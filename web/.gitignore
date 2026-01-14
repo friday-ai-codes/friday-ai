@@ -20,3 +20,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Auto-generated files
+src/auto-imports.d.ts
+src/components.d.ts
+src/typed-router.d.ts
+# Test results
+coverage
+test-results
+playwright-report
+playwright/.cache
+# Build cache
+.cache
+*.tsbuildinfo
