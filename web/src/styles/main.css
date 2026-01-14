@@ -1,55 +1,70 @@
 @import "tailwindcss";
-/* 自定义 CSS 变量，用于 shadcn-vue */
+/*
+ * Friday AI 配色方案
+ *
+ * 主题色:
+ * - #F9F7F7 - 浅色背景 (HSL: 0 12% 97%)
+ * - #DBE2EF - 浅蓝色次要背景 (HSL: 219 43% 90%)
+ * - #3F72AF - 主色调蓝色 (HSL: 213 47% 47%)
+ * - #112D4E - 深色文字 (HSL: 212 64% 19%)
+ */
 @theme {
- /* 颜色系统 - 使用 HSL */
- --color-background: hsl(0 0% 100%);
- --color-foreground: hsl(222.2 84% 4.9%);
- --color-card: hsl(0 0% 100%);
- --color-card-foreground: hsl(222.2 84% 4.9%);
- --color-popover: hsl(0 0% 100%);
- --color-popover-foreground: hsl(222.2 84% 4.9%);
- --color-primary: hsl(222.2 47.4% 11.2%);
- --color-primary-foreground: hsl(210 40% 98%);
- --color-secondary: hsl(210 40% 96.1%);
- --color-secondary-foreground: hsl(222.2 47.4% 11.2%);
- --color-muted: hsl(210 40% 96.1%);
- --color-muted-foreground: hsl(215.4 16.3% 46.9%);
- --color-accent: hsl(210 40% 96.1%);
- --color-accent-foreground: hsl(222.2 47.4% 11.2%);
- --color-destructive: hsl(0 84.2% 60.2%);
- --color-destructive-foreground: hsl(210 40% 98%);
- --color-border: hsl(214.3 31.8% 91.4%);
- --color-input: hsl(214.3 31.8% 91.4%);
- --color-ring: hsl(222.2 84% 4.9%);
+ /* 背景和前景 */
+ --color-background: hsl(0 12% 97%); /* #F9F7F7 */
+ --color-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 卡片 */
+ --color-card: hsl(0 0% 100%); /* 纯白色卡片 */
+ --color-card-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 弹出层 */
+ --color-popover: hsl(0 0% 100%); /* 纯白色 */
+ --color-popover-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 主色调 - 蓝色 */
+ --color-primary: hsl(213 47% 47%); /* #3F72AF */
+ --color-primary-foreground: hsl(0 0% 100%); /* 白色文字 */
+ /* 次要色 - 浅蓝 */
+ --color-secondary: hsl(219 43% 90%); /* #DBE2EF */
+ --color-secondary-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 淡化区域 */
+ --color-muted: hsl(219 43% 90%); /* #DBE2EF */
+ --color-muted-foreground: hsl(212 40% 40%); /* 较浅的深色 */
+ /* 强调色 */
+ --color-accent: hsl(219 43% 90%); /* #DBE2EF */
+ --color-accent-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 危险/错误色 - 保持红色 */
+ --color-destructive: hsl(0 72% 51%); /* 红色 */
+ --color-destructive-foreground: hsl(0 0% 100%); /* 白色 */
+ /* 边框和输入框 */
+ --color-border: hsl(219 30% 85%); /* 基于 #DBE2EF 稍深 */
+ --color-input: hsl(219 30% 85%);
+ --color-ring: hsl(213 47% 47%); /* #3F72AF */
  /* 圆角 */
  --radius: 0.5rem;
-}
-/* 暗色主题 */
-@media (prefers-color-scheme: dark) {
- @theme {
- --color-background: hsl(222.2 84% 4.9%);
- --color-foreground: hsl(210 40% 98%);
- --color-card: hsl(222.2 84% 4.9%);
- --color-card-foreground: hsl(210 40% 98%);
- --color-popover: hsl(222.2 84% 4.9%);
- --color-popover-foreground: hsl(210 40% 98%);
- --color-primary: hsl(210 40% 98%);
- --color-primary-foreground: hsl(222.2 47.4% 11.2%);
- --color-secondary: hsl(217.2 32.6% 17.5%);
- --color-secondary-foreground: hsl(210 40% 98%);
- --color-muted: hsl(217.2 32.6% 17.5%);
- --color-muted-foreground: hsl(215 20.2% 65.1%);
- --color-accent: hsl(217.2 32.6% 17.5%);
- --color-accent-foreground: hsl(210 40% 98%);
- --color-destructive: hsl(0 62.8% 30.6%);
- --color-destructive-foreground: hsl(210 40% 98%);
- --color-border: hsl(217.2 32.6% 17.5%);
- --color-input: hsl(217.2 32.6% 17.5%);
- --color-ring: hsl(212.7 26.8% 83.9%);
- }
+ /* 成功/警告色 */
+ --color-success: hsl(142 71% 45%);
+ --color-success-foreground: hsl(0 0% 100%);
+ --color-warning: hsl(38 92% 50%);
+ --color-warning-foreground: hsl(0 0% 100%);
 }
 /* 基础样式 */
 body {
  @apply bg-background text-foreground;
  font-feature-settings: "rlig" 1, "calt" 1;
+}
+/* 自定义滚动条样式 */:-webkit-scrollbar {
+ width: 8px;
+ height: 8px;
+}:-webkit-scrollbar-track {
+ background: hsl(219 43% 90%); /* #DBE2EF */
+}:-webkit-scrollbar-thumb {
+ background: hsl(213 47% 47%); /* #3F72AF */
+ border-radius: 4px;
+}:-webkit-scrollbar-thumb:hover {
+ background: hsl(212 64% 19%); /* #112D4E */
+}
+/* 链接样式 */
+a {
+ @apply text-primary hover:text-primary/80 transition-colors;
+}
+/* 选中文本样式 */:selection {
+ background: hsl(213 47% 47% / 0.3); /* #3F72AF 30% */
 }
