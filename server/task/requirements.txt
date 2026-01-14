@@ -1,0 +1,12 @@
+# Friday Task Container Dependencies
+# HTTP client for API callbacks
+httpx>=0.27.0
+# Environment configuration
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+# Git operations
+gitpython>=3.1.42
+# Async subprocess
+asyncio
+# Logging and utilities
+structlog>=24.1.0
