@@ -28,8 +28,8 @@ const { error: showError } = useToast
 // 当前选中的 Tab
 const activeTab = ref<'webhook' | 'workitem'>('webhook')
 // 过滤器
-const projectFilter = ref('')
-const statusFilter = ref('')
+const projectFilter = ref('__all__')
+const statusFilter = ref('__all__')
 // 加载状态
 const loading = ref(true)
 const webhookLogs = ref<WebhookLog>
@@ -54,14 +54,16 @@ onMounted(async => {
 async function fetchLogs {
  loading.value = true
  try {
+ const projectId = projectFilter.value === '__all__' ? undefined: projectFilter.value
+ const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as WebhookLogStatus
  const [webhookResult, workItemResult] = await Promise.all([
  listWebhookLogs({
- project_id: projectFilter.value || undefined,
- status: statusFilter.value as WebhookLogStatus || undefined,
+ project_id: projectId,
+ status,
  limit: 50,
  }),
  listWorkItemLogs({
- project_id: projectFilter.value || undefined,
+ project_id: projectId,
  limit: 50,
  }),
  ])
@@ -80,7 +82,7 @@ watch([projectFilter, statusFilter], => {
 })
 // 状态选项
 const statusOptions: { value: string, label: string } = [
- { value: '', label: '全部状态' },
+ { value: '__all__', label: '全部状态' },
  { value: 'accepted', label: '已接受' },
  { value: 'ignored', label: '已忽略' },
  { value: 'error', label: '错误' },
@@ -163,7 +165,7 @@ function getProjectName(projectId: string | null) {
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">
+ <SelectItem value="__all__">
  全部项目
  </SelectItem>
  <SelectItem

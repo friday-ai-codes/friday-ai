@@ -27,8 +27,8 @@ const tasksStore = useTasksStore
 const projectsStore = useProjectsStore
 const { error: showError } = useToast
 // 从 URL 获取过滤参数
-const projectFilter = ref<string>(route.query.project_id as string || '')
-const statusFilter = ref<string>(route.query.status as string || '')
+const projectFilter = ref<string>(route.query.project_id as string || '__all__')
+const statusFilter = ref<string>(route.query.status as string || '__all__')
 // 加载数据
 const loading = ref(true)
 onMounted(async => {
@@ -45,9 +45,11 @@ onMounted(async => {
 })
 // 获取任务列表
 async function fetchTasks {
+ const projectId = projectFilter.value === '__all__' ? undefined: projectFilter.value
+ const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as TaskStatus
  await tasksStore.fetchTasks({
- project_id: projectFilter.value || undefined,
- status: (statusFilter.value as TaskStatus) || undefined,
+ project_id: projectId,
+ status,
  })
 }
 // 监听过滤条件变化
@@ -56,7 +58,7 @@ watch([projectFilter, statusFilter], => {
 })
 // 状态选项
 const statusOptions: { value: string, label: string } = [
- { value: '', label: '全部状态' },
+ { value: '__all__', label: '全部状态' },
  { value: 'pending', label: STATUS_LABELS.pending },
  { value: 'planning', label: STATUS_LABELS.planning },
  { value: 'plan_review', label: STATUS_LABELS.plan_review },
@@ -110,7 +112,7 @@ function getProjectName(projectId: string) {
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">
+ <SelectItem value="__all__">
  全部项目
  </SelectItem>
  <SelectItem
