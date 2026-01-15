@@ -22,9 +22,11 @@ onMounted(async => {
  projectsStore.fetchProject(projectId.value),
  projectsStore.fetchCredential(projectId.value),
  ])
- } catch (e) {
+ }
+ catch (e) {
  // 忽略凭证不存在的错误
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -67,9 +69,11 @@ async function handleUploadSshKey {
  )
  success('上传成功', 'SSH 密钥已配置')
  sshForm.file = null
- } catch (e) {
+ }
+ catch (e) {
  showError('上传失败', e instanceof Error ? e.message: '无法上传 SSH 密钥')
- } finally {
+ }
+ finally {
  uploading.value = false
  }
 }
@@ -89,9 +93,11 @@ async function handleSetToken {
  )
  success('设置成功', 'Access Token 已配置')
  tokenForm.token = ''
- } catch (e) {
+ }
+ catch (e) {
  showError('设置失败', e instanceof Error ? e.message: '无法设置 Access Token')
- } finally {
+ }
+ finally {
  uploading.value = false
  }
 }
@@ -104,9 +110,11 @@ async function handleDeleteCredential {
  await projectsStore.deleteCredential(projectId.value)
  success('删除成功', '凭证已删除')
  deleteDialogOpen.value = false
- } catch (e) {
+ }
+ catch (e) {
  showError('删除失败', e instanceof Error ? e.message: '无法删除凭证')
- } finally {
+ }
+ finally {
  deleting.value = false
  }
 }
@@ -117,15 +125,19 @@ async function handleDeleteCredential {
  <RouterLink:to="`/projects/${projectId}`"
  class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
  >
- <span class="icon-[lucide--arrow-left] mr-1"></span>
+ <span class="icon-[lucide--arrow-left] mr-1" />
  返回项目详情
  </RouterLink>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="2" />
  <template v-else-if="project">
  <div>
- <h1 class="text-2xl font-bold">凭证管理</h1>
- <p class="text-muted-foreground">配置 {{ project.name }} 的 Git 访问凭证</p>
+ <h1 class="text-2xl font-bold">
+ 凭证管理
+ </h1>
+ <p class="text-muted-foreground">
+ 配置 {{ project.name }} 的 Git 访问凭证
+ </p>
  </div>
  <!-- 已有凭证 -->
  <Card v-if="credential">
@@ -133,7 +145,7 @@ async function handleDeleteCredential {
  <div class="flex items-center justify-between">
  <div>
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-green-600"></span>
+ <span class="icon-[lucide--check-circle] text-green-600" />
  <span>凭证已配置</span>
  </CardTitle>
  <CardDescription>
@@ -141,7 +153,7 @@ async function handleDeleteCredential {
  </CardDescription>
  </div>
  <Button variant="destructive" size="sm" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-1"></span>
+ <span class="icon-[lucide--trash-2] mr-1" />
  删除凭证
  </Button>
  </div>
@@ -150,15 +162,21 @@ async function handleDeleteCredential {
  <div class="space-y-4">
  <div>
  <label class="text-sm text-muted-foreground">Git 用户名</label>
- <p class="font-medium">{{ credential.git_user_name }}</p>
+ <p class="font-medium">
+ {{ credential.git_user_name }}
+ </p>
  </div>
  <div>
  <label class="text-sm text-muted-foreground">Git 邮箱</label>
- <p class="font-medium">{{ credential.git_user_email }}</p>
+ <p class="font-medium">
+ {{ credential.git_user_email }}
+ </p>
  </div>
  <div>
  <label class="text-sm text-muted-foreground">配置时间</label>
- <p class="font-medium">{{ new Date(credential.created_at).toLocaleString('zh-CN') }}</p>
+ <p class="font-medium">
+ {{ new Date(credential.created_at).toLocaleString('zh-CN') }}
+ </p>
  </div>
  </div>
  </CardContent>
@@ -175,11 +193,11 @@ async function handleDeleteCredential {
  <Tabs default-value="ssh" class="w-full">
  <TabsList class="grid w-full grid-cols-2">
  <TabsTrigger value="ssh">
- <span class="icon-[lucide--key] mr-1"></span>
+ <span class="icon-[lucide--key] mr-1" />
  SSH 密钥
  </TabsTrigger>
  <TabsTrigger value="token">
- <span class="icon-[lucide--lock] mr-1"></span>
+ <span class="icon-[lucide--lock] mr-1" />
  Access Token
  </TabsTrigger>
  </TabsList>
@@ -217,8 +235,8 @@ async function handleDeleteCredential {
  <Button:disabled="!sshForm.file || uploading"
  @click="handleUploadSshKey"
  >
- <span v-if="uploading" class="icon-[lucide--loader-circle] mr-2 animate-spin"></span>
- <span v-else class="icon-[lucide--upload] mr-2"></span>
+ <span v-if="uploading" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--upload] mr-2" />
  {{ uploading ? '上传中...': '上传 SSH 密钥' }}
  </Button>
  </TabsContent>
@@ -256,8 +274,8 @@ async function handleDeleteCredential {
  <Button:disabled="!tokenForm.token.trim || uploading"
  @click="handleSetToken"
  >
- <span v-if="uploading" class="icon-[lucide--loader-circle] mr-2 animate-spin"></span>
- <span v-else class="icon-[lucide--save] mr-2"></span>
+ <span v-if="uploading" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--save] mr-2" />
  {{ uploading ? '设置中...': '设置 Access Token' }}
  </Button>
  </TabsContent>

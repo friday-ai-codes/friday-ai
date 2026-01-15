@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useScroll } from '@vueuse/core';
-import { tasksApi } from '~/api';
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
-import { usePolling } from '~/composables/usePolling';
+import { useScroll } from '@vueuse/core'
+import { tasksApi } from '~/api'
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { usePolling } from '~/composables/usePolling'
 const props = defineProps<{
  taskId: string
  active?: boolean
@@ -13,13 +13,15 @@ const { y } = useScroll(logContainer)
 const autoScroll = ref(true)
 // 检测用户是否手动向上滚动，如果是则暂停自动滚动
 watch(y, (newY, oldY) => {
- if (!logContainer.value) return
+ if (!logContainer.value)
+ return
  const { scrollHeight, clientHeight } = logContainer.value
  // 如果距离底部超过 50px，则认为是手动滚动
  const isAtBottom = scrollHeight - clientHeight - newY < 50
  if (isAtBottom) {
  autoScroll.value = true
- } else if (newY < oldY) {
+ }
+ else if (newY < oldY) {
  // 用户向上滚动
  autoScroll.value = false
  }
@@ -40,7 +42,8 @@ const { start, stop, isPolling, error } = usePolling(
  })
  }
  }
- } catch (e) {
+ }
+ catch (e) {
  console.error('Failed to fetch logs:', e)
  throw e
  }
@@ -48,7 +51,7 @@ const { start, stop, isPolling, error } = usePolling(
  {
  interval: 2000,
  immediate: true,
- }
+ },
 )
 // 监听 active 属性变化
 watch(
@@ -56,18 +59,21 @@ watch(
  (newVal) => {
  if (newVal) {
  start
- } else {
+ }
+ else {
  stop
  }
  },
- { immediate: true }
+ { immediate: true },
 )
 </script>
 <template>
  <Card class="h-full flex flex-col">
  <CardHeader class="py-3 px-4 border-b">
  <div class="flex items-center justify-between">
- <CardTitle class="text-sm font-medium">执行日志</CardTitle>
+ <CardTitle class="text-sm font-medium">
+ 执行日志
+ </CardTitle>
  <div class="flex items-center gap-2">
  <span v-if="isPolling" class="flex w-2 rounded-full bg-green-500 animate-pulse" />
  <span v-else class="flex w-2 rounded-full bg-gray-300" />
@@ -92,7 +98,7 @@ watch(
  <button
  v-if="!autoScroll"
  class="absolute bottom-4 right-4 bg-primary text-primary-foreground text-xs px-3 py-1 rounded shadow-md hover:bg-primary/90 transition-colors"
- @click=" => { autoScroll = true; if(logContainer) logContainer.scrollTop = logContainer.scrollHeight; }"
+ @click=" => { autoScroll = true; if (logContainer) logContainer.scrollTop = logContainer.scrollHeight; }"
  >
  ↓ 滚动到底部
  </button>

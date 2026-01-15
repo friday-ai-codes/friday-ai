@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { GitPlatform } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -11,7 +12,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import type { GitPlatform } from '~/types'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute
 const router = useRouter
@@ -43,10 +43,12 @@ onMounted(async => {
  form.claude_md_path = project.claude_md_path
  form.feishu_project_key = project.feishu_project_key || ''
  }
- } catch (e) {
+ }
+ catch (e) {
  showError('加载失败', '无法加载项目信息')
  router.push('/projects')
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -63,7 +65,8 @@ function validate: boolean {
  }
  if (!form.repo_url.trim) {
  errors.repo_url = '请输入仓库 URL'
- } else if (!form.repo_url.match(/^(https?:\/\/|git@)/)) {
+ }
+ else if (!form.repo_url.match(/^(https?:\/\/|git@)/)) {
  errors.repo_url = '请输入有效的仓库 URL'
  }
  return !errors.name && !errors.repo_url
@@ -71,20 +74,23 @@ function validate: boolean {
 // 提交表单
 const submitting = ref(false)
 async function handleSubmit {
- if (!validate) return
+ if (!validate)
+ return
  submitting.value = true
  try {
  await projectsStore.updateProject(projectId, form)
  success('更新成功', '项目信息已更新')
  router.push(`/projects/${projectId}`)
- } catch (e) {
+ }
+ catch (e) {
  showError('更新失败', e instanceof Error ? e.message: '无法更新项目')
- } finally {
+ }
+ finally {
  submitting.value = false
  }
 }
 // 平台选项
-const platforms: { value: GitPlatform; label: string } = [
+const platforms: { value: GitPlatform, label: string } = [
  { value: 'github', label: PLATFORM_LABELS.github },
  { value: 'gitlab', label: PLATFORM_LABELS.gitlab },
  { value: 'gitea', label: PLATFORM_LABELS.gitea },
@@ -98,7 +104,9 @@ const platforms: { value: GitPlatform; label: string } = [
  ← 返回项目详情
  </RouterLink>
  <div v-if="loading" class="flex justify-center py-12">
- <div class="animate-spin text-2xl">⏳</div>
+ <div class="animate-spin text-2xl">
+ ⏳
+ </div>
  </div>
  <Card v-else>
  <CardHeader>
@@ -117,7 +125,9 @@ const platforms: { value: GitPlatform; label: string } = [
  v-model="form.name"
  placeholder="例如：friday-ai":class="{ 'border-red-500': errors.name }"
  />
- <p v-if="errors.name" class="text-sm text-red-500">{{ errors.name }}</p>
+ <p v-if="errors.name" class="text-sm text-red-500">
+ {{ errors.name }}
+ </p>
  </div>
  <!-- 仓库 URL -->
  <div class="space-y-2">
@@ -127,8 +137,12 @@ const platforms: { value: GitPlatform; label: string } = [
  v-model="form.repo_url"
  placeholder="https://github.com/user/repo.git":class="{ 'border-red-500': errors.repo_url }"
  />
- <p v-if="errors.repo_url" class="text-sm text-red-500">{{ errors.repo_url }}</p>
- <p class="text-xs text-muted-foreground">支持 HTTPS 或 SSH 格式</p>
+ <p v-if="errors.repo_url" class="text-sm text-red-500">
+ {{ errors.repo_url }}
+ </p>
+ <p class="text-xs text-muted-foreground">
+ 支持 HTTPS 或 SSH 格式
+ </p>
  </div>
  <!-- Git 平台 -->
  <div class="space-y-2">
@@ -184,7 +198,9 @@ const platforms: { value: GitPlatform; label: string } = [
  {{ submitting ? '保存中...': '保存更改' }}
  </Button>
  <RouterLink:to="`/projects/${projectId}`">
- <Button type="button" variant="outline">取消</Button>
+ <Button type="button" variant="outline">
+ 取消
+ </Button>
  </RouterLink>
  </div>
  </form>

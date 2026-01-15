@@ -14,9 +14,11 @@ const loading = ref(true)
 onMounted(async => {
  try {
  await projectsStore.fetchProjects
- } catch (e) {
+ }
+ catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取项目列表')
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -29,15 +31,18 @@ function confirmDelete(projectId: string) {
  deleteDialogOpen.value = true
 }
 async function handleDelete {
- if (!projectToDelete.value) return
+ if (!projectToDelete.value)
+ return
  deleting.value = true
  try {
  await projectsStore.deleteProject(projectToDelete.value)
  success('删除成功', '项目已删除')
  deleteDialogOpen.value = false
- } catch (e) {
+ }
+ catch (e) {
  showError('删除失败', e instanceof Error ? e.message: '无法删除项目')
- } finally {
+ }
+ finally {
  deleting.value = false
  }
 }
@@ -47,12 +52,16 @@ async function handleDelete {
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
  <div>
- <h1 class="text-2xl font-bold">项目管理</h1>
- <p class="text-muted-foreground">管理您的 Git 仓库项目和凭证配置</p>
+ <h1 class="text-2xl font-bold">
+ 项目管理
+ </h1>
+ <p class="text-muted-foreground">
+ 管理您的 Git 仓库项目和凭证配置
+ </p>
  </div>
  <RouterLink to="/projects/new">
  <Button>
- <span class="icon-[lucide--plus] mr-2"></span>
+ <span class="icon-[lucide--plus] mr-2" />
  新建项目
  </Button>
  </RouterLink>
@@ -77,7 +86,9 @@ async function handleDelete {
  <CardHeader class="pb-3">
  <div class="flex items-start justify-between">
  <div class="space-y-1">
- <CardTitle class="text-lg">{{ project.name }}</CardTitle>
+ <CardTitle class="text-lg">
+ {{ project.name }}
+ </CardTitle>
  <CardDescription class="flex items-center gap-2">
  <Badge variant="outline">
  {{ PLATFORM_LABELS[project.git_platform] }}
@@ -86,7 +97,7 @@ async function handleDelete {
  </CardDescription>
  </div>
  <Badge:variant="project.has_credential ? 'default': 'secondary'">
- <span:class="project.has_credential ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1"></span>
+ <span:class="project.has_credential ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
  {{ project.has_credential ? '已配置凭证': '未配置凭证' }}
  </Badge>
  </div>
@@ -94,20 +105,20 @@ async function handleDelete {
  <CardContent class="space-y-4">
  <!-- 仓库 URL -->
  <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--link] flex-shrink-0"></span>
+ <span class="icon-[lucide--link] flex-shrink-0" />
  <span class="truncate":title="project.repo_url">{{ project.repo_url }}</span>
  </div>
  <!-- 操作按钮 -->
  <div class="flex items-center gap-2">
  <RouterLink:to="`/projects/${project.id}`" class="flex-1">
  <Button variant="outline" size="sm" class="w-full">
- <span class="icon-[lucide--eye] mr-1"></span>
+ <span class="icon-[lucide--eye] mr-1" />
  查看详情
  </Button>
  </RouterLink>
  <RouterLink:to="`/projects/${project.id}/credential`">
  <Button variant="ghost" size="sm" title="凭证管理">
- <span class="icon-[lucide--key]"></span>
+ <span class="icon-[lucide--key]" />
  </Button>
  </RouterLink>
  <Button
@@ -116,7 +127,7 @@ async function handleDelete {
  title="删除项目"
  @click="confirmDelete(project.id)"
  >
- <span class="icon-[lucide--trash-2] text-destructive"></span>
+ <span class="icon-[lucide--trash-2] text-destructive" />
  </Button>
  </div>
  </CardContent>

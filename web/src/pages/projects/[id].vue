@@ -24,9 +24,11 @@ onMounted(async => {
  projectsStore.fetchCredential(projectId.value),
  tasksStore.fetchTasks({ project_id: projectId.value }),
  ])
- } catch (e) {
+ }
+ catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取项目详情')
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -39,9 +41,11 @@ async function handleDelete {
  await projectsStore.deleteProject(projectId.value)
  success('删除成功', '项目已删除')
  router.push('/projects')
- } catch (e) {
+ }
+ catch (e) {
  showError('删除失败', e instanceof Error ? e.message: '无法删除项目')
- } finally {
+ }
+ finally {
  deleting.value = false
  deleteDialogOpen.value = false
  }
@@ -59,7 +63,7 @@ const projectTasks = computed( => tasksStore.tasks)
  <div class="space-y-6">
  <!-- 返回按钮 -->
  <RouterLink to="/projects" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- <span class="icon-[lucide--arrow-left] mr-1"></span>
+ <span class="icon-[lucide--arrow-left] mr-1" />
  返回项目列表
  </RouterLink>
  <!-- 加载状态 -->
@@ -69,21 +73,25 @@ const projectTasks = computed( => tasksStore.tasks)
  <!-- 头部 -->
  <div class="flex items-start justify-between">
  <div>
- <h1 class="text-2xl font-bold">{{ project.name }}</h1>
+ <h1 class="text-2xl font-bold">
+ {{ project.name }}
+ </h1>
  <p class="text-muted-foreground flex items-center gap-2 mt-1">
- <Badge variant="outline">{{ PLATFORM_LABELS[project.git_platform] }}</Badge>
+ <Badge variant="outline">
+ {{ PLATFORM_LABELS[project.git_platform] }}
+ </Badge>
  <span>{{ project.default_branch }}</span>
  </p>
  </div>
  <div class="flex items-center gap-2">
  <RouterLink:to="`/projects/${project.id}/edit`">
  <Button variant="outline">
- <span class="icon-[lucide--pencil] mr-2"></span>
+ <span class="icon-[lucide--pencil] mr-2" />
  编辑
  </Button>
  </RouterLink>
  <Button variant="destructive" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-2"></span>
+ <span class="icon-[lucide--trash-2] mr-2" />
  删除
  </Button>
  </div>
@@ -97,27 +105,37 @@ const projectTasks = computed( => tasksStore.tasks)
  <CardContent class="space-y-4">
  <div>
  <label class="text-sm text-muted-foreground">仓库 URL</label>
- <p class="font-mono text-sm mt-1 break-all">{{ project.repo_url }}</p>
+ <p class="font-mono text-sm mt-1 break-all">
+ {{ project.repo_url }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">developer-notes.md 路径</label>
- <p class="font-mono text-sm mt-1">{{ project.claude_md_path }}</p>
+ <p class="font-mono text-sm mt-1">
+ {{ project.claude_md_path }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">飞书项目 Key</label>
- <p class="font-mono text-sm mt-1">{{ project.feishu_project_key || '未配置' }}</p>
+ <p class="font-mono text-sm mt-1">
+ {{ project.feishu_project_key || '未配置' }}
+ </p>
  </div>
  <Separator />
  <div class="flex gap-8">
  <div>
  <label class="text-sm text-muted-foreground">创建时间</label>
- <p class="text-sm mt-1">{{ formatDate(project.created_at) }}</p>
+ <p class="text-sm mt-1">
+ {{ formatDate(project.created_at) }}
+ </p>
  </div>
  <div>
  <label class="text-sm text-muted-foreground">更新时间</label>
- <p class="text-sm mt-1">{{ formatDate(project.updated_at) }}</p>
+ <p class="text-sm mt-1">
+ {{ formatDate(project.updated_at) }}
+ </p>
  </div>
  </div>
  </CardContent>
@@ -131,7 +149,7 @@ const projectTasks = computed( => tasksStore.tasks)
  </div>
  <RouterLink:to="`/projects/${project.id}/credential`">
  <Button variant="outline" size="sm">
- <span class="icon-[lucide--key] mr-2"></span>
+ <span class="icon-[lucide--key] mr-2" />
  管理凭证
  </Button>
  </RouterLink>
@@ -139,9 +157,11 @@ const projectTasks = computed( => tasksStore.tasks)
  <CardContent>
  <div v-if="credential" class="space-y-4">
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-2xl text-green-600"></span>
+ <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
  <div>
- <p class="font-medium">凭证已配置</p>
+ <p class="font-medium">
+ 凭证已配置
+ </p>
  <p class="text-sm text-muted-foreground">
  类型：{{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
  </p>
@@ -156,10 +176,14 @@ const projectTasks = computed( => tasksStore.tasks)
  </div>
  </div>
  <div v-else class="text-center py-6">
- <span class="icon-[lucide--lock] text-4xl text-muted-foreground"></span>
- <p class="mt-2 text-muted-foreground">尚未配置凭证</p>
+ <span class="icon-[lucide--lock] text-4xl text-muted-foreground" />
+ <p class="mt-2 text-muted-foreground">
+ 尚未配置凭证
+ </p>
  <RouterLink:to="`/projects/${project.id}/credential`">
- <Button class="mt-4" size="sm">配置凭证</Button>
+ <Button class="mt-4" size="sm">
+ 配置凭证
+ </Button>
  </RouterLink>
  </div>
  </CardContent>
@@ -174,14 +198,14 @@ const projectTasks = computed( => tasksStore.tasks)
  </div>
  <RouterLink:to="`/tasks?project_id=${project.id}`">
  <Button variant="outline" size="sm">
- <span class="icon-[lucide--arrow-right] mr-1"></span>
+ <span class="icon-[lucide--arrow-right] mr-1" />
  查看全部
  </Button>
  </RouterLink>
  </CardHeader>
  <CardContent>
  <div v-if="projectTasks.length === 0" class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--inbox] text-4xl block mb-2"></span>
+ <span class="icon-[lucide--inbox] text-4xl block mb-2" />
  暂无任务
  </div>
  <div v-else class="space-y-2">

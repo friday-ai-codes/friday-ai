@@ -10,21 +10,61 @@ This project follows a Monorepo structure, containing independent frontend and b
 ## 🚀 Quick Start (Full Stack)
 ### Prerequisites
 - Docker & Docker Compose
-- Node.js 20+ (Local development only)
-- Python 3.11+ (Local development only)
 ### One-Click Start
 1. **Configure Environment Variables**
  ```bash
- cp server/.env.example server/.env
- # Edit server/.env and fill in required API Keys (Feishu, Anthropic, etc.)
+ cp .env.example .env
+ # Edit .env and fill in required values
  ```
-2. **Start Full Stack Services**
+2. **Generate Encryption Key** (Required)
+ ```bash
+ # Using Python
+ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key.decode)"
+ # Or using OpenSSL
+ openssl rand -base64 32
+ ```
+ Add the generated key to `FRIDAY_ENCRYPTION_KEY` in `.env`
+3. **Start Full Stack Services**
  ```bash
  docker compose up -d
  ```
-3. **Access Services**
- - **Frontend**: http://localhost:8080
- - **Backend API**: http://localhost:8000/docs
+4. **Access Services**
+ - **Application**: http://localhost:8080 (Nginx serves frontend + proxies API)
+ - **API Docs**: http://localhost:8080/docs (Swagger UI)
+ - **Direct API Access**: http://localhost:8000 (Optional, for debugging)
+### Service Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│ User Browser │
+└───────────────────────────┬─────────────────────────────────┘
+ │
+ ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Nginx (friday-web:8080) │
+│ ┌─────────────────────┐ ┌───────────────────────────────┐ │
+│ │ Static Files │ │ Proxy: /api/* /health /docs │ │
+│ │ (Vue SPA) │ │ → server:8000 │ │
+│ └─────────────────────┘ └───────────────────────────────┘ │
+└───────────────────────────┬─────────────────────────────────┘
+ │
+ ▼
+┌─────────────────────────────────────────────────────────────┐
+│ FastAPI Server (friday-server:8000) │
+│ ┌────────────────┐ ┌──────────────────────────────────┐ │
+│ │ REST API │ │ Task Scheduler │ │
+│ │ /api/* │ │ (Docker Container Management) │ │
+│ └────────────────┘ └──────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+### Environment Variables
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FRIDAY_ENCRYPTION_KEY` | ✅ | - | Encryption key for sensitive data |
+| `ANTHROPIC_API_KEY` | ✅* | - | Anthropic API key for Claude Code |
+| `FRIDAY_WEB_PORT` | ❌ | 8080 | Web frontend port |
+| `FRIDAY_PORT` | ❌ | 8000 | Backend API port |
+| `FRIDAY_DEBUG` | ❌ | false | Enable debug mode |
+*Required for task execution functionality
 ## 💻 Local Development Guide
 ### Backend Development (`server/`)
 For detailed instructions, see [Server README](server/README.md).

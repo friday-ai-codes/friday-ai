@@ -2,7 +2,6 @@
  * Tasks Store
  * 管理任务列表和任务相关操作
  */
-import { tasksApi } from '~/api'
 import type {
  ContainerStatusResponse,
  Task,
@@ -11,6 +10,7 @@ import type {
  TaskStatus,
  TaskUpdate,
 } from '~/types'
+import { tasksApi } from '~/api'
 export const useTasksStore = defineStore('tasks', => {
  // ============================================================================
  // State
@@ -31,11 +31,11 @@ export const useTasksStore = defineStore('tasks', => {
  // Getters
  // ============================================================================
  const taskById = computed( => {
- return (id: string) => tasks.value.find((t) => t.id === id)
+ return (id: string) => tasks.value.find(t => t.id === id)
  })
  const taskCount = computed( => tasks.value.length)
  const tasksByStatus = computed( => {
- return (status: TaskStatus) => tasks.value.filter((t) => t.status === status)
+ return (status: TaskStatus) => tasks.value.filter(t => t.status === status)
  })
  const pendingTasks = computed( => tasksByStatus.value('pending'))
  const runningTasks = computed( => [
@@ -71,10 +71,12 @@ export const useTasksStore = defineStore('tasks', => {
  error.value = null
  try {
  tasks.value = await tasksApi.list(filters.value)
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取任务列表失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -87,10 +89,12 @@ export const useTasksStore = defineStore('tasks', => {
  try {
  currentTask.value = await tasksApi.get(taskId)
  return currentTask.value
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取任务详情失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -104,10 +108,12 @@ export const useTasksStore = defineStore('tasks', => {
  const newTask = await tasksApi.create(data)
  tasks.value.unshift(newTask)
  return newTask
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '创建任务失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -121,10 +127,12 @@ export const useTasksStore = defineStore('tasks', => {
  const updatedTask = await tasksApi.update(taskId, data)
  updateTaskInList(updatedTask)
  return updatedTask
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '更新任务失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -136,14 +144,16 @@ export const useTasksStore = defineStore('tasks', => {
  error.value = null
  try {
  await tasksApi.delete(taskId)
- tasks.value = tasks.value.filter((t) => t.id !== taskId)
+ tasks.value = tasks.value.filter(t => t.id !== taskId)
  if (currentTask.value?.id === taskId) {
  currentTask.value = null
  }
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '删除任务失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -157,10 +167,12 @@ export const useTasksStore = defineStore('tasks', => {
  const updatedTask = await tasksApi.transition(taskId, newStatus)
  updateTaskInList(updatedTask)
  return updatedTask
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '状态转换失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -175,10 +187,12 @@ export const useTasksStore = defineStore('tasks', => {
  // 刷新任务状态
  await fetchTask(taskId)
  return response
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '执行任务失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -193,10 +207,12 @@ export const useTasksStore = defineStore('tasks', => {
  // 刷新任务状态
  await fetchTask(taskId)
  return response
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '停止任务失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -208,7 +224,8 @@ export const useTasksStore = defineStore('tasks', => {
  const response = await tasksApi.getLogs(taskId, tail)
  currentLogs.value = response.logs
  return response.logs
- } catch (e) {
+ }
+ catch (e) {
  // 如果没有日志，不报错
  currentLogs.value = ''
  return ''
@@ -221,7 +238,8 @@ export const useTasksStore = defineStore('tasks', => {
  try {
  containerStatus.value = await tasksApi.getContainerStatus(taskId)
  return containerStatus.value
- } catch (e) {
+ }
+ catch (e) {
  containerStatus.value = null
  return null
  }
@@ -230,7 +248,7 @@ export const useTasksStore = defineStore('tasks', => {
  * 更新列表中的任务
  */
  function updateTaskInList(updatedTask: Task) {
- const index = tasks.value.findIndex((t) => t.id === updatedTask.id)
+ const index = tasks.value.findIndex(t => t.id === updatedTask.id)
  if (index !== -1) {
  tasks.value[index] = updatedTask
  }

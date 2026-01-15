@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { GitPlatform } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -11,7 +12,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import type { GitPlatform } from '~/types'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '新建项目 - Friday AI',
@@ -41,7 +41,8 @@ function validate: boolean {
  }
  if (!form.repo_url.trim) {
  errors.repo_url = '请输入仓库 URL'
- } else if (!form.repo_url.match(/^(https?:\/\/|git@)/)) {
+ }
+ else if (!form.repo_url.match(/^(https?:\/\/|git@)/)) {
  errors.repo_url = '请输入有效的仓库 URL'
  }
  return !errors.name && !errors.repo_url
@@ -49,20 +50,23 @@ function validate: boolean {
 // 提交表单
 const submitting = ref(false)
 async function handleSubmit {
- if (!validate) return
+ if (!validate)
+ return
  submitting.value = true
  try {
  const project = await projectsStore.createProject(form)
  success('创建成功', '项目已创建，接下来配置凭证')
  router.push(`/projects/${project.id}/credential`)
- } catch (e) {
+ }
+ catch (e) {
  showError('创建失败', e instanceof Error ? e.message: '无法创建项目')
- } finally {
+ }
+ finally {
  submitting.value = false
  }
 }
 // 平台选项
-const platforms: { value: GitPlatform; label: string } = [
+const platforms: { value: GitPlatform, label: string } = [
  { value: 'github', label: PLATFORM_LABELS.github },
  { value: 'gitlab', label: PLATFORM_LABELS.gitlab },
  { value: 'gitea', label: PLATFORM_LABELS.gitea },
@@ -92,7 +96,9 @@ const platforms: { value: GitPlatform; label: string } = [
  v-model="form.name"
  placeholder="例如：friday-ai":class="{ 'border-red-500': errors.name }"
  />
- <p v-if="errors.name" class="text-sm text-red-500">{{ errors.name }}</p>
+ <p v-if="errors.name" class="text-sm text-red-500">
+ {{ errors.name }}
+ </p>
  </div>
  <!-- 仓库 URL -->
  <div class="space-y-2">
@@ -102,8 +108,12 @@ const platforms: { value: GitPlatform; label: string } = [
  v-model="form.repo_url"
  placeholder="https://github.com/user/repo.git":class="{ 'border-red-500': errors.repo_url }"
  />
- <p v-if="errors.repo_url" class="text-sm text-red-500">{{ errors.repo_url }}</p>
- <p class="text-xs text-muted-foreground">支持 HTTPS 或 SSH 格式</p>
+ <p v-if="errors.repo_url" class="text-sm text-red-500">
+ {{ errors.repo_url }}
+ </p>
+ <p class="text-xs text-muted-foreground">
+ 支持 HTTPS 或 SSH 格式
+ </p>
  </div>
  <!-- Git 平台 -->
  <div class="space-y-2">
@@ -159,7 +169,9 @@ const platforms: { value: GitPlatform; label: string } = [
  {{ submitting ? '创建中...': '创建项目' }}
  </Button>
  <RouterLink to="/projects">
- <Button type="button" variant="outline">取消</Button>
+ <Button type="button" variant="outline">
+ 取消
+ </Button>
  </RouterLink>
  </div>
  </form>

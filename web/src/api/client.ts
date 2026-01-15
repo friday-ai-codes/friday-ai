@@ -65,7 +65,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  try {
  const error: ApiErrorResponse = await response.json
  detail = error.detail || detail
- } catch {
+ }
+ catch {
  // 忽略 JSON 解析错误
  }
  throw new ApiError(response.status, detail)

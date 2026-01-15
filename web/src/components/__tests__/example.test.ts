@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
 // 示例测试：测试一个简单的组件
-describe('Example Component Test', => {
+describe('example Component Test', => {
  it('should render correctly', => {
  // 创建一个简单的测试组件
  const TestComponent = defineComponent({

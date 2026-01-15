@@ -2,8 +2,8 @@
  * Projects Store
  * 管理项目列表和项目相关操作
  */
-import { projectsApi } from '~/api'
 import type { GitCredential, Project, ProjectCreate, ProjectUpdate } from '~/types'
+import { projectsApi } from '~/api'
 export const useProjectsStore = defineStore('projects', => {
  // ============================================================================
  // State
@@ -17,7 +17,7 @@ export const useProjectsStore = defineStore('projects', => {
  // Getters
  // ============================================================================
  const projectById = computed( => {
- return (id: string) => projects.value.find((p) => p.id === id)
+ return (id: string) => projects.value.find(p => p.id === id)
  })
  const projectCount = computed( => projects.value.length)
  // ============================================================================
@@ -31,10 +31,12 @@ export const useProjectsStore = defineStore('projects', => {
  error.value = null
  try {
  projects.value = await projectsApi.list
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取项目列表失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -47,10 +49,12 @@ export const useProjectsStore = defineStore('projects', => {
  try {
  currentProject.value = await projectsApi.get(projectId)
  return currentProject.value
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取项目详情失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -64,10 +68,12 @@ export const useProjectsStore = defineStore('projects', => {
  const newProject = await projectsApi.create(data)
  projects.value.unshift(newProject)
  return newProject
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '创建项目失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -80,7 +86,7 @@ export const useProjectsStore = defineStore('projects', => {
  try {
  const updatedProject = await projectsApi.update(projectId, data)
  // 更新列表中的项目
- const index = projects.value.findIndex((p) => p.id === projectId)
+ const index = projects.value.findIndex(p => p.id === projectId)
  if (index !== -1) {
  projects.value[index] = updatedProject
  }
@@ -89,10 +95,12 @@ export const useProjectsStore = defineStore('projects', => {
  currentProject.value = updatedProject
  }
  return updatedProject
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '更新项目失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -105,15 +113,17 @@ export const useProjectsStore = defineStore('projects', => {
  try {
  await projectsApi.delete(projectId)
  // 从列表中移除
- projects.value = projects.value.filter((p) => p.id !== projectId)
+ projects.value = projects.value.filter(p => p.id !== projectId)
  // 清空当前项目
  if (currentProject.value?.id === projectId) {
  currentProject.value = null
  }
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '删除项目失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -127,7 +137,8 @@ export const useProjectsStore = defineStore('projects', => {
  try {
  currentCredential.value = await projectsApi.getCredential(projectId)
  return currentCredential.value
- } catch (e) {
+ }
+ catch (e) {
  // 404 表示没有凭证，不是错误
  currentCredential.value = null
  return null
@@ -152,7 +163,7 @@ export const useProjectsStore = defineStore('projects', => {
  gitUserEmail,
  )
  // 更新项目的 has_credential 状态
- const project = projects.value.find((p) => p.id === projectId)
+ const project = projects.value.find(p => p.id === projectId)
  if (project) {
  project.has_credential = true
  }
@@ -160,10 +171,12 @@ export const useProjectsStore = defineStore('projects', => {
  currentProject.value.has_credential = true
  }
  return currentCredential.value
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '上传 SSH 密钥失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -186,7 +199,7 @@ export const useProjectsStore = defineStore('projects', => {
  gitUserEmail,
  )
  // 更新项目的 has_credential 状态
- const project = projects.value.find((p) => p.id === projectId)
+ const project = projects.value.find(p => p.id === projectId)
  if (project) {
  project.has_credential = true
  }
@@ -194,10 +207,12 @@ export const useProjectsStore = defineStore('projects', => {
  currentProject.value.has_credential = true
  }
  return currentCredential.value
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '设置 Access Token 失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -211,17 +226,19 @@ export const useProjectsStore = defineStore('projects', => {
  await projectsApi.deleteCredential(projectId)
  currentCredential.value = null
  // 更新项目的 has_credential 状态
- const project = projects.value.find((p) => p.id === projectId)
+ const project = projects.value.find(p => p.id === projectId)
  if (project) {
  project.has_credential = false
  }
  if (currentProject.value?.id === projectId) {
  currentProject.value.has_credential = false
  }
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '删除凭证失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }

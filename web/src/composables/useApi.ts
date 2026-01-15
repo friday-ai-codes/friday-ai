@@ -1,18 +1,26 @@
+import type { Ref } from 'vue'
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
-export function useApi<T = any>(
- apiFunc: (...args: any) => Promise<T>,
+// 显式定义返回类型以避免类型推断问题
+interface UseApiReturn<T> {
+ loading: Ref<boolean>
+ error: Ref<unknown>
+ data: Ref<T | null>
+ execute: (...args: unknown) => Promise<T>
+}
+export function useApi<T = unknown>(
+ apiFunc: (...args: unknown) => Promise<T>,
  options: {
  showError?: boolean
  successMessage?: string
  onSuccess?: (data: T) => void
- onError?: (error: any) => void
- } = {}
-) {
+ onError?: (error: unknown) => void
+ } = {},
+): UseApiReturn<T> {
  const loading = ref(false)
- const error = ref<any>(null)
- const data = ref<T | null>(null)
- const execute = async (...args: any) => {
+ const error = ref<unknown>(null)
+ const data = ref<T | null>(null) as Ref<T | null>
+ const execute = async (...args: unknown): Promise<T> => {
  loading.value = true
  error.value = null
  try {
@@ -25,9 +33,11 @@ export function useApi<T = any>(
  options.onSuccess(result)
  }
  return result
- } catch (err: any) {
+ }
+ catch (err: unknown) {
  error.value = err
- const message = err.response?.data?.detail || err.message || '操作失败'
+ const errorObj = err as { response?: { data?: { detail?: string } }, message?: string }
+ const message = errorObj.response?.data?.detail || errorObj.message || '操作失败'
  if (options.showError !== false) {
  toast.error(message)
  }
@@ -35,7 +45,8 @@ export function useApi<T = any>(
  options.onError(err)
  }
  throw err
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -43,6 +54,6 @@ export function useApi<T = any>(
  loading,
  error,
  data,
- execute
+ execute,
  }
 }

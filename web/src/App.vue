@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useHead } from '@vueuse/head';
+import { useHead } from '@vueuse/head'
 // 设置页面默认标题
 useHead({
  title: 'Friday AI',

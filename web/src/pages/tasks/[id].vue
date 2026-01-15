@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import type { TaskStatus } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import type { TaskStatus } from '~/types'
 import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
 const route = useRoute
 const router = useRouter
@@ -25,9 +25,11 @@ onMounted(async => {
  if (tasksStore.currentTask) {
  await projectsStore.fetchProject(tasksStore.currentTask.project_id)
  }
- } catch (e) {
+ }
+ catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取任务详情')
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -45,41 +47,49 @@ const { isPolling, start: startPolling, stop: stopPolling } = usePolling(async =
 watch( => task.value?.status, (status) => {
  if (status === 'planning' || status === 'executing') {
  startPolling
- } else {
+ }
+ else {
  stopPolling
  }
 }, { immediate: true })
 // 可用的状态转换
 const availableTransitions = computed( => {
- if (!task.value) return
+ if (!task.value)
+ return
  return VALID_TRANSITIONS[task.value.status] ||
 })
 // 状态转换
 const transitioning = ref(false)
 async function handleTransition(newStatus: TaskStatus) {
- if (!task.value) return
+ if (!task.value)
+ return
  transitioning.value = true
  try {
  await tasksStore.transitionTask(task.value.id, newStatus)
  success('状态已更新', `任务已转换为 ${STATUS_LABELS[newStatus]}`)
- } catch (e) {
+ }
+ catch (e) {
  showError('转换失败', e instanceof Error ? e.message: '无法转换任务状态')
- } finally {
+ }
+ finally {
  transitioning.value = false
  }
 }
 // 执行任务
 const executing = ref(false)
 async function handleExecute(mode: 'plan' | 'execute') {
- if (!task.value) return
+ if (!task.value)
+ return
  executing.value = true
  try {
  const response = await tasksStore.executeTask(task.value.id, mode)
  success('任务已启动', `容器 ID: ${response.container_id}`)
  startPolling
- } catch (e) {
+ }
+ catch (e) {
  showError('启动失败', e instanceof Error ? e.message: '无法启动任务')
- } finally {
+ }
+ finally {
  executing.value = false
  }
 }
@@ -87,15 +97,18 @@ async function handleExecute(mode: 'plan' | 'execute') {
 const stopping = ref(false)
 const stopDialogOpen = ref(false)
 async function handleStop {
- if (!task.value) return
+ if (!task.value)
+ return
  stopping.value = true
  try {
  await tasksStore.stopTask(task.value.id)
  success('任务已停止')
  stopDialogOpen.value = false
- } catch (e) {
+ }
+ catch (e) {
  showError('停止失败', e instanceof Error ? e.message: '无法停止任务')
- } finally {
+ }
+ finally {
  stopping.value = false
  }
 }
@@ -103,34 +116,40 @@ async function handleStop {
 const deleteDialogOpen = ref(false)
 const deleting = ref(false)
 async function handleDelete {
- if (!task.value) return
+ if (!task.value)
+ return
  deleting.value = true
  try {
  await tasksStore.deleteTask(task.value.id)
  success('删除成功', '任务已删除')
  router.push('/tasks')
- } catch (e) {
+ }
+ catch (e) {
  showError('删除失败', e instanceof Error ? e.message: '无法删除任务')
- } finally {
+ }
+ finally {
  deleting.value = false
  deleteDialogOpen.value = false
  }
 }
 // 格式化日期
 function formatDate(dateStr: string | null) {
- if (!dateStr) return '-'
+ if (!dateStr)
+ return '-'
  return new Date(dateStr).toLocaleString('zh-CN')
 }
 // 状态步骤
 const statusSteps = ['pending', 'planning', 'plan_review', 'executing', 'code_review', 'merged'] as const
 const currentStepIndex = computed( => {
- if (!task.value) return -1
- if (task.value.status === 'failed') return -1
+ if (!task.value)
+ return -1
+ if (task.value.status === 'failed')
+ return -1
  return statusSteps.indexOf(task.value.status as typeof statusSteps[number])
 })
 // 是否正在运行
 const isRunning = computed( =>
- task.value?.status === 'planning' || task.value?.status === 'executing'
+ task.value?.status === 'planning' || task.value?.status === 'executing',
 )
 // 日志内容
 const logs = computed( => tasksStore.currentLogs)
@@ -139,7 +158,7 @@ const logs = computed( => tasksStore.currentLogs)
  <div class="space-y-6">
  <!-- 返回按钮 -->
  <RouterLink to="/tasks" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- <span class="icon-[lucide--arrow-left] mr-1"></span>
+ <span class="icon-[lucide--arrow-left] mr-1" />
  返回任务列表
  </RouterLink>
  <!-- 加载状态 -->
@@ -149,7 +168,9 @@ const logs = computed( => tasksStore.currentLogs)
  <!-- 头部 -->
  <div class="flex items-start justify-between">
  <div class="space-y-2">
- <h1 class="text-2xl font-bold">{{ task.title }}</h1>
+ <h1 class="text-2xl font-bold">
+ {{ task.title }}
+ </h1>
  <div class="flex items-center gap-3">
  <TaskStatusBadge:status="task.status":show-icon="true" />
  <span class="text-muted-foreground">
@@ -163,16 +184,16 @@ const logs = computed( => tasksStore.currentLogs)
  v-if="task.status === 'pending'":disabled="executing"
  @click="handleExecute('plan')"
  >
- <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin"></span>
- <span v-else class="icon-[lucide--rocket] mr-2"></span>
+ <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--rocket] mr-2" />
  启动规划
  </Button>
  <Button
  v-if="task.status === 'plan_review'":disabled="executing"
  @click="handleExecute('execute')"
  >
- <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin"></span>
- <span v-else class="icon-[lucide--play] mr-2"></span>
+ <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--play] mr-2" />
  执行任务
  </Button>
  <!-- 停止按钮 -->
@@ -181,7 +202,7 @@ const logs = computed( => tasksStore.currentLogs)
  variant="destructive"
  @click="stopDialogOpen = true"
  >
- <span class="icon-[lucide--square] mr-2"></span>
+ <span class="icon-[lucide--square] mr-2" />
  停止
  </Button>
  <!-- 删除按钮 -->
@@ -190,7 +211,7 @@ const logs = computed( => tasksStore.currentLogs)
  variant="outline"
  @click="deleteDialogOpen = true"
  >
- <span class="icon-[lucide--trash-2] mr-2"></span>
+ <span class="icon-[lucide--trash-2] mr-2" />
  删除
  </Button>
  </div>
@@ -201,14 +222,14 @@ const logs = computed( => tasksStore.currentLogs)
  <div class="flex items-center justify-between">
  <template v-for="(step, index) in statusSteps":key="step">
  <div class="flex flex-col items-center gap-2">
- <div:class="[
- 'w-10 rounded-full flex items-center justify-center text-lg',
+ <div
+ class="w-10 rounded-full flex items-center justify-center text-lg":class="[
  index <= currentStepIndex
  ? 'bg-primary text-primary-foreground': 'bg-muted text-muted-foreground',
- task.status === 'failed' && 'bg-red-500 text-white'
+ task.status === 'failed' && 'bg-red-500 text-white',
  ]"
  >
- <span v-if="index < currentStepIndex" class="icon-[lucide--check]"></span>
+ <span v-if="index < currentStepIndex" class="icon-[lucide--check]" />
  <span v-else>{{ index + 1 }}</span>
  </div>
  <span class="text-xs text-muted-foreground">
@@ -216,27 +237,29 @@ const logs = computed( => tasksStore.currentLogs)
  </span>
  </div>
  <div
- v-if="index < statusSteps.length - 1":class="[
- 'flex-1 mx-2',
- index < currentStepIndex ? 'bg-primary': 'bg-muted'
+ v-if="index < statusSteps.length - 1"
+ class="flex-1 mx-2":class="[
+ index < currentStepIndex ? 'bg-primary': 'bg-muted',
  ]"
- ></div>
+ />
  </template>
  </div>
  <!-- 失败状态提示 -->
  <div v-if="task.status === 'failed'" class="mt-4 rounded-lg bg-red-50 text-red-800">
  <p class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--x-circle]"></span>
+ <span class="icon-[lucide--x-circle]" />
  任务执行失败
  </p>
- <p v-if="task.error_message" class="text-sm mt-1">{{ task.error_message }}</p>
+ <p v-if="task.error_message" class="text-sm mt-1">
+ {{ task.error_message }}
+ </p>
  <Button
  class="mt-2"
  size="sm"
  variant="outline":disabled="transitioning"
  @click="handleTransition('pending')"
  >
- <span class="icon-[lucide--rotate-ccw] mr-1"></span>
+ <span class="icon-[lucide--rotate-ccw] mr-1" />
  重试任务
  </Button>
  </div>
@@ -245,20 +268,20 @@ const logs = computed( => tasksStore.currentLogs)
  <Tabs default-value="info" class="w-full">
  <TabsList>
  <TabsTrigger value="info">
- <span class="icon-[lucide--info] mr-1"></span>
+ <span class="icon-[lucide--info] mr-1" />
  基本信息
  </TabsTrigger>
  <TabsTrigger value="plan">
- <span class="icon-[lucide--file-text] mr-1"></span>
+ <span class="icon-[lucide--file-text] mr-1" />
  执行方案
  </TabsTrigger>
  <TabsTrigger value="logs">
- <span class="icon-[lucide--terminal] mr-1"></span>
+ <span class="icon-[lucide--terminal] mr-1" />
  运行日志
- <span v-if="isPolling" class="ml-1 w-2 rounded-full bg-green-500 animate-pulse"></span>
+ <span v-if="isPolling" class="ml-1 w-2 rounded-full bg-green-500 animate-pulse" />
  </TabsTrigger>
  <TabsTrigger value="git">
- <span class="icon-[lucide--git-branch] mr-1"></span>
+ <span class="icon-[lucide--git-branch] mr-1" />
  Git 信息
  </TabsTrigger>
  </TabsList>
@@ -272,22 +295,30 @@ const logs = computed( => tasksStore.currentLogs)
  <CardContent class="space-y-4">
  <div>
  <label class="text-sm text-muted-foreground">任务 ID</label>
- <p class="font-mono text-sm">{{ task.id }}</p>
+ <p class="font-mono text-sm">
+ {{ task.id }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">工作项 ID</label>
- <p class="font-mono text-sm">{{ task.work_item_id }}</p>
+ <p class="font-mono text-sm">
+ {{ task.work_item_id }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">功能 ID</label>
- <p class="font-mono text-sm">{{ task.feature_id }}</p>
+ <p class="font-mono text-sm">
+ {{ task.feature_id }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">描述</label>
- <p class="text-sm mt-1">{{ task.description || '无描述' }}</p>
+ <p class="text-sm mt-1">
+ {{ task.description || '无描述' }}
+ </p>
  </div>
  </CardContent>
  </Card>
@@ -298,30 +329,42 @@ const logs = computed( => tasksStore.currentLogs)
  <CardContent class="space-y-4">
  <div>
  <label class="text-sm text-muted-foreground">创建时间</label>
- <p class="text-sm">{{ formatDate(task.created_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(task.created_at) }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">规划开始</label>
- <p class="text-sm">{{ formatDate(task.plan_started_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(task.plan_started_at) }}
+ </p>
  </div>
  <div>
  <label class="text-sm text-muted-foreground">规划完成</label>
- <p class="text-sm">{{ formatDate(task.plan_completed_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(task.plan_completed_at) }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">执行开始</label>
- <p class="text-sm">{{ formatDate(task.execute_started_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(task.execute_started_at) }}
+ </p>
  </div>
  <div>
  <label class="text-sm text-muted-foreground">执行完成</label>
- <p class="text-sm">{{ formatDate(task.execute_completed_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(task.execute_completed_at) }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">重试次数</label>
- <p class="text-sm">{{ task.retry_count }}</p>
+ <p class="text-sm">
+ {{ task.retry_count }}
+ </p>
  </div>
  </CardContent>
  </Card>
@@ -359,9 +402,13 @@ const logs = computed( => tasksStore.currentLogs)
  <pre class="bg-muted rounded-lg overflow-auto text-sm whitespace-pre-wrap">{{ task.plan_output }}</pre>
  </div>
  <div v-else class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--file-text] text-4xl block mb-2"></span>
- <p class="mt-2">尚未生成执行方案</p>
- <p class="text-sm">请先启动规划任务</p>
+ <span class="icon-[lucide--file-text] text-4xl block mb-2" />
+ <p class="mt-2">
+ 尚未生成执行方案
+ </p>
+ <p class="text-sm">
+ 请先启动规划任务
+ </p>
  </div>
  </CardContent>
  </Card>
@@ -371,7 +418,9 @@ const logs = computed( => tasksStore.currentLogs)
  <CardTitle>人工反馈</CardTitle>
  </CardHeader>
  <CardContent>
- <p class="text-sm">{{ task.human_feedback }}</p>
+ <p class="text-sm">
+ {{ task.human_feedback }}
+ </p>
  </CardContent>
  </Card>
  </TabsContent>
@@ -387,7 +436,7 @@ const logs = computed( => tasksStore.currentLogs)
  </div>
  <div class="flex items-center gap-2">
  <Badge v-if="isPolling" variant="outline" class="animate-pulse">
- <span class="icon-[lucide--refresh-cw] mr-1 animate-spin"></span>
+ <span class="icon-[lucide--refresh-cw] mr-1 animate-spin" />
  实时刷新中
  </Badge>
  <Button
@@ -396,7 +445,7 @@ const logs = computed( => tasksStore.currentLogs)
  size="sm"
  @click="startPolling"
  >
- <span class="icon-[lucide--play] mr-1"></span>
+ <span class="icon-[lucide--play] mr-1" />
  开始刷新
  </Button>
  <Button
@@ -405,7 +454,7 @@ const logs = computed( => tasksStore.currentLogs)
  size="sm"
  @click="stopPolling"
  >
- <span class="icon-[lucide--pause] mr-1"></span>
+ <span class="icon-[lucide--pause] mr-1" />
  停止刷新
  </Button>
  </div>
@@ -415,9 +464,13 @@ const logs = computed( => tasksStore.currentLogs)
  <pre class="whitespace-pre-wrap">{{ logs }}</pre>
  </div>
  <div v-else class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--terminal] text-4xl block mb-2"></span>
- <p class="mt-2">暂无日志</p>
- <p class="text-sm">任务执行后将在此显示日志</p>
+ <span class="icon-[lucide--terminal] text-4xl block mb-2" />
+ <p class="mt-2">
+ 暂无日志
+ </p>
+ <p class="text-sm">
+ 任务执行后将在此显示日志
+ </p>
  </div>
  </CardContent>
  </Card>
@@ -447,33 +500,43 @@ const logs = computed( => tasksStore.currentLogs)
  <CardContent class="space-y-4">
  <div>
  <label class="text-sm text-muted-foreground">仓库 URL</label>
- <p class="font-mono text-sm">{{ task.git_repo_url || project?.repo_url || '-' }}</p>
+ <p class="font-mono text-sm">
+ {{ task.git_repo_url || project?.repo_url || '-' }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">基础分支</label>
- <p class="font-mono text-sm">{{ task.git_branch || project?.default_branch || 'main' }}</p>
+ <p class="font-mono text-sm">
+ {{ task.git_branch || project?.default_branch || 'main' }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">功能分支</label>
- <p class="font-mono text-sm">{{ task.branch_name || '-' }}</p>
+ <p class="font-mono text-sm">
+ {{ task.branch_name || '-' }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">最新提交</label>
- <p class="font-mono text-sm">{{ task.commit_sha || '-' }}</p>
+ <p class="font-mono text-sm">
+ {{ task.commit_sha || '-' }}
+ </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">Pull Request</label>
  <p v-if="task.pr_url">
  <a:href="task.pr_url" target="_blank" class="text-primary hover:underline flex items-center gap-1">
- <span class="icon-[lucide--external-link]"></span>
+ <span class="icon-[lucide--external-link]" />
  {{ task.pr_url }}
  </a>
  </p>
- <p v-else class="text-sm">-</p>
+ <p v-else class="text-sm">
+ -
+ </p>
  </div>
  </CardContent>
  </Card>

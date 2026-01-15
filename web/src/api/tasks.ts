@@ -76,8 +76,8 @@ export async function executeTask(
 export async function stopTask(
  taskId: string,
  force: boolean = false,
-): Promise<{ status: string; message: string }> {
- return post<{ status: string; message: string }>(`/tasks/${taskId}/stop`, undefined, {
+): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(`/tasks/${taskId}/stop`, undefined, {
  params: { force: force ? 'true': undefined },
  })
 }

@@ -17,11 +17,13 @@ export function usePolling(
  const isPolling = ref(false)
  const error = ref<Error | null>(null)
  const wrappedCallback = async => {
- if (!isPolling.value) return
+ if (!isPolling.value)
+ return
  try {
  await callback
  error.value = null
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e: new Error('Polling error')
  }
  }

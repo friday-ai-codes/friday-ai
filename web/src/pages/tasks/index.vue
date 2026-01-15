@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TaskStatus } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -17,7 +18,6 @@ import {
  TableHeader,
  TableRow,
 } from '~/components/ui/table'
-import type { TaskStatus } from '~/types'
 import { STATUS_LABELS } from '~/types'
 useHead({
  title: '任务列表 - Friday AI',
@@ -35,9 +35,11 @@ onMounted(async => {
  try {
  await projectsStore.fetchProjects
  await fetchTasks
- } catch (e) {
+ }
+ catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取任务列表')
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -53,7 +55,7 @@ watch([projectFilter, statusFilter], => {
  fetchTasks
 })
 // 状态选项
-const statusOptions: { value: string; label: string } = [
+const statusOptions: { value: string, label: string } = [
  { value: '', label: '全部状态' },
  { value: 'pending', label: STATUS_LABELS.pending },
  { value: 'planning', label: STATUS_LABELS.planning },
@@ -84,14 +86,20 @@ function getProjectName(projectId: string) {
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
  <div>
- <h1 class="text-2xl font-bold">任务管理</h1>
- <p class="text-muted-foreground">查看和管理 AI 开发任务</p>
+ <h1 class="text-2xl font-bold">
+ 任务管理
+ </h1>
+ <p class="text-muted-foreground">
+ 查看和管理 AI 开发任务
+ </p>
  </div>
  </div>
  <!-- 过滤器 -->
  <Card>
  <CardHeader class="pb-3">
- <CardTitle class="text-base">筛选条件</CardTitle>
+ <CardTitle class="text-base">
+ 筛选条件
+ </CardTitle>
  </CardHeader>
  <CardContent>
  <div class="flex flex-wrap gap-4">
@@ -102,7 +110,9 @@ function getProjectName(projectId: string) {
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">全部项目</SelectItem>
+ <SelectItem value="">
+ 全部项目
+ </SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
  >
@@ -128,7 +138,7 @@ function getProjectName(projectId: string) {
  </div>
  <!-- 刷新按钮 -->
  <Button variant="outline" size="icon" @click="fetchTasks">
- <span class="icon-[lucide--refresh-cw]"></span>
+ <span class="icon-[lucide--refresh-cw]" />
  </Button>
  </div>
  </CardContent>
@@ -147,11 +157,15 @@ function getProjectName(projectId: string) {
  <Table>
  <TableHeader>
  <TableRow>
- <TableHead class="w-[300px]">任务名称</TableHead>
+ <TableHead class="w-[300px]">
+ 任务名称
+ </TableHead>
  <TableHead>项目</TableHead>
  <TableHead>状态</TableHead>
  <TableHead>创建时间</TableHead>
- <TableHead class="text-right">操作</TableHead>
+ <TableHead class="text-right">
+ 操作
+ </TableHead>
  </TableRow>
  </TableHeader>
  <TableBody>
@@ -179,7 +193,7 @@ function getProjectName(projectId: string) {
  <TableCell class="text-right">
  <RouterLink:to="`/tasks/${task.id}`" @click.stop>
  <Button variant="ghost" size="sm">
- <span class="icon-[lucide--arrow-right]"></span>
+ <span class="icon-[lucide--arrow-right]" />
  </Button>
  </RouterLink>
  </TableCell>

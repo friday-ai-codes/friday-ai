@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from '~/components/ui/button';
+import { Button } from '~/components/ui/button'
 withDefaults(defineProps<{
  icon?: string
  title?: string
@@ -16,9 +16,13 @@ const emit = defineEmits<{
 </script>
 <template>
  <div class="flex flex-col items-center justify-center py-12 text-center">
- <span:class="['icon-[' + icon + ']', 'text-5xl text-muted-foreground mb-4']"></span>
- <h3 class="text-lg font-medium text-foreground mb-2">{{ title }}</h3>
- <p class="text-muted-foreground mb-6 max-w-sm">{{ description }}</p>
+ <span class="text-5xl text-muted-foreground mb-4":class="[`icon-[${icon}]`]" />
+ <h3 class="text-lg font-medium text-foreground mb-2">
+ {{ title }}
+ </h3>
+ <p class="text-muted-foreground mb-6 max-w-sm">
+ {{ description }}
+ </p>
  <Button v-if="actionLabel" @click="emit('action')">
  {{ actionLabel }}
  </Button>

@@ -13,8 +13,8 @@ export type AuthType = 'ssh_key' | 'access_token' | 'deploy_key'
  * 任务状态枚举
  * 对应后端 TaskStatus
  */
-export type TaskStatus =
- | 'pending'
+export type TaskStatus
+ = | 'pending'
  | 'planning'
  | 'plan_review'
  | 'executing'

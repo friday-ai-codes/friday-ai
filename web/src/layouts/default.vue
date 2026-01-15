@@ -8,7 +8,7 @@ const navItems = [
 ]
 const route = useRoute
 // 判断当前路由是否激活
-const isActive = (path: string) => {
+function isActive(path: string) {
  if (path === '/') {
  return route.path === '/'
  }
@@ -23,19 +23,19 @@ const isActive = (path: string) => {
  <div class="flex items-center gap-8">
  <!-- Logo -->
  <RouterLink to="/" class="flex items-center gap-2 text-xl font-bold text-primary">
- <span class="icon-[lucide--bot] text-2xl"></span>
+ <span class="icon-[lucide--bot] text-2xl" />
  <span>Friday AI</span>
  </RouterLink>
  <!-- 导航链接 -->
  <div class="hidden md:flex items-center gap-1">
  <RouterLink
- v-for="item in navItems":key="item.to":to="item.to":class="[
- 'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+ v-for="item in navItems":key="item.to":to="item.to"
+ class="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors":class="[
  isActive(item.to)
- ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+ ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
  ]"
  >
- <span:class="['icon-[' + item.icon + ']', 'text-lg']"></span>
+ <span class="text-lg":class="[`icon-[${item.icon}]`]" />
  <span>{{ item.label }}</span>
  </RouterLink>
  </div>
@@ -44,7 +44,7 @@ const isActive = (path: string) => {
  <div class="flex items-center gap-4">
  <!-- 状态指示器 -->
  <div class="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
- <span class="w-2 rounded-full bg-green-500"></span>
+ <span class="w-2 rounded-full bg-green-500" />
  <span>在线</span>
  </div>
  </div>
@@ -60,17 +60,17 @@ const isActive = (path: string) => {
  <p>© {{ new Date.getFullYear }} Friday AI. All rights reserved.</p>
  <div class="flex items-center gap-4">
  <a href="https://github.com" target="_blank" class="hover:text-foreground transition-colors flex items-center gap-1">
- <span class="icon-[lucide--github]"></span>
+ <span class="icon-[lucide--github]" />
  <span>GitHub</span>
  </a>
  <a href="/docs" class="hover:text-foreground transition-colors flex items-center gap-1">
- <span class="icon-[lucide--book-open]"></span>
+ <span class="icon-[lucide--book-open]" />
  <span>API 文档</span>
  </a>
  </div>
  </div>
  </footer>
  <!-- Toast 通知 -->
- <Toaster richColors position="top-right" />
+ <Toaster rich-colors position="top-right" />
  </div>
 </template>

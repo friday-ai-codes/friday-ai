@@ -17,8 +17,12 @@ function reset {
 <template>
  <div v-if="error" class="min-h-[400px] flex items-center justify-center ">
  <div class="max-w-md w-full text-center space-y-4">
- <div class="text-6xl mb-4">💥</div>
- <h2 class="text-2xl font-bold text-red-600">出错了</h2>
+ <div class="text-6xl mb-4">
+ 💥
+ </div>
+ <h2 class="text-2xl font-bold text-red-600">
+ 出错了
+ </h2>
  <p class="text-muted-foreground break-words">
  {{ error.message }}
  </p>

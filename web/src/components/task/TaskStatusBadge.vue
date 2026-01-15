@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Badge } from '~/components/ui/badge';
-import type { TaskStatus } from '~/types';
-import { STATUS_COLORS, STATUS_LABELS } from '~/types';
+import type { TaskStatus } from '~/types'
+import { Badge } from '~/components/ui/badge'
+import { STATUS_COLORS, STATUS_LABELS } from '~/types'
 const props = defineProps<{
  status: TaskStatus
  showIcon?: boolean
@@ -18,7 +18,7 @@ const statusIcons: Record<TaskStatus, string> = {
 }
 // 是否是运行中状态
 const isRunning = computed( =>
- props.status === 'planning' || props.status === 'executing'
+ props.status === 'planning' || props.status === 'executing',
 )
 </script>
 <template>
@@ -28,12 +28,12 @@ const isRunning = computed( =>
  variant="secondary"
  >
  <span
- v-if="showIcon":class="[
- 'icon-[' + statusIcons[status] + ']',
- 'mr-1',
- isRunning && 'animate-spin'
+ v-if="showIcon"
+ class="mr-1":class="[
+ `icon-[${statusIcons[status]}]`,
+ isRunning && 'animate-spin',
  ]"
- ></span>
+ />
  {{ STATUS_LABELS[status] }}
  </Badge>
 </template>

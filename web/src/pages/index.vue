@@ -15,7 +15,8 @@ onMounted(async => {
  projectsStore.fetchProjects,
  tasksStore.fetchTasks({ limit: 5 }),
  ])
- } finally {
+ }
+ finally {
  loading.value = false
  }
 })
@@ -66,7 +67,7 @@ function formatDate(dateStr: string) {
  <!-- Hero 区域 -->
  <section class="text-center py-8 md:py-12">
  <div class="flex items-center justify-center gap-3 mb-4">
- <span class="icon-[lucide--bot] text-4xl md:text-5xl text-primary"></span>
+ <span class="icon-[lucide--bot] text-4xl md:text-5xl text-primary" />
  <h1 class="text-3xl md:text-4xl font-bold tracking-tight">
  Friday AI
  </h1>
@@ -83,12 +84,12 @@ function formatDate(dateStr: string) {
  <CardTitle class="text-sm font-medium text-muted-foreground">
  {{ stat.title }}
  </CardTitle>
- <span:class="['icon-[' + stat.icon + ']', 'text-2xl', stat.color]"></span>
+ <span class="text-2xl":class="[`icon-[${stat.icon}]`, stat.color]" />
  </CardHeader>
  <CardContent>
- <div:class="['text-3xl font-bold', stat.color]">
+ <div class="text-3xl font-bold":class="[stat.color]">
  <template v-if="loading">
- <span class="inline-block w-8 bg-muted animate-pulse rounded"></span>
+ <span class="inline-block w-8 bg-muted animate-pulse rounded" />
  </template>
  <template v-else>
  {{ stat.value }}
@@ -103,7 +104,7 @@ function formatDate(dateStr: string) {
  <Card>
  <CardHeader>
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--cpu] text-xl text-primary"></span>
+ <span class="icon-[lucide--cpu] text-xl text-primary" />
  <span>智能任务执行</span>
  </CardTitle>
  </CardHeader>
@@ -116,7 +117,7 @@ function formatDate(dateStr: string) {
  <Card>
  <CardHeader>
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--shield-check] text-xl text-primary"></span>
+ <span class="icon-[lucide--shield-check] text-xl text-primary" />
  <span>安全隔离</span>
  </CardTitle>
  </CardHeader>
@@ -129,7 +130,7 @@ function formatDate(dateStr: string) {
  <Card>
  <CardHeader>
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--user-check] text-xl text-primary"></span>
+ <span class="icon-[lucide--user-check] text-xl text-primary" />
  <span>人工审核</span>
  </CardTitle>
  </CardHeader>
@@ -150,7 +151,7 @@ function formatDate(dateStr: string) {
  </div>
  <RouterLink to="/tasks">
  <Button variant="outline" size="sm">
- <span class="icon-[lucide--arrow-right] mr-1"></span>
+ <span class="icon-[lucide--arrow-right] mr-1" />
  查看全部
  </Button>
  </RouterLink>
@@ -158,13 +159,13 @@ function formatDate(dateStr: string) {
  <CardContent>
  <div v-if="loading" class="space-y-4">
  <div v-for="i in 3":key="i" class="flex items-center gap-4">
- <div class=" w-1/3 bg-muted animate-pulse rounded"></div>
- <div class=" w-20 bg-muted animate-pulse rounded"></div>
- <div class=" w-24 bg-muted animate-pulse rounded"></div>
+ <div class=" w-1/3 bg-muted animate-pulse rounded" />
+ <div class=" w-20 bg-muted animate-pulse rounded" />
+ <div class=" w-24 bg-muted animate-pulse rounded" />
  </div>
  </div>
  <div v-else-if="tasksStore.tasks.length === 0" class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--inbox] text-4xl block mb-2"></span>
+ <span class="icon-[lucide--inbox] text-4xl block mb-2" />
  暂无任务
  </div>
  <div v-else class="space-y-4">
@@ -188,13 +189,13 @@ function formatDate(dateStr: string) {
  <section class="flex justify-center gap-4">
  <RouterLink to="/projects/new">
  <Button>
- <span class="icon-[lucide--plus] mr-2"></span>
+ <span class="icon-[lucide--plus] mr-2" />
  新建项目
  </Button>
  </RouterLink>
  <RouterLink to="/tasks">
  <Button variant="outline">
- <span class="icon-[lucide--list-checks] mr-2"></span>
+ <span class="icon-[lucide--list-checks] mr-2" />
  查看任务
  </Button>
  </RouterLink>

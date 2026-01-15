@@ -61,12 +61,12 @@ npx shadcn-vue@latest add button input card
 ## 路径别名
 项目使用 `~` 作为 `src` 目录的别名：
 ```typescript
+// 导入类型
+import type { Task } from '~/types'
 // 导入组件
 import Button from '~/components/ui/button/Button.vue'
 // 导入工具函数
 import { cn } from '~/lib/utils'
-// 导入类型
-import type { Task } from '~/types'
 ```
 ## 文件路由
 页面文件位于 `src/pages/` 目录，自动生成路由：
@@ -101,3 +101,4 @@ catalogs:
  "vue": "catalog:default"
  }
 }
+```
