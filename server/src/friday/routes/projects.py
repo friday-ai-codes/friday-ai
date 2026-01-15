@@ -1,6 +1,5 @@
 """项目管理 API 路由。"""
 from datetime import datetime
-from pathlib import Path
 from typing import List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import select
@@ -130,11 +129,6 @@ async def delete_project(
  )
  credential = cred_result.scalar_one_or_none
  if credential:
- # 删除 SSH 密钥文件（如果存在）
- if credential.ssh_key_path:
- key_path = Path(credential.ssh_key_path)
- if key_path.exists:
- key_path.unlink
  await db.delete(credential)
  await db.delete(project)
  await db.commit
@@ -184,18 +178,15 @@ async def upload_ssh_key(
  status_code=400,
  detail="凭证已存在，请先删除现有凭证。",
  )
- # 保存 SSH 密钥文件
- cred_dir = settings.DATA_DIR / "credentials" / project_id
- cred_dir.mkdir(parents=True, exist_ok=True)
- key_path = cred_dir / "id_rsa"
+ # 读取并加密 SSH 密钥内容
  content = await file.read
- key_path.write_bytes(content)
- key_path.chmod(0o600) # 设置安全权限
- # 创建凭证记录
+ ssh_key_content = content.decode("utf-8")
+ encrypted_ssh_key = encrypt_value(ssh_key_content)
+ # 创建凭证记录（SSH 密钥存储在数据库中）
  credential = GitCredential(
  project_id=project_id,
  auth_type=AuthType.SSH_KEY,
- ssh_key_path=str(key_path),
+ ssh_key_encrypted=encrypted_ssh_key,
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
@@ -266,15 +257,7 @@ async def delete_credential(
  credential = result.scalar_one_or_none
  if not credential:
  raise HTTPException(status_code=404, detail="凭证未找到")
- # 删除 SSH 密钥文件（如果存在）
- if credential.ssh_key_path:
- key_path = Path(credential.ssh_key_path)
- if key_path.exists:
- key_path.unlink
- # 如果目录为空则删除
- cred_dir = key_path.parent
- if cred_dir.exists and not list(cred_dir.iterdir):
- cred_dir.rmdir
+ # SSH 密钥现在存储在数据库中，直接删除记录即可
  await db.delete(credential)
  await db.commit
  return None

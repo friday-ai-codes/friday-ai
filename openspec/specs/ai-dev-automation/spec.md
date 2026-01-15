@@ -1,5 +1,6 @@
 # AI Development Automation Specification
-本规范定义了 Friday AI 敏捷开发自动化系统的核心能力和行为要求。
+## Purpose
+本规范定义了 Friday AI 敏捷开发自动化系统的核心能力和行为要求。系统通过与飞书项目管理平台集成，自动化处理从需求分析到代码实现的开发流程，利用 Claude AI 进行代码分析、方案规划和代码生成。
 ## Requirements
 ### Requirement: Project Management
 The system SHALL provide project configuration management, including Git repository URL, platform type (GitHub/GitLab/Gitea/Bitbucket), default branch, and developer-notes.md path.
@@ -12,20 +13,21 @@ The system SHALL provide project configuration management, including Git reposit
 - **THEN** the system persists the changes
 - **AND** future tasks use the updated configuration
 ### Requirement: Git Credential Management
-The system SHALL support encrypted storage of Git credentials, including SSH private keys and access tokens, with project-level isolation.
-#### Scenario: Add SSH key credential
-- **WHEN** user adds an SSH private key for a project
-- **THEN** the system encrypts the key using Fernet symmetric encryption
-- **AND** stores the encrypted value in the database
-- **AND** the credential is linked to the project
-#### Scenario: Add access token credential
-- **WHEN** user adds an access token for a project
-- **THEN** the system encrypts the token
-- **AND** stores it for HTTPS Git authentication
-#### Scenario: Credential decryption for task execution
-- **WHEN** a task container needs Git authentication
-- **THEN** the system decrypts the credential
-- **AND** injects it into the container environment
+系统 SHALL 支持将 Git 凭证加密存储到数据库中，包括 SSH 私钥和访问令牌，实现项目级别的隔离。
+#### Scenario: 添加 SSH 密钥凭证
+- **WHEN** 用户为项目添加 SSH 私钥
+- **THEN** 系统使用 Fernet 对称加密对私钥进行加密
+- **AND** 将加密后的值存储到数据库的 `ssh_key_encrypted` 字段
+- **AND** 凭证与项目关联
+#### Scenario: 添加访问令牌凭证
+- **WHEN** 用户为项目添加访问令牌
+- **THEN** 系统加密令牌
+- **AND** 存储用于 HTTPS Git 认证
+#### Scenario: 任务执行时解密凭证
+- **WHEN** 任务容器需要 Git 认证
+- **THEN** 系统从数据库读取加密的凭证
+- **AND** 解密凭证内容
+- **AND** 将解密后的凭证注入容器环境
 ### Requirement: Task State Machine
 The system SHALL implement a task state machine with the following states: PENDING, PLANNING, PLAN_REVIEW, EXECUTING, CODE_REVIEW, MERGED, FAILED.
 #### Scenario: Task creation
@@ -45,24 +47,28 @@ The system SHALL implement a task state machine with the following states: PENDI
 - **THEN** the system increments retry_count
 - **AND** allows reset to PENDING for retry
 ### Requirement: Task Execution Container
-The system SHALL execute each task in an isolated Docker container with Plan and Execute modes.
-#### Scenario: Start task in Plan mode
-- **WHEN** task execution is triggered with mode="plan"
-- **THEN** the system starts a container with task configuration
-- **AND** Claude Code analyzes the codebase
-- **AND** generates an implementation plan
-- **AND** task transitions to PLAN_REVIEW on completion
-#### Scenario: Start task in Execute mode
-- **WHEN** task execution is triggered with mode="execute" after plan approval
-- **THEN** the system starts a container with session restoration
-- **AND** Claude Code implements the approved plan
-- **AND** commits and pushes changes to a feature branch
-- **AND** task transitions to CODE_REVIEW on completion
-#### Scenario: Container resource isolation
-- **WHEN** a task container is started
-- **THEN** the container has memory limit (2GB)
-- **AND** CPU limit (1 core)
-- **AND** isolated network
+系统 SHALL 在隔离的 Docker 容器中执行每个任务，使用临时目录进行仓库操作，支持 Plan 和 Execute 模式。
+#### Scenario: 启动 Plan 模式任务
+- **WHEN** 触发 mode="plan" 的任务执行
+- **THEN** 系统启动带有任务配置的容器
+- **AND** 将仓库克隆到临时目录
+- **AND** Claude Code 分析代码库
+- **AND** 生成实现方案
+- **AND** 完成后任务状态转换为 PLAN_REVIEW
+- **AND** 清理临时目录
+#### Scenario: 启动 Execute 模式任务
+- **WHEN** 方案审批后触发 mode="execute" 的任务执行
+- **THEN** 系统启动带有会话恢复的容器
+- **AND** 将仓库克隆到临时目录
+- **AND** Claude Code 实现审批通过的方案
+- **AND** 提交并推送变更到功能分支
+- **AND** 完成后任务状态转换为 CODE_REVIEW
+- **AND** 清理临时目录
+#### Scenario: 容器资源隔离
+- **WHEN** 任务容器启动时
+- **THEN** 容器具有内存限制 (2GB)
+- **AND** CPU 限制 (1 核)
+- **AND** 隔离的网络环境
 ### Requirement: Feishu Integration
 The system SHALL integrate with Feishu Project (Meego) for webhook events and status updates.
 #### Scenario: Webhook challenge verification
@@ -78,20 +84,27 @@ The system SHALL integrate with Feishu Project (Meego) for webhook events and st
 - **THEN** the system captures the feedback
 - **AND** includes it in the task context for Claude
 ### Requirement: Git Operations
-The system SHALL perform Git operations including clone, branch creation, commit, and push with dynamic authentication.
-#### Scenario: Clone repository with SSH key
-- **WHEN** Git operations start with SSH authentication
-- **THEN** the system configures SSH_COMMAND with the private key
-- **AND** clones the repository to the workspace
-#### Scenario: Create feature branch
-- **WHEN** task execution begins
-- **THEN** the system creates a branch named `friday/task-{task_id}`
-- **AND** checks out the new branch
-#### Scenario: Commit and push changes
-- **WHEN** Claude Code completes code modifications
-- **THEN** the system stages all changes
-- **AND** commits with a descriptive message including task ID
-- **AND** pushes to the remote repository
+系统 SHALL 执行 Git 操作，包括克隆、分支创建、提交和推送，使用动态认证和临时工作目录。
+#### Scenario: 使用 SSH 密钥克隆仓库
+- **WHEN** 使用 SSH 认证开始 Git 操作
+- **THEN** 系统从数据库读取加密的 SSH 密钥
+- **AND** 解密后写入临时文件
+- **AND** 配置 SSH_COMMAND 使用该私钥
+- **AND** 将仓库克隆到临时工作目录
+- **AND** 操作完成后删除临时密钥文件
+#### Scenario: 创建功能分支
+- **WHEN** 任务执行开始
+- **THEN** 系统创建名为 `friday/task-{task_id}` 的分支
+- **AND** 切换到新分支
+#### Scenario: 提交并推送变更
+- **WHEN** Claude Code 完成代码修改
+- **THEN** 系统暂存所有变更
+- **AND** 使用包含任务 ID 的描述性消息进行提交
+- **AND** 推送到远程仓库
+#### Scenario: 任务完成后清理
+- **WHEN** 任务执行完成或失败
+- **THEN** 系统删除临时工作目录
+- **AND** 清理所有临时凭证文件
 ### Requirement: Claude Code Integration
 The system SHALL invoke Claude Code CLI in headless mode with session persistence.
 #### Scenario: Plan mode execution
