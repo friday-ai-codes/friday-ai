@@ -29,9 +29,9 @@ This project follows a Monorepo structure, containing independent frontend and b
  docker compose up -d
  ```
 4. **Access Services**
- - **Application**: http://localhost:8080 (Nginx serves frontend + proxies API)
- - **API Docs**: http://localhost:8080/docs (Swagger UI)
- - **Direct API Access**: http://localhost:8000 (Optional, for debugging)
+ - **Application**: http://localhost:10240 (Nginx serves frontend + proxies API)
+ - **API Docs**: http://localhost:10240/docs (Swagger UI)
+ - **Direct API Access**: http://localhost:10241 (Optional, for debugging)
 ### Service Architecture
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -40,7 +40,7 @@ This project follows a Monorepo structure, containing independent frontend and b
  │
  ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Nginx (friday-web:8080) │
+│ Nginx (friday-web:10240) │
 │ ┌─────────────────────┐ ┌───────────────────────────────┐ │
 │ │ Static Files │ │ Proxy: /api/* /health /docs │ │
 │ │ (Vue SPA) │ │ → server:8000 │ │
@@ -49,7 +49,7 @@ This project follows a Monorepo structure, containing independent frontend and b
  │
  ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ FastAPI Server (friday-server:8000) │
+│ FastAPI Server (friday-server:10241) │
 │ ┌────────────────┐ ┌──────────────────────────────────┐ │
 │ │ REST API │ │ Task Scheduler │ │
 │ │ /api/* │ │ (Docker Container Management) │ │
@@ -61,8 +61,8 @@ This project follows a Monorepo structure, containing independent frontend and b
 |----------|----------|---------|-------------|
 | `FRIDAY_ENCRYPTION_KEY` | ✅ | - | Encryption key for sensitive data |
 | `ANTHROPIC_API_KEY` | ✅* | - | Anthropic API key for Claude Code |
-| `FRIDAY_WEB_PORT` | ❌ | 8080 | Web frontend port |
-| `FRIDAY_PORT` | ❌ | 8000 | Backend API port |
+| `FRIDAY_WEB_PORT` | ❌ | 10240 | Web frontend port |
+| `FRIDAY_PORT` | ❌ | 10241 | Backend API port |
 | `FRIDAY_DEBUG` | ❌ | false | Enable debug mode |
 *Required for task execution functionality
 ## 💻 Local Development Guide

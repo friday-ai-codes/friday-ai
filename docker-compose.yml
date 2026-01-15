@@ -6,7 +6,7 @@ services:
  dockerfile: Dockerfile
  container_name: friday-server
  ports:
- - "${FRIDAY_PORT:-8000}:8000"
+ - "${FRIDAY_PORT:-10241}:8000"
  environment:
  - FRIDAY_DEBUG=${FRIDAY_DEBUG:-false}
  - FRIDAY_DATABASE_URL=sqlite+aiosqlite:///./data/friday.db
@@ -37,7 +37,7 @@ services:
  dockerfile: Dockerfile
  container_name: friday-web
  ports:
- - "${FRIDAY_WEB_PORT:-8080}:80"
+ - "${FRIDAY_WEB_PORT:-10240}:80"
  networks:
  - friday-network
  depends_on:
@@ -45,7 +45,15 @@ services:
  condition: service_healthy
  restart: unless-stopped
  healthcheck:
- test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+ test:
+ [
+ "CMD",
+ "wget",
+ "--no-verbose",
+ "--tries=1",
+ "--spider",
+ "http://localhost:80/",
+ ]
  interval: 30s
  timeout: 10s
  retries: 3
