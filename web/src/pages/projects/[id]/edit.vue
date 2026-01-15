@@ -30,7 +30,7 @@ onMounted(async => {
  form.feishu_project_key = project.feishu_project_key || ''
  }
  }
- catch (e) {
+ catch {
  showError('加载失败', '无法加载项目信息')
  router.push('/projects')
  }
