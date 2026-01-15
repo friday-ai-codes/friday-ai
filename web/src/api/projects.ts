@@ -3,12 +3,15 @@
  * 封装所有项目相关的 API 调用
  */
 import type {
+ FeishuConfig,
+ FeishuConfigCreate,
+ FeishuConfigTestResult,
  GitCredential,
  Project,
  ProjectCreate,
  ProjectUpdate,
 } from '~/types'
-import { del, get, patch, post, upload } from './client'
+import { del, get, patch, post, put, upload } from './client'
 /**
  * 获取项目列表
  */
@@ -84,6 +87,36 @@ export async function setAccessToken(
 export async function deleteCredential(projectId: string): Promise<void> {
  return del(`/projects/${projectId}/credential`)
 }
+// ============================================================================
+// 飞书配置管理
+// ============================================================================
+/**
+ * 获取项目的飞书配置
+ */
+export async function getFeishuConfig(projectId: string): Promise<FeishuConfig> {
+ return get<FeishuConfig>(`/projects/${projectId}/feishu-config`)
+}
+/**
+ * 设置项目的飞书配置
+ */
+export async function setFeishuConfig(
+ projectId: string,
+ config: FeishuConfigCreate,
+): Promise<FeishuConfig> {
+ return put<FeishuConfig>(`/projects/${projectId}/feishu-config`, config)
+}
+/**
+ * 删除项目的飞书配置
+ */
+export async function deleteFeishuConfig(projectId: string): Promise<void> {
+ return del(`/projects/${projectId}/feishu-config`)
+}
+/**
+ * 测试项目的飞书配置
+ */
+export async function testFeishuConfig(projectId: string): Promise<FeishuConfigTestResult> {
+ return post<FeishuConfigTestResult>(`/projects/${projectId}/feishu-config/test`)
+}
 export default {
  list: listProjects,
  create: createProject,
@@ -94,4 +127,9 @@ export default {
  uploadSshKey,
  setAccessToken,
  deleteCredential,
+ // 飞书配置
+ getFeishuConfig,
+ setFeishuConfig,
+ deleteFeishuConfig,
+ testFeishuConfig,
 }

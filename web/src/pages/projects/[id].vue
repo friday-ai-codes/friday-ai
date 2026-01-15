@@ -22,6 +22,7 @@ onMounted(async => {
  await Promise.all([
  projectsStore.fetchProject(projectId.value),
  projectsStore.fetchCredential(projectId.value),
+ projectsStore.fetchFeishuConfig(projectId.value),
  tasksStore.fetchTasks({ project_id: projectId.value }),
  ])
  }
@@ -57,6 +58,7 @@ function formatDate(dateStr: string) {
 // 计算属性
 const project = computed( => projectsStore.currentProject)
 const credential = computed( => projectsStore.currentCredential)
+const feishuConfig = computed( => projectsStore.currentFeishuConfig)
 const projectTasks = computed( => tasksStore.tasks)
 </script>
 <template>
@@ -183,6 +185,54 @@ const projectTasks = computed( => tasksStore.tasks)
  <RouterLink:to="`/projects/${project.id}/credential`">
  <Button class="mt-4" size="sm">
  配置凭证
+ </Button>
+ </RouterLink>
+ </div>
+ </CardContent>
+ </Card>
+ <!-- 飞书配置 -->
+ <Card>
+ <CardHeader class="flex flex-row items-center justify-between">
+ <div>
+ <CardTitle>飞书配置</CardTitle>
+ <CardDescription>飞书项目 Webhook 集成</CardDescription>
+ </div>
+ <RouterLink:to="`/projects/${project.id}/feishu`">
+ <Button variant="outline" size="sm">
+ <span class="icon-[lucide--settings] mr-2" />
+ 管理配置
+ </Button>
+ </RouterLink>
+ </CardHeader>
+ <CardContent>
+ <div v-if="feishuConfig" class="space-y-4">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
+ <div>
+ <p class="font-medium">
+ 已配置
+ </p>
+ <p class="text-sm text-muted-foreground">
+ 插件 ID：{{ feishuConfig.plugin_id }}
+ </p>
+ </div>
+ </div>
+ <Separator />
+ <div>
+ <label class="text-sm text-muted-foreground">Webhook Token</label>
+ <p class="text-sm mt-1">
+ {{ feishuConfig.has_webhook_token ? '已配置': '未配置' }}
+ </p>
+ </div>
+ </div>
+ <div v-else class="text-center py-6">
+ <span class="icon-[lucide--link] text-4xl text-muted-foreground" />
+ <p class="mt-2 text-muted-foreground">
+ 尚未配置飞书集成
+ </p>
+ <RouterLink:to="`/projects/${project.id}/feishu`">
+ <Button class="mt-4" size="sm">
+ 配置飞书
  </Button>
  </RouterLink>
  </div>

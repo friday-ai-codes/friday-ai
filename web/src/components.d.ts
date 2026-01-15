@@ -64,6 +64,7 @@ declare module 'vue' {
  DropdownMenuTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuTrigger.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
  ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
+ FeishuConfigForm: typeof import('./components/feishu/FeishuConfigForm.vue')['default']
  FormControl: typeof import('./components/ui/form/FormControl.vue')['default']
  FormDescription: typeof import('./components/ui/form/FormDescription.vue')['default']
  FormItem: typeof import('./components/ui/form/FormItem.vue')['default']

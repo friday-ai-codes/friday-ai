@@ -99,6 +99,12 @@ export async function patch<T>(endpoint: string, body: unknown): Promise<T> {
  return request<T>(endpoint, { method: 'PATCH', body })
 }
 /**
+ * PUT 请求
+ */
+export async function put<T>(endpoint: string, body: unknown): Promise<T> {
+ return request<T>(endpoint, { method: 'PUT', body })
+}
+/**
  * DELETE 请求
  */
 export async function del<T = void>(endpoint: string): Promise<T> {
@@ -114,6 +120,7 @@ export default {
  get,
  post,
  patch,
+ put,
  del,
  upload,
  ApiError,

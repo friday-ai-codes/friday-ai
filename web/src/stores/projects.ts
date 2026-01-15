@@ -2,7 +2,7 @@
  * Projects Store
  * 管理项目列表和项目相关操作
  */
-import type { GitCredential, Project, ProjectCreate, ProjectUpdate } from '~/types'
+import type { FeishuConfig, GitCredential, Project, ProjectCreate, ProjectUpdate } from '~/types'
 import { projectsApi } from '~/api'
 export const useProjectsStore = defineStore('projects', => {
  // ============================================================================
@@ -11,6 +11,7 @@ export const useProjectsStore = defineStore('projects', => {
  const projects = ref<Project>
  const currentProject = ref<Project | null>(null)
  const currentCredential = ref<GitCredential | null>(null)
+ const currentFeishuConfig = ref<FeishuConfig | null>(null)
  const loading = ref(false)
  const error = ref<string | null>(null)
  // ============================================================================
@@ -138,7 +139,7 @@ export const useProjectsStore = defineStore('projects', => {
  currentCredential.value = await projectsApi.getCredential(projectId)
  return currentCredential.value
  }
- catch (e) {
+ catch {
  // 404 表示没有凭证，不是错误
  currentCredential.value = null
  return null
@@ -248,12 +249,31 @@ export const useProjectsStore = defineStore('projects', => {
  function clearCurrent {
  currentProject.value = null
  currentCredential.value = null
+ currentFeishuConfig.value = null
+ }
+ // ============================================================================
+ // 飞书配置管理
+ // ============================================================================
+ /**
+ * 获取飞书配置
+ */
+ async function fetchFeishuConfig(projectId: string) {
+ try {
+ currentFeishuConfig.value = await projectsApi.getFeishuConfig(projectId)
+ return currentFeishuConfig.value
+ }
+ catch {
+ // 404 表示没有配置，不是错误
+ currentFeishuConfig.value = null
+ return null
+ }
  }
  return {
  // State
  projects,
  currentProject,
  currentCredential,
+ currentFeishuConfig,
  loading,
  error,
  // Getters
@@ -269,6 +289,7 @@ export const useProjectsStore = defineStore('projects', => {
  uploadSshKey,
  setAccessToken,
  deleteCredential,
+ fetchFeishuConfig,
  clearCurrent,
  }
 })

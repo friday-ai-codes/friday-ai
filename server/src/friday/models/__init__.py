@@ -1,4 +1,4 @@
-"""Friday data models."""
+"""Friday 数据模型。"""
 from .credential import (
  AuthType,
  GitCredential,
@@ -7,6 +7,9 @@ from .credential import (
  GitCredentialRead,
 )
 from .project import (
+ FeishuConfigCreate,
+ FeishuConfigRead,
+ FeishuConfigTestResult,
  GitPlatform,
  Project,
  ProjectBase,
@@ -31,6 +34,10 @@ __all__ = [
  "ProjectCreate",
  "ProjectRead",
  "ProjectUpdate",
+ # Feishu Config
+ "FeishuConfigCreate",
+ "FeishuConfigRead",
+ "FeishuConfigTestResult",
  # Credential
  "AuthType",
  "GitCredential",
