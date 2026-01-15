@@ -27,6 +27,27 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/logs/': RouteRecordInfo<
+ '/logs/',
+ '/logs',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/logs/webhooks/[id]': RouteRecordInfo<
+ '/logs/webhooks/[id]',
+ '/logs/webhooks/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/logs/work-items/[id]': RouteRecordInfo<
+ '/logs/work-items/[id]',
+ '/logs/work-items/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
  '/projects/': RouteRecordInfo<
  '/projects/',
  '/projects',
@@ -100,6 +121,24 @@ declare module 'vue-router/auto-routes' {
  'src/pages/index.vue': {
  routes:
  | '/'
+ views:
+ | never
+ }
+ 'src/pages/logs/index.vue': {
+ routes:
+ | '/logs/'
+ views:
+ | never
+ }
+ 'src/pages/logs/webhooks/[id].vue': {
+ routes:
+ | '/logs/webhooks/[id]'
+ views:
+ | never
+ }
+ 'src/pages/logs/work-items/[id].vue': {
+ routes:
+ | '/logs/work-items/[id]'
  views:
  | never
  }

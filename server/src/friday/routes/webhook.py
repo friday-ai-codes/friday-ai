@@ -6,7 +6,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import select
 from ..database import get_session
-from ..models import Project, Task, TaskStatus
+from ..models import (
+ Project,
+ Task,
+ TaskStatus,
+ WebhookLog,
+ WebhookLogStatus,
+ WorkItemLog,
+)
 from ..services.feishu import (
  create_feishu_client_for_project,
  verify_webhook_token,
@@ -97,6 +104,7 @@ async def handle_feishu_webhook(
  - 每个项目可配置独立的 webhook_token
  """
  body = await request.body
+ raw_body = body.decode("utf-8")
  # 解析请求体
  try:
  data = json.loads(body)
@@ -112,6 +120,16 @@ async def handle_feishu_webhook(
  logger.error(f"解析 Webhook 请求失败: {e}")
  raise HTTPException(status_code=400, detail=f"请求格式错误: {e}")
  if not webhook_request.header or not webhook_request.payload:
+ # 记录被忽略的请求
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=None,
+ event_type="",
+ project_key=None,
+ project_id=None,
+ status=WebhookLogStatus.IGNORED,
+ error_message="缺少 header 或 payload",
+ )
  return {"status": "ignored", "reason": "缺少 header 或 payload"}
  header = webhook_request.header
  payload = webhook_request.payload
@@ -119,12 +137,32 @@ async def handle_feishu_webhook(
  if header.uuid:
  if is_event_processed(header.uuid):
  logger.info(f"事件已处理，跳过: {header.uuid}")
+ # 记录重复事件
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=header.uuid,
+ event_type=header.event_type or "",
+ project_key=payload.project_key,
+ project_id=None,
+ status=WebhookLogStatus.DUPLICATE,
+ error_message=None,
+ )
  return {"status": "duplicate", "uuid": header.uuid}
  # 获取 project_key 并查找项目
  project_key = payload.project_key or payload.project_simple_name
  if not project_key:
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=header.uuid,
+ event_type=header.event_type or "",
+ project_key=None,
+ project_id=None,
+ status=WebhookLogStatus.IGNORED,
+ error_message="缺少 project_key",
+ )
  return {"status": "ignored", "reason": "缺少 project_key"}
  # 查找项目并验证 Token
+ project_id: Optional[str] = None
  async with get_session as db:
  result = await db.execute(
  select(Project).where(Project.feishu_project_key == project_key)
@@ -132,13 +170,32 @@ async def handle_feishu_webhook(
  project = result.scalar_one_or_none
  if not project:
  logger.warning(f"未找到项目: {project_key}")
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=header.uuid,
+ event_type=header.event_type or "",
+ project_key=project_key,
+ project_id=None,
+ status=WebhookLogStatus.IGNORED,
+ error_message=f"项目未配置: {project_key}",
+ )
  return {"status": "ignored", "reason": f"项目未配置: {project_key}"}
+ project_id = project.id
  # 验证 Webhook Token
  if project.feishu_webhook_token:
  if not verify_webhook_token(
  header.token or "",
  project.feishu_webhook_token,
  ):
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=header.uuid,
+ event_type=header.event_type or "",
+ project_key=project_key,
+ project_id=project_id,
+ status=WebhookLogStatus.ERROR,
+ error_message="Token 验证失败",
+ )
  raise HTTPException(status_code=401, detail="Token 验证失败")
  # 标记事件已处理
  if header.uuid:
@@ -146,6 +203,16 @@ async def handle_feishu_webhook(
  # 根据事件类型路由到处理器
  event_type = header.event_type or ""
  logger.info(f"处理事件: {event_type}, 项目: {project_key}, UUID: {header.uuid}")
+ # 记录成功接收的请求
+ await _save_webhook_log(
+ raw_request=raw_body,
+ event_uuid=header.uuid,
+ event_type=event_type,
+ project_key=project_key,
+ project_id=project_id,
+ status=WebhookLogStatus.ACCEPTED,
+ error_message=None,
+ )
  if event_type == "WorkitemCreateEvent":
  background_tasks.add_task(
  handle_workitem_create_event,
@@ -180,6 +247,31 @@ async def handle_feishu_webhook(
  logger.info(f"未处理的事件类型: {event_type}")
  return {"status": "ignored", "event_type": event_type}
  return {"status": "accepted", "event_type": event_type, "uuid": header.uuid}
+async def _save_webhook_log(
+ raw_request: str,
+ event_uuid: Optional[str],
+ event_type: str,
+ project_key: Optional[str],
+ project_id: Optional[str],
+ status: WebhookLogStatus,
+ error_message: Optional[str],
+) -> None:
+ """保存 Webhook 请求日志到数据库。"""
+ try:
+ async with get_session as db:
+ log = WebhookLog(
+ raw_request=raw_request,
+ event_uuid=event_uuid,
+ event_type=event_type,
+ project_key=project_key,
+ project_id=project_id,
+ status=status,
+ error_message=error_message,
+ )
+ db.add(log)
+ await db.commit
+ except Exception as e:
+ logger.error(f"保存 Webhook 日志失败: {e}")
 async def handle_workitem_create_event(project_key: str, payload: dict):
  """处理工作项创建事件。
  当在飞书项目中创建新的工作项时触发，自动创建对应的任务。
@@ -218,6 +310,22 @@ async def handle_workitem_create_event(project_key: str, payload: dict):
  )
  description = work_item_info.description
  work_item_name = work_item_info.name or work_item_name
+ # 保存工作项日志
+ if work_item_info.raw_response:
+ try:
+ work_item_log = WorkItemLog(
+ raw_response=work_item_info.raw_response,
+ work_item_id=str(work_item_id),
+ work_item_type=work_item_type,
+ project_key=project_key,
+ project_id=project.id,
+ task_id=None, # 任务稍后创建
+ )
+ db.add(work_item_log)
+ await db.commit
+ await db.refresh(work_item_log)
+ except Exception as log_e:
+ logger.error(f"保存工作项日志失败: {log_e}")
  except Exception as e:
  logger.error(f"获取工作项详情失败: {e}")
  # 使用 Webhook 中的基本信息继续创建
@@ -383,7 +491,7 @@ async def handle_pr_merged(branch: str, pr_url: str):
  try:
  feishu_client = create_feishu_client_for_project(project)
  await feishu_client.transition_status(
- project_key=project.feishu_project_key,
+ project_key=project.feishu_project_key or "",
  work_item_id=int(task.work_item_id),
  work_item_type="story",
  target_status_name="已完成",

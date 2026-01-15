@@ -6,6 +6,15 @@ from .credential import (
  GitCredentialCreate,
  GitCredentialRead,
 )
+from .log import (
+ WebhookLog,
+ WebhookLogBase,
+ WebhookLogRead,
+ WebhookLogStatus,
+ WorkItemLog,
+ WorkItemLogBase,
+ WorkItemLogRead,
+)
 from .project import (
  FeishuConfigCreate,
  FeishuConfigRead,
@@ -52,4 +61,12 @@ __all__ = [
  "TaskCreate",
  "TaskRead",
  "TaskUpdate",
+ # Log
+ "WebhookLogStatus",
+ "WebhookLog",
+ "WebhookLogBase",
+ "WebhookLogRead",
+ "WorkItemLog",
+ "WorkItemLogBase",
+ "WorkItemLogRead",
 ]

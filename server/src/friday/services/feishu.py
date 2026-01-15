@@ -1,4 +1,5 @@
 """飞书（Lark）项目集成服务。"""
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -15,6 +16,7 @@ class WorkItemInfo:
  project_key: str
  work_item_type: str
  fields: dict[str, Any]
+ raw_response: Optional[str] = None # 原始 JSON 响应，用于日志记录
 class FeishuClient:
  """飞书 API 客户端，用于项目管理集成。
  支持两种初始化方式：
@@ -143,6 +145,7 @@ class FeishuClient:
  project_key=project_key,
  work_item_type=work_item_type,
  fields=fields_dict,
+ raw_response=json.dumps(data, ensure_ascii=False),
  )
  async def add_comment(
  self,

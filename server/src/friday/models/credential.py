@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
  from .project import Project
@@ -17,10 +17,10 @@ class GitCredentialBase(SQLModel):
  default=AuthType.SSH_KEY,
  description="Authentication type",
  )
- # For SSH_KEY: path to key file stored in data/credentials/
- ssh_key_path: Optional[str] = Field(
+ # For SSH_KEY: encrypted SSH private key content (Fernet encrypted)
+ ssh_key_encrypted: Optional[str] = Field(
  default=None,
- description="Path to SSH private key file",
+ description="加密的 SSH 私钥内容",
  )
  # For ACCESS_TOKEN: encrypted token value
  encrypted_token: Optional[str] = Field(
@@ -38,7 +38,7 @@ class GitCredentialBase(SQLModel):
  )
 class GitCredential(GitCredentialBase, table=True):
  """Git credential database model."""
- __tablename__ = "git_credentials"
+ __tablename__: ClassVar[str] = "git_credentials"
  id: str = Field(
  default_factory=lambda: str(uuid.uuid4),
  primary_key=True,
@@ -52,13 +52,17 @@ class GitCredentialCreate(SQLModel):
  """Schema for creating a credential."""
  auth_type: AuthType
  git_user_name: Optional[str] = "Friday AI Agent"
- git_user_email: Optional[str] = "ai-agent@friday.dev"
-class GitCredentialRead(GitCredentialBase):
+ git_user_email: Optional[str] = "ai-agent@friday.codes"
+class GitCredentialRead(SQLModel):
  """Schema for reading a credential (without sensitive data)."""
  id: str
  project_id: str
  created_at: datetime
- # Never expose: ssh_key_path, encrypted_token
+ # Never expose: ssh_key_encrypted, encrypted_token
  auth_type: AuthType
  git_user_name: str
  git_user_email: str
+ # 标识是否已配置 SSH 密钥
+ has_ssh_key: bool = False
+ # 标识是否已配置访问令牌
+ has_access_token: bool = False

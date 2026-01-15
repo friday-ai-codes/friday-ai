@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from .config import get_settings
 from .database import close_db, init_db
-from .routes import projects_router, tasks_router, webhook_router
+from .routes import logs_router, projects_router, tasks_router, webhook_router
 settings = get_settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,6 +20,7 @@ app = FastAPI(
  lifespan=lifespan,
 )
 # Register routers
+app.include_router(logs_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)
 app.include_router(webhook_router)

@@ -5,6 +5,7 @@ const navItems = [
  { to: '/', label: '首页', icon: 'lucide--home' },
  { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
  { to: '/tasks', label: '任务', icon: 'lucide--list-checks' },
+ { to: '/logs', label: '日志', icon: 'lucide--file-text' },
 ]
 const route = useRoute
 // 判断当前路由是否激活
