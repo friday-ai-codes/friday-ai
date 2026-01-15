@@ -107,6 +107,7 @@ declare module 'vue' {
  TabsTrigger: typeof import('./components/ui/tabs/TabsTrigger.vue')['default']
  TaskLogs: typeof import('./components/task/TaskLogs.vue')['default']
  TaskStatusBadge: typeof import('./components/task/TaskStatusBadge.vue')['default']
+ Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
  Tooltip: typeof import('./components/ui/tooltip/Tooltip.vue')['default']
  TooltipContent: typeof import('./components/ui/tooltip/TooltipContent.vue')['default']
  TooltipProvider: typeof import('./components/ui/tooltip/TooltipProvider.vue')['default']

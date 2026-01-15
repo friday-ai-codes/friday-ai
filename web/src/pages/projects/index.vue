@@ -3,7 +3,6 @@ import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '项目管理 - Friday AI',
 })
@@ -89,24 +88,21 @@ async function handleDelete {
  <CardTitle class="text-lg">
  {{ project.name }}
  </CardTitle>
- <CardDescription class="flex items-center gap-2">
- <Badge variant="outline">
- {{ PLATFORM_LABELS[project.git_platform] }}
- </Badge>
- <span class="text-xs">{{ project.default_branch }}</span>
+ <CardDescription v-if="project.description" class="line-clamp-2">
+ {{ project.description }}
  </CardDescription>
  </div>
- <Badge:variant="project.has_credential ? 'default': 'secondary'">
- <span:class="project.has_credential ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
- {{ project.has_credential ? '已配置凭证': '未配置凭证' }}
+ <Badge:variant="project.has_feishu_config ? 'default': 'secondary'">
+ <span:class="project.has_feishu_config ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
+ {{ project.has_feishu_config ? '飞书已配置': '飞书未配置' }}
  </Badge>
  </div>
  </CardHeader>
  <CardContent class="space-y-4">
- <!-- 仓库 URL -->
+ <!-- 关联仓库数量 -->
  <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--link] flex-shrink-0" />
- <span class="truncate":title="project.repo_url">{{ project.repo_url }}</span>
+ <span class="icon-[lucide--git-branch] flex-shrink-0" />
+ <span>{{ project.repositories?.length || 0 }} 个关联仓库</span>
  </div>
  <!-- 操作按钮 -->
  <div class="flex items-center gap-2">
@@ -114,11 +110,6 @@ async function handleDelete {
  <Button variant="outline" size="sm" class="w-full">
  <span class="icon-[lucide--eye] mr-1" />
  查看详情
- </Button>
- </RouterLink>
- <RouterLink:to="`/projects/${project.id}/credential`">
- <Button variant="ghost" size="sm" title="凭证管理">
- <span class="icon-[lucide--key]" />
  </Button>
  </RouterLink>
  <Button

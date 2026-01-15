@@ -1,18 +1,10 @@
 <script setup lang="ts">
-import type { GitPlatform } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import {
- Select,
- SelectContent,
- SelectItem,
- SelectTrigger,
- SelectValue,
-} from '~/components/ui/select'
-import { PLATFORM_LABELS } from '~/types'
+import { Textarea } from '~/components/ui/textarea'
 useHead({
  title: '新建项目 - Friday AI',
 })
@@ -22,30 +14,19 @@ const { success, error: showError } = useToast
 // 表单数据
 const form = reactive({
  name: '',
- repo_url: '',
- git_platform: 'github' as GitPlatform,
- default_branch: 'main',
- claude_md_path: 'developer-notes.md',
+ description: '',
  feishu_project_key: '',
 })
 // 表单验证
 const errors = reactive({
  name: '',
- repo_url: '',
 })
 function validate: boolean {
  errors.name = ''
- errors.repo_url = ''
  if (!form.name.trim) {
  errors.name = '请输入项目名称'
  }
- if (!form.repo_url.trim) {
- errors.repo_url = '请输入仓库 URL'
- }
- else if (!form.repo_url.match(/^(https?:\/\/|git@)/)) {
- errors.repo_url = '请输入有效的仓库 URL'
- }
- return !errors.name && !errors.repo_url
+ return !errors.name
 }
 // 提交表单
 const submitting = ref(false)
@@ -54,9 +35,13 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const project = await projectsStore.createProject(form)
- success('创建成功', '项目已创建，接下来配置凭证')
- router.push(`/projects/${project.id}/credential`)
+ const project = await projectsStore.createProject({
+ name: form.name,
+ description: form.description || undefined,
+ feishu_project_key: form.feishu_project_key || null,
+ })
+ success('创建成功', '项目已创建')
+ router.push(`/projects/${project.id}`)
  }
  catch (e) {
  showError('创建失败', e instanceof Error ? e.message: '无法创建项目')
@@ -65,13 +50,6 @@ async function handleSubmit {
  submitting.value = false
  }
 }
-// 平台选项
-const platforms: { value: GitPlatform, label: string } = [
- { value: 'github', label: PLATFORM_LABELS.github },
- { value: 'gitlab', label: PLATFORM_LABELS.gitlab },
- { value: 'gitea', label: PLATFORM_LABELS.gitea },
- { value: 'bitbucket', label: PLATFORM_LABELS.bitbucket },
-]
 </script>
 <template>
  <div class="max-w-2xl mx-auto space-y-6">
@@ -83,7 +61,7 @@ const platforms: { value: GitPlatform, label: string } = [
  <CardHeader>
  <CardTitle>新建项目</CardTitle>
  <CardDescription>
- 配置 Git 仓库信息，用于 AI 辅助开发任务
+ 创建一个新项目，用于管理飞书工作项和关联的 Git 仓库
  </CardDescription>
  </CardHeader>
  <CardContent>
@@ -94,61 +72,21 @@ const platforms: { value: GitPlatform, label: string } = [
  <Input
  id="name"
  v-model="form.name"
- placeholder="例如：friday-ai":class="{ 'border-red-500': errors.name }"
+ placeholder="例如：智课项目":class="{ 'border-red-500': errors.name }"
  />
  <p v-if="errors.name" class="text-sm text-red-500">
  {{ errors.name }}
  </p>
  </div>
- <!-- 仓库 URL -->
+ <!-- 项目描述 -->
  <div class="space-y-2">
- <Label for="repo_url">仓库 URL *</Label>
- <Input
- id="repo_url"
- v-model="form.repo_url"
- placeholder="https://github.com/user/repo.git":class="{ 'border-red-500': errors.repo_url }"
+ <Label for="description">项目描述</Label>
+ <Textarea
+ id="description"
+ v-model="form.description"
+ placeholder="项目的简要描述..."
+ rows="3"
  />
- <p v-if="errors.repo_url" class="text-sm text-red-500">
- {{ errors.repo_url }}
- </p>
- <p class="text-xs text-muted-foreground">
- 支持 HTTPS 或 SSH 格式
- </p>
- </div>
- <!-- Git 平台 -->
- <div class="space-y-2">
- <Label>Git 平台</Label>
- <Select v-model="form.git_platform">
- <SelectTrigger>
- <SelectValue placeholder="选择平台" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem v-for="p in platforms":key="p.value":value="p.value">
- {{ p.label }}
- </SelectItem>
- </SelectContent>
- </Select>
- </div>
- <!-- 默认分支 -->
- <div class="space-y-2">
- <Label for="default_branch">默认分支</Label>
- <Input
- id="default_branch"
- v-model="form.default_branch"
- placeholder="main"
- />
- </div>
- <!-- developer-notes.md 路径 -->
- <div class="space-y-2">
- <Label for="claude_md_path">developer-notes.md 路径</Label>
- <Input
- id="claude_md_path"
- v-model="form.claude_md_path"
- placeholder="developer-notes.md"
- />
- <p class="text-xs text-muted-foreground">
- 用于提供项目上下文的 Markdown 文件路径
- </p>
  </div>
  <!-- 飞书项目 Key -->
  <div class="space-y-2">
@@ -156,10 +94,17 @@ const platforms: { value: GitPlatform, label: string } = [
  <Input
  id="feishu_project_key"
  v-model="form.feishu_project_key"
- placeholder="project_key"
+ placeholder="例如：project_key"
  />
  <p class="text-xs text-muted-foreground">
- 用于飞书项目管理 API 调用
+ 用于飞书项目管理 API 调用，可稍后在项目详情中配置
+ </p>
+ </div>
+ <!-- 提示信息 -->
+ <div class="rounded-lg border bg-muted/50 ">
+ <p class="text-sm text-muted-foreground">
+ <span class="icon-[lucide--info] mr-1.5 inline-block align-text-bottom" />
+ 创建项目后，您可以在项目详情页中关联 Git 仓库和配置飞书集成。
  </p>
  </div>
  <!-- 提交按钮 -->

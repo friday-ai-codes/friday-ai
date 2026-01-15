@@ -60,16 +60,8 @@ declare module 'vue-router/auto-routes' {
  '/projects/:id',
  { id: ParamValue<true> },
  { id: ParamValue<false> },
- | '/projects/[id]/credential'
  | '/projects/[id]/edit'
  | '/projects/[id]/feishu'
- >,
- '/projects/[id]/credential': RouteRecordInfo<
- '/projects/[id]/credential',
- '/projects/:id/credential',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
  >,
  '/projects/[id]/edit': RouteRecordInfo<
  '/projects/[id]/edit',
@@ -172,17 +164,10 @@ declare module 'vue-router/auto-routes' {
  'src/pages/projects/[id].vue': {
  routes:
  | '/projects/[id]'
- | '/projects/[id]/credential'
  | '/projects/[id]/edit'
  | '/projects/[id]/feishu'
  views:
  | 'default'
- }
- 'src/pages/projects/[id]/credential.vue': {
- routes:
- | '/projects/[id]/credential'
- views:
- | never
  }
  'src/pages/projects/[id]/edit.vue': {
  routes:

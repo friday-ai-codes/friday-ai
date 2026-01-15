@@ -44,7 +44,7 @@ catalogs:
  specifier: ^0.8.1
  version: 0.8.1
  '@vueuse/core':
- specifier: ^14.1.0
+ specifier: 'catalog:'
  version: 14.1.0
  '@vueuse/head':
  specifier: ^2.0.0
