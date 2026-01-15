@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
  from .project import Project
+ from .repository import Repository
 class TaskStatus(str, Enum):
  """Task status states in the state machine."""
  PENDING = "pending"
@@ -31,14 +32,6 @@ class TaskBase(SQLModel):
  description="Task description (Markdown)",
  )
  # Git info
- git_repo_url: Optional[str] = Field(
- default=None,
- description="Git repository URL (overrides project default)",
- )
- git_branch: Optional[str] = Field(
- default=None,
- description="Git branch to work on (overrides project default)",
- )
  branch_name: Optional[str] = Field(
  default=None,
  description="Feature branch name created for this task",
@@ -74,6 +67,11 @@ class Task(TaskBase, table=True):
  primary_key=True,
  )
  project_id: str = Field(foreign_key="projects.id", index=True)
+ repository_id: Optional[str] = Field(
+ default=None,
+ foreign_key="repositories.id",
+ index=True,
+ )
  created_at: datetime = Field(default_factory=datetime.utcnow)
  updated_at: datetime = Field(default_factory=datetime.utcnow)
  # Execution tracking
@@ -91,9 +89,11 @@ class Task(TaskBase, table=True):
  retry_count: int = Field(default=0)
  # Relationships
  project: "Project" = Relationship(back_populates="tasks")
+ repository: Optional["Repository"] = Relationship
 class TaskCreate(SQLModel):
  """Schema for creating a task."""
  project_id: str
+ repository_id: Optional[str] = None
  work_item_id: str
  feature_id: str
  title: str
@@ -101,8 +101,6 @@ class TaskCreate(SQLModel):
 class TaskUpdate(SQLModel):
  """Schema for updating a task."""
  status: Optional[TaskStatus] = None
- git_repo_url: Optional[str] = None
- git_branch: Optional[str] = None
  branch_name: Optional[str] = None
  commit_sha: Optional[str] = None
  pr_url: Optional[str] = None
@@ -114,6 +112,7 @@ class TaskRead(TaskBase):
  """Schema for reading a task."""
  id: str
  project_id: str
+ repository_id: Optional[str]
  created_at: datetime
  updated_at: datetime
  plan_started_at: Optional[datetime]

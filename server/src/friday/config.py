@@ -11,6 +11,7 @@ class Settings(BaseSettings):
  )
  # 应用配置
  APP_NAME: str = "Friday"
+ PORT: int = 8000
  DEBUG: bool = False
  # 数据库配置
  DATA_DIR: Path = Path("data")

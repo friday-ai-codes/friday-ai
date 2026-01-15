@@ -3,27 +3,11 @@
 TBD - created by archiving change add-multi-project-feishu-integration. Update Purpose after archive.
 ## Requirements
 ### Requirement: 项目级飞书凭证配置
-系统 SHALL 支持为每个 Project 独立配置飞书项目插件凭证，包括：
-- 飞书项目空间 ID（Space ID / project_key）
-- 飞书项目插件 ID（Plugin ID）
-- 飞书项目插件 Secret（Plugin Secret，加密存储）
-- Webhook 验证 Token（加密存储）
+Project 模型 SHALL 仅包含飞书集成配置，不再包含 Git 配置。
 #### Scenario: 配置飞书插件凭证
-- **WHEN** 用户调用 POST /api/projects/{project_id}/feishu-config 接口
-- **AND** 提供有效的 plugin_id、plugin_secret 和 webhook_token
-- **THEN** 系统将凭证加密存储到数据库
-- **AND** 返回配置成功状态
-#### Scenario: 查看飞书配置状态
-- **WHEN** 用户调用 GET /api/projects/{project_id}/feishu-config 接口
-- **THEN** 系统返回配置状态（已配置/未配置）
-- **AND** 返回已配置的字段列表（不包含敏感凭证内容）
-#### Scenario: 删除飞书配置
-- **WHEN** 用户调用 DELETE /api/projects/{project_id}/feishu-config 接口
-- **THEN** 系统清除该项目的所有飞书凭证
-#### Scenario: 测试飞书凭证有效性
-- **WHEN** 用户调用 POST /api/projects/{project_id}/feishu-config/test 接口
-- **THEN** 系统使用配置的凭证尝试获取 tenant_access_token
-- **AND** 返回凭证是否有效的结果
+- **WHEN** 用户调用设置飞书配置接口
+- **THEN** 系统更新 Project 的飞书凭证字段
+- **AND** 不影响任何 Git 仓库配置
 ### Requirement: 动态 Webhook 验证
 系统 SHALL 根据 Webhook 请求体中的 `project_key`（位于 payload 中）或 `header.token` 动态选择对应项目的 Webhook Token 进行签名验证。
 根据飞书项目 Webhook 文档，所有事件的请求结构如下：
@@ -131,24 +115,11 @@ API 接口规格（根据飞书文档）：
 - **THEN** 系统使用 header.uuid 作为幂等标识
 - **AND** 避免重复处理同一事件
 ### Requirement: 数据模型扩展
-系统 SHALL 扩展 Project 模型以存储飞书项目配置。
-新增字段：
-- feishu_space_id: Optional[str] - 飞书项目空间 ID（与 feishu_project_key 二选一）
-- feishu_plugin_id: Optional[str] - 飞书项目插件 ID
-- feishu_plugin_secret_encrypted: Optional[str] - 加密的插件 Secret
-- feishu_webhook_token_encrypted: Optional[str] - 加密的 Webhook Token
-#### Scenario: 保存加密凭证
-- **WHEN** 用户设置飞书插件凭证
-- **THEN** 系统使用 encrypt_value 函数加密 plugin_secret 和 webhook_token
-- **AND** 存储加密后的值到数据库
-#### Scenario: 读取解密凭证
-- **WHEN** 系统需要使用飞书凭证调用 API
-- **THEN** 系统使用 decrypt_value 函数解密凭证
-- **AND** 创建 FeishuClient 实例
-#### Scenario: API 响应不包含敏感信息
-- **WHEN** 用户获取项目信息或飞书配置状态
-- **THEN** API 响应不包含 plugin_secret 或 webhook_token 的明文
-- **AND** 仅返回配置是否存在的布尔标识
+Project 模型 SHALL 移除 Git 相关字段，保留飞书配置字段。
+#### Scenario: Project 模型结构
+- **WHEN** 查看 Project 模型定义
+- **THEN** 包含 feishu_project_key, feishu_plugin_id, feishu_plugin_secret_encrypted 等字段
+- **AND** 不包含 repo_url, git_platform 等字段
 ### Requirement: 前端飞书配置管理
 系统 SHALL 提供前端界面用于管理项目的飞书集成配置。
 #### Scenario: 查看飞书配置状态

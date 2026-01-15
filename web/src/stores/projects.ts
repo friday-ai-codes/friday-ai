@@ -10,7 +10,6 @@ export const useProjectsStore = defineStore('projects', => {
  // ============================================================================
  const projects = ref<Project>
  const currentProject = ref<Project | null>(null)
- const currentCredential = ref<GitCredential | null>(null)
  const currentFeishuConfig = ref<FeishuConfig | null>(null)
  const loading = ref(false)
  const error = ref<string | null>(null)
@@ -129,52 +128,23 @@ export const useProjectsStore = defineStore('projects', => {
  }
  }
  // ============================================================================
- // 凭证管理
+ // 仓库关联管理
  // ============================================================================
  /**
- * 获取项目凭证
+ * 关联仓库
  */
- async function fetchCredential(projectId: string) {
- try {
- currentCredential.value = await projectsApi.getCredential(projectId)
- return currentCredential.value
- }
- catch {
- // 404 表示没有凭证，不是错误
- currentCredential.value = null
- return null
- }
- }
- /**
- * 上传 SSH 密钥
- */
- async function uploadSshKey(
- projectId: string,
- file: File,
- gitUserName?: string,
- gitUserEmail?: string,
- ) {
+ async function addRepository(projectId: string, repositoryId: string) {
  loading.value = true
  error.value = null
  try {
- currentCredential.value = await projectsApi.uploadSshKey(
- projectId,
- file,
- gitUserName,
- gitUserEmail,
- )
- // 更新项目的 has_credential 状态
- const project = projects.value.find(p => p.id === projectId)
- if (project) {
- project.has_credential = true
- }
+ await projectsApi.addRepository(projectId, repositoryId)
+ // 刷新项目详情以获取最新关联的仓库列表
  if (currentProject.value?.id === projectId) {
- currentProject.value.has_credential = true
+ await fetchProject(projectId)
  }
- return currentCredential.value
  }
  catch (e) {
- error.value = e instanceof Error ? e.message: '上传 SSH 密钥失败'
+ error.value = e instanceof Error ? e.message: '关联仓库失败'
  throw e
  }
  finally {
@@ -182,61 +152,20 @@ export const useProjectsStore = defineStore('projects', => {
  }
  }
  /**
- * 设置 Access Token
+ * 解除关联仓库
  */
- async function setAccessToken(
- projectId: string,
- token: string,
- gitUserName?: string,
- gitUserEmail?: string,
- ) {
+ async function removeRepository(projectId: string, repositoryId: string) {
  loading.value = true
  error.value = null
  try {
- currentCredential.value = await projectsApi.setAccessToken(
- projectId,
- token,
- gitUserName,
- gitUserEmail,
- )
- // 更新项目的 has_credential 状态
- const project = projects.value.find(p => p.id === projectId)
- if (project) {
- project.has_credential = true
- }
+ await projectsApi.removeRepository(projectId, repositoryId)
+ // 刷新项目详情以获取最新关联的仓库列表
  if (currentProject.value?.id === projectId) {
- currentProject.value.has_credential = true
- }
- return currentCredential.value
- }
- catch (e) {
- error.value = e instanceof Error ? e.message: '设置 Access Token 失败'
- throw e
- }
- finally {
- loading.value = false
- }
- }
- /**
- * 删除凭证
- */
- async function deleteCredential(projectId: string) {
- loading.value = true
- error.value = null
- try {
- await projectsApi.deleteCredential(projectId)
- currentCredential.value = null
- // 更新项目的 has_credential 状态
- const project = projects.value.find(p => p.id === projectId)
- if (project) {
- project.has_credential = false
- }
- if (currentProject.value?.id === projectId) {
- currentProject.value.has_credential = false
+ await fetchProject(projectId)
  }
  }
  catch (e) {
- error.value = e instanceof Error ? e.message: '删除凭证失败'
+ error.value = e instanceof Error ? e.message: '解除关联仓库失败'
  throw e
  }
  finally {
@@ -248,7 +177,6 @@ export const useProjectsStore = defineStore('projects', => {
  */
  function clearCurrent {
  currentProject.value = null
- currentCredential.value = null
  currentFeishuConfig.value = null
  }
  // ============================================================================
@@ -272,7 +200,6 @@ export const useProjectsStore = defineStore('projects', => {
  // State
  projects,
  currentProject,
- currentCredential,
  currentFeishuConfig,
  loading,
  error,
@@ -285,10 +212,8 @@ export const useProjectsStore = defineStore('projects', => {
  createProject,
  updateProject,
  deleteProject,
- fetchCredential,
- uploadSshKey,
- setAccessToken,
- deleteCredential,
+ addRepository,
+ removeRepository,
  fetchFeishuConfig,
  clearCurrent,
  }

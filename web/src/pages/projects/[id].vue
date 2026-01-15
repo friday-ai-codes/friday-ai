@@ -3,11 +3,14 @@ import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute
 const router = useRouter
 const projectsStore = useProjectsStore
+const repositoriesStore = useRepositoriesStore
 const tasksStore = useTasksStore
 const { success, error: showError } = useToast
 const projectId = computed( => route.params.id as string)
@@ -21,9 +24,9 @@ onMounted(async => {
  try {
  await Promise.all([
  projectsStore.fetchProject(projectId.value),
- projectsStore.fetchCredential(projectId.value),
  projectsStore.fetchFeishuConfig(projectId.value),
  tasksStore.fetchTasks({ project_id: projectId.value }),
+ repositoriesStore.fetchRepositories, // 加载所有仓库供选择
  ])
  }
  catch (e) {
@@ -57,9 +60,51 @@ function formatDate(dateStr: string) {
 }
 // 计算属性
 const project = computed( => projectsStore.currentProject)
-const credential = computed( => projectsStore.currentCredential)
 const feishuConfig = computed( => projectsStore.currentFeishuConfig)
 const projectTasks = computed( => tasksStore.tasks)
+// 关联仓库
+const linkDialogOpen = ref(false)
+const selectedRepositoryId = ref('')
+const linking = ref(false)
+// 可供关联的仓库（排除已关联的）
+const availableRepositories = computed( => {
+ if (!project.value)
+ return
+ const linkedIds = project.value.repositories.map(r => r.id)
+ return repositoriesStore.repositories.filter(r => !linkedIds.includes(r.id))
+})
+async function handleLinkRepository {
+ if (!selectedRepositoryId.value)
+ return
+ linking.value = true
+ try {
+ await projectsStore.addRepository(projectId.value, selectedRepositoryId.value)
+ success('关联成功', '已关联仓库')
+ linkDialogOpen.value = false
+ selectedRepositoryId.value = ''
+ }
+ catch (e) {
+ showError('关联失败', e instanceof Error ? e.message: '无法关联仓库')
+ }
+ finally {
+ linking.value = false
+ }
+}
+// 解除关联
+const unlinking = ref(false)
+async function handleUnlinkRepository(repositoryId: string) {
+ unlinking.value = true
+ try {
+ await projectsStore.removeRepository(projectId.value, repositoryId)
+ success('解除关联成功', '已解除关联仓库')
+ }
+ catch (e) {
+ showError('解除关联失败', e instanceof Error ? e.message: '无法解除关联仓库')
+ }
+ finally {
+ unlinking.value = false
+ }
+}
 </script>
 <template>
  <div class="space-y-6">
@@ -78,12 +123,6 @@ const projectTasks = computed( => tasksStore.tasks)
  <h1 class="text-2xl font-bold">
  {{ project.name }}
  </h1>
- <p class="text-muted-foreground flex items-center gap-2 mt-1">
- <Badge variant="outline">
- {{ PLATFORM_LABELS[project.git_platform] }}
- </Badge>
- <span>{{ project.default_branch }}</span>
- </p>
  </div>
  <div class="flex items-center gap-2">
  <RouterLink:to="`/projects/${project.id}/edit`">
@@ -105,19 +144,6 @@ const projectTasks = computed( => tasksStore.tasks)
  <CardTitle>基本信息</CardTitle>
  </CardHeader>
  <CardContent class="space-y-4">
- <div>
- <label class="text-sm text-muted-foreground">仓库 URL</label>
- <p class="font-mono text-sm mt-1 break-all">
- {{ project.repo_url }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">developer-notes.md 路径</label>
- <p class="font-mono text-sm mt-1">
- {{ project.claude_md_path }}
- </p>
- </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">飞书项目 Key</label>
@@ -142,51 +168,54 @@ const projectTasks = computed( => tasksStore.tasks)
  </div>
  </CardContent>
  </Card>
- <!-- 凭证状态 -->
+ <!-- 关联仓库 -->
  <Card>
  <CardHeader class="flex flex-row items-center justify-between">
  <div>
- <CardTitle>凭证配置</CardTitle>
- <CardDescription>Git 仓库访问凭证</CardDescription>
+ <CardTitle>关联仓库</CardTitle>
+ <CardDescription>关联的 Git 仓库</CardDescription>
  </div>
- <RouterLink:to="`/projects/${project.id}/credential`">
- <Button variant="outline" size="sm">
- <span class="icon-[lucide--key] mr-2" />
- 管理凭证
+ <Button variant="outline" size="sm" @click="linkDialogOpen = true">
+ <span class="icon-[lucide--link] mr-2" />
+ 关联仓库
  </Button>
- </RouterLink>
  </CardHeader>
  <CardContent>
- <div v-if="credential" class="space-y-4">
+ <div v-if="project.repositories.length === 0" class="text-center py-6 text-muted-foreground">
+ 暂无关联仓库
+ </div>
+ <div v-else class="space-y-4">
+ <div
+ v-for="repo in project.repositories":key="repo.id"
+ class="flex items-center justify-between border rounded-lg"
+ >
+ <div>
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
- <div>
- <p class="font-medium">
- 凭证已配置
- </p>
- <p class="text-sm text-muted-foreground">
- 类型：{{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
- </p>
+ <span class="font-medium">{{ repo.name }}</span>
+ <Badge variant="outline">
+ {{ PLATFORM_LABELS[repo.git_platform] }}
+ </Badge>
+ </div>
+ <div class="text-sm text-muted-foreground mt-1">
+ {{ repo.git_url }}
  </div>
  </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">Git 用户</label>
- <p class="text-sm mt-1">
- {{ credential.git_user_name }} &lt;{{ credential.git_user_email }}&gt;
- </p>
- </div>
- </div>
- <div v-else class="text-center py-6">
- <span class="icon-[lucide--lock] text-4xl text-muted-foreground" />
- <p class="mt-2 text-muted-foreground">
- 尚未配置凭证
- </p>
- <RouterLink:to="`/projects/${project.id}/credential`">
- <Button class="mt-4" size="sm">
- 配置凭证
+ <div class="flex items-center gap-2">
+ <RouterLink:to="`/repositories/${repo.id}`">
+ <Button variant="ghost" size="sm" title="查看详情">
+ <span class="icon-[lucide--eye]" />
  </Button>
  </RouterLink>
+ <Button
+ variant="ghost"
+ size="sm"
+ title="解除关联":disabled="unlinking"
+ @click="handleUnlinkRepository(repo.id)"
+ >
+ <span class="icon-[lucide--unlink] text-destructive" />
+ </Button>
+ </div>
+ </div>
  </div>
  </CardContent>
  </Card>
@@ -294,4 +323,40 @@ const projectTasks = computed( => tasksStore.tasks)
  @confirm="handleDelete"
  />
  </div>
+ <!-- 关联仓库对话框 -->
+ <Dialog v-model:open="linkDialogOpen">
+ <DialogContent>
+ <DialogHeader>
+ <DialogTitle>关联仓库</DialogTitle>
+ <DialogDescription>
+ 选择要关联到此项目的 Git 仓库
+ </DialogDescription>
+ </DialogHeader>
+ <div class="py-4">
+ <Select v-model="selectedRepositoryId">
+ <SelectTrigger>
+ <SelectValue placeholder="选择仓库" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem v-for="repo in availableRepositories":key="repo.id":value="repo.id">
+ {{ repo.name }} ({{ repo.git_url }})
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <p v-if="availableRepositories.length === 0" class="text-sm text-muted-foreground mt-2">
+ 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="underline">
+ 创建仓库
+ </RouterLink>
+ </p>
+ </div>
+ <DialogFooter>
+ <Button variant="outline" @click="linkDialogOpen = false">
+ 取消
+ </Button>
+ <Button:disabled="!selectedRepositoryId || linking" @click="handleLinkRepository">
+ {{ linking ? '关联中...': '关联' }}
+ </Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
 </template>

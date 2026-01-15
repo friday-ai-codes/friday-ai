@@ -43,49 +43,19 @@ export async function deleteProject(projectId: string): Promise<void> {
  return del(`/projects/${projectId}`)
 }
 // ============================================================================
-// 凭证管理
+// 仓库关联管理
 // ============================================================================
 /**
- * 获取项目凭证
+ * 关联仓库
  */
-export async function getCredential(projectId: string): Promise<GitCredential> {
- return get<GitCredential>(`/projects/${projectId}/credential`)
+export async function addRepository(projectId: string, repositoryId: string): Promise<void> {
+ return post(`/projects/${projectId}/repositories/${repositoryId}`)
 }
 /**
- * 上传 SSH 密钥
+ * 解除关联仓库
  */
-export async function uploadSshKey(
- projectId: string,
- file: File,
- gitUserName: string = 'Friday AI Agent',
- gitUserEmail: string = 'ai-agent@friday.dev',
-): Promise<GitCredential> {
- const formData = new FormData
- formData.append('file', file)
- formData.append('git_user_name', gitUserName)
- formData.append('git_user_email', gitUserEmail)
- return upload<GitCredential>(`/projects/${projectId}/credential/ssh-key`, formData)
-}
-/**
- * 设置 Access Token
- */
-export async function setAccessToken(
- projectId: string,
- token: string,
- gitUserName: string = 'Friday AI Agent',
- gitUserEmail: string = 'ai-agent@friday.dev',
-): Promise<GitCredential> {
- const formData = new FormData
- formData.append('token', token)
- formData.append('git_user_name', gitUserName)
- formData.append('git_user_email', gitUserEmail)
- return upload<GitCredential>(`/projects/${projectId}/credential/access-token`, formData)
-}
-/**
- * 删除凭证
- */
-export async function deleteCredential(projectId: string): Promise<void> {
- return del(`/projects/${projectId}/credential`)
+export async function removeRepository(projectId: string, repositoryId: string): Promise<void> {
+ return del(`/projects/${projectId}/repositories/${repositoryId}`)
 }
 // ============================================================================
 // 飞书配置管理
@@ -123,10 +93,8 @@ export default {
  get: getProject,
  update: updateProject,
  delete: deleteProject,
- getCredential,
- uploadSshKey,
- setAccessToken,
- deleteCredential,
+ addRepository,
+ removeRepository,
  // 飞书配置
  getFeishuConfig,
  setFeishuConfig,

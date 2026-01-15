@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import desc
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ..database import get_db
@@ -15,6 +16,7 @@ from ..models import (
  TaskStatus,
  TaskUpdate,
 )
+from ..models.repository import Repository
 from ..services.crypto import decrypt_value
 from ..services.scheduler import get_scheduler
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -48,9 +50,9 @@ async def list_tasks(
  query = query.where(Task.project_id == project_id)
  if status:
  query = query.where(Task.status == status)
- query = query.order_by(Task.created_at.desc).offset(offset).limit(limit)
- result = await db.execute(query)
- tasks = result.scalars.all
+ query = query.order_by(desc("created_at")).offset(offset).limit(limit)
+ result = await db.exec(query)
+ tasks = result.all
  return [TaskRead(**t.model_dump) for t in tasks]
 @router.post("/", response_model=TaskRead, status_code=201)
 async def create_task(
@@ -59,15 +61,13 @@ async def create_task(
 ):
  """Create a new task."""
  # Verify project exists
- result = await db.execute(select(Project).where(Project.id == task.project_id))
- project = result.scalar_one_or_none
+ result = await db.exec(select(Project).where(Project.id == task.project_id))
+ project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="Project not found")
  # Check for duplicate work_item_id
- existing = await db.execute(
- select(Task).where(Task.work_item_id == task.work_item_id)
- )
- if existing.scalar_one_or_none:
+ existing = await db.exec(select(Task).where(Task.work_item_id == task.work_item_id))
+ if existing.one_or_none:
  raise HTTPException(
  status_code=400,
  detail=f"Task with work_item_id {task.work_item_id} already exists",
@@ -83,8 +83,8 @@ async def get_task(
  db: AsyncSession = Depends(get_db),
 ):
  """Get a task by ID."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  return TaskRead(**task.model_dump)
@@ -94,8 +94,8 @@ async def get_task_by_work_item(
  db: AsyncSession = Depends(get_db),
 ):
  """Get a task by Feishu work item ID."""
- result = await db.execute(select(Task).where(Task.work_item_id == work_item_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.work_item_id == work_item_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  return TaskRead(**task.model_dump)
@@ -106,8 +106,8 @@ async def update_task(
  db: AsyncSession = Depends(get_db),
 ):
  """Update a task."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  update_data = task_update.model_dump(exclude_unset=True)
@@ -124,8 +124,8 @@ async def transition_task(
  db: AsyncSession = Depends(get_db),
 ):
  """Transition task to a new status with validation."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  # Define valid transitions
@@ -167,8 +167,8 @@ async def delete_task(
  db: AsyncSession = Depends(get_db),
 ):
  """Delete a task."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  await db.delete(task)
@@ -186,13 +186,13 @@ async def execute_task(
  The container will run Claude Code to either generate a plan or implement changes.
  """
  # Get task
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  # Get project
- result = await db.execute(select(Project).where(Project.id == task.project_id))
- project = result.scalar_one_or_none
+ result = await db.exec(select(Project).where(Project.id == task.project_id))
+ project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="Project not found")
  # Check if task can be executed
@@ -206,32 +206,36 @@ async def execute_task(
  status_code=400,
  detail="Cannot start execution: task must be in PLAN_REVIEW status",
  )
- # Get git credentials
+ # Get repository and credentials
+ if not task.repository_id:
+ raise HTTPException(
+ status_code=400,
+ detail="Task must have a repository assigned before execution. Please update the task with a repository.",
+ )
  git_credentials = {}
- if project.git_credential_id:
- result = await db.execute(
- select(GitCredential).where(GitCredential.id == project.git_credential_id)
+ result = await db.exec(
+ select(Repository).where(Repository.id == task.repository_id)
  )
- credential = result.scalar_one_or_none
+ repository = result.one_or_none
+ if not repository:
+ raise HTTPException(status_code=404, detail="Repository not found")
+ # Get credentials from repository
+ result = await db.exec(
+ select(GitCredential).where(GitCredential.repository_id == repository.id)
+ )
+ credential = result.one_or_none
  if credential:
- if credential.ssh_private_key_encrypted:
- git_credentials["ssh_key"] = decrypt_value(
- credential.ssh_private_key_encrypted
- )
- elif credential.access_token_encrypted:
- git_credentials["access_token"] = decrypt_value(
- credential.access_token_encrypted
- )
- # Set git info on task if not already set
- if not task.git_repo_url:
- task.git_repo_url = project.git_repo_url
- if not task.git_branch:
- task.git_branch = project.default_branch or "main"
+ if credential.ssh_key_encrypted:
+ git_credentials["ssh_key"] = decrypt_value(credential.ssh_key_encrypted)
+ elif credential.encrypted_token:
+ git_credentials["access_token"] = decrypt_value(credential.encrypted_token)
  # Start container
  scheduler = get_scheduler
  try:
  container_id = await scheduler.start_task(
  task=task,
+ repo_url=repository.git_url,
+ branch=repository.default_branch or "main",
  git_credentials=git_credentials,
  mode=request.mode,
  )
@@ -263,8 +267,8 @@ async def update_task_status_from_container(
  """Receive status update from task container.
  This endpoint is called by the task container to report progress.
  """
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  now = datetime.utcnow
@@ -296,8 +300,8 @@ async def stop_task(
  db: AsyncSession = Depends(get_db),
 ):
  """Stop a running task container."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  scheduler = get_scheduler
@@ -317,8 +321,8 @@ async def get_task_logs(
  db: AsyncSession = Depends(get_db),
 ):
  """Get logs from task container."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  scheduler = get_scheduler
@@ -332,8 +336,8 @@ async def get_container_status(
  db: AsyncSession = Depends(get_db),
 ):
  """Get container status for a task."""
- result = await db.execute(select(Task).where(Task.id == task_id))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.id == task_id))
+ task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
  scheduler = get_scheduler

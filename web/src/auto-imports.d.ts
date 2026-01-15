@@ -243,6 +243,7 @@ declare global {
  const useProjectsStore: typeof import('./stores/projects').useProjectsStore
  const useRafFn: typeof import('@vueuse/core').useRafFn
  const useRefHistory: typeof import('@vueuse/core').useRefHistory
+ const useRepositoriesStore: typeof import('./stores/repositories').useRepositoriesStore
  const useResizeObserver: typeof import('@vueuse/core').useResizeObserver
  const useRoute: typeof import('vue-router').useRoute
  const useRouter: typeof import('vue-router').useRouter
@@ -566,6 +567,7 @@ declare module 'vue' {
  readonly useProjectsStore: UnwrapRef<typeof import('./stores/projects')['useProjectsStore']>
  readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
  readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
+ readonly useRepositoriesStore: UnwrapRef<typeof import('./stores/repositories')['useRepositoriesStore']>
  readonly useResizeObserver: UnwrapRef<typeof import('@vueuse/core')['useResizeObserver']>
  readonly useRoute: UnwrapRef<typeof import('vue-router')['useRoute']>
  readonly useRouter: UnwrapRef<typeof import('vue-router')['useRouter']>

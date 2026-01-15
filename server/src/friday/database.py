@@ -1,8 +1,7 @@
 """SQLModel async database configuration."""
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .config import get_settings
@@ -16,7 +15,7 @@ engine: AsyncEngine = create_async_engine(
  future=True,
 )
 # Async session factory
-async_session_maker = sessionmaker(
+async_session_maker = async_sessionmaker(
  engine,
  class_=AsyncSession,
  expire_on_commit=False,

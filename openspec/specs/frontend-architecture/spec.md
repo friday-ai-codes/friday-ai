@@ -227,28 +227,11 @@ TBD - created by archiving change add-frontend-architecture. Update Purpose afte
 - **AND** 返回容器 ID
 ---
 ### Requirement: 项目管理页面
-前端项目 SHALL 提供完整的项目管理界面。
-1. 项目列表页 `/projects`
-2. 创建项目页 `/projects/new`
-3. 项目详情页 `/projects/:id`
-4. 编辑项目页 `/projects/:id/edit`
-5. 凭证管理页 `/projects/:id/credential`
-#### Scenario: 项目列表页
-- **WHEN** 用户访问 `/projects`
-- **THEN** 应显示所有项目的卡片列表
-- **AND** 每个卡片显示项目名称、仓库 URL、凭证状态
-- **AND** 提供新建项目按钮
-#### Scenario: 创建项目
-- **WHEN** 用户在创建页面提交表单
-- **THEN** 应验证表单数据
-- **AND** 调用 API 创建项目
-- **AND** 成功后跳转到项目详情页
-#### Scenario: 凭证管理
-- **WHEN** 用户访问凭证管理页
-- **THEN** 应显示当前凭证类型
-- **AND** 提供 SSH 密钥上传或 Access Token 设置选项
-- **AND** 提供删除凭证功能
----
+项目详情页 SHALL 移除直接的 Git 配置展示，改为展示关联的仓库列表。
+#### Scenario: 项目详情页
+- **WHEN** 用户访问项目详情页
+- **THEN** 显示“基本信息”（飞书配置）
+- **AND** 显示“关联仓库”列表
 ### Requirement: 任务管理页面
 前端项目 SHALL 提供完整的任务管理界面。
 1. 任务列表页 `/tasks`
@@ -338,3 +321,19 @@ TBD - created by archiving change add-frontend-architecture. Update Purpose afte
 - **WHEN** 用户访问首页
 - **THEN** 应显示最近 5 个任务
 - **AND** 点击可跳转到详情页
+### Requirement: Repository Management UI
+系统 SHALL 提供仓库管理界面。
+#### Scenario: Repository List Page
+- **WHEN** 用户访问 `/repositories`
+- **THEN** 显示所有已配置的 Git 仓库列表
+#### Scenario: Create/Edit Repository
+- **WHEN** 用户创建或编辑仓库
+- **THEN** 提供表单输入 git_url, name, default_branch, claude_md_path 等信息
+### Requirement: Project-Repository Linking UI
+系统 SHALL 在项目详情页提供仓库关联管理功能。
+#### Scenario: Link Repository
+- **WHEN** 在项目详情页点击“关联仓库”
+- **THEN** 弹出对话框选择已有仓库进行关联
+#### Scenario: Unlink Repository
+- **WHEN** 在已关联仓库列表中点击“移除”
+- **THEN** 解除该仓库与当前项目的关联

@@ -4,6 +4,7 @@ import logging
 from typing import Optional, Set
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from ..database import get_session
 from ..models import (
@@ -14,10 +15,7 @@ from ..models import (
  WebhookLogStatus,
  WorkItemLog,
 )
-from ..services.feishu import (
- create_feishu_client_for_project,
- verify_webhook_token,
-)
+from ..services.feishu import create_feishu_client_for_project, verify_webhook_token
 router = APIRouter(prefix="/api/webhook", tags=["webhook"])
 logger = logging.getLogger(__name__)
 # 幂等处理：存储已处理的事件 UUID
@@ -164,10 +162,10 @@ async def handle_feishu_webhook(
  # 查找项目并验证 Token
  project_id: Optional[str] = None
  async with get_session as db:
- result = await db.execute(
+ result = await db.exec(
  select(Project).where(Project.feishu_project_key == project_key)
  )
- project = result.scalar_one_or_none
+ project = result.one_or_none
  if not project:
  logger.warning(f"未找到项目: {project_key}")
  await _save_webhook_log(
@@ -260,8 +258,8 @@ async def _save_webhook_log(
  try:
  async with get_session as db:
  log = WebhookLog(
- raw_request=raw_request,
  event_uuid=event_uuid,
+ raw_request=raw_request,
  event_type=event_type,
  project_key=project_key,
  project_id=project_id,
@@ -283,19 +281,21 @@ async def handle_workitem_create_event(project_key: str, payload: dict):
  logger.warning("工作项创建事件缺少 id")
  return
  async with get_session as db:
- # 查找项目
- result = await db.execute(
- select(Project).where(Project.feishu_project_key == project_key)
+ # 查找项目（预加载关联的仓库）
+ result = await db.exec(
+ select(Project)
+ .where(Project.feishu_project_key == project_key)
+ .options(selectinload(Project.repositories)) # type: ignore
  )
- project = result.scalar_one_or_none
+ project = result.one_or_none
  if not project:
  logger.warning(f"工作项创建事件：项目未找到 {project_key}")
  return
  # 检查任务是否已存在
- result = await db.execute(
+ result = await db.exec(
  select(Task).where(Task.work_item_id == str(work_item_id))
  )
- existing_task = result.scalar_one_or_none
+ existing_task = result.one_or_none
  if existing_task:
  logger.info(f"任务已存在: {work_item_id}")
  return
@@ -329,9 +329,21 @@ async def handle_workitem_create_event(project_key: str, payload: dict):
  except Exception as e:
  logger.error(f"获取工作项详情失败: {e}")
  # 使用 Webhook 中的基本信息继续创建
+ # 尝试自动关联仓库
+ # 1. 如果项目只有一个关联仓库，自动关联
+ # 2. 如果有多个，暂不关联，需人工在任务详情页选择（或后续支持在飞书描述中指定）
+ repository_id = None
+ if len(project.repositories) == 1:
+ repository_id = project.repositories[0].id
+ logger.info(f"自动关联唯一仓库: {project.repositories[0].name}")
+ elif len(project.repositories) > 1:
+ logger.info("项目关联多个仓库，需手动指定任务仓库")
+ else:
+ logger.warning("项目未关联任何仓库，无法自动关联")
  # 创建新任务
  new_task = Task(
  project_id=project.id,
+ repository_id=repository_id, # 可能为 None
  work_item_id=str(work_item_id),
  feature_id=str(work_item_id),
  title=work_item_name,
@@ -355,10 +367,10 @@ async def handle_workitem_status_event(project_key: str, payload: dict):
  logger.info(f"状态变更: {work_item_id} {pre_state_key} -> {cur_state_key}")
  async with get_session as db:
  # 查找任务
- result = await db.execute(
+ result = await db.exec(
  select(Task).where(Task.work_item_id == str(work_item_id))
  )
- task = result.scalar_one_or_none
+ task = result.one_or_none
  if not task:
  logger.info(f"任务不存在，跳过状态变更: {work_item_id}")
  return
@@ -411,10 +423,10 @@ async def handle_workitem_comment_event(project_key: str, payload: dict):
  return
  logger.info(f"评论审批: {work_item_id}, 通过={is_approved}, 驳回={is_rejected}")
  async with get_session as db:
- result = await db.execute(
+ result = await db.exec(
  select(Task).where(Task.work_item_id == str(work_item_id))
  )
- task = result.scalar_one_or_none
+ task = result.one_or_none
  if not task:
  return
  # 根据当前状态和评论内容更新任务
@@ -479,8 +491,8 @@ async def handle_pr_merged(branch: str, pr_url: str):
  """处理 PR 合并事件 - 更新任务为 MERGED 状态。"""
  async with get_session as db:
  # 根据分支名查找任务
- result = await db.execute(select(Task).where(Task.branch_name == branch))
- task = result.scalar_one_or_none
+ result = await db.exec(select(Task).where(Task.branch_name == branch))
+ task = result.one_or_none
  if task and task.status == TaskStatus.CODE_REVIEW:
  task.status = TaskStatus.MERGED
  task.pr_url = pr_url

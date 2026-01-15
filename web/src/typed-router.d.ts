@@ -92,6 +92,27 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/repositories/': RouteRecordInfo<
+ '/repositories/',
+ '/repositories',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/repositories/[id]': RouteRecordInfo<
+ '/repositories/[id]',
+ '/repositories/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/repositories/new': RouteRecordInfo<
+ '/repositories/new',
+ '/repositories/new',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/tasks/': RouteRecordInfo<
  '/tasks/',
  '/tasks',
@@ -178,6 +199,24 @@ declare module 'vue-router/auto-routes' {
  'src/pages/projects/new.vue': {
  routes:
  | '/projects/new'
+ views:
+ | never
+ }
+ 'src/pages/repositories/index.vue': {
+ routes:
+ | '/repositories/'
+ views:
+ | never
+ }
+ 'src/pages/repositories/[id].vue': {
+ routes:
+ | '/repositories/[id]'
+ views:
+ | never
+ }
+ 'src/pages/repositories/new.vue': {
+ routes:
+ | '/repositories/new'
  views:
  | never
  }

@@ -19,30 +19,37 @@ from .project import (
  FeishuConfigCreate,
  FeishuConfigRead,
  FeishuConfigTestResult,
- GitPlatform,
  Project,
  ProjectBase,
  ProjectCreate,
  ProjectRead,
  ProjectUpdate,
 )
-from .task import (
- Task,
- TaskBase,
- TaskCreate,
- TaskMode,
- TaskRead,
- TaskStatus,
- TaskUpdate,
+from .repository import (
+ GitPlatform,
+ ProjectRepository,
+ Repository,
+ RepositoryBase,
+ RepositoryCreate,
+ RepositoryRead,
+ RepositoryUpdate,
 )
+from .task import Task, TaskBase, TaskCreate, TaskMode, TaskRead, TaskStatus, TaskUpdate
 __all__ = [
  # Project
- "GitPlatform",
  "Project",
  "ProjectBase",
  "ProjectCreate",
  "ProjectRead",
  "ProjectUpdate",
+ # Repository
+ "GitPlatform",
+ "ProjectRepository",
+ "Repository",
+ "RepositoryBase",
+ "RepositoryCreate",
+ "RepositoryRead",
+ "RepositoryUpdate",
  # Feishu Config
  "FeishuConfigCreate",
  "FeishuConfigRead",

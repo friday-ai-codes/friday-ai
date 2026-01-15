@@ -18,12 +18,16 @@ class TaskScheduler:
  async def start_task(
  self,
  task: Task,
+ repo_url: str,
+ branch: str,
  git_credentials: dict[str, str],
  mode: str = "plan",
  ) -> str:
  """Start a container for the given task.
  Args:
  task: The task to execute
+ repo_url: Git repository URL
+ branch: Git branch name
  git_credentials: Dict with git_ssh_key or git_access_token
  mode: "plan" or "execute"
  Returns:
@@ -32,7 +36,7 @@ class TaskScheduler:
  log = logger.bind(task_id=task.id, project_id=task.project_id, mode=mode)
  log.info("Starting task container")
  # Build environment variables for the container
- env = self._build_env(task, git_credentials, mode)
+ env = self._build_env(task, repo_url, branch, git_credentials, mode)
  try:
  # Ensure image exists
  await self._ensure_image
@@ -63,9 +67,10 @@ class TaskScheduler:
  # Auto-remove when done
  auto_remove=False,
  )
- self._running_containers[str(task.id)] = container.id
- log.info("Task container started", container_id=container.id[:12])
- return container.id
+ container_id = str(container.id)
+ self._running_containers[str(task.id)] = container_id
+ log.info("Task container started", container_id=container_id[:12])
+ return container_id
  except ImageNotFound:
  log.error("Task image not found")
  raise RuntimeError("Task container image not found. Please build it first.")
@@ -75,6 +80,8 @@ class TaskScheduler:
  def _build_env(
  self,
  task: Task,
+ repo_url: str,
+ branch: str,
  git_credentials: dict[str, str],
  mode: str,
  ) -> dict[str, str]:
@@ -89,12 +96,12 @@ class TaskScheduler:
  "FRIDAY_TASK_TASK_DESCRIPTION": task.description or "",
  "FRIDAY_TASK_TASK_MODE": mode,
  # Git configuration
- "FRIDAY_TASK_GIT_REPO_URL": task.git_repo_url or "",
- "FRIDAY_TASK_GIT_BRANCH": task.git_branch or "main",
+ "FRIDAY_TASK_GIT_REPO_URL": repo_url,
+ "FRIDAY_TASK_GIT_BRANCH": branch,
  # Claude configuration
  "FRIDAY_TASK_CLAUDE_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
  # Callback configuration
- "FRIDAY_TASK_CALLBACK_URL": f"http://host.docker.internal:{settings.port}/api/v1",
+ "FRIDAY_TASK_CALLBACK_URL": f"http://host.docker.internal:{settings.PORT}/api/v1",
  "FRIDAY_TASK_CALLBACK_TOKEN": "", # TODO: Add internal auth
  }
  # Add git credentials

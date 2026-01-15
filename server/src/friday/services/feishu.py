@@ -39,8 +39,8 @@ class FeishuClient:
  plugin_secret: 飞书插件 Secret（可选，默认从配置读取）
  project_key: 飞书项目空间 Key（可选）
  """
- self.plugin_id = plugin_id or settings.FEISHU_PLUGIN_ID
- self.plugin_secret = plugin_secret or settings.FEISHU_PLUGIN_SECRET
+ self.plugin_id = plugin_id
+ self.plugin_secret = plugin_secret
  self.project_key = project_key
  self._plugin_token: Optional[str] = None
  self._token_expires_at: float = 0

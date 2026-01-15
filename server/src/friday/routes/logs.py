@@ -66,12 +66,12 @@ async def list_webhook_logs(
  count_query = count_query.where(WebhookLog.created_at >= start_date)
  if end_date:
  count_query = count_query.where(WebhookLog.created_at <= end_date)
- result = await db.execute(count_query)
+ result = await db.exec(count_query)
  total = len(result.all)
  # 获取分页数据
  query = query.order_by(desc(WebhookLog.created_at)).offset(offset).limit(limit)
- result = await db.execute(query)
- logs = result.scalars.all
+ result = await db.exec(query)
+ logs = result.all
  items = [
  WebhookLogRead(
  id=log.id,
@@ -93,8 +93,8 @@ async def get_webhook_log(log_id: str):
  返回完整的日志记录，包含解析后的原始 JSON。
  """
  async with get_session as db:
- result = await db.execute(select(WebhookLog).where(WebhookLog.id == log_id))
- log = result.scalar_one_or_none
+ result = await db.exec(select(WebhookLog).where(WebhookLog.id == log_id))
+ log = result.one_or_none
  if not log:
  raise HTTPException(status_code=404, detail="日志不存在")
  # 解析原始 JSON
@@ -153,12 +153,12 @@ async def list_work_item_logs(
  count_query = count_query.where(WorkItemLog.created_at >= start_date)
  if end_date:
  count_query = count_query.where(WorkItemLog.created_at <= end_date)
- result = await db.execute(count_query)
+ result = await db.exec(count_query)
  total = len(result.all)
  # 获取分页数据
  query = query.order_by(desc(WorkItemLog.created_at)).offset(offset).limit(limit)
- result = await db.execute(query)
- logs = result.scalars.all
+ result = await db.exec(query)
+ logs = result.all
  items = [
  WorkItemLogRead(
  id=log.id,
@@ -179,8 +179,8 @@ async def get_work_item_log(log_id: str):
  返回完整的日志记录，包含解析后的原始 JSON。
  """
  async with get_session as db:
- result = await db.execute(select(WorkItemLog).where(WorkItemLog.id == log_id))
- log = result.scalar_one_or_none
+ result = await db.exec(select(WorkItemLog).where(WorkItemLog.id == log_id))
+ log = result.one_or_none
  if not log:
  raise HTTPException(status_code=404, detail="日志不存在")
  # 解析原始 JSON

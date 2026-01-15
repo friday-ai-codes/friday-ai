@@ -4,6 +4,13 @@ import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
@@ -36,6 +43,34 @@ onMounted(async => {
 // 任务和项目
 const task = computed( => tasksStore.currentTask)
 const project = computed( => projectsStore.currentProject)
+// 仓库选择
+const selectedRepoId = ref('')
+const updatingRepo = ref(false)
+async function handleUpdateRepo {
+ if (!task.value || !selectedRepoId.value)
+ return
+ updatingRepo.value = true
+ try {
+ await tasksStore.updateTask(task.value.id, {
+ repository_id: selectedRepoId.value,
+ })
+ success('仓库已更新', '任务关联仓库已更新')
+ // 重新获取任务信息
+ await tasksStore.fetchTask(task.value.id)
+ }
+ catch (e) {
+ showError('更新失败', e instanceof Error ? e.message: '无法更新任务仓库')
+ }
+ finally {
+ updatingRepo.value = false
+ }
+}
+// 当项目加载完成后，如果任务已有仓库，设置选中值
+watch( => task.value?.repository_id, (newId) => {
+ if (newId) {
+ selectedRepoId.value = newId
+ }
+}, { immediate: true })
 // 日志轮询
 const { isPolling, start: startPolling, stop: stopPolling } = usePolling(async => {
  if (task.value) {
@@ -165,6 +200,38 @@ const logs = computed( => tasksStore.currentLogs)
  <LoadingState v-if="loading" variant="skeleton":count="4" />
  <!-- 任务详情 -->
  <template v-else-if="task">
+ <!-- 缺少仓库警告 -->
+ <div v-if="!task.repository_id" class=" mb-6 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800">
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--alert-triangle] mt-0.5 text-lg" />
+ <div class="space-y-2 flex-1">
+ <h3 class="font-semibold">
+ 未指定执行仓库
+ </h3>
+ <p class="text-sm">
+ 此任务尚未关联 Git 仓库，无法执行。请从项目关联的仓库中选择一个：
+ </p>
+ <div class="flex gap-3 max-w-md items-center">
+ <Select v-model="selectedRepoId">
+ <SelectTrigger class="w-[240px] bg-white">
+ <SelectValue placeholder="选择仓库" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="repo in project?.repositories || ":key="repo.id":value="repo.id"
+ >
+ {{ repo.name }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <Button:disabled="!selectedRepoId || updatingRepo" @click="handleUpdateRepo">
+ <span v-if="updatingRepo" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ 确认并关联
+ </Button>
+ </div>
+ </div>
+ </div>
+ </div>
  <!-- 头部 -->
  <div class="flex items-start justify-between">
  <div class="space-y-2">
@@ -181,7 +248,7 @@ const logs = computed( => tasksStore.currentLogs)
  <div class="flex items-center gap-2">
  <!-- 执行按钮 -->
  <Button
- v-if="task.status === 'pending'":disabled="executing"
+ v-if="task.status === 'pending'":disabled="executing || !task.repository_id":title="!task.repository_id ? '请先关联仓库': ''"
  @click="handleExecute('plan')"
  >
  <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
@@ -312,6 +379,27 @@ const logs = computed( => tasksStore.currentLogs)
  <p class="font-mono text-sm">
  {{ task.feature_id }}
  </p>
+ </div>
+ <Separator />
+ <div>
+ <label class="text-sm text-muted-foreground">关联仓库</label>
+ <div class="flex items-center gap-2 mt-1">
+ <p class="font-mono text-sm">
+ {{ project?.repositories.find(r => r.id === task?.repository_id)?.name || '未关联' }}
+ </p>
+ <Select v-if="task.status === 'pending'" v-model="selectedRepoId" @update:model-value="handleUpdateRepo">
+ <SelectTrigger class=" w-[140px] text-xs">
+ <SelectValue placeholder="更改仓库" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="repo in project?.repositories || ":key="repo.id":value="repo.id"
+ >
+ {{ repo.name }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
  </div>
  <Separator />
  <div>
@@ -499,16 +587,23 @@ const logs = computed( => tasksStore.currentLogs)
  </CardHeader>
  <CardContent class="space-y-4">
  <div>
+ <label class="text-sm text-muted-foreground">仓库名称</label>
+ <p class="font-medium text-sm">
+ {{ project?.repositories.find(r => r.id === task?.repository_id)?.name || '-' }}
+ </p>
+ </div>
+ <Separator />
+ <div>
  <label class="text-sm text-muted-foreground">仓库 URL</label>
  <p class="font-mono text-sm">
- {{ task.git_repo_url || project?.repo_url || '-' }}
+ {{ task?.git_repo_url || project?.repositories.find(r => r.id === task?.repository_id)?.git_url || '-' }}
  </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">基础分支</label>
  <p class="font-mono text-sm">
- {{ task.git_branch || project?.default_branch || 'main' }}
+ {{ task?.git_branch || project?.repositories.find(r => r.id === task?.repository_id)?.default_branch || 'main' }}
  </p>
  </div>
  <Separator />

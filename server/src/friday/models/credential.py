@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
- from .project import Project
+ from .repository import Repository
 class AuthType(str, Enum):
  """Authentication types for Git access."""
  SSH_KEY = "ssh_key"
@@ -43,11 +43,11 @@ class GitCredential(GitCredentialBase, table=True):
  default_factory=lambda: str(uuid.uuid4),
  primary_key=True,
  )
- project_id: str = Field(foreign_key="projects.id", unique=True)
+ repository_id: str = Field(foreign_key="repositories.id", unique=True)
  created_at: datetime = Field(default_factory=datetime.utcnow)
  updated_at: datetime = Field(default_factory=datetime.utcnow)
  # Relationships
- project: "Project" = Relationship(back_populates="credential")
+ repository: "Repository" = Relationship(back_populates="credential")
 class GitCredentialCreate(SQLModel):
  """Schema for creating a credential."""
  auth_type: AuthType
@@ -56,7 +56,7 @@ class GitCredentialCreate(SQLModel):
 class GitCredentialRead(SQLModel):
  """Schema for reading a credential (without sensitive data)."""
  id: str
- project_id: str
+ repository_id: str
  created_at: datetime
  # Never expose: ssh_key_encrypted, encrypted_token
  auth_type: AuthType

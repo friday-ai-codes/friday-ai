@@ -26,6 +26,44 @@ export type TaskStatus
  */
 export type TaskMode = 'plan' | 'execute'
 // ============================================================================
+// 仓库相关类型
+// ============================================================================
+/**
+ * 仓库基础字段
+ */
+export interface RepositoryBase {
+ name: string
+ git_url: string
+ git_platform: GitPlatform
+ default_branch: string
+ claude_md_path: string
+ description?: string
+}
+/**
+ * 仓库完整类型
+ */
+export interface Repository extends RepositoryBase {
+ id: string
+ created_at: string
+ updated_at: string
+ has_credential: boolean
+}
+/**
+ * 创建仓库请求
+ */
+export interface RepositoryCreate extends RepositoryBase {}
+/**
+ * 更新仓库请求
+ */
+export interface RepositoryUpdate {
+ name?: string
+ git_url?: string
+ git_platform?: GitPlatform
+ default_branch?: string
+ claude_md_path?: string
+ description?: string
+}
+// ============================================================================
 // 项目相关类型
 // ============================================================================
 /**
@@ -33,10 +71,7 @@ export type TaskMode = 'plan' | 'execute'
  */
 export interface ProjectBase {
  name: string
- repo_url: string
- git_platform: GitPlatform
- default_branch: string
- claude_md_path: string
+ description?: string
  feishu_project_key: string | null
 }
 /**
@@ -46,8 +81,8 @@ export interface Project extends ProjectBase {
  id: string
  created_at: string
  updated_at: string
- has_credential: boolean
  has_feishu_config: boolean
+ repositories: Repository
 }
 /**
  * 创建项目请求
@@ -58,10 +93,7 @@ export interface ProjectCreate extends ProjectBase {}
  */
 export interface ProjectUpdate {
  name?: string
- repo_url?: string
- git_platform?: GitPlatform
- default_branch?: string
- claude_md_path?: string
+ description?: string
  feishu_project_key?: string | null
 }
 // ============================================================================
@@ -72,7 +104,7 @@ export interface ProjectUpdate {
  */
 export interface GitCredential {
  id: string
- project_id: string
+ repository_id: string
  auth_type: AuthType
  git_user_name: string
  git_user_email: string
@@ -135,6 +167,7 @@ export interface TaskBase {
 export interface Task extends TaskBase {
  id: string
  project_id: string
+ repository_id: string | null
  created_at: string
  updated_at: string
  plan_started_at: string | null
@@ -150,6 +183,7 @@ export interface Task extends TaskBase {
  */
 export interface TaskCreate {
  project_id: string
+ repository_id?: string
  work_item_id: string
  feature_id: string
  title: string
@@ -160,6 +194,7 @@ export interface TaskCreate {
  */
 export interface TaskUpdate {
  status?: TaskStatus
+ repository_id?: string
  git_repo_url?: string
  git_branch?: string
  branch_name?: string
