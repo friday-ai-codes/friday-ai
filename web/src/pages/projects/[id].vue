@@ -70,7 +70,7 @@ const linking = ref(false)
 const availableRepositories = computed( => {
  if (!project.value)
  return
- const linkedIds = project.value.repositories.map(r => r.id)
+ const linkedIds = project.value.repositories?.map(r => r.id) ??
  return repositoriesStore.repositories.filter(r => !linkedIds.includes(r.id))
 })
 async function handleLinkRepository {
@@ -181,7 +181,7 @@ async function handleUnlinkRepository(repositoryId: string) {
  </Button>
  </CardHeader>
  <CardContent>
- <div v-if="project.repositories.length === 0" class="text-center py-6 text-muted-foreground">
+ <div v-if="project.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
  暂无关联仓库
  </div>
  <div v-else class="space-y-4">

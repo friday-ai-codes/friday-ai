@@ -1,18 +1,21 @@
 """Repository management routes."""
 from typing import List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ..database import get_db
 from ..models import AuthType, GitCredential, GitCredentialRead
 from ..models.repository import (
+ ProjectSummary,
  Repository,
  RepositoryCreate,
  RepositoryRead,
  RepositoryUpdate,
+ RepositoryWithProjectsRead,
 )
 from ..services.crypto import encrypt_value
-router = APIRouter(prefix="/repositories", tags=["repositories"])
+router = APIRouter(prefix="/api/repositories", tags=["repositories"])
 @router.get("/", response_model=List[RepositoryRead])
 async def list_repositories(db: AsyncSession = Depends(get_db)):
  """List all repositories."""
@@ -29,17 +32,42 @@ async def create_repository(
  await db.commit
  await db.refresh(db_repository)
  return db_repository
-@router.get("/{repository_id}", response_model=RepositoryRead)
+@router.get("/{repository_id}", response_model=RepositoryWithProjectsRead)
 async def get_repository(
  repository_id: str,
  db: AsyncSession = Depends(get_db),
 ):
- """Get repository by ID."""
- result = await db.exec(select(Repository).where(Repository.id == repository_id))
+ """Get repository by ID with associated projects."""
+ result = await db.exec(
+ select(Repository)
+ .where(Repository.id == repository_id)
+ .options(selectinload(Repository.projects)) # type: ignore[arg-type]
+ )
  repository = result.one_or_none
  if not repository:
  raise HTTPException(status_code=404, detail="Repository not found")
- return repository
+ # 检查是否有凭证
+ cred_result = await db.exec(
+ select(GitCredential).where(GitCredential.repository_id == repository_id)
+ )
+ has_credential = cred_result.one_or_none is not None
+ # 构建项目摘要列表
+ project_summaries = [
+ ProjectSummary(id=p.id, name=p.name) for p in repository.projects
+ ]
+ return RepositoryWithProjectsRead(
+ id=repository.id,
+ name=repository.name,
+ git_url=repository.git_url,
+ git_platform=repository.git_platform,
+ default_branch=repository.default_branch,
+ claude_md_path=repository.claude_md_path,
+ description=repository.description,
+ created_at=repository.created_at,
+ updated_at=repository.updated_at,
+ has_credential=has_credential,
+ projects=project_summaries,
+ )
 @router.patch("/{repository_id}", response_model=RepositoryRead)
 async def update_repository(
  repository_id: str,

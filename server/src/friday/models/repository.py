@@ -73,3 +73,10 @@ class RepositoryRead(RepositoryBase):
  created_at: datetime
  updated_at: datetime
  has_credential: bool = False
+class ProjectSummary(SQLModel):
+ """项目摘要信息，用于仓库关联展示。"""
+ id: str
+ name: str
+class RepositoryWithProjectsRead(RepositoryRead):
+ """包含关联项目的仓库读取 Schema。"""
+ projects: list[ProjectSummary] =

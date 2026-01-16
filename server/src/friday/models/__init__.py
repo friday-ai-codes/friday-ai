@@ -28,11 +28,13 @@ from .project import (
 from .repository import (
  GitPlatform,
  ProjectRepository,
+ ProjectSummary,
  Repository,
  RepositoryBase,
  RepositoryCreate,
  RepositoryRead,
  RepositoryUpdate,
+ RepositoryWithProjectsRead,
 )
 from .task import Task, TaskBase, TaskCreate, TaskMode, TaskRead, TaskStatus, TaskUpdate
 __all__ = [
@@ -45,11 +47,13 @@ __all__ = [
  # Repository
  "GitPlatform",
  "ProjectRepository",
+ "ProjectSummary",
  "Repository",
  "RepositoryBase",
  "RepositoryCreate",
  "RepositoryRead",
  "RepositoryUpdate",
+ "RepositoryWithProjectsRead",
  # Feishu Config
  "FeishuConfigCreate",
  "FeishuConfigRead",

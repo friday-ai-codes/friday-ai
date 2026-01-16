@@ -180,6 +180,30 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  </CardContent>
  </Card>
+ <!-- 关联项目 -->
+ <Card class="md:col-span-2">
+ <CardHeader>
+ <CardTitle>关联项目</CardTitle>
+ <CardDescription>使用此仓库的项目</CardDescription>
+ </CardHeader>
+ <CardContent>
+ <div v-if="repository.projects && repository.projects.length === 0" class="text-center py-6 text-muted-foreground">
+ 暂无关联项目
+ </div>
+ <div v-else class="space-y-3">
+ <RouterLink
+ v-for="project in repository.projects":key="project.id":to="`/projects/${project.id}`"
+ class="flex items-center justify-between border rounded-lg hover:bg-muted/50 transition-colors"
+ >
+ <div class="flex items-center gap-3">
+ <span class="icon-[lucide--folder] text-lg text-muted-foreground" />
+ <span class="font-medium">{{ project.name }}</span>
+ </div>
+ <span class="icon-[lucide--arrow-right] text-muted-foreground" />
+ </RouterLink>
+ </div>
+ </CardContent>
+ </Card>
  </div>
  </template>
  <!-- 仓库不存在 -->

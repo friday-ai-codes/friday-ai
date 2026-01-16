@@ -29,6 +29,13 @@ export type TaskMode = 'plan' | 'execute'
 // 仓库相关类型
 // ============================================================================
 /**
+ * 项目摘要信息（用于仓库关联展示）
+ */
+export interface ProjectSummary {
+ id: string
+ name: string
+}
+/**
  * 仓库基础字段
  */
 export interface RepositoryBase {
@@ -47,6 +54,7 @@ export interface Repository extends RepositoryBase {
  created_at: string
  updated_at: string
  has_credential: boolean
+ projects: ProjectSummary
 }
 /**
  * 创建仓库请求
@@ -82,7 +90,7 @@ export interface Project extends ProjectBase {
  created_at: string
  updated_at: string
  has_feishu_config: boolean
- repositories: Repository
+ repositories?: Repository
 }
 /**
  * 创建项目请求
