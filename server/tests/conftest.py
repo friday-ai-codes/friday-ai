@@ -10,9 +10,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # Set test environment before importing app
 os.environ["FRIDAY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["FRIDAY_ENCRYPTION_KEY"] = "dGVzdC1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcw=="
-os.environ["FRIDAY_FEISHU_APP_ID"] = "test_app_id"
-os.environ["FRIDAY_FEISHU_APP_SECRET"] = "test_app_secret"
-os.environ["FRIDAY_FEISHU_VERIFICATION_TOKEN"] = "test_token"
 from friday.database import engine, get_db
 from friday.main import app
 @pytest.fixture(scope="session")
