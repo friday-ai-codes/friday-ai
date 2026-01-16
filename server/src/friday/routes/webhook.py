@@ -1,7 +1,7 @@
 """飞书项目 Webhook 处理路由。"""
 import json
-import logging
 from typing import Optional, Set
+import structlog
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
@@ -17,7 +17,7 @@ from ..models import (
 )
 from ..services.feishu import create_feishu_client_for_project, verify_webhook_token
 router = APIRouter(prefix="/api/webhook", tags=["webhook"])
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 # 幂等处理：存储已处理的事件 UUID
 # 注意：生产环境应使用 Redis 或数据库存储
 _processed_events: Set[str] = set

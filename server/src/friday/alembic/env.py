@@ -1,7 +1,6 @@
 """Alembic 迁移环境配置。
 支持同步模式运行迁移（SQLite 需要同步模式）。
 """
-from logging.config import fileConfig
 from alembic import context
 from friday.config import get_settings
 # 导入所有模型以确保它们被注册到 SQLModel.metadata
@@ -18,9 +17,6 @@ from sqlalchemy import create_engine, pool
 from sqlmodel import SQLModel
 # Alembic Config 对象
 config = context.config
-# 配置日志
-if config.config_file_name is not None:
- fileConfig(config.config_file_name)
 # 获取应用配置
 settings = get_settings
 # 设置 target_metadata 为 SQLModel 的 metadata

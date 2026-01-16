@@ -53,6 +53,26 @@ Friday 是一个 AI 驱动的敏捷开发自动化系统，旨在无缝集成飞
 - 使用 `pytest` 进行单元测试和集成测试
 - `pytest-asyncio` 用于异步测试
 - 目标覆盖率：关键业务逻辑应有较高覆盖率
+### Logging Guidelines
+日志使用 **structlog** 作为统一的日志库：
+1. **获取 logger**：
+ ```python
+ import structlog
+ logger = structlog.get_logger(__name__)
+ ```
+2. **日志级别**：
+ - `DEBUG`: 详细调试信息
+ - `INFO`: 常规操作信息（请求处理、状态变更等）
+ - `WARNING`: 警告信息（可恢复的异常情况）
+ - `ERROR`: 错误信息（需要关注的问题）
+3. **结构化日志**：
+ ```python
+ logger.info("处理事件", event_type=event_type, project_key=project_key)
+ ```
+4. **日志格式**：
+ - 开发模式（`DEBUG=true`）: 彩色控制台输出
+ - 生产模式: JSON 格式，便于日志收集
+> **重要**：禁止使用标准 `logging` 模块，统一使用 `structlog`
 ### Git Workflow
 - 基于 Pull Request 的工作流
 - 分支命名规范建议：`feat/`, `fix/`, `docs/`, `refactor/`

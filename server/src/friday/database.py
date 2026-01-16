@@ -63,10 +63,12 @@ def run_migrations -> None:
  logger.info("Running database migrations...")
  try:
  alembic_cfg = get_alembic_config
+ logger.info("Alembic config loaded, starting upgrade to head...")
  command.upgrade(alembic_cfg, "head")
  logger.info("Database migrations completed successfully")
  except Exception as e:
  logger.error("Database migration failed", error=str(e))
+ raise
  raise
 async def check_database_exists -> bool:
  """检查数据库文件是否存在。"""
