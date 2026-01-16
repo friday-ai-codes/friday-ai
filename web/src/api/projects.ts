@@ -5,6 +5,7 @@
 import type {
  FeishuConfig,
  FeishuConfigCreate,
+ FeishuConfigTest,
  FeishuConfigTestResult,
  Project,
  ProjectCreate,
@@ -84,9 +85,14 @@ export async function deleteFeishuConfig(projectId: string): Promise<void> {
 }
 /**
  * 测试项目的飞书配置
+ * @param projectId 项目 ID
+ * @param testConfig 可选的临时配置，不传则使用已保存的配置
  */
-export async function testFeishuConfig(projectId: string): Promise<FeishuConfigTestResult> {
- return post<FeishuConfigTestResult>(`/projects/${projectId}/feishu-config/test`)
+export async function testFeishuConfig(
+ projectId: string,
+ testConfig?: FeishuConfigTest,
+): Promise<FeishuConfigTestResult> {
+ return post<FeishuConfigTestResult>(`/projects/${projectId}/feishu-config/test`, testConfig || {})
 }
 // ============================================================================
 // Webhook Token 管理

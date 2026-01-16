@@ -57,9 +57,13 @@ export interface Repository extends RepositoryBase {
  projects: ProjectSummary
 }
 /**
- * 创建仓库请求
+ * 创建仓库请求（包含必填的 Access Token）
  */
-export interface RepositoryCreate extends RepositoryBase {}
+export interface RepositoryCreate extends RepositoryBase {
+ access_token: string
+ git_user_name?: string
+ git_user_email?: string
+}
 /**
  * 更新仓库请求
  */
@@ -130,6 +134,7 @@ export interface GitCredential {
 export interface FeishuConfigCreate {
  plugin_id: string
  plugin_secret: string
+ user_key: string
 }
 /**
  * 飞书配置读取响应（不含敏感信息，webhook_token 由 Project 接口返回）
@@ -137,8 +142,17 @@ export interface FeishuConfigCreate {
 export interface FeishuConfig {
  project_key: string | null
  plugin_id: string | null
+ user_key: string | null
  has_plugin_secret: boolean
  is_configured: boolean
+}
+/**
+ * 飞书配置测试请求（用于传入临时配置进行测试）
+ */
+export interface FeishuConfigTest {
+ plugin_id?: string | null
+ plugin_secret?: string | null
+ user_key?: string | null
 }
 /**
  * 飞书配置测试结果
