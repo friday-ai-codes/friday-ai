@@ -55,13 +55,12 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
- '/projects/[id]': RouteRecordInfo<
- '/projects/[id]',
+ '/projects/[id]/': RouteRecordInfo<
+ '/projects/[id]/',
  '/projects/:id',
  { id: ParamValue<true> },
  { id: ParamValue<false> },
- | '/projects/[id]/edit'
- | '/projects/[id]/feishu'
+ | never
  >,
  '/projects/[id]/edit': RouteRecordInfo<
  '/projects/[id]/edit',
@@ -161,13 +160,11 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
- 'src/pages/projects/[id].vue': {
+ 'src/pages/projects/[id]/index.vue': {
  routes:
- | '/projects/[id]'
- | '/projects/[id]/edit'
- | '/projects/[id]/feishu'
+ | '/projects/[id]/'
  views:
- | 'default'
+ | never
  }
  'src/pages/projects/[id]/edit.vue': {
  routes:

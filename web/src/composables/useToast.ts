@@ -3,6 +3,7 @@
  * 封装 sonner toast 功能
  */
 import { toast } from 'vue-sonner'
+import 'vue-sonner/style.css'
 export function useToast {
  /**
  * 成功通知

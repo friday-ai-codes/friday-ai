@@ -1,7 +1,7 @@
 /**
  * 日志 API - Webhook 和工作项日志
  */
-import { del, get, post } from './client'
+import { get } from './client'
 // ============ 类型定义 ============
 /**
  * Webhook 日志状态

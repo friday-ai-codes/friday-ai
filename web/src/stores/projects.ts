@@ -2,7 +2,7 @@
  * Projects Store
  * 管理项目列表和项目相关操作
  */
-import type { FeishuConfig, GitCredential, Project, ProjectCreate, ProjectUpdate } from '~/types'
+import type { FeishuConfig, Project, ProjectCreate, ProjectUpdate } from '~/types'
 import { projectsApi } from '~/api'
 export const useProjectsStore = defineStore('projects', => {
  // ============================================================================

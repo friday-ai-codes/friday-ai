@@ -31,7 +31,6 @@ const emit = defineEmits<{
 const formData = ref<FeishuConfigCreate>({
  plugin_id: props.config?.plugin_id || '',
  plugin_secret: '',
- webhook_token: '',
 })
 // 状态
 const isLoading = ref(false)
@@ -52,7 +51,6 @@ async function handleSubmit {
  toast.success('飞书配置保存成功')
  // 清空敏感信息
  formData.value.plugin_secret = ''
- formData.value.webhook_token = ''
  emit('updated')
  }
  catch (error: unknown) {
@@ -89,7 +87,7 @@ async function handleDelete {
  try {
  await deleteFeishuConfig(props.projectId)
  toast.success('飞书配置已删除')
- formData.value = { plugin_id: '', plugin_secret: '', webhook_token: '' }
+ formData.value = { plugin_id: '', plugin_secret: '' }
  emit('updated')
  }
  catch (error: unknown) {
@@ -146,17 +144,6 @@ async function handleDelete {
  请妥善保管，不会在页面上显示
  </p>
  </div>
- <!-- Webhook Token -->
- <div class="space-y-2">
- <Label for="webhook_token">Webhook Token（可选）</Label>
- <Input
- id="webhook_token"
- v-model="formData.webhook_token":placeholder="config?.has_webhook_token ? '已配置（留空则不更新）': 'Webhook 验证 Token'":disabled="isLoading"
- />
- <p class="text-sm text-muted-foreground">
- 在飞书项目自动化规则中配置的 Token，用于验证 Webhook 请求
- </p>
- </div>
  <!-- 当前配置状态 -->
  <div v-if="config" class="rounded-lg bg-muted space-y-2">
  <p class="text-sm font-medium">
@@ -174,10 +161,6 @@ async function handleDelete {
  <div>
  <span class="text-muted-foreground">插件 Secret:</span>
  <span class="ml-2">{{ config.has_plugin_secret ? '已配置': '未配置' }}</span>
- </div>
- <div>
- <span class="text-muted-foreground">Webhook Token:</span>
- <span class="ml-2">{{ config.has_webhook_token ? '已配置': '未配置' }}</span>
  </div>
  </div>
  </div>

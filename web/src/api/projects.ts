@@ -6,12 +6,13 @@ import type {
  FeishuConfig,
  FeishuConfigCreate,
  FeishuConfigTestResult,
- GitCredential,
  Project,
  ProjectCreate,
  ProjectUpdate,
+ WebhookTokenRead,
+ WebhookTokenUpdate,
 } from '~/types'
-import { del, get, patch, post, put, upload } from './client'
+import { del, get, patch, post, put } from './client'
 /**
  * 获取项目列表
  */
@@ -87,6 +88,24 @@ export async function deleteFeishuConfig(projectId: string): Promise<void> {
 export async function testFeishuConfig(projectId: string): Promise<FeishuConfigTestResult> {
  return post<FeishuConfigTestResult>(`/projects/${projectId}/feishu-config/test`)
 }
+// ============================================================================
+// Webhook Token 管理
+// ============================================================================
+/**
+ * 刷新项目的 Webhook Token（生成新的随机 Token）
+ */
+export async function refreshWebhookToken(projectId: string): Promise<WebhookTokenRead> {
+ return post<WebhookTokenRead>(`/projects/${projectId}/refresh-webhook-token`)
+}
+/**
+ * 更新项目的 Webhook Token（自定义 Token，最大 32 字符）
+ */
+export async function updateWebhookToken(
+ projectId: string,
+ data: WebhookTokenUpdate,
+): Promise<WebhookTokenRead> {
+ return put<WebhookTokenRead>(`/projects/${projectId}/webhook-token`, data)
+}
 export default {
  list: listProjects,
  create: createProject,
@@ -100,4 +119,7 @@ export default {
  setFeishuConfig,
  deleteFeishuConfig,
  testFeishuConfig,
+ // Webhook Token 管理
+ refreshWebhookToken,
+ updateWebhookToken,
 }

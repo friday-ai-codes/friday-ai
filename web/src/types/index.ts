@@ -90,6 +90,7 @@ export interface Project extends ProjectBase {
  created_at: string
  updated_at: string
  has_feishu_config: boolean
+ webhook_token: string
  repositories?: Repository
 }
 /**
@@ -124,20 +125,19 @@ export interface GitCredential {
 /**
  * 飞书配置创建请求
  * 飞书项目使用「插件」凭证而非「应用」凭证来获取工作项详情
+ * 注意：webhook_token 不再在此处配置，它在项目级别独立管理
  */
 export interface FeishuConfigCreate {
  plugin_id: string
  plugin_secret: string
- webhook_token?: string
 }
 /**
- * 飞书配置读取响应（不含敏感信息）
+ * 飞书配置读取响应（不含敏感信息，webhook_token 由 Project 接口返回）
  */
 export interface FeishuConfig {
  project_key: string | null
  plugin_id: string | null
  has_plugin_secret: boolean
- has_webhook_token: boolean
  is_configured: boolean
 }
 /**
@@ -148,6 +148,18 @@ export interface FeishuConfigTestResult {
  message: string
  plugin_token_valid: boolean
  project_accessible: boolean
+}
+/**
+ * Webhook Token 更新请求
+ */
+export interface WebhookTokenUpdate {
+ token: string
+}
+/**
+ * Webhook Token 读取响应
+ */
+export interface WebhookTokenRead {
+ webhook_token: string
 }
 // ============================================================================
 // 任务相关类型

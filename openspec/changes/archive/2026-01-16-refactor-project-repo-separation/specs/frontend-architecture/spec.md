@@ -5,22 +5,6 @@
 - **WHEN** 用户查看主导航菜单
 - **THEN** 显示"仓库"导航链接
 - **AND** 点击后跳转到 `/repositories` 仓库列表页
-### Requirement: Repository Management UI
-系统 SHALL 提供仓库管理界面。
-#### Scenario: Repository List Page
-- **WHEN** 用户访问 `/repositories`
-- **THEN** 显示所有已配置的 Git 仓库列表
-#### Scenario: Create/Edit Repository
-- **WHEN** 用户创建或编辑仓库
-- **THEN** 提供表单输入 git_url, name, default_branch, claude_md_path 等信息
-### Requirement: Project-Repository Linking UI
-系统 SHALL 在项目详情页提供仓库关联管理功能。
-#### Scenario: Link Repository
-- **WHEN** 在项目详情页点击"关联仓库"
-- **THEN** 弹出对话框选择已有仓库进行关联
-#### Scenario: Unlink Repository
-- **WHEN** 在已关联仓库列表中点击"移除"
-- **THEN** 解除该仓库与当前项目的关联
 ### Requirement: Repository-Project Association Display
 系统 SHALL 在仓库详情页展示关联的项目列表。
 #### Scenario: Repository Detail Shows Associated Projects

@@ -14,6 +14,9 @@ from ..models import (
  ProjectCreate,
  ProjectRead,
  ProjectUpdate,
+ WebhookTokenRead,
+ WebhookTokenUpdate,
+ generate_webhook_token,
 )
 from ..models.repository import ProjectRepository, Repository
 from ..services.crypto import decrypt_value, encrypt_value
@@ -30,10 +33,9 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
  for p in projects:
  response.append(
  ProjectRead(
- **p.model_dump(
- exclude={"feishu_plugin_secret_encrypted", "feishu_webhook_token"}
- ),
+ **p.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=p.has_feishu_config,
+ webhook_token=p.feishu_webhook_token,
  )
  )
  return response
@@ -42,16 +44,16 @@ async def create_project(
  project: ProjectCreate,
  db: AsyncSession = Depends(get_db),
 ):
- """创建新项目。"""
+ """创建新项目，自动生成 Webhook Token。"""
  db_project = Project.model_validate(project)
+ # webhook_token 会通过 default_factory 自动生成
  db.add(db_project)
  await db.commit
  await db.refresh(db_project)
  return ProjectRead(
- **db_project.model_dump(
- exclude={"feishu_plugin_secret_encrypted", "feishu_webhook_token"}
- ),
+ **db_project.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=False,
+ webhook_token=db_project.feishu_webhook_token,
  )
 @router.get("/{project_id}", response_model=ProjectRead)
 async def get_project(
@@ -64,10 +66,9 @@ async def get_project(
  if not project:
  raise HTTPException(status_code=404, detail="项目未找到")
  return ProjectRead(
- **project.model_dump(
- exclude={"feishu_plugin_secret_encrypted", "feishu_webhook_token"}
- ),
+ **project.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=project.has_feishu_config,
+ webhook_token=project.feishu_webhook_token,
  )
 @router.patch("/{project_id}", response_model=ProjectRead)
 async def update_project(
@@ -87,10 +88,9 @@ async def update_project(
  await db.commit
  await db.refresh(project)
  return ProjectRead(
- **project.model_dump(
- exclude={"feishu_plugin_secret_encrypted", "feishu_webhook_token"}
- ),
+ **project.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=project.has_feishu_config,
+ webhook_token=project.feishu_webhook_token,
  )
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
@@ -177,7 +177,7 @@ async def get_feishu_config(
  project_id: str,
  db: AsyncSession = Depends(get_db),
 ):
- """获取项目的飞书配置（不返回敏感信息）。"""
+ """获取项目的飞书配置（不返回敏感信息，Webhook Token 由项目接口返回）。"""
  result = await db.exec(select(Project).where(Project.id == project_id))
  project = result.one_or_none
  if not project:
@@ -186,7 +186,6 @@ async def get_feishu_config(
  project_key=project.feishu_project_key,
  plugin_id=project.feishu_plugin_id,
  has_plugin_secret=bool(project.feishu_plugin_secret_encrypted),
- has_webhook_token=bool(project.feishu_webhook_token),
  is_configured=project.has_feishu_config,
  )
 @router.put("/{project_id}/feishu-config", response_model=FeishuConfigRead)
@@ -195,16 +194,14 @@ async def set_feishu_config(
  config: FeishuConfigCreate,
  db: AsyncSession = Depends(get_db),
 ):
- """设置项目的飞书配置。"""
+ """设置项目的飞书配置（不包含 Webhook Token，它在项目级别独立管理）。"""
  result = await db.exec(select(Project).where(Project.id == project_id))
  project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="项目未找到")
- # 加密敏感信息
+ # 加密敏感信息，不再处理 webhook_token
  project.feishu_plugin_id = config.plugin_id
  project.feishu_plugin_secret_encrypted = encrypt_value(config.plugin_secret)
- if config.webhook_token:
- project.feishu_webhook_token = config.webhook_token
  project.updated_at = datetime.utcnow
  await db.commit
  await db.refresh(project)
@@ -212,7 +209,6 @@ async def set_feishu_config(
  project_key=project.feishu_project_key,
  plugin_id=project.feishu_plugin_id,
  has_plugin_secret=bool(project.feishu_plugin_secret_encrypted),
- has_webhook_token=bool(project.feishu_webhook_token),
  is_configured=project.has_feishu_config,
  )
 @router.delete("/{project_id}/feishu-config", status_code=204)
@@ -220,15 +216,14 @@ async def delete_feishu_config(
  project_id: str,
  db: AsyncSession = Depends(get_db),
 ):
- """删除项目的飞书配置。"""
+ """删除项目的飞书配置（不影响 Webhook Token）。"""
  result = await db.exec(select(Project).where(Project.id == project_id))
  project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="项目未找到")
- # 清除飞书配置
+ # 清除飞书插件配置，不清除 webhook_token（它独立于飞书配置）
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
- project.feishu_webhook_token = None
  project.updated_at = datetime.utcnow
  await db.commit
  return None
@@ -274,3 +269,41 @@ async def test_feishu_config(
  plugin_token_valid=False,
  project_accessible=False,
  )
+# === Webhook Token 管理 ===
+@router.post("/{project_id}/refresh-webhook-token", response_model=WebhookTokenRead)
+async def refresh_webhook_token(
+ project_id: str,
+ db: AsyncSession = Depends(get_db),
+):
+ """刷新项目的 Webhook Token，生成新的随机 Token。"""
+ result = await db.exec(select(Project).where(Project.id == project_id))
+ project = result.one_or_none
+ if not project:
+ raise HTTPException(status_code=404, detail="项目未找到")
+ # 生成新的 Token
+ project.feishu_webhook_token = generate_webhook_token
+ project.updated_at = datetime.utcnow
+ await db.commit
+ await db.refresh(project)
+ return WebhookTokenRead(webhook_token=project.feishu_webhook_token)
+@router.put("/{project_id}/webhook-token", response_model=WebhookTokenRead)
+async def update_webhook_token(
+ project_id: str,
+ token_update: WebhookTokenUpdate,
+ db: AsyncSession = Depends(get_db),
+):
+ """自定义项目的 Webhook Token（最大 32 字符）。"""
+ result = await db.exec(select(Project).where(Project.id == project_id))
+ project = result.one_or_none
+ if not project:
+ raise HTTPException(status_code=404, detail="项目未找到")
+ # 验证 Token 长度
+ if len(token_update.token) > 32:
+ raise HTTPException(status_code=400, detail="Token 长度不能超过 32 个字符")
+ if len(token_update.token) == 0:
+ raise HTTPException(status_code=400, detail="Token 不能为空")
+ project.feishu_webhook_token = token_update.token
+ project.updated_at = datetime.utcnow
+ await db.commit
+ await db.refresh(project)
+ return WebhookTokenRead(webhook_token=project.feishu_webhook_token)

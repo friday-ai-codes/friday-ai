@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin "@iconify/tailwind4";
 /*
  * Friday AI 配色方案
  *

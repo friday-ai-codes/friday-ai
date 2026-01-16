@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
@@ -103,6 +106,69 @@ async function handleUnlinkRepository(repositoryId: string) {
  }
  finally {
  unlinking.value = false
+ }
+}
+// ===== Webhook Token 管理 =====
+// 复制 Token 到剪贴板
+async function copyWebhookToken {
+ if (!project.value?.webhook_token)
+ return
+ try {
+ await navigator.clipboard.writeText(project.value.webhook_token)
+ success('已复制', 'Webhook Token 已复制到剪贴板')
+ }
+ catch {
+ showError('复制失败', '无法访问剪贴板')
+ }
+}
+// 刷新 Token 对话框
+const refreshTokenDialogOpen = ref(false)
+const refreshingToken = ref(false)
+async function handleRefreshToken {
+ refreshingToken.value = true
+ try {
+ await refreshWebhookToken(projectId.value)
+ // 更新本地 project 数据
+ await projectsStore.fetchProject(projectId.value)
+ success('刷新成功', '已生成新的 Webhook Token')
+ refreshTokenDialogOpen.value = false
+ }
+ catch (e) {
+ showError('刷新失败', e instanceof Error ? e.message: '无法刷新 Token')
+ }
+ finally {
+ refreshingToken.value = false
+ }
+}
+// 自定义 Token 对话框
+const customTokenDialogOpen = ref(false)
+const customTokenValue = ref('')
+const customTokenLoading = ref(false)
+function openCustomTokenDialog {
+ customTokenValue.value = project.value?.webhook_token || ''
+ customTokenDialogOpen.value = true
+}
+async function handleCustomToken {
+ if (!customTokenValue.value.trim) {
+ showError('验证错误', 'Token 不能为空')
+ return
+ }
+ if (customTokenValue.value.length > 32) {
+ showError('验证错误', 'Token 长度不能超过 32 个字符')
+ return
+ }
+ customTokenLoading.value = true
+ try {
+ await updateWebhookToken(projectId.value, { token: customTokenValue.value })
+ await projectsStore.fetchProject(projectId.value)
+ success('保存成功', 'Webhook Token 已更新')
+ customTokenDialogOpen.value = false
+ }
+ catch (e) {
+ showError('保存失败', e instanceof Error ? e.message: '无法更新 Token')
+ }
+ finally {
+ customTokenLoading.value = false
  }
 }
 </script>
@@ -234,7 +300,7 @@ async function handleUnlinkRepository(repositoryId: string) {
  </RouterLink>
  </CardHeader>
  <CardContent>
- <div v-if="feishuConfig" class="space-y-4">
+ <div v-if="feishuConfig?.is_configured" class="space-y-4">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
  <div>
@@ -245,13 +311,6 @@ async function handleUnlinkRepository(repositoryId: string) {
  插件 ID：{{ feishuConfig.plugin_id }}
  </p>
  </div>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">Webhook Token</label>
- <p class="text-sm mt-1">
- {{ feishuConfig.has_webhook_token ? '已配置': '未配置' }}
- </p>
  </div>
  </div>
  <div v-else class="text-center py-6">
@@ -264,6 +323,58 @@ async function handleUnlinkRepository(repositoryId: string) {
  配置飞书
  </Button>
  </RouterLink>
+ </div>
+ </CardContent>
+ </Card>
+ <!-- Webhook Token 管理 -->
+ <Card>
+ <CardHeader>
+ <CardTitle>Webhook Token</CardTitle>
+ <CardDescription>用于验证飞书 Webhook 请求的来源</CardDescription>
+ </CardHeader>
+ <CardContent class="space-y-4">
+ <!-- Token 显示区域 -->
+ <div class="space-y-2">
+ <Label class="text-muted-foreground">当前 Token</Label>
+ <div class="flex items-center gap-2">
+ <code class="flex-1 px-3 py-2 bg-muted rounded font-mono text-sm overflow-hidden text-ellipsis">
+ {{ project.webhook_token }}
+ </code>
+ <Button
+ variant="outline"
+ size="sm"
+ title="复制 Token"
+ @click="copyWebhookToken"
+ >
+ <span class="icon-[lucide--copy]" />
+ </Button>
+ </div>
+ </div>
+ <!-- 安全警告 -->
+ <div class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200">
+ <span class="icon-[lucide--alert-triangle] text-lg shrink-0 mt-0.5" />
+ <p class="text-sm">
+ 请勿泄露此 Token，它用于验证 Webhook 请求的来源。如果 Token 泄露，请立即刷新。
+ </p>
+ </div>
+ <!-- 操作按钮 -->
+ <div class="flex gap-2">
+ <Button
+ variant="outline"
+ size="sm"
+ @click="refreshTokenDialogOpen = true"
+ >
+ <span class="icon-[lucide--refresh-cw] mr-2" />
+ 刷新 Token
+ </Button>
+ <Button
+ variant="outline"
+ size="sm"
+ @click="openCustomTokenDialog"
+ >
+ <span class="icon-[lucide--pencil] mr-2" />
+ 自定义 Token
+ </Button>
  </div>
  </CardContent>
  </Card>
@@ -355,6 +466,48 @@ async function handleUnlinkRepository(repositoryId: string) {
  </Button>
  <Button:disabled="!selectedRepositoryId || linking" @click="handleLinkRepository">
  {{ linking ? '关联中...': '关联' }}
+ </Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
+ <!-- 刷新 Token 确认对话框 -->
+ <ConfirmDialog
+ v-model:open="refreshTokenDialogOpen"
+ title="刷新 Webhook Token"
+ description="刷新后，旧的 Token 将立即失效。请确保在飞书项目自动化规则中更新新的 Token，否则 Webhook 请求将无法验证通过。"
+ confirm-text="刷新"
+ variant="destructive":loading="refreshingToken"
+ @confirm="handleRefreshToken"
+ />
+ <!-- 自定义 Token 对话框 -->
+ <Dialog v-model:open="customTokenDialogOpen">
+ <DialogContent>
+ <DialogHeader>
+ <DialogTitle>自定义 Webhook Token</DialogTitle>
+ <DialogDescription>
+ 输入自定义 Token（最大 32 字符），用于在飞书项目自动化规则中配置
+ </DialogDescription>
+ </DialogHeader>
+ <div class="py-4 space-y-4">
+ <div class="space-y-2">
+ <Label for="customToken">Token</Label>
+ <Input
+ id="customToken"
+ v-model="customTokenValue"
+ placeholder="输入自定义 Token"
+ maxlength="32"
+ />
+ <p class="text-sm text-muted-foreground">
+ {{ customTokenValue.length }}/32 字符
+ </p>
+ </div>
+ </div>
+ <DialogFooter>
+ <Button variant="outline" @click="customTokenDialogOpen = false">
+ 取消
+ </Button>
+ <Button:disabled="customTokenLoading" @click="handleCustomToken">
+ {{ customTokenLoading ? '保存中...': '保存' }}
  </Button>
  </DialogFooter>
  </DialogContent>

@@ -29,8 +29,26 @@ Friday 是一个 AI 驱动的敏捷开发自动化系统，旨在无缝集成飞
 - **API Layer**: `server/src/friday/routes/` - 处理 HTTP 请求和路由
 - **Service Layer**: `server/src/friday/services/` - 包含业务逻辑（如飞书集成、调度器、加密服务）
 - **Data Layer**: `server/src/friday/models/` & `server/src/friday/database.py` - 定义数据模型和数据库交互
+- **Database Migration**: `server/src/friday/alembic/` - Alembic 数据库迁移配置和脚本
 - **Task Runner**: `server/task/` - 独立的 Docker 容器环境，用于执行具体的 AI 编码任务
 - **Webhook Driven**: 主要通过飞书和 GitHub 的 Webhook 触发业务流程
+### Database Migration Guidelines
+数据库 Schema 变更 **必须** 通过 Alembic 迁移管理：
+1. **修改 Model 后生成迁移**：
+ ```bash
+ cd server && uv run alembic revision --autogenerate -m "描述变更"
+ ```
+2. **检查并调整迁移脚本**：`server/src/friday/alembic/versions/`
+3. **本地测试迁移**：
+ ```bash
+ uv run alembic upgrade head
+ ```
+4. **自动迁移机制**：服务启动时会自动执行 `alembic upgrade head`，Docker 容器无需额外命令
+5. **回滚操作**：
+ ```bash
+ uv run alembic downgrade -1
+ ```
+> **重要**：AI Agent 在完成后端代码变更涉及 Model 修改后，**必须** 生成对应的 Alembic 迁移脚本
 ### Testing Strategy
 - 使用 `pytest` 进行单元测试和集成测试
 - `pytest-asyncio` 用于异步测试

@@ -133,3 +133,28 @@ The system SHALL provide callback endpoints for task containers to report status
 - **WHEN** 用户调用解除关联 API
 - **THEN** 系统删除关联记录
 - **AND** 历史任务保留原有 repository_id 引用
+### Requirement: Database Migration Management
+系统 SHALL 使用 Alembic 管理数据库 Schema 迁移，支持自动迁移和版本回滚。
+#### Scenario: 服务启动时自动迁移
+- **WHEN** 后端服务启动
+- **THEN** 系统检测数据库迁移状态
+- **AND** 自动执行 `alembic upgrade head` 升级到最新版本
+- **AND** 日志记录迁移执行结果
+#### Scenario: 现有数据库首次引入迁移
+- **WHEN** 检测到数据库存在但无 alembic_version 表
+- **THEN** 系统自动执行 `alembic stamp head` 标记当前版本
+- **AND** 后续迁移正常执行增量变更
+#### Scenario: AI Agent 完成 Model 变更
+- **WHEN** AI Agent 修改了 `server/src/friday/models/` 中的模型定义
+- **THEN** Agent **必须** 执行 `uv run alembic revision --autogenerate -m "描述变更"`
+- **AND** 检查生成的迁移脚本是否正确
+- **AND** 确保迁移脚本包含在代码提交中
+#### Scenario: Docker 容器部署
+- **WHEN** 使用 Docker 部署新版本后端服务
+- **THEN** 容器启动时自动执行数据库迁移
+- **AND** 无需手动执行迁移命令
+- **AND** 迁移失败时服务启动失败并记录错误
+#### Scenario: 迁移回滚
+- **WHEN** 需要回滚数据库变更
+- **THEN** 执行 `uv run alembic downgrade -1` 回滚一个版本
+- **AND** 系统恢复到上一个 Schema 版本

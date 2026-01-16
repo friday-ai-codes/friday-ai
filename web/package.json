@@ -13,7 +13,6 @@
  "test:e2e:ui": "playwright test --ui"
  },
  "dependencies": {
- "@iconify/tailwind": "catalog:",
  "@vee-validate/zod": "catalog:",
  "@vueuse/core": "catalog:",
  "@vueuse/head": "catalog:",
@@ -37,6 +36,7 @@
  "@iconify-json/lucide": "catalog:",
  "@iconify-json/mdi": "catalog:",
  "@iconify/json": "catalog:",
+ "@iconify/tailwind4": "catalog:",
  "@playwright/test": "catalog:",
  "@tailwindcss/vite": "catalog:",
  "@types/node": "catalog:",

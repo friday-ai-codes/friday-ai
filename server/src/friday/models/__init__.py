@@ -24,6 +24,9 @@ from .project import (
  ProjectCreate,
  ProjectRead,
  ProjectUpdate,
+ WebhookTokenRead,
+ WebhookTokenUpdate,
+ generate_webhook_token,
 )
 from .repository import (
  GitPlatform,
@@ -58,6 +61,10 @@ __all__ = [
  "FeishuConfigCreate",
  "FeishuConfigRead",
  "FeishuConfigTestResult",
+ # Webhook Token
+ "WebhookTokenUpdate",
+ "WebhookTokenRead",
+ "generate_webhook_token",
  # Credential
  "AuthType",
  "GitCredential",

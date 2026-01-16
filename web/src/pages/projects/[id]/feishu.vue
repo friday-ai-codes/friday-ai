@@ -87,11 +87,11 @@ async function handleUpdated {
  配置说明
  </h3>
  <ol class="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
- <li>在飞书开放平台创建企业自建应用，获取 App ID 和 App Secret</li>
- <li>在应用权限页面申请飞书项目相关权限</li>
+ <li>在飞书项目管理后台创建插件，获取插件 ID 和插件 Secret</li>
+ <li>在插件权限页面申请飞书项目相关权限（如获取工作项详情）</li>
  <li>在飞书项目中配置自动化规则，添加 Webhook 操作</li>
  <li>Webhook URL 填写：<code class="px-1 py-0.5 bg-muted rounded">{{ webhookUrl }}</code></li>
- <li>如需验证，在 Webhook 配置中设置 Token，并在此处填写相同的 Token</li>
+ <li>Webhook Token 在项目详情页管理，请在飞书自动化规则中填写相同的 Token</li>
  </ol>
  </div>
  </template>
