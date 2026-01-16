@@ -355,25 +355,95 @@ async def handle_workitem_create_event(project_key: str, payload: dict):
  logger.info(f"已创建任务: {work_item_id} -> {new_task.id}")
 async def handle_workitem_status_event(project_key: str, payload: dict):
  """处理工作项状态变更事件。
- 根据状态变更更新任务状态，可能触发自动化流程。
+ 当飞书项目状态变更时触发：
+ 1. 如果任务不存在，自动创建任务并读取工作项详情
+ 2. 更新任务状态
+ 3. 触发后续的自动化流程（如 code 工作）
  """
  work_item_id = payload.get("id")
+ work_item_name = payload.get("name", "")
+ work_item_type = payload.get("work_item_type_key", "story")
  cur_status = payload.get("cur_work_item_status", {})
  pre_status = payload.get("pre_work_item_status", {})
  if not work_item_id:
+ logger.warning("工作项状态变更事件缺少 id")
  return
  cur_state_key = cur_status.get("state_key", "")
  pre_state_key = pre_status.get("state_key", "")
  logger.info(f"状态变更: {work_item_id} {pre_state_key} -> {cur_state_key}")
  async with get_session as db:
+ # 查找项目（预加载关联的仓库）
+ result = await db.exec(
+ select(Project)
+ .where(Project.feishu_project_key == project_key)
+ .options(selectinload(Project.repositories)) # type: ignore
+ )
+ project = result.one_or_none
+ if not project:
+ logger.warning(f"工作项状态变更事件：项目未找到 {project_key}")
+ return
  # 查找任务
  result = await db.exec(
  select(Task).where(Task.work_item_id == str(work_item_id))
  )
  task = result.one_or_none
+ # 如果任务不存在，自动创建
  if not task:
- logger.info(f"任务不存在，跳过状态变更: {work_item_id}")
- return
+ logger.info(f"任务不存在，自动创建: {work_item_id}")
+ # 获取工作项详情（需求文档）
+ description = ""
+ try:
+ feishu_client = create_feishu_client_for_project(project)
+ work_item_info = await feishu_client.get_work_item(
+ project_key=project_key,
+ work_item_id=work_item_id,
+ work_item_type=work_item_type,
+ )
+ description = work_item_info.description
+ work_item_name = work_item_info.name or work_item_name
+ # 保存工作项日志
+ if work_item_info.raw_response:
+ try:
+ work_item_log = WorkItemLog(
+ raw_response=work_item_info.raw_response,
+ work_item_id=str(work_item_id),
+ work_item_type=work_item_type,
+ project_key=project_key,
+ project_id=project.id,
+ task_id=None, # 任务稍后创建
+ )
+ db.add(work_item_log)
+ await db.commit
+ await db.refresh(work_item_log)
+ logger.info(f"已保存工作项日志: {work_item_id}")
+ except Exception as log_e:
+ logger.error(f"保存工作项日志失败: {log_e}")
+ except Exception as e:
+ logger.error(f"获取工作项详情失败: {e}")
+ # 使用 Webhook 中的基本信息继续创建
+ # 尝试自动关联仓库
+ repository_id = None
+ if len(project.repositories) == 1:
+ repository_id = project.repositories[0].id
+ logger.info(f"自动关联唯一仓库: {project.repositories[0].name}")
+ elif len(project.repositories) > 1:
+ logger.info("项目关联多个仓库，需手动指定任务仓库")
+ else:
+ logger.warning("项目未关联任何仓库，无法自动关联")
+ # 创建新任务
+ task = Task(
+ project_id=project.id,
+ repository_id=repository_id,
+ work_item_id=str(work_item_id),
+ feature_id=str(work_item_id),
+ title=work_item_name,
+ description=description,
+ status=TaskStatus.PENDING,
+ )
+ db.add(task)
+ await db.commit
+ await db.refresh(task)
+ logger.info(f"已创建任务: {work_item_id} -> {task.id}")
  # 根据飞书状态更新任务状态
  # 这里可以根据实际的状态映射进行调整
  if "planning" in cur_state_key.lower or "规划" in cur_state_key.lower:

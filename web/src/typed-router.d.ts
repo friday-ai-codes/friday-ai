@@ -90,9 +90,16 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
- '/repositories/[id]': RouteRecordInfo<
- '/repositories/[id]',
+ '/repositories/[id]/': RouteRecordInfo<
+ '/repositories/[id]/',
  '/repositories/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/repositories/[id]/credential': RouteRecordInfo<
+ '/repositories/[id]/credential',
+ '/repositories/:id/credential',
  { id: ParamValue<true> },
  { id: ParamValue<false> },
  | never
@@ -190,9 +197,15 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
- 'src/pages/repositories/[id].vue': {
+ 'src/pages/repositories/[id]/index.vue': {
  routes:
- | '/repositories/[id]'
+ | '/repositories/[id]/'
+ views:
+ | never
+ }
+ 'src/pages/repositories/[id]/credential.vue': {
+ routes:
+ | '/repositories/[id]/credential'
  views:
  | never
  }
