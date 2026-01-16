@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from .config import get_settings
 from .database import close_db, init_db
 from .logging import configure_logging
@@ -34,6 +35,9 @@ app = FastAPI(
  version="0.1.0",
  lifespan=lifespan,
 )
+# 添加代理头中间件，信任反向代理传递的 X-Forwarded-* 头
+# 这样 FastAPI 在生成重定向 URL 时会使用正确的协议和主机名
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 # Register routers
 app.include_router(logs_router)
 app.include_router(projects_router)

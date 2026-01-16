@@ -10,7 +10,7 @@ export const repositoriesApi = {
  * List all repositories
  */
  list: async => {
- return get<Repository>('/repositories')
+ return get<Repository>('/repositories/')
  },
  /**
  * Get repository by ID
@@ -22,7 +22,7 @@ export const repositoriesApi = {
  * Create new repository
  */
  create: async (data: RepositoryCreate) => {
- return post<Repository>('/repositories', data)
+ return post<Repository>('/repositories/', data)
  },
  /**
  * Update repository
@@ -40,24 +40,24 @@ export const repositoriesApi = {
  * Get credential
  */
  getCredential: async (id: string) => {
- return get<GitCredential>(`/repositories/${id}/credentials`)
+ return get<GitCredential>(`/repositories/${id}/credential`)
  },
  /**
  * Upload SSH key
  */
  uploadSshKey: async (id: string, data: FormData) => {
- return upload<GitCredential>(`/repositories/${id}/credentials/ssh-key`, data)
+ return upload<GitCredential>(`/repositories/${id}/credential/ssh-key`, data)
  },
  /**
  * Set access token
  */
  setAccessToken: async (id: string, data: FormData) => {
- return upload<GitCredential>(`/repositories/${id}/credentials/access-token`, data)
+ return upload<GitCredential>(`/repositories/${id}/credential/access-token`, data)
  },
  /**
  * Delete credential
  */
  deleteCredential: async (id: string) => {
- await del(`/repositories/${id}/credentials`)
+ await del(`/repositories/${id}/credential`)
  },
 }
