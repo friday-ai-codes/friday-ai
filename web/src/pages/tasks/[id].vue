@@ -385,7 +385,7 @@ const logs = computed( => tasksStore.currentLogs)
  <label class="text-sm text-muted-foreground">关联仓库</label>
  <div class="flex items-center gap-2 mt-1">
  <p class="font-mono text-sm">
- {{ project?.repositories.find(r => r.id === task?.repository_id)?.name || '未关联' }}
+ {{ project?.repositories?.find(r => r.id === task?.repository_id)?.name || '未关联' }}
  </p>
  <Select v-if="task.status === 'pending'" v-model="selectedRepoId" @update:model-value="handleUpdateRepo">
  <SelectTrigger class=" w-[140px] text-xs">
@@ -589,21 +589,21 @@ const logs = computed( => tasksStore.currentLogs)
  <div>
  <label class="text-sm text-muted-foreground">仓库名称</label>
  <p class="font-medium text-sm">
- {{ project?.repositories.find(r => r.id === task?.repository_id)?.name || '-' }}
+ {{ project?.repositories?.find(r => r.id === task?.repository_id)?.name || '-' }}
  </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">仓库 URL</label>
  <p class="font-mono text-sm">
- {{ task?.git_repo_url || project?.repositories.find(r => r.id === task?.repository_id)?.git_url || '-' }}
+ {{ task?.git_repo_url || project?.repositories?.find(r => r.id === task?.repository_id)?.git_url || '-' }}
  </p>
  </div>
  <Separator />
  <div>
  <label class="text-sm text-muted-foreground">基础分支</label>
  <p class="font-mono text-sm">
- {{ task?.git_branch || project?.repositories.find(r => r.id === task?.repository_id)?.default_branch || 'main' }}
+ {{ task?.git_branch || project?.repositories?.find(r => r.id === task?.repository_id)?.default_branch || 'main' }}
  </p>
  </div>
  <Separator />
