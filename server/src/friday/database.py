@@ -83,8 +83,9 @@ async def check_alembic_version_table_exists -> bool:
  )
  return result.fetchone is not None
 async def stamp_head_if_needed -> None:
- """如果数据库已存在但没有 alembic 版本记录，则标记为 head。
- 这用于处理从旧版本（无迁移）升级到新版本（有迁移）的情况。
+ """如果数据库已存在但没有 alembic 版本记录，则检查是否需要标记为 head。
+ 警告：自动 stamp 可能导致问题。如果旧数据库 schema 与当前模型不匹配，
+ 应该手动执行迁移或删除旧数据库重新创建。
  """
  db_exists = await check_database_exists
  if not db_exists:
@@ -95,17 +96,16 @@ async def stamp_head_if_needed -> None:
  logger.info("Alembic version table exists, migrations will run normally")
  return
  # 数据库存在但没有 alembic 版本表
- # 这意味着是从旧版本升级，需要先标记当前状态为 head
- logger.info(
- "Existing database without alembic_version table detected, stamping as head"
+ # 不再自动 stamp，而是警告用户可能需要手动处理
+ logger.warning(
+ "Existing database without alembic_version table detected. "
+ "This may cause issues if the schema does not match. "
+ "Consider deleting the old database or running migrations manually."
  )
- try:
- alembic_cfg = get_alembic_config
- command.stamp(alembic_cfg, "head")
- logger.info("Database stamped as head successfully")
- except Exception as e:
- logger.error("Failed to stamp database", error=str(e))
- raise
+ # 仍然需要创建 alembic_version 表，但标记为 base (无版本)
+ # 这样迁移可以从头运行
+ logger.info("Attempting to run migrations from base on existing database")
+ # 不进行 stamp，让迁移自己处理
 async def init_db -> None:
  """初始化数据库并运行迁移。
  这个函数在服务启动时调用，会：

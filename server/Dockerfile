@@ -23,4 +23,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
  CMD curl -f http://localhost:8000/health || exit 1
 # Run the application
 # 迁移会在应用启动时自动执行（在 lifespan 中）
-CMD ["uv", "run", "uvicorn", "friday.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --access-log 启用访问日志，方便调试
+CMD ["uv", "run", "uvicorn", "friday.main:app", "--host", "0.0.0.0", "--port", "8000", "--access-log"]
