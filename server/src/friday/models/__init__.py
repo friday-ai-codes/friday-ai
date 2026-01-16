@@ -18,6 +18,7 @@ from .log import (
 from .project import (
  FeishuConfigCreate,
  FeishuConfigRead,
+ FeishuConfigTest,
  FeishuConfigTestResult,
  Project,
  ProjectBase,

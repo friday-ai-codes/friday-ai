@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Optional
 from sqlmodel import Field, Relationship, SQLModel
-from .repository import ProjectRepository
+from .repository import ProjectRepository, RepositoryRead
 if TYPE_CHECKING:
  from .repository import Repository
  from .task import Task
@@ -41,6 +41,10 @@ class Project(ProjectBase, table=True):
  default_factory=generate_webhook_token,
  description="飞书 Webhook 验证 Token（创建项目时自动生成）",
  )
+ feishu_user_key: Optional[str] = Field(
+ default=None,
+ description="飞书用户 Key，用于 API 调用时的用户身份（必填，可通过双击用户头像获取）",
+ )
  # 关联关系
  # 关联关系
  tasks: list["Task"] = Relationship(back_populates="project")
@@ -71,15 +75,20 @@ class ProjectRead(ProjectBase):
  description: Optional[str] = None
  has_feishu_config: bool = False
  webhook_token: str = Field(description="Webhook 验证 Token")
+ repositories: list[RepositoryRead] =
 # 飞书配置相关 Schema
 class FeishuConfigCreate(SQLModel):
  """飞书配置创建 Schema（不包含 webhook_token，它在项目级别管理）。"""
  plugin_id: str = Field(description="飞书插件 ID")
  plugin_secret: str = Field(description="飞书插件 Secret")
+ user_key: str = Field(
+ description="飞书用户 Key，用于 API 调用时的用户身份（必填，可通过双击用户头像获取）",
+ )
 class FeishuConfigRead(SQLModel):
  """飞书配置读取 Schema（不返回敏感信息，不含 webhook_token 由项目接口返回）。"""
  project_key: Optional[str] = Field(description="飞书项目空间 Key")
  plugin_id: Optional[str] = Field(description="飞书插件 ID")
+ user_key: Optional[str] = Field(default=None, description="飞书用户 Key（必填）")
  has_plugin_secret: bool = Field(description="是否已配置插件 Secret")
  is_configured: bool = Field(description="是否已完成配置")
 class FeishuConfigTestResult(SQLModel):
@@ -93,6 +102,20 @@ class FeishuConfigTestResult(SQLModel):
  project_accessible: bool = Field(
  default=False,
  description="是否能访问飞书项目空间",
+ )
+class FeishuConfigTest(SQLModel):
+ """飞书配置测试请求 Schema，用于传入临时配置进行测试。"""
+ plugin_id: Optional[str] = Field(
+ default=None,
+ description="飞书插件 ID（可选，不传则使用已保存的配置）",
+ )
+ plugin_secret: Optional[str] = Field(
+ default=None,
+ description="飞书插件 Secret（可选，不传则使用已保存的配置）",
+ )
+ user_key: Optional[str] = Field(
+ default=None,
+ description="飞书用户 Key（不传则使用已保存的配置）",
  )
 # Webhook Token 相关 Schema
 class WebhookTokenUpdate(SQLModel):

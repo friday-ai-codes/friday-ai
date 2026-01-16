@@ -31,6 +31,7 @@ const emit = defineEmits<{
 const formData = ref<FeishuConfigCreate>({
  plugin_id: props.config?.plugin_id || '',
  plugin_secret: '',
+ user_key: props.config?.user_key || '',
 })
 // 状态
 const isLoading = ref(false)
@@ -43,6 +44,10 @@ const isConfigured = computed( => props.config?.is_configured ?? false)
 async function handleSubmit {
  if (!formData.value.plugin_id || !formData.value.plugin_secret) {
  toast.error('请填写插件 ID 和插件 Secret')
+ return
+ }
+ if (!formData.value.user_key) {
+ toast.error('请填写用户 Key')
  return
  }
  isLoading.value = true
@@ -65,7 +70,13 @@ async function handleSubmit {
 async function handleTest {
  isTesting.value = true
  try {
- const result = await testFeishuConfig(props.projectId)
+ // 使用表单中的当前值进行测试（支持未保存的配置）
+ const testConfig = {
+ plugin_id: formData.value.plugin_id || undefined,
+ plugin_secret: formData.value.plugin_secret || undefined,
+ user_key: formData.value.user_key || undefined,
+ }
+ const result = await testFeishuConfig(props.projectId, testConfig)
  if (result.success) {
  toast.success(result.message)
  }
@@ -87,7 +98,7 @@ async function handleDelete {
  try {
  await deleteFeishuConfig(props.projectId)
  toast.success('飞书配置已删除')
- formData.value = { plugin_id: '', plugin_secret: '' }
+ formData.value = { plugin_id: '', plugin_secret: '', user_key: '' }
  emit('updated')
  }
  catch (error: unknown) {
@@ -144,6 +155,18 @@ async function handleDelete {
  请妥善保管，不会在页面上显示
  </p>
  </div>
+ <!-- User Key -->
+ <div class="space-y-2">
+ <Label for="user_key">用户 Key</Label>
+ <Input
+ id="user_key"
+ v-model="formData.user_key"
+ placeholder="飞书用户 Key":disabled="isLoading"
+ />
+ <p class="text-sm text-muted-foreground">
+ 可通过双击用户头像获取，用于 API 调用时的用户身份（必填）
+ </p>
+ </div>
  <!-- 当前配置状态 -->
  <div v-if="config" class="rounded-lg bg-muted space-y-2">
  <p class="text-sm font-medium">
@@ -161,6 +184,10 @@ async function handleDelete {
  <div>
  <span class="text-muted-foreground">插件 Secret:</span>
  <span class="ml-2">{{ config.has_plugin_secret ? '已配置': '未配置' }}</span>
+ </div>
+ <div>
+ <span class="text-muted-foreground">用户 Key:</span>
+ <span class="ml-2">{{ config.user_key || '未设置' }}</span>
  </div>
  </div>
  </div>

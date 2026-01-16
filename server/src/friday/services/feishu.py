@@ -25,23 +25,27 @@ class FeishuClient:
  """
  # 飞书项目 API 基地址
  PROJECT_API_BASE = "https://project.feishu.cn"
+ # PROJECT_API_BASE = "https://guanghe.feishu.cn"
  # 飞书开放平台 API 基地址
- OPEN_API_BASE = "https://open.feishu.cn"
+ OPEN_API_BASE = "https://project.feishu.cn"
  def __init__(
  self,
  plugin_id: Optional[str] = None,
  plugin_secret: Optional[str] = None,
  project_key: Optional[str] = None,
+ user_key: Optional[str] = None,
  ):
  """初始化飞书客户端。
  Args:
  plugin_id: 飞书插件 ID（可选，默认从配置读取）
  plugin_secret: 飞书插件 Secret（可选，默认从配置读取）
  project_key: 飞书项目空间 Key（可选）
+ user_key: 飞书用户 Key（使用 plugin_token 调用 API 时必填）
  """
  self.plugin_id = plugin_id
  self.plugin_secret = plugin_secret
  self.project_key = project_key
+ self.user_key = user_key
  self._plugin_token: Optional[str] = None
  self._token_expires_at: float = 0
  async def get_plugin_token(self) -> str:
@@ -54,28 +58,27 @@ class FeishuClient:
  now = time.time
  if self._plugin_token is not None and now < self._token_expires_at:
  return self._plugin_token
- # 请求新 token
+ # 请求新 token（获取 token 接口不需要 X-USER-KEY）
  async with httpx.AsyncClient as client:
  response = await client.post(
- f"{self.OPEN_API_BASE}/open-apis/authen/plugin_token",
+ f"{self.OPEN_API_BASE}/open_api/authen/plugin_token",
+ headers={"Content-Type": "application/json"},
  json={
  "plugin_id": self.plugin_id,
  "plugin_secret": self.plugin_secret,
- "type": 0, # 0 表示获取 plugin_access_token
  },
  )
  data = response.json
- if data.get("code") != 0:
+ # 飞书 API 响应结构: {"data": {...}, "error": {"code": 0, "msg": "success"}}
+ error_code = data.get("error", {}).get("code", -1)
+ if error_code != 0:
  raise Exception(f"获取 plugin token 失败: {data}")
  self._plugin_token = data.get("data", {}).get("token")
  if not self._plugin_token:
  raise Exception("获取 plugin token 失败: 返回数据中缺少 token")
- # Token 有效期 2 小时，提前 5 分钟刷新
- expire_time = data.get("data", {}).get("expire_time", 0)
- if expire_time > 0:
- self._token_expires_at = expire_time - 300
- else:
- self._token_expires_at = now + 7200 - 300
+ # Token 有效期是相对秒数，提前 5 分钟刷新
+ expire_seconds = data.get("data", {}).get("expire_time", 7200)
+ self._token_expires_at = now + expire_seconds - 300
  return self._plugin_token
  async def get_work_item(
  self,
@@ -110,7 +113,8 @@ class FeishuClient:
  headers={
  "X-PLUGIN-TOKEN": token,
  "Content-Type": "application/json",
- "X-USER-KEY": "", # 可选，空字符串表示插件身份
+ "X-USER-KEY": self.user_key
+ or "", # 使用 plugin_token 时必须指定用户身份
  },
  json=body,
  )
@@ -172,6 +176,7 @@ class FeishuClient:
  headers={
  "X-PLUGIN-TOKEN": token,
  "Content-Type": "application/json",
+ "X-USER-KEY": self.user_key or "",
  },
  json={
  "content": rich_content,
@@ -201,6 +206,7 @@ class FeishuClient:
  f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/comment/list",
  headers={
  "X-PLUGIN-TOKEN": token,
+ "X-USER-KEY": self.user_key or "",
  },
  params={
  "page_size": limit,
@@ -245,6 +251,7 @@ class FeishuClient:
  f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/workflow/transition",
  headers={
  "X-PLUGIN-TOKEN": token,
+ "X-USER-KEY": self.user_key or "",
  },
  )
  data = response.json
@@ -271,6 +278,7 @@ class FeishuClient:
  headers={
  "X-PLUGIN-TOKEN": token,
  "Content-Type": "application/json",
+ "X-USER-KEY": self.user_key or "",
  },
  json={
  "transition_id": target_transition["id"],
@@ -308,6 +316,7 @@ class FeishuClient:
  f"{self.PROJECT_API_BASE}/open_api/{test_key}/work_item/all-types",
  headers={
  "X-PLUGIN-TOKEN": token,
+ "X-USER-KEY": self.user_key or "",
  },
  )
  data = response.json
@@ -439,6 +448,7 @@ def create_feishu_client_for_project(project: Any) -> FeishuClient:
  plugin_id=project.feishu_plugin_id,
  plugin_secret=plugin_secret,
  project_key=project.feishu_project_key,
+ user_key=project.feishu_user_key,
  )
 # 向后兼容的全局客户端（deprecated）
 _feishu_client: Optional[FeishuClient] = None

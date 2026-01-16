@@ -1,6 +1,6 @@
 # Friday Task Container
 # This container runs individual AI development tasks
-FROM python:3.11-slim
+FROM python:3.14-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
  git \

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /**
  * 仓库凭证配置页面
- * 用于配置仓库的 Git 凭证（SSH Key 或 Access Token）
+ * 用于查看和更新仓库的 Git 凭证（仅 Access Token）
  */
 import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
@@ -37,81 +38,41 @@ onMounted(loadData)
 const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
 // 表单状态
-const authType = ref<'ssh_key' | 'access_token'>('ssh_key')
-const sshKeyFile = ref<File | null>(null)
 const accessToken = ref('')
 const gitUserName = ref('Friday AI Agent')
 const gitUserEmail = ref('ai-agent@friday.dev')
 const submitting = ref(false)
-// 删除凭证
-const deleteDialogOpen = ref(false)
-const deleting = ref(false)
-// 文件上传处理
-function handleFileChange(event: Event) {
- const target = event.target as HTMLInputElement
- if (target.files && target.files.length > 0) {
- sshKeyFile.value = target.files[0]
- }
-}
-// 提交 SSH Key
-async function handleSshKeySubmit {
- if (!sshKeyFile.value) {
- showError('请选择 SSH 密钥文件')
- return
- }
- submitting.value = true
- try {
- const formData = new FormData
- formData.append('file', sshKeyFile.value)
- formData.append('git_user_name', gitUserName.value)
- formData.append('git_user_email', gitUserEmail.value)
- await repositoriesStore.uploadSshKey(repositoryId.value, formData)
- success('配置成功', 'SSH 密钥已上传')
- sshKeyFile.value = null
- }
- catch (e) {
- showError('上传失败', e instanceof Error ? e.message: '无法上传 SSH 密钥')
- }
- finally {
- submitting.value = false
- }
-}
-// 提交 Access Token
-async function handleAccessTokenSubmit {
+// 更新凭证对话框
+const updateDialogOpen = ref(false)
+// 提交更新 Access Token（需要先删除旧凭证再创建新的）
+async function handleAccessTokenUpdate {
  if (!accessToken.value.trim) {
- showError('请输入 Access Token')
+ showError('请输入新的 Access Token')
  return
  }
  submitting.value = true
  try {
+ // 先删除旧凭证
+ if (credential.value) {
+ await repositoriesStore.deleteCredential(repositoryId.value)
+ }
+ // 创建新凭证
  const formData = new FormData
  formData.append('token', accessToken.value)
  formData.append('git_user_name', gitUserName.value)
  formData.append('git_user_email', gitUserEmail.value)
  await repositoriesStore.setAccessToken(repositoryId.value, formData)
- success('配置成功', 'Access Token 已保存')
+ success('更新成功', 'Access Token 已更新')
  accessToken.value = ''
+ updateDialogOpen.value = false
+ // 重新加载凭证信息
+ await repositoriesStore.fetchCredential(repositoryId.value)
  }
  catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法保存 Access Token')
+ showError('更新失败', e instanceof Error ? e.message: '无法更新 Access Token')
  }
  finally {
  submitting.value = false
- }
-}
-// 删除凭证
-async function handleDelete {
- deleting.value = true
- try {
- await repositoriesStore.deleteCredential(repositoryId.value)
- success('删除成功', '凭证已删除')
- deleteDialogOpen.value = false
- }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除凭证')
- }
- finally {
- deleting.value = false
  }
 }
 // 格式化日期
@@ -146,7 +107,7 @@ function formatDate(dateStr: string) {
  <span class="icon-[lucide--check-circle] text-green-600" />
  凭证已配置
  </CardTitle>
- <CardDescription>当前凭证信息</CardDescription>
+ <CardDescription>当前凭证信息（Access Token 已脱敏，不会显示原文）</CardDescription>
  </CardHeader>
  <CardContent class="space-y-4">
  <div class="grid gap-4">
@@ -154,9 +115,19 @@ function formatDate(dateStr: string) {
  <Label class="text-muted-foreground">认证类型</Label>
  <div class="mt-1">
  <Badge variant="outline">
- {{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
+ Access Token
  </Badge>
  </div>
+ </div>
+ <Separator />
+ <div>
+ <Label class="text-muted-foreground">Access Token</Label>
+ <p class="mt-1 text-sm font-mono text-muted-foreground">
+ ••••••••••••••••
+ </p>
+ <p class="text-xs text-muted-foreground mt-1">
+ 出于安全考虑，Access Token 不会显示。如需更新请点击下方按钮。
+ </p>
  </div>
  <Separator />
  <div>
@@ -175,151 +146,44 @@ function formatDate(dateStr: string) {
  </div>
  <Separator />
  <div class="flex justify-end">
- <Button variant="destructive" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-2" />
- 删除凭证
+ <Button variant="outline" @click="updateDialogOpen = true">
+ <span class="icon-[lucide--refresh-cw] mr-2" />
+ 更新凭证
  </Button>
  </div>
  </CardContent>
  </Card>
- <!-- 配置新凭证 -->
- <template v-else>
- <!-- 认证类型选择 -->
- <Card>
+ <!-- 无凭证提示 -->
+ <Card v-else>
  <CardHeader>
- <CardTitle>选择认证方式</CardTitle>
- <CardDescription>选择用于访问 Git 仓库的认证方式</CardDescription>
+ <CardTitle class="flex items-center gap-2 text-amber-600">
+ <span class="icon-[lucide--alert-triangle]" />
+ 凭证未配置
+ </CardTitle>
+ <CardDescription>该仓库在创建时未配置凭证，需要补充配置</CardDescription>
  </CardHeader>
  <CardContent>
- <div class="flex gap-4">
- <Button:variant="authType === 'ssh_key' ? 'default': 'outline'"
- class="flex-1"
- @click="authType = 'ssh_key'"
- >
- <span class="icon-[lucide--key] mr-2" />
- SSH 密钥
- </Button>
- <Button:variant="authType === 'access_token' ? 'default': 'outline'"
- class="flex-1"
- @click="authType = 'access_token'"
- >
- <span class="icon-[lucide--lock] mr-2" />
- Access Token
- </Button>
- </div>
- </CardContent>
- </Card>
- <!-- SSH Key 配置 -->
- <Card v-if="authType === 'ssh_key'">
- <CardHeader>
- <CardTitle>SSH 密钥配置</CardTitle>
- <CardDescription>上传用于访问仓库的 SSH 私钥文件</CardDescription>
- </CardHeader>
- <CardContent>
- <form class="space-y-4" @submit.prevent="handleSshKeySubmit">
- <div class="space-y-2">
- <Label for="ssh_key">SSH 私钥文件</Label>
- <Input
- id="ssh_key"
- type="file"
- accept=".pem,.key,id_rsa,id_ed25519"
- @change="handleFileChange"
- />
- <p class="text-xs text-muted-foreground">
- 支持 RSA、ED25519 等格式的私钥文件（如 id_rsa、id_ed25519）
+ <p class="text-sm text-muted-foreground mb-4">
+ 请删除此仓库并重新创建，新建仓库时会强制要求填写 Access Token。
  </p>
- </div>
- <Separator />
- <div class="grid gap-4 md:grid-cols-2">
- <div class="space-y-2">
- <Label for="git_user_name">Git 用户名</Label>
- <Input
- id="git_user_name"
- v-model="gitUserName"
- placeholder="Friday AI Agent"
- />
- </div>
- <div class="space-y-2">
- <Label for="git_user_email">Git 邮箱</Label>
- <Input
- id="git_user_email"
- v-model="gitUserEmail"
- type="email"
- placeholder="ai-agent@friday.dev"
- />
- </div>
- </div>
- <div class="flex justify-end">
- <Button type="submit":disabled="!sshKeyFile || submitting">
- <span v-if="submitting" class="icon-[lucide--loader-2] mr-2 animate-spin" />
- <span v-else class="icon-[lucide--upload] mr-2" />
- 上传密钥
+ <RouterLink:to="`/repositories/${repositoryId}`">
+ <Button variant="outline">
+ <span class="icon-[lucide--arrow-left] mr-2" />
+ 返回仓库详情
  </Button>
- </div>
- </form>
+ </RouterLink>
  </CardContent>
  </Card>
- <!-- Access Token 配置 -->
- <Card v-if="authType === 'access_token'">
- <CardHeader>
- <CardTitle>Access Token 配置</CardTitle>
- <CardDescription>使用个人访问令牌 (PAT) 访问仓库</CardDescription>
- </CardHeader>
- <CardContent>
- <form class="space-y-4" @submit.prevent="handleAccessTokenSubmit">
- <div class="space-y-2">
- <Label for="access_token">Access Token</Label>
- <Input
- id="access_token"
- v-model="accessToken"
- type="password"
- placeholder="GITHUB_TOKEN_PLACEHOLDER"
- />
- <p class="text-xs text-muted-foreground">
- 需要仓库读写权限的个人访问令牌
- </p>
- </div>
- <Separator />
- <div class="grid gap-4 md:grid-cols-2">
- <div class="space-y-2">
- <Label for="git_user_name_token">Git 用户名</Label>
- <Input
- id="git_user_name_token"
- v-model="gitUserName"
- placeholder="Friday AI Agent"
- />
- </div>
- <div class="space-y-2">
- <Label for="git_user_email_token">Git 邮箱</Label>
- <Input
- id="git_user_email_token"
- v-model="gitUserEmail"
- type="email"
- placeholder="ai-agent@friday.dev"
- />
- </div>
- </div>
- <div class="flex justify-end">
- <Button type="submit":disabled="!accessToken.trim || submitting">
- <span v-if="submitting" class="icon-[lucide--loader-2] mr-2 animate-spin" />
- <span v-else class="icon-[lucide--save] mr-2" />
- 保存配置
- </Button>
- </div>
- </form>
- </CardContent>
- </Card>
- </template>
  <!-- 使用说明 -->
  <div class="rounded-lg border space-y-3">
  <h3 class="font-medium">
- 配置说明
+ 安全说明
  </h3>
  <ul class="list-disc list-inside space-y-2 text-sm text-muted-foreground">
- <li>SSH 密钥：需要在 Git 平台（如 GitHub）上添加对应的公钥作为 Deploy Key</li>
- <li>Access Token：需要创建具有仓库读写权限的个人访问令牌</li>
- <li>凭证会被加密存储，确保安全性</li>
- <li>Git 用户信息将用于提交代码时的作者信息</li>
+ <li>Access Token 会被加密存储在数据库中</li>
+ <li>前端和 API 不会返回或显示 Token 原文</li>
+ <li>Token 仅在执行 Git 操作时解密使用</li>
+ <li>如果 Token 泄露，请及时在 Git 平台撤销并更新</li>
  </ul>
  </div>
  </template>
@@ -332,14 +196,55 @@ function formatDate(dateStr: string) {
  action-label="返回列表"
  @action="router.push('/repositories')"
  />
- <!-- 删除确认对话框 -->
- <ConfirmDialog
- v-model:open="deleteDialogOpen"
- title="删除凭证"
- description="确定要删除此凭证吗？删除后需要重新配置才能执行任务。"
- confirm-text="删除"
- variant="destructive":loading="deleting"
- @confirm="handleDelete"
+ <!-- 更新凭证对话框 -->
+ <Dialog v-model:open="updateDialogOpen">
+ <DialogContent>
+ <DialogHeader>
+ <DialogTitle>更新 Access Token</DialogTitle>
+ <DialogDescription>
+ 输入新的 Access Token，更新后旧的 Token 将被替换
+ </DialogDescription>
+ </DialogHeader>
+ <form class="space-y-4" @submit.prevent="handleAccessTokenUpdate">
+ <div class="space-y-2">
+ <Label for="new_access_token">新 Access Token</Label>
+ <Input
+ id="new_access_token"
+ v-model="accessToken"
+ type="password"
+ placeholder="GITHUB_TOKEN_PLACEHOLDER 或 glpat-xxxxxxxxxxxx"
  />
+ </div>
+ <div class="grid gap-4 md:grid-cols-2">
+ <div class="space-y-2">
+ <Label for="update_git_user_name">Git 用户名</Label>
+ <Input
+ id="update_git_user_name"
+ v-model="gitUserName"
+ placeholder="Friday AI Agent"
+ />
+ </div>
+ <div class="space-y-2">
+ <Label for="update_git_user_email">Git 邮箱</Label>
+ <Input
+ id="update_git_user_email"
+ v-model="gitUserEmail"
+ type="email"
+ placeholder="ai-agent@friday.dev"
+ />
+ </div>
+ </div>
+ <DialogFooter>
+ <Button type="button" variant="outline" @click="updateDialogOpen = false">
+ 取消
+ </Button>
+ <Button type="submit":disabled="!accessToken.trim || submitting">
+ <span v-if="submitting" class="icon-[lucide--loader-2] mr-2 animate-spin" />
+ 更新
+ </Button>
+ </DialogFooter>
+ </form>
+ </DialogContent>
+ </Dialog>
  </div>
 </template>

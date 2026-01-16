@@ -1,7 +1,8 @@
 """项目管理 API 路由。"""
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import selectinload
 from sqlmodel import col, delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ..config import get_settings
@@ -9,6 +10,7 @@ from ..database import get_db
 from ..models import (
  FeishuConfigCreate,
  FeishuConfigRead,
+ FeishuConfigTest,
  FeishuConfigTestResult,
  Project,
  ProjectCreate,
@@ -18,7 +20,7 @@ from ..models import (
  WebhookTokenUpdate,
  generate_webhook_token,
 )
-from ..models.repository import ProjectRepository, Repository
+from ..models.repository import ProjectRepository, Repository, RepositoryRead
 from ..services.crypto import decrypt_value, encrypt_value
 from ..services.feishu import FeishuClient
 settings = get_settings
@@ -27,15 +29,35 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 @router.get("/", response_model=List[ProjectRead])
 async def list_projects(db: AsyncSession = Depends(get_db)):
  """列出所有项目。"""
- result = await db.exec(select(Project))
+ result = await db.exec(
+ select(Project).options(
+ selectinload(Project.repositories).selectinload(Repository.credential) # type: ignore[arg-type]
+ )
+ )
  projects = result.all
  response =
  for p in projects:
+ repositories = [
+ RepositoryRead(
+ id=repo.id,
+ name=repo.name,
+ git_url=repo.git_url,
+ git_platform=repo.git_platform,
+ default_branch=repo.default_branch,
+ claude_md_path=repo.claude_md_path,
+ description=repo.description,
+ created_at=repo.created_at,
+ updated_at=repo.updated_at,
+ has_credential=repo.credential is not None,
+ )
+ for repo in p.repositories
+ ]
  response.append(
  ProjectRead(
  **p.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=p.has_feishu_config,
  webhook_token=p.feishu_webhook_token,
+ repositories=repositories,
  )
  )
  return response
@@ -61,14 +83,36 @@ async def get_project(
  db: AsyncSession = Depends(get_db),
 ):
  """根据 ID 获取项目。"""
- result = await db.exec(select(Project).where(Project.id == project_id))
+ result = await db.exec(
+ select(Project)
+ .where(Project.id == project_id)
+ .options(
+ selectinload(Project.repositories).selectinload(Repository.credential) # type: ignore[arg-type]
+ )
+ )
  project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="项目未找到")
+ repositories = [
+ RepositoryRead(
+ id=repo.id,
+ name=repo.name,
+ git_url=repo.git_url,
+ git_platform=repo.git_platform,
+ default_branch=repo.default_branch,
+ claude_md_path=repo.claude_md_path,
+ description=repo.description,
+ created_at=repo.created_at,
+ updated_at=repo.updated_at,
+ has_credential=repo.credential is not None,
+ )
+ for repo in project.repositories
+ ]
  return ProjectRead(
  **project.model_dump(exclude={"feishu_plugin_secret_encrypted"}),
  has_feishu_config=project.has_feishu_config,
  webhook_token=project.feishu_webhook_token,
+ repositories=repositories,
  )
 @router.patch("/{project_id}", response_model=ProjectRead)
 async def update_project(
@@ -185,6 +229,7 @@ async def get_feishu_config(
  return FeishuConfigRead(
  project_key=project.feishu_project_key,
  plugin_id=project.feishu_plugin_id,
+ user_key=project.feishu_user_key,
  has_plugin_secret=bool(project.feishu_plugin_secret_encrypted),
  is_configured=project.has_feishu_config,
  )
@@ -202,12 +247,14 @@ async def set_feishu_config(
  # 加密敏感信息，不再处理 webhook_token
  project.feishu_plugin_id = config.plugin_id
  project.feishu_plugin_secret_encrypted = encrypt_value(config.plugin_secret)
+ project.feishu_user_key = config.user_key
  project.updated_at = datetime.utcnow
  await db.commit
  await db.refresh(project)
  return FeishuConfigRead(
  project_key=project.feishu_project_key,
  plugin_id=project.feishu_plugin_id,
+ user_key=project.feishu_user_key,
  has_plugin_secret=bool(project.feishu_plugin_secret_encrypted),
  is_configured=project.has_feishu_config,
  )
@@ -224,35 +271,58 @@ async def delete_feishu_config(
  # 清除飞书插件配置，不清除 webhook_token（它独立于飞书配置）
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
+ project.feishu_user_key = None
  project.updated_at = datetime.utcnow
  await db.commit
  return None
 @router.post("/{project_id}/feishu-config/test", response_model=FeishuConfigTestResult)
 async def test_feishu_config(
  project_id: str,
+ test_config: Optional[FeishuConfigTest] = None,
  db: AsyncSession = Depends(get_db),
 ):
- """测试项目的飞书配置是否有效。"""
+ """测试项目的飞书配置是否有效。
+ 支持两种模式：
+ 1. 不传 test_config：使用已保存的配置进行测试
+ 2. 传入 test_config：使用传入的临时配置进行测试（不保存）
+ """
  result = await db.exec(select(Project).where(Project.id == project_id))
  project = result.one_or_none
  if not project:
  raise HTTPException(status_code=404, detail="项目未找到")
- if not project.has_feishu_config:
+ # 确定使用的配置：优先使用传入的临时配置，否则使用已保存的配置
+ plugin_id = (
+ test_config.plugin_id
+ if test_config and test_config.plugin_id
+ else project.feishu_plugin_id
+ )
+ plugin_secret = None
+ if test_config and test_config.plugin_secret:
+ # 使用传入的临时 secret
+ plugin_secret = test_config.plugin_secret
+ elif project.feishu_plugin_secret_encrypted:
+ # 使用已保存的 secret
+ plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
+ user_key = (
+ test_config.user_key
+ if test_config and test_config.user_key
+ else project.feishu_user_key
+ )
+ # 检查配置是否完整
+ if not plugin_id or not plugin_secret:
  return FeishuConfigTestResult(
  success=False,
- message="飞书配置不完整，请先完成配置",
+ message="飞书配置不完整，请填写插件 ID 和插件 Secret",
  plugin_token_valid=False,
  project_accessible=False,
  )
  try:
- # 解密并创建客户端
- # has_feishu_config 已确保 feishu_plugin_secret_encrypted 不为 None
- assert project.feishu_plugin_secret_encrypted is not None
- plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
+ # 创建客户端
  client = FeishuClient(
- plugin_id=project.feishu_plugin_id,
+ plugin_id=plugin_id,
  plugin_secret=plugin_secret,
  project_key=project.feishu_project_key,
+ user_key=user_key,
  )
  # 执行测试
  test_result = await client.test_connection(project.feishu_project_key)

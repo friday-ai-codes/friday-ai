@@ -147,33 +147,7 @@ export const useRepositoriesStore = defineStore('repositories', => {
  }
  }
  /**
- * 上传 SSH 密钥
- */
- async function uploadSshKey(id: string, formData: FormData) {
- loading.value = true
- error.value = null
- try {
- currentCredential.value = await repositoriesApi.uploadSshKey(id, formData)
- // 更新仓库的 has_credential 状态
- const repository = repositories.value.find(r => r.id === id)
- if (repository) {
- repository.has_credential = true
- }
- if (currentRepository.value?.id === id) {
- currentRepository.value.has_credential = true
- }
- return currentCredential.value
- }
- catch (e) {
- error.value = e instanceof Error ? e.message: '上传 SSH 密钥失败'
- throw e
- }
- finally {
- loading.value = false
- }
- }
- /**
- * 设置 Access Token
+ * 设置/更新 Access Token
  */
  async function setAccessToken(id: string, formData: FormData) {
  loading.value = true
@@ -248,7 +222,6 @@ export const useRepositoriesStore = defineStore('repositories', => {
  updateRepository,
  deleteRepository,
  fetchCredential,
- uploadSshKey,
  setAccessToken,
  deleteCredential,
  clearCurrent,
