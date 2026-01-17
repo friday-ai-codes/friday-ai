@@ -1,12 +1,15 @@
 """Repository model for Git codebases."""
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
  from .credential import GitCredential
  from .project import Project
+def _utc_now -> datetime:
+ """返回当前 UTC 时间（推荐方式）。"""
+ return datetime.now(UTC)
 class GitPlatform(str, Enum):
  """Supported Git platforms."""
  GITHUB = "github"
@@ -45,8 +48,8 @@ class Repository(RepositoryBase, table=True):
  default_factory=lambda: str(uuid.uuid4),
  primary_key=True,
  )
- created_at: datetime = Field(default_factory=datetime.utcnow)
- updated_at: datetime = Field(default_factory=datetime.utcnow)
+ created_at: datetime = Field(default_factory=_utc_now)
+ updated_at: datetime = Field(default_factory=_utc_now)
  # Relationships
  projects: List["Project"] = Relationship(
  back_populates="repositories",

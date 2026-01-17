@@ -1,5 +1,5 @@
 """Task management API routes."""
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,6 +17,7 @@ from ..models import (
  TaskUpdate,
 )
 from ..models.repository import Repository
+from ..services.claude_config import get_claude_config_for_task
 from ..services.crypto import decrypt_value
 from ..services.scheduler import get_scheduler
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -113,7 +114,7 @@ async def update_task(
  update_data = task_update.model_dump(exclude_unset=True)
  for key, value in update_data.items:
  setattr(task, key, value)
- task.updated_at = datetime.utcnow
+ task.updated_at = datetime.now(UTC)
  await db.commit
  await db.refresh(task)
  return TaskRead(**task.model_dump)
@@ -145,7 +146,7 @@ async def transition_task(
  detail=f"Cannot transition from {task.status} to {new_status}. Allowed: {allowed}",
  )
  # Update timestamps based on transition
- now = datetime.utcnow
+ now = datetime.now(UTC)
  if new_status == TaskStatus.PLANNING and task.plan_started_at is None:
  task.plan_started_at = now
  elif new_status == TaskStatus.PLAN_REVIEW:
@@ -229,6 +230,15 @@ async def execute_task(
  git_credentials["ssh_key"] = decrypt_value(credential.ssh_key_encrypted)
  elif credential.encrypted_token:
  git_credentials["access_token"] = decrypt_value(credential.encrypted_token)
+ # 获取 Claude 配置
+ try:
+ claude_config_obj = await get_claude_config_for_task(db, str(task.project_id))
+ claude_config = {
+ "api_key": claude_config_obj.api_key or "",
+ "base_url": claude_config_obj.base_url or "",
+ }
+ except ValueError as e:
+ raise HTTPException(status_code=400, detail=str(e))
  # Start container
  scheduler = get_scheduler
  try:
@@ -238,11 +248,12 @@ async def execute_task(
  branch=repository.default_branch or "main",
  git_credentials=git_credentials,
  mode=request.mode,
+ claude_config=claude_config,
  )
  except RuntimeError as e:
  raise HTTPException(status_code=500, detail=str(e))
  # Update task status
- now = datetime.utcnow
+ now = datetime.now(UTC)
  if request.mode == "plan":
  task.status = TaskStatus.PLANNING
  task.plan_started_at = now
@@ -271,7 +282,7 @@ async def update_task_status_from_container(
  task = result.one_or_none
  if not task:
  raise HTTPException(status_code=404, detail="Task not found")
- now = datetime.utcnow
+ now = datetime.now(UTC)
  details = update.details or {}
  # Handle different status updates
  if update.status == "plan_ready":
@@ -309,7 +320,7 @@ async def stop_task(
  if stopped:
  task.status = TaskStatus.FAILED
  task.error_message = "Task stopped by user"
- task.updated_at = datetime.utcnow
+ task.updated_at = datetime.now(UTC)
  await db.commit
  return {"status": "stopped", "message": "Task container stopped"}
  else:

@@ -10,3 +10,5 @@ gitpython>=3.1.42
 asyncio
 # Logging and utilities
 structlog>=24.1.0
+# Claude Agent SDK for AI-powered development
+claude-agent-sdk>=0.1.0

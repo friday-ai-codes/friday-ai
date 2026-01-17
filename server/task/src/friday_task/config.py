@@ -21,8 +21,15 @@ class TaskConfig(BaseSettings):
  git_auth_type: str = Field(default="ssh", description="Auth type: ssh or token")
  git_ssh_key: str = Field(default="", description="SSH private key content")
  git_access_token: str = Field(default="", description="Access token for HTTPS auth")
+ git_ssl_verify: bool = Field(
+ default=False,
+ description="Verify SSL certificates for HTTPS Git operations (默认禁用以支持自签名证书的内部 Git 服务器)",
+ )
  # Claude Code configuration
  claude_api_key: str = Field(default="", description="Anthropic API key")
+ claude_base_url: str = Field(
+ default="", description="Anthropic API base URL（可选，用于代理服务）"
+ )
  claude_model: str = Field(
  default="claude-sonnet-4-20250514", description="Claude model to use"
  )

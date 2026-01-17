@@ -1,13 +1,16 @@
 """项目模型，用于管理 Git 仓库和飞书项目集成。"""
 import secrets
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, ClassVar, Optional
 from sqlmodel import Field, Relationship, SQLModel
 from .repository import ProjectRepository, RepositoryRead
 if TYPE_CHECKING:
  from .repository import Repository
  from .task import Task
+def _utc_now -> datetime:
+ """返回当前 UTC 时间（推荐方式）。"""
+ return datetime.now(UTC)
 def generate_webhook_token -> str:
  """生成 32 字符的随机 Webhook Token。"""
  return secrets.token_urlsafe(24)[:32]
@@ -26,8 +29,8 @@ class Project(ProjectBase, table=True):
  default_factory=lambda: str(uuid.uuid4),
  primary_key=True,
  )
- created_at: datetime = Field(default_factory=datetime.utcnow)
- updated_at: datetime = Field(default_factory=datetime.utcnow)
+ created_at: datetime = Field(default_factory=_utc_now)
+ updated_at: datetime = Field(default_factory=_utc_now)
  # 飞书插件凭证字段（加密存储）
  feishu_plugin_id: Optional[str] = Field(
  default=None,
@@ -44,6 +47,15 @@ class Project(ProjectBase, table=True):
  feishu_user_key: Optional[str] = Field(
  default=None,
  description="飞书用户 Key，用于 API 调用时的用户身份（必填，可通过双击用户头像获取）",
+ )
+ # Claude 配置字段（项目级覆盖系统配置）
+ claude_api_key_encrypted: Optional[str] = Field(
+ default=None,
+ description="Claude API Key（加密存储，可选，覆盖系统配置）",
+ )
+ claude_base_url: Optional[str] = Field(
+ default=None,
+ description="Claude API Base URL（可选，覆盖系统配置）",
  )
  # 关联关系
  # 关联关系
@@ -127,3 +139,22 @@ class WebhookTokenUpdate(SQLModel):
 class WebhookTokenRead(SQLModel):
  """Webhook Token 读取 Schema。"""
  webhook_token: str = Field(description="Webhook 验证 Token")
+# Claude 配置相关 Schema
+class ClaudeConfigCreate(SQLModel):
+ """Claude 配置创建/更新 Schema。"""
+ api_key: Optional[str] = Field(
+ default=None,
+ description="Claude API Key（可选，覆盖系统配置）",
+ )
+ base_url: Optional[str] = Field(
+ default=None,
+ description="Claude API Base URL（可选，覆盖系统配置）",
+ )
+class ClaudeConfigRead(SQLModel):
+ """Claude 配置读取 Schema（不返回敏感信息）。"""
+ has_api_key: bool = Field(description="是否已配置项目级 API Key")
+ base_url: Optional[str] = Field(default=None, description="Claude API Base URL")
+ source: str = Field(
+ default="system",
+ description="配置来源：project（项目级）、system（系统级）、environment（环境变量）",
+ )

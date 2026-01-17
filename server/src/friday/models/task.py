@@ -1,12 +1,15 @@
 """Task model for tracking AI development tasks."""
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
  from .project import Project
  from .repository import Repository
+def _utc_now -> datetime:
+ """返回当前 UTC 时间（推荐方式）。"""
+ return datetime.now(UTC)
 class TaskStatus(str, Enum):
  """Task status states in the state machine."""
  PENDING = "pending"
@@ -72,8 +75,8 @@ class Task(TaskBase, table=True):
  foreign_key="repositories.id",
  index=True,
  )
- created_at: datetime = Field(default_factory=datetime.utcnow)
- updated_at: datetime = Field(default_factory=datetime.utcnow)
+ created_at: datetime = Field(default_factory=_utc_now)
+ updated_at: datetime = Field(default_factory=_utc_now)
  # Execution tracking
  plan_started_at: Optional[datetime] = None
  plan_completed_at: Optional[datetime] = None

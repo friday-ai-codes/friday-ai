@@ -1,11 +1,14 @@
 """Git credential model for authentication management."""
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Optional
 from sqlmodel import Field, Relationship, SQLModel
 if TYPE_CHECKING:
  from .repository import Repository
+def _utc_now -> datetime:
+ """返回当前 UTC 时间（推荐方式）。"""
+ return datetime.now(UTC)
 class AuthType(str, Enum):
  """Authentication types for Git access."""
  SSH_KEY = "ssh_key"
@@ -44,8 +47,8 @@ class GitCredential(GitCredentialBase, table=True):
  primary_key=True,
  )
  repository_id: str = Field(foreign_key="repositories.id", unique=True)
- created_at: datetime = Field(default_factory=datetime.utcnow)
- updated_at: datetime = Field(default_factory=datetime.utcnow)
+ created_at: datetime = Field(default_factory=_utc_now)
+ updated_at: datetime = Field(default_factory=_utc_now)
  # Relationships
  repository: "Repository" = Relationship(back_populates="credential")
 class GitCredentialCreate(SQLModel):
