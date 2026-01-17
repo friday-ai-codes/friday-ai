@@ -7,6 +7,7 @@ const navItems = [
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
  { to: '/tasks', label: '任务', icon: 'lucide--list-checks' },
  { to: '/logs', label: '日志', icon: 'lucide--file-text' },
+ { to: '/settings', label: '设置', icon: 'lucide--settings' },
 ]
 const route = useRoute
 // 判断当前路由是否激活

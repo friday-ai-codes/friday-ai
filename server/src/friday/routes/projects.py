@@ -1,5 +1,5 @@
 """项目管理 API 路由。"""
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import selectinload
@@ -8,6 +8,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from ..config import get_settings
 from ..database import get_db
 from ..models import (
+ ClaudeConfigCreate,
+ ClaudeConfigRead,
  FeishuConfigCreate,
  FeishuConfigRead,
  FeishuConfigTest,
@@ -128,7 +130,7 @@ async def update_project(
  update_data = project_update.model_dump(exclude_unset=True)
  for key, value in update_data.items:
  setattr(project, key, value)
- project.updated_at = datetime.utcnow
+ project.updated_at = datetime.now(UTC)
  await db.commit
  await db.refresh(project)
  return ProjectRead(
@@ -248,7 +250,7 @@ async def set_feishu_config(
  project.feishu_plugin_id = config.plugin_id
  project.feishu_plugin_secret_encrypted = encrypt_value(config.plugin_secret)
  project.feishu_user_key = config.user_key
- project.updated_at = datetime.utcnow
+ project.updated_at = datetime.now(UTC)
  await db.commit
  await db.refresh(project)
  return FeishuConfigRead(
@@ -272,7 +274,7 @@ async def delete_feishu_config(
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
  project.feishu_user_key = None
- project.updated_at = datetime.utcnow
+ project.updated_at = datetime.now(UTC)
  await db.commit
  return None
 @router.post("/{project_id}/feishu-config/test", response_model=FeishuConfigTestResult)
@@ -352,7 +354,7 @@ async def refresh_webhook_token(
  raise HTTPException(status_code=404, detail="项目未找到")
  # 生成新的 Token
  project.feishu_webhook_token = generate_webhook_token
- project.updated_at = datetime.utcnow
+ project.updated_at = datetime.now(UTC)
  await db.commit
  await db.refresh(project)
  return WebhookTokenRead(webhook_token=project.feishu_webhook_token)
@@ -373,7 +375,83 @@ async def update_webhook_token(
  if len(token_update.token) == 0:
  raise HTTPException(status_code=400, detail="Token 不能为空")
  project.feishu_webhook_token = token_update.token
- project.updated_at = datetime.utcnow
+ project.updated_at = datetime.now(UTC)
  await db.commit
  await db.refresh(project)
  return WebhookTokenRead(webhook_token=project.feishu_webhook_token)
+# === Claude 配置管理 ===
+@router.get("/{project_id}/claude-config", response_model=ClaudeConfigRead)
+async def get_claude_config(
+ project_id: str,
+ db: AsyncSession = Depends(get_db),
+):
+ """获取项目的 Claude 配置（不返回敏感信息）。
+ 配置优先级：项目级 > 系统级 > 环境变量
+ """
+ result = await db.exec(select(Project).where(Project.id == project_id))
+ project = result.one_or_none
+ if not project:
+ raise HTTPException(status_code=404, detail="项目未找到")
+ # 确定配置来源
+ has_project_api_key = bool(project.claude_api_key_encrypted)
+ base_url = project.claude_base_url
+ if has_project_api_key:
+ source = "project"
+ else:
+ # 检查系统配置（这里先返回系统或环境变量来源，实际获取逻辑在 claude_config 服务中）
+ source = "system" # 或 "environment"
+ return ClaudeConfigRead(
+ has_api_key=has_project_api_key,
+ base_url=base_url,
+ source=source,
+ )
+@router.put("/{project_id}/claude-config", response_model=ClaudeConfigRead)
+async def set_claude_config(
+ project_id: str,
+ config: ClaudeConfigCreate,
+ db: AsyncSession = Depends(get_db),
+):
+ """设置项目的 Claude 配置。
+ 可以只设置 api_key 或只设置 base_url，也可以同时设置。
+ """
+ result = await db.exec(select(Project).where(Project.id == project_id))
+ project = result.one_or_none
+ if not project:
+ raise HTTPException(status_code=404, detail="项目未找到")
+ # 更新配置
+ if config.api_key is not None:
+ if config.api_key == "":
+ # 空字符串表示清除 API Key
+ project.claude_api_key_encrypted = None
+ else:
+ project.claude_api_key_encrypted = encrypt_value(config.api_key)
+ if config.base_url is not None:
+ if config.base_url == "":
+ # 空字符串表示清除 Base URL
+ project.claude_base_url = None
+ else:
+ project.claude_base_url = config.base_url
+ project.updated_at = datetime.now(UTC)
+ await db.commit
+ await db.refresh(project)
+ return ClaudeConfigRead(
+ has_api_key=bool(project.claude_api_key_encrypted),
+ base_url=project.claude_base_url,
+ source="project" if project.claude_api_key_encrypted else "system",
+ )
+@router.delete("/{project_id}/claude-config", status_code=204)
+async def delete_claude_config(
+ project_id: str,
+ db: AsyncSession = Depends(get_db),
+):
+ """删除项目的 Claude 配置，将使用系统级配置。"""
+ result = await db.exec(select(Project).where(Project.id == project_id))
+ project = result.one_or_none
+ if not project:
+ raise HTTPException(status_code=404, detail="项目未找到")
+ # 清除项目级 Claude 配置
+ project.claude_api_key_encrypted = None
+ project.claude_base_url = None
+ project.updated_at = datetime.now(UTC)
+ await db.commit
+ return None

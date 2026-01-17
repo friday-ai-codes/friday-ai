@@ -1,9 +1,12 @@
 """飞书数据日志模型，用于存储 Webhook 请求和工作项详情。"""
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import ClassVar, Optional
 from sqlmodel import Field, SQLModel
+def _utc_now -> datetime:
+ """返回当前 UTC 时间（推荐方式）。"""
+ return datetime.now(UTC)
 class WebhookLogStatus(str, Enum):
  """Webhook 处理状态。"""
  ACCEPTED = "accepted" # 已接受并处理
@@ -56,7 +59,7 @@ class WebhookLog(WebhookLogBase, table=True):
  index=True,
  )
  created_at: datetime = Field(
- default_factory=datetime.utcnow,
+ default_factory=_utc_now,
  index=True,
  )
 class WebhookLogRead(WebhookLogBase):
@@ -101,7 +104,7 @@ class WorkItemLog(WorkItemLogBase, table=True):
  index=True,
  )
  created_at: datetime = Field(
- default_factory=datetime.utcnow,
+ default_factory=_utc_now,
  index=True,
  )
 class WorkItemLogRead(WorkItemLogBase):

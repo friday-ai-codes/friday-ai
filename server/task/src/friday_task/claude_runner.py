@@ -1,42 +1,49 @@
-"""Claude Code CLI runner for task execution."""
-import asyncio
+"""Claude Agent SDK runner for task execution.
+使用 claude-agent-sdk Python SDK 来执行 AI 开发任务，
+替代原来的 Claude Code CLI 方式。
+"""
 import json
 import os
 from pathlib import Path
+from typing import Literal
 import structlog
+from claude_agent_sdk import (
+ AssistantMessage,
+ ClaudeAgentOptions,
+ ResultMessage,
+ TextBlock,
+ query,
+)
 from .config import TaskConfig
 logger = structlog.get_logger
+# SDK 支持的权限模式
+PermissionModeType = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 class ClaudeRunner:
- """Run Claude Code CLI for AI-powered development."""
+ """Run Claude Agent SDK for AI-powered development."""
  def __init__(self, config: TaskConfig, workspace: Path):
  """Initialize Claude runner with config and workspace path."""
  self.config = config
  self.workspace = workspace
  self.session_file = Path(config.session_dir) / f"{config.task_id}.json"
  async def run_plan_mode(self) -> dict:
- """Run Claude Code in plan mode to generate implementation plan."""
+ """Run Claude Agent in plan mode to generate implementation plan."""
  log = logger.bind(task_id=self.config.task_id, mode="plan")
- log.info("Starting plan mode execution")
+ log.info("Starting plan mode execution with claude-agent-sdk")
  prompt = self._build_plan_prompt
  result = await self._execute_claude(
  prompt=prompt,
- allowed_tools=[
- "Read",
- "Glob",
- "Grep",
- "LS",
- ], # Read-only tools for planning
+ permission_mode="plan", # 只读模式，只能读取文件
  )
  log.info("Plan mode completed", success=result.get("success", False))
  return result
  async def run_execute_mode(self, plan: str | None = None) -> dict:
- """Run Claude Code in execute mode to implement changes."""
+ """Run Claude Agent in execute mode to implement changes."""
  log = logger.bind(task_id=self.config.task_id, mode="execute")
- log.info("Starting execute mode execution")
+ log.info("Starting execute mode execution with claude-agent-sdk")
  prompt = self._build_execute_prompt(plan)
  result = await self._execute_claude(
  prompt=prompt,
- allowed_tools=None, # All tools allowed
+ permission_mode="acceptEdits", # 自动接受编辑
  )
  log.info("Execute mode completed", success=result.get("success", False))
  return result
@@ -87,95 +94,88 @@ Implement the task as described. Make necessary code changes.
  async def _execute_claude(
  self,
  prompt: str,
- allowed_tools: list[str] | None = None,
+ permission_mode: PermissionModeType = "acceptEdits",
  ) -> dict:
- """Execute Claude Code CLI with the given prompt."""
+ """Execute Claude Agent SDK with the given prompt."""
  log = logger.bind(task_id=self.config.task_id)
- # Build command
- cmd = [
- "claude",
- "--print", # Print output to stdout
- "--output-format",
- "json", # JSON output for parsing
- ]
- # Add allowed tools restriction if specified
- if allowed_tools:
- cmd.extend(["--allowedTools", ",".join(allowed_tools)])
- # Add session resume if exists
- if self.session_file.exists:
- cmd.extend(["--resume", str(self.session_file)])
- # Add prompt
- cmd.extend(["--prompt", prompt])
- # Set environment
- env = os.environ.copy
+ try:
+ # 设置环境变量
  if self.config.claude_api_key:
- env["ANTHROPIC_API_KEY"] = self.config.claude_api_key
- log.info("Executing Claude Code CLI", command=" ".join(cmd[:5]) + "...")
- try:
- # Create process
- process = await asyncio.create_subprocess_exec(
- *cmd,
- stdout=asyncio.subprocess.PIPE,
- stderr=asyncio.subprocess.PIPE,
+ os.environ["ANTHROPIC_API_KEY"] = self.config.claude_api_key
+ if self.config.claude_base_url:
+ os.environ["ANTHROPIC_BASE_URL"] = self.config.claude_base_url
+ # 构建 Claude Agent 选项
+ options = ClaudeAgentOptions(
+ system_prompt=self._get_system_prompt,
+ permission_mode=permission_mode,
  cwd=str(self.workspace),
- env=env,
+ setting_sources=["project"], # 加载项目级 developer-notes.md
  )
- # Wait with timeout
- stdout, stderr = await asyncio.wait_for(
- process.communicate,
- timeout=self.config.execution_timeout,
+ log.info(
+ "Executing Claude Agent SDK",
+ permission_mode=permission_mode,
+ workspace=str(self.workspace),
  )
- stdout_str = stdout.decode("utf-8") if stdout else ""
- stderr_str = stderr.decode("utf-8") if stderr else ""
- if process.returncode != 0:
- log.error(
- "Claude Code CLI failed",
- returncode=process.returncode,
- stderr=stderr_str,
- )
- return {
- "success": False,
- "error": stderr_str or "Unknown error",
- "returncode": process.returncode,
+ # 收集所有消息
+ messages =
+ final_output = ""
+ session_id = None
+ total_cost = None
+ async for message in query(prompt=prompt, options=options):
+ messages.append(message)
+ log.debug("Received message", message_type=type(message).__name__)
+ # 处理 AssistantMessage - 获取文本输出
+ if isinstance(message, AssistantMessage):
+ for block in message.content:
+ if isinstance(block, TextBlock):
+ final_output += block.text
+ # 处理 ResultMessage - 获取会话信息
+ if isinstance(message, ResultMessage):
+ session_id = message.session_id
+ total_cost = message.total_cost_usd
+ if message.result:
+ final_output = message.result
+ # 保存会话
+ await self._save_session(
+ {
+ "output": final_output,
+ "messages": len(messages),
+ "session_id": session_id,
  }
- # Parse JSON output
- try:
- result = json.loads(stdout_str)
- except json.JSONDecodeError:
- result = {"output": stdout_str}
- # Save session for resume
- await self._save_session(result)
+ )
  return {
  "success": True,
- "output": result.get("output", stdout_str),
- "session_id": result.get("session_id"),
- "cost": result.get("cost"),
- }
- except asyncio.TimeoutError:
- log.error(
- "Claude Code CLI timed out", timeout=self.config.execution_timeout
- )
- if process:
- process.kill
- return {
- "success": False,
- "error": f"Execution timed out after {self.config.execution_timeout}s",
+ "output": final_output,
+ "message_count": len(messages),
+ "session_id": session_id,
+ "cost": total_cost,
  }
  except Exception as e:
- log.exception("Claude Code CLI execution failed")
+ log.exception("Claude Agent SDK execution failed")
  return {
  "success": False,
  "error": str(e),
  }
+ def _get_system_prompt(self) -> str:
+ """Get the system prompt for Claude Agent."""
+ return """你是一个资深的全栈开发工程师，精通各种编程语言和框架，能够：
+1. 理解复杂的代码库结构
+2. 编写高质量、可维护的代码
+3. 遵循最佳实践和设计模式
+4. 考虑边界情况和错误处理
+请根据任务需求进行代码分析和实现。"""
  async def _save_session(self, result: dict) -> None:
  """Save session data for potential resume."""
  session_data = {
  "task_id": self.config.task_id,
  "session_id": result.get("session_id"),
- "last_output": result.get("output", "")[:1000], # Truncate for storage
+ "last_output": result.get("output", "")[:1000], # 截断存储
+ "message_count": result.get("message_count", 0),
  }
  self.session_file.parent.mkdir(parents=True, exist_ok=True)
- self.session_file.write_text(json.dumps(session_data, indent=2))
+ self.session_file.write_text(
+ json.dumps(session_data, indent=2, ensure_ascii=False)
+ )
  logger.debug("Session saved", session_file=str(self.session_file))
  async def get_session_summary(self) -> str | None:
  """Get summary of previous session if exists."""

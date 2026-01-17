@@ -10,6 +10,7 @@ from .routes import (
  logs_router,
  projects_router,
  repositories_router,
+ settings_router,
  tasks_router,
  webhook_router,
 )
@@ -42,6 +43,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 app.include_router(logs_router)
 app.include_router(projects_router)
 app.include_router(repositories_router)
+app.include_router(settings_router)
 app.include_router(tasks_router)
 app.include_router(webhook_router)
 @app.get("/health")

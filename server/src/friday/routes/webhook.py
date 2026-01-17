@@ -31,6 +31,7 @@ class FeishuWebhookHeader(BaseModel):
  rule_name: Optional[str] = None
 class FeishuWebhookPayload(BaseModel):
  """飞书 Webhook 请求体通用结构。"""
+ model_config = {"extra": "allow"} # 允许额外字段
  id: Optional[int] = None
  name: Optional[str] = None
  project_key: Optional[str] = None
@@ -52,18 +53,15 @@ class FeishuWebhookPayload(BaseModel):
  # 节点相关
  current_nodes: Optional[list] = None
  nodes: Optional[list] = None
- class Config:
- extra = "allow" # 允许额外字段
 class FeishuWebhookRequest(BaseModel):
  """飞书 Webhook 完整请求结构。"""
+ model_config = {"extra": "allow"}
  header: Optional[FeishuWebhookHeader] = None
  payload: Optional[FeishuWebhookPayload] = None
  # URL 验证挑战
  type: Optional[str] = None
  challenge: Optional[str] = None
  token: Optional[str] = None
- class Config:
- extra = "allow"
 def is_event_processed(event_uuid: str) -> bool:
  """检查事件是否已处理（幂等性检查）。
  Args:
@@ -528,7 +526,7 @@ async def handle_workitem_update_event(project_key: str, payload: dict):
  可用于同步工作项的标题、描述等字段变更。
  """
  work_item_id = payload.get("id")
- changed_fields = payload.get("changed_fields", )
+ changed_fields = payload.get("changed_fields", ) or
  if not work_item_id:
  return
  logger.info(f"字段变更: {work_item_id}, 字段数: {len(changed_fields)}")

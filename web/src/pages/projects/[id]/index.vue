@@ -326,6 +326,34 @@ async function handleCustomToken {
  </div>
  </CardContent>
  </Card>
+ <!-- Claude 配置 -->
+ <Card>
+ <CardHeader class="flex flex-row items-center justify-between">
+ <div>
+ <CardTitle>Claude 配置</CardTitle>
+ <CardDescription>AI 开发任务配置</CardDescription>
+ </div>
+ <RouterLink:to="`/projects/${project.id}/claude`">
+ <Button variant="outline" size="sm">
+ <span class="icon-[lucide--bot] mr-2" />
+ 管理配置
+ </Button>
+ </RouterLink>
+ </CardHeader>
+ <CardContent>
+ <div class="text-center py-6">
+ <span class="icon-[lucide--bot] text-4xl text-muted-foreground" />
+ <p class="mt-2 text-muted-foreground">
+ 配置 Claude Code API 密钥和端点
+ </p>
+ <RouterLink:to="`/projects/${project.id}/claude`">
+ <Button class="mt-4" size="sm" variant="outline">
+ 查看配置
+ </Button>
+ </RouterLink>
+ </div>
+ </CardContent>
+ </Card>
  <!-- Webhook Token 管理 -->
  <Card>
  <CardHeader>

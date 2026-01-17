@@ -13,14 +13,13 @@ async def test_create_project(client: AsyncClient):
  """Test project creation."""
  project_data = {
  "name": "Test Project",
- "repo_url": "https://github.com/test/repo.git",
  "feishu_project_key": "test-feishu-123",
  }
  response = await client.post("/api/projects/", json=project_data)
  assert response.status_code == 201
  data = response.json
  assert data["name"] == "Test Project"
- assert data["repo_url"] == "https://github.com/test/repo.git"
+ assert data["feishu_project_key"] == "test-feishu-123"
  assert "id" in data
 @pytest.mark.asyncio
 async def test_list_projects(client: AsyncClient):
@@ -28,7 +27,6 @@ async def test_list_projects(client: AsyncClient):
  # Create a project first
  project_data = {
  "name": "List Test Project",
- "repo_url": "https://github.com/test/repo.git",
  }
  create_resp = await client.post("/api/projects/", json=project_data)
  assert create_resp.status_code == 201
@@ -44,7 +42,6 @@ async def test_get_project(client: AsyncClient):
  # Create a project first
  project_data = {
  "name": "Get Test Project",
- "repo_url": "https://github.com/test/repo.git",
  }
  create_response = await client.post("/api/projects/", json=project_data)
  assert create_response.status_code == 201
@@ -66,7 +63,6 @@ async def test_create_task(client: AsyncClient):
  # Create a project first
  project_data = {
  "name": "Task Test Project",
- "repo_url": "https://github.com/test/repo.git",
  }
  project_response = await client.post("/api/projects/", json=project_data)
  assert project_response.status_code == 201
@@ -91,7 +87,6 @@ async def test_task_status_transition(client: AsyncClient):
  # Create a project and task
  project_data = {
  "name": "Transition Test Project",
- "repo_url": "https://github.com/test/repo.git",
  }
  project_response = await client.post("/api/projects/", json=project_data)
  assert project_response.status_code == 201
@@ -119,7 +114,6 @@ async def test_invalid_task_transition(client: AsyncClient):
  # Create a project and task
  project_data = {
  "name": "Invalid Transition Project",
- "repo_url": "https://github.com/test/repo.git",
  }
  project_response = await client.post("/api/projects/", json=project_data)
  assert project_response.status_code == 201

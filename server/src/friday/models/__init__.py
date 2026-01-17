@@ -16,6 +16,8 @@ from .log import (
  WorkItemLogRead,
 )
 from .project import (
+ ClaudeConfigCreate,
+ ClaudeConfigRead,
  FeishuConfigCreate,
  FeishuConfigRead,
  FeishuConfigTest,
@@ -40,6 +42,15 @@ from .repository import (
  RepositoryUpdate,
  RepositoryWithProjectsRead,
 )
+from .settings import (
+ SettingKeys,
+ SystemSetting,
+ SystemSettingBase,
+ SystemSettingCreate,
+ SystemSettingRead,
+ SystemSettingReadWithValue,
+ SystemSettingUpdate,
+)
 from .task import Task, TaskBase, TaskCreate, TaskMode, TaskRead, TaskStatus, TaskUpdate
 __all__ = [
  # Project
@@ -62,6 +73,9 @@ __all__ = [
  "FeishuConfigCreate",
  "FeishuConfigRead",
  "FeishuConfigTestResult",
+ # Claude Config
+ "ClaudeConfigCreate",
+ "ClaudeConfigRead",
  # Webhook Token
  "WebhookTokenUpdate",
  "WebhookTokenRead",
@@ -88,4 +102,12 @@ __all__ = [
  "WorkItemLog",
  "WorkItemLogBase",
  "WorkItemLogRead",
+ # Settings
+ "SettingKeys",
+ "SystemSetting",
+ "SystemSettingBase",
+ "SystemSettingCreate",
+ "SystemSettingRead",
+ "SystemSettingReadWithValue",
+ "SystemSettingUpdate",
 ]
