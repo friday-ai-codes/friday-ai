@@ -201,6 +201,8 @@ async def get_credential(
  git_user_name=credential.git_user_name,
  git_user_email=credential.git_user_email,
  created_at=credential.created_at,
+ has_ssh_key=credential.ssh_key_encrypted is not None,
+ has_access_token=credential.encrypted_token is not None,
  )
 @router.post(
  "/{repository_id}/credential/access-token", response_model=GitCredentialRead
@@ -247,6 +249,8 @@ async def set_access_token(
  git_user_name=credential.git_user_name,
  git_user_email=credential.git_user_email,
  created_at=credential.created_at,
+ has_ssh_key=credential.ssh_key_encrypted is not None,
+ has_access_token=credential.encrypted_token is not None,
  )
 @router.delete("/{repository_id}/credential", status_code=204)
 async def delete_credential(

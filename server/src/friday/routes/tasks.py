@@ -277,11 +277,22 @@ async def update_task_status_from_container(
 ):
  """Receive status update from task container.
  This endpoint is called by the task container to report progress.
+ 如果任务不存在（例如测试模式），仅记录日志而不返回错误。
  """
  result = await db.exec(select(Task).where(Task.id == task_id))
  task = result.one_or_none
  if not task:
- raise HTTPException(status_code=404, detail="Task not found")
+ # 任务不存在时，记录日志但不返回 404
+ # 这允许测试脚本在没有真实任务的情况下运行
+ import structlog
+ logger = structlog.get_logger(__name__)
+ logger.warning(
+ "Received status update for unknown task",
+ task_id=task_id,
+ status=update.status,
+ message=update.message,
+ )
+ return {"status": "ignored", "reason": "task not found", "task_id": task_id}
  now = datetime.now(UTC)
  details = update.details or {}
  # Handle different status updates

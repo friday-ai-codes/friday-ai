@@ -56,13 +56,14 @@ services:
  retries: 3
  start_period: 5s
  # Task container builder (helper service)
+ # 任务执行容器，独立项目，支持 CLI 和容器模式
  task-builder:
  build:
- context: ./server/task
+ context: ./task
  dockerfile: Dockerfile
  image: friday-task:latest
  container_name: friday-task-builder
- command: ["echo", "Task image built successfully"]
+ command: ["--help"]
  networks:
  - friday-network
 volumes:
