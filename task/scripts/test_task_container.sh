@@ -13,11 +13,11 @@
 # -m, --mode MODE 任务模式: plan 或 execute (默认: plan)
 # -t, --task-id ID 任务 ID (默认: test-task-001)
 # -p, --project-id ID 项目 ID (默认: test-project-001)
-# --title TITLE 任务标题
 # --description DESC 任务描述
 # --repo-url URL Git 仓库 URL (可选，用于真实测试)
 # --api-key KEY Anthropic API Key
 # --base-url URL Anthropic Base URL (可选)
+# --access-token TOKEN Git access token (用于私有仓库认证)
 # --server-url URL Friday Server 回调地址 (默认: http://host.docker.internal:8000)
 # --build 构建镜像后再测试
 # --dry-run 只显示将要执行的命令，不实际执行
@@ -28,24 +28,24 @@
 # ./test_task_container.sh --dry-run
 #
 # # 使用自定义任务运行 plan 模式
-# ./test_task_container.sh -m plan --title "添加用户认证" --description "实现 JWT 认证"
+# ./test_task_container.sh -m plan --description "添加用户认证"
 #
 # # 使用真实仓库测试
 # ./test_task_container.sh -m plan --repo-url "git@github.com:user/repo.git" --api-key "sk-xxx"
 set -e
 # 默认值
 MODE="plan"
-TASK_ID="test-task-$(date +%s)"
-PROJECT_ID="test-project-001"
-TASK_TITLE="测试任务"
+TASK_ID="f3848c6d-f1ee-4046-b241-0f4b8dd2c9e9"
+PROJECT_ID="1ebef9c9-9b36-47cf-9c94-cf1d8f9acce1"
 TASK_DESCRIPTION="这是一个用于测试容器的示例任务描述"
 REPO_URL=""
 API_KEY="${ANTHROPIC_API_KEY:-}"
 BASE_URL="${ANTHROPIC_BASE_URL:-}"
+ACCESS_TOKEN=""
 SERVER_URL="http://host.docker.internal:8000"
 BUILD=false
 DRY_RUN=false
-IMAGE_NAME="friday-ai-task:test"
+IMAGE_NAME="friday-task:test"
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -82,9 +82,6 @@ while [[ $# -gt 0 ]]; do
  -p|--project-id)
  PROJECT_ID="$2"
  shift 2;;
- --title)
- TASK_TITLE="$2"
- shift 2;;
  --description)
  TASK_DESCRIPTION="$2"
  shift 2;;
@@ -96,6 +93,9 @@ while [[ $# -gt 0 ]]; do
  shift 2;;
  --base-url)
  BASE_URL="$2"
+ shift 2;;
+ --access-token)
+ ACCESS_TOKEN="$2"
  shift 2;;
  --server-url)
  SERVER_URL="$2"
@@ -119,7 +119,7 @@ if [[ "$MODE" != "plan" && "$MODE" != "execute" ]]; then
  log_error "无效的模式: $MODE (必须是 plan 或 execute)"
  exit 1
 fi
-# 切换到脚本所在目录的上级 (task 目录)
+# 切换到 task 目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TASK_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$TASK_DIR"
@@ -155,26 +155,33 @@ if [[ -z "$REPO_URL" ]]; then
  REPO_URL="file://$WORKSPACE_DIR"
  log_success "测试仓库创建完成: $WORKSPACE_DIR"
 fi
+# 从 description 提取标题
+TASK_TITLE="${TASK_DESCRIPTION:0:50}"
 # 构建 Docker 运行命令
 DOCKER_CMD="docker run --rm"
 DOCKER_CMD+=" --name friday-task-test-$$"
 # 环境变量
-DOCKER_CMD+=" -e FRIDAY_TASK_ID=$TASK_ID"
-DOCKER_CMD+=" -e FRIDAY_PROJECT_ID=$PROJECT_ID"
-DOCKER_CMD+=" -e FRIDAY_TASK_MODE=$MODE"
-DOCKER_CMD+=" -e FRIDAY_TASK_TITLE=$TASK_TITLE"
-DOCKER_CMD+=" -e FRIDAY_TASK_DESCRIPTION=$TASK_DESCRIPTION"
-DOCKER_CMD+=" -e FRIDAY_REPO_URL=$REPO_URL"
-DOCKER_CMD+=" -e FRIDAY_CALLBACK_URL=$SERVER_URL/api/tasks/$TASK_ID/callback"
-DOCKER_CMD+=" -e FRIDAY_SESSION_DIR=/app/sessions"
+DOCKER_CMD+=" -e FRIDAY_TASK_TASK_ID=$TASK_ID"
+DOCKER_CMD+=" -e FRIDAY_TASK_PROJECT_ID=$PROJECT_ID"
+DOCKER_CMD+=" -e FRIDAY_TASK_TASK_MODE=$MODE"
+DOCKER_CMD+=" -e FRIDAY_TASK_TASK_TITLE=$TASK_TITLE"
+DOCKER_CMD+=" -e FRIDAY_TASK_TASK_DESCRIPTION=$TASK_DESCRIPTION"
+DOCKER_CMD+=" -e FRIDAY_TASK_GIT_REPO_URL=$REPO_URL"
+DOCKER_CMD+=" -e FRIDAY_TASK_CALLBACK_URL=$SERVER_URL/api"
+DOCKER_CMD+=" -e FRIDAY_TASK_SESSION_DIR=/app/sessions"
 DOCKER_CMD+=" -e GIT_AUTHOR_NAME=Friday-AI-Agent"
 DOCKER_CMD+=" -e GIT_AUTHOR_EMAIL=friday@example.com"
 # Claude 配置
 if [[ -n "$API_KEY" ]]; then
- DOCKER_CMD+=" -e ANTHROPIC_API_KEY=$API_KEY"
+ DOCKER_CMD+=" -e FRIDAY_TASK_CLAUDE_API_KEY=$API_KEY"
 fi
 if [[ -n "$BASE_URL" ]]; then
- DOCKER_CMD+=" -e ANTHROPIC_BASE_URL=$BASE_URL"
+ DOCKER_CMD+=" -e FRIDAY_TASK_CLAUDE_BASE_URL=$BASE_URL"
+fi
+# Git access token 配置
+if [[ -n "$ACCESS_TOKEN" ]]; then
+ DOCKER_CMD+=" -e FRIDAY_TASK_GIT_AUTH_TYPE=token"
+ DOCKER_CMD+=" -e FRIDAY_TASK_GIT_ACCESS_TOKEN=$ACCESS_TOKEN"
 fi
 # 卷挂载
 DOCKER_CMD+=" -v $SESSION_DIR:/app/sessions"
@@ -199,12 +206,13 @@ echo ""
 echo " 任务 ID: $TASK_ID"
 echo " 项目 ID: $PROJECT_ID"
 echo " 模式: $MODE"
-echo " 任务标题: $TASK_TITLE"
 echo " 任务描述: ${TASK_DESCRIPTION:0:50}..."
 echo " 仓库 URL: $REPO_URL"
-echo " 回调地址: $SERVER_URL/api/tasks/$TASK_ID/callback"
+echo " 回调地址: $SERVER_URL/api"
 echo " API Key: ${API_KEY:+[已设置]} ${API_KEY:-[未设置]}"
 echo " Base URL: ${BASE_URL:-[未设置]}"
+echo " Access Token: ${ACCESS_TOKEN:+[已设置]} ${ACCESS_TOKEN:-[未设置]}"
+echo "${ACCESS_TOKEN}"
 echo ""
 log_info "============================================="
 echo ""

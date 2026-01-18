@@ -5,7 +5,8 @@ async def main:
  system_prompt="你是一个资深的前端开发工程师，精通React和Vue框架，能够根据需求编写高质量的前端代码。",
  permission_mode="plan",
  cwd="/Users/zaneliu/Projects/open-source/friday-ai/web",
+ model="opus",
  )
- async for message in query(prompt="告诉我这是一个什么项目？", options=options):
+ async for message in query(prompt="这个项目是什么架构的？", options=options):
  print(message)
 asyncio.run(main)

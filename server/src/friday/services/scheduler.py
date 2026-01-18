@@ -1,4 +1,10 @@
-"""Task Scheduler Service - Manages Docker containers for task execution."""
+"""Task Scheduler Service - Manages Docker containers for task execution.
+任务容器镜像由独立的 task/ 项目构建（friday-task:latest）。
+task 是一个独立的 Python 项目，支持：
+1. CLI 模式 - 直接命令行调用
+2. 容器模式 - 由本 scheduler 启动执行
+参见: task/README.md 了解详情
+"""
 import os
 import platform
 from typing import Any
@@ -28,10 +34,10 @@ def _get_host_callback_url(port: int = 8000) -> str:
  system = platform.system.lower
  if system in ("darwin", "windows"):
  # macOS/Windows: 使用 host.docker.internal
- return f"http://host.docker.internal:{port}/api/v1"
+ return f"http://host.docker.internal:{port}/api"
  else:
  # Linux: 使用默认网关 IP
- return f"http://172.17.0.1:{port}/api/v1"
+ return f"http://172.17.0.1:{port}/api"
 class TaskScheduler:
  """Scheduler for running task containers."""
  def __init__(self):
@@ -133,10 +139,11 @@ class TaskScheduler:
  claude_config: dict[str, str] | None = None,
  ) -> dict[str, str]:
  """Build environment variables for the task container."""
+ log = logger.bind(task_id=task.id)
  # 根据网络环境选择回调 URL
  if self._docker_network:
  # Docker Compose 模式：使用容器名进行通信
- callback_url = "http://friday-server:8000/api/v1"
+ callback_url = "http://friday-server:8000/api"
  else:
  # 本地开发模式：使用宿主机地址
  # 从配置中读取端口，默认 8000
@@ -148,8 +155,25 @@ class TaskScheduler:
  if claude_config:
  claude_api_key = claude_config.get("api_key", "")
  claude_base_url = claude_config.get("base_url", "")
+ log.info(
+ "Claude config received",
+ has_api_key=bool(claude_api_key),
+ api_key_length=len(claude_api_key) if claude_api_key else 0,
+ base_url=claude_base_url or "(not set)",
+ )
+ else:
+ log.warning(
+ "No claude_config provided, falling back to environment variables"
+ )
  if not claude_api_key:
  claude_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+ if claude_api_key:
+ log.info(
+ "Using ANTHROPIC_API_KEY from environment",
+ key_length=len(claude_api_key),
+ )
+ else:
+ log.error("No ANTHROPIC_API_KEY found!")
  if not claude_base_url:
  claude_base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
  env = {

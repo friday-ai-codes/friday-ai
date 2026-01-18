@@ -5,36 +5,11 @@
  ANTHROPIC_API_KEY=your-key FRIDAY_RUN_INTEGRATION_TESTS=1 pytest tests/test_claude_sdk_integration.py -v
 """
 import os
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 import pytest
 # 检查是否应该运行集成测试
 SKIP_INTEGRATION = os.environ.get("FRIDAY_RUN_INTEGRATION_TESTS", "0") != "1"
 SKIP_REASON = "集成测试已禁用。设置 FRIDAY_RUN_INTEGRATION_TESTS=1 启用"
-@pytest.fixture
-def temp_workspace:
- """创建临时工作空间。"""
- with tempfile.TemporaryDirectory as tmpdir:
- workspace = Path(tmpdir)
- # 创建一个简单的项目结构
- (workspace / "README.md").write_text("# Test Project\n\nA test project.")
- (workspace / "src").mkdir
- (workspace / "src" / "main.py").write_text(
- '"""Main module."""\n\ndef hello:\n return "Hello, World!"\n'
- )
- yield workspace
-@pytest.fixture
-def mock_config:
- """创建模拟的 TaskConfig。"""
- config = MagicMock
- config.task_id = "test-task-001"
- config.task_title = "Test Task"
- config.task_description = "This is a test task for integration testing."
- config.session_dir = tempfile.mkdtemp
- config.claude_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
- config.claude_base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
- return config
 @pytest.mark.skipif(SKIP_INTEGRATION, reason=SKIP_REASON)
 @pytest.mark.asyncio
 async def test_claude_runner_plan_mode(temp_workspace, mock_config):
@@ -86,26 +61,19 @@ async def test_claude_runner_session_save(temp_workspace, mock_config):
 @pytest.mark.asyncio
 async def test_claude_runner_prompt_building(temp_workspace, mock_config):
  """测试 prompt 构建逻辑（不需要 API）。"""
- # 这里我们模拟导入以避免 SDK 依赖
- # 在实际测试中可能需要根据环境调整
  # 测试 plan prompt 构建
- expected_title = mock_config.task_title
  expected_description = mock_config.task_description
  plan_prompt_template = f"""You are an AI development agent working on a coding task.
 ## Task Information
-- **Title**: {expected_title}
 - **Description**: {expected_description}
 ## Your Goal
 Analyze the codebase and create a detailed implementation plan. Do NOT make any changes yet.
 """
- assert expected_title in plan_prompt_template
  assert expected_description in plan_prompt_template
 @pytest.mark.asyncio
 async def test_claude_runner_session_file_location(temp_workspace, mock_config):
  """测试会话文件路径正确性。"""
- expected_session_file = (
- Path(mock_config.session_dir) / f"{mock_config.task_id}.json"
- )
+ expected_session_file = Path(mock_config.session_dir) / f"{mock_config.task_id}.json"
  # 验证路径构建正确
  assert str(expected_session_file).endswith(f"{mock_config.task_id}.json")
  assert mock_config.session_dir in str(expected_session_file)
@@ -118,3 +86,29 @@ async def test_claude_runner_handles_missing_api_key(temp_workspace, mock_config
  # 具体行为取决于 SDK 实现
  # 这里我们只验证配置状态
  assert mock_config.claude_api_key == ""
+@pytest.mark.asyncio
+async def test_session_mapping(temp_session_dir, mock_config):
+ """测试会话映射功能。"""
+ import json
+ from friday_task.claude_runner import ClaudeRunner
+ mock_config.session_dir = temp_session_dir
+ # 创建一个映射文件
+ mapping_file = Path(temp_session_dir) / "mapping.json"
+ mapping_data = {
+ "session-abc123": {
+ "task_id": "test-task-001",
+ "created_at": "2026-01-17T12:00:00Z",
+ "last_output_preview": "Test output preview",
+ }
+ }
+ mapping_file.write_text(json.dumps(mapping_data))
+ # 测试通过 session_id 获取会话信息
+ session_info = await ClaudeRunner.get_session_by_id("session-abc123", temp_session_dir)
+ assert session_info is not None
+ assert session_info["task_id"] == "test-task-001"
+@pytest.mark.asyncio
+async def test_session_mapping_not_found(temp_session_dir):
+ """测试会话不存在的情况。"""
+ from friday_task.claude_runner import ClaudeRunner
+ session_info = await ClaudeRunner.get_session_by_id("non-existent-session", temp_session_dir)
+ assert session_info is None
