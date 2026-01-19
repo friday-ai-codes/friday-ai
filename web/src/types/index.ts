@@ -26,6 +26,50 @@ export type TaskStatus
  */
 export type TaskMode = 'plan' | 'execute'
 // ============================================================================
+// 用户认证相关类型
+// ============================================================================
+/**
+ * 用户信息
+ */
+export interface User {
+ id: string
+ username: string
+ display_name: string | null
+ is_active: boolean
+ is_superuser: boolean
+ created_at: string
+ updated_at: string
+}
+/**
+ * 登录请求
+ */
+export interface LoginRequest {
+ username: string
+ password: string
+}
+/**
+ * 登录响应
+ */
+export interface LoginResponse {
+ access_token: string
+ token_type: string
+ user: User
+}
+/**
+ * Token 刷新响应
+ */
+export interface RefreshResponse {
+ access_token: string
+ token_type: string
+}
+/**
+ * 修改密码请求
+ */
+export interface ChangePasswordRequest {
+ old_password: string
+ new_password: string
+}
+// ============================================================================
 // 仓库相关类型
 // ============================================================================
 /**
