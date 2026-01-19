@@ -6,6 +6,7 @@ import { createI18n } from 'vue-i18n'
 import { createRouter, createWebHistory } from 'vue-router'
 import { routes } from 'vue-router/auto-routes'
 import App from './App.vue'
+import { useAuthStore } from './stores/auth'
 import '~/styles/main.css'
 // 路由配置
 const router = createRouter({
@@ -25,8 +26,28 @@ const i18n = createI18n({
 const head = createHead
 // 创建应用
 const app = createApp(App)
+app.use(pinia) // 先注册 Pinia
 app.use(router)
-app.use(pinia)
 app.use(i18n)
 app.use(head)
+// 路由守卫
+router.beforeEach(async (to, from, next) => {
+ const authStore = useAuthStore
+ // 初始化认证状态（应用启动时恢复登录）
+ if (!authStore.isInitialized) {
+ await authStore.initAuth
+ }
+ // 这里的策略是：默认所有页面都需要认证，除了 /login
+ const publicPages = ['/login']
+ const authRequired = !publicPages.includes(to.path)
+ if (authRequired && !authStore.isAuthenticated) {
+ // 需要认证但未登录 -> 跳转登录页
+ return next({ path: '/login', query: { redirect: to.fullPath } })
+ }
+ if (to.path === '/login' && authStore.isAuthenticated) {
+ // 已登录访问登录页 -> 跳转首页
+ return next('/')
+ }
+ next
+})
 app.mount('#app')

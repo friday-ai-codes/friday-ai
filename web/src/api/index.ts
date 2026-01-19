@@ -2,6 +2,8 @@
  * API 服务统一导出
  */
 export { ApiError } from './client'
+export { default as authApi } from './auth'
+export * from './auth'
 export { default as logsApi } from './logs'
 export * from './logs'
 export { default as projectsApi } from './projects'

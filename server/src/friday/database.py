@@ -16,6 +16,7 @@ from .models import ( # noqa: F401
  ProjectRepository,
  Repository,
  Task,
+ User,
  WebhookLog,
  WorkItemLog,
 )
