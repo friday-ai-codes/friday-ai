@@ -2,7 +2,6 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
-from rest_framework.parsers import FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
@@ -257,8 +256,8 @@ class RepositoryViewSet(ModelViewSet):
  serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
  access_token = data.pop("access_token")
- git_user_name = data.pop("git_user_name", "Friday AI Agent")
- git_user_email = data.pop("git_user_email", "ai-agent@friday.dev")
+ git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
+ git_user_email = data.pop("git_user_email", "ai@friday.codes")
  if not access_token.strip:
  return Response(
  {"detail": "Access Token 不能为空"},
@@ -283,33 +282,44 @@ class RepositoryViewSet(ModelViewSet):
  """Get or delete credential for repository."""
  repository = self.get_object
  if request.method == "GET":
- credential = get_object_or_404(GitCredential, repository=repository)
+ # 凭证不存在时返回 null 而不是 404
+ credential = GitCredential.objects.filter(repository=repository).first
+ if credential:
  return Response(GitCredentialSerializer(credential).data)
+ return Response(None)
  elif request.method == "DELETE":
- credential = get_object_or_404(GitCredential, repository=repository)
+ credential = GitCredential.objects.filter(repository=repository).first
+ if credential:
  credential.delete
  return Response(status=status.HTTP_204_NO_CONTENT)
  else:
  return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 class SetAccessTokenView(APIView):
- """View for setting access token via form data."""
- parser_classes = [FormParser]
+ """View for setting or updating access token.
+ 支持创建新凭证或更新已有凭证。
+ """
  def post(self, request, repository_id):
  repository = get_object_or_404(Repository, id=repository_id)
- # Check if credential exists
- if GitCredential.objects.filter(repository=repository).exists:
- return Response(
- {"detail": "凭证已存在，请先删除现有凭证"},
- status=status.HTTP_400_BAD_REQUEST,
- )
  token = request.data.get("token")
  if not token:
  return Response(
  {"detail": "Token 不能为空"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- git_user_name = request.data.get("git_user_name", "Friday AI Agent")
- git_user_email = request.data.get("git_user_email", "ai-agent@friday.dev")
+ git_user_name = request.data.get("git_user_name", "Friday Codes AI Agent")
+ git_user_email = request.data.get("git_user_email", "ai@friday.codes")
+ # 检查凭证是否已存在，存在则更新，不存在则创建
+ existing_credential = GitCredential.objects.filter(repository=repository).first
+ if existing_credential:
+ # 更新现有凭证
+ existing_credential.auth_type = AuthType.ACCESS_TOKEN
+ existing_credential.encrypted_token = encrypt_value(token)
+ existing_credential.git_user_name = git_user_name
+ existing_credential.git_user_email = git_user_email
+ existing_credential.save
+ return Response(GitCredentialSerializer(existing_credential).data)
+ else:
+ # 创建新凭证
  credential = GitCredential.objects.create(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,
@@ -317,4 +327,6 @@ class SetAccessTokenView(APIView):
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
- return Response(GitCredentialSerializer(credential).data, status=status.HTTP_201_CREATED)
+ return Response(
+ GitCredentialSerializer(credential).data, status=status.HTTP_201_CREATED
+ )

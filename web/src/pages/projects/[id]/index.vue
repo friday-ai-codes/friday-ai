@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { ClaudeConfigRead } from '~/api/settings'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
+import { getProjectClaudeConfig } from '~/api/settings'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -23,6 +25,7 @@ useHead({
 })
 // 加载项目和相关任务
 const loading = ref(true)
+const claudeConfig = ref<ClaudeConfigRead | null>(null)
 onMounted(async => {
  try {
  await Promise.all([
@@ -31,6 +34,13 @@ onMounted(async => {
  tasksStore.fetchTasks({ project_id: projectId.value }),
  repositoriesStore.fetchRepositories, // 加载所有仓库供选择
  ])
+ // 加载 Claude 配置（单独 try-catch，失败不影响页面显示）
+ try {
+ claudeConfig.value = await getProjectClaudeConfig(projectId.value)
+ }
+ catch {
+ claudeConfig.value = null
+ }
  }
  catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取项目详情')
@@ -341,14 +351,30 @@ async function handleCustomToken {
  </RouterLink>
  </CardHeader>
  <CardContent>
- <div class="text-center py-6">
+ <div v-if="claudeConfig?.has_api_key" class="space-y-4">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
+ <div>
+ <p class="font-medium">
+ 已配置
+ </p>
+ <p class="text-sm text-muted-foreground">
+ 来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
+ </p>
+ <p v-if="claudeConfig.base_url" class="text-sm text-muted-foreground">
+ Base URL：{{ claudeConfig.base_url }}
+ </p>
+ </div>
+ </div>
+ </div>
+ <div v-else class="text-center py-6">
  <span class="icon-[lucide--bot] text-4xl text-muted-foreground" />
  <p class="mt-2 text-muted-foreground">
- 配置 Claude Code API 密钥和端点
+ 尚未配置 Claude API 密钥
  </p>
  <RouterLink:to="`/projects/${project.id}/claude`">
- <Button class="mt-4" size="sm" variant="outline">
- 查看配置
+ <Button class="mt-4" size="sm">
+ 配置 Claude
  </Button>
  </RouterLink>
  </div>

@@ -91,8 +91,8 @@ class GitCredential(models.Model):
  )
  ssh_key_encrypted = models.TextField(blank=True, null=True)
  encrypted_token = models.TextField(blank=True, null=True)
- git_user_name = models.CharField(max_length=200, default="Friday AI Agent")
- git_user_email = models.CharField(max_length=200, default="ai-agent@friday.dev")
+ git_user_name = models.CharField(max_length=200, default="Friday Codes AI Agent")
+ git_user_email = models.CharField(max_length=200, default="ai@friday.codes")
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

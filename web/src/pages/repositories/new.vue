@@ -30,8 +30,8 @@ const form = reactive({
  description: '',
  // 凭证信息（必填）
  access_token: '',
- git_user_name: 'Friday AI Agent',
- git_user_email: 'ai-agent@friday.dev',
+ git_user_name: 'Friday Codes AI Agent',
+ git_user_email: 'ai@friday.codes',
 })
 // 表单验证
 const errors = reactive({
@@ -213,7 +213,7 @@ const platforms: { value: GitPlatform, label: string } = [
  id="git_user_email"
  v-model="form.git_user_email"
  type="email"
- placeholder="ai-agent@friday.dev"
+ placeholder="ai@friday.codes"
  />
  </div>
  </div>
