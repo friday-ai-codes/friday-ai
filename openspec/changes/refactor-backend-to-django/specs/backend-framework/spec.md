@@ -70,16 +70,22 @@ The system SHALL use structlog for structured logging, integrated with Django's 
 - **WHEN** DEBUG mode is disabled
 - **THEN** logs SHALL be formatted as JSON for log aggregation
 ## ADDED Requirements
-### Requirement: Django Admin Interface
-The system SHALL provide a Django Admin interface for data management and system administration.
-#### Scenario: Model registration
-- **WHEN** admin accesses the admin interface
-- **THEN** all business models (Project, Repository, Task, etc.) SHALL be visible
-- **AND** CRUD operations SHALL be available for each model
-#### Scenario: Admin authentication
-- **WHEN** accessing `/admin/`
-- **THEN** Django session-based authentication SHALL be required
-- **AND** only users with `is_staff=True` SHALL have access
+### Requirement: Production Deployment with Gunicorn + Uvicorn
+The system SHALL be deployed in production using Gunicorn as the process manager with Uvicorn workers for ASGI support.
+#### Scenario: Container startup
+- **WHEN** the Docker container starts
+- **THEN** Gunicorn SHALL be launched with Uvicorn worker class
+- **AND** database migrations SHALL be applied automatically before starting the server
+#### Scenario: Worker configuration
+- **WHEN** the application runs in production
+- **THEN** Gunicorn SHALL manage multiple worker processes
+- **AND** each worker SHALL use `uvicorn.workers.UvicornWorker` for ASGI handling
+- **AND** workers SHALL have a configurable timeout (default 120 seconds)
+#### Scenario: Logging configuration
+- **WHEN** the application is running
+- **THEN** access logs SHALL be written to stdout
+- **AND** error logs SHALL be written to stderr
+- **AND** application output SHALL be captured in logs
 ### Requirement: Django App Structure
 The backend SHALL be organized into modular Django apps for separation of concerns.
 #### Scenario: App organization

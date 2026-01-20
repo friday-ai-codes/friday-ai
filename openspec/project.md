@@ -7,9 +7,11 @@ Friday 是一个 AI 驱动的敏捷开发自动化系统，旨在无缝集成飞
 - 提供完整的任务状态流转管理和人工审核机制
 - 通过 Docker 容器隔离确保任务执行环境的安全与独立
 ## Tech Stack
-- **Language**: Python 3.11+ (Backend), TypeScript (Frontend)
-- **Framework**: FastAPI (Backend), Vue 3 + Vite (Frontend), SQLModel (ORM)
-- **Database**: SQLite (aiosqlite)
+- **Language**: Python 3.13+ (Backend), TypeScript (Frontend)
+- **Framework**: Django 6.0 + Django REST Framework (Backend), Vue 3 + Vite (Frontend)
+- **Authentication**: djangorestframework-simplejwt (JWT)
+- **Database**: SQLite
+- **Production Server**: Gunicorn + Uvicorn (ASGI Workers)
 - **Containerization**: Docker, Docker Compose
 - **Integrations**:
  - Feishu/Lark Open Platform (SDK: lark-oapi)
@@ -24,31 +26,33 @@ Friday 是一个 AI 驱动的敏捷开发自动化系统，旨在无缝集成飞
 - 异步优先：I/O 密集型操作应使用 `async/await`
 ### Architecture Patterns
 - **Monorepo Structure**:
- - `server/`: Backend application (FastAPI, Python)
+ - `server/`: Backend application (Django, Python)
  - `web/`: Frontend application (Vue 3, TypeScript)
-- **API Layer**: `server/src/friday/routes/` - 处理 HTTP 请求和路由
-- **Service Layer**: `server/src/friday/services/` - 包含业务逻辑（如飞书集成、调度器、加密服务）
-- **Data Layer**: `server/src/friday/models/` & `server/src/friday/database.py` - 定义数据模型和数据库交互
-- **Database Migration**: `server/src/friday/alembic/` - Alembic 数据库迁移配置和脚本
+- **Django Apps**:
+ - `server/core/`: 核心应用 (认证、健康检查、系统设置)
+ - `server/projects/`: 项目和仓库管理
+ - `server/tasks/`: 任务生命周期管理
+ - `server/webhooks/`: Webhook 处理 (飞书、GitHub)
+- **Service Layer**: `server/services/` - 包含业务逻辑（飞书 API 客户端、Docker 调度器、Claude 配置服务）
 - **Task Runner**: `server/task/` - 独立的 Docker 容器环境，用于执行具体的 AI 编码任务
 - **Webhook Driven**: 主要通过飞书和 GitHub 的 Webhook 触发业务流程
 ### Database Migration Guidelines
-数据库 Schema 变更 **必须** 通过 Alembic 迁移管理：
+数据库 Schema 变更 **必须** 通过 Django 迁移管理：
 1. **修改 Model 后生成迁移**：
  ```bash
- cd server && uv run alembic revision --autogenerate -m "描述变更"
+ cd server && uv run python manage.py makemigrations
  ```
-2. **检查并调整迁移脚本**：`server/src/friday/alembic/versions/`
+2. **检查迁移脚本**：`server/<app>/migrations/`
 3. **本地测试迁移**：
  ```bash
- uv run alembic upgrade head
+ uv run python manage.py migrate
  ```
-4. **自动迁移机制**：服务启动时会自动执行 `alembic upgrade head`，Docker 容器无需额外命令
+4. **自动迁移机制**：Docker 容器启动时会自动执行 `python manage.py migrate --noinput`
 5. **回滚操作**：
  ```bash
- uv run alembic downgrade -1
+ uv run python manage.py migrate <app> <migration_name>
  ```
-> **重要**：AI Agent 在完成后端代码变更涉及 Model 修改后，**必须** 生成对应的 Alembic 迁移脚本
+> **重要**：AI Agent 在完成后端代码变更涉及 Model 修改后，**必须** 生成对应的 Django 迁移脚本
 ### Testing Strategy
 - 使用 `pytest` 进行单元测试和集成测试
 - `pytest-asyncio` 用于异步测试

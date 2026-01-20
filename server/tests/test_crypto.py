@@ -1,5 +1,4 @@
 """Tests for crypto service."""
-import pytest
 class TestCryptoService:
  """Test encryption/decryption service."""
  def test_encrypt_decrypt_value(self):
@@ -13,12 +12,12 @@ class TestCryptoService:
  """Test encrypting empty value."""
  from services.crypto import encrypt_value
  assert encrypt_value("") == ""
- assert encrypt_value(None) is None
+ assert encrypt_value(None) is None # type: ignore
  def test_decrypt_empty_value(self):
  """Test decrypting empty value."""
  from services.crypto import decrypt_value
  assert decrypt_value("") == ""
- assert decrypt_value(None) is None
+ assert decrypt_value(None) is None # type: ignore
  def test_encrypt_special_characters(self):
  """Test encrypting values with special characters."""
  from services.crypto import decrypt_value, encrypt_value

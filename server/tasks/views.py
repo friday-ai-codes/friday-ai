@@ -1,14 +1,20 @@
-"""Tasks app views."""
+"""Tasks app views - 任务管理 API 视图。
+包含完整的任务执行功能，迁移自 FastAPI 版本。
+"""
+import asyncio
 import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from projects.models import Project
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from projects.models import GitCredential, Project, Repository
+from services.claude_config import get_claude_config_for_task
+from services.crypto import decrypt_value
+from services.scheduler import get_scheduler
 from .models import Task, TaskStatus
 from .serializers import (
  TaskCreateSerializer,
@@ -39,7 +45,7 @@ class TaskViewSet(ModelViewSet):
  task_status = self.request.query_params.get("status")
  if task_status:
  queryset = queryset.filter(status=task_status)
- return queryset
+ return queryset.order_by("-created_at")
  def create(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
  serializer.is_valid(raise_exception=True)
@@ -120,8 +126,54 @@ class TaskViewSet(ModelViewSet):
  {"detail": "Task must have a repository assigned before execution."},
  status=status.HTTP_400_BAD_REQUEST,
  )
- # TODO: Implement actual container execution
- # For now, just update status
+ # Get repository and credentials
+ try:
+ repository = Repository.objects.get(id=task.repository_id)
+ except Repository.DoesNotExist:
+ return Response(
+ {"detail": "Repository not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ git_credentials = {}
+ try:
+ credential = GitCredential.objects.get(repository=repository)
+ if credential.ssh_key_encrypted:
+ git_credentials["ssh_key"] = decrypt_value(credential.ssh_key_encrypted)
+ elif credential.encrypted_token:
+ git_credentials["access_token"] = decrypt_value(credential.encrypted_token)
+ except GitCredential.DoesNotExist:
+ pass
+ # 获取 Claude 配置
+ try:
+ claude_config_obj = get_claude_config_for_task(str(task.project_id))
+ claude_config = {
+ "api_key": claude_config_obj.api_key or "",
+ "base_url": claude_config_obj.base_url or "",
+ }
+ except ValueError as e:
+ return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ # Start container
+ scheduler = get_scheduler
+ try:
+ # 使用 asyncio 运行异步代码
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ container_id = loop.run_until_complete(
+ scheduler.start_task(
+ task=task,
+ repo_url=repository.git_url,
+ branch=repository.default_branch or "main",
+ git_credentials=git_credentials,
+ mode=mode,
+ claude_config=claude_config,
+ )
+ )
+ finally:
+ loop.close
+ except RuntimeError as e:
+ return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+ # Update task status
  now = timezone.now
  if mode == "plan":
  task.status = TaskStatus.PLANNING
@@ -134,7 +186,7 @@ class TaskViewSet(ModelViewSet):
  TaskExecuteResponseSerializer(
  {
  "task_id": str(task.id),
- "container_id": "mock-container-id",
+ "container_id": container_id[:12],
  "mode": mode,
  "message": f"Task execution started in {mode} mode",
  }
@@ -144,39 +196,55 @@ class TaskViewSet(ModelViewSet):
  def stop(self, request, pk=None):
  """Stop task execution."""
  task = self.get_object
- # TODO: Implement actual container stop
+ force = request.query_params.get("force", "false").lower == "true"
+ scheduler = get_scheduler
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ stopped = loop.run_until_complete(scheduler.stop_task(str(task.id), force=force))
+ finally:
+ loop.close
+ if stopped:
  task.status = TaskStatus.FAILED
  task.error_message = "Task stopped by user"
  task.save
+ return Response({"status": "stopped", "message": "Task container stopped"})
+ else:
  return Response(
- {
- "status": "stopped",
- "message": "Task container stopped",
- }
+ {"status": "not_found", "message": "No running container found for task"}
  )
  @action(detail=True, methods=["get"])
  def logs(self, request, pk=None):
  """Get task container logs."""
  task = self.get_object
  tail = int(request.query_params.get("tail", 100))
- # TODO: Implement actual log retrieval
+ scheduler = get_scheduler
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ logs = loop.run_until_complete(scheduler.get_task_logs(str(task.id), tail=tail))
+ finally:
+ loop.close
+ if logs is None:
  return Response(
- {
- "task_id": str(task.id),
- "logs": "Container logs not available in Django migration phase",
- }
+ {"detail": "No container found for task"},
+ status=status.HTTP_404_NOT_FOUND,
  )
+ return Response({"task_id": str(task.id), "logs": logs})
  @action(detail=True, methods=["get"], url_path="container-status")
  def container_status(self, request, pk=None):
  """Get task container status."""
  task = self.get_object
- # TODO: Implement actual container status
- return Response(
- {
- "task_id": str(task.id),
- "container": None,
- }
- )
+ scheduler = get_scheduler
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ container_status = loop.run_until_complete(scheduler.get_task_status(str(task.id)))
+ finally:
+ loop.close
+ if container_status is None:
+ return Response({"task_id": str(task.id), "container": None})
+ return Response({"task_id": str(task.id), "container": container_status})
 class TaskStatusCallbackView(APIView):
  """View for task status callback from container."""
  permission_classes = [AllowAny] # Container callback doesn't use auth
