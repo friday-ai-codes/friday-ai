@@ -1,12 +1,12 @@
 """Projects app views."""
 from django.shortcuts import get_object_or_404
-from services.crypto import encrypt_value
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from services.crypto import encrypt_value
 from .models import (
  AuthType,
  GitCredential,
@@ -86,7 +86,7 @@ class ProjectViewSet(ModelViewSet):
  project = self.get_object
  if request.method == "GET":
  return Response(FeishuConfigSerializer(project).data)
- elif request.method == "PUT":
+ if request.method == "PUT":
  serializer = FeishuConfigCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  project.feishu_plugin_id = serializer.validated_data["plugin_id"]
@@ -96,7 +96,7 @@ class ProjectViewSet(ModelViewSet):
  project.feishu_user_key = serializer.validated_data.get("user_key", "")
  project.save
  return Response(FeishuConfigSerializer(project).data)
- elif request.method == "DELETE":
+ # DELETE
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
  project.feishu_user_key = None
@@ -116,13 +116,55 @@ class ProjectViewSet(ModelViewSet):
  "project_accessible": False,
  }
  )
- # TODO: Implement actual Feishu API test
+ # 获取测试配置（如果提供）
+ test_plugin_id = request.data.get("plugin_id")
+ test_plugin_secret = request.data.get("plugin_secret")
+ test_user_key = request.data.get("user_key")
+ # 使用传入的临时配置或已保存的配置
+ plugin_id = test_plugin_id or project.feishu_plugin_id
+ plugin_secret = None
+ if test_plugin_secret:
+ plugin_secret = test_plugin_secret
+ elif project.feishu_plugin_secret_encrypted:
+ from services.crypto import decrypt_value
+ plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
+ user_key = test_user_key or project.feishu_user_key
+ if not plugin_id or not plugin_secret:
  return Response(
  {
- "success": True,
- "message": "配置有效",
- "plugin_token_valid": True,
- "project_accessible": True,
+ "success": False,
+ "message": "飞书配置不完整，请填写插件 ID 和插件 Secret",
+ "plugin_token_valid": False,
+ "project_accessible": False,
+ }
+ )
+ # 执行实际的飞书 API 测试
+ try:
+ import asyncio
+ from services.feishu import FeishuClient
+ client = FeishuClient(
+ plugin_id=plugin_id,
+ plugin_secret=plugin_secret,
+ project_key=project.feishu_project_key,
+ user_key=user_key,
+ )
+ # 使用 asyncio.run 执行异步测试
+ test_result = asyncio.run(client.test_connection(project.feishu_project_key))
+ return Response(
+ {
+ "success": test_result["success"],
+ "message": test_result["message"],
+ "plugin_token_valid": test_result["plugin_token_valid"],
+ "project_accessible": test_result["project_accessible"],
+ }
+ )
+ except Exception as e:
+ return Response(
+ {
+ "success": False,
+ "message": f"测试失败: {str(e)}",
+ "plugin_token_valid": False,
+ "project_accessible": False,
  }
  )
  @action(detail=True, methods=["post"], url_path="refresh-webhook-token")
@@ -173,7 +215,7 @@ class ProjectViewSet(ModelViewSet):
  }
  ).data
  )
- elif request.method == "PUT":
+ if request.method == "PUT":
  serializer = ClaudeConfigCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  api_key = serializer.validated_data.get("api_key")
@@ -195,7 +237,7 @@ class ProjectViewSet(ModelViewSet):
  }
  ).data
  )
- elif request.method == "DELETE":
+ # DELETE
  project.claude_api_key_encrypted = None
  project.claude_base_url = None
  project.save
@@ -247,6 +289,8 @@ class RepositoryViewSet(ModelViewSet):
  credential = get_object_or_404(GitCredential, repository=repository)
  credential.delete
  return Response(status=status.HTTP_204_NO_CONTENT)
+ else:
+ return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 class SetAccessTokenView(APIView):
  """View for setting access token via form data."""
  parser_classes = [FormParser]
@@ -255,13 +299,13 @@ class SetAccessTokenView(APIView):
  # Check if credential exists
  if GitCredential.objects.filter(repository=repository).exists:
  return Response(
- {"detail": "Credential already exists. Please delete the existing one first."},
+ {"detail": "凭证已存在，请先删除现有凭证"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  token = request.data.get("token")
  if not token:
  return Response(
- {"detail": "Token is required"},
+ {"detail": "Token 不能为空"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  git_user_name = request.data.get("git_user_name", "Friday AI Agent")

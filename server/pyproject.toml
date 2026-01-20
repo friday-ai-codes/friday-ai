@@ -24,6 +24,7 @@ dependencies = [
  "paramiko>=4.0.0",
  # Utilities
  "structlog>=25.5.0",
+ "djangorestframework-stubs>=3.16.7",
 ]
 [build-system]
 requires = ["hatchling"]
