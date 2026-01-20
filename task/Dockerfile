@@ -15,8 +15,8 @@ COPY src/ ./src/
 # Install Python dependencies directly with pip (no virtual environment)
 RUN pip install --no-cache-dir -e .
 # Configure Git for commits
-RUN git config --global user.email "ai-agent@friday.dev" \
- && git config --global user.name "Friday AI Agent" \
+RUN git config --global user.email "ai@friday.codes" \
+ && git config --global user.name "Friday Codes AI Agent" \
  && git config --global --add safe.directory "*"
 # Configure SSH
 RUN mkdir -p /root/.ssh \

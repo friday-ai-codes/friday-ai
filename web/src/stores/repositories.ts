@@ -149,11 +149,11 @@ export const useRepositoriesStore = defineStore('repositories', => {
  /**
  * 设置/更新 Access Token
  */
- async function setAccessToken(id: string, formData: FormData) {
+ async function setAccessToken(id: string, data: { token: string, git_user_name?: string, git_user_email?: string }) {
  loading.value = true
  error.value = null
  try {
- currentCredential.value = await repositoriesApi.setAccessToken(id, formData)
+ currentCredential.value = await repositoriesApi.setAccessToken(id, data)
  // 更新仓库的 has_credential 状态
  const repository = repositories.value.find(r => r.id === id)
  if (repository) {

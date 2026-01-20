@@ -39,12 +39,12 @@ const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
 // 表单状态
 const accessToken = ref('')
-const gitUserName = ref('Friday AI Agent')
-const gitUserEmail = ref('ai-agent@friday.dev')
+const gitUserName = ref('Friday Codes AI Agent')
+const gitUserEmail = ref('ai@friday.codes')
 const submitting = ref(false)
 // 更新凭证对话框
 const updateDialogOpen = ref(false)
-// 提交更新 Access Token（需要先删除旧凭证再创建新的）
+// 提交更新或创建 Access Token
 async function handleAccessTokenUpdate {
  if (!accessToken.value.trim) {
  showError('请输入新的 Access Token')
@@ -52,24 +52,20 @@ async function handleAccessTokenUpdate {
  }
  submitting.value = true
  try {
- // 先删除旧凭证
- if (credential.value) {
- await repositoriesStore.deleteCredential(repositoryId.value)
- }
- // 创建新凭证
- const formData = new FormData
- formData.append('token', accessToken.value)
- formData.append('git_user_name', gitUserName.value)
- formData.append('git_user_email', gitUserEmail.value)
- await repositoriesStore.setAccessToken(repositoryId.value, formData)
- success('更新成功', 'Access Token 已更新')
+ // 直接调用接口，后端会自动判断是创建还是更新
+ await repositoriesStore.setAccessToken(repositoryId.value, {
+ token: accessToken.value,
+ git_user_name: gitUserName.value,
+ git_user_email: gitUserEmail.value,
+ })
+ success('保存成功', credential.value ? 'Access Token 已更新': 'Access Token 已配置')
  accessToken.value = ''
  updateDialogOpen.value = false
  // 重新加载凭证信息
  await repositoriesStore.fetchCredential(repositoryId.value)
  }
  catch (e) {
- showError('更新失败', e instanceof Error ? e.message: '无法更新 Access Token')
+ showError('保存失败', e instanceof Error ? e.message: '无法保存 Access Token')
  }
  finally {
  submitting.value = false
@@ -160,18 +156,16 @@ function formatDate(dateStr: string) {
  <span class="icon-[lucide--alert-triangle]" />
  凭证未配置
  </CardTitle>
- <CardDescription>该仓库在创建时未配置凭证，需要补充配置</CardDescription>
+ <CardDescription>该仓库尚未配置 Git 访问凭证，请配置 Access Token</CardDescription>
  </CardHeader>
- <CardContent>
- <p class="text-sm text-muted-foreground mb-4">
- 请删除此仓库并重新创建，新建仓库时会强制要求填写 Access Token。
+ <CardContent class="space-y-4">
+ <p class="text-sm text-muted-foreground">
+ 需要配置 Access Token 才能执行 Git 操作（如克隆、推送分支等）。
  </p>
- <RouterLink:to="`/repositories/${repositoryId}`">
- <Button variant="outline">
- <span class="icon-[lucide--arrow-left] mr-2" />
- 返回仓库详情
+ <Button @click="updateDialogOpen = true">
+ <span class="icon-[lucide--plus] mr-2" />
+ 配置 Access Token
  </Button>
- </RouterLink>
  </CardContent>
  </Card>
  <!-- 使用说明 -->
@@ -230,7 +224,7 @@ function formatDate(dateStr: string) {
  id="update_git_user_email"
  v-model="gitUserEmail"
  type="email"
- placeholder="ai-agent@friday.dev"
+ placeholder="ai@friday.codes"
  />
  </div>
  </div>

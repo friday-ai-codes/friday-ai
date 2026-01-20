@@ -570,10 +570,10 @@ const logs = computed( => tasksStore.currentLogs)
  <CardContent>
  <div class="flex gap-4">
  <Badge variant="outline">
- ID: {{ tasksStore.containerStatus.container.id.slice(0, 12) }}
+ ID: {{ tasksStore.containerStatus.container.id?.slice(0, 12) || '-' }}
  </Badge>
  <Badge>
- {{ tasksStore.containerStatus.container.status }}
+ {{ tasksStore.containerStatus.container.status || '-' }}
  </Badge>
  </div>
  </CardContent>

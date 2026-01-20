@@ -34,20 +34,32 @@ const claudeConfig = ref<ClaudeConfigRead | null>(null)
 const apiKeyValue = ref('')
 const baseUrlValue = ref('')
 const showApiKey = ref(false)
+// 跟踪用户是否修改了值
+const apiKeyDirty = ref(false)
+const baseUrlDirty = ref(false)
 async function loadData {
  loading.value = true
  try {
  await projectsStore.fetchProject(projectId.value)
  try {
  claudeConfig.value = await getProjectClaudeConfig(projectId.value)
+ // Base URL 直接使用返回的值
  if (claudeConfig.value.base_url) {
  baseUrlValue.value = claudeConfig.value.base_url
  }
+ else {
+ baseUrlValue.value = ''
+ }
+ // API Key 不显示，只显示是否已配置
+ apiKeyValue.value = ''
  }
  catch {
  // 配置不存在是正常情况
  claudeConfig.value = null
  }
+ // 重置脏标记
+ apiKeyDirty.value = false
+ baseUrlDirty.value = false
  }
  catch (e) {
  toast.error('加载失败', {
@@ -75,24 +87,37 @@ const sourceLabel = computed( => {
  return null
  }
 })
+// 处理输入变更
+function onApiKeyInput {
+ apiKeyDirty.value = true
+}
+function onBaseUrlInput {
+ baseUrlDirty.value = true
+}
+// 检查是否有未保存的更改
+function hasUnsavedChanges: boolean {
+ return apiKeyDirty.value || baseUrlDirty.value
+}
 // 保存配置
 async function saveConfig {
  saving.value = true
  try {
  const config: ClaudeConfigCreate = {}
- // 只在用户输入了新值时才更新
- if (apiKeyValue.value && !apiKeyValue.value.includes('***')) {
- config.api_key = apiKeyValue.value
+ // 只在用户实际修改过才保存
+ if (apiKeyDirty.value && apiKeyValue.value.trim) {
+ config.api_key = apiKeyValue.value.trim
  }
- if (baseUrlValue.value) {
- config.base_url = baseUrlValue.value
+ if (baseUrlDirty.value) {
+ config.base_url = baseUrlValue.value.trim || undefined
  }
- if (!config.api_key && !config.base_url) {
- toast.warning('请至少输入一个配置项')
+ if (!config.api_key && config.base_url === undefined) {
+ toast.info('没有需要保存的更改')
  return
  }
  claudeConfig.value = await updateProjectClaudeConfig(projectId.value, config)
  apiKeyValue.value = '' // 清空密钥输入
+ apiKeyDirty.value = false
+ baseUrlDirty.value = false
  toast.success('配置已保存')
  }
  catch (e) {
@@ -112,6 +137,8 @@ async function removeConfig {
  claudeConfig.value = null
  apiKeyValue.value = ''
  baseUrlValue.value = ''
+ apiKeyDirty.value = false
+ baseUrlDirty.value = false
  toast.success('配置已删除，将使用系统默认值')
  await loadData // 重新加载以获取回退的配置
  }
@@ -145,38 +172,6 @@ async function removeConfig {
  配置 {{ project.name }} 的 Claude Code 设置
  </p>
  </div>
- <!-- 当前配置状态 -->
- <Card>
- <CardHeader>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--info]" />
- 当前配置状态
- </CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
- <div class="grid grid-cols-2 gap-4 text-sm">
- <div>
- <span class="text-muted-foreground">API Key:</span>
- <span class="ml-2":class="claudeConfig?.has_api_key ? 'text-green-600': 'text-yellow-600'">
- {{ claudeConfig?.has_api_key ? '已配置': '未配置' }}
- </span>
- </div>
- <div>
- <span class="text-muted-foreground">Base URL:</span>
- <span class="ml-2">
- {{ claudeConfig?.base_url || '默认' }}
- </span>
- </div>
- <div>
- <span class="text-muted-foreground">配置来源:</span>
- <Badge v-if="sourceLabel":variant="sourceLabel.variant" class="ml-2">
- {{ sourceLabel.text }}
- </Badge>
- <span v-else class="ml-2 text-muted-foreground">无配置</span>
- </div>
- </div>
- </CardContent>
- </Card>
  <!-- 配置表单 -->
  <Card>
  <CardHeader>
@@ -195,12 +190,14 @@ async function removeConfig {
  <p class="text-sm text-muted-foreground">
  为此项目单独配置的 API 密钥，将覆盖系统默认值
  </p>
- <div class="relative">
+ <div class="flex gap-2">
+ <div class="relative flex-1">
  <Input
  id="api-key"
  v-model="apiKeyValue":type="showApiKey ? 'text': 'password'"
  placeholder="sk-ant-..."
  class="pr-10"
+ @input="onApiKeyInput"
  />
  <button
  type="button"
@@ -210,6 +207,14 @@ async function removeConfig {
  <span:class="showApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
  </button>
  </div>
+ </div>
+ <p v-if="claudeConfig?.has_api_key" class="text-sm text-green-600 flex items-center gap-1">
+ <span class="icon-[lucide--check-circle]" />
+ 已配置 API Key
+ <Badge v-if="sourceLabel":variant="sourceLabel.variant" class="ml-2">
+ {{ sourceLabel.text }}
+ </Badge>
+ </p>
  </div>
  <!-- Base URL -->
  <div class="space-y-2">
@@ -222,14 +227,14 @@ async function removeConfig {
  v-model="baseUrlValue"
  type="url"
  placeholder="https://api.anthropic.com"
+ @input="onBaseUrlInput"
  />
+ <p v-if="claudeConfig?.base_url" class="text-sm text-muted-foreground">
+ 当前值: {{ claudeConfig.base_url }}
+ </p>
  </div>
  <!-- 操作按钮 -->
- <div class="flex gap-2">
- <Button:disabled="saving" @click="saveConfig">
- <span v-if="saving" class="icon-[lucide--loader-2] animate-spin mr-2" />
- 保存配置
- </Button>
+ <div class="flex justify-between items-center pt-4 border-t">
  <Button
  v-if="claudeConfig?.source === 'project'"
  variant="destructive":disabled="saving"
@@ -237,15 +242,25 @@ async function removeConfig {
  >
  删除项目配置
  </Button>
+ <div v-else />
+ <Button:disabled="saving || !hasUnsavedChanges" @click="saveConfig">
+ <span v-if="saving" class="icon-[lucide--loader-2] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--save] mr-2" />
+ 保存设置
+ </Button>
  </div>
  </CardContent>
  </Card>
  <!-- 配置说明 -->
- <div class="rounded-lg border space-y-3">
- <h3 class="font-medium">
+ <Card class="border-dashed">
+ <CardHeader>
+ <CardTitle class="text-base flex items-center gap-2">
+ <span class="icon-[lucide--info]" />
  配置说明
- </h3>
- <ul class="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+ </CardTitle>
+ </CardHeader>
+ <CardContent class="text-sm text-muted-foreground space-y-2">
+ <ul class="list-disc list-inside space-y-1">
  <li>项目级配置将覆盖系统级默认设置</li>
  <li>如果删除项目配置，将自动回退到系统默认值</li>
  <li>API Key 将加密存储，确保安全</li>
@@ -253,12 +268,13 @@ async function removeConfig {
  </ul>
  <RouterLink
  to="/settings"
- class="inline-flex items-center text-sm text-primary hover:underline"
+ class="inline-flex items-center text-sm text-primary hover:underline mt-2"
  >
  前往系统设置配置默认值
  <span class="icon-[lucide--arrow-right] ml-1" />
  </RouterLink>
- </div>
+ </CardContent>
+ </Card>
  </template>
  <!-- 项目不存在 -->
  <EmptyState

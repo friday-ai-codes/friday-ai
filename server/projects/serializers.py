@@ -1,14 +1,21 @@
 """Projects app serializers."""
 from rest_framework import serializers
-from .models import AuthType, GitCredential, Project, Repository, generate_webhook_token
+from .models import GitCredential, Project, Repository
 class RepositorySerializer(serializers.ModelSerializer):
  """Serializer for Repository model."""
  has_credential = serializers.SerializerMethodField
  class Meta:
  model = Repository
  fields = [
- "id", "name", "git_url", "git_platform", "default_branch",
- "claude_md_path", "description", "created_at", "updated_at",
+ "id",
+ "name",
+ "git_url",
+ "git_platform",
+ "default_branch",
+ "claude_md_path",
+ "description",
+ "created_at",
+ "updated_at",
  "has_credential",
  ]
  read_only_fields = ["id", "created_at", "updated_at"]
@@ -17,14 +24,20 @@ class RepositorySerializer(serializers.ModelSerializer):
 class RepositoryCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Repository with credential."""
  access_token = serializers.CharField(write_only=True)
- git_user_name = serializers.CharField(default="Friday AI Agent")
- git_user_email = serializers.CharField(default="ai-agent@friday.dev")
+ git_user_name = serializers.CharField(default="Friday Codes AI Agent")
+ git_user_email = serializers.CharField(default="ai@friday.codes")
  class Meta:
  model = Repository
  fields = [
- "name", "git_url", "git_platform", "default_branch",
- "claude_md_path", "description", "access_token",
- "git_user_name", "git_user_email",
+ "name",
+ "git_url",
+ "git_platform",
+ "default_branch",
+ "claude_md_path",
+ "description",
+ "access_token",
+ "git_user_name",
+ "git_user_email",
  ]
 class ProjectSerializer(serializers.ModelSerializer):
  """Serializer for Project model."""
@@ -34,9 +47,15 @@ class ProjectSerializer(serializers.ModelSerializer):
  class Meta:
  model = Project
  fields = [
- "id", "name", "description", "feishu_project_key",
- "has_feishu_config", "webhook_token", "repositories",
- "created_at", "updated_at",
+ "id",
+ "name",
+ "description",
+ "feishu_project_key",
+ "has_feishu_config",
+ "webhook_token",
+ "repositories",
+ "created_at",
+ "updated_at",
  ]
  read_only_fields = ["id", "created_at", "updated_at"]
  def get_has_feishu_config(self, obj):
@@ -72,7 +91,7 @@ class ClaudeConfigSerializer(serializers.Serializer):
  """Serializer for Claude configuration."""
  has_api_key = serializers.BooleanField
  base_url = serializers.CharField(allow_null=True)
- source = serializers.CharField
+ config_source = serializers.CharField(source="source")
 class ClaudeConfigCreateSerializer(serializers.Serializer):
  """Serializer for creating/updating Claude configuration."""
  api_key = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -90,8 +109,14 @@ class GitCredentialSerializer(serializers.ModelSerializer):
  class Meta:
  model = GitCredential
  fields = [
- "id", "repository_id", "auth_type", "git_user_name",
- "git_user_email", "created_at", "has_ssh_key", "has_access_token",
+ "id",
+ "repository_id",
+ "auth_type",
+ "git_user_name",
+ "git_user_email",
+ "created_at",
+ "has_ssh_key",
+ "has_access_token",
  ]
  read_only_fields = ["id", "created_at"]
  def get_has_ssh_key(self, obj):
