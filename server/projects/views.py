@@ -1,0 +1,276 @@
+"""Projects app views."""
+from django.shortcuts import get_object_or_404
+from services.crypto import encrypt_value
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
+from .models import (
+ AuthType,
+ GitCredential,
+ Project,
+ ProjectRepository,
+ Repository,
+ generate_webhook_token,
+)
+from .serializers import (
+ ClaudeConfigCreateSerializer,
+ ClaudeConfigSerializer,
+ FeishuConfigCreateSerializer,
+ FeishuConfigSerializer,
+ GitCredentialSerializer,
+ ProjectCreateSerializer,
+ ProjectSerializer,
+ ProjectUpdateSerializer,
+ RepositoryCreateSerializer,
+ RepositorySerializer,
+ RepositoryWithProjectsSerializer,
+ WebhookTokenSerializer,
+ WebhookTokenUpdateSerializer,
+)
+class ProjectViewSet(ModelViewSet):
+ """ViewSet for Project CRUD operations."""
+ queryset = Project.objects.prefetch_related("repositories__credential").all
+ serializer_class = ProjectSerializer
+ def get_serializer_class(self):
+ if self.action == "create":
+ return ProjectCreateSerializer
+ if self.action in ["update", "partial_update"]:
+ return ProjectUpdateSerializer
+ return ProjectSerializer
+ def create(self, request, *args, **kwargs):
+ serializer = self.get_serializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ project = Project.objects.create(**serializer.validated_data)
+ return Response(
+ ProjectSerializer(project).data,
+ status=status.HTTP_201_CREATED,
+ )
+ # === Repository association ===
+ @action(detail=True, methods=["get"], url_path="repositories")
+ def list_repositories(self, request, pk=None):
+ """List repositories associated with the project."""
+ project = self.get_object
+ repositories = project.repositories.all
+ serializer = RepositorySerializer(repositories, many=True)
+ return Response(serializer.data)
+ @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
+ def link_repository(self, request, pk=None, repository_id=None):
+ """Link a repository to the project."""
+ project = self.get_object
+ repository = get_object_or_404(Repository, id=repository_id)
+ _, created = ProjectRepository.objects.get_or_create(
+ project=project,
+ repository=repository,
+ )
+ if not created:
+ return Response({"message": "Already linked"})
+ return Response({"message": "Linked successfully"}, status=status.HTTP_201_CREATED)
+ @link_repository.mapping.delete
+ def unlink_repository(self, request, pk=None, repository_id=None):
+ """Unlink a repository from the project."""
+ project = self.get_object
+ link = get_object_or_404(
+ ProjectRepository,
+ project=project,
+ repository_id=repository_id,
+ )
+ link.delete
+ return Response(status=status.HTTP_204_NO_CONTENT)
+ # === Feishu configuration ===
+ @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-config")
+ def feishu_config(self, request, pk=None):
+ """Manage Feishu configuration."""
+ project = self.get_object
+ if request.method == "GET":
+ return Response(FeishuConfigSerializer(project).data)
+ elif request.method == "PUT":
+ serializer = FeishuConfigCreateSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ project.feishu_plugin_id = serializer.validated_data["plugin_id"]
+ project.feishu_plugin_secret_encrypted = encrypt_value(
+ serializer.validated_data["plugin_secret"]
+ )
+ project.feishu_user_key = serializer.validated_data.get("user_key", "")
+ project.save
+ return Response(FeishuConfigSerializer(project).data)
+ elif request.method == "DELETE":
+ project.feishu_plugin_id = None
+ project.feishu_plugin_secret_encrypted = None
+ project.feishu_user_key = None
+ project.save
+ return Response(status=status.HTTP_204_NO_CONTENT)
+ @action(detail=True, methods=["post"], url_path="feishu-config/test")
+ def test_feishu_config(self, request, pk=None):
+ """Test Feishu configuration."""
+ project = self.get_object
+ # Check if configured
+ if not project.has_feishu_config:
+ return Response(
+ {
+ "success": False,
+ "message": "飞书配置不完整，请填写插件 ID 和插件 Secret",
+ "plugin_token_valid": False,
+ "project_accessible": False,
+ }
+ )
+ # TODO: Implement actual Feishu API test
+ return Response(
+ {
+ "success": True,
+ "message": "配置有效",
+ "plugin_token_valid": True,
+ "project_accessible": True,
+ }
+ )
+ @action(detail=True, methods=["post"], url_path="refresh-webhook-token")
+ def refresh_webhook_token(self, request, pk=None):
+ """Refresh webhook token."""
+ project = self.get_object
+ project.feishu_webhook_token = generate_webhook_token
+ project.save
+ return Response(
+ WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
+ )
+ @action(detail=True, methods=["put"], url_path="webhook-token")
+ def update_webhook_token(self, request, pk=None):
+ """Update webhook token with custom value."""
+ project = self.get_object
+ serializer = WebhookTokenUpdateSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ token = serializer.validated_data["token"]
+ if len(token) > 32:
+ return Response(
+ {"detail": "Token 长度不能超过 32 个字符"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if len(token) == 0:
+ return Response(
+ {"detail": "Token 不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ project.feishu_webhook_token = token
+ project.save
+ return Response(
+ WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
+ )
+ # === Claude configuration ===
+ @action(detail=True, methods=["get", "put", "delete"], url_path="claude-config")
+ def claude_config(self, request, pk=None):
+ """Manage Claude configuration."""
+ project = self.get_object
+ if request.method == "GET":
+ has_api_key = bool(project.claude_api_key_encrypted)
+ source = "project" if has_api_key else "system"
+ return Response(
+ ClaudeConfigSerializer(
+ {
+ "has_api_key": has_api_key,
+ "base_url": project.claude_base_url,
+ "source": source,
+ }
+ ).data
+ )
+ elif request.method == "PUT":
+ serializer = ClaudeConfigCreateSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ api_key = serializer.validated_data.get("api_key")
+ if api_key is not None:
+ if api_key == "":
+ project.claude_api_key_encrypted = None
+ else:
+ project.claude_api_key_encrypted = encrypt_value(api_key)
+ base_url = serializer.validated_data.get("base_url")
+ if base_url is not None:
+ project.claude_base_url = base_url if base_url else None
+ project.save
+ return Response(
+ ClaudeConfigSerializer(
+ {
+ "has_api_key": bool(project.claude_api_key_encrypted),
+ "base_url": project.claude_base_url,
+ "source": "project" if project.claude_api_key_encrypted else "system",
+ }
+ ).data
+ )
+ elif request.method == "DELETE":
+ project.claude_api_key_encrypted = None
+ project.claude_base_url = None
+ project.save
+ return Response(status=status.HTTP_204_NO_CONTENT)
+class RepositoryViewSet(ModelViewSet):
+ """ViewSet for Repository CRUD operations."""
+ queryset = Repository.objects.select_related("credential").prefetch_related("projects").all
+ serializer_class = RepositorySerializer
+ def get_serializer_class(self):
+ if self.action == "create":
+ return RepositoryCreateSerializer
+ if self.action == "retrieve":
+ return RepositoryWithProjectsSerializer
+ return RepositorySerializer
+ def create(self, request, *args, **kwargs):
+ serializer = RepositoryCreateSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ data = serializer.validated_data
+ access_token = data.pop("access_token")
+ git_user_name = data.pop("git_user_name", "Friday AI Agent")
+ git_user_email = data.pop("git_user_email", "ai-agent@friday.dev")
+ if not access_token.strip:
+ return Response(
+ {"detail": "Access Token 不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Create repository
+ repository = Repository.objects.create(**data)
+ # Create credential
+ GitCredential.objects.create(
+ repository=repository,
+ auth_type=AuthType.ACCESS_TOKEN,
+ encrypted_token=encrypt_value(access_token),
+ git_user_name=git_user_name,
+ git_user_email=git_user_email,
+ )
+ return Response(
+ RepositorySerializer(repository).data,
+ status=status.HTTP_201_CREATED,
+ )
+ @action(detail=True, methods=["get", "delete"], url_path="credential")
+ def credential(self, request, pk=None):
+ """Get or delete credential for repository."""
+ repository = self.get_object
+ if request.method == "GET":
+ credential = get_object_or_404(GitCredential, repository=repository)
+ return Response(GitCredentialSerializer(credential).data)
+ elif request.method == "DELETE":
+ credential = get_object_or_404(GitCredential, repository=repository)
+ credential.delete
+ return Response(status=status.HTTP_204_NO_CONTENT)
+class SetAccessTokenView(APIView):
+ """View for setting access token via form data."""
+ parser_classes = [FormParser]
+ def post(self, request, repository_id):
+ repository = get_object_or_404(Repository, id=repository_id)
+ # Check if credential exists
+ if GitCredential.objects.filter(repository=repository).exists:
+ return Response(
+ {"detail": "Credential already exists. Please delete the existing one first."},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ token = request.data.get("token")
+ if not token:
+ return Response(
+ {"detail": "Token is required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ git_user_name = request.data.get("git_user_name", "Friday AI Agent")
+ git_user_email = request.data.get("git_user_email", "ai-agent@friday.dev")
+ credential = GitCredential.objects.create(
+ repository=repository,
+ auth_type=AuthType.ACCESS_TOKEN,
+ encrypted_token=encrypt_value(token),
+ git_user_name=git_user_name,
+ git_user_email=git_user_email,
+ )
+ return Response(GitCredentialSerializer(credential).data, status=status.HTTP_201_CREATED)

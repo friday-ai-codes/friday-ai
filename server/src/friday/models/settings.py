@@ -39,9 +39,7 @@ class SystemSettingReadWithValue(SystemSettingRead):
  对于加密配置，masked_value 字段包含遮罩后的值。
  """
  value: Optional[str] = Field(default=None, description="配置值（仅非加密配置）")
- masked_value: Optional[str] = Field(
- default=None, description="遮罩后的值（仅加密配置）"
- )
+ masked_value: Optional[str] = Field(default=None, description="遮罩后的值（仅加密配置）")
 # 预定义的系统设置键
 class SettingKeys:
  """系统设置键常量。"""
