@@ -6,7 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from ..database import get_db
 from ..models.user import User
-from .auth import REFRESH_TOKEN_COOKIE_NAME, decode_token
+from ..services.auth import REFRESH_TOKEN_COOKIE_NAME, decode_token
 # HTTP Bearer 认证方案
 security = HTTPBearer(auto_error=False)
 async def get_current_user(
@@ -60,7 +60,9 @@ async def get_current_active_user(
  )
  return current_user
 async def get_refresh_token_from_cookie(
- refresh_token: Annotated[str | None, Cookie(alias=REFRESH_TOKEN_COOKIE_NAME)] = None,
+ refresh_token: Annotated[
+ str | None, Cookie(alias=REFRESH_TOKEN_COOKIE_NAME)
+ ] = None,
 ) -> str:
  """从 Cookie 获取 Refresh Token。
  Args:

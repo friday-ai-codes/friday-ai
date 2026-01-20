@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 from ..config import get_settings
 settings = get_settings
 # 密码哈希上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 # Token 类型
 TokenType = Literal["access", "refresh"]
 # Refresh Token Cookie 名称

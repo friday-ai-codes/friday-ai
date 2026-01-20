@@ -14,7 +14,7 @@ down_revision: Union[str, None] = 'ef3fc1fb8927'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # 密码哈希上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 def upgrade -> None:
  """执行升级迁移。"""
  # 创建 users 表
