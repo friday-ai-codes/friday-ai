@@ -1,6 +1,7 @@
 """Webhooks app views - 飞书和 GitHub Webhook 事件处理。
 包含完整的事件处理逻辑，迁移自 FastAPI 版本。
 """
+import asyncio
 import json
 import logging
 from django.db import transaction
@@ -13,6 +14,11 @@ from services.feishu import create_feishu_client_for_project, verify_webhook_tok
 from tasks.models import Task, TaskStatus
 from .models import WebhookLog, WebhookLogStatus, WorkItemLog
 logger = logging.getLogger(__name__)
+def run_async(coro):
+ """运行异步协程的辅助函数。
+ 使用 asyncio.run 替代已弃用的 get_event_loop.run_until_complete。
+ """
+ return asyncio.run(coro)
 # 幂等处理：存储已处理的事件 UUID
 # 注意：生产环境应使用 Redis 或数据库存储
 _processed_events = set
@@ -165,9 +171,8 @@ class FeishuWebhookView(APIView):
  # 获取工作项详情
  description = ""
  try:
- import asyncio
  feishu_client = create_feishu_client_for_project(project)
- work_item_info = asyncio.get_event_loop.run_until_complete(
+ work_item_info = run_async(
  feishu_client.get_work_item(
  project_key=project.feishu_project_key or "",
  work_item_id=work_item_id,
@@ -341,9 +346,8 @@ class GitHubWebhookView(APIView):
  project = task.project
  if project.has_feishu_config:
  try:
- import asyncio
  feishu_client = create_feishu_client_for_project(project)
- asyncio.get_event_loop.run_until_complete(
+ run_async(
  feishu_client.transition_status(
  project_key=project.feishu_project_key or "",
  work_item_id=int(task.work_item_id),

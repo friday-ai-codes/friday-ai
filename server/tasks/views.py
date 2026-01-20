@@ -1,6 +1,3 @@
-"""Tasks app views - 任务管理 API 视图。
-包含完整的任务执行功能，迁移自 FastAPI 版本。
-"""
 import asyncio
 import logging
 from django.shortcuts import get_object_or_404
@@ -24,7 +21,15 @@ from .serializers import (
  TaskStatusUpdateSerializer,
  TaskUpdateSerializer,
 )
+"""Tasks app views - 任务管理 API 视图。
+包含完整的任务执行功能
+"""
 logger = logging.getLogger(__name__)
+def run_async(coro):
+ """运行异步协程的辅助函数。
+ 使用 asyncio.run 替代已弃用的 get_event_loop.run_until_complete。
+ """
+ return asyncio.run(coro)
 class TaskViewSet(ModelViewSet):
  """ViewSet for Task CRUD operations."""
  queryset = Task.objects.all
@@ -54,7 +59,7 @@ class TaskViewSet(ModelViewSet):
  project_id = validated_data.get("project_id") or request.data.get("project_id")
  if project_id and not Project.objects.filter(id=project_id).exists:
  return Response(
- {"detail": "Project not found"},
+ {"detail": "项目未找到"},
  status=status.HTTP_404_NOT_FOUND,
  )
  # Use serializer.save for proper handling
@@ -117,13 +122,13 @@ class TaskViewSet(ModelViewSet):
  )
  elif mode == "execute" and task.status != TaskStatus.PLAN_REVIEW:
  return Response(
- {"detail": "Cannot start execution: task must be in PLAN_REVIEW status"},
+ {"detail": "无法开始执行：任务必须处于方案评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Check repository
  if not task.repository_id:
  return Response(
- {"detail": "Task must have a repository assigned before execution."},
+ {"detail": "执行前必须先关联仓库"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Get repository and credentials
@@ -131,7 +136,7 @@ class TaskViewSet(ModelViewSet):
  repository = Repository.objects.get(id=task.repository_id)
  except Repository.DoesNotExist:
  return Response(
- {"detail": "Repository not found"},
+ {"detail": "仓库未找到"},
  status=status.HTTP_404_NOT_FOUND,
  )
  git_credentials = {}
@@ -155,11 +160,8 @@ class TaskViewSet(ModelViewSet):
  # Start container
  scheduler = get_scheduler
  try:
- # 使用 asyncio 运行异步代码
- loop = asyncio.new_event_loop
- asyncio.set_event_loop(loop)
- try:
- container_id = loop.run_until_complete(
+ # 使用 asyncio.run 运行异步代码
+ container_id = run_async(
  scheduler.start_task(
  task=task,
  repo_url=repository.git_url,
@@ -169,8 +171,6 @@ class TaskViewSet(ModelViewSet):
  claude_config=claude_config,
  )
  )
- finally:
- loop.close
  except RuntimeError as e:
  return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
  # Update task status
@@ -198,12 +198,7 @@ class TaskViewSet(ModelViewSet):
  task = self.get_object
  force = request.query_params.get("force", "false").lower == "true"
  scheduler = get_scheduler
- loop = asyncio.new_event_loop
- asyncio.set_event_loop(loop)
- try:
- stopped = loop.run_until_complete(scheduler.stop_task(str(task.id), force=force))
- finally:
- loop.close
+ stopped = run_async(scheduler.stop_task(str(task.id), force=force))
  if stopped:
  task.status = TaskStatus.FAILED
  task.error_message = "Task stopped by user"
@@ -219,15 +214,10 @@ class TaskViewSet(ModelViewSet):
  task = self.get_object
  tail = int(request.query_params.get("tail", 100))
  scheduler = get_scheduler
- loop = asyncio.new_event_loop
- asyncio.set_event_loop(loop)
- try:
- logs = loop.run_until_complete(scheduler.get_task_logs(str(task.id), tail=tail))
- finally:
- loop.close
+ logs = run_async(scheduler.get_task_logs(str(task.id), tail=tail))
  if logs is None:
  return Response(
- {"detail": "No container found for task"},
+ {"detail": "未找到任务对应的容器"},
  status=status.HTTP_404_NOT_FOUND,
  )
  return Response({"task_id": str(task.id), "logs": logs})
@@ -236,12 +226,7 @@ class TaskViewSet(ModelViewSet):
  """Get task container status."""
  task = self.get_object
  scheduler = get_scheduler
- loop = asyncio.new_event_loop
- asyncio.set_event_loop(loop)
- try:
- container_status = loop.run_until_complete(scheduler.get_task_status(str(task.id)))
- finally:
- loop.close
+ container_status = run_async(scheduler.get_task_status(str(task.id)))
  if container_status is None:
  return Response({"task_id": str(task.id), "container": None})
  return Response({"task_id": str(task.id), "container": container_status})

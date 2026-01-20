@@ -17,9 +17,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Core Settings
 # =============================================================================
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
- "SECRET_KEY", "django-insecure-change-me-in-production"
-)
+SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-change-me-in-production")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("FRIDAY_DEBUG", "True").lower in ("true", "1", "yes")
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
@@ -27,7 +25,6 @@ ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 # Application definition
 # =============================================================================
 INSTALLED_APPS = [
- "django.contrib.admin",
  "django.contrib.auth",
  "django.contrib.contenttypes",
  "django.contrib.sessions",
