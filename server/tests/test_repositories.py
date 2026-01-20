@@ -1,24 +1,29 @@
-"""Tests for repository endpoints."""
+"""仓库端点测试。
+使用 pytest + pytest-django 风格，提供更好的表达力和可维护性。
+"""
 import pytest
 from rest_framework import status
+# ============================================================================
+# 仓库列表和创建测试
+# ============================================================================
 @pytest.mark.django_db
-class TestRepositoryEndpoints:
- """Test repository CRUD endpoints."""
- def test_list_repositories_empty(self, authenticated_client):
- """Test listing repositories when empty."""
- response = authenticated_client.get("/api/repositories/")
+class TestRepositoryListCreate:
+ """仓库列表和创建接口测试。"""
+ def test_list_repositories_empty(self, authenticated_client, urls):
+ """测试空仓库列表。"""
+ response = authenticated_client.get(urls.repository_list)
  assert response.status_code == status.HTTP_200_OK
  assert response.data ==
- def test_list_repositories(self, authenticated_client, repository):
- """Test listing repositories."""
- response = authenticated_client.get("/api/repositories/")
+ def test_list_repositories_with_data(self, authenticated_client, repository, urls):
+ """测试有数据的仓库列表。"""
+ response = authenticated_client.get(urls.repository_list)
  assert response.status_code == status.HTTP_200_OK
  assert len(response.data) == 1
  assert response.data[0]["name"] == "Test Repo"
- def test_create_repository(self, authenticated_client):
- """Test creating a repository with credential."""
+ def test_create_repository_with_token(self, authenticated_client, urls):
+ """测试使用 token 创建仓库。"""
  response = authenticated_client.post(
- "/api/repositories/",
+ urls.repository_list,
  {
  "name": "New Repo",
  "git_url": "https://github.com/test/new-repo.git",
@@ -31,10 +36,10 @@ class TestRepositoryEndpoints:
  assert response.status_code == status.HTTP_201_CREATED
  assert response.data["name"] == "New Repo"
  assert response.data["has_credential"] is True
- def test_create_repository_empty_token(self, authenticated_client):
- """Test creating a repository with empty token."""
+ def test_create_repository_empty_token(self, authenticated_client, urls):
+ """测试使用空 token 创建仓库失败。"""
  response = authenticated_client.post(
- "/api/repositories/",
+ urls.repository_list,
  {
  "name": "No Token Repo",
  "git_url": "https://github.com/test/repo.git",
@@ -43,33 +48,50 @@ class TestRepositoryEndpoints:
  format="json",
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
- def test_get_repository(self, authenticated_client, repository):
- """Test getting a single repository."""
- response = authenticated_client.get(f"/api/repositories/{repository.id}")
+ def test_create_repository_unauthenticated(self, api_client, urls):
+ """测试未认证用户无法创建仓库。"""
+ response = api_client.post(
+ urls.repository_list,
+ {"name": "New Repo", "git_url": "https://github.com/test/repo.git"},
+ format="json",
+ )
+ assert response.status_code == status.HTTP_401_UNAUTHORIZED
+# ============================================================================
+# 仓库详情测试
+# ============================================================================
+@pytest.mark.django_db
+class TestRepositoryDetail:
+ """仓库详情接口测试。"""
+ def test_get_repository(self, authenticated_client, repository, urls):
+ """测试获取单个仓库。"""
+ response = authenticated_client.get(urls.repository_detail(repository.id))
  assert response.status_code == status.HTTP_200_OK
  assert response.data["name"] == "Test Repo"
  assert "projects" in response.data
- def test_update_repository(self, authenticated_client, repository):
- """Test updating a repository."""
+ def test_update_repository(self, authenticated_client, repository, urls):
+ """测试更新仓库。"""
  response = authenticated_client.patch(
- f"/api/repositories/{repository.id}",
+ urls.repository_detail(repository.id),
  {"name": "Updated Repo"},
  format="json",
  )
  assert response.status_code == status.HTTP_200_OK
  assert response.data["name"] == "Updated Repo"
- def test_delete_repository(self, authenticated_client, repository):
- """Test deleting a repository."""
- response = authenticated_client.delete(f"/api/repositories/{repository.id}")
+ def test_delete_repository(self, authenticated_client, repository, urls):
+ """测试删除仓库。"""
+ response = authenticated_client.delete(urls.repository_detail(repository.id))
  assert response.status_code == status.HTTP_204_NO_CONTENT
+# ============================================================================
+# 仓库凭据测试
+# ============================================================================
 @pytest.mark.django_db
-class TestRepositoryCredentials:
- """Test repository credential endpoints."""
- def test_get_credential(self, authenticated_client):
- """Test getting credential for repository."""
- # Create repo with credential
+class TestRepositoryCredential:
+ """仓库凭据接口测试。"""
+ def test_get_credential(self, authenticated_client, urls):
+ """测试获取仓库凭据。"""
+ # 创建带凭据的仓库
  create_response = authenticated_client.post(
- "/api/repositories/",
+ urls.repository_list,
  {
  "name": "Repo With Cred",
  "git_url": "https://github.com/test/repo.git",
@@ -78,19 +100,19 @@ class TestRepositoryCredentials:
  format="json",
  )
  repo_id = create_response.data["id"]
- response = authenticated_client.get(f"/api/repositories/{repo_id}/credential")
+ response = authenticated_client.get(urls.repository_credential(repo_id))
  assert response.status_code == status.HTTP_200_OK
  assert response.data["has_access_token"] is True
  assert response.data["auth_type"] == "access_token"
- def test_get_credential_not_found(self, authenticated_client, repository):
- """Test getting nonexistent credential."""
- response = authenticated_client.get(f"/api/repositories/{repository.id}/credential")
+ def test_get_credential_not_found(self, authenticated_client, repository, urls):
+ """测试获取不存在的凭据。"""
+ response = authenticated_client.get(urls.repository_credential(repository.id))
  assert response.status_code == status.HTTP_404_NOT_FOUND
- def test_delete_credential(self, authenticated_client):
- """Test deleting credential."""
- # Create repo with credential
+ def test_delete_credential(self, authenticated_client, urls):
+ """测试删除仓库凭据。"""
+ # 创建带凭据的仓库
  create_response = authenticated_client.post(
- "/api/repositories/",
+ urls.repository_list,
  {
  "name": "Repo To Delete Cred",
  "git_url": "https://github.com/test/repo.git",
@@ -99,8 +121,8 @@ class TestRepositoryCredentials:
  format="json",
  )
  repo_id = create_response.data["id"]
- response = authenticated_client.delete(f"/api/repositories/{repo_id}/credential")
+ response = authenticated_client.delete(urls.repository_credential(repo_id))
  assert response.status_code == status.HTTP_204_NO_CONTENT
- # Verify deleted
- response = authenticated_client.get(f"/api/repositories/{repo_id}/credential")
+ # 验证已删除
+ response = authenticated_client.get(urls.repository_credential(repo_id))
  assert response.status_code == status.HTTP_404_NOT_FOUND
