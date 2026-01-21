@@ -97,7 +97,7 @@ const platforms: { value: GitPlatform, label: string, icon: string } = [
  <!-- 标题区域 -->
  <div class=" border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
  <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
  </div>
  <div>
@@ -204,7 +204,7 @@ const platforms: { value: GitPlatform, label: string, icon: string } = [
  <!-- 凭证配置区域 -->
  <div class="relative -mx-6 bg-gradient-to-r from-amber-500/5 to-orange-500/5 border-y border-border/50">
  <div class="flex items-center gap-3 mb-4">
- <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center">
  <span class="icon-[lucide--key] text-xl text-amber-500" />
  </div>
  <div>

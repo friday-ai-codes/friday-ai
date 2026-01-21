@@ -147,16 +147,16 @@ onMounted( => {
 <template>
  <div class="max-w-3xl mx-auto space-y-8">
  <!-- 页面标题 -->
+ <div class="flex items-start gap-3">
+ <div class="size-9 flex items-center justify-center rounded-lg bg-gradient-to-br from-gray-500/20 to-slate-500/10">
+ <span class="icon-[lucide--settings] text-xl text-gray-500" />
+ </div>
  <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-gray-500/20 to-slate-500/10">
- <span class="icon-[lucide--settings] text-2xl text-gray-500" />
- </div>
  <h1 class="text-2xl font-bold">系统设置</h1>
- </div>
- <p class="text-muted-foreground ml-12">
+ <p class="text-muted-foreground">
  配置全局的 Claude Code 设置，这些设置将作为所有项目的默认值
  </p>
+ </div>
  </div>
  <!-- 快速导航 -->
  <div class="flex gap-3">
@@ -176,7 +176,7 @@ onMounted( => {
  <!-- 标题区域 -->
  <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--bot] text-2xl text-primary" />
  </div>
  <div>

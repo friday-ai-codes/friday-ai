@@ -71,7 +71,7 @@ async function handleUpdated {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/10 flex items-center justify-center">
  <span class="icon-[lucide--message-square] text-2xl text-emerald-500" />
  </div>
  <div>

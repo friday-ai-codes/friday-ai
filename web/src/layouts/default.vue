@@ -28,7 +28,7 @@ function isActive(path: string) {
  <RouterLink to="/" class="group flex items-center gap-2.5 text-xl font-bold">
  <div class="relative">
  <div class="absolute inset-0 bg-gradient-to-br from-primary to-primary/50 rounded-lg blur-md opacity-50 group-hover:opacity-75 transition-opacity" />
- <div class="relative .5 rounded-lg bg-gradient-to-br from-primary to-primary/80">
+ <div class="relative .5 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
  <span class="icon-[lucide--bot] text-xl text-white" />
  </div>
  </div>

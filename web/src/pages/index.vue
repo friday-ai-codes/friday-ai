@@ -25,6 +25,7 @@ const stats = computed( => [
  title: '项目总数',
  value: projectsStore.projectCount,
  icon: 'lucide--folder-git-2',
+ iconColor: 'text-blue-500',
  gradient: 'from-blue-500 to-cyan-400',
  bgGradient: 'from-blue-500/10 to-cyan-400/10',
  link: '/projects',
@@ -33,6 +34,7 @@ const stats = computed( => [
  title: '任务总数',
  value: tasksStore.stats.total,
  icon: 'lucide--layers',
+ iconColor: 'text-violet-500',
  gradient: 'from-violet-500 to-purple-400',
  bgGradient: 'from-violet-500/10 to-purple-400/10',
  link: '/tasks',
@@ -41,6 +43,7 @@ const stats = computed( => [
  title: '运行中',
  value: tasksStore.stats.running,
  icon: 'lucide--zap',
+ iconColor: 'text-amber-500',
  gradient: 'from-amber-500 to-orange-400',
  bgGradient: 'from-amber-500/10 to-orange-400/10',
  link: '/tasks?status=planning',
@@ -49,6 +52,7 @@ const stats = computed( => [
  title: '待审核',
  value: tasksStore.stats.review,
  icon: 'lucide--scan-eye',
+ iconColor: 'text-emerald-500',
  gradient: 'from-emerald-500 to-teal-400',
  bgGradient: 'from-emerald-500/10 to-teal-400/10',
  link: '/tasks?status=plan_review',
@@ -118,8 +122,8 @@ function formatDate(dateStr: string) {
  <div class="absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10":class="stat.gradient" />
  <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
  <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br":class="stat.bgGradient">
- <span class="text-2xl bg-gradient-to-r bg-clip-text text-transparent":class="[`icon-[${stat.icon}]`, stat.gradient]" />
+ <div class=".5 rounded-xl bg-gradient-to-br flex items-center justify-center":class="stat.bgGradient">
+ <span class="text-2xl":class="[`icon-[${stat.icon}]`, stat.iconColor]" />
  </div>
  <span class="icon-[lucide--arrow-up-right] text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
  </div>
@@ -151,7 +155,7 @@ function formatDate(dateStr: string) {
  </div>
  <div class="relative">
  <div class="flex items-center gap-3 mb-3">
- <div class=" rounded-lg bg-gradient-to-br":class="feature.gradient">
+ <div class=" rounded-lg bg-gradient-to-br flex items-center justify-center":class="feature.gradient">
  <span class="text-xl text-white":class="`icon-[${feature.icon}]`" />
  </div>
  <h3 class="text-lg font-semibold">{{ feature.title }}</h3>
@@ -168,7 +172,7 @@ function formatDate(dateStr: string) {
  <!-- 标题栏 -->
  <div class="flex items-center justify-between border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--clock] text-xl text-primary" />
  </div>
  <div>

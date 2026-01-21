@@ -80,7 +80,7 @@ function getProjectName(projectId: string) {
  <div class="flex items-center justify-between">
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <div class=" rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center">
  <span class="icon-[lucide--list-checks] text-2xl text-amber-500" />
  </div>
  <h1 class="text-2xl font-bold">任务管理</h1>
