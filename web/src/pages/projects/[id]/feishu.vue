@@ -26,7 +26,6 @@ async function loadData {
  feishuConfig.value = await getFeishuConfig(projectId.value)
  }
  catch {
- // 配置不存在是正常情况
  feishuConfig.value = null
  }
  }
@@ -58,41 +57,56 @@ async function handleUpdated {
 }
 </script>
 <template>
- <div class="max-w-2xl mx-auto space-y-6">
+ <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
  <RouterLink:to="`/projects/${projectId}`"
- class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+ class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
  >
- <span class="icon-[lucide--arrow-left] mr-1" />
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
  返回项目详情
  </RouterLink>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="2" />
  <template v-else-if="project">
+ <!-- 页面标题 -->
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/10">
+ <span class="icon-[lucide--message-square] text-2xl text-emerald-500" />
+ </div>
  <div>
- <h1 class="text-2xl font-bold">
- 飞书配置
- </h1>
- <p class="text-muted-foreground">
+ <h1 class="text-2xl font-bold">飞书配置</h1>
+ <p class="text-sm text-muted-foreground">
  配置 {{ project.name }} 的飞书项目集成
  </p>
+ </div>
+ </div>
  </div>
  <!-- 飞书配置表单 -->
  <FeishuConfigForm:project-id="projectId":config="feishuConfig"
  @updated="handleUpdated"
  />
  <!-- 使用说明 -->
- <div class="rounded-lg border space-y-3">
- <h3 class="font-medium">
- 配置说明
- </h3>
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="relative rounded-2xl border border-dashed border-border/50 bg-card/80 backdrop-blur-sm">
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--info] text-xl text-emerald-500 flex-shrink-0 mt-0.5" />
+ <div class="space-y-3">
+ <h3 class="font-semibold">配置说明</h3>
  <ol class="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
  <li>在飞书项目管理后台创建插件，获取插件 ID 和插件 Secret</li>
  <li>在插件权限页面申请飞书项目相关权限（如获取工作项详情）</li>
  <li>在飞书项目中配置自动化规则，添加 Webhook 操作</li>
- <li>Webhook URL 填写：<code class="px-1 py-0.5 bg-muted rounded">{{ webhookUrl }}</code></li>
+ <li class="flex items-start gap-2">
+ <span>Webhook URL 填写：</span>
+ <code class="px-2 py-1 bg-muted/50 rounded-lg text-xs font-mono border border-border/50">{{ webhookUrl }}</code>
+ </li>
  <li>Webhook Token 在项目详情页管理，请在飞书自动化规则中填写相同的 Token</li>
  </ol>
+ </div>
+ </div>
+ </div>
  </div>
  </template>
  <!-- 项目不存在 -->
@@ -102,6 +116,7 @@ async function handleUpdated {
  title="项目不存在"
  description="未找到该项目"
  action-label="返回列表"
+ gradient="from-emerald-500/20 to-green-500/20"
  @action="router.push('/projects')"
  />
  </div>

@@ -8,9 +8,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
-from projects.models import GitCredential, Project, Repository
+from repositories.models import GitCredential, Repository
+from projects.models import Project
+from common.encryption import decrypt_value
 from services.claude_config import get_claude_config_for_task
-from services.crypto import decrypt_value
 from services.scheduler import get_scheduler
 from .models import Task, TaskStatus
 from .serializers import (

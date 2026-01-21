@@ -54,6 +54,7 @@ export interface LoginResponse {
  access_token: string
  token_type: string
  user: User
+ must_change_password: boolean
 }
 /**
  * Token 刷新响应
@@ -68,6 +69,30 @@ export interface RefreshResponse {
 export interface ChangePasswordRequest {
  old_password: string
  new_password: string
+}
+/**
+ * 强制修改密码请求
+ */
+export interface ForceChangePasswordRequest {
+ new_password: string
+}
+/**
+ * 管理员资料
+ */
+export interface AdminProfile {
+ id: string
+ username: string
+ display_name: string
+ is_superuser: boolean
+ created_at: string
+ updated_at: string
+}
+/**
+ * 管理员资料更新请求
+ */
+export interface AdminProfileUpdate {
+ username?: string
+ display_name?: string
 }
 // ============================================================================
 // 仓库相关类型

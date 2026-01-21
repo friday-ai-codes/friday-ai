@@ -27,6 +27,13 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/force-change-password': RouteRecordInfo<
+ '/force-change-password',
+ '/force-change-password',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/login': RouteRecordInfo<
  '/login',
  '/login',
@@ -39,6 +46,13 @@ declare module 'vue-router/auto-routes' {
  '/logs',
  Record<never, never>,
  Record<never, never>,
+ | never
+ >,
+ '/logs/triggers/[id]': RouteRecordInfo<
+ '/logs/triggers/[id]',
+ '/logs/triggers/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
  | never
  >,
  '/logs/webhooks/[id]': RouteRecordInfo<
@@ -132,6 +146,13 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/settings/account': RouteRecordInfo<
+ '/settings/account',
+ '/settings/account',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/tasks/': RouteRecordInfo<
  '/tasks/',
  '/tasks',
@@ -164,6 +185,12 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
+ 'src/pages/force-change-password.vue': {
+ routes:
+ | '/force-change-password'
+ views:
+ | never
+ }
  'src/pages/login.vue': {
  routes:
  | '/login'
@@ -173,6 +200,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/logs/index.vue': {
  routes:
  | '/logs/'
+ views:
+ | never
+ }
+ 'src/pages/logs/triggers/[id].vue': {
+ routes:
+ | '/logs/triggers/[id]'
  views:
  | never
  }
@@ -251,6 +284,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/settings/index.vue': {
  routes:
  | '/settings/'
+ views:
+ | never
+ }
+ 'src/pages/settings/account.vue': {
+ routes:
+ | '/settings/account'
  views:
  | never
  }

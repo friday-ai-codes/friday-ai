@@ -37,16 +37,23 @@ router.beforeEach(async (to, from, next) => {
  if (!authStore.isInitialized) {
  await authStore.initAuth
  }
- // 这里的策略是：默认所有页面都需要认证，除了 /login
- const publicPages = ['/login']
+ // 公开页面和强制修改密码页面
+ const publicPages = ['/login', '/force-change-password']
  const authRequired = !publicPages.includes(to.path)
  if (authRequired && !authStore.isAuthenticated) {
  // 需要认证但未登录 -> 跳转登录页
  return next({ path: '/login', query: { redirect: to.fullPath } })
  }
  if (to.path === '/login' && authStore.isAuthenticated) {
- // 已登录访问登录页 -> 跳转首页
+ // 已登录访问登录页 -> 检查是否需要修改密码
+ if (authStore.mustChangePassword) {
+ return next('/force-change-password')
+ }
  return next('/')
+ }
+ // 如果需要强制修改密码，只允许访问强制修改密码页面
+ if (authStore.isAuthenticated && authStore.mustChangePassword && to.path !== '/force-change-password') {
+ return next('/force-change-password')
  }
  next
 })

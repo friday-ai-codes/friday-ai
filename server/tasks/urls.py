@@ -1,6 +1,6 @@
 """Tasks URL configuration."""
 from django.urls import include, path, re_path
-from utils.routers import FlexibleSlashRouter
+from common.routers import FlexibleSlashRouter
 from .views import TaskStatusCallbackView, TaskViewSet
 router = FlexibleSlashRouter
 router.register("", TaskViewSet, basename="task")

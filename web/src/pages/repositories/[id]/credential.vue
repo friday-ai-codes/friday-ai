@@ -52,7 +52,6 @@ async function handleAccessTokenUpdate {
  }
  submitting.value = true
  try {
- // 直接调用接口，后端会自动判断是创建还是更新
  await repositoriesStore.setAccessToken(repositoryId.value, {
  token: accessToken.value,
  git_user_name: gitUserName.value,
@@ -61,7 +60,6 @@ async function handleAccessTokenUpdate {
  success('保存成功', credential.value ? 'Access Token 已更新': 'Access Token 已配置')
  accessToken.value = ''
  updateDialogOpen.value = false
- // 重新加载凭证信息
  await repositoriesStore.fetchCredential(repositoryId.value)
  }
  catch (e) {
@@ -77,108 +75,124 @@ function formatDate(dateStr: string) {
 }
 </script>
 <template>
- <div class="max-w-2xl mx-auto space-y-6">
+ <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
  <RouterLink:to="`/repositories/${repositoryId}`"
- class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+ class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
  >
- <span class="icon-[lucide--arrow-left] mr-1" />
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
  返回仓库详情
  </RouterLink>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="2" />
  <template v-else-if="repository">
+ <!-- 页面标题 -->
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <span class="icon-[lucide--key] text-2xl text-amber-500" />
+ </div>
  <div>
- <h1 class="text-2xl font-bold">
- 凭证配置
- </h1>
- <p class="text-muted-foreground">
+ <h1 class="text-2xl font-bold">凭证配置</h1>
+ <p class="text-sm text-muted-foreground">
  配置 {{ repository.name }} 的 Git 访问凭证
  </p>
  </div>
+ </div>
+ </div>
  <!-- 已有凭证显示 -->
- <Card v-if="credential">
- <CardHeader>
+ <div v-if="credential" class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-green-500/5">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-green-600" />
+ <span class="icon-[lucide--check-circle] text-emerald-500" />
  凭证已配置
  </CardTitle>
  <CardDescription>当前凭证信息（Access Token 已脱敏，不会显示原文）</CardDescription>
  </CardHeader>
- <CardContent class="space-y-4">
+ <CardContent class="space-y-4 pt-6">
  <div class="grid gap-4">
  <div>
  <Label class="text-muted-foreground">认证类型</Label>
- <div class="mt-1">
- <Badge variant="outline">
+ <div class="mt-2">
+ <Badge variant="outline" class="px-3 py-1">
+ <span class="icon-[lucide--key] mr-2" />
  Access Token
  </Badge>
  </div>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <Label class="text-muted-foreground">Access Token</Label>
- <p class="mt-1 text-sm font-mono text-muted-foreground">
+ <p class="mt-2 text-sm font-mono text-muted-foreground bg-muted/50 px-4 py-3 rounded-xl border border-border/50">
  ••••••••••••••••
  </p>
- <p class="text-xs text-muted-foreground mt-1">
+ <p class="text-xs text-muted-foreground mt-2">
  出于安全考虑，Access Token 不会显示。如需更新请点击下方按钮。
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <Label class="text-muted-foreground">Git 用户</Label>
- <p class="mt-1 text-sm">
+ <p class="mt-2 text-sm">
  {{ credential.git_user_name }} &lt;{{ credential.git_user_email }}&gt;
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <Label class="text-muted-foreground">创建时间</Label>
- <p class="mt-1 text-sm">
+ <p class="mt-2 text-sm">
  {{ formatDate(credential.created_at) }}
  </p>
  </div>
  </div>
- <Separator />
- <div class="flex justify-end">
- <Button variant="outline" @click="updateDialogOpen = true">
- <span class="icon-[lucide--refresh-cw] mr-2" />
+ <div class="flex justify-end pt-4 border-t border-border/50">
+ <Button variant="outline" class="group" @click="updateDialogOpen = true">
+ <span class="icon-[lucide--refresh-cw] mr-2 group-hover:rotate-180 transition-transform duration-500" />
  更新凭证
  </Button>
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 无凭证提示 -->
- <Card v-else>
- <CardHeader>
+ <div v-else class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
  <CardTitle class="flex items-center gap-2 text-amber-600">
  <span class="icon-[lucide--alert-triangle]" />
  凭证未配置
  </CardTitle>
  <CardDescription>该仓库尚未配置 Git 访问凭证，请配置 Access Token</CardDescription>
  </CardHeader>
- <CardContent class="space-y-4">
+ <CardContent class="space-y-4 pt-6">
  <p class="text-sm text-muted-foreground">
  需要配置 Access Token 才能执行 Git 操作（如克隆、推送分支等）。
  </p>
- <Button @click="updateDialogOpen = true">
+ <Button class="group relative overflow-hidden" @click="updateDialogOpen = true">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  配置 Access Token
  </Button>
  </CardContent>
  </Card>
- <!-- 使用说明 -->
- <div class="rounded-lg border space-y-3">
- <h3 class="font-medium">
- 安全说明
- </h3>
- <ul class="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+ </div>
+ <!-- 安全说明 -->
+ <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--shield] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
+ <div class="space-y-3">
+ <h3 class="font-medium">安全说明</h3>
+ <ul class="list-disc list-inside space-y-1 text-sm text-muted-foreground">
  <li>Access Token 会被加密存储在数据库中</li>
  <li>前端和 API 不会返回或显示 Token 原文</li>
  <li>Token 仅在执行 Git 操作时解密使用</li>
  <li>如果 Token 泄露，请及时在 Git 平台撤销并更新</li>
  </ul>
+ </div>
+ </div>
  </div>
  </template>
  <!-- 仓库不存在 -->
@@ -188,25 +202,30 @@ function formatDate(dateStr: string) {
  title="仓库不存在"
  description="未找到该仓库"
  action-label="返回列表"
+ gradient="from-amber-500/20 to-orange-500/20"
  @action="router.push('/repositories')"
  />
  <!-- 更新凭证对话框 -->
  <Dialog v-model:open="updateDialogOpen">
- <DialogContent>
+ <DialogContent class="sm:max-w-md">
  <DialogHeader>
- <DialogTitle>更新 Access Token</DialogTitle>
+ <DialogTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--key] text-primary" />
+ {{ credential ? '更新 Access Token': '配置 Access Token' }}
+ </DialogTitle>
  <DialogDescription>
- 输入新的 Access Token，更新后旧的 Token 将被替换
+ {{ credential ? '输入新的 Access Token，更新后旧的 Token 将被替换': '输入 Access Token 以配置 Git 访问凭证' }}
  </DialogDescription>
  </DialogHeader>
  <form class="space-y-4" @submit.prevent="handleAccessTokenUpdate">
  <div class="space-y-2">
- <Label for="new_access_token">新 Access Token</Label>
+ <Label for="new_access_token">Access Token</Label>
  <Input
  id="new_access_token"
  v-model="accessToken"
  type="password"
  placeholder="GITHUB_TOKEN_PLACEHOLDER 或 glpat-xxxxxxxxxxxx"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  />
  </div>
  <div class="grid gap-4 md:grid-cols-2">
@@ -216,6 +235,7 @@ function formatDate(dateStr: string) {
  id="update_git_user_name"
  v-model="gitUserName"
  placeholder="Friday AI Agent"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  />
  </div>
  <div class="space-y-2">
@@ -225,6 +245,7 @@ function formatDate(dateStr: string) {
  v-model="gitUserEmail"
  type="email"
  placeholder="ai@friday.codes"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  />
  </div>
  </div>
@@ -232,9 +253,10 @@ function formatDate(dateStr: string) {
  <Button type="button" variant="outline" @click="updateDialogOpen = false">
  取消
  </Button>
- <Button type="submit":disabled="!accessToken.trim || submitting">
- <span v-if="submitting" class="icon-[lucide--loader-2] mr-2 animate-spin" />
- 更新
+ <Button type="submit":disabled="!accessToken.trim || submitting" class="group relative overflow-hidden">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ {{ submitting ? '保存中...': '保存' }}
  </Button>
  </DialogFooter>
  </form>

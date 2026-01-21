@@ -32,9 +32,8 @@ onMounted(async => {
  projectsStore.fetchProject(projectId.value),
  projectsStore.fetchFeishuConfig(projectId.value),
  tasksStore.fetchTasks({ project_id: projectId.value }),
- repositoriesStore.fetchRepositories, // 加载所有仓库供选择
+ repositoriesStore.fetchRepositories,
  ])
- // 加载 Claude 配置（单独 try-catch，失败不影响页面显示）
  try {
  claudeConfig.value = await getProjectClaudeConfig(projectId.value)
  }
@@ -79,7 +78,6 @@ const projectTasks = computed( => tasksStore.tasks)
 const linkDialogOpen = ref(false)
 const selectedRepositoryId = ref('')
 const linking = ref(false)
-// 可供关联的仓库（排除已关联的）
 const availableRepositories = computed( => {
  if (!project.value)
  return
@@ -118,8 +116,7 @@ async function handleUnlinkRepository(repositoryId: string) {
  unlinking.value = false
  }
 }
-// ===== Webhook Token 管理 =====
-// 复制 Token 到剪贴板
+// Webhook Token 管理
 async function copyWebhookToken {
  if (!project.value?.webhook_token)
  return
@@ -131,14 +128,12 @@ async function copyWebhookToken {
  showError('复制失败', '无法访问剪贴板')
  }
 }
-// 刷新 Token 对话框
 const refreshTokenDialogOpen = ref(false)
 const refreshingToken = ref(false)
 async function handleRefreshToken {
  refreshingToken.value = true
  try {
  await refreshWebhookToken(projectId.value)
- // 更新本地 project 数据
  await projectsStore.fetchProject(projectId.value)
  success('刷新成功', '已生成新的 Webhook Token')
  refreshTokenDialogOpen.value = false
@@ -150,7 +145,6 @@ async function handleRefreshToken {
  refreshingToken.value = false
  }
 }
-// 自定义 Token 对话框
 const customTokenDialogOpen = ref(false)
 const customTokenValue = ref('')
 const customTokenLoading = ref(false)
@@ -183,10 +177,10 @@ async function handleCustomToken {
 }
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 返回按钮 -->
- <RouterLink to="/projects" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- <span class="icon-[lucide--arrow-left] mr-1" />
+ <RouterLink to="/projects" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
  返回项目列表
  </RouterLink>
  <!-- 加载状态 -->
@@ -195,39 +189,51 @@ async function handleCustomToken {
  <template v-else-if="project">
  <!-- 头部 -->
  <div class="flex items-start justify-between">
+ <div class="space-y-2">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <span class="icon-[lucide--folder-open] text-2xl text-blue-500" />
+ </div>
  <div>
- <h1 class="text-2xl font-bold">
- {{ project.name }}
- </h1>
+ <h1 class="text-2xl font-bold">{{ project.name }}</h1>
+ <p class="text-sm text-muted-foreground">
+ {{ project.description || '暂无描述' }}
+ </p>
+ </div>
+ </div>
  </div>
  <div class="flex items-center gap-2">
  <RouterLink:to="`/projects/${project.id}/edit`">
- <Button variant="outline">
- <span class="icon-[lucide--pencil] mr-2" />
+ <Button variant="outline" class="group">
+ <span class="icon-[lucide--pencil] mr-2 group-hover:scale-110 transition-transform" />
  编辑
  </Button>
  </RouterLink>
- <Button variant="destructive" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-2" />
+ <Button variant="destructive" class="group" @click="deleteDialogOpen = true">
+ <span class="icon-[lucide--trash-2] mr-2 group-hover:scale-110 transition-transform" />
  删除
  </Button>
  </div>
  </div>
  <div class="grid gap-6 md:grid-cols-2">
  <!-- 基本信息 -->
- <Card>
- <CardHeader>
- <CardTitle>基本信息</CardTitle>
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--info] text-blue-500" />
+ 基本信息
+ </CardTitle>
  </CardHeader>
- <CardContent class="space-y-4">
- <Separator />
+ <CardContent class="space-y-4 pt-6">
  <div>
  <label class="text-sm text-muted-foreground">飞书项目 Key</label>
  <p class="font-mono text-sm mt-1">
  {{ project.feishu_project_key || '未配置' }}
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div class="flex gap-8">
  <div>
  <label class="text-sm text-muted-foreground">创建时间</label>
@@ -244,47 +250,55 @@ async function handleCustomToken {
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 关联仓库 -->
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
  <div>
- <CardTitle>关联仓库</CardTitle>
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--git-branch] text-violet-500" />
+ 关联仓库
+ </CardTitle>
  <CardDescription>关联的 Git 仓库</CardDescription>
  </div>
- <Button variant="outline" size="sm" @click="linkDialogOpen = true">
- <span class="icon-[lucide--link] mr-2" />
+ <Button variant="outline" size="sm" class="group" @click="linkDialogOpen = true">
+ <span class="icon-[lucide--link] mr-2 group-hover:scale-110 transition-transform" />
  关联仓库
  </Button>
  </CardHeader>
- <CardContent>
+ <CardContent class="pt-6">
  <div v-if="project.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
+ <span class="icon-[lucide--git-branch] text-3xl mb-2 block opacity-50" />
  暂无关联仓库
  </div>
- <div v-else class="space-y-4">
+ <div v-else class="space-y-3">
  <div
  v-for="repo in project.repositories":key="repo.id"
- class="flex items-center justify-between border rounded-lg"
+ class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors"
  >
  <div>
  <div class="flex items-center gap-2">
  <span class="font-medium">{{ repo.name }}</span>
- <Badge variant="outline">
+ <Badge variant="outline" class="text-xs">
  {{ PLATFORM_LABELS[repo.git_platform] }}
  </Badge>
  </div>
- <div class="text-sm text-muted-foreground mt-1">
+ <div class="text-sm text-muted-foreground mt-1 font-mono text-xs">
  {{ repo.git_url }}
  </div>
  </div>
- <div class="flex items-center gap-2">
+ <div class="flex items-center gap-1">
  <RouterLink:to="`/repositories/${repo.id}`">
- <Button variant="ghost" size="sm" title="查看详情">
+ <Button variant="ghost" size="icon" class=" w-8" title="查看详情">
  <span class="icon-[lucide--eye]" />
  </Button>
  </RouterLink>
  <Button
  variant="ghost"
- size="sm"
+ size="icon"
+ class=" w-8 hover:bg-destructive/10"
  title="解除关联":disabled="unlinking"
  @click="handleUnlinkRepository(repo.id)"
  >
@@ -295,39 +309,43 @@ async function handleCustomToken {
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 飞书配置 -->
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-green-500/5">
  <div>
- <CardTitle>飞书配置</CardTitle>
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--message-square] text-emerald-500" />
+ 飞书配置
+ </CardTitle>
  <CardDescription>飞书项目 Webhook 集成</CardDescription>
  </div>
  <RouterLink:to="`/projects/${project.id}/feishu`">
- <Button variant="outline" size="sm">
- <span class="icon-[lucide--settings] mr-2" />
+ <Button variant="outline" size="sm" class="group">
+ <span class="icon-[lucide--settings] mr-2 group-hover:rotate-90 transition-transform" />
  管理配置
  </Button>
  </RouterLink>
  </CardHeader>
- <CardContent>
- <div v-if="feishuConfig?.is_configured" class="space-y-4">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
+ <CardContent class="pt-6">
+ <div v-if="feishuConfig?.is_configured" class="flex items-center gap-3">
+ <div class=" rounded-full bg-emerald-500/10">
+ <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
+ </div>
  <div>
- <p class="font-medium">
- 已配置
- </p>
+ <p class="font-medium">已配置</p>
  <p class="text-sm text-muted-foreground">
  插件 ID：{{ feishuConfig.plugin_id }}
  </p>
  </div>
  </div>
- </div>
  <div v-else class="text-center py-6">
- <span class="icon-[lucide--link] text-4xl text-muted-foreground" />
- <p class="mt-2 text-muted-foreground">
- 尚未配置飞书集成
- </p>
+ <div class="inline-flex rounded-full bg-muted/50 mb-3">
+ <span class="icon-[lucide--link] text-3xl text-muted-foreground" />
+ </div>
+ <p class="text-muted-foreground">尚未配置飞书集成</p>
  <RouterLink:to="`/projects/${project.id}/feishu`">
  <Button class="mt-4" size="sm">
  配置飞书
@@ -336,28 +354,33 @@ async function handleCustomToken {
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- Claude 配置 -->
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
  <div>
- <CardTitle>Claude 配置</CardTitle>
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--bot] text-orange-500" />
+ Claude 配置
+ </CardTitle>
  <CardDescription>AI 开发任务配置</CardDescription>
  </div>
  <RouterLink:to="`/projects/${project.id}/claude`">
- <Button variant="outline" size="sm">
- <span class="icon-[lucide--bot] mr-2" />
+ <Button variant="outline" size="sm" class="group">
+ <span class="icon-[lucide--bot] mr-2 group-hover:scale-110 transition-transform" />
  管理配置
  </Button>
  </RouterLink>
  </CardHeader>
- <CardContent>
- <div v-if="claudeConfig?.has_api_key" class="space-y-4">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
+ <CardContent class="pt-6">
+ <div v-if="claudeConfig?.has_api_key" class="flex items-center gap-3">
+ <div class=" rounded-full bg-emerald-500/10">
+ <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
+ </div>
  <div>
- <p class="font-medium">
- 已配置
- </p>
+ <p class="font-medium">已配置</p>
  <p class="text-sm text-muted-foreground">
  来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
  </p>
@@ -366,12 +389,11 @@ async function handleCustomToken {
  </p>
  </div>
  </div>
- </div>
  <div v-else class="text-center py-6">
- <span class="icon-[lucide--bot] text-4xl text-muted-foreground" />
- <p class="mt-2 text-muted-foreground">
- 尚未配置 Claude API 密钥
- </p>
+ <div class="inline-flex rounded-full bg-muted/50 mb-3">
+ <span class="icon-[lucide--bot] text-3xl text-muted-foreground" />
+ </div>
+ <p class="text-muted-foreground">尚未配置 Claude API 密钥</p>
  <RouterLink:to="`/projects/${project.id}/claude`">
  <Button class="mt-4" size="sm">
  配置 Claude
@@ -380,23 +402,29 @@ async function handleCustomToken {
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- Webhook Token 管理 -->
- <Card>
- <CardHeader>
- <CardTitle>Webhook Token</CardTitle>
+ <div class="relative md:col-span-2">
+ <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-cyan-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-blue-500/5">
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--key] text-cyan-500" />
+ Webhook Token
+ </CardTitle>
  <CardDescription>用于验证飞书 Webhook 请求的来源</CardDescription>
  </CardHeader>
- <CardContent class="space-y-4">
- <!-- Token 显示区域 -->
+ <CardContent class="space-y-4 pt-6">
  <div class="space-y-2">
  <Label class="text-muted-foreground">当前 Token</Label>
  <div class="flex items-center gap-2">
- <code class="flex-1 px-3 py-2 bg-muted rounded font-mono text-sm overflow-hidden text-ellipsis">
+ <code class="flex-1 px-4 py-3 bg-muted/50 rounded-xl font-mono text-sm overflow-hidden text-ellipsis border border-border/50">
  {{ project.webhook_token }}
  </code>
  <Button
  variant="outline"
- size="sm"
+ size="icon"
+ class=" w-11"
  title="复制 Token"
  @click="copyWebhookToken"
  >
@@ -404,70 +432,77 @@ async function handleCustomToken {
  </Button>
  </div>
  </div>
- <!-- 安全警告 -->
- <div class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200">
- <span class="icon-[lucide--alert-triangle] text-lg shrink-0 mt-0.5" />
- <p class="text-sm">
+ <div class="flex items-start gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+ <span class="icon-[lucide--alert-triangle] text-xl text-amber-500 shrink-0 mt-0.5" />
+ <p class="text-sm text-amber-700 dark:text-amber-300">
  请勿泄露此 Token，它用于验证 Webhook 请求的来源。如果 Token 泄露，请立即刷新。
  </p>
  </div>
- <!-- 操作按钮 -->
- <div class="flex gap-2">
- <Button
- variant="outline"
- size="sm"
- @click="refreshTokenDialogOpen = true"
- >
- <span class="icon-[lucide--refresh-cw] mr-2" />
+ <div class="flex gap-3">
+ <Button variant="outline" class="group" @click="refreshTokenDialogOpen = true">
+ <span class="icon-[lucide--refresh-cw] mr-2 group-hover:rotate-180 transition-transform duration-500" />
  刷新 Token
  </Button>
- <Button
- variant="outline"
- size="sm"
- @click="openCustomTokenDialog"
- >
- <span class="icon-[lucide--pencil] mr-2" />
+ <Button variant="outline" class="group" @click="openCustomTokenDialog">
+ <span class="icon-[lucide--pencil] mr-2 group-hover:scale-110 transition-transform" />
  自定义 Token
  </Button>
  </div>
  </CardContent>
  </Card>
  </div>
+ </div>
  <!-- 相关任务 -->
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
  <div>
- <CardTitle>相关任务</CardTitle>
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--list-todo] text-amber-500" />
+ 相关任务
+ </CardTitle>
  <CardDescription>此项目下的所有任务</CardDescription>
  </div>
  <RouterLink:to="`/tasks?project_id=${project.id}`">
- <Button variant="outline" size="sm">
- <span class="icon-[lucide--arrow-right] mr-1" />
+ <Button variant="outline" size="sm" class="group">
  查看全部
+ <span class="icon-[lucide--arrow-right] ml-2 group-hover:translate-x-1 transition-transform" />
  </Button>
  </RouterLink>
  </CardHeader>
- <CardContent>
+ <CardContent class="pt-6">
  <div v-if="projectTasks.length === 0" class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--inbox] text-4xl block mb-2" />
- 暂无任务
+ <div class="inline-flex rounded-full bg-muted/50 mb-3">
+ <span class="icon-[lucide--inbox] text-3xl" />
+ </div>
+ <p>暂无任务</p>
  </div>
  <div v-else class="space-y-2">
  <RouterLink
- v-for="task in projectTasks.slice(0, 5)":key="task.id":to="`/tasks/${task.id}`"
- class="flex items-center justify-between rounded-lg hover:bg-muted/50 transition-colors"
+ v-for="(task, index) in projectTasks.slice(0, 5)":key="task.id":to="`/tasks/${task.id}`"
+ class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-amber-500/30 transition-all group"
  >
  <div class="flex items-center gap-4">
- <span class="font-medium">{{ task.title }}</span>
- <TaskStatusBadge:status="task.status" />
+ <div class="w-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center text-sm font-medium text-amber-600">
+ {{ index + 1 }}
  </div>
+ <div>
+ <span class="font-medium group-hover:text-amber-600 transition-colors">{{ task.title }}</span>
+ <TaskStatusBadge:status="task.status" class="ml-3" />
+ </div>
+ </div>
+ <div class="flex items-center gap-3">
  <span class="text-sm text-muted-foreground">
  {{ formatDate(task.created_at) }}
  </span>
+ <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
+ </div>
  </RouterLink>
  </div>
  </CardContent>
  </Card>
+ </div>
  </template>
  <!-- 项目不存在 -->
  <EmptyState
@@ -476,6 +511,7 @@ async function handleCustomToken {
  title="项目不存在"
  description="未找到该项目，可能已被删除"
  action-label="返回列表"
+ gradient="from-blue-500/20 to-cyan-500/20"
  @action="router.push('/projects')"
  />
  <!-- 删除确认对话框 -->
@@ -490,16 +526,19 @@ async function handleCustomToken {
  </div>
  <!-- 关联仓库对话框 -->
  <Dialog v-model:open="linkDialogOpen">
- <DialogContent>
+ <DialogContent class="sm:max-w-md">
  <DialogHeader>
- <DialogTitle>关联仓库</DialogTitle>
+ <DialogTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--link] text-primary" />
+ 关联仓库
+ </DialogTitle>
  <DialogDescription>
  选择要关联到此项目的 Git 仓库
  </DialogDescription>
  </DialogHeader>
  <div class="py-4">
  <Select v-model="selectedRepositoryId">
- <SelectTrigger>
+ <SelectTrigger class=" bg-muted/30 border-border/50">
  <SelectValue placeholder="选择仓库" />
  </SelectTrigger>
  <SelectContent>
@@ -508,17 +547,17 @@ async function handleCustomToken {
  </SelectItem>
  </SelectContent>
  </Select>
- <p v-if="availableRepositories.length === 0" class="text-sm text-muted-foreground mt-2">
- 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="underline">
- 创建仓库
- </RouterLink>
+ <p v-if="availableRepositories.length === 0" class="text-sm text-muted-foreground mt-3">
+ 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">创建仓库</RouterLink>
  </p>
  </div>
  <DialogFooter>
  <Button variant="outline" @click="linkDialogOpen = false">
  取消
  </Button>
- <Button:disabled="!selectedRepositoryId || linking" @click="handleLinkRepository">
+ <Button:disabled="!selectedRepositoryId || linking" class="group relative overflow-hidden" @click="handleLinkRepository">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ linking ? '关联中...': '关联' }}
  </Button>
  </DialogFooter>
@@ -535,9 +574,12 @@ async function handleCustomToken {
  />
  <!-- 自定义 Token 对话框 -->
  <Dialog v-model:open="customTokenDialogOpen">
- <DialogContent>
+ <DialogContent class="sm:max-w-md">
  <DialogHeader>
- <DialogTitle>自定义 Webhook Token</DialogTitle>
+ <DialogTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--pencil] text-primary" />
+ 自定义 Webhook Token
+ </DialogTitle>
  <DialogDescription>
  输入自定义 Token（最大 32 字符），用于在飞书项目自动化规则中配置
  </DialogDescription>
@@ -550,6 +592,7 @@ async function handleCustomToken {
  v-model="customTokenValue"
  placeholder="输入自定义 Token"
  maxlength="32"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  />
  <p class="text-sm text-muted-foreground">
  {{ customTokenValue.length }}/32 字符
@@ -560,7 +603,9 @@ async function handleCustomToken {
  <Button variant="outline" @click="customTokenDialogOpen = false">
  取消
  </Button>
- <Button:disabled="customTokenLoading" @click="handleCustomToken">
+ <Button:disabled="customTokenLoading" class="group relative overflow-hidden" @click="handleCustomToken">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span v-if="customTokenLoading" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ customTokenLoading ? '保存中...': '保存' }}
  </Button>
  </DialogFooter>

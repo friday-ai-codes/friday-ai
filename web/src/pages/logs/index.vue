@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import type { WebhookLog, WebhookLogStatus, WorkItemLog } from '~/api/logs'
+import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
-import { listWebhookLogs, listWorkItemLogs } from '~/api/logs'
-import { Badge } from '~/components/ui/badge'
+import { listTriggerLogs } from '~/api/logs'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Select,
  SelectContent,
@@ -12,30 +10,18 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import {
- Table,
- TableBody,
- TableCell,
- TableHead,
- TableHeader,
- TableRow,
-} from '~/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 useHead({
- title: '日志管理 - Friday AI',
+ title: '触发日志 - Friday AI',
 })
 const { error: showError } = useToast
-// 当前选中的 Tab
-const activeTab = ref<'webhook' | 'workitem'>('webhook')
 // 过滤器
 const projectFilter = ref('__all__')
 const statusFilter = ref('__all__')
 // 加载状态
 const loading = ref(true)
-const webhookLogs = ref<WebhookLog>
-const workItemLogs = ref<WorkItemLog>
-const webhookTotal = ref(0)
-const workItemTotal = ref(0)
+const triggerLogs = ref<TriggerLog>
+const total = ref(0)
 // 加载项目列表
 const projectsStore = useProjectsStore
 onMounted(async => {
@@ -55,22 +41,14 @@ async function fetchLogs {
  loading.value = true
  try {
  const projectId = projectFilter.value === '__all__' ? undefined: projectFilter.value
- const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as WebhookLogStatus
- const [webhookResult, workItemResult] = await Promise.all([
- listWebhookLogs({
+ const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as TriggerLogStatus
+ const result = await listTriggerLogs({
  project_id: projectId,
  status,
  limit: 50,
- }),
- listWorkItemLogs({
- project_id: projectId,
- limit: 50,
- }),
- ])
- webhookLogs.value = webhookResult.items
- webhookTotal.value = webhookResult.total
- workItemLogs.value = workItemResult.items
- workItemTotal.value = workItemResult.total
+ })
+ triggerLogs.value = result.items ||
+ total.value = result.total || 0
  }
  finally {
  loading.value = false
@@ -81,53 +59,13 @@ watch([projectFilter, statusFilter], => {
  fetchLogs
 })
 // 状态选项
-const statusOptions: { value: string, label: string } = [
- { value: '__all__', label: '全部状态' },
- { value: 'accepted', label: '已接受' },
- { value: 'ignored', label: '已忽略' },
- { value: 'error', label: '错误' },
- { value: 'duplicate', label: '重复' },
+const statusOptions: { value: string, label: string, color: string } = [
+ { value: '__all__', label: '全部状态', color: 'bg-muted' },
+ { value: 'accepted', label: '已接受', color: 'bg-emerald-500' },
+ { value: 'ignored', label: '已忽略', color: 'bg-gray-400' },
+ { value: 'error', label: '错误', color: 'bg-red-500' },
+ { value: 'duplicate', label: '重复', color: 'bg-amber-500' },
 ]
-// 获取状态颜色
-function getStatusVariant(status: WebhookLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
- switch (status) {
- case 'accepted':
- return 'default'
- case 'ignored':
- return 'secondary'
- case 'error':
- return 'destructive'
- case 'duplicate':
- return 'outline'
- default:
- return 'outline'
- }
-}
-// 获取状态标签
-function getStatusLabel(status: WebhookLogStatus): string {
- switch (status) {
- case 'accepted':
- return '已接受'
- case 'ignored':
- return '已忽略'
- case 'error':
- return '错误'
- case 'duplicate':
- return '重复'
- default:
- return status
- }
-}
-// 格式化日期
-function formatDate(dateStr: string) {
- const date = new Date(dateStr)
- return date.toLocaleDateString('zh-CN', {
- month: 'short',
- day: 'numeric',
- hour: '2-digit',
- minute: '2-digit',
- })
-}
 // 获取项目名称
 function getProjectName(projectId: string | null) {
  if (!projectId)
@@ -137,37 +75,36 @@ function getProjectName(projectId: string | null) {
 }
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
- <div>
- <h1 class="text-2xl font-bold">
- 飞书数据日志
- </h1>
- <p class="text-muted-foreground">
- 查看 Webhook 请求和工作项详情的原始数据
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10">
+ <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
+ </div>
+ <h1 class="text-2xl font-bold">触发日志</h1>
+ </div>
+ <p class="text-muted-foreground ml-12">
+ 查看飞书 Webhook 触发的工作项日志
  </p>
  </div>
  </div>
+ <!-- 过滤器和统计 -->
+ <div class="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
  <!-- 过滤器 -->
- <Card>
- <CardHeader class="pb-3">
- <CardTitle class="text-base">
- 筛选条件
- </CardTitle>
- </CardHeader>
- <CardContent>
- <div class="flex flex-wrap gap-4">
+ <div class="flex flex-wrap items-center gap-3">
+ <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+ <span class="icon-[lucide--filter]" />
+ <span>筛选</span>
+ </div>
  <!-- 项目过滤 -->
- <div class="w-48">
  <Select v-model="projectFilter">
- <SelectTrigger>
+ <SelectTrigger class="w-44 bg-card/50 border-border/50">
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="__all__">
- 全部项目
- </SelectItem>
+ <SelectItem value="__all__">全部项目</SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
  >
@@ -175,11 +112,9 @@ function getProjectName(projectId: string | null) {
  </SelectItem>
  </SelectContent>
  </Select>
- </div>
- <!-- 状态过滤（仅 Webhook） -->
- <div v-if="activeTab === 'webhook'" class="w-40">
+ <!-- 状态过滤 -->
  <Select v-model="statusFilter">
- <SelectTrigger>
+ <SelectTrigger class="w-36 bg-card/50 border-border/50">
  <SelectValue placeholder="选择状态" />
  </SelectTrigger>
  <SelectContent>
@@ -190,138 +125,30 @@ function getProjectName(projectId: string | null) {
  </SelectItem>
  </SelectContent>
  </Select>
- </div>
  <!-- 刷新按钮 -->
- <Button variant="outline" size="icon" @click="fetchLogs">
+ <Button variant="outline" size="icon" class=" w-9" @click="fetchLogs">
  <span class="icon-[lucide--refresh-cw]" />
  </Button>
  </div>
- </CardContent>
- </Card>
- <!-- 日志 Tabs -->
- <Tabs v-model="activeTab" class="w-full">
- <TabsList class="grid w-full grid-cols-2 max-w-md">
- <TabsTrigger value="webhook">
- Webhook 日志 ({{ webhookTotal }})
- </TabsTrigger>
- <TabsTrigger value="workitem">
- 工作项日志 ({{ workItemTotal }})
- </TabsTrigger>
- </TabsList>
- <!-- Webhook 日志 Tab -->
- <TabsContent value="webhook" class="mt-4">
- <LoadingState v-if="loading" variant="skeleton":count="5" />
- <EmptyState
- v-else-if="webhookLogs.length === 0"
- icon="lucide--webhook"
- title="暂无 Webhook 日志"
- description="Webhook 日志将在接收到飞书请求后自动记录"
- />
- <Card v-else>
- <Table>
- <TableHeader>
- <TableRow>
- <TableHead>事件类型</TableHead>
- <TableHead>项目</TableHead>
- <TableHead>状态</TableHead>
- <TableHead>时间</TableHead>
- <TableHead class="text-right">
- 操作
- </TableHead>
- </TableRow>
- </TableHeader>
- <TableBody>
- <TableRow
- v-for="log in webhookLogs":key="log.id"
- class="cursor-pointer hover:bg-muted/50"
- @click="$router.push(`/logs/webhooks/${log.id}`)"
- >
- <TableCell class="font-medium">
- <div class="max-w-[200px] truncate":title="log.event_type">
- {{ log.event_type || '-' }}
+ <!-- 统计信息 -->
+ <div class="flex items-center gap-2 text-sm text-muted-foreground px-4 py-2 rounded-full bg-muted/30">
+ <span class="icon-[lucide--database]" />
+ 共 {{ total }} 条记录
  </div>
- </TableCell>
- <TableCell>
- <span class="text-muted-foreground">
- {{ getProjectName(log.project_id) }}
- </span>
- </TableCell>
- <TableCell>
- <Badge:variant="getStatusVariant(log.status)">
- {{ getStatusLabel(log.status) }}
- </Badge>
- </TableCell>
- <TableCell class="text-muted-foreground">
- {{ formatDate(log.created_at) }}
- </TableCell>
- <TableCell class="text-right">
- <RouterLink:to="`/logs/webhooks/${log.id}`" @click.stop>
- <Button variant="ghost" size="sm">
- <span class="icon-[lucide--arrow-right]" />
- </Button>
- </RouterLink>
- </TableCell>
- </TableRow>
- </TableBody>
- </Table>
- </Card>
- </TabsContent>
- <!-- 工作项日志 Tab -->
- <TabsContent value="workitem" class="mt-4">
+ </div>
+ <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="5" />
+ <!-- 空状态 -->
  <EmptyState
- v-else-if="workItemLogs.length === 0"
+ v-else-if="triggerLogs.length === 0"
  icon="lucide--file-text"
- title="暂无工作项日志"
- description="工作项日志将在获取飞书工作项详情后自动记录"
+ title="暂无日志"
+ description="飞书 Webhook 触发后将在此显示日志"
+ gradient="from-cyan-500/20 to-blue-500/20"
  />
- <Card v-else>
- <Table>
- <TableHeader>
- <TableRow>
- <TableHead>工作项 ID</TableHead>
- <TableHead>类型</TableHead>
- <TableHead>项目</TableHead>
- <TableHead>时间</TableHead>
- <TableHead class="text-right">
- 操作
- </TableHead>
- </TableRow>
- </TableHeader>
- <TableBody>
- <TableRow
- v-for="log in workItemLogs":key="log.id"
- class="cursor-pointer hover:bg-muted/50"
- @click="$router.push(`/logs/work-items/${log.id}`)"
- >
- <TableCell class="font-medium">
- {{ log.work_item_id }}
- </TableCell>
- <TableCell>
- <Badge variant="outline">
- {{ log.work_item_type }}
- </Badge>
- </TableCell>
- <TableCell>
- <span class="text-muted-foreground">
- {{ getProjectName(log.project_id) }}
- </span>
- </TableCell>
- <TableCell class="text-muted-foreground">
- {{ formatDate(log.created_at) }}
- </TableCell>
- <TableCell class="text-right">
- <RouterLink:to="`/logs/work-items/${log.id}`" @click.stop>
- <Button variant="ghost" size="sm">
- <span class="icon-[lucide--arrow-right]" />
- </Button>
- </RouterLink>
- </TableCell>
- </TableRow>
- </TableBody>
- </Table>
- </Card>
- </TabsContent>
- </Tabs>
+ <!-- 日志列表 -->
+ <TriggerLogList
+ v-else:logs="triggerLogs":loading="loading":get-project-name="getProjectName"
+ />
  </div>
 </template>

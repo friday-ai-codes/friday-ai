@@ -66,7 +66,7 @@ export async function removeRepository(projectId: string, repositoryId: string):
  * 获取项目的飞书配置
  */
 export async function getFeishuConfig(projectId: string): Promise<FeishuConfig> {
- return get<FeishuConfig>(`/projects/${projectId}/feishu-config`)
+ return get<FeishuConfig>(`/feishu/projects/${projectId}/config`)
 }
 /**
  * 设置项目的飞书配置
@@ -75,13 +75,13 @@ export async function setFeishuConfig(
  projectId: string,
  config: FeishuConfigCreate,
 ): Promise<FeishuConfig> {
- return put<FeishuConfig>(`/projects/${projectId}/feishu-config`, config)
+ return put<FeishuConfig>(`/feishu/projects/${projectId}/config`, config)
 }
 /**
  * 删除项目的飞书配置
  */
 export async function deleteFeishuConfig(projectId: string): Promise<void> {
- return del(`/projects/${projectId}/feishu-config`)
+ return del(`/feishu/projects/${projectId}/config`)
 }
 /**
  * 测试项目的飞书配置
@@ -92,7 +92,7 @@ export async function testFeishuConfig(
  projectId: string,
  testConfig?: FeishuConfigTest,
 ): Promise<FeishuConfigTestResult> {
- return post<FeishuConfigTestResult>(`/projects/${projectId}/feishu-config/test`, testConfig || {})
+ return post<FeishuConfigTestResult>(`/feishu/projects/${projectId}/config/test`, testConfig || {})
 }
 // ============================================================================
 // Webhook Token 管理
@@ -101,7 +101,7 @@ export async function testFeishuConfig(
  * 刷新项目的 Webhook Token（生成新的随机 Token）
  */
 export async function refreshWebhookToken(projectId: string): Promise<WebhookTokenRead> {
- return post<WebhookTokenRead>(`/projects/${projectId}/refresh-webhook-token`)
+ return post<WebhookTokenRead>(`/feishu/projects/${projectId}/refresh-token`)
 }
 /**
  * 更新项目的 Webhook Token（自定义 Token，最大 32 字符）
@@ -110,7 +110,7 @@ export async function updateWebhookToken(
  projectId: string,
  data: WebhookTokenUpdate,
 ): Promise<WebhookTokenRead> {
- return put<WebhookTokenRead>(`/projects/${projectId}/webhook-token`, data)
+ return put<WebhookTokenRead>(`/feishu/projects/${projectId}/token`, data)
 }
 export default {
  list: listProjects,

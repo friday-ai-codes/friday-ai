@@ -4,7 +4,8 @@
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
-from projects.models import Project, Repository
+from projects.models import Project
+from repositories.models import Repository
 from tasks.models import Task, TaskStatus
 User = get_user_model
 # ============================================================================
@@ -53,10 +54,13 @@ def repository(db):
 @pytest.fixture
 def repository_with_credential(db, repository):
  """创建带凭据的测试仓库。"""
- from services.crypto import encrypt_value
- repository.credential_encrypted = encrypt_value("GITHUB_TOKEN_PLACEHOLDER")
- repository.credential_type = "access_token"
- repository.save
+ from common.encryption import encrypt_value
+ from repositories.models import GitCredential, AuthType
+ GitCredential.objects.create(
+ repository=repository,
+ auth_type=AuthType.ACCESS_TOKEN,
+ encrypted_token=encrypt_value("GITHUB_TOKEN_PLACEHOLDER"),
+ )
  return repository
 # ============================================================================
 # Project Fixtures
@@ -184,7 +188,6 @@ def urls:
  @staticmethod
  def task_status_callback(task_id):
  return f"/api/tasks/{task_id}/status"
- # Webhooks
- feishu_webhook = reverse("feishu-webhook")
- github_webhook = reverse("github-webhook")
+ # Feishu webhooks (moved from webhooks app)
+ feishu_webhook = "/api/feishu/webhook"
  return URLs
