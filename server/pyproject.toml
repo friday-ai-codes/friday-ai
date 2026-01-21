@@ -26,6 +26,7 @@ dependencies = [
  "structlog>=25.5.0",
  "djangorestframework-stubs>=3.16.7",
  "pyright>=1.1.408",
+ "gunicorn>=23.0.0",
 ]
 [build-system]
 requires = ["hatchling"]
