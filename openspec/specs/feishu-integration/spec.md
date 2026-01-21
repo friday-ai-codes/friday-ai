@@ -245,7 +245,7 @@ Project 模型 SHALL 移除 Git 相关字段，保留飞书配置字段。
 系统 SHALL 在创建项目时自动生成一个唯一的 Webhook Token，用于验证飞书项目发送的 Webhook 请求。
 #### Scenario: 创建项目时自动生成 Token
 - **WHEN** 用户创建新项目
-- **THEN** 系统自动生成一个 32 字符的随机 Token
+- **THEN** 系统自动生成一个 16 字符的随机 Token（使用 `secrets.token_urlsafe`）
 - **AND** 将 Token 保存到 Project 的 webhook_token 字段
 - **AND** 在项目创建响应中返回此 Token
 #### Scenario: 查看项目详情时显示 Token
@@ -256,7 +256,7 @@ Project 模型 SHALL 移除 Git 相关字段，保留飞书配置字段。
 系统 SHALL 支持用户主动刷新项目的 Webhook Token，生成新的随机 Token。
 #### Scenario: 刷新 Webhook Token
 - **WHEN** 用户调用 POST /api/projects/{id}/refresh-webhook-token
-- **THEN** 系统生成新的 32 字符随机 Token
+- **THEN** 系统生成新的 16 字符随机 Token
 - **AND** 更新 Project 的 webhook_token 字段
 - **AND** 返回新的 Token
 #### Scenario: 前端刷新确认

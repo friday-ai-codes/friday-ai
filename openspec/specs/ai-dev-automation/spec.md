@@ -154,19 +154,15 @@ The system SHALL provide callback endpoints for task containers to report status
 - **THEN** 系统删除关联记录
 - **AND** 历史任务保留原有 repository_id 引用
 ### Requirement: Database Migration Management
-系统 SHALL 使用 Alembic 管理数据库 Schema 迁移，支持自动迁移和版本回滚。
+系统 SHALL 使用 Django ORM 管理数据库 Schema 迁移，支持自动迁移和版本回滚。
 #### Scenario: 服务启动时自动迁移
 - **WHEN** 后端服务启动
 - **THEN** 系统检测数据库迁移状态
-- **AND** 自动执行 `alembic upgrade head` 升级到最新版本
+- **AND** 自动执行 `python manage.py migrate` 升级到最新版本
 - **AND** 日志记录迁移执行结果
-#### Scenario: 现有数据库首次引入迁移
-- **WHEN** 检测到数据库存在但无 alembic_version 表
-- **THEN** 系统自动执行 `alembic stamp head` 标记当前版本
-- **AND** 后续迁移正常执行增量变更
 #### Scenario: AI Agent 完成 Model 变更
-- **WHEN** AI Agent 修改了 `server/src/friday/models/` 中的模型定义
-- **THEN** Agent **必须** 执行 `uv run alembic revision --autogenerate -m "描述变更"`
+- **WHEN** AI Agent 修改了 `server/*/models.py` 中的模型定义
+- **THEN** Agent **必须** 执行 `python manage.py makemigrations`
 - **AND** 检查生成的迁移脚本是否正确
 - **AND** 确保迁移脚本包含在代码提交中
 #### Scenario: Docker 容器部署
@@ -176,7 +172,7 @@ The system SHALL provide callback endpoints for task containers to report status
 - **AND** 迁移失败时服务启动失败并记录错误
 #### Scenario: 迁移回滚
 - **WHEN** 需要回滚数据库变更
-- **THEN** 执行 `uv run alembic downgrade -1` 回滚一个版本
+- **THEN** 执行 `python manage.py migrate <app_name> <migration_name>` 回滚到指定版本
 - **AND** 系统恢复到上一个 Schema 版本
 ### Requirement: System Settings Management
 系统 SHALL 提供系统级配置管理能力，支持通过 API 动态管理全局配置项。
@@ -222,15 +218,13 @@ Task 容器 SHALL 使用 `claude-agent-sdk` Python 包替代 Claude Code CLI，�
 - **AND** 不依赖 Node.js 或 Claude CLI
 #### Scenario: Plan 模式执行
 - **WHEN** 任务以 plan 模式运行
-- **THEN** 使用 ClaudeSDKClient 创建会话
-- **AND** 设置 `permission_mode="plan"` 禁止代码修改
-- **AND** 仅允许只读工具：Read, Glob, Grep, LS
+- **THEN** 使用 claude-agent-sdk 的 `query` 函数创建会话
+- **AND** 设置 `permission_mode="plan"` 禁止代码修改（SDK 原生只读模式）
 - **AND** 生成实现方案并返回
 #### Scenario: Execute 模式执行
 - **WHEN** 任务以 execute 模式运行
-- **THEN** 使用 ClaudeSDKClient 创建会话
-- **AND** 设置 `permission_mode="acceptEdits"` 自动接受编辑
-- **AND** 允许所有编辑工具：Read, Write, Edit, Bash, Glob, Grep, LS
+- **THEN** 使用 claude-agent-sdk 的 `query` 函数创建会话
+- **AND** 设置 `permission_mode="bypassPermissions"` 跳过所有权限检查，支持无人值守执行
 - **AND** 如有之前的 session_id，使用 `resume` 参数恢复会话
 #### Scenario: 消息处理
 - **WHEN** SDK 返回消息流
