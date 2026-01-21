@@ -25,6 +25,7 @@ dependencies = [
  # Utilities
  "structlog>=25.5.0",
  "djangorestframework-stubs>=3.16.7",
+ "pyright>=1.1.408",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -63,3 +64,12 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
+# uv 通过 [project.scripts] 定义 CLI 入口点
+# 常用命令直接使用 uv run：
+# uv run pyright . - 类型检查
+# uv run ruff check . - 代码检查
+# uv run ruff format . - 格式化代码
+# uv run pytest - 运行测试
+# uv run pytest --cov --cov-report=html - 测试+覆盖率
+# uv run python manage.py runserver - 开发服务器
+# uv run python manage.py migrate - 数据库迁移
