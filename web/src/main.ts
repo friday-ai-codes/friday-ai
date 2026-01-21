@@ -4,8 +4,10 @@ import { setupLayouts } from 'virtual:generated-layouts'
 import { createApp } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { createRouter, createWebHistory } from 'vue-router'
+import { createVfm } from 'vue-final-modal'
 import { routes } from 'vue-router/auto-routes'
 import App from './App.vue'
+import 'vue-final-modal/style.css'
 import { useAuthStore } from './stores/auth'
 import '~/styles/main.css'
 // 路由配置
@@ -24,12 +26,15 @@ const i18n = createI18n({
 })
 // Head 管理
 const head = createHead
+// Vue Final Modal
+const vfm = createVfm
 // 创建应用
 const app = createApp(App)
 app.use(pinia) // 先注册 Pinia
 app.use(router)
 app.use(i18n)
 app.use(head)
+app.use(vfm)
 // 路由守卫
 router.beforeEach(async (to, from, next) => {
  const authStore = useAuthStore

@@ -66,7 +66,7 @@ async function copyJson {
  if (!log.value)
  return
  try {
- await navigator.clipboard.writeText(JSON.stringify(log.value.raw_request_parsed, null, 2))
+ await navigator.clipboard.writeText(JSON.stringify(log.value.webhook_raw_request_parsed, null, 2))
  success('复制成功', 'JSON 已复制到剪贴板')
  }
  catch {
@@ -179,7 +179,7 @@ async function copyJson {
  </CardHeader>
  <CardContent>
  <div class="bg-muted rounded-lg overflow-auto max-h-[600px]">
- <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.raw_request_parsed, null, 2) }}</pre>
+ <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.webhook_raw_request_parsed, null, 2) }}</pre>
  </div>
  </CardContent>
  </Card>

@@ -22,6 +22,7 @@ declare module 'vue' {
  AvatarFallback: typeof import('./components/ui/avatar/AvatarFallback.vue')['default']
  AvatarImage: typeof import('./components/ui/avatar/AvatarImage.vue')['default']
  Badge: typeof import('./components/ui/badge/Badge.vue')['default']
+ BaseModal: typeof import('./components/modal/BaseModal.vue')['default']
  Button: typeof import('./components/ui/button/Button.vue')['default']
  Card: typeof import('./components/ui/card/Card.vue')['default']
  CardContent: typeof import('./components/ui/card/CardContent.vue')['default']
@@ -42,6 +43,9 @@ declare module 'vue' {
  CommandSeparator: typeof import('./components/ui/command/CommandSeparator.vue')['default']
  CommandShortcut: typeof import('./components/ui/command/CommandShortcut.vue')['default']
  ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']
+ ConfirmModal: typeof import('./components/modal/ConfirmModal.vue')['default']
+ CreateProjectModal: typeof import('./components/project/CreateProjectModal.vue')['default']
+ CreateRepositoryModal: typeof import('./components/repository/CreateRepositoryModal.vue')['default']
  Dialog: typeof import('./components/ui/dialog/Dialog.vue')['default']
  DialogClose: typeof import('./components/ui/dialog/DialogClose.vue')['default']
  DialogContent: typeof import('./components/ui/dialog/DialogContent.vue')['default']
@@ -73,6 +77,7 @@ declare module 'vue' {
  FormItem: typeof import('./components/ui/form/FormItem.vue')['default']
  FormLabel: typeof import('./components/ui/form/FormLabel.vue')['default']
  FormMessage: typeof import('./components/ui/form/FormMessage.vue')['default']
+ FormModal: typeof import('./components/modal/FormModal.vue')['default']
  Input: typeof import('./components/ui/input/Input.vue')['default']
  JsonHighlighter: typeof import('./components/logs/JsonHighlighter.vue')['default']
  KeyFieldsCard: typeof import('./components/logs/KeyFieldsCard.vue')['default']
@@ -118,6 +123,7 @@ declare module 'vue' {
  TooltipProvider: typeof import('./components/ui/tooltip/TooltipProvider.vue')['default']
  TooltipTrigger: typeof import('./components/ui/tooltip/TooltipTrigger.vue')['default']
  TriggerLogDetail: typeof import('./components/logs/TriggerLogDetail.vue')['default']
+ TriggerLogDetailModal: typeof import('./components/logs/TriggerLogDetailModal.vue')['default']
  TriggerLogList: typeof import('./components/logs/TriggerLogList.vue')['default']
  }
 }

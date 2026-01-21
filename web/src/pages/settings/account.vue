@@ -105,10 +105,14 @@ onMounted( => {
 <template>
  <div class="max-w-3xl mx-auto space-y-8">
  <!-- 返回按钮 -->
- <RouterLink to="/settings" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <button
+ type="button"
+ class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+ @click="router.back"
+ >
  <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
- 返回系统设置
- </RouterLink>
+ 返回
+ </button>
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">

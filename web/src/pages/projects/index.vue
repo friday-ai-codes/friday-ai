@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { markRaw } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 useHead({
  title: '项目管理 - Friday AI',
 })
+const router = useRouter
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
 // 加载项目列表
@@ -20,6 +23,17 @@ onMounted(async => {
  loading.value = false
  }
 })
+// 新建项目弹窗
+async function openCreateProject {
+ const { open, result } = useModal<string>({
+ component: markRaw(CreateProjectModal),
+ onConfirm: (projectId) => {
+ // 创建成功后跳转到项目详情
+ router.push(`/projects/${projectId}`)
+ },
+ })
+ await open
+}
 // 删除项目
 const deleteDialogOpen = ref(false)
 const projectToDelete = ref<string | null>(null)
@@ -60,13 +74,11 @@ async function handleDelete {
  管理您的 Git 仓库项目和凭证配置
  </p>
  </div>
- <RouterLink to="/projects/new">
- <Button class="group relative overflow-hidden">
+ <Button class="group relative overflow-hidden" @click="openCreateProject">
  <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  新建项目
  </Button>
- </RouterLink>
  </div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="card":count="3" />

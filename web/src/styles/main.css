@@ -76,3 +76,18 @@ a {
 /* 选中文本样式 */:selection {
  background: hsl(213 47% 47% / 0.3); /* #3F72AF 30% */
 }
+/* Vue Final Modal - shadcn 风格缩放动画 */
+.vfm-zoom-enter-active,
+.vfm-zoom-leave-active {
+ transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.vfm-zoom-enter-from,
+.vfm-zoom-leave-to {
+ opacity: 0;
+ transform: scale(0.95);
+}
+.vfm-zoom-enter-to,
+.vfm-zoom-leave-from {
+ opacity: 1;
+ transform: scale(1);
+}

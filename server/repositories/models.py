@@ -20,10 +20,9 @@ class Repository(models.Model):
  git_platform = models.CharField(
  max_length=20,
  choices=GitPlatform.choices,
- default=GitPlatform.GITHUB,
+ default=GitPlatform.GITLAB,
  )
  default_branch = models.CharField(max_length=100, default="main")
- claude_md_path = models.CharField(max_length=500, default="developer-notes.md")
  description = models.TextField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)

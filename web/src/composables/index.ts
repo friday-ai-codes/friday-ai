@@ -3,3 +3,5 @@
 export { usePolling } from './usePolling'
 export type { UsePollingOptions } from './usePolling'
 export { useToast } from './useToast'
+export { useModal, openModal } from './useModal'
+export type { ModalOptions, ModalInstance } from './useModal'

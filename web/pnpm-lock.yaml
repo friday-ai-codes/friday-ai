@@ -115,6 +115,9 @@ catalogs:
  vue:
  specifier: ^3.5.26
  version: 3.5.26
+ vue-final-modal:
+ specifier: ^4.5.5
+ version: 4.5.5
  vue-i18n:
  specifier: ^11.2.8
  version: 11.2.8
@@ -176,6 +179,9 @@ importers:
  vue:
  specifier: 'catalog:'
  version: 3.5.26(typescript@5.9.3)
+ vue-final-modal:
+ specifier: 'catalog:'
+ version: 4.5.5(@vueuse/core@14.1.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))
  vue-i18n:
  specifier: 'catalog:'
  version: 11.2.8(vue@3.5.26(typescript@5.9.3))
@@ -1150,6 +1156,47 @@ packages:
  resolution: {integrity: sha512-ykdOxTGs95xjD4WXE4na/umxZea2Itl0GWBILas+O4oqS7eXIods38INvk3XkJKjqMdWPcpCyLX/DioLQxU1KA==}
  peerDependencies:
  vue: '>=2.7 || >=3'
+ '@vueuse/integrations@14.1.0':
+ resolution: {integrity: sha512-eNQPdisnO9SvdydTIXnTE7c29yOsJBD/xkwEyQLdhDC/LKbqrFpXHb3uS//7NcIrQO3fWVuvMGp8dbK6mNEMCA==}
+ peerDependencies:
+ async-validator: ^4
+ axios: ^1
+ change-case: ^5
+ drauu: ^0.4
+ focus-trap: ^7
+ fuse.js: ^7
+ idb-keyval: ^6
+ jwt-decode: ^4
+ nprogress: ^0.2
+ qrcode: ^1.5
+ sortablejs: ^1
+ universal-cookie: ^7 || ^8
+ vue: ^3.5.0
+ peerDependenciesMeta:
+ async-validator:
+ optional: true
+ axios:
+ optional: true
+ change-case:
+ optional: true
+ drauu:
+ optional: true
+ focus-trap:
+ optional: true
+ fuse.js:
+ optional: true
+ idb-keyval:
+ optional: true
+ jwt-decode:
+ optional: true
+ nprogress:
+ optional: true
+ qrcode:
+ optional: true
+ sortablejs:
+ optional: true
+ universal-cookie:
+ optional: true
  '@vueuse/metadata@10.11.1':
  resolution: {integrity: sha512-IGa5FXd003Ug1qAZmyE8wF3sJ81xGLSqTqtQ6jaVfkeZ4i5kS2mwQF61yhVqojRnenVew5PldLyRgvdl4YYuSw==}
  '@vueuse/metadata@12.8.2':
@@ -1628,6 +1675,8 @@ packages:
  engines: {node: '>=16'}
  flatted@3.3.3:
  resolution: {integrity: sha512-GX+ysw4PBCz0PzosHDepZGANEuFCMLrnRTiEy9McGjmkCQYwRq4A/X786G/fjM/+OjsWSU1ZrY5qyARZmO/uwg==}
+ focus-trap@7.8.0:
+ resolution: {integrity: sha512-/yNdlIkpWbM0ptxno3ONTuf+2g318kh2ez3KSeZN5dZ8YC6AAmgeWz+GasYYiBJPFaYcSAPeu4GfhUaChzIJXA==}
  foreground-child@3.3.1:
  resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
  engines: {node: '>=14'}
@@ -2292,6 +2341,8 @@ packages:
  synckit@0.11.12:
  resolution: {integrity: sha512-Bh7QjT8/SuKUIfObSXNHNSK6WHo6J1tHCqJsuaFDP7gP0fkzSfTxI8y85JrppZ0h8l0maIgc2tfuZQ6/t3GtnQ==}
  engines: {node: ^14.18.0 || >=16.0.0}
+ tabbable@6.4.0:
+ resolution: {integrity: sha512-05PUHKSNE8ou2dwIxTngl4EzcnsCDZGJ/iCLtDflR/SHB/ny14rXc+qU5P4mG9JkusiV7EivzY9Mhm55AzAvCg==}
  tailwind-merge@3.4.0:
  resolution: {integrity: sha512-uSaO4gnW+b3Y2aWoWfFpX62vn2sR3skfhbjsEnaBI81WD1wBLlHZe5sWf0AqjksNdYTbGBEd0UasQMT3SNV15g==}
  tailwindcss@4.1.18:
@@ -2475,6 +2526,13 @@ packages:
  engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
  peerDependencies:
  eslint: ^8.57.0 || ^9.0.0
+ vue-final-modal@4.5.5:
+ resolution: {integrity: sha512-A6xgsXqE6eLw9e6Tq/W6pxDBmimPuSuvq20WL9TOZpZy7itPdGeNn8e1P15PCGqP2yHM3q2gJIchPY9ZJd8YsA==}
+ peerDependencies:
+ '@vueuse/core': '>=10.0.0'
+ '@vueuse/integrations': '>=10.0.0'
+ focus-trap: '>=7.2.0'
+ vue: '>=3.2.0'
  vue-i18n@11.2.8:
  resolution: {integrity: sha512-vJ123v/PXCZntd6Qj5Jumy7UBmIuE92VrtdX+AXr+1WzdBHojiBxnAxdfctUFL+/JIN+VQH4BhsfTtiGsvVObg==}
  engines: {node: '>= 16'}
@@ -3412,6 +3470,14 @@ snapshots:
  '@unhead/ssr': 1.11.20
  '@unhead/vue': 1.11.20(vue@3.5.26(typescript@5.9.3))
  vue: 3.5.26(typescript@5.9.3)
+ '@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))':
+ dependencies:
+ '@vueuse/core': 14.1.0(vue@3.5.26(typescript@5.9.3))
+ '@vueuse/shared': 14.1.0(vue@3.5.26(typescript@5.9.3))
+ vue: 3.5.26(typescript@5.9.3)
+ optionalDependencies:
+ change-case: 5.4.4
+ focus-trap: 7.8.0
  '@vueuse/metadata@10.11.1': {}
  '@vueuse/metadata@12.8.2': {}
  '@vueuse/metadata@14.1.0': {}
@@ -3942,6 +4008,9 @@ snapshots:
  flatted: 3.3.3
  keyv: 4.5.4
  flatted@3.3.3: {}
+ focus-trap@7.8.0:
+ dependencies:
+ tabbable: 6.4.0
  foreground-child@3.3.1:
  dependencies:
  cross-spawn: 7.0.6
@@ -4757,6 +4826,7 @@ snapshots:
  synckit@0.11.12:
  dependencies:
  '@pkgr/core': 0.2.9
+ tabbable@6.4.0: {}
  tailwind-merge@3.4.0: {}
  tailwindcss@4.1.18: {}
  tapable@2.3.0: {}
@@ -4986,6 +5056,12 @@ snapshots:
  semver: 7.7.3
  transitivePeerDependencies:
  - supports-color
+ vue-final-modal@4.5.5(@vueuse/core@14.1.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)):
+ dependencies:
+ '@vueuse/core': 14.1.0(vue@3.5.26(typescript@5.9.3))
+ '@vueuse/integrations': 14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))
+ focus-trap: 7.8.0
+ vue: 3.5.26(typescript@5.9.3)
  vue-i18n@11.2.8(vue@3.5.26(typescript@5.9.3)):
  dependencies:
  '@intlify/core-base': 11.2.8
