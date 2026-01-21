@@ -18,7 +18,6 @@
 - 支持多项目、多 Git 平台（GitHub/GitLab/Gitea/Bitbucket）
 ### Non-Goals
 - 不实现复杂的集群编排（Kubernetes）
-- 不实现 Web 管理界面（仅 API）
 - 不实现多租户隔离
 - 不实现 AI 代码的自动合并（保留人工 Review）
 ## Decisions
