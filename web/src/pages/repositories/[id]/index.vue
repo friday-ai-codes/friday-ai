@@ -71,7 +71,7 @@ const credential = computed( => repositoriesStore.currentCredential)
  <div class="flex items-start justify-between">
  <div class="space-y-2">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
  <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
  </div>
  <div>

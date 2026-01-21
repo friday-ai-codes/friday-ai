@@ -66,7 +66,7 @@ async function handleSubmit {
  <!-- 标题区域 -->
  <div class=" border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-plus] text-2xl text-blue-500" />
  </div>
  <div>

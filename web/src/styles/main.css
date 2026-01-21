@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @plugin "@iconify/tailwind4";
 /*
+ * Safelist 动态图标类
+ * 这些图标在 JS 中动态拼接，需要手动声明以确保被生成
+ */
+@source inline("icon-[lucide--folder-git-2] icon-[lucide--layers] icon-[lucide--zap] icon-[lucide--scan-eye] icon-[lucide--sparkles] icon-[lucide--shield] icon-[lucide--git-pull-request-draft]");
+/*
  * Friday AI 配色方案
  *
  * 主题色:

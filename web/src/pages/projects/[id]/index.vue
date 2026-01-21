@@ -191,7 +191,7 @@ async function handleCustomToken {
  <div class="flex items-start justify-between">
  <div class="space-y-2">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-open] text-2xl text-blue-500" />
  </div>
  <div>
