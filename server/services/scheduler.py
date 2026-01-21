@@ -229,14 +229,14 @@ class TaskScheduler:
  Returns:
  True if container was stopped, False if not found
  """
- container_id = self._running_containers.get(task_id)
+ container_id: str | None = self._running_containers.get(task_id)
  if not container_id:
  # Try to find by label
  containers = self.client.containers.list(filters={"label": f"friday.task_id={task_id}"})
  if not containers:
  logger.warning(f"No container found for task: {task_id}")
  return False
- container_id = containers[0].id
+ container_id = str(containers[0].id)
  try:
  container = self.client.containers.get(container_id)
  if force:
@@ -263,8 +263,9 @@ class TaskScheduler:
  if not containers:
  return None
  container = containers[0]
+ container_id = str(container.id) if container.id else ""
  return {
- "container_id": container.id[:12],
+ "container_id": container_id[:12],
  "status": container.status,
  "state": container.attrs.get("State", {}),
  "created": container.attrs.get("Created"),
@@ -303,7 +304,8 @@ class TaskScheduler:
  try:
  container.remove(v=True) # Also remove volumes
  removed += 1
- logger.debug(f"Removed finished container: {container.id[:12]}")
+ container_id = str(container.id) if container.id else ""
+ logger.debug(f"Removed finished container: {container_id[:12]}")
  except APIError as e:
  logger.warning(f"Failed to remove container: {e}")
  if removed:
