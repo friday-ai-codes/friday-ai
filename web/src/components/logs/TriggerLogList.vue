@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
+import { markRaw } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
@@ -11,12 +12,12 @@ import {
  TableHeader,
  TableRow,
 } from '~/components/ui/table'
+import TriggerLogDetailModal from './TriggerLogDetailModal.vue'
 defineProps<{
  logs: TriggerLog
  loading?: boolean
  getProjectName?: (projectId: string | null) => string
 }>
-const router = useRouter
 // 获取状态颜色
 function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
  switch (status) {
@@ -57,9 +58,15 @@ function formatDate(dateStr: string) {
  minute: '2-digit',
  })
 }
-// 跳转到详情页
-function goToDetail(logId: string) {
- router.push(`/logs/triggers/${logId}`)
+// 打开详情弹窗
+async function openDetail(logId: string) {
+ const { open } = useModal({
+ component: markRaw(TriggerLogDetailModal),
+ attrs: {
+ logId,
+ },
+ })
+ await open
 }
 </script>
 <template>
@@ -88,7 +95,7 @@ function goToDetail(logId: string) {
  <TableRow
  v-for="log in logs":key="log.id"
  class="cursor-pointer hover:bg-muted/50"
- @click="goToDetail(log.id)"
+ @click="openDetail(log.id)"
  >
  <TableCell class="font-medium">
  <div class="max-w-[150px] truncate":title="log.event_type">
@@ -114,11 +121,9 @@ function goToDetail(logId: string) {
  {{ formatDate(log.created_at) }}
  </TableCell>
  <TableCell class="text-right">
- <RouterLink:to="`/logs/triggers/${log.id}`" @click.stop>
- <Button variant="ghost" size="sm">
- <span class="icon-[lucide--arrow-right]" />
+ <Button variant="ghost" size="sm" @click.stop="openDetail(log.id)">
+ <span class="icon-[lucide--eye]" />
  </Button>
- </RouterLink>
  </TableCell>
  </TableRow>
  </TableBody>

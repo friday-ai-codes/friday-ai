@@ -80,6 +80,7 @@ declare global {
  const onUnmounted: typeof import('vue').onUnmounted
  const onUpdated: typeof import('vue').onUpdated
  const onWatcherCleanup: typeof import('vue').onWatcherCleanup
+ const openModal: typeof import('./composables/useModal').openModal
  const pausableWatch: typeof import('@vueuse/core').pausableWatch
  const provide: typeof import('vue').provide
  const provideLocal: typeof import('@vueuse/core').provideLocal
@@ -213,6 +214,7 @@ declare global {
  const useMediaQuery: typeof import('@vueuse/core').useMediaQuery
  const useMemoize: typeof import('@vueuse/core').useMemoize
  const useMemory: typeof import('@vueuse/core').useMemory
+ const useModal: typeof import('./composables/useModal').useModal
  const useModel: typeof import('vue').useModel
  const useMounted: typeof import('@vueuse/core').useMounted
  const useMouse: typeof import('@vueuse/core').useMouse
@@ -324,6 +326,9 @@ declare global {
  export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
  import('vue')
  // @ts-ignore
+ export type { ModalOptions, ModalInstance } from './composables/useModal'
+ import('./composables/useModal')
+ // @ts-ignore
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
 }
@@ -406,6 +411,7 @@ declare module 'vue' {
  readonly onUnmounted: UnwrapRef<typeof import('vue')['onUnmounted']>
  readonly onUpdated: UnwrapRef<typeof import('vue')['onUpdated']>
  readonly onWatcherCleanup: UnwrapRef<typeof import('vue')['onWatcherCleanup']>
+ readonly openModal: UnwrapRef<typeof import('./composables/useModal')['openModal']>
  readonly pausableWatch: UnwrapRef<typeof import('@vueuse/core')['pausableWatch']>
  readonly provide: UnwrapRef<typeof import('vue')['provide']>
  readonly provideLocal: UnwrapRef<typeof import('@vueuse/core')['provideLocal']>
@@ -538,6 +544,7 @@ declare module 'vue' {
  readonly useMediaQuery: UnwrapRef<typeof import('@vueuse/core')['useMediaQuery']>
  readonly useMemoize: UnwrapRef<typeof import('@vueuse/core')['useMemoize']>
  readonly useMemory: UnwrapRef<typeof import('@vueuse/core')['useMemory']>
+ readonly useModal: UnwrapRef<typeof import('./composables/useModal')['useModal']>
  readonly useModel: UnwrapRef<typeof import('vue')['useModel']>
  readonly useMounted: UnwrapRef<typeof import('@vueuse/core')['useMounted']>
  readonly useMouse: UnwrapRef<typeof import('@vueuse/core')['useMouse']>

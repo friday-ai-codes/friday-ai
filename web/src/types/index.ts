@@ -112,7 +112,6 @@ export interface RepositoryBase {
  git_url: string
  git_platform: GitPlatform
  default_branch: string
- claude_md_path: string
  description?: string
 }
 /**
@@ -141,7 +140,6 @@ export interface RepositoryUpdate {
  git_url?: string
  git_platform?: GitPlatform
  default_branch?: string
- claude_md_path?: string
  description?: string
 }
 // ============================================================================

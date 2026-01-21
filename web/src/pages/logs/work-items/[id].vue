@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { WorkItemLogDetail } from '~/api/logs'
+import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
-import { getWorkItemLog } from '~/api/logs'
+import { getTriggerLog } from '~/api/logs'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -15,10 +15,10 @@ useHead({
 })
 // 加载数据
 const loading = ref(true)
-const log = ref<WorkItemLogDetail | null>(null)
+const log = ref<TriggerLogDetail | null>(null)
 onMounted(async => {
  try {
- log.value = await getWorkItemLog(logId.value)
+ log.value = await getTriggerLog(logId.value)
  }
  catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
@@ -36,7 +36,7 @@ async function copyJson {
  if (!log.value)
  return
  try {
- await navigator.clipboard.writeText(JSON.stringify(log.value.raw_response_parsed, null, 2))
+ await navigator.clipboard.writeText(JSON.stringify(log.value.work_item_raw_response_parsed, null, 2))
  success('复制成功', 'JSON 已复制到剪贴板')
  }
  catch {
@@ -63,9 +63,9 @@ async function copyJson {
  </h1>
  <div class="flex items-center gap-3">
  <Badge variant="outline">
- {{ log.work_item_type }}
+ {{ log.event_type }}
  </Badge>
- <span class="text-muted-foreground font-mono">
+ <span v-if="log.work_item_id" class="text-muted-foreground font-mono">
  #{{ log.work_item_id }}
  </span>
  </div>
@@ -104,9 +104,9 @@ async function copyJson {
  </p>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">工作项类型</label>
+ <label class="text-sm text-muted-foreground">事件类型</label>
  <p class="font-mono text-sm">
- {{ log.work_item_type }}
+ {{ log.event_type }}
  </p>
  </div>
  </div>
@@ -119,14 +119,9 @@ async function copyJson {
  </p>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">关联任务 ID</label>
- <p v-if="log.task_id" class="font-mono text-sm">
- <RouterLink:to="`/tasks/${log.task_id}`" class="text-primary hover:underline">
- {{ log.task_id }}
- </RouterLink>
- </p>
- <p v-else class="text-sm">
- -
+ <label class="text-sm text-muted-foreground">事件 UUID</label>
+ <p class="font-mono text-sm">
+ {{ log.event_uuid || '-' }}
  </p>
  </div>
  </div>
@@ -142,7 +137,7 @@ async function copyJson {
  </CardHeader>
  <CardContent>
  <div class="bg-muted rounded-lg overflow-auto max-h-[600px]">
- <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.raw_response_parsed, null, 2) }}</pre>
+ <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.work_item_raw_response_parsed, null, 2) }}</pre>
  </div>
  </CardContent>
  </Card>

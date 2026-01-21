@@ -1,5 +1,16 @@
 <script setup lang="ts">
 import { Toaster } from '~/components/ui/sonner'
+import { Button } from '~/components/ui/button'
+import {
+ DropdownMenu,
+ DropdownMenuContent,
+ DropdownMenuItem,
+ DropdownMenuSeparator,
+ DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
+import { useAuthStore } from '~/stores/auth'
+const authStore = useAuthStore
+const router = useRouter
 // 导航项定义
 const navItems = [
  { to: '/', label: '首页', icon: 'lucide--home' },
@@ -16,6 +27,15 @@ function isActive(path: string) {
  return route.path === '/'
  }
  return route.path.startsWith(path)
+}
+// 退出登录
+async function handleLogout {
+ await authStore.logout
+ router.push('/login')
+}
+// 跳转到账号设置
+function goToAccountSettings {
+ router.push('/settings/account')
 }
 </script>
 <template>
@@ -63,6 +83,27 @@ function isActive(path: string) {
  </span>
  <span class="text-sm text-emerald-600 font-medium">在线</span>
  </div>
+ <!-- 用户下拉菜单 -->
+ <DropdownMenu>
+ <DropdownMenuTrigger as-child>
+ <Button variant="ghost" class="flex items-center gap-2 px-3">
+ <span class="icon-[lucide--user-circle] text-xl" />
+ <span class="hidden sm:inline text-sm font-medium">{{ authStore.user?.display_name || authStore.user?.username || '用户' }}</span>
+ <span class="icon-[lucide--chevron-down] text-sm" />
+ </Button>
+ </DropdownMenuTrigger>
+ <DropdownMenuContent align="end" class="w-48">
+ <DropdownMenuItem class="cursor-pointer" @click="goToAccountSettings">
+ <span class="icon-[lucide--user-cog] mr-2" />
+ 账号设置
+ </DropdownMenuItem>
+ <DropdownMenuSeparator />
+ <DropdownMenuItem class="cursor-pointer text-destructive focus:text-destructive" @click="handleLogout">
+ <span class="icon-[lucide--log-out] mr-2" />
+ 退出登录
+ </DropdownMenuItem>
+ </DropdownMenuContent>
+ </DropdownMenu>
  </div>
  </nav>
  </header>

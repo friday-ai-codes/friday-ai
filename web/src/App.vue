@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { ModalsContainer } from 'vue-final-modal'
 // 设置页面默认标题
 useHead({
  title: 'Friday AI',
@@ -10,4 +11,5 @@ useHead({
 </script>
 <template>
  <RouterView />
+ <ModalsContainer />
 </template>

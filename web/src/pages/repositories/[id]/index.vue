@@ -114,13 +114,6 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  <Separator class="bg-border/50" />
  <div>
- <label class="text-sm text-muted-foreground">developer-notes.md 路径</label>
- <p class="font-mono text-sm mt-1">
- {{ repository.claude_md_path }}
- </p>
- </div>
- <Separator class="bg-border/50" />
- <div>
  <label class="text-sm text-muted-foreground">描述</label>
  <p class="text-sm mt-1">
  {{ repository.description || '暂无描述' }}

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { markRaw } from 'vue'
+import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '仓库管理 - Friday AI',
 })
+const router = useRouter
 const repositoriesStore = useRepositoriesStore
 const { success, error: showError } = useToast
 // 加载仓库列表
@@ -21,6 +24,16 @@ onMounted(async => {
  loading.value = false
  }
 })
+// 新建仓库弹窗
+async function openCreateRepository {
+ const { open } = useModal<string>({
+ component: markRaw(CreateRepositoryModal),
+ onConfirm: (repositoryId) => {
+ router.push(`/repositories/${repositoryId}`)
+ },
+ })
+ await open
+}
 // 删除仓库
 const deleteDialogOpen = ref(false)
 const repositoryToDelete = ref<string | null>(null)
@@ -61,19 +74,19 @@ const platformIcons: Record<string, string> = {
  <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
  <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
  </div>
- <h1 class="text-2xl font-bold">仓库管理</h1>
+ <h1 class="text-2xl font-bold">
+ 仓库管理
+ </h1>
  </div>
  <p class="text-muted-foreground ml-12">
  管理您的 Git 仓库和凭证配置
  </p>
  </div>
- <RouterLink to="/repositories/new">
- <Button class="group relative overflow-hidden">
+ <Button class="group relative overflow-hidden" @click="openCreateRepository">
  <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  新建仓库
  </Button>
- </RouterLink>
  </div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="card":count="3" />

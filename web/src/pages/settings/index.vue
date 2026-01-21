@@ -158,13 +158,6 @@ onMounted( => {
  </p>
  </div>
  </div>
- <!-- 快速导航 -->
- <div class="flex gap-3">
- <Button variant="outline" class="group" @click="router.push('/settings/account')">
- <span class="icon-[lucide--user] mr-2 group-hover:scale-110 transition-transform" />
- 账号设置
- </Button>
- </div>
  <LoadingState v-if="loading" variant="spinner" text="加载设置..." />
  <template v-else>
  <!-- Claude Code 配置 -->
