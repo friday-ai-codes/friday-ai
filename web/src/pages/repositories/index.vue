@@ -2,7 +2,6 @@
 import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '仓库管理 - Friday AI',
@@ -46,28 +45,38 @@ async function handleDelete {
  deleting.value = false
  }
 }
+// 平台图标映射
+const platformIcons: Record<string, string> = {
+ github: 'lucide--github',
+ gitlab: 'simple-icons--gitlab',
+ gitee: 'simple-icons--gitee',
+}
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
- <div>
- <h1 class="text-2xl font-bold">
- 仓库管理
- </h1>
- <p class="text-muted-foreground">
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
+ </div>
+ <h1 class="text-2xl font-bold">仓库管理</h1>
+ </div>
+ <p class="text-muted-foreground ml-12">
  管理您的 Git 仓库和凭证配置
  </p>
  </div>
  <RouterLink to="/repositories/new">
- <Button>
+ <Button class="group relative overflow-hidden">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  新建仓库
  </Button>
  </RouterLink>
  </div>
  <!-- 加载状态 -->
- <LoadingState v-if="loading" variant="skeleton":count="3" />
+ <LoadingState v-if="loading" variant="card":count="3" />
  <!-- 空状态 -->
  <EmptyState
  v-else-if="repositoriesStore.repositories.length === 0"
@@ -75,48 +84,59 @@ async function handleDelete {
  title="暂无仓库"
  description="创建您的第一个仓库，关联到项目以开始使用"
  action-label="新建仓库"
+ gradient="from-violet-500/20 to-purple-500/20"
  @action="$router.push('/repositories/new')"
  />
  <!-- 仓库列表 -->
- <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
- <Card
- v-for="repository in repositoriesStore.repositories":key="repository.id"
- class="hover:shadow-md transition-shadow"
+ <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+ <RouterLink
+ v-for="repository in repositoriesStore.repositories":key="repository.id":to="`/repositories/${repository.id}`"
+ class="group relative"
  >
- <CardHeader class="pb-3">
- <div class="flex items-start justify-between">
- <div class="space-y-1">
- <CardTitle class="text-lg">
- {{ repository.name }}
- </CardTitle>
- <CardDescription class="flex items-center gap-2">
- <Badge variant="outline">
- {{ PLATFORM_LABELS[repository.git_platform] }}
- </Badge>
- <span class="text-xs">{{ repository.default_branch }}</span>
- </CardDescription>
+ <!-- 悬浮光晕 -->
+ <div class="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-2xl opacity-0 group-hover:opacity-20 blur-lg transition-opacity duration-500" />
+ <!-- 卡片主体 -->
+ <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg transition-all duration-300">
+ <!-- 头部 -->
+ <div class="flex items-start justify-between mb-4">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-500/10">
+ <span class="text-2xl text-violet-500":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
  </div>
- <Badge:variant="repository.has_credential ? 'default': 'secondary'">
+ <Badge:variant="repository.has_credential ? 'default': 'secondary'"
+ class="text-xs"
+ >
  <span:class="repository.has_credential ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
  {{ repository.has_credential ? '已配置凭证': '未配置凭证' }}
  </Badge>
  </div>
- </CardHeader>
- <CardContent class="space-y-4">
+ <!-- 内容 -->
+ <div class="space-y-3">
+ <h3 class="text-lg font-semibold group-hover:text-primary transition-colors">
+ {{ repository.name }}
+ </h3>
+ <!-- 平台和分支 -->
+ <div class="flex items-center gap-2">
+ <Badge variant="outline" class="text-xs">
+ {{ PLATFORM_LABELS[repository.git_platform] }}
+ </Badge>
+ <span class="text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--git-branch]" />
+ {{ repository.default_branch }}
+ </span>
+ </div>
  <!-- 仓库 URL -->
- <div class="flex items-center gap-2 text-sm text-muted-foreground">
+ <div class="flex items-center gap-2 text-sm text-muted-foreground pt-2">
  <span class="icon-[lucide--link] flex-shrink-0" />
  <span class="truncate":title="repository.git_url">{{ repository.git_url }}</span>
  </div>
+ </div>
  <!-- 操作按钮 -->
- <div class="flex items-center gap-2">
- <RouterLink:to="`/repositories/${repository.id}`" class="flex-1">
- <Button variant="outline" size="sm" class="w-full">
- <span class="icon-[lucide--eye] mr-1" />
+ <div class="flex items-center gap-2 mt-6 pt-4 border-t border-border/50">
+ <Button variant="outline" size="sm" class="flex-1 group/btn" @click.prevent>
+ <span class="icon-[lucide--eye] mr-1.5 group-hover/btn:scale-110 transition-transform" />
  查看详情
  </Button>
- </RouterLink>
- <RouterLink:to="`/repositories/${repository.id}/credential`">
+ <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
  <Button variant="ghost" size="sm" title="凭证管理">
  <span class="icon-[lucide--key]" />
  </Button>
@@ -124,14 +144,14 @@ async function handleDelete {
  <Button
  variant="ghost"
  size="sm"
- title="删除仓库"
- @click="confirmDelete(repository.id)"
+ class="hover:bg-destructive/10 hover:text-destructive"
+ @click.prevent="confirmDelete(repository.id)"
  >
- <span class="icon-[lucide--trash-2] text-destructive" />
+ <span class="icon-[lucide--trash-2]" />
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </RouterLink>
  </div>
  <!-- 删除确认对话框 -->
  <ConfirmDialog

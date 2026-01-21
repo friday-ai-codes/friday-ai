@@ -17,13 +17,18 @@ from django.urls import include, path, re_path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 # API routes (under /api prefix)
 api_patterns = [
- re_path(r"^auth/?", include("core.urls_auth")),
+ # Authentication (accounts app)
+ re_path(r"^auth/?", include("accounts.urls")),
+ # Projects
  re_path(r"^projects/?", include("projects.urls")),
- re_path(r"^repositories/?", include("projects.urls_repositories")),
+ # Repositories
+ re_path(r"^repositories/?", include("repositories.urls")),
+ # Tasks
  re_path(r"^tasks/?", include("tasks.urls")),
- re_path(r"^webhook/?", include("webhooks.urls")),
- re_path(r"^logs/?", include("webhooks.urls_logs")),
- re_path(r"^settings/?", include("core.urls_settings")),
+ # Feishu integration (webhook + logs)
+ re_path(r"^feishu/?", include("feishu.urls")),
+ # System settings
+ re_path(r"^settings/?", include("system.urls")),
  # API Documentation
  re_path(r"^schema/?$", SpectacularAPIView.as_view, name="schema"),
  re_path(r"^docs/?$", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
@@ -33,5 +38,5 @@ urlpatterns = [
  # All API endpoints under /api (with or without trailing slash)
  re_path(r"^api/?", include(api_patterns)),
  # Health check (outside /api prefix)
- path("health", include("core.urls_health")),
+ path("health", include("accounts.urls_health")),
 ]

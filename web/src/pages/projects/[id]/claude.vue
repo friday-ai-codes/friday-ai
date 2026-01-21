@@ -43,21 +43,17 @@ async function loadData {
  await projectsStore.fetchProject(projectId.value)
  try {
  claudeConfig.value = await getProjectClaudeConfig(projectId.value)
- // Base URL 直接使用返回的值
  if (claudeConfig.value.base_url) {
  baseUrlValue.value = claudeConfig.value.base_url
  }
  else {
  baseUrlValue.value = ''
  }
- // API Key 不显示，只显示是否已配置
  apiKeyValue.value = ''
  }
  catch {
- // 配置不存在是正常情况
  claudeConfig.value = null
  }
- // 重置脏标记
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  }
@@ -103,7 +99,6 @@ async function saveConfig {
  saving.value = true
  try {
  const config: ClaudeConfigCreate = {}
- // 只在用户实际修改过才保存
  if (apiKeyDirty.value && apiKeyValue.value.trim) {
  config.api_key = apiKeyValue.value.trim
  }
@@ -115,7 +110,7 @@ async function saveConfig {
  return
  }
  claudeConfig.value = await updateProjectClaudeConfig(projectId.value, config)
- apiKeyValue.value = '' // 清空密钥输入
+ apiKeyValue.value = ''
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  toast.success('配置已保存')
@@ -140,7 +135,7 @@ async function removeConfig {
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  toast.success('配置已删除，将使用系统默认值')
- await loadData // 重新加载以获取回退的配置
+ await loadData
  }
  catch (e) {
  toast.error('删除失败', {
@@ -153,114 +148,131 @@ async function removeConfig {
 }
 </script>
 <template>
- <div class="max-w-2xl mx-auto space-y-6">
+ <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
  <RouterLink:to="`/projects/${projectId}`"
- class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+ class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
  >
- <span class="icon-[lucide--arrow-left] mr-1" />
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
  返回项目详情
  </RouterLink>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="2" />
  <template v-else-if="project">
+ <!-- 页面标题 -->
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/10">
+ <span class="icon-[lucide--bot] text-2xl text-orange-500" />
+ </div>
  <div>
- <h1 class="text-2xl font-bold">
- Claude 配置
- </h1>
- <p class="text-muted-foreground">
+ <h1 class="text-2xl font-bold">Claude 配置</h1>
+ <p class="text-sm text-muted-foreground">
  配置 {{ project.name }} 的 Claude Code 设置
  </p>
  </div>
+ </div>
+ </div>
  <!-- 配置表单 -->
- <Card>
- <CardHeader>
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--bot]" />
+ <span class="icon-[lucide--bot] text-orange-500" />
  项目级配置
  </CardTitle>
  <CardDescription>
  为此项目单独配置 Claude Code，将覆盖系统默认设置
  </CardDescription>
  </CardHeader>
- <CardContent class="space-y-6">
+ <CardContent class="space-y-6 pt-6">
  <!-- API Key -->
- <div class="space-y-2">
- <Label for="api-key">Anthropic API Key</Label>
+ <div class="space-y-3">
+ <Label for="api-key" class="text-base">Anthropic API Key</Label>
  <p class="text-sm text-muted-foreground">
  为此项目单独配置的 API 密钥，将覆盖系统默认值
  </p>
  <div class="flex gap-2">
  <div class="relative flex-1">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key] text-muted-foreground" />
  <Input
  id="api-key"
  v-model="apiKeyValue":type="showApiKey ? 'text': 'password'"
  placeholder="sk-ant-..."
- class="pr-10"
+ class="pl-10 pr-10 bg-muted/30 border-border/50 focus:border-orange-500/50"
  @input="onApiKeyInput"
  />
  <button
  type="button"
- class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+ class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
  @click="showApiKey = !showApiKey"
  >
  <span:class="showApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
  </button>
  </div>
  </div>
- <p v-if="claudeConfig?.has_api_key" class="text-sm text-green-600 flex items-center gap-1">
+ <p v-if="claudeConfig?.has_api_key" class="text-sm text-emerald-600 flex items-center gap-2">
  <span class="icon-[lucide--check-circle]" />
  已配置 API Key
- <Badge v-if="sourceLabel":variant="sourceLabel.variant" class="ml-2">
+ <Badge v-if="sourceLabel":variant="sourceLabel.variant">
  {{ sourceLabel.text }}
  </Badge>
  </p>
  </div>
  <!-- Base URL -->
- <div class="space-y-2">
- <Label for="base-url">Anthropic Base URL</Label>
+ <div class="space-y-3">
+ <Label for="base-url" class="text-base">Anthropic Base URL</Label>
  <p class="text-sm text-muted-foreground">
  API 基础地址，用于代理或自定义端点
  </p>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--link] text-muted-foreground" />
  <Input
  id="base-url"
  v-model="baseUrlValue"
  type="url"
  placeholder="https://api.anthropic.com"
+ class="pl-10 bg-muted/30 border-border/50 focus:border-orange-500/50"
  @input="onBaseUrlInput"
  />
+ </div>
  <p v-if="claudeConfig?.base_url" class="text-sm text-muted-foreground">
  当前值: {{ claudeConfig.base_url }}
  </p>
  </div>
  <!-- 操作按钮 -->
- <div class="flex justify-between items-center pt-4 border-t">
+ <div class="flex justify-between items-center pt-4 border-t border-border/50">
  <Button
  v-if="claudeConfig?.source === 'project'"
- variant="destructive":disabled="saving"
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
  @click="removeConfig"
  >
+ <span class="icon-[lucide--trash-2] mr-2" />
  删除项目配置
  </Button>
  <div v-else />
- <Button:disabled="saving || !hasUnsavedChanges" @click="saveConfig">
- <span v-if="saving" class="icon-[lucide--loader-2] animate-spin mr-2" />
+ <Button:disabled="saving || !hasUnsavedChanges"
+ class="group relative overflow-hidden"
+ @click="saveConfig"
+ >
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
  </Button>
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 配置说明 -->
- <Card class="border-dashed">
- <CardHeader>
- <CardTitle class="text-base flex items-center gap-2">
- <span class="icon-[lucide--info]" />
- 配置说明
- </CardTitle>
- </CardHeader>
- <CardContent class="text-sm text-muted-foreground space-y-2">
- <ul class="list-disc list-inside space-y-1">
+ <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--info] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
+ <div class="space-y-3">
+ <h3 class="font-medium">配置说明</h3>
+ <ul class="list-disc list-inside space-y-1 text-sm text-muted-foreground">
  <li>项目级配置将覆盖系统级默认设置</li>
  <li>如果删除项目配置，将自动回退到系统默认值</li>
  <li>API Key 将加密存储，确保安全</li>
@@ -268,13 +280,14 @@ async function removeConfig {
  </ul>
  <RouterLink
  to="/settings"
- class="inline-flex items-center text-sm text-primary hover:underline mt-2"
+ class="inline-flex items-center text-sm text-primary hover:underline mt-2 group"
  >
  前往系统设置配置默认值
- <span class="icon-[lucide--arrow-right] ml-1" />
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-1 transition-transform" />
  </RouterLink>
- </CardContent>
- </Card>
+ </div>
+ </div>
+ </div>
  </template>
  <!-- 项目不存在 -->
  <EmptyState
@@ -283,6 +296,7 @@ async function removeConfig {
  title="项目不存在"
  description="未找到该项目"
  action-label="返回列表"
+ gradient="from-orange-500/20 to-amber-500/20"
  @action="router.push('/projects')"
  />
  </div>

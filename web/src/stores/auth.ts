@@ -2,7 +2,7 @@
  * Auth Store
  * 管理用户认证状态
  */
-import type { ChangePasswordRequest, User } from '~/types'
+import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, User } from '~/types'
 import { authApi } from '~/api'
 import { clearAccessToken, setAccessToken } from '~/api/client'
 export const useAuthStore = defineStore('auth', => {
@@ -14,6 +14,7 @@ export const useAuthStore = defineStore('auth', => {
  const isInitialized = ref(false)
  const loading = ref(false)
  const error = ref<string | null>(null)
+ const mustChangePassword = ref(false)
  // ============================================================================
  // Getters
  // ============================================================================
@@ -34,7 +35,8 @@ export const useAuthStore = defineStore('auth', => {
  setAccessToken(response.access_token)
  user.value = response.user
  isAuthenticated.value = true
- return response.user
+ mustChangePassword.value = response.must_change_password
+ return { user: response.user, mustChangePassword: response.must_change_password }
  } catch (e) {
  error.value = e instanceof Error ? e.message: '登录失败'
  throw e
@@ -122,6 +124,75 @@ export const useAuthStore = defineStore('auth', => {
  error.value = null
  try {
  await authApi.changePassword(data)
+ mustChangePassword.value = false
+ } catch (e) {
+ error.value = e instanceof Error ? e.message: '修改密码失败'
+ throw e
+ } finally {
+ loading.value = false
+ }
+ }
+ /**
+ * 强制修改密码（首次登录或密码重置后）
+ */
+ async function forceChangePassword(data: ForceChangePasswordRequest) {
+ loading.value = true
+ error.value = null
+ try {
+ await authApi.forceChangePassword(data)
+ mustChangePassword.value = false
+ } catch (e) {
+ error.value = e instanceof Error ? e.message: '修改密码失败'
+ throw e
+ } finally {
+ loading.value = false
+ }
+ }
+ /**
+ * 获取管理员资料
+ */
+ async function getAdminProfile {
+ loading.value = true
+ error.value = null
+ try {
+ return await authApi.getAdminProfile
+ } catch (e) {
+ error.value = e instanceof Error ? e.message: '获取管理员资料失败'
+ throw e
+ } finally {
+ loading.value = false
+ }
+ }
+ /**
+ * 更新管理员资料
+ */
+ async function updateAdminProfile(data: AdminProfileUpdate) {
+ loading.value = true
+ error.value = null
+ try {
+ const profile = await authApi.updateAdminProfile(data)
+ // 更新本地用户信息
+ if (user.value) {
+ user.value.username = profile.username
+ user.value.display_name = profile.display_name
+ }
+ return profile
+ } catch (e) {
+ error.value = e instanceof Error ? e.message: '更新管理员资料失败'
+ throw e
+ } finally {
+ loading.value = false
+ }
+ }
+ /**
+ * 管理员修改密码
+ */
+ async function adminChangePassword(data: ChangePasswordRequest) {
+ loading.value = true
+ error.value = null
+ try {
+ await authApi.adminChangePassword(data)
+ mustChangePassword.value = false
  } catch (e) {
  error.value = e instanceof Error ? e.message: '修改密码失败'
  throw e
@@ -139,6 +210,7 @@ export const useAuthStore = defineStore('auth', => {
  isInitialized.value = false
  loading.value = false
  error.value = null
+ mustChangePassword.value = false
  }
  return {
  // State
@@ -147,6 +219,7 @@ export const useAuthStore = defineStore('auth', => {
  isInitialized,
  loading,
  error,
+ mustChangePassword,
  // Getters
  isAdmin,
  displayName,
@@ -157,6 +230,10 @@ export const useAuthStore = defineStore('auth', => {
  initAuth,
  fetchCurrentUser,
  changePassword,
+ forceChangePassword,
+ getAdminProfile,
+ updateAdminProfile,
+ adminChangePassword,
  $reset,
  }
 })

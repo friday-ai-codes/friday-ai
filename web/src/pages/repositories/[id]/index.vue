@@ -57,10 +57,10 @@ const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 返回按钮 -->
- <RouterLink to="/repositories" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- <span class="icon-[lucide--arrow-left] mr-1" />
+ <RouterLink to="/repositories" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
  返回仓库列表
  </RouterLink>
  <!-- 加载状态 -->
@@ -69,53 +69,64 @@ const credential = computed( => repositoriesStore.currentCredential)
  <template v-else-if="repository">
  <!-- 头部 -->
  <div class="flex items-start justify-between">
+ <div class="space-y-2">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
+ </div>
  <div>
- <h1 class="text-2xl font-bold">
+ <h1 class="text-2xl font-bold flex items-center gap-3">
  {{ repository.name }}
- </h1>
- <p class="text-muted-foreground flex items-center gap-2 mt-1">
  <Badge variant="outline">
  {{ PLATFORM_LABELS[repository.git_platform] }}
  </Badge>
- <span>{{ repository.default_branch }}</span>
+ </h1>
+ <p class="text-sm text-muted-foreground font-mono">
+ {{ repository.default_branch }}
  </p>
  </div>
+ </div>
+ </div>
  <div class="flex items-center gap-2">
- <!-- TODO: 编辑功能 -->
- <Button variant="destructive" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-2" />
+ <Button variant="destructive" class="group" @click="deleteDialogOpen = true">
+ <span class="icon-[lucide--trash-2] mr-2 group-hover:scale-110 transition-transform" />
  删除
  </Button>
  </div>
  </div>
  <div class="grid gap-6 md:grid-cols-2">
  <!-- 基本信息 -->
- <Card>
- <CardHeader>
- <CardTitle>基本信息</CardTitle>
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--info] text-violet-500" />
+ 基本信息
+ </CardTitle>
  </CardHeader>
- <CardContent class="space-y-4">
+ <CardContent class="space-y-4 pt-6">
  <div>
  <label class="text-sm text-muted-foreground">仓库 URL</label>
  <p class="font-mono text-sm mt-1 break-all">
  {{ repository.git_url }}
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <label class="text-sm text-muted-foreground">developer-notes.md 路径</label>
  <p class="font-mono text-sm mt-1">
  {{ repository.claude_md_path }}
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <label class="text-sm text-muted-foreground">描述</label>
  <p class="text-sm mt-1">
  {{ repository.description || '暂无描述' }}
  </p>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div class="flex gap-8">
  <div>
  <label class="text-sm text-muted-foreground">创建时间</label>
@@ -132,34 +143,40 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 凭证状态 -->
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
+ <div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
  <div>
- <CardTitle>凭证配置</CardTitle>
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--key] text-amber-500" />
+ 凭证配置
+ </CardTitle>
  <CardDescription>Git 仓库访问凭证</CardDescription>
  </div>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
- <Button variant="outline" size="sm">
- <span class="icon-[lucide--key] mr-2" />
+ <Button variant="outline" size="sm" class="group">
+ <span class="icon-[lucide--key] mr-2 group-hover:scale-110 transition-transform" />
  管理凭证
  </Button>
  </RouterLink>
  </CardHeader>
- <CardContent>
+ <CardContent class="pt-6">
  <div v-if="credential" class="space-y-4">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-2xl text-green-600" />
+ <div class="flex items-center gap-3">
+ <div class=" rounded-full bg-emerald-500/10">
+ <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
+ </div>
  <div>
- <p class="font-medium">
- 凭证已配置
- </p>
+ <p class="font-medium">凭证已配置</p>
  <p class="text-sm text-muted-foreground">
  类型：{{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
  </p>
  </div>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <div>
  <label class="text-sm text-muted-foreground">Git 用户</label>
  <p class="text-sm mt-1">
@@ -168,10 +185,10 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  </div>
  <div v-else class="text-center py-6">
- <span class="icon-[lucide--lock] text-4xl text-muted-foreground" />
- <p class="mt-2 text-muted-foreground">
- 尚未配置凭证
- </p>
+ <div class="inline-flex rounded-full bg-muted/50 mb-3">
+ <span class="icon-[lucide--lock] text-3xl text-muted-foreground" />
+ </div>
+ <p class="text-muted-foreground">尚未配置凭证</p>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
  <Button class="mt-4" size="sm">
  配置凭证
@@ -180,30 +197,42 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  </CardContent>
  </Card>
+ </div>
  <!-- 关联项目 -->
- <Card class="md:col-span-2">
- <CardHeader>
- <CardTitle>关联项目</CardTitle>
+ <div class="relative md:col-span-2">
+ <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--folder] text-blue-500" />
+ 关联项目
+ </CardTitle>
  <CardDescription>使用此仓库的项目</CardDescription>
  </CardHeader>
- <CardContent>
+ <CardContent class="pt-6">
  <div v-if="repository.projects && repository.projects.length === 0" class="text-center py-6 text-muted-foreground">
- 暂无关联项目
+ <div class="inline-flex rounded-full bg-muted/50 mb-3">
+ <span class="icon-[lucide--folder] text-3xl" />
  </div>
- <div v-else class="space-y-3">
+ <p>暂无关联项目</p>
+ </div>
+ <div v-else class="space-y-2">
  <RouterLink
- v-for="project in repository.projects":key="project.id":to="`/projects/${project.id}`"
- class="flex items-center justify-between border rounded-lg hover:bg-muted/50 transition-colors"
+ v-for="(project, index) in repository.projects":key="project.id":to="`/projects/${project.id}`"
+ class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-blue-500/30 transition-all group"
  >
- <div class="flex items-center gap-3">
- <span class="icon-[lucide--folder] text-lg text-muted-foreground" />
- <span class="font-medium">{{ project.name }}</span>
+ <div class="flex items-center gap-4">
+ <div class="w-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center text-sm font-medium text-blue-600">
+ {{ index + 1 }}
  </div>
- <span class="icon-[lucide--arrow-right] text-muted-foreground" />
+ <span class="font-medium group-hover:text-blue-600 transition-colors">{{ project.name }}</span>
+ </div>
+ <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
  </RouterLink>
  </div>
  </CardContent>
  </Card>
+ </div>
  </div>
  </template>
  <!-- 仓库不存在 -->
@@ -213,6 +242,7 @@ const credential = computed( => repositoriesStore.currentCredential)
  title="仓库不存在"
  description="未找到该仓库，可能已被删除"
  action-label="返回列表"
+ gradient="from-violet-500/20 to-purple-500/20"
  @action="router.push('/repositories')"
  />
  <!-- 删除确认对话框 -->

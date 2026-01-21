@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
-from services.crypto import encrypt_value
+from common.encryption import encrypt_value
 from .models import (
  AuthType,
  GitCredential,
@@ -125,7 +125,7 @@ class ProjectViewSet(ModelViewSet):
  if test_plugin_secret:
  plugin_secret = test_plugin_secret
  elif project.feishu_plugin_secret_encrypted:
- from services.crypto import decrypt_value
+ from common.encryption import decrypt_value
  plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
  user_key = test_user_key or project.feishu_user_key
  if not plugin_id or not plugin_secret:
@@ -140,7 +140,7 @@ class ProjectViewSet(ModelViewSet):
  # 执行实际的飞书 API 测试
  try:
  import asyncio
- from services.feishu import FeishuClient
+ from feishu.client import FeishuClient
  client = FeishuClient(
  plugin_id=plugin_id,
  plugin_secret=plugin_secret,

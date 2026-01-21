@@ -35,11 +35,13 @@ INSTALLED_APPS = [
  "rest_framework_simplejwt",
  "drf_spectacular",
  "corsheaders",
- # Local apps
- "core",
+ # Local apps (refactored by domain)
+ "accounts",
+ "system",
+ "repositories",
  "projects",
+ "feishu",
  "tasks",
- "webhooks",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
@@ -82,7 +84,7 @@ DATABASES = {
 # =============================================================================
 # Custom User Model
 # =============================================================================
-AUTH_USER_MODEL = "core.User"
+AUTH_USER_MODEL = "accounts.User"
 # =============================================================================
 # Password validation
 # =============================================================================
@@ -126,7 +128,7 @@ REST_FRAMEWORK = {
  "rest_framework.permissions.IsAuthenticated",
  ],
  "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
- "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+ "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
 }
 # =============================================================================
 # JWT Settings

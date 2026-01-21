@@ -2,7 +2,6 @@
 import type { TaskStatus } from '~/types'
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Select,
  SelectContent,
@@ -10,14 +9,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import {
- Table,
- TableBody,
- TableCell,
- TableHead,
- TableHeader,
- TableRow,
-} from '~/components/ui/table'
 import { STATUS_LABELS } from '~/types'
 useHead({
  title: '任务列表 - Friday AI',
@@ -84,37 +75,36 @@ function getProjectName(projectId: string) {
 }
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
- <div>
- <h1 class="text-2xl font-bold">
- 任务管理
- </h1>
- <p class="text-muted-foreground">
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <span class="icon-[lucide--list-checks] text-2xl text-amber-500" />
+ </div>
+ <h1 class="text-2xl font-bold">任务管理</h1>
+ </div>
+ <p class="text-muted-foreground ml-12">
  查看和管理 AI 开发任务
  </p>
  </div>
  </div>
+ <!-- 过滤器和统计 -->
+ <div class="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
  <!-- 过滤器 -->
- <Card>
- <CardHeader class="pb-3">
- <CardTitle class="text-base">
- 筛选条件
- </CardTitle>
- </CardHeader>
- <CardContent>
- <div class="flex flex-wrap gap-4">
+ <div class="flex flex-wrap items-center gap-3">
+ <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-sm text-muted-foreground">
+ <span class="icon-[lucide--filter]" />
+ <span>筛选</span>
+ </div>
  <!-- 项目过滤 -->
- <div class="w-48">
  <Select v-model="projectFilter">
- <SelectTrigger>
+ <SelectTrigger class="w-44 bg-card/50 border-border/50">
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="__all__">
- 全部项目
- </SelectItem>
+ <SelectItem value="__all__">全部项目</SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
  >
@@ -122,11 +112,9 @@ function getProjectName(projectId: string) {
  </SelectItem>
  </SelectContent>
  </Select>
- </div>
  <!-- 状态过滤 -->
- <div class="w-40">
  <Select v-model="statusFilter">
- <SelectTrigger>
+ <SelectTrigger class="w-36 bg-card/50 border-border/50">
  <SelectValue placeholder="选择状态" />
  </SelectTrigger>
  <SelectContent>
@@ -137,14 +125,27 @@ function getProjectName(projectId: string) {
  </SelectItem>
  </SelectContent>
  </Select>
- </div>
  <!-- 刷新按钮 -->
- <Button variant="outline" size="icon" @click="fetchTasks">
+ <Button variant="outline" size="icon" class=" w-9" @click="fetchTasks">
  <span class="icon-[lucide--refresh-cw]" />
  </Button>
  </div>
- </CardContent>
- </Card>
+ <!-- 统计信息 -->
+ <div class="flex items-center gap-4 text-sm">
+ <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-600">
+ <span class="icon-[lucide--zap]" />
+ <span>运行中 {{ tasksStore.stats.running }}</span>
+ </div>
+ <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-600">
+ <span class="icon-[lucide--eye]" />
+ <span>待审核 {{ tasksStore.stats.review }}</span>
+ </div>
+ <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-600">
+ <span class="icon-[lucide--check-circle]" />
+ <span>已完成 {{ tasksStore.stats.completed }}</span>
+ </div>
+ </div>
+ </div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="5" />
  <!-- 空状态 -->
@@ -153,63 +154,49 @@ function getProjectName(projectId: string) {
  icon="lucide--list-checks"
  title="暂无任务"
  description="任务通常由飞书 Webhook 自动创建"
+ gradient="from-amber-500/20 to-orange-500/20"
  />
- <!-- 任务表格 -->
- <Card v-else>
- <Table>
- <TableHeader>
- <TableRow>
- <TableHead class="w-[300px]">
- 任务名称
- </TableHead>
- <TableHead>项目</TableHead>
- <TableHead>状态</TableHead>
- <TableHead>创建时间</TableHead>
- <TableHead class="text-right">
- 操作
- </TableHead>
- </TableRow>
- </TableHeader>
- <TableBody>
- <TableRow
- v-for="task in tasksStore.tasks":key="task.id"
- class="cursor-pointer hover:bg-muted/50"
- @click="$router.push(`/tasks/${task.id}`)"
+ <!-- 任务列表 -->
+ <div v-else class="space-y-3">
+ <RouterLink
+ v-for="(task, index) in tasksStore.tasks":key="task.id":to="`/tasks/${task.id}`"
+ class="group block"
  >
- <TableCell class="font-medium">
- <div class="max-w-[280px] truncate":title="task.title">
- {{ task.title }}
+ <div class="relative rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+ <div class="flex items-center gap-4">
+ <!-- 序号 -->
+ <div class="flex-shrink-0 w-10 rounded-xl bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center font-medium text-muted-foreground group-hover:from-primary/20 group-hover:to-primary/10 group-hover:text-primary transition-all duration-300">
+ {{ index + 1 }}
  </div>
- </TableCell>
- <TableCell>
- <span class="text-muted-foreground">
+ <!-- 内容 -->
+ <div class="flex-1 min-w-0">
+ <div class="flex items-center gap-3 mb-1">
+ <h3 class="font-semibold truncate group-hover:text-primary transition-colors">
+ {{ task.title }}
+ </h3>
+ <TaskStatusBadge:status="task.status":show-icon="true" />
+ </div>
+ <div class="flex items-center gap-4 text-sm text-muted-foreground">
+ <span class="flex items-center gap-1">
+ <span class="icon-[lucide--folder]" />
  {{ getProjectName(task.project_id) }}
  </span>
- </TableCell>
- <TableCell>
- <TaskStatusBadge:status="task.status":show-icon="true" />
- </TableCell>
- <TableCell class="text-muted-foreground">
+ <span class="flex items-center gap-1">
+ <span class="icon-[lucide--clock]" />
  {{ formatDate(task.created_at) }}
- </TableCell>
- <TableCell class="text-right">
- <RouterLink:to="`/tasks/${task.id}`" @click.stop>
- <Button variant="ghost" size="sm">
- <span class="icon-[lucide--arrow-right]" />
- </Button>
+ </span>
+ </div>
+ </div>
+ <!-- 箭头 -->
+ <span class="icon-[lucide--chevron-right] text-xl text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+ </div>
+ </div>
  </RouterLink>
- </TableCell>
- </TableRow>
- </TableBody>
- </Table>
- </Card>
- <!-- 统计信息 -->
- <div class="flex items-center justify-between text-sm text-muted-foreground">
- <span>共 {{ tasksStore.taskCount }} 个任务</span>
- <div class="flex gap-4">
- <span>运行中: {{ tasksStore.stats.running }}</span>
- <span>待审核: {{ tasksStore.stats.review }}</span>
- <span>已完成: {{ tasksStore.stats.completed }}</span>
+ </div>
+ <!-- 底部统计 -->
+ <div v-if="tasksStore.tasks.length > 0" class="flex items-center justify-center">
+ <div class="text-sm text-muted-foreground px-4 py-2 rounded-full bg-muted/30">
+ 共 {{ tasksStore.taskCount }} 个任务
  </div>
  </div>
  </div>

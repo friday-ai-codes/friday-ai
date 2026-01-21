@@ -1,5 +1,5 @@
 # Friday AI Dev Agent - Django API Service
-FROM python:3.14-slim
+FROM python:3.14.2-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
  curl \
@@ -12,12 +12,14 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY manage.py ./
 COPY friday/ ./friday/
-COPY core/ ./core/
+COPY common/ ./common/
+COPY accounts/ ./accounts/
+COPY system/ ./system/
+COPY repositories/ ./repositories/
 COPY projects/ ./projects/
+COPY feishu/ ./feishu/
 COPY tasks/ ./tasks/
-COPY webhooks/ ./webhooks/
 COPY services/ ./services/
-COPY utils/ ./utils/
 # Install dependencies
 RUN uv sync --frozen --no-dev
 # Create data directory
@@ -40,5 +42,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # - --timeout: worker 超时时间（秒）
 # - friday.asgi:application: Django ASGI 应用入口
 #
-# 启动前自动执行数据库迁移
-CMD ["sh", "-c", "uv run python manage.py migrate --noinput && uv run gunicorn friday.asgi:application --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --capture-output --timeout 120"]
+# 启动前自动执行数据库迁移和初始化超级管理员
+CMD ["sh", "-c", "uv run python manage.py migrate --noinput && uv run python manage.py init_superuser && uv run gunicorn friday.asgi:application --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --capture-output --timeout 120"]

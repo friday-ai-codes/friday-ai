@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
@@ -52,29 +51,48 @@ async function handleSubmit {
 }
 </script>
 <template>
- <div class="max-w-2xl mx-auto space-y-6">
+ <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
- <RouterLink to="/projects" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- ← 返回项目列表
+ <RouterLink to="/projects" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
+ 返回项目列表
  </RouterLink>
- <Card>
- <CardHeader>
- <CardTitle>新建项目</CardTitle>
- <CardDescription>
+ <!-- 表单卡片 -->
+ <div class="relative">
+ <!-- 卡片光晕 -->
+ <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <!-- 卡片主体 -->
+ <div class="relative bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden">
+ <!-- 标题区域 -->
+ <div class=" border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <span class="icon-[lucide--folder-plus] text-2xl text-blue-500" />
+ </div>
+ <div>
+ <h1 class="text-xl font-bold">新建项目</h1>
+ <p class="text-sm text-muted-foreground">
  创建一个新项目，用于管理飞书工作项和关联的 Git 仓库
- </CardDescription>
- </CardHeader>
- <CardContent>
- <form class="space-y-6" @submit.prevent="handleSubmit">
+ </p>
+ </div>
+ </div>
+ </div>
+ <!-- 表单内容 -->
+ <form class=" space-y-6" @submit.prevent="handleSubmit">
  <!-- 项目名称 -->
  <div class="space-y-2">
- <Label for="name">项目名称 *</Label>
+ <Label for="name" class="flex items-center gap-1">
+ 项目名称
+ <span class="text-destructive">*</span>
+ </Label>
  <Input
  id="name"
  v-model="form.name"
- placeholder="例如：智课项目":class="{ 'border-red-500': errors.name }"
+ placeholder="例如：智课项目"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50":class="{ 'border-destructive': errors.name }"
  />
- <p v-if="errors.name" class="text-sm text-red-500">
+ <p v-if="errors.name" class="text-sm text-destructive flex items-center gap-1">
+ <span class="icon-[lucide--alert-circle]" />
  {{ errors.name }}
  </p>
  </div>
@@ -86,32 +104,47 @@ async function handleSubmit {
  v-model="form.description"
  placeholder="项目的简要描述..."
  rows="3"
+ class="bg-muted/30 border-border/50 focus:border-primary/50 resize-none"
  />
  </div>
  <!-- 飞书项目 Key -->
  <div class="space-y-2">
- <Label for="feishu_project_key">飞书项目 Key（可选）</Label>
+ <Label for="feishu_project_key" class="flex items-center gap-2">
+ 飞书项目 Key
+ <span class="text-xs text-muted-foreground font-normal">（可选）</span>
+ </Label>
  <Input
  id="feishu_project_key"
  v-model="form.feishu_project_key"
  placeholder="例如：project_key"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  />
  <p class="text-xs text-muted-foreground">
  用于飞书项目管理 API 调用，可稍后在项目详情中配置
  </p>
  </div>
  <!-- 提示信息 -->
- <div class="rounded-lg border bg-muted/50 ">
+ <div class="flex items-start gap-3 rounded-xl bg-muted/50 border border-border/50">
+ <span class="icon-[lucide--lightbulb] text-lg text-amber-500 flex-shrink-0 mt-0.5" />
  <p class="text-sm text-muted-foreground">
- <span class="icon-[lucide--info] mr-1.5 inline-block align-text-bottom" />
  创建项目后，您可以在项目详情页中关联 Git 仓库和配置飞书集成。
  </p>
  </div>
  <!-- 提交按钮 -->
- <div class="flex items-center gap-4 pt-4">
- <Button type="submit":disabled="submitting">
- <span v-if="submitting" class="mr-2 animate-spin">⏳</span>
- {{ submitting ? '创建中...': '创建项目' }}
+ <div class="flex items-center gap-4 pt-4 border-t border-border/50">
+ <Button
+ type="submit":disabled="submitting"
+ class="group relative overflow-hidden"
+ >
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <template v-if="submitting">
+ <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ 创建中...
+ </template>
+ <template v-else>
+ <span class="icon-[lucide--plus] mr-2" />
+ 创建项目
+ </template>
  </Button>
  <RouterLink to="/projects">
  <Button type="button" variant="outline">
@@ -120,7 +153,7 @@ async function handleSubmit {
  </RouterLink>
  </div>
  </form>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
 </template>

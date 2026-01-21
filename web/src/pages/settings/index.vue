@@ -10,9 +10,9 @@ import {
 } from '~/api/settings'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+const router = useRouter
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -145,47 +145,68 @@ onMounted( => {
 })
 </script>
 <template>
- <div class="max-w-3xl mx-auto space-y-6">
+ <div class="max-w-3xl mx-auto space-y-8">
  <!-- 页面标题 -->
- <div>
- <h1 class="text-3xl font-bold">
- 系统设置
- </h1>
- <p class="text-muted-foreground mt-2">
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-gray-500/20 to-slate-500/10">
+ <span class="icon-[lucide--settings] text-2xl text-gray-500" />
+ </div>
+ <h1 class="text-2xl font-bold">系统设置</h1>
+ </div>
+ <p class="text-muted-foreground ml-12">
  配置全局的 Claude Code 设置，这些设置将作为所有项目的默认值
  </p>
  </div>
- <LoadingState v-if="loading" text="加载设置..." />
+ <!-- 快速导航 -->
+ <div class="flex gap-3">
+ <Button variant="outline" class="group" @click="router.push('/settings/account')">
+ <span class="icon-[lucide--user] mr-2 group-hover:scale-110 transition-transform" />
+ 账号设置
+ </Button>
+ </div>
+ <LoadingState v-if="loading" variant="spinner" text="加载设置..." />
  <template v-else>
  <!-- Claude Code 配置 -->
- <Card>
- <CardHeader>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--bot] text-xl" />
- Claude Code 配置
- </CardTitle>
- <CardDescription>
+ <div class="relative">
+ <!-- 卡片光晕 -->
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-secondary/10 to-primary/10 rounded-3xl blur-xl opacity-70" />
+ <!-- 卡片主体 -->
+ <div class="relative bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden">
+ <!-- 标题区域 -->
+ <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <span class="icon-[lucide--bot] text-2xl text-primary" />
+ </div>
+ <div>
+ <h2 class="text-lg font-semibold">Claude Code 配置</h2>
+ <p class="text-sm text-muted-foreground">
  配置 Anthropic API 凭证，用于 AI 开发任务
- </CardDescription>
- </CardHeader>
- <CardContent class="space-y-6">
+ </p>
+ </div>
+ </div>
+ </div>
+ <!-- 配置内容 -->
+ <div class=" space-y-6">
  <!-- API Key -->
- <div class="space-y-2">
- <Label for="api-key">{{ settingsMeta[SettingKey.ANTHROPIC_API_KEY].label }}</Label>
+ <div class="space-y-3">
+ <Label for="api-key" class="text-base">{{ settingsMeta[SettingKey.ANTHROPIC_API_KEY].label }}</Label>
  <p class="text-sm text-muted-foreground">
  {{ settingsMeta[SettingKey.ANTHROPIC_API_KEY].description }}
  </p>
  <div class="flex gap-2">
  <div class="relative flex-1">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key] text-muted-foreground" />
  <Input
  id="api-key"
  v-model="apiKeyValue":type="showApiKey ? 'text': 'password'":placeholder="settingsMeta[SettingKey.ANTHROPIC_API_KEY].placeholder"
- class="pr-10"
+ class="pl-10 pr-10 bg-muted/30 border-border/50 focus:border-primary/50"
  @input="onApiKeyInput"
  />
  <button
  type="button"
- class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+ class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
  @click="showApiKey = !showApiKey"
  >
  <span:class="showApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
@@ -193,36 +214,43 @@ onMounted( => {
  </div>
  <Button
  v-if="getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value"
- variant="destructive":disabled="saving"
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
  @click="removeSetting(SettingKey.ANTHROPIC_API_KEY)"
  >
+ <span class="icon-[lucide--trash-2] mr-2" />
  删除
  </Button>
  </div>
- <p v-if="getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value" class="text-sm text-green-600 flex items-center gap-1">
+ <p v-if="getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value" class="text-sm text-emerald-600 flex items-center gap-1">
  <span class="icon-[lucide--check-circle]" />
  已配置 API Key
  </p>
  </div>
  <!-- Base URL -->
- <div class="space-y-2">
- <Label for="base-url">{{ settingsMeta[SettingKey.ANTHROPIC_BASE_URL].label }}</Label>
+ <div class="space-y-3">
+ <Label for="base-url" class="text-base">{{ settingsMeta[SettingKey.ANTHROPIC_BASE_URL].label }}</Label>
  <p class="text-sm text-muted-foreground">
  {{ settingsMeta[SettingKey.ANTHROPIC_BASE_URL].description }}
  </p>
  <div class="flex gap-2">
+ <div class="relative flex-1">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--link] text-muted-foreground" />
  <Input
  id="base-url"
  v-model="baseUrlValue"
  type="url":placeholder="settingsMeta[SettingKey.ANTHROPIC_BASE_URL].placeholder"
- class="flex-1"
+ class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50"
  @input="onBaseUrlInput"
  />
+ </div>
  <Button
  v-if="getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.has_value"
- variant="destructive":disabled="saving"
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
  @click="removeSetting(SettingKey.ANTHROPIC_BASE_URL)"
  >
+ <span class="icon-[lucide--trash-2] mr-2" />
  删除
  </Button>
  </div>
@@ -231,36 +259,37 @@ onMounted( => {
  </p>
  </div>
  <!-- 统一保存按钮 -->
- <div class="flex justify-end pt-4 border-t">
+ <div class="flex justify-end pt-4 border-t border-border/50">
  <Button:disabled="saving || !hasUnsavedChanges"
+ class="group relative overflow-hidden"
  @click="saveAllSettings"
  >
- <span v-if="saving" class="icon-[lucide--loader-2] animate-spin mr-2" />
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
+ </div>
  <!-- 说明卡片 -->
- <Card class="border-dashed">
- <CardHeader>
- <CardTitle class="text-base flex items-center gap-2">
- <span class="icon-[lucide--info]" />
- 配置优先级说明
- </CardTitle>
- </CardHeader>
- <CardContent class="text-sm text-muted-foreground space-y-2">
- <p>
+ <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--info] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
+ <div class="space-y-2">
+ <h3 class="font-medium">配置优先级说明</h3>
+ <p class="text-sm text-muted-foreground">
  Claude Code 配置按以下优先级应用（高到低）：
  </p>
- <ol class="list-decimal list-inside space-y-1 ml-2">
- <li><strong>项目级配置</strong> - 在项目设置中单独配置的值</li>
- <li><strong>系统级配置</strong> - 在此页面配置的全局默认值</li>
- <li><strong>环境变量</strong> - 服务器环境变量 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL</li>
+ <ol class="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-2">
+ <li><strong class="text-foreground">项目级配置</strong> - 在项目设置中单独配置的值</li>
+ <li><strong class="text-foreground">系统级配置</strong> - 在此页面配置的全局默认值</li>
+ <li><strong class="text-foreground">环境变量</strong> - 服务器环境变量 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL</li>
  </ol>
- </CardContent>
- </Card>
+ </div>
+ </div>
+ </div>
  </template>
  </div>
 </template>

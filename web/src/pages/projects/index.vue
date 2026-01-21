@@ -2,7 +2,6 @@
 import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 useHead({
  title: '项目管理 - Friday AI',
 })
@@ -47,26 +46,30 @@ async function handleDelete {
 }
 </script>
 <template>
- <div class="space-y-6">
+ <div class="space-y-8">
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
- <div>
- <h1 class="text-2xl font-bold">
- 项目管理
- </h1>
- <p class="text-muted-foreground">
+ <div class="space-y-1">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <span class="icon-[lucide--folder-git-2] text-2xl text-blue-500" />
+ </div>
+ <h1 class="text-2xl font-bold">项目管理</h1>
+ </div>
+ <p class="text-muted-foreground ml-12">
  管理您的 Git 仓库项目和凭证配置
  </p>
  </div>
  <RouterLink to="/projects/new">
- <Button>
+ <Button class="group relative overflow-hidden">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  新建项目
  </Button>
  </RouterLink>
  </div>
  <!-- 加载状态 -->
- <LoadingState v-if="loading" variant="skeleton":count="3" />
+ <LoadingState v-if="loading" variant="card":count="3" />
  <!-- 空状态 -->
  <EmptyState
  v-else-if="projectsStore.projects.length === 0"
@@ -74,55 +77,62 @@ async function handleDelete {
  title="暂无项目"
  description="创建您的第一个项目，开始使用 AI 辅助开发"
  action-label="新建项目"
+ gradient="from-blue-500/20 to-cyan-500/20"
  @action="$router.push('/projects/new')"
  />
  <!-- 项目列表 -->
- <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
- <Card
- v-for="project in projectsStore.projects":key="project.id"
- class="hover:shadow-md transition-shadow"
+ <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+ <RouterLink
+ v-for="project in projectsStore.projects":key="project.id":to="`/projects/${project.id}`"
+ class="group relative"
  >
- <CardHeader class="pb-3">
- <div class="flex items-start justify-between">
- <div class="space-y-1">
- <CardTitle class="text-lg">
- {{ project.name }}
- </CardTitle>
- <CardDescription v-if="project.description" class="line-clamp-2">
- {{ project.description }}
- </CardDescription>
+ <!-- 悬浮光晕 -->
+ <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-20 blur-lg transition-opacity duration-500" />
+ <!-- 卡片主体 -->
+ <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg transition-all duration-300">
+ <!-- 头部 -->
+ <div class="flex items-start justify-between mb-4">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10">
+ <span class="icon-[lucide--folder-git-2] text-2xl text-blue-500" />
  </div>
- <Badge:variant="project.has_feishu_config ? 'default': 'secondary'">
+ <Badge:variant="project.has_feishu_config ? 'default': 'secondary'"
+ class="text-xs"
+ >
  <span:class="project.has_feishu_config ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
  {{ project.has_feishu_config ? '飞书已配置': '飞书未配置' }}
  </Badge>
  </div>
- </CardHeader>
- <CardContent class="space-y-4">
- <!-- 关联仓库数量 -->
- <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--git-branch] flex-shrink-0" />
+ <!-- 内容 -->
+ <div class="space-y-3">
+ <h3 class="text-lg font-semibold group-hover:text-primary transition-colors">
+ {{ project.name }}
+ </h3>
+ <p v-if="project.description" class="text-sm text-muted-foreground line-clamp-2">
+ {{ project.description }}
+ </p>
+ <!-- 仓库数量 -->
+ <div class="flex items-center gap-2 text-sm text-muted-foreground pt-2">
+ <span class="icon-[lucide--git-branch]" />
  <span>{{ project.repositories?.length || 0 }} 个关联仓库</span>
  </div>
+ </div>
  <!-- 操作按钮 -->
- <div class="flex items-center gap-2">
- <RouterLink:to="`/projects/${project.id}`" class="flex-1">
- <Button variant="outline" size="sm" class="w-full">
- <span class="icon-[lucide--eye] mr-1" />
+ <div class="flex items-center gap-2 mt-6 pt-4 border-t border-border/50">
+ <Button variant="outline" size="sm" class="flex-1 group/btn" @click.prevent>
+ <span class="icon-[lucide--eye] mr-1.5 group-hover/btn:scale-110 transition-transform" />
  查看详情
  </Button>
- </RouterLink>
  <Button
  variant="ghost"
  size="sm"
- title="删除项目"
- @click="confirmDelete(project.id)"
+ class="hover:bg-destructive/10 hover:text-destructive"
+ @click.prevent="confirmDelete(project.id)"
  >
- <span class="icon-[lucide--trash-2] text-destructive" />
+ <span class="icon-[lucide--trash-2]" />
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </RouterLink>
  </div>
  <!-- 删除确认对话框 -->
  <ConfirmDialog

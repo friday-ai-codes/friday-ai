@@ -15,13 +15,6 @@ import {
  FormLabel,
  FormMessage,
 } from '~/components/ui/form'
-import {
- Card,
- CardContent,
- CardDescription,
- CardHeader,
- CardTitle,
-} from '~/components/ui/card'
 const router = useRouter
 const route = useRoute
 const authStore = useAuthStore
@@ -38,7 +31,12 @@ const loginError = ref<string | null>(null)
 const onSubmit = handleSubmit(async (values) => {
  loginError.value = null
  try {
- await authStore.login(values.username, values.password)
+ const result = await authStore.login(values.username, values.password)
+ // 检查是否需要强制修改密码
+ if (result.mustChangePassword) {
+ router.push('/force-change-password')
+ return
+ }
  // 登录成功，跳转到原页面或首页
  const redirect = route.query.redirect as string || '/'
  router.push(redirect)
@@ -54,36 +52,57 @@ onMounted( => {
 })
 </script>
 <template>
- <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
- <Card class="w-full max-w-md">
- <CardHeader class="text-center">
- <CardTitle class="text-2xl font-bold">
- Friday
- </CardTitle>
- <CardDescription>
+ <div class="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
+ <!-- 背景装饰 -->
+ <div class="absolute inset-0 -z-10">
+ <div class="absolute -top-40 -right-40 w-96 bg-gradient-to-br from-primary/30 to-secondary/50 rounded-full blur-3xl" />
+ <div class="absolute -bottom-40 -left-40 w-96 bg-gradient-to-tr from-secondary/40 to-primary/20 rounded-full blur-3xl" />
+ <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-primary/5 to-secondary/10 rounded-full blur-3xl" />
+ </div>
+ <!-- 登录卡片 -->
+ <div class="w-full max-w-md mx-4">
+ <div class="relative">
+ <!-- 卡片光晕 -->
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/20 via-secondary/30 to-primary/20 rounded-3xl blur-xl opacity-70" />
+ <!-- 卡片主体 -->
+ <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-primary/5 ">
+ <!-- Logo -->
+ <div class="text-center mb-8">
+ <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/30 to-primary/10 border border-primary/10">
+ <span class="icon-[lucide--bot] text-4xl text-primary" />
+ </div>
+ <h1 class="text-2xl font-bold bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+ Friday AI
+ </h1>
+ <p class="text-muted-foreground mt-2">
  AI 驱动的开发自动化平台
- </CardDescription>
- </CardHeader>
- <CardContent>
- <form class="space-y-6" @submit="onSubmit">
+ </p>
+ </div>
+ <!-- 登录表单 -->
+ <form class="space-y-5" @submit="onSubmit">
  <!-- 错误提示 -->
  <div
  v-if="loginError"
- class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm"
+ class="flex items-center gap-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive"
  >
- {{ loginError }}
+ <span class="icon-[lucide--alert-circle] text-lg flex-shrink-0" />
+ <span class="text-sm">{{ loginError }}</span>
  </div>
  <!-- 用户名 -->
  <FormField v-slot="{ componentField }" name="username">
  <FormItem>
- <FormLabel>用户名</FormLabel>
+ <FormLabel class="text-foreground/80">用户名</FormLabel>
  <FormControl>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--user] text-muted-foreground" />
  <Input
  type="text"
  placeholder="请输入用户名"
  autocomplete="username"
+ class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50 focus:ring-primary/20"
  v-bind="componentField"
  />
+ </div>
  </FormControl>
  <FormMessage />
  </FormItem>
@@ -91,14 +110,18 @@ onMounted( => {
  <!-- 密码 -->
  <FormField v-slot="{ componentField }" name="password">
  <FormItem>
- <FormLabel>密码</FormLabel>
+ <FormLabel class="text-foreground/80">密码</FormLabel>
  <FormControl>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground" />
  <Input
  type="password"
  placeholder="请输入密码"
  autocomplete="current-password"
+ class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50 focus:ring-primary/20"
  v-bind="componentField"
  />
+ </div>
  </FormControl>
  <FormMessage />
  </FormItem>
@@ -106,28 +129,34 @@ onMounted( => {
  <!-- 登录按钮 -->
  <Button
  type="submit"
- class="w-full":disabled="isSubmitting"
+ class="w-full text-base font-medium group relative overflow-hidden":disabled="isSubmitting"
  >
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <template v-if="isSubmitting">
- <span class="mr-2">
- <svg class="animate-spin w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
- <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
- <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 work-item.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
- </svg>
- </span>
+ <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  登录中...
  </template>
  <template v-else>
+ <span class="icon-[lucide--log-in] mr-2" />
  登录
  </template>
  </Button>
  </form>
- <!-- 默认账户提示（仅开发环境） -->
- <div class="mt-6 text-center text-sm text-gray-500">
- <p>默认管理员账户：admin / admin123</p>
+ <!-- 默认账户提示 -->
+ <div class="mt-8 pt-6 border-t border-border/50">
+ <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+ <span class="icon-[lucide--info] text-base" />
+ <span>默认账户：</span>
+ <code class="px-2 py-0.5 rounded bg-muted/50 font-mono text-xs">admin / admin123</code>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
+ </div>
+ <!-- 底部版权 -->
+ <p class="text-center text-sm text-muted-foreground/60 mt-8">
+ © {{ new Date.getFullYear }} Friday AI. All rights reserved.
+ </p>
+ </div>
  </div>
 </template>
 <route lang="yaml">

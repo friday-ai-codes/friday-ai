@@ -1,50 +1,62 @@
 /**
- * 日志 API - Webhook 和工作项日志
+ * 日志 API - 触发日志（合并了 Webhook 和工作项日志）
+ *
+ * 注意：API 路径已从 /api/logs/* 迁移到 /api/feishu/logs/*
  */
 import { get } from './client'
+// ============ 常量定义 ============
+/**
+ * 工作项关键字段常量
+ * 用于从飞书工作项中提取关键业务信息
+ */
+export const KEY_FIELDS = {
+ /** 需求文档链接 */
+ PRD_URL: 'field_bcff9b',
+ /** 需求描述 */
+ DESCRIPTION: 'description',
+ /** 技术方案文档链接 */
+ TECH_DOC_URL: 'field_3f6667',
+} as const
 // ============ 类型定义 ============
 /**
- * Webhook 日志状态
+ * 工作项字段的通用类型
  */
-export type WebhookLogStatus = 'accepted' | 'ignored' | 'error' | 'duplicate'
+export interface WorkItemField {
+ field_key: string
+ field_value: unknown
+ field_type_key: string
+ field_alias: string
+ help_description?: string
+}
 /**
- * Webhook 日志
+ * 触发日志状态
  */
-export interface WebhookLog {
+export type TriggerLogStatus = 'accepted' | 'ignored' | 'error' | 'duplicate'
+/**
+ * 触发日志（合并了 Webhook 和工作项日志）
+ */
+export interface TriggerLog {
  id: string
  event_uuid: string | null
  event_type: string
- project_key: string | null
- raw_request: string
- status: WebhookLogStatus
- error_message: string | null
  project_id: string | null
+ work_item_id: string | null
+ status: TriggerLogStatus
+ error_message: string | null
+ // 提取的关键字段
+ prd_url: string
+ description: string
+ tech_doc_url: string
  created_at: string
 }
 /**
- * Webhook 日志详情（包含解析后的 JSON）
+ * 触发日志详情（包含原始数据）
  */
-export interface WebhookLogDetail extends WebhookLog {
- raw_request_parsed: Record<string, unknown> | null
-}
-/**
- * 工作项日志
- */
-export interface WorkItemLog {
- id: string
- work_item_id: string
- work_item_type: string
- project_key: string
- raw_response: string
- project_id: string
- task_id: string | null
- created_at: string
-}
-/**
- * 工作项日志详情（包含解析后的 JSON）
- */
-export interface WorkItemLogDetail extends WorkItemLog {
- raw_response_parsed: Record<string, unknown> | null
+export interface TriggerLogDetail extends TriggerLog {
+ webhook_raw_request: string
+ webhook_raw_request_parsed: Record<string, unknown> | null
+ work_item_raw_response: string
+ work_item_raw_response_parsed: Record<string, unknown> | null
 }
 /**
  * 日志列表响应
@@ -54,24 +66,12 @@ export interface LogListResponse<T> {
  total: number
 }
 /**
- * Webhook 日志查询参数
+ * 触发日志查询参数
  */
-export interface WebhookLogQuery {
+export interface TriggerLogQuery {
  project_id?: string
  event_type?: string
- status?: WebhookLogStatus
- start_date?: string
- end_date?: string
- limit?: number
- offset?: number
-}
-/**
- * 工作项日志查询参数
- */
-export interface WorkItemLogQuery {
- project_id?: string
- task_id?: string
- work_item_id?: string
+ status?: TriggerLogStatus
  start_date?: string
  end_date?: string
  limit?: number
@@ -79,36 +79,46 @@ export interface WorkItemLogQuery {
 }
 // ============ API 方法 ============
 /**
- * 获取 Webhook 日志列表
+ * 获取触发日志列表
  */
-export async function listWebhookLogs(
- query: WebhookLogQuery = {},
-): Promise<LogListResponse<WebhookLog>> {
- return get<LogListResponse<WebhookLog>>('/logs/webhooks', query as Record<string, string | number | undefined>)
+export async function listTriggerLogs(
+ query: TriggerLogQuery = {},
+): Promise<LogListResponse<TriggerLog>> {
+ return get<LogListResponse<TriggerLog>>('/feishu/logs', query as Record<string, string | number | undefined>)
 }
 /**
- * 获取 Webhook 日志详情
+ * 获取触发日志详情
  */
-export async function getWebhookLog(logId: string): Promise<WebhookLogDetail> {
- return get<WebhookLogDetail>(`/logs/webhooks/${logId}`)
+export async function getTriggerLog(logId: string): Promise<TriggerLogDetail> {
+ return get<TriggerLogDetail>(`/feishu/logs/${logId}`)
 }
 /**
- * 获取工作项日志列表
+ * 获取触发日志原始数据
  */
-export async function listWorkItemLogs(
- query: WorkItemLogQuery = {},
-): Promise<LogListResponse<WorkItemLog>> {
- return get<LogListResponse<WorkItemLog>>('/logs/work-items', query as Record<string, string | number | undefined>)
+export async function getTriggerLogRaw(logId: string): Promise<{
+ webhook_raw: Record<string, unknown> | null
+ work_item_raw: Record<string, unknown> | null
+}> {
+ return get(`/feishu/logs/${logId}/raw`)
 }
-/**
- * 获取工作项日志详情
- */
-export async function getWorkItemLog(logId: string): Promise<WorkItemLogDetail> {
- return get<WorkItemLogDetail>(`/logs/work-items/${logId}`)
-}
+// ============ 兼容性别名（旧 API，已废弃） ============
+/** @deprecated 使用 TriggerLogStatus 替代 */
+export type WebhookLogStatus = TriggerLogStatus
+/** @deprecated 使用 TriggerLog 替代 */
+export type WebhookLog = TriggerLog
+/** @deprecated 使用 TriggerLogDetail 替代 */
+export type WebhookLogDetail = TriggerLogDetail
+/** @deprecated 使用 TriggerLogQuery 替代 */
+export type WebhookLogQuery = TriggerLogQuery
+/** @deprecated 使用 listTriggerLogs 替代 */
+export const listWebhookLogs = listTriggerLogs
+/** @deprecated 使用 getTriggerLog 替代 */
+export const getWebhookLog = getTriggerLog
 export default {
+ listTriggerLogs,
+ getTriggerLog,
+ getTriggerLogRaw,
+ // 兼容性别名
  listWebhookLogs,
  getWebhookLog,
- listWorkItemLogs,
- getWorkItemLog,
 }

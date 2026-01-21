@@ -29,6 +29,9 @@ declare module 'vue' {
  CardFooter: typeof import('./components/ui/card/CardFooter.vue')['default']
  CardHeader: typeof import('./components/ui/card/CardHeader.vue')['default']
  CardTitle: typeof import('./components/ui/card/CardTitle.vue')['default']
+ Collapsible: typeof import('./components/ui/collapsible/Collapsible.vue')['default']
+ CollapsibleContent: typeof import('./components/ui/collapsible/CollapsibleContent.vue')['default']
+ CollapsibleTrigger: typeof import('./components/ui/collapsible/CollapsibleTrigger.vue')['default']
  Command: typeof import('./components/ui/command/Command.vue')['default']
  CommandDialog: typeof import('./components/ui/command/CommandDialog.vue')['default']
  CommandEmpty: typeof import('./components/ui/command/CommandEmpty.vue')['default']
@@ -71,6 +74,8 @@ declare module 'vue' {
  FormLabel: typeof import('./components/ui/form/FormLabel.vue')['default']
  FormMessage: typeof import('./components/ui/form/FormMessage.vue')['default']
  Input: typeof import('./components/ui/input/Input.vue')['default']
+ JsonHighlighter: typeof import('./components/logs/JsonHighlighter.vue')['default']
+ KeyFieldsCard: typeof import('./components/logs/KeyFieldsCard.vue')['default']
  Label: typeof import('./components/ui/label/Label.vue')['default']
  LoadingState: typeof import('./components/common/LoadingState.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
@@ -112,5 +117,7 @@ declare module 'vue' {
  TooltipContent: typeof import('./components/ui/tooltip/TooltipContent.vue')['default']
  TooltipProvider: typeof import('./components/ui/tooltip/TooltipProvider.vue')['default']
  TooltipTrigger: typeof import('./components/ui/tooltip/TooltipTrigger.vue')['default']
+ TriggerLogDetail: typeof import('./components/logs/TriggerLogDetail.vue')['default']
+ TriggerLogList: typeof import('./components/logs/TriggerLogList.vue')['default']
  }
 }
