@@ -1,8 +1,8 @@
 """Projects URL configuration."""
 from django.urls import include, path
-from common.routers import FlexibleSlashRouter
+from rest_framework.routers import DefaultRouter
 from .views import ProjectViewSet
-router = FlexibleSlashRouter
+router = DefaultRouter(trailing_slash=False)
 router.register("", ProjectViewSet, basename="project")
 urlpatterns = [
  path("", include(router.urls)),
