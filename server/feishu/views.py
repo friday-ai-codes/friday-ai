@@ -481,3 +481,58 @@ class TriggerLogRawView(APIView):
  "work_item_response": work_item_response,
  }
  )
+class TriggerLogDeleteView(APIView):
+ """Delete a trigger log."""
+ def delete(self, request, log_id):
+ log = get_object_or_404(TriggerLog, id=log_id)
+ log.delete
+ return Response(status=status.HTTP_204_NO_CONTENT)
+class TriggerLogRetryView(APIView):
+ """Retry processing a trigger log."""
+ def post(self, request, log_id):
+ log = get_object_or_404(TriggerLog, id=log_id)
+ if not log.webhook_raw_request:
+ return Response(
+ {"detail": "无法重试：缺少原始 Webhook 请求数据"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ data = json.loads(log.webhook_raw_request)
+ except json.JSONDecodeError:
+ return Response(
+ {"detail": "无法重试：原始数据格式错误"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Remove from processed events to allow re-processing
+ header = data.get("header", {})
+ event_uuid = header.get("uuid")
+ if event_uuid and event_uuid in _processed_events:
+ _processed_events.discard(event_uuid)
+ original_log_id = str(log.id)
+ raw_request_body = log.webhook_raw_request
+ log.delete
+ # Re-process the webhook
+ webhook_view = FeishuWebhookView
+ # Create a mock request with the original body
+ from django.http import HttpRequest
+ from rest_framework.request import Request
+ mock_http_request = HttpRequest
+ mock_http_request.method = "POST"
+ mock_http_request._body = raw_request_body.encode("utf-8")
+ mock_http_request.content_type = "application/json"
+ mock_request = Request(mock_http_request)
+ try:
+ response = webhook_view.post(mock_request)
+ return Response(
+ {
+ "status": "retried",
+ "original_log_id": original_log_id,
+ "result": response.data,
+ }
+ )
+ except Exception as e:
+ logger.error(f"重试失败: {e}")
+ return Response(
+ {"detail": f"重试失败: {str(e)}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )

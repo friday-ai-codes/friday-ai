@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
-import { listTriggerLogs } from '~/api/logs'
+import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -14,7 +14,7 @@ import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 useHead({
  title: '触发日志 - Friday AI',
 })
-const { error: showError } = useToast
+const { error: showError, success } = useToast
 // 过滤器
 const projectFilter = ref('__all__')
 const statusFilter = ref('__all__')
@@ -72,6 +72,28 @@ function getProjectName(projectId: string | null) {
  return '-'
  const project = projectsStore.projectById(projectId)
  return project?.name || projectId.slice(0, 8)
+}
+// 重试日志
+async function handleRetry(logId: string) {
+ try {
+ await retryTriggerLog(logId)
+ success('重试成功', '已重新处理该触发事件')
+ await fetchLogs
+ }
+ catch (e) {
+ showError('重试失败', e instanceof Error ? e.message: '无法重试')
+ }
+}
+// 删除日志
+async function handleDelete(logId: string) {
+ try {
+ await deleteTriggerLog(logId)
+ success('删除成功', '日志已删除')
+ await fetchLogs
+ }
+ catch (e) {
+ showError('删除失败', e instanceof Error ? e.message: '无法删除')
+ }
 }
 </script>
 <template>
@@ -149,6 +171,9 @@ function getProjectName(projectId: string | null) {
  <!-- 日志列表 -->
  <TriggerLogList
  v-else:logs="triggerLogs":loading="loading":get-project-name="getProjectName"
+ @retry="handleRetry"
+ @delete="handleDelete"
+ @refresh="fetchLogs"
  />
  </div>
 </template>

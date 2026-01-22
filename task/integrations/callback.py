@@ -2,8 +2,12 @@
 支持两种模式：
 1. 回调模式 - 设置 callback_url 后向 server API 报告状态
 2. 独立模式 - 不设置 callback_url 时仅记录日志
+[新增] 文件模式 - 如果环境变量 FRIDAY_TASK_OUTPUT_DIR 存在，将状态写入文件
+这作为网络回调不可靠时的兜底方案。
 """
 from __future__ import annotations
+import json
+import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 import httpx
@@ -14,6 +18,7 @@ logger = structlog.get_logger
 class CallbackClient:
  """Client for sending status updates back to the main Friday API.
  当 callback_url 为空时，自动切换到独立模式，仅记录日志。
+ 当 FRIDAY_TASK_OUTPUT_DIR 存在时，同时写入文件。
  """
  def __init__(self, config: "TaskConfig"):
  """Initialize callback client with config."""
@@ -25,8 +30,18 @@ class CallbackClient:
  }
  if config.callback_token:
  self.headers["Authorization"] = f"Bearer {config.callback_token}"
+ # 检查是否开启了文件输出模式（用于网络隔离环境）
+ self.output_dir = os.environ.get("FRIDAY_TASK_OUTPUT_DIR")
+ if self.output_dir and not os.path.exists(self.output_dir):
+ try:
+ os.makedirs(self.output_dir, exist_ok=True)
+ except Exception as e:
+ logger.warning("Failed to create output directory", path=self.output_dir, error=str(e))
+ self.output_dir = None
  if not self.enabled:
  logger.info("Callback disabled, running in standalone mode", task_id=config.task_id)
+ if self.output_dir:
+ logger.info("File output enabled", path=self.output_dir)
  async def report_status(
  self,
  status: str,
@@ -35,9 +50,6 @@ class CallbackClient:
  ) -> bool:
  """Report task status to the main API."""
  log = logger.bind(task_id=self.config.task_id, status=status)
- if not self.enabled:
- log.info("Status update (standalone mode)", message=message, details=details)
- return True
  payload = {
  "task_id": self.config.task_id,
  "status": status,
@@ -45,6 +57,24 @@ class CallbackClient:
  "details": details or {},
  "timestamp": datetime.utcnow.isoformat,
  }
+ # [新增] 1. 优先写入文件（这是最可靠的通道）
+ if self.output_dir:
+ try:
+ # 只有关键状态才写入 result.json，避免 IO 频繁
+ # 但这里为了调试方便，我们可以记录所有状态到 events.jsonl
+ # 关键结果写入 result.json
+ if status in ("plan_ready", "execution_complete", "error"):
+ result_path = os.path.join(self.output_dir, "result.json")
+ with open(result_path, "w") as f:
+ json.dump(payload, f, indent=2, ensure_ascii=False)
+ log.info("Status written to file", path=result_path)
+ except Exception as e:
+ log.error("Failed to write status to file", error=str(e))
+ # 2. 如果没启用 HTTP 回调，就结束
+ if not self.enabled:
+ log.info("Status update (standalone mode)", message=message, details=details)
+ return True
+ # 3. 尝试 HTTP 回调
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(
@@ -57,6 +87,10 @@ class CallbackClient:
  log.info("Status reported successfully")
  return True
  except httpx.HTTPError as e:
+ # 如果配置了文件输出，HTTP 失败是可以接受的，只是个警告
+ if self.output_dir:
+ log.warning("Failed to report status via HTTP (backed up to file)", error=str(e))
+ else:
  log.error("Failed to report status", error=str(e))
  return False
  async def report_plan_ready(self, plan: str) -> bool:
