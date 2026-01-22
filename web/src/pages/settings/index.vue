@@ -278,7 +278,6 @@ onMounted( => {
  <ol class="list-decimal list-inside space-y-1 text-sm text-muted-foreground ml-2">
  <li><strong class="text-foreground">项目级配置</strong> - 在项目设置中单独配置的值</li>
  <li><strong class="text-foreground">系统级配置</strong> - 在此页面配置的全局默认值</li>
- <li><strong class="text-foreground">环境变量</strong> - 服务器环境变量 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL</li>
  </ol>
  </div>
  </div>

@@ -1,6 +1,6 @@
 """Tests for callback module."""
 import pytest
-from friday_task.callback import CallbackClient
+from integrations import CallbackClient
 class TestCallbackClient:
  """CallbackClient 测试。"""
  @pytest.mark.asyncio

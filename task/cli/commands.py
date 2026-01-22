@@ -2,30 +2,16 @@
 支持两种主要模式：
 - plan: 分析代码库并生成实施计划（只读模式，不创建新分支）
 - exec: 执行代码变更（创建新分支，提交并推送）
-使用示例:
- # Plan 模式 - 分析并生成计划
- friday-task plan \\
- --git-url git@github.com:org/repo.git \\
- --branch main \\
- --description "添加用户登录功能"
- # Execute 模式 - 执行变更
- friday-task exec \\
- --git-url git@github.com:org/repo.git \\
- --branch main \\
- --new-branch friday/feature-login \\
- --description "添加用户登录功能"
- # 恢复会话
- friday-task resume --session-id xxx --mode exec
 """
 import asyncio
 import sys
 import uuid
 import click
 import structlog
-from .callback import CallbackClient
-from .claude_runner import ClaudeRunner
-from .config import TaskConfig
-from .git_ops import GitOperations
+from core.config import TaskConfig
+from core.executor import ClaudeRunner
+from git_ops import GitOperations
+from integrations import CallbackClient
 # 配置 structlog
 structlog.configure(
  processors=[
@@ -48,7 +34,6 @@ logger = structlog.get_logger
 def generate_task_id -> str:
  """生成唯一任务 ID."""
  return f"task-{uuid.uuid4.hex[:8]}"
-# 共享选项
 def common_options(f):
  """共享的命令行选项装饰器."""
  f = click.option(
@@ -71,12 +56,12 @@ def common_options(f):
  )(f)
  f = click.option(
  "--api-key",
- envvar="ANTHROPIC_API_KEY",
+ envvar="FRIDAY_TASK_CLAUDE_API_KEY",
  help="Claude API Key",
  )(f)
  f = click.option(
  "--base-url",
- envvar="ANTHROPIC_BASE_URL",
+ envvar="FRIDAY_TASK_CLAUDE_BASE_URL",
  help="Claude API Base URL（可选，用于代理）",
  )(f)
  f = click.option(
@@ -142,10 +127,7 @@ def plan(
  project_id: str,
  no_ssl_verify: bool,
 ):
- """执行计划模式 - 分析代码库并生成实施计划.
- Plan 模式是只读的，不会创建新分支或修改代码。
- 使用 claude-agent-sdk 的 plan 权限模式。
- """
+ """执行计划模式 - 分析代码库并生成实施计划."""
  task_id = task_id or generate_task_id
  config = _build_config(
  mode="plan",
@@ -153,7 +135,7 @@ def plan(
  project_id=project_id,
  git_url=git_url,
  branch=branch,
- new_branch=None, # Plan 模式不创建新分支
+ new_branch=None,
  description=description,
  api_key=api_key,
  base_url=base_url,
@@ -193,10 +175,7 @@ def exec(
  new_branch: str | None,
  resume_session: str | None,
 ):
- """执行实现模式 - 创建分支并实现代码变更.
- Execute 模式会创建新分支，实现代码变更，并提交推送。
- 使用 claude-agent-sdk 的 bypassPermissions 权限模式以支持无人值守执行。
- """
+ """执行实现模式 - 创建分支并实现代码变更."""
  task_id = task_id or generate_task_id
  config = _build_config(
  mode="execute",
@@ -218,33 +197,11 @@ def exec(
  exit_code = asyncio.run(_run_task(config))
  sys.exit(exit_code)
 @main.command
-@click.option(
- "--session-id",
- required=True,
- help="要恢复的会话 ID",
-)
-@click.option(
- "--mode",
- type=click.Choice(["plan", "exec"]),
- default="exec",
- help="恢复后的执行模式",
-)
-@click.option(
- "--session-dir",
- envvar="FRIDAY_TASK_SESSION_DIR",
- default="./sessions",
- help="会话存储目录",
-)
-@click.option(
- "--api-key",
- envvar="ANTHROPIC_API_KEY",
- help="Claude API Key",
-)
-@click.option(
- "--base-url",
- envvar="ANTHROPIC_BASE_URL",
- help="Claude API Base URL",
-)
+@click.option("--session-id", required=True, help="要恢复的会话 ID")
+@click.option("--mode", type=click.Choice(["plan", "exec"]), default="exec", help="恢复后的执行模式")
+@click.option("--session-dir", envvar="FRIDAY_TASK_SESSION_DIR", default="./sessions", help="会话存储目录")
+@click.option("--api-key", envvar="FRIDAY_TASK_CLAUDE_API_KEY", help="Claude API Key")
+@click.option("--base-url", envvar="FRIDAY_TASK_CLAUDE_BASE_URL", help="Claude API Base URL")
 def resume(
  session_id: str,
  mode: str,
@@ -252,12 +209,9 @@ def resume(
  api_key: str | None,
  base_url: str | None,
 ):
- """恢复已有会话继续执行.
- 从保存的会话状态中恢复，继续上次未完成的任务。
- """
+ """恢复已有会话继续执行."""
  import json
  from pathlib import Path
- # 查找会话映射
  mapping_file = Path(session_dir) / "mapping.json"
  if not mapping_file.exists:
  click.echo(f"错误: 未找到会话映射文件 {mapping_file}", err=True)
@@ -268,17 +222,7 @@ def resume(
  click.echo(f"错误: 未找到会话 {session_id}", err=True)
  sys.exit(1)
  session_info = mappings[session_id]
- task_id = session_info["task_id"]
- # 加载任务配置
- task_file = Path(session_dir) / f"{task_id}.json"
- if not task_file.exists:
- click.echo(f"错误: 未找到任务文件 {task_file}", err=True)
- sys.exit(1)
- task_data = json.loads(task_file.read_text)
- click.echo(f"恢复会话 {session_id} (任务: {task_id})")
- click.echo(f"上次输出预览: {session_info.get('last_output_preview', 'N/A')[:100]}...")
- # 这里需要重新构建配置并执行
- # 由于恢复需要原始的 git 信息，这里简化处理
+ click.echo(f"恢复会话 {session_id} (任务: {session_info['task_id']})")
  click.echo("注意: 完整的会话恢复需要原始 Git 配置，当前为简化实现。")
  sys.exit(0)
  except json.JSONDecodeError as e:
@@ -302,15 +246,12 @@ def _build_config(
  resume_session: str | None = None,
 ) -> TaskConfig:
  """构建任务配置对象."""
- # 确定 Git 认证类型
  if ssh_key:
  auth_type = "ssh"
  elif access_token:
  auth_type = "token"
  else:
- # 尝试使用默认 SSH（系统 SSH agent）
  auth_type = "ssh"
- # 从 description 提取标题（前50字符）
  title = description[:50] + "..." if len(description) > 50 else description
  return TaskConfig(
  task_id=task_id,
@@ -333,33 +274,19 @@ def _build_config(
  )
 async def _run_task(config: TaskConfig) -> int:
  """执行任务并返回退出码."""
- log = logger.bind(
- task_id=config.task_id,
- mode=config.task_mode,
- )
+ log = logger.bind(task_id=config.task_id, mode=config.task_mode)
  log.info("Task starting", git_url=config.git_repo_url, branch=config.git_branch)
  git_ops = GitOperations(config)
  callback = CallbackClient(config)
  try:
- # 报告开始
  await callback.report_started
- # 设置 Git 仓库
- log.info("Setting up Git repository")
  await git_ops.setup
- # 创建功能分支（仅 execute 模式）
  branch_name = config.git_branch
  if config.task_mode == "execute":
- # 使用指定的分支名或自动生成
  feature_branch = config.git_new_branch or f"friday/task-{config.task_id}"
  branch_name = await git_ops.create_feature_branch(feature_branch)
  await callback.report_git_ready(branch_name)
- log.info("Created feature branch", branch=branch_name)
- else:
- # Plan 模式不创建分支
- log.info("Plan mode - staying on branch", branch=branch_name)
- # 初始化 Claude runner
  claude = ClaudeRunner(config, git_ops.get_workspace_path)
- # 执行对应模式
  if config.task_mode == "plan":
  return await _run_plan_mode(claude, callback, log)
  else:
@@ -370,26 +297,19 @@ async def _run_task(config: TaskConfig) -> int:
  return 1
  finally:
  git_ops.cleanup
- log.info("Task finished")
 async def _run_plan_mode(claude: ClaudeRunner, callback: CallbackClient, log) -> int:
  """执行 Plan 模式."""
- log.info("Running in plan mode")
  result = await claude.run_plan_mode
  if not result.get("success"):
- error = result.get("error", "Unknown error")
- log.error("Plan generation failed", error=error)
- await callback.report_error(error, "planning")
+ await callback.report_error(result.get("error", "Unknown error"), "planning")
  return 1
  plan = result.get("output", "")
- # 输出计划到控制台
  click.echo("\n" + "=" * 60)
  click.echo("📋 实施计划:")
  click.echo("=" * 60)
  click.echo(plan)
  click.echo("=" * 60 + "\n")
- # 报告计划就绪
  await callback.report_plan_ready(plan)
- log.info("Plan mode completed successfully")
  return 0
 async def _run_execute_mode(
  claude: ClaudeRunner,
@@ -400,32 +320,19 @@ async def _run_execute_mode(
  log,
 ) -> int:
  """执行 Execute 模式."""
- log.info("Running in execute mode")
- # 检查是否有之前的计划
  plan = await claude.get_session_summary
- # 执行 Claude
  result = await claude.run_execute_mode(plan)
  if not result.get("success"):
- error = result.get("error", "Unknown error")
- log.error("Execution failed", error=error)
- await callback.report_error(error, "execution")
+ await callback.report_error(result.get("error", "Unknown error"), "execution")
  return 1
- # 提交变更
  commit_message = f"feat: {config.task_title}\n\n{config.task_description}\n\nTask ID: {config.task_id}\nImplemented by Friday AI Agent"
  commit_sha = await git_ops.commit_changes(commit_message)
  if not commit_sha:
- log.warning("No changes to commit")
- await callback.report_status(
- status="no_changes",
- message="No code changes were made",
- )
+ await callback.report_status(status="no_changes", message="No code changes were made")
  click.echo("⚠️ 没有代码变更需要提交")
  return 0
- # 推送分支
  await git_ops.push_branch(branch_name)
- # 获取 diff 摘要
  diff_summary = await git_ops.get_diff_summary
- # 输出结果到控制台
  click.echo("\n" + "=" * 60)
  click.echo("✅ 执行完成!")
  click.echo("=" * 60)
@@ -433,13 +340,11 @@ async def _run_execute_mode(
  click.echo(f"提交: {commit_sha[:8]}")
  click.echo(f"\n变更摘要:\n{diff_summary}")
  click.echo("=" * 60 + "\n")
- # 报告完成
  await callback.report_execution_complete(
  branch_name=branch_name,
  commit_sha=commit_sha,
  diff_summary=diff_summary,
  )
- log.info("Execute mode completed successfully", commit=commit_sha[:8])
  return 0
 if __name__ == "__main__":
  main

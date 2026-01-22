@@ -24,14 +24,14 @@ friday-task plan \
  --git-url git@github.com:org/repo.git \
  --branch main \
  --description "添加用户登录功能，包括 JWT 认证和密码加密" \
- --api-key $ANTHROPIC_API_KEY
+ --api-key $FRIDAY_TASK_CLAUDE_API_KEY
 # Execute 模式 - 执行变更
 friday-task exec \
  --git-url git@github.com:org/repo.git \
  --branch main \
  --new-branch friday/feature-login \
  --description "添加用户登录功能，包括 JWT 认证和密码加密" \
- --api-key $ANTHROPIC_API_KEY
+ --api-key $FRIDAY_TASK_CLAUDE_API_KEY
 # 恢复会话
 friday-task resume --session-id <session-id> --mode exec
 ```
@@ -41,7 +41,7 @@ friday-task resume --session-id <session-id> --mode exec
 docker build -t friday-task:latest .
 # CLI 模式
 docker run friday-task:latest plan --help
-docker run -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY friday-task:latest plan \
+docker run -e FRIDAY_TASK_CLAUDE_API_KEY=$FRIDAY_TASK_CLAUDE_API_KEY friday-task:latest plan \
  --git-url git@github.com:org/repo.git \
  --description "添加用户登录功能"
 # 容器模式（环境变量配置）
@@ -50,7 +50,7 @@ docker run \
  -e FRIDAY_TASK_GIT_REPO_URL=git@github.com:org/repo.git \
  -e FRIDAY_TASK_TASK_DESCRIPTION="添加用户登录功能" \
  -e FRIDAY_TASK_TASK_MODE=plan \
- -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+ -e FRIDAY_TASK_CLAUDE_API_KEY=$FRIDAY_TASK_CLAUDE_API_KEY \
  friday-task:latest
 ```
 ## 命令参数
@@ -60,8 +60,8 @@ docker run \
 | `--git-url` | FRIDAY_TASK_GIT_REPO_URL | ✅ | Git 仓库 URL |
 | `--branch` | FRIDAY_TASK_GIT_BRANCH | ❌ | 基础分支（默认 main）|
 | `--description` | FRIDAY_TASK_TASK_DESCRIPTION | ✅ | 任务描述 |
-| `--api-key` | ANTHROPIC_API_KEY | ✅ | Claude API Key |
-| `--base-url` | ANTHROPIC_BASE_URL | ❌ | API Base URL（代理）|
+| `--api-key` | FRIDAY_TASK_CLAUDE_API_KEY | ✅ | Claude API Key |
+| `--base-url` | FRIDAY_TASK_CLAUDE_BASE_URL | ❌ | API Base URL（代理） |
 | `--ssh-key` | FRIDAY_TASK_GIT_SSH_KEY | ❌* | SSH 私钥内容 |
 | `--access-token` | FRIDAY_TASK_GIT_ACCESS_TOKEN | ❌* | Git 访问令牌 |
 | `--callback-url` | FRIDAY_TASK_CALLBACK_URL | ❌ | 状态回调 URL |

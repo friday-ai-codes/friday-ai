@@ -1,7 +1,7 @@
 """Tests for config module."""
 import pytest
 from pydantic import ValidationError
-from friday_task.config import TaskConfig
+from core import TaskConfig
 class TestTaskConfig:
  """TaskConfig 测试。"""
  def test_config_from_params(self, temp_session_dir):

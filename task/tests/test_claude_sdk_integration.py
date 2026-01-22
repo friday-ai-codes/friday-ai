@@ -2,7 +2,7 @@
 这些测试需要真实的 Anthropic API Key 才能运行。
 默认情况下会跳过，通过设置环境变量 FRIDAY_RUN_INTEGRATION_TESTS=1 启用。
 使用方式：
- ANTHROPIC_API_KEY=your-key FRIDAY_RUN_INTEGRATION_TESTS=1 pytest tests/test_claude_sdk_integration.py -v
+ FRIDAY_TASK_CLAUDE_API_KEY=your-key FRIDAY_RUN_INTEGRATION_TESTS=1 pytest tests/test_claude_sdk_integration.py -v
 """
 import os
 from pathlib import Path
@@ -16,8 +16,8 @@ async def test_claude_runner_plan_mode(temp_workspace, mock_config):
  """测试 Claude Runner 的 plan 模式。"""
  # 仅当有 API Key 时才导入和测试
  if not mock_config.claude_api_key:
- pytest.skip("需要设置 ANTHROPIC_API_KEY")
- from friday_task.claude_runner import ClaudeRunner
+ pytest.skip("需要设置 FRIDAY_TASK_CLAUDE_API_KEY")
+ from core import ClaudeRunner
  runner = ClaudeRunner(config=mock_config, workspace=temp_workspace)
  result = await runner.run_plan_mode
  assert result["success"] is True
@@ -29,8 +29,8 @@ async def test_claude_runner_plan_mode(temp_workspace, mock_config):
 async def test_claude_runner_execute_mode(temp_workspace, mock_config):
  """测试 Claude Runner 的 execute 模式。"""
  if not mock_config.claude_api_key:
- pytest.skip("需要设置 ANTHROPIC_API_KEY")
- from friday_task.claude_runner import ClaudeRunner
+ pytest.skip("需要设置 FRIDAY_TASK_CLAUDE_API_KEY")
+ from core import ClaudeRunner
  runner = ClaudeRunner(config=mock_config, workspace=temp_workspace)
  # 提供一个简单的 plan
  plan = """
@@ -45,8 +45,8 @@ async def test_claude_runner_execute_mode(temp_workspace, mock_config):
 async def test_claude_runner_session_save(temp_workspace, mock_config):
  """测试会话保存功能。"""
  if not mock_config.claude_api_key:
- pytest.skip("需要设置 ANTHROPIC_API_KEY")
- from friday_task.claude_runner import ClaudeRunner
+ pytest.skip("需要设置 FRIDAY_TASK_CLAUDE_API_KEY")
+ from core import ClaudeRunner
  runner = ClaudeRunner(config=mock_config, workspace=temp_workspace)
  # 运行一次
  result = await runner.run_plan_mode
@@ -81,7 +81,7 @@ async def test_claude_runner_session_file_location(temp_workspace, mock_config):
 async def test_claude_runner_handles_missing_api_key(temp_workspace, mock_config):
  """测试没有 API Key 时的错误处理。"""
  mock_config.claude_api_key = ""
- os.environ.pop("ANTHROPIC_API_KEY", None)
+ os.environ.pop("FRIDAY_TASK_CLAUDE_API_KEY", None)
  # 这个测试验证在没有 API Key 时，runner 会优雅地处理错误
  # 具体行为取决于 SDK 实现
  # 这里我们只验证配置状态
@@ -90,7 +90,7 @@ async def test_claude_runner_handles_missing_api_key(temp_workspace, mock_config
 async def test_session_mapping(temp_session_dir, mock_config):
  """测试会话映射功能。"""
  import json
- from friday_task.claude_runner import ClaudeRunner
+ from core import ClaudeRunner
  mock_config.session_dir = temp_session_dir
  # 创建一个映射文件
  mapping_file = Path(temp_session_dir) / "mapping.json"
@@ -109,6 +109,6 @@ async def test_session_mapping(temp_session_dir, mock_config):
 @pytest.mark.asyncio
 async def test_session_mapping_not_found(temp_session_dir):
  """测试会话不存在的情况。"""
- from friday_task.claude_runner import ClaudeRunner
+ from core import ClaudeRunner
  session_info = await ClaudeRunner.get_session_by_id("non-existent-session", temp_session_dir)
  assert session_info is None

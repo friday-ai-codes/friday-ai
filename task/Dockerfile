@@ -1,34 +1,36 @@
-FROM python:3.14.2-slim
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
- git \
- openssh-client \
- curl \
- gnupg \
- ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-# Set working directory
+# Stage 1: Build dependencies
+FROM python:3.14-alpine AS builder
+RUN apk add --no-cache \
+ gcc \
+ musl-dev \
+ libffi-dev
 WORKDIR /app
-# Copy project files
 COPY pyproject.toml ./
-COPY src/ ./src/
-# Install Python dependencies directly with pip (no virtual environment)
-RUN pip install --no-cache-dir -e .
-# Configure Git for commits
-RUN git config --global user.email "ai@friday.codes" \
- && git config --global user.name "Friday Codes AI Agent" \
- && git config --global --add safe.directory "*"
-# Configure SSH
-RUN mkdir -p /root/.ssh \
- && chmod 700 /root/.ssh \
- && echo "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > /root/.ssh/config
-# Create working directories
+COPY cli/ ./cli/
+COPY core/ ./core/
+COPY git_ops/ ./git_ops/
+COPY integrations/ ./integrations/
+RUN pip install --no-cache-dir -e . \
+ && pip uninstall -y pip setuptools wheel 2>/dev/null || true
+# Stage 2: Runtime image
+FROM python:3.14-alpine
+# 只安装运行时依赖
+RUN apk add --no-cache \
+ git \
+ bash \
+ ripgrep \
+ jq \
+ tree \
+ curl \
+ ca-certificates \
+ libffi
+WORKDIR /app
+# 从 builder 复制已安装的 Python 包
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /app /app
+RUN git config --global --add safe.directory "*"
 RUN mkdir -p /app/workspace /app/sessions
-# Copy and set up entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
-# Entry point - 智能入口脚本:
-# - 无参数: 容器模式 (runner.py)
-# - "bash" 或 "sh": 调试模式，进入交互式 shell
-# - 其他参数: CLI 模式 (friday-task)
 ENTRYPOINT ["/app/entrypoint.sh"]

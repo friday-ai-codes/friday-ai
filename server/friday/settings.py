@@ -38,12 +38,9 @@ INSTALLED_APPS = [
  "django.contrib.sessions",
  "django.contrib.messages",
  "django.contrib.staticfiles",
- # Third-party apps
  "rest_framework",
  "rest_framework_simplejwt",
  "drf_spectacular",
- "corsheaders",
- # Local apps (refactored by domain)
  "accounts",
  "system",
  "repositories",
@@ -53,7 +50,6 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
- "corsheaders.middleware.CorsMiddleware",
  "django.contrib.sessions.middleware.SessionMiddleware",
  "django.middleware.common.CommonMiddleware",
  "django.middleware.csrf.CsrfViewMiddleware",
@@ -126,12 +122,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # =============================================================================
 # CORS Settings
 # =============================================================================
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = [
- origin.strip
- for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
- if origin.strip
-]
+# CORS_ALLOW_ALL_ORIGINS = DEBUG
+# CORS_ALLOWED_ORIGINS = [
+# origin.strip
+# for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+# if origin.strip
+# ]
 # =============================================================================
 # REST Framework Settings
 # =============================================================================
@@ -177,13 +173,8 @@ SPECTACULAR_SETTINGS = {
 # =============================================================================
 # External Integrations
 # =============================================================================
-# Anthropic/Claude API
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 # Encryption key for sensitive data (base64 encoded 32-byte key)
 FRIDAY_ENCRYPTION_KEY = os.environ.get("FRIDAY_ENCRYPTION_KEY", "")
-# GitHub webhook secret
-GITHUB_WEBHOOK_SECRET = os.environ.get("FRIDAY_GITHUB_WEBHOOK_SECRET", "")
 # =============================================================================
 # Logging
 # =============================================================================

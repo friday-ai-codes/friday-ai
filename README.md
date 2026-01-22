@@ -59,21 +59,19 @@ This project follows a Monorepo structure, containing independent frontend and b
 ### Environment Variables
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `SECRET_KEY` | ✅ | - | Django secret key (generate for production) |
 | `FRIDAY_ENCRYPTION_KEY` | ✅ | - | Encryption key for sensitive data |
-| `ANTHROPIC_API_KEY` | ❌ | - | Anthropic API key for Claude Code (can be configured via Web UI) |
-| `ANTHROPIC_BASE_URL` | ❌ | - | Custom Anthropic API base URL (for proxies) |
+| `DATABASE_URL` | ❌ | sqlite:///./data/friday.db | Database connection URL |
 | `FRIDAY_WEB_PORT` | ❌ | 10240 | Web frontend port |
 | `FRIDAY_PORT` | ❌ | 10241 | Backend API port |
-| `FRIDAY_DEBUG` | ❌ | false | Enable debug mode |
+| `DEBUG` | ❌ | false | Enable debug mode |
 ### Claude Code Configuration
-Claude API configuration supports three levels (higher priority overrides lower):
+Claude API configuration supports two levels (higher priority overrides lower):
 1. **Project Level** - Configure in Web UI → Project → Claude Settings
 2. **System Level** - Configure in Web UI → Settings → Claude Configuration
-3. **Environment Variables** - `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`
 This allows:
 - Different API keys for different projects
 - Custom proxy URLs for users in regions with limited API access
-- Fallback to environment variables for simple deployments
 ## 💻 Local Development Guide
 ### Backend Development (`server/`)
 For detailed instructions, see [Server README](server/README.md).

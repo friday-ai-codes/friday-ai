@@ -1,33 +1,31 @@
 # Friday AI Dev Agent - Django API Service
-FROM python:3.14.2-slim
-# Install system dependencies
-# - curl: healthcheck
-# - libpq-dev: PostgreSQL client library
-# - default-libmysqlclient-dev + pkg-config: MySQL/MariaDB client library
-RUN apt-get update && apt-get install -y \
- curl \
- libpq-dev \
- default-libmysqlclient-dev \
- pkg-config \
- && rm -rf /var/lib/apt/lists/*
-# Install uv
-RUN pip install uv
-# Set working directory
+# Stage 1: Build dependencies
+FROM python:3.14-alpine AS builder
+# Install build dependencies
+RUN apk add --no-cache \
+ gcc \
+ musl-dev \
+ libffi-dev \
+ postgresql-dev \
+ mariadb-dev
 WORKDIR /app
 # Copy project files
-COPY pyproject.toml uv.lock ./
-COPY manage.py ./
-COPY friday/ ./friday/
-COPY common/ ./common/
-COPY accounts/ ./accounts/
-COPY system/ ./system/
-COPY repositories/ ./repositories/
-COPY projects/ ./projects/
-COPY feishu/ ./feishu/
-COPY tasks/ ./tasks/
-COPY services/ ./services/
-# Install dependencies
-RUN uv sync --frozen --no-dev
+COPY . .
+# Install dependencies directly to system Python (no venv)
+RUN pip install uv && uv pip install --system -e .
+# Stage 2: Runtime image
+FROM python:3.14-alpine
+# Install runtime dependencies only
+RUN apk add --no-cache \
+ curl \
+ libpq \
+ mariadb-connector-c
+WORKDIR /app
+# Copy app from builder
+COPY --from=builder /app /app
+# Copy installed packages from builder's system Python
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 # Create data directory
 RUN mkdir -p /app/data
 # Expose port
@@ -35,18 +33,5 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
  CMD curl -f http://localhost:8000/health || exit 1
-# Run the application with Gunicorn + Uvicorn workers
-# 参考: https://docs.djangoproject.com/zh-hans/6.0/howto/deployment/asgi/uvicorn/
-#
-# 配置说明:
-# - --workers: worker 进程数量，根据 CPU 核心数调整
-# - --worker-class: 使用 uvicorn.workers.UvicornWorker 支持 ASGI
-# - --bind: 绑定地址和端口
-# - --access-logfile: 访问日志输出到 stdout
-# - --error-logfile: 错误日志输出到 stderr
-# - --capture-output: 捕获 stdout/stderr 到日志
-# - --timeout: worker 超时时间（秒）
-# - friday.asgi:application: Django ASGI 应用入口
-#
-# 启动前自动执行数据库迁移和初始化超级管理员
-CMD ["sh", "-c", "uv run python manage.py migrate --noinput && uv run python manage.py init_superuser && uv run gunicorn friday.asgi:application --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --capture-output --timeout 120"]
+# Run the application
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py init_superuser && gunicorn friday.asgi:application --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --capture-output --timeout 120"]

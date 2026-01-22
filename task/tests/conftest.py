@@ -34,8 +34,8 @@ def mock_config(temp_session_dir):
  config.git_branch = "main"
  config.git_new_branch = None
  config.session_dir = temp_session_dir
- config.claude_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
- config.claude_base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+ config.claude_api_key = os.environ.get("FRIDAY_TASK_CLAUDE_API_KEY", "")
+ config.claude_base_url = os.environ.get("FRIDAY_TASK_CLAUDE_BASE_URL", "")
  config.callback_url = ""
  config.callback_token = ""
  return config
