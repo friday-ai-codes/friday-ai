@@ -4,6 +4,8 @@
 export { ApiError } from './client'
 export { default as authApi } from './auth'
 export * from './auth'
+export { default as chatApi } from './chat'
+export * from './chat'
 export { default as logsApi } from './logs'
 export * from './logs'
 export { default as projectsApi } from './projects'

@@ -38,7 +38,7 @@ export async function getSetting(key: SettingKey): Promise<SettingRead> {
  * 获取所有设置
  */
 export async function getAllSettings: Promise<SettingRead> {
- return get<SettingRead>('/settings')
+ return get<SettingRead>('/settings/')
 }
 /**
  * 更新设置
@@ -56,19 +56,19 @@ export async function deleteSetting(key: SettingKey): Promise<void> {
  * 获取项目的 Claude 配置
  */
 export async function getProjectClaudeConfig(projectId: string): Promise<ClaudeConfigRead> {
- return get<ClaudeConfigRead>(`/projects/${projectId}/claude-config`)
+ return get<ClaudeConfigRead>(`/projects/${projectId}/claude-config/`)
 }
 /**
  * 更新项目的 Claude 配置
  */
 export async function updateProjectClaudeConfig(projectId: string, config: ClaudeConfigCreate): Promise<ClaudeConfigRead> {
- return put<ClaudeConfigRead>(`/projects/${projectId}/claude-config`, config)
+ return put<ClaudeConfigRead>(`/projects/${projectId}/claude-config/`, config)
 }
 /**
  * 删除项目的 Claude 配置
  */
 export async function deleteProjectClaudeConfig(projectId: string): Promise<void> {
- return del(`/projects/${projectId}/claude-config`)
+ return del(`/projects/${projectId}/claude-config/`)
 }
 // 默认导出
 export default {
