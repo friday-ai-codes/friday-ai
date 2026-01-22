@@ -30,19 +30,19 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
  * 获取项目详情
  */
 export async function getProject(projectId: string): Promise<Project> {
- return get<Project>(`/projects/${projectId}`)
+ return get<Project>(`/projects/${projectId}/`)
 }
 /**
  * 更新项目
  */
 export async function updateProject(projectId: string, data: ProjectUpdate): Promise<Project> {
- return patch<Project>(`/projects/${projectId}`, data)
+ return patch<Project>(`/projects/${projectId}/`, data)
 }
 /**
  * 删除项目
  */
 export async function deleteProject(projectId: string): Promise<void> {
- return del(`/projects/${projectId}`)
+ return del(`/projects/${projectId}/`)
 }
 // ============================================================================
 // 仓库关联管理
@@ -51,13 +51,13 @@ export async function deleteProject(projectId: string): Promise<void> {
  * 关联仓库
  */
 export async function addRepository(projectId: string, repositoryId: string): Promise<void> {
- return post(`/projects/${projectId}/repositories/${repositoryId}`)
+ return post(`/projects/${projectId}/repositories/${repositoryId}/`)
 }
 /**
  * 解除关联仓库
  */
 export async function removeRepository(projectId: string, repositoryId: string): Promise<void> {
- return del(`/projects/${projectId}/repositories/${repositoryId}`)
+ return del(`/projects/${projectId}/repositories/${repositoryId}/`)
 }
 // ============================================================================
 // 飞书配置管理

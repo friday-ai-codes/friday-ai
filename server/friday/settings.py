@@ -47,9 +47,9 @@ INSTALLED_APPS = [
  "projects",
  "feishu",
  "tasks",
+ "chat",
 ]
 MIDDLEWARE = [
- "friday.middleware.SlashNormalizerMiddleware",
  "django.middleware.security.SecurityMiddleware",
  "django.contrib.sessions.middleware.SessionMiddleware",
  "django.middleware.common.CommonMiddleware",
@@ -59,8 +59,8 @@ MIDDLEWARE = [
  "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 ROOT_URLCONF = "friday.urls"
-# URL Configuration - Allow both with and without trailing slash
-APPEND_SLASH = False
+# URL Configuration - Auto redirect to add trailing slash for collection resources
+APPEND_SLASH = True
 TEMPLATES = [
  {
  "BACKEND": "django.template.backends.django.DjangoTemplates",

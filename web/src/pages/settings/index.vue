@@ -1,17 +1,27 @@
 <script setup lang="ts">
+import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { getModels } from '~/api/chat'
 import {
  deleteSetting,
  getAllSettings,
  SettingKey,
  updateSetting,
 } from '~/api/settings'
+import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 const router = useRouter
 // 设置状态
 const settings = ref<SettingRead>
@@ -140,6 +150,44 @@ function onBaseUrlInput {
 function hasUnsavedChanges: boolean {
  return apiKeyDirty.value || baseUrlDirty.value
 }
+// 模型选择和测试相关
+const models = ref<Model>
+const selectedModel = ref('')
+const loadingModels = ref(false)
+const testDialogOpen = ref(false)
+// 是否可以测试（已配置 API Key）
+function canTest: boolean {
+ return getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value ?? false
+}
+// 获取模型列表
+async function fetchModels {
+ if (!canTest) return
+ loadingModels.value = true
+ try {
+ const response = await getModels({ source: 'system' })
+ models.value = response.models
+ if (models.value.length > 0 && !selectedModel.value) {
+ selectedModel.value = models.value[0].id
+ }
+ }
+ catch (error) {
+ console.error('Failed to fetch models:', error)
+ // 不显示错误，用户可以手动输入模型名称
+ }
+ finally {
+ loadingModels.value = false
+ }
+}
+// 打开测试对话框
+function openTestDialog {
+ testDialogOpen.value = true
+}
+// 监听设置加载完成后获取模型列表
+watch( => loading.value, (isLoading) => {
+ if (!isLoading && canTest) {
+ fetchModels
+ }
+})
 onMounted( => {
  loadSettings
 })
@@ -263,6 +311,62 @@ onMounted( => {
  保存设置
  </Button>
  </div>
+ <!-- 模型测试区域 -->
+ <div v-if="canTest" class="space-y-3 pt-4 border-t border-border/50">
+ <div class="flex items-center justify-between">
+ <div>
+ <Label class="text-base">测试配置</Label>
+ <p class="text-sm text-muted-foreground">
+ 验证 API 配置是否正确
+ </p>
+ </div>
+ <Button
+ variant="outline":disabled="loadingModels"
+ @click="fetchModels"
+ >
+ <span:class="[
+ 'icon-[lucide--refresh-cw] mr-2',
+ loadingModels && 'animate-spin',
+ ]"
+ />
+ 刷新模型
+ </Button>
+ </div>
+ <div class="flex gap-3">
+ <!-- 模型选择 -->
+ <div class="flex-1">
+ <div v-if="loadingModels" class="flex items-center gap-2 text-muted-foreground">
+ <span class="icon-[lucide--loader-circle] animate-spin" />
+ 正在获取模型列表...
+ </div>
+ <Select v-else-if="models.length > 0" v-model="selectedModel">
+ <SelectTrigger class="">
+ <SelectValue placeholder="选择模型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="model in models":key="model.id":value="model.id"
+ >
+ {{ model.name || model.id }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <Input
+ v-else
+ v-model="selectedModel"
+ placeholder="输入模型名称，如 claude-3-5-sonnet-20241022"
+ class=""
+ />
+ </div>
+ <!-- 测试按钮 -->
+ <Button:disabled="!selectedModel"
+ @click="openTestDialog"
+ >
+ <span class="icon-[lucide--flask-conical] mr-2" />
+ 测试
+ </Button>
+ </div>
+ </div>
  </div>
  </div>
  </div>
@@ -283,5 +387,10 @@ onMounted( => {
  </div>
  </div>
  </template>
+ <!-- 测试对话框 -->
+ <ClaudeTestDialog
+ v-model:open="testDialogOpen"
+ source="system"
+ />
  </div>
 </template>

@@ -29,6 +29,8 @@ api_patterns = [
  path("feishu/", include("feishu.urls")),
  # System settings
  path("settings/", include("system.urls")),
+ # Chat (LLM conversation)
+ path("chat/", include("chat.urls")),
  # API Documentation
  path("schema", SpectacularAPIView.as_view, name="schema"),
  path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
