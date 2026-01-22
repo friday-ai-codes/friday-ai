@@ -6,5 +6,9 @@ router = DefaultRouter(trailing_slash=False)
 router.register("", RepositoryViewSet, basename="repository")
 urlpatterns = [
  path("", include(router.urls)),
- path("<uuid:repository_id>/credential/access-token", SetAccessTokenView.as_view, name="set-access-token"),
+ path(
+ "<uuid:repository_id>/credential/access-token",
+ SetAccessTokenView.as_view,
+ name="set-access-token",
+ ),
 ]
