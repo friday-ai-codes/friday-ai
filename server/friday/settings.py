@@ -5,6 +5,7 @@ AI-powered Development Automation System
 import os
 from datetime import timedelta
 from pathlib import Path
+import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve.parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -13,14 +14,21 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "repos").mkdir(exist_ok=True)
 (DATA_DIR / "sessions").mkdir(exist_ok=True)
 (DATA_DIR / "credentials").mkdir(exist_ok=True)
+# Initialize django-environ
+env = environ.Env(
+ # Set default values
+ DEBUG=(bool, False),
+ SECRET_KEY=(str, "django-insecure-change-me-in-production"),
+ ALLOWED_HOSTS=(list, ["*"]),
+)
 # =============================================================================
 # Core Settings
 # =============================================================================
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-change-me-in-production")
+SECRET_KEY = env("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get("FRIDAY_DEBUG", "True").lower in ("true", "1", "yes")
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
+DEBUG = env("DEBUG") or os.environ.get("FRIDAY_DEBUG", "True").lower in ("true", "1", "yes")
+ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 # =============================================================================
 # Application definition
 # =============================================================================
@@ -75,11 +83,18 @@ ASGI_APPLICATION = "friday.asgi.application"
 # =============================================================================
 # Database
 # =============================================================================
+# 支持多种数据库，通过 DATABASE_URL 环境变量配置
+# 格式示例：
+# SQLite: sqlite:///./data/friday.db
+# PostgreSQL: postgres://user:${POSTGRES_PASSWORD}@host:5432/dbname
+# MySQL: mysql://user:password@host:3306/dbname
+# MariaDB: mysql://user:password@host:3306/dbname
+#
+# 注意：使用 PostgreSQL 需安装 psycopg[binary]
+# 使用 MySQL/MariaDB 需安装 mysqlclient
+DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'friday.db'}"
 DATABASES = {
- "default": {
- "ENGINE": "django.db.backends.sqlite3",
- "NAME": DATA_DIR / "friday.db",
- }
+ "default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL) # type: ignore[arg-type]
 }
 # =============================================================================
 # Custom User Model
