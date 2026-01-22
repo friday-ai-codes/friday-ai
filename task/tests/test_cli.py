@@ -1,6 +1,6 @@
 """Tests for CLI module."""
 from click.testing import CliRunner
-from friday_task.cli import main
+from cli import main
 class TestCLI:
  """CLI 基础功能测试。"""
  def test_cli_help(self):

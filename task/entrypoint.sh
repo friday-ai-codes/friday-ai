@@ -9,7 +9,7 @@ set -e
 if [ $# -eq 0 ]; then
  # 容器模式：无参数，使用环境变量配置
  echo "[Friday Task] Starting in container mode (env vars)"
- exec python -m friday_task.runner
+ exec python -m core.runner
 elif [ "$1" = "bash" ] || [ "$1" = "sh" ] || [ "$1" = "/bin/bash" ] || [ "$1" = "/bin/sh" ]; then
  # 调试模式：进入交互式 shell
  echo "[Friday Task] Starting interactive shell for debugging"

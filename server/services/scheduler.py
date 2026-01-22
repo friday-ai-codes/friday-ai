@@ -145,7 +145,7 @@ class TaskScheduler:
  # 从配置中读取端口，默认 8000
  port = int(os.environ.get("FRIDAY_PORT", "8000"))
  callback_url = _get_host_callback_url(port)
- # Claude 配置：优先使用传入的配置，否则回退到环境变量
+ # Claude 配置：必须通过 Web UI 配置（项目级或系统级）
  claude_api_key = ""
  claude_base_url = ""
  if claude_config:
@@ -156,17 +156,12 @@ class TaskScheduler:
  f"base_url={claude_base_url or '(not set)'}"
  )
  else:
- logger.warning("No claude_config provided, falling back to environment variables")
+ logger.warning("No claude_config provided")
  if not claude_api_key:
- claude_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
- if claude_api_key:
- logger.info(
- f"Using ANTHROPIC_API_KEY from environment, key_length={len(claude_api_key)}"
+ logger.error(
+ "No Claude API Key configured! "
+ "Please configure it in Web UI (Project Settings or System Settings)"
  )
- else:
- logger.error("No ANTHROPIC_API_KEY found!")
- if not claude_base_url:
- claude_base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
  env = {
  # Task identification
  "FRIDAY_TASK_TASK_ID": task_id,

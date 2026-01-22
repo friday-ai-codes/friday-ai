@@ -1,19 +1,18 @@
 """Claude 配置服务，实现配置优先级获取逻辑。
 迁移自 FastAPI 版本，适配 Django 框架。
-配置优先级：项目级 > 系统级 > 环境变量
+配置优先级：项目级 > 系统级
 """
-import os
 from dataclasses import dataclass
 from typing import Literal, Optional
-from system.models import SettingKeys, SystemSetting
-from projects.models import Project
 from common.encryption import decrypt_value
+from projects.models import Project
+from system.models import SettingKeys, SystemSetting
 @dataclass
 class ClaudeConfig:
  """Claude 配置数据类。"""
  api_key: Optional[str]
  base_url: Optional[str]
- source: Literal["project", "system", "environment"]
+ source: Literal["project", "system"]
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""
  try:
@@ -30,7 +29,6 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  配置优先级：
  1. 项目级配置（如果提供了 project）
  2. 系统级配置（从 system_settings 表读取）
- 3. 环境变量
  Args:
  project: 项目对象（可选）
  Returns:
@@ -38,7 +36,7 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  """
  api_key: Optional[str] = None
  base_url: Optional[str] = None
- source: Literal["project", "system", "environment"] = "environment"
+ source: Literal["project", "system"] = "system"
  # 1. 检查项目级配置
  if project:
  if project.claude_api_key_encrypted:
@@ -59,14 +57,6 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  system_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if system_base_url:
  base_url = system_base_url
- # 3. 如果没有系统级 API Key，检查环境变量
- if not api_key:
- api_key = os.environ.get("ANTHROPIC_API_KEY")
- if api_key:
- source = "environment"
- # 环境变量 Base URL
- if not base_url:
- base_url = os.environ.get("ANTHROPIC_BASE_URL")
  return ClaudeConfig(
  api_key=api_key,
  base_url=base_url,

@@ -276,7 +276,6 @@ async function removeConfig {
  <li>项目级配置将覆盖系统级默认设置</li>
  <li>如果删除项目配置，将自动回退到系统默认值</li>
  <li>API Key 将加密存储，确保安全</li>
- <li>如果系统级也未配置，将使用环境变量 ANTHROPIC_API_KEY</li>
  </ul>
  <RouterLink
  to="/settings"

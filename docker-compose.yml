@@ -1,5 +1,4 @@
 services:
- # Backend API
  server:
  build:
  context: ./server
@@ -10,13 +9,8 @@ services:
  environment:
  - SECRET_KEY=${SECRET_KEY}
  - DEBUG=${DEBUG:-false}
- - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
  - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/friday.db}
  - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY}
- - FRIDAY_GITHUB_WEBHOOK_SECRET=${FRIDAY_GITHUB_WEBHOOK_SECRET}
- - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
- - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
- - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
  volumes:
  - ~/.friday-data:/app/data
  - /var/run/docker.sock:/var/run/docker.sock
@@ -24,12 +18,11 @@ services:
  - friday-network
  restart: unless-stopped
  healthcheck:
- test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+ test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
  interval: 30s
  timeout: 10s
  retries: 3
  start_period: 10s
- # Frontend - Nginx 提供静态文件服务和 API 反向代理
  web:
  build:
  context: ./web
@@ -57,8 +50,6 @@ services:
  timeout: 10s
  retries: 3
  start_period: 5s
- # Task container builder (helper service)
- # 任务执行容器，独立项目，支持 CLI 和容器模式
  task-builder:
  build:
  context: ./task
