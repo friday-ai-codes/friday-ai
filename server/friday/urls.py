@@ -13,30 +13,30 @@ Including another URLconf
  1. Import the include function: from django.urls import include, path
  2. Add a URL to urlpatterns: path('blog/', include('blog.urls'))
 """
-from django.urls import include, path, re_path
+from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 # API routes (under /api prefix)
 api_patterns = [
  # Authentication (accounts app)
- re_path(r"^auth/?", include("accounts.urls")),
+ path("auth/", include("accounts.urls")),
  # Projects
- re_path(r"^projects/?", include("projects.urls")),
+ path("projects/", include("projects.urls")),
  # Repositories
- re_path(r"^repositories/?", include("repositories.urls")),
+ path("repositories/", include("repositories.urls")),
  # Tasks
- re_path(r"^tasks/?", include("tasks.urls")),
+ path("tasks/", include("tasks.urls")),
  # Feishu integration (webhook + logs)
- re_path(r"^feishu/?", include("feishu.urls")),
+ path("feishu/", include("feishu.urls")),
  # System settings
- re_path(r"^settings/?", include("system.urls")),
+ path("settings/", include("system.urls")),
  # API Documentation
- re_path(r"^schema/?$", SpectacularAPIView.as_view, name="schema"),
- re_path(r"^docs/?$", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
- re_path(r"^redoc/?$", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
+ path("schema", SpectacularAPIView.as_view, name="schema"),
+ path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
+ path("redoc", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
 ]
 urlpatterns = [
- # All API endpoints under /api (with or without trailing slash)
- re_path(r"^api/?", include(api_patterns)),
+ # All API endpoints under /api
+ path("api/", include(api_patterns)),
  # Health check (outside /api prefix)
  path("health", include("accounts.urls_health")),
 ]
