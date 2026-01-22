@@ -1,9 +1,26 @@
 <script setup lang="ts">
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { markRaw } from 'vue'
+import {
+ AlertDialog,
+ AlertDialogAction,
+ AlertDialogCancel,
+ AlertDialogContent,
+ AlertDialogDescription,
+ AlertDialogFooter,
+ AlertDialogHeader,
+ AlertDialogTitle,
+} from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card } from '~/components/ui/card'
+import {
+ DropdownMenu,
+ DropdownMenuContent,
+ DropdownMenuItem,
+ DropdownMenuSeparator,
+ DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
 import {
  Table,
  TableBody,
@@ -18,6 +35,28 @@ defineProps<{
  loading?: boolean
  getProjectName?: (projectId: string | null) => string
 }>
+const emit = defineEmits<{
+ retry: [logId: string]
+ delete: [logId: string]
+ refresh:
+}>
+// 删除确认状态
+const deleteDialogOpen = ref(false)
+const logToDelete = ref<string | null>(null)
+function confirmDelete(logId: string) {
+ logToDelete.value = logId
+ deleteDialogOpen.value = true
+}
+function handleDelete {
+ if (logToDelete.value) {
+ emit('delete', logToDelete.value)
+ }
+ deleteDialogOpen.value = false
+ logToDelete.value = null
+}
+function handleRetry(logId: string) {
+ emit('retry', logId)
+}
 // 获取状态颜色
 function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
  switch (status) {
@@ -64,6 +103,9 @@ async function openDetail(logId: string) {
  component: markRaw(TriggerLogDetailModal),
  attrs: {
  logId,
+ onRetry: => handleRetry(logId),
+ onDelete: => confirmDelete(logId),
+ onRefresh: => emit('refresh'),
  },
  })
  await open
@@ -77,7 +119,8 @@ async function openDetail(logId: string) {
  title="暂无触发日志"
  description="触发日志将在接收到飞书 Webhook 请求后自动记录"
  />
- <Card v-else>
+ <template v-else>
+ <Card class="rounded-2xl bg-card/70 backdrop-blur-sm border-border/50">
  <Table>
  <TableHeader>
  <TableRow>
@@ -86,7 +129,7 @@ async function openDetail(logId: string) {
  <TableHead>项目</TableHead>
  <TableHead>状态</TableHead>
  <TableHead>时间</TableHead>
- <TableHead class="text-right">
+ <TableHead class="text-right w-[80px]">
  操作
  </TableHead>
  </TableRow>
@@ -94,7 +137,7 @@ async function openDetail(logId: string) {
  <TableBody>
  <TableRow
  v-for="log in logs":key="log.id"
- class="cursor-pointer hover:bg-muted/50"
+ class="cursor-pointer hover:bg-muted/50 transition-colors"
  @click="openDetail(log.id)"
  >
  <TableCell class="font-medium">
@@ -103,8 +146,13 @@ async function openDetail(logId: string) {
  </div>
  </TableCell>
  <TableCell>
- <div class="max-w-[200px] truncate":title="log.work_item_id || undefined">
- {{ log.work_item_id || '-' }}
+ <div class="max-w-[200px]">
+ <div class="truncate font-medium":title="log.work_item_name || undefined">
+ {{ log.work_item_name || '-' }}
+ </div>
+ <div v-if="log.work_item_id" class="text-xs text-muted-foreground truncate">
+ #{{ log.work_item_id }}
+ </div>
  </div>
  </TableCell>
  <TableCell>
@@ -121,12 +169,55 @@ async function openDetail(logId: string) {
  {{ formatDate(log.created_at) }}
  </TableCell>
  <TableCell class="text-right">
- <Button variant="ghost" size="sm" @click.stop="openDetail(log.id)">
- <span class="icon-[lucide--eye]" />
+ <DropdownMenu>
+ <DropdownMenuTrigger as-child>
+ <Button variant="ghost" size="icon" class=" w-8" @click.stop>
+ <span class="icon-[lucide--more-horizontal] text-muted-foreground" />
  </Button>
+ </DropdownMenuTrigger>
+ <DropdownMenuContent align="end">
+ <DropdownMenuItem @click.stop="openDetail(log.id)">
+ <span class="icon-[lucide--eye] mr-2" />
+ 查看详情
+ </DropdownMenuItem>
+ <DropdownMenuItem @click.stop="handleRetry(log.id)">
+ <span class="icon-[lucide--refresh-cw] mr-2" />
+ 重试
+ </DropdownMenuItem>
+ <DropdownMenuSeparator />
+ <DropdownMenuItem
+ class="text-destructive focus:text-destructive focus:bg-destructive/10"
+ @click.stop="confirmDelete(log.id)"
+ >
+ <span class="icon-[lucide--trash-2] mr-2" />
+ 删除
+ </DropdownMenuItem>
+ </DropdownMenuContent>
+ </DropdownMenu>
  </TableCell>
  </TableRow>
  </TableBody>
  </Table>
  </Card>
+ <!-- 删除确认弹窗 -->
+ <AlertDialog v-model:open="deleteDialogOpen">
+ <AlertDialogContent>
+ <AlertDialogHeader>
+ <AlertDialogTitle>确认删除</AlertDialogTitle>
+ <AlertDialogDescription>
+ 确定要删除这条触发日志吗？此操作无法撤销。
+ </AlertDialogDescription>
+ </AlertDialogHeader>
+ <AlertDialogFooter>
+ <AlertDialogCancel>取消</AlertDialogCancel>
+ <AlertDialogAction
+ class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+ @click="handleDelete"
+ >
+ 删除
+ </AlertDialogAction>
+ </AlertDialogFooter>
+ </AlertDialogContent>
+ </AlertDialog>
+ </template>
 </template>

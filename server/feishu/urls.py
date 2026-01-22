@@ -5,9 +5,11 @@ from .views import (
  FeishuConfigView,
  FeishuWebhookView,
  RefreshWebhookTokenView,
+ TriggerLogDeleteView,
  TriggerLogDetailView,
  TriggerLogListView,
  TriggerLogRawView,
+ TriggerLogRetryView,
  UpdateWebhookTokenView,
 )
 urlpatterns = [
@@ -34,4 +36,6 @@ urlpatterns = [
  path("logs", TriggerLogListView.as_view, name="feishu-logs"),
  path("logs/<uuid:log_id>", TriggerLogDetailView.as_view, name="feishu-log-detail"),
  path("logs/<uuid:log_id>/raw", TriggerLogRawView.as_view, name="feishu-log-raw"),
+ path("logs/<uuid:log_id>/delete", TriggerLogDeleteView.as_view, name="feishu-log-delete"),
+ path("logs/<uuid:log_id>/retry", TriggerLogRetryView.as_view, name="feishu-log-retry"),
 ]

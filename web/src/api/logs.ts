@@ -3,7 +3,7 @@
  *
  * 注意：API 路径已从 /api/logs/* 迁移到 /api/feishu/logs/*
  */
-import { get } from './client'
+import { del, get, post } from './client'
 // ============ 常量定义 ============
 /**
  * 工作项关键字段常量
@@ -41,6 +41,8 @@ export interface TriggerLog {
  event_type: string
  project_id: string | null
  work_item_id: string | null
+ work_item_name: string
+ work_item_type: string
  status: TriggerLogStatus
  error_message: string | null
  // 提取的关键字段
@@ -101,6 +103,22 @@ export async function getTriggerLogRaw(logId: string): Promise<{
 }> {
  return get(`/feishu/logs/${logId}/raw`)
 }
+/**
+ * 删除触发日志
+ */
+export async function deleteTriggerLog(logId: string): Promise<void> {
+ return del(`/feishu/logs/${logId}/delete`)
+}
+/**
+ * 重试触发日志
+ */
+export async function retryTriggerLog(logId: string): Promise<{
+ status: string
+ log_id: string
+ result: Record<string, unknown>
+}> {
+ return post(`/feishu/logs/${logId}/retry`)
+}
 // ============ 兼容性别名（旧 API，已废弃） ============
 /** @deprecated 使用 TriggerLogStatus 替代 */
 export type WebhookLogStatus = TriggerLogStatus
@@ -118,6 +136,8 @@ export default {
  listTriggerLogs,
  getTriggerLog,
  getTriggerLogRaw,
+ deleteTriggerLog,
+ retryTriggerLog,
  // 兼容性别名
  listWebhookLogs,
  getWebhookLog,

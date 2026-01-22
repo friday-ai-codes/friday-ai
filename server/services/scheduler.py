@@ -6,9 +6,11 @@ task 是一个独立的 Python 项目，支持：
 2. 容器模式 - 由本 scheduler 启动执行
 参见: task/README.md 了解详情
 """
+import json
 import logging
 import os
 import platform
+import shutil
 from typing import Any, Optional
 import docker
 from docker.errors import APIError, ImageNotFound
@@ -52,6 +54,10 @@ class TaskScheduler:
  )
  else:
  logger.info("Docker network not found, using host networking for callbacks")
+ # 确保数据传输目录存在 (server/data/transfers)
+ self.data_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+ self.transfers_dir = os.path.join(self.data_dir, "transfers")
+ os.makedirs(self.transfers_dir, exist_ok=True)
  async def start_task(
  self,
  task,
@@ -75,8 +81,17 @@ class TaskScheduler:
  task_id = str(task.id)
  project_id = str(task.project_id)
  logger.info(f"Starting task container: task_id={task_id}, mode={mode}")
+ # 准备任务传输目录
+ task_transfer_dir = os.path.join(self.transfers_dir, task_id)
+ os.makedirs(task_transfer_dir, exist_ok=True)
+ # 清理旧的结果文件
+ result_file = os.path.join(task_transfer_dir, "result.json")
+ if os.path.exists(result_file):
+ os.remove(result_file)
  # Build environment variables for the container
  env = self._build_env(task, repo_url, branch, git_credentials, mode, claude_config)
+ # 注入传输目录环境变量
+ env["FRIDAY_TASK_OUTPUT_DIR"] = "/app/transfer"
  try:
  # Ensure image exists
  await self._ensure_image
@@ -100,6 +115,11 @@ class TaskScheduler:
  "bind": "/app/sessions",
  "mode": "rw",
  },
+ # [新增] 挂载宿主机传输目录到容器
+ task_transfer_dir: {
+ "bind": "/app/transfer",
+ "mode": "rw",
+ }
  },
  # 完成后不自动删除（便于查看日志）
  "auto_remove": False,
@@ -306,6 +326,17 @@ class TaskScheduler:
  if removed:
  logger.info(f"Cleaned up finished containers: count={removed}")
  return removed
+ def get_task_result_file(self, task_id: str) -> Optional[dict[str, Any]]:
+ """Read the result file from the transfer directory."""
+ result_file = os.path.join(self.transfers_dir, task_id, "result.json")
+ if not os.path.exists(result_file):
+ return None
+ try:
+ with open(result_file, "r") as f:
+ return json.load(f)
+ except Exception as e:
+ logger.error(f"Failed to read result file for task {task_id}: {e}")
+ return None
 # Singleton instance
 _scheduler: Optional[TaskScheduler] = None
 def get_scheduler -> TaskScheduler:

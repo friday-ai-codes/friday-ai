@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -224,10 +225,24 @@ class TaskViewSet(ModelViewSet):
  return Response({"task_id": str(task.id), "logs": logs})
  @action(detail=True, methods=["get"], url_path="container-status")
  def container_status(self, request, pk=None):
- """Get task container status."""
+ """Get task container status.
+ [修改] 增加结果文件检查逻辑。
+ 如果容器已结束但任务状态还是 running，尝试从文件系统读取结果。
+ """
  task = self.get_object
  scheduler = get_scheduler
  container_status = run_async(scheduler.get_task_status(str(task.id)))
+ # 如果容器找不到，或者已经停止 (exited)，但任务状态还是进行中
+ # 说明回调可能失败了，尝试从文件恢复结果
+ is_running_in_db = task.status in [TaskStatus.PLANNING, TaskStatus.EXECUTING]
+ is_container_done = container_status is None or container_status.get("status") == "exited"
+ if is_running_in_db and is_container_done:
+ # 尝试读取结果文件
+ result = scheduler.get_task_result_file(str(task.id))
+ if result:
+ logger.info(f"Recovered task result from file for task {task.id}")
+ # 手动应用状态更新
+ update_task_from_result(task, result)
  if container_status is None:
  return Response({"task_id": str(task.id), "container": None})
  return Response({"task_id": str(task.id), "container": container_status})
@@ -255,9 +270,29 @@ class TaskStatusCallbackView(APIView):
  "task_id": task_id,
  }
  )
- update_status = serializer.validated_data.get("status")
- details = serializer.validated_data.get("details", {}) or {}
+ # 使用通用辅助函数更新任务
+ # 这里需要将 serializer 数据重构为 result 字典格式
+ result = {
+ "status": serializer.validated_data.get("status"),
+ "message": serializer.validated_data.get("message"),
+ "details": serializer.validated_data.get("details", {}) or {}
+ }
+ update_task_from_result(task, result)
+ return Response(
+ {
+ "status": "ok",
+ "task_status": task.status,
+ }
+ )
+# 辅助函数：统一处理任务状态更新逻辑
+def update_task_from_result(task: Task, result: dict):
+ """根据结果字典更新任务状态。"""
+ update_status = result.get("status")
+ details = result.get("details", {}) or {}
  now = timezone.now
+ # 避免重复更新（如果是终态）
+ if task.status in [TaskStatus.PLAN_REVIEW, TaskStatus.CODE_REVIEW, TaskStatus.FAILED]:
+ return
  # Handle different status updates
  if update_status == "plan_ready":
  task.status = TaskStatus.PLAN_REVIEW
@@ -270,12 +305,6 @@ class TaskStatusCallbackView(APIView):
  task.commit_sha = details.get("commit_sha")
  elif update_status == "error":
  task.status = TaskStatus.FAILED
- task.error_message = serializer.validated_data.get("message")
+ task.error_message = result.get("message")
  task.retry_count += 1
  task.save
- return Response(
- {
- "status": "ok",
- "task_status": task.status,
- }
- )

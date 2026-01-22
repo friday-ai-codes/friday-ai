@@ -190,65 +190,47 @@ const isRunning = computed( =>
 const logs = computed( => tasksStore.currentLogs)
 </script>
 <template>
- <div class="space-y-6">
- <!-- 返回按钮 -->
- <RouterLink to="/tasks" class="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
- <span class="icon-[lucide--arrow-left] mr-1" />
- 返回任务列表
+ <div class="max-w-[1600px] mx-auto pb-10 space-y-6">
+ <!-- Breadcrumb & Back -->
+ <nav class="flex items-center text-sm text-muted-foreground">
+ <RouterLink to="/tasks" class="hover:text-foreground transition-colors flex items-center">
+ <span class="icon-[lucide--arrow-left] mr-1 w-4 " />
+ 返回列表
  </RouterLink>
- <!-- 加载状态 -->
+ <span class="mx-2 text-muted-foreground/30">/</span>
+ <span class="text-foreground truncate max-w-[200px]">{{ task?.title || '任务详情' }}</span>
+ </nav>
+ <!-- Loading State -->
  <LoadingState v-if="loading" variant="skeleton":count="4" />
- <!-- 任务详情 -->
  <template v-else-if="task">
- <!-- 缺少仓库警告 -->
- <div v-if="!task.repository_id" class=" mb-6 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800">
- <div class="flex items-start gap-3">
- <span class="icon-[lucide--alert-triangle] mt-0.5 text-lg" />
- <div class="space-y-2 flex-1">
- <h3 class="font-semibold">
- 未指定执行仓库
- </h3>
- <p class="text-sm">
- 此任务尚未关联 Git 仓库，无法执行。请从项目关联的仓库中选择一个：
- </p>
- <div class="flex gap-3 max-w-md items-center">
- <Select v-model="selectedRepoId">
- <SelectTrigger class="w-[240px] bg-white">
- <SelectValue placeholder="选择仓库" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="repo in project?.repositories || ":key="repo.id":value="repo.id"
- >
- {{ repo.name }}
- </SelectItem>
- </SelectContent>
- </Select>
- <Button:disabled="!selectedRepoId || updatingRepo" @click="handleUpdateRepo">
- <span v-if="updatingRepo" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
- 确认并关联
- </Button>
- </div>
- </div>
- </div>
- </div>
- <!-- 头部 -->
- <div class="flex items-start justify-between">
- <div class="space-y-2">
- <h1 class="text-2xl font-bold">
- {{ task.title }}
- </h1>
+ <!-- Top Header Area -->
+ <div class="flex flex-col lg:flex-row lg:items-start justify-between gap-6 pb-6 border-b border-border/50">
+ <div class="space-y-4 flex-1">
  <div class="flex items-center gap-3">
- <TaskStatusBadge:status="task.status":show-icon="true" />
- <span class="text-muted-foreground">
- {{ project?.name || task.project_id.slice(0, 8) }}
- </span>
+ <div class=" rounded-lg bg-primary/10 text-primary">
+ <span class="icon-[lucide--hash] w-6 " />
+ </div>
+ <h1 class="text-3xl font-bold tracking-tight text-foreground">{{ task.title }}</h1>
+ </div>
+ <div class="flex flex-wrap items-center gap-4 text-sm">
+ <TaskStatusBadge:status="task.status":show-icon="true" class="text-sm px-3 py-1" />
+ <div class="w-px bg-border" />
+ <div class="flex items-center text-muted-foreground gap-1.5">
+ <span class="icon-[lucide--folder-git-2] w-4 " />
+ <span>{{ project?.name }}</span>
+ </div>
+ <div class="w-px bg-border" />
+ <div class="flex items-center text-muted-foreground gap-1.5">
+ <span class="icon-[lucide--calendar] w-4 " />
+ <span>创建于 {{ formatDate(task.created_at) }}</span>
  </div>
  </div>
- <div class="flex items-center gap-2">
- <!-- 执行按钮 -->
+ </div>
+ <!-- Primary Actions -->
+ <div class="flex flex-wrap items-center gap-3">
  <Button
- v-if="task.status === 'pending'":disabled="executing || !task.repository_id":title="!task.repository_id ? '请先关联仓库': ''"
+ v-if="task.status === 'pending'"
+ size="lg":disabled="executing || !task.repository_id":class="!task.repository_id ? 'opacity-50': 'shadow-lg shadow-primary/20'"
  @click="handleExecute('plan')"
  >
  <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
@@ -256,389 +238,251 @@ const logs = computed( => tasksStore.currentLogs)
  启动规划
  </Button>
  <Button
- v-if="task.status === 'plan_review'":disabled="executing"
+ v-if="task.status === 'plan_review'"
+ size="lg":disabled="executing"
+ class="shadow-lg shadow-primary/20"
  @click="handleExecute('execute')"
  >
  <span v-if="executing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  <span v-else class="icon-[lucide--play] mr-2" />
  执行任务
  </Button>
- <!-- 停止按钮 -->
- <Button
- v-if="isRunning"
- variant="destructive"
- @click="stopDialogOpen = true"
- >
+ <Button v-if="isRunning" variant="destructive" size="lg" @click="stopDialogOpen = true">
  <span class="icon-[lucide--square] mr-2" />
  停止
  </Button>
- <!-- 删除按钮 -->
- <Button
- v-if="!isRunning"
- variant="outline"
- @click="deleteDialogOpen = true"
- >
- <span class="icon-[lucide--trash-2] mr-2" />
- 删除
+ <Button v-if="!isRunning" variant="outline" size="icon" class="w-10 " @click="deleteDialogOpen = true" title="删除任务">
+ <span class="icon-[lucide--trash-2] w-4 text-destructive" />
  </Button>
  </div>
  </div>
- <!-- 状态步骤条 -->
- <Card>
- <CardContent class="pt-6">
- <div class="flex items-center justify-between">
- <template v-for="(step, index) in statusSteps":key="step">
- <div class="flex flex-col items-center gap-2">
- <div
- class="w-10 rounded-full flex items-center justify-center text-lg":class="[
- index <= currentStepIndex
- ? 'bg-primary text-primary-foreground': 'bg-muted text-muted-foreground',
- task.status === 'failed' && 'bg-red-500 text-white',
- ]"
- >
- <span v-if="index < currentStepIndex" class="icon-[lucide--check]" />
- <span v-else>{{ index + 1 }}</span>
+ <!-- Warning: Missing Repo -->
+ <div v-if="!task.repository_id" class=" rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex flex-col sm:flex-row items-start gap-4">
+ <div class=" rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
+ <span class="icon-[lucide--alert-triangle] w-5 " />
  </div>
- <span class="text-xs text-muted-foreground">
- {{ STATUS_LABELS[step] }}
- </span>
- </div>
- <div
- v-if="index < statusSteps.length - 1"
- class="flex-1 mx-2":class="[
- index < currentStepIndex ? 'bg-primary': 'bg-muted',
- ]"
- />
- </template>
- </div>
- <!-- 失败状态提示 -->
- <div v-if="task.status === 'failed'" class="mt-4 rounded-lg bg-red-50 text-red-800">
- <p class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--x-circle]" />
- 任务执行失败
- </p>
- <p v-if="task.error_message" class="text-sm mt-1">
- {{ task.error_message }}
- </p>
- <Button
- class="mt-2"
- size="sm"
- variant="outline":disabled="transitioning"
- @click="handleTransition('pending')"
- >
- <span class="icon-[lucide--rotate-ccw] mr-1" />
- 重试任务
- </Button>
- </div>
- </CardContent>
- </Card>
- <Tabs default-value="info" class="w-full">
- <TabsList>
- <TabsTrigger value="info">
- <span class="icon-[lucide--info] mr-1" />
- 基本信息
- </TabsTrigger>
- <TabsTrigger value="plan">
- <span class="icon-[lucide--file-text] mr-1" />
- 执行方案
- </TabsTrigger>
- <TabsTrigger value="logs">
- <span class="icon-[lucide--terminal] mr-1" />
- 运行日志
- <span v-if="isPolling" class="ml-1 w-2 rounded-full bg-green-500 animate-pulse" />
- </TabsTrigger>
- <TabsTrigger value="git">
- <span class="icon-[lucide--git-branch] mr-1" />
- Git 信息
- </TabsTrigger>
- </TabsList>
- <!-- 基本信息 -->
- <TabsContent value="info" class="mt-4">
- <div class="grid gap-4 md:grid-cols-2">
- <Card>
- <CardHeader>
- <CardTitle>任务信息</CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
+ <div class="flex-1 space-y-3">
  <div>
- <label class="text-sm text-muted-foreground">任务 ID</label>
- <p class="font-mono text-sm">
- {{ task.id }}
- </p>
+ <h3 class="font-medium text-amber-900 dark:text-amber-100">未关联 Git 仓库</h3>
+ <p class="text-sm text-amber-700 dark:text-amber-300/70">请选择一个代码仓库以开始执行任务。</p>
  </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">工作项 ID</label>
- <p class="font-mono text-sm">
- {{ task.work_item_id }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">功能 ID</label>
- <p class="font-mono text-sm">
- {{ task.feature_id }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">关联仓库</label>
- <div class="flex items-center gap-2 mt-1">
- <p class="font-mono text-sm">
- {{ project?.repositories?.find(r => r.id === task?.repository_id)?.name || '未关联' }}
- </p>
- <Select v-if="task.status === 'pending'" v-model="selectedRepoId" @update:model-value="handleUpdateRepo">
- <SelectTrigger class=" w-[140px] text-xs">
- <SelectValue placeholder="更改仓库" />
+ <div class="flex items-center gap-3">
+ <Select v-model="selectedRepoId">
+ <SelectTrigger class="w-[280px] bg-background border-amber-200 dark:border-amber-800">
+ <SelectValue placeholder="选择仓库..." />
  </SelectTrigger>
  <SelectContent>
- <SelectItem
- v-for="repo in project?.repositories || ":key="repo.id":value="repo.id"
- >
+ <SelectItem v-for="repo in project?.repositories || ":key="repo.id":value="repo.id">
  {{ repo.name }}
  </SelectItem>
  </SelectContent>
  </Select>
+ <Button:disabled="!selectedRepoId || updatingRepo" @click="handleUpdateRepo" size="sm" variant="secondary">
+ <span v-if="updatingRepo" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ 关联仓库
+ </Button>
  </div>
  </div>
- <Separator />
+ </div>
+ <!-- Main Layout Grid -->
+ <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+ <!-- Left Column: Content (2/3 width) -->
+ <div class="xl:col-span-2 space-y-8">
+ <!-- Progress Timeline -->
+ <div class="relative pt-2 pb-6">
+ <!-- Line -->
+ <div class="absolute top-5 left-0 right-0 .5 bg-muted -z-10"></div>
+ <!-- Steps -->
+ <div class="flex justify-between">
+ <div
+ v-for="(step, index) in statusSteps":key="step"
+ class="flex flex-col items-center gap-2 group relative bg-background px-2"
+ >
+ <div
+ class="w-10 rounded-full border-2 flex items-center justify-center transition-all duration-300":class="[
+ index < currentStepIndex ? 'bg-primary border-primary text-primary-foreground':
+ index === currentStepIndex ? 'bg-background border-primary text-primary ring-4 ring-primary/10':
+ 'bg-background border-muted text-muted-foreground'
+ ]"
+ >
+ <span v-if="index < currentStepIndex" class="icon-[lucide--check] w-5 " />
+ <span v-else-if="index === currentStepIndex && isRunning" class="icon-[lucide--loader-circle] w-5 animate-spin" />
+ <span v-else class="text-sm font-medium">{{ index + 1 }}</span>
+ </div>
+ <span
+ class="text-xs font-medium transition-colors duration-300":class="index <= currentStepIndex ? 'text-foreground': 'text-muted-foreground'"
+ >
+ {{ STATUS_LABELS[step] }}
+ </span>
+ </div>
+ </div>
+ <!-- Error Alert -->
+ <div v-if="task.status === 'failed'" class="mt-6 mx-auto max-w-lg rounded-xl bg-destructive/5 border border-destructive/20 text-center">
+ <div class="inline-flex rounded-full bg-destructive/10 text-destructive mb-2">
+ <span class="icon-[lucide--x-circle] w-6 " />
+ </div>
+ <h3 class="font-semibold text-destructive">任务执行失败</h3>
+ <p class="text-sm text-destructive/80 mt-1 mb-3">{{ task.error_message || '未知错误' }}</p>
+ <Button variant="outline" size="sm" class="border-destructive/30 hover:bg-destructive/10 text-destructive" @click="handleTransition('pending')">
+ <span class="icon-[lucide--rotate-ccw] mr-2" /> 重试任务
+ </Button>
+ </div>
+ </div>
+ <!-- Tabs: Plan & Logs -->
+ <Tabs default-value="plan" class="w-full">
+ <div class="flex items-center justify-between mb-4">
+ <TabsList class="bg-muted/50 ">
+ <TabsTrigger value="plan" class="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+ <span class="icon-[lucide--file-code] mr-2 w-4 " />
+ 执行方案
+ </TabsTrigger>
+ <TabsTrigger value="logs" class="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+ <span class="icon-[lucide--terminal-square] mr-2 w-4 " />
+ 运行日志
+ <span v-if="isPolling" class="ml-2 w-1.5 .5 rounded-full bg-green-500 animate-pulse" />
+ </TabsTrigger>
+ </TabsList>
+ <!-- Log Actions -->
+ <div class="flex items-center gap-2">
+ <Button v-if="isPolling" size="sm" variant="ghost" class=" text-xs text-muted-foreground" @click="stopPolling">
+ <span class="icon-[lucide--pause] mr-1 w-3 " /> 暂停刷新
+ </Button>
+ <Button v-if="!isPolling && isRunning" size="sm" variant="ghost" class=" text-xs text-primary" @click="startPolling">
+ <span class="icon-[lucide--play] mr-1 w-3 " /> 恢复刷新
+ </Button>
+ </div>
+ </div>
+ <TabsContent value="plan" class="mt-0 outline-none">
+ <div class="rounded-xl border bg-card shadow-sm min-h-[400px]">
+ <div v-if="task.plan_output" class="">
+ <div class="prose prose-sm dark:prose-invert max-w-none">
+ <pre class="bg-muted/30 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed border border-border/50">{{ task.plan_output }}</pre>
+ </div>
+ </div>
+ <div v-else class="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
+ <span class="icon-[lucide--bot] w-12 mb-4 opacity-20" />
+ <p>等待 AI 生成执行方案...</p>
+ </div>
+ </div>
+ <!-- Human Feedback -->
+ <div v-if="task.human_feedback" class="mt-6 rounded-xl border border-blue-200 bg-blue-50/50 dark:bg-blue-950/10 dark:border-blue-800 ">
+ <h4 class="font-medium text-blue-900 dark:text-blue-100 flex items-center gap-2 mb-2">
+ <span class="icon-[lucide--message-square] w-4 " /> 人工反馈
+ </h4>
+ <p class="text-sm text-blue-800 dark:text-blue-200/80">{{ task.human_feedback }}</p>
+ </div>
+ </TabsContent>
+ <TabsContent value="logs" class="mt-0 outline-none">
+ <div class="rounded-xl border bg-[#1e1e1e] shadow-inner min-h-[500px] flex flex-col">
+ <div class="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-white/5">
+ <div class="flex items-center gap-2">
+ <div class="flex gap-1.5">
+ <div class="w-2.5 .5 rounded-full bg-red-500/50" />
+ <div class="w-2.5 .5 rounded-full bg-yellow-500/50" />
+ <div class="w-2.5 .5 rounded-full bg-green-500/50" />
+ </div>
+ <span class="text-xs text-white/40 font-mono ml-2">Console Output</span>
+ </div>
+ <div v-if="tasksStore.containerStatus?.container" class="flex gap-2">
+ <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono">
+ ID: {{ tasksStore.containerStatus.container.id?.slice(0, 8) }}
+ </span>
+ <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono">
+ {{ tasksStore.containerStatus.container.status }}
+ </span>
+ </div>
+ </div>
+ <div class="flex-1 overflow-auto font-mono text-xs text-gray-300 leading-relaxed scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+ <pre v-if="logs" class="whitespace-pre-wrap">{{ logs }}</pre>
+ <div v-else class="flex flex-col items-center justify-center h-full text-white/20">
+ <span class="icon-[lucide--terminal] w-12 mb-4" />
+ <p>等待日志输出...</p>
+ </div>
+ </div>
+ </div>
+ </TabsContent>
+ </Tabs>
+ </div>
+ <!-- Right Column: Sidebar (1/3 width) -->
+ <div class="space-y-6">
+ <!-- Details Card -->
+ <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+ <div class="px-4 py-3 border-b bg-muted/30">
+ <h3 class="font-medium text-sm">基本信息</h3>
+ </div>
+ <div class=" space-y-4">
+ <div class="grid grid-cols-1 gap-4 text-sm">
  <div>
- <label class="text-sm text-muted-foreground">描述</label>
- <p class="text-sm mt-1">
- {{ task.description || '无描述' }}
- </p>
- </div>
- </CardContent>
- </Card>
- <Card>
- <CardHeader>
- <CardTitle>时间线</CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
- <div>
- <label class="text-sm text-muted-foreground">创建时间</label>
- <p class="text-sm">
- {{ formatDate(task.created_at) }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">规划开始</label>
- <p class="text-sm">
- {{ formatDate(task.plan_started_at) }}
- </p>
+ <span class="text-muted-foreground block mb-1">任务 ID</span>
+ <span class="font-mono text-xs bg-muted/50 px-2 py-1 rounded">{{ task.id }}</span>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">规划完成</label>
- <p class="text-sm">
- {{ formatDate(task.plan_completed_at) }}
- </p>
+ <span class="text-muted-foreground block mb-1">描述</span>
+ <p class="text-foreground leading-relaxed">{{ task.description || '暂无描述' }}</p>
  </div>
- <Separator />
+ <div class="grid grid-cols-2 gap-4">
  <div>
- <label class="text-sm text-muted-foreground">执行开始</label>
- <p class="text-sm">
- {{ formatDate(task.execute_started_at) }}
- </p>
+ <span class="text-muted-foreground block mb-1">工作项 ID</span>
+ <span class="font-mono text-xs">{{ task.work_item_id }}</span>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">执行完成</label>
- <p class="text-sm">
- {{ formatDate(task.execute_completed_at) }}
- </p>
+ <span class="text-muted-foreground block mb-1">功能 ID</span>
+ <span class="font-mono text-xs">{{ task.feature_id }}</span>
  </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">重试次数</label>
- <p class="text-sm">
- {{ task.retry_count }}
- </p>
  </div>
- </CardContent>
- </Card>
  </div>
- <!-- 状态转换按钮 -->
- <Card v-if="availableTransitions.length > 0" class="mt-4">
- <CardHeader>
- <CardTitle>状态操作</CardTitle>
- <CardDescription>手动转换任务状态</CardDescription>
- </CardHeader>
- <CardContent>
- <div class="flex gap-2">
+ </div>
+ </div>
+ <!-- Git Info Card -->
+ <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+ <div class="px-4 py-3 border-b bg-muted/30 flex justify-between items-center">
+ <h3 class="font-medium text-sm">Git 信息</h3>
+ <span class="icon-[lucide--git-branch] w-4 text-muted-foreground" />
+ </div>
+ <div class=" space-y-4 text-sm">
+ <div class="flex items-center justify-between">
+ <span class="text-muted-foreground">仓库</span>
+ <span class="font-medium">{{ project?.repositories?.find(r => r.id === task?.repository_id)?.name || '-' }}</span>
+ </div>
+ <div class="flex items-center justify-between">
+ <span class="text-muted-foreground">基础分支</span>
+ <span class="font-mono text-xs bg-muted/50 px-1.5 py-0.5 rounded text-muted-foreground">{{ task?.git_branch || 'main' }}</span>
+ </div>
+ <div class="flex items-center justify-between">
+ <span class="text-muted-foreground">功能分支</span>
+ <span class="font-mono text-xs text-primary">{{ task.branch_name || '-' }}</span>
+ </div>
+ <div v-if="task.pr_url" class="pt-2 border-t">
+ <a:href="task.pr_url" target="_blank" class="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 transition-colors">
+ <span class="icon-[lucide--git-pull-request] w-4 " />
+ 查看 Pull Request
+ </a>
+ </div>
+ </div>
+ </div>
+ <!-- Manual Actions Card -->
+ <div v-if="availableTransitions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+ <div class="px-4 py-3 border-b bg-muted/30">
+ <h3 class="font-medium text-sm">手动状态流转</h3>
+ </div>
+ <div class="">
+ <div class="flex flex-wrap gap-2">
  <Button
  v-for="status in availableTransitions":key="status"
- variant="outline":disabled="transitioning"
+ variant="secondary"
+ size="sm"
+ class="flex-1":disabled="transitioning"
  @click="handleTransition(status)"
  >
  {{ STATUS_LABELS[status] }}
  </Button>
  </div>
- </CardContent>
- </Card>
- </TabsContent>
- <!-- 执行方案 -->
- <TabsContent value="plan" class="mt-4">
- <Card>
- <CardHeader>
- <CardTitle>AI 生成的执行方案</CardTitle>
- <CardDescription>
- Claude Code 分析代码库后生成的实现方案
- </CardDescription>
- </CardHeader>
- <CardContent>
- <div v-if="task.plan_output" class="prose prose-sm max-w-none">
- <pre class="bg-muted rounded-lg overflow-auto text-sm whitespace-pre-wrap">{{ task.plan_output }}</pre>
  </div>
- <div v-else class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--file-text] text-4xl block mb-2" />
- <p class="mt-2">
- 尚未生成执行方案
- </p>
- <p class="text-sm">
- 请先启动规划任务
- </p>
  </div>
- </CardContent>
- </Card>
- <!-- 人工反馈 -->
- <Card v-if="task.human_feedback" class="mt-4">
- <CardHeader>
- <CardTitle>人工反馈</CardTitle>
- </CardHeader>
- <CardContent>
- <p class="text-sm">
- {{ task.human_feedback }}
- </p>
- </CardContent>
- </Card>
- </TabsContent>
- <!-- 运行日志 -->
- <TabsContent value="logs" class="mt-4">
- <Card>
- <CardHeader class="flex flex-row items-center justify-between">
- <div>
- <CardTitle>容器日志</CardTitle>
- <CardDescription>
- 任务执行过程中的实时日志
- </CardDescription>
  </div>
- <div class="flex items-center gap-2">
- <Badge v-if="isPolling" variant="outline" class="animate-pulse">
- <span class="icon-[lucide--refresh-cw] mr-1 animate-spin" />
- 实时刷新中
- </Badge>
- <Button
- v-if="!isPolling && isRunning"
- variant="outline"
- size="sm"
- @click="startPolling"
- >
- <span class="icon-[lucide--play] mr-1" />
- 开始刷新
- </Button>
- <Button
- v-if="isPolling"
- variant="outline"
- size="sm"
- @click="stopPolling"
- >
- <span class="icon-[lucide--pause] mr-1" />
- 停止刷新
- </Button>
  </div>
- </CardHeader>
- <CardContent>
- <div v-if="logs" class="bg-black text-green-400 font-mono text-xs rounded-lg overflow-auto max-">
- <pre class="whitespace-pre-wrap">{{ logs }}</pre>
- </div>
- <div v-else class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--terminal] text-4xl block mb-2" />
- <p class="mt-2">
- 暂无日志
- </p>
- <p class="text-sm">
- 任务执行后将在此显示日志
- </p>
- </div>
- </CardContent>
- </Card>
- <!-- 容器状态 -->
- <Card v-if="tasksStore.containerStatus?.container" class="mt-4">
- <CardHeader>
- <CardTitle>容器状态</CardTitle>
- </CardHeader>
- <CardContent>
- <div class="flex gap-4">
- <Badge variant="outline">
- ID: {{ tasksStore.containerStatus.container.id?.slice(0, 12) || '-' }}
- </Badge>
- <Badge>
- {{ tasksStore.containerStatus.container.status || '-' }}
- </Badge>
- </div>
- </CardContent>
- </Card>
- </TabsContent>
- <!-- Git 信息 -->
- <TabsContent value="git" class="mt-4">
- <Card>
- <CardHeader>
- <CardTitle>Git 仓库信息</CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
- <div>
- <label class="text-sm text-muted-foreground">仓库名称</label>
- <p class="font-medium text-sm">
- {{ project?.repositories?.find(r => r.id === task?.repository_id)?.name || '-' }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">仓库 URL</label>
- <p class="font-mono text-sm">
- {{ task?.git_repo_url || project?.repositories?.find(r => r.id === task?.repository_id)?.git_url || '-' }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">基础分支</label>
- <p class="font-mono text-sm">
- {{ task?.git_branch || project?.repositories?.find(r => r.id === task?.repository_id)?.default_branch || 'main' }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">功能分支</label>
- <p class="font-mono text-sm">
- {{ task.branch_name || '-' }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">最新提交</label>
- <p class="font-mono text-sm">
- {{ task.commit_sha || '-' }}
- </p>
- </div>
- <Separator />
- <div>
- <label class="text-sm text-muted-foreground">Pull Request</label>
- <p v-if="task.pr_url">
- <a:href="task.pr_url" target="_blank" class="text-primary hover:underline flex items-center gap-1">
- <span class="icon-[lucide--external-link]" />
- {{ task.pr_url }}
- </a>
- </p>
- <p v-else class="text-sm">
- -
- </p>
- </div>
- </CardContent>
- </Card>
- </TabsContent>
- </Tabs>
  </template>
- <!-- 任务不存在 -->
+ <!-- Empty State -->
  <EmptyState
  v-else
  icon="lucide--help-circle"
@@ -647,7 +491,7 @@ const logs = computed( => tasksStore.currentLogs)
  action-label="返回列表"
  @action="router.push('/tasks')"
  />
- <!-- 停止确认对话框 -->
+ <!-- Dialogs -->
  <ConfirmDialog
  v-model:open="stopDialogOpen"
  title="停止任务"
@@ -656,7 +500,6 @@ const logs = computed( => tasksStore.currentLogs)
  variant="destructive":loading="stopping"
  @confirm="handleStop"
  />
- <!-- 删除确认对话框 -->
  <ConfirmDialog
  v-model:open="deleteDialogOpen"
  title="删除任务"
