@@ -7,7 +7,7 @@ Friday 是一个 AI 驱动的敏捷开发自动化系统，旨在无缝集成飞
 - 提供完整的任务状态流转管理和人工审核机制
 - 通过 Docker 容器隔离确保任务执行环境的安全与独立
 ## Tech Stack
-- **Language**: Python 3.13+ (Backend), TypeScript (Frontend)
+- **Language**: Python 3.14+ (Backend), TypeScript (Frontend)
 - **Framework**: Django 6.0 + Django REST Framework (Backend), Vue 3 + Vite (Frontend)
 - **Authentication**: djangorestframework-simplejwt (JWT)
 - **Database**: SQLite

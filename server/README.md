@@ -2,7 +2,7 @@
 [简体中文](README.zh-CN.md) | English
 This is the backend service for the Friday system, responsible for business logic, data persistence, and integration with Feishu, GitHub, and AI Agents.
 ## 🛠️ Tech Stack
-- **Language**: Python 3.13+
+- **Language**: Python 3.14+
 - **Framework**: Django 6.0 + Django REST Framework
 - **Authentication**: djangorestframework-simplejwt (JWT)
 - **Database**: SQLite
