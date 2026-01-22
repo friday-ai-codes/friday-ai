@@ -16,7 +16,7 @@ services:
  - FRIDAY_GITHUB_WEBHOOK_SECRET=${FRIDAY_GITHUB_WEBHOOK_SECRET}
  - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
  volumes:
- - friday-data:/app/data
+ - ~/.friday-data:/app/data
  - /var/run/docker.sock:/var/run/docker.sock
  networks:
  - friday-network
