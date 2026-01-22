@@ -445,12 +445,14 @@ class TriggerLogListView(APIView):
  log_status = request.query_params.get("status")
  if log_status:
  queryset = queryset.filter(status=log_status)
+ # Get total count before pagination
+ total = queryset.count
  # Pagination
  limit = int(request.query_params.get("limit", 50))
  offset = int(request.query_params.get("offset", 0))
  queryset = queryset[offset: offset + limit]
  serializer = TriggerLogSerializer(queryset, many=True)
- return Response(serializer.data)
+ return Response({"items": serializer.data, "total": total})
 class TriggerLogDetailView(APIView):
  """Get trigger log detail."""
  def get(self, request, log_id):
