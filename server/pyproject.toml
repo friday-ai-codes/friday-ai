@@ -11,6 +11,9 @@ dependencies = [
  "drf-spectacular>=0.27",
  "django-cors-headers>=4.3",
  "django-environ>=0.11",
+ # Database drivers (支持多种数据库)
+ "psycopg[binary]>=3.3", # PostgreSQL
+ "mysqlclient>=2.2", # MySQL / MariaDB
  # Async support
  "uvicorn[standard]>=0.30",
  "httpx>=0.27",

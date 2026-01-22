@@ -8,13 +8,15 @@ services:
  ports:
  - "${FRIDAY_PORT:-10241}:8000"
  environment:
- - FRIDAY_DEBUG=${FRIDAY_DEBUG:-false}
- - FRIDAY_DATABASE_URL=sqlite+aiosqlite:///./data/friday.db
- - FRIDAY_PORT=8000
- - FRIDAY_HOST=0.0.0.0
+ - SECRET_KEY=${SECRET_KEY}
+ - DEBUG=${DEBUG:-false}
+ - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+ - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/friday.db}
  - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY}
  - FRIDAY_GITHUB_WEBHOOK_SECRET=${FRIDAY_GITHUB_WEBHOOK_SECRET}
  - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+ - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+ - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
  volumes:
  - ~/.friday-data:/app/data
  - /var/run/docker.sock:/var/run/docker.sock

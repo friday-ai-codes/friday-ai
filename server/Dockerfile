@@ -1,8 +1,14 @@
 # Friday AI Dev Agent - Django API Service
 FROM python:3.14.2-slim
 # Install system dependencies
+# - curl: healthcheck
+# - libpq-dev: PostgreSQL client library
+# - default-libmysqlclient-dev + pkg-config: MySQL/MariaDB client library
 RUN apt-get update && apt-get install -y \
  curl \
+ libpq-dev \
+ default-libmysqlclient-dev \
+ pkg-config \
  && rm -rf /var/lib/apt/lists/*
 # Install uv
 RUN pip install uv
