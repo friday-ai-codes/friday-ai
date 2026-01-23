@@ -10,10 +10,10 @@ import json
 import logging
 import os
 import platform
-import shutil
 from typing import Any, Optional
 import docker
 from docker.errors import APIError, ImageNotFound
+from system.models import SettingKeys, SystemSetting
 logger = logging.getLogger(__name__)
 # 检测是否在 Docker 网络环境中运行
 def _detect_docker_network -> Optional[str]:
@@ -55,7 +55,9 @@ class TaskScheduler:
  else:
  logger.info("Docker network not found, using host networking for callbacks")
  # 确保数据传输目录存在 (server/data/transfers)
- self.data_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+ self.data_dir = os.path.abspath(
+ os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+ )
  self.transfers_dir = os.path.join(self.data_dir, "transfers")
  os.makedirs(self.transfers_dir, exist_ok=True)
  async def start_task(
@@ -89,7 +91,7 @@ class TaskScheduler:
  if os.path.exists(result_file):
  os.remove(result_file)
  # Build environment variables for the container
- env = self._build_env(task, repo_url, branch, git_credentials, mode, claude_config)
+ env = await self._build_env(task, repo_url, branch, git_credentials, mode, claude_config)
  # 注入传输目录环境变量
  env["FRIDAY_TASK_OUTPUT_DIR"] = "/app/transfer"
  try:
@@ -119,7 +121,7 @@ class TaskScheduler:
  task_transfer_dir: {
  "bind": "/app/transfer",
  "mode": "rw",
- }
+ },
  },
  # 完成后不自动删除（便于查看日志）
  "auto_remove": False,
@@ -145,7 +147,7 @@ class TaskScheduler:
  except APIError as e:
  logger.error(f"Docker API error: {e}")
  raise RuntimeError(f"Failed to start container: {e}")
- def _build_env(
+ async def _build_env(
  self,
  task,
  repo_url: str,
@@ -156,6 +158,35 @@ class TaskScheduler:
  ) -> dict[str, str]:
  """Build environment variables for the task container."""
  task_id = str(task.id)
+ # Proxy Configuration Logic
+ # Priority: 1. Repository specific proxy 2. System global proxy
+ git_http_proxy = ""
+ # 1. Check repository specific proxy
+ if task.repository and task.repository.proxy_url:
+ git_http_proxy = task.repository.proxy_url
+ logger.info(f"Using repository proxy for task {task_id}")
+ # 2. Check system global proxy if not set
+ if not git_http_proxy:
+ try:
+ # Use sync_to_async or assume this runs in async context safe for ORM?
+ # Since we are in async method, we should be careful.
+ # However, _build_env is now async, so we can use ahelper or async ORM.
+ # Django 5+ supports async ORM.
+ # Check if SystemSetting has async support or wrap it.
+ # Simplest way is to use sync_to_async if needed, but let's try direct async access if model allows
+ # or just use synchronous access if wrapped in sync_to_async in caller.
+ # But wait, start_task is async.
+ # Let's use asgiref.sync.sync_to_async for safety
+ from asgiref.sync import sync_to_async
+ get_setting = sync_to_async(
+ SystemSetting.objects.filter(key=SettingKeys.GIT_HTTP_PROXY).first
+ )
+ proxy_setting = await get_setting
+ if proxy_setting and proxy_setting.value:
+ git_http_proxy = proxy_setting.value
+ logger.info(f"Using system global proxy for task {task_id}")
+ except Exception as e:
+ logger.warning(f"Failed to fetch system proxy setting: {e}")
  # 根据网络环境选择回调 URL
  if self._docker_network:
  # Docker Compose 模式：使用容器名进行通信
@@ -211,6 +242,11 @@ class TaskScheduler:
  # 默认禁用 SSL 验证以支持内部 GitLab/GitHub 企业版
  git_ssl_verify = git_credentials.get("ssl_verify", False)
  env["FRIDAY_TASK_GIT_SSL_VERIFY"] = str(git_ssl_verify).lower
+ # Inject Proxy Environment Variables
+ if git_http_proxy:
+ env["FRIDAY_TASK_GIT_HTTP_PROXY"] = git_http_proxy
+ # Also set standard proxy env vars just in case, though Friday Task mainly uses FRIDAY_TASK_ prefix
+ # The Task CLI will handle setting http_proxy/https_proxy based on FRIDAY_TASK_GIT_HTTP_PROXY
  return env
  async def _ensure_image(self) -> None:
  """Ensure the task container image exists."""

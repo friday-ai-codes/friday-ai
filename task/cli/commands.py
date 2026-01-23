@@ -103,6 +103,11 @@ def common_options(f):
  default=True,
  help="禁用 Git SSL 验证（用于自签名证书）",
  )(f)
+ f = click.option(
+ "--git-proxy",
+ envvar="FRIDAY_TASK_GIT_HTTP_PROXY",
+ help="Git HTTP/HTTPS 代理 URL",
+ )(f)
  return f
 @click.group
 @click.version_option(version="0.1.0", prog_name="friday-task")
@@ -126,6 +131,7 @@ def plan(
  task_id: str | None,
  project_id: str,
  no_ssl_verify: bool,
+ git_proxy: str | None,
 ):
  """执行计划模式 - 分析代码库并生成实施计划."""
  task_id = task_id or generate_task_id
@@ -144,6 +150,7 @@ def plan(
  callback_url=callback_url,
  session_dir=session_dir,
  ssl_verify=not no_ssl_verify,
+ git_proxy=git_proxy,
  )
  exit_code = asyncio.run(_run_task(config))
  sys.exit(exit_code)
@@ -174,6 +181,7 @@ def exec(
  no_ssl_verify: bool,
  new_branch: str | None,
  resume_session: str | None,
+ git_proxy: str | None,
 ):
  """执行实现模式 - 创建分支并实现代码变更."""
  task_id = task_id or generate_task_id
@@ -193,13 +201,18 @@ def exec(
  session_dir=session_dir,
  ssl_verify=not no_ssl_verify,
  resume_session=resume_session,
+ git_proxy=git_proxy,
  )
  exit_code = asyncio.run(_run_task(config))
  sys.exit(exit_code)
 @main.command
 @click.option("--session-id", required=True, help="要恢复的会话 ID")
-@click.option("--mode", type=click.Choice(["plan", "exec"]), default="exec", help="恢复后的执行模式")
-@click.option("--session-dir", envvar="FRIDAY_TASK_SESSION_DIR", default="./sessions", help="会话存储目录")
+@click.option(
+ "--mode", type=click.Choice(["plan", "exec"]), default="exec", help="恢复后的执行模式"
+)
+@click.option(
+ "--session-dir", envvar="FRIDAY_TASK_SESSION_DIR", default="./sessions", help="会话存储目录"
+)
 @click.option("--api-key", envvar="FRIDAY_TASK_CLAUDE_API_KEY", help="Claude API Key")
 @click.option("--base-url", envvar="FRIDAY_TASK_CLAUDE_BASE_URL", help="Claude API Base URL")
 def resume(
@@ -244,6 +257,7 @@ def _build_config(
  session_dir: str,
  ssl_verify: bool,
  resume_session: str | None = None,
+ git_proxy: str | None = None,
 ) -> TaskConfig:
  """构建任务配置对象."""
  if ssh_key:
@@ -266,6 +280,7 @@ def _build_config(
  git_ssh_key=ssh_key or "",
  git_access_token=access_token or "",
  git_ssl_verify=ssl_verify,
+ git_http_proxy=git_proxy,
  claude_api_key=api_key or "",
  claude_base_url=base_url or "",
  callback_url=callback_url or "",

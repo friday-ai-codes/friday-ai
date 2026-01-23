@@ -29,10 +29,12 @@ const saving = ref(false)
 // 表单值
 const apiKeyValue = ref('')
 const baseUrlValue = ref('')
+const gitProxyValue = ref('')
 const showApiKey = ref(false)
 // 跟踪用户是否修改了值
 const apiKeyDirty = ref(false)
 const baseUrlDirty = ref(false)
+const gitProxyDirty = ref(false)
 // 设置项元数据
 const settingsMeta: Record<SettingKey, { label: string, description: string, placeholder: string }> = {
  [SettingKey.ANTHROPIC_API_KEY]: {
@@ -45,6 +47,11 @@ const settingsMeta: Record<SettingKey, { label: string, description: string, pla
  description: 'API 基础地址，用于代理或自定义端点（可选）',
  placeholder: 'https://api.anthropic.com',
  },
+ [SettingKey.GIT_HTTP_PROXY]: {
+ label: 'Git 全局代理',
+ description: '用于 Git 操作的默认 HTTP 代理（可选，仓库级配置优先）',
+ placeholder: 'http://proxy.example.com:8080',
+ },
 }
 // 加载设置
 async function loadSettings {
@@ -54,12 +61,20 @@ async function loadSettings {
  // 填充表单值
  const apiKeySetting = settings.value.find(s => s.key === SettingKey.ANTHROPIC_API_KEY)
  const baseUrlSetting = settings.value.find(s => s.key === SettingKey.ANTHROPIC_BASE_URL)
+ const gitProxySetting = settings.value.find(s => s.key === SettingKey.GIT_HTTP_PROXY)
  // Base URL 直接使用返回的 value
  if (baseUrlSetting?.value) {
  baseUrlValue.value = baseUrlSetting.value
  }
  else {
  baseUrlValue.value = ''
+ }
+ // Git Proxy
+ if (gitProxySetting?.value) {
+ gitProxyValue.value = gitProxySetting.value
+ }
+ else {
+ gitProxyValue.value = ''
  }
  // API Key 使用遮罩值显示
  if (apiKeySetting?.has_value && apiKeySetting.masked_value) {
@@ -71,6 +86,7 @@ async function loadSettings {
  // 重置脏标记
  apiKeyDirty.value = false
  baseUrlDirty.value = false
+ gitProxyDirty.value = false
  }
  catch (error) {
  console.error('Failed to load settings:', error)
@@ -92,6 +108,10 @@ async function saveAllSettings {
  // 保存 Base URL（只有用户实际修改过才保存）
  if (baseUrlDirty.value && baseUrlValue.value.trim) {
  promises.push(updateSetting(SettingKey.ANTHROPIC_BASE_URL, baseUrlValue.value.trim))
+ }
+ // 保存 Git Proxy
+ if (gitProxyDirty.value && gitProxyValue.value.trim) {
+ promises.push(updateSetting(SettingKey.GIT_HTTP_PROXY, gitProxyValue.value.trim))
  }
  if (promises.length === 0) {
  toast.info('没有需要保存的更改')
@@ -123,6 +143,10 @@ async function removeSetting(key: SettingKey) {
  baseUrlValue.value = ''
  baseUrlDirty.value = false
  }
+ else if (key === SettingKey.GIT_HTTP_PROXY) {
+ gitProxyValue.value = ''
+ gitProxyDirty.value = false
+ }
  await loadSettings
  }
  catch (error) {
@@ -145,9 +169,13 @@ function onApiKeyInput {
 function onBaseUrlInput {
  baseUrlDirty.value = true
 }
+// 处理 Git Proxy 输入变更
+function onGitProxyInput {
+ gitProxyDirty.value = true
+}
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {
- return apiKeyDirty.value || baseUrlDirty.value
+ return apiKeyDirty.value || baseUrlDirty.value || gitProxyDirty.value
 }
 // 模型选择和测试相关
 const models = ref<Model>
@@ -318,6 +346,47 @@ onMounted( => {
  </div>
  <p v-if="getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value" class="text-sm text-muted-foreground">
  当前值: {{ getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value }}
+ </p>
+ </div>
+ <!-- Git Proxy 字段 -->
+ <div class="space-y-3">
+ <div class="flex items-center justify-between">
+ <Label for="git-proxy" class="text-base font-medium">
+ {{ settingsMeta[SettingKey.GIT_HTTP_PROXY].label }}
+ </Label>
+ <span
+ v-if="getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value"
+ class="text-xs text-muted-foreground"
+ >
+ 已配置
+ </span>
+ </div>
+ <p class="text-sm text-muted-foreground">
+ {{ settingsMeta[SettingKey.GIT_HTTP_PROXY].description }}
+ </p>
+ <div class="flex gap-2">
+ <div class="relative flex-1">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--network] text-muted-foreground" />
+ <Input
+ id="git-proxy"
+ v-model="gitProxyValue"
+ type="url":placeholder="settingsMeta[SettingKey.GIT_HTTP_PROXY].placeholder"
+ class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
+ @input="onGitProxyInput"
+ />
+ </div>
+ <Button
+ v-if="getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.has_value"
+ variant="outline"
+ class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ @click="removeSetting(SettingKey.GIT_HTTP_PROXY)"
+ >
+ <span class="icon-[lucide--trash-2] mr-2" />
+ 删除
+ </Button>
+ </div>
+ <p v-if="getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value" class="text-sm text-muted-foreground">
+ 当前值: {{ getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value }}
  </p>
  </div>
  </div>

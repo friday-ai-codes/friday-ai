@@ -7,14 +7,8 @@ import type { ChatCompletionResponse, ConfigSource, Model } from '~/api/chat'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { chatCompletion, getModels } from '~/api/chat'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Button } from '~/components/ui/button'
-import {
- Dialog,
- DialogContent,
- DialogDescription,
- DialogHeader,
- DialogTitle,
-} from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -142,12 +136,15 @@ function refreshModels {
 }
 </script>
 <template>
- <Dialog v-model:open="isOpen">
- <DialogContent class="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col gap-0 bg-card/95 backdrop-blur-sm border-border/50">
+ <BaseModal
+ v-model="isOpen"
+ size="2xl":show-close="false":content-padding="false"
+ >
+ <div class="flex flex-col h-[85vh] sm:h-auto sm:max-h-[85vh]">
  <!-- 装饰性顶部条纹 -->
- <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500" />
+ <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 shrink-0" />
  <!-- 头部 -->
- <DialogHeader class="px-6 pt-5 pb-4 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-cyan-500/5">
+ <div class="px-6 pt-5 pb-4 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-cyan-500/5 shrink-0">
  <div class="flex items-center gap-3">
  <div class="relative">
  <div class="absolute inset-0 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl blur-sm opacity-40" />
@@ -156,13 +153,15 @@ function refreshModels {
  </div>
  </div>
  <div>
- <DialogTitle class="text-lg font-semibold">连接测试</DialogTitle>
- <DialogDescription class="text-sm">
+ <h2 class="text-lg font-semibold">
+ 连接测试
+ </h2>
+ <p class="text-sm text-muted-foreground">
  发送测试消息验证 API 配置是否正确
- </DialogDescription>
+ </p>
  </div>
  </div>
- </DialogHeader>
+ </div>
  <!-- 内容区域 -->
  <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
  <!-- 模型选择 -->
@@ -253,8 +252,12 @@ function refreshModels {
  <span class="icon-[lucide--x] text-lg text-destructive" />
  </div>
  <div class="flex-1 min-w-0">
- <p class="font-semibold text-destructive">连接失败</p>
- <p class="text-sm text-destructive/80 mt-1 break-words">{{ error }}</p>
+ <p class="font-semibold text-destructive">
+ 连接失败
+ </p>
+ <p class="text-sm text-destructive/80 mt-1 break-words">
+ {{ error }}
+ </p>
  </div>
  </div>
  </div>
@@ -290,7 +293,7 @@ function refreshModels {
  </div>
  </div>
  <!-- 底部操作栏 -->
- <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-border/50">
+ <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-border/50 shrink-0">
  <Button variant="outline" class="hover:border-primary/50" @click="close">
  关闭
  </Button>
@@ -307,6 +310,6 @@ function refreshModels {
  发送测试
  </Button>
  </div>
- </DialogContent>
- </Dialog>
+ </div>
+ </BaseModal>
 </template>

@@ -4,6 +4,7 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
+import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute
 const router = useRouter
@@ -55,6 +56,12 @@ function formatDate(dateStr: string) {
 // 计算属性
 const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
+// 编辑仓库
+const editDialogOpen = ref(false)
+async function handleEditSuccess {
+ editDialogOpen.value = false
+ await repositoriesStore.fetchRepository(repositoryId.value)
+}
 </script>
 <template>
  <div class="space-y-8">
@@ -88,6 +95,10 @@ const credential = computed( => repositoriesStore.currentCredential)
  </div>
  </div>
  <div class="flex items-center gap-2">
+ <Button variant="outline" class="group" @click="editDialogOpen = true">
+ <span class="icon-[lucide--edit] mr-2 group-hover:scale-110 transition-transform" />
+ 编辑
+ </Button>
  <Button variant="destructive" class="group" @click="deleteDialogOpen = true">
  <span class="icon-[lucide--trash-2] mr-2 group-hover:scale-110 transition-transform" />
  删除
@@ -120,6 +131,13 @@ const credential = computed( => repositoriesStore.currentCredential)
  </p>
  </div>
  <Separator class="bg-border/50" />
+ <div v-if="repository.proxy_url">
+ <label class="text-sm text-muted-foreground">代理 URL</label>
+ <p class="font-mono text-sm mt-1">
+ {{ repository.proxy_url }}
+ </p>
+ <Separator class="bg-border/50 mt-4" />
+ </div>
  <div class="flex gap-8">
  <div>
  <label class="text-sm text-muted-foreground">创建时间</label>
@@ -246,6 +264,14 @@ const credential = computed( => repositoriesStore.currentCredential)
  confirm-text="删除"
  variant="destructive":loading="deleting"
  @confirm="handleDelete"
+ />
+ <!-- 编辑对话框 -->
+ <EditRepositoryModal
+ v-if="repository"
+ v-model="editDialogOpen":repository="repository"
+ @confirm="handleEditSuccess"
+ @cancel="editDialogOpen = false"
+ @closed="editDialogOpen = false"
  />
  </div>
 </template>
