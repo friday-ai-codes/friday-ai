@@ -25,7 +25,16 @@ Task SHALL 明确关联一个 Repository 用于代码执行。
 - **THEN** 系统使用 task.repository_id 获取 Git 配置和凭证
 - **AND** 在容器中克隆对应的仓库
 ### Requirement: Task Execution Container
-系统 SHALL 在隔离的 Docker 容器中执行每个任务，使用 claude-agent-sdk Python 包进行 AI 代码生成，从数据库获取 Claude 配置。Task 容器作为独立项目构建，支持命令行直接调用。
+系统 SHALL 在隔离的 Docker 容器中执行每个任务，使用 claude-agent-sdk Python 包进行 AI 代码生成，从数据库获取 Claude 配置，并支持网络代理配置。
+#### Scenario: 容器资源隔离
+- **WHEN** 任务容器启动时
+- **THEN** 容器具有内存限制（2GB）
+- **AND** CPU 限制（1 核）
+- **AND** 隔离的网络环境
+#### Scenario: 传递代理配置
+- **WHEN** 系统检测到配置了 Git 代理（仓库级或系统级）
+- **THEN** 启动容器时注入代理相关的环境变量（如 `HTTP_PROXY`）
+- **AND** 容器内的 Git 操作自动使用该代理
 #### Scenario: 启动 Plan 模式任务
 - **WHEN** 触发 mode="plan" 的任务执行
 - **THEN** 系统从数据库获取 Claude 配置（项目级或系统级）
@@ -46,11 +55,6 @@ Task SHALL 明确关联一个 Repository 用于代码执行。
 - **AND** 提交并推送变更到功能分支
 - **AND** 完成后任务状态转换为 CODE_REVIEW
 - **AND** 清理临时目录
-#### Scenario: 容器资源隔离
-- **WHEN** 任务容器启动时
-- **THEN** 容器具有内存限制（2GB）
-- **AND** CPU 限制（1 核）
-- **AND** 隔离的网络环境
 #### Scenario: 命令行直接调用
 - **WHEN** 用户或 Claude Code 直接调用 friday-task 命令
 - **AND** 传入 plan/exec 子命令、--git-url、--description、--api-key 等参数
@@ -81,7 +85,7 @@ The system SHALL integrate with Feishu Project (Meego) for webhook events and st
 - **THEN** the system captures the feedback
 - **AND** includes it in the task context for Claude
 ### Requirement: Git Operations
-系统 SHALL 执行 Git 操作，包括克隆、分支创建、提交和推送，使用动态认证和临时工作目录。
+系统 SHALL 执行 Git 操作，包括克隆、分支创建、提交和推送，使用动态认证、临时工作目录和可选的代理配置。
 #### Scenario: 使用 SSH 密钥克隆仓库
 - **WHEN** 使用 SSH 认证开始 Git 操作
 - **THEN** 系统从数据库读取加密的 SSH 密钥
@@ -89,6 +93,12 @@ The system SHALL integrate with Feishu Project (Meego) for webhook events and st
 - **AND** 配置 SSH_COMMAND 使用该私钥
 - **AND** 将仓库克隆到临时工作目录
 - **AND** 操作完成后删除临时密钥文件
+#### Scenario: 使用 HTTP 代理克隆仓库
+- **WHEN** 需要执行 Git 操作
+- **THEN** 优先检查 Repository 级别的代理配置
+- **AND** 若未配置，则检查系统级 `git_http_proxy` 配置
+- **AND** 若存在有效配置，Git 操作（clone, push, pull）使用该代理
+- **AND** 确保代理配置仅在任务执行期间生效，不污染全局环境
 #### Scenario: 创建功能分支
 - **WHEN** 任务执行开始
 - **THEN** 系统创建名为 `friday/task-{task_id}` 的分支
@@ -142,6 +152,10 @@ The system SHALL provide callback endpoints for task containers to report status
 #### Scenario: Update repository
 - **WHEN** 用户调用更新仓库 API
 - **THEN** 系统更新仓库配置信息
+#### Scenario: Configure repository proxy
+- **WHEN** 用户设置仓库的 proxy_url
+- **THEN** 系统保存该仓库专用的代理配置
+- **AND** 该配置在任务执行时优先级高于系统级全局代理
 ### Requirement: Project-Repository Association
 系统 SHALL 支持建立 Project（飞书项目）与 Repository（Git 仓库）的多对多关联。
 #### Scenario: Link repository to project
@@ -188,7 +202,10 @@ The system SHALL provide callback endpoints for task containers to report status
 - **WHEN** 调用 `DELETE /api/v1/settings/{key}`
 - **THEN** 系统删除对应配置项
 - **AND** 相关功能回退到环境变量默认值
----
+#### Scenario: 配置全局 Git 代理
+- **WHEN** 设置 `git_http_proxy` 配置项
+- **THEN** 该代理作为所有仓库的默认 Git 代理
+- **AND** 仅在仓库未单独配置代理时生效
 ### Requirement: Claude Code Configuration
 系统 SHALL 支持分层的 Claude Code 配置，包括 API Key 和 Base URL，按优先级获取配置。
 #### Scenario: 系统级 Claude 配置

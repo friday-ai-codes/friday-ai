@@ -1,13 +1,6 @@
 <script setup lang="ts">
-import {
- AlertDialog,
- AlertDialogCancel,
- AlertDialogContent,
- AlertDialogDescription,
- AlertDialogFooter,
- AlertDialogHeader,
- AlertDialogTitle,
-} from '~/components/ui/alert-dialog'
+import { computed } from 'vue'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Button } from '~/components/ui/button'
 const props = withDefaults(defineProps<{
  open: boolean
@@ -30,6 +23,10 @@ const emit = defineEmits<{
  'confirm':
  'cancel':
 }>
+const isOpen = computed({
+ get: => props.open,
+ set: value => emit('update:open', value),
+})
 function handleConfirm {
  emit('confirm')
 }
@@ -37,33 +34,27 @@ function handleCancel {
  emit('cancel')
  emit('update:open', false)
 }
-function handleOpenChange(value: boolean) {
- emit('update:open', value)
- if (!value) {
- emit('cancel')
- }
-}
 </script>
 <template>
- <AlertDialog:open="open" @update:open="handleOpenChange">
- <AlertDialogContent>
- <AlertDialogHeader>
- <AlertDialogTitle>{{ title }}</AlertDialogTitle>
- <AlertDialogDescription>
+ <BaseModal
+ v-model="isOpen":title="title"
+ size="sm":show-close="false"
+ >
+ <div class="text-sm text-muted-foreground">
  {{ description }}
- </AlertDialogDescription>
- </AlertDialogHeader>
- <AlertDialogFooter>
- <AlertDialogCancel:disabled="loading" @click="handleCancel">
+ </div>
+ <template #footer>
+ <div class="flex justify-end gap-3 w-full">
+ <Button variant="outline":disabled="loading" @click="handleCancel">
  {{ cancelText }}
- </AlertDialogCancel>
+ </Button>
  <Button:variant="variant":disabled="loading"
  @click="handleConfirm"
  >
- <span v-if="loading" class="mr-2 animate-spin">⏳</span>
+ <span v-if="loading" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  {{ confirmText }}
  </Button>
- </AlertDialogFooter>
- </AlertDialogContent>
- </AlertDialog>
+ </div>
+ </template>
+ </BaseModal>
 </template>

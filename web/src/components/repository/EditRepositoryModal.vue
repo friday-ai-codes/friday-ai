@@ -12,8 +12,19 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { PLATFORM_LABELS } from '~/types'
+const props = defineProps<{
+ repository: {
+ id: string
+ name: string
+ git_url: string
+ git_platform: GitPlatform
+ default_branch: string
+ description: string
+ proxy_url?: string
+ }
+}>
 const emit = defineEmits<{
- confirm: [repositoryId: string]
+ confirm:
  cancel:
  closed:
 }>
@@ -21,27 +32,21 @@ const repositoriesStore = useRepositoriesStore
 const { success, error: showError } = useToast
 // 表单数据
 const form = reactive({
- name: '',
- git_url: '',
- git_platform: 'gitlab' as GitPlatform,
- default_branch: 'main',
- description: '',
- proxy_url: '',
- // 凭证信息（必填）
- access_token: '',
- git_user_name: 'Friday Codes AI Agent',
- git_user_email: 'ai@friday.codes',
+ name: props.repository.name,
+ git_url: props.repository.git_url,
+ git_platform: props.repository.git_platform,
+ default_branch: props.repository.default_branch,
+ description: props.repository.description || '',
+ proxy_url: props.repository.proxy_url || '',
 })
 // 表单验证
 const errors = reactive({
  name: '',
  git_url: '',
- access_token: '',
 })
 function validate: boolean {
  errors.name = ''
  errors.git_url = ''
- errors.access_token = ''
  if (!form.name.trim) {
  errors.name = '请输入仓库名称'
  }
@@ -51,10 +56,7 @@ function validate: boolean {
  else if (!form.git_url.match(/^(https?:\/\/|git@)/)) {
  errors.git_url = '请输入有效的仓库 URL'
  }
- if (!form.access_token.trim) {
- errors.access_token = '请输入 Access Token'
- }
- return !errors.name && !errors.git_url && !errors.access_token
+ return !errors.name && !errors.git_url
 }
 // 提交表单
 const submitting = ref(false)
@@ -63,12 +65,12 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const repository = await repositoriesStore.createRepository(form)
- success('创建成功', '仓库和凭证已创建')
- emit('confirm', repository.id)
+ await repositoriesStore.updateRepository(props.repository.id, form)
+ success('更新成功', '仓库信息已更新')
+ emit('confirm')
  }
  catch (e) {
- showError('创建失败', e instanceof Error ? e.message: '无法创建仓库')
+ showError('更新失败', e instanceof Error ? e.message: '无法更新仓库')
  }
  finally {
  submitting.value = false
@@ -98,14 +100,14 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
  <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
- <span class="icon-[lucide--git-branch] text-xl text-violet-600" />
+ <span class="icon-[lucide--edit] text-xl text-violet-600" />
  </div>
  <div>
  <h3 class="text-lg font-semibold text-foreground">
- 新建仓库
+ 编辑仓库
  </h3>
  <p class="text-sm text-muted-foreground">
- 配置 Git 仓库信息，用于 AI 辅助开发任务
+ 修改仓库基本信息和配置
  </p>
  </div>
  </div>
@@ -205,64 +207,15 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  />
  </div>
  </div>
- <!-- 凭证配置区域 -->
- <div class="relative -mx-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/50 rounded-xl">
- <div class="flex items-center gap-3 mb-4">
- <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10">
- <span class="icon-[lucide--key] text-lg text-amber-600" />
- </div>
- <div>
- <h4 class="font-semibold text-sm text-foreground">Git 凭证配置</h4>
- <p class="text-xs text-muted-foreground">
- 配置用于访问仓库的 Access Token（必填）
- </p>
- </div>
- </div>
- <!-- Access Token -->
- <div class="space-y-4">
+ <!-- 描述 -->
  <div class="space-y-2">
- <Label for="access_token" class="flex items-center gap-1 text-foreground">
- Access Token
- <span class="text-destructive">*</span>
- </Label>
+ <Label for="description" class="text-foreground">描述</Label>
  <Input
- id="access_token"
- v-model="form.access_token"
- type="password"
- placeholder="GITHUB_TOKEN_PLACEHOLDER 或 glpat-xxxxxxxxxxxx"
- class=" bg-white":class="{ 'border-destructive': errors.access_token }"
+ id="description"
+ v-model="form.description"
+ placeholder="仓库描述..."
+ class=""
  />
- <p v-if="errors.access_token" class="text-sm text-destructive flex items-center gap-1">
- <span class="icon-[lucide--alert-circle]" />
- {{ errors.access_token }}
- </p>
- <p class="text-xs text-muted-foreground">
- 需要仓库读写权限的个人访问令牌（PAT），该令牌会被加密存储
- </p>
- </div>
- <!-- Git 用户信息 -->
- <div class="grid gap-4 md:grid-cols-2">
- <div class="space-y-2">
- <Label for="git_user_name" class="text-foreground">Git 用户名</Label>
- <Input
- id="git_user_name"
- v-model="form.git_user_name"
- placeholder="Friday AI Agent"
- class=" bg-white"
- />
- </div>
- <div class="space-y-2">
- <Label for="git_user_email" class="text-foreground">Git 邮箱</Label>
- <Input
- id="git_user_email"
- v-model="form.git_user_email"
- type="email"
- placeholder="ai@friday.codes"
- class=" bg-white"
- />
- </div>
- </div>
- </div>
  </div>
  <!-- Footer -->
  <div class="flex justify-end gap-3 pt-4 border-t border-border/50">
@@ -271,8 +224,8 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  </Button>
  <Button type="submit":disabled="submitting">
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
- <span v-else class="icon-[lucide--plus] mr-2" />
- 创建仓库
+ <span v-else class="icon-[lucide--save] mr-2" />
+ 保存修改
  </Button>
  </div>
  </form>

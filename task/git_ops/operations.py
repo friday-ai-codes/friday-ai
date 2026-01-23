@@ -38,6 +38,14 @@ class GitOperations:
  if not self.config.git_ssl_verify:
  os.environ["GIT_SSL_NO_VERIFY"] = "true"
  log.warning("SSL verification disabled for Git operations")
+ # Configure Proxy
+ if self.config.git_http_proxy:
+ os.environ["http_proxy"] = self.config.git_http_proxy
+ os.environ["https_proxy"] = self.config.git_http_proxy
+ # Also set lower case versions just in case
+ os.environ["HTTP_PROXY"] = self.config.git_http_proxy
+ os.environ["HTTPS_PROXY"] = self.config.git_http_proxy
+ log.info("Git proxy configured", proxy=self.config.git_http_proxy)
  # Set up authentication
  auth_type = self.config.git_auth_type
  if auth_type == "ssh" and self.config.git_ssh_key:
@@ -51,7 +59,9 @@ class GitOperations:
  else:
  log.warning("No Git credentials provided, clone may fail for private repos")
  # Clone repository
- log.info("Starting repository clone", repo_url_masked=self._mask_url(self.config.git_repo_url))
+ log.info(
+ "Starting repository clone", repo_url_masked=self._mask_url(self.config.git_repo_url)
+ )
  await self._clone_repo
  await self._checkout_branch
  log.info("Git setup complete", branch=self.config.git_branch)
@@ -85,7 +95,9 @@ class GitOperations:
  if url.startswith("https://"):
  host_part = url[8:]
  if "gitlab" in host_part.lower:
- self.config.git_repo_url = f"https://oauth2:{self.config.git_access_token}@{host_part}"
+ self.config.git_repo_url = (
+ f"https://oauth2:{self.config.git_access_token}@{host_part}"
+ )
  else:
  self.config.git_repo_url = f"https://{self.config.git_access_token}@{host_part}"
  else:

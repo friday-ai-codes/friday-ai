@@ -6,7 +6,7 @@ import { getProjectClaudeConfig } from '~/api/settings'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
@@ -525,18 +525,16 @@ async function handleCustomToken {
  />
  </div>
  <!-- 关联仓库对话框 -->
- <Dialog v-model:open="linkDialogOpen">
- <DialogContent class="sm:max-w-md">
- <DialogHeader>
- <DialogTitle class="flex items-center gap-2">
- <span class="icon-[lucide--link] text-primary" />
- 关联仓库
- </DialogTitle>
- <DialogDescription>
+ <BaseModal
+ v-model="linkDialogOpen"
+ title="关联仓库"
+ size="md"
+ >
+ <div class="space-y-4">
+ <p class="text-sm text-muted-foreground">
  选择要关联到此项目的 Git 仓库
- </DialogDescription>
- </DialogHeader>
- <div class="py-4">
+ </p>
+ <div class="py-2">
  <Select v-model="selectedRepositoryId">
  <SelectTrigger class=" bg-muted/30 border-border/50">
  <SelectValue placeholder="选择仓库" />
@@ -551,7 +549,9 @@ async function handleCustomToken {
  没有可关联的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">创建仓库</RouterLink>
  </p>
  </div>
- <DialogFooter>
+ </div>
+ <template #footer>
+ <div class="flex justify-end gap-3 w-full">
  <Button variant="outline" @click="linkDialogOpen = false">
  取消
  </Button>
@@ -560,9 +560,9 @@ async function handleCustomToken {
  <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ linking ? '关联中...': '关联' }}
  </Button>
- </DialogFooter>
- </DialogContent>
- </Dialog>
+ </div>
+ </template>
+ </BaseModal>
  <!-- 刷新 Token 确认对话框 -->
  <ConfirmDialog
  v-model:open="refreshTokenDialogOpen"
@@ -573,18 +573,16 @@ async function handleCustomToken {
  @confirm="handleRefreshToken"
  />
  <!-- 自定义 Token 对话框 -->
- <Dialog v-model:open="customTokenDialogOpen">
- <DialogContent class="sm:max-w-md">
- <DialogHeader>
- <DialogTitle class="flex items-center gap-2">
- <span class="icon-[lucide--pencil] text-primary" />
- 自定义 Webhook Token
- </DialogTitle>
- <DialogDescription>
+ <BaseModal
+ v-model="customTokenDialogOpen"
+ title="自定义 Webhook Token"
+ size="md"
+ >
+ <div class="space-y-4">
+ <p class="text-sm text-muted-foreground">
  输入自定义 Token（最大 32 字符），用于在飞书项目自动化规则中配置
- </DialogDescription>
- </DialogHeader>
- <div class="py-4 space-y-4">
+ </p>
+ <div class="py-2 space-y-4">
  <div class="space-y-2">
  <Label for="customToken">Token</Label>
  <Input
@@ -599,7 +597,9 @@ async function handleCustomToken {
  </p>
  </div>
  </div>
- <DialogFooter>
+ </div>
+ <template #footer>
+ <div class="flex justify-end gap-3 w-full">
  <Button variant="outline" @click="customTokenDialogOpen = false">
  取消
  </Button>
@@ -608,7 +608,7 @@ async function handleCustomToken {
  <span v-if="customTokenLoading" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ customTokenLoading ? '保存中...': '保存' }}
  </Button>
- </DialogFooter>
- </DialogContent>
- </Dialog>
+ </div>
+ </template>
+ </BaseModal>
 </template>

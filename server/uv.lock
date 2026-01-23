@@ -456,7 +456,6 @@ dependencies = [
  { name = "gunicorn" },
  { name = "httpx" },
  { name = "lark-oapi" },
- { name = "mysqlclient" },
  { name = "paramiko" },
  { name = "passlib", extra = ["argon2"] },
  { name = "psycopg", extra = ["binary"] },
@@ -489,7 +488,6 @@ requires-dist = [
  { name = "gunicorn", specifier = ">=23.0.0" },
  { name = "httpx", specifier = ">=0.27" },
  { name = "lark-oapi", specifier = ">=1.5.2" },
- { name = "mysqlclient", specifier = ">=2.2" },
  { name = "paramiko", specifier = ">=4.0.0" },
  { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
  { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
@@ -674,11 +672,6 @@ dependencies = [
 wheels = [
  { url = "https://files.pythonhosted.org/packages/80/09/047dbf3f6b40737eb3eab687f409f677cd35d6ce37b827ba8cff7d69cca1/lark_oapi-1.5.2-py3-none-any.whl", hash = "sha256:496f6317f3f417e2346e64e91b2f70851fc84e2a229c9730bc84a16babe59aba", size = 6964389, upload-time = "2025-12-29T02:44:04.868Z" },
 ]
-[[package]]
-name = "mysqlclient"
-version = "2.2.7"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/61/68/810093cb579daae426794bbd9d88aa830fae296e85172d18cb0f0e5dd4bc/mysqlclient-2.2.7.tar.gz", hash = "sha256:24ae22b59416d5fcce7e99c9d37548350b4565baac82f95e149cac6ce4163845", size = 91383, upload-time = "2025-01-10T12:06:00.763Z" }
 [[package]]
 name = "nodeenv"
 version = "1.10.0"

@@ -2,10 +2,11 @@
 import { VueFinalModal } from 'vue-final-modal'
 interface Props {
  title?: string
- size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+ size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
  showClose?: boolean
  closeOnClickOutside?: boolean
  closeOnEsc?: boolean
+ contentPadding?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
  title: '',
@@ -13,6 +14,7 @@ const props = withDefaults(defineProps<Props>, {
  showClose: true,
  closeOnClickOutside: true,
  closeOnEsc: true,
+ contentPadding: true,
 })
 const emit = defineEmits<{
  confirm: [data?: unknown]
@@ -24,6 +26,7 @@ const sizeClasses: Record<string, string> = {
  md: 'max-w-md',
  lg: 'max-w-lg',
  xl: 'max-w-xl',
+ '2xl': 'max-w-2xl',
  full: 'max-w-4xl',
 }
 function handleCancel {
@@ -57,7 +60,7 @@ function handleCancel {
  </button>
  </div>
  <!-- Body -->
- <div class="flex-1 overflow-y-auto px-6 py-4">
+ <div class="flex-1 overflow-y-auto":class="{ 'px-6 py-4': contentPadding }">
  <slot />
  </div>
  <!-- Footer -->

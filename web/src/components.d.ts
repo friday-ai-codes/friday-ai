@@ -70,6 +70,7 @@ declare module 'vue' {
  DropdownMenuSubContent: typeof import('./components/ui/dropdown-menu/DropdownMenuSubContent.vue')['default']
  DropdownMenuSubTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuSubTrigger.vue')['default']
  DropdownMenuTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuTrigger.vue')['default']
+ EditRepositoryModal: typeof import('./components/repository/EditRepositoryModal.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
  ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
  FeishuConfigForm: typeof import('./components/feishu/FeishuConfigForm.vue')['default']

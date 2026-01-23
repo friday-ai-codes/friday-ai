@@ -37,6 +37,10 @@ class TaskConfig(BaseSettings):
  default=False,
  description="Verify SSL certificates for HTTPS Git operations (默认禁用以支持自签名证书的内部 Git 服务器)",
  )
+ git_http_proxy: str | None = Field(
+ default=None,
+ description="HTTP/HTTPS proxy URL for Git operations",
+ )
  # Claude Code configuration
  claude_api_key: str = Field(default="", description="Anthropic API key")
  claude_base_url: str = Field(

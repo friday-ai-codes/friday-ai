@@ -4,10 +4,10 @@
  * 用于查看和更新仓库的 Git 凭证（仅 Access Token）
  */
 import { useHead } from '@vueuse/head'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
@@ -93,7 +93,9 @@ function formatDate(dateStr: string) {
  <span class="icon-[lucide--key] text-2xl text-amber-500" />
  </div>
  <div>
- <h1 class="text-2xl font-bold">凭证配置</h1>
+ <h1 class="text-2xl font-bold">
+ 凭证配置
+ </h1>
  <p class="text-sm text-muted-foreground">
  配置 {{ repository.name }} 的 Git 访问凭证
  </p>
@@ -184,7 +186,9 @@ function formatDate(dateStr: string) {
  <div class="flex items-start gap-3">
  <span class="icon-[lucide--shield] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
  <div class="space-y-3">
- <h3 class="font-medium">安全说明</h3>
+ <h3 class="font-medium">
+ 安全说明
+ </h3>
  <ul class="list-disc list-inside space-y-1 text-sm text-muted-foreground">
  <li>Access Token 会被加密存储在数据库中</li>
  <li>前端和 API 不会返回或显示 Token 原文</li>
@@ -206,18 +210,15 @@ function formatDate(dateStr: string) {
  @action="router.push('/repositories')"
  />
  <!-- 更新凭证对话框 -->
- <Dialog v-model:open="updateDialogOpen">
- <DialogContent class="sm:max-w-md">
- <DialogHeader>
- <DialogTitle class="flex items-center gap-2">
- <span class="icon-[lucide--key] text-primary" />
- {{ credential ? '更新 Access Token': '配置 Access Token' }}
- </DialogTitle>
- <DialogDescription>
+ <BaseModal
+ v-model="updateDialogOpen":title="credential ? '更新 Access Token': '配置 Access Token'"
+ size="md"
+ >
+ <div class="space-y-4">
+ <p class="text-sm text-muted-foreground">
  {{ credential ? '输入新的 Access Token，更新后旧的 Token 将被替换': '输入 Access Token 以配置 Git 访问凭证' }}
- </DialogDescription>
- </DialogHeader>
- <form class="space-y-4" @submit.prevent="handleAccessTokenUpdate">
+ </p>
+ <form id="credential-form" class="space-y-4" @submit.prevent="handleAccessTokenUpdate">
  <div class="space-y-2">
  <Label for="new_access_token">Access Token</Label>
  <Input
@@ -249,18 +250,24 @@ function formatDate(dateStr: string) {
  />
  </div>
  </div>
- <DialogFooter>
+ </form>
+ </div>
+ <template #footer>
+ <div class="flex justify-end gap-3 w-full">
  <Button type="button" variant="outline" @click="updateDialogOpen = false">
  取消
  </Button>
- <Button type="submit":disabled="!accessToken.trim || submitting" class="group relative overflow-hidden">
+ <Button
+ type="submit"
+ form="credential-form":disabled="!accessToken.trim || submitting"
+ class="group relative overflow-hidden"
+ >
  <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ submitting ? '保存中...': '保存' }}
  </Button>
- </DialogFooter>
- </form>
- </DialogContent>
- </Dialog>
+ </div>
+ </template>
+ </BaseModal>
  </div>
 </template>

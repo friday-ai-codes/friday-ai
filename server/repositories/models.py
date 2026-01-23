@@ -24,6 +24,12 @@ class Repository(models.Model):
  )
  default_branch = models.CharField(max_length=100, default="main")
  description = models.TextField(blank=True, null=True)
+ proxy_url = models.CharField(
+ max_length=500,
+ blank=True,
+ null=True,
+ help_text="HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)",
+ )
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:
