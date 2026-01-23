@@ -33,6 +33,7 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 # Application definition
 # =============================================================================
 INSTALLED_APPS = [
+ "daphne",
  "django.contrib.auth",
  "django.contrib.contenttypes",
  "django.contrib.sessions",
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
  "rest_framework",
  "rest_framework_simplejwt",
  "drf_spectacular",
+ "channels",
  "accounts",
  "system",
  "repositories",
@@ -48,6 +50,7 @@ INSTALLED_APPS = [
  "feishu",
  "tasks",
  "chat",
+ "workflows",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
@@ -77,6 +80,17 @@ TEMPLATES = [
 ]
 WSGI_APPLICATION = "friday.wsgi.application"
 ASGI_APPLICATION = "friday.asgi.application"
+# =============================================================================
+# Channels / WebSocket
+# =============================================================================
+CHANNEL_LAYERS = {
+ "default": {
+ "BACKEND": "channels_redis.core.RedisChannelLayer",
+ "CONFIG": {
+ "hosts": [os.environ.get("REDIS_URL", "redis://localhost:6379/0")],
+ },
+ },
+}
 # =============================================================================
 # Database
 # =============================================================================

@@ -31,6 +31,8 @@ api_patterns = [
  path("settings/", include("system.urls")),
  # Chat (LLM conversation)
  path("chat/", include("chat.urls")),
+ # Workflows
+ path("", include("workflows.urls")),
  # API Documentation
  path("schema", SpectacularAPIView.as_view, name="schema"),
  path("docs", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
