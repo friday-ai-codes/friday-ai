@@ -325,6 +325,47 @@ class WorkflowViewSet(ModelViewSet):
  # Return updated workflow
  workflow.refresh_from_db
  return Response(WorkflowSerializer(workflow).data)
+ # =========================================================================
+ # Template Actions
+ # =========================================================================
+ @action(detail=False, methods=["get"])
+ def templates(self, request: Request) -> Response:
+ """List available workflow templates."""
+ from workflows.templates.loader import list_templates
+ return Response(list_templates)
+ @action(detail=False, methods=["post"], url_path="from-template")
+ def from_template(self, request: Request) -> Response:
+ """Create a workflow from a template."""
+ from workflows.templates.loader import create_workflow_from_template
+ template_id = request.data.get("template_id")
+ project_id = request.data.get("project_id")
+ name = request.data.get("name")
+ description = request.data.get("description")
+ if not template_id or not project_id:
+ return Response(
+ {"detail": "template_id and project_id are required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ workflow = create_workflow_from_template(
+ project_id=project_id,
+ template_id=template_id,
+ name=name,
+ description=description,
+ created_by=request.user,
+ )
+ return Response(
+ WorkflowSerializer(workflow).data,
+ status=status.HTTP_201_CREATED,
+ )
+ except ValueError as e:
+ return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ except Exception as e:
+ logger.exception("create_from_template_error", template_id=template_id)
+ return Response(
+ {"detail": f"Failed to create workflow: {e}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
 # =============================================================================
 # Execution ViewSet
 # =============================================================================

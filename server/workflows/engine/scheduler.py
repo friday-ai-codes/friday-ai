@@ -411,3 +411,171 @@ class WorkflowEngine:
  node_execution=node_execution,
  approver=approver,
  )
+ async def _continue_after_node(
+ self,
+ execution: WorkflowExecution,
+ node_execution: NodeExecution,
+ ) -> None:
+ """Continue workflow execution after a node completes via callback.
+ This is called when a container-based node (like CodeImplementNode)
+ reports completion through the callback API.
+ """
+ # Trigger completion hook
+ await self.hooks.trigger(
+ "node_completed",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ # Get the workflow and rebuild DAG
+ workflow = await sync_to_async(lambda: execution.workflow)
+ dag = await sync_to_async(DAG.from_workflow)(workflow)
+ # Find successor nodes
+ completed_node_id = str(node_execution.node_id)
+ dag_node = dag.nodes.get(completed_node_id)
+ if not dag_node:
+ logger.warning(
+ "callback_node_not_in_dag",
+ node_id=completed_node_id,
+ execution_id=str(execution.id),
+ )
+ return
+ # Check if there are successor nodes to execute
+ if not dag_node.outgoing:
+ # This was a terminal node - check if execution is complete
+ await self._check_execution_complete(execution)
+ return
+ # Collect all node outputs for context
+ node_outputs = await self._collect_all_outputs(execution)
+ # Execute successor nodes that are now ready
+ for successor_id in dag_node.outgoing:
+ successor_dag_node = dag.nodes.get(successor_id)
+ if not successor_dag_node:
+ continue
+ # Check if all dependencies are satisfied
+ all_deps_ready = await self._check_dependencies_ready(
+ execution, successor_dag_node
+ )
+ if all_deps_ready:
+ # Get successor's node execution
+ successor_exec = await sync_to_async(
+ lambda: NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id=successor_id,
+ status=NodeExecutionStatus.PENDING,
+ ).first
+ )
+ if successor_exec:
+ # Collect inputs and execute
+ input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
+ asyncio.create_task(
+ self._execute_node(execution, successor_dag_node, input_data, node_outputs)
+ )
+ async def _handle_node_failure(
+ self,
+ execution: WorkflowExecution,
+ node_execution: NodeExecution,
+ ) -> None:
+ """Handle node failure from callback.
+ Updates workflow status and triggers failure hooks.
+ """
+ # Trigger failure hook
+ await self.hooks.trigger(
+ "node_failed",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ # Check if we should fail the entire workflow
+ # For now, any node failure fails the workflow
+ await sync_to_async(execution.mark_failed)(
+ f"节点 {node_execution.node.name} 执行失败: {node_execution.error_message}"
+ )
+ await self.hooks.trigger("execution_failed", execution=execution)
+ async def _check_execution_complete(self, execution: WorkflowExecution) -> None:
+ """Check if workflow execution is complete and update status."""
+ # Count node statuses
+ stats = await sync_to_async(
+ lambda: {
+ "pending": NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.PENDING,
+ ).count,
+ "running": NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.RUNNING,
+ ).count,
+ "waiting": NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.WAITING_APPROVAL,
+ ).count,
+ "failed": NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.FAILED,
+ ).count,
+ }
+ )
+ if stats["pending"] == 0 and stats["running"] == 0 and stats["waiting"] == 0:
+ # All nodes are done
+ if stats["failed"] > 0:
+ await sync_to_async(execution.mark_failed)(
+ f"失败节点: {stats['failed']}"
+ )
+ else:
+ # Collect final outputs
+ final_output = await self._collect_final_outputs(execution)
+ await sync_to_async(execution.mark_completed)(final_output)
+ await self.hooks.trigger("execution_completed", execution=execution)
+ async def _check_dependencies_ready(
+ self,
+ execution: WorkflowExecution,
+ dag_node,
+ ) -> bool:
+ """Check if all dependencies of a node are completed."""
+ for dep_id in dag_node.incoming:
+ dep_exec = await sync_to_async(
+ lambda: NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id=dep_id,
+ ).first
+ )
+ if not dep_exec or dep_exec.status != NodeExecutionStatus.COMPLETED:
+ return False
+ return True
+ async def _collect_all_outputs(self, execution: WorkflowExecution) -> dict:
+ """Collect outputs from all completed nodes."""
+ completed_nodes = await sync_to_async(
+ lambda: list(
+ NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.COMPLETED,
+ ).select_related("node")
+ )
+ )
+ outputs = {}
+ for node_exec in completed_nodes:
+ outputs[str(node_exec.node_id)] = node_exec.output_data or {}
+ return outputs
+ async def _collect_final_outputs(self, execution: WorkflowExecution) -> dict:
+ """Collect outputs from terminal nodes."""
+ # Get workflow and DAG
+ workflow = await sync_to_async(lambda: execution.workflow)
+ dag = await sync_to_async(DAG.from_workflow)(workflow)
+ # Find terminal nodes (no outgoing edges)
+ terminal_node_ids = [
+ node_id for node_id, dag_node in dag.nodes.items
+ if not dag_node.outgoing
+ ]
+ # Get their outputs
+ terminal_outputs = await sync_to_async(
+ lambda: list(
+ NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id__in=terminal_node_ids,
+ status=NodeExecutionStatus.COMPLETED,
+ )
+ )
+ )
+ final_output = {}
+ for node_exec in terminal_outputs:
+ if node_exec.output_data:
+ final_output.update(node_exec.output_data)
+ return final_output

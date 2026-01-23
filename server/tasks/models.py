@@ -1,4 +1,14 @@
-"""Tasks app models."""
+"""Tasks app models.
+⚠️ DEPRECATED: This module is deprecated and will be removed.
+Use workflows.models instead.
+Migration guide: docs/migration/task-to-workflow.md
+Sunset date: 2025-06-01
+The Task model is being replaced by WorkflowExecution which provides:
+- Flexible, user-defined workflows instead of fixed pipeline
+- Visual workflow editor
+- Reusable workflow templates
+- Better state management and error handling
+"""
 import uuid
 from django.db import models
 from projects.models import Project, Repository

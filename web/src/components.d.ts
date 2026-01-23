@@ -9,6 +9,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
  export interface GlobalComponents {
+ ActionNode: typeof import('./components/workflow/nodes/ActionNode.vue')['default']
  AlertDialog: typeof import('./components/ui/alert-dialog/AlertDialog.vue')['default']
  AlertDialogAction: typeof import('./components/ui/alert-dialog/AlertDialogAction.vue')['default']
  AlertDialogCancel: typeof import('./components/ui/alert-dialog/AlertDialogCancel.vue')['default']
@@ -18,11 +19,13 @@ declare module 'vue' {
  AlertDialogHeader: typeof import('./components/ui/alert-dialog/AlertDialogHeader.vue')['default']
  AlertDialogTitle: typeof import('./components/ui/alert-dialog/AlertDialogTitle.vue')['default']
  AlertDialogTrigger: typeof import('./components/ui/alert-dialog/AlertDialogTrigger.vue')['default']
+ ApprovalNode: typeof import('./components/workflow/nodes/ApprovalNode.vue')['default']
  Avatar: typeof import('./components/ui/avatar/Avatar.vue')['default']
  AvatarFallback: typeof import('./components/ui/avatar/AvatarFallback.vue')['default']
  AvatarImage: typeof import('./components/ui/avatar/AvatarImage.vue')['default']
  Badge: typeof import('./components/ui/badge/Badge.vue')['default']
  BaseModal: typeof import('./components/modal/BaseModal.vue')['default']
+ BaseNodeComponent: typeof import('./components/workflow/nodes/BaseNodeComponent.vue')['default']
  Button: typeof import('./components/ui/button/Button.vue')['default']
  Card: typeof import('./components/ui/card/Card.vue')['default']
  CardContent: typeof import('./components/ui/card/CardContent.vue')['default']
@@ -45,6 +48,7 @@ declare module 'vue' {
  CommandShortcut: typeof import('./components/ui/command/CommandShortcut.vue')['default']
  ConfirmDialog: typeof import('./components/common/ConfirmDialog.vue')['default']
  ConfirmModal: typeof import('./components/modal/ConfirmModal.vue')['default']
+ ControlNode: typeof import('./components/workflow/nodes/ControlNode.vue')['default']
  CreateProjectModal: typeof import('./components/project/CreateProjectModal.vue')['default']
  CreateRepositoryModal: typeof import('./components/repository/CreateRepositoryModal.vue')['default']
  Dialog: typeof import('./components/ui/dialog/Dialog.vue')['default']
@@ -73,6 +77,7 @@ declare module 'vue' {
  EditRepositoryModal: typeof import('./components/repository/EditRepositoryModal.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
  ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
+ ExecutionProgress: typeof import('./components/workflow/ExecutionProgress.vue')['default']
  FeishuConfigForm: typeof import('./components/feishu/FeishuConfigForm.vue')['default']
  FormControl: typeof import('./components/ui/form/FormControl.vue')['default']
  FormDescription: typeof import('./components/ui/form/FormDescription.vue')['default']
@@ -85,6 +90,8 @@ declare module 'vue' {
  KeyFieldsCard: typeof import('./components/logs/KeyFieldsCard.vue')['default']
  Label: typeof import('./components/ui/label/Label.vue')['default']
  LoadingState: typeof import('./components/common/LoadingState.vue')['default']
+ NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
+ NodePalette: typeof import('./components/workflow/NodePalette.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
  PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
@@ -127,5 +134,8 @@ declare module 'vue' {
  TriggerLogDetail: typeof import('./components/logs/TriggerLogDetail.vue')['default']
  TriggerLogDetailModal: typeof import('./components/logs/TriggerLogDetailModal.vue')['default']
  TriggerLogList: typeof import('./components/logs/TriggerLogList.vue')['default']
+ TriggerNode: typeof import('./components/workflow/nodes/TriggerNode.vue')['default']
+ WorkflowCanvas: typeof import('./components/workflow/WorkflowCanvas.vue')['default']
+ WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  }
 }

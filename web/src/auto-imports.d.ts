@@ -186,6 +186,7 @@ declare global {
  const useEventBus: typeof import('@vueuse/core').useEventBus
  const useEventListener: typeof import('@vueuse/core').useEventListener
  const useEventSource: typeof import('@vueuse/core').useEventSource
+ const useExecutionsStore: typeof import('./stores/useExecutionsStore').useExecutionsStore
  const useEyeDropper: typeof import('@vueuse/core').useEyeDropper
  const useFavicon: typeof import('@vueuse/core').useFavicon
  const useFetch: typeof import('@vueuse/core').useFetch
@@ -223,6 +224,7 @@ declare global {
  const useMutationObserver: typeof import('@vueuse/core').useMutationObserver
  const useNavigatorLanguage: typeof import('@vueuse/core').useNavigatorLanguage
  const useNetwork: typeof import('@vueuse/core').useNetwork
+ const useNodeTypesStore: typeof import('./stores/useNodeTypesStore').useNodeTypesStore
  const useNow: typeof import('@vueuse/core').useNow
  const useObjectUrl: typeof import('@vueuse/core').useObjectUrl
  const useOffsetPagination: typeof import('@vueuse/core').useOffsetPagination
@@ -303,6 +305,7 @@ declare global {
  const useWindowFocus: typeof import('@vueuse/core').useWindowFocus
  const useWindowScroll: typeof import('@vueuse/core').useWindowScroll
  const useWindowSize: typeof import('@vueuse/core').useWindowSize
+ const useWorkflowsStore: typeof import('./stores/useWorkflowsStore').useWorkflowsStore
  const watch: typeof import('vue').watch
  const watchArray: typeof import('@vueuse/core').watchArray
  const watchAtMost: typeof import('@vueuse/core').watchAtMost
@@ -331,6 +334,15 @@ declare global {
  // @ts-ignore
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
+ // @ts-ignore
+ export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
+ import('./stores/useExecutionsStore')
+ // @ts-ignore
+ export type { NodePort, NodeType } from './stores/useNodeTypesStore'
+ import('./stores/useNodeTypesStore')
+ // @ts-ignore
+ export type { WorkflowNode, WorkflowEdge, Workflow } from './stores/useWorkflowsStore'
+ import('./stores/useWorkflowsStore')
 }
 // for vue template auto import
 import { UnwrapRef } from 'vue'
@@ -516,6 +528,7 @@ declare module 'vue' {
  readonly useEventBus: UnwrapRef<typeof import('@vueuse/core')['useEventBus']>
  readonly useEventListener: UnwrapRef<typeof import('@vueuse/core')['useEventListener']>
  readonly useEventSource: UnwrapRef<typeof import('@vueuse/core')['useEventSource']>
+ readonly useExecutionsStore: UnwrapRef<typeof import('./stores/useExecutionsStore')['useExecutionsStore']>
  readonly useEyeDropper: UnwrapRef<typeof import('@vueuse/core')['useEyeDropper']>
  readonly useFavicon: UnwrapRef<typeof import('@vueuse/core')['useFavicon']>
  readonly useFetch: UnwrapRef<typeof import('@vueuse/core')['useFetch']>
@@ -553,6 +566,7 @@ declare module 'vue' {
  readonly useMutationObserver: UnwrapRef<typeof import('@vueuse/core')['useMutationObserver']>
  readonly useNavigatorLanguage: UnwrapRef<typeof import('@vueuse/core')['useNavigatorLanguage']>
  readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
+ readonly useNodeTypesStore: UnwrapRef<typeof import('./stores/useNodeTypesStore')['useNodeTypesStore']>
  readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
  readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>
  readonly useOffsetPagination: UnwrapRef<typeof import('@vueuse/core')['useOffsetPagination']>
@@ -633,6 +647,7 @@ declare module 'vue' {
  readonly useWindowFocus: UnwrapRef<typeof import('@vueuse/core')['useWindowFocus']>
  readonly useWindowScroll: UnwrapRef<typeof import('@vueuse/core')['useWindowScroll']>
  readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>
+ readonly useWorkflowsStore: UnwrapRef<typeof import('./stores/useWorkflowsStore')['useWorkflowsStore']>
  readonly watch: UnwrapRef<typeof import('vue')['watch']>
  readonly watchArray: UnwrapRef<typeof import('@vueuse/core')['watchArray']>
  readonly watchAtMost: UnwrapRef<typeof import('@vueuse/core')['watchAtMost']>

@@ -160,6 +160,27 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
+ '/workflows/': RouteRecordInfo<
+ '/workflows/',
+ '/workflows',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/workflows/[id]': RouteRecordInfo<
+ '/workflows/[id]',
+ '/workflows/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/workflows/executions/[id]': RouteRecordInfo<
+ '/workflows/executions/[id]',
+ '/workflows/executions/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
  }
  /**
  * Route file to route info map by unplugin-vue-router.
@@ -289,6 +310,24 @@ declare module 'vue-router/auto-routes' {
  'src/pages/tasks/[id].vue': {
  routes:
  | '/tasks/[id]'
+ views:
+ | never
+ }
+ 'src/pages/workflows/index.vue': {
+ routes:
+ | '/workflows/'
+ views:
+ | never
+ }
+ 'src/pages/workflows/[id].vue': {
+ routes:
+ | '/workflows/[id]'
+ views:
+ | never
+ }
+ 'src/pages/workflows/executions/[id].vue': {
+ routes:
+ | '/workflows/executions/[id]'
  views:
  | never
  }
