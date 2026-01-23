@@ -1,3 +1,9 @@
+"""Tasks API views.
+⚠️ DEPRECATED: Use workflows.api.views instead.
+This module provides backward compatibility only.
+Migration guide: docs/migration/task-to-workflow.md
+Sunset date: 2025-06-01
+"""
 import asyncio
 import logging
 import json

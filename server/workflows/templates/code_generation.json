@@ -1,0 +1,93 @@
+{
+ "version": "1.0",
+ "name": "代码生成工作流",
+ "description": "从需求到 PR 的完整代码生成流程，等效于原 Task 系统",
+ "template_id": "code_generation",
+ "nodes": [
+ {
+ "id": "trigger",
+ "type": "manual_trigger",
+ "name": "手动触发",
+ "position": {"x": 250, "y": 0},
+ "config": {
+ "input_schema": {
+ "type": "object",
+ "properties": {
+ "title": {"type": "string", "title": "任务标题"},
+ "description": {"type": "string", "title": "需求描述"},
+ "work_item_id": {"type": "string", "title": "飞书工作项ID"}
+ },
+ "required": ["title", "description"]
+ }
+ }
+ },
+ {
+ "id": "generate_plan",
+ "type": "generate_plan",
+ "name": "生成方案",
+ "position": {"x": 250, "y": 100},
+ "config": {
+ "requirements_template": "{{trigger.description}}",
+ "include_codebase_analysis": true
+ }
+ },
+ {
+ "id": "plan_approval",
+ "type": "human_approval",
+ "name": "方案审批",
+ "position": {"x": 250, "y": 200},
+ "config": {
+ "title": "方案审批",
+ "description_template": "请审批以下技术方案：\n\n{{nodes.generate_plan.plan_markdown}}",
+ "timeout_hours": 72,
+ "notify_channels": ["feishu"]
+ }
+ },
+ {
+ "id": "code_implement",
+ "type": "code_implement",
+ "name": "代码实现",
+ "position": {"x": 250, "y": 300},
+ "config": {
+ "plan": "{{nodes.generate_plan.plan_markdown}}",
+ "repository_path": "{{context.repository_path}}",
+ "execution_mode": "auto",
+ "max_iterations": 10,
+ "timeout": 3600
+ }
+ },
+ {
+ "id": "code_approval",
+ "type": "human_approval",
+ "name": "代码审批",
+ "position": {"x": 250, "y": 400},
+ "config": {
+ "title": "代码审批",
+ "description_template": "代码实现已完成，请审批：\n\n分支: {{nodes.code_implement.branch_name}}\n变更文件: {{nodes.code_implement.changed_files}}",
+ "timeout_hours": 72,
+ "notify_channels": ["feishu"]
+ }
+ },
+ {
+ "id": "create_pr",
+ "type": "create_pr",
+ "name": "创建PR",
+ "position": {"x": 250, "y": 500},
+ "config": {
+ "title_template": "{{trigger.title}}",
+ "body_template": "## 需求\n{{trigger.description}}\n\n## 技术方案\n{{nodes.generate_plan.plan_markdown}}",
+ "base_branch": "main",
+ "auto_merge": false
+ }
+ }
+ ],
+ "edges": [
+ {"source": "trigger", "target": "generate_plan"},
+ {"source": "generate_plan", "target": "plan_approval"},
+ {"source": "plan_approval", "target": "code_implement", "source_handle": "approved"},
+ {"source": "plan_approval", "target": "generate_plan", "source_handle": "rejected", "label": "驳回修改"},
+ {"source": "code_implement", "target": "code_approval"},
+ {"source": "code_approval", "target": "create_pr", "source_handle": "approved"},
+ {"source": "code_approval", "target": "code_implement", "source_handle": "rejected", "label": "驳回修改"}
+ ]
+}
