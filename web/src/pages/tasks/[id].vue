@@ -14,9 +14,11 @@ import {
 import { Separator } from '~/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
+import { useTasksCompatStore } from '~/stores/tasksCompat'
 const route = useRoute
 const router = useRouter
-const tasksStore = useTasksStore
+const tasksStore = useTasksCompatStore
+const legacyTasksStore = useTasksStore // Keep for operations not in compat store
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
 const taskId = computed( => route.params.id as string)
@@ -51,7 +53,7 @@ async function handleUpdateRepo {
  return
  updatingRepo.value = true
  try {
- await tasksStore.updateTask(task.value.id, {
+ await legacyTasksStore.updateTask(task.value.id, {
  repository_id: selectedRepoId.value,
  })
  success('仓库已更新', '任务关联仓库已更新')
@@ -74,8 +76,8 @@ watch( => task.value?.repository_id, (newId) => {
 // 日志轮询
 const { isPolling, start: startPolling, stop: stopPolling } = usePolling(async => {
  if (task.value) {
- await tasksStore.fetchLogs(task.value.id)
- await tasksStore.fetchContainerStatus(task.value.id)
+ await legacyTasksStore.fetchLogs(task.value.id)
+ await legacyTasksStore.fetchContainerStatus(task.value.id)
  }
 }, { interval: 2000, immediate: false })
 // 当任务正在运行时自动开始轮询
@@ -100,8 +102,9 @@ async function handleTransition(newStatus: TaskStatus) {
  return
  transitioning.value = true
  try {
- await tasksStore.transitionTask(task.value.id, newStatus)
+ await legacyTasksStore.transitionTask(task.value.id, newStatus)
  success('状态已更新', `任务已转换为 ${STATUS_LABELS[newStatus]}`)
+ await tasksStore.fetchTask(task.value.id)
  }
  catch (e) {
  showError('转换失败', e instanceof Error ? e.message: '无法转换任务状态')
@@ -117,7 +120,7 @@ async function handleExecute(mode: 'plan' | 'execute') {
  return
  executing.value = true
  try {
- const response = await tasksStore.executeTask(task.value.id, mode)
+ const response = await legacyTasksStore.executeTask(task.value.id, mode)
  success('任务已启动', `容器 ID: ${response.container_id}`)
  startPolling
  }
@@ -136,7 +139,7 @@ async function handleStop {
  return
  stopping.value = true
  try {
- await tasksStore.stopTask(task.value.id)
+ await legacyTasksStore.stopTask(task.value.id)
  success('任务已停止')
  stopDialogOpen.value = false
  }
@@ -155,7 +158,7 @@ async function handleDelete {
  return
  deleting.value = true
  try {
- await tasksStore.deleteTask(task.value.id)
+ await legacyTasksStore.deleteTask(task.value.id)
  success('删除成功', '任务已删除')
  router.push('/tasks')
  }
@@ -187,7 +190,15 @@ const isRunning = computed( =>
  task.value?.status === 'planning' || task.value?.status === 'executing',
 )
 // 日志内容
-const logs = computed( => tasksStore.currentLogs)
+const logs = computed( => legacyTasksStore.currentLogs)
+// 检查是否是工作流任务，获取工作流ID
+const isWorkflowTask = computed( => tasksStore.isWorkflowTask(task.value!))
+const workflowId = computed( => task.value ? tasksStore.getWorkflowId(task.value): null)
+function viewWorkflow {
+ if (workflowId.value) {
+ router.push(`/workflows/${workflowId.value}`)
+ }
+}
 </script>
 <template>
  <div class="max-w-[1600px] mx-auto pb-10 space-y-6">
@@ -250,6 +261,10 @@ const logs = computed( => tasksStore.currentLogs)
  <Button v-if="isRunning" variant="destructive" size="lg" @click="stopDialogOpen = true">
  <span class="icon-[lucide--square] mr-2" />
  停止
+ </Button>
+ <Button v-if="workflowId" variant="outline" size="lg" @click="viewWorkflow">
+ <span class="icon-[lucide--git-branch] mr-2" />
+ 查看工作流
  </Button>
  <Button v-if="!isRunning" variant="outline" size="icon" class="w-10 " @click="deleteDialogOpen = true" title="删除任务">
  <span class="icon-[lucide--trash-2] w-4 text-destructive" />

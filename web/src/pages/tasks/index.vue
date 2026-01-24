@@ -10,11 +10,13 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { STATUS_LABELS } from '~/types'
+import { useTasksCompatStore } from '~/stores/tasksCompat'
 useHead({
  title: '任务列表 - Friday AI',
 })
 const route = useRoute
-const tasksStore = useTasksStore
+const router = useRouter
+const tasksStore = useTasksCompatStore
 const projectsStore = useProjectsStore
 const { error: showError } = useToast
 // 从 URL 获取过滤参数

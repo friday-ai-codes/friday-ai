@@ -48,6 +48,22 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  const failedTasks = computed( =>
  tasks.value.filter((t) => t.status === 'failed')
  )
+ const runningTasks = computed( =>
+ tasks.value.filter((t) => ['planning', 'executing'].includes(t.status))
+ )
+ const reviewTasks = computed( =>
+ tasks.value.filter((t) => ['plan_review', 'code_review'].includes(t.status))
+ )
+ const taskCount = computed( => tasks.value.length)
+ // Stats for dashboard display
+ const stats = computed( => ({
+ total: tasks.value.length,
+ pending: pendingTasks.value.length,
+ running: runningTasks.value.length,
+ review: reviewTasks.value.length,
+ completed: completedTasks.value.length,
+ failed: failedTasks.value.length,
+ }))
  /**
  * Fetch tasks list with optional filters.
  * Uses the compatibility API which merges Workflow and legacy Task data.
@@ -149,6 +165,10 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  activeTasks,
  completedTasks,
  failedTasks,
+ runningTasks,
+ reviewTasks,
+ taskCount,
+ stats,
  // Actions
  fetchTasks,
  fetchTask,
