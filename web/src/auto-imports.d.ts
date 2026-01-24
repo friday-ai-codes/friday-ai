@@ -270,6 +270,7 @@ declare global {
  const useStyleTag: typeof import('@vueuse/core').useStyleTag
  const useSupported: typeof import('@vueuse/core').useSupported
  const useSwipe: typeof import('@vueuse/core').useSwipe
+ const useTasksCompatStore: typeof import('./stores/tasksCompat').useTasksCompatStore
  const useTasksStore: typeof import('./stores/tasks').useTasksStore
  const useTemplateRef: typeof import('vue').useTemplateRef
  const useTemplateRefsList: typeof import('@vueuse/core').useTemplateRefsList
@@ -334,6 +335,9 @@ declare global {
  // @ts-ignore
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
+ // @ts-ignore
+ export type { TaskCompat } from './stores/tasksCompat'
+ import('./stores/tasksCompat')
  // @ts-ignore
  export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
@@ -612,6 +616,7 @@ declare module 'vue' {
  readonly useStyleTag: UnwrapRef<typeof import('@vueuse/core')['useStyleTag']>
  readonly useSupported: UnwrapRef<typeof import('@vueuse/core')['useSupported']>
  readonly useSwipe: UnwrapRef<typeof import('@vueuse/core')['useSwipe']>
+ readonly useTasksCompatStore: UnwrapRef<typeof import('./stores/tasksCompat')['useTasksCompatStore']>
  readonly useTasksStore: UnwrapRef<typeof import('./stores/tasks')['useTasksStore']>
  readonly useTemplateRef: UnwrapRef<typeof import('vue')['useTemplateRef']>
  readonly useTemplateRefsList: UnwrapRef<typeof import('@vueuse/core')['useTemplateRefsList']>

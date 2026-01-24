@@ -16,6 +16,7 @@ const navItems = [
  { to: '/', label: '首页', icon: 'lucide--home' },
  { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
+ { to: '/workflows', label: '工作流', icon: 'lucide--workflow', badge: 'NEW' },
  { to: '/tasks', label: '任务', icon: 'lucide--list-checks' },
  { to: '/logs', label: '日志', icon: 'lucide--file-text' },
  { to: '/settings', label: '设置', icon: 'lucide--settings' },
@@ -70,6 +71,12 @@ function goToAccountSettings {
  />
  <span class="relative text-lg":class="[`icon-[${item.icon}]`]" />
  <span class="relative">{{ item.label }}</span>
+ <span
+ v-if="item.badge"
+ class="relative ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-primary/10 text-primary"
+ >
+ {{ item.badge }}
+ </span>
  </RouterLink>
  </div>
  </div>
