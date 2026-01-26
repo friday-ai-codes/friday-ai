@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import api from '~/api/client'
 export interface NodePort {
  name: string
  label: string
@@ -47,10 +48,7 @@ export const useNodeTypesStore = defineStore('nodeTypes', => {
  loading.value = true
  error.value = null
  try {
- const response = await fetch('/api/node-types/')
- if (!response.ok)
- throw new Error('Failed to fetch node types')
- const data = await response.json
+ const data = await api.get<any>('/node-types/')
  nodeTypes.value = data.results || data
  }
  catch (e: any) {

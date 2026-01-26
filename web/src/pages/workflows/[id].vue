@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { VueFlowProvider } from '@vue-flow/core'
 import { storeToRefs } from 'pinia'
 import { onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -20,22 +19,22 @@ onMounted( => {
 async function onSave {
  try {
  await store.saveWorkflow
- toast.success('Workflow saved successfully')
+ toast.success('工作流保存成功')
  }
  catch (e: any) {
- toast.error(`Failed to save: ${e.message}`)
+ toast.error(`保存失败: ${e.message}`)
  }
 }
 async function onExecute {
  try {
  const result = await store.executeWorkflow
  if (result?.execution_id) {
- toast.success('Workflow execution started')
+ toast.success('工作流开始执行')
  router.push(`/workflows/executions/${result.execution_id}`)
  }
  }
  catch (e: any) {
- toast.error(`Failed to execute: ${e.message}`)
+ toast.error(`执行失败: ${e.message}`)
  }
 }
 function onUndo {
@@ -46,6 +45,7 @@ function onRedo {
 }
 function onSettings {
  // Settings are shown in the right panel when no node is selected
+ // 未选中节点时显示工作流设置
  store.selectNode(null)
 }
 </script>
@@ -64,9 +64,7 @@ function onSettings {
  <NodePalette />
  <!-- Center: Canvas -->
  <div class="flex-1 relative">
- <VueFlowProvider>
  <WorkflowCanvas:editable="true" />
- </VueFlowProvider>
  </div>
  <!-- Right Sidebar: Configuration -->
  <NodeConfigPanel />

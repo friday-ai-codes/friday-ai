@@ -291,9 +291,7 @@ class WorkflowViewSet(ModelViewSet):
  if node_id:
  # Update existing
  node = get_object_or_404(WorkflowNode, id=node_id, workflow=workflow)
- serializer = WorkflowNodeSerializer(
- node, data=node_data, partial=True
- )
+ serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
  serializer.is_valid(raise_exception=True)
  serializer.save
  existing_node_ids.add(str(node_id))
@@ -442,9 +440,7 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  serializer_class = NodeExecutionSerializer
  permission_classes = [IsAuthenticated]
  def get_queryset(self):
- queryset = NodeExecution.objects.select_related(
- "node", "workflow_execution"
- )
+ queryset = NodeExecution.objects.select_related("node", "workflow_execution")
  # Filter by execution
  execution_id = self.request.query_params.get("execution_id")
  if execution_id:
@@ -510,7 +506,7 @@ class NodeTypeViewSet(ReadOnlyModelViewSet):
  return
  def list(self, request: Request) -> Response:
  """List all available node types."""
- node_types = NodeRegistry.list_all
+ node_types = NodeRegistry.get_all_schemas
  data = [NodeTypeSerializer(nt).data for nt in node_types]
  # Optionally filter by category
  category = request.query_params.get("category")

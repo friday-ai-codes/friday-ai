@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import api from '~/api/client'
 export interface NodeExecution {
  id: string
  node: string
@@ -62,11 +63,8 @@ export const useExecutionsStore = defineStore('executions', => {
  params.append('workflow_id', workflowId)
  if (projectId)
  params.append('project_id', projectId)
- const url = `/api/workflow-executions/${params.toString ? `?${params.toString}`: ''}`
- const response = await fetch(url)
- if (!response.ok)
- throw new Error('Failed to fetch executions')
- const data = await response.json
+ const url = `/workflow-executions/${params.toString ? `?${params.toString}`: ''}`
+ const data = await api.get<any>(url)
  executions.value = data.results || data
  }
  catch (e: any) {
@@ -81,10 +79,7 @@ export const useExecutionsStore = defineStore('executions', => {
  loading.value = true
  error.value = null
  try {
- const response = await fetch(`/api/workflow-executions/${id}/`)
- if (!response.ok)
- throw new Error('Failed to fetch execution')
- currentExecution.value = await response.json
+ currentExecution.value = await api.get<WorkflowExecution>(`/workflow-executions/${id}/`)
  }
  catch (e: any) {
  error.value = e.message
@@ -96,11 +91,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  async function pauseExecution(id: string) {
  try {
- const response = await fetch(`/api/workflow-executions/${id}/pause/`, {
- method: 'POST',
- })
- if (!response.ok)
- throw new Error('Failed to pause execution')
+ await api.post(`/workflow-executions/${id}/pause/`)
  if (currentExecution.value?.id === id) {
  currentExecution.value.status = 'paused'
  }
@@ -112,11 +103,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  async function resumeExecution(id: string) {
  try {
- const response = await fetch(`/api/workflow-executions/${id}/resume/`, {
- method: 'POST',
- })
- if (!response.ok)
- throw new Error('Failed to resume execution')
+ await api.post(`/workflow-executions/${id}/resume/`)
  if (currentExecution.value?.id === id) {
  currentExecution.value.status = 'running'
  }
@@ -128,11 +115,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  async function cancelExecution(id: string) {
  try {
- const response = await fetch(`/api/workflow-executions/${id}/cancel/`, {
- method: 'POST',
- })
- if (!response.ok)
- throw new Error('Failed to cancel execution')
+ await api.post(`/workflow-executions/${id}/cancel/`)
  if (currentExecution.value?.id === id) {
  currentExecution.value.status = 'cancelled'
  }
@@ -144,13 +127,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  async function approveNode(nodeExecutionId: string, comment: string = '') {
  try {
- const response = await fetch(`/api/node-executions/${nodeExecutionId}/approve/`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ comment }),
- })
- if (!response.ok)
- throw new Error('Failed to approve node')
+ await api.post(`/node-executions/${nodeExecutionId}/approve/`, { comment })
  // Refresh execution to get updated state
  if (currentExecution.value) {
  await fetchExecution(currentExecution.value.id)
@@ -163,13 +140,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  async function rejectNode(nodeExecutionId: string, comment: string = '') {
  try {
- const response = await fetch(`/api/node-executions/${nodeExecutionId}/reject/`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ comment }),
- })
- if (!response.ok)
- throw new Error('Failed to reject node')
+ await api.post(`/node-executions/${nodeExecutionId}/reject/`, { comment })
  // Refresh execution to get updated state
  if (currentExecution.value) {
  await fetchExecution(currentExecution.value.id)

@@ -53,15 +53,15 @@ onUnmounted( => {
 })
 // Status helpers
 const statusConfig = {
- pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Pending' },
- running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', label: 'Running', animate: true },
- completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: 'Completed' },
- failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: 'Failed' },
- paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: 'Paused' },
- cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Cancelled' },
- waiting_approval: { icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30', label: 'Awaiting Approval' },
- skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Skipped' },
- timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: 'Timeout' },
+ pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '等待中' },
+ running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', label: '运行中', animate: true },
+ completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: '已完成' },
+ failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '失败' },
+ paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '已暂停' },
+ cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '已取消' },
+ waiting_approval: { icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30', label: '待审批' },
+ skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: '已跳过' },
+ timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时' },
 }
 const getStatusConfig = (status: string) => statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
 const progress = computed( => currentExecution.value?.progress || 0)
@@ -131,7 +131,7 @@ function formatTime(dateStr: string | null) {
  </Button>
  <div>
  <h1 class="text-2xl font-bold">
- {{ currentExecution?.workflow_name || 'Workflow Execution' }}
+ {{ currentExecution?.workflow_name || '工作流执行' }}
  </h1>
  <p class="text-sm text-muted-foreground font-mono">
  {{ executionId }}
@@ -146,7 +146,7 @@ function formatTime(dateStr: string | null) {
  @click="handlePause"
  >
  <Pause class="w-4 mr-2" />
- Pause
+ 暂停
  </Button>
  <Button
  v-if="currentExecution?.status === 'paused'"
@@ -155,7 +155,7 @@ function formatTime(dateStr: string | null) {
  @click="handleResume"
  >
  <Play class="w-4 mr-2" />
- Resume
+ 继续
  </Button>
  <Button
  v-if="['running', 'paused', 'pending'].includes(currentExecution?.status || '')"
@@ -164,7 +164,7 @@ function formatTime(dateStr: string | null) {
  @click="handleCancel"
  >
  <Square class="w-4 mr-2" />
- Cancel
+ 取消
  </Button>
  <Button variant="ghost" size="icon" @click="store.fetchExecution(executionId)">
  <RefreshCw class="w-4 " />
@@ -190,7 +190,7 @@ function formatTime(dateStr: string | null) {
  <Card>
  <CardHeader class="pb-3">
  <CardTitle class="text-lg">
- Status
+ 状态
  </CardTitle>
  </CardHeader>
  <CardContent class="space-y-4">
@@ -214,7 +214,7 @@ function formatTime(dateStr: string | null) {
  </div>
  <div class="space-y-2">
  <div class="flex justify-between text-sm">
- <span class="text-muted-foreground">Progress</span>
+ <span class="text-muted-foreground">进度</span>
  <span class="font-medium">{{ Math.round(progress) }}%</span>
  </div>
  <Progress:model-value="progress" class="" />
@@ -223,7 +223,7 @@ function formatTime(dateStr: string | null) {
  <div class="grid grid-cols-2 gap-4 text-sm">
  <div>
  <div class="text-muted-foreground">
- Total Nodes
+ 总节点数
  </div>
  <div class="font-medium">
  {{ currentExecution.total_nodes }}
@@ -231,7 +231,7 @@ function formatTime(dateStr: string | null) {
  </div>
  <div>
  <div class="text-muted-foreground">
- Completed
+ 已完成
  </div>
  <div class="font-medium text-green-600">
  {{ currentExecution.completed_nodes }}
@@ -239,7 +239,7 @@ function formatTime(dateStr: string | null) {
  </div>
  <div>
  <div class="text-muted-foreground">
- Failed
+ 失败
  </div>
  <div class="font-medium text-red-600">
  {{ currentExecution.failed_nodes }}
@@ -247,7 +247,7 @@ function formatTime(dateStr: string | null) {
  </div>
  <div>
  <div class="text-muted-foreground">
- Skipped
+ 已跳过
  </div>
  <div class="font-medium text-gray-500">
  {{ currentExecution.skipped_nodes }}
@@ -260,26 +260,26 @@ function formatTime(dateStr: string | null) {
  <Card>
  <CardHeader class="pb-3">
  <CardTitle class="text-lg">
- Trigger
+ 触发器
  </CardTitle>
  </CardHeader>
  <CardContent class="space-y-2 text-sm">
  <div class="flex justify-between">
- <span class="text-muted-foreground">Type</span>
+ <span class="text-muted-foreground">类型</span>
  <Badge variant="outline" class="capitalize">
  {{ currentExecution.trigger_type }}
  </Badge>
  </div>
  <div class="flex justify-between">
- <span class="text-muted-foreground">By</span>
- <span>{{ currentExecution.triggered_by_name || 'System' }}</span>
+ <span class="text-muted-foreground">触发者</span>
+ <span>{{ currentExecution.triggered_by_name || '系统' }}</span>
  </div>
  <div class="flex justify-between">
- <span class="text-muted-foreground">Started</span>
+ <span class="text-muted-foreground">开始时间</span>
  <span>{{ formatTime(currentExecution.started_at) }}</span>
  </div>
  <div v-if="currentExecution.completed_at" class="flex justify-between">
- <span class="text-muted-foreground">Completed</span>
+ <span class="text-muted-foreground">完成时间</span>
  <span>{{ formatTime(currentExecution.completed_at) }}</span>
  </div>
  </CardContent>
@@ -288,7 +288,7 @@ function formatTime(dateStr: string | null) {
  <Card v-if="currentExecution.error_message" class="border-destructive">
  <CardHeader class="pb-3">
  <CardTitle class="text-lg text-destructive">
- Error
+ 错误
  </CardTitle>
  </CardHeader>
  <CardContent>
@@ -303,9 +303,9 @@ function formatTime(dateStr: string | null) {
  <Card class="h-full">
  <CardHeader class="pb-3">
  <CardTitle class="text-lg">
- Node Executions
+ 节点执行
  </CardTitle>
- <CardDescription>Click on a node to view details</CardDescription>
+ <CardDescription>点击节点查看详情</CardDescription>
  </CardHeader>
  <CardContent>
  <ScrollArea class="h-[600px] pr-4">
@@ -344,7 +344,7 @@ function formatTime(dateStr: string | null) {
  class="border-orange-500 text-orange-500"
  @click.stop="openApprovalDialog(nodeExec)"
  >
- Review
+ 审核
  </Badge>
  <span class="text-xs text-muted-foreground">
  {{ formatTime(nodeExec.started_at) }}
@@ -362,13 +362,13 @@ function formatTime(dateStr: string | null) {
  <div class="grid gap-4 md:grid-cols-2">
  <div>
  <div class="text-xs font-medium text-muted-foreground mb-2">
- Input
+ 输入
  </div>
  <pre class=" rounded bg-muted text-xs overflow-auto max-">{{ JSON.stringify(nodeExec.input_data, null, 2) }}</pre>
  </div>
  <div>
  <div class="text-xs font-medium text-muted-foreground mb-2">
- Output
+ 输出
  </div>
  <pre class=" rounded bg-muted text-xs overflow-auto max-">{{ JSON.stringify(nodeExec.output_data, null, 2) }}</pre>
  </div>
@@ -376,7 +376,7 @@ function formatTime(dateStr: string | null) {
  <!-- Container logs -->
  <div v-if="nodeExec.container_logs">
  <div class="text-xs font-medium text-muted-foreground mb-2">
- Logs
+ 日志
  </div>
  <pre class=" rounded bg-black text-green-400 text-xs overflow-auto max- font-mono">{{ nodeExec.container_logs }}</pre>
  </div>
@@ -384,11 +384,11 @@ function formatTime(dateStr: string | null) {
  <div v-if="nodeExec.status === 'waiting_approval'" class="flex gap-2">
  <Button size="sm" @click.stop="openApprovalDialog(nodeExec)">
  <CheckCircle class="w-4 mr-2" />
- Approve
+ 批准
  </Button>
  <Button size="sm" variant="destructive" @click.stop="openApprovalDialog(nodeExec)">
  <XCircle class="w-4 mr-2" />
- Reject
+ 拒绝
  </Button>
  </div>
  </div>
@@ -403,9 +403,9 @@ function formatTime(dateStr: string | null) {
  <Dialog v-model:open="approvalDialogOpen">
  <DialogContent>
  <DialogHeader>
- <DialogTitle>Review: {{ selectedNodeExecution?.node_name }}</DialogTitle>
+ <DialogTitle>审核: {{ selectedNodeExecution?.node_name }}</DialogTitle>
  <DialogDescription>
- Please review the node execution and approve or reject.
+ 请审核此节点的执行结果并选择批准或拒绝。
  </DialogDescription>
  </DialogHeader>
  <div class="space-y-4">
@@ -414,21 +414,21 @@ function formatTime(dateStr: string | null) {
  <pre class="text-xs">{{ JSON.stringify(selectedNodeExecution.approval_data.display_data, null, 2) }}</pre>
  </div>
  <div class="space-y-2">
- <label class="text-sm font-medium">Comment (optional)</label>
- <Textarea v-model="approvalComment" placeholder="Add a comment..." />
+ <label class="text-sm font-medium">备注（可选）</label>
+ <Textarea v-model="approvalComment" placeholder="添加备注..." />
  </div>
  </div>
  <DialogFooter>
  <Button variant="outline" @click="approvalDialogOpen = false">
- Cancel
+ 取消
  </Button>
  <Button variant="destructive":disabled="approving" @click="handleReject">
  <XCircle class="w-4 mr-2" />
- Reject
+ 拒绝
  </Button>
  <Button:disabled="approving" @click="handleApprove">
  <CheckCircle class="w-4 mr-2" />
- Approve
+ 批准
  </Button>
  </DialogFooter>
  </DialogContent>

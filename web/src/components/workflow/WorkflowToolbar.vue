@@ -21,15 +21,15 @@ const emit = defineEmits(['save', 'execute', 'undo', 'redo', 'settings'])
  <div class="flex items-center space-x-2">
  <Button variant="outline" size="sm" @click="emit('settings')">
  <Settings class="w-4 mr-2" />
- Settings
+ 设置
  </Button>
  <Button variant="default" size="sm" @click="emit('execute')">
  <Play class="w-4 mr-2" />
- Run
+ 运行
  </Button>
  <Button variant="default" size="sm":disabled="saving" @click="emit('save')">
  <Save class="w-4 mr-2" />
- {{ saving ? 'Saving...': 'Save' }}
+ {{ saving ? '保存中...': '保存' }}
  </Button>
  </div>
  </div>

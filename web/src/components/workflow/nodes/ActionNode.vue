@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Terminal, Globe, GitBranch } from 'lucide-vue-next'
-import BaseNodeComponent from './BaseNodeComponent.vue'
+import { GitBranch, Globe, Terminal } from 'lucide-vue-next'
 import type { NodeProps } from '@vue-flow/core'
+import BaseNodeComponent from './BaseNodeComponent.vue'
 const props = defineProps<NodeProps>
 const getIcon = (type: string) => {
  switch (type) {
@@ -14,14 +14,15 @@ const getIcon = (type: string) => {
 </script>
 <template>
  <BaseNodeComponent
- v-bind="props":icon="getIcon(props.data.node_type)"
- badge="Action"
+ v-bind="props":icon="getIcon(props.data?.node_type || '')"
+ badge="操作"
+ badge-color="green"
  >
  <div class="space-y-1">
- <div v-if="props.data.config?.url" class="font-mono text-[10px] truncate max-w-full bg-muted px-1 rounded">
+ <div v-if="props.data?.config?.url" class="font-mono text-[10px] truncate max-w-full bg-secondary px-1.5 py-0.5 rounded">
  {{ props.data.config.method || 'GET' }} {{ props.data.config.url }}
  </div>
- <p class="line-clamp-2">{{ props.data.description }}</p>
+ <p class="line-clamp-2">{{ props.data?.description || '执行操作' }}</p>
  </div>
  </BaseNodeComponent>
 </template>
