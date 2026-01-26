@@ -60,9 +60,7 @@ class ExecutionContext:
  def get_context(self, key: str, default: Any = None) -> Any:
  """获取工作流上下文"""
  return self.workflow_context.get(key, default)
- def get_previous_output(
- self, node_id: str, key: str | None = None, default: Any = None
- ) -> Any:
+ def get_previous_output(self, node_id: str, key: str | None = None, default: Any = None) -> Any:
  """获取上游节点输出"""
  output = self.previous_outputs.get(node_id, {})
  if key:
@@ -110,9 +108,7 @@ class BaseNode(ABC):
  "required":,
  }
  # 输入/输出端口
- inputs: ClassVar[list[NodePort]] = [
- NodePort(name="default", label="输入", required=False)
- ]
+ inputs: ClassVar[list[NodePort]] = [NodePort(name="default", label="输入", required=False)]
  outputs: ClassVar[list[NodePort]] = [NodePort(name="default", label="输出")]
  # 执行选项
  requires_container: ClassVar[bool] = False # 是否需要 Docker 容器
@@ -152,6 +148,7 @@ class BaseNode(ABC):
  "name": p.name,
  "label": p.label,
  "type": p.port_type.value,
+ "required": p.required,
  "description": p.description,
  }
  for p in cls.outputs

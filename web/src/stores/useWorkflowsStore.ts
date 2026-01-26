@@ -1,6 +1,7 @@
 import type { Edge, Node } from '@vue-flow/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import client from '~/api/client'
 export interface WorkflowNode {
  id: string
  node_type: string
@@ -176,14 +177,10 @@ export const useWorkflowsStore = defineStore('workflows', => {
  loading.value = true
  error.value = null
  try {
- const params = new URLSearchParams
+ const params: Record<string, string> = {}
  if (projectId)
- params.append('project_id', projectId)
- const url = `/api/workflows/${params.toString ? `?${params.toString}`: ''}`
- const response = await fetch(url)
- if (!response.ok)
- throw new Error('Failed to fetch workflows')
- const data = await response.json
+ params.project_id = projectId
+ const data = await client.get<any>('/workflows/', params)
  workflows.value = data.results || data
  }
  catch (e: any) {
@@ -198,10 +195,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  loading.value = true
  error.value = null
  try {
- const response = await fetch(`/api/workflows/${id}/`)
- if (!response.ok)
- throw new Error('Failed to fetch workflow')
- const workflow = await response.json
+ const workflow = await client.get<Workflow>(`/workflows/${id}/`)
  currentWorkflow.value = workflow
  // Convert to Vue Flow format
  nodes.value = toVueFlowNodes(workflow.nodes || )
@@ -222,14 +216,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saving.value = true
  error.value = null
  try {
- const response = await fetch('/api/workflows/', {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify(data),
- })
- if (!response.ok)
- throw new Error('Failed to create workflow')
- const workflow = await response.json
+ const workflow = await client.post<Workflow>('/workflows/', data)
  workflows.value.unshift(workflow)
  return workflow
  }
@@ -247,18 +234,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saving.value = true
  error.value = null
  try {
- const response = await fetch(`/api/workflows/${currentWorkflow.value.id}/bulk-update/`, {
- method: 'PUT',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({
+ const workflow = await client.put<Workflow>(`/workflows/${currentWorkflow.value.id}/bulk-update/`, {
  nodes: toBackendNodes(nodes.value),
  edges: toBackendEdges(edges.value),
  delete_orphans: true,
- }),
  })
- if (!response.ok)
- throw new Error('Failed to save workflow')
- const workflow = await response.json
  currentWorkflow.value = workflow
  // Update nodes and edges with server IDs
  nodes.value = toVueFlowNodes(workflow.nodes || )
@@ -278,14 +258,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saving.value = true
  error.value = null
  try {
- const response = await fetch(`/api/workflows/${currentWorkflow.value.id}/`, {
- method: 'PATCH',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify(settings),
- })
- if (!response.ok)
- throw new Error('Failed to update workflow')
- const workflow = await response.json
+ const workflow = await client.patch<Workflow>(`/workflows/${currentWorkflow.value.id}/`, settings)
  currentWorkflow.value = { ...currentWorkflow.value, ...workflow }
  }
  catch (e: any) {
@@ -298,11 +271,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  async function deleteWorkflow(id: string) {
  try {
- const response = await fetch(`/api/workflows/${id}/`, {
- method: 'DELETE',
- })
- if (!response.ok)
- throw new Error('Failed to delete workflow')
+ await client.del(`/workflows/${id}/`)
  workflows.value = workflows.value.filter(w => w.id !== id)
  }
  catch (e: any) {
@@ -314,14 +283,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  if (!currentWorkflow.value)
  return null
  try {
- const response = await fetch(`/api/workflows/${currentWorkflow.value.id}/execute/`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ input_data: inputData }),
- })
- if (!response.ok)
- throw new Error('Failed to execute workflow')
- return await response.json
+ return await client.post(`/workflows/${currentWorkflow.value.id}/execute/`, { input_data: inputData })
  }
  catch (e: any) {
  error.value = e.message
@@ -330,14 +292,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  async function duplicateWorkflow(id: string, name?: string, projectId?: string) {
  try {
- const response = await fetch(`/api/workflows/${id}/duplicate/`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ name, project_id: projectId }),
- })
- if (!response.ok)
- throw new Error('Failed to duplicate workflow')
- const workflow = await response.json
+ const workflow = await client.post<Workflow>(`/workflows/${id}/duplicate/`, { name, project_id: projectId })
  workflows.value.unshift(workflow)
  return workflow
  }

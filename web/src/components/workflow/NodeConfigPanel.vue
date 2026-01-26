@@ -75,6 +75,15 @@ async function saveWorkflowSettings {
 function updateConfigValue(key: string, value: any) {
  nodeConfig.value = { ...nodeConfig.value, [key]: value }
 }
+// Helper to update JSON config safely
+function updateJsonConfig(key: string, value: string) {
+ try {
+ updateConfigValue(key, JSON.parse(value))
+ }
+ catch {
+ // Ignore JSON parse errors while typing
+ }
+}
 // Render config field based on schema
 function getFieldType(schema: any): string {
  if (schema.enum)
@@ -99,7 +108,7 @@ function getFieldType(schema: any): string {
  <div class="flex items-center gap-2">
  <Settings class="w-4 text-muted-foreground" />
  <CardTitle class="text-lg">
- Node Config
+ 节点配置
  </CardTitle>
  </div>
  <Button variant="ghost" size="icon" class=" w-8" @click="closeNodePanel">
@@ -115,19 +124,19 @@ function getFieldType(schema: any): string {
  <!-- Basic Info -->
  <div class="space-y-4">
  <div class="space-y-2">
- <Label>Name</Label>
- <Input v-model="nodeName" placeholder="Node name" />
+ <Label>名称</Label>
+ <Input v-model="nodeName" placeholder="节点名称" />
  </div>
  <div class="space-y-2">
- <Label>Description</Label>
- <Textarea v-model="nodeDescription" placeholder="Describe what this node does..." rows="2" />
+ <Label>描述</Label>
+ <Textarea v-model="nodeDescription" placeholder="描述此节点的功能..." rows="2" />
  </div>
  </div>
  <Separator />
  <!-- Dynamic Config Fields -->
  <div v-if="nodeTypeInfo?.config_schema?.properties" class="space-y-4">
  <h4 class="text-sm font-medium text-muted-foreground">
- Configuration
+ 配置项
  </h4>
  <div
  v-for="(propSchema, propKey) in nodeTypeInfo.config_schema.properties":key="propKey"
@@ -170,12 +179,7 @@ function getFieldType(schema: any): string {
  v-else-if="getFieldType(propSchema) === 'object' || getFieldType(propSchema) === 'array'":model-value="JSON.stringify(nodeConfig[propKey] || propSchema.default || {}, null, 2)"
  rows="4"
  class="font-mono text-xs"
- @update:model-value="
- try {
- updateConfigValue(propKey, JSON.parse($event))
- }
- catch {}
- "
+ @update:model-value="(val) => updateJsonConfig(propKey, val as string)"
  />
  <p v-if="propSchema.description && getFieldType(propSchema) !== 'switch'" class="text-xs text-muted-foreground">
  {{ propSchema.description }}
@@ -186,11 +190,11 @@ function getFieldType(schema: any): string {
  </ScrollArea>
  <div class=" border-t space-y-2">
  <Button class="w-full" @click="saveNodeConfig">
- Save Node
+ 保存节点
  </Button>
  <Button variant="destructive" class="w-full" @click="deleteNode">
  <Trash2 class="w-4 mr-2" />
- Delete Node
+ 删除节点
  </Button>
  </div>
  </template>
@@ -200,33 +204,33 @@ function getFieldType(schema: any): string {
  <div class="flex items-center gap-2">
  <Settings class="w-4 text-muted-foreground" />
  <CardTitle class="text-lg">
- Workflow Settings
+ 工作流设置
  </CardTitle>
  </div>
  </CardHeader>
  <ScrollArea class="flex-1">
  <CardContent class=" space-y-4">
  <div class="space-y-2">
- <Label>Name</Label>
- <Input v-model="workflowName" placeholder="Workflow Name" />
+ <Label>名称</Label>
+ <Input v-model="workflowName" placeholder="工作流名称" />
  </div>
  <div class="space-y-2">
- <Label>Description</Label>
- <Textarea v-model="workflowDescription" placeholder="Describe your workflow..." rows="3" />
+ <Label>描述</Label>
+ <Textarea v-model="workflowDescription" placeholder="描述您的工作流..." rows="3" />
  </div>
  <div class="space-y-2">
- <Label>Default Timeout (seconds)</Label>
+ <Label>默认超时时间（秒）</Label>
  <Input v-model.number="workflowTimeout" type="number" placeholder="3600" />
  </div>
  <Separator />
  <div class="text-sm text-muted-foreground">
- <p>Click on a node in the canvas to configure it.</p>
+ <p>点击画布中的节点进行配置。</p>
  </div>
  </CardContent>
  </ScrollArea>
  <div class=" border-t">
  <Button class="w-full" @click="saveWorkflowSettings">
- Save Settings
+ 保存设置
  </Button>
  </div>
  </template>

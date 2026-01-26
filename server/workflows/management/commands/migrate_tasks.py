@@ -2,9 +2,9 @@
 This management command migrates historical Task records to the new
 WorkflowExecution model, preserving data and enabling gradual transition.
 """
+import structlog
 from django.core.management.base import BaseCommand
 from django.db import transaction
-import structlog
 logger = structlog.get_logger
 class Command(BaseCommand):
  """Migrate historical Task data to WorkflowExecution."""
@@ -75,18 +75,12 @@ class Command(BaseCommand):
  def _is_already_migrated(self, task) -> bool:
  """Check if task has already been migrated."""
  from workflows.models import WorkflowExecution
- return WorkflowExecution.objects.filter(
- context__legacy_task_id=str(task.id)
- ).exists
+ return WorkflowExecution.objects.filter(context__legacy_task_id=str(task.id)).exists
  @transaction.atomic
  def _migrate_task(self, task):
  """Migrate a single Task to WorkflowExecution."""
  from workflows.models import (
- NodeExecution,
- NodeExecutionStatus,
- Workflow,
  WorkflowExecution,
- WorkflowExecutionStatus,
  )
  from workflows.templates.loader import create_workflow_from_template
  # 1. Create Workflow from template
@@ -115,9 +109,7 @@ class Command(BaseCommand):
  error_message=getattr(task, "error_message", "") or "",
  )
  # Update timestamps to match original
- WorkflowExecution.objects.filter(id=execution.id).update(
- created_at=task.created_at
- )
+ WorkflowExecution.objects.filter(id=execution.id).update(created_at=task.created_at)
  # 3. Create NodeExecution records based on task status
  self._create_node_executions(execution, task, workflow)
  logger.info(
@@ -153,9 +145,7 @@ class Command(BaseCommand):
  "merged": WorkflowExecutionStatus.COMPLETED,
  "failed": WorkflowExecutionStatus.FAILED,
  }
- return status_map.get(
- task_status.lower, WorkflowExecutionStatus.PENDING
- )
+ return status_map.get(task_status.lower, WorkflowExecutionStatus.PENDING)
  def _create_node_executions(self, execution, task, workflow):
  """Create NodeExecution records based on Task status."""
  from workflows.models import NodeExecution, NodeExecutionStatus
@@ -169,7 +159,9 @@ class Command(BaseCommand):
  ("code_review", "human_approval"), # Second approval (handled specially)
  ("merged", "create_pr"),
  ]
- task_status = task.status.lower if hasattr(task.status, "lower") else str(task.status).lower
+ task_status = (
+ task.status.lower if hasattr(task.status, "lower") else str(task.status).lower
+ )
  # Find current position in progression
  current_index = -1
  for i, (status, _) in enumerate(status_progression):
@@ -191,7 +183,9 @@ class Command(BaseCommand):
  if node_type == "human_approval":
  approval_count += 1
  # Find the right approval node
- approval_nodes = [n for n in workflow.nodes.all if n.node_type == "human_approval"]
+ approval_nodes = [
+ n for n in workflow.nodes.all if n.node_type == "human_approval"
+ ]
  if approval_count <= len(approval_nodes):
  node = approval_nodes[approval_count - 1]
  else:
@@ -222,9 +216,7 @@ class Command(BaseCommand):
  def _handle_rollback(self, dry_run: bool):
  """Rollback migrated data."""
  from workflows.models import WorkflowExecution
- migrated = WorkflowExecution.objects.filter(
- context__has_key="legacy_task_id"
- )
+ migrated = WorkflowExecution.objects.filter(context__has_key="legacy_task_id")
  count = migrated.count
  self.stdout.write(f"Found {count} migrated executions to rollback")
  if dry_run:
@@ -234,6 +226,4 @@ class Command(BaseCommand):
  workflow_ids = list(migrated.values_list("workflow_id", flat=True))
  from workflows.models import Workflow
  deleted = Workflow.objects.filter(id__in=workflow_ids).delete
- self.stdout.write(
- self.style.SUCCESS(f"Rollback complete: {deleted[0]} objects deleted")
- )
+ self.stdout.write(self.style.SUCCESS(f"Rollback complete: {deleted[0]} objects deleted"))

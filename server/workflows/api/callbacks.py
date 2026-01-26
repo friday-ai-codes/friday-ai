@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from workflows.models import NodeExecution, NodeExecutionStatus, WorkflowExecutionStatus
+from workflows.models import NodeExecution, NodeExecutionStatus
 logger = structlog.get_logger
 class NodeExecutionCallbackView(APIView):
  """Container execution callback endpoint.

@@ -8,6 +8,8 @@ from workflows.models.execution import (
  NodeExecutionStatus,
 )
 from workflows.models.webhook import WebhookConfig, WebhookLog
+# Alias for compatibility
+WorkflowExecutionStatus = ExecutionStatus
 __all__ = [
  "Workflow",
  "WorkflowNode",
@@ -15,6 +17,7 @@ __all__ = [
  "WorkflowExecution",
  "NodeExecution",
  "ExecutionStatus",
+ "WorkflowExecutionStatus",
  "NodeExecutionStatus",
  "WebhookConfig",
  "WebhookLog",

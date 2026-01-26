@@ -21,13 +21,13 @@ interface Props {
 }
 const props = defineProps<Props>
 const statusConfig = {
- pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Pending' },
- running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', label: 'Running', animate: true },
- completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: 'Completed' },
- failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: 'Failed' },
- paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: 'Paused' },
- cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: 'Cancelled' },
- timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: 'Timeout' },
+ pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '等待中' },
+ running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', label: '运行中', animate: true },
+ completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: '已完成' },
+ failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '失败' },
+ paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '已暂停' },
+ cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '已取消' },
+ timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时' },
 }
 const currentStatus = computed( => statusConfig[props.status as keyof typeof statusConfig] || statusConfig.pending)
 const formattedDuration = computed( => {
@@ -61,7 +61,7 @@ const formattedDuration = computed( => {
  <!-- Progress Bar -->
  <div class="space-y-2">
  <div class="flex justify-between text-sm">
- <span class="text-muted-foreground">Progress</span>
+ <span class="text-muted-foreground">进度</span>
  <span class="font-medium">{{ Math.round(progress) }}%</span>
  </div>
  <Progress:model-value="progress" class="" />
@@ -73,7 +73,7 @@ const formattedDuration = computed( => {
  {{ totalNodes }}
  </div>
  <div class="text-muted-foreground">
- Total
+ 总计
  </div>
  </div>
  <div class=" rounded bg-green-100 dark:bg-green-900/20">
@@ -81,7 +81,7 @@ const formattedDuration = computed( => {
  {{ completedNodes }}
  </div>
  <div class="text-muted-foreground">
- Done
+ 完成
  </div>
  </div>
  <div class=" rounded bg-red-100 dark:bg-red-900/20">
@@ -89,7 +89,7 @@ const formattedDuration = computed( => {
  {{ failedNodes }}
  </div>
  <div class="text-muted-foreground">
- Failed
+ 失败
  </div>
  </div>
  <div class=" rounded bg-gray-100 dark:bg-gray-800">
@@ -97,7 +97,7 @@ const formattedDuration = computed( => {
  {{ skippedNodes }}
  </div>
  <div class="text-muted-foreground">
- Skipped
+ 跳过
  </div>
  </div>
  </div>

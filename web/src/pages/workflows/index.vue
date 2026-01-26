@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { GitBranch, Play, Plus } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { onMounted } from 'vue'
+import { markRaw, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useModal } from 'vue-final-modal'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import CreateWorkflowModal from '~/components/workflow/CreateWorkflowModal.vue'
 const router = useRouter
 const store = useWorkflowsStore
 const { workflows, loading } = storeToRefs(store)
@@ -16,21 +18,36 @@ onMounted( => {
 function navigateToEditor(id: string) {
  router.push(`/workflows/${id}`)
 }
+// 新建工作流弹窗
+async function openCreateWorkflow {
+ const { open } = useModal({
+ component: markRaw(CreateWorkflowModal),
+ attrs: {
+ onConfirm: => {
+ // 创建成功后自动刷新列表（Store Action 已处理），这里无需额外跳转，
+ // 或者可以跳转到新创建的工作流详情页。
+ // createWorkflow action 返回了新工作流对象，如果能获取到 ID 最好跳转
+ store.fetchWorkflows // 刷新列表确保一致性
+ },
+ },
+ })
+ await open
+}
 </script>
 <template>
  <div class="container py-6 space-y-6">
  <div class="flex items-center justify-between">
  <div>
  <h1 class="text-3xl font-bold tracking-tight">
- Workflows
+ 工作流
  </h1>
  <p class="text-muted-foreground mt-2">
- Manage and automate your development processes.
+ 管理和自动化您的开发流程
  </p>
  </div>
- <Button>
+ <Button @click="openCreateWorkflow">
  <Plus class="w-4 mr-2" />
- New Workflow
+ 新建工作流
  </Button>
  </div>
  <div v-if="loading" class="flex justify-center py-12">
@@ -39,12 +56,14 @@ function navigateToEditor(id: string) {
  <div v-else-if="workflows.length === 0" class="text-center py-12 border rounded-lg bg-muted/10">
  <GitBranch class="w-12 mx-auto text-muted-foreground mb-4" />
  <h3 class="text-lg font-medium">
- No workflows found
+ 暂无工作流
  </h3>
  <p class="text-muted-foreground mb-4">
- Create your first workflow to start automating.
+ 创建您的第一个工作流，开始自动化开发流程
  </p>
- <Button>Create Workflow</Button>
+ <Button @click="openCreateWorkflow">
+ 创建工作流
+ </Button>
  </div>
  <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
  <Card v-for="workflow in workflows":key="workflow.id" class="hover:border-primary/50 transition-colors cursor-pointer" @click="navigateToEditor(workflow.id)">
@@ -63,11 +82,11 @@ function navigateToEditor(id: string) {
  {{ workflow.name }}
  </CardTitle>
  <CardDescription class="line-clamp-2">
- {{ workflow.description || 'No description' }}
+ {{ workflow.description || '暂无描述' }}
  </CardDescription>
  </CardHeader>
  <CardFooter class="text-xs text-muted-foreground">
- Updated {{ new Date(workflow.updated_at).toLocaleDateString }}
+ 更新于 {{ new Date(workflow.updated_at).toLocaleDateString('zh-CN') }}
  </CardFooter>
  </Card>
  </div>
