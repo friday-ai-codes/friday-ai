@@ -365,6 +365,153 @@ export interface HealthResponse {
  app: string
 }
 // ============================================================================
+// 工作流节点类型
+// ============================================================================
+/**
+ * 飞书事件触发节点数据
+ */
+export interface FeishuEventTriggerNodeData {
+ event_types: string
+ filter_project_key?: string
+ filter_work_item_type?: 'story' | 'task' | 'bug' | ''
+ filter_status?: string
+}
+/**
+ * 获取工作项详情节点数据
+ */
+export interface FetchWorkItemNodeData {
+ work_item_id: string
+ work_item_type: 'story' | 'task' | 'bug'
+ extract_fields: string
+ set_global_params: boolean
+ include_project_info: boolean
+ include_repositories: boolean
+}
+/**
+ * AI Prompt 节点数据
+ */
+export interface AIPromptNodeData {
+ system_prompt: string
+ user_prompt: string
+ model: string
+ temperature: number
+ max_tokens: number
+ output_format: 'text' | 'json' | 'markdown'
+}
+/**
+ * AI 编码指派器节点数据
+ */
+export interface AICodingDispatcherNodeData {
+ analysis_model: string
+ max_tasks: number
+ task_granularity: 'fine' | 'medium' | 'coarse'
+ include_tests: boolean
+ auto_assign_repos: boolean
+}
+/**
+ * 触发器事件类型
+ */
+export type TriggerEventType =
+ | 'WorkitemCreateEvent'
+ | 'WorkitemStatusEvent'
+ | 'WorkitemCommentEvent'
+ | 'WorkitemUpdateEvent'
+ | 'WorkFlowNodeStatusEvent'
+/**
+ * 工作流触发器
+ */
+export interface WorkflowTrigger {
+ id: string
+ workflow: string
+ event_type: TriggerEventType
+ event_type_display: string
+ filter_config: Record<string, any>
+ input_schema: Record<string, any>
+ is_active: boolean
+ name: string
+ description: string
+ created_at: string
+ updated_at: string
+}
+/**
+ * 创建触发器请求
+ */
+export interface WorkflowTriggerCreate {
+ event_type: TriggerEventType
+ filter_config?: Record<string, any>
+ input_schema?: Record<string, any>
+ is_active?: boolean
+ name?: string
+ description?: string
+}
+/**
+ * 编码任务状态
+ */
+export type CodingTaskStatus =
+ | 'pending'
+ | 'planning'
+ | 'plan_review'
+ | 'executing'
+ | 'code_review'
+ | 'merged'
+ | 'failed'
+/**
+ * 编码任务
+ */
+export interface CodingTask {
+ id: string
+ workflow_execution: string
+ repository: string
+ repository_name: string
+ name: string
+ prompt: string
+ description: string
+ status: CodingTaskStatus
+ status_display: string
+ session_id: string
+ plan_output: string
+ human_feedback: string
+ branch_name: string
+ commit_sha: string
+ pr_url: string
+ error_message: string
+ retry_count: number
+ metadata: Record<string, any>
+ duration: number | null
+ created_at: string
+ updated_at: string
+ started_at: string | null
+ completed_at: string | null
+}
+/**
+ * 执行上下文快照
+ */
+export interface ExecutionContext {
+ execution_id: string
+ status: string
+ progress: number
+ is_manual_trigger: boolean
+ trigger_data: Record<string, any>
+ input_data: Record<string, any>
+ global_params: Record<string, any>
+ node_outputs: Record<string, any>
+}
+/**
+ * 手动触发请求
+ */
+export interface ManualTriggerRequest {
+ event_type?: TriggerEventType
+ input_data?: Record<string, any>
+}
+/**
+ * 手动触发响应
+ */
+export interface ManualTriggerResponse {
+ execution_id: string
+ status: string
+ message: string
+}
+// ============================================================================
 // UI 辅助类型
 // ============================================================================
 /**

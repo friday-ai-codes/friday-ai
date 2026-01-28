@@ -1,17 +1,159 @@
 """Workflows API serializers."""
 from rest_framework import serializers
 from workflows.models import (
+ CodingTask,
+ CodingTaskStatus,
  ExecutionStatus,
  NodeExecution,
  NodeExecutionStatus,
+ TriggerEventType,
  WebhookConfig,
  WebhookLog,
  Workflow,
  WorkflowEdge,
  WorkflowExecution,
  WorkflowNode,
+ WorkflowTrigger,
 )
 from workflows.nodes.registry import NodeRegistry
+# =============================================================================
+# Trigger Serializers
+# =============================================================================
+class WorkflowTriggerSerializer(serializers.ModelSerializer):
+ """Serializer for WorkflowTrigger."""
+ event_type_display = serializers.CharField(
+ source="get_event_type_display", read_only=True
+ )
+ class Meta:
+ model = WorkflowTrigger
+ fields = [
+ "id",
+ "workflow",
+ "event_type",
+ "event_type_display",
+ "filter_config",
+ "input_schema",
+ "is_active",
+ "name",
+ "description",
+ "created_at",
+ "updated_at",
+ ]
+ read_only_fields = ["id", "created_at", "updated_at"]
+ def validate_event_type(self, value: str) -> str:
+ """Validate event type is a valid choice."""
+ valid_types = [choice.value for choice in TriggerEventType]
+ if value not in valid_types:
+ raise serializers.ValidationError(
+ f"Invalid event type: {value}. Valid types: {valid_types}"
+ )
+ return value
+class WorkflowTriggerCreateSerializer(serializers.ModelSerializer):
+ """Serializer for creating WorkflowTrigger."""
+ class Meta:
+ model = WorkflowTrigger
+ fields = [
+ "event_type",
+ "filter_config",
+ "input_schema",
+ "is_active",
+ "name",
+ "description",
+ ]
+class ManualTriggerSerializer(serializers.Serializer):
+ """Serializer for manual workflow trigger."""
+ event_type = serializers.ChoiceField(
+ choices=[choice.value for choice in TriggerEventType],
+ required=False,
+ allow_null=True,
+ )
+ input_data = serializers.JSONField(default=dict)
+class ExecutionContextSerializer(serializers.Serializer):
+ """Serializer for execution context snapshot."""
+ execution_id = serializers.UUIDField
+ status = serializers.CharField
+ progress = serializers.FloatField
+ is_manual_trigger = serializers.BooleanField
+ trigger_data = serializers.JSONField
+ input_data = serializers.JSONField
+ global_params = serializers.JSONField
+ node_outputs = serializers.JSONField
+# =============================================================================
+# CodingTask Serializers
+# =============================================================================
+class CodingTaskSerializer(serializers.ModelSerializer):
+ """Serializer for CodingTask."""
+ repository_name = serializers.CharField(
+ source="repository.name", read_only=True
+ )
+ status_display = serializers.CharField(
+ source="get_status_display", read_only=True
+ )
+ duration = serializers.FloatField(read_only=True)
+ class Meta:
+ model = CodingTask
+ fields = [
+ "id",
+ "workflow_execution",
+ "repository",
+ "repository_name",
+ "name",
+ "prompt",
+ "description",
+ "status",
+ "status_display",
+ "session_id",
+ "plan_output",
+ "human_feedback",
+ "branch_name",
+ "commit_sha",
+ "pr_url",
+ "error_message",
+ "retry_count",
+ "metadata",
+ "duration",
+ "created_at",
+ "updated_at",
+ "started_at",
+ "completed_at",
+ ]
+ read_only_fields = [
+ "id",
+ "workflow_execution",
+ "repository",
+ "created_at",
+ "updated_at",
+ "started_at",
+ "completed_at",
+ ]
+class CodingTaskListSerializer(serializers.ModelSerializer):
+ """Lightweight serializer for coding task list."""
+ repository_name = serializers.CharField(
+ source="repository.name", read_only=True
+ )
+ class Meta:
+ model = CodingTask
+ fields = [
+ "id",
+ "name",
+ "repository",
+ "repository_name",
+ "status",
+ "pr_url",
+ "created_at",
+ ]
+class CodingTaskUpdateSerializer(serializers.ModelSerializer):
+ """Serializer for updating CodingTask."""
+ class Meta:
+ model = CodingTask
+ fields = [
+ "status",
+ "human_feedback",
+ "branch_name",
+ "commit_sha",
+ "pr_url",
+ ]
+ extra_kwargs = {field: {"required": False} for field in fields}
 # =============================================================================
 # Node Serializers
 # =============================================================================

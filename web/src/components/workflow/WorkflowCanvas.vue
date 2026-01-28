@@ -10,8 +10,12 @@ import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 // Custom Nodes
 import ActionNode from './nodes/ActionNode.vue'
+import AICodingDispatcherNode from './nodes/AICodingDispatcherNode.vue'
+import AIPromptNode from './nodes/AIPromptNode.vue'
 import ApprovalNode from './nodes/ApprovalNode.vue'
 import ControlNode from './nodes/ControlNode.vue'
+import FeishuEventTriggerNode from './nodes/FeishuEventTriggerNode.vue'
+import FetchWorkItemNode from './nodes/FetchWorkItemNode.vue'
 import TriggerNode from './nodes/TriggerNode.vue'
 // Props
 defineProps<{
@@ -30,10 +34,16 @@ const nodeTypes = {
  manual_trigger: markRaw(TriggerNode),
  webhook_trigger: markRaw(TriggerNode),
  schedule_trigger: markRaw(TriggerNode),
+ feishu_event_trigger: markRaw(FeishuEventTriggerNode),
  // Actions
  http_request: markRaw(ActionNode),
  code_implement: markRaw(ActionNode),
  create_branch: markRaw(ActionNode),
+ // Integration
+ fetch_work_item: markRaw(FetchWorkItemNode),
+ // AI
+ ai_prompt: markRaw(AIPromptNode),
+ ai_coding_dispatcher: markRaw(AICodingDispatcherNode),
  // Approval
  human_approval: markRaw(ApprovalNode),
  approval: markRaw(ApprovalNode),

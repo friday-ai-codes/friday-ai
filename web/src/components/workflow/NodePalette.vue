@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Clock, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
+import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
@@ -14,6 +14,24 @@ const staticNodeTypes = [
  { type: 'manual_trigger', label: '手动触发', icon: Play, description: '手动启动工作流' },
  { type: 'webhook_trigger', label: 'Webhook', icon: Webhook, description: '通过 HTTP 请求触发' },
  { type: 'schedule_trigger', label: '定时调度', icon: Clock, description: '按计划自动执行' },
+ { type: 'feishu_event_trigger', label: '飞书事件', icon: Webhook, description: '监听飞书工作项事件' },
+ ],
+ },
+ {
+ category: '数据获取',
+ categoryKey: 'integration',
+ color: 'orange',
+ items: [
+ { type: 'fetch_work_item', label: '获取工作项', icon: Download, description: '获取飞书工作项详情' },
+ ],
+ },
+ {
+ category: 'AI',
+ categoryKey: 'ai',
+ color: 'purple',
+ items: [
+ { type: 'ai_prompt', label: 'AI Prompt', icon: MessageSquare, description: '调用 AI 大语言模型' },
+ { type: 'ai_coding_dispatcher', label: 'AI 编码指派', icon: Bot, description: '分析需求分配编码任务' },
  ],
  },
  {
@@ -29,7 +47,7 @@ const staticNodeTypes = [
  {
  category: '逻辑',
  categoryKey: 'control',
- color: 'purple',
+ color: 'cyan',
  items: [
  { type: 'condition', label: '条件判断', icon: GitBranch, description: '根据条件分支' },
  { type: 'approval', label: '人工审批', icon: MessageSquare, description: '等待人工审批' },
@@ -68,6 +86,8 @@ function getCategoryColor(color: string) {
  blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800',
  green: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800',
  purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800',
+ orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800',
+ cyan: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800',
  }
  return colors[color] || colors.blue
 }
@@ -76,6 +96,8 @@ function getIconBgColor(color: string) {
  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
  green: 'bg-green-500/10 text-green-600 dark:text-green-400',
  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+ orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+ cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
  }
  return colors[color] || colors.blue
 }

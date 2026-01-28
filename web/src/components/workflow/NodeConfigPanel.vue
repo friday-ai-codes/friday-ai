@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Settings, Trash2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -11,11 +11,14 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import { useNodeMeta } from '~/composables/useNodeMeta'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { currentWorkflow, selectedNode, selectedNodeId } = storeToRefs(store)
+// Use node meta composable for registry access
+const { getDefinition, hasCustomConfig } = useNodeMeta
 // Local form state for workflow settings
 const workflowName = ref('')
 const workflowDescription = ref('')
@@ -30,6 +33,26 @@ const nodeTypeInfo = computed( => {
  return null
  const nodeType = selectedNode.value.data?.node_type || selectedNode.value.type
  return nodeTypesStore.getNodeType(nodeType)
+})
+// Get the current node type for custom config panel
+const currentNodeType = computed( => {
+ return selectedNode.value?.data?.node_type || selectedNode.value?.type || ''
+})
+// Check if node has custom config panel (from registry)
+const nodeHasCustomConfig = computed( => {
+ return hasCustomConfig(currentNodeType.value)
+})
+// Get node definition from registry
+const nodeDefinition = computed( => {
+ return getDefinition(currentNodeType.value)
+})
+// Dynamic config component from registry
+const ConfigComponent = computed( => {
+ const def = nodeDefinition.value
+ if (def?.configComponent) {
+ return defineAsyncComponent(def.configComponent)
+ }
+ return null
 })
 // Watch for workflow changes
 watch(currentWorkflow, (workflow) => {
@@ -133,8 +156,14 @@ function getFieldType(schema: any): string {
  </div>
  </div>
  <Separator />
- <!-- Dynamic Config Fields -->
- <div v-if="nodeTypeInfo?.config_schema?.properties" class="space-y-4">
+ <!-- Custom Config Panels (dynamically loaded from registry) -->
+ <template v-if="nodeHasCustomConfig && ConfigComponent">
+ <component:is="ConfigComponent"
+ v-model:config="nodeConfig"
+ />
+ </template>
+ <!-- Dynamic Config Fields (fallback for nodes without custom panels) -->
+ <div v-else-if="nodeTypeInfo?.config_schema?.properties" class="space-y-4">
  <h4 class="text-sm font-medium text-muted-foreground">
  配置项
  </h4>
@@ -159,8 +188,8 @@ function getFieldType(schema: any): string {
  />
  <!-- Switch -->
  <div v-else-if="getFieldType(propSchema) === 'switch'" class="flex items-center gap-2">
- <Switch:checked="nodeConfig[propKey] ?? propSchema.default ?? false"
- @update:checked="updateConfigValue(propKey, $event)"
+ <Switch:model-value="nodeConfig[propKey] ?? propSchema.default ?? false"
+ @update:model-value="updateConfigValue(propKey, $event)"
  />
  <span class="text-sm text-muted-foreground">{{ propSchema.description }}</span>
  </div>

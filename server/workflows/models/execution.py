@@ -61,6 +61,29 @@ class WorkflowExecution(models.Model):
  verbose_name="触发数据",
  help_text="如 webhook payload、定时任务信息等",
  )
+ # 手动触发标识
+ is_manual_trigger = models.BooleanField(
+ default=False,
+ verbose_name="是否手动触发",
+ help_text="手动触发时模拟事件数据",
+ )
+ # 关联飞书触发日志
+ trigger_log = models.ForeignKey(
+ "feishu.TriggerLog",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="workflow_executions",
+ verbose_name="触发日志",
+ help_text="关联的飞书 Webhook 触发日志",
+ )
+ # 全局参数（节点可读写，前端可见）
+ global_params = models.JSONField(
+ default=dict,
+ blank=True,
+ verbose_name="全局参数",
+ help_text="节点间共享的全局参数，可通过 {{global.key}} 引用",
+ )
  # 执行上下文（全局变量，节点间共享）
  context = models.JSONField(
  default=dict,
@@ -152,6 +175,46 @@ class WorkflowExecution(models.Model):
  """批量更新上下文"""
  self.context.update(data)
  self.save(update_fields=["context"])
+ # 全局参数管理方法
+ def get_global_param(self, key: str, default: Any = None) -> Any:
+ """获取全局参数
+ Args:
+ key: 参数键
+ default: 默认值
+ Returns:
+ 参数值
+ """
+ return self.global_params.get(key, default)
+ def set_global_param(self, key: str, value: Any) -> None:
+ """设置全局参数
+ Args:
+ key: 参数键
+ value: 参数值
+ """
+ self.global_params[key] = value
+ self.save(update_fields=["global_params"])
+ def update_global_params(self, data: dict) -> None:
+ """批量更新全局参数
+ Args:
+ data: 要更新的参数字典
+ """
+ self.global_params.update(data)
+ self.save(update_fields=["global_params"])
+ def get_context_snapshot(self) -> dict:
+ """获取上下文快照（用于前端展示）
+ Returns:
+ 包含执行状态、全局参数、节点输出的完整上下文
+ """
+ return {
+ "execution_id": str(self.id),
+ "status": self.status,
+ "progress": self.progress,
+ "is_manual_trigger": self.is_manual_trigger,
+ "trigger_data": self.trigger_data,
+ "input_data": self.input_data,
+ "global_params": self.global_params,
+ "node_outputs": self.context.get("node_outputs", {}),
+ }
 class NodeExecution(models.Model):
  """节点执行记录"""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
