@@ -50,7 +50,13 @@ function onSettings {
 }
 </script>
 <template>
- <div class="flex flex-col h-[calc(100vh-4rem)] w-full bg-background overflow-hidden">
+ <div class="flex flex-col h-[calc(100vh-4rem)] w-full bg-background overflow-hidden relative">
+ <!-- 背景装饰 -->
+ <div class="absolute inset-0 -z-10 overflow-hidden">
+ <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/15 to-violet-500/20 rounded-full blur-3xl" />
+ <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-blue-500/15 to-cyan-400/10 rounded-full blur-3xl" />
+ <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
+ </div>
  <!-- Toolbar -->
  <WorkflowToolbar:saving="saving":can-undo="canUndo":can-redo="canRedo"
  @save="onSave"
@@ -63,7 +69,7 @@ function onSettings {
  <!-- Left Sidebar: Components -->
  <NodePalette />
  <!-- Center: Canvas -->
- <div class="flex-1 relative">
+ <div class="flex-1 relative my-3">
  <WorkflowCanvas:editable="true" />
  </div>
  <!-- Right Sidebar: Configuration -->
