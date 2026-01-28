@@ -7,7 +7,7 @@ const props = defineProps<{
 }>
 // 细粒度加载：只包含需要的语言和主题
 const highlighter = createHighlighterCore({
- themes: [import('shiki/themes/github-dark.mjs')],
+ themes: [import('shiki/themes/vitesse-dark.mjs')],
  langs: [
  import('shiki/langs/json.mjs'),
  import('shiki/langs/javascript.mjs'),
