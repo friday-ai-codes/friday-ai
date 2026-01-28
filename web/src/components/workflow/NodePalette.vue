@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 const _nodeTypesStore = useNodeTypesStore
 // 静态节点类型定义（备用，当 API 未加载时使用）
@@ -124,7 +123,7 @@ function getIconBgColor(color: string) {
  </div>
  </div>
  <!-- Node Items -->
- <div class="space-y-1.5">
+ <div class="space-y-2">
  <div
  v-for="item in category.items":key="item.type"
  class="group flex items-center gap-3 .5 text-sm border rounded-lg cursor-grab
@@ -144,8 +143,18 @@ function getIconBgColor(color: string) {
  <div class="font-medium text-foreground text-sm leading-tight">
  {{ item.label }}
  </div>
+ <!-- Text -->
+ <div class="flex-1 min-w-0">
+ <div class="font-medium text-foreground text-sm leading-tight">
+ {{ item.label }}
+ </div>
  <div class="text-[10px] text-muted-foreground truncate mt-0.5">
  {{ item.description }}
+ </div>
+ </div>
+ <!-- Drag indicator -->
+ <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+ <span class="icon-[lucide--grip-vertical] text-muted-foreground/50" />
  </div>
  </div>
  <!-- Drag indicator -->

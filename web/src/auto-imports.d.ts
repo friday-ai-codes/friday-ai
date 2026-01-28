@@ -156,6 +156,7 @@ declare global {
  const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
  const useCloned: typeof import('@vueuse/core').useCloned
  const useColorMode: typeof import('@vueuse/core').useColorMode
+ const useConfigModel: typeof import('./composables/useConfigModel').useConfigModel
  const useConfirmDialog: typeof import('@vueuse/core').useConfirmDialog
  const useCountdown: typeof import('@vueuse/core').useCountdown
  const useCounter: typeof import('@vueuse/core').useCounter
@@ -224,6 +225,7 @@ declare global {
  const useMutationObserver: typeof import('@vueuse/core').useMutationObserver
  const useNavigatorLanguage: typeof import('@vueuse/core').useNavigatorLanguage
  const useNetwork: typeof import('@vueuse/core').useNetwork
+ const useNodeMeta: typeof import('./composables/useNodeMeta').useNodeMeta
  const useNodeTypesStore: typeof import('./stores/useNodeTypesStore').useNodeTypesStore
  const useNow: typeof import('@vueuse/core').useNow
  const useObjectUrl: typeof import('@vueuse/core').useObjectUrl
@@ -329,6 +331,9 @@ declare global {
  // @ts-ignore
  export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
  import('vue')
+ // @ts-ignore
+ export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
+ import('./composables/useConfigModel')
  // @ts-ignore
  export type { ModalOptions, ModalInstance } from './composables/useModal'
  import('./composables/useModal')
@@ -502,6 +507,7 @@ declare module 'vue' {
  readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>
  readonly useCloned: UnwrapRef<typeof import('@vueuse/core')['useCloned']>
  readonly useColorMode: UnwrapRef<typeof import('@vueuse/core')['useColorMode']>
+ readonly useConfigModel: UnwrapRef<typeof import('./composables/useConfigModel')['useConfigModel']>
  readonly useConfirmDialog: UnwrapRef<typeof import('@vueuse/core')['useConfirmDialog']>
  readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
  readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
@@ -570,6 +576,7 @@ declare module 'vue' {
  readonly useMutationObserver: UnwrapRef<typeof import('@vueuse/core')['useMutationObserver']>
  readonly useNavigatorLanguage: UnwrapRef<typeof import('@vueuse/core')['useNavigatorLanguage']>
  readonly useNetwork: UnwrapRef<typeof import('@vueuse/core')['useNetwork']>
+ readonly useNodeMeta: UnwrapRef<typeof import('./composables/useNodeMeta')['useNodeMeta']>
  readonly useNodeTypesStore: UnwrapRef<typeof import('./stores/useNodeTypesStore')['useNodeTypesStore']>
  readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
  readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>

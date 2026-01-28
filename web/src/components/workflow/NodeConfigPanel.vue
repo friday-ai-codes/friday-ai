@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { ScrollArea } from '~/components/ui/scroll-area'
@@ -123,39 +122,44 @@ function getFieldType(schema: any): string {
 }
 </script>
 <template>
- <Card class="h-full w-80 border-l rounded-none flex flex-col bg-background">
+ <div class="h-full w-80 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <!-- Node Configuration -->
  <template v-if="selectedNode">
- <CardHeader class="border-b pb-3">
+ <!-- Header -->
+ <div class=" border-b border-border/50">
  <div class="flex items-center justify-between">
- <div class="flex items-center gap-2">
- <Settings class="w-4 text-muted-foreground" />
- <CardTitle class="text-lg">
- 节点配置
- </CardTitle>
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10">
+ <Settings class="w-5 text-violet-500" />
  </div>
- <Button variant="ghost" size="icon" class=" w-8" @click="closeNodePanel">
+ <div>
+ <h3 class="text-base font-semibold">
+ 节点配置
+ </h3>
+ <Badge v-if="nodeTypeInfo" variant="secondary" class="mt-1">
+ {{ nodeTypeInfo.display_name }}
+ </Badge>
+ </div>
+ </div>
+ <Button variant="ghost" size="icon" class=" w-8 hover:bg-muted/50" @click="closeNodePanel">
  <X class="w-4 " />
  </Button>
  </div>
- <Badge v-if="nodeTypeInfo" variant="secondary" class="w-fit mt-2">
- {{ nodeTypeInfo.display_name }}
- </Badge>
- </CardHeader>
+ </div>
  <ScrollArea class="flex-1">
- <CardContent class=" space-y-4">
+ <div class=" space-y-5">
  <!-- Basic Info -->
  <div class="space-y-4">
  <div class="space-y-2">
- <Label>名称</Label>
- <Input v-model="nodeName" placeholder="节点名称" />
+ <Label class="text-sm font-medium">名称</Label>
+ <Input v-model="nodeName" placeholder="节点名称" class="bg-background/50" />
  </div>
  <div class="space-y-2">
- <Label>描述</Label>
- <Textarea v-model="nodeDescription" placeholder="描述此节点的功能..." rows="2" />
+ <Label class="text-sm font-medium">描述</Label>
+ <Textarea v-model="nodeDescription" placeholder="描述此节点的功能..." rows="2" class="bg-background/50" />
  </div>
  </div>
- <Separator />
+ <Separator class="bg-border/50" />
  <!-- Custom Config Panels (dynamically loaded from registry) -->
  <template v-if="nodeHasCustomConfig && ConfigComponent">
  <component:is="ConfigComponent"
@@ -164,26 +168,29 @@ function getFieldType(schema: any): string {
  </template>
  <!-- Dynamic Config Fields (fallback for nodes without custom panels) -->
  <div v-else-if="nodeTypeInfo?.config_schema?.properties" class="space-y-4">
- <h4 class="text-sm font-medium text-muted-foreground">
+ <h4 class="text-sm font-medium text-muted-foreground flex items-center gap-2">
+ <span class="icon-[lucide--sliders-horizontal] text-base" />
  配置项
  </h4>
  <div
  v-for="(propSchema, propKey) in nodeTypeInfo.config_schema.properties":key="propKey"
  class="space-y-2"
  >
- <Label class="flex items-center gap-2">
+ <Label class="flex items-center gap-2 text-sm">
  {{ propSchema.title || propKey }}
  <span v-if="nodeTypeInfo.config_schema.required?.includes(propKey)" class="text-destructive">*</span>
  </Label>
  <!-- Text input -->
  <Input
  v-if="getFieldType(propSchema) === 'text'":model-value="nodeConfig[propKey] || propSchema.default || ''":placeholder="propSchema.description"
+ class="bg-background/50"
  @update:model-value="updateConfigValue(propKey, $event)"
  />
  <!-- Number input -->
  <Input
  v-else-if="getFieldType(propSchema) === 'number'"
  type="number":model-value="nodeConfig[propKey] ?? propSchema.default ?? 0":min="propSchema.minimum":max="propSchema.maximum"
+ class="bg-background/50"
  @update:model-value="updateConfigValue(propKey, Number($event))"
  />
  <!-- Switch -->
@@ -196,7 +203,7 @@ function getFieldType(schema: any): string {
  <!-- Select -->
  <select
  v-else-if="getFieldType(propSchema) === 'select'"
- class="w-full rounded-md border border-input bg-background px-3 py-1 text-sm":value="nodeConfig[propKey] || propSchema.default"
+ class="w-full rounded-xl border border-border/50 bg-background/50 px-3 py-1 text-sm focus:border-primary/50 focus:outline-none transition-colors":value="nodeConfig[propKey] || propSchema.default"
  @change="updateConfigValue(propKey, ($event.target as HTMLSelectElement).value)"
  >
  <option v-for="opt in propSchema.enum":key="opt":value="opt">
@@ -207,7 +214,7 @@ function getFieldType(schema: any): string {
  <Textarea
  v-else-if="getFieldType(propSchema) === 'object' || getFieldType(propSchema) === 'array'":model-value="JSON.stringify(nodeConfig[propKey] || propSchema.default || {}, null, 2)"
  rows="4"
- class="font-mono text-xs"
+ class="font-mono text-xs bg-background/50"
  @update:model-value="(val) => updateJsonConfig(propKey, val as string)"
  />
  <p v-if="propSchema.description && getFieldType(propSchema) !== 'switch'" class="text-xs text-muted-foreground">
@@ -215,13 +222,16 @@ function getFieldType(schema: any): string {
  </p>
  </div>
  </div>
- </CardContent>
+ </div>
  </ScrollArea>
- <div class=" border-t space-y-2">
- <Button class="w-full" @click="saveNodeConfig">
+ <!-- Actions -->
+ <div class=" border-t border-border/50 space-y-2">
+ <Button class="w-full group relative overflow-hidden" @click="saveNodeConfig">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="icon-[lucide--save] mr-2" />
  保存节点
  </Button>
- <Button variant="destructive" class="w-full" @click="deleteNode">
+ <Button variant="outline" class="w-full hover:border-destructive/50 hover:text-destructive" @click="deleteNode">
  <Trash2 class="w-4 mr-2" />
  删除节点
  </Button>
@@ -229,39 +239,55 @@ function getFieldType(schema: any): string {
  </template>
  <!-- Workflow Settings -->
  <template v-else>
- <CardHeader class="border-b">
- <div class="flex items-center gap-2">
- <Settings class="w-4 text-muted-foreground" />
- <CardTitle class="text-lg">
+ <!-- Header -->
+ <div class=" border-b border-border/50">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <Settings class="w-5 text-primary" />
+ </div>
+ <div>
+ <h3 class="text-base font-semibold">
  工作流设置
- </CardTitle>
+ </h3>
+ <p class="text-xs text-muted-foreground">
+ 配置工作流基本信息
+ </p>
  </div>
- </CardHeader>
+ </div>
+ </div>
  <ScrollArea class="flex-1">
- <CardContent class=" space-y-4">
+ <div class=" space-y-5">
+ <div class="space-y-4">
  <div class="space-y-2">
- <Label>名称</Label>
- <Input v-model="workflowName" placeholder="工作流名称" />
- </div>
- <div class="space-y-2">
- <Label>描述</Label>
- <Textarea v-model="workflowDescription" placeholder="描述您的工作流..." rows="3" />
+ <Label class="text-sm font-medium">名称</Label>
+ <Input v-model="workflowName" placeholder="工作流名称" class="bg-background/50" />
  </div>
  <div class="space-y-2">
- <Label>默认超时时间（秒）</Label>
- <Input v-model.number="workflowTimeout" type="number" placeholder="3600" />
+ <Label class="text-sm font-medium">描述</Label>
+ <Textarea v-model="workflowDescription" placeholder="描述您的工作流..." rows="3" class="bg-background/50" />
  </div>
- <Separator />
- <div class="text-sm text-muted-foreground">
- <p>点击画布中的节点进行配置。</p>
+ <div class="space-y-2">
+ <Label class="text-sm font-medium">默认超时时间（秒）</Label>
+ <Input v-model.number="workflowTimeout" type="number" placeholder="3600" class="bg-background/50" />
  </div>
- </CardContent>
+ </div>
+ <Separator class="bg-border/50" />
+ <div class=" rounded-xl bg-muted/30 border border-border/30">
+ <div class="flex items-center gap-2 text-sm text-muted-foreground">
+ <span class="icon-[lucide--mouse-pointer-click] text-base" />
+ 点击画布中的节点进行配置
+ </div>
+ </div>
+ </div>
  </ScrollArea>
- <div class=" border-t">
- <Button class="w-full" @click="saveWorkflowSettings">
+ <!-- Actions -->
+ <div class=" border-t border-border/50">
+ <Button class="w-full group relative overflow-hidden" @click="saveWorkflowSettings">
+ <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="icon-[lucide--save] mr-2" />
  保存设置
  </Button>
  </div>
  </template>
- </Card>
+ </div>
 </template>
