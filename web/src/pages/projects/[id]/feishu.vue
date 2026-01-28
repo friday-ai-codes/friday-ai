@@ -7,11 +7,11 @@ import type { FeishuConfig } from '~/types'
 import { useHead } from '@vueuse/head'
 import { getFeishuConfig } from '~/api/projects'
 import { FeishuConfigForm } from '~/components/feishu'
-const route = useRoute
+const route = useRoute('/projects/[id]/feishu')
 const router = useRouter
 const projectsStore = useProjectsStore
 const { error: showError } = useToast
-const projectId = computed( => route.params.id as string)
+const projectId = computed( => route.params.id)
 useHead({
  title: '飞书配置 - Friday AI',
 })

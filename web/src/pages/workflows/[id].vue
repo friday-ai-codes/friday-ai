@@ -8,9 +8,9 @@ import NodePalette from '~/components/workflow/NodePalette.vue'
 import WorkflowCanvas from '~/components/workflow/WorkflowCanvas.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-const route = useRoute
+const route = useRoute('/workflows/[id]')
 const router = useRouter
-const id = route.params.id as string
+const id = route.params.id
 const store = useWorkflowsStore
 const { saving, canUndo, canRedo, currentWorkflow: _currentWorkflow } = storeToRefs(store)
 onMounted( => {

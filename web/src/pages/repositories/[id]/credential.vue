@@ -11,11 +11,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/com
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
-const route = useRoute
+const route = useRoute('/repositories/[id]/credential')
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
 const { success, error: showError } = useToast
-const repositoryId = computed( => route.params.id as string)
+const repositoryId = computed( => route.params.id)
 useHead({
  title: '凭证配置 - Friday AI',
 })

@@ -1,21 +1,9 @@
-import type { TaskStatus } from '~/utils/taskStatusMapper'
+import type { Task } from '~/types'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { get, post } from '~/api/client'
-export interface TaskCompat {
- id: string
- project_id: string
- work_item_id: string
- title: string
- description: string
- status: TaskStatus
- branch_name?: string
- commit_sha?: string
- pr_url?: string
- plan_output?: string
- error_message?: string
- created_at: string
- updated_at?: string
+// Extend Task with workflow-specific fields for compatibility
+export interface TaskCompat extends Task {
  // Workflow-specific fields
  _workflow_execution_id?: string
  _workflow_id?: string

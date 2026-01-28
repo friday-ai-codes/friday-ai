@@ -123,6 +123,7 @@ export interface Repository extends RepositoryBase {
  updated_at: string
  has_credential: boolean
  projects: ProjectSummary
+ proxy_url?: string
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）

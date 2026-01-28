@@ -173,30 +173,30 @@ function getFieldType(schema: any): string {
  配置项
  </h4>
  <div
- v-for="(propSchema, propKey) in nodeTypeInfo.config_schema.properties":key="propKey"
+ v-for="(propSchema, propKey) in (nodeTypeInfo.config_schema.properties as Record<string, any>)":key="propKey"
  class="space-y-2"
  >
  <Label class="flex items-center gap-2 text-sm">
  {{ propSchema.title || propKey }}
- <span v-if="nodeTypeInfo.config_schema.required?.includes(propKey)" class="text-destructive">*</span>
+ <span v-if="nodeTypeInfo.config_schema.required?.includes(String(propKey))" class="text-destructive">*</span>
  </Label>
  <!-- Text input -->
  <Input
  v-if="getFieldType(propSchema) === 'text'":model-value="nodeConfig[propKey] || propSchema.default || ''":placeholder="propSchema.description"
  class="bg-background/50"
- @update:model-value="updateConfigValue(propKey, $event)"
+ @update:model-value="updateConfigValue(String(propKey), $event)"
  />
  <!-- Number input -->
  <Input
  v-else-if="getFieldType(propSchema) === 'number'"
  type="number":model-value="nodeConfig[propKey] ?? propSchema.default ?? 0":min="propSchema.minimum":max="propSchema.maximum"
  class="bg-background/50"
- @update:model-value="updateConfigValue(propKey, Number($event))"
+ @update:model-value="updateConfigValue(String(propKey), Number($event))"
  />
  <!-- Switch -->
  <div v-else-if="getFieldType(propSchema) === 'switch'" class="flex items-center gap-2">
  <Switch:model-value="nodeConfig[propKey] ?? propSchema.default ?? false"
- @update:model-value="updateConfigValue(propKey, $event)"
+ @update:model-value="updateConfigValue(String(propKey), $event)"
  />
  <span class="text-sm text-muted-foreground">{{ propSchema.description }}</span>
  </div>
@@ -204,7 +204,7 @@ function getFieldType(schema: any): string {
  <select
  v-else-if="getFieldType(propSchema) === 'select'"
  class="w-full rounded-xl border border-border/50 bg-background/50 px-3 py-1 text-sm focus:border-primary/50 focus:outline-none transition-colors":value="nodeConfig[propKey] || propSchema.default"
- @change="updateConfigValue(propKey, ($event.target as HTMLSelectElement).value)"
+ @change="updateConfigValue(String(propKey), ($event.target as HTMLSelectElement).value)"
  >
  <option v-for="opt in propSchema.enum":key="opt":value="opt">
  {{ opt }}
@@ -215,7 +215,7 @@ function getFieldType(schema: any): string {
  v-else-if="getFieldType(propSchema) === 'object' || getFieldType(propSchema) === 'array'":model-value="JSON.stringify(nodeConfig[propKey] || propSchema.default || {}, null, 2)"
  rows="4"
  class="font-mono text-xs bg-background/50"
- @update:model-value="(val) => updateJsonConfig(propKey, val as string)"
+ @update:model-value="(val) => updateJsonConfig(String(propKey), val as string)"
  />
  <p v-if="propSchema.description && getFieldType(propSchema) !== 'switch'" class="text-xs text-muted-foreground">
  {{ propSchema.description }}

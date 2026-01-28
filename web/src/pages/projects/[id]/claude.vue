@@ -29,10 +29,10 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-const route = useRoute
+const route = useRoute('/projects/[id]/claude')
 const router = useRouter
 const projectsStore = useProjectsStore
-const projectId = computed( => route.params.id as string)
+const projectId = computed( => route.params.id)
 useHead({
  title: 'Claude 配置 - Friday AI',
 })

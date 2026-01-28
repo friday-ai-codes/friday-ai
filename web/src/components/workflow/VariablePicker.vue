@@ -209,7 +209,7 @@ function getValuePreview(value: any): string {
  @click="selectVariable(item.path)"
  >
  <code class="text-xs":class="category.color">{{ item.key }}</code>
- <span v-if="item.value !== undefined" class="text-[10px] text-muted-foreground truncate max-w-[120px]">
+ <span v-if="'value' in item && item.value !== undefined" class="text-[10px] text-muted-foreground truncate max-w-[120px]">
  {{ getValuePreview(item.value) }}
  </span>
  </button>
