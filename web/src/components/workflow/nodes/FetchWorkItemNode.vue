@@ -20,6 +20,7 @@ function getFieldLabel(field: string): string {
  v-bind="props":icon="Download"
  badge="数据获取"
  badge-color="orange"
+ theme="feishu"
  >
  <div class="space-y-1">
  <!-- 显示工作项 ID 配置 -->

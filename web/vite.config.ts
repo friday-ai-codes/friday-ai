@@ -9,15 +9,20 @@ import { VueRouterAutoImports } from 'unplugin-vue-router'
 import VueRouter from 'unplugin-vue-router/vite'
 import { defineConfig } from 'vite'
 import Layouts from 'vite-plugin-vue-layouts'
+import VueMacros from 'vue-macros/vite'
 // https://vite.dev/config/
 export default defineConfig({
  plugins: [
- // 路由必须在 Vue 插件之前
- VueRouter({
+ VueMacros({
+ plugins: {
+ vue: Vue,
+ vueRouter: VueRouter({
  routesFolder: 'src/pages',
  dts: 'src/typed-router.d.ts',
  }),
- Vue,
+ },
+ }),
+ // 路由必须在 Vue 插件之前
  // Tailwind CSS v4
  TailwindCSS,
  // 布局系统

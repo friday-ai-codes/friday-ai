@@ -17,6 +17,7 @@ function getIcon(type: string) {
  v-bind="props":icon="getIcon(props.data?.node_type || '')"
  badge="操作"
  badge-color="green"
+ theme="action"
  >
  <div class="space-y-1">
  <div v-if="props.data?.config?.url" class="font-mono text-[10px] truncate max-w-full bg-secondary px-1.5 py-0.5 rounded">

@@ -1,19 +1,6 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import {
- AlertCircle,
- ArrowLeft,
- CheckCircle,
- ChevronRight,
- Clock,
- Loader2,
- Pause,
- Play,
- RefreshCw,
- RotateCcw,
- Square,
- XCircle,
-} from 'lucide-vue-next'
+import { AlertCircle, ArrowLeft, CheckCircle, ChevronRight, Clock, Loader2, Pause, Play, RefreshCw, RotateCcw, Square, XCircle } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -49,7 +36,7 @@ const approvalDialogOpen = ref(false)
 const approvalComment = ref('')
 const approving = ref(false)
 // Polling state
-let pollTimer: NodeJS.Timeout | null = null
+let pollTimer: number | null = null
 onMounted(async => {
  await store.fetchExecution(executionId)
  startPolling

@@ -21,6 +21,7 @@ function getModelShortName(model: string): string {
  v-bind="props":icon="MessageSquare"
  badge="AI"
  badge-color="purple"
+ theme="ai"
  >
  <div class="space-y-1">
  <!-- 显示模型信息 -->

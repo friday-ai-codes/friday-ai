@@ -17,6 +17,7 @@ function getIcon(type: string) {
  v-bind="props":icon="getIcon(props.data?.node_type || 'manual_trigger')"
  badge="触发器"
  badge-color="blue"
+ theme="trigger"
  >
  <div class="space-y-1">
  <div v-if="props.data?.config?.schedule" class="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded inline-block">

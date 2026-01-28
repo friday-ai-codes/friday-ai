@@ -75,9 +75,9 @@ const temperature = computed({
  class="font-mono text-sm"
  />
  <p class="text-xs text-muted-foreground">
- 支持模板变量：<code class="bg-secondary px-1 rounded">'\{\{global.xxx\}\}'</code>、
- <code class="bg-secondary px-1 rounded">'\{\{input.xxx\}\}'</code>、
- <code class="bg-secondary px-1 rounded">'\{\{nodes.nodeId.xxx\}\}'</code>
+ 支持模板变量：<code class="bg-secondary px-1 rounded">{{ '\{\{ global.xxx \}\}' }}</code>、
+ <code class="bg-secondary px-1 rounded">{{ '\{\{ input.xxx \}\}' }}</code>、
+ <code class="bg-secondary px-1 rounded">{{ '\{\{ nodes.nodeId.xxx \}\}' }}</code>
  </p>
  </div>
  <!-- 模型选择 -->

@@ -60,8 +60,11 @@ from workflows.models import (
 from workflows.nodes.registry import NodeRegistry
 logger = structlog.get_logger
 def run_async(coro):
- """Run async coroutine in sync context."""
- return asyncio.run(coro)
+ """Run async coroutine in sync context.
+ Uses async_to_sync which properly integrates with Django's ASGI event loop,
+ allowing background tasks created via asyncio.create_task to continue running.
+ """
+ return async_to_sync(lambda: coro)
 # =============================================================================
 # Workflow ViewSet
 # =============================================================================
