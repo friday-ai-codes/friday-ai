@@ -23,9 +23,9 @@ import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-const route = useRoute
+const route = useRoute('/workflows/executions/[id]')
 const router = useRouter
-const executionId = route.params.id as string
+const executionId = route.params.id
 const store = useExecutionsStore
 const workflowsStore = useWorkflowsStore
 const { currentExecution, loading, error } = storeToRefs(store)

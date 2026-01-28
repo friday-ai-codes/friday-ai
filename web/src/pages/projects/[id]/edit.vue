@@ -4,11 +4,11 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
-const route = useRoute
+const route = useRoute('/projects/[id]/edit')
 const router = useRouter
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
-const projectId = route.params.id as string
+const projectId = route.params.id
 useHead({
  title: '编辑项目 - Friday AI',
 })

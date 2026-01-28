@@ -4,7 +4,7 @@ import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
 import TriggerLogDetailComponent from '~/components/logs/TriggerLogDetail.vue'
 import { Button } from '~/components/ui/button'
-const route = useRoute
+const route = useRoute('/logs/triggers/[id]')
 const router = useRouter
 useHead({
  title: '触发日志详情 - Friday AI',
@@ -16,7 +16,7 @@ const loading = ref(true)
 // 项目 store
 const projectsStore = useProjectsStore
 // 获取日志 ID
-const logId = computed( => route.params.id as string)
+const logId = computed( => route.params.id)
 // 加载日志详情
 async function fetchLog {
  if (!logId.value)

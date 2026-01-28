@@ -6,11 +6,11 @@ import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
-const route = useRoute
+const route = useRoute('/repositories/[id]/')
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
 const { success, error: showError } = useToast
-const repositoryId = computed( => route.params.id as string)
+const repositoryId = computed( => route.params.id)
 useHead({
  title: computed( => repositoriesStore.currentRepository?.name
  ? `${repositoriesStore.currentRepository.name} - Friday AI`: '仓库详情 - Friday AI'),

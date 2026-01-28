@@ -6,10 +6,10 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
-const route = useRoute
+const route = useRoute('/logs/webhooks/[id]')
 const router = useRouter
 const { error: showError, success } = useToast
-const logId = computed( => route.params.id as string)
+const logId = computed( => route.params.id)
 useHead({
  title: computed( => `Webhook 日志 - Friday AI`),
 })

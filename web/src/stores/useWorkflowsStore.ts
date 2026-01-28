@@ -1,4 +1,5 @@
 import type { Edge, Node } from '@vue-flow/core'
+import type { ManualTriggerResponse } from '~/types'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import client from '~/api/client'
@@ -311,11 +312,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  throw e
  }
  }
- async function executeWorkflow(inputData: Record<string, any> = {}) {
+ async function executeWorkflow(inputData: Record<string, any> = {}): Promise<ManualTriggerResponse | null> {
  if (!currentWorkflow.value)
  return null
  try {
- return await client.post(`/workflows/${currentWorkflow.value.id}/execute/`, { input_data: inputData })
+ return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, { input_data: inputData })
  }
  catch (e: any) {
  error.value = e.message

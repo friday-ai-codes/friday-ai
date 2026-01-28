@@ -12,13 +12,13 @@ import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
-const route = useRoute
+const route = useRoute('/projects/[id]/')
 const router = useRouter
 const projectsStore = useProjectsStore
 const repositoriesStore = useRepositoriesStore
 const tasksStore = useTasksStore
 const { success, error: showError } = useToast
-const projectId = computed( => route.params.id as string)
+const projectId = computed( => route.params.id)
 useHead({
  title: computed( => projectsStore.currentProject?.name
  ? `${projectsStore.currentProject.name} - Friday AI`: '项目详情 - Friday AI'),

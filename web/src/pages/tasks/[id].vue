@@ -12,13 +12,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { useTasksCompatStore } from '~/stores/tasksCompat'
 import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
-const route = useRoute
+const route = useRoute('/tasks/[id]')
 const router = useRouter
 const tasksStore = useTasksCompatStore
 const legacyTasksStore = useTasksStore // Keep for operations not in compat store
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
-const taskId = computed( => route.params.id as string)
+const taskId = computed( => route.params.id)
 useHead({
  title: computed( => tasksStore.currentTask?.title
  ? `${tasksStore.currentTask.title} - Friday AI`: '任务详情 - Friday AI'),
@@ -189,7 +189,6 @@ const isRunning = computed( =>
 // 日志内容
 const logs = computed( => legacyTasksStore.currentLogs)
 // 检查是否是工作流任务，获取工作流ID
-const _isWorkflowTask = computed( => tasksStore.isWorkflowTask(task.value!))
 const workflowId = computed( => task.value ? tasksStore.getWorkflowId(task.value): null)
 function viewWorkflow {
  if (workflowId.value) {
@@ -405,12 +404,12 @@ function viewWorkflow {
  </div>
  <span class="text-xs text-white/40 font-mono ml-2">Console Output</span>
  </div>
- <div v-if="tasksStore.containerStatus?.container" class="flex gap-2">
+ <div v-if="legacyTasksStore.containerStatus?.container" class="flex gap-2">
  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono">
- ID: {{ tasksStore.containerStatus.container.id?.slice(0, 8) }}
+ ID: {{ legacyTasksStore.containerStatus.container.id?.slice(0, 8) }}
  </span>
  <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/60 font-mono">
- {{ tasksStore.containerStatus.container.status }}
+ {{ legacyTasksStore.containerStatus.container.status }}
  </span>
  </div>
  </div>

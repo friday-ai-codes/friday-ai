@@ -19,7 +19,7 @@ const props = defineProps<{
  git_url: string
  git_platform: GitPlatform
  default_branch: string
- description: string
+ description?: string
  proxy_url?: string
  }
 }>
