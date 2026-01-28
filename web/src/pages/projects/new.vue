@@ -70,7 +70,9 @@ async function handleSubmit {
  <span class="icon-[lucide--folder-plus] text-2xl text-blue-500" />
  </div>
  <div>
- <h1 class="text-xl font-bold">新建项目</h1>
+ <h1 class="text-xl font-bold">
+ 新建项目
+ </h1>
  <p class="text-sm text-muted-foreground">
  创建一个新项目，用于管理飞书工作项和关联的 Git 仓库
  </p>

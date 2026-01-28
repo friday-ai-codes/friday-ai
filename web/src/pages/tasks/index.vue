@@ -9,13 +9,13 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import { STATUS_LABELS } from '~/types'
 import { useTasksCompatStore } from '~/stores/tasksCompat'
+import { STATUS_LABELS } from '~/types'
 useHead({
  title: '任务列表 - Friday AI',
 })
 const route = useRoute
-const router = useRouter
+const _router = useRouter
 const tasksStore = useTasksCompatStore
 const projectsStore = useProjectsStore
 const { error: showError } = useToast
@@ -81,7 +81,9 @@ function getProjectName(projectId: string) {
  <!-- Header Area -->
  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2">
  <div class="space-y-1">
- <h1 class="text-3xl font-bold tracking-tight text-foreground">任务管理</h1>
+ <h1 class="text-3xl font-bold tracking-tight text-foreground">
+ 任务管理
+ </h1>
  <p class="text-muted-foreground text-sm">
  全自动 AI 开发任务编排与监控中心
  </p>
@@ -129,7 +131,9 @@ function getProjectName(projectId: string) {
  </div>
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="__all__">全部项目</SelectItem>
+ <SelectItem value="__all__">
+ 全部项目
+ </SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
  >
@@ -171,7 +175,9 @@ function getProjectName(projectId: string) {
  <div class=" rounded-full bg-muted mb-4">
  <span class="icon-[lucide--clipboard-list] w-8 text-muted-foreground" />
  </div>
- <h3 class="text-lg font-semibold">暂无任务</h3>
+ <h3 class="text-lg font-semibold">
+ 暂无任务
+ </h3>
  <p class="text-sm text-muted-foreground mt-2 max-w-sm">
  当前过滤条件下没有找到任务。任务通常由外部 Webhook 触发自动创建。
  </p>
@@ -201,7 +207,7 @@ function getProjectName(projectId: string) {
  'bg-emerald-500': task.status === 'merged',
  'bg-red-500': task.status === 'failed',
  }"
- ></div>
+ />
  <!-- Main Content -->
  <div class="flex-1 min-w-0 ml-3 space-y-1">
  <div class="flex items-start justify-between gap-4">

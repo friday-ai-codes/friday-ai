@@ -10,8 +10,8 @@ import { defineComponent, h } from 'vue'
 vi.mock('shiki', => ({
  codeToHtml: vi.fn.mockResolvedValue('<pre><code>{"test": "data"}</code></pre>'),
 }))
-describe('TriggerLog Components', => {
- describe('JsonHighlighter', => {
+describe('triggerLog Components', => {
+ describe('jsonHighlighter', => {
  it('should render loading state initially', async => {
  // 创建简化的 JsonHighlighter mock
  const JsonHighlighter = defineComponent({
@@ -66,7 +66,7 @@ describe('TriggerLog Components', => {
  expect(wrapper.text).toContain('无数据')
  })
  })
- describe('KeyFieldsCard', => {
+ describe('keyFieldsCard', => {
  it('should render key fields correctly', => {
  const KeyFieldsCard = defineComponent({
  props: {
@@ -122,7 +122,7 @@ describe('TriggerLog Components', => {
  expect(wrapper.find('.tech-doc-url').text).toBe('-')
  })
  })
- describe('TriggerLogList', => {
+ describe('triggerLogList', => {
  it('should render log items', => {
  const mockLogs = [
  {
@@ -226,7 +226,7 @@ describe('TriggerLog Components', => {
  expect(wrapper.text).toContain('暂无触发日志')
  })
  })
- describe('Status helpers', => {
+ describe('status helpers', => {
  it('should return correct status variant', => {
  const getStatusVariant = (status: string) => {
  switch (status) {
@@ -269,11 +269,13 @@ describe('TriggerLog Components', => {
  expect(getStatusLabel('duplicate')).toBe('重复')
  })
  })
- describe('URL validation', => {
+ describe('uRL validation', => {
  it('should validate URLs correctly', => {
  const isValidUrl = (url: string): boolean => {
- if (!url) return false
+ if (!url)
+ return false
  try {
+ // eslint-disable-next-line no-new
  new URL(url)
  return true
  }

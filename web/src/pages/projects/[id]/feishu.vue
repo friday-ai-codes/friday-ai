@@ -75,7 +75,9 @@ async function handleUpdated {
  <span class="icon-[lucide--message-square] text-2xl text-emerald-500" />
  </div>
  <div>
- <h1 class="text-2xl font-bold">飞书配置</h1>
+ <h1 class="text-2xl font-bold">
+ 飞书配置
+ </h1>
  <p class="text-sm text-muted-foreground">
  配置 {{ project.name }} 的飞书项目集成
  </p>
@@ -93,7 +95,9 @@ async function handleUpdated {
  <div class="flex items-start gap-3">
  <span class="icon-[lucide--info] text-xl text-emerald-500 flex-shrink-0 mt-0.5" />
  <div class="space-y-3">
- <h3 class="font-semibold">配置说明</h3>
+ <h3 class="font-semibold">
+ 配置说明
+ </h3>
  <ol class="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
  <li>在飞书项目管理后台创建插件，获取插件 ID 和插件 Secret</li>
  <li>在插件权限页面申请飞书项目相关权限（如获取工作项详情）</li>

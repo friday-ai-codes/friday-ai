@@ -25,8 +25,8 @@ export interface NodeExecution {
  status: string
  output_data: Record<string, unknown>
 }
-export type TaskStatus =
- | 'pending'
+export type TaskStatus
+ = | 'pending'
  | 'planning'
  | 'plan_review'
  | 'executing'
@@ -37,14 +37,18 @@ export type TaskStatus =
  * Map WorkflowExecution status to legacy Task status for UI display.
  */
 export function mapWorkflowToTaskStatus(execution: WorkflowExecution): TaskStatus {
- if (execution.status === 'pending') return 'pending'
- if (execution.status === 'completed') return 'merged'
- if (execution.status === 'failed' || execution.status === 'cancelled') return 'failed'
+ if (execution.status === 'pending')
+ return 'pending'
+ if (execution.status === 'completed')
+ return 'merged'
+ if (execution.status === 'failed' || execution.status === 'cancelled')
+ return 'failed'
  // For running status, determine based on current active node
  const activeNode = execution.node_executions.find(
- (n) => n.status === 'running' || n.status === 'waiting_approval'
+ n => n.status === 'running' || n.status === 'waiting_approval',
  )
- if (!activeNode) return 'pending'
+ if (!activeNode)
+ return 'pending'
  const nodeType = activeNode.node.node_type
  switch (nodeType) {
  case 'generate_plan':
@@ -52,7 +56,7 @@ export function mapWorkflowToTaskStatus(execution: WorkflowExecution): TaskStatu
  case 'human_approval': {
  // Check if this is plan approval or code approval
  const codeNode = execution.node_executions.find(
- (n) => n.node.node_type === 'code_implement' && n.status === 'completed'
+ n => n.node.node_type === 'code_implement' && n.status === 'completed',
  )
  return codeNode ? 'code_review': 'plan_review'
  }
@@ -69,7 +73,7 @@ export function mapWorkflowToTaskStatus(execution: WorkflowExecution): TaskStatu
  */
 export const STATUS_CONFIG: Record<
  TaskStatus,
- { label: string; color: string; bgColor: string; icon: string }
+ { label: string, color: string, bgColor: string, icon: string }
 > = {
  pending: {
  label: '待处理',

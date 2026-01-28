@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Toaster } from '~/components/ui/sonner'
 import { Button } from '~/components/ui/button'
 import {
  DropdownMenu,
@@ -8,6 +7,7 @@ import {
  DropdownMenuSeparator,
  DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu'
+import { Toaster } from '~/components/ui/sonner'
 import { useAuthStore } from '~/stores/auth'
 const authStore = useAuthStore
 const router = useRouter

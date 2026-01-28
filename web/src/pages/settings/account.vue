@@ -1,22 +1,14 @@
 <script setup lang="ts">
+import { toTypedSchema } from '@vee-validate/zod'
 /**
  * 账号设置页面
  * 管理员可以修改用户名、显示名和密码
  */
 import { useForm } from 'vee-validate'
-import { toTypedSchema } from '@vee-validate/zod'
-import * as z from 'zod'
 import { toast } from 'vue-sonner'
-import { useAuthStore } from '~/stores/auth'
+import * as z from 'zod'
+import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import {
- FormControl,
- FormField,
- FormItem,
- FormLabel,
- FormMessage,
-} from '~/components/ui/form'
 import {
  Card,
  CardContent,
@@ -24,7 +16,15 @@ import {
  CardHeader,
  CardTitle,
 } from '~/components/ui/card'
-import LoadingState from '~/components/common/LoadingState.vue'
+import {
+ FormControl,
+ FormField,
+ FormItem,
+ FormLabel,
+ FormMessage,
+} from '~/components/ui/form'
+import { Input } from '~/components/ui/input'
+import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const authStore = useAuthStore
 // 加载状态
@@ -120,7 +120,9 @@ onMounted( => {
  <span class="icon-[lucide--user-cog] text-2xl text-indigo-500" />
  </div>
  <div>
- <h1 class="text-2xl font-bold">账号设置</h1>
+ <h1 class="text-2xl font-bold">
+ 账号设置
+ </h1>
  <p class="text-muted-foreground">
  管理您的账号信息和安全设置
  </p>
@@ -274,7 +276,9 @@ onMounted( => {
  <div class="flex items-start gap-3">
  <span class="icon-[lucide--shield] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
  <div class="space-y-2">
- <h3 class="font-medium">安全提示</h3>
+ <h3 class="font-medium">
+ 安全提示
+ </h3>
  <ul class="list-disc list-inside space-y-1 text-sm text-muted-foreground">
  <li>请使用强密码，包含大小写字母、数字和特殊字符</li>
  <li>定期更换密码以保护账号安全</li>

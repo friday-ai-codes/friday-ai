@@ -256,8 +256,12 @@ onMounted( => {
  <span class="icon-[lucide--bot] text-2xl text-primary" />
  </div>
  <div>
- <h2 class="text-lg font-semibold">Claude Code 配置</h2>
- <p class="text-sm text-muted-foreground">Anthropic API 凭证，用于 AI 开发任务</p>
+ <h2 class="text-lg font-semibold">
+ Claude Code 配置
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ Anthropic API 凭证，用于 AI 开发任务
+ </p>
  </div>
  </div>
  <!-- 表单内容 -->
@@ -418,8 +422,12 @@ onMounted( => {
  <span class="icon-[lucide--flask-conical] text-2xl text-emerald-500" />
  </div>
  <div>
- <h2 class="text-lg font-semibold">连接测试</h2>
- <p class="text-sm text-muted-foreground">验证 API 配置是否正确</p>
+ <h2 class="text-lg font-semibold">
+ 连接测试
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 验证 API 配置是否正确
+ </p>
  </div>
  </div>
  <button:disabled="loadingModels"
@@ -487,7 +495,9 @@ onMounted( => {
  <span class="icon-[lucide--info] text-xl text-muted-foreground" />
  </div>
  <div class="space-y-2">
- <h3 class="font-medium">配置优先级说明</h3>
+ <h3 class="font-medium">
+ 配置优先级说明
+ </h3>
  <p class="text-sm text-muted-foreground">
  Claude Code 配置按以下优先级应用（高到低）：
  </p>

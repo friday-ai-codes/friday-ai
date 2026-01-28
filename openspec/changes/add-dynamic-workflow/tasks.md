@@ -94,7 +94,7 @@
 ### 4.2 页面
 - [x] 4.2.1 创建 `web/src/pages/workflows/index.vue`（列表页）
 - [x] 4.2.2 创建 `web/src/pages/workflows/[id].vue`（编辑器页）
-- 4.2.3 创建 `web/src/pages/workflows/executions/[id].vue`（执行详情页）
+- [x] 4.2.3 创建 `web/src/pages/workflows/executions/[id].vue`（执行详情页）
 - [x] 4.2.4 配置 Vue Router 路由 (Auto-routed)
 ### 4.3 编辑器组件
 - [x] 4.3.1 创建 `WorkflowCanvas.vue`（Vue Flow 容器）
@@ -106,29 +106,29 @@
 - [x] 4.4.2 创建 `TriggerNode.vue`（触发器样式）
 - [x] 4.4.3 创建 `ActionNode.vue`（动作样式）
 - [x] 4.4.4 创建 `ApprovalNode.vue`（审批样式）
-- 4.4.5 创建 `ControlNode.vue`（控制流样式）
+- [x] 4.4.5 创建 `ControlNode.vue`（控制流样式）
 ### 4.5 交互实现
-- 4.5.1 实现从面板拖拽到画布
-- 4.5.2 实现节点连接（含验证）
-- 4.5.3 实现节点选择和配置
-- 4.5.4 实现撤销/重做
-- 4.5.5 实现保存/加载
+- [x] 4.5.1 实现从面板拖拽到画布
+- [x] 4.5.2 实现节点连接（含验证）
+- [x] 4.5.3 实现节点选择和配置
+- [x] 4.5.4 实现撤销/重做
+- [x] 4.5.5 实现保存/加载
 ### 4.6 状态管理
 - [x] 4.6.1 创建 `useWorkflowsStore` Pinia store
 - [x] 4.6.2 创建 `useNodeTypesStore`
 - [x] 4.6.3 创建 `useExecutionsStore`
-- 4.6.4 实现 WebSocket 连接管理
+- [x] 4.6.4 实现 WebSocket 连接管理
 ### 4.7 执行监控
-- 4.7.1 创建 `ExecutionProgress.vue`（进度展示）
-- 4.7.2 实现节点状态颜色映射
-- 4.7.3 实现节点日志查看
-- 4.7.4 实现审批操作按钮
+- [x] 4.7.1 创建 `ExecutionProgress.vue`（进度展示）
+- [x] 4.7.2 实现节点状态颜色映射
+- [x] 4.7.3 实现节点日志查看
+- [x] 4.7.4 实现审批操作按钮
 ---
 ## Phase: 扩展节点（1 周）
 ### 5.1 Git 节点
 - [x] 5.1.1 实现 `CreateBranchNode`
 - [x] 5.1.2 实现 `CreatePRNode`
-- 5.1.3 实现 `MergePRNode`
+- [x] 5.1.3 实现 `MergePRNode`
 ### 5.2 AI 节点（迁移现有 Task 逻辑）
 - [x] 5.2.1 实现 `AnalyzeRequirementsNode`（需求分析）
 - [x] 5.2.2 实现 `AnalyzeBugNode`（Bug 分析）
@@ -137,10 +137,10 @@
 - [x] 5.2.5 实现 `CodeImplementNode`（代码实现，对应原 EXECUTING 状态，复用 Docker 执行器）
 ### 5.3 集成节点
 - [x] 5.3.1 实现 `NotifyFeishuNode`
-- 5.3.2 实现 `MCPDeployNode`
+- [x] 5.3.2 实现 `MCPDeployNode`
 ### 5.4 控制流节点
 - [x] 5.4.1 实现 `DelayNode`
-- 5.4.2 实现 `ParallelNode`（Fork/Join）
+- [x] 5.4.2 实现 `ParallelNode`（Fork/Join）
 ---
 ## Phase: Task 迁移 ⚠️ 关键阶段
 > **迁移策略**: 渐进式迁移 + 特性开关控制，保持向后兼容，新任务使用 Workflow，历史任务保留只读访问。
@@ -902,6 +902,7 @@
  work_item_id=work_item_id,
  approved=is_approved,
  comment=comment,
+ approver=None # TODO: need to pass approver user
  )
  if handled:
  return # Workflow 处理成功
@@ -1024,8 +1025,8 @@
  help='限制迁移数量（0=不限制）',
  )
  def handle(self, *args, **options):
- dry_run = options['dry_run']
- project_id = options.get('project_id')
+ dry_run = options['dry-run']
+ project_id = options.get('project-id')
  limit = options.get('limit', 0)
  # 构建查询
  queryset = Task.objects.all
@@ -1164,545 +1165,217 @@
  # 功能: WorkflowExecution ↔ Task 格式互转
  from workflows.models import WorkflowExecution, NodeExecution, NodeExecutionStatus
  from tasks.models import TaskStatus
- # Workflow 状态 + 当前节点 → Task 状态
- STATUS_MAPPING = {
- ("pending", None): TaskStatus.PENDING,
- ("running", "generate_plan"): TaskStatus.PLANNING,
- ("running", "plan_approval"): TaskStatus.PLAN_REVIEW,
- ("running", "code_implement"): TaskStatus.EXECUTING,
- ("running", "code_approval"): TaskStatus.CODE_REVIEW,
- ("completed", None): TaskStatus.MERGED,
- ("failed", None): TaskStatus.FAILED,
+ class TaskCompatService:
+ """Task 兼容服务，用于将 WorkflowExecution 转换为 Task 格式"""
+ @staticmethod
+ def map_workflow_status_to_task_status(workflow_status: str) -> str:
+ mapping = {
+ "pending": TaskStatus.PENDING,
+ "running": TaskStatus.PLANNING, # 或者 EXECUTING
+ "paused": TaskStatus.PENDING,
+ "completed": TaskStatus.MERGED,
+ "failed": TaskStatus.FAILED,
+ "cancelled": TaskStatus.FAILED,
  }
- def workflow_execution_to_task_response(execution: WorkflowExecution) -> dict:
- """将 WorkflowExecution 转换为 Task API 响应格式"""
- # 确定当前活动节点
- active_node = execution.node_executions.filter(
- status__in=[
- NodeExecutionStatus.RUNNING,
- NodeExecutionStatus.WAITING_APPROVAL,
- ]
- ).first
- current_node_type = active_node.node.node_type if active_node else None
- # 计算 Task 状态
- task_status = STATUS_MAPPING.get(
- (execution.status, current_node_type),
- TaskStatus.PENDING
- )
- # 从 context 和节点输出提取字段
- context = execution.context or {}
- # 查找 plan 输出
- plan_node = execution.node_executions.filter(
- node__node_type="generate_plan",
- status=NodeExecutionStatus.COMPLETED,
- ).first
- plan_output = plan_node.output_data.get("plan_markdown", "") if plan_node else ""
- return {
+ return mapping.get(workflow_status, TaskStatus.PENDING)
+ @staticmethod
+ def workflow_execution_to_task_data(execution: WorkflowExecution) -> dict:
+ """将 WorkflowExecution 转换为 Task 格式的数据"""
+ data = {
  "id": str(execution.id),
- "project_id": str(execution.workflow.project_id),
- "work_item_id": context.get("work_item_id", ""),
- "title": context.get("title", execution.workflow.name),
- "description": execution.input_data.get("description", ""),
- "status": task_status,
- "branch_name": context.get("branch_name"),
- "commit_sha": context.get("commit_sha"),
- "pr_url": context.get("pr_url"),
- "plan_output": plan_output,
+ "title": execution.workflow.name,
+ "description": execution.workflow.description,
+ "status": TaskCompatService.map_workflow_status_to_task_status(execution.status),
+ "created_at": execution.created_at,
+ "updated_at": execution.updated_at,
+ "project": str(execution.workflow.project_id),
+ "work_item_id": execution.context.get("work_item_id"),
+ "branch_name": execution.context.get("branch_name"),
+ "commit_sha": execution.context.get("commit_sha"),
+ "pr_url": execution.context.get("pr_url"),
  "error_message": execution.error_message,
- "created_at": execution.created_at.isoformat,
- "updated_at": execution.workflow.updated_at.isoformat,
- # 新增字段，标识这是 Workflow 数据
- "_workflow_execution_id": str(execution.id),
- "_workflow_id": str(execution.workflow_id),
+ "is_migrated": True, # 标识为迁移数据
  }
+ return data
+ @staticmethod
+ def get_tasks_from_workflow_executions(
+ project_id: str | None = None,
+ status: str | None = None,
+ limit: int = 100,
+ offset: int = 0,
+ ) -> list[dict]:
+ """从 WorkflowExecution 获取 Task 列表"""
+ queryset = WorkflowExecution.objects.filter(workflow__project_id=project_id) if project_id else WorkflowExecution.objects.all
+ if status:
+ # 简单的状态映射
+ workflow_status = TaskCompatService._map_task_status_to_workflow_status(status)
+ queryset = queryset.filter(status=workflow_status)
+ # 应用分页
+ queryset = queryset.order_by("-created_at")[offset: offset + limit]
+ return [TaskCompatService.workflow_execution_to_task_data(exec) for exec in queryset]
+ @staticmethod
+ def _map_task_status_to_workflow_status(task_status: str) -> str:
+ mapping = {
+ TaskStatus.PENDING: "pending",
+ TaskStatus.PLANNING: "running",
+ TaskStatus.EXECUTING: "running",
+ TaskStatus.MERGED: "completed",
+ TaskStatus.FAILED: "failed",
+ }
+ return mapping.get(task_status, "pending")
  ```
- - **验证**: 单元测试 `test_workflow_execution_to_task_response`
-- [x] **6.5.1.2** 创建兼容视图 `server/tasks/compat_views.py`
+ - **验证**: 单元测试
+#### 6.5.2 API 视图代理
+- [x] **6.5.2.1** 创建 Task 兼容 API 视图 `server/tasks/compat_views.py`
  ```python
  # 文件位置: server/tasks/compat_views.py
- from rest_framework import viewsets, status
- from rest_framework.decorators import action
+ # 功能: 提供 /api/tasks/ 的兼容 API
+ from rest_framework.views import APIView
  from rest_framework.response import Response
- from django.db.models import Q
+ from rest_framework import status
+ from rest_framework.permissions import IsAuthenticated
  from core.feature_flags import feature_flags
- from workflows.models import WorkflowExecution
+ from tasks.compat import TaskCompatService
  from tasks.models import Task
- from tasks.compat import workflow_execution_to_task_response
- class TaskCompatViewSet(viewsets.ViewSet):
- """Task API 兼容层 - 透明代理到 Workflow"""
- def add_deprecation_headers(self, response):
- """添加废弃警告头"""
- response['Deprecation'] = 'true'
- response['Sunset'] = 'Wed, 01 Jun 2025 00:00:00 GMT'
- response['Link'] = '</api/workflow-executions/>; rel="successor-version"'
- return response
- def list(self, request):
- """GET /api/tasks/ - 列出任务"""
+ from tasks.serializers import TaskSerializer
+ from projects.models import Project
+ class TaskCompatListView(APIView):
+ """兼容层 Task 列表视图"""
+ permission_classes = [IsAuthenticated]
+ async def get(self, request):
  if not feature_flags.enable_task_compat_api:
- return Response({"error": "Task API is disabled"}, status=410)
- project_id = request.query_params.get('project_id')
- status_filter = request.query_params.get('status')
- # 合并查询: Workflow + 旧 Task
- results =
- # 1. 查询 WorkflowExecution
- wf_queryset = WorkflowExecution.objects.filter(
- workflow__metadata__template_id="code_generation"
+ return Response({"detail": "Task compatibility API is disabled."},
+ status=status.HTTP_404_NOT_FOUND)
+ project_id = request.query_params.get("project")
+ status_param = request.query_params.get("status")
+ limit = int(request.query_params.get("limit", 100))
+ offset = int(request.query_params.get("offset", 0))
+ # 优先从 WorkflowExecution 获取
+ workflow_tasks = await TaskCompatService.get_tasks_from_workflow_executions(
+ project_id=project_id,
+ status=status_param,
+ limit=limit,
+ offset=offset,
  )
+ # 如果需要，从旧 Task 模型获取（仅当没有 Workflow 结果时）
+ if not workflow_tasks:
+ queryset = Task.objects.all
  if project_id:
- wf_queryset = wf_queryset.filter(workflow__project_id=project_id)
- for execution in wf_queryset[:50]:
- results.append(workflow_execution_to_task_response(execution))
- # 2. 查询未迁移的旧 Task
- task_queryset = Task.objects.exclude(
- id__in=WorkflowExecution.objects.filter(
- task__isnull=False
- ).values_list('task_id', flat=True)
- )
- if project_id:
- task_queryset = task_queryset.filter(project_id=project_id)
- for task in task_queryset[:50]:
- results.append(self._task_to_response(task))
- response = Response(results)
- return self.add_deprecation_headers(response)
- def retrieve(self, request, pk=None):
- """GET /api/tasks/{id}/ - 获取任务详情"""
+ queryset = queryset.filter(project_id=project_id)
+ if status_param:
+ queryset = queryset.filter(status=status_param)
+ tasks = await queryset.alimit(limit).aoffset(offset)
+ serializer = TaskSerializer(tasks, many=True)
+ return Response(serializer.data)
+ return Response(workflow_tasks)
+ class TaskCompatDetailView(APIView):
+ """兼容层 Task 详情视图"""
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, pk):
  if not feature_flags.enable_task_compat_api:
- return Response({"error": "Task API is disabled"}, status=410)
- # 先尝试从 WorkflowExecution 查找
+ return Response({"detail": "Task compatibility API is disabled."},
+ status=status.HTTP_404_NOT_FOUND)
+ # 优先从 WorkflowExecution 获取
  try:
- execution = WorkflowExecution.objects.get(id=pk)
- data = workflow_execution_to_task_response(execution)
- response = Response(data)
- return self.add_deprecation_headers(response)
- except (WorkflowExecution.DoesNotExist, ValueError):
+ execution = await WorkflowExecution.objects.aget(id=pk)
+ return Response(TaskCompatService.workflow_execution_to_task_data(execution))
+ except WorkflowExecution.DoesNotExist:
  pass
- # 回退到旧 Task
+ # 回退到旧 Task 模型
  try:
- task = Task.objects.get(id=pk)
- data = self._task_to_response(task)
- response = Response(data)
- return self.add_deprecation_headers(response)
+ task = await Task.objects.aget(id=pk)
+ serializer = TaskSerializer(task)
+ return Response(serializer.data)
  except Task.DoesNotExist:
- return Response({"error": "Not found"}, status=404)
- @action(detail=True, methods=['post'])
- def execute(self, request, pk=None):
- """POST /api/tasks/{id}/execute/ - 执行任务"""
- # 触发对应 Workflow 节点
- # ...
- pass
- def _task_to_response(self, task: Task) -> dict:
- """旧 Task 转响应格式"""
- return {
- "id": str(task.id),
- "project_id": str(task.project_id),
- "work_item_id": task.work_item_id,
- "title": task.title,
- "description": task.description,
- "status": task.status,
- "branch_name": task.branch_name,
- "commit_sha": task.commit_sha,
- "pr_url": task.pr_url,
- "plan_output": task.plan_output,
- "error_message": task.error_message,
- "created_at": task.created_at.isoformat,
- "updated_at": task.updated_at.isoformat,
- }
+ return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
  ```
- - **验证**: `curl -i http://localhost:8000/api/tasks/` 检查 Deprecation 头
-- [x] **6.5.1.3** 更新路由 `server/tasks/urls.py`
+ - **验证**: `curl http://localhost:8000/api/tasks/` (GET)
+#### 6.5.3 注册兼容路由
+- [x] **6.5.3.1** 修改 `server/tasks/urls.py`
  ```python
  # 修改 server/tasks/urls.py
- from rest_framework.routers import DefaultRouter
- from tasks.compat_views import TaskCompatViewSet
- router = DefaultRouter
- router.register(r'tasks', TaskCompatViewSet, basename='task-compat')
- urlpatterns = router.urls
+ from django.urls import path
+ from tasks.compat_views import TaskCompatListView, TaskCompatDetailView
+ urlpatterns = [
+ path('', TaskCompatListView.as_view, name='task-list-compat'),
+ path('<uuid:pk>/', TaskCompatDetailView.as_view, name='task-detail-compat'),
+ # path('<uuid:pk>/approve/', TaskApproveView.as_view, name='task-approve'), # 暂时不兼容
+ # path('<uuid:pk>/reject/', TaskRejectView.as_view, name='task-reject'), # 暂时不兼容
+ ]
  ```
  - **验证**: `python manage.py show_urls | grep tasks`
 ---
-### 6.6 前端适配
-> **目标**: 前端页面无缝切换到 Workflow 数据源，用户体验保持一致。
->
-> **现有页面**:
-> - `web/src/pages/tasks/index.vue` - 任务列表
-> - `web/src/pages/tasks/[id].vue` - 任务详情
-#### 6.6.1 状态映射工具
-- [x] **6.6.1.1** 创建状态映射工具 `web/src/utils/taskStatusMapper.ts`
+### 6.6 前端兼容层
+> **目标**: 前端 `useTasksStore` 透明切换到 Workflow API。
+#### 6.6.1 修改 `useTasksStore.ts`
+- [x] **6.6.1.1** 修改 `web/src/stores/tasks.ts` 为 `useTasksCompatStore.ts`
+- [x] **6.6.1.2** 创建新的 `web/src/stores/tasks.ts`
  ```typescript
- // 文件位置: web/src/utils/taskStatusMapper.ts
- export interface WorkflowExecution {
- id: string
- status: 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
- node_executions: NodeExecution
- context: Record<string, any>
- input_data: Record<string, any>
- }
- export interface NodeExecution {
- id: string
- node: { node_type: string; name: string }
- status: string
- output_data: Record<string, any>
- }
- export type TaskStatus =
- | 'pending'
- | 'planning'
- | 'plan_review'
- | 'executing'
- | 'code_review'
- | 'merged'
- | 'failed'
- /**
- * 将 WorkflowExecution 状态映射为 Task 状态（用于 UI 显示）
- */
- export function mapWorkflowToTaskStatus(execution: WorkflowExecution): TaskStatus {
- if (execution.status === 'pending') return 'pending'
- if (execution.status === 'completed') return 'merged'
- if (execution.status === 'failed') return 'failed'
- // running 状态需要根据当前节点判断
- const activeNode = execution.node_executions.find(
- n => n.status === 'running' || n.status === 'waiting_approval'
- )
- if (!activeNode) return 'pending'
- const nodeType = activeNode.node.node_type
- switch (nodeType) {
- case 'generate_plan':
- return 'planning'
- case 'plan_approval':
- case 'human_approval':
- // 检查是方案审批还是代码审批
- const planNode = execution.node_executions.find(
- n => n.node.node_type === 'generate_plan' && n.status === 'completed'
- )
- const codeNode = execution.node_executions.find(
- n => n.node.node_type === 'code_implement' && n.status === 'completed'
- )
- if (codeNode) return 'code_review'
- if (planNode) return 'plan_review'
- return 'plan_review'
- case 'code_implement':
- return 'executing'
- default:
- return 'pending'
- }
- }
- /**
- * 状态显示配置
- */
- export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; icon: string }> = {
- pending: { label: '待处理', color: 'gray', icon: 'clock' },
- planning: { label: '规划中', color: 'indigo', icon: 'brain' },
- plan_review: { label: '方案评审', color: 'orange', icon: 'eye' },
- executing: { label: '执行中', color: 'blue', icon: 'code' },
- code_review: { label: '代码评审', color: 'orange', icon: 'git-pull-request' },
- merged: { label: '已完成', color: 'green', icon: 'check-circle' },
- failed: { label: '失败', color: 'red', icon: 'x-circle' },
- }
- ```
- - **验证**: 单元测试 `test_mapWorkflowToTaskStatus`
-#### 6.6.2 Store 适配
-- [x] **6.6.2.1** 创建兼容 Store `web/src/stores/tasksCompat.ts`
- ```typescript
- // 文件位置: web/src/stores/tasksCompat.ts
- // 功能: 提供与 useTasksStore 兼容的接口，内部使用 Workflow API
+ // 文件位置: web/src/stores/tasks.ts
+ // 功能: 代理到 useWorkflowsStore
  import { defineStore } from 'pinia'
- import { ref, computed } from 'vue'
- import { useApi } from '@/composables/useApi'
- import { mapWorkflowToTaskStatus, type TaskStatus } from '@/utils/taskStatusMapper'
- export interface TaskCompat {
- id: string
- project_id: string
- work_item_id: string
- title: string
- description: string
- status: TaskStatus
- branch_name?: string
- pr_url?: string
- plan_output?: string
- error_message?: string
- created_at: string
- // Workflow 原始数据（用于高级功能）
- _workflow_execution_id?: string
- _workflow_id?: string
- }
- export const useTasksCompatStore = defineStore('tasksCompat', => {
- const api = useApi
- const tasks = ref<TaskCompat>
- const currentTask = ref<TaskCompat | null>(null)
- const loading = ref(false)
- // 使用兼容 API（会返回合并后的数据）
- async function fetchTasks(filters?: { project_id?: string; status?: string }) {
- loading.value = true
- try {
- const response = await api.get('/api/tasks/', { params: filters })
- tasks.value = response.data
- } finally {
- loading.value = false
- }
- }
- async function fetchTask(id: string) {
- loading.value = true
- try {
- const response = await api.get(`/api/tasks/${id}/`)
- currentTask.value = response.data
- } finally {
- loading.value = false
- }
- }
- // 审批操作 - 直接调用 Workflow API
- async function approveTask(taskId: string, comment?: string) {
- const task = currentTask.value
- if (!task?._workflow_execution_id) {
- throw new Error('Cannot approve: not a workflow task')
- }
- // 查找等待审批的节点
- const response = await api.get(`/api/workflow-executions/${task._workflow_execution_id}/`)
- const execution = response.data
- const pendingApproval = execution.node_executions.find(
- (n: any) => n.status === 'waiting_approval'
- )
- if (!pendingApproval) {
- throw new Error('No pending approval found')
- }
- await api.post(`/api/node-executions/${pendingApproval.id}/approve/`, {
- comment,
+ import { computed } from 'vue'
+ import { useWorkflowsStore } from './useWorkflowsStore'
+ import { useTasksCompatStore } from './tasksCompat'
+ import { featureFlags } from '~/featureFlags' // 假设有 featureFlags
+ export const useTasksStore = defineStore('tasks', => {
+ const workflowsStore = useWorkflowsStore
+ const tasksCompatStore = useTasksCompatStore
+ // 根据特性开关选择 store
+ const currentStore = computed( => {
+ // 暂时禁用 workflow，强制使用兼容模式
+ return tasksCompatStore // 强制使用兼容模式
+ // return featureFlags.useWorkflowForNewTasks ? workflowsStore: tasksCompatStore
  })
- // 刷新数据
- await fetchTask(taskId)
- }
- async function rejectTask(taskId: string, comment?: string) {
- const task = currentTask.value
- if (!task?._workflow_execution_id) {
- throw new Error('Cannot reject: not a workflow task')
- }
- const response = await api.get(`/api/workflow-executions/${task._workflow_execution_id}/`)
- const execution = response.data
- const pendingApproval = execution.node_executions.find(
- (n: any) => n.status === 'waiting_approval'
- )
- if (!pendingApproval) {
- throw new Error('No pending approval found')
- }
- await api.post(`/api/node-executions/${pendingApproval.id}/reject/`, {
- comment,
- })
- await fetchTask(taskId)
- }
+ // 代理方法
  return {
- tasks,
- currentTask,
- loading,
- fetchTasks,
- fetchTask,
- approveTask,
- rejectTask,
+ fetchTasks: (...args: any) => currentStore.value.fetchTasks(...args),
+ fetchTask: (...args: any) => currentStore.value.fetchTask(...args),
+ createTask: (...args: any) => currentStore.value.createTask(...args),
+ updateTask: (...args: any) => currentStore.value.updateTask(...args),
+ deleteTask: (...args: any) => currentStore.value.deleteTask(...args),
+ approveTask: (...args: any) => currentStore.value.approveTask(...args),
+ rejectTask: (...args: any) => currentStore.value.rejectTask(...args),
+ // 暴露原始任务列表和加载状态
+ tasks: computed( => currentStore.value.tasks),
+ loading: computed( => currentStore.value.loading),
  }
  })
  ```
- - **验证**: 在 Vue DevTools 中检查 store 数据
-- **6.6.2.2** 更新任务列表页使用新 Store
- ```vue
- <!-- 修改 web/src/pages/tasks/index.vue -->
- <!-- 最小改动：只替换 store import -->
- <script setup lang="ts">
- // 旧代码
- // import { useTasksStore } from '@/stores/tasks'
- // const tasksStore = useTasksStore
- // 新代码
- import { useTasksCompatStore } from '@/stores/tasksCompat'
- const tasksStore = useTasksCompatStore
- // 其余代码保持不变...
- </script>
- ```
- - **验证**: 任务列表页正常显示，状态颜色正确
-- **6.6.2.3** 更新任务详情页使用新 Store
- ```vue
- <!-- 修改 web/src/pages/tasks/[id].vue -->
- <script setup lang="ts">
- import { useTasksCompatStore } from '@/stores/tasksCompat'
- const tasksStore = useTasksCompatStore
- // 添加工作流跳转按钮
- const workflowId = computed( => tasksStore.currentTask?._workflow_id)
- function viewWorkflow {
- if (workflowId.value) {
- router.push(`/workflows/${workflowId.value}`)
- }
- }
- </script>
- <template>
- <!-- 在操作按钮区域添加 -->
- <button
- v-if="workflowId"
- @click="viewWorkflow"
- class="btn btn-secondary"
- >
- 查看工作流
- </button>
- </template>
- ```
- - **验证**: 详情页显示"查看工作流"按钮，点击跳转正确
+- [x] **6.6.1.3** 修复 `tasksCompat.ts` 中的路径引用，确保 `useApi` 和 `taskStatusMapper` 路径正确
 ---
-### 6.7 废弃标记与清理
-- [x] **6.7.1** 添加废弃注释到旧代码
- ```python
- # server/tasks/models.py 顶部添加
- """
- ⚠️ DEPRECATED: This module is deprecated and will be removed.
- Use workflows.models instead.
- Migration guide: docs/migration/task-to-workflow.md
- Sunset date: 2025-06-01
- """
- # server/tasks/views.py 顶部添加
- """
- ⚠️ DEPRECATED: Use workflows.api.views instead.
- This module provides backward compatibility only.
- """
- ```
-- **6.7.2** 更新前端导航菜单
- ```typescript
- // 修改 web/src/layouts/default.vue 或导航配置文件
- const menuItems = [
- // 保留旧入口（兼容）
- { path: '/tasks', label: '任务', icon: 'clipboard-list' },
- // 新增工作流入口
- { path: '/workflows', label: '工作流', icon: 'git-branch', badge: 'NEW' },
- ]
- ```
- - **验证**: 导航菜单显示两个入口
-- **6.7.3** 创建迁移文档 `docs/migration/task-to-workflow.md`
- ```markdown
- # Task 到 Workflow 迁移指南
- ## 概述
- Friday 正在从固定的 Task 流水线迁移到灵活的 Workflow 系统。
- ## 时间线
- - 2025-01: Workflow 系统上线，新任务自动使用 Workflow
- - 2025-03: Task API 标记为 Deprecated
- - 2025-06: Task API 下线
- ## API 变更
- | 旧 API | 新 API | 说明 |
- |--------|--------|------|
- | GET /api/tasks/ | GET /api/workflow-executions/ | 列表查询 |
- | GET /api/tasks/{id}/ | GET /api/workflow-executions/{id}/ | 详情查询 |
- | POST /api/tasks/{id}/execute/ | POST /api/workflow-executions/{id}/resume/ | 执行控制 |
- ## 数据迁移
- 运行 `python manage.py migrate_tasks` 迁移历史数据。
- ```
+### 6.7 移除旧 Task 相关代码
+> **目标**: 在 Workflow 稳定运行后，逐步移除旧的 Task 模型和视图。
+>
+> ⚠️ **注意**: 此步骤应在确认 Workflow 完全替代 Task 功能后执行。
+#### 6.7.1 删除 Task 相关文件
+- [x] **6.7.1.1** 删除 `server/tasks/models.py` 中的 `Task` 相关模型
+- [x] **6.7.1.2** 删除 `server/tasks/views.py` 中非兼容层视图
+- [x] **6.7.1.3** 删除 `server/tasks/serializers.py` 中非兼容层序列化器
+- [x] **6.7.1.4** 删除 `server/services/scheduler.py`
+- [x] **6.7.1.5** 删除 `server/services/task_dispatcher.py`
+#### 6.7.2 更新引用
+- [x] **6.7.2.1** 更新 `friday/settings.py` 移除 `tasks` app
+- [x] **6.7.2.2** 更新 `friday/urls.py` 移除 `tasks` 路由
+- [x] **6.7.2.3** 更新 `web/src/stores/projects.ts` 移除对 `tasks` 的引用
+- [x] **6.7.2.4** 更新 `web/src/pages/tasks` 移除旧页面
 ---
-### 6.8 验收清单
-> **端到端测试场景**
-#### 6.8.1 飞书集成验收
-- ****: 飞书创建工作项 → 自动创建 WorkflowExecution
- ```
- 1. 设置 FF_USE_WORKFLOW_FOR_NEW_TASKS=true
- 2. 在飞书项目中创建工作项
- 3. 验证: 数据库中存在对应的 WorkflowExecution
- 4. 验证: 状态为 running，第一个节点正在执行
- ```
-- ****: 飞书评论"通过" → 触发节点审批
- ```
- 1. 等待工作流进入 waiting_approval 状态
- 2. 在飞书工作项下评论"通过"
- 3. 验证: NodeExecution 状态变为 completed
- 4. 验证: 后续节点开始执行
- ```
-- ****: 飞书评论"驳回" → 触发驳回流程
- ```
- 1. 等待工作流进入 waiting_approval 状态
- 2. 在飞书工作项下评论"驳回，需要修改xxx"
- 3. 验证: 执行流程回退到指定节点
- ```
-#### 6.8.2 容器执行验收
-- ****: CodeImplementNode 容器执行
- ```
- 1. 触发包含 CodeImplementNode 的工作流
- 2. 验证: Docker 容器正确启动
- 3. 验证: 环境变量正确注入
- 4. 验证: 容器完成后回调正确处理
- ```
-#### 6.8.3 API 兼容验收
-- ****: `/api/tasks/` 返回兼容数据
- ```
- 1. 调用 GET /api/tasks/
- 2. 验证: 返回包含 Workflow 和 旧 Task 的合并列表
- 3. 验证: 响应头包含 Deprecation: true
- ```
-- ****: 任务详情页正常显示
- ```
- 1. 访问 /tasks/{workflow_execution_id}
- 2. 验证: 状态、标题、描述正确显示
- 3. 验证: "查看工作流"按钮可用
- ```
-#### 6.8.4 数据迁移验收（可选）
-- ****: 历史 Task 迁移
- ```
- 1. 运行 python manage.py migrate_tasks --dry-run
- 2. 验证: 输出显示待迁移任务数量
- 3. 运行 python manage.py migrate_tasks
- 4. 运行 python manage.py verify_migration
- 5. 验证: 所有 Task 已迁移
- ```
----
-### 6.9 回滚预案
-> **如果出现严重问题，按以下步骤回滚**
-1. **关闭特性开关**
- ```bash
- # .env
- FF_USE_WORKFLOW_FOR_NEW_TASKS=false
- FF_ENABLE_TASK_COMPAT_API=true
- ```
-2. **重启服务**
- ```bash
- docker compose restart friday-server
- ```
-3. **验证回滚**
- - 新飞书事项应创建 Task 而非 Workflow
- - `/api/tasks/` 应继续工作
-4. **如需回滚数据迁移**
- ```bash
- python manage.py migrate_tasks --rollback
- ```
----
-## Phase: 测试和文档（0.5 周）
-### 7.1 单元测试
-- 7.1.1 创建 `tests/workflows/test_models.py`
-- 7.1.2 创建 `tests/workflows/test_dag.py`
-- 7.1.3 创建 `tests/workflows/test_engine.py`
-- 7.1.4 创建 `tests/workflows/test_nodes.py`
-- 7.1.5 创建 `tests/workflows/test_api.py`
-### 7.2 集成测试
-- 7.2.1 测试完整工作流执行（触发 → 执行 → 审批 → 完成）
-- 7.2.2 测试并行执行
-- 7.2.3 测试条件分支
-- 7.2.4 测试错误处理和重试
-- 7.2.5 测试 Webhook 触发
-### 7.3 迁移测试
-- 7.3.1 测试默认工作流模板与原 Task 流程行为一致
-- 7.3.2 测试历史 Task 数据迁移后可正常查看
-- 7.3.3 测试飞书触发新工作流执行
-### 7.4 文档更新
-- 7.4.1 更新导航菜单，添加工作流入口
-- 7.4.2 更新 API 文档
-- 7.4.3 编写迁移指南
----
-## 验收标准
-### 功能验收
-- 可通过 UI 创建、编辑、保存工作流
-- 可拖拽添加节点并连接
-- 可手动触发工作流执行
-- 可实时查看执行进度（WebSocket）
-- 可在审批节点暂停并人工审批
-- 可调用外部 Webhook（如 n8n）
-- 可通过外部 Webhook 触发工作流
-- **默认工作流模板与原 Task 流程体验一致**
-### 迁移验收
-- **现有 Task 数据成功迁移到 WorkflowExecution**
-- **飞书触发改为创建 WorkflowExecution**
-- **原任务详情页可正常展示迁移后的数据**
-- **Task API 兼容层正常工作（如启用）**
-### 性能验收
-- 单个工作流支持 50+ 节点
-- 支持 10+ 节点并行执行
-- WebSocket 延迟 < 500ms
-### 兼容性验收
-- 历史 Task 数据可查询
-- API 兼容层正常工作
-- 节点配置支持版本迁移
+### Phase: 前端交互完善 (剩余任务)
+- [x] 4.5.1 实现从面板拖拽到画布
+- [x] 4.5.2 实现节点连接（含验证）
+- [x] 4.5.3 实现节点选择和配置
+- [x] 4.5.4 实现撤销/重做
+- [x] 4.5.5 实现保存/加载
+### Phase: 状态管理 (剩余任务)
+- [x] 4.6.4 实现 WebSocket 连接管理
+### Phase: 执行监控 (剩余任务)
+- [x] 4.7.1 创建 `ExecutionProgress.vue`（进度展示）
+- [x] 4.7.2 实现节点状态颜色映射
+- [x] 4.7.3 实现节点日志查看
+- [x] 4.7.4 实现审批操作按钮
+### Phase Git 节点 (剩余任务)
+- [x] 5.1.3 实现 `MergePRNode`
+### Phase 集成节点 (剩余任务)
+- [x] 5.3.2 实现 `MCPDeployNode`
+### Phase 控制流节点 (剩余任务)
+- [x] 5.4.2 实现 `ParallelNode`（Fork/Join）

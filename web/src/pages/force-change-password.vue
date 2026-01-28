@@ -1,15 +1,13 @@
 <script setup lang="ts">
+import { toTypedSchema } from '@vee-validate/zod'
 /**
  * 强制修改密码页面
  * 首次登录或密码重置后必须修改密码
  */
 import { useForm } from 'vee-validate'
-import { toTypedSchema } from '@vee-validate/zod'
-import * as z from 'zod'
 import { toast } from 'vue-sonner'
-import { useAuthStore } from '~/stores/auth'
+import * as z from 'zod'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
 import {
  FormControl,
  FormField,
@@ -17,6 +15,8 @@ import {
  FormLabel,
  FormMessage,
 } from '~/components/ui/form'
+import { Input } from '~/components/ui/input'
+import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const authStore = useAuthStore
 // 表单验证 schema
@@ -40,7 +40,8 @@ const onSubmit = handleSubmit(async (values) => {
  // 清除登录状态，要求重新登录
  await authStore.logout
  router.push('/login')
- } catch (e) {
+ }
+ catch (e) {
  submitError.value = e instanceof Error ? e.message: '修改密码失败，请重试'
  }
 })
@@ -48,7 +49,8 @@ const onSubmit = handleSubmit(async (values) => {
 onMounted( => {
  if (!authStore.isAuthenticated) {
  router.push('/login')
- } else if (!authStore.mustChangePassword) {
+ }
+ else if (!authStore.mustChangePassword) {
  router.push('/')
  }
 })
@@ -73,7 +75,9 @@ onMounted( => {
  <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-orange-500/20 to-amber-500/10 border border-amber-500/20">
  <span class="icon-[lucide--shield-check] text-4xl text-amber-500" />
  </div>
- <h1 class="text-2xl font-bold">修改密码</h1>
+ <h1 class="text-2xl font-bold">
+ 修改密码
+ </h1>
  <p class="text-muted-foreground mt-2">
  为了账户安全，请设置一个新密码
  </p>
@@ -96,7 +100,9 @@ onMounted( => {
  <!-- 新密码 -->
  <FormField v-slot="{ componentField }" name="new_password">
  <FormItem>
- <FormLabel class="text-foreground/80">新密码</FormLabel>
+ <FormLabel class="text-foreground/80">
+ 新密码
+ </FormLabel>
  <FormControl>
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground" />
@@ -115,7 +121,9 @@ onMounted( => {
  <!-- 确认密码 -->
  <FormField v-slot="{ componentField }" name="confirm_password">
  <FormItem>
- <FormLabel class="text-foreground/80">确认密码</FormLabel>
+ <FormLabel class="text-foreground/80">
+ 确认密码
+ </FormLabel>
  <FormControl>
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock-keyhole] text-muted-foreground" />

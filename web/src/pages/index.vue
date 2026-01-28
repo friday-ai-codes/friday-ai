@@ -119,7 +119,9 @@ function formatDate(dateStr: string) {
  v-for="stat in stats":key="stat.title":to="stat.link"
  class="group relative"
  >
- <div class="absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10":class="stat.gradient" />
+ <div
+ class="absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10":class="stat.gradient"
+ />
  <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
  <div class="flex items-start justify-between mb-4">
  <div class=".5 rounded-xl bg-gradient-to-br flex items-center justify-center":class="stat.bgGradient">
@@ -128,7 +130,9 @@ function formatDate(dateStr: string) {
  <span class="icon-[lucide--arrow-up-right] text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
  </div>
  <div class="space-y-1">
- <p class="text-sm font-medium text-muted-foreground">{{ stat.title }}</p>
+ <p class="text-sm font-medium text-muted-foreground">
+ {{ stat.title }}
+ </p>
  <p class="text-3xl md:text-4xl font-bold tracking-tight">
  <template v-if="loading">
  <span class="inline-block w-12 bg-gradient-to-r from-muted to-muted/50 animate-pulse rounded-lg" />
@@ -158,7 +162,9 @@ function formatDate(dateStr: string) {
  <div class=" rounded-lg bg-gradient-to-br flex items-center justify-center":class="feature.gradient">
  <span class="text-xl text-white":class="`icon-[${feature.icon}]`" />
  </div>
- <h3 class="text-lg font-semibold">{{ feature.title }}</h3>
+ <h3 class="text-lg font-semibold">
+ {{ feature.title }}
+ </h3>
  </div>
  <p class="text-muted-foreground leading-relaxed pl-12">
  {{ feature.description }}
@@ -176,8 +182,12 @@ function formatDate(dateStr: string) {
  <span class="icon-[lucide--clock] text-xl text-primary" />
  </div>
  <div>
- <h2 class="text-lg font-semibold">最近任务</h2>
- <p class="text-sm text-muted-foreground">最近创建的任务列表</p>
+ <h2 class="text-lg font-semibold">
+ 最近任务
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 最近创建的任务列表
+ </p>
  </div>
  </div>
  <RouterLink to="/tasks">
@@ -205,8 +215,12 @@ function formatDate(dateStr: string) {
  <div class="inline-flex items-center justify-center w-20 rounded-2xl bg-gradient-to-br from-muted to-muted/50 mb-6">
  <span class="icon-[lucide--inbox] text-4xl text-muted-foreground/50" />
  </div>
- <h3 class="text-lg font-medium text-muted-foreground mb-2">暂无任务</h3>
- <p class="text-sm text-muted-foreground/70 mb-6">创建你的第一个项目，开始自动化开发之旅</p>
+ <h3 class="text-lg font-medium text-muted-foreground mb-2">
+ 暂无任务
+ </h3>
+ <p class="text-sm text-muted-foreground/70 mb-6">
+ 创建你的第一个项目，开始自动化开发之旅
+ </p>
  <RouterLink to="/projects/new">
  <Button class="group">
  <span class="icon-[lucide--plus] mr-2" />
@@ -227,7 +241,9 @@ function formatDate(dateStr: string) {
  </div>
  <!-- 内容 -->
  <div class="flex-1 min-w-0">
- <p class="font-medium truncate group-hover:text-primary transition-colors">{{ task.title }}</p>
+ <p class="font-medium truncate group-hover:text-primary transition-colors">
+ {{ task.title }}
+ </p>
  <p class="text-sm text-muted-foreground">
  {{ formatDate(task.created_at) }}
  </p>

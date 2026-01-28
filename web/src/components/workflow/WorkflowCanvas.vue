@@ -2,7 +2,7 @@
 import type { Connection, Edge, Node } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { MarkerType, Position, useVueFlow, VueFlow } from '@vue-flow/core'
+import { MarkerType, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
@@ -51,7 +51,8 @@ const defaultEdgeOptions = {
 }
 // Connection handler - 当连接完成时添加边
 function handleConnect(connection: Connection) {
- if (!connection.source || !connection.target) return
+ if (!connection.source || !connection.target)
+ return
  const newEdge: Edge = {
  id: `e-${connection.source}-${connection.target}-${Date.now}`,
  source: connection.source,
@@ -88,10 +89,10 @@ function onDragLeave(event: DragEvent) {
  // 只有当离开整个容器时才设置为 false
  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect
  if (
- event.clientX < rect.left ||
- event.clientX > rect.right ||
- event.clientY < rect.top ||
- event.clientY > rect.bottom
+ event.clientX < rect.left
+ || event.clientX > rect.right
+ || event.clientY < rect.top
+ || event.clientY > rect.bottom
  ) {
  isDragOver.value = false
  }
@@ -100,7 +101,8 @@ function onDrop(event: DragEvent) {
  event.preventDefault
  isDragOver.value = false
  const type = event.dataTransfer?.getData('application/vueflow')
- if (!type) return
+ if (!type)
+ return
  // 获取画布容器的位置
  const flowContainer = event.currentTarget as HTMLElement
  const bounds = flowContainer.getBoundingClientRect
@@ -148,7 +150,8 @@ onMounted( => {
  @pane-click="handlePaneClick"
  >
  <!-- 背景网格 -->
- <Background:variant="'dots'":gap="20":size="1"
+ <Background
+ variant="dots":gap="20":size="1"
  pattern-color="hsl(219 30% 65% / 0.4)"
  />
  <!-- 小地图 -->

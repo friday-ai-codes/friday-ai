@@ -50,9 +50,12 @@ const isOpen = computed({
 const hasModels = computed( => models.value.length > 0)
 // 测试状态
 const testStatus = computed( => {
- if (loading.value) return 'loading'
- if (error.value) return 'error'
- if (result.value) return 'success'
+ if (loading.value)
+ return 'loading'
+ if (error.value)
+ return 'error'
+ if (result.value)
+ return 'success'
  return 'idle'
 })
 // 监听对话框打开

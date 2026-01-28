@@ -22,12 +22,12 @@ const emit = defineEmits<{
  closed:
 }>
 const sizeClasses: Record<string, string> = {
- sm: 'max-w-sm',
- md: 'max-w-md',
- lg: 'max-w-lg',
- xl: 'max-w-xl',
+ 'sm': 'max-w-sm',
+ 'md': 'max-w-md',
+ 'lg': 'max-w-lg',
+ 'xl': 'max-w-xl',
  '2xl': 'max-w-2xl',
- full: 'max-w-4xl',
+ 'full': 'max-w-4xl',
 }
 function handleCancel {
  emit('cancel')

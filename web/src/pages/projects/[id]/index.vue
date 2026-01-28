@@ -3,10 +3,10 @@ import type { ClaudeConfigRead } from '~/api/settings'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { getProjectClaudeConfig } from '~/api/settings'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import BaseModal from '~/components/modal/BaseModal.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
@@ -195,7 +195,9 @@ async function handleCustomToken {
  <span class="icon-[lucide--folder-open] text-2xl text-blue-500" />
  </div>
  <div>
- <h1 class="text-2xl font-bold">{{ project.name }}</h1>
+ <h1 class="text-2xl font-bold">
+ {{ project.name }}
+ </h1>
  <p class="text-sm text-muted-foreground">
  {{ project.description || '暂无描述' }}
  </p>
@@ -335,7 +337,9 @@ async function handleCustomToken {
  <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">已配置</p>
+ <p class="font-medium">
+ 已配置
+ </p>
  <p class="text-sm text-muted-foreground">
  插件 ID：{{ feishuConfig.plugin_id }}
  </p>
@@ -345,7 +349,9 @@ async function handleCustomToken {
  <div class="inline-flex rounded-full bg-muted/50 mb-3">
  <span class="icon-[lucide--link] text-3xl text-muted-foreground" />
  </div>
- <p class="text-muted-foreground">尚未配置飞书集成</p>
+ <p class="text-muted-foreground">
+ 尚未配置飞书集成
+ </p>
  <RouterLink:to="`/projects/${project.id}/feishu`">
  <Button class="mt-4" size="sm">
  配置飞书
@@ -380,7 +386,9 @@ async function handleCustomToken {
  <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">已配置</p>
+ <p class="font-medium">
+ 已配置
+ </p>
  <p class="text-sm text-muted-foreground">
  来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
  </p>
@@ -393,7 +401,9 @@ async function handleCustomToken {
  <div class="inline-flex rounded-full bg-muted/50 mb-3">
  <span class="icon-[lucide--bot] text-3xl text-muted-foreground" />
  </div>
- <p class="text-muted-foreground">尚未配置 Claude API 密钥</p>
+ <p class="text-muted-foreground">
+ 尚未配置 Claude API 密钥
+ </p>
  <RouterLink:to="`/projects/${project.id}/claude`">
  <Button class="mt-4" size="sm">
  配置 Claude
@@ -546,7 +556,9 @@ async function handleCustomToken {
  </SelectContent>
  </Select>
  <p v-if="availableRepositories.length === 0" class="text-sm text-muted-foreground mt-3">
- 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">创建仓库</RouterLink>
+ 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">
+ 创建仓库
+ </RouterLink>
  </p>
  </div>
  </div>

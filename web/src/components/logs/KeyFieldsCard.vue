@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Button } from '~/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  prdUrl: string
  description: string
@@ -26,7 +26,8 @@ async function copyToClipboard(text: string, label: string) {
 }
 // 检查是否为有效链接
 function isValidUrl(url: string): boolean {
- if (!url) return false
+ if (!url)
+ return false
  try {
  new URL(url)
  return true

@@ -225,7 +225,7 @@ export const useTasksStore = defineStore('tasks', => {
  currentLogs.value = response.logs
  return response.logs
  }
- catch (e) {
+ catch {
  // 如果没有日志，不报错
  currentLogs.value = ''
  return ''
@@ -239,7 +239,7 @@ export const useTasksStore = defineStore('tasks', => {
  containerStatus.value = await tasksApi.getContainerStatus(taskId)
  return containerStatus.value
  }
- catch (e) {
+ catch {
  containerStatus.value = null
  return null
  }

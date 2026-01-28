@@ -10,12 +10,14 @@ import {
  Pause,
  Play,
  RefreshCw,
+ RotateCcw,
  Square,
  XCircle,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -33,10 +35,12 @@ import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute
 const router = useRouter
 const executionId = route.params.id as string
 const store = useExecutionsStore
+const workflowsStore = useWorkflowsStore
 const { currentExecution, loading, error } = storeToRefs(store)
 // Selected node for detail view
 const selectedNodeExecution = ref<NodeExecution | null>(null)
@@ -44,12 +48,51 @@ const selectedNodeExecution = ref<NodeExecution | null>(null)
 const approvalDialogOpen = ref(false)
 const approvalComment = ref('')
 const approving = ref(false)
-onMounted( => {
- store.fetchExecution(executionId)
- store.connectWebSocket(executionId)
+// Polling state
+let pollTimer: NodeJS.Timeout | null = null
+onMounted(async => {
+ await store.fetchExecution(executionId)
+ startPolling
 })
 onUnmounted( => {
- store.disconnectWebSocket
+ stopPolling
+})
+function startPolling {
+ if (pollTimer)
+ return
+ // Initial check
+ if (isActiveStatus(currentExecution.value?.status)) {
+ pollTimer = setInterval(async => {
+ // Only fetch if we are still on the same page and execution is active
+ if (route.params.id === executionId) {
+ await store.fetchExecution(executionId)
+ if (!isActiveStatus(currentExecution.value?.status)) {
+ stopPolling
+ }
+ }
+ else {
+ stopPolling
+ }
+ }, 5000)
+ }
+}
+function stopPolling {
+ if (pollTimer) {
+ clearInterval(pollTimer)
+ pollTimer = null
+ }
+}
+function isActiveStatus(status?: string) {
+ return ['running', 'pending', 'queued', 'paused', 'waiting_approval'].includes(status || '')
+}
+// Watch for status changes to start/stop polling (e.g. if resumed)
+watch( => currentExecution.value?.status, (newStatus) => {
+ if (isActiveStatus(newStatus)) {
+ startPolling
+ }
+ else {
+ stopPolling
+ }
 })
 // Status helpers
 const statusConfig = {
@@ -78,12 +121,31 @@ const duration = computed( => {
 // Actions
 async function handlePause {
  await store.pauseExecution(executionId)
+ toast.success('工作流已暂停')
 }
 async function handleResume {
  await store.resumeExecution(executionId)
+ toast.success('工作流已恢复')
 }
 async function handleCancel {
  await store.cancelExecution(executionId)
+ toast.success('工作流已取消')
+}
+async function handleRetry {
+ if (!currentExecution.value)
+ return
+ try {
+ // Ensure workflow is loaded for execution
+ await workflowsStore.fetchWorkflow(currentExecution.value.workflow)
+ const result = await workflowsStore.executeWorkflow(currentExecution.value.input_data)
+ if (result?.execution_id) {
+ toast.success('工作流重新执行成功')
+ router.push(`/workflows/executions/${result.execution_id}`)
+ }
+ }
+ catch (e: any) {
+ toast.error(`重试失败: ${e.message}`)
+ }
 }
 async function handleApprove {
  if (!selectedNodeExecution.value)
@@ -93,6 +155,10 @@ async function handleApprove {
  await store.approveNode(selectedNodeExecution.value.id, approvalComment.value)
  approvalDialogOpen.value = false
  approvalComment.value = ''
+ toast.success('节点已批准')
+ }
+ catch (e: any) {
+ toast.error(`批准失败: ${e.message}`)
  }
  finally {
  approving.value = false
@@ -106,6 +172,10 @@ async function handleReject {
  await store.rejectNode(selectedNodeExecution.value.id, approvalComment.value)
  approvalDialogOpen.value = false
  approvalComment.value = ''
+ toast.success('节点已拒绝')
+ }
+ catch (e: any) {
+ toast.error(`拒绝失败: ${e.message}`)
  }
  finally {
  approving.value = false
@@ -158,7 +228,7 @@ function formatTime(dateStr: string | null) {
  继续
  </Button>
  <Button
- v-if="['running', 'paused', 'pending'].includes(currentExecution?.status || '')"
+ v-if="['running', 'paused', 'pending', 'waiting_approval'].includes(currentExecution?.status || '')"
  variant="destructive"
  size="sm"
  @click="handleCancel"
@@ -166,13 +236,22 @@ function formatTime(dateStr: string | null) {
  <Square class="w-4 mr-2" />
  取消
  </Button>
+ <Button
+ v-if="currentExecution?.status === 'failed' || currentExecution?.status === 'cancelled'"
+ variant="default"
+ size="sm"
+ @click="handleRetry"
+ >
+ <RotateCcw class="w-4 mr-2" />
+ 重试
+ </Button>
  <Button variant="ghost" size="icon" @click="store.fetchExecution(executionId)">
  <RefreshCw class="w-4 " />
  </Button>
  </div>
  </div>
  <!-- Loading state -->
- <div v-if="loading" class="flex justify-center py-12">
+ <div v-if="loading && !currentExecution" class="flex justify-center py-12">
  <Loader2 class="w-8 animate-spin text-primary" />
  </div>
  <!-- Error state -->

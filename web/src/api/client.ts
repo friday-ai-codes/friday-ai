@@ -113,7 +113,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  }
  // 添加 Authorization 头（除非跳过认证）
  if (!skipAuth && accessToken) {
- headers['Authorization'] = `Bearer ${accessToken}`
+ headers.Authorization = `Bearer ${accessToken}`
  }
  const response = await fetch(url, {
  ...init,
@@ -132,7 +132,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  subscribeTokenRefresh(async (newToken) => {
  try {
  // 使用新 Token 重试请求
- headers['Authorization'] = `Bearer ${newToken}`
+ headers.Authorization = `Bearer ${newToken}`
  const retryResponse = await fetch(url, {
  ...init,
  headers,
@@ -141,12 +141,15 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  if (!retryResponse.ok) {
  const error: ApiErrorResponse = await retryResponse.json.catch( => ({ detail: 'Request failed' }))
  reject(new ApiError(retryResponse.status, error.detail || 'Request failed'))
- } else if (retryResponse.status === 204) {
+ }
+ else if (retryResponse.status === 204) {
  resolve(undefined as T)
- } else {
+ }
+ else {
  resolve(retryResponse.json)
  }
- } catch (err) {
+ }
+ catch (err) {
  reject(err)
  }
  })
@@ -159,7 +162,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  isRefreshing = false
  onTokenRefreshed(newToken)
  // 使用新 Token 重试请求
- headers['Authorization'] = `Bearer ${newToken}`
+ headers.Authorization = `Bearer ${newToken}`
  const retryResponse = await fetch(url, {
  ...init,
  headers,
@@ -173,7 +176,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  throw new ApiError(retryResponse.status, error.detail || 'Request failed')
  }
  return retryResponse.json
- } catch (refreshError) {
+ }
+ catch {
  isRefreshing = false
  refreshSubscribers =
  // 刷新失败，清除 Token 并触发登出
@@ -189,7 +193,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  try {
  const error: ApiErrorResponse = await response.json
  detail = error.detail || detail
- } catch {
+ }
+ catch {
  // 忽略 JSON 解析错误
  }
  throw new ApiError(response.status, detail)

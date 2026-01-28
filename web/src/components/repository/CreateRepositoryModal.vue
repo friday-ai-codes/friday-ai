@@ -212,7 +212,9 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <span class="icon-[lucide--key] text-lg text-amber-600" />
  </div>
  <div>
- <h4 class="font-semibold text-sm text-foreground">Git 凭证配置</h4>
+ <h4 class="font-semibold text-sm text-foreground">
+ Git 凭证配置
+ </h4>
  <p class="text-xs text-muted-foreground">
  配置用于访问仓库的 Access Token（必填）
  </p>

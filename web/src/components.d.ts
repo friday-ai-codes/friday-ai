@@ -9,6 +9,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
  export interface GlobalComponents {
+ AccountSettingsModal: typeof import('./components/settings/AccountSettingsModal.vue')['default']
  ActionNode: typeof import('./components/workflow/nodes/ActionNode.vue')['default']
  AlertDialog: typeof import('./components/ui/alert-dialog/AlertDialog.vue')['default']
  AlertDialogAction: typeof import('./components/ui/alert-dialog/AlertDialogAction.vue')['default']
@@ -33,6 +34,7 @@ declare module 'vue' {
  CardFooter: typeof import('./components/ui/card/CardFooter.vue')['default']
  CardHeader: typeof import('./components/ui/card/CardHeader.vue')['default']
  CardTitle: typeof import('./components/ui/card/CardTitle.vue')['default']
+ ClaudeConfigModal: typeof import('./components/project/ClaudeConfigModal.vue')['default']
  ClaudeTestDialog: typeof import('./components/ClaudeTestDialog.vue')['default']
  Collapsible: typeof import('./components/ui/collapsible/Collapsible.vue')['default']
  CollapsibleContent: typeof import('./components/ui/collapsible/CollapsibleContent.vue')['default']
@@ -75,11 +77,13 @@ declare module 'vue' {
  DropdownMenuSubContent: typeof import('./components/ui/dropdown-menu/DropdownMenuSubContent.vue')['default']
  DropdownMenuSubTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuSubTrigger.vue')['default']
  DropdownMenuTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuTrigger.vue')['default']
+ EditProjectModal: typeof import('./components/project/EditProjectModal.vue')['default']
  EditRepositoryModal: typeof import('./components/repository/EditRepositoryModal.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
  ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
  ExecutionProgress: typeof import('./components/workflow/ExecutionProgress.vue')['default']
  FeishuConfigForm: typeof import('./components/feishu/FeishuConfigForm.vue')['default']
+ FeishuConfigModal: typeof import('./components/project/FeishuConfigModal.vue')['default']
  FormControl: typeof import('./components/ui/form/FormControl.vue')['default']
  FormDescription: typeof import('./components/ui/form/FormDescription.vue')['default']
  FormItem: typeof import('./components/ui/form/FormItem.vue')['default']
@@ -128,6 +132,7 @@ declare module 'vue' {
  TabsContent: typeof import('./components/ui/tabs/TabsContent.vue')['default']
  TabsList: typeof import('./components/ui/tabs/TabsList.vue')['default']
  TabsTrigger: typeof import('./components/ui/tabs/TabsTrigger.vue')['default']
+ TaskDetailModal: typeof import('./components/task/TaskDetailModal.vue')['default']
  TaskLogs: typeof import('./components/task/TaskLogs.vue')['default']
  TaskStatusBadge: typeof import('./components/task/TaskStatusBadge.vue')['default']
  Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
