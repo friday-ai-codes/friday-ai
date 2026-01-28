@@ -151,6 +151,19 @@ export const useExecutionsStore = defineStore('executions', => {
  throw e
  }
  }
+ async function triggerNode(nodeExecutionId: string, inputData: Record<string, any> = {}) {
+ try {
+ await api.post(`/node-executions/${nodeExecutionId}/trigger/`, { input_data: inputData })
+ // Refresh execution to get updated state
+ if (currentExecution.value) {
+ await fetchExecution(currentExecution.value.id)
+ }
+ }
+ catch (e: any) {
+ error.value = e.message
+ throw e
+ }
+ }
  function connectWebSocket(executionId: string) {
  if (ws) {
  ws.close
@@ -235,6 +248,7 @@ export const useExecutionsStore = defineStore('executions', => {
  cancelExecution,
  approveNode,
  rejectNode,
+ triggerNode,
  connectWebSocket,
  disconnectWebSocket,
  }

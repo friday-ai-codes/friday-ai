@@ -322,8 +322,9 @@ class AIPromptNode(BaseNode):
  return text, usage
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
+ from asgiref.sync import sync_to_async
  if context.workflow_execution:
- workflow = context.workflow_execution.workflow
+ workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
  if workflow:
- return workflow.project
+ return await sync_to_async(lambda: workflow.project)
  return None

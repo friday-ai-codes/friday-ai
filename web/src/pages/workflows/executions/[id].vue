@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import { AlertCircle, ArrowLeft, CheckCircle, ChevronRight, Clock, Loader2, Pause, Play, RefreshCw, RotateCcw, Square, XCircle } from 'lucide-vue-next'
+import { AlertCircle, ArrowLeft, CheckCircle, ChevronRight, Clock, Loader2, Pause, Play, RefreshCw, RotateCcw, Square, XCircle, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -35,6 +35,10 @@ const selectedNodeExecution = ref<NodeExecution | null>(null)
 const approvalDialogOpen = ref(false)
 const approvalComment = ref('')
 const approving = ref(false)
+// Manual trigger dialog state
+const triggerDialogOpen = ref(false)
+const triggerInputData = ref('')
+const triggering = ref(false)
 // Polling state
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(async => {
@@ -171,6 +175,39 @@ async function handleReject {
 function openApprovalDialog(nodeExec: NodeExecution) {
  selectedNodeExecution.value = nodeExec
  approvalDialogOpen.value = true
+}
+function openTriggerDialog(nodeExec: NodeExecution) {
+ selectedNodeExecution.value = nodeExec
+ triggerInputData.value = '{}'
+ triggerDialogOpen.value = true
+}
+async function handleTrigger {
+ if (!selectedNodeExecution.value)
+ return
+ triggering.value = true
+ try {
+ let inputData = {}
+ if (triggerInputData.value.trim) {
+ try {
+ inputData = JSON.parse(triggerInputData.value)
+ }
+ catch {
+ toast.error('输入数据格式错误，请输入有效的 JSON')
+ triggering.value = false
+ return
+ }
+ }
+ await store.triggerNode(selectedNodeExecution.value.id, inputData)
+ triggerDialogOpen.value = false
+ triggerInputData.value = '{}'
+ toast.success('节点已触发')
+ }
+ catch (e: any) {
+ toast.error(`触发失败: ${e.message}`)
+ }
+ finally {
+ triggering.value = false
+ }
 }
 function formatTime(dateStr: string | null) {
  if (!dateStr)
@@ -405,6 +442,15 @@ function formatTime(dateStr: string | null) {
  </div>
  <div class="flex items-center gap-2">
  <Badge
+ v-if="nodeExec.status === 'pending' && nodeExec.node_type === 'manual_trigger'"
+ variant="outline"
+ class="border-primary text-primary cursor-pointer hover:bg-primary/10"
+ @click.stop="openTriggerDialog(nodeExec)"
+ >
+ <Zap class="w-3 mr-1" />
+ 触发
+ </Badge>
+ <Badge
  v-if="nodeExec.status === 'waiting_approval'"
  variant="outline"
  class="border-orange-500 text-orange-500"
@@ -457,6 +503,13 @@ function formatTime(dateStr: string | null) {
  拒绝
  </Button>
  </div>
+ <!-- Manual trigger action -->
+ <div v-if="nodeExec.status === 'pending' && nodeExec.node_type === 'manual_trigger'" class="flex gap-2">
+ <Button size="sm" @click.stop="openTriggerDialog(nodeExec)">
+ <Zap class="w-4 mr-2" />
+ 触发执行
+ </Button>
+ </div>
  </div>
  </div>
  </div>
@@ -495,6 +548,36 @@ function formatTime(dateStr: string | null) {
  <Button:disabled="approving" @click="handleApprove">
  <CheckCircle class="w-4 mr-2" />
  批准
+ </Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
+ <!-- Manual Trigger Dialog -->
+ <Dialog v-model:open="triggerDialogOpen">
+ <DialogContent>
+ <DialogHeader>
+ <DialogTitle>触发: {{ selectedNodeExecution?.node_name }}</DialogTitle>
+ <DialogDescription>
+ 输入触发数据以启动工作流执行。
+ </DialogDescription>
+ </DialogHeader>
+ <div class="space-y-4">
+ <div class="space-y-2">
+ <label class="text-sm font-medium">输入数据（JSON 格式）</label>
+ <Textarea
+ v-model="triggerInputData"
+ placeholder='{"key": "value"}'
+ class="font-mono min-"
+ />
+ </div>
+ </div>
+ <DialogFooter>
+ <Button variant="outline" @click="triggerDialogOpen = false">
+ 取消
+ </Button>
+ <Button:disabled="triggering" @click="handleTrigger">
+ <Zap class="w-4 mr-2" />
+ 触发
  </Button>
  </DialogFooter>
  </DialogContent>

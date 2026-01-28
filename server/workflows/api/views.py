@@ -515,6 +515,33 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  return Response({"status": "rejected", "message": "审批已拒绝"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ @action(detail=True, methods=["post"])
+ def trigger(self, request: Request, pk=None) -> Response:
+ """Trigger a pending manual_trigger node."""
+ node_execution = self.get_object
+ if node_execution.status != NodeExecutionStatus.PENDING:
+ return Response(
+ {"detail": "节点不在等待触发状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if node_execution.node.node_type != "manual_trigger":
+ return Response(
+ {"detail": "只有手动触发节点可以被触发"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ input_data = request.data.get("input_data", {})
+ try:
+ engine = WorkflowEngine
+ run_async(engine.trigger_manual_node(node_execution, input_data))
+ return Response({"status": "triggered", "message": "节点已触发"})
+ except ValueError as e:
+ return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ except Exception as e:
+ logger.exception("manual_trigger_error", node_execution_id=str(pk))
+ return Response(
+ {"detail": f"触发失败: {e}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
 # =============================================================================
 # Node Type ViewSet
 # =============================================================================

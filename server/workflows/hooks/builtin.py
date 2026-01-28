@@ -1,5 +1,6 @@
 """Built-in lifecycle hooks."""
 import structlog
+from asgiref.sync import sync_to_async
 from workflows.hooks.base import BaseHook
 logger = structlog.get_logger
 class LoggingHook(BaseHook):
@@ -11,10 +12,11 @@ class LoggingHook(BaseHook):
  log_data = {"workflow_event_type": event}
  if execution:
  log_data["execution_id"] = str(execution.id)
- log_data["workflow"] = execution.workflow.name
+ log_data["workflow"] = await sync_to_async(lambda: execution.workflow.name)
  if node_execution:
- log_data["node_id"] = str(node_execution.node.id)
- log_data["node_name"] = node_execution.node.name
+ node = await sync_to_async(lambda: node_execution.node)
+ log_data["node_id"] = str(node.id)
+ log_data["node_name"] = node.name
  logger.info("workflow_event", **log_data)
 class WebSocketBroadcastHook(BaseHook):
  """WebSocket 广播钩子"""
