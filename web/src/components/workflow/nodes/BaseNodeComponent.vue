@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Handle, Position, type NodeProps } from '@vue-flow/core'
+import type { NodeProps } from '@vue-flow/core'
+import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
 interface Props extends NodeProps {
  icon?: any
@@ -88,7 +89,9 @@ const iconClasses = computed( => {
  border: 2px solid var(--color-border, hsl(219 30% 85%));
  border-radius: var(--radius, 0.5rem);
  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
- transition: border-color 0.15s ease, box-shadow 0.15s ease;
+ transition:
+ border-color 0.15s ease,
+ box-shadow 0.15s ease;
 }
 .workflow-node .node-card:hover {
  border-color: var(--color-primary, hsl(213 47% 47%));
@@ -147,7 +150,9 @@ const iconClasses = computed( => {
  border: 3px solid var(--color-card, #fff);
  border-radius: 50%;
  /* 不使用 transform，避免漂移 */
- transition: background-color 0.15s ease, box-shadow 0.15s ease;
+ transition:
+ background-color 0.15s ease,
+ box-shadow 0.15s ease;
 }
 .workflow-node .vue-flow__handle:hover {
  background: var(--color-primary, hsl(213 47% 47%));

@@ -3,7 +3,7 @@ import { Clock, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 
 import { computed } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
-const nodeTypesStore = useNodeTypesStore
+const _nodeTypesStore = useNodeTypesStore
 // 静态节点类型定义（备用，当 API 未加载时使用）
 const staticNodeTypes = [
  {
@@ -63,7 +63,7 @@ function onDragStart(event: DragEvent, nodeType: string) {
  }
  }
 }
-const getCategoryColor = (color: string) => {
+function getCategoryColor(color: string) {
  const colors: Record<string, string> = {
  blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800',
  green: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800',
@@ -71,7 +71,7 @@ const getCategoryColor = (color: string) => {
  }
  return colors[color] || colors.blue
 }
-const getIconBgColor = (color: string) => {
+function getIconBgColor(color: string) {
  const colors: Record<string, string> = {
  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
  green: 'bg-green-500/10 text-green-600 dark:text-green-400',

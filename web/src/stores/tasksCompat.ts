@@ -4,10 +4,10 @@
  * Provides a backward-compatible interface for task data,
  * internally using the Workflow API while exposing Task-like methods.
  */
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { useApi } from '@/composables/useApi'
 import type { TaskStatus } from '@/utils/taskStatusMapper'
+import { defineStore } from 'pinia'
+import { computed, ref } from 'vue'
+import { useApi } from '@/composables/useApi'
 export interface TaskCompat {
  id: string
  project_id: string
@@ -35,24 +35,24 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  const error = ref<string | null>(null)
  // Computed
  const pendingTasks = computed( =>
- tasks.value.filter((t) => t.status === 'pending')
+ tasks.value.filter(t => t.status === 'pending'),
  )
  const activeTasks = computed( =>
- tasks.value.filter((t) =>
- ['planning', 'plan_review', 'executing', 'code_review'].includes(t.status)
- )
+ tasks.value.filter(t =>
+ ['planning', 'plan_review', 'executing', 'code_review'].includes(t.status),
+ ),
  )
  const completedTasks = computed( =>
- tasks.value.filter((t) => t.status === 'merged')
+ tasks.value.filter(t => t.status === 'merged'),
  )
  const failedTasks = computed( =>
- tasks.value.filter((t) => t.status === 'failed')
+ tasks.value.filter(t => t.status === 'failed'),
  )
  const runningTasks = computed( =>
- tasks.value.filter((t) => ['planning', 'executing'].includes(t.status))
+ tasks.value.filter(t => ['planning', 'executing'].includes(t.status)),
  )
  const reviewTasks = computed( =>
- tasks.value.filter((t) => ['plan_review', 'code_review'].includes(t.status))
+ tasks.value.filter(t => ['plan_review', 'code_review'].includes(t.status)),
  )
  const taskCount = computed( => tasks.value.length)
  // Stats for dashboard display
@@ -68,16 +68,18 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  * Fetch tasks list with optional filters.
  * Uses the compatibility API which merges Workflow and legacy Task data.
  */
- async function fetchTasks(filters?: { project_id?: string; status?: string; limit?: number }) {
+ async function fetchTasks(filters?: { project_id?: string, status?: string, limit?: number }) {
  loading.value = true
  error.value = null
  try {
  const response = await api.get('/api/tasks/', { params: filters })
  tasks.value = response.data
- } catch (e: any) {
+ }
+ catch (e: any) {
  error.value = e.message || 'Failed to fetch tasks'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -91,10 +93,12 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  const response = await api.get(`/api/tasks/${id}/`)
  currentTask.value = response.data
  return response.data
- } catch (e: any) {
+ }
+ catch (e: any) {
  error.value = e.message || 'Failed to fetch task'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -103,13 +107,14 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  * Only works for workflow-based tasks.
  */
  async function approveTask(taskId: string, comment?: string) {
- const task = currentTask.value
+ const _task = currentTask.value
  // Use the compat API approve endpoint
  try {
  await api.post(`/api/tasks/${taskId}/approve/`, { comment })
  // Refresh the task data
  await fetchTask(taskId)
- } catch (e: any) {
+ }
+ catch (e: any) {
  error.value = e.message || 'Failed to approve task'
  throw e
  }
@@ -122,7 +127,8 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  try {
  await api.post(`/api/tasks/${taskId}/reject/`, { comment })
  await fetchTask(taskId)
- } catch (e: any) {
+ }
+ catch (e: any) {
  error.value = e.message || 'Failed to reject task'
  throw e
  }

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
-import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute
 const router = useRouter
@@ -181,7 +181,9 @@ async function handleEditSuccess {
  <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">凭证已配置</p>
+ <p class="font-medium">
+ 凭证已配置
+ </p>
  <p class="text-sm text-muted-foreground">
  类型：{{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
  </p>
@@ -199,7 +201,9 @@ async function handleEditSuccess {
  <div class="inline-flex rounded-full bg-muted/50 mb-3">
  <span class="icon-[lucide--lock] text-3xl text-muted-foreground" />
  </div>
- <p class="text-muted-foreground">尚未配置凭证</p>
+ <p class="text-muted-foreground">
+ 尚未配置凭证
+ </p>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
  <Button class="mt-4" size="sm">
  配置凭证

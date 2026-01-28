@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TaskStatus } from '~/types'
-import { Badge } from '~/components/ui/badge'
-import { STATUS_COLORS, STATUS_LABELS } from '~/types'
+import { STATUS_LABELS } from '~/types'
 const props = defineProps<{
  status: TaskStatus
  showIcon?: boolean
@@ -23,10 +22,8 @@ const isRunning = computed( =>
 </script>
 <template>
  <div
- class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors duration-200":class="[
+ class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors duration-200 bg-opacity-10 dark:bg-opacity-20 backdrop-blur-sm":class="[
  // Base styles
- 'bg-opacity-10 dark:bg-opacity-20 backdrop-blur-sm',
- // Status specific styles
  status === 'pending' && 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
  status === 'planning' && 'bg-indigo-100 text-indigo-600 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800',
  status === 'plan_review' && 'bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',

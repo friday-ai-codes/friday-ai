@@ -1,13 +1,11 @@
 <script setup lang="ts">
+import { toTypedSchema } from '@vee-validate/zod'
 /**
  * 登录页面
  */
 import { useForm } from 'vee-validate'
-import { toTypedSchema } from '@vee-validate/zod'
 import * as z from 'zod'
-import { useAuthStore } from '~/stores/auth'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
 import {
  FormControl,
  FormField,
@@ -15,6 +13,8 @@ import {
  FormLabel,
  FormMessage,
 } from '~/components/ui/form'
+import { Input } from '~/components/ui/input'
+import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const route = useRoute
 const authStore = useAuthStore
@@ -40,7 +40,8 @@ const onSubmit = handleSubmit(async (values) => {
  // 登录成功，跳转到原页面或首页
  const redirect = route.query.redirect as string || '/'
  router.push(redirect)
- } catch (e) {
+ }
+ catch (e) {
  loginError.value = e instanceof Error ? e.message: '登录失败，请重试'
  }
 })
@@ -91,7 +92,9 @@ onMounted( => {
  <!-- 用户名 -->
  <FormField v-slot="{ componentField }" name="username">
  <FormItem>
- <FormLabel class="text-foreground/80">用户名</FormLabel>
+ <FormLabel class="text-foreground/80">
+ 用户名
+ </FormLabel>
  <FormControl>
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--user] text-muted-foreground" />
@@ -110,7 +113,9 @@ onMounted( => {
  <!-- 密码 -->
  <FormField v-slot="{ componentField }" name="password">
  <FormItem>
- <FormLabel class="text-foreground/80">密码</FormLabel>
+ <FormLabel class="text-foreground/80">
+ 密码
+ </FormLabel>
  <FormControl>
  <div class="relative">
  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground" />

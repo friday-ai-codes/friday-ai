@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import type { TaskStatus } from '~/types'
 import { useHead } from '@vueuse/head'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Select,
  SelectContent,
@@ -11,10 +9,9 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import { Separator } from '~/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
 import { useTasksCompatStore } from '~/stores/tasksCompat'
+import { STATUS_LABELS, VALID_TRANSITIONS } from '~/types'
 const route = useRoute
 const router = useRouter
 const tasksStore = useTasksCompatStore
@@ -192,7 +189,7 @@ const isRunning = computed( =>
 // 日志内容
 const logs = computed( => legacyTasksStore.currentLogs)
 // 检查是否是工作流任务，获取工作流ID
-const isWorkflowTask = computed( => tasksStore.isWorkflowTask(task.value!))
+const _isWorkflowTask = computed( => tasksStore.isWorkflowTask(task.value!))
 const workflowId = computed( => task.value ? tasksStore.getWorkflowId(task.value): null)
 function viewWorkflow {
  if (workflowId.value) {
@@ -221,7 +218,9 @@ function viewWorkflow {
  <div class=" rounded-lg bg-primary/10 text-primary">
  <span class="icon-[lucide--hash] w-6 " />
  </div>
- <h1 class="text-3xl font-bold tracking-tight text-foreground">{{ task.title }}</h1>
+ <h1 class="text-3xl font-bold tracking-tight text-foreground">
+ {{ task.title }}
+ </h1>
  </div>
  <div class="flex flex-wrap items-center gap-4 text-sm">
  <TaskStatusBadge:status="task.status":show-icon="true" class="text-sm px-3 py-1" />
@@ -266,7 +265,7 @@ function viewWorkflow {
  <span class="icon-[lucide--git-branch] mr-2" />
  查看工作流
  </Button>
- <Button v-if="!isRunning" variant="outline" size="icon" class="w-10 " @click="deleteDialogOpen = true" title="删除任务">
+ <Button v-if="!isRunning" variant="outline" size="icon" class="w-10 " title="删除任务" @click="deleteDialogOpen = true">
  <span class="icon-[lucide--trash-2] w-4 text-destructive" />
  </Button>
  </div>
@@ -278,8 +277,12 @@ function viewWorkflow {
  </div>
  <div class="flex-1 space-y-3">
  <div>
- <h3 class="font-medium text-amber-900 dark:text-amber-100">未关联 Git 仓库</h3>
- <p class="text-sm text-amber-700 dark:text-amber-300/70">请选择一个代码仓库以开始执行任务。</p>
+ <h3 class="font-medium text-amber-900 dark:text-amber-100">
+ 未关联 Git 仓库
+ </h3>
+ <p class="text-sm text-amber-700 dark:text-amber-300/70">
+ 请选择一个代码仓库以开始执行任务。
+ </p>
  </div>
  <div class="flex items-center gap-3">
  <Select v-model="selectedRepoId">
@@ -292,7 +295,7 @@ function viewWorkflow {
  </SelectItem>
  </SelectContent>
  </Select>
- <Button:disabled="!selectedRepoId || updatingRepo" @click="handleUpdateRepo" size="sm" variant="secondary">
+ <Button:disabled="!selectedRepoId || updatingRepo" size="sm" variant="secondary" @click="handleUpdateRepo">
  <span v-if="updatingRepo" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  关联仓库
  </Button>
@@ -306,7 +309,7 @@ function viewWorkflow {
  <!-- Progress Timeline -->
  <div class="relative pt-2 pb-6">
  <!-- Line -->
- <div class="absolute top-5 left-0 right-0 .5 bg-muted -z-10"></div>
+ <div class="absolute top-5 left-0 right-0 .5 bg-muted -z-10" />
  <!-- Steps -->
  <div class="flex justify-between">
  <div
@@ -315,9 +318,7 @@ function viewWorkflow {
  >
  <div
  class="w-10 rounded-full border-2 flex items-center justify-center transition-all duration-300":class="[
- index < currentStepIndex ? 'bg-primary border-primary text-primary-foreground':
- index === currentStepIndex ? 'bg-background border-primary text-primary ring-4 ring-primary/10':
- 'bg-background border-muted text-muted-foreground'
+ index < currentStepIndex ? 'bg-primary border-primary text-primary-foreground': index === currentStepIndex ? 'bg-background border-primary text-primary ring-4 ring-primary/10': 'bg-background border-muted text-muted-foreground',
  ]"
  >
  <span v-if="index < currentStepIndex" class="icon-[lucide--check] w-5 " />
@@ -336,8 +337,12 @@ function viewWorkflow {
  <div class="inline-flex rounded-full bg-destructive/10 text-destructive mb-2">
  <span class="icon-[lucide--x-circle] w-6 " />
  </div>
- <h3 class="font-semibold text-destructive">任务执行失败</h3>
- <p class="text-sm text-destructive/80 mt-1 mb-3">{{ task.error_message || '未知错误' }}</p>
+ <h3 class="font-semibold text-destructive">
+ 任务执行失败
+ </h3>
+ <p class="text-sm text-destructive/80 mt-1 mb-3">
+ {{ task.error_message || '未知错误' }}
+ </p>
  <Button variant="outline" size="sm" class="border-destructive/30 hover:bg-destructive/10 text-destructive" @click="handleTransition('pending')">
  <span class="icon-[lucide--rotate-ccw] mr-2" /> 重试任务
  </Button>
@@ -384,7 +389,9 @@ function viewWorkflow {
  <h4 class="font-medium text-blue-900 dark:text-blue-100 flex items-center gap-2 mb-2">
  <span class="icon-[lucide--message-square] w-4 " /> 人工反馈
  </h4>
- <p class="text-sm text-blue-800 dark:text-blue-200/80">{{ task.human_feedback }}</p>
+ <p class="text-sm text-blue-800 dark:text-blue-200/80">
+ {{ task.human_feedback }}
+ </p>
  </div>
  </TabsContent>
  <TabsContent value="logs" class="mt-0 outline-none">
@@ -423,7 +430,9 @@ function viewWorkflow {
  <!-- Details Card -->
  <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
  <div class="px-4 py-3 border-b bg-muted/30">
- <h3 class="font-medium text-sm">基本信息</h3>
+ <h3 class="font-medium text-sm">
+ 基本信息
+ </h3>
  </div>
  <div class=" space-y-4">
  <div class="grid grid-cols-1 gap-4 text-sm">
@@ -433,7 +442,9 @@ function viewWorkflow {
  </div>
  <div>
  <span class="text-muted-foreground block mb-1">描述</span>
- <p class="text-foreground leading-relaxed">{{ task.description || '暂无描述' }}</p>
+ <p class="text-foreground leading-relaxed">
+ {{ task.description || '暂无描述' }}
+ </p>
  </div>
  <div class="grid grid-cols-2 gap-4">
  <div>
@@ -451,7 +462,9 @@ function viewWorkflow {
  <!-- Git Info Card -->
  <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
  <div class="px-4 py-3 border-b bg-muted/30 flex justify-between items-center">
- <h3 class="font-medium text-sm">Git 信息</h3>
+ <h3 class="font-medium text-sm">
+ Git 信息
+ </h3>
  <span class="icon-[lucide--git-branch] w-4 text-muted-foreground" />
  </div>
  <div class=" space-y-4 text-sm">
@@ -478,7 +491,9 @@ function viewWorkflow {
  <!-- Manual Actions Card -->
  <div v-if="availableTransitions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
  <div class="px-4 py-3 border-b bg-muted/30">
- <h3 class="font-medium text-sm">手动状态流转</h3>
+ <h3 class="font-medium text-sm">
+ 手动状态流转
+ </h3>
  </div>
  <div class="">
  <div class="flex flex-wrap gap-2">

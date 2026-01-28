@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { MessageSquare } from 'lucide-vue-next'
 import type { NodeProps } from '@vue-flow/core'
+import { MessageSquare } from 'lucide-vue-next'
 import BaseNodeComponent from './BaseNodeComponent.vue'
 const props = defineProps<NodeProps>
 </script>
@@ -15,7 +15,9 @@ const props = defineProps<NodeProps>
  <span class="opacity-70">审批人:</span>
  <span class="font-medium">{{ props.data?.config?.approvers?.length || '任意' }}</span>
  </div>
- <p class="line-clamp-2">{{ props.data?.description || '等待人工审批' }}</p>
+ <p class="line-clamp-2">
+ {{ props.data?.description || '等待人工审批' }}
+ </p>
  </div>
  </BaseNodeComponent>
 </template>

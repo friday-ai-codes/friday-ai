@@ -2,6 +2,7 @@
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
+import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -10,7 +11,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 useHead({
  title: '触发日志 - Friday AI',
 })
@@ -105,7 +105,9 @@ async function handleDelete(logId: string) {
  <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
- <h1 class="text-2xl font-bold">触发日志</h1>
+ <h1 class="text-2xl font-bold">
+ 触发日志
+ </h1>
  </div>
  <p class="text-muted-foreground ml-12">
  查看飞书 Webhook 触发的工作项日志
@@ -126,7 +128,9 @@ async function handleDelete(logId: string) {
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="__all__">全部项目</SelectItem>
+ <SelectItem value="__all__">
+ 全部项目
+ </SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
  >

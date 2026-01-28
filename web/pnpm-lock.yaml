@@ -56,7 +56,7 @@ catalogs:
  specifier: ^0.8.1
  version: 0.8.1
  '@vueuse/core':
- specifier: 'catalog:'
+ specifier: 14.1.0
  version: 14.1.0
  '@vueuse/head':
  specifier: ^2.0.0
@@ -86,7 +86,7 @@ catalogs:
  specifier: ^3.0.4
  version: 3.0.4
  reka-ui:
- specifier: 'catalog:'
+ specifier: ^2.7.0
  version: 2.7.0
  shiki:
  specifier: ^3.21.0

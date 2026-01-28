@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { VueFinalModal } from 'vue-final-modal'
 import { onMounted } from 'vue'
+import { VueFinalModal } from 'vue-final-modal'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { Textarea } from '~/components/ui/textarea'
 import {
  Select,
  SelectContent,
@@ -13,6 +12,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { Textarea } from '~/components/ui/textarea'
 const emit = defineEmits<{
  confirm: [data: { name: string, description?: string, project_id: string }]
  cancel:
@@ -54,7 +54,7 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const workflow = await workflowsStore.createWorkflow({
+ const _workflow = await workflowsStore.createWorkflow({
  name: form.name,
  description: form.description || undefined,
  project: form.project_id,

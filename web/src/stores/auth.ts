@@ -37,10 +37,12 @@ export const useAuthStore = defineStore('auth', => {
  isAuthenticated.value = true
  mustChangePassword.value = response.must_change_password
  return { user: response.user, mustChangePassword: response.must_change_password }
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '登录失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -50,9 +52,11 @@ export const useAuthStore = defineStore('auth', => {
  async function logout {
  try {
  await authApi.logout
- } catch {
+ }
+ catch {
  // 忽略登出错误，仍然清除本地状态
- } finally {
+ }
+ finally {
  clearAccessToken
  user.value = null
  isAuthenticated.value = false
@@ -66,7 +70,8 @@ export const useAuthStore = defineStore('auth', => {
  const response = await authApi.refresh
  setAccessToken(response.access_token)
  return response.access_token
- } catch (e) {
+ }
+ catch (e) {
  // 刷新失败，清除状态
  clearAccessToken
  user.value = null
@@ -79,7 +84,8 @@ export const useAuthStore = defineStore('auth', => {
  * 应用启动时调用，尝试通过 Refresh Token 恢复登录状态
  */
  async function initAuth {
- if (isInitialized.value) return
+ if (isInitialized.value)
+ return
  loading.value = true
  try {
  // 尝试刷新 Token
@@ -89,12 +95,14 @@ export const useAuthStore = defineStore('auth', => {
  const currentUser = await authApi.getCurrentUser
  user.value = currentUser
  isAuthenticated.value = true
- } catch {
+ }
+ catch {
  // 刷新失败，用户未登录
  clearAccessToken
  user.value = null
  isAuthenticated.value = false
- } finally {
+ }
+ finally {
  isInitialized.value = true
  loading.value = false
  }
@@ -109,10 +117,12 @@ export const useAuthStore = defineStore('auth', => {
  const currentUser = await authApi.getCurrentUser
  user.value = currentUser
  return currentUser
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取用户信息失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -125,10 +135,12 @@ export const useAuthStore = defineStore('auth', => {
  try {
  await authApi.changePassword(data)
  mustChangePassword.value = false
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '修改密码失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -141,10 +153,12 @@ export const useAuthStore = defineStore('auth', => {
  try {
  await authApi.forceChangePassword(data)
  mustChangePassword.value = false
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '修改密码失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -156,10 +170,12 @@ export const useAuthStore = defineStore('auth', => {
  error.value = null
  try {
  return await authApi.getAdminProfile
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '获取管理员资料失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -177,10 +193,12 @@ export const useAuthStore = defineStore('auth', => {
  user.value.display_name = profile.display_name
  }
  return profile
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '更新管理员资料失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }
@@ -193,10 +211,12 @@ export const useAuthStore = defineStore('auth', => {
  try {
  await authApi.adminChangePassword(data)
  mustChangePassword.value = false
- } catch (e) {
+ }
+ catch (e) {
  error.value = e instanceof Error ? e.message: '修改密码失败'
  throw e
- } finally {
+ }
+ finally {
  loading.value = false
  }
  }

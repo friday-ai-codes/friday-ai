@@ -2,13 +2,13 @@
 import { GitBranch, Play, Plus } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { markRaw, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { useModal } from 'vue-final-modal'
+import { useRouter } from 'vue-router'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card'
-import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import CreateWorkflowModal from '~/components/workflow/CreateWorkflowModal.vue'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const router = useRouter
 const store = useWorkflowsStore
 const { workflows, loading } = storeToRefs(store)

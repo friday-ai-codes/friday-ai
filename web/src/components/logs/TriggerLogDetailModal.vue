@@ -224,13 +224,17 @@ function isValidUrl(url: string): boolean {
  <div class=" rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/10">
  <span class="icon-[lucide--file-code] text-lg text-violet-500" />
  </div>
- <h4 class="font-semibold">工作项内容</h4>
+ <h4 class="font-semibold">
+ 工作项内容
+ </h4>
  </div>
  <div class=" space-y-4">
  <!-- 描述 -->
  <div v-if="log.description">
  <label class="text-xs text-muted-foreground uppercase tracking-wide">描述</label>
- <p class="mt-1 text-sm whitespace-pre-wrap">{{ log.description }}</p>
+ <p class="mt-1 text-sm whitespace-pre-wrap">
+ {{ log.description }}
+ </p>
  </div>
  <!-- 文档链接 -->
  <div class="grid gap-3 sm:grid-cols-2">
@@ -271,15 +275,21 @@ function isValidUrl(url: string): boolean {
  <div class="grid gap-2 sm:grid-cols-3 pt-3 border-t border-border/50">
  <div>
  <label class="text-xs text-muted-foreground">工作项 ID</label>
- <p class="font-mono text-sm">{{ log.work_item_id || '-' }}</p>
+ <p class="font-mono text-sm">
+ {{ log.work_item_id || '-' }}
+ </p>
  </div>
  <div>
  <label class="text-xs text-muted-foreground">工作项类型</label>
- <p class="text-sm">{{ log.work_item_type || '-' }}</p>
+ <p class="text-sm">
+ {{ log.work_item_type || '-' }}
+ </p>
  </div>
  <div>
  <label class="text-xs text-muted-foreground">创建时间</label>
- <p class="text-sm">{{ formatDate(log.created_at) }}</p>
+ <p class="text-sm">
+ {{ formatDate(log.created_at) }}
+ </p>
  </div>
  </div>
  <!-- 错误信息 -->
@@ -288,7 +298,9 @@ function isValidUrl(url: string): boolean {
  <span class="icon-[lucide--alert-circle]" />
  错误信息
  </div>
- <p class="mt-1 text-sm">{{ log.error_message }}</p>
+ <p class="mt-1 text-sm">
+ {{ log.error_message }}
+ </p>
  </div>
  </div>
  </div>
@@ -345,7 +357,9 @@ function isValidUrl(url: string): boolean {
  </AlertDialogDescription>
  </AlertDialogHeader>
  <AlertDialogFooter>
- <AlertDialogCancel:disabled="deleting">取消</AlertDialogCancel>
+ <AlertDialogCancel:disabled="deleting">
+ 取消
+ </AlertDialogCancel>
  <AlertDialogAction
  class="bg-destructive text-destructive-foreground hover:bg-destructive/90":disabled="deleting"
  @click="handleDelete"

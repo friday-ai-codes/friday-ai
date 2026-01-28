@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
+import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 useHead({
  title: '项目管理 - Friday AI',
 })
@@ -25,7 +25,7 @@ onMounted(async => {
 })
 // 新建项目弹窗
 async function openCreateProject {
- const { open, result } = useModal<string>({
+ const { open, _result } = useModal<string>({
  component: markRaw(CreateProjectModal),
  onConfirm: (projectId) => {
  // 创建成功后跳转到项目详情
@@ -68,7 +68,9 @@ async function handleDelete {
  <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-git-2] text-2xl text-blue-500" />
  </div>
- <h1 class="text-2xl font-bold">项目管理</h1>
+ <h1 class="text-2xl font-bold">
+ 项目管理
+ </h1>
  </div>
  <p class="text-muted-foreground ml-12">
  管理您的 Git 仓库项目和凭证配置

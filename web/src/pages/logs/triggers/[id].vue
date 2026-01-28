@@ -2,8 +2,8 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
-import { Button } from '~/components/ui/button'
 import TriggerLogDetailComponent from '~/components/logs/TriggerLogDetail.vue'
+import { Button } from '~/components/ui/button'
 const route = useRoute
 const router = useRouter
 useHead({
@@ -19,7 +19,8 @@ const projectsStore = useProjectsStore
 const logId = computed( => route.params.id as string)
 // 加载日志详情
 async function fetchLog {
- if (!logId.value) return
+ if (!logId.value)
+ return
  loading.value = true
  try {
  await projectsStore.fetchProjects
@@ -35,7 +36,8 @@ async function fetchLog {
 }
 // 获取项目名称
 function getProjectName(projectId: string | null): string {
- if (!projectId) return '-'
+ if (!projectId)
+ return '-'
  const project = projectsStore.projectById(projectId)
  return project?.name || projectId.slice(0, 8)
 }

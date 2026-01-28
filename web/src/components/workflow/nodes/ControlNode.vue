@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { Clock, Copy, GitBranch } from 'lucide-vue-next'
-import { Handle, Position, type NodeProps } from '@vue-flow/core'
+import type { NodeProps } from '@vue-flow/core'
+import { Handle, Position } from '@vue-flow/core'
+import { Clock, GitFork, Split } from 'lucide-vue-next'
 import { computed } from 'vue'
 const props = defineProps<NodeProps>
 const isSelected = computed( => props.selected)
-const getIcon = (type: string) => {
+function getIcon(type: string) {
  switch (type) {
- case 'condition': return GitBranch
+ case 'condition': return GitFork
  case 'delay': return Clock
- case 'parallel': return Copy
- default: return GitBranch
+ case 'parallel': return Split
+ default: return GitFork
  }
 }
 // 获取输出 Handles（条件节点有多个分支）
-const outputHandles = computed( => {
+const outputHandles = computed<{ id: string, label: string }>( => {
  const nodeType = props.data?.node_type || props.type
  if (nodeType === 'condition') {
  const conditions = props.data?.config?.conditions ||
@@ -21,13 +22,23 @@ const outputHandles = computed( => {
  id: `branch_${i}`,
  label: c.name || `分支 ${i + 1}`,
  }))
+ // 总是确保有 True/False 或类似分支
+ if (handles.length === 0) {
+ return [
+ { id: 'true', label: '是' },
+ { id: 'false', label: '否' },
+ ]
+ }
  handles.push({ id: 'else', label: '否则' })
  return handles
  }
  if (nodeType === 'parallel') {
- return [
- { id: 'fork', label: '分叉' },
- { id: 'join', label: '汇合' },
+ return props.data?.config?.branches?.map((b: any, i: number) => ({
+ id: b.id || `branch_${i}`,
+ label: b.name || `分支 ${i + 1}`,
+ })) || [
+ { id: 'branch_1', label: '分支 1' },
+ { id: 'branch_2', label: '分支 2' },
  ]
  }
  return [{ id: 'default', label: '输出' }]
@@ -50,7 +61,7 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  <component:is="getIcon(props.data?.node_type || props.type || '')" class="w-4 " />
  </div>
  <span class="node-title">
- {{ label || props.data?.name || 'Untitled' }}
+ {{ label || props.data?.name || 'Control' }}
  </span>
  <span class="node-badge">
  控制
@@ -65,16 +76,18 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  class="flex items-center gap-2 text-[10px]"
  >
  <div
- class="w-2 rounded-full":class="handle.id === 'else' ? 'bg-gray-400': 'bg-purple-500'"
+ class="w-2 rounded-full":class="handle.id === 'false' || handle.id === 'else' ? 'bg-gray-400': 'bg-orange-500'"
  />
  <span>{{ handle.label }}</span>
  </div>
  </div>
  <!-- 延迟配置预览 -->
  <div v-else-if="(props.data?.node_type || props.type) === 'delay'" class="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded inline-block mb-2">
- {{ props.data?.config?.duration || 60 }}s
+ {{ props.data?.config?.duration || '0s' }}
  </div>
- <p class="line-clamp-2">{{ props.data?.description || '控制流节点' }}</p>
+ <p class="line-clamp-2">
+ {{ props.data?.description || '控制流节点' }}
+ </p>
  </div>
  </div>
  <!-- Output Handles -->
@@ -86,8 +99,8 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  <!-- 多个输出（条件分支） -->
  <template v-else>
  <Handle
- v-for="(handle, index) in outputHandles":key="handle.id"
- type="source":position="Position.Right":id="handle.id":style="{ top: `${((index + 1) / (outputHandles.length + 1)) * 100}%` }"
+ v-for="(handle, index) in outputHandles":id="handle.id":key="handle.id"
+ type="source":position="Position.Right":style="{ top: `${((index + 1) / (outputHandles.length + 1)) * 100}%` }"
  class="workflow-node__handle--multi"
  />
  </template>
@@ -96,7 +109,7 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
 <style>
 /**
  * Control Node 样式
- * 继承 BaseNodeComponent 的样式，添加紫色主题
+ * 继承 BaseNodeComponent 的样式，使用 Orange 主题
  */
 .workflow-node--control {
  position: relative;
@@ -109,14 +122,16 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  border: 2px solid var(--color-border, hsl(219 30% 85%));
  border-radius: var(--radius, 0.5rem);
  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
- transition: border-color 0.15s ease, box-shadow 0.15s ease;
+ transition:
+ border-color 0.15s ease,
+ box-shadow 0.15s ease;
 }
 .workflow-node--control .node-card:hover {
- border-color: var(--color-primary, hsl(213 47% 47%));
+ border-color: var(--color-orange-500, #f97316);
 }
 .workflow-node--control .node-card--selected {
- border-color: var(--color-primary, hsl(213 47% 47%));
- box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 20%, transparent);
+ border-color: var(--color-orange-500, #f97316);
+ box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-orange-500, #f97316) 20%, transparent);
 }
 .workflow-node--control .node-header {
  display: flex;
@@ -132,8 +147,8 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  height: 28px;
  border-radius: 6px;
  flex-shrink: 0;
- background: rgb(147 51 234 / 0.1);
- color: rgb(147 51 234);
+ background: rgb(249 115 22 / 0.1); /* orange-500/10 */
+ color: rgb(249 115 22); /* orange-500 */
 }
 .workflow-node--control .node-title {
  flex: 1;
@@ -150,8 +165,8 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  padding: 2px 8px;
  border-radius: 9999px;
  flex-shrink: 0;
- background: rgb(147 51 234 / 0.1);
- color: rgb(147 51 234);
+ background: rgb(249 115 22 / 0.1);
+ color: rgb(249 115 22);
 }
 .workflow-node--control .node-body {
  font-size: 12px;
@@ -165,11 +180,17 @@ const hasMultipleHandles = computed( => outputHandles.value.length > 1)
  background: var(--color-muted-foreground, hsl(212 40% 40%));
  border: 3px solid var(--color-card, #fff);
  border-radius: 50%;
- transition: background-color 0.15s ease, box-shadow 0.15s ease;
+ transition:
+ background-color 0.15s ease,
+ box-shadow 0.15s ease;
 }
 .workflow-node--control .vue-flow__handle:hover {
- background: var(--color-primary, hsl(213 47% 47%));
- box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 30%, transparent);
+ background: var(--color-orange-500, #f97316);
+ box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-orange-500, #f97316) 30%, transparent);
+}
+.workflow-node--control .vue-flow__handle.connecting,
+.workflow-node--control .vue-flow__handle.valid {
+ background: var(--color-orange-500, #f97316);
 }
 .workflow-node--control .vue-flow__handle-left {
  left: -7px;

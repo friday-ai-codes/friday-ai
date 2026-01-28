@@ -93,7 +93,9 @@ async function handleSubmit {
  <span class="icon-[lucide--pencil] text-2xl text-blue-500" />
  </div>
  <div>
- <h1 class="text-xl font-bold">编辑项目</h1>
+ <h1 class="text-xl font-bold">
+ 编辑项目
+ </h1>
  <p class="text-sm text-muted-foreground">
  修改项目基本信息
  </p>

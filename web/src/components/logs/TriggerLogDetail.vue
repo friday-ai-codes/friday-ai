@@ -25,7 +25,8 @@ const webhookExpanded = ref(false)
 const workItemExpanded = ref(false)
 // 加载原始数据
 async function loadRawData {
- if (rawLoaded.value) return
+ if (rawLoaded.value)
+ return
  rawLoading.value = true
  try {
  const data = await getTriggerLogRaw(props.log.id)

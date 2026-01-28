@@ -4,7 +4,7 @@ import type {
  RepositoryCreate,
  RepositoryUpdate,
 } from '~/types'
-import { del, get, patch, post, upload } from './client'
+import { del, get, patch, post } from './client'
 export const repositoriesApi = {
  /**
  * 获取仓库列表

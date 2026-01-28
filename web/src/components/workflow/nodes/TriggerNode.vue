@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Clock, Play, Webhook } from 'lucide-vue-next'
 import type { NodeProps } from '@vue-flow/core'
+import { Clock, Play, Webhook } from 'lucide-vue-next'
 import BaseNodeComponent from './BaseNodeComponent.vue'
 const props = defineProps<NodeProps>
-const getIcon = (type: string) => {
+function getIcon(type: string) {
  switch (type) {
  case 'manual_trigger': return Play
  case 'webhook_trigger': return Webhook
@@ -25,7 +25,9 @@ const getIcon = (type: string) => {
  <div v-if="props.data?.config?.path" class="font-mono text-[10px] bg-secondary px-1.5 py-0.5 rounded inline-block">
  POST {{ props.data.config.path }}
  </div>
- <p class="line-clamp-2">{{ props.data?.description || '手动触发工作流执行' }}</p>
+ <p class="line-clamp-2">
+ {{ props.data?.description || '手动触发工作流执行' }}
+ </p>
  </div>
  </BaseNodeComponent>
 </template>
