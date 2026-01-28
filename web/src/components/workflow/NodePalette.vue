@@ -2,7 +2,8 @@
 import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
-const _nodeTypesStore = useNodeTypesStore
+const nodeTypesStore = useNodeTypesStore
+void nodeTypesStore // Used for future API loading
 // 静态节点类型定义（备用，当 API 未加载时使用）
 const staticNodeTypes = [
  {

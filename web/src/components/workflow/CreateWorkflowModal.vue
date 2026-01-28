@@ -54,7 +54,7 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const _workflow = await workflowsStore.createWorkflow({
+ await workflowsStore.createWorkflow({
  name: form.name,
  description: form.description || undefined,
  project: form.project_id,

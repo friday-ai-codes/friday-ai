@@ -15,7 +15,6 @@ useHead({
  title: '任务列表 - Friday AI',
 })
 const route = useRoute
-const _router = useRouter
 const tasksStore = useTasksCompatStore
 const projectsStore = useProjectsStore
 const { error: showError } = useToast

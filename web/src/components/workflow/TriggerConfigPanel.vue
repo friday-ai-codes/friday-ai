@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Edit, Plus, Power, Trash2, Zap } from 'lucide-vue-next'
+import { Edit, Plus, Trash2, Zap } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
