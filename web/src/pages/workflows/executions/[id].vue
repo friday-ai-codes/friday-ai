@@ -36,7 +36,7 @@ const approvalDialogOpen = ref(false)
 const approvalComment = ref('')
 const approving = ref(false)
 // Polling state
-let pollTimer: number | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(async => {
  await store.fetchExecution(executionId)
  startPolling
@@ -83,15 +83,15 @@ watch( => currentExecution.value?.status, (newStatus) => {
 })
 // Status helpers
 const statusConfig = {
- pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '等待中' },
+ pending: { icon: Clock, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '等待中', animate: false },
  running: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-100 dark:bg-blue-900/30', label: '运行中', animate: true },
- completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: '已完成' },
- failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '失败' },
- paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '已暂停' },
- cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '已取消' },
- waiting_approval: { icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30', label: '待审批' },
- skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: '已跳过' },
- timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时' },
+ completed: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-100 dark:bg-green-900/30', label: '已完成', animate: false },
+ failed: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '失败', animate: false },
+ paused: { icon: Pause, color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '已暂停', animate: false },
+ cancelled: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '已取消', animate: false },
+ waiting_approval: { icon: AlertCircle, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30', label: '待审批', animate: false },
+ skipped: { icon: ChevronRight, color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: '已跳过', animate: false },
+ timeout: { icon: Clock, color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时', animate: false },
 }
 const getStatusConfig = (status: string) => statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
 const progress = computed( => currentExecution.value?.progress || 0)

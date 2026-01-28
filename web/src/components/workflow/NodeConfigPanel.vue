@@ -66,7 +66,7 @@ watch(selectedNode, (node) => {
  if (node) {
  nodeName.value = node.data?.name || node.label || ''
  nodeDescription.value = node.data?.description || ''
- nodeConfig.value = { ...node.data?.config } || {}
+ nodeConfig.value = { ...node.data?.config }
  }
 }, { immediate: true })
 function closeNodePanel {

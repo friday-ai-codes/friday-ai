@@ -27,7 +27,6 @@ const nodeTypesStore = useNodeTypesStore
 const { nodes, edges } = storeToRefs(store)
 // Drag state
 const isDragOver = ref(false)
-const vueFlowRef = ref<InstanceType<typeof VueFlow> | null>(null)
 // 使用 useVueFlow 获取 project 方法
 const { project } = useVueFlow
 // Node Types Registration

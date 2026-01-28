@@ -70,7 +70,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Computed
  const canUndo = computed( => historyIndex.value > 0)
  const canRedo = computed( => historyIndex.value < history.value.length - 1)
- const selectedNode = computed( => {
+ const selectedNode = computed(: Node | null => {
  if (!selectedNodeId.value)
  return null
  return nodes.value.find(n => n.id === selectedNodeId.value) || null

@@ -28,6 +28,7 @@ const statusConfig = {
  bg: 'bg-gray-100 dark:bg-gray-800',
  border: 'border-gray-200 dark:border-gray-700',
  label: '等待中',
+ animate: false,
  },
  running: {
  icon: Loader2,
@@ -43,6 +44,7 @@ const statusConfig = {
  bg: 'bg-green-50 dark:bg-green-900/20',
  border: 'border-green-200 dark:border-green-800',
  label: '已完成',
+ animate: false,
  },
  failed: {
  icon: XCircle,
@@ -50,6 +52,7 @@ const statusConfig = {
  bg: 'bg-red-50 dark:bg-red-900/20',
  border: 'border-red-200 dark:border-red-800',
  label: '失败',
+ animate: false,
  },
  waiting_approval: {
  icon: Clock,
@@ -57,6 +60,7 @@ const statusConfig = {
  bg: 'bg-amber-50 dark:bg-amber-900/20',
  border: 'border-amber-200 dark:border-amber-800',
  label: '待审批',
+ animate: false,
  },
  paused: {
  icon: AlertCircle,
@@ -64,6 +68,7 @@ const statusConfig = {
  bg: 'bg-yellow-50 dark:bg-yellow-900/20',
  border: 'border-yellow-200 dark:border-yellow-800',
  label: '已暂停',
+ animate: false,
  },
  cancelled: {
  icon: XCircle,
@@ -71,6 +76,7 @@ const statusConfig = {
  bg: 'bg-gray-100 dark:bg-gray-800',
  border: 'border-gray-200 dark:border-gray-700',
  label: '已取消',
+ animate: false,
  },
 } as const
 function getStatusConfig(status: string) {

@@ -6,6 +6,7 @@ import { del, get, put } from './client'
 export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
  ANTHROPIC_BASE_URL = 'anthropic_base_url',
+ GIT_HTTP_PROXY = 'git_http_proxy',
 }
 // 设置值读取响应
 export interface SettingRead {

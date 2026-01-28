@@ -25,7 +25,7 @@ onMounted(async => {
 })
 // 新建项目弹窗
 async function openCreateProject {
- const { open, _result } = useModal<string>({
+ const { open } = useModal<string>({
  component: markRaw(CreateProjectModal),
  onConfirm: (projectId) => {
  // 创建成功后跳转到项目详情

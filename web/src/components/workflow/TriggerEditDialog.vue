@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { Button } from '~/components/ui/button'
-import { Checkbox } from '~/components/ui/checkbox'
 import {
  Dialog,
  DialogContent,

@@ -59,9 +59,7 @@ describe('triggerLog Components', => {
  }
  },
  })
- const wrapper = mount(JsonHighlighter, {
- props: { json: null },
- })
+ const wrapper = mount(JsonHighlighter)
  expect(wrapper.find('.empty').exists).toBe(true)
  expect(wrapper.text).toContain('无数据')
  })
