@@ -114,9 +114,9 @@
 - 4.5.4 实现撤销/重做
 - 4.5.5 实现保存/加载
 ### 4.6 状态管理
-- 4.6.1 创建 `useWorkflowsStore` Pinia store
-- 4.6.2 创建 `useNodeTypesStore`
-- 4.6.3 创建 `useExecutionsStore`
+- [x] 4.6.1 创建 `useWorkflowsStore` Pinia store
+- [x] 4.6.2 创建 `useNodeTypesStore`
+- [x] 4.6.3 创建 `useExecutionsStore`
 - 4.6.4 实现 WebSocket 连接管理
 ### 4.7 执行监控
 - 4.7.1 创建 `ExecutionProgress.vue`（进度展示）
@@ -126,20 +126,20 @@
 ---
 ## Phase: 扩展节点（1 周）
 ### 5.1 Git 节点
-- 5.1.1 实现 `CreateBranchNode`
-- 5.1.2 实现 `CreatePRNode`
+- [x] 5.1.1 实现 `CreateBranchNode`
+- [x] 5.1.2 实现 `CreatePRNode`
 - 5.1.3 实现 `MergePRNode`
 ### 5.2 AI 节点（迁移现有 Task 逻辑）
-- 5.2.1 实现 `AnalyzeRequirementsNode`（需求分析）
-- 5.2.2 实现 `AnalyzeBugNode`（Bug 分析）
-- 5.2.3 实现 `GeneratePlanNode`（生成技术方案，对应原 PLANNING 状态）
-- 5.2.4 实现 `RevisePlanNode`（根据反馈修改方案）
-- 5.2.5 实现 `CodeImplementNode`（代码实现，对应原 EXECUTING 状态，复用 Docker 执行器）
+- [x] 5.2.1 实现 `AnalyzeRequirementsNode`（需求分析）
+- [x] 5.2.2 实现 `AnalyzeBugNode`（Bug 分析）
+- [x] 5.2.3 实现 `GeneratePlanNode`（生成技术方案，对应原 PLANNING 状态）
+- [x] 5.2.4 实现 `RevisePlanNode`（根据反馈修改方案）
+- [x] 5.2.5 实现 `CodeImplementNode`（代码实现，对应原 EXECUTING 状态，复用 Docker 执行器）
 ### 5.3 集成节点
-- 5.3.1 实现 `NotifyFeishuNode`
+- [x] 5.3.1 实现 `NotifyFeishuNode`
 - 5.3.2 实现 `MCPDeployNode`
 ### 5.4 控制流节点
-- 5.4.1 实现 `DelayNode`
+- [x] 5.4.1 实现 `DelayNode`
 - 5.4.2 实现 `ParallelNode`（Fork/Join）
 ---
 ## Phase: Task 迁移 ⚠️ 关键阶段
