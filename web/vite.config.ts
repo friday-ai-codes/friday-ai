@@ -14,6 +14,7 @@ import VueMacros from 'vue-macros/vite'
 export default defineConfig({
  plugins: [
  VueMacros({
+ betterDefine: false,
  plugins: {
  vue: Vue,
  vueRouter: VueRouter({

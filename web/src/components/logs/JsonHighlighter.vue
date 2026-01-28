@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import { codeToHtml } from 'shiki'
+import { createHighlighterCore } from 'shiki/core'
+import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
 const props = defineProps<{
  json: Record<string, unknown> | null
  theme?: 'github-dark' | 'github-light'
 }>
+// 细粒度加载：只包含需要的语言和主题
+const highlighter = createHighlighterCore({
+ themes: [import('shiki/themes/github-dark.mjs')],
+ langs: [
+ import('shiki/langs/json.mjs'),
+ import('shiki/langs/javascript.mjs'),
+ import('shiki/langs/typescript.mjs'),
+ import('shiki/langs/python.mjs'),
+ ],
+ engine: createOnigurumaEngine(import('shiki/wasm')),
+})
 const html = ref('')
 const loading = ref(true)
 // 动态加载并高亮 JSON
@@ -18,9 +30,10 @@ watch(
  loading.value = true
  try {
  const jsonString = JSON.stringify(newJson, null, 2)
- html.value = await codeToHtml(jsonString, {
+ const hl = await highlighter
+ html.value = hl.codeToHtml(jsonString, {
  lang: 'json',
- theme: props.theme ?? 'github-dark',
+ theme: 'github-dark',
  })
  }
  catch (e) {
