@@ -1,13 +1,7 @@
-/**
- * Tasks compatibility store.
- *
- * Provides a backward-compatible interface for task data,
- * internally using the Workflow API while exposing Task-like methods.
- */
-import type { TaskStatus } from '@/utils/taskStatusMapper'
+import type { TaskStatus } from '~/utils/taskStatusMapper'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { useApi } from '@/composables/useApi'
+import { get, post } from '~/api/client'
 export interface TaskCompat {
  id: string
  project_id: string
@@ -28,7 +22,6 @@ export interface TaskCompat {
  _is_workflow?: boolean
 }
 export const useTasksCompatStore = defineStore('tasksCompat', => {
- const api = useApi
  const tasks = ref<TaskCompat>
  const currentTask = ref<TaskCompat | null>(null)
  const loading = ref(false)
@@ -72,8 +65,7 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  loading.value = true
  error.value = null
  try {
- const response = await api.get('/api/tasks/', { params: filters })
- tasks.value = response.data
+ tasks.value = await get<TaskCompat>('/tasks/', filters)
  }
  catch (e: any) {
  error.value = e.message || 'Failed to fetch tasks'
@@ -90,9 +82,9 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  loading.value = true
  error.value = null
  try {
- const response = await api.get(`/api/tasks/${id}/`)
- currentTask.value = response.data
- return response.data
+ const data = await get<TaskCompat>(`/tasks/${id}/`)
+ currentTask.value = data
+ return data
  }
  catch (e: any) {
  error.value = e.message || 'Failed to fetch task'
@@ -107,10 +99,9 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  * Only works for workflow-based tasks.
  */
  async function approveTask(taskId: string, comment?: string) {
- const _task = currentTask.value
  // Use the compat API approve endpoint
  try {
- await api.post(`/api/tasks/${taskId}/approve/`, { comment })
+ await post(`/tasks/${taskId}/approve/`, { comment })
  // Refresh the task data
  await fetchTask(taskId)
  }
@@ -125,7 +116,7 @@ export const useTasksCompatStore = defineStore('tasksCompat', => {
  */
  async function rejectTask(taskId: string, comment?: string) {
  try {
- await api.post(`/api/tasks/${taskId}/reject/`, { comment })
+ await post(`/tasks/${taskId}/reject/`, { comment })
  await fetchTask(taskId)
  }
  catch (e: any) {
