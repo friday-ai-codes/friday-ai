@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import structlog
 from common.encryption import decrypt_value, encrypt_value
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -22,7 +23,9 @@ from .serializers import (
  WebhookTokenSerializer,
  WebhookTokenUpdateSerializer,
 )
+from .workflow_bridge import FeishuWorkflowBridge
 logger = logging.getLogger(__name__)
+struct_logger = structlog.get_logger
 def run_async(coro):
  """运行异步协程的辅助函数。"""
  return asyncio.run(coro)
@@ -150,13 +153,34 @@ class FeishuWebhookView(APIView):
  self._handle_workitem_update(project, payload, trigger_log)
  else:
  logger.info(f"未处理的事件类型: {event_type}")
- return Response({"status": "ignored", "event_type": event_type})
+ # Dispatch to workflow system (for all events)
+ self._dispatch_to_workflows(event_type, project, payload, trigger_log)
  return Response(
  {
  "status": "accepted",
  "event_type": event_type,
  "uuid": event_uuid,
  }
+ )
+ def _dispatch_to_workflows(self, event_type: str, project, payload: dict, trigger_log):
+ """Dispatch event to workflow system."""
+ try:
+ bridge = FeishuWorkflowBridge
+ executions = run_async(
+ bridge.dispatch_event(event_type, project, payload, trigger_log)
+ )
+ if executions:
+ struct_logger.info(
+ "workflows_triggered",
+ event_type=event_type,
+ count=len(executions),
+ execution_ids=[str(e.id) for e in executions],
+ )
+ except Exception as e:
+ struct_logger.error(
+ "workflow_dispatch_failed",
+ event_type=event_type,
+ error=str(e),
  )
  def _fetch_and_update_work_item(self, project, work_item_id, work_item_type, trigger_log):
  """Fetch work item details and update trigger log."""

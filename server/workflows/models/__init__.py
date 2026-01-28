@@ -8,6 +8,8 @@ from workflows.models.execution import (
  NodeExecutionStatus,
 )
 from workflows.models.webhook import WebhookConfig, WebhookLog
+from workflows.models.trigger import WorkflowTrigger, TriggerEventType
+from workflows.models.coding_task import CodingTask, CodingTaskStatus
 # Alias for compatibility
 WorkflowExecutionStatus = ExecutionStatus
 __all__ = [
@@ -21,4 +23,8 @@ __all__ = [
  "NodeExecutionStatus",
  "WebhookConfig",
  "WebhookLog",
+ "WorkflowTrigger",
+ "TriggerEventType",
+ "CodingTask",
+ "CodingTaskStatus",
 ]

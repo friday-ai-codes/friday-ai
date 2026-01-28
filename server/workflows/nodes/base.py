@@ -48,6 +48,8 @@ class ExecutionContext:
  input_data: dict
  workflow_context: dict # 全局上下文
  previous_outputs: dict[str, dict] # 上游节点输出 {node_id: output}
+ # 触发器数据
+ trigger_data: dict = field(default_factory=dict)
  # 服务注入
  workflow_execution: "WorkflowExecution | None" = None
  node_execution: "NodeExecution | None" = None
@@ -66,6 +68,64 @@ class ExecutionContext:
  if key:
  return output.get(key, default)
  return output
+ def get_trigger_data(self, key: str, default: Any = None) -> Any:
+ """获取触发器数据
+ Args:
+ key: 数据键，支持点分隔路径如 "payload.work_item_id"
+ default: 默认值
+ Returns:
+ 触发器数据值
+ """
+ parts = key.split(".")
+ current = self.trigger_data
+ for part in parts:
+ if isinstance(current, dict):
+ current = current.get(part)
+ else:
+ return default
+ if current is None:
+ return default
+ return current
+ def get_global_param(self, key: str, default: Any = None) -> Any:
+ """获取全局参数
+ 从 workflow_context 的 global_params 中读取，
+ 或者从 workflow_execution.global_params 中读取。
+ Args:
+ key: 参数键
+ default: 默认值
+ Returns:
+ 参数值
+ """
+ # 优先从 workflow_execution 读取（最新值）
+ if self.workflow_execution:
+ return self.workflow_execution.get_global_param(key, default)
+ # 回退到 workflow_context
+ global_params = self.workflow_context.get("global_params", {})
+ return global_params.get(key, default)
+ def set_global_param(self, key: str, value: Any) -> None:
+ """设置全局参数
+ 更新 workflow_execution.global_params 并持久化到数据库。
+ Args:
+ key: 参数键
+ value: 参数值
+ """
+ if self.workflow_execution:
+ self.workflow_execution.set_global_param(key, value)
+ # 同时更新本地 context 以便后续节点读取
+ if "global_params" not in self.workflow_context:
+ self.workflow_context["global_params"] = {}
+ self.workflow_context["global_params"][key] = value
+ def update_global_params(self, data: dict) -> None:
+ """批量更新全局参数
+ Args:
+ data: 要更新的参数字典
+ """
+ if self.workflow_execution:
+ self.workflow_execution.update_global_params(data)
+ # 同时更新本地 context
+ if "global_params" not in self.workflow_context:
+ self.workflow_context["global_params"] = {}
+ self.workflow_context["global_params"].update(data)
  def render_template(self, template: str) -> str:
  """渲染模板字符串，支持变量替换
  支持格式：
@@ -73,6 +133,8 @@ class ExecutionContext:
  - {{context.key}} - 工作流上下文
  - {{config.key}} - 节点配置
  - {{nodes.node_id.key}} - 上游节点输出
+ - {{global.key}} - 全局参数
+ - {{trigger.key}} - 触发器数据
  """
  def replace(match: re.Match) -> str:
  path = match.group(1).strip
@@ -87,6 +149,10 @@ class ExecutionContext:
  node_id = parts[1]
  key = ".".join(parts[2:])
  return str(self.get_previous_output(node_id, key, ""))
+ elif parts[0] == "global":
+ return str(self.get_global_param(".".join(parts[1:]), ""))
+ elif parts[0] == "trigger":
+ return str(self.get_trigger_data(".".join(parts[1:]), ""))
  return match.group(0) # 无法解析则保持原样
  return re.sub(r"\{\{(.+?)\}\}", replace, template)
 class BaseNode(ABC):

@@ -18,6 +18,11 @@ from workflows.api.permissions import (
  WorkflowPermission,
 )
 from workflows.api.serializers import (
+ CodingTaskListSerializer,
+ CodingTaskSerializer,
+ CodingTaskUpdateSerializer,
+ ExecutionContextSerializer,
+ ManualTriggerSerializer,
  NodeApproveSerializer,
  NodeExecutionSerializer,
  NodeRejectSerializer,
@@ -35,10 +40,13 @@ from workflows.api.serializers import (
  WorkflowNodeCreateSerializer,
  WorkflowNodeSerializer,
  WorkflowSerializer,
+ WorkflowTriggerCreateSerializer,
+ WorkflowTriggerSerializer,
  WorkflowUpdateSerializer,
 )
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
+ CodingTask,
  NodeExecution,
  NodeExecutionStatus,
  WebhookConfig,
@@ -47,6 +55,7 @@ from workflows.models import (
  WorkflowEdge,
  WorkflowExecution,
  WorkflowNode,
+ WorkflowTrigger,
 )
 from workflows.nodes.registry import NodeRegistry
 logger = structlog.get_logger
@@ -646,3 +655,185 @@ class WebhookLogViewSet(ReadOnlyModelViewSet):
  if execution_id:
  queryset = queryset.filter(execution_id=execution_id)
  return queryset.order_by("-created_at")
+# =============================================================================
+# Trigger Management ViewSet
+# =============================================================================
+class WorkflowTriggerViewSet(ModelViewSet):
+ """ViewSet for WorkflowTrigger CRUD."""
+ queryset = WorkflowTrigger.objects.all
+ serializer_class = WorkflowTriggerSerializer
+ permission_classes = [IsAuthenticated]
+ def get_serializer_class(self):
+ if self.action == "create":
+ return WorkflowTriggerCreateSerializer
+ return WorkflowTriggerSerializer
+ def get_queryset(self):
+ queryset = WorkflowTrigger.objects.select_related("workflow")
+ workflow_id = self.kwargs.get("workflow_id") or self.request.query_params.get(
+ "workflow_id"
+ )
+ if workflow_id:
+ queryset = queryset.filter(workflow_id=workflow_id)
+ is_active = self.request.query_params.get("is_active")
+ if is_active is not None:
+ queryset = queryset.filter(is_active=is_active.lower == "true")
+ return queryset.order_by("-created_at")
+ def perform_create(self, serializer):
+ workflow_id = self.kwargs.get("workflow_id")
+ if workflow_id:
+ workflow = get_object_or_404(Workflow, id=workflow_id)
+ serializer.save(workflow=workflow)
+ else:
+ serializer.save
+# =============================================================================
+# Manual Trigger View
+# =============================================================================
+class ManualTriggerView(APIView):
+ """View for manually triggering a workflow."""
+ permission_classes = [IsAuthenticated]
+ def post(self, request: Request, workflow_id) -> Response:
+ """Manually trigger a workflow execution."""
+ from feishu.workflow_bridge import FeishuWorkflowBridge
+ workflow = get_object_or_404(Workflow, id=workflow_id)
+ if not workflow.is_active:
+ return Response(
+ {"detail": "工作流已禁用，无法执行"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ serializer = ManualTriggerSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ event_type = serializer.validated_data.get("event_type")
+ input_data = serializer.validated_data.get("input_data", {})
+ try:
+ bridge = FeishuWorkflowBridge
+ execution = run_async(
+ bridge.manual_trigger(
+ workflow=workflow,
+ event_type=event_type,
+ input_data=input_data,
+ triggered_by=request.user,
+ )
+ )
+ return Response(
+ {
+ "execution_id": str(execution.id),
+ "status": execution.status,
+ "message": "工作流执行已启动",
+ },
+ status=status.HTTP_201_CREATED,
+ )
+ except ValueError as e:
+ return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ except Exception as e:
+ logger.exception("manual_trigger_error", workflow_id=str(workflow_id))
+ return Response(
+ {"detail": f"执行失败: {e}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+# =============================================================================
+# Execution Context View
+# =============================================================================
+class ExecutionContextView(APIView):
+ """View for getting execution context snapshot."""
+ permission_classes = [IsAuthenticated]
+ def get(self, request: Request, execution_id) -> Response:
+ """Get execution context snapshot."""
+ execution = get_object_or_404(WorkflowExecution, id=execution_id)
+ context_snapshot = execution.get_context_snapshot
+ serializer = ExecutionContextSerializer(context_snapshot)
+ return Response(serializer.data)
+# =============================================================================
+# Node Schema View
+# =============================================================================
+class NodeSchemaListView(APIView):
+ """View for listing all node schemas."""
+ permission_classes = [IsAuthenticated]
+ def get(self, request: Request) -> Response:
+ """Get all node schemas from registry."""
+ schemas = NodeRegistry.get_all_schemas
+ # Optionally filter by category
+ category = request.query_params.get("category")
+ if category:
+ schemas = [s for s in schemas if s.get("category") == category]
+ return Response(schemas)
+# =============================================================================
+# CodingTask ViewSet
+# =============================================================================
+class CodingTaskViewSet(ModelViewSet):
+ """ViewSet for CodingTask."""
+ queryset = CodingTask.objects.all
+ serializer_class = CodingTaskSerializer
+ permission_classes = [IsAuthenticated]
+ def get_serializer_class(self):
+ if self.action == "list":
+ return CodingTaskListSerializer
+ if self.action in ["update", "partial_update"]:
+ return CodingTaskUpdateSerializer
+ return CodingTaskSerializer
+ def get_queryset(self):
+ queryset = CodingTask.objects.select_related(
+ "workflow_execution", "repository"
+ )
+ # Filter by execution
+ execution_id = self.kwargs.get("execution_id") or self.request.query_params.get(
+ "execution_id"
+ )
+ if execution_id:
+ queryset = queryset.filter(workflow_execution_id=execution_id)
+ # Filter by status
+ task_status = self.request.query_params.get("status")
+ if task_status:
+ queryset = queryset.filter(status=task_status)
+ # Filter by repository
+ repository_id = self.request.query_params.get("repository_id")
+ if repository_id:
+ queryset = queryset.filter(repository_id=repository_id)
+ return queryset.order_by("-created_at")
+ @action(detail=True, methods=["post"])
+ def approve_plan(self, request: Request, pk=None) -> Response:
+ """Approve coding task plan and move to executing."""
+ task = self.get_object
+ if task.status != "plan_review":
+ return Response(
+ {"detail": "任务不在方案评审状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ task.mark_executing
+ return Response({"status": task.status, "message": "方案已批准，开始执行"})
+ @action(detail=True, methods=["post"])
+ def reject_plan(self, request: Request, pk=None) -> Response:
+ """Reject coding task plan and request revision."""
+ task = self.get_object
+ if task.status != "plan_review":
+ return Response(
+ {"detail": "任务不在方案评审状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ feedback = request.data.get("feedback", "")
+ task.add_feedback(feedback)
+ task.mark_planning
+ return Response({"status": task.status, "message": "方案已驳回，重新规划"})
+ @action(detail=True, methods=["post"])
+ def approve_code(self, request: Request, pk=None) -> Response:
+ """Approve coding task code and mark as merged."""
+ task = self.get_object
+ if task.status != "code_review":
+ return Response(
+ {"detail": "任务不在代码评审状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ task.mark_merged
+ return Response({"status": task.status, "message": "代码已批准合并"})
+ @action(detail=True, methods=["post"])
+ def reject_code(self, request: Request, pk=None) -> Response:
+ """Reject coding task code and request revision."""
+ task = self.get_object
+ if task.status != "code_review":
+ return Response(
+ {"detail": "任务不在代码评审状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ feedback = request.data.get("feedback", "")
+ task.add_feedback(feedback)
+ task.mark_executing
+ return Response({"status": task.status, "message": "代码已驳回，继续开发"})
