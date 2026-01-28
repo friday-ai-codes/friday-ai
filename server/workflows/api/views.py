@@ -289,14 +289,23 @@ class WorkflowViewSet(ModelViewSet):
  for node_data in nodes_data:
  node_id = node_data.get("id")
  if node_id:
+ # Try to find existing node
+ node = WorkflowNode.objects.filter(id=node_id, workflow=workflow).first
+ if node:
  # Update existing
- node = get_object_or_404(WorkflowNode, id=node_id, workflow=workflow)
  serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
  serializer.is_valid(raise_exception=True)
  serializer.save
+ else:
+ # Create new node with specified ID
+ serializer = WorkflowNodeCreateSerializer(data=node_data)
+ serializer.is_valid(raise_exception=True)
+ node = WorkflowNode.objects.create(
+ id=node_id, workflow=workflow, **serializer.validated_data
+ )
  existing_node_ids.add(str(node_id))
  else:
- # Create new
+ # Create new node with auto-generated ID
  serializer = WorkflowNodeCreateSerializer(data=node_data)
  serializer.is_valid(raise_exception=True)
  node = WorkflowNode.objects.create(
