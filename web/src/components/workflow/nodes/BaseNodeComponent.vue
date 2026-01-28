@@ -5,7 +5,8 @@ import { computed } from 'vue'
 interface Props extends NodeProps {
  icon?: any
  badge?: string
- badgeColor?: 'blue' | 'green' | 'purple' | 'orange'
+ badgeColor?: 'blue' | 'green' | 'purple' | 'orange' | 'cyan'
+ theme?: 'default' | 'ai' | 'feishu' | 'trigger' | 'action'
 }
 const props = defineProps<Props>
 const isSelected = computed( => props.selected)
@@ -14,22 +15,35 @@ const isTrigger = computed( => {
  const nodeType = props.data?.node_type || props.type || ''
  return nodeType.includes('trigger')
 })
+// 主题样式类
+const themeClasses = computed( => {
+ const themes: Record<string, string> = {
+ default: '',
+ ai: 'node-card--ai',
+ feishu: 'node-card--feishu',
+ trigger: 'node-card--trigger',
+ action: 'node-card--action',
+ }
+ return themes[props.theme || 'default'] || ''
+})
 // Badge 颜色映射
 const badgeClasses = computed( => {
- const colorMap = {
+ const colorMap: Record<string, string> = {
  blue: 'bg-primary/10 text-primary',
- green: 'bg-green-500/10 text-green-600',
- purple: 'bg-purple-500/10 text-purple-600',
- orange: 'bg-orange-500/10 text-orange-600',
+ green: 'bg-emerald-500/10 text-emerald-600',
+ purple: 'bg-gradient-to-r from-violet-500 to-purple-500 text-white',
+ orange: 'bg-amber-500/10 text-amber-600',
+ cyan: 'bg-cyan-500/10 text-cyan-600',
  }
  return colorMap[props.badgeColor || 'blue']
 })
 const iconClasses = computed( => {
- const colorMap = {
- blue: 'bg-primary/10 text-primary',
- green: 'bg-green-500/10 text-green-600',
- purple: 'bg-purple-500/10 text-purple-600',
- orange: 'bg-orange-500/10 text-orange-600',
+ const colorMap: Record<string, string> = {
+ blue: 'bg-gradient-to-br from-blue-500/20 to-cyan-400/10 text-blue-500',
+ green: 'bg-gradient-to-br from-emerald-500/20 to-teal-400/10 text-emerald-500',
+ purple: 'bg-gradient-to-br from-violet-500/20 to-purple-400/10 text-violet-500',
+ orange: 'bg-gradient-to-br from-amber-500/20 to-orange-400/10 text-amber-500',
+ cyan: 'bg-gradient-to-br from-cyan-500/20 to-blue-400/10 text-cyan-500',
  }
  return colorMap[props.badgeColor || 'blue']
 })
@@ -39,17 +53,18 @@ const iconClasses = computed( => {
  <!-- Input Handle (Target) - 非触发器节点显示 -->
  <Handle
  v-if="!isTrigger"
- type="target":position="Position.Left"
+ type="target":position="Position.Top"
  />
  <!-- 节点内容 -->
  <div
- class="node-card":class="{ 'node-card--selected': isSelected }"
+ class="node-card":class="[themeClasses, { 'node-card--selected': isSelected }]"
  >
  <!-- Header -->
  <div class="node-header">
  <div v-if="icon" class="node-icon":class="iconClasses">
  <component:is="icon" class="w-4 " />
  </div>
+ <slot name="icon" />
  <span class="node-title">
  {{ label || data?.name || 'Untitled' }}
  </span>
@@ -67,7 +82,7 @@ const iconClasses = computed( => {
  </div>
  <!-- Output Handle (Source) -->
  <Handle
- type="source":position="Position.Right"
+ type="source":position="Position.Bottom"
  />
  </div>
 </template>
@@ -75,30 +90,42 @@ const iconClasses = computed( => {
 /**
  * Vue Flow 节点样式
  * 使用项目主题配色 (main.css @theme 变量)
+ * 玻璃拟态风格
  */
 /* 节点容器 - 必须 relative 以正确定位 Handle */
 .workflow-node {
  position: relative;
 }
-/* 节点卡片 */
+/* 节点卡片 - 玻璃拟态风格 */
 .workflow-node .node-card {
  min-width: 200px;
  max-width: 280px;
  padding: 12px 14px;
- background: var(--color-card, #fff);
- border: 2px solid var(--color-border, hsl(219 30% 85%));
- border-radius: var(--radius, 0.5rem);
- box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+ background: color-mix(in srgb, var(--color-card, #fff) 90%, transparent);
+ backdrop-filter: blur(8px);
+ border: 2px solid color-mix(in srgb, var(--color-border, hsl(219 30% 85%)) 60%, transparent);
+ border-radius: 16px;
+ box-shadow:
+ 0 4px 6px -1px rgb(0 0 0 / 0.05),
+ 0 2px 4px -2px rgb(0 0 0 / 0.05);
  transition:
- border-color 0.15s ease,
- box-shadow 0.15s ease;
+ border-color 0.2s ease,
+ box-shadow 0.3s ease,
+ transform 0.2s ease;
 }
 .workflow-node .node-card:hover {
- border-color: var(--color-primary, hsl(213 47% 47%));
+ border-color: color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 50%, transparent);
+ box-shadow:
+ 0 10px 15px -3px rgb(0 0 0 / 0.08),
+ 0 4px 6px -4px rgb(0 0 0 / 0.05),
+ 0 0 0 1px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 10%, transparent);
+ transform: translateY(-1px);
 }
 .workflow-node .node-card--selected {
  border-color: var(--color-primary, hsl(213 47% 47%));
- box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 20%, transparent);
+ box-shadow:
+ 0 0 0 3px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 20%, transparent),
+ 0 10px 25px -5px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 15%, transparent);
 }
 /* Header */
 .workflow-node .node-header {
@@ -111,15 +138,15 @@ const iconClasses = computed( => {
  display: flex;
  align-items: center;
  justify-content: center;
- width: 28px;
- height: 28px;
- border-radius: 6px;
+ width: 32px;
+ height: 32px;
+ border-radius: 10px;
  flex-shrink: 0;
 }
 .workflow-node .node-title {
  flex: 1;
  font-size: 14px;
- font-weight: 500;
+ font-weight: 600;
  color: var(--color-foreground, hsl(212 64% 19%));
  white-space: nowrap;
  overflow: hidden;
@@ -128,7 +155,7 @@ const iconClasses = computed( => {
 .workflow-node .node-badge {
  font-size: 10px;
  font-weight: 500;
- padding: 2px 8px;
+ padding: 3px 10px;
  border-radius: 9999px;
  flex-shrink: 0;
 }
@@ -149,24 +176,102 @@ const iconClasses = computed( => {
  background: var(--color-muted-foreground, hsl(212 40% 40%));
  border: 3px solid var(--color-card, #fff);
  border-radius: 50%;
- /* 不使用 transform，避免漂移 */
+ box-shadow: 0 2px 4px rgb(0 0 0 / 0.1);
  transition:
  background-color 0.15s ease,
- box-shadow 0.15s ease;
+ box-shadow 0.15s ease,
+ transform 0.15s ease;
 }
 .workflow-node .vue-flow__handle:hover {
  background: var(--color-primary, hsl(213 47% 47%));
- box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 30%, transparent);
+ box-shadow:
+ 0 0 0 4px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 25%, transparent),
+ 0 2px 8px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 30%, transparent);
 }
 .workflow-node .vue-flow__handle.connecting,
 .workflow-node .vue-flow__handle.valid {
  background: var(--color-primary, hsl(213 47% 47%));
 }
 /* Handle 位置微调 */
-.workflow-node .vue-flow__handle-left {
- left: -7px;
+.workflow-node .vue-flow__handle-top {
+ top: -7px;
 }
-.workflow-node .vue-flow__handle-right {
- right: -7px;
+.workflow-node .vue-flow__handle-bottom {
+ bottom: -7px;
+}
+/* ========== 主题变体 ========== */
+/* AI 主题 - 科技感渐变边框 */
+.workflow-node .node-card--ai {
+ background: linear-gradient(135deg,
+ color-mix(in srgb, var(--color-card, #fff) 95%, hsl(270 80% 60%)),
+ color-mix(in srgb, var(--color-card, #fff) 90%, hsl(280 70% 50%))
+ );
+ border-color: color-mix(in srgb, hsl(270 70% 60%) 40%, transparent);
+}
+.workflow-node .node-card--ai:hover {
+ border-color: hsl(270 70% 55%);
+ box-shadow:
+ 0 0 20px color-mix(in srgb, hsl(270 80% 60%) 20%, transparent),
+ 0 10px 25px -5px color-mix(in srgb, hsl(270 80% 60%) 15%, transparent);
+}
+.workflow-node .node-card--ai.node-card--selected {
+ border-color: hsl(270 70% 55%);
+ box-shadow:
+ 0 0 0 3px color-mix(in srgb, hsl(270 80% 60%) 25%, transparent),
+ 0 0 30px color-mix(in srgb, hsl(270 80% 60%) 20%, transparent);
+}
+/* 飞书主题 - 飞书蓝色调 */
+.workflow-node .node-card--feishu {
+ background: linear-gradient(135deg,
+ color-mix(in srgb, var(--color-card, #fff) 95%, hsl(214 100% 50%)),
+ color-mix(in srgb, var(--color-card, #fff) 92%, hsl(214 90% 45%))
+ );
+ border-color: color-mix(in srgb, hsl(214 100% 50%) 35%, transparent);
+}
+.workflow-node .node-card--feishu:hover {
+ border-color: hsl(214 100% 50%);
+ box-shadow:
+ 0 0 15px color-mix(in srgb, hsl(214 100% 50%) 15%, transparent),
+ 0 10px 20px -5px color-mix(in srgb, hsl(214 100% 50%) 12%, transparent);
+}
+.workflow-node .node-card--feishu.node-card--selected {
+ border-color: hsl(214 100% 50%);
+ box-shadow:
+ 0 0 0 3px color-mix(in srgb, hsl(214 100% 50%) 25%, transparent),
+ 0 0 25px color-mix(in srgb, hsl(214 100% 50%) 15%, transparent);
+}
+/* 触发器主题 - 蓝绿渐变 */
+.workflow-node .node-card--trigger {
+ background: linear-gradient(135deg,
+ color-mix(in srgb, var(--color-card, #fff) 95%, hsl(200 80% 50%)),
+ color-mix(in srgb, var(--color-card, #fff) 92%, hsl(180 70% 45%))
+ );
+ border-color: color-mix(in srgb, hsl(190 75% 50%) 35%, transparent);
+}
+.workflow-node .node-card--trigger:hover {
+ border-color: hsl(190 75% 45%);
+}
+.workflow-node .node-card--trigger.node-card--selected {
+ border-color: hsl(190 75% 45%);
+ box-shadow:
+ 0 0 0 3px color-mix(in srgb, hsl(190 75% 50%) 25%, transparent),
+ 0 0 20px color-mix(in srgb, hsl(190 75% 50%) 15%, transparent);
+}
+/* 操作主题 - 绿色调 */
+.workflow-node .node-card--action {
+ background: linear-gradient(135deg,
+ color-mix(in srgb, var(--color-card, #fff) 95%, hsl(160 70% 45%)),
+ color-mix(in srgb, var(--color-card, #fff) 92%, hsl(170 60% 40%))
+ );
+ border-color: color-mix(in srgb, hsl(160 65% 45%) 35%, transparent);
+}
+.workflow-node .node-card--action:hover {
+ border-color: hsl(160 65% 40%);
+}
+.workflow-node .node-card--action.node-card--selected {
+ border-color: hsl(160 65% 40%);
+ box-shadow:
+ 0 0 0 3px color-mix(in srgb, hsl(160 65% 45%) 25%, transparent),
+ 0 0 20px color-mix(in srgb, hsl(160 65% 45%) 15%, transparent);
 }
 </style>

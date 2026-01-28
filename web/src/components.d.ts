@@ -113,6 +113,7 @@ declare module 'vue' {
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
  PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
+ Progress: typeof import('./components/ui/progress/Progress.vue')['default']
  RouterLink: typeof import('vue-router')['RouterLink']
  RouterView: typeof import('vue-router')['RouterView']
  ScrollArea: typeof import('./components/ui/scroll-area/ScrollArea.vue')['default']

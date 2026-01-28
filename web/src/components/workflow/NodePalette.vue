@@ -80,68 +80,98 @@ function onDragStart(event: DragEvent, nodeType: string) {
  }
  }
 }
-function getCategoryColor(color: string) {
+// 分类标签渐变样式
+function getCategoryGradient(color: string) {
+ const gradients: Record<string, string> = {
+ blue: 'bg-gradient-to-r from-blue-500 to-cyan-400',
+ green: 'bg-gradient-to-r from-emerald-500 to-teal-400',
+ purple: 'bg-gradient-to-r from-violet-500 to-purple-400',
+ orange: 'bg-gradient-to-r from-amber-500 to-orange-400',
+ cyan: 'bg-gradient-to-r from-cyan-500 to-blue-400',
+ }
+ return gradients[color] || gradients.blue
+}
+// 图标渐变背景
+function getIconGradient(color: string) {
+ const gradients: Record<string, string> = {
+ blue: 'bg-gradient-to-br from-blue-500/20 to-cyan-400/10',
+ green: 'bg-gradient-to-br from-emerald-500/20 to-teal-400/10',
+ purple: 'bg-gradient-to-br from-violet-500/20 to-purple-400/10',
+ orange: 'bg-gradient-to-br from-amber-500/20 to-orange-400/10',
+ cyan: 'bg-gradient-to-br from-cyan-500/20 to-blue-400/10',
+ }
+ return gradients[color] || gradients.blue
+}
+// 图标颜色
+function getIconColor(color: string) {
  const colors: Record<string, string> = {
- blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800',
- green: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200 dark:border-green-800',
- purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800',
- orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800',
- cyan: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400 border-cyan-200 dark:border-cyan-800',
+ blue: 'text-blue-500',
+ green: 'text-emerald-500',
+ purple: 'text-violet-500',
+ orange: 'text-amber-500',
+ cyan: 'text-cyan-500',
  }
  return colors[color] || colors.blue
 }
-function getIconBgColor(color: string) {
- const colors: Record<string, string> = {
- blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
- green: 'bg-green-500/10 text-green-600 dark:text-green-400',
- purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
- orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
- cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+// 悬浮光晕颜色
+function getHoverGlow(color: string) {
+ const glows: Record<string, string> = {
+ blue: 'group-hover:shadow-blue-500/10 group-hover:border-blue-500/30',
+ green: 'group-hover:shadow-emerald-500/10 group-hover:border-emerald-500/30',
+ purple: 'group-hover:shadow-violet-500/10 group-hover:border-violet-500/30',
+ orange: 'group-hover:shadow-amber-500/10 group-hover:border-amber-500/30',
+ cyan: 'group-hover:shadow-cyan-500/10 group-hover:border-cyan-500/30',
  }
- return colors[color] || colors.blue
+ return glows[color] || glows.blue
 }
 </script>
 <template>
- <Card class="h-full w-64 border-r rounded-none flex flex-col bg-card/50 backdrop-blur-sm">
- <CardHeader class="pb-3 border-b">
- <CardTitle class="text-base font-semibold flex items-center gap-2">
- <div class="w-2 rounded-full bg-primary animate-pulse" />
+ <div class="h-full w-64 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <!-- Header -->
+ <div class=" border-b border-border/50">
+ <div class="flex items-center gap-3">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/10">
+ <span class="icon-[lucide--boxes] text-xl text-primary" />
+ </div>
+ <div>
+ <h3 class="text-base font-semibold flex items-center gap-2">
+ <div class="w-2 rounded-full bg-gradient-to-r from-primary to-secondary animate-pulse" />
  节点库
- </CardTitle>
- <p class="text-xs text-muted-foreground mt-1">
+ </h3>
+ <p class="text-xs text-muted-foreground">
  拖拽节点到画布上
  </p>
- </CardHeader>
- <CardContent class="flex-1 overflow-y-auto space-y-4">
+ </div>
+ </div>
+ </div>
+ <!-- Content -->
+ <div class="flex-1 overflow-y-auto space-y-5">
  <div v-for="category in nodeTypes":key="category.category">
  <!-- Category Header -->
- <div class="flex items-center gap-2 mb-2">
+ <div class="flex items-center gap-2 mb-2.5">
  <div
- class="text-xs font-medium px-2 py-0.5 rounded-full border":class="getCategoryColor(category.color)"
+ class="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white shadow-sm":class="getCategoryGradient(category.color)"
  >
  {{ category.category }}
  </div>
+ <div class="flex-1 h-px bg-gradient-to-r from-border/50 to-transparent" />
  </div>
  <!-- Node Items -->
- <div class="space-y-2">
+ <div class="space-y-1.5">
  <div
  v-for="item in category.items":key="item.type"
- class="group flex items-center gap-3 .5 text-sm border rounded-lg cursor-grab
- bg-background hover:bg-accent/50 hover:border-primary/30
- transition-all duration-200 hover:shadow-sm
- active:cursor-grabbing active:scale-[0.98]":draggable="true"
+ class="group flex items-center gap-3 text-sm rounded-xl cursor-grab
+ bg-background/80 border border-border/40
+ transition-all duration-200
+ hover:bg-background hover:shadow-md hover:border-border/60
+ active:cursor-grabbing active:scale-[0.98]":class="getHoverGlow(category.color)":draggable="true"
  @dragstart="onDragStart($event, item.type)"
  >
  <!-- Icon -->
  <div
- class=".5 rounded-md transition-colors":class="getIconBgColor(category.color)"
+ class=" rounded-lg transition-transform duration-200 group-hover:scale-105":class="getIconGradient(category.color)"
  >
- <component:is="item.icon" class="w-4 " />
- </div>
- <!-- Text -->
- <div class="flex-1 min-w-0">
- <div class="font-medium text-foreground text-sm leading-tight">
- {{ item.label }}
+ <component:is="item.icon" class="w-4 ":class="getIconColor(category.color)" />
  </div>
  <!-- Text -->
  <div class="flex-1 min-w-0">
@@ -153,24 +183,19 @@ function getIconBgColor(color: string) {
  </div>
  </div>
  <!-- Drag indicator -->
- <div class="opacity-0 group-hover:opacity-100 transition-opacity">
- <span class="icon-[lucide--grip-vertical] text-muted-foreground/50" />
- </div>
- </div>
- <!-- Drag indicator -->
- <div class="opacity-0 group-hover:opacity-100 transition-opacity">
- <svg class="w-4 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
- <circle cx="9" cy="6" r="1.5" />
- <circle cx="15" cy="6" r="1.5" />
- <circle cx="9" cy="12" r="1.5" />
- <circle cx="15" cy="12" r="1.5" />
- <circle cx="9" cy="18" r="1.5" />
- <circle cx="15" cy="18" r="1.5" />
- </svg>
+ <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+ <span class="icon-[lucide--grip-vertical] text-lg text-muted-foreground/40" />
  </div>
  </div>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ <!-- Footer hint -->
+ <div class=" border-t border-border/30">
+ <div class="flex items-center justify-center gap-2 text-[10px] text-muted-foreground/60">
+ <span class="icon-[lucide--mouse-pointer-click]" />
+ <span>拖拽添加 · 点击配置</span>
+ </div>
+ </div>
+ </div>
 </template>

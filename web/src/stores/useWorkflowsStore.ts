@@ -109,22 +109,54 @@ export const useWorkflowsStore = defineStore('workflows', => {
  },
  }))
  }
+ // 根据节点类型获取默认配置
+ function getDefaultConfig(nodeType: string): Record<string, any> {
+ const defaults: Record<string, Record<string, any>> = {
+ ai_prompt: {
+ user_prompt: '{{global.description}}',
+ model: 'claude-3-5-sonnet-20241022',
+ temperature: 0.7,
+ max_tokens: 4096,
+ output_format: 'text',
+ },
+ ai_coding_dispatcher: {
+ max_tasks: 5,
+ task_granularity: 'medium',
+ include_tests: true,
+ auto_assign_repos: false,
+ },
+ feishu_event_trigger: {
+ event_types:,
+ },
+ fetch_work_item: {
+ work_item_id: '{{input.work_item_id}}',
+ extract_fields: ['description', 'title'],
+ },
+ }
+ return defaults[nodeType] || {}
+ }
  // Convert Vue Flow nodes back to backend format
  function toBackendNodes(vueFlowNodes: Node): Partial<WorkflowNode> {
- return vueFlowNodes.map(node => ({
+ return vueFlowNodes.map((node) => {
+ const nodeType = node.type || node.data?.node_type
+ const defaultConfig = getDefaultConfig(nodeType)
+ // 合并默认配置和用户配置，用户配置优先
+ const config = { ...defaultConfig, ...node.data?.config }
+ return {
  id: node.id,
- node_type: node.type || node.data?.node_type,
+ node_type: nodeType,
  name: node.data?.name || node.label || 'Untitled',
  description: node.data?.description || '',
  position_x: node.position.x,
  position_y: node.position.y,
- config: node.data?.config || {},
+ config,
  timeout: node.data?.timeout || null,
  retry_count: node.data?.retry_count || 0,
  retry_delay: node.data?.retry_delay || 60,
  run_condition: node.data?.run_condition || null,
  metadata: node.data?.metadata || {},
- }))
+ }
+ })
  }
  // Convert Vue Flow edges back to backend format
  function toBackendEdges(vueFlowEdges: Edge): Partial<WorkflowEdge> {
@@ -369,5 +401,5 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saveToHistory,
  undo,
  redo,
- }
+ } as const
 })

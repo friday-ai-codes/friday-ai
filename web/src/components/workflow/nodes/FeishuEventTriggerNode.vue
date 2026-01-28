@@ -20,6 +20,7 @@ function getEventTypeLabel(type: string): string {
  v-bind="props":icon="Webhook"
  badge="飞书触发"
  badge-color="blue"
+ theme="feishu"
  >
  <div class="space-y-1">
  <!-- 显示已配置的事件类型 -->

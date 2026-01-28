@@ -2,7 +2,7 @@
 import type { Connection, Edge, Node } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { MarkerType, VueFlow } from '@vue-flow/core'
+import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
@@ -28,6 +28,8 @@ const { nodes, edges } = storeToRefs(store)
 // Drag state
 const isDragOver = ref(false)
 const vueFlowRef = ref<InstanceType<typeof VueFlow> | null>(null)
+// 使用 useVueFlow 获取 project 方法
+const { project } = useVueFlow
 // Node Types Registration
 const nodeTypes = {
  // Triggers
@@ -116,13 +118,39 @@ function onDrop(event: DragEvent) {
  // 获取画布容器的位置
  const flowContainer = event.currentTarget as HTMLElement
  const bounds = flowContainer.getBoundingClientRect
- // 计算相对于画布的位置
- const position = {
- x: event.clientX - bounds.left - 100, // 居中偏移
- y: event.clientY - bounds.top - 40,
- }
+ // 使用 project 方法将屏幕坐标转换为画布坐标
+ const position = project({
+ x: event.clientX - bounds.left,
+ y: event.clientY - bounds.top,
+ })
+ // 居中偏移（节点宽度约 200px，高度约 80px）
+ position.x -= 100
+ position.y -= 40
  const nodeTypeInfo = nodeTypesStore.getNodeType(type)
  const displayName = nodeTypeInfo?.display_name || type.replace(/_/g, ' ')
+ // 根据节点类型设置默认配置
+ const defaultConfigs: Record<string, Record<string, any>> = {
+ ai_prompt: {
+ user_prompt: '{{global.description}}',
+ model: 'claude-3-5-sonnet-20241022',
+ temperature: 0.7,
+ max_tokens: 4096,
+ output_format: 'text',
+ },
+ ai_coding_dispatcher: {
+ max_tasks: 5,
+ task_granularity: 'medium',
+ include_tests: true,
+ auto_assign_repos: false,
+ },
+ feishu_event_trigger: {
+ event_types:,
+ },
+ fetch_work_item: {
+ work_item_id: '{{input.work_item_id}}',
+ extract_fields: ['description', 'title'],
+ },
+ }
  const newNode: Node = {
  id: crypto.randomUUID,
  type,
@@ -131,7 +159,7 @@ function onDrop(event: DragEvent) {
  data: {
  node_type: type,
  name: displayName,
- config: {},
+ config: defaultConfigs[type] || {},
  description: nodeTypeInfo?.description || '',
  },
  }
@@ -144,11 +172,17 @@ onMounted( => {
 </script>
 <template>
  <div
- class="h-full w-full workflow-canvas":class="{ 'drag-over': isDragOver }"
+ class="h-full w-full workflow-canvas relative":class="{ 'drag-over': isDragOver }"
  @drop="onDrop"
  @dragover="onDragOver"
  @dragleave="onDragLeave"
  >
+ <!-- 背景装饰 -->
+ <div class="absolute inset-0 -z-10 overflow-hidden pointer-events-none">
+ <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/10 to-secondary/20 rounded-full blur-3xl" />
+ <div class="absolute bottom-0 -left-40 w-96 bg-gradient-to-tr from-secondary/15 to-primary/5 rounded-full blur-3xl" />
+ <div class="absolute top-1/3 right-1/4 w-64 bg-gradient-to-t from-violet-500/5 to-transparent rounded-full blur-3xl" />
+ </div>
  <VueFlow
  ref="vueFlowRef"
  v-model:nodes="nodes"
@@ -190,10 +224,10 @@ onMounted( => {
 @import '@vue-flow/minimap/dist/style.css';
 .workflow-canvas {
  position: relative;
- background: #f8fafc;
+ background: linear-gradient(135deg, hsl(210 40% 98%) 0%, hsl(220 30% 96%) 100%);
 }
 .workflow-canvas.drag-over {
- background: #eff6ff;
+ background: linear-gradient(135deg, hsl(210 60% 97%) 0%, hsl(220 50% 95%) 100%);
 }
 .vue-flow-wrapper {
  width: 100%;
@@ -202,5 +236,31 @@ onMounted( => {
 /* Node 选中状态 */
 .vue-flow .vue-flow__node.selected {
  outline: none;
+}
+/* Minimap 样式优化 */
+.vue-flow-minimap {
+ background: hsl(var(--card) / 0.8) !important;
+ backdrop-filter: blur(8px);
+ border: 1px solid hsl(var(--border) / 0.5) !important;
+ border-radius: 12px !important;
+}
+/* Controls 样式优化 */
+.vue-flow__controls {
+ background: hsl(var(--card) / 0.8) !important;
+ backdrop-filter: blur(8px);
+ border: 1px solid hsl(var(--border) / 0.5) !important;
+ border-radius: 12px !important;
+ overflow: hidden;
+}
+.vue-flow__controls-button {
+ background: transparent !important;
+ border: none !important;
+ border-bottom: 1px solid hsl(var(--border) / 0.3) !important;
+}
+.vue-flow__controls-button:last-child {
+ border-bottom: none !important;
+}
+.vue-flow__controls-button:hover {
+ background: hsl(var(--accent)) !important;
 }
 </style>

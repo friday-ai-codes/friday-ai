@@ -18,6 +18,7 @@ function getGranularityLabel(granularity: string): string {
  v-bind="props":icon="GitBranch"
  badge="AI 编码"
  badge-color="purple"
+ theme="ai"
  >
  <div class="space-y-1">
  <!-- 显示最大任务数 -->

@@ -61,6 +61,7 @@
  "vite": "catalog:",
  "vite-plugin-vue-layouts": "catalog:",
  "vitest": "catalog:",
+ "vue-macros": "catalog:",
  "vue-tsc": "catalog:"
  }
 }
