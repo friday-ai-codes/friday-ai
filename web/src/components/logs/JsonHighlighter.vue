@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { createHighlighterCore } from 'shiki/core'
-import { createOnigurumaEngine } from 'shiki/engine/oniguruma'
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 const props = defineProps<{
  json: Record<string, unknown> | null
  theme?: 'github-dark' | 'github-light'
 }>
-// 细粒度加载：只包含需要的语言和主题
+// 细粒度加载：只包含需要的语言和主题，使用轻量 JS 引擎
 const highlighter = createHighlighterCore({
  themes: [import('shiki/themes/vitesse-dark.mjs')],
  langs: [
@@ -14,7 +14,7 @@ const highlighter = createHighlighterCore({
  import('shiki/langs/typescript.mjs'),
  import('shiki/langs/python.mjs'),
  ],
- engine: createOnigurumaEngine(import('shiki/wasm')),
+ engine: createJavaScriptRegexEngine,
 })
 const html = ref('')
 const loading = ref(true)
