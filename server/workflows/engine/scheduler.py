@@ -1,5 +1,6 @@
 """Workflow execution engine."""
 import asyncio
+import threading
 import uuid
 from typing import TYPE_CHECKING
 import structlog
@@ -18,6 +19,19 @@ if TYPE_CHECKING:
  from workflows.hooks import HookManager
  from workflows.models import Workflow, WorkflowNode
 logger = structlog.get_logger
+def _run_in_thread(coro):
+ """Run a coroutine in a new thread with its own event loop."""
+ def target:
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ loop.run_until_complete(coro)
+ except Exception as e:
+ logger.exception("background_task_error", error=str(e))
+ finally:
+ loop.close
+ thread = threading.Thread(target=target, daemon=True)
+ thread.start
 class WorkflowEngine:
  """工作流执行引擎
  核心调度器，负责：
@@ -91,8 +105,8 @@ class WorkflowEngine:
  )
  # 触发开始钩子
  await self.hooks.trigger("execution_started", execution=execution)
- # 开始执行
- asyncio.create_task(self._run_execution(execution, dag, input_data))
+ # 开始执行（在独立线程中运行，避免事件循环退出问题）
+ _run_in_thread(self._run_execution(execution, dag, input_data))
  return execution
  async def _run_execution(
  self,
@@ -411,6 +425,38 @@ class WorkflowEngine:
  node_execution=node_execution,
  approver=approver,
  )
+ async def trigger_manual_node(
+ self,
+ node_execution: NodeExecution,
+ input_data: dict | None = None,
+ ) -> None:
+ """触发等待中的手动触发节点"""
+ if node_execution.status != NodeExecutionStatus.PENDING:
+ raise ValueError("节点不在等待触发状态")
+ if node_execution.node.node_type != "manual_trigger":
+ raise ValueError("只有手动触发节点可以被触发")
+ input_data = input_data or {}
+ execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ # 更新执行的输入数据
+ execution.input_data = input_data
+ await sync_to_async(execution.save)(update_fields=["input_data"])
+ # 标记节点开始执行
+ node_execution.input_data = input_data
+ await sync_to_async(node_execution.mark_started)
+ await self.hooks.trigger(
+ "node_started",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ # 直接完成手动触发节点（将输入数据作为输出）
+ await sync_to_async(node_execution.mark_completed)(input_data)
+ await self.hooks.trigger(
+ "node_completed",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ # 直接执行后续节点（同步方式，确保错误信息正确保存）
+ await self._continue_after_node(execution, node_execution)
  async def _continue_after_node(
  self,
  execution: WorkflowExecution,
@@ -458,18 +504,17 @@ class WorkflowEngine:
  if all_deps_ready:
  # Get successor's node execution
  successor_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ lambda sid=successor_id: NodeExecution.objects.filter(
  workflow_execution=execution,
- node_id=successor_id,
+ node_id=sid,
  status=NodeExecutionStatus.PENDING,
  ).first
  )
  if successor_exec:
  # Collect inputs and execute
  input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
- asyncio.create_task(
- self._execute_node(execution, successor_dag_node, input_data, node_outputs)
- )
+ # Execute directly instead of create_task to ensure it runs
+ await self._execute_node(execution, successor_dag_node, input_data, node_outputs)
  async def _handle_node_failure(
  self,
  execution: WorkflowExecution,
