@@ -2,7 +2,7 @@
 Provides a unified interface for calling LLM APIs (Claude/OpenAI compatible).
 """
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 import httpx
 import structlog
 from common.encryption import decrypt_value

@@ -16,10 +16,7 @@ async def test_workflow_execution_consumer(settings):
  }
  # Test connection to a path
  execution_id = "00000000-0000-0000-0000-000000000000"
- communicator = WebsocketCommunicator(
- application,
- f"/ws/workflow-executions/{execution_id}/"
- )
+ communicator = WebsocketCommunicator(application, f"/ws/workflow-executions/{execution_id}/")
  connected, subprotocol = await communicator.connect
  assert connected
  # Test sending group message
@@ -29,7 +26,7 @@ async def test_workflow_execution_consumer(settings):
  "type": "workflow.event",
  "event": "execution_started",
  "execution_id": execution_id,
- "status": "running"
+ "status": "running",
  }
  await channel_layer.group_send(f"execution_{execution_id}", message)
  # Receive message

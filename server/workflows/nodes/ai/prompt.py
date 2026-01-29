@@ -196,9 +196,7 @@ class AIPromptNode(BaseNode):
  error=str(e),
  next_handle="error",
  )
- def _format_prompt_for_output(
- self, prompt: str, output_format: str, json_schema: dict
- ) -> str:
+ def _format_prompt_for_output(self, prompt: str, output_format: str, json_schema: dict) -> str:
  """根据输出格式调整提示词"""
  if output_format == "json":
  schema_hint = ""
@@ -247,8 +245,7 @@ class AIPromptNode(BaseNode):
  # 如果使用自定义 API，使用 OpenAI 兼容协议
  if use_custom_api and api_base_url:
  return await self._call_openai_compatible(
- system_prompt, user_prompt, model, temperature, max_tokens,
- api_base_url, api_key
+ system_prompt, user_prompt, model, temperature, max_tokens, api_base_url, api_key
  )
  # 获取项目的 API 配置
  project = await self._get_project(context)

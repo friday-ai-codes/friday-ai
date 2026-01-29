@@ -54,7 +54,7 @@ def repository(db):
 def repository_with_credential(db, repository):
  """创建带凭据的测试仓库。"""
  from common.encryption import encrypt_value
- from repositories.models import GitCredential, AuthType
+ from repositories.models import AuthType, GitCredential
  GitCredential.objects.create(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,

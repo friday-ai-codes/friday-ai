@@ -77,9 +77,7 @@ class NotifyFeishuNode(BaseNode):
  next_handle="error",
  )
  try:
- payload = self._build_message_payload(
- message_type, content, title, at_all
- )
+ payload = self._build_message_payload(message_type, content, title, at_all)
  async with httpx.AsyncClient as client:
  response = await client.post(
  webhook_url,
@@ -120,7 +118,7 @@ class NotifyFeishuNode(BaseNode):
  if message_type == "text":
  text = content
  if at_all:
- text = f"<at user_id=\"all\">所有人</at> {text}"
+ text = f'<at user_id="all">所有人</at> {text}'
  return {
  "msg_type": "text",
  "content": {"text": text},
@@ -144,9 +142,7 @@ class NotifyFeishuNode(BaseNode):
  "header": {
  "title": {"tag": "plain_text", "content": title or "通知"},
  },
- "elements": [
- {"tag": "div", "text": {"tag": "plain_text", "content": content}}
- ],
+ "elements": [{"tag": "div", "text": {"tag": "plain_text", "content": content}}],
  },
  }
  return {"msg_type": "text", "content": {"text": content}}

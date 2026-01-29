@@ -124,7 +124,7 @@ class GeneratePlanNode(BaseNode):
  "detailed": "请提供非常详细的方案，包括具体代码结构、函数签名、数据流等。",
  }
  prompt += f"""## 要求
-{detail_instructions.get(detail_level, detail_instructions['standard'])}
+{detail_instructions.get(detail_level, detail_instructions["standard"])}
 请包含：
 1. 实现概述
 2. 详细步骤（按顺序）
@@ -201,9 +201,7 @@ class RevisePlanNode(BaseNode):
  next_handle="error",
  )
  try:
- prompt = self._build_revision_prompt(
- original_plan, feedback, preserve_structure
- )
+ prompt = self._build_revision_prompt(original_plan, feedback, preserve_structure)
  revised_result = await self._call_llm(prompt, config.get("model", "gpt-4"))
  return NodeResult(
  status="completed",
@@ -221,9 +219,7 @@ class RevisePlanNode(BaseNode):
  error=str(e),
  next_handle="error",
  )
- def _build_revision_prompt(
- self, original: str, feedback: str, preserve_structure: bool
- ) -> str:
+ def _build_revision_prompt(self, original: str, feedback: str, preserve_structure: bool) -> str:
  """构建方案修订提示词"""
  prompt = f"""请根据反馈修改以下技术方案：
 ## 原方案

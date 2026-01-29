@@ -5,18 +5,18 @@ class Migration(migrations.Migration):
  dependencies =
  operations = [
  migrations.CreateModel(
- name='SystemSetting',
+ name="SystemSetting",
  fields=[
- ('key', models.CharField(max_length=100, primary_key=True, serialize=False)),
- ('value', models.TextField(blank=True, null=True)),
- ('is_encrypted', models.BooleanField(default=False)),
- ('description', models.TextField(blank=True, null=True)),
- ('updated_at', models.DateTimeField(auto_now=True)),
+ ("key", models.CharField(max_length=100, primary_key=True, serialize=False)),
+ ("value", models.TextField(blank=True, null=True)),
+ ("is_encrypted", models.BooleanField(default=False)),
+ ("description", models.TextField(blank=True, null=True)),
+ ("updated_at", models.DateTimeField(auto_now=True)),
  ],
  options={
- 'verbose_name': '系统设置',
- 'verbose_name_plural': '系统设置',
- 'db_table': 'system_settings',
+ "verbose_name": "系统设置",
+ "verbose_name_plural": "系统设置",
+ "db_table": "system_settings",
  },
  ),
  ]

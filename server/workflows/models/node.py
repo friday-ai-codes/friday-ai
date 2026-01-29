@@ -161,9 +161,7 @@ class WorkflowEdge(models.Model):
  verbose_name = "工作流边"
  verbose_name_plural = "工作流边"
  # 同一对节点 + 同一连接点只能有一条边
- unique_together = [
- ("source_node", "target_node", "source_handle", "target_handle")
- ]
+ unique_together = [("source_node", "target_node", "source_handle", "target_handle")]
  def __str__(self) -> str:
  return f"{self.source_node.name} → {self.target_node.name}"
  def to_json(self) -> dict:

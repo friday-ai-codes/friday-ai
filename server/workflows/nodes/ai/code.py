@@ -1,7 +1,6 @@
 """Code implementation node."""
 import structlog
 from services.container_executor import (
- ContainerExecutor,
  ExecutionRequest,
  get_container_executor,
 )

@@ -18,12 +18,14 @@ def list_templates -> list[dict]:
  try:
  with open(f) as fp:
  data = json.load(fp)
- templates.append({
+ templates.append(
+ {
  "template_id": data.get("template_id", f.stem),
  "name": data.get("name", f.stem),
  "description": data.get("description", ""),
  "version": data.get("version", "1.0"),
- })
+ }
+ )
  except Exception as e:
  logger.warning("failed_to_load_template", file=str(f), error=str(e))
  return templates

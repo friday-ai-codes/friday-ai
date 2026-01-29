@@ -1,15 +1,14 @@
-import pytest
 import asyncio
-from workflows.models import (
- Workflow,
- WorkflowNode,
- WorkflowEdge,
- WorkflowExecution,
- ExecutionStatus,
-)
-from workflows.engine.scheduler import WorkflowEngine
-from projects.models import Project
+import pytest
 from asgiref.sync import sync_to_async
+from projects.models import Project
+from workflows.engine.scheduler import WorkflowEngine
+from workflows.models import (
+ ExecutionStatus,
+ Workflow,
+ WorkflowEdge,
+ WorkflowNode,
+)
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 async def test_simple_linear_workflow:

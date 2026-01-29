@@ -14,11 +14,9 @@ from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import (
  ExecutionStatus,
- NodeExecution,
  NodeExecutionStatus,
  Workflow,
  WorkflowEdge,
- WorkflowExecution,
  WorkflowNode,
 )
 @pytest.fixture
@@ -208,9 +206,7 @@ class TestApprovalHandling:
  # Check if any node is waiting for approval
  waiting_nodes = await sync_to_async(
  lambda: list(
- execution.node_executions.filter(
- status=NodeExecutionStatus.WAITING_APPROVAL
- )
+ execution.node_executions.filter(status=NodeExecutionStatus.WAITING_APPROVAL)
  )
  )
  if waiting_nodes:

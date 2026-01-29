@@ -160,7 +160,9 @@ class FeishuWebhookView(APIView):
  """Dispatch event to workflow system."""
  try:
  bridge = FeishuWorkflowBridge
- executions = async_to_sync(bridge.dispatch_event)(event_type, project, payload, trigger_log)
+ executions = async_to_sync(bridge.dispatch_event)(
+ event_type, project, payload, trigger_log
+ )
  if executions:
  struct_logger.info(
  "workflows_triggered",
@@ -203,7 +205,6 @@ class FeishuWebhookView(APIView):
  def _handle_workitem_create(self, project, payload, trigger_log):
  """处理工作项创建事件。"""
  work_item_id = payload.get("id")
- work_item_name = payload.get("name", "")
  work_item_type = payload.get("work_item_type_key", "story")
  if not work_item_id:
  logger.warning("工作项创建事件缺少 id")

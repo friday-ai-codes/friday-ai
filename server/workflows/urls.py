@@ -66,7 +66,9 @@ urlpatterns = router.urls + [
  ),
  path(
  "workflows/<uuid:workflow_id>/triggers/<uuid:pk>/",
- WorkflowTriggerViewSet.as_view({"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}),
+ WorkflowTriggerViewSet.as_view(
+ {"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}
+ ),
  name="workflow-triggers-detail",
  ),
  # Nested coding tasks under execution

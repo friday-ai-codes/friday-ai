@@ -2,12 +2,21 @@
 from django.db import migrations, models
 class Migration(migrations.Migration):
  dependencies = [
- ('repositories', '0002_remove_repository_claude_md_path'),
+ ("repositories", "0002_remove_repository_claude_md_path"),
  ]
  operations = [
  migrations.AlterField(
- model_name='repository',
- name='git_platform',
- field=models.CharField(choices=[('github', 'GitHub'), ('gitlab', 'GitLab'), ('gitea', 'Gitea'), ('bitbucket', 'Bitbucket')], default='gitlab', max_length=20),
+ model_name="repository",
+ name="git_platform",
+ field=models.CharField(
+ choices=[
+ ("github", "GitHub"),
+ ("gitlab", "GitLab"),
+ ("gitea", "Gitea"),
+ ("bitbucket", "Bitbucket"),
+ ],
+ default="gitlab",
+ max_length=20,
+ ),
  ),
  ]

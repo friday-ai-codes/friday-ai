@@ -54,9 +54,7 @@ class AnalyzeRequirementsNode(BaseNode):
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:
  config = context.node_config
- requirements_text = context.render_template(
- config.get("requirements_text", "")
- )
+ requirements_text = context.render_template(config.get("requirements_text", ""))
  project_context = context.render_template(config.get("context", ""))
  output_format = config.get("output_format", "structured")
  if not requirements_text:
@@ -67,9 +65,7 @@ class AnalyzeRequirementsNode(BaseNode):
  )
  try:
  # Build the analysis prompt
- prompt = self._build_analysis_prompt(
- requirements_text, project_context, output_format
- )
+ prompt = self._build_analysis_prompt(requirements_text, project_context, output_format)
  # Call LLM service (placeholder - integrate with actual LLM service)
  analysis_result = await self._call_llm(prompt, config.get("model", "gpt-4"))
  return NodeResult(
@@ -87,9 +83,7 @@ class AnalyzeRequirementsNode(BaseNode):
  error=str(e),
  next_handle="error",
  )
- def _build_analysis_prompt(
- self, requirements: str, context: str, output_format: str
- ) -> str:
+ def _build_analysis_prompt(self, requirements: str, context: str, output_format: str) -> str:
  """构建分析提示词"""
  prompt = f"""请分析以下需求，提取关键信息：
 ## 需求描述
@@ -177,9 +171,7 @@ class AnalyzeBugNode(BaseNode):
  config = context.node_config
  bug_description = context.render_template(config.get("bug_description", ""))
  error_logs = context.render_template(config.get("error_logs", ""))
- reproduction_steps = context.render_template(
- config.get("reproduction_steps", "")
- )
+ reproduction_steps = context.render_template(config.get("reproduction_steps", ""))
  codebase_context = context.render_template(config.get("codebase_context", ""))
  if not bug_description:
  return NodeResult(

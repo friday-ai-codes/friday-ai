@@ -80,9 +80,7 @@ class HTTPRequestNode(BaseNode):
  # 渲染模板变量
  url = context.render_template(config.get("url", ""))
  method = config.get("method", "POST")
- headers = {
- k: context.render_template(v) for k, v in config.get("headers", {}).items
- }
+ headers = {k: context.render_template(v) for k, v in config.get("headers", {}).items}
  timeout = config.get("timeout", 30)
  # 构建请求体
  body_type = config.get("body_type", "json")
@@ -93,9 +91,7 @@ class HTTPRequestNode(BaseNode):
  # 对 dict 中的字符串值进行模板渲染
  body = self._render_dict(body, context)
  try:
- async with httpx.AsyncClient(
- verify=not config.get("ignore_ssl", False)
- ) as client:
+ async with httpx.AsyncClient(verify=not config.get("ignore_ssl", False)) as client:
  request_kwargs: dict = {
  "method": method,
  "url": url,
@@ -145,9 +141,7 @@ class HTTPRequestNode(BaseNode):
  elif isinstance(v, dict):
  result[k] = self._render_dict(v, context)
  elif isinstance(v, list):
- result[k] = [
- context.render_template(i) if isinstance(i, str) else i for i in v
- ]
+ result[k] = [context.render_template(i) if isinstance(i, str) else i for i in v]
  else:
  result[k] = v
  return result

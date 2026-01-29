@@ -1,4 +1,13 @@
 """Workflows nodes package."""
+# Import all node modules to trigger registration
+from workflows.nodes import (
+ ai, # noqa: F401
+ control, # noqa: F401
+ data, # noqa: F401
+ git, # noqa: F401
+ integrations, # noqa: F401
+ triggers, # noqa: F401
+)
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -9,13 +18,6 @@ from workflows.nodes.base import (
  PortType,
 )
 from workflows.nodes.registry import NodeRegistry, register_node
-# Import all node modules to trigger registration
-from workflows.nodes import triggers # noqa: F401
-from workflows.nodes import control # noqa: F401
-from workflows.nodes import integrations # noqa: F401
-from workflows.nodes import git # noqa: F401
-from workflows.nodes import ai # noqa: F401
-from workflows.nodes import data # noqa: F401
 __all__ = [
  "BaseNode",
  "NodeCategory",

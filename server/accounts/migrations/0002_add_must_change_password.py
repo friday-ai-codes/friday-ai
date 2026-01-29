@@ -2,12 +2,16 @@
 from django.db import migrations, models
 class Migration(migrations.Migration):
  dependencies = [
- ('accounts', '0001_initial'),
+ ("accounts", "0001_initial"),
  ]
  operations = [
  migrations.AddField(
- model_name='user',
- name='must_change_password',
- field=models.BooleanField(default=False, help_text='标记用户是否需要在下次登录时强制修改密码', verbose_name='必须修改密码'),
+ model_name="user",
+ name="must_change_password",
+ field=models.BooleanField(
+ default=False,
+ help_text="标记用户是否需要在下次登录时强制修改密码",
+ verbose_name="必须修改密码",
+ ),
  ),
  ]

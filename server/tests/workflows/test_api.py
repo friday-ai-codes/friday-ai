@@ -8,12 +8,9 @@ Tests cover:
 - Task compatibility API
 """
 import pytest
-from django.urls import reverse
 from rest_framework import status
 from projects.models import Project
 from workflows.models import (
- ExecutionStatus,
- NodeExecutionStatus,
  Workflow,
  WorkflowEdge,
  WorkflowExecution,
@@ -98,9 +95,7 @@ class TestWorkflowDetailAPI:
  assert response.status_code == status.HTTP_200_OK
  assert response.data["id"] == str(api_workflow_with_nodes.id)
  assert response.data["name"] == api_workflow_with_nodes.name
- def test_get_workflow_includes_nodes(
- self, authenticated_client, api_workflow_with_nodes
- ):
+ def test_get_workflow_includes_nodes(self, authenticated_client, api_workflow_with_nodes):
  """Test that workflow detail includes nodes."""
  url = f"/api/workflows/{api_workflow_with_nodes.id}/"
  response = authenticated_client.get(url)

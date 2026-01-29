@@ -32,14 +32,8 @@ class Command(BaseCommand):
  )
  return
  # Get configuration from arguments or environment variables
- username = (
- options.get("username")
- or os.environ.get("FRIDAY_ADMIN_USERNAME", "admin")
- )
- password = (
- options.get("password")
- or os.environ.get("FRIDAY_ADMIN_PASSWORD")
- )
+ username = options.get("username") or os.environ.get("FRIDAY_ADMIN_USERNAME", "admin")
+ password = options.get("password") or os.environ.get("FRIDAY_ADMIN_PASSWORD")
  # Generate password if not provided
  password_generated = False
  if not password:
