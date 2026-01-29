@@ -118,13 +118,6 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
- '/projects/new': RouteRecordInfo<
- '/projects/new',
- '/projects/new',
- Record<never, never>,
- Record<never, never>,
- | never
- >,
  '/repositories/': RouteRecordInfo<
  '/repositories/',
  '/repositories',
@@ -149,13 +142,6 @@ declare module 'vue-router/auto-routes' {
  '/settings/': RouteRecordInfo<
  '/settings/',
  '/settings',
- Record<never, never>,
- Record<never, never>,
- | never
- >,
- '/settings/account': RouteRecordInfo<
- '/settings/account',
- '/settings/account',
  Record<never, never>,
  Record<never, never>,
  | never
@@ -277,12 +263,6 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
- 'src/pages/projects/new.vue': {
- routes:
- | '/projects/new'
- views:
- | never
- }
  'src/pages/repositories/index.vue': {
  routes:
  | '/repositories/'
@@ -304,12 +284,6 @@ declare module 'vue-router/auto-routes' {
  'src/pages/settings/index.vue': {
  routes:
  | '/settings/'
- views:
- | never
- }
- 'src/pages/settings/account.vue': {
- routes:
- | '/settings/account'
  views:
  | never
  }
