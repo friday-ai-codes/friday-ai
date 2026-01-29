@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
+import { useTimeoutPoll } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { Badge } from '~/components/ui/badge'
@@ -38,20 +39,12 @@ const approving = ref(false)
 const triggerDialogOpen = ref(false)
 const triggerInputData = ref('')
 const triggering = ref(false)
-// Polling state
-let pollTimer: ReturnType<typeof setInterval> | null = null
-onMounted(async => {
- await store.fetchExecution(executionId.value)
- startPolling
-})
-onUnmounted( => {
- stopPolling
-})
-function startPolling {
- if (pollTimer)
- return
- if (isActiveStatus(currentExecution.value?.status)) {
- pollTimer = setInterval(async => {
+// Polling with useTimeoutPoll - auto cleanup on unmount
+function isActiveStatus(status?: string) {
+ return ['running', 'pending', 'queued', 'paused', 'waiting_approval'].includes(status || '')
+}
+const { pause: stopPolling, resume: startPolling } = useTimeoutPoll(
+ async => {
  if ((route.params as { id: string }).id === executionId.value) {
  await store.fetchExecution(executionId.value)
  if (!isActiveStatus(currentExecution.value?.status)) {
@@ -61,18 +54,16 @@ function startPolling {
  else {
  stopPolling
  }
- }, 5000)
+ },
+ 5000,
+ { immediate: false },
+)
+onMounted(async => {
+ await store.fetchExecution(executionId.value)
+ if (isActiveStatus(currentExecution.value?.status)) {
+ startPolling
  }
-}
-function stopPolling {
- if (pollTimer) {
- clearInterval(pollTimer)
- pollTimer = null
- }
-}
-function isActiveStatus(status?: string) {
- return ['running', 'pending', 'queued', 'paused', 'waiting_approval'].includes(status || '')
-}
+})
 watch( => currentExecution.value?.status, (newStatus) => {
  if (isActiveStatus(newStatus)) {
  startPolling

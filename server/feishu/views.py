@@ -3,22 +3,19 @@ import asyncio
 import json
 import logging
 import structlog
-from common.encryption import decrypt_value, encrypt_value
-from django.db import transaction
 from django.shortcuts import get_object_or_404
-from projects.models import Project, generate_webhook_token
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from tasks.models import Task, TaskStatus
+from common.encryption import decrypt_value, encrypt_value
+from projects.models import Project, generate_webhook_token
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
 from .models import KeyFields, TriggerLog, TriggerLogStatus
 from .serializers import (
  FeishuConfigCreateSerializer,
  FeishuConfigSerializer,
  TriggerLogDetailSerializer,
- TriggerLogRawSerializer,
  TriggerLogSerializer,
  WebhookTokenSerializer,
  WebhookTokenUpdateSerializer,
@@ -166,9 +163,7 @@ class FeishuWebhookView(APIView):
  """Dispatch event to workflow system."""
  try:
  bridge = FeishuWorkflowBridge
- executions = run_async(
- bridge.dispatch_event(event_type, project, payload, trigger_log)
- )
+ executions = run_async(bridge.dispatch_event(event_type, project, payload, trigger_log))
  if executions:
  struct_logger.info(
  "workflows_triggered",
@@ -218,40 +213,12 @@ class FeishuWebhookView(APIView):
  if not work_item_id:
  logger.warning("工作项创建事件缺少 id")
  return
- if Task.objects.filter(work_item_id=str(work_item_id)).exists:
- logger.info(f"任务已存在: {work_item_id}")
- return
- # Fetch work item details
- work_item_info = self._fetch_and_update_work_item(
- project, work_item_id, work_item_type, trigger_log
- )
- description = work_item_info.description if work_item_info else ""
- if work_item_info:
- work_item_name = work_item_info.name or work_item_name
- # Try to auto-link repository
- repository_id = None
- repositories = list(project.repositories.all)
- if len(repositories) == 1:
- repository_id = repositories[0].id
- logger.info(f"自动关联唯一仓库: {repositories[0].name}")
- # Create task
- with transaction.atomic:
- task = Task.objects.create(
- project=project,
- repository_id=repository_id,
- work_item_id=str(work_item_id),
- feature_id=str(work_item_id),
- title=work_item_name,
- description=description,
- status=TaskStatus.PENDING,
- )
- trigger_log.task = task
- trigger_log.save
- logger.info(f"已创建任务: {work_item_id}")
+ # Fetch work item details and update trigger log
+ self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
+ logger.info(f"工作项创建事件已处理: {work_item_id}")
  def _handle_workitem_status(self, project, payload, trigger_log):
  """处理工作项状态变更事件。"""
  work_item_id = payload.get("id")
- work_item_name = payload.get("name", "")
  work_item_type = payload.get("work_item_type_key", "story")
  cur_status = payload.get("cur_work_item_status", {})
  pre_status = payload.get("pre_work_item_status", {})
@@ -261,36 +228,8 @@ class FeishuWebhookView(APIView):
  cur_state_key = cur_status.get("state_key", "")
  pre_state_key = pre_status.get("state_key", "")
  logger.info(f"状态变更: {work_item_id} {pre_state_key} -> {cur_state_key}")
- # Fetch work item details
+ # Fetch work item details and update trigger log
  self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
- # Find or create task
- try:
- task = Task.objects.get(work_item_id=str(work_item_id))
- trigger_log.task = task
- trigger_log.save
- except Task.DoesNotExist:
- logger.info(f"任务不存在，自动创建: {work_item_id}")
- self._handle_workitem_create(project, payload, trigger_log)
- try:
- task = Task.objects.get(work_item_id=str(work_item_id))
- except Task.DoesNotExist:
- return
- # Update task status based on Feishu status
- if "planning" in cur_state_key.lower or "规划" in cur_state_key.lower:
- if task.status == TaskStatus.PENDING:
- task.status = TaskStatus.PLANNING
- task.save
- logger.info(f"任务状态更新为 PLANNING: {task.id}")
- elif "doing" in cur_state_key.lower or "进行中" in cur_state_key.lower:
- if task.status == TaskStatus.PLAN_REVIEW:
- task.status = TaskStatus.EXECUTING
- task.save
- logger.info(f"任务状态更新为 EXECUTING: {task.id}")
- elif "review" in cur_state_key.lower or "评审" in cur_state_key.lower:
- if task.status == TaskStatus.EXECUTING:
- task.status = TaskStatus.CODE_REVIEW
- task.save
- logger.info(f"任务状态更新为 CODE_REVIEW: {task.id}")
  def _handle_workflow_node_status(self, project, payload, trigger_log):
  """处理工作项节点流转事件。"""
  work_item_id = payload.get("id")
@@ -304,41 +243,15 @@ class FeishuWebhookView(APIView):
  comment = payload.get("comment", "")
  if not work_item_id or not comment:
  return
- # Check for approval/rejection keywords
+ # Check for approval/rejection keywords (for logging purposes)
  comment_lower = comment.lower
  approval_keywords = ["通过", "批准", "approved", "lgtm", "ok", "👍"]
  rejection_keywords = ["驳回", "拒绝", "rejected", "需要修改", "不通过", "👎"]
  is_approved = any(kw in comment_lower for kw in approval_keywords)
  is_rejected = any(kw in comment_lower for kw in rejection_keywords)
- if not is_approved and not is_rejected:
- return
+ if is_approved or is_rejected:
  logger.info(f"评论审批: {work_item_id}, 通过={is_approved}, 驳回={is_rejected}")
- try:
- task = Task.objects.get(work_item_id=str(work_item_id))
- trigger_log.task = task
- trigger_log.save
- except Task.DoesNotExist:
- return
- # Update task based on current status and comment
- if task.status == TaskStatus.PLAN_REVIEW:
- if is_approved:
- task.status = TaskStatus.EXECUTING
- task.human_feedback = None
- task.save
- logger.info(f"方案审批通过，开始执行: {task.id}")
- elif is_rejected:
- task.human_feedback = comment
- task.status = TaskStatus.PLANNING
- task.save
- logger.info(f"方案审批驳回，重新规划: {task.id}")
- elif task.status == TaskStatus.CODE_REVIEW:
- if is_approved:
- logger.info(f"代码审批通过: {task.id}")
- elif is_rejected:
- task.human_feedback = comment
- task.status = TaskStatus.EXECUTING
- task.save
- logger.info(f"代码审批驳回，继续开发: {task.id}")
+ # Workflow system handles actual approval logic via _dispatch_to_workflows
  def _handle_workitem_update(self, project, payload, trigger_log):
  """处理工作项字段修改事件。"""
  work_item_id = payload.get("id")
@@ -456,7 +369,7 @@ class UpdateWebhookTokenView(APIView):
 class TriggerLogListView(APIView):
  """List trigger logs."""
  def get(self, request):
- queryset = TriggerLog.objects.select_related("project", "task").all
+ queryset = TriggerLog.objects.select_related("project").all
  # Filter by project
  project_id = request.query_params.get("project_id")
  if project_id:

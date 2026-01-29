@@ -6,7 +6,6 @@ class Migration(migrations.Migration):
  initial = True
  dependencies = [
  ('projects', '0001_initial'),
- ('tasks', '0001_initial'),
  ]
  operations = [
  migrations.CreateModel(
@@ -28,7 +27,6 @@ class Migration(migrations.Migration):
  ('error_message', models.TextField(blank=True, null=True)),
  ('created_at', models.DateTimeField(auto_now_add=True)),
  ('project', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='trigger_logs', to='projects.project')),
- ('task', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='trigger_logs', to='tasks.task')),
  ],
  options={
  'verbose_name': '触发日志',

@@ -105,7 +105,7 @@ const extractFields = arrayField('extract_fields', ['description', 'prd_url', 't
  提取的字段可被后续节点通过 '\{\{global.xxx\}\}' 访问
  </p>
  </div>
- <Switch v-model:checked="setGlobalParams" />
+ <Switch v-model="setGlobalParams" />
  </div>
  <div class="flex items-center justify-between">
  <div>
@@ -114,7 +114,7 @@ const extractFields = arrayField('extract_fields', ['description', 'prd_url', 't
  输出中包含项目名称、ID 等信息
  </p>
  </div>
- <Switch v-model:checked="includeProjectInfo" />
+ <Switch v-model="includeProjectInfo" />
  </div>
  <div class="flex items-center justify-between">
  <div>
@@ -123,7 +123,7 @@ const extractFields = arrayField('extract_fields', ['description', 'prd_url', 't
  获取项目关联的代码仓库信息
  </p>
  </div>
- <Switch v-model:checked="includeRepositories" />
+ <Switch v-model="includeRepositories" />
  </div>
  </div>
  </div>

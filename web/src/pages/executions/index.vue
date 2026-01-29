@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ExecutionCard from '~/components/execution/ExecutionCard.vue'
 import { Button } from '~/components/ui/button'
@@ -19,11 +20,9 @@ const executionsStore = useExecutionsStore
 const projectsStore = useProjectsStore
 const workflowsStore = useWorkflowsStore
 // Filters
-const statusFilter = ref<string>(route.query.status as string || '')
-const projectFilter = ref<string>(route.query.project_id as string || '')
-const workflowFilter = ref<string>(route.query.workflow_id as string || '')
-// Auto-refresh interval
-let refreshInterval: ReturnType<typeof setInterval> | null = null
+const statusFilter = ref<string>(route.query.status as string || 'all')
+const projectFilter = ref<string>(route.query.project_id as string || 'all')
+const workflowFilter = ref<string>(route.query.workflow_id as string || 'all')
 const stats = computed( => {
  const execs = executionsStore.executions
  return {
@@ -35,15 +34,28 @@ const stats = computed( => {
  failed: execs.filter(e => e.status === 'failed').length,
  }
 })
+// Auto-refresh with useIntervalFn - auto cleanup on unmount
+const { resume: startAutoRefresh } = useIntervalFn(
+ => {
+ if (stats.value.running > 0 || stats.value.pending > 0) {
+ executionsStore.fetchExecutions(
+ workflowFilter.value !== 'all' ? workflowFilter.value: undefined,
+ projectFilter.value !== 'all' ? projectFilter.value: undefined,
+ )
+ }
+ },
+ 5000,
+ { immediate: false },
+)
 const filteredExecutions = computed( => {
  let execs = executionsStore.executions
- if (statusFilter.value) {
+ if (statusFilter.value && statusFilter.value !== 'all') {
  execs = execs.filter(e => e.status === statusFilter.value)
  }
  return execs
 })
 const statusOptions = [
- { value: '', label: '全部状态' },
+ { value: 'all', label: '全部状态' },
  { value: 'running', label: '运行中' },
  { value: 'pending', label: '等待中' },
  { value: 'paused', label: '已暂停' },
@@ -54,39 +66,21 @@ const statusOptions = [
 async function loadData {
  await Promise.all([
  executionsStore.fetchExecutions(
- workflowFilter.value || undefined,
- projectFilter.value || undefined,
+ workflowFilter.value !== 'all' ? workflowFilter.value: undefined,
+ projectFilter.value !== 'all' ? projectFilter.value: undefined,
  ),
  projectsStore.fetchProjects,
  workflowsStore.fetchWorkflows,
  ])
 }
-function startAutoRefresh {
- if (refreshInterval)
- return
- refreshInterval = setInterval( => {
- if (stats.value.running > 0 || stats.value.pending > 0) {
- executionsStore.fetchExecutions(
- workflowFilter.value || undefined,
- projectFilter.value || undefined,
- )
- }
- }, 5000)
-}
-function stopAutoRefresh {
- if (refreshInterval) {
- clearInterval(refreshInterval)
- refreshInterval = null
- }
-}
 // Watch filters and update URL
 watch([statusFilter, projectFilter, workflowFilter], => {
  const query: Record<string, string> = {}
- if (statusFilter.value)
+ if (statusFilter.value && statusFilter.value !== 'all')
  query.status = statusFilter.value
- if (projectFilter.value)
+ if (projectFilter.value && projectFilter.value !== 'all')
  query.project_id = projectFilter.value
- if (workflowFilter.value)
+ if (workflowFilter.value && workflowFilter.value !== 'all')
  query.workflow_id = workflowFilter.value
  router.replace({ query })
  loadData
@@ -94,9 +88,6 @@ watch([statusFilter, projectFilter, workflowFilter], => {
 onMounted( => {
  loadData
  startAutoRefresh
-})
-onUnmounted( => {
- stopAutoRefresh
 })
 </script>
 <template>
@@ -177,7 +168,7 @@ onUnmounted( => {
  <SelectValue placeholder="全部项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">
+ <SelectItem value="all">
  全部项目
  </SelectItem>
  <SelectItem v-for="project in projectsStore.projects":key="project.id":value="project.id">
@@ -190,7 +181,7 @@ onUnmounted( => {
  <SelectValue placeholder="全部工作流" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">
+ <SelectItem value="all">
  全部工作流
  </SelectItem>
  <SelectItem v-for="workflow in workflowsStore.workflows":key="workflow.id":value="workflow.id">
@@ -199,10 +190,10 @@ onUnmounted( => {
  </SelectContent>
  </Select>
  <Button
- v-if="statusFilter || projectFilter || workflowFilter"
+ v-if="statusFilter !== 'all' || projectFilter !== 'all' || workflowFilter !== 'all'"
  variant="ghost"
  size="sm"
- @click="statusFilter = ''; projectFilter = ''; workflowFilter = ''"
+ @click="statusFilter = 'all'; projectFilter = 'all'; workflowFilter = 'all'"
  >
  <span class="icon-[lucide--x] mr-1" />
  清除筛选
@@ -221,7 +212,7 @@ onUnmounted( => {
  暂无执行记录
  </h3>
  <p class="text-muted-foreground mb-4">
- {{ statusFilter || projectFilter || workflowFilter ? '没有符合筛选条件的执行记录': '运行工作流后，执行记录将显示在这里' }}
+ {{ statusFilter !== 'all' || projectFilter !== 'all' || workflowFilter !== 'all' ? '没有符合筛选条件的执行记录': '运行工作流后，执行记录将显示在这里' }}
  </p>
  <RouterLink to="/workflows">
  <Button>

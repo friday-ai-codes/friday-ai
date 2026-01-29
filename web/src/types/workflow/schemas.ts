@@ -2,14 +2,15 @@ import { z } from 'zod'
 // ============================================================================
 // 共享选项常量
 // ============================================================================
-/** AI 模型选项 */
+/** AI 模型选项（默认模型列表，用于未配置自定义 API 时） */
 export const AI_MODELS = [
+ { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+ { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
- { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
- { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet' },
+ { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+ { value: 'gpt-4o', label: 'GPT-4o' },
+ { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
  { value: 'gpt-4-turbo', label: ' Turbo' },
- { value: 'gpt-4', label: '' },
- { value: 'gpt-3.5-turbo', label: '.5 Turbo' },
 ] as const
 /** 输出格式选项 */
 export const OUTPUT_FORMATS = [
@@ -31,7 +32,7 @@ export const WORK_ITEM_TYPE_OPTIONS = [
 ] as const
 /** 工作项类型选项（含全部） */
 export const WORK_ITEM_TYPE_OPTIONS_WITH_ALL = [
- { value: '', label: '全部类型' },
+ { value: '__all__', label: '全部类型' },
  ...WORK_ITEM_TYPE_OPTIONS,
 ] as const
 /** 飞书事件类型选项 */
@@ -57,16 +58,27 @@ export const WORK_ITEM_FIELD_OPTIONS = [
 // ============================================================================
 /** AI Prompt 节点配置 */
 export const aiPromptConfigSchema = z.object({
+ // API 配置
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ // 提示词配置
  system_prompt: z.string.default(''),
  user_prompt: z.string.default(''),
- model: z.string.default('claude-3-5-sonnet-20241022'),
+ // 模型配置
+ model: z.string.default('claude-sonnet-4-20250514'),
  temperature: z.number.min(0).max(2).default(0.7),
  max_tokens: z.number.min(100).max(100000).default(4096),
  output_format: z.enum(['text', 'json', 'markdown']).default('text'),
 })
 /** AI 编码指派器节点配置 */
 export const aiCodingDispatcherConfigSchema = z.object({
- analysis_model: z.string.default('claude-3-5-sonnet-20241022'),
+ // API 配置
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ // 模型配置
+ analysis_model: z.string.default('claude-sonnet-4-20250514'),
  max_tasks: z.number.min(1).max(20).default(5),
  task_granularity: z.enum(['fine', 'medium', 'coarse']).default('medium'),
  include_tests: z.boolean.default(true),

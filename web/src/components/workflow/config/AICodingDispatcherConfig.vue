@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { AICodingDispatcherConfig } from '~/types/workflow'
+import { computed } from 'vue'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -9,10 +11,10 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
- AI_MODELS,
  aiCodingDispatcherConfigSchema,
  TASK_GRANULARITY_OPTIONS,
 } from '~/types/workflow'
@@ -34,7 +36,15 @@ const { field } = useConfigModel({
  emit: v => emit('update:config', v),
  schema: aiCodingDispatcherConfigSchema,
 })
-const analysisModel = field('analysis_model', 'claude-3-5-sonnet-20241022')
+// API 配置
+const useCustomApi = computed({
+ get: => props.config.use_custom_api ?? false,
+ set: v => emit('update:config', { ...props.config, use_custom_api: v }),
+})
+const apiBaseUrl = field('api_base_url', '')
+const apiKey = field('api_key', '')
+const analysisModel = field('analysis_model', 'claude-sonnet-4-20250514')
+// 任务配置
 const maxTasks = field('max_tasks', 5)
 const taskGranularity = field('task_granularity', 'medium')
 const includeTests = field('include_tests', true)
@@ -42,25 +52,16 @@ const autoAssignRepos = field('auto_assign_repos', true)
 </script>
 <template>
  <div class="space-y-4">
- <!-- 分析模型 -->
- <div class="space-y-2">
- <Label>分析模型</Label>
- <Select v-model="analysisModel">
- <SelectTrigger>
- <SelectValue placeholder="选择模型" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="option in AI_MODELS":key="option.value":value="option.value"
- >
- {{ option.label }}
- </SelectItem>
- </SelectContent>
- </Select>
- <p class="text-xs text-muted-foreground">
- 用于分析需求文档并生成编码任务
- </p>
- </div>
+ <!-- AI 模型配置（通用组件） -->
+ <AIModelConfig
+ v-model:use-custom-api="useCustomApi"
+ v-model:api-base-url="apiBaseUrl"
+ v-model:api-key="apiKey"
+ v-model:model="analysisModel"
+ model-label="分析模型"
+ model-description="用于分析需求文档并生成编码任务"
+ />
+ <Separator />
  <!-- 最大任务数 -->
  <div class="space-y-2">
  <Label>最大任务数</Label>
@@ -100,7 +101,7 @@ const autoAssignRepos = field('auto_assign_repos', true)
  为每个编码任务生成对应的测试任务
  </p>
  </div>
- <Switch v-model:checked="includeTests" />
+ <Switch v-model="includeTests" />
  </div>
  <div class="flex items-center justify-between">
  <div>
@@ -109,7 +110,7 @@ const autoAssignRepos = field('auto_assign_repos', true)
  根据需求自动判断应修改哪些仓库
  </p>
  </div>
- <Switch v-model:checked="autoAssignRepos" />
+ <Switch v-model="autoAssignRepos" />
  </div>
  </div>
  <!-- 说明 -->

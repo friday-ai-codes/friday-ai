@@ -787,6 +787,100 @@ class NodeSchemaListView(APIView):
  schemas = [s for s in schemas if s.get("category") == category]
  return Response(schemas)
 # =============================================================================
+# LLM Models Query View
+# =============================================================================
+class LLMModelsView(APIView):
+ """View for querying available LLM models from an API endpoint."""
+ permission_classes = [IsAuthenticated]
+ def post(self, request: Request) -> Response:
+ """Query available models from an OpenAI-compatible API.
+ Request body:
+ base_url: str - API base URL (e.g., https://api.openai.com/v1)
+ api_key: str - API key (optional for some local deployments)
+ use_system: bool - If true, use system config (ignore base_url/api_key)
+ Returns:
+ List of model objects with id and other metadata.
+ """
+ use_system = request.data.get("use_system", False)
+ if use_system:
+ # Use system configuration
+ from services.claude_config import get_claude_config
+ config = get_claude_config
+ if not config.api_key:
+ return Response(
+ {"detail": "系统未配置 API Key"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ base_url = config.base_url or "https://api.anthropic.com"
+ api_key = config.api_key
+ else:
+ base_url = request.data.get("base_url", "").strip
+ api_key = request.data.get("api_key", "").strip
+ if not base_url:
+ return Response(
+ {"detail": "base_url 不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Normalize base_url
+ base_url = base_url.rstrip("/")
+ if not base_url.endswith("/v1"):
+ base_url = f"{base_url}/v1"
+ try:
+ import httpx
+ headers = {"Content-Type": "application/json"}
+ if api_key:
+ headers["Authorization"] = f"Bearer {api_key}"
+ with httpx.Client(timeout=30) as client:
+ response = client.get(f"{base_url}/models", headers=headers)
+ if response.status_code != 200:
+ return Response(
+ {"detail": f"API 请求失败: {response.status_code} - {response.text}"},
+ status=status.HTTP_502_BAD_GATEWAY,
+ )
+ data = response.json
+ models = data.get("data", )
+ # Sort models by id for consistent ordering
+ models.sort(key=lambda m: m.get("id", ""))
+ return Response({
+ "models": models,
+ "count": len(models),
+ })
+ except httpx.TimeoutException:
+ return Response(
+ {"detail": "请求超时，请检查 API 地址是否正确"},
+ status=status.HTTP_504_GATEWAY_TIMEOUT,
+ )
+ except httpx.RequestError as e:
+ return Response(
+ {"detail": f"网络请求错误: {e}"},
+ status=status.HTTP_502_BAD_GATEWAY,
+ )
+ except Exception as e:
+ logger.exception("llm_models_query_error", base_url=base_url)
+ return Response(
+ {"detail": f"查询模型失败: {e}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+class LLMSystemConfigView(APIView):
+ """View for getting system LLM configuration (for display in frontend)."""
+ permission_classes = [IsAuthenticated]
+ def get(self, request: Request) -> Response:
+ """Get current system LLM configuration.
+ Returns:
+ base_url: str - Configured base URL (masked)
+ model: str - Default model
+ has_api_key: bool - Whether API key is configured
+ source: str - Config source (system/project)
+ """
+ from services.claude_config import get_claude_config
+ config = get_claude_config
+ return Response({
+ "base_url": config.base_url or "https://api.anthropic.com",
+ "model": config.model,
+ "has_api_key": bool(config.api_key),
+ "source": config.source,
+ })
+# =============================================================================
 # CodingTask ViewSet
 # =============================================================================
 class CodingTaskViewSet(ModelViewSet):

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ClaudeConfigRead } from '~/api/settings'
+import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { getProjectClaudeConfig } from '~/api/settings'
@@ -16,8 +17,9 @@ const route = useRoute('/projects/[id]/')
 const router = useRouter
 const projectsStore = useProjectsStore
 const repositoriesStore = useRepositoriesStore
-const tasksStore = useTasksStore
+const executionsStore = useExecutionsStore
 const { success, error: showError } = useToast
+const { copy } = useClipboard
 const projectId = computed( => route.params.id)
 useHead({
  title: computed( => projectsStore.currentProject?.name
@@ -31,7 +33,7 @@ onMounted(async => {
  await Promise.all([
  projectsStore.fetchProject(projectId.value),
  projectsStore.fetchFeishuConfig(projectId.value),
- tasksStore.fetchTasks({ project_id: projectId.value }),
+ executionsStore.fetchExecutions(undefined, projectId.value),
  repositoriesStore.fetchRepositories,
  ])
  try {
@@ -73,7 +75,7 @@ function formatDate(dateStr: string) {
 // 计算属性
 const project = computed( => projectsStore.currentProject)
 const feishuConfig = computed( => projectsStore.currentFeishuConfig)
-const projectTasks = computed( => tasksStore.tasks)
+const projectExecutions = computed( => executionsStore.executions)
 // 关联仓库
 const linkDialogOpen = ref(false)
 const selectedRepositoryId = ref('')
@@ -120,13 +122,8 @@ async function handleUnlinkRepository(repositoryId: string) {
 async function copyWebhookToken {
  if (!project.value?.webhook_token)
  return
- try {
- await navigator.clipboard.writeText(project.value.webhook_token)
+ await copy(project.value.webhook_token)
  success('已复制', 'Webhook Token 已复制到剪贴板')
- }
- catch {
- showError('复制失败', '无法访问剪贴板')
- }
 }
 const refreshTokenDialogOpen = ref(false)
 const refreshingToken = ref(false)
@@ -462,19 +459,19 @@ async function handleCustomToken {
  </Card>
  </div>
  </div>
- <!-- 相关任务 -->
+ <!-- 相关执行 -->
  <div class="relative">
  <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
  <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
  <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
  <div>
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--list-todo] text-amber-500" />
- 相关任务
+ <span class="icon-[lucide--layers] text-amber-500" />
+ 相关执行
  </CardTitle>
- <CardDescription>此项目下的所有任务</CardDescription>
+ <CardDescription>此项目下的工作流执行记录</CardDescription>
  </div>
- <RouterLink:to="`/tasks?project_id=${project.id}`">
+ <RouterLink:to="`/executions?project_id=${project.id}`">
  <Button variant="outline" size="sm" class="group">
  查看全部
  <span class="icon-[lucide--arrow-right] ml-2 group-hover:translate-x-1 transition-transform" />
@@ -482,15 +479,15 @@ async function handleCustomToken {
  </RouterLink>
  </CardHeader>
  <CardContent class="pt-6">
- <div v-if="projectTasks.length === 0" class="text-center py-8 text-muted-foreground">
+ <div v-if="projectExecutions.length === 0" class="text-center py-8 text-muted-foreground">
  <div class="inline-flex rounded-full bg-muted/50 mb-3">
  <span class="icon-[lucide--inbox] text-3xl" />
  </div>
- <p>暂无任务</p>
+ <p>暂无执行记录</p>
  </div>
  <div v-else class="space-y-2">
  <RouterLink
- v-for="(task, index) in projectTasks.slice(0, 5)":key="task.id":to="`/tasks/${task.id}`"
+ v-for="(execution, index) in projectExecutions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
  class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-amber-500/30 transition-all group"
  >
  <div class="flex items-center gap-4">
@@ -498,13 +495,23 @@ async function handleCustomToken {
  {{ index + 1 }}
  </div>
  <div>
- <span class="font-medium group-hover:text-amber-600 transition-colors">{{ task.title }}</span>
- <TaskStatusBadge:status="task.status" class="ml-3" />
+ <span class="font-medium group-hover:text-amber-600 transition-colors">{{ execution.workflow_name }}</span>
+ <Badge
+ class="ml-3":class="{
+ 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300': execution.status === 'pending',
+ 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300': execution.status === 'running',
+ 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300': execution.status === 'completed',
+ 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': execution.status === 'failed',
+ 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': execution.status === 'waiting_approval',
+ }"
+ >
+ {{ execution.status === 'pending' ? '等待中': execution.status === 'running' ? '运行中': execution.status === 'completed' ? '已完成': execution.status === 'failed' ? '失败': execution.status === 'waiting_approval' ? '待审批': execution.status }}
+ </Badge>
  </div>
  </div>
  <div class="flex items-center gap-3">
  <span class="text-sm text-muted-foreground">
- {{ formatDate(task.created_at) }}
+ {{ formatDate(execution.created_at) }}
  </span>
  <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
  </div>

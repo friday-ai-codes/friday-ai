@@ -7,11 +7,14 @@ from typing import Literal, Optional
 from common.encryption import decrypt_value
 from projects.models import Project
 from system.models import SettingKeys, SystemSetting
+# 默认模型
+DEFAULT_MODEL = "claude-sonnet-4-20250514"
 @dataclass
 class ClaudeConfig:
  """Claude 配置数据类。"""
  api_key: Optional[str]
  base_url: Optional[str]
+ model: str
  source: Literal["project", "system"]
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""
@@ -57,9 +60,12 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  system_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if system_base_url:
  base_url = system_base_url
+ # 获取模型配置
+ model = get_setting_value(SettingKeys.ANTHROPIC_MODEL) or DEFAULT_MODEL
  return ClaudeConfig(
  api_key=api_key,
  base_url=base_url,
+ model=model,
  source=source,
  )
 def get_claude_config_for_task(project_id: str) -> ClaudeConfig:

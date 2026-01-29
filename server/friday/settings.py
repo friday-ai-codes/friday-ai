@@ -48,7 +48,6 @@ INSTALLED_APPS = [
  "repositories",
  "projects",
  "feishu",
- "tasks",
  "chat",
  "workflows",
 ]

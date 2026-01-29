@@ -32,14 +32,6 @@ class WorkflowExecution(models.Model):
  on_delete=models.CASCADE,
  related_name="executions",
  )
- # 可选关联到 Task（用于从旧系统迁移）
- task = models.ForeignKey(
- "tasks.Task",
- on_delete=models.SET_NULL,
- null=True,
- blank=True,
- related_name="workflow_executions",
- )
  # 状态
  status = models.CharField(
  max_length=20,

@@ -142,6 +142,53 @@ export async function rejectCodingTaskCode(
 ): Promise<{ status: string; message: string }> {
  return post<{ status: string; message: string }>(`/workflows/coding-tasks/${taskId}/reject_code/`, { feedback })
 }
+// ============================================================================
+// LLM Models API
+// ============================================================================
+/**
+ * LLM 模型信息
+ */
+export interface LLMModel {
+ id: string
+ object?: string
+ created?: number
+ owned_by?: string
+}
+/**
+ * 查询可用的 LLM 模型列表（自定义 API）
+ */
+export async function queryLLMModels(
+ baseUrl: string,
+ apiKey?: string,
+): Promise<{ models: LLMModel; count: number }> {
+ return post<{ models: LLMModel; count: number }>('/workflows/llm/models/', {
+ base_url: baseUrl,
+ api_key: apiKey || '',
+ })
+}
+/**
+ * 查询系统配置的 LLM 模型列表
+ */
+export async function querySystemLLMModels: Promise<{ models: LLMModel; count: number }> {
+ return post<{ models: LLMModel; count: number }>('/workflows/llm/models/', {
+ use_system: true,
+ })
+}
+/**
+ * 系统 LLM 配置信息
+ */
+export interface LLMSystemConfig {
+ base_url: string
+ model: string
+ has_api_key: boolean
+ source: 'system' | 'project'
+}
+/**
+ * 获取系统 LLM 配置
+ */
+export async function getLLMSystemConfig: Promise<LLMSystemConfig> {
+ return get<LLMSystemConfig>('/workflows/llm/config/')
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -161,4 +208,7 @@ export default {
  rejectCodingTaskPlan,
  approveCodingTaskCode,
  rejectCodingTaskCode,
+ // LLM Models
+ queryLLMModels,
+ getLLMSystemConfig,
 }
