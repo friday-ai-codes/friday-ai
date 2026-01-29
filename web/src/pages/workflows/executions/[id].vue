@@ -566,7 +566,7 @@ function formatTime(dateStr: string | null) {
  <label class="text-sm font-medium">输入数据（JSON 格式）</label>
  <Textarea
  v-model="triggerInputData"
- placeholder='{"key": "value"}'
+ placeholder="{&quot;key&quot;: &quot;value&quot;}"
  class="font-mono min-"
  />
  </div>

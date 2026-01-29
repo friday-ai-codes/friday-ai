@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { AIPromptConfig } from '~/types/workflow'
 import { computed } from 'vue'
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -14,6 +13,7 @@ import {
 import { Separator } from '~/components/ui/separator'
 import { Slider } from '~/components/ui/slider'
 import { Textarea } from '~/components/ui/textarea'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
  aiPromptConfigSchema,

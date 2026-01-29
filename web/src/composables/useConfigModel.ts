@@ -1,5 +1,6 @@
-import { computed, type ComputedRef, type WritableComputedRef } from 'vue'
+import type { ComputedRef, WritableComputedRef } from 'vue'
 import type { ZodSchema } from 'zod'
+import { computed } from 'vue'
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -17,7 +18,7 @@ export interface UseConfigModelReturn<T> {
  /** 创建数组字段的操作方法 */
  arrayField: <K extends keyof T>(
  key: K,
- defaultValue?: T[K]
+ defaultValue?: T[K],
  ) => {
  value: ComputedRef<T[K]>
  includes: (item: T[K] extends (infer U) ? U: never) => boolean

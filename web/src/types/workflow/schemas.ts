@@ -45,9 +45,9 @@ export const FEISHU_EVENT_TYPE_OPTIONS = [
 ] as const
 /** 常用字段快捷选项 */
 export const QUICK_FIELD_OPTIONS = [
- { key: 'prdUrl', name: '需求文档', path: "$.fields[?(@.key=='field_bcff9b')].value", desc: 'PRD 文档链接' },
- { key: 'techDocUrl', name: '技术方案', path: "$.fields[?(@.key=='field_3f6667')].value", desc: '技术方案文档链接' },
- { key: 'description', name: '描述', path: "$.fields[?(@.key=='description')].value", desc: '工作项描述' },
+ { key: 'prdUrl', name: '需求文档', path: '$.fields[?(@.key==\'field_bcff9b\')].value', desc: 'PRD 文档链接' },
+ { key: 'techDocUrl', name: '技术方案', path: '$.fields[?(@.key==\'field_3f6667\')].value', desc: '技术方案文档链接' },
+ { key: 'description', name: '描述', path: '$.fields[?(@.key==\'description\')].value', desc: '工作项描述' },
  { key: 'workItemName', name: '工作项名称', path: '$.name', desc: '工作项标题' },
  { key: 'workItemId', name: '工作项ID', path: '$.id', desc: '工作项唯一标识' },
  { key: 'projectKey', name: '项目Key', path: '$.project_key', desc: '飞书项目标识' },
@@ -108,7 +108,7 @@ export const feishuEventTriggerConfigSchema = z.object({
 /** 提取规则 */
 export const extractionRuleSchema = z.object({
  source_path: z.string.min(1, 'JSONPath 路径不能为空'),
- key: z.string.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, '变量标识符格式不正确'),
+ key: z.string.regex(/^[a-z_]\w*$/i, '变量标识符格式不正确'),
  name: z.string.min(1, '显示名称不能为空'),
  desc: z.string.default(''),
  required: z.boolean.default(false),
@@ -119,7 +119,7 @@ export const variableExtractorConfigSchema = z.object({
 })
 /** AI 变量定义 */
 export const aiVariableDefinitionSchema = z.object({
- key: z.string.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, '变量标识符格式不正确'),
+ key: z.string.regex(/^[a-z_]\w*$/i, '变量标识符格式不正确'),
  name: z.string.min(1, '显示名称不能为空'),
  desc: z.string.min(1, '提取描述不能为空'),
  required: z.boolean.default(false),
@@ -158,8 +158,8 @@ export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
-export type NodeConfig =
- | AIPromptConfig
+export type NodeConfig
+ = | AIPromptConfig
  | AICodingDispatcherConfig
  | FetchWorkItemConfig
  | FeishuEventTriggerConfig

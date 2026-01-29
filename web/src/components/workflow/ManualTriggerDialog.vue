@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { ManualTriggerResponse, TriggerEventType } from '~/types'
 import { Play } from 'lucide-vue-next'
 import { ref, watch } from 'vue'
+import { executeWorkflow } from '~/api/workflow'
 import { Button } from '~/components/ui/button'
 import {
  Dialog,
@@ -19,8 +21,6 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
-import { executeWorkflow } from '~/api/workflow'
-import type { TriggerEventType, ManualTriggerResponse } from '~/types'
 interface Props {
  open: boolean
  workflowId: string
@@ -37,7 +37,7 @@ const error = ref<string | null>(null)
 const eventType = ref<TriggerEventType | ''>('')
 const inputDataJson = ref('{\n "work_item_id": "",\n "project_key": ""\n}')
 // 事件类型选项
-const eventTypeOptions: Array<{ value: TriggerEventType | ''; label: string }> = [
+const eventTypeOptions: Array<{ value: TriggerEventType | '', label: string }> = [
  { value: '', label: '无事件类型（手动）' },
  { value: 'WorkitemCreateEvent', label: '工作项创建' },
  { value: 'WorkitemStatusEvent', label: '状态变更' },
@@ -61,7 +61,8 @@ watch( => props.open, (open) => {
 function parseInputData: Record<string, any> | null {
  try {
  return JSON.parse(inputDataJson.value)
- } catch (e) {
+ }
+ catch {
  return null
  }
 }
@@ -81,9 +82,11 @@ async function handleTrigger {
  })
  emit('triggered', response)
  emit('update:open', false)
- } catch (e: any) {
+ }
+ catch (e: any) {
  error.value = e.detail || e.message || '触发失败'
- } finally {
+ }
+ finally {
  triggering.value = false
  }
 }
@@ -129,7 +132,7 @@ function handleClose {
  <Textarea
  v-model="inputDataJson"
  class="font-mono text-sm "
- placeholder='{"work_item_id": "123", "project_key": "xxx"}'
+ placeholder="{&quot;work_item_id&quot;: &quot;123&quot;, &quot;project_key&quot;: &quot;xxx&quot;}"
  />
  <p class="text-xs text-muted-foreground">
  输入触发工作流所需的数据，将作为 <code class="bg-secondary px-1 rounded">input.*</code> 变量

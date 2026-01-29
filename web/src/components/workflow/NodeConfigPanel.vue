@@ -99,9 +99,7 @@ function updateConfigValue(key: string, value: any) {
 }
 // Handle config update from custom config component
 function handleConfigUpdate(newConfig: Record<string, any>) {
- console.log('[NodeConfigPanel] handleConfigUpdate called:', JSON.stringify(newConfig))
  nodeConfig.value = { ...newConfig }
- console.log('[NodeConfigPanel] nodeConfig after update:', JSON.stringify(nodeConfig.value))
 }
 // Helper to update JSON config safely
 function updateJsonConfig(key: string, value: string) {

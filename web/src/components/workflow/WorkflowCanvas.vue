@@ -2,7 +2,7 @@
 import type { Connection, Edge, Node } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { MarkerType, VueFlow, useVueFlow } from '@vue-flow/core'
+import { MarkerType, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
@@ -188,7 +188,6 @@ onMounted( => {
  <div class="absolute top-1/3 right-1/4 w-64 bg-gradient-to-t from-violet-500/5 to-transparent rounded-full blur-3xl" />
  </div>
  <VueFlow
- ref="vueFlowRef"
  v-model:nodes="nodes"
  v-model:edges="edges":node-types="nodeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="true":snap-grid="[20, 20]":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
  class="vue-flow-wrapper"

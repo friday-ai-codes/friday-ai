@@ -1,3 +1,4 @@
+import type { NodeCategory, NodeTypeDefinition, NodeTypeKey } from '~/types/workflow'
 import { computed } from 'vue'
 import {
  getDefaultConfig,
@@ -5,9 +6,6 @@ import {
  getNodesByCategory,
  hasNodeDefinition,
  validateNodeConfig,
- type NodeCategory,
- type NodeTypeDefinition,
- type NodeTypeKey,
 } from '~/types/workflow'
 // ============================================================================
 // Composable 实现

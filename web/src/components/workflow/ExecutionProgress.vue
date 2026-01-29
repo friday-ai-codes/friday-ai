@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<Props>, {
  compact: false,
 })
 const emit = defineEmits<{
- (e: 'select-node', node: NodeExecution): void
+ (e: 'selectNode', node: NodeExecution): void
 }>
 const statusConfig = {
  pending: {
@@ -151,7 +151,7 @@ function formatNodeDuration(duration: number | null) {
  <div
  v-for="node in nodeExecutions":key="node.id"
  class="group flex items-center gap-3 rounded-lg border border-transparent hover:bg-accent hover:border-border transition-all cursor-pointer"
- @click="emit('select-node', node)"
+ @click="emit('selectNode', node)"
  >
  <!-- Node Status Icon -->
  <div:class="cn(

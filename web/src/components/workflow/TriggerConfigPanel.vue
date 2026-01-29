@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import type { WorkflowTrigger } from '~/types'
 import { Edit, Plus, Trash2, Zap } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
+import { deleteTrigger, listTriggers, updateTrigger } from '~/api/workflow'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Switch } from '~/components/ui/switch'
-import { listTriggers, updateTrigger, deleteTrigger } from '~/api/workflow'
-import type { WorkflowTrigger } from '~/types'
 interface Props {
  workflowId: string
 }
@@ -30,13 +30,16 @@ function getEventTypeLabel(type: string): string {
 }
 // 加载触发器列表
 async function loadTriggers {
- if (!props.workflowId) return
+ if (!props.workflowId)
+ return
  loading.value = true
  try {
  triggers.value = await listTriggers(props.workflowId)
- } catch (error) {
+ }
+ catch (error) {
  console.error('Failed to load triggers:', error)
- } finally {
+ }
+ finally {
  loading.value = false
  }
 }
@@ -47,19 +50,22 @@ async function toggleActive(trigger: WorkflowTrigger) {
  is_active: !trigger.is_active,
  })
  trigger.is_active = !trigger.is_active
- } catch (error) {
+ }
+ catch (error) {
  console.error('Failed to toggle trigger:', error)
  }
 }
 // 删除触发器
 async function handleDelete(trigger: WorkflowTrigger) {
- if (!confirm(`确定要删除触发器 "${trigger.name || trigger.event_type}" 吗？`)) {
+ // eslint-disable-next-line no-alert
+ if (!window.confirm(`确定要删除触发器 "${trigger.name || trigger.event_type}" 吗？`)) {
  return
  }
  try {
  await deleteTrigger(props.workflowId, trigger.id)
  triggers.value = triggers.value.filter(t => t.id !== trigger.id)
- } catch (error) {
+ }
+ catch (error) {
  console.error('Failed to delete trigger:', error)
  }
 }
@@ -79,7 +85,9 @@ defineExpose({ refresh: loadTriggers })
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
  <Zap class="w-4 text-primary" />
- <CardTitle class="text-base">触发器配置</CardTitle>
+ <CardTitle class="text-base">
+ 触发器配置
+ </CardTitle>
  <Badge v-if="activeTriggerCount > 0" variant="secondary" class="text-xs">
  {{ activeTriggerCount }} 个启用
  </Badge>
@@ -100,7 +108,9 @@ defineExpose({ refresh: loadTriggers })
  <div v-else-if="triggers.length === 0" class="text-center py-8 text-muted-foreground">
  <Zap class="w-8 mx-auto mb-2 opacity-50" />
  <p>暂无触发器</p>
- <p class="text-xs mt-1">点击上方按钮添加触发器</p>
+ <p class="text-xs mt-1">
+ 点击上方按钮添加触发器
+ </p>
  </div>
  <!-- Trigger list -->
  <div

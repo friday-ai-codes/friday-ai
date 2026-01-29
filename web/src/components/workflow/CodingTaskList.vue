@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import type { CodingTask } from '~/types'
 import { ExternalLink, GitBranch } from 'lucide-vue-next'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
-import type { CodingTask } from '~/types'
 interface Props {
  tasks: CodingTask
  loading?: boolean
@@ -44,7 +44,9 @@ function getStatusLabel(status: string): string {
  <CardHeader class="pb-3 border-b">
  <div class="flex items-center gap-2">
  <GitBranch class="w-4 text-primary" />
- <CardTitle class="text-base">编码任务</CardTitle>
+ <CardTitle class="text-base">
+ 编码任务
+ </CardTitle>
  <Badge v-if="tasks.length > 0" variant="secondary" class="text-xs">
  {{ tasks.length }} 个任务
  </Badge>
@@ -61,7 +63,9 @@ function getStatusLabel(status: string): string {
  <div v-else-if="tasks.length === 0" class="text-center py-8 text-muted-foreground">
  <GitBranch class="w-8 mx-auto mb-2 opacity-50" />
  <p>暂无编码任务</p>
- <p class="text-xs mt-1">AI 编码指派器将在此创建任务</p>
+ <p class="text-xs mt-1">
+ AI 编码指派器将在此创建任务
+ </p>
  </div>
  <!-- Task list -->
  <div

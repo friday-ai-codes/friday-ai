@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import type { AIVariableExtractorConfig, AIVariableDefinition } from '~/types/workflow'
+import type { AIVariableDefinition, AIVariableExtractorConfig } from '~/types/workflow'
 import { computed } from 'vue'
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { Switch } from '~/components/ui/switch'
 import { Separator } from '~/components/ui/separator'
+import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
+import { useConfigModel } from '~/composables/useConfigModel'
 import {
  aiVariableExtractorConfigSchema,
 } from '~/types/workflow'
-import { useConfigModel } from '~/composables/useConfigModel'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -96,7 +96,9 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <div v-if="variables.length === 0" class="text-center py-8 text-muted-foreground">
  <span class="icon-[lucide--sparkles] text-4xl mb-2 block opacity-50" />
  <p>暂无目标变量</p>
- <p class="text-xs">定义需要 AI 从文本中提取的变量</p>
+ <p class="text-xs">
+ 定义需要 AI 从文本中提取的变量
+ </p>
  </div>
  <div
  v-for="(variable, index) in variables":key="index"
@@ -157,7 +159,9 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <div class="flex items-center justify-between pt-1">
  <div>
  <Label class="text-xs">必填变量</Label>
- <p class="text-xs text-muted-foreground">提取失败时节点将报错</p>
+ <p class="text-xs text-muted-foreground">
+ 提取失败时节点将报错
+ </p>
  </div>
  <Switch:checked="variable.required"
  @update:checked="(v: boolean) => updateVariable(index, 'required', v)"
@@ -180,7 +184,7 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <p class="text-xs text-muted-foreground">
  <span class="icon-[lucide--info] mr-1" />
  AI 将根据变量描述智能提取信息，提取结果可通过
- <code class="bg-background px-1 rounded">{{ '{{ global.variableKey }}' }}</code>
+ <code class="bg-background px-1 rounded">{<!-- -->{ global.variableKey }<!-- -->}</code>
  引用
  </p>
  </div>
