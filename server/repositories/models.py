@@ -12,6 +12,12 @@ class AuthType(models.TextChoices):
  SSH_KEY = "ssh_key", "SSH Key"
  ACCESS_TOKEN = "access_token", "Access Token"
  DEPLOY_KEY = "deploy_key", "Deploy Key"
+class IndexStatus(models.TextChoices):
+ """Index status choices."""
+ NOT_INDEXED = "not_indexed", "未索引"
+ INDEXING = "indexing", "索引中"
+ INDEXED = "indexed", "已索引"
+ FAILED = "failed", "索引失败"
 class Repository(models.Model):
  """Repository model for Git repositories."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -30,6 +36,17 @@ class Repository(models.Model):
  null=True,
  help_text="HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)",
  )
+ # Index status fields
+ index_status = models.CharField(
+ max_length=20,
+ choices=IndexStatus.choices,
+ default=IndexStatus.NOT_INDEXED,
+ )
+ last_indexed_at = models.DateTimeField(blank=True, null=True)
+ index_error = models.TextField(blank=True, null=True)
+ # Progress tracking
+ index_total_chunks = models.IntegerField(default=0)
+ index_processed_chunks = models.IntegerField(default=0)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

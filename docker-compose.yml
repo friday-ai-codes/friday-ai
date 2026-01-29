@@ -59,6 +59,25 @@ services:
  command: ["--help"]
  networks:
  - friday-network
+ qdrant:
+ image: qdrant/qdrant:latest
+ container_name: friday-qdrant
+ ports:
+ - "${QDRANT_HTTP_PORT:-6333}:6333"
+ - "${QDRANT_GRPC_PORT:-6334}:6334"
+ environment:
+ - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+ volumes:
+ - ~/.friday-data/qdrant:/qdrant/storage
+ networks:
+ - friday-network
+ restart: unless-stopped
+ healthcheck:
+ test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+ interval: 30s
+ timeout: 10s
+ retries: 3
+ start_period: 10s
 volumes:
  friday-data:
  driver: local
