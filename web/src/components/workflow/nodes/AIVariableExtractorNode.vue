@@ -22,7 +22,7 @@ function getModelShortName(model: string): string {
  <BaseNodeComponent
  v-bind="props":icon="Sparkles"
  badge="AI"
- badge-color="violet"
+ badge-color="purple"
  theme="ai"
  >
  <div class="space-y-1">

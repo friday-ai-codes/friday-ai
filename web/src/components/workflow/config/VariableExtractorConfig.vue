@@ -363,7 +363,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  </p>
  </div>
  <Switch:checked="rule.required"
- @update:checked="v => updateRule(index, 'required', v)"
+ @update:checked="(v: boolean) => updateRule(index, 'required', v)"
  />
  </div>
  </div>

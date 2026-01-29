@@ -33,7 +33,7 @@ const { field } = useConfigModel({
  schema: fetchWorkItemConfigSchema,
 })
 const workItemId = field('work_item_id', '')
-const workItemType = field('work_item_type', '')
+const workItemType = field('work_item_type', '__auto__')
 </script>
 <template>
  <div class="space-y-4">
