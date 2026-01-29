@@ -28,4 +28,4 @@
 - [x] 4.5.1 账户设置 → 弹窗 (AccountSettingsModal.vue 已创建)
 ## 5. 验收
 - [x] 5.1 所有弹窗功能正常 (功能已实现，待手动验证)
-- 5.2 删除不再需要的子页面路由 (此任务将在功能验证后进行)
+- [x] 5.2 删除不再需要的子页面路由 (已删除 projects/new.vue, settings/account.vue)
