@@ -126,6 +126,11 @@ export const aiVariableDefinitionSchema = z.object({
 })
 /** AI 变量提取节点配置 */
 export const aiVariableExtractorConfigSchema = z.object({
+ // API 配置
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ // 提取配置
  input_source: z.string.default(''),
  variables: z.array(aiVariableDefinitionSchema).default,
  additional_prompt: z.string.default(''),

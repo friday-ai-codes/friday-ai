@@ -75,7 +75,7 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  })
  // Auto-refresh using useIntervalFn
- const { pause: stopAutoRefresh, resume: startAutoRefresh, isActive: isAutoRefreshing } = useIntervalFn(
+ const { pause: stopAutoRefresh, resume: startAutoRefresh } = useIntervalFn(
  => {
  if (hasActiveExecutions.value) {
  fetchExecutions

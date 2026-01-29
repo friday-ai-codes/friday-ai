@@ -61,7 +61,7 @@ const eventTypes = arrayField('event_types', )
  class="flex items-center gap-2"
  >
  <Checkbox:id="`event-${option.value}`":model-value="eventTypes.includes(option.value)"
- @update:model-value="(checked: boolean) => eventTypes.toggle(option.value, checked)"
+ @update:model-value="(checked: boolean | 'indeterminate') => eventTypes.toggle(option.value, checked === true)"
  />
  <label:for="`event-${option.value}`"
  class="text-sm cursor-pointer"

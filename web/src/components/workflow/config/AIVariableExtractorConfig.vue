@@ -33,6 +33,9 @@ const { field } = useConfigModel({
 const inputSource = field('input_source', '')
 const additionalPrompt = field('additional_prompt', '')
 const model = field('model', 'claude-sonnet-4-20250514')
+const useCustomApi = field('use_custom_api', false)
+const apiBaseUrl = field('api_base_url', '')
+const apiKey = field('api_key', '')
 const variables = computed({
  get: => props.config.variables ??,
  set: v => emit('update:config', { ...props.config, variables: v }),
@@ -62,7 +65,10 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <div class="space-y-4">
  <!-- AI 模型配置 -->
  <AIModelConfig
- v-model:model="model":use-custom-api="false":show-custom-api="false"
+ v-model:model="model"
+ v-model:use-custom-api="useCustomApi"
+ v-model:api-base-url="apiBaseUrl"
+ v-model:api-key="apiKey"
  />
  <Separator />
  <!-- 输入来源 -->
@@ -154,7 +160,7 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <p class="text-xs text-muted-foreground">提取失败时节点将报错</p>
  </div>
  <Switch:checked="variable.required"
- @update:checked="v => updateVariable(index, 'required', v)"
+ @update:checked="(v: boolean) => updateVariable(index, 'required', v)"
  />
  </div>
  </div>
