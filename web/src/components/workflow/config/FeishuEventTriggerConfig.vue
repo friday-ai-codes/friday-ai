@@ -30,8 +30,14 @@ const emit = defineEmits<{
 // Config Model
 // ============================================================================
 const { field, arrayField } = useConfigModel({
- config: => props.config,
- emit: v => emit('update:config', v),
+ config: => {
+ console.log('[FeishuEventTrigger] config called, props.config:', JSON.stringify(props.config))
+ return props.config
+ },
+ emit: (v) => {
+ console.log('[FeishuEventTrigger] emit called with:', JSON.stringify(v))
+ emit('update:config', v)
+ },
  schema: feishuEventTriggerConfigSchema,
 })
 // 简单字段
@@ -54,8 +60,8 @@ const eventTypes = arrayField('event_types', )
  v-for="option in FEISHU_EVENT_TYPE_OPTIONS":key="option.value"
  class="flex items-center gap-2"
  >
- <Checkbox:id="`event-${option.value}`":checked="eventTypes.includes(option.value)"
- @update:checked="(checked: boolean) => eventTypes.toggle(option.value, checked)"
+ <Checkbox:id="`event-${option.value}`":model-value="eventTypes.includes(option.value)"
+ @update:model-value="(checked: boolean) => eventTypes.toggle(option.value, checked)"
  />
  <label:for="`event-${option.value}`"
  class="text-sm cursor-pointer"

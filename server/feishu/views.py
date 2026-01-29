@@ -1,8 +1,8 @@
 """Feishu views: Webhook handling, config management, and logs."""
-import asyncio
 import json
 import logging
 import structlog
+from asgiref.sync import async_to_sync
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -23,9 +23,6 @@ from .serializers import (
 from .workflow_bridge import FeishuWorkflowBridge
 logger = logging.getLogger(__name__)
 struct_logger = structlog.get_logger
-def run_async(coro):
- """运行异步协程的辅助函数。"""
- return asyncio.run(coro)
 # 幂等处理
 _processed_events = set
 _MAX_PROCESSED_EVENTS = 10000
@@ -163,7 +160,7 @@ class FeishuWebhookView(APIView):
  """Dispatch event to workflow system."""
  try:
  bridge = FeishuWorkflowBridge
- executions = run_async(bridge.dispatch_event(event_type, project, payload, trigger_log))
+ executions = async_to_sync(bridge.dispatch_event)(event_type, project, payload, trigger_log)
  if executions:
  struct_logger.info(
  "workflows_triggered",
@@ -181,12 +178,10 @@ class FeishuWebhookView(APIView):
  """Fetch work item details and update trigger log."""
  try:
  feishu_client = create_feishu_client_for_project(project)
- work_item_info = run_async(
- feishu_client.get_work_item(
+ work_item_info = async_to_sync(feishu_client.get_work_item)(
  project_key=project.feishu_project_key or "",
  work_item_id=work_item_id,
  work_item_type=work_item_type,
- )
  )
  # Update trigger log with work item details
  trigger_log.work_item_name = work_item_info.name
@@ -323,7 +318,7 @@ class FeishuConfigTestView(APIView):
  project_key=project.feishu_project_key,
  user_key=user_key,
  )
- test_result = run_async(client.test_connection(project.feishu_project_key))
+ test_result = async_to_sync(client.test_connection)(project.feishu_project_key)
  return Response(test_result)
  except Exception as e:
  return Response(

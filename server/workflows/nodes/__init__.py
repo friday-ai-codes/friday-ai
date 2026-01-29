@@ -2,6 +2,7 @@
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
+ GlobalVariable,
  NodeCategory,
  NodePort,
  NodeResult,
@@ -14,6 +15,7 @@ from workflows.nodes import control # noqa: F401
 from workflows.nodes import integrations # noqa: F401
 from workflows.nodes import git # noqa: F401
 from workflows.nodes import ai # noqa: F401
+from workflows.nodes import data # noqa: F401
 __all__ = [
  "BaseNode",
  "NodeCategory",
@@ -21,6 +23,7 @@ __all__ = [
  "NodeResult",
  "PortType",
  "ExecutionContext",
+ "GlobalVariable",
  "NodeRegistry",
  "register_node",
 ]

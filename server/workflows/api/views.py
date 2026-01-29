@@ -59,6 +59,67 @@ from workflows.models import (
 )
 from workflows.nodes.registry import NodeRegistry
 logger = structlog.get_logger
+def sync_workflow_triggers(workflow: Workflow) -> None:
+ """Sync feishu_event_trigger nodes to WorkflowTrigger table.
+ This ensures that trigger nodes configured in the workflow canvas
+ are automatically registered for webhook event matching.
+ """
+ # Get all feishu_event_trigger nodes from the workflow
+ trigger_nodes = workflow.nodes.filter(node_type="feishu_event_trigger")
+ # Collect configured event types from nodes
+ configured_triggers: list[dict] =
+ for node in trigger_nodes:
+ config = node.config or {}
+ event_types = config.get("event_types", )
+ filter_config = {}
+ # Build filter config from node config
+ if config.get("filter_project_key"):
+ filter_config["project_key"] = config["filter_project_key"]
+ if config.get("filter_work_item_type"):
+ filter_config["work_item_type_key"] = config["filter_work_item_type"]
+ if config.get("filter_status"):
+ filter_config["cur_work_item_status.state_key"] = config["filter_status"]
+ for event_type in event_types:
+ configured_triggers.append({
+ "event_type": event_type,
+ "filter_config": filter_config,
+ "node_id": str(node.id),
+ "node_name": node.name,
+ })
+ # Get existing triggers for this workflow
+ existing_triggers = {t.event_type: t for t in workflow.triggers.all}
+ # Sync triggers
+ seen_event_types = set
+ for trigger_config in configured_triggers:
+ event_type = trigger_config["event_type"]
+ seen_event_types.add(event_type)
+ if event_type in existing_triggers:
+ # Update existing trigger
+ trigger = existing_triggers[event_type]
+ trigger.filter_config = trigger_config["filter_config"]
+ trigger.is_active = True
+ trigger.name = trigger_config["node_name"] or f"触发器: {event_type}"
+ trigger.save
+ else:
+ # Create new trigger
+ WorkflowTrigger.objects.create(
+ workflow=workflow,
+ event_type=event_type,
+ filter_config=trigger_config["filter_config"],
+ is_active=True,
+ name=trigger_config["node_name"] or f"触发器: {event_type}",
+ )
+ # Deactivate triggers for removed event types
+ for event_type, trigger in existing_triggers.items:
+ if event_type not in seen_event_types:
+ trigger.is_active = False
+ trigger.save
+ logger.info(
+ "workflow_triggers_synced",
+ workflow_id=str(workflow.id),
+ trigger_count=len(configured_triggers),
+ event_types=list(seen_event_types),
+ )
 def run_async(coro):
  """Run async coroutine in sync context.
  Uses async_to_sync which properly integrates with Django's ASGI event loop,
@@ -343,6 +404,8 @@ class WorkflowViewSet(ModelViewSet):
  )
  # Return updated workflow
  workflow.refresh_from_db
+ # Sync triggers from feishu_event_trigger nodes
+ sync_workflow_triggers(workflow)
  return Response(WorkflowSerializer(workflow).data)
  # =========================================================================
  # Template Actions

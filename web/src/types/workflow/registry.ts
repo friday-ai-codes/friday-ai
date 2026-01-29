@@ -1,11 +1,13 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, FeishuEventTriggerConfig, FetchWorkItemConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, FeishuEventTriggerConfig, FetchWorkItemConfig, VariableExtractorConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
+ aiVariableExtractorConfigSchema,
  feishuEventTriggerConfigSchema,
  fetchWorkItemConfigSchema,
+ variableExtractorConfigSchema,
 } from './schemas'
 // ============================================================================
 // 类型定义
@@ -81,6 +83,28 @@ export const NODE_REGISTRY = {
  defaultConfig: feishuEventTriggerConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/FeishuEventTriggerConfig.vue'),
  } satisfies NodeTypeDefinition<FeishuEventTriggerConfig>,
+ variable_extractor: {
+ nodeType: 'variable_extractor',
+ displayName: '变量提取',
+ description: '从 JSON 数据中提取变量',
+ icon: 'icon-[lucide--variable]',
+ color: 'from-cyan-500 to-blue-400',
+ category: 'action',
+ schema: variableExtractorConfigSchema,
+ defaultConfig: variableExtractorConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/VariableExtractorConfig.vue'),
+ } satisfies NodeTypeDefinition<VariableExtractorConfig>,
+ ai_variable_extractor: {
+ nodeType: 'ai_variable_extractor',
+ displayName: 'AI 变量提取',
+ description: '使用 AI 从文本中智能提取变量',
+ icon: 'icon-[lucide--sparkles]',
+ color: 'from-violet-500 to-fuchsia-400',
+ category: 'ai',
+ schema: aiVariableExtractorConfigSchema,
+ defaultConfig: aiVariableExtractorConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AIVariableExtractorConfig.vue'),
+ } satisfies NodeTypeDefinition<AIVariableExtractorConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数

@@ -97,6 +97,12 @@ async function saveWorkflowSettings {
 function updateConfigValue(key: string, value: any) {
  nodeConfig.value = { ...nodeConfig.value, [key]: value }
 }
+// Handle config update from custom config component
+function handleConfigUpdate(newConfig: Record<string, any>) {
+ console.log('[NodeConfigPanel] handleConfigUpdate called:', JSON.stringify(newConfig))
+ nodeConfig.value = { ...newConfig }
+ console.log('[NodeConfigPanel] nodeConfig after update:', JSON.stringify(nodeConfig.value))
+}
 // Helper to update JSON config safely
 function updateJsonConfig(key: string, value: string) {
  try {
@@ -162,8 +168,8 @@ function getFieldType(schema: any): string {
  <Separator class="bg-border/50" />
  <!-- Custom Config Panels (dynamically loaded from registry) -->
  <template v-if="nodeHasCustomConfig && ConfigComponent">
- <component:is="ConfigComponent"
- v-model:config="nodeConfig"
+ <component:is="ConfigComponent":config="nodeConfig"
+ @update:config="handleConfigUpdate"
  />
  </template>
  <!-- Dynamic Config Fields (fallback for nodes without custom panels) -->

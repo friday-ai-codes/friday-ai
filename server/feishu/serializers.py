@@ -29,7 +29,6 @@ class TriggerLogDetailSerializer(TriggerLogSerializer):
  "event_uuid",
  "work_item_type",
  "error_message",
- "task_id",
  ]
 class TriggerLogRawSerializer(serializers.Serializer):
  """Serializer for raw trigger log data."""

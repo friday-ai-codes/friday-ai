@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
+import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 const nodeTypesStore = useNodeTypesStore
@@ -26,12 +26,21 @@ const staticNodeTypes = [
  ],
  },
  {
+ category: '数据处理',
+ categoryKey: 'data',
+ color: 'cyan',
+ items: [
+ { type: 'variable_extractor', label: '变量提取', icon: Variable, description: '从 JSON 数据中提取全局变量' },
+ ],
+ },
+ {
  category: 'AI',
  categoryKey: 'ai',
  color: 'purple',
  items: [
  { type: 'ai_prompt', label: 'AI Prompt', icon: MessageSquare, description: '调用 AI 大语言模型' },
  { type: 'ai_coding_dispatcher', label: 'AI 编码指派', icon: Bot, description: '分析需求分配编码任务' },
+ { type: 'ai_variable_extractor', label: 'AI 变量提取', icon: Sparkles, description: '使用 AI 智能提取变量' },
  ],
  },
  {

@@ -205,8 +205,34 @@ class WorkflowExecution(models.Model):
  "trigger_data": self.trigger_data,
  "input_data": self.input_data,
  "global_params": self.global_params,
+ "global_variables": self.context.get("global_variables", {}),
  "node_outputs": self.context.get("node_outputs", {}),
  }
+ # ===== 全局变量管理（带元数据） =====
+ def set_global_variable(self, key: str, variable: dict) -> None:
+ """设置全局变量
+ Args:
+ key: 变量标识符
+ variable: 变量数据（包含 key, name, value, desc, required, source_node）
+ """
+ if "global_variables" not in self.context:
+ self.context["global_variables"] = {}
+ self.context["global_variables"][key] = variable
+ self.save(update_fields=["context"])
+ def get_global_variable(self, key: str) -> dict | None:
+ """获取全局变量
+ Args:
+ key: 变量标识符
+ Returns:
+ 变量数据或 None
+ """
+ return self.context.get("global_variables", {}).get(key)
+ def get_all_global_variables(self) -> dict:
+ """获取所有全局变量
+ Returns:
+ {key: variable} 字典
+ """
+ return self.context.get("global_variables", {})
 class NodeExecution(models.Model):
  """节点执行记录"""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -265,11 +291,13 @@ class NodeExecution(models.Model):
  if self.started_at and self.completed_at:
  return (self.completed_at - self.started_at).total_seconds
  return None
- def mark_started(self) -> None:
+ def mark_started(self, input_data: dict | None = None) -> None:
  """标记开始执行"""
  self.status = NodeExecutionStatus.RUNNING
  self.started_at = timezone.now
- self.save(update_fields=["status", "started_at"])
+ if input_data is not None:
+ self.input_data = input_data
+ self.save(update_fields=["status", "started_at", "input_data"])
  def mark_completed(self, output_data: dict | None = None) -> None:
  """标记执行完成"""
  self.status = NodeExecutionStatus.COMPLETED

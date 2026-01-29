@@ -12,11 +12,13 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import ActionNode from './nodes/ActionNode.vue'
 import AICodingDispatcherNode from './nodes/AICodingDispatcherNode.vue'
 import AIPromptNode from './nodes/AIPromptNode.vue'
+import AIVariableExtractorNode from './nodes/AIVariableExtractorNode.vue'
 import ApprovalNode from './nodes/ApprovalNode.vue'
 import ControlNode from './nodes/ControlNode.vue'
 import FeishuEventTriggerNode from './nodes/FeishuEventTriggerNode.vue'
 import FetchWorkItemNode from './nodes/FetchWorkItemNode.vue'
 import TriggerNode from './nodes/TriggerNode.vue'
+import VariableExtractorNode from './nodes/VariableExtractorNode.vue'
 // Props
 defineProps<{
  editable?: boolean
@@ -42,9 +44,12 @@ const nodeTypes = {
  create_branch: markRaw(ActionNode),
  // Integration
  fetch_work_item: markRaw(FetchWorkItemNode),
+ // Data Processing
+ variable_extractor: markRaw(VariableExtractorNode),
  // AI
  ai_prompt: markRaw(AIPromptNode),
  ai_coding_dispatcher: markRaw(AICodingDispatcherNode),
+ ai_variable_extractor: markRaw(AIVariableExtractorNode),
  // Approval
  human_approval: markRaw(ApprovalNode),
  approval: markRaw(ApprovalNode),

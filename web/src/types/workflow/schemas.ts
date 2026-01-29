@@ -43,6 +43,15 @@ export const FEISHU_EVENT_TYPE_OPTIONS = [
  { value: 'WorkitemUpdateEvent', label: '字段更新' },
  { value: 'WorkFlowNodeStatusEvent', label: '节点流转' },
 ] as const
+/** 常用字段快捷选项 */
+export const QUICK_FIELD_OPTIONS = [
+ { key: 'prdUrl', name: '需求文档', path: "$.fields[?(@.key=='field_bcff9b')].value", desc: 'PRD 文档链接' },
+ { key: 'techDocUrl', name: '技术方案', path: "$.fields[?(@.key=='field_3f6667')].value", desc: '技术方案文档链接' },
+ { key: 'description', name: '描述', path: "$.fields[?(@.key=='description')].value", desc: '工作项描述' },
+ { key: 'workItemName', name: '工作项名称', path: '$.name', desc: '工作项标题' },
+ { key: 'workItemId', name: '工作项ID', path: '$.id', desc: '工作项唯一标识' },
+ { key: 'projectKey', name: '项目Key', path: '$.project_key', desc: '飞书项目标识' },
+] as const
 /** 工作项字段选项 */
 export const WORK_ITEM_FIELD_OPTIONS = [
  { value: 'description', label: '需求描述' },
@@ -87,11 +96,7 @@ export const aiCodingDispatcherConfigSchema = z.object({
 /** 获取工作项节点配置 */
 export const fetchWorkItemConfigSchema = z.object({
  work_item_id: z.string.default(''),
- work_item_type: z.enum(['story', 'task', 'bug']).default('story'),
- extract_fields: z.array(z.string).default(['description', 'prd_url', 'tech_doc_url']),
- set_global_params: z.boolean.default(true),
- include_project_info: z.boolean.default(true),
- include_repositories: z.boolean.default(true),
+ work_item_type: z.enum(['story', 'task', 'bug', '__auto__']).default('__auto__'),
 })
 /** 飞书事件触发器配置 */
 export const feishuEventTriggerConfigSchema = z.object({
@@ -100,6 +105,41 @@ export const feishuEventTriggerConfigSchema = z.object({
  filter_work_item_type: z.enum(['story', 'task', 'bug', '']).default(''),
  filter_status: z.string.default(''),
 })
+/** 提取规则 */
+export const extractionRuleSchema = z.object({
+ source_path: z.string.min(1, 'JSONPath 路径不能为空'),
+ key: z.string.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, '变量标识符格式不正确'),
+ name: z.string.min(1, '显示名称不能为空'),
+ desc: z.string.default(''),
+ required: z.boolean.default(false),
+})
+/** 变量提取节点配置 */
+export const variableExtractorConfigSchema = z.object({
+ extractions: z.array(extractionRuleSchema).default,
+})
+/** AI 变量定义 */
+export const aiVariableDefinitionSchema = z.object({
+ key: z.string.regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, '变量标识符格式不正确'),
+ name: z.string.min(1, '显示名称不能为空'),
+ desc: z.string.min(1, '提取描述不能为空'),
+ required: z.boolean.default(false),
+})
+/** AI 变量提取节点配置 */
+export const aiVariableExtractorConfigSchema = z.object({
+ input_source: z.string.default(''),
+ variables: z.array(aiVariableDefinitionSchema).default,
+ additional_prompt: z.string.default(''),
+ model: z.string.default('claude-sonnet-4-20250514'),
+})
+/** 全局变量结构 */
+export const globalVariableSchema = z.object({
+ key: z.string,
+ name: z.string,
+ desc: z.string.optional,
+ value: z.any,
+ required: z.boolean.optional,
+ source_node: z.string.optional,
+})
 // ============================================================================
 // 类型推导
 // ============================================================================
@@ -107,12 +147,19 @@ export type AIPromptConfig = z.infer<typeof aiPromptConfigSchema>
 export type AICodingDispatcherConfig = z.infer<typeof aiCodingDispatcherConfigSchema>
 export type FetchWorkItemConfig = z.infer<typeof fetchWorkItemConfigSchema>
 export type FeishuEventTriggerConfig = z.infer<typeof feishuEventTriggerConfigSchema>
+export type ExtractionRule = z.infer<typeof extractionRuleSchema>
+export type VariableExtractorConfig = z.infer<typeof variableExtractorConfigSchema>
+export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
+export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
+export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig =
  | AIPromptConfig
  | AICodingDispatcherConfig
  | FetchWorkItemConfig
  | FeishuEventTriggerConfig
+ | VariableExtractorConfig
+ | AIVariableExtractorConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -122,5 +169,7 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_coding_dispatcher: aiCodingDispatcherConfigSchema,
  fetch_work_item: fetchWorkItemConfigSchema,
  feishu_event_trigger: feishuEventTriggerConfigSchema,
+ variable_extractor: variableExtractorConfigSchema,
+ ai_variable_extractor: aiVariableExtractorConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
