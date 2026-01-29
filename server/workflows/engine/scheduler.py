@@ -1,7 +1,6 @@
 """Workflow execution engine."""
 import asyncio
 import threading
-import uuid
 from typing import TYPE_CHECKING
 import structlog
 from asgiref.sync import sync_to_async
@@ -17,7 +16,7 @@ from workflows.nodes.base import ExecutionContext, NodeResult
 from workflows.nodes.registry import NodeRegistry
 if TYPE_CHECKING:
  from workflows.hooks import HookManager
- from workflows.models import Workflow, WorkflowNode
+ from workflows.models import Workflow
 logger = structlog.get_logger
 def _run_in_thread(coro):
  """Run a coroutine in a new thread with its own event loop."""
@@ -80,9 +79,7 @@ class WorkflowEngine:
  ).count
  )
  if running_count >= workflow.max_concurrent_executions:
- raise ValueError(
- f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})"
- )
+ raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
  # 使用已有执行实例或创建新的
  if execution is None:
  execution = await sync_to_async(WorkflowExecution.objects.create)(
@@ -154,9 +151,7 @@ class WorkflowEngine:
  for dep_id in dag_node.incoming
  )
  # 检查是否有前置失败（需要跳过）
- any_dep_failed = any(
- dep_id in failed_nodes for dep_id in dag_node.incoming
- )
+ any_dep_failed = any(dep_id in failed_nodes for dep_id in dag_node.incoming)
  if any_dep_failed:
  # 前置失败，跳过此节点
  await self._skip_node(execution, dag_node, "前置节点失败")
@@ -208,9 +203,7 @@ class WorkflowEngine:
  node_input = entry_inputs[dag_node.id]
  else:
  node_input = self._collect_inputs(dag_node, dag, node_outputs)
- tasks.append(
- self._execute_node(execution, dag_node, node_input, node_outputs)
- )
+ tasks.append(self._execute_node(execution, dag_node, node_input, node_outputs))
  pending_nodes.discard(dag_node.id)
  results = await asyncio.gather(*tasks, return_exceptions=True)
  # 处理结果
@@ -239,9 +232,7 @@ class WorkflowEngine:
  return
  # 执行完成
  if failed_nodes:
- await sync_to_async(execution.mark_failed)(
- f"失败节点: {len(failed_nodes)}"
- )
+ await sync_to_async(execution.mark_failed)(f"失败节点: {len(failed_nodes)}")
  else:
  # 收集最终输出（终端节点的输出）
  final_output = {}
@@ -252,9 +243,7 @@ class WorkflowEngine:
  await sync_to_async(execution.mark_completed)(final_output)
  await self.hooks.trigger("execution_completed", execution=execution)
  except Exception as e:
- logger.exception(
- "workflow_execution_error", execution_id=str(execution.id)
- )
+ logger.exception("workflow_execution_error", execution_id=str(execution.id))
  await sync_to_async(execution.mark_failed)(str(e))
  await self.hooks.trigger("execution_failed", execution=execution, error=e)
  async def _execute_node(
@@ -317,9 +306,7 @@ class WorkflowEngine:
  )
  return {"status": "waiting_approval"}
  else:
- await sync_to_async(node_execution.mark_failed)(
- result.error or "未知错误"
- )
+ await sync_to_async(node_execution.mark_failed)(result.error or "未知错误")
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
@@ -353,9 +340,7 @@ class WorkflowEngine:
  # 合并上游输出到输入
  inputs.update(node_outputs[source_id])
  return inputs
- async def _skip_node(
- self, execution: WorkflowExecution, dag_node, reason: str
- ) -> None:
+ async def _skip_node(self, execution: WorkflowExecution, dag_node, reason: str) -> None:
  """跳过节点"""
  node_execution = await sync_to_async(NodeExecution.objects.get)(
  workflow_execution=execution,
@@ -511,9 +496,7 @@ class WorkflowEngine:
  if not successor_dag_node:
  continue
  # Check if all dependencies are satisfied
- all_deps_ready = await self._check_dependencies_ready(
- execution, successor_dag_node
- )
+ all_deps_ready = await self._check_dependencies_ready(execution, successor_dag_node)
  if all_deps_ready:
  # Get successor's node execution
  successor_exec = await sync_to_async(
@@ -527,7 +510,9 @@ class WorkflowEngine:
  # Collect inputs and execute
  input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
  # Execute directly instead of create_task to ensure it runs
- await self._execute_node(execution, successor_dag_node, input_data, node_outputs)
+ await self._execute_node(
+ execution, successor_dag_node, input_data, node_outputs
+ )
  async def _handle_node_failure(
  self,
  execution: WorkflowExecution,
@@ -574,9 +559,7 @@ class WorkflowEngine:
  if stats["pending"] == 0 and stats["running"] == 0 and stats["waiting"] == 0:
  # All nodes are done
  if stats["failed"] > 0:
- await sync_to_async(execution.mark_failed)(
- f"失败节点: {stats['failed']}"
- )
+ await sync_to_async(execution.mark_failed)(f"失败节点: {stats['failed']}")
  else:
  # Collect final outputs
  final_output = await self._collect_final_outputs(execution)
@@ -619,8 +602,7 @@ class WorkflowEngine:
  dag = await sync_to_async(DAG.from_workflow)(workflow)
  # Find terminal nodes (no outgoing edges)
  terminal_node_ids = [
- node_id for node_id, dag_node in dag.nodes.items
- if not dag_node.outgoing
+ node_id for node_id, dag_node in dag.nodes.items if not dag_node.outgoing
  ]
  # Get their outputs
  terminal_outputs = await sync_to_async(

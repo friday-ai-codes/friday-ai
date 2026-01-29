@@ -8,7 +8,7 @@ Tests cover:
 """
 import pytest
 from projects.models import Project
-from workflows.engine.dag import DAG, DAGNode
+from workflows.engine.dag import DAG
 from workflows.models import Workflow, WorkflowEdge, WorkflowNode
 @pytest.fixture
 def dag_project(db):

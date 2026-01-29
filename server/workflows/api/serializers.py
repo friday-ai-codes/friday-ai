@@ -2,10 +2,7 @@
 from rest_framework import serializers
 from workflows.models import (
  CodingTask,
- CodingTaskStatus,
- ExecutionStatus,
  NodeExecution,
- NodeExecutionStatus,
  TriggerEventType,
  WebhookConfig,
  WebhookLog,
@@ -21,9 +18,7 @@ from workflows.nodes.registry import NodeRegistry
 # =============================================================================
 class WorkflowTriggerSerializer(serializers.ModelSerializer):
  """Serializer for WorkflowTrigger."""
- event_type_display = serializers.CharField(
- source="get_event_type_display", read_only=True
- )
+ event_type_display = serializers.CharField(source="get_event_type_display", read_only=True)
  class Meta:
  model = WorkflowTrigger
  fields = [
@@ -83,12 +78,8 @@ class ExecutionContextSerializer(serializers.Serializer):
 # =============================================================================
 class CodingTaskSerializer(serializers.ModelSerializer):
  """Serializer for CodingTask."""
- repository_name = serializers.CharField(
- source="repository.name", read_only=True
- )
- status_display = serializers.CharField(
- source="get_status_display", read_only=True
- )
+ repository_name = serializers.CharField(source="repository.name", read_only=True)
+ status_display = serializers.CharField(source="get_status_display", read_only=True)
  duration = serializers.FloatField(read_only=True)
  class Meta:
  model = CodingTask
@@ -128,9 +119,7 @@ class CodingTaskSerializer(serializers.ModelSerializer):
  ]
 class CodingTaskListSerializer(serializers.ModelSerializer):
  """Lightweight serializer for coding task list."""
- repository_name = serializers.CharField(
- source="repository.name", read_only=True
- )
+ repository_name = serializers.CharField(source="repository.name", read_only=True)
  class Meta:
  model = CodingTask
  fields = [
@@ -188,9 +177,7 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
  return value
  def validate(self, attrs: dict) -> dict:
  """Validate node configuration against schema."""
- node_type = attrs.get("node_type") or (
- self.instance.node_type if self.instance else None
- )
+ node_type = attrs.get("node_type") or (self.instance.node_type if self.instance else None)
  config = attrs.get("config", {})
  if node_type:
  node_class = NodeRegistry.get(node_type)

@@ -1,11 +1,11 @@
 """Repositories views."""
-from common.encryption import encrypt_value
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
+from common.encryption import encrypt_value
 from .models import AuthType, GitCredential, Repository
 from .serializers import (
  GitCredentialSerializer,

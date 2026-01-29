@@ -1,8 +1,8 @@
 """Settings views."""
-from common.encryption import encrypt_value
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from common.encryption import encrypt_value
 from .models import SettingKeys, SystemSetting
 from .serializers import (
  SystemSettingCreateSerializer,

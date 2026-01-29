@@ -1,7 +1,6 @@
 """Tests for Feishu TriggerLog API endpoints."""
 import json
 import pytest
-from django.urls import reverse
 from feishu.models import TriggerLog, TriggerLogStatus
 # ============================================================================
 # Fixtures
@@ -14,16 +13,18 @@ def trigger_log(db, project):
  project_key=project.feishu_project_key,
  event_uuid="test-event-uuid-001",
  event_type="WorkitemCreateEvent",
- webhook_raw_request=json.dumps({
+ webhook_raw_request=json.dumps(
+ {
  "header": {"uuid": "test-event-uuid-001", "event_type": "WorkitemCreateEvent"},
- "payload": {"id": "12345", "name": "Test Work Item"}
- }),
+ "payload": {"id": "12345", "name": "Test Work Item"},
+ }
+ ),
  work_item_id="12345",
  work_item_type="story",
  work_item_name="Test Work Item",
- work_item_raw_response=json.dumps({
- "data": [{"id": 12345, "name": "Test Work Item", "fields": }]
- }),
+ work_item_raw_response=json.dumps(
+ {"data": [{"id": 12345, "name": "Test Work Item", "fields": }]}
+ ),
  prd_url="https://example.com/prd",
  description="This is a test description",
  tech_doc_url="https://example.com/tech-doc",
@@ -67,7 +68,7 @@ class TestTriggerLogList:
  assert isinstance(data, list)
  assert len(data) >= 1
  # 验证返回的日志包含必要字段
- log_data = next((l for l in data if l["id"] == str(trigger_log.id)), None)
+ log_data = next((log for log in data if log["id"] == str(trigger_log.id)), None)
  assert log_data is not None
  assert log_data["event_type"] == "WorkitemCreateEvent"
  assert log_data["status"] == "accepted"
@@ -76,38 +77,31 @@ class TestTriggerLogList:
  self, authenticated_client, trigger_log, project, feishu_urls
  ):
  """测试按项目筛选日志。"""
- response = authenticated_client.get(
- feishu_urls.logs_list,
- {"project_id": str(project.id)}
- )
+ response = authenticated_client.get(feishu_urls.logs_list, {"project_id": str(project.id)})
  assert response.status_code == 200
  data = response.json
- assert all(l.get("project_id") == str(project.id) for l in data if l.get("project_id"))
+ assert all(
+ log.get("project_id") == str(project.id) for log in data if log.get("project_id")
+ )
  def test_list_trigger_logs_filter_by_status(
  self, authenticated_client, trigger_log, trigger_log_with_error, feishu_urls
  ):
  """测试按状态筛选日志。"""
- response = authenticated_client.get(
- feishu_urls.logs_list,
- {"status": "error"}
- )
+ response = authenticated_client.get(feishu_urls.logs_list, {"status": "error"})
  assert response.status_code == 200
  data = response.json
- assert all(l["status"] == "error" for l in data)
+ assert all(log["status"] == "error" for log in data)
  def test_list_trigger_logs_filter_by_event_type(
  self, authenticated_client, trigger_log, feishu_urls
  ):
  """测试按事件类型筛选日志。"""
  response = authenticated_client.get(
- feishu_urls.logs_list,
- {"event_type": "WorkitemCreateEvent"}
+ feishu_urls.logs_list, {"event_type": "WorkitemCreateEvent"}
  )
  assert response.status_code == 200
  data = response.json
- assert all(l["event_type"] == "WorkitemCreateEvent" for l in data)
- def test_list_trigger_logs_pagination(
- self, authenticated_client, project, feishu_urls
- ):
+ assert all(log["event_type"] == "WorkitemCreateEvent" for log in data)
+ def test_list_trigger_logs_pagination(self, authenticated_client, project, feishu_urls):
  """测试日志列表分页。"""
  # 创建多条日志
  for i in range(5):
@@ -117,10 +111,7 @@ class TestTriggerLogList:
  event_type="WorkitemCreateEvent",
  status=TriggerLogStatus.ACCEPTED,
  )
- response = authenticated_client.get(
- feishu_urls.logs_list,
- {"limit": 2, "offset": 0}
- )
+ response = authenticated_client.get(feishu_urls.logs_list, {"limit": 2, "offset": 0})
  assert response.status_code == 200
  data = response.json
  assert len(data) == 2
@@ -135,13 +126,9 @@ class TestTriggerLogList:
 @pytest.mark.django_db
 class TestTriggerLogDetail:
  """测试触发日志详情 API。"""
- def test_get_trigger_log_detail_success(
- self, authenticated_client, trigger_log, feishu_urls
- ):
+ def test_get_trigger_log_detail_success(self, authenticated_client, trigger_log, feishu_urls):
  """测试获取日志详情成功。"""
- response = authenticated_client.get(
- feishu_urls.logs_detail(trigger_log.id)
- )
+ response = authenticated_client.get(feishu_urls.logs_detail(trigger_log.id))
  assert response.status_code == 200
  data = response.json
  assert data["id"] == str(trigger_log.id)
@@ -157,16 +144,12 @@ class TestTriggerLogDetail:
  self, authenticated_client, trigger_log_with_error, feishu_urls
  ):
  """测试获取带错误信息的日志详情。"""
- response = authenticated_client.get(
- feishu_urls.logs_detail(trigger_log_with_error.id)
- )
+ response = authenticated_client.get(feishu_urls.logs_detail(trigger_log_with_error.id))
  assert response.status_code == 200
  data = response.json
  assert data["status"] == "error"
  assert data["error_message"] == "Token 验证失败"
- def test_get_trigger_log_detail_not_found(
- self, authenticated_client, feishu_urls
- ):
+ def test_get_trigger_log_detail_not_found(self, authenticated_client, feishu_urls):
  """测试获取不存在的日志详情。"""
  response = authenticated_client.get(
  feishu_urls.logs_detail("00000000-0000-0000-0000-000000000000")
@@ -178,13 +161,9 @@ class TestTriggerLogDetail:
 @pytest.mark.django_db
 class TestTriggerLogRaw:
  """测试触发日志原始数据 API。"""
- def test_get_trigger_log_raw_success(
- self, authenticated_client, trigger_log, feishu_urls
- ):
+ def test_get_trigger_log_raw_success(self, authenticated_client, trigger_log, feishu_urls):
  """测试获取日志原始数据成功。"""
- response = authenticated_client.get(
- feishu_urls.logs_raw(trigger_log.id)
- )
+ response = authenticated_client.get(feishu_urls.logs_raw(trigger_log.id))
  assert response.status_code == 200
  data = response.json
  # 验证 webhook_request
@@ -193,25 +172,19 @@ class TestTriggerLogRaw:
  # 验证 work_item_response
  assert "work_item_response" in data
  assert data["work_item_response"]["data"][0]["id"] == 12345
- def test_get_trigger_log_raw_empty_data(
- self, authenticated_client, project, feishu_urls
- ):
+ def test_get_trigger_log_raw_empty_data(self, authenticated_client, project, feishu_urls):
  """测试获取空原始数据的日志。"""
  empty_log = TriggerLog.objects.create(
  project=project,
  event_type="TestEvent",
  status=TriggerLogStatus.IGNORED,
  )
- response = authenticated_client.get(
- feishu_urls.logs_raw(empty_log.id)
- )
+ response = authenticated_client.get(feishu_urls.logs_raw(empty_log.id))
  assert response.status_code == 200
  data = response.json
  assert data["webhook_request"] == {}
  assert data["work_item_response"] == {}
- def test_get_trigger_log_raw_not_found(
- self, authenticated_client, feishu_urls
- ):
+ def test_get_trigger_log_raw_not_found(self, authenticated_client, feishu_urls):
  """测试获取不存在日志的原始数据。"""
  response = authenticated_client.get(
  feishu_urls.logs_raw("00000000-0000-0000-0000-000000000000")

@@ -10,9 +10,7 @@ class DAGNode:
  """DAG 节点包装"""
  node: "WorkflowNode"
  incoming: set[str] = field(default_factory=set) # 入边的源节点 ID
- outgoing: dict[str, set[str]] = field(
- default_factory=dict
- ) # {handle: {target_node_ids}}
+ outgoing: dict[str, set[str]] = field(default_factory=dict) # {handle: {target_node_ids}}
  @property
  def id(self) -> str:
  return str(self.node.id)
@@ -107,9 +105,7 @@ class DAG:
  return [self.nodes[sid] for sid in all_successor_ids if sid in self.nodes]
  def topological_sort(self) -> list[DAGNode]:
  """拓扑排序"""
- in_degree = {
- node_id: dag_node.in_degree for node_id, dag_node in self.nodes.items
- }
+ in_degree = {node_id: dag_node.in_degree for node_id, dag_node in self.nodes.items}
  queue = [node_id for node_id, degree in in_degree.items if degree == 0]
  result =
  while queue:

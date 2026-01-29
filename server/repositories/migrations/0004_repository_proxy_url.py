@@ -2,12 +2,17 @@
 from django.db import migrations, models
 class Migration(migrations.Migration):
  dependencies = [
- ('repositories', '0003_alter_repository_git_platform'),
+ ("repositories", "0003_alter_repository_git_platform"),
  ]
  operations = [
  migrations.AddField(
- model_name='repository',
- name='proxy_url',
- field=models.CharField(blank=True, help_text='HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)', max_length=500, null=True),
+ model_name="repository",
+ name="proxy_url",
+ field=models.CharField(
+ blank=True,
+ help_text="HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)",
+ max_length=500,
+ null=True,
+ ),
  ),
  ]

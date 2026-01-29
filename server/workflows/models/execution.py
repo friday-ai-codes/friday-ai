@@ -136,9 +136,7 @@ class WorkflowExecution(models.Model):
  """标记开始执行"""
  self.status = ExecutionStatus.RUNNING
  self.started_at = timezone.now
- self.timeout_at = timezone.now + timezone.timedelta(
- seconds=self.workflow.default_timeout
- )
+ self.timeout_at = timezone.now + timezone.timedelta(seconds=self.workflow.default_timeout)
  self.save(update_fields=["status", "started_at", "timeout_at"])
  def mark_completed(self, output_data: dict | None = None) -> None:
  """标记执行完成"""
@@ -153,9 +151,7 @@ class WorkflowExecution(models.Model):
  self.completed_at = timezone.now
  self.error_message = error
  self.error_node_id = node_id
- self.save(
- update_fields=["status", "completed_at", "error_message", "error_node_id"]
- )
+ self.save(update_fields=["status", "completed_at", "error_message", "error_node_id"])
  def get_context_value(self, key: str, default: Any = None) -> Any:
  """获取上下文变量"""
  return self.context.get(key, default)
@@ -314,9 +310,7 @@ class NodeExecution(models.Model):
  self.completed_at = timezone.now
  self.error_message = error
  self.error_traceback = traceback
- self.save(
- update_fields=["status", "completed_at", "error_message", "error_traceback"]
- )
+ self.save(update_fields=["status", "completed_at", "error_message", "error_traceback"])
  # 更新父执行的统计
  self.workflow_execution.failed_nodes += 1
  self.workflow_execution.save(update_fields=["failed_nodes"])

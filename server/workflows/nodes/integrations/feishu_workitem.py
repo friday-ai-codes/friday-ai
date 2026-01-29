@@ -172,18 +172,18 @@ class FetchWorkItemNode(BaseNode):
  async def _get_repositories(self, project) -> list[dict]:
  """获取项目关联的仓库列表"""
  try:
- repos = await sync_to_async(
- lambda: list(project.repositories.filter(is_active=True))
- )
+ repos = await sync_to_async(lambda: list(project.repositories.filter(is_active=True)))
  repositories =
  for repo in repos:
- repositories.append({
+ repositories.append(
+ {
  "id": str(repo.id),
  "name": repo.name,
  "git_url": repo.git_url,
  "description": repo.description or "",
  "default_branch": repo.default_branch,
- })
+ }
+ )
  return repositories
  except Exception as e:
  logger.warning("get_repositories_failed", error=str(e))
@@ -196,11 +196,13 @@ class FetchWorkItemNode(BaseNode):
  result =
  for key, value in fields.items:
  parsed_value = self._parse_field_value(value)
- result.append({
+ result.append(
+ {
  "key": key,
  "value": parsed_value,
  "raw_value": value, # 保留原始值
- })
+ }
+ )
  return result
  def _parse_field_value(self, value: Any) -> Any:
  """解析字段值

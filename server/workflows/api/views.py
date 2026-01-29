@@ -1,6 +1,4 @@
 """Workflows API views."""
-import asyncio
-from typing import Any
 import structlog
 from asgiref.sync import async_to_sync
 from django.db import transaction
@@ -80,12 +78,14 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  if config.get("filter_status"):
  filter_config["cur_work_item_status.state_key"] = config["filter_status"]
  for event_type in event_types:
- configured_triggers.append({
+ configured_triggers.append(
+ {
  "event_type": event_type,
  "filter_config": filter_config,
  "node_id": str(node.id),
  "node_name": node.name,
- })
+ }
+ )
  # Get existing triggers for this workflow
  existing_triggers = {t.event_type: t for t in workflow.triggers.all}
  # Sync triggers
@@ -762,9 +762,7 @@ class WorkflowTriggerViewSet(ModelViewSet):
  return WorkflowTriggerSerializer
  def get_queryset(self):
  queryset = WorkflowTrigger.objects.select_related("workflow")
- workflow_id = self.kwargs.get("workflow_id") or self.request.query_params.get(
- "workflow_id"
- )
+ workflow_id = self.kwargs.get("workflow_id") or self.request.query_params.get("workflow_id")
  if workflow_id:
  queryset = queryset.filter(workflow_id=workflow_id)
  is_active = self.request.query_params.get("is_active")
@@ -904,10 +902,12 @@ class LLMModelsView(APIView):
  models = data.get("data", )
  # Sort models by id for consistent ordering
  models.sort(key=lambda m: m.get("id", ""))
- return Response({
+ return Response(
+ {
  "models": models,
  "count": len(models),
- })
+ }
+ )
  except httpx.TimeoutException:
  return Response(
  {"detail": "请求超时，请检查 API 地址是否正确"},
@@ -937,12 +937,14 @@ class LLMSystemConfigView(APIView):
  """
  from services.claude_config import get_claude_config
  config = get_claude_config
- return Response({
+ return Response(
+ {
  "base_url": config.base_url or "https://api.anthropic.com",
  "model": config.model,
  "has_api_key": bool(config.api_key),
  "source": config.source,
- })
+ }
+ )
 # =============================================================================
 # CodingTask ViewSet
 # =============================================================================
@@ -958,9 +960,7 @@ class CodingTaskViewSet(ModelViewSet):
  return CodingTaskUpdateSerializer
  return CodingTaskSerializer
  def get_queryset(self):
- queryset = CodingTask.objects.select_related(
- "workflow_execution", "repository"
- )
+ queryset = CodingTask.objects.select_related("workflow_execution", "repository")
  # Filter by execution
  execution_id = self.kwargs.get("execution_id") or self.request.query_params.get(
  "execution_id"

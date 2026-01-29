@@ -7,7 +7,7 @@ Tests cover:
 - Integration nodes (HTTP request)
 """
 import pytest
-from workflows.nodes.base import BaseNode, NodePort, NodeResult
+from workflows.nodes.base import NodePort, NodeResult
 from workflows.nodes.registry import NodeRegistry
 # ============================================================================
 # Node Registry Tests

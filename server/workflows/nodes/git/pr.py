@@ -94,9 +94,13 @@ class CreatePRNode(BaseNode):
  try:
  # Build gh pr create command
  cmd = [
- "gh", "pr", "create",
- "--title", title,
- "--base", base_branch,
+ "gh",
+ "pr",
+ "create",
+ "--title",
+ title,
+ "--base",
+ base_branch,
  ]
  if body:
  cmd.extend(["--body", body])
@@ -205,14 +209,20 @@ class MergePRNode(BaseNode):
  if auto_merge:
  # Enable auto-merge
  cmd = [
- "gh", "pr", "merge", pr_number,
+ "gh",
+ "pr",
+ "merge",
+ pr_number,
  "--auto",
  f"--{merge_method}",
  ]
  else:
  # Direct merge
  cmd = [
- "gh", "pr", "merge", pr_number,
+ "gh",
+ "pr",
+ "merge",
+ pr_number,
  f"--{merge_method}",
  ]
  if delete_branch:

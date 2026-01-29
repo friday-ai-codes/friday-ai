@@ -142,8 +142,7 @@ class AIVariableExtractorNode(BaseNode):
  )
  # 构建变量定义描述
  variable_definitions = "\n".join(
- f"- {v['key']} ({v['name']}): {v['desc']}"
- for v in variables_config
+ f"- {v['key']} ({v['name']}): {v['desc']}" for v in variables_config
  )
  # 构建完整提示词
  prompt = EXTRACTION_PROMPT_TEMPLATE.format(

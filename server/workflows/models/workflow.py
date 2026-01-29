@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from django.contrib.auth import get_user_model
 from django.db import models
 if TYPE_CHECKING:
- from workflows.models.node import WorkflowEdge, WorkflowNode
+ pass
 User = get_user_model
 class Workflow(models.Model):
  """工作流模板定义"""

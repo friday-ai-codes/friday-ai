@@ -1,6 +1,5 @@
 """AI Coding Dispatcher node for analyzing requirements and creating coding tasks."""
 import json
-from typing import Any
 import httpx
 import structlog
 from workflows.models.coding_task import CodingTask, CodingTaskStatus
@@ -235,10 +234,12 @@ class AICodingDispatcherNode(BaseNode):
  "medium": "中粒度：每个功能模块一个任务",
  "coarse": "粗粒度：整体实现一个任务",
  }
- repos_desc = "\n".join([
+ repos_desc = "\n".join(
+ [
  f"- {repo['name']}: {repo.get('description', '无描述')} (默认分支: {repo.get('default_branch', 'main')})"
  for repo in repositories
- ])
+ ]
+ )
  prompt = f"""你是一个专业的软件架构师和项目经理。请分析以下需求，并创建编码任务。
 ## 需求信息
 **需求名称**: {work_item_name}
@@ -256,10 +257,10 @@ class AICodingDispatcherNode(BaseNode):
  prompt += f"""## 可用代码仓库
 {repos_desc}
 ## 任务拆分要求
-- 粒度: {granularity_desc.get(task_granularity, '中粒度')}
+- 粒度: {granularity_desc.get(task_granularity, "中粒度")}
 - 最多创建 {max_tasks} 个任务
-- {'需要包含测试任务' if include_tests else '不需要单独的测试任务'}
-- {'AI 自动判断每个任务应该在哪个仓库实现' if auto_assign_repos else '用户将手动分配仓库'}
+- {"需要包含测试任务" if include_tests else "不需要单独的测试任务"}
+- {"AI 自动判断每个任务应该在哪个仓库实现" if auto_assign_repos else "用户将手动分配仓库"}
 ## 请输出 JSON 格式的任务列表
 ```json
 {{

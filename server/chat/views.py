@@ -77,10 +77,7 @@ class ModelsView(APIView):
  # Run async method synchronously
  models = async_to_sync(service.get_models)
  response_data = {
- "models": [
- {"id": m.id, "name": m.name, "created": m.created}
- for m in models
- ]
+ "models": [{"id": m.id, "name": m.name, "created": m.created} for m in models]
  }
  return Response(response_data)
  except ChatServiceError as e:
@@ -130,10 +127,7 @@ class ChatCompletionsView(APIView):
  base_url=base_url or None,
  )
  # Convert message dicts to ChatMessage objects
- messages = [
- ChatMessage(role=m["role"], content=m["content"])
- for m in messages_data
- ]
+ messages = [ChatMessage(role=m["role"], content=m["content"]) for m in messages_data]
  # Run async method synchronously
  result = async_to_sync(service.chat_completion)(
  messages=messages,

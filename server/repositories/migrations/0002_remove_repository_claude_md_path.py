@@ -2,11 +2,11 @@
 from django.db import migrations
 class Migration(migrations.Migration):
  dependencies = [
- ('repositories', '0001_initial'),
+ ("repositories", "0001_initial"),
  ]
  operations = [
  migrations.RemoveField(
- model_name='repository',
- name='claude_md_path',
+ model_name="repository",
+ name="claude_md_path",
  ),
  ]

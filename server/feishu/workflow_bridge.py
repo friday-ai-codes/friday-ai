@@ -3,7 +3,6 @@ This module provides the bridge layer that converts Feishu webhook events
 to Workflow operations, enabling gradual migration from Task to Workflow.
 """
 import uuid as uuid_lib
-from datetime import datetime
 from typing import Any
 import jsonschema
 import structlog
@@ -118,7 +117,9 @@ class FeishuWorkflowBridge:
  lambda: NodeExecution.objects.filter(
  workflow_execution=execution,
  status=NodeExecutionStatus.WAITING_APPROVAL,
- ).select_related("node").first
+ )
+ .select_related("node")
+ .first
  )
  if not node_execution:
  logger.warning(
@@ -140,9 +141,7 @@ class FeishuWorkflowBridge:
  approved=approved,
  )
  return True
- async def _find_active_execution(
- self, work_item_id: str
- ) -> WorkflowExecution | None:
+ async def _find_active_execution(self, work_item_id: str) -> WorkflowExecution | None:
  """Find active WorkflowExecution by work_item_id.
  Searches in both context and input_data for the work_item_id.
  """
@@ -186,7 +185,9 @@ class FeishuWorkflowBridge:
  NodeExecutionStatus.RUNNING,
  NodeExecutionStatus.WAITING_APPROVAL,
  ],
- ).select_related("node").first
+ )
+ .select_related("node")
+ .first
  )
  return {
  "execution_id": str(execution.id),
@@ -214,7 +215,6 @@ class FeishuWorkflowBridge:
  Returns:
  List of created WorkflowExecution instances
  """
- from workflows.engine.scheduler import WorkflowEngine
  # Find matching triggers for this project and event type
  triggers = await sync_to_async(
  lambda: list(
@@ -419,9 +419,7 @@ class FeishuWorkflowBridge:
  if event_type:
  enriched_input["event_type"] = event_type
  # Validate against workflow's triggers' input_schema if any
- triggers = await sync_to_async(
- lambda: list(workflow.triggers.filter(is_active=True))
- )
+ triggers = await sync_to_async(lambda: list(workflow.triggers.filter(is_active=True)))
  for trigger in triggers:
  if trigger.input_schema:
  errors = self._validate_input(input_data, trigger.input_schema)

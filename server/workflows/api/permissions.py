@@ -13,9 +13,7 @@ class WorkflowPermission(BasePermission):
  def has_permission(self, request: Request, view: APIView) -> bool:
  # All authenticated users can list/create
  return request.user and request.user.is_authenticated
- def has_object_permission(
- self, request: Request, view: APIView, obj: Workflow
- ) -> bool:
+ def has_object_permission(self, request: Request, view: APIView, obj: Workflow) -> bool:
  user = request.user
  # Superuser can do anything
  if user.is_superuser:
@@ -77,9 +75,7 @@ class ApprovalPermission(BasePermission):
  """
  def has_permission(self, request: Request, view: APIView) -> bool:
  return request.user and request.user.is_authenticated
- def has_object_permission(
- self, request: Request, view: APIView, obj: NodeExecution
- ) -> bool:
+ def has_object_permission(self, request: Request, view: APIView, obj: NodeExecution) -> bool:
  user = request.user
  if user.is_superuser:
  return True

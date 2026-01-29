@@ -181,9 +181,7 @@ class ContainerExecutor:
  except APIError as e:
  logger.error("docker_api_error", error=str(e))
  raise RuntimeError(f"Failed to start container: {e}")
- async def wait_for_completion(
- self, container_id: str, timeout: int = 3600
- ) -> ExecutionResult:
+ async def wait_for_completion(self, container_id: str, timeout: int = 3600) -> ExecutionResult:
  """Wait for container to complete.
  Args:
  container_id: Docker container ID
@@ -203,9 +201,7 @@ class ContainerExecutor:
  )
  try:
  # Wait for container to exit
- result = await asyncio.wait_for(
- asyncio.to_thread(container.wait), timeout=timeout
- )
+ result = await asyncio.wait_for(asyncio.to_thread(container.wait), timeout=timeout)
  duration = time.time - start_time
  logs = await self.get_logs(container_id, tail=500)
  exit_code = result.get("StatusCode", -1)
@@ -240,9 +236,7 @@ class ContainerExecutor:
  duration=float(timeout),
  container_id=container_id,
  )
- async def stop_execution(
- self, container_id: str, force: bool = False
- ) -> bool:
+ async def stop_execution(self, container_id: str, force: bool = False) -> bool:
  """Stop a running container.
  Args:
  container_id: Docker container ID
@@ -298,9 +292,7 @@ class ContainerExecutor:
  }
  except docker.errors.NotFound:
  return None
- async def cleanup_finished_containers(
- self, older_than_hours: int = 24
- ) -> int:
+ async def cleanup_finished_containers(self, older_than_hours: int = 24) -> int:
  """Clean up finished containers.
  Args:
  older_than_hours: Only cleanup containers older than this
@@ -399,9 +391,7 @@ class ContainerExecutor:
  with open(result_file) as f:
  return json.load(f)
  except Exception as e:
- logger.warning(
- "read_result_file_failed", execution_id=execution_id, error=str(e)
- )
+ logger.warning("read_result_file_failed", execution_id=execution_id, error=str(e))
  return None
 # Singleton instance
 _executor: ContainerExecutor | None = None
