@@ -1,6 +1,7 @@
 """Feishu work item integration node."""
 from typing import Any
 import structlog
+from asgiref.sync import sync_to_async
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -11,25 +12,14 @@ from workflows.nodes.base import (
 )
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger
-# 预设字段映射：用户友好名称 -> 飞书字段 key
-PRESET_FIELD_MAPPING = {
- "description": "description", # 需求描述
- "prd_url": "field_prd_url", # 需求文档链接
- "tech_doc_url": "field_tech_doc", # 技术方案文档链接
- "priority": "priority", # 优先级
- "assignee": "assignee", # 负责人
- "due_date": "due_date", # 截止日期
- "story_point": "story_point", # 故事点
-}
 @register_node
 class FetchWorkItemNode(BaseNode):
  """获取工作项详情节点
- 从飞书获取工作项详细信息，提取指定字段，
- 并可设置为全局参数供后续节点使用。
+ 从飞书获取工作项完整 JSON 数据，输出供后续节点（如变量提取）使用。
  """
  node_type = "fetch_work_item"
  display_name = "获取工作项详情"
- description = "从飞书获取工作项详情，提取关键字段"
+ description = "从飞书获取工作项完整 JSON 数据"
  icon = "download"
  category = NodeCategory.INTEGRATION
  config_schema = {
@@ -45,36 +35,8 @@ class FetchWorkItemNode(BaseNode):
  "type": "string",
  "title": "工作项类型",
  "description": "飞书工作项类型",
- "enum": ["story", "task", "bug", "epic", "feature"],
- "default": "story",
- },
- "extract_fields": {
- "type": "array",
- "title": "提取字段",
- "description": "要提取的字段列表",
- "items": {
- "type": "string",
- "enum": list(PRESET_FIELD_MAPPING.keys),
- },
- "default": ["description", "prd_url", "tech_doc_url"],
- },
- "set_global_params": {
- "type": "boolean",
- "title": "设置为全局参数",
- "description": "将提取的字段设置为全局参数，供后续节点通过 {{global.xxx}} 引用",
- "default": True,
- },
- "include_project_info": {
- "type": "boolean",
- "title": "包含项目信息",
- "description": "在输出中包含项目 ID 和名称",
- "default": True,
- },
- "include_repositories": {
- "type": "boolean",
- "title": "包含仓库信息",
- "description": "获取并包含项目关联的代码仓库列表",
- "default": True,
+ "enum": ["story", "task", "bug", "epic", "feature", ""],
+ "default": "",
  },
  },
  "required": ["work_item_id"],
@@ -85,7 +47,7 @@ class FetchWorkItemNode(BaseNode):
  label="输入",
  port_type=PortType.OBJECT,
  required=False,
- description="上游节点输出，可包含 work_item_id",
+ description="上游节点输出，可包含 work_item_id 和 work_item_type",
  ),
  ]
  outputs = [
@@ -93,7 +55,7 @@ class FetchWorkItemNode(BaseNode):
  name="default",
  label="工作项详情",
  port_type=PortType.OBJECT,
- description="包含工作项信息和提取的字段",
+ description="完整的工作项 JSON 数据",
  ),
  NodePort(
  name="error",
@@ -103,15 +65,10 @@ class FetchWorkItemNode(BaseNode):
  ),
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:
- """获取工作项详情并提取字段"""
+ """获取工作项详情，输出完整 JSON"""
  config = context.node_config
- # 解析配置
+ # 解析 work_item_id
  work_item_id_str = context.render_template(config.get("work_item_id", ""))
- work_item_type = config.get("work_item_type", "story")
- extract_fields = config.get("extract_fields", ["description", "prd_url", "tech_doc_url"])
- set_global_params = config.get("set_global_params", True)
- include_project_info = config.get("include_project_info", True)
- include_repositories = config.get("include_repositories", True)
  # 验证 work_item_id
  if not work_item_id_str:
  return NodeResult(
@@ -127,6 +84,11 @@ class FetchWorkItemNode(BaseNode):
  error=f"工作项 ID 格式错误: {work_item_id_str}",
  next_handle="error",
  )
+ # 解析 work_item_type：优先用配置，其次用触发器数据
+ work_item_type = config.get("work_item_type", "")
+ if not work_item_type or work_item_type == "__auto__":
+ # 从触发器数据获取
+ work_item_type = context.get_trigger_data("work_item_type", "story")
  # 获取项目信息
  project = await self._get_project(context)
  if not project:
@@ -135,9 +97,13 @@ class FetchWorkItemNode(BaseNode):
  error="无法获取项目信息，请确保工作流关联了项目",
  next_handle="error",
  )
- project_key = context.get_input("project_key", "") or context.get_trigger_data("project_key", "")
- if not project_key:
- project_key = project.feishu_project_key or ""
+ # 获取 project_key
+ project_key = (
+ context.get_input("project_key", "")
+ or context.get_trigger_data("project_key", "")
+ or project.feishu_project_key
+ or ""
+ )
  if not project_key:
  return NodeResult(
  status="failed",
@@ -153,55 +119,32 @@ class FetchWorkItemNode(BaseNode):
  work_item_id=work_item_id,
  work_item_type=work_item_type,
  )
- # 构建输出
+ # 构建完整的输出 JSON
+ # 结构与飞书事件触发器的 payload 类似，方便变量提取节点使用相同的 JSONPath
  output: dict[str, Any] = {
- "work_item_id": work_item.id,
- "work_item_name": work_item.name,
- "work_item_type": work_item.work_item_type,
+ "id": work_item.id,
+ "name": work_item.name,
+ "description": work_item.description,
  "status": work_item.status,
  "project_key": project_key,
- }
- # 提取预设字段
- extracted_fields: dict[str, Any] = {}
- for field_name in extract_fields:
- feishu_field_key = PRESET_FIELD_MAPPING.get(field_name, field_name)
- if field_name == "description":
- # 描述已经在 work_item.description 中解析
- extracted_fields[field_name] = work_item.description
- else:
- # 从 fields 字典中获取
- field_value = work_item.fields.get(feishu_field_key)
- extracted_fields[field_name] = self._parse_field_value(field_value)
- output["extracted_fields"] = extracted_fields
- output.update(extracted_fields) # 也在顶层输出
- # 包含项目信息
- if include_project_info:
- output["project_id"] = str(project.id)
- output["project_name"] = project.name
- # 获取仓库信息
- if include_repositories:
- repositories = await self._get_repositories(project)
- output["repositories"] = repositories
- # 设置全局参数
- if set_global_params:
- global_params = {
- "work_item_id": work_item.id,
- "work_item_name": work_item.name,
  "work_item_type": work_item.work_item_type,
- "project_key": project_key,
+ # 将 fields 数组转为更易用的结构
+ "fields": self._normalize_fields(work_item.fields),
+ # 保留原始 fields dict 供高级用户使用
+ "raw_fields": work_item.fields,
+ # 项目信息
+ "project": {
+ "id": str(project.id),
+ "name": project.name,
+ },
+ # 仓库信息
+ "repositories": await self._get_repositories(project),
  }
- global_params.update(extracted_fields)
- if include_project_info:
- global_params["project_id"] = str(project.id)
- global_params["project_name"] = project.name
- if include_repositories:
- global_params["repositories"] = repositories
- context.update_global_params(global_params)
  logger.info(
  "work_item_fetched",
  work_item_id=work_item.id,
  work_item_name=work_item.name,
- extracted_fields=list(extracted_fields.keys),
+ project_key=project_key,
  )
  return NodeResult(
  status="completed",
@@ -221,17 +164,19 @@ class FetchWorkItemNode(BaseNode):
  )
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
- # 从 workflow_execution 获取 workflow，再获取 project
  if context.workflow_execution:
- workflow = context.workflow_execution.workflow
+ workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
  if workflow:
- return workflow.project
+ return await sync_to_async(lambda: workflow.project)
  return None
  async def _get_repositories(self, project) -> list[dict]:
  """获取项目关联的仓库列表"""
  try:
+ repos = await sync_to_async(
+ lambda: list(project.repositories.filter(is_active=True))
+ )
  repositories =
- for repo in project.repositories.filter(is_active=True):
+ for repo in repos:
  repositories.append({
  "id": str(repo.id),
  "name": repo.name,
@@ -243,6 +188,20 @@ class FetchWorkItemNode(BaseNode):
  except Exception as e:
  logger.warning("get_repositories_failed", error=str(e))
  return
+ def _normalize_fields(self, fields: dict[str, Any]) -> list[dict[str, Any]]:
+ """将 fields dict 转换为数组格式，与飞书事件 payload 保持一致
+ 输出格式: [{"key": "description", "value": "..."}, ...]
+ 这样可以使用相同的 JSONPath: $.fields[?(@.key=='description')].value
+ """
+ result =
+ for key, value in fields.items:
+ parsed_value = self._parse_field_value(value)
+ result.append({
+ "key": key,
+ "value": parsed_value,
+ "raw_value": value, # 保留原始值
+ })
+ return result
  def _parse_field_value(self, value: Any) -> Any:
  """解析字段值
  飞书字段值可能是复杂结构，需要提取实际值

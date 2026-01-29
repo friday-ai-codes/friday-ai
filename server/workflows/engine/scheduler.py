@@ -58,8 +58,17 @@ class WorkflowEngine:
  triggered_by=None,
  trigger_type: str = "manual",
  trigger_data: dict | None = None,
+ execution: WorkflowExecution | None = None,
  ) -> WorkflowExecution:
- """启动工作流执行"""
+ """启动工作流执行
+ Args:
+ workflow: 工作流实例
+ input_data: 输入数据
+ triggered_by: 触发者
+ trigger_type: 触发类型
+ trigger_data: 触发数据
+ execution: 可选的已创建执行实例（如果提供则复用，否则创建新的）
+ """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
  # 检查并发限制
@@ -74,7 +83,8 @@ class WorkflowEngine:
  raise ValueError(
  f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})"
  )
- # 创建执行实例
+ # 使用已有执行实例或创建新的
+ if execution is None:
  execution = await sync_to_async(WorkflowExecution.objects.create)(
  workflow=workflow,
  status=ExecutionStatus.PENDING,
@@ -88,6 +98,10 @@ class WorkflowEngine:
  "started_at": timezone.now.isoformat,
  },
  )
+ else:
+ # 确保执行状态正确
+ execution.status = ExecutionStatus.PENDING
+ await sync_to_async(execution.save)(update_fields=["status"])
  # 构建 DAG
  dag = await sync_to_async(DAG.from_workflow)(workflow)
  errors = dag.validate
@@ -257,8 +271,7 @@ class WorkflowEngine:
  node=node,
  )
  try:
- node_execution.input_data = input_data
- await sync_to_async(node_execution.mark_started)
+ await sync_to_async(node_execution.mark_started)(input_data)
  await self.hooks.trigger(
  "node_started",
  execution=execution,

@@ -3,10 +3,18 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
 import jsonschema
 if TYPE_CHECKING:
  from workflows.models import NodeExecution, WorkflowExecution
+class GlobalVariable(TypedDict, total=False):
+ """全局变量结构"""
+ key: str # 变量标识符
+ name: str # 显示名称
+ desc: str # 描述（选填）
+ value: Any # 变量值
+ required: bool # 是否必填
+ source_node: str # 来源节点 ID
 class NodeCategory(str, Enum):
  """节点分类"""
  TRIGGER = "trigger" # 触发器
@@ -126,6 +134,72 @@ class ExecutionContext:
  if "global_params" not in self.workflow_context:
  self.workflow_context["global_params"] = {}
  self.workflow_context["global_params"].update(data)
+ # ===== 全局变量管理（带元数据） =====
+ def set_global_variable(
+ self,
+ key: str,
+ name: str,
+ value: Any,
+ desc: str = "",
+ required: bool = False,
+ ) -> None:
+ """设置全局变量（带元数据）
+ Args:
+ key: 变量标识符，用于在模板中引用
+ name: 显示名称
+ value: 变量值
+ desc: 描述信息
+ required: 是否必填
+ """
+ variable: GlobalVariable = {
+ "key": key,
+ "name": name,
+ "value": value,
+ "desc": desc,
+ "required": required,
+ "source_node": self.node_id,
+ }
+ # 存储到 workflow_execution.context['global_variables']
+ if self.workflow_execution:
+ self.workflow_execution.set_global_variable(key, variable)
+ # 同时更新本地 context
+ if "global_variables" not in self.workflow_context:
+ self.workflow_context["global_variables"] = {}
+ self.workflow_context["global_variables"][key] = variable
+ # 同时更新 global_params 以保持向后兼容
+ self.set_global_param(key, value)
+ def get_global_variable(self, key: str) -> GlobalVariable | None:
+ """获取全局变量（含元数据）
+ Args:
+ key: 变量标识符
+ Returns:
+ GlobalVariable 或 None
+ """
+ if self.workflow_execution:
+ return self.workflow_execution.get_global_variable(key)
+ global_vars = self.workflow_context.get("global_variables", {})
+ return global_vars.get(key)
+ def get_global_variable_value(self, key: str, default: Any = None) -> Any:
+ """获取全局变量的值
+ Args:
+ key: 变量标识符
+ default: 默认值
+ Returns:
+ 变量值
+ """
+ var = self.get_global_variable(key)
+ if var is not None:
+ return var.get("value", default)
+ # 回退到 global_params
+ return self.get_global_param(key, default)
+ def get_all_global_variables(self) -> dict[str, GlobalVariable]:
+ """获取所有全局变量
+ Returns:
+ {key: GlobalVariable} 字典
+ """
+ if self.workflow_execution:
+ return self.workflow_execution.get_all_global_variables
+ return self.workflow_context.get("global_variables", {})
  def render_template(self, template: str) -> str:
  """渲染模板字符串，支持变量替换
  支持格式：
@@ -150,7 +224,13 @@ class ExecutionContext:
  key = ".".join(parts[2:])
  return str(self.get_previous_output(node_id, key, ""))
  elif parts[0] == "global":
- return str(self.get_global_param(".".join(parts[1:]), ""))
+ # 优先从全局变量获取值
+ var_key = ".".join(parts[1:])
+ value = self.get_global_variable_value(var_key, None)
+ if value is not None:
+ return str(value)
+ # 回退到 global_params
+ return str(self.get_global_param(var_key, ""))
  elif parts[0] == "trigger":
  return str(self.get_trigger_data(".".join(parts[1:]), ""))
  return match.group(0) # 无法解析则保持原样
