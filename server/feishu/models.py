@@ -42,14 +42,6 @@ class TriggerLog(models.Model):
  default=TriggerLogStatus.ACCEPTED,
  )
  error_message = models.TextField(blank=True, null=True)
- # Task reference (optional)
- task = models.ForeignKey(
- "tasks.Task",
- on_delete=models.SET_NULL,
- null=True,
- blank=True,
- related_name="trigger_logs",
- )
  created_at = models.DateTimeField(auto_now_add=True)
  class Meta:
  db_table = "trigger_logs"

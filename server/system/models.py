@@ -17,4 +17,5 @@ class SettingKeys:
  """Predefined setting keys."""
  ANTHROPIC_API_KEY = "anthropic_api_key"
  ANTHROPIC_BASE_URL = "anthropic_base_url"
+ ANTHROPIC_MODEL = "anthropic_model"
  GIT_HTTP_PROXY = "git_http_proxy"

@@ -13,6 +13,7 @@ declare module 'vue' {
  ActionNode: typeof import('./components/workflow/nodes/ActionNode.vue')['default']
  AICodingDispatcherConfig: typeof import('./components/workflow/config/AICodingDispatcherConfig.vue')['default']
  AICodingDispatcherNode: typeof import('./components/workflow/nodes/AICodingDispatcherNode.vue')['default']
+ AIModelConfig: typeof import('./components/workflow/config/AIModelConfig.vue')['default']
  AIPromptConfig: typeof import('./components/workflow/config/AIPromptConfig.vue')['default']
  AIPromptNode: typeof import('./components/workflow/nodes/AIPromptNode.vue')['default']
  AlertDialog: typeof import('./components/ui/alert-dialog/AlertDialog.vue')['default']

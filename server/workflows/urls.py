@@ -5,6 +5,8 @@ from workflows.api.callbacks import NodeExecutionCallbackView
 from workflows.api.views import (
  CodingTaskViewSet,
  ExecutionContextView,
+ LLMModelsView,
+ LLMSystemConfigView,
  ManualTriggerView,
  NodeExecutionViewSet,
  NodeSchemaListView,
@@ -72,5 +74,17 @@ urlpatterns = router.urls + [
  "workflow-executions/<uuid:execution_id>/coding-tasks/",
  CodingTaskViewSet.as_view({"get": "list"}),
  name="execution-coding-tasks",
+ ),
+ # LLM models query endpoint
+ path(
+ "workflows/llm/models/",
+ LLMModelsView.as_view,
+ name="llm-models",
+ ),
+ # LLM system config endpoint
+ path(
+ "workflows/llm/config/",
+ LLMSystemConfigView.as_view,
+ name="llm-config",
  ),
 ]

@@ -6,7 +6,6 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from projects.models import Project
 from repositories.models import Repository
-from tasks.models import Task, TaskStatus
 User = get_user_model
 # ============================================================================
 # API Client Fixtures
@@ -84,39 +83,6 @@ def project_without_repo(db):
  feishu_project_key="no-repo-project-key",
  )
 # ============================================================================
-# Task Fixtures
-# ============================================================================
-@pytest.fixture
-def task(db, project):
- """创建测试任务。"""
- return Task.objects.create(
- project=project,
- title="Test Task",
- description="A test task description",
- work_item_id="12345",
- status=TaskStatus.PENDING,
- )
-@pytest.fixture
-def task_with_repository(db, project, repository):
- """创建带仓库的测试任务。"""
- return Task.objects.create(
- project=project,
- repository=repository,
- title="Task With Repo",
- description="A task with repository",
- work_item_id="67890",
- status=TaskStatus.PENDING,
- )
-@pytest.fixture
-def planning_task(db, project):
- """创建处于 PLANNING 状态的任务。"""
- return Task.objects.create(
- project=project,
- title="Planning Task",
- work_item_id="planning-task-001",
- status=TaskStatus.PLANNING,
- )
-# ============================================================================
 # URL Helper Fixtures
 # ============================================================================
 @pytest.fixture
@@ -162,32 +128,6 @@ def urls:
  @staticmethod
  def repository_credential(repo_id):
  return reverse("repository-credential", args=[repo_id])
- # Tasks
- task_list = reverse("task-list")
- @staticmethod
- def task_detail(task_id):
- return reverse("task-detail", args=[task_id])
- @staticmethod
- def task_work_item(work_item_id):
- return f"/api/tasks/work-item/{work_item_id}"
- @staticmethod
- def task_transition(task_id, target_status):
- return f"/api/tasks/{task_id}/transition/{target_status}"
- @staticmethod
- def task_execute(task_id):
- return f"/api/tasks/{task_id}/execute"
- @staticmethod
- def task_stop(task_id):
- return f"/api/tasks/{task_id}/stop"
- @staticmethod
- def task_logs(task_id):
- return f"/api/tasks/{task_id}/logs"
- @staticmethod
- def task_container_status(task_id):
- return f"/api/tasks/{task_id}/container-status"
- @staticmethod
- def task_status_callback(task_id):
- return f"/api/tasks/{task_id}/status"
- # Feishu webhooks (moved from webhooks app)
+ # Feishu webhooks
  feishu_webhook = "/api/feishu/webhook"
  return URLs

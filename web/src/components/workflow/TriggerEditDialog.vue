@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import type { TriggerEventType, WorkflowTrigger, WorkflowTriggerCreate } from '~/types'
+import { computed, ref, watch } from 'vue'
+import { createTrigger, updateTrigger } from '~/api/workflow'
 import { Button } from '~/components/ui/button'
 import {
  Dialog,
@@ -20,8 +22,6 @@ import {
 } from '~/components/ui/select'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
-import { createTrigger, updateTrigger } from '~/api/workflow'
-import type { WorkflowTrigger, WorkflowTriggerCreate, TriggerEventType } from '~/types'
 interface Props {
  open: boolean
  workflowId: string
@@ -43,7 +43,7 @@ const formData = ref<WorkflowTriggerCreate>({
  description: '',
 })
 // 事件类型选项
-const eventTypeOptions: Array<{ value: TriggerEventType; label: string }> = [
+const eventTypeOptions: Array<{ value: TriggerEventType, label: string }> = [
  { value: 'WorkitemCreateEvent', label: '工作项创建' },
  { value: 'WorkitemStatusEvent', label: '状态变更' },
  { value: 'WorkitemCommentEvent', label: '评论事件' },
@@ -82,9 +82,10 @@ watch( => props.trigger, (trigger) => {
  description: trigger.description,
  }
  filterProjectKey.value = trigger.filter_config?.project_key || ''
- filterWorkItemType.value = trigger.filter_config?.work_item_type || ''
+ filterWorkItemType.value = trigger.filter_config?.work_item_type || '__all__'
  filterStatus.value = trigger.filter_config?.status || ''
- } else {
+ }
+ else {
  resetForm
  }
 }, { immediate: true })
@@ -100,7 +101,7 @@ function buildFilterConfig: Record<string, any> {
  if (filterProjectKey.value) {
  config.project_key = filterProjectKey.value
  }
- if (filterWorkItemType.value) {
+ if (filterWorkItemType.value && filterWorkItemType.value !== '__all__') {
  config.work_item_type = filterWorkItemType.value
  }
  if (filterStatus.value) {
@@ -119,14 +120,17 @@ async function handleSave {
  let result: WorkflowTrigger
  if (isEdit.value && props.trigger) {
  result = await updateTrigger(props.workflowId, props.trigger.id, data)
- } else {
+ }
+ else {
  result = await createTrigger(props.workflowId, data)
  }
  emit('saved', result)
  emit('update:open', false)
- } catch (error) {
+ }
+ catch (error) {
  console.error('Failed to save trigger:', error)
- } finally {
+ }
+ finally {
  saving.value = false
  }
 }
@@ -188,10 +192,18 @@ function handleClose {
  <SelectValue placeholder="全部类型" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">全部类型</SelectItem>
- <SelectItem value="story">需求 (Story)</SelectItem>
- <SelectItem value="task">任务 (Task)</SelectItem>
- <SelectItem value="bug">缺陷 (Bug)</SelectItem>
+ <SelectItem value="__all__">
+ 全部类型
+ </SelectItem>
+ <SelectItem value="story">
+ 需求 (Story)
+ </SelectItem>
+ <SelectItem value="task">
+ 任务 (Task)
+ </SelectItem>
+ <SelectItem value="bug">
+ 缺陷 (Bug)
+ </SelectItem>
  </SelectContent>
  </Select>
  </div>
@@ -215,7 +227,7 @@ function handleClose {
  <!-- 启用状态 -->
  <div class="flex items-center justify-between">
  <Label>启用触发器</Label>
- <Switch v-model:checked="formData.is_active" />
+ <Switch v-model="formData.is_active" />
  </div>
  </div>
  <DialogFooter>

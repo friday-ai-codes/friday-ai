@@ -119,26 +119,10 @@ export async function retryTriggerLog(logId: string): Promise<{
 }> {
  return post(`/feishu/logs/${logId}/retry`)
 }
-// ============ 兼容性别名（旧 API，已废弃） ============
-/** @deprecated 使用 TriggerLogStatus 替代 */
-export type WebhookLogStatus = TriggerLogStatus
-/** @deprecated 使用 TriggerLog 替代 */
-export type WebhookLog = TriggerLog
-/** @deprecated 使用 TriggerLogDetail 替代 */
-export type WebhookLogDetail = TriggerLogDetail
-/** @deprecated 使用 TriggerLogQuery 替代 */
-export type WebhookLogQuery = TriggerLogQuery
-/** @deprecated 使用 listTriggerLogs 替代 */
-export const listWebhookLogs = listTriggerLogs
-/** @deprecated 使用 getTriggerLog 替代 */
-export const getWebhookLog = getTriggerLog
 export default {
  listTriggerLogs,
  getTriggerLog,
  getTriggerLogRaw,
  deleteTriggerLog,
  retryTriggerLog,
- // 兼容性别名
- listWebhookLogs,
- getWebhookLog,
 }

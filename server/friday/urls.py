@@ -23,8 +23,6 @@ api_patterns = [
  path("projects/", include("projects.urls")),
  # Repositories
  path("repositories/", include("repositories.urls")),
- # Tasks
- path("tasks/", include("tasks.urls")),
  # Feishu integration (webhook + logs)
  path("feishu/", include("feishu.urls")),
  # System settings

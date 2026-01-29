@@ -469,7 +469,7 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  triggered_by_name = serializers.CharField(
  source="triggered_by.username", read_only=True, allow_null=True
  )
- node_executions = NodeExecutionListSerializer(many=True, read_only=True)
+ node_executions = NodeExecutionSerializer(many=True, read_only=True)
  duration = serializers.FloatField(read_only=True)
  progress = serializers.FloatField(read_only=True)
  class Meta:
@@ -478,7 +478,6 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  "id",
  "workflow",
  "workflow_name",
- "task",
  "status",
  "trigger_type",
  "triggered_by",
@@ -504,7 +503,6 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  read_only_fields = [
  "id",
  "workflow",
- "task",
  "status",
  "triggered_by",
  "trigger_data",

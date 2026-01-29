@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AIPromptConfig } from '~/types/workflow'
 import { computed } from 'vue'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -10,11 +11,11 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { Separator } from '~/components/ui/separator'
 import { Slider } from '~/components/ui/slider'
 import { Textarea } from '~/components/ui/textarea'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
- AI_MODELS,
  aiPromptConfigSchema,
  OUTPUT_FORMATS,
 } from '~/types/workflow'
@@ -36,10 +37,17 @@ const { field } = useConfigModel({
  emit: v => emit('update:config', v),
  schema: aiPromptConfigSchema,
 })
-// 简单字段使用 field 一行搞定
+// API 配置
+const useCustomApi = computed({
+ get: => props.config.use_custom_api ?? false,
+ set: v => emit('update:config', { ...props.config, use_custom_api: v }),
+})
+const apiBaseUrl = field('api_base_url', '')
+const apiKey = field('api_key', '')
+const model = field('model', 'claude-sonnet-4-20250514')
+// 提示词配置
 const systemPrompt = field('system_prompt', '')
 const userPrompt = field('user_prompt', '')
-const model = field('model', 'claude-3-5-sonnet-20241022')
 const maxTokens = field('max_tokens', 4096)
 const outputFormat = field('output_format', 'text')
 // Slider 需要数组格式的特殊处理
@@ -50,6 +58,14 @@ const temperature = computed({
 </script>
 <template>
  <div class="space-y-4">
+ <!-- AI 模型配置（通用组件） -->
+ <AIModelConfig
+ v-model:use-custom-api="useCustomApi"
+ v-model:api-base-url="apiBaseUrl"
+ v-model:api-key="apiKey"
+ v-model:model="model"
+ />
+ <Separator />
  <!-- System Prompt -->
  <div class="space-y-2">
  <Label>系统提示词</Label>
@@ -79,22 +95,6 @@ const temperature = computed({
  <code class="bg-secondary px-1 rounded">{{ '\{\{ input.xxx \}\}' }}</code>、
  <code class="bg-secondary px-1 rounded">{{ '\{\{ nodes.nodeId.xxx \}\}' }}</code>
  </p>
- </div>
- <!-- 模型选择 -->
- <div class="space-y-2">
- <Label>模型</Label>
- <Select v-model="model">
- <SelectTrigger>
- <SelectValue placeholder="选择模型" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="option in AI_MODELS":key="option.value":value="option.value"
- >
- {{ option.label }}
- </SelectItem>
- </SelectContent>
- </Select>
  </div>
  <!-- 温度 -->
  <div class="space-y-2">

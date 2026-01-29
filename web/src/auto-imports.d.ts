@@ -341,9 +341,6 @@ declare global {
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
  // @ts-ignore
- export type { TaskCompat } from './stores/tasksCompat'
- import('./stores/tasksCompat')
- // @ts-ignore
  export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
  // @ts-ignore
@@ -479,7 +476,6 @@ declare module 'vue' {
  readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>
  readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
  readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>
- readonly useApi: UnwrapRef<typeof import('./composables/useApi')['useApi']>
  readonly useArrayDifference: UnwrapRef<typeof import('@vueuse/core')['useArrayDifference']>
  readonly useArrayEvery: UnwrapRef<typeof import('@vueuse/core')['useArrayEvery']>
  readonly useArrayFilter: UnwrapRef<typeof import('@vueuse/core')['useArrayFilter']>
@@ -623,8 +619,6 @@ declare module 'vue' {
  readonly useStyleTag: UnwrapRef<typeof import('@vueuse/core')['useStyleTag']>
  readonly useSupported: UnwrapRef<typeof import('@vueuse/core')['useSupported']>
  readonly useSwipe: UnwrapRef<typeof import('@vueuse/core')['useSwipe']>
- readonly useTasksCompatStore: UnwrapRef<typeof import('./stores/tasksCompat')['useTasksCompatStore']>
- readonly useTasksStore: UnwrapRef<typeof import('./stores/tasks')['useTasksStore']>
  readonly useTemplateRef: UnwrapRef<typeof import('vue')['useTemplateRef']>
  readonly useTemplateRefsList: UnwrapRef<typeof import('@vueuse/core')['useTemplateRefsList']>
  readonly useTextDirection: UnwrapRef<typeof import('@vueuse/core')['useTextDirection']>

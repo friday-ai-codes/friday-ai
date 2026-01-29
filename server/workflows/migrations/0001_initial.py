@@ -7,7 +7,6 @@ class Migration(migrations.Migration):
  initial = True
  dependencies = [
  ('projects', '0001_initial'),
- ('tasks', '0001_initial'),
  migrations.swappable_dependency(settings.AUTH_USER_MODEL),
  ]
  operations = [
@@ -77,7 +76,6 @@ class Migration(migrations.Migration):
  ('started_at', models.DateTimeField(blank=True, null=True)),
  ('completed_at', models.DateTimeField(blank=True, null=True)),
  ('timeout_at', models.DateTimeField(blank=True, null=True)),
- ('task', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='workflow_executions', to='tasks.task')),
  ('triggered_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL, verbose_name='触发者')),
  ('workflow', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='executions', to='workflows.workflow')),
  ],

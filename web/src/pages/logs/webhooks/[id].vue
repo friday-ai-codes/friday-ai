@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { WebhookLogDetail, WebhookLogStatus } from '~/api/logs'
+import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
+import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
-import { getWebhookLog } from '~/api/logs'
+import { getTriggerLog } from '~/api/logs'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -9,16 +10,17 @@ import { Separator } from '~/components/ui/separator'
 const route = useRoute('/logs/webhooks/[id]')
 const router = useRouter
 const { error: showError, success } = useToast
+const { copy } = useClipboard
 const logId = computed( => route.params.id)
 useHead({
  title: computed( => `Webhook 日志 - Friday AI`),
 })
 // 加载数据
 const loading = ref(true)
-const log = ref<WebhookLogDetail | null>(null)
+const log = ref<TriggerLogDetail | null>(null)
 onMounted(async => {
  try {
- log.value = await getWebhookLog(logId.value)
+ log.value = await getTriggerLog(logId.value)
  }
  catch (e) {
  showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
@@ -28,7 +30,7 @@ onMounted(async => {
  }
 })
 // 获取状态颜色
-function getStatusVariant(status: WebhookLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
+function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
  switch (status) {
  case 'accepted':
  return 'default'
@@ -43,7 +45,7 @@ function getStatusVariant(status: WebhookLogStatus): 'default' | 'secondary' | '
  }
 }
 // 获取状态标签
-function getStatusLabel(status: WebhookLogStatus): string {
+function getStatusLabel(status: TriggerLogStatus): string {
  switch (status) {
  case 'accepted':
  return '已接受'
@@ -65,13 +67,8 @@ function formatDate(dateStr: string) {
 async function copyJson {
  if (!log.value)
  return
- try {
- await navigator.clipboard.writeText(JSON.stringify(log.value.webhook_raw_request_parsed, null, 2))
+ await copy(JSON.stringify(log.value.webhook_raw_request_parsed, null, 2))
  success('复制成功', 'JSON 已复制到剪贴板')
- }
- catch {
- showError('复制失败', '无法复制到剪贴板')
- }
 }
 </script>
 <template>

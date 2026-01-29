@@ -1,5 +1,6 @@
+import { useIntervalFn, useWebSocket } from '@vueuse/core'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import api from '~/api/client'
 export interface NodeExecution {
  id: string
@@ -53,9 +54,36 @@ export const useExecutionsStore = defineStore('executions', => {
  const loading = ref(false)
  const error = ref<string | null>(null)
  // WebSocket connection
- let ws: WebSocket | null = null
- // Auto-refresh timer
- let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+ const wsUrl = ref<string | undefined>(undefined)
+ const { data: wsData, close: wsClose, open: wsOpen } = useWebSocket(wsUrl, {
+ immediate: false,
+ autoReconnect: {
+ retries: 3,
+ delay: 1000,
+ },
+ })
+ // Watch WebSocket messages
+ watch(wsData, (data) => {
+ if (data) {
+ try {
+ const parsed = JSON.parse(data)
+ handleWebSocketMessage(parsed)
+ }
+ catch (e) {
+ console.error('Failed to parse WebSocket message:', e)
+ }
+ }
+ })
+ // Auto-refresh using useIntervalFn
+ const { pause: stopAutoRefresh, resume: startAutoRefresh, isActive: isAutoRefreshing } = useIntervalFn(
+ => {
+ if (hasActiveExecutions.value) {
+ fetchExecutions
+ }
+ },
+ 5000,
+ { immediate: false },
+ )
  // Computed stats
  const stats = computed( => ({
  total: executions.value.length,
@@ -183,36 +211,14 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  }
  function connectWebSocket(executionId: string) {
- if (ws) {
- ws.close
- }
+ // Close existing connection by setting new URL
  const protocol = window.location.protocol === 'https:' ? 'wss:': 'ws:'
- const wsUrl = `${protocol}//${window.location.host}/ws/workflow-executions/${executionId}/`
- ws = new WebSocket(wsUrl)
- ws.onopen = => {
- // WebSocket connected
- }
- ws.onmessage = (event) => {
- try {
- const data = JSON.parse(event.data)
- handleWebSocketMessage(data)
- }
- catch (e) {
- console.error('Failed to parse WebSocket message:', e)
- }
- }
- ws.onerror = (event) => {
- console.error('WebSocket error:', event)
- }
- ws.onclose = => {
- // WebSocket disconnected
- }
+ wsUrl.value = `${protocol}//${window.location.host}/ws/workflow-executions/${executionId}/`
+ wsOpen
  }
  function disconnectWebSocket {
- if (ws) {
- ws.close
- ws = null
- }
+ wsClose
+ wsUrl.value = undefined
  }
  function handleWebSocketMessage(data: any) {
  if (!currentExecution.value)
@@ -252,22 +258,6 @@ export const useExecutionsStore = defineStore('executions', => {
  // Refresh full data on execution complete
  if (event === 'execution_completed' || event === 'execution_failed') {
  fetchExecution(execution_id)
- }
- }
- // Auto-refresh methods
- function startAutoRefresh(interval: number = 5000) {
- if (autoRefreshTimer)
- return
- autoRefreshTimer = setInterval( => {
- if (hasActiveExecutions.value) {
- fetchExecutions
- }
- }, interval)
- }
- function stopAutoRefresh {
- if (autoRefreshTimer) {
- clearInterval(autoRefreshTimer)
- autoRefreshTimer = null
  }
  }
  return {

@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 useHead({
  title: '首页 - Friday AI',
 })
 const projectsStore = useProjectsStore
-const tasksStore = useTasksStore
+const executionsStore = useExecutionsStore
 // 加载数据
 const loading = ref(true)
 onMounted(async => {
  try {
  await Promise.all([
  projectsStore.fetchProjects,
- tasksStore.fetchTasks({ limit: 5 }),
+ executionsStore.fetchExecutions,
  ])
  }
  finally {
@@ -31,39 +32,39 @@ const stats = computed( => [
  link: '/projects',
  },
  {
- title: '任务总数',
- value: tasksStore.stats.total,
+ title: '执行总数',
+ value: executionsStore.stats.total,
  icon: 'lucide--layers',
  iconColor: 'text-violet-500',
  gradient: 'from-violet-500 to-purple-400',
  bgGradient: 'from-violet-500/10 to-purple-400/10',
- link: '/tasks',
+ link: '/executions',
  },
  {
  title: '运行中',
- value: tasksStore.stats.running,
+ value: executionsStore.stats.running,
  icon: 'lucide--zap',
  iconColor: 'text-amber-500',
  gradient: 'from-amber-500 to-orange-400',
  bgGradient: 'from-amber-500/10 to-orange-400/10',
- link: '/tasks?status=planning',
+ link: '/executions?status=running',
  },
  {
- title: '待审核',
- value: tasksStore.stats.review,
+ title: '待审批',
+ value: executionsStore.stats.waitingApproval,
  icon: 'lucide--scan-eye',
  iconColor: 'text-emerald-500',
  gradient: 'from-emerald-500 to-teal-400',
  bgGradient: 'from-emerald-500/10 to-teal-400/10',
- link: '/tasks?status=plan_review',
+ link: '/executions?status=waiting_approval',
  },
 ])
 // 功能特性
 const features = [
  {
  icon: 'lucide--sparkles',
- title: '智能任务执行',
- description: '自动监听飞书工作项，AI 驱动的代码生成与实现',
+ title: '智能工作流',
+ description: '可视化工作流编排，AI 驱动的自动化执行',
  gradient: 'from-blue-500 to-indigo-500',
  },
  {
@@ -74,11 +75,19 @@ const features = [
  },
  {
  icon: 'lucide--git-pull-request-draft',
- title: '人工审核',
- description: '完整的状态流转与审核机制，代码质量完全可控',
+ title: '人工审批',
+ description: '完整的状态流转与审批机制，代码质量完全可控',
  gradient: 'from-violet-500 to-purple-500',
  },
 ]
+// 执行状态配置
+const statusConfig: Record<string, { label: string, color: string }> = {
+ pending: { label: '等待中', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
+ running: { label: '运行中', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+ completed: { label: '已完成', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+ failed: { label: '失败', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+ waiting_approval: { label: '待审批', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+}
 // 格式化日期
 function formatDate(dateStr: string) {
  const date = new Date(dateStr)
@@ -172,7 +181,7 @@ function formatDate(dateStr: string) {
  </div>
  </div>
  </section>
- <!-- 最近任务 -->
+ <!-- 最近执行 -->
  <section class="relative">
  <div class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <!-- 标题栏 -->
@@ -183,21 +192,21 @@ function formatDate(dateStr: string) {
  </div>
  <div>
  <h2 class="text-lg font-semibold">
- 最近任务
+ 最近执行
  </h2>
  <p class="text-sm text-muted-foreground">
- 最近创建的任务列表
+ 最近的工作流执行记录
  </p>
  </div>
  </div>
- <RouterLink to="/tasks">
+ <RouterLink to="/executions">
  <Button variant="ghost" size="sm" class="group">
  查看全部
  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-1 transition-transform" />
  </Button>
  </RouterLink>
  </div>
- <!-- 任务列表 -->
+ <!-- 执行列表 -->
  <div class="">
  <!-- 加载状态 -->
  <div v-if="loading" class="space-y-3">
@@ -211,28 +220,28 @@ function formatDate(dateStr: string) {
  </div>
  </div>
  <!-- 空状态 -->
- <div v-else-if="tasksStore.tasks.length === 0" class="py-16 text-center">
+ <div v-else-if="executionsStore.executions.length === 0" class="py-16 text-center">
  <div class="inline-flex items-center justify-center w-20 rounded-2xl bg-gradient-to-br from-muted to-muted/50 mb-6">
- <span class="icon-[lucide--inbox] text-4xl text-muted-foreground/50" />
+ <span class="icon-[lucide--play-circle] text-4xl text-muted-foreground/50" />
  </div>
  <h3 class="text-lg font-medium text-muted-foreground mb-2">
- 暂无任务
+ 暂无执行记录
  </h3>
  <p class="text-sm text-muted-foreground/70 mb-6">
- 创建你的第一个项目，开始自动化开发之旅
+ 创建工作流并运行，执行记录将显示在这里
  </p>
- <RouterLink to="/projects/new">
+ <RouterLink to="/workflows">
  <Button class="group">
- <span class="icon-[lucide--plus] mr-2" />
- 创建项目
+ <span class="icon-[lucide--workflow] mr-2" />
+ 查看工作流
  <span class="icon-[lucide--arrow-right] ml-2 group-hover:translate-x-1 transition-transform" />
  </Button>
  </RouterLink>
  </div>
- <!-- 任务列表 -->
+ <!-- 执行列表 -->
  <div v-else class="space-y-2">
  <RouterLink
- v-for="(task, index) in tasksStore.tasks.slice(0, 5)":key="task.id":to="`/tasks/${task.id}`"
+ v-for="(execution, index) in executionsStore.executions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
  class="group flex items-center gap-4 rounded-xl hover:bg-gradient-to-r hover:from-muted/50 hover:to-transparent transition-all duration-300"
  >
  <!-- 序号 -->
@@ -242,14 +251,16 @@ function formatDate(dateStr: string) {
  <!-- 内容 -->
  <div class="flex-1 min-w-0">
  <p class="font-medium truncate group-hover:text-primary transition-colors">
- {{ task.title }}
+ {{ execution.workflow_name }}
  </p>
  <p class="text-sm text-muted-foreground">
- {{ formatDate(task.created_at) }}
+ {{ formatDate(execution.created_at) }}
  </p>
  </div>
  <!-- 状态 -->
- <TaskStatusBadge:status="task.status" />
+ <Badge:class="statusConfig[execution.status]?.color || statusConfig.pending.color">
+ {{ statusConfig[execution.status]?.label || execution.status }}
+ </Badge>
  <!-- 箭头 -->
  <span class="icon-[lucide--chevron-right] text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
  </RouterLink>
@@ -266,16 +277,16 @@ function formatDate(dateStr: string) {
  新建项目
  </Button>
  </RouterLink>
- <RouterLink to="/tasks">
+ <RouterLink to="/executions">
  <Button variant="outline" size="lg" class="w-full sm:w-auto group hover:border-primary/50">
- <span class="icon-[lucide--layout-list] mr-2 group-hover:text-primary transition-colors" />
- 查看任务
+ <span class="icon-[lucide--play-circle] mr-2 group-hover:text-primary transition-colors" />
+ 执行监控
  </Button>
  </RouterLink>
- <RouterLink to="/repositories">
+ <RouterLink to="/workflows">
  <Button variant="ghost" size="lg" class="w-full sm:w-auto group">
- <span class="icon-[lucide--git-branch] mr-2 group-hover:text-primary transition-colors" />
- 仓库管理
+ <span class="icon-[lucide--workflow] mr-2 group-hover:text-primary transition-colors" />
+ 工作流管理
  </Button>
  </RouterLink>
  </section>

@@ -1,14 +1,11 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
+import type { AICodingDispatcherConfig, AIPromptConfig, FeishuEventTriggerConfig, FetchWorkItemConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
  feishuEventTriggerConfigSchema,
  fetchWorkItemConfigSchema,
- type AICodingDispatcherConfig,
- type AIPromptConfig,
- type FeishuEventTriggerConfig,
- type FetchWorkItemConfig,
 } from './schemas'
 // ============================================================================
 // 类型定义

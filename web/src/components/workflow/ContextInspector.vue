@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useClipboard } from '@vueuse/core'
 import { ChevronDown, ChevronRight, Copy, Database, Globe, Layers, Zap } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
@@ -15,6 +16,7 @@ interface Props {
  loading?: boolean
 }
 const props = defineProps<Props>
+const { copy } = useClipboard
 // 展开状态
 const expandedSections = ref<Record<string, boolean>>({
  trigger: true,
@@ -27,7 +29,7 @@ function toggleSection(key: string) {
 }
 // 复制变量路径
 function copyVariablePath(path: string) {
- navigator.clipboard.writeText(`{{${path}}}`)
+ copy(`{{${path}}}`)
 }
 // 格式化 JSON 值
 function formatValue(value: any): string {
