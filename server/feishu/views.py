@@ -453,7 +453,7 @@ class TriggerLogRetryView(APIView):
  mock_http_request.method = "POST"
  mock_http_request._body = raw_request_body.encode("utf-8")
  mock_http_request.content_type = "application/json"
- mock_request = Request(mock_http_request)
+ mock_request = Request(mock_http_request) # type: ignore[call-arg]
  try:
  response = webhook_view.post(mock_request)
  return Response(
