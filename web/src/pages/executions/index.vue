@@ -10,8 +10,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useProjectsStore } from '~/stores/projects'
+import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute
 const router = useRouter
@@ -62,7 +62,8 @@ async function loadData {
  ])
 }
 function startAutoRefresh {
- if (refreshInterval) return
+ if (refreshInterval)
+ return
  refreshInterval = setInterval( => {
  if (stats.value.running > 0 || stats.value.pending > 0) {
  executionsStore.fetchExecutions(
@@ -81,9 +82,12 @@ function stopAutoRefresh {
 // Watch filters and update URL
 watch([statusFilter, projectFilter, workflowFilter], => {
  const query: Record<string, string> = {}
- if (statusFilter.value) query.status = statusFilter.value
- if (projectFilter.value) query.project_id = projectFilter.value
- if (workflowFilter.value) query.workflow_id = workflowFilter.value
+ if (statusFilter.value)
+ query.status = statusFilter.value
+ if (projectFilter.value)
+ query.project_id = projectFilter.value
+ if (workflowFilter.value)
+ query.workflow_id = workflowFilter.value
  router.replace({ query })
  loadData
 })
@@ -105,8 +109,12 @@ onUnmounted( => {
  <!-- Header -->
  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
  <div class="space-y-1">
- <h1 class="text-3xl font-bold tracking-tight">执行监控</h1>
- <p class="text-muted-foreground text-sm">实时追踪工作流执行状态</p>
+ <h1 class="text-3xl font-bold tracking-tight">
+ 执行监控
+ </h1>
+ <p class="text-muted-foreground text-sm">
+ 实时追踪工作流执行状态
+ </p>
  </div>
  <!-- Stats cards -->
  <div class="flex flex-wrap gap-3">
@@ -169,7 +177,9 @@ onUnmounted( => {
  <SelectValue placeholder="全部项目" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">全部项目</SelectItem>
+ <SelectItem value="">
+ 全部项目
+ </SelectItem>
  <SelectItem v-for="project in projectsStore.projects":key="project.id":value="project.id">
  {{ project.name }}
  </SelectItem>
@@ -180,7 +190,9 @@ onUnmounted( => {
  <SelectValue placeholder="全部工作流" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">全部工作流</SelectItem>
+ <SelectItem value="">
+ 全部工作流
+ </SelectItem>
  <SelectItem v-for="workflow in workflowsStore.workflows":key="workflow.id":value="workflow.id">
  {{ workflow.name }}
  </SelectItem>
@@ -205,7 +217,9 @@ onUnmounted( => {
  <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4">
  <span class="icon-[lucide--play-circle] text-4xl text-muted-foreground" />
  </div>
- <h3 class="text-lg font-medium mb-2">暂无执行记录</h3>
+ <h3 class="text-lg font-medium mb-2">
+ 暂无执行记录
+ </h3>
  <p class="text-muted-foreground mb-4">
  {{ statusFilter || projectFilter || workflowFilter ? '没有符合筛选条件的执行记录': '运行工作流后，执行记录将显示在这里' }}
  </p>

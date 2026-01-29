@@ -292,14 +292,16 @@ function formatTime(dateStr: string | null) {
  <!-- Status Card -->
  <Card class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <CardHeader class="pb-3">
- <CardTitle class="text-lg">状态</CardTitle>
+ <CardTitle class="text-lg">
+ 状态
+ </CardTitle>
  </CardHeader>
  <CardContent class="space-y-4">
  <div class="flex items-center gap-3">
  <div:class="cn(' rounded-lg', getStatusConfig(currentExecution.status).bg)">
- <span:class="[
+ <span
+ class="w-5 ":class="[
  `icon-[${getStatusConfig(currentExecution.status).icon}]`,
- 'w-5 ',
  getStatusConfig(currentExecution.status).color,
  getStatusConfig(currentExecution.status).animate && 'animate-spin',
  ]"
@@ -324,20 +326,36 @@ function formatTime(dateStr: string | null) {
  <Separator />
  <div class="grid grid-cols-2 gap-4 text-sm">
  <div>
- <div class="text-muted-foreground">总节点数</div>
- <div class="font-medium">{{ currentExecution.total_nodes }}</div>
+ <div class="text-muted-foreground">
+ 总节点数
+ </div>
+ <div class="font-medium">
+ {{ currentExecution.total_nodes }}
+ </div>
  </div>
  <div>
- <div class="text-muted-foreground">已完成</div>
- <div class="font-medium text-green-600">{{ currentExecution.completed_nodes }}</div>
+ <div class="text-muted-foreground">
+ 已完成
+ </div>
+ <div class="font-medium text-green-600">
+ {{ currentExecution.completed_nodes }}
+ </div>
  </div>
  <div>
- <div class="text-muted-foreground">失败</div>
- <div class="font-medium text-red-600">{{ currentExecution.failed_nodes }}</div>
+ <div class="text-muted-foreground">
+ 失败
+ </div>
+ <div class="font-medium text-red-600">
+ {{ currentExecution.failed_nodes }}
+ </div>
  </div>
  <div>
- <div class="text-muted-foreground">已跳过</div>
- <div class="font-medium text-gray-500">{{ currentExecution.skipped_nodes }}</div>
+ <div class="text-muted-foreground">
+ 已跳过
+ </div>
+ <div class="font-medium text-gray-500">
+ {{ currentExecution.skipped_nodes }}
+ </div>
  </div>
  </div>
  </CardContent>
@@ -345,7 +363,9 @@ function formatTime(dateStr: string | null) {
  <!-- Trigger Info -->
  <Card class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <CardHeader class="pb-3">
- <CardTitle class="text-lg">触发信息</CardTitle>
+ <CardTitle class="text-lg">
+ 触发信息
+ </CardTitle>
  </CardHeader>
  <CardContent class="space-y-2 text-sm">
  <div class="flex justify-between">
@@ -371,7 +391,9 @@ function formatTime(dateStr: string | null) {
  <!-- Error Message -->
  <Card v-if="currentExecution.error_message" class="border-destructive rounded-2xl">
  <CardHeader class="pb-3">
- <CardTitle class="text-lg text-destructive">错误信息</CardTitle>
+ <CardTitle class="text-lg text-destructive">
+ 错误信息
+ </CardTitle>
  </CardHeader>
  <CardContent>
  <p class="text-sm text-destructive">
@@ -384,7 +406,9 @@ function formatTime(dateStr: string | null) {
  <div class="lg:col-span-2">
  <Card class="h-full rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <CardHeader class="pb-3">
- <CardTitle class="text-lg">节点执行</CardTitle>
+ <CardTitle class="text-lg">
+ 节点执行
+ </CardTitle>
  <CardDescription>点击节点查看详情</CardDescription>
  </CardHeader>
  <CardContent>
@@ -401,17 +425,21 @@ function formatTime(dateStr: string | null) {
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
  <div:class="cn('.5 rounded-lg', getStatusConfig(nodeExec.status).bg)">
- <span:class="[
+ <span
+ class="w-4 ":class="[
  `icon-[${getStatusConfig(nodeExec.status).icon}]`,
- 'w-4 ',
  getStatusConfig(nodeExec.status).color,
  getStatusConfig(nodeExec.status).animate && 'animate-spin',
  ]"
  />
  </div>
  <div>
- <div class="font-medium">{{ nodeExec.node_name }}</div>
- <div class="text-xs text-muted-foreground">{{ nodeExec.node_type }}</div>
+ <div class="font-medium">
+ {{ nodeExec.node_name }}
+ </div>
+ <div class="text-xs text-muted-foreground">
+ {{ nodeExec.node_type }}
+ </div>
  </div>
  </div>
  <div class="flex items-center gap-2">
@@ -447,17 +475,23 @@ function formatTime(dateStr: string | null) {
  <!-- Input/Output data -->
  <div class="grid gap-4 md:grid-cols-2">
  <div>
- <div class="text-xs font-medium text-muted-foreground mb-2">输入</div>
+ <div class="text-xs font-medium text-muted-foreground mb-2">
+ 输入
+ </div>
  <pre class=" rounded-lg bg-muted text-xs overflow-auto max-">{{ JSON.stringify(nodeExec.input_data, null, 2) }}</pre>
  </div>
  <div>
- <div class="text-xs font-medium text-muted-foreground mb-2">输出</div>
+ <div class="text-xs font-medium text-muted-foreground mb-2">
+ 输出
+ </div>
  <pre class=" rounded-lg bg-muted text-xs overflow-auto max-">{{ JSON.stringify(nodeExec.output_data, null, 2) }}</pre>
  </div>
  </div>
  <!-- Container logs -->
  <div v-if="nodeExec.container_logs">
- <div class="text-xs font-medium text-muted-foreground mb-2">日志</div>
+ <div class="text-xs font-medium text-muted-foreground mb-2">
+ 日志
+ </div>
  <pre class=" rounded-lg bg-black text-green-400 text-xs overflow-auto max- font-mono">{{ nodeExec.container_logs }}</pre>
  </div>
  <!-- Approval action -->
@@ -533,7 +567,7 @@ function formatTime(dateStr: string | null) {
  <label class="text-sm font-medium">输入数据（JSON 格式）</label>
  <Textarea
  v-model="triggerInputData"
- placeholder='{"key": "value"}'
+ placeholder="{&quot;key&quot;: &quot;value&quot;}"
  class="font-mono min-"
  />
  </div>
