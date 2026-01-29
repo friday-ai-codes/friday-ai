@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ExecutionContext } from '~/types'
 import { useClipboard } from '@vueuse/core'
 import { ChevronDown, ChevronRight, Copy, Database, Globe, Layers, Zap } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
@@ -10,7 +11,6 @@ import {
  CollapsibleTrigger,
 } from '~/components/ui/collapsible'
 import { ScrollArea } from '~/components/ui/scroll-area'
-import type { ExecutionContext } from '~/types'
 interface Props {
  context: ExecutionContext | null
  loading?: boolean
@@ -33,7 +33,8 @@ function copyVariablePath(path: string) {
 }
 // 格式化 JSON 值
 function formatValue(value: any): string {
- if (value === null || value === undefined) return 'null'
+ if (value === null || value === undefined)
+ return 'null'
  if (typeof value === 'object') {
  return JSON.stringify(value, null, 2)
  }
@@ -53,11 +54,12 @@ const nodeOutputs = computed( => {
 })
 // 检查是否有数据
 const hasData = computed( => {
- if (!props.context) return false
+ if (!props.context)
+ return false
  return (
- Object.keys(props.context.trigger_data || {}).length > 0 ||
- Object.keys(props.context.global_params || {}).length > 0 ||
- Object.keys(props.context.node_outputs || {}).length > 0
+ Object.keys(props.context.trigger_data || {}).length > 0
+ || Object.keys(props.context.global_params || {}).length > 0
+ || Object.keys(props.context.node_outputs || {}).length > 0
  )
 })
 </script>
@@ -66,7 +68,9 @@ const hasData = computed( => {
  <CardHeader class="pb-3 border-b">
  <div class="flex items-center gap-2">
  <Database class="w-4 text-primary" />
- <CardTitle class="text-base">执行上下文</CardTitle>
+ <CardTitle class="text-base">
+ 执行上下文
+ </CardTitle>
  </div>
  <div v-if="context" class="flex items-center gap-2 mt-2">
  <span

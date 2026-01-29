@@ -412,8 +412,8 @@ export interface AICodingDispatcherNodeData {
 /**
  * 触发器事件类型
  */
-export type TriggerEventType =
- | 'WorkitemCreateEvent'
+export type TriggerEventType
+ = | 'WorkitemCreateEvent'
  | 'WorkitemStatusEvent'
  | 'WorkitemCommentEvent'
  | 'WorkitemUpdateEvent'
@@ -448,8 +448,8 @@ export interface WorkflowTriggerCreate {
 /**
  * 编码任务状态
  */
-export type CodingTaskStatus =
- | 'pending'
+export type CodingTaskStatus
+ = | 'pending'
  | 'planning'
  | 'plan_review'
  | 'executing'

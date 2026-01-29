@@ -74,16 +74,6 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  }
  })
- // Auto-refresh using useIntervalFn
- const { pause: stopAutoRefresh, resume: startAutoRefresh } = useIntervalFn(
- => {
- if (hasActiveExecutions.value) {
- fetchExecutions
- }
- },
- 5000,
- { immediate: false },
- )
  // Computed stats
  const stats = computed( => ({
  total: executions.value.length,
@@ -99,6 +89,16 @@ export const useExecutionsStore = defineStore('executions', => {
  // Check if there are active executions
  const hasActiveExecutions = computed( =>
  stats.value.running > 0 || stats.value.pending > 0,
+ )
+ // Auto-refresh using useIntervalFn
+ const { pause: stopAutoRefresh, resume: startAutoRefresh } = useIntervalFn(
+ => {
+ if (hasActiveExecutions.value) {
+ fetchExecutions
+ }
+ },
+ 5000,
+ { immediate: false },
  )
  async function fetchExecutions(workflowId?: string, projectId?: string) {
  loading.value = true

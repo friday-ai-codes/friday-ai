@@ -202,7 +202,8 @@ const iconClasses = computed( => {
 /* ========== 主题变体 ========== */
 /* AI 主题 - 科技感渐变边框 */
 .workflow-node .node-card--ai {
- background: linear-gradient(135deg,
+ background: linear-gradient(
+ 135deg,
  color-mix(in srgb, var(--color-card, #fff) 95%, hsl(270 80% 60%)),
  color-mix(in srgb, var(--color-card, #fff) 90%, hsl(280 70% 50%))
  );
@@ -222,7 +223,8 @@ const iconClasses = computed( => {
 }
 /* 飞书主题 - 飞书蓝色调 */
 .workflow-node .node-card--feishu {
- background: linear-gradient(135deg,
+ background: linear-gradient(
+ 135deg,
  color-mix(in srgb, var(--color-card, #fff) 95%, hsl(214 100% 50%)),
  color-mix(in srgb, var(--color-card, #fff) 92%, hsl(214 90% 45%))
  );
@@ -242,7 +244,8 @@ const iconClasses = computed( => {
 }
 /* 触发器主题 - 蓝绿渐变 */
 .workflow-node .node-card--trigger {
- background: linear-gradient(135deg,
+ background: linear-gradient(
+ 135deg,
  color-mix(in srgb, var(--color-card, #fff) 95%, hsl(200 80% 50%)),
  color-mix(in srgb, var(--color-card, #fff) 92%, hsl(180 70% 45%))
  );
@@ -259,7 +262,8 @@ const iconClasses = computed( => {
 }
 /* 操作主题 - 绿色调 */
 .workflow-node .node-card--action {
- background: linear-gradient(135deg,
+ background: linear-gradient(
+ 135deg,
  color-mix(in srgb, var(--color-card, #fff) 95%, hsl(160 70% 45%)),
  color-mix(in srgb, var(--color-card, #fff) 92%, hsl(170 60% 40%))
  );

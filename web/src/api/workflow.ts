@@ -23,8 +23,8 @@ export interface NodeSchema {
  category: string
  icon: string
  config_schema: Record<string, any>
- inputs: Array<{ name: string; label: string; port_type: string }>
- outputs: Array<{ name: string; label: string; port_type: string }>
+ inputs: Array<{ name: string, label: string, port_type: string }>
+ outputs: Array<{ name: string, label: string, port_type: string }>
 }
 /**
  * 获取所有节点 Schema
@@ -115,8 +115,8 @@ export async function updateCodingTask(
 /**
  * 批准编码任务方案
  */
-export async function approveCodingTaskPlan(taskId: string): Promise<{ status: string; message: string }> {
- return post<{ status: string; message: string }>(`/workflows/coding-tasks/${taskId}/approve_plan/`)
+export async function approveCodingTaskPlan(taskId: string): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/approve_plan/`)
 }
 /**
  * 驳回编码任务方案
@@ -124,14 +124,14 @@ export async function approveCodingTaskPlan(taskId: string): Promise<{ status: s
 export async function rejectCodingTaskPlan(
  taskId: string,
  feedback: string,
-): Promise<{ status: string; message: string }> {
- return post<{ status: string; message: string }>(`/workflows/coding-tasks/${taskId}/reject_plan/`, { feedback })
+): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/reject_plan/`, { feedback })
 }
 /**
  * 批准编码任务代码
  */
-export async function approveCodingTaskCode(taskId: string): Promise<{ status: string; message: string }> {
- return post<{ status: string; message: string }>(`/workflows/coding-tasks/${taskId}/approve_code/`)
+export async function approveCodingTaskCode(taskId: string): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/approve_code/`)
 }
 /**
  * 驳回编码任务代码
@@ -139,8 +139,8 @@ export async function approveCodingTaskCode(taskId: string): Promise<{ status: s
 export async function rejectCodingTaskCode(
  taskId: string,
  feedback: string,
-): Promise<{ status: string; message: string }> {
- return post<{ status: string; message: string }>(`/workflows/coding-tasks/${taskId}/reject_code/`, { feedback })
+): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(`/workflows/coding-tasks/${taskId}/reject_code/`, { feedback })
 }
 // ============================================================================
 // LLM Models API
@@ -160,8 +160,8 @@ export interface LLMModel {
 export async function queryLLMModels(
  baseUrl: string,
  apiKey?: string,
-): Promise<{ models: LLMModel; count: number }> {
- return post<{ models: LLMModel; count: number }>('/workflows/llm/models/', {
+): Promise<{ models: LLMModel, count: number }> {
+ return post<{ models: LLMModel, count: number }>('/workflows/llm/models/', {
  base_url: baseUrl,
  api_key: apiKey || '',
  })
@@ -169,8 +169,8 @@ export async function queryLLMModels(
 /**
  * 查询系统配置的 LLM 模型列表
  */
-export async function querySystemLLMModels: Promise<{ models: LLMModel; count: number }> {
- return post<{ models: LLMModel; count: number }>('/workflows/llm/models/', {
+export async function querySystemLLMModels: Promise<{ models: LLMModel, count: number }> {
+ return post<{ models: LLMModel, count: number }>('/workflows/llm/models/', {
  use_system: true,
  })
 }

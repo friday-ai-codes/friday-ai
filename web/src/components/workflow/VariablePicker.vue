@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ExecutionContext } from '~/types'
 import { ChevronDown, ChevronRight, Database, Globe, Layers, Variable, Zap } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
@@ -8,7 +9,6 @@ import {
  PopoverTrigger,
 } from '~/components/ui/popover'
 import { ScrollArea } from '~/components/ui/scroll-area'
-import type { ExecutionContext } from '~/types'
 interface Props {
  context?: ExecutionContext | null
  modelValue?: string
@@ -36,7 +36,7 @@ const availableVariables = computed( => {
  categoryLabel: string
  icon: any
  color: string
- items: Array<{ key: string; path: string; value?: any }>
+ items: Array<{ key: string, path: string, value?: any }>
  }> =
  // Trigger data
  if (props.context?.trigger_data) {
@@ -91,7 +91,7 @@ const availableVariables = computed( => {
  }
  // Node outputs
  if (props.context?.node_outputs) {
- const items: Array<{ key: string; path: string; value?: any }> =
+ const items: Array<{ key: string, path: string, value?: any }> =
  Object.entries(props.context.node_outputs).forEach(([nodeId, outputs]) => {
  if (typeof outputs === 'object' && outputs !== null) {
  Object.entries(outputs).forEach(([key, value]) => {
@@ -163,13 +163,15 @@ function selectVariable(path: string) {
  isOpen.value = false
 }
 function getValuePreview(value: any): string {
- if (value === undefined) return ''
- if (value === null) return 'null'
+ if (value === undefined)
+ return ''
+ if (value === null)
+ return 'null'
  if (typeof value === 'string') {
- return value.length > 30 ? value.substring(0, 30) + '...': value
+ return value.length > 30 ? `${value.substring(0, 30)}...`: value
  }
  if (typeof value === 'object') {
- return JSON.stringify(value).substring(0, 30) + '...'
+ return `${JSON.stringify(value).substring(0, 30)}...`
  }
  return String(value)
 }
@@ -184,7 +186,9 @@ function getValuePreview(value: any): string {
  </PopoverTrigger>
  <PopoverContent class="w-80 " align="start">
  <div class=" border-b">
- <h4 class="font-medium text-sm">插入变量</h4>
+ <h4 class="font-medium text-sm">
+ 插入变量
+ </h4>
  <p class="text-xs text-muted-foreground mt-1">
  点击变量名插入到输入框
  </p>
@@ -219,7 +223,7 @@ function getValuePreview(value: any): string {
  </ScrollArea>
  <div class=" border-t bg-muted/50">
  <p class="text-[10px] text-muted-foreground">
- 语法: <code class="bg-background px-1 rounded">{{ '{{path.to.value}}' }}</code>
+ 语法: <code class="bg-background px-1 rounded">{<!-- -->{ path.to.value }<!-- -->}</code>
  </p>
  </div>
  </PopoverContent>

@@ -142,8 +142,8 @@ function isValidUrl(url: string): boolean {
  if (!url)
  return false
  try {
- new URL(url)
- return true
+ const _ = new URL(url)
+ return Boolean(_)
  }
  catch {
  return false

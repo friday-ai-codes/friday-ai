@@ -76,7 +76,9 @@ const workItemType = field('work_item_type', '__auto__')
  </div>
  <!-- 输出说明 -->
  <div class="rounded-lg bg-muted/50 space-y-2">
- <p class="text-xs font-medium">输出数据结构</p>
+ <p class="text-xs font-medium">
+ 输出数据结构
+ </p>
  <div class="text-xs text-muted-foreground space-y-1 font-mono">
  <div><span class="text-primary">$.name</span> → 工作项名称</div>
  <div><span class="text-primary">$.description</span> → 描述</div>

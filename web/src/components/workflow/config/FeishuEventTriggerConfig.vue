@@ -30,14 +30,8 @@ const emit = defineEmits<{
 // Config Model
 // ============================================================================
 const { field, arrayField } = useConfigModel({
- config: => {
- console.log('[FeishuEventTrigger] config called, props.config:', JSON.stringify(props.config))
- return props.config
- },
- emit: (v) => {
- console.log('[FeishuEventTrigger] emit called with:', JSON.stringify(v))
- emit('update:config', v)
- },
+ config: => props.config,
+ emit: v => emit('update:config', v),
  schema: feishuEventTriggerConfigSchema,
 })
 // 简单字段

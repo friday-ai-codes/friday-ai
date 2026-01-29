@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { AICodingDispatcherConfig } from '~/types/workflow'
 import { computed } from 'vue'
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -13,6 +12,7 @@ import {
 } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
  aiCodingDispatcherConfigSchema,
@@ -86,7 +86,9 @@ const autoAssignRepos = field('auto_assign_repos', true)
  >
  <div>
  <div>{{ option.label }}</div>
- <div class="text-xs text-muted-foreground">{{ option.description }}</div>
+ <div class="text-xs text-muted-foreground">
+ {{ option.description }}
+ </div>
  </div>
  </SelectItem>
  </SelectContent>
@@ -115,7 +117,9 @@ const autoAssignRepos = field('auto_assign_repos', true)
  </div>
  <!-- 说明 -->
  <div class="mt-4 bg-secondary/50 rounded-md text-sm space-y-1">
- <p class="font-medium">此节点将：</p>
+ <p class="font-medium">
+ 此节点将：
+ </p>
  <ul class="text-xs text-muted-foreground space-y-1 list-disc list-inside">
  <li>从全局参数读取需求文档 URL 和描述</li>
  <li>抓取需求文档内容进行分析</li>
