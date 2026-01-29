@@ -7,6 +7,14 @@ export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
  ANTHROPIC_BASE_URL = 'anthropic_base_url',
  GIT_HTTP_PROXY = 'git_http_proxy',
+ // Vector Index Settings
+ QDRANT_URL = 'qdrant_url',
+ QDRANT_API_KEY = 'qdrant_api_key',
+ EMBEDDING_API_URL = 'embedding_api_url',
+ EMBEDDING_MODEL = 'embedding_model',
+ EMBEDDING_DIMENSION = 'embedding_dimension',
+ RERANKER_API_URL = 'reranker_api_url',
+ RERANKER_MODEL = 'reranker_model',
 }
 // 设置值读取响应
 export interface SettingRead {

@@ -33,6 +33,16 @@ dependencies = [
  "channels-redis>=4.3.0",
  "daphne>=4.2.1",
  "jsonpath-ng>=1.7.0",
+ "qdrant-client>=1.9.0",
+ "llama-index>=0.10.0",
+ "llama-index-vector-stores-qdrant>=0.2.0",
+ "tree-sitter>=0.21.0",
+ "tree-sitter-go>=0.21.0",
+ "tree-sitter-javascript>=0.21.0",
+ "tree-sitter-python>=0.21.0",
+ "tree-sitter-css>=0.21.0",
+ "tree-sitter-html>=0.21.0",
+ "tree-sitter-json>=0.21.0",
 ]
 [build-system]
 requires = ["hatchling"]

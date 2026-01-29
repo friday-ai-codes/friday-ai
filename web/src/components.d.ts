@@ -119,6 +119,7 @@ declare module 'vue' {
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
  PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
  Progress: typeof import('./components/ui/progress/Progress.vue')['default']
+ RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
  RouterLink: typeof import('vue-router')['RouterLink']
  RouterView: typeof import('vue-router')['RouterView']
  ScrollArea: typeof import('./components/ui/scroll-area/ScrollArea.vue')['default']
@@ -169,6 +170,7 @@ declare module 'vue' {
  VariableExtractorConfig: typeof import('./components/workflow/config/VariableExtractorConfig.vue')['default']
  VariableExtractorNode: typeof import('./components/workflow/nodes/VariableExtractorNode.vue')['default']
  VariablePicker: typeof import('./components/workflow/VariablePicker.vue')['default']
+ VectorIndexSettings: typeof import('./components/settings/VectorIndexSettings.vue')['default']
  WorkflowCanvas: typeof import('./components/workflow/WorkflowCanvas.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  }

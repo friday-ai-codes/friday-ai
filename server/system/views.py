@@ -9,7 +9,7 @@ from .serializers import (
  SystemSettingSerializer,
  SystemSettingUpdateSerializer,
 )
-ENCRYPTED_KEYS = {SettingKeys.ANTHROPIC_API_KEY}
+ENCRYPTED_KEYS = {SettingKeys.ANTHROPIC_API_KEY, SettingKeys.QDRANT_API_KEY}
 class SettingsListCreateView(APIView):
  """List and create system settings."""
  def get(self, request):
