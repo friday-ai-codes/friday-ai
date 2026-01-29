@@ -27,6 +27,20 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/executions/': RouteRecordInfo<
+ '/executions/',
+ '/executions',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/executions/[id]': RouteRecordInfo<
+ '/executions/[id]',
+ '/executions/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
  '/force-change-password': RouteRecordInfo<
  '/force-change-password',
  '/force-change-password',
@@ -196,6 +210,18 @@ declare module 'vue-router/auto-routes' {
  'src/pages/index.vue': {
  routes:
  | '/'
+ views:
+ | never
+ }
+ 'src/pages/executions/index.vue': {
+ routes:
+ | '/executions/'
+ views:
+ | never
+ }
+ 'src/pages/executions/[id].vue': {
+ routes:
+ | '/executions/[id]'
  views:
  | never
  }

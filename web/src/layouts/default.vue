@@ -12,12 +12,12 @@ import { useAuthStore } from '~/stores/auth'
 const authStore = useAuthStore
 const router = useRouter
 // 导航项定义
-const navItems = [
+const navItems: Array<{ to: string, label: string, icon: string, badge?: string }> = [
  { to: '/', label: '首页', icon: 'lucide--home' },
  { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
- { to: '/workflows', label: '工作流', icon: 'lucide--workflow', badge: 'NEW' },
- { to: '/tasks', label: '任务', icon: 'lucide--list-checks' },
+ { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
+ { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
  { to: '/logs', label: '日志', icon: 'lucide--file-text' },
  { to: '/settings', label: '设置', icon: 'lucide--settings' },
 ]
