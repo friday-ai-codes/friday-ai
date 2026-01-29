@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import api from '~/api/client'
 export interface NodeExecution {
  id: string
@@ -54,6 +54,24 @@ export const useExecutionsStore = defineStore('executions', => {
  const error = ref<string | null>(null)
  // WebSocket connection
  let ws: WebSocket | null = null
+ // Auto-refresh timer
+ let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+ // Computed stats
+ const stats = computed( => ({
+ total: executions.value.length,
+ running: executions.value.filter(e => e.status === 'running').length,
+ pending: executions.value.filter(e => e.status === 'pending').length,
+ waitingApproval: executions.value.filter(e =>
+ e.status === 'waiting_approval'
+ || e.node_executions?.some(n => n.status === 'waiting_approval'),
+ ).length,
+ completed: executions.value.filter(e => e.status === 'completed').length,
+ failed: executions.value.filter(e => e.status === 'failed').length,
+ }))
+ // Check if there are active executions
+ const hasActiveExecutions = computed( =>
+ stats.value.running > 0 || stats.value.pending > 0,
+ )
  async function fetchExecutions(workflowId?: string, projectId?: string) {
  loading.value = true
  error.value = null
@@ -236,11 +254,29 @@ export const useExecutionsStore = defineStore('executions', => {
  fetchExecution(execution_id)
  }
  }
+ // Auto-refresh methods
+ function startAutoRefresh(interval: number = 5000) {
+ if (autoRefreshTimer)
+ return
+ autoRefreshTimer = setInterval( => {
+ if (hasActiveExecutions.value) {
+ fetchExecutions
+ }
+ }, interval)
+ }
+ function stopAutoRefresh {
+ if (autoRefreshTimer) {
+ clearInterval(autoRefreshTimer)
+ autoRefreshTimer = null
+ }
+ }
  return {
  executions,
  currentExecution,
  loading,
  error,
+ stats,
+ hasActiveExecutions,
  fetchExecutions,
  fetchExecution,
  pauseExecution,
@@ -251,5 +287,7 @@ export const useExecutionsStore = defineStore('executions', => {
  triggerNode,
  connectWebSocket,
  disconnectWebSocket,
+ startAutoRefresh,
+ stopAutoRefresh,
  }
 })

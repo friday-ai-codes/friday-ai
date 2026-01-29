@@ -303,6 +303,7 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  project_name = serializers.CharField(source="project.name", read_only=True)
  node_count = serializers.SerializerMethodField
  execution_count = serializers.SerializerMethodField
+ last_execution = serializers.SerializerMethodField
  class Meta:
  model = Workflow
  fields = [
@@ -317,6 +318,7 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  "is_template",
  "node_count",
  "execution_count",
+ "last_execution",
  "created_at",
  "updated_at",
  ]
@@ -324,6 +326,15 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  return obj.nodes.count
  def get_execution_count(self, obj: Workflow) -> int:
  return obj.executions.count
+ def get_last_execution(self, obj: Workflow) -> dict | None:
+ last = obj.executions.order_by("-created_at").first
+ if last:
+ return {
+ "id": str(last.id),
+ "status": last.status,
+ "created_at": last.created_at.isoformat,
+ }
+ return None
 class WorkflowCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Workflow."""
  nodes = WorkflowNodeCreateSerializer(many=True, required=False)
