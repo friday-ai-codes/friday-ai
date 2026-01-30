@@ -14,8 +14,10 @@ import AICodingDispatcherNode from './nodes/AICodingDispatcherNode.vue'
 import AIPromptNode from './nodes/AIPromptNode.vue'
 import AIVariableExtractorNode from './nodes/AIVariableExtractorNode.vue'
 import ApprovalNode from './nodes/ApprovalNode.vue'
+import ContextRetrievalNode from './nodes/ContextRetrievalNode.vue'
 import ControlNode from './nodes/ControlNode.vue'
 import FeishuEventTriggerNode from './nodes/FeishuEventTriggerNode.vue'
+import FetchProjectInfoNode from './nodes/FetchProjectInfoNode.vue'
 import FetchWorkItemNode from './nodes/FetchWorkItemNode.vue'
 import TriggerNode from './nodes/TriggerNode.vue'
 import VariableExtractorNode from './nodes/VariableExtractorNode.vue'
@@ -44,12 +46,14 @@ const nodeTypes = {
  create_branch: markRaw(ActionNode),
  // Integration
  fetch_work_item: markRaw(FetchWorkItemNode),
+ fetch_project_info: markRaw(FetchProjectInfoNode),
  // Data Processing
  variable_extractor: markRaw(VariableExtractorNode),
  // AI
  ai_prompt: markRaw(AIPromptNode),
  ai_coding_dispatcher: markRaw(AICodingDispatcherNode),
  ai_variable_extractor: markRaw(AIVariableExtractorNode),
+ context_retrieval: markRaw(ContextRetrievalNode),
  // Approval
  human_approval: markRaw(ApprovalNode),
  approval: markRaw(ApprovalNode),

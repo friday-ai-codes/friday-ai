@@ -25,5 +25,3 @@ class SettingKeys:
  EMBEDDING_API_URL = "embedding_api_url"
  EMBEDDING_MODEL = "embedding_model"
  EMBEDDING_DIMENSION = "embedding_dimension"
- RERANKER_API_URL = "reranker_api_url"
- RERANKER_MODEL = "reranker_model"

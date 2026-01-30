@@ -1,11 +1,13 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, FeishuEventTriggerConfig, FetchWorkItemConfig, VariableExtractorConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
+ contextRetrievalConfigSchema,
  feishuEventTriggerConfigSchema,
+ fetchProjectInfoConfigSchema,
  fetchWorkItemConfigSchema,
  variableExtractorConfigSchema,
 } from './schemas'
@@ -105,6 +107,28 @@ export const NODE_REGISTRY = {
  defaultConfig: aiVariableExtractorConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/AIVariableExtractorConfig.vue'),
  } satisfies NodeTypeDefinition<AIVariableExtractorConfig>,
+ context_retrieval: {
+ nodeType: 'context_retrieval',
+ displayName: '召回上下文',
+ description: '从代码库检索相关代码片段',
+ icon: 'icon-[lucide--search-code]',
+ color: 'from-violet-500 to-purple-400',
+ category: 'ai',
+ schema: contextRetrievalConfigSchema,
+ defaultConfig: contextRetrievalConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/ContextRetrievalConfig.vue'),
+ } satisfies NodeTypeDefinition<ContextRetrievalConfig>,
+ fetch_project_info: {
+ nodeType: 'fetch_project_info',
+ displayName: '获取项目信息',
+ description: '获取项目配置和仓库列表',
+ icon: 'icon-[lucide--folder-search]',
+ color: 'from-amber-500 to-orange-400',
+ category: 'integration',
+ schema: fetchProjectInfoConfigSchema,
+ defaultConfig: fetchProjectInfoConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/FetchProjectInfoConfig.vue'),
+ } satisfies NodeTypeDefinition<FetchProjectInfoConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数

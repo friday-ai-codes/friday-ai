@@ -130,11 +130,7 @@ class VariableExtractorNode(BaseNode):
  desc=desc,
  required=required,
  )
- extracted_variables[key] = {
- "name": name,
- "value": value,
- "path": source_path,
- }
+ extracted_variables[key] = value
  logger.info(
  "variable_extracted",
  key=key,

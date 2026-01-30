@@ -7,7 +7,7 @@ from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from repositories.models import IndexStatus, Repository
-from services.embedding import EmbeddingService, RerankerService
+from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
 def run_async(coro):
@@ -80,13 +80,15 @@ class IndexStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- serializer = IndexStatusSerializer({
+ serializer = IndexStatusSerializer(
+ {
  "index_status": repository.index_status,
  "last_indexed_at": repository.last_indexed_at,
  "index_error": repository.index_error,
  "index_total_chunks": repository.index_total_chunks,
  "index_processed_chunks": repository.index_processed_chunks,
- })
+ }
+ )
  return Response(serializer.data)
 class IndexDeleteView(APIView):
  """Delete index for a repository."""
@@ -132,11 +134,13 @@ class CodeSearchView(APIView):
  filters = serializer.validated_data.get("filters", {})
  # Run search
  results = run_async(self._search(repository_id, query, top_k, filters))
- return Response({
+ return Response(
+ {
  "query": query,
  "results": results,
  "total": len(results),
- })
+ }
+ )
  async def _search(
  self,
  repository_id: str,
@@ -144,38 +148,35 @@ class CodeSearchView(APIView):
  top_k: int,
  filters: dict[str, Any],
  ) -> list[dict[str, Any]]:
- """Execute search with optional reranking."""
+ """Execute vector search."""
  # Generate query embedding
  query_embedding = await EmbeddingService.generate_embedding(query)
  if not query_embedding:
  return
- # Search in Qdrant (get more results for reranking)
- initial_top_k = min(top_k * 3, 50)
+ # Search in Qdrant
  search_results = QdrantService.search(
  repository_id,
  query_embedding,
- top_k=initial_top_k,
+ top_k=top_k,
  filters=filters,
  )
  if not search_results:
  return
- # Try reranking
- documents = [r["payload"].get("content", "") for r in search_results]
- reranked = await RerankerService.rerank(query, documents, top_k=top_k)
- # Build final results
+ # Build results
  results =
- for idx, score in reranked:
- if idx < len(search_results):
- payload = search_results[idx]["payload"]
- results.append({
+ for r in search_results:
+ payload = r["payload"]
+ results.append(
+ {
  "file_path": payload.get("file_path"),
- "score": score,
+ "score": r["score"],
  "content": payload.get("content"),
  "language": payload.get("language"),
  "start_line": payload.get("start_line"),
  "end_line": payload.get("end_line"),
  "context_header": payload.get("context_header"),
- })
+ }
+ )
  return results
 class QdrantHealthView(APIView):
  """Check Qdrant service health."""
@@ -194,26 +195,11 @@ class EmbeddingHealthView(APIView):
  api_url = request.data.get("api_url")
  model = request.data.get("model", "BAAI/bge-m3")
  if not api_url:
- return Response({
+ return Response(
+ {
  "status": "error",
  "message": "Embedding API URL is required",
- })
+ }
+ )
  health = run_async(EmbeddingService.test_connection_with_config(api_url, model))
- return Response(health)
-class RerankerHealthView(APIView):
- """Check Reranker API health."""
- def get(self, request):
- """Get Reranker API health status using saved config."""
- health = run_async(RerankerService.test_connection)
- return Response(health)
- def post(self, request):
- """Test Reranker API with provided config (before saving)."""
- api_url = request.data.get("api_url")
- model = request.data.get("model", "BAAI/bge-reranker-large")
- if not api_url:
- return Response({
- "status": "not_configured",
- "message": "Reranker API URL not configured (optional)",
- })
- health = run_async(RerankerService.test_connection_with_config(api_url, model))
  return Response(health)

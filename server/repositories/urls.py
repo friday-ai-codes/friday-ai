@@ -8,7 +8,6 @@ from .index_views import (
  IndexStatusView,
  IndexTriggerView,
  QdrantHealthView,
- RerankerHealthView,
 )
 from .views import RepositoryViewSet, SetAccessTokenView
 router = DefaultRouter # trailing_slash=True by default
@@ -52,10 +51,5 @@ urlpatterns = [
  "health/embedding/",
  EmbeddingHealthView.as_view,
  name="embedding-health",
- ),
- path(
- "health/reranker/",
- RerankerHealthView.as_view,
- name="reranker-health",
  ),
 ]
