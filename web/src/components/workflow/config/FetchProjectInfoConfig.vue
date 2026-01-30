@@ -1,0 +1,193 @@
+<script setup lang="ts">
+import type { FetchProjectInfoConfig } from '~/types/workflow'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
+import { Separator } from '~/components/ui/separator'
+import { Switch } from '~/components/ui/switch'
+import VariablePicker from '~/components/workflow/VariablePicker.vue'
+import { useConfigModel } from '~/composables/useConfigModel'
+import { fetchProjectInfoConfigSchema } from '~/types/workflow'
+// ============================================================================
+// Props & Emits
+// ============================================================================
+interface Props {
+ config: FetchProjectInfoConfig
+}
+const props = defineProps<Props>
+const emit = defineEmits<{
+ (e: 'update:config', value: FetchProjectInfoConfig): void
+}>
+// ============================================================================
+// Config Model
+// ============================================================================
+const { field } = useConfigModel({
+ config: => props.config,
+ emit: v => emit('update:config', v),
+ schema: fetchProjectInfoConfigSchema,
+})
+const projectIdentifier = field('project_identifier', '')
+const identifierType = field('identifier_type', 'auto')
+const includeRepositories = field('include_repositories', true)
+const includeFeishuConfig = field('include_feishu_config', false)
+const includeClaudeConfig = field('include_claude_config', false)
+const includeWebhookToken = field('include_webhook_token', false)
+// ============================================================================
+// Options
+// ============================================================================
+const identifierTypeOptions = [
+ { value: 'auto', label: '自动检测', description: '优先尝试 UUID，再尝试飞书项目 Key' },
+ { value: 'id', label: '项目 ID', description: '使用项目 UUID' },
+ { value: 'feishu_project_key', label: '飞书项目 Key', description: '使用飞书项目标识' },
+]
+</script>
+<template>
+ <div class="space-y-4">
+ <!-- 项目标识 -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1">
+ 项目标识
+ <span class="text-destructive">*</span>
+ </Label>
+ <div class="flex gap-2">
+ <Input
+ v-model="projectIdentifier"
+ placeholder="$.projectKey 或 {{ global.projectKey }}"
+ class="font-mono text-sm flex-1"
+ />
+ <VariablePicker @select="v => projectIdentifier = v" />
+ </div>
+ <!-- 语法说明 -->
+ <div class="rounded-lg bg-muted/30 space-y-1">
+ <p class="text-xs font-medium text-muted-foreground">支持以下语法：</p>
+ <div class="grid grid-cols-2 gap-2 text-xs">
+ <div class="flex items-center gap-1.5">
+ <code class="bg-background px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400">$.projectKey</code>
+ <span class="text-muted-foreground">JSONPath</span>
+ </div>
+ <div class="flex items-center gap-1.5">
+ <code class="bg-background px-1.5 py-0.5 rounded text-blue-600 dark:text-blue-400">{{ '\{\{global.x\}\}' }}</code>
+ <span class="text-muted-foreground">模板变量</span>
+ </div>
+ </div>
+ </div>
+ </div>
+ <!-- 标识类型 -->
+ <div class="space-y-2">
+ <Label>标识类型</Label>
+ <Select v-model="identifierType">
+ <SelectTrigger>
+ <SelectValue placeholder="选择标识类型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="opt in identifierTypeOptions":key="opt.value":value="opt.value"
+ >
+ <div>
+ <div>{{ opt.label }}</div>
+ <div class="text-xs text-muted-foreground">
+ {{ opt.description }}
+ </div>
+ </div>
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
+ <Separator />
+ <!-- 获取内容选项 -->
+ <div class="space-y-3">
+ <Label>获取内容</Label>
+ <!-- 仓库列表 -->
+ <div class="flex items-center justify-between rounded-lg border border-border/50 ">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/10">
+ <span class="icon-[lucide--git-branch] text-blue-500" />
+ </div>
+ <div>
+ <span class="text-sm font-medium">仓库列表</span>
+ <p class="text-xs text-muted-foreground">
+ 项目关联的所有代码仓库
+ </p>
+ </div>
+ </div>
+ <Switch v-model="includeRepositories" />
+ </div>
+ <!-- 飞书配置 -->
+ <div class="flex items-center justify-between rounded-lg border border-border/50 ">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/10">
+ <span class="icon-[lucide--message-square] text-emerald-500" />
+ </div>
+ <div>
+ <span class="text-sm font-medium">飞书配置</span>
+ <p class="text-xs text-muted-foreground">
+ 插件 ID、用户 Key 等集成配置
+ </p>
+ </div>
+ </div>
+ <Switch v-model="includeFeishuConfig" />
+ </div>
+ <!-- Claude 配置 -->
+ <div class="flex items-center justify-between rounded-lg border border-border/50 ">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-500/10">
+ <span class="icon-[lucide--bot] text-violet-500" />
+ </div>
+ <div>
+ <span class="text-sm font-medium">Claude 配置</span>
+ <p class="text-xs text-muted-foreground">
+ API 密钥状态、Base URL 等
+ </p>
+ </div>
+ </div>
+ <Switch v-model="includeClaudeConfig" />
+ </div>
+ <!-- Webhook Token -->
+ <div class="flex items-center justify-between rounded-lg border border-border/50 ">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-500/10">
+ <span class="icon-[lucide--key] text-amber-500" />
+ </div>
+ <div>
+ <span class="text-sm font-medium">Webhook Token</span>
+ <p class="text-xs text-muted-foreground">
+ 飞书 Webhook 验证令牌
+ </p>
+ </div>
+ </div>
+ <Switch v-model="includeWebhookToken" />
+ </div>
+ </div>
+ <!-- 使用提示 -->
+ <div class="rounded-lg bg-muted/50 space-y-2">
+ <p class="text-xs text-muted-foreground">
+ <span class="icon-[lucide--info] mr-1" />
+ 输出变量说明：
+ </p>
+ <ul class="text-xs text-muted-foreground space-y-1 ml-4">
+ <li>
+ <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.project_id \}\}' }}</code>
+ - 项目 ID
+ </li>
+ <li>
+ <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.repositories \}\}' }}</code>
+ - 仓库列表
+ </li>
+ <li>
+ <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.primary_repository_id \}\}' }}</code>
+ - 首个仓库 ID
+ </li>
+ <li>
+ <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.feishu_config \}\}' }}</code>
+ - 飞书配置
+ </li>
+ </ul>
+ </div>
+ </div>
+</template>

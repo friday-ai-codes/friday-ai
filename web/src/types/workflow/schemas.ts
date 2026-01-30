@@ -136,6 +136,25 @@ export const aiVariableExtractorConfigSchema = z.object({
  additional_prompt: z.string.default(''),
  model: z.string.default('claude-sonnet-4-20250514'),
 })
+/** 召回上下文节点配置 */
+export const contextRetrievalConfigSchema = z.object({
+ query: z.string.default(''),
+ repository_id: z.string.default(''),
+ top_k: z.number.min(1).max(50).default(10),
+ score_threshold: z.number.min(0).max(1).default(0.5),
+ language_filter: z.string.default(''),
+ include_content: z.boolean.default(true),
+ format_as_markdown: z.boolean.default(true),
+})
+/** 获取项目信息节点配置 */
+export const fetchProjectInfoConfigSchema = z.object({
+ project_identifier: z.string.default(''),
+ identifier_type: z.enum(['auto', 'id', 'feishu_project_key']).default('auto'),
+ include_repositories: z.boolean.default(true),
+ include_feishu_config: z.boolean.default(false),
+ include_claude_config: z.boolean.default(false),
+ include_webhook_token: z.boolean.default(false),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -156,6 +175,8 @@ export type ExtractionRule = z.infer<typeof extractionRuleSchema>
 export type VariableExtractorConfig = z.infer<typeof variableExtractorConfigSchema>
 export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
+export type ContextRetrievalConfig = z.infer<typeof contextRetrievalConfigSchema>
+export type FetchProjectInfoConfig = z.infer<typeof fetchProjectInfoConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -165,6 +186,8 @@ export type NodeConfig
  | FeishuEventTriggerConfig
  | VariableExtractorConfig
  | AIVariableExtractorConfig
+ | ContextRetrievalConfig
+ | FetchProjectInfoConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -176,5 +199,7 @@ export const NODE_CONFIG_SCHEMAS = {
  feishu_event_trigger: feishuEventTriggerConfigSchema,
  variable_extractor: variableExtractorConfigSchema,
  ai_variable_extractor: aiVariableExtractorConfigSchema,
+ context_retrieval: contextRetrievalConfigSchema,
+ fetch_project_info: fetchProjectInfoConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS

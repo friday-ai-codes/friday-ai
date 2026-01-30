@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Clock, Download, GitBranch, Globe, MessageSquare, Play, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
+import { Bot, Clock, Download, FolderSearch, GitBranch, Globe, MessageSquare, Play, SearchCode, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 const nodeTypesStore = useNodeTypesStore
@@ -23,6 +23,7 @@ const staticNodeTypes = [
  color: 'orange',
  items: [
  { type: 'fetch_work_item', label: '获取工作项', icon: Download, description: '获取飞书工作项详情' },
+ { type: 'fetch_project_info', label: '获取项目信息', icon: FolderSearch, description: '获取项目配置和仓库列表' },
  ],
  },
  {
@@ -41,6 +42,7 @@ const staticNodeTypes = [
  { type: 'ai_prompt', label: 'AI Prompt', icon: MessageSquare, description: '调用 AI 大语言模型' },
  { type: 'ai_coding_dispatcher', label: 'AI 编码指派', icon: Bot, description: '分析需求分配编码任务' },
  { type: 'ai_variable_extractor', label: 'AI 变量提取', icon: Sparkles, description: '使用 AI 智能提取变量' },
+ { type: 'context_retrieval', label: '召回上下文', icon: SearchCode, description: '从代码库检索相关代码' },
  ],
  },
  {
