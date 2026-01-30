@@ -53,6 +53,7 @@ export interface Workflow {
  created_at: string
  updated_at: string
 }
+const DRAFT_KEY_PREFIX = 'friday-workflow-draft-'
 export const useWorkflowsStore = defineStore('workflows', => {
  const workflows = ref<Workflow>
  const currentWorkflow = ref<Workflow | null>(null)
@@ -68,6 +69,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Vue Flow nodes and edges (for canvas)
  const nodes = ref<Node>
  const edges = ref<Edge>
+ // Unsaved changes tracking
+ const hasUnsavedChanges = ref(false)
  // Computed
  const canUndo = computed( => historyIndex.value > 0)
  const canRedo = computed( => historyIndex.value < history.value.length - 1)
@@ -188,6 +191,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  else {
  historyIndex.value++
  }
+ // Mark as having unsaved changes
+ hasUnsavedChanges.value = true
  }
  function undo {
  if (!canUndo.value)
@@ -236,6 +241,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Initialize history
  history.value = [{ nodes: JSON.parse(JSON.stringify(nodes.value)), edges: JSON.parse(JSON.stringify(edges.value)) }]
  historyIndex.value = 0
+ // Reset unsaved changes flag
+ hasUnsavedChanges.value = false
  }
  catch (e: any) {
  error.value = e.message
@@ -276,6 +283,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Update nodes and edges with server IDs
  nodes.value = toVueFlowNodes(workflow.nodes || )
  edges.value = toVueFlowEdges(workflow.edges || )
+ // Reset unsaved changes flag and clear draft
+ hasUnsavedChanges.value = false
+ clearDraft
  }
  catch (e: any) {
  error.value = e.message
@@ -372,6 +382,60 @@ export const useWorkflowsStore = defineStore('workflows', => {
  function selectNode(nodeId: string | null) {
  selectedNodeId.value = nodeId
  }
+ // Draft management
+ function getDraftKey: string | null {
+ return currentWorkflow.value ? `${DRAFT_KEY_PREFIX}${currentWorkflow.value.id}`: null
+ }
+ function saveDraft {
+ const key = getDraftKey
+ if (!key) return
+ const draft = {
+ nodes: JSON.parse(JSON.stringify(nodes.value)),
+ edges: JSON.parse(JSON.stringify(edges.value)),
+ savedAt: new Date.toISOString,
+ }
+ localStorage.setItem(key, JSON.stringify(draft))
+ }
+ function loadDraft: boolean {
+ const key = getDraftKey
+ if (!key) return false
+ const draftStr = localStorage.getItem(key)
+ if (!draftStr) return false
+ try {
+ const draft = JSON.parse(draftStr)
+ nodes.value = draft.nodes
+ edges.value = draft.edges
+ hasUnsavedChanges.value = true
+ return true
+ }
+ catch {
+ return false
+ }
+ }
+ function clearDraft {
+ const key = getDraftKey
+ if (key) {
+ localStorage.removeItem(key)
+ }
+ }
+ function hasDraft: boolean {
+ const key = getDraftKey
+ if (!key) return false
+ return localStorage.getItem(key) !== null
+ }
+ function getDraftInfo: { savedAt: string } | null {
+ const key = getDraftKey
+ if (!key) return null
+ const draftStr = localStorage.getItem(key)
+ if (!draftStr) return null
+ try {
+ const draft = JSON.parse(draftStr)
+ return { savedAt: draft.savedAt }
+ }
+ catch {
+ return null
+ }
+ }
  return {
  workflows,
  currentWorkflow,
@@ -384,6 +448,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  selectedNode,
  canUndo,
  canRedo,
+ hasUnsavedChanges,
  fetchWorkflows,
  fetchWorkflow,
  createWorkflow,
@@ -402,5 +467,10 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saveToHistory,
  undo,
  redo,
+ saveDraft,
+ loadDraft,
+ clearDraft,
+ hasDraft,
+ getDraftInfo,
  } as const
 })
