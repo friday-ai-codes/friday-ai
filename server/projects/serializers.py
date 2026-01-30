@@ -41,7 +41,7 @@ class ProjectSerializer(serializers.ModelSerializer):
  """Serializer for Project model."""
  has_feishu_config = serializers.SerializerMethodField
  webhook_token = serializers.CharField(source="feishu_webhook_token", read_only=True)
- repositories = RepositorySerializer(many=True, read_only=True)
+ repositories = serializers.SerializerMethodField
  class Meta:
  model = Project
  fields = [
@@ -58,6 +58,10 @@ class ProjectSerializer(serializers.ModelSerializer):
  read_only_fields = ["id", "created_at", "updated_at"]
  def get_has_feishu_config(self, obj):
  return obj.has_feishu_config
+ def get_repositories(self, obj):
+ """Return only non-deleted repositories."""
+ active_repos = obj.repositories.filter(is_deleted=False)
+ return RepositorySerializer(active_repos, many=True).data
 class ProjectCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Project."""
  class Meta:

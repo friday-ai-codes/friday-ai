@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { GitPlatform } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
+import { repositoriesApi } from '~/api'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { MarkdownEditor } from '~/components/ui/markdown-editor'
 import {
  Select,
  SelectContent,
@@ -55,6 +57,45 @@ function validate: boolean {
  errors.access_token = '请输入 Access Token'
  }
  return !errors.name && !errors.git_url && !errors.access_token
+}
+// 测试连接
+const testing = ref(false)
+const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string } | null>(null)
+async function handleTestConnection {
+ // 验证必填字段
+ errors.git_url = ''
+ errors.access_token = ''
+ if (!form.git_url.trim) {
+ errors.git_url = '请输入仓库 URL'
+ return
+ }
+ if (!form.access_token.trim) {
+ errors.access_token = '请输入 Access Token'
+ return
+ }
+ testing.value = true
+ testResult.value = null
+ try {
+ const result = await repositoriesApi.testConnection({
+ git_url: form.git_url,
+ access_token: form.access_token,
+ proxy_url: form.proxy_url || undefined,
+ })
+ testResult.value = result
+ if (result.success) {
+ success('连接成功', result.branches?.length ? `发现 ${result.branches.length} 个分支`: '仓库可访问')
+ }
+ else {
+ showError('连接失败', result.error || '无法连接到仓库')
+ }
+ }
+ catch (e) {
+ testResult.value = { success: false, error: e instanceof Error ? e.message: '测试连接失败' }
+ showError('测试失败', e instanceof Error ? e.message: '无法测试连接')
+ }
+ finally {
+ testing.value = false
+ }
 }
 // 提交表单
 const submitting = ref(false)
@@ -172,6 +213,18 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  用于该仓库 Git 操作的 HTTP 代理
  </p>
  </div>
+ <!-- 仓库简介 -->
+ <div class="space-y-2">
+ <Label for="description" class="flex items-center gap-1 text-foreground">
+ 仓库简介
+ <span class="text-xs font-normal text-muted-foreground">(可选，支持 Markdown)</span>
+ </Label>
+ <MarkdownEditor
+ v-model="form.description"
+ placeholder="简要描述仓库的用途和功能，支持 Markdown 语法..."
+ height="200px"
+ />
+ </div>
  <!-- Git 平台和默认分支 -->
  <div class="grid gap-4 md:grid-cols-2">
  <div class="space-y-2">
@@ -262,6 +315,30 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  placeholder="ai@friday.codes"
  class=" bg-white"
  />
+ </div>
+ </div>
+ <!-- 测试连接按钮 -->
+ <div class="pt-2">
+ <Button
+ type="button"
+ variant="outline"
+ size="sm"
+ class="w-full":disabled="testing || !form.git_url || !form.access_token"
+ @click="handleTestConnection"
+ >
+ <span v-if="testing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--plug] mr-2" />
+ {{ testing ? '测试中...': '测试连接' }}
+ </Button>
+ <!-- 测试结果 -->
+ <div v-if="testResult" class="mt-2 rounded-lg text-sm":class="testResult.success ? 'bg-emerald-50 text-emerald-700': 'bg-red-50 text-red-700'">
+ <div class="flex items-center gap-1.5">
+ <span:class="testResult.success ? 'icon-[lucide--check-circle]': 'icon-[lucide--x-circle]'" />
+ {{ testResult.success ? '连接成功': testResult.error }}
+ </div>
+ <div v-if="testResult.success && testResult.branches?.length" class="mt-1 text-xs opacity-80">
+ 分支: {{ testResult.branches.slice(0, 5).join(', ') }}{{ testResult.branches.length > 5 ? '...': '' }}
+ </div>
  </div>
  </div>
  </div>

@@ -17,6 +17,10 @@ const emit = defineEmits<{
 }>
 const triggers = ref<WorkflowTrigger>
 const loading = ref(false)
+// 删除确认弹窗
+const deleteDialogOpen = ref(false)
+const triggerToDelete = ref<WorkflowTrigger | null>(null)
+const deleting = ref(false)
 // 事件类型中文映射
 const eventTypeLabels: Record<string, string> = {
  WorkitemCreateEvent: '工作项创建',
@@ -56,17 +60,25 @@ async function toggleActive(trigger: WorkflowTrigger) {
  }
 }
 // 删除触发器
-async function handleDelete(trigger: WorkflowTrigger) {
- // eslint-disable-next-line no-alert
- if (!window.confirm(`确定要删除触发器 "${trigger.name || trigger.event_type}" 吗？`)) {
+function openDeleteDialog(trigger: WorkflowTrigger) {
+ triggerToDelete.value = trigger
+ deleteDialogOpen.value = true
+}
+async function handleDelete {
+ if (!triggerToDelete.value)
  return
- }
+ deleting.value = true
  try {
- await deleteTrigger(props.workflowId, trigger.id)
- triggers.value = triggers.value.filter(t => t.id !== trigger.id)
+ await deleteTrigger(props.workflowId, triggerToDelete.value.id)
+ triggers.value = triggers.value.filter(t => t.id !== triggerToDelete.value!.id)
+ deleteDialogOpen.value = false
  }
  catch (error) {
  console.error('Failed to delete trigger:', error)
+ }
+ finally {
+ deleting.value = false
+ triggerToDelete.value = null
  }
 }
 // 活跃触发器数量
@@ -152,7 +164,7 @@ defineExpose({ refresh: loadTriggers })
  variant="ghost"
  size="icon"
  class=" w-7 text-destructive hover:text-destructive"
- @click="handleDelete(trigger)"
+ @click="openDeleteDialog(trigger)"
  >
  <Trash2 class="w-3.5 .5" />
  </Button>
@@ -160,4 +172,12 @@ defineExpose({ refresh: loadTriggers })
  </div>
  </CardContent>
  </Card>
+ <!-- 删除确认对话框 -->
+ <ConfirmDialog
+ v-model:open="deleteDialogOpen"
+ title="删除触发器":description="`确定要删除触发器 &quot;${triggerToDelete?.name || getEventTypeLabel(triggerToDelete?.event_type || '')}&quot; 吗？`"
+ confirm-text="删除"
+ variant="destructive":loading="deleting"
+ @confirm="handleDelete"
+ />
 </template>

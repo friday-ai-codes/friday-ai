@@ -52,14 +52,14 @@ class ProjectViewSet(ModelViewSet):
  def list_repositories(self, request, pk=None):
  """List repositories associated with the project."""
  project = self.get_object
- repositories = project.repositories.all
+ repositories = project.repositories.filter(is_deleted=False)
  serializer = RepositorySerializer(repositories, many=True)
  return Response(serializer.data)
  @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
  def link_repository(self, request, pk=None, repository_id=None):
  """Link a repository to the project."""
  project = self.get_object
- repository = get_object_or_404(Repository, id=repository_id)
+ repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
  _, created = ProjectRepository.objects.get_or_create(
  project=project,
  repository=repository,
@@ -243,7 +243,7 @@ class ProjectViewSet(ModelViewSet):
  return Response(status=status.HTTP_204_NO_CONTENT)
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
- queryset = Repository.objects.select_related("credential").prefetch_related("projects").all
+ queryset = Repository.objects.filter(is_deleted=False).select_related("credential").prefetch_related("projects")
  serializer_class = RepositorySerializer
  def get_serializer_class(self):
  if self.action == "create":
@@ -299,7 +299,7 @@ class SetAccessTokenView(APIView):
  支持创建新凭证或更新已有凭证。
  """
  def post(self, request, repository_id):
- repository = get_object_or_404(Repository, id=repository_id)
+ repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
  token = request.data.get("token")
  if not token:
  return Response(

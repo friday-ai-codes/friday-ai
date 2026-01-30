@@ -76,9 +76,10 @@ function formatDate(dateStr: string) {
 const project = computed( => projectsStore.currentProject)
 const feishuConfig = computed( => projectsStore.currentFeishuConfig)
 const projectExecutions = computed( => executionsStore.executions)
-// 关联仓库
+// 关联仓库 - 穿梭框模式
 const linkDialogOpen = ref(false)
-const selectedRepositoryId = ref('')
+const selectedToLink = ref<Set<string>>(new Set)
+const selectedToUnlink = ref<Set<string>>(new Set)
 const linking = ref(false)
 const availableRepositories = computed( => {
  if (!project.value)
@@ -86,15 +87,48 @@ const availableRepositories = computed( => {
  const linkedIds = project.value.repositories?.map(r => r.id) ??
  return repositoriesStore.repositories.filter(r => !linkedIds.includes(r.id))
 })
-async function handleLinkRepository {
- if (!selectedRepositoryId.value)
+const linkedRepositories = computed( => {
+ return project.value?.repositories ??
+})
+function toggleSelectToLink(id: string) {
+ if (selectedToLink.value.has(id)) {
+ selectedToLink.value.delete(id)
+ }
+ else {
+ selectedToLink.value.add(id)
+ }
+}
+function toggleSelectToUnlink(id: string) {
+ if (selectedToUnlink.value.has(id)) {
+ selectedToUnlink.value.delete(id)
+ }
+ else {
+ selectedToUnlink.value.add(id)
+ }
+}
+function selectAllAvailable {
+ availableRepositories.value.forEach(r => selectedToLink.value.add(r.id))
+}
+function clearSelectToLink {
+ selectedToLink.value.clear
+}
+function selectAllLinked {
+ linkedRepositories.value.forEach(r => selectedToUnlink.value.add(r.id))
+}
+function clearSelectToUnlink {
+ selectedToUnlink.value.clear
+}
+async function handleLinkSelected {
+ if (selectedToLink.value.size === 0)
  return
  linking.value = true
  try {
- await projectsStore.addRepository(projectId.value, selectedRepositoryId.value)
- success('关联成功', '已关联仓库')
- linkDialogOpen.value = false
- selectedRepositoryId.value = ''
+ const promises = Array.from(selectedToLink.value).map(id =>
+ projectsStore.addRepository(projectId.value, id),
+ )
+ await Promise.all(promises)
+ success('关联成功', `已关联 ${selectedToLink.value.size} 个仓库`)
+ selectedToLink.value.clear
  }
  catch (e) {
  showError('关联失败', e instanceof Error ? e.message: '无法关联仓库')
@@ -103,20 +137,29 @@ async function handleLinkRepository {
  linking.value = false
  }
 }
-// 解除关联
-const unlinking = ref(false)
-async function handleUnlinkRepository(repositoryId: string) {
- unlinking.value = true
+async function handleUnlinkSelected {
+ if (selectedToUnlink.value.size === 0)
+ return
+ linking.value = true
  try {
- await projectsStore.removeRepository(projectId.value, repositoryId)
- success('解除关联成功', '已解除关联仓库')
+ const promises = Array.from(selectedToUnlink.value).map(id =>
+ projectsStore.removeRepository(projectId.value, id),
+ )
+ await Promise.all(promises)
+ success('解除关联成功', `已解除 ${selectedToUnlink.value.size} 个仓库`)
+ selectedToUnlink.value.clear
  }
  catch (e) {
  showError('解除关联失败', e instanceof Error ? e.message: '无法解除关联仓库')
  }
  finally {
- unlinking.value = false
+ linking.value = false
  }
+}
+function openLinkDialog {
+ selectedToLink.value.clear
+ selectedToUnlink.value.clear
+ linkDialogOpen.value = true
 }
 // Webhook Token 管理
 async function copyWebhookToken {
@@ -262,9 +305,9 @@ async function handleCustomToken {
  </CardTitle>
  <CardDescription>关联的 Git 仓库</CardDescription>
  </div>
- <Button variant="outline" size="sm" class="group" @click="linkDialogOpen = true">
- <span class="icon-[lucide--link] mr-2 group-hover:scale-110 transition-transform" />
- 关联仓库
+ <Button variant="outline" size="sm" class="group" @click="openLinkDialog">
+ <span class="icon-[lucide--settings-2] mr-2 group-hover:rotate-90 transition-transform" />
+ 管理仓库
  </Button>
  </CardHeader>
  <CardContent class="pt-6">
@@ -288,22 +331,11 @@ async function handleCustomToken {
  {{ repo.git_url }}
  </div>
  </div>
- <div class="flex items-center gap-1">
  <RouterLink:to="`/repositories/${repo.id}`">
  <Button variant="ghost" size="icon" class=" w-8" title="查看详情">
  <span class="icon-[lucide--eye]" />
  </Button>
  </RouterLink>
- <Button
- variant="ghost"
- size="icon"
- class=" w-8 hover:bg-destructive/10"
- title="解除关联":disabled="unlinking"
- @click="handleUnlinkRepository(repo.id)"
- >
- <span class="icon-[lucide--unlink] text-destructive" />
- </Button>
- </div>
  </div>
  </div>
  </CardContent>
@@ -541,43 +573,155 @@ async function handleCustomToken {
  @confirm="handleDelete"
  />
  </div>
- <!-- 关联仓库对话框 -->
+ <!-- 管理仓库关联对话框 - 穿梭框样式 -->
  <BaseModal
  v-model="linkDialogOpen"
- title="关联仓库"
- size="md"
+ title="管理仓库关联"
+ size="800px"
  >
  <div class="space-y-4">
  <p class="text-sm text-muted-foreground">
- 选择要关联到此项目的 Git 仓库
+ 在左侧选择要关联的仓库，在右侧选择要解除关联的仓库
  </p>
- <div class="py-2">
- <Select v-model="selectedRepositoryId">
- <SelectTrigger class=" bg-muted/30 border-border/50">
- <SelectValue placeholder="选择仓库" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem v-for="repo in availableRepositories":key="repo.id":value="repo.id">
- {{ repo.name }} ({{ repo.git_url }})
- </SelectItem>
- </SelectContent>
- </Select>
- <p v-if="availableRepositories.length === 0" class="text-sm text-muted-foreground mt-3">
- 没有可关联的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">
- 创建仓库
- </RouterLink>
- </p>
+ <div class="grid grid-cols-2 gap-6">
+ <!-- 左侧：可用仓库 -->
+ <div class="flex flex-col">
+ <!-- 标题栏 - 固定高度 -->
+ <div class="flex items-center justify-between mb-3">
+ <h4 class="text-sm font-medium flex items-center gap-2">
+ <span class="icon-[lucide--inbox] text-muted-foreground" />
+ 可用仓库
+ <span class="text-xs text-muted-foreground font-normal">({{ availableRepositories.length }})</span>
+ </h4>
+ <div class="flex items-center gap-1">
+ <Button
+ v-if="availableRepositories.length > 0"
+ variant="ghost"
+ size="sm"
+ class=" px-2 text-xs"
+ @click="selectAllAvailable"
+ >
+ 全选
+ </Button>
+ <Button
+ v-if="selectedToLink.size > 0"
+ variant="ghost"
+ size="sm"
+ class=" px-2 text-xs"
+ @click="clearSelectToLink"
+ >
+ 清空
+ </Button>
  </div>
+ </div>
+ <!-- 列表区域 - 固定高度 -->
+ <div class="border border-border/50 rounded-xl bg-muted/20 overflow-y-auto mb-3">
+ <div v-if="availableRepositories.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground">
+ <span class="icon-[lucide--package] text-2xl mb-2 opacity-50" />
+ <span class="text-sm">没有可用仓库</span>
+ </div>
+ <div v-else class=" space-y-1">
+ <div
+ v-for="repo in availableRepositories":key="repo.id"
+ class="flex items-center gap-3 .5 rounded-lg cursor-pointer transition-colors":class="selectedToLink.has(repo.id) ? 'bg-primary/10 border border-primary/30': 'hover:bg-muted/50 border border-transparent'"
+ @click="toggleSelectToLink(repo.id)"
+ >
+ <div
+ class="w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors":class="selectedToLink.has(repo.id) ? 'bg-primary border-primary': 'border-muted-foreground/30'"
+ >
+ <span v-if="selectedToLink.has(repo.id)" class="icon-[lucide--check] text-xs text-primary-foreground" />
+ </div>
+ <div class="min-w-0 flex-1">
+ <div class="font-medium text-sm truncate">{{ repo.name }}</div>
+ <div class="text-xs text-muted-foreground truncate">{{ repo.git_url }}</div>
+ </div>
+ </div>
+ </div>
+ </div>
+ <!-- 操作按钮 - 固定高度 -->
+ <Button
+ class="w-full group":disabled="selectedToLink.size === 0 || linking"
+ @click="handleLinkSelected"
+ >
+ <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--arrow-right] mr-2 group-hover:translate-x-1 transition-transform" />
+ 关联选中 ({{ selectedToLink.size }})
+ </Button>
+ </div>
+ <!-- 右侧：已关联仓库 -->
+ <div class="flex flex-col">
+ <!-- 标题栏 - 固定高度 -->
+ <div class="flex items-center justify-between mb-3">
+ <h4 class="text-sm font-medium flex items-center gap-2">
+ <span class="icon-[lucide--link] text-violet-500" />
+ 已关联仓库
+ <span class="text-xs text-muted-foreground font-normal">({{ linkedRepositories.length }})</span>
+ </h4>
+ <div class="flex items-center gap-1">
+ <Button
+ v-if="linkedRepositories.length > 0"
+ variant="ghost"
+ size="sm"
+ class=" px-2 text-xs"
+ @click="selectAllLinked"
+ >
+ 全选
+ </Button>
+ <Button
+ v-if="selectedToUnlink.size > 0"
+ variant="ghost"
+ size="sm"
+ class=" px-2 text-xs"
+ @click="clearSelectToUnlink"
+ >
+ 清空
+ </Button>
+ </div>
+ </div>
+ <!-- 列表区域 - 固定高度 -->
+ <div class="border border-border/50 rounded-xl bg-muted/20 overflow-y-auto mb-3">
+ <div v-if="linkedRepositories.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground">
+ <span class="icon-[lucide--unlink] text-2xl mb-2 opacity-50" />
+ <span class="text-sm">暂无关联仓库</span>
+ </div>
+ <div v-else class=" space-y-1">
+ <div
+ v-for="repo in linkedRepositories":key="repo.id"
+ class="flex items-center gap-3 .5 rounded-lg cursor-pointer transition-colors":class="selectedToUnlink.has(repo.id) ? 'bg-destructive/10 border border-destructive/30': 'hover:bg-muted/50 border border-transparent'"
+ @click="toggleSelectToUnlink(repo.id)"
+ >
+ <div
+ class="w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors":class="selectedToUnlink.has(repo.id) ? 'bg-destructive border-destructive': 'border-muted-foreground/30'"
+ >
+ <span v-if="selectedToUnlink.has(repo.id)" class="icon-[lucide--check] text-xs text-destructive-foreground" />
+ </div>
+ <div class="min-w-0 flex-1">
+ <div class="font-medium text-sm truncate">{{ repo.name }}</div>
+ <div class="text-xs text-muted-foreground truncate">{{ repo.git_url }}</div>
+ </div>
+ </div>
+ </div>
+ </div>
+ <!-- 操作按钮 - 固定高度 -->
+ <Button
+ variant="outline"
+ class="w-full group text-destructive hover:bg-destructive/10":disabled="selectedToUnlink.size === 0 || linking"
+ @click="handleUnlinkSelected"
+ >
+ <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
+ 解除关联 ({{ selectedToUnlink.size }})
+ </Button>
+ </div>
+ </div>
+ <p v-if="availableRepositories.length === 0 && linkedRepositories.length === 0" class="text-sm text-muted-foreground text-center py-2">
+ 没有可用的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">创建仓库</RouterLink>
+ </p>
  </div>
  <template #footer>
- <div class="flex justify-end gap-3 w-full">
+ <div class="flex justify-end w-full">
  <Button variant="outline" @click="linkDialogOpen = false">
- 取消
- </Button>
- <Button:disabled="!selectedRepositoryId || linking" class="group relative overflow-hidden" @click="handleLinkRepository">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
- {{ linking ? '关联中...': '关联' }}
+ 完成
  </Button>
  </div>
  </template>

@@ -367,7 +367,7 @@ class AICodingDispatcherNode(BaseNode):
  else:
  continue
  try:
- repository = await Repository.objects.aget(id=repo_id)
+ repository = await Repository.objects.aget(id=repo_id, is_deleted=False)
  except Repository.DoesNotExist:
  logger.warning("repository_not_found", repo_id=repo_id)
  continue

@@ -47,6 +47,9 @@ class Repository(models.Model):
  # Progress tracking
  index_total_chunks = models.IntegerField(default=0)
  index_processed_chunks = models.IntegerField(default=0)
+ # Soft delete fields
+ is_deleted = models.BooleanField(default=False)
+ deleted_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:
@@ -55,6 +58,12 @@ class Repository(models.Model):
  verbose_name_plural = "仓库"
  def __str__(self):
  return self.name
+ def soft_delete(self) -> None:
+ """Mark the repository as deleted."""
+ from django.utils import timezone
+ self.is_deleted = True
+ self.deleted_at = timezone.now
+ self.save(update_fields=["is_deleted", "deleted_at"])
 class GitCredential(models.Model):
  """Git credential model for authentication."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
