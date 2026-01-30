@@ -117,6 +117,8 @@ declare module 'vue' {
  Label: typeof import('./components/ui/label/Label.vue')['default']
  LoadingState: typeof import('./components/common/LoadingState.vue')['default']
  ManualTriggerDialog: typeof import('./components/workflow/ManualTriggerDialog.vue')['default']
+ MarkdownEditor: typeof import('./components/ui/markdown-editor/MarkdownEditor.vue')['default']
+ MarkdownPreview: typeof import('./components/ui/markdown-editor/MarkdownPreview.vue')['default']
  NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
  NodePalette: typeof import('./components/workflow/NodePalette.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']

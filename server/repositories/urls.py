@@ -9,15 +9,39 @@ from .index_views import (
  IndexTriggerView,
  QdrantHealthView,
 )
-from .views import RepositoryViewSet, SetAccessTokenView
+from .views import RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
 router.register("", RepositoryViewSet, basename="repository")
 urlpatterns = [
+ # Test connection (must be before router to avoid being matched as repository id)
+ path(
+ "test-connection/",
+ TestConnectionView.as_view,
+ name="test-connection",
+ ),
+ # Health checks (must be before router)
+ path(
+ "health/qdrant/",
+ QdrantHealthView.as_view,
+ name="qdrant-health",
+ ),
+ path(
+ "health/embedding/",
+ EmbeddingHealthView.as_view,
+ name="embedding-health",
+ ),
+ # Router URLs
  path("", include(router.urls)),
+ # Repository-specific endpoints
  path(
  "<uuid:repository_id>/credential/access-token",
  SetAccessTokenView.as_view,
  name="set-access-token",
+ ),
+ path(
+ "<uuid:repository_id>/test-connection/",
+ TestConnectionView.as_view,
+ name="repository-test-connection",
  ),
  # Index management
  path(
@@ -40,16 +64,5 @@ urlpatterns = [
  "<uuid:repository_id>/search/",
  CodeSearchView.as_view,
  name="repository-code-search",
- ),
- # Health checks
- path(
- "health/qdrant/",
- QdrantHealthView.as_view,
- name="qdrant-health",
- ),
- path(
- "health/embedding/",
- EmbeddingHealthView.as_view,
- name="embedding-health",
  ),
 ]

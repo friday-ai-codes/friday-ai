@@ -18,28 +18,22 @@ const loading = ref(true)
 const saving = ref(false)
 const testingQdrant = ref(false)
 const testingEmbedding = ref(false)
-const testingReranker = ref(false)
 // 表单值
 const qdrantUrlValue = ref('')
 const qdrantApiKeyValue = ref('')
 const embeddingApiUrlValue = ref('')
 const embeddingModelValue = ref('')
 const embeddingDimensionValue = ref('')
-const rerankerApiUrlValue = ref('')
-const rerankerModelValue = ref('')
 // 跟踪用户是否修改了值
 const qdrantUrlDirty = ref(false)
 const qdrantApiKeyDirty = ref(false)
 const embeddingApiUrlDirty = ref(false)
 const embeddingModelDirty = ref(false)
 const embeddingDimensionDirty = ref(false)
-const rerankerApiUrlDirty = ref(false)
-const rerankerModelDirty = ref(false)
 const showQdrantApiKey = ref(false)
 // 健康状态
 const qdrantHealth = ref<{ status: string, message?: string } | null>(null)
 const embeddingHealth = ref<{ status: string, message?: string } | null>(null)
-const rerankerHealth = ref<{ status: string, message?: string } | null>(null)
 // 设置项元数据
 const settingsMeta: Record<string, { label: string, description: string, placeholder: string }> = {
  [SettingKey.QDRANT_URL]: {
@@ -67,16 +61,6 @@ const settingsMeta: Record<string, { label: string, description: string, placeho
  description: 'Embedding 向量的维度大小',
  placeholder: '1024',
  },
- [SettingKey.RERANKER_API_URL]: {
- label: 'Reranker API 地址',
- description: '用于重排序的 Reranker API 端点（可选）',
- placeholder: 'http://localhost:8080/v1/rerank',
- },
- [SettingKey.RERANKER_MODEL]: {
- label: 'Reranker 模型',
- description: '使用的 Reranker 模型名称',
- placeholder: 'BAAI/bge-reranker-large',
- },
 }
 // 加载设置
 async function loadSettings {
@@ -94,8 +78,6 @@ async function loadSettings {
  embeddingApiUrlValue.value = getValue(SettingKey.EMBEDDING_API_URL)
  embeddingModelValue.value = getValue(SettingKey.EMBEDDING_MODEL)
  embeddingDimensionValue.value = getValue(SettingKey.EMBEDDING_DIMENSION)
- rerankerApiUrlValue.value = getValue(SettingKey.RERANKER_API_URL)
- rerankerModelValue.value = getValue(SettingKey.RERANKER_MODEL)
  // 重置脏标记
  resetDirtyFlags
  }
@@ -113,8 +95,6 @@ function resetDirtyFlags {
  embeddingApiUrlDirty.value = false
  embeddingModelDirty.value = false
  embeddingDimensionDirty.value = false
- rerankerApiUrlDirty.value = false
- rerankerModelDirty.value = false
 }
 // 保存所有设置
 async function saveAllSettings {
@@ -131,10 +111,6 @@ async function saveAllSettings {
  promises.push(updateSetting(SettingKey.EMBEDDING_MODEL, embeddingModelValue.value.trim))
  if (embeddingDimensionDirty.value && embeddingDimensionValue.value.trim)
  promises.push(updateSetting(SettingKey.EMBEDDING_DIMENSION, embeddingDimensionValue.value.trim))
- if (rerankerApiUrlDirty.value && rerankerApiUrlValue.value.trim)
- promises.push(updateSetting(SettingKey.RERANKER_API_URL, rerankerApiUrlValue.value.trim))
- if (rerankerModelDirty.value && rerankerModelValue.value.trim)
- promises.push(updateSetting(SettingKey.RERANKER_MODEL, rerankerModelValue.value.trim))
  if (promises.length === 0) {
  toast.info('没有需要保存的更改')
  return
@@ -175,7 +151,6 @@ function getSettingByKey(key: SettingKey): SettingRead | undefined {
 function hasUnsavedChanges: boolean {
  return qdrantUrlDirty.value || qdrantApiKeyDirty.value || embeddingApiUrlDirty.value
  || embeddingModelDirty.value || embeddingDimensionDirty.value
- || rerankerApiUrlDirty.value || rerankerModelDirty.value
 }
 // 测试 Qdrant 连接
 async function testQdrantConnection {
@@ -225,38 +200,6 @@ async function testEmbeddingConnection {
  }
  finally {
  testingEmbedding.value = false
- }
-}
-// 测试 Reranker API 连接
-async function testRerankerConnection {
- testingReranker.value = true
- try {
- // 使用表单中的值测试（无需先保存）
- const apiUrl = rerankerApiUrlValue.value.trim
- const model = rerankerModelValue.value.trim || 'BAAI/bge-reranker-large'
- if (!apiUrl) {
- toast.info('Reranker API 未配置（可选）')
- rerankerHealth.value = { status: 'not_configured', message: 'Reranker API URL not configured (optional)' }
- return
- }
- const result = await repositoriesApi.testRerankerConnection(apiUrl, model)
- rerankerHealth.value = result
- if (result.status === 'healthy') {
- toast.success('Reranker API 连接成功')
- }
- else if (result.status === 'not_configured') {
- toast.info('Reranker API 未配置（可选）')
- }
- else {
- toast.error(`Reranker API 连接失败: ${result.message}`)
- }
- }
- catch (error) {
- toast.error('测试连接失败')
- rerankerHealth.value = { status: 'error', message: String(error) }
- }
- finally {
- testingReranker.value = false
  }
 }
 function getHealthStatusColor(status: string | undefined) {
@@ -420,51 +363,6 @@ onMounted( => {
  <span v-if="testingEmbedding" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--plug] mr-2" />
  测试 Embedding API
- </Button>
- </div>
- <!-- Reranker 配置 -->
- <div class="space-y-4">
- <div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
- <span class="icon-[lucide--list-ordered]" />
- <span>Reranker API（可选）</span>
- <span
- v-if="rerankerHealth":class="[getHealthStatusIcon(rerankerHealth.status), getHealthStatusColor(rerankerHealth.status)]"
- />
- </div>
- <div class="grid gap-4 md:grid-cols-2">
- <!-- Reranker API URL -->
- <div class="space-y-2">
- <Label for="reranker-api-url">{{ settingsMeta[SettingKey.RERANKER_API_URL].label }}</Label>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--link] text-muted-foreground" />
- <Input
- id="reranker-api-url"
- v-model="rerankerApiUrlValue"
- type="url":placeholder="settingsMeta[SettingKey.RERANKER_API_URL].placeholder"
- class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50"
- @input="rerankerApiUrlDirty = true"
- />
- </div>
- </div>
- <!-- Reranker Model -->
- <div class="space-y-2">
- <Label for="reranker-model">{{ settingsMeta[SettingKey.RERANKER_MODEL].label }}</Label>
- <Input
- id="reranker-model"
- v-model="rerankerModelValue":placeholder="settingsMeta[SettingKey.RERANKER_MODEL].placeholder"
- class=" bg-muted/30 border-border/50 focus:border-primary/50"
- @input="rerankerModelDirty = true"
- />
- </div>
- </div>
- <Button
- variant="outline"
- size="sm":disabled="testingReranker"
- @click="testRerankerConnection"
- >
- <span v-if="testingReranker" class="icon-[lucide--loader-circle] animate-spin mr-2" />
- <span v-else class="icon-[lucide--plug] mr-2" />
- 测试 Reranker API
  </Button>
  </div>
  </div>

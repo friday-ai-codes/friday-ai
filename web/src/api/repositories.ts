@@ -59,6 +59,13 @@ export interface HealthCheckResponse {
  dimension?: number
  model?: string
 }
+// 连接测试响应
+export interface TestConnectionResponse {
+ success: boolean
+ message?: string
+ error?: string
+ branches?: string
+}
 export const repositoriesApi = {
  /**
  * 获取仓库列表
@@ -154,19 +161,17 @@ export const repositoriesApi = {
  model,
  })
  },
+ // ==================== 连接测试 API ====================
  /**
- * Reranker API 健康检查（使用已保存配置）
+ * 测试仓库连接（新建时使用）
  */
- checkRerankerHealth: async: Promise<HealthCheckResponse> => {
- return get<HealthCheckResponse>('/repositories/health/reranker/')
+ testConnection: async (data: { git_url: string, access_token: string, proxy_url?: string }): Promise<TestConnectionResponse> => {
+ return post<TestConnectionResponse>('/repositories/test-connection/', data)
  },
  /**
- * Reranker API 健康检查（使用提供的配置，保存前测试）
+ * 测试已有仓库的连接
  */
- testRerankerConnection: async (apiUrl: string, model: string): Promise<HealthCheckResponse> => {
- return post<HealthCheckResponse>('/repositories/health/reranker/', {
- api_url: apiUrl,
- model,
- })
+ testRepositoryConnection: async (id: string): Promise<TestConnectionResponse> => {
+ return post<TestConnectionResponse>(`/repositories/${id}/test-connection/`)
  },
 }

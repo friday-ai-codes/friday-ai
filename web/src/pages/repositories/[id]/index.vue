@@ -5,6 +5,7 @@ import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import { MarkdownPreview } from '~/components/ui/markdown-editor'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/repositories/[id]/')
@@ -127,8 +128,11 @@ async function handleEditSuccess {
  <Separator class="bg-border/50" />
  <div>
  <label class="text-sm text-muted-foreground">描述</label>
- <p class="text-sm mt-1">
- {{ repository.description || '暂无描述' }}
+ <div v-if="repository.description" class="mt-1">
+ <MarkdownPreview:content="repository.description" />
+ </div>
+ <p v-else class="text-sm mt-1 text-muted-foreground">
+ 暂无描述
  </p>
  </div>
  <Separator class="bg-border/50" />

@@ -47,7 +47,7 @@ class IndexTriggerView(APIView):
  def post(self, request, repository_id):
  """Trigger indexing for the repository."""
  try:
- repository = Repository.objects.get(id=repository_id)
+ repository = Repository.objects.get(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -74,7 +74,7 @@ class IndexStatusView(APIView):
  def get(self, request, repository_id):
  """Get current index status."""
  try:
- repository = Repository.objects.get(id=repository_id)
+ repository = Repository.objects.get(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -95,7 +95,7 @@ class IndexDeleteView(APIView):
  def delete(self, request, repository_id):
  """Delete the index for the repository."""
  try:
- repository = Repository.objects.get(id=repository_id)
+ repository = Repository.objects.get(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -114,7 +114,7 @@ class CodeSearchView(APIView):
  def post(self, request, repository_id):
  """Search for code in the repository."""
  try:
- repository = Repository.objects.get(id=repository_id)
+ repository = Repository.objects.get(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},

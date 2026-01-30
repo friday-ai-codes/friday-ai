@@ -171,7 +171,7 @@ class FetchProjectInfoNode(BaseNode):
  # 仓库列表
  if include_repositories:
  repositories =
- for repo in project.repositories.all:
+ for repo in project.repositories.filter(is_deleted=False):
  repo_info = {
  "id": str(repo.id),
  "name": repo.name,
