@@ -164,30 +164,38 @@ const identifierTypeOptions = [
  <Switch v-model="includeWebhookToken" />
  </div>
  </div>
- <!-- 使用提示 -->
+ <!-- 输出变量说明 -->
  <div class="rounded-lg bg-muted/50 space-y-2">
- <p class="text-xs text-muted-foreground">
- <span class="icon-[lucide--info] mr-1" />
- 输出变量说明：
+ <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--code] text-cyan-500" />
+ 输出变量（JSONPath）
  </p>
- <ul class="text-xs text-muted-foreground space-y-1 ml-4">
- <li>
- <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.project_id \}\}' }}</code>
- - 项目 ID
- </li>
- <li>
- <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.repositories \}\}' }}</code>
- - 仓库列表
- </li>
- <li>
- <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.primary_repository_id \}\}' }}</code>
- - 首个仓库 ID
- </li>
- <li>
- <code class="bg-background px-1 rounded">{{ '\{\{ nodes.<id>.feishu_config \}\}' }}</code>
- - 飞书配置
- </li>
- </ul>
+ <div class="bg-muted rounded-lg space-y-1.5 text-xs">
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.project_id</code>
+ <span class="text-muted-foreground">项目 ID</span>
+ </div>
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.project_name</code>
+ <span class="text-muted-foreground">项目名称</span>
+ </div>
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.feishu_project_key</code>
+ <span class="text-muted-foreground">飞书项目 Key</span>
+ </div>
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repositories</code>
+ <span class="text-muted-foreground">仓库列表</span>
+ </div>
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repositories[0].id</code>
+ <span class="text-muted-foreground">首个仓库 ID</span>
+ </div>
+ <div class="flex gap-2">
+ <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repository_count</code>
+ <span class="text-muted-foreground">仓库数量</span>
+ </div>
+ </div>
  </div>
  </div>
 </template>

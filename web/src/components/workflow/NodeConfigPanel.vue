@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watchDebounced } from '@vueuse/core'
 import { Settings, Trash2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
@@ -61,14 +62,27 @@ watch(currentWorkflow, (workflow) => {
  workflowTimeout.value = workflow.default_timeout
  }
 }, { immediate: true })
-// Watch for selected node changes
-watch(selectedNode, (node) => {
- if (node) {
- nodeName.value = node.data?.name || node.label || ''
- nodeDescription.value = node.data?.description || ''
- nodeConfig.value = { ...node.data?.config }
+// Watch for selected node changes - only trigger on node ID change to avoid feedback loop
+watch( => selectedNode.value?.id, (newId) => {
+ if (newId && selectedNode.value) {
+ nodeName.value = selectedNode.value.data?.name || selectedNode.value.label || ''
+ nodeDescription.value = selectedNode.value.data?.description || ''
+ nodeConfig.value = { ...selectedNode.value.data?.config }
  }
 }, { immediate: true })
+// Auto-sync node config to store with debounce
+watchDebounced(
+ [nodeName, nodeDescription, nodeConfig],
+ => {
+ if (!selectedNodeId.value) return
+ store.updateNodeData(selectedNodeId.value, {
+ name: nodeName.value,
+ description: nodeDescription.value,
+ config: nodeConfig.value,
+ })
+ },
+ { debounce: 300, deep: true }
+)
 function closeNodePanel {
  store.selectNode(null)
 }
@@ -76,15 +90,6 @@ function deleteNode {
  if (selectedNodeId.value) {
  store.removeNode(selectedNodeId.value)
  }
-}
-function saveNodeConfig {
- if (!selectedNodeId.value)
- return
- store.updateNodeData(selectedNodeId.value, {
- name: nodeName.value,
- description: nodeDescription.value,
- config: nodeConfig.value,
- })
 }
 async function saveWorkflowSettings {
  await store.updateWorkflowSettings({
@@ -229,12 +234,7 @@ function getFieldType(schema: any): string {
  </div>
  </ScrollArea>
  <!-- Actions -->
- <div class=" border-t border-border/50 space-y-2">
- <Button class="w-full group relative overflow-hidden" @click="saveNodeConfig">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span class="icon-[lucide--save] mr-2" />
- 保存节点
- </Button>
+ <div class=" border-t border-border/50">
  <Button variant="outline" class="w-full hover:border-destructive/50 hover:text-destructive" @click="deleteNode">
  <Trash2 class="w-4 mr-2" />
  删除节点
