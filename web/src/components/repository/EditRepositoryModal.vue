@@ -138,7 +138,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 leading-none">
  <span class="icon-[lucide--edit] text-xl text-violet-600" />
  </div>
  <div>

@@ -138,7 +138,7 @@ function getFieldType(schema: any): string {
  <div class=" border-b border-border/50">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10">
+ <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10 leading-none">
  <Settings class="w-5 text-violet-500" />
  </div>
  <div>
@@ -246,7 +246,7 @@ function getFieldType(schema: any): string {
  <!-- Header -->
  <div class=" border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 leading-none">
  <Settings class="w-5 text-primary" />
  </div>
  <div>

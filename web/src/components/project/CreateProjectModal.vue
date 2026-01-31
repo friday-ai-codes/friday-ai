@@ -65,7 +65,7 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 leading-none">
  <span class="icon-[lucide--folder-plus] text-xl text-blue-600" />
  </div>
  <div>

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { createHighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  json: Record<string, unknown> | null
- theme?: 'github-dark' | 'github-light'
-}>
+ showCopy?: boolean
+}>, {
+ showCopy: true,
+})
+const { success, error: showError } = useToast
 // 细粒度加载：只包含需要的语言和主题，使用轻量 JS 引擎
 const highlighter = createHighlighterCore({
  themes: [import('shiki/themes/vitesse-dark.mjs')],
@@ -18,6 +21,7 @@ const highlighter = createHighlighterCore({
 })
 const html = ref('')
 const loading = ref(true)
+const copied = ref(false)
 // 动态加载并高亮 JSON
 watch(
  => props.json,
@@ -33,7 +37,7 @@ watch(
  const hl = await highlighter
  html.value = hl.codeToHtml(jsonString, {
  lang: 'json',
- theme: 'github-dark',
+ theme: 'vitesse-dark',
  })
  }
  catch (e) {
@@ -47,6 +51,22 @@ watch(
  },
  { immediate: true },
 )
+// 复制到剪贴板
+async function copyToClipboard {
+ if (!props.json)
+ return
+ try {
+ await navigator.clipboard.writeText(JSON.stringify(props.json, null, 2))
+ copied.value = true
+ success('已复制', 'JSON 已复制到剪贴板')
+ setTimeout( => {
+ copied.value = false
+ }, 2000)
+ }
+ catch {
+ showError('复制失败', '无法复制到剪贴板')
+ }
+}
 </script>
 <template>
  <div class="json-highlighter">
@@ -57,8 +77,25 @@ watch(
  <div v-else-if="!json" class=" text-sm text-muted-foreground">
  无数据
  </div>
+ <template v-else>
+ <!-- 复制按钮栏 -->
+ <div
+ v-if="showCopy !== false"
+ class="sticky top-0 flex justify-end px-2 py-1.5 bg-[#121212] border-b border-zinc-800 z-10"
+ >
+ <button
+ type="button"
+ class="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 hover:text-white transition-colors"
+ @click="copyToClipboard"
+ >
+ <span v-if="copied" class="icon-[lucide--check] text-green-400" />
+ <span v-else class="icon-[lucide--copy]" />
+ {{ copied ? '已复制': '复制' }}
+ </button>
+ </div>
  <!-- eslint-disable-next-line vue/no-v-html -->
- <div v-else class="overflow-auto rounded-md" v-html="html" />
+ <div class="overflow-auto rounded-b-md" v-html="html" />
+ </template>
  </div>
 </template>
 <style scoped>

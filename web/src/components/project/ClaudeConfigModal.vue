@@ -80,7 +80,7 @@ function openTestDialog {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 leading-none">
  <span class="icon-[lucide--bot] text-xl text-emerald-600" />
  </div>
  <div>

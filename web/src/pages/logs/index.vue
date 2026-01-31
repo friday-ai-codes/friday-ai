@@ -102,7 +102,7 @@ async function handleDelete(logId: string) {
  <div class="flex items-center justify-between">
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center">
+ <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center leading-none">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <h1 class="text-2xl font-bold">

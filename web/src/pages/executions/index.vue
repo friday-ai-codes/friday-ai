@@ -110,7 +110,7 @@ onMounted( => {
  <!-- Stats cards -->
  <div class="flex flex-wrap gap-3">
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-400/10">
+ <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-400/10 leading-none">
  <span class="icon-[lucide--loader-2] w-5 text-blue-500":class="stats.running > 0 ? 'animate-spin': ''" />
  </div>
  <div>
@@ -119,7 +119,7 @@ onMounted( => {
  </div>
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class=" rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-400/10">
+ <div class=" rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-400/10 leading-none">
  <span class="icon-[lucide--user-check] w-5 text-orange-500" />
  </div>
  <div>
@@ -128,7 +128,7 @@ onMounted( => {
  </div>
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class=" rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-400/10">
+ <div class=" rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-400/10 leading-none">
  <span class="icon-[lucide--check-circle] w-5 text-emerald-500" />
  </div>
  <div>
@@ -137,7 +137,7 @@ onMounted( => {
  </div>
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class=" rounded-xl bg-gradient-to-br from-red-500/20 to-red-400/10">
+ <div class=" rounded-xl bg-gradient-to-br from-red-500/20 to-red-400/10 leading-none">
  <span class="icon-[lucide--x-circle] w-5 text-red-500" />
  </div>
  <div>
@@ -205,7 +205,7 @@ onMounted( => {
  </div>
  <!-- Empty state -->
  <div v-else-if="filteredExecutions.length === 0" class="text-center py-16">
- <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4">
+ <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4 leading-none">
  <span class="icon-[lucide--play-circle] text-4xl text-muted-foreground" />
  </div>
  <h3 class="text-lg font-medium mb-2">

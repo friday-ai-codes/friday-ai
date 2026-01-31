@@ -110,7 +110,7 @@ function formatDate(dateStr: string) {
  <div class="space-y-12 relative">
  <!-- Hero 区域 -->
  <section class="text-center pt-8 pb-4 md:pt-16 md:pb-8">
- <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
+ <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10 leading-none">
  <span class="icon-[lucide--bot] text-5xl md:text-6xl text-primary" />
  </div>
  <h1 class="text-4xl md:text-5xl font-bold tracking-tight bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent mb-4">
@@ -133,7 +133,7 @@ function formatDate(dateStr: string) {
  />
  <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
  <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br flex items-center justify-center":class="stat.bgGradient">
+ <div class=".5 rounded-xl bg-gradient-to-br flex items-center justify-center leading-none":class="stat.bgGradient">
  <span class="text-2xl":class="[`icon-[${stat.icon}]`, stat.iconColor]" />
  </div>
  <span class="icon-[lucide--arrow-up-right] text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
@@ -163,12 +163,12 @@ function formatDate(dateStr: string) {
  <!-- 悬浮时的渐变背景 -->
  <div class="absolute inset-0 rounded-2xl bg-gradient-to-br opacity-0 group-hover:opacity-5 transition-opacity duration-500":class="feature.gradient" />
  <!-- 序号装饰 -->
- <div class="absolute -top-3 -left-3 w-8 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold shadow-lg":class="feature.gradient">
+ <div class="absolute -top-3 -left-3 w-8 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold shadow-lg leading-none":class="feature.gradient">
  {{ index + 1 }}
  </div>
  <div class="relative">
  <div class="flex items-center gap-3 mb-3">
- <div class=" rounded-lg bg-gradient-to-br flex items-center justify-center":class="feature.gradient">
+ <div class=" rounded-lg bg-gradient-to-br flex items-center justify-center leading-none":class="feature.gradient">
  <span class="text-xl text-white":class="`icon-[${feature.icon}]`" />
  </div>
  <h3 class="text-lg font-semibold">
@@ -187,7 +187,7 @@ function formatDate(dateStr: string) {
  <!-- 标题栏 -->
  <div class="flex items-center justify-between border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center leading-none">
  <span class="icon-[lucide--clock] text-xl text-primary" />
  </div>
  <div>

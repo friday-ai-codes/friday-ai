@@ -87,7 +87,7 @@ async function openCreateWorkflow {
  <div class="animate-spin rounded-full w-8 border-b-2 border-primary" />
  </div>
  <div v-else-if="workflows.length === 0" class="text-center py-16">
- <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4">
+ <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4 leading-none">
  <span class="icon-[lucide--git-branch] text-4xl text-muted-foreground" />
  </div>
  <h3 class="text-lg font-medium mb-2">

@@ -151,7 +151,7 @@ function refreshModels {
  <div class="flex items-center gap-3">
  <div class="relative">
  <div class="absolute inset-0 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl blur-sm opacity-40" />
- <div class="relative .5 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center">
+ <div class="relative .5 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center leading-none">
  <span class="icon-[lucide--flask-conical] text-xl text-white" />
  </div>
  </div>
@@ -251,7 +251,7 @@ function refreshModels {
  <!-- 错误状态 -->
  <div v-else-if="testStatus === 'error'" class="">
  <div class="flex items-start gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center flex-shrink-0">
+ <div class=" rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center flex-shrink-0 leading-none">
  <span class="icon-[lucide--x] text-lg text-destructive" />
  </div>
  <div class="flex-1 min-w-0">
@@ -268,7 +268,7 @@ function refreshModels {
  <div v-else-if="testStatus === 'success' && result" class="divide-y divide-emerald-500/20">
  <!-- 成功标识 -->
  <div class="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-emerald-500/10 to-cyan-500/5">
- <div class=".5 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/25">
+ <div class=".5 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/25 leading-none">
  <span class="icon-[lucide--check] text-sm text-white" />
  </div>
  <span class="font-semibold bg-gradient-to-r from-emerald-600 to-cyan-600 bg-clip-text text-transparent">连接成功</span>
