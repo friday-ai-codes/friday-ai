@@ -71,7 +71,7 @@ const platformIcons: Record<string, string> = {
  <div class="flex items-center justify-between">
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
+ <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center leading-none">
  <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
  </div>
  <h1 class="text-2xl font-bold">
@@ -112,7 +112,7 @@ const platformIcons: Record<string, string> = {
  <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg transition-all duration-300">
  <!-- 头部 -->
  <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 flex items-center justify-center leading-none">
  <span class="text-2xl text-violet-500":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
  </div>
  <Badge:variant="repository.has_credential ? 'default': 'secondary'"

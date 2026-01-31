@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
-import { getTriggerLogRaw } from '~/api/logs'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -15,38 +14,9 @@ const props = defineProps<{
  log: TriggerLogDetail
  getProjectName?: (projectId: string | null) => string
 }>
-// 原始数据
-const webhookRaw = ref<Record<string, unknown> | null>(null)
-const workItemRaw = ref<Record<string, unknown> | null>(null)
-const rawLoading = ref(false)
-const rawLoaded = ref(false)
 // 折叠状态
 const webhookExpanded = ref(false)
 const workItemExpanded = ref(false)
-// 加载原始数据
-async function loadRawData {
- if (rawLoaded.value)
- return
- rawLoading.value = true
- try {
- const data = await getTriggerLogRaw(props.log.id)
- webhookRaw.value = data.webhook_raw
- workItemRaw.value = data.work_item_raw
- rawLoaded.value = true
- }
- catch (e) {
- console.error('Failed to load raw data:', e)
- }
- finally {
- rawLoading.value = false
- }
-}
-// 当展开任一原始数据时加载
-watch([webhookExpanded, workItemExpanded], ([webhook, workItem]) => {
- if ((webhook || workItem) && !rawLoaded.value) {
- loadRawData
- }
-})
 // 获取状态颜色
 function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
  switch (status) {
@@ -190,20 +160,16 @@ function formatDate(dateStr: string) {
  </Button>
  </CollapsibleTrigger>
  <CollapsibleContent class="mt-2">
- <div v-if="rawLoading" class="flex items-center justify-center ">
- <span class="icon-[lucide--loader-2] w-5 animate-spin" />
- <span class="ml-2 text-sm text-muted-foreground">加载中...</span>
- </div>
- <JsonHighlighter v-else:json="webhookRaw" />
+ <JsonHighlighter:json="log.webhook_raw_request_parsed" />
  </CollapsibleContent>
  </Collapsible>
- <!-- 工作项详情 -->
+ <!-- 工作项响应 -->
  <Collapsible v-model:open="workItemExpanded">
  <CollapsibleTrigger as-child>
  <Button variant="outline" class="w-full justify-between">
  <span class="flex items-center gap-2">
  <span class="icon-[lucide--file-text] w-4" />
- 工作项详情
+ 工作项响应
  </span>
  <span
  class="icon-[lucide--chevron-down] w-4 transition-transform":class="{ 'rotate-180': workItemExpanded }"
@@ -211,11 +177,7 @@ function formatDate(dateStr: string) {
  </Button>
  </CollapsibleTrigger>
  <CollapsibleContent class="mt-2">
- <div v-if="rawLoading" class="flex items-center justify-center ">
- <span class="icon-[lucide--loader-2] w-5 animate-spin" />
- <span class="ml-2 text-sm text-muted-foreground">加载中...</span>
- </div>
- <JsonHighlighter v-else:json="workItemRaw" />
+ <JsonHighlighter:json="log.work_item_raw_response_parsed" />
  </CollapsibleContent>
  </Collapsible>
  </CardContent>

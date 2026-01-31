@@ -13,22 +13,6 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card } from '~/components/ui/card'
-import {
- DropdownMenu,
- DropdownMenuContent,
- DropdownMenuItem,
- DropdownMenuSeparator,
- DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu'
-import {
- Table,
- TableBody,
- TableCell,
- TableHead,
- TableHeader,
- TableRow,
-} from '~/components/ui/table'
 import TriggerLogDetailModal from './TriggerLogDetailModal.vue'
 defineProps<{
  logs: TriggerLog
@@ -97,6 +81,25 @@ function formatDate(dateStr: string) {
  minute: '2-digit',
  })
 }
+// 获取执行状态信息
+function getExecutionInfo(status: string | null): { icon: string, color: string, label: string } | null {
+ if (!status)
+ return null
+ switch (status) {
+ case 'completed':
+ return { icon: 'icon-[lucide--circle-check]', color: 'text-emerald-500', label: '执行成功' }
+ case 'running':
+ return { icon: 'icon-[lucide--loader-2] animate-spin', color: 'text-blue-500', label: '执行中' }
+ case 'pending':
+ return { icon: 'icon-[lucide--clock]', color: 'text-amber-500', label: '待执行' }
+ case 'failed':
+ return { icon: 'icon-[lucide--circle-x]', color: 'text-red-500', label: '执行失败' }
+ case 'cancelled':
+ return { icon: 'icon-[lucide--circle-slash]', color: 'text-gray-400', label: '已取消' }
+ default:
+ return { icon: 'icon-[lucide--circle-dot]', color: 'text-gray-400', label: status }
+ }
+}
 // 打开详情弹窗
 async function openDetail(logId: string) {
  const { open } = useModal({
@@ -120,85 +123,83 @@ async function openDetail(logId: string) {
  description="触发日志将在接收到飞书 Webhook 请求后自动记录"
  />
  <template v-else>
- <Card class="rounded-2xl bg-card/70 backdrop-blur-sm border-border/50">
- <Table>
- <TableHeader>
- <TableRow>
- <TableHead>事件类型</TableHead>
- <TableHead>工作项</TableHead>
- <TableHead>项目</TableHead>
- <TableHead>状态</TableHead>
- <TableHead>时间</TableHead>
- <TableHead class="text-right w-[80px]">
- 操作
- </TableHead>
- </TableRow>
- </TableHeader>
- <TableBody>
- <TableRow
+ <!-- 列表头部 -->
+ <div class="hidden lg:grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-muted-foreground border-b border-border/50">
+ <div class="col-span-5">工作项</div>
+ <div class="col-span-2">项目</div>
+ <div class="col-span-2">状态</div>
+ <div class="col-span-2">时间</div>
+ <div class="col-span-1" />
+ </div>
+ <!-- 列表内容 -->
+ <div class="divide-y divide-border/30">
+ <div
  v-for="log in logs":key="log.id"
- class="cursor-pointer hover:bg-muted/50 transition-colors"
+ class="group grid grid-cols-1 lg:grid-cols-12 gap-2 lg:gap-4 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer"
  @click="openDetail(log.id)"
  >
- <TableCell class="font-medium">
- <div class="max-w-[150px] truncate":title="log.event_type">
- {{ log.event_type || '-' }}
+ <!-- 工作项信息 -->
+ <div class="lg:col-span-5 flex items-center gap-3 min-w-0">
+ <div class="shrink-0 w-8 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center leading-none">
+ <span class="icon-[lucide--webhook] text-primary" />
  </div>
- </TableCell>
- <TableCell>
- <div class="max-w-[200px]">
- <div class="truncate font-medium":title="log.work_item_name || undefined">
- {{ log.work_item_name || '-' }}
+ <div class="min-w-0 flex-1">
+ <p class="font-medium truncate text-sm":title="log.work_item_name || undefined">
+ {{ log.work_item_name || '未命名工作项' }}
+ </p>
+ <p class="text-xs text-muted-foreground truncate">
+ {{ log.event_type }} · #{{ log.work_item_id || '-' }}
+ </p>
  </div>
- <div v-if="log.work_item_id" class="text-xs text-muted-foreground truncate">
- #{{ log.work_item_id }}
  </div>
- </div>
- </TableCell>
- <TableCell>
- <span class="text-muted-foreground">
- {{ getProjectName?.(log.project_id) || log.project_id?.slice(0, 8) || '-' }}
+ <!-- 项目 -->
+ <div class="lg:col-span-2 flex items-center">
+ <span class="text-sm text-muted-foreground truncate">
+ {{ getProjectName?.(log.project_id) || '-' }}
  </span>
- </TableCell>
- <TableCell>
- <Badge:variant="getStatusVariant(log.status)">
+ </div>
+ <!-- 状态 -->
+ <div class="lg:col-span-2 flex items-center gap-2">
+ <Badge:variant="getStatusVariant(log.status)" class="text-xs">
  {{ getStatusLabel(log.status) }}
  </Badge>
- </TableCell>
- <TableCell class="text-muted-foreground">
+ <span
+ v-if="getExecutionInfo(log.execution_status)"
+ class="inline-flex":title="getExecutionInfo(log.execution_status)?.label"
+ >
+ <span:class="[getExecutionInfo(log.execution_status)?.icon, getExecutionInfo(log.execution_status)?.color]" />
+ </span>
+ </div>
+ <!-- 时间 -->
+ <div class="lg:col-span-2 flex items-center">
+ <span class="text-sm text-muted-foreground">
  {{ formatDate(log.created_at) }}
- </TableCell>
- <TableCell class="text-right">
- <DropdownMenu>
- <DropdownMenuTrigger as-child>
- <Button variant="ghost" size="icon" class=" w-8" @click.stop>
- <span class="icon-[lucide--more-horizontal] text-muted-foreground" />
+ </span>
+ </div>
+ <!-- 操作 -->
+ <div class="lg:col-span-1 flex items-center justify-end gap-1">
+ <Button
+ variant="ghost"
+ size="icon"
+ class=" w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+ title="重试"
+ @click.stop="handleRetry(log.id)"
+ >
+ <span class="icon-[lucide--refresh-cw] text-sm text-muted-foreground" />
  </Button>
- </DropdownMenuTrigger>
- <DropdownMenuContent align="end">
- <DropdownMenuItem @click.stop="openDetail(log.id)">
- <span class="icon-[lucide--eye] mr-2" />
- 查看详情
- </DropdownMenuItem>
- <DropdownMenuItem @click.stop="handleRetry(log.id)">
- <span class="icon-[lucide--refresh-cw] mr-2" />
- 重试
- </DropdownMenuItem>
- <DropdownMenuSeparator />
- <DropdownMenuItem
- class="text-destructive focus:text-destructive focus:bg-destructive/10"
+ <Button
+ variant="ghost"
+ size="icon"
+ class=" w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+ title="删除"
  @click.stop="confirmDelete(log.id)"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
- 删除
- </DropdownMenuItem>
- </DropdownMenuContent>
- </DropdownMenu>
- </TableCell>
- </TableRow>
- </TableBody>
- </Table>
- </Card>
+ <span class="icon-[lucide--trash-2] text-sm text-muted-foreground hover:text-destructive" />
+ </Button>
+ <span class="icon-[lucide--chevron-right] text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+ </div>
+ </div>
+ </div>
  <!-- 删除确认弹窗 -->
  <AlertDialog v-model:open="deleteDialogOpen">
  <AlertDialogContent>

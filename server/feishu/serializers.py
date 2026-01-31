@@ -4,6 +4,7 @@ from .models import TriggerLog
 class TriggerLogSerializer(serializers.ModelSerializer):
  """Serializer for TriggerLog list view."""
  project_name = serializers.SerializerMethodField
+ execution_status = serializers.SerializerMethodField
  class Meta:
  model = TriggerLog
  fields = [
@@ -19,16 +20,58 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  "prd_url",
  "description",
  "tech_doc_url",
+ "execution_status",
  ]
  def get_project_name(self, obj):
  return obj.project.name if obj.project else None
+ def get_execution_status(self, obj):
+ """Get the latest workflow execution status."""
+ latest = obj.workflow_executions.order_by("-created_at").first
+ return latest.status if latest else None
 class TriggerLogDetailSerializer(TriggerLogSerializer):
  """Serializer for TriggerLog detail view."""
+ webhook_raw_request_parsed = serializers.SerializerMethodField
+ work_item_raw_response_parsed = serializers.SerializerMethodField
+ workflow_executions = serializers.SerializerMethodField
  class Meta(TriggerLogSerializer.Meta):
  fields = TriggerLogSerializer.Meta.fields + [
  "event_uuid",
  "work_item_type",
  "error_message",
+ "webhook_raw_request_parsed",
+ "work_item_raw_response_parsed",
+ "workflow_executions",
+ ]
+ def get_webhook_raw_request_parsed(self, obj):
+ """Parse webhook raw request JSON."""
+ import json
+ if not obj.webhook_raw_request:
+ return None
+ try:
+ return json.loads(obj.webhook_raw_request)
+ except (json.JSONDecodeError, TypeError):
+ return None
+ def get_work_item_raw_response_parsed(self, obj):
+ """Parse work item raw response JSON."""
+ import json
+ if not obj.work_item_raw_response:
+ return None
+ try:
+ return json.loads(obj.work_item_raw_response)
+ except (json.JSONDecodeError, TypeError):
+ return None
+ def get_workflow_executions(self, obj):
+ """Get related workflow executions."""
+ executions = obj.workflow_executions.select_related("workflow").all[:5]
+ return [
+ {
+ "id": str(ex.id),
+ "workflow_id": str(ex.workflow.id),
+ "workflow_name": ex.workflow.name,
+ "status": ex.status,
+ "created_at": ex.created_at.isoformat,
+ }
+ for ex in executions
  ]
 class TriggerLogRawSerializer(serializers.Serializer):
  """Serializer for raw trigger log data."""

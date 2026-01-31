@@ -50,6 +50,18 @@ export interface TriggerLog {
  description: string
  tech_doc_url: string
  created_at: string
+ // 关联执行状态
+ execution_status: string | null
+}
+/**
+ * 关联的工作流执行
+ */
+export interface LinkedWorkflowExecution {
+ id: string
+ workflow_id: string
+ workflow_name: string
+ status: string
+ created_at: string
 }
 /**
  * 触发日志详情（包含原始数据）
@@ -59,6 +71,7 @@ export interface TriggerLogDetail extends TriggerLog {
  webhook_raw_request_parsed: Record<string, unknown> | null
  work_item_raw_response: string
  work_item_raw_response_parsed: Record<string, unknown> | null
+ workflow_executions: LinkedWorkflowExecution
 }
 /**
  * 日志列表响应

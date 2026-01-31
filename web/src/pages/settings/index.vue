@@ -232,7 +232,7 @@ onMounted( => {
  <div class="max-w-2xl mx-auto space-y-8 relative">
  <!-- 页面标题 -->
  <section class="text-center pt-8 pb-4">
- <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
+ <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10 leading-none">
  <span class="icon-[lucide--settings] text-4xl text-primary" />
  </div>
  <h1 class="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent mb-3">
@@ -253,7 +253,7 @@ onMounted( => {
  <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
  <!-- 卡片头部 -->
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center leading-none">
  <span class="icon-[lucide--bot] text-2xl text-primary" />
  </div>
  <div>
@@ -419,7 +419,7 @@ onMounted( => {
  <!-- 标题区域 -->
  <div class="flex items-center justify-between border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 flex items-center justify-center leading-none">
  <span class="icon-[lucide--flask-conical] text-2xl text-emerald-500" />
  </div>
  <div>
@@ -492,7 +492,7 @@ onMounted( => {
  <!-- 说明卡片 -->
  <section class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
  <div class="flex items-start gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center">
+ <div class=" rounded-lg bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center leading-none">
  <span class="icon-[lucide--info] text-xl text-muted-foreground" />
  </div>
  <div class="space-y-2">

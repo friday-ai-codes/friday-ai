@@ -14,7 +14,11 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import {
+ Collapsible,
+ CollapsibleContent,
+ CollapsibleTrigger,
+} from '~/components/ui/collapsible'
 import JsonHighlighter from './JsonHighlighter.vue'
 interface Props {
  logId: string
@@ -34,7 +38,7 @@ const log = ref<TriggerLogDetail | null>(null)
 const retrying = ref(false)
 const deleting = ref(false)
 const showDeleteConfirm = ref(false)
-const activeTab = ref('webhook')
+const rawExpanded = ref(false)
 onMounted(async => {
  try {
  log.value = await getTriggerLog(props.logId)
@@ -80,18 +84,18 @@ function getStatusLabel(status: TriggerLogStatus): string {
 function formatDate(dateStr: string) {
  return new Date(dateStr).toLocaleString('zh-CN')
 }
+// 格式化时间戳（毫秒）
+function formatTimestamp(ts: number) {
+ return new Date(ts).toLocaleString('zh-CN')
+}
 // 复制 JSON 到剪贴板
-async function copyCurrentTab {
- if (!log.value)
- return
- const data = activeTab.value === 'webhook'
- ? log.value.webhook_raw_request_parsed: log.value.work_item_raw_response_parsed
- if (!data) {
+async function copyWebhookRaw {
+ if (!log.value?.webhook_raw_request_parsed) {
  showError('复制失败', '暂无数据')
  return
  }
  try {
- await navigator.clipboard.writeText(JSON.stringify(data, null, 2))
+ await navigator.clipboard.writeText(JSON.stringify(log.value.webhook_raw_request_parsed, null, 2))
  success('复制成功', '已复制到剪贴板')
  }
  catch {
@@ -137,18 +141,20 @@ async function handleDelete {
 function handleClose {
  emit('cancel')
 }
-// 检查是否为有效链接
-function isValidUrl(url: string): boolean {
- if (!url)
- return false
- try {
- const _ = new URL(url)
- return Boolean(_)
- }
- catch {
- return false
- }
-}
+// 从 webhook 原始数据中提取 payload
+const webhookPayload = computed( => {
+ const parsed = log.value?.webhook_raw_request_parsed
+ if (!parsed || typeof parsed !== 'object')
+ return null
+ return (parsed as Record<string, unknown>).payload as Record<string, unknown> | undefined
+})
+// 从 webhook 原始数据中提取 header
+const webhookHeader = computed( => {
+ const parsed = log.value?.webhook_raw_request_parsed
+ if (!parsed || typeof parsed !== 'object')
+ return null
+ return (parsed as Record<string, unknown>).header as Record<string, unknown> | undefined
+})
 </script>
 <template>
  <VueFinalModal
@@ -181,7 +187,7 @@ function isValidUrl(url: string): boolean {
  </div>
  <div class="flex items-start justify-between border-b border-border/50">
  <div class="flex items-center gap-4">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10">
+ <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 leading-none">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <div>
@@ -217,134 +223,154 @@ function isValidUrl(url: string): boolean {
  </div>
  </div>
  <!-- Body -->
- <div class="flex-1 overflow-y-auto space-y-6">
- <!-- 工作项内容 -->
- <div class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50">
- <div class=" rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-500/10">
- <span class="icon-[lucide--file-code] text-lg text-violet-500" />
+ <div class="flex-1 overflow-y-auto space-y-4">
+ <!-- Webhook 事件信息 -->
+ <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
+ <div class=".5 rounded-md bg-gradient-to-br from-violet-500/20 to-purple-500/10 leading-none">
+ <span class="icon-[lucide--webhook] text-sm text-violet-500" />
  </div>
- <h4 class="font-semibold">
- 工作项内容
+ <h4 class="text-sm font-medium">
+ 事件信息
  </h4>
  </div>
- <div class=" space-y-4">
- <!-- 描述 -->
- <div v-if="log.description">
- <label class="text-xs text-muted-foreground uppercase tracking-wide">描述</label>
- <p class="mt-1 text-sm whitespace-pre-wrap">
- {{ log.description }}
- </p>
- </div>
- <!-- 文档链接 -->
- <div class="grid gap-3 sm:grid-cols-2">
- <a
- v-if="log.prd_url && isValidUrl(log.prd_url)":href="log.prd_url"
- target="_blank"
- class="group flex items-center gap-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
- >
- <div class=" rounded-lg bg-gradient-to-br from-blue-500 to-cyan-400 text-white">
- <span class="icon-[lucide--file-text]" />
- </div>
- <div class="flex-1 min-w-0">
- <div class="font-medium">需求文档</div>
- <div class="text-xs text-muted-foreground truncate">{{ log.prd_url }}</div>
- </div>
- <span class="icon-[lucide--external-link] text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
- </a>
- <a
- v-if="log.tech_doc_url && isValidUrl(log.tech_doc_url)":href="log.tech_doc_url"
- target="_blank"
- class="group flex items-center gap-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
- >
- <div class=" rounded-lg bg-gradient-to-br from-emerald-500 to-teal-400 text-white">
- <span class="icon-[lucide--code-2]" />
- </div>
- <div class="flex-1 min-w-0">
- <div class="font-medium">技术方案</div>
- <div class="text-xs text-muted-foreground truncate">{{ log.tech_doc_url }}</div>
- </div>
- <span class="icon-[lucide--external-link] text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
- </a>
- </div>
- <!-- 无文档链接时的提示 -->
- <div v-if="!log.description && !log.prd_url && !log.tech_doc_url" class="text-center py-4 text-muted-foreground">
- 暂无工作项内容
- </div>
- <!-- 元信息 -->
- <div class="grid gap-2 sm:grid-cols-3 pt-3 border-t border-border/50">
+ <div class="px-3 py-2 space-y-2">
+ <!-- 基本信息网格 -->
+ <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+ <!-- 工作项 ID -->
  <div>
  <label class="text-xs text-muted-foreground">工作项 ID</label>
  <p class="font-mono text-sm">
- {{ log.work_item_id || '-' }}
+ {{ webhookPayload?.id || log.work_item_id || '-' }}
  </p>
  </div>
+ <!-- 工作项类型 -->
  <div>
- <label class="text-xs text-muted-foreground">工作项类型</label>
+ <label class="text-xs text-muted-foreground">类型</label>
  <p class="text-sm">
- {{ log.work_item_type || '-' }}
+ {{ webhookPayload?.work_item_type_key || log.work_item_type || '-' }}
  </p>
  </div>
+ <!-- 项目 -->
  <div>
- <label class="text-xs text-muted-foreground">创建时间</label>
- <p class="text-sm">
- {{ formatDate(log.created_at) }}
+ <label class="text-xs text-muted-foreground">项目</label>
+ <p class="text-sm truncate":title="webhookPayload?.project_key as string">
+ {{ webhookPayload?.project_simple_name || '-' }}
  </p>
+ </div>
+ <!-- 操作人 -->
+ <div>
+ <label class="text-xs text-muted-foreground">操作人</label>
+ <p class="font-mono text-sm truncate">
+ {{ webhookHeader?.operator || webhookPayload?.updated_by || '-' }}
+ </p>
+ </div>
+ <!-- 事件时间 -->
+ <div>
+ <label class="text-xs text-muted-foreground">事件时间</label>
+ <p class="text-sm">
+ {{ webhookPayload?.updated_at ? formatTimestamp(webhookPayload.updated_at as number): formatDate(log.created_at) }}
+ </p>
+ </div>
+ <!-- 事件 UUID -->
+ <div class="col-span-2 sm:col-span-1">
+ <label class="text-xs text-muted-foreground">事件 UUID</label>
+ <p class="font-mono text-xs text-muted-foreground truncate">
+ {{ webhookHeader?.uuid || log.event_uuid || '-' }}
+ </p>
+ </div>
+ <!-- 状态变更（仅 WorkitemStatusEvent） -->
+ <div v-if="webhookPayload?.pre_sub_stage && webhookPayload?.cur_sub_stage" class="col-span-2">
+ <label class="text-xs text-muted-foreground">状态变更</label>
+ <div class="flex items-center gap-1.5 mt-0.5">
+ <code class="px-1.5 py-0.5 rounded bg-muted text-xs">{{ webhookPayload.pre_sub_stage }}</code>
+ <span class="icon-[lucide--arrow-right] text-xs text-muted-foreground" />
+ <code class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{{ webhookPayload.cur_sub_stage }}</code>
+ </div>
  </div>
  </div>
  <!-- 错误信息 -->
- <div v-if="log.error_message" class="rounded-xl border border-destructive/50 bg-destructive/10 ">
- <div class="flex items-center gap-2 text-destructive font-medium">
- <span class="icon-[lucide--alert-circle]" />
- 错误信息
+ <div v-if="log.error_message" class="rounded-lg border border-destructive/50 bg-destructive/10 mt-2">
+ <div class="flex items-center gap-1.5 text-destructive text-sm font-medium">
+ <span class="icon-[lucide--alert-circle] text-sm" />
+ 错误
  </div>
- <p class="mt-1 text-sm">
+ <p class="text-xs mt-0.5">
  {{ log.error_message }}
  </p>
  </div>
  </div>
  </div>
- <!-- 原始数据 Tabs -->
- <div class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
- <Tabs v-model="activeTab" default-value="webhook" class="w-full">
- <div class="flex items-center justify-between px-4 pt-4">
- <TabsList class="bg-muted/50">
- <TabsTrigger value="webhook" class="data-[state=active]:bg-card">
- <span class="icon-[lucide--webhook] mr-2" />
- Webhook 请求
- </TabsTrigger>
- <TabsTrigger value="workitem" class="data-[state=active]:bg-card">
- <span class="icon-[lucide--file-json] mr-2" />
- 工作项响应
- </TabsTrigger>
- </TabsList>
- <Button variant="ghost" size="sm" @click="copyCurrentTab">
- <span class="icon-[lucide--copy] mr-1" />
- 复制
- </Button>
+ <!-- 关联的工作流执行 -->
+ <div v-if="log.workflow_executions?.length" class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
+ <div class=".5 rounded-md bg-gradient-to-br from-emerald-500/20 to-teal-500/10 leading-none">
+ <span class="icon-[lucide--play-circle] text-sm text-emerald-500" />
  </div>
- <TabsContent value="webhook" class=" pt-2">
- <div class="rounded-xl bg-muted/30 overflow-hidden max-h-[300px] overflow-y-auto">
+ <h4 class="text-sm font-medium">
+ 关联执行
+ </h4>
+ <span class="text-xs text-muted-foreground">({{ log.workflow_executions.length }})</span>
+ </div>
+ <div class="divide-y divide-border/50">
+ <RouterLink
+ v-for="exec in log.workflow_executions":key="exec.id":to="`/workflows/${exec.workflow_id}/executions/${exec.id}`"
+ class="flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors group"
+ >
+ <div class="flex items-center gap-2 min-w-0">
+ <span
+ class="w-2 rounded-full shrink-0":class="{
+ 'bg-emerald-500': exec.status === 'completed',
+ 'bg-blue-500 animate-pulse': exec.status === 'running',
+ 'bg-amber-500': exec.status === 'pending',
+ 'bg-red-500': exec.status === 'failed',
+ 'bg-gray-400': exec.status === 'cancelled',
+ }"
+ />
+ <span class="text-sm truncate">{{ exec.workflow_name }}</span>
+ </div>
+ <div class="flex items-center gap-2 shrink-0">
+ <span class="text-xs text-muted-foreground">{{ formatDate(exec.created_at) }}</span>
+ <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+ </div>
+ </RouterLink>
+ </div>
+ </div>
+ <!-- 原始 Webhook 数据（可折叠） -->
+ <Collapsible v-model:open="rawExpanded">
+ <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <CollapsibleTrigger as-child>
+ <button
+ type="button"
+ class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/30 transition-colors"
+ >
+ <div class="flex items-center gap-2">
+ <div class=".5 rounded-md bg-gradient-to-br from-amber-500/20 to-orange-500/10 leading-none">
+ <span class="icon-[lucide--code] text-sm text-amber-500" />
+ </div>
+ <h4 class="text-sm font-medium">
+ 原始数据
+ </h4>
+ </div>
+ <span
+ class="icon-[lucide--chevron-down] text-sm text-muted-foreground transition-transform":class="{ 'rotate-180': rawExpanded }"
+ />
+ </button>
+ </CollapsibleTrigger>
+ <CollapsibleContent>
+ <div class="border-t border-border/50">
+ <div class="max-h-[240px] overflow-y-auto">
  <JsonHighlighter
  v-if="log.webhook_raw_request_parsed":json="log.webhook_raw_request_parsed"
  />
- <div v-else class=" text-center text-muted-foreground">
+ <div v-else class=" text-center text-muted-foreground text-sm">
  暂无数据
  </div>
  </div>
- </TabsContent>
- <TabsContent value="workitem" class=" pt-2">
- <div class="rounded-xl bg-muted/30 overflow-hidden max-h-[300px] overflow-y-auto">
- <JsonHighlighter
- v-if="log.work_item_raw_response_parsed":json="log.work_item_raw_response_parsed"
- />
- <div v-else class=" text-center text-muted-foreground">
- 暂无数据
  </div>
+ </CollapsibleContent>
  </div>
- </TabsContent>
- </Tabs>
- </div>
+ </Collapsible>
  </div>
  </template>
  <!-- 删除确认弹窗 -->
