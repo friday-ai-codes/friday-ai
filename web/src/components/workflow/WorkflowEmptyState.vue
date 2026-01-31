@@ -10,12 +10,12 @@ defineEmits<{
  <div class="bg-muted/50 mx-auto flex w-20 items-center justify-center rounded-full">
  <GitBranch class="text-muted-foreground w-10" />
  </div>
- <h3 class="mt-4 text-lg font-semibold">No workflows found</h3>
+ <h3 class="mt-4 text-lg font-semibold">暂无工作流</h3>
  <p class="text-muted-foreground mb-4 mt-2 max-w-sm text-sm">
- Get started by creating your first automation workflow.
+ 创建您的第一个工作流，开始自动化开发流程
  </p>
  <Button @click="$emit('create')">
- Create Workflow
+ 新建工作流
  </Button>
  </div>
 </template>
