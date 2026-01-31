@@ -59,11 +59,19 @@ function getRelativeTime(dateStr?: string) {
  if (!dateStr) return '-'
  const date = new Date(dateStr)
  const now = new Date
- const diffInSeconds = Math.floor((now.getTime - date.getTime) / 1000)
- if (diffInSeconds < 60) return 'Just now'
- if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`
- if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`
- return `${Math.floor(diffInSeconds / 86400)}d ago`
+ const diffMs = now.getTime - date.getTime
+ const diffMins = Math.floor(diffMs / 60000)
+ const diffHours = Math.floor(diffMs / 3600000)
+ const diffDays = Math.floor(diffMs / 86400000)
+ if (diffMins < 1)
+ return '刚刚'
+ if (diffMins < 60)
+ return `${diffMins} 分钟前`
+ if (diffHours < 24)
+ return `${diffHours} 小时前`
+ if (diffDays < 7)
+ return `${diffDays} 天前`
+ return date.toLocaleDateString('zh-CN')
 }
 function onRowClick(workflow: Workflow) {
  emit('click', workflow)
@@ -85,10 +93,10 @@ function onDeleteClick(workflow: Workflow) {
  <TableHeader>
  <TableRow>
  <TableHead class="w-[50px]"></TableHead>
- <TableHead>Workflow</TableHead>
- <TableHead>Trigger</TableHead>
- <TableHead>Last Run</TableHead>
- <TableHead class="w-[100px] text-right">Actions</TableHead>
+ <TableHead>工作流</TableHead>
+ <TableHead>触发器</TableHead>
+ <TableHead>最近运行</TableHead>
+ <TableHead class="w-[100px] text-right">操作</TableHead>
  </TableRow>
  </TableHeader>
  <TableBody>
@@ -114,7 +122,7 @@ function onDeleteClick(workflow: Workflow) {
  <template v-else-if="!workflows || workflows.length === 0">
  <TableRow>
  <TableCell colspan="5" class=" text-center">
- No workflows found.
+ 暂无工作流
  </TableCell>
  </TableRow>
  </template>
@@ -135,7 +143,7 @@ function onDeleteClick(workflow: Workflow) {
  <div class="flex flex-col">
  <span class="font-medium">{{ workflow.name }}</span>
  <span class="text-sm text-muted-foreground line-clamp-1":title="workflow.description">
- {{ workflow.description || 'No description' }}
+ {{ workflow.description || '暂无描述' }}
  </span>
  </div>
  </TableCell>
@@ -164,7 +172,7 @@ function onDeleteClick(workflow: Workflow) {
  variant="ghost"
  size="icon"
  class=" w-8 hover:text-primary"
- title="Run Workflow"
+ title="执行工作流"
  @click="onRunClick($event, workflow)"
  >
  <Play class=" w-4" />
@@ -173,17 +181,17 @@ function onDeleteClick(workflow: Workflow) {
  <DropdownMenuTrigger as-child>
  <Button variant="ghost" size="icon" class=" w-8">
  <MoreHorizontal class=" w-4" />
- <span class="sr-only">Open menu</span>
+ <span class="sr-only">打开菜单</span>
  </Button>
  </DropdownMenuTrigger>
  <DropdownMenuContent align="end">
  <DropdownMenuItem @click="onEditClick(workflow)">
  <Edit class="mr-2 w-4" />
- Edit
+ 编辑
  </DropdownMenuItem>
  <DropdownMenuItem @click="onDeleteClick(workflow)" class="text-red-600 focus:text-red-600">
  <Trash2 class="mr-2 w-4" />
- Delete
+ 删除
  </DropdownMenuItem>
  </DropdownMenuContent>
  </DropdownMenu>
