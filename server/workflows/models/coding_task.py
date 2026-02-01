@@ -1,4 +1,13 @@
-"""CodingTask model for AI-generated coding tasks."""
+"""CodingTask model - the canonical location for AI coding tasks.
+Architecture Note:
+This is the ONLY CodingTask model in the codebase. The legacy server/tasks/
+app has been removed as of 2026-02-01. All AI coding task functionality
+is now managed through the Workflow system.
+Historical context:
+- Originally, there were two systems: Task (standalone) and Workflow (DAG-based)
+- The Task system was deprecated and removed to simplify architecture
+- CodingTask is created by AI coding dispatcher nodes within Workflows
+"""
 import uuid
 from django.db import models
 class CodingTaskStatus(models.TextChoices):
@@ -12,8 +21,12 @@ class CodingTaskStatus(models.TextChoices):
  FAILED = "failed", "失败"
  CANCELLED = "cancelled", "已取消"
 class CodingTask(models.Model):
- """AI 编码任务
+ """AI 编码任务 (Canonical Location)
  由 AI 编码指派器节点创建，存储编码任务的 Prompt、状态和 Git 产物。
+ Usage:
+ - 此模型由 Workflow 系统中的 AI 编码指派器节点创建
+ - 每个 CodingTask 关联到一个 WorkflowExecution
+ - 状态流转: PENDING → PLANNING → PLAN_REVIEW → EXECUTING → CODE_REVIEW → MERGED
  """
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  # 关联
