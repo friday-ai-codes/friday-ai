@@ -140,7 +140,7 @@ async function openDetail(logId: string) {
  >
  <!-- 工作项信息 -->
  <div class="lg:col-span-5 flex items-center gap-3 min-w-0">
- <div class="shrink-0 w-8 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center leading-none">
+ <div class="shrink-0 w-8 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
  <span class="icon-[lucide--webhook] text-primary" />
  </div>
  <div class="min-w-0 flex-1">

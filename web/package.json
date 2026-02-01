@@ -15,6 +15,7 @@
  "test:e2e:ui": "playwright test --ui"
  },
  "dependencies": {
+ "@tanstack/vue-query": "^5.92.9",
  "@tiptap/extension-code-block-lowlight": "^3.18.0",
  "@tiptap/extension-link": "^3.18.0",
  "@tiptap/extension-placeholder": "^3.18.0",

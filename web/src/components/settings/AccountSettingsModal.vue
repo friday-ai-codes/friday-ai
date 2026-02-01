@@ -107,7 +107,7 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 sticky top-0 bg-card z-10">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10 leading-none">
+ <div class=".5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10">
  <span class="icon-[lucide--user-cog] text-xl text-indigo-500" />
  </div>
  <div>

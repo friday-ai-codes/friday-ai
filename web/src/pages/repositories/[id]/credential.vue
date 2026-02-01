@@ -89,7 +89,7 @@ function formatDate(dateStr: string) {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center leading-none">
+ <div class=".5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center">
  <span class="icon-[lucide--key] text-2xl text-amber-500" />
  </div>
  <div>

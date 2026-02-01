@@ -23,7 +23,7 @@ const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
 const store = useWorkflowsStore
-const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow: _currentWorkflow } = storeToRefs(store)
+const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
@@ -123,6 +123,10 @@ function onSaveDraft {
  toast.success('草稿已保存到本地')
 }
 async function onExecute {
+ if (!currentWorkflow.value?.is_active) {
+ toast.error('工作流已禁用，无法执行')
+ return
+ }
  try {
  const result = await store.executeWorkflow
  if (result?.execution_id) {
@@ -140,10 +144,24 @@ function onUndo {
 function onRedo {
  store.redo
 }
-function onSettings {
- // Settings are shown in the right panel when no node is selected
- // 未选中节点时显示工作流设置
- store.selectNode(null)
+function onBack {
+ router.push('/workflows')
+}
+function onUpdateWorkflowName(name: string) {
+ if (currentWorkflow.value) {
+ store.updateWorkflowSettings({ ...currentWorkflow.value, name })
+ }
+}
+async function onUpdateIsActive(isActive: boolean) {
+ if (currentWorkflow.value) {
+ try {
+ await store.toggleWorkflowActive(currentWorkflow.value.id, isActive)
+ toast.success(isActive ? '工作流已启用': '工作流已禁用')
+ }
+ catch (e: any) {
+ toast.error(`操作失败: ${e.message}`)
+ }
+ }
 }
 </script>
 <template>
@@ -155,13 +173,15 @@ function onSettings {
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->
- <WorkflowToolbar:saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges"
+ <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges"
  @save="onSave"
  @save-draft="onSaveDraft"
  @execute="onExecute"
  @undo="onUndo"
  @redo="onRedo"
- @settings="onSettings"
+ @back="onBack"
+ @update:workflow-name="onUpdateWorkflowName"
+ @update:is-active="onUpdateIsActive"
  />
  <div class="flex flex-1 overflow-hidden">
  <!-- Left Sidebar: Components -->
@@ -170,7 +190,7 @@ function onSettings {
  <div class="flex-1 relative my-3">
  <WorkflowCanvas:editable="true" />
  </div>
- <!-- Right Sidebar: Configuration -->
+ <!-- Right Sidebar: Configuration (only when node selected) -->
  <NodeConfigPanel />
  </div>
  <!-- Leave Confirmation Dialog -->

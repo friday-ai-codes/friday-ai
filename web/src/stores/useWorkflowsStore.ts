@@ -322,6 +322,25 @@ export const useWorkflowsStore = defineStore('workflows', => {
  throw e
  }
  }
+ async function toggleWorkflowActive(id: string, isActive: boolean) {
+ try {
+ const workflow = await client.patch<Workflow>(`/workflows/${id}/`, { is_active: isActive })
+ // Update in workflows list
+ const index = workflows.value.findIndex(w => w.id === id)
+ if (index !== -1) {
+ workflows.value[index] = { ...workflows.value[index], ...workflow }
+ }
+ // Update current workflow if it's the same
+ if (currentWorkflow.value?.id === id) {
+ currentWorkflow.value = { ...currentWorkflow.value, ...workflow }
+ }
+ return workflow
+ }
+ catch (e: any) {
+ error.value = e.message
+ throw e
+ }
+ }
  async function executeWorkflow(inputData: Record<string, any> = {}): Promise<ManualTriggerResponse | null> {
  if (!currentWorkflow.value)
  return null
@@ -455,6 +474,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saveWorkflow,
  updateWorkflowSettings,
  deleteWorkflow,
+ toggleWorkflowActive,
  executeWorkflow,
  duplicateWorkflow,
  addNode,

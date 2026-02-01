@@ -214,7 +214,7 @@ watch( => loading.value, (isLoading) => {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 flex items-center justify-center leading-none">
+ <div class=".5 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 flex items-center justify-center">
  <span class="icon-[lucide--bot] text-2xl text-orange-500" />
  </div>
  <div>

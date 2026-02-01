@@ -3,6 +3,7 @@ import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
 import TriggerLogList from '~/components/logs/TriggerLogList.vue'
+import PageContainer from '~/components/layout/PageContainer.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -18,6 +19,16 @@ const { error: showError, success } = useToast
 // 过滤器
 const projectFilter = ref('__all__')
 const statusFilter = ref('__all__')
+const timeRangeFilter = ref('7')
+// 时间范围选项
+const timeRangeOptions = [
+ { value: '1', label: '近 1 天' },
+ { value: '3', label: '近 3 天' },
+ { value: '7', label: '近 7 天' },
+ { value: '14', label: '近 14 天' },
+ { value: '30', label: '近 30 天' },
+ { value: 'all', label: '全部时间' },
+]
 // 加载状态
 const loading = ref(true)
 const triggerLogs = ref<TriggerLog>
@@ -42,9 +53,18 @@ async function fetchLogs {
  try {
  const projectId = projectFilter.value === '__all__' ? undefined: projectFilter.value
  const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as TriggerLogStatus
+ // 计算时间范围
+ let createdAfter: string | undefined
+ if (timeRangeFilter.value !== 'all') {
+ const days = Number.parseInt(timeRangeFilter.value)
+ const date = new Date
+ date.setDate(date.getDate - days)
+ createdAfter = date.toISOString
+ }
  const result = await listTriggerLogs({
  project_id: projectId,
  status,
+ start_date: createdAfter,
  limit: 50,
  })
  triggerLogs.value = result.items ||
@@ -55,7 +75,7 @@ async function fetchLogs {
  }
 }
 // 监听过滤条件变化
-watch([projectFilter, statusFilter], => {
+watch([projectFilter, statusFilter, timeRangeFilter], => {
  fetchLogs
 })
 // 状态选项
@@ -97,12 +117,12 @@ async function handleDelete(logId: string) {
 }
 </script>
 <template>
- <div class="space-y-8">
+ <PageContainer>
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center leading-none">
+ <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <h1 class="text-2xl font-bold">
@@ -114,18 +134,29 @@ async function handleDelete(logId: string) {
  </p>
  </div>
  </div>
- <!-- 过滤器和统计 -->
- <div class="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
  <!-- 过滤器 -->
- <div class="flex flex-wrap items-center gap-3">
- <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-sm text-muted-foreground">
- <span class="icon-[lucide--filter]" />
- <span>筛选</span>
+ <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--filter] text-muted-foreground" />
+ <span class="text-sm text-muted-foreground">筛选</span>
  </div>
+ <!-- 状态过滤 -->
+ <Select v-model="statusFilter">
+ <SelectTrigger class="w-[140px]">
+ <SelectValue placeholder="全部状态" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="option in statusOptions":key="option.value":value="option.value"
+ >
+ {{ option.label }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
  <!-- 项目过滤 -->
  <Select v-model="projectFilter">
- <SelectTrigger class="w-44 bg-card/50 border-border/50">
- <SelectValue placeholder="选择项目" />
+ <SelectTrigger class="w-[160px]">
+ <SelectValue placeholder="全部项目" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem value="__all__">
@@ -138,29 +169,38 @@ async function handleDelete(logId: string) {
  </SelectItem>
  </SelectContent>
  </Select>
- <!-- 状态过滤 -->
- <Select v-model="statusFilter">
- <SelectTrigger class="w-36 bg-card/50 border-border/50">
- <SelectValue placeholder="选择状态" />
+ <!-- 时间范围过滤 -->
+ <Select v-model="timeRangeFilter">
+ <SelectTrigger class="w-[140px]">
+ <SelectValue placeholder="时间范围" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem
- v-for="option in statusOptions":key="option.value":value="option.value"
+ v-for="option in timeRangeOptions":key="option.value":value="option.value"
  >
  {{ option.label }}
  </SelectItem>
  </SelectContent>
  </Select>
- <!-- 刷新按钮 -->
- <Button variant="outline" size="icon" class=" w-9" @click="fetchLogs">
- <span class="icon-[lucide--refresh-cw]" />
+ <Button
+ v-if="statusFilter !== '__all__' || projectFilter !== '__all__' || timeRangeFilter !== '7'"
+ variant="ghost"
+ size="sm"
+ @click="statusFilter = '__all__'; projectFilter = '__all__'; timeRangeFilter = '7'"
+ >
+ <span class="icon-[lucide--x] mr-1" />
+ 清除筛选
  </Button>
- </div>
+ <div class="flex-1" />
  <!-- 统计信息 -->
- <div class="flex items-center gap-2 text-sm text-muted-foreground px-4 py-2 rounded-full bg-muted/30">
+ <div class="flex items-center gap-2 text-sm text-muted-foreground">
  <span class="icon-[lucide--database]" />
  共 {{ total }} 条记录
  </div>
+ <!-- 刷新按钮 -->
+ <Button variant="ghost" size="icon" class=" w-8" @click="fetchLogs">
+ <span class="icon-[lucide--refresh-cw]" />
+ </Button>
  </div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="5" />
@@ -179,5 +219,5 @@ async function handleDelete(logId: string) {
  @delete="handleDelete"
  @refresh="fetchLogs"
  />
- </div>
+ </PageContainer>
 </template>

@@ -16,13 +16,9 @@ import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
-const { currentWorkflow, selectedNode, selectedNodeId } = storeToRefs(store)
+const { selectedNode, selectedNodeId } = storeToRefs(store)
 // Use node meta composable for registry access
 const { getDefinition, hasCustomConfig } = useNodeMeta
-// Local form state for workflow settings
-const workflowName = ref('')
-const workflowDescription = ref('')
-const workflowTimeout = ref(3600)
 // Local form state for node config
 const nodeName = ref('')
 const nodeDescription = ref('')
@@ -54,14 +50,6 @@ const ConfigComponent = computed( => {
  }
  return null
 })
-// Watch for workflow changes
-watch(currentWorkflow, (workflow) => {
- if (workflow) {
- workflowName.value = workflow.name
- workflowDescription.value = workflow.description
- workflowTimeout.value = workflow.default_timeout
- }
-}, { immediate: true })
 // Watch for selected node changes - only trigger on node ID change to avoid feedback loop
 watch( => selectedNode.value?.id, (newId) => {
  if (newId && selectedNode.value) {
@@ -90,13 +78,6 @@ function deleteNode {
  if (selectedNodeId.value) {
  store.removeNode(selectedNodeId.value)
  }
-}
-async function saveWorkflowSettings {
- await store.updateWorkflowSettings({
- name: workflowName.value,
- description: workflowDescription.value,
- default_timeout: workflowTimeout.value,
- })
 }
 // Helper to update config value
 function updateConfigValue(key: string, value: any) {
@@ -131,14 +112,16 @@ function getFieldType(schema: any): string {
 }
 </script>
 <template>
- <div class="h-full w-80 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
- <!-- Node Configuration -->
- <template v-if="selectedNode">
+ <!-- Only show when a node is selected -->
+ <div
+ v-if="selectedNode"
+ class="h-full w-80 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden"
+ >
  <!-- Header -->
  <div class=" border-b border-border/50">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10 leading-none">
+ <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10">
  <Settings class="w-5 text-violet-500" />
  </div>
  <div>
@@ -157,15 +140,20 @@ function getFieldType(schema: any): string {
  </div>
  <ScrollArea class="flex-1">
  <div class=" space-y-5">
- <!-- Basic Info -->
  <div class="space-y-4">
  <div class="space-y-2">
- <Label class="text-sm font-medium">名称</Label>
- <Input v-model="nodeName" placeholder="节点名称" class="bg-background/50" />
+ <Label class="text-sm font-medium flex items-center justify-between">
+ <span>名称</span>
+ <span class="text-xs text-muted-foreground">{{ nodeName.length }}/50</span>
+ </Label>
+ <Input v-model="nodeName" placeholder="节点名称" maxlength="50" class="bg-background/50" />
  </div>
  <div class="space-y-2">
- <Label class="text-sm font-medium">描述</Label>
- <Textarea v-model="nodeDescription" placeholder="描述此节点的功能..." rows="2" class="bg-background/50" />
+ <Label class="text-sm font-medium flex items-center justify-between">
+ <span>描述</span>
+ <span class="text-xs text-muted-foreground">{{ nodeDescription.length }}/200</span>
+ </Label>
+ <Textarea v-model="nodeDescription" placeholder="描述此节点的功能..." rows="2" maxlength="200" class="bg-background/50" />
  </div>
  </div>
  <Separator class="bg-border/50" />
@@ -240,58 +228,5 @@ function getFieldType(schema: any): string {
  删除节点
  </Button>
  </div>
- </template>
- <!-- Workflow Settings -->
- <template v-else>
- <!-- Header -->
- <div class=" border-b border-border/50">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 leading-none">
- <Settings class="w-5 text-primary" />
- </div>
- <div>
- <h3 class="text-base font-semibold">
- 工作流设置
- </h3>
- <p class="text-xs text-muted-foreground">
- 配置工作流基本信息
- </p>
- </div>
- </div>
- </div>
- <ScrollArea class="flex-1">
- <div class=" space-y-5">
- <div class="space-y-4">
- <div class="space-y-2">
- <Label class="text-sm font-medium">名称</Label>
- <Input v-model="workflowName" placeholder="工作流名称" class="bg-background/50" />
- </div>
- <div class="space-y-2">
- <Label class="text-sm font-medium">描述</Label>
- <Textarea v-model="workflowDescription" placeholder="描述您的工作流..." rows="3" class="bg-background/50" />
- </div>
- <div class="space-y-2">
- <Label class="text-sm font-medium">默认超时时间（秒）</Label>
- <Input v-model.number="workflowTimeout" type="number" placeholder="3600" class="bg-background/50" />
- </div>
- </div>
- <Separator class="bg-border/50" />
- <div class=" rounded-xl bg-muted/30 border border-border/30">
- <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--mouse-pointer-click] text-base" />
- 点击画布中的节点进行配置
- </div>
- </div>
- </div>
- </ScrollArea>
- <!-- Actions -->
- <div class=" border-t border-border/50">
- <Button class="w-full group relative overflow-hidden" @click="saveWorkflowSettings">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span class="icon-[lucide--save] mr-2" />
- 保存设置
- </Button>
- </div>
- </template>
  </div>
 </template>

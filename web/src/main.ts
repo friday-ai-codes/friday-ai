@@ -1,3 +1,4 @@
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import { createHead } from '@vueuse/head'
 import { createPinia } from 'pinia'
 import { setupLayouts } from 'virtual:generated-layouts'
@@ -31,6 +32,7 @@ const vfm = createVfm
 // 创建应用
 const app = createApp(App)
 app.use(pinia) // 先注册 Pinia
+app.use(VueQueryPlugin) // TanStack Query
 app.use(router)
 app.use(i18n)
 app.use(head)

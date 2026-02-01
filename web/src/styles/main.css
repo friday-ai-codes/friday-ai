@@ -58,6 +58,9 @@ body {
  'rlig' 1,
  'calt' 1;
 }
+/* 图标容器修正：消除 line-height 导致的高度拉伸 */:has(> [class*='icon-[']:only-child) {
+ line-height: 0;
+}
 /* 自定义滚动条样式 */:-webkit-scrollbar {
  width: 8px;
  height: 8px;

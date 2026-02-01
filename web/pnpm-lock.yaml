@@ -152,6 +152,9 @@ overrides:
 importers:
  .:
  dependencies:
+ '@tanstack/vue-query':
+ specifier: ^5.92.9
+ version: 5.92.9(vue@3.5.26(typescript@5.9.3))
  '@tiptap/extension-code-block-lowlight':
  specifier: ^3.18.0
  version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/extension-code-block@3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(highlight.js@11.11.1)(lowlight@3.3.0)
@@ -1088,8 +1091,21 @@ packages:
  resolution: {integrity: sha512-jVA+/UpKL1vRLg6Hkao5jldawNmRo7mQYrZtNHMIVpLfLhDml5nMRUo/8MwoX2vNXvnaXNNMedrMfMugAVX1nA==}
  peerDependencies:
  vite: ^5.2.0 || ^6 || ^7
+ '@tanstack/match-sorter-utils@8.19.4':
+ resolution: {integrity: sha512-Wo1iKt2b9OT7d+YGhvEPD3DXvPv2etTusIMhMUoG7fbhmxcXCtIjJDEygy91Y2JFlwGyjqiBPRozme7UD8hoqg==}
+ engines: {node: '>=12'}
+ '@tanstack/query-core@5.90.20':
+ resolution: {integrity: sha512-OMD2HLpNouXEfZJWcKeVKUgQ5n+n3A2JFmBaScpNDUqSrQSjiveC7dKMe53uJUg1nDG16ttFPz2xfilz6i2uVg==}
  '@tanstack/virtual-core@3.13.18':
  resolution: {integrity: sha512-Mx86Hqu1k39icq2Zusq+Ey2J6dDWTjDvEv43PJtRCoEYTLyfaPnxIQ6iy7YAOK0NV/qOEmZQ/uCufrppZxTgcg==}
+ '@tanstack/vue-query@5.92.9':
+ resolution: {integrity: sha512-jjAZcqKveyX0C4w/6zUqbnqk/XzuxNWaFsWjGTJWULVFizUNeLGME2gf9vVSDclIyiBhR13oZJPPs6fJgfpIJQ==}
+ peerDependencies:
+ '@vue/composition-api': ^1.1.2
+ vue: ^2.6.0 || ^3.3.0
+ peerDependenciesMeta:
+ '@vue/composition-api':
+ optional: true
  '@tanstack/vue-virtual@3.13.18':
  resolution: {integrity: sha512-6pT8HdHtTU5Z+t906cGdCroUNA5wHjFXsNss9gwk7QAr1VNZtz9IQCs2Nhx0gABK48c+OocHl2As+TMg8+Hy4A==}
  peerDependencies:
@@ -2742,6 +2758,8 @@ packages:
  resolution: {integrity: sha512-m+XmxQN2xtFzBP3OAdIafKq7C8OETo2fqfxcIIxYmNN2Ch3r5oAf6yEYCIJg5tL/yJU2mHqF70dCCekUkrAnXA==}
  peerDependencies:
  vue: '>= 3.2.0'
+ remove-accents@0.5.0:
+ resolution: {integrity: sha512-8g3/Otx1eJaVD12e31UbJj1YzdtVvzH85HV7t+9MJYk/u3XmkOUJ5Ys9wQrf9PCPK8+xn4ymzqYCiZl6QWKn+A==}
  reserved-identifiers@1.2.0:
  resolution: {integrity: sha512-yE7KUfFvaBFzGPs5H3Ops1RevfUEsDc5Iz65rOwWg4lE8HJSYtle77uul3+573457oHvBKuHYDl/xqUkKpEEdw==}
  engines: {node: '>=18'}
@@ -3795,7 +3813,18 @@ snapshots:
  '@tailwindcss/oxide': 4.1.18
  tailwindcss: 4.1.18
  vite: rolldown-vite@7.3.1(@types/node@24.10.8)(esbuild@0.27.2)(jiti@2.6.1)(yaml@2.8.2)
+ '@tanstack/match-sorter-utils@8.19.4':
+ dependencies:
+ remove-accents: 0.5.0
+ '@tanstack/query-core@5.90.20': {}
  '@tanstack/virtual-core@3.13.18': {}
+ '@tanstack/vue-query@5.92.9(vue@3.5.26(typescript@5.9.3))':
+ dependencies:
+ '@tanstack/match-sorter-utils': 8.19.4
+ '@tanstack/query-core': 5.90.20
+ '@vue/devtools-api': 6.6.4
+ vue: 3.5.26(typescript@5.9.3)
+ vue-demi: 0.14.10(vue@3.5.26(typescript@5.9.3))
  '@tanstack/vue-virtual@3.13.18(vue@3.5.26(typescript@5.9.3))':
  dependencies:
  '@tanstack/virtual-core': 3.13.18
@@ -5870,6 +5899,7 @@ snapshots:
  transitivePeerDependencies:
  - '@vue/composition-api'
  - typescript
+ remove-accents@0.5.0: {}
  reserved-identifiers@1.2.0: {}
  resolve-from@4.0.0: {}
  resolve-pkg-maps@1.0.0: {}
