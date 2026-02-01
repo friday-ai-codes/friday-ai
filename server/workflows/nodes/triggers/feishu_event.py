@@ -1,16 +1,12 @@
 """Feishu event trigger node."""
+import structlog
 from workflows.models.trigger import TriggerEventType
-from workflows.nodes.base import (
- BaseNode,
- ExecutionContext,
- NodeCategory,
- NodePort,
- NodeResult,
- PortType,
-)
+from workflows.nodes.base import ExecutionContext, NodePort, PortType
 from workflows.nodes.registry import register_node
+from workflows.nodes.triggers.base import BaseTriggerNode
+logger = structlog.get_logger
 @register_node
-class FeishuEventTriggerNode(BaseNode):
+class FeishuEventTriggerNode(BaseTriggerNode):
  """飞书事件触发节点
  通过飞书 Webhook 事件触发工作流执行。
  支持多种事件类型和过滤条件。
@@ -19,7 +15,6 @@ class FeishuEventTriggerNode(BaseNode):
  display_name = "飞书事件触发"
  description = "监听飞书 Webhook 事件触发工作流"
  icon = "webhook"
- category = NodeCategory.TRIGGER
  config_schema = {
  "type": "object",
  "properties": {
@@ -55,8 +50,6 @@ class FeishuEventTriggerNode(BaseNode):
  },
  "required": ["event_types"],
  }
- # 触发器节点无输入端口
- inputs: list[NodePort] =
  outputs = [
  NodePort(
  name="default",
@@ -65,61 +58,68 @@ class FeishuEventTriggerNode(BaseNode):
  description="包含 event_type, work_item_id, project_key, payload",
  ),
  ]
- async def execute(self, context: ExecutionContext) -> NodeResult:
- """提取并输出事件数据
- 从 input_data 和 trigger_data 中提取飞书事件相关信息。
- 支持两种输入格式：
- 1. Webhook 触发：数据已由 workflow_bridge 预处理
- 2. 手动执行：直接传入飞书事件的 payload 数据
+ async def parse_payload(self, context: ExecutionContext) -> dict:
+ """Extract Feishu event data with flattening.
+ Feishu payload: transparent passthrough with flattening.
+ Critical fields: work_item_id (from id field)
+ Optional fields: project_key, work_item_type, name, status info
  """
- # 获取完整的 input_data 用于手动执行场景
- input_data = context.input_data or {}
- # 从 input_data 获取事件基本信息
- event_type = context.get_input("event_type", "")
- work_item_id = context.get_input("work_item_id", "")
- project_key = context.get_input("project_key", "")
- payload = context.get_input("payload", {})
- # 如果 input_data 中没有，尝试从 trigger_data 获取
- if not event_type:
- event_type = context.get_trigger_data("event_type", "")
- if not work_item_id:
- work_item_id = context.get_trigger_data("work_item_id", "")
+ raw_payload = context.input_data.get("raw_payload", context.input_data)
+ input_data = context.input_data
+ # Get event_type from multiple sources
+ event_type = input_data.get("event_type") or context.trigger_data.get(
+ "event_type", ""
+ )
+ # Critical: work_item_id
+ work_item_id = (
+ input_data.get("work_item_id")
+ or context.trigger_data.get("work_item_id")
+ or raw_payload.get("id")
+ )
+ if work_item_id:
+ work_item_id = str(work_item_id)
+ # Optional: project_key
+ project_key = (
+ input_data.get("project_key")
+ or context.trigger_data.get("project_key")
+ or raw_payload.get("project_key")
+ or raw_payload.get("project_simple_name", "")
+ )
  if not project_key:
- project_key = context.get_trigger_data("project_key", "")
- if not payload:
- payload = context.get_trigger_data("payload", {})
- # 手动执行场景：直接从 input_data 提取字段（飞书 payload 格式）
- # 此时 input_data 就是飞书事件的 payload 内容
- if not work_item_id and input_data.get("id"):
- work_item_id = str(input_data.get("id", ""))
- if not project_key and input_data.get("project_key"):
- project_key = input_data.get("project_key", "") or input_data.get(
- "project_simple_name", ""
+ logger.debug(
+ "optional_field_missing", field="project_key", trigger_type=self.node_type
  )
- if not payload and input_data:
- # 整个 input_data 就是 payload
- payload = input_data
- # 提取更多有用信息（优先从 payload，回退到 input_data）
- work_item_type = payload.get("work_item_type_key", "") or input_data.get(
- "work_item_type_key", ""
- )
- work_item_name = payload.get("name", "") or input_data.get("name", "")
- # 状态信息（适用于状态变更事件）
- cur_status = payload.get("cur_work_item_status", {})
- prev_status = payload.get("pre_work_item_status", {})
- output = {
+ # Optional: work item details
+ work_item_type = raw_payload.get("work_item_type_key", "")
+ work_item_name = raw_payload.get("name", "")
+ # Optional: status info (for status change events)
+ cur_status = raw_payload.get("cur_work_item_status", {})
+ prev_status = raw_payload.get("pre_work_item_status", {})
+ current_status = cur_status.get("state_key", "")
+ current_status_name = cur_status.get("name", "")
+ previous_status = prev_status.get("state_key", "")
+ previous_status_name = prev_status.get("name", "")
+ return {
+ "data": {
  "event_type": event_type,
  "work_item_id": work_item_id,
  "project_key": project_key,
  "work_item_type": work_item_type,
  "work_item_name": work_item_name,
- "current_status": cur_status.get("state_key", ""),
- "current_status_name": cur_status.get("name", ""),
- "previous_status": prev_status.get("state_key", ""),
- "previous_status_name": prev_status.get("name", ""),
- "payload": payload,
+ "current_status": current_status,
+ "current_status_name": current_status_name,
+ "previous_status": previous_status,
+ "previous_status_name": previous_status_name,
+ },
+ # Backward compatibility: flat fields at root
+ "event_type": event_type,
+ "work_item_id": work_item_id,
+ "project_key": project_key,
+ "work_item_type": work_item_type,
+ "work_item_name": work_item_name,
+ "current_status": current_status,
+ "current_status_name": current_status_name,
+ "previous_status": previous_status,
+ "previous_status_name": previous_status_name,
+ "payload": raw_payload, # Legacy compatibility
  }
- return NodeResult(
- status="completed",
- output=output,
- )
