@@ -1,15 +1,11 @@
 """Webhook trigger node."""
-from workflows.nodes.base import (
- BaseNode,
- ExecutionContext,
- NodeCategory,
- NodePort,
- NodeResult,
- PortType,
-)
+import structlog
+from workflows.nodes.base import ExecutionContext, NodePort, PortType
 from workflows.nodes.registry import register_node
+from workflows.nodes.triggers.base import BaseTriggerNode
+logger = structlog.get_logger
 @register_node
-class WebhookTriggerNode(BaseNode):
+class WebhookTriggerNode(BaseTriggerNode):
  """Webhook 触发节点
  通过 HTTP Webhook 触发工作流执行。
  """
@@ -17,7 +13,6 @@ class WebhookTriggerNode(BaseNode):
  display_name = "Webhook 触发"
  description = "通过 HTTP Webhook 触发工作流"
  icon = "webhook"
- category = NodeCategory.TRIGGER
  config_schema = {
  "type": "object",
  "properties": {
@@ -48,19 +43,37 @@ class WebhookTriggerNode(BaseNode):
  },
  },
  }
- inputs: list[NodePort] =
  outputs = [
  NodePort(name="default", label="Payload", port_type=PortType.OBJECT),
  NodePort(name="headers", label="Headers", port_type=PortType.OBJECT),
  NodePort(name="query", label="Query Params", port_type=PortType.OBJECT),
  ]
- async def execute(self, context: ExecutionContext) -> NodeResult:
- """将 webhook 数据作为输出"""
- return NodeResult(
- status="completed",
- output={
- "body": context.input_data.get("body", {}),
- "headers": context.input_data.get("headers", {}),
- "query": context.input_data.get("query", {}),
- },
+ async def parse_payload(self, context: ExecutionContext) -> dict:
+ """Extract HTTP request info: path, method, headers, body.
+ Webhook payload structure from handler:
+ - body: Request body (JSON parsed)
+ - headers: HTTP headers dict
+ - query: Query string parameters
+ - webhook_path: The matched webhook path
+ """
+ raw_payload = context.input_data.get("raw_payload", context.input_data)
+ # Extract HTTP request components
+ body = (
+ raw_payload.get("body", {}) if isinstance(raw_payload, dict) else raw_payload
  )
+ headers = context.input_data.get("headers", {})
+ query = context.input_data.get("query", {})
+ webhook_path = context.input_data.get("webhook_path", "")
+ return {
+ "data": {
+ "path": webhook_path,
+ "method": context.node_config.get("method", "POST"),
+ "headers": headers,
+ "query": query,
+ "body": body,
+ },
+ # Backward compatibility: keep existing flat structure
+ "body": body,
+ "headers": headers,
+ "query": query,
+ }
