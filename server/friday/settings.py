@@ -222,12 +222,8 @@ LOGGING = {
  },
 }
 # =============================================================================
-# Feature Flags (Task -> Workflow Migration)
+# Feature Flags
 # =============================================================================
-# When True, new Feishu work items create WorkflowExecution instead of Task
-FF_USE_WORKFLOW_FOR_NEW_TASKS = env.bool("FF_USE_WORKFLOW_FOR_NEW_TASKS", False)
-# When True, /api/tasks/ endpoints remain functional (compatibility layer)
-FF_ENABLE_TASK_COMPAT_API = env.bool("FF_ENABLE_TASK_COMPAT_API", True)
 # When True, workflow status changes sync to Feishu
 FF_SYNC_WORKFLOW_TO_FEISHU = env.bool("FF_SYNC_WORKFLOW_TO_FEISHU", True)
 # When True, WebSocket real-time updates are enabled
