@@ -146,14 +146,9 @@ async function copyJson {
  </p>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">关联任务 ID</label>
- <p v-if="log.id" class="font-mono text-sm">
- <RouterLink:to="`/tasks/${log.id}`" class="text-primary hover:underline">
+ <label class="text-sm text-muted-foreground">日志 ID</label>
+ <p class="font-mono text-sm">
  {{ log.id }}
- </RouterLink>
- </p>
- <p v-else class="text-sm">
- -
  </p>
  </div>
  </div>
