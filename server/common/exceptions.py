@@ -42,3 +42,10 @@ class TriggerAuthError(TriggerError):
  - Insufficient permissions
  """
  pass
+class TriggerParseError(TriggerError):
+ """Payload parsing failures in trigger nodes.
+ Raised when a trigger node cannot extract required data
+ from the raw_payload. Used by BaseTriggerNode to wrap
+ parse_payload exceptions.
+ """
+ pass
