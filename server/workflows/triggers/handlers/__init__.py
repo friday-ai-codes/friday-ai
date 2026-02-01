@@ -1,6 +1,10 @@
 """Trigger handlers package.
-Provides the TriggerHandler abstract base class for implementing
-trigger-specific handlers.
+All handlers are auto-registered via the @register_handler decorator.
+Import this package to ensure all handlers are registered.
 """
 from workflows.triggers.handlers.base import TriggerHandler
-__all__ = ["TriggerHandler"]
+from workflows.triggers.handlers.manual import ManualHandler
+__all__ = [
+ "TriggerHandler",
+ "ManualHandler",
+]
