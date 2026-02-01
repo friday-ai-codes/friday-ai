@@ -203,6 +203,7 @@ class ExecutionContext:
  def render_template(self, template: str) -> str:
  """渲染模板字符串，支持变量替换
  支持格式：
+ - {{$.key}} - 输入数据简写（等同于 input.key）
  - {{input.key}} - 输入数据
  - {{context.key}} - 工作流上下文
  - {{config.key}} - 节点配置
@@ -212,8 +213,18 @@ class ExecutionContext:
  """
  def replace(match: re.Match) -> str:
  path = match.group(1).strip
+ # 处理 $ 简写语法：$.key 或 $key 等同于 input.key
+ if path.startswith("$."):
+ # {{$.repositories}} -> input.repositories
+ return str(self.get_input(path[2:], ""))
+ elif path.startswith("$") and not path.startswith("$"):
+ # {{$repositories}} -> input.repositories
+ return str(self.get_input(path[1:], ""))
  parts = path.split(".")
- if parts[0] == "input":
+ if parts[0] == "$":
+ # {{$}} 单独使用表示整个 input 对象
+ return str(self.input_data or "")
+ elif parts[0] == "input":
  return str(self.get_input(".".join(parts[1:]), ""))
  elif parts[0] == "context":
  return str(self.get_context(".".join(parts[1:]), ""))

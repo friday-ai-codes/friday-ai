@@ -94,6 +94,7 @@ declare module 'vue' {
  EditRepositoryModal: typeof import('./components/repository/EditRepositoryModal.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
  ErrorBoundary: typeof import('./components/ErrorBoundary.vue')['default']
+ ExecuteWorkflowModal: typeof import('./components/workflow/ExecuteWorkflowModal.vue')['default']
  ExecutionCard: typeof import('./components/execution/ExecutionCard.vue')['default']
  ExecutionProgress: typeof import('./components/workflow/ExecutionProgress.vue')['default']
  ExecutionStatusBadge: typeof import('./components/execution/ExecutionStatusBadge.vue')['default']
@@ -121,6 +122,7 @@ declare module 'vue' {
  MarkdownPreview: typeof import('./components/ui/markdown-editor/MarkdownPreview.vue')['default']
  NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
  NodePalette: typeof import('./components/workflow/NodePalette.vue')['default']
+ PageContainer: typeof import('./components/layout/PageContainer.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
  PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
@@ -178,6 +180,10 @@ declare module 'vue' {
  VariablePicker: typeof import('./components/workflow/VariablePicker.vue')['default']
  VectorIndexSettings: typeof import('./components/settings/VectorIndexSettings.vue')['default']
  WorkflowCanvas: typeof import('./components/workflow/WorkflowCanvas.vue')['default']
+ WorkflowDataTable: typeof import('./components/workflow/WorkflowDataTable.vue')['default']
+ WorkflowEmptyState: typeof import('./components/workflow/WorkflowEmptyState.vue')['default']
+ WorkflowPageHeader: typeof import('./components/workflow/WorkflowPageHeader.vue')['default']
+ WorkflowSettingsDialog: typeof import('./components/workflow/WorkflowSettingsDialog.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  }
 }

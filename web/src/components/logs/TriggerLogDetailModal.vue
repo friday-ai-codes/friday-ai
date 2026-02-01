@@ -187,7 +187,7 @@ const webhookHeader = computed( => {
  </div>
  <div class="flex items-start justify-between border-b border-border/50">
  <div class="flex items-center gap-4">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 leading-none">
+ <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <div>
@@ -227,7 +227,7 @@ const webhookHeader = computed( => {
  <!-- Webhook 事件信息 -->
  <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
- <div class=".5 rounded-md bg-gradient-to-br from-violet-500/20 to-purple-500/10 leading-none">
+ <div class=".5 rounded-md bg-gradient-to-br from-violet-500/20 to-purple-500/10">
  <span class="icon-[lucide--webhook] text-sm text-violet-500" />
  </div>
  <h4 class="text-sm font-medium">
@@ -304,7 +304,7 @@ const webhookHeader = computed( => {
  <!-- 关联的工作流执行 -->
  <div v-if="log.workflow_executions?.length" class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
- <div class=".5 rounded-md bg-gradient-to-br from-emerald-500/20 to-teal-500/10 leading-none">
+ <div class=".5 rounded-md bg-gradient-to-br from-emerald-500/20 to-teal-500/10">
  <span class="icon-[lucide--play-circle] text-sm text-emerald-500" />
  </div>
  <h4 class="text-sm font-medium">
@@ -345,7 +345,7 @@ const webhookHeader = computed( => {
  class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/30 transition-colors"
  >
  <div class="flex items-center gap-2">
- <div class=".5 rounded-md bg-gradient-to-br from-amber-500/20 to-orange-500/10 leading-none">
+ <div class=".5 rounded-md bg-gradient-to-br from-amber-500/20 to-orange-500/10">
  <span class="icon-[lucide--code] text-sm text-amber-500" />
  </div>
  <h4 class="text-sm font-medium">

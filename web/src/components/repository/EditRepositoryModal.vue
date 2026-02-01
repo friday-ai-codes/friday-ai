@@ -138,7 +138,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 leading-none">
+ <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
  <span class="icon-[lucide--edit] text-xl text-violet-600" />
  </div>
  <div>
@@ -288,10 +288,18 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  {{ testing ? '正在测试连接...': testResult?.success ? '连接成功': testResult && !testResult.success ? '连接失败': '连接测试' }}
  </h4>
  <p class="text-xs text-muted-foreground">
- <template v-if="testing">验证仓库凭证中</template>
- <template v-else-if="testResult?.success">仓库可访问</template>
- <template v-else-if="testResult && !testResult.success">{{ testResult.error }}</template>
- <template v-else>验证仓库凭证是否有效</template>
+ <template v-if="testing">
+ 验证仓库凭证中
+ </template>
+ <template v-else-if="testResult?.success">
+ 仓库可访问
+ </template>
+ <template v-else-if="testResult && !testResult.success">
+ {{ testResult.error }}
+ </template>
+ <template v-else>
+ 验证仓库凭证是否有效
+ </template>
  </p>
  </div>
  </div>

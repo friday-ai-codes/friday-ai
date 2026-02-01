@@ -100,17 +100,22 @@ export const useExecutionsStore = defineStore('executions', => {
  5000,
  { immediate: false },
  )
- async function fetchExecutions(workflowId?: string, projectId?: string) {
+ async function fetchExecutions(workflowId?: string, projectId?: string, createdAfter?: string, silent = false) {
+ // silent 模式下不显示 loading 状态，避免页面抖动
+ if (!silent) {
  loading.value = true
+ }
  error.value = null
  try {
- const params = new URLSearchParams
+ // 构建查询参数对象，让 api.get 处理 URL 拼接
+ const params: Record<string, string> = {}
  if (workflowId)
- params.append('workflow_id', workflowId)
+ params.workflow_id = workflowId
  if (projectId)
- params.append('project_id', projectId)
- const url = `/workflow-executions/${params.toString ? `?${params.toString}`: ''}`
- const data = await api.get<any>(url)
+ params.project_id = projectId
+ if (createdAfter)
+ params.created_after = createdAfter
+ const data = await api.get<any>('/workflow-executions/', params)
  executions.value = data.results || data
  }
  catch (e: any) {
@@ -118,7 +123,9 @@ export const useExecutionsStore = defineStore('executions', => {
  console.error(e)
  }
  finally {
+ if (!silent) {
  loading.value = false
+ }
  }
  }
  async function fetchExecution(id: string) {
