@@ -68,7 +68,12 @@ class FeishuEventTriggerNode(BaseNode):
  async def execute(self, context: ExecutionContext) -> NodeResult:
  """提取并输出事件数据
  从 input_data 和 trigger_data 中提取飞书事件相关信息。
+ 支持两种输入格式：
+ 1. Webhook 触发：数据已由 workflow_bridge 预处理
+ 2. 手动执行：直接传入飞书事件的 payload 数据
  """
+ # 获取完整的 input_data 用于手动执行场景
+ input_data = context.input_data or {}
  # 从 input_data 获取事件基本信息
  event_type = context.get_input("event_type", "")
  work_item_id = context.get_input("work_item_id", "")
@@ -83,9 +88,22 @@ class FeishuEventTriggerNode(BaseNode):
  project_key = context.get_trigger_data("project_key", "")
  if not payload:
  payload = context.get_trigger_data("payload", {})
- # 提取更多有用信息
- work_item_type = payload.get("work_item_type_key", "")
- work_item_name = payload.get("name", "")
+ # 手动执行场景：直接从 input_data 提取字段（飞书 payload 格式）
+ # 此时 input_data 就是飞书事件的 payload 内容
+ if not work_item_id and input_data.get("id"):
+ work_item_id = str(input_data.get("id", ""))
+ if not project_key and input_data.get("project_key"):
+ project_key = input_data.get("project_key", "") or input_data.get(
+ "project_simple_name", ""
+ )
+ if not payload and input_data:
+ # 整个 input_data 就是 payload
+ payload = input_data
+ # 提取更多有用信息（优先从 payload，回退到 input_data）
+ work_item_type = payload.get("work_item_type_key", "") or input_data.get(
+ "work_item_type_key", ""
+ )
+ work_item_name = payload.get("name", "") or input_data.get("name", "")
  # 状态信息（适用于状态变更事件）
  cur_status = payload.get("cur_work_item_status", {})
  prev_status = payload.get("pre_work_item_status", {})
