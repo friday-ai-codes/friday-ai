@@ -1,3 +1,12 @@
+---
+# 语言约束
+**所有回复必须使用中文。** 包括：
+- 主对话回复
+- GSD 规划输出（阶段名称、任务描述、验证结果）
+- 代码注释和文档字符串
+- 提交信息
+英文仅用于：代码变量名、技术术语、CLI 命令
+---
 <!-- OPENSPEC:START -->
 # OpenSpec Instructions
 These instructions are for AI assistants working in this project.
