@@ -161,9 +161,6 @@ declare module 'vue' {
  TabsContent: typeof import('./components/ui/tabs/TabsContent.vue')['default']
  TabsList: typeof import('./components/ui/tabs/TabsList.vue')['default']
  TabsTrigger: typeof import('./components/ui/tabs/TabsTrigger.vue')['default']
- TaskDetailModal: typeof import('./components/task/TaskDetailModal.vue')['default']
- TaskLogs: typeof import('./components/task/TaskLogs.vue')['default']
- TaskStatusBadge: typeof import('./components/task/TaskStatusBadge.vue')['default']
  Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
  Tooltip: typeof import('./components/ui/tooltip/Tooltip.vue')['default']
  TooltipContent: typeof import('./components/ui/tooltip/TooltipContent.vue')['default']
@@ -183,7 +180,6 @@ declare module 'vue' {
  WorkflowDataTable: typeof import('./components/workflow/WorkflowDataTable.vue')['default']
  WorkflowEmptyState: typeof import('./components/workflow/WorkflowEmptyState.vue')['default']
  WorkflowPageHeader: typeof import('./components/workflow/WorkflowPageHeader.vue')['default']
- WorkflowSettingsDialog: typeof import('./components/workflow/WorkflowSettingsDialog.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  }
 }

@@ -100,7 +100,6 @@ declare global {
  const refWithControl: typeof import('@vueuse/core').refWithControl
  const resolveComponent: typeof import('vue').resolveComponent
  const resolveRef: typeof import('@vueuse/core').resolveRef
- const resolveUnref: typeof import('@vueuse/core')['resolveUnref']
  const setActivePinia: typeof import('pinia').setActivePinia
  const setMapStoreSuffix: typeof import('pinia').setMapStoreSuffix
  const shallowReactive: typeof import('vue').shallowReactive
@@ -128,7 +127,6 @@ declare global {
  const until: typeof import('@vueuse/core').until
  const useActiveElement: typeof import('@vueuse/core').useActiveElement
  const useAnimate: typeof import('@vueuse/core').useAnimate
- const useApi: typeof import('./composables/useApi').useApi
  const useArrayDifference: typeof import('@vueuse/core').useArrayDifference
  const useArrayEvery: typeof import('@vueuse/core').useArrayEvery
  const useArrayFilter: typeof import('@vueuse/core').useArrayFilter
@@ -272,8 +270,6 @@ declare global {
  const useStyleTag: typeof import('@vueuse/core').useStyleTag
  const useSupported: typeof import('@vueuse/core').useSupported
  const useSwipe: typeof import('@vueuse/core').useSwipe
- const useTasksCompatStore: typeof import('./stores/tasksCompat').useTasksCompatStore
- const useTasksStore: typeof import('./stores/tasks').useTasksStore
  const useTemplateRef: typeof import('vue').useTemplateRef
  const useTemplateRefsList: typeof import('@vueuse/core').useTemplateRefsList
  const useTextDirection: typeof import('@vueuse/core').useTextDirection
