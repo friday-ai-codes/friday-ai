@@ -29,12 +29,16 @@ async function openExecuteModal(workflowId: string) {
  await store.fetchWorkflow(workflowId)
  if (store.currentWorkflow) {
  workflowToExecute.value = store.currentWorkflow
- const { open } = useModal({
+ const { open, close } = useModal({
  component: markRaw(ExecuteWorkflowModal),
  attrs: {
  workflow: workflowToExecute.value,
  onConfirm: async (inputData: Record<string, any>) => {
+ close
  await executeWorkflow(inputData)
+ },
+ onCancel: => {
+ close
  },
  },
  })

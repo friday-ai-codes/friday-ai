@@ -26,11 +26,22 @@ interface FieldDefinition {
  required: boolean
  description?: string
 }
-// 飞书事件必填字段
+// 飞书事件必填字段（支持原始 Webhook 格式和简化格式）
 const feishuRequiredFields: FieldDefinition = [
  { path: 'id', name: '工作项 ID', required: true, description: '飞书工作项唯一标识' },
  { path: 'project_key', name: '项目 Key', required: true, description: '飞书项目标识' },
 ]
+// 检测是否为飞书原始 Webhook 格式（带 header/payload 结构）
+function isFeishuRawWebhookFormat(data: Record<string, any>): boolean {
+ return !!(data.header && data.payload && typeof data.payload === 'object')
+}
+// 从飞书数据中提取有效载荷（支持原始格式和简化格式）
+function extractFeishuPayload(data: Record<string, any>): Record<string, any> {
+ if (isFeishuRawWebhookFormat(data)) {
+ return data.payload
+ }
+ return data
+}
 // 飞书事件可选字段
 const feishuOptionalFields: FieldDefinition = [
  { path: 'work_item_type_key', name: '工作项类型', required: false, description: '如 story, task, bug' },
@@ -148,10 +159,13 @@ function validateJson: boolean {
  parseError.value = 'JSON 格式不正确，请检查语法'
  return false
  }
+ // 对于飞书触发器，支持原始 Webhook 格式（自动从 payload 中提取）
+ const dataToValidate = triggerNodeType.value === 'feishu'
+ ? extractFeishuPayload(data): data
  // 验证必填字段
  const errors: string =
  for (const field of requiredFields.value) {
- const value = getNestedValue(data, field.path)
+ const value = getNestedValue(dataToValidate, field.path)
  if (value === undefined || value === null || value === '') {
  errors.push(`缺少必填字段: ${field.name} (${field.path})`)
  }
@@ -168,8 +182,13 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const inputData = requiresInput.value
- ? JSON.parse(inputJson.value): {}
+ let inputData: Record<string, any> = {}
+ if (requiresInput.value) {
+ const rawData = JSON.parse(inputJson.value)
+ // 对于飞书触发器，自动从原始 Webhook 格式中提取 payload
+ inputData = triggerNodeType.value === 'feishu'
+ ? extractFeishuPayload(rawData): rawData
+ }
  emit('confirm', inputData)
  }
  finally {
