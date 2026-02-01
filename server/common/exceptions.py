@@ -21,3 +21,24 @@ class ConfigurationError(FridayException):
 class FeishuConfigurationError(ConfigurationError):
  """Feishu configuration error."""
  pass
+class TriggerError(FridayException):
+ """Base exception for all trigger-related errors.
+ All trigger-specific exceptions should inherit from this class.
+ """
+ pass
+class TriggerValidationError(TriggerError):
+ """Validation failures in trigger processing.
+ Raised when trigger context validation fails, such as:
+ - Missing required fields
+ - Invalid data format
+ - Workflow not found or inactive
+ """
+ pass
+class TriggerAuthError(TriggerError):
+ """Authentication/authorization failures in trigger processing.
+ Raised when authentication or authorization fails, such as:
+ - Invalid webhook signature
+ - Invalid or expired token
+ - Insufficient permissions
+ """
+ pass
