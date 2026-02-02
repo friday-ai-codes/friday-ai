@@ -1,6 +1,7 @@
 """Feishu views: Webhook handling, config management, and logs."""
 import json
 import logging
+import uuid as uuid_module
 import structlog
 from asgiref.sync import async_to_sync
 from django.shortcuts import get_object_or_404
@@ -10,6 +11,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
+from workflows.triggers.context import TriggerContext
+from workflows.triggers.dispatcher import TriggerDispatcher
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
 from .models import KeyFields, TriggerLog, TriggerLogStatus
 from .serializers import (
@@ -20,7 +23,6 @@ from .serializers import (
  WebhookTokenSerializer,
  WebhookTokenUpdateSerializer,
 )
-from .workflow_bridge import FeishuWorkflowBridge
 logger = logging.getLogger(__name__)
 struct_logger = structlog.get_logger
 # 幂等处理
@@ -157,19 +159,33 @@ class FeishuWebhookView(APIView):
  }
  )
  def _dispatch_to_workflows(self, event_type: str, project, payload: dict, trigger_log):
- """Dispatch event to workflow system."""
+ """Dispatch event to workflow system via TriggerDispatcher."""
  try:
- bridge = FeishuWorkflowBridge
- executions = async_to_sync(bridge.dispatch_event)(
- event_type, project, payload, trigger_log
+ trace_id = str(uuid_module.uuid4)
+ context = TriggerContext(
+ trigger_type="feishu",
+ raw_payload=payload,
+ event_type=event_type,
+ project=project,
+ metadata={
+ "trace_id": trace_id,
+ "trigger_log_id": str(trigger_log.id),
+ },
  )
+ dispatcher = TriggerDispatcher
+ executions = async_to_sync(dispatcher.dispatch)(context)
  if executions:
  struct_logger.info(
  "workflows_triggered",
+ trace_id=trace_id,
  event_type=event_type,
  count=len(executions),
  execution_ids=[str(e.id) for e in executions],
  )
+ # Update trigger_log with execution info
+ if len(executions) == 1:
+ trigger_log.workflow_execution = executions[0]
+ trigger_log.save(update_fields=["workflow_execution"])
  except Exception as e:
  struct_logger.error(
  "workflow_dispatch_failed",
