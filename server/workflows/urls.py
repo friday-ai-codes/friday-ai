@@ -7,7 +7,6 @@ from workflows.api.views import (
  ExecutionContextView,
  LLMModelsView,
  LLMSystemConfigView,
- ManualTriggerView,
  NodeExecutionViewSet,
  NodeSchemaListView,
  NodeTypeViewSet,
@@ -39,12 +38,6 @@ urlpatterns = router.urls + [
  "node-callback/",
  NodeExecutionCallbackView.as_view,
  name="node-callback",
- ),
- # Manual trigger endpoint
- path(
- "workflows/<uuid:workflow_id>/execute/",
- ManualTriggerView.as_view,
- name="workflow-manual-trigger",
  ),
  # Execution context endpoint
  path(
