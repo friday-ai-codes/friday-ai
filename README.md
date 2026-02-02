@@ -97,7 +97,6 @@ friday/
 ├── web/ # Frontend Project (Vue 3)
 │ ├── src/
 │ └── README.md
-├── openspec/ # Project Specs & Design Docs
 ├── docker-compose.yml # Full Stack Orchestration
 └── README.md # Project Entry Documentation
 ```
