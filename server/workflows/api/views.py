@@ -1,4 +1,5 @@
 """Workflows API views."""
+import uuid
 import structlog
 from asgiref.sync import async_to_sync
 from django.db import transaction
@@ -10,6 +11,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
+from common.exceptions import TriggerValidationError
 from workflows.api.permissions import (
  ApprovalPermission,
  ExecutionPermission,
@@ -56,6 +58,8 @@ from workflows.models import (
  WorkflowTrigger,
 )
 from workflows.nodes.registry import NodeRegistry
+from workflows.triggers.context import TriggerContext
+from workflows.triggers.dispatcher import TriggerDispatcher
 logger = structlog.get_logger
 def sync_workflow_triggers(workflow: Workflow) -> None:
  """Sync feishu_event_trigger nodes to WorkflowTrigger table.
@@ -172,43 +176,38 @@ class WorkflowViewSet(ModelViewSet):
  return Response(serializer.data)
  @action(detail=True, methods=["post"])
  def execute(self, request: Request, pk=None) -> Response:
- """Trigger workflow execution."""
+ """Trigger workflow execution via TriggerDispatcher."""
  workflow = self.get_object
- if not workflow.is_active:
- return Response(
- {"detail": "工作流已禁用，无法执行"},
- status=status.HTTP_400_BAD_REQUEST,
+ trace_id = str(uuid.uuid4)
+ log = logger.bind(trace_id=trace_id)
+ log.info(
+ "manual_trigger_start",
+ workflow_id=str(workflow.id),
+ user_id=str(request.user.id),
  )
  serializer = WorkflowExecuteSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
- input_data = serializer.validated_data.get("input_data", {})
- trigger_data = serializer.validated_data.get("trigger_data", {})
- try:
- engine = WorkflowEngine
- execution = run_async(
- engine.start_execution(
- workflow=workflow,
- input_data=input_data,
- triggered_by=request.user,
+ context = TriggerContext(
  trigger_type="manual",
- trigger_data=trigger_data,
+ raw_payload=serializer.validated_data.get("input_data", {}),
+ workflow=workflow,
+ triggered_by=request.user,
+ metadata={"trace_id": trace_id},
  )
- )
+ dispatcher = TriggerDispatcher
+ execution = async_to_sync(dispatcher.dispatch_single)(context)
+ if not execution:
+ raise TriggerValidationError("Failed to start workflow execution")
+ log.info("manual_trigger_complete", execution_id=str(execution.id))
  return Response(
  {
+ "workflow_id": str(execution.workflow.id),
+ "workflow_name": execution.workflow.name,
  "execution_id": str(execution.id),
  "status": execution.status,
- "message": "工作流执行已启动",
+ "triggered_at": execution.created_at.isoformat,
  },
  status=status.HTTP_201_CREATED,
- )
- except ValueError as e:
- return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
- except Exception as e:
- logger.exception("workflow_execute_error", workflow_id=str(pk))
- return Response(
- {"detail": f"执行失败: {e}"},
- status=status.HTTP_500_INTERNAL_SERVER_ERROR,
  )
  @action(detail=True, methods=["post"])
  def duplicate(self, request: Request, pk=None) -> Response:
@@ -640,88 +639,42 @@ class WebhookTriggerView(APIView):
  """View for handling external webhook triggers."""
  permission_classes = [AllowAny]
  def post(self, request: Request, path: str) -> Response:
- """Handle incoming webhook."""
- # Find webhook config by path
- try:
- webhook_config = WebhookConfig.objects.select_related("workflow").get(
- path=path,
- is_active=True,
- )
- except WebhookConfig.DoesNotExist:
- return Response(
- {"detail": "Webhook not found"},
- status=status.HTTP_404_NOT_FOUND,
- )
- # Check HTTP method
- if request.method.upper != webhook_config.http_method.upper:
- return Response(
- {"detail": f"Method not allowed. Expected: {webhook_config.http_method}"},
- status=status.HTTP_405_METHOD_NOT_ALLOWED,
- )
- # Validate auth if required
- if webhook_config.require_auth:
- auth_header = request.headers.get("Authorization")
- expected_token = webhook_config.workflow.trigger_config.get("webhook_token")
- if not auth_header or auth_header != f"Bearer {expected_token}":
- return Response(
- {"detail": "Unauthorized"},
- status=status.HTTP_401_UNAUTHORIZED,
- )
- # Create webhook log
- import time
- start_time = time.time
- log = WebhookLog.objects.create(
- webhook_config=webhook_config,
- request_method=request.method,
- request_path=path,
- request_headers=dict(request.headers),
- request_body=request.data if request.data else {},
- )
- # Trigger workflow
- try:
- engine = WorkflowEngine
- execution = run_async(
- engine.start_execution(
- workflow=webhook_config.workflow,
- input_data=request.data if request.data else {},
+ """Handle incoming webhook via TriggerDispatcher."""
+ trace_id = str(uuid.uuid4)
+ log = logger.bind(trace_id=trace_id, webhook_path=path)
+ log.info("webhook_trigger_start")
+ context = TriggerContext(
  trigger_type="webhook",
- trigger_data={
- "webhook_config_id": str(webhook_config.id),
- "path": path,
- "headers": dict(request.headers),
+ raw_payload=request.data if request.data else {},
+ metadata={
+ "trace_id": trace_id,
+ "webhook_path": path,
+ "signature": request.headers.get("X-Signature", ""),
+ "request_body": request.body,
+ "request_headers": dict(request.headers),
+ "request_method": request.method,
  },
  )
- )
- # Update log with success
- processing_time = int((time.time - start_time) * 1000)
- log.execution = execution
- log.response_status = 200
- log.response_body = {"execution_id": str(execution.id)}
- log.processing_time_ms = processing_time
- log.save
- # Update webhook stats
- from django.utils import timezone
- webhook_config.request_count += 1
- webhook_config.last_triggered_at = timezone.now
- webhook_config.save(update_fields=["request_count", "last_triggered_at"])
+ dispatcher = TriggerDispatcher
+ executions = async_to_sync(dispatcher.dispatch)(context)
+ log.info("webhook_trigger_complete", execution_count=len(executions))
+ if not executions:
  return Response(
- {
- "status": "triggered",
- "execution_id": str(execution.id),
- },
+ {"status": "no_workflows", "message": "No matching workflows found"},
  status=status.HTTP_200_OK,
  )
- except Exception as e:
- # Update log with error
- processing_time = int((time.time - start_time) * 1000)
- log.response_status = 500
- log.error_message = str(e)
- log.processing_time_ms = processing_time
- log.save
- logger.exception("webhook_trigger_error", path=path)
  return Response(
- {"detail": f"Failed to trigger workflow: {e}"},
- status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ [
+ {
+ "workflow_id": str(e.workflow.id),
+ "workflow_name": e.workflow.name,
+ "execution_id": str(e.id),
+ "status": e.status,
+ "triggered_at": e.created_at.isoformat,
+ }
+ for e in executions
+ ],
+ status=status.HTTP_201_CREATED,
  )
 class WebhookConfigViewSet(ModelViewSet):
  """ViewSet for WebhookConfig."""
