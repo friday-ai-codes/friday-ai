@@ -263,7 +263,34 @@ class FeishuWebhookView(APIView):
  is_rejected = any(kw in comment_lower for kw in rejection_keywords)
  if is_approved or is_rejected:
  logger.info(f"评论审批: {work_item_id}, 通过={is_approved}, 驳回={is_rejected}")
- # Workflow system handles actual approval logic via _dispatch_to_workflows
+ # Call FeishuApprovalHandler
+ from feishu.approval import FeishuApprovalHandler
+ handler = FeishuApprovalHandler
+ try:
+ approved = is_approved and not is_rejected # Rejection takes priority
+ result = async_to_sync(handler.on_approval_comment)(
+ work_item_id=str(work_item_id),
+ approved=approved,
+ comment=comment,
+ approver=None,
+ )
+ if result:
+ struct_logger.info(
+ "feishu_approval_processed_via_webhook",
+ work_item_id=work_item_id,
+ approved=approved,
+ )
+ else:
+ struct_logger.warning(
+ "feishu_approval_no_matching_execution",
+ work_item_id=work_item_id,
+ )
+ except Exception as e:
+ struct_logger.error(
+ "feishu_approval_handler_error",
+ work_item_id=work_item_id,
+ error=str(e),
+ )
  def _handle_workitem_update(self, project, payload, trigger_log):
  """处理工作项字段修改事件。"""
  work_item_id = payload.get("id")
