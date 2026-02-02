@@ -1,14 +1,14 @@
 <script setup lang="ts">
+import { Plus, Search } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
-import { Plus, Search } from 'lucide-vue-next'
 const emit = defineEmits<{
  (e: 'create'): void
  (e: 'search', value: string): void
 }>
 const searchQuery = ref('')
-function onInput(event: Event) {
+function onInput {
  // Input component emits update:modelValue, but native input event is also useful
  // or we can just watch searchQuery.
  // For standard shadcn-vue Input, v-model works.
@@ -18,7 +18,9 @@ function onInput(event: Event) {
 <template>
  <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
  <div class="space-y-1">
- <h2 class="text-2xl font-bold tracking-tight">Workflows</h2>
+ <h2 class="text-2xl font-bold tracking-tight">
+ Workflows
+ </h2>
  <p class="text-muted-foreground text-sm">
  Manage and automate your development workflows
  </p>

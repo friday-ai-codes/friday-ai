@@ -10,7 +10,6 @@ import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/projects/[id]/')
@@ -632,8 +631,12 @@ async function handleCustomToken {
  <span v-if="selectedToLink.has(repo.id)" class="icon-[lucide--check] text-xs text-primary-foreground" />
  </div>
  <div class="min-w-0 flex-1">
- <div class="font-medium text-sm truncate">{{ repo.name }}</div>
- <div class="text-xs text-muted-foreground truncate">{{ repo.git_url }}</div>
+ <div class="font-medium text-sm truncate">
+ {{ repo.name }}
+ </div>
+ <div class="text-xs text-muted-foreground truncate">
+ {{ repo.git_url }}
+ </div>
  </div>
  </div>
  </div>
@@ -696,8 +699,12 @@ async function handleCustomToken {
  <span v-if="selectedToUnlink.has(repo.id)" class="icon-[lucide--check] text-xs text-destructive-foreground" />
  </div>
  <div class="min-w-0 flex-1">
- <div class="font-medium text-sm truncate">{{ repo.name }}</div>
- <div class="text-xs text-muted-foreground truncate">{{ repo.git_url }}</div>
+ <div class="font-medium text-sm truncate">
+ {{ repo.name }}
+ </div>
+ <div class="text-xs text-muted-foreground truncate">
+ {{ repo.git_url }}
+ </div>
  </div>
  </div>
  </div>
@@ -715,7 +722,9 @@ async function handleCustomToken {
  </div>
  </div>
  <p v-if="availableRepositories.length === 0 && linkedRepositories.length === 0" class="text-sm text-muted-foreground text-center py-2">
- 没有可用的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">创建仓库</RouterLink>
+ 没有可用的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">
+ 创建仓库
+ </RouterLink>
  </p>
  </div>
  <template #footer>

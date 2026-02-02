@@ -3,7 +3,7 @@ import type { ContextRetrievalConfig } from '~/types/workflow'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
-import { Slider } from '~/components/ui/slider'
+import { SliderSingle } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
 import VariablePicker from '~/components/workflow/VariablePicker.vue'
@@ -100,8 +100,8 @@ const languageOptions = [
  <span class="text-sm">返回数量</span>
  <span class="text-sm font-mono bg-secondary px-2 py-0.5 rounded">{{ topK }}</span>
  </div>
- <Slider:model-value="[topK]":min="1":max="50":step="1"
- @update:model-value="v => topK = v[0]"
+ <SliderSingle
+ v-model="topK":min="1":max="50":step="1"
  />
  <p class="text-xs text-muted-foreground">
  返回最相关的代码片段数量
@@ -113,8 +113,8 @@ const languageOptions = [
  <span class="text-sm">相似度阈值</span>
  <span class="text-sm font-mono bg-secondary px-2 py-0.5 rounded">{{ scoreThreshold.toFixed(2) }}</span>
  </div>
- <Slider:model-value="[scoreThreshold * 100]":min="0":max="100":step="5"
- @update:model-value="v => scoreThreshold = v[0] / 100"
+ <SliderSingle:model-value="scoreThreshold * 100":min="0":max="100":step="5"
+ @update:model-value="v => scoreThreshold = v / 100"
  />
  <p class="text-xs text-muted-foreground">
  过滤低于此分数的结果，0 表示不过滤
@@ -167,15 +167,15 @@ const languageOptions = [
  </p>
  <ul class="text-xs text-muted-foreground space-y-1 ml-4">
  <li>
- <code class="bg-background px-1 rounded">{{ '{{ nodes.<id>.formatted_context }}' }}</code>
+ <code v-pre class="bg-background px-1 rounded">{{ nodes.[id].formatted_context }}</code>
  - 格式化的 Markdown 文本
  </li>
  <li>
- <code class="bg-background px-1 rounded">{{ '{{ nodes.<id>.contexts }}' }}</code>
+ <code v-pre class="bg-background px-1 rounded">{{ nodes.[id].contexts }}</code>
  - 原始检索结果数组
  </li>
  <li>
- <code class="bg-background px-1 rounded">{{ '{{ nodes.<id>.total }}' }}</code>
+ <code v-pre class="bg-background px-1 rounded">{{ nodes.[id].total }}</code>
  - 结果数量
  </li>
  </ul>

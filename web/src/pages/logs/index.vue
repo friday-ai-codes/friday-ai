@@ -2,8 +2,8 @@
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
-import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import TriggerLogList from '~/components/logs/TriggerLogList.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,

@@ -407,7 +407,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  function saveDraft {
  const key = getDraftKey
- if (!key) return
+ if (!key)
+ return
  const draft = {
  nodes: JSON.parse(JSON.stringify(nodes.value)),
  edges: JSON.parse(JSON.stringify(edges.value)),
@@ -417,9 +418,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  function loadDraft: boolean {
  const key = getDraftKey
- if (!key) return false
+ if (!key)
+ return false
  const draftStr = localStorage.getItem(key)
- if (!draftStr) return false
+ if (!draftStr)
+ return false
  try {
  const draft = JSON.parse(draftStr)
  nodes.value = draft.nodes
@@ -439,14 +442,17 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  function hasDraft: boolean {
  const key = getDraftKey
- if (!key) return false
+ if (!key)
+ return false
  return localStorage.getItem(key) !== null
  }
  function getDraftInfo: { savedAt: string } | null {
  const key = getDraftKey
- if (!key) return null
+ if (!key)
+ return null
  const draftStr = localStorage.getItem(key)
- if (!draftStr) return null
+ if (!draftStr)
+ return null
  try {
  const draft = JSON.parse(draftStr)
  return { savedAt: draft.savedAt }

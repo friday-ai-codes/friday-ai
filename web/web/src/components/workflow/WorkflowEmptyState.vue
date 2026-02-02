@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button } from '~/components/ui/button'
 import { GitBranch } from 'lucide-vue-next'
+import { Button } from '~/components/ui/button'
 defineEmits<{
  (e: 'create'): void
 }>
@@ -10,7 +10,9 @@ defineEmits<{
  <div class="mx-auto flex w-12 items-center justify-center rounded-full bg-muted/50 mb-4">
  <GitBranch class=" w-6 text-muted-foreground" />
  </div>
- <h3 class="text-lg font-semibold tracking-tight">No workflows found</h3>
+ <h3 class="text-lg font-semibold tracking-tight">
+ No workflows found
+ </h3>
  <p class="mb-6 mt-2 text-sm text-muted-foreground max-w-sm">
  Get started by creating your first automation workflow. Streamline your development process with custom automation.
  </p>

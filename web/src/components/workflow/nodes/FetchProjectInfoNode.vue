@@ -6,10 +6,14 @@ const props = defineProps<NodeProps>
 function getIncludedItems: string {
  const items: string =
  const config = props.data?.config
- if (config?.include_repositories) items.push('仓库')
- if (config?.include_feishu_config) items.push('飞书')
- if (config?.include_claude_config) items.push('Claude')
- if (config?.include_webhook_token) items.push('Token')
+ if (config?.include_repositories)
+ items.push('仓库')
+ if (config?.include_feishu_config)
+ items.push('飞书')
+ if (config?.include_claude_config)
+ items.push('Claude')
+ if (config?.include_webhook_token)
+ items.push('Token')
  return items
 }
 function hasIdentifier: boolean {

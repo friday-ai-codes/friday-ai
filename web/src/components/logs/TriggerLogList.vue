@@ -125,10 +125,18 @@ async function openDetail(logId: string) {
  <template v-else>
  <!-- 列表头部 -->
  <div class="hidden lg:grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-muted-foreground border-b border-border/50">
- <div class="col-span-5">工作项</div>
- <div class="col-span-2">项目</div>
- <div class="col-span-2">状态</div>
- <div class="col-span-2">时间</div>
+ <div class="col-span-5">
+ 工作项
+ </div>
+ <div class="col-span-2">
+ 项目
+ </div>
+ <div class="col-span-2">
+ 状态
+ </div>
+ <div class="col-span-2">
+ 时间
+ </div>
  <div class="col-span-1" />
  </div>
  <!-- 列表内容 -->
