@@ -1,6 +1,8 @@
 """Integration tests for trigger views using TriggerDispatcher."""
 import pytest
 from rest_framework import status
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import User
 from projects.models import Project
 from workflows.models import Workflow, WorkflowNode
@@ -17,7 +19,6 @@ def project(db):
  """Create test project."""
  return Project.objects.create(
  name="Test Project",
- key="TEST",
  )
 @pytest.fixture
 def workflow(db, project, user):
@@ -48,40 +49,56 @@ def inactive_workflow(db, project, user):
  created_by=user,
  )
 @pytest.fixture
-def authenticated_client(client, user):
- """Return client with authenticated user."""
- client.force_login(user)
- return client
+def api_client:
+ """Return DRF APIClient."""
+ return APIClient
+@pytest.fixture
+def authenticated_api_client(api_client, user):
+ """Return APIClient with JWT authentication."""
+ refresh = RefreshToken.for_user(user)
+ api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {refresh.access_token}")
+ return api_client
 class TestWorkflowExecuteView:
  """Tests for WorkflowViewSet.execute (manual trigger)."""
  @pytest.mark.django_db
- def test_execute_inactive_workflow(self, authenticated_client, inactive_workflow):
+ def test_execute_inactive_workflow(self, authenticated_api_client, inactive_workflow):
  """Triggering inactive workflow should fail."""
- response = authenticated_client.post(
+ response = authenticated_api_client.post(
  f"/api/workflows/{inactive_workflow.id}/execute/",
  data={},
- content_type="application/json",
+ format="json",
  )
  # Workflow is_active check returns 400
  assert response.status_code == status.HTTP_400_BAD_REQUEST
  @pytest.mark.django_db
- def test_execute_unauthenticated(self, client, workflow):
+ def test_execute_unauthenticated(self, api_client, workflow):
  """Unauthenticated request should fail."""
- response = client.post(
+ response = api_client.post(
  f"/api/workflows/{workflow.id}/execute/",
  data={},
- content_type="application/json",
+ format="json",
  )
  assert response.status_code == status.HTTP_401_UNAUTHORIZED
+ @pytest.mark.django_db
+ def test_execute_nonexistent_workflow(self, authenticated_api_client):
+ """Executing nonexistent workflow returns 404."""
+ import uuid
+ fake_id = uuid.uuid4
+ response = authenticated_api_client.post(
+ f"/api/workflows/{fake_id}/execute/",
+ data={},
+ format="json",
+ )
+ assert response.status_code == status.HTTP_404_NOT_FOUND
 class TestWebhookTriggerView:
  """Tests for WebhookTriggerView."""
  @pytest.mark.django_db
- def test_webhook_no_matching_workflow(self, client):
+ def test_webhook_no_matching_workflow(self, api_client):
  """Webhook with no matching workflow returns 200 with status."""
- response = client.post(
- "/api/webhooks/trigger/nonexistent-path/",
+ response = api_client.post(
+ "/api/webhook/nonexistent-path/",
  data={"event": "test"},
- content_type="application/json",
+ format="json",
  )
  # No matching workflow config - returns 200 with status
  assert response.status_code == status.HTTP_200_OK
@@ -90,25 +107,25 @@ class TestWebhookTriggerView:
 class TestFeishuWebhookView:
  """Tests for FeishuWebhookView."""
  @pytest.mark.django_db
- def test_url_verification_challenge(self, client):
+ def test_url_verification_challenge(self, api_client):
  """URL verification should return challenge."""
- response = client.post(
- "/api/feishu/webhook/",
+ response = api_client.post(
+ "/api/feishu/webhook",
  data={
  "type": "url_verification",
  "challenge": "test_challenge_string",
  },
- content_type="application/json",
+ format="json",
  )
  assert response.status_code == status.HTTP_200_OK
  assert response.json["challenge"] == "test_challenge_string"
  @pytest.mark.django_db
- def test_missing_header_payload(self, client):
+ def test_missing_header_payload(self, api_client):
  """Request without header/payload should be ignored."""
- response = client.post(
- "/api/feishu/webhook/",
+ response = api_client.post(
+ "/api/feishu/webhook",
  data={"some": "data"},
- content_type="application/json",
+ format="json",
  )
  assert response.status_code == status.HTTP_200_OK
  assert response.json["status"] == "ignored"

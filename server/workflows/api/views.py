@@ -642,6 +642,11 @@ class WebhookTriggerView(APIView):
  trace_id = str(uuid.uuid4)
  log = logger.bind(trace_id=trace_id, webhook_path=path)
  log.info("webhook_trigger_start")
+ # Read body before accessing request.data (DRF consumes the stream)
+ try:
+ request_body = request.body
+ except Exception:
+ request_body = b""
  context = TriggerContext(
  trigger_type="webhook",
  raw_payload=request.data if request.data else {},
@@ -649,7 +654,7 @@ class WebhookTriggerView(APIView):
  "trace_id": trace_id,
  "webhook_path": path,
  "signature": request.headers.get("X-Signature", ""),
- "request_body": request.body,
+ "request_body": request_body,
  "request_headers": dict(request.headers),
  "request_method": request.method,
  },
