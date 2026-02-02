@@ -110,16 +110,16 @@ def urls:
  return reverse("project-detail", args=[project_id])
  @staticmethod
  def project_repositories(project_id):
- return f"/api/projects/{project_id}/repositories"
+ return f"/api/projects/{project_id}/repositories/"
  @staticmethod
  def project_link_repository(project_id, repo_id):
- return f"/api/projects/{project_id}/repositories/{repo_id}"
+ return f"/api/projects/{project_id}/repositories/{repo_id}/"
  @staticmethod
  def project_unlink_repository(project_id, repo_id):
- return f"/api/projects/{project_id}/repositories/{repo_id}"
+ return f"/api/projects/{project_id}/repositories/{repo_id}/"
  @staticmethod
  def project_claude_config(project_id):
- return f"/api/projects/{project_id}/claude-config"
+ return f"/api/projects/{project_id}/claude-config/"
  # Repositories
  repository_list = reverse("repository-list")
  @staticmethod

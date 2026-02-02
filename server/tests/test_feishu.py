@@ -65,10 +65,14 @@ class TestTriggerLogList:
  response = authenticated_client.get(feishu_urls.logs_list)
  assert response.status_code == 200
  data = response.json
- assert isinstance(data, list)
- assert len(data) >= 1
+ # API now returns {"items": [...], "total": N}
+ assert "items" in data
+ assert "total" in data
+ items = data["items"]
+ assert isinstance(items, list)
+ assert len(items) >= 1
  # 验证返回的日志包含必要字段
- log_data = next((log for log in data if log["id"] == str(trigger_log.id)), None)
+ log_data = next((log for log in items if log["id"] == str(trigger_log.id)), None)
  assert log_data is not None
  assert log_data["event_type"] == "WorkitemCreateEvent"
  assert log_data["status"] == "accepted"
@@ -80,8 +84,9 @@ class TestTriggerLogList:
  response = authenticated_client.get(feishu_urls.logs_list, {"project_id": str(project.id)})
  assert response.status_code == 200
  data = response.json
+ items = data["items"]
  assert all(
- log.get("project_id") == str(project.id) for log in data if log.get("project_id")
+ log.get("project_id") == str(project.id) for log in items if log.get("project_id")
  )
  def test_list_trigger_logs_filter_by_status(
  self, authenticated_client, trigger_log, trigger_log_with_error, feishu_urls
@@ -90,7 +95,8 @@ class TestTriggerLogList:
  response = authenticated_client.get(feishu_urls.logs_list, {"status": "error"})
  assert response.status_code == 200
  data = response.json
- assert all(log["status"] == "error" for log in data)
+ items = data["items"]
+ assert all(log["status"] == "error" for log in items)
  def test_list_trigger_logs_filter_by_event_type(
  self, authenticated_client, trigger_log, feishu_urls
  ):
@@ -100,7 +106,8 @@ class TestTriggerLogList:
  )
  assert response.status_code == 200
  data = response.json
- assert all(log["event_type"] == "WorkitemCreateEvent" for log in data)
+ items = data["items"]
+ assert all(log["event_type"] == "WorkitemCreateEvent" for log in items)
  def test_list_trigger_logs_pagination(self, authenticated_client, project, feishu_urls):
  """测试日志列表分页。"""
  # 创建多条日志

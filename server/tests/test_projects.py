@@ -114,7 +114,7 @@ class TestProjectClaudeConfig:
  response = authenticated_client.get(urls.project_claude_config(project.id))
  assert response.status_code == status.HTTP_200_OK
  assert response.data["has_api_key"] is False
- assert response.data["source"] == "system"
+ assert response.data["config_source"] == "system"
  def test_set_claude_config(self, authenticated_client, project, urls):
  """测试设置 Claude 配置。"""
  response = authenticated_client.put(
@@ -125,7 +125,7 @@ class TestProjectClaudeConfig:
  assert response.status_code == status.HTTP_200_OK
  assert response.data["has_api_key"] is True
  assert response.data["base_url"] == "https://api.example.com"
- assert response.data["source"] == "project"
+ assert response.data["config_source"] == "project"
  def test_delete_claude_config(self, authenticated_client, project, urls):
  """测试删除 Claude 配置。"""
  # 先设置
