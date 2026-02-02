@@ -43,6 +43,7 @@ dependencies = [
  "tree-sitter-css>=0.21.0",
  "tree-sitter-html>=0.21.0",
  "tree-sitter-json>=0.21.0",
+ "claude-agent-sdk>=0.1.27",
 ]
 [build-system]
 requires = ["hatchling"]
