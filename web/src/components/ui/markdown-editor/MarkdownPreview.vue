@@ -7,14 +7,14 @@ import Typography from '@tiptap/extension-typography'
 import StarterKit from '@tiptap/starter-kit'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { common, createLowlight } from 'lowlight'
+const props = withDefaults(defineProps<Props>, {
+ class: '',
+})
 const lowlight = createLowlight(common)
 interface Props {
  content: string
  class?: string
 }
-const props = withDefaults(defineProps<Props>, {
- class: '',
-})
 const editor = useEditor({
  content: props.content,
  editable: false,
@@ -49,7 +49,7 @@ onBeforeUnmount( => {
 })
 </script>
 <template>
- <div:class="['tiptap-preview', props.class]">
+ <div class="tiptap-preview":class="[props.class]">
  <EditorContent:editor="editor" class="tiptap-preview-content" />
  </div>
 </template>
@@ -112,20 +112,20 @@ onBeforeUnmount( => {
  list-style-type: decimal;
 }
 /* 任务列表 */
-.tiptap-preview-content .tiptap ul[data-type="taskList"] {
+.tiptap-preview-content .tiptap ul[data-type='taskList'] {
  list-style: none;
  padding-left: 0;
 }
-.tiptap-preview-content .tiptap ul[data-type="taskList"] li {
+.tiptap-preview-content .tiptap ul[data-type='taskList'] li {
  display: flex;
  align-items: flex-start;
  gap: 0.5rem;
 }
-.tiptap-preview-content .tiptap ul[data-type="taskList"] li > label {
+.tiptap-preview-content .tiptap ul[data-type='taskList'] li > label {
  flex-shrink: 0;
  margin-top: 0.25rem;
 }
-.tiptap-preview-content .tiptap ul[data-type="taskList"] li > div {
+.tiptap-preview-content .tiptap ul[data-type='taskList'] li > div {
  flex: 1;
 }
 /* 引用 */

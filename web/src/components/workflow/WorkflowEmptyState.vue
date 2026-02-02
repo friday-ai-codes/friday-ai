@@ -10,7 +10,9 @@ defineEmits<{
  <div class="bg-muted/50 mx-auto flex w-20 items-center justify-center rounded-full">
  <GitBranch class="text-muted-foreground w-10" />
  </div>
- <h3 class="mt-4 text-lg font-semibold">暂无工作流</h3>
+ <h3 class="mt-4 text-lg font-semibold">
+ 暂无工作流
+ </h3>
  <p class="text-muted-foreground mb-4 mt-2 max-w-sm text-sm">
  创建您的第一个工作流，开始自动化开发流程
  </p>

@@ -62,14 +62,15 @@ watch( => selectedNode.value?.id, (newId) => {
 watchDebounced(
  [nodeName, nodeDescription, nodeConfig],
  => {
- if (!selectedNodeId.value) return
+ if (!selectedNodeId.value)
+ return
  store.updateNodeData(selectedNodeId.value, {
  name: nodeName.value,
  description: nodeDescription.value,
  config: nodeConfig.value,
  })
  },
- { debounce: 300, deep: true }
+ { debounce: 300, deep: true },
 )
 function closeNodePanel {
  store.selectNode(null)

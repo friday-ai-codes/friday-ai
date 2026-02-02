@@ -2,6 +2,7 @@
 import type { FetchProjectInfoConfig } from '~/types/workflow'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import TemplateCode from '~/components/ui/TemplateCode.vue'
 import {
  Select,
  SelectContent,
@@ -65,14 +66,16 @@ const identifierTypeOptions = [
  </div>
  <!-- 语法说明 -->
  <div class="rounded-lg bg-muted/30 space-y-1">
- <p class="text-xs font-medium text-muted-foreground">支持以下语法：</p>
+ <p class="text-xs font-medium text-muted-foreground">
+ 支持以下语法：
+ </p>
  <div class="grid grid-cols-2 gap-2 text-xs">
  <div class="flex items-center gap-1.5">
  <code class="bg-background px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400">$.projectKey</code>
  <span class="text-muted-foreground">JSONPath</span>
  </div>
  <div class="flex items-center gap-1.5">
- <code class="bg-background px-1.5 py-0.5 rounded text-blue-600 dark:text-blue-400">{{ '\{\{global.x\}\}' }}</code>
+ <TemplateCode>global.x</TemplateCode>
  <span class="text-muted-foreground">模板变量</span>
  </div>
  </div>

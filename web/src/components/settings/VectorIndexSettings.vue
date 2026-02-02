@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
@@ -8,7 +9,6 @@ import {
  SettingKey,
  updateSetting,
 } from '~/api/settings'
-import type { SettingRead } from '~/api/settings'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -275,7 +275,9 @@ onMounted( => {
  @input="qdrantUrlDirty = true"
  />
  </div>
- <p class="text-xs text-muted-foreground">{{ settingsMeta[SettingKey.QDRANT_URL].description }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ settingsMeta[SettingKey.QDRANT_URL].description }}
+ </p>
  </div>
  <!-- Qdrant API Key -->
  <div class="space-y-2">
@@ -296,7 +298,9 @@ onMounted( => {
  <span:class="showQdrantApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
  </button>
  </div>
- <p class="text-xs text-muted-foreground">{{ settingsMeta[SettingKey.QDRANT_API_KEY].description }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ settingsMeta[SettingKey.QDRANT_API_KEY].description }}
+ </p>
  </div>
  </div>
  <Button

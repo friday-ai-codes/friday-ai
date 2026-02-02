@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import type { IndexStatusResponse } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
-import type { IndexStatusResponse } from '~/api/repositories'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -161,7 +161,9 @@ onUnmounted( => {
  <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">索引已就绪</p>
+ <p class="font-medium">
+ 索引已就绪
+ </p>
  <p class="text-sm text-muted-foreground">
  最后更新: {{ formatDate(indexStatus.last_indexed_at) }}
  </p>
@@ -194,7 +196,9 @@ onUnmounted( => {
  <span class="icon-[lucide--loader-circle] text-2xl text-blue-500 animate-spin" />
  </div>
  <div class="flex-1">
- <p class="font-medium">正在构建索引</p>
+ <p class="font-medium">
+ 正在构建索引
+ </p>
  <p class="text-sm text-muted-foreground">
  <template v-if="indexStatus.index_total_chunks > 0">
  正在生成向量: {{ indexStatus.index_processed_chunks }} / {{ indexStatus.index_total_chunks }} 块
@@ -221,7 +225,9 @@ onUnmounted( => {
  <span class="icon-[lucide--x-circle] text-2xl text-destructive" />
  </div>
  <div>
- <p class="font-medium">索引构建失败</p>
+ <p class="font-medium">
+ 索引构建失败
+ </p>
  <p class="text-sm text-muted-foreground">
  {{ indexStatus.index_error || '未知错误' }}
  </p>
