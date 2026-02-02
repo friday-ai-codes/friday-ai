@@ -7,25 +7,10 @@
 - 提交信息
 英文仅用于：代码变量名、技术术语、CLI 命令
 ---
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-These instructions are for AI assistants working in this project.
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-Keep this managed block so 'openspec update' can refresh the instructions.
-<!-- OPENSPEC:END -->
----
 # Friday 开发规范
 全栈 Monorepo 项目：
 - **前端**: `web/` — Vue 3 + TypeScript + shadcn-vue
 - **后端**: `server/` — Django 6.0 + Python 3.14+
-- **规范**: `openspec/` — 变更提案与系统规范
 ---
 ## 第一部分：前端 (Vue 3 / shadcn-vue)
 ### 1. 核心理念
@@ -300,4 +285,3 @@ python manage.py migrate
 ### 3. 文档
 - 代码应尽可能自文档化
 - 注释解释*为什么*，而非*是什么*
-- 重大变更时更新 `openspec/` 中的相关规范
