@@ -100,14 +100,16 @@ class TestWorkflowModel:
  def test_workflow_to_json(self, workflow_with_nodes):
  """Test workflow JSON export."""
  data = workflow_with_nodes.to_json
- assert "name" in data
+ # to_json returns nested structure with version, workflow, nodes, edges
+ assert "version" in data
+ assert "workflow" in data
  assert "nodes" in data
  assert "edges" in data
  assert len(data["nodes"]) == 2
  assert len(data["edges"]) == 1
  def test_workflow_str(self, workflow):
  """Test workflow string representation."""
- assert str(workflow) == "Test Workflow"
+ assert str(workflow) == "Test Workflow (Workflow Test Project)"
 # ============================================================================
 # WorkflowNode Model Tests
 # ============================================================================
@@ -146,7 +148,7 @@ class TestWorkflowNodeModel:
  position_x=100,
  position_y=100,
  )
- cloned = original.clone
+ cloned = original.clone(new_workflow=workflow)
  assert cloned.id != original.id
  assert cloned.name == original.name
  assert cloned.config == original.config
