@@ -22,7 +22,6 @@ from workflows.api.serializers import (
  CodingTaskSerializer,
  CodingTaskUpdateSerializer,
  ExecutionContextSerializer,
- ManualTriggerSerializer,
  NodeApproveSerializer,
  NodeExecutionSerializer,
  NodeRejectSerializer,
@@ -729,51 +728,6 @@ class WorkflowTriggerViewSet(ModelViewSet):
  serializer.save(workflow=workflow)
  else:
  serializer.save
-# =============================================================================
-# Manual Trigger View
-# =============================================================================
-class ManualTriggerView(APIView):
- """View for manually triggering a workflow."""
- permission_classes = [IsAuthenticated]
- def post(self, request: Request, workflow_id) -> Response:
- """Manually trigger a workflow execution."""
- from feishu.workflow_bridge import FeishuWorkflowBridge
- workflow = get_object_or_404(Workflow, id=workflow_id)
- if not workflow.is_active:
- return Response(
- {"detail": "工作流已禁用，无法执行"},
- status=status.HTTP_400_BAD_REQUEST,
- )
- serializer = ManualTriggerSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
- event_type = serializer.validated_data.get("event_type")
- input_data = serializer.validated_data.get("input_data", {})
- try:
- bridge = FeishuWorkflowBridge
- execution = run_async(
- bridge.manual_trigger(
- workflow=workflow,
- event_type=event_type,
- input_data=input_data,
- triggered_by=request.user,
- )
- )
- return Response(
- {
- "execution_id": str(execution.id),
- "status": execution.status,
- "message": "工作流执行已启动",
- },
- status=status.HTTP_201_CREATED,
- )
- except ValueError as e:
- return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
- except Exception as e:
- logger.exception("manual_trigger_error", workflow_id=str(workflow_id))
- return Response(
- {"detail": f"执行失败: {e}"},
- status=status.HTTP_500_INTERNAL_SERVER_ERROR,
- )
 # =============================================================================
 # Execution Context View
 # =============================================================================
