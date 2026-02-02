@@ -1,7 +1,14 @@
 """Common exceptions."""
+from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.views import exception_handler
 def custom_exception_handler(exc, context):
- """Custom exception handler to match FastAPI error format."""
+ """Custom exception handler to match FastAPI error format.
+ Also handles TriggerError hierarchy for unified trigger error responses:
+ - TriggerValidationError -> 400 Bad Request
+ - TriggerAuthError -> 401 Unauthorized
+ - TriggerError (base) -> 500 Internal Server Error
+ """
  response = exception_handler(exc, context)
  if response is not None:
  # Ensure 'detail' key exists for consistency with FastAPI
@@ -11,6 +18,35 @@ def custom_exception_handler(exc, context):
  value = response.data[key]
  if isinstance(value, list) and len(value) == 1:
  response.data = {"detail": str(value[0])}
+ return response
+ # Handle TriggerError hierarchy (check subclasses before parent)
+ if isinstance(exc, TriggerValidationError):
+ return Response(
+ {
+ "error": str(exc),
+ "code": "TRIGGER_VALIDATION_ERROR",
+ "details": getattr(exc, "details", {}),
+ },
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if isinstance(exc, TriggerAuthError):
+ return Response(
+ {
+ "error": str(exc),
+ "code": "TRIGGER_AUTH_ERROR",
+ "details": getattr(exc, "details", {}),
+ },
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ if isinstance(exc, TriggerError):
+ return Response(
+ {
+ "error": str(exc),
+ "code": "TRIGGER_ERROR",
+ "details": getattr(exc, "details", {}),
+ },
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
  return response
 class FridayException(Exception):
  """Base exception for Friday."""
