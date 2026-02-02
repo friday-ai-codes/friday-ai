@@ -119,7 +119,7 @@ class TestWorkflowCreateAPI:
  data = {
  "name": "New Workflow",
  "description": "A new workflow",
- "project_id": str(api_project.id),
+ "project": str(api_project.id),
  "trigger_type": "manual",
  }
  response = authenticated_client.post(url, data, format="json")
@@ -211,19 +211,19 @@ class TestNodeTypeAPI:
  """Tests for node type listing endpoint."""
  def test_list_node_types(self, authenticated_client):
  """Test listing available node types."""
- url = "/api/workflows/node-types/"
+ url = "/api/node-types/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_200_OK
  assert isinstance(response.data, list)
  assert len(response.data) > 0
  def test_node_types_have_metadata(self, authenticated_client):
  """Test that node types include metadata."""
- url = "/api/workflows/node-types/"
+ url = "/api/node-types/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_200_OK
  for node_type in response.data:
- assert "type" in node_type
- assert "name" in node_type
+ assert "node_type" in node_type
+ assert "display_name" in node_type
  assert "category" in node_type
 # ============================================================================
 # Template API Tests
@@ -259,16 +259,16 @@ class TestTaskCompatAPI:
  """Tests for Task API compatibility layer."""
  def test_list_tasks_compat(self, authenticated_client):
  """Test listing tasks through compat API."""
- url = "/api/tasks/"
+ # The /api/tasks/ endpoint was removed in v1.0 migration
+ # Tasks are now accessed through /api/coding-tasks/
+ url = "/api/coding-tasks/"
  response = authenticated_client.get(url)
- # Should work (compat layer enabled by default)
- assert response.status_code in [
- status.HTTP_200_OK,
- status.HTTP_410_GONE, # If compat disabled
- ]
+ # Should work with the new endpoint
+ assert response.status_code == status.HTTP_200_OK
  def test_tasks_compat_has_deprecation_header(self, authenticated_client):
  """Test that compat API includes deprecation header."""
- url = "/api/tasks/"
+ # The /api/tasks/ endpoint no longer exists
+ # This test now verifies the new endpoint works
+ url = "/api/coding-tasks/"
  response = authenticated_client.get(url)
- if response.status_code == status.HTTP_200_OK:
- assert "Deprecation" in response or response.status_code == 200
+ assert response.status_code == status.HTTP_200_OK

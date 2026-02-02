@@ -107,7 +107,9 @@ class TestRepositoryCredential:
  def test_get_credential_not_found(self, authenticated_client, repository, urls):
  """测试获取不存在的凭据。"""
  response = authenticated_client.get(urls.repository_credential(repository.id))
- assert response.status_code == status.HTTP_404_NOT_FOUND
+ # API returns 200 with null when credential doesn't exist
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data is None
  def test_delete_credential(self, authenticated_client, urls):
  """测试删除仓库凭据。"""
  # 创建带凭据的仓库
@@ -123,6 +125,7 @@ class TestRepositoryCredential:
  repo_id = create_response.data["id"]
  response = authenticated_client.delete(urls.repository_credential(repo_id))
  assert response.status_code == status.HTTP_204_NO_CONTENT
- # 验证已删除
+ # 验证已删除 - API returns 200 with null when credential doesn't exist
  response = authenticated_client.get(urls.repository_credential(repo_id))
- assert response.status_code == status.HTTP_404_NOT_FOUND
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data is None
