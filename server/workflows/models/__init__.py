@@ -4,6 +4,7 @@ from workflows.models.execution import (
  ExecutionStatus,
  NodeExecution,
  NodeExecutionStatus,
+ WorkflowEventSubscription,
  WorkflowExecution,
 )
 from workflows.models.node import WorkflowEdge, WorkflowNode
@@ -21,6 +22,7 @@ __all__ = [
  "ExecutionStatus",
  "WorkflowExecutionStatus",
  "NodeExecutionStatus",
+ "WorkflowEventSubscription",
  "WebhookConfig",
  "WebhookLog",
  "WorkflowTrigger",

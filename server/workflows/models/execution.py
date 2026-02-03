@@ -364,3 +364,104 @@ class NodeExecution(models.Model):
  self.status = NodeExecutionStatus.WAITING_EVENT
  self.approval_data = subscription_data # 复用 approval_data 字段存储等待信息
  self.save(update_fields=["status", "approval_data"])
+class WorkflowEventSubscription(models.Model):
+ """工作流事件订阅记录
+ 记录挂起的工作流正在等待的外部事件条件。
+ 当 Webhook 收到匹配事件时，通过此表查找并唤醒对应工作流。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ workflow_execution = models.ForeignKey(
+ WorkflowExecution,
+ on_delete=models.CASCADE,
+ related_name="event_subscriptions",
+ verbose_name="工作流执行",
+ )
+ node_execution = models.ForeignKey(
+ NodeExecution,
+ on_delete=models.CASCADE,
+ related_name="event_subscriptions",
+ verbose_name="节点执行",
+ )
+ # 等待的事件信息
+ event_type = models.CharField(
+ max_length=50,
+ verbose_name="事件类型",
+ help_text="如 WorkitemUpdateEvent, WorkitemStatusEvent",
+ )
+ project_key = models.CharField(
+ max_length=100,
+ verbose_name="项目标识",
+ )
+ work_item_id = models.CharField(
+ max_length=100,
+ blank=True,
+ default="",
+ verbose_name="工作项 ID",
+ help_text="为空表示匹配该项目的所有工作项",
+ )
+ work_item_type = models.CharField(
+ max_length=50,
+ default="story",
+ verbose_name="工作项类型",
+ )
+ # 条件表达式（JSON 格式，支持 AND/OR 组合）
+ condition_expression = models.JSONField(
+ default=dict,
+ verbose_name="条件表达式",
+ help_text="JSON 格式的条件表达式，支持 logic:and/or + conditions 数组",
+ )
+ # 超时配置
+ timeout_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ verbose_name="超时时间",
+ )
+ timeout_action = models.CharField(
+ max_length=20,
+ choices=[
+ ("fail", "失败终止"),
+ ("skip", "跳过继续"),
+ ("retry", "重试"),
+ ],
+ default="fail",
+ verbose_name="超时动作",
+ )
+ # 状态追踪
+ is_active = models.BooleanField(
+ default=True,
+ verbose_name="是否活跃",
+ help_text="工作流完成/取消后设为 False",
+ )
+ created_at = models.DateTimeField(auto_now_add=True)
+ matched_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ verbose_name="匹配时间",
+ )
+ matched_payload = models.JSONField(
+ default=dict,
+ blank=True,
+ verbose_name="匹配的事件数据",
+ )
+ class Meta:
+ db_table = "workflow_event_subscriptions"
+ verbose_name = "工作流事件订阅"
+ verbose_name_plural = "工作流事件订阅"
+ ordering = ["-created_at"]
+ indexes = [
+ models.Index(fields=["is_active", "project_key", "work_item_id"]),
+ models.Index(fields=["is_active", "event_type"]),
+ models.Index(fields=["timeout_at"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.workflow_execution_id} waiting for {self.event_type}"
+ def mark_matched(self, payload: dict) -> None:
+ """标记订阅已匹配"""
+ self.is_active = False
+ self.matched_at = timezone.now
+ self.matched_payload = payload
+ self.save(update_fields=["is_active", "matched_at", "matched_payload"])
+ def mark_inactive(self) -> None:
+ """标记订阅为非活跃（工作流取消/超时时调用）"""
+ self.is_active = False
+ self.save(update_fields=["is_active"])
