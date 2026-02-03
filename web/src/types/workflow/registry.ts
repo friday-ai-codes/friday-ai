@@ -1,6 +1,6 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
@@ -9,6 +9,7 @@ import {
  feishuEventTriggerConfigSchema,
  fetchProjectInfoConfigSchema,
  fetchWorkItemConfigSchema,
+ technicalPlanNodeConfigSchema,
  variableExtractorConfigSchema,
  waitFeishuFieldConfigSchema,
 } from './schemas'
@@ -141,6 +142,17 @@ export const NODE_REGISTRY = {
  defaultConfig: waitFeishuFieldConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/WaitFeishuConfig.vue'),
  } satisfies NodeTypeDefinition<WaitFeishuFieldConfig>,
+ ai_technical_plan: {
+ nodeType: 'ai_technical_plan',
+ displayName: 'AI 技术方案',
+ description: '根据需求生成技术方案',
+ icon: 'icon-[lucide--file-code]',
+ color: 'from-emerald-500 to-teal-400',
+ category: 'ai',
+ schema: technicalPlanNodeConfigSchema,
+ defaultConfig: technicalPlanNodeConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/TechnicalPlanConfig.vue'),
+ } satisfies NodeTypeDefinition<TechnicalPlanNodeConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
