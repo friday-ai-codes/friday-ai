@@ -1,7 +1,14 @@
-"""AI Coding Dispatcher node for analyzing requirements and creating coding tasks."""
-import json
-import httpx
+"""AI Coding Dispatcher node for dispatching coding tasks from technical plans.
+Strict Mode Implementation:
+This dispatcher parses execution_plan from upstream TechnicalPlanNode output
+and creates CodingTasks directly without LLM analysis. Tasks targeting the
+same repository and branch strategy are merged into a single CodingTask.
+"""
+import asyncio
+from typing import Any
 import structlog
+from asgiref.sync import sync_to_async
+from repositories.models import Repository
 from workflows.models.coding_task import CodingTask, CodingTaskStatus
 from workflows.nodes.base import (
  BaseNode,
@@ -12,70 +19,42 @@ from workflows.nodes.base import (
  PortType,
 )
 from workflows.nodes.registry import register_node
+from workflows.schemas.technical_plan import validate_technical_plan
 logger = structlog.get_logger
 @register_node
 class AICodingDispatcherNode(BaseNode):
- """AI 编码指派器节点
- 分析需求文档，判断涉及哪些代码仓库，
- 为每个仓库生成编码任务 Prompt 并创建 CodingTask 记录。
+ """AI 编码指派器节点 (严格模式)
+ 从上游 TechnicalPlanNode 解析 execution_plan，
+ 直接创建 CodingTask 记录，无需 LLM 分析。
+ 特性:
+ - 验证技术方案的 execution_plan 结构
+ - 合并同一仓库/分支策略的任务
+ - 并行创建 CodingTask 记录
+ - 支持部分成功状态
  """
  node_type = "ai_coding_dispatcher"
  display_name = "AI 编码指派器"
- description = "分析需求并为涉及的仓库创建编码任务"
+ description = "从技术方案创建编码任务"
  icon = "git-branch"
  category = NodeCategory.AI
  config_schema = {
  "type": "object",
  "properties": {
- "analysis_model": {
- "type": "string",
- "title": "分析模型",
- "description": "用于需求分析的 LLM 模型",
- "enum": [
- "claude-3-opus-20240229",
- "claude-3-5-sonnet-20241022",
- "claude-3-sonnet-20240229",
- "gpt-4",
- "gpt-4-turbo",
- ],
- "default": "claude-3-5-sonnet-20241022",
- },
- "max_tasks": {
- "type": "integer",
- "title": "最大任务数",
- "description": "单次最多创建的编码任务数量",
- "minimum": 1,
- "maximum": 20,
- "default": 5,
- },
- "task_granularity": {
- "type": "string",
- "title": "任务粒度",
- "description": "任务拆分的粒度",
- "enum": ["fine", "medium", "coarse"],
- "default": "medium",
- },
- "include_tests": {
+ "merge_same_branch": {
  "type": "boolean",
- "title": "包含测试任务",
- "description": "是否为每个实现任务生成对应的测试任务",
- "default": True,
- },
- "auto_assign_repos": {
- "type": "boolean",
- "title": "自动分配仓库",
- "description": "AI 自动判断任务应该在哪个仓库实现",
+ "title": "合并同分支任务",
+ "description": "是否将目标相同仓库/分支的任务合并为单个 CodingTask",
  "default": True,
  },
  },
  }
  inputs = [
  NodePort(
- name="default",
- label="输入",
+ name="plan",
+ label="技术方案",
  port_type=PortType.OBJECT,
- required=False,
- description="上游节点输出，通常包含需求信息",
+ required=True,
+ description="上游 TechnicalPlanNode 输出的技术方案",
  ),
  ]
  outputs = [
@@ -93,88 +72,66 @@ class AICodingDispatcherNode(BaseNode):
  ),
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:
- """分析需求并创建编码任务"""
+ """解析技术方案并创建编码任务"""
  config = context.node_config
- # 解析配置
- analysis_model = config.get("analysis_model", "claude-3-5-sonnet-20241022")
- max_tasks = config.get("max_tasks", 5)
- task_granularity = config.get("task_granularity", "medium")
- include_tests = config.get("include_tests", True)
- auto_assign_repos = config.get("auto_assign_repos", True)
+ merge_same_branch = config.get("merge_same_branch", True)
  try:
- # 从全局参数获取需求信息
- prd_url = context.get_global_param("prd_url", "")
- description = context.get_global_param("description", "")
- tech_doc_url = context.get_global_param("tech_doc_url", "")
- work_item_name = context.get_global_param("work_item_name", "")
- repositories = context.get_global_param("repositories", )
- if not description and not prd_url:
+ # 1. 获取上游技术方案数据
+ plan_data = self._get_plan_data(context)
+ if not plan_data:
  return NodeResult(
  status="failed",
- error="缺少需求信息，请确保上游节点已设置 description 或 prd_url 全局参数",
+ error="缺少技术方案输入，请确保上游 TechnicalPlanNode 已执行",
  next_handle="error",
  )
- if not repositories:
+ # 2. 验证技术方案结构
+ is_valid, error_msg = validate_technical_plan(plan_data)
+ if not is_valid:
  return NodeResult(
  status="failed",
- error="缺少仓库信息，请确保项目已关联代码仓库",
+ error=f"技术方案验证失败: {error_msg}",
  next_handle="error",
  )
- # 抓取需求文档内容
- prd_content = ""
- if prd_url:
- prd_content = await self._fetch_document(prd_url)
- tech_doc_content = ""
- if tech_doc_url:
- tech_doc_content = await self._fetch_document(tech_doc_url)
- # 构建分析 Prompt
- analysis_prompt = self._build_analysis_prompt(
- work_item_name=work_item_name,
- description=description,
- prd_content=prd_content,
- tech_doc_content=tech_doc_content,
- repositories=repositories,
- task_granularity=task_granularity,
- max_tasks=max_tasks,
- include_tests=include_tests,
- auto_assign_repos=auto_assign_repos,
- )
- # 调用 LLM 分析
- analysis_result = await self._call_llm(
- prompt=analysis_prompt,
- model=analysis_model,
- context=context,
- )
- # 解析 LLM 输出
- tasks_data = self._parse_analysis_result(analysis_result)
- # 创建 CodingTask 记录
- created_tasks = await self._create_coding_tasks(
- tasks_data=tasks_data,
- repositories=repositories,
- context=context,
- )
- logger.info(
- "coding_tasks_created",
- task_count=len(created_tasks),
- work_item_name=work_item_name,
- )
+ # 3. 检查 execution_plan 非空
+ execution_plan = plan_data.get("execution_plan", )
+ if not execution_plan:
  return NodeResult(
- status="completed",
- output={
- "tasks": [
- {
- "id": str(task.id),
- "name": task.name,
- "repository_id": str(task.repository_id),
- "status": task.status,
+ status="failed",
+ error="execution_plan 为空，技术方案必须包含至少一个执行项",
+ next_handle="error",
+ )
+ # 4. 预取仓库以避免 N+1
+ repo_ids = {task["repository_id"] for task in execution_plan}
+ repositories = await self._fetch_repositories(repo_ids)
+ # 5. 验证所有仓库存在
+ missing_repos = repo_ids - set(repositories.keys)
+ if missing_repos:
+ return NodeResult(
+ status="failed",
+ error=f"仓库不存在: {', '.join(missing_repos)}",
+ next_handle="error",
+ )
+ # 6. 分组任务
+ if merge_same_branch:
+ task_groups = self._group_tasks(execution_plan)
+ else:
+ # 每个任务单独一组
+ task_groups = {
+ (task["repository_id"], task["branch_strategy"]): [task]
+ for task in execution_plan
  }
- for task in created_tasks
- ],
- "task_count": len(created_tasks),
- "analysis_model": analysis_model,
- },
- next_handle="default",
+ # 7. 获取全局上下文
+ global_context = plan_data.get("global_context", "")
+ # 8. 并行创建 CodingTasks
+ create_coroutines = [
+ self._create_coding_task(
+ context, repositories[repo_id], tasks, global_context
  )
+ for (repo_id, _), tasks in task_groups.items
+ ]
+ results = await asyncio.gather(*create_coroutines, return_exceptions=True)
+ # 9. 处理结果
+ return self._process_results(results, task_groups)
  except Exception as e:
  logger.error("coding_dispatcher_failed", error=str(e))
  return NodeResult(
@@ -182,214 +139,212 @@ class AICodingDispatcherNode(BaseNode):
  error=str(e),
  next_handle="error",
  )
- async def _fetch_document(self, url: str) -> str:
- """抓取文档内容
- 支持常见文档平台的内容提取。
- """
- if not url:
- return ""
- try:
- async with httpx.AsyncClient as client:
- response = await client.get(url, timeout=30, follow_redirects=True)
- if response.status_code != 200:
- logger.warning("fetch_document_failed", url=url, status=response.status_code)
- return ""
- content_type = response.headers.get("content-type", "")
- if "text/html" in content_type:
- # 简单提取文本，实际使用时可以集成更完善的 HTML 解析
- return self._extract_text_from_html(response.text)
- elif "application/json" in content_type:
- return json.dumps(response.json, ensure_ascii=False, indent=2)
- else:
- return response.text[:50000] # 限制长度
- except Exception as e:
- logger.warning("fetch_document_error", url=url, error=str(e))
- return ""
- def _extract_text_from_html(self, html: str) -> str:
- """从 HTML 中提取文本（简化版）"""
- import re
- # 移除 script 和 style 标签
- html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
- html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
- # 移除所有 HTML 标签
- text = re.sub(r"<[^>]+>", " ", html)
- # 清理多余空白
- text = re.sub(r"\s+", " ", text)
- return text.strip[:30000] # 限制长度
- def _build_analysis_prompt(
- self,
- work_item_name: str,
- description: str,
- prd_content: str,
- tech_doc_content: str,
- repositories: list[dict],
- task_granularity: str,
- max_tasks: int,
- include_tests: bool,
- auto_assign_repos: bool,
- ) -> str:
- """构建需求分析 Prompt"""
- granularity_desc = {
- "fine": "细粒度：每个小功能点一个任务",
- "medium": "中粒度：每个功能模块一个任务",
- "coarse": "粗粒度：整体实现一个任务",
+ def _get_plan_data(self, context: ExecutionContext) -> dict[str, Any] | None:
+ """从上下文获取技术方案数据"""
+ # 首先尝试从输入端口获取
+ plan_data = context.get_node_output("plan")
+ if plan_data:
+ return plan_data # type: ignore[return-value]
+ # 尝试从全局参数获取 (向后兼容)
+ plan_data = context.get_global_param("technical_plan")
+ if plan_data:
+ return plan_data # type: ignore[return-value]
+ return None
+ async def _fetch_repositories(
+ self, repo_ids: set[str]
+ ) -> dict[str, Repository]:
+ """批量获取仓库对象"""
+ def _query -> dict[str, Repository]:
+ return {
+ str(r.id): r
+ for r in Repository.objects.filter(id__in=repo_ids, is_deleted=False)
  }
- repos_desc = "\n".join(
- [
- f"- {repo['name']}: {repo.get('description', '无描述')} (默认分支: {repo.get('default_branch', 'main')})"
- for repo in repositories
- ]
- )
- prompt = f"""你是一个专业的软件架构师和项目经理。请分析以下需求，并创建编码任务。
-## 需求信息
-**需求名称**: {work_item_name}
-**需求描述**:
-{description}
-"""
- if prd_content:
- prompt += f"""**需求文档内容**:
-{prd_content[:10000]}
-"""
- if tech_doc_content:
- prompt += f"""**技术方案文档**:
-{tech_doc_content[:10000]}
-"""
- prompt += f"""## 可用代码仓库
-{repos_desc}
-## 任务拆分要求
-- 粒度: {granularity_desc.get(task_granularity, "中粒度")}
-- 最多创建 {max_tasks} 个任务
-- {"需要包含测试任务" if include_tests else "不需要单独的测试任务"}
-- {"AI 自动判断每个任务应该在哪个仓库实现" if auto_assign_repos else "用户将手动分配仓库"}
-## 请输出 JSON 格式的任务列表
-```json
-{{
- "analysis_summary": "需求分析摘要",
- "tasks": [
- {{
- "name": "任务名称（简洁描述）",
- "description": "任务详细描述",
- "repository_name": "目标仓库名称",
- "prompt": "发送给 AI 编码助手的完整 Prompt，包含：\\n1. 任务背景\\n2. 具体实现要求\\n3. 技术约束\\n4. 验收标准",
- "priority": 1,
- "is_test_task": false,
- "dependencies":
- }}
- ]
-}}
-```
-注意：
-1. prompt 字段非常重要，需要包含足够的上下文让 AI 编码助手能够独立完成任务
-2. 每个任务应该是可以独立实现的
-3. 如果任务有依赖关系，在 dependencies 中列出依赖的任务名称
-4. priority 数字越小优先级越高
-"""
- return prompt
- async def _call_llm(
+ return await sync_to_async(_query)
+ def _group_tasks(
+ self, execution_plan: list[dict[str, Any]]
+ ) -> dict[tuple[str, str], list[dict[str, Any]]]:
+ """按 (repository_id, branch_strategy) 分组任务"""
+ groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+ for task in execution_plan:
+ key = (task["repository_id"], task["branch_strategy"])
+ groups.setdefault(key, ).append(task)
+ return groups
+ async def _create_coding_task(
  self,
- prompt: str,
- model: str,
  context: ExecutionContext,
- ) -> str:
- """调用 LLM 进行需求分析"""
- import os
- project = await self._get_project(context)
- # 获取 API key
- api_key = None
- if project and hasattr(project, "anthropic_api_key"):
- api_key = project.anthropic_api_key
- if not api_key:
- api_key = os.environ.get("ANTHROPIC_API_KEY")
- if not api_key:
- raise ValueError("未配置 Anthropic API Key")
- async with httpx.AsyncClient as client:
- response = await client.post(
- "https://api.anthropic.com/v1/messages",
- headers={
- "x-api-key": api_key,
- "anthropic-version": "2023-06-01",
- "content-type": "application/json",
- },
- json={
- "model": model,
- "max_tokens": 8192,
- "temperature": 0.3, # 低温度以获得更一致的输出
- "system": "你是一个专业的软件架构师，擅长需求分析和任务拆分。请始终以有效的 JSON 格式输出。",
- "messages": [{"role": "user", "content": prompt}],
- },
- timeout=180,
- )
- if response.status_code != 200:
- raise Exception(f"LLM API 错误: {response.status_code} - {response.text}")
- data = response.json
- content = data.get("content", )
- return content[0].get("text", "") if content else ""
- def _parse_analysis_result(self, result: str) -> list[dict]:
- """解析 LLM 分析结果"""
- try:
- # 尝试提取 JSON
- if "```json" in result:
- start = result.find("```json") + 7
- end = result.find("```", start)
- json_str = result[start:end].strip
- elif "```" in result:
- start = result.find("```") + 3
- end = result.find("```", start)
- json_str = result[start:end].strip
- else:
- json_str = result.strip
- data = json.loads(json_str)
- return data.get("tasks", )
- except json.JSONDecodeError as e:
- logger.error("parse_analysis_result_failed", error=str(e))
- raise ValueError(f"无法解析 LLM 输出: {e}")
- async def _create_coding_tasks(
- self,
- tasks_data: list[dict],
- repositories: list[dict],
- context: ExecutionContext,
- ) -> list[CodingTask]:
- """创建 CodingTask 记录"""
- from repositories.models import Repository
- # 构建仓库名称到 ID 的映射
- repo_name_to_id = {repo["name"]: repo["id"] for repo in repositories}
- created_tasks =
+ repository: Repository,
+ tasks: list[dict[str, Any]],
+ global_context: str,
+ ) -> CodingTask:
+ """创建单个 CodingTask (可能合并多个执行计划任务)"""
  workflow_execution = context.workflow_execution
  if not workflow_execution:
  raise ValueError("缺少 workflow_execution 上下文")
- for task_data in tasks_data:
- repo_name = task_data.get("repository_name", "")
- repo_id = repo_name_to_id.get(repo_name)
- if not repo_id:
- # 如果找不到匹配的仓库，使用第一个
- if repositories:
- repo_id = repositories[0]["id"]
+ # 提取任务 ID 列表
+ execution_plan_ids = [task["id"] for task in tasks]
+ # 构建任务名称
+ if len(tasks) == 1:
+ name = tasks[0].get("name", "未命名任务")
+ description = tasks[0].get("description", "")
  else:
- continue
- try:
- repository = await Repository.objects.aget(id=repo_id, is_deleted=False)
- except Repository.DoesNotExist:
- logger.warning("repository_not_found", repo_id=repo_id)
- continue
+ name = f"合并任务: {repository.name} ({len(tasks)} 项)"
+ description = "合并的任务:\n" + "\n".join(
+ f"- {task.get('name', '未命名')}" for task in tasks
+ )
+ # 构建编码指令 (合并多个任务的指令)
+ coding_instruction = self._build_merged_instruction(tasks)
+ # 构建文件列表
+ files_list = self._build_files_list(tasks)
+ # 组合完整 Prompt
+ prompt = self._compose_prompt(global_context, coding_instruction, files_list)
+ # 创建 CodingTask
  coding_task = await CodingTask.objects.acreate(
  workflow_execution=workflow_execution,
  repository=repository,
- name=task_data.get("name", "未命名任务"),
- prompt=task_data.get("prompt", ""),
- description=task_data.get("description", ""),
+ name=name,
+ prompt=prompt,
+ description=description,
  status=CodingTaskStatus.PENDING,
+ execution_plan_ids=execution_plan_ids,
+ global_context_snapshot=global_context,
  metadata={
- "priority": task_data.get("priority", 99),
- "is_test_task": task_data.get("is_test_task", False),
- "dependencies": task_data.get("dependencies", ),
+ "branch_strategy": tasks[0].get("branch_strategy", "feature"),
+ "task_count": len(tasks),
+ "estimated_hours": sum(
+ task.get("estimated_hours", 0) for task in tasks
+ ),
  },
  )
- created_tasks.append(coding_task)
- return created_tasks
- async def _get_project(self, context: ExecutionContext):
- """获取关联的项目"""
- if context.workflow_execution:
- workflow = context.workflow_execution.workflow
- if workflow:
- return workflow.project
- return None
+ logger.info(
+ "coding_task_created",
+ task_id=str(coding_task.id),
+ repository=repository.name,
+ merged_count=len(tasks),
+ )
+ return coding_task
+ def _build_merged_instruction(self, tasks: list[dict[str, Any]]) -> str:
+ """构建合并后的编码指令"""
+ if len(tasks) == 1:
+ return tasks[0].get("coding_instruction", "") or tasks[0].get(
+ "description", ""
+ )
+ instructions =
+ for i, task in enumerate(tasks, 1):
+ task_name = task.get("name", f"任务 {i}")
+ instruction = task.get("coding_instruction", "") or task.get(
+ "description", ""
+ )
+ instructions.append(f"## 任务 {i}: {task_name}\n\n{instruction}")
+ return "\n\n---\n\n".join(instructions)
+ def _build_files_list(self, tasks: list[dict[str, Any]]) -> str:
+ """构建涉及的文件列表"""
+ files_by_action: dict[str, list[str]] = {
+ "create":,
+ "modify":,
+ "delete":,
+ }
+ for task in tasks:
+ for file_info in task.get("files", ):
+ action = file_info.get("action", "modify")
+ path = file_info.get("path", "")
+ if path and action in files_by_action:
+ files_by_action[action].append(path)
+ if not any(files_by_action.values):
+ return ""
+ lines = ["## 涉及文件"]
+ for action, label in [
+ ("create", "创建"),
+ ("modify", "修改"),
+ ("delete", "删除"),
+ ]:
+ if files_by_action[action]:
+ lines.append(f"\n### {label}")
+ for path in files_by_action[action]:
+ lines.append(f"- `{path}`")
+ return "\n".join(lines)
+ def _compose_prompt(
+ self, global_context: str, coding_instruction: str, files_list: str
+ ) -> str:
+ """组合完整的 AI 编码 Prompt"""
+ parts =
+ if global_context:
+ parts.append(f"# 项目背景\n\n{global_context}")
+ if coding_instruction:
+ parts.append(f"# 编码任务\n\n{coding_instruction}")
+ if files_list:
+ parts.append(files_list)
+ return "\n\n---\n\n".join(parts)
+ def _process_results(
+ self,
+ results: list[CodingTask | BaseException],
+ task_groups: dict[tuple[str, str], list[dict[str, Any]]],
+ ) -> NodeResult:
+ """处理并行创建结果，支持部分成功"""
+ successful_tasks: list[CodingTask] =
+ failed_details: list[dict[str, Any]] =
+ group_keys = list(task_groups.keys)
+ for i, result in enumerate(results):
+ repo_id, branch_strategy = group_keys[i]
+ if isinstance(result, BaseException):
+ failed_details.append(
+ {
+ "repository_id": repo_id,
+ "branch_strategy": branch_strategy,
+ "error": str(result),
+ }
+ )
+ else:
+ successful_tasks.append(result)
+ success_count = len(successful_tasks)
+ failed_count = len(failed_details)
+ total_count = success_count + failed_count
+ # 构建输出
+ output = {
+ "tasks": [
+ {
+ "id": str(task.id),
+ "name": task.name,
+ "repository_id": str(task.repository_id),
+ "status": task.status,
+ "execution_plan_ids": task.execution_plan_ids,
+ }
+ for task in successful_tasks
+ ],
+ "task_count": success_count,
+ "success_count": success_count,
+ "failed_count": failed_count,
+ }
+ if failed_details:
+ output["failed_details"] = failed_details
+ # 决定返回状态
+ if failed_count == total_count:
+ # 全部失败
+ return NodeResult(
+ status="failed",
+ error=f"所有 {total_count} 个任务创建失败",
+ output=output,
+ next_handle="error",
+ )
+ elif failed_count > 0:
+ # 部分成功
+ logger.warning(
+ "coding_tasks_partial_success",
+ success_count=success_count,
+ failed_count=failed_count,
+ )
+ return NodeResult(
+ status="partial_success",
+ output=output,
+ next_handle="default",
+ )
+ else:
+ # 全部成功
+ logger.info(
+ "coding_tasks_created",
+ task_count=success_count,
+ )
+ return NodeResult(
+ status="completed",
+ output=output,
+ next_handle="default",
+ )
