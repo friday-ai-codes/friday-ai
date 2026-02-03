@@ -356,6 +356,7 @@ export interface CodingTask {
  error_message: string
  retry_count: number
  metadata: Record<string, any>
+ execution_plan_ids: string
  duration: number | null
  created_at: string
  updated_at: string
