@@ -21,6 +21,7 @@ class HookManager:
  "execution_completed",
  "execution_failed",
  "execution_paused",
+ "execution_suspended",
  "execution_resumed",
  "execution_cancelled",
  "execution_timeout",
