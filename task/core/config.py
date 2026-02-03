@@ -62,6 +62,15 @@ class TaskConfig(BaseSettings):
  default=None,
  description="Session ID to resume from (可选)",
  )
+ # Branch strategy for MR creation
+ branch_strategy: str | None = Field(
+ default=None,
+ description="Branch name pattern (supports {task_id} placeholder), e.g., 'friday/task-{task_id}'",
+ )
+ target_branch: str | None = Field(
+ default=None,
+ description="MR target branch from tech plan (defaults to git_branch)",
+ )
  # Timeouts
  execution_timeout: int = Field(default=3600, description="Max execution time in seconds")
  git_timeout: int = Field(default=300, description="Git operation timeout in seconds")

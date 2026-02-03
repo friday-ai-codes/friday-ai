@@ -41,6 +41,7 @@ class TaskRunner:
  self.git_ops = GitOperations(config)
  self.callback = CallbackClient(config)
  self.claude: ClaudeRunner | None = None
+ self._task_branch: str | None = None # Store branch name for push
  async def run(self) -> int:
  """Run the task and return exit code."""
  log = logger.bind(
@@ -61,13 +62,19 @@ class TaskRunner:
  # Set up Git repository
  log.info("Setting up Git repository")
  await self.git_ops.setup
- # Create feature branch only in execute mode
+ # Setup task-specific branch based on branch_strategy
+ # CRITICAL: Branch must be created/switched BEFORE any Claude coding execution
  branch_name = self.config.git_branch
  if self.config.task_mode == "execute":
- feature_branch = self.config.git_new_branch or f"friday/task-{self.config.task_id}"
- branch_name = await self.git_ops.create_feature_branch(feature_branch)
+ # Use branch_strategy if provided, otherwise fall back to git_new_branch or default
+ branch_strategy = self.config.branch_strategy or self.config.git_new_branch
+ self._task_branch = await self.git_ops.setup_task_branch(
+ branch_strategy=branch_strategy,
+ task_id=self.config.task_id,
+ )
+ branch_name = self._task_branch
  await self.callback.report_git_ready(branch_name)
- log.info("Created feature branch", branch=branch_name)
+ log.info("Task branch ready for coding", branch=branch_name)
  else:
  log.info("Plan mode - staying on branch", branch=branch_name)
  # Initialize Claude runner
