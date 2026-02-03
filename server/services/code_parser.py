@@ -62,12 +62,12 @@ class CodeParser:
  if language in self._parsers:
  return self._parsers[language]
  try:
- import tree_sitter_go
- import tree_sitter_javascript
- import tree_sitter_python
  import tree_sitter_css
+ import tree_sitter_go
  import tree_sitter_html
+ import tree_sitter_javascript
  import tree_sitter_json
+ import tree_sitter_python
  from tree_sitter import Language, Parser
  lang_modules = {
  "go": tree_sitter_go,
@@ -184,9 +184,7 @@ class CodeParser:
  """Parse Vue SFC files by separating script and template."""
  chunks =
  # Extract script content
- script_match = re.search(
- r"<script[^>]*>(.*?)</script>", content, re.DOTALL | re.IGNORECASE
- )
+ script_match = re.search(r"<script[^>]*>(.*?)</script>", content, re.DOTALL | re.IGNORECASE)
  if script_match:
  script_content = script_match.group(1).strip
  if script_content:

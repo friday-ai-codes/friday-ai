@@ -26,7 +26,7 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 struct_logger = structlog.get_logger
 # 幂等处理
-_processed_events = set
+_processed_events: set[str] = set
 _MAX_PROCESSED_EVENTS = 10000
 def is_event_processed(event_uuid: str) -> bool:
  return event_uuid in _processed_events

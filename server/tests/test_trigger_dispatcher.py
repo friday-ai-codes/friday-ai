@@ -248,9 +248,7 @@ class TestDispatcherInitialization:
  """测试调度器初始化。"""
  async def test_dispatcher_creates_engine_if_not_provided(self):
  """未提供引擎时应自动创建。"""
- with patch(
- "workflows.engine.scheduler.WorkflowEngine"
- ) as MockWorkflowEngine:
+ with patch("workflows.engine.scheduler.WorkflowEngine") as MockWorkflowEngine:
  mock_engine_instance = MagicMock
  MockWorkflowEngine.return_value = mock_engine_instance
  dispatcher = TriggerDispatcher

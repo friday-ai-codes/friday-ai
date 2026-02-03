@@ -2,6 +2,9 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+# django-stubs monkeypatch for type checking
+import django_stubs_ext
+django_stubs_ext.monkeypatch
 def main:
  """Run administrative tasks."""
  os.environ.setdefault("DJANGO_SETTINGS_MODULE", "friday.settings")

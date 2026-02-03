@@ -243,7 +243,11 @@ class ProjectViewSet(ModelViewSet):
  return Response(status=status.HTTP_204_NO_CONTENT)
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
- queryset = Repository.objects.filter(is_deleted=False).select_related("credential").prefetch_related("projects")
+ queryset = (
+ Repository.objects.filter(is_deleted=False)
+ .select_related("credential")
+ .prefetch_related("projects")
+ )
  serializer_class = RepositorySerializer
  def get_serializer_class(self):
  if self.action == "create":

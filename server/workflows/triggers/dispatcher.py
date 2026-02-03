@@ -104,9 +104,7 @@ class TriggerDispatcher:
  error=str(e),
  )
  return executions
- async def dispatch_single(
- self, context: TriggerContext
- ) -> "WorkflowExecution | None":
+ async def dispatch_single(self, context: TriggerContext) -> "WorkflowExecution | None":
  """单工作流触发的便捷方法
  适用于手动触发等已知目标工作流的场景。
  调用 dispatch 并返回第一个执行实例。

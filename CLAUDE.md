@@ -266,10 +266,32 @@ logging.info("Task started")
 python manage.py makemigrations
 python manage.py migrate
 ```
-### 8. 错误处理
-- 使用 `common/exceptions.py` 中的自定义异常
-- 让 DRF 处理异常到响应的转换
-- 使用 structlog 记录带上下文的错误
+### 9. 类型检查
+**重要**：修改 Python 代码后必须通过类型检查。
+使用 **mypy** + **django-stubs** 进行静态类型检查：
+```bash
+cd server
+uv run mypy . # 检查整个项目
+uv run mypy path/to/file.py # 检查特定文件
+```
+#### 类型检查规范
+- **所有新代码必须通过 mypy 检查**（0 errors）
+- notes 可以接受，但应尽量减少
+- 配置已在 `pyproject.toml` 的 `[tool.mypy]` 中定义
+#### 常见类型问题处理
+```python
+# Django ORM 动态属性（如 related_name）mypy 无法识别时，使用 type: ignore
+obj.related_objects.all # type: ignore[attr-defined]
+# DRF serializer 字段类型不匹配时
+field = serializers.CharField # type: ignore[assignment]
+# 可选类型访问时
+if node_class is not None:
+ output = node_class.outputs # type: ignore[union-attr]
+```
+#### 禁止
+- 提交有类型错误的代码
+- 滥用 `type: ignore` 掩盖真正的类型问题
+- 忽略 mypy 的 error 级别报告
 ---
 ## 第三部分：通用实践
 ### 1. Git 工作流
