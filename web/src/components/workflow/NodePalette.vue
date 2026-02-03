@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Clock, Download, FolderSearch, GitBranch, Globe, MessageSquare, Play, SearchCode, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
+import { Bot, Clock, Download, FileCode, FolderSearch, GitBranch, Globe, MessageSquare, Play, SearchCode, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 const nodeTypesStore = useNodeTypesStore
@@ -43,6 +43,7 @@ const staticNodeTypes = [
  { type: 'ai_coding_dispatcher', label: 'AI 编码指派', icon: Bot, description: '分析需求分配编码任务' },
  { type: 'ai_variable_extractor', label: 'AI 变量提取', icon: Sparkles, description: '使用 AI 智能提取变量' },
  { type: 'context_retrieval', label: '召回上下文', icon: SearchCode, description: '从代码库检索相关代码' },
+ { type: 'ai_technical_plan', label: 'AI 技术方案', icon: FileCode, description: '根据需求生成技术方案' },
  ],
  },
  {
@@ -62,6 +63,7 @@ const staticNodeTypes = [
  items: [
  { type: 'condition', label: '条件判断', icon: GitBranch, description: '根据条件分支' },
  { type: 'approval', label: '人工审批', icon: MessageSquare, description: '等待人工审批' },
+ { type: 'wait_feishu_field', label: '等待飞书字段', icon: Clock, description: '等待飞书工作项字段满足条件' },
  ],
  },
 ]
