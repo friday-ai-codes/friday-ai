@@ -19,8 +19,10 @@ import ControlNode from './nodes/ControlNode.vue'
 import FeishuEventTriggerNode from './nodes/FeishuEventTriggerNode.vue'
 import FetchProjectInfoNode from './nodes/FetchProjectInfoNode.vue'
 import FetchWorkItemNode from './nodes/FetchWorkItemNode.vue'
+import TechnicalPlanNode from './nodes/TechnicalPlanNode.vue'
 import TriggerNode from './nodes/TriggerNode.vue'
 import VariableExtractorNode from './nodes/VariableExtractorNode.vue'
+import WaitFeishuNode from './nodes/WaitFeishuNode.vue'
 // Props
 defineProps<{
  editable?: boolean
@@ -54,6 +56,7 @@ const nodeTypes = {
  ai_coding_dispatcher: markRaw(AICodingDispatcherNode),
  ai_variable_extractor: markRaw(AIVariableExtractorNode),
  context_retrieval: markRaw(ContextRetrievalNode),
+ ai_technical_plan: markRaw(TechnicalPlanNode),
  // Approval
  human_approval: markRaw(ApprovalNode),
  approval: markRaw(ApprovalNode),
@@ -61,6 +64,7 @@ const nodeTypes = {
  condition: markRaw(ControlNode),
  delay: markRaw(ControlNode),
  parallel: markRaw(ControlNode),
+ wait_feishu_field: markRaw(WaitFeishuNode),
 }
 // 默认边样式
 const defaultEdgeOptions = {
