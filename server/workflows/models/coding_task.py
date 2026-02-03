@@ -17,6 +17,7 @@ class CodingTaskStatus(models.TextChoices):
  PLAN_REVIEW = "plan_review", "方案评审"
  EXECUTING = "executing", "执行中"
  CODE_REVIEW = "code_review", "代码评审"
+ PARTIAL_SUCCESS = "partial_success", "部分成功"
  MERGED = "merged", "已合并"
  FAILED = "failed", "失败"
  CANCELLED = "cancelled", "已取消"
@@ -212,3 +213,18 @@ class CodingTask(models.Model):
  else:
  self.execution_log = log_entry
  self.save(update_fields=["execution_log", "updated_at"])
+ def mark_partial_success(self, branch_name: str, commit_sha: str, error: str) -> None:
+ """标记部分成功（推送成功但 MR 创建失败）"""
+ from django.utils import timezone
+ self.status = CodingTaskStatus.PARTIAL_SUCCESS
+ self.branch_name = branch_name
+ self.commit_sha = commit_sha
+ self.error_message = error
+ self.completed_at = timezone.now
+ self.save(
+ update_fields=["status", "branch_name", "commit_sha", "error_message", "completed_at"]
+ )
+ def set_pr_url(self, pr_url: str) -> None:
+ """设置 MR/PR URL"""
+ self.pr_url = pr_url
+ self.save(update_fields=["pr_url", "updated_at"])
