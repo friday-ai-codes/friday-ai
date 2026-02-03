@@ -163,17 +163,20 @@ class WorkflowEngine:
  for node_id in nodes_to_remove:
  pending_nodes.discard(node_id)
  if not ready_nodes:
- # 检查是否有正在等待审批的节点
+ # 检查是否有正在等待审批或等待事件的节点
  waiting_nodes = await sync_to_async(
  lambda: list(
  NodeExecution.objects.filter(
  workflow_execution=execution,
- status=NodeExecutionStatus.WAITING_APPROVAL,
+ status__in=[
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ],
  )
  )
  )
  if waiting_nodes:
- # 有节点在等待审批，等待状态变化
+ # 有节点在等待审批或等待事件，等待状态变化
  await asyncio.sleep(5)
  # 刷新状态
  for ne in waiting_nodes:
@@ -220,6 +223,9 @@ class WorkflowEngine:
  node_outputs[dag_node.id] = result.get("output", {})
  elif result.get("status") == "waiting_approval":
  # 节点正在等待审批，保持在 pending
+ pending_nodes.add(dag_node.id)
+ elif result.get("status") == "waiting_event":
+ # 节点正在等待外部事件，保持在 pending
  pending_nodes.add(dag_node.id)
  else:
  failed_nodes.add(dag_node.id)
@@ -305,6 +311,14 @@ class WorkflowEngine:
  node_execution=node_execution,
  )
  return {"status": "waiting_approval"}
+ elif result.status == "waiting_event":
+ await sync_to_async(node_execution.mark_waiting_event)(result.output)
+ await self.hooks.trigger(
+ "node_waiting_event",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ return {"status": "waiting_event"}
  else:
  await sync_to_async(node_execution.mark_failed)(result.error or "未知错误")
  await self.hooks.trigger(
@@ -548,7 +562,10 @@ class WorkflowEngine:
  ).count,
  "waiting": NodeExecution.objects.filter(
  workflow_execution=execution,
- status=NodeExecutionStatus.WAITING_APPROVAL,
+ status__in=[
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ],
  ).count,
  "failed": NodeExecution.objects.filter(
  workflow_execution=execution,

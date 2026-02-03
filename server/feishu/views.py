@@ -242,6 +242,13 @@ class FeishuWebhookView(APIView):
  logger.info(f"状态变更: {work_item_id} {pre_state_key} -> {cur_state_key}")
  # Fetch work item details and update trigger log
  self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
+ # 检查并唤醒挂起的工作流
+ self._check_and_resume_suspended_workflows(
+ project=project,
+ work_item_id=str(work_item_id),
+ event_type="WorkitemStatusEvent",
+ payload=payload,
+ )
  def _handle_workflow_node_status(self, project, payload, trigger_log):
  """处理工作项节点流转事件。"""
  work_item_id = payload.get("id")
@@ -298,6 +305,119 @@ class FeishuWebhookView(APIView):
  if not work_item_id:
  return
  logger.info(f"字段变更: {work_item_id}, 字段数: {len(changed_fields)}")
+ # 检查并唤醒挂起的工作流
+ self._check_and_resume_suspended_workflows(
+ project=project,
+ work_item_id=str(work_item_id),
+ event_type="WorkitemUpdateEvent",
+ payload=payload,
+ )
+ def _check_and_resume_suspended_workflows(
+ self,
+ project,
+ work_item_id: str,
+ event_type: str,
+ payload: dict,
+ ) -> None:
+ """检查并唤醒匹配的挂起工作流"""
+ from django.utils import timezone
+ from workflows.conditions import evaluate_condition
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.models.execution import (
+ NodeExecutionStatus,
+ WorkflowEventSubscription,
+ )
+ try:
+ # 查找匹配的活跃订阅
+ subscriptions = WorkflowEventSubscription.objects.filter(
+ is_active=True,
+ project_key=project.feishu_project_key,
+ work_item_id=work_item_id,
+ event_type=event_type,
+ ).select_related("workflow_execution", "node_execution")
+ # 获取当前字段值用于条件匹配
+ fields = self._get_current_fields(project, work_item_id, payload)
+ for sub in subscriptions:
+ # 求值条件
+ if evaluate_condition(sub.condition_expression, fields):
+ struct_logger.info(
+ "subscription_matched",
+ subscription_id=str(sub.id),
+ work_item_id=work_item_id,
+ execution_id=str(sub.workflow_execution_id),
+ )
+ # 标记订阅已匹配
+ sub.mark_matched(payload)
+ # 恢复节点执行
+ self._resume_node_execution(sub, fields)
+ except Exception as e:
+ struct_logger.error(
+ "resume_suspended_workflows_error",
+ work_item_id=work_item_id,
+ error=str(e),
+ )
+ def _get_current_fields(self, project, work_item_id: str, payload: dict) -> dict:
+ """获取当前字段值（优先从 payload 获取，否则调用 API）"""
+ # payload 中可能包含 changed_fields 或完整字段
+ if "fields" in payload:
+ return payload["fields"]
+ # 从 changed_fields 构建字段映射
+ changed_fields = payload.get("changed_fields", )
+ if changed_fields:
+ fields: dict = {}
+ for field in changed_fields:
+ if isinstance(field, dict):
+ field_key = field.get("field_key", "")
+ new_value = field.get("new_value")
+ if field_key:
+ fields[field_key] = new_value
+ if fields:
+ return fields
+ # 回退：调用 API 获取完整字段
+ try:
+ feishu_client = create_feishu_client_for_project(project)
+ work_item = async_to_sync(feishu_client.get_work_item)(
+ project_key=project.feishu_project_key or "",
+ work_item_id=work_item_id,
+ work_item_type=payload.get("work_item_type_key", "story"),
+ )
+ return work_item.fields if work_item else {}
+ except Exception as e:
+ logger.warning(f"获取工作项字段失败: {e}")
+ return {}
+ def _resume_node_execution(
+ self, subscription, matched_fields: dict
+ ) -> None:
+ """恢复节点执行"""
+ from django.utils import timezone
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.models.execution import NodeExecutionStatus
+ node_execution = subscription.node_execution
+ workflow_execution = subscription.workflow_execution
+ # 更新节点状态为完成
+ node_execution.status = NodeExecutionStatus.COMPLETED
+ node_execution.completed_at = timezone.now
+ node_execution.output_data = {
+ "matched": True,
+ "field_value": matched_fields,
+ "wait_duration": (
+ timezone.now - subscription.created_at
+ ).total_seconds,
+ }
+ node_execution.save(update_fields=["status", "completed_at", "output_data"])
+ # 更新执行统计
+ workflow_execution.completed_nodes += 1
+ workflow_execution.save(update_fields=["completed_nodes"])
+ # 触发后续节点执行
+ engine = WorkflowEngine
+ async_to_sync(engine._continue_after_node)(
+ workflow_execution, node_execution
+ )
+ struct_logger.info(
+ "node_resumed",
+ node_execution_id=str(node_execution.id),
+ execution_id=str(workflow_execution.id),
+ )
 # ============ Config Views ============
 class FeishuConfigView(APIView):
  """Manage Feishu configuration for a project."""
