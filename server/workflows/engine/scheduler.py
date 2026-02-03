@@ -58,6 +58,7 @@ class WorkflowEngine:
  trigger_type: str = "manual",
  trigger_data: dict | None = None,
  execution: WorkflowExecution | None = None,
+ run_sync: bool = False,
  ) -> WorkflowExecution:
  """启动工作流执行
  Args:
@@ -67,6 +68,7 @@ class WorkflowEngine:
  trigger_type: 触发类型
  trigger_data: 触发数据
  execution: 可选的已创建执行实例（如果提供则复用，否则创建新的）
+ run_sync: 是否同步执行（用于测试，确保在同一事务/上下文中运行）
  """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
@@ -116,7 +118,12 @@ class WorkflowEngine:
  )
  # 触发开始钩子
  await self.hooks.trigger("execution_started", execution=execution)
- # 开始执行（在独立线程中运行，避免事件循环退出问题）
+ # 开始执行
+ if run_sync:
+ # 同步执行（用于测试，保持在同一事务/上下文中）
+ await self._run_execution(execution, dag, input_data)
+ else:
+ # 异步执行（在独立线程中运行，避免事件循环退出问题）
  _run_in_thread(self._run_execution(execution, dag, input_data))
  return execution
  async def _run_execution(
