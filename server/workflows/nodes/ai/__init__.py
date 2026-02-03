@@ -5,6 +5,7 @@ from workflows.nodes.ai.coding_dispatcher import AICodingDispatcherNode
 from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
 from workflows.nodes.ai.plan import GeneratePlanNode, RevisePlanNode
 from workflows.nodes.ai.prompt import AIPromptNode
+from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 from workflows.nodes.ai.variable_extractor import AIVariableExtractorNode
 __all__ = [
  "AnalyzeRequirementsNode",
@@ -16,4 +17,5 @@ __all__ = [
  "AICodingDispatcherNode",
  "AIVariableExtractorNode",
  "ContextRetrievalNode",
+ "TechnicalPlanNode",
 ]
