@@ -211,3 +211,35 @@ class GitOperations:
  if not self.workspace:
  raise RuntimeError("Workspace not initialized. Call setup first.")
  return self.workspace
+ async def setup_task_branch(self, branch_strategy: str | None, task_id: str) -> str:
+ """Create or checkout branch based on branch_strategy.
+ Args:
+ branch_strategy: Branch name pattern or explicit name.
+ Supports {task_id} placeholder.
+ If None, uses default: friday/task-{task_id}
+ task_id: Task ID for placeholder substitution
+ Returns:
+ The actual branch name created/checked out
+ """
+ if not self.repo:
+ raise RuntimeError("Repository not initialized. Call setup first.")
+ # Determine branch name
+ if branch_strategy:
+ branch_name = branch_strategy.replace("{task_id}", task_id)
+ else:
+ branch_name = f"friday/task-{task_id}"
+ # Normalize: ensure friday/ prefix if not present
+ if not branch_name.startswith("friday/"):
+ branch_name = f"friday/{branch_name}"
+ # Check if branch exists remotely
+ try:
+ self.repo.git.fetch("origin", branch_name)
+ # Branch exists remotely, checkout
+ self.repo.git.checkout(branch_name)
+ logger.info("Checked out existing branch", branch=branch_name)
+ except GitCommandError:
+ # Branch doesn't exist, create new
+ new_branch = self.repo.create_head(branch_name)
+ new_branch.checkout
+ logger.info("Created new task branch", branch=branch_name)
+ return branch_name
