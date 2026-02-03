@@ -391,9 +391,13 @@ class FeishuWebhookView(APIView):
  """恢复节点执行"""
  from django.utils import timezone
  from workflows.engine.scheduler import WorkflowEngine
- from workflows.models.execution import NodeExecutionStatus
+ from workflows.models.execution import ExecutionStatus, NodeExecutionStatus
  node_execution = subscription.node_execution
  workflow_execution = subscription.workflow_execution
+ # If workflow is suspended, mark it as running before continuing
+ if workflow_execution.status == ExecutionStatus.SUSPENDED:
+ workflow_execution.status = ExecutionStatus.RUNNING
+ workflow_execution.save(update_fields=["status"])
  # 更新节点状态为完成
  node_execution.status = NodeExecutionStatus.COMPLETED
  node_execution.completed_at = timezone.now
