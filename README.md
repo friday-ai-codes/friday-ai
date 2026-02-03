@@ -7,10 +7,11 @@ This project follows a Monorepo structure, containing independent frontend and b
 - **Frontend (`web/`)**: Vue 3 + TypeScript + Vite
 - **Backend (`server/`)**: FastAPI + Python 3.11 + SQLModel
 - **Infrastructure**: Full-stack orchestration via Docker Compose
-## 🚀 Quick Start (Full Stack)
-### Prerequisites
-- Docker & Docker Compose
-### One-Click Start
+## 🚀 Quick Start
+> **详细指南**: 查看 [快速开始文档](docs/quick-start.md) 获取完整的中文安装和配置指南。
+### Full Stack Deployment (Docker)
+**Prerequisites:** Docker & Docker Compose
+#### One-Click Start
 1. **Configure Environment Variables**
  ```bash
  cp .env.example .env
