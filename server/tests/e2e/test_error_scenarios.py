@@ -6,18 +6,41 @@ webhook flow requires complex infrastructure setup. The key requirement
 is that error messages are clear and actionable.
 """
 import json
-from typing import Any
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from feishu.client import FeishuAPIError
-from workflows.models import ExecutionStatus
 from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 from workflows.nodes.ai.coding_dispatcher import AICodingDispatcherNode
 from workflows.nodes.base import ExecutionContext, NodeResult
 # ============================================================================
 # Helper Functions
 # ============================================================================
+@dataclass
+class MockClaudeConfig:
+ """Mock Claude configuration for testing."""
+ api_key: str = "test-api-key"
+ base_url: str = "https://api.anthropic.com"
+ model: str = "claude-3-5-sonnet-20241022"
+ source: str = "system"
+@contextmanager
+def mock_claude_config(
+ api_key: str = "test-api-key",
+ base_url: str = "https://api.anthropic.com",
+) -> Generator[MagicMock, None, None]:
+ """Context manager to mock get_claude_config to avoid database access.
+ This is required because TechnicalPlanNode._call_llm calls get_claude_config
+ which tries to access the database for system settings.
+ """
+ mock_config = MockClaudeConfig(api_key=api_key, base_url=base_url)
+ with patch(
+ "services.claude_config.get_claude_config",
+ return_value=mock_config,
+ ) as mock:
+ yield mock
 def create_mock_context(
  node_config: dict[str, Any] | None = None,
  global_params: dict[str, Any] | None = None,
@@ -36,11 +59,16 @@ def create_mock_context(
  context.get_node_output = MagicMock(
  side_effect=lambda key: _node_outputs.get(key)
  )
- # Mock workflow execution
+ # Mock workflow execution with proper project structure
+ # IMPORTANT: claude_api_key_encrypted must be None (not MagicMock) to avoid
+ # "token must be bytes or str" error in decrypt_value
+ mock_project = MagicMock
+ mock_project.claude_api_key_encrypted = None # Prevent decrypt_value from failing
+ mock_project.claude_base_url = None # Fall back to system config
+ mock_project.anthropic_api_key = "test-api-key" # Legacy field
  context.workflow_execution = MagicMock
  context.workflow_execution.workflow = MagicMock
- context.workflow_execution.workflow.project = MagicMock
- context.workflow_execution.workflow.project.anthropic_api_key = "test-api-key"
+ context.workflow_execution.workflow.project = mock_project
  return context
 # ============================================================================
 # Test Class: LLM Error Scenarios
@@ -63,6 +91,7 @@ class TestLLMErrorScenarios:
  mock_response = MagicMock
  mock_response.status_code = 500
  mock_response.text = "Internal Server Error"
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_response)
@@ -90,6 +119,7 @@ class TestLLMErrorScenarios:
  "project_key": "test-project",
  },
  )
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(
@@ -133,6 +163,7 @@ class TestLLMErrorScenarios:
  }
  ],
  }
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_response)
@@ -178,6 +209,7 @@ class TestSchemaValidationErrors:
  "type": "message",
  "content": [{"type": "text", "text": json.dumps(invalid_plan)}],
  }
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_response)
@@ -328,6 +360,7 @@ class TestFeishuAPIErrors:
  mock_feishu.update_field = AsyncMock(
  side_effect=FeishuAPIError("更新字段失败: 字段不存在")
  )
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_llm_response)
@@ -396,6 +429,7 @@ class TestFeishuAPIErrors:
  mock_feishu.transition_status = AsyncMock(
  side_effect=Exception("状态流转失败: 无可用流转")
  )
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_llm_response)
@@ -435,6 +469,7 @@ class TestWorkflowRecovery:
  mock_response = MagicMock
  mock_response.status_code = 500
  mock_response.text = "Internal Server Error"
+ with mock_claude_config:
  with patch("httpx.AsyncClient") as mock_client_class:
  mock_client = AsyncMock
  mock_client.post = AsyncMock(return_value=mock_response)
