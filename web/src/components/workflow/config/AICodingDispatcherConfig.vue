@@ -1,23 +1,8 @@
 <script setup lang="ts">
 import type { AICodingDispatcherConfig } from '~/types/workflow'
-import { computed } from 'vue'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import {
- Select,
- SelectContent,
- SelectItem,
- SelectTrigger,
- SelectValue,
-} from '~/components/ui/select'
-import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
-import {
- aiCodingDispatcherConfigSchema,
- TASK_GRANULARITY_OPTIONS,
-} from '~/types/workflow'
+import { aiCodingDispatcherConfigSchema } from '~/types/workflow'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -36,95 +21,59 @@ const { field } = useConfigModel({
  emit: v => emit('update:config', v),
  schema: aiCodingDispatcherConfigSchema,
 })
-// API 配置
-const useCustomApi = computed({
- get: => props.config.use_custom_api ?? false,
- set: v => emit('update:config', { ...props.config, use_custom_api: v }),
-})
-const apiBaseUrl = field('api_base_url', '')
-const apiKey = field('api_key', '')
-const analysisModel = field('analysis_model', 'claude-sonnet-4-20250514')
-// 任务配置
-const maxTasks = field('max_tasks', 5)
-const taskGranularity = field('task_granularity', 'medium')
-const includeTests = field('include_tests', true)
-const autoAssignRepos = field('auto_assign_repos', true)
+// 任务合并配置
+const mergeSameBranch = field('merge_same_branch', true)
 </script>
 <template>
  <div class="space-y-4">
- <!-- AI 模型配置（通用组件） -->
- <AIModelConfig
- v-model:use-custom-api="useCustomApi"
- v-model:api-base-url="apiBaseUrl"
- v-model:api-key="apiKey"
- v-model:model="analysisModel"
- model-label="分析模型"
- model-description="用于分析需求文档并生成编码任务"
- />
- <Separator />
- <!-- 最大任务数 -->
- <div class="space-y-2">
- <Label>最大任务数</Label>
- <Input
- v-model="maxTasks"
- type="number":min="1":max="20"
- />
- <p class="text-xs text-muted-foreground">
- 单次执行最多生成的编码任务数量
- </p>
- </div>
- <!-- 任务粒度 -->
- <div class="space-y-2">
- <Label>任务粒度</Label>
- <Select v-model="taskGranularity">
- <SelectTrigger>
- <SelectValue placeholder="选择粒度" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="option in TASK_GRANULARITY_OPTIONS":key="option.value":value="option.value"
+ <!-- 严格模式说明 -->
+ <div
+ class=" rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/5
+ border border-amber-200/50 dark:border-amber-800/50"
  >
- <div>
- <div>{{ option.label }}</div>
- <div class="text-xs text-muted-foreground">
- {{ option.description }}
- </div>
- </div>
- </SelectItem>
- </SelectContent>
- </Select>
- </div>
- <!-- 开关选项 -->
- <div class="space-y-3 pt-2">
- <div class="flex items-center justify-between">
- <div>
- <Label>包含测试任务</Label>
- <p class="text-xs text-muted-foreground">
- 为每个编码任务生成对应的测试任务
+ <div class="flex items-start gap-3">
+ <span class="icon-[lucide--info] text-lg text-amber-500 mt-0.5" />
+ <div class="text-sm">
+ <p class="font-medium text-amber-700 dark:text-amber-400">
+ 严格模式
+ </p>
+ <p class="text-muted-foreground mt-1">
+ 此节点将严格按照上游技术方案节点的 execution_plan 创建编码任务，
+ 不进行 AI 自主分析。请确保上游已配置技术方案节点。
  </p>
  </div>
- <Switch v-model="includeTests" />
  </div>
- <div class="flex items-center justify-between">
+ </div>
+ <!-- 合并同仓库任务 -->
+ <div
+ class="flex items-center justify-between rounded-xl
+ bg-card/70 backdrop-blur-sm border border-border/50"
+ >
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
+ <span class="icon-[lucide--git-merge] text-xl text-blue-500" />
+ </div>
  <div>
- <Label>自动分配仓库</Label>
+ <label class="text-sm font-medium">
+ 合并同仓库任务
+ </label>
  <p class="text-xs text-muted-foreground">
- 根据需求自动判断应修改哪些仓库
+ 将目标仓库和分支相同的任务合并为一个编码任务
  </p>
  </div>
- <Switch v-model="autoAssignRepos" />
  </div>
+ <Switch v-model="mergeSameBranch" />
  </div>
- <!-- 说明 -->
- <div class="mt-4 bg-secondary/50 rounded-md text-sm space-y-1">
+ <!-- 节点行为说明 -->
+ <div class=" bg-secondary/50 rounded-xl text-sm space-y-1">
  <p class="font-medium">
  此节点将：
  </p>
  <ul class="text-xs text-muted-foreground space-y-1 list-disc list-inside">
- <li>从全局参数读取需求文档 URL 和描述</li>
- <li>抓取需求文档内容进行分析</li>
- <li>生成编码任务并分配到对应仓库</li>
- <li>创建 CodingTask 记录供后续处理</li>
+ <li>从上游技术方案节点读取 execution_plan</li>
+ <li>验证技术方案的有效性</li>
+ <li>按配置选项合并相同仓库/分支的任务</li>
+ <li>并行创建 CodingTask 记录供后续处理</li>
  </ul>
  </div>
  </div>

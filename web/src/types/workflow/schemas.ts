@@ -80,18 +80,10 @@ export const aiPromptConfigSchema = z.object({
  max_tokens: z.number.min(100).max(100000).default(4096),
  output_format: z.enum(['text', 'json', 'markdown']).default('text'),
 })
-/** AI 编码指派器节点配置 */
+/** AI 编码指派器节点配置 - 严格模式 */
 export const aiCodingDispatcherConfigSchema = z.object({
- // API 配置
- use_custom_api: z.boolean.default(false),
- api_base_url: z.string.default(''),
- api_key: z.string.default(''),
- // 模型配置
- analysis_model: z.string.default('claude-sonnet-4-20250514'),
- max_tasks: z.number.min(1).max(20).default(5),
- task_granularity: z.enum(['fine', 'medium', 'coarse']).default('medium'),
- include_tests: z.boolean.default(true),
- auto_assign_repos: z.boolean.default(true),
+ // 严格模式只需要合并选项
+ merge_same_branch: z.boolean.default(true),
 })
 /** 获取工作项节点配置 */
 export const fetchWorkItemConfigSchema = z.object({
