@@ -9,6 +9,7 @@ from pathlib import Path
 import structlog
 from git import Actor, Repo
 from git.exc import GitCommandError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from core.config import TaskConfig
 logger = structlog.get_logger
 class GitOperations:
@@ -178,6 +179,27 @@ class GitOperations:
  logger.info("Pushed branch", branch=branch_name)
  except GitCommandError as e:
  logger.error("Failed to push branch", error=str(e))
+ raise
+ @retry(
+ stop=stop_after_attempt(3),
+ wait=wait_exponential(multiplier=1, min=2, max=10),
+ retry=retry_if_exception_type(GitCommandError),
+ reraise=True,
+ )
+ async def push_branch_with_retry(self, branch_name: str) -> None:
+ """Push branch with exponential backoff retry (2s, 4s, 8s delays)."""
+ logger.info("Pushing branch", branch=branch_name, attempt="with retry")
+ await self.push_branch(branch_name)
+ async def get_modified_files(self, base_branch: str | None = None) -> list[str]:
+ """Get list of files modified in current branch vs base."""
+ if not self.repo:
+ return
+ try:
+ target = base_branch or self.config.git_branch
+ diff = self.repo.git.diff("--name-only", f"origin/{target}...HEAD")
+ return [f.strip for f in diff.split("\n") if f.strip]
+ except GitCommandError:
+ return
  raise
  async def get_diff_summary(self) -> str:
  """Get a summary of current changes."""
