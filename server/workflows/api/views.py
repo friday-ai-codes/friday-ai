@@ -936,3 +936,117 @@ class CodingTaskViewSet(ModelViewSet):
  task.add_feedback(feedback)
  task.mark_executing
  return Response({"status": task.status, "message": "代码已驳回，继续开发"})
+# =============================================================================
+# Node Execution Action View (Manual Intervention)
+# =============================================================================
+class NodeExecutionActionView(APIView):
+ """节点执行操作视图 - 支持手动干预等待中的节点"""
+ permission_classes = [IsAuthenticated]
+ def post(self, request: Request, execution_id, node_id, action_type) -> Response:
+ """执行节点操作
+ 支持的 action_type:
+ - skip-wait: 跳过等待，继续执行
+ - trigger-resume: 手动触发唤醒
+ """
+ from workflows.models.execution import WorkflowEventSubscription
+ execution = get_object_or_404(WorkflowExecution, id=execution_id)
+ node_execution = get_object_or_404(
+ NodeExecution,
+ workflow_execution=execution,
+ id=node_id,
+ )
+ if action_type == "skip-wait":
+ return self._skip_wait(request, execution, node_execution)
+ elif action_type == "trigger-resume":
+ return self._trigger_resume(request, execution, node_execution)
+ else:
+ return Response(
+ {"detail": f"未知的操作类型: {action_type}"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ def _skip_wait(
+ self, request: Request, execution: WorkflowExecution, node_execution: NodeExecution
+ ) -> Response:
+ """跳过等待，继续执行"""
+ from django.utils import timezone
+ from workflows.models.execution import WorkflowEventSubscription
+ if node_execution.status != NodeExecutionStatus.WAITING_EVENT:
+ return Response(
+ {"detail": "节点不在等待事件状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 标记相关订阅为非活跃
+ WorkflowEventSubscription.objects.filter(
+ node_execution=node_execution,
+ is_active=True,
+ ).update(is_active=False)
+ # 标记节点为完成（走 skipped 输出）
+ node_execution.status = NodeExecutionStatus.COMPLETED
+ node_execution.completed_at = timezone.now
+ node_execution.output_data = {
+ "skipped": True,
+ "skip_reason": "用户手动跳过",
+ "skipped_by": request.user.username if request.user.is_authenticated else "anonymous",
+ "skipped_at": timezone.now.isoformat,
+ }
+ node_execution.save(update_fields=["status", "completed_at", "output_data"])
+ # 更新执行统计
+ execution.completed_nodes += 1
+ execution.save(update_fields=["completed_nodes"])
+ # 触发后续节点
+ engine = WorkflowEngine
+ run_async(engine._continue_after_node(execution, node_execution))
+ logger.info(
+ "node_wait_skipped",
+ execution_id=str(execution.id),
+ node_id=str(node_execution.id),
+ user=request.user.username if request.user.is_authenticated else "anonymous",
+ )
+ return Response({
+ "status": "success",
+ "message": "已跳过等待，工作流继续执行",
+ })
+ def _trigger_resume(
+ self, request: Request, execution: WorkflowExecution, node_execution: NodeExecution
+ ) -> Response:
+ """手动触发唤醒（模拟事件匹配）"""
+ from django.utils import timezone
+ from workflows.models.execution import WorkflowEventSubscription
+ if node_execution.status != NodeExecutionStatus.WAITING_EVENT:
+ return Response(
+ {"detail": "节点不在等待事件状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 获取订阅信息并标记为已匹配
+ subscription = WorkflowEventSubscription.objects.filter(
+ node_execution=node_execution,
+ is_active=True,
+ ).first
+ if subscription:
+ subscription.mark_matched({"manual_trigger": True})
+ # 标记节点为完成
+ node_execution.status = NodeExecutionStatus.COMPLETED
+ node_execution.completed_at = timezone.now
+ node_execution.output_data = {
+ "matched": True,
+ "manual_trigger": True,
+ "triggered_by": request.user.username if request.user.is_authenticated else "anonymous",
+ "triggered_at": timezone.now.isoformat,
+ }
+ node_execution.save(update_fields=["status", "completed_at", "output_data"])
+ # 更新执行统计
+ execution.completed_nodes += 1
+ execution.save(update_fields=["completed_nodes"])
+ # 触发后续节点
+ engine = WorkflowEngine
+ run_async(engine._continue_after_node(execution, node_execution))
+ logger.info(
+ "node_manually_resumed",
+ execution_id=str(execution.id),
+ node_id=str(node_execution.id),
+ user=request.user.username if request.user.is_authenticated else "anonymous",
+ )
+ return Response({
+ "status": "success",
+ "message": "已手动触发唤醒，工作流继续执行",
+ })
