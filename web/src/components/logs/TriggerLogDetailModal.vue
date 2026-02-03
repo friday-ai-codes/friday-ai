@@ -88,20 +88,6 @@ function formatDate(dateStr: string) {
 function formatTimestamp(ts: number) {
  return new Date(ts).toLocaleString('zh-CN')
 }
-// 复制 JSON 到剪贴板
-async function copyWebhookRaw {
- if (!log.value?.webhook_raw_request_parsed) {
- showError('复制失败', '暂无数据')
- return
- }
- try {
- await navigator.clipboard.writeText(JSON.stringify(log.value.webhook_raw_request_parsed, null, 2))
- success('复制成功', '已复制到剪贴板')
- }
- catch {
- showError('复制失败', '无法复制到剪贴板')
- }
-}
 // 重试
 async function handleRetry {
  if (!log.value)

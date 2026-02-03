@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import TechnicalPlanViewer from './TechnicalPlanViewer.vue'
-import TechnicalPlanEditor from './TechnicalPlanEditor.vue'
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs'
-const props = defineProps<{
+import TechnicalPlanEditor from './TechnicalPlanEditor.vue'
+import TechnicalPlanViewer from './TechnicalPlanViewer.vue'
+defineProps<{
  plan: Record<string, unknown> | null
  markdown: string
  validationError?: string | null
@@ -23,8 +23,12 @@ const activeTab = ref<'markdown' | 'json'>('markdown')
  <span class="icon-[lucide--file-code] text-xl text-emerald-500" />
  </div>
  <div>
- <h2 class="text-lg font-semibold">技术方案</h2>
- <p class="text-sm text-muted-foreground">查看或编辑技术方案</p>
+ <h2 class="text-lg font-semibold">
+ 技术方案
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 查看或编辑技术方案
+ </p>
  </div>
  </div>
  <Tabs v-model="activeTab">

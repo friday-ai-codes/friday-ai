@@ -184,7 +184,7 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <p class="text-xs text-muted-foreground">
  <span class="icon-[lucide--info] mr-1" />
  AI 将根据变量描述智能提取信息，提取结果可通过
- <TemplateCode>global.variableKey</TemplateCode>
+ <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ global.variableKey }}</code>
  引用
  </p>
  </div>

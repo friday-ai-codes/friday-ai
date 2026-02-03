@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TechnicalPlanNodeConfig } from '~/types/workflow'
+import type { TechnicalPlanNodeConfig } from '~/types/workflow/schemas'
 import { computed } from 'vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -15,7 +15,7 @@ import { Slider } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
-import { technicalPlanNodeConfigSchema } from '~/types/workflow'
+import { technicalPlanNodeConfigSchema } from '~/types/workflow/schemas'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -76,7 +76,9 @@ const GENERATION_MODE_OPTIONS = [
  <Separator />
  <!-- 生成配置 -->
  <div class="space-y-4">
- <h4 class="text-sm font-medium">生成配置</h4>
+ <h4 class="text-sm font-medium">
+ 生成配置
+ </h4>
  <!-- 生成模式 -->
  <div class="space-y-2">
  <Label>生成模式</Label>
@@ -150,7 +152,9 @@ const GENERATION_MODE_OPTIONS = [
  <Separator />
  <!-- 飞书回写配置 -->
  <div class="space-y-4">
- <h4 class="text-sm font-medium">飞书回写配置</h4>
+ <h4 class="text-sm font-medium">
+ 飞书回写配置
+ </h4>
  <!-- 目标字段 -->
  <div class="space-y-2">
  <Label>目标字段 Key</Label>

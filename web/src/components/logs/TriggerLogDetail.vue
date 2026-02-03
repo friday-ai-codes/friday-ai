@@ -10,7 +10,7 @@ import {
 } from '~/components/ui/collapsible'
 import JsonHighlighter from './JsonHighlighter.vue'
 import KeyFieldsCard from './KeyFieldsCard.vue'
-const props = defineProps<{
+defineProps<{
  log: TriggerLogDetail
  getProjectName?: (projectId: string | null) => string
 }>

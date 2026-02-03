@@ -576,7 +576,7 @@ async function handleCustomToken {
  <BaseModal
  v-model="linkDialogOpen"
  title="管理仓库关联"
- size="800px"
+ size="md"
  >
  <div class="space-y-4">
  <p class="text-sm text-muted-foreground">

@@ -2,7 +2,6 @@
 import type { FetchProjectInfoConfig } from '~/types/workflow'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import TemplateCode from '~/components/ui/TemplateCode.vue'
 import {
  Select,
  SelectContent,
@@ -75,7 +74,7 @@ const identifierTypeOptions = [
  <span class="text-muted-foreground">JSONPath</span>
  </div>
  <div class="flex items-center gap-1.5">
- <TemplateCode>global.x</TemplateCode>
+ <code v-pre class="bg-background px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400">{{ global.x }}</code>
  <span class="text-muted-foreground">模板变量</span>
  </div>
  </div>
