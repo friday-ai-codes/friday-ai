@@ -155,6 +155,26 @@ export const fetchProjectInfoConfigSchema = z.object({
  include_claude_config: z.boolean.default(false),
  include_webhook_token: z.boolean.default(false),
 })
+/** 等待条件 */
+export const waitConditionSchema = z.object({
+ field: z.string.default(''),
+ operator: z.enum(['eq', 'ne', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'gt', 'gte', 'lt', 'lte', 'regex']).default('eq'),
+ value: z.string.default(''),
+})
+/** 等待条件组 */
+export const waitConditionGroupSchema = z.object({
+ logic: z.enum(['and', 'or']).default('and'),
+ conditions: z.array(waitConditionSchema).default,
+})
+/** 等待飞书字段节点配置 */
+export const waitFeishuFieldConfigSchema = z.object({
+ work_item_id: z.string.default('{{trigger.work_item_id}}'),
+ work_item_type: z.enum(['story', 'task', 'bug', 'epic']).default('story'),
+ project_key: z.string.default('{{trigger.project_key}}'),
+ condition: waitConditionGroupSchema.default({ logic: 'and', conditions: }),
+ timeout_seconds: z.number.default(0),
+ timeout_action: z.enum(['fail', 'skip', 'retry']).default('fail'),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -177,6 +197,9 @@ export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
 export type ContextRetrievalConfig = z.infer<typeof contextRetrievalConfigSchema>
 export type FetchProjectInfoConfig = z.infer<typeof fetchProjectInfoConfigSchema>
+export type WaitCondition = z.infer<typeof waitConditionSchema>
+export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
+export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -188,6 +211,7 @@ export type NodeConfig
  | AIVariableExtractorConfig
  | ContextRetrievalConfig
  | FetchProjectInfoConfig
+ | WaitFeishuFieldConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -201,5 +225,6 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_variable_extractor: aiVariableExtractorConfigSchema,
  context_retrieval: contextRetrievalConfigSchema,
  fetch_project_info: fetchProjectInfoConfigSchema,
+ wait_feishu_field: waitFeishuFieldConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
