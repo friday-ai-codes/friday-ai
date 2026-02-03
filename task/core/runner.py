@@ -10,6 +10,7 @@ CLI 模式使用 cli 模块作为入口点。
 import asyncio
 import sys
 import structlog
+from git.exc import GitCommandError
 from git_ops import GitOperations
 from integrations import CallbackClient
 from .config import TaskConfig
@@ -131,8 +132,22 @@ class TaskRunner:
  message="No code changes were made",
  )
  return 0
- # Push branch
- await self.git_ops.push_branch(branch_name)
+ # Push branch with retry
+ try:
+ await self.git_ops.push_branch_with_retry(branch_name)
+ # Get modified files for MR description
+ modified_files = await self.git_ops.get_modified_files
+ # Report push complete - server will create MR
+ await self.callback.report_push_complete(
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ modified_files=modified_files,
+ )
+ except GitCommandError as e:
+ # Push failed after 3 retries
+ log.error("Push failed after retries", error=str(e))
+ await self.callback.report_error(str(e), "push")
+ return 1
  diff_summary = await self.git_ops.get_diff_summary
  # Report completion
  await self.callback.report_execution_complete(
