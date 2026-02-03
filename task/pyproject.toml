@@ -11,6 +11,7 @@ dependencies = [
  "structlog>=24.1.0",
  "claude-agent-sdk>=0.1.0",
  "click>=8.0.0",
+ "tenacity>=8.2.0",
 ]
 [project.scripts]
 friday-task = "cli:main"

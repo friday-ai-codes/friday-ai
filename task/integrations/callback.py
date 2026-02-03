@@ -63,7 +63,7 @@ class CallbackClient:
  # 只有关键状态才写入 result.json，避免 IO 频繁
  # 但这里为了调试方便，我们可以记录所有状态到 events.jsonl
  # 关键结果写入 result.json
- if status in ("plan_ready", "execution_complete", "error"):
+ if status in ("plan_ready", "execution_complete", "push_complete", "error"):
  result_path = os.path.join(self.output_dir, "result.json")
  with open(result_path, "w") as f:
  json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -140,4 +140,20 @@ class CallbackClient:
  status="git_ready",
  message="Git repository cloned and branch created",
  details={"branch_name": branch_name},
+ )
+ async def report_push_complete(
+ self,
+ branch_name: str,
+ commit_sha: str,
+ modified_files: list[str],
+ ) -> bool:
+ """Report that push is complete, triggering MR creation on server."""
+ return await self.report_status(
+ status="push_complete",
+ message="Branch pushed successfully, ready for MR creation",
+ details={
+ "branch_name": branch_name,
+ "commit_sha": commit_sha,
+ "modified_files": modified_files,
+ },
  )
