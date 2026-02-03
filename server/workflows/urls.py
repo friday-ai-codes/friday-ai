@@ -7,6 +7,7 @@ from workflows.api.views import (
  ExecutionContextView,
  LLMModelsView,
  LLMSystemConfigView,
+ NodeExecutionActionView,
  NodeExecutionViewSet,
  NodeSchemaListView,
  NodeTypeViewSet,
@@ -81,5 +82,11 @@ urlpatterns = router.urls + [
  "workflows/llm/config/",
  LLMSystemConfigView.as_view,
  name="llm-config",
+ ),
+ # Node execution action endpoint (manual intervention)
+ path(
+ "workflow-executions/<uuid:execution_id>/nodes/<uuid:node_id>/<str:action_type>/",
+ NodeExecutionActionView.as_view,
+ name="node-execution-action",
  ),
 ]
