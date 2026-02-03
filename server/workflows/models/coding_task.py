@@ -117,6 +117,25 @@ class CodingTask(models.Model):
  verbose_name="元数据",
  help_text="存储额外信息，如分析结果、关联的需求字段等",
  )
+ # 执行计划追踪字段
+ execution_plan_ids = models.JSONField(
+ default=list,
+ blank=True,
+ verbose_name="关联的执行计划项 ID",
+ help_text="从技术方案 execution_plan 合并的任务 ID 列表",
+ )
+ global_context_snapshot = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="全局上下文快照",
+ help_text="任务创建时的 global_context，用于重试",
+ )
+ execution_log = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="执行日志",
+ help_text="完整的 AI 编码执行日志",
+ )
  # 时间戳
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
@@ -183,3 +202,13 @@ class CodingTask(models.Model):
  else:
  self.human_feedback = feedback
  self.save(update_fields=["human_feedback"])
+ def append_log(self, message: str) -> None:
+ """追加带时间戳的日志条目到执行日志"""
+ from django.utils import timezone
+ timestamp = timezone.now.strftime("%Y-%m-%d %H:%M:%S")
+ log_entry = f"[{timestamp}] {message}"
+ if self.execution_log:
+ self.execution_log += f"\n{log_entry}"
+ else:
+ self.execution_log = log_entry
+ self.save(update_fields=["execution_log", "updated_at"])
