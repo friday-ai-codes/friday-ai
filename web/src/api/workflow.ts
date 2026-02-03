@@ -189,6 +189,31 @@ export interface LLMSystemConfig {
 export async function getLLMSystemConfig: Promise<LLMSystemConfig> {
  return get<LLMSystemConfig>('/workflows/llm/config/')
 }
+// ============================================================================
+// Node Execution Action API (Manual Intervention)
+// ============================================================================
+/**
+ * 跳过节点等待，继续执行工作流
+ */
+export async function skipNodeWait(
+ executionId: string,
+ nodeId: string,
+): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(
+ `/workflows/workflow-executions/${executionId}/nodes/${nodeId}/skip-wait/`,
+ )
+}
+/**
+ * 手动触发节点唤醒，继续执行工作流
+ */
+export async function triggerNodeResume(
+ executionId: string,
+ nodeId: string,
+): Promise<{ status: string, message: string }> {
+ return post<{ status: string, message: string }>(
+ `/workflows/workflow-executions/${executionId}/nodes/${nodeId}/trigger-resume/`,
+ )
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -211,4 +236,7 @@ export default {
  // LLM Models
  queryLLMModels,
  getLLMSystemConfig,
+ // Node Execution Actions
+ skipNodeWait,
+ triggerNodeResume,
 }
