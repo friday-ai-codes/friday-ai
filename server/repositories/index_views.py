@@ -28,6 +28,8 @@ class IndexStatusSerializer(serializers.Serializer):
  index_error = serializers.CharField(allow_null=True)
  index_total_chunks = serializers.IntegerField
  index_processed_chunks = serializers.IntegerField
+ index_write_total = serializers.IntegerField
+ index_write_processed = serializers.IntegerField
 class SearchRequestSerializer(serializers.Serializer):
  """Serializer for search request."""
  query = serializers.CharField(max_length=1000)
@@ -87,6 +89,8 @@ class IndexStatusView(APIView):
  "index_error": repository.index_error,
  "index_total_chunks": repository.index_total_chunks,
  "index_processed_chunks": repository.index_processed_chunks,
+ "index_write_total": repository.index_write_total,
+ "index_write_processed": repository.index_write_processed,
  }
  )
  return Response(serializer.data)
