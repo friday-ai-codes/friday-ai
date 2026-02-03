@@ -44,9 +44,12 @@ class Repository(models.Model):
  )
  last_indexed_at = models.DateTimeField(blank=True, null=True)
  index_error = models.TextField(blank=True, null=True)
- # Progress tracking
+ # Progress tracking - embedding generation
  index_total_chunks = models.IntegerField(default=0)
  index_processed_chunks = models.IntegerField(default=0)
+ # Progress tracking - Qdrant write
+ index_write_total = models.IntegerField(default=0)
+ index_write_processed = models.IntegerField(default=0)
  # Soft delete fields
  is_deleted = models.BooleanField(default=False)
  deleted_at = models.DateTimeField(blank=True, null=True)

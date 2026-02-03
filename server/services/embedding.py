@@ -10,9 +10,18 @@ class EmbeddingService:
  @classmethod
  def get_config_sync(cls) -> dict[str, Any]:
  """Get embedding configuration from system settings (sync version)."""
+ from common.encryption import decrypt_value
  config = {}
  api_url = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_URL).first
  config["api_url"] = api_url.value if api_url else None
+ api_key_setting = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_KEY).first
+ if api_key_setting and api_key_setting.value:
+ if api_key_setting.is_encrypted:
+ config["api_key"] = decrypt_value(api_key_setting.value)
+ else:
+ config["api_key"] = api_key_setting.value
+ else:
+ config["api_key"] = None
  model = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_MODEL).first
  config["model"] = model.value if model else "BAAI/bge-m3"
  dimension = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_DIMENSION).first
@@ -39,6 +48,11 @@ class EmbeddingService:
  async with httpx.AsyncClient(timeout=60.0) as client:
  # Detect API type and build request accordingly
  model = config.get("model", "BAAI/bge-m3")
+ api_key = config.get("api_key")
+ # Build headers
+ headers = {"Content-Type": "application/json"}
+ if api_key:
+ headers["Authorization"] = f"Bearer {api_key}"
  # Check if it's Ollama API (contains /api/embeddings)
  if "/api/embeddings" in api_url:
  # Ollama format
@@ -55,7 +69,7 @@ class EmbeddingService:
  response = await client.post(
  api_url,
  json=request_body,
- headers={"Content-Type": "application/json"},
+ headers=headers,
  )
  response.raise_for_status
  data = response.json
@@ -97,6 +111,11 @@ class EmbeddingService:
  return [None] * len(texts)
  results: list[list[float] | None] =
  total = len(texts)
+ # Build headers
+ api_key = config.get("api_key")
+ headers = {"Content-Type": "application/json"}
+ if api_key:
+ headers["Authorization"] = f"Bearer {api_key}"
  # Check if it's Ollama API (doesn't support batch)
  is_ollama = "/api/embeddings" in api_url
  if is_ollama:
@@ -110,7 +129,7 @@ class EmbeddingService:
  "model": config.get("model", "BAAI/bge-m3"),
  "prompt": text,
  },
- headers={"Content-Type": "application/json"},
+ headers=headers,
  )
  response.raise_for_status
  data = response.json
@@ -138,7 +157,7 @@ class EmbeddingService:
  "model": config.get("model", "BAAI/bge-m3"),
  "input": batch,
  },
- headers={"Content-Type": "application/json"},
+ headers=headers,
  )
  response.raise_for_status
  data = response.json
@@ -190,10 +209,14 @@ class EmbeddingService:
  "message": str(e),
  }
  @classmethod
- async def test_connection_with_config(cls, api_url: str, model: str) -> dict[str, Any]:
+ async def test_connection_with_config(
+ cls, api_url: str, model: str, api_key: str | None = None
+ ) -> dict[str, Any]:
  """Test embedding API connection with provided config (before saving)."""
  try:
- embedding = await cls._generate_embedding_with_config(api_url, model, "test connection")
+ embedding = await cls._generate_embedding_with_config(
+ api_url, model, "test connection", api_key
+ )
  if embedding:
  return {
  "status": "healthy",
@@ -212,11 +235,15 @@ class EmbeddingService:
  }
  @classmethod
  async def _generate_embedding_with_config(
- cls, api_url: str, model: str, text: str
+ cls, api_url: str, model: str, text: str, api_key: str | None = None
  ) -> list[float] | None:
  """Generate embedding using provided config instead of saved settings."""
  try:
  async with httpx.AsyncClient(timeout=60.0) as client:
+ # Build headers
+ headers = {"Content-Type": "application/json"}
+ if api_key:
+ headers["Authorization"] = f"Bearer {api_key}"
  # Check if it's Ollama API (contains /api/embeddings)
  if "/api/embeddings" in api_url:
  # Ollama format
@@ -233,7 +260,7 @@ class EmbeddingService:
  response = await client.post(
  api_url,
  json=request_body,
- headers={"Content-Type": "application/json"},
+ headers=headers,
  )
  response.raise_for_status
  data = response.json

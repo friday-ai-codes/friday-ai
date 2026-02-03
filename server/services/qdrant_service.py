@@ -73,6 +73,20 @@ class QdrantService:
  collections = client.get_collections
  existing_names = [c.name for c in collections.collections]
  if collection_name in existing_names:
+ # Check if vector size matches
+ collection_info = client.get_collection(collection_name)
+ existing_size = collection_info.config.params.vectors.size # type: ignore[union-attr]
+ if existing_size != vector_size:
+ logger.info(
+ "collection_dimension_mismatch",
+ collection_name=collection_name,
+ existing_size=existing_size,
+ new_size=vector_size,
+ )
+ # Delete and recreate with new dimension
+ client.delete_collection(collection_name=collection_name)
+ logger.info("collection_deleted_for_resize", collection_name=collection_name)
+ else:
  logger.info("collection_already_exists", collection_name=collection_name)
  return True
  # Create collection with dense vectors
