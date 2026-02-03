@@ -1,6 +1,6 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
@@ -10,6 +10,7 @@ import {
  fetchProjectInfoConfigSchema,
  fetchWorkItemConfigSchema,
  variableExtractorConfigSchema,
+ waitFeishuFieldConfigSchema,
 } from './schemas'
 // ============================================================================
 // 类型定义
@@ -129,6 +130,17 @@ export const NODE_REGISTRY = {
  defaultConfig: fetchProjectInfoConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/FetchProjectInfoConfig.vue'),
  } satisfies NodeTypeDefinition<FetchProjectInfoConfig>,
+ wait_feishu_field: {
+ nodeType: 'wait_feishu_field',
+ displayName: '等待飞书字段',
+ description: '等待飞书工作项字段满足条件',
+ icon: 'icon-[lucide--clock]',
+ color: 'from-amber-500 to-orange-400',
+ category: 'control',
+ schema: waitFeishuFieldConfigSchema,
+ defaultConfig: waitFeishuFieldConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/WaitFeishuConfig.vue'),
+ } satisfies NodeTypeDefinition<WaitFeishuFieldConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
