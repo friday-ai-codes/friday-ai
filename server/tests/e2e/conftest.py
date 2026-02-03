@@ -18,6 +18,7 @@ from workflows.models import (
  WorkflowEdge,
  WorkflowExecution,
  WorkflowNode,
+ WorkflowTrigger,
 )
 # Import mock fixtures from fixtures module - pytest will auto-discover them
 pytest_plugins = [
@@ -162,6 +163,17 @@ def e2e_workflow(
  target_node=dispatcher_node,
  source_handle="matched",
  target_handle="plan",
+ )
+ # Create WorkflowTrigger to enable Feishu event triggering
+ # The FeishuEventHandler uses WorkflowTrigger to match events to workflows
+ # Empty filter_config means it matches all WorkitemCreateEvent events for this project
+ WorkflowTrigger.objects.create(
+ workflow=workflow,
+ event_type="WorkitemCreateEvent",
+ name="E2E Test Trigger",
+ description="Trigger for E2E testing",
+ is_active=True,
+ filter_config={}, # Match all events of this type
  )
  return workflow
 @pytest.fixture
