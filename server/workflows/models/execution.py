@@ -8,6 +8,7 @@ class ExecutionStatus(models.TextChoices):
  PENDING = "pending", "待执行"
  RUNNING = "running", "执行中"
  PAUSED = "paused", "已暂停"
+ SUSPENDED = "suspended", "挂起中"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
  CANCELLED = "cancelled", "已取消"
@@ -19,6 +20,7 @@ class NodeExecutionStatus(models.TextChoices):
  RUNNING = "running", "执行中"
  WAITING_APPROVAL = "waiting_approval", "等待审批"
  WAITING_INPUT = "waiting_input", "等待输入"
+ WAITING_EVENT = "waiting_event", "等待事件"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
  SKIPPED = "skipped", "已跳过"
@@ -152,6 +154,10 @@ class WorkflowExecution(models.Model):
  self.error_message = error
  self.error_node_id = node_id
  self.save(update_fields=["status", "completed_at", "error_message", "error_node_id"])
+ def mark_suspended(self) -> None:
+ """标记工作流挂起"""
+ self.status = ExecutionStatus.SUSPENDED
+ self.save(update_fields=["status"])
  def get_context_value(self, key: str, default: Any = None) -> Any:
  """获取上下文变量"""
  return self.context.get(key, default)
@@ -353,3 +359,8 @@ class NodeExecution(models.Model):
  }
  )
  self.mark_failed(f"审批被拒绝: {comment}")
+ def mark_waiting_event(self, subscription_data: dict) -> None:
+ """标记节点等待外部事件"""
+ self.status = NodeExecutionStatus.WAITING_EVENT
+ self.approval_data = subscription_data # 复用 approval_data 字段存储等待信息
+ self.save(update_fields=["status", "approval_data"])
