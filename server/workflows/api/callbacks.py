@@ -8,7 +8,7 @@ from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from workflows.models import NodeExecution, NodeExecutionStatus
+from workflows.models import CodingTask, NodeExecution, NodeExecutionStatus
 logger = structlog.get_logger
 class NodeExecutionCallbackView(APIView):
  """Container execution callback endpoint.
@@ -100,3 +100,125 @@ class NodeExecutionCallbackView(APIView):
  node_execution_id=str(node_execution.id),
  node_status=node_execution.status,
  )
+class CodingTaskCallbackView(APIView):
+ """CodingTask status callback endpoint.
+ This endpoint is called by task containers when they report status updates.
+ Handles push_complete to trigger MR creation with dual-channel failure reporting.
+ """
+ # Allow unauthenticated access (called from containers)
+ authentication_classes =
+ permission_classes =
+ async def post(self, request):
+ """Handle CodingTask status callback.
+ Expected payload:
+ {
+ "task_id": "uuid",
+ "status": "push_complete" | "failed" | ...,
+ "details": {
+ "branch_name": "string",
+ "commit_sha": "string",
+ "modified_files": ["file1.py", "file2.py"]
+ },
+ "error": "string or null"
+ }
+ """
+ task_id = request.data.get("task_id")
+ callback_status = request.data.get("status")
+ details = request.data.get("details", {})
+ error = request.data.get("error")
+ if not task_id:
+ return Response(
+ {"error": "task_id is required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if not callback_status:
+ return Response(
+ {"error": "status is required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ coding_task = await CodingTask.objects.select_related(
+ "workflow_execution", "repository"
+ ).aget(id=task_id)
+ except CodingTask.DoesNotExist:
+ logger.warning("callback_coding_task_not_found", task_id=task_id)
+ return Response(
+ {"error": "CodingTask not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ log = logger.bind(task_id=str(task_id), callback_status=callback_status)
+ if callback_status == "push_complete":
+ return await self._handle_push_complete(coding_task, details, log)
+ elif callback_status == "failed":
+ await self._handle_failed(coding_task, error or "Unknown error", log)
+ return Response({"status": "ok"})
+ else:
+ log.info("callback_status_received")
+ return Response({"status": "ok"})
+ async def _handle_push_complete(self, coding_task: CodingTask, details: dict, log) -> Response:
+ """Handle push_complete status - create MR with dual-channel failure reporting.
+ This implements the dual-channel reporting requirement:
+ - Channel 1: Update task status (frontend displays error)
+ - Channel 2: Post failure comment to Feishu work item
+ """
+ from workflows.services.mr_service import create_mr_for_task, report_feishu_failure
+ branch_name = details.get("branch_name", "")
+ commit_sha = details.get("commit_sha", "")
+ modified_files = details.get("modified_files", )
+ if not branch_name:
+ return Response(
+ {"error": "branch_name is required in details"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ log.info("push_complete_received", branch=branch_name, commit=commit_sha)
+ # Create MR asynchronously
+ result = await create_mr_for_task(
+ task=coding_task,
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ modified_files=modified_files,
+ )
+ if result.success:
+ # Update task with MR URL and mark code_review
+ await sync_to_async(coding_task.mark_code_review)(
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ pr_url=result.mr_url,
+ )
+ # Add conflict warning to metadata if present
+ if result.has_conflicts:
+ coding_task.metadata = coding_task.metadata or {}
+ coding_task.metadata["mr_has_conflicts"] = True
+ await sync_to_async(coding_task.save)(update_fields=["metadata"])
+ log.info("mr_created_successfully", mr_url=result.mr_url)
+ return Response({
+ "status": "ok",
+ "mr_url": result.mr_url,
+ "mr_id": result.mr_id,
+ })
+ else:
+ # MR creation failed - partial success
+ error_msg = f"Push succeeded but MR creation failed: {result.error}"
+ # Channel 1: Update task status (frontend will display this)
+ await sync_to_async(coding_task.mark_partial_success)(
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ error=error_msg,
+ )
+ # Channel 2: Post failure to Feishu work item (dual-channel reporting)
+ await report_feishu_failure(
+ task=coding_task,
+ error=result.error or "Unknown error",
+ branch_name=branch_name,
+ )
+ log.warning("mr_creation_failed", error=result.error)
+ return Response({
+ "status": "partial_success",
+ "error": error_msg,
+ "branch_name": branch_name,
+ "commit_sha": commit_sha,
+ })
+ async def _handle_failed(self, coding_task: CodingTask, error: str, log) -> None:
+ """Handle failed status - mark task as failed."""
+ await sync_to_async(coding_task.mark_failed)(error)
+ log.error("task_failed", error=error)
