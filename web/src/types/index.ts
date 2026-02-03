@@ -333,6 +333,7 @@ export type CodingTaskStatus
  | 'executing'
  | 'code_review'
  | 'merged'
+ | 'partial_success'
  | 'failed'
 /**
  * 编码任务
@@ -357,6 +358,7 @@ export interface CodingTask {
  retry_count: number
  metadata: Record<string, any>
  execution_plan_ids: string
+ mr_has_conflicts?: boolean
  duration: number | null
  created_at: string
  updated_at: string
