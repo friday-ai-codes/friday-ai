@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 import httpx
 from common.encryption import decrypt_value
+class FeishuAPIError(Exception):
+ """飞书 API 调用错误"""
+ pass
 @dataclass
 class WorkItemInfo:
  """飞书项目工作项信息。"""
@@ -223,6 +226,51 @@ class FeishuClient:
  }
  )
  return comments
+ async def update_field(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str,
+ field_key: str,
+ field_value: Any,
+ ) -> bool:
+ """更新工作项字段
+ Args:
+ project_key: 项目空间 Key
+ work_item_id: 工作项 ID
+ work_item_type: 工作项类型 (story/task/bug)
+ field_key: 字段 Key (e.g., 'field_bcff9b')
+ field_value: 字段值
+ Returns:
+ 成功返回 True，失败抛出异常
+ Raises:
+ FeishuAPIError: 更新字段失败时抛出
+ """
+ token = await self.get_plugin_token
+ async with httpx.AsyncClient as client:
+ response = await client.patch(
+ f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}",
+ headers={
+ "X-PLUGIN-TOKEN": token,
+ "Content-Type": "application/json",
+ "X-USER-KEY": self.user_key or "",
+ },
+ json={
+ "update_fields": [
+ {
+ "field_key": field_key,
+ "field_value": field_value,
+ }
+ ]
+ },
+ timeout=30,
+ )
+ data = response.json
+ if data.get("err_code") != 0:
+ raise FeishuAPIError(
+ f"更新字段失败: {data.get('err_msg', 'Unknown error')}"
+ )
+ return True
  async def transition_status(
  self,
  project_key: str,
