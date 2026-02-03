@@ -100,6 +100,14 @@ const statusConfig = {
  label: '挂起中',
  animate: false,
  },
+ partial_success: {
+ icon: AlertCircle,
+ color: 'text-amber-500',
+ bg: 'bg-gradient-to-br from-amber-500/20 to-orange-500/10',
+ border: 'border-amber-200 dark:border-amber-800',
+ label: '部分完成',
+ animate: false,
+ },
 } as const
 function getStatusConfig(status: string) {
  return statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
@@ -156,6 +164,15 @@ function getWaitingCondition(node: NodeExecution): string {
  return `${firstCondition.field} ${op} ${firstCondition.value || ''}`
  }
  return `${firstCondition.field} ${op} ${firstCondition.value || ''} 等 ${condition.conditions.length} 个条件`
+}
+// Extract success/failed counts from node output for partial_success nodes
+function getTaskCounts(node: NodeExecution): { success: number, failed: number } | null {
+ const output = node.output_data
+ if (!output) return null
+ const successCount = typeof output.success_count === 'number' ? output.success_count: 0
+ const failedCount = typeof output.failed_count === 'number' ? output.failed_count: 0
+ if (successCount === 0 && failedCount === 0) return null
+ return { success: successCount, failed: failedCount }
 }
 // Manual intervention handlers
 const isOperating = ref(false)
@@ -228,6 +245,7 @@ async function handleTriggerResume(node: NodeExecution) {
  class="":class="cn(
  execution.status === 'failed' && '[&>div]:bg-red-500',
  execution.status === 'completed' && '[&>div]:bg-green-500',
+ execution.status === 'partial_success' && '[&>div]:bg-amber-500',
  )"
  />
  </div>
@@ -308,6 +326,11 @@ async function handleTriggerResume(node: NodeExecution) {
  <span:class="getStatusConfig(node.status).color">
  {{ getStatusConfig(node.status).label }}
  </span>
+ <!-- Success/failed counts for partial_success nodes -->
+ <template v-if="node.status === 'partial_success' && getTaskCounts(node)">
+ <span class="text-emerald-500">{{ getTaskCounts(node)?.success }} 成功</span>
+ <span class="text-red-500">{{ getTaskCounts(node)?.failed }} 失败</span>
+ </template>
  <span v-if="node.error_message" class="text-red-500 truncate max-w-[120px]">
  - {{ node.error_message }}
  </span>
