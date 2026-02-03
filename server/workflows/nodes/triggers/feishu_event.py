@@ -67,9 +67,7 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  raw_payload = context.input_data.get("raw_payload", context.input_data)
  input_data = context.input_data
  # Get event_type from multiple sources
- event_type = input_data.get("event_type") or context.trigger_data.get(
- "event_type", ""
- )
+ event_type = input_data.get("event_type") or context.trigger_data.get("event_type", "")
  # Critical: work_item_id
  work_item_id = (
  input_data.get("work_item_id")
@@ -86,9 +84,7 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  or raw_payload.get("project_simple_name", "")
  )
  if not project_key:
- logger.debug(
- "optional_field_missing", field="project_key", trigger_type=self.node_type
- )
+ logger.debug("optional_field_missing", field="project_key", trigger_type=self.node_type)
  # Optional: work item details
  work_item_type = raw_payload.get("work_item_type_key", "")
  work_item_name = raw_payload.get("name", "")

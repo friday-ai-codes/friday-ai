@@ -2,17 +2,17 @@
 from django.db import migrations, models
 class Migration(migrations.Migration):
  dependencies = [
- ('repositories', '0006_repository_index_processed_chunks_and_more'),
+ ("repositories", "0006_repository_index_processed_chunks_and_more"),
  ]
  operations = [
  migrations.AddField(
- model_name='repository',
- name='deleted_at',
+ model_name="repository",
+ name="deleted_at",
  field=models.DateTimeField(blank=True, null=True),
  ),
  migrations.AddField(
- model_name='repository',
- name='is_deleted',
+ model_name="repository",
+ name="is_deleted",
  field=models.BooleanField(default=False),
  ),
  ]

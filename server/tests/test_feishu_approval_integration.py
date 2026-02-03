@@ -77,9 +77,7 @@ class TestFeishuApprovalIntegration:
  mock_handler.on_approval_comment.assert_called_once
  call_kwargs = mock_handler.on_approval_comment.call_args.kwargs
  assert call_kwargs["approved"] is False # Rejection takes priority
- def test_comment_without_keywords_does_not_call_handler(
- self, api_client, project, webhook_url
- ):
+ def test_comment_without_keywords_does_not_call_handler(self, api_client, project, webhook_url):
  """Test that neutral comment does not trigger handler."""
  payload = create_comment_payload(project, "Just a regular comment, nothing special")
  with patch("feishu.approval.FeishuApprovalHandler") as MockHandler:

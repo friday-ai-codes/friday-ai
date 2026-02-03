@@ -99,9 +99,7 @@ class IndexerService:
  async def on_embedding_progress(processed: int, total: int) -> None:
  await update_index_progress(self.repository_id, total, processed)
  # Generate embeddings
- texts_to_embed = [
- f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks
- ]
+ texts_to_embed = [f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks]
  embeddings = await EmbeddingService.generate_embeddings_batch(
  texts_to_embed, on_progress=on_embedding_progress
  )
@@ -110,7 +108,8 @@ class IndexerService:
  for i, (chunk, embedding) in enumerate(zip(all_chunks, embeddings)):
  if embedding is None:
  continue
- points.append({
+ points.append(
+ {
  "id": str(uuid.uuid4),
  "vector": embedding,
  "payload": {
@@ -123,7 +122,8 @@ class IndexerService:
  "content": chunk.content,
  "context_header": chunk.context_header,
  },
- })
+ }
+ )
  # Upsert to Qdrant in batches
  batch_size = 100
  for i in range(0, len(points), batch_size):
@@ -213,7 +213,8 @@ class IndexerService:
  for chunk, embedding in zip(all_chunks, embeddings):
  if embedding is None:
  continue
- points.append({
+ points.append(
+ {
  "id": str(uuid.uuid4),
  "vector": embedding,
  "payload": {
@@ -226,7 +227,8 @@ class IndexerService:
  "content": chunk.content,
  "context_header": chunk.context_header,
  },
- })
+ }
+ )
  batch_size = 100
  for i in range(0, len(points), batch_size):
  batch = points[i: i + batch_size]

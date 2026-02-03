@@ -2,17 +2,17 @@
 from django.db import migrations, models
 class Migration(migrations.Migration):
  dependencies = [
- ('repositories', '0005_add_index_status_fields'),
+ ("repositories", "0005_add_index_status_fields"),
  ]
  operations = [
  migrations.AddField(
- model_name='repository',
- name='index_processed_chunks',
+ model_name="repository",
+ name="index_processed_chunks",
  field=models.IntegerField(default=0),
  ),
  migrations.AddField(
- model_name='repository',
- name='index_total_chunks',
+ model_name="repository",
+ name="index_total_chunks",
  field=models.IntegerField(default=0),
  ),
  ]

@@ -26,8 +26,6 @@ dependencies = [
  "paramiko>=4.0.0",
  # Utilities
  "structlog>=25.5.0",
- "djangorestframework-stubs>=3.16.7",
- "pyright>=1.1.408",
  "gunicorn>=23.0.0",
  "channels[daphne]>=4.3.2",
  "channels-redis>=4.3.0",
@@ -44,6 +42,11 @@ dependencies = [
  "tree-sitter-html>=0.21.0",
  "tree-sitter-json>=0.21.0",
  "claude-agent-sdk>=0.1.27",
+ # Type checking
+ "mypy>=1.14.0",
+ "django-stubs>=5.1.0",
+ "django-stubs-ext>=5.1.0",
+ "djangorestframework-stubs>=3.15.0",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -76,6 +79,73 @@ exclude_lines = [
  "def __repr__",
  "raise NotImplementedError",
 ]
+[tool.mypy]
+python_version = "3.14"
+plugins = [
+ "mypy_django_plugin.main",
+ "mypy_drf_plugin.main",
+]
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+explicit_package_bases = true
+# Django ORM patterns
+disallow_untyped_defs = false
+check_untyped_defs = false
+exclude = [
+ "migrations/",
+ "__pycache__/",
+ ".venv/",
+ "workflows/tests/", # 避免与 tests/ 重复
+]
+# 针对特定模块放宽检查
+[[tool.mypy.overrides]]
+module = [
+ "*.views",
+ "*.serializers",
+ "*.permissions",
+]
+# DRF 视图/序列化器/权限的特殊模式
+disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "list-item", "return-value"]
+[[tool.mypy.overrides]]
+module = [
+ "*.models",
+ "*.models.*",
+ "workflows.models.*",
+]
+# Django ORM 动态属性
+disable_error_code = ["attr-defined", "assignment"]
+[[tool.mypy.overrides]]
+module = [
+ "*.nodes.*",
+ "*.engine.*",
+ "*.triggers.*",
+]
+# 工作流节点的动态类型操作
+disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "operator", "call-overload", "return-value"]
+[[tool.mypy.overrides]]
+module = [
+ "services.*",
+ "chat.*",
+ "projects.*",
+]
+# 服务层放宽检查
+disable_error_code = ["attr-defined", "arg-type", "assignment", "misc", "var-annotated"]
+[[tool.mypy.overrides]]
+module = [
+ "*.urls",
+ "*.templates.*",
+ "*.approval",
+ "feishu.*",
+]
+# URL 路由和其他模块
+disable_error_code = ["attr-defined", "arg-type"]
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["attr-defined", "arg-type", "no-untyped-def"]
+[tool.django-stubs]
+django_settings_module = "friday.settings"
 [tool.ruff]
 line-length = 100
 target-version = "py314"
@@ -84,7 +154,7 @@ select = ["E", "F", "I", "W"]
 ignore = ["E501"]
 # uv 通过 [project.scripts] 定义 CLI 入口点
 # 常用命令直接使用 uv run：
-# uv run pyright . - 类型检查
+# uv run mypy . - 类型检查
 # uv run ruff check . - 代码检查
 # uv run ruff format . - 格式化代码
 # uv run pytest - 运行测试

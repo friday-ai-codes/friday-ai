@@ -58,9 +58,7 @@ class WebhookTriggerNode(BaseTriggerNode):
  """
  raw_payload = context.input_data.get("raw_payload", context.input_data)
  # Extract HTTP request components
- body = (
- raw_payload.get("body", {}) if isinstance(raw_payload, dict) else raw_payload
- )
+ body = raw_payload.get("body", {}) if isinstance(raw_payload, dict) else raw_payload
  headers = context.input_data.get("headers", {})
  query = context.input_data.get("query", {})
  webhook_path = context.input_data.get("webhook_path", "")

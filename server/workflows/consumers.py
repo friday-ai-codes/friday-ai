@@ -6,7 +6,7 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  Clients connect to: /ws/workflow-executions/{execution_id}/
  """
  async def connect(self):
- self.execution_id = self.scope["url_route"]["kwargs"]["execution_id"]
+ self.execution_id = self.scope["url_route"]["kwargs"]["execution_id"] # type: ignore[typeddict-item]
  self.group_name = f"execution_{self.execution_id}"
  # Join execution group
  await self.channel_layer.group_add(self.group_name, self.channel_name)

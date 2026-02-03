@@ -1,6 +1,5 @@
 """Repositories views."""
 import subprocess
-import tempfile
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -174,27 +173,35 @@ class TestConnectionView(APIView):
  ref = line.split("\t")[1]
  if ref.startswith("refs/heads/"):
  branches.append(ref.replace("refs/heads/", ""))
- return Response({
+ return Response(
+ {
  "success": True,
  "message": "连接成功",
  "branches": branches[:10], # Limit to first 10 branches
- })
+ }
+ )
  else:
  error_msg = result.stderr.strip
  # Clean up token from error message
  if token:
  error_msg = error_msg.replace(token, "***")
- return Response({
+ return Response(
+ {
  "success": False,
  "error": f"连接失败: {error_msg}",
- })
+ }
+ )
  except subprocess.TimeoutExpired:
- return Response({
+ return Response(
+ {
  "success": False,
  "error": "连接超时，请检查网络或代理配置",
- })
+ }
+ )
  except Exception as e:
- return Response({
+ return Response(
+ {
  "success": False,
  "error": f"连接测试失败: {e!s}",
- })
+ }
+ )

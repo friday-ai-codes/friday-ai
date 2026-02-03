@@ -64,9 +64,7 @@ class BaseTriggerNode(BaseNode):
  error=str(e),
  execution_id=context.execution_id,
  )
- raise TriggerParseError(
- f"Failed to parse {self.node_type} payload: {e}"
- ) from e
+ raise TriggerParseError(f"Failed to parse {self.node_type} payload: {e}") from e
  @abstractmethod
  async def parse_payload(self, context: ExecutionContext) -> dict:
  """Extract structured data from raw_payload.

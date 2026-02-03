@@ -211,7 +211,9 @@ class EmbeddingService:
  "message": str(e),
  }
  @classmethod
- async def _generate_embedding_with_config(cls, api_url: str, model: str, text: str) -> list[float] | None:
+ async def _generate_embedding_with_config(
+ cls, api_url: str, model: str, text: str
+ ) -> list[float] | None:
  """Generate embedding using provided config instead of saved settings."""
  try:
  async with httpx.AsyncClient(timeout=60.0) as client:

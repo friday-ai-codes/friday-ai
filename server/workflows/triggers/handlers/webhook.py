@@ -40,7 +40,9 @@ class WebhookHandler(TriggerHandler):
  path=webhook_path,
  is_active=True,
  workflow__is_active=True,
- ).select_related("workflow").first
+ )
+ .select_related("workflow")
+ .first
  )
  if not config:
  errors.append(f"未找到有效的 Webhook 配置: {webhook_path}")
