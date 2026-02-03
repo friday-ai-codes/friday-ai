@@ -23,5 +23,6 @@ class SettingKeys:
  QDRANT_URL = "qdrant_url"
  QDRANT_API_KEY = "qdrant_api_key"
  EMBEDDING_API_URL = "embedding_api_url"
+ EMBEDDING_API_KEY = "embedding_api_key"
  EMBEDDING_MODEL = "embedding_model"
  EMBEDDING_DIMENSION = "embedding_dimension"

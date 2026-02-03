@@ -191,9 +191,14 @@ class EmbeddingHealthView(APIView):
  health = run_async(EmbeddingService.test_connection)
  return Response(health)
  def post(self, request):
- """Test Embedding API with provided config (before saving)."""
+ """Test Embedding API with provided config (before saving).
+ If api_key is not provided, use the saved api_key from system settings.
+ """
+ from common.encryption import decrypt_value
+ from system.models import SettingKeys, SystemSetting
  api_url = request.data.get("api_url")
  model = request.data.get("model", "BAAI/bge-m3")
+ api_key = request.data.get("api_key")
  if not api_url:
  return Response(
  {
@@ -201,5 +206,15 @@ class EmbeddingHealthView(APIView):
  "message": "Embedding API URL is required",
  }
  )
- health = run_async(EmbeddingService.test_connection_with_config(api_url, model))
+ # If api_key not provided, try to get from saved settings
+ if not api_key:
+ api_key_setting = SystemSetting.objects.filter(
+ key=SettingKeys.EMBEDDING_API_KEY
+ ).first
+ if api_key_setting and api_key_setting.value:
+ if api_key_setting.is_encrypted:
+ api_key = decrypt_value(api_key_setting.value)
+ else:
+ api_key = api_key_setting.value
+ health = run_async(EmbeddingService.test_connection_with_config(api_url, model, api_key))
  return Response(health)

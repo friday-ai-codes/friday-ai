@@ -1,5 +1,6 @@
 """Context retrieval node for RAG-based code search."""
 import structlog
+from asgiref.sync import sync_to_async
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from workflows.nodes.base import (
@@ -120,8 +121,8 @@ class ContextRetrievalNode(BaseNode):
  filters = {}
  if language_filter:
  filters["language"] = language_filter
- # 执行向量检索
- search_results = QdrantService.search(
+ # 执行向量检索（同步方法需要包装）
+ search_results = await sync_to_async(QdrantService.search, thread_sensitive=True)(
  repository_id,
  query_embedding,
  top_k=top_k,

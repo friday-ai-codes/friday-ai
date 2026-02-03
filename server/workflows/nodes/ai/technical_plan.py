@@ -41,6 +41,9 @@ class TechnicalPlanNode(BaseNode):
  "title": "模型",
  "description": "用于生成技术方案的 LLM 模型",
  "enum": [
+ "claude-opus-4-5-20251101",
+ "claude-sonnet-4-5-20251101",
+ "claude-haiku-4-5-20251001",
  "claude-3-opus-20240229",
  "claude-3-5-sonnet-20241022",
  "claude-3-sonnet-20240229",

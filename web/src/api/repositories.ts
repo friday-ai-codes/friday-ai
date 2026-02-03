@@ -155,10 +155,11 @@ export const repositoriesApi = {
  /**
  * Embedding API 健康检查（使用提供的配置，保存前测试）
  */
- testEmbeddingConnection: async (apiUrl: string, model: string): Promise<HealthCheckResponse> => {
+ testEmbeddingConnection: async (apiUrl: string, model: string, apiKey?: string): Promise<HealthCheckResponse> => {
  return post<HealthCheckResponse>('/repositories/health/embedding/', {
  api_url: apiUrl,
  model,
+ api_key: apiKey,
  })
  },
  // ==================== 连接测试 API ====================

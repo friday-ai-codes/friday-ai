@@ -233,6 +233,7 @@ onUnmounted( => {
  </p>
  </div>
  </div>
+ <div class="flex gap-2">
  <Button:disabled="triggering"
  @click="triggerIndex"
  >
@@ -240,6 +241,16 @@ onUnmounted( => {
  <span v-else class="icon-[lucide--refresh-cw] mr-2" />
  重试
  </Button>
+ <Button
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="deleting"
+ @click="deleteIndex"
+ >
+ <span v-if="deleting" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--trash-2] mr-2" />
+ 删除索引
+ </Button>
+ </div>
  </div>
  <!-- 未索引状态 -->
  <div v-else class="text-center py-6">

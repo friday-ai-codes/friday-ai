@@ -21,15 +21,18 @@ const testingEmbedding = ref(false)
 const qdrantUrlValue = ref('')
 const qdrantApiKeyValue = ref('')
 const embeddingApiUrlValue = ref('')
+const embeddingApiKeyValue = ref('')
 const embeddingModelValue = ref('')
 const embeddingDimensionValue = ref('')
 // 跟踪用户是否修改了值
 const qdrantUrlDirty = ref(false)
 const qdrantApiKeyDirty = ref(false)
 const embeddingApiUrlDirty = ref(false)
+const embeddingApiKeyDirty = ref(false)
 const embeddingModelDirty = ref(false)
 const embeddingDimensionDirty = ref(false)
 const showQdrantApiKey = ref(false)
+const showEmbeddingApiKey = ref(false)
 // 健康状态
 const qdrantHealth = ref<{ status: string, message?: string } | null>(null)
 const embeddingHealth = ref<{ status: string, message?: string } | null>(null)
@@ -49,6 +52,11 @@ const settingsMeta: Record<string, { label: string, description: string, placeho
  label: 'Embedding API 地址',
  description: '用于生成向量的 Embedding API 端点',
  placeholder: 'http://localhost:8080/v1/embeddings',
+ },
+ [SettingKey.EMBEDDING_API_KEY]: {
+ label: 'Embedding API Key',
+ description: 'Embedding 服务的 API 密钥（可选，加密存储）',
+ placeholder: '留空表示无需认证',
  },
  [SettingKey.EMBEDDING_MODEL]: {
  label: 'Embedding 模型',
@@ -75,6 +83,7 @@ async function loadSettings {
  qdrantUrlValue.value = getValue(SettingKey.QDRANT_URL)
  qdrantApiKeyValue.value = getMasked(SettingKey.QDRANT_API_KEY)
  embeddingApiUrlValue.value = getValue(SettingKey.EMBEDDING_API_URL)
+ embeddingApiKeyValue.value = getMasked(SettingKey.EMBEDDING_API_KEY)
  embeddingModelValue.value = getValue(SettingKey.EMBEDDING_MODEL)
  embeddingDimensionValue.value = getValue(SettingKey.EMBEDDING_DIMENSION)
  // 重置脏标记
@@ -92,6 +101,7 @@ function resetDirtyFlags {
  qdrantUrlDirty.value = false
  qdrantApiKeyDirty.value = false
  embeddingApiUrlDirty.value = false
+ embeddingApiKeyDirty.value = false
  embeddingModelDirty.value = false
  embeddingDimensionDirty.value = false
 }
@@ -106,10 +116,12 @@ async function saveAllSettings {
  promises.push(updateSetting(SettingKey.QDRANT_API_KEY, qdrantApiKeyValue.value.trim))
  if (embeddingApiUrlDirty.value && embeddingApiUrlValue.value.trim)
  promises.push(updateSetting(SettingKey.EMBEDDING_API_URL, embeddingApiUrlValue.value.trim))
+ if (embeddingApiKeyDirty.value && embeddingApiKeyValue.value.trim)
+ promises.push(updateSetting(SettingKey.EMBEDDING_API_KEY, embeddingApiKeyValue.value.trim))
  if (embeddingModelDirty.value && embeddingModelValue.value.trim)
  promises.push(updateSetting(SettingKey.EMBEDDING_MODEL, embeddingModelValue.value.trim))
- if (embeddingDimensionDirty.value && embeddingDimensionValue.value.trim)
- promises.push(updateSetting(SettingKey.EMBEDDING_DIMENSION, embeddingDimensionValue.value.trim))
+ if (embeddingDimensionDirty.value && embeddingDimensionValue.value)
+ promises.push(updateSetting(SettingKey.EMBEDDING_DIMENSION, String(embeddingDimensionValue.value)))
  if (promises.length === 0) {
  toast.info('没有需要保存的更改')
  return
@@ -129,7 +141,7 @@ async function saveAllSettings {
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {
  return qdrantUrlDirty.value || qdrantApiKeyDirty.value || embeddingApiUrlDirty.value
- || embeddingModelDirty.value || embeddingDimensionDirty.value
+ || embeddingApiKeyDirty.value || embeddingModelDirty.value || embeddingDimensionDirty.value
 }
 // 测试 Qdrant 连接
 async function testQdrantConnection {
@@ -164,7 +176,11 @@ async function testEmbeddingConnection {
  embeddingHealth.value = { status: 'error', message: 'Embedding API URL is required' }
  return
  }
- const result = await repositoriesApi.testEmbeddingConnection(apiUrl, model)
+ const result = await repositoriesApi.testEmbeddingConnection(
+ apiUrl,
+ model,
+ embeddingApiKeyDirty.value ? embeddingApiKeyValue.value.trim: undefined,
+ )
  embeddingHealth.value = result
  if (result.status === 'healthy') {
  toast.success('Embedding API 连接成功')
@@ -301,7 +317,7 @@ onMounted( => {
  v-if="embeddingHealth":class="[getHealthStatusIcon(embeddingHealth.status), getHealthStatusColor(embeddingHealth.status)]"
  />
  </div>
- <div class="grid gap-4 md:grid-cols-3">
+ <div class="grid gap-4 md:grid-cols-2">
  <!-- Embedding API URL -->
  <div class="space-y-2">
  <Label for="embedding-api-url">{{ settingsMeta[SettingKey.EMBEDDING_API_URL].label }}</Label>
@@ -315,6 +331,29 @@ onMounted( => {
  @input="embeddingApiUrlDirty = true"
  />
  </div>
+ </div>
+ <!-- Embedding API Key -->
+ <div class="space-y-2">
+ <Label for="embedding-api-key">{{ settingsMeta[SettingKey.EMBEDDING_API_KEY].label }}</Label>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key] text-muted-foreground" />
+ <Input
+ id="embedding-api-key"
+ v-model="embeddingApiKeyValue":type="showEmbeddingApiKey ? 'text': 'password'":placeholder="settingsMeta[SettingKey.EMBEDDING_API_KEY].placeholder"
+ class="pl-10 pr-10 bg-muted/30 border-border/50 focus:border-primary/50"
+ @input="embeddingApiKeyDirty = true"
+ />
+ <button
+ type="button"
+ class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+ @click="showEmbeddingApiKey = !showEmbeddingApiKey"
+ >
+ <span:class="showEmbeddingApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
+ </button>
+ </div>
+ <p class="text-xs text-muted-foreground">
+ {{ settingsMeta[SettingKey.EMBEDDING_API_KEY].description }}
+ </p>
  </div>
  <!-- Embedding Model -->
  <div class="space-y-2">
