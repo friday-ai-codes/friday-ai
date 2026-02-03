@@ -18,12 +18,23 @@ class MockWorkItem:
  work_item_type: str = "story"
  current_status: str = "created"
  fields: dict[str, Any] = field(default_factory=dict)
+ description: str = "Test work item description"
+ status: str = "created"
+ project_key: str = "e2e-test-project"
+ raw_response: str | None = None # Required by feishu.views
  def __post_init__(self) -> None:
  if not self.fields:
  self.fields = {
  "name": self.name,
  "status": self.current_status,
  }
+ # Set raw_response to a valid JSON string if not provided
+ if self.raw_response is None:
+ self.raw_response = json.dumps({
+ "id": self.work_item_id,
+ "name": self.name,
+ "description": self.description,
+ })
 @dataclass
 class MockMRResult:
  """Mock merge request creation result."""
