@@ -329,3 +329,33 @@ def get_execution_node_outputs(execution: WorkflowExecution) -> dict[str, Any]:
  node_name = node_exec.node.name
  outputs[node_name] = node_exec.output_data
  return outputs
+async def trigger_workflow_sync(
+ workflow: Workflow,
+ input_data: dict[str, Any],
+ trigger_type: str = "feishu",
+ trigger_data: dict[str, Any] | None = None,
+) -> WorkflowExecution:
+ """Trigger workflow execution synchronously for testing.
+ Unlike webhook-triggered execution which runs in a background thread,
+ this runs the workflow in the current async context, ensuring:
+ 1. Database transaction is shared with test
+ 2. Mocks patched in test context are visible
+ 3. No race conditions with test assertions
+ Args:
+ workflow: Workflow to execute
+ input_data: Input data for the workflow
+ trigger_type: Trigger type (default: "feishu")
+ trigger_data: Optional trigger metadata
+ Returns:
+ WorkflowExecution after completion/suspension
+ """
+ from workflows.engine.scheduler import WorkflowEngine
+ engine = WorkflowEngine
+ execution = await engine.start_execution(
+ workflow=workflow,
+ input_data=input_data,
+ trigger_type=trigger_type,
+ trigger_data=trigger_data or {},
+ run_sync=True, # Run in same context as test
+ )
+ return execution
