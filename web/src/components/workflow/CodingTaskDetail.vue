@@ -32,6 +32,7 @@ const statusColors: Record<string, string> = {
  executing: 'bg-blue-100 text-blue-700',
  code_review: 'bg-yellow-100 text-yellow-700',
  merged: 'bg-green-100 text-green-700',
+ partial_success: 'bg-amber-100 text-amber-700',
  failed: 'bg-red-100 text-red-700',
 }
 // 状态中文映射
@@ -42,6 +43,7 @@ const statusLabels: Record<string, string> = {
  executing: '执行中',
  code_review: '代码评审',
  merged: '已合并',
+ partial_success: '部分成功',
  failed: '失败',
 }
 function getStatusColor(status: string) {
@@ -187,6 +189,84 @@ async function handleRejectCode {
  </div>
  </div>
  <Separator v-if="task.branch_name || task.commit_sha || task.pr_url" />
+ <!-- MR Section -->
+ <div v-if="task.pr_url || task.status === 'partial_success'" class="space-y-3">
+ <h4 class="text-sm font-medium flex items-center gap-2">
+ <span class="icon-[lucide--git-pull-request] w-4 text-primary" />
+ Merge Request
+ </h4>
+ <!-- MR Link Card -->
+ <a
+ v-if="task.pr_url":href="task.pr_url"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="block rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5
+ border border-emerald-200 dark:border-emerald-800
+ hover:from-emerald-500/20 hover:to-teal-500/10
+ transition-all duration-300 group"
+ >
+ <div class="flex items-center justify-between">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-lg bg-emerald-500/20">
+ <span class="icon-[lucide--git-pull-request] w-5 text-emerald-600" />
+ </div>
+ <div>
+ <p class="font-medium text-emerald-700 dark:text-emerald-400">
+ 查看 Merge Request
+ </p>
+ <p class="text-xs text-muted-foreground truncate max-w-[300px]">
+ {{ task.pr_url }}
+ </p>
+ </div>
+ </div>
+ <span
+ class="icon-[lucide--external-link] w-4 text-emerald-500
+ group-hover:translate-x-1 transition-transform"
+ />
+ </div>
+ <!-- Conflict warning -->
+ <div
+ v-if="task.mr_has_conflicts"
+ class="mt-3 rounded-lg bg-amber-100 dark:bg-amber-900/30
+ flex items-center gap-2"
+ >
+ <span class="icon-[lucide--alert-triangle] w-4 text-amber-500" />
+ <span class="text-sm text-amber-700 dark:text-amber-400">
+ 此 MR 有合并冲突，需要人工解决
+ </span>
+ </div>
+ </a>
+ <!-- Partial success guidance -->
+ <div
+ v-else-if="task.status === 'partial_success'"
+ class=" rounded-xl bg-amber-50 dark:bg-amber-900/20
+ border border-amber-200 dark:border-amber-800"
+ >
+ <div class="flex items-start gap-3">
+ <div class=" rounded-lg bg-amber-500/20">
+ <span class="icon-[lucide--alert-triangle] w-5 text-amber-500" />
+ </div>
+ <div class="flex-1">
+ <p class="font-medium text-amber-700 dark:text-amber-400">
+ MR 创建失败
+ </p>
+ <p class="text-sm text-muted-foreground mt-1">
+ 代码已成功推送到分支，但自动创建 MR 失败。
+ </p>
+ <div v-if="task.branch_name" class="mt-3 rounded-lg bg-card/50">
+ <p class="text-xs text-muted-foreground">
+ 分支名称
+ </p>
+ <code class="text-sm">{{ task.branch_name }}</code>
+ </div>
+ <p class="text-xs text-muted-foreground mt-3">
+ 请在 Git 平台手动创建 MR，或检查仓库 API 配置。
+ </p>
+ </div>
+ </div>
+ </div>
+ </div>
+ <Separator v-if="task.pr_url || task.status === 'partial_success'" />
  <!-- Prompt -->
  <div class="space-y-2">
  <h4 class="text-sm font-medium">
