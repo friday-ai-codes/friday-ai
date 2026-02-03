@@ -141,17 +141,61 @@ const runningCount = computed( =>
  {{ task.error_message }}
  </p>
  </div>
+ <!-- Partial success info -->
+ <div
+ v-if="task.status === 'partial_success'"
+ class="mt-2 rounded-lg bg-amber-50 dark:bg-amber-900/20
+ border border-amber-200 dark:border-amber-800"
+ >
+ <div class="flex items-start gap-2">
+ <span class="icon-[lucide--alert-triangle] w-4 text-amber-500 shrink-0 mt-0.5" />
+ <div class="flex-1 min-w-0">
+ <p class="text-sm font-medium text-amber-700 dark:text-amber-400">
+ 代码已推送，但 MR 创建失败
+ </p>
+ <p v-if="task.branch_name" class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+ 分支: <code class="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/40 rounded">{{ task.branch_name }}</code>
+ </p>
+ <p v-if="task.error_message" class="text-xs text-amber-600 dark:text-amber-500 mt-1">
+ {{ task.error_message }}
+ </p>
+ <p class="text-xs text-muted-foreground mt-2">
+ 请手动创建 MR 或检查仓库配置
+ </p>
  </div>
- <!-- PR Link -->
+ </div>
+ </div>
+ </div>
+ <!-- MR Status Section -->
+ <div class="flex items-center gap-2 shrink-0">
+ <!-- MR Link with status -->
  <a
  v-if="task.pr_url":href="task.pr_url"
  target="_blank"
  rel="noopener noreferrer"
- class="shrink-0 .5 hover:bg-accent rounded"
+ class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg
+ bg-gradient-to-r from-emerald-500/20 to-teal-500/10
+ text-emerald-700 dark:text-emerald-400
+ hover:from-emerald-500/30 hover:to-teal-500/20
+ transition-all duration-300"
  @click.stop
  >
- <ExternalLink class="w-4 text-primary" />
+ <span class="icon-[lucide--git-pull-request] w-4 " />
+ <span class="text-xs font-medium">MR</span>
+ <ExternalLink class="w-3 " />
  </a>
+ <!-- Conflict warning badge -->
+ <div
+ v-if="task.pr_url && task.mr_has_conflicts"
+ class="inline-flex items-center gap-1 px-2 py-1 rounded-lg
+ bg-gradient-to-r from-amber-500/20 to-orange-500/10
+ text-amber-600 dark:text-amber-400"
+ title="MR 有合并冲突，需要人工解决"
+ >
+ <span class="icon-[lucide--alert-triangle] w-3 " />
+ <span class="text-[10px]">冲突</span>
+ </div>
+ </div>
  </div>
  </div>
  </CardContent>
