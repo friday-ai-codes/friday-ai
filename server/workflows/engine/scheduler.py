@@ -176,7 +176,37 @@ class WorkflowEngine:
  )
  )
  if waiting_nodes:
- # 有节点在等待审批或等待事件，等待状态变化
+ # Check if ALL remaining pending nodes are in waiting states
+ # If so, we can truly suspend and release resources
+ all_blocked = True
+ for node_id in pending_nodes:
+ # Check if this pending node is in waiting state
+ ne = await sync_to_async(
+ lambda nid=node_id: NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id=nid,
+ ).first
+ )
+ if ne and ne.status not in [
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ]:
+ all_blocked = False
+ break
+ if all_blocked:
+ # All paths are blocked on external events - truly suspend
+ logger.info(
+ "workflow_suspended",
+ execution_id=str(execution.id),
+ waiting_nodes=len(waiting_nodes),
+ )
+ await sync_to_async(execution.mark_suspended)
+ await self.hooks.trigger("execution_suspended", execution=execution)
+ # Exit the loop - webhook will restart via _continue_after_node
+ return
+ else:
+ # Some nodes might become ready (e.g., approval being processed)
+ # Keep polling
  await asyncio.sleep(5)
  # 刷新状态
  for ne in waiting_nodes:
