@@ -48,6 +48,10 @@ dependencies = [
  "django-stubs-ext>=5.1.0",
  "djangorestframework-stubs>=3.15.0",
  "jsonschema>=4.23.0",
+ # Git platform integrations
+ "python-gitlab>=4.0.0",
+ "PyGithub>=2.0.0",
+ "tenacity>=8.2.0",
 ]
 [build-system]
 requires = ["hatchling"]
