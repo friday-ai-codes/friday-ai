@@ -1,8 +1,33 @@
-"""Feishu event schemas for variable extraction.
-Defines JSON schemas for different Feishu webhook event types,
-used by the frontend to display data structure previews.
+"""Workflow schemas for event handling and AI plan validation.
+Defines JSON schemas for:
+- Feishu webhook event types (used by frontend for data structure previews)
+- Technical plan validation (used by AI planning nodes)
 """
 from typing import Any
+from .technical_plan import (
+ TECHNICAL_PLAN_JSON_SCHEMA,
+ ExecutionTask,
+ TaskFile,
+ TechnicalPlan,
+ dict_to_technical_plan,
+ validate_technical_plan,
+)
+__all__ = [
+ # Technical plan schema
+ "TechnicalPlan",
+ "ExecutionTask",
+ "TaskFile",
+ "TECHNICAL_PLAN_JSON_SCHEMA",
+ "validate_technical_plan",
+ "dict_to_technical_plan",
+ # Feishu event schemas
+ "EVENT_SCHEMAS",
+ "QUICK_FIELDS",
+ "get_event_schema",
+ "get_all_event_schemas",
+ "get_quick_fields",
+ "get_event_types",
+]
 # 常用字段快捷映射
 QUICK_FIELDS = {
  "prd_url": {
