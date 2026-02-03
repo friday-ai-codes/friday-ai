@@ -15,7 +15,7 @@ interface ConditionGroup {
 }
 const props = defineProps<{
  modelValue: ConditionGroup
- availableFields?: Array<{ key: string; name: string; type?: string }>
+ availableFields?: Array<{ key: string, name: string, type?: string }>
 }>
 const emit = defineEmits<{
  (e: 'update:modelValue', value: ConditionGroup): void
@@ -76,8 +76,12 @@ function removeCondition(index: number) {
  class=" rounded-lg border border-border/50 bg-background/50 px-3 text-sm focus:border-primary/50 focus:outline-none transition-colors"
  @change="updateLogic(($event.target as HTMLSelectElement).value as 'and' | 'or')"
  >
- <option value="and">所有</option>
- <option value="or">任一</option>
+ <option value="and">
+ 所有
+ </option>
+ <option value="or">
+ 任一
+ </option>
  </select>
  <Label class="text-sm text-muted-foreground">条件时继续</Label>
  </div>
@@ -103,7 +107,9 @@ function removeCondition(index: number) {
  class="w-full rounded-lg border border-border/50 bg-background/50 px-2 text-sm"
  @change="updateCondition(index, { field: ($event.target as HTMLSelectElement).value })"
  >
- <option value="">选择字段</option>
+ <option value="">
+ 选择字段
+ </option>
  <option v-for="field in availableFields":key="field.key":value="field.key">
  {{ field.name }}
  </option>

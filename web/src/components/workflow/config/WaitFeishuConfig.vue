@@ -16,7 +16,7 @@ const emit = defineEmits<{
 const workItemId = ref((props.config?.work_item_id as string) || '{{trigger.work_item_id}}')
 const workItemType = ref((props.config?.work_item_type as string) || 'story')
 const projectKey = ref((props.config?.project_key as string) || '{{trigger.project_key}}')
-const condition = ref((props.config?.condition as { logic: 'and' | 'or'; conditions: Array<{ field: string; operator: string; value: string }> }) || { logic: 'and' as const, conditions: })
+const condition = ref((props.config?.condition as { logic: 'and' | 'or', conditions: Array<{ field: string, operator: string, value: string }> }) || { logic: 'and' as const, conditions: })
 const timeoutSeconds = ref((props.config?.timeout_seconds as number) || 0)
 const timeoutAction = ref((props.config?.timeout_action as string) || 'fail')
 // Watch for external config changes
@@ -89,8 +89,8 @@ const isCustomTimeout = computed( => {
  placeholder="{{trigger.work_item_id}}"
  class="bg-background/50"
  />
- <p class="text-xs text-muted-foreground">
- 支持变量引用，如 {{ '{{trigger.work_item_id}}' }}
+ <p v-pre class="text-xs text-muted-foreground">
+ 支持变量引用，如 {{trigger.work_item_id}}
  </p>
  </div>
  <div class="grid grid-cols-2 gap-3">
@@ -108,10 +108,18 @@ const isCustomTimeout = computed( => {
  v-model="workItemType"
  class="w-full rounded-xl border border-border/50 bg-background/50 px-3 text-sm"
  >
- <option value="story">需求 (story)</option>
- <option value="task">任务 (task)</option>
- <option value="bug">缺陷 (bug)</option>
- <option value="epic">史诗 (epic)</option>
+ <option value="story">
+ 需求 (story)
+ </option>
+ <option value="task">
+ 任务 (task)
+ </option>
+ <option value="bug">
+ 缺陷 (bug)
+ </option>
+ <option value="epic">
+ 史诗 (epic)
+ </option>
  </select>
  </div>
  </div>

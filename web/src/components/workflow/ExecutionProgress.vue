@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NodeExecution, WorkflowExecution } from '~/stores/useExecutionsStore'
+import { useIntervalFn } from '@vueuse/core'
 import {
  AlertCircle,
  CheckCircle2,
@@ -10,12 +11,11 @@ import {
  XCircle,
 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { Progress } from '~/components/ui/progress'
-import { Button } from '~/components/ui/button'
-import { cn } from '~/lib/utils'
 import { skipNodeWait, triggerNodeResume } from '~/api/workflow'
+import { Button } from '~/components/ui/button'
+import { Progress } from '~/components/ui/progress'
+import { cn } from '~/lib/utils'
 interface Props {
  execution: WorkflowExecution
  nodeExecutions: NodeExecution
@@ -136,28 +136,42 @@ useIntervalFn( => {
 }, 1000)
 // Calculate waiting duration for waiting_event nodes
 function getWaitingDuration(node: NodeExecution): string {
- if (node.status !== 'waiting_event') return ''
+ if (node.status !== 'waiting_event')
+ return ''
  const startedAt = node.started_at ? new Date(node.started_at): null
- if (!startedAt) return ''
+ if (!startedAt)
+ return ''
  const duration = Math.floor((now.value.getTime - startedAt.getTime) / 1000)
- if (duration < 60) return `${duration} 秒`
- if (duration < 3600) return `${Math.floor(duration / 60)} 分钟`
- if (duration < 86400) return `${Math.floor(duration / 3600)} 小时`
+ if (duration < 60)
+ return `${duration} 秒`
+ if (duration < 3600)
+ return `${Math.floor(duration / 60)} 分钟`
+ if (duration < 86400)
+ return `${Math.floor(duration / 3600)} 小时`
  return `${Math.floor(duration / 86400)} 天`
 }
 // Extract waiting condition summary from node approval_data
 function getWaitingCondition(node: NodeExecution): string {
  const approvalData = node.approval_data as Record<string, unknown> | undefined
- if (!approvalData?.condition) return ''
+ if (!approvalData?.condition)
+ return ''
  const condition = approvalData.condition as {
  conditions?: Array<{ field: string, operator: string, value?: string }>
  logic?: string
  }
- if (!condition.conditions || condition.conditions.length === 0) return ''
+ if (!condition.conditions || condition.conditions.length === 0)
+ return ''
  const firstCondition = condition.conditions[0]
  const operatorLabels: Record<string, string> = {
- eq: '=', ne: '!=', gt: '>', gte: '>=', lt: '<', lte: '<=',
- contains: '包含', is_empty: '为空', is_not_empty: '不为空',
+ eq: '=',
+ ne: '!=',
+ gt: '>',
+ gte: '>=',
+ lt: '<',
+ lte: '<=',
+ contains: '包含',
+ is_empty: '为空',
+ is_not_empty: '不为空',
  }
  const op = operatorLabels[firstCondition.operator] || firstCondition.operator
  if (condition.conditions.length === 1) {
@@ -168,37 +182,45 @@ function getWaitingCondition(node: NodeExecution): string {
 // Extract success/failed counts from node output for partial_success nodes
 function getTaskCounts(node: NodeExecution): { success: number, failed: number } | null {
  const output = node.output_data
- if (!output) return null
+ if (!output)
+ return null
  const successCount = typeof output.success_count === 'number' ? output.success_count: 0
  const failedCount = typeof output.failed_count === 'number' ? output.failed_count: 0
- if (successCount === 0 && failedCount === 0) return null
+ if (successCount === 0 && failedCount === 0)
+ return null
  return { success: successCount, failed: failedCount }
 }
 // Manual intervention handlers
 const isOperating = ref(false)
 async function handleSkipWait(node: NodeExecution) {
- if (isOperating.value) return
+ if (isOperating.value)
+ return
  try {
  isOperating.value = true
  await skipNodeWait(props.execution.id, node.id)
  toast.success('已跳过等待，工作流继续执行')
- } catch (error: unknown) {
+ }
+ catch (error: unknown) {
  const errorMessage = error instanceof Error ? error.message: '操作失败'
  toast.error(errorMessage)
- } finally {
+ }
+ finally {
  isOperating.value = false
  }
 }
 async function handleTriggerResume(node: NodeExecution) {
- if (isOperating.value) return
+ if (isOperating.value)
+ return
  try {
  isOperating.value = true
  await triggerNodeResume(props.execution.id, node.id)
  toast.success('已手动触发唤醒，工作流继续执行')
- } catch (error: unknown) {
+ }
+ catch (error: unknown) {
  const errorMessage = error instanceof Error ? error.message: '操作失败'
  toast.error(errorMessage)
- } finally {
+ }
+ finally {
  isOperating.value = false
  }
 }
@@ -343,7 +365,8 @@ async function handleTriggerResume(node: NodeExecution) {
 </template>
 <style scoped>
 @keyframes pulse-glow {
- 0%, 100% {
+ 0%,
+ 100% {
  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
  }
  50% {

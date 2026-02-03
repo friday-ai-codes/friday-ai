@@ -17,7 +17,7 @@ const emit = defineEmits<{
  (e: 'click', workflow: Workflow): void
  (e: 'execute', workflow: Workflow): void
  (e: 'delete', workflow: Workflow): void
- (e: 'toggle-active', workflow: Workflow, isActive: boolean): void
+ (e: 'toggleActive', workflow: Workflow, isActive: boolean): void
 }>
 function onCardClick(workflow: Workflow) {
  emit('click', workflow)
@@ -33,7 +33,7 @@ function onDeleteClick(e: Event, workflow: Workflow) {
  emit('delete', workflow)
 }
 function onToggleActive(checked: boolean, workflow: Workflow) {
- emit('toggle-active', workflow, checked)
+ emit('toggleActive', workflow, checked)
 }
 </script>
 <template>

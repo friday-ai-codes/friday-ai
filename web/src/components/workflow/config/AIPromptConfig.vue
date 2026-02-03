@@ -3,7 +3,6 @@ import type { AIPromptConfig } from '~/types/workflow'
 import { computed } from 'vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import TemplateCode from '~/components/ui/TemplateCode.vue'
 import {
  Select,
  SelectContent,
@@ -92,9 +91,9 @@ const temperature = computed({
  class="font-mono text-sm"
  />
  <p class="text-xs text-muted-foreground">
- 支持模板变量：<TemplateCode>global.xxx</TemplateCode>、
- <TemplateCode>input.xxx</TemplateCode>、
- <TemplateCode>nodes.nodeId.xxx</TemplateCode>
+ 支持模板变量：<code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ global.xxx }}</code>、
+ <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ input.xxx }}</code>、
+ <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ nodes.nodeId.xxx }}</code>
  </p>
  </div>
  <!-- 温度 -->

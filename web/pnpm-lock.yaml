@@ -28,6 +28,33 @@ catalogs:
  '@tailwindcss/vite':
  specifier: ^4.1.18
  version: 4.1.18
+ '@tanstack/vue-query':
+ specifier: 5.92.9
+ version: 5.92.9
+ '@tiptap/extension-code-block-lowlight':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/extension-link':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/extension-placeholder':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/extension-task-item':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/extension-task-list':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/extension-typography':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/starter-kit':
+ specifier: 3.18.0
+ version: 3.18.0
+ '@tiptap/vue-3':
+ specifier: 3.18.0
+ version: 3.18.0
  '@types/node':
  specifier: ^24.10.8
  version: 24.10.8
@@ -79,6 +106,9 @@ catalogs:
  happy-dom:
  specifier: ^20.3.0
  version: 20.3.0
+ lowlight:
+ specifier: 3.3.0
+ version: 3.3.0
  lucide-vue-next:
  specifier: ^0.562.0
  version: 0.562.0
@@ -153,31 +183,31 @@ importers:
  .:
  dependencies:
  '@tanstack/vue-query':
- specifier: ^5.92.9
+ specifier: 'catalog:'
  version: 5.92.9(vue@3.5.26(typescript@5.9.3))
  '@tiptap/extension-code-block-lowlight':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/extension-code-block@3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(highlight.js@11.11.1)(lowlight@3.3.0)
  '@tiptap/extension-link':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)
  '@tiptap/extension-placeholder':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/extensions@3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0))
  '@tiptap/extension-task-item':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/extension-list@3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0))
  '@tiptap/extension-task-list':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/extension-list@3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0))
  '@tiptap/extension-typography':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))
  '@tiptap/starter-kit':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0
  '@tiptap/vue-3':
- specifier: ^3.18.0
+ specifier: 'catalog:'
  version: 3.18.0(@floating-ui/dom@1.7.4)(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(vue@3.5.26(typescript@5.9.3))
  '@vee-validate/zod':
  specifier: 'catalog:'
@@ -207,7 +237,7 @@ importers:
  specifier: 'catalog:'
  version: 2.1.1
  lowlight:
- specifier: ^3.3.0
+ specifier: 'catalog:'
  version: 3.3.0
  lucide-vue-next:
  specifier: 'catalog:'

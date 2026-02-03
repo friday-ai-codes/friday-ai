@@ -41,7 +41,7 @@ const editor = useEditor({
 // 监听内容变化
 watch( => props.content, (value) => {
  if (editor.value && editor.value.getHTML !== value) {
- editor.value.commands.setContent(value, false)
+ editor.value.commands.setContent(value, { emitUpdate: false })
  }
 })
 onBeforeUnmount( => {

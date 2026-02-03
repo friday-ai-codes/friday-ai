@@ -5,19 +5,22 @@ const props = defineProps<{
  plan: Record<string, unknown> | null
 }>
 const formattedJson = computed( => {
- if (!props.plan) return ''
+ if (!props.plan)
+ return ''
  return JSON.stringify(props.plan, null, 2)
 })
 const copied = ref(false)
 async function copyToClipboard {
- if (!formattedJson.value) return
+ if (!formattedJson.value)
+ return
  try {
  await navigator.clipboard.writeText(formattedJson.value)
  copied.value = true
  setTimeout( => {
  copied.value = false
  }, 2000)
- } catch {
+ }
+ catch {
  // Fallback for older browsers
  const textarea = document.createElement('textarea')
  textarea.value = formattedJson.value
@@ -39,8 +42,12 @@ async function copyToClipboard {
  <div class=" rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4">
  <span class="icon-[lucide--file-code] text-4xl" />
  </div>
- <p class="text-base font-medium">暂无技术方案</p>
- <p class="text-sm mt-1">技术方案生成后将在此显示</p>
+ <p class="text-base font-medium">
+ 暂无技术方案
+ </p>
+ <p class="text-sm mt-1">
+ 技术方案生成后将在此显示
+ </p>
  </div>
  <!-- JSON view -->
  <div v-else>

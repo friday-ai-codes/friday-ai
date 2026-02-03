@@ -19,7 +19,6 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
-import TemplateCode from '~/components/ui/TemplateCode.vue'
 import { QUICK_FIELD_OPTIONS } from '~/types/workflow'
 // ============================================================================
 // Props & Emits
@@ -235,7 +234,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  提取的变量注册为全局变量后，可在后续节点的配置中通过模板语法引用：
  </p>
  <div class="bg-muted rounded-lg text-xs space-y-1">
- <TemplateCode:styled="false">global.workItemName</TemplateCode>
+ <code v-pre>{{ global.workItemName }}</code>
  <span class="text-muted-foreground ml-2">→ 响应式适配需求</span>
  </div>
  </div>
@@ -374,7 +373,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  <p class="text-xs text-muted-foreground">
  <span class="icon-[lucide--info] mr-1" />
  提取的变量可在后续节点中通过
- <TemplateCode>global.variableKey</TemplateCode>
+ <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ global.variableKey }}</code>
  语法引用
  </p>
  </div>

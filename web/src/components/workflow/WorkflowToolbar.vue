@@ -9,7 +9,7 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
-const props = defineProps<{
+defineProps<{
  workflowName?: string
  isActive?: boolean
  canUndo?: boolean

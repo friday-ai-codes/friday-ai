@@ -36,8 +36,10 @@ const showApiKey = ref(false)
 const apiKeyDirty = ref(false)
 const baseUrlDirty = ref(false)
 const gitProxyDirty = ref(false)
+// 本页面管理的设置键（向量索引设置由 VectorIndexSettings 组件管理）
+type ManagedSettingKey = SettingKey.ANTHROPIC_API_KEY | SettingKey.ANTHROPIC_BASE_URL | SettingKey.GIT_HTTP_PROXY
 // 设置项元数据
-const settingsMeta: Record<SettingKey, { label: string, description: string, placeholder: string }> = {
+const settingsMeta: Record<ManagedSettingKey, { label: string, description: string, placeholder: string }> = {
  [SettingKey.ANTHROPIC_API_KEY]: {
  label: 'API Key',
  description: '用于 Claude Code SDK 的 API 密钥，将加密存储',

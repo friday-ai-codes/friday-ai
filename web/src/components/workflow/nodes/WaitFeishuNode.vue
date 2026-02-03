@@ -44,10 +44,14 @@ const conditionSummary = computed( => {
 // 超时配置显示
 const timeoutDisplay = computed( => {
  const seconds = props.data?.config?.timeout_seconds
- if (seconds === -1) return '不超时'
- if (!seconds || seconds === 0) return '7 天'
- if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`
- if (seconds < 86400) return `${Math.round(seconds / 3600)} 小时`
+ if (seconds === -1)
+ return '不超时'
+ if (!seconds || seconds === 0)
+ return '7 天'
+ if (seconds < 3600)
+ return `${Math.round(seconds / 60)} 分钟`
+ if (seconds < 86400)
+ return `${Math.round(seconds / 3600)} 小时`
  return `${Math.round(seconds / 86400)} 天`
 })
 </script>

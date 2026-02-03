@@ -4,7 +4,6 @@ import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
 import {
- deleteSetting,
  getAllSettings,
  SettingKey,
  updateSetting,
@@ -126,26 +125,6 @@ async function saveAllSettings {
  finally {
  saving.value = false
  }
-}
-// 删除设置
-async function removeSetting(key: SettingKey) {
- saving.value = true
- try {
- await deleteSetting(key)
- toast.success('设置已删除')
- await loadSettings
- }
- catch (error) {
- console.error('Failed to delete setting:', error)
- toast.error('删除失败')
- }
- finally {
- saving.value = false
- }
-}
-// 获取设置状态
-function getSettingByKey(key: SettingKey): SettingRead | undefined {
- return settings.value.find(s => s.key === key)
 }
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {

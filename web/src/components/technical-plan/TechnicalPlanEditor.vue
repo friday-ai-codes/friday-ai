@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import MarkdownEditor from '~/components/ui/markdown-editor/MarkdownEditor.vue'
 import { Button } from '~/components/ui/button'
+import MarkdownEditor from '~/components/ui/markdown-editor/MarkdownEditor.vue'
 const props = defineProps<{
  markdown: string
  validationError?: string | null
@@ -35,7 +35,7 @@ function handleSave {
  <span class="icon-[lucide--alert-triangle]" />
  校验失败
  </span>
- <Button @click="handleSave" class="">
+ <Button class="" @click="handleSave">
  <span class="icon-[lucide--save] mr-2" />
  保存
  </Button>
@@ -57,8 +57,12 @@ function handleSave {
  <span class="icon-[lucide--alert-circle] text-lg text-destructive" />
  </div>
  <div class="flex-1">
- <p class="text-sm font-medium text-destructive">Schema 校验失败</p>
- <p class="text-sm text-muted-foreground mt-1">{{ validationError }}</p>
+ <p class="text-sm font-medium text-destructive">
+ Schema 校验失败
+ </p>
+ <p class="text-sm text-muted-foreground mt-1">
+ {{ validationError }}
+ </p>
  <p class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
  <span class="icon-[lucide--info]" />
  您仍可强制保存，但可能影响后续执行。
