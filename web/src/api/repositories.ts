@@ -19,6 +19,8 @@ export interface IndexStatusResponse {
  index_error: string | null
  index_total_chunks: number
  index_processed_chunks: number
+ index_write_total: number
+ index_write_processed: number
 }
 // 索引触发响应
 export interface IndexTriggerResponse {

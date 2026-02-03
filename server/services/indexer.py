@@ -34,6 +34,13 @@ def update_index_progress(repository_id: str, total: int, processed: int) -> Non
  index_total_chunks=total,
  index_processed_chunks=processed,
  )
+@sync_to_async
+def update_write_progress(repository_id: str, total: int, processed: int) -> None:
+ """Update Qdrant write progress in database."""
+ Repository.objects.filter(id=repository_id).update(
+ index_write_total=total,
+ index_write_processed=processed,
+ )
 logger = structlog.get_logger(__name__)
 class DiffAction(Enum):
  """Action to take for a file during incremental sync."""
@@ -126,9 +133,12 @@ class IndexerService:
  )
  # Upsert to Qdrant in batches
  batch_size = 100
- for i in range(0, len(points), batch_size):
+ total_points = len(points)
+ await update_write_progress(self.repository_id, total_points, 0)
+ for i in range(0, total_points, batch_size):
  batch = points[i: i + batch_size]
  await qdrant_upsert_vectors(self.repository_id, batch)
+ await update_write_progress(self.repository_id, total_points, min(i + batch_size, total_points))
  logger.info(
  "indexing_complete",
  repository_id=self.repository_id,
@@ -230,9 +240,12 @@ class IndexerService:
  }
  )
  batch_size = 100
- for i in range(0, len(points), batch_size):
+ total_points = len(points)
+ await update_write_progress(self.repository_id, total_points, 0)
+ for i in range(0, total_points, batch_size):
  batch = points[i: i + batch_size]
  await qdrant_upsert_vectors(self.repository_id, batch)
+ await update_write_progress(self.repository_id, total_points, min(i + batch_size, total_points))
  logger.info(
  "incremental_indexing_complete",
  repository_id=self.repository_id,

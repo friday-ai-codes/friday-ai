@@ -116,6 +116,14 @@ const progressPercent = computed( => {
  (indexStatus.value.index_processed_chunks / indexStatus.value.index_total_chunks) * 100,
  )
 })
+// 计算写入进度百分比
+const writePercent = computed( => {
+ if (!indexStatus.value || indexStatus.value.index_write_total === 0)
+ return 0
+ return Math.round(
+ (indexStatus.value.index_write_processed / indexStatus.value.index_write_total) * 100,
+ )
+})
 onMounted(async => {
  await loadIndexStatus
  if (indexStatus.value?.index_status === IndexStatus.INDEXING) {
@@ -199,23 +207,43 @@ onUnmounted( => {
  <p class="font-medium">
  正在构建索引
  </p>
- <p class="text-sm text-muted-foreground">
- <template v-if="indexStatus.index_total_chunks > 0">
- 正在生成向量: {{ indexStatus.index_processed_chunks }} / {{ indexStatus.index_total_chunks }} 块
- </template>
- <template v-else>
- 正在解析代码，请稍候...
- </template>
- </p>
  </div>
- <div v-if="indexStatus.index_total_chunks > 0" class="text-sm font-medium text-blue-500">
- {{ progressPercent }}%
  </div>
+ <!-- 生成向量进度 -->
+ <div class="space-y-1.5">
+ <div class="flex items-center justify-between text-sm">
+ <span class="text-muted-foreground">
+ <span class="icon-[lucide--cpu] mr-1.5" />
+ 生成向量
+ </span>
+ <span v-if="indexStatus.index_total_chunks > 0" class="font-medium text-blue-500">
+ {{ indexStatus.index_processed_chunks }} / {{ indexStatus.index_total_chunks }} ({{ progressPercent }}%)
+ </span>
+ <span v-else class="text-muted-foreground">解析中...</span>
  </div>
  <div class=" bg-muted rounded-full overflow-hidden">
  <div
  class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300":style="{ width: indexStatus.index_total_chunks > 0 ? `${progressPercent}%`: '30%' }":class="{ 'animate-pulse': indexStatus.index_total_chunks === 0 }"
  />
+ </div>
+ </div>
+ <!-- 写入 Qdrant 进度 -->
+ <div class="space-y-1.5">
+ <div class="flex items-center justify-between text-sm">
+ <span class="text-muted-foreground">
+ <span class="icon-[lucide--database] mr-1.5" />
+ 写入向量库
+ </span>
+ <span v-if="indexStatus.index_write_total > 0" class="font-medium text-emerald-500">
+ {{ indexStatus.index_write_processed }} / {{ indexStatus.index_write_total }} ({{ writePercent }}%)
+ </span>
+ <span v-else class="text-muted-foreground">等待中...</span>
+ </div>
+ <div class=" bg-muted rounded-full overflow-hidden">
+ <div
+ class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300":style="{ width: indexStatus.index_write_total > 0 ? `${writePercent}%`: '0%' }"
+ />
+ </div>
  </div>
  </div>
  <!-- 失败状态 -->
