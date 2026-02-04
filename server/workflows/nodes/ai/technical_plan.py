@@ -7,6 +7,7 @@ import os
 from typing import Any
 import httpx
 import structlog
+from asgiref.sync import sync_to_async
 from feishu.client import FeishuAPIError, create_feishu_client_for_project
 from workflows.nodes.base import (
  BaseNode,
@@ -298,17 +299,18 @@ class TechnicalPlanNode(BaseNode):
  project: Any,
  ) -> str:
  """调用 LLM 生成技术方案"""
- # 获取 API key
- api_key = None
- if project and hasattr(project, "anthropic_api_key"):
- api_key = project.anthropic_api_key
+ from services.claude_config import get_claude_config
+ # 使用 claude_config 服务获取配置
+ config = await sync_to_async(get_claude_config)(project)
+ api_key = config.api_key
+ base_url = config.base_url or "https://api.anthropic.com"
  if not api_key:
- api_key = os.environ.get("ANTHROPIC_API_KEY")
- if not api_key:
- raise ValueError("未配置 Anthropic API Key")
+ raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
+ # 确保 base_url 格式正确
+ base_url = base_url.rstrip("/")
  async with httpx.AsyncClient as client:
  response = await client.post(
- "https://api.anthropic.com/v1/messages",
+ f"{base_url}/v1/messages",
  headers={
  "x-api-key": api_key,
  "anthropic-version": "2023-06-01",
@@ -407,7 +409,11 @@ class TechnicalPlanNode(BaseNode):
  async def _get_project(self, context: ExecutionContext) -> Any:
  """获取关联的项目"""
  if context.workflow_execution:
- workflow = context.workflow_execution.workflow
+ @sync_to_async
+ def get_project_sync -> Any:
+ workflow = context.workflow_execution.workflow # type: ignore[union-attr]
  if workflow:
  return workflow.project
+ return None
+ return await get_project_sync
  return None
