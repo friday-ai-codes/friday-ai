@@ -1,24 +1,64 @@
 <script setup lang="ts">
 import type { ContextRetrievalConfig } from '~/types/workflow'
-import { Input } from '~/components/ui/input'
+import { computed, watch } from 'vue'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { SliderSingle } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import RepositoryPicker from '~/components/workflow/RepositoryPicker.vue'
 import VariablePicker from '~/components/workflow/VariablePicker.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { contextRetrievalConfigSchema } from '~/types/workflow'
+// ============================================================================
+// Types
+// ============================================================================
+interface Repository {
+ id: string
+ name: string
+}
 // ============================================================================
 // Props & Emits
 // ============================================================================
 interface Props {
  config: ContextRetrievalConfig
+ repositories?: Repository
 }
-const props = defineProps<Props>
+const props = withDefaults(defineProps<Props>, {
+ repositories: =>,
+})
 const emit = defineEmits<{
  (e: 'update:config', value: ContextRetrievalConfig): void
 }>
+// ============================================================================
+// Migration: legacy repository_id -> repositories array
+// ============================================================================
+const migratedConfig = computed( => {
+ const config = props.config
+ // Already has repositories array with items
+ if (Array.isArray(config.repositories) && config.repositories.length > 0) {
+ if ('repository_id' in config && config.repository_id !== undefined) {
+ // eslint-disable-next-line @typescript-eslint/no-unused-vars
+ const { repository_id, ...rest } = config
+ return rest as ContextRetrievalConfig
+ }
+ return config
+ }
+ // Migrate from legacy repository_id
+ if (config.repository_id) {
+ // eslint-disable-next-line @typescript-eslint/no-unused-vars
+ const { repository_id, ...rest } = config
+ return { ...rest, repositories: [config.repository_id] } as ContextRetrievalConfig
+ }
+ // No repositories configured
+ return { ...config, repositories: } as ContextRetrievalConfig
+})
+// Emit migrated config on first load (silent migration)
+watch(migratedConfig, (newConfig) => {
+ if (JSON.stringify(newConfig) !== JSON.stringify(props.config)) {
+ emit('update:config', newConfig)
+ }
+}, { immediate: true })
 // ============================================================================
 // Config Model
 // ============================================================================
@@ -28,12 +68,18 @@ const { field } = useConfigModel({
  schema: contextRetrievalConfigSchema,
 })
 const query = field('query', '')
-const repositoryId = field('repository_id', '')
 const topK = field('top_k', 10)
 const scoreThreshold = field('score_threshold', 0.5)
 const languageFilter = field('language_filter', '')
 const includeContent = field('include_content', true)
 const formatAsMarkdown = field('format_as_markdown', true)
+// ============================================================================
+// Repositories v-model for RepositoryPicker
+// ============================================================================
+const repositories = computed({
+ get: => props.config.repositories ??,
+ set: (val: string) => emit('update:config', { ...props.config, repositories: val }),
+})
 // ============================================================================
 // 语言选项
 // ============================================================================
@@ -50,22 +96,18 @@ const languageOptions = [
 </script>
 <template>
  <div class="space-y-4">
- <!-- 仓库 ID -->
+ <!-- 目标仓库 -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1">
- 仓库 ID
+ 目标仓库
  <span class="text-destructive">*</span>
  </Label>
- <div class="flex gap-2">
- <Input
- v-model="repositoryId"
- placeholder="仓库 UUID 或 {{ context.repository_id }}"
- class="font-mono text-sm flex-1"
+ <RepositoryPicker
+ v-model="repositories":repositories="props.repositories"
+ placeholder="选择要检索的代码仓库..."
  />
- <VariablePicker @select="v => repositoryId = v" />
- </div>
  <p class="text-xs text-muted-foreground">
- 指定要检索的代码仓库，支持模板变量
+ 选择要检索代码的仓库，支持多选
  </p>
  </div>
  <Separator />
