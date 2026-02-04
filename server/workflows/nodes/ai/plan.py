@@ -1,4 +1,6 @@
 """Plan generation and revision nodes."""
+import json
+from typing import Any
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -55,6 +57,27 @@ class GeneratePlanNode(BaseNode):
  "title": "模型",
  "default": "gpt-4",
  },
+ "repositories": {
+ "oneOf": [
+ {
+ "type": "array",
+ "title": "仓库列表",
+ "description": "目标仓库列表，用于分配任务",
+ "items": {"type": "string"},
+ },
+ {
+ "type": "string",
+ "title": "仓库引用",
+ "description": "模板变量如 {{global.repositories}}",
+ },
+ ],
+ },
+ "codebase_context": {
+ "type": "string",
+ "title": "代码库上下文",
+ "description": "从 ContextRetrievalNode 获取的相关代码上下文，支持模板变量",
+ "default": "",
+ },
  },
  "required": ["requirements"],
  }
@@ -70,6 +93,18 @@ class GeneratePlanNode(BaseNode):
  constraints = context.render_template(config.get("constraints", ""))
  detail_level = config.get("detail_level", "standard")
  include_tests = config.get("include_tests", True)
+ # Handle repositories - can be array or template string
+ repositories_config = config.get("repositories", )
+ if isinstance(repositories_config, str):
+ rendered_repos = context.render_template(repositories_config)
+ try:
+ repositories: list[dict[str, Any]] = json.loads(rendered_repos) if rendered_repos else
+ except json.JSONDecodeError:
+ repositories =
+ else:
+ repositories = repositories_config if repositories_config else
+ # Handle codebase_context - template string
+ codebase_context = context.render_template(config.get("codebase_context", ""))
  if not requirements:
  return NodeResult(
  status="failed",
@@ -78,7 +113,13 @@ class GeneratePlanNode(BaseNode):
  )
  try:
  prompt = self._build_plan_prompt(
- requirements, codebase_info, constraints, detail_level, include_tests
+ requirements,
+ codebase_info,
+ constraints,
+ detail_level,
+ include_tests,
+ repositories=repositories,
+ codebase_context=codebase_context,
  )
  plan_result = await self._call_llm(prompt, config.get("model", "gpt-4"))
  return NodeResult(
@@ -104,6 +145,8 @@ class GeneratePlanNode(BaseNode):
  constraints: str,
  detail_level: str,
  include_tests: bool,
+ repositories: list[dict[str, Any]] | None = None,
+ codebase_context: str = "",
  ) -> str:
  """构建方案生成提示词"""
  prompt = f"""请基于以下需求，生成详细的技术实现方案：
@@ -117,6 +160,21 @@ class GeneratePlanNode(BaseNode):
  if constraints:
  prompt += f"""## 约束条件
 {constraints}
+"""
+ if repositories:
+ repos_desc = "\n".join(
+ [
+ f"- {repo.get('name', 'unknown')}: {repo.get('description', '无描述')} (ID: {repo.get('id', '')})"
+ for repo in repositories
+ ]
+ )
+ prompt += f"""## 可用代码仓库
+{repos_desc}
+"""
+ if codebase_context:
+ prompt += f"""## 相关代码上下文
+以下是从各仓库检索到的相关代码，请参考这些代码来设计技术方案：
+{codebase_context}
 """
  detail_instructions = {
  "brief": "请提供简要的实现思路，重点关注关键步骤。",
