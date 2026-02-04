@@ -131,7 +131,8 @@ export const aiVariableExtractorConfigSchema = z.object({
 /** 召回上下文节点配置 */
 export const contextRetrievalConfigSchema = z.object({
  query: z.string.default(''),
- repository_id: z.string.default(''),
+ repositories: z.array(z.string).default, // NEW: multi-repo support
+ repository_id: z.string.optional, // DEPRECATED: kept for backward compat migration
  top_k: z.number.min(1).max(50).default(10),
  score_threshold: z.number.min(0).max(1).default(0.5),
  language_filter: z.string.default(''),
