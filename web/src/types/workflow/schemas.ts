@@ -268,6 +268,7 @@ export type NodeConfig
  | TechnicalPlanNodeConfig
  | CreateBranchConfig
  | CreatePRConfig
+ | GeneratePlanConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -285,5 +286,6 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_technical_plan: technicalPlanNodeConfigSchema,
  create_branch: createBranchConfigSchema,
  create_pr: createPRConfigSchema,
+ generate_plan: generatePlanConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
