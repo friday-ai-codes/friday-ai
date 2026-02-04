@@ -387,6 +387,7 @@ def normalize_repositories(
  - repository_ids: List[str] - list of IDs (alias)
  - repository_id: str - single ID (alias, deprecated)
  - Template variables: {{global.repositories}}
+ - Auto-fallback: if config is empty, check global.repositories
  Per CONTEXT.md:
  - `repositories` takes priority over `repository`
  - Single values silently wrap to list (no log)
@@ -402,6 +403,11 @@ def normalize_repositories(
  if value is None:
  # Fallback to singular forms
  value = config.get("repository") or config.get("repository_id")
+ # Auto-fallback: if config is empty, try global.repositories
+ if value is None or (isinstance(value, list) and len(value) == 0):
+ global_repos = context.get_global_variable_value("repositories")
+ if global_repos:
+ value = global_repos
  if value is None:
  return
  # Handle template variable

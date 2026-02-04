@@ -82,7 +82,7 @@ class FetchProjectInfoNode(BaseNode):
  include_claude_config = config.get("include_claude_config", False)
  include_webhook_token = config.get("include_webhook_token", False)
  # 解析项目标识：支持模板变量 {{}} 和 JSONPath $
- project_identifier = self._resolve_value(raw_identifier, context)
+ project_identifier = await self._resolve_value_async(raw_identifier, context)
  if not project_identifier:
  return NodeResult(
  status="failed",
@@ -113,7 +113,7 @@ class FetchProjectInfoNode(BaseNode):
  )
  # 注册仓库列表为全局变量，供下游节点使用
  if include_repositories and "repositories" in output:
- context.set_global_variable(
+ await sync_to_async(context.set_global_variable, thread_sensitive=True)(
  key="repositories",
  name="项目仓库列表",
  value=output["repositories"],
@@ -217,6 +217,9 @@ class FetchProjectInfoNode(BaseNode):
  output["webhook_token"] = project.feishu_webhook_token or ""
  return output
  return await sync_to_async(_build, thread_sensitive=True)
+ async def _resolve_value_async(self, raw_value: str, context: ExecutionContext) -> str:
+ """异步解析值：支持模板变量 {{}} 和 JSONPath $"""
+ return await sync_to_async(self._resolve_value, thread_sensitive=True)(raw_value, context)
  def _resolve_value(self, raw_value: str, context: ExecutionContext) -> str:
  """解析值：支持模板变量 {{}} 和 JSONPath $
  Args:

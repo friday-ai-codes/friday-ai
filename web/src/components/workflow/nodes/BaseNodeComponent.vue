@@ -2,6 +2,7 @@
 import type { NodeProps } from '@vue-flow/core'
 import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
+import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 interface Props extends NodeProps {
  icon?: any
  badge?: string
@@ -9,12 +10,26 @@ interface Props extends NodeProps {
  theme?: 'default' | 'ai' | 'feishu' | 'trigger' | 'action'
 }
 const props = defineProps<Props>
+const nodeTypesStore = useNodeTypesStore
 const isSelected = computed( => props.selected)
 // 判断是否是触发器节点（触发器没有输入 Handle）
 const isTrigger = computed( => {
  const nodeType = props.data?.node_type || props.type || ''
  return nodeType.includes('trigger')
 })
+// 获取节点类型定义
+const nodeTypeDef = computed( => {
+ const nodeType = props.data?.node_type || props.type
+ if (!nodeType) return null
+ return nodeTypesStore.getNodeType(nodeType)
+})
+// 输入端口
+const inputPorts = computed( => nodeTypeDef.value?.inputs || )
+// 输出端口
+const outputPorts = computed( => nodeTypeDef.value?.outputs || )
+// 是否显示多端口（端口数 > 1 时显示标签）
+const hasMultipleInputs = computed( => inputPorts.value.length > 1)
+const hasMultipleOutputs = computed( => outputPorts.value.length > 1)
 // 主题样式类
 const themeClasses = computed( => {
  const themes: Record<string, string> = {
@@ -50,9 +65,19 @@ const iconClasses = computed( => {
 </script>
 <template>
  <div class="workflow-node">
- <!-- Input Handle (Target) - 非触发器节点显示 -->
+ <!-- 输入端口（多端口模式） -->
+ <div v-if="!isTrigger && hasMultipleInputs" class="port-group port-group--top">
+ <div v-for="port in inputPorts":key="port.name" class="port-item">
  <Handle
- v-if="!isTrigger"
+ type="target":id="port.name":position="Position.Top"
+ class="port-handle"
+ />
+ <span class="port-label port-label--top">{{ port.label }}</span>
+ </div>
+ </div>
+ <!-- 输入端口（单端口模式） -->
+ <Handle
+ v-else-if="!isTrigger"
  type="target":position="Position.Top"
  />
  <!-- 节点内容 -->
@@ -80,8 +105,19 @@ const iconClasses = computed( => {
  </slot>
  </div>
  </div>
- <!-- Output Handle (Source) -->
+ <!-- 输出端口（多端口模式） -->
+ <div v-if="hasMultipleOutputs" class="port-group port-group--bottom">
+ <div v-for="port in outputPorts":key="port.name" class="port-item">
+ <span class="port-label port-label--bottom">{{ port.label }}</span>
  <Handle
+ type="source":id="port.name":position="Position.Bottom"
+ class="port-handle"
+ />
+ </div>
+ </div>
+ <!-- 输出端口（单端口模式） -->
+ <Handle
+ v-else
  type="source":position="Position.Bottom"
  />
  </div>
@@ -169,6 +205,47 @@ const iconClasses = computed( => {
  opacity: 0.5;
  font-style: italic;
 }
+/* ========== 多端口布局 ========== */
+.workflow-node .port-group {
+ display: flex;
+ justify-content: space-around;
+ gap: 8px;
+ position: absolute;
+ left: 50%;
+ transform: translateX(-50%);
+ z-index: 1;
+}
+.workflow-node .port-group--top {
+ top: -20px;
+}
+.workflow-node .port-group--bottom {
+ bottom: -20px;
+}
+.workflow-node .port-item {
+ display: flex;
+ flex-direction: column;
+ align-items: center;
+ position: relative;
+}
+.workflow-node .port-label {
+ font-size: 9px;
+ color: var(--color-muted-foreground, hsl(212 40% 40%));
+ white-space: nowrap;
+ background: var(--color-card, #fff);
+ padding: 1px 4px;
+ border-radius: 4px;
+ opacity: 0;
+ transition: opacity 0.15s ease;
+}
+.workflow-node:hover .port-label {
+ opacity: 1;
+}
+.workflow-node .port-label--top {
+ margin-top: 2px;
+}
+.workflow-node .port-label--bottom {
+ margin-bottom: 2px;
+}
 /* Handle 样式 - 使用 Vue Flow 变量 + 项目主题色 */
 .workflow-node .vue-flow__handle {
  width: 14px;
@@ -198,6 +275,12 @@ const iconClasses = computed( => {
 }
 .workflow-node .vue-flow__handle-bottom {
  bottom: -7px;
+}
+/* 多端口模式下的 Handle */
+.workflow-node .port-item .vue-flow__handle {
+ position: relative;
+ top: auto;
+ bottom: auto;
 }
 /* ========== 主题变体 ========== */
 /* AI 主题 - 科技感渐变边框 */

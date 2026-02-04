@@ -16,7 +16,7 @@ import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
-const { selectedNode, selectedNodeId } = storeToRefs(store)
+const { selectedNode, selectedNodeId, nodes, edges } = storeToRefs(store)
 // Use node meta composable for registry access
 const { getDefinition, hasCustomConfig } = useNodeMeta
 // Local form state for node config
@@ -160,7 +160,7 @@ function getFieldType(schema: any): string {
  <Separator class="bg-border/50" />
  <!-- Custom Config Panels (dynamically loaded from registry) -->
  <template v-if="nodeHasCustomConfig && ConfigComponent">
- <component:is="ConfigComponent":config="nodeConfig"
+ <component:is="ConfigComponent":config="nodeConfig":workflow-nodes="nodes":workflow-edges="edges":current-node-id="selectedNodeId":node-type-info="nodeTypeInfo"
  @update:config="handleConfigUpdate"
  />
  </template>

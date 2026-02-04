@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Edge, Node } from '@vue-flow/core'
+import type { NodeType } from '~/stores/useNodeTypesStore'
 import type { ContextRetrievalConfig } from '~/types/workflow'
 import { computed, watch } from 'vue'
 import { Label } from '~/components/ui/label'
@@ -6,6 +8,7 @@ import { Separator } from '~/components/ui/separator'
 import { SliderSingle } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import NodePortsDisplay from '~/components/workflow/NodePortsDisplay.vue'
 import RepositoryPicker from '~/components/workflow/RepositoryPicker.vue'
 import VariablePicker from '~/components/workflow/VariablePicker.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
@@ -23,9 +26,21 @@ interface Repository {
 interface Props {
  config: ContextRetrievalConfig
  repositories?: Repository
+ /** 设计态：工作流画布节点列表 */
+ workflowNodes?: Node
+ /** 设计态：工作流画布边列表 */
+ workflowEdges?: Edge
+ /** 设计态：当前正在配置的节点 ID */
+ currentNodeId?: string | null
+ /** 节点类型信息 */
+ nodeTypeInfo?: NodeType | null
 }
 const props = withDefaults(defineProps<Props>, {
  repositories: =>,
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: null,
+ nodeTypeInfo: null,
 })
 const emit = defineEmits<{
  (e: 'update:config', value: ContextRetrievalConfig): void
@@ -96,6 +111,11 @@ const languageOptions = [
 </script>
 <template>
  <div class="space-y-4">
+ <!-- 节点端口信息 -->
+ <NodePortsDisplay
+ v-if="nodeTypeInfo && currentNodeId":inputs="nodeTypeInfo.inputs":outputs="nodeTypeInfo.outputs":node-id="currentNodeId"
+ />
+ <Separator v-if="nodeTypeInfo" />
  <!-- 目标仓库 -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1">
@@ -129,7 +149,9 @@ const languageOptions = [
  <p class="text-xs text-muted-foreground">
  根据此文本检索相关代码，支持模板变量
  </p>
- <VariablePicker @select="v => query += v" />
+ <VariablePicker:workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId ?? undefined"
+ @select="v => query += v"
+ />
  </div>
  </div>
  <Separator />
