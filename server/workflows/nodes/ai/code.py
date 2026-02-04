@@ -47,6 +47,12 @@ class CodeImplementNode(BaseNode):
  "description": "在哪个分支上实现",
  "default": "",
  },
+ "cross_repo_context": {
+ "type": "string",
+ "title": "跨仓库上下文",
+ "description": "来自其他仓库的相关代码，供参考以确保接口一致性（只读）",
+ "default": "",
+ },
  "execution_mode": {
  "type": "string",
  "title": "执行模式",
@@ -101,6 +107,7 @@ class CodeImplementNode(BaseNode):
  plan = context.render_template(config.get("plan", ""))
  repository_path = context.render_template(config.get("repository_path", ""))
  branch_name = context.render_template(config.get("branch_name", ""))
+ cross_repo_context = context.render_template(config.get("cross_repo_context", ""))
  execution_mode = config.get("execution_mode", "auto")
  max_iterations = config.get("max_iterations", 5)
  run_tests = config.get("run_tests", True)
@@ -130,6 +137,7 @@ class CodeImplementNode(BaseNode):
  plan=plan,
  repository_path=repository_path,
  branch_name=branch_name,
+ cross_repo_context=cross_repo_context,
  max_iterations=max_iterations,
  run_tests=run_tests,
  auto_commit=auto_commit,
@@ -167,6 +175,7 @@ class CodeImplementNode(BaseNode):
  plan: str,
  repository_path: str,
  branch_name: str,
+ cross_repo_context: str,
  max_iterations: int,
  run_tests: bool,
  auto_commit: bool,
@@ -193,6 +202,9 @@ class CodeImplementNode(BaseNode):
  workflow_context = context.workflow_context or {}
  if workflow_context.get("project_id"):
  environment["FRIDAY_PROJECT_ID"] = str(workflow_context["project_id"])
+ # Add cross-repo context if provided (read-only reference for API consistency)
+ if cross_repo_context:
+ environment["FRIDAY_TASK_CROSS_REPO_CONTEXT"] = cross_repo_context
  # Build volume mounts
  volumes = {}
  if repository_path:
