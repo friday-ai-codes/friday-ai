@@ -84,6 +84,12 @@ class TechnicalPlanNode(BaseNode):
  "description": "自动流转的目标状态名称",
  "default": "待审核",
  },
+ "codebase_context": {
+ "type": "string",
+ "title": "代码库上下文",
+ "description": "从 ContextRetrievalNode 获取的相关代码上下文，支持模板变量",
+ "default": "",
+ },
  },
  }
  inputs = [
@@ -119,6 +125,8 @@ class TechnicalPlanNode(BaseNode):
  feishu_field_key = config.get("feishu_field_key", "")
  auto_transition_status = config.get("auto_transition_status", True)
  target_status = config.get("target_status", "待审核")
+ # Handle codebase_context - template string
+ codebase_context = context.render_template(config.get("codebase_context", ""))
  try:
  # 从全局参数获取需求信息
  work_item_name = context.get_global_param("work_item_name", "")
@@ -145,6 +153,7 @@ class TechnicalPlanNode(BaseNode):
  repositories=repositories,
  detail_level=detail_level,
  include_tests=include_tests,
+ codebase_context=codebase_context,
  )
  # 调用 LLM 生成方案
  llm_response = await self._call_llm(
@@ -248,6 +257,7 @@ class TechnicalPlanNode(BaseNode):
  repositories: list[dict[str, Any]],
  detail_level: str,
  include_tests: bool,
+ codebase_context: str = "",
  ) -> str:
  """构建技术方案生成 Prompt"""
  detail_instructions = {
@@ -277,6 +287,11 @@ class TechnicalPlanNode(BaseNode):
  prompt += f"""## 可用代码仓库
 {repos_desc}
 """
+ if codebase_context:
+ prompt += f"""## 相关代码上下文
+以下是从各仓库检索到的相关代码，请参考这些代码来设计技术方案：
+{codebase_context}
+"""
  prompt += f"""## 输出要求
 {detail_instructions.get(detail_level, detail_instructions["standard"])}
 {"请在方案中包含测试策略。" if include_tests else ""}
@@ -289,6 +304,7 @@ class TechnicalPlanNode(BaseNode):
 2. branch_strategy 必须是 feature/hotfix/release 之一
 3. coding_instruction 应该包含足够详细的编码指令，让 AI 编码助手能够独立完成
 4. 如果任务有依赖关系，在 dependencies 中列出依赖的任务 ID
+5. 当涉及多个仓库间的交互（如 API 调用），请在 coding_instruction 中明确引用相关仓库的代码
 请直接输出 JSON，不要包含其他内容。
 """
  return prompt
