@@ -376,3 +376,59 @@ class BaseNode(ABC):
  async def on_timeout(self, context: ExecutionContext) -> None:
  """超时时的清理操作"""
  pass
+def normalize_repositories(
+ config: dict[str, Any],
+ context: ExecutionContext,
+) -> list[dict[str, Any]]:
+ """Normalize repository configuration to list format.
+ Supports:
+ - repositories: List[str|dict] - list of IDs or repository objects
+ - repository: str|dict - single ID or object (auto-wrapped)
+ - repository_ids: List[str] - list of IDs (alias)
+ - repository_id: str - single ID (alias, deprecated)
+ - Template variables: {{global.repositories}}
+ Per CONTEXT.md:
+ - `repositories` takes priority over `repository`
+ - Single values silently wrap to list (no log)
+ - Returns list of dicts with at least 'id' key
+ Args:
+ config: Node configuration dict
+ context: Execution context for template resolution
+ Returns:
+ List of repository dicts, each with at least 'id' key
+ """
+ # Check plural forms first (take priority per CONTEXT.md)
+ value = config.get("repositories") or config.get("repository_ids")
+ if value is None:
+ # Fallback to singular forms
+ value = config.get("repository") or config.get("repository_id")
+ if value is None:
+ return
+ # Handle template variable
+ if isinstance(value, str) and "{{" in value:
+ resolved = context.get_template_value(value)
+ if resolved is not None and resolved != "":
+ value = resolved
+ # else: Template didn't resolve - treat as literal string (single ID)
+ # Normalize to list of dicts
+ def to_repo_dict(item: Any) -> dict[str, Any] | None:
+ if isinstance(item, str):
+ return {"id": item}
+ elif isinstance(item, dict):
+ return item
+ return None
+ if isinstance(value, str):
+ # Single ID string
+ return [{"id": value}]
+ elif isinstance(value, dict):
+ # Single repository object
+ return [value]
+ elif isinstance(value, list):
+ # Already a list - normalize each item
+ result =
+ for item in value:
+ repo_dict = to_repo_dict(item)
+ if repo_dict is not None:
+ result.append(repo_dict)
+ return result
+ return
