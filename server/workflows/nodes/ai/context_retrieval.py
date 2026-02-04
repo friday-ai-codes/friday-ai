@@ -1,6 +1,11 @@
 """Context retrieval node for RAG-based code search."""
+from __future__ import annotations
+import asyncio
+from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async
+if TYPE_CHECKING:
+ from repositories.models import Repository
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from workflows.nodes.base import (
@@ -277,3 +282,77 @@ class ContextRetrievalNode(BaseNode):
  parts.append("```")
  parts.append("") # 空行分隔
  return "\n".join(parts)
+ async def _search_repository(
+ self,
+ repository: "Repository",
+ query_embedding: list[float],
+ top_k: int,
+ filters: dict[str, Any] | None,
+ timeout: float = 30.0,
+ ) -> dict[str, Any]:
+ """Search single repository with timeout.
+ Returns a dict with repository_id, repository_name, status, results, and error (if any).
+ """
+ repo_id = str(repository.id)
+ try:
+ search_coro = sync_to_async(QdrantService.search, thread_sensitive=True)(
+ repo_id,
+ query_embedding,
+ top_k=top_k,
+ filters=filters,
+ )
+ results = await asyncio.wait_for(search_coro, timeout=timeout)
+ return {
+ "repository_id": repo_id,
+ "repository_name": repository.name,
+ "status": "success",
+ "results": results or,
+ }
+ except asyncio.TimeoutError:
+ return {
+ "repository_id": repo_id,
+ "repository_name": repository.name,
+ "status": "timeout",
+ "error": f"Search timed out after {timeout}s",
+ "results":,
+ }
+ except Exception as e:
+ return {
+ "repository_id": repo_id,
+ "repository_name": repository.name,
+ "status": "error",
+ "error": str(e),
+ "results":,
+ }
+ async def _search_all_repositories(
+ self,
+ repositories: list["Repository"],
+ query_embedding: list[float],
+ top_k: int,
+ filters: dict[str, Any] | None,
+ timeout: float = 30.0,
+ ) -> list[dict[str, Any]]:
+ """Search all repositories in parallel.
+ Uses asyncio.gather with return_exceptions=True to ensure all tasks complete.
+ Any unexpected exceptions are converted to error dicts.
+ """
+ search_tasks = [
+ self._search_repository(repo, query_embedding, top_k, filters, timeout)
+ for repo in repositories
+ ]
+ # gather with return_exceptions=True ensures all tasks complete
+ results = await asyncio.gather(*search_tasks, return_exceptions=True)
+ # Convert any unexpected exceptions to error dicts
+ processed: list[dict[str, Any]] =
+ for i, result in enumerate(results):
+ if isinstance(result, Exception):
+ processed.append({
+ "repository_id": str(repositories[i].id),
+ "repository_name": repositories[i].name,
+ "status": "error",
+ "error": str(result),
+ "results":,
+ })
+ else:
+ processed.append(result)
+ return processed
