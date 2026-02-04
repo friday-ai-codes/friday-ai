@@ -2,9 +2,11 @@
 from __future__ import annotations
 import asyncio
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async
+from friday.settings import DATA_DIR
 if TYPE_CHECKING:
  from repositories.models import Repository
 from workflows.nodes.base import (
@@ -289,13 +291,10 @@ class CreateBranchNode(BaseNode):
  """
  repo_id = str(repository.id)
  repo_name = repository.name
- # Get repository local path from services
- from services.git_service import GitService
  try:
- repo_path = await sync_to_async(
- GitService.get_repository_path, thread_sensitive=True
- )(repository)
- if not repo_path or not repo_path.exists:
+ # Get repository local path from DATA_DIR/repos/{repo_id}
+ repo_path = DATA_DIR / "repos" / repo_id
+ if not repo_path.exists:
  return {
  "repository_id": repo_id,
  "repository_name": repo_name,
