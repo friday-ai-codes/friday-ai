@@ -187,6 +187,24 @@ export const technicalPlanNodeConfigSchema = z.object({
  auto_transition_status: z.boolean.default(true),
  target_status: z.string.default('待审核'),
 })
+/** 创建分支节点配置 */
+export const createBranchConfigSchema = z.object({
+ repositories: z.array(z.string).default,
+ branch_name: z.string.default(''),
+ base_branch: z.string.default('main'),
+ checkout: z.boolean.default(true),
+ push: z.boolean.default(false),
+})
+/** 创建 PR 节点配置 */
+export const createPRConfigSchema = z.object({
+ repositories: z.array(z.string).default,
+ title: z.string.default(''),
+ body: z.string.default(''),
+ head_branch: z.string.default(''),
+ base_branch: z.string.default('main'),
+ draft: z.boolean.default(false),
+ add_cross_references: z.boolean.default(true),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -213,6 +231,8 @@ export type WaitCondition = z.infer<typeof waitConditionSchema>
 export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
 export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
 export type TechnicalPlanNodeConfig = z.infer<typeof technicalPlanNodeConfigSchema>
+export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
+export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -226,6 +246,8 @@ export type NodeConfig
  | FetchProjectInfoConfig
  | WaitFeishuFieldConfig
  | TechnicalPlanNodeConfig
+ | CreateBranchConfig
+ | CreatePRConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -241,5 +263,7 @@ export const NODE_CONFIG_SCHEMAS = {
  fetch_project_info: fetchProjectInfoConfigSchema,
  wait_feishu_field: waitFeishuFieldConfigSchema,
  ai_technical_plan: technicalPlanNodeConfigSchema,
+ create_branch: createBranchConfigSchema,
+ create_pr: createPRConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
