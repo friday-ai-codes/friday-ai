@@ -252,6 +252,7 @@ export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
 export type TechnicalPlanNodeConfig = z.infer<typeof technicalPlanNodeConfigSchema>
 export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
+export type GeneratePlanConfig = z.infer<typeof generatePlanConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
