@@ -13,7 +13,9 @@ import {
 import { Separator } from '~/components/ui/separator'
 import { Slider } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
+import { Textarea } from '~/components/ui/textarea'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
+import VariablePicker from '~/components/workflow/VariablePicker.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { technicalPlanNodeConfigSchema } from '~/types/workflow/schemas'
 // ============================================================================
@@ -42,6 +44,8 @@ const useCustomApi = computed({
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')
 const model = field('model', 'claude-sonnet-4-20250514')
+// Context input
+const codebaseContext = field('codebase_context', '')
 // 生成配置
 const generationMode = field('generation_mode', 'outline_first')
 const includeFileDetails = field('include_file_details', true)
@@ -73,6 +77,23 @@ const GENERATION_MODE_OPTIONS = [
  model-label="生成模型"
  model-description="用于生成技术方案的 AI 模型"
  />
+ <Separator />
+ <!-- 代码库上下文 -->
+ <div class="space-y-2">
+ <Label>代码库上下文</Label>
+ <Textarea
+ v-model="codebaseContext"
+ placeholder="从上下文召回节点获取，如 {{ nodes.context_retrieval.formatted_context }}"
+ rows="4"
+ class="font-mono text-sm"
+ />
+ <div class="flex items-center justify-between">
+ <p class="text-xs text-muted-foreground">
+ 相关代码上下文，辅助 AI 生成更准确的技术方案
+ </p>
+ <VariablePicker @select="v => codebaseContext += v" />
+ </div>
+ </div>
  <Separator />
  <!-- 生成配置 -->
  <div class="space-y-4">
