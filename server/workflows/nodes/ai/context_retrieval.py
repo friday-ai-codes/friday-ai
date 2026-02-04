@@ -143,9 +143,7 @@ class ContextRetrievalNode(BaseNode):
  continue
  # 查找仓库
  repo = await sync_to_async(
- lambda rid=repo_id: Repository.objects.filter(
- id=rid, is_deleted=False
- ).first
+ lambda rid=repo_id: Repository.objects.filter(id=rid, is_deleted=False).first
  or Repository.objects.filter(name=rid, is_deleted=False).first,
  thread_sensitive=True,
  )
@@ -320,17 +318,16 @@ class ContextRetrievalNode(BaseNode):
  total_results = 0
  for repo_result in search_results:
  if repo_result["status"] != "success":
- failed_repositories.append({
+ failed_repositories.append(
+ {
  "repository_id": repo_result["repository_id"],
  "repository_name": repo_result["repository_name"],
  "error": repo_result.get("error", "Unknown error"),
- })
+ }
+ )
  continue
  # Filter by score threshold and limit per repo
- filtered = [
- r for r in repo_result["results"]
- if r["score"] >= score_threshold
- ][:top_k]
+ filtered = [r for r in repo_result["results"] if r["score"] >= score_threshold][:top_k]
  if not filtered:
  continue
  # Build context items sorted by score (descending)
@@ -350,12 +347,14 @@ class ContextRetrievalNode(BaseNode):
  if include_content:
  ctx["content"] = payload.get("content", "")
  contexts.append(ctx)
- repository_groups.append({
+ repository_groups.append(
+ {
  "repository_id": repo_result["repository_id"],
  "repository_name": repo_result["repository_name"],
  "result_count": len(contexts),
  "contexts": contexts,
- })
+ }
+ )
  total_results += len(contexts)
  return {
  "repositories": repository_groups,
@@ -434,13 +433,15 @@ class ContextRetrievalNode(BaseNode):
  processed: list[dict[str, Any]] =
  for i, result in enumerate(results):
  if isinstance(result, Exception):
- processed.append({
+ processed.append(
+ {
  "repository_id": str(repositories[i].id),
  "repository_name": repositories[i].name,
  "status": "error",
  "error": str(result),
  "results":,
- })
+ }
+ )
  else:
  processed.append(result)
  return processed

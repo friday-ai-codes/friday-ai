@@ -126,6 +126,7 @@ declare module 'vue' {
  MarkdownPreview: typeof import('./components/ui/markdown-editor/MarkdownPreview.vue')['default']
  NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
  NodePalette: typeof import('./components/workflow/NodePalette.vue')['default']
+ NodePortsDisplay: typeof import('./components/workflow/NodePortsDisplay.vue')['default']
  PageContainer: typeof import('./components/layout/PageContainer.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
