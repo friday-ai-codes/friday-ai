@@ -174,6 +174,8 @@ export const technicalPlanNodeConfigSchema = z.object({
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
+ // Context input
+ codebase_context: z.string.default(''),
  // Model configuration
  model: z.string.default('claude-sonnet-4-20250514'),
  temperature: z.number.min(0).max(1).default(0.3),
@@ -204,6 +206,23 @@ export const createPRConfigSchema = z.object({
  base_branch: z.string.default('main'),
  draft: z.boolean.default(false),
  add_cross_references: z.boolean.default(true),
+})
+/** 生成方案节点配置 */
+export const generatePlanConfigSchema = z.object({
+ // Repository selection
+ repositories: z.array(z.string).default,
+ // Context input
+ codebase_context: z.string.default(''),
+ requirement_text: z.string.default(''),
+ // AI configuration
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ model: z.string.default('claude-sonnet-4-20250514'),
+ temperature: z.number.min(0).max(1).default(0.3),
+ // Generation settings
+ max_tasks: z.number.min(1).max(50).default(15),
+ include_file_details: z.boolean.default(true),
 })
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
