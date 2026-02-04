@@ -204,9 +204,7 @@ class ContextRetrievalNode(BaseNode):
  # 格式化为 Markdown
  formatted_context = ""
  if format_as_markdown and aggregated["total"] > 0:
- formatted_context = self._format_as_markdown(
- self._flatten_contexts(aggregated)
- )
+ formatted_context = self._format_as_markdown_grouped(aggregated)
  logger.info(
  "context_retrieval_completed",
  total=aggregated["total"],
@@ -268,6 +266,44 @@ class ContextRetrievalNode(BaseNode):
  parts.append(content.strip)
  parts.append("```")
  parts.append("") # 空行分隔
+ return "\n".join(parts)
+ def _format_as_markdown_grouped(self, aggregated: dict[str, Any]) -> str:
+ """将分组检索结果格式化为 Markdown，按仓库分节展示"""
+ parts = ["## 相关代码上下文\n"]
+ for repo_group in aggregated["repositories"]:
+ repo_name = repo_group["repository_name"]
+ result_count = repo_group["result_count"]
+ parts.append(f"### [{repo_name}] ({result_count} 条结果)\n")
+ for i, ctx in enumerate(repo_group["contexts"], 1):
+ file_path = ctx.get("file_path", "unknown")
+ start_line = ctx.get("start_line", 0)
+ end_line = ctx.get("end_line", 0)
+ language = ctx.get("language", "")
+ content = ctx.get("content", "")
+ score = ctx.get("score", 0)
+ context_header = ctx.get("context_header", "")
+ # 标题行
+ line_info = f"L{start_line}-{end_line}" if start_line and end_line else ""
+ header = f"#### {i}. {file_path}"
+ if line_info:
+ header += f" ({line_info})"
+ header += f" [相似度: {score:.2f}]"
+ parts.append(header)
+ # 上下文头（如函数/类名）
+ if context_header:
+ parts.append(f"> {context_header}")
+ # 代码块
+ if content:
+ parts.append(f"```{language}")
+ parts.append(content.strip)
+ parts.append("```")
+ parts.append("") # 空行分隔
+ # 添加失败仓库信息
+ if aggregated.get("failed_repositories"):
+ parts.append("---\n")
+ parts.append("**检索失败的仓库:**")
+ for fail in aggregated["failed_repositories"]:
+ parts.append(f"- {fail['repository_name']}: {fail['error']}")
  return "\n".join(parts)
  def _aggregate_results(
  self,
