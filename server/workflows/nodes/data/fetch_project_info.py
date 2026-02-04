@@ -111,6 +111,15 @@ class FetchProjectInfoNode(BaseNode):
  include_claude_config=include_claude_config,
  include_webhook_token=include_webhook_token,
  )
+ # 注册仓库列表为全局变量，供下游节点使用
+ if include_repositories and "repositories" in output:
+ context.set_global_variable(
+ key="repositories",
+ name="项目仓库列表",
+ value=output["repositories"],
+ desc="项目关联的代码仓库对象列表",
+ required=False,
+ )
  logger.info(
  "fetch_project_info_completed",
  project_id=str(project.id),
