@@ -1,15 +1,17 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
  contextRetrievalConfigSchema,
  createBranchConfigSchema,
+ createPRConfigSchema,
  feishuEventTriggerConfigSchema,
  fetchProjectInfoConfigSchema,
  fetchWorkItemConfigSchema,
+ generatePlanConfigSchema,
  technicalPlanNodeConfigSchema,
  variableExtractorConfigSchema,
  waitFeishuFieldConfigSchema,
@@ -165,6 +167,28 @@ export const NODE_REGISTRY = {
  defaultConfig: createBranchConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/CreateBranchConfig.vue'),
  } satisfies NodeTypeDefinition<CreateBranchConfig>,
+ create_pr: {
+ nodeType: 'create_pr',
+ displayName: '创建 PR',
+ description: '在 Git 仓库中创建 Pull Request',
+ icon: 'icon-[lucide--git-pull-request]',
+ color: 'from-violet-500 to-purple-400',
+ category: 'action',
+ schema: createPRConfigSchema,
+ defaultConfig: createPRConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/CreatePRConfig.vue'),
+ } satisfies NodeTypeDefinition<CreatePRConfig>,
+ generate_plan: {
+ nodeType: 'generate_plan',
+ displayName: '生成方案',
+ description: '根据需求生成开发计划',
+ icon: 'icon-[lucide--list-todo]',
+ color: 'from-amber-500 to-orange-400',
+ category: 'ai',
+ schema: generatePlanConfigSchema,
+ defaultConfig: generatePlanConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/GeneratePlanConfig.vue'),
+ } satisfies NodeTypeDefinition<GeneratePlanConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
