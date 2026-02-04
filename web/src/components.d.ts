@@ -129,6 +129,7 @@ declare module 'vue' {
  PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
  Progress: typeof import('./components/ui/progress/Progress.vue')['default']
  RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
+ RepositoryPicker: typeof import('./components/workflow/RepositoryPicker.vue')['default']
  RouterLink: typeof import('vue-router')['RouterLink']
  RouterView: typeof import('vue-router')['RouterView']
  ScrollArea: typeof import('./components/ui/scroll-area/ScrollArea.vue')['default']
