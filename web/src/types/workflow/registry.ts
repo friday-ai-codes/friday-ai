@@ -1,11 +1,12 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
  contextRetrievalConfigSchema,
+ createBranchConfigSchema,
  feishuEventTriggerConfigSchema,
  fetchProjectInfoConfigSchema,
  fetchWorkItemConfigSchema,
@@ -153,6 +154,17 @@ export const NODE_REGISTRY = {
  defaultConfig: technicalPlanNodeConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/TechnicalPlanConfig.vue'),
  } satisfies NodeTypeDefinition<TechnicalPlanNodeConfig>,
+ create_branch: {
+ nodeType: 'create_branch',
+ displayName: '创建分支',
+ description: '在 Git 仓库中创建新分支',
+ icon: 'icon-[lucide--git-branch]',
+ color: 'from-emerald-500 to-teal-400',
+ category: 'action',
+ schema: createBranchConfigSchema,
+ defaultConfig: createBranchConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/CreateBranchConfig.vue'),
+ } satisfies NodeTypeDefinition<CreateBranchConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
