@@ -246,6 +246,54 @@ class ExecutionContext:
  return str(self.get_trigger_data(".".join(parts[1:]), ""))
  return match.group(0) # 无法解析则保持原样
  return re.sub(r"\{\{(.+?)\}\}", replace, template)
+ def get_template_value(self, template: str) -> Any:
+ """Get template value preserving complex types.
+ Unlike render_template which returns str, this returns
+ the actual value for single-variable templates.
+ Examples:
+ "{{global.repositories}}" -> list of dicts
+ "{{global.repositories[0]}}" -> single dict
+ "prefix_{{global.name}}_suffix" -> str (uses render_template)
+ """
+ template = template.strip
+ # Check if template is a single variable reference
+ match = re.fullmatch(r"\{\{(.+?)\}\}", template)
+ if not match:
+ # Multiple variables or mixed content - use string rendering
+ return self.render_template(template)
+ path = match.group(1).strip
+ # Handle array indexing: global.repositories[0]
+ index_match = re.match(r"(.+?)\[(\d+)\]$", path)
+ index = None
+ if index_match:
+ path = index_match.group(1)
+ index = int(index_match.group(2))
+ parts = path.split(".")
+ value = None
+ if parts[0] == "global" and len(parts) >= 2:
+ var_key = ".".join(parts[1:])
+ value = self.get_global_variable_value(var_key, None)
+ if value is None:
+ value = self.get_global_param(var_key, None)
+ elif parts[0] == "input":
+ value = self.get_input(".".join(parts[1:]), None)
+ elif parts[0] == "nodes" and len(parts) >= 3:
+ node_id = parts[1]
+ key = ".".join(parts[2:])
+ value = self.get_previous_output(node_id, key, None)
+ else:
+ # Unknown prefix - fall back to string rendering
+ return self.render_template(template)
+ # Apply array index if specified
+ if index is not None and isinstance(value, list):
+ if 0 <= index < len(value):
+ value = value[index]
+ else:
+ value = None
+ # If value is still None, return empty string for consistency
+ if value is None:
+ return ""
+ return value
 class BaseNode(ABC):
  """节点基类
  所有节点类型必须继承此类并实现 execute 方法。
