@@ -104,11 +104,12 @@ class ContextRetrievalNode(BaseNode):
  config = context.node_config
  # 渲染模板变量
  query = context.render_template(config.get("query", ""))
- top_k = config.get("top_k", 10)
+ top_k = config.get("top_k", 50) # Per CONTEXT.md: 50 per repo
  score_threshold = config.get("score_threshold", 0.5)
  language_filter = context.render_template(config.get("language_filter", ""))
  include_content = config.get("include_content", True)
  format_as_markdown = config.get("format_as_markdown", True)
+ timeout = config.get("timeout", 30.0)
  # 规范化仓库配置（支持单个/列表、模板变量）
  repo_configs = normalize_repositories(config, context)
  # 处理空仓库列表（静默跳过）
@@ -116,6 +117,7 @@ class ContextRetrievalNode(BaseNode):
  return NodeResult(
  status="completed",
  output={
+ "repositories":,
  "contexts":,
  "formatted_context": "",
  "total": 0,
@@ -163,6 +165,7 @@ class ContextRetrievalNode(BaseNode):
  return NodeResult(
  status="completed",
  output={
+ "repositories":,
  "contexts":,
  "formatted_context": "",
  "total": 0,
@@ -187,55 +190,39 @@ class ContextRetrievalNode(BaseNode):
  next_handle="error",
  )
  # 构建过滤条件
- filters = {}
+ filters: dict[str, Any] | None = None
  if language_filter:
- filters["language"] = language_filter
- # 从所有仓库检索并聚合结果
- all_contexts: list[dict] =
- for repo in valid_repos:
- repo_id_str = str(repo.id)
- search_results = await sync_to_async(QdrantService.search, thread_sensitive=True)(
- repo_id_str,
- query_embedding,
- top_k=top_k,
- filters=filters if filters else None,
+ filters = {"language": language_filter}
+ # 并行搜索所有仓库
+ search_results = await self._search_all_repositories(
+ valid_repos, query_embedding, top_k, filters, timeout
  )
- if search_results:
- for r in search_results:
- if r["score"] >= score_threshold:
- payload = r["payload"]
- ctx: dict = {
- "repository_id": repo_id_str,
- "repository_name": repo.name,
- "file_path": payload.get("file_path"),
- "score": r["score"],
- "language": payload.get("language"),
- "start_line": payload.get("start_line"),
- "end_line": payload.get("end_line"),
- "context_header": payload.get("context_header", ""),
- }
- if include_content:
- ctx["content"] = payload.get("content", "")
- all_contexts.append(ctx)
- # 按相似度降序排序（跨仓库排名）
- all_contexts.sort(key=lambda x: x["score"], reverse=True)
- # 限制总数为 top_k
- all_contexts = all_contexts[:top_k]
+ # 聚合结果（按仓库分组）
+ aggregated = self._aggregate_results(
+ search_results, score_threshold, top_k, include_content
+ )
  # 格式化为 Markdown
  formatted_context = ""
- if format_as_markdown and all_contexts:
- formatted_context = self._format_as_markdown(all_contexts)
+ if format_as_markdown and aggregated["total"] > 0:
+ formatted_context = self._format_as_markdown(
+ self._flatten_contexts(aggregated)
+ )
  logger.info(
  "context_retrieval_completed",
- total=len(all_contexts),
- repository_count=len(valid_repos),
+ total=aggregated["total"],
+ repository_count=len(aggregated["repositories"]),
+ failed_count=len(aggregated.get("failed_repositories") or ),
  )
- output: dict = {
- "contexts": all_contexts,
+ # 构建输出（包含新的 repositories 结构和向后兼容的 contexts）
+ output: dict[str, Any] = {
+ "repositories": aggregated["repositories"],
+ "contexts": self._flatten_contexts(aggregated),
  "formatted_context": formatted_context,
- "total": len(all_contexts),
+ "total": aggregated["total"],
  "query": query,
  }
+ if aggregated.get("failed_repositories"):
+ output["failed_repositories"] = aggregated["failed_repositories"]
  if invalid_ids:
  output["skipped_repositories"] = invalid_ids
  return NodeResult(
@@ -282,6 +269,71 @@ class ContextRetrievalNode(BaseNode):
  parts.append("```")
  parts.append("") # 空行分隔
  return "\n".join(parts)
+ def _aggregate_results(
+ self,
+ search_results: list[dict[str, Any]],
+ score_threshold: float,
+ top_k: int,
+ include_content: bool,
+ ) -> dict[str, Any]:
+ """Aggregate results grouped by repository.
+ Returns a dict with repositories, total, and failed_repositories (if any).
+ """
+ repository_groups: list[dict[str, Any]] =
+ failed_repositories: list[dict[str, Any]] =
+ total_results = 0
+ for repo_result in search_results:
+ if repo_result["status"] != "success":
+ failed_repositories.append({
+ "repository_id": repo_result["repository_id"],
+ "repository_name": repo_result["repository_name"],
+ "error": repo_result.get("error", "Unknown error"),
+ })
+ continue
+ # Filter by score threshold and limit per repo
+ filtered = [
+ r for r in repo_result["results"]
+ if r["score"] >= score_threshold
+ ][:top_k]
+ if not filtered:
+ continue
+ # Build context items sorted by score (descending)
+ contexts: list[dict[str, Any]] =
+ for r in sorted(filtered, key=lambda x: x["score"], reverse=True):
+ payload = r["payload"]
+ ctx: dict[str, Any] = {
+ "repository_id": repo_result["repository_id"],
+ "repository_name": repo_result["repository_name"],
+ "file_path": payload.get("file_path"),
+ "score": r["score"],
+ "language": payload.get("language"),
+ "start_line": payload.get("start_line"),
+ "end_line": payload.get("end_line"),
+ "context_header": payload.get("context_header", ""),
+ }
+ if include_content:
+ ctx["content"] = payload.get("content", "")
+ contexts.append(ctx)
+ repository_groups.append({
+ "repository_id": repo_result["repository_id"],
+ "repository_name": repo_result["repository_name"],
+ "result_count": len(contexts),
+ "contexts": contexts,
+ })
+ total_results += len(contexts)
+ return {
+ "repositories": repository_groups,
+ "total": total_results,
+ "failed_repositories": failed_repositories if failed_repositories else None,
+ }
+ def _flatten_contexts(self, aggregated: dict[str, Any]) -> list[dict[str, Any]]:
+ """Flatten grouped results into a single sorted list for backward compatibility."""
+ all_contexts: list[dict[str, Any]] =
+ for repo_group in aggregated["repositories"]:
+ all_contexts.extend(repo_group["contexts"])
+ # Sort by score descending across all repositories
+ all_contexts.sort(key=lambda x: x["score"], reverse=True)
+ return all_contexts
  async def _search_repository(
  self,
  repository: "Repository",
