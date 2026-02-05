@@ -24,6 +24,7 @@
  "@tiptap/extension-task-list": "catalog:",
  "@tiptap/extension-typography": "catalog:",
  "@tiptap/starter-kit": "catalog:",
+ "@tiptap/suggestion": "^3.19.0",
  "@tiptap/vue-3": "catalog:",
  "@vee-validate/zod": "catalog:",
  "@vue-flow/background": "catalog:",
