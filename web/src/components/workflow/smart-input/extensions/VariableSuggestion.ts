@@ -4,8 +4,11 @@ import Suggestion, {
  type SuggestionKeyDownProps,
 } from '@tiptap/suggestion'
 import { PluginKey } from '@tiptap/pm/state'
+import { createApp, ref, h, type App } from 'vue'
+import { computePosition, flip, offset, shift } from '@floating-ui/dom'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { VariableNodeAttrs } from '~/types/smart-input'
+import VariableSuggestionList from '../VariableSuggestionList.vue'
 /**
  * Plugin key for the variable suggestion plugin
  * Used to access the plugin state from outside
@@ -103,35 +106,135 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  })
  .run
  },
- // Render lifecycle - stub implementation for now
- // Will be replaced with actual Vue component rendering in Plan
+ // Render lifecycle - mounts Vue popup component with Floating UI positioning
  render: options.render ?? ( => {
+ let popup: HTMLElement | null = null
+ let app: App | null = null
+ let componentRef: { onKeyDown: (event: KeyboardEvent) => boolean } | null = null
  return {
  onStart(props: SuggestionProps) {
- // eslint-disable-next-line no-console
- console.debug('[VariableSuggestion] onStart', {
- query: props.query,
- itemCount: props.items.length,
+ // Create popup container
+ popup = document.createElement('div')
+ popup.className = 'variable-suggestion-popup'
+ document.body.appendChild(popup)
+ // Create reactive props for the Vue component
+ const items = ref(props.items)
+ const command = (item: DesignTimeVariable) => {
+ props.command({
+ path: item.path,
+ label: item.label,
+ nodeId: item.nodeId,
+ outputName: item.key,
  })
+ }
+ // Mount Vue component
+ app = createApp({
+ setup {
+ return => h(VariableSuggestionList, {
+ items: items.value,
+ command,
+ ref: (el: any) => {
+ componentRef = el
+ },
+ })
+ },
+ })
+ app.mount(popup)
+ // Position popup using Floating UI
+ const updatePosition = async => {
+ if (!popup || !props.clientRect) return
+ // Create a virtual element from clientRect
+ const virtualEl = {
+ getBoundingClientRect: => props.clientRect! ?? new DOMRect,
+ }
+ const { x, y } = await computePosition(virtualEl, popup, {
+ placement: 'bottom-start',
+ middleware: [
+ offset(8),
+ flip,
+ shift({ padding: 8 }),
+ ],
+ })
+ Object.assign(popup.style, {
+ position: 'fixed',
+ left: `${x}px`,
+ top: `${y}px`,
+ zIndex: '9999',
+ })
+ }
+ updatePosition
  },
  onUpdate(props: SuggestionProps) {
- // eslint-disable-next-line no-console
- console.debug('[VariableSuggestion] onUpdate', {
- query: props.query,
- itemCount: props.items.length,
+ // Update items reactively - remount with new props
+ if (app && popup) {
+ app.unmount
+ const items = ref(props.items)
+ const command = (item: DesignTimeVariable) => {
+ props.command({
+ path: item.path,
+ label: item.label,
+ nodeId: item.nodeId,
+ outputName: item.key,
+ })
+ }
+ app = createApp({
+ setup {
+ return => h(VariableSuggestionList, {
+ items: items.value,
+ command,
+ ref: (el: any) => {
+ componentRef = el
+ },
  })
  },
+ })
+ app.mount(popup)
+ // Update position
+ const updatePosition = async => {
+ if (!popup || !props.clientRect) return
+ const virtualEl = {
+ getBoundingClientRect: => props.clientRect! ?? new DOMRect,
+ }
+ const { x, y } = await computePosition(virtualEl, popup, {
+ placement: 'bottom-start',
+ middleware: [
+ offset(8),
+ flip,
+ shift({ padding: 8 }),
+ ],
+ })
+ Object.assign(popup.style, {
+ position: 'fixed',
+ left: `${x}px`,
+ top: `${y}px`,
+ zIndex: '9999',
+ })
+ }
+ updatePosition
+ }
+ },
  onKeyDown({ event }: SuggestionKeyDownProps): boolean {
- // Handle keyboard navigation
- // Return true if event was handled, false to let editor handle it
+ // Forward keyboard events to the Vue component
+ if (componentRef?.onKeyDown) {
+ return componentRef.onKeyDown(event)
+ }
+ // Handle Escape to close popup
  if (event.key === 'Escape') {
  return true
  }
  return false
  },
  onExit {
- // eslint-disable-next-line no-console
- console.debug('[VariableSuggestion] onExit')
+ // Cleanup: unmount Vue app and remove popup from DOM
+ if (app) {
+ app.unmount
+ app = null
+ }
+ if (popup) {
+ popup.remove
+ popup = null
+ }
+ componentRef = null
  },
  }
  }),
