@@ -37,8 +37,8 @@ const nodeTypesStore = useNodeTypesStore
 const { nodes, edges } = storeToRefs(store)
 // Drag state
 const isDragOver = ref(false)
-// 使用 useVueFlow 获取 project 方法
-const { project } = useVueFlow
+// 使用 useVueFlow 获取 project 方法和节点更新方法
+const { project, updateNode: vueFlowUpdateNode } = useVueFlow
 // Drag preview state
 const {
  isDragging: isNodeDragging,
@@ -176,8 +176,11 @@ function handleNodeDrag(event: { node: Node }) {
  event.node.position,
  nodeWithDims.dimensions
  )
- // If colliding, force node back to last valid position
+ // If colliding, force node back to last valid position using Vue Flow's internal updateNode
  if (result.collides && result.position) {
+ // Use Vue Flow's updateNode directly to override the drag position
+ vueFlowUpdateNode(event.node.id, { position: result.position })
+ // Also sync to store
  store.updateNode(event.node.id, { position: result.position })
  }
 }
