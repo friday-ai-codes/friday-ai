@@ -184,18 +184,30 @@ function handleNodeDrag(event: { node: Node }) {
  store.updateNode(event.node.id, { position: result.position })
  }
 }
-// Node drag stop handler
+// Node drag stop handler - snap to grid on release
 function handleNodeDragStop(event: { node: Node }) {
- const snappedPosition = onDragStop
- const targetPosition = snappedPosition || event.node.position
- // Find valid position if current position collides
+ onDragStop
+ // Snap current position to grid
+ const gridSize = 20
+ const snappedPosition = {
+ x: Math.round(event.node.position.x / gridSize) * gridSize,
+ y: Math.round(event.node.position.y / gridSize) * gridSize,
+ }
+ // Find valid position if snapped position collides
  const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
  const validPosition = findValidPosition(
- targetPosition,
+ snappedPosition,
  event.node.id,
  nodeWithDims.dimensions
  )
- store.updateNode(event.node.id, { position: validPosition })
+ // Snap the valid position to grid as well
+ const finalPosition = {
+ x: Math.round(validPosition.x / gridSize) * gridSize,
+ y: Math.round(validPosition.y / gridSize) * gridSize,
+ }
+ // Update both Vue Flow internal state and store
+ vueFlowUpdateNode(event.node.id, { position: finalPosition })
+ store.updateNode(event.node.id, { position: finalPosition })
  clearWarning
 }
 // Node click handler
@@ -337,7 +349,7 @@ watch(isColliding, (colliding) => {
  </div>
  <VueFlow
  v-model:nodes="nodes"
- v-model:edges="edges":node-types="nodeTypes":edge-types="edgeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="true":snap-grid="[20, 20]":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
+ v-model:edges="edges":node-types="nodeTypes":edge-types="edgeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="false":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
  class="vue-flow-wrapper"
  @connect="handleConnect"
  @node-drag-start="handleNodeDragStart"
