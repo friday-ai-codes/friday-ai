@@ -361,4 +361,28 @@ const iconClasses = computed( => {
  0 0 0 3px color-mix(in srgb, hsl(160 65% 45%) 25%, transparent),
  0 0 20px color-mix(in srgb, hsl(160 65% 45%) 15%, transparent);
 }
+/* ========== Dragging State ========== */
+/* Dragging state - "picked up" feel */
+.vue-flow__node.dragging .node-card {
+ transform: scale(1.05);
+ box-shadow:
+ 0 20px 25px -5px rgb(0 0 0 / 0.15),
+ 0 8px 10px -6px rgb(0 0 0 / 0.1);
+ z-index: 1000;
+}
+/* Improve performance during drag */
+.vue-flow__node.dragging {
+ will-change: transform;
+}
+.vue-flow__node.dragging .node-card {
+ /* Temporarily reduce backdrop-filter complexity during drag */
+ backdrop-filter: blur(4px);
+}
+/* Smooth transition for scale on drag start/stop */
+.workflow-node .node-card {
+ transition:
+ border-color 0.2s ease,
+ box-shadow 0.3s ease,
+ transform 0.15s ease;
+}
 </style>
