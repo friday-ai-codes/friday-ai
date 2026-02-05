@@ -133,10 +133,13 @@ const iconClasses = computed( => {
  position: relative;
 }
 /* 节点卡片 - 玻璃拟态风格 */
+/* 宽度固定为 40 的倍数，确保 width/2 落在 20px 网格点上 */
+/* 高度使用 min-height 为 20 的倍数 */
 .workflow-node .node-card {
- min-width: 200px;
- max-width: 280px;
- padding: 12px 14px;
+ width: 200px; /* 200 / 2 = 100，是 20 的倍数 */
+ min-height: 80px; /* 80 是 20 的倍数 */
+ padding: 10px 14px; /* 调整 padding 保持内容美观 */
+ box-sizing: border-box;
  background: color-mix(in srgb, var(--color-card, #fff) 90%, transparent);
  backdrop-filter: blur(8px);
  border: 2px solid color-mix(in srgb, var(--color-border, hsl(219 30% 85%)) 60%, transparent);
