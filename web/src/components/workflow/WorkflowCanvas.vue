@@ -8,6 +8,9 @@ import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { useDragPreview } from './composables/useDragPreview'
+// Custom Edges
+import { GradientEdge } from './edges'
 // Custom Nodes
 import ActionNode from './nodes/ActionNode.vue'
 import AICodingDispatcherNode from './nodes/AICodingDispatcherNode.vue'
@@ -35,6 +38,14 @@ const { nodes, edges } = storeToRefs(store)
 const isDragOver = ref(false)
 // 使用 useVueFlow 获取 project 方法
 const { project } = useVueFlow
+// Drag preview state
+const {
+ isDragging: isNodeDragging,
+ previewPosition,
+ onDragStart,
+ onDrag,
+ onDragStop,
+} = useDragPreview(20)
 // Node Types Registration
 const nodeTypes = {
  // Triggers
@@ -66,6 +77,45 @@ const nodeTypes = {
  parallel: markRaw(ControlNode),
  wait_feishu_field: markRaw(WaitFeishuNode),
 }
+// Edge Types Registration
+const edgeTypes = {
+ gradient: markRaw(GradientEdge),
+}
+// Node type to color mapping for gradient edges
+const nodeTypeColorMap: Record<string, string> = {
+ // Triggers - blue
+ manual_trigger: '#3b82f6',
+ webhook_trigger: '#3b82f6',
+ schedule_trigger: '#3b82f6',
+ feishu_event_trigger: '#3b82f6',
+ // AI nodes - purple
+ ai_prompt: '#8b5cf6',
+ ai_coding_dispatcher: '#8b5cf6',
+ ai_variable_extractor: '#8b5cf6',
+ context_retrieval: '#8b5cf6',
+ ai_technical_plan: '#8b5cf6',
+ // Integration - orange
+ fetch_work_item: '#f59e0b',
+ fetch_project_info: '#f59e0b',
+ // Data/Control - cyan
+ variable_extractor: '#06b6d4',
+ condition: '#06b6d4',
+ wait_feishu_field: '#06b6d4',
+ delay: '#06b6d4',
+ parallel: '#06b6d4',
+ // Actions - green
+ http_request: '#10b981',
+ create_branch: '#10b981',
+ code_implement: '#10b981',
+ approval: '#10b981',
+ human_approval: '#10b981',
+}
+/**
+ * Get color for a node type
+ */
+function getNodeTypeColor(nodeType: string): string {
+ return nodeTypeColorMap[nodeType] || '#6366f1' // indigo as fallback
+}
 // 默认边样式
 const defaultEdgeOptions = {
  type: 'smoothstep',
@@ -77,21 +127,45 @@ const defaultEdgeOptions = {
 function handleConnect(connection: Connection) {
  if (!connection.source || !connection.target)
  return
+ // Find source and target nodes to get their types for gradient colors
+ const sourceNode = nodes.value.find(n => n.id === connection.source)
+ const targetNode = nodes.value.find(n => n.id === connection.target)
+ const sourceNodeType = sourceNode?.type || sourceNode?.data?.node_type || ''
+ const targetNodeType = targetNode?.type || targetNode?.data?.node_type || ''
+ // Use gradient edge type with color data for all new connections
  const newEdge: Edge = {
  id: `e-${connection.source}-${connection.target}-${Date.now}`,
  source: connection.source,
  target: connection.target,
  sourceHandle: connection.sourceHandle || 'source',
  targetHandle: connection.targetHandle || 'target',
- type: 'smoothstep',
- animated: true,
- markerEnd: MarkerType.ArrowClosed,
+ type: 'gradient',
+ animated: false,
+ data: {
+ sourceColor: getNodeTypeColor(sourceNodeType),
+ targetColor: getNodeTypeColor(targetNodeType),
+ sourceNodeType,
+ targetNodeType,
+ },
  }
  store.addEdge(newEdge)
 }
+// Node drag start handler
+function handleNodeDragStart(event: { node: Node }) {
+ onDragStart(event.node)
+}
+// Node drag handler
+function handleNodeDrag(event: { node: Node }) {
+ onDrag(event.node)
+}
 // Node drag stop handler
 function handleNodeDragStop(event: { node: Node }) {
+ const snappedPosition = onDragStop
+ if (snappedPosition) {
+ store.updateNode(event.node.id, { position: snappedPosition })
+ } else {
  store.updateNode(event.node.id, { position: event.node.position })
+ }
 }
 // Node click handler
 function handleNodeClick(event: { node: Node }) {
@@ -197,9 +271,11 @@ onMounted( => {
  </div>
  <VueFlow
  v-model:nodes="nodes"
- v-model:edges="edges":node-types="nodeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="true":snap-grid="[20, 20]":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
+ v-model:edges="edges":node-types="nodeTypes":edge-types="edgeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="true":snap-grid="[20, 20]":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
  class="vue-flow-wrapper"
  @connect="handleConnect"
+ @node-drag-start="handleNodeDragStart"
+ @node-drag="handleNodeDrag"
  @node-drag-stop="handleNodeDragStop"
  @node-click="handleNodeClick"
  @pane-click="handlePaneClick"
@@ -215,7 +291,18 @@ onMounted( => {
  />
  <!-- 控制按钮 -->
  <Controls:show-interactive="false" />
+ <!-- Grid overlay during drag -->
+ <template v-if="isNodeDragging">
+ <div class="grid-overlay" />
+ </template>
  </VueFlow>
+ <!-- Node preview position indicator -->
+ <div
+ v-if="isNodeDragging && previewPosition"
+ class="node-preview":style="{
+ transform: `translate(${previewPosition.x}px, ${previewPosition.y}px)`,
+ }"
+ />
  <!-- Drop indicator overlay -->
  <div
  v-if="isDragOver"
