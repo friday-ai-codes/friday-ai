@@ -116,6 +116,7 @@ declare module 'vue' {
  FormMessage: typeof import('./components/ui/form/FormMessage.vue')['default']
  FormModal: typeof import('./components/modal/FormModal.vue')['default']
  GeneratePlanConfig: typeof import('./components/workflow/config/GeneratePlanConfig.vue')['default']
+ GradientEdge: typeof import('./components/workflow/edges/GradientEdge.vue')['default']
  Input: typeof import('./components/ui/input/Input.vue')['default']
  JsonHighlighter: typeof import('./components/logs/JsonHighlighter.vue')['default']
  KeyFieldsCard: typeof import('./components/logs/KeyFieldsCard.vue')['default']

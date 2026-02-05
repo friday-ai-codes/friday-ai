@@ -246,11 +246,10 @@ const iconClasses = computed( => {
 .workflow-node .port-label--bottom {
  margin-bottom: 2px;
 }
-/* Handle 样式 - 使用 Vue Flow 变量 + 项目主题色 */
+/* Handle 样式 - 使用语义色区分输入/输出 */
 .workflow-node .vue-flow__handle {
  width: 14px;
  height: 14px;
- background: var(--color-muted-foreground, hsl(212 40% 40%));
  border: 3px solid var(--color-card, #fff);
  border-radius: 50%;
  box-shadow: 0 2px 4px rgb(0 0 0 / 0.1);
@@ -259,15 +258,48 @@ const iconClasses = computed( => {
  box-shadow 0.15s ease,
  transform 0.15s ease;
 }
-.workflow-node .vue-flow__handle:hover {
- background: var(--color-primary, hsl(213 47% 47%));
- box-shadow:
- 0 0 0 4px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 25%, transparent),
- 0 2px 8px color-mix(in srgb, var(--color-primary, hsl(213 47% 47%)) 30%, transparent);
+/* 输入句柄 - 蓝色 (target) */
+.workflow-node .vue-flow__handle-top,
+.workflow-node .vue-flow__handle[data-handlepos="top"] {
+ background: #3b82f6; /* blue-500 */
 }
-.workflow-node .vue-flow__handle.connecting,
+.workflow-node .vue-flow__handle-top:hover,
+.workflow-node .vue-flow__handle[data-handlepos="top"]:hover {
+ background: #2563eb; /* blue-600 */
+ box-shadow:
+ 0 0 0 4px rgba(59, 130, 246, 0.25),
+ 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+/* 输出句柄 - 绿色 (source) */
+.workflow-node .vue-flow__handle-bottom,
+.workflow-node .vue-flow__handle[data-handlepos="bottom"] {
+ background: #10b981; /* emerald-500 */
+}
+.workflow-node .vue-flow__handle-bottom:hover,
+.workflow-node .vue-flow__handle[data-handlepos="bottom"]:hover {
+ background: #059669; /* emerald-600 */
+ box-shadow:
+ 0 0 0 4px rgba(16, 185, 129, 0.25),
+ 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+/* 连接中状态 - 黄色 */
+.workflow-node .vue-flow__handle.connecting {
+ background: #f59e0b; /* amber-500 */
+ box-shadow:
+ 0 0 0 4px rgba(245, 158, 11, 0.3),
+ 0 2px 8px rgba(245, 158, 11, 0.4);
+ animation: pulse-connecting 0.8s ease-in-out infinite;
+}
+@keyframes pulse-connecting {
+ 0%, 100% { transform: scale(1); }
+ 50% { transform: scale(1.15); }
+}
+/* 有效连接状态 - 绿色增强 */
 .workflow-node .vue-flow__handle.valid {
- background: var(--color-primary, hsl(213 47% 47%));
+ background: #10b981;
+ box-shadow:
+ 0 0 0 4px rgba(16, 185, 129, 0.4),
+ 0 2px 12px rgba(16, 185, 129, 0.5);
 }
 /* Handle 位置微调 */
 .workflow-node .vue-flow__handle-top {
