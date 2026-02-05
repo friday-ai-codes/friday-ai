@@ -361,6 +361,18 @@ onMounted( => {
 .vue-flow__controls-button:hover {
  background: hsl(var(--accent)) !important;
 }
+/* ========== Gradient Edge Styles ========== */
+/* Gradient edge path animations */
+.vue-flow__edge-path {
+ transition: stroke-width 0.2s ease;
+}
+.vue-flow__edge.selected .vue-flow__edge-path {
+ stroke-width: 4;
+}
+/* Glow layer animation on hover */
+.vue-flow__edge:hover .vue-flow__edge-path-glow {
+ opacity: 0.6;
+}
 /* ========== Drag Preview Styles ========== */
 /* Grid overlay during drag */
 .grid-overlay {
