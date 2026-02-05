@@ -23,12 +23,9 @@ const nodeTypeDef = computed( => {
  if (!nodeType) return null
  return nodeTypesStore.getNodeType(nodeType)
 })
-// 输入端口
-const inputPorts = computed( => nodeTypeDef.value?.inputs || )
 // 输出端口
 const outputPorts = computed( => nodeTypeDef.value?.outputs || )
-// 是否显示多端口（端口数 > 1 时显示标签）
-const hasMultipleInputs = computed( => inputPorts.value.length > 1)
+// 是否有多个输出端口
 const hasMultipleOutputs = computed( => outputPorts.value.length > 1)
 // 主题样式类
 const themeClasses = computed( => {
@@ -65,20 +62,11 @@ const iconClasses = computed( => {
 </script>
 <template>
  <div class="workflow-node">
- <!-- 输入端口（多端口模式） -->
- <div v-if="!isTrigger && hasMultipleInputs" class="port-group port-group--top">
- <div v-for="port in inputPorts":key="port.name" class="port-item">
- <Handle
- type="target":id="port.name":position="Position.Top"
- class="port-handle"
- />
- <span class="port-label port-label--top">{{ port.label }}</span>
- </div>
- </div>
  <!-- 输入端口（单端口模式） -->
  <Handle
- v-else-if="!isTrigger"
+ v-if="!isTrigger"
  type="target":position="Position.Top"
+ class="handle-input"
  />
  <!-- 节点内容 -->
  <div
@@ -105,20 +93,27 @@ const iconClasses = computed( => {
  </slot>
  </div>
  </div>
- <!-- 输出端口（多端口模式） -->
- <div v-if="hasMultipleOutputs" class="port-group port-group--bottom">
- <div v-for="port in outputPorts":key="port.name" class="port-item">
- <span class="port-label port-label--bottom">{{ port.label }}</span>
+ <!-- 输出端口（多端口模式：正常 + 错误） -->
+ <template v-if="hasMultipleOutputs">
+ <!-- 正常输出 - 底部居中 -->
  <Handle
+ v-for="port in outputPorts.filter(p => p.name !== 'error')":key="port.name"
  type="source":id="port.name":position="Position.Bottom"
- class="port-handle"
+ class="handle-output"
  />
- </div>
- </div>
+ <!-- 错误输出 - 右下角 -->
+ <Handle
+ v-if="outputPorts.some(p => p.name === 'error')"
+ type="source"
+ id="error":position="Position.Bottom"
+ class="handle-error handle-corner"
+ />
+ </template>
  <!-- 输出端口（单端口模式） -->
  <Handle
  v-else
  type="source":position="Position.Bottom"
+ class="handle-output"
  />
  </div>
 </template>
@@ -249,43 +244,65 @@ const iconClasses = computed( => {
 .workflow-node .port-label--bottom {
  margin-bottom: 2px;
 }
-/* Handle 样式 - 使用语义色区分输入/输出 */
+/* ========== Handle 样式 ========== */
+/* Handle 基础样式 */
 .workflow-node .vue-flow__handle {
- width: 14px;
- height: 14px;
- border: 3px solid var(--color-card, #fff);
+ width: 12px;
+ height: 12px;
+ border: 2px solid var(--color-card, #fff);
  border-radius: 50%;
- box-shadow: 0 2px 4px rgb(0 0 0 / 0.1);
+ box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
  transition:
  background-color 0.15s ease,
  box-shadow 0.15s ease,
  transform 0.15s ease;
 }
-/* 输入句柄 - 蓝色 (target) */
-.workflow-node .vue-flow__handle-top,
-.workflow-node .vue-flow__handle[data-handlepos="top"] {
+/* 输入端口 - 蓝色，顶部水平居中，紧贴边框 */
+.workflow-node .handle-input {
  background: #3b82f6; /* blue-500 */
+ top: -6px !important;
+ left: 50% !important;
+ transform: translateX(-50%) !important;
 }
-.workflow-node .vue-flow__handle-top:hover,
-.workflow-node .vue-flow__handle[data-handlepos="top"]:hover {
+.workflow-node .handle-input:hover {
  background: #2563eb; /* blue-600 */
  box-shadow:
  0 0 0 4px rgba(59, 130, 246, 0.25),
  0 2px 8px rgba(59, 130, 246, 0.3);
 }
-/* 输出句柄 - 绿色 (source) */
-.workflow-node .vue-flow__handle-bottom,
-.workflow-node .vue-flow__handle[data-handlepos="bottom"] {
+/* 输出端口 - 绿色，底部水平居中，紧贴边框 */
+.workflow-node .handle-output {
  background: #10b981; /* emerald-500 */
+ bottom: -6px !important;
+ top: auto !important;
+ left: 50% !important;
+ transform: translateX(-50%) !important;
 }
-.workflow-node .vue-flow__handle-bottom:hover,
-.workflow-node .vue-flow__handle[data-handlepos="bottom"]:hover {
+.workflow-node .handle-output:hover {
  background: #059669; /* emerald-600 */
  box-shadow:
  0 0 0 4px rgba(16, 185, 129, 0.25),
  0 2px 8px rgba(16, 185, 129, 0.3);
 }
-/* 连接中状态 - 黄色 */
+/* 错误端口 - 红色，右下角紧贴边框 */
+.workflow-node .handle-error {
+ background: #ef4444; /* red-500 */
+}
+.workflow-node .handle-error:hover {
+ background: #dc2626; /* red-600 */
+ box-shadow:
+ 0 0 0 4px rgba(239, 68, 68, 0.25),
+ 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+/* 右下角定位 */
+.workflow-node .handle-corner {
+ bottom: -6px !important;
+ right: -6px !important;
+ top: auto !important;
+ left: auto !important;
+ transform: none !important;
+}
+/* 连接中状态 */
 .workflow-node .vue-flow__handle.connecting {
  background: #f59e0b; /* amber-500 */
  box-shadow:
@@ -297,25 +314,12 @@ const iconClasses = computed( => {
  0%, 100% { transform: scale(1); }
  50% { transform: scale(1.15); }
 }
-/* 有效连接状态 - 绿色增强 */
+/* 有效连接状态 */
 .workflow-node .vue-flow__handle.valid {
  background: #10b981;
  box-shadow:
  0 0 0 4px rgba(16, 185, 129, 0.4),
  0 2px 12px rgba(16, 185, 129, 0.5);
-}
-/* Handle 位置微调 */
-.workflow-node .vue-flow__handle-top {
- top: -7px;
-}
-.workflow-node .vue-flow__handle-bottom {
- bottom: -7px;
-}
-/* 多端口模式下的 Handle */
-.workflow-node .port-item .vue-flow__handle {
- position: relative;
- top: auto;
- bottom: auto;
 }
 /* ========== 主题变体 ========== */
 /* AI 主题 - 科技感渐变边框 */

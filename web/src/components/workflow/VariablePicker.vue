@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Edge, Node } from '@vue-flow/core'
-import type { ExecutionContext } from '~/types'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
+import type { ExecutionContext } from '~/types'
 import { ChevronDown, ChevronRight, Database, Globe, Layers, Variable, Zap } from 'lucide-vue-next'
 import { computed, ref, toRef } from 'vue'
 import { Button } from '~/components/ui/button'
@@ -71,7 +71,8 @@ const { designTimeVariables } = useDesignTimeVariables(
 // 设计态变量分类
 const designTimeCategories = computed(: VariableCategory => {
  const variables = designTimeVariables.value
- if (variables.length === 0) return
+ if (variables.length === 0)
+ return
  return [{
  category: 'nodes',
  categoryLabel: '节点输出',
@@ -301,7 +302,9 @@ function getValuePreview(value: any): string {
  <!-- 空状态 -->
  <div v-if="displayVariables.length === 0" class="py-8 text-center">
  <Variable class="w-8 mx-auto text-muted-foreground/30" />
- <p class="text-sm text-muted-foreground mt-2">暂无可用变量</p>
+ <p class="text-sm text-muted-foreground mt-2">
+ 暂无可用变量
+ </p>
  </div>
  </div>
  </ScrollArea>

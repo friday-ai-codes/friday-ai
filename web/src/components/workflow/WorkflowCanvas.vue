@@ -170,11 +170,11 @@ function handleNodeDragStart(event: { node: Node }) {
 function handleNodeDrag(event: { node: Node }) {
  onDrag(event.node)
  // Check collision and apply sliding constraint
- const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
+ const nodeWithDims = event.node as Node & { dimensions?: { width: number, height: number } }
  const result = constrainWithSliding(
  event.node.id,
  event.node.position,
- nodeWithDims.dimensions
+ nodeWithDims.dimensions,
  )
  // If position was constrained, update node to sliding position
  if (result.collides && result.position) {
@@ -194,11 +194,11 @@ function handleNodeDragStop(event: { node: Node }) {
  y: Math.round(event.node.position.y / gridSize) * gridSize,
  }
  // Find valid position if snapped position collides
- const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
+ const nodeWithDims = event.node as Node & { dimensions?: { width: number, height: number } }
  const validPosition = findValidPosition(
  snappedPosition,
  event.node.id,
- nodeWithDims.dimensions
+ nodeWithDims.dimensions,
  )
  // Snap the valid position to grid as well
  const finalPosition = {
@@ -326,9 +326,10 @@ watch(isColliding, (colliding) => {
  if (draggingNode) {
  draggingNode.classList.add('collision-blocked')
  }
- } else {
+ }
+ else {
  // Remove from all nodes
- document.querySelectorAll('.collision-blocked').forEach(el => {
+ document.querySelectorAll('.collision-blocked').forEach((el) => {
  el.classList.remove('collision-blocked')
  })
  }
@@ -466,7 +467,9 @@ watch(isColliding, (colliding) => {
  animation: gridFadeIn 0.15s ease forwards;
 }
 @keyframes gridFadeIn {
- to { opacity: 1; }
+ to {
+ opacity: 1;
+ }
 }
 /* Node preview indicator */
 .node-preview {
@@ -500,7 +503,10 @@ watch(isColliding, (colliding) => {
  transform: translate(-50%, 0);
  }
 }
-.workflow-canvas [class*="bg-destructive"] {
+.workflow-canvas [class*='bg-destructive'] {
  animation: slideUp 0.2s ease-out;
+}
+.vue-flow__connection-line {
+ display: none;
 }
 </style>
