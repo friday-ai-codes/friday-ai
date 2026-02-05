@@ -385,4 +385,38 @@ const iconClasses = computed( => {
  box-shadow 0.3s ease,
  transform 0.15s ease;
 }
+/* ========== Collision Warning Styles ========== */
+/* Collision warning - approaching 30px boundary */
+.vue-flow__node.collision-warning .node-card {
+ border-color: hsl(0 84% 60%); /* red-500 */
+ box-shadow:
+ 0 0 0 3px hsl(0 84% 60% / 0.3),
+ 0 0 15px hsl(0 84% 60% / 0.2);
+ animation: pulse-warning 0.5s ease-in-out infinite alternate;
+}
+@keyframes pulse-warning {
+ from {
+ box-shadow:
+ 0 0 0 3px hsl(0 84% 60% / 0.2),
+ 0 0 10px hsl(0 84% 60% / 0.15);
+ }
+ to {
+ box-shadow:
+ 0 0 0 5px hsl(0 84% 60% / 0.35),
+ 0 0 20px hsl(0 84% 60% / 0.25);
+ }
+}
+/* Collision blocked state */
+.vue-flow__node.collision-blocked .node-card {
+ border-color: hsl(0 84% 50%);
+ cursor: not-allowed;
+}
+/* Collision warning during drag */
+.vue-flow__node.dragging.collision-warning .node-card {
+ border-color: hsl(0 84% 60%);
+ box-shadow:
+ 0 0 0 4px hsl(0 84% 60% / 0.4),
+ 0 0 25px hsl(0 84% 60% / 0.3),
+ 0 20px 25px -5px rgb(0 0 0 / 0.15);
+}
 </style>
