@@ -120,6 +120,85 @@ export function useNodeCollision(nodesRef: => Node) {
  */
  const lastValidPosition = ref<{ x: number; y: number } | null>(null)
  /**
+ * Calculate sliding position when colliding - allows node to slide along obstacle edges
+ * This creates a smooth "hugging" effect around obstacles
+ */
+ function calculateSlidingPosition(
+ targetPosition: { x: number; y: number },
+ nodeId: string,
+ dimensions?: { width: number; height: number }
+ ): { x: number; y: number } {
+ const nodes = nodesRef
+ const width = dimensions?.width ?? DEFAULT_NODE_WIDTH
+ const height = dimensions?.height ?? DEFAULT_NODE_HEIGHT
+ let bestPosition = { ...targetPosition }
+ let hasCollision = true
+ let iterations = 0
+ const maxIterations = 5 // Prevent infinite loops
+ while (hasCollision && iterations < maxIterations) {
+ hasCollision = false
+ iterations++
+ for (const other of nodes) {
+ if (other.id === nodeId) continue
+ const otherBounds = getNodeBounds(other)
+ // Calculate overlap with margin
+ const leftOverlap = (bestPosition.x + width + COLLISION_MARGIN) - otherBounds.x
+ const rightOverlap = (otherBounds.x + otherBounds.width + COLLISION_MARGIN) - bestPosition.x
+ const topOverlap = (bestPosition.y + height + COLLISION_MARGIN) - otherBounds.y
+ const bottomOverlap = (otherBounds.y + otherBounds.height + COLLISION_MARGIN) - bestPosition.y
+ // Check if there's a collision (all overlaps positive means collision)
+ if (leftOverlap > 0 && rightOverlap > 0 && topOverlap > 0 && bottomOverlap > 0) {
+ hasCollision = true
+ // Find the minimum separation needed (slide along the shortest escape route)
+ const minOverlap = Math.min(leftOverlap, rightOverlap, topOverlap, bottomOverlap)
+ if (minOverlap === leftOverlap) {
+ // Push left
+ bestPosition.x = otherBounds.x - width - COLLISION_MARGIN
+ } else if (minOverlap === rightOverlap) {
+ // Push right
+ bestPosition.x = otherBounds.x + otherBounds.width + COLLISION_MARGIN
+ } else if (minOverlap === topOverlap) {
+ // Push up
+ bestPosition.y = otherBounds.y - height - COLLISION_MARGIN
+ } else {
+ // Push down
+ bestPosition.y = otherBounds.y + otherBounds.height + COLLISION_MARGIN
+ }
+ }
+ }
+ }
+ return bestPosition
+ }
+ /**
+ * Constrain position with sliding - node slides along obstacle edges
+ */
+ function constrainWithSliding(
+ nodeId: string,
+ targetPosition: { x: number; y: number },
+ dimensions?: { width: number; height: number }
+ ): { position: { x: number; y: number }; collides: boolean } {
+ // First check if target position is valid
+ const result = checkNodeCollision(nodeId, targetPosition, dimensions)
+ if (!result.collides) {
+ // No collision, use target position directly
+ lastValidPosition.value = { ...targetPosition }
+ return { position: targetPosition, collides: false }
+ }
+ // Collision detected - calculate sliding position
+ const slidingPosition = calculateSlidingPosition(targetPosition, nodeId, dimensions)
+ // Verify the sliding position is valid
+ const verifyResult = checkNodeCollision(nodeId, slidingPosition, dimensions)
+ if (!verifyResult.collides) {
+ lastValidPosition.value = { ...slidingPosition }
+ return { position: slidingPosition, collides: true }
+ }
+ // Fallback to last valid position if sliding still causes collision
+ if (lastValidPosition.value) {
+ return { position: lastValidPosition.value, collides: true }
+ }
+ return { position: targetPosition, collides: true }
+ }
+ /**
  * Find a valid position near the desired position that doesn't collide
  * Uses expanding spiral pattern to find nearest valid spot
  */
@@ -215,6 +294,7 @@ export function useNodeCollision(nodesRef: => Node) {
  checkNodeCollision,
  findValidPosition,
  checkAndConstrainPosition,
+ constrainWithSliding,
  initDragPosition,
  clearWarning,
  }

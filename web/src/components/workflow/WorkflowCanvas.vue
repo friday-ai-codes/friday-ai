@@ -52,7 +52,7 @@ const {
  collisionWarningNodeId,
  isColliding,
  findValidPosition,
- checkAndConstrainPosition,
+ constrainWithSliding,
  initDragPosition,
  clearWarning,
 } = useNodeCollision( => nodes.value)
@@ -166,17 +166,17 @@ function handleNodeDragStart(event: { node: Node }) {
  // Initialize collision tracking with current position
  initDragPosition(event.node.position)
 }
-// Node drag handler - constrain position to prevent overlap
+// Node drag handler - constrain position with sliding to prevent overlap
 function handleNodeDrag(event: { node: Node }) {
  onDrag(event.node)
- // Check collision and constrain position during drag
+ // Check collision and apply sliding constraint
  const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
- const result = checkAndConstrainPosition(
+ const result = constrainWithSliding(
  event.node.id,
  event.node.position,
  nodeWithDims.dimensions
  )
- // If colliding, force node back to last valid position using Vue Flow's internal updateNode
+ // If position was constrained, update node to sliding position
  if (result.collides && result.position) {
  // Use Vue Flow's updateNode directly to override the drag position
  vueFlowUpdateNode(event.node.id, { position: result.position })
