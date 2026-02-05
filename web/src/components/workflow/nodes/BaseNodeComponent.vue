@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { NodeProps } from '@vue-flow/core'
 import { Handle, Position } from '@vue-flow/core'
-import { computed } from 'vue'
+import { computed, inject, ref, type Ref } from 'vue'
+import { areTypesCompatible } from '~/composables/useSchemaValidation'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 interface Props extends NodeProps {
  icon?: any
@@ -11,6 +12,12 @@ interface Props extends NodeProps {
 }
 const props = defineProps<Props>
 const nodeTypesStore = useNodeTypesStore
+// Inject connection state from WorkflowCanvas for port highlighting
+const connectingFrom = inject<Ref<{
+ nodeId: string
+ handleId: string
+ portType: string
+} | null>>('connectingFrom', ref(null))
 const isSelected = computed( => props.selected)
 // 判断是否是触发器节点（触发器没有输入 Handle）
 const isTrigger = computed( => {
@@ -23,10 +30,49 @@ const nodeTypeDef = computed( => {
  if (!nodeType) return null
  return nodeTypesStore.getNodeType(nodeType)
 })
+// 输入端口
+const inputPorts = computed( => nodeTypeDef.value?.inputs || )
 // 输出端口
 const outputPorts = computed( => nodeTypeDef.value?.outputs || )
 // 是否有多个输出端口
 const hasMultipleOutputs = computed( => outputPorts.value.length > 1)
+// Port compatibility for highlighting during connection drag
+const inputPortCompatibility = computed( => {
+ const result: Record<string, 'compatible' | 'incompatible' | 'none'> = {}
+ // Only compute when actively connecting
+ if (!connectingFrom.value) {
+ return result
+ }
+ // Don't highlight source node's own ports
+ if (connectingFrom.value.nodeId === props.id) {
+ return result
+ }
+ // Check each input port
+ for (const input of inputPorts.value) {
+ const isCompatible = areTypesCompatible(
+ connectingFrom.value.portType,
+ input.type,
+ )
+ result[input.name] = isCompatible ? 'compatible': 'incompatible'
+ }
+ // If no specific input ports, check default input
+ if (inputPorts.value.length === 0 && !isTrigger.value) {
+ // Default input accepts 'any'
+ const isCompatible = areTypesCompatible(
+ connectingFrom.value.portType,
+ 'any',
+ )
+ result.default = isCompatible ? 'compatible': 'incompatible'
+ }
+ return result
+})
+// Get compatibility class for the default input handle
+const defaultInputCompatClass = computed( => {
+ const compat = inputPortCompatibility.value.default
+ if (compat === 'compatible') return 'port-compatible'
+ if (compat === 'incompatible') return 'port-incompatible'
+ return ''
+})
 // 主题样式类
 const themeClasses = computed( => {
  const themes: Record<string, string> = {
@@ -66,7 +112,7 @@ const iconClasses = computed( => {
  <Handle
  v-if="!isTrigger"
  type="target":position="Position.Top"
- class="handle-input"
+ class="handle-input":class="defaultInputCompatClass"
  />
  <!-- 节点内容 -->
  <div
@@ -320,6 +366,33 @@ const iconClasses = computed( => {
  box-shadow:
  0 0 0 4px rgba(16, 185, 129, 0.4),
  0 2px 12px rgba(16, 185, 129, 0.5);
+}
+/* ========== Port Compatibility Highlighting ========== */
+/* Compatible port - green glow effect during connection drag */
+.workflow-node .vue-flow__handle.port-compatible {
+ background: #10b981 !important; /* emerald-500 */
+ box-shadow:
+ 0 0 0 4px rgba(16, 185, 129, 0.4),
+ 0 0 12px rgba(16, 185, 129, 0.6);
+ animation: pulse-compatible 1s ease-in-out infinite;
+}
+@keyframes pulse-compatible {
+ 0%, 100% {
+ box-shadow:
+ 0 0 0 4px rgba(16, 185, 129, 0.4),
+ 0 0 12px rgba(16, 185, 129, 0.6);
+ }
+ 50% {
+ box-shadow:
+ 0 0 0 6px rgba(16, 185, 129, 0.5),
+ 0 0 16px rgba(16, 185, 129, 0.7);
+ }
+}
+/* Incompatible port - dimmed but still connectable */
+.workflow-node .vue-flow__handle.port-incompatible {
+ background: #9ca3af !important; /* gray-400 */
+ opacity: 0.5;
+ /* pointer-events: auto - default, still connectable per CONTEXT.md */
 }
 /* ========== 主题变体 ========== */
 /* AI 主题 - 科技感渐变边框 */

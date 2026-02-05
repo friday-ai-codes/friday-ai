@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import type { Connection, Edge, Node } from '@vue-flow/core'
+import type { Connection, Edge, Node, OnConnectStartParams } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MarkerType, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { storeToRefs } from 'pinia'
-import { markRaw, onMounted, ref, watch } from 'vue'
+import { markRaw, onMounted, provide, ref, watch } from 'vue'
+import { useSchemaValidation } from '~/composables/useSchemaValidation'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
+import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useDragPreview } from './composables/useDragPreview'
 import { useNodeCollision } from './composables/useNodeCollision'
@@ -34,9 +36,20 @@ defineProps<{
 // Stores
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
+const validationStore = useWorkflowValidationStore
 const { nodes, edges } = storeToRefs(store)
+// Schema validation
+const { checkConnection } = useSchemaValidation
 // Drag state
 const isDragOver = ref(false)
+// Connection drag state - tracks active connection for port highlighting
+const connectingFrom = ref<{
+ nodeId: string
+ handleId: string
+ portType: string
+} | null>(null)
+// Provide connection state to child nodes for port highlighting
+provide('connectingFrom', connectingFrom)
 // 使用 useVueFlow 获取 project 方法和节点更新方法
 const { project, updateNode: vueFlowUpdateNode } = useVueFlow
 // Drag preview state
@@ -142,9 +155,17 @@ function handleConnect(connection: Connection) {
  const targetNode = nodes.value.find(n => n.id === connection.target)
  const sourceNodeType = sourceNode?.type || sourceNode?.data?.node_type || ''
  const targetNodeType = targetNode?.type || targetNode?.data?.node_type || ''
+ // Check connection for schema mismatch
+ const validationResult = checkConnection(
+ sourceNodeType,
+ connection.sourceHandle || 'source',
+ targetNodeType,
+ connection.targetHandle || 'target',
+ )
+ const edgeId = `e-${connection.source}-${connection.target}-${Date.now}`
  // Use gradient edge type with color data for all new connections
  const newEdge: Edge = {
- id: `e-${connection.source}-${connection.target}-${Date.now}`,
+ id: edgeId,
  source: connection.source,
  target: connection.target,
  sourceHandle: connection.sourceHandle || 'source',
@@ -156,9 +177,22 @@ function handleConnect(connection: Connection) {
  targetColor: getNodeTypeColor(targetNodeType),
  sourceNodeType,
  targetNodeType,
+ hasWarning: !!validationResult.warning,
+ warning: validationResult.warning || '',
  },
  }
  store.addEdge(newEdge)
+ // Add warning to validation store if schema mismatch
+ if (validationResult.warning) {
+ validationStore.addWarning({
+ id: edgeId,
+ edgeId,
+ type: 'schema_mismatch',
+ message: validationResult.warning,
+ sourceNodeId: connection.source,
+ targetNodeId: connection.target,
+ })
+ }
 }
 // Node drag start handler
 function handleNodeDragStart(event: { node: Node }) {
@@ -217,6 +251,30 @@ function handleNodeClick(event: { node: Node }) {
 // Pane click handler
 function handlePaneClick {
  store.selectNode(null)
+}
+// Connection start handler - track source port for highlighting
+function handleConnectStart(params: OnConnectStartParams) {
+ if (!params.nodeId || !params.handleId) return
+ // Only track source (output) connections
+ if (params.handleType !== 'source') return
+ // Find the source node to get its type
+ const sourceNode = nodes.value.find(n => n.id === params.nodeId)
+ if (!sourceNode) return
+ const nodeType = sourceNode.type || sourceNode.data?.node_type
+ if (!nodeType) return
+ // Get the output port type from node definition
+ const nodeTypeDef = nodeTypesStore.getNodeType(nodeType)
+ const outputPort = nodeTypeDef?.outputs.find(p => p.name === params.handleId)
+ || nodeTypeDef?.outputs[0] // fallback to first output if no match
+ connectingFrom.value = {
+ nodeId: params.nodeId,
+ handleId: params.handleId,
+ portType: outputPort?.type || 'any',
+ }
+}
+// Connection end handler - clear tracking
+function handleConnectEnd {
+ connectingFrom.value = null
 }
 // Drag and Drop handlers
 function onDragOver(event: DragEvent) {
@@ -334,6 +392,10 @@ watch(isColliding, (colliding) => {
  })
  }
 })
+// Sync validation store with edges - remove orphaned warnings when edges are deleted
+watch(edges, (newEdges) => {
+ validationStore.syncWithEdges(newEdges)
+}, { deep: true })
 </script>
 <template>
  <div
@@ -353,6 +415,8 @@ watch(isColliding, (colliding) => {
  v-model:edges="edges":node-types="nodeTypes":edge-types="edgeTypes":default-edge-options="defaultEdgeOptions":default-viewport="{ zoom: 1, x: 50, y: 50 }":min-zoom="0.2":max-zoom="4":nodes-draggable="editable":nodes-connectable="editable":elements-selectable="true":snap-to-grid="false":connect-on-click="false":fit-view-on-init="false":pan-on-drag="true":zoom-on-scroll="true"
  class="vue-flow-wrapper"
  @connect="handleConnect"
+ @connect-start="handleConnectStart"
+ @connect-end="handleConnectEnd"
  @node-drag-start="handleNodeDragStart"
  @node-drag="handleNodeDrag"
  @node-drag-stop="handleNodeDragStop"
