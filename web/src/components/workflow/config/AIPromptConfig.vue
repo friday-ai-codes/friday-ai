@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Node as VueFlowNode, Edge } from '@vue-flow/core'
 import type { AIPromptConfig } from '~/types/workflow'
 import { computed } from 'vue'
 import { Input } from '~/components/ui/input'
@@ -12,8 +13,8 @@ import {
 } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Slider } from '~/components/ui/slider'
-import { Textarea } from '~/components/ui/textarea'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
+import { SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
  aiPromptConfigSchema,
@@ -24,8 +25,15 @@ import {
 // ============================================================================
 interface Props {
  config: AIPromptConfig
+ workflowNodes?: VueFlowNode
+ workflowEdges?: Edge
+ currentNodeId?: string
 }
-const props = defineProps<Props>
+const props = withDefaults(defineProps<Props>, {
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: '',
+})
 const emit = defineEmits<{
  (e: 'update:config', value: AIPromptConfig): void
 }>
@@ -69,10 +77,9 @@ const temperature = computed({
  <!-- System Prompt -->
  <div class="space-y-2">
  <Label>系统提示词</Label>
- <Textarea
- v-model="systemPrompt"
- placeholder="设定 AI 的角色和行为规范..."
- rows="3"
+ <SmartTextarea
+ v-model="systemPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="设定 AI 的角色和行为规范...":min-rows="3"
  />
  <p class="text-xs text-muted-foreground">
  定义 AI 的角色、能力范围和输出要求
@@ -84,16 +91,12 @@ const temperature = computed({
  用户提示词
  <span class="text-destructive">*</span>
  </Label>
- <Textarea
- v-model="userPrompt"
- placeholder="{{global.description}}"
- rows="4"
- class="font-mono text-sm"
+ <SmartTextarea
+ v-model="userPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="输入 {{ 触发变量自动补全...":min-rows="4"
  />
  <p class="text-xs text-muted-foreground">
- 支持模板变量：<code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ global.xxx }}</code>、
- <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ input.xxx }}</code>、
- <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{ nodes.nodeId.xxx }}</code>
+ 输入 <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{</code> 触发变量自动补全
  </p>
  </div>
  <!-- 温度 -->
