@@ -361,4 +361,36 @@ onMounted( => {
 .vue-flow__controls-button:hover {
  background: hsl(var(--accent)) !important;
 }
+/* ========== Drag Preview Styles ========== */
+/* Grid overlay during drag */
+.grid-overlay {
+ position: absolute;
+ inset: 0;
+ pointer-events: none;
+ background-image:
+ linear-gradient(hsl(var(--primary) / 0.08) 1px, transparent 1px),
+ linear-gradient(90deg, hsl(var(--primary) / 0.08) 1px, transparent 1px);
+ background-size: 20px 20px;
+ z-index: 1;
+ opacity: 0;
+ animation: gridFadeIn 0.15s ease forwards;
+}
+@keyframes gridFadeIn {
+ to { opacity: 1; }
+}
+/* Node preview indicator */
+.node-preview {
+ position: absolute;
+ top: 0;
+ left: 0;
+ width: 200px;
+ height: 80px;
+ pointer-events: none;
+ opacity: 0.4;
+ border: 2px dashed hsl(var(--primary));
+ border-radius: 16px;
+ background: hsl(var(--primary) / 0.05);
+ z-index: 5;
+ transition: transform 0.1s ease-out;
+}
 </style>
