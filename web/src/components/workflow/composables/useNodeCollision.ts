@@ -14,8 +14,8 @@ export interface CollisionResult {
  isNearBoundary: boolean // within 30px but not colliding
 }
 const COLLISION_MARGIN = 30
-const DEFAULT_NODE_WIDTH = 200
-const DEFAULT_NODE_HEIGHT = 80
+const DEFAULT_NODE_WIDTH = 200 // 固定宽度，200/2=100 是 20 的倍数
+const DEFAULT_NODE_HEIGHT = 80 // 固定高度，是 20 的倍数
 /**
  * Extended node type with optional dimensions (available on GraphNode at runtime)
  */
