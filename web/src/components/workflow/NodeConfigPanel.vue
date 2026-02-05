@@ -16,6 +16,7 @@ import { useNodeMeta } from '~/composables/useNodeMeta'
 import { areTypesCompatible } from '~/composables/useSchemaValidation'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import IssuesPanel from './validation/IssuesPanel.vue'
 import OverrideConfirmDialog from './validation/OverrideConfirmDialog.vue'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
@@ -230,6 +231,8 @@ function handleOverrideConfirm(selectedKeys: string) {
  </div>
  <ScrollArea class="flex-1">
  <div class=" space-y-5">
+ <!-- Issues Panel (shows when warnings exist) -->
+ <IssuesPanel />
  <div class="space-y-4">
  <div class="space-y-2">
  <Label class="text-sm font-medium flex items-center justify-between">
