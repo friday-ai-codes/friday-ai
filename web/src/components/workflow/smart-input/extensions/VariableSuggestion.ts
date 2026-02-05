@@ -5,7 +5,6 @@ import Suggestion, {
 } from '@tiptap/suggestion'
 import { PluginKey } from '@tiptap/pm/state'
 import { createApp, ref, h, type App } from 'vue'
-import { computePosition, flip, offset, shift } from '@floating-ui/dom'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { VariableNodeAttrs } from '~/types/smart-input'
 import VariableSuggestionList from '../VariableSuggestionList.vue'
@@ -113,7 +112,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  let componentRef: { onKeyDown: (event: KeyboardEvent) => boolean } | null = null
  return {
  onStart(props: SuggestionProps) {
- // Create popup container
+ const editorEl = props.editor.view.dom as HTMLElement
+ // Create popup container on body
  popup = document.createElement('div')
  popup.className = 'variable-suggestion-popup'
  document.body.appendChild(popup)
@@ -140,29 +140,15 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  },
  })
  app.mount(popup)
- // Position popup using Floating UI
- const updatePosition = async => {
- if (!popup || !props.clientRect) return
- // Create a virtual element from clientRect
- const virtualEl = {
- getBoundingClientRect: => props.clientRect! ?? new DOMRect,
- }
- const { x, y } = await computePosition(virtualEl, popup, {
- placement: 'bottom-start',
- middleware: [
- offset(8),
- flip,
- shift({ padding: 8 }),
- ],
- })
+ // Position popup below editor using getBoundingClientRect
+ const editorRect = editorEl.getBoundingClientRect
  Object.assign(popup.style, {
  position: 'fixed',
- left: `${x}px`,
- top: `${y}px`,
+ left: `${editorRect.left}px`,
+ top: `${editorRect.bottom + 8}px`,
  zIndex: '9999',
+ minWidth: `${editorRect.width}px`,
  })
- }
- updatePosition
  },
  onUpdate(props: SuggestionProps) {
  // Update items reactively - remount with new props
@@ -189,28 +175,6 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  },
  })
  app.mount(popup)
- // Update position
- const updatePosition = async => {
- if (!popup || !props.clientRect) return
- const virtualEl = {
- getBoundingClientRect: => props.clientRect! ?? new DOMRect,
- }
- const { x, y } = await computePosition(virtualEl, popup, {
- placement: 'bottom-start',
- middleware: [
- offset(8),
- flip,
- shift({ padding: 8 }),
- ],
- })
- Object.assign(popup.style, {
- position: 'fixed',
- left: `${x}px`,
- top: `${y}px`,
- zIndex: '9999',
- })
- }
- updatePosition
  }
  },
  onKeyDown({ event }: SuggestionKeyDownProps): boolean {

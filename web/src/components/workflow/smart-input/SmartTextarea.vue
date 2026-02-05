@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, computed } from 'vue'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
+import type { Edge, Node as VueFlowNode } from '@vue-flow/core'
 import Document from '@tiptap/extension-document'
-import Paragraph from '@tiptap/extension-paragraph'
-import Text from '@tiptap/extension-text'
 import History from '@tiptap/extension-history'
+import Paragraph from '@tiptap/extension-paragraph'
 import Placeholder from '@tiptap/extension-placeholder'
-import type { Node as VueFlowNode, Edge } from '@vue-flow/core'
+import Text from '@tiptap/extension-text'
+import { EditorContent, useEditor } from '@tiptap/vue-3'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
-import { VariableNode, createVariableSuggestion } from './extensions'
+import { createVariableSuggestion, VariableNode } from './extensions'
 interface Props {
  modelValue: string
  workflowNodes: VueFlowNode
@@ -41,7 +41,8 @@ const isUpdatingFromExternal = ref(false)
  * Serialize editor content to string with {{path}} syntax
  */
 function serializeContent: string {
- if (!editor.value) return ''
+ if (!editor.value)
+ return ''
  const doc = editor.value.getJSON
  const paragraphs: string =
  // Traverse document nodes
@@ -51,7 +52,8 @@ function serializeContent: string {
  for (const child of node.content ?? ) {
  if (child.type === 'text') {
  paragraphText += child.text ?? ''
- } else if (child.type === 'variable') {
+ }
+ else if (child.type === 'variable') {
  paragraphText += `{{${child.attrs?.path ?? ''}}}`
  }
  }
@@ -139,7 +141,8 @@ const editor = useEditor({
 })
 // Sync external value changes to editor
 watch( => props.modelValue, (newValue) => {
- if (!editor.value) return
+ if (!editor.value)
+ return
  const currentValue = serializeContent
  if (newValue !== currentValue) {
  isUpdatingFromExternal.value = true
@@ -163,7 +166,7 @@ onBeforeUnmount( => {
 </script>
 <template>
  <div
- class="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm
+ class="smart-textarea-wrapper relative rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm
  focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2
  focus-within:ring-offset-background transition-shadow
  max- overflow-y-auto":class="{ 'opacity-50 cursor-not-allowed': disabled }"

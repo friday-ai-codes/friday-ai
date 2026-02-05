@@ -9,6 +9,7 @@ overrides:
 catalogs:
  default:
  '@antfu/eslint-config': ^7.0.1
+ '@floating-ui/dom': 1.7.5
  '@iconify-json/heroicons': ^1.2.3
  '@iconify-json/lucide': ^1.2.85
  '@iconify-json/mdi': ^1.2.3
@@ -17,14 +18,21 @@ catalogs:
  '@playwright/test': ^1.57.0
  '@tailwindcss/vite': ^4.1.18
  '@tanstack/vue-query': 5.92.9
- '@tiptap/extension-code-block-lowlight': 3.18.0
- '@tiptap/extension-link': 3.18.0
- '@tiptap/extension-placeholder': 3.18.0
- '@tiptap/extension-task-item': 3.18.0
- '@tiptap/extension-task-list': 3.18.0
- '@tiptap/extension-typography': 3.18.0
- '@tiptap/starter-kit': 3.18.0
- '@tiptap/vue-3': 3.18.0
+ '@tiptap/core': 3.19.0
+ '@tiptap/extension-code-block-lowlight': 3.19.0
+ '@tiptap/extension-document': 3.19.0
+ '@tiptap/extension-history': 3.19.0
+ '@tiptap/extension-link': 3.19.0
+ '@tiptap/extension-paragraph': 3.19.0
+ '@tiptap/extension-placeholder': 3.19.0
+ '@tiptap/extension-task-item': 3.19.0
+ '@tiptap/extension-task-list': 3.19.0
+ '@tiptap/extension-text': 3.19.0
+ '@tiptap/extension-typography': 3.19.0
+ '@tiptap/pm': 3.19.0
+ '@tiptap/starter-kit': 3.19.0
+ '@tiptap/suggestion': 3.19.0
+ '@tiptap/vue-3': 3.19.0
  '@types/node': ^24.10.8
  '@vee-validate/zod': ^4.15.1
  '@vitejs/plugin-vue': ^6.0.3
