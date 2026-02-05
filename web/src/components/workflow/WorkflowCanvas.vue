@@ -440,4 +440,24 @@ onMounted( => {
  z-index: 5;
  transition: transform 0.1s ease-out;
 }
+/* Node preview collision indicator */
+.node-preview.collision {
+ border-color: hsl(0 84% 60%);
+ background: hsl(0 84% 60% / 0.1);
+}
+/* ========== Collision Warning Styles ========== */
+/* Collision warning toast animation */
+@keyframes slideUp {
+ from {
+ opacity: 0;
+ transform: translate(-50%, 10px);
+ }
+ to {
+ opacity: 1;
+ transform: translate(-50%, 0);
+ }
+}
+.workflow-canvas [class*="bg-destructive"] {
+ animation: slideUp 0.2s ease-out;
+}
 </style>
