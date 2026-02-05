@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { watchDebounced } from '@vueuse/core'
-import { Settings, Trash2, X } from 'lucide-vue-next'
+import { Settings, Trash2, Wand2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
@@ -11,18 +11,32 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { useNodeMeta } from '~/composables/useNodeMeta'
+import { areTypesCompatible } from '~/composables/useSchemaValidation'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import OverrideConfirmDialog from './validation/OverrideConfirmDialog.vue'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { selectedNode, selectedNodeId, nodes, edges } = storeToRefs(store)
 // Use node meta composable for registry access
 const { getDefinition, hasCustomConfig } = useNodeMeta
+// Get upstream variables for the selected node
+const { designTimeVariables } = useDesignTimeVariables(nodes, edges, selectedNodeId)
 // Local form state for node config
 const nodeName = ref('')
 const nodeDescription = ref('')
 const nodeConfig = ref<Record<string, any>>({})
+// Override confirmation state
+const overrideDialogOpen = ref(false)
+const fieldsToOverride = ref<Array<{
+ key: string
+ label: string
+ currentValue: string
+ newValue: string
+}>>
+const pendingFills = ref<Record<string, string>>({})
 // Get node type info for selected node
 const nodeTypeInfo = computed( => {
  if (!selectedNode.value)
@@ -111,6 +125,69 @@ function getFieldType(schema: any): string {
  return 'object'
  return 'text'
 }
+// Auto-fill logic: match upstream variables to node inputs
+// Per CONTEXT.md: name priority, type fallback
+function computeAutoFills: { fills: Record<string, string>; overrides: typeof fieldsToOverride.value } {
+ const fills: Record<string, string> = {}
+ const overrides: typeof fieldsToOverride.value =
+ const inputs = nodeTypeInfo.value?.inputs ||
+ const vars = designTimeVariables.value
+ for (const input of inputs) {
+ // Find match by name first (case-insensitive)
+ let match = vars.find(v =>
+ v.key.toLowerCase === input.name.toLowerCase,
+ )
+ // Fallback to type match
+ if (!match) {
+ match = vars.find(v => areTypesCompatible(v.type, input.type))
+ }
+ if (match) {
+ const varPath = `{{${match.path}}}`
+ const currentVal = nodeConfig.value[input.name]
+ if (currentVal && currentVal !== varPath) {
+ // Has existing value - needs confirmation
+ overrides.push({
+ key: input.name,
+ label: input.label || input.name,
+ currentValue: String(currentVal),
+ newValue: varPath,
+ })
+ }
+ else if (!currentVal) {
+ // Empty - fill directly
+ fills[input.name] = varPath
+ }
+ }
+ }
+ return { fills, overrides }
+}
+function handleAutoFill {
+ const { fills, overrides } = computeAutoFills
+ if (Object.keys(fills).length === 0 && overrides.length === 0) {
+ // Nothing to fill - silent per CONTEXT.md
+ return
+ }
+ // Apply direct fills immediately (silent per CONTEXT.md)
+ for (const [key, value] of Object.entries(fills)) {
+ nodeConfig.value[key] = value
+ }
+ // If there are overrides, show confirmation dialog
+ if (overrides.length > 0) {
+ fieldsToOverride.value = overrides
+ pendingFills.value = Object.fromEntries(
+ overrides.map(o => [o.key, o.newValue]),
+ )
+ overrideDialogOpen.value = true
+ }
+}
+function handleOverrideConfirm(selectedKeys: string) {
+ for (const key of selectedKeys) {
+ if (pendingFills.value[key]) {
+ nodeConfig.value[key] = pendingFills.value[key]
+ }
+ }
+ pendingFills.value = {}
+}
 </script>
 <template>
  <!-- Only show when a node is selected -->
@@ -134,9 +211,21 @@ function getFieldType(schema: any): string {
  </Badge>
  </div>
  </div>
+ <div class="flex items-center gap-1">
+ <Button
+ v-if="nodeTypeInfo?.inputs?.length"
+ variant="ghost"
+ size="sm"
+ class=" hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+ @click="handleAutoFill"
+ >
+ <Wand2 class="w-4 mr-1.5" />
+ 自动填充
+ </Button>
  <Button variant="ghost" size="icon" class=" w-8 hover:bg-muted/50" @click="closeNodePanel">
  <X class="w-4 " />
  </Button>
+ </div>
  </div>
  </div>
  <ScrollArea class="flex-1">
@@ -230,4 +319,9 @@ function getFieldType(schema: any): string {
  </Button>
  </div>
  </div>
+ <!-- Override Confirmation Dialog -->
+ <OverrideConfirmDialog
+ v-model:open="overrideDialogOpen":fields="fieldsToOverride"
+ @confirm="handleOverrideConfirm"
+ />
 </template>
