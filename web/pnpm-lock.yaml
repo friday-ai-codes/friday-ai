@@ -206,6 +206,9 @@ importers:
  '@tiptap/starter-kit':
  specifier: 'catalog:'
  version: 3.18.0
+ '@tiptap/suggestion':
+ specifier: ^3.19.0
+ version: 3.19.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)
  '@tiptap/vue-3':
  specifier: 'catalog:'
  version: 3.18.0(@floating-ui/dom@1.7.4)(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(vue@3.5.26(typescript@5.9.3))
@@ -1276,6 +1279,11 @@ packages:
  resolution: {integrity: sha512-8RoI5gW0xBVCsuxahpK8vx7onAw6k2/uR3hbGBBnH+HocDMaAZKot3nTyY546ij8ospIC1mnQ7k4BhVUZesZDQ==}
  '@tiptap/starter-kit@3.18.0':
  resolution: {integrity: sha512-LctpCelqI/5nHEeZgCPiwI1MmTjGr6YCIBGWmS5s4DJE7NfevEkwomR/C05QKdVUwPhpCXIMeS1+h/RYqRo1KA==}
+ '@tiptap/suggestion@3.19.0':
+ resolution: {integrity: sha512-tUZwMRFqTVPIo566ZmHNRteyZxJy2EE4FA+S3IeIUOOvY6AW0h1imhbpBO7sXV8CeEQvpa+2DWwLvy7L3vmstA==}
+ peerDependencies:
+ '@tiptap/core': ^3.19.0
+ '@tiptap/pm': ^3.19.0
  '@tiptap/vue-3@3.18.0':
  resolution: {integrity: sha512-3JUMYqFYXEOKk2zOtPp6wuEzHAHrHdrswaRhHVVDR8olO9PpbuJ6qu83RJUB8OZVnP7dv3yxIakDf1AHMxLQXg==}
  peerDependencies:
@@ -4010,6 +4018,10 @@ snapshots:
  '@tiptap/extension-text': 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))
  '@tiptap/extension-underline': 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))
  '@tiptap/extensions': 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)
+ '@tiptap/pm': 3.18.0
+ '@tiptap/suggestion@3.19.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)':
+ dependencies:
+ '@tiptap/core': 3.18.0(@tiptap/pm@3.18.0)
  '@tiptap/pm': 3.18.0
  '@tiptap/vue-3@3.18.0(@floating-ui/dom@1.7.4)(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(vue@3.5.26(typescript@5.9.3))':
  dependencies:
