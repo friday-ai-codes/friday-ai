@@ -9,6 +9,7 @@ import { markRaw, onMounted, ref } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useDragPreview } from './composables/useDragPreview'
+import { useNodeCollision } from './composables/useNodeCollision'
 // Custom Edges
 import { GradientEdge } from './edges'
 // Custom Nodes
@@ -46,6 +47,14 @@ const {
  onDrag,
  onDragStop,
 } = useDragPreview(20)
+// Collision detection state
+const {
+ collisionWarningNodeId,
+ isColliding,
+ checkNodeCollision,
+ findValidPosition,
+ clearWarning,
+} = useNodeCollision( => nodes.value)
 // Node Types Registration
 const nodeTypes = {
  // Triggers
@@ -157,15 +166,27 @@ function handleNodeDragStart(event: { node: Node }) {
 // Node drag handler
 function handleNodeDrag(event: { node: Node }) {
  onDrag(event.node)
+ // Check collision at current position for visual feedback
+ const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
+ checkNodeCollision(
+ event.node.id,
+ event.node.position,
+ nodeWithDims.dimensions
+ )
 }
 // Node drag stop handler
 function handleNodeDragStop(event: { node: Node }) {
  const snappedPosition = onDragStop
- if (snappedPosition) {
- store.updateNode(event.node.id, { position: snappedPosition })
- } else {
- store.updateNode(event.node.id, { position: event.node.position })
- }
+ const targetPosition = snappedPosition || event.node.position
+ // Find valid position if current position collides
+ const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
+ const validPosition = findValidPosition(
+ targetPosition,
+ event.node.id,
+ nodeWithDims.dimensions
+ )
+ store.updateNode(event.node.id, { position: validPosition })
+ clearWarning
 }
 // Node click handler
 function handleNodeClick(event: { node: Node }) {
@@ -212,6 +233,9 @@ function onDrop(event: DragEvent) {
  // 居中偏移（节点宽度约 200px，高度约 80px）
  position.x -= 100
  position.y -= 40
+ // Find valid position if dropping would cause collision
+ const tempNodeId = 'temp-drop-check'
+ const validPosition = findValidPosition(position, tempNodeId)
  const nodeTypeInfo = nodeTypesStore.getNodeType(type)
  const displayName = nodeTypeInfo?.display_name || type.replace(/_/g, ' ')
  // 根据节点类型设置默认配置
@@ -240,7 +264,7 @@ function onDrop(event: DragEvent) {
  const newNode: Node = {
  id: crypto.randomUUID,
  type,
- position,
+ position: validPosition, // Use collision-free position
  label: displayName,
  data: {
  node_type: type,
@@ -312,6 +336,17 @@ onMounted( => {
  释放以添加节点
  </div>
  </div>
+ <!-- Collision warning toast -->
+ <div
+ v-if="isColliding"
+ class="absolute bottom-4 left-1/2 -translate-x-1/2 z-50
+ px-4 py-2 bg-destructive/90 text-destructive-foreground
+ rounded-lg shadow-lg text-sm"
+ >
+ 节点间距不能小于 30px
+ </div>
+ <!-- Hidden ref for collisionWarningNodeId (used for CSS class binding) -->
+ <div v-if="false":data-warning-node="collisionWarningNodeId" />
  </div>
 </template>
 <style>
