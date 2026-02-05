@@ -169,6 +169,7 @@ declare global {
  const useDebounce: typeof import('@vueuse/core').useDebounce
  const useDebounceFn: typeof import('@vueuse/core').useDebounceFn
  const useDebouncedRefHistory: typeof import('@vueuse/core').useDebouncedRefHistory
+ const useDesignTimeVariables: typeof import('./composables/useDesignTimeVariables').useDesignTimeVariables
  const useDeviceMotion: typeof import('@vueuse/core').useDeviceMotion
  const useDeviceOrientation: typeof import('@vueuse/core').useDeviceOrientation
  const useDevicePixelRatio: typeof import('@vueuse/core').useDevicePixelRatio
@@ -330,6 +331,9 @@ declare global {
  // @ts-ignore
  export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
  import('./composables/useConfigModel')
+ // @ts-ignore
+ export type { DesignTimeVariable, VariableCategory } from './composables/useDesignTimeVariables'
+ import('./composables/useDesignTimeVariables')
  // @ts-ignore
  export type { ModalOptions, ModalInstance } from './composables/useModal'
  import('./composables/useModal')
@@ -514,6 +518,7 @@ declare module 'vue' {
  readonly useDebounce: UnwrapRef<typeof import('@vueuse/core')['useDebounce']>
  readonly useDebounceFn: UnwrapRef<typeof import('@vueuse/core')['useDebounceFn']>
  readonly useDebouncedRefHistory: UnwrapRef<typeof import('@vueuse/core')['useDebouncedRefHistory']>
+ readonly useDesignTimeVariables: UnwrapRef<typeof import('./composables/useDesignTimeVariables')['useDesignTimeVariables']>
  readonly useDeviceMotion: UnwrapRef<typeof import('@vueuse/core')['useDeviceMotion']>
  readonly useDeviceOrientation: UnwrapRef<typeof import('@vueuse/core')['useDeviceOrientation']>
  readonly useDevicePixelRatio: UnwrapRef<typeof import('@vueuse/core')['useDevicePixelRatio']>

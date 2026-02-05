@@ -116,8 +116,12 @@ export function useNodeCollision(nodesRef: => Node) {
  return result
  }
  /**
+ * Store last valid position during drag
+ */
+ const lastValidPosition = ref<{ x: number; y: number } | null>(null)
+ /**
  * Find a valid position near the desired position that doesn't collide
- * Uses expanding square pattern to find nearest valid spot
+ * Uses expanding spiral pattern to find nearest valid spot
  */
  function findValidPosition(
  position: { x: number; y: number },
@@ -129,10 +133,12 @@ export function useNodeCollision(nodesRef: => Node) {
  if (!result.collides) {
  return position
  }
- // Try to find nearest valid position by pushing away from collision
- // Simple approach: try positions in expanding square pattern
- const step = 10
- for (let offset = step; offset <= 200; offset += step) {
+ // Try to find nearest valid position using spiral pattern
+ // Expand search to 500px to handle dense layouts
+ const step = 20
+ const maxOffset = 500
+ for (let offset = step; offset <= maxOffset; offset += step) {
+ // Try 8 directions at each distance level
  const candidates = [
  { x: position.x + offset, y: position.y },
  { x: position.x - offset, y: position.y },
@@ -144,7 +150,19 @@ export function useNodeCollision(nodesRef: => Node) {
  { x: position.x - offset, y: position.y + offset },
  ]
  for (const candidate of candidates) {
- const check = checkNodeCollision(nodeId, candidate, dimensions)
+ // Use a temporary check that doesn't update reactive state
+ const nodes = nodesRef
+ const otherBounds = nodes
+ .filter(n => n.id !== nodeId)
+ .map(getNodeBounds)
+ const draggingBounds: NodeBounds = {
+ id: nodeId,
+ x: candidate.x,
+ y: candidate.y,
+ width: dimensions?.width ?? DEFAULT_NODE_WIDTH,
+ height: dimensions?.height ?? DEFAULT_NODE_HEIGHT,
+ }
+ const check = checkCollision(draggingBounds, otherBounds)
  if (!check.collides) {
  return candidate
  }
@@ -152,6 +170,37 @@ export function useNodeCollision(nodesRef: => Node) {
  }
  // Fallback: return original position (shouldn't happen in practice)
  return position
+ }
+ /**
+ * Check collision and track last valid position for drag constraint
+ */
+ function checkAndConstrainPosition(
+ nodeId: string,
+ position: { x: number; y: number },
+ dimensions?: { width: number; height: number }
+ ): { position: { x: number; y: number }; collides: boolean; isNearBoundary: boolean } {
+ const result = checkNodeCollision(nodeId, position, dimensions)
+ if (!result.collides) {
+ // Position is valid, update last valid position
+ lastValidPosition.value = { ...position }
+ return { position, collides: false, isNearBoundary: result.isNearBoundary }
+ }
+ // Colliding - return last valid position if available
+ if (lastValidPosition.value) {
+ return {
+ position: lastValidPosition.value,
+ collides: true,
+ isNearBoundary: false,
+ }
+ }
+ // No last valid position, return current (shouldn't happen normally)
+ return { position, collides: true, isNearBoundary: false }
+ }
+ /**
+ * Initialize last valid position when drag starts
+ */
+ function initDragPosition(position: { x: number; y: number }) {
+ lastValidPosition.value = { ...position }
  }
  /**
  * Clear collision warning state
@@ -165,6 +214,8 @@ export function useNodeCollision(nodesRef: => Node) {
  isColliding,
  checkNodeCollision,
  findValidPosition,
+ checkAndConstrainPosition,
+ initDragPosition,
  clearWarning,
  }
 }

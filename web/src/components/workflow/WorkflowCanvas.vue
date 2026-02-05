@@ -5,7 +5,7 @@ import { Controls } from '@vue-flow/controls'
 import { MarkerType, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
 import { storeToRefs } from 'pinia'
-import { markRaw, onMounted, ref } from 'vue'
+import { markRaw, onMounted, ref, watch } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useDragPreview } from './composables/useDragPreview'
@@ -51,8 +51,9 @@ const {
 const {
  collisionWarningNodeId,
  isColliding,
- checkNodeCollision,
  findValidPosition,
+ checkAndConstrainPosition,
+ initDragPosition,
  clearWarning,
 } = useNodeCollision( => nodes.value)
 // Node Types Registration
@@ -162,17 +163,23 @@ function handleConnect(connection: Connection) {
 // Node drag start handler
 function handleNodeDragStart(event: { node: Node }) {
  onDragStart(event.node)
+ // Initialize collision tracking with current position
+ initDragPosition(event.node.position)
 }
-// Node drag handler
+// Node drag handler - constrain position to prevent overlap
 function handleNodeDrag(event: { node: Node }) {
  onDrag(event.node)
- // Check collision at current position for visual feedback
+ // Check collision and constrain position during drag
  const nodeWithDims = event.node as Node & { dimensions?: { width: number; height: number } }
- checkNodeCollision(
+ const result = checkAndConstrainPosition(
  event.node.id,
  event.node.position,
  nodeWithDims.dimensions
  )
+ // If colliding, force node back to last valid position
+ if (result.collides && result.position) {
+ store.updateNode(event.node.id, { position: result.position })
+ }
 }
 // Node drag stop handler
 function handleNodeDragStop(event: { node: Node }) {
@@ -279,6 +286,38 @@ function onDrop(event: DragEvent) {
 onMounted( => {
  nodeTypesStore.fetchNodeTypes
 })
+// Watch collision warning and add/remove class on node elements
+watch(collisionWarningNodeId, (newId, oldId) => {
+ // Remove class from old node
+ if (oldId) {
+ const oldNode = document.querySelector(`[data-id="${oldId}"]`)
+ if (oldNode) {
+ oldNode.classList.remove('collision-warning')
+ }
+ }
+ // Add class to new node
+ if (newId) {
+ const newNode = document.querySelector(`[data-id="${newId}"]`)
+ if (newNode) {
+ newNode.classList.add('collision-warning')
+ }
+ }
+})
+// Watch isColliding to show red glow on dragging node
+watch(isColliding, (colliding) => {
+ if (colliding) {
+ // Add visual feedback to currently dragging node
+ const draggingNode = document.querySelector('.vue-flow__node.dragging')
+ if (draggingNode) {
+ draggingNode.classList.add('collision-blocked')
+ }
+ } else {
+ // Remove from all nodes
+ document.querySelectorAll('.collision-blocked').forEach(el => {
+ el.classList.remove('collision-blocked')
+ })
+ }
+})
 </script>
 <template>
  <div
@@ -336,17 +375,6 @@ onMounted( => {
  释放以添加节点
  </div>
  </div>
- <!-- Collision warning toast -->
- <div
- v-if="isColliding"
- class="absolute bottom-4 left-1/2 -translate-x-1/2 z-50
- px-4 py-2 bg-destructive/90 text-destructive-foreground
- rounded-lg shadow-lg text-sm"
- >
- 节点间距不能小于 30px
- </div>
- <!-- Hidden ref for collisionWarningNodeId (used for CSS class binding) -->
- <div v-if="false":data-warning-node="collisionWarningNodeId" />
  </div>
 </template>
 <style>
