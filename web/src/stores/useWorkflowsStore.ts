@@ -100,7 +100,12 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }))
  }
  // Convert backend edges to Vue Flow format
- function toVueFlowEdges(workflowEdges: WorkflowEdge): Edge {
+ function toVueFlowEdges(workflowEdges: WorkflowEdge, workflowNodes: Node): Edge {
+ // Build a node type lookup map
+ const nodeTypeMap = new Map<string, string>
+ workflowNodes.forEach((node) => {
+ nodeTypeMap.set(node.id, node.type || node.data?.node_type || '')
+ })
  return workflowEdges.map(edge => ({
  id: edge.id,
  source: edge.source_node,
@@ -108,8 +113,12 @@ export const useWorkflowsStore = defineStore('workflows', => {
  sourceHandle: edge.source_handle,
  targetHandle: edge.target_handle,
  label: edge.label,
+ type: 'gradient',
+ animated: false,
  data: {
  condition: edge.condition,
+ sourceNodeType: nodeTypeMap.get(edge.source_node) || '',
+ targetNodeType: nodeTypeMap.get(edge.target_node) || '',
  },
  }))
  }
@@ -237,7 +246,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  currentWorkflow.value = workflow
  // Convert to Vue Flow format
  nodes.value = toVueFlowNodes(workflow.nodes || )
- edges.value = toVueFlowEdges(workflow.edges || )
+ edges.value = toVueFlowEdges(workflow.edges ||, nodes.value)
  // Initialize history
  history.value = [{ nodes: JSON.parse(JSON.stringify(nodes.value)), edges: JSON.parse(JSON.stringify(edges.value)) }]
  historyIndex.value = 0
@@ -282,7 +291,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  currentWorkflow.value = workflow
  // Update nodes and edges with server IDs
  nodes.value = toVueFlowNodes(workflow.nodes || )
- edges.value = toVueFlowEdges(workflow.edges || )
+ edges.value = toVueFlowEdges(workflow.edges ||, nodes.value)
  // Reset unsaved changes flag and clear draft
  hasUnsavedChanges.value = false
  clearDraft
