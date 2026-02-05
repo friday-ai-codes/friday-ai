@@ -7,11 +7,17 @@
  * - SVG linearGradient from source to target node colors
  * - Glow effect using feGaussianBlur filter
  * - Thicker stroke (3px) compared to default edges (2px)
+ * - Warning variant with red dashed stroke for schema mismatch
  */
 import type { EdgeProps } from '@vue-flow/core'
 import { getBezierPath } from '@vue-flow/core'
 import { computed } from 'vue'
 const props = defineProps<EdgeProps>
+// Warning state from edge data
+const hasWarning = computed( => props.data?.hasWarning === true)
+const warningMessage = computed( => (props.data?.warning as string) || '')
+// Warning color (red-500)
+const warningColor = 'hsl(0 84% 60%)'
 // Unique gradient ID per edge to avoid conflicts
 const gradientId = computed( => `gradient-${props.id}`)
 const glowFilterId = computed( => `glow-${props.id}`)
@@ -93,16 +99,28 @@ const targetColor = computed( => {
  </filter>
  </defs>
  <!-- Glow layer (behind main edge) -->
- <path:d="pathData.path":stroke="`url(#${gradientId})`"
+ <path:d="pathData.path":stroke="hasWarning ? warningColor: `url(#${gradientId})`"
  stroke-width="6"
- fill="none":filter="`url(#${glowFilterId})`"
- opacity="0.4"
+ fill="none":filter="`url(#${glowFilterId})`":opacity="hasWarning ? 0.3: 0.4"
  class="vue-flow__edge-path-glow"
  />
  <!-- Main edge path -->
- <path:id="id":d="pathData.path":stroke="`url(#${gradientId})`"
+ <path:id="id":d="pathData.path":stroke="hasWarning ? warningColor: `url(#${gradientId})`":stroke-dasharray="hasWarning ? '8 4': undefined"
  stroke-width="3"
  fill="none"
  class="vue-flow__edge-path"
  />
+ <!-- Warning indicator at edge midpoint -->
+ <g v-if="hasWarning":transform="`translate(${pathData.labelX}, ${pathData.labelY})`">
+ <circle r="10":fill="warningColor" />
+ <text
+ text-anchor="middle"
+ dy="4"
+ fill="white"
+ font-size="12"
+ font-weight="bold"
+ >!</text>
+ <!-- Tooltip title -->
+ <title>{{ warningMessage }}</title>
+ </g>
 </template>
