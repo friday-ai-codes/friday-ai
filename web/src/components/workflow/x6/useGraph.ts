@@ -5,6 +5,7 @@ import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 import { getConnectingConfig } from './ports'
 import { applyEdgeGradientFromNodes } from './edges'
 import './edges/edge-animations.css'
+import './selection.css'
 /**
  * Default Graph configuration optimized for workflow editing.
  *
@@ -121,6 +122,16 @@ export function useGraph(
  }
  }
  const graphInstance = new Graph(mergedOptions)
+ // Enable Selection plugin if requested (X6 3.x requires explicit plugin use)
+ if (config?.selecting) {
+ graphInstance.use(new Selection({
+ enabled: true,
+ rubberband: true,
+ multiple: true,
+ movable: true,
+ showNodeSelectionBox: true,
+ }))
+ }
  // Apply gradient coloring when edge connection completes
  graphInstance.on('edge:connected', ({ edge }) => {
  applyEdgeGradientFromNodes(graphInstance, edge.id)
