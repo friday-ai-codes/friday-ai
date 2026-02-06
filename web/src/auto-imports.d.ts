@@ -8,6 +8,7 @@ export {}
 declare global {
  const EffectScope: typeof import('vue').EffectScope
  const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
+ const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
  const asyncComputed: typeof import('@vueuse/core').asyncComputed
  const autoResetRef: typeof import('@vueuse/core').autoResetRef
  const computed: typeof import('vue').computed
@@ -254,6 +255,7 @@ declare global {
  const useRoute: typeof import('vue-router').useRoute
  const useRouter: typeof import('vue-router').useRouter
  const useSSRWidth: typeof import('@vueuse/core').useSSRWidth
+ const useSchemaValidation: typeof import('./composables/useSchemaValidation').useSchemaValidation
  const useScreenOrientation: typeof import('@vueuse/core').useScreenOrientation
  const useScreenSafeArea: typeof import('@vueuse/core').useScreenSafeArea
  const useScriptTag: typeof import('@vueuse/core').useScriptTag
@@ -305,6 +307,7 @@ declare global {
  const useWindowFocus: typeof import('@vueuse/core').useWindowFocus
  const useWindowScroll: typeof import('@vueuse/core').useWindowScroll
  const useWindowSize: typeof import('@vueuse/core').useWindowSize
+ const useWorkflowValidationStore: typeof import('./stores/useWorkflowValidationStore').useWorkflowValidationStore
  const useWorkflowsStore: typeof import('./stores/useWorkflowsStore').useWorkflowsStore
  const watch: typeof import('vue').watch
  const watchArray: typeof import('@vueuse/core').watchArray
@@ -341,11 +344,17 @@ declare global {
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
  // @ts-ignore
+ export type { ConnectionCheckResult, PortCompatibility } from './composables/useSchemaValidation'
+ import('./composables/useSchemaValidation')
+ // @ts-ignore
  export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
  // @ts-ignore
  export type { NodePort, NodeType } from './stores/useNodeTypesStore'
  import('./stores/useNodeTypesStore')
+ // @ts-ignore
+ export type { ValidationWarning } from './stores/useWorkflowValidationStore'
+ import('./stores/useWorkflowValidationStore')
  // @ts-ignore
  export type { WorkflowNode, WorkflowEdge, Workflow } from './stores/useWorkflowsStore'
  import('./stores/useWorkflowsStore')
@@ -357,6 +366,7 @@ declare module 'vue' {
  interface ComponentCustomProperties {
  readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
  readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
+ readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
  readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
  readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
  readonly computed: UnwrapRef<typeof import('vue')['computed']>
@@ -603,6 +613,7 @@ declare module 'vue' {
  readonly useRoute: UnwrapRef<typeof import('vue-router')['useRoute']>
  readonly useRouter: UnwrapRef<typeof import('vue-router')['useRouter']>
  readonly useSSRWidth: UnwrapRef<typeof import('@vueuse/core')['useSSRWidth']>
+ readonly useSchemaValidation: UnwrapRef<typeof import('./composables/useSchemaValidation')['useSchemaValidation']>
  readonly useScreenOrientation: UnwrapRef<typeof import('@vueuse/core')['useScreenOrientation']>
  readonly useScreenSafeArea: UnwrapRef<typeof import('@vueuse/core')['useScreenSafeArea']>
  readonly useScriptTag: UnwrapRef<typeof import('@vueuse/core')['useScriptTag']>
@@ -654,6 +665,7 @@ declare module 'vue' {
  readonly useWindowFocus: UnwrapRef<typeof import('@vueuse/core')['useWindowFocus']>
  readonly useWindowScroll: UnwrapRef<typeof import('@vueuse/core')['useWindowScroll']>
  readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>
+ readonly useWorkflowValidationStore: UnwrapRef<typeof import('./stores/useWorkflowValidationStore')['useWorkflowValidationStore']>
  readonly useWorkflowsStore: UnwrapRef<typeof import('./stores/useWorkflowsStore')['useWorkflowsStore']>
  readonly watch: UnwrapRef<typeof import('vue')['watch']>
  readonly watchArray: UnwrapRef<typeof import('@vueuse/core')['watchArray']>
