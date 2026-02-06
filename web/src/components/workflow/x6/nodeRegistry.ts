@@ -1,17 +1,37 @@
 import type { Component } from 'vue'
 import { getTeleport, register } from '@antv/x6-vue-shape'
+import X6TriggerNode from './nodes/X6TriggerNode.vue'
+import X6ActionNode from './nodes/X6ActionNode.vue'
+import X6ConditionNode from './nodes/X6ConditionNode.vue'
 /**
  * Node registry for X6 graph nodes.
  * Maps shape names to Vue components.
  *
- * Placeholders - real components will be added in 29-02
+ * Each shape name corresponds to a node_type from the backend.
+ * The component is rendered inside the X6 node via teleport.
  */
 const nodeRegistry: Record<string, Component> = {
- // Will be populated with type-specific node components:
- // manual_trigger: X6TriggerNode,
- // feishu_event: X6TriggerNode,
- // claude_code: X6ActionNode,
- // ...
+ // Trigger nodes (blue gradient)
+ manual_trigger: X6TriggerNode,
+ webhook_trigger: X6TriggerNode,
+ schedule_trigger: X6TriggerNode,
+ feishu_event_trigger: X6TriggerNode,
+ // Action nodes (purple gradient)
+ http_request: X6ActionNode,
+ code_implement: X6ActionNode,
+ create_branch: X6ActionNode,
+ fetch_work_item: X6ActionNode,
+ fetch_project_info: X6ActionNode,
+ ai_prompt: X6ActionNode,
+ ai_coding_dispatcher: X6ActionNode,
+ ai_variable_extractor: X6ActionNode,
+ variable_extractor: X6ActionNode,
+ context_retrieval: X6ActionNode,
+ technical_plan: X6ActionNode,
+ wait_feishu: X6ActionNode,
+ // Condition nodes (amber gradient)
+ condition: X6ConditionNode,
+ approval: X6ConditionNode,
 }
 /**
  * Default node dimensions.
