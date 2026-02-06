@@ -167,6 +167,13 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
+ '/x6-test': RouteRecordInfo<
+ '/x6-test',
+ '/x6-test',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  }
  /**
  * Route file to route info map by unplugin-vue-router.
@@ -302,6 +309,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/workflows/executions/[id].vue': {
  routes:
  | '/workflows/executions/[id]'
+ views:
+ | never
+ }
+ 'src/pages/x6-test.vue': {
+ routes:
+ | '/x6-test'
  views:
  | never
  }

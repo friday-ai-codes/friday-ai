@@ -202,5 +202,10 @@ declare module 'vue' {
  WorkflowEmptyState: typeof import('./components/workflow/WorkflowEmptyState.vue')['default']
  WorkflowPageHeader: typeof import('./components/workflow/WorkflowPageHeader.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
+ X6ActionNode: typeof import('./components/workflow/x6/nodes/X6ActionNode.vue')['default']
+ X6BaseNode: typeof import('./components/workflow/x6/nodes/X6BaseNode.vue')['default']
+ X6ConditionNode: typeof import('./components/workflow/x6/nodes/X6ConditionNode.vue')['default']
+ X6TriggerNode: typeof import('./components/workflow/x6/nodes/X6TriggerNode.vue')['default']
+ X6WorkflowCanvas: typeof import('./components/workflow/x6/X6WorkflowCanvas.vue')['default']
  }
 }
