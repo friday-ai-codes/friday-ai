@@ -1,3 +1,5 @@
 export { useGraph } from './useGraph'
+export { useDnd } from './useDnd'
+export type { DndNodeConfig } from './useDnd'
 export { default as X6WorkflowCanvas } from './X6WorkflowCanvas.vue'
 export { registerAllNodes, TeleportContainer } from './nodeRegistry'

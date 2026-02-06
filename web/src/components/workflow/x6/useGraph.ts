@@ -96,6 +96,8 @@ export function useGraph(
  mergedOptions.selecting = {
  enabled: true,
  rubberband: true,
+ multiple: true,
+ movable: true,
  showNodeSelectionBox: true,
  }
  }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useGraph } from './useGraph'
+import { useDnd } from './useDnd'
 import { registerAllNodes } from './nodeRegistry'
 /**
  * X6 Workflow Canvas Component
@@ -10,6 +11,7 @@ import { registerAllNodes } from './nodeRegistry'
  * - Mouse drag to pan the canvas
  * - Ctrl/Cmd + mousewheel to zoom
  * - Vue component nodes via x6-vue-shape
+ * - Drag-and-drop node creation from sidebar
  *
  * The graph instance is managed by the useGraph composable,
  * which handles lifecycle (init on mount, dispose on unmount).
@@ -21,6 +23,29 @@ const { graph } = useGraph(containerRef, {
  // Enable selection for testing node selection state styling
  selecting: true,
 })
+// Initialize Dnd plugin for drag-and-drop from sidebar
+const { initDnd, startDrag } = useDnd(graph)
+// Initialize Dnd after graph is ready
+watch(graph, (g) => {
+ if (g) {
+ initDnd
+ }
+}, { immediate: true })
+/**
+ * Handle drag start from sidebar node palette.
+ * Creates a node configuration and starts the Dnd operation.
+ *
+ * @param nodeType - The shape type of the node being dragged
+ * @param event - The MouseEvent that triggered the drag
+ */
+function handleDragStart(nodeType: string, event: MouseEvent) {
+ startDrag({
+ shape: nodeType,
+ width: 200,
+ height: 80,
+ data: { name: 'New Node', description: '' },
+ }, event)
+}
 // Add demo nodes for visual testing (Phase verification)
 onMounted( => {
  watch(graph, (g) => {
@@ -49,9 +74,11 @@ onMounted( => {
  })
  }, { immediate: true })
 })
-// Expose graph instance for parent components that need direct access
+// Expose graph instance and drag handler for parent components
 defineExpose({
  graph,
+ handleDragStart,
+ startDrag,
 })
 </script>
 <template>
