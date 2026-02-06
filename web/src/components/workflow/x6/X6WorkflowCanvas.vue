@@ -2,7 +2,11 @@
 import { onMounted, ref, watch } from 'vue'
 import { useGraph } from './useGraph'
 import { useDnd } from './useDnd'
+import { useHistory } from './useHistory'
+import { useSnapline } from './useSnapline'
+import { useMinimap } from './useMinimap'
 import { registerAllNodes } from './nodeRegistry'
+import EditorToolbar from './toolbar/EditorToolbar.vue'
 /**
  * X6 Workflow Canvas Component
  *
@@ -12,6 +16,9 @@ import { registerAllNodes } from './nodeRegistry'
  * - Ctrl/Cmd + mousewheel to zoom
  * - Vue component nodes via x6-vue-shape
  * - Drag-and-drop node creation from sidebar
+ * - Undo/redo with keyboard shortcuts (Ctrl+Z, Ctrl+Shift+Z)
+ * - Alignment snaplines when dragging nodes
+ * - Minimap navigation panel
  *
  * The graph instance is managed by the useGraph composable,
  * which handles lifecycle (init on mount, dispose on unmount).
@@ -19,10 +26,25 @@ import { registerAllNodes } from './nodeRegistry'
 // Register all node shapes before graph creation
 registerAllNodes
 const containerRef = ref<HTMLDivElement>
+const minimapContainerRef = ref<HTMLDivElement>
 const { graph } = useGraph(containerRef, {
  // Enable selection for testing node selection state styling
  selecting: true,
 })
+// Initialize editor enhancement composables
+const { canUndo, canRedo, undo, redo } = useHistory(graph)
+useSnapline(graph)
+useMinimap(graph, minimapContainerRef)
+// Zoom control functions
+function zoomIn {
+ graph.value?.zoom(0.1)
+}
+function zoomOut {
+ graph.value?.zoom(-0.1)
+}
+function zoomFit {
+ graph.value?.zoomToFit({ padding: 20 })
+}
 // Initialize Dnd plugin for drag-and-drop from sidebar
 const { initDnd, startDrag } = useDnd(graph)
 // Initialize Dnd after graph is ready
@@ -87,6 +109,22 @@ defineExpose({
  <div
  ref="containerRef"
  class="absolute inset-0"
+ />
+ <!-- Editor toolbar in top-left corner -->
+ <EditorToolbar
+ class="absolute left-4 top-4 z-10":can-undo="canUndo":can-redo="canRedo"
+ @undo="undo"
+ @redo="redo"
+ @zoom-in="zoomIn"
+ @zoom-out="zoomOut"
+ @zoom-fit="zoomFit"
+ />
+ <!-- Minimap container in bottom-right corner with glassmorphism styling -->
+ <div
+ ref="minimapContainerRef"
+ class="absolute right-4 bottom-4 z-10 rounded-xl
+ bg-card/70 backdrop-blur-sm border border-border/50
+ shadow-lg overflow-hidden"
  />
  </div>
 </template>
