@@ -23,6 +23,9 @@ const nodeData = ref<Record<string, unknown>>(node.getData || {})
 const isSelected = ref(false)
 const isHovered = ref(false)
 // Computed properties for common node data
+const isDragPreview = computed( => {
+ return nodeData.value.isDragPreview === true
+})
 const label = computed( => {
  const data = nodeData.value
  return (data.name as string) || (data.label as string) || 'Untitled'
@@ -88,6 +91,7 @@ onUnmounted( => {
  'x6-node--selected': isSelected,
  'x6-node--hovered': isHovered,
  'x6-node--disabled': isDisabled,
+ 'x6-node--preview': isDragPreview,
  }"
  >
  <slot:node-data="nodeData":label="label":description="description":node-type="nodeType":is-selected="isSelected":is-hovered="isHovered":is-disabled="isDisabled"
@@ -148,5 +152,9 @@ onUnmounted( => {
  filter: grayscale(1);
  opacity: 0.5;
  pointer-events: none;
+}
+/* Preview state - 50% opacity during drag */
+.x6-node--preview {
+ opacity: 0.5;
 }
 </style>
