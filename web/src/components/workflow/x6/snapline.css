@@ -1,0 +1,13 @@
+/**
+ * Snapline styling using theme primary color.
+ *
+ * The Snapline plugin creates SVG lines with these classes.
+ * We override the default blue color with the theme's primary color
+ * and add a dashed pattern for visual distinction.
+ */
+.x6-widget-snapline-horizontal line,
+.x6-widget-snapline-vertical line {
+ stroke: hsl(var(--primary)) !important;
+ stroke-width: 1px;
+ stroke-dasharray: 4 2;
+}
