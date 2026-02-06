@@ -1,7 +1,6 @@
 import type { Graph } from '@antv/x6'
 import type { ShallowRef } from 'vue'
-import { History } from '@antv/x6-plugin-history'
-import { Keyboard } from '@antv/x6-plugin-keyboard'
+import { History, Keyboard } from '@antv/x6'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 export interface UseHistoryOptions {

@@ -1,6 +1,6 @@
 import type { Cell, Graph } from '@antv/x6'
 import type { Ref, ShallowRef } from 'vue'
-import { MiniMap } from '@antv/x6-plugin-minimap'
+import { MiniMap } from '@antv/x6'
 import { watch } from 'vue'
 export interface UseMinimapOptions {
  /**
