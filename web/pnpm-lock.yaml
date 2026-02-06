@@ -209,9 +209,6 @@ importers:
  '@antv/x6':
  specifier: ^3.1.6
  version: 3.1.6
- '@antv/x6-plugin-selection':
- specifier: ^2.2.2
- version: 2.2.2(@antv/x6@3.1.6)
  '@antv/x6-vue-shape':
  specifier: ^3.0.2
  version: 3.0.2(@antv/x6@3.1.6)(vue@3.5.26(typescript@5.9.3))
@@ -474,10 +471,6 @@ packages:
  optional: true
  '@antfu/install-pkg@1.1.0':
  resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
- '@antv/x6-plugin-selection@2.2.2':
- resolution: {integrity: sha512-s2gtR9Onlhr7HOHqyqg0d+4sG76JCcQEbvrZZ64XmSChlvieIPlC3YtH4dg1KMNhYIuBmBmpSum6S0eVTEiPQw==}
- peerDependencies:
- '@antv/x6': ^2.x
  '@antv/x6-vue-shape@3.0.2':
  resolution: {integrity: sha512-HWnYFvLCaUD9ernINxTn9vCRj66eG/nXKErSSq0hfI4U1HOitC/1oUrzDdwL/BT80HKAQeSsmy7gpDA/79jYlw==}
  peerDependencies:
@@ -3415,9 +3408,6 @@ snapshots:
  dependencies:
  package-manager-detector: 1.6.0
  tinyexec: 1.0.2
- '@antv/x6-plugin-selection@2.2.2(@antv/x6@3.1.6)':
- dependencies:
- '@antv/x6': 3.1.6
  '@antv/x6-vue-shape@3.0.2(@antv/x6@3.1.6)(vue@3.5.26(typescript@5.9.3))':
  dependencies:
  '@antv/x6': 3.1.6
