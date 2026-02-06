@@ -1,6 +1,6 @@
 import type { Graph } from '@antv/x6'
 import type { ShallowRef } from 'vue'
-import { Snapline } from '@antv/x6-plugin-snapline'
+import { Snapline } from '@antv/x6'
 import { watch } from 'vue'
 import './snapline.css'
 export interface UseSnaplineOptions {

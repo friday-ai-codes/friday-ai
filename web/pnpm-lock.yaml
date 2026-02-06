@@ -209,18 +209,6 @@ importers:
  '@antv/x6':
  specifier: ^3.1.6
  version: 3.1.6
- '@antv/x6-plugin-history':
- specifier: ^2.2.4
- version: 2.2.4(@antv/x6@3.1.6)
- '@antv/x6-plugin-keyboard':
- specifier: ^2.2.3
- version: 2.2.3(@antv/x6@3.1.6)
- '@antv/x6-plugin-minimap':
- specifier: ^2.0.7
- version: 2.0.7(@antv/x6@3.1.6)
- '@antv/x6-plugin-snapline':
- specifier: ^2.1.7
- version: 2.1.7(@antv/x6@3.1.6)
  '@antv/x6-vue-shape':
  specifier: ^3.0.2
  version: 3.0.2(@antv/x6@3.1.6)(vue@3.5.26(typescript@5.9.3))
@@ -483,22 +471,6 @@ packages:
  optional: true
  '@antfu/install-pkg@1.1.0':
  resolution: {integrity: sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ==}
- '@antv/x6-plugin-history@2.2.4':
- resolution: {integrity: sha512-9gHHvEW4Fla+1hxUV49zNgJyIMoV9CjVM52MrFgAJcvyRn1Kvxz4MfxiKlG+DEZUs+/zvfjl9pS6gJOd8laRkg==}
- peerDependencies:
- '@antv/x6': ^2.x
- '@antv/x6-plugin-keyboard@2.2.3':
- resolution: {integrity: sha512-pnCIC+mDyKKfkcDyLePfGxKVIqXBcldTgannITkHC1kc0IafRS1GMvzpvuDGrM5haRYd6Nwz8kjkJyHkJE4GPA==}
- peerDependencies:
- '@antv/x6': ^2.x
- '@antv/x6-plugin-minimap@2.0.7':
- resolution: {integrity: sha512-8zzESCx0jguFPCOKCA0gPFb6JmRgq81CXXtgJYe34XhySdZ6PB23I5Po062lNsEuTjTjnzli4lju8vvU+jzlGw==}
- peerDependencies:
- '@antv/x6': ^2.x
- '@antv/x6-plugin-snapline@2.1.7':
- resolution: {integrity: sha512-AsysoCb9vES0U2USNhEpYuO/W8I0aYfkhlbee5Kt4NYiMfQfZKQyqW/YjDVaS2pm38C1NKu1LdPVk/BBr4CasA==}
- peerDependencies:
- '@antv/x6': ^2.x
  '@antv/x6-vue-shape@3.0.2':
  resolution: {integrity: sha512-HWnYFvLCaUD9ernINxTn9vCRj66eG/nXKErSSq0hfI4U1HOitC/1oUrzDdwL/BT80HKAQeSsmy7gpDA/79jYlw==}
  peerDependencies:
@@ -3436,19 +3408,6 @@ snapshots:
  dependencies:
  package-manager-detector: 1.6.0
  tinyexec: 1.0.2
- '@antv/x6-plugin-history@2.2.4(@antv/x6@3.1.6)':
- dependencies:
- '@antv/x6': 3.1.6
- '@antv/x6-plugin-keyboard@2.2.3(@antv/x6@3.1.6)':
- dependencies:
- '@antv/x6': 3.1.6
- mousetrap: 1.6.5
- '@antv/x6-plugin-minimap@2.0.7(@antv/x6@3.1.6)':
- dependencies:
- '@antv/x6': 3.1.6
- '@antv/x6-plugin-snapline@2.1.7(@antv/x6@3.1.6)':
- dependencies:
- '@antv/x6': 3.1.6
  '@antv/x6-vue-shape@3.0.2(@antv/x6@3.1.6)(vue@3.5.26(typescript@5.9.3))':
  dependencies:
  '@antv/x6': 3.1.6
