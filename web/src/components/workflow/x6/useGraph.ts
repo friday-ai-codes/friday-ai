@@ -1,9 +1,11 @@
-import type { Ref } from 'vue'
 import type { Options as GraphOptions } from '@antv/x6'
+import type { Ref } from 'vue'
 import { Graph, Selection } from '@antv/x6'
+import { History } from '@antv/x6-plugin-history'
+import { Keyboard } from '@antv/x6-plugin-keyboard'
 import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
-import { getConnectingConfig } from './ports'
 import { applyEdgeGradientFromNodes } from './edges'
+import { getConnectingConfig } from './ports'
 import './edges/edge-animations.css'
 import './selection.css'
 /**
@@ -41,6 +43,20 @@ export interface UseGraphOptions {
  selecting?: boolean
  /** Enable port-based connecting with validation (default: true) */
  connecting?: boolean
+ /**
+ * Enable history plugin for undo/redo.
+ * - `true`: Enable with default stackSize of 50
+ * - `{ stackSize: number }`: Enable with custom stack size
+ * - `false` or omitted: Disabled
+ *
+ * When enabled, also binds keyboard shortcuts:
+ * - Ctrl+Z / Cmd+Z: Undo
+ * - Ctrl+Shift+Z / Cmd+Shift+Z: Redo
+ *
+ * Note: For full control over history (e.g., canUndo/canRedo state for toolbar),
+ * use the separate `useHistory` composable instead.
+ */
+ history?: boolean | { stackSize?: number }
 }
 /**
  * Composable for managing X6 Graph instance lifecycle.
@@ -131,6 +147,48 @@ export function useGraph(
  movable: true,
  showNodeSelectionBox: true,
  }))
+ }
+ // Enable History plugin if requested
+ if (config?.history) {
+ const stackSize = typeof config.history === 'object'
+ ? config.history.stackSize ?? 50: 50
+ graphInstance.use(new History({
+ enabled: true,
+ stackSize,
+ }))
+ // Enable Keyboard plugin for undo/redo shortcuts
+ graphInstance.use(new Keyboard({
+ enabled: true,
+ global: true, // Bind to document for shortcuts to work without focus
+ }))
+ // Bind undo shortcuts (Ctrl+Z on Windows/Linux, Cmd+Z on Mac)
+ graphInstance.bindKey(['ctrl+z', 'cmd+z'], => {
+ if (graphInstance.canUndo) {
+ graphInstance.undo
+ }
+ return false // Prevent default browser undo
+ })
+ // Bind redo shortcuts (Ctrl+Shift+Z on Windows/Linux, Cmd+Shift+Z on Mac)
+ graphInstance.bindKey(['ctrl+shift+z', 'cmd+shift+z'], => {
+ if (graphInstance.canRedo) {
+ graphInstance.redo
+ }
+ return false // Prevent default browser redo
+ })
+ // Batch drag operations so entire drag = one undo step
+ let isBatching = false
+ graphInstance.on('node:move', => {
+ if (!isBatching) {
+ graphInstance.startBatch('node-move')
+ isBatching = true
+ }
+ })
+ graphInstance.on('node:moved', => {
+ if (isBatching) {
+ graphInstance.stopBatch('node-move')
+ isBatching = false
+ }
+ })
  }
  // Apply gradient coloring when edge connection completes
  graphInstance.on('edge:connected', ({ edge }) => {
