@@ -105,7 +105,7 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  })
  .run
  },
- // Render lifecycle - mounts Vue popup component with Floating UI positioning
+ // Render lifecycle - mounts Vue popup component
  render: options.render ?? ( => {
  let popup: HTMLElement | null = null
  let app: App | null = null
