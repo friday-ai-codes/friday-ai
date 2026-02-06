@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import type { Options as GraphOptions } from '@antv/x6'
-import { Graph } from '@antv/x6'
+import { Graph, Selection } from '@antv/x6'
 import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 import { getConnectingConfig } from './ports'
 import { applyEdgeGradientFromNodes } from './edges'
@@ -92,8 +92,8 @@ export function useGraph(
  container: containerRef.value,
  }
  // Add selecting config if enabled (X6 3.x built-in)
- if (config?.selecting) {
- mergedOptions.selecting = {
+ // Use type assertion as X6 types don't fully expose plugin options
+ if (config?.selecting) {;(mergedOptions as Record<string, unknown>).selecting = {
  enabled: true,
  rubberband: true,
  multiple: true,
