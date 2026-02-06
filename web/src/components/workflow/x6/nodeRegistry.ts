@@ -3,6 +3,7 @@ import { getTeleport, register } from '@antv/x6-vue-shape'
 import X6TriggerNode from './nodes/X6TriggerNode.vue'
 import X6ActionNode from './nodes/X6ActionNode.vue'
 import X6ConditionNode from './nodes/X6ConditionNode.vue'
+import { workflowPortGroups, getDefaultPortsForNodeType } from './ports'
 /**
  * Node registry for X6 graph nodes.
  * Maps shape names to Vue components.
@@ -69,6 +70,10 @@ export function registerAllNodes: void {
  width: DEFAULT_NODE_WIDTH,
  height: DEFAULT_NODE_HEIGHT,
  component,
+ ports: {
+ groups: workflowPortGroups,
+ items: getDefaultPortsForNodeType(shape),
+ },
  })
  }
  isRegistered = true
