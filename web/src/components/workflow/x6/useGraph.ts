@@ -2,6 +2,9 @@ import type { Ref } from 'vue'
 import type { Options as GraphOptions } from '@antv/x6'
 import { Graph } from '@antv/x6'
 import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
+import { getConnectingConfig } from './ports'
+import { applyEdgeGradientFromNodes } from './edges'
+import './edges/edge-animations.css'
 /**
  * Default Graph configuration optimized for workflow editing.
  *
@@ -35,6 +38,8 @@ export interface UseGraphOptions {
  options?: Partial<GraphOptions>
  /** Enable selection plugin */
  selecting?: boolean
+ /** Enable port-based connecting with validation (default: true) */
+ connecting?: boolean
 }
 /**
  * Composable for managing X6 Graph instance lifecycle.
@@ -94,7 +99,31 @@ export function useGraph(
  showNodeSelectionBox: true,
  }
  }
- graph.value = new Graph(mergedOptions)
+ // Add connecting config with port validation (enabled by default)
+ if (config?.connecting !== false) {
+ const connectingConfig = getConnectingConfig
+ mergedOptions.connecting = {
+ ...connectingConfig,
+ // Use gradient-edge shape for new connections
+ createEdge {
+ return this.createEdge({
+ shape: 'gradient-edge',
+ attrs: {
+ line: {
+ stroke: '#5B8FF9',
+ strokeWidth: 2,
+ },
+ },
+ })
+ },
+ }
+ }
+ const graphInstance = new Graph(mergedOptions)
+ // Apply gradient coloring when edge connection completes
+ graphInstance.on('edge:connected', ({ edge }) => {
+ applyEdgeGradientFromNodes(graphInstance, edge.id)
+ })
+ graph.value = graphInstance
  })
  onUnmounted( => {
  // CRITICAL: Must dispose Graph to prevent memory leaks.
