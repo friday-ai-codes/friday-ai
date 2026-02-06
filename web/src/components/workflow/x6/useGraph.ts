@@ -1,7 +1,6 @@
 import type { Ref } from 'vue'
 import type { Options as GraphOptions } from '@antv/x6'
 import { Graph } from '@antv/x6'
-import { Selection } from '@antv/x6-plugin-selection'
 import { nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 /**
  * Default Graph configuration optimized for workflow editing.
@@ -87,16 +86,15 @@ export function useGraph(
  ...config?.options,
  container: containerRef.value,
  }
- const g = new Graph(mergedOptions)
- // Add selection plugin if enabled
+ // Add selecting config if enabled (X6 3.x built-in)
  if (config?.selecting) {
- g.use(new Selection({
+ mergedOptions.selecting = {
  enabled: true,
  rubberband: true,
  showNodeSelectionBox: true,
- }))
  }
- graph.value = g
+ }
+ graph.value = new Graph(mergedOptions)
  })
  onUnmounted( => {
  // CRITICAL: Must dispose Graph to prevent memory leaks.
