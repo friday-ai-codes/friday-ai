@@ -16,6 +16,8 @@
  "test:e2e:ui": "playwright test --ui"
  },
  "dependencies": {
+ "@antv/x6": "^3.1.6",
+ "@antv/x6-vue-shape": "^3.0.2",
  "@floating-ui/dom": "catalog:",
  "@floating-ui/vue": "^1.1.10",
  "@tanstack/vue-query": "catalog:",
