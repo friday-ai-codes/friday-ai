@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useGraph } from './useGraph'
+import { registerAllNodes } from './nodeRegistry'
 /**
  * X6 Workflow Canvas Component
  *
@@ -8,12 +9,46 @@ import { useGraph } from './useGraph'
  * - Dot grid background for visual alignment
  * - Mouse drag to pan the canvas
  * - Ctrl/Cmd + mousewheel to zoom
+ * - Vue component nodes via x6-vue-shape
  *
  * The graph instance is managed by the useGraph composable,
  * which handles lifecycle (init on mount, dispose on unmount).
  */
+// Register all node shapes before graph creation
+registerAllNodes
 const containerRef = ref<HTMLDivElement>
-const { graph } = useGraph(containerRef)
+const { graph } = useGraph(containerRef, {
+ // Enable selection for testing node selection state styling
+ selecting: true,
+})
+// Add demo nodes for visual testing (Phase verification)
+onMounted( => {
+ watch(graph, (g) => {
+ if (!g) return
+ // Add demo nodes with different node types
+ g.addNode({
+ id: 'trigger-1',
+ shape: 'manual_trigger',
+ x: 100,
+ y: 100,
+ data: { name: 'Manual Trigger', description: 'Start workflow manually' },
+ })
+ g.addNode({
+ id: 'action-1',
+ shape: 'http_request',
+ x: 100,
+ y: 250,
+ data: { name: 'HTTP Request', description: 'Call external API' },
+ })
+ g.addNode({
+ id: 'condition-1',
+ shape: 'condition',
+ x: 100,
+ y: 400,
+ data: { name: 'Check Status', description: 'Branch based on response' },
+ })
+ }, { immediate: true })
+})
 // Expose graph instance for parent components that need direct access
 defineExpose({
  graph,
