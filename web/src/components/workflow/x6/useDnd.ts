@@ -1,6 +1,6 @@
 import type { Graph, Node } from '@antv/x6'
 import type { ShallowRef } from 'vue'
-import { Dnd } from '@antv/x6-plugin-dnd'
+import { Dnd } from '@antv/x6'
 import { onUnmounted, shallowRef } from 'vue'
 /**
  * Node configuration for drag-and-drop operations.

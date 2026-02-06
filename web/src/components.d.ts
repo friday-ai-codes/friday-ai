@@ -128,6 +128,7 @@ declare module 'vue' {
  MarkdownPreview: typeof import('./components/ui/markdown-editor/MarkdownPreview.vue')['default']
  NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
  NodePalette: typeof import('./components/workflow/NodePalette.vue')['default']
+ NodePaletteItem: typeof import('./components/workflow/sidebar/NodePaletteItem.vue')['default']
  NodePortsDisplay: typeof import('./components/workflow/NodePortsDisplay.vue')['default']
  OverrideConfirmDialog: typeof import('./components/workflow/validation/OverrideConfirmDialog.vue')['default']
  PageContainer: typeof import('./components/layout/PageContainer.vue')['default']
