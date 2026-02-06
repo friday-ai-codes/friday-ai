@@ -1,0 +1,23 @@
+/**
+ * Edge flow animations for X6 workflow canvas.
+ *
+ * Add .is-flowing class to an edge element for continuous flow animation.
+ * Add .is-active class for faster animation (e.g., during execution).
+ */
+@keyframes edge-flow {
+ from {
+ stroke-dashoffset: 0;
+ }
+ to {
+ stroke-dashoffset: -20;
+ }
+}
+.x6-edge.is-flowing path[stroke] {
+ stroke-dasharray: 10 5;
+ animation: edge-flow 1s linear infinite;
+ will-change: stroke-dashoffset;
+}
+.x6-edge.is-active path[stroke] {
+ stroke-dasharray: 5 3;
+ animation: edge-flow 0.3s linear infinite;
+}
