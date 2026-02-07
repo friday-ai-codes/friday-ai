@@ -7,6 +7,10 @@ export interface PortGroupConfig {
  attrs: {
  circle: Record<string, unknown>
  }
+ markup?: Array<{
+ tagName: string
+ selector: string
+ }>
 }
 /**
  * Port metadata interface for X6 nodes.
@@ -22,13 +26,20 @@ export interface PortMetadata {
 /**
  * Standard port groups for workflow nodes.
  * Input ports on left, output ports on right.
+ * Edges anchor to the port circle, not the node center.
  */
 export const workflowPortGroups: Record<string, PortGroupConfig> = {
  input: {
  position: 'left',
+ markup: [
+ {
+ tagName: 'circle',
+ selector: 'circle',
+ },
+ ],
  attrs: {
  circle: {
- r: 5,
+ r: 6,
  magnet: true,
  stroke: 'var(--color-border)',
  strokeWidth: 1.5,
@@ -39,9 +50,15 @@ export const workflowPortGroups: Record<string, PortGroupConfig> = {
  },
  output: {
  position: 'right',
+ markup: [
+ {
+ tagName: 'circle',
+ selector: 'circle',
+ },
+ ],
  attrs: {
  circle: {
- r: 5,
+ r: 6,
  magnet: true,
  stroke: 'var(--color-border)',
  strokeWidth: 1.5,

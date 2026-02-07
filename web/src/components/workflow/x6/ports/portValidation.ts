@@ -13,6 +13,8 @@ export interface ConnectingConfig {
  highlight: boolean
  router: string
  connector: string
+ anchor: string
+ connectionPoint: string
  validateConnection: (args: {
  sourceCell?: Cell | null
  targetCell?: Cell | null
@@ -77,6 +79,9 @@ export function getConnectingConfig: ConnectingConfig {
  // Use router for clean edge paths
  router: 'manhattan',
  connector: 'rounded',
+ // Anchor edges to the port center (not node center)
+ anchor: 'center',
+ connectionPoint: 'anchor',
  // Validate connection on drag
  validateConnection({ sourceCell, targetCell, sourceMagnet, targetMagnet }) {
  // Must connect to a port (magnet)
