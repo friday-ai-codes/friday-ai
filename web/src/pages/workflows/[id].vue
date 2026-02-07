@@ -19,11 +19,13 @@ import { X6WorkflowCanvas } from '~/components/workflow/x6'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
+import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
 const store = useWorkflowsStore
+const nodeTypesStore = useNodeTypesStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
 // Canvas ref for calling loadFromStore
 const canvasRef = ref<InstanceType<typeof X6WorkflowCanvas>>
@@ -31,7 +33,11 @@ const canvasRef = ref<InstanceType<typeof X6WorkflowCanvas>>
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
 onMounted(async => {
- await store.fetchWorkflow(id)
+ // Fetch node types and workflow data in parallel
+ await Promise.all([
+ nodeTypesStore.fetchNodeTypes,
+ store.fetchWorkflow(id),
+ ])
  // Wait for next tick to ensure graph is ready, then load from store
  await nextTick
  canvasRef.value?.loadFromStore

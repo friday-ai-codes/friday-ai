@@ -221,8 +221,46 @@ async function copyNodeId {
  console.error('Failed to copy:', e)
  }
 }
-// 输出 Schema 折叠状态
+// 输入/输出 Schema 折叠状态
+const inputSchemaOpen = ref(true)
 const outputSchemaOpen = ref(true)
+// 获取直接前置节点的输出字段（用于显示 input 可用变量）
+const directPredecessorOutputs = computed( => {
+ if (!selectedNodeId.value) return
+ // 找到直接连接到当前节点的边
+ const incomingEdges = edges.value.filter(e => e.target === selectedNodeId.value)
+ if (incomingEdges.length === 0) return
+ const outputs: Array<{
+ nodeId: string
+ nodeShortId: string
+ nodeLabel: string
+ outputName: string
+ outputLabel: string
+ type: string
+ description?: string
+ }> =
+ for (const edge of incomingEdges) {
+ const sourceNode = nodes.value.find(n => n.id === edge.source)
+ if (!sourceNode) continue
+ const sourceNodeType = nodeTypesStore.getNodeType(sourceNode.nodeType)
+ if (!sourceNodeType?.outputs) continue
+ const nodeLabel = sourceNode.name || sourceNodeType.display_name
+ for (const output of sourceNodeType.outputs) {
+ outputs.push({
+ nodeId: sourceNode.id,
+ nodeShortId: sourceNode.shortId || sourceNode.id.slice(0, 8),
+ nodeLabel,
+ outputName: output.name,
+ outputLabel: output.label,
+ type: output.type,
+ description: output.description,
+ })
+ }
+ }
+ return outputs
+})
+// 检查当前节点是否有前置节点
+const hasPredecessor = computed( => directPredecessorOutputs.value.length > 0)
 // 获取端口类型的显示颜色
 function getPortTypeColor(type: string): string {
  const colors: Record<string, string> = {
@@ -238,6 +276,10 @@ function getPortTypeColor(type: string): string {
 // 生成输出变量引用路径 (使用 shortId)
 function getOutputPath(outputName: string): string {
  return `{{nodes.${selectedNode.value?.shortId || selectedNodeId.value}.${outputName}}}`
+}
+// 生成输入变量引用路径
+function getInputPath(outputName: string): string {
+ return `{{input.${outputName}}}`
 }
 </script>
 <template>
@@ -394,6 +436,56 @@ function getOutputPath(outputName: string): string {
  </p>
  </div>
  </div>
+ <!-- 输入字段（来自前置节点） -->
+ <Collapsible v-if="hasPredecessor" v-model:open="inputSchemaOpen" class="mt-4">
+ <Separator class="bg-border/50 mb-4" />
+ <CollapsibleTrigger class="flex items-center justify-between w-full group">
+ <div class="flex items-center gap-2 text-sm font-medium">
+ <span class="icon-[lucide--arrow-left-from-line] text-base text-blue-500" />
+ 输入字段
+ <Badge variant="outline" class="text-xs">
+ {{ directPredecessorOutputs.length }}
+ </Badge>
+ </div>
+ <span
+ class="icon-[lucide--chevron-down] text-muted-foreground transition-transform duration-200":class="{ 'rotate-180': inputSchemaOpen }"
+ />
+ </CollapsibleTrigger>
+ <CollapsibleContent class="mt-3">
+ <div class="rounded-xl bg-muted/30 border border-border/50 overflow-hidden">
+ <div
+ v-for="(input, idx) in directPredecessorOutputs":key="`${input.nodeId}-${input.outputName}`"
+ class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
+ >
+ <div class="flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <code class="font-mono font-medium">{{ input.outputName }}</code>
+ <span
+ class="text-[10px] px-1.5 py-0.5 rounded-full bg-muted":class="getPortTypeColor(input.type)"
+ >
+ {{ input.type }}
+ </span>
+ </div>
+ <span class="text-[10px] text-muted-foreground">
+ 来自 {{ input.nodeLabel }}
+ </span>
+ </div>
+ <div v-if="input.description" class="mt-1 text-muted-foreground">
+ {{ input.description }}
+ </div>
+ <!-- 引用提示 -->
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <span class="icon-[lucide--code] text-xs" />
+ <code class="font-mono">{{ getInputPath(input.outputName) }}</code>
+ </div>
+ </div>
+ </div>
+ <p class="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--info]" />
+ 可通过 <code class="px-1 py-0.5 rounded bg-muted font-mono text-[10px]">input.字段名</code> 引用前置节点输出
+ </p>
+ </CollapsibleContent>
+ </Collapsible>
  <!-- 输出 Schema -->
  <Collapsible v-if="nodeTypeInfo?.outputs?.length" v-model:open="outputSchemaOpen" class="mt-4">
  <Separator class="bg-border/50 mb-4" />

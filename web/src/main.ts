@@ -10,6 +10,7 @@ import { routes } from 'vue-router/auto-routes'
 import App from './App.vue'
 import { useAuthStore } from './stores/auth'
 import 'vue-final-modal/style.css'
+import 'vue-sonner/style.css'
 import '~/styles/main.css'
 // 路由配置
 const router = createRouter({
