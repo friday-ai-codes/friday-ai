@@ -9,7 +9,10 @@ overrides:
 catalogs:
  default:
  '@antfu/eslint-config': ^7.0.1
+ '@antv/x6': 3.1.6
+ '@antv/x6-vue-shape': ^3.0.2
  '@floating-ui/dom': 1.7.5
+ '@floating-ui/vue': ^1.1.10
  '@iconify-json/heroicons': ^1.2.3
  '@iconify-json/lucide': ^1.2.85
  '@iconify-json/mdi': ^1.2.3
@@ -52,6 +55,7 @@ catalogs:
  happy-dom: ^20.3.0
  lowlight: 3.3.0
  lucide-vue-next: ^0.562.0
+ nanoid: ^5.1.6
  pinia: ^3.0.4
  reka-ui: 2.7.0
  shiki: ^3.21.0

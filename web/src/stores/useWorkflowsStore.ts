@@ -1,8 +1,10 @@
-import type { Edge, Node } from '@vue-flow/core'
-import type { ManualTriggerResponse } from '~/types'
+import type { ManualTriggerResponse, WorkflowEdgeStore, WorkflowNodeStore } from '~/types'
+import { nanoid } from 'nanoid'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import client from '~/api/client'
+import { getDefaultData } from '~/components/workflow/x6/nodeTypeMapping'
+// Backend API response types (snake_case)
 export interface WorkflowNode {
  id: string
  node_type: string
@@ -10,12 +12,12 @@ export interface WorkflowNode {
  description: string
  position_x: number
  position_y: number
- config: Record<string, any>
+ config: Record<string, unknown>
  timeout: number | null
  retry_count: number
  retry_delay: number
- run_condition: Record<string, any> | null
- metadata: Record<string, any>
+ run_condition: Record<string, unknown> | null
+ metadata: Record<string, unknown>
  created_at: string
  updated_at: string
 }
@@ -25,9 +27,9 @@ export interface WorkflowEdge {
  target_node: string
  source_handle: string
  target_handle: string
- condition: Record<string, any> | null
+ condition: Record<string, unknown> | null
  label: string
- style: Record<string, any>
+ style: Record<string, unknown>
  created_at: string
 }
 export interface Workflow {
@@ -40,12 +42,12 @@ export interface Workflow {
  created_by: string | null
  created_by_name: string | null
  trigger_type: 'manual' | 'webhook' | 'schedule' | 'event'
- trigger_config: Record<string, any>
+ trigger_config: Record<string, unknown>
  is_active: boolean
  is_template: boolean
  max_concurrent_executions: number
  default_timeout: number
- metadata: Record<string, any>
+ metadata: Record<string, unknown>
  nodes: WorkflowNode
  edges: WorkflowEdge
  execution_count: number
@@ -62,127 +64,183 @@ export const useWorkflowsStore = defineStore('workflows', => {
  const error = ref<string | null>(null)
  // Selected node for configuration panel
  const selectedNodeId = ref<string | null>(null)
- // Undo/Redo history
- const history = ref<{ nodes: Node, edges: Edge }>
+ // Undo/Redo history (uses store types, not X6 types)
+ const history = ref<{ nodes: WorkflowNodeStore, edges: WorkflowEdgeStore }>
  const historyIndex = ref(-1)
  const maxHistorySize = 50
- // Vue Flow nodes and edges (for canvas)
- const nodes = ref<Node>
- const edges = ref<Edge>
+ // Store nodes and edges (X6-agnostic format)
+ const nodes = ref<WorkflowNodeStore>
+ const edges = ref<WorkflowEdgeStore>
  // Unsaved changes tracking
  const hasUnsavedChanges = ref(false)
  // Computed
  const canUndo = computed( => historyIndex.value > 0)
  const canRedo = computed( => historyIndex.value < history.value.length - 1)
- const selectedNode = computed(: Node | null => {
+ const selectedNode = computed(: WorkflowNodeStore | null => {
  if (!selectedNodeId.value)
  return null
  return nodes.value.find(n => n.id === selectedNodeId.value) || null
  })
- // Convert backend nodes to Vue Flow format
- function toVueFlowNodes(workflowNodes: WorkflowNode): Node {
+ // ============================================================================
+ // ID Generation
+ // ============================================================================
+ /**
+ * Generate unique ID for new nodes/edges
+ */
+ function generateId: string {
+ return nanoid(12)
+ }
+ // ============================================================================
+ // Type Converters: Backend API <-> Store Format
+ // ============================================================================
+ /**
+ * Convert backend nodes to store format
+ */
+ function toStoreNodes(workflowNodes: WorkflowNode): WorkflowNodeStore {
  return workflowNodes.map(node => ({
  id: node.id,
- type: node.node_type,
- position: { x: node.position_x, y: node.position_y },
- label: node.name,
- data: {
- node_type: node.node_type,
+ nodeType: node.node_type,
  name: node.name,
  description: node.description,
+ position: { x: node.position_x, y: node.position_y },
  config: node.config,
  timeout: node.timeout,
- retry_count: node.retry_count,
- retry_delay: node.retry_delay,
- run_condition: node.run_condition,
+ retryCount: node.retry_count,
+ retryDelay: node.retry_delay,
+ runCondition: node.run_condition,
  metadata: node.metadata,
- },
  }))
  }
- // Convert backend edges to Vue Flow format
- function toVueFlowEdges(workflowEdges: WorkflowEdge, workflowNodes: Node): Edge {
- // Build a node type lookup map
- const nodeTypeMap = new Map<string, string>
- workflowNodes.forEach((node) => {
- nodeTypeMap.set(node.id, node.type || node.data?.node_type || '')
- })
+ /**
+ * Convert backend edges to store format
+ */
+ function toStoreEdges(workflowEdges: WorkflowEdge): WorkflowEdgeStore {
  return workflowEdges.map(edge => ({
  id: edge.id,
  source: edge.source_node,
+ sourcePort: edge.source_handle,
  target: edge.target_node,
- sourceHandle: edge.source_handle,
- targetHandle: edge.target_handle,
+ targetPort: edge.target_handle,
  label: edge.label,
- type: 'gradient',
- animated: false,
- data: {
  condition: edge.condition,
- sourceNodeType: nodeTypeMap.get(edge.source_node) || '',
- targetNodeType: nodeTypeMap.get(edge.target_node) || '',
- },
  }))
  }
- // 根据节点类型获取默认配置
- function getDefaultConfig(nodeType: string): Record<string, any> {
- const defaults: Record<string, Record<string, any>> = {
+ /**
+ * Get default config for a node type (merged from registry and local defaults)
+ */
+ function getDefaultConfig(nodeType: string): Record<string, unknown> {
+ // Start with registry defaults
+ const registryDefaults = getDefaultData(nodeType)
+ // Additional local defaults for specific types
+ const localDefaults: Record<string, Record<string, unknown>> = {
  ai_prompt: {
  user_prompt: '{{global.description}}',
- model: 'claude-3-5-sonnet-20241022',
- temperature: 0.7,
- max_tokens: 4096,
- output_format: 'text',
- },
- ai_coding_dispatcher: {
- max_tasks: 5,
- task_granularity: 'medium',
- include_tests: true,
- auto_assign_repos: false,
- },
- feishu_event_trigger: {
- event_types:,
  },
  fetch_work_item: {
  work_item_id: '{{input.work_item_id}}',
- extract_fields: ['description', 'title'],
  },
  }
- return defaults[nodeType] || {}
+ return { ...registryDefaults, ...localDefaults[nodeType] }
  }
- // Convert Vue Flow nodes back to backend format
- function toBackendNodes(vueFlowNodes: Node): Partial<WorkflowNode> {
- return vueFlowNodes.map((node) => {
- const nodeType = node.type || node.data?.node_type
- const defaultConfig = getDefaultConfig(nodeType)
- // 合并默认配置和用户配置，用户配置优先
- const config = { ...defaultConfig, ...node.data?.config }
+ /**
+ * Convert store nodes back to backend format
+ */
+ function toBackendNodes(storeNodes: WorkflowNodeStore): Partial<WorkflowNode> {
+ return storeNodes.map((node) => {
+ const defaultConfig = getDefaultConfig(node.nodeType)
+ // Merge default config with user config, user config takes priority
+ const config = { ...defaultConfig, ...node.config }
  return {
  id: node.id,
- node_type: nodeType,
- name: node.data?.name || node.label || 'Untitled',
- description: node.data?.description || '',
+ node_type: node.nodeType,
+ name: node.name || 'Untitled',
+ description: node.description || '',
  position_x: node.position.x,
  position_y: node.position.y,
  config,
- timeout: node.data?.timeout || null,
- retry_count: node.data?.retry_count || 0,
- retry_delay: node.data?.retry_delay || 60,
- run_condition: node.data?.run_condition || null,
- metadata: node.data?.metadata || {},
+ timeout: node.timeout,
+ retry_count: node.retryCount,
+ retry_delay: node.retryDelay,
+ run_condition: node.runCondition,
+ metadata: node.metadata,
  }
  })
  }
- // Convert Vue Flow edges back to backend format
- function toBackendEdges(vueFlowEdges: Edge): Partial<WorkflowEdge> {
- return vueFlowEdges.map(edge => ({
+ /**
+ * Convert store edges back to backend format
+ */
+ function toBackendEdges(storeEdges: WorkflowEdgeStore): Partial<WorkflowEdge> {
+ return storeEdges.map(edge => ({
  source_node_id: edge.source,
  target_node_id: edge.target,
- source_handle: edge.sourceHandle || 'default',
- target_handle: edge.targetHandle || 'default',
- condition: edge.data?.condition || null,
- label: typeof edge.label === 'string' ? edge.label: '',
+ source_handle: edge.sourcePort || 'default',
+ target_handle: edge.targetPort || 'default',
+ condition: edge.condition,
+ label: edge.label || '',
  }))
  }
- // History management
+ // ============================================================================
+ // X6 Sync Methods (called by useX6Sync composable)
+ // ============================================================================
+ /**
+ * Mark workflow as dirty (has unsaved changes)
+ */
+ function markDirty {
+ hasUnsavedChanges.value = true
+ }
+ /**
+ * Called when X6 adds a node
+ */
+ function addNodeFromX6(node: WorkflowNodeStore) {
+ nodes.value.push(node)
+ markDirty
+ }
+ /**
+ * Called when X6 moves a node
+ */
+ function updateNodePosition(nodeId: string, position: { x: number, y: number }) {
+ const node = nodes.value.find(n => n.id === nodeId)
+ if (node) {
+ node.position = position
+ markDirty
+ }
+ }
+ /**
+ * Called when X6 updates node data
+ */
+ function updateNodeFromX6(nodeId: string, updates: Partial<WorkflowNodeStore>) {
+ const index = nodes.value.findIndex(n => n.id === nodeId)
+ if (index !== -1) {
+ nodes.value[index] = { ...nodes.value[index], ...updates }
+ markDirty
+ }
+ }
+ /**
+ * Called when X6 removes a node
+ */
+ function removeNodeFromX6(nodeId: string) {
+ nodes.value = nodes.value.filter(n => n.id !== nodeId)
+ // Also remove connected edges
+ edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
+ markDirty
+ }
+ /**
+ * Called when X6 adds an edge
+ */
+ function addEdgeFromX6(edge: WorkflowEdgeStore) {
+ edges.value.push(edge)
+ markDirty
+ }
+ /**
+ * Called when X6 removes an edge
+ */
+ function removeEdgeFromX6(edgeId: string) {
+ edges.value = edges.value.filter(e => e.id !== edgeId)
+ markDirty
+ }
+ // ============================================================================
+ // History Management
+ // ============================================================================
  function saveToHistory {
  // Remove any redo history
  if (historyIndex.value < history.value.length - 1) {
@@ -219,7 +277,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  nodes.value = JSON.parse(JSON.stringify(state.nodes))
  edges.value = JSON.parse(JSON.stringify(state.edges))
  }
- // API calls
+ // ============================================================================
+ // API Calls
+ // ============================================================================
  async function fetchWorkflows(projectId?: string) {
  loading.value = true
  error.value = null
@@ -227,11 +287,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  const params: Record<string, string> = {}
  if (projectId)
  params.project_id = projectId
- const data = await client.get<any>('/workflows/', params)
- workflows.value = data.results || data
+ const data = await client.get<{ results?: Workflow }>('/workflows/', params)
+ workflows.value = (data.results || data) as Workflow
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  console.error(e)
  }
  finally {
@@ -244,17 +304,17 @@ export const useWorkflowsStore = defineStore('workflows', => {
  try {
  const workflow = await client.get<Workflow>(`/workflows/${id}/`)
  currentWorkflow.value = workflow
- // Convert to Vue Flow format
- nodes.value = toVueFlowNodes(workflow.nodes || )
- edges.value = toVueFlowEdges(workflow.edges ||, nodes.value)
+ // Convert to store format
+ nodes.value = toStoreNodes(workflow.nodes || )
+ edges.value = toStoreEdges(workflow.edges || )
  // Initialize history
  history.value = [{ nodes: JSON.parse(JSON.stringify(nodes.value)), edges: JSON.parse(JSON.stringify(edges.value)) }]
  historyIndex.value = 0
  // Reset unsaved changes flag
  hasUnsavedChanges.value = false
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  console.error(e)
  }
  finally {
@@ -269,8 +329,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  workflows.value.unshift(workflow)
  return workflow
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  finally {
@@ -290,14 +350,14 @@ export const useWorkflowsStore = defineStore('workflows', => {
  })
  currentWorkflow.value = workflow
  // Update nodes and edges with server IDs
- nodes.value = toVueFlowNodes(workflow.nodes || )
- edges.value = toVueFlowEdges(workflow.edges ||, nodes.value)
+ nodes.value = toStoreNodes(workflow.nodes || )
+ edges.value = toStoreEdges(workflow.edges || )
  // Reset unsaved changes flag and clear draft
  hasUnsavedChanges.value = false
  clearDraft
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  finally {
@@ -313,8 +373,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  const workflow = await client.patch<Workflow>(`/workflows/${currentWorkflow.value.id}/`, settings)
  currentWorkflow.value = { ...currentWorkflow.value, ...workflow }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  finally {
@@ -326,8 +386,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  await client.del(`/workflows/${id}/`)
  workflows.value = workflows.value.filter(w => w.id !== id)
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  }
@@ -345,19 +405,19 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  return workflow
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  }
- async function executeWorkflow(inputData: Record<string, any> = {}): Promise<ManualTriggerResponse | null> {
+ async function executeWorkflow(inputData: Record<string, unknown> = {}): Promise<ManualTriggerResponse | null> {
  if (!currentWorkflow.value)
  return null
  try {
  return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, { input_data: inputData })
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  }
@@ -367,28 +427,30 @@ export const useWorkflowsStore = defineStore('workflows', => {
  workflows.value.unshift(workflow)
  return workflow
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = (e as Error).message
  throw e
  }
  }
- // Node operations
- function addNode(node: Node) {
+ // ============================================================================
+ // Node Operations (with history)
+ // ============================================================================
+ function addNode(node: WorkflowNodeStore) {
  saveToHistory
  nodes.value.push(node)
  }
- function updateNode(nodeId: string, updates: Partial<Node>) {
+ function updateNode(nodeId: string, updates: Partial<WorkflowNodeStore>) {
  saveToHistory
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
  nodes.value[index] = { ...nodes.value[index], ...updates }
  }
  }
- function updateNodeData(nodeId: string, data: Record<string, any>) {
+ function updateNodeData(nodeId: string, data: Record<string, unknown>) {
  saveToHistory
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
- nodes.value[index].data = { ...nodes.value[index].data, ...data }
+ nodes.value[index].config = { ...nodes.value[index].config, ...data }
  }
  }
  function removeNode(nodeId: string) {
@@ -397,8 +459,10 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Also remove connected edges
  edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
  }
- // Edge operations
- function addEdge(edge: Edge) {
+ // ============================================================================
+ // Edge Operations (with history)
+ // ============================================================================
+ function addEdge(edge: WorkflowEdgeStore) {
  saveToHistory
  edges.value.push(edge)
  }
@@ -406,11 +470,15 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saveToHistory
  edges.value = edges.value.filter(e => e.id !== edgeId)
  }
+ // ============================================================================
  // Selection
+ // ============================================================================
  function selectNode(nodeId: string | null) {
  selectedNodeId.value = nodeId
  }
- // Draft management
+ // ============================================================================
+ // Draft Management
+ // ============================================================================
  function getDraftKey: string | null {
  return currentWorkflow.value ? `${DRAFT_KEY_PREFIX}${currentWorkflow.value.id}`: null
  }
@@ -471,6 +539,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  }
  return {
+ // State
  workflows,
  currentWorkflow,
  loading,
@@ -483,6 +552,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  canUndo,
  canRedo,
  hasUnsavedChanges,
+ // API
  fetchWorkflows,
  fetchWorkflow,
  createWorkflow,
@@ -492,20 +562,34 @@ export const useWorkflowsStore = defineStore('workflows', => {
  toggleWorkflowActive,
  executeWorkflow,
  duplicateWorkflow,
+ // Node operations (with history)
  addNode,
  updateNode,
  updateNodeData,
  removeNode,
+ // Edge operations (with history)
  addEdge,
  removeEdge,
+ // Selection
  selectNode,
+ // History
  saveToHistory,
  undo,
  redo,
+ // Draft
  saveDraft,
  loadDraft,
  clearDraft,
  hasDraft,
  getDraftInfo,
+ // X6 sync methods (without history, called by useX6Sync)
+ generateId,
+ markDirty,
+ addNodeFromX6,
+ updateNodePosition,
+ updateNodeFromX6,
+ removeNodeFromX6,
+ addEdgeFromX6,
+ removeEdgeFromX6,
  } as const
 })
