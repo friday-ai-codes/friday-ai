@@ -93,6 +93,7 @@ declare module 'vue' {
  DropdownMenuSubContent: typeof import('./components/ui/dropdown-menu/DropdownMenuSubContent.vue')['default']
  DropdownMenuSubTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuSubTrigger.vue')['default']
  DropdownMenuTrigger: typeof import('./components/ui/dropdown-menu/DropdownMenuTrigger.vue')['default']
+ EditorToolbar: typeof import('./components/workflow/x6/toolbar/EditorToolbar.vue')['default']
  EditProjectModal: typeof import('./components/project/EditProjectModal.vue')['default']
  EditRepositoryModal: typeof import('./components/repository/EditRepositoryModal.vue')['default']
  EmptyState: typeof import('./components/common/EmptyState.vue')['default']
