@@ -350,7 +350,10 @@ class WorkflowViewSet(ModelViewSet):
  return Response(serializer.data)
  @action(detail=True, methods=["put"], url_path="bulk-update")
  def bulk_update(self, request: Request, pk=None) -> Response:
- """Bulk update nodes and edges for a workflow."""
+ """Bulk update nodes and edges for a workflow.
+ Uses UUID as primary identifier for nodes.
+ short_id is only for user display and template variables.
+ """
  workflow = self.get_object
  nodes_data = request.data.get("nodes", )
  edges_data = request.data.get("edges", )
@@ -360,15 +363,19 @@ class WorkflowViewSet(ModelViewSet):
  for node_data in nodes_data:
  node_id = node_data.get("id")
  if node_id:
- # Try to find existing node
- node = WorkflowNode.objects.filter(id=node_id, workflow=workflow).first
+ # Try to find existing node by UUID
+ node = WorkflowNode.objects.filter(
+ id=node_id, workflow=workflow
+ ).first
  if node:
  # Update existing
- serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
+ serializer = WorkflowNodeSerializer(
+ node, data=node_data, partial=True
+ )
  serializer.is_valid(raise_exception=True)
  serializer.save
  else:
- # Create new node with specified ID
+ # Create new node with specified UUID
  serializer = WorkflowNodeCreateSerializer(data=node_data)
  serializer.is_valid(raise_exception=True)
  node = WorkflowNode.objects.create(
@@ -376,7 +383,7 @@ class WorkflowViewSet(ModelViewSet):
  )
  existing_node_ids.add(str(node_id))
  else:
- # Create new node with auto-generated ID
+ # Create new node with auto-generated UUID
  serializer = WorkflowNodeCreateSerializer(data=node_data)
  serializer.is_valid(raise_exception=True)
  node = WorkflowNode.objects.create(

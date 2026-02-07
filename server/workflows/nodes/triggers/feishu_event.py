@@ -18,20 +18,24 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  config_schema = {
  "type": "object",
  "properties": {
- "event_types": {
- "type": "array",
- "title": "事件类型",
- "description": "要监听的飞书事件类型",
- "items": {
+ "event_type": {
  "type": "string",
+ "title": "事件类型",
+ "description": "监听的飞书事件类型（单选）",
  "enum": [choice.value for choice in TriggerEventType],
+ "default": "",
  },
- "default": [TriggerEventType.WORKITEM_STATUS.value],
+ "project_ids": {
+ "type": "array",
+ "title": "监听项目",
+ "description": "要监听的 Friday 项目 ID 列表，留空监听所有项目",
+ "items": {"type": "string"},
+ "default":,
  },
  "filter_project_key": {
  "type": "string",
- "title": "项目 Key",
- "description": "可选，仅处理指定项目的事件",
+ "title": "飞书项目 Key",
+ "description": "高级用法：直接指定飞书项目标识",
  "default": "",
  },
  "filter_work_item_type": {
@@ -42,13 +46,39 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  "default": "",
  },
  "filter_status": {
- "type": "string",
+ "type": "array",
  "title": "状态过滤",
- "description": "可选，仅处理指定状态的事件",
+ "description": "可选，选择状态进行过滤",
+ "items": {"type": "string"},
+ "default":,
+ },
+ "filter_status_custom": {
+ "type": "string",
+ "title": "自定义状态",
+ "description": "可选，输入自定义状态 key，多个用逗号分隔",
+ "default": "",
+ },
+ "exclude_project_ids": {
+ "type": "array",
+ "title": "排除项目",
+ "description": "要排除的项目 ID 列表",
+ "items": {"type": "string"},
+ "default":,
+ },
+ "exclude_work_item_pattern": {
+ "type": "string",
+ "title": "排除工作项（包含匹配）",
+ "description": "工作项名称包含此文本时将被排除",
+ "default": "",
+ },
+ "exclude_work_item_regex": {
+ "type": "string",
+ "title": "排除工作项（正则匹配）",
+ "description": "使用正则表达式匹配要排除的工作项名称",
  "default": "",
  },
  },
- "required": ["event_types"],
+ "required": ["event_type"],
  }
  outputs = [
  NodePort(

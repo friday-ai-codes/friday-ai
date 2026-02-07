@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useGraph } from './useGraph'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { registerAllNodes } from './nodeRegistry'
+import EditorToolbar from './toolbar/EditorToolbar.vue'
 import { useDnd } from './useDnd'
+import { useGraph } from './useGraph'
 import { useHistory } from './useHistory'
 import { useMinimap } from './useMinimap'
 import { useX6Sync } from './useX6Sync'
-import { registerAllNodes } from './nodeRegistry'
-import EditorToolbar from './toolbar/EditorToolbar.vue'
-import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 /**
  * X6 Workflow Canvas Component
  *
@@ -61,6 +61,14 @@ watch(graph, (g) => {
  // Click on blank area → close config panel
  g.on('blank:click', => {
  store.selectNode(null)
+ })
+ // Cell unselected (from Selection plugin) → close config panel
+ g.on('cell:unselected', => {
+ // Only clear if no other node is selected
+ const selectedCells = g.getSelectedCells
+ if (selectedCells.length === 0) {
+ store.selectNode(null)
+ }
  })
  // Delete/Backspace → remove selected cells
  g.bindKey(['delete', 'backspace'], => {

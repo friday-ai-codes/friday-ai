@@ -23,6 +23,7 @@ export {
  aiVariableDefinitionSchema,
  type AIVariableExtractorConfig,
  aiVariableExtractorConfigSchema,
+ COMMON_STATUS_OPTIONS,
  type ContextRetrievalConfig,
  contextRetrievalConfigSchema,
  type ExtractionRule,

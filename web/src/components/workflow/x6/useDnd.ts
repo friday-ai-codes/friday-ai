@@ -2,6 +2,7 @@ import type { Graph, Node } from '@antv/x6'
 import type { ShallowRef } from 'vue'
 import { Dnd } from '@antv/x6'
 import { onUnmounted, shallowRef } from 'vue'
+import { generateShortId } from '~/utils/shortId'
 /**
  * Node configuration for drag-and-drop operations.
  */
@@ -70,18 +71,16 @@ export function useDnd(graphRef: ShallowRef<Graph | null>) {
  */
  getDragNode(node: Node) {
  const cloned = node.clone({ keepId: false })
- // Merge existing data with isDragPreview flag
  const existingData = cloned.getData || {}
  cloned.setData({ ...existingData, isDragPreview: true })
  return cloned
  },
  /**
  * Configure the dropped node.
- * Sets isDragPreview: false so the final node renders normally.
+ * Use the same ID from drag preview (X6 generated UUID).
  */
  getDropNode(node: Node) {
- const cloned = node.clone({ keepId: false })
- // Merge existing data with isDragPreview flag
+ const cloned = node.clone({ keepId: true })
  const existingData = cloned.getData || {}
  cloned.setData({ ...existingData, isDragPreview: false })
  return cloned
@@ -104,8 +103,15 @@ export function useDnd(graphRef: ShallowRef<Graph | null>) {
  console.error('[useDnd] Graph instance not available')
  return
  }
- // Create a temporary node for dragging
- const node = graphRef.value.createNode(nodeConfig)
+ // Create a temporary node for dragging with a generated shortId
+ const shortId = generateShortId
+ const node = graphRef.value.createNode({
+ ...nodeConfig,
+ data: {
+ ...nodeConfig.data,
+ shortId, // For display in node component
+ },
+ })
  // Start the drag operation
  dnd.value.start(node, event)
  }

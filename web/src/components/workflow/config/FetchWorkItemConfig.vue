@@ -1,26 +1,30 @@
 <script setup lang="ts">
-import type { FetchWorkItemConfig } from '~/types/workflow'
-import { Input } from '~/components/ui/input'
+import type { FetchWorkItemConfig, WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow'
+import { computed, onMounted } from 'vue'
+import { Button } from '~/components/ui/button'
 import { Label } from '~/components/ui/label'
 import {
- Select,
- SelectContent,
- SelectItem,
- SelectTrigger,
- SelectValue,
-} from '~/components/ui/select'
+ Popover,
+ PopoverContent,
+ PopoverTrigger,
+} from '~/components/ui/popover'
+import SmartInput from '~/components/workflow/smart-input/SmartInput.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
-import {
- fetchWorkItemConfigSchema,
- WORK_ITEM_TYPE_OPTIONS,
-} from '~/types/workflow'
+import { fetchWorkItemConfigSchema } from '~/types/workflow'
 // ============================================================================
 // Props & Emits
 // ============================================================================
 interface Props {
  config: FetchWorkItemConfig
+ workflowNodes?: WorkflowNodeStore
+ workflowEdges?: WorkflowEdgeStore
+ currentNodeId?: string
 }
-const props = defineProps<Props>
+const props = withDefaults(defineProps<Props>, {
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: '',
+})
 const emit = defineEmits<{
  (e: 'update:config', value: FetchWorkItemConfig): void
 }>
@@ -33,7 +37,63 @@ const { field } = useConfigModel({
  schema: fetchWorkItemConfigSchema,
 })
 const workItemId = field('work_item_id', '')
-const workItemType = field('work_item_type', '__auto__')
+// ============================================================================
+// 自动填充检测
+// ============================================================================
+// 找到上游的飞书事件触发器节点
+const upstreamFeishuTrigger = computed( => {
+ // 找到当前节点的所有上游节点
+ const upstreamNodeIds = new Set<string>
+ function findUpstream(nodeId: string) {
+ for (const edge of props.workflowEdges) {
+ if (edge.target === nodeId && !upstreamNodeIds.has(edge.source)) {
+ upstreamNodeIds.add(edge.source)
+ findUpstream(edge.source)
+ }
+ }
+ }
+ findUpstream(props.currentNodeId)
+ // 返回第一个飞书事件触发器节点
+ return props.workflowNodes.find(
+ node => upstreamNodeIds.has(node.id) && node.nodeType === 'feishu_event_trigger',
+ )
+})
+// 检测上游是否有飞书事件触发器
+const hasFeishuTriggerUpstream = computed( => !!upstreamFeishuTrigger.value)
+// 生成变量路径
+// 使用 input.work_item_id 因为调度器会自动将上游输出合并到下游 input_data
+const triggerWorkItemIdPath = computed( => {
+ if (!upstreamFeishuTrigger.value) return ''
+ return 'input.work_item_id'
+})
+// 检测是否需要显示自动填充提示
+const showAutoFillHint = computed( => {
+ return hasFeishuTriggerUpstream.value && !workItemId.value
+})
+// 检测是否已经填充了触发器变量
+const isFilledWithTriggerVar = computed( => {
+ if (!triggerWorkItemIdPath.value) return false
+ return workItemId.value.includes(`{{${triggerWorkItemIdPath.value}}}`)
+})
+// 自动填充
+function autoFill {
+ if (triggerWorkItemIdPath.value) {
+ workItemId.value = `{{${triggerWorkItemIdPath.value}}}`
+ }
+}
+// 组件挂载时自动填充（如果为空且有上游触发器）
+onMounted( => {
+ if (showAutoFillHint.value) {
+ autoFill
+ }
+})
+// 变量语法示例
+const variableSyntaxExamples = [
+ { syntax: '{{input.xxx}}', desc: '上游节点输出', color: 'text-blue-500' },
+ { syntax: '{{global.xxx}}', desc: '全局参数', color: 'text-green-500' },
+ { syntax: '{{trigger.xxx}}', desc: '触发器数据', color: 'text-amber-500' },
+ { syntax: '{{nodes.id.xxx}}', desc: '指定节点输出', color: 'text-purple-500' },
+]
 </script>
 <template>
  <div class="space-y-4">
@@ -43,50 +103,87 @@ const workItemType = field('work_item_type', '__auto__')
  工作项 ID
  <span class="text-destructive">*</span>
  </Label>
- <Input
- v-model="workItemId"
- placeholder="{{input.work_item_id}}"
- class="font-mono"
+ <!-- 自动填充提示 -->
+ <div
+ v-if="showAutoFillHint"
+ class="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/20"
+ >
+ <span class="icon-[lucide--lightbulb] text-blue-500" />
+ <span class="text-xs text-blue-600 dark:text-blue-400 flex-1">
+ 检测到上游有飞书事件触发器
+ </span>
+ <Button
+ variant="ghost"
+ size="sm"
+ class=" text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-500/20"
+ @click="autoFill"
+ >
+ 自动填充
+ </Button>
+ </div>
+ <!-- 已填充状态 -->
+ <div
+ v-if="isFilledWithTriggerVar"
+ class="flex items-center gap-2 text-xs text-green-600 dark:text-green-400"
+ >
+ <span class="icon-[lucide--check-circle]" />
+ <span>已关联飞书事件触发器的工作项 ID</span>
+ </div>
+ <SmartInput
+ v-model="workItemId":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="输入工作项 ID 或输入 {{ 选择变量..."
  />
- <p class="text-xs text-muted-foreground">
- 支持模板变量，如 <code class="bg-secondary px-1 rounded">{{ '\{\{ input.work_item_id \}\}' }}</code>
+ <p class="text-xs text-muted-foreground flex items-center gap-1">
+ <span>输入 <code class="bg-muted px-1 py-0.5 rounded font-mono">{{ '{{' }}</code> 触发变量联想</span>
+ <Popover>
+ <PopoverTrigger as-child>
+ <button
+ type="button"
+ class="inline-flex items-center justify-center w-4 rounded-full bg-muted hover:bg-muted/80 transition-colors"
+ >
+ <span class="icon-[lucide--help-circle] text-xs text-muted-foreground" />
+ </button>
+ </PopoverTrigger>
+ <PopoverContent class="w-80 " align="start">
+ <div class="space-y-3">
+ <div class="flex items-center gap-2 text-sm font-medium">
+ <span class="icon-[lucide--variable] text-primary" />
+ 变量语法说明
+ </div>
+ <div class="text-xs text-muted-foreground space-y-2">
+ <p>在配置中使用变量引用动态值：</p>
+ <div class="space-y-1.5 font-mono text-[11px]">
+ <div
+ v-for="example in variableSyntaxExamples":key="example.syntax"
+ class="flex items-start gap-2"
+ >
+ <code class="shrink-0":class="example.color">{{ example.syntax }}</code>
+ <span class="text-muted-foreground">{{ example.desc }}</span>
+ </div>
+ </div>
+ <p class="pt-1 border-t border-border/50 text-muted-foreground/80">
+ 输入 <code class="bg-muted px-1 rounded">{{ '{{' }}</code> 后会自动弹出可用变量列表
  </p>
  </div>
- <!-- 工作项类型 -->
- <div class="space-y-2">
- <Label>工作项类型</Label>
- <Select v-model="workItemType">
- <SelectTrigger>
- <SelectValue placeholder="自动（从触发器获取）" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="__auto__">
- 自动（从触发器获取）
- </SelectItem>
- <SelectItem
- v-for="option in WORK_ITEM_TYPE_OPTIONS":key="option.value":value="option.value"
- >
- {{ option.label }}
- </SelectItem>
- </SelectContent>
- </Select>
- <p class="text-xs text-muted-foreground">
- 选择「自动」则从上游触发器获取类型
+ </div>
+ </PopoverContent>
+ </Popover>
  </p>
  </div>
  <!-- 输出说明 -->
- <div class="rounded-lg bg-muted/50 space-y-2">
- <p class="text-xs font-medium">
+ <div class="rounded-xl bg-muted/30 border border-border/50 space-y-2">
+ <div class="flex items-center gap-2 text-xs font-medium">
+ <span class="icon-[lucide--box] text-primary" />
  输出数据结构
- </p>
+ </div>
  <div class="text-xs text-muted-foreground space-y-1 font-mono">
  <div><span class="text-primary">$.name</span> → 工作项名称</div>
  <div><span class="text-primary">$.description</span> → 描述</div>
  <div><span class="text-primary">$.status</span> → 状态</div>
  <div><span class="text-primary">$.fields[?(@.key=='xxx')].value</span> → 自定义字段</div>
  </div>
- <p class="text-xs text-muted-foreground pt-1">
- <span class="icon-[lucide--info] mr-1" />
+ <p class="text-xs text-muted-foreground pt-1 flex items-center gap-1">
+ <span class="icon-[lucide--info]" />
  使用「变量提取」节点从输出中提取所需字段
  </p>
  </div>

@@ -29,18 +29,62 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: {},
  },
  {
+ shape: 'schedule_trigger',
+ workflowType: 'schedule_trigger',
+ category: 'trigger',
+ defaultData: { cron: '0 0 * * *' },
+ },
+ {
  shape: 'feishu_event_trigger',
  workflowType: 'feishu_event_trigger',
  category: 'trigger',
  defaultData: { event_types: },
+ },
+ // Data Fetch
+ {
+ shape: 'fetch_work_item',
+ workflowType: 'fetch_work_item',
+ category: 'action',
+ defaultData: { extract_fields: ['description', 'title'] },
+ },
+ {
+ shape: 'fetch_project_info',
+ workflowType: 'fetch_project_info',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'context_retrieval',
+ workflowType: 'context_retrieval',
+ category: 'action',
+ defaultData: {},
  },
  // Actions
  {
  shape: 'http_request',
  workflowType: 'http_request',
  category: 'action',
+ defaultData: { method: 'GET', url: '', headers: {} },
+ },
+ {
+ shape: 'code_implement',
+ workflowType: 'code_implement',
+ category: 'action',
  defaultData: {},
  },
+ {
+ shape: 'create_branch',
+ workflowType: 'create_branch',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'wait_feishu',
+ workflowType: 'wait_feishu',
+ category: 'action',
+ defaultData: {},
+ },
+ // AI
  {
  shape: 'ai_prompt',
  workflowType: 'ai_prompt',
@@ -64,17 +108,33 @@ export const nodeTypeMapping: NodeTypeConfig = [
  },
  },
  {
- shape: 'fetch_work_item',
- workflowType: 'fetch_work_item',
+ shape: 'ai_variable_extractor',
+ workflowType: 'ai_variable_extractor',
  category: 'action',
- defaultData: {
- extract_fields: ['description', 'title'],
+ defaultData: {},
  },
+ {
+ shape: 'variable_extractor',
+ workflowType: 'variable_extractor',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'technical_plan',
+ workflowType: 'technical_plan',
+ category: 'action',
+ defaultData: {},
  },
  // Conditions
  {
  shape: 'condition',
  workflowType: 'condition',
+ category: 'condition',
+ defaultData: {},
+ },
+ {
+ shape: 'approval',
+ workflowType: 'approval',
  category: 'condition',
  defaultData: {},
  },

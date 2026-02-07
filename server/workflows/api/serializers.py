@@ -152,6 +152,7 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
  model = WorkflowNode
  fields = [
  "id",
+ "short_id",
  "node_type",
  "name",
  "description",
@@ -166,7 +167,7 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
  "created_at",
  "updated_at",
  ]
- read_only_fields = ["id", "created_at", "updated_at"]
+ read_only_fields = ["id", "short_id", "created_at", "updated_at"]
  def validate_node_type(self, value: str) -> str:
  """Validate node type exists in registry."""
  if not NodeRegistry.get(value):
@@ -212,6 +213,9 @@ class WorkflowNodeCreateSerializer(serializers.ModelSerializer):
 # =============================================================================
 class WorkflowEdgeSerializer(serializers.ModelSerializer):
  """Serializer for WorkflowEdge."""
+ # Return UUID for internal operations
+ source_node = serializers.CharField(source="source_node_id", read_only=True)
+ target_node = serializers.CharField(source="target_node_id", read_only=True)
  class Meta:
  model = WorkflowEdge
  fields = [

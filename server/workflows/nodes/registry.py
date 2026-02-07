@@ -22,7 +22,10 @@ class NodeRegistry:
  if not hasattr(node_class, "node_type"):
  raise ValueError(f"节点类 {node_class.__name__} 缺少 node_type 属性")
  node_type = node_class.node_type
+ # Skip if same class already registered (decorator + auto-discover)
  if node_type in cls._nodes:
+ if cls._nodes[node_type] is node_class:
+ return # Same class, skip silently
  logger.warning(
  "node_type_already_registered",
  node_type=node_type,

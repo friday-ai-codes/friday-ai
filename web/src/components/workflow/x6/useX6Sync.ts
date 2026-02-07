@@ -1,9 +1,9 @@
-import type { Graph, Node, Edge } from '@antv/x6'
+import type { Edge, Graph, Node } from '@antv/x6'
 import type { ShallowRef } from 'vue'
-import { watch, onUnmounted } from 'vue'
+import type { WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow'
+import { onUnmounted, watch } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-import type { WorkflowNodeStore, WorkflowEdgeStore } from '~/types/workflow'
-import { getWorkflowType, getShape, getDefaultData } from './nodeTypeMapping'
+import { getDefaultData, getShape, getWorkflowType } from './nodeTypeMapping'
 /**
  * Bidirectional sync between X6 Graph and Pinia Store.
  *
@@ -23,6 +23,7 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  const cleanupFns: ( => void) =
  /**
  * Convert X6 Node to Store format
+ * New nodes from canvas don't have shortId yet - it will be assigned by backend
  */
  function nodeToStoreFormat(node: Node): WorkflowNodeStore {
  const data = node.getData || {}
@@ -30,6 +31,7 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  const shape = node.shape
  return {
  id: node.id,
+ shortId: data.shortId || '', // Empty for new nodes, filled by backend
  nodeType: getWorkflowType(shape),
  name: data.name || 'Untitled',
  description: data.description || '',
@@ -69,28 +71,34 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  function setupX6Listeners(g: Graph) {
  // Node added
  g.on('node:added', ({ node }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6) {
+ return
+ }
  isSyncingFromX6 = true
- store.addNodeFromX6(nodeToStoreFormat(node))
+ const storeNode = nodeToStoreFormat(node)
+ store.addNodeFromX6(storeNode)
  isSyncingFromX6 = false
  })
  // Node removed
  g.on('node:removed', ({ node }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6)
+ return
  isSyncingFromX6 = true
  store.removeNode(node.id)
  isSyncingFromX6 = false
  })
  // Node position changed (after drag ends)
  g.on('node:moved', ({ node }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6)
+ return
  isSyncingFromX6 = true
  store.updateNodePosition(node.id, node.getPosition)
  isSyncingFromX6 = false
  })
  // Node data changed (config updates from panel)
  g.on('cell:change:data', ({ cell }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6)
+ return
  if (cell.isNode) {
  isSyncingFromX6 = true
  const data = cell.getData
@@ -100,7 +108,8 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  })
  // Edge connected (new connection created)
  g.on('edge:connected', ({ edge }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6)
+ return
  // Only sync if edge has valid source and target
  const source = edge.getSourceCell
  const target = edge.getTargetCell
@@ -112,7 +121,8 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  })
  // Edge removed
  g.on('edge:removed', ({ edge }) => {
- if (isSyncingToX6) return
+ if (isSyncingToX6)
+ return
  isSyncingFromX6 = true
  store.removeEdge(edge.id)
  isSyncingFromX6 = false
@@ -134,6 +144,7 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  x: node.position.x,
  y: node.position.y,
  data: {
+ shortId: node.shortId, // For display in node component
  name: node.name,
  description: node.description,
  config: node.config,
@@ -172,6 +183,41 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  }
  }, { immediate: true })
  cleanupFns.push(stopGraphWatch)
+ /**
+ * Watch store nodes for changes and sync to X6 (Store → X6)
+ * This handles updates from NodeConfigPanel
+ */
+ const stopNodesWatch = watch(
+ => store.nodes,
+ (newNodes) => {
+ if (isSyncingFromX6 || !graph.value)
+ return
+ isSyncingToX6 = true
+ for (const node of newNodes) {
+ const x6Node = graph.value.getCellById(node.id)
+ if (x6Node?.isNode) {
+ const currentData = x6Node.getData || {}
+ // Only update if data actually changed
+ if (
+ currentData.name !== node.name
+ || currentData.description !== node.description
+ || JSON.stringify(currentData.config) !== JSON.stringify(node.config)
+ ) {
+ // Don't use silent: true, we need the node component to receive the change:data event
+ x6Node.setData({
+ ...currentData,
+ name: node.name,
+ description: node.description,
+ config: node.config,
+ })
+ }
+ }
+ }
+ isSyncingToX6 = false
+ },
+ { deep: true },
+ )
+ cleanupFns.push(stopNodesWatch)
  // Cleanup on unmount
  onUnmounted( => {
  cleanupFns.forEach(fn => fn)

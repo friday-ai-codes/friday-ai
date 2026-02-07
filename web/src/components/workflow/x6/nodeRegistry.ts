@@ -37,10 +37,10 @@ const nodeRegistry: Record<string, Component> = {
 }
 /**
  * Default node dimensions.
- * Width/height chosen to align with 20px grid.
+ * Width/height chosen to align with 20px grid and fit horizontal layout.
  */
-const DEFAULT_NODE_WIDTH = 200
-const DEFAULT_NODE_HEIGHT = 80
+const DEFAULT_NODE_WIDTH = 220
+const DEFAULT_NODE_HEIGHT = 60
 /**
  * Flag to prevent double registration.
  * X6 throws error if same shape is registered twice.
