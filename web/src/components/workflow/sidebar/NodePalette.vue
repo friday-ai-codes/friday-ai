@@ -74,7 +74,7 @@ function handleDragStart(nodeType: string, event: MouseEvent) {
 }
 </script>
 <template>
- <div class="h-full w-64 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <div class="h-full w-64 shrink-0 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden ">
  <!-- Header -->
  <div class=" border-b border-border/50">
  <div class="flex items-center gap-3">
