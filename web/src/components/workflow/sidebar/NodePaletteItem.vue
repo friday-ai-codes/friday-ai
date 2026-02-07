@@ -16,14 +16,14 @@ const props = defineProps<{
  node: NodePaletteItemData
 }>
 const emit = defineEmits<{
- dragStart: [nodeType: string, event: MouseEvent]
+ dragStart: [nodeData: NodePaletteItemData, event: MouseEvent]
 }>
 /**
  * Handle drag start from the grip handle.
  * Only the grip handle triggers drag - not the entire item.
  */
 function handleDragStart(event: MouseEvent) {
- emit('dragStart', props.node.type, event)
+ emit('dragStart', props.node, event)
 }
 /**
  * Get gradient classes for icon background based on color.

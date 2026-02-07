@@ -18,6 +18,7 @@ import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import { X6WorkflowCanvas } from '~/components/workflow/x6'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
+import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
@@ -154,6 +155,18 @@ function onRedo {
 function onBack {
  router.push('/workflows')
 }
+function handleNodeDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
+ canvasRef.value?.startDrag({
+ shape: nodeData.type,
+ width: 200,
+ height: 80,
+ data: {
+ node_type: nodeData.type,
+ name: nodeData.name,
+ description: nodeData.description,
+ },
+ }, event)
+}
 function onUpdateWorkflowName(name: string) {
  if (currentWorkflow.value) {
  store.updateWorkflowSettings({ ...currentWorkflow.value, name })
@@ -192,13 +205,13 @@ async function onUpdateIsActive(isActive: boolean) {
  />
  <div class="flex flex-1 overflow-hidden">
  <!-- Left Sidebar: Components -->
- <NodePalette />
- <!-- Center: Canvas -->
+ <NodePalette @drag-start="handleNodeDragStart" />
+ <!-- Center: Canvas with Config Panel overlay -->
  <div class="flex-1 relative my-3">
  <X6WorkflowCanvas ref="canvasRef" />
- </div>
- <!-- Right Sidebar: Configuration (only when node selected) -->
+ <!-- Right Sidebar: Configuration (floating over canvas) -->
  <NodeConfigPanel />
+ </div>
  </div>
  <!-- Leave Confirmation Dialog -->
  <AlertDialog:open="showLeaveDialog">

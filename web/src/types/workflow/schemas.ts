@@ -37,11 +37,26 @@ export const WORK_ITEM_TYPE_OPTIONS_WITH_ALL = [
 ] as const
 /** 飞书事件类型选项 */
 export const FEISHU_EVENT_TYPE_OPTIONS = [
- { value: 'WorkitemCreateEvent', label: '工作项创建' },
- { value: 'WorkitemStatusEvent', label: '状态变更' },
- { value: 'WorkitemCommentEvent', label: '评论事件' },
- { value: 'WorkitemUpdateEvent', label: '字段更新' },
- { value: 'WorkFlowNodeStatusEvent', label: '节点流转' },
+ { value: 'WorkitemCreateEvent', label: '工作项创建', description: '监听工作项创建事件' },
+ { value: 'WorkitemStatusEvent', label: '状态变更', description: '监听工作项状态流转' },
+ { value: 'WorkitemCommentEvent', label: '评论事件', description: '监听工作项评论' },
+ { value: 'WorkitemUpdateEvent', label: '字段更新', description: '监听工作项字段修改' },
+ { value: 'WorkFlowNodeStatusEvent', label: '节点流转', description: '监听飞书工作流节点状态' },
+ { value: 'WorkitemFinishEvent', label: '工作项完成', description: '监听工作项完成' },
+ { value: 'WorkitemDeleteEvent', label: '工作项删除', description: '监听工作项删除' },
+ { value: 'WorkitemAbortedEvent', label: '工作项终止', description: '监听工作项被终止' },
+ { value: 'WorkitemRestoreEvent', label: '工作项恢复', description: '监听工作项恢复' },
+] as const
+/** 常用状态选项（供快速选择） */
+export const COMMON_STATUS_OPTIONS = [
+ { value: 'open', label: '待处理', category: 'todo' },
+ { value: 'in_progress', label: '进行中', category: 'doing' },
+ { value: 'done', label: '已完成', category: 'done' },
+ { value: 'closed', label: '已关闭', category: 'done' },
+ { value: 'pending_review', label: '待审核', category: 'doing' },
+ { value: 'approved', label: '已通过', category: 'done' },
+ { value: 'rejected', label: '已拒绝', category: 'done' },
+ { value: 'blocked', label: '已阻塞', category: 'doing' },
 ] as const
 /** 常用字段快捷选项 */
 export const QUICK_FIELD_OPTIONS = [
@@ -92,10 +107,19 @@ export const fetchWorkItemConfigSchema = z.object({
 })
 /** 飞书事件触发器配置 */
 export const feishuEventTriggerConfigSchema = z.object({
- event_types: z.array(z.string).default,
- filter_project_key: z.string.default(''),
- filter_work_item_type: z.enum(['story', 'task', 'bug', '']).default(''),
- filter_status: z.string.default(''),
+ // 事件类型 - 单选，一个触发器只监听一种事件
+ event_type: z.string.default(''),
+ // 事件来源 - 可选多选，留空监听所有项目
+ project_ids: z.array(z.string).default,
+ // 过滤条件
+ filter_project_key: z.string.default(''), // 高级用法：直接指定飞书 project_key
+ filter_work_item_type: z.enum(['story', 'task', 'bug', 'epic', 'feature', '']).default(''),
+ filter_status: z.array(z.string).default, // 状态过滤（多选）
+ filter_status_custom: z.string.default(''), // 自定义状态输入
+ // 排除规则
+ exclude_project_ids: z.array(z.string).default, // 排除的项目
+ exclude_work_item_pattern: z.string.default(''), // 排除的工作项名称（包含匹配）
+ exclude_work_item_regex: z.string.default(''), // 排除的工作项名称（正则匹配）
 })
 /** 提取规则 */
 export const extractionRuleSchema = z.object({

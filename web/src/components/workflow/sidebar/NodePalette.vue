@@ -1,9 +1,24 @@
 <script setup lang="ts">
-import { Bot, Clock, GitBranch, Globe, MessageSquare, Play, Terminal, Webhook } from 'lucide-vue-next'
+import {
+ Bot,
+ Briefcase,
+ Clock,
+ FileText,
+ FolderGit2,
+ GitBranch,
+ Globe,
+ Hourglass,
+ MessageSquare,
+ Play,
+ Search,
+ Terminal,
+ Variable,
+ Webhook,
+} from 'lucide-vue-next'
 import NodePaletteItem from './NodePaletteItem.vue'
 import type { NodePaletteItemData } from './NodePaletteItem.vue'
 const emit = defineEmits<{
- dragStart: [nodeType: string, event: MouseEvent]
+ dragStart: [nodeData: NodePaletteItemData, event: MouseEvent]
 }>
 /**
  * Node type categories with their items.
@@ -26,6 +41,16 @@ const nodeCategories: NodeCategory = [
  { type: 'manual_trigger', name: '手动触发', description: '手动启动工作流', icon: Play, color: 'blue' },
  { type: 'webhook_trigger', name: 'Webhook', description: '通过 HTTP 请求触发', icon: Webhook, color: 'blue' },
  { type: 'schedule_trigger', name: '定时调度', description: '按计划自动执行', icon: Clock, color: 'blue' },
+ { type: 'feishu_event_trigger', name: '飞书事件', description: '飞书事件触发', icon: MessageSquare, color: 'blue' },
+ ],
+ },
+ {
+ name: '数据获取',
+ color: 'orange',
+ items: [
+ { type: 'fetch_work_item', name: '获取工作项', description: '从项目获取工作项信息', icon: Briefcase, color: 'orange' },
+ { type: 'fetch_project_info', name: '获取项目信息', description: '获取项目详细信息', icon: FileText, color: 'orange' },
+ { type: 'context_retrieval', name: '上下文检索', description: '检索相关上下文信息', icon: Search, color: 'orange' },
  ],
  },
  {
@@ -34,6 +59,8 @@ const nodeCategories: NodeCategory = [
  items: [
  { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求', icon: Globe, color: 'green' },
  { type: 'code_implement', name: 'AI 编码', description: 'AI 自动实现代码', icon: Terminal, color: 'green' },
+ { type: 'create_branch', name: '创建分支', description: '创建 Git 分支', icon: FolderGit2, color: 'green' },
+ { type: 'wait_feishu', name: '等待飞书', description: '等待飞书消息响应', icon: Hourglass, color: 'green' },
  ],
  },
  {
@@ -42,6 +69,9 @@ const nodeCategories: NodeCategory = [
  items: [
  { type: 'ai_prompt', name: 'AI Prompt', description: '调用 AI 大语言模型', icon: MessageSquare, color: 'purple' },
  { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务', icon: Bot, color: 'purple' },
+ { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
+ { type: 'variable_extractor', name: '变量提取', description: '提取变量值', icon: Variable, color: 'purple' },
+ { type: 'technical_plan', name: '技术方案', description: '生成技术实现方案', icon: FileText, color: 'purple' },
  ],
  },
  {
@@ -69,8 +99,8 @@ function getCategoryGradient(color: string): string {
 /**
  * Forward dragStart event from child item to parent.
  */
-function handleDragStart(nodeType: string, event: MouseEvent) {
- emit('dragStart', nodeType, event)
+function handleDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
+ emit('dragStart', nodeData, event)
 }
 </script>
 <template>

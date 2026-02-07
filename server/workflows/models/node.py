@@ -3,11 +3,19 @@ import uuid
 from typing import TYPE_CHECKING
 from django.core.exceptions import ValidationError
 from django.db import models
+from common.short_id import generate_short_id
 if TYPE_CHECKING:
  from workflows.models.workflow import Workflow
 class WorkflowNode(models.Model):
  """工作流节点"""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ # 短 ID，用于前端显示和模板变量引用 (如 {{nodes.abc.xxx}})
+ short_id = models.CharField(
+ max_length=12,
+ default=generate_short_id,
+ verbose_name="短 ID",
+ help_text="用于模板变量引用，如 {{nodes.abc.field}}",
+ )
  workflow = models.ForeignKey(
  "workflows.Workflow",
  on_delete=models.CASCADE,
@@ -68,6 +76,9 @@ class WorkflowNode(models.Model):
  verbose_name = "工作流节点"
  verbose_name_plural = "工作流节点"
  ordering = ["created_at"]
+ indexes = [
+ models.Index(fields=["workflow", "short_id"]),
+ ]
  def __str__(self) -> str:
  return f"{self.name} ({self.node_type})"
  def clean(self) -> None:
@@ -87,6 +98,7 @@ class WorkflowNode(models.Model):
  """导出为 JSON"""
  return {
  "id": str(self.id),
+ "short_id": self.short_id,
  "node_type": self.node_type,
  "name": self.name,
  "description": self.description,
@@ -167,8 +179,8 @@ class WorkflowEdge(models.Model):
  def to_json(self) -> dict:
  """导出为 JSON"""
  return {
- "source_node_id": str(self.source_node_id),
- "target_node_id": str(self.target_node_id),
+ "source_node_id": str(self.source_node_id), # type: ignore[attr-defined]
+ "target_node_id": str(self.target_node_id), # type: ignore[attr-defined]
  "source_handle": self.source_handle,
  "target_handle": self.target_handle,
  "condition": self.condition,
@@ -180,8 +192,8 @@ class WorkflowEdge(models.Model):
  """克隆边到新工作流"""
  return WorkflowEdge.objects.create(
  workflow=new_workflow,
- source_node_id=node_mapping[self.source_node_id],
- target_node_id=node_mapping[self.target_node_id],
+ source_node_id=node_mapping[self.source_node_id], # type: ignore[attr-defined]
+ target_node_id=node_mapping[self.target_node_id], # type: ignore[attr-defined]
  source_handle=self.source_handle,
  target_handle=self.target_handle,
  condition=self.condition,

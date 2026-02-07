@@ -13,10 +13,9 @@ import {
 const validationStore = useWorkflowValidationStore
 const workflowStore = useWorkflowsStore
 const { warningsList, warningCount, hasWarnings } = storeToRefs(validationStore)
-const { nodes } = storeToRefs(workflowStore)
-// Get node name by ID
+// Get node name by ID using store getter
 function getNodeName(nodeId: string): string {
- const node = nodes.value.find(n => n.id === nodeId)
+ const node = workflowStore.getNodeById(nodeId)
  return node?.name || nodeId.slice(0, 8)
 }
 // Handle clicking a warning - TODO: integrate with X6 graph for centering

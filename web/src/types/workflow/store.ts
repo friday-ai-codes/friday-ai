@@ -32,9 +32,13 @@ export interface WorkflowEdge {
  * Store-side node representation (X6-agnostic)
  * This is the canonical format for nodes in the Pinia store.
  * Converted to/from X6 Cell format by useX6Sync composable.
+ *
+ * - id: UUID for internal use (X6, API, database)
+ * - shortId: Human-friendly ID for display and template variables (e.g., {{nodes.abc.field}})
  */
 export interface WorkflowNodeStore {
- id: string
+ id: string // UUID
+ shortId: string // 3-char human-friendly ID for display
  nodeType: string // maps to X6 shape
  name: string
  description: string

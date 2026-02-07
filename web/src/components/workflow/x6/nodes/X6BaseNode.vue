@@ -36,6 +36,12 @@ const description = computed( => {
 const nodeType = computed( => {
  return (nodeData.value.node_type as string) || ''
 })
+// shortId for display (from node data, set by loadFromStore)
+// Falls back to truncated UUID for new nodes before save
+const shortId = computed( => {
+ return (nodeData.value.shortId as string) || node.id.slice(0, 8)
+})
+const nodeId = computed( => node.id)
 const isDisabled = computed( => {
  return (nodeData.value.disabled as boolean) || false
 })
@@ -94,7 +100,7 @@ onUnmounted( => {
  'x6-node--preview': isDragPreview,
  }"
  >
- <slot:node-data="nodeData":label="label":description="description":node-type="nodeType":is-selected="isSelected":is-hovered="isHovered":is-disabled="isDisabled"
+ <slot:node-data="nodeData":node-id="nodeId":short-id="shortId":label="label":description="description":node-type="nodeType":is-selected="isSelected":is-hovered="isHovered":is-disabled="isDisabled"
  />
  </div>
 </template>

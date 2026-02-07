@@ -1,5 +1,4 @@
 import type { ManualTriggerResponse, WorkflowEdgeStore, WorkflowNodeStore } from '~/types'
-import { nanoid } from 'nanoid'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import client from '~/api/client'
@@ -7,6 +6,7 @@ import { getDefaultData } from '~/components/workflow/x6/nodeTypeMapping'
 // Backend API response types (snake_case)
 export interface WorkflowNode {
  id: string
+ short_id: string
  node_type: string
  name: string
  description: string
@@ -81,24 +81,23 @@ export const useWorkflowsStore = defineStore('workflows', => {
  return null
  return nodes.value.find(n => n.id === selectedNodeId.value) || null
  })
- // ============================================================================
- // ID Generation
- // ============================================================================
  /**
- * Generate unique ID for new nodes/edges
+ * Get node by ID
  */
- function generateId: string {
- return nanoid(12)
+ function getNodeById(nodeId: string): WorkflowNodeStore | undefined {
+ return nodes.value.find(n => n.id === nodeId)
  }
  // ============================================================================
  // Type Converters: Backend API <-> Store Format
  // ============================================================================
  /**
  * Convert backend nodes to store format
+ * Uses UUID as id for internal operations, shortId for display
  */
  function toStoreNodes(workflowNodes: WorkflowNode): WorkflowNodeStore {
  return workflowNodes.map(node => ({
  id: node.id,
+ shortId: node.short_id,
  nodeType: node.node_type,
  name: node.name,
  description: node.description,
@@ -446,11 +445,22 @@ export const useWorkflowsStore = defineStore('workflows', => {
  nodes.value[index] = { ...nodes.value[index], ...updates }
  }
  }
- function updateNodeData(nodeId: string, data: Record<string, unknown>) {
+ function updateNodeData(nodeId: string, data: { name?: string, description?: string, config?: Record<string, unknown> }) {
  saveToHistory
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
- nodes.value[index].config = { ...nodes.value[index].config, ...data }
+ const node = nodes.value[index]
+ // Update name and description if provided
+ if (data.name !== undefined) {
+ node.name = data.name
+ }
+ if (data.description !== undefined) {
+ node.description = data.description
+ }
+ // Merge config if provided
+ if (data.config !== undefined) {
+ node.config = { ...node.config, ...data.config }
+ }
  }
  }
  function removeNode(nodeId: string) {
@@ -583,7 +593,6 @@ export const useWorkflowsStore = defineStore('workflows', => {
  hasDraft,
  getDraftInfo,
  // X6 sync methods (without history, called by useX6Sync)
- generateId,
  markDirty,
  addNodeFromX6,
  updateNodePosition,
@@ -591,5 +600,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  removeNodeFromX6,
  addEdgeFromX6,
  removeEdgeFromX6,
+ // Getters
+ getNodeById,
  } as const
 })

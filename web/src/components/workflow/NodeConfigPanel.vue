@@ -1,16 +1,27 @@
 <script setup lang="ts">
 import { watchDebounced } from '@vueuse/core'
-import { Settings, Trash2, Wand2, X } from 'lucide-vue-next'
+import { Check, Copy, Settings, Trash2, Wand2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+ Collapsible,
+ CollapsibleContent,
+ CollapsibleTrigger,
+} from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { useNodeMeta } from '~/composables/useNodeMeta'
 import { areTypesCompatible } from '~/composables/useSchemaValidation'
@@ -20,7 +31,13 @@ import IssuesPanel from './validation/IssuesPanel.vue'
 import OverrideConfirmDialog from './validation/OverrideConfirmDialog.vue'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
-const { selectedNode, selectedNodeId, nodes, edges } = storeToRefs(store)
+const { selectedNodeId, nodes, edges } = storeToRefs(store)
+// Compute selectedNode directly in component to ensure reactivity
+const selectedNode = computed( => {
+ if (!selectedNodeId.value)
+ return null
+ return nodes.value.find(n => n.id === selectedNodeId.value) || null
+})
 // Use node meta composable for registry access
 const { getDefinition, hasCustomConfig } = useNodeMeta
 // Get upstream variables for the selected node
@@ -128,7 +145,7 @@ function getFieldType(schema: any): string {
 }
 // Auto-fill logic: match upstream variables to node inputs
 // Per CONTEXT.md: name priority, type fallback
-function computeAutoFills: { fills: Record<string, string>; overrides: typeof fieldsToOverride.value } {
+function computeAutoFills: { fills: Record<string, string>, overrides: typeof fieldsToOverride.value } {
  const fills: Record<string, string> = {}
  const overrides: typeof fieldsToOverride.value =
  const inputs = nodeTypeInfo.value?.inputs ||
@@ -189,12 +206,53 @@ function handleOverrideConfirm(selectedKeys: string) {
  }
  pendingFills.value = {}
 }
+// 复制节点 ID
+const idCopied = ref(false)
+async function copyNodeId {
+ if (!selectedNodeId.value) return
+ try {
+ await navigator.clipboard.writeText(selectedNodeId.value)
+ idCopied.value = true
+ setTimeout( => {
+ idCopied.value = false
+ }, 2000)
+ }
+ catch (e) {
+ console.error('Failed to copy:', e)
+ }
+}
+// 输出 Schema 折叠状态
+const outputSchemaOpen = ref(true)
+// 获取端口类型的显示颜色
+function getPortTypeColor(type: string): string {
+ const colors: Record<string, string> = {
+ string: 'text-green-500',
+ number: 'text-blue-500',
+ boolean: 'text-amber-500',
+ object: 'text-purple-500',
+ array: 'text-cyan-500',
+ any: 'text-muted-foreground',
+ }
+ return colors[type] || 'text-muted-foreground'
+}
+// 生成输出变量引用路径 (使用 shortId)
+function getOutputPath(outputName: string): string {
+ return `{{nodes.${selectedNode.value?.shortId || selectedNodeId.value}.${outputName}}}`
+}
 </script>
 <template>
  <!-- Only show when a node is selected -->
+ <Transition
+ enter-active-class="transition-all duration-300 ease-out"
+ enter-from-class="opacity-0 translate-x-8"
+ enter-to-class="opacity-100 translate-x-0"
+ leave-active-class="transition-all duration-200 ease-in"
+ leave-from-class="opacity-100 translate-x-0"
+ leave-to-class="opacity-0 translate-x-8"
+ >
  <div
  v-if="selectedNode"
- class="h-full w-80 shrink-0 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden"
+ class="absolute top-0 right-3 bottom-0 w-80 z-20 flex flex-col rounded-2xl bg-card/90 backdrop-blur-md border border-border/50 shadow-xl overflow-hidden"
  >
  <!-- Header -->
  <div class=" border-b border-border/50">
@@ -227,6 +285,30 @@ function handleOverrideConfirm(selectedKeys: string) {
  <X class="w-4 " />
  </Button>
  </div>
+ </div>
+ <!-- 节点 ID 显示 (shortId for user display) -->
+ <div class="mt-3 flex items-center gap-2">
+ <span class="text-xs text-muted-foreground">ID:</span>
+ <code class="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded">
+ {{ selectedNode?.shortId || selectedNodeId }}
+ </code>
+ <TooltipProvider>
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button
+ type="button"
+ class="inline-flex items-center justify-center w-5 rounded hover:bg-muted/50 transition-colors"
+ @click="copyNodeId"
+ >
+ <Check v-if="idCopied" class="w-3 text-green-500" />
+ <Copy v-else class="w-3 text-muted-foreground" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="top">
+ <p>{{ idCopied ? '已复制': '复制节点 ID' }}</p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </div>
  </div>
  <ScrollArea class="flex-1">
@@ -312,6 +394,53 @@ function handleOverrideConfirm(selectedKeys: string) {
  </p>
  </div>
  </div>
+ <!-- 输出 Schema -->
+ <Collapsible v-if="nodeTypeInfo?.outputs?.length" v-model:open="outputSchemaOpen" class="mt-4">
+ <Separator class="bg-border/50 mb-4" />
+ <CollapsibleTrigger class="flex items-center justify-between w-full group">
+ <div class="flex items-center gap-2 text-sm font-medium">
+ <span class="icon-[lucide--arrow-right-from-line] text-base text-emerald-500" />
+ 输出字段
+ <Badge variant="outline" class="text-xs">
+ {{ nodeTypeInfo.outputs.length }}
+ </Badge>
+ </div>
+ <span
+ class="icon-[lucide--chevron-down] text-muted-foreground transition-transform duration-200":class="{ 'rotate-180': outputSchemaOpen }"
+ />
+ </CollapsibleTrigger>
+ <CollapsibleContent class="mt-3">
+ <div class="rounded-xl bg-muted/30 border border-border/50 overflow-hidden">
+ <div
+ v-for="(output, idx) in nodeTypeInfo.outputs":key="output.name"
+ class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
+ >
+ <div class="flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <code class="font-mono font-medium">{{ output.name }}</code>
+ <span
+ class="text-[10px] px-1.5 py-0.5 rounded-full bg-muted":class="getPortTypeColor(output.type)"
+ >
+ {{ output.type }}
+ </span>
+ </div>
+ </div>
+ <div v-if="output.description" class="mt-1 text-muted-foreground">
+ {{ output.description }}
+ </div>
+ <!-- 引用提示 -->
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <span class="icon-[lucide--code] text-xs" />
+ <code class="font-mono">{{ getOutputPath(output.name) }}</code>
+ </div>
+ </div>
+ </div>
+ <p class="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--info]" />
+ 下游节点可通过上述路径引用输出
+ </p>
+ </CollapsibleContent>
+ </Collapsible>
  </div>
  </ScrollArea>
  <!-- Actions -->
@@ -322,6 +451,7 @@ function handleOverrideConfirm(selectedKeys: string) {
  </Button>
  </div>
  </div>
+ </Transition>
  <!-- Override Confirmation Dialog -->
  <OverrideConfirmDialog
  v-model:open="overrideDialogOpen":fields="fieldsToOverride"

@@ -3,7 +3,10 @@
  * Defines position and visual attributes for a group of ports.
  */
 export interface PortGroupConfig {
- position: 'left' | 'right' | 'top' | 'bottom'
+ position: 'left' | 'right' | 'top' | 'bottom' | {
+ name: string
+ args?: Record<string, unknown>
+ }
  attrs: {
  circle: Record<string, unknown>
  }
@@ -27,10 +30,17 @@ export interface PortMetadata {
  * Standard port groups for workflow nodes.
  * Input ports on left, output ports on right.
  * Edges anchor to the port circle, not the node center.
+ * Using absolute positioning to ensure vertical centering.
  */
 export const workflowPortGroups: Record<string, PortGroupConfig> = {
  input: {
- position: 'left',
+ position: {
+ name: 'absolute',
+ args: {
+ x: 0,
+ y: '50%',
+ },
+ },
  markup: [
  {
  tagName: 'circle',
@@ -49,7 +59,13 @@ export const workflowPortGroups: Record<string, PortGroupConfig> = {
  },
  },
  output: {
- position: 'right',
+ position: {
+ name: 'absolute',
+ args: {
+ x: '100%',
+ y: '50%',
+ },
+ },
  markup: [
  {
  tagName: 'circle',
