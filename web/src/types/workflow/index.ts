@@ -1,3 +1,5 @@
+// Store types (X6-compatible)
+export type { WorkflowNodeStore, WorkflowEdgeStore } from './store'
 // Registry
 export {
  getDefaultConfig,

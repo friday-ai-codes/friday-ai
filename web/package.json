@@ -16,10 +16,10 @@
  "test:e2e:ui": "playwright test --ui"
  },
  "dependencies": {
- "@antv/x6": "^3.1.6",
- "@antv/x6-vue-shape": "^3.0.2",
+ "@antv/x6": "catalog:",
+ "@antv/x6-vue-shape": "catalog:",
  "@floating-ui/dom": "catalog:",
- "@floating-ui/vue": "^1.1.10",
+ "@floating-ui/vue": "catalog:",
  "@tanstack/vue-query": "catalog:",
  "@tiptap/core": "catalog:",
  "@tiptap/extension-code-block-lowlight": "catalog:",
@@ -47,6 +47,7 @@
  "clsx": "catalog:",
  "lowlight": "catalog:",
  "lucide-vue-next": "catalog:",
+ "nanoid": "catalog:",
  "pinia": "catalog:",
  "reka-ui": "catalog:",
  "shiki": "catalog:",
