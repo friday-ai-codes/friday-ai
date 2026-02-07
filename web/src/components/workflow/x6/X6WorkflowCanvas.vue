@@ -3,11 +3,11 @@ import { ref, watch } from 'vue'
 import { useGraph } from './useGraph'
 import { useDnd } from './useDnd'
 import { useHistory } from './useHistory'
-import { useSnapline } from './useSnapline'
 import { useMinimap } from './useMinimap'
 import { useX6Sync } from './useX6Sync'
 import { registerAllNodes } from './nodeRegistry'
 import EditorToolbar from './toolbar/EditorToolbar.vue'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 /**
  * X6 Workflow Canvas Component
  *
@@ -18,7 +18,6 @@ import EditorToolbar from './toolbar/EditorToolbar.vue'
  * - Vue component nodes via x6-vue-shape
  * - Drag-and-drop node creation from sidebar
  * - Undo/redo with keyboard shortcuts (Ctrl+Z, Ctrl+Shift+Z)
- * - Alignment snaplines when dragging nodes
  * - Minimap navigation panel
  * - Bidirectional sync with Pinia store
  *
@@ -27,6 +26,7 @@ import EditorToolbar from './toolbar/EditorToolbar.vue'
  */
 // Register all node shapes before graph creation
 registerAllNodes
+const store = useWorkflowsStore
 const containerRef = ref<HTMLDivElement>
 const minimapContainerRef = ref<HTMLDivElement>
 const { graph } = useGraph(containerRef, {
@@ -35,7 +35,6 @@ const { graph } = useGraph(containerRef, {
 })
 // Initialize editor enhancement composables
 const { canUndo, canRedo, undo, redo } = useHistory(graph)
-useSnapline(graph)
 useMinimap(graph, minimapContainerRef)
 // Initialize bidirectional sync between X6 and Pinia store
 const { loadFromStore } = useX6Sync(graph)
@@ -51,10 +50,26 @@ function zoomFit {
 }
 // Initialize Dnd plugin for drag-and-drop from sidebar
 const { initDnd, startDrag } = useDnd(graph)
-// Initialize Dnd after graph is ready
+// Initialize Dnd and event listeners after graph is ready
 watch(graph, (g) => {
  if (g) {
  initDnd
+ // Node click → open config panel
+ g.on('node:click', ({ node }) => {
+ store.selectNode(node.id)
+ })
+ // Click on blank area → close config panel
+ g.on('blank:click', => {
+ store.selectNode(null)
+ })
+ // Delete/Backspace → remove selected cells
+ g.bindKey(['delete', 'backspace'], => {
+ const cells = g.getSelectedCells
+ if (cells.length > 0) {
+ g.removeCells(cells)
+ }
+ return false
+ })
  }
 }, { immediate: true })
 /**
