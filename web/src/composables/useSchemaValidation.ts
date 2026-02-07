@@ -1,4 +1,4 @@
-import type { Node } from '@vue-flow/core'
+import type { WorkflowNode } from '~/types/workflow/store'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 /**
  * Type compatibility matrix for workflow port connections
@@ -123,7 +123,7 @@ export function useSchemaValidation {
  function getCompatiblePorts(
  sourceNodeId: string,
  sourcePortType: string,
- nodes: Node,
+ nodes: WorkflowNode,
  ): PortCompatibility {
  const result: PortCompatibility =
  for (const node of nodes) {

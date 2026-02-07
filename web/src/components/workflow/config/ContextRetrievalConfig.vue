@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Edge, Node } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { NodeType } from '~/stores/useNodeTypesStore'
 import type { ContextRetrievalConfig } from '~/types/workflow'
 import { computed, watch } from 'vue'
@@ -27,9 +27,9 @@ interface Props {
  config: ContextRetrievalConfig
  repositories?: Repository
  /** 设计态：工作流画布节点列表 */
- workflowNodes?: Node
+ workflowNodes?: WorkflowNode
  /** 设计态：工作流画布边列表 */
- workflowEdges?: Edge
+ workflowEdges?: WorkflowEdge
  /** 设计态：当前正在配置的节点 ID */
  currentNodeId?: string | null
  /** 节点类型信息 */

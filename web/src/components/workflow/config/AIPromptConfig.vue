@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Node as VueFlowNode, Edge } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { AIPromptConfig } from '~/types/workflow'
 import { computed } from 'vue'
 import { Input } from '~/components/ui/input'
@@ -25,8 +25,8 @@ import {
 // ============================================================================
 interface Props {
  config: AIPromptConfig
- workflowNodes?: VueFlowNode
- workflowEdges?: Edge
+ workflowNodes?: WorkflowNode
+ workflowEdges?: WorkflowEdge
  currentNodeId?: string
 }
 const props = withDefaults(defineProps<Props>, {

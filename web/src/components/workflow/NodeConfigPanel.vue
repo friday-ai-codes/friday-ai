@@ -42,12 +42,12 @@ const pendingFills = ref<Record<string, string>>({})
 const nodeTypeInfo = computed( => {
  if (!selectedNode.value)
  return null
- const nodeType = selectedNode.value.data?.node_type || selectedNode.value.type
+ const nodeType = selectedNode.value.nodeType
  return nodeTypesStore.getNodeType(nodeType)
 })
 // Get the current node type for custom config panel
 const currentNodeType = computed( => {
- return selectedNode.value?.data?.node_type || selectedNode.value?.type || ''
+ return selectedNode.value?.nodeType || ''
 })
 // Check if node has custom config panel (from registry)
 const nodeHasCustomConfig = computed( => {
@@ -68,9 +68,9 @@ const ConfigComponent = computed( => {
 // Watch for selected node changes - only trigger on node ID change to avoid feedback loop
 watch( => selectedNode.value?.id, (newId) => {
  if (newId && selectedNode.value) {
- nodeName.value = selectedNode.value.data?.name || selectedNode.value.label || ''
- nodeDescription.value = selectedNode.value.data?.description || ''
- nodeConfig.value = { ...selectedNode.value.data?.config }
+ nodeName.value = selectedNode.value.name || ''
+ nodeDescription.value = selectedNode.value.description || ''
+ nodeConfig.value = { ...selectedNode.value.config }
  }
 }, { immediate: true })
 // Auto-sync node config to store with debounce

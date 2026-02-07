@@ -8,7 +8,6 @@ import { useMinimap } from './useMinimap'
 import { useX6Sync } from './useX6Sync'
 import { registerAllNodes } from './nodeRegistry'
 import EditorToolbar from './toolbar/EditorToolbar.vue'
-import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 /**
  * X6 Workflow Canvas Component
  *
@@ -30,8 +29,6 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 registerAllNodes
 const containerRef = ref<HTMLDivElement>
 const minimapContainerRef = ref<HTMLDivElement>
-// Get store for sync
-const store = useWorkflowsStore
 const { graph } = useGraph(containerRef, {
  // Enable selection for testing node selection state styling
  selecting: true,

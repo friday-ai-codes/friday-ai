@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { AlertTriangle, ChevronDown } from 'lucide-vue-next'
-import { useVueFlow } from '@vue-flow/core'
 import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { Badge } from '~/components/ui/badge'
@@ -15,22 +14,16 @@ const validationStore = useWorkflowValidationStore
 const workflowStore = useWorkflowsStore
 const { warningsList, warningCount, hasWarnings } = storeToRefs(validationStore)
 const { nodes } = storeToRefs(workflowStore)
-const { setCenter } = useVueFlow
 // Get node name by ID
 function getNodeName(nodeId: string): string {
  const node = nodes.value.find(n => n.id === nodeId)
- return node?.data?.name || node?.label || nodeId.slice(0, 8)
+ return node?.name || nodeId.slice(0, 8)
 }
-// Handle clicking a warning - center on the edge
-function handleWarningClick(warning: typeof warningsList.value[0]) {
- // Find source and target nodes to calculate edge center
- const sourceNode = nodes.value.find(n => n.id === warning.sourceNodeId)
- const targetNode = nodes.value.find(n => n.id === warning.targetNodeId)
- if (sourceNode && targetNode) {
- const centerX = (sourceNode.position.x + targetNode.position.x) / 2
- const centerY = (sourceNode.position.y + targetNode.position.y) / 2
- setCenter(centerX, centerY, { zoom: 1.5, duration: 300 })
- }
+// Handle clicking a warning - TODO: integrate with X6 graph for centering
+function handleWarningClick(_warning: typeof warningsList.value[0]) {
+ // X6 centering will be implemented when graph instance is available via provide/inject
+ // For now, just log the warning click
+ console.log('Warning clicked:', _warning.id)
 }
 // Panel open state - auto-open when warnings exist
 const isOpen = ref(true)
