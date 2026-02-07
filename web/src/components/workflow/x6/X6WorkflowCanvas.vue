@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useGraph } from './useGraph'
 import { useDnd } from './useDnd'
 import { useHistory } from './useHistory'
 import { useSnapline } from './useSnapline'
 import { useMinimap } from './useMinimap'
+import { useX6Sync } from './useX6Sync'
 import { registerAllNodes } from './nodeRegistry'
 import EditorToolbar from './toolbar/EditorToolbar.vue'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 /**
  * X6 Workflow Canvas Component
  *
@@ -19,6 +21,7 @@ import EditorToolbar from './toolbar/EditorToolbar.vue'
  * - Undo/redo with keyboard shortcuts (Ctrl+Z, Ctrl+Shift+Z)
  * - Alignment snaplines when dragging nodes
  * - Minimap navigation panel
+ * - Bidirectional sync with Pinia store
  *
  * The graph instance is managed by the useGraph composable,
  * which handles lifecycle (init on mount, dispose on unmount).
@@ -27,6 +30,8 @@ import EditorToolbar from './toolbar/EditorToolbar.vue'
 registerAllNodes
 const containerRef = ref<HTMLDivElement>
 const minimapContainerRef = ref<HTMLDivElement>
+// Get store for sync
+const store = useWorkflowsStore
 const { graph } = useGraph(containerRef, {
  // Enable selection for testing node selection state styling
  selecting: true,
@@ -35,6 +40,8 @@ const { graph } = useGraph(containerRef, {
 const { canUndo, canRedo, undo, redo } = useHistory(graph)
 useSnapline(graph)
 useMinimap(graph, minimapContainerRef)
+// Initialize bidirectional sync between X6 and Pinia store
+const { loadFromStore } = useX6Sync(graph)
 // Zoom control functions
 function zoomIn {
  graph.value?.zoom(0.1)
@@ -68,39 +75,12 @@ function handleDragStart(nodeType: string, event: MouseEvent) {
  data: { name: 'New Node', description: '' },
  }, event)
 }
-// Add demo nodes for visual testing (Phase verification)
-onMounted( => {
- watch(graph, (g) => {
- if (!g) return
- // Add demo nodes with different node types
- g.addNode({
- id: 'trigger-1',
- shape: 'manual_trigger',
- x: 100,
- y: 100,
- data: { name: 'Manual Trigger', description: 'Start workflow manually' },
- })
- g.addNode({
- id: 'action-1',
- shape: 'http_request',
- x: 100,
- y: 250,
- data: { name: 'HTTP Request', description: 'Call external API' },
- })
- g.addNode({
- id: 'condition-1',
- shape: 'condition',
- x: 100,
- y: 400,
- data: { name: 'Check Status', description: 'Branch based on response' },
- })
- }, { immediate: true })
-})
-// Expose graph instance and drag handler for parent components
+// Expose graph instance, drag handler, and loadFromStore for parent components
 defineExpose({
  graph,
  handleDragStart,
  startDrag,
+ loadFromStore,
 })
 </script>
 <template>

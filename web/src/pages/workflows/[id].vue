@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import {
@@ -15,20 +15,25 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
-import NodePalette from '~/components/workflow/NodePalette.vue'
-import WorkflowCanvas from '~/components/workflow/WorkflowCanvas.vue'
+import { X6WorkflowCanvas } from '~/components/workflow/x6'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
+import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
 const store = useWorkflowsStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
+// Canvas ref for calling loadFromStore
+const canvasRef = ref<InstanceType<typeof X6WorkflowCanvas>>
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
-onMounted( => {
- store.fetchWorkflow(id)
+onMounted(async => {
+ await store.fetchWorkflow(id)
+ // Wait for next tick to ensure graph is ready, then load from store
+ await nextTick
+ canvasRef.value?.loadFromStore
  // Check if there's a draft to restore
  if (store.hasDraft) {
  const draftInfo = store.getDraftInfo
@@ -39,6 +44,8 @@ onMounted( => {
  label: '恢复',
  onClick: => {
  store.loadDraft
+ // Reload graph from store after restoring draft
+ nextTick( => canvasRef.value?.loadFromStore)
  toast.success('草稿已恢复')
  },
  },
@@ -188,7 +195,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <NodePalette />
  <!-- Center: Canvas -->
  <div class="flex-1 relative my-3">
- <WorkflowCanvas:editable="true" />
+ <X6WorkflowCanvas ref="canvasRef" />
  </div>
  <!-- Right Sidebar: Configuration (only when node selected) -->
  <NodeConfigPanel />
