@@ -6,13 +6,13 @@ import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import History from '@tiptap/extension-history'
 import Placeholder from '@tiptap/extension-placeholder'
-import type { Node as VueFlowNode, Edge } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { VariableNode, createVariableSuggestion } from './extensions'
 interface Props {
  modelValue: string
- workflowNodes: VueFlowNode
- workflowEdges: Edge
+ workflowNodes: WorkflowNode
+ workflowEdges: WorkflowEdge
  currentNodeId: string
  placeholder?: string
  disabled?: boolean
@@ -47,9 +47,9 @@ function serializeContent: string {
  if (node.type === 'paragraph') {
  for (const child of node.content ?? ) {
  if (child.type === 'text') {
- result += child.text ?? ''
+ result += (child as { text?: string }).text ?? ''
  } else if (child.type === 'variable') {
- result += `{{${child.attrs?.path ?? ''}}}`
+ result += `{{${(child as { attrs?: { path?: string } }).attrs?.path ?? ''}}}`
  }
  }
  }

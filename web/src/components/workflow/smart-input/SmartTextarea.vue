@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Edge, Node as VueFlowNode } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import Document from '@tiptap/extension-document'
 import History from '@tiptap/extension-history'
 import Paragraph from '@tiptap/extension-paragraph'
@@ -11,8 +11,8 @@ import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { createVariableSuggestion, VariableNode } from './extensions'
 interface Props {
  modelValue: string
- workflowNodes: VueFlowNode
- workflowEdges: Edge
+ workflowNodes: WorkflowNode
+ workflowEdges: WorkflowEdge
  currentNodeId: string
  placeholder?: string
  disabled?: boolean
@@ -51,10 +51,10 @@ function serializeContent: string {
  let paragraphText = ''
  for (const child of node.content ?? ) {
  if (child.type === 'text') {
- paragraphText += child.text ?? ''
+ paragraphText += (child as { text?: string }).text ?? ''
  }
  else if (child.type === 'variable') {
- paragraphText += `{{${child.attrs?.path ?? ''}}}`
+ paragraphText += `{{${(child as { attrs?: { path?: string } }).attrs?.path ?? ''}}}`
  }
  }
  paragraphs.push(paragraphText)

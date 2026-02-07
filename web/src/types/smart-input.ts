@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 /**
  * Variable node attributes stored in TipTap document
@@ -20,9 +20,9 @@ export interface SmartInputProps {
  /** v-model value - serialized content with {{path}} syntax */
  modelValue: string
  /** Workflow nodes for variable discovery */
- workflowNodes: Node
+ workflowNodes: WorkflowNode
  /** Workflow edges for DAG traversal */
- workflowEdges: Edge
+ workflowEdges: WorkflowEdge
  /** Current node ID to determine upstream variables */
  currentNodeId: string
  /** Placeholder text when empty */

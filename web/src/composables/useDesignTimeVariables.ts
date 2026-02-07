@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@vue-flow/core'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { Ref } from 'vue'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
@@ -38,11 +38,11 @@ export interface VariableCategory {
  */
 function getUpstreamNodes(
  nodeId: string,
- nodes: Node,
- edges: Edge,
-): Node {
+ nodes: WorkflowNode,
+ edges: WorkflowEdge,
+): WorkflowNode {
  const visited = new Set<string>
- const result: Node =
+ const result: WorkflowNode =
  const nodeMap = new Map(nodes.map(n => [n.id, n]))
  function traverse(id: string) {
  if (visited.has(id)) return
@@ -69,8 +69,8 @@ function getUpstreamNodes(
  *
  * @example
  * ```ts
- * const nodes = ref<Node>
- * const edges = ref<Edge>
+ * const nodes = ref<WorkflowNode>
+ * const edges = ref<WorkflowEdge>
  * const currentNodeId = ref<string | null>('node-2')
  *
  * const { upstreamNodes, designTimeVariables } = useDesignTimeVariables(
@@ -84,8 +84,8 @@ function getUpstreamNodes(
  * ```
  */
 export function useDesignTimeVariables(
- workflowNodes: Ref<Node>,
- workflowEdges: Ref<Edge>,
+ workflowNodes: Ref<WorkflowNode>,
+ workflowEdges: Ref<WorkflowEdge>,
  currentNodeId: Ref<string | null>,
 ) {
  const nodeTypesStore = useNodeTypesStore

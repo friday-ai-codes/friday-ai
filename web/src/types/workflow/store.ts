@@ -2,6 +2,33 @@
 // X6-Compatible Store Types
 // ============================================================================
 /**
+ * Simple workflow node type for composables and components.
+ * Framework-agnostic representation used by design-time variable discovery,
+ * schema validation, and other utilities.
+ */
+export interface WorkflowNode {
+ id: string
+ type?: string
+ label?: string
+ position: { x: number, y: number }
+ data?: {
+ node_type?: string
+ name?: string
+ [key: string]: unknown
+ }
+}
+/**
+ * Simple workflow edge type for composables and components.
+ * Framework-agnostic representation used by DAG traversal and validation.
+ */
+export interface WorkflowEdge {
+ id: string
+ source: string
+ target: string
+ sourceHandle?: string
+ targetHandle?: string
+}
+/**
  * Store-side node representation (X6-agnostic)
  * This is the canonical format for nodes in the Pinia store.
  * Converted to/from X6 Cell format by useX6Sync composable.

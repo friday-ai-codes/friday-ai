@@ -1,4 +1,4 @@
-import type { Edge } from '@vue-flow/core'
+import type { WorkflowEdge } from '~/types/workflow/store'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 /**
@@ -92,7 +92,7 @@ export const useWorkflowValidationStore = defineStore('workflowValidation', => {
  * Removes orphaned warnings for edges that no longer exist
  * @param edges - Current edges in the workflow
  */
- function syncWithEdges(edges: Edge): void {
+ function syncWithEdges(edges: WorkflowEdge): void {
  const edgeIds = new Set(edges.map(e => e.id))
  // Remove warnings for edges that no longer exist
  for (const edgeId of warnings.value.keys) {
