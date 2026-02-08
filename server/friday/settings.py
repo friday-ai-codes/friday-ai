@@ -50,6 +50,7 @@ INSTALLED_APPS = [
  "feishu",
  "chat",
  "workflows",
+ "agents",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
