@@ -1,6 +1,7 @@
 """Feishu URL configuration."""
 from django.urls import path
 from .views import (
+ CardCallbackView,
  FeishuConfigTestView,
  FeishuConfigView,
  FeishuWebhookView,
@@ -15,6 +16,8 @@ from .views import (
 urlpatterns = [
  # Webhook endpoint
  path("webhook", FeishuWebhookView.as_view, name="feishu-webhook"),
+ # Card callback (IM interactions)
+ path("card/callback/", CardCallbackView.as_view, name="card-callback"),
  # Config management (per project)
  path("projects/<uuid:project_id>/config", FeishuConfigView.as_view, name="feishu-config"),
  path(
