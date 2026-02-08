@@ -52,6 +52,8 @@ dependencies = [
  "python-gitlab>=4.0.0",
  "PyGithub>=2.0.0",
  "tenacity>=8.2.0",
+ # LLM providers
+ "anthropic>=0.40.0",
 ]
 [build-system]
 requires = ["hatchling"]
