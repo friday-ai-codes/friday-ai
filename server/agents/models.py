@@ -60,6 +60,14 @@ class AgentSession(models.Model):
  final_answer = models.TextField(blank=True, default="")
  # Metadata (iteration count, tool_calls count, usage stats)
  metadata = models.JSONField(default=dict)
+ # Temporary data for tool-specific state (cleared on completion)
+ temp_data = models.JSONField(default=dict, blank=True)
+ """
+ Tool-specific temporary data that needs to persist across suspension.
+ Examples: intermediate computation results, cached API responses,
+ tool state that cannot be derived from messages alone.
+ Cleared when session completes or errors.
+ """
  # Timestamps
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
