@@ -257,7 +257,11 @@ class WorkflowEngine:
  failed_nodes.add(dag_node.id)
  elif result.get("status") == "completed":
  completed_nodes.add(dag_node.id)
- node_outputs[dag_node.id] = result.get("output", {})
+ output = result.get("output", {})
+ node_outputs[dag_node.id] = output
+ # Also store by short_id for template variable support
+ if hasattr(dag_node.node, "short_id") and dag_node.node.short_id:
+ node_outputs[dag_node.node.short_id] = output
  elif result.get("status") == "waiting_approval":
  # 节点正在等待审批，保持在 pending
  pending_nodes.add(dag_node.id)

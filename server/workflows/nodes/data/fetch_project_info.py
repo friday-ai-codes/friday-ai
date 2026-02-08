@@ -69,7 +69,60 @@ class FetchProjectInfoNode(BaseNode):
  }
  inputs = [NodePort(name="default", label="输入", port_type=PortType.OBJECT, required=False)]
  outputs = [
- NodePort(name="default", label="项目信息", port_type=PortType.OBJECT),
+ NodePort(
+ name="default",
+ label="项目信息",
+ port_type=PortType.OBJECT,
+ schema={
+ "type": "object",
+ "properties": {
+ "project_id": {"type": "string", "description": "项目 ID"},
+ "project_name": {"type": "string", "description": "项目名称"},
+ "description": {"type": "string", "description": "项目描述"},
+ "feishu_project_key": {"type": "string", "description": "飞书项目 Key"},
+ "created_at": {"type": "string", "description": "创建时间"},
+ "updated_at": {"type": "string", "description": "更新时间"},
+ "repositories": {
+ "type": "array",
+ "description": "仓库列表",
+ "items": {
+ "type": "object",
+ "properties": {
+ "id": {"type": "string", "description": "仓库 ID"},
+ "name": {"type": "string", "description": "仓库名称"},
+ "git_url": {"type": "string", "description": "Git URL"},
+ "git_platform": {"type": "string", "description": "Git 平台"},
+ "default_branch": {"type": "string", "description": "默认分支"},
+ "description": {"type": "string", "description": "仓库描述"},
+ },
+ },
+ },
+ "repository_count": {"type": "integer", "description": "仓库数量"},
+ "primary_repository_id": {"type": "string", "description": "主仓库 ID"},
+ "feishu_config": {
+ "type": "object",
+ "description": "飞书配置",
+ "properties": {
+ "project_key": {"type": "string"},
+ "plugin_id": {"type": "string"},
+ "user_key": {"type": "string"},
+ "has_plugin_secret": {"type": "boolean"},
+ "is_configured": {"type": "boolean"},
+ },
+ },
+ "claude_config": {
+ "type": "object",
+ "description": "Claude 配置",
+ "properties": {
+ "has_api_key": {"type": "boolean"},
+ "base_url": {"type": "string"},
+ "is_configured": {"type": "boolean"},
+ },
+ },
+ "webhook_token": {"type": "string", "description": "Webhook Token"},
+ },
+ },
+ ),
  NodePort(name="error", label="失败", port_type=PortType.OBJECT),
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:

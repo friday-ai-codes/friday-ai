@@ -56,6 +56,51 @@ class FetchWorkItemNode(BaseNode):
  label="工作项详情",
  port_type=PortType.OBJECT,
  description="完整的工作项 JSON 数据",
+ schema={
+ "type": "object",
+ "properties": {
+ "id": {"type": "integer", "description": "工作项 ID"},
+ "name": {"type": "string", "description": "工作项名称"},
+ "description": {"type": "string", "description": "工作项描述"},
+ "status": {"type": "string", "description": "当前状态"},
+ "project_key": {"type": "string", "description": "飞书项目 Key"},
+ "work_item_type": {"type": "string", "description": "工作项类型"},
+ "fields": {
+ "type": "array",
+ "description": "字段列表",
+ "items": {
+ "type": "object",
+ "properties": {
+ "key": {"type": "string"},
+ "value": {"type": "any"},
+ "raw_value": {"type": "any"},
+ },
+ },
+ },
+ "raw_fields": {"type": "object", "description": "原始字段数据"},
+ "project": {
+ "type": "object",
+ "description": "项目信息",
+ "properties": {
+ "id": {"type": "string", "description": "项目 ID"},
+ "name": {"type": "string", "description": "项目名称"},
+ },
+ },
+ "repositories": {
+ "type": "array",
+ "description": "关联仓库列表",
+ "items": {
+ "type": "object",
+ "properties": {
+ "id": {"type": "string", "description": "仓库 ID"},
+ "name": {"type": "string", "description": "仓库名称"},
+ "git_url": {"type": "string", "description": "Git URL"},
+ "default_branch": {"type": "string", "description": "默认分支"},
+ },
+ },
+ },
+ },
+ },
  ),
  NodePort(
  name="error",

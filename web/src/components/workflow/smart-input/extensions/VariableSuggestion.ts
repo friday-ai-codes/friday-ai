@@ -72,22 +72,40 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  options.onEmpty?.
  return
  }
- // If query is empty, return first 10 items
+ // If query is empty, return all items (max 50)
  if (!query) {
- return allItems.slice(0, 10)
+ return allItems.slice(0, 50)
+ }
+ // JSONPath mode: query starts with $
+ // Strip the $ prefix for filtering, but we'll add it back when inserting
+ let filterQuery = query
+ if (query.startsWith('$')) {
+ // Remove $ and optional . prefix for filtering
+ filterQuery = query.replace(/^\$\.?/, '')
+ }
+ // If filterQuery is empty after stripping $, return all items
+ if (!filterQuery) {
+ return allItems.slice(0, 50)
  }
  // Fuzzy filter by label and path (case-insensitive)
- const lowerQuery = query.toLowerCase
+ const lowerQuery = filterQuery.toLowerCase
  return allItems
  .filter(
  item =>
  item.label.toLowerCase.includes(lowerQuery) ||
  item.path.toLowerCase.includes(lowerQuery),
  )
- .slice(0, 10)
+ .slice(0, 50)
  },
  // Command to execute when item is selected
  command: ({ editor, range, props }) => {
+ // Check if user was in JSONPath mode (query started with $)
+ // We detect this by checking the text before the range
+ const { state } = editor
+ const textBefore = state.doc.textBetween(range.from, range.to, '')
+ const isJsonPathMode = textBefore.startsWith('$')
+ // Build the path - add $ prefix for JSONPath mode
+ const finalPath = isJsonPathMode ? `$.${props.path}`: props.path
  // Delete the trigger range (removes `{{` and any typed query)
  // Then insert the variable node with attributes from props
  editor
@@ -97,8 +115,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  .insertContent({
  type: 'variable',
  attrs: {
- path: props.path,
- label: props.label,
+ path: finalPath,
+ label: isJsonPathMode ? `$ ${props.label}`: props.label,
  nodeId: props.nodeId,
  outputName: props.outputName,
  } satisfies VariableNodeAttrs,
@@ -110,12 +128,83 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  let popup: HTMLElement | null = null
  let app: App | null = null
  let componentRef: { onKeyDown: (event: KeyboardEvent) => boolean } | null = null
+ let currentProps: SuggestionProps | null = null
+ let scrollHandler: ( => void) | null = null
+ // Position popup relative to cursor with auto flip (vertical & horizontal)
+ function updatePosition(props: SuggestionProps) {
+ if (!popup) return
+ const clientRect = props.clientRect?.
+ if (!clientRect) {
+ popup.style.visibility = 'hidden'
+ return
+ }
+ const popupWidth = popup.offsetWidth || 256 // min-w-64 = 256px
+ const popupHeight = popup.offsetHeight || 288 // max- = 288px
+ const gap = 8
+ const viewportWidth = window.innerWidth
+ const viewportHeight = window.innerHeight
+ // Check if cursor is visible in viewport
+ const cursorVisible =
+ clientRect.top >= 0 &&
+ clientRect.bottom <= viewportHeight &&
+ clientRect.left >= 0 &&
+ clientRect.right <= viewportWidth
+ if (!cursorVisible) {
+ popup.style.visibility = 'hidden'
+ return
+ }
+ popup.style.visibility = 'visible'
+ // Vertical positioning: check space below vs above
+ const spaceBelow = viewportHeight - clientRect.bottom - gap
+ const spaceAbove = clientRect.top - gap
+ let top: number
+ if (spaceBelow >= popupHeight || spaceBelow >= spaceAbove) {
+ top = clientRect.bottom + gap
+ } else {
+ top = clientRect.top - popupHeight - gap
+ }
+ // Horizontal positioning: check space right vs left
+ const spaceRight = viewportWidth - clientRect.left
+ const spaceLeft = clientRect.right
+ let left: number
+ if (spaceRight >= popupWidth) {
+ // Align to cursor left
+ left = clientRect.left
+ } else if (spaceLeft >= popupWidth) {
+ // Align to cursor right, popup extends left
+ left = clientRect.right - popupWidth
+ } else {
+ // Center in viewport if neither side has enough space
+ left = Math.max(gap, (viewportWidth - popupWidth) / 2)
+ }
+ // Clamp to viewport bounds
+ left = Math.max(gap, Math.min(left, viewportWidth - popupWidth - gap))
+ top = Math.max(gap, Math.min(top, viewportHeight - popupHeight - gap))
+ Object.assign(popup.style, {
+ position: 'fixed',
+ left: `${left}px`,
+ top: `${top}px`,
+ zIndex: '9999',
+ })
+ }
+ // Handle scroll events to update position
+ function onScroll {
+ if (currentProps) {
+ updatePosition(currentProps)
+ }
+ }
  return {
  onStart(props: SuggestionProps) {
- const editorEl = props.editor.view.dom as HTMLElement
+ currentProps = props
  // Create popup container on body
  popup = document.createElement('div')
  popup.className = 'variable-suggestion-popup'
+ // Set width constraints: content-based with min/max limits
+ Object.assign(popup.style, {
+ width: 'max-content',
+ minWidth: '256px',
+ maxWidth: '400px',
+ })
  document.body.appendChild(popup)
  // Create reactive props for the Vue component
  const items = ref(props.items)
@@ -140,17 +229,14 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  },
  })
  app.mount(popup)
- // Position popup below editor using getBoundingClientRect
- const editorRect = editorEl.getBoundingClientRect
- Object.assign(popup.style, {
- position: 'fixed',
- left: `${editorRect.left}px`,
- top: `${editorRect.bottom + 8}px`,
- zIndex: '9999',
- minWidth: `${editorRect.width}px`,
- })
+ // Position after mount so we can measure popup height
+ requestAnimationFrame( => updatePosition(props))
+ // Listen to scroll events on all scrollable ancestors
+ scrollHandler = onScroll
+ window.addEventListener('scroll', scrollHandler, true)
  },
  onUpdate(props: SuggestionProps) {
+ currentProps = props
  // Update items reactively - remount with new props
  if (app && popup) {
  app.unmount
@@ -175,6 +261,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  },
  })
  app.mount(popup)
+ // Update position
+ requestAnimationFrame( => updatePosition(props))
  }
  },
  onKeyDown({ event }: SuggestionKeyDownProps): boolean {
@@ -189,6 +277,11 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  return false
  },
  onExit {
+ // Remove scroll listener
+ if (scrollHandler) {
+ window.removeEventListener('scroll', scrollHandler, true)
+ scrollHandler = null
+ }
  // Cleanup: unmount Vue app and remove popup from DOM
  if (app) {
  app.unmount
@@ -199,6 +292,7 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  popup = null
  }
  componentRef = null
+ currentProps = null
  },
  }
  }),

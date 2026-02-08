@@ -1,12 +1,19 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '~/api/client'
+export interface PortSchema {
+ type: string
+ description?: string
+ properties?: Record<string, PortSchema>
+ items?: PortSchema
+}
 export interface NodePort {
  name: string
  label: string
  type: string
  required: boolean
  description: string
+ schema?: PortSchema | null
 }
 export interface NodeType {
  node_type: string

@@ -1,6 +1,7 @@
 """AI Prompt node for general LLM interactions."""
 import json
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 import structlog
 from workflows.nodes.base import (
  BaseNode,
@@ -12,6 +13,95 @@ from workflows.nodes.base import (
 )
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger
+# =============================================================================
+# OpenResponses-compatible unified response format
+# Based on: https://www.openresponses.org/
+# =============================================================================
+@dataclass
+class OutputItem:
+ """Base class for output items following OpenResponses spec.
+ Output items are the atomic units of model output:
+ - message: Text content from the model
+ - reasoning: Thinking/reasoning content (for thinking models)
+ - function_call: Tool calls (not used in this node yet)
+ """
+ type: Literal["message", "reasoning", "function_call"]
+ def to_dict(self) -> dict[str, Any]:
+ """Convert to dictionary. Subclasses should override this."""
+ return {"type": self.type}
+@dataclass
+class MessageItem(OutputItem):
+ """Message output item containing text content."""
+ type: Literal["message"] = "message" # type: ignore[assignment]
+ role: str = "assistant"
+ content: str = ""
+ def to_dict(self) -> dict[str, Any]:
+ return {"type": self.type, "role": self.role, "content": self.content}
+@dataclass
+class ReasoningItem(OutputItem):
+ """Reasoning output item containing thinking content."""
+ type: Literal["reasoning"] = "reasoning" # type: ignore[assignment]
+ content: str = ""
+ summary: str | None = None
+ def to_dict(self) -> dict[str, Any]:
+ result: dict[str, Any] = {"type": self.type, "content": self.content}
+ if self.summary:
+ result["summary"] = self.summary
+ return result
+@dataclass
+class Usage:
+ """Token usage statistics following OpenResponses spec."""
+ input_tokens: int = 0
+ output_tokens: int = 0
+ total_tokens: int = 0
+ def to_dict(self) -> dict[str, int]:
+ return {
+ "input_tokens": self.input_tokens,
+ "output_tokens": self.output_tokens,
+ "total_tokens": self.total_tokens,
+ }
+@dataclass
+class LLMResponse:
+ """Unified LLM response format following OpenResponses spec.
+ This provides a consistent response structure across all LLM providers
+ (Anthropic, OpenAI, custom APIs, etc.)
+ Attributes:
+ output: List of output items (messages, reasoning, etc.)
+ usage: Token usage statistics
+ model: The model used for generation
+ status: Response status ("completed", "failed", etc.)
+ """
+ output: list[OutputItem] = field(default_factory=list)
+ usage: Usage = field(default_factory=Usage)
+ model: str = ""
+ status: str = "completed"
+ @property
+ def text(self) -> str:
+ """Get the main text content (from message items)."""
+ texts = [item.content for item in self.output if isinstance(item, MessageItem)]
+ return "\n".join(texts)
+ @property
+ def thinking(self) -> str:
+ """Get the reasoning/thinking content."""
+ texts = [item.content for item in self.output if isinstance(item, ReasoningItem)]
+ return "\n".join(texts)
+ @property
+ def has_thinking(self) -> bool:
+ """Check if response contains reasoning content."""
+ return any(isinstance(item, ReasoningItem) for item in self.output)
+ def to_dict(self) -> dict[str, Any]:
+ """Convert to dictionary for node output."""
+ return {
+ "output": [
+ item.to_dict for item in self.output if hasattr(item, "to_dict")
+ ],
+ "text": self.text,
+ "thinking": self.thinking,
+ "has_thinking": self.has_thinking,
+ "usage": self.usage.to_dict,
+ "model": self.model,
+ "status": self.status,
+ }
 # 默认支持的模型列表（当未配置自定义 API 时使用）
 DEFAULT_MODELS = [
  "claude-sonnet-4-20250514",
@@ -122,13 +212,101 @@ class AIPromptNode(BaseNode):
  name="default",
  label="AI 响应",
  port_type=PortType.OBJECT,
- description="包含 response 和 usage 信息",
+ description="包含 response、usage 和 OpenResponses 格式的输出",
+ schema={
+ "type": "object",
+ "properties": {
+ "response": {
+ "oneOf": [
+ {"type": "string", "description": "文本格式的响应"},
+ {"type": "object", "description": "JSON 格式的响应"},
+ ],
+ "description": "解析后的响应内容（根据 output_format 决定类型）",
+ },
+ "text": {
+ "type": "string",
+ "description": "AI 回复的主要文本内容（从 message 类型的 output 项中提取）",
+ },
+ "thinking": {
+ "type": "string",
+ "description": "AI 的思考过程（仅 Claude thinking 模型有值）",
+ },
+ "has_thinking": {
+ "type": "boolean",
+ "description": "是否包含思考内容",
+ },
+ "output": {
+ "type": "array",
+ "description": "OpenResponses 格式的输出项列表",
+ "items": {
+ "type": "object",
+ "properties": {
+ "type": {
+ "type": "string",
+ "enum": ["message", "reasoning"],
+ "description": "输出项类型",
+ },
+ "content": {
+ "type": "string",
+ "description": "输出内容",
+ },
+ "role": {
+ "type": "string",
+ "description": "角色（仅 message 类型）",
+ },
+ "summary": {
+ "type": "string",
+ "description": "摘要（仅 reasoning 类型，可选）",
+ },
+ },
+ },
+ },
+ "usage": {
+ "type": "object",
+ "description": "Token 使用统计",
+ "properties": {
+ "input_tokens": {
+ "type": "integer",
+ "description": "输入 token 数",
+ },
+ "output_tokens": {
+ "type": "integer",
+ "description": "输出 token 数",
+ },
+ "total_tokens": {
+ "type": "integer",
+ "description": "总 token 数",
+ },
+ },
+ },
+ "model": {
+ "type": "string",
+ "description": "使用的模型名称",
+ },
+ "output_format": {
+ "type": "string",
+ "enum": ["text", "json", "markdown"],
+ "description": "输出格式",
+ },
+ "raw_response": {
+ "type": "string",
+ "description": "原始文本响应（向后兼容）",
+ },
+ },
+ },
  ),
  NodePort(
  name="error",
  label="失败",
  port_type=PortType.OBJECT,
  description="调用失败时的错误信息",
+ schema={
+ "type": "object",
+ "properties": {
+ "error": {"type": "string", "description": "错误信息"},
+ "error_type": {"type": "string", "description": "错误类型"},
+ },
+ },
  ),
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:
@@ -159,7 +337,7 @@ class AIPromptNode(BaseNode):
  user_prompt, output_format, json_schema
  )
  # 调用 LLM
- response, usage = await self._call_llm(
+ llm_response = await self._call_llm(
  system_prompt=system_prompt,
  user_prompt=formatted_user_prompt,
  model=model,
@@ -171,21 +349,28 @@ class AIPromptNode(BaseNode):
  api_key=api_key,
  )
  # 解析输出
- parsed_response = self._parse_response(response, output_format)
+ parsed_response = self._parse_response(llm_response.text, output_format)
  logger.info(
  "ai_prompt_completed",
  model=model,
- input_tokens=usage.get("input_tokens", 0),
- output_tokens=usage.get("output_tokens", 0),
+ input_tokens=llm_response.usage.input_tokens,
+ output_tokens=llm_response.usage.output_tokens,
+ has_thinking=llm_response.has_thinking,
  )
  return NodeResult(
  status="completed",
  output={
  "response": parsed_response,
- "raw_response": response,
+ "text": llm_response.text,
+ "thinking": llm_response.thinking,
+ "raw_response": llm_response.text, # backward compatibility
  "model": model,
- "usage": usage,
+ "usage": llm_response.usage.to_dict,
+ "output": [
+ item.to_dict for item in llm_response.output if hasattr(item, "to_dict")
+ ],
  "output_format": output_format,
+ "has_thinking": llm_response.has_thinking,
  },
  next_handle="default",
  )
@@ -237,10 +422,10 @@ class AIPromptNode(BaseNode):
  use_custom_api: bool = False,
  api_base_url: str = "",
  api_key: str = "",
- ) -> tuple[str, dict]:
+ ) -> LLMResponse:
  """调用 LLM 服务
  Returns:
- tuple: (response_text, usage_dict)
+ LLMResponse: Unified response object containing text, thinking, and usage info
  """
  # 如果使用自定义 API，使用 OpenAI 兼容协议
  if use_custom_api and api_base_url:
@@ -272,7 +457,7 @@ class AIPromptNode(BaseNode):
  max_tokens: int,
  base_url: str,
  api_key: str = "",
- ) -> tuple[str, dict]:
+ ) -> LLMResponse:
  """调用 OpenAI 兼容 API（支持自定义 Base URL）"""
  import httpx
  # 确保 base_url 格式正确
@@ -304,11 +489,17 @@ class AIPromptNode(BaseNode):
  data = response.json
  choices = data.get("choices", )
  text = choices[0].get("message", {}).get("content", "") if choices else ""
- usage = {
- "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
- "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
- }
- return text, usage
+ input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
+ output_tokens = data.get("usage", {}).get("completion_tokens", 0)
+ return LLMResponse(
+ output=[MessageItem(content=text)],
+ usage=Usage(
+ input_tokens=input_tokens,
+ output_tokens=output_tokens,
+ total_tokens=input_tokens + output_tokens,
+ ),
+ model=model,
+ )
  async def _call_anthropic(
  self,
  system_prompt: str,
@@ -317,7 +508,7 @@ class AIPromptNode(BaseNode):
  temperature: float,
  max_tokens: int,
  project,
- ) -> tuple[str, dict]:
+ ) -> LLMResponse:
  """调用 Anthropic Claude API"""
  import httpx
  from asgiref.sync import sync_to_async
@@ -351,12 +542,36 @@ class AIPromptNode(BaseNode):
  raise Exception(f"Anthropic API 错误: {response.status_code} - {response.text}")
  data = response.json
  content = data.get("content", )
- text = content[0].get("text", "") if content else ""
- usage = {
- "input_tokens": data.get("usage", {}).get("input_tokens", 0),
- "output_tokens": data.get("usage", {}).get("output_tokens", 0),
- }
- return text, usage
+ # Parse content blocks into OpenResponses format
+ # Claude API returns:
+ # - {"type": "thinking", "thinking": "..."} - thinking/reasoning process
+ # - {"type": "text", "text": "..."} - actual response text
+ output_items: list[OutputItem] =
+ for block in content:
+ block_type = block.get("type", "")
+ if block_type == "thinking":
+ # Reasoning content
+ output_items.append(ReasoningItem(content=block.get("thinking", "")))
+ elif block_type == "text":
+ # Message content
+ output_items.append(MessageItem(content=block.get("text", "")))
+ elif "text" in block:
+ # Fallback for blocks with text field but no explicit type
+ output_items.append(MessageItem(content=block.get("text", "")))
+ # If no items parsed, try legacy format
+ if not output_items and content:
+ output_items.append(MessageItem(content=content[0].get("text", "")))
+ input_tokens = data.get("usage", {}).get("input_tokens", 0)
+ output_tokens = data.get("usage", {}).get("output_tokens", 0)
+ return LLMResponse(
+ output=output_items,
+ usage=Usage(
+ input_tokens=input_tokens,
+ output_tokens=output_tokens,
+ total_tokens=input_tokens + output_tokens,
+ ),
+ model=model,
+ )
  async def _call_openai(
  self,
  system_prompt: str,
@@ -365,7 +580,7 @@ class AIPromptNode(BaseNode):
  temperature: float,
  max_tokens: int,
  project,
- ) -> tuple[str, dict]:
+ ) -> LLMResponse:
  """调用 OpenAI API"""
  import httpx
  api_key = None
@@ -399,11 +614,17 @@ class AIPromptNode(BaseNode):
  data = response.json
  choices = data.get("choices", )
  text = choices[0].get("message", {}).get("content", "") if choices else ""
- usage = {
- "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
- "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
- }
- return text, usage
+ input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
+ output_tokens = data.get("usage", {}).get("completion_tokens", 0)
+ return LLMResponse(
+ output=[MessageItem(content=text)],
+ usage=Usage(
+ input_tokens=input_tokens,
+ output_tokens=output_tokens,
+ total_tokens=input_tokens + output_tokens,
+ ),
+ model=model,
+ )
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
  from asgiref.sync import sync_to_async

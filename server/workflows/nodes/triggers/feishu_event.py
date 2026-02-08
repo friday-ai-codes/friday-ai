@@ -86,6 +86,36 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  label="事件数据",
  port_type=PortType.OBJECT,
  description="包含 event_type, work_item_id, project_key, payload",
+ schema={
+ "type": "object",
+ "properties": {
+ "event_type": {"type": "string", "description": "事件类型"},
+ "work_item_id": {"type": "string", "description": "工作项 ID"},
+ "project_key": {"type": "string", "description": "飞书项目 Key"},
+ "work_item_type": {"type": "string", "description": "工作项类型"},
+ "work_item_name": {"type": "string", "description": "工作项名称"},
+ "current_status": {"type": "string", "description": "当前状态 Key"},
+ "current_status_name": {"type": "string", "description": "当前状态名称"},
+ "previous_status": {"type": "string", "description": "原状态 Key"},
+ "previous_status_name": {"type": "string", "description": "原状态名称"},
+ "payload": {"type": "object", "description": "原始事件 payload"},
+ "data": {
+ "type": "object",
+ "description": "结构化事件数据",
+ "properties": {
+ "event_type": {"type": "string"},
+ "work_item_id": {"type": "string"},
+ "project_key": {"type": "string"},
+ "work_item_type": {"type": "string"},
+ "work_item_name": {"type": "string"},
+ "current_status": {"type": "string"},
+ "current_status_name": {"type": "string"},
+ "previous_status": {"type": "string"},
+ "previous_status_name": {"type": "string"},
+ },
+ },
+ },
+ },
  ),
  ]
  async def parse_payload(self, context: ExecutionContext) -> dict:
