@@ -7,10 +7,8 @@ import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { SliderSingle } from '~/components/ui/slider'
 import { Switch } from '~/components/ui/switch'
-import { Textarea } from '~/components/ui/textarea'
 import NodePortsDisplay from '~/components/workflow/NodePortsDisplay.vue'
-import RepositoryPicker from '~/components/workflow/RepositoryPicker.vue'
-import VariablePicker from '~/components/workflow/VariablePicker.vue'
+import SmartInput from '~/components/workflow/smart-input/SmartInput.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { contextRetrievalConfigSchema } from '~/types/workflow'
 // ============================================================================
@@ -50,6 +48,15 @@ const emit = defineEmits<{
 // ============================================================================
 const migratedConfig = computed( => {
  const config = props.config
+ // If repositories is already a string (JSONPath expression), keep it as-is
+ if (typeof config.repositories === 'string') {
+ if ('repository_id' in config && config.repository_id !== undefined) {
+ // eslint-disable-next-line @typescript-eslint/no-unused-vars
+ const { repository_id, ...rest } = config
+ return rest as ContextRetrievalConfig
+ }
+ return config
+ }
  // Already has repositories array with items
  if (Array.isArray(config.repositories) && config.repositories.length > 0) {
  if ('repository_id' in config && config.repository_id !== undefined) {
@@ -65,8 +72,8 @@ const migratedConfig = computed( => {
  const { repository_id, ...rest } = config
  return { ...rest, repositories: [config.repository_id] } as ContextRetrievalConfig
  }
- // No repositories configured
- return { ...config, repositories: } as ContextRetrievalConfig
+ // No repositories configured - use empty string for SmartInput compatibility
+ return { ...config, repositories: '' } as ContextRetrievalConfig
 })
 // Emit migrated config on first load (silent migration)
 watch(migratedConfig, (newConfig) => {
@@ -89,11 +96,19 @@ const languageFilter = field('language_filter', '')
 const includeContent = field('include_content', true)
 const formatAsMarkdown = field('format_as_markdown', true)
 // ============================================================================
-// Repositories v-model for RepositoryPicker
+// Repositories - 支持字符串（JSONPath 表达式）或数组
 // ============================================================================
-const repositories = computed({
- get: => props.config.repositories ??,
- set: (val: string) => emit('update:config', { ...props.config, repositories: val }),
+const repositoriesModel = computed({
+ get: => {
+ const val = props.config.repositories
+ // 如果是字符串（JSONPath 表达式），直接返回
+ if (typeof val === 'string') return val
+ // 如果是数组，返回空字符串（旧数据迁移场景）
+ return ''
+ },
+ set: (val: string) => {
+ emit('update:config', { ...props.config, repositories: val })
+ },
 })
 // ============================================================================
 // 语言选项
@@ -122,12 +137,12 @@ const languageOptions = [
  目标仓库
  <span class="text-destructive">*</span>
  </Label>
- <RepositoryPicker
- v-model="repositories":repositories="props.repositories"
- placeholder="选择要检索的代码仓库..."
+ <SmartInput
+ v-model="repositoriesModel":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId ?? undefined"
+ placeholder="输入 {{ 选择变量，或 {{$ 使用 JSONPath"
  />
  <p class="text-xs text-muted-foreground">
- 选择要检索代码的仓库，支持多选
+ 使用 JSONPath 提取仓库 ID 列表，如 <code v-pre class="bg-muted px-1 rounded">{{$.input.repositories[*].id}}</code>
  </p>
  </div>
  <Separator />
@@ -137,22 +152,13 @@ const languageOptions = [
  检索查询
  <span class="text-destructive">*</span>
  </Label>
- <div class="flex gap-2">
- <Textarea
- v-model="query"
- placeholder="输入检索文本，如 {{ global.requirement_text }}"
- rows="3"
- class="font-mono text-sm flex-1"
+ <SmartInput
+ v-model="query":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId ?? undefined"
+ placeholder="输入检索文本，或 {{ 选择变量"
  />
- </div>
- <div class="flex items-center justify-between">
  <p class="text-xs text-muted-foreground">
  根据此文本检索相关代码，支持模板变量
  </p>
- <VariablePicker:workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId ?? undefined"
- @select="v => query += v"
- />
- </div>
  </div>
  <Separator />
  <!-- 检索参数 -->
@@ -168,7 +174,7 @@ const languageOptions = [
  v-model="topK":min="1":max="50":step="1"
  />
  <p class="text-xs text-muted-foreground">
- 返回最相关的代码片段数量
+ 每个仓库返回的最相关代码片段数量
  </p>
  </div>
  <!-- 相似度阈值 -->

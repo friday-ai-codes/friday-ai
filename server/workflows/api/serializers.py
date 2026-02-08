@@ -550,6 +550,7 @@ class NodePortSerializer(serializers.Serializer):
  type = serializers.CharField
  required = serializers.BooleanField
  description = serializers.CharField
+ schema = serializers.JSONField(required=False, allow_null=True)
 class NodeTypeSerializer(serializers.Serializer):
  """Serializer for node type definition (for frontend node palette)."""
  node_type = serializers.CharField

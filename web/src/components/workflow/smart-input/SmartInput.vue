@@ -1,23 +1,27 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, computed } from 'vue'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
-import Document from '@tiptap/extension-document'
-import Paragraph from '@tiptap/extension-paragraph'
-import Text from '@tiptap/extension-text'
-import History from '@tiptap/extension-history'
-import Placeholder from '@tiptap/extension-placeholder'
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
+import Document from '@tiptap/extension-document'
+import Gapcursor from '@tiptap/extension-gapcursor'
+import History from '@tiptap/extension-history'
+import Paragraph from '@tiptap/extension-paragraph'
+import Placeholder from '@tiptap/extension-placeholder'
+import Text from '@tiptap/extension-text'
+import { EditorContent, useEditor } from '@tiptap/vue-3'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
-import { VariableNode, createVariableSuggestion } from './extensions'
+import { createVariableSuggestion, VariableNode } from './extensions'
 interface Props {
  modelValue: string
- workflowNodes: WorkflowNode
- workflowEdges: WorkflowEdge
- currentNodeId: string
+ workflowNodes?: WorkflowNode
+ workflowEdges?: WorkflowEdge
+ currentNodeId?: string
  placeholder?: string
  disabled?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: '',
  placeholder: '',
  disabled: false,
 })
@@ -28,18 +32,79 @@ const emit = defineEmits<{
 const workflowNodesRef = computed( => props.workflowNodes)
 const workflowEdgesRef = computed( => props.workflowEdges)
 const currentNodeIdRef = computed( => props.currentNodeId)
+// Track if we're updating from external source to prevent loops
+const isUpdatingFromExternal = ref(false)
 const { designTimeVariables } = useDesignTimeVariables(
  workflowNodesRef,
  workflowEdgesRef,
  currentNodeIdRef,
 )
-// Track if we're updating from external source to prevent loops
-const isUpdatingFromExternal = ref(false)
+const editor = useEditor({
+ extensions: [
+ Document,
+ Paragraph,
+ Text,
+ History,
+ Gapcursor,
+ Placeholder.configure({
+ placeholder: props.placeholder,
+ }),
+ VariableNode,
+ createVariableSuggestion({
+ items: => designTimeVariables.value,
+ }),
+ ],
+ content: parseContent(props.modelValue),
+ editable: !props.disabled,
+ onUpdate: => {
+ if (!isUpdatingFromExternal.value) {
+ const serialized = serializeContent
+ emit('update:modelValue', serialized)
+ }
+ },
+ editorProps: {
+ // Prevent Enter from creating new paragraphs (single-line behavior)
+ handleKeyDown: (view, event) => {
+ if (event.key === 'Enter' && !event.shiftKey) {
+ // Prevent default behavior
+ return true
+ }
+ return false
+ },
+ // Custom copy handler to serialize variable nodes as {{path}}
+ clipboardTextSerializer: (slice) => {
+ let text = ''
+ slice.content.forEach((node) => {
+ if (node.type.name === 'paragraph') {
+ node.content.forEach((child) => {
+ if (child.type.name === 'text') {
+ text += child.text || ''
+ }
+ else if (child.type.name === 'variable') {
+ text += `{{${child.attrs.path || ''}}}`
+ }
+ })
+ }
+ else if (node.type.name === 'variable') {
+ text += `{{${node.attrs.path || ''}}}`
+ }
+ else if (node.type.name === 'text') {
+ text += node.text || ''
+ }
+ })
+ return text
+ },
+ attributes: {
+ class: 'outline-none min-h-[2.25rem] flex items-center',
+ },
+ },
+})
 /**
  * Serialize editor content to string with {{path}} syntax
  */
 function serializeContent: string {
- if (!editor.value) return ''
+ if (!editor.value)
+ return ''
  const doc = editor.value.getJSON
  let result = ''
  // Traverse document nodes
@@ -48,7 +113,8 @@ function serializeContent: string {
  for (const child of node.content ?? ) {
  if (child.type === 'text') {
  result += (child as { text?: string }).text ?? ''
- } else if (child.type === 'variable') {
+ }
+ else if (child.type === 'variable') {
  result += `{{${(child as { attrs?: { path?: string } }).attrs?.path ?? ''}}}`
  }
  }
@@ -63,8 +129,7 @@ function parseContent(value: string): object {
  const content: object =
  const regex = /\{\{([^}]+)\}\}/g
  let lastIndex = 0
- let match
- while ((match = regex.exec(value)) !== null) {
+ for (const match of value.matchAll(regex)) {
  // Add text before the match
  if (match.index > lastIndex) {
  content.push({
@@ -84,7 +149,7 @@ function parseContent(value: string): object {
  outputName: variable?.key ?? '',
  },
  })
- lastIndex = regex.lastIndex
+ lastIndex = match.index + match[0].length
  }
  // Add remaining text
  if (lastIndex < value.length) {
@@ -103,49 +168,18 @@ function parseContent(value: string): object {
  ],
  }
 }
-const editor = useEditor({
- extensions: [
- Document,
- Paragraph,
- Text,
- History,
- Placeholder.configure({
- placeholder: props.placeholder,
- }),
- VariableNode,
- createVariableSuggestion({
- items: => designTimeVariables.value,
- }),
- ],
- content: parseContent(props.modelValue),
- editable: !props.disabled,
- onUpdate: => {
- if (!isUpdatingFromExternal.value) {
- emit('update:modelValue', serializeContent)
- }
- },
- editorProps: {
- // Prevent Enter from creating new paragraphs (single-line behavior)
- handleKeyDown: (view, event) => {
- if (event.key === 'Enter' && !event.shiftKey) {
- // Prevent default behavior
- return true
- }
- return false
- },
- attributes: {
- class: 'outline-none min-h-[2.25rem] flex items-center',
- },
- },
-})
 // Sync external value changes to editor
 watch( => props.modelValue, (newValue) => {
- if (!editor.value) return
+ if (!editor.value)
+ return
  const currentValue = serializeContent
  if (newValue !== currentValue) {
  isUpdatingFromExternal.value = true
  editor.value.commands.setContent(parseContent(newValue))
+ // Use nextTick to ensure the flag is reset after the update cycle
+ nextTick( => {
  isUpdatingFromExternal.value = false
+ })
  }
 })
 // Update editable state
@@ -180,5 +214,9 @@ onBeforeUnmount( => {
  opacity: 0.5;
  pointer-events: none;
  height: 0;
+}
+/* Variable chip spacing - ensure chips don't touch each other */
+.tiptap .node-variable + .node-variable {
+ margin-left: 0.5rem;
 }
 </style>

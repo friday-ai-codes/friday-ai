@@ -1,4 +1,4 @@
-import { mergeAttributes, Node } from '@tiptap/core'
+import { InputRule, mergeAttributes, Node } from '@tiptap/core'
 import { VueNodeViewRenderer, type NodeViewProps } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import type { VariableNodeAttrs } from '~/types/smart-input'
@@ -106,5 +106,31 @@ export const VariableNode = Node.create({
  },
  addNodeView {
  return VueNodeViewRenderer(VariableChip as Component<NodeViewProps>)
+ },
+ addInputRules {
+ // Match {{path}} pattern and convert to variable node
+ // This allows users to manually type {{input.project.id}} and have it convert to a chip
+ const type = this.type
+ return [
+ new InputRule({
+ find: /\{\{([^}]+)\}\}$/,
+ handler: ({ state, range, match }) => {
+ const path = match[1]
+ const { tr } = state
+ // Extract key from path (last segment)
+ const pathParts = path.split('.')
+ const key = pathParts[pathParts.length - 1]
+ // Create the variable node
+ const node = type.create({
+ path,
+ label: path, // Use path as label for manually typed variables
+ nodeId: '',
+ outputName: key,
+ } satisfies VariableNodeAttrs)
+ // Replace the matched text with the node
+ tr.replaceWith(range.from, range.to, node)
+ },
+ }),
+ ]
  },
 })

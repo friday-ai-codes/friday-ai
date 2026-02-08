@@ -8,23 +8,48 @@ interface Props {
 const props = defineProps<Props>
 const selectedIndex = ref(0)
 const scrollContainer = ref<HTMLElement | null>(null)
-// Group items by nodeId for display
+// Group items by path prefix (input vs nodes.xxx)
 const groupedItems = computed( => {
- const groups = new Map<string, { nodeLabel: string; items: DesignTimeVariable }>
+ const inputGroup: DesignTimeVariable =
+ const nodeGroups = new Map<string, { nodeLabel: string; items: DesignTimeVariable }>
  for (const item of props.items) {
- if (!groups.has(item.nodeId)) {
- groups.set(item.nodeId, {
+ if (item.path.startsWith('input.')) {
+ inputGroup.push(item)
+ }
+ else {
+ if (!nodeGroups.has(item.nodeId)) {
+ nodeGroups.set(item.nodeId, {
  nodeLabel: item.nodeLabel,
  items:,
  })
  }
- groups.get(item.nodeId)!.items.push(item)
+ nodeGroups.get(item.nodeId)!.items.push(item)
  }
- return Array.from(groups.entries).map(([nodeId, group]) => ({
- nodeId,
- nodeLabel: group.nodeLabel,
+ }
+ const result: Array<{ groupKey: string; groupLabel: string; groupIcon: string; items: DesignTimeVariable }> =
+ // Add input group first
+ if (inputGroup.length > 0) {
+ result.push({
+ groupKey: 'input',
+ groupLabel: '输入变量',
+ groupIcon: 'icon-[lucide--arrow-left-from-line]',
+ items: inputGroup,
+ })
+ }
+ // Add node groups
+ for (const [nodeId, group] of nodeGroups) {
+ result.push({
+ groupKey: nodeId,
+ groupLabel: group.nodeLabel,
+ groupIcon: 'icon-[lucide--box]',
  items: group.items,
- }))
+ })
+ }
+ return result
+})
+// Flatten grouped items for consistent indexing
+const flatItems = computed( => {
+ return groupedItems.value.flatMap(group => group.items)
 })
 // Get flat index for an item
 function getFlatIndex(groupIndex: number, itemIndex: number): number {
@@ -40,8 +65,9 @@ function isSelected(groupIndex: number, itemIndex: number): boolean {
 }
 // Select item by flat index
 function selectItem(index: number) {
- if (index >= 0 && index < props.items.length) {
- props.command(props.items[index])
+ const item = flatItems.value[index]
+ if (item) {
+ props.command(item)
  }
 }
 // Scroll selected item into view
@@ -74,55 +100,104 @@ function onKeyDown(event: KeyboardEvent): boolean {
  // Let Esc be handled by TipTap
  return false
 }
+// Get color class for type
+function getTypeColor(type: string): string {
+ const colors: Record<string, string> = {
+ string: 'text-green-600 bg-green-500/10',
+ number: 'text-blue-600 bg-blue-500/10',
+ integer: 'text-blue-600 bg-blue-500/10',
+ boolean: 'text-amber-600 bg-amber-500/10',
+ object: 'text-purple-600 bg-purple-500/10',
+ array: 'text-cyan-600 bg-cyan-500/10',
+ }
+ return colors[type] || 'text-muted-foreground bg-muted'
+}
 defineExpose({ onKeyDown })
 </script>
 <template>
+ <div class="bg-popover/95 backdrop-blur-md border border-border/50 rounded-xl shadow-lg shadow-black/5 overflow-hidden min-w-64">
+ <!-- Scrollable content -->
  <div
  ref="scrollContainer"
- class="bg-popover/95 backdrop-blur-md border border-border/50 rounded-xl shadow-lg shadow-black/5 max- overflow-y-auto min-w-64 "
+ class="max- overflow-y-auto "
  >
  <!-- Empty state -->
  <div
  v-if="items.length === 0"
- class="flex flex-col items-center justify-center py-8 px-4 text-center"
+ class="flex flex-col items-center justify-center py-6 px-4 text-center"
  >
- <div class=" rounded-xl bg-muted/50 mb-3">
- <span class="icon-[lucide--variable] text-2xl text-muted-foreground" />
+ <div class=".5 rounded-xl bg-muted/50 mb-2">
+ <span class="icon-[lucide--variable] text-xl text-muted-foreground" />
  </div>
- <p class="text-sm font-medium text-muted-foreground">
+ <p class="text-xs font-medium text-muted-foreground">
  当前无可用变量
  </p>
- <p class="text-xs text-muted-foreground/70 mt-1">
+ <p class="text-[10px] text-muted-foreground/70 mt-0.5">
  请先连接上游节点
  </p>
  </div>
  <!-- Grouped variable list -->
  <template v-else>
  <div
- v-for="(group, groupIndex) in groupedItems":key="group.nodeId"
- class="mb-1 last:mb-0"
+ v-for="(group, groupIndex) in groupedItems":key="group.groupKey"
+ class="mb-0.5 last:mb-0"
  >
  <!-- Group header -->
- <div class="px-2 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5">
- <span class="icon-[lucide--box] text-xs opacity-70" />
- <span>{{ group.nodeLabel }}</span>
+ <div class="px-2 py-1 text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+ <span:class="group.groupIcon" class="text-[10px] opacity-70" />
+ <span>{{ group.groupLabel }}</span>
  </div>
  <!-- Group items -->
  <button
  v-for="(item, itemIndex) in group.items":key="item.path"
  type="button":data-selected="isSelected(groupIndex, itemIndex)"
- class="w-full px-3 py-2 text-sm text-left rounded-lg flex items-center justify-between gap-2 transition-colors":class="[
+ class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[
  isSelected(groupIndex, itemIndex)
  ? 'bg-accent': 'hover:bg-accent/50'
  ]"
  @click="selectItem(getFlatIndex(groupIndex, itemIndex))"
  >
- <span class="truncate">{{ item.outputLabel }}</span>
- <span class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+ <div class="flex items-center justify-between gap-2">
+ <!-- Variable info: key + description -->
+ <div class="flex items-center gap-1.5 min-w-0">
+ <code class="font-mono text-xs font-medium shrink-0">{{ item.key }}</code>
+ <span v-if="item.description" class="text-[10px] text-muted-foreground truncate">
+ {{ item.description }}
+ </span>
+ </div>
+ <!-- Type badge -->
+ <span
+ class="text-[9px] px-1 py-0.5 rounded-full shrink-0 font-medium":class="getTypeColor(item.type)"
+ >
  {{ item.type }}
  </span>
+ </div>
+ <!-- Full path (secondary) -->
+ <div class="mt-0.5 text-[10px] text-muted-foreground/70 font-mono truncate">
+ {{ item.path }}
+ </div>
  </button>
  </div>
  </template>
+ </div>
+ <!-- Keyboard hints footer -->
+ <div
+ v-if="items.length > 0"
+ class="flex items-center gap-3 px-2.5 py-1.5 border-t border-border/50 bg-muted/30"
+ >
+ <div class="flex items-center gap-1 text-[10px] text-muted-foreground">
+ <kbd class="px-1 py-0.5 rounded bg-muted border border-border/50 font-mono text-[9px]">↑</kbd>
+ <kbd class="px-1 py-0.5 rounded bg-muted border border-border/50 font-mono text-[9px]">↓</kbd>
+ <span>导航</span>
+ </div>
+ <div class="flex items-center gap-1 text-[10px] text-muted-foreground">
+ <kbd class="px-1 py-0.5 rounded bg-muted border border-border/50 font-mono text-[9px]">Tab</kbd>
+ <span>选中</span>
+ </div>
+ <div class="flex items-center gap-1 text-[10px] text-muted-foreground">
+ <kbd class="px-1 py-0.5 rounded bg-muted border border-border/50 font-mono text-[9px]">Esc</kbd>
+ <span>关闭</span>
+ </div>
+ </div>
  </div>
 </template>

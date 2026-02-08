@@ -461,7 +461,7 @@ class WorkflowExecutionViewSet(ModelViewSet):
  queryset = WorkflowExecution.objects.all
  serializer_class = WorkflowExecutionSerializer
  permission_classes = [IsAuthenticated, ExecutionPermission]
- http_method_names = ["get", "delete", "head", "options"] # No create/update
+ http_method_names = ["get", "post", "delete", "head", "options"] # No create/update, post for actions
  def get_serializer_class(self):
  if self.action == "list":
  return WorkflowExecutionListSerializer

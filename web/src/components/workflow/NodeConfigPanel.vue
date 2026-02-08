@@ -224,37 +224,63 @@ async function copyNodeId {
 // 输入/输出 Schema 折叠状态
 const inputSchemaOpen = ref(true)
 const outputSchemaOpen = ref(true)
+// 输入字段项类型
+interface InputFieldItem {
+ nodeId: string
+ nodeShortId: string
+ nodeLabel: string
+ fieldName: string
+ fieldLabel: string
+ type: string
+ description?: string
+ isNested?: boolean
+ parentOutput?: string
+}
 // 获取直接前置节点的输出字段（用于显示 input 可用变量）
-const directPredecessorOutputs = computed( => {
+// 如果前置节点有详细 schema，展开为具体字段
+const directPredecessorOutputs = computed(: InputFieldItem => {
  if (!selectedNodeId.value) return
  // 找到直接连接到当前节点的边
  const incomingEdges = edges.value.filter(e => e.target === selectedNodeId.value)
  if (incomingEdges.length === 0) return
- const outputs: Array<{
- nodeId: string
- nodeShortId: string
- nodeLabel: string
- outputName: string
- outputLabel: string
- type: string
- description?: string
- }> =
+ const outputs: InputFieldItem =
  for (const edge of incomingEdges) {
  const sourceNode = nodes.value.find(n => n.id === edge.source)
  if (!sourceNode) continue
  const sourceNodeType = nodeTypesStore.getNodeType(sourceNode.nodeType)
  if (!sourceNodeType?.outputs) continue
  const nodeLabel = sourceNode.name || sourceNodeType.display_name
+ const nodeShortId = sourceNode.shortId || sourceNode.id.slice(0, 8)
  for (const output of sourceNodeType.outputs) {
+ // 如果有详细 schema，展开具体字段
+ if (output.schema?.properties) {
+ for (const [propKey, propSchema] of Object.entries(output.schema.properties)) {
  outputs.push({
  nodeId: sourceNode.id,
- nodeShortId: sourceNode.shortId || sourceNode.id.slice(0, 8),
+ nodeShortId,
  nodeLabel,
- outputName: output.name,
- outputLabel: output.label,
+ fieldName: propKey,
+ fieldLabel: (propSchema as any).description || propKey,
+ type: (propSchema as any).type || 'any',
+ description: (propSchema as any).description,
+ isNested: true,
+ parentOutput: output.name,
+ })
+ }
+ }
+ else {
+ // 没有详细 schema，使用端口级别信息
+ outputs.push({
+ nodeId: sourceNode.id,
+ nodeShortId,
+ nodeLabel,
+ fieldName: output.name,
+ fieldLabel: output.label,
  type: output.type,
  description: output.description,
+ isNested: false,
  })
+ }
  }
  }
  return outputs
@@ -280,6 +306,20 @@ function getOutputPath(outputName: string): string {
 // 生成输入变量引用路径
 function getInputPath(outputName: string): string {
  return `{{input.${outputName}}}`
+}
+// 计算输出字段总数（包含 schema 详细字段）
+function getOutputFieldCount: number {
+ if (!nodeTypeInfo.value?.outputs) return 0
+ let count = 0
+ for (const output of nodeTypeInfo.value.outputs) {
+ if (output.schema?.properties) {
+ count += Object.keys(output.schema.properties).length
+ }
+ else {
+ count += 1
+ }
+ }
+ return count
 }
 </script>
 <template>
@@ -454,12 +494,12 @@ function getInputPath(outputName: string): string {
  <CollapsibleContent class="mt-3">
  <div class="rounded-xl bg-muted/30 border border-border/50 overflow-hidden">
  <div
- v-for="(input, idx) in directPredecessorOutputs":key="`${input.nodeId}-${input.outputName}`"
+ v-for="(input, idx) in directPredecessorOutputs":key="`${input.nodeId}-${input.fieldName}`"
  class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
- <code class="font-mono font-medium">{{ input.outputName }}</code>
+ <code class="font-mono font-medium">{{ input.fieldName }}</code>
  <span
  class="text-[10px] px-1.5 py-0.5 rounded-full bg-muted":class="getPortTypeColor(input.type)"
  >
@@ -476,7 +516,7 @@ function getInputPath(outputName: string): string {
  <!-- 引用提示 -->
  <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
  <span class="icon-[lucide--code] text-xs" />
- <code class="font-mono">{{ getInputPath(input.outputName) }}</code>
+ <code class="font-mono">{{ getInputPath(input.fieldName) }}</code>
  </div>
  </div>
  </div>
@@ -494,7 +534,7 @@ function getInputPath(outputName: string): string {
  <span class="icon-[lucide--arrow-right-from-line] text-base text-emerald-500" />
  输出字段
  <Badge variant="outline" class="text-xs">
- {{ nodeTypeInfo.outputs.length }}
+ {{ getOutputFieldCount }}
  </Badge>
  </div>
  <span
@@ -503,8 +543,36 @@ function getInputPath(outputName: string): string {
  </CollapsibleTrigger>
  <CollapsibleContent class="mt-3">
  <div class="rounded-xl bg-muted/30 border border-border/50 overflow-hidden">
+ <template v-for="(output, idx) in nodeTypeInfo.outputs":key="output.name">
+ <!-- 如果有详细 schema，展示具体字段 -->
+ <template v-if="output.schema?.properties">
  <div
- v-for="(output, idx) in nodeTypeInfo.outputs":key="output.name"
+ v-for="(propSchema, propKey, propIdx) in output.schema.properties":key="`${output.name}-${propKey}`"
+ class="px-3 py-2 text-xs":class="{ 'border-t border-border/50': idx > 0 || propIdx > 0 }"
+ >
+ <div class="flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <code class="font-mono font-medium">{{ propKey }}</code>
+ <span
+ class="text-[10px] px-1.5 py-0.5 rounded-full bg-muted":class="getPortTypeColor(propSchema.type)"
+ >
+ {{ propSchema.type }}
+ </span>
+ </div>
+ </div>
+ <div v-if="propSchema.description" class="mt-1 text-muted-foreground">
+ {{ propSchema.description }}
+ </div>
+ <!-- 引用提示 -->
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <span class="icon-[lucide--code] text-xs" />
+ <code class="font-mono">{{ getOutputPath(String(propKey)) }}</code>
+ </div>
+ </div>
+ </template>
+ <!-- 没有详细 schema，显示端口级别信息 -->
+ <template v-else>
+ <div
  class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
  >
  <div class="flex items-center justify-between">
@@ -526,6 +594,8 @@ function getInputPath(outputName: string): string {
  <code class="font-mono">{{ getOutputPath(output.name) }}</code>
  </div>
  </div>
+ </template>
+ </template>
  </div>
  <p class="mt-2 text-xs text-muted-foreground flex items-center gap-1">
  <span class="icon-[lucide--info]" />

@@ -24,6 +24,7 @@
  "@tiptap/core": "catalog:",
  "@tiptap/extension-code-block-lowlight": "catalog:",
  "@tiptap/extension-document": "catalog:",
+ "@tiptap/extension-gapcursor": "catalog:",
  "@tiptap/extension-history": "catalog:",
  "@tiptap/extension-link": "catalog:",
  "@tiptap/extension-paragraph": "catalog:",

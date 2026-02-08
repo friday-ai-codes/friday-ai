@@ -52,6 +52,9 @@ catalogs:
  '@tiptap/extension-document':
  specifier: 3.19.0
  version: 3.19.0
+ '@tiptap/extension-gapcursor':
+ specifier: ^3.19.0
+ version: 3.19.0
  '@tiptap/extension-history':
  specifier: 3.19.0
  version: 3.19.0
@@ -230,6 +233,9 @@ importers:
  '@tiptap/extension-document':
  specifier: 'catalog:'
  version: 3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))
+ '@tiptap/extension-gapcursor':
+ specifier: 'catalog:'
+ version: 3.19.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))
  '@tiptap/extension-history':
  specifier: 'catalog:'
  version: 3.19.0(@tiptap/extensions@3.19.0(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0))

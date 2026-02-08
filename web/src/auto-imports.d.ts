@@ -350,7 +350,7 @@ declare global {
  export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
  // @ts-ignore
- export type { NodePort, NodeType } from './stores/useNodeTypesStore'
+ export type { PortSchema, NodePort, NodeType } from './stores/useNodeTypesStore'
  import('./stores/useNodeTypesStore')
  // @ts-ignore
  export type { ValidationWarning } from './stores/useWorkflowValidationStore'

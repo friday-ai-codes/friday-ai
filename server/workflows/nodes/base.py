@@ -40,6 +40,9 @@ class NodePort:
  required: bool = True
  default: Any = None
  description: str = ""
+ # 详细输出结构 (JSON Schema 格式)
+ # 用于描述 object/array 类型端口的具体字段
+ schema: dict | None = None
 @dataclass
 class NodeResult:
  """节点执行结果"""
@@ -62,8 +65,23 @@ class ExecutionContext:
  workflow_execution: "WorkflowExecution | None" = None
  node_execution: "NodeExecution | None" = None
  def get_input(self, key: str, default: Any = None) -> Any:
- """获取输入数据"""
- return self.input_data.get(key, default)
+ """获取输入数据
+ Args:
+ key: 数据键，支持点分隔路径如 "project.id"
+ default: 默认值
+ Returns:
+ 输入数据值
+ """
+ parts = key.split(".")
+ current = self.input_data
+ for part in parts:
+ if isinstance(current, dict):
+ current = current.get(part)
+ else:
+ return default
+ if current is None:
+ return default
+ return current
  def get_config(self, key: str, default: Any = None) -> Any:
  """获取节点配置"""
  return self.node_config.get(key, default)
@@ -204,6 +222,7 @@ class ExecutionContext:
  """渲染模板字符串，支持变量替换
  支持格式：
  - {{$.key}} - 输入数据简写（等同于 input.key）
+ - {{$nodes.id.field[*].value}} - JSONPath 表达式（包含 [ 字符）
  - {{input.key}} - 输入数据
  - {{context.key}} - 工作流上下文
  - {{config.key}} - 节点配置
@@ -213,6 +232,20 @@ class ExecutionContext:
  """
  def replace(match: re.Match) -> str:
  path = match.group(1).strip
+ # JSONPath mode: starts with $ and contains [ (array access/filter)
+ # Examples: $nodes.SLT.fields[?(@.key=="xxx")].value, $.input.repos[*].id
+ if path.startswith("$") and "[" in path:
+ # Normalize path: $nodes.xxx -> $.nodes.xxx (add dot after $)
+ jsonpath_expr = path
+ if path.startswith("$") and not path.startswith("$."):
+ jsonpath_expr = "$." + path[1:]
+ # _resolve_jsonpath will raise ValueError if node ID is invalid
+ result = self._resolve_jsonpath(jsonpath_expr)
+ # Convert result to string for template rendering
+ if isinstance(result, list):
+ # Join list items with newlines for readability in prompts
+ return "\n".join(str(item) for item in result)
+ return str(result) if result != "" else match.group(0)
  # 处理 $ 简写语法：$.key 或 $key 等同于 input.key
  if path.startswith("$."):
  # {{$.repositories}} -> input.repositories
@@ -233,6 +266,24 @@ class ExecutionContext:
  elif parts[0] == "nodes" and len(parts) >= 3:
  node_id = parts[1]
  key = ".".join(parts[2:])
+ # Validate node ID exists
+ nodes_data = self.previous_outputs or {}
+ if node_id not in nodes_data:
+ available_ids = list(nodes_data.keys)
+ # Check for case-insensitive match
+ case_match = next(
+ (nid for nid in available_ids if nid.lower == node_id.lower),
+ None
+ )
+ if case_match:
+ raise ValueError(
+ f"节点 ID '{node_id}' 不存在。"
+ f"你是否想使用 '{case_match}'？（节点 ID 区分大小写）"
+ )
+ else:
+ raise ValueError(
+ f"节点 ID '{node_id}' 不存在。可用的节点 ID: {available_ids}"
+ )
  return str(self.get_previous_output(node_id, key, ""))
  elif parts[0] == "global":
  # 优先从全局变量获取值
@@ -250,9 +301,13 @@ class ExecutionContext:
  """Get template value preserving complex types.
  Unlike render_template which returns str, this returns
  the actual value for single-variable templates.
+ Supports two modes:
+ 1. Simple path mode: {{input.project.id}}, {{global.repositories}}
+ 2. JSONPath mode: {{$.input.repositories[*].id}} - starts with $
  Examples:
  "{{global.repositories}}" -> list of dicts
  "{{global.repositories[0]}}" -> single dict
+ "{{$.input.repositories[*].id}}" -> ["id1", "id2", ...]
  "prefix_{{global.name}}_suffix" -> str (uses render_template)
  """
  template = template.strip
@@ -262,8 +317,99 @@ class ExecutionContext:
  # Multiple variables or mixed content - use string rendering
  return self.render_template(template)
  path = match.group(1).strip
- # Handle array indexing: global.repositories[0]
- index_match = re.match(r"(.+?)\[(\d+)\]$", path)
+ # JSONPath mode: starts with $
+ if path.startswith("$"):
+ return self._resolve_jsonpath(path)
+ # Simple path mode (backward compatible)
+ return self._resolve_simple_path(path)
+ def _resolve_jsonpath(self, jsonpath_expr: str) -> Any:
+ """Resolve JSONPath expression against execution context.
+ The JSONPath is evaluated against a virtual document:
+ {
+ "input": <input_data>,
+ "global": <global_params>,
+ "nodes": <previous_outputs>,
+ "trigger": <trigger_data>,
+ "config": <node_config>,
+ "context": <workflow_context>
+ }
+ Examples:
+ $.input.repositories[*].id -> extract all repository IDs
+ $.input.project.name -> get project name
+ $.global.repositories[-1] -> last repository
+ Raises:
+ ValueError: If referencing a non-existent node ID
+ """
+ from jsonpath_ng.ext import parse as jsonpath_parse
+ from jsonpath_ng.exceptions import JsonPathParserError
+ nodes_data = self.previous_outputs or {}
+ # Validate node ID reference before JSONPath evaluation
+ # Extract node ID from paths like $.nodes.SLT.xxx or $.nodes.SLT[...]
+ node_ref_match = re.match(r"^\$\.?nodes\.([^.\[\]]+)", jsonpath_expr)
+ if node_ref_match:
+ referenced_node_id = node_ref_match.group(1)
+ available_node_ids = list(nodes_data.keys)
+ if referenced_node_id not in available_node_ids:
+ # Check for case-insensitive match to provide helpful error
+ case_insensitive_match = None
+ for node_id in available_node_ids:
+ if node_id.lower == referenced_node_id.lower:
+ case_insensitive_match = node_id
+ break
+ if case_insensitive_match:
+ raise ValueError(
+ f"节点 ID '{referenced_node_id}' 不存在。"
+ f"你是否想使用 '{case_insensitive_match}'？"
+ f"（节点 ID 区分大小写）"
+ )
+ else:
+ raise ValueError(
+ f"节点 ID '{referenced_node_id}' 不存在。"
+ f"可用的节点 ID: {available_node_ids}"
+ )
+ # Build virtual document for JSONPath evaluation
+ document = {
+ "input": self.input_data or {},
+ "global": self._get_global_values,
+ "nodes": nodes_data,
+ "trigger": self.trigger_data or {},
+ "config": self.node_config or {},
+ "context": self.workflow_context or {},
+ }
+ try:
+ jsonpath_expr_obj = jsonpath_parse(jsonpath_expr)
+ matches = jsonpath_expr_obj.find(document)
+ if not matches:
+ return ""
+ # Single match: return value directly
+ if len(matches) == 1:
+ return matches[0].value
+ # Multiple matches: return list of values
+ return [m.value for m in matches]
+ except JsonPathParserError as e:
+ raise ValueError(f"无效的 JSONPath 表达式: {jsonpath_expr}。错误: {e}")
+ def _get_global_values(self) -> dict:
+ """Get all global values (from variables and params) as flat dict."""
+ result = {}
+ # Add global params
+ global_params = self.workflow_context.get("global_params", {})
+ result.update(global_params)
+ # Add global variable values (override params if same key)
+ for key, var in self.get_all_global_variables.items:
+ if isinstance(var, dict) and "value" in var:
+ result[key] = var["value"]
+ else:
+ result[key] = var
+ return result
+ def _resolve_simple_path(self, path: str) -> Any:
+ """Resolve simple dot-notation path (backward compatible).
+ Supports:
+ global.repositories, global.repositories[0]
+ input.project.id
+ nodes.abc123.output
+ """
+ # Handle array indexing: global.repositories[0] or global.repositories[-1]
+ index_match = re.match(r"(.+?)\[(-?\d+)\]$", path)
  index = None
  if index_match:
  path = index_match.group(1)
@@ -281,14 +427,20 @@ class ExecutionContext:
  node_id = parts[1]
  key = ".".join(parts[2:])
  value = self.get_previous_output(node_id, key, None)
+ elif parts[0] == "trigger":
+ value = self.get_trigger_data(".".join(parts[1:]), None)
+ elif parts[0] == "config":
+ value = self.get_config(".".join(parts[1:]), None)
+ elif parts[0] == "context":
+ value = self.get_context(".".join(parts[1:]), None)
  else:
- # Unknown prefix - fall back to string rendering
- return self.render_template(template)
- # Apply array index if specified
+ # Unknown prefix
+ return ""
+ # Apply array index if specified (supports negative indexing)
  if index is not None and isinstance(value, list):
- if 0 <= index < len(value):
+ try:
  value = value[index]
- else:
+ except IndexError:
  value = None
  # If value is still None, return empty string for consistency
  if value is None:
@@ -345,6 +497,7 @@ class BaseNode(ABC):
  "type": p.port_type.value,
  "required": p.required,
  "description": p.description,
+ "schema": p.schema,
  }
  for p in cls.inputs
  ],
@@ -355,6 +508,7 @@ class BaseNode(ABC):
  "type": p.port_type.value,
  "required": p.required,
  "description": p.description,
+ "schema": p.schema,
  }
  for p in cls.outputs
  ],
@@ -388,6 +542,10 @@ def normalize_repositories(
  - repository_id: str - single ID (alias, deprecated)
  - Template variables: {{global.repositories}}
  - Auto-fallback: if config is empty, check global.repositories
+ String formats supported:
+ - JSON object array: [{"id": "xxx", ...}, ...] -> extract id from each object
+ - JSON string array: ["xxx", "yyy"] or ['xxx', 'yyy']
+ - Comma-separated: "id1, id2, id3" -> split and trim
  Per CONTEXT.md:
  - `repositories` takes priority over `repository`
  - Single values silently wrap to list (no log)
@@ -398,6 +556,7 @@ def normalize_repositories(
  Returns:
  List of repository dicts, each with at least 'id' key
  """
+ import json
  # Check plural forms first (take priority per CONTEXT.md)
  value = config.get("repositories") or config.get("repository_ids")
  if value is None:
@@ -419,13 +578,51 @@ def normalize_repositories(
  # Normalize to list of dicts
  def to_repo_dict(item: Any) -> dict[str, Any] | None:
  if isinstance(item, str):
+ item = item.strip
+ if not item:
+ return None
  return {"id": item}
  elif isinstance(item, dict):
+ # If dict has 'id' field, use it; otherwise return the dict as-is
  return item
  return None
- if isinstance(value, str):
+ def parse_string_value(s: str) -> list[dict[str, Any]]:
+ """Parse string value into list of repo dicts.
+ Supports:
+ 1. JSON object array: [{"id": "xxx"}, ...]
+ 2. JSON string array: ["xxx", "yyy"] or ['xxx', 'yyy']
+ 3. Comma-separated: "id1, id2, id3"
+ """
+ s = s.strip
+ if not s:
+ return
+ # Try JSON parsing first (handles both object and string arrays)
+ if s.startswith("["):
+ try:
+ # Replace single quotes with double quotes for JSON compatibility
+ json_str = s.replace("'", '"')
+ parsed = json.loads(json_str)
+ if isinstance(parsed, list):
+ result =
+ for item in parsed:
+ repo_dict = to_repo_dict(item)
+ if repo_dict is not None:
+ result.append(repo_dict)
+ return result
+ except json.JSONDecodeError:
+ pass # Fall through to comma-separated parsing
+ # Comma-separated string: "id1, id2, id3"
+ if "," in s:
+ result =
+ for part in s.split(","):
+ part = part.strip
+ if part:
+ result.append({"id": part})
+ return result
  # Single ID string
- return [{"id": value}]
+ return [{"id": s}]
+ if isinstance(value, str):
+ return parse_string_value(value)
  elif isinstance(value, dict):
  # Single repository object
  return [value]

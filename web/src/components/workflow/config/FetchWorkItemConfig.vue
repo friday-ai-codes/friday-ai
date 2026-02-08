@@ -170,22 +170,5 @@ const variableSyntaxExamples = [
  </Popover>
  </p>
  </div>
- <!-- 输出说明 -->
- <div class="rounded-xl bg-muted/30 border border-border/50 space-y-2">
- <div class="flex items-center gap-2 text-xs font-medium">
- <span class="icon-[lucide--box] text-primary" />
- 输出数据结构
- </div>
- <div class="text-xs text-muted-foreground space-y-1 font-mono">
- <div><span class="text-primary">$.name</span> → 工作项名称</div>
- <div><span class="text-primary">$.description</span> → 描述</div>
- <div><span class="text-primary">$.status</span> → 状态</div>
- <div><span class="text-primary">$.fields[?(@.key=='xxx')].value</span> → 自定义字段</div>
- </div>
- <p class="text-xs text-muted-foreground pt-1 flex items-center gap-1">
- <span class="icon-[lucide--info]" />
- 使用「变量提取」节点从输出中提取所需字段
- </p>
- </div>
  </div>
 </template>

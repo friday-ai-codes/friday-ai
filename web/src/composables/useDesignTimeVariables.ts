@@ -62,6 +62,26 @@ function getUpstreamNodes(
  return result.reverse
 }
 /**
+ * 获取当前节点的直接上游节点（只有直接连接的前一个节点）
+ */
+function getDirectUpstreamNodes(
+ nodeId: string,
+ nodes: WorkflowNode,
+ edges: WorkflowEdge,
+): WorkflowNode {
+ const nodeMap = new Map(nodes.map(n => [n.id, n]))
+ const result: WorkflowNode =
+ // 只找直接指向当前节点的边
+ const incomingEdges = edges.filter(e => e.target === nodeId)
+ for (const edge of incomingEdges) {
+ const sourceNode = nodeMap.get(edge.source)
+ if (sourceNode) {
+ result.push(sourceNode)
+ }
+ }
+ return result
+}
+/**
  * 设计态变量 Composable
  *
  * 在工作流编辑器中，根据当前节点在 DAG 中的位置，
@@ -98,22 +118,73 @@ export function useDesignTimeVariables(
  workflowEdges.value,
  )
  })
+ // 获取当前节点的直接上游节点（用于 input.xxx 变量）
+ const directUpstreamNodes = computed( => {
+ if (!currentNodeId.value) return
+ return getDirectUpstreamNodes(
+ currentNodeId.value,
+ workflowNodes.value,
+ workflowEdges.value,
+ )
+ })
  // 构建设计态变量列表
+ // input.{field} 只包含直接上游节点的输出
+ // nodes.{shortId}.{field} 包含所有上游节点的输出
  const designTimeVariables = computed(: DesignTimeVariable => {
  const variables: DesignTimeVariable =
+ const directUpstreamIds = new Set(directUpstreamNodes.value.map(n => n.id))
  for (const node of upstreamNodes.value) {
- // 获取节点类型（优先 data.node_type，其次 type）
- const nodeTypeKey = node.data?.node_type || node.type
+ // 获取节点类型（兼容 WorkflowNode 和 WorkflowNodeStore 两种格式）
+ // WorkflowNodeStore: node.nodeType
+ // WorkflowNode: node.data?.node_type || node.type
+ const nodeTypeKey = (node as any).nodeType || node.data?.node_type || node.type
  if (!nodeTypeKey) continue
  const nodeTypeDef = nodeTypesStore.getNodeType(nodeTypeKey)
  if (!nodeTypeDef) continue
  // 节点显示名称：优先用户自定义名称，其次节点类型定义的显示名
- const nodeLabel = node.data?.name || node.label || nodeTypeDef.display_name
+ const nodeLabel = (node as any).name || node.data?.name || node.label || nodeTypeDef.display_name
+ // 获取 shortId（用于用户友好的变量路径显示）
+ // WorkflowNodeStore 有 shortId，否则截取 UUID 前 8 位
+ const shortId = (node as any).shortId || node.id.slice(0, 8)
+ // 是否是直接上游节点（决定是否生成 input.xxx 变量）
+ const isDirectUpstream = directUpstreamIds.has(node.id)
  // 遍历该节点的所有输出端口
  for (const output of nodeTypeDef.outputs) {
+ // 如果有详细 schema，展开具体字段
+ if (output.schema?.properties) {
+ for (const [propKey, propSchema] of Object.entries(output.schema.properties)) {
+ const schema = propSchema as { type?: string, description?: string }
+ // 添加 nodes.{shortId}.{field} 格式（所有上游节点）
+ variables.push({
+ key: propKey,
+ path: `nodes.${shortId}.${propKey}`,
+ label: `${nodeLabel} - ${schema.description || propKey}`,
+ nodeId: node.id,
+ nodeLabel,
+ outputLabel: schema.description || propKey,
+ type: schema.type || 'any',
+ description: schema.description,
+ })
+ // 添加 input.{field} 格式（只有直接上游节点）
+ if (isDirectUpstream) {
+ variables.push({
+ key: propKey,
+ path: `input.${propKey}`,
+ label: `${nodeLabel} - ${schema.description || propKey}`,
+ nodeId: node.id,
+ nodeLabel,
+ outputLabel: schema.description || propKey,
+ type: schema.type || 'any',
+ description: schema.description,
+ })
+ }
+ }
+ }
+ else {
+ // 没有详细 schema，使用端口级别信息
  variables.push({
  key: output.name,
- path: `nodes.${node.id}.${output.name}`,
+ path: `nodes.${shortId}.${output.name}`,
  label: `${nodeLabel} - ${output.label}`,
  nodeId: node.id,
  nodeLabel,
@@ -121,6 +192,20 @@ export function useDesignTimeVariables(
  type: output.type,
  description: output.description,
  })
+ // 添加 input.{field} 格式（只有直接上游节点）
+ if (isDirectUpstream) {
+ variables.push({
+ key: output.name,
+ path: `input.${output.name}`,
+ label: `${nodeLabel} - ${output.label}`,
+ nodeId: node.id,
+ nodeLabel,
+ outputLabel: output.label,
+ type: output.type,
+ description: output.description,
+ })
+ }
+ }
  }
  }
  return variables

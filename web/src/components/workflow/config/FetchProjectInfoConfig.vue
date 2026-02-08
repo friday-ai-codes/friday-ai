@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { FetchProjectInfoConfig } from '~/types/workflow'
-import { Input } from '~/components/ui/input'
+import type { FetchProjectInfoConfig, WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow'
 import { Label } from '~/components/ui/label'
 import {
  Select,
@@ -11,7 +10,7 @@ import {
 } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
-import VariablePicker from '~/components/workflow/VariablePicker.vue'
+import SmartInput from '~/components/workflow/smart-input/SmartInput.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { fetchProjectInfoConfigSchema } from '~/types/workflow'
 // ============================================================================
@@ -19,8 +18,15 @@ import { fetchProjectInfoConfigSchema } from '~/types/workflow'
 // ============================================================================
 interface Props {
  config: FetchProjectInfoConfig
+ workflowNodes?: WorkflowNodeStore
+ workflowEdges?: WorkflowEdgeStore
+ currentNodeId?: string
 }
-const props = defineProps<Props>
+const props = withDefaults(defineProps<Props>, {
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: '',
+})
 const emit = defineEmits<{
  (e: 'update:config', value: FetchProjectInfoConfig): void
 }>
@@ -55,30 +61,10 @@ const identifierTypeOptions = [
  项目标识
  <span class="text-destructive">*</span>
  </Label>
- <div class="flex gap-2">
- <Input
- v-model="projectIdentifier"
- placeholder="$.projectKey 或 {{ global.projectKey }}"
- class="font-mono text-sm flex-1"
+ <SmartInput
+ v-model="projectIdentifier":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="输入 {{ 触发变量联想"
  />
- <VariablePicker @select="v => projectIdentifier = v" />
- </div>
- <!-- 语法说明 -->
- <div class="rounded-lg bg-muted/30 space-y-1">
- <p class="text-xs font-medium text-muted-foreground">
- 支持以下语法：
- </p>
- <div class="grid grid-cols-2 gap-2 text-xs">
- <div class="flex items-center gap-1.5">
- <code class="bg-background px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400">$.projectKey</code>
- <span class="text-muted-foreground">JSONPath</span>
- </div>
- <div class="flex items-center gap-1.5">
- <code v-pre class="bg-background px-1.5 py-0.5 rounded text-violet-600 dark:text-violet-400">{{ global.x }}</code>
- <span class="text-muted-foreground">模板变量</span>
- </div>
- </div>
- </div>
  </div>
  <!-- 标识类型 -->
  <div class="space-y-2">
@@ -164,39 +150,6 @@ const identifierTypeOptions = [
  </div>
  </div>
  <Switch v-model="includeWebhookToken" />
- </div>
- </div>
- <!-- 输出变量说明 -->
- <div class="rounded-lg bg-muted/50 space-y-2">
- <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
- <span class="icon-[lucide--code] text-cyan-500" />
- 输出变量（JSONPath）
- </p>
- <div class="bg-muted rounded-lg space-y-1.5 text-xs">
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.project_id</code>
- <span class="text-muted-foreground">项目 ID</span>
- </div>
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.project_name</code>
- <span class="text-muted-foreground">项目名称</span>
- </div>
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.feishu_project_key</code>
- <span class="text-muted-foreground">飞书项目 Key</span>
- </div>
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repositories</code>
- <span class="text-muted-foreground">仓库列表</span>
- </div>
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repositories[0].id</code>
- <span class="text-muted-foreground">首个仓库 ID</span>
- </div>
- <div class="flex gap-2">
- <code class="bg-background px-1.5 py-0.5 rounded min-w-40">$.repository_count</code>
- <span class="text-muted-foreground">仓库数量</span>
- </div>
  </div>
  </div>
  </div>

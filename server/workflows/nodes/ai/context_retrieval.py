@@ -97,14 +97,48 @@ class ContextRetrievalNode(BaseNode):
  }
  inputs = [NodePort(name="default", label="输入", port_type=PortType.OBJECT, required=False)]
  outputs = [
- NodePort(name="default", label="检索结果", port_type=PortType.OBJECT),
+ NodePort(
+ name="default",
+ label="检索结果",
+ port_type=PortType.OBJECT,
+ schema={
+ "type": "object",
+ "properties": {
+ "query": {"type": "string", "description": "检索查询文本"},
+ "total": {"type": "integer", "description": "检索到的总数量"},
+ "formatted_context": {"type": "string", "description": "格式化的上下文（Markdown）"},
+ "contexts": {
+ "type": "array",
+ "description": "代码片段列表",
+ "items": {
+ "type": "object",
+ "properties": {
+ "repository_id": {"type": "string", "description": "仓库 ID"},
+ "repository_name": {"type": "string", "description": "仓库名称"},
+ "file_path": {"type": "string", "description": "文件路径"},
+ "content": {"type": "string", "description": "代码内容"},
+ "language": {"type": "string", "description": "编程语言"},
+ "score": {"type": "number", "description": "相关度分数"},
+ "start_line": {"type": "integer", "description": "起始行号"},
+ "end_line": {"type": "integer", "description": "结束行号"},
+ },
+ },
+ },
+ "repositories": {
+ "type": "array",
+ "description": "检索的仓库列表",
+ "items": {"type": "string"},
+ },
+ },
+ },
+ ),
  NodePort(name="error", label="失败", port_type=PortType.OBJECT),
  ]
  async def execute(self, context: ExecutionContext) -> NodeResult:
  config = context.node_config
  # 渲染模板变量
  query = context.render_template(config.get("query", ""))
- top_k = config.get("top_k", 50) # Per CONTEXT.md: 50 per repo
+ top_k = config.get("top_k", 10) # Default 10 per repo
  score_threshold = config.get("score_threshold", 0.5)
  language_filter = context.render_template(config.get("language_filter", ""))
  include_content = config.get("include_content", True)
