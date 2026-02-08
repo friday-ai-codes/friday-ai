@@ -265,13 +265,14 @@ async def search_repository_code(
  )
  @sync_to_async
  def get_project_repo_ids -> list[str]:
- return list(
- Repository.objects.filter(
+ return [
+ str(rid)
+ for rid in Repository.objects.filter(
  projects=project,
  is_deleted=False,
  index_status="indexed",
  ).values_list("id", flat=True)
- )
+ ]
  project_repo_ids = await get_project_repo_ids
  # Add to list (avoid duplicates)
  for rid in project_repo_ids:
