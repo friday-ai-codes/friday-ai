@@ -19,6 +19,11 @@ from agents.tools.project_tools import (
  search_repository_code,
 )
 from agents.tools.registry import ToolRegistry
+from agents.tools.work_item_tools import (
+ add_work_item_comment,
+ get_work_item_detail,
+ list_related_work_items,
+)
 __all__ = [
  # Core framework
  "tool",
@@ -30,4 +35,8 @@ __all__ = [
  "list_project_repositories",
  "get_repository_info",
  "search_repository_code",
+ # Work item tools
+ "get_work_item_detail",
+ "list_related_work_items",
+ "add_work_item_comment",
 ]
