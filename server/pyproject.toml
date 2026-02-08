@@ -54,6 +54,7 @@ dependencies = [
  "tenacity>=8.2.0",
  # LLM providers
  "anthropic>=0.40.0",
+ "mistune>=3.2.0",
 ]
 [build-system]
 requires = ["hatchling"]
