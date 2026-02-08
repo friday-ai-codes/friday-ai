@@ -2,8 +2,11 @@
 import json
 import logging
 import uuid as uuid_module
+from dataclasses import dataclass
+from typing import Any, Callable
 import structlog
 from asgiref.sync import async_to_sync
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -13,6 +16,7 @@ from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
+from services.feishu_im import FeishuIMClient
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
 from .models import KeyFields, TriggerLog, TriggerLogStatus
 from .serializers import (
@@ -36,6 +40,123 @@ def mark_event_processed(event_uuid: str) -> None:
  for uuid in to_remove:
  _processed_events.discard(uuid)
  _processed_events.add(event_uuid)
+# ============ Card Callback ============
+@dataclass
+class CardCallback:
+ """卡片回调数据结构。"""
+ action_value: str
+ message_id: str
+ user_open_id: str
+ chat_id: str
+ tenant_key: str
+# 卡片回调处理器注册表
+_card_callback_handlers: dict[str, Callable[[CardCallback], dict[str, Any] | None]] = {}
+def register_card_callback(action_prefix: str) -> Callable:
+ """装饰器，注册卡片回调处理器。
+ Args:
+ action_prefix: action value 的前缀，用于匹配回调
+ Example:
+ @register_card_callback("approve_")
+ def handle_approve(callback: CardCallback) -> dict | None:
+ # 处理审批按钮点击
+ return updated_card_json # 或 None 不更新卡片
+ """
+ def decorator(func: Callable[[CardCallback], dict[str, Any] | None]) -> Callable:
+ _card_callback_handlers[action_prefix] = func
+ return func
+ return decorator
+class CardCallbackView(APIView):
+ """处理飞书卡片按钮点击回调。
+ 飞书会在用户点击卡片按钮时发送 POST 请求，必须在 3 秒内响应。
+ 复杂逻辑应异步处理，先返回"处理中"状态的卡片。
+ 配置回调 URL: https://your-domain/api/feishu/card/callback/
+ """
+ permission_classes = [AllowAny]
+ def post(self, request):
+ raw_body = request.body.decode("utf-8")
+ try:
+ data = json.loads(raw_body)
+ except json.JSONDecodeError:
+ return Response(
+ {"detail": "无效的 JSON 格式"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 1. 处理 challenge 验证 (首次配置回调 URL)
+ if "challenge" in data:
+ return Response({"challenge": data["challenge"]})
+ # 2. 验证签名 (如果配置了 encrypt_key)
+ encrypt_key = getattr(settings, "FEISHU_ENCRYPT_KEY", "")
+ if encrypt_key:
+ timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
+ nonce = request.headers.get("X-Lark-Request-Nonce", "")
+ signature = request.headers.get("X-Lark-Signature", "")
+ if not FeishuIMClient.verify_callback_signature(
+ timestamp=timestamp,
+ nonce=nonce,
+ body=raw_body,
+ signature=signature,
+ encrypt_key=encrypt_key,
+ ):
+ struct_logger.warning("card_callback_signature_invalid")
+ return Response(
+ {"detail": "签名验证失败"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ # 解密加密内容
+ if "encrypt" in data:
+ try:
+ data = FeishuIMClient.decrypt_callback(
+ data["encrypt"], encrypt_key
+ )
+ except Exception as e:
+ struct_logger.error("card_callback_decrypt_failed", error=str(e))
+ return Response(
+ {"detail": "解密失败"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 3. 解析回调数据
+ action = data.get("action", {})
+ action_value = action.get("value", {}).get("action", "")
+ message_id = data.get("open_message_id", "")
+ user_open_id = data.get("open_id", "")
+ chat_id = data.get("open_chat_id", "")
+ tenant_key = data.get("tenant_key", "")
+ callback = CardCallback(
+ action_value=action_value,
+ message_id=message_id,
+ user_open_id=user_open_id,
+ chat_id=chat_id,
+ tenant_key=tenant_key,
+ )
+ struct_logger.info(
+ "card_callback_received",
+ action_value=action_value,
+ message_id=message_id,
+ user_open_id=user_open_id,
+ )
+ # 4. 根据 action_value 分发处理
+ for prefix, handler in _card_callback_handlers.items:
+ if action_value.startswith(prefix):
+ try:
+ updated_card = handler(callback)
+ if updated_card:
+ # 返回更新后的卡片 JSON
+ return Response(updated_card)
+ # 处理器返回 None，不更新卡片
+ return Response({})
+ except Exception as e:
+ struct_logger.error(
+ "card_callback_handler_error",
+ action_value=action_value,
+ error=str(e),
+ )
+ return Response({})
+ # 没有匹配的处理器
+ struct_logger.warning(
+ "card_callback_no_handler",
+ action_value=action_value,
+ )
+ return Response({})
 # ============ Webhook View ============
 class FeishuWebhookView(APIView):
  """Handle Feishu webhook events."""
