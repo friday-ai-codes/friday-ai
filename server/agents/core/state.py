@@ -104,19 +104,21 @@ class AgentStateManager:
  session = await AgentSession.objects.aget(session_id=session_id)
  except AgentSession.DoesNotExist:
  return None
- # Map AgentSession.Status back to AgentStatus
- status_map = {
- AgentSession.Status.RUNNING: AgentStatus.RUNNING,
- AgentSession.Status.SUSPENDED: AgentStatus.SUSPENDED,
- AgentSession.Status.COMPLETED: AgentStatus.COMPLETED,
- AgentSession.Status.ERROR: AgentStatus.ERROR,
- AgentSession.Status.MAX_ITERATIONS: AgentStatus.MAX_ITERATIONS,
+ # Map AgentSession.Status back to AgentStatus (use string keys for Django CharField)
+ status_map: dict[str, AgentStatus] = {
+ AgentSession.Status.RUNNING.value: AgentStatus.RUNNING,
+ AgentSession.Status.SUSPENDED.value: AgentStatus.SUSPENDED,
+ AgentSession.Status.COMPLETED.value: AgentStatus.COMPLETED,
+ AgentSession.Status.ERROR.value: AgentStatus.ERROR,
+ AgentSession.Status.MAX_ITERATIONS.value: AgentStatus.MAX_ITERATIONS,
  }
  metadata = session.metadata or {}
  usage = metadata.get("usage", {"input_tokens": 0, "output_tokens": 0})
+ # session.status is a string from CharField
+ agent_status = status_map.get(session.status, AgentStatus.RUNNING)
  return AgentState(
  session_id=session.session_id,
- status=status_map[session.status],
+ status=agent_status,
  messages=session.messages or,
  iteration=metadata.get("iteration_count", 0),
  usage=usage,
