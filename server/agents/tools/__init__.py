@@ -24,6 +24,11 @@ from agents.tools.work_item_tools import (
  get_work_item_detail,
  list_related_work_items,
 )
+from agents.tools.feishu_doc_tools import (
+ create_feishu_document,
+ fetch_feishu_document,
+)
+from agents.tools.feishu_im_tools import send_card_message
 __all__ = [
  # Core framework
  "tool",
@@ -39,4 +44,9 @@ __all__ = [
  "get_work_item_detail",
  "list_related_work_items",
  "add_work_item_comment",
+ # Feishu IM tools
+ "send_card_message",
+ # Feishu document tools
+ "fetch_feishu_document",
+ "create_feishu_document",
 ]
