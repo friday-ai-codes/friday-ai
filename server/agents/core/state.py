@@ -4,7 +4,7 @@ Provides state management for agent execution, including status tracking,
 message history, and database persistence via Django async ORM.
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 import structlog
@@ -12,6 +12,9 @@ from agents.core.context import AgentContext
 from agents.models import AgentSession, ToolCallLog
 from agents.tools.base import ToolResult
 logger = structlog.get_logger
+# Suspension expiration policy
+SUSPENSION_EXPIRY_DAYS = 7
+"""Sessions suspended for more than this many days are considered expired."""
 class AgentStatus(Enum):
  """Status of an agent execution session."""
  RUNNING = "running"
@@ -42,6 +45,8 @@ class AgentState:
  """Tool call awaiting external response (for suspension)."""
  output_items: list[Any] = field(default_factory=list)
  """Accumulated outputs from tool executions."""
+ temp_data: dict[str, Any] = field(default_factory=dict)
+ """Tool-specific temporary data for suspension persistence."""
 class AgentStateManager:
  """
  Manages persistence of agent state to database.
@@ -84,6 +89,7 @@ class AgentStateManager:
  if state.status == AgentStatus.SUSPENDED
  else None
  ),
+ "temp_data": state.temp_data,
  },
  )
  logger.debug(
@@ -124,6 +130,7 @@ class AgentStateManager:
  usage=usage,
  pending_tool_call=session.pending_tool_call,
  output_items=session.output or,
+ temp_data=session.temp_data or {},
  )
  async def log_tool_call(
  self,
@@ -178,3 +185,63 @@ class AgentStateManager:
  success=result.success,
  duration_ms=duration_ms,
  )
+ async def check_session_expired(self, session_id: str) -> bool:
+ """
+ Check if a suspended session has expired (7+ days).
+ Args:
+ session_id: Session ID to check
+ Returns:
+ True if session is expired or does not exist
+ """
+ try:
+ session = await AgentSession.objects.aget(session_id=session_id)
+ except AgentSession.DoesNotExist:
+ return True # Non-existent is considered expired
+ if session.status != AgentSession.Status.SUSPENDED:
+ return False
+ if session.suspended_at is None:
+ return False
+ expiry_time = session.suspended_at + timedelta(days=SUSPENSION_EXPIRY_DAYS)
+ return datetime.now(timezone.utc) > expiry_time
+ async def expire_old_sessions(self) -> int:
+ """
+ Mark expired suspended sessions as error.
+ Sessions suspended for more than SUSPENSION_EXPIRY_DAYS are marked
+ as ERROR with temp_data cleared.
+ Returns:
+ Number of sessions marked as expired
+ """
+ expiry_cutoff = datetime.now(timezone.utc) - timedelta(
+ days=SUSPENSION_EXPIRY_DAYS
+ )
+ updated = await AgentSession.objects.filter(
+ status=AgentSession.Status.SUSPENDED,
+ suspended_at__lt=expiry_cutoff,
+ ).aupdate(
+ status=AgentSession.Status.ERROR,
+ final_answer="Session expired after 7 days of inactivity",
+ temp_data={},
+ )
+ if updated > 0:
+ logger.info("expired_sessions", count=updated)
+ return updated
+ async def create_full_snapshot(self, state: AgentState) -> dict[str, Any]:
+ """
+ Create a full snapshot dict for debugging/export.
+ Includes all state fields plus a timestamp.
+ Args:
+ state: Agent state to snapshot
+ Returns:
+ Dictionary with complete state snapshot
+ """
+ return {
+ "session_id": state.session_id,
+ "status": state.status.value,
+ "iteration": state.iteration,
+ "messages": state.messages,
+ "pending_tool_call": state.pending_tool_call,
+ "output_items": state.output_items,
+ "temp_data": state.temp_data,
+ "usage": state.usage,
+ "snapshot_at": datetime.now(timezone.utc).isoformat,
+ }
