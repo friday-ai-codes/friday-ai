@@ -379,10 +379,37 @@ def markdown_to_blocks(content: str) -> list[dict[str, Any]]:
  return blocks
  # tokens is a list of token dicts when renderer=None
  for token in tokens:
- block = _token_to_block(token)
- if block:
- blocks.append(block)
+ token_blocks = _token_to_blocks(token)
+ blocks.extend(token_blocks)
  return blocks
+def _token_to_blocks(token: Any) -> list[dict[str, Any]]:
+ """Convert a mistune token to Feishu blocks.
+ Handles list tokens by extracting all list items.
+ Args:
+ token: Mistune parsed token
+ Returns:
+ List of Feishu block definitions
+ """
+ if not isinstance(token, dict):
+ return
+ token_type = token.get("type", "")
+ # Handle list tokens specially - extract all items
+ if token_type == "list":
+ blocks: list[dict[str, Any]] =
+ is_ordered = token.get("attrs", {}).get("ordered", False)
+ children = token.get("children", )
+ for child in children:
+ if child.get("type") == "list_item":
+ text = _extract_token_text(child)
+ if text:
+ if is_ordered:
+ blocks.append(_create_ordered_block(text))
+ else:
+ blocks.append(_create_bullet_block(text))
+ return blocks
+ # For other tokens, convert single token
+ block = _token_to_block(token)
+ return [block] if block else
 def _token_to_block(token: Any) -> dict[str, Any] | None:
  """Convert a mistune token to a Feishu block.
  Args:
