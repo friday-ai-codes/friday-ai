@@ -1,0 +1,190 @@
+"""Feishu IM tools for the Agent.
+Provides tools for sending card messages to Feishu chats.
+Uses FeishuIMClient with tenant_access_token authentication.
+"""
+from datetime import datetime, timezone
+import structlog
+from agents.tools.base import ToolResult, tool
+from projects.models import Project
+from services.crypto import decrypt_value
+from services.feishu_im import CardTemplate, FeishuIMClient, FeishuIMError
+logger = structlog.get_logger(__name__)
+# Maximum content length before truncation
+MAX_CONTENT_LENGTH = 3000
+def create_feishu_im_client_for_project(project: Project) -> FeishuIMClient:
+ """为指定项目创建 FeishuIMClient 实例。
+ 使用项目的飞书应用凭证创建 IM 客户端。
+ 注意：同一个飞书应用凭证可用于 Project API (plugin_token) 和 IM API (tenant_access_token)。
+ Args:
+ project: Project 模型实例
+ Returns:
+ 配置好的 FeishuIMClient 实例
+ Raises:
+ ValueError: 项目未配置飞书集成时抛出
+ """
+ if not project.feishu_plugin_id or not project.feishu_plugin_secret_encrypted:
+ raise ValueError(f"项目 {project.id} 未配置飞书集成")
+ # 解密 app_secret (使用与 plugin_secret 相同的字段)
+ app_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
+ return FeishuIMClient(
+ app_id=project.feishu_plugin_id,
+ app_secret=app_secret,
+ )
+def _truncate_content(content: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
+ """截断超长内容并添加省略号。
+ Args:
+ content: 原始内容
+ max_length: 最大长度
+ Returns:
+ 截断后的内容（如果需要）
+ """
+ if len(content) <= max_length:
+ return content
+ return content[: max_length - 20] + "\n\n... [内容已截断]"
+@tool(
+ name="send_card_message",
+ description="发送卡片消息到飞书群聊或私聊。卡片支持 Markdown 内容和交互按钮。",
+ category="FEISHU",
+ parameters={
+ "type": "object",
+ "properties": {
+ "project_id": {
+ "type": "string",
+ "description": "项目 UUID，用于获取飞书配置",
+ },
+ "chat_id": {
+ "type": "string",
+ "description": "群聊 ID (oc_xxx 格式) 或用户 open_id",
+ },
+ "title": {
+ "type": "string",
+ "description": "卡片标题",
+ },
+ "content": {
+ "type": "string",
+ "description": "卡片内容 (Markdown 格式)",
+ },
+ "buttons": {
+ "type": "array",
+ "description": "按钮列表（可选）",
+ "items": {
+ "type": "object",
+ "properties": {
+ "text": {"type": "string", "description": "按钮文字"},
+ "value": {"type": "string", "description": "按钮值（回调用）"},
+ "type": {
+ "type": "string",
+ "enum": ["primary", "default", "danger"],
+ "description": "按钮类型",
+ },
+ },
+ "required": ["text"],
+ },
+ },
+ "color": {
+ "type": "string",
+ "enum": ["blue", "green", "orange", "red"],
+ "description": "卡片主题色，默认 blue",
+ },
+ },
+ "required": ["project_id", "chat_id", "title", "content"],
+ },
+)
+async def send_card_message(
+ project_id: str,
+ chat_id: str,
+ title: str,
+ content: str,
+ buttons: list[dict] | None = None,
+ color: str = "blue",
+) -> ToolResult:
+ """发送卡片消息到飞书群聊或私聊。
+ Args:
+ project_id: Friday 项目 ID
+ chat_id: 群聊 ID 或用户 open_id
+ title: 卡片标题
+ content: 卡片内容（Markdown 格式）
+ buttons: 按钮列表（可选）
+ color: 卡片主题色
+ Returns:
+ ToolResult with message_id on success
+ """
+ log = logger.bind(
+ project_id=project_id,
+ chat_id=chat_id,
+ title=title,
+ content_length=len(content),
+ )
+ # Get project
+ try:
+ project = await Project.objects.aget(id=project_id)
+ except Project.DoesNotExist:
+ log.warning("project_not_found")
+ return ToolResult(
+ success=False,
+ error=f"项目不存在: {project_id}",
+ )
+ # Create IM client
+ try:
+ client = create_feishu_im_client_for_project(project)
+ except ValueError as e:
+ log.warning("feishu_im_not_configured", error=str(e))
+ return ToolResult(
+ success=False,
+ error=str(e),
+ )
+ # Truncate long content
+ truncated_content = _truncate_content(content)
+ was_truncated = len(truncated_content) < len(content)
+ # Build card template
+ # Validate and normalize color
+ valid_colors = ("blue", "green", "orange", "red")
+ card_color = color if color in valid_colors else "blue"
+ card = CardTemplate(
+ title=title,
+ content=truncated_content,
+ buttons=buttons or,
+ color=card_color, # type: ignore[arg-type]
+ )
+ # Determine receive_id_type based on chat_id format
+ # oc_ prefix = chat_id, ou_ prefix = open_id
+ if chat_id.startswith("oc_"):
+ receive_id_type = "chat_id"
+ elif chat_id.startswith("ou_"):
+ receive_id_type = "open_id"
+ else:
+ receive_id_type = "chat_id" # Default to chat_id
+ # Send card message
+ try:
+ message_id = await client.send_card(
+ receive_id=chat_id,
+ receive_id_type=receive_id_type, # type: ignore[arg-type]
+ card=card.to_card_json,
+ )
+ log.info("card_message_sent", message_id=message_id, truncated=was_truncated)
+ return ToolResult(
+ success=True,
+ output={
+ "data": {
+ "message_id": message_id,
+ "chat_id": chat_id,
+ },
+ "metadata": {
+ "sent_at": datetime.now(timezone.utc).isoformat,
+ "truncated": was_truncated,
+ "original_length": len(content),
+ },
+ },
+ )
+ except FeishuIMError as e:
+ log.error("send_card_failed", error=str(e), code=e.code)
+ return ToolResult(
+ success=False,
+ error=f"发送卡片消息失败: {e}",
+ )
+ except Exception as e:
+ log.error("send_card_unexpected_error", error=str(e))
+ return ToolResult(
+ success=False,
+ error=f"发送卡片消息失败: {e}",
+ )
