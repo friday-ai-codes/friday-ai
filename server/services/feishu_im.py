@@ -2,12 +2,15 @@
 独立于 FeishuClient (Project API)，使用 tenant_access_token 认证。
 用于发送群聊消息、卡片消息等 IM 功能。
 """
+import base64
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 import httpx
 import structlog
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from tenacity import (
  retry,
  retry_if_exception_type,
@@ -244,3 +247,52 @@ class FeishuIMClient:
  else:
  log.warning("card_update_failed", response=data)
  return False
+ @staticmethod
+ def verify_callback_signature(
+ timestamp: str,
+ nonce: str,
+ body: str,
+ signature: str,
+ encrypt_key: str,
+ ) -> bool:
+ """验证卡片回调签名。
+ 飞书回调使用 SHA256(timestamp + nonce + encrypt_key + body) 签名。
+ Args:
+ timestamp: 请求头中的时间戳
+ nonce: 请求头中的随机数
+ body: 原始请求体
+ signature: 请求头中的签名
+ encrypt_key: 应用的 Encrypt Key
+ Returns:
+ 签名是否有效
+ """
+ content = f"{timestamp}{nonce}{encrypt_key}{body}"
+ computed = hashlib.sha256(content.encode("utf-8")).hexdigest
+ return computed == signature
+ @staticmethod
+ def decrypt_callback(encrypt: str, encrypt_key: str) -> dict[str, Any]:
+ """解密 -CBC 加密的回调内容。
+ 飞书使用 -CBC 加密回调内容，密钥为 SHA256(encrypt_key) 的前 32 字节。
+ Args:
+ encrypt: Base64 编码的加密内容
+ encrypt_key: 应用的 Encrypt Key
+ Returns:
+ 解密后的 JSON 数据
+ Raises:
+ ValueError: 解密失败
+ """
+ # 生成 AES 密钥: SHA256(encrypt_key) 取前 32 字节
+ key = hashlib.sha256(encrypt_key.encode("utf-8")).digest
+ # Base64 解码
+ ciphertext = base64.b64decode(encrypt)
+ # 前 16 字节是 IV
+ iv = ciphertext[:16]
+ encrypted_data = ciphertext[16:]
+ # -CBC 解密
+ cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+ decryptor = cipher.decryptor
+ decrypted = decryptor.update(encrypted_data) + decryptor.finalize
+ # 去除 PKCS7 填充
+ padding_len = decrypted[-1]
+ decrypted = decrypted[:-padding_len]
+ return json.loads(decrypted.decode("utf-8"))
