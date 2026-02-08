@@ -150,6 +150,50 @@ class FeishuClient:
  fields=fields_dict,
  raw_response=json.dumps(data, ensure_ascii=False),
  )
+ async def get_work_item_relations(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str,
+ ) -> list[dict[str, Any]]:
+ """获取工作项的关联关系。
+ 查询所有关联类型：父子、阻塞、关联等。
+ Args:
+ project_key: 项目空间 Key
+ work_item_id: 工作项 ID
+ work_item_type: 工作项类型
+ Returns:
+ 关联工作项列表，每项包含:
+ - relation_type: 关联类型 (parent, child, blocker, blocked_by, related)
+ - work_item_id: 关联工作项 ID
+ - work_item_type: 关联工作项类型
+ - name: 工作项名称
+ - status: 工作项状态
+ """
+ token = await self.get_plugin_token
+ async with httpx.AsyncClient as client:
+ # Feishu API: GET /open_api/{project_key}/work_item/{type}/{id}/relation
+ response = await client.get(
+ f"{self.PROJECT_API_BASE}/open_api/{project_key}/work_item/{work_item_type}/{work_item_id}/relation",
+ headers={
+ "X-PLUGIN-TOKEN": token,
+ "X-USER-KEY": self.user_key or "",
+ },
+ )
+ data = response.json
+ if data.get("err_code") != 0:
+ return # Graceful degradation
+ relations =
+ # Parse relation types from response
+ for relation in data.get("data", {}).get("relations", ):
+ relations.append({
+ "relation_type": relation.get("relation_type", "related"),
+ "work_item_id": relation.get("work_item_id"),
+ "work_item_type": relation.get("work_item_type"),
+ "name": relation.get("name", ""),
+ "status": relation.get("status", ""),
+ })
+ return relations
  async def add_comment(
  self,
  project_key: str,
