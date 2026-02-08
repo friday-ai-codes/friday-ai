@@ -157,6 +157,158 @@ class CardCallbackView(APIView):
  action_value=action_value,
  )
  return Response({})
+# ============ IM Message Webhook ============
+def parse_message_content(msg_type: str, content: str) -> str:
+ """解析飞书消息内容为纯文本。
+ Args:
+ msg_type: 消息类型 (text, post, interactive)
+ content: JSON 格式的消息内容
+ Returns:
+ 纯文本内容
+ """
+ try:
+ content_data = json.loads(content)
+ except json.JSONDecodeError:
+ return content
+ if msg_type == "text":
+ return content_data.get("text", "")
+ elif msg_type == "post":
+ # 富文本: 提取所有 text 节点
+ texts =
+ for lang_content in content_data.values:
+ if isinstance(lang_content, dict):
+ for para in lang_content.get("content", ):
+ for elem in para:
+ if elem.get("tag") == "text":
+ texts.append(elem.get("text", ""))
+ return " ".join(texts)
+ elif msg_type == "interactive":
+ # 卡片消息: 返回空 (通常不需要解析)
+ return ""
+ else:
+ return str(content_data)
+# 消息接收队列 (内存队列，为 Phase 准备)
+# 生产环境应使用 Redis 或数据库
+_im_message_queue: list[dict[str, Any]] =
+_MAX_MESSAGE_QUEUE_SIZE = 1000
+class IMMessageWebhookView(APIView):
+ """处理飞书 IM 消息事件 (im.message.receive_v1)。
+ 当用户在群聊中 @机器人 或私聊机器人时触发。
+ 用于 Phase 的用户问答回复匹配。
+ 配置事件订阅 URL: https://your-domain/api/feishu/im/message/
+ """
+ permission_classes = [AllowAny]
+ def post(self, request):
+ raw_body = request.body.decode("utf-8")
+ try:
+ data = json.loads(raw_body)
+ except json.JSONDecodeError:
+ return Response(
+ {"detail": "无效的 JSON 格式"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 1. 处理 URL 验证 (url_verification 事件)
+ if data.get("type") == "url_verification":
+ return Response({"challenge": data.get("challenge", "")})
+ # 2. 验证事件签名 (如果配置了 encrypt_key)
+ encrypt_key = getattr(settings, "FEISHU_ENCRYPT_KEY", "")
+ if encrypt_key:
+ timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
+ nonce = request.headers.get("X-Lark-Request-Nonce", "")
+ signature = request.headers.get("X-Lark-Signature", "")
+ if not FeishuIMClient.verify_callback_signature(
+ timestamp=timestamp,
+ nonce=nonce,
+ body=raw_body,
+ signature=signature,
+ encrypt_key=encrypt_key,
+ ):
+ struct_logger.warning("im_message_signature_invalid")
+ return Response(
+ {"detail": "签名验证失败"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ # 解密加密内容
+ if "encrypt" in data:
+ try:
+ data = FeishuIMClient.decrypt_callback(
+ data["encrypt"], encrypt_key
+ )
+ except Exception as e:
+ struct_logger.error("im_message_decrypt_failed", error=str(e))
+ return Response(
+ {"detail": "解密失败"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 3. 解析事件数据
+ header = data.get("header", {})
+ event = data.get("event", {})
+ event_id = header.get("event_id", "")
+ event_type = header.get("event_type", "")
+ # 幂等检查
+ if event_id and is_event_processed(event_id):
+ return Response({"status": "duplicate"})
+ if event_id:
+ mark_event_processed(event_id)
+ # 只处理 im.message.receive_v1 事件
+ if event_type != "im.message.receive_v1":
+ struct_logger.debug("im_message_event_ignored", event_type=event_type)
+ return Response({"status": "ignored"})
+ # 提取消息信息
+ message = event.get("message", {})
+ sender = event.get("sender", {})
+ chat_id = message.get("chat_id", "")
+ message_id = message.get("message_id", "")
+ msg_type = message.get("message_type", "text")
+ content_raw = message.get("content", "{}")
+ sender_open_id = sender.get("sender_id", {}).get("open_id", "")
+ # 解析消息内容
+ content_text = parse_message_content(msg_type, content_raw)
+ struct_logger.info(
+ "im_message_received",
+ chat_id=chat_id,
+ message_id=message_id,
+ sender_open_id=sender_open_id,
+ msg_type=msg_type,
+ content_preview=content_text[:50] if content_text else "",
+ )
+ # 4. 存储消息到队列 (供 Phase 匹配)
+ message_record = {
+ "chat_id": chat_id,
+ "message_id": message_id,
+ "sender_open_id": sender_open_id,
+ "content": content_text,
+ "msg_type": msg_type,
+ "raw_content": content_raw,
+ "received_at": header.get("create_time", ""),
+ }
+ # 队列大小限制
+ if len(_im_message_queue) >= _MAX_MESSAGE_QUEUE_SIZE:
+ _im_message_queue.pop(0) # 移除最旧的消息
+ _im_message_queue.append(message_record)
+ # 5. 返回 200 OK (必须快速响应)
+ return Response({"status": "ok"})
+def get_pending_messages(chat_id: str | None = None) -> list[dict[str, Any]]:
+ """获取待处理的消息队列 (供 Phase 使用)。
+ Args:
+ chat_id: 可选，过滤特定群聊的消息
+ Returns:
+ 消息列表
+ """
+ if chat_id:
+ return [m for m in _im_message_queue if m["chat_id"] == chat_id]
+ return list(_im_message_queue)
+def pop_message(message_id: str) -> dict[str, Any] | None:
+ """从队列中移除并返回指定消息 (供 Phase 使用)。
+ Args:
+ message_id: 消息 ID
+ Returns:
+ 消息记录或 None
+ """
+ for i, msg in enumerate(_im_message_queue):
+ if msg["message_id"] == message_id:
+ return _im_message_queue.pop(i)
+ return None
 # ============ Webhook View ============
 class FeishuWebhookView(APIView):
  """Handle Feishu webhook events."""
