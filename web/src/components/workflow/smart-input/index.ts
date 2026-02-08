@@ -1,3 +1,5 @@
 export { default as SmartInput } from './SmartInput.vue'
 export { default as SmartTextarea } from './SmartTextarea.vue'
+export { default as SmartMarkdownEditor } from './SmartMarkdownEditor.vue'
+export { default as MarkdownEditorModal } from './MarkdownEditorModal.vue'
 export { VariableNode, createVariableSuggestion } from './extensions'

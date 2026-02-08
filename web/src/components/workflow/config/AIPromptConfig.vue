@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { AIPromptConfig } from '~/types/workflow'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -14,7 +14,7 @@ import {
 import { Separator } from '~/components/ui/separator'
 import { Slider } from '~/components/ui/slider'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
-import { SmartTextarea } from '~/components/workflow/smart-input'
+import { MarkdownEditorModal, SmartMarkdownEditor } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
 import {
  aiPromptConfigSchema,
@@ -63,6 +63,11 @@ const temperature = computed({
  get: => [props.config.temperature ?? 0.7],
  set: v => emit('update:config', { ...props.config, temperature: v[0] }),
 })
+// ============================================================================
+// Modal State
+// ============================================================================
+const systemPromptModalOpen = ref(false)
+const userPromptModalOpen = ref(false)
 </script>
 <template>
  <div class="space-y-4">
@@ -77,9 +82,10 @@ const temperature = computed({
  <!-- System Prompt -->
  <div class="space-y-2">
  <Label>系统提示词</Label>
- <SmartTextarea
+ <SmartMarkdownEditor
  v-model="systemPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
- placeholder="设定 AI 的角色和行为规范...":min-rows="3"
+ placeholder="设定 AI 的角色和行为规范...":min-rows="3":show-toolbar="true":compact="true"
+ @expand="systemPromptModalOpen = true"
  />
  <p class="text-xs text-muted-foreground">
  定义 AI 的角色、能力范围和输出要求
@@ -91,9 +97,10 @@ const temperature = computed({
  用户提示词
  <span class="text-destructive">*</span>
  </Label>
- <SmartTextarea
+ <SmartMarkdownEditor
  v-model="userPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
- placeholder="输入 {{ 触发变量自动补全...":min-rows="4"
+ placeholder="输入 {{ 触发变量自动补全...":min-rows="4":show-toolbar="true":compact="true"
+ @expand="userPromptModalOpen = true"
  />
  <p class="text-xs text-muted-foreground">
  输入 <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary">{{</code> 触发变量自动补全
@@ -142,5 +149,21 @@ const temperature = computed({
  JSON 格式会自动解析为对象，便于后续节点使用
  </p>
  </div>
+ <!-- System Prompt Modal -->
+ <MarkdownEditorModal
+ v-model:open="systemPromptModalOpen"
+ v-model="systemPrompt"
+ title="编辑系统提示词"
+ description="定义 AI 的角色、能力范围和输出要求":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="设定 AI 的角色和行为规范..."
+ />
+ <!-- User Prompt Modal -->
+ <MarkdownEditorModal
+ v-model:open="userPromptModalOpen"
+ v-model="userPrompt"
+ title="编辑用户提示词"
+ description="输入 {{ 触发变量自动补全":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="输入 {{ 触发变量自动补全..."
+ />
  </div>
 </template>
