@@ -5,6 +5,7 @@ from .views import (
  FeishuConfigTestView,
  FeishuConfigView,
  FeishuWebhookView,
+ IMMessageWebhookView,
  RefreshWebhookTokenView,
  TriggerLogDeleteView,
  TriggerLogDetailView,
@@ -18,6 +19,8 @@ urlpatterns = [
  path("webhook", FeishuWebhookView.as_view, name="feishu-webhook"),
  # Card callback (IM interactions)
  path("card/callback/", CardCallbackView.as_view, name="card-callback"),
+ # IM message webhook (user messages to bot)
+ path("im/message/", IMMessageWebhookView.as_view, name="im-message-webhook"),
  # Config management (per project)
  path("projects/<uuid:project_id>/config", FeishuConfigView.as_view, name="feishu-config"),
  path(
