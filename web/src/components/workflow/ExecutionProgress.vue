@@ -4,6 +4,8 @@ import { useIntervalFn } from '@vueuse/core'
 import {
  AlertCircle,
  CheckCircle2,
+ ChevronDown,
+ ChevronRight,
  Clock,
  Loader2,
  Play,
@@ -15,6 +17,8 @@ import { toast } from 'vue-sonner'
 import { skipNodeWait, triggerNodeResume } from '~/api/workflow'
 import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
+import AgentExecutionLog from '~/components/workflow/execution/AgentExecutionLog.vue'
 import { cn } from '~/lib/utils'
 interface Props {
  execution: WorkflowExecution
@@ -192,6 +196,15 @@ function getTaskCounts(node: NodeExecution): { success: number, failed: number }
 }
 // Manual intervention handlers
 const isOperating = ref(false)
+// Track expanded node for showing details
+const expandedNodeId = ref<string | null>(null)
+function toggleNodeExpand(nodeId: string) {
+ expandedNodeId.value = expandedNodeId.value === nodeId ? null: nodeId
+}
+// Check if node is an AI Agent node
+function isAgentNode(node: NodeExecution): boolean {
+ return node.node_type === 'ai_agent'
+}
 async function handleSkipWait(node: NodeExecution) {
  if (isOperating.value)
  return
@@ -276,9 +289,18 @@ async function handleTriggerResume(node: NodeExecution) {
  <div class="flex flex-col gap-2 overflow-y-auto max-h-[calc(100vh-12rem)] pr-1">
  <div
  v-for="node in nodeExecutions":key="node.id"
- class="group flex items-center gap-3 rounded-lg border border-transparent hover:bg-accent hover:border-border transition-all cursor-pointer"
- @click="emit('selectNode', node)"
+ class="rounded-lg border border-transparent hover:border-border transition-all"
  >
+ <!-- Node Header (clickable) -->
+ <div
+ class="group flex items-center gap-3 cursor-pointer hover:bg-accent rounded-lg"
+ @click="isAgentNode(node) ? toggleNodeExpand(node.id): emit('selectNode', node)"
+ >
+ <!-- Expand/Collapse Icon for Agent Nodes -->
+ <component
+ v-if="isAgentNode(node)":is="expandedNodeId === node.id ? ChevronDown: ChevronRight"
+ class="w-4 text-muted-foreground shrink-0"
+ />
  <!-- Node Status Icon -->
  <div:class="cn(
  'flex-shrink-0 w-6 rounded-full flex items-center justify-center border',
@@ -296,9 +318,18 @@ async function handleTriggerResume(node: NodeExecution) {
  <!-- Node Info -->
  <div class="flex-1 min-w-0">
  <div class="flex items-center justify-between mb-0.5">
+ <div class="flex items-center gap-2">
  <span class="font-medium truncate text-sm">
  {{ node.node_name || node.node }}
  </span>
+ <!-- AI Agent badge -->
+ <span
+ v-if="isAgentNode(node)"
+ class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-500 shrink-0"
+ >
+ AI Agent
+ </span>
+ </div>
  <span v-if="node.duration" class="text-xs text-muted-foreground flex-shrink-0 ml-2">
  {{ formatNodeDuration(node.duration) }}
  </span>
@@ -358,6 +389,17 @@ async function handleTriggerResume(node: NodeExecution) {
  </span>
  </div>
  </template>
+ </div>
+ </div>
+ <!-- Agent Execution Log (expandable) -->
+ <div
+ v-if="isAgentNode(node) && expandedNodeId === node.id"
+ class="px-3 pb-3 pt-1"
+ >
+ <div class="border- border-blue-500/30 pl-4 ml-2">
+ <AgentExecutionLog:node-execution="node"
+ />
+ </div>
  </div>
  </div>
  </div>
