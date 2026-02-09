@@ -29,6 +29,7 @@ from agents.tools.feishu_doc_tools import (
  fetch_feishu_document,
 )
 from agents.tools.feishu_im_tools import send_card_message
+from agents.tools.user_interaction import ask_user_question
 __all__ = [
  # Core framework
  "tool",
@@ -49,4 +50,6 @@ __all__ = [
  # Feishu document tools
  "fetch_feishu_document",
  "create_feishu_document",
+ # User interaction tools
+ "ask_user_question",
 ]
