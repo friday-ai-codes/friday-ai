@@ -5,6 +5,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from agents.models import AgentSession
+from common.encryption import decrypt_value
 logger = structlog.get_logger(__name__)
 async def build_subagent_context(
  session: AgentSession,
@@ -30,14 +31,11 @@ async def build_subagent_context(
  "focus_areas": focus_areas or,
  }
  # Extract project info
+ # Note: Project model doesn't have metadata field, use basic info
  project = session.project
- project_metadata = project.metadata or {}
  context["project"] = {
  "name": project.name,
  "description": project.description or "",
- "tech_stack": project_metadata.get("tech_stack", ),
- "code_style": project_metadata.get("code_style", {}),
- "naming_conventions": project_metadata.get("naming_conventions", {}),
  }
  # Get work item details if available
  if session.work_item_id:
@@ -53,11 +51,12 @@ async def build_subagent_context(
  repo = repos[0]
  repo_metadata = repo.metadata or {}
  space_id = repo_metadata.get("feishu_space_id")
- if space_id:
+ if space_id and project.feishu_plugin_secret_encrypted:
+ plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
  client = FeishuProjectClient(
  plugin_id=project.feishu_plugin_id or "",
- plugin_secret=project.decrypt_feishu_plugin_secret or "",
- user_key=project_metadata.get("feishu_user_key", ""),
+ plugin_secret=plugin_secret or "",
+ user_key=project.feishu_user_key or "",
  )
  work_item = await client.get_work_item(
  space_id=space_id,
