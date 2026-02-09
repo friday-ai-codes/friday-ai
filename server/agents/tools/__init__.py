@@ -30,6 +30,12 @@ from agents.tools.feishu_doc_tools import (
 )
 from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.user_interaction import ask_user_question
+from agents.tools.subagent import (
+ ask_claude_code,
+ dispatch_coding_task,
+ explore_repository,
+ generate_tech_plan_section,
+)
 __all__ = [
  # Core framework
  "tool",
@@ -52,4 +58,9 @@ __all__ = [
  "create_feishu_document",
  # User interaction tools
  "ask_user_question",
+ # SubAgent tools
+ "explore_repository",
+ "ask_claude_code",
+ "generate_tech_plan_section",
+ "dispatch_coding_task",
 ]
