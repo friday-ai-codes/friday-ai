@@ -1,26 +1,28 @@
 # Friday AI Dev Agent - Django API Service
 # Stage 1: Build dependencies
-FROM python:3.14-alpine AS builder
+FROM python:3.14-slim AS builder
 # Install build dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
  gcc \
- musl-dev \
+ libc-dev \
  libffi-dev \
- postgresql-dev \
- mariadb-dev \
- tree-sitter-dev
+ libpq-dev \
+ default-libmysqlclient-dev \
+ pkg-config \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 # Copy project files
 COPY . .
 # Install dependencies directly to system Python (no venv)
 RUN pip install uv && uv pip install --system -e .
 # Stage 2: Runtime image
-FROM python:3.14-alpine
+FROM python:3.14-slim
 # Install runtime dependencies only
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
  curl \
- libpq \
- mariadb-connector-c
+ libpq5 \
+ default-mysql-client \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 # Copy app from builder
 COPY --from=builder /app /app
