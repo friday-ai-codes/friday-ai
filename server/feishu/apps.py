@@ -1,7 +1,32 @@
 """Feishu app configuration."""
+import os
+import threading
 from django.apps import AppConfig
+from django.conf import settings
 class FeishuConfig(AppConfig):
  """Feishu app configuration."""
  default_auto_field = "django.db.models.BigAutoField"
  name = "feishu"
  verbose_name = "飞书集成"
+ def ready(self):
+ """Called when Django app is ready.
+ Starts Feishu WebSocket clients for all configured projects
+ that have feishu_app_id and feishu_app_secret configured.
+ """
+ # Avoid running in management commands or migrations
+ if os.environ.get("RUN_MAIN") != "true":
+ # Only run in the main process (not the reloader)
+ return
+ # Start in a delayed thread to avoid blocking app startup
+ def delayed_start:
+ import time
+ time.sleep(3) # Wait for Django to fully initialize
+ try:
+ from feishu.websocket_client import auto_start_clients
+ auto_start_clients
+ except Exception as e:
+ import structlog
+ logger = structlog.get_logger(__name__)
+ logger.error("feishu_ws_auto_start_failed", error=str(e))
+ thread = threading.Thread(target=delayed_start, daemon=True)
+ thread.start

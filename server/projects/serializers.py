@@ -104,6 +104,33 @@ class WebhookTokenSerializer(serializers.Serializer):
 class WebhookTokenUpdateSerializer(serializers.Serializer):
  """Serializer for updating webhook token."""
  token = serializers.CharField(max_length=32)
+class FeishuIMConfigSerializer(serializers.Serializer):
+ """Serializer for Feishu IM App configuration (read)."""
+ app_id = serializers.CharField(source="feishu_app_id", read_only=True)
+ has_app_secret = serializers.SerializerMethodField
+ is_configured = serializers.SerializerMethodField
+ def get_has_app_secret(self, obj):
+ return bool(obj.feishu_app_secret_encrypted)
+ def get_is_configured(self, obj):
+ return obj.has_feishu_im_config
+class FeishuIMConfigCreateSerializer(serializers.Serializer):
+ """Serializer for creating/updating Feishu IM App configuration."""
+ app_id = serializers.CharField(
+ help_text="飞书自建应用 App ID (cli_xxx 格式)"
+ )
+ app_secret = serializers.CharField(
+ write_only=True,
+ help_text="飞书自建应用 App Secret"
+ )
+class FeishuIMTestSerializer(serializers.Serializer):
+ """Serializer for testing Feishu IM message sending."""
+ user_id = serializers.CharField(
+ help_text="飞书用户 ID (ou_xxx 格式)，可在飞书管理后台 > 成员管理中查看"
+ )
+ message = serializers.CharField(
+ default="这是一条测试消息，来自 Friday AI Agent 配置测试。",
+ help_text="测试消息内容"
+ )
 class GitCredentialSerializer(serializers.ModelSerializer):
  """Serializer for GitCredential model."""
  has_ssh_key = serializers.SerializerMethodField

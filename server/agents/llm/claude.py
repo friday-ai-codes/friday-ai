@@ -156,9 +156,21 @@ class ClaudeProvider:
  arguments=dict(block.input) if block.input else {},
  )
  )
+ # Convert content blocks to serializable dicts
+ serializable_content: list[dict[str, Any]] =
+ for block in response.content:
+ if block.type == "text":
+ serializable_content.append({"type": "text", "text": block.text})
+ elif block.type == "tool_use":
+ serializable_content.append({
+ "type": "tool_use",
+ "id": block.id,
+ "name": block.name,
+ "input": dict(block.input) if block.input else {},
+ })
  return LLMResponse(
  content="\n".join(text_parts),
- raw_content=list(response.content),
+ raw_content=serializable_content,
  tool_calls=tool_calls,
  usage={
  "input_tokens": response.usage.input_tokens,

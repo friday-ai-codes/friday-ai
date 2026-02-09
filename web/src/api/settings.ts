@@ -1,7 +1,7 @@
 /**
  * 系统设置 API 服务
  */
-import { del, get, put } from './client'
+import { del, get, post, put } from './client'
 // 系统设置键
 export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
@@ -14,6 +14,9 @@ export enum SettingKey {
  EMBEDDING_API_KEY = 'embedding_api_key',
  EMBEDDING_MODEL = 'embedding_model',
  EMBEDDING_DIMENSION = 'embedding_dimension',
+ // Feishu IM Settings
+ FEISHU_APP_ID = 'feishu_app_id',
+ FEISHU_APP_SECRET = 'feishu_app_secret',
 }
 // 设置值读取响应
 export interface SettingRead {
@@ -77,6 +80,18 @@ export async function updateProjectClaudeConfig(projectId: string, config: Claud
  */
 export async function deleteProjectClaudeConfig(projectId: string): Promise<void> {
  return del(`/projects/${projectId}/claude-config/`)
+}
+/**
+ * 测试飞书 IM 配置
+ */
+export async function testFeishuIM(params: {
+ receive_id: string
+ receive_id_type?: 'open_id' | 'chat_id' | 'user_id'
+ message?: string
+ app_id?: string
+ app_secret?: string
+}): Promise<{ success: boolean; message: string; message_id?: string }> {
+ return post('/settings/feishu-im/test/', params)
 }
 // 默认导出
 export default {

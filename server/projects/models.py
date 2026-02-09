@@ -19,6 +19,15 @@ class Project(models.Model):
  feishu_plugin_secret_encrypted = models.TextField(blank=True, null=True)
  feishu_webhook_token = models.CharField(max_length=32, default=generate_webhook_token)
  feishu_user_key = models.CharField(max_length=100, blank=True, null=True)
+ # Feishu IM App (for sending messages via Open API)
+ feishu_app_id = models.CharField(
+ max_length=100, blank=True, null=True,
+ help_text="飞书自建应用 App ID (cli_xxx 格式)"
+ )
+ feishu_app_secret_encrypted = models.TextField(
+ blank=True, null=True,
+ help_text="飞书自建应用 App Secret (加密存储)"
+ )
  # Claude configuration
  claude_api_key_encrypted = models.TextField(blank=True, null=True)
  claude_base_url = models.CharField(max_length=500, blank=True, null=True)
@@ -38,8 +47,11 @@ class Project(models.Model):
  def __str__(self):
  return self.name
  def has_feishu_config(self) -> bool:
- """Check if Feishu is configured."""
+ """Check if Feishu Plugin is configured."""
  return bool(self.feishu_plugin_id and self.feishu_plugin_secret_encrypted)
+ def has_feishu_im_config(self) -> bool:
+ """Check if Feishu IM App is configured."""
+ return bool(self.feishu_app_id and self.feishu_app_secret_encrypted)
 class ProjectRepository(models.Model):
  """Through model for Project-Repository many-to-many relationship."""
  project = models.ForeignKey(Project, on_delete=models.CASCADE)

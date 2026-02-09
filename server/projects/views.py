@@ -19,6 +19,9 @@ from .serializers import (
  ClaudeConfigSerializer,
  FeishuConfigCreateSerializer,
  FeishuConfigSerializer,
+ FeishuIMConfigCreateSerializer,
+ FeishuIMConfigSerializer,
+ FeishuIMTestSerializer,
  GitCredentialSerializer,
  ProjectCreateSerializer,
  ProjectSerializer,
@@ -241,6 +244,73 @@ class ProjectViewSet(ModelViewSet):
  project.claude_base_url = None
  project.save
  return Response(status=status.HTTP_204_NO_CONTENT)
+ # === Feishu IM App configuration ===
+ @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-im-config")
+ def feishu_im_config(self, request, pk=None):
+ """Manage Feishu IM App configuration."""
+ project = self.get_object
+ if request.method == "GET":
+ return Response(FeishuIMConfigSerializer(project).data)
+ if request.method == "PUT":
+ serializer = FeishuIMConfigCreateSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ project.feishu_app_id = serializer.validated_data["app_id"]
+ project.feishu_app_secret_encrypted = encrypt_value(
+ serializer.validated_data["app_secret"]
+ )
+ project.save
+ return Response(FeishuIMConfigSerializer(project).data)
+ # DELETE
+ project.feishu_app_id = None
+ project.feishu_app_secret_encrypted = None
+ project.save
+ return Response(status=status.HTTP_204_NO_CONTENT)
+ @action(detail=True, methods=["post"], url_path="feishu-im-config/test")
+ def test_feishu_im_config(self, request, pk=None):
+ """Test Feishu IM configuration by sending a test message."""
+ project = self.get_object
+ serializer = FeishuIMTestSerializer(data=request.data)
+ serializer.is_valid(raise_exception=True)
+ user_id = serializer.validated_data["user_id"]
+ message = serializer.validated_data["message"]
+ # 优先使用请求中的临时配置，否则使用已保存的配置
+ app_id = request.data.get("app_id") or project.feishu_app_id
+ app_secret = request.data.get("app_secret")
+ if not app_secret and project.feishu_app_secret_encrypted:
+ from common.encryption import decrypt_value
+ app_secret = decrypt_value(project.feishu_app_secret_encrypted)
+ if not app_id or not app_secret:
+ return Response(
+ {
+ "success": False,
+ "message": "飞书 IM 配置不完整，请填写 App ID 和 App Secret",
+ },
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 发送测试消息
+ try:
+ import asyncio
+ from services.feishu_im import FeishuIMClient
+ client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
+ async def send_test:
+ # 发送文本消息给指定用户
+ message_id = await client.send_text(
+ receive_id=user_id,
+ receive_id_type="open_id",
+ text=message,
+ )
+ return message_id
+ message_id = asyncio.run(send_test)
+ return Response({
+ "success": True,
+ "message": "测试消息发送成功",
+ "message_id": message_id,
+ })
+ except Exception as e:
+ return Response({
+ "success": False,
+ "message": f"发送失败: {str(e)}",
+ })
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  queryset = (

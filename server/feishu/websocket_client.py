@@ -1,0 +1,363 @@
+"""Feishu WebSocket Long Connection Client.
+Provides a long-lived WebSocket connection to receive Feishu events
+without requiring a public domain or webhook configuration.
+This module supports two modes:
+1. Standalone: python manage.py run_feishu_client --project-id <uuid>
+2. Auto-start: Starts automatically with Django when configured
+Features:
+- Receives IM messages (user replies to bot)
+- Receives card action callbacks (button clicks, form submissions)
+- Auto-reconnect on connection loss
+- Forwards events to existing Django handlers
+"""
+import json
+import threading
+from typing import Any
+import lark_oapi as lark
+import structlog
+from lark_oapi.ws import Client as WsClient
+logger = structlog.get_logger(__name__)
+# Global client manager for auto-start mode
+_client_manager: "FeishuClientManager | None" = None
+class FeishuWebSocketClient:
+ """Feishu WebSocket client for receiving events via long connection.
+ This client establishes a persistent WebSocket connection to Feishu servers
+ to receive events without needing a public webhook endpoint.
+ """
+ def __init__(
+ self,
+ app_id: str,
+ app_secret: str,
+ project_id: str | None = None,
+ log_level: int = lark.LogLevel.INFO,
+ ):
+ """Initialize the WebSocket client.
+ Args:
+ app_id: Feishu app ID (cli_xxx format)
+ app_secret: Feishu app secret
+ project_id: Optional Friday project ID for context
+ log_level: Lark SDK log level
+ """
+ self.app_id = app_id
+ self.app_secret = app_secret
+ self.project_id = project_id
+ self._client: WsClient | None = None
+ self._running = False
+ # Build event dispatcher
+ self._event_handler = self._build_event_handler
+ # Create Lark client
+ self._lark_client = (
+ lark.Client.builder.app_id(app_id).app_secret(app_secret).log_level(log_level).build
+ )
+ def _build_event_handler(self) -> lark.EventDispatcherHandler:
+ """Build event dispatcher with registered handlers."""
+ handler = (
+ lark.EventDispatcherHandler.builder("", "")
+ .register_p2_im_message_receive_v1(self._handle_message_receive)
+ .register_p2_card_action_trigger(self._handle_card_action)
+ .build
+ )
+ return handler
+ def _handle_message_receive(self, data) -> None:
+ """Handle incoming IM message events.
+ Called when a user sends a message to the bot (private or group mention).
+ """
+ try:
+ event_data = data.event
+ if not event_data:
+ return
+ message = event_data.message
+ sender = event_data.sender
+ logger.info(
+ "ws_message_received",
+ message_id=message.message_id if message else None,
+ chat_id=message.chat_id if message else None,
+ sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
+ message_type=message.message_type if message else None,
+ )
+ # Forward to existing handler
+ self._process_message_sync(data)
+ except Exception as e:
+ logger.error("ws_message_handle_error", error=str(e))
+ def _handle_card_action(self, data) -> dict[str, Any] | None:
+ """Handle card action events (button clicks, form submissions).
+ Called when a user interacts with a card (clicks button, submits form).
+ Must return within 3 seconds.
+ """
+ try:
+ event_data = data.event
+ if not event_data:
+ return None
+ action = event_data.action
+ operator = event_data.operator
+ logger.info(
+ "ws_card_action_received",
+ action_value=action.value if action else None,
+ operator_id=operator.open_id if operator else None,
+ token=event_data.token,
+ )
+ # Forward to existing card callback handler
+ return self._process_card_action_sync(data)
+ except Exception as e:
+ logger.error("ws_card_action_handle_error", error=str(e))
+ return None
+ def _process_message_sync(self, data) -> None:
+ """Process received message synchronously.
+ Forwards the message to the existing IM message handler logic.
+ """
+ event_data = data.event
+ if not event_data or not event_data.message:
+ return
+ message = event_data.message
+ sender = event_data.sender
+ # Extract message content
+ content_str = message.content or "{}"
+ try:
+ content = json.loads(content_str)
+ except json.JSONDecodeError:
+ content = {"text": content_str}
+ # Get text content
+ text = content.get("text", "")
+ logger.info(
+ "ws_im_message_processed",
+ message_id=message.message_id,
+ chat_id=message.chat_id,
+ chat_type=message.chat_type,
+ message_type=message.message_type,
+ text_preview=text[:50] if text else None,
+ sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
+ )
+ # Check if this is a reply to an agent question
+ # Match by chat_id to find suspended agent sessions
+ self._try_resume_agent_from_message(
+ chat_id=message.chat_id,
+ text=text,
+ sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
+ )
+ def _try_resume_agent_from_message(
+ self,
+ chat_id: str,
+ text: str,
+ sender_id: str | None,
+ ) -> None:
+ """Try to resume a suspended agent session from a chat message.
+ Looks for agent sessions waiting for user response in this chat.
+ """
+ from agents.models import AgentSession
+ from tasks.agent_tasks import schedule_resume_agent_session
+ try:
+ # Find suspended sessions waiting in this chat
+ sessions = AgentSession.objects.filter(
+ status=AgentSession.Status.SUSPENDED,
+ temp_data__chat_id=chat_id,
+ ).order_by("-updated_at")[:1]
+ if sessions.exists:
+ session = sessions.first
+ logger.info(
+ "ws_resuming_agent_from_message",
+ session_id=session.session_id,
+ chat_id=chat_id,
+ answer_preview=text[:50] if text else None,
+ )
+ schedule_resume_agent_session(session.session_id, text)
+ except Exception as e:
+ logger.error("ws_resume_agent_error", error=str(e), chat_id=chat_id)
+ def _process_card_action_sync(self, data) -> dict[str, Any] | None:
+ """Process card action synchronously (must return within 3s).
+ Forwards to existing CardCallbackView logic.
+ """
+ from feishu.views import (
+ CardCallback,
+ _card_callback_handlers,
+ )
+ event_data = data.event
+ if not event_data:
+ return None
+ action = event_data.action
+ operator = event_data.operator
+ context = event_data.context
+ # Build CardCallback object compatible with existing handlers
+ action_value = ""
+ if action and action.value:
+ # action.value is a dict, extract the "action" key
+ if isinstance(action.value, dict):
+ action_value = action.value.get("action", "")
+ else:
+ action_value = str(action.value)
+ callback = CardCallback(
+ action_value=action_value,
+ message_id=context.open_message_id if context else "",
+ user_open_id=operator.open_id if operator else "",
+ chat_id=context.open_chat_id if context else "",
+ tenant_key=operator.tenant_key if operator else "",
+ )
+ logger.info(
+ "ws_card_callback_dispatching",
+ action_value=action_value,
+ message_id=callback.message_id,
+ user_open_id=callback.user_open_id,
+ )
+ # Dispatch to registered handlers
+ for prefix, handler in _card_callback_handlers.items:
+ if action_value.startswith(prefix):
+ try:
+ result = handler(callback)
+ logger.info(
+ "ws_card_callback_handled",
+ prefix=prefix,
+ has_result=result is not None,
+ )
+ return result
+ except Exception as e:
+ logger.error(
+ "ws_card_callback_handler_error",
+ prefix=prefix,
+ error=str(e),
+ )
+ return None
+ logger.warning(
+ "ws_card_callback_no_handler",
+ action_value=action_value,
+ )
+ return None
+ def start(self) -> None:
+ """Start the WebSocket client (blocking).
+ This method blocks and runs until stopped or connection fails.
+ """
+ logger.info(
+ "ws_client_starting",
+ app_id=self.app_id,
+ project_id=self.project_id,
+ )
+ self._running = True
+ # Create WebSocket client
+ self._client = WsClient(
+ app_id=self.app_id,
+ app_secret=self.app_secret,
+ event_handler=self._event_handler,
+ log_level=lark.LogLevel.WARNING,
+ )
+ # Start (blocking)
+ try:
+ self._client.start
+ except KeyboardInterrupt:
+ logger.info("ws_client_interrupted")
+ except Exception as e:
+ logger.error("ws_client_error", error=str(e))
+ raise
+ finally:
+ self._running = False
+ def stop(self) -> None:
+ """Stop the WebSocket client."""
+ logger.info("ws_client_stopping")
+ self._running = False
+class FeishuClientManager:
+ """Manager for auto-starting Feishu WebSocket client.
+ Starts a single client using global system settings.
+ """
+ def __init__(self):
+ self._client: FeishuWebSocketClient | None = None
+ self._thread: threading.Thread | None = None
+ self._running = False
+ def start_all(self) -> None:
+ """Start WebSocket client if Feishu IM is configured in system settings."""
+ from common.encryption import decrypt_value
+ from system.models import SettingKeys, SystemSetting
+ self._running = True
+ # Get global Feishu IM config from system settings
+ try:
+ app_id_setting = SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_ID).first
+ app_secret_setting = SystemSetting.objects.filter(
+ key=SettingKeys.FEISHU_APP_SECRET
+ ).first
+ if not app_id_setting or not app_id_setting.value:
+ logger.info("ws_manager_skipped", reason="feishu_app_id not configured")
+ return
+ if not app_secret_setting or not app_secret_setting.value:
+ logger.info("ws_manager_skipped", reason="feishu_app_secret not configured")
+ return
+ app_id = app_id_setting.value
+ app_secret = app_secret_setting.value
+ if app_secret_setting.is_encrypted:
+ app_secret = decrypt_value(app_secret)
+ self._start_client(app_id, app_secret)
+ except Exception as e:
+ logger.error("ws_client_start_failed", error=str(e))
+ def _start_client(self, app_id: str, app_secret: str) -> None:
+ """Start the WebSocket client."""
+ if self._client is not None:
+ return # Already running
+ client = FeishuWebSocketClient(
+ app_id=app_id,
+ app_secret=app_secret,
+ log_level=lark.LogLevel.WARNING, # Reduce noise in auto-start mode
+ )
+ self._client = client
+ # Start in background thread
+ thread = threading.Thread(
+ target=client.start,
+ name="feishu-ws-global",
+ daemon=True, # Die with main process
+ )
+ thread.start
+ self._thread = thread
+ logger.info(
+ "ws_client_started",
+ app_id=app_id,
+ )
+ def stop_all(self) -> None:
+ """Stop the WebSocket client."""
+ self._running = False
+ if self._client:
+ try:
+ self._client.stop
+ except Exception as e:
+ logger.error("ws_client_stop_failed", error=str(e))
+ self._client = None
+ self._thread = None
+ logger.info("ws_manager_stopped")
+ def refresh(self) -> None:
+ """Refresh client - restart if config changed."""
+ self.stop_all
+ self.start_all
+def get_client_manager -> FeishuClientManager:
+ """Get the global client manager, creating if needed."""
+ global _client_manager
+ if _client_manager is None:
+ _client_manager = FeishuClientManager
+ return _client_manager
+def auto_start_clients -> None:
+ """Auto-start Feishu WebSocket clients for all configured projects.
+ Call this from Django's AppConfig.ready to start on server boot.
+ """
+ manager = get_client_manager
+ manager.start_all
+def create_client_for_project(project_id: str) -> FeishuWebSocketClient:
+ """Create a WebSocket client for a specific project.
+ Args:
+ project_id: Friday project UUID
+ Returns:
+ Configured FeishuWebSocketClient
+ Raises:
+ ValueError: If project doesn't have Feishu IM configured
+ """
+ from django.core.exceptions import ObjectDoesNotExist
+ from common.encryption import decrypt_value
+ from projects.models import Project
+ try:
+ project = Project.objects.get(id=project_id)
+ except ObjectDoesNotExist:
+ raise ValueError(f"Project not found: {project_id}")
+ # Check for Feishu IM config
+ if not project.has_feishu_im_config:
+ raise ValueError(
+ f"Project {project_id} does not have Feishu IM configured. "
+ "Please configure App ID and App Secret in project settings."
+ )
+ app_id = project.feishu_app_id
+ app_secret = decrypt_value(project.feishu_app_secret_encrypted)
+ return FeishuWebSocketClient(
+ app_id=app_id,
+ app_secret=app_secret,
+ project_id=project_id,
+ )

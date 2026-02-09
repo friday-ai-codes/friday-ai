@@ -13,8 +13,8 @@ logger = structlog.get_logger(__name__)
 MAX_CONTENT_LENGTH = 3000
 def create_feishu_im_client_for_project(project: Project) -> FeishuIMClient:
  """为指定项目创建 FeishuIMClient 实例。
- 使用项目的飞书应用凭证创建 IM 客户端。
- 注意：同一个飞书应用凭证可用于 Project API (plugin_token) 和 IM API (tenant_access_token)。
+ 优先使用项目的飞书 IM App 配置 (feishu_app_id/feishu_app_secret)，
+ 如果未配置则回退到 Plugin 配置 (feishu_plugin_id/feishu_plugin_secret)。
  Args:
  project: Project 模型实例
  Returns:
@@ -22,13 +22,23 @@ def create_feishu_im_client_for_project(project: Project) -> FeishuIMClient:
  Raises:
  ValueError: 项目未配置飞书集成时抛出
  """
- if not project.feishu_plugin_id or not project.feishu_plugin_secret_encrypted:
- raise ValueError(f"项目 {project.id} 未配置飞书集成")
- # 解密 app_secret (使用与 plugin_secret 相同的字段)
+ # 优先使用飞书 IM App 配置
+ if project.feishu_app_id and project.feishu_app_secret_encrypted:
+ app_secret = decrypt_value(project.feishu_app_secret_encrypted)
+ return FeishuIMClient(
+ app_id=project.feishu_app_id,
+ app_secret=app_secret,
+ )
+ # 回退到 Plugin 配置
+ if project.feishu_plugin_id and project.feishu_plugin_secret_encrypted:
  app_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
  return FeishuIMClient(
  app_id=project.feishu_plugin_id,
  app_secret=app_secret,
+ )
+ raise ValueError(
+ f"项目 {project.id} 未配置飞书 IM 集成。"
+ "请在项目设置中配置飞书自建应用 App ID 和 App Secret。"
  )
 def _truncate_content(content: str, max_length: int = MAX_CONTENT_LENGTH) -> str:
  """截断超长内容并添加省略号。
