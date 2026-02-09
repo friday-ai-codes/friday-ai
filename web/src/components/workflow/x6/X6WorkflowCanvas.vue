@@ -7,6 +7,7 @@ import { useDnd } from './useDnd'
 import { useGraph } from './useGraph'
 import { useHistory } from './useHistory'
 import { useMinimap } from './useMinimap'
+import { useSnapline } from './useSnapline'
 import { useX6Sync } from './useX6Sync'
 /**
  * X6 Workflow Canvas Component
@@ -36,6 +37,7 @@ const { graph } = useGraph(containerRef, {
 // Initialize editor enhancement composables
 const { canUndo, canRedo, undo, redo } = useHistory(graph)
 useMinimap(graph, minimapContainerRef)
+useSnapline(graph)
 // Initialize bidirectional sync between X6 and Pinia store
 const { loadFromStore } = useX6Sync(graph)
 // Zoom control functions
