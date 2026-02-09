@@ -43,6 +43,7 @@ INSTALLED_APPS = [
  "rest_framework_simplejwt",
  "drf_spectacular",
  "channels",
+ "django_apscheduler",
  "accounts",
  "system",
  "repositories",
@@ -231,3 +232,12 @@ FF_SYNC_WORKFLOW_TO_FEISHU = env.bool("FF_SYNC_WORKFLOW_TO_FEISHU", True)
 FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 # Default workflow template for new tasks
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
+# =============================================================================
+# APScheduler Settings
+# =============================================================================
+# Format for django-apscheduler scheduler
+APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
+# Seconds the scheduler checks for jobs to run
+APSCHEDULER_RUN_NOW_TIMEOUT = 25
+# Enable scheduler (can be disabled in tests)
+FF_ENABLE_SCHEDULER = env.bool("FF_ENABLE_SCHEDULER", True)
