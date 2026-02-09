@@ -290,19 +290,12 @@ async function testFeishuIMConfig {
  testingFeishuIM.value = true
  feishuTestResult.value = null
  try {
- const params: Record<string, string> = {
+ // 测试时只传接收者信息，app_id 和 app_secret 由后端从数据库获取
+ const result = await testFeishuIM({
  receive_id: feishuTestReceiveId.value.trim,
  receive_id_type: feishuTestReceiveIdType.value,
  message: feishuTestMessage.value,
- }
- // 如果输入了临时配置，一并发送用于测试
- if (feishuAppIdValue.value.trim) {
- params.app_id = feishuAppIdValue.value.trim
- }
- if (feishuAppSecretValue.value.trim) {
- params.app_secret = feishuAppSecretValue.value.trim
- }
- const result = await testFeishuIM(params)
+ })
  feishuTestResult.value = result
  if (result.success) {
  toast.success('消息已发送，请检查飞书')
