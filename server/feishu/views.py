@@ -157,6 +157,58 @@ class CardCallbackView(APIView):
  action_value=action_value,
  )
  return Response({})
+# ============ User Answer Callback Handler ============
+@register_card_callback("user_answer")
+def handle_user_answer(callback: CardCallback) -> dict[str, Any] | None:
+ """Handle user answer from question card.
+ Processes button clicks and form submissions from ask_user_question cards.
+ Schedules async session resume and returns updated card immediately.
+ Args:
+ callback: Card callback data with action_value and context
+ Returns:
+ Updated card JSON showing answered state, or None
+ """
+ from feishu.cards.question_card import build_answered_card
+ from tasks.agent_tasks import schedule_resume_agent_session
+ # Parse action value (may be string or dict)
+ action_data = callback.action_value
+ if isinstance(action_data, str):
+ try:
+ action_data = json.loads(action_data)
+ except json.JSONDecodeError:
+ action_data = {}
+ # For button clicks, action_value comes from action.value dict
+ # For form submits, we need to check the raw callback data
+ session_id = ""
+ answer = ""
+ if isinstance(action_data, dict):
+ session_id = action_data.get("session_id", "")
+ answer = action_data.get("answer", "")
+ # If no answer from button, this might be a form submission
+ # Form values come through differently - need to handle in CardCallbackView
+ # For now, we extract from the callback structure
+ if not session_id or not answer:
+ struct_logger.warning(
+ "user_answer_missing_data",
+ session_id=session_id,
+ has_answer=bool(answer),
+ action_value=str(callback.action_value)[:100],
+ )
+ return None
+ struct_logger.info(
+ "user_answer_received",
+ session_id=session_id,
+ answer_preview=answer[:50] if answer else "",
+ )
+ # Schedule async session resume (don't block callback response)
+ schedule_resume_agent_session(session_id, answer)
+ # Get current question from session for the answered card
+ # We use a simple approach - just show the answer
+ return build_answered_card(
+ question="", # Question was already in the card
+ answer=answer,
+ history=None,
+ )
 # ============ IM Message Webhook ============
 def parse_message_content(msg_type: str, content: str) -> str:
  """解析飞书消息内容为纯文本。
