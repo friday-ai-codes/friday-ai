@@ -1,7 +1,8 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIAgentConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
+ aiAgentConfigSchema,
  aiCodingDispatcherConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
@@ -189,6 +190,17 @@ export const NODE_REGISTRY = {
  defaultConfig: generatePlanConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/GeneratePlanConfig.vue'),
  } satisfies NodeTypeDefinition<GeneratePlanConfig>,
+ ai_agent: {
+ nodeType: 'ai_agent',
+ displayName: 'AI Agent',
+ description: '自主 AI 代理，可调用工具完成复杂任务',
+ icon: 'icon-[lucide--bot]',
+ color: 'from-blue-500 to-cyan-400',
+ category: 'ai',
+ schema: aiAgentConfigSchema,
+ defaultConfig: aiAgentConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AIAgentConfig.vue'),
+ } satisfies NodeTypeDefinition<AIAgentConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数

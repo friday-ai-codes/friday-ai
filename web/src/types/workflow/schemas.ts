@@ -250,6 +250,17 @@ export const generatePlanConfigSchema = z.object({
  max_tasks: z.number.min(1).max(50).default(15),
  include_file_details: z.boolean.default(true),
 })
+/** AI Agent 节点配置 */
+export const aiAgentConfigSchema = z.object({
+ // Prompts
+ system_prompt: z.string.default('你是一个专业的软件开发助手。'),
+ user_prompt: z.string.default(''),
+ // Tool configuration (empty array = all tools enabled)
+ enabled_tools: z.array(z.string).default,
+ // Execution limits
+ max_iterations: z.number.min(1).max(100).default(25),
+ timeout_hours: z.number.min(1).max(168).default(24),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -279,6 +290,7 @@ export type TechnicalPlanNodeConfig = z.infer<typeof technicalPlanNodeConfigSche
 export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type GeneratePlanConfig = z.infer<typeof generatePlanConfigSchema>
+export type AIAgentConfig = z.infer<typeof aiAgentConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -295,6 +307,7 @@ export type NodeConfig
  | CreateBranchConfig
  | CreatePRConfig
  | GeneratePlanConfig
+ | AIAgentConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -313,5 +326,6 @@ export const NODE_CONFIG_SCHEMAS = {
  create_branch: createBranchConfigSchema,
  create_pr: createPRConfigSchema,
  generate_plan: generatePlanConfigSchema,
+ ai_agent: aiAgentConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
