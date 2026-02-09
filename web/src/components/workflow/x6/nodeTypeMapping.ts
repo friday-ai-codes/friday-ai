@@ -125,6 +125,19 @@ export const nodeTypeMapping: NodeTypeConfig = [
  category: 'action',
  defaultData: {},
  },
+ // AI Agent (Friday 编码助手)
+ {
+ shape: 'ai_agent',
+ workflowType: 'ai_agent',
+ category: 'action',
+ defaultData: {
+ system_prompt: '你是一个专业的软件开发助手。你可以使用各种工具来完成编码任务，包括读写文件、执行命令、搜索代码等。请根据用户的需求，自主规划并执行任务。',
+ user_prompt: '',
+ enabled_tools:,
+ max_iterations: 25,
+ timeout_hours: 24,
+ },
+ },
  // Conditions
  {
  shape: 'condition',

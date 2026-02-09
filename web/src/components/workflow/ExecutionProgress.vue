@@ -17,7 +17,6 @@ import { toast } from 'vue-sonner'
 import { skipNodeWait, triggerNodeResume } from '~/api/workflow'
 import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import AgentExecutionLog from '~/components/workflow/execution/AgentExecutionLog.vue'
 import { cn } from '~/lib/utils'
 interface Props {

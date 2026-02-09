@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
  Bot,
+ BrainCircuit,
  Briefcase,
  Clock,
  FileText,
@@ -67,6 +68,7 @@ const nodeCategories: NodeCategory = [
  name: 'AI',
  color: 'purple',
  items: [
+ { type: 'ai_agent', name: 'Friday 编码助手', description: '自主编码的智能代理', icon: BrainCircuit, color: 'purple' },
  { type: 'ai_prompt', name: 'AI Prompt', description: '调用 AI 大语言模型', icon: MessageSquare, color: 'purple' },
  { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务', icon: Bot, color: 'purple' },
  { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
