@@ -10,6 +10,8 @@ export {}
 declare module 'vue' {
  export interface GlobalComponents {
  AccountSettingsModal: typeof import('./components/settings/AccountSettingsModal.vue')['default']
+ AgentExecutionLog: typeof import('./components/workflow/execution/AgentExecutionLog.vue')['default']
+ AIAgentConfig: typeof import('./components/workflow/config/AIAgentConfig.vue')['default']
  AICodingDispatcherConfig: typeof import('./components/workflow/config/AICodingDispatcherConfig.vue')['default']
  AIModelConfig: typeof import('./components/workflow/config/AIModelConfig.vue')['default']
  AIPromptConfig: typeof import('./components/workflow/config/AIPromptConfig.vue')['default']
@@ -170,6 +172,7 @@ declare module 'vue' {
  TechnicalPlanPanel: typeof import('./components/technical-plan/TechnicalPlanPanel.vue')['default']
  TechnicalPlanViewer: typeof import('./components/technical-plan/TechnicalPlanViewer.vue')['default']
  Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
+ ToolSelector: typeof import('./components/workflow/config/ToolSelector.vue')['default']
  Tooltip: typeof import('./components/ui/tooltip/Tooltip.vue')['default']
  TooltipContent: typeof import('./components/ui/tooltip/TooltipContent.vue')['default']
  TooltipProvider: typeof import('./components/ui/tooltip/TooltipProvider.vue')['default']
@@ -190,6 +193,7 @@ declare module 'vue' {
  WorkflowPageHeader: typeof import('./components/workflow/WorkflowPageHeader.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  X6ActionNode: typeof import('./components/workflow/x6/nodes/X6ActionNode.vue')['default']
+ X6AgentNode: typeof import('./components/workflow/x6/nodes/X6AgentNode.vue')['default']
  X6BaseNode: typeof import('./components/workflow/x6/nodes/X6BaseNode.vue')['default']
  X6ConditionNode: typeof import('./components/workflow/x6/nodes/X6ConditionNode.vue')['default']
  X6TriggerNode: typeof import('./components/workflow/x6/nodes/X6TriggerNode.vue')['default']
