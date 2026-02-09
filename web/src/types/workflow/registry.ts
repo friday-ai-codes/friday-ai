@@ -192,9 +192,9 @@ export const NODE_REGISTRY = {
  } satisfies NodeTypeDefinition<GeneratePlanConfig>,
  ai_agent: {
  nodeType: 'ai_agent',
- displayName: 'AI Agent',
- description: '自主 AI 代理，可调用工具完成复杂任务',
- icon: 'icon-[lucide--bot]',
+ displayName: 'Friday 编码助手',
+ description: '自主编码的智能代理，可调用工具完成复杂任务',
+ icon: 'icon-[lucide--brain-circuit]',
  color: 'from-blue-500 to-cyan-400',
  category: 'ai',
  schema: aiAgentConfigSchema,

@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { ScrollArea } from '~/components/ui/scroll-area'
 /**
- * ToolSelector - Tool multi-select component for AI Agent node.
+ * ToolSelector - Lightweight tool multi-select component for AI Agent node.
  *
- * Features:
- * - Search/filter tools by name and description
- * - Flat list display with ScrollArea (max 200px height)
- * - Select all / deselect individual tools
- * - Empty array = all enabled (inverse selection logic)
+ * Uses native elements for better performance.
  */
 interface Tool {
  name: string
@@ -42,19 +36,15 @@ const allSelected = computed(
  => props.modelValue.length === 0,
 )
 // Check if a specific tool is enabled
-// Per CONTEXT.md: empty array = all enabled
 function isToolEnabled(toolName: string): boolean {
  if (props.modelValue.length === 0) return true
  return props.modelValue.includes(toolName)
 }
-// Toggle tool selection (inverse logic per CONTEXT.md)
-// When unchecking: add to exclusion list
-// When checking: remove from exclusion list (or keep empty if was all-selected)
+// Toggle tool selection
 function toggleTool(toolName: string) {
  const current = [...props.modelValue]
  if (allSelected.value) {
  // Currently all selected, user wants to disable one tool
- // Add all other tools to the list (enabled list)
  const newValue = props.tools
  .map(t => t.name)
  .filter(name => name !== toolName)
@@ -63,18 +53,13 @@ function toggleTool(toolName: string) {
  else {
  const idx = current.indexOf(toolName)
  if (idx >= 0) {
- // Tool is in enabled list, remove it (disable)
  current.splice(idx, 1)
- // If list becomes empty after removal, keep it empty (means none selected)
- // But if only one was removed and others remain, just update
  emit('update:modelValue', current)
  }
  else {
- // Tool is not in enabled list, add it (enable)
  current.push(toolName)
- // Check if all tools are now enabled
  if (current.length === props.tools.length) {
- emit('update:modelValue', ) // All selected = empty array
+ emit('update:modelValue', )
  }
  else {
  emit('update:modelValue', current)
@@ -88,13 +73,13 @@ function selectAll {
 }
 </script>
 <template>
- <div class="space-y-3">
+ <div class="space-y-2">
  <!-- Header with label and select all button -->
  <div class="flex items-center justify-between">
- <Label>启用的工具</Label>
+ <Label class="text-xs">启用的工具</Label>
  <button
  type="button"
- class="text-xs text-primary hover:underline transition-colors":class="{ 'text-muted-foreground': allSelected }"
+ class="text-[10px] text-primary hover:underline":class="{ 'text-muted-foreground': allSelected }"
  @click="selectAll"
  >
  {{ allSelected ? '已全选': '全选' }}
@@ -104,49 +89,42 @@ function selectAll {
  <Input
  v-model="searchQuery"
  placeholder="搜索工具..."
- class="bg-background/50"
+ class="bg-background/50 text-xs"
  >
  <template #prefix>
- <span class="icon-[lucide--search] text-muted-foreground" />
+ <span class="icon-[lucide--search] text-xs text-muted-foreground" />
  </template>
  </Input>
- <!-- Tools list with ScrollArea -->
- <ScrollArea class=" rounded-lg border border-border/50 bg-muted/30">
- <div class=" space-y-1">
- <div
+ <!-- Tools list with native scroll -->
+ <div class=" overflow-y-auto rounded-lg border border-border/50 bg-muted/30">
+ <div class=".5 space-y-0.5">
+ <label
  v-for="tool in filteredTools":key="tool.name"
- class="flex items-start gap-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors"
- @click="toggleTool(tool.name)"
+ class="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-muted/50"
  >
- <Checkbox:checked="isToolEnabled(tool.name)"
- class="mt-0.5"
- @click.stop
- @update:checked="toggleTool(tool.name)"
- />
+ <input
+ type="checkbox":checked="isToolEnabled(tool.name)"
+ class="w-3.5 .5 rounded border-border accent-primary shrink-0"
+ @change="toggleTool(tool.name)"
+ >
  <div class="flex-1 min-w-0">
- <div class="font-mono text-sm">{{ tool.name }}</div>
- <div class="text-xs text-muted-foreground truncate">
+ <div class="font-mono text-[11px] leading-tight">{{ tool.name }}</div>
+ <div class="text-[10px] text-muted-foreground truncate leading-tight">
  {{ tool.description }}
  </div>
  </div>
- <span
- v-if="tool.category"
- class="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0"
- >
- {{ tool.category }}
- </span>
- </div>
+ </label>
  <!-- Empty state -->
  <div
  v-if="filteredTools.length === 0"
- class="py-4 text-center text-sm text-muted-foreground"
+ class="py-3 text-center text-[11px] text-muted-foreground"
  >
  未找到匹配的工具
  </div>
  </div>
- </ScrollArea>
+ </div>
  <!-- Help text -->
- <p class="text-xs text-muted-foreground">
+ <p class="text-[10px] text-muted-foreground">
  留空表示启用所有工具
  </p>
  </div>

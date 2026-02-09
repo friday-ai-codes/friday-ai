@@ -7,7 +7,8 @@ RUN apk add --no-cache \
  musl-dev \
  libffi-dev \
  postgresql-dev \
- mariadb-dev
+ mariadb-dev \
+ tree-sitter-dev
 WORKDIR /app
 # Copy project files
 COPY . .
