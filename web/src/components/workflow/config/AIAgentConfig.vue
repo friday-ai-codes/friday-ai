@@ -10,7 +10,7 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
-import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
+import { MarkdownEditorModal, SmartMarkdownEditor } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
 import ToolSelector from './ToolSelector.vue'
 /**
