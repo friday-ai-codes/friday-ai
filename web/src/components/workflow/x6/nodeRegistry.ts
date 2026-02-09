@@ -3,6 +3,7 @@ import { getTeleport, register } from '@antv/x6-vue-shape'
 import X6TriggerNode from './nodes/X6TriggerNode.vue'
 import X6ActionNode from './nodes/X6ActionNode.vue'
 import X6ConditionNode from './nodes/X6ConditionNode.vue'
+import X6AgentNode from './nodes/X6AgentNode.vue'
 import { workflowPortGroups, getDefaultPortsForNodeType } from './ports'
 import { registerGradientEdge } from './edges'
 /**
@@ -34,6 +35,8 @@ const nodeRegistry: Record<string, Component> = {
  // Condition nodes (amber gradient)
  condition: X6ConditionNode,
  approval: X6ConditionNode,
+ // AI Agent node (blue-cyan gradient, larger size)
+ ai_agent: X6AgentNode,
 }
 /**
  * Default node dimensions.
