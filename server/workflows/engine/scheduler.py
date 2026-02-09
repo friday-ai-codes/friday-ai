@@ -266,8 +266,9 @@ class WorkflowEngine:
  # 节点正在等待审批，保持在 pending
  pending_nodes.add(dag_node.id)
  elif result.get("status") == "waiting_event":
- # 节点正在等待外部事件，保持在 pending
- pending_nodes.add(dag_node.id)
+ # 节点正在等待外部事件，不加回 pending
+ # 循环会检测到 waiting 节点并挂起 workflow
+ pass
  else:
  failed_nodes.add(dag_node.id)
  # 检查超时

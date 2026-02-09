@@ -8,6 +8,7 @@ import {
  deleteSetting,
  getAllSettings,
  SettingKey,
+ testFeishuIM,
  updateSetting,
 } from '~/api/settings'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
@@ -23,6 +24,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { Textarea } from '~/components/ui/textarea'
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -90,6 +92,23 @@ async function loadSettings {
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  gitProxyDirty.value = false
+ // 飞书 IM 配置
+ const feishuAppIdSetting = settings.value.find(s => s.key === SettingKey.FEISHU_APP_ID)
+ const feishuAppSecretSetting = settings.value.find(s => s.key === SettingKey.FEISHU_APP_SECRET)
+ if (feishuAppIdSetting?.value) {
+ feishuAppIdValue.value = feishuAppIdSetting.value
+ }
+ else {
+ feishuAppIdValue.value = ''
+ }
+ if (feishuAppSecretSetting?.has_value && feishuAppSecretSetting.masked_value) {
+ feishuAppSecretValue.value = feishuAppSecretSetting.masked_value
+ }
+ else {
+ feishuAppSecretValue.value = ''
+ }
+ feishuAppIdDirty.value = false
+ feishuAppSecretDirty.value = false
  }
  catch (error) {
  console.error('Failed to load settings:', error)
@@ -179,6 +198,127 @@ function onGitProxyInput {
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {
  return apiKeyDirty.value || baseUrlDirty.value || gitProxyDirty.value
+}
+// ===== 飞书 IM 配置 =====
+const feishuAppIdValue = ref('')
+const feishuAppSecretValue = ref('')
+const feishuAppIdDirty = ref(false)
+const feishuAppSecretDirty = ref(false)
+const showFeishuAppSecret = ref(false)
+const savingFeishuIM = ref(false)
+// 飞书 IM 测试
+const feishuTestReceiveId = ref('')
+const feishuTestReceiveIdType = ref<'open_id' | 'chat_id'>('open_id')
+const feishuTestMessage = ref('这是一条测试消息，来自 Friday AI Agent 配置测试。')
+const testingFeishuIM = ref(false)
+const feishuTestResult = ref<{ success: boolean; message: string } | null>(null)
+function onFeishuAppIdInput {
+ feishuAppIdDirty.value = true
+}
+function onFeishuAppSecretInput {
+ feishuAppSecretDirty.value = true
+}
+function hasFeishuIMConfig: boolean {
+ return getSettingByKey(SettingKey.FEISHU_APP_ID)?.has_value ?? false
+}
+async function saveFeishuIMConfig {
+ if (!feishuAppIdValue.value.trim) {
+ toast.error('请输入 App ID')
+ return
+ }
+ const hasExistingSecret = getSettingByKey(SettingKey.FEISHU_APP_SECRET)?.has_value
+ if (!feishuAppSecretValue.value.trim && !hasExistingSecret) {
+ toast.error('请输入 App Secret')
+ return
+ }
+ savingFeishuIM.value = true
+ try {
+ const promises: Promise<unknown> =
+ if (feishuAppIdDirty.value && feishuAppIdValue.value.trim) {
+ promises.push(updateSetting(SettingKey.FEISHU_APP_ID, feishuAppIdValue.value.trim))
+ }
+ if (feishuAppSecretDirty.value && feishuAppSecretValue.value.trim) {
+ promises.push(updateSetting(SettingKey.FEISHU_APP_SECRET, feishuAppSecretValue.value.trim))
+ }
+ if (promises.length > 0) {
+ await Promise.all(promises)
+ toast.success('飞书 IM 配置已保存')
+ feishuAppSecretValue.value = ''
+ feishuAppIdDirty.value = false
+ feishuAppSecretDirty.value = false
+ await loadSettings
+ }
+ else {
+ toast.info('没有需要保存的更改')
+ }
+ }
+ catch (error) {
+ console.error('Failed to save Feishu IM config:', error)
+ toast.error('保存失败')
+ }
+ finally {
+ savingFeishuIM.value = false
+ }
+}
+async function removeFeishuIMConfig {
+ savingFeishuIM.value = true
+ try {
+ await Promise.all([
+ deleteSetting(SettingKey.FEISHU_APP_ID),
+ deleteSetting(SettingKey.FEISHU_APP_SECRET),
+ ])
+ toast.success('飞书 IM 配置已删除')
+ feishuAppIdValue.value = ''
+ feishuAppSecretValue.value = ''
+ feishuAppIdDirty.value = false
+ feishuAppSecretDirty.value = false
+ await loadSettings
+ }
+ catch (error) {
+ console.error('Failed to delete Feishu IM config:', error)
+ toast.error('删除失败')
+ }
+ finally {
+ savingFeishuIM.value = false
+ }
+}
+async function testFeishuIMConfig {
+ if (!feishuTestReceiveId.value.trim) {
+ toast.error(feishuTestReceiveIdType.value === 'chat_id' ? '请输入群聊 ID': '请输入用户 ID')
+ return
+ }
+ testingFeishuIM.value = true
+ feishuTestResult.value = null
+ try {
+ const params: Record<string, string> = {
+ receive_id: feishuTestReceiveId.value.trim,
+ receive_id_type: feishuTestReceiveIdType.value,
+ message: feishuTestMessage.value,
+ }
+ // 如果输入了临时配置，一并发送用于测试
+ if (feishuAppIdValue.value.trim) {
+ params.app_id = feishuAppIdValue.value.trim
+ }
+ if (feishuAppSecretValue.value.trim) {
+ params.app_secret = feishuAppSecretValue.value.trim
+ }
+ const result = await testFeishuIM(params)
+ feishuTestResult.value = result
+ if (result.success) {
+ toast.success('消息已发送，请检查飞书')
+ }
+ else {
+ toast.error(result.message)
+ }
+ }
+ catch (error) {
+ const message = error instanceof Error ? error.message: '测试失败'
+ feishuTestResult.value = { success: false, message }
+ toast.error(message)
+ }
+ finally {
+ testingFeishuIM.value = false
+ }
 }
 // 模型选择和测试相关
 const models = ref<Model>
@@ -513,6 +653,189 @@ onMounted( => {
  </section>
  <!-- 向量索引配置 -->
  <VectorIndexSettings />
+ <!-- 飞书 IM 配置卡片 -->
+ <section class="group relative">
+ <!-- 悬浮光晕 -->
+ <div class="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-cyan-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
+ <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-blue-500/30 group-hover:shadow-lg group-hover:shadow-blue-500/5 transition-all duration-300">
+ <!-- 卡片头部 -->
+ <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
+ <span class="icon-[lucide--message-circle] text-2xl text-blue-500" />
+ </div>
+ <div class="flex-1">
+ <h2 class="text-lg font-semibold">
+ 飞书 IM 配置
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 用于 AI Agent 发送飞书消息（提问卡片、通知等）
+ </p>
+ </div>
+ <span
+ v-if="hasFeishuIMConfig"
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-600 bg-emerald-500/10 rounded-full"
+ >
+ <span class="icon-[lucide--check-circle]" />
+ 已配置
+ </span>
+ </div>
+ <!-- 表单内容 -->
+ <div class=" space-y-6">
+ <!-- 说明 -->
+ <div class="rounded-lg bg-blue-500/5 border border-blue-500/20 text-sm text-muted-foreground space-y-2">
+ <p class="font-medium text-blue-600 flex items-center gap-2">
+ <span class="icon-[lucide--info]" />
+ 配置说明
+ </p>
+ <p>用于 AI Agent 通过飞书发送消息和接收用户回复。</p>
+ <p>需要在<strong>飞书开放平台</strong>创建自建应用，并开启消息权限和长连接模式。</p>
+ </div>
+ <!-- App ID -->
+ <div class="space-y-3">
+ <div class="flex items-center justify-between">
+ <Label for="feishu-app-id" class="text-base font-medium">
+ App ID
+ </Label>
+ </div>
+ <p class="text-sm text-muted-foreground">
+ 飞书开放平台 → 应用管理 → 凭证与基础信息
+ </p>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key] text-muted-foreground" />
+ <Input
+ id="feishu-app-id"
+ v-model="feishuAppIdValue"
+ placeholder="cli_xxxxxxxxxx"
+ class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
+ @input="onFeishuAppIdInput"
+ />
+ </div>
+ </div>
+ <!-- App Secret -->
+ <div class="space-y-3">
+ <div class="flex items-center justify-between">
+ <Label for="feishu-app-secret" class="text-base font-medium">
+ App Secret
+ </Label>
+ <span
+ v-if="getSettingByKey(SettingKey.FEISHU_APP_SECRET)?.has_value"
+ class="text-xs text-emerald-600"
+ >
+ (已配置，留空则保持不变)
+ </span>
+ </div>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground" />
+ <Input
+ id="feishu-app-secret"
+ v-model="feishuAppSecretValue":type="showFeishuAppSecret ? 'text': 'password'":placeholder="getSettingByKey(SettingKey.FEISHU_APP_SECRET)?.has_value ? '••••••••••••••••': '输入 App Secret'"
+ class="pl-10 pr-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
+ @input="onFeishuAppSecretInput"
+ />
+ <button
+ type="button"
+ class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+ @click="showFeishuAppSecret = !showFeishuAppSecret"
+ >
+ <span:class="showFeishuAppSecret ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
+ </button>
+ </div>
+ </div>
+ </div>
+ <!-- 保存按钮区域 -->
+ <div class="flex justify-between px-6 py-4 border-t border-border/50">
+ <Button
+ v-if="hasFeishuIMConfig"
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="savingFeishuIM"
+ @click="removeFeishuIMConfig"
+ >
+ <span class="icon-[lucide--trash-2] mr-2" />
+ 删除配置
+ </Button>
+ <div v-else />
+ <Button:disabled="savingFeishuIM || (!feishuAppIdDirty && !feishuAppSecretDirty)"
+ @click="saveFeishuIMConfig"
+ >
+ <span v-if="savingFeishuIM" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--save] mr-2" />
+ 保存 IM 配置
+ </Button>
+ </div>
+ <!-- 测试区域 -->
+ <div v-if="hasFeishuIMConfig || feishuAppIdValue.trim" class="px-6 py-4 border-t border-border/50 space-y-4 bg-muted/20">
+ <div class="flex items-center gap-2 text-sm font-medium">
+ <span class="icon-[lucide--flask-conical] text-amber-500" />
+ 测试消息发送
+ </div>
+ <div class="space-y-3">
+ <div class="space-y-1.5">
+ <Label class="text-sm">发送类型</Label>
+ <div class="flex gap-4">
+ <label class="flex items-center gap-2 cursor-pointer">
+ <input
+ v-model="feishuTestReceiveIdType"
+ type="radio"
+ value="open_id"
+ class="accent-primary"
+ >
+ <span class="text-sm">用户 (open_id)</span>
+ </label>
+ <label class="flex items-center gap-2 cursor-pointer">
+ <input
+ v-model="feishuTestReceiveIdType"
+ type="radio"
+ value="chat_id"
+ class="accent-primary"
+ >
+ <span class="text-sm">群聊 (chat_id)</span>
+ </label>
+ </div>
+ </div>
+ <div class="space-y-1.5">
+ <Label class="text-sm">{{ feishuTestReceiveIdType === 'chat_id' ? '群聊 ID': '用户 ID' }}</Label>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground":class="feishuTestReceiveIdType === 'chat_id' ? 'icon-[lucide--users]': 'icon-[lucide--user]'" />
+ <Input
+ v-model="feishuTestReceiveId":placeholder="feishuTestReceiveIdType === 'chat_id' ? 'oc_xxxxxxxxxx': 'ou_xxxxxxxxxx'"
+ class="pl-10 font-mono text-sm bg-background border-border/50"
+ />
+ </div>
+ <p class="text-xs text-muted-foreground">
+ {{ feishuTestReceiveIdType === 'chat_id' ? '获取方式：把机器人拉入群聊后，从群设置中复制群链接获取': '获取方式：飞书管理后台 → 成员管理 → 点击成员 → 复制 Open ID' }}
+ </p>
+ </div>
+ <div class="space-y-1.5">
+ <Label class="text-sm">测试消息</Label>
+ <Textarea
+ v-model="feishuTestMessage"
+ rows="2"
+ class="text-sm resize-none bg-background border-border/50"
+ />
+ </div>
+ <div class="flex items-center gap-3">
+ <Button
+ variant="outline"
+ size="sm":disabled="testingFeishuIM"
+ @click="testFeishuIMConfig"
+ >
+ <span v-if="testingFeishuIM" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--send] mr-2" />
+ 发送测试消息
+ </Button>
+ <!-- 测试结果 -->
+ <div
+ v-if="feishuTestResult"
+ class="flex-1 rounded-lg px-3 py-2 text-xs":class="feishuTestResult.success ? 'bg-emerald-500/10 text-emerald-600': 'bg-destructive/10 text-destructive'"
+ >
+ <span:class="feishuTestResult.success ? 'icon-[lucide--check-circle]': 'icon-[lucide--x-circle]'" class="mr-1.5" />
+ {{ feishuTestResult.message }}
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
+ </section>
  </div>
  </template>
  <!-- 测试对话框 -->

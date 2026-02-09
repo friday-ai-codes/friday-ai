@@ -10,7 +10,8 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
-import { MarkdownEditorModal, SmartMarkdownEditor } from '~/components/workflow/smart-input'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
+import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
 import ToolSelector from './ToolSelector.vue'
 /**
@@ -32,6 +33,11 @@ interface AIAgentConfig {
  enabled_tools: string
  max_iterations: number
  timeout_hours: number
+ chat_id: string
+ use_custom_api: boolean
+ api_base_url: string
+ api_key: string
+ model: string
 }
 interface Tool {
  name: string
@@ -67,6 +73,15 @@ const userPrompt = field('user_prompt', '') as import('vue').WritableComputedRef
 const enabledTools = field('enabled_tools', ) as import('vue').WritableComputedRef<string>
 const maxIterations = field('max_iterations', 25) as import('vue').WritableComputedRef<number>
 const timeoutHours = field('timeout_hours', 24) as import('vue').WritableComputedRef<number>
+const chatId = field('chat_id', '') as import('vue').WritableComputedRef<string>
+// API 配置
+const useCustomApi = computed({
+ get: => props.config.use_custom_api ?? false,
+ set: v => emit('update:config', { ...props.config, use_custom_api: v }),
+})
+const apiBaseUrl = field('api_base_url', '') as import('vue').WritableComputedRef<string>
+const apiKey = field('api_key', '') as import('vue').WritableComputedRef<string>
+const model = field('model', 'claude-sonnet-4-20250514') as import('vue').WritableComputedRef<string>
 // ============================================================================
 // Tools Data
 // ============================================================================
@@ -106,7 +121,9 @@ const advancedOpen = ref(false)
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--brain-circuit] text-violet-500 text-lg shrink-0 mt-0.5" />
  <div class="space-y-2">
- <h4 class="text-sm font-medium">Friday AI Agent</h4>
+ <h4 class="text-sm font-medium">
+ Friday AI Agent
+ </h4>
  <p class="text-xs text-muted-foreground leading-relaxed">
  自主决策的智能代理，通过 <span class="text-violet-600 font-medium">Think-Act-Observe</span> 循环完成复杂任务。
  </p>
@@ -247,7 +264,32 @@ const advancedOpen = ref(false)
  />
  </div>
  <Separator />
- <!-- Max Iterations -->
+ <!-- AI 模型配置（通用组件） -->
+ <AIModelConfig
+ v-model:use-custom-api="useCustomApi"
+ v-model:api-base-url="apiBaseUrl"
+ v-model:api-key="apiKey"
+ v-model:model="model"
+ model-description="Agent 使用的 LLM 模型"
+ />
+ <Separator />
+ <!-- Chat ID -->
+ <div class="space-y-1.5">
+ <Label class="text-xs flex items-center gap-1.5">
+ <span class="icon-[lucide--message-circle] text-blue-500" />
+ 飞书群聊 ID
+ </Label>
+ <SmartTextarea
+ v-model="chatId":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="输入 {{ 选择变量，如 fetch_project.fields...":min-rows="1"
+ class="bg-background/50"
+ />
+ <p class="text-[10px] text-muted-foreground">
+ Agent 发送卡片消息的目标群聊，支持变量如
+ <code v-pre class="bg-muted px-1 py-0.5 rounded text-primary text-[9px]">{{fetch_project.fields[?(@.key=='chat_group')].value}}</code>
+ </p>
+ </div>
+ <Separator />
  <div class="space-y-1.5">
  <Label class="text-xs">最大迭代次数</Label>
  <Input

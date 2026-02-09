@@ -26,3 +26,6 @@ class SettingKeys:
  EMBEDDING_API_KEY = "embedding_api_key"
  EMBEDDING_MODEL = "embedding_model"
  EMBEDDING_DIMENSION = "embedding_dimension"
+ # Feishu IM Settings
+ FEISHU_APP_ID = "feishu_app_id"
+ FEISHU_APP_SECRET = "feishu_app_secret"
