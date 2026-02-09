@@ -52,6 +52,7 @@ INSTALLED_APPS = [
  "chat",
  "workflows",
  "agents",
+ "subagent",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
