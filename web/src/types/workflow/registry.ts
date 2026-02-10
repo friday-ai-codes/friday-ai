@@ -1,8 +1,9 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingConfig, AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiAgentConfigSchema,
+ aiCodingConfigSchema,
  aiCodingDispatcherConfigSchema,
  aiPlanApprovalConfigSchema,
  aiPlanGenerationConfigSchema,
@@ -225,6 +226,17 @@ export const NODE_REGISTRY = {
  defaultConfig: aiPlanApprovalConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/AIPlanApprovalConfig.vue'),
  } satisfies NodeTypeDefinition<AIPlanApprovalConfig>,
+ ai_coding: {
+ nodeType: 'ai_coding',
+ displayName: 'AI 编码执行',
+ description: 'AI 自动在容器中编码并创建 MR',
+ icon: 'icon-[lucide--terminal]',
+ color: 'from-blue-500 to-cyan-400',
+ category: 'ai',
+ schema: aiCodingConfigSchema,
+ defaultConfig: aiCodingConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AICodingConfig.vue'),
+ } satisfies NodeTypeDefinition<AICodingConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数

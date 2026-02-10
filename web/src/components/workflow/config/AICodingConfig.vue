@@ -1,0 +1,148 @@
+<script setup lang="ts">
+import type { WritableComputedRef } from 'vue'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
+import { computed } from 'vue'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import { useConfigModel } from '~/composables/useConfigModel'
+/**
+ * AICodingConfig - AI 编码执行节点配置面板
+ *
+ * 配置项：
+ * - container_image: SubAgent 执行编码使用的 Docker 镜像
+ * - timeout_seconds: 单个仓库的编码超时时间
+ * - polling_interval: 检查 SubAgent 状态的时间间隔
+ * - chat_id: 飞书群聊 ID，用于发送编码结果和分支确认卡片
+ */
+interface AICodingConfig {
+ container_image: string
+ timeout_seconds: number
+ chat_id: string
+ polling_interval: number
+}
+interface Props {
+ config: AICodingConfig
+ workflowNodes?: WorkflowNode
+ workflowEdges?: WorkflowEdge
+ currentNodeId?: string
+}
+const props = withDefaults(defineProps<Props>, {
+ workflowNodes: =>,
+ workflowEdges: =>,
+ currentNodeId: '',
+})
+const emit = defineEmits<{
+ (e: 'update:config', value: AICodingConfig): void
+}>
+const { field } = useConfigModel({
+ config: => props.config as unknown as Record<string, unknown>,
+ emit: v => emit('update:config', v as unknown as AICodingConfig),
+})
+const containerImage = field('container_image', '') as WritableComputedRef<string>
+const timeoutSeconds = field('timeout_seconds', 1800) as WritableComputedRef<number>
+const pollingInterval = field('polling_interval', 15) as WritableComputedRef<number>
+const chatId = field('chat_id', '') as WritableComputedRef<string>
+// 数值字段需要 string -> number 转换
+const timeoutSecondsStr = computed({
+ get: => String(timeoutSeconds.value),
+ set: (v: string) => { timeoutSeconds.value = Number(v) || 1800 },
+})
+const pollingIntervalStr = computed({
+ get: => String(pollingInterval.value),
+ set: (v: string) => { pollingInterval.value = Number(v) || 15 },
+})
+</script>
+<template>
+ <div class="space-y-4">
+ <!-- Introduction -->
+ <div class="rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-400/5 border border-blue-500/20 ">
+ <div class="flex items-start gap-2">
+ <span class="icon-[lucide--terminal] text-blue-500 text-lg shrink-0 mt-0.5" />
+ <div class="space-y-1.5">
+ <h4 class="text-sm font-medium">
+ AI 编码执行
+ </h4>
+ <p class="text-xs text-muted-foreground leading-relaxed">
+ 自动编码并创建 MR。按仓库并行分发 SubAgent，编码完成后自动创建 Merge Request。
+ </p>
+ <!-- Workflow Visual -->
+ <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
+ <span class="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600 font-medium">读取方案</span>
+ <span class="icon-[lucide--arrow-right] text-muted-foreground" />
+ <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-600 font-medium">SubAgent 编码</span>
+ <span class="icon-[lucide--arrow-right] text-muted-foreground" />
+ <span class="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-600 font-medium">创建 MR</span>
+ <span class="icon-[lucide--arrow-right] text-muted-foreground" />
+ <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 font-medium">通知结果</span>
+ </div>
+ </div>
+ </div>
+ </div>
+ <!-- Container Image -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1.5">
+ <span class="icon-[lucide--container] text-blue-500" />
+ 容器镜像
+ </Label>
+ <Input
+ v-model="containerImage"
+ placeholder="friday/claude-code:latest"
+ class="bg-background/50"
+ />
+ <p class="text-xs text-muted-foreground">
+ SubAgent 执行编码使用的 Docker 镜像
+ </p>
+ </div>
+ <!-- Timeout Seconds -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1.5">
+ <span class="icon-[lucide--timer] text-blue-500" />
+ 编码超时（秒）
+ </Label>
+ <Input
+ v-model="timeoutSecondsStr"
+ type="number"
+ placeholder="1800"
+ class="bg-background/50"
+ min="60"
+ max="7200"
+ />
+ <p class="text-xs text-muted-foreground">
+ 单个仓库的编码超时时间，默认 30 分钟
+ </p>
+ </div>
+ <!-- Polling Interval -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1.5">
+ <span class="icon-[lucide--refresh-cw] text-blue-500" />
+ 轮询间隔（秒）
+ </Label>
+ <Input
+ v-model="pollingIntervalStr"
+ type="number"
+ placeholder="15"
+ class="bg-background/50"
+ min="5"
+ max="60"
+ />
+ <p class="text-xs text-muted-foreground">
+ 检查 SubAgent 状态的时间间隔
+ </p>
+ </div>
+ <!-- Chat ID -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1.5">
+ <span class="icon-[lucide--message-circle] text-blue-500" />
+ 飞书群 ID
+ </Label>
+ <Input
+ v-model="chatId"
+ placeholder="输入飞书群 ID"
+ class="bg-background/50"
+ />
+ <p class="text-xs text-muted-foreground">
+ 编码结果和分支确认卡片将发送到此群。留空则使用上游节点传递的 chat_id。
+ </p>
+ </div>
+ </div>
+</template>
