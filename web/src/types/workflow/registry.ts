@@ -1,9 +1,10 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIAgentConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIAgentConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiAgentConfigSchema,
  aiCodingDispatcherConfigSchema,
+ aiPlanGenerationConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
  contextRetrievalConfigSchema,
@@ -201,6 +202,17 @@ export const NODE_REGISTRY = {
  defaultConfig: aiAgentConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/AIAgentConfig.vue'),
  } satisfies NodeTypeDefinition<AIAgentConfig>,
+ ai_plan_generation: {
+ nodeType: 'ai_plan_generation',
+ displayName: 'AI 方案生成',
+ description: 'AI 自动跨仓库分析需求，生成结构化技术方案',
+ icon: 'icon-[lucide--file-text]',
+ color: 'from-emerald-500 to-teal-400',
+ category: 'ai',
+ schema: aiPlanGenerationConfigSchema,
+ defaultConfig: aiPlanGenerationConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AIPlanGenerationConfig.vue'),
+ } satisfies NodeTypeDefinition<AIPlanGenerationConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
