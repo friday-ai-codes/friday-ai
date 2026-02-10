@@ -14,6 +14,8 @@ from .views import (
  TriggerLogRetryView,
  UpdateWebhookTokenView,
 )
+# Register card callback handlers (import triggers @register_card_callback)
+import feishu.callbacks.plan_callback as _plan_callback # noqa: F401
 urlpatterns = [
  # Webhook endpoint
  path("webhook", FeishuWebhookView.as_view, name="feishu-webhook"),
