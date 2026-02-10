@@ -261,6 +261,25 @@ export const aiAgentConfigSchema = z.object({
  max_iterations: z.number.min(1).max(100).default(25),
  timeout_hours: z.number.min(1).max(168).default(24),
 })
+/** AI 方案生成节点配置 */
+export const aiPlanGenerationConfigSchema = z.object({
+ // Prompts
+ system_prompt: z.string.default(''),
+ user_prompt: z.string.default(''),
+ // Repository filtering
+ include_repos: z.array(z.string).default,
+ exclude_repos: z.array(z.string).default,
+ // Execution limits
+ max_iterations: z.number.min(10).max(200).default(50),
+ enabled_tools: z.array(z.string).default,
+ // Feishu integration
+ chat_id: z.string.default(''),
+ // API configuration
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ model: z.string.default('claude-sonnet-4-20250514'),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -291,6 +310,7 @@ export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type GeneratePlanConfig = z.infer<typeof generatePlanConfigSchema>
 export type AIAgentConfig = z.infer<typeof aiAgentConfigSchema>
+export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -308,6 +328,7 @@ export type NodeConfig
  | CreatePRConfig
  | GeneratePlanConfig
  | AIAgentConfig
+ | AIPlanGenerationConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -327,5 +348,6 @@ export const NODE_CONFIG_SCHEMAS = {
  create_pr: createPRConfigSchema,
  generate_plan: generatePlanConfigSchema,
  ai_agent: aiAgentConfigSchema,
+ ai_plan_generation: aiPlanGenerationConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
