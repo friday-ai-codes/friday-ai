@@ -30,6 +30,7 @@ from agents.tools.feishu_doc_tools import (
 )
 from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.user_interaction import ask_user_question
+from agents.tools.verify_plan import verify_plan
 from agents.tools.subagent import (
  ask_claude_code,
  dispatch_coding_task,
@@ -63,4 +64,6 @@ __all__ = [
  "ask_claude_code",
  "generate_tech_plan_section",
  "dispatch_coding_task",
+ # Plan verification tools
+ "verify_plan",
 ]
