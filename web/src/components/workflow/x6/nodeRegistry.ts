@@ -37,6 +37,11 @@ const nodeRegistry: Record<string, Component> = {
  approval: X6ConditionNode,
  // AI Agent node (blue-cyan gradient, larger size)
  ai_agent: X6AgentNode,
+ // Specialized AI nodes (Phase placeholders)
+ ai_plan_generation: X6AgentNode,
+ ai_plan_approval: X6ConditionNode, // Approval node uses condition style (dual outputs)
+ ai_coding: X6AgentNode,
+ ai_code_review: X6AgentNode,
 }
 /**
  * Default node dimensions.

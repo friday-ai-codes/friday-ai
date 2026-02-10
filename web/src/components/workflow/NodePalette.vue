@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, BrainCircuit, Clock, Download, FileCode, FolderSearch, GitBranch, Globe, MessageSquare, Play, SearchCode, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
+import { Bot, BrainCircuit, CheckCircle, Clock, Download, FileCode, FolderSearch, GitBranch, Globe, MessageSquare, Play, SearchCode, Sparkles, Terminal, Variable, Webhook } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 const nodeTypesStore = useNodeTypesStore
@@ -45,6 +45,10 @@ const staticNodeTypes = [
  { type: 'ai_variable_extractor', label: 'AI 变量提取', icon: Sparkles, description: '使用 AI 智能提取变量' },
  { type: 'context_retrieval', label: '召回上下文', icon: SearchCode, description: '从代码库检索相关代码' },
  { type: 'ai_technical_plan', label: 'AI 技术方案', icon: FileCode, description: '根据需求生成技术方案' },
+ { type: 'ai_plan_generation', label: 'AI 方案生成', icon: FileCode, description: 'AI 自动生成技术方案' },
+ { type: 'ai_plan_approval', label: '方案审批', icon: CheckCircle, description: '审批技术方案' },
+ { type: 'ai_coding', label: 'AI 编码执行', icon: Terminal, description: 'AI 自动编码并创建 MR' },
+ { type: 'ai_code_review', label: 'AI 代码审查', icon: SearchCode, description: 'AI 多维度代码审查' },
  ],
  },
  {
