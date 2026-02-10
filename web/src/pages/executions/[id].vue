@@ -21,6 +21,7 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
+import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute
@@ -41,7 +42,7 @@ const triggerInputData = ref('')
 const triggering = ref(false)
 // Polling with useTimeoutPoll - auto cleanup on unmount
 function isActiveStatus(status?: string) {
- return ['running', 'pending', 'queued', 'paused', 'waiting_approval'].includes(status || '')
+ return ['running', 'pending', 'queued', 'paused', 'waiting_approval', 'waiting_event', 'suspended'].includes(status || '')
 }
 const { pause: stopPolling, resume: startPolling } = useTimeoutPoll(
  async => {
@@ -81,6 +82,8 @@ const statusConfig: Record<string, { icon: string, color: string, bg: string, la
  paused: { icon: 'lucide--pause', color: 'text-yellow-500', bg: 'bg-yellow-100 dark:bg-yellow-900/30', label: '已暂停' },
  cancelled: { icon: 'lucide--square', color: 'text-gray-500', bg: 'bg-gray-100 dark:bg-gray-800', label: '已取消' },
  waiting_approval: { icon: 'lucide--user-check', color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/30', label: '待审批' },
+ waiting_event: { icon: 'lucide--hourglass', color: 'text-indigo-500', bg: 'bg-indigo-100 dark:bg-indigo-900/30', label: '等待操作', animate: true },
+ suspended: { icon: 'lucide--pause-circle', color: 'text-indigo-500', bg: 'bg-indigo-100 dark:bg-indigo-900/30', label: '已挂起' },
  skipped: { icon: 'lucide--skip-forward', color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', label: '已跳过' },
  timeout: { icon: 'lucide--alarm-clock-off', color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时' },
 }
@@ -243,7 +246,7 @@ function formatTime(dateStr: string | null) {
  继续
  </Button>
  <Button
- v-if="['running', 'paused', 'pending', 'waiting_approval'].includes(currentExecution?.status || '')"
+ v-if="['running', 'paused', 'pending', 'waiting_approval', 'waiting_event', 'suspended'].includes(currentExecution?.status || '')"
  variant="destructive"
  size="sm"
  @click="handleCancel"
@@ -451,6 +454,15 @@ function formatTime(dateStr: string | null) {
  >
  审核
  </Badge>
+ <Badge
+ v-if="nodeExec.status === 'waiting_event' && nodeExec.node_type === 'ai_plan_approval'"
+ variant="outline"
+ class="border-indigo-500 text-indigo-500 cursor-pointer hover:bg-indigo-500/10"
+ @click.stop="selectedNodeExecution = nodeExec"
+ >
+ <span class="icon-[lucide--check-circle] w-3 mr-1" />
+ 审批
+ </Badge>
  <span class="text-xs text-muted-foreground">
  {{ formatTime(nodeExec.started_at) }}
  </span>
@@ -459,6 +471,11 @@ function formatTime(dateStr: string | null) {
  <!-- Expanded details -->
  <div v-if="selectedNodeExecution?.id === nodeExec.id" class="mt-4 space-y-3">
  <Separator />
+ <!-- Plan Approval Panel (for ai_plan_approval nodes) -->
+ <PlanApprovalPanel
+ v-if="nodeExec.node_type === 'ai_plan_approval' && (nodeExec.status === 'waiting_event' || nodeExec.status === 'completed')":node-execution="nodeExec"
+ @action-complete="store.fetchExecution(executionId)"
+ />
  <!-- Error message -->
  <div v-if="nodeExec.error_message" class=" rounded-lg bg-destructive/10 text-sm text-destructive">
  {{ nodeExec.error_message }}
