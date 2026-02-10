@@ -21,6 +21,7 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
+import AICodingPanel from '~/components/execution/AICodingPanel.vue'
 import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
@@ -463,6 +464,14 @@ function formatTime(dateStr: string | null) {
  <span class="icon-[lucide--check-circle] w-3 mr-1" />
  审批
  </Badge>
+ <Badge
+ v-if="nodeExec.status === 'running' && nodeExec.node_type === 'ai_coding'"
+ variant="outline"
+ class="border-blue-500 text-blue-500 animate-pulse"
+ >
+ <span class="icon-[lucide--terminal] w-3 mr-1" />
+ 编码中
+ </Badge>
  <span class="text-xs text-muted-foreground">
  {{ formatTime(nodeExec.started_at) }}
  </span>
@@ -475,6 +484,10 @@ function formatTime(dateStr: string | null) {
  <PlanApprovalPanel
  v-if="nodeExec.node_type === 'ai_plan_approval' && (nodeExec.status === 'waiting_event' || nodeExec.status === 'completed')":node-execution="nodeExec"
  @action-complete="store.fetchExecution(executionId)"
+ />
+ <!-- AI Coding Panel (for ai_coding nodes) -->
+ <AICodingPanel
+ v-if="nodeExec.node_type === 'ai_coding' && (nodeExec.status === 'running' || nodeExec.status === 'waiting_event' || nodeExec.status === 'completed')":node-execution="nodeExec"
  />
  <!-- Error message -->
  <div v-if="nodeExec.error_message" class=" rounded-lg bg-destructive/10 text-sm text-destructive">
