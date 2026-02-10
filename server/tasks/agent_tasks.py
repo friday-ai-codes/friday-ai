@@ -70,6 +70,9 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  status=result.status,
  iterations=result.metadata.get("iterations"),
  )
+ # Notify workflow engine if this is a workflow node session
+ if session_id.startswith("wf-"):
+ await _notify_workflow_completion(session_id, result, log)
  return {
  "status": result.status,
  "final_answer": result.final_answer,
@@ -88,6 +91,65 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  "status": "error",
  "error": str(e),
  }
+async def _notify_workflow_completion(
+ session_id: str,
+ result: Any,
+ log: Any,
+) -> None:
+ """Notify workflow engine after agent session completes or re-suspends.
+ When a workflow-originated agent session (session_id starts with "wf-")
+ finishes execution, this function finds the corresponding NodeExecution
+ and tells the WorkflowEngine to continue executing successors.
+ If the agent re-suspends (e.g., waiting for another user interaction),
+ no notification is needed — the workflow stays suspended until the next
+ resume_agent_session call.
+ """
+ if result.status == "suspended":
+ log.info("workflow_notify_skip_suspended")
+ return
+ try:
+ from asgiref.sync import sync_to_async
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.models.execution import (
+ NodeExecution,
+ NodeExecutionStatus,
+ WorkflowExecution,
+ )
+ # Find the node execution linked to this session
+ node_exec = await sync_to_async(
+ lambda: NodeExecution.objects.filter(
+ output_data__agent_session_id=session_id,
+ status=NodeExecutionStatus.WAITING_EVENT,
+ )
+ .select_related("workflow_execution")
+ .first
+ )
+ if not node_exec:
+ log.warning("workflow_node_execution_not_found")
+ return
+ execution: WorkflowExecution = node_exec.workflow_execution
+ if result.status == "completed":
+ # Mark node as completed with agent output
+ output_data = {
+ "agent_session_id": session_id,
+ "final_answer": result.final_answer,
+ "output": result.output,
+ "usage": result.usage,
+ }
+ await sync_to_async(node_exec.mark_completed)(output_data)
+ # Continue workflow execution
+ engine = WorkflowEngine
+ await engine._continue_after_node(execution, node_exec)
+ log.info("workflow_continued_after_node")
+ else:
+ # Agent errored or hit max_iterations
+ error_msg = result.error or f"Agent session ended with status: {result.status}"
+ await sync_to_async(node_exec.mark_failed)(error_msg)
+ engine = WorkflowEngine
+ await engine._handle_node_failure(execution, node_exec)
+ log.warning("workflow_node_failed", agent_status=result.status)
+ except Exception as e:
+ log.exception("workflow_notify_error", error=str(e))
 def schedule_resume_agent_session(session_id: str, user_response: str) -> None:
  """Schedule async resume task to run in background.
  Uses asyncio.create_task if in async context, otherwise creates
