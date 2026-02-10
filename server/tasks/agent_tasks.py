@@ -117,7 +117,7 @@ async def _notify_workflow_completion(
  )
  # Find the node execution linked to this session
  node_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ lambda: NodeExecution.objects.filter( # type: ignore[attr-defined]
  output_data__agent_session_id=session_id,
  status=NodeExecutionStatus.WAITING_EVENT,
  )
