@@ -44,7 +44,7 @@ def mark_event_processed(event_uuid: str) -> None:
 @dataclass
 class CardCallback:
  """卡片回调数据结构。"""
- action_value: str
+ action_value: dict[str, Any] | str
  message_id: str
  user_open_id: str
  chat_id: str
@@ -116,13 +116,16 @@ class CardCallbackView(APIView):
  )
  # 3. 解析回调数据
  action = data.get("action", {})
- action_value = action.get("value", {}).get("action", "")
+ # Pass the full value dict to preserve execution_id, node_id, etc.
+ action_value_dict = action.get("value", {})
+ # Extract action name for routing (string used for prefix matching)
+ action_name = action_value_dict.get("action", "") if isinstance(action_value_dict, dict) else str(action_value_dict)
  message_id = data.get("open_message_id", "")
  user_open_id = data.get("open_id", "")
  chat_id = data.get("open_chat_id", "")
  tenant_key = data.get("tenant_key", "")
  callback = CardCallback(
- action_value=action_value,
+ action_value=action_value_dict,
  message_id=message_id,
  user_open_id=user_open_id,
  chat_id=chat_id,
@@ -130,13 +133,13 @@ class CardCallbackView(APIView):
  )
  struct_logger.info(
  "card_callback_received",
- action_value=action_value,
+ action_name=action_name,
  message_id=message_id,
  user_open_id=user_open_id,
  )
- # 4. 根据 action_value 分发处理
+ # 4. 根据 action_name 分发处理
  for prefix, handler in _card_callback_handlers.items:
- if action_value.startswith(prefix):
+ if action_name.startswith(prefix):
  try:
  updated_card = handler(callback)
  if updated_card:
@@ -147,14 +150,14 @@ class CardCallbackView(APIView):
  except Exception as e:
  struct_logger.error(
  "card_callback_handler_error",
- action_value=action_value,
+ action_name=action_name,
  error=str(e),
  )
  return Response({})
  # 没有匹配的处理器
  struct_logger.warning(
  "card_callback_no_handler",
- action_value=action_value,
+ action_name=action_name,
  )
  return Response({})
 # ============ User Answer Callback Handler ============
