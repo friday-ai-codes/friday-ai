@@ -334,7 +334,11 @@ class WorkflowEngine:
  result: NodeResult = await node_instance.execute(context)
  # 处理结果
  if result.status == "completed":
- await sync_to_async(node_execution.mark_completed)(result.output)
+ # Persist handle info in output_data for _continue_after_node routing
+ output_with_handle = {**(result.output or {})}
+ if result.next_handle and result.next_handle != "default":
+ output_with_handle["_next_handle"] = result.next_handle
+ await sync_to_async(node_execution.mark_completed)(output_with_handle)
  await self.hooks.trigger(
  "node_completed",
  execution=execution,
@@ -453,32 +457,73 @@ class WorkflowEngine:
  comment: str = "",
  ) -> None:
  """审批通过节点"""
- if node_execution.status != NodeExecutionStatus.WAITING_APPROVAL:
+ if node_execution.status not in [
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ]:
  raise ValueError("节点不在等待审批状态")
  await sync_to_async(node_execution.approve)(approver, comment)
- await sync_to_async(node_execution.mark_completed)(node_execution.approval_data)
+ # Build output: preserve original data + set next_handle for routing
+ approval_output = {
+ **(node_execution.approval_data or {}),
+ "_next_handle": "approved",
+ }
+ await sync_to_async(node_execution.mark_completed)(approval_output)
  await self.hooks.trigger(
  "node_approved",
  execution=node_execution.workflow_execution,
  node_execution=node_execution,
  approver=approver,
  )
+ # Continue workflow execution from approved port
+ execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ await self._continue_after_node(execution, node_execution)
  async def reject_node(
  self,
  node_execution: NodeExecution,
  approver,
  comment: str = "",
  ) -> None:
- """审批拒绝节点"""
- if node_execution.status != NodeExecutionStatus.WAITING_APPROVAL:
+ """审批拒绝节点
+ Per Phase design: reject marks node as completed (not failed)
+ with next_handle="rejected", allowing workflow to route through
+ the rejected output port.
+ """
+ if node_execution.status not in [
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ]:
  raise ValueError("节点不在等待审批状态")
- await sync_to_async(node_execution.reject)(approver, comment)
+ # Update approval_data with rejection info (without calling mark_failed)
+ await sync_to_async(node_execution.refresh_from_db)
+ node_execution.approval_data.update(
+ {
+ "approved": False,
+ "approver_id": approver.id if approver else None,
+ "approver_name": approver.username if approver else "",
+ "comment": comment,
+ "rejected_at": timezone.now.isoformat,
+ }
+ )
+ await sync_to_async(node_execution.save)(update_fields=["approval_data"])
+ # Mark completed (NOT failed) with next_handle="rejected" for routing
+ original_data = node_execution.approval_data or {}
+ reject_output = {
+ **original_data,
+ "_next_handle": "rejected",
+ "reject_reason": comment,
+ "rejected_by": str(approver) if approver else "",
+ }
+ await sync_to_async(node_execution.mark_completed)(reject_output)
  await self.hooks.trigger(
  "node_rejected",
  execution=node_execution.workflow_execution,
  node_execution=node_execution,
  approver=approver,
  )
+ # Continue workflow execution from rejected port
+ execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ await self._continue_after_node(execution, node_execution)
  async def trigger_manual_node(
  self,
  node_execution: NodeExecution,
@@ -544,19 +589,28 @@ class WorkflowEngine:
  # This was a terminal node - check if execution is complete
  await self._check_execution_complete(execution)
  return
+ # Read next_handle from output_data for handle-based routing
+ output_data = node_execution.output_data or {}
+ next_handle = output_data.get("_next_handle", "default")
+ # Use dag.get_successors to route by handle
+ successors = dag.get_successors(completed_node_id, next_handle)
+ # Fallback to "default" handle if specified handle has no successors
+ if not successors and next_handle != "default":
+ successors = dag.get_successors(completed_node_id, "default")
+ if not successors:
+ # Terminal node - check if execution is complete
+ await self._check_execution_complete(execution)
+ return
  # Collect all node outputs for context
  node_outputs = await self._collect_all_outputs(execution)
  # Execute successor nodes that are now ready
- for successor_id in dag_node.outgoing:
- successor_dag_node = dag.nodes.get(successor_id)
- if not successor_dag_node:
- continue
+ for successor_dag_node in successors:
  # Check if all dependencies are satisfied
  all_deps_ready = await self._check_dependencies_ready(execution, successor_dag_node)
  if all_deps_ready:
  # Get successor's node execution
  successor_exec = await sync_to_async(
- lambda sid=successor_id: NodeExecution.objects.filter(
+ lambda sid=successor_dag_node.id: NodeExecution.objects.filter(
  workflow_execution=execution,
  node_id=sid,
  status=NodeExecutionStatus.PENDING,
@@ -565,10 +619,20 @@ class WorkflowEngine:
  if successor_exec:
  # Collect inputs and execute
  input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
- # Execute directly instead of create_task to ensure it runs
- await self._execute_node(
+ result = await self._execute_node(
  execution, successor_dag_node, input_data, node_outputs
  )
+ # Recursive: if successor also completed immediately, continue its downstream
+ if isinstance(result, dict) and result.get("status") == "completed":
+ successor_ne = await sync_to_async(
+ lambda sid=successor_dag_node.id: NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id=sid,
+ status=NodeExecutionStatus.COMPLETED,
+ ).first
+ )
+ if successor_ne:
+ await self._continue_after_node(execution, successor_ne)
  async def _handle_node_failure(
  self,
  execution: WorkflowExecution,
