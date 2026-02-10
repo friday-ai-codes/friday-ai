@@ -547,7 +547,10 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  def approve(self, request: Request, pk=None) -> Response:
  """Approve a node waiting for approval."""
  node_execution = self.get_object
- if node_execution.status != NodeExecutionStatus.WAITING_APPROVAL:
+ if node_execution.status not in [
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ]:
  return Response(
  {"detail": "节点不在等待审批状态"},
  status=status.HTTP_400_BAD_REQUEST,
@@ -569,7 +572,10 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  def reject(self, request: Request, pk=None) -> Response:
  """Reject a node waiting for approval."""
  node_execution = self.get_object
- if node_execution.status != NodeExecutionStatus.WAITING_APPROVAL:
+ if node_execution.status not in [
+ NodeExecutionStatus.WAITING_APPROVAL,
+ NodeExecutionStatus.WAITING_EVENT,
+ ]:
  return Response(
  {"detail": "节点不在等待审批状态"},
  status=status.HTTP_400_BAD_REQUEST,
