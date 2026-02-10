@@ -154,6 +154,10 @@ export function getDefaultPortsForNodeType(nodeType: string): PortMetadata {
  // Trigger nodes: no inputs, one output
  return generatePortItems(nodeType,, ['output'])
  }
+ // ai_plan_approval: 1 input, 2 outputs (approved/rejected)
+ if (nodeType === 'ai_plan_approval') {
+ return generatePortItems(nodeType, ['input'], ['approved', 'rejected'])
+ }
  if (CONDITION_NODE_TYPES.includes(nodeType)) {
  // Condition nodes: one input, two outputs (true/false branches)
  return generatePortItems(nodeType, ['input'], ['true', 'false'])

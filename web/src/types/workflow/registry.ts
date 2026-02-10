@@ -1,9 +1,10 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingDispatcherConfig, AIAgentConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiAgentConfigSchema,
  aiCodingDispatcherConfigSchema,
+ aiPlanApprovalConfigSchema,
  aiPlanGenerationConfigSchema,
  aiPromptConfigSchema,
  aiVariableExtractorConfigSchema,
@@ -213,6 +214,17 @@ export const NODE_REGISTRY = {
  defaultConfig: aiPlanGenerationConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/AIPlanGenerationConfig.vue'),
  } satisfies NodeTypeDefinition<AIPlanGenerationConfig>,
+ ai_plan_approval: {
+ nodeType: 'ai_plan_approval',
+ displayName: '方案审批',
+ description: '审批技术方案，支持通过/驳回分支',
+ icon: 'icon-[lucide--check-circle]',
+ color: 'from-amber-500 to-orange-400',
+ category: 'ai',
+ schema: aiPlanApprovalConfigSchema,
+ defaultConfig: aiPlanApprovalConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AIPlanApprovalConfig.vue'),
+ } satisfies NodeTypeDefinition<AIPlanApprovalConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
