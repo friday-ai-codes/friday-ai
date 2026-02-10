@@ -17,6 +17,7 @@ from .views import (
 # Register card callback handlers (import triggers @register_card_callback)
 import feishu.callbacks.plan_callback as _plan_callback # noqa: F401
 import feishu.callbacks.approval_callback as _approval_callback # noqa: F401
+import feishu.callbacks.coding_callback as _coding_callback # noqa: F401
 urlpatterns = [
  # Webhook endpoint
  path("webhook", FeishuWebhookView.as_view, name="feishu-webhook"),
