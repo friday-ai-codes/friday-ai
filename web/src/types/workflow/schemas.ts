@@ -284,6 +284,13 @@ export const aiPlanGenerationConfigSchema = z.object({
 export const aiPlanApprovalConfigSchema = z.object({
  chat_id: z.string.default(''),
 })
+/** AI 编码执行节点配置 */
+export const aiCodingConfigSchema = z.object({
+ container_image: z.string.default('friday/claude-code:latest'),
+ timeout_seconds: z.number.int.min(60).max(7200).default(1800),
+ chat_id: z.string.default(''),
+ polling_interval: z.number.int.min(5).max(60).default(15),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -316,6 +323,7 @@ export type GeneratePlanConfig = z.infer<typeof generatePlanConfigSchema>
 export type AIAgentConfig = z.infer<typeof aiAgentConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
 export type AIPlanApprovalConfig = z.infer<typeof aiPlanApprovalConfigSchema>
+export type AICodingConfig = z.infer<typeof aiCodingConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -335,6 +343,7 @@ export type NodeConfig
  | AIAgentConfig
  | AIPlanGenerationConfig
  | AIPlanApprovalConfig
+ | AICodingConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -356,5 +365,6 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_agent: aiAgentConfigSchema,
  ai_plan_generation: aiPlanGenerationConfigSchema,
  ai_plan_approval: aiPlanApprovalConfigSchema,
+ ai_coding: aiCodingConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS
