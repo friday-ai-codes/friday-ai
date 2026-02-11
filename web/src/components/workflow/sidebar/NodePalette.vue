@@ -2,7 +2,9 @@
 import {
  Bot,
  Briefcase,
+ CheckCircle,
  Clock,
+ FileCode,
  FileText,
  FolderGit2,
  GitBranch,
@@ -11,6 +13,7 @@ import {
  MessageSquare,
  Play,
  Search,
+ SearchCode,
  Terminal,
  Variable,
  Webhook,
@@ -72,6 +75,10 @@ const nodeCategories: NodeCategory = [
  { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
  { type: 'variable_extractor', name: '变量提取', description: '提取变量值', icon: Variable, color: 'purple' },
  { type: 'technical_plan', name: '技术方案', description: '生成技术实现方案', icon: FileText, color: 'purple' },
+ { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案', icon: FileCode, color: 'purple' },
+ { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案', icon: CheckCircle, color: 'purple' },
+ { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR', icon: Terminal, color: 'purple' },
+ { type: 'ai_code_review', name: 'AI 代码审查', description: 'AI 多维度代码审查', icon: SearchCode, color: 'purple' },
  ],
  },
  {
