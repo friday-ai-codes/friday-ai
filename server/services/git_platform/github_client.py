@@ -3,7 +3,7 @@ import asyncio
 import structlog
 from github import Auth, Github, GithubException
 from .base import GitPlatformClient
-from .models import MRCreateRequest, MRCreateResult
+from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult
 logger = structlog.get_logger
 class GitHubClient(GitPlatformClient):
  """GitHub platform client for pull request operations."""
@@ -118,3 +118,78 @@ class GitHubClient(GitPlatformClient):
  error=error_msg,
  )
  return MRCreateResult(success=False, error=error_msg)
+ async def get_merge_request_diff(
+ self,
+ mr_id: str,
+ max_files: int = 50,
+ max_diff_lines: int = 500,
+ ) -> MRDiffResult:
+ """获取 GitHub PR 的文件变更 diff。
+ Args:
+ mr_id: PR 编号
+ max_files: 最大文件数限制
+ max_diff_lines: 单个文件 diff 最大行数
+ Returns:
+ MRDiffResult 包含文件列表和 diff 内容
+ """
+ try:
+ repo = self._get_repo
+ pr = await asyncio.to_thread(repo.get_pull, int(mr_id))
+ raw_files = await asyncio.to_thread(lambda: list(pr.get_files))
+ truncated = False
+ # 截断文件数量
+ if len(raw_files) > max_files:
+ raw_files = raw_files[:max_files]
+ truncated = True
+ files: list[MRDiffFile] =
+ for f in raw_files:
+ diff_text: str = f.patch or ""
+ # 截断单个文件 diff 行数
+ diff_lines = diff_text.split("\n")
+ if len(diff_lines) > max_diff_lines:
+ diff_text = "\n".join(diff_lines[:max_diff_lines]) + "\n[diff truncated]"
+ truncated = True
+ # 判断文件状态
+ status: str = f.status or ""
+ new_file = status == "added"
+ renamed_file = status == "renamed"
+ deleted_file = status == "removed"
+ # GitHub renamed 文件有 previous_filename
+ old_path = f.previous_filename if renamed_file and f.previous_filename else f.filename
+ files.append(
+ MRDiffFile(
+ old_path=old_path,
+ new_path=f.filename,
+ diff=diff_text,
+ new_file=new_file,
+ renamed_file=renamed_file,
+ deleted_file=deleted_file,
+ )
+ )
+ logger.info(
+ "github_pr_diff_fetched",
+ pr_number=mr_id,
+ files_count=len(files),
+ truncated=truncated,
+ )
+ return MRDiffResult(success=True, files=files, truncated=truncated)
+ except GithubException as e:
+ error_msg = f"Failed to fetch PR diff: {e}"
+ logger.error(
+ "github_pr_diff_error",
+ pr_number=mr_id,
+ owner=self.owner,
+ repo=self.repo_name,
+ error=error_msg,
+ )
+ return MRDiffResult(success=False, error=error_msg)
+ except Exception as e:
+ error_msg = f"Unexpected error fetching PR diff: {e}"
+ logger.error(
+ "github_pr_diff_error",
+ pr_number=mr_id,
+ owner=self.owner,
+ repo=self.repo_name,
+ error=error_msg,
+ )
+ return MRDiffResult(success=False, error=error_msg)

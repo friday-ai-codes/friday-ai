@@ -4,7 +4,7 @@ from typing import Any
 import gitlab
 import structlog
 from .base import GitPlatformClient
-from .models import MRCreateRequest, MRCreateResult
+from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult
 logger = structlog.get_logger
 class GitLabClient(GitPlatformClient):
  """GitLab platform client for merge request operations."""
@@ -116,3 +116,62 @@ class GitLabClient(GitPlatformClient):
  error=error_msg,
  )
  return MRCreateResult(success=False, error=error_msg)
+ async def get_merge_request_diff(
+ self,
+ mr_id: str,
+ max_files: int = 50,
+ max_diff_lines: int = 500,
+ ) -> MRDiffResult:
+ """获取 GitLab MR 的文件变更 diff。
+ Args:
+ mr_id: MR 的 IID（项目内编号）
+ max_files: 最大文件数限制
+ max_diff_lines: 单个文件 diff 最大行数
+ Returns:
+ MRDiffResult 包含文件列表和 diff 内容
+ """
+ try:
+ project = self._get_project
+ # 获取 MR 对象及其变更
+ mr = await asyncio.to_thread(project.mergerequests.get, int(mr_id))
+ changes = await asyncio.to_thread(lambda: mr.changes)
+ raw_changes: list[dict[str, Any]] = changes.get("changes", )
+ truncated = False
+ # 截断文件数量
+ if len(raw_changes) > max_files:
+ raw_changes = raw_changes[:max_files]
+ truncated = True
+ files: list[MRDiffFile] =
+ for change in raw_changes:
+ diff_text: str = change.get("diff", "")
+ # 截断单个文件 diff 行数
+ diff_lines = diff_text.split("\n")
+ if len(diff_lines) > max_diff_lines:
+ diff_text = "\n".join(diff_lines[:max_diff_lines]) + "\n[diff truncated]"
+ truncated = True
+ files.append(
+ MRDiffFile(
+ old_path=change.get("old_path", ""),
+ new_path=change.get("new_path", ""),
+ diff=diff_text,
+ new_file=change.get("new_file", False),
+ renamed_file=change.get("renamed_file", False),
+ deleted_file=change.get("deleted_file", False),
+ )
+ )
+ logger.info(
+ "gitlab_mr_diff_fetched",
+ mr_id=mr_id,
+ files_count=len(files),
+ truncated=truncated,
+ )
+ return MRDiffResult(success=True, files=files, truncated=truncated)
+ except Exception as e:
+ error_msg = f"Failed to fetch MR diff: {e}"
+ logger.error(
+ "gitlab_mr_diff_error",
+ mr_id=mr_id,
+ project=self.project_path,
+ error=error_msg,
+ )
+ return MRDiffResult(success=False, error=error_msg)
