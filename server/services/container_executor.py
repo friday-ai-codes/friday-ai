@@ -92,11 +92,11 @@ class ContainerExecutor:
  """Build the appropriate callback URL based on network mode."""
  if self._docker_network:
  # Compose mode: use container name
- return f"http://friday-server:{port}/api/workflows/node-callback/"
+ return f"http://friday-server:{port}/api/containers/callback/"
  else:
  # Local development: use host networking
  base = self._get_host_callback_url(port)
- return f"{base}/workflows/node-callback/"
+ return f"{base}/containers/callback/"
  def _build_run_kwargs(self, request: ExecutionRequest) -> dict[str, Any]:
  """Build docker run kwargs from execution request."""
  kwargs: dict[str, Any] = {

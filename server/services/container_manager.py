@@ -16,6 +16,7 @@ from typing import Any
 import docker
 import structlog
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.utils import timezone
 from services.container_executor import ContainerExecutor, ExecutionRequest
 from services.protocols import (
@@ -106,7 +107,7 @@ class ContainerManager:
  ENV_PROTOCOL_DIR: CONTAINER_PROTOCOL_DIR,
  # 回调（Phase 实现处理逻辑）
  ENV_CALLBACK_URL: self._executor._build_callback_url,
- ENV_CALLBACK_TOKEN: "", # TODO: Phase 内部认证
+ ENV_CALLBACK_TOKEN: settings.CONTAINER_CALLBACK_TOKEN,
  # Git 配置
  "FRIDAY_GIT_REPO_URL": config.repo_url,
  "FRIDAY_GIT_BRANCH": config.branch,

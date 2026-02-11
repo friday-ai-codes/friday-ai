@@ -125,6 +125,8 @@ class SubAgentSession(models.Model):
  # 执行时间追踪（Phase 新增）
  started_at = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
  completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
+ # 心跳追踪（Phase 新增）
+ last_heartbeat_at = models.DateTimeField(null=True, blank=True, verbose_name="最后心跳时间")
  class Meta:
  indexes = [
  models.Index(fields=["main_session", "task_type"]),
@@ -171,6 +173,43 @@ class SubAgentSession(models.Model):
  if self.started_at and self.completed_at:
  return int((self.completed_at - self.started_at).total_seconds * 1000)
  return None
+class TaskResult(models.Model):
+ """统一任务结果模型（Phase）。
+ 替代 SubAgentSession.last_output 和 AgentSession.temp_data 中的结果存储。
+ 文本产物和 Git 产物通过 result_type 区分，各有独立字段。
+ """
+ class ResultType(models.TextChoices):
+ TEXT = "text", "Text Output"
+ GIT = "git", "Git Artifacts"
+ # 关联 SubAgentSession
+ session = models.OneToOneField(
+ SubAgentSession,
+ on_delete=models.CASCADE,
+ related_name="task_result",
+ )
+ result_type = models.CharField(
+ max_length=10,
+ choices=ResultType.choices,
+ verbose_name="结果类型",
+ )
+ # 文本产物（explore/ask/plan）
+ text_output = models.TextField(blank=True, default="", verbose_name="文本输出")
+ # Git 产物（coding）
+ branch_name = models.CharField(max_length=255, blank=True, default="")
+ commit_sha = models.CharField(max_length=64, blank=True, default="")
+ pr_url = models.URLField(blank=True, default="")
+ modified_files = models.JSONField(default=list, blank=True, verbose_name="修改文件列表")
+ # 原始输出（完整 result.json 内容）
+ raw_output = models.JSONField(default=dict, blank=True, verbose_name="原始输出")
+ # 元数据
+ duration_ms = models.IntegerField(null=True, blank=True, verbose_name="执行时长(ms)")
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ indexes = [
+ models.Index(fields=["result_type"]),
+ ]
+ def __str__(self) -> str:
+ return f"TaskResult({self.session.session_id}, {self.result_type})"
 class SubAgentOutput(models.Model):
  """Stores long SubAgent results.
  When output exceeds MAX_INLINE_OUTPUT_LENGTH (50KB),
