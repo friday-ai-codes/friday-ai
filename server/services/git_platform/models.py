@@ -17,3 +17,19 @@ class MRCreateResult:
  mr_id: str = ""
  error: str = ""
  has_conflicts: bool = False
+@dataclass
+class MRDiffFile:
+ """单个文件的 diff 信息。"""
+ old_path: str
+ new_path: str
+ diff: str # unified diff 文本
+ new_file: bool = False
+ renamed_file: bool = False
+ deleted_file: bool = False
+@dataclass
+class MRDiffResult:
+ """MR diff 获取结果。"""
+ success: bool
+ files: list[MRDiffFile] = field(default_factory=list)
+ error: str | None = None
+ truncated: bool = False # diff 是否因过大被截断
