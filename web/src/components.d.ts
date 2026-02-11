@@ -11,7 +11,6 @@ declare module 'vue' {
  export interface GlobalComponents {
  AccountSettingsModal: typeof import('./components/settings/AccountSettingsModal.vue')['default']
  AgentExecutionLog: typeof import('./components/workflow/execution/AgentExecutionLog.vue')['default']
- AIAgentConfig: typeof import('./components/workflow/config/AIAgentConfig.vue')['default']
  AICodeReviewConfig: typeof import('./components/workflow/config/AICodeReviewConfig.vue')['default']
  AICodeReviewPanel: typeof import('./components/execution/AICodeReviewPanel.vue')['default']
  AICodingConfig: typeof import('./components/workflow/config/AICodingConfig.vue')['default']
