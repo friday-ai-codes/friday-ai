@@ -6,6 +6,10 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from projects.models import Project
 from repositories.models import Repository
+# Register E2E mock fixtures for auto-discovery
+pytest_plugins = [
+ "tests.e2e.fixtures.mock_services",
+]
 User = get_user_model
 # ============================================================================
 # API Client Fixtures
