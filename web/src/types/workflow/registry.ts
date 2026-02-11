@@ -1,8 +1,7 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
- aiAgentConfigSchema,
  aiCodeReviewConfigSchema,
  aiCodingConfigSchema,
  aiCodingDispatcherConfigSchema,
@@ -194,17 +193,6 @@ export const NODE_REGISTRY = {
  defaultConfig: generatePlanConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/GeneratePlanConfig.vue'),
  } satisfies NodeTypeDefinition<GeneratePlanConfig>,
- ai_agent: {
- nodeType: 'ai_agent',
- displayName: 'Friday 编码助手',
- description: '自主编码的智能代理，可调用工具完成复杂任务',
- icon: 'icon-[lucide--brain-circuit]',
- color: 'from-blue-500 to-cyan-400',
- category: 'ai',
- schema: aiAgentConfigSchema,
- defaultConfig: aiAgentConfigSchema.parse({}),
- configComponent: => import('~/components/workflow/config/AIAgentConfig.vue'),
- } satisfies NodeTypeDefinition<AIAgentConfig>,
  ai_plan_generation: {
  nodeType: 'ai_plan_generation',
  displayName: 'AI 方案生成',
