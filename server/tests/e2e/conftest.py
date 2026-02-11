@@ -20,10 +20,8 @@ from workflows.models import (
  WorkflowNode,
  WorkflowTrigger,
 )
-# Import mock fixtures from fixtures module - pytest will auto-discover them
-pytest_plugins = [
- "tests.e2e.fixtures.mock_services",
-]
+# Mock fixtures are auto-discovered via tests/e2e/fixtures/mock_services.py
+# (fixtures registered as pytest fixtures are available to all tests in this directory)
 # ============================================================================
 # Database Fixtures
 # ============================================================================
