@@ -46,7 +46,7 @@ class TaskConfig(BaseSettings):
  claude_base_url: str = Field(
  default="", description="Anthropic API base URL（可选，用于代理服务）"
  )
- claude_model: str = Field(default="claude-sonnet-4-20250514", description="Claude model to use")
+ claude_model: str = Field(default="", description="Claude model to use")
  claude_max_tokens: int = Field(default=8192, description="Max tokens per request")
  # Callback configuration (可选 - 不设置则仅记录日志)
  callback_url: str = Field(

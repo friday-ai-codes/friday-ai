@@ -164,7 +164,7 @@ class AIPromptNode(BaseNode):
  "type": "string",
  "title": "模型",
  "description": "使用的 LLM 模型",
- "default": "claude-sonnet-4-20250514",
+ "default": "",
  },
  "temperature": {
  "type": "number",
@@ -315,7 +315,7 @@ class AIPromptNode(BaseNode):
  # 解析配置
  system_prompt = context.render_template(config.get("system_prompt", ""))
  user_prompt = context.render_template(config.get("user_prompt", ""))
- model = config.get("model", "claude-sonnet-4-20250514")
+ model = config.get("model", "")
  temperature = config.get("temperature", 0.7)
  max_tokens = config.get("max_tokens", 4096)
  output_format = config.get("output_format", "text")
@@ -429,11 +429,21 @@ class AIPromptNode(BaseNode):
  """
  # 如果使用自定义 API，使用 OpenAI 兼容协议
  if use_custom_api and api_base_url:
+ if not model:
+ raise ValueError("使用自定义 API 时必须指定模型")
  return await self._call_openai_compatible(
  system_prompt, user_prompt, model, temperature, max_tokens, api_base_url, api_key
  )
  # 获取项目的 API 配置
  project = await self._get_project(context)
+ # 如果未指定模型，从配置中获取
+ if not model:
+ from asgiref.sync import sync_to_async
+ from services.claude_config import get_claude_config
+ config = await sync_to_async(get_claude_config)(project)
+ model = config.model or ""
+ if not model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  # 根据模型类型选择调用方式
  if model.startswith("claude"):
  return await self._call_anthropic(

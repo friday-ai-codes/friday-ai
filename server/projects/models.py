@@ -31,6 +31,7 @@ class Project(models.Model):
  # Claude configuration
  claude_api_key_encrypted = models.TextField(blank=True, null=True)
  claude_base_url = models.CharField(max_length=500, blank=True, null=True)
+ claude_default_model = models.CharField(max_length=200, blank=True, null=True)
  # Timestamps
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)

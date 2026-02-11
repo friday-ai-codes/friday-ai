@@ -23,6 +23,7 @@ const showApiKey = ref(false)
 const form = reactive({
  api_key: '',
  base_url: '',
+ default_model: '',
 })
 // 加载配置
 async function loadData {
@@ -31,6 +32,7 @@ async function loadData {
  const config = await getProjectClaudeConfig(props.projectId)
  if (config) {
  form.base_url = config.base_url || ''
+ form.default_model = config.default_model || ''
  // API Key is not returned for security, so we leave it empty
  // If user wants to update, they enter a new one
  }
@@ -51,6 +53,7 @@ async function handleSubmit {
  await updateProjectClaudeConfig(props.projectId, {
  api_key: form.api_key || undefined,
  base_url: form.base_url || undefined,
+ default_model: form.default_model || undefined,
  })
  success('配置已保存')
  emit('confirm')
@@ -135,6 +138,22 @@ function openTestDialog {
  />
  <p class="text-xs text-muted-foreground">
  可选，用于自定义 API 代理地址
+ </p>
+ </div>
+ <!-- 默认模型 -->
+ <div class="space-y-2">
+ <Label for="default-model" class="text-foreground">默认模型</Label>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--cpu] text-muted-foreground" />
+ <Input
+ id="default-model"
+ v-model="form.default_model"
+ placeholder="如 claude-sonnet-4-20250514"
+ class="pl-10 "
+ />
+ </div>
+ <p class="text-xs text-muted-foreground">
+ 用于所有未指定模型的调用，留空则使用系统默认模型
  </p>
  </div>
  <!-- Footer -->

@@ -6,6 +6,7 @@ import { del, get, post, put } from './client'
 export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
  ANTHROPIC_BASE_URL = 'anthropic_base_url',
+ ANTHROPIC_MODEL = 'anthropic_model',
  GIT_HTTP_PROXY = 'git_http_proxy',
  // Vector Index Settings
  QDRANT_URL = 'qdrant_url',
@@ -32,12 +33,14 @@ export interface SettingRead {
 export interface ClaudeConfigRead {
  has_api_key: boolean
  base_url: string | null
+ default_model: string | null
  source: 'project' | 'system' | 'environment'
 }
 // Claude 配置创建/更新请求
 export interface ClaudeConfigCreate {
  api_key?: string
  base_url?: string
+ default_model?: string
 }
 /**
  * 获取单个设置

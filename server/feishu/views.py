@@ -181,15 +181,14 @@ def handle_user_answer(callback: CardCallback) -> dict[str, Any] | None:
  except json.JSONDecodeError:
  action_data = {}
  # For button clicks, action_value comes from action.value dict
- # For form submits, we need to check the raw callback data
+ # For form submits, form_value is merged into action_value dict
  session_id = ""
  answer = ""
  if isinstance(action_data, dict):
  session_id = action_data.get("session_id", "")
- answer = action_data.get("answer", "")
- # If no answer from button, this might be a form submission
- # Form values come through differently - need to handle in CardCallbackView
- # For now, we extract from the callback structure
+ # Button click: answer is in "answer" key
+ # Form submit: user input is in "custom_answer" key (from input element name)
+ answer = action_data.get("answer", "") or action_data.get("custom_answer", "")
  if not session_id or not answer:
  struct_logger.warning(
  "user_answer_missing_data",

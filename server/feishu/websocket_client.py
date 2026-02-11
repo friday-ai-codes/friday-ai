@@ -177,15 +177,23 @@ class FeishuWebSocketClient:
  operator = event_data.operator
  context = event_data.context
  # Build CardCallback object compatible with existing handlers
- action_value = ""
+ # Pass the full value dict (same as CardCallbackView in views.py)
+ action_value_dict: dict[str, Any] | str = ""
+ action_name = ""
  if action and action.value:
- # action.value is a dict, extract the "action" key
  if isinstance(action.value, dict):
- action_value = action.value.get("action", "")
+ action_value_dict = action.value
+ action_name = action.value.get("action", "")
+ # For form submissions, merge form_value into the dict
+ # so handlers can extract user input (e.g. custom_answer)
+ form_value = getattr(action, "form_value", None)
+ if form_value and isinstance(form_value, dict):
+ action_value_dict = {**action.value, **form_value}
  else:
- action_value = str(action.value)
+ action_value_dict = str(action.value)
+ action_name = str(action.value)
  callback = CardCallback(
- action_value=action_value,
+ action_value=action_value_dict,
  message_id=context.open_message_id if context else "",
  user_open_id=operator.open_id if operator else "",
  chat_id=context.open_chat_id if context else "",
@@ -193,13 +201,13 @@ class FeishuWebSocketClient:
  )
  logger.info(
  "ws_card_callback_dispatching",
- action_value=action_value,
+ action_value=action_name,
  message_id=callback.message_id,
  user_open_id=callback.user_open_id,
  )
  # Dispatch to registered handlers
  for prefix, handler in _card_callback_handlers.items:
- if action_value.startswith(prefix):
+ if action_name.startswith(prefix):
  try:
  result = handler(callback)
  logger.info(

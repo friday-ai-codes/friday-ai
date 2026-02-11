@@ -52,7 +52,7 @@ const useCustomApi = computed({
 })
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')
-const model = field('model', 'claude-sonnet-4-20250514')
+const model = field('model', '')
 // 提示词配置
 const systemPrompt = field('system_prompt', '')
 const userPrompt = field('user_prompt', '')

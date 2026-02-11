@@ -78,6 +78,7 @@ def build_question_card(
  },
  {
  "tag": "button",
+ "name": "submit_answer",
  "text": {"tag": "plain_text", "content": "提交"},
  "type": "primary",
  "action_type": "form_submit",

@@ -39,7 +39,7 @@ class AIAgentBaseNode(BaseNode):
  "type": "string",
  "title": "模型",
  "description": "使用的 LLM 模型",
- "default": "claude-sonnet-4-20250514",
+ "default": "",
  },
  "chat_id": {
  "type": "string",
@@ -141,17 +141,22 @@ class AIAgentBaseNode(BaseNode):
  async def _get_provider(
  self,
  project: Any,
- model: str = "claude-sonnet-4-20250514",
+ model: str = "",
  use_custom_api: bool = False,
  api_base_url: str = "",
  api_key: str = "",
  ) -> ClaudeProvider:
  """Get LLM Provider, supporting custom API or system config."""
  if use_custom_api and api_base_url:
+ if not model:
+ raise ValueError("使用自定义 API 时必须指定模型")
  return ClaudeProvider(api_key=api_key, base_url=api_base_url, model=model)
  from services.claude_config import get_claude_config
  config = await sync_to_async(get_claude_config)(project)
- return ClaudeProvider(api_key=config.api_key, base_url=config.base_url, model=model)
+ resolved_model = model or config.model
+ if not resolved_model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ return ClaudeProvider(api_key=config.api_key, base_url=config.base_url, model=resolved_model)
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
@@ -202,7 +207,7 @@ class AIAgentBaseNode(BaseNode):
  user = await self._get_user(context)
  session_id = self._build_session_id(context)
  chat_id = context.render_template(config.get("chat_id", ""))
- model: str = config.get("model", "claude-sonnet-4-20250514")
+ model: str = config.get("model", "")
  use_custom_api: bool = config.get("use_custom_api", False)
  api_base_url: str = config.get("api_base_url", "")
  api_key: str = config.get("api_key", "")
