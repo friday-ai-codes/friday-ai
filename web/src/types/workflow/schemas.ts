@@ -291,6 +291,15 @@ export const aiCodingConfigSchema = z.object({
  chat_id: z.string.default(''),
  polling_interval: z.number.int.min(5).max(60).default(15),
 })
+/** AI 代码审查节点配置 */
+export const aiCodeReviewConfigSchema = z.object({
+ model: z.string.default('claude-sonnet-4-20250514'),
+ use_custom_api: z.boolean.default(false),
+ api_base_url: z.string.default(''),
+ api_key: z.string.default(''),
+ chat_id: z.string.default(''),
+ max_iterations: z.number.min(1).max(100).default(30),
+})
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
  key: z.string,
@@ -324,6 +333,7 @@ export type AIAgentConfig = z.infer<typeof aiAgentConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
 export type AIPlanApprovalConfig = z.infer<typeof aiPlanApprovalConfigSchema>
 export type AICodingConfig = z.infer<typeof aiCodingConfigSchema>
+export type AICodeReviewConfig = z.infer<typeof aiCodeReviewConfigSchema>
 export type GlobalVariable = z.infer<typeof globalVariableSchema>
 /** 所有节点配置的联合类型 */
 export type NodeConfig
@@ -344,6 +354,7 @@ export type NodeConfig
  | AIPlanGenerationConfig
  | AIPlanApprovalConfig
  | AICodingConfig
+ | AICodeReviewConfig
 // ============================================================================
 // Schema 映射
 // ============================================================================
@@ -366,5 +377,6 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_plan_generation: aiPlanGenerationConfigSchema,
  ai_plan_approval: aiPlanApprovalConfigSchema,
  ai_coding: aiCodingConfigSchema,
+ ai_code_review: aiCodeReviewConfigSchema,
 } as const
 export type NodeTypeWithSchema = keyof typeof NODE_CONFIG_SCHEMAS

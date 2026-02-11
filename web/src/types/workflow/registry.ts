@@ -1,8 +1,9 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
-import type { AICodingConfig, AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIAgentConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, GeneratePlanConfig, TechnicalPlanNodeConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiAgentConfigSchema,
+ aiCodeReviewConfigSchema,
  aiCodingConfigSchema,
  aiCodingDispatcherConfigSchema,
  aiPlanApprovalConfigSchema,
@@ -237,6 +238,17 @@ export const NODE_REGISTRY = {
  defaultConfig: aiCodingConfigSchema.parse({}),
  configComponent: => import('~/components/workflow/config/AICodingConfig.vue'),
  } satisfies NodeTypeDefinition<AICodingConfig>,
+ ai_code_review: {
+ nodeType: 'ai_code_review',
+ displayName: 'AI 代码审查',
+ description: 'AI 多维度代码审查，输出结构化审查报告',
+ icon: 'icon-[lucide--search-code]',
+ color: 'from-amber-500 to-orange-400',
+ category: 'ai',
+ schema: aiCodeReviewConfigSchema,
+ defaultConfig: aiCodeReviewConfigSchema.parse({}),
+ configComponent: => import('~/components/workflow/config/AICodeReviewConfig.vue'),
+ } satisfies NodeTypeDefinition<AICodeReviewConfig>,
 } as const
 // ============================================================================
 // 辅助类型与函数
