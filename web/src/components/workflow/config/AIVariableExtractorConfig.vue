@@ -32,7 +32,7 @@ const { field } = useConfigModel({
 })
 const inputSource = field('input_source', '')
 const additionalPrompt = field('additional_prompt', '')
-const model = field('model', 'claude-sonnet-4-20250514')
+const model = field('model', '')
 const useCustomApi = field('use_custom_api', false)
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')

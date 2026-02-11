@@ -4,14 +4,28 @@ with automatic Markdown conversion.
 """
 from datetime import datetime, timezone
 import structlog
+from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from services.feishu_doc import FeishuDocAPIError, FeishuDocClient
 logger = structlog.get_logger(__name__)
-def create_feishu_doc_client_for_project(project: Project) -> FeishuDocClient:
+def _get_system_feishu_credentials_for_doc -> tuple[str, str] | None:
+ """从 SystemSetting 获取飞书凭证（同步）。"""
+ from services.crypto import decrypt_value
+ from system.models import SettingKeys, SystemSetting
+ try:
+ app_id_setting = SystemSetting.objects.get(key=SettingKeys.FEISHU_APP_ID)
+ app_secret_setting = SystemSetting.objects.get(key=SettingKeys.FEISHU_APP_SECRET)
+ if app_id_setting.value and app_secret_setting.value:
+ app_secret = decrypt_value(app_secret_setting.value) if app_secret_setting.is_encrypted else app_secret_setting.value
+ return app_id_setting.value, app_secret
+ except SystemSetting.DoesNotExist:
+ pass
+ return None
+async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocClient:
  """Create a FeishuDocClient for a project.
- Uses the project's Feishu app credentials (app_id/app_secret)
- which are different from plugin credentials.
+ 优先使用项目的飞书 IM App 配置 (feishu_app_id/feishu_app_secret)，
+ 如果未配置则回退到系统级飞书 IM 配置 (SystemSetting)。
  Args:
  project: Project model instance
  Returns:
@@ -19,20 +33,24 @@ def create_feishu_doc_client_for_project(project: Project) -> FeishuDocClient:
  Raises:
  ValueError: Project lacks Feishu app configuration
  """
- # Document API uses app_id/app_secret for tenant_access_token
- # These should be stored on the project (different from plugin_id/plugin_secret)
- app_id = getattr(project, "feishu_app_id", None) or project.feishu_plugin_id
- app_secret_encrypted = getattr(
- project, "feishu_app_secret_encrypted", None
- ) or project.feishu_plugin_secret_encrypted
- if not app_id or not app_secret_encrypted:
- raise ValueError(f"项目 {project.id} 未配置飞书应用凭证")
- # Decrypt the secret
  from services.crypto import decrypt_value
- app_secret = decrypt_value(app_secret_encrypted)
+ # 优先使用项目级飞书 IM App 配置
+ if project.feishu_app_id and project.feishu_app_secret_encrypted:
+ app_secret = decrypt_value(project.feishu_app_secret_encrypted)
  return FeishuDocClient(
- app_id=app_id,
+ app_id=project.feishu_app_id,
  app_secret=app_secret,
+ )
+ # 回退到系统级飞书 IM 配置
+ credentials = await sync_to_async(_get_system_feishu_credentials_for_doc)
+ if credentials:
+ return FeishuDocClient(
+ app_id=credentials[0],
+ app_secret=credentials[1],
+ )
+ raise ValueError(
+ f"项目 {project.id} 未配置飞书应用凭证。"
+ "请在系统设置或项目设置中配置飞书自建应用 App ID 和 App Secret。"
  )
 @tool(
  name="fetch_feishu_document",
@@ -83,7 +101,7 @@ async def fetch_feishu_document(
  error=f"项目不存在: {project_id}",
  )
  try:
- client = create_feishu_doc_client_for_project(project)
+ client = await create_feishu_doc_client_for_project(project)
  except ValueError as e:
  log.warning("feishu_not_configured", error=str(e))
  return ToolResult(
@@ -188,7 +206,7 @@ async def create_feishu_document(
  error=f"项目不存在: {project_id}",
  )
  try:
- client = create_feishu_doc_client_for_project(project)
+ client = await create_feishu_doc_client_for_project(project)
  except ValueError as e:
  log.warning("feishu_not_configured", error=str(e))
  return ToolResult(

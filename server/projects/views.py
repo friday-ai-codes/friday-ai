@@ -213,6 +213,7 @@ class ProjectViewSet(ModelViewSet):
  {
  "has_api_key": has_api_key,
  "base_url": project.claude_base_url,
+ "default_model": project.claude_default_model,
  "source": source,
  }
  ).data
@@ -229,12 +230,16 @@ class ProjectViewSet(ModelViewSet):
  base_url = serializer.validated_data.get("base_url")
  if base_url is not None:
  project.claude_base_url = base_url if base_url else None
+ default_model = serializer.validated_data.get("default_model")
+ if default_model is not None:
+ project.claude_default_model = default_model if default_model else None
  project.save
  return Response(
  ClaudeConfigSerializer(
  {
  "has_api_key": bool(project.claude_api_key_encrypted),
  "base_url": project.claude_base_url,
+ "default_model": project.claude_default_model,
  "source": "project" if project.claude_api_key_encrypted else "system",
  }
  ).data
@@ -242,6 +247,7 @@ class ProjectViewSet(ModelViewSet):
  # DELETE
  project.claude_api_key_encrypted = None
  project.claude_base_url = None
+ project.claude_default_model = None
  project.save
  return Response(status=status.HTTP_204_NO_CONTENT)
  # === Feishu IM App configuration ===

@@ -43,22 +43,20 @@ const claudeConfig = ref<ClaudeConfigRead | null>(null)
 // 表单值
 const apiKeyValue = ref('')
 const baseUrlValue = ref('')
+const defaultModelValue = ref('__default__')
 const showApiKey = ref(false)
 // 跟踪用户是否修改了值
 const apiKeyDirty = ref(false)
 const baseUrlDirty = ref(false)
+const defaultModelDirty = ref(false)
 async function loadData {
  loading.value = true
  try {
  await projectsStore.fetchProject(projectId.value)
  try {
  claudeConfig.value = await getProjectClaudeConfig(projectId.value)
- if (claudeConfig.value.base_url) {
- baseUrlValue.value = claudeConfig.value.base_url
- }
- else {
- baseUrlValue.value = ''
- }
+ baseUrlValue.value = claudeConfig.value.base_url || ''
+ defaultModelValue.value = claudeConfig.value.default_model || '__default__'
  apiKeyValue.value = ''
  }
  catch {
@@ -66,6 +64,7 @@ async function loadData {
  }
  apiKeyDirty.value = false
  baseUrlDirty.value = false
+ defaultModelDirty.value = false
  }
  catch (e) {
  toast.error('加载失败', {
@@ -100,9 +99,12 @@ function onApiKeyInput {
 function onBaseUrlInput {
  baseUrlDirty.value = true
 }
+function onDefaultModelChange {
+ defaultModelDirty.value = true
+}
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {
- return apiKeyDirty.value || baseUrlDirty.value
+ return apiKeyDirty.value || baseUrlDirty.value || defaultModelDirty.value
 }
 // 保存配置
 async function saveConfig {
@@ -115,7 +117,11 @@ async function saveConfig {
  if (baseUrlDirty.value) {
  config.base_url = baseUrlValue.value.trim || undefined
  }
- if (!config.api_key && config.base_url === undefined) {
+ if (defaultModelDirty.value) {
+ const modelVal = defaultModelValue.value === '__default__' ? '': defaultModelValue.value.trim
+ config.default_model = modelVal || undefined
+ }
+ if (!config.api_key && config.base_url === undefined && config.default_model === undefined) {
  toast.info('没有需要保存的更改')
  return
  }
@@ -123,6 +129,7 @@ async function saveConfig {
  apiKeyValue.value = ''
  apiKeyDirty.value = false
  baseUrlDirty.value = false
+ defaultModelDirty.value = false
  toast.success('配置已保存')
  }
  catch (e) {
@@ -142,8 +149,10 @@ async function removeConfig {
  claudeConfig.value = null
  apiKeyValue.value = ''
  baseUrlValue.value = ''
+ defaultModelValue.value = '__default__'
  apiKeyDirty.value = false
  baseUrlDirty.value = false
+ defaultModelDirty.value = false
  toast.success('配置已删除，将使用系统默认值')
  await loadData
  }
@@ -156,9 +165,8 @@ async function removeConfig {
  saving.value = false
  }
 }
-// 模型选择和测试相关
+// 模型列表和测试相关
 const models = ref<Model>
-const selectedModel = ref('')
 const loadingModels = ref(false)
 const testDialogOpen = ref(false)
 // 是否可以测试（已配置 API Key）
@@ -176,13 +184,9 @@ async function fetchModels {
  project_id: Number(projectId.value),
  })
  models.value = response.models
- if (models.value.length > 0 && !selectedModel.value && models.value[0]) {
- selectedModel.value = models.value[0].id
- }
  }
  catch (error) {
  console.error('Failed to fetch models:', error)
- // 不显示错误，用户可以手动输入模型名称
  }
  finally {
  loadingModels.value = false
@@ -295,6 +299,61 @@ watch( => loading.value, (isLoading) => {
  当前值: {{ claudeConfig.base_url }}
  </p>
  </div>
+ <!-- 默认模型 -->
+ <div class="space-y-3">
+ <Label for="default-model" class="text-base">默认模型</Label>
+ <p class="text-sm text-muted-foreground">
+ 用于所有未指定模型的调用，留空则使用系统默认模型
+ </p>
+ <div class="flex gap-2">
+ <div class="flex-1">
+ <div v-if="loadingModels" class="flex items-center gap-2 text-muted-foreground">
+ <span class="icon-[lucide--loader-circle] animate-spin" />
+ 正在获取模型列表...
+ </div>
+ <Select v-else-if="models.length > 0" v-model="defaultModelValue" @update:model-value="onDefaultModelChange">
+ <SelectTrigger class=" bg-muted/30 border-border/50">
+ <SelectValue placeholder="选择默认模型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem value="__default__">
+ 使用系统默认
+ </SelectItem>
+ <SelectItem
+ v-for="model in models":key="model.id":value="model.id"
+ >
+ {{ model.name || model.id }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <div v-else class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--cpu] text-muted-foreground" />
+ <Input
+ id="default-model":model-value="defaultModelValue === '__default__' ? '': defaultModelValue"
+ placeholder="如 claude-sonnet-4-20250514"
+ class="pl-10 bg-muted/30 border-border/50 focus:border-orange-500/50"
+ @update:model-value="(v: string) => { defaultModelValue = v || '__default__'; onDefaultModelChange }"
+ />
+ </div>
+ </div>
+ <Button
+ v-if="canTest"
+ variant="outline"
+ size="icon"
+ class=" w-11 shrink-0":disabled="loadingModels"
+ @click="fetchModels"
+ >
+ <span
+ class="icon-[lucide--refresh-cw]":class="[
+ loadingModels && 'animate-spin',
+ ]"
+ />
+ </Button>
+ </div>
+ <p v-if="claudeConfig?.default_model" class="text-sm text-muted-foreground">
+ 当前值: {{ claudeConfig.default_model }}
+ </p>
+ </div>
  <!-- 操作按钮 -->
  <div class="flex justify-between items-center pt-4 border-t border-border/50">
  <Button
@@ -307,6 +366,15 @@ watch( => loading.value, (isLoading) => {
  删除项目配置
  </Button>
  <div v-else />
+ <div class="flex items-center gap-3">
+ <Button
+ v-if="canTest"
+ variant="outline"
+ @click="openTestDialog"
+ >
+ <span class="icon-[lucide--flask-conical] mr-2" />
+ 连接测试
+ </Button>
  <Button:disabled="saving || !hasUnsavedChanges"
  class="group relative overflow-hidden"
  @click="saveConfig"
@@ -315,61 +383,6 @@ watch( => loading.value, (isLoading) => {
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
- </Button>
- </div>
- <!-- 模型测试区域 -->
- <div v-if="canTest" class="space-y-3 pt-4 border-t border-border/50">
- <div class="flex items-center justify-between">
- <div>
- <Label class="text-base">测试配置</Label>
- <p class="text-sm text-muted-foreground">
- 验证 API 配置是否正确
- </p>
- </div>
- <Button
- variant="outline":disabled="loadingModels"
- @click="fetchModels"
- >
- <span
- class="icon-[lucide--refresh-cw] mr-2":class="[
- loadingModels && 'animate-spin',
- ]"
- />
- 刷新模型
- </Button>
- </div>
- <div class="flex gap-3">
- <!-- 模型选择 -->
- <div class="flex-1">
- <div v-if="loadingModels" class="flex items-center gap-2 text-muted-foreground">
- <span class="icon-[lucide--loader-circle] animate-spin" />
- 正在获取模型列表...
- </div>
- <Select v-else-if="models.length > 0" v-model="selectedModel">
- <SelectTrigger class="">
- <SelectValue placeholder="选择模型" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="model in models":key="model.id":value="model.id"
- >
- {{ model.name || model.id }}
- </SelectItem>
- </SelectContent>
- </Select>
- <Input
- v-else
- v-model="selectedModel"
- placeholder="输入模型名称，如 claude-3-5-sonnet-20241022"
- class=""
- />
- </div>
- <!-- 测试按钮 -->
- <Button:disabled="!selectedModel"
- @click="openTestDialog"
- >
- <span class="icon-[lucide--flask-conical] mr-2" />
- 测试
  </Button>
  </div>
  </div>

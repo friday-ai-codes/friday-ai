@@ -168,7 +168,7 @@ class PlanApprovalNode(BaseNode):
  from agents.tools.feishu_doc_tools import (
  create_feishu_doc_client_for_project,
  )
- client = create_feishu_doc_client_for_project(project)
+ client = await create_feishu_doc_client_for_project(project)
  # Build document content in Markdown
  content = self._build_document_content(plan_data, plan_title)
  # Get folder token from project config
@@ -316,7 +316,7 @@ class PlanApprovalNode(BaseNode):
  )
  from services.feishu_im import FeishuIMClient
  # Use same credentials as doc client
- doc_client = create_feishu_doc_client_for_project(project)
+ doc_client = await create_feishu_doc_client_for_project(project)
  im_client = FeishuIMClient(
  app_id=doc_client.app_id,
  app_secret=doc_client.app_secret,

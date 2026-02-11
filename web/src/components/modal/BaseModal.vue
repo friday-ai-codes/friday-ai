@@ -35,8 +35,7 @@ function handleCancel {
 </script>
 <template>
  <VueFinalModal
- class="flex justify-center items-center"
- content-class="flex flex-col bg-card rounded-2xl shadow-lg border border-border/50 w-full mx-4":content-style="{ maxWidth: sizeClasses[props.size] ? undefined: props.size }"
+ class="flex justify-center items-center":content-class="`flex flex-col bg-card rounded-2xl shadow-lg border border-border/50 w-full mx-4 ${sizeClasses[props.size] || ''}`":content-style="{ maxWidth: sizeClasses[props.size] ? undefined: props.size }"
  overlay-transition="vfm-fade"
  content-transition="vfm-zoom":click-to-close="closeOnClickOutside":esc-to-close="closeOnEsc"
  @closed="emit('closed')"

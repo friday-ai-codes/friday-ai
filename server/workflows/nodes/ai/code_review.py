@@ -276,7 +276,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  # 2. 准备 Agent 基础设施
  project = await self._get_project(context)
  user = await self._get_user(context)
- model: str = config.get("model", "claude-sonnet-4-20250514")
+ model: str = config.get("model", "")
  use_custom_api: bool = config.get("use_custom_api", False)
  api_base_url: str = config.get("api_base_url", "")
  api_key: str = config.get("api_key", "")
@@ -687,7 +687,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  create_feishu_doc_client_for_project,
  )
  from services.feishu_im import FeishuIMClient
- doc_client = create_feishu_doc_client_for_project(project)
+ doc_client = await create_feishu_doc_client_for_project(project)
  im_client = FeishuIMClient(
  app_id=doc_client.app_id,
  app_secret=doc_client.app_secret,

@@ -43,7 +43,7 @@ const { field } = useConfigModel({
  config: => props.config as unknown as Record<string, unknown>,
  emit: v => emit('update:config', v as unknown as AICodeReviewConfig),
 })
-const model = field('model', 'claude-sonnet-4-20250514') as WritableComputedRef<string>
+const model = field('model', '') as WritableComputedRef<string>
 const useCustomApi = field('use_custom_api', false) as WritableComputedRef<boolean>
 const apiBaseUrl = field('api_base_url', '') as WritableComputedRef<string>
 const apiKey = field('api_key', '') as WritableComputedRef<string>
@@ -89,7 +89,7 @@ const maxIterationsStr = computed({
  </Label>
  <Input
  v-model="model"
- placeholder="claude-sonnet-4-20250514"
+ placeholder="留空使用系统默认模型"
  class="bg-background/50"
  />
  <p class="text-xs text-muted-foreground">

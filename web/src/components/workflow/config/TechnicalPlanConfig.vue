@@ -43,7 +43,7 @@ const useCustomApi = computed({
 })
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')
-const model = field('model', 'claude-sonnet-4-20250514')
+const model = field('model', '')
 // Context input
 const codebaseContext = field('codebase_context', '')
 // 生成配置

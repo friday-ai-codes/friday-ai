@@ -436,7 +436,7 @@ class AICodingNode(BaseNode):
  create_feishu_doc_client_for_project,
  )
  from services.feishu_im import FeishuIMClient
- doc_client = create_feishu_doc_client_for_project(project)
+ doc_client = await create_feishu_doc_client_for_project(project)
  im_client = FeishuIMClient(
  app_id=doc_client.app_id,
  app_secret=doc_client.app_secret,
@@ -787,7 +787,7 @@ class AICodingNode(BaseNode):
  create_feishu_doc_client_for_project,
  )
  from services.feishu_im import FeishuIMClient
- doc_client = create_feishu_doc_client_for_project(project)
+ doc_client = await create_feishu_doc_client_for_project(project)
  im_client = FeishuIMClient(
  app_id=doc_client.app_id,
  app_secret=doc_client.app_secret,

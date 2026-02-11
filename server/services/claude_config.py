@@ -7,14 +7,12 @@ from typing import Literal, Optional
 from common.encryption import decrypt_value
 from projects.models import Project
 from system.models import SettingKeys, SystemSetting
-# 默认模型
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
 @dataclass
 class ClaudeConfig:
  """Claude 配置数据类。"""
  api_key: Optional[str]
  base_url: Optional[str]
- model: str
+ model: Optional[str]
  source: Literal["project", "system"]
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""
@@ -60,8 +58,12 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  system_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if system_base_url:
  base_url = system_base_url
- # 获取模型配置
- model = get_setting_value(SettingKeys.ANTHROPIC_MODEL) or DEFAULT_MODEL
+ # 获取模型配置（项目级 > 系统级）
+ model = (
+ (project.claude_default_model if project else None)
+ or get_setting_value(SettingKeys.ANTHROPIC_MODEL)
+ or None
+ )
  return ClaudeConfig(
  api_key=api_key,
  base_url=base_url,
@@ -86,4 +88,6 @@ def get_claude_config_for_task(project_id: str) -> ClaudeConfig:
  config = get_claude_config(project)
  if not config.api_key:
  raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
+ if not config.model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  return config

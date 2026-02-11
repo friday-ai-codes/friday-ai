@@ -4,6 +4,7 @@ import { z } from 'zod'
 // ============================================================================
 /** AI 模型选项（默认模型列表，用于未配置自定义 API 时） */
 export const AI_MODELS = [
+ { value: '', label: '使用系统默认' },
  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
  { value: 'claude-3-7-sonnet-20250219', label: 'Claude 3.7 Sonnet' },
  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
@@ -90,7 +91,7 @@ export const aiPromptConfigSchema = z.object({
  system_prompt: z.string.default(''),
  user_prompt: z.string.default(''),
  // 模型配置
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
  temperature: z.number.min(0).max(2).default(0.7),
  max_tokens: z.number.min(100).max(100000).default(4096),
  output_format: z.enum(['text', 'json', 'markdown']).default('text'),
@@ -150,7 +151,7 @@ export const aiVariableExtractorConfigSchema = z.object({
  input_source: z.string.default(''),
  variables: z.array(aiVariableDefinitionSchema).default,
  additional_prompt: z.string.default(''),
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
 })
 /** 召回上下文节点配置 */
 export const contextRetrievalConfigSchema = z.object({
@@ -203,7 +204,7 @@ export const technicalPlanNodeConfigSchema = z.object({
  // Context input
  codebase_context: z.string.default(''),
  // Model configuration
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
  temperature: z.number.min(0).max(1).default(0.3),
  max_retries: z.number.min(1).max(5).default(3),
  // Generation configuration
@@ -244,7 +245,7 @@ export const generatePlanConfigSchema = z.object({
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
  temperature: z.number.min(0).max(1).default(0.3),
  // Generation settings
  max_tasks: z.number.min(1).max(50).default(15),
@@ -267,7 +268,7 @@ export const aiPlanGenerationConfigSchema = z.object({
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
 })
 /** 方案审批节点配置 */
 export const aiPlanApprovalConfigSchema = z.object({
@@ -282,7 +283,7 @@ export const aiCodingConfigSchema = z.object({
 })
 /** AI 代码审查节点配置 */
 export const aiCodeReviewConfigSchema = z.object({
- model: z.string.default('claude-sonnet-4-20250514'),
+ model: z.string.default(''),
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),

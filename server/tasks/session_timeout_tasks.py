@@ -8,8 +8,8 @@ from typing import Any
 import structlog
 from django.utils import timezone
 from agents.models import AgentSession
-from common.encryption import decrypt_value
-from services.feishu_im import CardTemplate, FeishuIMClient
+from agents.tools.feishu_im_tools import create_feishu_im_client_for_project
+from services.feishu_im import CardTemplate
 logger = structlog.get_logger(__name__)
 # Configuration constants
 TIMEOUT_HOURS = 24
@@ -88,13 +88,11 @@ async def check_timeout_reminders -> dict[str, Any]:
  continue
  # Get project credentials for Feishu client
  project = session.project
- app_id = project.feishu_plugin_id
- app_secret_encrypted = project.feishu_plugin_secret_encrypted
- if not app_id or not app_secret_encrypted:
+ try:
+ client = await create_feishu_im_client_for_project(project)
+ except ValueError:
  session_log.warning("missing_feishu_credentials")
  continue
- # Decrypt the app secret
- app_secret = decrypt_value(app_secret_encrypted)
  # Get current question from temp_data
  current_question = temp_data.get("current_question", "")
  if not current_question:
@@ -110,7 +108,6 @@ async def check_timeout_reminders -> dict[str, Any]:
  hours_remaining=hours_remaining,
  session_id=session.session_id,
  )
- client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
  await client.send_card(
  receive_id=chat_id,
  receive_id_type="chat_id",

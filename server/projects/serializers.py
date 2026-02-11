@@ -93,11 +93,13 @@ class ClaudeConfigSerializer(serializers.Serializer):
  """Serializer for Claude configuration."""
  has_api_key = serializers.BooleanField
  base_url = serializers.CharField(allow_null=True)
+ default_model = serializers.CharField(allow_null=True)
  config_source = serializers.CharField(source="source")
 class ClaudeConfigCreateSerializer(serializers.Serializer):
  """Serializer for creating/updating Claude configuration."""
  api_key = serializers.CharField(required=False, allow_blank=True, allow_null=True)
  base_url = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+ default_model = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 class WebhookTokenSerializer(serializers.Serializer):
  """Serializer for webhook token."""
  webhook_token = serializers.CharField

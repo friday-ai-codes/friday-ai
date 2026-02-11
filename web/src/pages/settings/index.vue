@@ -32,14 +32,16 @@ const saving = ref(false)
 // 表单值
 const apiKeyValue = ref('')
 const baseUrlValue = ref('')
+const defaultModelValue = ref('__default__')
 const gitProxyValue = ref('')
 const showApiKey = ref(false)
 // 跟踪用户是否修改了值
 const apiKeyDirty = ref(false)
 const baseUrlDirty = ref(false)
+const defaultModelDirty = ref(false)
 const gitProxyDirty = ref(false)
 // 本页面管理的设置键（向量索引设置由 VectorIndexSettings 组件管理）
-type ManagedSettingKey = SettingKey.ANTHROPIC_API_KEY | SettingKey.ANTHROPIC_BASE_URL | SettingKey.GIT_HTTP_PROXY
+type ManagedSettingKey = SettingKey.ANTHROPIC_API_KEY | SettingKey.ANTHROPIC_BASE_URL | SettingKey.ANTHROPIC_MODEL | SettingKey.GIT_HTTP_PROXY
 // 设置项元数据
 const settingsMeta: Record<ManagedSettingKey, { label: string, description: string, placeholder: string }> = {
  [SettingKey.ANTHROPIC_API_KEY]: {
@@ -51,6 +53,11 @@ const settingsMeta: Record<ManagedSettingKey, { label: string, description: stri
  label: 'Base URL',
  description: 'API 基础地址，用于代理或自定义端点（可选）',
  placeholder: 'https://api.anthropic.com',
+ },
+ [SettingKey.ANTHROPIC_MODEL]: {
+ label: '默认模型',
+ description: '用于所有未指定模型的调用，留空则使用内置默认值',
+ placeholder: '如 claude-sonnet-4-20250514',
  },
  [SettingKey.GIT_HTTP_PROXY]: {
  label: 'Git 全局代理',
@@ -74,6 +81,14 @@ async function loadSettings {
  else {
  baseUrlValue.value = ''
  }
+ // 默认模型
+ const defaultModelSetting = settings.value.find(s => s.key === SettingKey.ANTHROPIC_MODEL)
+ if (defaultModelSetting?.value) {
+ defaultModelValue.value = defaultModelSetting.value
+ }
+ else {
+ defaultModelValue.value = '__default__'
+ }
  // Git Proxy
  if (gitProxySetting?.value) {
  gitProxyValue.value = gitProxySetting.value
@@ -91,6 +106,7 @@ async function loadSettings {
  // 重置脏标记
  apiKeyDirty.value = false
  baseUrlDirty.value = false
+ defaultModelDirty.value = false
  gitProxyDirty.value = false
  // 飞书 IM 配置
  const feishuAppIdSetting = settings.value.find(s => s.key === SettingKey.FEISHU_APP_ID)
@@ -131,6 +147,16 @@ async function saveAllSettings {
  if (baseUrlDirty.value && baseUrlValue.value.trim) {
  promises.push(updateSetting(SettingKey.ANTHROPIC_BASE_URL, baseUrlValue.value.trim))
  }
+ // 保存默认模型（只有用户实际修改过才保存）
+ if (defaultModelDirty.value) {
+ const modelVal = defaultModelValue.value === '__default__' ? '': defaultModelValue.value.trim
+ if (modelVal) {
+ promises.push(updateSetting(SettingKey.ANTHROPIC_MODEL, modelVal))
+ }
+ else {
+ promises.push(deleteSetting(SettingKey.ANTHROPIC_MODEL))
+ }
+ }
  // 保存 Git Proxy
  if (gitProxyDirty.value && gitProxyValue.value.trim) {
  promises.push(updateSetting(SettingKey.GIT_HTTP_PROXY, gitProxyValue.value.trim))
@@ -165,6 +191,10 @@ async function removeSetting(key: SettingKey) {
  baseUrlValue.value = ''
  baseUrlDirty.value = false
  }
+ else if (key === SettingKey.ANTHROPIC_MODEL) {
+ defaultModelValue.value = '__default__'
+ defaultModelDirty.value = false
+ }
  else if (key === SettingKey.GIT_HTTP_PROXY) {
  gitProxyValue.value = ''
  gitProxyDirty.value = false
@@ -191,13 +221,17 @@ function onApiKeyInput {
 function onBaseUrlInput {
  baseUrlDirty.value = true
 }
+// 处理默认模型输入变更
+function onDefaultModelInput {
+ defaultModelDirty.value = true
+}
 // 处理 Git Proxy 输入变更
 function onGitProxyInput {
  gitProxyDirty.value = true
 }
 // 检查是否有未保存的更改
 function hasUnsavedChanges: boolean {
- return apiKeyDirty.value || baseUrlDirty.value || gitProxyDirty.value
+ return apiKeyDirty.value || baseUrlDirty.value || defaultModelDirty.value || gitProxyDirty.value
 }
 // ===== 飞书 IM 配置 =====
 const feishuAppIdValue = ref('')
@@ -313,9 +347,8 @@ async function testFeishuIMConfig {
  testingFeishuIM.value = false
  }
 }
-// 模型选择和测试相关
+// 模型列表和测试相关
 const models = ref<Model>
-const selectedModel = ref('')
 const loadingModels = ref(false)
 const testDialogOpen = ref(false)
 // 是否可以测试（已配置 API Key）
@@ -330,14 +363,9 @@ async function fetchModels {
  try {
  const response = await getModels({ source: 'system' })
  models.value = response.models
- const firstModel = models.value[0]
- if (firstModel && !selectedModel.value) {
- selectedModel.value = firstModel.id
- }
  }
  catch (error) {
  console.error('Failed to fetch models:', error)
- // 不显示错误，用户可以手动输入模型名称
  }
  finally {
  loadingModels.value = false
@@ -488,6 +516,77 @@ onMounted( => {
  当前值: {{ getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value }}
  </p>
  </div>
+ <!-- 默认模型字段 -->
+ <div class="space-y-3">
+ <div class="flex items-center justify-between">
+ <Label for="default-model" class="text-base font-medium">
+ {{ settingsMeta[SettingKey.ANTHROPIC_MODEL].label }}
+ </Label>
+ <span
+ v-if="getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value"
+ class="text-xs text-muted-foreground"
+ >
+ 已自定义
+ </span>
+ </div>
+ <p class="text-sm text-muted-foreground">
+ {{ settingsMeta[SettingKey.ANTHROPIC_MODEL].description }}
+ </p>
+ <div class="flex gap-2">
+ <div class="flex-1">
+ <div v-if="loadingModels" class="flex items-center gap-2 text-muted-foreground">
+ <span class="icon-[lucide--loader-circle] animate-spin" />
+ 正在获取模型列表...
+ </div>
+ <Select v-else-if="models.length > 0" v-model="defaultModelValue" @update:model-value="onDefaultModelInput">
+ <SelectTrigger class=" bg-muted/30 border-border/50">
+ <SelectValue placeholder="选择默认模型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem value="__default__">
+ 使用内置默认
+ </SelectItem>
+ <SelectItem
+ v-for="model in models":key="model.id":value="model.id"
+ >
+ {{ model.name || model.id }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <div v-else class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--cpu] text-muted-foreground" />
+ <Input
+ id="default-model":model-value="defaultModelValue === '__default__' ? '': defaultModelValue":placeholder="settingsMeta[SettingKey.ANTHROPIC_MODEL].placeholder"
+ class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
+ @update:model-value="(v: string) => { defaultModelValue = v || '__default__'; onDefaultModelInput }"
+ />
+ </div>
+ </div>
+ <Button
+ v-if="canTest"
+ variant="outline"
+ size="icon"
+ class=" w-11 shrink-0":disabled="loadingModels"
+ @click="fetchModels"
+ >
+ <span
+ class="icon-[lucide--refresh-cw]":class="loadingModels && 'animate-spin'"
+ />
+ </Button>
+ <Button
+ v-if="getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.has_value"
+ variant="outline"
+ class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ @click="removeSetting(SettingKey.ANTHROPIC_MODEL)"
+ >
+ <span class="icon-[lucide--trash-2] mr-2" />
+ 删除
+ </Button>
+ </div>
+ <p v-if="getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value" class="text-sm text-muted-foreground">
+ 当前值: {{ getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value }}
+ </p>
+ </div>
  <!-- Git Proxy 字段 -->
  <div class="space-y-3">
  <div class="flex items-center justify-between">
@@ -531,7 +630,15 @@ onMounted( => {
  </div>
  </div>
  <!-- 保存按钮区域 -->
- <div class="flex justify-end px-6 py-4 border-t border-border/50">
+ <div class="flex justify-end gap-3 px-6 py-4 border-t border-border/50">
+ <Button
+ v-if="canTest"
+ variant="outline"
+ @click="openTestDialog"
+ >
+ <span class="icon-[lucide--flask-conical] mr-2" />
+ 连接测试
+ </Button>
  <Button:disabled="saving || !hasUnsavedChanges"
  class="group/btn relative overflow-hidden"
  @click="saveAllSettings"
@@ -541,86 +648,6 @@ onMounted( => {
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
  </Button>
- </div>
- </div>
- </section>
- <!-- 连接测试卡片 -->
- <section v-if="canTest" class="group relative">
- <!-- 悬浮光晕 -->
- <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-emerald-500/30 group-hover:shadow-lg group-hover:shadow-emerald-500/5 transition-all duration-300">
- <!-- 装饰性顶部条纹 -->
- <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500" />
- <!-- 标题区域 -->
- <div class="flex items-center justify-between border-b border-border/50">
- <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 flex items-center justify-center">
- <span class="icon-[lucide--flask-conical] text-2xl text-emerald-500" />
- </div>
- <div>
- <h2 class="text-lg font-semibold">
- 连接测试
- </h2>
- <p class="text-sm text-muted-foreground">
- 验证 API 配置是否正确
- </p>
- </div>
- </div>
- <button:disabled="loadingModels"
- class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-all duration-200 disabled:opacity-50 cursor-pointer"
- @click="fetchModels"
- >
- <span
- class="icon-[lucide--refresh-cw]":class="loadingModels && 'animate-spin'"
- />
- 刷新
- </button>
- </div>
- <div class="">
- <!-- 加载状态 -->
- <div v-if="loadingModels" class="flex items-center justify-center gap-3 py-8 bg-muted/30 rounded-xl border border-dashed border-border/50">
- <div class="relative">
- <div class="absolute inset-0 bg-primary/20 rounded-full blur animate-pulse" />
- <span class="relative icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
- </div>
- <span class="text-sm text-muted-foreground">正在获取可用模型...</span>
- </div>
- <!-- 模型选择 -->
- <div v-else class="space-y-4">
- <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--cpu]" />
- <span>选择测试模型</span>
- </div>
- <div class="flex gap-3">
- <Select v-if="models.length > 0" v-model="selectedModel" class="flex-1">
- <SelectTrigger class=" bg-muted/30 border-border/50">
- <SelectValue placeholder="选择测试模型" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem
- v-for="model in models":key="model.id":value="model.id"
- >
- {{ model.name || model.id }}
- </SelectItem>
- </SelectContent>
- </Select>
- <div v-else class="relative flex-1">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--type] text-muted-foreground" />
- <Input
- v-model="selectedModel"
- placeholder="输入模型名称，如 claude-sonnet-4-20250514"
- class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50"
- />
- </div>
- <Button:disabled="!selectedModel"
- class=" bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-lg shadow-emerald-500/25 transition-all duration-300 disabled:opacity-50 disabled:shadow-none group/btn"
- @click="openTestDialog"
- >
- <span class="icon-[lucide--play] mr-2 group-hover/btn:scale-110 transition-transform duration-200" />
- 开始测试
- </Button>
- </div>
- </div>
  </div>
  </div>
  </section>

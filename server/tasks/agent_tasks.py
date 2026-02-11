@@ -41,6 +41,11 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  })
  temp_data["question_history"] = history
  temp_data.pop("current_question", None)
+ # Recover chat_id if missing (may have been lost by earlier bug)
+ if not temp_data.get("chat_id") and session_id.startswith("wf-"):
+ chat_id = await _recover_chat_id_from_node(session_id, log)
+ if chat_id:
+ temp_data["chat_id"] = chat_id
  session.temp_data = temp_data
  await session.asave(update_fields=["temp_data"])
  # Create context and loop
@@ -61,7 +66,19 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  max_tokens=stored_config.get("max_tokens", 4096),
  tool_names=stored_config.get("tool_names"),
  )
- provider = ClaudeProvider
+ # Create provider with project's Claude config
+ from asgiref.sync import sync_to_async
+ from services.claude_config import get_claude_config
+ claude_config = await sync_to_async(get_claude_config, thread_sensitive=False)(session.project)
+ if not claude_config.api_key:
+ raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
+ if not claude_config.model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ provider = ClaudeProvider(
+ api_key=claude_config.api_key,
+ base_url=claude_config.base_url,
+ model=claude_config.model,
+ )
  loop = AgentLoop(config=config, context=context, provider=provider)
  # Resume execution
  result = await loop.resume(user_response)
@@ -91,6 +108,36 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  "status": "error",
  "error": str(e),
  }
+async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
+ """Recover chat_id from WorkflowNode config when missing from temp_data.
+ Looks up the NodeExecution linked to this session_id, then reads
+ chat_id from the associated WorkflowNode's config.
+ Args:
+ session_id: The agent session ID (format: wf-{execution_id}-{node_id})
+ log: Bound logger
+ Returns:
+ The chat_id string, or empty string if not found
+ """
+ try:
+ from asgiref.sync import sync_to_async
+ from workflows.models.execution import NodeExecution
+ node_exec = await sync_to_async(
+ lambda: NodeExecution.objects.filter(
+ output_data__agent_session_id=session_id,
+ )
+ .select_related("node")
+ .first
+ )
+ if node_exec and node_exec.node:
+ chat_id = node_exec.node.config.get("chat_id", "")
+ if chat_id:
+ log.info("chat_id_recovered_from_node", chat_id=chat_id)
+ return chat_id
+ log.warning("chat_id_recovery_failed", reason="node_execution_not_found_or_no_chat_id")
+ return ""
+ except Exception as e:
+ log.warning("chat_id_recovery_error", error=str(e))
+ return ""
 async def _notify_workflow_completion(
  session_id: str,
  result: Any,

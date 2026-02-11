@@ -141,7 +141,7 @@ function refreshModels {
 <template>
  <BaseModal
  v-model="isOpen"
- size="2xl":show-close="false":content-padding="false"
+ size="lg":show-close="false":content-padding="false"
  >
  <div class="flex flex-col h-[85vh] sm:h-auto sm:max-h-[85vh]">
  <!-- 装饰性顶部条纹 -->

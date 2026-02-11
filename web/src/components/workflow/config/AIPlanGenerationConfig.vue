@@ -74,7 +74,7 @@ const useCustomApi = computed({
 })
 const apiBaseUrl = field('api_base_url', '') as import('vue').WritableComputedRef<string>
 const apiKey = field('api_key', '') as import('vue').WritableComputedRef<string>
-const model = field('model', 'claude-sonnet-4-20250514') as import('vue').WritableComputedRef<string>
+const model = field('model', '') as import('vue').WritableComputedRef<string>
 // ============================================================================
 // Tag Input State
 // ============================================================================

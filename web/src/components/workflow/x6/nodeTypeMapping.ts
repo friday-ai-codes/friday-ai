@@ -169,21 +169,28 @@ export const nodeTypeMapping: NodeTypeConfig = [
 export function getWorkflowType(shape: string): string {
  return nodeTypeMapping.find(m => m.shape === shape)?.workflowType ?? shape
 }
+/** Deprecated workflow types → their replacement type */
+const deprecatedTypeAliases: Record<string, string> = {
+ ai_agent: 'ai_plan_generation',
+}
 /**
  * Get X6 shape name from workflow type
  */
 export function getShape(workflowType: string): string {
- return nodeTypeMapping.find(m => m.workflowType === workflowType)?.shape ?? workflowType
+ const resolved = deprecatedTypeAliases[workflowType] ?? workflowType
+ return nodeTypeMapping.find(m => m.workflowType === resolved)?.shape ?? resolved
 }
 /**
  * Get default data for a node type
  */
 export function getDefaultData(nodeType: string): Record<string, unknown> {
- return nodeTypeMapping.find(m => m.workflowType === nodeType || m.shape === nodeType)?.defaultData ?? {}
+ const resolved = deprecatedTypeAliases[nodeType] ?? nodeType
+ return nodeTypeMapping.find(m => m.workflowType === resolved || m.shape === resolved)?.defaultData ?? {}
 }
 /**
  * Get category for a node type
  */
 export function getCategory(nodeType: string): 'trigger' | 'action' | 'condition' | undefined {
- return nodeTypeMapping.find(m => m.workflowType === nodeType || m.shape === nodeType)?.category
+ const resolved = deprecatedTypeAliases[nodeType] ?? nodeType
+ return nodeTypeMapping.find(m => m.workflowType === resolved || m.shape === resolved)?.category
 }

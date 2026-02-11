@@ -89,10 +89,16 @@ class AgentLoop:
  "role": "user",
  "content": user_message,
  })
+ # Preserve existing temp_data (e.g. chat_id set by _ensure_agent_session)
+ existing_temp_data: dict[str, Any] = {}
+ existing_state = await self.state_manager.load_state(self.context.session_id)
+ if existing_state is not None:
+ existing_temp_data = existing_state.temp_data
  state = AgentState(
  session_id=self.context.session_id,
  status=AgentStatus.RUNNING,
  messages=messages,
+ temp_data=existing_temp_data,
  )
  return await self._execute_loop(state)
  async def resume(self, user_response: str) -> AgentResult:
@@ -197,6 +203,24 @@ class AgentLoop:
  # Check for suspension
  for result in tool_results:
  if result.metadata.get("suspension"):
+ # Add ALL tool results to messages before suspending,
+ # so the conversation history stays consistent
+ # (every tool_use must have a matching tool_result)
+ non_suspension_results = [
+ {
+ "type": "tool_result",
+ "tool_use_id": r.tool_call_id,
+ "content": r.to_content,
+ "is_error": not r.success,
+ }
+ for r in tool_results
+ if not r.metadata.get("suspension")
+ ]
+ if non_suspension_results:
+ state.messages.append({
+ "role": "user",
+ "content": non_suspension_results,
+ })
  state.status = AgentStatus.SUSPENDED
  state.pending_tool_call = {
  "tool_call_id": result.tool_call_id,

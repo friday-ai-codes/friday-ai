@@ -99,7 +99,7 @@ class AIVariableExtractorNode(BaseNode):
  "type": "string",
  "title": "模型",
  "description": "使用的 LLM 模型",
- "default": "claude-sonnet-4-20250514",
+ "default": "",
  },
  },
  "required": ["variables"],
@@ -126,7 +126,7 @@ class AIVariableExtractorNode(BaseNode):
  config = context.node_config
  variables_config = config.get("variables", )
  additional_prompt = config.get("additional_prompt", "")
- model = config.get("model", "claude-sonnet-4-20250514")
+ model = config.get("model", "")
  input_source = config.get("input_source", "")
  if not variables_config:
  return NodeResult(
@@ -310,6 +310,10 @@ class AIVariableExtractorNode(BaseNode):
  if workflow:
  project = await sync_to_async(lambda: workflow.project)
  config = await sync_to_async(get_claude_config)(project)
+ # 如果未指定模型，从配置中获取
+ resolved_model = model or config.model
+ if not resolved_model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  api_key = config.api_key
  base_url = config.base_url or "https://api.anthropic.com"
  if not api_key:
@@ -324,7 +328,7 @@ class AIVariableExtractorNode(BaseNode):
  "content-type": "application/json",
  },
  json={
- "model": model,
+ "model": resolved_model,
  "max_tokens": 4096,
  "temperature": 0.3, # 低温度保证稳定性
  "messages": [{"role": "user", "content": prompt}],

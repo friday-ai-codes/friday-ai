@@ -95,7 +95,7 @@ async def send_plan_card(
  )
  # Create IM client
  try:
- client = create_feishu_im_client_for_project(project)
+ client = await create_feishu_im_client_for_project(project)
  except ValueError as e:
  log.error("feishu_im_not_configured", error=str(e))
  return ToolResult(

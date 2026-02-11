@@ -34,7 +34,7 @@ class ClaudeProvider:
  Supports tool_use API, automatic retry with exponential backoff,
  and token usage tracking.
  Example:
- provider = ClaudeProvider(model="claude-sonnet-4-20250514")
+ provider = ClaudeProvider(model="your-model-id")
  response = await provider.chat([
  {"role": "user", "content": "Hello!"}
  ])
@@ -45,7 +45,7 @@ class ClaudeProvider:
  config: LLMConfig | None = None,
  api_key: str | None = None,
  base_url: str | None = None,
- model: str = "claude-sonnet-4-20250514",
+ model: str = "",
  ) -> None:
  """
  Initialize the Claude provider.
