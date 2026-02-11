@@ -125,6 +125,30 @@ export const nodeTypeMapping: NodeTypeConfig = [
  category: 'action',
  defaultData: {},
  },
+ {
+ shape: 'ai_plan_generation',
+ workflowType: 'ai_plan_generation',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'ai_plan_approval',
+ workflowType: 'ai_plan_approval',
+ category: 'condition',
+ defaultData: {},
+ },
+ {
+ shape: 'ai_coding',
+ workflowType: 'ai_coding',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'ai_code_review',
+ workflowType: 'ai_code_review',
+ category: 'action',
+ defaultData: {},
+ },
  // Conditions
  {
  shape: 'condition',
