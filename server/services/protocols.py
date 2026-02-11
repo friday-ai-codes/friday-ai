@@ -63,3 +63,59 @@ ENV_TASK_TYPE = "FRIDAY_TASK_TYPE"
 ENV_PROTOCOL_DIR = "FRIDAY_PROTOCOL_DIR"
 ENV_CALLBACK_URL = "FRIDAY_CALLBACK_URL"
 ENV_CALLBACK_TOKEN = "FRIDAY_CALLBACK_TOKEN"
+# === 回调协议 Schema（Phase）===
+class CallbackType:
+ """回调端点 type 字段值。"""
+ COMPLETED = "completed"
+ FAILED = "failed"
+ QUESTION = "question"
+ HEARTBEAT = "heartbeat"
+ PROGRESS = "progress"
+@dataclass
+class CallbackPayload:
+ """统一回调端点请求结构。"""
+ type: str # completed | failed | question | heartbeat | progress
+ session_id: str
+ token: str
+ timestamp: str # ISO 8601
+ payload: dict[str, Any] = field(default_factory=dict)
+@dataclass
+class CompletedPayload:
+ """type=completed 时的 payload 结构。"""
+ result_type: str # text | git
+ output: dict[str, Any] = field(default_factory=dict)
+ duration_ms: int = 0
+ branch_name: str = ""
+ commit_sha: str = ""
+ modified_files: list[str] = field(default_factory=list)
+@dataclass
+class FailedPayload:
+ """type=failed 时的 payload 结构。"""
+ error: str = ""
+ exit_code: int = 1
+ logs: str = ""
+@dataclass
+class QuestionPayload:
+ """type=question 时的 payload 结构。"""
+ question: str = ""
+ options: list[str] = field(default_factory=list)
+ context: str = ""
+ default_option: str = ""
+ timeout_minutes: int = 10
+@dataclass
+class AnswerPayload:
+ """answer.json 结构 — Friday 写入，SubAgent 读取。"""
+ question_id: str = ""
+ answer: str = ""
+ answered_at: str = "" # ISO 8601
+@dataclass
+class HeartbeatPayload:
+ """type=heartbeat 时的 payload 结构。"""
+ progress: float = 0.0
+ message: str = ""
+@dataclass
+class ProgressPayload:
+ """type=progress 时的 payload 结构。"""
+ phase: str = "" # cloning | installing | coding | testing | pushing
+ progress: float = 0.0
+ message: str = ""

@@ -3,6 +3,7 @@ Django settings for Friday project.
 AI-powered Development Automation System
 """
 import os
+import secrets
 from datetime import timedelta
 from pathlib import Path
 import environ
@@ -231,6 +232,11 @@ LOGGING = {
 SUBAGENT_API_URL = os.environ.get("SUBAGENT_API_URL", "http://localhost:8080")
 # Base URL for callbacks (this server's external URL)
 FRIDAY_BASE_URL = os.environ.get("FRIDAY_BASE_URL", "http://localhost:8000")
+# Container callback authentication (Phase)
+CONTAINER_CALLBACK_TOKEN = os.environ.get(
+ "CONTAINER_CALLBACK_TOKEN",
+ secrets.token_urlsafe(32),
+)
 # =============================================================================
 # Feature Flags
 # =============================================================================
