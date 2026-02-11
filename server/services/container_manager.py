@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 import docker
 import structlog
+from asgiref.sync import sync_to_async
 from django.utils import timezone
 from services.container_executor import ContainerExecutor, ExecutionRequest
 from services.protocols import (
@@ -247,7 +248,7 @@ class ContainerManager:
  try:
  container_id = await self._executor.start_execution(request)
  # 持久化到数据库 (C1)
- session.mark_running(container_id, container_name)
+ await sync_to_async(session.mark_running)(container_id, container_name)
  logger.info(
  "container_started",
  session_id=config.session_id,
@@ -256,7 +257,7 @@ class ContainerManager:
  )
  return container_id
  except Exception as e:
- session.mark_failed(str(e))
+ await sync_to_async(session.mark_failed)(str(e))
  logger.error(
  "container_start_failed",
  session_id=config.session_id,
@@ -285,10 +286,7 @@ class ContainerManager:
  SubAgentSession.Status.PENDING,
  SubAgentSession.Status.RUNNING,
  ):
- if force:
- session.mark_cancelled
- else:
- session.mark_cancelled
+ await sync_to_async(session.mark_cancelled)
  logger.info(
  "container_stopped",
  session_id=session_id,
@@ -450,7 +448,7 @@ class ContainerManager:
  return existing
  else:
  # 容器已不在运行，修正数据库状态
- existing.mark_failed("容器已退出但状态未更新")
+ await sync_to_async(existing.mark_failed)("容器已退出但状态未更新")
  return None
  # PENDING 状态（容器还没启动）也算重复
  return existing
