@@ -22,6 +22,7 @@ import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
 import AICodingPanel from '~/components/execution/AICodingPanel.vue'
+import AICodeReviewPanel from '~/components/execution/AICodeReviewPanel.vue'
 import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
@@ -488,6 +489,10 @@ function formatTime(dateStr: string | null) {
  <!-- AI Coding Panel (for ai_coding nodes) -->
  <AICodingPanel
  v-if="nodeExec.node_type === 'ai_coding' && (nodeExec.status === 'running' || nodeExec.status === 'waiting_event' || nodeExec.status === 'completed')":node-execution="nodeExec"
+ />
+ <!-- AI Code Review Panel (for ai_code_review nodes) -->
+ <AICodeReviewPanel
+ v-else-if="nodeExec.node_type === 'ai_code_review' && (nodeExec.status === 'running' || nodeExec.status === 'completed' || nodeExec.status === 'failed')":node-execution="nodeExec"
  />
  <!-- Error message -->
  <div v-if="nodeExec.error_message" class=" rounded-lg bg-destructive/10 text-sm text-destructive">
