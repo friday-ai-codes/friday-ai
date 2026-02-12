@@ -111,6 +111,8 @@ class ContainerManager:
  # Git 配置
  "FRIDAY_GIT_REPO_URL": config.repo_url,
  "FRIDAY_GIT_BRANCH": config.branch,
+ # 任务超时（Phase）
+ "FRIDAY_TASK_TIMEOUT": str(config.timeout),
  }
  if config.target_branch:
  env["FRIDAY_GIT_TARGET_BRANCH"] = config.target_branch
