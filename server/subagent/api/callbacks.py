@@ -72,6 +72,62 @@ async def _cleanup_container_now(session: SubAgentSession) -> None:
  except Exception as e:
  log.warning("container_cleanup_error", error=str(e))
 # === 失败通知（Phase）===
+def _schedule_agent_loop_resume(session: SubAgentSession, log) -> None:
+ """触发 AgentLoop 恢复（当容器完成时）。
+ 仅当 session 有 main_session 但无 node_execution 时触发（纯 AgentLoop 场景）。
+ 如果有 node_execution，由 workflow 恢复处理。
+ Args:
+ session: SubAgentSession 实例
+ log: Bound logger
+ """
+ # 如果有 node_execution，由 workflow 恢复处理
+ if session.node_execution_id:
+ log.debug("has_node_execution_skip_agent_resume")
+ return
+ # 检查是否有 main_session
+ if not session.main_session_id:
+ log.debug("no_main_session_skip_agent_resume")
+ return
+ async def _prepare_and_resume:
+ """异步准备并调度 AgentLoop 恢复。"""
+ try:
+ from subagent.models import TaskResult
+ # 获取 TaskResult
+ task_result = await TaskResult.objects.filter(
+ session=session,
+ ).afirst
+ # 构建结果消息
+ if task_result:
+ if session.status == SubAgentSession.Status.COMPLETED:
+ result_msg = f"SubAgent 任务完成。\n\n结果：\n{task_result.text_output[:2000]}"
+ else:
+ result_msg = f"SubAgent 任务失败：{session.last_error}"
+ else:
+ if session.status == SubAgentSession.Status.COMPLETED:
+ result_msg = "SubAgent 任务完成。"
+ else:
+ result_msg = f"SubAgent 任务失败：{session.last_error}"
+ # 调度 AgentLoop 恢复
+ from tasks.agent_tasks import schedule_resume_agent_session
+ # 需要刷新 main_session 关系以获取 session_id
+ await session.arefresh_from_db
+ if session.main_session:
+ schedule_resume_agent_session(
+ session_id=session.main_session.session_id,
+ user_response=result_msg,
+ )
+ log.info(
+ "agent_loop_resume_scheduled",
+ main_session_id=session.main_session.session_id,
+ )
+ except Exception as e:
+ log.exception("agent_loop_resume_error", error=str(e))
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_prepare_and_resume)
+ except RuntimeError:
+ # 没有运行中的事件循环
+ asyncio.run(_prepare_and_resume)
 def _send_failure_notification(
  session: SubAgentSession,
  error_msg: str,
@@ -224,6 +280,8 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_completed
  # 调度容器清理（成功任务立即清理）
  _schedule_container_cleanup(session, immediate=True)
+ # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
+ _schedule_agent_loop_resume(session, log)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
@@ -242,6 +300,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_failed(error=error_msg)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=0)
+ # 触发 AgentLoop 恢复
+ _schedule_agent_loop_resume(session, log)
  log.info("callback_failed_no_retry", task_type=task_type)
  return Response({"status": "ok", "retried": False})
  # 获取当前重试次数
@@ -252,6 +312,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_failed(error=error_msg)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=retry_count)
+ # 触发 AgentLoop 恢复
+ _schedule_agent_loop_resume(session, log)
  log.info("callback_failed_max_retries", retry_count=retry_count)
  return Response({"status": "ok", "retried": False, "max_retries_exceeded": True})
  # 计划重试
