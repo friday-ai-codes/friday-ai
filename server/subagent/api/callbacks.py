@@ -39,6 +39,22 @@ _TERMINAL_STATUSES = {
 RETRYABLE_TASK_TYPES = {"explore", "ask", "plan"}
 MAX_RETRIES = 2
 RETRY_DELAYS = [30, 60] # 指数退避：30s -> 60s
+# === 并行调度通知（Phase）===
+def _notify_scheduler_completion(session_id: str) -> None:
+ """通知调度器容器已完成，尝试启动队列中下一个任务。"""
+ async def _notify:
+ try:
+ from services.parallel_scheduler import get_scheduler
+ scheduler = get_scheduler
+ await scheduler.on_container_completed(session_id)
+ except Exception as e:
+ logger.warning("scheduler_notification_failed", session_id=session_id, error=str(e))
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_notify)
+ except RuntimeError:
+ # 没有运行中的事件循环
+ asyncio.run(_notify)
 # === 容器清理调度（Phase）===
 def _schedule_container_cleanup(session: SubAgentSession, immediate: bool = False) -> None:
  """调度容器清理（异步，不阻塞回调响应）。
@@ -405,6 +421,8 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
  _schedule_agent_loop_resume(session, log)
+ # 通知调度器容器完成（Phase）
+ _notify_scheduler_completion(session.session_id)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
@@ -427,6 +445,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复
  _schedule_agent_loop_resume(session, log)
+ # 通知调度器容器完成（Phase）
+ _notify_scheduler_completion(session.session_id)
  log.info("callback_failed_no_retry", task_type=task_type)
  return Response({"status": "ok", "retried": False})
  # 获取当前重试次数
@@ -441,6 +461,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复
  _schedule_agent_loop_resume(session, log)
+ # 通知调度器容器完成（Phase）
+ _notify_scheduler_completion(session.session_id)
  log.info("callback_failed_max_retries", retry_count=retry_count)
  return Response({"status": "ok", "retried": False, "max_retries_exceeded": True})
  # 计划重试

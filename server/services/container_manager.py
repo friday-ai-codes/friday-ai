@@ -462,6 +462,44 @@ class ContainerManager:
  config.session_id = generate_execution_id
  # 跳过重复检测，直接启动
  return await self._start_container(config)
+ async def start_with_scheduling(
+ self,
+ config: ContainerConfig,
+ wait_if_busy: bool = True,
+ ) -> str | None:
+ """资源感知启动容器（Phase）。
+ 检查资源可用性：
+ - 可用：立即启动
+ - 不可用且 wait_if_busy=True：入队等待
+ - 不可用且 wait_if_busy=False：返回 None
+ Args:
+ config: 容器启动配置
+ wait_if_busy: 资源不足时是否入队等待
+ Returns:
+ container_id（立即启动成功）或 None（入队等待或资源不足）
+ """
+ from services.parallel_scheduler import get_scheduler
+ scheduler = get_scheduler
+ if wait_if_busy:
+ # 通过调度器处理（可能入队）
+ return await scheduler.enqueue_immediate(config)
+ else:
+ # 检查资源，不入队
+ from services.resource_monitor import (
+ check_resource_availability,
+ get_running_container_count_async,
+ )
+ running_count = await get_running_container_count_async
+ availability = await check_resource_availability(running_count)
+ if availability.can_start:
+ return await self.start(config)
+ else:
+ logger.info(
+ "start_skipped_resource_unavailable",
+ session_id=config.session_id,
+ reason=availability.reason,
+ )
+ return None
  # === 私有辅助方法 ===
  async def _check_duplicate(
  self,
