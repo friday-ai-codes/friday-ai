@@ -362,8 +362,9 @@ class NodeExecution(models.Model):
  def mark_waiting_event(self, subscription_data: dict) -> None:
  """标记节点等待外部事件"""
  self.status = NodeExecutionStatus.WAITING_EVENT
+ self.output_data = subscription_data
  self.approval_data = subscription_data # 复用 approval_data 字段存储等待信息
- self.save(update_fields=["status", "approval_data"])
+ self.save(update_fields=["status", "output_data", "approval_data"])
 class WorkflowEventSubscription(models.Model):
  """工作流事件订阅记录
  记录挂起的工作流正在等待的外部事件条件。
