@@ -30,6 +30,16 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  session = await AgentSession.objects.select_related("project", "user").aget(
  session_id=session_id
  )
+ # 检查 session 是否已经完成（用户回答前 agent 可能已经跑完了）
+ if session.status in (AgentSession.Status.COMPLETED, AgentSession.Status.ERROR, AgentSession.Status.MAX_ITERATIONS):
+ log.info(
+ "resume_agent_session_already_terminal",
+ session_status=session.status,
+ )
+ return {
+ "status": session.status,
+ "error": f"Session already in terminal state: {session.status}",
+ }
  # Update question history in temp_data
  temp_data = session.temp_data or {}
  history: list[dict[str, str]] = temp_data.get("question_history", )
