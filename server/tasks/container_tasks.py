@@ -175,3 +175,99 @@ async def enforce_task_timeouts -> dict:
  log.exception("timeout_stop_error", session_id=session.session_id)
  log.info("task_complete", **stats)
  return stats
+# === 提问超时提醒（Phase）===
+# 提醒配置（用户决策：每 30 分钟低频提醒）
+QUESTION_REMINDER_INTERVAL_MINUTES = 30
+async def remind_pending_questions -> dict:
+ """提醒用户待回复的问题。
+ 每 30 分钟执行一次，检查未回复且距上次提醒超过 30 分钟的问题。
+ 发送提醒消息并更新状态。
+ 用户决策：
+ - 无自动决策：用户不回复不自动继续
+ - 提醒频率：每 30 分钟低频提醒
+ - 提醒渠道：飞书消息
+ - 最大等待：永不取消，任务一直等待
+ Returns:
+ {"reminded": int, "errors": list[str]}
+ """
+ from django.db import models
+ from services.feishu_im import FeishuIMClient
+ from subagent.models import InteractionLog
+ log = logger.bind(task="remind_pending_questions")
+ log.info("task_start")
+ # 从 settings 获取飞书配置
+ app_id = getattr(settings, "FEISHU_APP_ID", "")
+ app_secret = getattr(settings, "FEISHU_APP_SECRET", "")
+ if not app_id or not app_secret:
+ log.warning("feishu_config_missing_skip_reminder")
+ return {"reminded": 0, "errors": ["Feishu config missing"]}
+ now = timezone.now
+ reminder_cutoff = now - timedelta(minutes=QUESTION_REMINDER_INTERVAL_MINUTES)
+ reminded_count = 0
+ errors: list[str] =
+ # 查找未回复且需要提醒的问题
+ # 条件：answered_at 为空 AND (last_reminder_at 为空 OR 距今超过 30 分钟)
+ pending_questions = InteractionLog.objects.filter(
+ answered_at__isnull=True,
+ ).filter(
+ models.Q(last_reminder_at__isnull=True) |
+ models.Q(last_reminder_at__lt=reminder_cutoff)
+ ).select_related("session", "session__main_session")
+ async for interaction in pending_questions:
+ try:
+ # 检查 session 是否仍在运行
+ if interaction.session.status != SubAgentSession.Status.RUNNING:
+ continue
+ # 获取 chat_id
+ chat_id = ""
+ if interaction.session.main_session and interaction.session.main_session.metadata:
+ chat_id = interaction.session.main_session.metadata.get("chat_id", "")
+ if not chat_id:
+ continue
+ # 计算等待时间
+ wait_seconds = int((now - interaction.asked_at).total_seconds)
+ wait_hours = wait_seconds // 3600
+ wait_minutes = (wait_seconds % 3600) // 60
+ if wait_hours > 0:
+ wait_str = f"{wait_hours}小时{wait_minutes}分钟"
+ else:
+ wait_str = f"{wait_minutes}分钟"
+ # 构建提醒消息
+ question_preview = interaction.question_text[:100]
+ if len(interaction.question_text) > 100:
+ question_preview += "..."
+ reminder_text = (
+ f"⏰ **任务等待中**\n\n"
+ f"容器任务需要您的输入才能继续。\n\n"
+ f"• 问题：{question_preview}\n"
+ f"• 已等待：{wait_str}\n\n"
+ f"请回复上方卡片中的问题。"
+ )
+ # 发送提醒消息（使用 send_message 发送文本消息）
+ try:
+ im_client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
+ await im_client.send_message(
+ receive_id=chat_id,
+ receive_id_type="chat_id",
+ msg_type="text",
+ content={"text": reminder_text},
+ )
+ except Exception as e:
+ log.warning("reminder_send_failed", error=str(e))
+ continue
+ # 更新提醒状态
+ interaction.reminder_count += 1
+ interaction.last_reminder_at = now
+ await interaction.asave(update_fields=["reminder_count", "last_reminder_at"])
+ reminded_count += 1
+ log.info(
+ "question_reminded",
+ interaction_id=interaction.id,
+ reminder_count=interaction.reminder_count,
+ wait_time=wait_str,
+ )
+ except Exception as e:
+ errors.append(f"{interaction.id}: {e}")
+ log.exception("remind_error", interaction_id=interaction.id)
+ log.info("task_complete", reminded=reminded_count, error_count=len(errors))
+ return {"reminded": reminded_count, "errors": errors}
