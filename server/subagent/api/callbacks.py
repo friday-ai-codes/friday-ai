@@ -128,6 +128,76 @@ def _schedule_agent_loop_resume(session: SubAgentSession, log) -> None:
  except RuntimeError:
  # 没有运行中的事件循环
  asyncio.run(_prepare_and_resume)
+def _schedule_workflow_resume(session: SubAgentSession, log) -> None:
+ """触发 workflow 恢复（异步，不阻塞回调响应）。
+ 当容器完成时，检查该节点的所有 SubAgentSession 是否都已终态，
+ 如果是则恢复 workflow 执行。
+ """
+ if not session.node_execution_id:
+ log.debug("no_node_execution_skip_resume")
+ return
+ async def _resume:
+ try:
+ from django.db import close_old_connections
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.models.execution import NodeExecution
+ # 关闭旧连接（防止长时间运行后的连接问题）
+ close_old_connections
+ # 获取 node_execution
+ node_exec = await NodeExecution.objects.select_related(
+ "workflow_execution"
+ ).filter(id=session.node_execution_id).afirst
+ if not node_exec:
+ log.warning("node_execution_not_found_for_resume")
+ return
+ # 检查该节点的所有 SubAgentSession 是否都已终态
+ pending_count = await SubAgentSession.objects.filter(
+ node_execution=node_exec,
+ status__in=[
+ SubAgentSession.Status.PENDING,
+ SubAgentSession.Status.RUNNING,
+ ],
+ ).acount
+ if pending_count > 0:
+ log.info(
+ "pending_subagents_remain",
+ pending_count=pending_count,
+ node_execution_id=str(node_exec.id),
+ )
+ return
+ # 所有任务完成，设置恢复标记并触发 workflow 恢复
+ output_data = node_exec.output_data or {}
+ output_data["_resume_from_callback"] = True
+ output_data["_all_containers_completed"] = True
+ # 保存每个 session 的结果摘要
+ session_results = {}
+ async for s in SubAgentSession.objects.filter(node_execution=node_exec):
+ session_results[s.session_id] = {
+ "status": s.status,
+ "error": s.last_error,
+ }
+ output_data["_session_results"] = session_results
+ node_exec.output_data = output_data
+ await node_exec.asave(update_fields=["output_data"])
+ # 恢复 workflow
+ engine = WorkflowEngine
+ await engine._continue_after_node(
+ node_exec.workflow_execution,
+ node_exec,
+ )
+ log.info(
+ "workflow_resumed_after_container_completion",
+ node_execution_id=str(node_exec.id),
+ workflow_execution_id=str(node_exec.workflow_execution.id),
+ )
+ except Exception as e:
+ log.exception("workflow_resume_error", error=str(e))
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_resume)
+ except RuntimeError:
+ # 没有运行中的事件循环，创建新的
+ asyncio.run(_resume)
 def _send_failure_notification(
  session: SubAgentSession,
  error_msg: str,
@@ -280,6 +350,8 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_completed
  # 调度容器清理（成功任务立即清理）
  _schedule_container_cleanup(session, immediate=True)
+ # 触发 workflow 恢复（如果有 node_execution）
+ _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
  _schedule_agent_loop_resume(session, log)
  log.info("callback_completed_ok", result_type=p["result_type"])
@@ -300,6 +372,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_failed(error=error_msg)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=0)
+ # 触发 workflow 恢复（如果有 node_execution）
+ _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复
  _schedule_agent_loop_resume(session, log)
  log.info("callback_failed_no_retry", task_type=task_type)
@@ -312,6 +386,8 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  session.mark_failed(error=error_msg)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=retry_count)
+ # 触发 workflow 恢复（如果有 node_execution）
+ _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复
  _schedule_agent_loop_resume(session, log)
  log.info("callback_failed_max_retries", retry_count=retry_count)
