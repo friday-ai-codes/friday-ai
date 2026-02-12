@@ -151,8 +151,20 @@ class AICodingNode(BaseNode):
  execution_id=context.execution_id,
  node_id=context.node_id,
  )
- # 0. 检查是否从 waiting_event 恢复（分支确认后）
- confirmed_branch = self._check_confirmed_branch(context)
+ # 0. 检查是否从 waiting_event 恢复
+ if context.node_execution:
+ output_data = getattr(context.node_execution, "output_data", None)
+ if isinstance(output_data, dict):
+ # 检查是否有恢复标记（容器完成后）
+ if output_data.get("_resume_from_callback"):
+ return await self._resume_after_containers(context, output_data, log)
+ # 分支确认恢复（保持不变）
+ confirmed_branch = output_data.get("_confirmed_branch_name", "")
+ if confirmed_branch:
+ # 继续正常执行流程
+ return await self._execute_with_branch(
+ context, confirmed_branch, log
+ )
  # 1. 提取方案数据
  plan_data = self._extract_plan_data(context)
  if not plan_data:
@@ -188,15 +200,36 @@ class AICodingNode(BaseNode):
  next_handle="error",
  )
  # 4. 解析分支名
- branch_name = confirmed_branch or self._resolve_branch_name(
- plan_data, context
- )
+ branch_name = self._resolve_branch_name(plan_data, context)
  if not branch_name:
  # 无法确定分支名，发送飞书确认卡片
  candidate = self._generate_candidate_branch(plan_data, context)
  return await self._send_branch_confirmation(
  context, candidate, plan_title, plan_data, log
  )
+ return await self._execute_with_branch(context, branch_name, log)
+ async def _execute_with_branch(
+ self,
+ context: ExecutionContext,
+ branch_name: str,
+ log: Any,
+ ) -> NodeResult:
+ """使用已确认的分支名执行编码任务。"""
+ # 从 context 重新获取方案数据
+ plan_data = self._extract_plan_data(context)
+ if not plan_data:
+ return NodeResult(
+ status="failed",
+ error="缺少技术方案数据",
+ next_handle="error",
+ )
+ plan_title: str = plan_data.get("title", "技术方案")
+ execution_plan: list[dict[str, Any]] = plan_data.get("execution_plan", )
+ global_context: str = plan_data.get("global_context", "")
+ # 重新获取仓库信息
+ repo_groups = self._group_by_repository(execution_plan)
+ repo_ids = set(repo_groups.keys)
+ repositories = await self._fetch_repositories(repo_ids)
  # 确定 base branch（取第一个仓库的 default_branch）
  first_repo = next(iter(repositories.values))
  base_branch: str = first_repo.default_branch or "main"
@@ -206,26 +239,31 @@ class AICodingNode(BaseNode):
  base_branch=base_branch,
  repo_count=len(repo_groups),
  )
- # 5. 并行分发 SubAgent（每个仓库一个）
+ # 5. 并行分发（使用 ContainerManager）
  config = context.node_config
+ # DEPRECATED: SubAgentClient 不再使用
  client = SubAgentClient
+ node_execution_id = ""
+ if context.node_execution:
+ node_execution_id = str(context.node_execution.id)
  coding_tasks = [
  self._run_repo_coding(
- client=client,
+ client=client, # deprecated
  repository=repositories[repo_id],
  tasks=tasks,
  branch_name=branch_name,
  base_branch=base_branch,
  global_context=global_context,
  config=config,
+ node_execution_id=node_execution_id,
  )
  for repo_id, tasks in repo_groups.items
  ]
  results: list[dict[str, Any] | BaseException] = await asyncio.gather(
  *coding_tasks, return_exceptions=True
  )
- # 6. 分离成功/失败
- succeeded: list[dict[str, Any]] =
+ # 6. 分离 waiting_event / error
+ waiting_sessions: list[dict[str, Any]] =
  failed: list[dict[str, Any]] =
  group_keys = list(repo_groups.keys)
  for i, result in enumerate(results):
@@ -237,81 +275,183 @@ class AICodingNode(BaseNode):
  "repository_name": repo.name,
  "error": _truncate(str(result), _MAX_ERROR_LENGTH),
  })
- elif isinstance(result, dict) and result.get("status") == "error":
+ elif isinstance(result, dict):
+ if result.get("status") == "error":
  failed.append({
  "repository_id": str(repo.id),
  "repository_name": repo.name,
- "error": _truncate(
- result.get("error", "未知错误"), _MAX_ERROR_LENGTH
- ),
+ "error": _truncate(result.get("error", "未知错误"), _MAX_ERROR_LENGTH),
  })
+ elif result.get("status") == "waiting_event":
+ waiting_sessions.append(result)
  else:
- if isinstance(result, dict):
- succeeded.append(result)
+ # 兼容旧模式（如果有）
+ waiting_sessions.append(result)
  log.info(
  "ai_coding_dispatch_complete",
- succeeded=len(succeeded),
+ waiting=len(waiting_sessions),
  failed=len(failed),
  )
- # 7. 为成功仓库创建 MR（并行）
+ # 7. 如果有 waiting_event，挂起 workflow
+ if waiting_sessions:
+ return NodeResult(
+ status="waiting_event",
+ output={
+ "pending_sessions": [
+ {
+ "session_id": s["session_id"],
+ "container_id": s["container_id"],
+ "repository_id": s["repository_id"],
+ "repository_name": s["repository_name"],
+ }
+ for s in waiting_sessions
+ ],
+ "failed_repos": failed,
+ "plan_data": plan_data,
+ "branch_name": branch_name,
+ "base_branch": base_branch,
+ "plan_title": plan_title,
+ # 保存用于恢复后 MR 创建
+ "repositories": {str(r.id): {"name": r.name, "id": str(r.id)} for r in repositories.values},
+ },
+ )
+ # 8. 如果全部失败，立即返回错误
+ if not waiting_sessions and failed:
+ return NodeResult(
+ status="failed",
+ error="所有仓库容器启动失败",
+ output={"failed_details": failed},
+ next_handle="error",
+ )
+ # 正常流程不会到达这里（waiting_event 会先返回）
+ return NodeResult(
+ status="failed",
+ error="意外的执行路径",
+ next_handle="error",
+ )
+ async def _resume_after_containers(
+ self,
+ context: ExecutionContext,
+ output_data: dict[str, Any],
+ log: Any,
+ ) -> NodeResult:
+ """容器完成后恢复 workflow 执行。
+ 检查所有 pending_sessions 的状态，为成功的仓库创建 MR。
+ """
+ pending_sessions = output_data.get("pending_sessions", )
+ failed_repos = output_data.get("failed_repos", )
+ branch_name = output_data.get("branch_name", "")
+ base_branch = output_data.get("base_branch", "")
+ plan_title = output_data.get("plan_title", "")
+ repositories_info = output_data.get("repositories", {})
+ # 查询每个 session 的结果
+ from subagent.models import SubAgentSession, TaskResult
+ succeeded: list[dict[str, Any]] =
+ for session_info in pending_sessions:
+ session_id = session_info["session_id"]
+ repo_id = session_info["repository_id"]
+ repo_name = session_info["repository_name"]
+ try:
+ session = await SubAgentSession.objects.filter(
+ session_id=session_id,
+ ).afirst
+ if not session:
+ failed_repos.append({
+ "repository_id": repo_id,
+ "repository_name": repo_name,
+ "error": "Session 不存在",
+ })
+ continue
+ if session.status == SubAgentSession.Status.COMPLETED:
+ # 获取 TaskResult
+ task_result = await TaskResult.objects.filter(
+ session=session,
+ ).afirst
+ if task_result:
+ succeeded.append({
+ "repository_id": repo_id,
+ "repository_name": repo_name,
+ "tasks_completed":, # 从 task_result 解析
+ "output": task_result.raw_output,
+ "mr_url": task_result.pr_url,
+ "mr_id": "",
+ "files_changed": len(task_result.modified_files) if task_result.modified_files else 0,
+ "insertions": 0, # 从 raw_output 解析
+ "deletions": 0,
+ })
+ else:
+ succeeded.append({
+ "repository_id": repo_id,
+ "repository_name": repo_name,
+ "tasks_completed":,
+ "output": {},
+ "mr_url": "",
+ "mr_id": "",
+ "files_changed": 0,
+ "insertions": 0,
+ "deletions": 0,
+ })
+ elif session.status in (
+ SubAgentSession.Status.ERROR,
+ SubAgentSession.Status.TIMEOUT,
+ ):
+ failed_repos.append({
+ "repository_id": repo_id,
+ "repository_name": repo_name,
+ "error": session.last_error or f"容器状态: {session.status}",
+ })
+ except Exception as e:
+ log.exception("session_check_error", session_id=session_id)
+ failed_repos.append({
+ "repository_id": repo_id,
+ "repository_name": repo_name,
+ "error": str(e),
+ })
+ log.info(
+ "resume_sessions_checked",
+ succeeded=len(succeeded),
+ failed=len(failed_repos),
+ )
+ # 为成功仓库创建 MR
  mr_results: list[dict[str, Any]] =
  if succeeded:
- mr_tasks = [
- self._create_mr_for_repo(
- repository=repositories[r["repository_id"]],
+ from repositories.models import Repository
+ for result in succeeded:
+ repo_id = result["repository_id"]
+ repo = await Repository.objects.filter(id=repo_id).afirst
+ if repo:
+ mr_result = await self._create_mr_for_repo(
+ repository=repo,
  branch_name=branch_name,
  base_branch=base_branch,
  plan_title=plan_title,
- tasks_completed=r.get("tasks_completed", ),
- changes_summary=r.get("output", {}),
+ tasks_completed=result.get("tasks_completed", ),
+ changes_summary=result.get("output", {}),
  )
- for r in succeeded
- ]
- mr_raw = await asyncio.gather(*mr_tasks, return_exceptions=True)
- for i, mr in enumerate(mr_raw):
- repo_result = succeeded[i]
- if isinstance(mr, BaseException):
- log.warning(
- "mr_creation_exception",
- repository_id=repo_result["repository_id"],
- error=str(mr),
- )
- mr_results.append({
- **repo_result,
- "mr_url": "",
- "mr_id": "",
- "has_conflicts": False,
- })
- elif isinstance(mr, dict):
- mr_results.append({**repo_result, **mr})
- # 8. 发送飞书结果卡片
+ mr_results.append({**result, **mr_result})
+ # 发送飞书结果卡片
  await self._send_result_notification(
  context=context,
  plan_title=plan_title,
  succeeded_repos=mr_results,
- failed_repos=failed,
+ failed_repos=failed_repos,
  branch_name=branch_name,
  base_branch=base_branch,
  log=log,
  )
- # 9. 构建输出
+ # 构建输出
  output = self._build_output(
  mr_results=mr_results,
- failed_repos=failed,
+ failed_repos=failed_repos,
  branch_name=branch_name,
  base_branch=base_branch,
  )
- if not succeeded:
+ if not mr_results:
  return NodeResult(
  status="failed",
  output=output,
  error="所有仓库编码均失败",
  next_handle="error",
- )
- log.info(
- "ai_coding_complete",
- mr_count=len(mr_results),
- failed_count=len(failed),
  )
  return NodeResult(
  status="completed",
@@ -390,15 +530,6 @@ class AICodingNode(BaseNode):
  if work_item_id:
  return f"feat/xxxx-m{work_item_id}-{description_slug}"
  # 无 work_item_id 时返回空，触发飞书确认流程
- return ""
- def _check_confirmed_branch(
- self, context: ExecutionContext
- ) -> str:
- """检查是否从 waiting_event 恢复（分支确认后）。"""
- if context.node_execution:
- output_data = getattr(context.node_execution, "output_data", None)
- if isinstance(output_data, dict):
- return output_data.get("_confirmed_branch_name", "")
  return ""
  # ------------------------------------------------------------------
  # 分支确认（飞书卡片 + waiting_event）
