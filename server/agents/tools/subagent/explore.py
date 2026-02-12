@@ -1,12 +1,14 @@
 """Explore repository tool for SubAgent.
 Allows the main Agent to delegate repository exploration to Claude Code SubAgent.
+DEPRECATED: SubAgentClient 轮询模式将在 Phase 清理
 """
 import structlog
 from agents.models import AgentSession
 from agents.tools.base import ToolResult, tool
 from agents.tools.subagent.context import build_subagent_context
-from subagent.client import SubAgentClient, SubAgentRequest
-from subagent.models import SubAgentSession, generate_subagent_session_id
+from services.container_config import TASK_TIMEOUTS
+from services.container_manager import ContainerConfig, ContainerManager
+from subagent.models import SubAgentSession, generate_execution_id
 logger = structlog.get_logger(__name__)
 @tool(
  name="explore_repository",
@@ -44,15 +46,15 @@ async def explore_repository(
  focus_areas: list[str] | None = None,
 ) -> ToolResult:
  """Explore repository structure via SubAgent.
- Submits an exploration task to Claude Code SubAgent and suspends
- the main Agent until the SubAgent completes.
+ 使用 ContainerManager 启动容器，返回 suspension 元数据，
+ 容器完成后通过回调恢复 AgentLoop。
  Args:
  repo_url: Git repository URL
  branch: Branch name to explore
  session_id: Main Agent session ID
  focus_areas: Optional list of areas to focus on
  Returns:
- ToolResult with task_id and suspension metadata
+ ToolResult with subagent_session_id and suspension metadata
  """
  log = logger.bind(
  session_id=session_id,
@@ -70,12 +72,8 @@ async def explore_repository(
  success=False,
  error=f"会话不存在: {session_id}",
  )
- # Generate SubAgent session ID (deterministic for reuse)
- subagent_session_id = generate_subagent_session_id(
- main_session_id=session_id,
- repo_url=repo_url,
- task_type="explore",
- )
+ # 生成唯一执行 ID
+ subagent_session_id = generate_execution_id
  # Build context for SubAgent
  context = await build_subagent_context(main_session, focus_areas)
  # Build prompt for exploration
@@ -88,48 +86,46 @@ async def explore_repository(
 """
  if focus_areas:
  prompt += f"\n重点关注以下领域: {', '.join(focus_areas)}"
- # Create SubAgent request
- request = SubAgentRequest(
+ # 使用 ContainerManager 启动容器
+ try:
+ manager = ContainerManager
+ config = ContainerConfig(
  session_id=subagent_session_id,
  task_type="explore",
  repo_url=repo_url,
  branch=branch,
- main_session_id=session_id,
  prompt=prompt,
+ main_session_id=session_id,
+ timeout=TASK_TIMEOUTS.get("explore", 600),
  context=context,
  )
- # Submit task to SubAgent
- try:
- client = SubAgentClient
- task_id = await client.submit_task(request)
- log.info("subagent_task_submitted", task_id=task_id)
+ container_id = await manager.start(config)
+ log.info(
+ "container_started",
+ subagent_session_id=subagent_session_id,
+ container_id=container_id[:12],
+ )
  except Exception as e:
- log.error("subagent_submit_failed", error=str(e))
+ log.error("container_start_failed", error=str(e))
  return ToolResult(
  success=False,
- error=f"提交 SubAgent 任务失败: {e}",
+ error=f"容器启动失败: {e}",
  )
- # Create or update SubAgentSession record
- subagent_session, created = await SubAgentSession.objects.aupdate_or_create(
+ # 创建 SubAgentSession 记录
+ await SubAgentSession.objects.aupdate_or_create(
  session_id=subagent_session_id,
  defaults={
  "main_session": main_session,
  "repo_url": repo_url,
  "task_type": SubAgentSession.TaskType.EXPLORE,
  "status": SubAgentSession.Status.RUNNING,
- "current_task_id": task_id,
+ "container_id": container_id,
  },
- )
- log.info(
- "subagent_session_updated",
- subagent_session_id=subagent_session_id,
- created=created,
  )
  # Store mapping in main session temp_data
  temp_data = main_session.temp_data or {}
  subagent_sessions = temp_data.setdefault("subagent_sessions", {})
  subagent_sessions[subagent_session_id] = {
- "task_id": task_id,
  "task_type": "explore",
  "status": "running",
  }
@@ -138,7 +134,6 @@ async def explore_repository(
  return ToolResult(
  success=True,
  output={
- "task_id": task_id,
  "subagent_session_id": subagent_session_id,
  "status": "running",
  "message": "已提交仓库探索任务，等待 SubAgent 完成分析",
@@ -147,6 +142,6 @@ async def explore_repository(
  "suspension": True,
  "suspension_reason": "subagent_task",
  "subagent_session_id": subagent_session_id,
- "task_id": task_id,
+ "container_id": container_id,
  },
  )
