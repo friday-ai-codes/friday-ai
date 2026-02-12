@@ -1,16 +1,18 @@
 """Dispatch coding task tool for SubAgent.
 Allows the main Agent to delegate coding tasks to Claude Code SubAgent.
+DEPRECATED: SubAgentClient 轮询模式将在 Phase 清理
 """
 import structlog
 from agents.models import AgentSession
 from agents.tools.base import ToolResult, tool
 from agents.tools.subagent.context import build_subagent_context
-from subagent.client import SubAgentClient, SubAgentRequest
-from subagent.models import SubAgentSession, generate_subagent_session_id
+from services.container_config import TASK_TIMEOUTS
+from services.container_manager import ContainerConfig, ContainerManager
+from subagent.models import SubAgentSession, generate_execution_id
 logger = structlog.get_logger(__name__)
 @tool(
  name="dispatch_coding_task",
- description="分派编码任务给 Claude Code SubAgent。SubAgent 将在指定分支上执行代码修改，完成后通知主 Agent。",
+ description="分派编码任务给 Claude Code SubAgent。SubAgent 将在指定分支上执行代码修改，完成后通过回调通知主 Agent。",
  category="SUBAGENT",
  parameters={
  "type": "object",
@@ -54,12 +56,8 @@ async def dispatch_coding_task(
  files_to_modify: list[str] | None = None,
 ) -> ToolResult:
  """Dispatch a coding task to SubAgent.
- Submits a coding task to Claude Code SubAgent which will:
- 1. Clone/update the repository
- 2. Create/checkout the target branch from from_branch
- 3. Execute the coding task
- 4. Commit changes
- 5. Notify the main Agent via callback
+ 使用 ContainerManager 启动容器，返回 suspension 元数据，
+ 容器完成后通过回调恢复 AgentLoop。
  Args:
  repo_url: Git repository URL
  from_branch: Source branch to base work on
@@ -68,7 +66,7 @@ async def dispatch_coding_task(
  session_id: Main Agent session ID
  files_to_modify: Optional list of files to modify
  Returns:
- ToolResult with task_id and suspension metadata
+ ToolResult with subagent_session_id and suspension metadata
  """
  log = logger.bind(
  session_id=session_id,
@@ -88,12 +86,8 @@ async def dispatch_coding_task(
  success=False,
  error=f"会话不存在: {session_id}",
  )
- # Generate SubAgent session ID
- subagent_session_id = generate_subagent_session_id(
- main_session_id=session_id,
- repo_url=repo_url,
- task_type="coding",
- )
+ # 生成唯一执行 ID
+ subagent_session_id = generate_execution_id
  # Build context for SubAgent
  context = await build_subagent_context(main_session)
  context["branch_info"] = {
@@ -124,49 +118,48 @@ async def dispatch_coding_task(
 - 确保向后兼容
 - 完成后提交所有更改
 """
- # Create SubAgent request
- request = SubAgentRequest(
+ # 使用 ContainerManager 启动容器
+ try:
+ manager = ContainerManager
+ config = ContainerConfig(
  session_id=subagent_session_id,
  task_type="coding",
  repo_url=repo_url,
  branch=from_branch,
  target_branch=target_branch,
- main_session_id=session_id,
  prompt=prompt,
+ main_session_id=session_id,
+ timeout=TASK_TIMEOUTS.get("coding", 1800),
  context=context,
  )
- # Submit task to SubAgent
- try:
- client = SubAgentClient
- task_id = await client.submit_task(request)
- log.info("subagent_task_submitted", task_id=task_id)
+ container_id = await manager.start(config)
+ log.info(
+ "container_started",
+ subagent_session_id=subagent_session_id,
+ container_id=container_id[:12],
+ )
  except Exception as e:
- log.error("subagent_submit_failed", error=str(e))
+ log.error("container_start_failed", error=str(e))
  return ToolResult(
  success=False,
- error=f"提交 SubAgent 任务失败: {e}",
+ error=f"容器启动失败: {e}",
  )
- # Create or update SubAgentSession record
- subagent_session, created = await SubAgentSession.objects.aupdate_or_create(
+ # 创建 SubAgentSession 记录
+ await SubAgentSession.objects.aupdate_or_create(
  session_id=subagent_session_id,
  defaults={
  "main_session": main_session,
  "repo_url": repo_url,
  "task_type": SubAgentSession.TaskType.CODING,
  "status": SubAgentSession.Status.RUNNING,
- "current_task_id": task_id,
+ "container_id": container_id,
+ "target_branch": target_branch,
  },
- )
- log.info(
- "subagent_session_updated",
- subagent_session_id=subagent_session_id,
- created=created,
  )
  # Store mapping in main session temp_data
  temp_data = main_session.temp_data or {}
  subagent_sessions = temp_data.setdefault("subagent_sessions", {})
  subagent_sessions[subagent_session_id] = {
- "task_id": task_id,
  "task_type": "coding",
  "status": "running",
  "from_branch": from_branch,
@@ -178,17 +171,14 @@ async def dispatch_coding_task(
  return ToolResult(
  success=True,
  output={
- "task_id": task_id,
  "subagent_session_id": subagent_session_id,
  "status": "running",
- "from_branch": from_branch,
- "target_branch": target_branch,
  "message": "已分派编码任务，SubAgent 正在执行",
  },
  metadata={
  "suspension": True,
  "suspension_reason": "subagent_task",
  "subagent_session_id": subagent_session_id,
- "task_id": task_id,
+ "container_id": container_id,
  },
  )
