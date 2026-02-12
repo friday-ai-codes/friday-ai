@@ -57,6 +57,10 @@ class SubAgentSession(models.Model):
  ASK = "ask", "Ask Question"
  PLAN = "plan", "Generate Plan"
  CODING = "coding", "Coding Task"
+ class HealthStatus(models.TextChoices):
+ HEALTHY = "healthy", "Healthy"
+ UNHEALTHY = "unhealthy", "Unhealthy"
+ UNKNOWN = "unknown", "Unknown"
  # Unique identifier (sub-{hash})
  session_id = models.CharField(max_length=64, unique=True, db_index=True)
  # Relationship to main Agent session
@@ -127,6 +131,13 @@ class SubAgentSession(models.Model):
  completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
  # 心跳追踪（Phase 新增）
  last_heartbeat_at = models.DateTimeField(null=True, blank=True, verbose_name="最后心跳时间")
+ # 健康状态追踪（Phase 新增）
+ health_status = models.CharField(
+ max_length=20,
+ choices=HealthStatus.choices,
+ default=HealthStatus.UNKNOWN,
+ verbose_name="容器健康状态",
+ )
  class Meta:
  indexes = [
  models.Index(fields=["main_session", "task_type"]),
