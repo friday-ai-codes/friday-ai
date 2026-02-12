@@ -5,6 +5,8 @@ successful repositories, and sends a Feishu result card.
 Architecture decision: AICodingNode inherits BaseNode (NOT AIAgentBaseNode).
 The orchestrator pattern (multiple SubAgents + polling + MR creation) is
 fundamentally different from AIAgentBaseNode's single AgentLoop model.
+# DEPRECATED: SubAgentClient 轮询模式将在 Phase 清理
+# 新代码使用 ContainerManager + 回调驱动模式
 """
 import asyncio
 import re
@@ -467,121 +469,81 @@ class AICodingNode(BaseNode):
  },
  )
  # ------------------------------------------------------------------
- # SubAgent 分发 + 轮询
+ # SubAgent 分发（回调驱动模式）
  # ------------------------------------------------------------------
  async def _run_repo_coding(
  self,
- client: SubAgentClient,
+ client: SubAgentClient, # DEPRECATED - 不再使用
  repository: Repository,
  tasks: list[dict[str, Any]],
  branch_name: str,
  base_branch: str,
  global_context: str,
  config: dict[str, Any],
+ node_execution_id: str = "",
  ) -> dict[str, Any]:
  """执行单个仓库的编码任务。
- 1. 构建 SubAgent prompt（合并该仓库所有任务的编码指令）
- 2. 提交 SubAgent 任务
- 3. 轮询等待完成
- 4. 返回结果
+ 迁移后：启动容器并返回 waiting_event 状态，不再轮询。
+ 容器完成后通过回调恢复 workflow。
  """
  log = logger.bind(
  repository_id=str(repository.id),
  repository_name=repository.name,
  )
- timeout_seconds: int = config.get("timeout_seconds", 1800)
- polling_interval: int = config.get("polling_interval", 15)
- # 1. 构建 prompt
+ # 1. 构建 prompt（保持不变）
  prompt = self._build_coding_prompt(tasks, global_context, branch_name)
- # 2. 获取仓库 URL
- repo_url: str = repository.git_url
- # 3. 提交 SubAgent 任务
- session_id = f"coding-{uuid.uuid4.hex[:12]}"
- request = SubAgentRequest(
+ # 2. 使用 ContainerManager 启动容器
+ from services.container_config import TASK_TIMEOUTS
+ from services.container_manager import ContainerConfig, ContainerManager
+ from subagent.models import generate_execution_id
+ manager = ContainerManager
+ session_id = generate_execution_id
+ # 获取仓库 Git 凭证
+ git_credentials = {}
+ if repository.credential and repository.credential.encrypted_token:
+ token = decrypt_value(repository.credential.encrypted_token)
+ git_credentials = {
+ "access_token": token,
+ "ssl_verify": str(repository.credential.ssl_verify).lower,
+ }
+ container_config = ContainerConfig(
  session_id=session_id,
  task_type="coding",
- repo_url=repo_url,
+ repo_url=repository.git_url,
  branch=base_branch,
  target_branch=branch_name,
  prompt=prompt,
- main_session_id=session_id,
+ work_item_id=config.get("work_item_id", ""),
+ node_execution_id=node_execution_id,
+ timeout=TASK_TIMEOUTS.get("coding", 1800),
+ git_credentials=git_credentials,
  context={
  "repository_id": str(repository.id),
  "repository_name": repository.name,
- "container_image": config.get(
- "container_image", "friday/claude-code:latest"
- ),
  },
  )
- log.info("subagent_submitting", session_id=session_id)
  try:
- task_id = await client.submit_task(request)
- except Exception as e:
- log.error("subagent_submit_failed", error=str(e))
- return {
- "status": "error",
- "error": f"SubAgent 提交失败: {e}",
- "repository_id": str(repository.id),
- "repository_name": repository.name,
- }
- log.info("subagent_submitted", task_id=task_id)
- # 4. 轮询等待完成
- elapsed = 0
- response: SubAgentResponse | None = None
- while elapsed < timeout_seconds:
- await asyncio.sleep(polling_interval)
- elapsed += polling_interval
- try:
- response = await client.get_task_status(task_id)
- except Exception as e:
- log.warning(
- "subagent_poll_error",
- task_id=task_id,
- elapsed=elapsed,
- error=str(e),
+ container_id = await manager.start(container_config)
+ log.info(
+ "container_started_callback_mode",
+ session_id=session_id,
+ container_id=container_id[:12],
  )
- continue
- if response.status in ("completed", "error"):
- break
- # 5. 处理结果
- if response is None:
+ except Exception as e:
+ log.error("container_start_failed", error=str(e))
  return {
  "status": "error",
- "error": f"SubAgent 轮询超时 ({timeout_seconds}s)，无法获取状态",
+ "error": f"容器启动失败: {e}",
  "repository_id": str(repository.id),
  "repository_name": repository.name,
  }
- if response.status == "error":
- log.warning(
- "subagent_coding_error",
- task_id=task_id,
- error=response.error,
- )
+ # 3. 返回 waiting_event 状态（关键变更！不再轮询）
  return {
- "status": "error",
- "error": response.error or "SubAgent 编码失败",
+ "status": "waiting_event",
+ "session_id": session_id,
+ "container_id": container_id,
  "repository_id": str(repository.id),
  "repository_name": repository.name,
- }
- if response.status != "completed":
- return {
- "status": "error",
- "error": f"SubAgent 超时（{timeout_seconds}s），最后状态: {response.status}",
- "repository_id": str(repository.id),
- "repository_name": repository.name,
- }
- log.info("subagent_coding_completed", task_id=task_id)
- # 从 output 中提取变更统计
- output = response.output or {}
- return {
- "status": "completed",
- "output": output,
- "repository_id": str(repository.id),
- "repository_name": repository.name,
- "tasks_completed": [t.get("name", "") for t in tasks],
- "files_changed": output.get("files_changed", 0) if isinstance(output, dict) else 0,
- "insertions": output.get("insertions", 0) if isinstance(output, dict) else 0,
- "deletions": output.get("deletions", 0) if isinstance(output, dict) else 0,
  }
  def _build_coding_prompt(
  self,
