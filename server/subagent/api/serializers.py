@@ -41,6 +41,7 @@ class QuestionPayloadSerializer(serializers.Serializer):
  child=serializers.CharField, required=False, default=list
  )
  context = serializers.CharField(required=False, default="", allow_blank=True)
+ code_snippet = serializers.CharField(required=False, default="", allow_blank=True) # Phase 新增
  default_option = serializers.CharField(required=False, default="", allow_blank=True)
  timeout_minutes = serializers.IntegerField(required=False, default=10)
 class HeartbeatPayloadSerializer(serializers.Serializer):

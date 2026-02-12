@@ -6,6 +6,7 @@ Starts the background scheduler for session timeout tasks:
 - detect_zombie_containers: Every 2 minutes (Phase)
 - enforce_task_timeouts: Every 60 seconds (Phase)
 - cleanup_completed_containers: Daily at 4:00 AM (Phase)
+- remind_pending_questions: Every 30 minutes (Phase)
 """
 import asyncio
 import structlog
@@ -93,6 +94,16 @@ def enforce_task_timeouts_job:
  log.info("job_complete", result=result)
  except Exception as e:
  log.exception("job_error", error=str(e))
+def remind_pending_questions_job:
+ """Job wrapper for remind_pending_questions task (Phase)."""
+ from tasks.container_tasks import remind_pending_questions
+ log = logger.bind(job="remind_pending_questions")
+ log.info("job_start")
+ try:
+ result = run_async_task(remind_pending_questions)
+ log.info("job_complete", result=result)
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 @util.close_old_connections
 def delete_old_job_executions(max_age: int = 604_800):
  """Delete job execution logs older than max_age seconds (default: 7 days)."""
@@ -163,6 +174,16 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="cleanup_completed_containers", schedule="daily at 04:00")
+ # Remind pending questions every 30 minutes (Phase)
+ scheduler.add_job(
+ remind_pending_questions_job,
+ trigger=IntervalTrigger(minutes=30),
+ id="remind_pending_questions",
+ name="Remind users about pending questions",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info("job_registered", job="remind_pending_questions", schedule="every 30 minutes")
  # Delete old job executions weekly
  scheduler.add_job(
  delete_old_job_executions,

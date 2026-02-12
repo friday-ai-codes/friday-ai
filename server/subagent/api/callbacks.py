@@ -505,7 +505,10 @@ def _handle_heartbeat(session: SubAgentSession, payload: dict, log) -> Response:
  log.debug("callback_heartbeat_ok")
  return Response({"status": "ok"})
 def _handle_question(session: SubAgentSession, payload: dict, log) -> Response:
- """处理 question 回调 — 更新 session 状态，触发 Feishu 提问卡片。"""
+ """处理 question 回调 — 创建 InteractionLog 并触发 Feishu 提问卡片。"""
+ import uuid
+ from subagent.models import InteractionLog
+ from subagent.question_handler import send_question_card_enhanced
  ser = QuestionPayloadSerializer(data=payload)
  if not ser.is_valid:
  return Response(
@@ -513,30 +516,55 @@ def _handle_question(session: SubAgentSession, payload: dict, log) -> Response:
  status=status.HTTP_400_BAD_REQUEST,
  )
  p = ser.validated_data
- # 存储问题到 last_output（临时状态数据）
+ # 生成问题 ID
+ question_id = f"q-{uuid.uuid4.hex[:12]}"
+ # 创建 InteractionLog 记录
+ interaction_log = InteractionLog.objects.create(
+ session=session,
+ question_id=question_id,
+ question_text=p["question"],
+ question_context=p.get("context", ""),
+ code_snippet=p.get("code_snippet", ""),
+ options=p.get("options", ),
+ )
+ # 存储问题到 last_output（保持兼容）
  session.last_output = {
+ **(session.last_output or {}),
  "pending_question": {
+ "question_id": question_id,
  "question": p["question"],
  "options": p.get("options", ),
- "context": p.get("context", ""),
  "asked_at": timezone.now.isoformat,
  },
  }
  session.save(update_fields=["last_output", "updated_at"])
- # 触发 Feishu 提问卡片（异步，不阻塞回调响应）
- from subagent.question_handler import send_question_card
- try:
- send_question_card(
+ # 触发增强版 Feishu 提问卡片（异步）
+ async def _send_card:
+ message_id = await send_question_card_enhanced(
  session=session,
  question=p["question"],
  options=p.get("options", ),
  context=p.get("context", ""),
+ code_snippet=p.get("code_snippet", ""),
+ question_id=question_id,
  )
- except Exception as e:
- log.error("callback_question_card_failed", error=str(e))
- # 卡片发送失败不影响回调响应
- log.info("callback_question_ok", question_preview=p["question"][:80])
- return Response({"status": "ok"})
+ # 更新 message_id 到 InteractionLog
+ if message_id:
+ interaction_log.feishu_message_id = message_id
+ await interaction_log.asave(update_fields=["feishu_message_id"])
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_send_card)
+ except RuntimeError:
+ # 没有运行中的事件循环
+ asyncio.run(_send_card)
+ log.info(
+ "callback_question_ok",
+ question_id=question_id,
+ interaction_log_id=interaction_log.id,
+ question_preview=p["question"][:80],
+ )
+ return Response({"status": "ok", "question_id": question_id})
 def _handle_progress(session: SubAgentSession, payload: dict, log) -> Response:
  """处理 progress 回调 — 更新 last_output（临时进度数据）。"""
  ser = ProgressPayloadSerializer(data=payload)
