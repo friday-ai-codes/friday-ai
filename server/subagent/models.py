@@ -224,6 +224,102 @@ class TaskResult(models.Model):
  ]
  def __str__(self) -> str:
  return f"TaskResult({self.session.session_id}, {self.result_type})"
+class InteractionLog(models.Model):
+ """SubAgent 提问交互记录（Phase）。
+ 记录每次 SubAgent 向用户的提问及用户回复，
+ 支持后续查询和分析。
+ """
+ class AnswerSource(models.TextChoices):
+ BUTTON = "button", "按钮选择"
+ TEXT = "text", "文字输入"
+ # 关联
+ session = models.ForeignKey(
+ SubAgentSession,
+ on_delete=models.CASCADE,
+ related_name="interaction_logs",
+ )
+ # 问题内容
+ question_id = models.CharField(
+ max_length=64,
+ db_index=True,
+ verbose_name="问题 ID",
+ help_text="唯一标识，用于匹配回复",
+ )
+ question_text = models.TextField(verbose_name="问题描述")
+ question_context = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="上下文说明",
+ help_text="任务名、文件路径等上下文信息",
+ )
+ code_snippet = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="代码片段",
+ help_text="相关代码或 diff",
+ )
+ options = models.JSONField(
+ default=list,
+ verbose_name="可选项",
+ help_text="选项列表 ['选项A', '选项B']",
+ )
+ # 用户回复
+ answer_text = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="用户回复",
+ )
+ answer_source = models.CharField(
+ max_length=20,
+ choices=AnswerSource.choices,
+ blank=True,
+ default="",
+ verbose_name="回复来源",
+ )
+ # 飞书消息追踪（用于更新卡片状态）
+ feishu_message_id = models.CharField(
+ max_length=128,
+ blank=True,
+ default="",
+ verbose_name="飞书消息 ID",
+ )
+ # 时间追踪
+ asked_at = models.DateTimeField(auto_now_add=True, verbose_name="提问时间")
+ answered_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ verbose_name="回复时间",
+ )
+ # 提醒追踪
+ reminder_count = models.IntegerField(
+ default=0,
+ verbose_name="提醒次数",
+ )
+ last_reminder_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ verbose_name="上次提醒时间",
+ )
+ class Meta:
+ ordering = ["-asked_at"]
+ indexes = [
+ models.Index(fields=["session", "asked_at"]),
+ models.Index(fields=["answered_at"]), # 用于查询未回复问题
+ ]
+ verbose_name = "交互记录"
+ verbose_name_plural = "交互记录"
+ def __str__(self) -> str:
+ status = "已回复" if self.answered_at else "待回复"
+ return f"InteractionLog({self.session.session_id}, {status})"
+ @property
+ def is_answered(self) -> bool:
+ return self.answered_at is not None
+ @property
+ def wait_duration_seconds(self) -> int | None:
+ """等待时长（秒）。"""
+ if self.answered_at:
+ return int((self.answered_at - self.asked_at).total_seconds)
+ return int((timezone.now - self.asked_at).total_seconds)
 class SubAgentOutput(models.Model):
  """Stores long SubAgent results.
  When output exceeds MAX_INLINE_OUTPUT_LENGTH (50KB),
