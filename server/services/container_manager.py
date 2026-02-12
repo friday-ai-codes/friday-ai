@@ -12,6 +12,7 @@ import json
 import os
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 import docker
 import structlog
@@ -269,6 +270,13 @@ class ContainerManager:
  raise
  async def stop(self, session_id: str, force: bool = False) -> bool:
  """停止容器。
+ 优雅终止流程（force=False）：
+ 1. 发送 SIGTERM，等待 30s 让容器清理
+ 2. 超时后 SIGKILL
+ 3. 移除容器资源
+ 强制终止流程（force=True）：
+ 1. 直接 SIGKILL
+ 2. 强制移除容器
  Args:
  session_id: 会话 ID
  force: 是否强制终止
@@ -279,7 +287,25 @@ class ContainerManager:
  if not container_id:
  logger.warning("stop_no_container_found", session_id=session_id)
  return False
- stopped = await self._executor.stop_execution(container_id, force=force)
+ try:
+ container = await asyncio.to_thread(
+ self._executor.client.containers.get, container_id
+ )
+ if force:
+ # 强制终止：kill + force remove
+ await asyncio.to_thread(container.kill)
+ await asyncio.to_thread(container.remove, force=True)
+ else:
+ # 优雅终止：stop(timeout=30) + remove
+ await asyncio.to_thread(container.stop, timeout=30)
+ await asyncio.to_thread(container.remove)
+ stopped = True
+ except docker.errors.NotFound:
+ logger.warning("stop_container_not_found", session_id=session_id, container_id=container_id[:12])
+ stopped = True # 容器已不存在，视为停止成功
+ except Exception as e:
+ logger.error("stop_container_failed", session_id=session_id, error=str(e))
+ stopped = False
  if stopped:
  # 更新数据库状态
  session = await SubAgentSession.objects.filter(
@@ -293,7 +319,7 @@ class ContainerManager:
  logger.info(
  "container_stopped",
  session_id=session_id,
- container_id=container_id[:12],
+ container_id=container_id[:12] if container_id else "N/A",
  force=force,
  )
  return stopped
@@ -340,6 +366,9 @@ class ContainerManager:
  return await self._executor.get_logs(container_id, tail=tail)
  async def cleanup(self, older_than_hours: int = 24) -> int:
  """清理已完成容器。
+ 支持：
+ 1. 常规清理：终态且超过阈值的容器
+ 2. 延迟清理：带有 cleanup_after 标记的容器（失败任务 1 小时后清理）
  Args:
  older_than_hours: 仅清理超过此时长的容器
  Returns:
@@ -354,11 +383,30 @@ class ContainerManager:
  ]
  sessions = SubAgentSession.objects.filter(
  status__in=terminal_statuses,
- completed_at__lt=cutoff,
  container_id__gt="", # 有容器 ID 的
  )
  removed = 0
  async for session in sessions:
+ # 检查是否有延迟清理标记
+ cleanup_after_str = ""
+ if session.last_output and isinstance(session.last_output, dict):
+ cleanup_after_str = session.last_output.get("cleanup_after", "")
+ if cleanup_after_str:
+ try:
+ cleanup_after = datetime.fromisoformat(cleanup_after_str)
+ if timezone.now < cleanup_after:
+ # 还没到清理时间，跳过
+ logger.debug(
+ "cleanup_deferred",
+ session_id=session.session_id,
+ cleanup_after=cleanup_after_str,
+ )
+ continue
+ except (ValueError, TypeError):
+ pass # 解析失败，按常规清理处理
+ # 检查是否超过清理阈值（针对无 cleanup_after 的容器）
+ if not cleanup_after_str and session.completed_at and session.completed_at >= cutoff:
+ continue
  try:
  container = await asyncio.to_thread(
  self._executor.client.containers.get, session.container_id
