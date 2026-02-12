@@ -138,6 +138,9 @@ class SubAgentSession(models.Model):
  default=HealthStatus.UNKNOWN,
  verbose_name="容器健康状态",
  )
+ # 资源消耗（Phase 从 docker stats 收集）
+ cpu_usage_percent = models.FloatField(null=True, blank=True, verbose_name="CPU 使用率%")
+ memory_usage_mb = models.FloatField(null=True, blank=True, verbose_name="内存使用MB")
  class Meta:
  indexes = [
  models.Index(fields=["main_session", "task_type"]),

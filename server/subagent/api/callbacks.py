@@ -71,6 +71,55 @@ async def _cleanup_container_now(session: SubAgentSession) -> None:
  log.info("container_cleaned")
  except Exception as e:
  log.warning("container_cleanup_error", error=str(e))
+def _collect_container_stats(session: SubAgentSession, log) -> None:
+ """收集容器资源消耗（在清理前）。
+ 通过 docker stats 获取 CPU 使用率和内存使用量。
+ 这是同步调用但会异步执行以不阻塞回调响应。
+ """
+ async def _collect:
+ if not session.container_id:
+ return
+ try:
+ import asyncio
+ from services.container_manager import ContainerManager
+ manager = ContainerManager
+ container = await asyncio.to_thread(
+ manager._executor.client.containers.get, session.container_id
+ )
+ # 获取 docker stats（单次采样）
+ stats = await asyncio.to_thread(container.stats, stream=False)
+ if stats:
+ # CPU 使用率计算
+ cpu_stats = stats.get("cpu_stats", {})
+ precpu_stats = stats.get("precpu_stats", {})
+ cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - \
+ precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+ system_delta = cpu_stats.get("system_cpu_usage", 0) - \
+ precpu_stats.get("system_cpu_usage", 0)
+ if system_delta > 0 and cpu_delta > 0:
+ # 考虑 CPU 核心数
+ online_cpus = cpu_stats.get("online_cpus", 1)
+ cpu_percent = (cpu_delta / system_delta) * online_cpus * 100
+ session.cpu_usage_percent = round(cpu_percent, 2)
+ # 内存使用
+ mem_stats = stats.get("memory_stats", {})
+ mem_usage = mem_stats.get("usage", 0)
+ if mem_usage > 0:
+ session.memory_usage_mb = round(mem_usage / 1024 / 1024, 2)
+ session.save(update_fields=["cpu_usage_percent", "memory_usage_mb", "updated_at"])
+ log.info(
+ "container_stats_collected",
+ cpu_percent=session.cpu_usage_percent,
+ memory_mb=session.memory_usage_mb,
+ )
+ except Exception as e:
+ log.warning("stats_collection_error", error=str(e))
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_collect)
+ except RuntimeError:
+ # 没有运行中的事件循环
+ pass
 # === 失败通知（Phase）===
 def _schedule_agent_loop_resume(session: SubAgentSession, log) -> None:
  """触发 AgentLoop 恢复（当容器完成时）。
@@ -348,6 +397,8 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  )
  # 更新 session 状态
  session.mark_completed
+ # 收集容器资源消耗（在清理前）
+ _collect_container_stats(session, log)
  # 调度容器清理（成功任务立即清理）
  _schedule_container_cleanup(session, immediate=True)
  # 触发 workflow 恢复（如果有 node_execution）
