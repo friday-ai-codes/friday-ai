@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from agents.core.result import AgentResult
 from services.git_platform.models import MRCreateResult, MRDiffFile, MRDiffResult
-from subagent.client import SubAgentResponse
 from tests.e2e.fixtures.technical_plans import VALID_TECHNICAL_PLAN
 from workflows.nodes.ai.code_review import AICodeReviewNode
 from workflows.nodes.ai.coding import AICodingNode
@@ -245,8 +244,8 @@ class TestSpecializedChainE2E:
  e2e_repository: Any,
  ) -> None:
  """PlanApproval output.plan (approved) -> AICoding input.plan.
- Verifies AICodingNode correctly reads plan data, dispatches SubAgent,
- and creates MR.
+ Verifies AICodingNode correctly reads plan data, dispatches container,
+ and returns waiting_event (callback-driven mode).
  """
  repo_id_str = str(e2e_repository.id)
  # Construct approved plan data (simulating approval callback output)
@@ -258,46 +257,31 @@ class TestSpecializedChainE2E:
  repo_id=repo_id_str,
  )
  coding_node = AICodingNode
- subagent_response = SubAgentResponse(
- task_id="task-001",
- status="completed",
- output={"files_changed": 3, "insertions": 50, "deletions": 10},
- )
- mr_result = MRCreateResult(
- success=True,
- mr_url="https://gitlab.example.com/test/repo/-/merge_requests/1",
- mr_id="1",
- has_conflicts=False,
- )
+ # Mock _run_repo_coding to avoid ContainerManager and DB sync issues
+ mock_repo_result = {
+ "status": "waiting_event",
+ "session_id": "exec-test123",
+ "container_id": "container-001",
+ "repository_id": repo_id_str,
+ "repository_name": "e2e-test-repo",
+ }
  with (
- patch(
- "workflows.nodes.ai.coding.SubAgentClient"
- ) as MockClient,
- patch(
- "workflows.nodes.ai.coding.get_git_platform_client"
- ) as mock_git_factory,
+ patch.object(
+ coding_node,
+ "_run_repo_coding",
+ new_callable=AsyncMock,
+ return_value=mock_repo_result,
+ ),
  patch(
  "workflows.nodes.ai.coding.decrypt_value",
- return_value="decrypted-token",
+ return_value="mock-token-123",
  ),
- patch("asyncio.sleep", new_callable=AsyncMock),
  ):
- client_instance = MockClient.return_value
- client_instance.submit_task = AsyncMock(return_value="task-001")
- client_instance.get_task_status = AsyncMock(return_value=subagent_response)
- mock_git_client = MagicMock
- mock_git_client.create_merge_request = AsyncMock(return_value=mr_result)
- mock_git_factory.return_value = mock_git_client
  coding_result: NodeResult = await coding_node.execute(coding_ctx)
- # Verify: AICodingNode read the plan and produced MR output
- assert coding_result.status == "completed"
- assert "merge_requests" in coding_result.output
- assert len(coding_result.output["merge_requests"]) >= 1
- mr = coding_result.output["merge_requests"][0]
- assert mr["repository_id"] == repo_id_str
- assert mr["mr_url"] != ""
- assert mr["mr_id"] != ""
- assert "changes_summary" in coding_result.output
+ # Verify: AICodingNode returns waiting_event (callback-driven)
+ assert coding_result.status == "waiting_event"
+ assert "pending_sessions" in coding_result.output
+ assert len(coding_result.output["pending_sessions"]) >= 1
  async def test_data_flow_coding_to_review(self) -> None:
  """AICoding output (merge_requests) -> CodeReview input (coding_result).
  Verifies AICodeReviewNode reads MR list, fetches diff, and produces
@@ -453,35 +437,55 @@ class TestSpecializedChainE2E:
  repo_id=repo_id_str,
  )
  coding_node = AICodingNode
- subagent_response = SubAgentResponse(
- task_id="task-chain-001",
- status="completed",
- output={"files_changed": 5, "insertions": 100, "deletions": 20},
- )
- mr_result = MRCreateResult(
- success=True,
- mr_url="https://gitlab.example.com/test/repo/-/merge_requests/42",
- mr_id="42",
- has_conflicts=False,
- )
+ # Mock _run_repo_coding to avoid ContainerManager and DB sync issues
+ mock_repo_result = {
+ "status": "waiting_event",
+ "session_id": "exec-chain-test",
+ "container_id": "container-chain-001",
+ "repository_id": repo_id_str,
+ "repository_name": "e2e-test-repo",
+ }
  with (
- patch("workflows.nodes.ai.coding.SubAgentClient") as MockClient,
- patch("workflows.nodes.ai.coding.get_git_platform_client") as mock_git_factory,
- patch("workflows.nodes.ai.coding.decrypt_value", return_value="decrypted-token"),
- patch("asyncio.sleep", new_callable=AsyncMock),
+ patch.object(
+ coding_node,
+ "_run_repo_coding",
+ new_callable=AsyncMock,
+ return_value=mock_repo_result,
+ ),
+ patch(
+ "workflows.nodes.ai.coding.decrypt_value",
+ return_value="mock-token-123",
+ ),
  ):
- client_instance = MockClient.return_value
- client_instance.submit_task = AsyncMock(return_value="task-chain-001")
- client_instance.get_task_status = AsyncMock(return_value=subagent_response)
- mock_git_client = MagicMock
- mock_git_client.create_merge_request = AsyncMock(return_value=mr_result)
- mock_git_factory.return_value = mock_git_client
  coding_result = await coding_node.execute(coding_ctx)
- assert coding_result.status == "completed"
- coding_output = coding_result.output
- assert len(coding_output["merge_requests"]) >= 1
- assert coding_output["merge_requests"][0]["mr_id"] == "42"
- assert coding_output["merge_requests"][0]["repository_id"] == repo_id_str
+ # In callback-driven mode, AICodingNode returns waiting_event
+ assert coding_result.status == "waiting_event"
+ assert "pending_sessions" in coding_result.output
+ # For CodeReview test, we simulate what the callback would produce
+ coding_output = {
+ "merge_requests": [
+ {
+ "repository_id": repo_id_str,
+ "repository_name": "e2e-test-repo",
+ "mr_url": "https://gitlab.example.com/test/repo/-/merge_requests/42",
+ "mr_id": "42",
+ "tasks_completed": ["Task 1"],
+ "files_changed": 5,
+ "insertions": 100,
+ "deletions": 20,
+ }
+ ],
+ "branches": {"branch_name": "feat/e2e-test", "base_branch": "main"},
+ "changes_summary": {
+ "total_repos": 1,
+ "succeeded_repos": 1,
+ "failed_repos": 0,
+ "total_files_changed": 5,
+ "total_insertions": 100,
+ "total_deletions": 20,
+ },
+ "failed_details":,
+ }
  # ==================== Step 4: CodeReview ====================
  review_input = {
  "coding_result": coding_output,
