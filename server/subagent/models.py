@@ -341,3 +341,46 @@ class SubAgentOutput(models.Model):
  ordering = ["-created_at"]
  def __str__(self) -> str:
  return f"SubAgentOutput({self.task_id})"
+class ActionLog(models.Model):
+ """SubAgent 执行轨迹记录（Phase）。
+ 记录完整执行过程：工具调用、LLM 交互、状态变更、决策点。
+ 永久保留，用于失败分析和长期数据积累。
+ """
+ class ActionType(models.TextChoices):
+ TOOL_CALL = "tool_call", "工具调用"
+ LLM_REQUEST = "llm_request", "LLM 请求"
+ LLM_RESPONSE = "llm_response", "LLM 响应"
+ STATE_CHANGE = "state_change", "状态变更"
+ DECISION = "decision", "决策点"
+ session = models.ForeignKey(
+ SubAgentSession,
+ on_delete=models.CASCADE,
+ related_name="action_logs",
+ verbose_name="关联会话",
+ )
+ action_type = models.CharField(
+ max_length=20,
+ choices=ActionType.choices,
+ verbose_name="动作类型",
+ )
+ # 原始事件时间（来自容器内记录）
+ timestamp = models.DateTimeField(verbose_name="事件时间")
+ # 序号（同一会话内的执行顺序）
+ sequence = models.PositiveIntegerField(default=0, verbose_name="序号")
+ # 通用载荷（灵活存储不同类型的详情）
+ payload = models.JSONField(default=dict, verbose_name="载荷")
+ # 性能追踪
+ duration_ms = models.IntegerField(null=True, blank=True, verbose_name="耗时(ms)")
+ # 入库时间
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ indexes = [
+ models.Index(fields=["session", "timestamp"]),
+ models.Index(fields=["action_type"]),
+ models.Index(fields=["session", "sequence"]),
+ ]
+ ordering = ["session", "sequence"]
+ verbose_name = "执行日志"
+ verbose_name_plural = "执行日志"
+ def __str__(self) -> str:
+ return f"ActionLog({self.session.session_id}, {self.action_type}, seq={self.sequence})"
