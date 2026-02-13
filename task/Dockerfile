@@ -1,3 +1,6 @@
+# Stage 0: Node.js tools
+FROM node:22.12.0-alpine AS node-tools
+# Node is pre-installed, we just need this layer
 # Stage 1: Build dependencies
 FROM python:3.14-alpine AS builder
 RUN apk add --no-cache \
@@ -23,8 +26,14 @@ RUN apk add --no-cache \
  tree \
  curl \
  ca-certificates \
- libffi
+ libffi \
+ docker-cli
 WORKDIR /app
+# Copy Node.js from node-tools
+COPY --from=node-tools /usr/local/bin/node /usr/local/bin/
+COPY --from=node-tools /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+ ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 # 从 builder 复制已安装的 Python 包
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
