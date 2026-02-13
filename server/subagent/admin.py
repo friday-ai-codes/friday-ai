@@ -1,6 +1,6 @@
 """Django Admin 配置 for subagent models."""
 from django.contrib import admin
-from subagent.models import InteractionLog, SubAgentOutput, SubAgentSession, TaskResult
+from subagent.models import ActionLog, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult
 @admin.register(SubAgentSession)
 class SubAgentSessionAdmin(admin.ModelAdmin):
  list_display = [
@@ -49,3 +49,30 @@ class SubAgentOutputAdmin(admin.ModelAdmin):
  list_display = ["id", "task_id", "session", "created_at"]
  search_fields = ["task_id"]
  raw_id_fields = ["session"]
+@admin.register(ActionLog)
+class ActionLogAdmin(admin.ModelAdmin):
+ """ActionLog Django Admin 配置。"""
+ list_display = [
+ "id",
+ "session_link",
+ "action_type",
+ "sequence",
+ "timestamp",
+ "duration_ms",
+ "payload_preview",
+ ]
+ list_filter = ["action_type", "timestamp"]
+ search_fields = ["session__session_id", "payload"]
+ readonly_fields = ["session", "action_type", "timestamp", "sequence", "payload", "duration_ms", "created_at"]
+ ordering = ["-timestamp"]
+ @admin.display(description="会话")
+ def session_link(self, obj: ActionLog) -> str:
+ from django.urls import reverse
+ from django.utils.html import format_html
+ url = reverse("admin:subagent_subagentsession_change", args=[obj.session.pk])
+ return format_html('<a href="{}">{}</a>', url, obj.session.session_id[:16])
+ @admin.display(description="载荷预览")
+ def payload_preview(self, obj: ActionLog) -> str:
+ import json
+ preview = json.dumps(obj.payload, ensure_ascii=False)[:100]
+ return preview + "..." if len(json.dumps(obj.payload)) > 100 else preview
