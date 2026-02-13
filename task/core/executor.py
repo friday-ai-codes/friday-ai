@@ -231,6 +231,19 @@ Implement the task as described. Make necessary code changes.
  "cost": total_cost,
  }
  )
+ # Write token usage to shared volume for main agent collection (Phase)
+ if result_message:
+ result_usage = getattr(result_message, "usage", {}) or {}
+ usage_data = {
+ "input_tokens": result_usage.get("input_tokens", 0),
+ "output_tokens": result_usage.get("output_tokens", 0),
+ "cache_read_tokens": result_usage.get("cache_read_input_tokens", 0),
+ "cache_write_tokens": result_usage.get("cache_creation_input_tokens", 0),
+ "total_cost_usd": float(total_cost) if total_cost else 0.0,
+ "model": "claude-opus-4-6",
+ "session_id": session_id,
+ }
+ await self._write_usage_data(usage_data)
  return {
  "success": True,
  "output": final_output,
@@ -295,6 +308,21 @@ Implement the task as described. Make necessary code changes.
  "Session mapping updated",
  session_id=session_id,
  task_id=self.config.task_id,
+ )
+ async def _write_usage_data(self, usage_data: dict) -> None:
+ """Write token usage data to shared volume.
+ Main agent will collect this data and store in TokenUsage model.
+ Data is written to /workspace/.friday/usage.json following existing protocol.
+ """
+ friday_dir = Path(self.workspace) / ".friday"
+ friday_dir.mkdir(exist_ok=True)
+ usage_file = friday_dir / "usage.json"
+ usage_file.write_text(json.dumps(usage_data, indent=2))
+ logger.info(
+ "Token usage written",
+ input_tokens=usage_data["input_tokens"],
+ output_tokens=usage_data["output_tokens"],
+ cost=usage_data["total_cost_usd"],
  )
  async def get_session_summary(self) -> str | None:
  """Get summary of previous session if exists."""
