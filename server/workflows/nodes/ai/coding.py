@@ -5,8 +5,6 @@ successful repositories, and sends a Feishu result card.
 Architecture decision: AICodingNode inherits BaseNode (NOT AIAgentBaseNode).
 The orchestrator pattern (multiple SubAgents + polling + MR creation) is
 fundamentally different from AIAgentBaseNode's single AgentLoop model.
-# DEPRECATED: SubAgentClient 轮询模式将在 Phase 清理
-# 新代码使用 ContainerManager + 回调驱动模式
 """
 import asyncio
 import re
@@ -17,7 +15,6 @@ from asgiref.sync import sync_to_async
 from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
-from subagent.client import SubAgentClient, SubAgentRequest, SubAgentResponse
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -241,14 +238,11 @@ class AICodingNode(BaseNode):
  )
  # 5. 并行分发（使用 ContainerManager）
  config = context.node_config
- # DEPRECATED: SubAgentClient 不再使用
- client = SubAgentClient
  node_execution_id = ""
  if context.node_execution:
  node_execution_id = str(context.node_execution.id)
  coding_tasks = [
  self._run_repo_coding(
- client=client, # deprecated
  repository=repositories[repo_id],
  tasks=tasks,
  branch_name=branch_name,
@@ -604,7 +598,6 @@ class AICodingNode(BaseNode):
  # ------------------------------------------------------------------
  async def _run_repo_coding(
  self,
- client: SubAgentClient, # DEPRECATED - 不再使用
  repository: Repository,
  tasks: list[dict[str, Any]],
  branch_name: str,
