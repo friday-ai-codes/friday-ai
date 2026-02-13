@@ -1,6 +1,6 @@
 """Django Admin 配置 for subagent models."""
 from django.contrib import admin
-from subagent.models import ActionLog, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult
+from subagent.models import ActionLog, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult, TokenUsage
 @admin.register(SubAgentSession)
 class SubAgentSessionAdmin(admin.ModelAdmin):
  list_display = [
@@ -76,3 +76,40 @@ class ActionLogAdmin(admin.ModelAdmin):
  import json
  preview = json.dumps(obj.payload, ensure_ascii=False)[:100]
  return preview + "..." if len(json.dumps(obj.payload)) > 100 else preview
+@admin.register(TokenUsage)
+class TokenUsageAdmin(admin.ModelAdmin):
+ """TokenUsage Django Admin 配置。"""
+ list_display = [
+ "id",
+ "session_link",
+ "model",
+ "input_tokens",
+ "output_tokens",
+ "total_tokens_display",
+ "total_cost_usd",
+ "source",
+ "recorded_at",
+ ]
+ list_filter = ["model", "source", "recorded_at"]
+ search_fields = ["session__session_id", "model"]
+ readonly_fields = [
+ "session",
+ "input_tokens",
+ "output_tokens",
+ "cache_read_tokens",
+ "cache_write_tokens",
+ "total_cost_usd",
+ "model",
+ "source",
+ "recorded_at",
+ ]
+ ordering = ["-recorded_at"]
+ @admin.display(description="会话")
+ def session_link(self, obj: TokenUsage) -> str:
+ from django.urls import reverse
+ from django.utils.html import format_html
+ url = reverse("admin:subagent_subagentsession_change", args=[obj.session.pk])
+ return format_html('<a href="{}">{}</a>', url, obj.session.session_id[:16])
+ @admin.display(description="总 Token")
+ def total_tokens_display(self, obj: TokenUsage) -> int:
+ return obj.total_tokens

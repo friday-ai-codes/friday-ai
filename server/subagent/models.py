@@ -384,3 +384,53 @@ class ActionLog(models.Model):
  verbose_name_plural = "执行日志"
  def __str__(self) -> str:
  return f"ActionLog({self.session.session_id}, {self.action_type}, seq={self.sequence})"
+class TokenUsage(models.Model):
+ """LLM Token 消耗记录（Phase）。
+ 记录每次任务执行的 token 消耗和成本，支持多维度统计。
+ 数据来源：SubAgent 上报 + 主服务校验（双重来源）。
+ """
+ class Source(models.TextChoices):
+ SUBAGENT = "subagent", "SubAgent 上报"
+ VERIFIED = "verified", "主服务校验"
+ session = models.ForeignKey(
+ SubAgentSession,
+ on_delete=models.CASCADE,
+ related_name="token_usages",
+ verbose_name="关联会话",
+ )
+ # Token 统计
+ input_tokens = models.IntegerField(verbose_name="输入 Token")
+ output_tokens = models.IntegerField(verbose_name="输出 Token")
+ cache_read_tokens = models.IntegerField(default=0, verbose_name="缓存读取 Token")
+ cache_write_tokens = models.IntegerField(default=0, verbose_name="缓存写入 Token")
+ # 成本（美元，6位小数精度）
+ total_cost_usd = models.DecimalField(
+ max_digits=10,
+ decimal_places=6,
+ verbose_name="总成本(USD)",
+ )
+ # 模型信息
+ model = models.CharField(max_length=50, verbose_name="模型")
+ # 数据来源
+ source = models.CharField(
+ max_length=20,
+ choices=Source.choices,
+ default=Source.SUBAGENT,
+ verbose_name="数据来源",
+ )
+ # 时间戳
+ recorded_at = models.DateTimeField(auto_now_add=True, verbose_name="记录时间")
+ class Meta:
+ indexes = [
+ models.Index(fields=["session"]),
+ models.Index(fields=["model"]),
+ models.Index(fields=["recorded_at"]),
+ ]
+ verbose_name = "Token 使用"
+ verbose_name_plural = "Token 使用"
+ def __str__(self) -> str:
+ return f"TokenUsage({self.session.session_id[:16]}, {self.input_tokens}+{self.output_tokens}, ${self.total_cost_usd})"
+ @property
+ def total_tokens(self) -> int:
+ """总 token 数。"""
+ return self.input_tokens + self.output_tokens
