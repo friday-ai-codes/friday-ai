@@ -1,6 +1,5 @@
 """Explore repository tool for SubAgent.
 Allows the main Agent to delegate repository exploration to Claude Code SubAgent.
-DEPRECATED: SubAgentClient 轮询模式将在 Phase 清理
 """
 import structlog
 from agents.models import AgentSession
