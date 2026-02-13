@@ -5,8 +5,9 @@ import structlog
 from agents.models import AgentSession
 from agents.tools.base import ToolResult, tool
 from agents.tools.subagent.context import build_subagent_context
-from subagent.client import SubAgentClient, SubAgentRequest
-from subagent.models import SubAgentSession, generate_subagent_session_id
+from services.container_config import TASK_TIMEOUTS
+from services.container_manager import ContainerConfig, ContainerManager
+from subagent.models import SubAgentSession, generate_execution_id
 logger = structlog.get_logger(__name__)
 @tool(
  name="generate_tech_plan_section",
@@ -77,12 +78,8 @@ async def generate_tech_plan_section(
  success=False,
  error=f"会话不存在: {session_id}",
  )
- # Generate SubAgent session ID
- subagent_session_id = generate_subagent_session_id(
- main_session_id=session_id,
- repo_url=repo_url,
- task_type="plan",
- )
+ # Generate unique execution ID
+ subagent_session_id = generate_execution_id
  # Build context for SubAgent
  context = await build_subagent_context(main_session)
  # Map section types to descriptions
@@ -109,48 +106,46 @@ async def generate_tech_plan_section(
 3. 给出具体、可执行的建议
 4. 考虑边界情况和错误处理
 """
- # Create SubAgent request
- request = SubAgentRequest(
+ # 使用 ContainerManager 启动容器
+ try:
+ manager = ContainerManager
+ config = ContainerConfig(
  session_id=subagent_session_id,
  task_type="plan",
  repo_url=repo_url,
  branch=branch,
- main_session_id=session_id,
  prompt=prompt,
+ main_session_id=session_id,
+ timeout=TASK_TIMEOUTS.get("plan", 600),
  context=context,
  )
- # Submit task to SubAgent
- try:
- client = SubAgentClient
- task_id = await client.submit_task(request)
- log.info("subagent_task_submitted", task_id=task_id)
+ container_id = await manager.start(config)
+ log.info(
+ "container_started",
+ subagent_session_id=subagent_session_id,
+ container_id=container_id[:12],
+ )
  except Exception as e:
- log.error("subagent_submit_failed", error=str(e))
+ log.error("container_start_failed", error=str(e))
  return ToolResult(
  success=False,
- error=f"提交 SubAgent 任务失败: {e}",
+ error=f"容器启动失败: {e}",
  )
- # Create or update SubAgentSession record
- subagent_session, created = await SubAgentSession.objects.aupdate_or_create(
+ # 创建 SubAgentSession 记录
+ await SubAgentSession.objects.aupdate_or_create(
  session_id=subagent_session_id,
  defaults={
  "main_session": main_session,
  "repo_url": repo_url,
  "task_type": SubAgentSession.TaskType.PLAN,
  "status": SubAgentSession.Status.RUNNING,
- "current_task_id": task_id,
+ "container_id": container_id,
  },
- )
- log.info(
- "subagent_session_updated",
- subagent_session_id=subagent_session_id,
- created=created,
  )
  # Store mapping in main session temp_data
  temp_data = main_session.temp_data or {}
  subagent_sessions = temp_data.setdefault("subagent_sessions", {})
  subagent_sessions[subagent_session_id] = {
- "task_id": task_id,
  "task_type": "plan",
  "status": "running",
  "requirement": requirement[:100],
@@ -161,7 +156,6 @@ async def generate_tech_plan_section(
  return ToolResult(
  success=True,
  output={
- "task_id": task_id,
  "subagent_session_id": subagent_session_id,
  "status": "running",
  "section_type": section_type or "full_plan",
@@ -171,6 +165,5 @@ async def generate_tech_plan_section(
  "suspension": True,
  "suspension_reason": "subagent_task",
  "subagent_session_id": subagent_session_id,
- "task_id": task_id,
  },
  )
