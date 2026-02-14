@@ -7,6 +7,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from common.encryption import decrypt_value, encrypt_value
+from services.dependency_cache import DependencyCacheManager
+from services.repo_cache_manager import RepoCacheManager
+from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
 from .models import AuthType, GitCredential, Repository
 from .serializers import (
  GitCredentialSerializer,
@@ -77,6 +80,41 @@ class RepositoryViewSet(ModelViewSet):
  repository = self.get_object
  repository.soft_delete
  return Response(status=status.HTTP_204_NO_CONTENT)
+ @action(detail=True, methods=["post"])
+ def warmup_cache(self, request, pk=None):
+ """预热仓库缓存卷。
+ POST /api/repositories/{id}/warmup_cache/
+ """
+ import asyncio
+ repository = self.get_object
+ volume_name = asyncio.run(
+ warmup_repo_cache(
+ repo_url=repository.git_url,
+ repo_id=str(repository.id),
+ )
+ )
+ if volume_name:
+ return Response({"volume": volume_name, "status": "created"})
+ return Response(
+ {"error": "Cache creation failed"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+ @action(detail=True, methods=["get"])
+ def cache_status(self, request, pk=None):
+ """获取仓库缓存状态。
+ GET /api/repositories/{id}/cache_status/
+ """
+ repository = self.get_object
+ manager = RepoCacheManager
+ volume_name = manager.get_volume_name(repository.git_url)
+ try:
+ manager.client.volumes.get(volume_name)
+ return Response({
+ "cached": True,
+ "volume": volume_name,
+ })
+ except Exception:
+ return Response({"cached": False})
 class SetAccessTokenView(APIView):
  """View for setting or updating access token."""
  def post(self, request, repository_id):
@@ -205,3 +243,30 @@ class TestConnectionView(APIView):
  "error": f"连接测试失败: {e!s}",
  }
  )
+class CacheManagementView(APIView):
+ """缓存管理 API。"""
+ def get(self, request):
+ """列出所有缓存卷。
+ GET /api/repositories/cache/
+ """
+ import asyncio
+ repo_manager = RepoCacheManager
+ deps_manager = DependencyCacheManager
+ repo_volumes = asyncio.run(repo_manager.list_cache_volumes)
+ deps_volumes = asyncio.run(deps_manager.list_deps_volumes)
+ return Response({
+ "repo_caches": repo_volumes,
+ "deps_caches": deps_volumes,
+ })
+ def delete(self, request):
+ """清理缓存卷。
+ DELETE /api/repositories/cache/?older_than_days=7&dry_run=true
+ """
+ import asyncio
+ older_than_days = int(request.query_params.get("older_than_days", 7))
+ dry_run = request.query_params.get("dry_run", "false").lower == "true"
+ pruned = asyncio.run(prune_cache_volumes(older_than_days, dry_run))
+ return Response({
+ "pruned": pruned,
+ "dry_run": dry_run,
+ })
