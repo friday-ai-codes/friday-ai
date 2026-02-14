@@ -9,10 +9,16 @@ from .index_views import (
  IndexTriggerView,
  QdrantHealthView,
 )
-from .views import RepositoryViewSet, SetAccessTokenView, TestConnectionView
+from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
 router.register("", RepositoryViewSet, basename="repository")
 urlpatterns = [
+ # Cache management (must be before router to avoid being matched as repository id)
+ path(
+ "cache/",
+ CacheManagementView.as_view,
+ name="cache-management",
+ ),
  # Test connection (must be before router to avoid being matched as repository id)
  path(
  "test-connection/",
