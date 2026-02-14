@@ -22,7 +22,6 @@ class TestAICodingNodeMigration:
  mock_repo.git_url = "https://github.com/test/repo.git"
  mock_repo.credential = None
  result = await node._run_repo_coding(
- client=MagicMock, # deprecated
  repository=mock_repo,
  tasks=[{"name": "task1", "coding_instruction": "do something"}],
  branch_name="feat/test",
@@ -49,7 +48,6 @@ class TestAICodingNodeMigration:
  mock_repo.git_url = "https://github.com/test/repo2.git"
  mock_repo.credential = None
  result = await node._run_repo_coding(
- client=MagicMock, # deprecated, should not be used
  repository=mock_repo,
  tasks=[{"name": "task1", "coding_instruction": "do something"}],
  branch_name="feat/test",
@@ -76,7 +74,6 @@ class TestAICodingNodeMigration:
  mock_repo.git_url = "https://github.com/test/repo3.git"
  mock_repo.credential = None
  result = await node._run_repo_coding(
- client=MagicMock,
  repository=mock_repo,
  tasks=[{"name": "task1", "coding_instruction": "do something"}],
  branch_name="feat/test",
