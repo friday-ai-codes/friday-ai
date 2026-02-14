@@ -20,6 +20,8 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.utils import timezone
 from services.container_executor import ContainerExecutor, ExecutionRequest
+from services.dependency_cache import DependencyCacheManager, PackageManager
+from services.repo_cache_manager import RepoCacheManager
 from services.protocols import (
  CONTAINER_PROTOCOL_DIR,
  CONTEXT_FILE,
@@ -61,6 +63,11 @@ class ContainerConfig:
  # Claude 配置
  claude_api_key: str = ""
  claude_base_url: str = ""
+ # 缓存配置
+ repo_cache_enabled: bool = True
+ """是否启用仓库预克隆卷"""
+ deps_cache_enabled: bool = True
+ """是否启用依赖缓存卷"""
 class ContainerManager:
  """统一容器管理器。
  在 ContainerExecutor 基础上增加：
@@ -224,17 +231,63 @@ class ContainerManager:
  self._write_context_file(friday_dir, config)
  # 构建 ExecutionRequest
  env = self._build_environment(config)
+ # 基础卷挂载
+ volumes: dict[str, dict[str, str]] = {
+ friday_dir: {
+ "bind": CONTAINER_PROTOCOL_DIR,
+ "mode": "rw",
+ },
+ }
+ # 挂载预克隆卷
+ if config.repo_cache_enabled and config.repo_url:
+ try:
+ repo_cache = RepoCacheManager
+ cache_volume = repo_cache.get_volume_name(config.repo_url)
+ self._executor.client.volumes.get(cache_volume)
+ volumes[cache_volume] = {
+ "bind": "/cache/repo.git",
+ "mode": "ro",
+ }
+ env["FRIDAY_REPO_REFERENCE"] = "/cache/repo.git"
+ logger.info(
+ "repo_cache_mounted",
+ volume=cache_volume,
+ repo_url=config.repo_url[:50],
+ )
+ except docker.errors.NotFound:
+ logger.debug("no_repo_cache", repo_url=config.repo_url[:50])
+ # 挂载依赖缓存卷
+ if config.deps_cache_enabled and config.work_item_id:
+ try:
+ deps_cache = DependencyCacheManager
+ existing_volumes = await deps_cache.list_deps_volumes(
+ repo_id=config.work_item_id
+ )
+ if existing_volumes:
+ latest = existing_volumes[0]
+ volume_name = latest["name"]
+ manager_str = latest.get("manager", "pip")
+ manager = PackageManager(manager_str)
+ mount_path = deps_cache.get_mount_path(manager)
+ volumes[volume_name] = {
+ "bind": mount_path,
+ "mode": "ro",
+ }
+ env["FRIDAY_DEPS_CACHE_PATH"] = mount_path
+ env["FRIDAY_DEPS_MANAGER"] = manager_str
+ logger.info(
+ "deps_cache_mounted",
+ volume=volume_name,
+ path=mount_path,
+ )
+ except Exception as e:
+ logger.debug("deps_cache_check_failed", error=str(e))
  request = ExecutionRequest(
  execution_id=config.session_id,
  node_execution_id=config.node_execution_id or config.session_id,
  image=config.image,
  environment=env,
- volumes={
- friday_dir: {
- "bind": CONTAINER_PROTOCOL_DIR,
- "mode": "rw",
- },
- },
+ volumes=volumes,
  timeout=config.timeout,
  callback_url=env.get(ENV_CALLBACK_URL, ""),
  mem_limit=config.mem_limit,

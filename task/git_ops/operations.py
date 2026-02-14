@@ -105,10 +105,32 @@ class GitOperations:
  raise ValueError(f"无法使用访问令牌认证：URL '{url}' 不是有效的 HTTPS 或 SSH 格式")
  logger.info("Token authentication configured")
  async def _clone_repo(self) -> None:
- """Clone the repository using shallow clone."""
+ """Clone the repository, using reference if available."""
  if not self.workspace:
  raise RuntimeError("Workspace not initialized")
+ reference_path = self.config.git_reference_path
  try:
+ if reference_path and os.path.exists(reference_path):
+ # Reference clone: 从本地 bare repo 获取对象，仅下载增量
+ # --dissociate 确保克隆后独立于 reference，可安全删除 reference
+ logger.info(
+ "using_reference_clone",
+ reference=reference_path,
+ repo_url_masked=self._mask_url(self.config.git_repo_url),
+ )
+ self.repo = Repo.clone_from(
+ self.config.git_repo_url,
+ self.workspace,
+ branch=self.config.git_branch,
+ reference=reference_path,
+ dissociate=True,
+ )
+ else:
+ # Fallback: shallow clone
+ logger.info(
+ "using_shallow_clone",
+ repo_url_masked=self._mask_url(self.config.git_repo_url),
+ )
  self.repo = Repo.clone_from(
  self.config.git_repo_url,
  self.workspace,

@@ -74,3 +74,19 @@ class TaskConfig(BaseSettings):
  # Timeouts
  execution_timeout: int = Field(default=3600, description="Max execution time in seconds")
  git_timeout: int = Field(default=300, description="Git operation timeout in seconds")
+ # Cache support
+ git_reference_path: str = Field(
+ default="",
+ description="预克隆仓库的本地路径（FRIDAY_REPO_REFERENCE 环境变量）",
+ json_schema_extra={"env": "FRIDAY_REPO_REFERENCE"},
+ )
+ deps_cache_path: str = Field(
+ default="",
+ description="预安装依赖的挂载路径（FRIDAY_DEPS_CACHE_PATH 环境变量）",
+ json_schema_extra={"env": "FRIDAY_DEPS_CACHE_PATH"},
+ )
+ deps_manager: str = Field(
+ default="",
+ description="依赖管理器类型 pip/npm/pnpm（FRIDAY_DEPS_MANAGER 环境变量）",
+ json_schema_extra={"env": "FRIDAY_DEPS_MANAGER"},
+ )
