@@ -1,13 +1,11 @@
 """AICodingNode 单元测试。
-覆盖 happy path（SubAgent 成功 -> MR 创建 -> completed）
-和 error handling（缺少方案 -> failed、所有仓库编码失败 -> failed）。
+覆盖 callback-driven 模式（ContainerManager 启动 -> waiting_event）
+和 error handling（缺少方案 -> failed、容器启动失败 -> failed）。
 """
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from services.git_platform.models import MRCreateResult
-from subagent.client import SubAgentResponse
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.base import ExecutionContext, NodeResult
 # ---------------------------------------------------------------------------
@@ -24,6 +22,7 @@ def _make_repo(repo_id: str | None = None, name: str = "test-repo") -> MagicMock
  repo.is_deleted = False
  credential = MagicMock
  credential.encrypted_token = "encrypted-token-123"
+ credential.ssl_verify = True
  repo.credential = credential
  return repo
 def _make_context(
@@ -34,7 +33,8 @@ def _make_context(
  return ExecutionContext(
  execution_id="exec-test-001",
  node_id="node-coding-001",
- node_config=node_config or {
+ node_config=node_config
+ or {
  "polling_interval": 0,
  "timeout_seconds": 10,
  "chat_id": "",
@@ -76,57 +76,35 @@ def _make_plan_data(
 @pytest.mark.asyncio
 class TestAICodingNode:
  """AICodingNode 独立执行行为测试。"""
- async def test_execute_happy_path(self) -> None:
- """提供有效 plan，SubAgent + MR 均成功 -> status=completed。"""
+ async def test_execute_happy_path_returns_waiting_event(self) -> None:
+ """提供有效 plan，ContainerManager 启动成功 -> status=waiting_event。"""
  repo = _make_repo(repo_id="00000000-0000-0000-0000-000000000001")
  repo_id_str = str(repo.id)
  input_data = _make_plan_data(repo_id_str)
  context = _make_context(input_data=input_data)
- subagent_response = SubAgentResponse(
- task_id="task-001",
- status="completed",
- output={"files_changed": 3, "insertions": 50, "deletions": 10},
- )
- mr_result = MRCreateResult(
- success=True,
- mr_url="https://gitlab.example.com/test/repo/-/merge_requests/1",
- mr_id="1",
- has_conflicts=False,
- )
  node = AICodingNode
  with (
  patch.object(
- node, "_fetch_repositories", new_callable=AsyncMock,
+ node,
+ "_fetch_repositories",
+ new_callable=AsyncMock,
  return_value={repo_id_str: repo},
  ),
- patch(
- "workflows.nodes.ai.coding.SubAgentClient"
- ) as MockClient,
- patch(
- "workflows.nodes.ai.coding.get_git_platform_client"
- ) as mock_git_factory,
+ patch("services.container_manager.ContainerManager") as MockManager,
  patch(
  "workflows.nodes.ai.coding.decrypt_value",
- return_value="decrypted-token",
+ return_value="mock-token-123",
  ),
- patch("asyncio.sleep", new_callable=AsyncMock),
  ):
- # SubAgent mock
- client_instance = MockClient.return_value
- client_instance.submit_task = AsyncMock(return_value="task-001")
- client_instance.get_task_status = AsyncMock(return_value=subagent_response)
- # Git platform mock
- mock_git_client = MagicMock
- mock_git_client.create_merge_request = AsyncMock(return_value=mr_result)
- mock_git_factory.return_value = mock_git_client
+ # ContainerManager mock
+ mock_manager = MagicMock
+ mock_manager.start = AsyncMock(return_value="container-001")
+ MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
- assert result.status == "completed"
- assert result.next_handle == "default"
- assert "merge_requests" in result.output
- assert len(result.output["merge_requests"]) == 1
- assert result.output["merge_requests"][0]["mr_url"] == mr_result.mr_url
- assert "changes_summary" in result.output
- assert result.output["changes_summary"]["succeeded_repos"] == 1
+ # 回调驱动模式：立即返回 waiting_event
+ assert result.status == "waiting_event"
+ assert "pending_sessions" in result.output
+ assert len(result.output["pending_sessions"]) == 1
  async def test_execute_missing_plan(self) -> None:
  """input_data 无 plan -> status=failed。"""
  context = _make_context(input_data={})
@@ -150,37 +128,35 @@ class TestAICodingNode:
  assert result.status == "failed"
  assert "execution_plan 为空" in (result.error or "")
  assert result.next_handle == "error"
- async def test_execute_subagent_failure(self) -> None:
- """所有仓库 SubAgent 编码失败 -> status=failed。"""
+ async def test_execute_container_failure(self) -> None:
+ """所有仓库容器启动失败 -> status=failed。"""
  repo = _make_repo(repo_id="00000000-0000-0000-0000-000000000002")
  repo_id_str = str(repo.id)
  input_data = _make_plan_data(repo_id_str)
  context = _make_context(input_data=input_data)
- subagent_error = SubAgentResponse(
- task_id="task-err",
- status="error",
- error="Container crashed",
- )
  node = AICodingNode
  with (
  patch.object(
- node, "_fetch_repositories", new_callable=AsyncMock,
+ node,
+ "_fetch_repositories",
+ new_callable=AsyncMock,
  return_value={repo_id_str: repo},
  ),
+ patch("services.container_manager.ContainerManager") as MockManager,
  patch(
- "workflows.nodes.ai.coding.SubAgentClient"
- ) as MockClient,
- patch("asyncio.sleep", new_callable=AsyncMock),
+ "workflows.nodes.ai.coding.decrypt_value",
+ return_value="mock-token-123",
+ ),
  ):
- client_instance = MockClient.return_value
- client_instance.submit_task = AsyncMock(return_value="task-err")
- client_instance.get_task_status = AsyncMock(return_value=subagent_error)
+ mock_manager = MagicMock
+ mock_manager.start = AsyncMock(side_effect=Exception("Container start failed"))
+ MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
  assert result.status == "failed"
- assert "所有仓库编码均失败" in (result.error or "")
+ assert "所有仓库容器启动失败" in (result.error or "")
  assert result.next_handle == "error"
- async def test_execute_partial_success(self) -> None:
- """两个仓库，一个成功一个失败 -> status=completed + failed_details。"""
+ async def test_execute_partial_container_failure(self) -> None:
+ """两个仓库，一个容器启动成功一个失败 -> status=waiting_event (部分)。"""
  repo_a = _make_repo(repo_id="00000000-0000-0000-0000-00000000000a", name="repo-a")
  repo_b = _make_repo(repo_id="00000000-0000-0000-0000-00000000000b", name="repo-b")
  id_a = str(repo_a.id)
@@ -197,52 +173,35 @@ class TestAICodingNode:
  }
  }
  context = _make_context(input_data=input_data)
- success_response = SubAgentResponse(
- task_id="task-a",
- status="completed",
- output={"files_changed": 2, "insertions": 20, "deletions": 5},
- )
- error_response = SubAgentResponse(
- task_id="task-b",
- status="error",
- error="Build failed",
- )
- mr_result = MRCreateResult(
- success=True, mr_url="https://example.com/mr/1", mr_id="1",
- )
  node = AICodingNode
- # Track which repo is being submitted to return different responses
- submit_call_count = 0
- async def mock_submit(request: Any) -> str:
- nonlocal submit_call_count
- submit_call_count += 1
- return f"task-{submit_call_count}"
- status_responses = {
- "task-1": success_response,
- "task-2": error_response,
- }
- async def mock_get_status(task_id: str) -> SubAgentResponse:
- return status_responses[task_id]
+ # Track which repo is being submitted
+ call_count = 0
+ async def mock_start(config: Any) -> str:
+ nonlocal call_count
+ call_count += 1
+ if call_count == 1:
+ return "container-001"
+ raise Exception("Container start failed")
  with (
  patch.object(
- node, "_fetch_repositories", new_callable=AsyncMock,
+ node,
+ "_fetch_repositories",
+ new_callable=AsyncMock,
  return_value={id_a: repo_a, id_b: repo_b},
  ),
- patch("workflows.nodes.ai.coding.SubAgentClient") as MockClient,
- patch("workflows.nodes.ai.coding.get_git_platform_client") as mock_git_factory,
- patch("workflows.nodes.ai.coding.decrypt_value", return_value="token"),
- patch("asyncio.sleep", new_callable=AsyncMock),
+ patch("services.container_manager.ContainerManager") as MockManager,
+ patch(
+ "workflows.nodes.ai.coding.decrypt_value",
+ return_value="mock-token-123",
+ ),
  ):
- client_instance = MockClient.return_value
- client_instance.submit_task = AsyncMock(side_effect=mock_submit)
- client_instance.get_task_status = AsyncMock(side_effect=mock_get_status)
- mock_git_client = MagicMock
- mock_git_client.create_merge_request = AsyncMock(return_value=mr_result)
- mock_git_factory.return_value = mock_git_client
+ mock_manager = MagicMock
+ mock_manager.start = AsyncMock(side_effect=mock_start)
+ MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
- assert result.status == "completed"
- assert result.output["changes_summary"]["succeeded_repos"] >= 1
- assert len(result.output["failed_details"]) >= 1
+ # 只要有一个等待，就返回 waiting_event
+ assert result.status == "waiting_event"
+ assert "pending_sessions" in result.output
  def test_group_by_repository(self) -> None:
  """按 repository_id 正确分组任务。"""
  node = AICodingNode
