@@ -767,4 +767,4 @@ _HANDLERS = {
  CallbackType.ACTION_LOG: _handle_action_log,
  CallbackType.TOKEN_USAGE: _handle_token_usage,
 }
-from structlog.typing import BoundLogger
+from structlog.stdlib import BoundLogger
