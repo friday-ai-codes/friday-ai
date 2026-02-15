@@ -141,6 +141,8 @@ class SubAgentSession(models.Model):
  # 资源消耗（Phase 从 docker stats 收集）
  cpu_usage_percent = models.FloatField(null=True, blank=True, verbose_name="CPU 使用率%")
  memory_usage_mb = models.FloatField(null=True, blank=True, verbose_name="内存使用MB")
+ # 失败原因（Phase 新增）
+ failure_reason = models.TextField(blank=True, default="", verbose_name="失败原因")
  class Meta:
  indexes = [
  models.Index(fields=["main_session", "task_type"]),
@@ -434,3 +436,27 @@ class TokenUsage(models.Model):
  def total_tokens(self) -> int:
  """总 token 数。"""
  return self.input_tokens + self.output_tokens
+class ExecutionContext(models.Model):
+ """执行上下文（Phase）。
+ 聚合完整执行上下文：环境变量、输入 prompt、容器日志、Docker stats。
+ OneToOne 关联 SubAgentSession，在容器终态时收集写入。
+ """
+ session = models.OneToOneField(
+ SubAgentSession,
+ on_delete=models.CASCADE,
+ related_name="execution_context",
+ )
+ environment_vars = models.JSONField(default=dict, verbose_name="环境变量")
+ input_prompt = models.TextField(blank=True, default="", verbose_name="输入 Prompt")
+ container_logs = models.TextField(blank=True, default="", verbose_name="容器日志")
+ docker_stats = models.JSONField(default=dict, verbose_name="Docker Stats 快照")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ indexes = [
+ models.Index(fields=["session"]),
+ ]
+ verbose_name = "执行上下文"
+ verbose_name_plural = "执行上下文"
+ def __str__(self) -> str:
+ return f"ExecutionContext({self.session.session_id})"
