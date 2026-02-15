@@ -33,6 +33,8 @@ api_patterns = [
  path("", include("workflows.urls")),
  # SubAgent integration
  path("subagent/", include("subagent.urls")),
+ # Container callbacks (ContainerCallbackView)
+ path("containers/", include("subagent.api.urls")),
  # Agent tools API
  path("agents/", include("agents.urls")),
  # API Documentation

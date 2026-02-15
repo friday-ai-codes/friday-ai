@@ -108,10 +108,12 @@ def _collect_container_stats(session: SubAgentSession, log) -> None:
  # CPU 使用率计算
  cpu_stats = stats.get("cpu_stats", {})
  precpu_stats = stats.get("precpu_stats", {})
- cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - \
- precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
- system_delta = cpu_stats.get("system_cpu_usage", 0) - \
- precpu_stats.get("system_cpu_usage", 0)
+ cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get(
+ "cpu_usage", {}
+ ).get("total_usage", 0)
+ system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
+ "system_cpu_usage", 0
+ )
  if system_delta > 0 and cpu_delta > 0:
  # 考虑 CPU 核心数
  online_cpus = cpu_stats.get("online_cpus", 1)
@@ -209,9 +211,11 @@ def _schedule_workflow_resume(session: SubAgentSession, log) -> None:
  # 关闭旧连接（防止长时间运行后的连接问题）
  close_old_connections
  # 获取 node_execution
- node_exec = await NodeExecution.objects.select_related(
- "workflow_execution"
- ).filter(id=session.node_execution_id).afirst
+ node_exec = (
+ await NodeExecution.objects.select_related("workflow_execution")
+ .filter(id=session.node_execution_id)
+ .afirst
+ )
  if not node_exec:
  log.warning("node_execution_not_found_for_resume")
  return
