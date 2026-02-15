@@ -71,6 +71,8 @@ class CallbackType:
  QUESTION = "question"
  HEARTBEAT = "heartbeat"
  PROGRESS = "progress"
+ ACTION_LOG = "action_log"
+ TOKEN_USAGE = "token_usage"
 @dataclass
 class CallbackPayload:
  """统一回调端点请求结构。"""
@@ -119,3 +121,25 @@ class ProgressPayload:
  phase: str = "" # cloning | installing | coding | testing | pushing
  progress: float = 0.0
  message: str = ""
+@dataclass
+class ActionLogPayload:
+ """type=action_log 时的 payload 结构。"""
+ action_type: str
+ tool_name: str = ""
+ input: dict[str, Any] = field(default_factory=dict)
+ output: dict[str, Any] = field(default_factory=dict)
+ timestamp: str = "" # ISO 8601
+ duration_ms: int = 0
+ thinking: str = ""
+ model: str = ""
+ sequence: int = 0
+@dataclass
+class TokenUsagePayload:
+ """type=token_usage 时的 payload 结构。"""
+ input_tokens: int = 0
+ output_tokens: int = 0
+ cache_read_tokens: int = 0
+ cache_write_tokens: int = 0
+ model: str = ""
+ timestamp: str = "" # ISO 8601
+ total_cost_usd: float = 0.0
