@@ -8,6 +8,7 @@ POST /api/containers/callback/
 - progress: 进度更新，写入 last_output
 """
 import asyncio
+from typing import Any
 from datetime import timedelta
 import structlog
 from django.conf import settings
@@ -91,7 +92,7 @@ async def _cleanup_container_now(session: SubAgentSession) -> None:
  log.info("container_cleaned")
  except Exception as e:
  log.warning("container_cleanup_error", error=str(e))
-def _collect_container_stats(session: SubAgentSession, log) -> None:
+def _collect_container_stats(session: SubAgentSession, log: BoundLogger) -> None:
  """收集容器资源消耗（在清理前）。
  通过 docker stats 获取 CPU 使用率和内存使用量。
  这是同步调用但会异步执行以不阻塞回调响应。
@@ -143,7 +144,7 @@ def _collect_container_stats(session: SubAgentSession, log) -> None:
  # 没有运行中的事件循环
  pass
 # === 失败通知（Phase）===
-def _schedule_agent_loop_resume(session: SubAgentSession, log) -> None:
+def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> None:
  """触发 AgentLoop 恢复（当容器完成时）。
  仅当 session 有 main_session 但无 node_execution 时触发（纯 AgentLoop 场景）。
  如果有 node_execution，由 workflow 恢复处理。
@@ -199,7 +200,7 @@ def _schedule_agent_loop_resume(session: SubAgentSession, log) -> None:
  except RuntimeError:
  # 没有运行中的事件循环
  asyncio.run(_prepare_and_resume)
-def _schedule_workflow_resume(session: SubAgentSession, log) -> None:
+def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> None:
  """触发 workflow 恢复（异步，不阻塞回调响应）。
  当容器完成时，检查该节点的所有 SubAgentSession 是否都已终态，
  如果是则恢复 workflow 执行。
@@ -314,7 +315,7 @@ def _resolve_notification_chat_id(session: SubAgentSession) -> str:
  if node_exec.node and node_exec.node.config:
  return node_exec.node.config.get("chat_id", "")
  return ""
-def _send_feishu_card(chat_id: str, card: dict) -> None:
+def _send_feishu_card(chat_id: str, card: dict[str, Any]) -> None:
  """发送飞书卡片（异步）。"""
  async def _send:
  try:
@@ -407,7 +408,7 @@ def _filter_sensitive_env(env: dict[str, str]) -> dict[str, str]:
  else:
  filtered[k] = v
  return filtered
-def _collect_execution_context(session: SubAgentSession, log) -> None:
+def _collect_execution_context(session: SubAgentSession, log: BoundLogger) -> None:
  """在容器清理前收集执行上下文写入 ExecutionContext。"""
  async def _collect:
  try:
@@ -482,7 +483,7 @@ def _collect_execution_context(session: SubAgentSession, log) -> None:
  except RuntimeError:
  pass
 # === 回调处理函数 ===
-def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_completed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 completed 回调 — 创建 TaskResult，更新 session 状态。"""
  ser = CompletedPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -522,7 +523,7 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  _notify_scheduler_completion(session.session_id)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
-def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 failed 回调 — 更新状态，轻量任务自动重试。"""
  ser = FailedPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -617,7 +618,7 @@ def _schedule_retry(session: SubAgentSession, delay_seconds: int) -> None:
  except RuntimeError:
  # 没有运行中的事件循环，直接创建新的
  asyncio.create_task(_retry_after_delay)
-def _handle_heartbeat(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_heartbeat(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 heartbeat 回调 — 更新 last_heartbeat_at。"""
  ser = HeartbeatPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -629,7 +630,7 @@ def _handle_heartbeat(session: SubAgentSession, payload: dict, log) -> Response:
  session.save(update_fields=["last_heartbeat_at", "updated_at"])
  log.debug("callback_heartbeat_ok")
  return Response({"status": "ok"})
-def _handle_question(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_question(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 question 回调 — 创建 InteractionLog 并触发 Feishu 提问卡片。"""
  import uuid
  from subagent.models import InteractionLog
@@ -690,7 +691,7 @@ def _handle_question(session: SubAgentSession, payload: dict, log) -> Response:
  question_preview=p["question"][:80],
  )
  return Response({"status": "ok", "question_id": question_id})
-def _handle_progress(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_progress(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 progress 回调 — 更新 last_output（临时进度数据）。"""
  ser = ProgressPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -710,7 +711,7 @@ def _handle_progress(session: SubAgentSession, payload: dict, log) -> Response:
  session.save(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
-def _handle_action_log(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_action_log(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 action_log 回调 — 写入 ActionLog 记录。"""
  ser = ActionLogPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -735,7 +736,7 @@ def _handle_action_log(session: SubAgentSession, payload: dict, log) -> Response
  )
  log.debug("callback_action_log_ok", action_type=p["action_type"], sequence=p["sequence"])
  return Response({"status": "ok"})
-def _handle_token_usage(session: SubAgentSession, payload: dict, log) -> Response:
+def _handle_token_usage(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 token_usage 回调 — 写入 TokenUsage 记录。"""
  ser = TokenUsagePayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -766,3 +767,4 @@ _HANDLERS = {
  CallbackType.ACTION_LOG: _handle_action_log,
  CallbackType.TOKEN_USAGE: _handle_token_usage,
 }
+from structlog.typing import BoundLogger

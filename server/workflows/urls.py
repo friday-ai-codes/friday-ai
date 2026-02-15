@@ -1,7 +1,6 @@
 """Workflows app URL configuration."""
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from workflows.api.callbacks import CodingTaskCallbackView, NodeExecutionCallbackView
 from workflows.api.views import (
  CodingTaskViewSet,
  ExecutionContextView,
@@ -35,17 +34,9 @@ urlpatterns = router.urls + [
  name="webhook-trigger",
  ),
  # Container execution callback endpoint (unauthenticated, called from containers)
- path(
- "node-callback/",
- NodeExecutionCallbackView.as_view,
- name="node-callback",
- ),
+ path,
  # CodingTask status callback endpoint (unauthenticated, called from task containers)
- path(
- "task-callback/",
- CodingTaskCallbackView.as_view,
- name="task-callback",
- ),
+ path,
  # Execution context endpoint
  path(
  "workflow-executions/<uuid:execution_id>/context/",
