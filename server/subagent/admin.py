@@ -1,6 +1,6 @@
 """Django Admin 配置 for subagent models."""
 from django.contrib import admin
-from subagent.models import ActionLog, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult, TokenUsage
+from subagent.models import ActionLog, ExecutionContext, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult, TokenUsage
 @admin.register(SubAgentSession)
 class SubAgentSessionAdmin(admin.ModelAdmin):
  list_display = [
@@ -9,14 +9,20 @@ class SubAgentSessionAdmin(admin.ModelAdmin):
  "task_type",
  "status",
  "health_status",
+ "failure_reason_preview",
  "created_at",
  "started_at",
  "completed_at",
  ]
- list_filter = ["status", "task_type", "health_status"]
+ list_filter = ["status", "task_type", "health_status", ("failure_reason", admin.EmptyFieldListFilter)]
  search_fields = ["session_id", "repo_url", "container_name"]
- readonly_fields = ["created_at", "updated_at", "started_at", "completed_at"]
+ readonly_fields = ["created_at", "updated_at", "started_at", "completed_at", "failure_reason"]
  raw_id_fields = ["main_session", "node_execution"]
+ @admin.display(description="失败原因")
+ def failure_reason_preview(self, obj: SubAgentSession) -> str:
+ if not obj.failure_reason:
+ return ""
+ return obj.failure_reason[:50] + "..." if len(obj.failure_reason) > 50 else obj.failure_reason
 @admin.register(TaskResult)
 class TaskResultAdmin(admin.ModelAdmin):
  list_display = ["id", "session", "result_type", "duration_ms", "created_at"]
@@ -113,3 +119,45 @@ class TokenUsageAdmin(admin.ModelAdmin):
  @admin.display(description="总 Token")
  def total_tokens_display(self, obj: TokenUsage) -> int:
  return obj.total_tokens
+@admin.register(ExecutionContext)
+class ExecutionContextAdmin(admin.ModelAdmin):
+ """ExecutionContext Django Admin 配置。"""
+ list_display = [
+ "id",
+ "session_link",
+ "session_status",
+ "session_task_type",
+ "has_container_logs",
+ "has_action_logs",
+ "created_at",
+ ]
+ list_filter = ["session__status", "session__task_type", "created_at"]
+ search_fields = ["session__session_id"]
+ readonly_fields = [
+ "session",
+ "environment_vars",
+ "input_prompt",
+ "container_logs",
+ "docker_stats",
+ "created_at",
+ "updated_at",
+ ]
+ raw_id_fields = ["session"]
+ @admin.display(description="会话")
+ def session_link(self, obj: ExecutionContext) -> str:
+ from django.urls import reverse
+ from django.utils.html import format_html
+ url = reverse("admin:subagent_subagentsession_change", args=[obj.session.pk])
+ return format_html('<a href="{}">{}</a>', url, obj.session.session_id[:16])
+ @admin.display(description="状态")
+ def session_status(self, obj: ExecutionContext) -> str:
+ return obj.session.status
+ @admin.display(description="任务类型")
+ def session_task_type(self, obj: ExecutionContext) -> str:
+ return obj.session.task_type
+ @admin.display(boolean=True, description="有容器日志")
+ def has_container_logs(self, obj: ExecutionContext) -> bool:
+ return bool(obj.container_logs)
+ @admin.display(boolean=True, description="有执行日志")
+ def has_action_logs(self, obj: ExecutionContext) -> bool:
+ return obj.session.action_logs.exists
