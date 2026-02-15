@@ -1,6 +1,7 @@
 """容器回调 API 序列化器（Phase）。"""
 from rest_framework import serializers
 from services.protocols import CallbackType
+from subagent.models import ActionLog
 class CallbackSerializer(serializers.Serializer):
  """统一回调端点请求序列化器。
  验证容器发送的回调请求结构。
@@ -12,6 +13,8 @@ class CallbackSerializer(serializers.Serializer):
  CallbackType.QUESTION,
  CallbackType.HEARTBEAT,
  CallbackType.PROGRESS,
+ CallbackType.ACTION_LOG,
+ CallbackType.TOKEN_USAGE,
  ],
  )
  session_id = serializers.CharField(max_length=64)
@@ -53,3 +56,25 @@ class ProgressPayloadSerializer(serializers.Serializer):
  phase = serializers.CharField(required=False, default="", allow_blank=True)
  progress = serializers.FloatField(required=False, default=0.0)
  message = serializers.CharField(required=False, default="", allow_blank=True)
+class ActionLogPayloadSerializer(serializers.Serializer):
+ """type=action_log 时的 payload 验证。"""
+ action_type = serializers.ChoiceField(choices=ActionLog.ActionType.choices)
+ tool_name = serializers.CharField(required=False, default="", allow_blank=True)
+ input = serializers.DictField(default=dict)
+ output = serializers.DictField(default=dict)
+ timestamp = serializers.DateTimeField
+ duration_ms = serializers.IntegerField(required=False, default=0)
+ thinking = serializers.CharField(required=False, default="", allow_blank=True)
+ model = serializers.CharField(required=False, default="", allow_blank=True)
+ sequence = serializers.IntegerField(default=0)
+class TokenUsagePayloadSerializer(serializers.Serializer):
+ """type=token_usage 时的 payload 验证。"""
+ input_tokens = serializers.IntegerField
+ output_tokens = serializers.IntegerField
+ cache_read_tokens = serializers.IntegerField(required=False, default=0)
+ cache_write_tokens = serializers.IntegerField(required=False, default=0)
+ model = serializers.CharField
+ timestamp = serializers.DateTimeField
+ total_cost_usd = serializers.DecimalField(
+ max_digits=10, decimal_places=6, required=False, default=0
+ )

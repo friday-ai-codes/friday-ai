@@ -17,14 +17,16 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from services.protocols import CallbackType
-from subagent.models import SubAgentSession, TaskResult
+from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TaskResult, TokenUsage
 from .serializers import (
+ ActionLogPayloadSerializer,
  CallbackSerializer,
  CompletedPayloadSerializer,
  FailedPayloadSerializer,
  HeartbeatPayloadSerializer,
  ProgressPayloadSerializer,
  QuestionPayloadSerializer,
+ TokenUsagePayloadSerializer,
 )
 logger = structlog.get_logger
 # 终态集合 — 处于终态的 session 不再接受回调
@@ -34,6 +36,8 @@ _TERMINAL_STATUSES = {
  SubAgentSession.Status.TIMEOUT,
  SubAgentSession.Status.CANCELLED,
 }
+# 数据补充类回调绕过终态检查（它们不改变状态，只追加数据）
+_DATA_APPEND_TYPES = {CallbackType.ACTION_LOG, CallbackType.TOKEN_USAGE}
 # === 重试配置（Phase）===
 # 可重试的任务类型（用户决策：explore/ask/plan 可重试，coding 不重试）
 RETRYABLE_TASK_TYPES = {"explore", "ask", "plan"}
@@ -375,8 +379,8 @@ class ContainerCallbackView(APIView):
  {"detail": f"Session not found: {session_id}"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # 4. 终态检查 — 已完成的 session 拒绝重复回调
- if session.status in _TERMINAL_STATUSES:
+ # 4. 终态检查 — 已完成的 session 拒绝重复回调（数据补充类回调除外）
+ if session.status in _TERMINAL_STATUSES and callback_type not in _DATA_APPEND_TYPES:
  log.info("callback_terminal_state", current_status=session.status)
  return Response(
  {"detail": "Session already in terminal state", "status": session.status},
@@ -390,6 +394,93 @@ class ContainerCallbackView(APIView):
  status=status.HTTP_400_BAD_REQUEST,
  )
  return handler(session, payload, log)
+# === 执行上下文收集（Phase）===
+# 敏感环境变量 key 关键词
+_SENSITIVE_KEY_PATTERNS = {"API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"}
+def _filter_sensitive_env(env: dict[str, str]) -> dict[str, str]:
+ """过滤环境变量中的敏感值。"""
+ filtered = {}
+ for k, v in env.items:
+ key_upper = k.upper
+ if any(p in key_upper for p in _SENSITIVE_KEY_PATTERNS):
+ filtered[k] = "***"
+ else:
+ filtered[k] = v
+ return filtered
+def _collect_execution_context(session: SubAgentSession, log) -> None:
+ """在容器清理前收集执行上下文写入 ExecutionContext。"""
+ async def _collect:
+ try:
+ import json
+ import os
+ from services.container_manager import ContainerManager
+ manager = ContainerManager
+ # 容器日志
+ container_logs = ""
+ if session.container_id:
+ container_logs = await manager.get_logs(session.session_id, tail=500)
+ # Docker stats
+ docker_stats: dict = {}
+ if session.container_id:
+ try:
+ import asyncio
+ container = await asyncio.to_thread(
+ manager._executor.client.containers.get, session.container_id
+ )
+ docker_stats = await asyncio.to_thread(container.stats, stream=False)
+ except Exception as e:
+ log.warning("docker_stats_collection_error", error=str(e))
+ # 环境变量（从 ContainerManager 构建方法获取，过滤敏感 key）
+ environment_vars: dict = {}
+ try:
+ env = manager._build_environment(
+ type("_Cfg",, {
+ "session_id": session.session_id,
+ "task_type": session.task_type,
+ "repo_url": session.repo_url,
+ "branch": session.target_branch or "main",
+ "target_branch": session.target_branch,
+ "timeout": 3600,
+ "git_credentials": {},
+ "claude_api_key": "",
+ "claude_base_url": "",
+ })
+ )
+ environment_vars = _filter_sensitive_env(env)
+ except Exception as e:
+ log.warning("env_collection_error", error=str(e))
+ # input_prompt（从 transfer 目录的 context.json 读取）
+ input_prompt = ""
+ try:
+ transfer_dir = os.path.join(
+ manager._executor.transfers_dir, session.session_id, ".friday"
+ )
+ context_path = os.path.join(transfer_dir, "context.json")
+ if os.path.exists(context_path):
+ with open(context_path) as f:
+ ctx = json.load(f)
+ input_prompt = ctx.get("prompt", "")
+ except Exception as e:
+ log.warning("prompt_collection_error", error=str(e))
+ # 创建或更新 ExecutionContext
+ from asgiref.sync import sync_to_async
+ await sync_to_async(ExecutionContext.objects.update_or_create)(
+ session=session,
+ defaults={
+ "environment_vars": environment_vars,
+ "input_prompt": input_prompt,
+ "container_logs": container_logs,
+ "docker_stats": docker_stats,
+ },
+ )
+ log.info("execution_context_collected")
+ except Exception as e:
+ log.warning("execution_context_collection_error", error=str(e))
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_collect)
+ except RuntimeError:
+ pass
 # === 回调处理函数 ===
 def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  """处理 completed 回调 — 创建 TaskResult，更新 session 状态。"""
@@ -417,6 +508,8 @@ def _handle_completed(session: SubAgentSession, payload: dict, log) -> Response:
  )
  # 更新 session 状态
  session.mark_completed
+ # 收集执行上下文（在清理前）
+ _collect_execution_context(session, log)
  # 收集容器资源消耗（在清理前）
  _collect_container_stats(session, log)
  # 调度容器清理（成功任务立即清理）
@@ -442,7 +535,10 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  task_type = session.task_type
  # Coding 任务不重试（有 Git 副作用）
  if task_type not in RETRYABLE_TASK_TYPES:
+ session.failure_reason = error_msg
+ session.save(update_fields=["failure_reason"])
  session.mark_failed(error=error_msg)
+ _collect_execution_context(session, log)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=0)
  # 触发 workflow 恢复（如果有 node_execution）
@@ -458,7 +554,10 @@ def _handle_failed(session: SubAgentSession, payload: dict, log) -> Response:
  if session.last_output and isinstance(session.last_output, dict):
  retry_count = session.last_output.get("retry_count", 0)
  if retry_count >= MAX_RETRIES:
+ session.failure_reason = error_msg
+ session.save(update_fields=["failure_reason"])
  session.mark_failed(error=error_msg)
+ _collect_execution_context(session, log)
  _schedule_container_cleanup(session, immediate=False)
  _send_failure_notification(session, error_msg, retry_count=retry_count)
  # 触发 workflow 恢复（如果有 node_execution）
@@ -611,6 +710,52 @@ def _handle_progress(session: SubAgentSession, payload: dict, log) -> Response:
  session.save(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
+def _handle_action_log(session: SubAgentSession, payload: dict, log) -> Response:
+ """处理 action_log 回调 — 写入 ActionLog 记录。"""
+ ser = ActionLogPayloadSerializer(data=payload)
+ if not ser.is_valid:
+ return Response(
+ {"detail": "Invalid action_log payload", "errors": ser.errors},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ p = ser.validated_data
+ ActionLog.objects.create(
+ session=session,
+ action_type=p["action_type"],
+ timestamp=p["timestamp"],
+ sequence=p["sequence"],
+ payload={
+ "tool_name": p["tool_name"],
+ "input": p["input"],
+ "output": p["output"],
+ "thinking": p["thinking"],
+ "model": p["model"],
+ },
+ duration_ms=p["duration_ms"],
+ )
+ log.debug("callback_action_log_ok", action_type=p["action_type"], sequence=p["sequence"])
+ return Response({"status": "ok"})
+def _handle_token_usage(session: SubAgentSession, payload: dict, log) -> Response:
+ """处理 token_usage 回调 — 写入 TokenUsage 记录。"""
+ ser = TokenUsagePayloadSerializer(data=payload)
+ if not ser.is_valid:
+ return Response(
+ {"detail": "Invalid token_usage payload", "errors": ser.errors},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ p = ser.validated_data
+ TokenUsage.objects.create(
+ session=session,
+ input_tokens=p["input_tokens"],
+ output_tokens=p["output_tokens"],
+ cache_read_tokens=p["cache_read_tokens"],
+ cache_write_tokens=p["cache_write_tokens"],
+ model=p["model"],
+ total_cost_usd=p["total_cost_usd"],
+ source=TokenUsage.Source.SUBAGENT,
+ )
+ log.debug("callback_token_usage_ok", model=p["model"])
+ return Response({"status": "ok"})
 # 处理器映射
 _HANDLERS = {
  CallbackType.COMPLETED: _handle_completed,
@@ -618,4 +763,6 @@ _HANDLERS = {
  CallbackType.HEARTBEAT: _handle_heartbeat,
  CallbackType.QUESTION: _handle_question,
  CallbackType.PROGRESS: _handle_progress,
+ CallbackType.ACTION_LOG: _handle_action_log,
+ CallbackType.TOKEN_USAGE: _handle_token_usage,
 }
