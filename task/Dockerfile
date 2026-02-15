@@ -27,6 +27,7 @@ RUN apk add --no-cache \
  curl \
  ca-certificates \
  libffi \
+ libstdc++ \
  docker-cli
 WORKDIR /app
 # Copy Node.js from node-tools
