@@ -33,10 +33,6 @@ urlpatterns = router.urls + [
  WebhookTriggerView.as_view,
  name="webhook-trigger",
  ),
- # Container execution callback endpoint (unauthenticated, called from containers)
- path,
- # CodingTask status callback endpoint (unauthenticated, called from task containers)
- path,
  # Execution context endpoint
  path(
  "workflow-executions/<uuid:execution_id>/context/",
