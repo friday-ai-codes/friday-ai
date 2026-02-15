@@ -1,7 +1,9 @@
-"""容器回调 API 序列化器（Phase）。"""
+"""容器回调 API 序列化器（Phase）+ ExecutionContext API 序列化器（Phase）。"""
+from __future__ import annotations
+from typing import Any
 from rest_framework import serializers
 from services.protocols import CallbackType
-from subagent.models import ActionLog
+from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TokenUsage
 class CallbackSerializer(serializers.Serializer):
  """统一回调端点请求序列化器。
  验证容器发送的回调请求结构。
@@ -78,3 +80,99 @@ class TokenUsagePayloadSerializer(serializers.Serializer):
  total_cost_usd = serializers.DecimalField(
  max_digits=10, decimal_places=6, required=False, default=0
  )
+# =============================================================================
+# ExecutionContext API 序列化器（Phase）
+# =============================================================================
+class ActionLogReadSerializer(serializers.ModelSerializer):
+ """ActionLog 读取序列化器。"""
+ tool_name = serializers.SerializerMethodField
+ class Meta:
+ model = ActionLog
+ fields = [
+ "id",
+ "action_type",
+ "tool_name",
+ "timestamp",
+ "sequence",
+ "duration_ms",
+ "payload",
+ "created_at",
+ ]
+ def get_tool_name(self, obj: ActionLog) -> str:
+ return obj.payload.get("tool_name", "") if isinstance(obj.payload, dict) else ""
+class TokenUsageReadSerializer(serializers.ModelSerializer):
+ """TokenUsage 读取序列化器。"""
+ class Meta:
+ model = TokenUsage
+ fields = [
+ "id",
+ "input_tokens",
+ "output_tokens",
+ "cache_read_tokens",
+ "cache_write_tokens",
+ "total_cost_usd",
+ "model",
+ "source",
+ "recorded_at",
+ ]
+class ExecutionContextListSerializer(serializers.ModelSerializer):
+ """ExecutionContext 列表序列化器。"""
+ session_id = serializers.CharField(source="session.session_id", read_only=True)
+ session_status = serializers.CharField(source="session.status", read_only=True)
+ task_type = serializers.CharField(source="session.task_type", read_only=True)
+ failure_reason = serializers.CharField(source="session.failure_reason", read_only=True)
+ action_log_count = serializers.SerializerMethodField
+ token_usage_count = serializers.SerializerMethodField
+ class Meta:
+ model = ExecutionContext
+ fields = [
+ "id",
+ "session_id",
+ "session_status",
+ "task_type",
+ "failure_reason",
+ "action_log_count",
+ "token_usage_count",
+ "created_at",
+ ]
+ def get_action_log_count(self, obj: ExecutionContext) -> int:
+ return obj.session.action_logs.count
+ def get_token_usage_count(self, obj: ExecutionContext) -> int:
+ return obj.session.token_usages.count
+class ExecutionContextWriteSerializer(serializers.ModelSerializer):
+ """ExecutionContext 创建/更新序列化器。"""
+ session = serializers.PrimaryKeyRelatedField(queryset=SubAgentSession.objects.all)
+ class Meta:
+ model = ExecutionContext
+ fields = [
+ "session",
+ "environment_vars",
+ "input_prompt",
+ "container_logs",
+ "docker_stats",
+ ]
+class ExecutionContextDetailSerializer(serializers.ModelSerializer):
+ """ExecutionContext 详情序列化器（含关联 action_logs + token_usages）。"""
+ session_id = serializers.CharField(source="session.session_id", read_only=True)
+ session_status = serializers.CharField(source="session.status", read_only=True)
+ task_type = serializers.CharField(source="session.task_type", read_only=True)
+ failure_reason = serializers.CharField(source="session.failure_reason", read_only=True)
+ action_logs = ActionLogReadSerializer(many=True, source="session.action_logs", read_only=True)
+ token_usages = TokenUsageReadSerializer(many=True, source="session.token_usages", read_only=True)
+ class Meta:
+ model = ExecutionContext
+ fields = [
+ "id",
+ "session_id",
+ "session_status",
+ "task_type",
+ "failure_reason",
+ "environment_vars",
+ "input_prompt",
+ "container_logs",
+ "docker_stats",
+ "action_logs",
+ "token_usages",
+ "created_at",
+ "updated_at",
+ ]
