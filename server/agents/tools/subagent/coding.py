@@ -155,18 +155,6 @@ async def dispatch_coding_task(
  "target_branch": target_branch,
  },
  )
- # Store mapping in main session temp_data
- temp_data = main_session.temp_data or {}
- subagent_sessions = temp_data.setdefault("subagent_sessions", {})
- subagent_sessions[subagent_session_id] = {
- "task_type": "coding",
- "status": "running",
- "from_branch": from_branch,
- "target_branch": target_branch,
- "task_description": task_description[:200],
- }
- main_session.temp_data = temp_data
- await main_session.asave(update_fields=["temp_data"])
  return ToolResult(
  success=True,
  output={

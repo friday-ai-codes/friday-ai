@@ -121,15 +121,6 @@ async def explore_repository(
  "container_id": container_id,
  },
  )
- # Store mapping in main session temp_data
- temp_data = main_session.temp_data or {}
- subagent_sessions = temp_data.setdefault("subagent_sessions", {})
- subagent_sessions[subagent_session_id] = {
- "task_type": "explore",
- "status": "running",
- }
- main_session.temp_data = temp_data
- await main_session.asave(update_fields=["temp_data"])
  return ToolResult(
  success=True,
  output={

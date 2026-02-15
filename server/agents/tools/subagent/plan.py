@@ -142,17 +142,6 @@ async def generate_tech_plan_section(
  "container_id": container_id,
  },
  )
- # Store mapping in main session temp_data
- temp_data = main_session.temp_data or {}
- subagent_sessions = temp_data.setdefault("subagent_sessions", {})
- subagent_sessions[subagent_session_id] = {
- "task_type": "plan",
- "status": "running",
- "requirement": requirement[:100],
- "section_type": section_type,
- }
- main_session.temp_data = temp_data
- await main_session.asave(update_fields=["temp_data"])
  return ToolResult(
  success=True,
  output={
