@@ -7,6 +7,8 @@ Starts the background scheduler for session timeout tasks:
 - enforce_task_timeouts: Every 60 seconds (Phase)
 - cleanup_completed_containers: Daily at 4:00 AM (Phase)
 - remind_pending_questions: Every 30 minutes (Phase)
+- refresh_repo_caches: Daily at 2:00 AM (Phase)
+- prune_cache_volumes: Daily at 5:00 AM (Phase)
 """
 import asyncio
 import structlog
@@ -109,6 +111,26 @@ def delete_old_job_executions(max_age: int = 604_800):
  """Delete job execution logs older than max_age seconds (default: 7 days)."""
  DjangoJobExecution.objects.delete_old_job_executions(max_age)
  logger.info("old_job_executions_deleted", max_age_seconds=max_age)
+def refresh_repo_caches_job:
+ """Job wrapper for refresh_repo_caches task (Phase)."""
+ from tasks.cache_tasks import refresh_repo_caches
+ log = logger.bind(job="refresh_repo_caches")
+ log.info("job_start")
+ try:
+ result = run_async_task(refresh_repo_caches)
+ log.info("job_complete", result=result)
+ except Exception as e:
+ log.exception("job_error", error=str(e))
+def prune_cache_volumes_job:
+ """Job wrapper for prune_cache_volumes task (Phase)."""
+ from tasks.cache_tasks import prune_cache_volumes
+ log = logger.bind(job="prune_cache_volumes")
+ log.info("job_start")
+ try:
+ result = run_async_task(prune_cache_volumes)
+ log.info("job_complete", result=result)
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 class Command(BaseCommand):
  help = "Runs APScheduler for session timeout tasks."
  def handle(self, *args, **options):
@@ -194,6 +216,26 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="delete_old_job_executions", schedule="weekly on Monday")
+ # Refresh repository caches daily at 2:00 AM (Phase)
+ scheduler.add_job(
+ refresh_repo_caches_job,
+ trigger=CronTrigger(hour=2, minute=0),
+ id="refresh_repo_caches",
+ name="Refresh repository caches",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info("job_registered", job="refresh_repo_caches", schedule="daily at 02:00")
+ # Prune cache volumes daily at 5:00 AM (Phase)
+ scheduler.add_job(
+ prune_cache_volumes_job,
+ trigger=CronTrigger(hour=5, minute=0),
+ id="prune_cache_volumes",
+ name="Prune unused cache volumes",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info("job_registered", job="prune_cache_volumes", schedule="daily at 05:00")
  try:
  logger.info("scheduler_starting")
  scheduler.start
