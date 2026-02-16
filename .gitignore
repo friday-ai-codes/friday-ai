@@ -19,3 +19,17 @@ Thumbs.db
 *.log
 node_modules
 .env
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+# Python tools
+.mypy_cache/
+.pytest_cache/
+# Database
+*.sqlite3
+# Runtime data
+server/data/
