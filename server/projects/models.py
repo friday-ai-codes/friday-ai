@@ -2,9 +2,6 @@
 import secrets
 import uuid
 from django.db import models
-# Backward compatibility imports (deprecated)
-# Import these from repositories.models instead
-from repositories.models import AuthType, GitCredential, GitPlatform, Repository
 def generate_webhook_token:
  """Generate a random webhook token."""
  return secrets.token_urlsafe(16)[:16]
@@ -60,23 +57,8 @@ class ProjectRepository(models.Model):
  class Meta:
  db_table = "project_repositories"
  unique_together = ["project", "repository"]
-# Re-export for backward compatibility
-# These are now in repositories.models
-def get_repository_model:
- """Get Repository model from repositories app."""
- from repositories.models import Repository
- return Repository
-def get_git_credential_model:
- """Get GitCredential model from repositories app."""
- from repositories.models import GitCredential
- return GitCredential
 __all__ = [
  "Project",
  "ProjectRepository",
  "generate_webhook_token",
- # Backward compatibility (deprecated - use repositories.models)
- "Repository",
- "GitCredential",
- "GitPlatform",
- "AuthType",
 ]

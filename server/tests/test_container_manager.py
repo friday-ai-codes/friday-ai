@@ -1,6 +1,5 @@
 """ContainerManager 单元测试 + SubAgentSession 模型测试。"""
 import json
-import warnings
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -393,14 +392,6 @@ class TestSubAgentSessionModel:
  from subagent.models import generate_execution_id
  ids = {generate_execution_id for _ in range(100)}
  assert len(ids) == 100
- def test_old_generate_function_warns(self):
- """旧函数触发 DeprecationWarning。"""
- from subagent.models import generate_subagent_session_id
- with warnings.catch_warnings(record=True) as w:
- warnings.simplefilter("always")
- generate_subagent_session_id("main-1", "https://repo", "coding")
- assert len(w) == 1
- assert issubclass(w[0].category, DeprecationWarning)
  def test_status_choices_include_new_states(self):
  """Status 包含 Phase 新增状态。"""
  from subagent.models import SubAgentSession

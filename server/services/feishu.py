@@ -483,14 +483,3 @@ def create_feishu_client_for_project(project) -> FeishuClient:
  project_key=project.feishu_project_key,
  user_key=project.feishu_user_key,
  )
-# 向后兼容的全局客户端（deprecated）
-_feishu_client: Optional[FeishuClient] = None
-def get_feishu_client -> FeishuClient:
- """获取飞书客户端单例。
- 注意：此函数已弃用，建议使用 create_feishu_client_for_project 替代。
- 保留此函数仅为向后兼容。
- """
- global _feishu_client
- if _feishu_client is None:
- _feishu_client = FeishuClient
- return _feishu_client
