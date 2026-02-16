@@ -61,6 +61,4 @@ class NotificationHook(BaseHook):
  execution = kwargs.get("execution")
  if not execution:
  return
- # TODO: 实现通知发送逻辑
- # 可以调用飞书、邮件等通知服务
- pass
+ raise NotImplementedError("通知发送逻辑未实现")

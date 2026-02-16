@@ -64,6 +64,19 @@ class FeishuSyncHook(BaseHook):
  "回复「通过」或「驳回」进行审批"
  ),
  )
+ async def execute(self, event: str, **kwargs) -> None:
+ """Execute hook by routing to the appropriate on_* handler."""
+ event_map = {
+ "node_started": self.on_node_started,
+ "node_completed": self.on_node_completed,
+ "node_failed": self.on_node_failed,
+ "node_waiting_approval": self.on_node_waiting_approval,
+ "execution_completed": self.on_execution_completed,
+ "execution_failed": self.on_execution_failed,
+ }
+ handler = event_map.get(event)
+ if handler:
+ await handler(**kwargs)
  async def on_execution_completed(self, execution, **kwargs):
  """Post completion comment and update work item status."""
  if not feature_flags.sync_workflow_to_feishu:
@@ -75,8 +88,6 @@ class FeishuSyncHook(BaseHook):
  work_item_id=work_item_id,
  content="🎉 工作流执行完成!",
  )
- # TODO: Update Feishu work item status to "已完成"
- # await self._update_work_item_status(work_item_id, "completed")
  async def on_execution_failed(self, execution, **kwargs):
  """Post failure comment."""
  if not feature_flags.sync_workflow_to_feishu:
@@ -98,24 +109,18 @@ class FeishuSyncHook(BaseHook):
  work_item_id = input_data.get("work_item_id")
  return work_item_id
  async def _post_comment(self, work_item_id: str, content: str):
- """Post a comment to Feishu work item.
- TODO: Implement actual Feishu API call using feishu.services
- """
+ """Post a comment to Feishu work item."""
  logger.info(
  "feishu_comment_posted",
  work_item_id=work_item_id,
  content=content[:100],
  )
- # TODO: Actual implementation
- # from feishu.services import FeishuService
- # feishu = FeishuService
- # await feishu.post_work_item_comment(work_item_id, content)
+ raise NotImplementedError("飞书评论 API 集成未实现")
  async def _update_work_item_status(self, work_item_id: str, status: str):
- """Update Feishu work item status.
- TODO: Implement actual Feishu API call
- """
+ """Update Feishu work item status."""
  logger.info(
  "feishu_status_updated",
  work_item_id=work_item_id,
  status=status,
  )
+ raise NotImplementedError("飞书工作项状态更新未实现")
