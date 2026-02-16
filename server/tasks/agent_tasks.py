@@ -133,7 +133,7 @@ async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
  from asgiref.sync import sync_to_async
  from workflows.models.execution import NodeExecution
  node_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ lambda: NodeExecution.objects.filter( # type: ignore[attr-defined]
  output_data__session_id=session_id,
  )
  .select_related("node")
