@@ -153,6 +153,7 @@ class FeishuWebSocketClient:
  ).order_by("-updated_at")[:1]
  if sessions.exists:
  session = sessions.first
+ if session is not None:
  logger.info(
  "ws_resuming_agent_from_message",
  session_id=session.session_id,
@@ -225,7 +226,7 @@ class FeishuWebSocketClient:
  return None
  logger.warning(
  "ws_card_callback_no_handler",
- action_value=action_value,
+ action_value=action_name,
  )
  return None
  def start(self) -> None:

@@ -301,6 +301,7 @@ async def test_batch_create_pr_empty_repositories -> None:
  node = CreatePRNode
  result = await node.execute(context)
  assert result.status == "failed"
+ assert result.error is not None
  assert "未配置仓库列表" in result.error
 @pytest.mark.asyncio
 async def test_batch_create_pr_missing_title -> None:
@@ -314,4 +315,5 @@ async def test_batch_create_pr_missing_title -> None:
  node = CreatePRNode
  result = await node.execute(context)
  assert result.status == "failed"
+ assert result.error is not None
  assert "标题" in result.error or "title" in result.error.lower

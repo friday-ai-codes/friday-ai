@@ -99,7 +99,7 @@ class SubAgentSession(models.Model):
  verbose_name="Docker 容器名",
  help_text="格式: friday-exec-{uuid}",
  )
- node_execution = models.ForeignKey(
+ node_execution = models.ForeignKey( # type: ignore[misc]
  "workflows.NodeExecution",
  on_delete=models.SET_NULL,
  null=True,

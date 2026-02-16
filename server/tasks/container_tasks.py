@@ -7,6 +7,7 @@
 """
 import asyncio
 from datetime import timedelta
+from typing import Any
 import docker
 import structlog
 from django.conf import settings
@@ -27,7 +28,7 @@ async def check_container_health -> dict:
  log.info("task_start")
  from services.container_manager import ContainerManager
  manager = ContainerManager
- stats = {"checked": 0, "healthy": 0, "unhealthy": 0, "errors": }
+ stats: dict[str, Any] = {"checked": 0, "healthy": 0, "unhealthy": 0, "errors": }
  sessions = SubAgentSession.objects.filter(
  status=SubAgentSession.Status.RUNNING,
  container_id__gt="",
@@ -149,7 +150,7 @@ async def enforce_task_timeouts -> dict:
  from services.container_manager import ContainerManager
  manager = ContainerManager
  now = timezone.now
- stats = {"stopped": 0, "errors": }
+ stats: dict[str, Any] = {"stopped": 0, "errors": }
  sessions = SubAgentSession.objects.filter(
  status=SubAgentSession.Status.RUNNING,
  started_at__isnull=False,
@@ -158,7 +159,7 @@ async def enforce_task_timeouts -> dict:
  task_type = session.task_type or "coding"
  timeout_seconds = TASK_TIMEOUTS.get(task_type, 1800)
  cutoff = now - timedelta(seconds=timeout_seconds)
- if session.started_at < cutoff:
+ if session.started_at is not None and session.started_at < cutoff:
  log.info(
  "task_timeout_enforcing",
  session_id=session.session_id,
