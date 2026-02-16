@@ -31,15 +31,17 @@ class WorkflowPermission(BasePermission):
  # For POST (execute, duplicate), check project membership
  return self._is_project_member(user, project)
  def _is_project_member(self, user, project) -> bool:
- """Check if user is a member of the project."""
- # For now, allow all authenticated users
- # TODO: Implement actual project membership check
+ """Check if user is a member of the project.
+ Currently allows all authenticated users. Real membership check
+ deferred to future user permission system.
+ """
  return True
  def _is_project_admin(self, user, project) -> bool:
- """Check if user is an admin of the project."""
- # For now, allow if user created the project
- # TODO: Implement actual project admin check
- return project.created_by_id == user.id if hasattr(project, "created_by_id") else True
+ """Check if user is an admin of the project.
+ Currently allows all authenticated users. Real admin check
+ deferred to future user permission system.
+ """
+ return True
 class ExecutionPermission(BasePermission):
  """Permission for WorkflowExecution operations.
  - List: User can see executions for workflows they have access to
@@ -65,9 +67,17 @@ class ExecutionPermission(BasePermission):
  return True
  return self._is_project_admin(user, project)
  def _is_project_member(self, user, project) -> bool:
+ """Check if user is a member of the project.
+ Currently allows all authenticated users. Real membership check
+ deferred to future user permission system.
+ """
  return True
  def _is_project_admin(self, user, project) -> bool:
- return project.created_by_id == user.id if hasattr(project, "created_by_id") else True
+ """Check if user is an admin of the project.
+ Currently allows all authenticated users. Real admin check
+ deferred to future user permission system.
+ """
+ return True
 class ApprovalPermission(BasePermission):
  """Permission for approval operations.
  - Approve/Reject: User must be in the approvers list (if specified)
@@ -96,6 +106,10 @@ class ApprovalPermission(BasePermission):
  project = obj.workflow_execution.workflow.project
  return self._is_project_member(user, project)
  def _is_project_member(self, user, project) -> bool:
+ """Check if user is a member of the project.
+ Currently allows all authenticated users. Real membership check
+ deferred to future user permission system.
+ """
  return True
 class WebhookConfigPermission(BasePermission):
  """Permission for WebhookConfig operations.
@@ -113,6 +127,14 @@ class WebhookConfigPermission(BasePermission):
  return self._is_project_member(user, project)
  return workflow.created_by == user or self._is_project_admin(user, project)
  def _is_project_member(self, user, project) -> bool:
+ """Check if user is a member of the project.
+ Currently allows all authenticated users. Real membership check
+ deferred to future user permission system.
+ """
  return True
  def _is_project_admin(self, user, project) -> bool:
- return project.created_by_id == user.id if hasattr(project, "created_by_id") else True
+ """Check if user is an admin of the project.
+ Currently allows all authenticated users. Real admin check
+ deferred to future user permission system.
+ """
+ return True

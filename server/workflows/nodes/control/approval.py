@@ -1,4 +1,5 @@
 """Human approval node."""
+import structlog
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -8,6 +9,7 @@ from workflows.nodes.base import (
  PortType,
 )
 from workflows.nodes.registry import register_node
+logger = structlog.get_logger
 @register_node
 class HumanApprovalNode(BaseNode):
  """人工审批节点
@@ -117,5 +119,8 @@ class HumanApprovalNode(BaseNode):
  channels: list[str],
  ) -> None:
  """发送审批通知"""
- # TODO: 实现通知发送逻辑
- pass
+ logger.warning(
+ "approval_notification_not_implemented",
+ channels=channels,
+ node_name=context.node_config.get("title", ""),
+ )
