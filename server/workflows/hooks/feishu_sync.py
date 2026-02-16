@@ -76,7 +76,7 @@ class FeishuSyncHook(BaseHook):
  }
  handler = event_map.get(event)
  if handler:
- await handler(**kwargs)
+ await handler(**kwargs) # type: ignore[operator]
  async def on_execution_completed(self, execution, **kwargs):
  """Post completion comment and update work item status."""
  if not feature_flags.sync_workflow_to_feishu:

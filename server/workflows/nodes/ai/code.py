@@ -132,7 +132,6 @@ class CodeImplementNode(BaseNode):
  next_handle="default",
  )
  # Execute code implementation in container
- # TODO: Integrate with services/docker_executor.py
  execution_result = await self._execute_in_container(
  plan=plan,
  repository_path=repository_path,

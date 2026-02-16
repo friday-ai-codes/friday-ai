@@ -146,9 +146,8 @@ class NotifyFeishuNode(BaseNode):
  },
  }
  return {"msg_type": "text", "content": {"text": content}}
-@register_node
 class MCPDeployNode(BaseNode):
- """MCP 部署节点
+ """MCP 部署节点 [未实现]
  触发 MCP (Model Context Protocol) 服务部署。
  """
  node_type = "mcp_deploy"
@@ -262,9 +261,7 @@ class MCPDeployNode(BaseNode):
  wait_for_completion: bool,
  timeout: int,
  ) -> dict:
- """触发 MCP 部署
- TODO: 集成实际的 MCP 部署 API
- """
+ """触发 MCP 部署"""
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(

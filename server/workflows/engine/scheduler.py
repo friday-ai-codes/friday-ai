@@ -426,7 +426,7 @@ class WorkflowEngine:
  execution.status = ExecutionStatus.RUNNING
  await sync_to_async(execution.save)(update_fields=["status"])
  await self.hooks.trigger("execution_resumed", execution=execution)
- # TODO: 重新启动执行循环
+ raise NotImplementedError("恢复执行循环未实现")
  async def cancel_execution(self, execution: WorkflowExecution) -> None:
  """取消执行"""
  if execution.status in (ExecutionStatus.COMPLETED, ExecutionStatus.CANCELLED):
