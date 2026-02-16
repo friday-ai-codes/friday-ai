@@ -1,6 +1,5 @@
 """Feishu views: Webhook handling, config management, and logs."""
 import json
-import logging
 import uuid as uuid_module
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -27,8 +26,7 @@ from .serializers import (
  WebhookTokenSerializer,
  WebhookTokenUpdateSerializer,
 )
-logger = logging.getLogger(__name__)
-struct_logger = structlog.get_logger
+logger = structlog.get_logger(__name__)
 # 幂等处理
 _processed_events: set[str] = set
 _MAX_PROCESSED_EVENTS = 10000
@@ -97,7 +95,7 @@ class CardCallbackView(APIView):
  signature=signature,
  encrypt_key=encrypt_key,
  ):
- struct_logger.warning("card_callback_signature_invalid")
+ logger.warning("card_callback_signature_invalid")
  return Response(
  {"detail": "签名验证失败"},
  status=status.HTTP_401_UNAUTHORIZED,
@@ -109,7 +107,7 @@ class CardCallbackView(APIView):
  data["encrypt"], encrypt_key
  )
  except Exception as e:
- struct_logger.error("card_callback_decrypt_failed", error=str(e))
+ logger.error("card_callback_decrypt_failed", error=str(e))
  return Response(
  {"detail": "解密失败"},
  status=status.HTTP_400_BAD_REQUEST,
@@ -135,7 +133,7 @@ class CardCallbackView(APIView):
  chat_id=chat_id,
  tenant_key=tenant_key,
  )
- struct_logger.info(
+ logger.info(
  "card_callback_received",
  action_name=action_name,
  message_id=message_id,
@@ -152,14 +150,14 @@ class CardCallbackView(APIView):
  # 处理器返回 None，不更新卡片
  return Response({})
  except Exception as e:
- struct_logger.error(
+ logger.error(
  "card_callback_handler_error",
  action_name=action_name,
  error=str(e),
  )
  return Response({})
  # 没有匹配的处理器
- struct_logger.warning(
+ logger.warning(
  "card_callback_no_handler",
  action_name=action_name,
  )
@@ -194,14 +192,14 @@ def handle_user_answer(callback: CardCallback) -> dict[str, Any] | None:
  # Form submit: user input is in "custom_answer" key (from input element name)
  answer = action_data.get("answer", "") or action_data.get("custom_answer", "")
  if not session_id or not answer:
- struct_logger.warning(
+ logger.warning(
  "user_answer_missing_data",
  session_id=session_id,
  has_answer=bool(answer),
  action_value=str(callback.action_value)[:100],
  )
  return None
- struct_logger.info(
+ logger.info(
  "user_answer_received",
  session_id=session_id,
  answer_preview=answer[:50] if answer else "",
@@ -281,7 +279,7 @@ class IMMessageWebhookView(APIView):
  signature=signature,
  encrypt_key=encrypt_key,
  ):
- struct_logger.warning("im_message_signature_invalid")
+ logger.warning("im_message_signature_invalid")
  return Response(
  {"detail": "签名验证失败"},
  status=status.HTTP_401_UNAUTHORIZED,
@@ -293,7 +291,7 @@ class IMMessageWebhookView(APIView):
  data["encrypt"], encrypt_key
  )
  except Exception as e:
- struct_logger.error("im_message_decrypt_failed", error=str(e))
+ logger.error("im_message_decrypt_failed", error=str(e))
  return Response(
  {"detail": "解密失败"},
  status=status.HTTP_400_BAD_REQUEST,
@@ -310,7 +308,7 @@ class IMMessageWebhookView(APIView):
  mark_event_processed(event_id)
  # 只处理 im.message.receive_v1 事件
  if event_type != "im.message.receive_v1":
- struct_logger.debug("im_message_event_ignored", event_type=event_type)
+ logger.debug("im_message_event_ignored", event_type=event_type)
  return Response({"status": "ignored"})
  # 提取消息信息
  message = event.get("message", {})
@@ -322,7 +320,7 @@ class IMMessageWebhookView(APIView):
  sender_open_id = sender.get("sender_id", {}).get("open_id", "")
  # 解析消息内容
  content_text = parse_message_content(msg_type, content_raw)
- struct_logger.info(
+ logger.info(
  "im_message_received",
  chat_id=chat_id,
  message_id=message_id,
@@ -451,7 +449,7 @@ class FeishuWebhookView(APIView):
  # Mark as processed
  if event_uuid:
  mark_event_processed(event_uuid)
- logger.info(f"处理事件: {event_type}, 项目: {project_key}, UUID: {event_uuid}")
+ logger.info("webhook_event_processing", event_type=event_type, project_key=project_key, event_uuid=event_uuid)
  # Handle event and create trigger log
  work_item_id = payload.get("id")
  work_item_name = payload.get("name", "")
@@ -479,7 +477,7 @@ class FeishuWebhookView(APIView):
  elif event_type == "WorkitemUpdateEvent":
  self._handle_workitem_update(project, payload, trigger_log)
  else:
- logger.info(f"未处理的事件类型: {event_type}")
+ logger.info("webhook_event_unhandled", event_type=event_type)
  # Dispatch to workflow system (for all events)
  self._dispatch_to_workflows(event_type, project, payload, trigger_log)
  return Response(
@@ -506,7 +504,7 @@ class FeishuWebhookView(APIView):
  dispatcher = TriggerDispatcher
  executions = async_to_sync(dispatcher.dispatch)(context)
  if executions:
- struct_logger.info(
+ logger.info(
  "workflows_triggered",
  trace_id=trace_id,
  event_type=event_type,
@@ -518,7 +516,7 @@ class FeishuWebhookView(APIView):
  trigger_log.workflow_execution = executions[0]
  trigger_log.save(update_fields=["workflow_execution"])
  except Exception as e:
- struct_logger.error(
+ logger.error(
  "workflow_dispatch_failed",
  event_type=event_type,
  error=str(e),
@@ -545,7 +543,7 @@ class FeishuWebhookView(APIView):
  trigger_log.save
  return work_item_info
  except Exception as e:
- logger.error(f"获取工作项详情失败: {e}")
+ logger.error("work_item_fetch_failed", error=str(e))
  trigger_log.error_message = str(e)
  trigger_log.save
  return None
@@ -554,11 +552,11 @@ class FeishuWebhookView(APIView):
  work_item_id = payload.get("id")
  work_item_type = payload.get("work_item_type_key", "story")
  if not work_item_id:
- logger.warning("工作项创建事件缺少 id")
+ logger.warning("workitem_create_missing_id")
  return
  # Fetch work item details and update trigger log
  self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
- logger.info(f"工作项创建事件已处理: {work_item_id}")
+ logger.info("workitem_create_processed", work_item_id=work_item_id)
  def _handle_workitem_status(self, project, payload, trigger_log):
  """处理工作项状态变更事件。"""
  work_item_id = payload.get("id")
@@ -566,11 +564,11 @@ class FeishuWebhookView(APIView):
  cur_status = payload.get("cur_work_item_status", {})
  pre_status = payload.get("pre_work_item_status", {})
  if not work_item_id:
- logger.warning("工作项状态变更事件缺少 id")
+ logger.warning("workitem_status_missing_id")
  return
  cur_state_key = cur_status.get("state_key", "")
  pre_state_key = pre_status.get("state_key", "")
- logger.info(f"状态变更: {work_item_id} {pre_state_key} -> {cur_state_key}")
+ logger.info("workitem_status_changed", work_item_id=work_item_id, from_state=pre_state_key, to_state=cur_state_key)
  # Fetch work item details and update trigger log
  self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
  # 检查并唤醒挂起的工作流
@@ -586,7 +584,7 @@ class FeishuWebhookView(APIView):
  status_change_type = payload.get("status_change_type", "")
  if not work_item_id:
  return
- logger.info(f"节点流转: {work_item_id}, 类型: {status_change_type}")
+ logger.info("workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type)
  def _handle_workitem_comment(self, project, payload, trigger_log):
  """处理工作项评论事件。"""
  work_item_id = payload.get("id")
@@ -600,7 +598,7 @@ class FeishuWebhookView(APIView):
  is_approved = any(kw in comment_lower for kw in approval_keywords)
  is_rejected = any(kw in comment_lower for kw in rejection_keywords)
  if is_approved or is_rejected:
- logger.info(f"评论审批: {work_item_id}, 通过={is_approved}, 驳回={is_rejected}")
+ logger.info("workitem_comment_approval", work_item_id=work_item_id, approved=is_approved, rejected=is_rejected)
  # Call FeishuApprovalHandler
  from feishu.approval import FeishuApprovalHandler
  handler = FeishuApprovalHandler
@@ -613,18 +611,18 @@ class FeishuWebhookView(APIView):
  approver=None,
  )
  if result:
- struct_logger.info(
+ logger.info(
  "feishu_approval_processed_via_webhook",
  work_item_id=work_item_id,
  approved=approved,
  )
  else:
- struct_logger.warning(
+ logger.warning(
  "feishu_approval_no_matching_execution",
  work_item_id=work_item_id,
  )
  except Exception as e:
- struct_logger.error(
+ logger.error(
  "feishu_approval_handler_error",
  work_item_id=work_item_id,
  error=str(e),
@@ -635,7 +633,7 @@ class FeishuWebhookView(APIView):
  changed_fields = payload.get("changed_fields", ) or
  if not work_item_id:
  return
- logger.info(f"字段变更: {work_item_id}, 字段数: {len(changed_fields)}")
+ logger.info("workitem_fields_updated", work_item_id=work_item_id, field_count=len(changed_fields))
  # 检查并唤醒挂起的工作流
  self._check_and_resume_suspended_workflows(
  project=project,
@@ -671,7 +669,7 @@ class FeishuWebhookView(APIView):
  for sub in subscriptions:
  # 求值条件
  if evaluate_condition(sub.condition_expression, fields):
- struct_logger.info(
+ logger.info(
  "subscription_matched",
  subscription_id=str(sub.id),
  work_item_id=work_item_id,
@@ -682,7 +680,7 @@ class FeishuWebhookView(APIView):
  # 恢复节点执行
  self._resume_node_execution(sub, fields)
  except Exception as e:
- struct_logger.error(
+ logger.error(
  "resume_suspended_workflows_error",
  work_item_id=work_item_id,
  error=str(e),
@@ -714,7 +712,7 @@ class FeishuWebhookView(APIView):
  )
  return work_item.fields if work_item else {}
  except Exception as e:
- logger.warning(f"获取工作项字段失败: {e}")
+ logger.warning("work_item_fields_fetch_failed", error=str(e))
  return {}
  def _resume_node_execution(
  self, subscription, matched_fields: dict
@@ -748,7 +746,7 @@ class FeishuWebhookView(APIView):
  async_to_sync(engine._continue_after_node)(
  workflow_execution, node_execution
  )
- struct_logger.info(
+ logger.info(
  "node_resumed",
  node_execution_id=str(node_execution.id),
  execution_id=str(workflow_execution.id),
@@ -962,7 +960,7 @@ class TriggerLogRetryView(APIView):
  }
  )
  except Exception as e:
- logger.error(f"重试失败: {e}")
+ logger.error("trigger_log_retry_failed", error=str(e))
  return Response(
  {"detail": f"重试失败: {str(e)}"},
  status=status.HTTP_500_INTERNAL_SERVER_ERROR,
