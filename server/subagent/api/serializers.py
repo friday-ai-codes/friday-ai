@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from rest_framework import serializers
 from services.protocols import CallbackType
-from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TokenUsage
+from subagent.models import ActionLog, ExecutionContext, InteractionLog, SubAgentSession, TokenUsage
 class CallbackSerializer(serializers.Serializer):
  """统一回调端点请求序列化器。
  验证容器发送的回调请求结构。
@@ -176,3 +176,30 @@ class ExecutionContextDetailSerializer(serializers.ModelSerializer):
  "created_at",
  "updated_at",
  ]
+# =============================================================================
+# InteractionLog API 序列化器
+# =============================================================================
+class InteractionLogSerializer(serializers.ModelSerializer):
+ """InteractionLog 读取序列化器。"""
+ session_id = serializers.CharField(source="session.session_id", read_only=True)
+ class Meta:
+ model = InteractionLog
+ fields = [
+ "id",
+ "session_id",
+ "question_id",
+ "question_text",
+ "question_context",
+ "code_snippet",
+ "options",
+ "answer_text",
+ "answer_source",
+ "asked_at",
+ "answered_at",
+ ]
+class InteractionAnswerSerializer(serializers.Serializer):
+ """提交回答的请求序列化器。"""
+ answer = serializers.CharField
+ answer_source = serializers.ChoiceField(
+ choices=["button", "text"], default="text",
+ )

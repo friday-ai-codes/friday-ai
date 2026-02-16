@@ -58,6 +58,8 @@ dependencies = [
  "django-apscheduler>=0.7.0",
  # System monitoring (Phase)
  "psutil>=5.9.0",
+ "python-socks>=2.8.0",
+ "openai>=2.16.0",
 ]
 [build-system]
 requires = ["hatchling"]

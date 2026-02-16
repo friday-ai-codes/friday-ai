@@ -513,6 +513,41 @@ class WorkflowExecutionViewSet(ModelViewSet):
  return Response({"status": "cancelled", "message": "执行已取消"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+ @action(detail=True, methods=["post"])
+ def retry(self, request: Request, pk=None) -> Response:
+ """用原始触发数据重新执行工作流。"""
+ execution = self.get_object
+ if execution.status not in ("failed", "cancelled"):
+ return Response(
+ {"detail": "只能重试失败或已取消的执行"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ workflow = execution.workflow
+ trigger_data = execution.trigger_data or {}
+ raw_payload = trigger_data.get("raw_payload", execution.input_data.get("raw_payload", {}))
+ context = TriggerContext(
+ trigger_type=execution.trigger_type or "manual",
+ raw_payload=raw_payload,
+ event_type=execution.input_data.get("event_type"),
+ workflow=workflow,
+ triggered_by=request.user,
+ metadata={"retry_from": str(execution.id)},
+ )
+ dispatcher = TriggerDispatcher
+ new_execution = async_to_sync(dispatcher.dispatch_single)(context)
+ if not new_execution:
+ return Response(
+ {"detail": "重试失败：无法启动工作流执行"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+ return Response(
+ {
+ "execution_id": str(new_execution.id),
+ "status": new_execution.status,
+ "retry_from": str(execution.id),
+ },
+ status=status.HTTP_201_CREATED,
+ )
  @action(detail=True, methods=["get"])
  def nodes(self, request: Request, pk=None) -> Response:
  """List node executions for this execution."""

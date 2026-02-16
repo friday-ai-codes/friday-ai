@@ -54,3 +54,23 @@ class LLMConfig:
  temperature: float = 0.0
  api_key: str | None = None
  base_url: str | None = None
+def create_provider(
+ provider_type: str = "anthropic",
+ api_key: str | None = None,
+ base_url: str | None = None,
+ model: str = "",
+) -> Any:
+ """Create an LLM provider by type.
+ Args:
+ provider_type: "anthropic" or "openai"
+ api_key: API key
+ base_url: Custom API base URL
+ model: Model identifier
+ Returns:
+ LLMProvider instance
+ """
+ if provider_type == "openai":
+ from agents.llm.openai import OpenAIProvider
+ return OpenAIProvider(api_key=api_key, base_url=base_url, model=model)
+ from agents.llm.claude import ClaudeProvider
+ return ClaudeProvider(api_key=api_key, base_url=base_url, model=model)

@@ -79,6 +79,16 @@ export async function executeWorkflow(
 ): Promise<ManualTriggerResponse> {
  return post<ManualTriggerResponse>(`/workflows/workflows/${workflowId}/execute/`, data)
 }
+/**
+ * 重试失败/取消的执行（用原始触发数据重新执行）
+ */
+export async function retryExecution(
+ executionId: string,
+): Promise<{ execution_id: string, status: string, retry_from: string }> {
+ return post<{ execution_id: string, status: string, retry_from: string }>(
+ `/workflow-executions/${executionId}/retry/`,
+ )
+}
 // ============================================================================
 // Execution Context API
 // ============================================================================
@@ -214,6 +224,52 @@ export async function triggerNodeResume(
  `/workflows/workflow-executions/${executionId}/nodes/${nodeId}/trigger-resume/`,
  )
 }
+// ============================================================================
+// InteractionLog API (Node Debug)
+// ============================================================================
+export interface InteractionLog {
+ id: number
+ session_id: string
+ question_id: string
+ question_text: string
+ question_context: string
+ code_snippet: string
+ options: string
+ answer_text: string
+ answer_source: string
+ asked_at: string
+ answered_at: string | null
+}
+/**
+ * 获取节点执行关联的交互记录
+ */
+export async function getNodeInteractions(nodeExecutionId: string): Promise<InteractionLog> {
+ return get<InteractionLog>(`/containers/node-executions/${nodeExecutionId}/interactions/`)
+}
+/**
+ * 提交交互回答
+ */
+export async function answerInteraction(
+ interactionId: number,
+ answer: string,
+ answerSource: 'button' | 'text' = 'text',
+): Promise<InteractionLog> {
+ return post<InteractionLog>(`/containers/interactions/${interactionId}/answer/`, {
+ answer,
+ answer_source: answerSource,
+ })
+}
+/**
+ * 回答 AgentSession 的提问（AIAgentBaseNode 场景）
+ */
+export async function answerAgentSession(
+ sessionId: string,
+ answer: string,
+): Promise<{ status: string, session_id: string }> {
+ return post<{ status: string, session_id: string }>(`/containers/agent-sessions/${sessionId}/answer/`, {
+ answer,
+ })
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -224,6 +280,7 @@ export default {
  deleteTrigger,
  // Execution
  executeWorkflow,
+ retryExecution,
  getExecutionContext,
  // CodingTask
  listCodingTasks,
@@ -239,4 +296,8 @@ export default {
  // Node Execution Actions
  skipNodeWait,
  triggerNodeResume,
+ // Interactions
+ getNodeInteractions,
+ answerInteraction,
+ answerAgentSession,
 }

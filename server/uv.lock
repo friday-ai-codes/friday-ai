@@ -797,12 +797,14 @@ dependencies = [
  { name = "mistune" },
  { name = "mypy" },
  { name = "mysqlclient" },
+ { name = "openai" },
  { name = "paramiko" },
  { name = "passlib", extra = ["argon2"] },
  { name = "psutil" },
  { name = "psycopg", extra = ["binary"] },
  { name = "pygithub" },
  { name = "python-gitlab" },
+ { name = "python-socks" },
  { name = "qdrant-client" },
  { name = "structlog" },
  { name = "tenacity" },
@@ -855,12 +857,14 @@ requires-dist = [
  { name = "mistune", specifier = ">=3.2.0" },
  { name = "mypy", specifier = ">=1.14.0" },
  { name = "mysqlclient", specifier = ">=2.2" },
+ { name = "openai", specifier = ">=2.16.0" },
  { name = "paramiko", specifier = ">=4.0.0" },
  { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
  { name = "psutil", specifier = ">=5.9.0" },
  { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
  { name = "pygithub", specifier = ">=2.0.0" },
  { name = "python-gitlab", specifier = ">=4.0.0" },
+ { name = "python-socks", specifier = ">=2.8.0" },
  { name = "qdrant-client", specifier = ">=1.9.0" },
  { name = "structlog", specifier = ">=25.5.0" },
  { name = "tenacity", specifier = ">=8.2.0" },
@@ -2299,6 +2303,14 @@ source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
 sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/94/01/979e98d542a70714b0cb2b6728ed0b7c46792b695e3eaec3e20711271ca3/python_multipart-0.0.22.tar.gz", hash = "sha256:7340bef99a7e0032613f56dc36027b959fd3b30a787ed62d310e951f7c3a3a58", size = 37612, upload-time = "2026-01-25T10:15:56.219Z" }
 wheels = [
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl", hash = "sha256:2b2cd894c83d21bf49d702499531c7bafd057d730c201782048f7945d82de155", size = 24579, upload-time = "2026-01-25T10:15:54.811Z" },
+]
+[[package]]
+name = "python-socks"
+version = "2.8.0"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/6c/07/cfdd6a846ac859e513b4e68bb6c669a90a74d89d8d405516fba7fc9c6f0c/python_socks-2.8.0.tar.gz", hash = "sha256:340f82778b20a290bdd538ee47492978d603dff7826aaf2ce362d21ad9ee6f1b", size = 273130, upload-time = "2025-12-09T12:17:05.433Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/13/10/e2b575faa32d1d32e5e6041fc64794fa9f09526852a06b25353b66f52cae/python_socks-2.8.0-py3-none-any.whl", hash = "sha256:57c24b416569ccea493a101d38b0c82ed54be603aa50b6afbe64c46e4a4e4315", size = 55075, upload-time = "2025-12-09T12:17:03.269Z" },
 ]
 [[package]]
 name = "pytz"

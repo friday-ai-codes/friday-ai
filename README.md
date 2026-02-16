@@ -5,7 +5,7 @@ Friday is an AI-driven agile development automation system that seamlessly integ
 ## 🏗️ Architecture
 This project follows a Monorepo structure, containing independent frontend and backend services:
 - **Frontend (`web/`)**: Vue 3 + TypeScript + Vite
-- **Backend (`server/`)**: FastAPI + Python 3.11 + SQLModel
+- **Backend (`server/`)**: Django + Django REST Framework + Python 3.14+
 - **Infrastructure**: Full-stack orchestration via Docker Compose
 ## 🚀 Quick Start
 > **详细指南**: 查看 [快速开始文档](docs/quick-start.md) 获取完整的中文安装和配置指南。
@@ -50,7 +50,7 @@ This project follows a Monorepo structure, containing independent frontend and b
  │
  ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ FastAPI Server (friday-server:10241) │
+│ Django Server (friday-server:10241) │
 │ ┌────────────────┐ ┌──────────────────────────────────┐ │
 │ │ REST API │ │ Task Scheduler │ │
 │ │ /api/* │ │ (Docker Container Management) │ │
@@ -79,7 +79,7 @@ For detailed instructions, see [Server README](server/README.md).
 ```bash
 cd server
 uv sync
-uv run uvicorn friday.main:app --reload
+uv run python manage.py runserver
 ```
 ### Frontend Development (`web/`)
 For detailed instructions, see [Web README](web/README.md).
@@ -91,7 +91,7 @@ pnpm dev
 ## 📂 Project Structure
 ```
 friday/
-├── server/ # Backend Service (FastAPI)
+├── server/ # Backend Service (Django)
 │ ├── src/ # Source Code
 │ ├── task/ # Task Execution Container
 │ └── README.md
