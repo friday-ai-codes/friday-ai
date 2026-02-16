@@ -8,8 +8,8 @@ POST /api/containers/callback/
 - progress: 进度更新，写入 last_output
 """
 import asyncio
-from typing import Any
 from datetime import timedelta
+from typing import Any
 import structlog
 from django.conf import settings
 from django.utils import timezone
@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from structlog.stdlib import BoundLogger
 from services.protocols import CallbackType
 from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TaskResult, TokenUsage
 from .serializers import (
@@ -435,7 +436,9 @@ def _collect_execution_context(session: SubAgentSession, log: BoundLogger) -> No
  environment_vars: dict = {}
  try:
  env = manager._build_environment(
- type("_Cfg",, {
+ type(
+ "_Cfg",,
+ {
  "session_id": session.session_id,
  "task_type": session.task_type,
  "repo_url": session.repo_url,
@@ -445,7 +448,8 @@ def _collect_execution_context(session: SubAgentSession, log: BoundLogger) -> No
  "git_credentials": {},
  "claude_api_key": "",
  "claude_base_url": "",
- })
+ },
+ )
  )
  environment_vars = _filter_sensitive_env(env)
  except Exception as e:
@@ -483,7 +487,9 @@ def _collect_execution_context(session: SubAgentSession, log: BoundLogger) -> No
  except RuntimeError:
  pass
 # === 回调处理函数 ===
-def _handle_completed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_completed(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 completed 回调 — 创建 TaskResult，更新 session 状态。"""
  ser = CompletedPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -618,7 +624,9 @@ def _schedule_retry(session: SubAgentSession, delay_seconds: int) -> None:
  except RuntimeError:
  # 没有运行中的事件循环，直接创建新的
  asyncio.create_task(_retry_after_delay)
-def _handle_heartbeat(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_heartbeat(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 heartbeat 回调 — 更新 last_heartbeat_at。"""
  ser = HeartbeatPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -630,7 +638,9 @@ def _handle_heartbeat(session: SubAgentSession, payload: dict[str, Any], log: Bo
  session.save(update_fields=["last_heartbeat_at", "updated_at"])
  log.debug("callback_heartbeat_ok")
  return Response({"status": "ok"})
-def _handle_question(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_question(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 question 回调 — 创建 InteractionLog 并触发 Feishu 提问卡片。"""
  import uuid
  from subagent.models import InteractionLog
@@ -691,7 +701,9 @@ def _handle_question(session: SubAgentSession, payload: dict[str, Any], log: Bou
  question_preview=p["question"][:80],
  )
  return Response({"status": "ok", "question_id": question_id})
-def _handle_progress(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_progress(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 progress 回调 — 更新 last_output（临时进度数据）。"""
  ser = ProgressPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -711,7 +723,9 @@ def _handle_progress(session: SubAgentSession, payload: dict[str, Any], log: Bou
  session.save(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
-def _handle_action_log(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_action_log(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 action_log 回调 — 写入 ActionLog 记录。"""
  ser = ActionLogPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -736,7 +750,9 @@ def _handle_action_log(session: SubAgentSession, payload: dict[str, Any], log: B
  )
  log.debug("callback_action_log_ok", action_type=p["action_type"], sequence=p["sequence"])
  return Response({"status": "ok"})
-def _handle_token_usage(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+def _handle_token_usage(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 token_usage 回调 — 写入 TokenUsage 记录。"""
  ser = TokenUsagePayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -767,4 +783,3 @@ _HANDLERS = {
  CallbackType.ACTION_LOG: _handle_action_log,
  CallbackType.TOKEN_USAGE: _handle_token_usage,
 }
-from structlog.stdlib import BoundLogger

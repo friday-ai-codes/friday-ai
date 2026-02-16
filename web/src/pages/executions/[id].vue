@@ -23,6 +23,7 @@ import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
 import AICodingPanel from '~/components/execution/AICodingPanel.vue'
 import AICodeReviewPanel from '~/components/execution/AICodeReviewPanel.vue'
+import NodeDebugPanel from '~/components/execution/NodeDebugPanel.vue'
 import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
@@ -118,8 +119,8 @@ async function handleRetry {
  if (!currentExecution.value)
  return
  try {
- await workflowsStore.fetchWorkflow(currentExecution.value.workflow)
- const result = await workflowsStore.executeWorkflow(currentExecution.value.input_data)
+ const { retryExecution } = await import('~/api/workflow')
+ const result = await retryExecution(currentExecution.value.id)
  if (result?.execution_id) {
  toast.success('工作流重新执行成功')
  router.push(`/executions/${result.execution_id}`)
@@ -493,6 +494,11 @@ function formatTime(dateStr: string | null) {
  <!-- AI Code Review Panel (for ai_code_review nodes) -->
  <AICodeReviewPanel
  v-else-if="nodeExec.node_type === 'ai_code_review' && (nodeExec.status === 'running' || nodeExec.status === 'completed' || nodeExec.status === 'failed')":node-execution="nodeExec"
+ />
+ <!-- Debug Panel (for nodes with container interactions) -->
+ <NodeDebugPanel
+ v-if="['running', 'waiting_event', 'completed', 'failed'].includes(nodeExec.status)":node-execution-id="nodeExec.id":output-data="nodeExec.output_data":node-status="nodeExec.status"
+ @answered="store.fetchExecution(executionId)"
  />
  <!-- Error message -->
  <div v-if="nodeExec.error_message" class=" rounded-lg bg-destructive/10 text-sm text-destructive">

@@ -18,6 +18,7 @@ class SettingKeys:
  ANTHROPIC_API_KEY = "anthropic_api_key"
  ANTHROPIC_BASE_URL = "anthropic_base_url"
  ANTHROPIC_MODEL = "anthropic_model"
+ LLM_PROVIDER_TYPE = "llm_provider_type"
  GIT_HTTP_PROXY = "git_http_proxy"
  # Vector Index Settings
  QDRANT_URL = "qdrant_url"

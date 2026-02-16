@@ -21,6 +21,7 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { cn } from '~/lib/utils'
+import NodeDebugPanel from '~/components/execution/NodeDebugPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/executions/[id]')
@@ -126,9 +127,8 @@ async function handleRetry {
  if (!currentExecution.value)
  return
  try {
- // Ensure workflow is loaded for execution
- await workflowsStore.fetchWorkflow(currentExecution.value.workflow)
- const result = await workflowsStore.executeWorkflow(currentExecution.value.input_data)
+ const { retryExecution } = await import('~/api/workflow')
+ const result = await retryExecution(currentExecution.value.id)
  if (result?.execution_id) {
  toast.success('工作流重新执行成功')
  router.push(`/workflows/executions/${result.execution_id}`)
@@ -470,6 +470,11 @@ function formatTime(dateStr: string | null) {
  <div v-if="nodeExec.error_message" class=" rounded bg-destructive/10 text-sm text-destructive">
  {{ nodeExec.error_message }}
  </div>
+ <!-- Debug Panel (container interactions) -->
+ <NodeDebugPanel
+ v-if="['running', 'waiting_event', 'completed', 'failed'].includes(nodeExec.status)":node-execution-id="nodeExec.id":output-data="nodeExec.output_data":node-status="nodeExec.status"
+ @answered="store.fetchExecution(executionId)"
+ />
  <!-- Input/Output data -->
  <div class="grid gap-4 md:grid-cols-2">
  <div>

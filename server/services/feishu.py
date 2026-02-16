@@ -1,6 +1,4 @@
-"""飞书（Lark）项目集成服务。
-迁移自 FastAPI 版本，适配 Django 框架。
-"""
+"""飞书（Lark）项目集成服务。"""
 import json
 import time
 from dataclasses import dataclass

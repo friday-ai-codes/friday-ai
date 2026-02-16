@@ -7,7 +7,7 @@ from typing import Any
 import structlog
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
-from agents.llm.claude import ClaudeProvider
+from agents.llm.base import create_provider
 from agents.models import AgentSession
 logger = structlog.get_logger(__name__)
 async def resume_agent_session(session_id: str, user_response: str) -> dict[str, Any]:
@@ -84,7 +84,8 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
  if not claude_config.model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- provider = ClaudeProvider(
+ provider = create_provider(
+ claude_config.provider_type,
  api_key=claude_config.api_key,
  base_url=claude_config.base_url,
  model=claude_config.model,
@@ -133,7 +134,7 @@ async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
  from workflows.models.execution import NodeExecution
  node_exec = await sync_to_async(
  lambda: NodeExecution.objects.filter(
- output_data__agent_session_id=session_id,
+ output_data__session_id=session_id,
  )
  .select_related("node")
  .first
@@ -175,7 +176,7 @@ async def _notify_workflow_completion(
  # Find the node execution linked to this session
  node_exec = await sync_to_async(
  lambda: NodeExecution.objects.filter( # type: ignore[attr-defined]
- output_data__agent_session_id=session_id,
+ output_data__session_id=session_id,
  status=NodeExecutionStatus.WAITING_EVENT,
  )
  .select_related("workflow_execution")

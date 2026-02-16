@@ -21,7 +21,7 @@ class LoginView(APIView):
  user = serializer.validated_data["user"]
  # Generate tokens
  refresh = RefreshToken.for_user(user)
- # Set custom claim to match FastAPI format
+ # 设置自定义 claim，统一 JWT 中的用户标识字段
  refresh["sub"] = str(user.id)
  access_token = str(refresh.access_token)
  response = Response(

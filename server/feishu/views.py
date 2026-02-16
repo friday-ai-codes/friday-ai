@@ -118,6 +118,10 @@ class CardCallbackView(APIView):
  action = data.get("action", {})
  # Pass the full value dict to preserve execution_id, node_id, etc.
  action_value_dict = action.get("value", {})
+ # Merge form_value into action_value (for form submissions, e.g. custom_answer)
+ form_value = action.get("form_value", {})
+ if isinstance(form_value, dict) and isinstance(action_value_dict, dict):
+ action_value_dict = {**action_value_dict, **form_value}
  # Extract action name for routing (string used for prefix matching)
  action_name = action_value_dict.get("action", "") if isinstance(action_value_dict, dict) else str(action_value_dict)
  message_id = data.get("open_message_id", "")

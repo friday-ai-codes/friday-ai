@@ -3,15 +3,15 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 def custom_exception_handler(exc, context):
- """Custom exception handler to match FastAPI error format.
- Also handles TriggerError hierarchy for unified trigger error responses:
+ """统一异常处理器，输出规范化错误响应。
+ 同时处理 TriggerError 继承体系，输出统一的触发器错误响应：
  - TriggerValidationError -> 400 Bad Request
  - TriggerAuthError -> 401 Unauthorized
  - TriggerError (base) -> 500 Internal Server Error
  """
  response = exception_handler(exc, context)
  if response is not None:
- # Ensure 'detail' key exists for consistency with FastAPI
+ # 确保包含 detail 字段，便于前端统一展示错误
  if "detail" not in response.data and isinstance(response.data, dict):
  if len(response.data) == 1:
  key = list(response.data.keys)[0]

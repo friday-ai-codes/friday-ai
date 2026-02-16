@@ -124,6 +124,7 @@ declare module 'vue' {
  MarkdownEditorModal: typeof import('./components/workflow/smart-input/MarkdownEditorModal.vue')['default']
  MarkdownPreview: typeof import('./components/ui/markdown-editor/MarkdownPreview.vue')['default']
  NodeConfigPanel: typeof import('./components/workflow/NodeConfigPanel.vue')['default']
+ NodeDebugPanel: typeof import('./components/execution/NodeDebugPanel.vue')['default']
  NodePalette: typeof import('./components/workflow/sidebar/NodePalette.vue')['default']
  NodePaletteItem: typeof import('./components/workflow/sidebar/NodePaletteItem.vue')['default']
  NodePortsDisplay: typeof import('./components/workflow/NodePortsDisplay.vue')['default']

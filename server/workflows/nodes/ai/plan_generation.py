@@ -147,6 +147,10 @@ class AIPlanGenerationNode(AIAgentBaseNode):
 ### 终止条件
 - 用户点击「确认方案」按钮
 - 用户反馈中包含明确的肯定确认
+### 重要规则
+- **禁止直接输出文字回复用户。** 当你需要向用户提问、确认信息或请求补充需求时，必须调用 ask_user_question 工具，绝不能用纯文字回复代替。
+- 如果需求描述不清晰、信息不足或存在歧义，立即调用 ask_user_question 向用户提问，不要猜测或自行假设。
+- 你的每一轮迭代都应该调用至少一个工具（search_code、verify_plan、ask_user_question 等），不要空转。
 ## 输出格式
 技术方案必须符合以下 JSON Schema：
 ```json

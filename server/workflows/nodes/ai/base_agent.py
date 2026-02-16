@@ -10,7 +10,7 @@ from asgiref.sync import sync_to_async
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
-from agents.llm.claude import ClaudeProvider
+from agents.llm.base import create_provider
 from agents.models import AgentSession
 from workflows.nodes.base import (
  BaseNode,
@@ -64,6 +64,13 @@ class AIAgentBaseNode(BaseNode):
  "title": "API Key",
  "description": "API 密钥",
  "default": "",
+ },
+ "api_format": {
+ "type": "string",
+ "title": "API 格式",
+ "description": "API 协议格式：anthropic（Claude 原生）或 openai（兼容格式）",
+ "enum": ["anthropic", "openai"],
+ "default": "anthropic",
  },
  "timeout_hours": {
  "type": "integer",
@@ -145,18 +152,21 @@ class AIAgentBaseNode(BaseNode):
  use_custom_api: bool = False,
  api_base_url: str = "",
  api_key: str = "",
- ) -> ClaudeProvider:
+ api_format: str = "",
+ ) -> Any:
  """Get LLM Provider, supporting custom API or system config."""
  if use_custom_api and api_base_url:
  if not model:
  raise ValueError("使用自定义 API 时必须指定模型")
- return ClaudeProvider(api_key=api_key, base_url=api_base_url, model=model)
+ provider_type = api_format or "anthropic"
+ return create_provider(provider_type, api_key=api_key, base_url=api_base_url, model=model)
  from services.claude_config import get_claude_config
  config = await sync_to_async(get_claude_config)(project)
  resolved_model = model or config.model
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- return ClaudeProvider(api_key=config.api_key, base_url=config.base_url, model=resolved_model)
+ provider_type = api_format or config.provider_type
+ return create_provider(provider_type, api_key=config.api_key, base_url=config.base_url, model=resolved_model)
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
@@ -211,6 +221,7 @@ class AIAgentBaseNode(BaseNode):
  use_custom_api: bool = config.get("use_custom_api", False)
  api_base_url: str = config.get("api_base_url", "")
  api_key: str = config.get("api_key", "")
+ api_format: str = config.get("api_format", "")
  logger.info(
  "agent_node_start",
  session_id=session_id,
@@ -237,7 +248,7 @@ class AIAgentBaseNode(BaseNode):
  )
  # Get LLM Provider
  provider = await self._get_provider(
- project, model, use_custom_api, api_base_url, api_key
+ project, model, use_custom_api, api_base_url, api_key, api_format
  )
  # 3. Execute Agent
  loop = AgentLoop(

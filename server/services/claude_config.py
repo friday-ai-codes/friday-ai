@@ -1,5 +1,4 @@
 """Claude 配置服务，实现配置优先级获取逻辑。
-迁移自 FastAPI 版本，适配 Django 框架。
 配置优先级：项目级 > 系统级
 """
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ class ClaudeConfig:
  base_url: Optional[str]
  model: Optional[str]
  source: Literal["project", "system"]
+ provider_type: str = "anthropic"
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""
  try:
@@ -69,6 +69,7 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  base_url=base_url,
  model=model,
  source=source,
+ provider_type=get_setting_value(SettingKeys.LLM_PROVIDER_TYPE) or "anthropic",
  )
 def get_claude_config_for_task(project_id: str) -> ClaudeConfig:
  """为任务执行获取 Claude 配置。
