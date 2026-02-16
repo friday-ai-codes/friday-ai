@@ -2,37 +2,10 @@
 SubAgentSession: Tracks SubAgent session state for session reuse
 SubAgentOutput: Stores long results that exceed inline threshold
 """
-import hashlib
 import uuid
-import warnings
 from django.db import models
 from django.utils import timezone
 from agents.models import AgentSession
-def generate_subagent_session_id(
- main_session_id: str,
- repo_url: str,
- task_type: str,
-) -> str:
- """Generate SubAgent session unique identifier.
- Same main session + same repo + same task type = same ID (session reuse)
- .. deprecated:
- 使用确定性哈希，重试场景会碰撞。请使用 generate_execution_id 替代。
- Args:
- main_session_id: Main Agent session ID
- repo_url: Git repository URL
- task_type: Task type (explore, ask, plan, coding)
- Returns:
- SubAgent session ID (format: sub-{hash12})
- """
- warnings.warn(
- "generate_subagent_session_id 使用确定性哈希，重试场景会碰撞。"
- "请使用 generate_execution_id 替代。",
- DeprecationWarning,
- stacklevel=2,
- )
- content = f"{main_session_id}:{repo_url}:{task_type}"
- hash_value = hashlib.sha256(content.encode).hexdigest[:12]
- return f"sub-{hash_value}"
 def generate_execution_id -> str:
  """生成唯一执行 ID。
  使用 UUID4 替代确定性哈希，彻底解决 Session ID 碰撞问题。
