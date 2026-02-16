@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 import httpx
-from .crypto import decrypt_value
+from common.encryption import decrypt_value
 @dataclass
 class WorkItemInfo:
  """飞书项目工作项信息。"""
