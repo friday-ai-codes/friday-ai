@@ -10,7 +10,9 @@ from datetime import datetime, timezone
 from typing import Any
 import docker
 import structlog
+from django.utils import timezone as dj_timezone
 from docker.errors import APIError, NotFound
+from system.models import CacheVolumeTracker
 logger = structlog.get_logger
 class RepoCacheManager:
  """仓库预克隆卷管理。
@@ -59,6 +61,10 @@ class RepoCacheManager:
  volume_name=volume_name,
  repo_url=repo_url,
  )
+ # 更新使用时间跟踪
+ await CacheVolumeTracker.objects.filter(
+ volume_name=volume_name,
+ ).aupdate(last_used_at=dj_timezone.now)
  return volume_name
  except NotFound:
  pass
@@ -100,6 +106,12 @@ class RepoCacheManager:
  # Clean up volume on failure
  await self.remove_cache(volume_name)
  return None
+ # 创建使用跟踪记录
+ await CacheVolumeTracker.objects.acreate(
+ volume_name=volume_name,
+ volume_type="repo",
+ repo_url=repo_url,
+ )
  return volume_name
  async def _run_bare_clone(
  self,
@@ -259,6 +271,8 @@ class RepoCacheManager:
  try:
  volume = self.client.volumes.get(volume_name)
  await asyncio.to_thread(volume.remove)
+ # 清理跟踪记录
+ await CacheVolumeTracker.objects.filter(volume_name=volume_name).adelete
  logger.info(
  "repo_cache_removed",
  volume_name=volume_name,
