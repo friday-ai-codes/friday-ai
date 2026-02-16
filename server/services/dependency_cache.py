@@ -13,7 +13,9 @@ from enum import Enum
 from typing import Any
 import docker
 import structlog
+from django.utils import timezone as dj_timezone
 from docker.errors import APIError, NotFound
+from system.models import CacheVolumeTracker
 logger = structlog.get_logger
 class PackageManager(Enum):
  """Supported package managers."""
@@ -130,6 +132,10 @@ class DependencyCacheManager:
  volume_name=volume_name,
  repo_id=repo_id,
  )
+ # 更新使用时间跟踪
+ await CacheVolumeTracker.objects.filter(
+ volume_name=volume_name,
+ ).aupdate(last_used_at=dj_timezone.now)
  return volume_name
  except NotFound:
  pass
@@ -173,6 +179,12 @@ class DependencyCacheManager:
  # Clean up volume on failure
  await self.remove_deps_cache(volume_name)
  return None
+ # 创建使用跟踪记录
+ await CacheVolumeTracker.objects.acreate(
+ volume_name=volume_name,
+ volume_type="deps",
+ repo_url="",
+ )
  return volume_name
  def _get_install_command(self, manager: PackageManager, lock_file_path: str) -> str:
  """返回对应包管理器的安装命令。
@@ -310,6 +322,8 @@ class DependencyCacheManager:
  try:
  volume = self.client.volumes.get(volume_name)
  await asyncio.to_thread(volume.remove)
+ # 清理跟踪记录
+ await CacheVolumeTracker.objects.filter(volume_name=volume_name).adelete
  logger.info(
  "deps_cache_removed",
  volume_name=volume_name,
