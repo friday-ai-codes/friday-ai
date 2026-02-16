@@ -11,7 +11,7 @@ from services.feishu_doc import FeishuDocAPIError, FeishuDocClient
 logger = structlog.get_logger(__name__)
 def _get_system_feishu_credentials_for_doc -> tuple[str, str] | None:
  """从 SystemSetting 获取飞书凭证（同步）。"""
- from services.crypto import decrypt_value
+ from common.encryption import decrypt_value
  from system.models import SettingKeys, SystemSetting
  try:
  app_id_setting = SystemSetting.objects.get(key=SettingKeys.FEISHU_APP_ID)
@@ -33,7 +33,7 @@ async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocCli
  Raises:
  ValueError: Project lacks Feishu app configuration
  """
- from services.crypto import decrypt_value
+ from common.encryption import decrypt_value
  # 优先使用项目级飞书 IM App 配置
  if project.feishu_app_id and project.feishu_app_secret_encrypted:
  app_secret = decrypt_value(project.feishu_app_secret_encrypted)

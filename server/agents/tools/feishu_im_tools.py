@@ -7,7 +7,7 @@ import structlog
 from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
-from services.crypto import decrypt_value
+from common.encryption import decrypt_value
 from services.feishu_im import CardTemplate, FeishuIMClient, FeishuIMError
 from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
