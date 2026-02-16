@@ -7,10 +7,8 @@ from workflows.nodes.base import (
  NodeResult,
  PortType,
 )
-from workflows.nodes.registry import register_node
-@register_node
 class AnalyzeRequirementsNode(BaseNode):
- """需求分析节点
+ """需求分析节点 [未实现]
  使用 LLM 分析需求文档，提取关键信息。
  """
  node_type = "analyze_requirements"
@@ -106,22 +104,10 @@ class AnalyzeRequirementsNode(BaseNode):
  prompt += "\n请使用结构化的 Markdown 格式输出。"
  return prompt
  async def _call_llm(self, prompt: str, model: str) -> dict:
- """调用 LLM 服务
- TODO: 集成实际的 LLM 服务
- """
- # Placeholder - integrate with services/llm.py
- return {
- "summary": "需求分析摘要",
- "features":,
- "technical_points":,
- "risks":,
- "estimated_effort": "medium",
- "implementation_steps":,
- "raw_response": f"[Placeholder] LLM analysis for: {prompt[:100]}...",
- }
-@register_node
+ """调用 LLM 服务"""
+ raise NotImplementedError("LLM 服务集成未实现")
 class AnalyzeBugNode(BaseNode):
- """Bug 分析节点
+ """Bug 分析节点 [未实现]
  使用 LLM 分析 Bug 报告，提取关键信息和可能的解决方案。
  """
  node_type = "analyze_bug"
@@ -237,11 +223,4 @@ class AnalyzeBugNode(BaseNode):
  return prompt
  async def _call_llm(self, prompt: str, model: str) -> dict:
  """调用 LLM 服务"""
- return {
- "root_cause": "问题根因分析",
- "severity": "medium",
- "solutions":,
- "fix_steps":,
- "edge_cases":,
- "raw_response": f"[Placeholder] Bug analysis for: {prompt[:100]}...",
- }
+ raise NotImplementedError("LLM 服务集成未实现")
