@@ -59,7 +59,6 @@ export function useDnd(graphRef: ShallowRef<Graph | null>) {
  */
  function initDnd {
  if (!graphRef.value) {
- console.error('[useDnd] Graph instance not available')
  return
  }
  const dndInstance = new Dnd({
@@ -96,11 +95,9 @@ export function useDnd(graphRef: ShallowRef<Graph | null>) {
  */
  function startDrag(nodeConfig: DndNodeConfig, event: MouseEvent) {
  if (!dnd.value) {
- console.error('[useDnd] Dnd instance not initialized')
  return
  }
  if (!graphRef.value) {
- console.error('[useDnd] Graph instance not available')
  return
  }
  // Create a temporary node for dragging with a generated shortId

@@ -21,8 +21,7 @@ function getNodeName(nodeId: string): string {
 // Handle clicking a warning - TODO: integrate with X6 graph for centering
 function handleWarningClick(_warning: typeof warningsList.value[0]) {
  // X6 centering will be implemented when graph instance is available via provide/inject
- // For now, just log the warning click
- console.log('Warning clicked:', _warning.id)
+ // intentionally ignored
 }
 // Panel open state - auto-open when warnings exist
 const isOpen = ref(true)

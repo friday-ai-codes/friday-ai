@@ -40,8 +40,7 @@ watch(
  theme: 'vitesse-dark',
  })
  }
- catch (e) {
- console.error('Failed to highlight JSON:', e)
+ catch {
  // Fallback to plain text
  html.value = `<pre>${JSON.stringify(newJson, null, 2)}</pre>`
  }

@@ -127,8 +127,8 @@ async function handleSave {
  emit('saved', result)
  emit('update:open', false)
  }
- catch (error) {
- console.error('Failed to save trigger:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  saving.value = false

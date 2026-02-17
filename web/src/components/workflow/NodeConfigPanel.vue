@@ -217,8 +217,8 @@ async function copyNodeId {
  idCopied.value = false
  }, 2000)
  }
- catch (e) {
- console.error('Failed to copy:', e)
+ catch {
+ // intentionally ignored
  }
 }
 // 输入/输出 Schema 折叠状态
