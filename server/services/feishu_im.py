@@ -172,14 +172,10 @@ class FeishuIMClient:
  # Handle rate limit
  if code == 99991400 or "rate limit" in str(data).lower:
  log.warning("rate_limit_hit", response=data)
- raise RateLimitError(
- f"Rate limit exceeded: {data.get('msg', data)}", code=code
- )
+ raise RateLimitError(f"Rate limit exceeded: {data.get('msg', data)}", code=code)
  if code != 0:
  log.error("send_message_failed", response=data)
- raise FeishuIMError(
- f"发送消息失败: {data.get('msg', data)}", code=code
- )
+ raise FeishuIMError(f"发送消息失败: {data.get('msg', data)}", code=code)
  message_id = data.get("data", {}).get("message_id", "")
  log.info("message_sent", message_id=message_id)
  return data.get("data", {})
