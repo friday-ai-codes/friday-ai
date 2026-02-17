@@ -1,6 +1,7 @@
 """Projects app serializers."""
 from rest_framework import serializers
-from .models import GitCredential, Project, Repository
+from repositories.models import GitCredential, Repository
+from .models import Project
 class RepositorySerializer(serializers.ModelSerializer):
  """Serializer for Repository model."""
  has_credential = serializers.SerializerMethodField

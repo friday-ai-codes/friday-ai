@@ -298,12 +298,13 @@ class ProjectViewSet(ModelViewSet):
  client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
  async def send_test:
  # 发送文本消息给指定用户
- message_id = await client.send_text(
+ result = await client.send_message(
  receive_id=user_id,
  receive_id_type="open_id",
- text=message,
+ msg_type="text",
+ content={"text": message},
  )
- return message_id
+ return result.get("message_id", "")
  message_id = asyncio.run(send_test)
  return Response(
  {
