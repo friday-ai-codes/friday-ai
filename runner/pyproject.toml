@@ -15,7 +15,7 @@ dependencies = [
 friday-runner = "friday_runner.cli:app"
 [build-system]
 requires = ["hatchling"]
-build-backend = "hatchling.backends"
+build-backend = "hatchling.build"
 [tool.ruff]
 line-length = 100
 target-version = "py314"
