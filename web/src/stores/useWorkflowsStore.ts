@@ -291,7 +291,6 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  catch (e: unknown) {
  error.value = (e as Error).message
- console.error(e)
  }
  finally {
  loading.value = false
@@ -314,7 +313,6 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  catch (e: unknown) {
  error.value = (e as Error).message
- console.error(e)
  }
  finally {
  loading.value = false

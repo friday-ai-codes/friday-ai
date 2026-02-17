@@ -185,8 +185,8 @@ async function fetchModels {
  })
  models.value = response.models
  }
- catch (error) {
- console.error('Failed to fetch models:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  loadingModels.value = false
