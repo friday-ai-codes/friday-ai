@@ -53,11 +53,6 @@ class ContextRetrievalNode(BaseNode):
  },
  ],
  },
- "repository_id": {
- "type": "string",
- "title": "仓库 ID (已弃用)",
- "description": "单个仓库 ID，建议使用 repositories 字段",
- },
  "top_k": {
  "type": "integer",
  "title": "返回数量",
