@@ -69,8 +69,8 @@ export const useExecutionsStore = defineStore('executions', => {
  const parsed = JSON.parse(data)
  handleWebSocketMessage(parsed)
  }
- catch (e) {
- console.error('Failed to parse WebSocket message:', e)
+ catch {
+ // intentionally ignored
  }
  }
  })
@@ -120,7 +120,6 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  catch (e: any) {
  error.value = e.message
- console.error(e)
  }
  finally {
  if (!silent) {
@@ -136,7 +135,6 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  catch (e: any) {
  error.value = e.message
- console.error(e)
  }
  finally {
  loading.value = false

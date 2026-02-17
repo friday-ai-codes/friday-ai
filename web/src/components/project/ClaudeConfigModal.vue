@@ -37,9 +37,8 @@ async function loadData {
  // If user wants to update, they enter a new one
  }
  }
- catch (e) {
- // Ignore 404 or other errors, just start with empty form
- console.error('Failed to load claude config:', e)
+ catch {
+ // intentionally ignored
  }
  finally {
  loading.value = false

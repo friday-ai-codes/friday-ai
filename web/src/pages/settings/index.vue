@@ -126,8 +126,7 @@ async function loadSettings {
  feishuAppIdDirty.value = false
  feishuAppSecretDirty.value = false
  }
- catch (error) {
- console.error('Failed to load settings:', error)
+ catch {
  toast.error('加载设置失败')
  }
  finally {
@@ -169,8 +168,7 @@ async function saveAllSettings {
  toast.success('设置已保存')
  await loadSettings
  }
- catch (error) {
- console.error('Failed to save settings:', error)
+ catch {
  toast.error('保存失败')
  }
  finally {
@@ -201,8 +199,7 @@ async function removeSetting(key: SettingKey) {
  }
  await loadSettings
  }
- catch (error) {
- console.error('Failed to delete setting:', error)
+ catch {
  toast.error('删除失败')
  }
  finally {
@@ -286,8 +283,7 @@ async function saveFeishuIMConfig {
  toast.info('没有需要保存的更改')
  }
  }
- catch (error) {
- console.error('Failed to save Feishu IM config:', error)
+ catch {
  toast.error('保存失败')
  }
  finally {
@@ -308,8 +304,7 @@ async function removeFeishuIMConfig {
  feishuAppSecretDirty.value = false
  await loadSettings
  }
- catch (error) {
- console.error('Failed to delete Feishu IM config:', error)
+ catch {
  toast.error('删除失败')
  }
  finally {
@@ -364,8 +359,8 @@ async function fetchModels {
  const response = await getModels({ source: 'system' })
  models.value = response.models
  }
- catch (error) {
- console.error('Failed to fetch models:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  loadingModels.value = false

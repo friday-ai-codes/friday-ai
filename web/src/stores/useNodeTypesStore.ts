@@ -60,7 +60,6 @@ export const useNodeTypesStore = defineStore('nodeTypes', => {
  }
  catch (e: any) {
  error.value = e.message
- console.error(e)
  }
  finally {
  loading.value = false
