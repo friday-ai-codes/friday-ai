@@ -17,17 +17,9 @@ from asgiref.sync import sync_to_async
 from rest_framework.test import APIClient
 from projects.models import Project
 from repositories.models import Repository
-from tests.e2e.conftest import (
- simulate_feishu_webhook,
- wait_for_execution_status,
-)
-from tests.e2e.fixtures.feishu_payloads import (
- create_status_change_payload,
- create_workitem_create_payload,
-)
 from tests.e2e.fixtures.mock_services import MockWorkItem
 from tests.e2e.fixtures.technical_plans import create_technical_plan
-from workflows.models import Workflow, WorkflowExecution
+from workflows.models import Workflow
 from workflows.models.coding_task import CodingTask, CodingTaskStatus
 from workflows.models.execution import (
  ExecutionStatus,
@@ -348,7 +340,7 @@ class TestCompleteWorkflowFlow:
  assert len(task.execution_plan_ids) >= 1
  else:
  # If workflow failed or suspended, verify dispatcher node was at least reached
- dispatcher_node_exec = await sync_to_async(
+ await sync_to_async(
  lambda: execution.node_executions.filter(
  node__node_type="ai_coding_dispatcher",
  ).first

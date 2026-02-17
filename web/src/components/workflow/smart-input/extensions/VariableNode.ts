@@ -1,7 +1,8 @@
-import { InputRule, mergeAttributes, Node } from '@tiptap/core'
-import { VueNodeViewRenderer, type NodeViewProps } from '@tiptap/vue-3'
+import type { NodeViewProps } from '@tiptap/vue-3'
 import type { Component } from 'vue'
 import type { VariableNodeAttrs } from '~/types/smart-input'
+import { InputRule, mergeAttributes, Node } from '@tiptap/core'
+import { VueNodeViewRenderer } from '@tiptap/vue-3'
 import VariableChip from '../VariableChip.vue'
 declare module '@tiptap/core' {
  interface Commands<ReturnType> {

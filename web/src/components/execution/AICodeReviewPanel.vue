@@ -79,7 +79,8 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  const groups: Record<string, Record<string, any>> = {}
  for (const issue of issues) {
  const dim = issue.dimension || 'other'
- if (!groups[dim]) groups[dim] =
+ if (!groups[dim])
+ groups[dim] =
  groups[dim].push(issue)
  }
  return groups
@@ -195,7 +196,7 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  >
  <!-- Dimension header -->
  <div class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground py-1">
- <span:class="[getDimensionMeta(dimension as string).icon, 'w-3.5 .5 text-amber-500']" />
+ <span class="w-3.5 .5 text-amber-500":class="[getDimensionMeta(dimension as string).icon]" />
  {{ getDimensionMeta(dimension as string).label }}
  <Badge variant="outline" class="text-[10px] px-1 py-0 ml-1">
  {{ issues.length }}
@@ -209,11 +210,11 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  >
  <!-- Collapsed: severity + truncated description -->
  <div class="flex items-center gap-2 .5">
- <Badge:class="[
+ <Badge
+ class="text-[10px] px-1.5 py-0 shrink-0":class="[
  getSeverityStyle(issue.severity).bg,
  getSeverityStyle(issue.severity).text,
  getSeverityStyle(issue.severity).border,
- 'text-[10px] px-1.5 py-0 shrink-0',
  ]"
  >
  {{ issue.severity }}

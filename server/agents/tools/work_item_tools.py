@@ -4,7 +4,6 @@ Provides tools for querying work item details, listing related items,
 and adding comments as AI Agent identity.
 """
 from datetime import datetime, timezone
-from typing import Any
 import structlog
 from agents.tools.base import ToolResult, tool
 from projects.models import Project

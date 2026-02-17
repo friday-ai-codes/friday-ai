@@ -4,11 +4,8 @@ configuration and codebase context inputs.
 """
 import json
 from typing import Any
-from unittest.mock import MagicMock
-import pytest
 from workflows.nodes.ai.plan import GeneratePlanNode
 from workflows.nodes.ai.technical_plan import TechnicalPlanNode
-from workflows.nodes.base import ExecutionContext
 class MockExecutionContext:
  """Mock ExecutionContext for testing."""
  def __init__(

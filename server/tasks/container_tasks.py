@@ -8,10 +8,10 @@
 import asyncio
 from datetime import timedelta
 from typing import Any
-import docker
 import structlog
 from django.conf import settings
 from django.utils import timezone
+from docker.errors import NotFound
 from services.container_config import ZOMBIE_HEARTBEAT_SECONDS
 from subagent.models import SubAgentSession
 logger = structlog.get_logger(__name__)
@@ -53,7 +53,7 @@ async def check_container_health -> dict:
  session.health_status = SubAgentSession.HealthStatus.UNKNOWN
  session.save(update_fields=["health_status", "updated_at"])
  stats["checked"] += 1
- except docker.errors.NotFound:
+ except NotFound:
  log.warning("container_not_found", session_id=session.session_id)
  except Exception as e:
  stats["errors"].append(f"{session.session_id}: {e}")

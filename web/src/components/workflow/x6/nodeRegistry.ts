@@ -1,11 +1,11 @@
 import type { Component } from 'vue'
 import { getTeleport, register } from '@antv/x6-vue-shape'
-import X6TriggerNode from './nodes/X6TriggerNode.vue'
-import X6ActionNode from './nodes/X6ActionNode.vue'
-import X6ConditionNode from './nodes/X6ConditionNode.vue'
-import X6AgentNode from './nodes/X6AgentNode.vue'
-import { workflowPortGroups, getDefaultPortsForNodeType } from './ports'
 import { registerGradientEdge } from './edges'
+import X6ActionNode from './nodes/X6ActionNode.vue'
+import X6AgentNode from './nodes/X6AgentNode.vue'
+import X6ConditionNode from './nodes/X6ConditionNode.vue'
+import X6TriggerNode from './nodes/X6TriggerNode.vue'
+import { getDefaultPortsForNodeType, workflowPortGroups } from './ports'
 /**
  * Node registry for X6 graph nodes.
  * Maps shape names to Vue components.

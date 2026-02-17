@@ -1,7 +1,7 @@
 export {
- NODE_COLORS,
- getNodeColor,
- registerGradientEdge,
  applyEdgeGradient,
  applyEdgeGradientFromNodes,
+ getNodeColor,
+ NODE_COLORS,
+ registerGradientEdge,
 } from './GradientEdge'

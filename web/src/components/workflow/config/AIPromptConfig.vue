@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { AIPromptConfig } from '~/types/workflow'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed, ref } from 'vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'

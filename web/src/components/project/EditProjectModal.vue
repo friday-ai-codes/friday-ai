@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
+import { get, post, put } from '~/api/client'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import { Textarea } from '~/components/ui/textarea'
-import { Separator } from '~/components/ui/separator'
 import {
  Collapsible,
  CollapsibleContent,
  CollapsibleTrigger,
 } from '~/components/ui/collapsible'
-import { get, post, put } from '~/api/client'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import { Separator } from '~/components/ui/separator'
+import { Textarea } from '~/components/ui/textarea'
 const props = defineProps<{
  projectId: string
 }>
@@ -56,7 +56,7 @@ const submitting = ref(false)
 const feishuIMOpen = ref(false)
 const savingFeishuIM = ref(false)
 const testingFeishuIM = ref(false)
-const testResult = ref<{ success: boolean; message: string } | null>(null)
+const testResult = ref<{ success: boolean, message: string } | null>(null)
 // 获取项目详情
 async function fetchProjectData {
  loading.value = true
@@ -169,7 +169,7 @@ async function testFeishuIMConfig {
  if (feishuIMConfig.app_secret.trim) {
  payload.app_secret = feishuIMConfig.app_secret
  }
- const result = await post<{ success: boolean; message: string }>(
+ const result = await post<{ success: boolean, message: string }>(
  `/projects/${props.projectId}/feishu-im-config/test/`,
  payload,
  )
@@ -293,7 +293,9 @@ function handleCancel {
  </CollapsibleTrigger>
  <CollapsibleContent class="space-y-4 pt-3">
  <div class="rounded-lg bg-blue-500/5 border border-blue-500/20 text-xs text-muted-foreground space-y-1">
- <p class="font-medium text-blue-600">配置说明</p>
+ <p class="font-medium text-blue-600">
+ 配置说明
+ </p>
  <p>用于 AI Agent 发送飞书消息（如提问卡片、通知等）。</p>
  <p>需要在飞书开放平台创建<strong>自建应用</strong>并开启消息权限。</p>
  </div>

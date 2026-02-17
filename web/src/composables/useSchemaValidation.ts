@@ -133,9 +133,11 @@ export function useSchemaValidation {
  }
  // Get node type definition
  const nodeTypeKey = node.data?.node_type || node.type
- if (!nodeTypeKey) continue
+ if (!nodeTypeKey)
+ continue
  const nodeTypeDef = nodeTypesStore.getNodeType(nodeTypeKey)
- if (!nodeTypeDef) continue
+ if (!nodeTypeDef)
+ continue
  // Check each input port
  for (const input of nodeTypeDef.inputs) {
  result.push({

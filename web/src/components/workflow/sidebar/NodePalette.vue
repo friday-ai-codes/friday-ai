@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NodePaletteItemData } from './NodePaletteItem.vue'
 import {
  Bot,
  Briefcase,
@@ -18,7 +19,6 @@ import {
  Webhook,
 } from 'lucide-vue-next'
 import NodePaletteItem from './NodePaletteItem.vue'
-import type { NodePaletteItemData } from './NodePaletteItem.vue'
 const emit = defineEmits<{
  dragStart: [nodeData: NodePaletteItemData, event: MouseEvent]
 }>

@@ -63,7 +63,8 @@ const hasFeishuTriggerUpstream = computed( => !!upstreamFeishuTrigger.value)
 // 生成变量路径
 // 使用 input.work_item_id 因为调度器会自动将上游输出合并到下游 input_data
 const triggerWorkItemIdPath = computed( => {
- if (!upstreamFeishuTrigger.value) return ''
+ if (!upstreamFeishuTrigger.value)
+ return ''
  return 'input.work_item_id'
 })
 // 检测是否需要显示自动填充提示
@@ -72,7 +73,8 @@ const showAutoFillHint = computed( => {
 })
 // 检测是否已经填充了触发器变量
 const isFilledWithTriggerVar = computed( => {
- if (!triggerWorkItemIdPath.value) return false
+ if (!triggerWorkItemIdPath.value)
+ return false
  return workItemId.value.includes(`{{${triggerWorkItemIdPath.value}}}`)
 })
 // 自动填充

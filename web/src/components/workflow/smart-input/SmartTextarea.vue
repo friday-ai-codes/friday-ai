@@ -41,8 +41,10 @@ const isUpdatingFromExternal = ref(false)
  * Serialize editor content to string with {{path}} syntax
  */
 function serializeContent: string {
+ // eslint-disable-next-line ts/no-use-before-define
  if (!editor.value)
  return ''
+ // eslint-disable-next-line ts/no-use-before-define
  const doc = editor.value.getJSON
  const paragraphs: string =
  // Traverse document nodes
@@ -72,8 +74,8 @@ function parseContent(value: string): object {
  const content: object =
  const regex = /\{\{([^}]+)\}\}/g
  let lastIndex = 0
- let match
- while ((match = regex.exec(line)) !== null) {
+ let match: RegExpExecArray | null = null
+ while ((match = regex.exec(line)) !== null) { // eslint-disable-line no-cond-assign
  // Add text before the match
  if (match.index > lastIndex) {
  content.push({

@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from feishu.client import FeishuAPIError
-from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 from workflows.nodes.ai.coding_dispatcher import AICodingDispatcherNode
+from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 from workflows.nodes.base import ExecutionContext, NodeResult
 # ============================================================================
 # Helper Functions

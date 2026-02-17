@@ -209,7 +209,8 @@ function handleOverrideConfirm(selectedKeys: string) {
 // 复制节点 ID
 const idCopied = ref(false)
 async function copyNodeId {
- if (!selectedNodeId.value) return
+ if (!selectedNodeId.value)
+ return
  try {
  await navigator.clipboard.writeText(selectedNodeId.value)
  idCopied.value = true
@@ -239,16 +240,20 @@ interface InputFieldItem {
 // 获取直接前置节点的输出字段（用于显示 input 可用变量）
 // 如果前置节点有详细 schema，展开为具体字段
 const directPredecessorOutputs = computed(: InputFieldItem => {
- if (!selectedNodeId.value) return
+ if (!selectedNodeId.value)
+ return
  // 找到直接连接到当前节点的边
  const incomingEdges = edges.value.filter(e => e.target === selectedNodeId.value)
- if (incomingEdges.length === 0) return
+ if (incomingEdges.length === 0)
+ return
  const outputs: InputFieldItem =
  for (const edge of incomingEdges) {
  const sourceNode = nodes.value.find(n => n.id === edge.source)
- if (!sourceNode) continue
+ if (!sourceNode)
+ continue
  const sourceNodeType = nodeTypesStore.getNodeType(sourceNode.nodeType)
- if (!sourceNodeType?.outputs) continue
+ if (!sourceNodeType?.outputs)
+ continue
  const nodeLabel = sourceNode.name || sourceNodeType.display_name
  const nodeShortId = sourceNode.shortId || sourceNode.id.slice(0, 8)
  for (const output of sourceNodeType.outputs) {
@@ -309,7 +314,8 @@ function getInputPath(outputName: string): string {
 }
 // 计算输出字段总数（包含 schema 详细字段）
 function getOutputFieldCount: number {
- if (!nodeTypeInfo.value?.outputs) return 0
+ if (!nodeTypeInfo.value?.outputs)
+ return 0
  let count = 0
  for (const output of nodeTypeInfo.value.outputs) {
  if (output.schema?.properties) {

@@ -1,17 +1,14 @@
 """Phase 容器生命周期测试。
 验证健康检查、超时强制终止、清理策略。
 """
+from unittest.mock import MagicMock, patch
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import timedelta
-from django.utils import timezone
 class TestContainerCleanup:
  """容器清理策略测试。"""
  @pytest.mark.asyncio
  async def test_successful_task_cleaned_immediately(self):
  """验证成功任务容器立即清理。"""
  from subagent.api.callbacks import _schedule_container_cleanup
- from subagent.models import SubAgentSession
  mock_session = MagicMock
  mock_session.session_id = "sess-success"
  mock_session.container_id = "container-success"

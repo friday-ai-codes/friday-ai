@@ -827,6 +827,7 @@ dev = [
  { name = "pytest-cov" },
  { name = "pytest-django" },
  { name = "ruff" },
+ { name = "types-docker" },
 ]
 [package.metadata]
 requires-dist = [
@@ -887,6 +888,7 @@ dev = [
  { name = "pytest-cov", specifier = ">=4.1" },
  { name = "pytest-django", specifier = ">=4.8" },
  { name = "ruff", specifier = ">=0.14.11" },
+ { name = "types-docker", specifier = ">=7.1.0.20260109" },
 ]
 [[package]]
 name = "frozenlist"
@@ -2828,6 +2830,30 @@ source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
 sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/7f/67/ea9c9ddbaa3e0b4d53c91f8778a33e42045be352dc7200ed2b9aaa7dc229/txaio-25.12.2.tar.gz", hash = "sha256:9f232c21e12aa1ff52690e365b5a0ecfd42cc27a6ec86e1b92ece88f763f4b78", size = 117393, upload-time = "2025-12-09T15:03:26.527Z" }
 wheels = [
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/50/05/bdb6318120cac9bf97779674f49035e0595d894b42d4c43b60637bafdb1f/txaio-25.12.2-py3-none-any.whl", hash = "sha256:5f6cd6c6b397fc3305790d15efd46a2d5b91cdbefa96543b4f8666aeb56ba026", size = 31208, upload-time = "2025-12-09T04:30:27.811Z" },
+]
+[[package]]
+name = "types-docker"
+version = "7.1.0.20260109"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "types-paramiko" },
+ { name = "types-requests" },
+ { name = "urllib3" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/54/08/ffef2a8e29e9e22c724f9c1b22563c0938c3ab3fa728ff5b966465e12b93/types_docker-7.1.0.20260109.tar.gz", hash = "sha256:b36ef355ec9ba8bf29bcc4e32cc61dd9138ce4d8352c599c8fbc65f1a3e87b57", size = 32551, upload-time = "2026-01-09T03:21:49.238Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/8f/0d/cdf37dcd0cd4c942a1634daf3ae3a99833791c7a316bff4d4ce04a30652e/types_docker-7.1.0.20260109-py3-none-any.whl", hash = "sha256:001a5a377d3fb287b7279cf4265b8ba3857e7d4203a16ab03e6e512f68f2f3d4", size = 47216, upload-time = "2026-01-09T03:21:48.059Z" },
+]
+[[package]]
+name = "types-paramiko"
+version = "4.0.0.20250822"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "cryptography" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/b7/b8/c6ff3b10c2f7b9897650af746f0dc6c5cddf054db857bc79d621f53c7d22/types_paramiko-4.0.0.20250822.tar.gz", hash = "sha256:1b56b0cbd3eec3d2fd123c9eb2704e612b777e15a17705a804279ea6525e0c53", size = 28730, upload-time = "2025-08-22T03:03:43.262Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/79/a1/b3774ed924a66ee2c041224d89c36f0c21f4f6cf75036d6ee7698bf8a4b9/types_paramiko-4.0.0.20250822-py3-none-any.whl", hash = "sha256:55bdb14db75ca89039725ec64ae3fa26b8d57b6991cfb476212fa8f83a59753c", size = 38833, upload-time = "2025-08-22T03:03:42.072Z" },
 ]
 [[package]]
 name = "types-pyyaml"

@@ -1,5 +1,3 @@
-// Store types (X6-compatible)
-export type { WorkflowNodeStore, WorkflowEdgeStore } from './store'
 // Registry
 export {
  getDefaultConfig,
@@ -55,3 +53,5 @@ export {
  WORK_ITEM_TYPE_OPTIONS,
  WORK_ITEM_TYPE_OPTIONS_WITH_ALL,
 } from './schemas'
+// Store types (X6-compatible)
+export type { WorkflowEdgeStore, WorkflowNodeStore } from './store'

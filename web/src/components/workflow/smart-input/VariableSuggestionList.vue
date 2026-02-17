@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
+import { computed, nextTick, ref, watch } from 'vue'
 interface Props {
  items: DesignTimeVariable
  command: (item: DesignTimeVariable) => void
@@ -11,7 +11,7 @@ const scrollContainer = ref<HTMLElement | null>(null)
 // Group items by path prefix (input vs nodes.xxx)
 const groupedItems = computed( => {
  const inputGroup: DesignTimeVariable =
- const nodeGroups = new Map<string, { nodeLabel: string; items: DesignTimeVariable }>
+ const nodeGroups = new Map<string, { nodeLabel: string, items: DesignTimeVariable }>
  for (const item of props.items) {
  if (item.path.startsWith('input.')) {
  inputGroup.push(item)
@@ -26,7 +26,7 @@ const groupedItems = computed( => {
  nodeGroups.get(item.nodeId)!.items.push(item)
  }
  }
- const result: Array<{ groupKey: string; groupLabel: string; groupIcon: string; items: DesignTimeVariable }> =
+ const result: Array<{ groupKey: string, groupLabel: string, groupIcon: string, items: DesignTimeVariable }> =
  // Add input group first
  if (inputGroup.length > 0) {
  result.push({
@@ -153,7 +153,7 @@ defineExpose({ onKeyDown })
  type="button":data-selected="isSelected(groupIndex, itemIndex)"
  class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[
  isSelected(groupIndex, itemIndex)
- ? 'bg-accent': 'hover:bg-accent/50'
+ ? 'bg-accent': 'hover:bg-accent/50',
  ]"
  @click="selectItem(getFlatIndex(groupIndex, itemIndex))"
  >

@@ -11,7 +11,7 @@ from typing import Any
 import docker
 import structlog
 from django.utils import timezone as dj_timezone
-from docker.errors import APIError, NotFound
+from docker.errors import APIError, ContainerError, NotFound
 from system.models import CacheVolumeTracker
 logger = structlog.get_logger
 class RepoCacheManager:
@@ -55,7 +55,7 @@ class RepoCacheManager:
  volume_name = self.get_volume_name(repo_url)
  # Check if volume already exists
  try:
- volume = self.client.volumes.get(volume_name)
+ self.client.volumes.get(volume_name)
  logger.info(
  "repo_cache_exists",
  volume_name=volume_name,
@@ -135,7 +135,7 @@ class RepoCacheManager:
  )
  try:
  # Run container synchronously in thread pool
- result = await asyncio.to_thread(
+ await asyncio.to_thread(
  self.client.containers.run,
  image=image,
  command=["sh", "-c", clone_command],
@@ -150,13 +150,13 @@ class RepoCacheManager:
  repo_url=repo_url,
  )
  return True
- except docker.errors.ContainerError as e:
+ except ContainerError as e:
  logger.error(
  "repo_cache_bare_clone_failed",
  volume_name=volume_name,
  repo_url=repo_url,
  exit_code=e.exit_status,
- stderr=e.stderr.decode if e.stderr else "",
+ stderr=e.stderr.decode if isinstance(e.stderr, bytes) else (e.stderr or ""),
  )
  return False
  except Exception as e:
@@ -208,12 +208,12 @@ class RepoCacheManager:
  volume_name=volume_name,
  )
  return True
- except docker.errors.ContainerError as e:
+ except ContainerError as e:
  logger.error(
  "repo_cache_refresh_failed",
  volume_name=volume_name,
  exit_code=e.exit_status,
- stderr=e.stderr.decode if e.stderr else "",
+ stderr=e.stderr.decode if isinstance(e.stderr, bytes) else (e.stderr or ""),
  )
  return False
  except Exception as e:

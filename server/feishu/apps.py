@@ -2,7 +2,6 @@
 import os
 import threading
 from django.apps import AppConfig
-from django.conf import settings
 class FeishuConfig(AppConfig):
  """Feishu app configuration."""
  default_auto_field = "django.db.models.BigAutoField"

@@ -14,7 +14,7 @@ from typing import Any
 import docker
 import structlog
 from django.utils import timezone as dj_timezone
-from docker.errors import APIError, NotFound
+from docker.errors import APIError, ContainerError, NotFound
 from system.models import CacheVolumeTracker
 logger = structlog.get_logger
 class PackageManager(Enum):
@@ -126,7 +126,7 @@ class DependencyCacheManager:
  volume_name = self.get_volume_name(repo_id, lock_info.content_hash)
  # Check if volume already exists
  try:
- volume = self.client.volumes.get(volume_name)
+ self.client.volumes.get(volume_name)
  logger.info(
  "deps_cache_exists",
  volume_name=volume_name,
@@ -231,7 +231,7 @@ class DependencyCacheManager:
  )
  # Mount lock file directory as /workspace
  lock_dir = os.path.dirname(lock_info.file_path)
- mount_path = self.get_mount_path(lock_info.manager)
+ _mount_path = self.get_mount_path(lock_info.manager)
  logger.info(
  "deps_cache_install_starting",
  volume_name=volume_name,
@@ -257,12 +257,12 @@ class DependencyCacheManager:
  manager=lock_info.manager.value,
  )
  return True
- except docker.errors.ContainerError as e:
+ except ContainerError as e:
  logger.error(
  "deps_cache_install_failed",
  volume_name=volume_name,
  exit_code=e.exit_status,
- stderr=e.stderr.decode if e.stderr else "",
+ stderr=e.stderr.decode if isinstance(e.stderr, bytes) else (e.stderr or ""),
  )
  return False
  except Exception as e:
@@ -292,14 +292,16 @@ class DependencyCacheManager:
  # Filter by repo_id if specified
  if repo_id and labels.get("friday.repo_id") != repo_id:
  continue
- result.append({
+ result.append(
+ {
  "name": volume.name,
  "labels": labels,
  "repo_id": labels.get("friday.repo_id"),
  "lock_hash": labels.get("friday.lock_hash"),
  "manager": labels.get("friday.manager"),
  "created": volume.attrs.get("CreatedAt"),
- })
+ }
+ )
  logger.info(
  "deps_cache_volumes_listed",
  count=len(result),

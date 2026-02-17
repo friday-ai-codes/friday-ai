@@ -7,8 +7,8 @@ to receive events (messages, card callbacks) without requiring a public webhook.
 """
 import signal
 import sys
-from django.core.management.base import BaseCommand, CommandError
 import structlog
+from django.core.management.base import BaseCommand, CommandError
 logger = structlog.get_logger(__name__)
 class Command(BaseCommand):
  help = "Run Feishu WebSocket client for receiving events via long connection"
@@ -34,8 +34,8 @@ class Command(BaseCommand):
  help="Enable debug logging for Lark SDK",
  )
  def handle(self, *args, **options):
- from feishu.websocket_client import FeishuWebSocketClient, create_client_for_project
  import lark_oapi as lark
+ from feishu.websocket_client import FeishuWebSocketClient, create_client_for_project
  project_id = options.get("project_id")
  app_id = options.get("app_id")
  app_secret = options.get("app_secret")

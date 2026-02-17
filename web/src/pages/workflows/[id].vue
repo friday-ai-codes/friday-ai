@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
 import { storeToRefs } from 'pinia'
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
@@ -15,10 +16,9 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
-import { X6WorkflowCanvas } from '~/components/workflow/x6'
-import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
-import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
+import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
+import { X6WorkflowCanvas } from '~/components/workflow/x6'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/[id]')

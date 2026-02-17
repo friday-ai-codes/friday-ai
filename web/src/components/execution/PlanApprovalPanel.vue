@@ -40,7 +40,7 @@ interface Props {
 }
 const props = defineProps<Props>
 const emit = defineEmits<{
- 'action-complete':
+ actionComplete:
 }>
 const store = useExecutionsStore
 // 方案数据提取
@@ -61,11 +61,14 @@ const documentUrl = computed( => {
 const isWaiting = computed( => props.nodeExecution.status === 'waiting_event')
 const isCompleted = computed( => props.nodeExecution.status === 'completed')
 const approvalResult = computed( => {
- if (!isCompleted.value) return null
+ if (!isCompleted.value)
+ return null
  const output = props.nodeExecution.output_data || {}
  const handle = output._next_handle
- if (handle === 'approved') return 'approved'
- if (handle === 'rejected') return 'rejected'
+ if (handle === 'approved')
+ return 'approved'
+ if (handle === 'rejected')
+ return 'rejected'
  return null
 })
 const rejectReason = computed( => {
@@ -84,7 +87,7 @@ async function handleApprove {
  try {
  await store.approveNode(props.nodeExecution.id, '')
  toast.success('方案已通过')
- emit('action-complete')
+ emit('actionComplete')
  }
  catch (e: any) {
  toast.error(`操作失败: ${e.message}`)
@@ -107,7 +110,7 @@ async function handleReject {
  await store.rejectNode(props.nodeExecution.id, rejectReasonInput.value)
  rejectDialogOpen.value = false
  toast.success('方案已驳回')
- emit('action-complete')
+ emit('actionComplete')
  }
  catch (e: any) {
  toast.error(`操作失败: ${e.message}`)

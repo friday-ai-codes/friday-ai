@@ -2,7 +2,6 @@
 from __future__ import annotations
 import asyncio
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async

@@ -13,9 +13,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
+from services.feishu_im import FeishuIMClient
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
-from services.feishu_im import FeishuIMClient
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
 from .models import KeyFields, TriggerLog, TriggerLogStatus
 from .serializers import (
@@ -649,11 +649,8 @@ class FeishuWebhookView(APIView):
  payload: dict,
  ) -> None:
  """检查并唤醒匹配的挂起工作流"""
- from django.utils import timezone
  from workflows.conditions import evaluate_condition
- from workflows.engine.scheduler import WorkflowEngine
  from workflows.models.execution import (
- NodeExecutionStatus,
  WorkflowEventSubscription,
  )
  try:

@@ -49,11 +49,11 @@ export const workflowPortGroups: Record<string, PortGroupConfig> = {
  ],
  attrs: {
  circle: {
- r: 6,
- magnet: true,
- stroke: 'var(--color-border)',
- strokeWidth: 1.5,
- fill: 'var(--color-background)',
+ 'r': 6,
+ 'magnet': true,
+ 'stroke': 'var(--color-border)',
+ 'strokeWidth': 1.5,
+ 'fill': 'var(--color-background)',
  'data-port-direction': 'input',
  },
  },
@@ -74,11 +74,11 @@ export const workflowPortGroups: Record<string, PortGroupConfig> = {
  ],
  attrs: {
  circle: {
- r: 6,
- magnet: true,
- stroke: 'var(--color-border)',
- strokeWidth: 1.5,
- fill: 'var(--color-background)',
+ 'r': 6,
+ 'magnet': true,
+ 'stroke': 'var(--color-border)',
+ 'strokeWidth': 1.5,
+ 'fill': 'var(--color-background)',
  'data-port-direction': 'output',
  },
  },
@@ -88,7 +88,7 @@ export const workflowPortGroups: Record<string, PortGroupConfig> = {
  * Generate port items based on input/output names.
  * Creates port metadata with type information stored in attrs.
  *
- * @param nodeType - The node type (used for future schema lookup)
+ * @param _nodeType - The node type (used for future schema lookup)
  * @param inputs - Array of input port names
  * @param outputs - Array of output port names
  * @returns Array of port metadata items

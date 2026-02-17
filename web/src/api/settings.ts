@@ -93,7 +93,7 @@ export async function testFeishuIM(params: {
  message?: string
  app_id?: string
  app_secret?: string
-}): Promise<{ success: boolean; message: string; message_id?: string }> {
+}): Promise<{ success: boolean, message: string, message_id?: string }> {
  return post('/settings/feishu-im/test/', params)
 }
 // 默认导出

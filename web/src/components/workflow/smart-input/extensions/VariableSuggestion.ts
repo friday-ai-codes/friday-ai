@@ -1,12 +1,11 @@
-import { Extension } from '@tiptap/core'
-import Suggestion, {
- type SuggestionProps as TipTapSuggestionProps,
- type SuggestionKeyDownProps,
-} from '@tiptap/suggestion'
-import { PluginKey } from '@tiptap/pm/state'
-import { createApp, ref, h, type App } from 'vue'
+import type { SuggestionKeyDownProps, SuggestionProps as TipTapSuggestionProps } from '@tiptap/suggestion'
+import type { App } from 'vue'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { VariableNodeAttrs } from '~/types/smart-input'
+import { Extension } from '@tiptap/core'
+import { PluginKey } from '@tiptap/pm/state'
+import Suggestion from '@tiptap/suggestion'
+import { createApp, h, ref } from 'vue'
 import VariableSuggestionList from '../VariableSuggestionList.vue'
 /**
  * Plugin key for the variable suggestion plugin
@@ -92,8 +91,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  return allItems
  .filter(
  item =>
- item.label.toLowerCase.includes(lowerQuery) ||
- item.path.toLowerCase.includes(lowerQuery),
+ item.label.toLowerCase.includes(lowerQuery)
+ || item.path.toLowerCase.includes(lowerQuery),
  )
  .slice(0, 50)
  },
@@ -132,7 +131,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  let scrollHandler: ( => void) | null = null
  // Position popup relative to cursor with auto flip (vertical & horizontal)
  function updatePosition(props: SuggestionProps) {
- if (!popup) return
+ if (!popup)
+ return
  const clientRect = props.clientRect?.
  if (!clientRect) {
  popup.style.visibility = 'hidden'
@@ -144,11 +144,11 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  const viewportWidth = window.innerWidth
  const viewportHeight = window.innerHeight
  // Check if cursor is visible in viewport
- const cursorVisible =
- clientRect.top >= 0 &&
- clientRect.bottom <= viewportHeight &&
- clientRect.left >= 0 &&
- clientRect.right <= viewportWidth
+ const cursorVisible
+ = clientRect.top >= 0
+ && clientRect.bottom <= viewportHeight
+ && clientRect.left >= 0
+ && clientRect.right <= viewportWidth
  if (!cursorVisible) {
  popup.style.visibility = 'hidden'
  return
@@ -160,7 +160,8 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  let top: number
  if (spaceBelow >= popupHeight || spaceBelow >= spaceAbove) {
  top = clientRect.bottom + gap
- } else {
+ }
+ else {
  top = clientRect.top - popupHeight - gap
  }
  // Horizontal positioning: check space right vs left
@@ -170,10 +171,12 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  if (spaceRight >= popupWidth) {
  // Align to cursor left
  left = clientRect.left
- } else if (spaceLeft >= popupWidth) {
+ }
+ else if (spaceLeft >= popupWidth) {
  // Align to cursor right, popup extends left
  left = clientRect.right - popupWidth
- } else {
+ }
+ else {
  // Center in viewport if neither side has enough space
  left = Math.max(gap, (viewportWidth - popupWidth) / 2)
  }

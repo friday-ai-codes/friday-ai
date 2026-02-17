@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { ExecutionContext } from '~/types'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { ChevronDown, ChevronRight, Database, Globe, Layers, Variable, Zap } from 'lucide-vue-next'
 import { computed, ref, toRef } from 'vue'
 import { Button } from '~/components/ui/button'

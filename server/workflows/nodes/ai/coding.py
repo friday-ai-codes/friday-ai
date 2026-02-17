@@ -172,7 +172,7 @@ class AICodingNode(BaseNode):
  )
  plan_title: str = plan_data.get("title", "技术方案")
  execution_plan: list[dict[str, Any]] = plan_data.get("execution_plan", )
- global_context: str = plan_data.get("global_context", "")
+ _global_context: str = plan_data.get("global_context", "")
  if not execution_plan:
  return NodeResult(
  status="failed",
@@ -337,7 +337,7 @@ class AICodingNode(BaseNode):
  branch_name = output_data.get("branch_name", "")
  base_branch = output_data.get("base_branch", "")
  plan_title = output_data.get("plan_title", "")
- repositories_info = output_data.get("repositories", {})
+ _repositories_info = output_data.get("repositories", {})
  # 查询每个 session 的结果
  from subagent.models import SubAgentSession, TaskResult
  succeeded: list[dict[str, Any]] =

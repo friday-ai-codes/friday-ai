@@ -3,7 +3,6 @@ This node generates technical plans from requirements using LLM,
 validates them against TechnicalPlanSchema, and writes back to Feishu.
 """
 import json
-import os
 from typing import Any
 import httpx
 import structlog

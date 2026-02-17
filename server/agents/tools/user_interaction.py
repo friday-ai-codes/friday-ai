@@ -7,7 +7,6 @@ from agents.models import AgentSession
 from agents.tools.base import ToolResult, tool
 from agents.tools.feishu_im_tools import create_feishu_im_client_for_project
 from feishu.cards.question_card import build_question_card
-from projects.models import Project
 logger = structlog.get_logger(__name__)
 @tool(
  name="ask_user_question",
