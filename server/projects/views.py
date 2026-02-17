@@ -6,12 +6,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from common.encryption import encrypt_value
+from repositories.models import AuthType, GitCredential, Repository
 from .models import (
- AuthType,
- GitCredential,
  Project,
  ProjectRepository,
- Repository,
  generate_webhook_token,
 )
 from .serializers import (
@@ -307,16 +305,20 @@ class ProjectViewSet(ModelViewSet):
  )
  return message_id
  message_id = asyncio.run(send_test)
- return Response({
+ return Response(
+ {
  "success": True,
  "message": "测试消息发送成功",
  "message_id": message_id,
- })
+ }
+ )
  except Exception as e:
- return Response({
+ return Response(
+ {
  "success": False,
  "message": f"发送失败: {str(e)}",
- })
+ }
+ )
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  queryset = (
