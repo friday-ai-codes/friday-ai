@@ -54,6 +54,7 @@ INSTALLED_APPS = [
  "workflows",
  "agents",
  "subagent",
+ "runners",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
