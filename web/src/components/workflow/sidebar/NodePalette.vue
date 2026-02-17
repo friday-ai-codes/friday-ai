@@ -3,7 +3,6 @@ import {
  Bot,
  Briefcase,
  CheckCircle,
- Clock,
  FileCode,
  FileText,
  FolderGit2,
@@ -43,7 +42,6 @@ const nodeCategories: NodeCategory = [
  items: [
  { type: 'manual_trigger', name: '手动触发', description: '手动启动工作流', icon: Play, color: 'blue' },
  { type: 'webhook_trigger', name: 'Webhook', description: '通过 HTTP 请求触发', icon: Webhook, color: 'blue' },
- { type: 'schedule_trigger', name: '定时调度', description: '按计划自动执行', icon: Clock, color: 'blue' },
  { type: 'feishu_event_trigger', name: '飞书事件', description: '飞书事件触发', icon: MessageSquare, color: 'blue' },
  ],
  },
