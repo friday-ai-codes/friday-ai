@@ -37,10 +37,10 @@ export interface ModalInstance<T = unknown> {
  * data: projectData,
  * },
  * onConfirm: (result) => {
- * console.log('确认:', result)
+ * // handle confirm
  * },
  * onCancel: => {
- * console.log('取消')
+ * // handle cancel
  * },
  * })
  *
