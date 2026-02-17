@@ -17,7 +17,6 @@ const nodeRegistry: Record<string, Component> = {
  // Trigger nodes (blue gradient)
  manual_trigger: X6TriggerNode,
  webhook_trigger: X6TriggerNode,
- schedule_trigger: X6TriggerNode,
  feishu_event_trigger: X6TriggerNode,
  // Action nodes (purple gradient)
  http_request: X6ActionNode,

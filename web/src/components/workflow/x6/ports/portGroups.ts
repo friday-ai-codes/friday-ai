@@ -133,7 +133,6 @@ export function generatePortItems(
 const TRIGGER_NODE_TYPES = [
  'manual_trigger',
  'webhook_trigger',
- 'schedule_trigger',
  'feishu_event_trigger',
 ]
 /**
