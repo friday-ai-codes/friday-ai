@@ -196,7 +196,7 @@ function handleManualKeydown(event: KeyboardEvent) {
  <div class="flex gap-2">
  <Input
  v-model="manualValue"
- placeholder="仓库 ID 或 {{nodes.xxx.repository_id}}"
+ placeholder="仓库 ID 或 {{nodes.xxx.repositories}}"
  class="flex-1 font-mono text-sm rounded-xl bg-card/50 backdrop-blur-sm border-border/50"
  @keydown="handleManualKeydown"
  />

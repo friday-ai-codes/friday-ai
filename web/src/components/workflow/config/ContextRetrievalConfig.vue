@@ -2,7 +2,7 @@
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { NodeType } from '~/stores/useNodeTypesStore'
 import type { ContextRetrievalConfig } from '~/types/workflow'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { SliderSingle } from '~/components/ui/slider'
@@ -43,44 +43,6 @@ const props = withDefaults(defineProps<Props>, {
 const emit = defineEmits<{
  (e: 'update:config', value: ContextRetrievalConfig): void
 }>
-// ============================================================================
-// Migration: legacy repository_id -> repositories array
-// ============================================================================
-const migratedConfig = computed( => {
- const config = props.config
- // If repositories is already a string (JSONPath expression), keep it as-is
- if (typeof config.repositories === 'string') {
- if ('repository_id' in config && config.repository_id !== undefined) {
- // eslint-disable-next-line @typescript-eslint/no-unused-vars
- const { repository_id, ...rest } = config
- return rest as ContextRetrievalConfig
- }
- return config
- }
- // Already has repositories array with items
- if (Array.isArray(config.repositories) && config.repositories.length > 0) {
- if ('repository_id' in config && config.repository_id !== undefined) {
- // eslint-disable-next-line @typescript-eslint/no-unused-vars
- const { repository_id, ...rest } = config
- return rest as ContextRetrievalConfig
- }
- return config
- }
- // Migrate from legacy repository_id
- if (config.repository_id) {
- // eslint-disable-next-line @typescript-eslint/no-unused-vars
- const { repository_id, ...rest } = config
- return { ...rest, repositories: [config.repository_id] } as ContextRetrievalConfig
- }
- // No repositories configured - use empty string for SmartInput compatibility
- return { ...config, repositories: '' } as ContextRetrievalConfig
-})
-// Emit migrated config on first load (silent migration)
-watch(migratedConfig, (newConfig) => {
- if (JSON.stringify(newConfig) !== JSON.stringify(props.config)) {
- emit('update:config', newConfig)
- }
-}, { immediate: true })
 // ============================================================================
 // Config Model
 // ============================================================================
