@@ -75,9 +75,6 @@ onMounted( => {
  <h1 class="text-2xl font-bold bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
  Friday AI
  </h1>
- <p class="text-muted-foreground mt-2">
- AI 驱动的开发自动化平台
- </p>
  </div>
  <!-- 登录表单 -->
  <form class="space-y-5" @submit="onSubmit">
@@ -147,14 +144,6 @@ onMounted( => {
  </template>
  </Button>
  </form>
- <!-- 默认账户提示 -->
- <div class="mt-8 pt-6 border-t border-border/50">
- <div class="flex items-center justify-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--info] text-base" />
- <span>默认账户：</span>
- <code class="px-2 py-0.5 rounded bg-muted/50 font-mono text-xs">admin / admin123</code>
- </div>
- </div>
  </div>
  </div>
  <!-- 底部版权 -->
