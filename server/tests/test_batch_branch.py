@@ -4,12 +4,12 @@ Tests cover:
 - Batch create branch with partial failures
 - Backward compatibility with repository_path
 """
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 import subprocess
 import uuid
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 import pytest
-from workflows.nodes.base import ExecutionContext, NodeResult
+from workflows.nodes.base import ExecutionContext
 from workflows.nodes.git.branch import CreateBranchNode
 def make_context(
  node_config: dict,

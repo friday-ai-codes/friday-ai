@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 import docker
 import structlog
-from docker.errors import APIError, ImageNotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 logger = structlog.get_logger
 @dataclass
 class ExecutionRequest:
@@ -192,7 +192,7 @@ class ContainerExecutor:
  start_time = time.time
  try:
  container = self.client.containers.get(container_id)
- except docker.errors.NotFound:
+ except NotFound:
  return ExecutionResult(
  success=False,
  status="not_found",
@@ -252,7 +252,7 @@ class ContainerExecutor:
  await asyncio.to_thread(container.stop, timeout=30)
  logger.info("container_stopped", container_id=container_id[:12], force=force)
  return True
- except docker.errors.NotFound:
+ except NotFound:
  logger.warning("container_not_found", container_id=container_id[:12])
  return False
  except Exception as e:
@@ -270,7 +270,7 @@ class ContainerExecutor:
  container = self.client.containers.get(container_id)
  logs = await asyncio.to_thread(container.logs, tail=tail, timestamps=True)
  return logs.decode("utf-8", errors="replace")
- except docker.errors.NotFound:
+ except NotFound:
  return ""
  except Exception as e:
  logger.warning("get_logs_failed", container_id=container_id[:12], error=str(e))
@@ -290,7 +290,7 @@ class ContainerExecutor:
  "state": container.attrs.get("State", {}),
  "created": container.attrs.get("Created"),
  }
- except docker.errors.NotFound:
+ except NotFound:
  return None
  async def cleanup_finished_containers(self, older_than_hours: int = 24) -> int:
  """Clean up finished containers.
@@ -354,7 +354,7 @@ class ContainerExecutor:
  container = self.client.containers.get(name)
  await asyncio.to_thread(container.remove, force=True)
  logger.debug("removed_existing_container", name=name)
- except docker.errors.NotFound:
+ except NotFound:
  pass
  def _read_result_file(self, container_id: str) -> dict | None:
  """Read result file from transfer directory."""

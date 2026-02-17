@@ -34,11 +34,13 @@ export function useUnsavedChanges(isDirty: => boolean) {
  */
  onBeforeRouteLeave((_to, _from, next) => {
  if (isDirty) {
+ // eslint-disable-next-line no-alert
  const answer = window.confirm(
- '你有未保存的更改。确定要离开吗？\nYou have unsaved changes. Are you sure you want to leave?'
+ '你有未保存的更改。确定要离开吗？\nYou have unsaved changes. Are you sure you want to leave?',
  )
  next(answer)
- } else {
+ }
+ else {
  next
  }
  })

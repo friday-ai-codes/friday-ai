@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FeishuEventTriggerConfig } from '~/types/workflow'
-import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
+import { computed, onMounted, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -17,6 +17,10 @@ import {
  FEISHU_EVENT_TYPE_OPTIONS,
  feishuEventTriggerConfigSchema,
 } from '~/types/workflow'
+const props = defineProps<Props>
+const emit = defineEmits<{
+ (e: 'update:config', value: FeishuEventTriggerConfig): void
+}>
 // ============================================================================
 // 需求状态选项（飞书需求工作项的状态流）
 // ============================================================================
@@ -36,10 +40,6 @@ const STORY_STATUS_OPTIONS = [
 interface Props {
  config: FeishuEventTriggerConfig
 }
-const props = defineProps<Props>
-const emit = defineEmits<{
- (e: 'update:config', value: FeishuEventTriggerConfig): void
-}>
 // ============================================================================
 // Projects Store
 // ============================================================================
@@ -110,7 +110,8 @@ const excludeProjectPopoverOpen = ref(false)
 // 过滤后的项目列表
 const filteredProjects = computed( => {
  const query = projectSearchQuery.value.toLowerCase.trim
- if (!query) return feishuProjects.value
+ if (!query)
+ return feishuProjects.value
  return feishuProjects.value.filter(p =>
  p.name.toLowerCase.includes(query)
  || p.feishu_project_key?.toLowerCase.includes(query),
@@ -118,7 +119,8 @@ const filteredProjects = computed( => {
 })
 const filteredExcludeProjects = computed( => {
  const query = excludeProjectSearchQuery.value.toLowerCase.trim
- if (!query) return feishuProjects.value
+ if (!query)
+ return feishuProjects.value
  return feishuProjects.value.filter(p =>
  p.name.toLowerCase.includes(query)
  || p.feishu_project_key?.toLowerCase.includes(query),
@@ -174,6 +176,7 @@ const regexValidation = computed( => {
  return { valid: null, error: null }
  }
  try {
+ // eslint-disable-next-line no-new
  new RegExp(match[1], match[2])
  return { valid: true, error: null }
  }
@@ -239,7 +242,9 @@ const regexValidation = computed( => {
  <div class="flex-1">
  <div class="text-sm font-medium flex items-center gap-2">
  缺陷 (Bug)
- <Badge variant="outline" class="text-xs">即将支持</Badge>
+ <Badge variant="outline" class="text-xs">
+ 即将支持
+ </Badge>
  </div>
  </div>
  </div>
@@ -248,7 +253,9 @@ const regexValidation = computed( => {
  <div class="flex-1">
  <div class="text-sm font-medium flex items-center gap-2">
  任务 (Task)
- <Badge variant="outline" class="text-xs">即将支持</Badge>
+ <Badge variant="outline" class="text-xs">
+ 即将支持
+ </Badge>
  </div>
  </div>
  </div>
@@ -260,7 +267,9 @@ const regexValidation = computed( => {
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--git-branch] text-violet-500" />
  <Label class="text-sm font-medium">状态过滤</Label>
- <Badge variant="outline" class="text-xs">可选</Badge>
+ <Badge variant="outline" class="text-xs">
+ 可选
+ </Badge>
  </div>
  <p class="text-xs text-muted-foreground">
  选择或输入要监听的需求状态，留空则监听所有状态变更
@@ -297,7 +306,9 @@ const regexValidation = computed( => {
  </PopoverTrigger>
  <PopoverContent class="w-72 " align="start">
  <div class="space-y-2">
- <div class="text-xs text-muted-foreground px-2">预设状态</div>
+ <div class="text-xs text-muted-foreground px-2">
+ 预设状态
+ </div>
  <div class="max- overflow-y-auto space-y-0.5">
  <button
  v-for="status in STORY_STATUS_OPTIONS":key="status.value"
@@ -336,7 +347,9 @@ const regexValidation = computed( => {
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--folder] text-primary" />
  <Label class="text-sm font-medium">监听项目</Label>
- <Badge variant="outline" class="text-xs">可选</Badge>
+ <Badge variant="outline" class="text-xs">
+ 可选
+ </Badge>
  </div>
  <p class="text-xs text-muted-foreground">
  留空则监听所有已配置飞书的项目
@@ -383,7 +396,9 @@ const regexValidation = computed( => {
  />
  <div class="max- overflow-y-auto space-y-0.5">
  <template v-if="projectsLoading">
- <div class=" text-sm text-muted-foreground text-center">加载中...</div>
+ <div class=" text-sm text-muted-foreground text-center">
+ 加载中...
+ </div>
  </template>
  <template v-else-if="filteredProjects.length === 0">
  <div class=" text-sm text-muted-foreground text-center">
@@ -418,7 +433,9 @@ const regexValidation = computed( => {
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--folder-minus] text-red-500" />
  <Label class="text-sm font-medium">排除项目</Label>
- <Badge variant="outline" class="text-xs">可选</Badge>
+ <Badge variant="outline" class="text-xs">
+ 可选
+ </Badge>
  </div>
  <Popover v-model:open="excludeProjectPopoverOpen">
  <PopoverTrigger as-child>
@@ -492,7 +509,9 @@ const regexValidation = computed( => {
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--file-minus] text-red-500" />
  <Label class="text-sm font-medium">排除工作项</Label>
- <Badge variant="outline" class="text-xs">可选</Badge>
+ <Badge variant="outline" class="text-xs">
+ 可选
+ </Badge>
  </div>
  <div class="relative">
  <Input

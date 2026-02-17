@@ -4,7 +4,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 import pytest
-from docker.errors import APIError, NotFound
+from docker.errors import NotFound
 from services.dependency_cache import (
  DependencyCacheManager,
  LockFileInfo,

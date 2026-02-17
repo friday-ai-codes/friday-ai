@@ -1,5 +1,5 @@
-import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 /**
  * Variable node attributes stored in TipTap document
  */

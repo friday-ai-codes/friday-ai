@@ -1,8 +1,8 @@
 """Phase 迁移验证测试。
 验证 AICodingNode 和 AgentLoop 工具从轮询模式迁移到回调驱动模式。
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 from workflows.nodes.ai.coding import AICodingNode
 class TestAICodingNodeMigration:
  """AICodingNode 迁移验证测试。"""
@@ -105,7 +105,7 @@ class TestCallbackDrivenMigration:
  assert callable(_collect_container_stats)
  def test_retry_configuration(self):
  """验证重试配置正确。"""
- from subagent.api.callbacks import RETRYABLE_TASK_TYPES, MAX_RETRIES, RETRY_DELAYS
+ from subagent.api.callbacks import MAX_RETRIES, RETRY_DELAYS, RETRYABLE_TASK_TYPES
  assert "explore" in RETRYABLE_TASK_TYPES
  assert "ask" in RETRYABLE_TASK_TYPES
  assert "plan" in RETRYABLE_TASK_TYPES

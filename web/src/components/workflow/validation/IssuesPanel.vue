@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { storeToRefs } from 'pinia'
 import { AlertTriangle, ChevronDown } from 'lucide-vue-next'
-import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
-import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { storeToRefs } from 'pinia'
+import { ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import {
  Collapsible,
  CollapsibleContent,
  CollapsibleTrigger,
 } from '~/components/ui/collapsible'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { useWorkflowValidationStore } from '~/stores/useWorkflowValidationStore'
 const validationStore = useWorkflowValidationStore
 const workflowStore = useWorkflowsStore
 const { warningsList, warningCount, hasWarnings } = storeToRefs(validationStore)

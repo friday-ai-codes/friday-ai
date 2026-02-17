@@ -24,7 +24,8 @@ const searchQuery = ref('')
 // Filter tools by search query (name or description)
 const filteredTools = computed( => {
  const query = searchQuery.value.toLowerCase.trim
- if (!query) return props.tools
+ if (!query)
+ return props.tools
  return props.tools.filter(
  t =>
  t.name.toLowerCase.includes(query)
@@ -37,7 +38,8 @@ const allSelected = computed(
 )
 // Check if a specific tool is enabled
 function isToolEnabled(toolName: string): boolean {
- if (props.modelValue.length === 0) return true
+ if (props.modelValue.length === 0)
+ return true
  return props.modelValue.includes(toolName)
 }
 // Toggle tool selection

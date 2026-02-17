@@ -539,8 +539,8 @@ class AICodeReviewNode(AIAgentBaseNode):
  task_desc = task.get("description", "")
  task_lines.append(f"{i}. **{task_name}**: {task_desc}")
  parts.append(
- f"## 技术方案任务\n\n"
- f"以下是该仓库应实现的任务，请逐任务检查代码是否忠实实现：\n\n"
+ "## 技术方案任务\n\n"
+ "以下是该仓库应实现的任务，请逐任务检查代码是否忠实实现：\n\n"
  + "\n".join(task_lines)
  )
  else:

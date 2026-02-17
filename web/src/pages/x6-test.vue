@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { X6WorkflowCanvas } from '~/components/workflow/x6'
-import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
+import { ref } from 'vue'
+import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
+import { X6WorkflowCanvas } from '~/components/workflow/x6'
 const canvasRef = ref<InstanceType<typeof X6WorkflowCanvas>>
 function handleDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
  canvasRef.value?.startDrag({

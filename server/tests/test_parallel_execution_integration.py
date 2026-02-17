@@ -6,8 +6,8 @@
 4. FIFO 顺序保证
 5. 资源阈值正确触发
 """
-import pytest
 from unittest.mock import AsyncMock, patch
+import pytest
 from services.container_manager import ContainerConfig
 from services.parallel_scheduler import ParallelExecutionScheduler
 from services.resource_monitor import ResourceAvailability, ResourceMetrics

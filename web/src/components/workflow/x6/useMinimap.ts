@@ -72,7 +72,8 @@ export function useMinimap(
  [graph, containerRef],
  ([g, container]) => {
  // Wait for both graph and container to be available
- if (!g || !container) return
+ if (!g || !container)
+ return
  g.use(
  new MiniMap({
  container,

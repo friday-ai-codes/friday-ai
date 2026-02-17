@@ -129,7 +129,9 @@ const temperature = computed({
  <Separator />
  <!-- 生成配置 -->
  <div class="space-y-4">
- <h4 class="text-sm font-medium">生成配置</h4>
+ <h4 class="text-sm font-medium">
+ 生成配置
+ </h4>
  <!-- 温度 -->
  <div class="space-y-2">
  <div class="flex items-center justify-between">

@@ -38,7 +38,8 @@ export function useSnapline(
  watch(
  graph,
  (g) => {
- if (!g) return
+ if (!g)
+ return
  g.use(
  new Snapline({
  enabled: true,

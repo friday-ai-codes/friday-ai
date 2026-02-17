@@ -14,7 +14,7 @@ import { createBranchConfigSchema } from '~/types/workflow/schemas'
 // ============================================================================
 interface Props {
  config: CreateBranchConfig
- repositories?: Array<{ id: string; name: string }>
+ repositories?: Array<{ id: string, name: string }>
 }
 const props = withDefaults(defineProps<Props>, {
  repositories: =>,

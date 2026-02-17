@@ -39,7 +39,8 @@ const selectedCount = computed( => selectedKeys.value.size)
 function toggleField(key: string, checked: boolean) {
  if (checked) {
  selectedKeys.value.add(key)
- } else {
+ }
+ else {
  selectedKeys.value.delete(key)
  }
  // Force reactivity

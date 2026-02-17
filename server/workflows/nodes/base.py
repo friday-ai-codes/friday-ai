@@ -340,8 +340,8 @@ class ExecutionContext:
  Raises:
  ValueError: If referencing a non-existent node ID
  """
- from jsonpath_ng.ext import parse as jsonpath_parse
  from jsonpath_ng.exceptions import JsonPathParserError
+ from jsonpath_ng.ext import parse as jsonpath_parse
  nodes_data = self.previous_outputs or {}
  # Validate node ID reference before JSONPath evaluation
  # Extract node ID from paths like $.nodes.SLT.xxx or $.nodes.SLT[...]

@@ -1,6 +1,14 @@
 """Django Admin 配置 for subagent models."""
 from django.contrib import admin
-from subagent.models import ActionLog, ExecutionContext, InteractionLog, SubAgentOutput, SubAgentSession, TaskResult, TokenUsage
+from subagent.models import (
+ ActionLog,
+ ExecutionContext,
+ InteractionLog,
+ SubAgentOutput,
+ SubAgentSession,
+ TaskResult,
+ TokenUsage,
+)
 @admin.register(SubAgentSession)
 class SubAgentSessionAdmin(admin.ModelAdmin):
  list_display = [

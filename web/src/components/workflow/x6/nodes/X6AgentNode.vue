@@ -42,7 +42,7 @@ function getContainerClass(status: string): string {
  <div
  class="agent-node-container flex items-center gap-3 px-5 py-4":class="[
  getContainerClass(nodeData.status as string),
- { 'animate-pulse-border': nodeData.status === 'waiting_event' }
+ { 'animate-pulse-border': nodeData.status === 'waiting_event' },
  ]"
  >
  <!-- Icon with AI gradient background (larger) -->
@@ -52,10 +52,10 @@ function getContainerClass(status: string): string {
  'bg-gradient-to-br from-red-500/20 to-red-400/10': nodeData.status === 'failed',
  }"
  >
- <span:class="[
- 'text-xl',
+ <span
+ class="text-xl":class="[
  nodeData.status === 'failed' ? 'icon-[lucide--alert-circle] text-red-500': 'icon-[lucide--bot] text-blue-500',
- nodeData.status === 'running' && 'animate-pulse'
+ nodeData.status === 'running' && 'animate-pulse',
  ]"
  />
  </div>
@@ -144,11 +144,14 @@ function getContainerClass(status: string): string {
 }
 /* Pulse border animation for waiting_event */
 @keyframes pulse-border {
- 0%, 100% {
+ 0%,
+ 100% {
  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
  }
  50% {
- box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.1), 0 0 12px rgba(245, 158, 11, 0.3);
+ box-shadow:
+ 0 0 0 4px rgba(245, 158, 11, 0.1),
+ 0 0 12px rgba(245, 158, 11, 0.3);
  }
 }
 .animate-pulse-border {

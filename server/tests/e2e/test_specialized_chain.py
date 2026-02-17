@@ -11,7 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from agents.core.result import AgentResult
-from services.git_platform.models import MRCreateResult, MRDiffFile, MRDiffResult
+from services.git_platform.models import MRDiffFile, MRDiffResult
 from tests.e2e.fixtures.technical_plans import VALID_TECHNICAL_PLAN
 from workflows.nodes.ai.code_review import AICodeReviewNode
 from workflows.nodes.ai.coding import AICodingNode

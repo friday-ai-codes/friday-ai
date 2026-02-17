@@ -1,5 +1,10 @@
 """Feishu URL configuration."""
 from django.urls import path
+import feishu.callbacks.approval_callback as _approval_callback # noqa: F401
+import feishu.callbacks.coding_callback as _coding_callback # noqa: F401
+import feishu.callbacks.container_callback as _container_callback # noqa: F401
+# Register card callback handlers (import triggers @register_card_callback)
+import feishu.callbacks.plan_callback as _plan_callback # noqa: F401
 from .views import (
  CardCallbackView,
  FeishuConfigTestView,
@@ -14,11 +19,6 @@ from .views import (
  TriggerLogRetryView,
  UpdateWebhookTokenView,
 )
-# Register card callback handlers (import triggers @register_card_callback)
-import feishu.callbacks.plan_callback as _plan_callback # noqa: F401
-import feishu.callbacks.approval_callback as _approval_callback # noqa: F401
-import feishu.callbacks.coding_callback as _coding_callback # noqa: F401
-import feishu.callbacks.container_callback as _container_callback # noqa: F401
 urlpatterns = [
  # Webhook endpoint
  path("webhook", FeishuWebhookView.as_view, name="feishu-webhook"),

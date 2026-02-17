@@ -2,10 +2,10 @@
 import type { InteractionLog } from '~/api/workflow'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { answerAgentSession, answerInteraction, getNodeInteractions } from '~/api/workflow'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Textarea } from '~/components/ui/textarea'
-import { answerAgentSession, answerInteraction, getNodeInteractions } from '~/api/workflow'
 const props = defineProps<{
  nodeExecutionId: string
  outputData?: Record<string, any>
@@ -41,7 +41,8 @@ const agentQuestion = computed( => {
  const partial = props.outputData?.partial_output
  if (Array.isArray(partial)) {
  const last = partial[partial.length - 1]
- if (last?.awaiting_response) return last.question || ''
+ if (last?.awaiting_response)
+ return last.question || ''
  }
  return ''
 })
@@ -56,12 +57,14 @@ const hasContent = computed( =>
  interactions.value.length > 0 || isAgentWaiting.value || answered.value,
 )
 async function submitInteractionAnswer(interaction: InteractionLog, answer: string, source: 'button' | 'text' = 'text') {
- if (!answer.trim) return
+ if (!answer.trim)
+ return
  submitting.value = true
  try {
  const updated = await answerInteraction(interaction.id, answer, source)
  const idx = interactions.value.findIndex(i => i.id === interaction.id)
- if (idx !== -1) interactions.value[idx] = updated
+ if (idx !== -1)
+ interactions.value[idx] = updated
  customAnswer.value = ''
  toast.success('回答已提交')
  }
@@ -73,7 +76,8 @@ async function submitInteractionAnswer(interaction: InteractionLog, answer: stri
  }
 }
 async function submitAgentAnswer(answer: string) {
- if (!answer.trim || !agentSessionId.value) return
+ if (!answer.trim || !agentSessionId.value)
+ return
  submitting.value = true
  try {
  await answerAgentSession(agentSessionId.value, answer)

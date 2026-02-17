@@ -12,16 +12,15 @@ import json
 import os
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
-import docker
 import structlog
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.utils import timezone
+from docker.errors import DockerException, NotFound
 from services.container_executor import ContainerExecutor, ExecutionRequest
 from services.dependency_cache import DependencyCacheManager, PackageManager
-from services.repo_cache_manager import RepoCacheManager
 from services.protocols import (
  CONTAINER_PROTOCOL_DIR,
  CONTEXT_FILE,
@@ -32,6 +31,7 @@ from services.protocols import (
  ENV_TASK_TYPE,
  ContextPayload,
 )
+from services.repo_cache_manager import RepoCacheManager
 from subagent.models import SubAgentSession
 logger = structlog.get_logger(__name__)
 @dataclass
@@ -96,7 +96,7 @@ class ContainerManager:
  version=info.get("ServerVersion"),
  containers_running=info.get("ContainersRunning"),
  )
- except docker.errors.DockerException as e:
+ except DockerException as e:
  logger.error("docker_daemon_unavailable", error=str(e))
  raise RuntimeError(
  f"Docker daemon 不可用: {e}. "
@@ -254,7 +254,7 @@ class ContainerManager:
  volume=cache_volume,
  repo_url=config.repo_url[:50],
  )
- except docker.errors.NotFound:
+ except NotFound:
  logger.debug("no_repo_cache", repo_url=config.repo_url[:50])
  # 挂载依赖缓存卷
  if config.deps_cache_enabled and config.work_item_id:
@@ -353,7 +353,7 @@ class ContainerManager:
  await asyncio.to_thread(container.stop, timeout=30)
  await asyncio.to_thread(container.remove)
  stopped = True
- except docker.errors.NotFound:
+ except NotFound:
  logger.warning("stop_container_not_found", session_id=session_id, container_id=container_id[:12])
  stopped = True # 容器已不存在，视为停止成功
  except Exception as e:
@@ -427,7 +427,7 @@ class ContainerManager:
  Returns:
  清理数量
  """
- cutoff = timezone.now - timezone.timedelta(hours=older_than_hours)
+ cutoff = timezone.now - timedelta(hours=older_than_hours)
  terminal_statuses = [
  SubAgentSession.Status.COMPLETED,
  SubAgentSession.Status.ERROR,
@@ -471,7 +471,7 @@ class ContainerManager:
  session_id=session.session_id,
  container_id=session.container_id[:12],
  )
- except docker.errors.NotFound:
+ except NotFound:
  pass # 容器已不存在
  except Exception as e:
  logger.warning(

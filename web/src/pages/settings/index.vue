@@ -40,6 +40,10 @@ const apiKeyDirty = ref(false)
 const baseUrlDirty = ref(false)
 const defaultModelDirty = ref(false)
 const gitProxyDirty = ref(false)
+const feishuAppIdValue = ref('')
+const feishuAppSecretValue = ref('')
+const feishuAppIdDirty = ref(false)
+const feishuAppSecretDirty = ref(false)
 // 本页面管理的设置键（向量索引设置由 VectorIndexSettings 组件管理）
 type ManagedSettingKey = SettingKey.ANTHROPIC_API_KEY | SettingKey.ANTHROPIC_BASE_URL | SettingKey.ANTHROPIC_MODEL | SettingKey.GIT_HTTP_PROXY
 // 设置项元数据
@@ -231,10 +235,6 @@ function hasUnsavedChanges: boolean {
  return apiKeyDirty.value || baseUrlDirty.value || defaultModelDirty.value || gitProxyDirty.value
 }
 // ===== 飞书 IM 配置 =====
-const feishuAppIdValue = ref('')
-const feishuAppSecretValue = ref('')
-const feishuAppIdDirty = ref(false)
-const feishuAppSecretDirty = ref(false)
 const showFeishuAppSecret = ref(false)
 const savingFeishuIM = ref(false)
 // 飞书 IM 测试
@@ -242,7 +242,7 @@ const feishuTestReceiveId = ref('')
 const feishuTestReceiveIdType = ref<'open_id' | 'chat_id'>('open_id')
 const feishuTestMessage = ref('这是一条测试消息，来自 Friday AI Agent 配置测试。')
 const testingFeishuIM = ref(false)
-const feishuTestResult = ref<{ success: boolean; message: string } | null>(null)
+const feishuTestResult = ref<{ success: boolean, message: string } | null>(null)
 function onFeishuAppIdInput {
  feishuAppIdDirty.value = true
 }

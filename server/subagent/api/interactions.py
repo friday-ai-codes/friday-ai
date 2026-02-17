@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from subagent.models import InteractionLog, SubAgentSession
+from subagent.models import InteractionLog
 from .serializers import InteractionAnswerSerializer, InteractionLogSerializer
 class NodeInteractionLogsView(APIView):
  """获取某个 node execution 关联的所有 InteractionLog。

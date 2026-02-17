@@ -1,12 +1,12 @@
 export {
- workflowPortGroups,
  generatePortItems,
  getDefaultPortsForNodeType,
  type PortGroupConfig,
  type PortMetadata,
+ workflowPortGroups,
 } from './portGroups'
 export {
  arePortTypesCompatible,
- getConnectingConfig,
  type ConnectingConfig,
+ getConnectingConfig,
 } from './portValidation'

@@ -1,5 +1,4 @@
 """Tests for TechnicalPlanSchema validation."""
-import pytest
 from workflows.schemas import (
  TECHNICAL_PLAN_JSON_SCHEMA,
  ExecutionTask,

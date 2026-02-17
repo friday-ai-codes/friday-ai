@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Button } from '~/components/ui/button'
+import { Separator } from '~/components/ui/separator'
 import {
  Tooltip,
  TooltipContent,
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
-import { Separator } from '~/components/ui/separator'
 /**
  * EditorToolbar Component
  *

@@ -208,8 +208,8 @@ def _schedule_branch_confirmation(
  # 重新执行该节点（节点内部会检测 _confirmed_branch_name）
  # 直接实例化节点并执行，而非通过 engine._execute_node
  # （因为 _execute_node 需要 dag_node 参数）
- from workflows.nodes.registry import NodeRegistry
  from workflows.nodes.base import ExecutionContext, NodeResult
+ from workflows.nodes.registry import NodeRegistry
  workflow_node = await sync_to_async(
  lambda: node_execution.node
  )

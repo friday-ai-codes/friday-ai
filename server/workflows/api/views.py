@@ -996,7 +996,6 @@ class NodeExecutionActionView(APIView):
  - skip-wait: 跳过等待，继续执行
  - trigger-resume: 手动触发唤醒
  """
- from workflows.models.execution import WorkflowEventSubscription
  execution = get_object_or_404(WorkflowExecution, id=execution_id)
  node_execution = get_object_or_404(
  NodeExecution,

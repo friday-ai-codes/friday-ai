@@ -127,7 +127,9 @@ class FeishuIMClient:
  # Token 有效期 2 小时，提前 5 分钟刷新
  self._token_expires_at = now + data.get("expire", 7200) - 300
  log.info("tenant_token_refreshed", expires_in=data.get("expire", 7200))
- return self._tenant_token
+ token = self._tenant_token
+ assert token is not None
+ return token
  async def send_message(
  self,
  receive_id: str,

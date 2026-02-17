@@ -42,12 +42,12 @@ async def refresh_repo_caches(
  """
  manager = RepoCacheManager
  volumes = await manager.list_cache_volumes
- cutoff = timezone.now - timedelta(hours=max_age_hours)
+ _cutoff = timezone.now - timedelta(hours=max_age_hours)
  results: dict[str, bool] = {}
  for vol in volumes:
  # 检查 labels 中的 friday.created 时间戳
  labels = vol.get("labels", {})
- created_str = labels.get("friday.created", "")
+ _created_str = labels.get("friday.created", "")
  # 简化处理：刷新所有卷（后续可增加时间过滤）
  success = await manager.refresh_cache(vol["name"], image)
  results[vol["name"]] = success

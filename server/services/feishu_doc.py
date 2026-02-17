@@ -63,7 +63,9 @@ class FeishuDocClient:
  # Token valid for 2 hours, refresh 5 minutes early
  self._token_expires_at = now + data.get("expire", 7200) - 300
  logger.debug("feishu_doc_token_refreshed", expires_in=data.get("expire"))
- return self._tenant_token
+ token = self._tenant_token
+ assert token is not None
+ return token
  @retry(
  stop=stop_after_attempt(3),
  wait=wait_exponential(multiplier=1, min=4, max=60),

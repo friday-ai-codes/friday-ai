@@ -1,5 +1,5 @@
-import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { Ref } from 'vue'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed } from 'vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 /**
@@ -45,7 +45,8 @@ function getUpstreamNodes(
  const result: WorkflowNode =
  const nodeMap = new Map(nodes.map(n => [n.id, n]))
  function traverse(id: string) {
- if (visited.has(id)) return
+ if (visited.has(id))
+ return
  visited.add(id)
  // 找到所有指向当前节点的边（target === id）
  const incomingEdges = edges.filter(e => e.target === id)
@@ -111,7 +112,8 @@ export function useDesignTimeVariables(
  const nodeTypesStore = useNodeTypesStore
  // 获取当前节点的所有上游节点
  const upstreamNodes = computed( => {
- if (!currentNodeId.value) return
+ if (!currentNodeId.value)
+ return
  return getUpstreamNodes(
  currentNodeId.value,
  workflowNodes.value,
@@ -120,7 +122,8 @@ export function useDesignTimeVariables(
  })
  // 获取当前节点的直接上游节点（用于 input.xxx 变量）
  const directUpstreamNodes = computed( => {
- if (!currentNodeId.value) return
+ if (!currentNodeId.value)
+ return
  return getDirectUpstreamNodes(
  currentNodeId.value,
  workflowNodes.value,
@@ -138,9 +141,11 @@ export function useDesignTimeVariables(
  // WorkflowNodeStore: node.nodeType
  // WorkflowNode: node.data?.node_type || node.type
  const nodeTypeKey = (node as any).nodeType || node.data?.node_type || node.type
- if (!nodeTypeKey) continue
+ if (!nodeTypeKey)
+ continue
  const nodeTypeDef = nodeTypesStore.getNodeType(nodeTypeKey)
- if (!nodeTypeDef) continue
+ if (!nodeTypeDef)
+ continue
  // 节点显示名称：优先用户自定义名称，其次节点类型定义的显示名
  const nodeLabel = (node as any).name || node.data?.name || node.label || nodeTypeDef.display_name
  // 获取 shortId（用于用户友好的变量路径显示）
@@ -213,7 +218,8 @@ export function useDesignTimeVariables(
  // 按分类分组的变量列表（兼容 VariablePicker 的格式）
  const designTimeVariablesByCategory = computed(: VariableCategory => {
  const variables = designTimeVariables.value
- if (variables.length === 0) return
+ if (variables.length === 0)
+ return
  // 将所有节点输出变量归入「节点输出」分类
  return [{
  category: 'nodes',

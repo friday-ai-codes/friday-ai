@@ -1,9 +1,9 @@
 """Integration tests for Agent framework."""
-import pytest
 from unittest.mock import AsyncMock, MagicMock
-from agents.core import AgentLoop, AgentConfig, AgentContext, AgentResult
+import pytest
+from agents.core import AgentConfig, AgentContext, AgentLoop
 from agents.llm import LLMResponse, ToolCall
-from agents.tools import tool, ToolResult, ToolRegistry
+from agents.tools import ToolRegistry, ToolResult, tool
 # Test tool
 @tool(
  name="echo",

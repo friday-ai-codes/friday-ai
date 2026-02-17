@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import type { NodeType } from '~/stores/useNodeTypesStore'
 import type { ContextRetrievalConfig } from '~/types/workflow'
+import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed } from 'vue'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
@@ -64,7 +64,8 @@ const repositoriesModel = computed({
  get: => {
  const val = props.config.repositories
  // 如果是字符串（JSONPath 表达式），直接返回
- if (typeof val === 'string') return val
+ if (typeof val === 'string')
+ return val
  // 如果是数组，返回空字符串（旧数据迁移场景）
  return ''
  },

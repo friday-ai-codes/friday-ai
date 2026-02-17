@@ -42,7 +42,8 @@ export function useHistory(
  const canRedo = computed( => graph.value?.canRedo ?? false)
  // Initialize plugins when graph becomes available
  watch(graph, (g) => {
- if (!g) return
+ if (!g)
+ return
  // History plugin for undo/redo stack
  g.use(new History({
  enabled: true,

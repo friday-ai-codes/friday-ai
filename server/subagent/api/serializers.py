@@ -1,6 +1,5 @@
 """容器回调 API 序列化器（Phase）+ ExecutionContext API 序列化器（Phase）。"""
 from __future__ import annotations
-from typing import Any
 from rest_framework import serializers
 from services.protocols import CallbackType
 from subagent.models import ActionLog, ExecutionContext, InteractionLog, SubAgentSession, TokenUsage

@@ -6,7 +6,7 @@ Orchestrates the agent's iterative process of:
 3. OBSERVE: Add tool results to conversation and continue
 Supports suspension for human-in-the-loop workflows and resumption.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 import structlog

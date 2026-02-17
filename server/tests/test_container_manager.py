@@ -174,7 +174,7 @@ class TestDuplicateDetection:
  ):
  """重复提交返回已有 session 。"""
  from subagent.models import SubAgentSession, generate_execution_id
- existing = await SubAgentSession.objects.acreate(
+ await SubAgentSession.objects.acreate(
  session_id=generate_execution_id,
  main_session=agent_session,
  repo_url="https://github.com/test/repo.git",

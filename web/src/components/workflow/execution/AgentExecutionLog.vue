@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, Wrench, Brain, Eye } from 'lucide-vue-next'
+import { AlertCircle, Brain, CheckCircle2, ChevronDown, ChevronRight, Eye, Loader2, Wrench } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 /**
@@ -43,7 +43,8 @@ const expandedTools = ref<Set<string>>(new Set)
 function toggleTool(toolId: string) {
  if (expandedTools.value.has(toolId)) {
  expandedTools.value.delete(toolId)
- } else {
+ }
+ else {
  expandedTools.value.add(toolId)
  }
 }
@@ -53,7 +54,8 @@ const parsedOutput = computed<AgentOutput>( => {
  return props.agentOutput
  }
  const outputData = props.nodeExecution.output_data
- if (!outputData) return {}
+ if (!outputData)
+ return {}
  // Try to parse standard agent output format
  if (outputData.iterations) {
  return outputData as AgentOutput
@@ -73,14 +75,16 @@ const parsedOutput = computed<AgentOutput>( => {
  currentIteration = {}
  }
  currentIteration.think = item.content || item.text
- } else if (item.type === 'tool_use') {
+ }
+ else if (item.type === 'tool_use') {
  currentIteration.act = {
  id: item.id || String(Date.now),
  name: item.name || 'unknown',
  input: item.input || {},
  status: 'running',
  }
- } else if (item.type === 'tool_result') {
+ }
+ else if (item.type === 'tool_result') {
  if (currentIteration.act) {
  currentIteration.act.status = item.is_error ? 'error': 'success'
  currentIteration.act.output = item.content
@@ -119,15 +123,19 @@ const hasIterations = computed( => {
 })
 // Format duration
 function formatDuration(ms?: number): string {
- if (!ms) return ''
- if (ms < 1000) return `${ms}ms`
+ if (!ms)
+ return ''
+ if (ms < 1000)
+ return `${ms}ms`
  return `${(ms / 1000).toFixed(1)}s`
 }
 // Truncate text for summary
 function truncate(text: string, maxLength: number = 100): string {
- if (!text) return ''
- if (text.length <= maxLength) return text
- return text.slice(0, maxLength) + '...'
+ if (!text)
+ return ''
+ if (text.length <= maxLength)
+ return text
+ return `${text.slice(0, maxLength)}...`
 }
 // Get status icon component
 function getStatusIcon(status: string) {
@@ -169,7 +177,9 @@ const errorMessage = computed( => {
  <div class="flex items-start gap-3">
  <AlertCircle class="w-5 text-red-500 shrink-0 mt-0.5" />
  <div class="flex-1 min-w-0">
- <div class="font-medium text-red-500 mb-1">执行错误</div>
+ <div class="font-medium text-red-500 mb-1">
+ 执行错误
+ </div>
  <div class="text-sm text-red-400 whitespace-pre-wrap break-words">
  {{ errorMessage }}
  </div>
@@ -198,7 +208,9 @@ const errorMessage = computed( => {
  <Brain class="w-4 text-violet-500" />
  </div>
  <div class="flex-1 min-w-0">
- <div class="text-xs font-medium text-violet-500 mb-1">思考</div>
+ <div class="text-xs font-medium text-violet-500 mb-1">
+ 思考
+ </div>
  <Collapsible>
  <CollapsibleTrigger class="group flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
  <ChevronRight class="w-3 transition-transform group-data-[state=open]:rotate-90" />
@@ -223,10 +235,10 @@ const errorMessage = computed( => {
  <span class="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded">
  {{ iteration.act.name }}
  </span>
- <component:is="getStatusIcon(iteration.act.status)":class="[
- 'w-3.5 .5',
+ <component:is="getStatusIcon(iteration.act.status)"
+ class="w-3.5 .5":class="[
  getStatusColor(iteration.act.status),
- iteration.act.status === 'running' && 'animate-spin'
+ iteration.act.status === 'running' && 'animate-spin',
  ]"
  />
  <span v-if="iteration.act.duration" class="text-xs text-muted-foreground">
@@ -241,15 +253,21 @@ const errorMessage = computed( => {
  <CollapsibleContent>
  <div class="mt-2 space-y-2">
  <div class="bg-muted/30 rounded-lg ">
- <div class="text-xs font-medium text-muted-foreground mb-1">输入</div>
+ <div class="text-xs font-medium text-muted-foreground mb-1">
+ 输入
+ </div>
  <pre class="text-xs overflow-x-auto">{{ JSON.stringify(iteration.act.input, null, 2) }}</pre>
  </div>
  <div v-if="iteration.act.output !== undefined" class="bg-muted/30 rounded-lg ">
- <div class="text-xs font-medium text-muted-foreground mb-1">输出</div>
+ <div class="text-xs font-medium text-muted-foreground mb-1">
+ 输出
+ </div>
  <pre class="text-xs overflow-x-auto whitespace-pre-wrap">{{ typeof iteration.act.output === 'string' ? iteration.act.output: JSON.stringify(iteration.act.output, null, 2) }}</pre>
  </div>
  <div v-if="iteration.act.error" class="bg-red-500/10 border border-red-500/30 rounded-lg ">
- <div class="text-xs font-medium text-red-500 mb-1">错误</div>
+ <div class="text-xs font-medium text-red-500 mb-1">
+ 错误
+ </div>
  <pre class="text-xs text-red-400 overflow-x-auto whitespace-pre-wrap">{{ iteration.act.error }}</pre>
  </div>
  </div>
@@ -263,7 +281,9 @@ const errorMessage = computed( => {
  <Eye class="w-4 text-emerald-500" />
  </div>
  <div class="flex-1 min-w-0">
- <div class="text-xs font-medium text-emerald-500 mb-1">观察</div>
+ <div class="text-xs font-medium text-emerald-500 mb-1">
+ 观察
+ </div>
  <Collapsible>
  <CollapsibleTrigger class="group flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
  <ChevronRight class="w-3 transition-transform group-data-[state=open]:rotate-90" />
@@ -294,17 +314,17 @@ const errorMessage = computed( => {
  class="relative flex gap-3"
  >
  <!-- Timeline Dot -->
- <div:class="[
- 'relative z-10 shrink-0 w-8 rounded-full flex items-center justify-center border-2',
+ <div
+ class="relative z-10 shrink-0 w-8 rounded-full flex items-center justify-center border-2":class="[
  tool.status === 'success' && 'bg-emerald-500/20 border-emerald-500',
  tool.status === 'error' && 'bg-red-500/20 border-red-500',
  tool.status === 'running' && 'bg-blue-500/20 border-blue-500',
  ]"
  >
- <component:is="getStatusIcon(tool.status)":class="[
- 'w-4 ',
+ <component:is="getStatusIcon(tool.status)"
+ class="w-4 ":class="[
  getStatusColor(tool.status),
- tool.status === 'running' && 'animate-spin'
+ tool.status === 'running' && 'animate-spin',
  ]"
  />
  </div>
@@ -313,8 +333,8 @@ const errorMessage = computed( => {
  <div class="flex items-center justify-between mb-2">
  <div class="flex items-center gap-2">
  <span class="font-mono text-sm font-medium">{{ tool.name }}</span>
- <span:class="[
- 'text-xs px-1.5 py-0.5 rounded-full',
+ <span
+ class="text-xs px-1.5 py-0.5 rounded-full":class="[
  tool.status === 'success' && 'bg-emerald-500/20 text-emerald-500',
  tool.status === 'error' && 'bg-red-500/20 text-red-500',
  tool.status === 'running' && 'bg-blue-500/20 text-blue-500',
@@ -337,15 +357,21 @@ const errorMessage = computed( => {
  <CollapsibleContent>
  <div class="mt-2 space-y-2">
  <div class="bg-card/50 rounded-lg ">
- <div class="text-xs font-medium text-muted-foreground mb-1">输入</div>
+ <div class="text-xs font-medium text-muted-foreground mb-1">
+ 输入
+ </div>
  <pre class="text-xs overflow-x-auto">{{ JSON.stringify(tool.input, null, 2) }}</pre>
  </div>
  <div v-if="tool.output !== undefined" class="bg-card/50 rounded-lg ">
- <div class="text-xs font-medium text-muted-foreground mb-1">输出</div>
+ <div class="text-xs font-medium text-muted-foreground mb-1">
+ 输出
+ </div>
  <pre class="text-xs overflow-x-auto whitespace-pre-wrap">{{ typeof tool.output === 'string' ? tool.output: JSON.stringify(tool.output, null, 2) }}</pre>
  </div>
  <div v-if="tool.error" class="bg-red-500/10 border border-red-500/30 rounded-lg ">
- <div class="text-xs font-medium text-red-500 mb-1">错误</div>
+ <div class="text-xs font-medium text-red-500 mb-1">
+ 错误
+ </div>
  <pre class="text-xs text-red-400 overflow-x-auto whitespace-pre-wrap">{{ tool.error }}</pre>
  </div>
  </div>
@@ -362,7 +388,9 @@ const errorMessage = computed( => {
  class="text-center py-8 text-muted-foreground"
  >
  <Loader2 class="w-8 mx-auto mb-2 animate-spin text-blue-500" />
- <div class="text-sm">正在执行...</div>
+ <div class="text-sm">
+ 正在执行...
+ </div>
  </div>
  <!-- Final Result -->
  <div
@@ -372,7 +400,9 @@ const errorMessage = computed( => {
  <div class="flex items-start gap-3">
  <CheckCircle2 class="w-5 text-emerald-500 shrink-0 mt-0.5" />
  <div class="flex-1 min-w-0">
- <div class="font-medium text-emerald-500 mb-1">执行结果</div>
+ <div class="font-medium text-emerald-500 mb-1">
+ 执行结果
+ </div>
  <div class="text-sm whitespace-pre-wrap">
  {{ parsedOutput.final_result }}
  </div>

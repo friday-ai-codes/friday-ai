@@ -18,8 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "friday.settings")
 import django
 django.setup
-from services.embedding import EmbeddingService
-from services.qdrant_service import QdrantService
+from services.embedding import EmbeddingService # noqa: E402
+from services.qdrant_service import QdrantService # noqa: E402
 async def generate_embedding_manual(
  text: str, api_url: str, model: str, api_key: str | None = None
 ) -> list[float] | None:
