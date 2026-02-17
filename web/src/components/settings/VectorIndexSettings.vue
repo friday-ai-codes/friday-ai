@@ -89,8 +89,7 @@ async function loadSettings {
  // 重置脏标记
  resetDirtyFlags
  }
- catch (error) {
- console.error('Failed to load settings:', error)
+ catch {
  toast.error('加载设置失败')
  }
  finally {
@@ -130,8 +129,7 @@ async function saveAllSettings {
  toast.success('设置已保存')
  await loadSettings
  }
- catch (error) {
- console.error('Failed to save settings:', error)
+ catch {
  toast.error('保存失败')
  }
  finally {
