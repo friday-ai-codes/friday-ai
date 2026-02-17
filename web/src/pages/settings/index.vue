@@ -553,7 +553,7 @@ onMounted( => {
  <Input
  id="default-model":model-value="defaultModelValue === '__default__' ? '': defaultModelValue":placeholder="settingsMeta[SettingKey.ANTHROPIC_MODEL].placeholder"
  class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
- @update:model-value="(v: string) => { defaultModelValue = v || '__default__'; onDefaultModelInput }"
+ @update:model-value="(v: string | number) => { defaultModelValue = String(v) || '__default__'; onDefaultModelInput }"
  />
  </div>
  </div>

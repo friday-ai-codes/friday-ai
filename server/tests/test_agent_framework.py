@@ -38,6 +38,7 @@ async def test_tool_validation:
  valid, err = ToolRegistry.validate_tool_arguments("echo", {})
  assert valid is False
  assert "message" in err.lower
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_agent_loop_completion:
  """Test agent loop completes when LLM returns no tool calls."""
@@ -60,6 +61,7 @@ async def test_agent_loop_completion:
  assert result.status == "completed"
  assert result.final_answer == "I'm done!"
  assert result.usage["input_tokens"] == 10
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_agent_loop_max_iterations:
  """Test agent loop stops at max iterations."""
@@ -82,6 +84,7 @@ async def test_agent_loop_max_iterations:
  result = await loop.run("Loop forever")
  assert result.status == "max_iterations"
  assert result.metadata["iterations"] == 2
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_agent_loop_tool_execution:
  """Test that tools are executed and results are collected."""
@@ -124,6 +127,7 @@ async def test_agent_loop_tool_execution:
  assert result.usage["output_tokens"] == 15 # 5 + 10
  assert len(result.output) == 1
  assert "Echo: hello" in result.output[0]
+@pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_agent_loop_tool_error_handling:
  """Test that tool errors are returned to LLM, not thrown."""

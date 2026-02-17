@@ -26,12 +26,10 @@ import AICodeReviewPanel from '~/components/execution/AICodeReviewPanel.vue'
 import NodeDebugPanel from '~/components/execution/NodeDebugPanel.vue'
 import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
 const store = useExecutionsStore
-const workflowsStore = useWorkflowsStore
 const { currentExecution, loading, error } = storeToRefs(store)
 // Selected node for detail view
 const selectedNodeExecution = ref<NodeExecution | null>(null)

@@ -25,6 +25,7 @@ class TestGetVolumeName:
  name1 = manager.get_volume_name(url1)
  name2 = manager.get_volume_name(url2)
  assert name1 != name2
+@pytest.mark.django_db
 class TestEnsureRepoCache:
  """Tests for ensure_repo_cache method."""
  @pytest.mark.asyncio
