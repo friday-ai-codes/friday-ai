@@ -69,6 +69,7 @@ class TestDetectLockFile:
  with tempfile.TemporaryDirectory as tmpdir:
  result = manager.detect_lock_file(tmpdir)
  assert result is None
+@pytest.mark.django_db
 class TestEnsureDepsCache:
  """Tests for ensure_deps_cache method."""
  @pytest.mark.asyncio

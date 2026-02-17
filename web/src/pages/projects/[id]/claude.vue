@@ -332,7 +332,7 @@ watch( => loading.value, (isLoading) => {
  id="default-model":model-value="defaultModelValue === '__default__' ? '': defaultModelValue"
  placeholder="如 claude-sonnet-4-20250514"
  class="pl-10 bg-muted/30 border-border/50 focus:border-orange-500/50"
- @update:model-value="(v: string) => { defaultModelValue = v || '__default__'; onDefaultModelChange }"
+ @update:model-value="(v: string | number) => { defaultModelValue = String(v) || '__default__'; onDefaultModelChange }"
  />
  </div>
  </div>
