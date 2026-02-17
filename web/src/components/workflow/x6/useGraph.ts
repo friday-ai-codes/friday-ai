@@ -97,7 +97,6 @@ export function useGraph(
  // Wait for DOM to be fully rendered
  await nextTick
  if (!containerRef.value) {
- console.error('[useGraph] Container element not found')
  return
  }
  // Merge user options with defaults

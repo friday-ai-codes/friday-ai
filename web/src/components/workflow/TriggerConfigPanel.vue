@@ -40,8 +40,8 @@ async function loadTriggers {
  try {
  triggers.value = await listTriggers(props.workflowId)
  }
- catch (error) {
- console.error('Failed to load triggers:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  loading.value = false
@@ -55,8 +55,8 @@ async function toggleActive(trigger: WorkflowTrigger) {
  })
  trigger.is_active = !trigger.is_active
  }
- catch (error) {
- console.error('Failed to toggle trigger:', error)
+ catch {
+ // intentionally ignored
  }
 }
 // 删除触发器
@@ -73,8 +73,8 @@ async function handleDelete {
  triggers.value = triggers.value.filter(t => t.id !== triggerToDelete.value!.id)
  deleteDialogOpen.value = false
  }
- catch (error) {
- console.error('Failed to delete trigger:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  deleting.value = false

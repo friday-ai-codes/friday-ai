@@ -28,8 +28,8 @@ async function fetchInteractions {
  try {
  interactions.value = await getNodeInteractions(props.nodeExecutionId)
  }
- catch (e: any) {
- console.error(e)
+ catch {
+ // intentionally ignored
  }
  finally {
  loading.value = false

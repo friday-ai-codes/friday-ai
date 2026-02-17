@@ -61,8 +61,8 @@ async function handleApprovePlan {
  await approveCodingTaskPlan(props.task.id)
  emit('updated', { ...props.task, status: 'executing' })
  }
- catch (error) {
- console.error('Failed to approve plan:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  processing.value = false
@@ -78,8 +78,8 @@ async function handleRejectPlan {
  emit('updated', { ...props.task, status: 'planning' })
  feedback.value = ''
  }
- catch (error) {
- console.error('Failed to reject plan:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  processing.value = false
@@ -94,8 +94,8 @@ async function handleApproveCode {
  await approveCodingTaskCode(props.task.id)
  emit('updated', { ...props.task, status: 'merged' })
  }
- catch (error) {
- console.error('Failed to approve code:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  processing.value = false
@@ -111,8 +111,8 @@ async function handleRejectCode {
  emit('updated', { ...props.task, status: 'executing' })
  feedback.value = ''
  }
- catch (error) {
- console.error('Failed to reject code:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  processing.value = false

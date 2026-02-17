@@ -89,8 +89,8 @@ async function fetchFeishuIMConfig {
  feishuIMConfig.has_app_secret = config.has_app_secret
  feishuIMConfig.is_configured = config.is_configured
  }
- catch (e) {
- console.error('Failed to fetch Feishu IM config:', e)
+ catch {
+ // intentionally ignored
  }
 }
 onMounted( => {
