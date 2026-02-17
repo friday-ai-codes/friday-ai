@@ -35,6 +35,8 @@ api_patterns = [
  path("subagent/", include("subagent.urls")),
  # Container callbacks (ContainerCallbackView)
  path("containers/", include("subagent.api.urls")),
+ # Runners
+ path("runners/", include("runners.urls")),
  # Agent tools API
  path("agents/", include("agents.urls")),
  # API Documentation
