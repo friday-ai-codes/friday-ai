@@ -539,7 +539,6 @@ def normalize_repositories(
  - repositories: List[str|dict] - list of IDs or repository objects
  - repository: str|dict - single ID or object (auto-wrapped)
  - repository_ids: List[str] - list of IDs (alias)
- - repository_id: str - single ID (alias, deprecated)
  - Template variables: {{global.repositories}}
  - Auto-fallback: if config is empty, check global.repositories
  String formats supported:
@@ -561,7 +560,7 @@ def normalize_repositories(
  value = config.get("repositories") or config.get("repository_ids")
  if value is None:
  # Fallback to singular forms
- value = config.get("repository") or config.get("repository_id")
+ value = config.get("repository")
  # Auto-fallback: if config is empty, try global.repositories
  if value is None or (isinstance(value, list) and len(value) == 0):
  global_repos = context.get_global_variable_value("repositories")
