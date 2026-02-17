@@ -61,7 +61,7 @@ export function areTypesCompatible(sourceType: string, targetType: string): bool
  * // Check if a connection is valid
  * const result = checkConnection('ai_prompt', 'output', 'http_request', 'body')
  * if (result.warning) {
- * console.warn(result.warning)
+ * // handle warning
  * }
  *
  * // Get compatible ports for highlighting during drag

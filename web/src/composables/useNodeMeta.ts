@@ -19,7 +19,7 @@ import {
  *
  * // 获取节点定义
  * const def = getDefinition('ai_prompt')
- * console.log(def?.icon, def?.color)
+ * // use meta data: def?.icon, def?.color
  *
  * // 按分类获取节点
  * const aiNodes = byCategory.value.ai
