@@ -42,7 +42,7 @@ export interface ValidationWarning {
  * const warning = validationStore.getWarningForEdge('edge-1')
  *
  * // Display in issues panel
- * validationStore.warningsList.forEach(w => { /* handle warning */ })
+ * validationStore.warningsList.forEach(w => handleWarning(w.message))
  * ```
  */
 export const useWorkflowValidationStore = defineStore('workflowValidation', => {

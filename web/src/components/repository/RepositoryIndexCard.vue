@@ -39,8 +39,8 @@ async function loadIndexStatus {
  try {
  indexStatus.value = await repositoriesApi.getIndexStatus(props.repositoryId)
  }
- catch (error) {
- console.error('Failed to load index status:', error)
+ catch {
+ // intentionally ignored
  }
  finally {
  loading.value = false
@@ -55,8 +55,7 @@ async function triggerIndex {
  await loadIndexStatus
  startPolling
  }
- catch (error) {
- console.error('Failed to trigger index:', error)
+ catch {
  toast.error('启动索引失败')
  }
  finally {
@@ -71,8 +70,7 @@ async function deleteIndex {
  toast.success('索引已删除')
  await loadIndexStatus
  }
- catch (error) {
- console.error('Failed to delete index:', error)
+ catch {
  toast.error('删除索引失败')
  }
  finally {

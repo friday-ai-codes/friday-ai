@@ -2,8 +2,7 @@
 import { Button } from '~/components/ui/button'
 const error = ref<Error | null>(null)
 const info = ref<string>('')
-onErrorCaptured((err, instance, infoMsg) => {
- console.error('Captured error:', err)
+onErrorCaptured((err, _instance, infoMsg) => {
  error.value = err instanceof Error ? err: new Error(String(err))
  info.value = infoMsg
  // 阻止错误继续传播

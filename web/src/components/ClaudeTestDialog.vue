@@ -89,7 +89,6 @@ async function fetchModels {
  }
  }
  catch (e) {
- console.error('Failed to fetch models:', e)
  error.value = e instanceof Error ? e.message: '获取模型列表失败'
  }
  finally {
@@ -120,7 +119,6 @@ async function sendTest {
  })
  }
  catch (e) {
- console.error('Test failed:', e)
  error.value = e instanceof Error ? e.message: '测试失败'
  }
  finally {
