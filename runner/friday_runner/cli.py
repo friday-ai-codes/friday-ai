@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 import socket
 import httpx
@@ -16,6 +17,7 @@ from .config import (
  save_config,
 )
 from .crypto import decrypt_token, encrypt_token
+from .ws import run_ws
 app = typer.Typer(name="friday-runner", help="Friday Runner CLI")
 @app.command
 def register(
@@ -137,3 +139,31 @@ def unregister(
  remove_runner(doc, runner_name)
  save_config(doc)
  rprint(f"[green]Runner '{runner_name}' unregistered successfully[/green]")
+@app.command
+def run(
+ name: str = typer.Option(None, "--name", help="Runner name (default: first runner)"),
+) -> None:
+ """启动 Runner，连接 Server WebSocket。"""
+ doc = load_config
+ runner = find_runner(doc, name)
+ if not runner:
+ rprint("[red]No runner configured. Run 'friday-runner register' first.[/red]")
+ raise typer.Exit(1)
+ runner = apply_env_overrides(runner)
+ runner_token = decrypt_token(runner["token"])
+ rprint(f"[green]Starting runner '{runner['name']}'...[/green]")
+ try:
+ asyncio.run(
+ run_ws(
+ url=runner["url"],
+ token=runner_token,
+ name=runner["name"],
+ version=__version__,
+ concurrent=runner["concurrent"],
+ )
+ )
+ except KeyboardInterrupt:
+ rprint("\n[yellow]Runner stopped.[/yellow]")
+ except RuntimeError as e:
+ rprint(f"[red]{e}[/red]")
+ raise typer.Exit(1)
