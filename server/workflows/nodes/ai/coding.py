@@ -606,23 +606,16 @@ class AICodingNode(BaseNode):
  config: dict[str, Any],
  node_execution_id: str = "",
  ) -> dict[str, Any]:
- """执行单个仓库的编码任务。
- 迁移后：启动容器并返回 waiting_event 状态，不再轮询。
- 容器完成后通过回调恢复 workflow。
- """
+ """通过 TaskDispatcher 分发编码任务到 Runner。"""
  log = logger.bind(
  repository_id=str(repository.id),
  repository_name=repository.name,
  )
- # 1. 构建 prompt（保持不变）
  prompt = self._build_coding_prompt(tasks, global_context, branch_name)
- # 2. 使用 ContainerManager 启动容器
- from services.container_config import TASK_TIMEOUTS
- from services.container_manager import ContainerConfig, ContainerManager
- from subagent.models import generate_execution_id
- manager = ContainerManager
+ from runners.dispatcher import DispatchTask, get_dispatcher
+ from subagent.models import SubAgentSession, generate_execution_id
  session_id = generate_execution_id
- # 获取仓库 Git 凭证
+ # Git 凭证
  git_credentials = {}
  if repository.credential and repository.credential.encrypted_token:
  token = decrypt_value(repository.credential.encrypted_token)
@@ -630,42 +623,75 @@ class AICodingNode(BaseNode):
  "access_token": token,
  "ssl_verify": str(repository.credential.ssl_verify).lower,
  }
- container_config = ContainerConfig(
- session_id=session_id,
+ dispatch_task = DispatchTask(
+ task_id=session_id,
  task_type="coding",
+ tags=["coding"],
+ image=config.get("container_image", "friday/claude-code:latest"),
  repo_url=repository.git_url,
  branch=base_branch,
  target_branch=branch_name,
  prompt=prompt,
- work_item_id=config.get("work_item_id", ""),
+ timeout=config.get("timeout_seconds", 1800),
  node_execution_id=node_execution_id,
- timeout=TASK_TIMEOUTS.get("coding", 1800),
- git_credentials=git_credentials,
- context={
+ session_id=session_id,
+ metadata={
  "repository_id": str(repository.id),
  "repository_name": repository.name,
+ "work_item_id": config.get("work_item_id", ""),
+ "git_credentials": git_credentials,
+ },
+ )
+ # 预创建 SubAgentSession（PENDING 状态）
+ @sync_to_async
+ def _create_session -> None:
+ from agents.models import AgentSession
+ # 查找关联的 main_session
+ main_session = None
+ if node_execution_id:
+ from workflows.models import NodeExecution
+ node_exec = NodeExecution.objects.filter(
+ id=node_execution_id,
+ ).select_related("workflow_execution").first
+ if node_exec and node_exec.workflow_execution:
+ main_session = AgentSession.objects.filter(
+ metadata__workflow_execution_id=str(
+ node_exec.workflow_execution.id
+ ),
+ ).first
+ # main_session 是必需 FK，无法找到时创建占位
+ if not main_session:
+ main_session = AgentSession.objects.create(
+ metadata={"placeholder": True, "session_id": session_id},
+ )
+ SubAgentSession.objects.update_or_create(
+ session_id=session_id,
+ defaults={
+ "main_session": main_session,
+ "status": SubAgentSession.Status.PENDING,
+ "task_type": "coding",
+ "repo_url": repository.git_url,
+ "work_item_id": config.get("work_item_id", ""),
+ "target_branch": branch_name,
+ "node_execution_id": node_execution_id or None,
  },
  )
  try:
- container_id = await manager.start(container_config)
- log.info(
- "container_started_callback_mode",
- session_id=session_id,
- container_id=container_id[:12],
- )
+ await _create_session
+ await get_dispatcher.dispatch(dispatch_task)
+ log.info("task_dispatched_to_runner", session_id=session_id)
  except Exception as e:
- log.error("container_start_failed", error=str(e))
+ log.error("task_dispatch_failed", error=str(e))
  return {
  "status": "error",
- "error": f"容器启动失败: {e}",
+ "error": f"任务分发失败: {e}",
  "repository_id": str(repository.id),
  "repository_name": repository.name,
  }
- # 3. 返回 waiting_event 状态（关键变更！不再轮询）
  return {
  "status": "waiting_event",
  "session_id": session_id,
- "container_id": container_id,
+ "container_id": "",
  "repository_id": str(repository.id),
  "repository_name": repository.name,
  }
