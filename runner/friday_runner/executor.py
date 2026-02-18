@@ -1,11 +1,17 @@
 """Docker Executor — 容器生命周期管理。"""
 from __future__ import annotations
 import asyncio
+import datetime
 import uuid
+from typing import TYPE_CHECKING
 import docker
 import docker.errors
 import structlog
 from .models import TaskInfo
+from .protocol import MessageType, make_message
+if TYPE_CHECKING:
+ from .queue import MessageQueue
+ from .scheduler import TaskScheduler
 log = structlog.get_logger
 class DockerExecutor:
  def __init__(self, default_image: str = "friday-task:latest") -> None:
@@ -83,3 +89,64 @@ class DockerExecutor:
  return str(container.status)
  except docker.errors.NotFound:
  return None
+ async def startup_cleanup(self) -> int:
+ """清理上次残留的 friday-task-* 容器。"""
+ containers = await asyncio.to_thread(
+ self._client.containers.list, all=True, filters={"label": "friday.task_id"}
+ )
+ count = 0
+ for c in containers:
+ try:
+ await asyncio.to_thread(c.remove, force=True)
+ count += 1
+ except docker.errors.NotFound:
+ pass
+ log.info("startup_cleanup_completed", count=count)
+ return count
+ async def zombie_scan(
+ self, scheduler: TaskScheduler, queue: MessageQueue,
+ interval: float = 30.0, zombie_threshold: float = 120.0, retain_hours: float = 1.0,
+ ) -> None:
+ """后台僵尸容器扫描循环。"""
+ while True:
+ await asyncio.sleep(interval)
+ await self._scan_once(scheduler, queue, zombie_threshold, retain_hours)
+ async def _scan_once(
+ self, scheduler: TaskScheduler, queue: MessageQueue,
+ zombie_threshold: float, retain_hours: float,
+ ) -> None:
+ try:
+ containers = await asyncio.to_thread(
+ self._client.containers.list, all=True, filters={"label": "friday.task_id"}
+ )
+ except Exception:
+ log.exception("zombie_scan_list_failed")
+ return
+ known_ids = set(scheduler.get_all_container_ids)
+ now = datetime.datetime.now(datetime.timezone.utc)
+ for c in containers:
+ try:
+ task_id = c.labels.get("friday.task_id", "")
+ status = c.status
+ if status == "running" and c.id not in known_ids:
+ created = c.attrs.get("Created", "")
+ created_dt = datetime.datetime.fromisoformat(created.replace("Z", "+00:00"))
+ age = (now - created_dt).total_seconds
+ if age > zombie_threshold:
+ await asyncio.to_thread(c.kill)
+ queue.push(make_message(MessageType.TASK_FAILED, {
+ "task_id": task_id, "exit_code": -1,
+ "error": "zombie container killed",
+ "duration_ms": int(age * 1000), "logs": "",
+ }))
+ log.warning("zombie_killed", task_id=task_id, container_id=c.id)
+ elif status == "exited":
+ finished = c.attrs.get("State", {}).get("FinishedAt", "")
+ if finished:
+ finished_dt = datetime.datetime.fromisoformat(finished.replace("Z", "+00:00"))
+ hours = (now - finished_dt).total_seconds / 3600
+ if hours > retain_hours:
+ await asyncio.to_thread(c.remove, force=True)
+ log.info("container_cleaned", task_id=task_id, container_id=c.id)
+ except Exception:
+ log.exception("zombie_scan_container_error", container_id=c.id)
