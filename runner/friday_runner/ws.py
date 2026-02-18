@@ -2,9 +2,12 @@
 from __future__ import annotations
 import asyncio
 import json
+import os
 import random
 import secrets
+import signal
 import time
+from pathlib import Path
 import structlog
 import websockets
 import websockets.asyncio.client
@@ -22,6 +25,19 @@ BACKOFF_FACTOR = 2.0
 MAX_RETRIES = 20
 HEARTBEAT_INTERVAL = 30.0
 CLOSE_CODE_REPLACED = 4002
+PID_DIR = Path.home / ".friday-runner"
+PID_FILE = PID_DIR / "runner.pid"
+def _write_pidfile -> None:
+ PID_DIR.mkdir(parents=True, exist_ok=True)
+ PID_FILE.write_text(str(os.getpid))
+def _remove_pidfile -> None:
+ PID_FILE.unlink(missing_ok=True)
+def read_pidfile -> int | None:
+ """读取 PID 文件，返回 PID 或 None。"""
+ try:
+ return int(PID_FILE.read_text.strip)
+ except (FileNotFoundError, ValueError):
+ return None
 async def run_ws(
  url: str, token: str, name: str, version: str, concurrent: int,
  image: str = "friday-task:latest",
@@ -34,10 +50,24 @@ async def run_ws(
  if not any(h in url for h in ("localhost", "127.0.0.1")) and not uri.startswith("wss://"):
  log.warning("insecure_connection", msg="生产环境应使用 WSS (TLS) 连接")
  warmup
+ _write_pidfile
  queue = MessageQueue
  # 初始化组件
  executor = DockerExecutor(default_image=image)
  scheduler = TaskScheduler(max_concurrent=concurrent)
+ shutdown_event = asyncio.Event
+ # 信号处理
+ loop = asyncio.get_running_loop
+ def on_sigterm -> None:
+ log.info("sigterm_received", msg="停止接收新任务，等待运行中任务完成")
+ scheduler.stop_accepting
+ shutdown_event.set
+ def on_sigusr1 -> None:
+ paused = scheduler.toggle_pause
+ log.info("pause_toggled", paused=paused)
+ loop.add_signal_handler(signal.SIGTERM, on_sigterm)
+ loop.add_signal_handler(signal.SIGINT, on_sigterm)
+ loop.add_signal_handler(signal.SIGUSR1, on_sigusr1)
  if not callback_token:
  callback_token = secrets.token_urlsafe(32)
  callback_url = f"http://host.docker.internal:{CALLBACK_PORT}/callback"
@@ -49,7 +79,7 @@ async def run_ws(
  try:
  delay = INITIAL_DELAY
  retries = 0
- while retries < MAX_RETRIES:
+ while retries < MAX_RETRIES and not shutdown_event.is_set:
  try:
  async with websockets.asyncio.client.connect(
  uri, ping_interval=20, ping_timeout=10
@@ -64,15 +94,21 @@ async def run_ws(
  return
  except (OSError, websockets.WebSocketException):
  pass
+ if shutdown_event.is_set:
+ break
  retries += 1
  jitter = random.uniform(0, delay * 0.1)
  log.info("reconnecting", attempt=retries, delay=f"{delay + jitter:.1f}s")
  await asyncio.sleep(delay + jitter)
  delay = min(delay * BACKOFF_FACTOR, MAX_DELAY)
+ if not shutdown_event.is_set and retries >= MAX_RETRIES:
  raise RuntimeError(f"Max retries ({MAX_RETRIES}) exceeded")
  finally:
+ if shutdown_event.is_set:
+ await scheduler.wait_all_done(timeout=300)
  scheduler_task.cancel
  await callback_runner.cleanup
+ _remove_pidfile
 async def _on_connected(
  ws: websockets.asyncio.client.ClientConnection,
  name: str,
@@ -121,7 +157,7 @@ async def _heartbeat_loop(
  """每 HEARTBEAT_INTERVAL 秒发送心跳。"""
  while True:
  await asyncio.sleep(HEARTBEAT_INTERVAL)
- msg = make_message(MessageType.RUNNER_HEARTBEAT, collect_metrics(scheduler.active_count, concurrent))
+ msg = make_message(MessageType.RUNNER_HEARTBEAT, collect_metrics(scheduler.active_count, concurrent, scheduler.is_accepting))
  try:
  await ws.send(json.dumps(msg))
  except Exception:
@@ -150,6 +186,13 @@ async def _handle_task_assign(
  """收到 task.assign 后响应 accepted 并提交到 scheduler。"""
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
+ if not scheduler.is_accepting:
+ response = make_response(content.get("id", ""), MessageType.TASK_REJECTED, {"task_id": task_id, "reason": "not_accepting"})
+ try:
+ await ws.send(json.dumps(response))
+ except Exception:
+ queue.push(response)
+ return
  response = make_response(content.get("id", ""), MessageType.TASK_ACCEPTED, {"task_id": task_id})
  try:
  await ws.send(json.dumps(response))

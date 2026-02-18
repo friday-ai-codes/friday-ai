@@ -1,6 +1,8 @@
 from __future__ import annotations
 import asyncio
 import json
+import os
+import signal
 import socket
 import httpx
 import typer
@@ -18,7 +20,7 @@ from .config import (
  save_config,
 )
 from .crypto import decrypt_token, encrypt_token
-from .ws import run_ws
+from .ws import read_pidfile, run_ws
 app = typer.Typer(name="friday-runner", help="Friday Runner CLI")
 @app.command
 def register(
@@ -172,3 +174,20 @@ def run(
  except RuntimeError as e:
  rprint(f"[red]{e}[/red]")
  raise typer.Exit(1)
+@app.command
+def pause(
+ pid: int = typer.Option(None, "--pid", help="Runner PID (default: read from pidfile)"),
+) -> None:
+ """暂停/恢复 Runner 接收新任务（发送 SIGUSR1）。"""
+ target_pid = pid or read_pidfile
+ if not target_pid:
+ rprint("[red]No running runner found.[/red]")
+ raise typer.Exit(1)
+ os.kill(target_pid, signal.SIGUSR1)
+ rprint(f"[green]Sent pause/resume signal to runner (PID {target_pid})[/green]")
+@app.command
+def resume(
+ pid: int = typer.Option(None, "--pid", help="Runner PID (default: read from pidfile)"),
+) -> None:
+ """恢复 Runner 接收新任务（等同 pause，发送 SIGUSR1 切换）。"""
+ pause(pid=pid)
