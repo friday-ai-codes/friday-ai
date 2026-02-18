@@ -64,6 +64,7 @@ class Runner(models.Model):
  version = models.CharField(max_length=50, blank=True, default="")
  is_active = models.BooleanField(default=True)
  last_heartbeat = models.DateTimeField(null=True, blank=True)
+ channel_name = models.CharField(max_length=100, blank=True, default="")
  ip_address = models.GenericIPAddressField(null=True, blank=True)
  registered_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
