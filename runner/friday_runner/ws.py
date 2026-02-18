@@ -99,10 +99,13 @@ async def _message_loop(
  try:
  async for raw in ws:
  content = json.loads(raw)
- if content.get("type") == MessageType.TASK_ASSIGN:
+ msg_type = content.get("type")
+ if msg_type == MessageType.TASK_ASSIGN:
  await _handle_task_assign(ws, content, queue, scheduler)
+ elif msg_type == MessageType.QUESTION_ANSWER:
+ await _handle_question_answer(content)
  else:
- log.debug("received", type=content.get("type"))
+ log.debug("received", type=msg_type)
  finally:
  heartbeat_task.cancel
  try:
@@ -123,6 +126,21 @@ async def _heartbeat_loop(
  await ws.send(json.dumps(msg))
  except Exception:
  queue.push(msg)
+async def _handle_question_answer(content: dict) -> None:
+ """备用链路：Server 通过 WS 发送回答到 Runner，Runner 转发到容器。"""
+ payload = content.get("payload", {})
+ answer_endpoint = payload.get("answer_endpoint", "")
+ if not answer_endpoint:
+ return
+ import aiohttp
+ try:
+ async with aiohttp.ClientSession as session:
+ await session.post(answer_endpoint, json={
+ "question_id": payload.get("question_id", ""),
+ "answer": payload.get("answer", ""),
+ }, timeout=aiohttp.ClientTimeout(total=10))
+ except Exception:
+ log.warning("question_answer_forward_failed", task_id=payload.get("task_id", ""))
 async def _handle_task_assign(
  ws: websockets.asyncio.client.ClientConnection,
  content: dict,
@@ -156,8 +174,13 @@ async def _run_task(
  """任务执行核心：启动容器 → 等待完成 → 上报结果。"""
  start = time.monotonic
  try:
- container_id = await executor.start_container(task, callback_url, callback_token)
+ container_id, answer_endpoint = await executor.start_container(task, callback_url, callback_token)
  scheduler.register_container(task.task_id, container_id)
+ if answer_endpoint:
+ queue.push(make_message(MessageType.TASK_ACCEPTED, {
+ "task_id": task.task_id,
+ "answer_endpoint": answer_endpoint,
+ }))
  timeout = task.timeout or default_timeout
  exit_code, logs = await executor.wait_container(container_id, timeout)
  duration_ms = int((time.monotonic - start) * 1000)

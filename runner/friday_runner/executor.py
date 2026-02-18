@@ -20,7 +20,7 @@ class DockerExecutor:
  self._client.ping
  async def start_container(
  self, task: TaskInfo, callback_url: str, callback_token: str
- ) -> str:
+ ) -> tuple[str, str]:
  container_name = f"friday-task-{uuid.uuid4.hex[:12]}"
  image = task.image or self._default_image
  env = {
@@ -31,6 +31,7 @@ class DockerExecutor:
  "FRIDAY_GIT_REPO_URL": task.repo_url,
  "FRIDAY_GIT_BRANCH": task.branch,
  "FRIDAY_TASK_TIMEOUT": str(task.timeout or 1800),
+ "FRIDAY_ANSWER_PORT": "8977",
  }
  try:
  container = await asyncio.to_thread(
@@ -42,13 +43,19 @@ class DockerExecutor:
  extra_hosts={"host.docker.internal": "host-gateway"},
  labels={"friday.task_id": task.task_id},
  auto_remove=False,
+ ports={"8977/tcp": None},
  )
  except docker.errors.ImageNotFound as e:
  raise RuntimeError(f"Image not found: {image}") from e
  except docker.errors.APIError as e:
  raise RuntimeError(f"Docker API error: {e}") from e
- log.info("container_started", task_id=task.task_id, container_id=container.id)
- return str(container.id)
+ # 获取宿主机映射端口，构造 answer_endpoint
+ await asyncio.to_thread(container.reload)
+ port_bindings = container.attrs.get("NetworkSettings", {}).get("Ports", {}).get("8977/tcp")
+ host_port = port_bindings[0]["HostPort"] if port_bindings else ""
+ answer_endpoint = f"http://host.docker.internal:{host_port}/answer" if host_port else ""
+ log.info("container_started", task_id=task.task_id, container_id=container.id, answer_endpoint=answer_endpoint)
+ return str(container.id), answer_endpoint
  async def wait_container(self, container_id: str, timeout: int) -> tuple[int, str]:
  try:
  container = await asyncio.to_thread(self._client.containers.get, container_id)
