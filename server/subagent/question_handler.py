@@ -12,6 +12,7 @@ Phase 增强：
 import json
 import os
 import uuid
+from typing import Any
 import structlog
 from asgiref.sync import async_to_sync
 from django.conf import settings
@@ -129,14 +130,46 @@ async def handle_container_answer_enhanced(
  )
  else:
  log.warning("interaction_log_not_found")
- # 写入 answer.json（保持兼容）
+ # 回答链路：优先直达容器 HTTP 服务，回退到共享卷 answer.json
+ answer_sent = False
+ answer_endpoint = ""
+ if session.last_output and isinstance(session.last_output, dict):
+ answer_endpoint = session.last_output.get("answer_endpoint", "")
+ if answer_endpoint:
+ answer_sent = await _send_answer_to_container(
+ answer_endpoint, question_id, answer, log
+ )
+ if not answer_sent:
  write_answer_to_volume(session, answer)
  # 清除 pending_question
  if session.last_output and isinstance(session.last_output, dict):
  session.last_output.pop("pending_question", None)
  await session.asave(update_fields=["last_output", "updated_at"])
- log.info("container_answer_processed", answer_preview=answer[:50])
+ log.info("container_answer_processed", answer_preview=answer[:50], via="http" if answer_sent else "volume")
  return True
+async def _send_answer_to_container(
+ answer_endpoint: str,
+ question_id: str,
+ answer: str,
+ log: Any,
+) -> bool:
+ """通过 HTTP POST 直达容器内 HTTP 服务发送回答。"""
+ import aiohttp
+ try:
+ async with aiohttp.ClientSession as client:
+ async with client.post(
+ answer_endpoint,
+ json={"question_id": question_id, "answer": answer},
+ timeout=aiohttp.ClientTimeout(total=15),
+ ) as resp:
+ if resp.status == 200:
+ log.info("answer_sent_to_container", endpoint=answer_endpoint)
+ return True
+ log.warning("answer_container_http_error", status=resp.status)
+ return False
+ except Exception as e:
+ log.warning("answer_container_unreachable", endpoint=answer_endpoint, error=str(e))
+ return False
 async def _update_card_to_answered(
  message_id: str,
  question: str,
