@@ -12,6 +12,7 @@ from .config import (
  append_runner,
  apply_env_overrides,
  find_runner,
+ get_executor_config,
  load_config,
  remove_runner,
  save_config,
@@ -151,6 +152,7 @@ def run(
  raise typer.Exit(1)
  runner = apply_env_overrides(runner)
  runner_token = decrypt_token(runner["token"])
+ exec_cfg = get_executor_config(runner)
  rprint(f"[green]Starting runner '{runner['name']}'...[/green]")
  try:
  asyncio.run(
@@ -160,6 +162,9 @@ def run(
  name=runner["name"],
  version=__version__,
  concurrent=runner["concurrent"],
+ image=exec_cfg["image"],
+ timeout=exec_cfg["timeout"],
+ callback_token=exec_cfg["callback_token"],
  )
  )
  except KeyboardInterrupt:
