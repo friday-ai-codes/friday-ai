@@ -55,6 +55,7 @@ INSTALLED_APPS = [
  "agents",
  "subagent",
  "runners",
+ "tools",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
