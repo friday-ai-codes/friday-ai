@@ -1,4 +1,21 @@
-from dataclasses import dataclass
+import enum
+from dataclasses import dataclass, field
+class TaskState(str, enum.Enum):
+ QUEUED = "queued"
+ RUNNING = "running"
+ COMPLETED = "completed"
+ FAILED = "failed"
+ TIMEOUT = "timeout"
+ CANCELLED = "cancelled"
+@dataclass
+class TaskInfo:
+ task_id: str
+ task_type: str = "coding"
+ image: str = ""
+ repo_url: str = ""
+ branch: str = ""
+ timeout: int = 0
+ payload: dict = field(default_factory=dict)
 @dataclass
 class RunnerConfig:
  name: str
