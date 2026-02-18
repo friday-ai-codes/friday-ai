@@ -34,6 +34,8 @@ class TaskDispatcher:
  runners = await database_sync_to_async(self._find_matching_runners)(task.tags)
  if not runners:
  return False
+ from tools.registry import RemoteToolRegistry
+ remote_tools = await database_sync_to_async(RemoteToolRegistry.get_tools_payload)
  for runner in runners:
  if runner.current_tasks < runner.concurrent:
  channel_layer = get_channel_layer
@@ -52,6 +54,7 @@ class TaskDispatcher:
  "timeout": task.timeout,
  "session_id": task.session_id,
  "metadata": task.metadata,
+ "remote_tools": remote_tools,
  }),
  },
  )

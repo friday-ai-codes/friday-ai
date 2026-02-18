@@ -21,6 +21,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  "task.token_usage": "_handle_task_token_usage",
  "task.log": "_handle_task_log",
  "task.progress": "_handle_task_progress",
+ "tool.call": "_handle_tool_call",
  }
  async def connect(self):
  runner = self.scope.get("runner")
@@ -124,6 +125,17 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  task_id = payload.get("task_id", "")
  await _close_old_connections
  await database_sync_to_async(self._sync_handle_progress)(task_id, payload)
+ async def _handle_tool_call(self, content):
+ payload = content.get("payload", {})
+ call_id = payload.get("call_id", "")
+ tool_name = payload.get("tool_name", "")
+ arguments = payload.get("arguments", {})
+ from tools.executor import execute_tool
+ result = await execute_tool(tool_name, arguments)
+ await self.send_json({
+ "type": "tool.result",
+ "payload": {"call_id": call_id, "result": result},
+ })
  # -- channel layer events --
  async def runner_message(self, event):
  """Channel layer 事件：向 Runner 发送消息。"""
