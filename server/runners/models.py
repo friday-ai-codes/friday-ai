@@ -41,6 +41,8 @@ class RegistrationToken(models.Model):
  return not self.is_used and not self.is_expired
  def __str__(self) -> str:
  return f"RegToken {self.id} ({'used' if self.is_used else 'valid'})"
+def _default_tags -> list[str]:
+ return ["coding"]
 class Runner(models.Model):
  """已注册的 Runner 实例。"""
  class Scope(models.TextChoices):
@@ -64,6 +66,15 @@ class Runner(models.Model):
  version = models.CharField(max_length=50, blank=True, default="")
  is_active = models.BooleanField(default=True)
  last_heartbeat = models.DateTimeField(null=True, blank=True)
+ tags = models.JSONField(
+ default=_default_tags,
+ blank=True,
+ verbose_name="标签",
+ help_text='Runner 能力标签，如 ["coding", "plan"]',
+ )
+ current_tasks = models.PositiveIntegerField(
+ default=0, verbose_name="当前任务数", help_text="Runner 当前正在执行的任务数量"
+ )
  channel_name = models.CharField(max_length=100, blank=True, default="")
  ip_address = models.GenericIPAddressField(null=True, blank=True)
  registered_at = models.DateTimeField(auto_now_add=True)
