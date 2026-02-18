@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 import datetime
+import json
 import uuid
 from typing import TYPE_CHECKING
 import docker
@@ -32,6 +33,7 @@ class DockerExecutor:
  "FRIDAY_GIT_BRANCH": task.branch,
  "FRIDAY_TASK_TIMEOUT": str(task.timeout or 1800),
  "FRIDAY_ANSWER_PORT": "8977",
+ "FRIDAY_REMOTE_TOOLS": json.dumps(task.payload.get("remote_tools", ), ensure_ascii=False),
  }
  try:
  container = await asyncio.to_thread(

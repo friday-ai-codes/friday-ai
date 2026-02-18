@@ -11,7 +11,7 @@ from pathlib import Path
 import structlog
 import websockets
 import websockets.asyncio.client
-from .callback import CALLBACK_PORT, start_callback_server
+from .callback import CALLBACK_PORT, resolve_tool_call, start_callback_server
 from .executor import DockerExecutor
 from .heartbeat import collect_metrics, warmup
 from .models import TaskInfo
@@ -140,6 +140,8 @@ async def _message_loop(
  await _handle_task_assign(ws, content, queue, scheduler)
  elif msg_type == MessageType.QUESTION_ANSWER:
  await _handle_question_answer(content)
+ elif msg_type == MessageType.TOOL_RESULT:
+ _handle_tool_result(content)
  else:
  log.debug("received", type=msg_type)
  finally:
@@ -177,6 +179,12 @@ async def _handle_question_answer(content: dict) -> None:
  }, timeout=aiohttp.ClientTimeout(total=10))
  except Exception:
  log.warning("question_answer_forward_failed", task_id=payload.get("task_id", ""))
+def _handle_tool_result(content: dict) -> None:
+ """Server 返回 tool 执行结果，resolve 对应 Future。"""
+ payload = content.get("payload", {})
+ call_id = payload.get("call_id", "")
+ if call_id:
+ resolve_tool_call(call_id, payload.get("result", {}))
 async def _handle_task_assign(
  ws: websockets.asyncio.client.ClientConnection,
  content: dict,
