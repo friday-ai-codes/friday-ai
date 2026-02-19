@@ -1,19 +1,26 @@
 """Runners app views - 注册/注销/验证/管理 API。"""
+from __future__ import annotations
 from datetime import timedelta
+from typing import Any
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 from .authentication import RunnerTokenAuthentication
-from .models import RegistrationToken, Runner, generate_token, hash_token
+from .models import RegistrationToken, Runner, RunnerEvent, RunnerTaskAssignment, generate_token, hash_token
 from .serializers import (
  RegistrationTokenCreateSerializer,
  RegistrationTokenSerializer,
+ RunnerEventSerializer,
  RunnerRegisterResponseSerializer,
  RunnerRegisterSerializer,
  RunnerSerializer,
+ RunnerTaskAssignmentSerializer,
 )
 class RegistrationTokenViewSet(ModelViewSet):
  """Registration token 管理（JWT 认证）。"""
@@ -106,8 +113,53 @@ class RunnerVerifyView(APIView):
  "version": runner.version,
  "last_heartbeat": runner.last_heartbeat,
  })
+class RunnerPagination(PageNumberPagination):
+ page_size = 20
+ page_size_query_param = "page_size"
+ max_page_size = 100
 class RunnerViewSet(ModelViewSet):
  """Runner 管理（JWT 认证，只读 + 删除）。"""
  queryset = Runner.objects.all.order_by("-registered_at")
  serializer_class = RunnerSerializer
+ pagination_class = RunnerPagination
  http_method_names = ["get", "delete", "head", "options"]
+ def get_queryset(self) -> Any:
+ qs = super.get_queryset
+ params = self.request.query_params
+ if s:= params.get("status"):
+ qs = qs.filter(status=s)
+ if search:= params.get("search"):
+ qs = qs.filter(name__icontains=search)
+ if tags:= params.get("tags"):
+ for tag in tags.split(","):
+ tag = tag.strip
+ if tag:
+ qs = qs.filter(tags__contains=tag)
+ return qs
+ @action(detail=True, methods=["get"])
+ def tasks(self, request: Request, pk: str | None = None) -> Response:
+ """GET /api/runners/{id}/tasks/ — Runner 关联任务列表。"""
+ runner = self.get_object
+ qs = RunnerTaskAssignment.objects.filter(
+ runner=runner,
+ ).select_related("session").order_by("-assigned_at")
+ params = request.query_params
+ if s:= params.get("status"):
+ qs = qs.filter(status=s)
+ if since:= params.get("since"):
+ qs = qs.filter(assigned_at__gte=since)
+ if until:= params.get("until"):
+ qs = qs.filter(assigned_at__lte=until)
+ page = self.paginate_queryset(qs)
+ serializer = RunnerTaskAssignmentSerializer(page, many=True)
+ return self.get_paginated_response(serializer.data)
+ @action(detail=True, methods=["get"])
+ def logs(self, request: Request, pk: str | None = None) -> Response:
+ """GET /api/runners/{id}/logs/ — Runner 事件日志。"""
+ runner = self.get_object
+ qs = RunnerEvent.objects.filter(runner=runner)
+ if event_type:= request.query_params.get("event_type"):
+ qs = qs.filter(event_type=event_type)
+ page = self.paginate_queryset(qs)
+ serializer = RunnerEventSerializer(page, many=True)
+ return self.get_paginated_response(serializer.data)
