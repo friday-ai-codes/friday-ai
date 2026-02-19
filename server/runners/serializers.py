@@ -1,6 +1,8 @@
 """Runners app serializers."""
+from __future__ import annotations
+from typing import Any
 from rest_framework import serializers
-from .models import RegistrationToken, Runner
+from .models import RegistrationToken, Runner, RunnerEvent, RunnerTaskAssignment
 class RegistrationTokenCreateSerializer(serializers.Serializer):
  description = serializers.CharField(required=False, default="", allow_blank=True)
  scope = serializers.ChoiceField(choices=["global", "project"], default="global")
@@ -22,15 +24,48 @@ class RunnerRegisterSerializer(serializers.Serializer):
  scope = serializers.ChoiceField(choices=["global", "project"], default="global")
  concurrent = serializers.IntegerField(default=1, min_value=1)
  version = serializers.CharField(required=False, default="", allow_blank=True)
+class RunnerTaskBriefSerializer(serializers.ModelSerializer):
+ """精简任务信息，用于 Runner 详情默认嵌套。"""
+ id = serializers.CharField(source="session.session_id")
+ name = serializers.CharField(source="session.task_type")
+ class Meta:
+ model = RunnerTaskAssignment
+ fields = ["id", "name", "status"]
+class RunnerTaskAssignmentSerializer(serializers.ModelSerializer):
+ """完整任务信息。"""
+ session_id = serializers.CharField(source="session.session_id")
+ task_type = serializers.CharField(source="session.task_type")
+ session_status = serializers.CharField(source="session.status")
+ repo_url = serializers.URLField(source="session.repo_url")
+ class Meta:
+ model = RunnerTaskAssignment
+ fields = [
+ "id", "session_id", "task_type", "session_status",
+ "repo_url", "assigned_at", "status", "completed_at",
+ ]
 class RunnerSerializer(serializers.ModelSerializer):
+ current_task_list = serializers.SerializerMethodField
  class Meta:
  model = Runner
  fields = [
  "id", "name", "token_prefix", "scope", "concurrent",
  "status", "version", "is_active", "last_heartbeat",
- "ip_address", "registered_at",
+ "ip_address", "registered_at", "tags", "current_tasks",
+ "current_task_list",
  ]
  read_only_fields = fields
+ def get_current_task_list(self, obj: Runner) -> list[dict[str, Any]]:
+ qs = RunnerTaskAssignment.objects.filter(
+ runner=obj, status__in=["assigned", "running"],
+ ).select_related("session")
+ request = self.context.get("request")
+ if request and "current_tasks" in request.query_params.get("expand", ""):
+ return RunnerTaskAssignmentSerializer(qs, many=True).data # type: ignore[return-value]
+ return RunnerTaskBriefSerializer(qs, many=True).data # type: ignore[return-value]
+class RunnerEventSerializer(serializers.ModelSerializer):
+ class Meta:
+ model = RunnerEvent
+ fields = ["id", "event_type", "detail", "created_at"]
 class RunnerRegisterResponseSerializer(serializers.Serializer):
  runner_id = serializers.UUIDField
  runner_token = serializers.CharField

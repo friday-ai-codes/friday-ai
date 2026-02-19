@@ -83,3 +83,50 @@ class Runner(models.Model):
  db_table = "runners"
  def __str__(self) -> str:
  return f"Runner {self.name} ({self.status})"
+class RunnerTaskAssignment(models.Model):
+ """Runner-Task 关联记录，追踪任务分发历史。"""
+ class Status(models.TextChoices):
+ ASSIGNED = "assigned", "已分发"
+ RUNNING = "running", "执行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ runner = models.ForeignKey(Runner, on_delete=models.CASCADE, related_name="task_assignments")
+ session = models.ForeignKey(
+ "subagent.SubAgentSession", on_delete=models.CASCADE, related_name="runner_assignments"
+ )
+ assigned_at = models.DateTimeField(auto_now_add=True)
+ status = models.CharField(max_length=20, choices=Status.choices, default=Status.ASSIGNED)
+ completed_at = models.DateTimeField(null=True, blank=True)
+ class Meta:
+ db_table = "runner_task_assignments"
+ indexes = [
+ models.Index(fields=["runner", "status"]),
+ models.Index(fields=["session"]),
+ models.Index(fields=["assigned_at"]),
+ ]
+ def __str__(self) -> str:
+ return f"RunnerTaskAssignment({self.runner_id}, {self.session_id}, {self.status})"
+class RunnerEvent(models.Model):
+ """Runner 级别事件日志。"""
+ class EventType(models.TextChoices):
+ CONNECTED = "connected", "连接"
+ DISCONNECTED = "disconnected", "断开"
+ HEARTBEAT = "heartbeat", "心跳"
+ TASK_ASSIGNED = "task_assigned", "任务分发"
+ TASK_COMPLETED = "task_completed", "任务完成"
+ TASK_FAILED = "task_failed", "任务失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ runner = models.ForeignKey(Runner, on_delete=models.CASCADE, related_name="events")
+ event_type = models.CharField(max_length=30, choices=EventType.choices)
+ detail = models.JSONField(default=dict, blank=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "runner_events"
+ indexes = [
+ models.Index(fields=["runner", "-created_at"]),
+ models.Index(fields=["event_type"]),
+ ]
+ ordering = ["-created_at"]
+ def __str__(self) -> str:
+ return f"RunnerEvent({self.runner_id}, {self.event_type})"
