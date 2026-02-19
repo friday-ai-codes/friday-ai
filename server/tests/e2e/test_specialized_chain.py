@@ -257,7 +257,7 @@ class TestSpecializedChainE2E:
  repo_id=repo_id_str,
  )
  coding_node = AICodingNode
- # Mock _run_repo_coding to avoid ContainerManager and DB sync issues
+ # Mock _run_repo_coding to avoid TaskDispatcher and DB sync issues
  mock_repo_result = {
  "status": "waiting_event",
  "session_id": "exec-test123",
@@ -437,7 +437,7 @@ class TestSpecializedChainE2E:
  repo_id=repo_id_str,
  )
  coding_node = AICodingNode
- # Mock _run_repo_coding to avoid ContainerManager and DB sync issues
+ # Mock _run_repo_coding to avoid TaskDispatcher and DB sync issues
  mock_repo_result = {
  "status": "waiting_event",
  "session_id": "exec-chain-test",

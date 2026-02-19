@@ -1,6 +1,6 @@
 """AICodingNode 单元测试。
-覆盖 callback-driven 模式（ContainerManager 启动 -> waiting_event）
-和 error handling（缺少方案 -> failed、容器启动失败 -> failed）。
+覆盖 callback-driven 模式（TaskDispatcher 分发 -> waiting_event）
+和 error handling（缺少方案 -> failed、分发失败 -> failed）。
 """
 import uuid
 from typing import Any
@@ -77,12 +77,19 @@ def _make_plan_data(
 class TestAICodingNode:
  """AICodingNode 独立执行行为测试。"""
  async def test_execute_happy_path_returns_waiting_event(self) -> None:
- """提供有效 plan，ContainerManager 启动成功 -> status=waiting_event。"""
+ """提供有效 plan，TaskDispatcher 分发成功 -> status=waiting_event。"""
  repo = _make_repo(repo_id="00000000-0000-0000-0000-000000000001")
  repo_id_str = str(repo.id)
  input_data = _make_plan_data(repo_id_str)
  context = _make_context(input_data=input_data)
  node = AICodingNode
+ mock_result = {
+ "status": "waiting_event",
+ "session_id": "exec-test-001",
+ "container_id": "",
+ "repository_id": repo_id_str,
+ "repository_name": repo.name,
+ }
  with (
  patch.object(
  node,
@@ -90,18 +97,14 @@ class TestAICodingNode:
  new_callable=AsyncMock,
  return_value={repo_id_str: repo},
  ),
- patch("services.container_manager.ContainerManager") as MockManager,
- patch(
- "workflows.nodes.ai.coding.decrypt_value",
- return_value="mock-token-123",
+ patch.object(
+ node,
+ "_run_repo_coding",
+ new_callable=AsyncMock,
+ return_value=mock_result,
  ),
  ):
- # ContainerManager mock
- mock_manager = MagicMock
- mock_manager.start = AsyncMock(return_value="container-001")
- MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
- # 回调驱动模式：立即返回 waiting_event
  assert result.status == "waiting_event"
  assert "pending_sessions" in result.output
  assert len(result.output["pending_sessions"]) == 1
@@ -129,12 +132,18 @@ class TestAICodingNode:
  assert "execution_plan 为空" in (result.error or "")
  assert result.next_handle == "error"
  async def test_execute_container_failure(self) -> None:
- """所有仓库容器启动失败 -> status=failed。"""
+ """所有仓库分发失败 -> status=failed。"""
  repo = _make_repo(repo_id="00000000-0000-0000-0000-000000000002")
  repo_id_str = str(repo.id)
  input_data = _make_plan_data(repo_id_str)
  context = _make_context(input_data=input_data)
  node = AICodingNode
+ mock_result = {
+ "status": "error",
+ "error": "任务分发失败: Container start failed",
+ "repository_id": repo_id_str,
+ "repository_name": repo.name,
+ }
  with (
  patch.object(
  node,
@@ -142,21 +151,19 @@ class TestAICodingNode:
  new_callable=AsyncMock,
  return_value={repo_id_str: repo},
  ),
- patch("services.container_manager.ContainerManager") as MockManager,
- patch(
- "workflows.nodes.ai.coding.decrypt_value",
- return_value="mock-token-123",
+ patch.object(
+ node,
+ "_run_repo_coding",
+ new_callable=AsyncMock,
+ return_value=mock_result,
  ),
  ):
- mock_manager = MagicMock
- mock_manager.start = AsyncMock(side_effect=Exception("Container start failed"))
- MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
  assert result.status == "failed"
  assert "所有仓库容器启动失败" in (result.error or "")
  assert result.next_handle == "error"
  async def test_execute_partial_container_failure(self) -> None:
- """两个仓库，一个容器启动成功一个失败 -> status=waiting_event (部分)。"""
+ """两个仓库，一个分发成功一个失败 -> status=waiting_event (部分)。"""
  repo_a = _make_repo(repo_id="00000000-0000-0000-0000-00000000000a", name="repo-a")
  repo_b = _make_repo(repo_id="00000000-0000-0000-0000-00000000000b", name="repo-b")
  id_a = str(repo_a.id)
@@ -174,14 +181,25 @@ class TestAICodingNode:
  }
  context = _make_context(input_data=input_data)
  node = AICodingNode
- # Track which repo is being submitted
  call_count = 0
- async def mock_start(config: Any) -> str:
+ async def mock_run_repo_coding(**kwargs: Any) -> dict[str, Any]:
  nonlocal call_count
  call_count += 1
+ repo = kwargs["repository"]
  if call_count == 1:
- return "container-001"
- raise Exception("Container start failed")
+ return {
+ "status": "waiting_event",
+ "session_id": "exec-partial-001",
+ "container_id": "",
+ "repository_id": str(repo.id),
+ "repository_name": repo.name,
+ }
+ return {
+ "status": "error",
+ "error": "分发失败",
+ "repository_id": str(repo.id),
+ "repository_name": repo.name,
+ }
  with (
  patch.object(
  node,
@@ -189,17 +207,13 @@ class TestAICodingNode:
  new_callable=AsyncMock,
  return_value={id_a: repo_a, id_b: repo_b},
  ),
- patch("services.container_manager.ContainerManager") as MockManager,
- patch(
- "workflows.nodes.ai.coding.decrypt_value",
- return_value="mock-token-123",
+ patch.object(
+ node,
+ "_run_repo_coding",
+ side_effect=mock_run_repo_coding,
  ),
  ):
- mock_manager = MagicMock
- mock_manager.start = AsyncMock(side_effect=mock_start)
- MockManager.return_value = mock_manager
  result: NodeResult = await node.execute(context)
- # 只要有一个等待，就返回 waiting_event
  assert result.status == "waiting_event"
  assert "pending_sessions" in result.output
  def test_group_by_repository(self) -> None:
@@ -218,7 +232,6 @@ class TestAICodingNode:
  assert "repo-2" in groups
  assert len(groups["repo-1"]) == 3
  assert len(groups["repo-2"]) == 2
- # 没有 repository_id 的任务不应出现
  assert "" not in groups
  def test_build_output_structure(self) -> None:
  """_build_output 返回包含所有必要字段的输出。"""
@@ -248,12 +261,10 @@ class TestAICodingNode:
  branch_name="feat/test",
  base_branch="main",
  )
- # 验证顶层键
  assert "merge_requests" in output
  assert "branches" in output
  assert "changes_summary" in output
  assert "failed_details" in output
- # merge_requests 结构
  assert len(output["merge_requests"]) == 1
  mr = output["merge_requests"][0]
  assert mr["repository_id"] == "repo-1"
@@ -261,10 +272,8 @@ class TestAICodingNode:
  assert mr["files_changed"] == 5
  assert mr["insertions"] == 100
  assert mr["deletions"] == 20
- # branches 结构
  assert output["branches"]["branch_name"] == "feat/test"
  assert output["branches"]["base_branch"] == "main"
- # changes_summary 结构
  summary = output["changes_summary"]
  assert summary["total_repos"] == 2
  assert summary["succeeded_repos"] == 1
@@ -272,6 +281,5 @@ class TestAICodingNode:
  assert summary["total_files_changed"] == 5
  assert summary["total_insertions"] == 100
  assert summary["total_deletions"] == 20
- # failed_details
  assert len(output["failed_details"]) == 1
  assert output["failed_details"][0]["repository_name"] == "failed-repo"

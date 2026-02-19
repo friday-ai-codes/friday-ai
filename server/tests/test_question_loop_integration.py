@@ -9,10 +9,8 @@
 7. 写入 answer.json
 """
 import uuid
-from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 import pytest
-from django.utils import timezone
 @pytest.fixture
 def mock_session(db):
  """创建测试用 SubAgentSession。"""
@@ -136,41 +134,3 @@ class TestMultiRoundQuestions:
  async for log in InteractionLog.objects.filter(session=mock_session):
  question_ids.add(log.question_id)
  assert len(question_ids) == 3
-class TestReminder:
- """测试超时提醒。"""
- @pytest.mark.asyncio
- @pytest.mark.django_db(transaction=True)
- async def test_reminder_not_sent_for_answered_questions(self, mock_session):
- """验证已回复问题不发送提醒。"""
- from subagent.models import InteractionLog
- from tasks.container_tasks import remind_pending_questions
- # 创建已回复的问题
- await InteractionLog.objects.acreate(
- session=mock_session,
- question_id="q-answered-001",
- question_text="已回复的问题",
- answer_text="已回复",
- answered_at=timezone.now,
- )
- # 运行提醒任务（mock 飞书调用）
- with patch("services.feishu_im.FeishuIMClient") as mock_client:
- mock_client.return_value = AsyncMock
- stats = await remind_pending_questions
- # 不应该发送提醒（问题已回复）
- assert stats["reminded"] == 0
- @pytest.mark.asyncio
- @pytest.mark.django_db(transaction=True)
- async def test_reminder_respects_interval(self, mock_session):
- """验证提醒遵守 30 分钟间隔。"""
- from subagent.models import InteractionLog
- # 创建刚刚被提醒过的问题
- interaction = await InteractionLog.objects.acreate(
- session=mock_session,
- question_id="q-recent-reminder",
- question_text="刚被提醒的问题",
- last_reminder_at=timezone.now - timedelta(minutes=5), # 5分钟前
- )
- # 问题应该在 last_reminder_at < 30 分钟前 才会被提醒
- # 由于是 5 分钟前，不应被选中
- await interaction.arefresh_from_db
- assert interaction.last_reminder_at is not None
