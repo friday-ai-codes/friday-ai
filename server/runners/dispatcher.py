@@ -59,6 +59,7 @@ class TaskDispatcher:
  },
  )
  await database_sync_to_async(self._increment_tasks)(runner)
+ await database_sync_to_async(self._create_assignment)(runner, task)
  self._log.info("task_dispatched", task_id=task.task_id, runner=str(runner.id))
  return True
  return False
@@ -77,6 +78,12 @@ class TaskDispatcher:
  Runner.objects.filter(id=runner.id).update(
  current_tasks=db_models.F("current_tasks") + 1
  )
+ def _create_assignment(self, runner: object, task: DispatchTask) -> None:
+ from runners.models import RunnerTaskAssignment
+ from subagent.models import SubAgentSession
+ session = SubAgentSession.objects.filter(session_id=task.session_id).first
+ if session:
+ RunnerTaskAssignment.objects.create(runner=runner, session=session) # type: ignore[misc]
  async def on_runner_online(self, runner_id: uuid.UUID) -> None:
  while not self._pending.empty:
  try:
