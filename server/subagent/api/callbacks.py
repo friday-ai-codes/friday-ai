@@ -8,7 +8,6 @@ POST /api/containers/callback/
 - progress: 进度更新，写入 last_output
 """
 import asyncio
-from datetime import timedelta
 from typing import Any
 import structlog
 from django.conf import settings
@@ -40,111 +39,6 @@ _TERMINAL_STATUSES = {
 }
 # 数据补充类回调绕过终态检查（它们不改变状态，只追加数据）
 _DATA_APPEND_TYPES = {CallbackType.ACTION_LOG, CallbackType.TOKEN_USAGE}
-# === 重试配置（Phase）===
-# 可重试的任务类型（用户决策：explore/ask/plan 可重试，coding 不重试）
-RETRYABLE_TASK_TYPES = {"explore", "ask", "plan"}
-MAX_RETRIES = 2
-RETRY_DELAYS = [30, 60] # 指数退避：30s -> 60s
-# === 并行调度通知（Phase）===
-def _notify_scheduler_completion(session_id: str) -> None:
- """通知调度器容器已完成，尝试启动队列中下一个任务。"""
- async def _notify:
- try:
- from services.parallel_scheduler import get_scheduler
- scheduler = get_scheduler
- await scheduler.on_container_completed(session_id)
- except Exception as e:
- logger.warning("scheduler_notification_failed", session_id=session_id, error=str(e))
- try:
- loop = asyncio.get_running_loop
- loop.create_task(_notify)
- except RuntimeError:
- # 没有运行中的事件循环
- asyncio.run(_notify)
-# === 容器清理调度（Phase）===
-def _schedule_container_cleanup(session: SubAgentSession, immediate: bool = False) -> None:
- """调度容器清理（异步，不阻塞回调响应）。
- Args:
- session: SubAgentSession 实例
- immediate: True=立即清理（成功任务），False=延迟 1 小时清理（失败任务）
- """
- log = logger.bind(session_id=session.session_id, immediate=immediate)
- if immediate:
- # 成功任务：立即清理
- asyncio.create_task(_cleanup_container_now(session))
- log.info("container_cleanup_scheduled_immediate")
- else:
- # 失败任务：标记 1 小时后清理
- cleanup_after = (timezone.now + timedelta(hours=1)).isoformat
- session.last_output = {
- **(session.last_output or {}),
- "cleanup_after": cleanup_after,
- }
- session.save(update_fields=["last_output", "updated_at"])
- log.info("container_cleanup_scheduled_delayed", cleanup_after=cleanup_after)
-async def _cleanup_container_now(session: SubAgentSession) -> None:
- """立即清理容器和挂载卷。"""
- log = logger.bind(session_id=session.session_id)
- try:
- from services.container_manager import ContainerManager
- manager = ContainerManager
- if session.container_id:
- await manager.stop(session.session_id, force=False)
- log.info("container_cleaned")
- except Exception as e:
- log.warning("container_cleanup_error", error=str(e))
-def _collect_container_stats(session: SubAgentSession, log: BoundLogger) -> None:
- """收集容器资源消耗（在清理前）。
- 通过 docker stats 获取 CPU 使用率和内存使用量。
- 这是同步调用但会异步执行以不阻塞回调响应。
- """
- async def _collect:
- if not session.container_id:
- return
- try:
- import asyncio
- from services.container_manager import ContainerManager
- manager = ContainerManager
- container = await asyncio.to_thread(
- manager._executor.client.containers.get, session.container_id
- )
- # 获取 docker stats（单次采样）
- stats = await asyncio.to_thread(container.stats, stream=False)
- if stats:
- # CPU 使用率计算
- cpu_stats = stats.get("cpu_stats", {})
- precpu_stats = stats.get("precpu_stats", {})
- cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get(
- "cpu_usage", {}
- ).get("total_usage", 0)
- system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get(
- "system_cpu_usage", 0
- )
- if system_delta > 0 and cpu_delta > 0:
- # 考虑 CPU 核心数
- online_cpus = cpu_stats.get("online_cpus", 1)
- cpu_percent = (cpu_delta / system_delta) * online_cpus * 100
- session.cpu_usage_percent = round(cpu_percent, 2)
- # 内存使用
- mem_stats = stats.get("memory_stats", {})
- mem_usage = mem_stats.get("usage", 0)
- if mem_usage > 0:
- session.memory_usage_mb = round(mem_usage / 1024 / 1024, 2)
- session.save(update_fields=["cpu_usage_percent", "memory_usage_mb", "updated_at"])
- log.info(
- "container_stats_collected",
- cpu_percent=session.cpu_usage_percent,
- memory_mb=session.memory_usage_mb,
- )
- except Exception as e:
- log.warning("stats_collection_error", error=str(e))
- try:
- loop = asyncio.get_running_loop
- loop.create_task(_collect)
- except RuntimeError:
- # 没有运行中的事件循环
- pass
-# === 失败通知（Phase）===
 def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> None:
  """触发 AgentLoop 恢复（当容器完成时）。
  仅当 session 有 main_session 但无 node_execution 时触发（纯 AgentLoop 场景）。
@@ -396,96 +290,6 @@ class ContainerCallbackView(APIView):
  status=status.HTTP_400_BAD_REQUEST,
  )
  return handler(session, payload, log)
-# === 执行上下文收集（Phase）===
-# 敏感环境变量 key 关键词
-_SENSITIVE_KEY_PATTERNS = {"API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL"}
-def _filter_sensitive_env(env: dict[str, str]) -> dict[str, str]:
- """过滤环境变量中的敏感值。"""
- filtered = {}
- for k, v in env.items:
- key_upper = k.upper
- if any(p in key_upper for p in _SENSITIVE_KEY_PATTERNS):
- filtered[k] = "***"
- else:
- filtered[k] = v
- return filtered
-def _collect_execution_context(session: SubAgentSession, log: BoundLogger) -> None:
- """在容器清理前收集执行上下文写入 ExecutionContext。"""
- async def _collect:
- try:
- import json
- import os
- from services.container_manager import ContainerManager
- manager = ContainerManager
- # 容器日志
- container_logs = ""
- if session.container_id:
- container_logs = await manager.get_logs(session.session_id, tail=500)
- # Docker stats
- docker_stats: dict = {}
- if session.container_id:
- try:
- import asyncio
- container = await asyncio.to_thread(
- manager._executor.client.containers.get, session.container_id
- )
- docker_stats = await asyncio.to_thread(container.stats, stream=False)
- except Exception as e:
- log.warning("docker_stats_collection_error", error=str(e))
- # 环境变量（从 ContainerManager 构建方法获取，过滤敏感 key）
- environment_vars: dict = {}
- try:
- env = manager._build_environment(
- type(
- "_Cfg",,
- {
- "session_id": session.session_id,
- "task_type": session.task_type,
- "repo_url": session.repo_url,
- "branch": session.target_branch or "main",
- "target_branch": session.target_branch,
- "timeout": 3600,
- "git_credentials": {},
- "claude_api_key": "",
- "claude_base_url": "",
- },
- )
- )
- environment_vars = _filter_sensitive_env(env)
- except Exception as e:
- log.warning("env_collection_error", error=str(e))
- # input_prompt（从 transfer 目录的 context.json 读取）
- input_prompt = ""
- try:
- transfer_dir = os.path.join(
- manager._executor.transfers_dir, session.session_id, ".friday"
- )
- context_path = os.path.join(transfer_dir, "context.json")
- if os.path.exists(context_path):
- with open(context_path) as f:
- ctx = json.load(f)
- input_prompt = ctx.get("prompt", "")
- except Exception as e:
- log.warning("prompt_collection_error", error=str(e))
- # 创建或更新 ExecutionContext
- from asgiref.sync import sync_to_async
- await sync_to_async(ExecutionContext.objects.update_or_create)(
- session=session,
- defaults={
- "environment_vars": environment_vars,
- "input_prompt": input_prompt,
- "container_logs": container_logs,
- "docker_stats": docker_stats,
- },
- )
- log.info("execution_context_collected")
- except Exception as e:
- log.warning("execution_context_collection_error", error=str(e))
- try:
- loop = asyncio.get_running_loop
- loop.create_task(_collect)
- except RuntimeError:
- pass
 # === 回调处理函数 ===
 def _handle_completed(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
@@ -515,22 +319,16 @@ def _handle_completed(
  )
  # 更新 session 状态
  session.mark_completed
- # 收集执行上下文（在清理前）
- _collect_execution_context(session, log)
- # 收集容器资源消耗（在清理前）
- _collect_container_stats(session, log)
- # 调度容器清理（成功任务立即清理）
- _schedule_container_cleanup(session, immediate=True)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
  _schedule_agent_loop_resume(session, log)
- # 通知调度器容器完成（Phase）
- _notify_scheduler_completion(session.session_id)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
- """处理 failed 回调 — 更新状态，轻量任务自动重试。"""
+ """处理 failed 回调 — 标记失败，通知，恢复 workflow/agent。
+ Phase: Runner 端独立处理重试，Server 端不再重试。
+ """
  ser = FailedPayloadSerializer(data=payload)
  if not ser.is_valid:
  return Response(
@@ -539,91 +337,17 @@ def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: Bound
  )
  p = ser.validated_data
  error_msg = p.get("error", "Unknown error")
- task_type = session.task_type
- # Coding 任务不重试（有 Git 副作用）
- if task_type not in RETRYABLE_TASK_TYPES:
+ # 直接标记失败（Runner 端独立处理重试）
  session.failure_reason = error_msg
  session.save(update_fields=["failure_reason"])
  session.mark_failed(error=error_msg)
- _collect_execution_context(session, log)
- _schedule_container_cleanup(session, immediate=False)
- _send_failure_notification(session, error_msg, retry_count=0)
+ _send_failure_notification(session, error_msg)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复
  _schedule_agent_loop_resume(session, log)
- # 通知调度器容器完成（Phase）
- _notify_scheduler_completion(session.session_id)
- log.info("callback_failed_no_retry", task_type=task_type)
- return Response({"status": "ok", "retried": False})
- # 获取当前重试次数
- retry_count = 0
- if session.last_output and isinstance(session.last_output, dict):
- retry_count = session.last_output.get("retry_count", 0)
- if retry_count >= MAX_RETRIES:
- session.failure_reason = error_msg
- session.save(update_fields=["failure_reason"])
- session.mark_failed(error=error_msg)
- _collect_execution_context(session, log)
- _schedule_container_cleanup(session, immediate=False)
- _send_failure_notification(session, error_msg, retry_count=retry_count)
- # 触发 workflow 恢复（如果有 node_execution）
- _schedule_workflow_resume(session, log)
- # 触发 AgentLoop 恢复
- _schedule_agent_loop_resume(session, log)
- # 通知调度器容器完成（Phase）
- _notify_scheduler_completion(session.session_id)
- log.info("callback_failed_max_retries", retry_count=retry_count)
- return Response({"status": "ok", "retried": False, "max_retries_exceeded": True})
- # 计划重试
- retry_delay = RETRY_DELAYS[retry_count]
- session.last_output = {
- **(session.last_output or {}),
- "retry_count": retry_count + 1,
- "last_error": error_msg,
- }
- session.save(update_fields=["last_output", "updated_at"])
- # 调度延迟重试
- _schedule_retry(session, delay_seconds=retry_delay)
- log.info(
- "callback_failed_retry_scheduled",
- retry_count=retry_count + 1,
- retry_delay=retry_delay,
- )
- return Response({"status": "ok", "retried": True, "retry_count": retry_count + 1})
-def _schedule_retry(session: SubAgentSession, delay_seconds: int) -> None:
- """调度任务重试（延迟执行）。"""
- async def _retry_after_delay:
- await asyncio.sleep(delay_seconds)
- try:
- from services.container_manager import ContainerConfig, ContainerManager
- from subagent.models import generate_execution_id
- # 生成新 session_id
- old_session_id = session.session_id
- new_session_id = generate_execution_id
- # 构建 config（从 session 恢复）
- config = ContainerConfig(
- session_id=new_session_id,
- task_type=session.task_type,
- repo_url=session.repo_url,
- work_item_id=session.work_item_id,
- target_branch=session.target_branch,
- )
- manager = ContainerManager
- await manager.restart(config)
- logger.info(
- "retry_started",
- old_session_id=old_session_id,
- new_session_id=new_session_id,
- )
- except Exception as e:
- logger.exception("retry_error", session_id=session.session_id, error=str(e))
- try:
- loop = asyncio.get_running_loop
- loop.create_task(_retry_after_delay)
- except RuntimeError:
- # 没有运行中的事件循环，直接创建新的
- asyncio.create_task(_retry_after_delay)
+ log.info("callback_failed_ok", error=error_msg)
+ return Response({"status": "ok"})
 def _handle_heartbeat(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
