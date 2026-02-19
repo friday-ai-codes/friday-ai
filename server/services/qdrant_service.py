@@ -24,9 +24,13 @@ class QdrantService:
  def get_client(cls) -> QdrantClient:
  """Get or create Qdrant client."""
  if cls._client is None:
+ import os
  config = cls.get_config
+ url = config.get("url", "http://localhost:6333")
+ proxy_vars = {k: v for k, v in os.environ.items if "proxy" in k.lower}
+ logger.info("qdrant_client_init", url=url, proxy_env=proxy_vars)
  cls._client = QdrantClient(
- url=config.get("url", "http://localhost:6333"),
+ url=url,
  api_key=config.get("api_key"),
  )
  return cls._client
