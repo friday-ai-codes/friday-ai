@@ -236,7 +236,7 @@ class AICodingNode(BaseNode):
  base_branch=base_branch,
  repo_count=len(repo_groups),
  )
- # 5. 并行分发（使用 ContainerManager）
+ # 5. 并行分发（通过 TaskDispatcher → Runner）
  config = context.node_config
  node_execution_id = ""
  if context.node_execution:
