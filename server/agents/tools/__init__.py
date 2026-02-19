@@ -24,12 +24,6 @@ from agents.tools.project_tools import (
  search_repository_code,
 )
 from agents.tools.registry import ToolRegistry
-from agents.tools.subagent import (
- ask_claude_code,
- dispatch_coding_task,
- explore_repository,
- generate_tech_plan_section,
-)
 from agents.tools.user_interaction import ask_user_question
 from agents.tools.verify_plan import verify_plan
 from agents.tools.work_item_tools import (
@@ -59,11 +53,6 @@ __all__ = [
  "create_feishu_document",
  # User interaction tools
  "ask_user_question",
- # SubAgent tools
- "explore_repository",
- "ask_claude_code",
- "generate_tech_plan_section",
- "dispatch_coding_task",
  # Plan verification tools
  "verify_plan",
 ]

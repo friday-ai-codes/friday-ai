@@ -1,6 +1,5 @@
 """AI-related workflow nodes."""
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
-from workflows.nodes.ai.code import CodeImplementNode
 from workflows.nodes.ai.code_review import AICodeReviewNode
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.ai.coding_dispatcher import AICodingDispatcherNode
@@ -15,7 +14,6 @@ __all__ = [
  "AIAgentBaseNode",
  "GeneratePlanNode",
  "RevisePlanNode",
- "CodeImplementNode",
  "AIPromptNode",
  "AICodingDispatcherNode",
  "AIVariableExtractorNode",
