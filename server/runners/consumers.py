@@ -31,6 +31,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  return
  self.runner = runner
  self.group_name = f"runner_{runner.id}"
+ self._heartbeat_count = 0
  # 踢旧连接
  if runner.channel_name:
  await self.channel_layer.send(
@@ -44,6 +45,10 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await self.channel_layer.group_discard(self.group_name, self.channel_name)
  if hasattr(self, "runner") and close_code != 4002:
  await self._mark_offline
+ await _broadcast_monitor_event(
+ self.channel_layer, "runner.status_changed", self.runner.id, {"status": "offline"}
+ )
+ await database_sync_to_async(_log_runner_event)(self.runner.id, "disconnected")
  async def receive_json(self, content, **kwargs):
  msg_type = content.get("type")
  handler_name = self._handlers.get(msg_type) if msg_type else None
@@ -56,6 +61,13 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  payload = content.get("payload", {})
  await _close_old_connections
  await database_sync_to_async(self._sync_update_hello)(payload)
+ await _broadcast_monitor_event(
+ self.channel_layer, "runner.status_changed", self.runner.id,
+ {"status": "online", "name": self.runner.name, "version": payload.get("version", "")},
+ )
+ await database_sync_to_async(_log_runner_event)(
+ self.runner.id, "connected", {"version": payload.get("version", "")}
+ )
  # 触发分发器检查待分发队列
  from runners.dispatcher import get_dispatcher
  await get_dispatcher.on_runner_online(self.runner.id)
@@ -63,6 +75,15 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  payload = content.get("payload", {})
  await _close_old_connections
  await database_sync_to_async(self._sync_update_heartbeat)(payload)
+ self._heartbeat_count += 1
+ if self._heartbeat_count % 10 == 0:
+ await _broadcast_monitor_event(
+ self.channel_layer, "runner.status_changed", self.runner.id,
+ {"status": "online", "current_tasks": payload.get("current_tasks", 0)},
+ )
+ await database_sync_to_async(_log_runner_event)(
+ self.runner.id, "heartbeat", {"current_tasks": payload.get("current_tasks", 0)}
+ )
  async def _handle_task_accepted(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
@@ -73,18 +94,39 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await database_sync_to_async(self._sync_store_answer_endpoint)(
  task_id, answer_endpoint
  )
+ await _broadcast_monitor_event(
+ self.channel_layer, "task.status_changed", self.runner.id,
+ {"task_id": task_id, "status": "running"},
+ )
+ await database_sync_to_async(self._sync_update_assignment_status)(task_id, "running")
  async def _handle_task_completed(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
  log = logger.bind(runner=str(self.runner.id), task_id=task_id)
  await _close_old_connections
  await database_sync_to_async(self._sync_handle_completed)(payload, log)
+ await _broadcast_monitor_event(
+ self.channel_layer, "task.status_changed", self.runner.id,
+ {"task_id": task_id, "status": "completed"},
+ )
+ await database_sync_to_async(self._sync_update_assignment_status)(task_id, "completed")
+ await database_sync_to_async(_log_runner_event)(
+ self.runner.id, "task_completed", {"task_id": task_id}
+ )
  async def _handle_task_failed(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
  log = logger.bind(runner=str(self.runner.id), task_id=task_id)
  await _close_old_connections
  await database_sync_to_async(self._sync_handle_failed)(payload, log)
+ await _broadcast_monitor_event(
+ self.channel_layer, "task.status_changed", self.runner.id,
+ {"task_id": task_id, "status": "failed"},
+ )
+ await database_sync_to_async(self._sync_update_assignment_status)(task_id, "failed")
+ await database_sync_to_async(_log_runner_event)(
+ self.runner.id, "task_failed", {"task_id": task_id, "error": payload.get("error", "")}
+ )
  async def _handle_task_question(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
@@ -273,6 +315,14 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  },
  }
  session.save(update_fields=["last_output", "updated_at"])
+ def _sync_update_assignment_status(self, session_id: str, status: str) -> None:
+ from runners.models import RunnerTaskAssignment
+ updates: dict[str, object] = {"status": status}
+ if status in ("completed", "failed"):
+ updates["completed_at"] = timezone.now
+ RunnerTaskAssignment.objects.filter(
+ runner=self.runner, session__session_id=session_id, status__in=["assigned", "running"]
+ ).update(**updates)
  async def _update_channel_name(self, channel_name: str):
  await _close_old_connections
  @database_sync_to_async
@@ -293,6 +343,16 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
 # ---------------------------------------------------------------------------
 MONITOR_GROUP = "runner_monitor"
 AUTH_TIMEOUT = 5
+async def _broadcast_monitor_event(
+ channel_layer: object, event_type: str, runner_id: uuid.UUID, data: dict
+) -> None:
+ await channel_layer.group_send(MONITOR_GROUP, { # type: ignore[attr-defined]
+ "type": "monitor.event",
+ "data": {"event": event_type, "runner_id": str(runner_id), "data": data},
+ })
+def _log_runner_event(runner_id: uuid.UUID, event_type: str, detail: dict | None = None) -> None:
+ from runners.models import RunnerEvent
+ RunnerEvent.objects.create(runner_id=runner_id, event_type=event_type, detail=detail or {})
 class MonitorConsumer(AsyncJsonWebsocketConsumer):
  """前端监控 WebSocket，首条消息 JWT 认证，接收 runner/task 事件。"""
  async def connect(self) -> None:

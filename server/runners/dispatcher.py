@@ -61,6 +61,15 @@ class TaskDispatcher:
  await database_sync_to_async(self._increment_tasks)(runner)
  await database_sync_to_async(self._create_assignment)(runner, task)
  self._log.info("task_dispatched", task_id=task.task_id, runner=str(runner.id))
+ await channel_layer.group_send("runner_monitor", {
+ "type": "monitor.event",
+ "data": {
+ "event": "task.status_changed",
+ "runner_id": str(runner.id),
+ "data": {"task_id": task.task_id, "session_id": task.session_id, "status": "assigned"},
+ },
+ })
+ await database_sync_to_async(self._log_dispatch_event)(runner, task)
  return True
  return False
  def _find_matching_runners(self, tags: list[str]) -> list:
@@ -84,6 +93,13 @@ class TaskDispatcher:
  session = SubAgentSession.objects.filter(session_id=task.session_id).first
  if session:
  RunnerTaskAssignment.objects.create(runner=runner, session=session) # type: ignore[misc]
+ def _log_dispatch_event(self, runner: object, task: DispatchTask) -> None:
+ from runners.models import RunnerEvent
+ RunnerEvent.objects.create(
+ runner=runner, # type: ignore[misc]
+ event_type="task_assigned",
+ detail={"task_id": task.task_id, "session_id": task.session_id},
+ )
  async def on_runner_online(self, runner_id: uuid.UUID) -> None:
  while not self._pending.empty:
  try:
