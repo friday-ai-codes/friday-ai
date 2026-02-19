@@ -25,7 +25,7 @@ class WorkflowNode(models.Model):
  node_type = models.CharField(
  max_length=100,
  verbose_name="节点类型",
- help_text="如: manual_trigger, create_branch, code_implement",
+ help_text="如: manual_trigger, create_branch, ai_coding",
  )
  # 显示信息
  name = models.CharField(max_length=200, verbose_name="节点名称")
