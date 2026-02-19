@@ -1,4 +1,5 @@
 """Runner WebSocket consumer。"""
+import asyncio
 import uuid
 import structlog
 from channels.db import database_sync_to_async
@@ -287,3 +288,45 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  self.runner.channel_name = ""
  self.runner.save(update_fields=["status", "channel_name", "updated_at"])
  await _save
+# ---------------------------------------------------------------------------
+# Monitor WebSocket — 前端实时监控
+# ---------------------------------------------------------------------------
+MONITOR_GROUP = "runner_monitor"
+AUTH_TIMEOUT = 5
+class MonitorConsumer(AsyncJsonWebsocketConsumer):
+ """前端监控 WebSocket，首条消息 JWT 认证，接收 runner/task 事件。"""
+ async def connect(self) -> None:
+ self.authenticated = False
+ await self.accept
+ self._auth_timeout = asyncio.ensure_future(self._auth_timeout_handler)
+ async def _auth_timeout_handler(self) -> None:
+ await asyncio.sleep(AUTH_TIMEOUT)
+ if not self.authenticated:
+ await self.close(code=4001)
+ async def disconnect(self, close_code: int) -> None:
+ if hasattr(self, "_auth_timeout"):
+ self._auth_timeout.cancel
+ if self.authenticated:
+ await self.channel_layer.group_discard(MONITOR_GROUP, self.channel_name)
+ async def receive_json(self, content: dict, **kwargs) -> None: # type: ignore[override]
+ if content.get("type") == "auth":
+ await self._handle_auth(content)
+ async def _handle_auth(self, content: dict) -> None:
+ try:
+ from rest_framework_simplejwt.tokens import AccessToken
+ token = AccessToken(content.get("token", ""))
+ user_id = token["sub"]
+ from django.contrib.auth import get_user_model
+ await database_sync_to_async(get_user_model.objects.get)(id=user_id)
+ except Exception:
+ await self.send_json({"type": "auth", "status": "error", "detail": "Invalid token"})
+ await self.close(code=4003)
+ return
+ if not self.authenticated:
+ self.authenticated = True
+ self._auth_timeout.cancel
+ await self.channel_layer.group_add(MONITOR_GROUP, self.channel_name)
+ await self.send_json({"type": "auth", "status": "ok"})
+ async def monitor_event(self, event: dict) -> None:
+ """Channel layer handler — 转发事件到前端。"""
+ await self.send_json(event["data"])
