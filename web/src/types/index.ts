@@ -428,6 +428,28 @@ export interface Runner {
  current_task_list: RunnerTaskBrief
 }
 /**
+ * DRF 分页响应
+ */
+export interface PaginatedResponse<T> {
+ count: number
+ next: string | null
+ previous: string | null
+ results: T
+}
+/**
+ * Runner 任务关联（对齐 RunnerTaskAssignmentSerializer）
+ */
+export interface RunnerTaskAssignment {
+ id: string
+ session_id: string
+ task_type: string
+ session_status: string
+ repo_url: string
+ assigned_at: string
+ status: 'assigned' | 'running' | 'completed' | 'failed'
+ completed_at: string | null
+}
+/**
  * 注册令牌（来自 API）
  */
 export interface RegistrationToken {
