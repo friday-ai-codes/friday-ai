@@ -18,6 +18,7 @@ const navItems: Array<{ to: string, label: string, icon: string, badge?: string 
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
  { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
  { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
+ { to: '/runners', label: 'Runner', icon: 'lucide--server' },
  { to: '/logs', label: '日志', icon: 'lucide--file-text' },
  { to: '/settings', label: '设置', icon: 'lucide--settings' },
 ]
