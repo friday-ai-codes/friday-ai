@@ -427,6 +427,35 @@ export interface Runner {
  current_tasks: number
  current_task_list: RunnerTaskBrief
 }
+/**
+ * 注册令牌（来自 API）
+ */
+export interface RegistrationToken {
+ id: string
+ description: string
+ scope: 'global' | 'project'
+ project_id: string | null
+ is_used: boolean
+ used_at: string | null
+ expires_at: string
+ created_at: string
+ is_valid: boolean
+}
+/**
+ * 创建注册令牌请求
+ */
+export interface RegistrationTokenCreate {
+ description?: string
+ scope: 'global' | 'project'
+ project_id?: string
+ expires_in: number
+}
+/**
+ * 创建注册令牌响应（含一次性明文令牌）
+ */
+export interface RegistrationTokenCreateResponse extends RegistrationToken {
+ token: string
+}
 // ============================================================================
 // UI 辅助类型
 // ============================================================================
