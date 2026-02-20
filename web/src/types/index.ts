@@ -398,6 +398,36 @@ export interface ManualTriggerResponse {
  message: string
 }
 // ============================================================================
+// Runner 相关类型
+// ============================================================================
+/**
+ * Runner 当前执行任务的精简信息
+ */
+export interface RunnerTaskBrief {
+ id: string
+ name: string
+ status: string
+}
+/**
+ * Runner 完整类型（与后端 RunnerSerializer 字段对齐）
+ */
+export interface Runner {
+ id: string
+ name: string
+ token_prefix: string
+ scope: 'global' | 'project'
+ concurrent: number
+ status: 'online' | 'offline'
+ version: string
+ is_active: boolean
+ last_heartbeat: string | null
+ ip_address: string | null
+ registered_at: string
+ tags: string
+ current_tasks: number
+ current_task_list: RunnerTaskBrief
+}
+// ============================================================================
 // UI 辅助类型
 // ============================================================================
 /**

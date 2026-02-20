@@ -12,6 +12,8 @@ export { default as projectsApi } from './projects'
 // 重新导出所有具体方法，便于按需引入
 export * from './projects'
 export * from './repositories'
+export { default as runnersApi } from './runners'
+export * from './runners'
 export { default as settingsApi } from './settings'
 export * from './settings'
 export { default as workflowApi } from './workflow'
