@@ -254,6 +254,7 @@ declare global {
  const useResizeObserver: typeof import('@vueuse/core').useResizeObserver
  const useRoute: typeof import('vue-router').useRoute
  const useRouter: typeof import('vue-router').useRouter
+ const useRunnersStore: typeof import('./stores/runners').useRunnersStore
  const useSSRWidth: typeof import('@vueuse/core').useSSRWidth
  const useSchemaValidation: typeof import('./composables/useSchemaValidation').useSchemaValidation
  const useScreenOrientation: typeof import('@vueuse/core').useScreenOrientation
@@ -612,6 +613,7 @@ declare module 'vue' {
  readonly useResizeObserver: UnwrapRef<typeof import('@vueuse/core')['useResizeObserver']>
  readonly useRoute: UnwrapRef<typeof import('vue-router')['useRoute']>
  readonly useRouter: UnwrapRef<typeof import('vue-router')['useRouter']>
+ readonly useRunnersStore: UnwrapRef<typeof import('./stores/runners')['useRunnersStore']>
  readonly useSSRWidth: UnwrapRef<typeof import('@vueuse/core')['useSSRWidth']>
  readonly useSchemaValidation: UnwrapRef<typeof import('./composables/useSchemaValidation')['useSchemaValidation']>
  readonly useScreenOrientation: UnwrapRef<typeof import('@vueuse/core')['useScreenOrientation']>
