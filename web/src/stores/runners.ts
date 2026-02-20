@@ -2,13 +2,14 @@
  * Runners Store
  * 管理 Runner 列表和 Runner 相关操作
  */
-import type { Runner } from '~/types'
+import type { RegistrationToken, RegistrationTokenCreate, RegistrationTokenCreateResponse, Runner } from '~/types'
 import { runnersApi } from '~/api'
 export const useRunnersStore = defineStore('runners', => {
  // ============================================================================
  // State
  // ============================================================================
  const runners = ref<Runner>
+ const tokens = ref<RegistrationToken>
  const loading = ref(false)
  const error = ref<string | null>(null)
  // ============================================================================
@@ -55,9 +56,22 @@ export const useRunnersStore = defineStore('runners', => {
  loading.value = false
  }
  }
+ async function fetchTokens {
+ tokens.value = await runnersApi.listTokens
+ }
+ async function addToken(data: RegistrationTokenCreate): Promise<RegistrationTokenCreateResponse> {
+ const result = await runnersApi.createToken(data)
+ await fetchTokens
+ return result
+ }
+ async function removeToken(tokenId: string) {
+ await runnersApi.deleteToken(tokenId)
+ tokens.value = tokens.value.filter(t => t.id !== tokenId)
+ }
  return {
  // State
  runners,
+ tokens,
  loading,
  error,
  // Getters
@@ -67,5 +81,8 @@ export const useRunnersStore = defineStore('runners', => {
  // Actions
  fetchRunners,
  removeRunner,
+ fetchTokens,
+ addToken,
+ removeToken,
  }
 })
