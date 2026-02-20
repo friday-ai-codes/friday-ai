@@ -10,6 +10,7 @@ export const useRunnersStore = defineStore('runners', => {
  // ============================================================================
  const runners = ref<Runner>
  const tokens = ref<RegistrationToken>
+ const currentRunner = ref<Runner | null>(null)
  const loading = ref(false)
  const error = ref<string | null>(null)
  // ============================================================================
@@ -32,6 +33,20 @@ export const useRunnersStore = defineStore('runners', => {
  }
  catch (e) {
  error.value = e instanceof Error ? e.message: '获取 Runner 列表失败'
+ throw e
+ }
+ finally {
+ loading.value = false
+ }
+ }
+ async function fetchRunner(runnerId: string) {
+ loading.value = true
+ error.value = null
+ try {
+ currentRunner.value = await runnersApi.getRunner(runnerId)
+ }
+ catch (e) {
+ error.value = e instanceof Error ? e.message: '获取 Runner 详情失败'
  throw e
  }
  finally {
@@ -72,6 +87,7 @@ export const useRunnersStore = defineStore('runners', => {
  // State
  runners,
  tokens,
+ currentRunner,
  loading,
  error,
  // Getters
@@ -80,6 +96,7 @@ export const useRunnersStore = defineStore('runners', => {
  runnerCount,
  // Actions
  fetchRunners,
+ fetchRunner,
  removeRunner,
  fetchTokens,
  addToken,
