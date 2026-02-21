@@ -38,6 +38,28 @@ function formatAbsoluteTime(dateStr: string | null) {
  if (!dateStr) return '从未连接'
  return new Date(dateStr).toLocaleString('zh-CN')
 }
+// 任务数变化高亮：检测 current_tasks 变化，短暂高亮 500ms
+const highlightedRunners = ref(new Set<string>)
+let highlightTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+watch(
+ => runnersStore.runners.map(r => r.current_tasks),
+ (newVal, oldVal) => {
+ if (!oldVal) return
+ runnersStore.runners.forEach((runner, i) => {
+ if (i < oldVal.length && newVal[i] !== oldVal[i]) {
+ highlightedRunners.value.add(runner.id)
+ if (highlightTimers[runner.id]) clearTimeout(highlightTimers[runner.id])
+ highlightTimers[runner.id] = setTimeout( => {
+ highlightedRunners.value.delete(runner.id)
+ }, 500)
+ }
+ })
+ },
+)
+onUnmounted( => {
+ Object.values(highlightTimers).forEach(clearTimeout)
+ highlightTimers = {}
+})
 </script>
 <template>
  <!-- 加载状态 -->
@@ -116,7 +138,7 @@ function formatAbsoluteTime(dateStr: string | null) {
  </div>
  <div class="flex items-center gap-1.5">
  <span class="icon-[lucide--activity] text-xs" />
- <span>任务 {{ runner.current_tasks }}</span>
+ <span class="transition-colors duration-300":class="highlightedRunners.has(runner.id) ? 'bg-primary/20 rounded px-1 text-primary font-medium': ''">任务 {{ runner.current_tasks }}</span>
  </div>
  <div class="col-span-2 flex items-center gap-1.5">
  <span class="icon-[lucide--clock] text-xs" />
