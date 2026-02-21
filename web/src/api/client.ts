@@ -60,7 +60,7 @@ function onTokenRefreshed(token: string): void {
 /**
  * 刷新 Token
  */
-async function refreshToken: Promise<string> {
+export async function refreshToken: Promise<string> {
  const response = await fetch(`${API_BASE}/auth/refresh`, {
  method: 'POST',
  credentials: 'include', // 发送 HttpOnly Cookie
@@ -255,4 +255,5 @@ export default {
  setAccessToken,
  getAccessToken,
  clearAccessToken,
+ refreshToken,
 }

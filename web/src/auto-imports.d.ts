@@ -240,6 +240,7 @@ declare global {
  const usePointerLock: typeof import('@vueuse/core').usePointerLock
  const usePointerSwipe: typeof import('@vueuse/core').usePointerSwipe
  const usePolling: typeof import('./composables/usePolling').usePolling
+ const useRunnerMonitor: typeof import('./composables/useRunnerMonitor').useRunnerMonitor
  const usePreferredColorScheme: typeof import('@vueuse/core').usePreferredColorScheme
  const usePreferredContrast: typeof import('@vueuse/core').usePreferredContrast
  const usePreferredDark: typeof import('@vueuse/core').usePreferredDark
@@ -344,6 +345,9 @@ declare global {
  // @ts-ignore
  export type { UsePollingOptions } from './composables/usePolling'
  import('./composables/usePolling')
+ // @ts-ignore
+ export type { MonitorStatus, MonitorLog } from './composables/useRunnerMonitor'
+ import('./composables/useRunnerMonitor')
  // @ts-ignore
  export type { ConnectionCheckResult, PortCompatibility } from './composables/useSchemaValidation'
  import('./composables/useSchemaValidation')
@@ -599,6 +603,7 @@ declare module 'vue' {
  readonly usePointerLock: UnwrapRef<typeof import('@vueuse/core')['usePointerLock']>
  readonly usePointerSwipe: UnwrapRef<typeof import('@vueuse/core')['usePointerSwipe']>
  readonly usePolling: UnwrapRef<typeof import('./composables/usePolling')['usePolling']>
+ readonly useRunnerMonitor: UnwrapRef<typeof import('./composables/useRunnerMonitor')['useRunnerMonitor']>
  readonly usePreferredColorScheme: UnwrapRef<typeof import('@vueuse/core')['usePreferredColorScheme']>
  readonly usePreferredContrast: UnwrapRef<typeof import('@vueuse/core')['usePreferredContrast']>
  readonly usePreferredDark: UnwrapRef<typeof import('@vueuse/core')['usePreferredDark']>
