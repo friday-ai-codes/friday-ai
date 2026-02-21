@@ -1,11 +1,69 @@
 <script setup lang="ts">
 import type { MonitorLog } from '~/composables/useRunnerMonitor'
+import { getRunnerLogs } from '~/api/runners'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  runnerId: string
 }>
 // 日志源
 const { logs } = useRunnerMonitor
+// 历史日志（从 REST API 加载，不污染全局 WS logs 单例）
+const historyLogs = ref<MonitorLog>
+const historyLoading = ref(false)
+let historyIdCounter = -1
+function eventTypeToMonitorLog(event: import('~/types').RunnerEvent): MonitorLog {
+ let event_str: string
+ let data: Record<string, unknown>
+ switch (event.event_type) {
+ case 'connected':
+ event_str = 'runner.status_changed'
+ data = { ...event.detail, status: 'online' }
+ break
+ case 'disconnected':
+ event_str = 'runner.status_changed'
+ data = { ...event.detail, status: 'offline' }
+ break
+ case 'heartbeat':
+ event_str = 'runner.status_changed'
+ data = event.detail
+ break
+ case 'task_assigned':
+ event_str = 'task.status_changed'
+ data = { ...event.detail, status: 'running' }
+ break
+ case 'task_completed':
+ event_str = 'task.status_changed'
+ data = { ...event.detail, status: 'completed' }
+ break
+ case 'task_failed':
+ event_str = 'task.status_changed'
+ data = { ...event.detail, status: 'failed' }
+ break
+ default:
+ event_str = event.event_type
+ data = event.detail
+ }
+ return {
+ id: historyIdCounter--,
+ event: event_str,
+ runner_id: props.runnerId,
+ data,
+ timestamp: new Date(event.created_at),
+ }
+}
+onMounted(async => {
+ historyLoading.value = true
+ try {
+ const res = await getRunnerLogs(props.runnerId)
+ historyLogs.value = res.results.map(eventTypeToMonitorLog)
+ }
+ catch {
+ // 加载失败静默处理，不影响实时日志展示
+ }
+ finally {
+ historyLoading.value = false
+ }
+})
 // 折叠偏好（localStorage 持久化）
 const collapsed = useStorage('runner-log-panel-collapsed', false)
 // 过滤器
@@ -75,10 +133,13 @@ function formatTimestamp(date: Date): string {
 }
 // 过滤后的日志
 const filteredLogs = computed( => {
- // 按 runnerId 过滤
- let result = logs.value.filter(l => l.runner_id === props.runnerId)
+ // 合并历史日志与实时日志，按 runnerId 过滤
+ const combined = [
+ ...historyLogs.value,
+ ...logs.value.filter(l => l.runner_id === props.runnerId),
+ ].sort((a, b) => a.timestamp.getTime - b.timestamp.getTime)
  // 按类型过滤
- result = result.filter((l) => {
+ let result = combined.filter((l) => {
  const type = getLogType(l)
  return filters.value[type]
  })
@@ -98,8 +159,11 @@ const filteredLogs = computed( => {
 // 被折叠的心跳数量
 const hiddenHeartbeatCount = computed( => {
  if (heartbeatExpanded.value) return 0
- const allForRunner = logs.value.filter(l => l.runner_id === props.runnerId)
- const total = allForRunner.filter(l => getLogType(l) === 'heartbeat').length
+ const combined = [
+ ...historyLogs.value,
+ ...logs.value.filter(l => l.runner_id === props.runnerId),
+ ]
+ const total = combined.filter(l => getLogType(l) === 'heartbeat').length
  return Math.max(0, total - 5)
 })
 // 滚动事件
@@ -169,9 +233,13 @@ watch( => filteredLogs.value.length, => {
  @scroll="onScroll"
  >
  <!-- 空状态 -->
- <p v-if="filteredLogs.length === 0" class="text-muted-foreground text-center py-6">
+ <p v-if="filteredLogs.length === 0 && !historyLoading" class="text-muted-foreground text-center py-6">
  等待事件...
  </p>
+ <!-- 历史日志加载中 -->
+ <div v-if="historyLoading" class="text-xs text-muted-foreground px-2 py-1">
+ 加载历史日志…
+ </div>
  <!-- 心跳折叠提示 -->
  <button
  v-if="hiddenHeartbeatCount > 0"
