@@ -23,6 +23,11 @@ const navItems: Array<{ to: string, label: string, icon: string, badge?: string 
  { to: '/settings', label: '设置', icon: 'lucide--settings' },
 ]
 const route = useRoute
+// WebSocket 实时监控
+const { status, connect } = useRunnerMonitor
+onMounted( => {
+ connect
+})
 // 判断当前路由是否激活
 function isActive(path: string) {
  if (path === '/') {
@@ -83,13 +88,34 @@ function goToAccountSettings {
  </div>
  <!-- 右侧操作区 -->
  <div class="flex items-center gap-4">
- <!-- 状态指示器 -->
- <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+ <!-- WebSocket 连接状态指示器 -->
+ <div
+ class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{
+ 'bg-emerald-500/10 border border-emerald-500/20': status === 'connected',
+ 'bg-amber-500/10 border border-amber-500/20': status === 'connecting' || status === 'reconnecting',
+ 'bg-red-500/10 border border-red-500/20': status === 'disconnected',
+ }"
+ @click="status === 'disconnected' && connect"
+ >
  <span class="relative flex w-2">
- <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
- <span class="relative inline-flex rounded-full w-2 bg-emerald-500" />
+ <span v-if="status === 'connected'" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+ <span
+ class="relative inline-flex rounded-full w-2":class="{
+ 'bg-emerald-500': status === 'connected',
+ 'bg-amber-500 animate-pulse': status === 'connecting' || status === 'reconnecting',
+ 'bg-red-500': status === 'disconnected',
+ }"
+ />
  </span>
- <span class="text-sm text-emerald-600 font-medium">在线</span>
+ <span
+ class="text-sm font-medium":class="{
+ 'text-emerald-600 dark:text-emerald-400': status === 'connected',
+ 'text-amber-600 dark:text-amber-400': status === 'connecting' || status === 'reconnecting',
+ 'text-red-600 dark:text-red-400': status === 'disconnected',
+ }"
+ >
+ {{ status === 'connected' ? '已连接': status === 'disconnected' ? '已断开': '重连中...' }}
+ </span>
  </div>
  <!-- 用户下拉菜单 -->
  <DropdownMenu>
