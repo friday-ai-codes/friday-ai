@@ -450,6 +450,15 @@ export interface RunnerTaskAssignment {
  completed_at: string | null
 }
 /**
+ * Runner 事件日志（对齐后端 RunnerEventSerializer）
+ */
+export interface RunnerEvent {
+ id: string
+ event_type: 'connected' | 'disconnected' | 'heartbeat' | 'task_assigned' | 'task_completed' | 'task_failed'
+ detail: Record<string, unknown>
+ created_at: string
+}
+/**
  * 注册令牌（来自 API）
  */
 export interface RegistrationToken {
