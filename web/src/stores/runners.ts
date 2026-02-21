@@ -83,6 +83,38 @@ export const useRunnersStore = defineStore('runners', => {
  await runnersApi.deleteToken(tokenId)
  tokens.value = tokens.value.filter(t => t.id !== tokenId)
  }
+ /**
+ * WS 事件：patch runner 状态字段
+ */
+ function patchRunner(runnerId: string, data: Record<string, unknown>) {
+ const idx = runners.value.findIndex(r => r.id === runnerId)
+ if (idx !== -1) Object.assign(runners.value[idx], data)
+ if (currentRunner.value?.id === runnerId) Object.assign(currentRunner.value, data)
+ }
+ /**
+ * WS 事件：patch runner 的任务状态
+ */
+ function patchRunnerTask(runnerId: string, data: Record<string, unknown>) {
+ const taskStatus = data.status as string
+ const taskId = data.task_id as string
+ // 更新列表页 runner 的 current_tasks
+ const idx = runners.value.findIndex(r => r.id === runnerId)
+ if (taskStatus === 'running' && idx !== -1) {
+ runners.value[idx].current_tasks += 1
+ }
+ else if ((taskStatus === 'completed' || taskStatus === 'failed') && idx !== -1) {
+ runners.value[idx].current_tasks = Math.max(0, runners.value[idx].current_tasks - 1)
+ }
+ // 更新详情页 currentRunner 的 current_task_list
+ if (currentRunner.value?.id !== runnerId) return
+ if (taskStatus === 'completed' || taskStatus === 'failed') {
+ currentRunner.value.current_task_list = currentRunner.value.current_task_list.filter(t => t.id !== taskId)
+ currentRunner.value.current_tasks = Math.max(0, currentRunner.value.current_tasks - 1)
+ }
+ else if (taskStatus === 'running') {
+ currentRunner.value.current_tasks += 1
+ }
+ }
  return {
  // State
  runners,
@@ -101,5 +133,7 @@ export const useRunnersStore = defineStore('runners', => {
  fetchTokens,
  addToken,
  removeToken,
+ patchRunner,
+ patchRunnerTask,
  }
 })
