@@ -1,0 +1,213 @@
+<script setup lang="ts">
+import type { MonitorLog } from '~/composables/useRunnerMonitor'
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+const props = defineProps<{
+ runnerId: string
+}>
+// 日志源
+const { logs } = useRunnerMonitor
+// 折叠偏好（localStorage 持久化）
+const collapsed = useStorage('runner-log-panel-collapsed', false)
+// 过滤器
+const filters = ref({ connection: true, heartbeat: true, task: true, error: true })
+// 心跳展开
+const heartbeatExpanded = ref(false)
+// 自动滚动
+const scrollContainer = ref<HTMLElement | null>(null)
+const isAtBottom = ref(true)
+const newLogCount = ref(0)
+type LogType = 'connection' | 'heartbeat' | 'task' | 'error'
+function getLogType(log: MonitorLog): LogType {
+ if (log.event === 'runner.status_changed') {
+ if (log.data.status === 'online' || log.data.status === 'offline') return 'connection'
+ if (log.data.current_tasks !== undefined) return 'heartbeat'
+ }
+ if (log.event === 'task.status_changed') return 'task'
+ return 'error'
+}
+function getLogColor(log: MonitorLog): string {
+ const type = getLogType(log)
+ if (type === 'connection') return 'text-blue-400'
+ if (type === 'heartbeat') return 'text-muted-foreground'
+ if (type === 'task') {
+ const status = log.data.status as string | undefined
+ if (status === 'completed') return 'text-emerald-400'
+ if (status === 'failed') return 'text-red-400'
+ return 'text-violet-400'
+ }
+ return 'text-destructive'
+}
+function getLogIcon(log: MonitorLog): string {
+ const type = getLogType(log)
+ if (type === 'connection') {
+ return log.data.status === 'online' ? 'icon-[lucide--wifi]': 'icon-[lucide--wifi-off]'
+ }
+ if (type === 'heartbeat') return 'icon-[lucide--heart-pulse]'
+ if (type === 'task') return 'icon-[lucide--play-circle]'
+ return 'icon-[lucide--alert-circle]'
+}
+function formatLogMessage(log: MonitorLog): string {
+ const type = getLogType(log)
+ if (type === 'connection') {
+ if (log.data.status === 'online') {
+ const parts = ['Runner 上线']
+ if (log.data.name) parts.push(`${log.data.name}`)
+ if (log.data.version) parts.push(`v${log.data.version}`)
+ return parts.join(' · ')
+ }
+ return 'Runner 下线'
+ }
+ if (type === 'heartbeat') {
+ const tasks = log.data.current_tasks ?? 0
+ return `心跳 · 当前任务: ${tasks}`
+ }
+ if (type === 'task') {
+ const taskId = ((log.data.task_id as string) || '').slice(0, 8)
+ const status = log.data.status as string
+ if (status === 'completed') return `任务完成: ${taskId}`
+ if (status === 'failed') return `任务失败: ${taskId}`
+ return `任务开始: ${taskId}`
+ }
+ return `${log.event}: ${JSON.stringify(log.data)}`
+}
+function formatTimestamp(date: Date): string {
+ return date.toLocaleTimeString('zh-CN', { hour12: false })
+}
+// 过滤后的日志
+const filteredLogs = computed( => {
+ // 按 runnerId 过滤
+ let result = logs.value.filter(l => l.runner_id === props.runnerId)
+ // 按类型过滤
+ result = result.filter((l) => {
+ const type = getLogType(l)
+ return filters.value[type]
+ })
+ // 心跳折叠：未展开时只保留最近 5 条
+ if (!heartbeatExpanded.value) {
+ const heartbeats: number =
+ for (let i = 0; i < result.length; i++) {
+ if (getLogType(result[i]) === 'heartbeat') heartbeats.push(i)
+ }
+ if (heartbeats.length > 5) {
+ const toRemove = new Set(heartbeats.slice(0, heartbeats.length - 5))
+ result = result.filter((_, i) => !toRemove.has(i))
+ }
+ }
+ return result
+})
+// 被折叠的心跳数量
+const hiddenHeartbeatCount = computed( => {
+ if (heartbeatExpanded.value) return 0
+ const allForRunner = logs.value.filter(l => l.runner_id === props.runnerId)
+ const total = allForRunner.filter(l => getLogType(l) === 'heartbeat').length
+ return Math.max(0, total - 5)
+})
+// 滚动事件
+function onScroll {
+ const el = scrollContainer.value
+ if (!el) return
+ isAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 30
+ if (isAtBottom.value) newLogCount.value = 0
+}
+function scrollToBottom {
+ const el = scrollContainer.value
+ if (!el) return
+ el.scrollTop = el.scrollHeight
+ isAtBottom.value = true
+ newLogCount.value = 0
+}
+// 监听日志变化，自动滚动或累计计数
+watch( => filteredLogs.value.length, => {
+ if (isAtBottom.value) {
+ nextTick(scrollToBottom)
+ }
+ else {
+ newLogCount.value++
+ }
+})
+</script>
+<template>
+ <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
+ <CardHeader
+ class="border-b border-border/50 bg-gradient-to-r from-gray-500/5 to-slate-500/5 cursor-pointer select-none"
+ @click="collapsed = !collapsed"
+ >
+ <div class="flex items-center justify-between">
+ <CardTitle class="flex items-center gap-2">
+ <span class="icon-[lucide--terminal] text-gray-500" />
+ 实时日志
+ </CardTitle>
+ <span
+ class="w-5 transition-transform duration-200":class="collapsed ? 'icon-[lucide--chevron-down]': 'icon-[lucide--chevron-up]'"
+ />
+ </div>
+ <!-- 过滤器 -->
+ <div v-show="!collapsed" class="flex items-center gap-3 text-xs mt-2" @click.stop>
+ <label class="flex items-center gap-1 cursor-pointer">
+ <input v-model="filters.connection" type="checkbox" class="rounded">
+ <span class="text-blue-400">连接</span>
+ </label>
+ <label class="flex items-center gap-1 cursor-pointer">
+ <input v-model="filters.heartbeat" type="checkbox" class="rounded">
+ <span class="text-muted-foreground">心跳</span>
+ </label>
+ <label class="flex items-center gap-1 cursor-pointer">
+ <input v-model="filters.task" type="checkbox" class="rounded">
+ <span class="text-violet-400">任务</span>
+ </label>
+ <label class="flex items-center gap-1 cursor-pointer">
+ <input v-model="filters.error" type="checkbox" class="rounded">
+ <span class="text-red-400">错误</span>
+ </label>
+ </div>
+ </CardHeader>
+ <CardContent v-show="!collapsed" class="">
+ <div class="relative">
+ <div
+ ref="scrollContainer"
+ class="bg-gray-950 rounded-b-2xl font-mono text-sm max- overflow-y-auto"
+ @scroll="onScroll"
+ >
+ <!-- 空状态 -->
+ <p v-if="filteredLogs.length === 0" class="text-muted-foreground text-center py-6">
+ 等待事件...
+ </p>
+ <!-- 心跳折叠提示 -->
+ <button
+ v-if="hiddenHeartbeatCount > 0"
+ class="text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+ @click="heartbeatExpanded = true"
+ >
+ 还有 {{ hiddenHeartbeatCount }} 条心跳日志...
+ </button>
+ <!-- 日志行 -->
+ <div
+ v-for="log in filteredLogs":key="log.id"
+ class="flex items-start gap-2 py-0.5 leading-5"
+ >
+ <span class="text-gray-500 flex-shrink-0">{{ formatTimestamp(log.timestamp) }}</span>
+ <span class="flex-shrink-0 w-4 mt-0.5":class="[getLogIcon(log), getLogColor(log)]" />
+ <span:class="getLogColor(log)">{{ formatLogMessage(log) }}</span>
+ </div>
+ </div>
+ <!-- 新日志提示按钮 -->
+ <Transition
+ enter-active-class="transition-all duration-200"
+ enter-from-class="opacity-0 translate-y-2"
+ enter-to-class="opacity-100 translate-y-0"
+ leave-active-class="transition-all duration-150"
+ leave-from-class="opacity-100"
+ leave-to-class="opacity-0 translate-y-2"
+ >
+ <button
+ v-if="newLogCount > 0 && !isAtBottom"
+ class="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-primary/90 text-primary-foreground text-xs backdrop-blur-sm hover:bg-primary transition-colors"
+ @click="scrollToBottom"
+ >
+ 已暂停 · 有 {{ newLogCount }} 条新日志
+ </button>
+ </Transition>
+ </div>
+ </CardContent>
+ </Card>
+</template>
