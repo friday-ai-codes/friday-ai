@@ -289,6 +289,8 @@ const statusMap: Record<string, { label: string, class: string }> = {
  </div>
  </CardContent>
  </Card>
+ <!-- 实时日志 -->
+ <RunnerLogPanel:runner-id="runnerId" />
  </template>
  <!-- 删除确认 -->
  <ConfirmDialog
