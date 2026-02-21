@@ -14,6 +14,32 @@ const route = useRoute('/runners/[id]')
 const router = useRouter
 const runnersStore = useRunnersStore
 const { success, error: showError } = useToast
+// WS 实时状态
+const { status: wsStatus } = useRunnerMonitor
+// 断线横幅：断开超过 10 秒后显示
+const disconnectedTooLong = ref(false)
+let disconnectTimer: ReturnType<typeof setTimeout> | null = null
+watch(wsStatus, (val) => {
+ if (val === 'connected') {
+ disconnectedTooLong.value = false
+ if (disconnectTimer) {
+ clearTimeout(disconnectTimer)
+ disconnectTimer = null
+ }
+ }
+ else if (!disconnectTimer) {
+ disconnectTimer = setTimeout( => {
+ disconnectedTooLong.value = true
+ disconnectTimer = null
+ }, 10_000)
+ }
+}, { immediate: true })
+onUnmounted( => {
+ if (disconnectTimer) {
+ clearTimeout(disconnectTimer)
+ disconnectTimer = null
+ }
+})
 const runnerId = computed( => route.params.id)
 const loading = ref(true)
 const runner = computed( => runnersStore.currentRunner)
@@ -96,7 +122,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  <span class="icon-[lucide--arrow-left] w-5 " />
  </Button>
  <h1 class="text-2xl font-bold">{{ runner?.name || '加载中...' }}</h1>
- <div v-if="runner" class="relative flex-shrink-0">
+ <div v-if="runner" class="relative flex-shrink-0 transition-all duration-300">
  <template v-if="runner.status === 'online'">
  <span class="absolute inline-flex w-3 rounded-full bg-emerald-400 opacity-75 animate-ping" />
  <span class="relative inline-flex w-3 rounded-full bg-emerald-500" />
@@ -111,6 +137,14 @@ const statusMap: Record<string, { label: string, class: string }> = {
  删除
  </Button>
  </div>
+ <!-- 断线横幅 -->
+ <Transition enter-active-class="transition-all duration-300" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0">
+ <div v-if="disconnectedTooLong" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-sm">
+ <span class="icon-[lucide--wifi-off] text-base" />
+ <span>连接已断开，正在重连...</span>
+ <span v-if="wsStatus === 'disconnected'" class="ml-auto text-xs text-muted-foreground">无法连接，请刷新页面</span>
+ </div>
+ </Transition>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton" />
  <!-- 主内容 -->
@@ -133,7 +167,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  </div>
  <div>
  <div class="text-sm text-muted-foreground">状态</div>
- <Badge class="mt-1":class="runner.status === 'online' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'">
+ <Badge class="mt-1 transition-colors duration-300":class="runner.status === 'online' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'">
  {{ runner.status === 'online' ? '在线': '离线' }}
  </Badge>
  </div>
@@ -195,12 +229,12 @@ const statusMap: Record<string, { label: string, class: string }> = {
  <CardTitle class="flex items-center gap-2">
  <span class="icon-[lucide--play-circle] text-blue-500" />
  当前任务
- <Badge variant="secondary" class="ml-auto">{{ runner.current_task_list.length }}</Badge>
+ <Badge variant="secondary" class="ml-auto transition-colors duration-300">{{ runner.current_task_list.length }}</Badge>
  </CardTitle>
  </CardHeader>
  <CardContent class="pt-6">
  <p v-if="runner.current_task_list.length === 0" class="text-sm text-muted-foreground">暂无正在执行的任务</p>
- <div v-else class="space-y-0 divide-y divide-border/30">
+ <TransitionGroup v-else name="task-list" tag="div" class="space-y-0 divide-y divide-border/30">
  <div v-for="task in runner.current_task_list":key="task.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
  <div class="flex items-center gap-3">
  <span class="font-medium">{{ task.name }}</span>
@@ -208,7 +242,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  </div>
  <span class="text-xs text-muted-foreground font-mono">{{ task.id.slice(0, 8) }}</span>
  </div>
- </div>
+ </TransitionGroup>
  </CardContent>
  </Card>
  <!-- 历史任务卡片 -->
@@ -266,3 +300,12 @@ const statusMap: Record<string, { label: string, class: string }> = {
  />
  </PageContainer>
 </template>
+<style scoped>
+.task-list-leave-active {
+ transition: all 0.3s ease;
+}
+.task-list-leave-to {
+ opacity: 0;
+ transform: translateX(20px);
+}
+</style>
