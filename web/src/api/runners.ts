@@ -2,7 +2,7 @@
  * Runners API 服务
  * 封装所有 Runner 相关的 API 调用
  */
-import type { PaginatedResponse, RegistrationToken, RegistrationTokenCreate, RegistrationTokenCreateResponse, Runner, RunnerTaskAssignment } from '~/types'
+import type { PaginatedResponse, RegistrationToken, RegistrationTokenCreate, RegistrationTokenCreateResponse, Runner, RunnerEvent, RunnerTaskAssignment } from '~/types'
 import { del, get, post } from './client'
 /**
  * 获取 Runner 列表
@@ -34,6 +34,12 @@ export async function createToken(data: RegistrationTokenCreate): Promise<Regist
 export async function deleteToken(tokenId: string): Promise<void> {
  return del(`/runners/tokens/${tokenId}/`)
 }
+export async function getRunnerLogs(
+ runnerId: string,
+ params?: Record<string, string | number | undefined>,
+): Promise<PaginatedResponse<RunnerEvent>> {
+ return get<PaginatedResponse<RunnerEvent>>(`/runners/${runnerId}/logs/`, params)
+}
 export default {
  list: listRunners,
  delete: deleteRunner,
@@ -42,4 +48,5 @@ export default {
  listTokens,
  createToken,
  deleteToken,
+ getRunnerLogs,
 }

@@ -113,6 +113,8 @@ export const useRunnersStore = defineStore('runners', => {
  }
  else if (taskStatus === 'running') {
  currentRunner.value.current_tasks += 1
+ const task = currentRunner.value.current_task_list.find(t => t.id === taskId)
+ if (task) task.status = 'running'
  }
  }
  return {
