@@ -99,20 +99,28 @@ export const useRunnersStore = defineStore('runners', => {
  const taskId = data.task_id as string
  // 更新列表页 runner 的 current_tasks
  const idx = runners.value.findIndex(r => r.id === runnerId)
- if (taskStatus === 'running' && idx !== -1) {
+ if (taskStatus === 'assigned' && idx !== -1) {
  runners.value[idx].current_tasks += 1
  }
  else if ((taskStatus === 'completed' || taskStatus === 'failed') && idx !== -1) {
  runners.value[idx].current_tasks = Math.max(0, runners.value[idx].current_tasks - 1)
  }
+ // running 不再 +1，因为 assigned 已经 +1
  // 更新详情页 currentRunner 的 current_task_list
  if (currentRunner.value?.id !== runnerId) return
- if (taskStatus === 'completed' || taskStatus === 'failed') {
+ if (taskStatus === 'assigned') {
+ currentRunner.value.current_tasks += 1
+ currentRunner.value.current_task_list.push({
+ id: taskId,
+ name: (data.task_type as string) || '',
+ status: 'assigned',
+ })
+ }
+ else if (taskStatus === 'completed' || taskStatus === 'failed') {
  currentRunner.value.current_task_list = currentRunner.value.current_task_list.filter(t => t.id !== taskId)
  currentRunner.value.current_tasks = Math.max(0, currentRunner.value.current_tasks - 1)
  }
  else if (taskStatus === 'running') {
- currentRunner.value.current_tasks += 1
  const task = currentRunner.value.current_task_list.find(t => t.id === taskId)
  if (task) task.status = 'running'
  }
