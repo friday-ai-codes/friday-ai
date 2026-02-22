@@ -22,10 +22,10 @@ class SubAgentSessionAdmin(admin.ModelAdmin):
  "started_at",
  "completed_at",
  ]
- list_filter = ["status", "task_type", "health_status", ("failure_reason", admin.EmptyFieldListFilter)]
+ list_filter = ["status", "task_type", "health_status", "runner", ("failure_reason", admin.EmptyFieldListFilter)]
  search_fields = ["session_id", "repo_url", "container_name"]
  readonly_fields = ["created_at", "updated_at", "started_at", "completed_at", "failure_reason"]
- raw_id_fields = ["main_session", "node_execution"]
+ raw_id_fields = ["main_session", "node_execution", "runner"]
  @admin.display(description="失败原因")
  def failure_reason_preview(self, obj: SubAgentSession) -> str:
  if not obj.failure_reason:
