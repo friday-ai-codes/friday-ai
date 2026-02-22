@@ -141,6 +141,7 @@ declare module 'vue' {
  RouterLink: typeof import('vue-router')['RouterLink']
  RouterView: typeof import('vue-router')['RouterView']
  RunnerGrid: typeof import('./components/runners/RunnerGrid.vue')['default']
+ RunnerLogPanel: typeof import('./components/runners/RunnerLogPanel.vue')['default']
  ScrollArea: typeof import('./components/ui/scroll-area/ScrollArea.vue')['default']
  ScrollBar: typeof import('./components/ui/scroll-area/ScrollBar.vue')['default']
  Select: typeof import('./components/ui/select/Select.vue')['default']

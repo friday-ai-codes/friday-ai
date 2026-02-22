@@ -240,7 +240,6 @@ declare global {
  const usePointerLock: typeof import('@vueuse/core').usePointerLock
  const usePointerSwipe: typeof import('@vueuse/core').usePointerSwipe
  const usePolling: typeof import('./composables/usePolling').usePolling
- const useRunnerMonitor: typeof import('./composables/useRunnerMonitor').useRunnerMonitor
  const usePreferredColorScheme: typeof import('@vueuse/core').usePreferredColorScheme
  const usePreferredContrast: typeof import('@vueuse/core').usePreferredContrast
  const usePreferredDark: typeof import('@vueuse/core').usePreferredDark
@@ -255,6 +254,7 @@ declare global {
  const useResizeObserver: typeof import('@vueuse/core').useResizeObserver
  const useRoute: typeof import('vue-router').useRoute
  const useRouter: typeof import('vue-router').useRouter
+ const useRunnerMonitor: typeof import('./composables/useRunnerMonitor').useRunnerMonitor
  const useRunnersStore: typeof import('./stores/runners').useRunnersStore
  const useSSRWidth: typeof import('@vueuse/core').useSSRWidth
  const useSchemaValidation: typeof import('./composables/useSchemaValidation').useSchemaValidation
@@ -603,7 +603,6 @@ declare module 'vue' {
  readonly usePointerLock: UnwrapRef<typeof import('@vueuse/core')['usePointerLock']>
  readonly usePointerSwipe: UnwrapRef<typeof import('@vueuse/core')['usePointerSwipe']>
  readonly usePolling: UnwrapRef<typeof import('./composables/usePolling')['usePolling']>
- readonly useRunnerMonitor: UnwrapRef<typeof import('./composables/useRunnerMonitor')['useRunnerMonitor']>
  readonly usePreferredColorScheme: UnwrapRef<typeof import('@vueuse/core')['usePreferredColorScheme']>
  readonly usePreferredContrast: UnwrapRef<typeof import('@vueuse/core')['usePreferredContrast']>
  readonly usePreferredDark: UnwrapRef<typeof import('@vueuse/core')['usePreferredDark']>
@@ -618,6 +617,7 @@ declare module 'vue' {
  readonly useResizeObserver: UnwrapRef<typeof import('@vueuse/core')['useResizeObserver']>
  readonly useRoute: UnwrapRef<typeof import('vue-router')['useRoute']>
  readonly useRouter: UnwrapRef<typeof import('vue-router')['useRouter']>
+ readonly useRunnerMonitor: UnwrapRef<typeof import('./composables/useRunnerMonitor')['useRunnerMonitor']>
  readonly useRunnersStore: UnwrapRef<typeof import('./stores/runners')['useRunnersStore']>
  readonly useSSRWidth: UnwrapRef<typeof import('@vueuse/core')['useSSRWidth']>
  readonly useSchemaValidation: UnwrapRef<typeof import('./composables/useSchemaValidation')['useSchemaValidation']>
