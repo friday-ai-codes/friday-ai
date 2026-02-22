@@ -80,6 +80,14 @@ class SubAgentSession(models.Model):
  related_name="subagent_sessions",
  verbose_name="关联节点执行",
  )
+ runner = models.ForeignKey(
+ "runners.Runner",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="executed_sessions",
+ verbose_name="执行 Runner",
+ )
  # 重复提交检测（Phase 新增）
  work_item_id = models.CharField(
  max_length=100,

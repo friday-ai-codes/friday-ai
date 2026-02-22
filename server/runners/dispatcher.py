@@ -66,7 +66,7 @@ class TaskDispatcher:
  "data": {
  "event": "task.status_changed",
  "runner_id": str(runner.id),
- "data": {"task_id": task.task_id, "session_id": task.session_id, "status": "assigned"},
+ "data": {"task_id": task.task_id, "session_id": task.session_id, "status": "assigned", "task_type": task.task_type},
  },
  })
  await database_sync_to_async(self._log_dispatch_event)(runner, task)
@@ -93,6 +93,8 @@ class TaskDispatcher:
  session = SubAgentSession.objects.filter(session_id=task.session_id).first
  if session:
  RunnerTaskAssignment.objects.create(runner=runner, session=session) # type: ignore[misc]
+ session.runner = runner # type: ignore[assignment]
+ session.save(update_fields=["runner", "updated_at"])
  def _log_dispatch_event(self, runner: object, task: DispatchTask) -> None:
  from runners.models import RunnerEvent
  RunnerEvent.objects.create(
