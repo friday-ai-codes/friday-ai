@@ -14,19 +14,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
-// TaskInfo 对齐 Python models.TaskInfo。
-type TaskInfo struct {
-	TaskID string
-	TaskType string
-	Image string
-	RepoURL string
-	Branch string
-	Timeout int
-	Payload map[string]any
-}
 // Executor 定义容器执行器接口（为 K8s 预留）。
 type Executor interface {
-	StartContainer(ctx context.Context, task TaskInfo, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
+	StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
 	WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (exitCode int, logs string, err error)
 	KillContainer(ctx context.Context, containerID string) error
 	RemoveContainer(ctx context.Context, containerID string) error
@@ -48,7 +38,7 @@ func NewDockerExecutor(defaultImage string) (*DockerExecutor, error) {
 	}
 	return &DockerExecutor{cli: cli, defaultImage: defaultImage}, nil
 }
-func (e *DockerExecutor) StartContainer(ctx context.Context, task TaskInfo, callbackURL, callbackToken string) (string, string, error) {
+func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (string, string, error) {
 	name:= fmt.Sprintf("friday-task-%s", uuid.NewString[:12])
 	image:= task.Image
 	if image == "" {

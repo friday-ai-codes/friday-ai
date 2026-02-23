@@ -5,24 +5,24 @@ import (
 	"sync/atomic"
 	"time"
 	"github.com/rs/zerolog/log"
-	"github.com/friday-ai-codes/friday-ai/runner/internal/docker"
+	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
 // TaskScheduler 通过 FIFO 队列 + semaphore 控制并发调度。
 type TaskScheduler struct {
 	mu sync.Mutex
 	cond *sync.Cond
-	queue docker.TaskInfo
+	queue ws.TaskPayload
 	sem chan struct{}
 	wg sync.WaitGroup
 	accepting atomic.Bool
 	containers sync.Map // task_id -> container_id
-	onTask func(context.Context, docker.TaskInfo)
+	onTask func(context.Context, ws.TaskPayload)
 	concurrent int
 }
 // New 创建 TaskScheduler。
 func New(concurrent int) *TaskScheduler {
 	s:= &TaskScheduler{
- queue: make(docker.TaskInfo, 0),
+ queue: make(ws.TaskPayload, 0),
  sem: make(chan struct{}, concurrent),
  concurrent: concurrent,
 	}
@@ -31,11 +31,11 @@ func New(concurrent int) *TaskScheduler {
 	return s
 }
 // SetTaskCallback 设置任务执行回调。
-func (s *TaskScheduler) SetTaskCallback(fn func(context.Context, docker.TaskInfo)) {
+func (s *TaskScheduler) SetTaskCallback(fn func(context.Context, ws.TaskPayload)) {
 	s.onTask = fn
 }
 // Submit 将任务加入 FIFO 队列。
-func (s *TaskScheduler) Submit(task docker.TaskInfo) {
+func (s *TaskScheduler) Submit(task ws.TaskPayload) {
 	s.mu.Lock
 	s.queue = append(s.queue, task)
 	s.mu.Unlock
@@ -64,7 +64,7 @@ func (s *TaskScheduler) Run(ctx context.Context) {
  go s.execute(ctx, task)
 	}
 }
-func (s *TaskScheduler) execute(ctx context.Context, task docker.TaskInfo) {
+func (s *TaskScheduler) execute(ctx context.Context, task ws.TaskPayload) {
 	defer func {
  <-s.sem // release semaphore
  s.wg.Done
