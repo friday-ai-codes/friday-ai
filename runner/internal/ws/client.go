@@ -347,11 +347,24 @@ func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackServi
  "task_id": task.TaskID, "answer_endpoint": answerEndpoint,
  }))
 	}
+	// 启动流式日志转发
+	streamCtx, cancelStream:= context.WithCancel(ctx)
+	streamDone:= make(chan struct{})
+	go func {
+ defer close(streamDone)
+ cfg.Executor.StreamLogs(streamCtx, containerID, func(line string) {
+ queue.Push(NewMessage(TypeTaskLog, map[string]any{
+ "task_id": task.TaskID, "message": line,
+ }))
+ })
+	}
 	timeout:= time.Duration(task.Timeout) * time.Second
 	if timeout == 0 {
  timeout = time.Duration(cfg.DefaultTimeout) * time.Second
 	}
-	exitCode, logs, err:= cfg.Executor.WaitContainer(ctx, containerID, timeout)
+	exitCode, _, err:= cfg.Executor.WaitContainer(ctx, containerID, timeout)
+	cancelStream
+	<-streamDone
 	durationMs:= int(time.Since(start).Milliseconds)
 	if err != nil {
  queue.Push(NewMessage(TypeTaskFailed, map[string]any{
@@ -362,7 +375,7 @@ func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackServi
 	}
 	if exitCode == 0 {
  queue.Push(NewMessage(TypeTaskCompleted, map[string]any{
- "task_id": task.TaskID, "exit_code": 0, "duration_ms": durationMs, "logs": logs,
+ "task_id": task.TaskID, "exit_code": 0, "duration_ms": durationMs, "logs": "",
  }))
 	} else {
  errMsg:= "timeout"
@@ -371,7 +384,7 @@ func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackServi
  }
  queue.Push(NewMessage(TypeTaskFailed, map[string]any{
  "task_id": task.TaskID, "exit_code": exitCode, "error": errMsg,
- "duration_ms": durationMs, "logs": logs,
+ "duration_ms": durationMs, "logs": "",
  }))
 	}
 }
