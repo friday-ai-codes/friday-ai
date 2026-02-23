@@ -420,6 +420,11 @@ export interface Runner {
  status: 'online' | 'offline'
  version: string
  is_active: boolean
+ is_paused: boolean
+ is_protected: boolean
+ run_untagged: boolean
+ max_timeout: number | null
+ description: string
  last_heartbeat: string | null
  ip_address: string | null
  registered_at: string
@@ -466,6 +471,11 @@ export interface RegistrationToken {
  description: string
  scope: 'global' | 'project'
  project_id: string | null
+ tags: string
+ run_untagged: boolean
+ is_paused: boolean
+ is_protected: boolean
+ max_timeout: number | null
  is_used: boolean
  used_at: string | null
  expires_at: string
@@ -480,6 +490,11 @@ export interface RegistrationTokenCreate {
  scope: 'global' | 'project'
  project_id?: string
  expires_in: number
+ tags?: string
+ run_untagged?: boolean
+ is_paused?: boolean
+ is_protected?: boolean
+ max_timeout?: number | null
 }
 /**
  * 创建注册令牌响应（含一次性明文令牌）

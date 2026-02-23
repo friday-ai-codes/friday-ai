@@ -17,7 +17,7 @@ class LoggingHook(BaseHook):
  node = await sync_to_async(lambda: node_execution.node)
  log_data["node_id"] = str(node.id)
  log_data["node_name"] = node.name
- logger.info("workflow_event", **log_data)
+ logger.info("工作流事件", **log_data)
 class WebSocketBroadcastHook(BaseHook):
  """WebSocket 广播钩子"""
  priority = 10

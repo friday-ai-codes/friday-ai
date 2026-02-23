@@ -75,7 +75,7 @@ class AgentLoop:
  Returns:
  AgentResult with outputs, final answer, and execution metadata
  """
- self.logger.info("agent_run_start", user_message_length=len(user_message))
+ self.logger.info("Agent 开始运行", user_message_length=len(user_message))
  # Initialize state
  messages: list[dict[str, Any]] =
  # Add system prompt if configured
@@ -113,7 +113,7 @@ class AgentLoop:
  Raises:
  ValueError: If session not found or not in SUSPENDED status
  """
- self.logger.info("agent_resume_start")
+ self.logger.info("Agent 恢复执行")
  # Load existing state
  state = await self.state_manager.load_state(self.context.session_id)
  if state is None:
@@ -160,7 +160,7 @@ class AgentLoop:
  tool_calls_count = 0
  while state.iteration < self.config.max_iterations:
  state.iteration += 1
- self.logger.info("agent_iteration", iteration=state.iteration)
+ self.logger.info("Agent 迭代中", iteration=state.iteration)
  # THINK: Call LLM
  tools = self._get_tool_schemas
  response = await self.provider.chat(
@@ -176,7 +176,7 @@ class AgentLoop:
  state.status = AgentStatus.COMPLETED
  await self.state_manager.save_state(state, self.context)
  self.logger.info(
- "agent_completed",
+ "Agent 执行完成",
  iterations=state.iteration,
  tool_calls=tool_calls_count,
  input_tokens=state.usage["input_tokens"],
@@ -229,7 +229,7 @@ class AgentLoop:
  }
  await self.state_manager.save_state(state, self.context)
  self.logger.info(
- "agent_suspended",
+ "Agent 已挂起",
  iteration=state.iteration,
  tool_name=result.metadata.get("tool_name"),
  )
@@ -263,7 +263,7 @@ class AgentLoop:
  state.status = AgentStatus.MAX_ITERATIONS
  await self.state_manager.save_state(state, self.context)
  self.logger.warning(
- "agent_max_iterations",
+ "Agent 达到最大迭代次数",
  iterations=state.iteration,
  tool_calls=tool_calls_count,
  )
@@ -299,7 +299,7 @@ class AgentLoop:
  for tool_call in tool_calls:
  started_at = datetime.now(timezone.utc)
  self.logger.debug(
- "tool_execution_start",
+ "开始执行工具",
  tool_name=tool_call.name,
  tool_call_id=tool_call.id,
  )
@@ -356,7 +356,7 @@ class AgentLoop:
  state.output_items.append(result.output)
  except Exception as e:
  self.logger.exception(
- "tool_execution_error",
+ "工具执行出错",
  tool_name=tool_call.name,
  error=str(e),
  )
@@ -378,7 +378,7 @@ class AgentLoop:
  iteration=state.iteration,
  )
  self.logger.debug(
- "tool_execution_complete",
+ "工具执行完成",
  tool_name=tool_call.name,
  success=result.success,
  )

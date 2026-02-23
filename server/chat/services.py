@@ -65,7 +65,7 @@ class ChatService:
  ChatServiceError: If the API call fails
  """
  url = f"{self.base_url}/v1/models"
- logger.info("Fetching models", url=url)
+ logger.info("正在获取模型列表", url=url)
  try:
  async with httpx.AsyncClient(timeout=self.timeout) as client:
  response = await client.get(url, headers=self._get_headers)
@@ -80,13 +80,13 @@ class ChatService:
  created=model_data.get("created"),
  )
  )
- logger.info("Models fetched", count=len(models))
+ logger.info("模型列表获取成功", count=len(models))
  return models
  except httpx.TimeoutException:
- logger.error("Request timeout while fetching models")
+ logger.error("获取模型列表请求超时")
  raise ChatServiceError("请求超时，请检查网络连接和 Base URL 配置")
  except httpx.HTTPStatusError as e:
- logger.error("HTTP error while fetching models", status_code=e.response.status_code)
+ logger.error("获取模型列表 HTTP 错误", status_code=e.response.status_code)
  if e.response.status_code == 401:
  raise ChatServiceError("API Key 无效或已过期")
  elif e.response.status_code == 403:
@@ -94,10 +94,10 @@ class ChatService:
  else:
  raise ChatServiceError(f"API 请求失败: {e.response.status_code}")
  except httpx.RequestError as e:
- logger.error("Request error while fetching models", error=str(e))
+ logger.error("获取模型列表网络错误", error=str(e))
  raise ChatServiceError(f"网络请求失败: {str(e)}")
  except Exception as e:
- logger.error("Unexpected error while fetching models", error=str(e))
+ logger.error("获取模型列表未知错误", error=str(e))
  raise ChatServiceError(f"获取模型列表失败: {str(e)}")
  async def chat_completion(
  self,
@@ -116,7 +116,7 @@ class ChatService:
  ChatServiceError: If the API call fails
  """
  url = f"{self.base_url}/v1/chat/completions"
- logger.info("Sending chat completion", url=url, model=model)
+ logger.info("正在发送对话请求", url=url, model=model)
  payload = {
  "model": model,
  "messages": [{"role": m.role, "content": m.content} for m in messages],
@@ -143,17 +143,17 @@ class ChatService:
  usage=data.get("usage"),
  )
  logger.info(
- "Chat completion successful",
+ "对话请求成功",
  model=result.model,
  usage=result.usage,
  )
  return result
  except httpx.TimeoutException:
- logger.error("Request timeout during chat completion")
+ logger.error("对话请求超时")
  raise ChatServiceError("请求超时，请稍后重试")
  except httpx.HTTPStatusError as e:
  logger.error(
- "HTTP error during chat completion",
+ "对话请求 HTTP 错误",
  status_code=e.response.status_code,
  )
  if e.response.status_code == 401:
@@ -171,12 +171,12 @@ class ChatService:
  error_msg = str(e)
  raise ChatServiceError(f"API 请求失败: {error_msg}")
  except httpx.RequestError as e:
- logger.error("Request error during chat completion", error=str(e))
+ logger.error("对话请求网络错误", error=str(e))
  raise ChatServiceError(f"网络请求失败: {str(e)}")
  except ChatServiceError:
  raise
  except Exception as e:
- logger.error("Unexpected error during chat completion", error=str(e))
+ logger.error("对话请求未知错误", error=str(e))
  raise ChatServiceError(f"对话请求失败: {str(e)}")
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""

@@ -37,6 +37,11 @@ class RegistrationTokenViewSet(ModelViewSet):
  description=data.get("description", ""),
  scope=data["scope"],
  project_id=data.get("project_id"),
+ tags=data.get("tags", ),
+ run_untagged=data.get("run_untagged", True),
+ is_paused=data.get("is_paused", False),
+ is_protected=data.get("is_protected", False),
+ max_timeout=data.get("max_timeout"),
  expires_at=timezone.now + timedelta(seconds=data["expires_in"]),
  created_by=request.user,
  )
@@ -73,6 +78,13 @@ class RunnerRegisterView(APIView):
  concurrent=data["concurrent"],
  version=data.get("version", ""),
  ip_address=request.META.get("REMOTE_ADDR"),
+ # 继承 token 预设配置
+ description=reg_token.description,
+ tags=reg_token.tags or ["coding"],
+ run_untagged=reg_token.run_untagged,
+ is_paused=reg_token.is_paused,
+ is_protected=reg_token.is_protected,
+ max_timeout=reg_token.max_timeout,
  )
  # 绑定项目
  if reg_token.project:

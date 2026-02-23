@@ -8,7 +8,8 @@ import { del, get, post } from './client'
  * 获取 Runner 列表
  */
 export async function listRunners: Promise<Runner> {
- return get<Runner>('/runners/')
+ const res = await get<PaginatedResponse<Runner>>('/runners/')
+ return res.results
 }
 /**
  * 删除 Runner
