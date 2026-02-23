@@ -76,13 +76,21 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await _close_old_connections
  await database_sync_to_async(self._sync_update_heartbeat)(payload)
  self._heartbeat_count += 1
+ # 每次心跳记录详细指标到 RunnerEvent（支持趋势查看）
+ _METRIC_KEYS = (
+ "cpu_percent", "mem_percent", "mem_total_mb", "mem_used_mb",
+ "disk_percent", "disk_total_gb", "disk_used_gb",
+ "current_tasks", "max_concurrent", "accepting",
+ )
+ detail = {k: payload[k] for k in _METRIC_KEYS if k in payload}
+ await database_sync_to_async(_log_runner_event)(
+ self.runner.id, "heartbeat", detail
+ )
+ # 每 10 次广播到前端监控（避免 WS 消息过多）
  if self._heartbeat_count % 10 == 0:
  await _broadcast_monitor_event(
  self.channel_layer, "runner.status_changed", self.runner.id,
  {"status": "online", "current_tasks": payload.get("current_tasks", 0)},
- )
- await database_sync_to_async(_log_runner_event)(
- self.runner.id, "heartbeat", {"current_tasks": payload.get("current_tasks", 0)}
  )
  async def _handle_task_accepted(self, content):
  payload = content.get("payload", {})
