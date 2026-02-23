@@ -24,7 +24,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  >>> print(result["status"]) # "completed" or "suspended"
  """
  log = logger.bind(session_id=session_id)
- log.info("resume_agent_session_start", response_preview=user_response[:50])
+ log.info("开始恢复 Agent 会话", response_preview=user_response[:50])
  try:
  # Load session
  session = await AgentSession.objects.select_related("project", "user").aget(
@@ -33,7 +33,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  # 检查 session 是否已经完成（用户回答前 agent 可能已经跑完了）
  if session.status in (AgentSession.Status.COMPLETED, AgentSession.Status.ERROR, AgentSession.Status.MAX_ITERATIONS):
  log.info(
- "resume_agent_session_already_terminal",
+ "会话已处于终态，跳过恢复",
  session_status=session.status,
  )
  return {
@@ -94,7 +94,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  # Resume execution
  result = await loop.resume(user_response)
  log.info(
- "resume_agent_session_complete",
+ "Agent 会话恢复完成",
  status=result.status,
  iterations=result.metadata.get("iterations"),
  )
@@ -108,13 +108,13 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  "metadata": result.metadata,
  }
  except AgentSession.DoesNotExist:
- log.error("session_not_found")
+ log.error("会话未找到")
  return {
  "status": "error",
  "error": f"Session not found: {session_id}",
  }
  except Exception as e:
- log.exception("resume_agent_session_error", error=str(e))
+ log.exception("恢复 Agent 会话出错", error=str(e))
  return {
  "status": "error",
  "error": str(e),
@@ -142,12 +142,12 @@ async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
  if node_exec and node_exec.node:
  chat_id = node_exec.node.config.get("chat_id", "")
  if chat_id:
- log.info("chat_id_recovered_from_node", chat_id=chat_id)
+ log.info("从节点恢复 chat_id", chat_id=chat_id)
  return chat_id
- log.warning("chat_id_recovery_failed", reason="node_execution_not_found_or_no_chat_id")
+ log.warning("chat_id 恢复失败", reason="node_execution_not_found_or_no_chat_id")
  return ""
  except Exception as e:
- log.warning("chat_id_recovery_error", error=str(e))
+ log.warning("chat_id 恢复出错", error=str(e))
  return ""
 async def _notify_workflow_completion(
  session_id: str,
@@ -163,7 +163,7 @@ async def _notify_workflow_completion(
  resume_agent_session call.
  """
  if result.status == "suspended":
- log.info("workflow_notify_skip_suspended")
+ log.info("工作流节点挂起中，跳过通知")
  return
  try:
  from asgiref.sync import sync_to_async
@@ -183,7 +183,7 @@ async def _notify_workflow_completion(
  .first
  )
  if not node_exec:
- log.warning("workflow_node_execution_not_found")
+ log.warning("未找到工作流节点执行记录")
  return
  execution: WorkflowExecution = node_exec.workflow_execution
  if result.status == "completed":
@@ -198,16 +198,16 @@ async def _notify_workflow_completion(
  # Continue workflow execution
  engine = WorkflowEngine
  await engine._continue_after_node(execution, node_exec)
- log.info("workflow_continued_after_node")
+ log.info("工作流已继续执行下一节点")
  else:
  # Agent errored or hit max_iterations
  error_msg = result.error or f"Agent session ended with status: {result.status}"
  await sync_to_async(node_exec.mark_failed)(error_msg)
  engine = WorkflowEngine
  await engine._handle_node_failure(execution, node_exec)
- log.warning("workflow_node_failed", agent_status=result.status)
+ log.warning("工作流节点执行失败", agent_status=result.status)
  except Exception as e:
- log.exception("workflow_notify_error", error=str(e))
+ log.exception("工作流通知出错", error=str(e))
 def schedule_resume_agent_session(session_id: str, user_response: str) -> None:
  """Schedule async resume task to run in background.
  Uses asyncio.create_task if in async context, otherwise creates
@@ -223,7 +223,7 @@ def schedule_resume_agent_session(session_id: str, user_response: str) -> None:
  loop = asyncio.get_running_loop
  # Schedule task in current loop
  loop.create_task(resume_agent_session(session_id, user_response))
- log.info("resume_task_scheduled_in_loop")
+ log.info("恢复任务已加入事件循环")
  except RuntimeError:
  # No running loop - create new one in thread
  import threading
@@ -231,4 +231,4 @@ def schedule_resume_agent_session(session_id: str, user_response: str) -> None:
  asyncio.run(resume_agent_session(session_id, user_response))
  thread = threading.Thread(target=run_in_thread, daemon=True)
  thread.start
- log.info("resume_task_scheduled_in_thread")
+ log.info("恢复任务已在新线程中调度")

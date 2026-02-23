@@ -1,5 +1,6 @@
-# Friday 开发规范
-**所有回复使用中文。** 代码变量名、技术术语、CLI 命令用英文。
+# Claude Code 项目指令
+## 语言要求
+**必须使用中文回复用户。** 这是项目的硬性要求，所有对话、解释、文档注释都使用中文。
 ## 项目结构
 全栈 Monorepo：
 - **前端**: `web/` — Vue 3 + TypeScript + shadcn-vue + Tailwind CSS

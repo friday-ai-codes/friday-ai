@@ -20,14 +20,18 @@ class RegistrationToken(models.Model):
  choices=[("global", "全局"), ("project", "项目")],
  default="global",
  )
- project = models.ForeignKey(
- "projects.Project", on_delete=models.CASCADE, null=True, blank=True
+ project = models.ForeignKey("projects.Project", on_delete=models.CASCADE, null=True, blank=True)
+ # GitLab 风格预设配置（创建时设定，注册时继承到 Runner）
+ tags = models.JSONField(default=list, blank=True, help_text="预设标签")
+ run_untagged = models.BooleanField(default=True, help_text="运行未打标签的作业")
+ is_paused = models.BooleanField(default=False, help_text="暂停接收新作业")
+ is_protected = models.BooleanField(default=False, help_text="仅受保护分支")
+ max_timeout = models.PositiveIntegerField(
+ null=True, blank=True, help_text="最大作业超时（秒），最小 600"
  )
  is_used = models.BooleanField(default=False)
  used_at = models.DateTimeField(null=True, blank=True)
- used_by_runner = models.ForeignKey(
- "Runner", on_delete=models.SET_NULL, null=True, blank=True
- )
+ used_by_runner = models.ForeignKey("Runner", on_delete=models.SET_NULL, null=True, blank=True)
  expires_at = models.DateTimeField
  created_by = models.ForeignKey("accounts.User", on_delete=models.CASCADE)
  created_at = models.DateTimeField(auto_now_add=True)
@@ -55,16 +59,17 @@ class Runner(models.Model):
  name = models.CharField(max_length=200)
  token_hash = models.CharField(max_length=64, unique=True, db_index=True)
  token_prefix = models.CharField(max_length=8, default="")
- scope = models.CharField(
- max_length=20, choices=Scope.choices, default=Scope.GLOBAL
- )
+ scope = models.CharField(max_length=20, choices=Scope.choices, default=Scope.GLOBAL)
  projects = models.ManyToManyField("projects.Project", blank=True)
  concurrent = models.PositiveIntegerField(default=1)
- status = models.CharField(
- max_length=20, choices=Status.choices, default=Status.OFFLINE
- )
+ status = models.CharField(max_length=20, choices=Status.choices, default=Status.OFFLINE)
  version = models.CharField(max_length=50, blank=True, default="")
  is_active = models.BooleanField(default=True)
+ is_paused = models.BooleanField(default=False, help_text="暂停接收新作业")
+ is_protected = models.BooleanField(default=False, help_text="仅受保护分支")
+ run_untagged = models.BooleanField(default=True, help_text="运行未打标签的作业")
+ max_timeout = models.PositiveIntegerField(null=True, blank=True, help_text="最大作业超时（秒）")
+ description = models.CharField(max_length=500, blank=True, default="")
  last_heartbeat = models.DateTimeField(null=True, blank=True)
  tags = models.JSONField(
  default=_default_tags,

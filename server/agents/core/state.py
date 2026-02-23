@@ -93,7 +93,7 @@ class AgentStateManager:
  },
  )
  logger.debug(
- "agent_state_saved",
+ "Agent 状态已保存",
  session_id=state.session_id,
  status=state.status.value,
  iteration=state.iteration,
@@ -160,7 +160,7 @@ class AgentStateManager:
  session = await AgentSession.objects.aget(session_id=session_id)
  except AgentSession.DoesNotExist:
  logger.warning(
- "tool_call_log_skipped",
+ "工具调用日志跳过",
  session_id=session_id,
  reason="session_not_found",
  )
@@ -179,7 +179,7 @@ class AgentStateManager:
  iteration=iteration,
  )
  logger.debug(
- "tool_call_logged",
+ "工具调用已记录",
  session_id=session_id,
  tool_name=tool_name,
  success=result.success,
@@ -223,7 +223,7 @@ class AgentStateManager:
  temp_data={},
  )
  if updated > 0:
- logger.info("expired_sessions", count=updated)
+ logger.info("已清理过期会话", count=updated)
  return updated
  async def create_full_snapshot(self, state: AgentState) -> dict[str, Any]:
  """

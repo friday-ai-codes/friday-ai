@@ -8,13 +8,19 @@ class RegistrationTokenCreateSerializer(serializers.Serializer):
  scope = serializers.ChoiceField(choices=["global", "project"], default="global")
  project_id = serializers.UUIDField(required=False, allow_null=True)
  expires_in = serializers.IntegerField(default=3600, min_value=60)
+ tags = serializers.ListField(child=serializers.CharField, required=False, default=list)
+ run_untagged = serializers.BooleanField(required=False, default=True)
+ is_paused = serializers.BooleanField(required=False, default=False)
+ is_protected = serializers.BooleanField(required=False, default=False)
+ max_timeout = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=600)
 class RegistrationTokenSerializer(serializers.ModelSerializer):
  is_valid = serializers.BooleanField(read_only=True)
- project_id = serializers.UUIDField(source="project_id", read_only=True, allow_null=True)
+ project_id = serializers.UUIDField(read_only=True, allow_null=True)
  class Meta:
  model = RegistrationToken
  fields = [
  "id", "description", "scope", "project_id",
+ "tags", "run_untagged", "is_paused", "is_protected", "max_timeout",
  "is_used", "used_at", "expires_at", "created_at", "is_valid",
  ]
  read_only_fields = fields
@@ -49,9 +55,10 @@ class RunnerSerializer(serializers.ModelSerializer):
  model = Runner
  fields = [
  "id", "name", "token_prefix", "scope", "concurrent",
- "status", "version", "is_active", "last_heartbeat",
- "ip_address", "registered_at", "tags", "current_tasks",
- "current_task_list",
+ "status", "version", "is_active", "is_paused", "is_protected",
+ "run_untagged", "max_timeout", "description",
+ "last_heartbeat", "ip_address", "registered_at", "tags",
+ "current_tasks", "current_task_list",
  ]
  read_only_fields = fields
  def get_current_task_list(self, obj: Runner) -> list[dict[str, Any]]:
