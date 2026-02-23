@@ -3,8 +3,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/friday-ai-codes/friday-ai/runner/internal/callback"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/config"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/crypto"
+	"github.com/friday-ai-codes/friday-ai/runner/internal/docker"
+	"github.com/friday-ai-codes/friday-ai/runner/internal/scheduler"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ui"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/ws"
 )
@@ -25,12 +28,24 @@ var runCmd = &cobra.Command{
  if err != nil {
  return fmt.Errorf("解密 token 失败: %w", err)
  }
+ executor, err:= docker.NewDockerExecutor(config.GetDefaultImage)
+ if err != nil {
+ return fmt.Errorf("初始化 Docker 执行器失败: %w", err)
+ }
+ sched:= scheduler.New(config.GetConcurrent)
  return ws.Run(context.Background, ws.Config{
  ServerURL: config.GetServerURL,
  Token: string(token),
  Name: config.GetRunnerName,
  Version: "5.0.0",
  Concurrent: config.GetConcurrent,
+ Executor: executor,
+ Scheduler: sched,
+ CallbackFactory: func(q *ws.MessageQueue, cbToken string, port int) ws.CallbackService {
+ return callback.New(q, cbToken, port)
+ },
+ CallbackPort: config.GetCallbackPort,
+ DefaultTimeout: config.GetExecutorTimeout,
  })
 	},
 }
