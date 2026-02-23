@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	mathrand "math/rand/v2"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -66,6 +67,7 @@ type SchedulerService interface {
 	IsAccepting bool
 	StopAccepting
 	WaitAllDone(timeout time.Duration)
+	TogglePause bool
 }
 // Config 是 WebSocket 客户端配置。
 type Config struct {
@@ -92,6 +94,25 @@ func Run(ctx context.Context, cfg Config) error {
 	Warmup
 	ctx, cancel:= signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer cancel
+	// SIGUSR1 触发 pause/resume，不终止进程
+	sigCh:= make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGUSR1)
+	defer signal.Stop(sigCh)
+	go func {
+ for {
+ select {
+ case <-ctx.Done:
+ return
+ case <-sigCh:
+ paused:= cfg.Scheduler.TogglePause
+ if paused {
+ log.Info.Msg("sigusr1_paused")
+ } else {
+ log.Info.Msg("sigusr1_resumed")
+ }
+ }
+ }
+	}
 	queue:= NewMessageQueue(100)
 	// 生成 callbackToken
 	tokenBytes:= make(byte, 32)
