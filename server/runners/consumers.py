@@ -22,6 +22,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  "task.token_usage": "_handle_task_token_usage",
  "task.log": "_handle_task_log",
  "task.progress": "_handle_task_progress",
+ "task.rejected": "_handle_task_rejected",
  "tool.call": "_handle_tool_call",
  }
  async def connect(self):
@@ -176,6 +177,17 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  task_id = payload.get("task_id", "")
  await _close_old_connections
  await database_sync_to_async(self._sync_handle_progress)(task_id, payload)
+ async def _handle_task_rejected(self, content):
+ payload = content.get("payload", {})
+ task_id = payload.get("task_id", "")
+ reason = payload.get("reason", "")
+ logger.info("task_rejected", runner=str(self.runner.id), task_id=task_id, reason=reason)
+ await _close_old_connections
+ dispatch_task = await database_sync_to_async(self._sync_rebuild_dispatch_task)(task_id)
+ if dispatch_task:
+ from runners.dispatcher import get_dispatcher
+ await get_dispatcher.on_task_rejected(task_id, dispatch_task)
+ await database_sync_to_async(self._sync_update_assignment_status)(task_id, "rejected")
  async def _handle_tool_call(self, content):
  payload = content.get("payload", {})
  call_id = payload.get("call_id", "")
@@ -323,10 +335,32 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  },
  }
  session.save(update_fields=["last_output", "updated_at"])
+ def _sync_rebuild_dispatch_task(self, session_id: str):
+ from runners.dispatcher import DispatchTask
+ from runners.models import RunnerTaskAssignment
+ assignment = RunnerTaskAssignment.objects.filter(
+ runner=self.runner, session__session_id=session_id
+ ).select_related("session").first
+ if not assignment or not assignment.session:
+ return None
+ session = assignment.session
+ return DispatchTask(
+ task_id=session.session_id,
+ task_type=session.last_output.get("task_type", "coding") if session.last_output else "coding",
+ tags=list(self.runner.tags),
+ image="",
+ repo_url="",
+ branch="",
+ target_branch="",
+ prompt="",
+ timeout=600,
+ node_execution_id="",
+ session_id=session.session_id,
+ )
  def _sync_update_assignment_status(self, session_id: str, status: str) -> None:
  from runners.models import RunnerTaskAssignment
  updates: dict[str, object] = {"status": status}
- if status in ("completed", "failed"):
+ if status in ("completed", "failed", "rejected"):
  updates["completed_at"] = timezone.now
  RunnerTaskAssignment.objects.filter(
  runner=self.runner, session__session_id=session_id, status__in=["assigned", "running"]

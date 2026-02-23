@@ -6,7 +6,9 @@ class MessageType(str, enum.Enum):
  # Runner -> Server
  RUNNER_HELLO = "runner.hello"
  RUNNER_HEARTBEAT = "runner.heartbeat"
+ RUNNER_BYE = "runner.bye"
  TASK_ACCEPTED = "task.accepted"
+ TASK_REJECTED = "task.rejected"
  TASK_COMPLETED = "task.completed"
  TASK_FAILED = "task.failed"
  TASK_LOG = "task.log"
