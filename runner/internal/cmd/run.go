@@ -28,9 +28,20 @@ var runCmd = &cobra.Command{
  if err != nil {
  return fmt.Errorf("解密 token 失败: %w", err)
  }
- executor, err:= docker.NewDockerExecutor(config.GetDefaultImage)
+ var executor ws.ExecutorService
+ switch config.GetExecutorType {
+ case "docker", "":
+ exec, err:= docker.NewDockerExecutor(config.GetDefaultImage)
  if err != nil {
  return fmt.Errorf("初始化 Docker 执行器失败: %w", err)
+ }
+ executor = exec
+ case "kubernetes":
+ ui.Error("Kubernetes executor 尚未实现")
+ ui.Hint("请在 config.toml 中设置 executor.type = \"docker\"")
+ return fmt.Errorf("kubernetes executor 未实现")
+ default:
+ return fmt.Errorf("未知的 executor 类型: %s", config.GetExecutorType)
  }
  sched:= scheduler.New(config.GetConcurrent)
  return ws.Run(context.Background, ws.Config{

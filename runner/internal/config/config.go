@@ -89,3 +89,9 @@ func GetCallbackPort int {
 	}
 	return 8976
 }
+func GetExecutorType string {
+	if v:= viper.GetString("executor.type"); v != "" {
+ return v
+	}
+	return "docker"
+}
