@@ -1,6 +1,7 @@
 """WorkflowExecution and NodeExecution model definitions."""
 import uuid
 from typing import Any
+from asgiref.sync import sync_to_async
 from django.db import models
 from django.utils import timezone
 class ExecutionStatus(models.TextChoices):
@@ -140,6 +141,13 @@ class WorkflowExecution(models.Model):
  self.started_at = timezone.now
  self.timeout_at = timezone.now + timezone.timedelta(seconds=self.workflow.default_timeout)
  self.save(update_fields=["status", "started_at", "timeout_at"])
+ async def amark_started(self) -> None:
+ """标记开始执行（async 版本）"""
+ self.status = ExecutionStatus.RUNNING
+ self.started_at = timezone.now
+ default_timeout = await sync_to_async(lambda: self.workflow.default_timeout)
+ self.timeout_at = timezone.now + timezone.timedelta(seconds=default_timeout)
+ await self.asave(update_fields=["status", "started_at", "timeout_at"])
  def mark_completed(self, output_data: dict | None = None) -> None:
  """标记执行完成"""
  self.status = ExecutionStatus.COMPLETED
@@ -147,6 +155,13 @@ class WorkflowExecution(models.Model):
  if output_data:
  self.output_data = output_data
  self.save(update_fields=["status", "completed_at", "output_data"])
+ async def amark_completed(self, output_data: dict | None = None) -> None:
+ """标记执行完成（async 版本）"""
+ self.status = ExecutionStatus.COMPLETED
+ self.completed_at = timezone.now
+ if output_data:
+ self.output_data = output_data
+ await self.asave(update_fields=["status", "completed_at", "output_data"])
  def mark_failed(self, error: str, node_id: uuid.UUID | None = None) -> None:
  """标记执行失败"""
  self.status = ExecutionStatus.FAILED
@@ -154,10 +169,21 @@ class WorkflowExecution(models.Model):
  self.error_message = error
  self.error_node_id = node_id
  self.save(update_fields=["status", "completed_at", "error_message", "error_node_id"])
+ async def amark_failed(self, error: str, node_id: uuid.UUID | None = None) -> None:
+ """标记执行失败（async 版本）"""
+ self.status = ExecutionStatus.FAILED
+ self.completed_at = timezone.now
+ self.error_message = error
+ self.error_node_id = node_id
+ await self.asave(update_fields=["status", "completed_at", "error_message", "error_node_id"])
  def mark_suspended(self) -> None:
  """标记工作流挂起"""
  self.status = ExecutionStatus.SUSPENDED
  self.save(update_fields=["status"])
+ async def amark_suspended(self) -> None:
+ """标记工作流挂起（async 版本）"""
+ self.status = ExecutionStatus.SUSPENDED
+ await self.asave(update_fields=["status"])
  def get_context_value(self, key: str, default: Any = None) -> Any:
  """获取上下文变量"""
  return self.context.get(key, default)
@@ -300,6 +326,13 @@ class NodeExecution(models.Model):
  if input_data is not None:
  self.input_data = input_data
  self.save(update_fields=["status", "started_at", "input_data"])
+ async def amark_started(self, input_data: dict | None = None) -> None:
+ """标记开始执行（async 版本）"""
+ self.status = NodeExecutionStatus.RUNNING
+ self.started_at = timezone.now
+ if input_data is not None:
+ self.input_data = input_data
+ await self.asave(update_fields=["status", "started_at", "input_data"])
  def mark_completed(self, output_data: dict | None = None) -> None:
  """标记执行完成"""
  self.status = NodeExecutionStatus.COMPLETED
@@ -310,6 +343,16 @@ class NodeExecution(models.Model):
  # 更新父执行的统计
  self.workflow_execution.completed_nodes += 1
  self.workflow_execution.save(update_fields=["completed_nodes"])
+ async def amark_completed(self, output_data: dict | None = None) -> None:
+ """标记执行完成（async 版本）"""
+ self.status = NodeExecutionStatus.COMPLETED
+ self.completed_at = timezone.now
+ if output_data:
+ self.output_data = output_data
+ await self.asave(update_fields=["status", "completed_at", "output_data"])
+ # 级联更新父执行统计
+ self.workflow_execution.completed_nodes += 1
+ await self.workflow_execution.asave(update_fields=["completed_nodes"])
  def mark_failed(self, error: str, traceback: str = "") -> None:
  """标记执行失败"""
  self.status = NodeExecutionStatus.FAILED
@@ -320,6 +363,16 @@ class NodeExecution(models.Model):
  # 更新父执行的统计
  self.workflow_execution.failed_nodes += 1
  self.workflow_execution.save(update_fields=["failed_nodes"])
+ async def amark_failed(self, error: str, traceback: str = "") -> None:
+ """标记执行失败（async 版本）"""
+ self.status = NodeExecutionStatus.FAILED
+ self.completed_at = timezone.now
+ self.error_message = error
+ self.error_traceback = traceback
+ await self.asave(update_fields=["status", "completed_at", "error_message", "error_traceback"])
+ # 级联更新父执行统计
+ self.workflow_execution.failed_nodes += 1
+ await self.workflow_execution.asave(update_fields=["failed_nodes"])
  def mark_skipped(self, reason: str = "") -> None:
  """标记跳过"""
  self.status = NodeExecutionStatus.SKIPPED
@@ -329,11 +382,25 @@ class NodeExecution(models.Model):
  # 更新父执行的统计
  self.workflow_execution.skipped_nodes += 1
  self.workflow_execution.save(update_fields=["skipped_nodes"])
+ async def amark_skipped(self, reason: str = "") -> None:
+ """标记跳过（async 版本）"""
+ self.status = NodeExecutionStatus.SKIPPED
+ self.completed_at = timezone.now
+ self.error_message = reason
+ await self.asave(update_fields=["status", "completed_at", "error_message"])
+ # 级联更新父执行统计
+ self.workflow_execution.skipped_nodes += 1
+ await self.workflow_execution.asave(update_fields=["skipped_nodes"])
  def mark_waiting_approval(self, approval_request: dict) -> None:
  """标记等待审批"""
  self.status = NodeExecutionStatus.WAITING_APPROVAL
  self.approval_data = approval_request
  self.save(update_fields=["status", "approval_data"])
+ async def amark_waiting_approval(self, approval_request: dict) -> None:
+ """标记等待审批（async 版本）"""
+ self.status = NodeExecutionStatus.WAITING_APPROVAL
+ self.approval_data = approval_request
+ await self.asave(update_fields=["status", "approval_data"])
  def approve(self, approver, comment: str = "") -> None:
  """审批通过"""
  self.approval_data.update(
@@ -365,6 +432,12 @@ class NodeExecution(models.Model):
  self.output_data = subscription_data
  self.approval_data = subscription_data # 复用 approval_data 字段存储等待信息
  self.save(update_fields=["status", "output_data", "approval_data"])
+ async def amark_waiting_event(self, subscription_data: dict) -> None:
+ """标记节点等待外部事件（async 版本）"""
+ self.status = NodeExecutionStatus.WAITING_EVENT
+ self.output_data = subscription_data
+ self.approval_data = subscription_data
+ await self.asave(update_fields=["status", "output_data", "approval_data"])
 class WorkflowEventSubscription(models.Model):
  """工作流事件订阅记录
  记录挂起的工作流正在等待的外部事件条件。
@@ -462,7 +535,17 @@ class WorkflowEventSubscription(models.Model):
  self.matched_at = timezone.now
  self.matched_payload = payload
  self.save(update_fields=["is_active", "matched_at", "matched_payload"])
+ async def amark_matched(self, payload: dict) -> None:
+ """标记订阅已匹配（async 版本）"""
+ self.is_active = False
+ self.matched_at = timezone.now
+ self.matched_payload = payload
+ await self.asave(update_fields=["is_active", "matched_at", "matched_payload"])
  def mark_inactive(self) -> None:
  """标记订阅为非活跃（工作流取消/超时时调用）"""
  self.is_active = False
  self.save(update_fields=["is_active"])
+ async def amark_inactive(self) -> None:
+ """标记订阅为非活跃（async 版本）"""
+ self.is_active = False
+ await self.asave(update_fields=["is_active"])
