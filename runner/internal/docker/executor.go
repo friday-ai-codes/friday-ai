@@ -1,9 +1,10 @@
 package docker
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -18,6 +19,7 @@ import (
 type Executor interface {
 	StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
 	WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (exitCode int, logs string, err error)
+	StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error
 	KillContainer(ctx context.Context, containerID string) error
 	RemoveContainer(ctx context.Context, containerID string) error
 	StartupCleanup(ctx context.Context) (int, error)
@@ -99,16 +101,27 @@ func (e *DockerExecutor) WaitContainer(ctx context.Context, containerID string, 
 	case result:= <-statusCh:
  exitCode = int(result.StatusCode)
 	}
-	// 读取日志（multiplexed stream 需要 stdcopy 分离）
-	logReader, err:= e.cli.ContainerLogs(ctx, containerID, container.LogsOptions{ShowStdout: true, ShowStderr: true, Tail: "2000"})
+	return exitCode, "", nil
+}
+// StreamLogs 实时逐行读取容器日志，每行调用 onLine 回调。ctx 取消时自动终止。
+func (e *DockerExecutor) StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error {
+	reader, err:= e.cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+ ShowStdout: true, ShowStderr: true, Follow: true,
+	})
 	if err != nil {
- return exitCode, "", nil
+ return fmt.Errorf("获取容器日志流失败: %w", err)
 	}
-	defer logReader.Close
-	var stdout, stderr bytes.Buffer
-	_, _ = stdcopy.StdCopy(&stdout, &stderr, logReader)
-	logs:= stdout.String + stderr.String
-	return exitCode, logs, nil
+	defer reader.Close
+	pr, pw:= io.Pipe
+	go func {
+ _, _ = stdcopy.StdCopy(pw, pw, reader)
+ pw.Close
+	}
+	s:= bufio.NewScanner(pr)
+	for s.Scan {
+ onLine(s.Text)
+	}
+	return s.Err
 }
 func (e *DockerExecutor) KillContainer(ctx context.Context, containerID string) error {
 	err:= e.cli.ContainerKill(ctx, containerID, "KILL")
