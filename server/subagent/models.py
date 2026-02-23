@@ -136,6 +136,10 @@ class SubAgentSession(models.Model):
  """标记为等待容器启动。"""
  self.status = self.Status.PENDING
  self.save(update_fields=["status", "updated_at"])
+ async def amark_pending(self) -> None:
+ """标记为等待容器启动（async 版本）"""
+ self.status = self.Status.PENDING
+ await self.asave(update_fields=["status", "updated_at"])
  def mark_running(self, container_id: str, container_name: str) -> None:
  """标记为运行中，记录容器信息。"""
  self.status = self.Status.RUNNING
@@ -143,27 +147,55 @@ class SubAgentSession(models.Model):
  self.container_name = container_name
  self.started_at = timezone.now
  self.save(update_fields=["status", "container_id", "container_name", "started_at", "updated_at"])
+ async def amark_running(self, container_id: str, container_name: str) -> None:
+ """标记为运行中（async 版本）"""
+ self.status = self.Status.RUNNING
+ self.container_id = container_id
+ self.container_name = container_name
+ self.started_at = timezone.now
+ await self.asave(update_fields=["status", "container_id", "container_name", "started_at", "updated_at"])
  def mark_completed(self) -> None:
  """标记为已完成。"""
  self.status = self.Status.COMPLETED
  self.completed_at = timezone.now
  self.save(update_fields=["status", "completed_at", "updated_at"])
+ async def amark_completed(self) -> None:
+ """标记为已完成（async 版本）"""
+ self.status = self.Status.COMPLETED
+ self.completed_at = timezone.now
+ await self.asave(update_fields=["status", "completed_at", "updated_at"])
  def mark_failed(self, error: str = "") -> None:
  """标记为失败。"""
  self.status = self.Status.ERROR
  self.last_error = error
  self.completed_at = timezone.now
  self.save(update_fields=["status", "last_error", "completed_at", "updated_at"])
+ async def amark_failed(self, error: str = "") -> None:
+ """标记为失败（async 版本）"""
+ self.status = self.Status.ERROR
+ self.last_error = error
+ self.completed_at = timezone.now
+ await self.asave(update_fields=["status", "last_error", "completed_at", "updated_at"])
  def mark_timeout(self) -> None:
  """标记为超时。"""
  self.status = self.Status.TIMEOUT
  self.completed_at = timezone.now
  self.save(update_fields=["status", "completed_at", "updated_at"])
+ async def amark_timeout(self) -> None:
+ """标记为超时（async 版本）"""
+ self.status = self.Status.TIMEOUT
+ self.completed_at = timezone.now
+ await self.asave(update_fields=["status", "completed_at", "updated_at"])
  def mark_cancelled(self) -> None:
  """标记为已取消。"""
  self.status = self.Status.CANCELLED
  self.completed_at = timezone.now
  self.save(update_fields=["status", "completed_at", "updated_at"])
+ async def amark_cancelled(self) -> None:
+ """标记为已取消（async 版本）"""
+ self.status = self.Status.CANCELLED
+ self.completed_at = timezone.now
+ await self.asave(update_fields=["status", "completed_at", "updated_at"])
  @property
  def duration_ms(self) -> int | None:
  """执行时长（毫秒）。"""

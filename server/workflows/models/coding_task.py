@@ -166,15 +166,30 @@ class CodingTask(models.Model):
  self.status = CodingTaskStatus.PLANNING
  self.started_at = timezone.now
  self.save(update_fields=["status", "started_at"])
+ async def amark_planning(self) -> None:
+ """标记开始规划（async 版本）"""
+ from django.utils import timezone
+ self.status = CodingTaskStatus.PLANNING
+ self.started_at = timezone.now
+ await self.asave(update_fields=["status", "started_at"])
  def mark_plan_review(self, plan_output: str) -> None:
  """标记等待方案评审"""
  self.status = CodingTaskStatus.PLAN_REVIEW
  self.plan_output = plan_output
  self.save(update_fields=["status", "plan_output"])
+ async def amark_plan_review(self, plan_output: str) -> None:
+ """标记等待方案评审（async 版本）"""
+ self.status = CodingTaskStatus.PLAN_REVIEW
+ self.plan_output = plan_output
+ await self.asave(update_fields=["status", "plan_output"])
  def mark_executing(self) -> None:
  """标记开始执行"""
  self.status = CodingTaskStatus.EXECUTING
  self.save(update_fields=["status"])
+ async def amark_executing(self) -> None:
+ """标记开始执行（async 版本）"""
+ self.status = CodingTaskStatus.EXECUTING
+ await self.asave(update_fields=["status"])
  def mark_code_review(self, branch_name: str, commit_sha: str, pr_url: str = "") -> None:
  """标记等待代码评审"""
  self.status = CodingTaskStatus.CODE_REVIEW
@@ -182,12 +197,25 @@ class CodingTask(models.Model):
  self.commit_sha = commit_sha
  self.pr_url = pr_url
  self.save(update_fields=["status", "branch_name", "commit_sha", "pr_url"])
+ async def amark_code_review(self, branch_name: str, commit_sha: str, pr_url: str = "") -> None:
+ """标记等待代码评审（async 版本）"""
+ self.status = CodingTaskStatus.CODE_REVIEW
+ self.branch_name = branch_name
+ self.commit_sha = commit_sha
+ self.pr_url = pr_url
+ await self.asave(update_fields=["status", "branch_name", "commit_sha", "pr_url"])
  def mark_merged(self) -> None:
  """标记已合并"""
  from django.utils import timezone
  self.status = CodingTaskStatus.MERGED
  self.completed_at = timezone.now
  self.save(update_fields=["status", "completed_at"])
+ async def amark_merged(self) -> None:
+ """标记已合并（async 版本）"""
+ from django.utils import timezone
+ self.status = CodingTaskStatus.MERGED
+ self.completed_at = timezone.now
+ await self.asave(update_fields=["status", "completed_at"])
  def mark_failed(self, error: str) -> None:
  """标记失败"""
  from django.utils import timezone
@@ -196,6 +224,14 @@ class CodingTask(models.Model):
  self.completed_at = timezone.now
  self.retry_count += 1
  self.save(update_fields=["status", "error_message", "completed_at", "retry_count"])
+ async def amark_failed(self, error: str) -> None:
+ """标记失败（async 版本）"""
+ from django.utils import timezone
+ self.status = CodingTaskStatus.FAILED
+ self.error_message = error
+ self.completed_at = timezone.now
+ self.retry_count += 1
+ await self.asave(update_fields=["status", "error_message", "completed_at", "retry_count"])
  def add_feedback(self, feedback: str) -> None:
  """添加人工反馈"""
  if self.human_feedback:
@@ -222,6 +258,17 @@ class CodingTask(models.Model):
  self.error_message = error
  self.completed_at = timezone.now
  self.save(
+ update_fields=["status", "branch_name", "commit_sha", "error_message", "completed_at"]
+ )
+ async def amark_partial_success(self, branch_name: str, commit_sha: str, error: str) -> None:
+ """标记部分成功（async 版本）"""
+ from django.utils import timezone
+ self.status = CodingTaskStatus.PARTIAL_SUCCESS
+ self.branch_name = branch_name
+ self.commit_sha = commit_sha
+ self.error_message = error
+ self.completed_at = timezone.now
+ await self.asave(
  update_fields=["status", "branch_name", "commit_sha", "error_message", "completed_at"]
  )
  def set_pr_url(self, pr_url: str) -> None:
