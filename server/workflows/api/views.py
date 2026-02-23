@@ -129,6 +129,54 @@ def run_async(coro):
  allowing background tasks created via asyncio.create_task to continue running.
  """
  return async_to_sync(lambda: coro)
+def _bulk_update_nodes_and_edges(
+ workflow: Workflow,
+ nodes_data: list,
+ edges_data: list,
+ delete_orphans: bool = False,
+) -> None:
+ """同步事务函数 -- bulk update nodes and edges。
+ 提取为独立函数，后续 async 迁移时只需
+ await sync_to_async(_bulk_update_nodes_and_edges)(...) 即可。
+ """
+ with transaction.atomic:
+ existing_node_ids: set[str] = set
+ for node_data in nodes_data:
+ node_id = node_data.get("id")
+ if node_id:
+ node = WorkflowNode.objects.filter(id=node_id, workflow=workflow).first
+ if node:
+ serializer = WorkflowNodeSerializer(node, data=node_data, partial=True)
+ serializer.is_valid(raise_exception=True)
+ serializer.save
+ else:
+ serializer = WorkflowNodeCreateSerializer(data=node_data)
+ serializer.is_valid(raise_exception=True)
+ node = WorkflowNode.objects.create(
+ id=node_id, workflow=workflow, **serializer.validated_data
+ )
+ existing_node_ids.add(str(node_id))
+ else:
+ serializer = WorkflowNodeCreateSerializer(data=node_data)
+ serializer.is_valid(raise_exception=True)
+ node = WorkflowNode.objects.create(
+ workflow=workflow, **serializer.validated_data
+ )
+ existing_node_ids.add(str(node.id))
+ if delete_orphans:
+ workflow.nodes.exclude(id__in=existing_node_ids).delete
+ if edges_data:
+ workflow.edges.all.delete
+ for edge_data in edges_data:
+ serializer = WorkflowEdgeCreateSerializer(data=edge_data)
+ serializer.is_valid(raise_exception=True)
+ data = serializer.validated_data
+ WorkflowEdge.objects.create(
+ workflow=workflow,
+ source_node_id=data.pop("source_node_id"),
+ target_node_id=data.pop("target_node_id"),
+ **data,
+ )
 # =============================================================================
 # Workflow ViewSet
 # =============================================================================
@@ -357,56 +405,8 @@ class WorkflowViewSet(ModelViewSet):
  workflow = self.get_object
  nodes_data = request.data.get("nodes", )
  edges_data = request.data.get("edges", )
- with transaction.atomic:
- # Update or create nodes
- existing_node_ids = set
- for node_data in nodes_data:
- node_id = node_data.get("id")
- if node_id:
- # Try to find existing node by UUID
- node = WorkflowNode.objects.filter(
- id=node_id, workflow=workflow
- ).first
- if node:
- # Update existing
- serializer = WorkflowNodeSerializer(
- node, data=node_data, partial=True
- )
- serializer.is_valid(raise_exception=True)
- serializer.save
- else:
- # Create new node with specified UUID
- serializer = WorkflowNodeCreateSerializer(data=node_data)
- serializer.is_valid(raise_exception=True)
- node = WorkflowNode.objects.create(
- id=node_id, workflow=workflow, **serializer.validated_data
- )
- existing_node_ids.add(str(node_id))
- else:
- # Create new node with auto-generated UUID
- serializer = WorkflowNodeCreateSerializer(data=node_data)
- serializer.is_valid(raise_exception=True)
- node = WorkflowNode.objects.create(
- workflow=workflow, **serializer.validated_data
- )
- existing_node_ids.add(str(node.id))
- # Delete removed nodes
  delete_orphans = request.data.get("delete_orphans", False)
- if delete_orphans:
- workflow.nodes.exclude(id__in=existing_node_ids).delete
- # Recreate edges
- if edges_data:
- workflow.edges.all.delete
- for edge_data in edges_data:
- serializer = WorkflowEdgeCreateSerializer(data=edge_data)
- serializer.is_valid(raise_exception=True)
- data = serializer.validated_data
- WorkflowEdge.objects.create(
- workflow=workflow,
- source_node_id=data.pop("source_node_id"),
- target_node_id=data.pop("target_node_id"),
- **data,
- )
+ _bulk_update_nodes_and_edges(workflow, nodes_data, edges_data, delete_orphans)
  # Return updated workflow
  workflow.refresh_from_db
  # Sync triggers from feishu_event_trigger nodes
