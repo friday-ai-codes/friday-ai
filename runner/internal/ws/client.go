@@ -51,6 +51,7 @@ type CallbackFactory func(queue *MessageQueue, token string, port int) CallbackS
 type ExecutorService interface {
 	StartContainer(ctx context.Context, task TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
 	WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (exitCode int, logs string, err error)
+	StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error
 	RemoveContainer(ctx context.Context, containerID string) error
 	StartupCleanup(ctx context.Context) (int, error)
 	ZombieScan(ctx context.Context, knownIDs string, queue *MessageQueue, zombieThreshold, retainHours float64) error
