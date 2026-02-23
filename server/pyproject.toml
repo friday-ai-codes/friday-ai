@@ -60,6 +60,7 @@ dependencies = [
  "psutil>=5.9.0",
  "python-socks>=2.8.0",
  "openai>=2.16.0",
+ "adrf>=0.1.12",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -84,6 +85,7 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 [tool.coverage.run]
 source = ["friday"]
 omit = ["*/migrations/*", "*/tests/*", "*/__pycache__/*"]
