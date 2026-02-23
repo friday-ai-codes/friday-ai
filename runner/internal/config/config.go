@@ -44,6 +44,8 @@ func bindEnvVars {
 	_ = viper.BindEnv("runner.concurrent", "FRIDAY_RUNNER_CONCURRENT")
 	_ = viper.BindEnv("executor.type", "FRIDAY_RUNNER_EXECUTOR")
 	_ = viper.BindEnv("executor.timeout", "FRIDAY_RUNNER_TIMEOUT")
+	_ = viper.BindEnv("executor.image", "FRIDAY_RUNNER_IMAGE")
+	_ = viper.BindEnv("callback.port", "FRIDAY_RUNNER_CALLBACK_PORT")
 }
 func SaveConfig(serverURL, encryptedToken, name string, concurrent int) error {
 	dir:= ConfigDir
@@ -69,3 +71,21 @@ func GetServerURL string { return viper.GetString("server.url") }
 func GetToken string { return viper.GetString("server.token") }
 func GetRunnerName string { return viper.GetString("runner.name") }
 func GetConcurrent int { return viper.GetInt("runner.concurrent") }
+func GetDefaultImage string {
+	if v:= viper.GetString("executor.image"); v != "" {
+ return v
+	}
+	return "friday-task:latest"
+}
+func GetExecutorTimeout int {
+	if v:= viper.GetInt("executor.timeout"); v > 0 {
+ return v
+	}
+	return 1800
+}
+func GetCallbackPort int {
+	if v:= viper.GetInt("callback.port"); v > 0 {
+ return v
+	}
+	return 8976
+}
