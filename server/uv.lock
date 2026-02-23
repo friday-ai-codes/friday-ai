@@ -2,6 +2,19 @@ version = 1
 revision = 3
 requires-python = ">=3.14"
 [[package]]
+name = "adrf"
+version = "0.1.12"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "async-property" },
+ { name = "django" },
+ { name = "djangorestframework" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/10/fe/573d7ec8805aec8e13459451f81398c6ac819882496e82fb6b4ae96c2762/adrf-0.1.12.tar.gz", hash = "sha256:e7aa49e5406b168f040f1a12cafb606e98fdd5467314240a9c42dbe63200d2c1", size = 17181, upload-time = "2025-11-24T03:25:44.337Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/e7/47/14006c4045f818cf625d2357e823a15b4bb7fab8dd81a40acd23af41ee53/adrf-0.1.12-py3-none-any.whl", hash = "sha256:e9d1f343b82158f4c528c0809c9635a27ceef4c37d3d8e61b8096c8eeded616d", size = 20199, upload-time = "2025-11-24T03:25:43.291Z" },
+]
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
@@ -174,6 +187,14 @@ source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
 sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/76/b9/4db2509eabd14b4a8c71d1b24c8d5734c52b8560a7b1e1a8b56c8d25568b/asgiref-3.11.0.tar.gz", hash = "sha256:13acff32519542a1736223fb79a715acdebe24286d98e8b164a73085f40da2c4", size = 37969, upload-time = "2025-11-19T15:32:20.106Z" }
 wheels = [
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/91/be/317c2c55b8bbec407257d45f5c8d1b6867abc76d12043f2d3d58c538a4ea/asgiref-3.11.0-py3-none-any.whl", hash = "sha256:1db9021efadb0d9512ce8ffaf72fcef601c7b73a8807a1bb2ef143dc6b14846d", size = 24096, upload-time = "2025-11-19T15:32:19.004Z" },
+]
+[[package]]
+name = "async-property"
+version = "0.2.2"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/a7/12/900eb34b3af75c11b69d6b78b74ec0fd1ba489376eceb3785f787d1a0a1d/async_property-0.2.2.tar.gz", hash = "sha256:17d9bd6ca67e27915a75d92549df64b5c7174e9dc806b30a3934dc4ff0506380", size = 16523, upload-time = "2023-07-03T17:21:55.688Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/c7/80/9f608d13b4b3afcebd1dd13baf9551c95fc424d6390e4b1cfd7b1810cd06/async_property-0.2.2-py2.py3-none-any.whl", hash = "sha256:8924d792b5843994537f8ed411165700b27b2bd966cefc4daeefc1253442a9d7", size = 9546, upload-time = "2023-07-03T17:21:54.293Z" },
 ]
 [[package]]
 name = "attrs"
@@ -770,6 +791,7 @@ name = "friday"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+ { name = "adrf" },
  { name = "anthropic" },
  { name = "channels", extra = ["daphne"] },
  { name = "channels-redis" },
@@ -831,6 +853,7 @@ dev = [
 ]
 [package.metadata]
 requires-dist = [
+ { name = "adrf", specifier = ">=0.1.12" },
  { name = "anthropic", specifier = ">=0.40.0" },
  { name = "channels", extras = ["daphne"], specifier = ">=4.3.2" },
  { name = "channels-redis", specifier = ">=4.3.0" },
