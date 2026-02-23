@@ -1,5 +1,9 @@
 """Chat service for LLM API calls.
 Provides a unified interface for calling LLM APIs (Claude/OpenAI compatible).
+Serializer Async Pattern:
+ 在 async view 中使用 DRF/adrf serializer 的统一模式：
+ - is_valid: 无 DB 查询时直接调用；有 DB 验证时用 await sync_to_async(s.is_valid)(raise_exception=True)
+ - save: 使用 await serializer.asave（adrf serializer）或 await sync_to_async(serializer.save)
 """
 from dataclasses import dataclass
 from typing import Literal, Optional
@@ -189,6 +193,17 @@ def get_setting_value(key: str) -> Optional[str]:
  return setting.value
  except SystemSetting.DoesNotExist:
  return None
+async def aget_setting_value(key: str) -> Optional[str]:
+ """获取系统设置值（自动解密）— async 版本。"""
+ try:
+ setting = await SystemSetting.objects.aget(key=key)
+ if not setting.value:
+ return None
+ if setting.is_encrypted:
+ return decrypt_value(setting.value)
+ return setting.value
+ except SystemSetting.DoesNotExist:
+ return None
 def get_chat_service(
  source: Literal["system", "project"],
  project_id: Optional[int] = None,
@@ -225,6 +240,36 @@ def get_chat_service(
  final_api_key = get_setting_value(SettingKeys.ANTHROPIC_API_KEY)
  if not final_base_url:
  final_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ if not final_api_key:
+ raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
+ return ChatService(
+ api_key=final_api_key,
+ base_url=final_base_url,
+ )
+async def aget_chat_service(
+ source: Literal["system", "project"],
+ project_id: Optional[int] = None,
+ api_key: Optional[str] = None,
+ base_url: Optional[str] = None,
+) -> ChatService:
+ """Get a ChatService instance — async 版本。"""
+ final_api_key = api_key
+ final_base_url = base_url
+ if source == "project":
+ if not project_id:
+ raise ChatServiceError("使用项目配置时必须提供 project_id")
+ try:
+ project = await Project.objects.aget(id=project_id)
+ except Project.DoesNotExist:
+ raise ChatServiceError(f"找不到项目: {project_id}")
+ if not final_api_key and project.claude_api_key_encrypted:
+ final_api_key = decrypt_value(project.claude_api_key_encrypted)
+ if not final_base_url and project.claude_base_url:
+ final_base_url = project.claude_base_url
+ if not final_api_key:
+ final_api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
+ if not final_base_url:
+ final_base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
  return ChatService(
