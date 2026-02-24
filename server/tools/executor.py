@@ -2,7 +2,6 @@
 import asyncio
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from tools.models import RemoteTool
 from tools.registry import RemoteToolRegistry
 from tools.sources.builtin import execute_builtin
@@ -11,7 +10,7 @@ from tools.sources.skill import execute_skill
 logger = structlog.get_logger(__name__)
 async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
  """Execute a remote tool by name, returning {"ok": bool, "result"|"error": ...}."""
- tool = await sync_to_async(RemoteToolRegistry.get_tool)(tool_name)
+ tool = await RemoteToolRegistry.aget_tool(tool_name)
  if not tool:
  return {"ok": False, "error": {"code": "not_found", "message": f"Tool not found: {tool_name}"}}
  try:
