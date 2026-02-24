@@ -6,7 +6,6 @@ name and resumes the workflow.
 import json
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from feishu.cards.coding_result_card import build_branch_confirmed_card
 from feishu.views import CardCallback, register_card_callback
 from workflows.engine.scheduler import WorkflowEngine, _run_in_thread
@@ -172,16 +171,14 @@ def _schedule_branch_confirmation(
  async def _do_confirmation -> None:
  from workflows.models.execution import ExecutionStatus
  try:
- node_execution = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ node_execution = await NodeExecution.objects.filter(
  workflow_execution_id=execution_id,
  node_id=node_id,
  status__in=[
  NodeExecutionStatus.WAITING_EVENT,
  NodeExecutionStatus.WAITING_APPROVAL,
  ],
- ).select_related("workflow_execution").first
- )
+ ).select_related("workflow_execution").afirst
  if not node_execution:
  logger.warning(
  "branch_confirm_node_not_found",
@@ -193,26 +190,21 @@ def _schedule_branch_confirmation(
  output_data = node_execution.output_data or {}
  output_data["_confirmed_branch_name"] = branch_name
  node_execution.output_data = output_data
- await sync_to_async(node_execution.save)(
- update_fields=["output_data"]
- )
- # 如果工作流是 suspended 状态，先标记为 running
- workflow_execution = await sync_to_async(
- lambda: node_execution.workflow_execution
- )
+ await node_execution.asave(update_fields=["output_data"])
+ # select_related 已预加载 workflow_execution
+ workflow_execution = node_execution.workflow_execution
  if workflow_execution.status == ExecutionStatus.SUSPENDED:
  workflow_execution.status = ExecutionStatus.RUNNING
- await sync_to_async(workflow_execution.save)(
- update_fields=["status"]
- )
+ await workflow_execution.asave(update_fields=["status"])
  # 重新执行该节点（节点内部会检测 _confirmed_branch_name）
  # 直接实例化节点并执行，而非通过 engine._execute_node
  # （因为 _execute_node 需要 dag_node 参数）
  from workflows.nodes.base import ExecutionContext, NodeResult
  from workflows.nodes.registry import NodeRegistry
- workflow_node = await sync_to_async(
- lambda: node_execution.node
+ workflow_node = await NodeExecution.objects.select_related("node").aget(
+ pk=node_execution.pk
  )
+ workflow_node = workflow_node.node
  node_class = NodeRegistry.get(workflow_node.node_type)
  if not node_class:
  logger.error(
@@ -222,9 +214,7 @@ def _schedule_branch_confirmation(
  return
  # 重置节点状态为 running
  node_execution.status = NodeExecutionStatus.RUNNING
- await sync_to_async(node_execution.save)(
- update_fields=["status"]
- )
+ await node_execution.asave(update_fields=["status"])
  # 构建执行上下文
  context = ExecutionContext(
  execution_id=str(workflow_execution.id),
@@ -243,7 +233,7 @@ def _schedule_branch_confirmation(
  output_with_handle = {**(result.output or {})}
  if result.next_handle and result.next_handle != "default":
  output_with_handle["_next_handle"] = result.next_handle
- await sync_to_async(node_execution.mark_completed)(
+ await node_execution.amark_completed(
  output_with_handle
  )
  engine = WorkflowEngine
@@ -251,7 +241,7 @@ def _schedule_branch_confirmation(
  workflow_execution, node_execution
  )
  elif result.status == "failed":
- await sync_to_async(node_execution.mark_failed)(
+ await node_execution.amark_failed(
  result.error or "编码执行失败"
  )
  logger.info(

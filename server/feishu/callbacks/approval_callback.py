@@ -7,7 +7,6 @@ via engine.approve_node / engine.reject_node.
 import json
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from feishu.cards.approval_card import (
  build_approval_approved_card,
  build_approval_rejected_card,
@@ -178,16 +177,14 @@ def _schedule_approval_completion(
  from workflows.models.execution import ExecutionStatus
  try:
  # Find the NodeExecution
- node_execution = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ node_execution = await NodeExecution.objects.filter(
  workflow_execution_id=execution_id,
  node_id=node_id,
  status__in=[
  NodeExecutionStatus.WAITING_EVENT,
  NodeExecutionStatus.WAITING_APPROVAL,
  ],
- ).select_related("workflow_execution").first
- )
+ ).select_related("workflow_execution").afirst
  if not node_execution:
  logger.warning(
  "approval_node_not_found",
@@ -195,15 +192,11 @@ def _schedule_approval_completion(
  node_id=node_id,
  )
  return
- # If workflow is suspended, mark it as running before continuing
- workflow_execution = await sync_to_async(
- lambda: node_execution.workflow_execution
- )
+ # select_related 已预加载 workflow_execution
+ workflow_execution = node_execution.workflow_execution
  if workflow_execution.status == ExecutionStatus.SUSPENDED:
  workflow_execution.status = ExecutionStatus.RUNNING
- await sync_to_async(workflow_execution.save)(
- update_fields=["status"]
- )
+ await workflow_execution.asave(update_fields=["status"])
  engine = WorkflowEngine
  # Create a simple approver object with required attributes
  class _FeishuApprover:
