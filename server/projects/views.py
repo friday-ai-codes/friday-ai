@@ -1,10 +1,11 @@
 """Projects app views."""
-from django.shortcuts import get_object_or_404
+from asgiref.sync import sync_to_async
+from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet
 from common.encryption import encrypt_value
 from repositories.models import AuthType, GitCredential, Repository
 from .models import (
@@ -40,28 +41,28 @@ class ProjectViewSet(ModelViewSet):
  if self.action in ["update", "partial_update"]:
  return ProjectUpdateSerializer
  return ProjectSerializer
- def create(self, request, *args, **kwargs):
+ async def create(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
- serializer.is_valid(raise_exception=True)
- project = Project.objects.create(**serializer.validated_data)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ project = await Project.objects.acreate(**serializer.validated_data)
  return Response(
  ProjectSerializer(project).data,
  status=status.HTTP_201_CREATED,
  )
  # === Repository association ===
  @action(detail=True, methods=["get"], url_path="repositories")
- def list_repositories(self, request, pk=None):
+ async def list_repositories(self, request, pk=None):
  """List repositories associated with the project."""
- project = self.get_object
+ project = await self.aget_object
  repositories = project.repositories.filter(is_deleted=False)
- serializer = RepositorySerializer(repositories, many=True)
+ serializer = RepositorySerializer([r async for r in repositories], many=True)
  return Response(serializer.data)
  @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
- def link_repository(self, request, pk=None, repository_id=None):
+ async def link_repository(self, request, pk=None, repository_id=None):
  """Link a repository to the project."""
- project = self.get_object
- repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
- _, created = ProjectRepository.objects.get_or_create(
+ project = await self.aget_object
+ repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
+ _, created = await ProjectRepository.objects.aget_or_create(
  project=project,
  repository=repository,
  )
@@ -69,43 +70,43 @@ class ProjectViewSet(ModelViewSet):
  return Response({"message": "Already linked"})
  return Response({"message": "Linked successfully"}, status=status.HTTP_201_CREATED)
  @link_repository.mapping.delete
- def unlink_repository(self, request, pk=None, repository_id=None):
+ async def unlink_repository(self, request, pk=None, repository_id=None):
  """Unlink a repository from the project."""
- project = self.get_object
- link = get_object_or_404(
+ project = await self.aget_object
+ link = await aget_object_or_404(
  ProjectRepository,
  project=project,
  repository_id=repository_id,
  )
- link.delete
+ await link.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
  # === Feishu configuration ===
  @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-config")
- def feishu_config(self, request, pk=None):
+ async def feishu_config(self, request, pk=None):
  """Manage Feishu configuration."""
- project = self.get_object
+ project = await self.aget_object
  if request.method == "GET":
  return Response(FeishuConfigSerializer(project).data)
  if request.method == "PUT":
  serializer = FeishuConfigCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  project.feishu_plugin_id = serializer.validated_data["plugin_id"]
  project.feishu_plugin_secret_encrypted = encrypt_value(
  serializer.validated_data["plugin_secret"]
  )
  project.feishu_user_key = serializer.validated_data.get("user_key", "")
- project.save
+ await project.asave
  return Response(FeishuConfigSerializer(project).data)
  # DELETE
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
  project.feishu_user_key = None
- project.save
+ await project.asave
  return Response(status=status.HTTP_204_NO_CONTENT)
  @action(detail=True, methods=["post"], url_path="feishu-config/test")
- def test_feishu_config(self, request, pk=None):
+ async def test_feishu_config(self, request, pk=None):
  """Test Feishu configuration."""
- project = self.get_object
+ project = await self.aget_object
  # Check if configured
  if not project.has_feishu_config:
  return Response(
@@ -140,7 +141,6 @@ class ProjectViewSet(ModelViewSet):
  )
  # 执行实际的飞书 API 测试
  try:
- import asyncio
  from feishu.client import FeishuClient
  client = FeishuClient(
  plugin_id=plugin_id,
@@ -148,8 +148,7 @@ class ProjectViewSet(ModelViewSet):
  project_key=project.feishu_project_key,
  user_key=user_key,
  )
- # 使用 asyncio.run 执行异步测试
- test_result = asyncio.run(client.test_connection(project.feishu_project_key))
+ test_result = await client.test_connection(project.feishu_project_key)
  return Response(
  {
  "success": test_result["success"],
@@ -168,20 +167,20 @@ class ProjectViewSet(ModelViewSet):
  }
  )
  @action(detail=True, methods=["post"], url_path="refresh-webhook-token")
- def refresh_webhook_token(self, request, pk=None):
+ async def refresh_webhook_token(self, request, pk=None):
  """Refresh webhook token."""
- project = self.get_object
+ project = await self.aget_object
  project.feishu_webhook_token = generate_webhook_token
- project.save
+ await project.asave
  return Response(
  WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
  )
  @action(detail=True, methods=["put"], url_path="webhook-token")
- def update_webhook_token(self, request, pk=None):
+ async def update_webhook_token(self, request, pk=None):
  """Update webhook token with custom value."""
- project = self.get_object
+ project = await self.aget_object
  serializer = WebhookTokenUpdateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  token = serializer.validated_data["token"]
  if len(token) > 32:
  return Response(
@@ -194,15 +193,15 @@ class ProjectViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  project.feishu_webhook_token = token
- project.save
+ await project.asave
  return Response(
  WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
  )
  # === Claude configuration ===
  @action(detail=True, methods=["get", "put", "delete"], url_path="claude-config")
- def claude_config(self, request, pk=None):
+ async def claude_config(self, request, pk=None):
  """Manage Claude configuration."""
- project = self.get_object
+ project = await self.aget_object
  if request.method == "GET":
  has_api_key = bool(project.claude_api_key_encrypted)
  source = "project" if has_api_key else "system"
@@ -218,7 +217,7 @@ class ProjectViewSet(ModelViewSet):
  )
  if request.method == "PUT":
  serializer = ClaudeConfigCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  api_key = serializer.validated_data.get("api_key")
  if api_key is not None:
  if api_key == "":
@@ -231,7 +230,7 @@ class ProjectViewSet(ModelViewSet):
  default_model = serializer.validated_data.get("default_model")
  if default_model is not None:
  project.claude_default_model = default_model if default_model else None
- project.save
+ await project.asave
  return Response(
  ClaudeConfigSerializer(
  {
@@ -246,35 +245,35 @@ class ProjectViewSet(ModelViewSet):
  project.claude_api_key_encrypted = None
  project.claude_base_url = None
  project.claude_default_model = None
- project.save
+ await project.asave
  return Response(status=status.HTTP_204_NO_CONTENT)
  # === Feishu IM App configuration ===
  @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-im-config")
- def feishu_im_config(self, request, pk=None):
+ async def feishu_im_config(self, request, pk=None):
  """Manage Feishu IM App configuration."""
- project = self.get_object
+ project = await self.aget_object
  if request.method == "GET":
  return Response(FeishuIMConfigSerializer(project).data)
  if request.method == "PUT":
  serializer = FeishuIMConfigCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  project.feishu_app_id = serializer.validated_data["app_id"]
  project.feishu_app_secret_encrypted = encrypt_value(
  serializer.validated_data["app_secret"]
  )
- project.save
+ await project.asave
  return Response(FeishuIMConfigSerializer(project).data)
  # DELETE
  project.feishu_app_id = None
  project.feishu_app_secret_encrypted = None
- project.save
+ await project.asave
  return Response(status=status.HTTP_204_NO_CONTENT)
  @action(detail=True, methods=["post"], url_path="feishu-im-config/test")
- def test_feishu_im_config(self, request, pk=None):
+ async def test_feishu_im_config(self, request, pk=None):
  """Test Feishu IM configuration by sending a test message."""
- project = self.get_object
+ project = await self.aget_object
  serializer = FeishuIMTestSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  user_id = serializer.validated_data["user_id"]
  message = serializer.validated_data["message"]
  # 优先使用请求中的临时配置，否则使用已保存的配置
@@ -293,19 +292,15 @@ class ProjectViewSet(ModelViewSet):
  )
  # 发送测试消息
  try:
- import asyncio
  from services.feishu_im import FeishuIMClient
  client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
- async def send_test:
- # 发送文本消息给指定用户
  result = await client.send_message(
  receive_id=user_id,
  receive_id_type="open_id",
  msg_type="text",
  content={"text": message},
  )
- return result.get("message_id", "")
- message_id = asyncio.run(send_test)
+ message_id = result.get("message_id", "")
  return Response(
  {
  "success": True,
@@ -334,9 +329,9 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "retrieve":
  return RepositoryWithProjectsSerializer
  return RepositorySerializer
- def create(self, request, *args, **kwargs):
+ async def create(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  data = serializer.validated_data
  access_token = data.pop("access_token")
  git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
@@ -347,9 +342,9 @@ class RepositoryViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Create repository
- repository = Repository.objects.create(**data)
+ repository = await Repository.objects.acreate(**data)
  # Create credential
- GitCredential.objects.create(
+ await GitCredential.objects.acreate(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,
  encrypted_token=encrypt_value(access_token),
@@ -361,19 +356,19 @@ class RepositoryViewSet(ModelViewSet):
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["get", "delete"], url_path="credential")
- def credential(self, request, pk=None):
+ async def credential(self, request, pk=None):
  """Get or delete credential for repository."""
- repository = self.get_object
+ repository = await self.aget_object
  if request.method == "GET":
  # 凭证不存在时返回 null 而不是 404
- credential = GitCredential.objects.filter(repository=repository).first
+ credential = await GitCredential.objects.filter(repository=repository).afirst
  if credential:
  return Response(GitCredentialSerializer(credential).data)
  return Response(None)
  elif request.method == "DELETE":
- credential = GitCredential.objects.filter(repository=repository).first
+ credential = await GitCredential.objects.filter(repository=repository).afirst
  if credential:
- credential.delete
+ await credential.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
  else:
  return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
@@ -381,8 +376,8 @@ class SetAccessTokenView(APIView):
  """View for setting or updating access token.
  支持创建新凭证或更新已有凭证。
  """
- def post(self, request, repository_id):
- repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
+ async def post(self, request, repository_id):
+ repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
  token = request.data.get("token")
  if not token:
  return Response(
@@ -392,18 +387,18 @@ class SetAccessTokenView(APIView):
  git_user_name = request.data.get("git_user_name", "Friday Codes AI Agent")
  git_user_email = request.data.get("git_user_email", "ai@friday.codes")
  # 检查凭证是否已存在，存在则更新，不存在则创建
- existing_credential = GitCredential.objects.filter(repository=repository).first
+ existing_credential = await GitCredential.objects.filter(repository=repository).afirst
  if existing_credential:
  # 更新现有凭证
  existing_credential.auth_type = AuthType.ACCESS_TOKEN
  existing_credential.encrypted_token = encrypt_value(token)
  existing_credential.git_user_name = git_user_name
  existing_credential.git_user_email = git_user_email
- existing_credential.save
+ await existing_credential.asave
  return Response(GitCredentialSerializer(existing_credential).data)
  else:
  # 创建新凭证
- credential = GitCredential.objects.create(
+ credential = await GitCredential.objects.acreate(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,
  encrypted_token=encrypt_value(token),

@@ -78,6 +78,7 @@ dev = [
  "ruff>=0.14.11",
  "factory-boy>=3.3",
  "types-docker>=7.1.0.20260109",
+ "django-stubs-ext>=5.2.8",
 ]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "friday.settings"

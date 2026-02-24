@@ -1,16 +1,16 @@
 """Workflows API views."""
 import uuid
 import structlog
-from asgiref.sync import async_to_sync
+from asgiref.sync import sync_to_async
 from django.db import transaction
-from django.shortcuts import get_object_or_404
+from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from common.exceptions import TriggerValidationError
 from workflows.api.permissions import (
  ApprovalPermission,
@@ -123,12 +123,6 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  trigger_count=len(configured_triggers),
  event_types=list(seen_event_types),
  )
-def run_async(coro):
- """Run async coroutine in sync context.
- Uses async_to_sync which properly integrates with Django's ASGI event loop,
- allowing background tasks created via asyncio.create_task to continue running.
- """
- return async_to_sync(lambda: coro)
 def _bulk_update_nodes_and_edges(
  workflow: Workflow,
  nodes_data: list,
@@ -216,15 +210,15 @@ class WorkflowViewSet(ModelViewSet):
  if trigger_type:
  queryset = queryset.filter(trigger_type=trigger_type)
  return queryset.order_by("-updated_at")
- def retrieve(self, request: Request, *args, **kwargs) -> Response:
+ async def retrieve(self, request: Request, *args, **kwargs) -> Response:
  """Get workflow with nodes and edges."""
- instance = self.get_object
+ instance = await self.aget_object
  serializer = self.get_serializer(instance)
  return Response(serializer.data)
  @action(detail=True, methods=["post"])
- def execute(self, request: Request, pk=None) -> Response:
+ async def execute(self, request: Request, pk=None) -> Response:
  """Trigger workflow execution via TriggerDispatcher."""
- workflow = self.get_object
+ workflow = await self.aget_object
  trace_id = str(uuid.uuid4)
  log = logger.bind(trace_id=trace_id)
  log.info(
@@ -233,7 +227,7 @@ class WorkflowViewSet(ModelViewSet):
  user_id=str(request.user.id),
  )
  serializer = WorkflowExecuteSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  context = TriggerContext(
  trigger_type="manual",
  raw_payload=serializer.validated_data.get("input_data", {}),
@@ -242,7 +236,7 @@ class WorkflowViewSet(ModelViewSet):
  metadata={"trace_id": trace_id},
  )
  dispatcher = TriggerDispatcher
- execution = async_to_sync(dispatcher.dispatch_single)(context)
+ execution = await dispatcher.dispatch_single(context)
  if not execution:
  raise TriggerValidationError("Failed to start workflow execution")
  log.info("manual_trigger_complete", execution_id=str(execution.id))
@@ -257,32 +251,33 @@ class WorkflowViewSet(ModelViewSet):
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["post"])
- def duplicate(self, request: Request, pk=None) -> Response:
+ async def duplicate(self, request: Request, pk=None) -> Response:
  """Duplicate workflow."""
- workflow = self.get_object
+ workflow = await self.aget_object
  new_name = request.data.get("name", f"{workflow.name} (副本)")
  new_project_id = request.data.get("project_id")
  new_project = None
  if new_project_id:
  from projects.models import Project
- new_project = get_object_or_404(Project, id=new_project_id)
- new_workflow = workflow.clone(new_project=new_project, new_name=new_name)
+ new_project = await aget_object_or_404(Project, id=new_project_id)
+ new_workflow = await sync_to_async(workflow.clone)(new_project=new_project, new_name=new_name)
  new_workflow.created_by = request.user
- new_workflow.save
+ await new_workflow.asave
  return Response(
  WorkflowSerializer(new_workflow).data,
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["get"])
- def export(self, request: Request, pk=None) -> Response:
+ async def export(self, request: Request, pk=None) -> Response:
  """Export workflow as JSON."""
- workflow = self.get_object
- return Response(workflow.to_json)
+ workflow = await self.aget_object
+ data = await sync_to_async(workflow.to_json)
+ return Response(data)
  @action(detail=False, methods=["post"], url_path="import")
- def import_workflow(self, request: Request) -> Response:
+ async def import_workflow(self, request: Request) -> Response:
  """Import workflow from JSON."""
  serializer = WorkflowImportSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  project_id = request.data.get("project_id")
  if not project_id:
  return Response(
@@ -290,9 +285,9 @@ class WorkflowViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  from projects.models import Project
- project = get_object_or_404(Project, id=project_id)
+ project = await aget_object_or_404(Project, id=project_id)
  try:
- workflow = Workflow.from_json(
+ workflow = await sync_to_async(Workflow.from_json)(
  data=serializer.validated_data["data"],
  project=project,
  created_by=request.user,
@@ -311,17 +306,17 @@ class WorkflowViewSet(ModelViewSet):
  # Node Management (nested under workflow)
  # =========================================================================
  @action(detail=True, methods=["get", "post"], url_path="nodes")
- def nodes(self, request: Request, pk=None) -> Response:
+ async def nodes(self, request: Request, pk=None) -> Response:
  """List or create nodes for a workflow."""
- workflow = self.get_object
+ workflow = await self.aget_object
  if request.method == "GET":
  nodes = workflow.nodes.all
  serializer = WorkflowNodeSerializer(nodes, many=True)
- return Response(serializer.data)
+ return Response(await sync_to_async(lambda: serializer.data))
  # POST - Create node
  serializer = WorkflowNodeCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
- node = WorkflowNode.objects.create(workflow=workflow, **serializer.validated_data)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ node = await WorkflowNode.objects.acreate(workflow=workflow, **serializer.validated_data)
  return Response(
  WorkflowNodeSerializer(node).data,
  status=status.HTTP_201_CREATED,
@@ -331,42 +326,42 @@ class WorkflowViewSet(ModelViewSet):
  methods=["get", "put", "patch", "delete"],
  url_path=r"nodes/(?P<node_id>[^/.]+)",
  )
- def node_detail(self, request: Request, pk=None, node_id=None) -> Response:
+ async def node_detail(self, request: Request, pk=None, node_id=None) -> Response:
  """Get, update, or delete a specific node."""
- workflow = self.get_object
- node = get_object_or_404(WorkflowNode, id=node_id, workflow=workflow)
+ workflow = await self.aget_object
+ node = await aget_object_or_404(WorkflowNode, id=node_id, workflow=workflow)
  if request.method == "GET":
  return Response(WorkflowNodeSerializer(node).data)
  if request.method == "DELETE":
- node.delete
+ await node.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
  # PUT or PATCH
  partial = request.method == "PATCH"
  serializer = WorkflowNodeSerializer(node, data=request.data, partial=partial)
- serializer.is_valid(raise_exception=True)
- serializer.save
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ await sync_to_async(serializer.save)
  return Response(serializer.data)
  # =========================================================================
  # Edge Management (nested under workflow)
  # =========================================================================
  @action(detail=True, methods=["get", "post"], url_path="edges")
- def edges(self, request: Request, pk=None) -> Response:
+ async def edges(self, request: Request, pk=None) -> Response:
  """List or create edges for a workflow."""
- workflow = self.get_object
+ workflow = await self.aget_object
  if request.method == "GET":
  edges = workflow.edges.all
  serializer = WorkflowEdgeSerializer(edges, many=True)
- return Response(serializer.data)
+ return Response(await sync_to_async(lambda: serializer.data))
  # POST - Create edge
  serializer = WorkflowEdgeCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  data = serializer.validated_data
  source_id = data.pop("source_node_id")
  target_id = data.pop("target_node_id")
  # Verify nodes belong to this workflow
- source = get_object_or_404(WorkflowNode, id=source_id, workflow=workflow)
- target = get_object_or_404(WorkflowNode, id=target_id, workflow=workflow)
- edge = WorkflowEdge.objects.create(
+ source = await aget_object_or_404(WorkflowNode, id=source_id, workflow=workflow)
+ target = await aget_object_or_404(WorkflowNode, id=target_id, workflow=workflow)
+ edge = await WorkflowEdge.objects.acreate(
  workflow=workflow,
  source_node=source,
  target_node=target,
@@ -381,47 +376,47 @@ class WorkflowViewSet(ModelViewSet):
  methods=["get", "put", "patch", "delete"],
  url_path=r"edges/(?P<edge_id>[^/.]+)",
  )
- def edge_detail(self, request: Request, pk=None, edge_id=None) -> Response:
+ async def edge_detail(self, request: Request, pk=None, edge_id=None) -> Response:
  """Get, update, or delete a specific edge."""
- workflow = self.get_object
- edge = get_object_or_404(WorkflowEdge, id=edge_id, workflow=workflow)
+ workflow = await self.aget_object
+ edge = await aget_object_or_404(WorkflowEdge, id=edge_id, workflow=workflow)
  if request.method == "GET":
  return Response(WorkflowEdgeSerializer(edge).data)
  if request.method == "DELETE":
- edge.delete
+ await edge.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
  # PUT or PATCH
  partial = request.method == "PATCH"
  serializer = WorkflowEdgeSerializer(edge, data=request.data, partial=partial)
- serializer.is_valid(raise_exception=True)
- serializer.save
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ await sync_to_async(serializer.save)
  return Response(serializer.data)
  @action(detail=True, methods=["put"], url_path="bulk-update")
- def bulk_update(self, request: Request, pk=None) -> Response:
+ async def bulk_update(self, request: Request, pk=None) -> Response:
  """Bulk update nodes and edges for a workflow.
  Uses UUID as primary identifier for nodes.
  short_id is only for user display and template variables.
  """
- workflow = self.get_object
+ workflow = await self.aget_object
  nodes_data = request.data.get("nodes", )
  edges_data = request.data.get("edges", )
  delete_orphans = request.data.get("delete_orphans", False)
- _bulk_update_nodes_and_edges(workflow, nodes_data, edges_data, delete_orphans)
+ await sync_to_async(_bulk_update_nodes_and_edges)(workflow, nodes_data, edges_data, delete_orphans)
  # Return updated workflow
- workflow.refresh_from_db
+ await workflow.arefresh_from_db
  # Sync triggers from feishu_event_trigger nodes
- sync_workflow_triggers(workflow)
+ await sync_to_async(sync_workflow_triggers)(workflow)
  return Response(WorkflowSerializer(workflow).data)
  # =========================================================================
  # Template Actions
  # =========================================================================
  @action(detail=False, methods=["get"])
- def templates(self, request: Request) -> Response:
+ async def templates(self, request: Request) -> Response:
  """List available workflow templates."""
  from workflows.templates.loader import list_templates
  return Response(list_templates)
  @action(detail=False, methods=["post"], url_path="from-template")
- def from_template(self, request: Request) -> Response:
+ async def from_template(self, request: Request) -> Response:
  """Create a workflow from a template."""
  from workflows.templates.loader import create_workflow_from_template
  template_id = request.data.get("template_id")
@@ -434,7 +429,7 @@ class WorkflowViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  try:
- workflow = create_workflow_from_template(
+ workflow = await sync_to_async(create_workflow_from_template)(
  project_id=project_id,
  template_id=template_id,
  name=name,
@@ -484,45 +479,45 @@ class WorkflowExecutionViewSet(ModelViewSet):
  queryset = queryset.filter(status=exec_status)
  return queryset.order_by("-created_at")
  @action(detail=True, methods=["post"])
- def pause(self, request: Request, pk=None) -> Response:
+ async def pause(self, request: Request, pk=None) -> Response:
  """Pause execution."""
- execution = self.get_object
+ execution = await self.aget_object
  try:
  engine = WorkflowEngine
- run_async(engine.pause_execution(execution))
+ await engine.pause_execution(execution)
  return Response({"status": "paused", "message": "执行已暂停"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
  @action(detail=True, methods=["post"])
- def resume(self, request: Request, pk=None) -> Response:
+ async def resume(self, request: Request, pk=None) -> Response:
  """Resume execution."""
- execution = self.get_object
+ execution = await self.aget_object
  try:
  engine = WorkflowEngine
- run_async(engine.resume_execution(execution))
+ await engine.resume_execution(execution)
  return Response({"status": "running", "message": "执行已恢复"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
  @action(detail=True, methods=["post"])
- def cancel(self, request: Request, pk=None) -> Response:
+ async def cancel(self, request: Request, pk=None) -> Response:
  """Cancel execution."""
- execution = self.get_object
+ execution = await self.aget_object
  try:
  engine = WorkflowEngine
- run_async(engine.cancel_execution(execution))
+ await engine.cancel_execution(execution)
  return Response({"status": "cancelled", "message": "执行已取消"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
  @action(detail=True, methods=["post"])
- def retry(self, request: Request, pk=None) -> Response:
+ async def retry(self, request: Request, pk=None) -> Response:
  """用原始触发数据重新执行工作流。"""
- execution = self.get_object
+ execution = await self.aget_object
  if execution.status not in ("failed", "cancelled"):
  return Response(
  {"detail": "只能重试失败或已取消的执行"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- workflow = execution.workflow
+ workflow = await sync_to_async(lambda: execution.workflow)
  trigger_data = execution.trigger_data or {}
  raw_payload = trigger_data.get("raw_payload", execution.input_data.get("raw_payload", {}))
  context = TriggerContext(
@@ -534,7 +529,7 @@ class WorkflowExecutionViewSet(ModelViewSet):
  metadata={"retry_from": str(execution.id)},
  )
  dispatcher = TriggerDispatcher
- new_execution = async_to_sync(dispatcher.dispatch_single)(context)
+ new_execution = await dispatcher.dispatch_single(context)
  if not new_execution:
  return Response(
  {"detail": "重试失败：无法启动工作流执行"},
@@ -549,12 +544,12 @@ class WorkflowExecutionViewSet(ModelViewSet):
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["get"])
- def nodes(self, request: Request, pk=None) -> Response:
+ async def nodes(self, request: Request, pk=None) -> Response:
  """List node executions for this execution."""
- execution = self.get_object
+ execution = await self.aget_object
  node_executions = execution.node_executions.select_related("node").all
  serializer = NodeExecutionSerializer(node_executions, many=True)
- return Response(serializer.data)
+ return Response(await sync_to_async(lambda: serializer.data))
 # =============================================================================
 # Node Execution ViewSet
 # =============================================================================
@@ -787,10 +782,10 @@ class WorkflowTriggerViewSet(ModelViewSet):
 class ExecutionContextView(APIView):
  """View for getting execution context snapshot."""
  permission_classes = [IsAuthenticated]
- def get(self, request: Request, execution_id) -> Response:
+ async def get(self, request: Request, execution_id) -> Response:
  """Get execution context snapshot."""
- execution = get_object_or_404(WorkflowExecution, id=execution_id)
- context_snapshot = execution.get_context_snapshot
+ execution = await aget_object_or_404(WorkflowExecution, id=execution_id)
+ context_snapshot = await sync_to_async(execution.get_context_snapshot)
  serializer = ExecutionContextSerializer(context_snapshot)
  return Response(serializer.data)
 # =============================================================================
@@ -799,7 +794,7 @@ class ExecutionContextView(APIView):
 class NodeSchemaListView(APIView):
  """View for listing all node schemas."""
  permission_classes = [IsAuthenticated]
- def get(self, request: Request) -> Response:
+ async def get(self, request: Request) -> Response:
  """Get all node schemas from registry."""
  schemas = NodeRegistry.get_all_schemas
  # Optionally filter by category
@@ -813,7 +808,7 @@ class NodeSchemaListView(APIView):
 class LLMModelsView(APIView):
  """View for querying available LLM models from an API endpoint."""
  permission_classes = [IsAuthenticated]
- def post(self, request: Request) -> Response:
+ async def post(self, request: Request) -> Response:
  """Query available models from an OpenAI-compatible API.
  Request body:
  base_url: str - API base URL (e.g., https://api.openai.com/v1)
@@ -824,7 +819,6 @@ class LLMModelsView(APIView):
  """
  use_system = request.data.get("use_system", False)
  if use_system:
- # Use system configuration
  from services.claude_config import get_claude_config
  config = get_claude_config
  if not config.api_key:
@@ -842,7 +836,6 @@ class LLMModelsView(APIView):
  {"detail": "base_url 不能为空"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- # Normalize base_url
  base_url = base_url.rstrip("/")
  if not base_url.endswith("/v1"):
  base_url = f"{base_url}/v1"
@@ -851,8 +844,8 @@ class LLMModelsView(APIView):
  headers = {"Content-Type": "application/json"}
  if api_key:
  headers["Authorization"] = f"Bearer {api_key}"
- with httpx.Client(timeout=30) as client:
- response = client.get(f"{base_url}/models", headers=headers)
+ async with httpx.AsyncClient(timeout=30) as client:
+ response = await client.get(f"{base_url}/models", headers=headers)
  if response.status_code != 200:
  return Response(
  {"detail": f"API 请求失败: {response.status_code} - {response.text}"},
@@ -860,7 +853,6 @@ class LLMModelsView(APIView):
  )
  data = response.json
  models = data.get("data", )
- # Sort models by id for consistent ordering
  models.sort(key=lambda m: m.get("id", ""))
  return Response(
  {
@@ -887,14 +879,7 @@ class LLMModelsView(APIView):
 class LLMSystemConfigView(APIView):
  """View for getting system LLM configuration (for display in frontend)."""
  permission_classes = [IsAuthenticated]
- def get(self, request: Request) -> Response:
- """Get current system LLM configuration.
- Returns:
- base_url: str - Configured base URL (masked)
- model: str - Default model
- has_api_key: bool - Whether API key is configured
- source: str - Config source (system/project)
- """
+ async def get(self, request: Request) -> Response:
  from services.claude_config import get_claude_config
  config = get_claude_config
  return Response(
