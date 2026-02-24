@@ -1,11 +1,9 @@
 """Runner WebSocket token 认证中间件。"""
 from urllib.parse import parse_qs
-from channels.db import database_sync_to_async
 from .models import Runner, hash_token
-@database_sync_to_async
-def _get_runner_by_token(token: str) -> Runner | None:
+async def _get_runner_by_token(token: str) -> Runner | None:
  try:
- return Runner.objects.get(token_hash=hash_token(token), is_active=True)
+ return await Runner.objects.aget(token_hash=hash_token(token), is_active=True)
  except Runner.DoesNotExist:
  return None
 class RunnerTokenAuthMiddleware:
