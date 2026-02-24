@@ -296,12 +296,12 @@ class WorkflowEngine:
  ) -> dict:
  """执行单个节点"""
  node = dag_node.node
- node_execution = await sync_to_async(NodeExecution.objects.get)(
+ node_execution = await NodeExecution.objects.aget(
  workflow_execution=execution,
  node=node,
  )
  try:
- await sync_to_async(node_execution.mark_started)(input_data)
+ await node_execution.amark_started(input_data)
  await self.hooks.trigger(
  "node_started",
  execution=execution,
@@ -331,7 +331,7 @@ class WorkflowEngine:
  output_with_handle = {**(result.output or {})}
  if result.next_handle and result.next_handle != "default":
  output_with_handle["_next_handle"] = result.next_handle
- await sync_to_async(node_execution.mark_completed)(output_with_handle)
+ await node_execution.amark_completed(output_with_handle)
  await self.hooks.trigger(
  "node_completed",
  execution=execution,
@@ -343,7 +343,7 @@ class WorkflowEngine:
  "handle": result.next_handle,
  }
  elif result.status == "waiting_approval":
- await sync_to_async(node_execution.mark_waiting_approval)(result.output)
+ await node_execution.amark_waiting_approval(result.output)
  await self.hooks.trigger(
  "node_waiting_approval",
  execution=execution,
@@ -351,7 +351,7 @@ class WorkflowEngine:
  )
  return {"status": "waiting_approval"}
  elif result.status == "waiting_event":
- await sync_to_async(node_execution.mark_waiting_event)(result.output)
+ await node_execution.amark_waiting_event(result.output)
  await self.hooks.trigger(
  "node_waiting_event",
  execution=execution,
@@ -359,7 +359,7 @@ class WorkflowEngine:
  )
  return {"status": "waiting_event"}
  else:
- await sync_to_async(node_execution.mark_failed)(result.error or "未知错误")
+ await node_execution.amark_failed(result.error or "未知错误")
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
@@ -372,7 +372,7 @@ class WorkflowEngine:
  node_id=str(node.id),
  execution_id=str(execution.id),
  )
- await sync_to_async(node_execution.mark_failed)(str(e))
+ await node_execution.amark_failed(str(e))
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
@@ -395,11 +395,11 @@ class WorkflowEngine:
  return inputs
  async def _skip_node(self, execution: WorkflowExecution, dag_node, reason: str) -> None:
  """跳过节点"""
- node_execution = await sync_to_async(NodeExecution.objects.get)(
+ node_execution = await NodeExecution.objects.aget(
  workflow_execution=execution,
  node=dag_node.node,
  )
- await sync_to_async(node_execution.mark_skipped)(reason)
+ await node_execution.amark_skipped(reason)
  await self.hooks.trigger(
  "node_skipped",
  execution=execution,
@@ -410,14 +410,14 @@ class WorkflowEngine:
  if execution.status != ExecutionStatus.RUNNING:
  raise ValueError("只能暂停运行中的执行")
  execution.status = ExecutionStatus.PAUSED
- await sync_to_async(execution.save)(update_fields=["status"])
+ await execution.asave(update_fields=["status"])
  await self.hooks.trigger("execution_paused", execution=execution)
  async def resume_execution(self, execution: WorkflowExecution) -> None:
  """恢复执行"""
  if execution.status != ExecutionStatus.PAUSED:
  raise ValueError("只能恢复已暂停的执行")
  execution.status = ExecutionStatus.RUNNING
- await sync_to_async(execution.save)(update_fields=["status"])
+ await execution.asave(update_fields=["status"])
  await self.hooks.trigger("execution_resumed", execution=execution)
  raise NotImplementedError("恢复执行循环未实现")
  async def cancel_execution(self, execution: WorkflowExecution) -> None:
@@ -426,22 +426,20 @@ class WorkflowEngine:
  raise ValueError("执行已完成或已取消")
  execution.status = ExecutionStatus.CANCELLED
  execution.completed_at = timezone.now
- await sync_to_async(execution.save)(update_fields=["status", "completed_at"])
+ await execution.asave(update_fields=["status", "completed_at"])
  # 取消所有运行中的节点
- running_nodes = await sync_to_async(
- lambda: list(
- NodeExecution.objects.filter(
+ running_nodes = [
+ ne async for ne in NodeExecution.objects.filter(
  workflow_execution=execution,
  status__in=[
  NodeExecutionStatus.RUNNING,
  NodeExecutionStatus.QUEUED,
  ],
  )
- )
- )
+ ]
  for node_exec in running_nodes:
  node_exec.status = NodeExecutionStatus.CANCELLED
- await sync_to_async(node_exec.save)(update_fields=["status"])
+ await node_exec.asave(update_fields=["status"])
  await self.hooks.trigger("execution_cancelled", execution=execution)
  async def approve_node(
  self,
@@ -455,13 +453,13 @@ class WorkflowEngine:
  NodeExecutionStatus.WAITING_EVENT,
  ]:
  raise ValueError("节点不在等待审批状态")
- await sync_to_async(node_execution.approve)(approver, comment)
+ await node_execution.aapprove(approver, comment)
  # Build output: preserve original data + set next_handle for routing
  approval_output = {
  **(node_execution.approval_data or {}),
  "_next_handle": "approved",
  }
- await sync_to_async(node_execution.mark_completed)(approval_output)
+ await node_execution.amark_completed(approval_output)
  await self.hooks.trigger(
  "node_approved",
  execution=node_execution.workflow_execution,
@@ -469,7 +467,8 @@ class WorkflowEngine:
  approver=approver,
  )
  # Continue workflow execution from approved port
- execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+ execution = node_execution.workflow_execution
  await self._continue_after_node(execution, node_execution)
  async def reject_node(
  self,
@@ -488,7 +487,7 @@ class WorkflowEngine:
  ]:
  raise ValueError("节点不在等待审批状态")
  # Update approval_data with rejection info (without calling mark_failed)
- await sync_to_async(node_execution.refresh_from_db)
+ await node_execution.arefresh_from_db
  node_execution.approval_data.update(
  {
  "approved": False,
@@ -498,7 +497,7 @@ class WorkflowEngine:
  "rejected_at": timezone.now.isoformat,
  }
  )
- await sync_to_async(node_execution.save)(update_fields=["approval_data"])
+ await node_execution.asave(update_fields=["approval_data"])
  # Mark completed (NOT failed) with next_handle="rejected" for routing
  original_data = node_execution.approval_data or {}
  reject_output = {
@@ -507,7 +506,7 @@ class WorkflowEngine:
  "reject_reason": comment,
  "rejected_by": str(approver) if approver else "",
  }
- await sync_to_async(node_execution.mark_completed)(reject_output)
+ await node_execution.amark_completed(reject_output)
  await self.hooks.trigger(
  "node_rejected",
  execution=node_execution.workflow_execution,
@@ -515,7 +514,8 @@ class WorkflowEngine:
  approver=approver,
  )
  # Continue workflow execution from rejected port
- execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+ execution = node_execution.workflow_execution
  await self._continue_after_node(execution, node_execution)
  async def trigger_manual_node(
  self,
@@ -528,20 +528,21 @@ class WorkflowEngine:
  if node_execution.node.node_type != "manual_trigger":
  raise ValueError("只有手动触发节点可以被触发")
  input_data = input_data or {}
- execution = await sync_to_async(lambda: node_execution.workflow_execution)
+ node_execution = await NodeExecution.objects.select_related("workflow_execution").aget(id=node_execution.id)
+ execution = node_execution.workflow_execution
  # 更新执行的输入数据
  execution.input_data = input_data
- await sync_to_async(execution.save)(update_fields=["input_data"])
+ await execution.asave(update_fields=["input_data"])
  # 标记节点开始执行
  node_execution.input_data = input_data
- await sync_to_async(node_execution.mark_started)
+ await node_execution.amark_started
  await self.hooks.trigger(
  "node_started",
  execution=execution,
  node_execution=node_execution,
  )
  # 直接完成手动触发节点（将输入数据作为输出）
- await sync_to_async(node_execution.mark_completed)(input_data)
+ await node_execution.amark_completed(input_data)
  await self.hooks.trigger(
  "node_completed",
  execution=execution,
@@ -565,7 +566,8 @@ class WorkflowEngine:
  node_execution=node_execution,
  )
  # Get the workflow and rebuild DAG
- workflow = await sync_to_async(lambda: execution.workflow)
+ execution = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id)
+ workflow = execution.workflow
  dag = await DAG.afrom_workflow(workflow)
  # Find successor nodes
  completed_node_id = str(node_execution.node_id)
@@ -602,13 +604,11 @@ class WorkflowEngine:
  all_deps_ready = await self._check_dependencies_ready(execution, successor_dag_node)
  if all_deps_ready:
  # Get successor's node execution
- successor_exec = await sync_to_async(
- lambda sid=successor_dag_node.id: NodeExecution.objects.filter(
+ successor_exec = await NodeExecution.objects.filter(
  workflow_execution=execution,
- node_id=sid,
+ node_id=successor_dag_node.id,
  status=NodeExecutionStatus.PENDING,
- ).first
- )
+ ).afirst
  if successor_exec:
  # Collect inputs and execute
  input_data = self._collect_inputs(successor_dag_node, dag, node_outputs)
@@ -617,13 +617,11 @@ class WorkflowEngine:
  )
  # Recursive: if successor also completed immediately, continue its downstream
  if isinstance(result, dict) and result.get("status") == "completed":
- successor_ne = await sync_to_async(
- lambda sid=successor_dag_node.id: NodeExecution.objects.filter(
+ successor_ne = await NodeExecution.objects.filter(
  workflow_execution=execution,
- node_id=sid,
+ node_id=successor_dag_node.id,
  status=NodeExecutionStatus.COMPLETED,
- ).first
- )
+ ).afirst
  if successor_ne:
  await self._continue_after_node(execution, successor_ne)
  async def _handle_node_failure(
@@ -642,44 +640,33 @@ class WorkflowEngine:
  )
  # Check if we should fail the entire workflow
  # For now, any node failure fails the workflow
- await sync_to_async(execution.mark_failed)(
+ await execution.amark_failed(
  f"节点 {node_execution.node.name} 执行失败: {node_execution.error_message}"
  )
  await self.hooks.trigger("execution_failed", execution=execution)
  async def _check_execution_complete(self, execution: WorkflowExecution) -> None:
  """Check if workflow execution is complete and update status."""
  # Count node statuses
- stats = await sync_to_async(
- lambda: {
- "pending": NodeExecution.objects.filter(
- workflow_execution=execution,
- status=NodeExecutionStatus.PENDING,
- ).count,
- "running": NodeExecution.objects.filter(
- workflow_execution=execution,
- status=NodeExecutionStatus.RUNNING,
- ).count,
- "waiting": NodeExecution.objects.filter(
- workflow_execution=execution,
+ base_qs = NodeExecution.objects.filter(workflow_execution=execution)
+ stats = {
+ "pending": await base_qs.filter(status=NodeExecutionStatus.PENDING).acount,
+ "running": await base_qs.filter(status=NodeExecutionStatus.RUNNING).acount,
+ "waiting": await base_qs.filter(
  status__in=[
  NodeExecutionStatus.WAITING_APPROVAL,
  NodeExecutionStatus.WAITING_EVENT,
  ],
- ).count,
- "failed": NodeExecution.objects.filter(
- workflow_execution=execution,
- status=NodeExecutionStatus.FAILED,
- ).count,
+ ).acount,
+ "failed": await base_qs.filter(status=NodeExecutionStatus.FAILED).acount,
  }
- )
  if stats["pending"] == 0 and stats["running"] == 0 and stats["waiting"] == 0:
  # All nodes are done
  if stats["failed"] > 0:
- await sync_to_async(execution.mark_failed)(f"失败节点: {stats['failed']}")
+ await execution.amark_failed(f"失败节点: {stats['failed']}")
  else:
  # Collect final outputs
  final_output = await self._collect_final_outputs(execution)
- await sync_to_async(execution.mark_completed)(final_output)
+ await execution.amark_completed(final_output)
  await self.hooks.trigger("execution_completed", execution=execution)
  async def _check_dependencies_ready(
  self,
@@ -688,25 +675,21 @@ class WorkflowEngine:
  ) -> bool:
  """Check if all dependencies of a node are completed."""
  for dep_id in dag_node.incoming:
- dep_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ dep_exec = await NodeExecution.objects.filter(
  workflow_execution=execution,
  node_id=dep_id,
- ).first
- )
+ ).afirst
  if not dep_exec or dep_exec.status != NodeExecutionStatus.COMPLETED:
  return False
  return True
  async def _collect_all_outputs(self, execution: WorkflowExecution) -> dict:
  """Collect outputs from all completed nodes."""
- completed_nodes = await sync_to_async(
- lambda: list(
- NodeExecution.objects.filter(
+ completed_nodes = [
+ ne async for ne in NodeExecution.objects.filter(
  workflow_execution=execution,
  status=NodeExecutionStatus.COMPLETED,
  ).select_related("node")
- )
- )
+ ]
  outputs = {}
  for node_exec in completed_nodes:
  outputs[str(node_exec.node_id)] = node_exec.output_data or {}
@@ -714,22 +697,21 @@ class WorkflowEngine:
  async def _collect_final_outputs(self, execution: WorkflowExecution) -> dict:
  """Collect outputs from terminal nodes."""
  # Get workflow and DAG
- workflow = await sync_to_async(lambda: execution.workflow)
+ execution = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id)
+ workflow = execution.workflow
  dag = await DAG.afrom_workflow(workflow)
  # Find terminal nodes (no outgoing edges)
  terminal_node_ids = [
  node_id for node_id, dag_node in dag.nodes.items if not dag_node.outgoing
  ]
  # Get their outputs
- terminal_outputs = await sync_to_async(
- lambda: list(
- NodeExecution.objects.filter(
+ terminal_outputs = [
+ ne async for ne in NodeExecution.objects.filter(
  workflow_execution=execution,
  node_id__in=terminal_node_ids,
  status=NodeExecutionStatus.COMPLETED,
  )
- )
- )
+ ]
  final_output = {}
  for node_exec in terminal_outputs:
  if node_exec.output_data:
