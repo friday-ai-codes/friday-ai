@@ -7,7 +7,6 @@ approve or reject on the card.
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -158,10 +157,11 @@ class PlanApprovalNode(BaseNode):
  if not context.workflow_execution:
  log.warning("plan_approval_no_workflow_execution")
  return ""
- workflow = await sync_to_async(
- lambda: context.workflow_execution.workflow # type: ignore[union-attr]
- )
- project = await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
  if not project:
  log.warning("plan_approval_no_project")
  return ""
@@ -304,10 +304,11 @@ class PlanApprovalNode(BaseNode):
  if not context.workflow_execution:
  log.warning("plan_approval_no_workflow_execution_for_card")
  return
- workflow = await sync_to_async(
- lambda: context.workflow_execution.workflow # type: ignore[union-attr]
- )
- project = await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution as WE2
+ we = await WE2.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
  if not project:
  log.warning("plan_approval_no_project_for_card")
  return
