@@ -4,7 +4,6 @@ with automatic Markdown conversion.
 """
 from datetime import datetime, timezone
 import structlog
-from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from services.feishu_doc import FeishuDocAPIError, FeishuDocClient
@@ -21,6 +20,16 @@ def _get_system_feishu_credentials_for_doc -> tuple[str, str] | None:
  return app_id_setting.value, app_secret
  except SystemSetting.DoesNotExist:
  pass
+ return None
+async def _aget_system_feishu_credentials_for_doc -> tuple[str, str] | None:
+ """从 SystemSetting 获取飞书凭证（async 版本）。"""
+ from common.encryption import decrypt_value
+ from system.models import SettingKeys, SystemSetting
+ app_id_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_ID).afirst
+ app_secret_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_SECRET).afirst
+ if app_id_setting and app_secret_setting and app_id_setting.value and app_secret_setting.value:
+ app_secret = decrypt_value(app_secret_setting.value) if app_secret_setting.is_encrypted else app_secret_setting.value
+ return app_id_setting.value, app_secret
  return None
 async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocClient:
  """Create a FeishuDocClient for a project.
@@ -42,7 +51,7 @@ async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocCli
  app_secret=app_secret,
  )
  # 回退到系统级飞书 IM 配置
- credentials = await sync_to_async(_get_system_feishu_credentials_for_doc)
+ credentials = await _aget_system_feishu_credentials_for_doc
  if credentials:
  return FeishuDocClient(
  app_id=credentials[0],

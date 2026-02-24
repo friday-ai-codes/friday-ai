@@ -77,9 +77,8 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  tool_names=stored_config.get("tool_names"),
  )
  # Create provider with project's Claude config
- from asgiref.sync import sync_to_async
- from services.claude_config import get_claude_config
- claude_config = await sync_to_async(get_claude_config, thread_sensitive=False)(session.project)
+ from services.claude_config import aget_claude_config
+ claude_config = await aget_claude_config(session.project)
  if not claude_config.api_key:
  raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
  if not claude_config.model:
@@ -130,15 +129,10 @@ async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
  The chat_id string, or empty string if not found
  """
  try:
- from asgiref.sync import sync_to_async
  from workflows.models.execution import NodeExecution
- node_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter( # type: ignore[attr-defined]
+ node_exec = await NodeExecution.objects.filter( # type: ignore[attr-defined]
  output_data__session_id=session_id,
- )
- .select_related("node")
- .first
- )
+ ).select_related("node").afirst
  if node_exec and node_exec.node:
  chat_id = node_exec.node.config.get("chat_id", "")
  if chat_id:
@@ -166,7 +160,6 @@ async def _notify_workflow_completion(
  log.info("工作流节点挂起中，跳过通知")
  return
  try:
- from asgiref.sync import sync_to_async
  from workflows.engine.scheduler import WorkflowEngine
  from workflows.models.execution import (
  NodeExecution,
@@ -174,14 +167,10 @@ async def _notify_workflow_completion(
  WorkflowExecution,
  )
  # Find the node execution linked to this session
- node_exec = await sync_to_async(
- lambda: NodeExecution.objects.filter( # type: ignore[attr-defined]
+ node_exec = await NodeExecution.objects.filter( # type: ignore[attr-defined]
  output_data__session_id=session_id,
  status=NodeExecutionStatus.WAITING_EVENT,
- )
- .select_related("workflow_execution")
- .first
- )
+ ).select_related("workflow_execution").afirst
  if not node_exec:
  log.warning("未找到工作流节点执行记录")
  return
@@ -194,7 +183,7 @@ async def _notify_workflow_completion(
  "output": result.output,
  "usage": result.usage,
  }
- await sync_to_async(node_exec.mark_completed)(output_data)
+ await node_exec.amark_completed(output_data)
  # Continue workflow execution
  engine = WorkflowEngine
  await engine._continue_after_node(execution, node_exec)
@@ -202,7 +191,7 @@ async def _notify_workflow_completion(
  else:
  # Agent errored or hit max_iterations
  error_msg = result.error or f"Agent session ended with status: {result.status}"
- await sync_to_async(node_exec.mark_failed)(error_msg)
+ await node_exec.amark_failed(error_msg)
  engine = WorkflowEngine
  await engine._handle_node_failure(execution, node_exec)
  log.warning("工作流节点执行失败", agent_status=result.status)

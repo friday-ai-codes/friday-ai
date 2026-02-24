@@ -4,7 +4,6 @@ Uses FeishuIMClient with tenant_access_token authentication.
 """
 from datetime import datetime, timezone
 import structlog
-from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from common.encryption import decrypt_value
 from projects.models import Project
@@ -23,6 +22,14 @@ def _get_system_feishu_credentials -> tuple[str, str] | None:
  return app_id_setting.value, app_secret
  except SystemSetting.DoesNotExist:
  pass
+ return None
+async def _aget_system_feishu_credentials -> tuple[str, str] | None:
+ """从 SystemSetting 获取飞书 IM 凭证（async 版本）。"""
+ app_id_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_ID).afirst
+ app_secret_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_SECRET).afirst
+ if app_id_setting and app_secret_setting and app_id_setting.value and app_secret_setting.value:
+ app_secret = decrypt_value(app_secret_setting.value) if app_secret_setting.is_encrypted else app_secret_setting.value
+ return app_id_setting.value, app_secret
  return None
 async def create_feishu_im_client_for_project(project: Project) -> FeishuIMClient:
  """为指定项目创建 FeishuIMClient 实例。
@@ -43,7 +50,7 @@ async def create_feishu_im_client_for_project(project: Project) -> FeishuIMClien
  app_secret=app_secret,
  )
  # 回退到系统级飞书 IM 配置
- credentials = await sync_to_async(_get_system_feishu_credentials)
+ credentials = await _aget_system_feishu_credentials
  if credentials:
  return FeishuIMClient(
  app_id=credentials[0],
