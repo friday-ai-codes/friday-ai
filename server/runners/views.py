@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import timedelta
 from typing import Any
+from asgiref.sync import sync_to_async
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
@@ -27,7 +28,7 @@ class RegistrationTokenViewSet(ModelViewSet):
  queryset = RegistrationToken.objects.all.order_by("-created_at")
  serializer_class = RegistrationTokenSerializer
  http_method_names = ["get", "post", "delete", "head", "options"]
- async def create(self, request, *args, **kwargs):
+ async def acreate(self, request, *args, **kwargs):
  serializer = RegistrationTokenCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
@@ -162,7 +163,7 @@ class RunnerViewSet(ModelViewSet):
  qs = qs.filter(assigned_at__gte=since)
  if until:= params.get("until"):
  qs = qs.filter(assigned_at__lte=until)
- page = self.paginate_queryset(qs)
+ page = await sync_to_async(self.paginate_queryset)(qs)
  serializer = RunnerTaskAssignmentSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)
  @action(detail=True, methods=["get"]) # type: ignore[type-var]
@@ -172,6 +173,6 @@ class RunnerViewSet(ModelViewSet):
  qs = RunnerEvent.objects.filter(runner=runner)
  if event_type:= request.query_params.get("event_type"):
  qs = qs.filter(event_type=event_type)
- page = self.paginate_queryset(qs)
+ page = await sync_to_async(self.paginate_queryset)(qs)
  serializer = RunnerEventSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)

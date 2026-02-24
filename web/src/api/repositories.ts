@@ -55,7 +55,7 @@ export interface SearchResponse {
 }
 // 健康检查响应
 export interface HealthCheckResponse {
- status: 'healthy' | 'unhealthy' | 'error' | 'not_configured'
+ status: 'healthy' | 'unhealthy' | 'error' | 'not_configured' | 'warning'
  message?: string
  collections_count?: number
  dimension?: number
@@ -149,6 +149,15 @@ export const repositoriesApi = {
  return get<HealthCheckResponse>('/repositories/health/qdrant/')
  },
  /**
+ * Qdrant 连接测试（使用提供的配置，保存前测试）
+ */
+ testQdrantConnection: async (url: string, apiKey?: string): Promise<HealthCheckResponse> => {
+ return post<HealthCheckResponse>('/repositories/health/qdrant/', {
+ url,
+ api_key: apiKey,
+ })
+ },
+ /**
  * Embedding API 健康检查（使用已保存配置）
  */
  checkEmbeddingHealth: async: Promise<HealthCheckResponse> => {
@@ -157,11 +166,12 @@ export const repositoriesApi = {
  /**
  * Embedding API 健康检查（使用提供的配置，保存前测试）
  */
- testEmbeddingConnection: async (apiUrl: string, model: string, apiKey?: string): Promise<HealthCheckResponse> => {
+ testEmbeddingConnection: async (apiUrl: string, model: string, apiKey?: string, dimension?: number): Promise<HealthCheckResponse> => {
  return post<HealthCheckResponse>('/repositories/health/embedding/', {
  api_url: apiUrl,
  model,
  api_key: apiKey,
+ dimension,
  })
  },
  // ==================== 连接测试 API ====================

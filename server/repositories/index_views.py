@@ -176,6 +176,24 @@ class QdrantHealthView(APIView):
  """Get Qdrant health status."""
  health = await sync_to_async(QdrantService.health_check)
  return Response(health)
+ async def post(self, request):
+ """Test Qdrant connection with provided config (before saving)."""
+ from common.encryption import decrypt_value
+ from system.models import SettingKeys, SystemSetting
+ url = request.data.get("url")
+ api_key = request.data.get("api_key")
+ # If api_key not provided, try to get from saved settings
+ if not api_key:
+ api_key_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.QDRANT_API_KEY
+ ).afirst
+ if api_key_setting and api_key_setting.value:
+ if api_key_setting.is_encrypted:
+ api_key = decrypt_value(api_key_setting.value)
+ else:
+ api_key = api_key_setting.value
+ health = await sync_to_async(QdrantService.health_check_with_config)(url, api_key)
+ return Response(health)
 class EmbeddingHealthView(APIView):
  """Check Embedding API health."""
  async def get(self, request):
@@ -191,6 +209,7 @@ class EmbeddingHealthView(APIView):
  api_url = request.data.get("api_url")
  model = request.data.get("model", "BAAI/bge-m3")
  api_key = request.data.get("api_key")
+ dimension = request.data.get("dimension")
  if not api_url:
  return Response(
  {
@@ -208,5 +227,7 @@ class EmbeddingHealthView(APIView):
  api_key = decrypt_value(api_key_setting.value)
  else:
  api_key = api_key_setting.value
- health = await EmbeddingService.test_connection_with_config(api_url, model, api_key)
+ health = await EmbeddingService.test_connection_with_config(
+ api_url, model, api_key, int(dimension) if dimension else None
+ )
  return Response(health)
