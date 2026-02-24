@@ -5,12 +5,11 @@
 import json
 from typing import Any
 import structlog
-from asgiref.sync import async_to_sync
 from feishu.cards.container_question_card import build_container_answered_card
 from feishu.views import CardCallback, register_card_callback
 logger = structlog.get_logger
 @register_card_callback("container_answer")
-def handle_container_answer(callback: CardCallback) -> dict[str, Any] | None:
+async def handle_container_answer(callback: CardCallback) -> dict[str, Any] | None:
  """处理容器提问卡片的用户回复。
  按钮点击: action_value 包含 answer 字段
  表单提交: action_value 包含 custom_answer 字段
@@ -42,7 +41,7 @@ def handle_container_answer(callback: CardCallback) -> dict[str, Any] | None:
  # 异步处理回复（写入 answer.json、更新 InteractionLog 等）
  from subagent.question_handler import handle_container_answer_enhanced
  answer_source = "button" if action_data.get("answer") else "text"
- async_to_sync(handle_container_answer_enhanced)(
+ await handle_container_answer_enhanced(
  session_id=session_id,
  question_id=question_id,
  answer=answer,

@@ -2,7 +2,6 @@
 import asyncio
 import uuid
 import structlog
-from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
 logger = structlog.get_logger
@@ -250,8 +249,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  session.failure_reason = error_msg
  await session.asave(update_fields=["failure_reason"])
  await session.amark_failed(error=error_msg)
- # TODO(Phase): async 化 _send_failure_notification
- await sync_to_async(_send_failure_notification)(session, error_msg)
+ await _send_failure_notification(session, error_msg)
  _schedule_workflow_resume(session, log)
  _schedule_agent_loop_resume(session, log)
  log.info("task_failed_via_ws")
