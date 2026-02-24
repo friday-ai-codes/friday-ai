@@ -27,17 +27,15 @@ def qdrant_delete_by_file_path(repository_id: str, file_path: str) -> bool:
 @sync_to_async
 def qdrant_upsert_vectors(repository_id: str, points: list[dict]) -> bool:
  return QdrantService.upsert_vectors(repository_id, points)
-@sync_to_async
-def update_index_progress(repository_id: str, total: int, processed: int) -> None:
+async def update_index_progress(repository_id: str, total: int, processed: int) -> None:
  """Update indexing progress in database."""
- Repository.objects.filter(id=repository_id).update(
+ await Repository.objects.filter(id=repository_id).aupdate(
  index_total_chunks=total,
  index_processed_chunks=processed,
  )
-@sync_to_async
-def update_write_progress(repository_id: str, total: int, processed: int) -> None:
+async def update_write_progress(repository_id: str, total: int, processed: int) -> None:
  """Update Qdrant write progress in database."""
- Repository.objects.filter(id=repository_id).update(
+ await Repository.objects.filter(id=repository_id).aupdate(
  index_write_total=total,
  index_write_processed=processed,
  )
@@ -74,13 +72,10 @@ class IndexerService:
  )
  try:
  # Get embedding dimension from settings
- @sync_to_async
- def get_embedding_dimension:
- dimension_setting = SystemSetting.objects.filter(
+ dimension_setting = await SystemSetting.objects.filter(
  key=SettingKeys.EMBEDDING_DIMENSION
- ).first
- return int(dimension_setting.value) if dimension_setting else 1024
- vector_size = await get_embedding_dimension
+ ).afirst
+ vector_size = int(dimension_setting.value) if dimension_setting else 1024
  # Create collection
  await qdrant_create_collection(self.repository_id, vector_size)
  # Scan files
@@ -296,10 +291,9 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  This is the main entry point for indexing a repository.
  """
  from common.encryption import decrypt_value
- @sync_to_async
- def get_repository_data:
- """Fetch repository and extract all needed data in sync context."""
- repo = Repository.objects.select_related("credential").get(id=repository_id)
+ async def get_repository_data:
+ """Fetch repository and extract all needed data in async context."""
+ repo = await Repository.objects.select_related("credential").aget(id=repository_id)
  credential = getattr(repo, "credential", None)
  token = None
  if credential and credential.encrypted_token:
@@ -310,10 +304,8 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  "proxy_url": repo.proxy_url,
  "token": token,
  }
- @sync_to_async
- def update_repository_status(repo, status, error=None, last_indexed_at=None):
- # Refresh from db to avoid stale state
- repo.refresh_from_db
+ async def update_repository_status(repo, status, error=None, last_indexed_at=None):
+ await repo.arefresh_from_db
  repo.index_status = status
  repo.index_error = error
  if last_indexed_at:
@@ -321,7 +313,7 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  update_fields = ["index_status", "index_error"]
  if last_indexed_at:
  update_fields.append("last_indexed_at")
- repo.save(update_fields=update_fields)
+ await repo.asave(update_fields=update_fields)
  try:
  repo_data = await get_repository_data
  except Repository.DoesNotExist:

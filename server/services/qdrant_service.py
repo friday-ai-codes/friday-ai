@@ -10,8 +10,8 @@ class QdrantService:
  """Service for interacting with Qdrant vector database."""
  _client: QdrantClient | None = None
  @classmethod
- def get_config(cls) -> dict[str, Any]:
- """Get Qdrant configuration from system settings."""
+ def _get_config_sync(cls) -> dict[str, Any]:
+ """Get Qdrant configuration from system settings (sync, for client init)."""
  config = {}
  url_setting = SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).first
  config["url"] = url_setting.value if url_setting else "http://localhost:6333"
@@ -21,11 +21,22 @@ class QdrantService:
  config["api_key"] = decrypt_value(api_key_setting.value)
  return config
  @classmethod
+ async def get_config(cls) -> dict[str, Any]:
+ """Get Qdrant configuration from system settings (async)."""
+ config = {}
+ url_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).afirst
+ config["url"] = url_setting.value if url_setting else "http://localhost:6333"
+ api_key_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_API_KEY).afirst
+ if api_key_setting and api_key_setting.value:
+ from common.encryption import decrypt_value
+ config["api_key"] = decrypt_value(api_key_setting.value)
+ return config
+ @classmethod
  def get_client(cls) -> QdrantClient:
  """Get or create Qdrant client."""
  if cls._client is None:
  import os
- config = cls.get_config
+ config = cls._get_config_sync
  url = config.get("url", "http://localhost:6333")
  proxy_vars = {k: v for k, v in os.environ.items if "proxy" in k.lower}
  logger.info("qdrant_client_init", url=url, proxy_env=proxy_vars)
@@ -59,6 +70,17 @@ class QdrantService:
  "status": "unhealthy",
  "error": str(e),
  }
+ @staticmethod
+ def health_check_with_config(url: str | None = None, api_key: str | None = None) -> dict[str, Any]:
+ """Check Qdrant health with provided config (before saving)."""
+ try:
+ client = QdrantClient(url=url or "http://localhost:6333", api_key=api_key or None)
+ info = client.get_collections
+ client.close
+ return {"status": "healthy", "collections_count": len(info.collections)}
+ except Exception as e:
+ logger.error("qdrant_health_check_with_config_failed", error=str(e))
+ return {"status": "unhealthy", "error": str(e)}
  @classmethod
  def get_collection_name(cls, repository_id: str) -> str:
  """Generate collection name for a repository."""
