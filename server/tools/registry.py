@@ -23,3 +23,9 @@ class RemoteToolRegistry:
  @staticmethod
  def get_tool(name: str) -> RemoteTool | None:
  return RemoteTool.objects.filter(name=name, is_active=True).first
+ @staticmethod
+ async def aget_active_tools -> list[RemoteTool]:
+ return [t async for t in RemoteTool.objects.filter(is_active=True)]
+ @staticmethod
+ async def aget_tool(name: str) -> RemoteTool | None:
+ return await RemoteTool.objects.filter(name=name, is_active=True).afirst

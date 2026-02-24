@@ -2,19 +2,18 @@
 from typing import Any, Callable
 import httpx
 import structlog
-from asgiref.sync import sync_to_async
 from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
 class EmbeddingService:
  """Service for generating embeddings via remote API."""
  @classmethod
- def get_config_sync(cls) -> dict[str, Any]:
- """Get embedding configuration from system settings (sync version)."""
+ async def get_config(cls) -> dict[str, Any]:
+ """Get embedding configuration from system settings."""
  from common.encryption import decrypt_value
- config = {}
- api_url = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_URL).first
+ config: dict[str, Any] = {}
+ api_url = await SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_URL).afirst
  config["api_url"] = api_url.value if api_url else None
- api_key_setting = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_KEY).first
+ api_key_setting = await SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_API_KEY).afirst
  if api_key_setting and api_key_setting.value:
  if api_key_setting.is_encrypted:
  config["api_key"] = decrypt_value(api_key_setting.value)
@@ -22,15 +21,11 @@ class EmbeddingService:
  config["api_key"] = api_key_setting.value
  else:
  config["api_key"] = None
- model = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_MODEL).first
+ model = await SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_MODEL).afirst
  config["model"] = model.value if model else "BAAI/bge-m3"
- dimension = SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_DIMENSION).first
+ dimension = await SystemSetting.objects.filter(key=SettingKeys.EMBEDDING_DIMENSION).afirst
  config["dimension"] = int(dimension.value) if dimension and dimension.value else 1024
  return config
- @classmethod
- async def get_config(cls) -> dict[str, Any]:
- """Get embedding configuration from system settings (async version)."""
- return await sync_to_async(cls.get_config_sync, thread_sensitive=True)
  @classmethod
  async def generate_embedding(cls, text: str) -> list[float] | None:
  """Generate embedding for a single text.
@@ -210,24 +205,23 @@ class EmbeddingService:
  }
  @classmethod
  async def test_connection_with_config(
- cls, api_url: str, model: str, api_key: str | None = None
+ cls, api_url: str, model: str, api_key: str | None = None, expected_dimension: int | None = None
  ) -> dict[str, Any]:
  """Test embedding API connection with provided config (before saving)."""
  try:
  embedding = await cls._generate_embedding_with_config(
  api_url, model, "test connection", api_key
  )
- if embedding:
- return {
+ actual_dim = len(embedding)
+ result: dict[str, Any] = {
  "status": "healthy",
- "dimension": len(embedding),
+ "dimension": actual_dim,
  "model": model,
  }
- else:
- return {
- "status": "error",
- "message": "Failed to generate test embedding",
- }
+ if expected_dimension and actual_dim != expected_dimension:
+ result["status"] = "warning"
+ result["message"] = f"维度不匹配：模型返回 {actual_dim}，配置填写 {expected_dimension}"
+ return result
  except Exception as e:
  return {
  "status": "error",
@@ -262,8 +256,14 @@ class EmbeddingService:
  json=request_body,
  headers=headers,
  )
- response.raise_for_status
+ if response.status_code != 200:
+ body = response.text[:200]
+ msg = f"HTTP {response.status_code}: {body}" if body else f"HTTP {response.status_code}"
+ raise ValueError(msg)
+ try:
  data = response.json
+ except Exception:
+ raise ValueError(f"响应不是有效的 JSON，请检查 API 地址是否正确（如需添加 /v1/embeddings 后缀）")
  # Handle different API response formats
  if "data" in data and len(data["data"]) > 0:
  return data["data"][0]["embedding"]
@@ -273,7 +273,6 @@ class EmbeddingService:
  return data["embeddings"][0]
  else:
  logger.error("unexpected_embedding_response", data=data)
- return None
+ raise ValueError(f"无法解析 embedding 响应: {str(data)[:200]}")
  except httpx.HTTPError as e:
- logger.error("embedding_api_failed", error=str(e))
- return None
+ raise ValueError(f"请求失败: {e}")
