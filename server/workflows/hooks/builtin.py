@@ -1,7 +1,7 @@
 """Built-in lifecycle hooks."""
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.hooks.base import BaseHook
+from workflows.models.execution import NodeExecution, WorkflowExecution
 logger = structlog.get_logger
 class LoggingHook(BaseHook):
  """日志钩子"""
@@ -12,11 +12,12 @@ class LoggingHook(BaseHook):
  log_data = {"workflow_event_type": event}
  if execution:
  log_data["execution_id"] = str(execution.id)
- log_data["workflow"] = await sync_to_async(lambda: execution.workflow.name)
+ exe = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id) # type: ignore[attr-defined]
+ log_data["workflow"] = exe.workflow.name
  if node_execution:
- node = await sync_to_async(lambda: node_execution.node)
- log_data["node_id"] = str(node.id)
- log_data["node_name"] = node.name
+ ne = await NodeExecution.objects.select_related("node").aget(id=node_execution.id) # type: ignore[attr-defined]
+ log_data["node_id"] = str(ne.node.id)
+ log_data["node_name"] = ne.node.name
  logger.info("工作流事件", **log_data)
 class WebSocketBroadcastHook(BaseHook):
  """WebSocket 广播钩子"""
@@ -38,7 +39,7 @@ class WebSocketBroadcastHook(BaseHook):
  }
  node_execution = kwargs.get("node_execution")
  if node_execution:
- message["node_id"] = str(node_execution.node.id)
+ message["node_id"] = str(node_execution.node_id)
  message["node_status"] = node_execution.status
  await channel_layer.group_send(
  f"execution_{execution.id}",
