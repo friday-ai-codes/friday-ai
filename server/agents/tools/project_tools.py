@@ -52,14 +52,8 @@ async def list_project_repositories(project_id: str) -> ToolResult:
  "error": f"Project not found: {project_id}",
  },
  )
- # Use sync_to_async for M2M query
- @sync_to_async
- def get_repositories -> list[dict[str, Any]]:
- repos = Repository.objects.filter(
- projects=project,
- is_deleted=False,
- ).select_related
- return [
+ # Use async for M2M query
+ repositories = [
  {
  "id": str(repo.id),
  "name": repo.name,
@@ -69,9 +63,11 @@ async def list_project_repositories(project_id: str) -> ToolResult:
  "description": repo.description or "",
  "index_status": repo.index_status,
  }
- for repo in repos
+ async for repo in Repository.objects.filter(
+ projects=project,
+ is_deleted=False,
+ ).select_related
  ]
- repositories = await get_repositories
  logger.info(
  "list_project_repositories_success",
  project_id=project_id,
@@ -130,14 +126,11 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  "error": f"Repository not found: {repository_id}",
  },
  )
- # Use sync_to_async for M2M project query
- @sync_to_async
- def get_projects -> list[dict[str, str]]:
- return [
+ # Use async for M2M project query
+ projects = [
  {"id": str(p.id), "name": p.name}
- for p in repo.projects.all # type: ignore[attr-defined]
+ async for p in repo.projects.all # type: ignore[attr-defined]
  ]
- projects = await get_projects
  logger.info(
  "get_repository_info_success",
  repository_id=repository_id,
@@ -263,17 +256,13 @@ async def search_repository_code(
  "error": f"Project not found: {project_id}",
  },
  )
- @sync_to_async
- def get_project_repo_ids -> list[str]:
- return [
- str(rid)
- for rid in Repository.objects.filter(
+ project_repo_ids = [
+ str(rid) async for rid in Repository.objects.filter(
  projects=project,
  is_deleted=False,
  index_status="indexed",
  ).values_list("id", flat=True)
  ]
- project_repo_ids = await get_project_repo_ids
  # Add to list (avoid duplicates)
  for rid in project_repo_ids:
  rid_str = str(rid)
