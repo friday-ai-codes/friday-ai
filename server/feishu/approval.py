@@ -3,7 +3,6 @@ This module provides approval handling for Feishu comments that trigger
 workflow node approvals or rejections.
 """
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.models import (
  NodeExecution,
  NodeExecutionStatus,
@@ -42,14 +41,10 @@ class FeishuApprovalHandler:
  )
  return False
  # Find node waiting for approval
- node_execution = await sync_to_async(
- lambda: NodeExecution.objects.filter(
+ node_execution = await NodeExecution.objects.filter(
  workflow_execution=execution,
  status=NodeExecutionStatus.WAITING_APPROVAL,
- )
- .select_related("node")
- .first
- )
+ ).select_related("node").afirst
  if not node_execution:
  logger.warning(
  "no_pending_approval",
@@ -75,27 +70,23 @@ class FeishuApprovalHandler:
  Searches in both context and input_data for the work_item_id.
  """
  # Try to find by context first
- execution = await sync_to_async(
- lambda: WorkflowExecution.objects.filter(
+ execution = await WorkflowExecution.objects.filter(
  context__work_item_id=work_item_id,
  status__in=[
  WorkflowExecutionStatus.PENDING,
  WorkflowExecutionStatus.RUNNING,
  WorkflowExecutionStatus.PAUSED,
  ],
- ).first
- )
+ ).afirst
  if execution:
  return execution
  # Try input_data as fallback
- execution = await sync_to_async(
- lambda: WorkflowExecution.objects.filter(
+ execution = await WorkflowExecution.objects.filter(
  input_data__work_item_id=work_item_id,
  status__in=[
  WorkflowExecutionStatus.PENDING,
  WorkflowExecutionStatus.RUNNING,
  WorkflowExecutionStatus.PAUSED,
  ],
- ).first
- )
+ ).afirst
  return execution
