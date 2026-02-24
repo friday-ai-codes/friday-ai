@@ -7,7 +7,6 @@ same repository and branch strategy are merged into a single CodingTask.
 import asyncio
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from repositories.models import Repository
 from workflows.models.coding_task import CodingTask, CodingTaskStatus
 from workflows.nodes.base import (
@@ -154,12 +153,10 @@ class AICodingDispatcherNode(BaseNode):
  self, repo_ids: set[str]
  ) -> dict[str, Repository]:
  """批量获取仓库对象"""
- def _query -> dict[str, Repository]:
  return {
  str(r.id): r
- for r in Repository.objects.filter(id__in=repo_ids, is_deleted=False)
+ async for r in Repository.objects.filter(id__in=repo_ids, is_deleted=False)
  }
- return await sync_to_async(_query)
  def _group_tasks(
  self, execution_plan: list[dict[str, Any]]
  ) -> dict[tuple[str, str], list[dict[str, Any]]]:

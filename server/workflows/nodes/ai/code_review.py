@@ -13,7 +13,6 @@ import re
 import time
 from typing import Any, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
@@ -454,15 +453,15 @@ class AICodeReviewNode(AIAgentBaseNode):
  MRDiffResult 或 None（仓库不存在时）
  """
  try:
- repository = await sync_to_async(
- lambda: Repository.objects.filter(
+ repository = await Repository.objects.select_related(
+ "credential"
+ ).filter(
  id=repository_id, is_deleted=False
- ).first
- )
+ ).afirst
  if not repository:
  log.warning("review_repository_not_found", repository_id=repository_id)
  return None
- credential = await sync_to_async(lambda: repository.credential)
+ credential = repository.credential
  if not credential or not credential.encrypted_token:
  log.warning(
  "review_no_credential",
@@ -676,10 +675,11 @@ class AICodeReviewNode(AIAgentBaseNode):
  if not context.workflow_execution:
  log.warning("review_notification_no_workflow_execution")
  return
- workflow = await sync_to_async(
- lambda: context.workflow_execution.workflow # type: ignore[union-attr]
- )
- project = await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
  if not project:
  log.warning("review_notification_no_project")
  return

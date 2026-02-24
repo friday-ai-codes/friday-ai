@@ -11,7 +11,6 @@ import re
 import uuid
 from typing import Any, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
@@ -480,14 +479,12 @@ class AICodingNode(BaseNode):
  self, repo_ids: set[str]
  ) -> dict[str, Repository]:
  """批量获取仓库对象。"""
- def _query -> dict[str, Repository]:
  return {
  str(r.id): r
- for r in Repository.objects.filter(
+ async for r in Repository.objects.filter(
  id__in=repo_ids, is_deleted=False
  )
  }
- return await sync_to_async(_query)
  # ------------------------------------------------------------------
  # 分支名解析
  # ------------------------------------------------------------------
@@ -554,10 +551,11 @@ class AICodingNode(BaseNode):
  )
  # 获取 project 的飞书配置
  if context.workflow_execution:
- workflow = await sync_to_async(
- lambda: context.workflow_execution.workflow # type: ignore[union-attr]
- )
- project = await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
  if project:
  from agents.tools.feishu_doc_tools import (
  create_feishu_doc_client_for_project,
@@ -643,28 +641,27 @@ class AICodingNode(BaseNode):
  },
  )
  # 预创建 SubAgentSession（PENDING 状态）
- @sync_to_async
- def _create_session -> None:
+ async def _create_session -> None:
  from agents.models import AgentSession
  # 查找关联的 main_session
  main_session = None
  if node_execution_id:
  from workflows.models import NodeExecution
- node_exec = NodeExecution.objects.filter(
+ node_exec = await NodeExecution.objects.filter(
  id=node_execution_id,
- ).select_related("workflow_execution").first
+ ).select_related("workflow_execution").afirst
  if node_exec and node_exec.workflow_execution:
- main_session = AgentSession.objects.filter(
+ main_session = await AgentSession.objects.filter(
  metadata__workflow_execution_id=str(
  node_exec.workflow_execution.id
  ),
- ).first
+ ).afirst
  # main_session 是必需 FK，无法找到时创建占位
  if not main_session:
- main_session = AgentSession.objects.create(
+ main_session = await AgentSession.objects.acreate(
  metadata={"placeholder": True, "session_id": session_id},
  )
- SubAgentSession.objects.update_or_create(
+ await SubAgentSession.objects.aupdate_or_create(
  session_id=session_id,
  defaults={
  "main_session": main_session,
@@ -784,7 +781,10 @@ class AICodingNode(BaseNode):
  repository_name=repository.name,
  )
  # 获取 credential 并解密 token
- credential = await sync_to_async(lambda: repository.credential)
+ repo_with_cred = await Repository.objects.select_related(
+ "credential"
+ ).aget(id=repository.id)
+ credential = repo_with_cred.credential
  if not credential or not credential.encrypted_token:
  log.warning("mr_creation_no_credential")
  return {
@@ -888,10 +888,11 @@ class AICodingNode(BaseNode):
  if not context.workflow_execution:
  log.warning("result_notification_no_workflow_execution")
  return
- workflow = await sync_to_async(
- lambda: context.workflow_execution.workflow # type: ignore[union-attr]
- )
- project = await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution as WE2
+ we = await WE2.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
  if not project:
  log.warning("result_notification_no_project")
  return
