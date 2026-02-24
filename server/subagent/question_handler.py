@@ -14,7 +14,6 @@ import os
 import uuid
 from typing import Any
 import structlog
-from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.utils import timezone
 from feishu.cards.container_question_card import (
@@ -196,22 +195,6 @@ async def _update_card_to_answered(
  log.info("card_updated_to_answered")
  except Exception as e:
  log.warning("card_update_failed", error=str(e))
-# === 同步兼容版函数 ===
-def send_question_card(
- session: SubAgentSession,
- question: str,
- options: list[str] | None = None,
- context: str = "",
-) -> None:
- """发送 Feishu 提问卡片（同步版本，保持兼容）。"""
- async_to_sync(send_question_card_enhanced)(
- session=session,
- question=question,
- options=options,
- context=context,
- code_snippet="",
- question_id=f"q-{uuid.uuid4.hex[:12]}",
- )
 def write_answer_to_volume(session: SubAgentSession, answer: str) -> bool:
  """将用户回复写入容器共享卷的 answer.json。
  路径: server/data/transfers/{session_id}/.friday/answer.json
@@ -243,21 +226,4 @@ def write_answer_to_volume(session: SubAgentSession, answer: str) -> bool:
  return True
  except OSError as e:
  log.error("answer_write_failed", path=answer_path, error=str(e))
- return False
-def handle_container_answer(session_id: str, answer: str) -> bool:
- """处理容器提问的用户回复（同步版本，保持兼容）。"""
- # 从 session 获取最近的 question_id
- try:
- session = SubAgentSession.objects.get(session_id=session_id)
- question_id = ""
- if session.last_output and isinstance(session.last_output, dict):
- pending = session.last_output.get("pending_question", {})
- question_id = pending.get("question_id", "")
- return async_to_sync(handle_container_answer_enhanced)(
- session_id=session_id,
- question_id=question_id,
- answer=answer,
- answer_source="text",
- )
- except SubAgentSession.DoesNotExist:
  return False
