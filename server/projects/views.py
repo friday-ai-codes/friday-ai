@@ -41,14 +41,12 @@ class ProjectViewSet(ModelViewSet):
  if self.action in ["update", "partial_update"]:
  return ProjectUpdateSerializer
  return ProjectSerializer
- async def create(self, request, *args, **kwargs):
+ async def acreate(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
- return Response(
- ProjectSerializer(project).data,
- status=status.HTTP_201_CREATED,
- )
+ data = await sync_to_async(lambda: ProjectSerializer(project).data)
+ return Response(data, status=status.HTTP_201_CREATED)
  # === Repository association ===
  @action(detail=True, methods=["get"], url_path="repositories")
  async def list_repositories(self, request, pk=None):
@@ -329,7 +327,7 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "retrieve":
  return RepositoryWithProjectsSerializer
  return RepositorySerializer
- async def create(self, request, *args, **kwargs):
+ async def acreate(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  data = serializer.validated_data
@@ -351,10 +349,8 @@ class RepositoryViewSet(ModelViewSet):
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
- return Response(
- RepositorySerializer(repository).data,
- status=status.HTTP_201_CREATED,
- )
+ resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
+ return Response(resp_data, status=status.HTTP_201_CREATED)
  @action(detail=True, methods=["get", "delete"], url_path="credential")
  async def credential(self, request, pk=None):
  """Get or delete credential for repository."""

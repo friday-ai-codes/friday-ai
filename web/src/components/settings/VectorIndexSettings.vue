@@ -50,8 +50,8 @@ const settingsMeta: Record<string, { label: string, description: string, placeho
  },
  [SettingKey.EMBEDDING_API_URL]: {
  label: 'Embedding API 地址',
- description: '用于生成向量的 Embedding API 端点',
- placeholder: 'http://localhost:8080/v1/embeddings',
+ description: '完整的 API 端点地址，OpenAI 兼容格式需包含 /v1/embeddings，Ollama 需包含 /api/embeddings',
+ placeholder: 'https://api.example.com/v1/embeddings',
  },
  [SettingKey.EMBEDDING_API_KEY]: {
  label: 'Embedding API Key',
@@ -145,7 +145,7 @@ function hasUnsavedChanges: boolean {
 async function testQdrantConnection {
  testingQdrant.value = true
  try {
- const result = await repositoriesApi.checkQdrantHealth
+ const result = await repositoriesApi.testQdrantConnection(qdrantUrlValue.value, qdrantApiKeyDirty.value ? qdrantApiKeyValue.value || undefined: undefined)
  qdrantHealth.value = result
  if (result.status === 'healthy') {
  toast.success('Qdrant 连接成功')
@@ -177,11 +177,15 @@ async function testEmbeddingConnection {
  const result = await repositoriesApi.testEmbeddingConnection(
  apiUrl,
  model,
- embeddingApiKeyDirty.value ? embeddingApiKeyValue.value.trim: undefined,
+ embeddingApiKeyDirty.value ? embeddingApiKeyValue.value.trim || undefined: undefined,
+ embeddingDimensionValue.value ? Number(embeddingDimensionValue.value): undefined,
  )
  embeddingHealth.value = result
  if (result.status === 'healthy') {
- toast.success('Embedding API 连接成功')
+ toast.success(`Embedding API 连接成功，维度: ${result.dimension}`)
+ }
+ else if (result.status === 'warning') {
+ toast.warning(result.message)
  }
  else {
  toast.error(`Embedding API 连接失败: ${result.message}`)
@@ -199,6 +203,7 @@ function getHealthStatusColor(status: string | undefined) {
  switch (status) {
  case 'healthy':
  return 'text-emerald-500'
+ case 'warning':
  case 'not_configured':
  return 'text-amber-500'
  default:

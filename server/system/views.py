@@ -18,8 +18,8 @@ ENCRYPTED_KEYS = {
 class SettingsListCreateView(APIView):
  """List and create system settings."""
  async def get(self, request):
- settings_qs = SystemSetting.objects.all
- serializer = SystemSettingSerializer(settings_qs, many=True)
+ settings = [s async for s in SystemSetting.objects.all]
+ serializer = SystemSettingSerializer(settings, many=True)
  return Response(serializer.data)
  async def post(self, request):
  serializer = SystemSettingCreateSerializer(data=request.data)

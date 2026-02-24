@@ -93,7 +93,7 @@ async function handleDelete {
  description="创建您的第一个项目，开始使用 AI 辅助开发"
  action-label="新建项目"
  gradient="from-blue-500/20 to-cyan-500/20"
- @action="$router.push('/projects/new')"
+ @action="openCreateProject"
  />
  <!-- 项目列表 -->
  <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
