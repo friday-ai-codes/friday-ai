@@ -1,6 +1,10 @@
 """Repositories models: Repository and GitCredential."""
 import uuid
+from typing import TYPE_CHECKING
 from django.db import models
+if TYPE_CHECKING:
+ from django.db.models import QuerySet
+ from workflows.models.coding_task import CodingTask
 class GitPlatform(models.TextChoices):
  """Git platform choices."""
  GITHUB = "github", "GitHub"
@@ -20,6 +24,9 @@ class IndexStatus(models.TextChoices):
  FAILED = "failed", "索引失败"
 class Repository(models.Model):
  """Repository model for Git repositories."""
+ # 反向关系类型声明
+ coding_tasks: "QuerySet[CodingTask]"
+ credential: "GitCredential"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  git_url = models.CharField(max_length=500)

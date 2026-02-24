@@ -4,10 +4,20 @@ from typing import TYPE_CHECKING
 from django.contrib.auth import get_user_model
 from django.db import models
 if TYPE_CHECKING:
- pass
+ from django.db.models import QuerySet
+ from workflows.models.execution import WorkflowExecution
+ from workflows.models.node import WorkflowEdge, WorkflowNode
+ from workflows.models.trigger import WorkflowTrigger
+ from workflows.models.webhook import WebhookConfig
 User = get_user_model
 class Workflow(models.Model):
  """工作流模板定义"""
+ # 反向关系类型声明（由 ForeignKey 的 related_name 生成）
+ nodes: "QuerySet[WorkflowNode]"
+ edges: "QuerySet[WorkflowEdge]"
+ executions: "QuerySet[WorkflowExecution]"
+ triggers: "QuerySet[WorkflowTrigger]"
+ webhook_configs: "QuerySet[WebhookConfig]"
  class TriggerType(models.TextChoices):
  MANUAL = "manual", "手动触发"
  WEBHOOK = "webhook", "Webhook 触发"
