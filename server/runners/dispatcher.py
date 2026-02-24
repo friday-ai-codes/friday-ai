@@ -3,7 +3,6 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 import structlog
-from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from runners.protocol import MessageType, make_request
 logger = structlog.get_logger
@@ -31,11 +30,11 @@ class TaskDispatcher:
  self._pending.put_nowait(task)
  self._log.info("task_queued", task_id=task.task_id)
  async def _try_assign(self, task: DispatchTask) -> bool:
- runners = await database_sync_to_async(self._find_matching_runners)(task.tags)
+ runners = await self._find_matching_runners(task.tags)
  if not runners:
  return False
  from tools.registry import RemoteToolRegistry
- remote_tools = await database_sync_to_async(RemoteToolRegistry.get_tools_payload)
+ remote_tools = await RemoteToolRegistry.aget_tools_payload
  for runner in runners:
  if runner.current_tasks < runner.concurrent:
  channel_layer = get_channel_layer
@@ -58,8 +57,8 @@ class TaskDispatcher:
  }),
  },
  )
- await database_sync_to_async(self._increment_tasks)(runner)
- await database_sync_to_async(self._create_assignment)(runner, task)
+ await self._increment_tasks(runner)
+ await self._create_assignment(runner, task)
  self._log.info("task_dispatched", task_id=task.task_id, runner=str(runner.id))
  await channel_layer.group_send("runner_monitor", {
  "type": "monitor.event",
@@ -69,35 +68,35 @@ class TaskDispatcher:
  "data": {"task_id": task.task_id, "session_id": task.session_id, "status": "assigned", "task_type": task.task_type},
  },
  })
- await database_sync_to_async(self._log_dispatch_event)(runner, task)
+ await self._log_dispatch_event(runner, task)
  return True
  return False
- def _find_matching_runners(self, tags: list[str]) -> list:
+ async def _find_matching_runners(self, tags: list[str]) -> list:
  from runners.models import Runner
- runners = list(
- Runner.objects.filter(status="online", is_active=True).exclude(channel_name="")
- )
+ runners = [
+ r async for r in Runner.objects.filter(status="online", is_active=True).exclude(channel_name="")
+ ]
  tag_set = set(tags)
  matched = [r for r in runners if tag_set.issubset(set(r.tags))]
  matched.sort(key=lambda r: r.current_tasks)
  return matched
- def _increment_tasks(self, runner) -> None: # type: ignore[no-untyped-def]
+ async def _increment_tasks(self, runner) -> None: # type: ignore[no-untyped-def]
  from django.db import models as db_models
  from runners.models import Runner
- Runner.objects.filter(id=runner.id).update(
+ await Runner.objects.filter(id=runner.id).aupdate(
  current_tasks=db_models.F("current_tasks") + 1
  )
- def _create_assignment(self, runner: object, task: DispatchTask) -> None:
+ async def _create_assignment(self, runner: object, task: DispatchTask) -> None:
  from runners.models import RunnerTaskAssignment
  from subagent.models import SubAgentSession
- session = SubAgentSession.objects.filter(session_id=task.session_id).first
+ session = await SubAgentSession.objects.filter(session_id=task.session_id).afirst
  if session:
- RunnerTaskAssignment.objects.create(runner=runner, session=session) # type: ignore[misc]
+ await RunnerTaskAssignment.objects.acreate(runner=runner, session=session) # type: ignore[misc]
  session.runner = runner # type: ignore[assignment]
- session.save(update_fields=["runner", "updated_at"])
- def _log_dispatch_event(self, runner: object, task: DispatchTask) -> None:
+ await session.asave(update_fields=["runner", "updated_at"])
+ async def _log_dispatch_event(self, runner: object, task: DispatchTask) -> None:
  from runners.models import RunnerEvent
- RunnerEvent.objects.create(
+ await RunnerEvent.objects.acreate(
  runner=runner, # type: ignore[misc]
  event_type="task_assigned",
  detail={"task_id": task.task_id, "session_id": task.session_id},
