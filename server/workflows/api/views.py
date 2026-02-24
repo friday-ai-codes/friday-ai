@@ -574,9 +574,9 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  methods=["post"],
  permission_classes=[IsAuthenticated, ApprovalPermission],
  )
- def approve(self, request: Request, pk=None) -> Response:
+ async def approve(self, request: Request, pk=None) -> Response:
  """Approve a node waiting for approval."""
- node_execution = self.get_object
+ node_execution = await self.aget_object
  if node_execution.status not in [
  NodeExecutionStatus.WAITING_APPROVAL,
  NodeExecutionStatus.WAITING_EVENT,
@@ -590,7 +590,7 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  comment = serializer.validated_data.get("comment", "")
  try:
  engine = WorkflowEngine
- run_async(engine.approve_node(node_execution, request.user, comment))
+ await engine.approve_node(node_execution, request.user, comment)
  return Response({"status": "approved", "message": "审批已通过"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -599,9 +599,9 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  methods=["post"],
  permission_classes=[IsAuthenticated, ApprovalPermission],
  )
- def reject(self, request: Request, pk=None) -> Response:
+ async def reject(self, request: Request, pk=None) -> Response:
  """Reject a node waiting for approval."""
- node_execution = self.get_object
+ node_execution = await self.aget_object
  if node_execution.status not in [
  NodeExecutionStatus.WAITING_APPROVAL,
  NodeExecutionStatus.WAITING_EVENT,
@@ -615,20 +615,21 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  comment = serializer.validated_data.get("comment", "")
  try:
  engine = WorkflowEngine
- run_async(engine.reject_node(node_execution, request.user, comment))
+ await engine.reject_node(node_execution, request.user, comment)
  return Response({"status": "rejected", "message": "审批已拒绝"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
  @action(detail=True, methods=["post"])
- def trigger(self, request: Request, pk=None) -> Response:
+ async def trigger(self, request: Request, pk=None) -> Response:
  """Trigger a pending manual_trigger node."""
- node_execution = self.get_object
+ node_execution = await self.aget_object
  if node_execution.status != NodeExecutionStatus.PENDING:
  return Response(
  {"detail": "节点不在等待触发状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- if node_execution.node.node_type != "manual_trigger":
+ node = await sync_to_async(lambda: node_execution.node)
+ if node.node_type != "manual_trigger":
  return Response(
  {"detail": "只有手动触发节点可以被触发"},
  status=status.HTTP_400_BAD_REQUEST,
@@ -636,7 +637,7 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  input_data = request.data.get("input_data", {})
  try:
  engine = WorkflowEngine
- run_async(engine.trigger_manual_node(node_execution, input_data))
+ await engine.trigger_manual_node(node_execution, input_data)
  return Response({"status": "triggered", "message": "节点已触发"})
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -680,7 +681,7 @@ class NodeTypeViewSet(ReadOnlyModelViewSet):
 class WebhookTriggerView(APIView):
  """View for handling external webhook triggers."""
  permission_classes = [AllowAny]
- def post(self, request: Request, path: str) -> Response:
+ async def post(self, request: Request, path: str) -> Response:
  """Handle incoming webhook via TriggerDispatcher."""
  trace_id = str(uuid.uuid4)
  log = logger.bind(trace_id=trace_id, webhook_path=path)
@@ -703,7 +704,7 @@ class WebhookTriggerView(APIView):
  },
  )
  dispatcher = TriggerDispatcher
- executions = async_to_sync(dispatcher.dispatch)(context)
+ executions = await dispatcher.dispatch(context)
  log.info("webhook_trigger_complete", execution_count=len(executions))
  if not executions:
  return Response(
@@ -769,13 +770,13 @@ class WorkflowTriggerViewSet(ModelViewSet):
  if is_active is not None:
  queryset = queryset.filter(is_active=is_active.lower == "true")
  return queryset.order_by("-created_at")
- def perform_create(self, serializer):
+ async def perform_create(self, serializer):
  workflow_id = self.kwargs.get("workflow_id")
  if workflow_id:
- workflow = get_object_or_404(Workflow, id=workflow_id)
- serializer.save(workflow=workflow)
+ workflow = await aget_object_or_404(Workflow, id=workflow_id)
+ await sync_to_async(serializer.save)(workflow=workflow)
  else:
- serializer.save
+ await sync_to_async(serializer.save)
 # =============================================================================
 # Execution Context View
 # =============================================================================
@@ -922,52 +923,52 @@ class CodingTaskViewSet(ModelViewSet):
  queryset = queryset.filter(repository_id=repository_id)
  return queryset.order_by("-created_at")
  @action(detail=True, methods=["post"])
- def approve_plan(self, request: Request, pk=None) -> Response:
+ async def approve_plan(self, request: Request, pk=None) -> Response:
  """Approve coding task plan and move to executing."""
- task = self.get_object
+ task = await self.aget_object
  if task.status != "plan_review":
  return Response(
  {"detail": "任务不在方案评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- task.mark_executing
+ await sync_to_async(task.mark_executing)
  return Response({"status": task.status, "message": "方案已批准，开始执行"})
  @action(detail=True, methods=["post"])
- def reject_plan(self, request: Request, pk=None) -> Response:
+ async def reject_plan(self, request: Request, pk=None) -> Response:
  """Reject coding task plan and request revision."""
- task = self.get_object
+ task = await self.aget_object
  if task.status != "plan_review":
  return Response(
  {"detail": "任务不在方案评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  feedback = request.data.get("feedback", "")
- task.add_feedback(feedback)
- task.mark_planning
+ await sync_to_async(task.add_feedback)(feedback)
+ await sync_to_async(task.mark_planning)
  return Response({"status": task.status, "message": "方案已驳回，重新规划"})
  @action(detail=True, methods=["post"])
- def approve_code(self, request: Request, pk=None) -> Response:
+ async def approve_code(self, request: Request, pk=None) -> Response:
  """Approve coding task code and mark as merged."""
- task = self.get_object
+ task = await self.aget_object
  if task.status != "code_review":
  return Response(
  {"detail": "任务不在代码评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- task.mark_merged
+ await sync_to_async(task.mark_merged)
  return Response({"status": task.status, "message": "代码已批准合并"})
  @action(detail=True, methods=["post"])
- def reject_code(self, request: Request, pk=None) -> Response:
+ async def reject_code(self, request: Request, pk=None) -> Response:
  """Reject coding task code and request revision."""
- task = self.get_object
+ task = await self.aget_object
  if task.status != "code_review":
  return Response(
  {"detail": "任务不在代码评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  feedback = request.data.get("feedback", "")
- task.add_feedback(feedback)
- task.mark_executing
+ await sync_to_async(task.add_feedback)(feedback)
+ await sync_to_async(task.mark_executing)
  return Response({"status": task.status, "message": "代码已驳回，继续开发"})
 # =============================================================================
 # Node Execution Action View (Manual Intervention)
@@ -975,28 +976,28 @@ class CodingTaskViewSet(ModelViewSet):
 class NodeExecutionActionView(APIView):
  """节点执行操作视图 - 支持手动干预等待中的节点"""
  permission_classes = [IsAuthenticated]
- def post(self, request: Request, execution_id, node_id, action_type) -> Response:
+ async def post(self, request: Request, execution_id, node_id, action_type) -> Response:
  """执行节点操作
  支持的 action_type:
  - skip-wait: 跳过等待，继续执行
  - trigger-resume: 手动触发唤醒
  """
- execution = get_object_or_404(WorkflowExecution, id=execution_id)
- node_execution = get_object_or_404(
+ execution = await aget_object_or_404(WorkflowExecution, id=execution_id)
+ node_execution = await aget_object_or_404(
  NodeExecution,
  workflow_execution=execution,
  id=node_id,
  )
  if action_type == "skip-wait":
- return self._skip_wait(request, execution, node_execution)
+ return await self._skip_wait(request, execution, node_execution)
  elif action_type == "trigger-resume":
- return self._trigger_resume(request, execution, node_execution)
+ return await self._trigger_resume(request, execution, node_execution)
  else:
  return Response(
  {"detail": f"未知的操作类型: {action_type}"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- def _skip_wait(
+ async def _skip_wait(
  self, request: Request, execution: WorkflowExecution, node_execution: NodeExecution
  ) -> Response:
  """跳过等待，继续执行"""
@@ -1007,12 +1008,10 @@ class NodeExecutionActionView(APIView):
  {"detail": "节点不在等待事件状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- # 标记相关订阅为非活跃
- WorkflowEventSubscription.objects.filter(
+ await WorkflowEventSubscription.objects.filter(
  node_execution=node_execution,
  is_active=True,
- ).update(is_active=False)
- # 标记节点为完成（走 skipped 输出）
+ ).aupdate(is_active=False)
  node_execution.status = NodeExecutionStatus.COMPLETED
  node_execution.completed_at = timezone.now
  node_execution.output_data = {
@@ -1021,13 +1020,12 @@ class NodeExecutionActionView(APIView):
  "skipped_by": request.user.username if request.user.is_authenticated else "anonymous",
  "skipped_at": timezone.now.isoformat,
  }
- node_execution.save(update_fields=["status", "completed_at", "output_data"])
+ await node_execution.asave(update_fields=["status", "completed_at", "output_data"])
  # 更新执行统计
  execution.completed_nodes += 1
- execution.save(update_fields=["completed_nodes"])
- # 触发后续节点
+ await execution.asave(update_fields=["completed_nodes"])
  engine = WorkflowEngine
- run_async(engine._continue_after_node(execution, node_execution))
+ await engine._continue_after_node(execution, node_execution)
  logger.info(
  "node_wait_skipped",
  execution_id=str(execution.id),
@@ -1038,7 +1036,7 @@ class NodeExecutionActionView(APIView):
  "status": "success",
  "message": "已跳过等待，工作流继续执行",
  })
- def _trigger_resume(
+ async def _trigger_resume(
  self, request: Request, execution: WorkflowExecution, node_execution: NodeExecution
  ) -> Response:
  """手动触发唤醒（模拟事件匹配）"""
@@ -1049,14 +1047,12 @@ class NodeExecutionActionView(APIView):
  {"detail": "节点不在等待事件状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- # 获取订阅信息并标记为已匹配
- subscription = WorkflowEventSubscription.objects.filter(
+ subscription = await WorkflowEventSubscription.objects.filter(
  node_execution=node_execution,
  is_active=True,
- ).first
+ ).afirst
  if subscription:
- subscription.mark_matched({"manual_trigger": True})
- # 标记节点为完成
+ await sync_to_async(subscription.mark_matched)({"manual_trigger": True})
  node_execution.status = NodeExecutionStatus.COMPLETED
  node_execution.completed_at = timezone.now
  node_execution.output_data = {
@@ -1065,13 +1061,11 @@ class NodeExecutionActionView(APIView):
  "triggered_by": request.user.username if request.user.is_authenticated else "anonymous",
  "triggered_at": timezone.now.isoformat,
  }
- node_execution.save(update_fields=["status", "completed_at", "output_data"])
- # 更新执行统计
+ await node_execution.asave(update_fields=["status", "completed_at", "output_data"])
  execution.completed_nodes += 1
- execution.save(update_fields=["completed_nodes"])
- # 触发后续节点
+ await execution.asave(update_fields=["completed_nodes"])
  engine = WorkflowEngine
- run_async(engine._continue_after_node(execution, node_execution))
+ await engine._continue_after_node(execution, node_execution)
  logger.info(
  "node_manually_resumed",
  execution_id=str(execution.id),
