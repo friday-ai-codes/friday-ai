@@ -167,7 +167,7 @@ def _schedule_workflow_resume(session: SubAgentSession, log: BoundLogger) -> Non
  except RuntimeError:
  # 没有运行中的事件循环，创建新的
  asyncio.run(_resume)
-def _send_failure_notification(
+async def _send_failure_notification(
  session: SubAgentSession,
  error_msg: str,
  retry_count: int = 0,
@@ -180,7 +180,7 @@ def _send_failure_notification(
  try:
  from feishu.cards.failure_notification_card import build_failure_notification_card
  # 获取触发者信息（从 main_session 或 node_execution）
- chat_id = _resolve_notification_chat_id(session)
+ chat_id = await _resolve_notification_chat_id(session)
  if not chat_id:
  log.warning("failure_notification_no_chat_id")
  return
@@ -195,27 +195,33 @@ def _send_failure_notification(
  session_id=session.session_id,
  )
  # 发送卡片
- _send_feishu_card(chat_id, card)
+ await _send_feishu_card(chat_id, card)
  log.info("failure_notification_sent", chat_id=chat_id)
  except Exception as e:
  log.error("failure_notification_error", error=str(e))
-def _resolve_notification_chat_id(session: SubAgentSession) -> str:
+async def _resolve_notification_chat_id(session: SubAgentSession) -> str:
  """解析通知目标的 chat_id。"""
  # 优先从 main_session 获取（metadata 中的 chat_id）
- if session.main_session and session.main_session.metadata:
- return session.main_session.metadata.get("chat_id", "")
+ if session.main_session_id:
+ from agents.models import AgentSession
+ main = await AgentSession.objects.filter(pk=session.main_session_id).afirst
+ if main and main.metadata:
+ chat_id: str = main.metadata.get("chat_id", "")
+ if chat_id:
+ return chat_id
  # 从 node_execution 获取
- if session.node_execution:
- node_exec = session.node_execution
- if node_exec.node and node_exec.node.config:
- return node_exec.node.config.get("chat_id", "")
+ if session.node_execution_id:
+ from workflows.models.execution import NodeExecution
+ ne = await NodeExecution.objects.select_related("node").filter( # type: ignore[attr-defined]
+ pk=session.node_execution_id
+ ).afirst
+ if ne and ne.node and ne.node.config:
+ return ne.node.config.get("chat_id", "")
  return ""
-def _send_feishu_card(chat_id: str, card: dict[str, Any]) -> None:
- """发送飞书卡片（异步）。"""
- async def _send:
+async def _send_feishu_card(chat_id: str, card: dict[str, Any]) -> None:
+ """发送飞书卡片。"""
  try:
  from services.feishu_im import FeishuIMClient
- # 从 settings 获取飞书配置
  app_id = getattr(settings, "FEISHU_APP_ID", "")
  app_secret = getattr(settings, "FEISHU_APP_SECRET", "")
  if not app_id or not app_secret:
@@ -229,12 +235,6 @@ def _send_feishu_card(chat_id: str, card: dict[str, Any]) -> None:
  )
  except Exception as e:
  logger.exception("feishu_card_send_error", error=str(e))
- try:
- loop = asyncio.get_running_loop
- loop.create_task(_send)
- except RuntimeError:
- # 没有运行中的事件循环
- pass
 class ContainerCallbackView(APIView):
  """容器统一回调端点。
  所有容器 SubAgent 通过 POST 请求上报状态。
@@ -341,7 +341,7 @@ async def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log:
  session.failure_reason = error_msg
  await session.asave(update_fields=["failure_reason"])
  await session.amark_failed(error=error_msg)
- _send_failure_notification(session, error_msg)
+ await _send_failure_notification(session, error_msg)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复

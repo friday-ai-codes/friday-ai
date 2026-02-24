@@ -1,4 +1,5 @@
 """Feishu views: Webhook handling, config management, and logs."""
+import asyncio
 import json
 import uuid as uuid_module
 from dataclasses import dataclass
@@ -143,6 +144,9 @@ class CardCallbackView(APIView):
  for prefix, handler in _card_callback_handlers.items:
  if action_name.startswith(prefix):
  try:
+ if asyncio.iscoroutinefunction(handler):
+ updated_card = await handler(callback)
+ else:
  updated_card = handler(callback)
  if updated_card:
  # 返回更新后的卡片 JSON
