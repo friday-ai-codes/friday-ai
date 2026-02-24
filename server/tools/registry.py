@@ -14,5 +14,12 @@ class RemoteToolRegistry:
  for t in RemoteTool.objects.filter(is_active=True)
  ]
  @staticmethod
+ async def aget_tools_payload -> list[dict[str, Any]]:
+ """Serialize active tools to Anthropic-compatible tool schema list (async)."""
+ return [
+ {"name": t.name, "description": t.description, "input_schema": t.input_schema}
+ async for t in RemoteTool.objects.filter(is_active=True)
+ ]
+ @staticmethod
  def get_tool(name: str) -> RemoteTool | None:
  return RemoteTool.objects.filter(name=name, is_active=True).first
