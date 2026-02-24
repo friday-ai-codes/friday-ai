@@ -1,18 +1,17 @@
 """Chat API views."""
 import structlog
-from asgiref.sync import async_to_sync
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
 )
-from .services import ChatMessage, ChatServiceError, get_chat_service
+from .services import ChatMessage, ChatServiceError, aget_chat_service
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
  """API view for getting available models."""
@@ -57,7 +56,7 @@ class ModelsView(APIView):
  },
  tags=["Chat"],
  )
- def get(self, request):
+ async def get(self, request):
  """Get available models."""
  serializer = ModelsRequestSerializer(data=request.query_params)
  if not serializer.is_valid:
@@ -68,14 +67,13 @@ class ModelsView(APIView):
  api_key = data.get("api_key")
  base_url = data.get("base_url")
  try:
- service = get_chat_service(
+ service = await aget_chat_service(
  source=source,
  project_id=project_id,
  api_key=api_key or None,
  base_url=base_url or None,
  )
- # Run async method synchronously
- models = async_to_sync(service.get_models)
+ models = await service.get_models
  response_data = {
  "models": [{"id": m.id, "name": m.name, "created": m.created} for m in models]
  }
@@ -106,7 +104,7 @@ class ChatCompletionsView(APIView):
  },
  tags=["Chat"],
  )
- def post(self, request):
+ async def post(self, request):
  """Send chat completion request."""
  serializer = ChatCompletionRequestSerializer(data=request.data)
  if not serializer.is_valid:
@@ -120,7 +118,7 @@ class ChatCompletionsView(APIView):
  messages_data = data["messages"]
  max_tokens = data.get("max_tokens", 4096)
  try:
- service = get_chat_service(
+ service = await aget_chat_service(
  source=source,
  project_id=project_id,
  api_key=api_key or None,
@@ -128,8 +126,7 @@ class ChatCompletionsView(APIView):
  )
  # Convert message dicts to ChatMessage objects
  messages = [ChatMessage(role=m["role"], content=m["content"]) for m in messages_data]
- # Run async method synchronously
- result = async_to_sync(service.chat_completion)(
+ result = await service.chat_completion(
  messages=messages,
  model=model,
  max_tokens=max_tokens,
