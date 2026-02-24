@@ -1,7 +1,7 @@
 """SubAgent API views."""
 from __future__ import annotations
 from typing import Any
-from rest_framework import viewsets
+from adrf.viewsets import ModelViewSet
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -17,7 +17,7 @@ class ExecutionContextPagination(PageNumberPagination):
  page_size = 20
  page_size_query_param = "page_size"
  max_page_size = 100
-class ExecutionContextViewSet(viewsets.ModelViewSet): # type: ignore[type-arg]
+class ExecutionContextViewSet(ModelViewSet): # type: ignore[type-arg]
  """ExecutionContext 完整 CRUD + 批量导出。"""
  queryset = ExecutionContext.objects.select_related("session").order_by("-created_at")
  permission_classes = [IsAuthenticated]
@@ -44,8 +44,8 @@ class ExecutionContextViewSet(viewsets.ModelViewSet): # type: ignore[type-arg]
  if params.get("has_failure") == "true":
  qs = qs.exclude(session__failure_reason="")
  return qs
- @action(detail=False, methods=["post"])
- def export(self, request: Request) -> Response:
+ @action(detail=False, methods=["post"]) # type: ignore[type-var]
+ async def export(self, request: Request) -> Response:
  """批量导出执行上下文（JSON 格式）。"""
  ids = request.data.get("ids")
  filters = request.data.get("filters", {})
