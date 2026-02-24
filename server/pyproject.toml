@@ -28,7 +28,6 @@ dependencies = [
  "structlog>=25.5.0",
  "gunicorn>=23.0.0",
  "channels[daphne]>=4.3.2",
- "channels-redis>=4.3.0",
  "daphne>=4.2.1",
  "jsonpath-ng>=1.7.0",
  "qdrant-client>=1.9.0",

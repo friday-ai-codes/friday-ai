@@ -1,12 +1,20 @@
 """Projects app models - Lightweight project management."""
 import secrets
 import uuid
+from typing import TYPE_CHECKING
 from django.db import models
+if TYPE_CHECKING:
+ from django.db.models import QuerySet
+ from feishu.models import TriggerLog
+ from workflows.models.workflow import Workflow
 def generate_webhook_token:
  """Generate a random webhook token."""
  return secrets.token_urlsafe(16)[:16]
 class Project(models.Model):
  """Project model for managing Feishu integration."""
+ # 反向关系类型声明
+ workflows: "QuerySet[Workflow]"
+ trigger_logs: "QuerySet[TriggerLog]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  description = models.TextField(blank=True, null=True)

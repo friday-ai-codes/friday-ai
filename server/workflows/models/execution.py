@@ -1,9 +1,13 @@
 """WorkflowExecution and NodeExecution model definitions."""
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from asgiref.sync import sync_to_async
 from django.db import models
 from django.utils import timezone
+if TYPE_CHECKING:
+ from django.db.models import QuerySet
+ from workflows.models.coding_task import CodingTask
+ from workflows.models.webhook import WebhookLog
 class ExecutionStatus(models.TextChoices):
  """执行状态"""
  PENDING = "pending", "待执行"
@@ -29,6 +33,11 @@ class NodeExecutionStatus(models.TextChoices):
  TIMEOUT = "timeout", "超时"
 class WorkflowExecution(models.Model):
  """工作流执行实例"""
+ # 反向关系类型声明
+ node_executions: "QuerySet[NodeExecution]"
+ event_subscriptions: "QuerySet[WorkflowEventSubscription]"
+ webhook_logs: "QuerySet[WebhookLog]"
+ coding_tasks: "QuerySet[CodingTask]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  workflow = models.ForeignKey(
  "workflows.Workflow",
@@ -263,6 +272,8 @@ class WorkflowExecution(models.Model):
  return self.context.get("global_variables", {})
 class NodeExecution(models.Model):
  """节点执行记录"""
+ # 反向关系类型声明
+ event_subscriptions: "QuerySet[WorkflowEventSubscription]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  workflow_execution = models.ForeignKey(
  WorkflowExecution,

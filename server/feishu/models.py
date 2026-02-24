@@ -1,6 +1,10 @@
 """Feishu models: TriggerLog for unified webhook and work item logging."""
 import uuid
+from typing import TYPE_CHECKING
 from django.db import models
+if TYPE_CHECKING:
+ from django.db.models import QuerySet
+ from workflows.models.execution import WorkflowExecution
 class TriggerLogStatus(models.TextChoices):
  """Trigger log status choices."""
  ACCEPTED = "accepted", "已接受"
@@ -12,6 +16,8 @@ class TriggerLog(models.Model):
  Combines the functionality of WebhookLog and WorkItemLog into a single
  model that tracks the complete event processing chain.
  """
+ # 反向关系类型声明
+ workflow_executions: "QuerySet[WorkflowExecution]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  # Project reference (use string reference to avoid circular import)
  project = models.ForeignKey(

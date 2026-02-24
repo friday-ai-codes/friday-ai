@@ -5,9 +5,13 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from common.short_id import generate_short_id
 if TYPE_CHECKING:
+ from django.db.models import QuerySet
+ from workflows.models.execution import NodeExecution
  from workflows.models.workflow import Workflow
 class WorkflowNode(models.Model):
  """工作流节点"""
+ # 反向关系类型声明
+ executions: "QuerySet[NodeExecution]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  # 短 ID，用于前端显示和模板变量引用 (如 {{nodes.abc.xxx}})
  short_id = models.CharField(
