@@ -931,7 +931,7 @@ class CodingTaskViewSet(ModelViewSet):
  {"detail": "任务不在方案评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- await sync_to_async(task.mark_executing)
+ await task.amark_executing
  return Response({"status": task.status, "message": "方案已批准，开始执行"})
  @action(detail=True, methods=["post"])
  async def reject_plan(self, request: Request, pk=None) -> Response:
@@ -943,8 +943,8 @@ class CodingTaskViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  feedback = request.data.get("feedback", "")
- await sync_to_async(task.add_feedback)(feedback)
- await sync_to_async(task.mark_planning)
+ await task.aadd_feedback(feedback)
+ await task.amark_planning
  return Response({"status": task.status, "message": "方案已驳回，重新规划"})
  @action(detail=True, methods=["post"])
  async def approve_code(self, request: Request, pk=None) -> Response:
@@ -955,7 +955,7 @@ class CodingTaskViewSet(ModelViewSet):
  {"detail": "任务不在代码评审状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- await sync_to_async(task.mark_merged)
+ await task.amark_merged
  return Response({"status": task.status, "message": "代码已批准合并"})
  @action(detail=True, methods=["post"])
  async def reject_code(self, request: Request, pk=None) -> Response:
@@ -967,8 +967,8 @@ class CodingTaskViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  feedback = request.data.get("feedback", "")
- await sync_to_async(task.add_feedback)(feedback)
- await sync_to_async(task.mark_executing)
+ await task.aadd_feedback(feedback)
+ await task.amark_executing
  return Response({"status": task.status, "message": "代码已驳回，继续开发"})
 # =============================================================================
 # Node Execution Action View (Manual Intervention)
@@ -1052,7 +1052,7 @@ class NodeExecutionActionView(APIView):
  is_active=True,
  ).afirst
  if subscription:
- await sync_to_async(subscription.mark_matched)({"manual_trigger": True})
+ await subscription.amark_matched({"manual_trigger": True})
  node_execution.status = NodeExecutionStatus.COMPLETED
  node_execution.completed_at = timezone.now
  node_execution.output_data = {

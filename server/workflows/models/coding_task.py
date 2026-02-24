@@ -239,6 +239,13 @@ class CodingTask(models.Model):
  else:
  self.human_feedback = feedback
  self.save(update_fields=["human_feedback"])
+ async def aadd_feedback(self, feedback: str) -> None:
+ """添加人工反馈（async 版本）"""
+ if self.human_feedback:
+ self.human_feedback += f"\n---\n{feedback}"
+ else:
+ self.human_feedback = feedback
+ await self.asave(update_fields=["human_feedback"])
  def append_log(self, message: str) -> None:
  """追加带时间戳的日志条目到执行日志"""
  from django.utils import timezone
