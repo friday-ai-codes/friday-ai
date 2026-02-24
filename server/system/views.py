@@ -1,7 +1,7 @@
 """Settings views."""
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from common.encryption import encrypt_value
 from .models import SettingKeys, SystemSetting
 from .serializers import (
@@ -17,16 +17,16 @@ ENCRYPTED_KEYS = {
 }
 class SettingsListCreateView(APIView):
  """List and create system settings."""
- def get(self, request):
+ async def get(self, request):
  settings_qs = SystemSetting.objects.all
  serializer = SystemSettingSerializer(settings_qs, many=True)
  return Response(serializer.data)
- def post(self, request):
+ async def post(self, request):
  serializer = SystemSettingCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  key = serializer.validated_data["key"]
  # Check if already exists
- if SystemSetting.objects.filter(key=key).exists:
+ if await SystemSetting.objects.filter(key=key).aexists:
  return Response(
  {"detail": f"设置 '{key}' 已存在"},
  status=status.HTTP_409_CONFLICT,
@@ -38,7 +38,7 @@ class SettingsListCreateView(APIView):
  value = serializer.validated_data.get("value")
  if should_encrypt and value:
  value = encrypt_value(value)
- setting = SystemSetting.objects.create(
+ setting = await SystemSetting.objects.acreate(
  key=key,
  value=value,
  is_encrypted=should_encrypt,
@@ -50,19 +50,19 @@ class SettingsListCreateView(APIView):
  )
 class SettingsDetailView(APIView):
  """Get, update, and delete a system setting."""
- def get(self, request, key):
+ async def get(self, request, key):
  try:
- setting = SystemSetting.objects.get(key=key)
+ setting = await SystemSetting.objects.aget(key=key)
  except SystemSetting.DoesNotExist:
  return Response(
  {"detail": f"设置 '{key}' 未找到"},
  status=status.HTTP_404_NOT_FOUND,
  )
  return Response(SystemSettingSerializer(setting).data)
- def put(self, request, key):
+ async def put(self, request, key):
  serializer = SystemSettingUpdateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
- setting, created = SystemSetting.objects.get_or_create(key=key)
+ setting, created = await SystemSetting.objects.aget_or_create(key=key)
  # Determine if should encrypt
  should_encrypt = serializer.validated_data.get("is_encrypted")
  if should_encrypt is None:
@@ -74,21 +74,21 @@ class SettingsDetailView(APIView):
  setting.is_encrypted = should_encrypt
  if "description" in serializer.validated_data:
  setting.description = serializer.validated_data["description"]
- setting.save
+ await setting.asave
  return Response(SystemSettingSerializer(setting).data)
- def delete(self, request, key):
+ async def delete(self, request, key):
  try:
- setting = SystemSetting.objects.get(key=key)
+ setting = await SystemSetting.objects.aget(key=key)
  except SystemSetting.DoesNotExist:
  return Response(
  {"detail": f"设置 '{key}' 未找到"},
  status=status.HTTP_404_NOT_FOUND,
  )
- setting.delete
+ await setting.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
 class FeishuIMTestView(APIView):
  """Test Feishu IM configuration by sending a test message."""
- def post(self, request):
+ async def post(self, request):
  from common.encryption import decrypt_value
  receive_id = request.data.get("receive_id") or request.data.get("user_id")
  receive_id_type = request.data.get("receive_id_type", "open_id")
@@ -109,13 +109,13 @@ class FeishuIMTestView(APIView):
  # 如果没有临时配置，使用系统设置
  if not app_id:
  try:
- setting = SystemSetting.objects.get(key=SettingKeys.FEISHU_APP_ID)
+ setting = await SystemSetting.objects.aget(key=SettingKeys.FEISHU_APP_ID)
  app_id = setting.value
  except SystemSetting.DoesNotExist:
  pass
  if not app_secret:
  try:
- setting = SystemSetting.objects.get(key=SettingKeys.FEISHU_APP_SECRET)
+ setting = await SystemSetting.objects.aget(key=SettingKeys.FEISHU_APP_SECRET)
  if setting.value and setting.is_encrypted:
  app_secret = decrypt_value(setting.value)
  else:
@@ -129,19 +129,15 @@ class FeishuIMTestView(APIView):
  )
  # 发送测试消息
  try:
- import asyncio
  from services.feishu_im import FeishuIMClient
  client = FeishuIMClient(app_id=app_id, app_secret=app_secret)
- async def send_test:
- # 发送文本消息给指定用户或群聊
  result = await client.send_message(
  receive_id=receive_id,
  receive_id_type=receive_id_type,
  msg_type="text",
  content={"text": message},
  )
- return result.get("message_id", "")
- message_id = asyncio.run(send_test)
+ message_id = result.get("message_id", "")
  return Response({
  "success": True,
  "message": "测试消息发送成功",
