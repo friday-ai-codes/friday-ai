@@ -414,6 +414,18 @@ class NodeExecution(models.Model):
  )
  self.save(update_fields=["approval_data"])
  # 状态变更由引擎处理
+ async def aapprove(self, approver, comment: str = "") -> None:
+ """审批通过（async 版本）"""
+ self.approval_data.update(
+ {
+ "approved": True,
+ "approver_id": approver.id,
+ "approver_name": approver.username,
+ "comment": comment,
+ "approved_at": timezone.now.isoformat,
+ }
+ )
+ await self.asave(update_fields=["approval_data"])
  def reject(self, approver, comment: str = "") -> None:
  """审批拒绝"""
  self.approval_data.update(

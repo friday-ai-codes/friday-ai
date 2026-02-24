@@ -45,6 +45,23 @@ class DAG:
  dag.nodes[source_id].outgoing[handle].add(target_id)
  dag.edges.append(edge)
  return dag
+ @classmethod
+ async def afrom_workflow(cls, workflow: "Workflow") -> "DAG":
+ """从工作流模型构建 DAG（async 版本）"""
+ dag = cls
+ async for node in workflow.nodes.all:
+ dag.nodes[str(node.id)] = DAGNode(node=node)
+ async for edge in workflow.edges.all:
+ source_id = str(edge.source_node_id)
+ target_id = str(edge.target_node_id)
+ handle = edge.source_handle
+ if source_id in dag.nodes and target_id in dag.nodes:
+ dag.nodes[target_id].incoming.add(source_id)
+ if handle not in dag.nodes[source_id].outgoing:
+ dag.nodes[source_id].outgoing[handle] = set
+ dag.nodes[source_id].outgoing[handle].add(target_id)
+ dag.edges.append(edge)
+ return dag
  def validate(self) -> list[str]:
  """验证 DAG 是否有效"""
  errors =
