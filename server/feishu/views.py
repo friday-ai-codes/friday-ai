@@ -369,7 +369,7 @@ def pop_message(message_id: str) -> dict[str, Any] | None:
 class FeishuWebhookView(APIView):
  """Handle Feishu webhook events."""
  permission_classes = [AllowAny]
- def post(self, request):
+ async def post(self, request):
  raw_body = request.body.decode("utf-8")
  try:
  data = json.loads(raw_body)
@@ -385,7 +385,7 @@ class FeishuWebhookView(APIView):
  header = data.get("header", {})
  payload = data.get("payload", {})
  if not header or not payload:
- TriggerLog.objects.create(
+ await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_type="",
  status=TriggerLogStatus.IGNORED,
@@ -396,7 +396,7 @@ class FeishuWebhookView(APIView):
  event_type = header.get("event_type", "")
  # Idempotency check
  if event_uuid and is_event_processed(event_uuid):
- TriggerLog.objects.create(
+ await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
  event_type=event_type,
@@ -406,7 +406,7 @@ class FeishuWebhookView(APIView):
  # Get project
  project_key = payload.get("project_key") or payload.get("project_simple_name")
  if not project_key:
- TriggerLog.objects.create(
+ await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
  event_type=event_type,
@@ -415,11 +415,11 @@ class FeishuWebhookView(APIView):
  )
  return Response({"status": "ignored", "reason": "缺少 project_key"})
  try:
- project = Project.objects.prefetch_related("repositories").get(
+ project = await Project.objects.prefetch_related("repositories").aget(
  feishu_project_key=project_key
  )
  except Project.DoesNotExist:
- TriggerLog.objects.create(
+ await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
  event_type=event_type,
@@ -433,7 +433,7 @@ class FeishuWebhookView(APIView):
  if project.feishu_webhook_token and not verify_webhook_token(
  token, project.feishu_webhook_token
  ):
- TriggerLog.objects.create(
+ await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
  event_type=event_type,
@@ -454,7 +454,7 @@ class FeishuWebhookView(APIView):
  work_item_id = payload.get("id")
  work_item_name = payload.get("name", "")
  work_item_type = payload.get("work_item_type_key", "story")
- trigger_log = TriggerLog.objects.create(
+ trigger_log = await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
  event_type=event_type,
@@ -467,19 +467,19 @@ class FeishuWebhookView(APIView):
  )
  # Handle specific events
  if event_type == "WorkitemCreateEvent":
- self._handle_workitem_create(project, payload, trigger_log)
+ await self._handle_workitem_create(project, payload, trigger_log)
  elif event_type == "WorkitemStatusEvent":
- self._handle_workitem_status(project, payload, trigger_log)
+ await self._handle_workitem_status(project, payload, trigger_log)
  elif event_type == "WorkFlowNodeStatusEvent":
- self._handle_workflow_node_status(project, payload, trigger_log)
+ await self._handle_workflow_node_status(project, payload, trigger_log)
  elif event_type == "WorkitemCommentEvent":
- self._handle_workitem_comment(project, payload, trigger_log)
+ await self._handle_workitem_comment(project, payload, trigger_log)
  elif event_type == "WorkitemUpdateEvent":
- self._handle_workitem_update(project, payload, trigger_log)
+ await self._handle_workitem_update(project, payload, trigger_log)
  else:
  logger.info("webhook_event_unhandled", event_type=event_type)
  # Dispatch to workflow system (for all events)
- self._dispatch_to_workflows(event_type, project, payload, trigger_log)
+ await self._dispatch_to_workflows(event_type, project, payload, trigger_log)
  return Response(
  {
  "status": "accepted",
@@ -487,7 +487,7 @@ class FeishuWebhookView(APIView):
  "uuid": event_uuid,
  }
  )
- def _dispatch_to_workflows(self, event_type: str, project, payload: dict, trigger_log):
+ async def _dispatch_to_workflows(self, event_type: str, project, payload: dict, trigger_log):
  """Dispatch event to workflow system via TriggerDispatcher."""
  try:
  trace_id = str(uuid_module.uuid4)
@@ -502,7 +502,7 @@ class FeishuWebhookView(APIView):
  },
  )
  dispatcher = TriggerDispatcher
- executions = async_to_sync(dispatcher.dispatch)(context)
+ executions = await dispatcher.dispatch(context)
  if executions:
  logger.info(
  "workflows_triggered",
@@ -514,18 +514,18 @@ class FeishuWebhookView(APIView):
  # Update trigger_log with execution info
  if len(executions) == 1:
  trigger_log.workflow_execution = executions[0]
- trigger_log.save(update_fields=["workflow_execution"])
+ await trigger_log.asave(update_fields=["workflow_execution"])
  except Exception as e:
  logger.error(
  "workflow_dispatch_failed",
  event_type=event_type,
  error=str(e),
  )
- def _fetch_and_update_work_item(self, project, work_item_id, work_item_type, trigger_log):
+ async def _fetch_and_update_work_item(self, project, work_item_id, work_item_type, trigger_log):
  """Fetch work item details and update trigger log."""
  try:
  feishu_client = create_feishu_client_for_project(project)
- work_item_info = async_to_sync(feishu_client.get_work_item)(
+ work_item_info = await feishu_client.get_work_item(
  project_key=project.feishu_project_key or "",
  work_item_id=work_item_id,
  work_item_type=work_item_type,
@@ -540,24 +540,23 @@ class FeishuWebhookView(APIView):
  trigger_log.prd_url = fields[KeyFields.PRD_URL] or ""
  if KeyFields.TECH_DOC_URL in fields:
  trigger_log.tech_doc_url = fields[KeyFields.TECH_DOC_URL] or ""
- trigger_log.save
+ await trigger_log.asave
  return work_item_info
  except Exception as e:
  logger.error("work_item_fetch_failed", error=str(e))
  trigger_log.error_message = str(e)
- trigger_log.save
+ await trigger_log.asave
  return None
- def _handle_workitem_create(self, project, payload, trigger_log):
+ async def _handle_workitem_create(self, project, payload, trigger_log):
  """处理工作项创建事件。"""
  work_item_id = payload.get("id")
  work_item_type = payload.get("work_item_type_key", "story")
  if not work_item_id:
  logger.warning("workitem_create_missing_id")
  return
- # Fetch work item details and update trigger log
- self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
+ await self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
  logger.info("workitem_create_processed", work_item_id=work_item_id)
- def _handle_workitem_status(self, project, payload, trigger_log):
+ async def _handle_workitem_status(self, project, payload, trigger_log):
  """处理工作项状态变更事件。"""
  work_item_id = payload.get("id")
  work_item_type = payload.get("work_item_type_key", "story")
@@ -569,42 +568,38 @@ class FeishuWebhookView(APIView):
  cur_state_key = cur_status.get("state_key", "")
  pre_state_key = pre_status.get("state_key", "")
  logger.info("workitem_status_changed", work_item_id=work_item_id, from_state=pre_state_key, to_state=cur_state_key)
- # Fetch work item details and update trigger log
- self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
- # 检查并唤醒挂起的工作流
- self._check_and_resume_suspended_workflows(
+ await self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
+ await self._check_and_resume_suspended_workflows(
  project=project,
  work_item_id=str(work_item_id),
  event_type="WorkitemStatusEvent",
  payload=payload,
  )
- def _handle_workflow_node_status(self, project, payload, trigger_log):
+ async def _handle_workflow_node_status(self, project, payload, trigger_log):
  """处理工作项节点流转事件。"""
  work_item_id = payload.get("id")
  status_change_type = payload.get("status_change_type", "")
  if not work_item_id:
  return
  logger.info("workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type)
- def _handle_workitem_comment(self, project, payload, trigger_log):
+ async def _handle_workitem_comment(self, project, payload, trigger_log):
  """处理工作项评论事件。"""
  work_item_id = payload.get("id")
  comment = payload.get("comment", "")
  if not work_item_id or not comment:
  return
- # Check for approval/rejection keywords (for logging purposes)
  comment_lower = comment.lower
- approval_keywords = ["通过", "批准", "approved", "lgtm", "ok", "👍"]
- rejection_keywords = ["驳回", "拒绝", "rejected", "需要修改", "不通过", "👎"]
+ approval_keywords = ["通过", "批准", "approved", "lgtm", "ok", "\U0001f44d"]
+ rejection_keywords = ["驳回", "拒绝", "rejected", "需要修改", "不通过", "\U0001f44e"]
  is_approved = any(kw in comment_lower for kw in approval_keywords)
  is_rejected = any(kw in comment_lower for kw in rejection_keywords)
  if is_approved or is_rejected:
  logger.info("workitem_comment_approval", work_item_id=work_item_id, approved=is_approved, rejected=is_rejected)
- # Call FeishuApprovalHandler
  from feishu.approval import FeishuApprovalHandler
  handler = FeishuApprovalHandler
  try:
- approved = is_approved and not is_rejected # Rejection takes priority
- result = async_to_sync(handler.on_approval_comment)(
+ approved = is_approved and not is_rejected
+ result = await handler.on_approval_comment(
  work_item_id=str(work_item_id),
  approved=approved,
  comment=comment,
@@ -627,21 +622,20 @@ class FeishuWebhookView(APIView):
  work_item_id=work_item_id,
  error=str(e),
  )
- def _handle_workitem_update(self, project, payload, trigger_log):
+ async def _handle_workitem_update(self, project, payload, trigger_log):
  """处理工作项字段修改事件。"""
  work_item_id = payload.get("id")
  changed_fields = payload.get("changed_fields", ) or
  if not work_item_id:
  return
  logger.info("workitem_fields_updated", work_item_id=work_item_id, field_count=len(changed_fields))
- # 检查并唤醒挂起的工作流
- self._check_and_resume_suspended_workflows(
+ await self._check_and_resume_suspended_workflows(
  project=project,
  work_item_id=str(work_item_id),
  event_type="WorkitemUpdateEvent",
  payload=payload,
  )
- def _check_and_resume_suspended_workflows(
+ async def _check_and_resume_suspended_workflows(
  self,
  project,
  work_item_id: str,
@@ -654,17 +648,14 @@ class FeishuWebhookView(APIView):
  WorkflowEventSubscription,
  )
  try:
- # 查找匹配的活跃订阅
  subscriptions = WorkflowEventSubscription.objects.filter(
  is_active=True,
  project_key=project.feishu_project_key,
  work_item_id=work_item_id,
  event_type=event_type,
  ).select_related("workflow_execution", "node_execution")
- # 获取当前字段值用于条件匹配
- fields = self._get_current_fields(project, work_item_id, payload)
- for sub in subscriptions:
- # 求值条件
+ fields = await self._get_current_fields(project, work_item_id, payload)
+ async for sub in subscriptions:
  if evaluate_condition(sub.condition_expression, fields):
  logger.info(
  "subscription_matched",
@@ -672,22 +663,18 @@ class FeishuWebhookView(APIView):
  work_item_id=work_item_id,
  execution_id=str(sub.workflow_execution_id),
  )
- # 标记订阅已匹配
  sub.mark_matched(payload)
- # 恢复节点执行
- self._resume_node_execution(sub, fields)
+ await self._resume_node_execution(sub, fields)
  except Exception as e:
  logger.error(
  "resume_suspended_workflows_error",
  work_item_id=work_item_id,
  error=str(e),
  )
- def _get_current_fields(self, project, work_item_id: str, payload: dict) -> dict:
+ async def _get_current_fields(self, project, work_item_id: str, payload: dict) -> dict:
  """获取当前字段值（优先从 payload 获取，否则调用 API）"""
- # payload 中可能包含 changed_fields 或完整字段
  if "fields" in payload:
  return payload["fields"]
- # 从 changed_fields 构建字段映射
  changed_fields = payload.get("changed_fields", )
  if changed_fields:
  fields: dict = {}
@@ -699,10 +686,9 @@ class FeishuWebhookView(APIView):
  fields[field_key] = new_value
  if fields:
  return fields
- # 回退：调用 API 获取完整字段
  try:
  feishu_client = create_feishu_client_for_project(project)
- work_item = async_to_sync(feishu_client.get_work_item)(
+ work_item = await feishu_client.get_work_item(
  project_key=project.feishu_project_key or "",
  work_item_id=work_item_id,
  work_item_type=payload.get("work_item_type_key", "story"),
@@ -711,7 +697,7 @@ class FeishuWebhookView(APIView):
  except Exception as e:
  logger.warning("work_item_fields_fetch_failed", error=str(e))
  return {}
- def _resume_node_execution(
+ async def _resume_node_execution(
  self, subscription, matched_fields: dict
  ) -> None:
  """恢复节点执行"""
@@ -720,11 +706,9 @@ class FeishuWebhookView(APIView):
  from workflows.models.execution import ExecutionStatus, NodeExecutionStatus
  node_execution = subscription.node_execution
  workflow_execution = subscription.workflow_execution
- # If workflow is suspended, mark it as running before continuing
  if workflow_execution.status == ExecutionStatus.SUSPENDED:
  workflow_execution.status = ExecutionStatus.RUNNING
- workflow_execution.save(update_fields=["status"])
- # 更新节点状态为完成
+ await workflow_execution.asave(update_fields=["status"])
  node_execution.status = NodeExecutionStatus.COMPLETED
  node_execution.completed_at = timezone.now
  node_execution.output_data = {
@@ -734,13 +718,11 @@ class FeishuWebhookView(APIView):
  timezone.now - subscription.created_at
  ).total_seconds,
  }
- node_execution.save(update_fields=["status", "completed_at", "output_data"])
- # 更新执行统计
+ await node_execution.asave(update_fields=["status", "completed_at", "output_data"])
  workflow_execution.completed_nodes += 1
- workflow_execution.save(update_fields=["completed_nodes"])
- # 触发后续节点执行
+ await workflow_execution.asave(update_fields=["completed_nodes"])
  engine = WorkflowEngine
- async_to_sync(engine._continue_after_node)(
+ await engine._continue_after_node(
  workflow_execution, node_execution
  )
  logger.info(
@@ -878,13 +860,15 @@ class TriggerLogListView(APIView):
  offset = int(request.query_params.get("offset", 0))
  items = await sync_to_async(list)(queryset[offset: offset + limit])
  serializer = TriggerLogSerializer(items, many=True)
- return Response({"items": serializer.data, "total": total})
+ data = await sync_to_async(lambda: serializer.data)
+ return Response({"items": data, "total": total})
 class TriggerLogDetailView(APIView):
  """Get trigger log detail."""
  async def get(self, request, log_id):
  log = await aget_object_or_404(TriggerLog, id=log_id)
  serializer = TriggerLogDetailSerializer(log)
- return Response(serializer.data)
+ data = await sync_to_async(lambda: serializer.data)
+ return Response(data)
 class TriggerLogRawView(APIView):
  """Get raw trigger log data."""
  async def get(self, request, log_id):
