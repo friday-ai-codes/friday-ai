@@ -18,7 +18,7 @@ class LoginView(APIView):
  permission_classes = [AllowAny]
  async def post(self, request):
  serializer = LoginSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  user = serializer.validated_data["user"]
  # Generate tokens
  refresh = await sync_to_async(RefreshToken.for_user)(user)
@@ -134,7 +134,7 @@ class AdminProfileView(APIView):
  )
  from .serializers import AdminProfileUpdateSerializer
  serializer = AdminProfileUpdateSerializer(data=request.data, context={"user": request.user})
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  user = request.user
  if "username" in serializer.validated_data:
  user.username = serializer.validated_data["username"]

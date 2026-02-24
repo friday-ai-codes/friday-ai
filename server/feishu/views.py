@@ -4,13 +4,13 @@ import uuid as uuid_module
 from dataclasses import dataclass
 from typing import Any, Callable
 import structlog
-from asgiref.sync import async_to_sync
+from asgiref.sync import sync_to_async
 from django.conf import settings
-from django.shortcuts import get_object_or_404
+from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
@@ -70,7 +70,7 @@ class CardCallbackView(APIView):
  配置回调 URL: https://your-domain/api/feishu/card/callback/
  """
  permission_classes = [AllowAny]
- def post(self, request):
+ async def post(self, request):
  raw_body = request.body.decode("utf-8")
  try:
  data = json.loads(raw_body)
@@ -254,7 +254,7 @@ class IMMessageWebhookView(APIView):
  配置事件订阅 URL: https://your-domain/api/feishu/im/message/
  """
  permission_classes = [AllowAny]
- def post(self, request):
+ async def post(self, request):
  raw_body = request.body.decode("utf-8")
  try:
  data = json.loads(raw_body)
@@ -751,11 +751,11 @@ class FeishuWebhookView(APIView):
 # ============ Config Views ============
 class FeishuConfigView(APIView):
  """Manage Feishu configuration for a project."""
- def get(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def get(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  return Response(FeishuConfigSerializer(project).data)
- def put(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def put(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  serializer = FeishuConfigCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  project.feishu_plugin_id = serializer.validated_data["plugin_id"]
@@ -763,19 +763,19 @@ class FeishuConfigView(APIView):
  serializer.validated_data["plugin_secret"]
  )
  project.feishu_user_key = serializer.validated_data.get("user_key", "")
- project.save
+ await project.asave
  return Response(FeishuConfigSerializer(project).data)
- def delete(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def delete(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
  project.feishu_user_key = None
- project.save
+ await project.asave
  return Response(status=status.HTTP_204_NO_CONTENT)
 class FeishuConfigTestView(APIView):
  """Test Feishu configuration."""
- def post(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def post(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  if not project.has_feishu_config:
  return Response(
  {
@@ -812,7 +812,7 @@ class FeishuConfigTestView(APIView):
  project_key=project.feishu_project_key,
  user_key=user_key,
  )
- test_result = async_to_sync(client.test_connection)(project.feishu_project_key)
+ test_result = await client.test_connection(project.feishu_project_key)
  return Response(test_result)
  except Exception as e:
  return Response(
@@ -825,17 +825,17 @@ class FeishuConfigTestView(APIView):
  )
 class RefreshWebhookTokenView(APIView):
  """Refresh webhook token for a project."""
- def post(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def post(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  project.feishu_webhook_token = generate_webhook_token
- project.save
+ await project.asave
  return Response(
  WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
  )
 class UpdateWebhookTokenView(APIView):
  """Update webhook token with custom value."""
- def put(self, request, project_id):
- project = get_object_or_404(Project, id=project_id)
+ async def put(self, request, project_id):
+ project = await aget_object_or_404(Project, id=project_id)
  serializer = WebhookTokenUpdateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  token = serializer.validated_data["token"]
@@ -850,14 +850,14 @@ class UpdateWebhookTokenView(APIView):
  status=status.HTTP_400_BAD_REQUEST,
  )
  project.feishu_webhook_token = token
- project.save
+ await project.asave
  return Response(
  WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
  )
 # ============ Log Views ============
 class TriggerLogListView(APIView):
  """List trigger logs."""
- def get(self, request):
+ async def get(self, request):
  queryset = TriggerLog.objects.select_related("project").all
  # Filter by project
  project_id = request.query_params.get("project_id")
@@ -872,23 +872,23 @@ class TriggerLogListView(APIView):
  if log_status:
  queryset = queryset.filter(status=log_status)
  # Get total count before pagination
- total = queryset.count
+ total = await queryset.acount
  # Pagination
  limit = int(request.query_params.get("limit", 50))
  offset = int(request.query_params.get("offset", 0))
- queryset = queryset[offset: offset + limit]
- serializer = TriggerLogSerializer(queryset, many=True)
+ items = await sync_to_async(list)(queryset[offset: offset + limit])
+ serializer = TriggerLogSerializer(items, many=True)
  return Response({"items": serializer.data, "total": total})
 class TriggerLogDetailView(APIView):
  """Get trigger log detail."""
- def get(self, request, log_id):
- log = get_object_or_404(TriggerLog, id=log_id)
+ async def get(self, request, log_id):
+ log = await aget_object_or_404(TriggerLog, id=log_id)
  serializer = TriggerLogDetailSerializer(log)
  return Response(serializer.data)
 class TriggerLogRawView(APIView):
  """Get raw trigger log data."""
- def get(self, request, log_id):
- log = get_object_or_404(TriggerLog, id=log_id)
+ async def get(self, request, log_id):
+ log = await aget_object_or_404(TriggerLog, id=log_id)
  webhook_request = {}
  work_item_response = {}
  try:
@@ -909,14 +909,14 @@ class TriggerLogRawView(APIView):
  )
 class TriggerLogDeleteView(APIView):
  """Delete a trigger log."""
- def delete(self, request, log_id):
- log = get_object_or_404(TriggerLog, id=log_id)
- log.delete
+ async def delete(self, request, log_id):
+ log = await aget_object_or_404(TriggerLog, id=log_id)
+ await log.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
 class TriggerLogRetryView(APIView):
  """Retry processing a trigger log."""
- def post(self, request, log_id):
- log = get_object_or_404(TriggerLog, id=log_id)
+ async def post(self, request, log_id):
+ log = await aget_object_or_404(TriggerLog, id=log_id)
  if not log.webhook_raw_request:
  return Response(
  {"detail": "无法重试：缺少原始 Webhook 请求数据"},
@@ -936,7 +936,7 @@ class TriggerLogRetryView(APIView):
  _processed_events.discard(event_uuid)
  original_log_id = str(log.id)
  raw_request_body = log.webhook_raw_request
- log.delete
+ await log.adelete
  # Re-process the webhook
  webhook_view = FeishuWebhookView
  # Create a mock request with the original body
@@ -948,7 +948,7 @@ class TriggerLogRetryView(APIView):
  mock_http_request.content_type = "application/json"
  mock_request = Request(mock_http_request) # type: ignore[call-arg]
  try:
- response = webhook_view.post(mock_request)
+ response = await webhook_view.post(mock_request)
  return Response(
  {
  "status": "retried",

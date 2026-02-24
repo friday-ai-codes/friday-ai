@@ -1,6 +1,6 @@
 """Workflows app URL configuration."""
 from django.urls import path
-from rest_framework.routers import DefaultRouter
+from adrf.routers import DefaultRouter
 from workflows.api.views import (
  CodingTaskViewSet,
  ExecutionContextView,

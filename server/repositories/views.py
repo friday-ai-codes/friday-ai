@@ -1,11 +1,12 @@
 """Repositories views."""
 import subprocess
-from django.shortcuts import get_object_or_404
+from asgiref.sync import sync_to_async
+from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet
 from common.encryption import decrypt_value, encrypt_value
 from services.dependency_cache import DependencyCacheManager
 from services.repo_cache_manager import RepoCacheManager
@@ -33,9 +34,9 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "retrieve":
  return RepositoryWithProjectsSerializer
  return RepositorySerializer
- def create(self, request, *args, **kwargs):
+ async def create(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  data = serializer.validated_data
  access_token = data.pop("access_token")
  git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
@@ -46,9 +47,9 @@ class RepositoryViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Create repository
- repository = Repository.objects.create(**data)
+ repository = await Repository.objects.acreate(**data)
  # Create credential
- GitCredential.objects.create(
+ await GitCredential.objects.acreate(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,
  encrypted_token=encrypt_value(access_token),
@@ -60,38 +61,35 @@ class RepositoryViewSet(ModelViewSet):
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["get", "delete"], url_path="credential")
- def credential(self, request, pk=None):
+ async def credential(self, request, pk=None):
  """Get or delete credential for repository."""
- repository = self.get_object
+ repository = await self.aget_object
  if request.method == "GET":
- credential = GitCredential.objects.filter(repository=repository).first
+ credential = await GitCredential.objects.filter(repository=repository).afirst
  if credential:
  return Response(GitCredentialSerializer(credential).data)
  return Response(None)
  elif request.method == "DELETE":
- credential = GitCredential.objects.filter(repository=repository).first
+ credential = await GitCredential.objects.filter(repository=repository).afirst
  if credential:
- credential.delete
+ await credential.adelete
  return Response(status=status.HTTP_204_NO_CONTENT)
  else:
  return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
- def destroy(self, request, *args, **kwargs):
+ async def destroy(self, request, *args, **kwargs):
  """Soft delete the repository instead of hard delete."""
- repository = self.get_object
- repository.soft_delete
+ repository = await self.aget_object
+ await sync_to_async(repository.soft_delete)
  return Response(status=status.HTTP_204_NO_CONTENT)
  @action(detail=True, methods=["post"])
- def warmup_cache(self, request, pk=None):
+ async def warmup_cache(self, request, pk=None):
  """预热仓库缓存卷。
  POST /api/repositories/{id}/warmup_cache/
  """
- import asyncio
- repository = self.get_object
- volume_name = asyncio.run(
- warmup_repo_cache(
+ repository = await self.aget_object
+ volume_name = await warmup_repo_cache(
  repo_url=repository.git_url,
  repo_id=str(repository.id),
- )
  )
  if volume_name:
  return Response({"volume": volume_name, "status": "created"})
@@ -100,15 +98,15 @@ class RepositoryViewSet(ModelViewSet):
  status=status.HTTP_500_INTERNAL_SERVER_ERROR,
  )
  @action(detail=True, methods=["get"])
- def cache_status(self, request, pk=None):
+ async def cache_status(self, request, pk=None):
  """获取仓库缓存状态。
  GET /api/repositories/{id}/cache_status/
  """
- repository = self.get_object
+ repository = await self.aget_object
  manager = RepoCacheManager
  volume_name = manager.get_volume_name(repository.git_url)
  try:
- manager.client.volumes.get(volume_name)
+ await sync_to_async(manager.client.volumes.get)(volume_name)
  return Response({
  "cached": True,
  "volume": volume_name,
@@ -117,8 +115,8 @@ class RepositoryViewSet(ModelViewSet):
  return Response({"cached": False})
 class SetAccessTokenView(APIView):
  """View for setting or updating access token."""
- def post(self, request, repository_id):
- repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
+ async def post(self, request, repository_id):
+ repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
  token = request.data.get("token")
  if not token:
  return Response(
@@ -127,16 +125,16 @@ class SetAccessTokenView(APIView):
  )
  git_user_name = request.data.get("git_user_name", "Friday Codes AI Agent")
  git_user_email = request.data.get("git_user_email", "ai@friday.codes")
- existing_credential = GitCredential.objects.filter(repository=repository).first
+ existing_credential = await GitCredential.objects.filter(repository=repository).afirst
  if existing_credential:
  existing_credential.auth_type = AuthType.ACCESS_TOKEN
  existing_credential.encrypted_token = encrypt_value(token)
  existing_credential.git_user_name = git_user_name
  existing_credential.git_user_email = git_user_email
- existing_credential.save
+ await existing_credential.asave
  return Response(GitCredentialSerializer(existing_credential).data)
  else:
- credential = GitCredential.objects.create(
+ credential = await GitCredential.objects.acreate(
  repository=repository,
  auth_type=AuthType.ACCESS_TOKEN,
  encrypted_token=encrypt_value(token),
@@ -148,7 +146,7 @@ class SetAccessTokenView(APIView):
  )
 class TestConnectionView(APIView):
  """View for testing Git repository connection."""
- def post(self, request, repository_id=None):
+ async def post(self, request, repository_id=None):
  """Test connection to a Git repository.
  Can be used in two ways:
  1. With repository_id: Test existing repository's connection
@@ -156,11 +154,11 @@ class TestConnectionView(APIView):
  """
  if repository_id:
  # Test existing repository
- repository = get_object_or_404(Repository, id=repository_id, is_deleted=False)
+ repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
  git_url = repository.git_url
  proxy_url = repository.proxy_url
  # Get token from credential
- credential = getattr(repository, "credential", None)
+ credential = await sync_to_async(lambda: getattr(repository, "credential", None))
  if not credential or not credential.encrypted_token:
  return Response(
  {"success": False, "error": "仓库未配置访问凭证"},
@@ -196,7 +194,7 @@ class TestConnectionView(APIView):
  env = os.environ.copy
  env["http_proxy"] = proxy_url
  env["https_proxy"] = proxy_url
- result = subprocess.run(
+ result = await sync_to_async(subprocess.run)(
  cmd,
  capture_output=True,
  text=True,
@@ -245,27 +243,25 @@ class TestConnectionView(APIView):
  )
 class CacheManagementView(APIView):
  """缓存管理 API。"""
- def get(self, request):
+ async def get(self, request):
  """列出所有缓存卷。
  GET /api/repositories/cache/
  """
- import asyncio
  repo_manager = RepoCacheManager
  deps_manager = DependencyCacheManager
- repo_volumes = asyncio.run(repo_manager.list_cache_volumes)
- deps_volumes = asyncio.run(deps_manager.list_deps_volumes)
+ repo_volumes = await repo_manager.list_cache_volumes
+ deps_volumes = await deps_manager.list_deps_volumes
  return Response({
  "repo_caches": repo_volumes,
  "deps_caches": deps_volumes,
  })
- def delete(self, request):
+ async def delete(self, request):
  """清理缓存卷。
  DELETE /api/repositories/cache/?older_than_days=7&dry_run=true
  """
- import asyncio
  older_than_days = int(request.query_params.get("older_than_days", 7))
  dry_run = request.query_params.get("dry_run", "false").lower == "true"
- pruned = asyncio.run(prune_cache_volumes(older_than_days, dry_run))
+ pruned = await prune_cache_volumes(older_than_days, dry_run)
  return Response({
  "pruned": pruned,
  "dry_run": dry_run,
