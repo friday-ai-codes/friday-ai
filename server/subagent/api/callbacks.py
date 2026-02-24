@@ -15,7 +15,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from structlog.stdlib import BoundLogger
 from services.protocols import CallbackType
 from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TaskResult, TokenUsage
@@ -241,7 +241,7 @@ class ContainerCallbackView(APIView):
  使用 CONTAINER_CALLBACK_TOKEN 进行身份验证。
  """
  permission_classes = [AllowAny]
- def post(self, request):
+ async def post(self, request): # type: ignore[override]
  # 1. 反序列化 + 基础验证
  serializer = CallbackSerializer(data=request.data)
  if not serializer.is_valid:
@@ -268,7 +268,7 @@ class ContainerCallbackView(APIView):
  )
  # 3. Session 查找
  try:
- session = SubAgentSession.objects.get(session_id=session_id)
+ session = await SubAgentSession.objects.aget(session_id=session_id)
  except SubAgentSession.DoesNotExist:
  log.warning("callback_session_not_found")
  return Response(
@@ -289,9 +289,9 @@ class ContainerCallbackView(APIView):
  {"detail": f"Unknown callback type: {callback_type}"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- return handler(session, payload, log)
+ return await handler(session, payload, log)
 # === 回调处理函数 ===
-def _handle_completed(
+async def _handle_completed(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 completed 回调 — 创建 TaskResult，更新 session 状态。"""
@@ -303,11 +303,11 @@ def _handle_completed(
  )
  p = ser.validated_data
  # 幂等：如果 TaskResult 已存在，直接返回成功
- if TaskResult.objects.filter(session=session).exists:
+ if await TaskResult.objects.filter(session=session).aexists:
  log.info("callback_completed_idempotent")
  return Response({"status": "ok", "detail": "Already recorded"})
  # 创建 TaskResult
- TaskResult.objects.create(
+ await TaskResult.objects.acreate(
  session=session,
  result_type=p["result_type"],
  text_output=p["output"].get("text", "") if p["result_type"] == "text" else "",
@@ -318,14 +318,14 @@ def _handle_completed(
  duration_ms=p.get("duration_ms"),
  )
  # 更新 session 状态
- session.mark_completed
+ await session.amark_completed
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
  # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
  _schedule_agent_loop_resume(session, log)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
-def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+async def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
  """处理 failed 回调 — 标记失败，通知，恢复 workflow/agent。
  Phase: Runner 端独立处理重试，Server 端不再重试。
  """
@@ -339,8 +339,8 @@ def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: Bound
  error_msg = p.get("error", "Unknown error")
  # 直接标记失败（Runner 端独立处理重试）
  session.failure_reason = error_msg
- session.save(update_fields=["failure_reason"])
- session.mark_failed(error=error_msg)
+ await session.asave(update_fields=["failure_reason"])
+ await session.amark_failed(error=error_msg)
  _send_failure_notification(session, error_msg)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
@@ -348,7 +348,7 @@ def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: Bound
  _schedule_agent_loop_resume(session, log)
  log.info("callback_failed_ok", error=error_msg)
  return Response({"status": "ok"})
-def _handle_heartbeat(
+async def _handle_heartbeat(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 heartbeat 回调 — 更新 last_heartbeat_at。"""
@@ -359,10 +359,10 @@ def _handle_heartbeat(
  status=status.HTTP_400_BAD_REQUEST,
  )
  session.last_heartbeat_at = timezone.now
- session.save(update_fields=["last_heartbeat_at", "updated_at"])
+ await session.asave(update_fields=["last_heartbeat_at", "updated_at"])
  log.debug("callback_heartbeat_ok")
  return Response({"status": "ok"})
-def _handle_question(
+async def _handle_question(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 question 回调 — 创建 InteractionLog 并触发 Feishu 提问卡片。"""
@@ -379,7 +379,7 @@ def _handle_question(
  # 生成问题 ID
  question_id = f"q-{uuid.uuid4.hex[:12]}"
  # 创建 InteractionLog 记录
- interaction_log = InteractionLog.objects.create(
+ interaction_log = await InteractionLog.objects.acreate(
  session=session,
  question_id=question_id,
  question_text=p["question"],
@@ -397,7 +397,7 @@ def _handle_question(
  "asked_at": timezone.now.isoformat,
  },
  }
- session.save(update_fields=["last_output", "updated_at"])
+ await session.asave(update_fields=["last_output", "updated_at"])
  # 触发增强版 Feishu 提问卡片（异步）
  async def _send_card:
  message_id = await send_question_card_enhanced(
@@ -425,7 +425,7 @@ def _handle_question(
  question_preview=p["question"][:80],
  )
  return Response({"status": "ok", "question_id": question_id})
-def _handle_progress(
+async def _handle_progress(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 progress 回调 — 更新 last_output（临时进度数据）。"""
@@ -444,10 +444,10 @@ def _handle_progress(
  "updated_at": timezone.now.isoformat,
  },
  }
- session.save(update_fields=["last_output", "updated_at"])
+ await session.asave(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
-def _handle_action_log(
+async def _handle_action_log(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 action_log 回调 — 写入 ActionLog 记录。"""
@@ -458,7 +458,7 @@ def _handle_action_log(
  status=status.HTTP_400_BAD_REQUEST,
  )
  p = ser.validated_data
- ActionLog.objects.create(
+ await ActionLog.objects.acreate(
  session=session,
  action_type=p["action_type"],
  timestamp=p["timestamp"],
@@ -474,7 +474,7 @@ def _handle_action_log(
  )
  log.debug("callback_action_log_ok", action_type=p["action_type"], sequence=p["sequence"])
  return Response({"status": "ok"})
-def _handle_token_usage(
+async def _handle_token_usage(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 token_usage 回调 — 写入 TokenUsage 记录。"""
@@ -485,7 +485,7 @@ def _handle_token_usage(
  status=status.HTTP_400_BAD_REQUEST,
  )
  p = ser.validated_data
- TokenUsage.objects.create(
+ await TokenUsage.objects.acreate(
  session=session,
  input_tokens=p["input_tokens"],
  output_tokens=p["output_tokens"],
