@@ -438,9 +438,8 @@ class AIPromptNode(BaseNode):
  project = await self._get_project(context)
  # 如果未指定模型，从配置中获取
  if not model:
- from asgiref.sync import sync_to_async
- from services.claude_config import get_claude_config
- config = await sync_to_async(get_claude_config)(project)
+ from services.claude_config import aget_claude_config
+ config = await aget_claude_config(project)
  model = config.model or ""
  if not model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
@@ -521,10 +520,9 @@ class AIPromptNode(BaseNode):
  ) -> LLMResponse:
  """调用 Anthropic Claude API"""
  import httpx
- from asgiref.sync import sync_to_async
- from services.claude_config import get_claude_config
+ from services.claude_config import aget_claude_config
  # 使用 claude_config 服务获取配置
- config = await sync_to_async(get_claude_config)(project)
+ config = await aget_claude_config(project)
  api_key = config.api_key
  base_url = config.base_url or "https://api.anthropic.com"
  if not api_key:
@@ -637,9 +635,11 @@ class AIPromptNode(BaseNode):
  )
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
- from asgiref.sync import sync_to_async
  if context.workflow_execution:
- workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
- if workflow:
- return await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ if we.workflow:
+ return we.workflow.project
  return None
