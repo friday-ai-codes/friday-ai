@@ -3,7 +3,6 @@ import asyncio
 import threading
 from typing import TYPE_CHECKING
 import structlog
-from asgiref.sync import sync_to_async
 from django.utils import timezone
 from workflows.engine.dag import DAG
 from workflows.models.execution import (
@@ -74,17 +73,15 @@ class WorkflowEngine:
  trigger_data = trigger_data or {}
  # 检查并发限制
  if workflow.max_concurrent_executions > 0:
- running_count = await sync_to_async(
- lambda: WorkflowExecution.objects.filter(
+ running_count = await WorkflowExecution.objects.filter(
  workflow=workflow,
  status=ExecutionStatus.RUNNING,
- ).count
- )
+ ).acount
  if running_count >= workflow.max_concurrent_executions:
  raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
  # 使用已有执行实例或创建新的
  if execution is None:
- execution = await sync_to_async(WorkflowExecution.objects.create)(
+ execution = await WorkflowExecution.objects.acreate(
  workflow=workflow,
  status=ExecutionStatus.PENDING,
  trigger_type=trigger_type,
@@ -100,18 +97,18 @@ class WorkflowEngine:
  else:
  # 确保执行状态正确
  execution.status = ExecutionStatus.PENDING
- await sync_to_async(execution.save)(update_fields=["status"])
+ await execution.asave(update_fields=["status"])
  # 构建 DAG
- dag = await sync_to_async(DAG.from_workflow)(workflow)
+ dag = await DAG.afrom_workflow(workflow)
  errors = dag.validate
  if errors:
- await sync_to_async(execution.mark_failed)("\n".join(errors))
+ await execution.amark_failed("\n".join(errors))
  return execution
  # 初始化节点执行记录
  execution.total_nodes = len(dag.nodes)
- await sync_to_async(execution.save)(update_fields=["total_nodes"])
+ await execution.asave(update_fields=["total_nodes"])
  for dag_node in dag.nodes.values:
- await sync_to_async(NodeExecution.objects.create)(
+ await NodeExecution.objects.acreate(
  workflow_execution=execution,
  node=dag_node.node,
  status=NodeExecutionStatus.PENDING,
@@ -134,7 +131,7 @@ class WorkflowEngine:
  ) -> None:
  """执行工作流主循环"""
  try:
- await sync_to_async(execution.mark_started)
+ await execution.amark_started
  await self.hooks.trigger("execution_running", execution=execution)
  # 节点输出缓存
  node_outputs: dict[str, dict] = {}
@@ -171,29 +168,25 @@ class WorkflowEngine:
  pending_nodes.discard(node_id)
  if not ready_nodes:
  # 检查是否有正在等待审批或等待事件的节点
- waiting_nodes = await sync_to_async(
- lambda: list(
- NodeExecution.objects.filter(
+ waiting_nodes = [
+ ne async for ne in NodeExecution.objects.filter(
  workflow_execution=execution,
  status__in=[
  NodeExecutionStatus.WAITING_APPROVAL,
  NodeExecutionStatus.WAITING_EVENT,
  ],
  )
- )
- )
+ ]
  if waiting_nodes:
  # Check if ALL remaining pending nodes are in waiting states
  # If so, we can truly suspend and release resources
  all_blocked = True
  for node_id in pending_nodes:
  # Check if this pending node is in waiting state
- ne = await sync_to_async(
- lambda nid=node_id: NodeExecution.objects.filter(
+ ne = await NodeExecution.objects.filter(
  workflow_execution=execution,
- node_id=nid,
- ).first
- )
+ node_id=node_id,
+ ).afirst
  if ne and ne.status not in [
  NodeExecutionStatus.WAITING_APPROVAL,
  NodeExecutionStatus.WAITING_EVENT,
@@ -207,7 +200,7 @@ class WorkflowEngine:
  execution_id=str(execution.id),
  waiting_nodes=len(waiting_nodes),
  )
- await sync_to_async(execution.mark_suspended)
+ await execution.amark_suspended
  await self.hooks.trigger("execution_suspended", execution=execution)
  # Exit the loop - webhook will restart via _continue_after_node
  return
@@ -217,7 +210,7 @@ class WorkflowEngine:
  await asyncio.sleep(5)
  # 刷新状态
  for ne in waiting_nodes:
- await sync_to_async(ne.refresh_from_db)
+ await ne.arefresh_from_db
  if ne.status == NodeExecutionStatus.COMPLETED:
  completed_nodes.add(str(ne.node_id))
  node_outputs[str(ne.node_id)] = ne.output_data
@@ -272,15 +265,15 @@ class WorkflowEngine:
  else:
  failed_nodes.add(dag_node.id)
  # 检查超时
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  if execution.timeout_at and timezone.now > execution.timeout_at:
  execution.status = ExecutionStatus.TIMEOUT
- await sync_to_async(execution.save)(update_fields=["status"])
+ await execution.asave(update_fields=["status"])
  await self.hooks.trigger("execution_timeout", execution=execution)
  return
  # 执行完成
  if failed_nodes:
- await sync_to_async(execution.mark_failed)(f"失败节点: {len(failed_nodes)}")
+ await execution.amark_failed(f"失败节点: {len(failed_nodes)}")
  else:
  # 收集最终输出（终端节点的输出）
  final_output = {}
@@ -288,11 +281,11 @@ class WorkflowEngine:
  dag_node = dag.nodes.get(node_id)
  if dag_node and not dag_node.outgoing:
  final_output.update(node_outputs.get(node_id, {}))
- await sync_to_async(execution.mark_completed)(final_output)
+ await execution.amark_completed(final_output)
  await self.hooks.trigger("execution_completed", execution=execution)
  except Exception as e:
  logger.exception("workflow_execution_error", execution_id=str(execution.id))
- await sync_to_async(execution.mark_failed)(str(e))
+ await execution.amark_failed(str(e))
  await self.hooks.trigger("execution_failed", execution=execution, error=e)
  async def _execute_node(
  self,
@@ -573,7 +566,7 @@ class WorkflowEngine:
  )
  # Get the workflow and rebuild DAG
  workflow = await sync_to_async(lambda: execution.workflow)
- dag = await sync_to_async(DAG.from_workflow)(workflow)
+ dag = await DAG.afrom_workflow(workflow)
  # Find successor nodes
  completed_node_id = str(node_execution.node_id)
  dag_node = dag.nodes.get(completed_node_id)
@@ -722,7 +715,7 @@ class WorkflowEngine:
  """Collect outputs from terminal nodes."""
  # Get workflow and DAG
  workflow = await sync_to_async(lambda: execution.workflow)
- dag = await sync_to_async(DAG.from_workflow)(workflow)
+ dag = await DAG.afrom_workflow(workflow)
  # Find terminal nodes (no outgoing edges)
  terminal_node_ids = [
  node_id for node_id, dag_node in dag.nodes.items if not dag_node.outgoing
