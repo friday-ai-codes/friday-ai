@@ -1,26 +1,14 @@
 """Index management views for repositories."""
 import asyncio
-import concurrent.futures
-import threading
 from typing import Any
+from asgiref.sync import sync_to_async
 from rest_framework import serializers, status
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from adrf.views import APIView
 from repositories.models import IndexStatus, Repository
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
-def run_async(coro):
- """Run async coroutine in a new event loop within a thread pool."""
- with concurrent.futures.ThreadPoolExecutor as pool:
- future = pool.submit(asyncio.run, coro)
- return future.result
-def run_async_background(coro):
- """Run async coroutine in a background thread (non-blocking)."""
- def run_in_thread:
- asyncio.run(coro)
- thread = threading.Thread(target=run_in_thread, daemon=True)
- thread.start
 class IndexStatusSerializer(serializers.Serializer):
  """Serializer for index status response."""
  index_status = serializers.CharField
@@ -46,10 +34,10 @@ class SearchResultSerializer(serializers.Serializer):
  context_header = serializers.CharField
 class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
- def post(self, request, repository_id):
+ async def post(self, request, repository_id):
  """Trigger indexing for the repository."""
  try:
- repository = Repository.objects.get(id=repository_id, is_deleted=False)
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -61,8 +49,8 @@ class IndexTriggerView(APIView):
  {"detail": "索引正在进行中"},
  status=status.HTTP_409_CONFLICT,
  )
- # Run indexing in background
- run_async_background(clone_and_index_repository(str(repository.id)))
+ # Run indexing in background (fire-and-forget)
+ asyncio.create_task(clone_and_index_repository(str(repository.id)))
  return Response(
  {
  "message": "索引任务已启动",
@@ -73,10 +61,10 @@ class IndexTriggerView(APIView):
  )
 class IndexStatusView(APIView):
  """Get index status for a repository."""
- def get(self, request, repository_id):
+ async def get(self, request, repository_id):
  """Get current index status."""
  try:
- repository = Repository.objects.get(id=repository_id, is_deleted=False)
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -96,29 +84,29 @@ class IndexStatusView(APIView):
  return Response(serializer.data)
 class IndexDeleteView(APIView):
  """Delete index for a repository."""
- def delete(self, request, repository_id):
+ async def delete(self, request, repository_id):
  """Delete the index for the repository."""
  try:
- repository = Repository.objects.get(id=repository_id, is_deleted=False)
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # Delete collection from Qdrant
- QdrantService.delete_collection(str(repository.id))
+ # Delete collection from Qdrant (sync call)
+ await sync_to_async(QdrantService.delete_collection)(str(repository.id))
  # Reset repository status
  repository.index_status = IndexStatus.NOT_INDEXED
  repository.last_indexed_at = None
  repository.index_error = None
- repository.save(update_fields=["index_status", "last_indexed_at", "index_error"])
+ await repository.asave(update_fields=["index_status", "last_indexed_at", "index_error"])
  return Response(status=status.HTTP_204_NO_CONTENT)
 class CodeSearchView(APIView):
  """Search code in repository index."""
- def post(self, request, repository_id):
+ async def post(self, request, repository_id):
  """Search for code in the repository."""
  try:
- repository = Repository.objects.get(id=repository_id, is_deleted=False)
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response(
  {"detail": "仓库不存在"},
@@ -137,7 +125,7 @@ class CodeSearchView(APIView):
  top_k = serializer.validated_data["top_k"]
  filters = serializer.validated_data.get("filters", {})
  # Run search
- results = run_async(self._search(repository_id, query, top_k, filters))
+ results = await self._search(repository_id, query, top_k, filters)
  return Response(
  {
  "query": query,
@@ -153,12 +141,12 @@ class CodeSearchView(APIView):
  filters: dict[str, Any],
  ) -> list[dict[str, Any]]:
  """Execute vector search."""
- # Generate query embedding
+ # Generate query embedding (async)
  query_embedding = await EmbeddingService.generate_embedding(query)
  if not query_embedding:
  return
- # Search in Qdrant
- search_results = QdrantService.search(
+ # Search in Qdrant (sync call)
+ search_results = await sync_to_async(QdrantService.search)(
  repository_id,
  query_embedding,
  top_k=top_k,
@@ -184,17 +172,17 @@ class CodeSearchView(APIView):
  return results
 class QdrantHealthView(APIView):
  """Check Qdrant service health."""
- def get(self, request):
+ async def get(self, request):
  """Get Qdrant health status."""
- health = QdrantService.health_check
+ health = await sync_to_async(QdrantService.health_check)
  return Response(health)
 class EmbeddingHealthView(APIView):
  """Check Embedding API health."""
- def get(self, request):
+ async def get(self, request):
  """Get Embedding API health status using saved config."""
- health = run_async(EmbeddingService.test_connection)
+ health = await EmbeddingService.test_connection
  return Response(health)
- def post(self, request):
+ async def post(self, request):
  """Test Embedding API with provided config (before saving).
  If api_key is not provided, use the saved api_key from system settings.
  """
@@ -212,13 +200,13 @@ class EmbeddingHealthView(APIView):
  )
  # If api_key not provided, try to get from saved settings
  if not api_key:
- api_key_setting = SystemSetting.objects.filter(
+ api_key_setting = await SystemSetting.objects.filter(
  key=SettingKeys.EMBEDDING_API_KEY
- ).first
+ ).afirst
  if api_key_setting and api_key_setting.value:
  if api_key_setting.is_encrypted:
  api_key = decrypt_value(api_key_setting.value)
  else:
  api_key = api_key_setting.value
- health = run_async(EmbeddingService.test_connection_with_config(api_url, model, api_key))
+ health = await EmbeddingService.test_connection_with_config(api_url, model, api_key)
  return Response(health)
