@@ -6,7 +6,6 @@ import json
 from typing import Any
 import httpx
 import structlog
-from asgiref.sync import sync_to_async
 from feishu.client import FeishuAPIError, create_feishu_client_for_project
 from workflows.nodes.base import (
  BaseNode,
@@ -314,9 +313,9 @@ class TechnicalPlanNode(BaseNode):
  project: Any,
  ) -> str:
  """调用 LLM 生成技术方案"""
- from services.claude_config import get_claude_config
+ from services.claude_config import aget_claude_config
  # 使用 claude_config 服务获取配置
- config = await sync_to_async(get_claude_config)(project)
+ config = await aget_claude_config(project)
  api_key = config.api_key
  base_url = config.base_url or "https://api.anthropic.com"
  if not api_key:
@@ -424,11 +423,10 @@ class TechnicalPlanNode(BaseNode):
  async def _get_project(self, context: ExecutionContext) -> Any:
  """获取关联的项目"""
  if context.workflow_execution:
- @sync_to_async
- def get_project_sync -> Any:
- workflow = context.workflow_execution.workflow # type: ignore[union-attr]
- if workflow:
- return workflow.project
- return None
- return await get_project_sync
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ if we.workflow:
+ return we.workflow.project
  return None

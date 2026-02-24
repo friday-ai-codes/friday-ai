@@ -301,15 +301,17 @@ class AIVariableExtractorNode(BaseNode):
  ) -> tuple[str, dict]:
  """调用 LLM 服务"""
  import httpx
- from asgiref.sync import sync_to_async
- from services.claude_config import get_claude_config
+ from services.claude_config import aget_claude_config
  # 获取项目配置
  project = None
  if context.workflow_execution:
- workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
- if workflow:
- project = await sync_to_async(lambda: workflow.project)
- config = await sync_to_async(get_claude_config)(project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ if we.workflow:
+ project = we.workflow.project
+ config = await aget_claude_config(project)
  # 如果未指定模型，从配置中获取
  resolved_model = model or config.model
  if not resolved_model:

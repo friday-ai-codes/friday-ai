@@ -6,7 +6,6 @@ result mapping) into a base class. Subclasses only need to override
 from abc import abstractmethod
 from typing import Any, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
@@ -136,14 +135,21 @@ class AIAgentBaseNode(BaseNode):
  async def _get_project(self, context: ExecutionContext) -> Any:
  """Get associated project via workflow_execution."""
  if context.workflow_execution:
- workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
- if workflow:
- return await sync_to_async(lambda: workflow.project)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ if we.workflow:
+ return we.workflow.project
  return None
  async def _get_user(self, context: ExecutionContext) -> Any:
  """Get triggering user via workflow_execution."""
  if context.workflow_execution:
- return await sync_to_async(lambda: context.workflow_execution.triggered_by)
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "triggered_by"
+ ).aget(id=context.workflow_execution.id)
+ return we.triggered_by
  return None
  async def _get_provider(
  self,
@@ -160,8 +166,8 @@ class AIAgentBaseNode(BaseNode):
  raise ValueError("使用自定义 API 时必须指定模型")
  provider_type = api_format or "anthropic"
  return create_provider(provider_type, api_key=api_key, base_url=api_base_url, model=model)
- from services.claude_config import get_claude_config
- config = await sync_to_async(get_claude_config)(project)
+ from services.claude_config import aget_claude_config
+ config = await aget_claude_config(project)
  resolved_model = model or config.model
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
