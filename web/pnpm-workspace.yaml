@@ -66,6 +66,7 @@ catalogs:
  reka-ui: 2.7.0
  shiki: ^3.21.0
  tailwind-merge: ^3.4.0
+ tsx: ^4.21.0
  tailwindcss: ^4.1.18
  typescript: ~5.9.3
  unplugin-auto-import: ^21.0.0
