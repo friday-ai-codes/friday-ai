@@ -13,7 +13,8 @@
  "type-check": "vue-tsc --noEmit",
  "test:unit": "vitest",
  "test:e2e": "playwright test",
- "test:e2e:ui": "playwright test --ui"
+ "test:e2e:ui": "playwright test --ui",
+ "validate:node-types": "tsx scripts/validateNodeTypes.ts"
  },
  "dependencies": {
  "@antv/x6": "catalog:",
@@ -85,6 +86,7 @@
  "happy-dom": "catalog:",
  "tailwindcss": "catalog:",
  "typescript": "catalog:",
+ "tsx": "catalog:",
  "unplugin-auto-import": "catalog:",
  "unplugin-vue-components": "catalog:",
  "unplugin-vue-i18n": "catalog:",
