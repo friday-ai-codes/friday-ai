@@ -19,6 +19,7 @@ class DelayNode(BaseNode):
  description = "暂停工作流执行指定时间"
  icon = "clock"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
@@ -79,6 +80,7 @@ class ParallelNode(BaseNode):
  description = "将工作流分成多个并行分支"
  icon = "git-fork"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
@@ -164,6 +166,7 @@ class JoinNode(BaseNode):
  description = "等待所有并行分支完成后继续"
  icon = "git-merge"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

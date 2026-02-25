@@ -49,6 +49,7 @@ class CreatePRNode(BaseNode):
  description = "创建 GitHub/GitLab Pull Request（支持多仓库）"
  icon = "git-pull-request"
  category = NodeCategory.ACTION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
@@ -488,6 +489,7 @@ class MergePRNode(BaseNode):
  description = "合并 GitHub Pull Request"
  icon = "git-merge"
  category = NodeCategory.ACTION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

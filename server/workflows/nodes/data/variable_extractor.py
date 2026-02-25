@@ -22,6 +22,7 @@ class VariableExtractorNode(BaseNode):
  description = "从 JSON 数据中提取字段并注册为全局变量"
  icon = "variable"
  category = NodeCategory.ACTION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

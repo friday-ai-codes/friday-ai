@@ -21,6 +21,7 @@ class WaitForFeishuFieldNode(BaseNode):
  description = "暂停执行，等待飞书工作项字段变更为期望值后继续"
  icon = "clock"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

@@ -29,6 +29,7 @@ class CreateBranchNode(BaseNode):
  description = "在 Git 仓库中创建新分支，支持多仓库并行"
  icon = "git-branch"
  category = NodeCategory.ACTION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

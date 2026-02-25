@@ -1,7 +1,7 @@
 """Base class for trigger nodes."""
 from abc import abstractmethod
 from datetime import datetime, timezone
-from typing import ClassVar
+from typing import ClassVar, Literal
 import structlog
 from common.exceptions import TriggerParseError
 from workflows.nodes.base import (
@@ -21,6 +21,7 @@ class BaseTriggerNode(BaseNode):
  Subclasses implement parse_payload to extract type-specific data.
  """
  category: ClassVar[NodeCategory] = NodeCategory.TRIGGER
+ execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "server_local"
  inputs: ClassVar[list[NodePort]] = # Triggers have no input ports
  async def execute(self, context: ExecutionContext) -> NodeResult:
  """Template method: log trigger, parse payload, wrap errors.

@@ -25,6 +25,7 @@ class FetchProjectInfoNode(BaseNode):
  description = "根据项目标识获取项目配置信息，包括仓库、飞书配置等"
  icon = "folder-search"
  category = NodeCategory.ACTION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

@@ -19,6 +19,7 @@ class NotifyFeishuNode(BaseNode):
  description = "发送消息到飞书"
  icon = "message-square"
  category = NodeCategory.INTEGRATION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
@@ -155,6 +156,7 @@ class MCPDeployNode(BaseNode):
  description = "触发 MCP 服务部署"
  icon = "cloud-upload"
  category = NodeCategory.INTEGRATION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

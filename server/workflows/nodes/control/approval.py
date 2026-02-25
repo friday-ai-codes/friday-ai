@@ -20,6 +20,7 @@ class HumanApprovalNode(BaseNode):
  description = "暂停执行，等待人工审批通过后继续"
  icon = "user-check"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
