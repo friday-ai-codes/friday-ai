@@ -30,10 +30,10 @@ const nodeRegistry: Record<string, Component> = {
  variable_extractor: X6ActionNode,
  context_retrieval: X6ActionNode,
  technical_plan: X6ActionNode,
- wait_feishu: X6ActionNode,
+ wait_feishu_field: X6ActionNode,
  // Condition nodes (amber gradient)
  condition: X6ConditionNode,
- approval: X6ConditionNode,
+ human_approval: X6ConditionNode,
  // Specialized AI nodes
  ai_plan_generation: X6AgentNode,
  ai_plan_approval: X6ConditionNode, // Approval node uses condition style (dual outputs)

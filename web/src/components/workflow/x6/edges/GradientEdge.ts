@@ -21,7 +21,7 @@ export function getNodeColor(nodeType: string): string {
  return NODE_COLORS.trigger
  }
  // Condition/decision nodes (amber)
- if (nodeType === 'condition' || nodeType === 'approval') {
+ if (nodeType === 'condition' || nodeType === 'human_approval') {
  return NODE_COLORS.condition
  }
  // All other nodes are actions (violet)
