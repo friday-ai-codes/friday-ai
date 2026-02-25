@@ -94,6 +94,7 @@ const nodeCategories: NodeCategory = [
  { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务', icon: Bot, color: 'purple' },
  { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
  { type: 'variable_extractor', name: '变量提取', description: '提取变量值', icon: Variable, color: 'purple' },
+ { type: 'ai_technical_plan', name: 'AI 技术方案', description: 'AI 生成技术方案', icon: FileText, color: 'purple' },
  { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案', icon: FileCode, color: 'purple' },
  { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案', icon: CheckCircle, color: 'purple' },
  { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR', icon: Terminal, color: 'purple' },
