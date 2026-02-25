@@ -1,10 +1,9 @@
 """Unit tests for multi-repo plan generation nodes.
-Tests GeneratePlanNode and TechnicalPlanNode with multi-repository
+Tests TechnicalPlanNode with multi-repository
 configuration and codebase context inputs.
 """
 import json
 from typing import Any
-from workflows.nodes.ai.plan import GeneratePlanNode
 from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 class MockExecutionContext:
  """Mock ExecutionContext for testing."""
@@ -33,89 +32,6 @@ class MockExecutionContext:
  def get_global_param(self, key: str, default: Any = None) -> Any:
  """Get global parameter."""
  return self._global_params.get(key, default)
-class TestGeneratePlanNodeConfigSchema:
- """Tests for GeneratePlanNode config schema."""
- def test_config_schema_has_repositories(self) -> None:
- """Test that config_schema includes repositories property."""
- node = GeneratePlanNode
- assert "repositories" in node.config_schema["properties"]
- def test_config_schema_has_codebase_context(self) -> None:
- """Test that config_schema includes codebase_context property."""
- node = GeneratePlanNode
- assert "codebase_context" in node.config_schema["properties"]
- def test_repositories_supports_array(self) -> None:
- """Test that repositories supports array type."""
- node = GeneratePlanNode
- repos_schema = node.config_schema["properties"]["repositories"]
- assert "oneOf" in repos_schema
- array_option = repos_schema["oneOf"][0]
- assert array_option["type"] == "array"
- def test_repositories_supports_template_string(self) -> None:
- """Test that repositories supports string type for templates."""
- node = GeneratePlanNode
- repos_schema = node.config_schema["properties"]["repositories"]
- assert "oneOf" in repos_schema
- string_option = repos_schema["oneOf"][1]
- assert string_option["type"] == "string"
-class TestGeneratePlanNodePrompt:
- """Tests for GeneratePlanNode prompt building."""
- def test_build_prompt_with_repositories(self) -> None:
- """Test that prompt includes repository listing when provided."""
- node = GeneratePlanNode
- repositories = [
- {"id": "repo-1", "name": "frontend", "description": "Vue app"},
- {"id": "repo-2", "name": "backend", "description": "Django API"},
- ]
- prompt = node._build_plan_prompt(
- requirements="Build user login",
- codebase_info="",
- constraints="",
- detail_level="standard",
- include_tests=True,
- repositories=repositories,
- codebase_context="",
- )
- assert "## 可用代码仓库" in prompt
- assert "frontend" in prompt
- assert "backend" in prompt
- assert "repo-1" in prompt
- assert "repo-2" in prompt
- def test_build_prompt_with_codebase_context(self) -> None:
- """Test that prompt includes codebase context when provided."""
- node = GeneratePlanNode
- context = """
-# File: src/auth/login.py
-def authenticate(username, password):
- pass
-"""
- prompt = node._build_plan_prompt(
- requirements="Improve login",
- codebase_info="",
- constraints="",
- detail_level="standard",
- include_tests=True,
- repositories=None,
- codebase_context=context,
- )
- assert "## 相关代码上下文" in prompt
- assert "authenticate" in prompt
- assert "从各仓库检索到的相关代码" in prompt
- def test_build_prompt_without_optional_params(self) -> None:
- """Test that prompt builds correctly without optional params."""
- node = GeneratePlanNode
- prompt = node._build_plan_prompt(
- requirements="Simple task",
- codebase_info="",
- constraints="",
- detail_level="standard",
- include_tests=False,
- repositories=None,
- codebase_context="",
- )
- assert "## 需求" in prompt
- assert "Simple task" in prompt
- assert "## 可用代码仓库" not in prompt
- assert "## 相关代码上下文" not in prompt
 class TestTechnicalPlanNodeConfigSchema:
  """Tests for TechnicalPlanNode config schema."""
  def test_config_schema_has_codebase_context(self) -> None:
