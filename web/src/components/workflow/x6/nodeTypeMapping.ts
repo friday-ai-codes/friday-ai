@@ -132,6 +132,12 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: {},
  },
  {
+ shape: 'ai_technical_plan',
+ workflowType: 'ai_technical_plan',
+ category: 'action',
+ defaultData: {},
+ },
+ {
  shape: 'ai_plan_generation',
  workflowType: 'ai_plan_generation',
  category: 'action',

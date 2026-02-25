@@ -42,6 +42,7 @@ const nodeRegistry: Record<string, Component> = {
  parallel: X6ParallelNode,
  join: X6ParallelNode,
  // Specialized AI nodes
+ ai_technical_plan: X6AgentNode,
  ai_plan_generation: X6AgentNode,
  ai_plan_approval: X6ConditionNode, // Approval node uses condition style (dual outputs)
  ai_coding: X6AgentNode,
