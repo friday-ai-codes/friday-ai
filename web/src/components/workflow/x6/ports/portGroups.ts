@@ -140,9 +140,20 @@ const TRIGGER_NODE_TYPES = [
  */
 const CONDITION_NODE_TYPES = ['condition', 'human_approval']
 /**
+ * Node types that have error output ports (1 input, 2 outputs: default + error).
+ */
+const ERROR_OUTPUT_NODE_TYPES = [
+ 'create_branch',
+ 'create_pr',
+ 'merge_pr',
+ 'notify_feishu',
+ 'mcp_deploy',
+]
+/**
  * Get default port configuration for a node type.
  * - Trigger nodes: 0 inputs, 1 output
  * - Condition nodes: 1 input, 2 outputs (true/false branches)
+ * - Error output nodes: 1 input, 2 outputs (default/error)
  * - Action nodes: 1 input, 1 output
  *
  * @param nodeType - The node type to get ports for
@@ -150,7 +161,6 @@ const CONDITION_NODE_TYPES = ['condition', 'human_approval']
  */
 export function getDefaultPortsForNodeType(nodeType: string): PortMetadata {
  if (TRIGGER_NODE_TYPES.includes(nodeType)) {
- // Trigger nodes: no inputs, one output
  return generatePortItems(nodeType,, ['output'])
  }
  // ai_plan_approval: 1 input, 2 outputs (approved/rejected)
@@ -158,8 +168,10 @@ export function getDefaultPortsForNodeType(nodeType: string): PortMetadata {
  return generatePortItems(nodeType, ['input'], ['approved', 'rejected'])
  }
  if (CONDITION_NODE_TYPES.includes(nodeType)) {
- // Condition nodes: one input, two outputs (true/false branches)
  return generatePortItems(nodeType, ['input'], ['true', 'false'])
+ }
+ if (ERROR_OUTPUT_NODE_TYPES.includes(nodeType)) {
+ return generatePortItems(nodeType, ['input'], ['default', 'error'])
  }
  // Action nodes: one input, one output
  return generatePortItems(nodeType, ['input'], ['output'])
