@@ -233,23 +233,6 @@ export const createPRConfigSchema = z.object({
  draft: z.boolean.default(false),
  add_cross_references: z.boolean.default(true),
 })
-/** 生成方案节点配置 */
-export const generatePlanConfigSchema = z.object({
- // Repository selection
- repositories: z.array(z.string).default,
- // Context input
- codebase_context: z.string.default(''),
- requirement_text: z.string.default(''),
- // AI configuration
- use_custom_api: z.boolean.default(false),
- api_base_url: z.string.default(''),
- api_key: z.string.default(''),
- model: z.string.default(''),
- temperature: z.number.min(0).max(1).default(0.3),
- // Generation settings
- max_tasks: z.number.min(1).max(50).default(15),
- include_file_details: z.boolean.default(true),
-})
 /** AI 方案生成节点配置 */
 export const aiPlanGenerationConfigSchema = z.object({
  // Prompts
@@ -317,7 +300,6 @@ export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
 export type TechnicalPlanNodeConfig = z.infer<typeof technicalPlanNodeConfigSchema>
 export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
-export type GeneratePlanConfig = z.infer<typeof generatePlanConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
 export type AIPlanApprovalConfig = z.infer<typeof aiPlanApprovalConfigSchema>
 export type AICodingConfig = z.infer<typeof aiCodingConfigSchema>
@@ -337,7 +319,6 @@ export type NodeConfig
  | TechnicalPlanNodeConfig
  | CreateBranchConfig
  | CreatePRConfig
- | GeneratePlanConfig
  | AIPlanGenerationConfig
  | AIPlanApprovalConfig
  | AICodingConfig
@@ -359,7 +340,6 @@ export const NODE_CONFIG_SCHEMAS = {
  ai_technical_plan: technicalPlanNodeConfigSchema,
  create_branch: createBranchConfigSchema,
  create_pr: createPRConfigSchema,
- generate_plan: generatePlanConfigSchema,
  ai_plan_generation: aiPlanGenerationConfigSchema,
  ai_plan_approval: aiPlanApprovalConfigSchema,
  ai_coding: aiCodingConfigSchema,

@@ -20,7 +20,6 @@ const nodeRegistry: Record<string, Component> = {
  feishu_event_trigger: X6TriggerNode,
  // Action nodes (purple gradient)
  http_request: X6ActionNode,
- code_implement: X6ActionNode,
  create_branch: X6ActionNode,
  fetch_work_item: X6ActionNode,
  fetch_project_info: X6ActionNode,
@@ -29,7 +28,6 @@ const nodeRegistry: Record<string, Component> = {
  ai_variable_extractor: X6ActionNode,
  variable_extractor: X6ActionNode,
  context_retrieval: X6ActionNode,
- technical_plan: X6ActionNode,
  wait_feishu_field: X6ActionNode,
  // Condition nodes (amber gradient)
  condition: X6ConditionNode,

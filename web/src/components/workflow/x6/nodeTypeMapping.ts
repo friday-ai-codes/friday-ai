@@ -61,12 +61,6 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: { method: 'GET', url: '', headers: {} },
  },
  {
- shape: 'code_implement',
- workflowType: 'code_implement',
- category: 'action',
- defaultData: {},
- },
- {
  shape: 'create_branch',
  workflowType: 'create_branch',
  category: 'action',
@@ -110,12 +104,6 @@ export const nodeTypeMapping: NodeTypeConfig = [
  {
  shape: 'variable_extractor',
  workflowType: 'variable_extractor',
- category: 'action',
- defaultData: {},
- },
- {
- shape: 'technical_plan',
- workflowType: 'technical_plan',
  category: 'action',
  defaultData: {},
  },
