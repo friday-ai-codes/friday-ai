@@ -61,7 +61,7 @@ const nodeCategories: NodeCategory = [
  { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求', icon: Globe, color: 'green' },
  { type: 'code_implement', name: 'AI 编码', description: 'AI 自动实现代码', icon: Terminal, color: 'green' },
  { type: 'create_branch', name: '创建分支', description: '创建 Git 分支', icon: FolderGit2, color: 'green' },
- { type: 'wait_feishu', name: '等待飞书', description: '等待飞书消息响应', icon: Hourglass, color: 'green' },
+ { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应', icon: Hourglass, color: 'green' },
  ],
  },
  {
@@ -84,7 +84,7 @@ const nodeCategories: NodeCategory = [
  color: 'cyan',
  items: [
  { type: 'condition', name: '条件判断', description: '根据条件分支', icon: GitBranch, color: 'cyan' },
- { type: 'approval', name: '人工审批', description: '等待人工审批', icon: MessageSquare, color: 'cyan' },
+ { type: 'human_approval', name: '人工审批', description: '等待人工审批', icon: MessageSquare, color: 'cyan' },
  ],
  },
 ]

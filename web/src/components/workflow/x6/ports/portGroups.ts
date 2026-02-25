@@ -138,7 +138,7 @@ const TRIGGER_NODE_TYPES = [
 /**
  * Node types that are condition nodes (one input, two outputs for branches).
  */
-const CONDITION_NODE_TYPES = ['condition', 'approval']
+const CONDITION_NODE_TYPES = ['condition', 'human_approval']
 /**
  * Get default port configuration for a node type.
  * - Trigger nodes: 0 inputs, 1 output

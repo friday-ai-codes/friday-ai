@@ -73,8 +73,8 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: {},
  },
  {
- shape: 'wait_feishu',
- workflowType: 'wait_feishu',
+ shape: 'wait_feishu_field',
+ workflowType: 'wait_feishu_field',
  category: 'action',
  defaultData: {},
  },
@@ -151,8 +151,8 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: {},
  },
  {
- shape: 'approval',
- workflowType: 'approval',
+ shape: 'human_approval',
+ workflowType: 'human_approval',
  category: 'condition',
  defaultData: {},
  },
