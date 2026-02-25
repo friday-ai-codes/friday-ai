@@ -207,6 +207,7 @@ declare module 'vue' {
  X6AgentNode: typeof import('./components/workflow/x6/nodes/X6AgentNode.vue')['default']
  X6BaseNode: typeof import('./components/workflow/x6/nodes/X6BaseNode.vue')['default']
  X6ConditionNode: typeof import('./components/workflow/x6/nodes/X6ConditionNode.vue')['default']
+ X6ParallelNode: typeof import('./components/workflow/x6/nodes/X6ParallelNode.vue')['default']
  X6TriggerNode: typeof import('./components/workflow/x6/nodes/X6TriggerNode.vue')['default']
  X6WorkflowCanvas: typeof import('./components/workflow/x6/X6WorkflowCanvas.vue')['default']
  }
