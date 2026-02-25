@@ -4,6 +4,7 @@ import { registerGradientEdge } from './edges'
 import X6ActionNode from './nodes/X6ActionNode.vue'
 import X6AgentNode from './nodes/X6AgentNode.vue'
 import X6ConditionNode from './nodes/X6ConditionNode.vue'
+import X6ParallelNode from './nodes/X6ParallelNode.vue'
 import X6TriggerNode from './nodes/X6TriggerNode.vue'
 import { getDefaultPortsForNodeType, workflowPortGroups } from './ports'
 /**
@@ -36,6 +37,10 @@ const nodeRegistry: Record<string, Component> = {
  // Condition nodes (amber gradient)
  condition: X6ConditionNode,
  human_approval: X6ConditionNode,
+ // Control flow nodes
+ delay: X6ActionNode,
+ parallel: X6ParallelNode,
+ join: X6ParallelNode,
  // Specialized AI nodes
  ai_plan_generation: X6AgentNode,
  ai_plan_approval: X6ConditionNode, // Approval node uses condition style (dual outputs)

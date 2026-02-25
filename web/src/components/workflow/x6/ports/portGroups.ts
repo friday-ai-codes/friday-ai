@@ -173,6 +173,12 @@ export function getDefaultPortsForNodeType(nodeType: string): PortMetadata {
  if (ERROR_OUTPUT_NODE_TYPES.includes(nodeType)) {
  return generatePortItems(nodeType, ['input'], ['default', 'error'])
  }
+ if (nodeType === 'parallel') {
+ return generatePortItems(nodeType, ['input'], ['branch_0', 'branch_1'])
+ }
+ if (nodeType === 'join') {
+ return generatePortItems(nodeType, ['input_0', 'input_1'], ['output'])
+ }
  // Action nodes: one input, one output
  return generatePortItems(nodeType, ['input'], ['output'])
 }

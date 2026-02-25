@@ -168,6 +168,25 @@ export const nodeTypeMapping: NodeTypeConfig = [
  category: 'condition',
  defaultData: {},
  },
+ // Control flow
+ {
+ shape: 'delay',
+ workflowType: 'delay',
+ category: 'action',
+ defaultData: { duration_seconds: 60 },
+ },
+ {
+ shape: 'parallel',
+ workflowType: 'parallel',
+ category: 'action',
+ defaultData: { branches: ['branch_0', 'branch_1'] },
+ },
+ {
+ shape: 'join',
+ workflowType: 'join',
+ category: 'action',
+ defaultData: {},
+ },
 ]
 /**
  * Get workflow type from X6 shape name
