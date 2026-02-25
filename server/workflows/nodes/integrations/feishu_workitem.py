@@ -22,6 +22,7 @@ class FetchWorkItemNode(BaseNode):
  description = "从飞书获取工作项完整 JSON 数据"
  icon = "download"
  category = NodeCategory.INTEGRATION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

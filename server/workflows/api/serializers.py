@@ -563,6 +563,7 @@ class NodeTypeSerializer(serializers.Serializer):
  outputs = NodePortSerializer(many=True)
  requires_container = serializers.BooleanField
  is_blocking = serializers.BooleanField
+ execution_mode = serializers.CharField
 # =============================================================================
 # Webhook Serializers
 # =============================================================================

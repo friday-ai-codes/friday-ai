@@ -36,6 +36,7 @@ class AICodingDispatcherNode(BaseNode):
  description = "从技术方案创建编码任务"
  icon = "git-branch"
  category = NodeCategory.AI
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

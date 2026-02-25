@@ -124,6 +124,7 @@ class AIPromptNode(BaseNode):
  description = "通用 AI 节点，支持自定义提示词和 API 配置"
  icon = "message-square"
  category = NodeCategory.AI
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

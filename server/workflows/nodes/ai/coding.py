@@ -9,7 +9,7 @@ fundamentally different from AIAgentBaseNode's single AgentLoop model.
 import asyncio
 import re
 import uuid
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 import structlog
 from common.encryption import decrypt_value
 from repositories.models import Repository
@@ -59,6 +59,7 @@ class AICodingNode(BaseNode):
  description: ClassVar[str] = "AI 自动编码并创建 MR"
  icon: ClassVar[str] = "terminal"
  category: ClassVar[NodeCategory] = NodeCategory.AI
+ execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "runner_dispatched"
  is_blocking: ClassVar[bool] = True
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",

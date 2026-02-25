@@ -19,6 +19,7 @@ class HTTPRequestNode(BaseNode):
  description = "发送 HTTP 请求到外部 API"
  icon = "globe"
  category = NodeCategory.INTEGRATION
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

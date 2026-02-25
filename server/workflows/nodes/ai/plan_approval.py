@@ -34,6 +34,7 @@ class PlanApprovalNode(BaseNode):
  description: ClassVar[str] = "审批技术方案"
  icon: ClassVar[str] = "check-circle"
  category: ClassVar[NodeCategory] = NodeCategory.AI
+ execution_mode: ClassVar[str] = "server_local"
  is_blocking: ClassVar[bool] = True
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",

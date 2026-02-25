@@ -18,6 +18,7 @@ class ConditionNode(BaseNode):
  description = "根据条件判断走不同的分支"
  icon = "git-branch"
  category = NodeCategory.CONTROL
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

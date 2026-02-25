@@ -47,6 +47,7 @@ class AIVariableExtractorNode(BaseNode):
  description = "使用 AI 从文本中智能提取变量"
  icon = "sparkles"
  category = NodeCategory.AI
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

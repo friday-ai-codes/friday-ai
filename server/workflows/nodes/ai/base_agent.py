@@ -4,7 +4,7 @@ result mapping) into a base class. Subclasses only need to override
 5 hook methods to define specialized node behavior.
 """
 from abc import abstractmethod
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 import structlog
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
@@ -29,6 +29,7 @@ class AIAgentBaseNode(BaseNode):
  Common infrastructure (session, provider, agent loop) is handled here.
  """
  category: ClassVar[NodeCategory] = NodeCategory.AI
+ execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "server_local"
  is_blocking: ClassVar[bool] = True
  # Base config schema with common fields; subclasses extend via dict merge
  config_schema: ClassVar[dict[str, Any]] = {

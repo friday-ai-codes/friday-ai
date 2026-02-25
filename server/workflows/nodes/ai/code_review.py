@@ -11,7 +11,7 @@ methods, but overrides execute entirely because:
 import json
 import re
 import time
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 import structlog
 from agents.core.context import AgentContext
 from agents.core.loop import AgentConfig, AgentLoop
@@ -148,6 +148,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  display_name: ClassVar[str] = "AI 代码审查"
  description: ClassVar[str] = "AI 多维度代码审查"
  icon: ClassVar[str] = "search-code"
+ execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "runner_dispatched"
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",
  "properties": {

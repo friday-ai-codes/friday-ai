@@ -30,6 +30,7 @@ class ContextRetrievalNode(BaseNode):
  description = "从代码库中检索与需求相关的代码片段，为 AI 编码提供上下文"
  icon = "search-code"
  category = NodeCategory.AI
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

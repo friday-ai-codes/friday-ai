@@ -32,6 +32,7 @@ class TechnicalPlanNode(BaseNode):
  description = "基于需求生成结构化的技术实现方案，支持飞书回填"
  icon = "file-text"
  category = NodeCategory.AI
+ execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {

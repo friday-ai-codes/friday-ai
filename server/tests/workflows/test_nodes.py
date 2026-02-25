@@ -203,3 +203,44 @@ class TestHTTPRequestNode:
  schema = node_class.config_schema # type: ignore[union-attr]
  # Should have URL in config
  assert schema is not None
+# ============================================================================
+# execution_mode Tests
+# ============================================================================
+@pytest.mark.django_db
+class TestExecutionMode:
+ """Tests for execution_mode ClassVar on all nodes."""
+ def test_all_nodes_have_execution_mode(self):
+ """Every registered node must declare execution_mode."""
+ for node_type, cls in NodeRegistry.get_all.items:
+ assert hasattr(cls, "execution_mode"), f"{cls.__name__} missing execution_mode"
+ assert cls.execution_mode in ("server_local", "runner_dispatched"), (
+ f"{cls.__name__} has invalid execution_mode={cls.execution_mode}"
+ )
+ def test_runner_dispatched_nodes(self):
+ """ai_coding and ai_code_review must be runner_dispatched."""
+ for name in ("ai_coding", "ai_code_review"):
+ cls = NodeRegistry.get(name)
+ assert cls is not None, f"{name} not registered"
+ assert cls.execution_mode == "runner_dispatched"
+ def test_server_local_nodes(self):
+ """Control/trigger/integration nodes must be server_local."""
+ for name in ("condition", "delay", "manual_trigger", "http_request", "notify_feishu"):
+ cls = NodeRegistry.get(name)
+ assert cls is not None, f"{name} not registered"
+ assert cls.execution_mode == "server_local"
+ def test_get_schema_includes_execution_mode(self):
+ """get_schema output must contain execution_mode."""
+ for schema in NodeRegistry.get_all_schemas:
+ assert "execution_mode" in schema, (
+ f"{schema['node_type']} schema missing execution_mode"
+ )
+ def test_init_subclass_rejects_missing_execution_mode(self):
+ """Concrete BaseNode subclass without execution_mode must raise TypeError."""
+ from workflows.nodes.base import BaseNode
+ with pytest.raises(TypeError, match="必须声明 execution_mode"):
+ class _BadNode(BaseNode):
+ node_type = "test_bad"
+ display_name = "bad"
+ description = "bad"
+ icon = "x"
+ category = NodeCategory.CONTROL
