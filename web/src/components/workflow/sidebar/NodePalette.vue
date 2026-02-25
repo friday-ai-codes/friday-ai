@@ -6,7 +6,6 @@ import {
  CheckCircle,
  FileCode,
  FileText,
- FolderGit2,
  GitBranch,
  Globe,
  Hourglass,
@@ -59,8 +58,6 @@ const nodeCategories: NodeCategory = [
  color: 'green',
  items: [
  { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求', icon: Globe, color: 'green' },
- { type: 'code_implement', name: 'AI 编码', description: 'AI 自动实现代码', icon: Terminal, color: 'green' },
- { type: 'create_branch', name: '创建分支', description: '创建 Git 分支', icon: FolderGit2, color: 'green' },
  { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应', icon: Hourglass, color: 'green' },
  ],
  },
@@ -72,7 +69,6 @@ const nodeCategories: NodeCategory = [
  { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务', icon: Bot, color: 'purple' },
  { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
  { type: 'variable_extractor', name: '变量提取', description: '提取变量值', icon: Variable, color: 'purple' },
- { type: 'technical_plan', name: '技术方案', description: '生成技术实现方案', icon: FileText, color: 'purple' },
  { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案', icon: FileCode, color: 'purple' },
  { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案', icon: CheckCircle, color: 'purple' },
  { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR', icon: Terminal, color: 'purple' },
@@ -80,11 +76,11 @@ const nodeCategories: NodeCategory = [
  ],
  },
  {
- name: '逻辑',
- color: 'cyan',
+ name: '控制流',
+ color: 'purple',
  items: [
- { type: 'condition', name: '条件判断', description: '根据条件分支', icon: GitBranch, color: 'cyan' },
- { type: 'human_approval', name: '人工审批', description: '等待人工审批', icon: MessageSquare, color: 'cyan' },
+ { type: 'condition', name: '条件判断', description: '根据条件分支', icon: GitBranch, color: 'purple' },
+ { type: 'human_approval', name: '人工审批', description: '等待人工审批', icon: MessageSquare, color: 'purple' },
  ],
  },
 ]
