@@ -21,6 +21,10 @@ const nodeRegistry: Record<string, Component> = {
  // Action nodes (purple gradient)
  http_request: X6ActionNode,
  create_branch: X6ActionNode,
+ create_pr: X6ActionNode,
+ merge_pr: X6ActionNode,
+ notify_feishu: X6ActionNode,
+ mcp_deploy: X6ActionNode,
  fetch_work_item: X6ActionNode,
  fetch_project_info: X6ActionNode,
  ai_prompt: X6ActionNode,

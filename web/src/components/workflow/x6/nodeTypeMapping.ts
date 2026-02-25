@@ -67,6 +67,30 @@ export const nodeTypeMapping: NodeTypeConfig = [
  defaultData: {},
  },
  {
+ shape: 'create_pr',
+ workflowType: 'create_pr',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'merge_pr',
+ workflowType: 'merge_pr',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'notify_feishu',
+ workflowType: 'notify_feishu',
+ category: 'action',
+ defaultData: {},
+ },
+ {
+ shape: 'mcp_deploy',
+ workflowType: 'mcp_deploy',
+ category: 'action',
+ defaultData: {},
+ },
+ {
  shape: 'wait_feishu_field',
  workflowType: 'wait_feishu_field',
  category: 'action',
