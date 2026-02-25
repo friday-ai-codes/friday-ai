@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, TypedDict
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypedDict
 import jsonschema
 if TYPE_CHECKING:
  from workflows.models import NodeExecution, WorkflowExecution
@@ -467,10 +467,23 @@ class BaseNode(ABC):
  # 输入/输出端口
  inputs: ClassVar[list[NodePort]] = [NodePort(name="default", label="输入", required=False)]
  outputs: ClassVar[list[NodePort]] = [NodePort(name="default", label="输出")]
+ # 执行模式
+ execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]]
  # 执行选项
  requires_container: ClassVar[bool] = False # 是否需要 Docker 容器
  supports_retry: ClassVar[bool] = True # 是否支持重试
  is_blocking: ClassVar[bool] = False # 是否阻塞（如审批节点）
+ def __init_subclass__(cls, **kwargs: Any) -> None:
+ super.__init_subclass__(**kwargs)
+ # 跳过抽象中间类（无 node_type 或有 abstractmethods）
+ if not hasattr(cls, "node_type") or getattr(cls, "__abstractmethods__", None):
+ return
+ if "execution_mode" not in cls.__dict__ and not any(
+ "execution_mode" in getattr(base, "__dict__", {})
+ for base in cls.__mro__[1:]
+ if base is not BaseNode
+ ):
+ raise TypeError(f"{cls.__name__} 必须声明 execution_mode")
  @classmethod
  def validate_config(cls, config: dict) -> list[str]:
  """验证节点配置"""
@@ -514,6 +527,7 @@ class BaseNode(ABC):
  ],
  "requires_container": cls.requires_container,
  "is_blocking": cls.is_blocking,
+ "execution_mode": cls.execution_mode,
  }
  @abstractmethod
  async def execute(self, context: ExecutionContext) -> NodeResult:
