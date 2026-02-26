@@ -14,6 +14,7 @@ import {
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
 const emit = defineEmits<{
+ close:
  confirm: [data: { name: string, description?: string, project_id: string }]
  cancel:
  closed:
@@ -62,6 +63,7 @@ async function handleSubmit {
  is_active: true,
  })
  success('创建成功', '工作流已创建')
+ emit('close')
  emit('confirm', { name: form.name, description: form.description, project_id: form.project_id })
  }
  catch (e) {
@@ -72,6 +74,7 @@ async function handleSubmit {
  }
 }
 function handleCancel {
+ emit('close')
  emit('cancel')
 }
 </script>
