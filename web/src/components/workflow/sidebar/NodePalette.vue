@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { NodePaletteItemData } from './NodePaletteItem.vue'
 import {
  Bot,
  Briefcase,
@@ -26,9 +25,6 @@ import {
  Webhook,
 } from 'lucide-vue-next'
 import NodePaletteItem from './NodePaletteItem.vue'
-const emit = defineEmits<{
- dragStart: [nodeData: NodePaletteItemData, event: MouseEvent]
-}>
 /**
  * Node type categories with their items.
  * Each category has a color theme for consistent styling.
@@ -126,12 +122,6 @@ function getCategoryGradient(color: string): string {
  }
  return gradients[color] || gradients.blue
 }
-/**
- * Forward dragStart event from child item to parent.
- */
-function handleDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
- emit('dragStart', nodeData, event)
-}
 </script>
 <template>
  <div class="h-full w-64 shrink-0 flex flex-col rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden ">
@@ -168,7 +158,6 @@ function handleDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
  <div class="space-y-1.5">
  <NodePaletteItem
  v-for="item in category.items":key="item.type":node="item"
- @drag-start="handleDragStart"
  />
  </div>
  </div>
