@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
 import { storeToRefs } from 'pinia'
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import {
@@ -18,7 +18,7 @@ import { Button } from '~/components/ui/button'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
-import { X6WorkflowCanvas } from '~/components/workflow/x6'
+import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute('/workflows/[id]')
@@ -27,8 +27,6 @@ const id = route.params.id
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
-// Canvas ref for calling loadFromStore
-const canvasRef = ref<InstanceType<typeof X6WorkflowCanvas>>
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
@@ -38,9 +36,6 @@ onMounted(async => {
  nodeTypesStore.fetchNodeTypes,
  store.fetchWorkflow(id),
  ])
- // Wait for next tick to ensure graph is ready, then load from store
- await nextTick
- canvasRef.value?.loadFromStore
  // Check if there's a draft to restore
  if (store.hasDraft) {
  const draftInfo = store.getDraftInfo
@@ -51,8 +46,6 @@ onMounted(async => {
  label: '恢复',
  onClick: => {
  store.loadDraft
- // Reload graph from store after restoring draft
- nextTick( => canvasRef.value?.loadFromStore)
  toast.success('草稿已恢复')
  },
  },
@@ -162,16 +155,14 @@ function onBack {
  router.push('/workflows')
 }
 function handleNodeDragStart(nodeData: NodePaletteItemData, event: MouseEvent) {
- canvasRef.value?.startDrag({
- shape: nodeData.type,
- width: 200,
- height: 80,
- data: {
- node_type: nodeData.type,
+ // VueFlow drag-and-drop: set data on the native drag event
+ // The canvas component handles the drop via @dragover/@drop
+ const dragEvent = event as unknown as DragEvent
+ dragEvent.dataTransfer?.setData('application/workflow-node', JSON.stringify({
+ type: nodeData.type,
  name: nodeData.name,
  description: nodeData.description,
- },
- }, event)
+ }))
 }
 function onUpdateWorkflowName(name: string) {
  if (currentWorkflow.value) {
@@ -214,7 +205,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <NodePalette @drag-start="handleNodeDragStart" />
  <!-- Center: Canvas with Config Panel overlay -->
  <div class="flex-1 relative my-3">
- <X6WorkflowCanvas ref="canvasRef" />
+ <WorkflowCanvas />
  <!-- Right Sidebar: Configuration (floating over canvas) -->
  <NodeConfigPanel />
  </div>

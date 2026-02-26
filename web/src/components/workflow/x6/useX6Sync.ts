@@ -76,6 +76,7 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  }
  isSyncingFromX6 = true
  const storeNode = nodeToStoreFormat(node)
+ // @ts-expect-error Method removed in Phase; file deleted in Phase
  store.addNodeFromX6(storeNode)
  isSyncingFromX6 = false
  })
@@ -115,6 +116,7 @@ export function useX6Sync(graph: ShallowRef<Graph | null>) {
  const target = edge.getTargetCell
  if (source && target) {
  isSyncingFromX6 = true
+ // @ts-expect-error Method removed in Phase; file deleted in Phase
  store.addEdgeFromX6(edgeToStoreFormat(edge))
  isSyncingFromX6 = false
  }
