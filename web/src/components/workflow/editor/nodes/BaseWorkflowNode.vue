@@ -10,7 +10,7 @@ import { computed } from 'vue'
 import { getNodeDefinition } from '~/types/workflow/registry'
 import { getDefaultPortsForNodeType } from '~/components/workflow/x6/ports/portGroups'
 import { useNodeStyle } from './composables/useNodeStyle'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  id: string
  data: {
  name: string
@@ -19,7 +19,9 @@ const props = defineProps<{
  [key: string]: unknown
  }
  selected?: boolean
-}>
+ /** 隐藏指定方向的 Handle，供 DynamicPortNode 等自行管理端口 */
+ hideHandles?: 'input' | 'output' | 'both' | 'none'
+}>, { hideHandles: 'none' })
 const nodeDef = computed( => getNodeDefinition(props.data.nodeType))
 const style = computed( => useNodeStyle(nodeDef.value?.category ?? '').value)
 const ports = computed( => getDefaultPortsForNodeType(props.data.nodeType))
@@ -43,7 +45,8 @@ function portLeft(index: number, total: number): string {
  >
  <!-- Input Handles -->
  <Handle
- v-for="(port, i) in inputPorts":key="port.id":id="port.id"
+ v-for="(port, i) in inputPorts"
+ v-show="hideHandles !== 'input' && hideHandles !== 'both'":key="port.id":id="port.id"
  type="target":position="Position.Top":style="{ left: portLeft(i, inputPorts.length) }"
  />
  <!-- 头部：图标 + 名称 -->
@@ -61,7 +64,8 @@ function portLeft(index: number, total: number): string {
  <slot name="content" />
  <!-- Output Handles -->
  <Handle
- v-for="(port, i) in outputPorts":key="port.id":id="port.id"
+ v-for="(port, i) in outputPorts"
+ v-show="hideHandles !== 'output' && hideHandles !== 'both'":key="port.id":id="port.id"
  type="source":position="Position.Bottom":style="{ left: portLeft(i, outputPorts.length) }"
  />
  </div>
