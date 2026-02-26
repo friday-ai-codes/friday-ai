@@ -2,30 +2,39 @@
 /**
  * WorkflowCanvas - Vue Flow canvas wired to Pinia store.
  *
- * Phase: empty canvas + dot background.
- * Phase: real node/edge data from store via useWorkflowTransform.
+ * Phase: basic canvas + dot background + store sync.
+ * Phase: connection validation, gradient edges, sidebar drag-and-drop.
  */
 import type { NodeDragEvent, Connection } from '@vue-flow/core'
 import { VueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, markRaw } from 'vue'
+import { toast } from 'vue-sonner'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { toVueFlowNodes, toVueFlowEdges } from './composables/useWorkflowTransform'
+import { useConnectionValidator, getValidationError } from './composables/useConnectionValidator'
+import { useDragAndDrop } from './composables/useDragAndDrop'
 import { nodeTypes } from './nodes'
+import GradientEdge from './edges/GradientEdge.vue'
 const store = useWorkflowsStore
 const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
-// Convert store data to VueFlow format (reactive)
 const vfNodes = computed( => toVueFlowNodes(storeNodes.value))
 const vfEdges = computed( => toVueFlowEdges(storeEdges.value))
-// Sync position changes back to store (lightweight, no history)
+const edgeTypes = { gradient: markRaw(GradientEdge) }
+const { validateConnection } = useConnectionValidator
+const { onDragOver, onDrop } = useDragAndDrop
 function onNodeDragStop(event: NodeDragEvent) {
  for (const node of event.nodes) {
  store.updateNodePosition(node.id, node.position)
  }
 }
-// Sync new connections back to store
 function onConnect(connection: Connection) {
+ const error = getValidationError(connection)
+ if (error) {
+ toast.error('连线失败', { description: error })
+ return
+ }
  store.addEdge({
  id: `edge-${connection.source}-${connection.target}-${Date.now}`,
  source: connection.source,
@@ -39,9 +48,11 @@ function onConnect(connection: Connection) {
 </script>
 <template>
  <div class="h-full w-full bg-background">
- <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":fit-view-on-init="true"
+ <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":fit-view-on-init="true"
  @node-drag-stop="onNodeDragStop"
  @connect="onConnect"
+ @dragover="onDragOver"
+ @drop="onDrop"
  >
  <Background
  variant="dots":gap="35":size="1.5"

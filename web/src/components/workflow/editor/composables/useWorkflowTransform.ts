@@ -1,4 +1,5 @@
 import type { Node, Edge } from '@vue-flow/core'
+import { MarkerType } from '@vue-flow/core'
 import type { WorkflowNodeStore, WorkflowEdgeStore } from '~/types/workflow/store'
 /** Vue Flow Node 的 data 载荷类型 */
 interface WorkflowNodeData {
@@ -44,7 +45,7 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore): Node<WorkflowNode
 /**
  * 将 Pinia Store 边转为 Vue Flow 边。
  * sourcePort/targetPort 映射到 sourceHandle/targetHandle，空值 fallback 到 "default"。
- * Phase 统一使用默认边类型 + 流动动画。
+ * 使用自定义 gradient 边类型 + 箭头标记。
  */
 export function toVueFlowEdges(storeEdges: WorkflowEdgeStore): Edge<WorkflowEdgeData> {
  return storeEdges.map((storeEdge) => ({
@@ -55,9 +56,8 @@ export function toVueFlowEdges(storeEdges: WorkflowEdgeStore): Edge<WorkflowEdge
  targetHandle: storeEdge.targetPort || 'default',
  label: storeEdge.label,
  data: { condition: storeEdge.condition },
- type: 'default' as const,
- animated: true,
- style: { stroke: '#3b82f6', strokeWidth: 2 },
+ type: 'gradient',
+ markerEnd: MarkerType.ArrowClosed,
  }))
 }
 /**
