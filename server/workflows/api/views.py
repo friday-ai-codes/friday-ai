@@ -179,6 +179,10 @@ class WorkflowViewSet(ModelViewSet):
  queryset = Workflow.objects.all
  serializer_class = WorkflowSerializer
  permission_classes = [IsAuthenticated, WorkflowPermission]
+ async def perform_acreate(self, serializer):
+ await sync_to_async(serializer.save)
+ async def perform_aupdate(self, serializer):
+ await sync_to_async(serializer.save)
  def get_serializer_class(self):
  if self.action == "create":
  return WorkflowCreateSerializer
@@ -406,7 +410,8 @@ class WorkflowViewSet(ModelViewSet):
  await workflow.arefresh_from_db
  # Sync triggers from feishu_event_trigger nodes
  await sync_to_async(sync_workflow_triggers)(workflow)
- return Response(WorkflowSerializer(workflow).data)
+ data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)
+ return Response(data)
  # =========================================================================
  # Template Actions
  # =========================================================================
