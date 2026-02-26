@@ -2,7 +2,7 @@ import type { ManualTriggerResponse, WorkflowEdgeStore, WorkflowNodeStore } from
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import client from '~/api/client'
-import { getDefaultData } from '~/components/workflow/x6/nodeTypeMapping'
+import { getDefaultConfig as getRegistryDefaultConfig } from '~/types/workflow/registry'
 // Backend API response types (snake_case)
 export interface WorkflowNode {
  id: string
@@ -129,7 +129,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  */
  function getDefaultConfig(nodeType: string): Record<string, unknown> {
  // Start with registry defaults
- const registryDefaults = getDefaultData(nodeType)
+ const registryDefaults = (getRegistryDefaultConfig(nodeType) ?? {}) as Record<string, unknown>
  // Additional local defaults for specific types
  const localDefaults: Record<string, Record<string, unknown>> = {
  ai_prompt: {
@@ -188,14 +188,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  hasUnsavedChanges.value = true
  }
  /**
- * Called when X6 adds a node
- */
- function addNodeFromX6(node: WorkflowNodeStore) {
- nodes.value.push(node)
- markDirty
- }
- /**
- * Called when X6 moves a node
+ * Called when the canvas moves a node (lightweight, no history snapshot)
  */
  function updateNodePosition(nodeId: string, position: { x: number, y: number }) {
  const node = nodes.value.find(n => n.id === nodeId)
@@ -203,39 +196,6 @@ export const useWorkflowsStore = defineStore('workflows', => {
  node.position = position
  markDirty
  }
- }
- /**
- * Called when X6 updates node data
- */
- function updateNodeFromX6(nodeId: string, updates: Partial<WorkflowNodeStore>) {
- const index = nodes.value.findIndex(n => n.id === nodeId)
- if (index !== -1) {
- nodes.value[index] = { ...nodes.value[index], ...updates }
- markDirty
- }
- }
- /**
- * Called when X6 removes a node
- */
- function removeNodeFromX6(nodeId: string) {
- nodes.value = nodes.value.filter(n => n.id !== nodeId)
- // Also remove connected edges
- edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
- markDirty
- }
- /**
- * Called when X6 adds an edge
- */
- function addEdgeFromX6(edge: WorkflowEdgeStore) {
- edges.value.push(edge)
- markDirty
- }
- /**
- * Called when X6 removes an edge
- */
- function removeEdgeFromX6(edgeId: string) {
- edges.value = edges.value.filter(e => e.id !== edgeId)
- markDirty
  }
  // ============================================================================
  // History Management
@@ -590,14 +550,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  clearDraft,
  hasDraft,
  getDraftInfo,
- // X6 sync methods (without history, called by useX6Sync)
+ // Canvas position sync (lightweight, no history)
  markDirty,
- addNodeFromX6,
  updateNodePosition,
- updateNodeFromX6,
- removeNodeFromX6,
- addEdgeFromX6,
- removeEdgeFromX6,
  // Getters
  getNodeById,
  } as const
