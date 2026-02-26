@@ -15,15 +15,12 @@ export interface NodePaletteItemData {
 const props = defineProps<{
  node: NodePaletteItemData
 }>
-const emit = defineEmits<{
- dragStart: [nodeData: NodePaletteItemData, event: MouseEvent]
-}>
 /**
- * Handle drag start from the grip handle.
- * Only the grip handle triggers drag - not the entire item.
+ * Handle drag start — set node type in dataTransfer for canvas drop handler.
  */
-function handleDragStart(event: MouseEvent) {
- emit('dragStart', props.node, event)
+function handleDragStart(event: DragEvent) {
+ event.dataTransfer?.setData('application/vueflow', props.node.type)
+ event.dataTransfer!.effectAllowed = 'move'
 }
 /**
  * Get gradient classes for icon background based on color.
@@ -67,16 +64,17 @@ function getHoverGlow(color?: string): string {
 </script>
 <template>
  <div
+ draggable="true"
  class="group flex items-center gap-3 text-sm rounded-xl
  bg-card/70 backdrop-blur-sm border border-border/50
- transition-all duration-300
+ transition-all duration-300 cursor-grab active:cursor-grabbing
  hover:bg-card/90 hover:shadow-md":class="getHoverGlow(node.color)"
+ @dragstart="handleDragStart"
  >
  <!-- Drag Handle (6-dot grip) -->
  <div
- class=".5 rounded-lg bg-muted/50 cursor-grab active:cursor-grabbing
+ class=".5 rounded-lg bg-muted/50
  hover:bg-muted transition-colors duration-200"
- @mousedown.prevent="handleDragStart"
  >
  <span class="icon-[lucide--grip-vertical] text-lg text-muted-foreground" />
  </div>
