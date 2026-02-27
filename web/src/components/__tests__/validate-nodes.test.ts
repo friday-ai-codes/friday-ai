@@ -10,10 +10,10 @@ describe('validateNodeTypes 脚本验证', => {
  const content = fs.readFileSync(scriptPath, 'utf-8')
  expect(content).toContain('node-types')
  })
- it('脚本应包含三文件解析逻辑', => {
+ it('脚本应包含 NodePalette 解析逻辑', => {
  const content = fs.readFileSync(scriptPath, 'utf-8')
- expect(content).toContain('nodeTypeMapping')
  expect(content).toContain('NodePalette')
+ expect(content).toContain('getPaletteTypes')
  })
  it('脚本应区分连接失败和节点不一致', => {
  const content = fs.readFileSync(scriptPath, 'utf-8')
