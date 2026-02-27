@@ -185,7 +185,7 @@ async function testEmbeddingConnection {
  toast.success(`Embedding API 连接成功，维度: ${result.dimension}`)
  }
  else if (result.status === 'warning') {
- toast.warning(result.message)
+ toast.warning(result.message ?? '连接警告')
  }
  else {
  toast.error(`Embedding API 连接失败: ${result.message}`)
