@@ -8,40 +8,6 @@ export interface NodeStyleTokens {
  iconColor: string
  ringColor: string
 }
-/** 节点执行状态：idle 为默认静态，其余四种对应执行生命周期 */
-export type NodeExecutionStatus = 'idle' | 'running' | 'success' | 'failed' | 'skipped'
-export interface ExecutionStyleTokens {
- borderColor: string
- glowClass: string
- iconComponent: string | null
-}
-const EXECUTION_STYLES: Record<Exclude<NodeExecutionStatus, 'idle'>, ExecutionStyleTokens> = {
- running: {
- borderColor: 'border-blue-500',
- glowClass: 'node-execution-running',
- iconComponent: 'Loader2',
- },
- success: {
- borderColor: 'border-emerald-500',
- glowClass: 'node-execution-success',
- iconComponent: 'Check',
- },
- failed: {
- borderColor: 'border-red-500',
- glowClass: 'node-execution-failed',
- iconComponent: 'X',
- },
- skipped: {
- borderColor: 'border-gray-400',
- glowClass: 'node-execution-skipped',
- iconComponent: null,
- },
-}
-/** 根据执行状态返回对应样式 token，idle 返回 null（使用默认样式） */
-export function getExecutionStyle(status: NodeExecutionStatus): ExecutionStyleTokens | null {
- if (status === 'idle') return null
- return EXECUTION_STYLES[status]
-}
 const COLOR_STYLES: Record<NodeColorKey, NodeStyleTokens> = {
  blue: {
  borderColor: 'border-blue-500/50',
