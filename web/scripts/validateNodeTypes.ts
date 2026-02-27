@@ -12,24 +12,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { nodeTypeMapping } from '../src/components/workflow/x6/nodeTypeMapping'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8000'
-// -- 提取前端节点列表 --
-/** 从 nodeTypeMapping（直接 import，纯 TS 无 Vue 依赖）提取 */
-function getMappingTypes: Set<string> {
- return new Set(nodeTypeMapping.map(m => m.workflowType))
-}
-/** 从 nodeRegistry.ts 用正则提取 shape key */
-function getRegistryTypes: Set<string> {
- const file = path.resolve(__dirname, '../src/components/workflow/x6/nodeRegistry.ts')
- const content = fs.readFileSync(file, 'utf-8')
- const types = new Set<string>
- for (const match of content.matchAll(/^\s+(\w+):\s*X6/gm)) {
- types.add(match[1])
- }
- return types
-}
 /** 从 NodePalette.vue 用正则提取 type 字段 */
 function getPaletteTypes: Set<string> {
  const file = path.resolve(__dirname, '../src/components/workflow/sidebar/NodePalette.vue')
@@ -66,21 +50,14 @@ async function main: Promise<void> {
  console.error('Fetch error:', err)
  process.exit(2)
  }
- // 2. 提取前端三文件节点列表
- const mappingSet = getMappingTypes
- const registrySet = getRegistryTypes
+ // 2. 提取前端节点列表（NodePalette 为唯一权威来源）
  const paletteSet = getPaletteTypes
  // 3. 对比
- const checks = [
- { name: 'nodeTypeMapping', missing: diff(backendSet, mappingSet), extra: diff(mappingSet, backendSet) },
- { name: 'nodeRegistry', missing: diff(backendSet, registrySet), extra: diff(registrySet, backendSet) },
- { name: 'NodePalette', missing: diff(backendSet, paletteSet), extra: diff(paletteSet, backendSet) },
- ]
+ const missing = diff(backendSet, paletteSet)
+ const extra = diff(paletteSet, backendSet)
  let hasError = false
- for (const c of checks) {
- if (c.missing.length) { console.error(`[${c.name}] missing: ${c.missing.join(', ')}`); hasError = true }
- if (c.extra.length) { console.error(`[${c.name}] extra: ${c.extra.join(', ')}`); hasError = true }
- }
+ if (missing.length) { console.error(`[NodePalette] missing: ${missing.join(', ')}`); hasError = true }
+ if (extra.length) { console.error(`[NodePalette] extra: ${extra.join(', ')}`); hasError = true }
  if (hasError) {
  process.exit(1)
  }

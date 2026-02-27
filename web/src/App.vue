@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { ModalsContainer } from 'vue-final-modal'
-import { TeleportContainer } from '~/components/workflow/x6/nodeRegistry'
 // 设置页面默认标题
 useHead({
  title: 'Friday AI',
@@ -13,5 +12,4 @@ useHead({
 <template>
  <RouterView />
  <ModalsContainer />
- <TeleportContainer />
 </template>
