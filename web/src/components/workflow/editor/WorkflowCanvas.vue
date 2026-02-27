@@ -4,10 +4,15 @@
  *
  * Phase: basic canvas + dot background + store sync.
  * Phase: connection validation, gradient edges, sidebar drag-and-drop.
+ * Phase: MiniMap, Controls plugins + node-click/pane-click event wiring.
  */
-import type { NodeDragEvent, Connection } from '@vue-flow/core'
-import { VueFlow } from '@vue-flow/core'
+import type { NodeDragEvent, NodeMouseEvent, Connection } from '@vue-flow/core'
+import { VueFlow, SelectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
+import { MiniMap } from '@vue-flow/minimap'
+import { Controls } from '@vue-flow/controls'
+import '@vue-flow/minimap/dist/style.css'
+import '@vue-flow/controls/dist/style.css'
 import { storeToRefs } from 'pinia'
 import { computed, markRaw } from 'vue'
 import { toast } from 'vue-sonner'
@@ -29,6 +34,12 @@ function onNodeDragStop(event: NodeDragEvent) {
  store.updateNodePosition(node.id, node.position)
  }
 }
+function onNodeClick({ node }: NodeMouseEvent) {
+ store.selectNode(node.id)
+}
+function onPaneClick {
+ store.selectNode(null)
+}
 function onConnect(connection: Connection) {
  const error = getValidationError(connection)
  if (error) {
@@ -49,7 +60,11 @@ function onConnect(connection: Connection) {
 <template>
  <div class="h-full w-full bg-background">
  <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":fit-view-on-init="true"
+ multi-selection-key-code="Shift"
+ selection-key-code="Shift":selection-mode="SelectionMode.Partial"
  @node-drag-stop="onNodeDragStop"
+ @node-click="onNodeClick"
+ @pane-click="onPaneClick"
  @connect="onConnect"
  @dragover="onDragOver"
  @drop="onDrop"
@@ -57,6 +72,14 @@ function onConnect(connection: Connection) {
  <Background
  variant="dots":gap="35":size="1.5"
  color="#3b82f620"
+ />
+ <MiniMap
+ position="bottom-right":pannable="true":zoomable="true":mask-color="'rgba(0, 0, 0, 0.08)'"
+ class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
+ />
+ <Controls
+ position="bottom-left":show-zoom="true":show-fit-view="true":show-interactive="false"
+ class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
  />
  </VueFlow>
  </div>
