@@ -50,17 +50,15 @@ export function useKeyboardShortcuts {
  event.preventDefault
  clipboard.value.forEach(copiedNode => {
  const storeNode = store.nodes.find(n => n.id === copiedNode.id)
- // 从 store 节点或剪贴板快照构造新节点
- const source = storeNode ?? copiedNode
  // 优先使用 store 数据（含最新编辑），回退到 VueFlow GraphNode 的 data 字段
+ const data = copiedNode.data as Record<string, unknown> | undefined
  const sourceData = storeNode
  ? JSON.parse(JSON.stringify(storeNode)): {
- ...JSON.parse(JSON.stringify(source.data ?? {})),
- id: source.id,
- nodeType: source.type ?? (source.data as Record<string, unknown>)?.nodeType ?? '',
- name: (source.data as Record<string, unknown>)?.name ?? '',
- description: (source.data as Record<string, unknown>)?.description ?? '',
- config: (source.data as Record<string, unknown>)?.config ?? {},
+ id: copiedNode.id,
+ nodeType: copiedNode.type ?? data?.nodeType ?? '',
+ name: data?.name ?? '',
+ description: data?.description ?? '',
+ config: data?.config ?? {},
  timeout: null,
  retryCount: 0,
  retryDelay: 0,

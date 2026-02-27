@@ -3,16 +3,16 @@
  * BaseWorkflowNode - 所有自定义节点的基础壳组件
  *
  * 负责：glassmorphism 外观、动态 Handle 渲染、选中态高亮。
- * 子节点通过 #icon 和 #content slot 注入内容。
+ * 图标和颜色从 nodeVisuals 统一数据源获取。
  */
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NodeToolbar } from '@vue-flow/node-toolbar'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-import { getNodeDefinition } from '~/types/workflow/registry'
 import { getDefaultPortsForNodeType } from '~/components/workflow/x6/ports/portGroups'
 import { generateShortId } from '~/utils/shortId'
+import { getNodeVisual } from './nodeVisuals'
 import { useNodeStyle } from './composables/useNodeStyle'
 const props = withDefaults(defineProps<{
  id: string
@@ -28,8 +28,8 @@ const props = withDefaults(defineProps<{
 }>, { hideHandles: 'none' })
 const store = useWorkflowsStore
 const { getSelectedNodes } = useVueFlow
-const nodeDef = computed( => getNodeDefinition(props.data.nodeType))
-const style = computed( => useNodeStyle(nodeDef.value?.category ?? '').value)
+const visual = computed( => getNodeVisual(props.data.nodeType))
+const style = computed( => useNodeStyle(visual.value.color).value)
 const ports = computed( => getDefaultPortsForNodeType(props.data.nodeType))
 const inputPorts = computed( => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
@@ -99,7 +99,7 @@ function handleCopy {
  <div class="flex items-center gap-2 mb-2">
  <div:class="['bg-gradient-to-br rounded-lg .5', style.iconBg]">
  <slot name="icon">
- <div class="w-4 " />
+ <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
  </slot>
  </div>
  <span class="text-sm font-medium text-foreground truncate">

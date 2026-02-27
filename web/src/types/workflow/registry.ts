@@ -62,7 +62,7 @@ export const NODE_REGISTRY = {
  } satisfies NodeTypeDefinition<AIPromptConfig>,
  ai_coding_dispatcher: {
  nodeType: 'ai_coding_dispatcher',
- displayName: 'AI 编码指派器',
+ displayName: 'AI 编码指派',
  description: '分析需求并生成编码任务',
  icon: 'icon-[lucide--code-2]',
  color: 'from-blue-500 to-cyan-400',
@@ -84,7 +84,7 @@ export const NODE_REGISTRY = {
  } satisfies NodeTypeDefinition<FetchWorkItemConfig>,
  feishu_event_trigger: {
  nodeType: 'feishu_event_trigger',
- displayName: '飞书事件触发器',
+ displayName: '飞书事件',
  description: '监听飞书工作项事件',
  icon: 'icon-[lucide--zap]',
  color: 'from-amber-500 to-orange-400',
@@ -117,7 +117,7 @@ export const NODE_REGISTRY = {
  } satisfies NodeTypeDefinition<AIVariableExtractorConfig>,
  context_retrieval: {
  nodeType: 'context_retrieval',
- displayName: '召回上下文',
+ displayName: '上下文检索',
  description: '从代码库检索相关代码片段',
  icon: 'icon-[lucide--search-code]',
  color: 'from-violet-500 to-purple-400',
@@ -139,7 +139,7 @@ export const NODE_REGISTRY = {
  } satisfies NodeTypeDefinition<FetchProjectInfoConfig>,
  wait_feishu_field: {
  nodeType: 'wait_feishu_field',
- displayName: '等待飞书字段',
+ displayName: '等待飞书',
  description: '等待飞书工作项字段满足条件',
  icon: 'icon-[lucide--clock]',
  color: 'from-amber-500 to-orange-400',
