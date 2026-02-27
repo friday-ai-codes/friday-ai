@@ -94,7 +94,7 @@ function getNodeRowClass(nodeExec: NodeExecution, isSelected: boolean) {
  running: 'border-blue-400/60 shadow-[0_0_8px_rgba(59,130,246,0.15)] node-running-border',
  completed: 'border-green-400/40 shadow-[0_0_6px_rgba(34,197,94,0.1)]',
  failed: 'border-red-400/50 shadow-[0_0_8px_rgba(239,68,68,0.15)]',
- skipped: 'opacity-50',
+ skipped: 'opacity-50 grayscale',
  }
  return cn(base, statusBorders[nodeExec.status] || '', 'hover:bg-muted/50 hover:border-primary/30')
 }
