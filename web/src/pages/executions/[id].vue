@@ -24,6 +24,7 @@ import { Progress } from '~/components/ui/progress'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
+import { getNodeVisual, type NodeColorKey } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { cn } from '~/lib/utils'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 const route = useRoute
@@ -89,6 +90,29 @@ const statusConfig: Record<string, { icon: string, color: string, bg: string, la
  timeout: { icon: 'lucide--alarm-clock-off', color: 'text-red-500', bg: 'bg-red-100 dark:bg-red-900/30', label: '超时' },
 }
 const getStatusConfig = (status: string) => statusConfig[status] || statusConfig.pending
+// 节点行状态边框样式
+function getNodeRowClass(nodeExec: NodeExecution, isSelected: boolean) {
+ const base = ' rounded-xl border cursor-pointer transition-all duration-300'
+ if (isSelected) return cn(base, 'border-primary bg-primary/5')
+ const statusBorders: Record<string, string> = {
+ running: 'border-blue-400/60 shadow-[0_0_8px_rgba(59,130,246,0.15)] node-running-border',
+ completed: 'border-green-400/40 shadow-[0_0_6px_rgba(34,197,94,0.1)]',
+ failed: 'border-red-400/50 shadow-[0_0_8px_rgba(239,68,68,0.15)]',
+ skipped: 'opacity-50',
+ }
+ return cn(base, statusBorders[nodeExec.status] || '', 'hover:bg-muted/50 hover:border-primary/30')
+}
+// 节点颜色映射 — 与 useNodeStyle 保持一致
+const nodeColorMap: Record<NodeColorKey, { bg: string, text: string }> = {
+ blue: { bg: 'from-blue-500/20 to-cyan-400/10', text: 'text-blue-500' },
+ green: { bg: 'from-emerald-500/20 to-teal-400/10', text: 'text-emerald-500' },
+ purple: { bg: 'from-violet-500/20 to-purple-400/10', text: 'text-violet-500' },
+ orange: { bg: 'from-amber-500/20 to-orange-400/10', text: 'text-amber-500' },
+}
+function getNodeColor(nodeType: string) {
+ const visual = getNodeVisual(nodeType)
+ return nodeColorMap[visual.color] ?? nodeColorMap.blue
+}
 const progress = computed( => currentExecution.value?.progress || 0)
 const duration = computed( => {
  if (!currentExecution.value?.duration)
@@ -410,27 +434,28 @@ function formatTime(dateStr: string | null) {
  <ScrollArea class="h-[600px] pr-4">
  <div class="space-y-3">
  <div
- v-for="nodeExec in currentExecution.node_executions":key="nodeExec.id":class="cn(
- ' rounded-xl border cursor-pointer transition-all duration-300',
- selectedNodeExecution?.id === nodeExec.id
- ? 'border-primary bg-primary/5': 'hover:bg-muted/50 hover:border-primary/30',
- )"
+ v-for="nodeExec in currentExecution.node_executions":key="nodeExec.id":class="getNodeRowClass(nodeExec, selectedNodeExecution?.id === nodeExec.id)"
  @click="selectedNodeExecution = nodeExec"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div:class="cn('.5 rounded-lg', getStatusConfig(nodeExec.status).bg)">
+ <!-- 节点类型图标 -->
+ <div:class="cn('bg-gradient-to-br .5 rounded-lg', getNodeColor(nodeExec.node_type).bg)">
+ <component:is="getNodeVisual(nodeExec.node_type).icon"
+ class="w-4 ":class="getNodeColor(nodeExec.node_type).text"
+ />
+ </div>
+ <div>
+ <div class="font-medium flex items-center gap-2">
+ {{ nodeExec.node_name }}
+ <!-- 内联状态指示器 -->
  <span
- class="w-4 ":class="[
+ class="w-3 ":class="[
  `icon-[${getStatusConfig(nodeExec.status).icon}]`,
  getStatusConfig(nodeExec.status).color,
  getStatusConfig(nodeExec.status).animate && 'animate-spin',
  ]"
  />
- </div>
- <div>
- <div class="font-medium">
- {{ nodeExec.node_name }}
  </div>
  <div class="text-xs text-muted-foreground">
  {{ nodeExec.node_type }}
@@ -615,3 +640,18 @@ function formatTime(dateStr: string | null) {
  </Dialog>
  </div>
 </template>
+<style scoped>
+.node-running-border {
+ animation: running-pulse 2s ease-in-out infinite;
+}
+@keyframes running-pulse {
+ 0%, 100% {
+ border-color: rgba(59, 130, 246, 0.3);
+ box-shadow: 0 0 4px rgba(59, 130, 246, 0.05);
+ }
+ 50% {
+ border-color: rgba(59, 130, 246, 0.6);
+ box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+ }
+}
+</style>
