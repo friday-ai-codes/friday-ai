@@ -55,7 +55,7 @@ export const useExecutionsStore = defineStore('executions', => {
  const error = ref<string | null>(null)
  // WebSocket connection
  const wsUrl = ref<string | undefined>(undefined)
- const { data: wsData, close: wsClose, open: wsOpen } = useWebSocket(wsUrl, {
+ const { data: wsData, close: wsClose, open: wsOpen, status: wsStatus } = useWebSocket(wsUrl, {
  immediate: false,
  autoReconnect: {
  retries: 3,
@@ -284,5 +284,6 @@ export const useExecutionsStore = defineStore('executions', => {
  disconnectWebSocket,
  startAutoRefresh,
  stopAutoRefresh,
+ wsStatus,
  }
 })
