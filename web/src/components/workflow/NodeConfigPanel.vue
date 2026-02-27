@@ -2,7 +2,7 @@
 import { watchDebounced } from '@vueuse/core'
 import { Check, Copy, Settings, Trash2, Wand2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -32,6 +32,14 @@ import OverrideConfirmDialog from './validation/OverrideConfirmDialog.vue'
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { selectedNodeId, nodes, edges } = storeToRefs(store)
+// Esc 键关闭面板
+function onEscKey(e: KeyboardEvent) {
+ if (e.key === 'Escape' && selectedNodeId.value) {
+ store.selectNode(null)
+ }
+}
+onMounted( => document.addEventListener('keydown', onEscKey))
+onUnmounted( => document.removeEventListener('keydown', onEscKey))
 // Compute selectedNode directly in component to ensure reactivity
 const selectedNode = computed( => {
  if (!selectedNodeId.value)
@@ -340,7 +348,7 @@ function getOutputFieldCount: number {
  >
  <div
  v-if="selectedNode"
- class="absolute top-0 right-3 bottom-0 w-80 z-20 flex flex-col rounded-2xl bg-card/90 backdrop-blur-md border border-border/50 shadow-xl overflow-hidden"
+ class="absolute top-0 right-3 bottom-0 w-[400px] z-20 flex flex-col rounded-2xl bg-card/90 backdrop-blur-md border border-border/50 shadow-xl overflow-hidden"
  >
  <!-- Header -->
  <div class=" border-b border-border/50">
