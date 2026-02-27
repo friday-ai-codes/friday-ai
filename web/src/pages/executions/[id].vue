@@ -12,6 +12,7 @@ import PlanApprovalPanel from '~/components/execution/PlanApprovalPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import {
  Dialog,
  DialogContent,
@@ -524,11 +525,29 @@ function formatTime(dateStr: string | null) {
  @answered="store.fetchExecution(executionId)"
  />
  <!-- Error message -->
- <div v-if="nodeExec.error_message" class=" rounded-lg bg-destructive/10 text-sm text-destructive">
+ <Collapsible v-if="nodeExec.error_message":default-open="true">
+ <CollapsibleTrigger class="flex items-center gap-2 w-full group cursor-pointer">
+ <span class="icon-[lucide--chevron-right] w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+ <span class="text-xs font-medium text-destructive">错误信息</span>
+ </CollapsibleTrigger>
+ <CollapsibleContent>
+ <div class="mt-2 rounded-lg bg-destructive/10 text-sm text-destructive">
  {{ nodeExec.error_message }}
+ <pre
+ v-if="nodeExec.error_traceback"
+ class="mt-2 rounded bg-destructive/5 text-xs overflow-auto max- font-mono whitespace-pre-wrap"
+ >{{ nodeExec.error_traceback }}</pre>
  </div>
+ </CollapsibleContent>
+ </Collapsible>
  <!-- Input/Output data -->
- <div class="grid gap-4 md:grid-cols-2">
+ <Collapsible>
+ <CollapsibleTrigger class="flex items-center gap-2 w-full group cursor-pointer">
+ <span class="icon-[lucide--chevron-right] w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+ <span class="text-xs font-medium text-muted-foreground">输入 / 输出</span>
+ </CollapsibleTrigger>
+ <CollapsibleContent>
+ <div class="mt-2 grid gap-4 md:grid-cols-2">
  <div>
  <div class="text-xs font-medium text-muted-foreground mb-2">
  输入
@@ -542,13 +561,18 @@ function formatTime(dateStr: string | null) {
  <pre class=" rounded-lg bg-muted text-xs overflow-auto max-">{{ JSON.stringify(nodeExec.output_data, null, 2) }}</pre>
  </div>
  </div>
+ </CollapsibleContent>
+ </Collapsible>
  <!-- Container logs -->
- <div v-if="nodeExec.container_logs">
- <div class="text-xs font-medium text-muted-foreground mb-2">
- 日志
- </div>
- <pre class=" rounded-lg bg-black text-green-400 text-xs overflow-auto max- font-mono">{{ nodeExec.container_logs }}</pre>
- </div>
+ <Collapsible v-if="nodeExec.container_logs">
+ <CollapsibleTrigger class="flex items-center gap-2 w-full group cursor-pointer">
+ <span class="icon-[lucide--chevron-right] w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+ <span class="text-xs font-medium text-muted-foreground">日志</span>
+ </CollapsibleTrigger>
+ <CollapsibleContent>
+ <pre class="mt-2 rounded-lg bg-black text-green-400 text-xs overflow-auto max- font-mono">{{ nodeExec.container_logs }}</pre>
+ </CollapsibleContent>
+ </Collapsible>
  <!-- Approval action -->
  <div v-if="nodeExec.status === 'waiting_approval'" class="flex gap-2">
  <Button size="sm" @click.stop="openApprovalDialog(nodeExec)">
