@@ -582,6 +582,9 @@ function formatTime(dateStr: string | null) {
  <CollapsibleTrigger class="flex items-center gap-2 w-full group cursor-pointer">
  <span class="icon-[lucide--chevron-right] w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
  <span class="text-xs font-medium text-muted-foreground">输入 / 输出</span>
+ <span class="text-xs text-muted-foreground/60 truncate ml-auto max-w-[50%]">
+ {{ jsonKeysSummary(nodeExec.input_data) }} → {{ jsonKeysSummary(nodeExec.output_data) }}
+ </span>
  </CollapsibleTrigger>
  <CollapsibleContent>
  <div class="mt-2 grid gap-4 md:grid-cols-2">
