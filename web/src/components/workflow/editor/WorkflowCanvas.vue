@@ -22,6 +22,7 @@ import { generateShortId } from '~/utils/shortId'
 import { toVueFlowNodes, toVueFlowEdges } from './composables/useWorkflowTransform'
 import { useConnectionValidator, getValidationError } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
+import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
 import { nodeTypes } from './nodes'
 import GradientEdge from './edges/GradientEdge.vue'
 const store = useWorkflowsStore
@@ -32,6 +33,7 @@ const edgeTypes = { gradient: markRaw(GradientEdge) }
 const { getSelectedNodes } = useVueFlow
 const { validateConnection } = useConnectionValidator
 const { onDragOver, onDrop } = useDragAndDrop
+useKeyboardShortcuts
 /** 多选节点数量 */
 const multiSelectCount = computed( => getSelectedNodes.value.length)
 function onNodeDragStop(event: NodeDragEvent) {
