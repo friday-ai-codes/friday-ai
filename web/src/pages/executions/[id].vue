@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import { useTimeoutPoll } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import AICodeReviewPanel from '~/components/execution/AICodeReviewPanel.vue'
@@ -32,7 +31,7 @@ const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
 const store = useExecutionsStore
-const { currentExecution, loading, error } = storeToRefs(store)
+const { currentExecution, loading, error, wsStatus } = storeToRefs(store)
 // Selected node for detail view
 const selectedNodeExecution = ref<NodeExecution | null>(null)
 // Approval dialog state
@@ -47,33 +46,29 @@ const triggering = ref(false)
 function isActiveStatus(status?: string) {
  return ['running', 'pending', 'queued', 'paused', 'waiting_approval', 'waiting_event', 'suspended'].includes(status || '')
 }
-const { pause: stopPolling, resume: startPolling } = useTimeoutPoll(
- async => {
- if ((route.params as { id: string }).id === executionId.value) {
- await store.fetchExecution(executionId.value)
- if (!isActiveStatus(currentExecution.value?.status)) {
- stopPolling
- }
- }
- else {
- stopPolling
- }
- },
- 5000,
- { immediate: false },
-)
+/** WebSocket 断线检测：仅在执行活跃时关注连接状态 */
+const wsDisconnected = computed( => {
+ if (!currentExecution.value) return false
+ if (!isActiveStatus(currentExecution.value.status)) return false
+ return wsStatus.value === 'CLOSED'
+})
 onMounted(async => {
  await store.fetchExecution(executionId.value)
  if (isActiveStatus(currentExecution.value?.status)) {
- startPolling
+ store.connectWebSocket(executionId.value)
  }
 })
-watch( => currentExecution.value?.status, (newStatus) => {
- if (isActiveStatus(newStatus)) {
- startPolling
+onUnmounted( => {
+ store.disconnectWebSocket
+})
+watch( => currentExecution.value?.status, (newStatus, oldStatus) => {
+ if (isActiveStatus(newStatus) && !isActiveStatus(oldStatus)) {
+ // 执行变为活跃状态，连接 WebSocket
+ store.connectWebSocket(executionId.value)
  }
- else {
- stopPolling
+ else if (!isActiveStatus(newStatus) && isActiveStatus(oldStatus)) {
+ // 执行结束，断开 WebSocket
+ store.disconnectWebSocket
  }
 })
 // Status helpers
@@ -237,6 +232,29 @@ function formatTime(dateStr: string | null) {
  <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/20 to-secondary/40 rounded-full blur-3xl" />
  <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-primary/10 rounded-full blur-3xl" />
  </div>
+ <!-- WebSocket 断线警告条 -->
+ <Transition
+ enter-active-class="transition-all duration-300 ease-out"
+ enter-from-class="-translate-y-2 opacity-0"
+ enter-to-class="translate-y-0 opacity-100"
+ leave-active-class="transition-all duration-200 ease-in"
+ leave-from-class="translate-y-0 opacity-100"
+ leave-to-class="-translate-y-2 opacity-0"
+ >
+ <div
+ v-if="wsDisconnected"
+ class="flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm text-white text-sm px-4 py-2 rounded-2xl shadow-lg"
+ >
+ <span class="icon-[lucide--wifi-off] w-4 " />
+ <span>连接已断开，状态可能不是最新</span>
+ <button
+ class="ml-2 text-xs underline underline-offset-2 hover:no-underline"
+ @click="store.connectWebSocket(executionId)"
+ >
+ 重新连接
+ </button>
+ </div>
+ </Transition>
  <!-- Header -->
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-4">
