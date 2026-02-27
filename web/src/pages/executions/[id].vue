@@ -98,6 +98,19 @@ function getNodeRowClass(nodeExec: NodeExecution, isSelected: boolean) {
  }
  return cn(base, statusBorders[nodeExec.status] || '', 'hover:bg-muted/50 hover:border-primary/30')
 }
+// 文本截断辅助函数
+function truncateText(text: string, maxLen = 80): string {
+ if (text.length <= maxLen) return text
+ return `${text.slice(0, maxLen)}…`
+}
+// JSON 键名摘要：返回形如 "3 keys: foo, bar, baz" 的摘要
+function jsonKeysSummary(data: Record<string, any> | null | undefined): string {
+ if (!data || typeof data !== 'object') return '(空)'
+ const keys = Object.keys(data)
+ if (keys.length === 0) return '(空)'
+ const summary = `${keys.length} keys: ${keys.join(', ')}`
+ return truncateText(summary, 40)
+}
 // 节点颜色映射 — 与 useNodeStyle 保持一致
 const nodeColorMap: Record<NodeColorKey, { bg: string, text: string }> = {
  blue: { bg: 'from-blue-500/20 to-cyan-400/10', text: 'text-blue-500' },
