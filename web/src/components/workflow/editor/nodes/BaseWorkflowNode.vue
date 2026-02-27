@@ -7,13 +7,13 @@
  */
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NodeToolbar } from '@vue-flow/node-toolbar'
-import { Copy, Trash2 } from 'lucide-vue-next'
+import { Check, Copy, Loader2, Trash2, X } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getDefaultPortsForNodeType } from '~/components/workflow/x6/ports/portGroups'
 import { generateShortId } from '~/utils/shortId'
 import { getNodeVisual } from './nodeVisuals'
-import { useNodeStyle } from './composables/useNodeStyle'
+import { useNodeStyle, getExecutionStyle, type NodeExecutionStatus } from './composables/useNodeStyle'
 const props = withDefaults(defineProps<{
  id: string
  data: {
@@ -30,6 +30,11 @@ const store = useWorkflowsStore
 const { getSelectedNodes } = useVueFlow
 const visual = computed( => getNodeVisual(props.data.nodeType))
 const style = computed( => useNodeStyle(visual.value.color).value)
+/** 执行状态：由外部通过 data.executionStatus 驱动 */
+const executionStatus = computed( =>
+ (props.data.executionStatus as NodeExecutionStatus) ?? 'idle',
+)
+const execStyle = computed( => getExecutionStyle(executionStatus.value))
 const ports = computed( => getDefaultPortsForNodeType(props.data.nodeType))
 const inputPorts = computed( => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
@@ -82,11 +87,13 @@ function handleCopy {
  </NodeToolbar>
  <div
  class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
- transition-all duration-200 group
+ transition-all duration-300 group
  hover:shadow-md hover:border-opacity-70":class="[
- style.borderColor,
+ execStyle ? execStyle.borderColor: style.borderColor,
+ execStyle?.glowClass,
  selected ? `ring-2 ${style.ringColor} shadow-lg`: '',
  data.disabled ? 'grayscale opacity-50': '',
+ executionStatus === 'skipped' ? 'opacity-45 grayscale-[0.3]': '',
  ]"
  >
  <!-- Input Handles -->
@@ -99,7 +106,14 @@ function handleCopy {
  <div class="flex items-center gap-2 mb-2">
  <div:class="['bg-gradient-to-br rounded-lg .5', style.iconBg]">
  <slot name="icon">
- <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
+ <!-- 执行状态图标覆盖：running/success/failed 替换原始图标 -->
+ <Loader2 v-if="executionStatus === 'running'" class="w-4 text-blue-500 animate-spin" />
+ <Check v-else-if="executionStatus === 'success'" class="w-4 text-emerald-500" />
+ <X v-else-if="executionStatus === 'failed'" class="w-4 text-red-500" />
+ <component
+ v-else:is="visual.icon"
+ class="w-4 ":class="[style.iconColor, executionStatus === 'skipped' ? 'opacity-50': '']"
+ />
  </slot>
  </div>
  <span class="text-sm font-medium text-foreground truncate">
@@ -116,3 +130,27 @@ function handleCopy {
  />
  </div>
 </template>
+<style>
+/* 执行状态动画 — 不用 scoped，class 名有 node-execution 前缀足够唯一 */
+@keyframes execution-pulse {
+ 0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+ 50% { box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.2); }
+}
+@keyframes execution-breathe {
+ 0%, 100% { transform: scale(1); }
+ 50% { transform: scale(1.02); }
+}
+.node-execution-running {
+ animation: execution-pulse 2s ease-in-out infinite,
+ execution-breathe 2s ease-in-out infinite;
+}
+.node-execution-success {
+ box-shadow: 0 0 8px 2px rgba(16, 185, 129, 0.15);
+}
+.node-execution-failed {
+ box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.15);
+}
+.node-execution-skipped {
+ border-style: dashed;
+}
+</style>
