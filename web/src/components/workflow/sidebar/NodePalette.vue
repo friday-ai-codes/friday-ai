@@ -1,124 +1,87 @@
 <script setup lang="ts">
-import {
- Bot,
- Briefcase,
- CheckCircle,
- CloudUpload,
- FileCode,
- FileText,
- FolderGit2,
- Clock,
- GitBranch,
- GitFork,
- GitMerge,
- GitPullRequest,
- Globe,
- Hourglass,
- Merge,
- MessageSquare,
- Play,
- Search,
- SearchCode,
- Send,
- Terminal,
- Variable,
- Webhook,
-} from 'lucide-vue-next'
+import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 import NodePaletteItem from './NodePaletteItem.vue'
 /**
- * Node type categories with their items.
- * Each category has a color theme for consistent styling.
+ * 节点分组定义 — 名称和描述在这里维护，图标和颜色从 nodeVisuals 统一读取。
  */
-interface NodeCategory {
+interface PaletteGroup {
  name: string
- color: string
- items: NodePaletteItemData
+ items: { type: string, name: string, description: string }
 }
-/**
- * Default node types organized by category.
- * Can be replaced with dynamic data from API in the future.
- */
-const nodeCategories: NodeCategory = [
+const nodeGroups: PaletteGroup = [
  {
  name: '触发器',
- color: 'blue',
  items: [
- { type: 'manual_trigger', name: '手动触发', description: '手动启动工作流', icon: Play, color: 'blue' },
- { type: 'webhook_trigger', name: 'Webhook', description: '通过 HTTP 请求触发', icon: Webhook, color: 'blue' },
- { type: 'feishu_event_trigger', name: '飞书事件', description: '飞书事件触发', icon: MessageSquare, color: 'blue' },
+ { type: 'manual_trigger', name: '手动触发', description: '手动启动工作流' },
+ { type: 'webhook_trigger', name: 'Webhook', description: '通过 HTTP 请求触发' },
+ { type: 'feishu_event_trigger', name: '飞书事件', description: '飞书事件触发' },
  ],
  },
  {
  name: '数据获取',
- color: 'orange',
  items: [
- { type: 'fetch_work_item', name: '获取工作项', description: '从项目获取工作项信息', icon: Briefcase, color: 'orange' },
- { type: 'fetch_project_info', name: '获取项目信息', description: '获取项目详细信息', icon: FileText, color: 'orange' },
- { type: 'context_retrieval', name: '上下文检索', description: '检索相关上下文信息', icon: Search, color: 'orange' },
+ { type: 'fetch_work_item', name: '获取工作项', description: '从项目获取工作项信息' },
+ { type: 'fetch_project_info', name: '获取项目信息', description: '获取项目详细信息' },
+ { type: 'context_retrieval', name: '上下文检索', description: '检索相关上下文信息' },
  ],
  },
  {
  name: '操作',
- color: 'green',
  items: [
- { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求', icon: Globe, color: 'green' },
- { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应', icon: Hourglass, color: 'green' },
+ { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求' },
+ { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应' },
  ],
  },
  {
  name: '集成',
- color: 'blue',
  items: [
- { type: 'create_branch', name: '创建分支', description: '创建 Git 分支', icon: FolderGit2, color: 'blue' },
- { type: 'create_pr', name: '创建 PR', description: '创建 Pull Request', icon: GitPullRequest, color: 'blue' },
- { type: 'merge_pr', name: '合并 PR', description: '合并 Pull Request', icon: GitMerge, color: 'blue' },
- { type: 'mcp_deploy', name: 'MCP 部署', description: 'MCP 服务部署', icon: CloudUpload, color: 'blue' },
+ { type: 'create_branch', name: '创建分支', description: '创建 Git 分支' },
+ { type: 'create_pr', name: '创建 PR', description: '创建 Pull Request' },
+ { type: 'merge_pr', name: '合并 PR', description: '合并 Pull Request' },
+ { type: 'mcp_deploy', name: 'MCP 部署', description: 'MCP 服务部署' },
  ],
  },
  {
  name: '通知',
- color: 'orange',
  items: [
- { type: 'notify_feishu', name: '飞书通知', description: '发送飞书消息通知', icon: Send, color: 'orange' },
+ { type: 'notify_feishu', name: '飞书通知', description: '发送飞书消息通知' },
  ],
  },
  {
  name: 'AI',
- color: 'purple',
  items: [
- { type: 'ai_prompt', name: 'AI Prompt', description: '调用 AI 大语言模型', icon: MessageSquare, color: 'purple' },
- { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务', icon: Bot, color: 'purple' },
- { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量', icon: Variable, color: 'purple' },
- { type: 'variable_extractor', name: '变量提取', description: '提取变量值', icon: Variable, color: 'purple' },
- { type: 'ai_technical_plan', name: 'AI 技术方案', description: 'AI 生成技术方案', icon: FileText, color: 'purple' },
- { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案', icon: FileCode, color: 'purple' },
- { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案', icon: CheckCircle, color: 'purple' },
- { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR', icon: Terminal, color: 'purple' },
- { type: 'ai_code_review', name: 'AI 代码审查', description: 'AI 多维度代码审查', icon: SearchCode, color: 'purple' },
+ { type: 'ai_prompt', name: 'AI Prompt', description: '调用 AI 大语言模型' },
+ { type: 'ai_coding_dispatcher', name: 'AI 编码指派', description: '分析需求分配编码任务' },
+ { type: 'ai_variable_extractor', name: 'AI 变量提取', description: 'AI 提取变量' },
+ { type: 'variable_extractor', name: '变量提取', description: '提取变量值' },
+ { type: 'ai_technical_plan', name: 'AI 技术方案', description: 'AI 生成技术方案' },
+ { type: 'ai_plan_generation', name: 'AI 方案生成', description: 'AI 自动生成技术方案' },
+ { type: 'ai_plan_approval', name: '方案审批', description: '审批技术方案' },
+ { type: 'ai_coding', name: 'AI 编码执行', description: 'AI 自动编码并创建 MR' },
+ { type: 'ai_code_review', name: 'AI 代码审查', description: 'AI 多维度代码审查' },
  ],
  },
  {
  name: '控制流',
- color: 'purple',
  items: [
- { type: 'condition', name: '条件判断', description: '根据条件分支', icon: GitBranch, color: 'purple' },
- { type: 'human_approval', name: '人工审批', description: '等待人工审批', icon: MessageSquare, color: 'purple' },
- { type: 'delay', name: '延时', description: '等待指定时长后继续', icon: Clock, color: 'purple' },
- { type: 'parallel', name: '并行分支', description: '并行执行多个分支', icon: GitFork, color: 'purple' },
- { type: 'join', name: '汇聚', description: '等待所有并行分支完成', icon: Merge, color: 'purple' },
+ { type: 'condition', name: '条件判断', description: '根据条件分支' },
+ { type: 'human_approval', name: '人工审批', description: '等待人工审批' },
+ { type: 'delay', name: '延时', description: '等待指定时长后继续' },
+ { type: 'parallel', name: '并行分支', description: '并行执行多个分支' },
+ { type: 'join', name: '汇聚', description: '等待所有并行分支完成' },
  ],
  },
 ]
-/**
- * Get gradient classes for category badge.
- */
+/** 从 nodeVisuals 获取分组的主色 — 取第一个 item 的颜色 */
+function getGroupColor(group: PaletteGroup): string {
+ return getNodeVisual(group.items[0]?.type ?? '').color
+}
 function getCategoryGradient(color: string): string {
  const gradients: Record<string, string> = {
  blue: 'bg-gradient-to-r from-blue-500 to-cyan-400',
  green: 'bg-gradient-to-r from-emerald-500 to-teal-400',
  purple: 'bg-gradient-to-r from-violet-500 to-purple-400',
  orange: 'bg-gradient-to-r from-amber-500 to-orange-400',
- cyan: 'bg-gradient-to-r from-cyan-500 to-blue-400',
  }
  return gradients[color] || gradients.blue
 }
@@ -144,20 +107,20 @@ function getCategoryGradient(color: string): string {
  </div>
  <!-- Content: Scrollable list of categories -->
  <div class="flex-1 overflow-y-auto space-y-5">
- <div v-for="category in nodeCategories":key="category.name">
+ <div v-for="group in nodeGroups":key="group.name">
  <!-- Category Header -->
  <div class="flex items-center gap-2 mb-2.5">
  <div
- class="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white shadow-sm":class="getCategoryGradient(category.color)"
+ class="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white shadow-sm":class="getCategoryGradient(getGroupColor(group))"
  >
- {{ category.name }}
+ {{ group.name }}
  </div>
  <div class="flex-1 h-px bg-gradient-to-r from-border/50 to-transparent" />
  </div>
  <!-- Node Items -->
  <div class="space-y-1.5">
  <NodePaletteItem
- v-for="item in category.items":key="item.type":node="item"
+ v-for="item in group.items":key="item.type":node-type="item.type":name="item.name":description="item.description"
  />
  </div>
  </div>

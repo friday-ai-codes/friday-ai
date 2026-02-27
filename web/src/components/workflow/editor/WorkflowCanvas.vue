@@ -88,9 +88,8 @@ function handleBatchCopy {
 </script>
 <template>
  <div class="h-full w-full bg-background">
- <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":fit-view-on-init="true"
- multi-selection-key-code="Shift"
- selection-key-code="Shift":selection-mode="SelectionMode.Partial"
+ <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":max-zoom="1.5":min-zoom="0.2"
+ multi-selection-key-code="Shift":selection-mode="SelectionMode.Partial"
  @node-drag-stop="onNodeDragStop"
  @node-click="onNodeClick"
  @pane-click="onPaneClick"

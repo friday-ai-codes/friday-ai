@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
+interface NodePaletteItemData { type: string, name: string, description: string }
 import { storeToRefs } from 'pinia'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'

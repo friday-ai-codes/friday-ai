@@ -21,11 +21,12 @@ export function useDragAndDrop {
  if (!nodeType) return
  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
  const def = getNodeDefinition(nodeType)
+ const dragName = event.dataTransfer?.getData('application/vueflow-name')
  store.addNode({
  id: crypto.randomUUID,
  shortId: generateShortId,
  nodeType,
- name: def?.displayName ?? nodeType,
+ name: dragName || def?.displayName || nodeType,
  description: '',
  position,
  config: def ? (def.schema.parse({}) as Record<string, unknown>): {},

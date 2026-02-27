@@ -1,35 +1,37 @@
 /**
  * Vue Flow 节点类型注册
  *
- * 按 NODE_REGISTRY 中每个节点的 category 映射到对应类别组件。
- * parallel/join 特殊节点使用 DynamicPortNode。
+ * 所有节点统一使用 BaseWorkflowNode（图标/颜色由 nodeVisuals 数据源驱动）。
+ * parallel/join 使用 DynamicPortNode（需要动态端口管理）。
  */
 import { markRaw } from 'vue'
 import type { NodeComponent } from '@vue-flow/core'
-import type { NodeCategory, NodeTypeKey } from '~/types/workflow/registry'
+import type { NodeTypeKey } from '~/types/workflow/registry'
 import { NODE_REGISTRY } from '~/types/workflow/registry'
-import TriggerNode from './TriggerNode.vue'
-import ActionNode from './ActionNode.vue'
-import ControlNode from './ControlNode.vue'
-import IntegrationNode from './IntegrationNode.vue'
+import BaseWorkflowNode from './BaseWorkflowNode.vue'
 import DynamicPortNode from './DynamicPortNode.vue'
-/** 类别到组件的映射 */
-const categoryComponents: Record<NodeCategory, NodeComponent> = {
- trigger: markRaw(TriggerNode) as unknown as NodeComponent,
- action: markRaw(ActionNode) as unknown as NodeComponent,
- control: markRaw(ControlNode) as unknown as NodeComponent,
- integration: markRaw(IntegrationNode) as unknown as NodeComponent,
- ai: markRaw(ActionNode) as unknown as NodeComponent,
-}
+import { allNodeTypeKeys } from './nodeVisuals'
+const baseNode = markRaw(BaseWorkflowNode) as unknown as NodeComponent
+const dynamicNode = markRaw(DynamicPortNode) as unknown as NodeComponent
 /** 特殊节点覆盖（parallel/join 使用动态端口组件） */
 const specialNodes: Record<string, NodeComponent> = {
- parallel: markRaw(DynamicPortNode) as unknown as NodeComponent,
- join: markRaw(DynamicPortNode) as unknown as NodeComponent,
+ parallel: dynamicNode,
+ join: dynamicNode,
 }
-/** 从 NODE_REGISTRY 动态生成节点类型映射 */
-export const nodeTypes: Record<string, NodeComponent> = Object.fromEntries(
+/** 从 NODE_REGISTRY + nodeVisuals 合并生成节点类型映射 */
+const registryTypes = Object.fromEntries(
  (Object.keys(NODE_REGISTRY) as NodeTypeKey).map((key) => [
  key,
- specialNodes[key] ?? categoryComponents[NODE_REGISTRY[key].category],
+ specialNodes[key] ?? baseNode,
  ]),
 )
+/** nodeVisuals 中有但 NODE_REGISTRY 中没有的节点类型也注册（如 manual_trigger） */
+const visualOnlyTypes = Object.fromEntries(
+ allNodeTypeKeys
+ .filter((key) => !(key in registryTypes))
+ .map((key) => [key, specialNodes[key] ?? baseNode]),
+)
+export const nodeTypes: Record<string, NodeComponent> = {
+ ...registryTypes,
+ ...visualOnlyTypes,
+}

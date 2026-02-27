@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NodePaletteItemData } from '~/components/workflow/sidebar/NodePaletteItem.vue'
+interface NodePaletteItemData { type: string, name: string, description: string }
 import { ref } from 'vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import { X6WorkflowCanvas } from '~/components/workflow/x6'

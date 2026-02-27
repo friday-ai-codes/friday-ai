@@ -1,65 +1,43 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
-export interface NodePaletteItemData {
- /** Node type identifier */
- type: string
- /** Display name */
- name: string
- /** Description text */
- description: string
- /** Optional Lucide icon component */
- icon?: Component
- /** Color theme for styling */
- color?: string
-}
+import { computed } from 'vue'
+import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 const props = defineProps<{
- node: NodePaletteItemData
+ nodeType: string
+ name: string
+ description: string
 }>
-/**
- * Handle drag start — set node type in dataTransfer for canvas drop handler.
- */
+const visual = computed( => getNodeVisual(props.nodeType))
 function handleDragStart(event: DragEvent) {
- event.dataTransfer?.setData('application/vueflow', props.node.type)
+ event.dataTransfer?.setData('application/vueflow', props.nodeType)
+ event.dataTransfer?.setData('application/vueflow-name', props.name)
  event.dataTransfer!.effectAllowed = 'move'
 }
-/**
- * Get gradient classes for icon background based on color.
- */
-function getIconGradient(color?: string): string {
+function getIconGradient(color: string): string {
  const gradients: Record<string, string> = {
  blue: 'bg-gradient-to-br from-blue-500/20 to-cyan-400/10',
  green: 'bg-gradient-to-br from-emerald-500/20 to-teal-400/10',
  purple: 'bg-gradient-to-br from-violet-500/20 to-purple-400/10',
  orange: 'bg-gradient-to-br from-amber-500/20 to-orange-400/10',
- cyan: 'bg-gradient-to-br from-cyan-500/20 to-blue-400/10',
  }
- return gradients[color || 'blue'] || gradients.blue
+ return gradients[color] || gradients.blue
 }
-/**
- * Get text color classes for icon based on color.
- */
-function getIconColor(color?: string): string {
+function getIconColor(color: string): string {
  const colors: Record<string, string> = {
  blue: 'text-blue-500',
  green: 'text-emerald-500',
  purple: 'text-violet-500',
  orange: 'text-amber-500',
- cyan: 'text-cyan-500',
  }
- return colors[color || 'blue'] || colors.blue
+ return colors[color] || colors.blue
 }
-/**
- * Get hover glow classes based on color.
- */
-function getHoverGlow(color?: string): string {
+function getHoverGlow(color: string): string {
  const glows: Record<string, string> = {
  blue: 'group-hover:shadow-blue-500/10 group-hover:border-blue-500/30',
  green: 'group-hover:shadow-emerald-500/10 group-hover:border-emerald-500/30',
  purple: 'group-hover:shadow-violet-500/10 group-hover:border-violet-500/30',
  orange: 'group-hover:shadow-amber-500/10 group-hover:border-amber-500/30',
- cyan: 'group-hover:shadow-cyan-500/10 group-hover:border-cyan-500/30',
  }
- return glows[color || 'blue'] || glows.blue
+ return glows[color] || glows.blue
 }
 </script>
 <template>
@@ -68,7 +46,7 @@ function getHoverGlow(color?: string): string {
  class="group flex items-center gap-3 text-sm rounded-xl
  bg-card/70 backdrop-blur-sm border border-border/50
  transition-all duration-300 cursor-grab active:cursor-grabbing
- hover:bg-card/90 hover:shadow-md":class="getHoverGlow(node.color)"
+ hover:bg-card/90 hover:shadow-md":class="getHoverGlow(visual.color)"
  @dragstart="handleDragStart"
  >
  <!-- Drag Handle (6-dot grip) -->
@@ -80,18 +58,17 @@ function getHoverGlow(color?: string): string {
  </div>
  <!-- Node Icon -->
  <div
- v-if="node.icon"
- class=" rounded-lg transition-transform duration-200 group-hover:scale-105":class="getIconGradient(node.color)"
+ class=" rounded-lg transition-transform duration-200 group-hover:scale-105":class="getIconGradient(visual.color)"
  >
- <component:is="node.icon" class="w-4 ":class="getIconColor(node.color)" />
+ <component:is="visual.icon" class="w-4 ":class="getIconColor(visual.color)" />
  </div>
  <!-- Node Info -->
  <div class="flex-1 min-w-0">
  <div class="font-medium text-foreground text-sm leading-tight">
- {{ node.name }}
+ {{ name }}
  </div>
  <div class="text-[10px] text-muted-foreground truncate mt-0.5">
- {{ node.description }}
+ {{ description }}
  </div>
  </div>
  <!-- Arrow indicator on hover -->
