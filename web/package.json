@@ -17,8 +17,6 @@
  "validate:node-types": "tsx scripts/validateNodeTypes.ts"
  },
  "dependencies": {
- "@antv/x6": "catalog:",
- "@antv/x6-vue-shape": "catalog:",
  "@floating-ui/dom": "catalog:",
  "@floating-ui/vue": "catalog:",
  "@tanstack/vue-query": "catalog:",
