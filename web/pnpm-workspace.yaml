@@ -9,8 +9,6 @@ overrides:
 catalogs:
  default:
  '@antfu/eslint-config': ^7.0.1
- '@antv/x6': 3.1.6
- '@antv/x6-vue-shape': ^3.0.2
  '@floating-ui/dom': 1.7.5
  '@vue-flow/background': 1.3.2
  '@vue-flow/core': 1.48.2
