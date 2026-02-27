@@ -117,6 +117,7 @@ declare module 'vue' {
  FormLabel: typeof import('./components/ui/form/FormLabel.vue')['default']
  FormMessage: typeof import('./components/ui/form/FormMessage.vue')['default']
  FormModal: typeof import('./components/modal/FormModal.vue')['default']
+ GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']
  Input: typeof import('./components/ui/input/Input.vue')['default']
  IntegrationNode: typeof import('./components/workflow/editor/nodes/IntegrationNode.vue')['default']
  IssuesPanel: typeof import('./components/workflow/validation/IssuesPanel.vue')['default']

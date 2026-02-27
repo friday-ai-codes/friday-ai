@@ -60,6 +60,7 @@ function handleCopy {
 }
 </script>
 <template>
+ <div>
  <!-- 单选浮动工具栏：仅单选时显示，多选时隐藏（由画布级统一工具栏接管） -->
  <NodeToolbar:is-visible="selected && !isMultiSelect":position="Position.Top":offset="10"
  >
@@ -114,5 +115,6 @@ function handleCopy {
  v-show="hideHandles !== 'output' && hideHandles !== 'both'":key="port.id":id="port.id"
  type="source":position="Position.Bottom":style="{ left: portLeft(i, outputPorts.length) }"
  />
+ </div>
  </div>
 </template>
