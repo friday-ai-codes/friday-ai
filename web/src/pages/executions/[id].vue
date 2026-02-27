@@ -492,6 +492,12 @@ function formatTime(dateStr: string | null) {
  <div class="text-xs text-muted-foreground">
  {{ nodeExec.node_type }}
  </div>
+ <div
+ v-if="nodeExec.status === 'failed' && nodeExec.error_message"
+ class="text-xs text-destructive/80 truncate max-w-[300px]"
+ >
+ {{ truncateText(nodeExec.error_message) }}
+ </div>
  </div>
  </div>
  <div class="flex items-center gap-2">
