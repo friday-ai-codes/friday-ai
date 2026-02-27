@@ -5,10 +5,14 @@
  * 负责：glassmorphism 外观、动态 Handle 渲染、选中态高亮。
  * 子节点通过 #icon 和 #content slot 注入内容。
  */
-import { Handle, Position } from '@vue-flow/core'
+import { Handle, Position, useVueFlow } from '@vue-flow/core'
+import { NodeToolbar } from '@vue-flow/node-toolbar'
+import { Copy, Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
 import { getDefaultPortsForNodeType } from '~/components/workflow/x6/ports/portGroups'
+import { generateShortId } from '~/utils/shortId'
 import { useNodeStyle } from './composables/useNodeStyle'
 const props = withDefaults(defineProps<{
  id: string
@@ -22,18 +26,60 @@ const props = withDefaults(defineProps<{
  /** 隐藏指定方向的 Handle，供 DynamicPortNode 等自行管理端口 */
  hideHandles?: 'input' | 'output' | 'both' | 'none'
 }>, { hideHandles: 'none' })
+const store = useWorkflowsStore
+const { getSelectedNodes } = useVueFlow
 const nodeDef = computed( => getNodeDefinition(props.data.nodeType))
 const style = computed( => useNodeStyle(nodeDef.value?.category ?? '').value)
 const ports = computed( => getDefaultPortsForNodeType(props.data.nodeType))
 const inputPorts = computed( => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
+/** 多选时隐藏单节点工具栏，改用画布级统一工具栏 */
+const isMultiSelect = computed( => getSelectedNodes.value.length > 1)
 /** 多端口时均匀分布的 left 百分比 */
 function portLeft(index: number, total: number): string {
  if (total <= 1) return '50%'
  return `${((index + 1) / (total + 1)) * 100}%`
 }
+function handleDelete {
+ store.removeNode(props.id)
+}
+function handleCopy {
+ const currentNode = store.nodes.find(n => n.id === props.id)
+ if (!currentNode) return
+ const newNode = {
+ ...JSON.parse(JSON.stringify(currentNode)),
+ id: crypto.randomUUID,
+ shortId: generateShortId,
+ position: {
+ x: (currentNode.position?.x ?? 0) + 50,
+ y: (currentNode.position?.y ?? 0) + 50,
+ },
+ }
+ newNode.name = `${currentNode.name} (副本)`
+ store.addNode(newNode)
+}
 </script>
 <template>
+ <!-- 单选浮动工具栏：仅单选时显示，多选时隐藏（由画布级统一工具栏接管） -->
+ <NodeToolbar:is-visible="selected && !isMultiSelect":position="Position.Top":offset="10"
+ >
+ <div class="flex gap-1 bg-card/90 backdrop-blur-sm border border-border/50 rounded-xl shadow-lg">
+ <button
+ class=".5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+ title="复制节点"
+ @click.stop="handleCopy"
+ >
+ <Copy class="w-3.5 .5" />
+ </button>
+ <button
+ class=".5 rounded-lg hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive"
+ title="删除节点"
+ @click.stop="handleDelete"
+ >
+ <Trash2 class="w-3.5 .5" />
+ </button>
+ </div>
+ </NodeToolbar>
  <div
  class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
  transition-all duration-200 group
