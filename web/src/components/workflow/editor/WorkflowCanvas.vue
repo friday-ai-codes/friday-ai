@@ -5,6 +5,7 @@
  * Phase: basic canvas + dot background + store sync.
  * Phase: connection validation, gradient edges, sidebar drag-and-drop.
  * Phase: MiniMap, Controls plugins + node-click/pane-click event wiring.
+ * Phase: execution status bridge + WS disconnect warning.
  */
 import type { NodeDragEvent, NodeMouseEvent, Connection } from '@vue-flow/core'
 import { Panel, VueFlow, SelectionMode, useVueFlow } from '@vue-flow/core'
@@ -13,7 +14,7 @@ import { MiniMap } from '@vue-flow/minimap'
 import { Controls } from '@vue-flow/controls'
 import '@vue-flow/minimap/dist/style.css'
 import '@vue-flow/controls/dist/style.css'
-import { Copy, Trash2 } from 'lucide-vue-next'
+import { AlertTriangle, Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, markRaw } from 'vue'
 import { toast } from 'vue-sonner'
@@ -23,6 +24,7 @@ import { toVueFlowNodes, toVueFlowEdges } from './composables/useWorkflowTransfo
 import { useConnectionValidator, getValidationError } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
+import { useExecutionStatus } from './composables/useExecutionStatus'
 import { nodeTypes } from './nodes'
 import GradientEdge from './edges/GradientEdge.vue'
 const store = useWorkflowsStore
@@ -34,6 +36,7 @@ const { getSelectedNodes } = useVueFlow
 const { validateConnection } = useConnectionValidator
 const { onDragOver, onDrop } = useDragAndDrop
 useKeyboardShortcuts
+const { isWsDisconnected } = useExecutionStatus
 /** 多选节点数量 */
 const multiSelectCount = computed( => getSelectedNodes.value.length)
 function onNodeDragStop(event: NodeDragEvent) {
@@ -101,6 +104,15 @@ function handleBatchCopy {
  variant="dots":gap="35":size="1.5"
  color="#3b82f620"
  />
+ <!-- WS 断线警告条 -->
+ <Panel v-if="isWsDisconnected" position="top-center">
+ <div class="flex items-center gap-2 bg-amber-500/90 backdrop-blur-sm
+ text-white text-xs px-4 py-2 rounded-xl shadow-lg
+ border border-amber-400/50">
+ <AlertTriangle class="w-3.5 .5 shrink-0" />
+ <span>连接已断开，状态可能不是最新</span>
+ </div>
+ </Panel>
  <MiniMap
  position="bottom-right":pannable="true":zoomable="true":mask-color="'rgba(0, 0, 0, 0.08)'"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
