@@ -20,6 +20,8 @@ logger = structlog.get_logger(__name__)
 DEFAULT_TIMEOUT = 30.0
 # Default base URL for OpenAI-compatible API
 DEFAULT_BASE_URL = "https://api.openai.com"
+# 合法的 provider_type 值（chat 协议系统）
+VALID_PROVIDER_TYPES = frozenset({"openai_chat", "openai_response", "anthropic", "gemini"})
 @dataclass
 class ChatMessage:
  """Chat message structure."""
@@ -98,6 +100,29 @@ async def aget_setting_value(key: str) -> Optional[str]:
  return setting.value
  except SystemSetting.DoesNotExist:
  return None
+def _create_protocol(provider_type: str, api_key: str, base_url: str) -> ProviderProtocol:
+ """根据 provider_type 创建协议实例。
+ Args:
+ provider_type: 协议类型标识
+ api_key: API 密钥
+ base_url: API 基础 URL
+ Returns:
+ ProviderProtocol 实例
+ Raises:
+ ChatServiceError: provider_type 不合法或尚未实现
+ """
+ if provider_type not in VALID_PROVIDER_TYPES:
+ raise ChatServiceError(
+ f"不支持的 provider_type: '{provider_type}'，"
+ f"支持的值: {', '.join(sorted(VALID_PROVIDER_TYPES))}"
+ )
+ if provider_type == "openai_chat":
+ from chat.protocols.openai_chat import OpenAIChatProtocol
+ return OpenAIChatProtocol(api_key=api_key, base_url=base_url)
+ # Phase 将添加 openai_response, anthropic, gemini 协议实现
+ raise ChatServiceError(
+ f"Provider 类型 '{provider_type}' 尚未实现，" f"当前仅支持: openai_chat"
+ )
 def get_chat_service(
  source: Literal["system", "project"],
  project_id: Optional[int] = None,
@@ -136,12 +161,9 @@ def get_chat_service(
  final_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- # 暂时直接使用 OpenAIChatProtocol，Plan 会添加 provider_type 路由
- from chat.protocols.openai_chat import OpenAIChatProtocol
- protocol = OpenAIChatProtocol(
- api_key=final_api_key,
- base_url=final_base_url or DEFAULT_BASE_URL,
- )
+ # 根据 provider_type 选择协议实现
+ provider_type = get_setting_value(SettingKeys.PROVIDER_TYPE) or "openai_chat"
+ protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)
 async def aget_chat_service(
  source: Literal["system", "project"],
@@ -169,10 +191,7 @@ async def aget_chat_service(
  final_base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- # 暂时直接使用 OpenAIChatProtocol，Plan 会添加 provider_type 路由
- from chat.protocols.openai_chat import OpenAIChatProtocol
- protocol = OpenAIChatProtocol(
- api_key=final_api_key,
- base_url=final_base_url or DEFAULT_BASE_URL,
- )
+ # 根据 provider_type 选择协议实现
+ provider_type = await aget_setting_value(SettingKeys.PROVIDER_TYPE) or "openai_chat"
+ protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)
