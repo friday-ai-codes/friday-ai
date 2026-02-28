@@ -19,6 +19,7 @@ class SettingKeys:
  ANTHROPIC_BASE_URL = "anthropic_base_url"
  ANTHROPIC_MODEL = "anthropic_model"
  LLM_PROVIDER_TYPE = "llm_provider_type"
+ PROVIDER_TYPE = "provider_type" # Chat 协议类型: openai_chat/openai_response/anthropic/gemini
  GIT_HTTP_PROXY = "git_http_proxy"
  # Vector Index Settings
  QDRANT_URL = "qdrant_url"
