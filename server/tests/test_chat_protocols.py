@@ -12,7 +12,7 @@ import httpx
 import pytest
 from chat.protocols.base import ProviderProtocol
 from chat.protocols.openai_chat import OpenAIChatProtocol
-from chat.services import ChatCompletionResult, ChatMessage, ChatService, ChatServiceError, Model
+from chat.services import ChatCompletionResult, ChatMessage, ChatService, ChatServiceError, Model, get_chat_service
 # --- ProviderProtocol Interface Tests ---
 class TestProviderProtocolInterface:
  """验证 ProviderProtocol 是 ABC 且包含正确的抽象方法。"""
@@ -286,3 +286,93 @@ class TestFallbackLogicRemoved:
  def test_no_get_headers_method(self) -> None:
  """ChatService 不应有 _get_headers 方法（已移至协议类）。"""
  assert not hasattr(ChatService, "_get_headers")
+# --- Provider Type Configuration Tests (Plan) ---
+class TestSettingKeysProviderType:
+ """验证 SettingKeys 包含 PROVIDER_TYPE。"""
+ def test_provider_type_key_exists(self) -> None:
+ """SettingKeys.PROVIDER_TYPE 存在且值正确。"""
+ from system.models import SettingKeys as SK
+ assert hasattr(SK, "PROVIDER_TYPE")
+ assert SK.PROVIDER_TYPE == "provider_type"
+ def test_provider_type_independent_from_llm_provider(self) -> None:
+ """PROVIDER_TYPE 与 LLM_PROVIDER_TYPE 是独立字段。"""
+ from system.models import SettingKeys as SK
+ assert SK.PROVIDER_TYPE != SK.LLM_PROVIDER_TYPE
+class TestValidProviderTypes:
+ """验证 VALID_PROVIDER_TYPES 常量。"""
+ def test_contains_exactly_four_values(self) -> None:
+ """VALID_PROVIDER_TYPES 应恰好包含四个值。"""
+ from chat.services import VALID_PROVIDER_TYPES
+ assert len(VALID_PROVIDER_TYPES) == 4
+ def test_contains_expected_values(self) -> None:
+ """VALID_PROVIDER_TYPES 应包含四种协议类型。"""
+ from chat.services import VALID_PROVIDER_TYPES
+ expected = {"openai_chat", "openai_response", "anthropic", "gemini"}
+ assert VALID_PROVIDER_TYPES == expected
+class TestCreateProtocol:
+ """验证 _create_protocol 工厂辅助函数。"""
+ def test_openai_chat_returns_correct_protocol(self) -> None:
+ """openai_chat 应返回 OpenAIChatProtocol 实例。"""
+ from chat.services import _create_protocol
+ protocol = _create_protocol("openai_chat", "test-key", "https://api.test.com")
+ assert isinstance(protocol, OpenAIChatProtocol)
+ assert protocol.api_key == "test-key"
+ assert protocol.base_url == "https://api.test.com"
+ def test_invalid_type_raises_error(self) -> None:
+ """非法 provider_type 应抛出 ChatServiceError 并列出合法值。"""
+ from chat.services import _create_protocol
+ with pytest.raises(ChatServiceError, match="不支持的 provider_type") as exc_info:
+ _create_protocol("invalid_type", "key", "url")
+ error_msg = str(exc_info.value)
+ assert "anthropic" in error_msg
+ assert "gemini" in error_msg
+ assert "openai_chat" in error_msg
+ assert "openai_response" in error_msg
+ def test_unimplemented_openai_response_raises_error(self) -> None:
+ """openai_response 合法但尚未实现，应给友好错误。"""
+ from chat.services import _create_protocol
+ with pytest.raises(ChatServiceError, match="尚未实现"):
+ _create_protocol("openai_response", "key", "url")
+ def test_unimplemented_anthropic_raises_error(self) -> None:
+ """anthropic 合法但尚未实现，应给友好错误。"""
+ from chat.services import _create_protocol
+ with pytest.raises(ChatServiceError, match="尚未实现"):
+ _create_protocol("anthropic", "key", "url")
+ def test_unimplemented_gemini_raises_error(self) -> None:
+ """gemini 合法但尚未实现，应给友好错误。"""
+ from chat.services import _create_protocol
+ with pytest.raises(ChatServiceError, match="尚未实现"):
+ _create_protocol("gemini", "key", "url")
+class TestFactoryProviderTypeRouting:
+ """验证工厂函数的 provider_type 路由。"""
+ @patch("chat.services.get_setting_value")
+ def test_factory_default_provider_type(self, mock_get_setting: MagicMock) -> None:
+ """无 PROVIDER_TYPE 设置时默认使用 openai_chat。"""
+ # 模拟: API key 存在，provider_type 不存在
+ def setting_side_effect(key: str) -> str | None:
+ if key == "anthropic_api_key":
+ return "test-api-key"
+ if key == "anthropic_base_url":
+ return "https://api.test.com"
+ if key == "provider_type":
+ return None # 不存在
+ return None
+ mock_get_setting.side_effect = setting_side_effect
+ service = get_chat_service(source="system")
+ assert isinstance(service, ChatService)
+ # 验证内部协议是 OpenAIChatProtocol
+ assert isinstance(service._protocol, OpenAIChatProtocol)
+ @patch("chat.services.get_setting_value")
+ def test_factory_reads_provider_type(self, mock_get_setting: MagicMock) -> None:
+ """工厂函数读取 provider_type 设置。"""
+ def setting_side_effect(key: str) -> str | None:
+ if key == "anthropic_api_key":
+ return "test-api-key"
+ if key == "anthropic_base_url":
+ return "https://api.test.com"
+ if key == "provider_type":
+ return "openai_chat"
+ return None
+ mock_get_setting.side_effect = setting_side_effect
+ service = get_chat_service(source="system")
+ assert isinstance(service._protocol, OpenAIChatProtocol)
