@@ -1,22 +1,25 @@
 """Chat service for LLM API calls.
-Provides a unified interface for calling LLM APIs (Claude/OpenAI compatible).
+Provides a unified interface for calling LLM APIs via protocol abstraction.
+ChatService is a thin facade that delegates to ProviderProtocol implementations.
 Serializer Async Pattern:
  在 async view 中使用 DRF/adrf serializer 的统一模式：
  - is_valid: 无 DB 查询时直接调用；有 DB 验证时用 await sync_to_async(s.is_valid)(raise_exception=True)
  - save: 使用 await serializer.asave（adrf serializer）或 await sync_to_async(serializer.save)
 """
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import Literal, Optional
-import httpx
+from typing import TYPE_CHECKING, Literal, Optional
 import structlog
 from common.encryption import decrypt_value
 from projects.models import Project
 from system.models import SettingKeys, SystemSetting
+if TYPE_CHECKING:
+ from chat.protocols.base import ProviderProtocol
 logger = structlog.get_logger(__name__)
 # Default timeout for API calls (30 seconds)
 DEFAULT_TIMEOUT = 30.0
-# Default base URL for Anthropic API
-DEFAULT_BASE_URL = "https://api.anthropic.com"
+# Default base URL for OpenAI-compatible API
+DEFAULT_BASE_URL = "https://api.openai.com"
 @dataclass
 class ChatMessage:
  """Chat message structure."""
@@ -38,29 +41,16 @@ class ChatServiceError(Exception):
  """Chat service error."""
  pass
 class ChatService:
- """Service for LLM API calls."""
- def __init__(
- self,
- api_key: str,
- base_url: Optional[str] = None,
- timeout: float = DEFAULT_TIMEOUT,
- ):
+ """Service for LLM API calls.
+ Thin facade that delegates to a ProviderProtocol implementation.
+ Public interface (chat_completion, get_models) remains unchanged.
+ """
+ def __init__(self, protocol: ProviderProtocol) -> None:
  """Initialize chat service.
  Args:
- api_key: API key for the LLM provider
- base_url: Base URL for the API (defaults to Anthropic API)
- timeout: Request timeout in seconds
+ protocol: Provider protocol instance to delegate calls to
  """
- self.api_key = api_key
- self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
- self.timeout = timeout
- def _get_headers(self) -> dict[str, str]:
- """Get request headers."""
- return {
- "Authorization": f"Bearer {self.api_key}",
- "Content-Type": "application/json",
- "x-api-key": self.api_key, # For Anthropic API compatibility
- }
+ self._protocol = protocol
  async def get_models(self) -> list[Model]:
  """Get available models from the API.
  Returns:
@@ -68,41 +58,7 @@ class ChatService:
  Raises:
  ChatServiceError: If the API call fails
  """
- url = f"{self.base_url}/v1/models"
- logger.info("正在获取模型列表", url=url)
- try:
- async with httpx.AsyncClient(timeout=self.timeout) as client:
- response = await client.get(url, headers=self._get_headers)
- response.raise_for_status
- data = response.json
- models =
- for model_data in data.get("data", ):
- models.append(
- Model(
- id=model_data.get("id", ""),
- name=model_data.get("id", ""), # Use id as name if not provided
- created=model_data.get("created"),
- )
- )
- logger.info("模型列表获取成功", count=len(models))
- return models
- except httpx.TimeoutException:
- logger.error("获取模型列表请求超时")
- raise ChatServiceError("请求超时，请检查网络连接和 Base URL 配置")
- except httpx.HTTPStatusError as e:
- logger.error("获取模型列表 HTTP 错误", status_code=e.response.status_code)
- if e.response.status_code == 401:
- raise ChatServiceError("API Key 无效或已过期")
- elif e.response.status_code == 403:
- raise ChatServiceError("API Key 没有访问权限")
- else:
- raise ChatServiceError(f"API 请求失败: {e.response.status_code}")
- except httpx.RequestError as e:
- logger.error("获取模型列表网络错误", error=str(e))
- raise ChatServiceError(f"网络请求失败: {str(e)}")
- except Exception as e:
- logger.error("获取模型列表未知错误", error=str(e))
- raise ChatServiceError(f"获取模型列表失败: {str(e)}")
+ return await self._protocol.get_models
  async def chat_completion(
  self,
  messages: list[ChatMessage],
@@ -119,69 +75,7 @@ class ChatService:
  Raises:
  ChatServiceError: If the API call fails
  """
- url = f"{self.base_url}/v1/chat/completions"
- logger.info("正在发送对话请求", url=url, model=model)
- payload = {
- "model": model,
- "messages": [{"role": m.role, "content": m.content} for m in messages],
- "max_tokens": max_tokens,
- }
- try:
- async with httpx.AsyncClient(timeout=self.timeout) as client:
- response = await client.post(
- url,
- headers=self._get_headers,
- json=payload,
- )
- response.raise_for_status
- data = response.json
- # Extract content from response
- choices = data.get("choices", )
- if not choices:
- raise ChatServiceError("API 返回空响应")
- message = choices[0].get("message", {})
- content = message.get("content", "")
- result = ChatCompletionResult(
- content=content,
- model=data.get("model", model),
- usage=data.get("usage"),
- )
- logger.info(
- "对话请求成功",
- model=result.model,
- usage=result.usage,
- )
- return result
- except httpx.TimeoutException:
- logger.error("对话请求超时")
- raise ChatServiceError("请求超时，请稍后重试")
- except httpx.HTTPStatusError as e:
- logger.error(
- "对话请求 HTTP 错误",
- status_code=e.response.status_code,
- )
- if e.response.status_code == 401:
- raise ChatServiceError("API Key 无效或已过期")
- elif e.response.status_code == 403:
- raise ChatServiceError("API Key 没有访问权限")
- elif e.response.status_code == 429:
- raise ChatServiceError("请求过于频繁，请稍后重试")
- else:
- # Try to extract error message from response
- try:
- error_data = e.response.json
- error_msg = error_data.get("error", {}).get("message", str(e))
- except Exception:
- error_msg = str(e)
- raise ChatServiceError(f"API 请求失败: {error_msg}")
- except httpx.RequestError as e:
- logger.error("对话请求网络错误", error=str(e))
- raise ChatServiceError(f"网络请求失败: {str(e)}")
- except ChatServiceError:
- raise
- except Exception as e:
- logger.error("对话请求未知错误", error=str(e))
- raise ChatServiceError(f"对话请求失败: {str(e)}")
+ return await self._protocol.send_message(messages, model, max_tokens)
 def get_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）。"""
  try:
@@ -242,10 +136,13 @@ def get_chat_service(
  final_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- return ChatService(
+ # 暂时直接使用 OpenAIChatProtocol，Plan 会添加 provider_type 路由
+ from chat.protocols.openai_chat import OpenAIChatProtocol
+ protocol = OpenAIChatProtocol(
  api_key=final_api_key,
- base_url=final_base_url,
+ base_url=final_base_url or DEFAULT_BASE_URL,
  )
+ return ChatService(protocol=protocol)
 async def aget_chat_service(
  source: Literal["system", "project"],
  project_id: Optional[int] = None,
@@ -272,7 +169,10 @@ async def aget_chat_service(
  final_base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- return ChatService(
+ # 暂时直接使用 OpenAIChatProtocol，Plan 会添加 provider_type 路由
+ from chat.protocols.openai_chat import OpenAIChatProtocol
+ protocol = OpenAIChatProtocol(
  api_key=final_api_key,
- base_url=final_base_url,
+ base_url=final_base_url or DEFAULT_BASE_URL,
  )
+ return ChatService(protocol=protocol)
