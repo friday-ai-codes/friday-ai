@@ -16,6 +16,7 @@ defineProps<{
  canRedo?: boolean
  saving?: boolean
  hasUnsavedChanges?: boolean
+ hasTriggers?: boolean
 }>
 const emit = defineEmits<{
  (e: 'save'): void
@@ -114,15 +115,15 @@ const emit = defineEmits<{
  <TooltipTrigger as-child>
  <Button
  size="sm"
- class=" bg-emerald-600 hover:bg-emerald-700":disabled="!isActive"
+ class=" bg-emerald-600 hover:bg-emerald-700":disabled="!isActive || !hasTriggers"
  @click="emit('execute')"
  >
  <Play class="w-4 mr-1.5" />
  运行
  </Button>
  </TooltipTrigger>
- <TooltipContent v-if="!isActive" side="bottom">
- <p>工作流已禁用</p>
+ <TooltipContent v-if="!isActive || !hasTriggers" side="bottom">
+ <p>{{ !isActive ? '工作流已禁用': '请先添加一个触发器' }}</p>
  </TooltipContent>
  </Tooltip>
  </div>

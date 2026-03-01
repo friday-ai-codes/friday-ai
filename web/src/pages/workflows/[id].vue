@@ -1,7 +1,8 @@
 <script setup lang="ts">
 interface NodePaletteItemData { type: string, name: string, description: string }
+import type { ManualTriggerResponse } from '~/types'
 import { storeToRefs } from 'pinia'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import {
@@ -15,21 +16,46 @@ import {
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
+import ManualTriggerDialog from '~/components/workflow/ManualTriggerDialog.vue'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { getNodeDefinition } from '~/types/workflow/registry'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
+const { nodes } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
+// Manual trigger dialog state
+const showTriggerDialog = ref(false)
+interface TriggerInfo {
+ id: string
+ name: string
+ nodeType: string
+ eventType: string
+}
+const triggerInfoList = computed<TriggerInfo>( =>
+ nodes.value
+ .filter((node) => {
+ const def = getNodeDefinition(node.nodeType)
+ return def?.category === 'trigger'
+ })
+ .map(node => ({
+ id: node.id,
+ name: node.name || getNodeDefinition(node.nodeType)?.displayName || node.nodeType,
+ nodeType: node.nodeType,
+ eventType: (node.config?.event_type as string) || '',
+ })),
+)
+const hasTriggers = computed( => triggerInfoList.value.length > 0)
 onMounted(async => {
  // Fetch node types and workflow data in parallel
  await Promise.all([
@@ -129,20 +155,13 @@ function onSaveDraft {
  store.saveDraft
  toast.success('草稿已保存到本地')
 }
-async function onExecute {
- if (!currentWorkflow.value?.is_active) {
- toast.error('工作流已禁用，无法执行')
- return
- }
- try {
- const result = await store.executeWorkflow
- if (result?.execution_id) {
+function onExecute {
+ showTriggerDialog.value = true
+}
+function onTriggered(response: ManualTriggerResponse) {
+ if (response.execution_id) {
  toast.success('工作流开始执行')
- router.push(`/workflows/executions/${result.execution_id}`)
- }
- }
- catch (e: any) {
- toast.error(`执行失败: ${e.message}`)
+ router.push(`/workflows/executions/${response.execution_id}`)
  }
 }
 function onUndo {
@@ -190,7 +209,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->
- <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges"
+ <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
  @save="onSave"
  @save-draft="onSaveDraft"
  @execute="onExecute"
@@ -212,6 +231,12 @@ async function onUpdateIsActive(isActive: boolean) {
  </div>
  <!-- Leave Confirmation Dialog -->
  <AlertDialog:open="showLeaveDialog">
+ <!-- Manual Trigger Dialog -->
+ <ManualTriggerDialog
+ v-if="currentWorkflow":open="showTriggerDialog":workflow-id="currentWorkflow.id":workflow-name="currentWorkflow.name":triggers="triggerInfoList"
+ @update:open="showTriggerDialog = $event"
+ @triggered="onTriggered"
+ />
  <AlertDialogContent>
  <AlertDialogHeader>
  <AlertDialogTitle>有未保存的更改</AlertDialogTitle>
