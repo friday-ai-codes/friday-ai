@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
  Variable, GitBranch, GitPullRequest,
- Sparkles, SquareCode, SearchCode, FileCode, FileText,
+ Sparkles, SquareCode, SearchCode, FileText,
  CircleCheck, Terminal, Cog,
 } from 'lucide-vue-next'
 import { computed, type Component } from 'vue'
@@ -25,7 +25,6 @@ const iconMap: Record<string, Component> = {
  ai_coding_dispatcher: SquareCode,
  ai_variable_extractor: Sparkles,
  context_retrieval: SearchCode,
- ai_technical_plan: FileCode,
  ai_plan_generation: FileText,
  ai_plan_approval: CircleCheck,
  ai_coding: Terminal,
