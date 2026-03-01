@@ -14,7 +14,7 @@ export interface PortMetadata {
 /**
  * 触发器节点类型（无输入，一个输出）。
  */
-const TRIGGER_NODE_TYPES = [
+export const TRIGGER_NODE_TYPES = [
  'manual_trigger',
  'webhook_trigger',
  'feishu_event_trigger',
