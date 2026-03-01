@@ -40,7 +40,6 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  ai_coding_dispatcher: { icon: Bot, color: 'purple' },
  ai_variable_extractor: { icon: Variable, color: 'purple' },
  variable_extractor: { icon: Variable, color: 'purple' },
- ai_technical_plan: { icon: FileCode, color: 'purple' },
  ai_plan_generation: { icon: FileCode, color: 'purple' },
  ai_plan_approval: { icon: CheckCircle, color: 'purple' },
  ai_coding: { icon: Terminal, color: 'purple' },
