@@ -7,7 +7,6 @@ from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
 from workflows.nodes.ai.plan_approval import PlanApprovalNode
 from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
 from workflows.nodes.ai.prompt import AIPromptNode
-from workflows.nodes.ai.technical_plan import TechnicalPlanNode
 from workflows.nodes.ai.variable_extractor import AIVariableExtractorNode
 __all__ = [
  "AIAgentBaseNode",
@@ -15,7 +14,6 @@ __all__ = [
  "AICodingDispatcherNode",
  "AIVariableExtractorNode",
  "ContextRetrievalNode",
- "TechnicalPlanNode",
  "AIPlanGenerationNode",
  "PlanApprovalNode",
  "AICodingNode",
