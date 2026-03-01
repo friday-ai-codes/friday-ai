@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ManualTriggerResponse, TriggerEventType } from '~/types'
 import { Play } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { executeWorkflow } from '~/api/workflow'
 import { Button } from '~/components/ui/button'
 import {
@@ -21,10 +21,17 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+interface TriggerInfo {
+ id: string
+ name: string
+ nodeType: string
+ eventType: string
+}
 interface Props {
  open: boolean
  workflowId: string
  workflowName?: string
+ triggers: TriggerInfo
 }
 const props = defineProps<Props>
 const emit = defineEmits<{
@@ -33,21 +40,17 @@ const emit = defineEmits<{
 }>
 const triggering = ref(false)
 const error = ref<string | null>(null)
-// 表单数据
-const eventType = ref<TriggerEventType | ''>('')
+const selectedTriggerId = ref<string>('')
 const inputDataJson = ref('{\n "work_item_id": "",\n "project_key": ""\n}')
-// 事件类型选项
-const eventTypeOptions: Array<{ value: TriggerEventType | '', label: string }> = [
- { value: '', label: '无事件类型（手动）' },
- { value: 'WorkitemCreateEvent', label: '工作项创建' },
- { value: 'WorkitemStatusEvent', label: '状态变更' },
- { value: 'WorkitemCommentEvent', label: '评论事件' },
- { value: 'WorkitemUpdateEvent', label: '字段更新' },
- { value: 'WorkFlowNodeStatusEvent', label: '节点流转' },
-]
+// 获取选中触发器的 event_type（用户不可见，后台自动填入）
+const autoEventType = computed( => {
+ const trigger = props.triggers.find(t => t.id === selectedTriggerId.value)
+ return trigger?.eventType || ''
+})
 // 重置表单
 function resetForm {
- eventType.value = ''
+ // 自动选择：单触发器或多触发器时预选第一个
+ selectedTriggerId.value = props.triggers.length >= 1 ? props.triggers[0].id: ''
  inputDataJson.value = '{\n "work_item_id": "",\n "project_key": ""\n}'
  error.value = null
 }
@@ -77,7 +80,7 @@ async function handleTrigger {
  triggering.value = true
  try {
  const response = await executeWorkflow(props.workflowId, {
- event_type: eventType.value || undefined,
+ event_type: (autoEventType.value || undefined) as TriggerEventType | undefined,
  input_data: inputData,
  })
  emit('triggered', response)
@@ -100,31 +103,34 @@ function handleClose {
  <DialogHeader>
  <DialogTitle class="flex items-center gap-2">
  <Play class="w-5 text-primary" />
- 手动触发工作流
+ 测试工作流
  </DialogTitle>
  <DialogDescription>
- {{ workflowName ? `手动执行工作流: ${workflowName}`: '手动执行工作流' }}
+ 选择触发器并配置输入数据，测试工作流执行效果
  </DialogDescription>
  </DialogHeader>
  <div class="space-y-4 py-4">
- <!-- 事件类型 -->
- <div class="space-y-2">
- <Label>模拟事件类型</Label>
- <Select v-model="eventType">
+ <!-- 触发器选择（多触发器） -->
+ <div v-if="triggers.length > 1" class="space-y-2">
+ <Label>选择触发器</Label>
+ <Select v-model="selectedTriggerId">
  <SelectTrigger>
- <SelectValue placeholder="选择事件类型（可选）" />
+ <SelectValue placeholder="选择一个触发器" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem
- v-for="option in eventTypeOptions":key="option.value":value="option.value"
+ v-for="trigger in triggers":key="trigger.id":value="trigger.id"
  >
- {{ option.label }}
+ {{ trigger.name }}
  </SelectItem>
  </SelectContent>
  </Select>
- <p class="text-xs text-muted-foreground">
- 选择要模拟的事件类型，留空表示纯手动触发
- </p>
+ </div>
+ <!-- 单触发器信息 -->
+ <div v-else-if="triggers.length === 1" class="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border/30">
+ <span class="icon-[lucide--zap] w-4 text-amber-500" />
+ <span class="text-sm text-muted-foreground">触发器：</span>
+ <span class="text-sm font-medium">{{ triggers[0].name }}</span>
  </div>
  <!-- 输入数据 -->
  <div class="space-y-2">
