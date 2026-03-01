@@ -23,6 +23,7 @@ import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
 import { getNodeDefinition } from '~/types/workflow/registry'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
@@ -44,10 +45,7 @@ interface TriggerInfo {
 }
 const triggerInfoList = computed<TriggerInfo>( =>
  nodes.value
- .filter((node) => {
- const def = getNodeDefinition(node.nodeType)
- return def?.category === 'trigger'
- })
+ .filter((node) => TRIGGER_NODE_TYPES.includes(node.nodeType))
  .map(node => ({
  id: node.id,
  name: node.name || getNodeDefinition(node.nodeType)?.displayName || node.nodeType,
