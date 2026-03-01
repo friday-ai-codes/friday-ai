@@ -68,7 +68,7 @@ def e2e_workflow(
  """Create a complete E2E workflow with all node types.
  The workflow chain:
  1. feishu_event_trigger - Triggers on Feishu work item creation
- 2. ai_technical_plan - Generates technical plan from requirements
+ 2. ai_plan_generation - Generates technical plan from requirements
  3. wait_feishu_field - Waits for approval status
  4. ai_coding_dispatcher - Dispatches coding tasks
  Returns:
@@ -93,20 +93,25 @@ def e2e_workflow(
  "work_item_types": ["story"],
  },
  )
- # Node 2: AI Technical Plan
+ # Node 2: AI Plan Generation
  plan_node = WorkflowNode.objects.create(
  workflow=workflow,
- node_type="ai_technical_plan",
- name="Generate Technical Plan",
+ node_type="ai_plan_generation",
+ name="AI Plan Generation",
  position_x=250,
  position_y=100,
  config={
+ "system_prompt": "",
+ "user_prompt": "",
+ "include_repos":,
+ "exclude_repos":,
+ "max_iterations": 50,
+ "enabled_tools":,
+ "chat_id": "",
+ "use_custom_api": False,
+ "api_base_url": "",
+ "api_key": "",
  "model": "claude-3-5-sonnet-20241022",
- "detail_level": "standard",
- "include_tests": True,
- "feishu_field_key": "technical_plan",
- "auto_transition_status": True,
- "target_status": "待审核",
  },
  )
  # Node 3: Wait for Feishu Field (approval)
