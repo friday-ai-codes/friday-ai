@@ -1,9 +1,9 @@
 <script setup lang="ts">
 interface NodePaletteItemData { type: string, name: string, description: string }
-import type { ManualTriggerResponse } from '~/types'
 import { storeToRefs } from 'pinia'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useModal } from 'vue-final-modal'
 import { toast } from 'vue-sonner'
 import {
  AlertDialog,
@@ -16,7 +16,7 @@ import {
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
-import ManualTriggerDialog from '~/components/workflow/ManualTriggerDialog.vue'
+import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
@@ -24,7 +24,6 @@ import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
-import { getNodeDefinition } from '~/types/workflow/registry'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
@@ -35,25 +34,9 @@ const { nodes } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
-// Manual trigger dialog state
-const showTriggerDialog = ref(false)
-interface TriggerInfo {
- id: string
- name: string
- nodeType: string
- eventType: string
-}
-const triggerInfoList = computed<TriggerInfo>( =>
- nodes.value
- .filter((node) => TRIGGER_NODE_TYPES.includes(node.nodeType))
- .map(node => ({
- id: node.id,
- name: node.name || getNodeDefinition(node.nodeType)?.displayName || node.nodeType,
- nodeType: node.nodeType,
- eventType: (node.config?.event_type as string) || '',
- })),
+const hasTriggers = computed( =>
+ nodes.value.some((node) => TRIGGER_NODE_TYPES.includes(node.nodeType)),
 )
-const hasTriggers = computed( => triggerInfoList.value.length > 0)
 onMounted(async => {
  // Fetch node types and workflow data in parallel
  await Promise.all([
@@ -154,12 +137,32 @@ function onSaveDraft {
  toast.success('草稿已保存到本地')
 }
 function onExecute {
- showTriggerDialog.value = true
+ if (!currentWorkflow.value) return
+ const { open, close } = useModal({
+ component: markRaw(ExecuteWorkflowModal),
+ attrs: {
+ workflow: currentWorkflow.value,
+ onConfirm: async (inputData: Record<string, any>) => {
+ close
+ await executeWorkflowAction(inputData)
+ },
+ onCancel: => {
+ close
+ },
+ },
+ })
+ open
 }
-function onTriggered(response: ManualTriggerResponse) {
- if (response.execution_id) {
- toast.success('工作流开始执行')
- router.push(`/workflows/executions/${response.execution_id}`)
+async function executeWorkflowAction(inputData: Record<string, any>) {
+ try {
+ const result = await store.executeWorkflow(inputData)
+ if (result?.execution_id) {
+ toast.success('工作流已启动')
+ router.push(`/executions/${result.execution_id}`)
+ }
+ }
+ catch (e: any) {
+ toast.error(`执行失败: ${e.message}`)
  }
 }
 function onUndo {
@@ -229,12 +232,6 @@ async function onUpdateIsActive(isActive: boolean) {
  </div>
  <!-- Leave Confirmation Dialog -->
  <AlertDialog:open="showLeaveDialog">
- <!-- Manual Trigger Dialog -->
- <ManualTriggerDialog
- v-if="currentWorkflow":open="showTriggerDialog":workflow-id="currentWorkflow.id":workflow-name="currentWorkflow.name":triggers="triggerInfoList"
- @update:open="showTriggerDialog = $event"
- @triggered="onTriggered"
- />
  <AlertDialogContent>
  <AlertDialogHeader>
  <AlertDialogTitle>有未保存的更改</AlertDialogTitle>
