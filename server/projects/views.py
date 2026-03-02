@@ -43,7 +43,8 @@ class ProjectViewSet(ModelViewSet):
  return ProjectSerializer
  async def acreate(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ # KEEP: ProjectCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
  data = await sync_to_async(lambda: ProjectSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)

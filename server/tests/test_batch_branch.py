@@ -7,7 +7,7 @@ Tests cover:
 import subprocess
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from workflows.nodes.base import ExecutionContext
 from workflows.nodes.git.branch import CreateBranchNode
@@ -31,6 +31,21 @@ class MockRepository:
  self.id = uuid.UUID(repo_id) if len(repo_id) == 36 else repo_id
  self.name = name
  self.is_deleted = False
+def _make_mock_objects(repo_map: dict[str, "MockRepository | None"]):
+ """Create a mock Repository.objects that supports async afirst.
+ Args:
+ repo_map: mapping of repo_id -> MockRepository (or None)
+ """
+ mock_objects = MagicMock
+ def mock_filter_side_effect(**kwargs):
+ mock_qs = MagicMock
+ repo_id = kwargs.get("id")
+ name = kwargs.get("name")
+ repo = repo_map.get(repo_id) or repo_map.get(name)
+ mock_qs.afirst = AsyncMock(return_value=repo)
+ return mock_qs
+ mock_objects.filter.side_effect = mock_filter_side_effect
+ return mock_objects
 @pytest.mark.django_db
 class TestCreateBranchNodeBatch:
  """Tests for CreateBranchNode multi-repository batch operations."""
@@ -55,23 +70,13 @@ class TestCreateBranchNodeBatch:
  "checkout": True,
  "push": False,
  })
- # Mock Repository.objects.filter to return our mock repos
- def mock_filter_side_effect(id=None, name=None, is_deleted=False):
- mock_qs = MagicMock
- if id == repo1_id:
- mock_qs.first.return_value = repo1
- elif id == repo2_id:
- mock_qs.first.return_value = repo2
- else:
- mock_qs.first.return_value = None
- return mock_qs
+ mock_objects = _make_mock_objects({repo1_id: repo1, repo2_id: repo2})
  # Mock subprocess.run to succeed
  mock_run = MagicMock(return_value=MagicMock(returncode=0))
  with patch("workflows.nodes.git.branch.DATA_DIR", tmp_path), \
- patch("repositories.models.Repository.objects") as mock_objects, \
+ patch("repositories.models.Repository.objects", mock_objects), \
  patch("asyncio.to_thread", side_effect=lambda func, *args, **kwargs: func(*args, **kwargs)), \
  patch("subprocess.run", mock_run):
- mock_objects.filter.side_effect = mock_filter_side_effect
  result = await node.execute(context)
  assert result.status == "completed"
  assert result.next_handle == "default"
@@ -105,22 +110,13 @@ class TestCreateBranchNodeBatch:
  "checkout": True,
  "push": False,
  })
- def mock_filter_side_effect(id=None, name=None, is_deleted=False):
- mock_qs = MagicMock
- if id == repo1_id:
- mock_qs.first.return_value = repo1
- elif id == repo2_id:
- mock_qs.first.return_value = repo2
- else:
- mock_qs.first.return_value = None
- return mock_qs
+ mock_objects = _make_mock_objects({repo1_id: repo1, repo2_id: repo2})
  # Mock subprocess.run to succeed
  mock_run = MagicMock(return_value=MagicMock(returncode=0))
  with patch("workflows.nodes.git.branch.DATA_DIR", tmp_path), \
- patch("repositories.models.Repository.objects") as mock_objects, \
+ patch("repositories.models.Repository.objects", mock_objects), \
  patch("asyncio.to_thread", side_effect=lambda func, *args, **kwargs: func(*args, **kwargs)), \
  patch("subprocess.run", mock_run):
- mock_objects.filter.side_effect = mock_filter_side_effect
  result = await node.execute(context)
  # Should still complete (partial success)
  assert result.status == "completed"
@@ -190,12 +186,8 @@ class TestCreateBranchNodeBatch:
  "repositories": ["invalid-id-1", "invalid-id-2"],
  "branch_name": "feature/test",
  })
- def mock_filter_side_effect(id=None, name=None, is_deleted=False):
- mock_qs = MagicMock
- mock_qs.first.return_value = None # No repos found
- return mock_qs
- with patch("repositories.models.Repository.objects") as mock_objects:
- mock_objects.filter.side_effect = mock_filter_side_effect
+ mock_objects = _make_mock_objects({})
+ with patch("repositories.models.Repository.objects", mock_objects):
  result = await node.execute(context)
  assert result.status == "failed"
  assert result.next_handle == "error"
@@ -214,23 +206,16 @@ class TestCreateBranchNodeBatch:
  "branch_name": "feature/test-branch",
  "base_branch": "main",
  })
- def mock_filter_side_effect(id=None, name=None, is_deleted=False):
- mock_qs = MagicMock
- if id == repo_id:
- mock_qs.first.return_value = repo
- else:
- mock_qs.first.return_value = None
- return mock_qs
+ mock_objects = _make_mock_objects({repo_id: repo})
  # Mock subprocess.run to raise CalledProcessError
  def mock_run_error(*args, **kwargs):
  error = subprocess.CalledProcessError(1, "git fetch")
  error.stderr = b"fatal: remote origin not found"
  raise error
  with patch("workflows.nodes.git.branch.DATA_DIR", tmp_path), \
- patch("repositories.models.Repository.objects") as mock_objects, \
+ patch("repositories.models.Repository.objects", mock_objects), \
  patch("asyncio.to_thread", side_effect=lambda func, *args, **kwargs: func(*args, **kwargs)), \
  patch("subprocess.run", side_effect=mock_run_error):
- mock_objects.filter.side_effect = mock_filter_side_effect
  result = await node.execute(context)
  # Should complete but with failure in the list
  assert result.status == "completed"

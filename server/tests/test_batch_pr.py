@@ -39,6 +39,14 @@ def make_context(
  workflow_context={},
  previous_outputs={},
  )
+def _make_async_filter_qs(repos: list[MagicMock]) -> MagicMock:
+ """Create a mock queryset that supports async for iteration."""
+ mock_qs = MagicMock
+ async def async_iter:
+ for r in repos:
+ yield r
+ mock_qs.__aiter__ = lambda self: async_iter
+ return mock_qs
 @pytest.mark.asyncio
 async def test_batch_create_pr_all_success -> None:
  """Test batch PR creation with all repositories succeeding."""
@@ -68,7 +76,7 @@ async def test_batch_create_pr_all_success -> None:
  ),
  patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
- return_value=MagicMock(__iter__=lambda self: iter([repo1, repo2])),
+ return_value=_make_async_filter_qs([repo1, repo2]),
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -121,7 +129,7 @@ async def test_batch_create_pr_partial_failure -> None:
  ),
  patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
- return_value=MagicMock(__iter__=lambda self: iter([repo1, repo2])),
+ return_value=_make_async_filter_qs([repo1, repo2]),
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -207,7 +215,7 @@ async def test_batch_create_pr_cross_reference_disabled -> None:
  ),
  patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
- return_value=MagicMock(__iter__=lambda self: iter([repo1, repo2])),
+ return_value=_make_async_filter_qs([repo1, repo2]),
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -248,7 +256,7 @@ async def test_batch_create_pr_backward_compat -> None:
  ),
  patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
- return_value=MagicMock(__iter__=lambda self: iter([repo])),
+ return_value=_make_async_filter_qs([repo]),
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -280,7 +288,7 @@ async def test_batch_create_pr_no_credential -> None:
  ),
  patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
- return_value=MagicMock(__iter__=lambda self: iter([repo])),
+ return_value=_make_async_filter_qs([repo]),
  ),
  ):
  node = CreatePRNode
