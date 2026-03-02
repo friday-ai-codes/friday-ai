@@ -159,7 +159,9 @@ class TestConnectionView(APIView):
  git_url = repository.git_url
  proxy_url = repository.proxy_url
  # Get token from credential
- credential = await sync_to_async(lambda: getattr(repository, "credential", None))
+ credential = await GitCredential.objects.filter(
+ repository=repository
+ ).afirst
  if not credential or not credential.encrypted_token:
  return Response(
  {"success": False, "error": "仓库未配置访问凭证"},

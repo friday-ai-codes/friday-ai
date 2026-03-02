@@ -1,7 +1,6 @@
 """Feishu work item integration node."""
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -213,9 +212,13 @@ class FetchWorkItemNode(BaseNode):
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
  if context.workflow_execution:
- workflow = await sync_to_async(lambda: context.workflow_execution.workflow)
+ from workflows.models import Workflow
+ workflow = await Workflow.objects.filter(
+ pk=context.workflow_execution.workflow_id
+ ).afirst
  if workflow:
- return await sync_to_async(lambda: workflow.project)
+ from projects.models import Project
+ return await Project.objects.filter(pk=workflow.project_id).afirst
  return None
  async def _get_repositories(self, project) -> list[dict]:
  """获取项目关联的仓库列表"""
