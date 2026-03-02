@@ -34,7 +34,7 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "retrieve":
  return RepositoryWithProjectsSerializer
  return RepositorySerializer
- async def create(self, request, *args, **kwargs):
+ async def acreate(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
@@ -56,10 +56,12 @@ class RepositoryViewSet(ModelViewSet):
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
- return Response(
- RepositorySerializer(repository).data,
- status=status.HTTP_201_CREATED,
- )
+ # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
+ resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
+ return Response(resp_data, status=status.HTTP_201_CREATED)
+ async def perform_aupdate(self, serializer):
+ # KEEP: RepositorySerializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)
  @action(detail=True, methods=["get", "delete"], url_path="credential")
  async def credential(self, request, pk=None):
  """Get or delete credential for repository."""

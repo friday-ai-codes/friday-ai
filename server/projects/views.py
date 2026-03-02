@@ -46,16 +46,20 @@ class ProjectViewSet(ModelViewSet):
  # KEEP: ProjectCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
- data = ProjectSerializer(project).data
+ # KEEP: ProjectSerializer.get_repositories 触发 repositories.filter DB 查询
+ data = await sync_to_async(lambda: ProjectSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
- await serializer.asave
+ # KEEP: ProjectSerializer 继承自 rest_framework.serializers，不支持 asave
+ await sync_to_async(serializer.save)
  # === Repository association ===
  @action(detail=True, methods=["get"], url_path="repositories")
  async def list_repositories(self, request, pk=None):
  """List repositories associated with the project."""
  project = await self.aget_object
- repositories = project.repositories.filter(is_deleted=False)
+ repositories = project.repositories.filter(is_deleted=False).select_related(
+ "credential"
+ )
  serializer = RepositorySerializer([r async for r in repositories], many=True)
  return Response(serializer.data)
  @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
@@ -352,7 +356,8 @@ class RepositoryViewSet(ModelViewSet):
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
- resp_data = RepositorySerializer(repository).data
+ # KEEP: RepositorySerializer.get_has_credential 触发 credential FK 访问
+ resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
  return Response(resp_data, status=status.HTTP_201_CREATED)
  @action(detail=True, methods=["get", "delete"], url_path="credential")
  async def credential(self, request, pk=None):
