@@ -1,7 +1,6 @@
 """FeishuEventHandler for Feishu project event triggering."""
 from typing import TYPE_CHECKING, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.handlers.base import TriggerHandler
 from workflows.triggers.registry import register_handler
@@ -55,16 +54,14 @@ class FeishuEventHandler(TriggerHandler):
  return
  from workflows.models import WorkflowTrigger
  # 查找该项目下所有匹配事件类型的活跃触发器
- triggers = await sync_to_async(
- lambda: list(
- WorkflowTrigger.objects.filter(
+ triggers = [
+ t async for t in WorkflowTrigger.objects.filter(
  event_type=context.event_type,
  is_active=True,
  workflow__is_active=True,
  workflow__project=context.project,
  ).select_related("workflow")
- )
- )
+ ]
  # 使用 matches_event 进行详细过滤
  workflows =
  for trigger in triggers:

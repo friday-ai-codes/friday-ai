@@ -862,7 +862,7 @@ class TriggerLogListView(APIView):
  # Pagination
  limit = int(request.query_params.get("limit", 50))
  offset = int(request.query_params.get("offset", 0))
- items = await sync_to_async(list)(queryset[offset: offset + limit])
+ items = [item async for item in queryset[offset: offset + limit]]
  serializer = TriggerLogSerializer(items, many=True)
  data = await sync_to_async(lambda: serializer.data)
  return Response({"items": data, "total": total})

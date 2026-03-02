@@ -1,7 +1,6 @@
 """WebhookHandler for generic webhook triggering."""
 from typing import TYPE_CHECKING, ClassVar
 import structlog
-from asgiref.sync import sync_to_async
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.handlers.base import TriggerHandler
 from workflows.triggers.registry import register_handler
@@ -35,15 +34,11 @@ class WebhookHandler(TriggerHandler):
  return errors
  # 查找 WebhookConfig
  from workflows.models import WebhookConfig
- config = await sync_to_async(
- lambda: WebhookConfig.objects.filter(
+ config = await WebhookConfig.objects.filter(
  path=webhook_path,
  is_active=True,
  workflow__is_active=True,
- )
- .select_related("workflow")
- .first
- )
+ ).select_related("workflow").afirst
  if not config:
  errors.append(f"未找到有效的 Webhook 配置: {webhook_path}")
  return errors
@@ -66,15 +61,13 @@ class WebhookHandler(TriggerHandler):
  if not webhook_path:
  return
  from workflows.models import WebhookConfig
- configs = await sync_to_async(
- lambda: list(
- WebhookConfig.objects.filter(
+ configs = [
+ c async for c in WebhookConfig.objects.filter(
  path=webhook_path,
  is_active=True,
  workflow__is_active=True,
  ).select_related("workflow")
- )
- )
+ ]
  return [config.workflow for config in configs]
  async def prepare_input(
  self,

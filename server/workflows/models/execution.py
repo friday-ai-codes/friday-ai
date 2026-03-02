@@ -1,7 +1,6 @@
 """WorkflowExecution and NodeExecution model definitions."""
 import uuid
 from typing import TYPE_CHECKING, Any
-from asgiref.sync import sync_to_async
 from django.db import models
 from django.db.models import F
 from django.utils import timezone
@@ -155,8 +154,10 @@ class WorkflowExecution(models.Model):
  """标记开始执行（async 版本）"""
  self.status = ExecutionStatus.RUNNING
  self.started_at = timezone.now
- default_timeout = await sync_to_async(lambda: self.workflow.default_timeout)
- self.timeout_at = timezone.now + timezone.timedelta(seconds=default_timeout)
+ default_timeout = await type(self).objects.filter(
+ pk=self.pk
+ ).values_list("workflow__default_timeout", flat=True).afirst
+ self.timeout_at = timezone.now + timezone.timedelta(seconds=default_timeout or 3600)
  await self.asave(update_fields=["status", "started_at", "timeout_at"])
  def mark_completed(self, output_data: dict | None = None) -> None:
  """标记执行完成"""
