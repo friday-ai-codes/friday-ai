@@ -1,5 +1,4 @@
 """InteractionLog API views — 节点调试面板的数据源。"""
-from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,10 +11,12 @@ class NodeInteractionLogsView(APIView):
  """
  permission_classes = [IsAuthenticated]
  async def get(self, request, node_execution_id: str) -> Response:
- logs = InteractionLog.objects.filter(
+ logs = [
+ log async for log in InteractionLog.objects.filter(
  session__node_execution_id=node_execution_id,
  ).select_related("session").order_by("asked_at")
- data = await sync_to_async(lambda: InteractionLogSerializer(logs, many=True).data)
+ ]
+ data = InteractionLogSerializer(logs, many=True).data
  return Response(data)
 class InteractionAnswerView(APIView):
  """通过 Web 端提交 InteractionLog 的回答。
@@ -40,8 +41,11 @@ class InteractionAnswerView(APIView):
  answer=answer,
  answer_source=answer_source,
  )
- await interaction.arefresh_from_db
- data = await sync_to_async(lambda: InteractionLogSerializer(interaction).data)
+ # 重新获取以确保 session FK 已加载（arefresh_from_db 不加载 FK）
+ interaction = await InteractionLog.objects.select_related("session").aget(
+ id=interaction_id
+ )
+ data = InteractionLogSerializer(interaction).data
  return Response(data)
 class AgentSessionAnswerView(APIView):
  """通过 Web 端回答 AgentSession 的提问（AIAgentBaseNode 场景）。

@@ -864,6 +864,7 @@ class TriggerLogListView(APIView):
  offset = int(request.query_params.get("offset", 0))
  items = [item async for item in queryset[offset: offset + limit]]
  serializer = TriggerLogSerializer(items, many=True)
+ # KEEP: TriggerLogSerializer.get_execution_status 触发 workflow_executions 反向查询
  data = await sync_to_async(lambda: serializer.data)
  return Response({"items": data, "total": total})
 class TriggerLogDetailView(APIView):
@@ -871,6 +872,7 @@ class TriggerLogDetailView(APIView):
  async def get(self, request, log_id):
  log = await aget_object_or_404(TriggerLog, id=log_id)
  serializer = TriggerLogDetailSerializer(log)
+ # KEEP: TriggerLogDetailSerializer.get_workflow_executions 触发反向 FK 查询
  data = await sync_to_async(lambda: serializer.data)
  return Response(data)
 class TriggerLogRawView(APIView):
