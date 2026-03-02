@@ -106,6 +106,7 @@ class RepositoryViewSet(ModelViewSet):
  manager = RepoCacheManager
  volume_name = manager.get_volume_name(repository.git_url)
  try:
+ # KEEP: Docker SDK 同步客户端限制
  await sync_to_async(manager.client.volumes.get)(volume_name)
  return Response({
  "cached": True,
@@ -194,6 +195,7 @@ class TestConnectionView(APIView):
  env = os.environ.copy
  env["http_proxy"] = proxy_url
  env["https_proxy"] = proxy_url
+ # KEEP: subprocess.run 阻塞系统调用，必须在线程中运行
  result = await sync_to_async(subprocess.run)(
  cmd,
  capture_output=True,

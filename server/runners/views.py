@@ -163,7 +163,7 @@ class RunnerViewSet(ModelViewSet):
  qs = qs.filter(assigned_at__gte=since)
  if until:= params.get("until"):
  qs = qs.filter(assigned_at__lte=until)
- page = await sync_to_async(self.paginate_queryset)(qs)
+ page = await sync_to_async(self.paginate_queryset)(qs) # KEEP: DRF paginate_queryset 无 async API
  serializer = RunnerTaskAssignmentSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)
  @action(detail=True, methods=["get"]) # type: ignore[type-var]
@@ -173,6 +173,6 @@ class RunnerViewSet(ModelViewSet):
  qs = RunnerEvent.objects.filter(runner=runner)
  if event_type:= request.query_params.get("event_type"):
  qs = qs.filter(event_type=event_type)
- page = await sync_to_async(self.paginate_queryset)(qs)
+ page = await sync_to_async(self.paginate_queryset)(qs) # KEEP: DRF paginate_queryset 无 async API
  serializer = RunnerEventSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)

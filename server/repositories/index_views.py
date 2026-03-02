@@ -93,7 +93,7 @@ class IndexDeleteView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # Delete collection from Qdrant (sync call)
+ # KEEP: Qdrant SDK 同步限制
  await sync_to_async(QdrantService.delete_collection)(str(repository.id))
  # Reset repository status
  repository.index_status = IndexStatus.NOT_INDEXED
@@ -145,7 +145,7 @@ class CodeSearchView(APIView):
  query_embedding = await EmbeddingService.generate_embedding(query)
  if not query_embedding:
  return
- # Search in Qdrant (sync call)
+ # KEEP: Qdrant SDK 同步限制
  search_results = await sync_to_async(QdrantService.search)(
  repository_id,
  query_embedding,
@@ -174,7 +174,7 @@ class QdrantHealthView(APIView):
  """Check Qdrant service health."""
  async def get(self, request):
  """Get Qdrant health status."""
- health = await sync_to_async(QdrantService.health_check)
+ health = await sync_to_async(QdrantService.health_check) # KEEP: Qdrant SDK 同步限制
  return Response(health)
  async def post(self, request):
  """Test Qdrant connection with provided config (before saving)."""
@@ -192,7 +192,7 @@ class QdrantHealthView(APIView):
  api_key = decrypt_value(api_key_setting.value)
  else:
  api_key = api_key_setting.value
- health = await sync_to_async(QdrantService.health_check_with_config)(url, api_key)
+ health = await sync_to_async(QdrantService.health_check_with_config)(url, api_key) # KEEP: Qdrant SDK 同步限制
  return Response(health)
 class EmbeddingHealthView(APIView):
  """Check Embedding API health."""

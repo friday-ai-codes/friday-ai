@@ -414,6 +414,7 @@ class ContextRetrievalNode(BaseNode):
  """
  repo_id = str(repository.id)
  try:
+ # KEEP: Qdrant SDK 同步限制
  search_coro = sync_to_async(QdrantService.search, thread_sensitive=True)(
  repo_id,
  query_embedding,

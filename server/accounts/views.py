@@ -18,9 +18,11 @@ class LoginView(APIView):
  permission_classes = [AllowAny]
  async def post(self, request):
  serializer = LoginSerializer(data=request.data)
+ # KEEP: LoginSerializer.is_valid 内部调用 authenticate，涉及 DB 查询
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  user = serializer.validated_data["user"]
  # Generate tokens
+ # KEEP: simplejwt RefreshToken.for_user 无 async API
  refresh = await sync_to_async(RefreshToken.for_user)(user)
  # 设置自定义 claim，统一 JWT 中的用户标识字段
  refresh["sub"] = str(user.id)
@@ -66,6 +68,7 @@ class RefreshTokenView(APIView):
  access_token = str(refresh.access_token)
  # Create new refresh token (rolling refresh)
  if request.user.is_authenticated:
+ # KEEP: simplejwt RefreshToken.for_user 无 async API
  new_refresh = await sync_to_async(RefreshToken.for_user)(request.user)
  else:
  new_refresh = refresh
