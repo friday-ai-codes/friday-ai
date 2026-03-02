@@ -118,7 +118,7 @@ class TestCompleteWorkflowFlow:
  assert execution is not None
  assert execution.trigger_type == "feishu"
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Verify execution progressed
  assert execution.status in [
  ExecutionStatus.RUNNING,
@@ -170,7 +170,7 @@ class TestCompleteWorkflowFlow:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Workflow execution completed synchronously - verify key assertions
  # Status may be SUSPENDED (if waiting for approval) or FAILED (if node errors)
  # or COMPLETED (if all nodes pass). The key test is that execution happened
@@ -247,7 +247,7 @@ class TestCompleteWorkflowFlow:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # With approved status configured, workflow should complete (or at least pass wait node)
  assert execution.status in [
  ExecutionStatus.COMPLETED,
@@ -308,7 +308,7 @@ class TestCompleteWorkflowFlow:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Workflow execution completed synchronously - verify key assertions
  # Status may vary based on node behavior in test environment
  assert execution.status in [
@@ -401,7 +401,7 @@ class TestCompleteWorkflowFlow:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # The synchronous execution mode is working if we get here without
  # TimeoutError - the workflow executed in our context.
  # Status may vary based on mock configuration and node behavior.
@@ -471,7 +471,7 @@ class TestWorkflowStateVerification:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Check trigger node output
  trigger_node = await sync_to_async(
  lambda: execution.node_executions.filter(
@@ -528,7 +528,7 @@ class TestWorkflowStateVerification:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Verify trigger node output contains key data
  trigger_node = await sync_to_async(
  lambda: execution.node_executions.filter(
@@ -582,7 +582,7 @@ class TestWorkflowStateVerification:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # If workflow reached wait node and created subscription
  subscription = await sync_to_async(
  lambda: WorkflowEventSubscription.objects.filter(
@@ -642,7 +642,7 @@ class TestWorkflowStateVerification:
  trigger_type="feishu",
  )
  # Refresh to get final state
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Verify execution completed synchronously
  assert execution.status in [
  ExecutionStatus.COMPLETED,
