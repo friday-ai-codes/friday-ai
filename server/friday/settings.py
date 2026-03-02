@@ -22,6 +22,8 @@ env = environ.Env(
  SECRET_KEY=(str, "django-insecure-change-me-in-production"),
  ALLOWED_HOSTS=(list, ["*"]),
 )
+# Read .env file
+env.read_env(BASE_DIR / ".env", overwrite=False)
 # =============================================================================
 # Core Settings
 # =============================================================================

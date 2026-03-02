@@ -79,15 +79,19 @@ class FeishuWebSocketClient:
  self._process_message_sync(data)
  except Exception as e:
  logger.error("ws_message_handle_error", error=str(e))
- def _handle_card_action(self, data) -> dict[str, Any] | None:
+ def _handle_card_action(self, data):
  """Handle card action events (button clicks, form submissions).
  Called when a user interacts with a card (clicks button, submits form).
- Must return within 3 seconds.
+ Must return P2CardActionTriggerResponse within 3 seconds.
  """
+ from lark_oapi.event.callback.model.p2_card_action_trigger import (
+ CallBackCard,
+ P2CardActionTriggerResponse,
+ )
  try:
  event_data = data.event
  if not event_data:
- return None
+ return P2CardActionTriggerResponse
  action = event_data.action
  operator = event_data.operator
  logger.info(
@@ -97,10 +101,17 @@ class FeishuWebSocketClient:
  token=event_data.token,
  )
  # Forward to existing card callback handler
- return self._process_card_action_sync(data)
+ card_json = self._process_card_action_sync(data)
+ resp = P2CardActionTriggerResponse
+ if card_json:
+ card = CallBackCard
+ card.type = "raw"
+ card.data = card_json
+ resp.card = card
+ return resp
  except Exception as e:
  logger.error("ws_card_action_handle_error", error=str(e))
- return None
+ return P2CardActionTriggerResponse
  def _process_message_sync(self, data) -> None:
  """Process received message synchronously.
  Forwards the message to the existing IM message handler logic.

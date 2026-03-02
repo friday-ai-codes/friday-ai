@@ -89,6 +89,8 @@ def get_setting_value(key: str) -> Optional[str]:
  return setting.value
  except SystemSetting.DoesNotExist:
  return None
+ except ValueError as e:
+ raise ChatServiceError(str(e))
 async def aget_setting_value(key: str) -> Optional[str]:
  """获取系统设置值（自动解密）— async 版本。"""
  try:
@@ -100,6 +102,8 @@ async def aget_setting_value(key: str) -> Optional[str]:
  return setting.value
  except SystemSetting.DoesNotExist:
  return None
+ except ValueError as e:
+ raise ChatServiceError(str(e))
 def _create_protocol(provider_type: str, api_key: str, base_url: str) -> ProviderProtocol:
  """根据 provider_type 创建协议实例。
  Args:

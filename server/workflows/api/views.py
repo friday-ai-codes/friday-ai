@@ -828,8 +828,8 @@ class LLMModelsView(APIView):
  """
  use_system = request.data.get("use_system", False)
  if use_system:
- from services.claude_config import get_claude_config
- config = get_claude_config
+ from services.claude_config import aget_claude_config
+ config = await aget_claude_config
  if not config.api_key:
  return Response(
  {"detail": "系统未配置 API Key"},
@@ -889,8 +889,8 @@ class LLMSystemConfigView(APIView):
  """View for getting system LLM configuration (for display in frontend)."""
  permission_classes = [IsAuthenticated]
  async def get(self, request: Request) -> Response:
- from services.claude_config import get_claude_config
- config = get_claude_config
+ from services.claude_config import aget_claude_config
+ config = await aget_claude_config
  return Response(
  {
  "base_url": config.base_url or "https://api.anthropic.com",
