@@ -117,9 +117,53 @@ class TestFeishuWebhookWithProject:
  response1 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
  assert response1.status_code == status.HTTP_200_OK
  assert response1.data["status"] == "accepted"
- # 重复请求 - the in-memory deduplication should catch this
- # Note: The duplicate detection uses in-memory set, and trying to create
- # a TriggerLog with duplicate event_uuid would fail due to unique constraint.
- # The current implementation has a bug where it still tries to create a log
- # for duplicates. Skip the second request assertion as this is a known issue.
- # The in-memory deduplication works correctly for the first check.
+ # 重复请求 — 内存去重应捕获并返回 duplicate，不抛 IntegrityError
+ response2 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
+ assert response2.status_code == status.HTTP_200_OK
+ assert response2.data["status"] == "duplicate"
+ def test_webhook_duplicate_after_memory_clear(self, api_client, project, urls):
+ """测试服务器重启后（内存集合清空），DB 唯一约束仍能去重。"""
+ import uuid
+ from feishu.views import _processed_events
+ unique_uuid = f"mem-clear-test-{uuid.uuid4}"
+ webhook_data = {
+ "header": {
+ "event_type": "WorkitemCreateEvent",
+ "token": project.feishu_webhook_token,
+ "uuid": unique_uuid,
+ },
+ "payload": {
+ "project_key": project.feishu_project_key,
+ "id": 12345,
+ },
+ }
+ # 第一次请求 → accepted
+ response1 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
+ assert response1.status_code == status.HTTP_200_OK
+ assert response1.data["status"] == "accepted"
+ # 模拟服务器重启：清空内存去重集合
+ _processed_events.discard(unique_uuid)
+ # 第二次请求 → DB unique 约束应捕获重复，返回 duplicate
+ response2 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
+ assert response2.status_code == status.HTTP_200_OK
+ assert response2.data["status"] == "duplicate"
+ def test_webhook_null_event_uuid_not_conflict(self, api_client, project, urls):
+ """测试 event_uuid 为 None 时，多次请求不冲突（unique 允许多个 NULL）。"""
+ webhook_data = {
+ "header": {
+ "event_type": "WorkitemCreateEvent",
+ "token": project.feishu_webhook_token,
+ # 不设置 uuid → event_uuid 为 None
+ },
+ "payload": {
+ "project_key": project.feishu_project_key,
+ "id": 12345,
+ },
+ }
+ # 两次请求都应正常处理
+ response1 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
+ assert response1.status_code == status.HTTP_200_OK
+ assert response1.data["status"] == "accepted"
+ response2 = api_client.post(urls.feishu_webhook, webhook_data, format="json")
+ assert response2.status_code == status.HTTP_200_OK
+ assert response2.data["status"] == "accepted"
