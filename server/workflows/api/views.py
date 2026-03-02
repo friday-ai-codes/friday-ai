@@ -60,16 +60,14 @@ from workflows.nodes.registry import NodeRegistry
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
 logger = structlog.get_logger
-def sync_workflow_triggers(workflow: Workflow) -> None:
+async def async_sync_workflow_triggers(workflow: Workflow) -> None:
  """Sync feishu_event_trigger nodes to WorkflowTrigger table.
  This ensures that trigger nodes configured in the workflow canvas
  are automatically registered for webhook event matching.
  """
  # Get all feishu_event_trigger nodes from the workflow
- trigger_nodes = workflow.nodes.filter(node_type="feishu_event_trigger")
- # Collect configured event types from nodes
  configured_triggers: list[dict] =
- for node in trigger_nodes:
+ async for node in workflow.nodes.filter(node_type="feishu_event_trigger"):
  config = node.config or {}
  event_types = config.get("event_types", )
  filter_config = {}
@@ -92,7 +90,7 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  }
  )
  # Get existing triggers for this workflow
- existing_triggers = {t.event_type: t for t in workflow.triggers.all}
+ existing_triggers = {t.event_type: t async for t in workflow.triggers.all}
  # Sync triggers
  seen_event_types = set
  for trigger_config in configured_triggers:
@@ -104,10 +102,10 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  trigger.filter_config = trigger_config["filter_config"]
  trigger.is_active = True
  trigger.name = trigger_config["node_name"] or f"触发器: {event_type}"
- trigger.save
+ await trigger.asave
  else:
  # Create new trigger
- WorkflowTrigger.objects.create(
+ await WorkflowTrigger.objects.acreate(
  workflow=workflow,
  event_type=event_type,
  filter_config=trigger_config["filter_config"],
@@ -118,7 +116,7 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  for event_type, trigger in existing_triggers.items:
  if event_type not in seen_event_types:
  trigger.is_active = False
- trigger.save
+ await trigger.asave
  logger.info(
  "workflow_triggers_synced",
  workflow_id=str(workflow.id),
@@ -415,7 +413,7 @@ class WorkflowViewSet(ModelViewSet):
  # Return updated workflow
  await workflow.arefresh_from_db
  # Sync triggers from feishu_event_trigger nodes
- await sync_to_async(sync_workflow_triggers)(workflow)
+ await async_sync_workflow_triggers(workflow)
  # KEEP: WorkflowSerializer 内部 get_execution_count/get_last_execution 触发 DB 查询
  data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)
  return Response(data)
