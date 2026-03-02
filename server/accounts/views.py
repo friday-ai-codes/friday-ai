@@ -137,6 +137,7 @@ class AdminProfileView(APIView):
  )
  from .serializers import AdminProfileUpdateSerializer
  serializer = AdminProfileUpdateSerializer(data=request.data, context={"user": request.user})
+ # KEEP: AdminProfileUpdateSerializer.validate_username 执行 User.objects.filter.exists DB 查询
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  user = request.user
  if "username" in serializer.validated_data:

@@ -323,7 +323,7 @@ class WorkflowViewSet(ModelViewSet):
  return Response(serializer.data)
  # POST - Create node
  serializer = WorkflowNodeCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  node = await WorkflowNode.objects.acreate(workflow=workflow, **serializer.validated_data)
  return Response(
  WorkflowNodeSerializer(node).data,
@@ -346,7 +346,7 @@ class WorkflowViewSet(ModelViewSet):
  # PUT or PATCH
  partial = request.method == "PATCH"
  serializer = WorkflowNodeSerializer(node, data=request.data, partial=partial)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
  return Response(serializer.data)
@@ -363,7 +363,7 @@ class WorkflowViewSet(ModelViewSet):
  return Response(serializer.data)
  # POST - Create edge
  serializer = WorkflowEdgeCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
  source_id = data.pop("source_node_id")
  target_id = data.pop("target_node_id")
@@ -397,7 +397,7 @@ class WorkflowViewSet(ModelViewSet):
  # PUT or PATCH
  partial = request.method == "PATCH"
  serializer = WorkflowEdgeSerializer(edge, data=request.data, partial=partial)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
  return Response(serializer.data)
