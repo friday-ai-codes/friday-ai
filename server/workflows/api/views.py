@@ -525,7 +525,7 @@ class WorkflowExecutionViewSet(ModelViewSet):
  {"detail": "只能重试失败或已取消的执行"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- workflow = await sync_to_async(lambda: execution.workflow)
+ workflow = await Workflow.objects.aget(pk=execution.workflow_id)
  trigger_data = execution.trigger_data or {}
  raw_payload = trigger_data.get("raw_payload", execution.input_data.get("raw_payload", {}))
  context = TriggerContext(
@@ -638,7 +638,7 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  {"detail": "节点不在等待触发状态"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- node = await sync_to_async(lambda: node_execution.node)
+ node = await WorkflowNode.objects.aget(pk=node_execution.node_id)
  if node.node_type != "manual_trigger":
  return Response(
  {"detail": "只有手动触发节点可以被触发"},

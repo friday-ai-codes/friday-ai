@@ -2,9 +2,8 @@
 import asyncio
 from typing import Any, TypedDict
 import structlog
-from asgiref.sync import sync_to_async
 from common.encryption import decrypt_value
-from repositories.models import Repository
+from repositories.models import GitCredential, Repository
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
 from workflows.nodes.base import (
  BaseNode,
@@ -143,7 +142,9 @@ class CreatePRNode(BaseNode):
  repo_name = repository.name
  try:
  # Get credential and decrypt token
- credential = await sync_to_async(lambda: repository.credential)
+ credential = await GitCredential.objects.filter(
+ repository=repository
+ ).afirst
  if not credential or not credential.encrypted_token:
  return PRCreateResult(
  repository_id=repo_id,
@@ -307,7 +308,9 @@ class CreatePRNode(BaseNode):
  # Build new body with cross-references
  new_body = original_body + cross_ref_section
  # Get credential and client
- credential = await sync_to_async(lambda: repository.credential)
+ credential = await GitCredential.objects.filter(
+ repository=repository
+ ).afirst
  if not credential or not credential.encrypted_token:
  logger.warning(
  "cross_reference_skip_no_token",
