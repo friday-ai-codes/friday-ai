@@ -575,19 +575,13 @@ class WebhookConfigSerializer(serializers.ModelSerializer):
  "id",
  "workflow",
  "name",
+ "description",
  "path",
- "http_method",
  "is_active",
- "require_auth",
- "headers_schema",
- "body_schema",
- "response_config",
- "request_count",
- "last_triggered_at",
  "created_at",
  "updated_at",
  ]
- read_only_fields = ["id", "request_count", "last_triggered_at", "created_at"]
+ read_only_fields = ["id", "created_at", "updated_at"]
 class WebhookLogSerializer(serializers.ModelSerializer):
  """Serializer for WebhookLog."""
  class Meta:
@@ -597,12 +591,12 @@ class WebhookLogSerializer(serializers.ModelSerializer):
  "webhook_config",
  "execution",
  "request_method",
- "request_path",
  "request_headers",
  "request_body",
+ "request_ip",
  "response_status",
  "response_body",
- "processing_time_ms",
+ "success",
  "error_message",
  "created_at",
  ]
