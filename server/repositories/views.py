@@ -79,7 +79,7 @@ class RepositoryViewSet(ModelViewSet):
  async def destroy(self, request, *args, **kwargs):
  """Soft delete the repository instead of hard delete."""
  repository = await self.aget_object
- await sync_to_async(repository.soft_delete)
+ await repository.asoft_delete
  return Response(status=status.HTTP_204_NO_CONTENT)
  @action(detail=True, methods=["post"])
  async def warmup_cache(self, request, pk=None):

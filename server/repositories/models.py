@@ -74,6 +74,12 @@ class Repository(models.Model):
  self.is_deleted = True
  self.deleted_at = timezone.now
  self.save(update_fields=["is_deleted", "deleted_at"])
+ async def asoft_delete(self) -> None:
+ """Mark the repository as deleted (async version)."""
+ from django.utils import timezone
+ self.is_deleted = True
+ self.deleted_at = timezone.now
+ await self.asave(update_fields=["is_deleted", "deleted_at"])
 class GitCredential(models.Model):
  """Git credential model for authentication."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -113,6 +113,45 @@ class Workflow(models.Model):
  for edge in self.edges.all:
  edge.clone(new_workflow, node_mapping)
  return new_workflow
+ async def aclone(self, new_project=None, new_name: str | None = None) -> "Workflow":
+ """克隆工作流到另一个项目（async 版本）"""
+ from workflows.models.node import WorkflowEdge, WorkflowNode
+ new_workflow = await Workflow.objects.acreate(
+ name=new_name or f"{self.name} (副本)",
+ description=self.description,
+ project=new_project or self.project,
+ trigger_type=self.trigger_type,
+ trigger_config=self.trigger_config.copy,
+ default_timeout=self.default_timeout,
+ metadata=self.metadata.copy,
+ )
+ # 克隆节点
+ node_mapping: dict[uuid.UUID, uuid.UUID] = {}
+ async for node in self.nodes.all:
+ new_node = await WorkflowNode.objects.acreate(
+ workflow=new_workflow,
+ node_type=node.node_type,
+ name=node.name,
+ description=node.description,
+ position_x=node.position_x,
+ position_y=node.position_y,
+ config=node.config.copy if node.config else {},
+ )
+ node_mapping[node.id] = new_node.id
+ # 克隆边（更新节点引用）
+ async for edge in self.edges.all:
+ source_id = node_mapping.get(edge.source_node_id)
+ target_id = node_mapping.get(edge.target_node_id)
+ if source_id and target_id:
+ await WorkflowEdge.objects.acreate(
+ workflow=new_workflow,
+ source_node_id=source_id,
+ target_node_id=target_id,
+ source_handle=edge.source_handle,
+ target_handle=edge.target_handle,
+ condition=edge.condition,
+ )
+ return new_workflow
  def to_json(self) -> dict:
  """导出为 JSON 格式（用于导入/导出）"""
  return {
@@ -126,6 +165,22 @@ class Workflow(models.Model):
  },
  "nodes": [node.to_json for node in self.nodes.all],
  "edges": [edge.to_json for edge in self.edges.all],
+ }
+ async def ato_json(self) -> dict:
+ """导出为 JSON 格式（async 版本）"""
+ nodes = [node.to_json async for node in self.nodes.all]
+ edges = [edge.to_json async for edge in self.edges.all]
+ return {
+ "version": "1.0",
+ "workflow": {
+ "name": self.name,
+ "description": self.description,
+ "trigger_type": self.trigger_type,
+ "trigger_config": self.trigger_config,
+ "default_timeout": self.default_timeout,
+ },
+ "nodes": nodes,
+ "edges": edges,
  }
  @classmethod
  def from_json(cls, data: dict, project, created_by=None) -> "Workflow":
@@ -154,6 +209,41 @@ class Workflow(models.Model):
  target_id = node_id_mapping.get(edge_data["target_node_id"])
  if source_id and target_id:
  WorkflowEdge.objects.create(
+ workflow=workflow,
+ source_node_id=source_id,
+ target_node_id=target_id,
+ source_handle=edge_data.get("source_handle", "default"),
+ target_handle=edge_data.get("target_handle", "default"),
+ condition=edge_data.get("condition"),
+ )
+ return workflow
+ @classmethod
+ async def afrom_json(cls, data: dict, project, created_by=None) -> "Workflow":
+ """从 JSON 导入工作流（async 版本）"""
+ from workflows.models.node import WorkflowEdge, WorkflowNode
+ workflow_data = data["workflow"]
+ workflow = await cls.objects.acreate(
+ name=workflow_data["name"],
+ description=workflow_data.get("description", ""),
+ project=project,
+ created_by=created_by,
+ trigger_type=workflow_data.get("trigger_type", "manual"),
+ trigger_config=workflow_data.get("trigger_config", {}),
+ default_timeout=workflow_data.get("default_timeout", 3600),
+ )
+ # 导入节点
+ node_id_mapping: dict[str, str] = {}
+ for node_data in data.get("nodes", ):
+ old_id = node_data.pop("id", None)
+ node = await WorkflowNode.objects.acreate(workflow=workflow, **node_data)
+ if old_id:
+ node_id_mapping[old_id] = str(node.id)
+ # 导入边（映射节点 ID）
+ for edge_data in data.get("edges", ):
+ source_id = node_id_mapping.get(edge_data["source_node_id"])
+ target_id = node_id_mapping.get(edge_data["target_node_id"])
+ if source_id and target_id:
+ await WorkflowEdge.objects.acreate(
  workflow=workflow,
  source_node_id=source_id,
  target_node_id=target_id,
