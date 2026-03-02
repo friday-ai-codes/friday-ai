@@ -94,6 +94,10 @@ CHANNEL_LAYERS = {
  "BACKEND": "channels.layers.InMemoryChannelLayer",
  },
 }
+# 生产模式下要求 WebSocket 使用 TLS (wss://)
+# 默认值：DEBUG=False 时启用，DEBUG=True 时禁用
+# 可通过环境变量 WEBSOCKET_REQUIRE_TLS 显式控制
+WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", not DEBUG)
 # =============================================================================
 # Database
 # =============================================================================
