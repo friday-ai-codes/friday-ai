@@ -316,9 +316,9 @@ class WorkflowViewSet(ModelViewSet):
  """List or create nodes for a workflow."""
  workflow = await self.aget_object
  if request.method == "GET":
- nodes = workflow.nodes.all
- serializer = WorkflowNodeSerializer(nodes, many=True)
- return Response(await sync_to_async(lambda: serializer.data))
+ nodes_list = [n async for n in workflow.nodes.all]
+ serializer = WorkflowNodeSerializer(nodes_list, many=True)
+ return Response(serializer.data)
  # POST - Create node
  serializer = WorkflowNodeCreateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
@@ -355,9 +355,9 @@ class WorkflowViewSet(ModelViewSet):
  """List or create edges for a workflow."""
  workflow = await self.aget_object
  if request.method == "GET":
- edges = workflow.edges.all
- serializer = WorkflowEdgeSerializer(edges, many=True)
- return Response(await sync_to_async(lambda: serializer.data))
+ edges_list = [e async for e in workflow.edges.all]
+ serializer = WorkflowEdgeSerializer(edges_list, many=True)
+ return Response(serializer.data)
  # POST - Create edge
  serializer = WorkflowEdgeCreateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
@@ -412,6 +412,7 @@ class WorkflowViewSet(ModelViewSet):
  await workflow.arefresh_from_db
  # Sync triggers from feishu_event_trigger nodes
  await sync_to_async(sync_workflow_triggers)(workflow)
+ # KEEP: WorkflowSerializer 内部 get_execution_count/get_last_execution 触发 DB 查询
  data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)
  return Response(data)
  # =========================================================================
@@ -554,9 +555,11 @@ class WorkflowExecutionViewSet(ModelViewSet):
  async def nodes(self, request: Request, pk=None) -> Response:
  """List node executions for this execution."""
  execution = await self.aget_object
- node_executions = execution.node_executions.select_related("node").all
- serializer = NodeExecutionSerializer(node_executions, many=True)
- return Response(await sync_to_async(lambda: serializer.data))
+ node_executions_list = [
+ ne async for ne in execution.node_executions.select_related("node").all
+ ]
+ serializer = NodeExecutionSerializer(node_executions_list, many=True)
+ return Response(serializer.data)
 # =============================================================================
 # Node Execution ViewSet
 # =============================================================================

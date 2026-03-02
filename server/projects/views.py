@@ -46,7 +46,7 @@ class ProjectViewSet(ModelViewSet):
  # KEEP: ProjectCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
- data = await sync_to_async(lambda: ProjectSerializer(project).data)
+ data = ProjectSerializer(project).data
  return Response(data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
  await serializer.asave
@@ -352,7 +352,7 @@ class RepositoryViewSet(ModelViewSet):
  git_user_name=git_user_name,
  git_user_email=git_user_email,
  )
- resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
+ resp_data = RepositorySerializer(repository).data
  return Response(resp_data, status=status.HTTP_201_CREATED)
  @action(detail=True, methods=["get", "delete"], url_path="credential")
  async def credential(self, request, pk=None):
