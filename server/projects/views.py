@@ -43,7 +43,7 @@ class ProjectViewSet(ModelViewSet):
  return ProjectSerializer
  async def acreate(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
  data = await sync_to_async(lambda: ProjectSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)
@@ -89,7 +89,7 @@ class ProjectViewSet(ModelViewSet):
  return Response(FeishuConfigSerializer(project).data)
  if request.method == "PUT":
  serializer = FeishuConfigCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  project.feishu_plugin_id = serializer.validated_data["plugin_id"]
  project.feishu_plugin_secret_encrypted = encrypt_value(
  serializer.validated_data["plugin_secret"]
@@ -180,7 +180,7 @@ class ProjectViewSet(ModelViewSet):
  """Update webhook token with custom value."""
  project = await self.aget_object
  serializer = WebhookTokenUpdateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  token = serializer.validated_data["token"]
  if len(token) > 32:
  return Response(
@@ -217,7 +217,7 @@ class ProjectViewSet(ModelViewSet):
  )
  if request.method == "PUT":
  serializer = ClaudeConfigCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  api_key = serializer.validated_data.get("api_key")
  if api_key is not None:
  if api_key == "":
@@ -256,7 +256,7 @@ class ProjectViewSet(ModelViewSet):
  return Response(FeishuIMConfigSerializer(project).data)
  if request.method == "PUT":
  serializer = FeishuIMConfigCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  project.feishu_app_id = serializer.validated_data["app_id"]
  project.feishu_app_secret_encrypted = encrypt_value(
  serializer.validated_data["app_secret"]
@@ -273,7 +273,7 @@ class ProjectViewSet(ModelViewSet):
  """Test Feishu IM configuration by sending a test message."""
  project = await self.aget_object
  serializer = FeishuIMTestSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  user_id = serializer.validated_data["user_id"]
  message = serializer.validated_data["message"]
  # 优先使用请求中的临时配置，否则使用已保存的配置
@@ -331,7 +331,7 @@ class RepositoryViewSet(ModelViewSet):
  return RepositorySerializer
  async def acreate(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
  access_token = data.pop("access_token")
  git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")

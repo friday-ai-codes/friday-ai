@@ -36,7 +36,7 @@ class RepositoryViewSet(ModelViewSet):
  return RepositorySerializer
  async def create(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  data = serializer.validated_data
  access_token = data.pop("access_token")
  git_user_name = data.pop("git_user_name", "Friday Codes AI Agent")
