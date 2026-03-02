@@ -3,6 +3,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 from asgiref.sync import sync_to_async
 from django.db import models
+from django.db.models import F
 from django.utils import timezone
 if TYPE_CHECKING:
  from django.db.models import QuerySet
@@ -361,9 +362,10 @@ class NodeExecution(models.Model):
  if output_data:
  self.output_data = output_data
  await self.asave(update_fields=["status", "completed_at", "output_data"])
- # 级联更新父执行统计
- self.workflow_execution.completed_nodes += 1
- await self.workflow_execution.asave(update_fields=["completed_nodes"])
+ # 级联更新父执行统计（避免加载 FK，直接原子更新）
+ await WorkflowExecution.objects.filter(pk=self.workflow_execution_id).aupdate(
+ completed_nodes=F("completed_nodes") + 1
+ )
  def mark_failed(self, error: str, traceback: str = "") -> None:
  """标记执行失败"""
  self.status = NodeExecutionStatus.FAILED
@@ -381,9 +383,10 @@ class NodeExecution(models.Model):
  self.error_message = error
  self.error_traceback = traceback
  await self.asave(update_fields=["status", "completed_at", "error_message", "error_traceback"])
- # 级联更新父执行统计
- self.workflow_execution.failed_nodes += 1
- await self.workflow_execution.asave(update_fields=["failed_nodes"])
+ # 级联更新父执行统计（避免加载 FK，直接原子更新）
+ await WorkflowExecution.objects.filter(pk=self.workflow_execution_id).aupdate(
+ failed_nodes=F("failed_nodes") + 1
+ )
  def mark_skipped(self, reason: str = "") -> None:
  """标记跳过"""
  self.status = NodeExecutionStatus.SKIPPED
@@ -399,9 +402,10 @@ class NodeExecution(models.Model):
  self.completed_at = timezone.now
  self.error_message = reason
  await self.asave(update_fields=["status", "completed_at", "error_message"])
- # 级联更新父执行统计
- self.workflow_execution.skipped_nodes += 1
- await self.workflow_execution.asave(update_fields=["skipped_nodes"])
+ # 级联更新父执行统计（避免加载 FK，直接原子更新）
+ await WorkflowExecution.objects.filter(pk=self.workflow_execution_id).aupdate(
+ skipped_nodes=F("skipped_nodes") + 1
+ )
  def mark_waiting_approval(self, approval_request: dict) -> None:
  """标记等待审批"""
  self.status = NodeExecutionStatus.WAITING_APPROVAL

@@ -61,6 +61,14 @@ body {
 /* 图标容器修正：消除 line-height 导致的高度拉伸 */:has(> [class*='icon-[']:only-child) {
  line-height: 0;
 }
+/* 隐藏滚动条但保留滚动功能 */
+.scrollbar-hide {
+ -ms-overflow-style: none;
+ scrollbar-width: none;
+ &:-webkit-scrollbar {
+ display: none;
+ }
+}
 /* 自定义滚动条样式 */:-webkit-scrollbar {
  width: 8px;
  height: 8px;

@@ -27,7 +27,7 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore): Node<WorkflowNode
  return storeNodes.map((storeNode) => ({
  id: storeNode.id,
  type: storeNode.nodeType,
- position: storeNode.position,
+ position: { ...storeNode.position },
  data: {
  nodeType: storeNode.nodeType,
  shortId: storeNode.shortId,
