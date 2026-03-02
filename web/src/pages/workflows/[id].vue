@@ -113,16 +113,6 @@ async function saveAndLeave {
  toast.error(`保存失败: ${e.message}`)
  }
 }
-function saveDraftAndLeave {
- store.saveDraft
- toast.success('草稿已保存')
- showLeaveDialog.value = false
- if (pendingNavigation.value) {
- hasUnsavedChanges.value = false
- pendingNavigation.value
- pendingNavigation.value = null
- }
-}
 async function onSave {
  try {
  await store.saveWorkflow
@@ -232,27 +222,22 @@ async function onUpdateIsActive(isActive: boolean) {
  </div>
  <!-- Leave Confirmation Dialog -->
  <AlertDialog:open="showLeaveDialog">
- <AlertDialogContent>
+ <AlertDialogContent @escape-key-down="cancelLeave">
  <AlertDialogHeader>
  <AlertDialogTitle>有未保存的更改</AlertDialogTitle>
  <AlertDialogDescription>
- 您有未保存的工作流更改，离开前请选择操作：
+ 您有未保存的工作流更改，是否保存后再离开？
  </AlertDialogDescription>
  </AlertDialogHeader>
  <AlertDialogFooter class="flex-col sm:flex-row gap-2">
  <AlertDialogCancel @click="cancelLeave">
  取消
  </AlertDialogCancel>
- <Button variant="outline" @click="saveDraftAndLeave">
- <span class="icon-[lucide--file-clock] w-4 mr-2" />
- 存草稿
- </Button>
- <Button variant="outline" class="text-destructive hover:text-destructive" @click="confirmLeave">
- 放弃更改
+ <Button variant="outline" class="text-destructive hover:text-destructive hover:bg-destructive/10" @click="confirmLeave">
+ 不保存退出
  </Button>
  <AlertDialogAction @click="saveAndLeave">
- <span class="icon-[lucide--save] w-4 mr-2" />
- 保存
+ 保存并退出
  </AlertDialogAction>
  </AlertDialogFooter>
  </AlertDialogContent>

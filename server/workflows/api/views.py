@@ -668,26 +668,19 @@ class NodeTypeViewSet(ReadOnlyModelViewSet):
  serializer_class = NodeTypeSerializer
  permission_classes = [IsAuthenticated]
  def get_queryset(self):
- # Return empty - we use list directly
- return
- def list(self, request: Request) -> Response:
- """List all available node types."""
  node_types = NodeRegistry.get_all_schemas
- data = [NodeTypeSerializer(nt).data for nt in node_types]
  # Optionally filter by category
- category = request.query_params.get("category")
+ category = self.request.query_params.get("category")
  if category:
- data = [d for d in data if d["category"] == category]
- return Response(data)
- def retrieve(self, request: Request, pk=None) -> Response:
- """Get a specific node type."""
+ node_types = [nt for nt in node_types if nt["category"] == category]
+ return node_types
+ def get_object(self):
+ pk = self.kwargs.get("pk")
  node_class = NodeRegistry.get(pk)
  if not node_class:
- return Response(
- {"detail": f"未知的节点类型: {pk}"},
- status=status.HTTP_404_NOT_FOUND,
- )
- return Response(NodeTypeSerializer(node_class.get_schema).data)
+ from rest_framework.exceptions import NotFound
+ raise NotFound(f"未知的节点类型: {pk}")
+ return node_class.get_schema
 # =============================================================================
 # Webhook Views
 # =============================================================================
