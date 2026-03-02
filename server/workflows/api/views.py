@@ -233,7 +233,7 @@ class WorkflowViewSet(ModelViewSet):
  user_id=str(request.user.id),
  )
  serializer = WorkflowExecuteSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  context = TriggerContext(
  trigger_type="manual",
  raw_payload=serializer.validated_data.get("input_data", {}),
@@ -283,7 +283,7 @@ class WorkflowViewSet(ModelViewSet):
  async def import_workflow(self, request: Request) -> Response:
  """Import workflow from JSON."""
  serializer = WorkflowImportSerializer(data=request.data)
- await sync_to_async(serializer.is_valid)(raise_exception=True)
+ serializer.is_valid(raise_exception=True)
  project_id = request.data.get("project_id")
  if not project_id:
  return Response(
