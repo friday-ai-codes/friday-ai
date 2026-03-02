@@ -793,7 +793,7 @@ class ExecutionContextView(APIView):
  async def get(self, request: Request, execution_id) -> Response:
  """Get execution context snapshot."""
  execution = await aget_object_or_404(WorkflowExecution, id=execution_id)
- context_snapshot = await sync_to_async(execution.get_context_snapshot)
+ context_snapshot = execution.get_context_snapshot
  serializer = ExecutionContextSerializer(context_snapshot)
  return Response(serializer.data)
 # =============================================================================
