@@ -7,6 +7,7 @@ from typing import Any, Callable
 import structlog
 from asgiref.sync import sync_to_async
 from django.conf import settings
+from django.db import IntegrityError
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -398,21 +399,16 @@ class FeishuWebhookView(APIView):
  return Response({"status": "ignored", "reason": "缺少 header 或 payload"})
  event_uuid = header.get("uuid")
  event_type = header.get("event_type", "")
- # Idempotency check
+ # Idempotency check — 内存去重
  if event_uuid and is_event_processed(event_uuid):
- await TriggerLog.objects.acreate(
- webhook_raw_request=raw_body,
- event_uuid=event_uuid,
- event_type=event_type,
- status=TriggerLogStatus.DUPLICATE,
- )
+ logger.info("webhook_event_duplicate", event_uuid=event_uuid)
  return Response({"status": "duplicate", "uuid": event_uuid})
  # Get project
  project_key = payload.get("project_key") or payload.get("project_simple_name")
  if not project_key:
  await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
- event_uuid=event_uuid,
+ event_uuid=None, # 事件未被处理，不占用 unique 约束位
  event_type=event_type,
  status=TriggerLogStatus.IGNORED,
  error_message="缺少 project_key",
@@ -425,7 +421,7 @@ class FeishuWebhookView(APIView):
  except Project.DoesNotExist:
  await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
- event_uuid=event_uuid,
+ event_uuid=None, # 事件未被处理，不占用 unique 约束位
  event_type=event_type,
  project_key=project_key,
  status=TriggerLogStatus.IGNORED,
@@ -439,7 +435,7 @@ class FeishuWebhookView(APIView):
  ):
  await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
- event_uuid=event_uuid,
+ event_uuid=None, # 事件未被处理，不占用 unique 约束位
  event_type=event_type,
  project_key=project_key,
  project=project,
@@ -458,6 +454,7 @@ class FeishuWebhookView(APIView):
  work_item_id = payload.get("id")
  work_item_name = payload.get("name", "")
  work_item_type = payload.get("work_item_type_key", "story")
+ try:
  trigger_log = await TriggerLog.objects.acreate(
  webhook_raw_request=raw_body,
  event_uuid=event_uuid,
@@ -469,6 +466,12 @@ class FeishuWebhookView(APIView):
  work_item_type=work_item_type,
  status=TriggerLogStatus.ACCEPTED,
  )
+ except IntegrityError:
+ # 服务器重启后内存集合丢失，但 DB unique 约束捕获了重复
+ if event_uuid:
+ mark_event_processed(event_uuid)
+ logger.info("webhook_event_duplicate_db", event_uuid=event_uuid)
+ return Response({"status": "duplicate", "uuid": event_uuid})
  # Handle specific events
  if event_type == "WorkitemCreateEvent":
  await self._handle_workitem_create(project, payload, trigger_log)
