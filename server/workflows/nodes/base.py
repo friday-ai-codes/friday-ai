@@ -141,6 +141,19 @@ class ExecutionContext:
  if "global_params" not in self.workflow_context:
  self.workflow_context["global_params"] = {}
  self.workflow_context["global_params"][key] = value
+ async def aset_global_param(self, key: str, value: Any) -> None:
+ """设置全局参数（async 版本）
+ 更新 workflow_execution.global_params 并持久化到数据库。
+ Args:
+ key: 参数键
+ value: 参数值
+ """
+ if self.workflow_execution:
+ await self.workflow_execution.aset_global_param(key, value)
+ # 同时更新本地 context 以便后续节点读取
+ if "global_params" not in self.workflow_context:
+ self.workflow_context["global_params"] = {}
+ self.workflow_context["global_params"][key] = value
  def update_global_params(self, data: dict) -> None:
  """批量更新全局参数
  Args:
@@ -186,6 +199,39 @@ class ExecutionContext:
  self.workflow_context["global_variables"][key] = variable
  # 同时更新 global_params 以保持向后兼容
  self.set_global_param(key, value)
+ async def aset_global_variable(
+ self,
+ key: str,
+ name: str,
+ value: Any,
+ desc: str = "",
+ required: bool = False,
+ ) -> None:
+ """设置全局变量（async 版本，带元数据）
+ Args:
+ key: 变量标识符，用于在模板中引用
+ name: 显示名称
+ value: 变量值
+ desc: 描述信息
+ required: 是否必填
+ """
+ variable: GlobalVariable = {
+ "key": key,
+ "name": name,
+ "value": value,
+ "desc": desc,
+ "required": required,
+ "source_node": self.node_id,
+ }
+ # 存储到 workflow_execution.context['global_variables']
+ if self.workflow_execution:
+ await self.workflow_execution.aset_global_variable(key, variable)
+ # 同时更新本地 context
+ if "global_variables" not in self.workflow_context:
+ self.workflow_context["global_variables"] = {}
+ self.workflow_context["global_variables"][key] = variable
+ # 同时更新 global_params 以保持向后兼容
+ await self.aset_global_param(key, value)
  def get_global_variable(self, key: str) -> GlobalVariable | None:
  """获取全局变量（含元数据）
  Args:

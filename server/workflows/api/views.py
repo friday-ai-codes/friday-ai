@@ -266,7 +266,7 @@ class WorkflowViewSet(ModelViewSet):
  if new_project_id:
  from projects.models import Project
  new_project = await aget_object_or_404(Project, id=new_project_id)
- new_workflow = await sync_to_async(workflow.clone)(new_project=new_project, new_name=new_name)
+ new_workflow = await workflow.aclone(new_project=new_project, new_name=new_name)
  new_workflow.created_by = request.user
  await new_workflow.asave
  return Response(
@@ -277,7 +277,7 @@ class WorkflowViewSet(ModelViewSet):
  async def export(self, request: Request, pk=None) -> Response:
  """Export workflow as JSON."""
  workflow = await self.aget_object
- data = await sync_to_async(workflow.to_json)
+ data = await workflow.ato_json
  return Response(data)
  @action(detail=False, methods=["post"], url_path="import")
  async def import_workflow(self, request: Request) -> Response:
@@ -293,7 +293,7 @@ class WorkflowViewSet(ModelViewSet):
  from projects.models import Project
  project = await aget_object_or_404(Project, id=project_id)
  try:
- workflow = await sync_to_async(Workflow.from_json)(
+ workflow = await Workflow.afrom_json(
  data=serializer.validated_data["data"],
  project=project,
  created_by=request.user,

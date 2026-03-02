@@ -167,7 +167,7 @@ class FetchProjectInfoNode(BaseNode):
  )
  # 注册仓库列表为全局变量，供下游节点使用
  if include_repositories and "repositories" in output:
- await sync_to_async(context.set_global_variable, thread_sensitive=True)(
+ await context.aset_global_variable(
  key="repositories",
  name="项目仓库列表",
  value=output["repositories"],

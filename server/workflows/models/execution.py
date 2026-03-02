@@ -224,6 +224,14 @@ class WorkflowExecution(models.Model):
  """
  self.global_params[key] = value
  self.save(update_fields=["global_params"])
+ async def aset_global_param(self, key: str, value: Any) -> None:
+ """设置全局参数（async 版本）
+ Args:
+ key: 参数键
+ value: 参数值
+ """
+ self.global_params[key] = value
+ await self.asave(update_fields=["global_params"])
  def update_global_params(self, data: dict) -> None:
  """批量更新全局参数
  Args:
@@ -258,6 +266,16 @@ class WorkflowExecution(models.Model):
  self.context["global_variables"] = {}
  self.context["global_variables"][key] = variable
  self.save(update_fields=["context"])
+ async def aset_global_variable(self, key: str, variable: dict) -> None:
+ """设置全局变量（async 版本）
+ Args:
+ key: 变量标识符
+ variable: 变量数据（包含 key, name, value, desc, required, source_node）
+ """
+ if "global_variables" not in self.context:
+ self.context["global_variables"] = {}
+ self.context["global_variables"][key] = variable
+ await self.asave(update_fields=["context"])
  def get_global_variable(self, key: str) -> dict | None:
  """获取全局变量
  Args:

@@ -1,6 +1,5 @@
 """Variable Extractor Node - Extract variables from JSON data using JSONPath."""
 import structlog
-from asgiref.sync import sync_to_async
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
 from workflows.nodes.base import (
@@ -123,8 +122,8 @@ class VariableExtractorNode(BaseNode):
  if matches:
  # 取第一个匹配结果
  value = matches[0].value
- # 注册全局变量（使用 sync_to_async 因为底层会调用 save）
- await sync_to_async(context.set_global_variable)(
+ # 注册全局变量
+ await context.aset_global_variable(
  key=key,
  name=name,
  value=value,
