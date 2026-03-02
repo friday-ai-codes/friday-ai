@@ -40,7 +40,7 @@ class InteractionAnswerView(APIView):
  answer=answer,
  answer_source=answer_source,
  )
- await sync_to_async(interaction.refresh_from_db)
+ await interaction.arefresh_from_db
  data = await sync_to_async(lambda: InteractionLogSerializer(interaction).data)
  return Response(data)
 class AgentSessionAnswerView(APIView):

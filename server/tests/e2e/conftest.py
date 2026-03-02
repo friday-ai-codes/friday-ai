@@ -276,7 +276,7 @@ async def wait_for_execution_status(
  targets.append(status)
  elapsed = 0.0
  while elapsed < timeout:
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  if execution.status in targets:
  return execution.status
  await asyncio.sleep(poll_interval)

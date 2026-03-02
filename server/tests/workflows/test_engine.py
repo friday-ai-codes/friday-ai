@@ -133,7 +133,7 @@ class TestExecutionStart:
  input_data=input_data,
  trigger_type="manual",
  )
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  assert execution.input_data == input_data
  async def test_start_execution_status(self, simple_workflow):
  """Test that execution starts in correct status."""
@@ -162,7 +162,7 @@ class TestExecutionLifecycle:
  # Wait for completion
  for _ in range(20):
  await asyncio.sleep(0.2)
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  if execution.status in [
  ExecutionStatus.COMPLETED,
  ExecutionStatus.FAILED,
@@ -180,7 +180,7 @@ class TestExecutionLifecycle:
  # Wait for completion
  for _ in range(20):
  await asyncio.sleep(0.2)
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  if execution.status == ExecutionStatus.COMPLETED:
  break
  assert execution.completed_nodes >= 1
@@ -202,7 +202,7 @@ class TestApprovalHandling:
  # Wait for execution to reach approval
  for _ in range(20):
  await asyncio.sleep(0.2)
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  # Check if any node is waiting for approval
  waiting_nodes = await sync_to_async(
  lambda: list(
@@ -238,5 +238,5 @@ class TestCancelOperation:
  await asyncio.sleep(0.5)
  # Cancel the execution
  await engine.cancel_execution(execution)
- await sync_to_async(execution.refresh_from_db)
+ await execution.arefresh_from_db
  assert execution.status == ExecutionStatus.CANCELLED
