@@ -12,9 +12,19 @@ class FeishuConfig(AppConfig):
  Starts Feishu WebSocket clients for all configured projects
  that have feishu_app_id and feishu_app_secret configured.
  """
- # Avoid running in management commands or migrations
- if os.environ.get("RUN_MAIN") != "true":
- # Only run in the main process (not the reloader)
+ # runserver reloader: RUN_MAIN=true 表示子进程（应启动）
+ # uvicorn/daphne: 没有 RUN_MAIN，但也不是 reloader 模式
+ # 管理命令/迁移: 通过 sys.argv 检测跳过
+ import sys
+ is_runserver = any("runserver" in arg for arg in sys.argv)
+ if is_runserver and os.environ.get("RUN_MAIN") != "true":
+ # runserver reloader 主进程，跳过（子进程会再次调用 ready）
+ return
+ is_management_cmd = len(sys.argv) > 1 and sys.argv[1] in (
+ "migrate", "makemigrations", "collectstatic", "check",
+ "shell", "dbshell", "test", "startapp", "createsuperuser",
+ )
+ if is_management_cmd:
  return
  # Start in a delayed thread to avoid blocking app startup
  def delayed_start:

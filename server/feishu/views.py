@@ -178,6 +178,7 @@ def handle_user_answer(callback: CardCallback) -> dict[str, Any] | None:
  Returns:
  Updated card JSON showing answered state, or None
  """
+ from agents.models import AgentSession
  from feishu.cards.question_card import build_answered_card
  from tasks.agent_tasks import schedule_resume_agent_session
  # Parse action value (may be string or dict)
@@ -209,12 +210,26 @@ def handle_user_answer(callback: CardCallback) -> dict[str, Any] | None:
  session_id=session_id,
  answer_preview=answer[:50] if answer else "",
  )
- # Schedule async session resume (don't block callback response)
+ # Check session status before scheduling resume
+ try:
+ session = AgentSession.objects.get(session_id=session_id)
+ if session.status != AgentSession.Status.SUSPENDED:
+ logger.warning(
+ "user_answer_session_not_suspended",
+ session_id=session_id,
+ status=session.status,
+ )
+ # Still update the card but don't resume
+ else:
  schedule_resume_agent_session(session_id, answer)
- # Get current question from session for the answered card
- # We use a simple approach - just show the answer
+ # Get question from session temp_data
+ question = (session.temp_data or {}).get("current_question", "")
+ except AgentSession.DoesNotExist:
+ logger.warning("user_answer_session_not_found", session_id=session_id)
+ question = ""
+ schedule_resume_agent_session(session_id, answer)
  return build_answered_card(
- question="", # Question was already in the card
+ question=question,
  answer=answer,
  history=None,
  )

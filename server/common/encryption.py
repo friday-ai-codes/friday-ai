@@ -1,7 +1,7 @@
 """Encryption utilities using Fernet symmetric encryption."""
 import base64
 import hashlib
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 def _get_fernet_key -> bytes:
  """Get or derive a valid Fernet key from SECRET_KEY."""
@@ -40,5 +40,11 @@ def decrypt_value(encrypted_value: str) -> str:
  if not encrypted_value:
  return encrypted_value
  fernet = get_fernet
+ try:
  decrypted = fernet.decrypt(encrypted_value.encode)
+ except InvalidToken:
+ raise ValueError(
+ "解密失败：密钥不匹配。可能是 FRIDAY_ENCRYPTION_KEY 或 SECRET_KEY 已变更，"
+ "请重新配置加密字段的值"
+ )
  return decrypted.decode
