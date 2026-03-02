@@ -1,6 +1,5 @@
 """Fetch project information node."""
 import structlog
-from asgiref.sync import sync_to_async
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
 from projects.models import Project
@@ -136,7 +135,7 @@ class FetchProjectInfoNode(BaseNode):
  include_claude_config = config.get("include_claude_config", False)
  include_webhook_token = config.get("include_webhook_token", False)
  # 解析项目标识：支持模板变量 {{}} 和 JSONPath $
- project_identifier = await self._resolve_value_async(raw_identifier, context)
+ project_identifier = self._resolve_value(raw_identifier, context)
  if not project_identifier:
  return NodeResult(
  status="failed",
@@ -193,26 +192,23 @@ class FetchProjectInfoNode(BaseNode):
  )
  async def _find_project(self, identifier: str, identifier_type: str) -> Project | None:
  """查找项目"""
- def _query:
- # 自动检测类型
+ import uuid as uuid_mod
  if identifier_type == "auto":
  # 先尝试 UUID
  try:
- import uuid
- uuid.UUID(identifier)
- project = Project.objects.filter(id=identifier).first
+ uuid_mod.UUID(identifier)
+ project = await Project.objects.filter(id=identifier).afirst
  if project:
  return project
  except ValueError:
  pass
  # 再尝试飞书项目 Key
- return Project.objects.filter(feishu_project_key=identifier).first
+ return await Project.objects.filter(feishu_project_key=identifier).afirst
  elif identifier_type == "id":
- return Project.objects.filter(id=identifier).first
+ return await Project.objects.filter(id=identifier).afirst
  elif identifier_type == "feishu_project_key":
- return Project.objects.filter(feishu_project_key=identifier).first
+ return await Project.objects.filter(feishu_project_key=identifier).afirst
  return None
- return await sync_to_async(_query, thread_sensitive=True)
  async def _build_output(
  self,
  project: Project,
@@ -222,8 +218,7 @@ class FetchProjectInfoNode(BaseNode):
  include_webhook_token: bool,
  ) -> dict:
  """构建输出数据"""
- def _build:
- output = {
+ output: dict = {
  "project_id": str(project.id),
  "project_name": project.name,
  "description": project.description or "",
@@ -234,7 +229,7 @@ class FetchProjectInfoNode(BaseNode):
  # 仓库列表
  if include_repositories:
  repositories =
- for repo in project.repositories.filter(is_deleted=False):
+ async for repo in project.repositories.filter(is_deleted=False):
  repo_info = {
  "id": str(repo.id),
  "name": repo.name,
@@ -270,12 +265,9 @@ class FetchProjectInfoNode(BaseNode):
  if include_webhook_token:
  output["webhook_token"] = project.feishu_webhook_token or ""
  return output
- return await sync_to_async(_build, thread_sensitive=True)
- async def _resolve_value_async(self, raw_value: str, context: ExecutionContext) -> str:
- """异步解析值：支持模板变量 {{}} 和 JSONPath $"""
- return await sync_to_async(self._resolve_value, thread_sensitive=True)(raw_value, context)
  def _resolve_value(self, raw_value: str, context: ExecutionContext) -> str:
  """解析值：支持模板变量 {{}} 和 JSONPath $
+ 注意：此方法不涉及 DB 操作，纯 CPU 计算，可安全在 async 上下文中同步调用。
  Args:
  raw_value: 原始配置值
  context: 执行上下文
