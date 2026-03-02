@@ -14,17 +14,18 @@ from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
 from system.models import SettingKeys, SystemSetting
+# KEEP: Qdrant SDK 使用同步 httpx 客户端，async 化属于独立重构项（Out of Scope）
 # Wrap sync Qdrant operations for use in async context
 @sync_to_async
 def qdrant_create_collection(repository_id: str, vector_size: int) -> bool:
  return QdrantService.create_collection(repository_id, vector_size=vector_size)
-@sync_to_async
+@sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_get_stored_file_hashes(repository_id: str) -> dict[str, str]:
  return QdrantService.get_stored_file_hashes(repository_id)
-@sync_to_async
+@sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_delete_by_file_path(repository_id: str, file_path: str) -> bool:
  return QdrantService.delete_by_file_path(repository_id, file_path)
-@sync_to_async
+@sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_upsert_vectors(repository_id: str, points: list[dict]) -> bool:
  return QdrantService.upsert_vectors(repository_id, points)
 async def update_index_progress(repository_id: str, total: int, processed: int) -> None:

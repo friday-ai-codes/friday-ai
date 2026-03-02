@@ -291,7 +291,7 @@ async def search_repository_code(
  )
  # Search across all repositories
  all_results: list[dict[str, Any]] =
- @sync_to_async
+ @sync_to_async # KEEP: Qdrant SDK 同步限制
  def search_repo(repo_id: str) -> list[dict[str, Any]]:
  return QdrantService.search(
  repository_id=repo_id,

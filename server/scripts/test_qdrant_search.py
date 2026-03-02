@@ -147,6 +147,7 @@ async def search_qdrant(
  if language:
  filters["language"] = language
  from asgiref.sync import sync_to_async
+ # KEEP: Qdrant SDK 同步限制（测试脚本）
  results = await sync_to_async(QdrantService.search)(
  repository_id=repository_id,
  query_vector=query_vector,
