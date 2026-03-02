@@ -409,6 +409,7 @@ class WorkflowViewSet(ModelViewSet):
  nodes_data = request.data.get("nodes", )
  edges_data = request.data.get("edges", )
  delete_orphans = request.data.get("delete_orphans", False)
+ # KEEP: 包含 transaction.atomic + 多个 serializer + 批量 CRUD，完全 async 化复杂度高
  await sync_to_async(_bulk_update_nodes_and_edges)(workflow, nodes_data, edges_data, delete_orphans)
  # Return updated workflow
  await workflow.arefresh_from_db
