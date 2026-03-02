@@ -182,9 +182,11 @@ class WorkflowViewSet(ModelViewSet):
  serializer_class = WorkflowSerializer
  permission_classes = [IsAuthenticated, WorkflowPermission]
  async def perform_acreate(self, serializer):
- await serializer.asave
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)
  async def perform_aupdate(self, serializer):
- await serializer.asave
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)
  def get_serializer_class(self):
  if self.action == "create":
  return WorkflowCreateSerializer
@@ -345,7 +347,8 @@ class WorkflowViewSet(ModelViewSet):
  partial = request.method == "PATCH"
  serializer = WorkflowNodeSerializer(node, data=request.data, partial=partial)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
- await serializer.asave
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)
  return Response(serializer.data)
  # =========================================================================
  # Edge Management (nested under workflow)
@@ -395,7 +398,8 @@ class WorkflowViewSet(ModelViewSet):
  partial = request.method == "PATCH"
  serializer = WorkflowEdgeSerializer(edge, data=request.data, partial=partial)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
- await serializer.asave
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)
  return Response(serializer.data)
  @action(detail=True, methods=["put"], url_path="bulk-update")
  async def bulk_update(self, request: Request, pk=None) -> Response:
@@ -784,9 +788,10 @@ class WorkflowTriggerViewSet(ModelViewSet):
  workflow_id = self.kwargs.get("workflow_id")
  if workflow_id:
  workflow = await aget_object_or_404(Workflow, id=workflow_id)
- await serializer.asave(workflow=workflow)
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
+ await sync_to_async(serializer.save)(workflow=workflow)
  else:
- await serializer.asave
+ await sync_to_async(serializer.save)
 # =============================================================================
 # Execution Context View
 # =============================================================================

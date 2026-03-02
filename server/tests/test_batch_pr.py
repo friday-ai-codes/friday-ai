@@ -19,13 +19,14 @@ def make_mock_repository(
  repo.name = name
  repo.git_url = git_url
  repo.git_platform = git_platform
- if has_credential:
+ return repo
+def make_mock_credential(has_token: bool = True) -> MagicMock | None:
+ """Create a mock GitCredential object."""
+ if not has_token:
+ return None
  credential = MagicMock
  credential.encrypted_token = "encrypted_token_value"
- repo.credential = credential
- else:
- repo.credential = None
- return repo
+ return credential
 def make_context(
  config: dict[str, Any],
  input_data: dict[str, Any] | None = None,
@@ -54,6 +55,7 @@ async def test_batch_create_pr_all_success -> None:
  repo2_id = str(uuid4)
  repo1 = make_mock_repository(repo_id=repo1_id, name="frontend")
  repo2 = make_mock_repository(repo_id=repo2_id, name="backend")
+ credential = make_mock_credential
  config = {
  "repositories": [{"id": repo1_id}, {"id": repo2_id}],
  "title": "Test PR",
@@ -71,12 +73,12 @@ async def test_batch_create_pr_all_success -> None:
  )
  with (
  patch(
- "workflows.nodes.git.pr.sync_to_async",
- side_effect=lambda fn: AsyncMock(return_value=fn),
- ),
- patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
  return_value=_make_async_filter_qs([repo1, repo2]),
+ ),
+ patch(
+ "workflows.nodes.git.pr.GitCredential.objects.filter",
+ **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -100,6 +102,7 @@ async def test_batch_create_pr_partial_failure -> None:
  repo2_id = str(uuid4)
  repo1 = make_mock_repository(repo_id=repo1_id, name="frontend")
  repo2 = make_mock_repository(repo_id=repo2_id, name="backend")
+ credential = make_mock_credential
  config = {
  "repositories": [{"id": repo1_id}, {"id": repo2_id}],
  "title": "Test PR",
@@ -124,12 +127,12 @@ async def test_batch_create_pr_partial_failure -> None:
  ]
  with (
  patch(
- "workflows.nodes.git.pr.sync_to_async",
- side_effect=lambda fn: AsyncMock(return_value=fn),
- ),
- patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
  return_value=_make_async_filter_qs([repo1, repo2]),
+ ),
+ patch(
+ "workflows.nodes.git.pr.GitCredential.objects.filter",
+ **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -193,6 +196,7 @@ async def test_batch_create_pr_cross_reference_disabled -> None:
  repo2_id = str(uuid4)
  repo1 = make_mock_repository(repo_id=repo1_id, name="frontend")
  repo2 = make_mock_repository(repo_id=repo2_id, name="backend")
+ credential = make_mock_credential
  config = {
  "repositories": [{"id": repo1_id}, {"id": repo2_id}],
  "title": "Test PR",
@@ -210,12 +214,12 @@ async def test_batch_create_pr_cross_reference_disabled -> None:
  )
  with (
  patch(
- "workflows.nodes.git.pr.sync_to_async",
- side_effect=lambda fn: AsyncMock(return_value=fn),
- ),
- patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
  return_value=_make_async_filter_qs([repo1, repo2]),
+ ),
+ patch(
+ "workflows.nodes.git.pr.GitCredential.objects.filter",
+ **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -233,6 +237,7 @@ async def test_batch_create_pr_backward_compat -> None:
  """Test backward compatibility with single repository using repository field."""
  repo_id = str(uuid4)
  repo = make_mock_repository(repo_id=repo_id, name="single-repo")
+ credential = make_mock_credential
  # Use singular 'repository' field (backward compat)
  config = {
  "repository": {"id": repo_id},
@@ -251,12 +256,12 @@ async def test_batch_create_pr_backward_compat -> None:
  )
  with (
  patch(
- "workflows.nodes.git.pr.sync_to_async",
- side_effect=lambda fn: AsyncMock(return_value=fn),
- ),
- patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
  return_value=_make_async_filter_qs([repo]),
+ ),
+ patch(
+ "workflows.nodes.git.pr.GitCredential.objects.filter",
+ **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
  patch(
@@ -283,12 +288,12 @@ async def test_batch_create_pr_no_credential -> None:
  context = make_context(config)
  with (
  patch(
- "workflows.nodes.git.pr.sync_to_async",
- side_effect=lambda fn: AsyncMock(return_value=fn),
- ),
- patch(
  "workflows.nodes.git.pr.Repository.objects.filter",
  return_value=_make_async_filter_qs([repo]),
+ ),
+ patch(
+ "workflows.nodes.git.pr.GitCredential.objects.filter",
+ **{"return_value.afirst": AsyncMock(return_value=None)},
  ),
  ):
  node = CreatePRNode
