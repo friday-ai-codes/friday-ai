@@ -81,6 +81,8 @@ def sync_workflow_triggers(workflow: Workflow) -> None:
  if config.get("filter_status"):
  filter_config["cur_work_item_status.state_key"] = config["filter_status"]
  for event_type in event_types:
+ if not event_type:
+ continue
  configured_triggers.append(
  {
  "event_type": event_type,

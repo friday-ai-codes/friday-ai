@@ -480,7 +480,12 @@ def create_feishu_client_for_project(project) -> FeishuClient:
  if not project.feishu_plugin_id or not project.feishu_plugin_secret_encrypted:
  raise ValueError(f"项目 {project.id} 未配置飞书集成")
  # 解密 plugin_secret
+ try:
  plugin_secret = decrypt_value(project.feishu_plugin_secret_encrypted)
+ except Exception as e:
+ raise ValueError(
+ f"项目 {project.id} 飞书凭证解密失败，请重新配置 plugin_secret"
+ ) from e
  return FeishuClient(
  plugin_id=project.feishu_plugin_id,
  plugin_secret=plugin_secret,

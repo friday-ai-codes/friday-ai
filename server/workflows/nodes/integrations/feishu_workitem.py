@@ -36,7 +36,7 @@ class FetchWorkItemNode(BaseNode):
  "type": "string",
  "title": "工作项类型",
  "description": "飞书工作项类型",
- "enum": ["story", "task", "bug", "epic", "feature", ""],
+ "enum": ["story", "task", "bug", "epic", "feature", "__auto__", ""],
  "default": "",
  },
  },
@@ -198,14 +198,16 @@ class FetchWorkItemNode(BaseNode):
  next_handle="default",
  )
  except Exception as e:
+ error_msg = str(e) or f"{type(e).__name__}: 飞书 API 调用失败"
  logger.error(
  "fetch_work_item_failed",
  work_item_id=work_item_id,
- error=str(e),
+ error=error_msg,
+ exc_info=True,
  )
  return NodeResult(
  status="failed",
- error=str(e),
+ error=error_msg,
  next_handle="error",
  )
  async def _get_project(self, context: ExecutionContext):

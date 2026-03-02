@@ -194,27 +194,6 @@ export const waitFeishuFieldConfigSchema = z.object({
  timeout_seconds: z.number.default(0),
  timeout_action: z.enum(['fail', 'skip', 'retry']).default('fail'),
 })
-/** AI 技术方案节点配置 */
-export const technicalPlanNodeConfigSchema = z.object({
- // API configuration
- use_custom_api: z.boolean.default(false),
- api_base_url: z.string.default(''),
- api_key: z.string.default(''),
- // Context input
- codebase_context: z.string.default(''),
- // Model configuration
- model: z.string.default(''),
- temperature: z.number.min(0).max(1).default(0.3),
- max_retries: z.number.min(1).max(5).default(3),
- // Generation configuration
- generation_mode: z.enum(['full', 'outline_first']).default('outline_first'),
- include_file_details: z.boolean.default(true),
- max_tasks: z.number.min(1).max(50).default(20),
- // Feishu writeback configuration
- feishu_field_key: z.string.default(''),
- auto_transition_status: z.boolean.default(true),
- target_status: z.string.default('待审核'),
-})
 /** 创建分支节点配置 */
 export const createBranchConfigSchema = z.object({
  repositories: z.array(z.string).default,
@@ -297,7 +276,6 @@ export type FetchProjectInfoConfig = z.infer<typeof fetchProjectInfoConfigSchema
 export type WaitCondition = z.infer<typeof waitConditionSchema>
 export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
 export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
-export type TechnicalPlanNodeConfig = z.infer<typeof technicalPlanNodeConfigSchema>
 export type CreateBranchConfig = z.infer<typeof createBranchConfigSchema>
 export type CreatePRConfig = z.infer<typeof createPRConfigSchema>
 export type AIPlanGenerationConfig = z.infer<typeof aiPlanGenerationConfigSchema>
@@ -316,7 +294,6 @@ export type NodeConfig
  | ContextRetrievalConfig
  | FetchProjectInfoConfig
  | WaitFeishuFieldConfig
- | TechnicalPlanNodeConfig
  | CreateBranchConfig
  | CreatePRConfig
  | AIPlanGenerationConfig
@@ -337,7 +314,6 @@ export const NODE_CONFIG_SCHEMAS = {
  context_retrieval: contextRetrievalConfigSchema,
  fetch_project_info: fetchProjectInfoConfigSchema,
  wait_feishu_field: waitFeishuFieldConfigSchema,
- ai_technical_plan: technicalPlanNodeConfigSchema,
  create_branch: createBranchConfigSchema,
  create_pr: createPRConfigSchema,
  ai_plan_generation: aiPlanGenerationConfigSchema,

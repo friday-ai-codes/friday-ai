@@ -2,11 +2,10 @@
 /**
  * WorkflowCanvas - Vue Flow canvas wired to Pinia store.
  *
- * Phase: basic canvas + dot background + store sync.
- * Phase: connection validation, gradient edges, sidebar drag-and-drop.
- * Phase: MiniMap, Controls plugins + node-click/pane-click event wiring.
+ * 数据同步策略：Pinia store 是 source of truth，通过:nodes/:edges 单向传入 VueFlow。
+ * VueFlow 的所有内部变更（拖拽、删除等）通过 @nodes-change/@edges-change 统一回写 store。
  */
-import type { NodeDragEvent, NodeMouseEvent, Connection } from '@vue-flow/core'
+import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
 import { Panel, VueFlow, SelectionMode, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
@@ -36,9 +35,31 @@ const { onDragOver, onDrop } = useDragAndDrop
 useKeyboardShortcuts
 /** 多选节点数量 */
 const multiSelectCount = computed( => getSelectedNodes.value.length)
-function onNodeDragStop(event: NodeDragEvent) {
- for (const node of event.nodes) {
- store.updateNodePosition(node.id, node.position)
+/**
+ * 统一处理 VueFlow 内部节点变更，回写到 Pinia store。
+ * 只处理 position（拖拽结束）和 remove（删除），其余忽略。
+ */
+function onNodesChange(changes: NodeChange) {
+ for (const change of changes) {
+ if (change.type === 'position' && change.position) {
+ // 拖拽中和拖拽结束都同步位置到 store，
+ // 避免其他操作触发 vfNodes 重新计算时用旧位置覆盖
+ store.updateNodePosition(change.id, change.position)
+ }
+ else if (change.type === 'remove') {
+ store.removeNode(change.id)
+ }
+ }
+}
+/**
+ * 统一处理 VueFlow 内部边变更，回写到 Pinia store。
+ * 只处理 remove（删除），其余忽略。
+ */
+function onEdgesChange(changes: EdgeChange) {
+ for (const change of changes) {
+ if (change.type === 'remove') {
+ store.removeEdge(change.id)
+ }
  }
 }
 function onNodeClick({ node }: NodeMouseEvent) {
@@ -90,7 +111,8 @@ function handleBatchCopy {
  <div class="h-full w-full bg-background">
  <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":max-zoom="1.5":min-zoom="0.2"
  multi-selection-key-code="Shift":selection-mode="SelectionMode.Partial"
- @node-drag-stop="onNodeDragStop"
+ @nodes-change="onNodesChange"
+ @edges-change="onEdgesChange"
  @node-click="onNodeClick"
  @pane-click="onPaneClick"
  @connect="onConnect"
