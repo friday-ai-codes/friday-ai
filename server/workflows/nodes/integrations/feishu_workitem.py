@@ -220,7 +220,7 @@ class FetchWorkItemNode(BaseNode):
  async def _get_repositories(self, project) -> list[dict]:
  """获取项目关联的仓库列表"""
  try:
- repos = await sync_to_async(lambda: list(project.repositories.filter(is_active=True)))
+ repos = [r async for r in project.repositories.filter(is_active=True)]
  repositories =
  for repo in repos:
  repositories.append(

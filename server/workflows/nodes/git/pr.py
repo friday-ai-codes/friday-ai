@@ -392,9 +392,9 @@ class CreatePRNode(BaseNode):
  next_handle="error",
  )
  # Fetch repositories from database
- repositories = await sync_to_async(
- lambda: list(Repository.objects.filter(id__in=repo_ids, is_deleted=False))
- )
+ repositories = [
+ r async for r in Repository.objects.filter(id__in=repo_ids, is_deleted=False)
+ ]
  if not repositories:
  return NodeResult(
  status="failed",

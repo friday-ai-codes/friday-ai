@@ -4,7 +4,6 @@ import asyncio
 import subprocess
 from typing import TYPE_CHECKING, Any
 import structlog
-from asgiref.sync import sync_to_async
 from friday.settings import DATA_DIR
 if TYPE_CHECKING:
  from repositories.models import Repository
@@ -117,13 +116,11 @@ class CreateBranchNode(BaseNode):
  if not repo_id:
  continue
  # 查找仓库
- repo = await sync_to_async(
- lambda rid=repo_id: Repository.objects.filter(
- id=rid, is_deleted=False
- ).first
- or Repository.objects.filter(name=rid, is_deleted=False).first,
- thread_sensitive=True,
- )
+ repo = await Repository.objects.filter(
+ id=repo_id, is_deleted=False
+ ).afirst
+ if repo is None:
+ repo = await Repository.objects.filter(name=repo_id, is_deleted=False).afirst
  if repo:
  valid_repos.append(repo)
  else:

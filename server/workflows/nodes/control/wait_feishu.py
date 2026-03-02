@@ -126,8 +126,7 @@ class WaitForFeishuFieldNode(BaseNode):
  "created_at": timezone.now.isoformat,
  }
  # 创建订阅记录
- from asgiref.sync import sync_to_async
- await sync_to_async(WorkflowEventSubscription.objects.create)(
+ await WorkflowEventSubscription.objects.acreate(
  workflow_execution=context.workflow_execution,
  node_execution=context.node_execution,
  event_type="WorkitemUpdateEvent", # 主要监听字段更新事件
@@ -152,13 +151,10 @@ class WaitForFeishuFieldNode(BaseNode):
  ) -> dict | None:
  """获取当前字段值（用于检查条件是否已满足）"""
  try:
- from asgiref.sync import sync_to_async
  from feishu.client import create_feishu_client_for_project
  from projects.models import Project
  # 获取项目
- project = await sync_to_async(
- lambda: Project.objects.filter(feishu_project_key=project_key).first
- )
+ project = await Project.objects.filter(feishu_project_key=project_key).afirst
  if not project:
  return None
  # 获取工作项详情
