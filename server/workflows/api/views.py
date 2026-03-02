@@ -790,6 +790,7 @@ class WorkflowTriggerViewSet(ModelViewSet):
  # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)(workflow=workflow)
  else:
+ # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
 # =============================================================================
 # Execution Context View
