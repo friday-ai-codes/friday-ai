@@ -1,7 +1,8 @@
 /**
  * useKeyboardShortcuts - 工作流画布键盘快捷键集中管理
  *
- * 快捷键：Delete/Backspace 删除、Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+A 全选
+ * 快捷键：Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+A 全选
+ * Delete/Backspace 删除由 VueFlow 内置处理，通过 @nodes-change 回写 store。
  * 注意：输入框聚焦时不拦截键盘事件（防止在 NodeConfigPanel 输入框中误触）
  */
 import type { GraphNode } from '@vue-flow/core'
@@ -23,14 +24,7 @@ export function useKeyboardShortcuts {
  // 输入框聚焦时不拦截
  if (isInputFocused(event)) return
  const isModifier = event.ctrlKey || event.metaKey
- // Delete / Backspace -> 删除选中节点（直接执行，不弹确认）
- if (event.key === 'Delete' || event.key === 'Backspace') {
- const selected = getSelectedNodes.value
- if (selected.length > 0) {
- event.preventDefault
- selected.forEach(node => store.removeNode(node.id))
- }
- }
+ // Delete/Backspace 由 VueFlow 内置处理，通过 @nodes-change 回写 store
  // Ctrl+A -> 全选
  if (isModifier && event.key === 'a') {
  event.preventDefault
