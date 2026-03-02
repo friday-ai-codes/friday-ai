@@ -121,12 +121,60 @@ async def acreate_workflow_from_template(
  description: str | None = None,
  created_by=None,
 ) -> Any:
- """Async version of create_workflow_from_template."""
- from asgiref.sync import sync_to_async
- return await sync_to_async(create_workflow_from_template)(
+ """Async version of create_workflow_from_template.
+ Uses native async ORM calls instead of sync_to_async wrapper.
+ """
+ from workflows.models import Workflow, WorkflowEdge, WorkflowNode
+ template = load_template(template_id)
+ # Create workflow
+ workflow = await Workflow.objects.acreate(
+ name=name or template.get("name", template_id),
+ description=description or template.get("description", ""),
  project_id=project_id,
- template_id=template_id,
- name=name,
- description=description,
  created_by=created_by,
+ trigger_type="manual",
+ metadata={
+ "template_id": template_id,
+ "template_version": template.get("version", "1.0"),
+ },
  )
+ # Create nodes
+ node_id_map: dict[str, str] = {} # template_id -> db_id
+ for node_data in template.get("nodes", ):
+ position = node_data.get("position", {})
+ node = await WorkflowNode.objects.acreate(
+ workflow=workflow,
+ node_type=node_data["type"],
+ name=node_data.get("name", node_data["type"]),
+ description=node_data.get("description", ""),
+ position_x=position.get("x", 0),
+ position_y=position.get("y", 0),
+ config=node_data.get("config", {}),
+ )
+ node_id_map[node_data["id"]] = str(node.id)
+ # Create edges
+ for edge_data in template.get("edges", ):
+ source_id = node_id_map.get(edge_data["source"])
+ target_id = node_id_map.get(edge_data["target"])
+ if not source_id or not target_id:
+ logger.warning(
+ "edge_node_not_found",
+ source=edge_data["source"],
+ target=edge_data["target"],
+ )
+ continue
+ await WorkflowEdge.objects.acreate(
+ workflow=workflow,
+ source_node_id=source_id,
+ target_node_id=target_id,
+ source_handle=edge_data.get("source_handle", "default"),
+ target_handle=edge_data.get("target_handle", "default"),
+ label=edge_data.get("label", ""),
+ )
+ logger.info(
+ "workflow_created_from_template",
+ workflow_id=str(workflow.id),
+ template_id=template_id,
+ node_count=len(node_id_map),
+ )
+ return workflow

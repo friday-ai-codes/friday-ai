@@ -426,7 +426,7 @@ class WorkflowViewSet(ModelViewSet):
  @action(detail=False, methods=["post"], url_path="from-template")
  async def from_template(self, request: Request) -> Response:
  """Create a workflow from a template."""
- from workflows.templates.loader import create_workflow_from_template
+ from workflows.templates.loader import acreate_workflow_from_template
  template_id = request.data.get("template_id")
  project_id = request.data.get("project_id")
  name = request.data.get("name")
@@ -437,7 +437,7 @@ class WorkflowViewSet(ModelViewSet):
  status=status.HTTP_400_BAD_REQUEST,
  )
  try:
- workflow = await sync_to_async(create_workflow_from_template)(
+ workflow = await acreate_workflow_from_template(
  project_id=project_id,
  template_id=template_id,
  name=name,
