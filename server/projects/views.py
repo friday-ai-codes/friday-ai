@@ -49,7 +49,7 @@ class ProjectViewSet(ModelViewSet):
  data = await sync_to_async(lambda: ProjectSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
- await sync_to_async(serializer.save)
+ await serializer.asave
  # === Repository association ===
  @action(detail=True, methods=["get"], url_path="repositories")
  async def list_repositories(self, request, pk=None):

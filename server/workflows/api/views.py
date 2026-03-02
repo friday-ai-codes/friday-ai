@@ -182,9 +182,9 @@ class WorkflowViewSet(ModelViewSet):
  serializer_class = WorkflowSerializer
  permission_classes = [IsAuthenticated, WorkflowPermission]
  async def perform_acreate(self, serializer):
- await sync_to_async(serializer.save)
+ await serializer.asave
  async def perform_aupdate(self, serializer):
- await sync_to_async(serializer.save)
+ await serializer.asave
  def get_serializer_class(self):
  if self.action == "create":
  return WorkflowCreateSerializer
@@ -345,7 +345,7 @@ class WorkflowViewSet(ModelViewSet):
  partial = request.method == "PATCH"
  serializer = WorkflowNodeSerializer(node, data=request.data, partial=partial)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
- await sync_to_async(serializer.save)
+ await serializer.asave
  return Response(serializer.data)
  # =========================================================================
  # Edge Management (nested under workflow)
@@ -395,7 +395,7 @@ class WorkflowViewSet(ModelViewSet):
  partial = request.method == "PATCH"
  serializer = WorkflowEdgeSerializer(edge, data=request.data, partial=partial)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
- await sync_to_async(serializer.save)
+ await serializer.asave
  return Response(serializer.data)
  @action(detail=True, methods=["put"], url_path="bulk-update")
  async def bulk_update(self, request: Request, pk=None) -> Response:
@@ -781,9 +781,9 @@ class WorkflowTriggerViewSet(ModelViewSet):
  workflow_id = self.kwargs.get("workflow_id")
  if workflow_id:
  workflow = await aget_object_or_404(Workflow, id=workflow_id)
- await sync_to_async(serializer.save)(workflow=workflow)
+ await serializer.asave(workflow=workflow)
  else:
- await sync_to_async(serializer.save)
+ await serializer.asave
 # =============================================================================
 # Execution Context View
 # =============================================================================
