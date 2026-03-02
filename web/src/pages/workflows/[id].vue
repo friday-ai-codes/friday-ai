@@ -1,8 +1,9 @@
 <script setup lang="ts">
 interface NodePaletteItemData { type: string, name: string, description: string }
 import { storeToRefs } from 'pinia'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useModal } from 'vue-final-modal'
 import { toast } from 'vue-sonner'
 import {
  AlertDialog,
@@ -15,21 +16,27 @@ import {
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
+import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
 const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
+const { nodes } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
+const hasTriggers = computed( =>
+ nodes.value.some((node) => TRIGGER_NODE_TYPES.includes(node.nodeType)),
+)
 onMounted(async => {
  // Fetch node types and workflow data in parallel
  await Promise.all([
@@ -129,16 +136,29 @@ function onSaveDraft {
  store.saveDraft
  toast.success('草稿已保存到本地')
 }
-async function onExecute {
- if (!currentWorkflow.value?.is_active) {
- toast.error('工作流已禁用，无法执行')
- return
- }
+function onExecute {
+ if (!currentWorkflow.value) return
+ const { open, close } = useModal({
+ component: markRaw(ExecuteWorkflowModal),
+ attrs: {
+ workflow: currentWorkflow.value,
+ onConfirm: async (inputData: Record<string, any>) => {
+ close
+ await executeWorkflowAction(inputData)
+ },
+ onCancel: => {
+ close
+ },
+ },
+ })
+ open
+}
+async function executeWorkflowAction(inputData: Record<string, any>) {
  try {
- const result = await store.executeWorkflow
+ const result = await store.executeWorkflow(inputData)
  if (result?.execution_id) {
- toast.success('工作流开始执行')
- router.push(`/workflows/executions/${result.execution_id}`)
+ toast.success('工作流已启动')
+ router.push(`/executions/${result.execution_id}`)
  }
  }
  catch (e: any) {
@@ -190,7 +210,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->
- <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges"
+ <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
  @save="onSave"
  @save-draft="onSaveDraft"
  @execute="onExecute"

@@ -16,6 +16,7 @@ defineProps<{
  canRedo?: boolean
  saving?: boolean
  hasUnsavedChanges?: boolean
+ hasTriggers?: boolean
 }>
 const emit = defineEmits<{
  (e: 'save'): void
@@ -64,9 +65,9 @@ const emit = defineEmits<{
  <!-- Center: Enable toggle -->
  <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/30 border border-border/30">
  <span class="text-xs text-muted-foreground">启用</span>
- <Switch:checked="isActive"
+ <Switch:model-value="isActive"
  class="scale-90"
- @update:checked="emit('update:isActive', $event)"
+ @update:model-value="emit('update:isActive', $event)"
  />
  </div>
  <!-- Right: Actions -->
@@ -114,15 +115,15 @@ const emit = defineEmits<{
  <TooltipTrigger as-child>
  <Button
  size="sm"
- class=" bg-emerald-600 hover:bg-emerald-700":disabled="!isActive"
+ class=" bg-emerald-600 hover:bg-emerald-700 disabled:!pointer-events-auto":disabled="!hasTriggers"
  @click="emit('execute')"
  >
  <Play class="w-4 mr-1.5" />
  运行
  </Button>
  </TooltipTrigger>
- <TooltipContent v-if="!isActive" side="bottom">
- <p>工作流已禁用</p>
+ <TooltipContent v-if="!hasTriggers" side="bottom">
+ <p>请先添加一个触发器</p>
  </TooltipContent>
  </Tooltip>
  </div>

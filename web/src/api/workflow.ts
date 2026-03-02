@@ -77,7 +77,7 @@ export async function executeWorkflow(
  workflowId: string,
  data: ManualTriggerRequest = {},
 ): Promise<ManualTriggerResponse> {
- return post<ManualTriggerResponse>(`/workflows/workflows/${workflowId}/execute/`, data)
+ return post<ManualTriggerResponse>(`/workflows/${workflowId}/execute/`, data)
 }
 /**
  * 重试失败/取消的执行（用原始触发数据重新执行）

@@ -50,7 +50,7 @@ function goToAccountSettings {
  <!-- 顶部导航 -->
  <header class="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
  <nav class="container mx-auto px-4 flex items-center justify-between">
- <div class="flex items-center gap-8">
+ <div class="flex items-center gap-8 min-w-0 overflow-hidden">
  <!-- Logo -->
  <RouterLink to="/" class="group flex items-center gap-2.5 text-xl font-bold">
  <div class="relative">
@@ -62,10 +62,10 @@ function goToAccountSettings {
  <span class="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">Friday AI</span>
  </RouterLink>
  <!-- 导航链接 -->
- <div class="hidden md:flex items-center gap-1">
+ <div class="hidden md:flex items-center gap-1 overflow-x-auto scrollbar-hide">
  <RouterLink
  v-for="item in navItems":key="item.to":to="item.to"
- class="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="[
+ class="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap shrink-0":class="[
  isActive(item.to)
  ? 'text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
  ]"
@@ -87,7 +87,7 @@ function goToAccountSettings {
  </div>
  </div>
  <!-- 右侧操作区 -->
- <div class="flex items-center gap-4">
+ <div class="flex items-center gap-4 shrink-0">
  <!-- WebSocket 连接状态指示器 -->
  <div
  class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{

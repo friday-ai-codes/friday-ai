@@ -8,7 +8,7 @@ const paletteSource = fs.readFileSync(path.join(sidebarDir, 'NodePalette.vue'), 
 const paletteSet = new Set(
  [...paletteSource.matchAll(/type:\s*'([^']+)'/g)].map(m => m[1]),
 )
-// 后端 27 个注册节点
+// 后端 26 个注册节点
 const EXPECTED_NODES = [
  'manual_trigger', 'webhook_trigger', 'feishu_event_trigger',
  'fetch_work_item', 'fetch_project_info', 'context_retrieval',
@@ -17,7 +17,7 @@ const EXPECTED_NODES = [
  'delay', 'parallel', 'join',
  'condition', 'human_approval',
  'ai_prompt', 'ai_coding_dispatcher', 'ai_variable_extractor',
- 'variable_extractor', 'ai_technical_plan',
+ 'variable_extractor',
  'ai_plan_generation', 'ai_plan_approval',
  'ai_coding', 'ai_code_review',
 ]

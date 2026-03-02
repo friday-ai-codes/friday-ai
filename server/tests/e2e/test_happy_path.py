@@ -1,7 +1,7 @@
 """E2E Happy Path Tests for complete workflow execution.
 These tests verify the complete workflow chain from Feishu trigger to CodingTask creation:
 1. Feishu event trigger starts workflow
-2. AI Technical Plan generates and writes back to Feishu
+2. AI Plan Generation generates and writes back to Feishu
 3. Wait for approval (SUSPENDED state)
 4. Approval webhook resumes workflow
 5. Coding dispatcher creates CodingTasks
@@ -36,7 +36,7 @@ class MockClaudeConfig:
 @pytest.fixture
 def mock_claude_config:
  """Mock get_claude_config to provide API credentials for tests.
- This is required because TechnicalPlanNode._call_llm calls get_claude_config
+ This is required because AIPlanGenerationNode calls get_claude_config
  which tries to access the database for system settings.
  """
  mock_config = MockClaudeConfig
@@ -93,7 +93,7 @@ class TestCompleteWorkflowFlow:
  """Test that workflow execution starts and trigger node completes."""
  from tests.e2e.conftest import trigger_workflow_sync
  work_item_id = f"wi-{uuid.uuid4.hex[:8]}"
- # Configure mock LLM (needed for ai_technical_plan node)
+ # Configure mock LLM (needed for ai_plan_generation node)
  custom_plan = create_technical_plan(
  repository_id=str(e2e_repository.id),
  repository_name=e2e_repository.name,
@@ -191,7 +191,7 @@ class TestCompleteWorkflowFlow:
  # Verify technical plan node executed (may have completed or failed)
  plan_node_exec = await sync_to_async(
  lambda: execution.node_executions.filter(
- node__node_type="ai_technical_plan",
+ node__node_type="ai_plan_generation",
  ).first
  )
  assert plan_node_exec is not None
@@ -483,7 +483,7 @@ class TestWorkflowStateVerification:
  # Check technical plan node exists and ran
  plan_node = await sync_to_async(
  lambda: execution.node_executions.filter(
- node__node_type="ai_technical_plan"
+ node__node_type="ai_plan_generation"
  ).first
  )
  assert plan_node is not None
@@ -506,7 +506,7 @@ class TestWorkflowStateVerification:
  from tests.e2e.conftest import trigger_workflow_sync
  work_item_id = f"wi-{uuid.uuid4.hex[:8]}"
  work_item_name = "Global Params Test Story"
- # Configure mock LLM (needed for ai_technical_plan node)
+ # Configure mock LLM (needed for ai_plan_generation node)
  custom_plan = create_technical_plan(
  repository_id=str(e2e_repository.id),
  repository_name=e2e_repository.name,
