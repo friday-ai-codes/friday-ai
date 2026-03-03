@@ -612,3 +612,44 @@ class WebhookLogSerializer(serializers.ModelSerializer):
  "created_at",
  ]
  read_only_fields = ["id", "created_at"]
+# =============================================================================
+# ActionLog Serializers
+# =============================================================================
+class ActionLogSummarySerializer(serializers.ModelSerializer):
+ """ActionLog 摘要 serializer（react-steps 列表用）。
+ 返回元数据和 payload 前 200 字符摘要，不包含完整 payload。
+ """
+ payload_summary: serializers.SerializerMethodField = serializers.SerializerMethodField
+ class Meta:
+ from subagent.models import ActionLog
+ model = ActionLog
+ fields = [
+ "id",
+ "action_type",
+ "sequence",
+ "duration_ms",
+ "timestamp",
+ "payload_summary",
+ ]
+ def get_payload_summary(self, obj) -> str:
+ """返回 payload 的摘要（前 200 字符）"""
+ import json
+ payload_str = json.dumps(obj.payload, ensure_ascii=False)
+ if len(payload_str) <= 200:
+ return payload_str
+ return payload_str[:200] + "..."
+class ActionLogDetailSerializer(serializers.ModelSerializer):
+ """ActionLog 完整详情 serializer。"""
+ class Meta:
+ from subagent.models import ActionLog
+ model = ActionLog
+ fields = [
+ "id",
+ "session",
+ "action_type",
+ "sequence",
+ "duration_ms",
+ "timestamp",
+ "payload",
+ "created_at",
+ ]
