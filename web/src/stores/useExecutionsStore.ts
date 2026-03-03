@@ -21,6 +21,44 @@ export interface NodeExecution {
  started_at: string | null
  completed_at: string | null
 }
+export interface WorkflowDefinitionNode {
+ id: string
+ name: string
+ node_type: string
+ position: { x: number; y: number }
+ config: Record<string, unknown>
+}
+export interface WorkflowDefinitionEdge {
+ id: string
+ source: string
+ target: string
+ sourcePort: string
+ targetPort: string
+}
+export interface WorkflowDefinition {
+ nodes: WorkflowDefinitionNode
+ edges: WorkflowDefinitionEdge
+}
+export interface TimelineNode {
+ node_id: string
+ node_name: string
+ node_type: string
+ status: string
+ started_at: string | null
+ completed_at: string | null
+ duration_seconds: number | null
+ is_bottleneck: boolean
+ bottleneck_level: 'critical' | 'warning' | null
+}
+export interface TimelineData {
+ nodes: TimelineNode
+ summary: {
+ total_duration_seconds: number | null
+ total_nodes: number
+ avg_node_duration_seconds: number | null
+ bottleneck_nodes: number
+ }
+}
 export interface WorkflowExecution {
  id: string
  workflow: string
@@ -31,6 +69,7 @@ export interface WorkflowExecution {
  triggered_by: string | null
  triggered_by_name: string | null
  trigger_data: Record<string, any>
+ workflow_definition: WorkflowDefinition | null
  context: Record<string, any>
  input_data: Record<string, any>
  output_data: Record<string, any>
@@ -51,6 +90,7 @@ export interface WorkflowExecution {
 export const useExecutionsStore = defineStore('executions', => {
  const executions = ref<WorkflowExecution>
  const currentExecution = ref<WorkflowExecution | null>(null)
+ const timelineData = ref<TimelineData | null>(null)
  const loading = ref(false)
  const error = ref<string | null>(null)
  // WebSocket connection
@@ -138,6 +178,15 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  finally {
  loading.value = false
+ }
+ }
+ async function fetchTimeline(id: string) {
+ try {
+ timelineData.value = await api.get<TimelineData>(`/workflow-executions/${id}/timeline/`)
+ }
+ catch {
+ // timeline 数据是辅助信息，获取失败不阻塞主流程
+ timelineData.value = null
  }
  }
  async function pauseExecution(id: string) {
@@ -268,12 +317,14 @@ export const useExecutionsStore = defineStore('executions', => {
  return {
  executions,
  currentExecution,
+ timelineData,
  loading,
  error,
  stats,
  hasActiveExecutions,
  fetchExecutions,
  fetchExecution,
+ fetchTimeline,
  pauseExecution,
  resumeExecution,
  cancelExecution,
