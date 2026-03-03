@@ -3,7 +3,7 @@
  *
  * 独立于编辑器的 useWorkflowsStore，避免只读视图和编辑视图的状态冲突。
  */
-import type { Node, Edge } from '@vue-flow/core'
+import type { Node, Edge, NodeComponent } from '@vue-flow/core'
 import { MarkerType } from '@vue-flow/core'
 import { markRaw } from 'vue'
 import { computed, type Ref } from 'vue'
@@ -30,8 +30,8 @@ export interface ExecutionNodeData {
  elapsed?: number
 }
 /** 自定义节点类型注册 */
-export const executionNodeTypes = {
- execution: markRaw(ExecutionNode),
+export const executionNodeTypes: Record<string, NodeComponent> = {
+ execution: markRaw(ExecutionNode) as unknown as NodeComponent,
 }
 /** 自定义边类型注册（复用编辑器的 GradientEdge） */
 export const executionEdgeTypes = {
