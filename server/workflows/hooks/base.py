@@ -30,6 +30,7 @@ class HookManager:
  "node_failed",
  "node_skipped",
  "node_waiting_approval",
+ "node_waiting_event",
  "node_approved",
  "node_rejected",
  ]
