@@ -1,6 +1,8 @@
 """Workflows API views."""
 import uuid
 import structlog
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.shortcuts import aget_object_or_404
@@ -9,8 +11,6 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
-from adrf.views import APIView
-from adrf.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from common.exceptions import TriggerValidationError
 from workflows.api.permissions import (
  ApprovalPermission,
@@ -18,6 +18,8 @@ from workflows.api.permissions import (
  WorkflowPermission,
 )
 from workflows.api.serializers import (
+ ActionLogDetailSerializer,
+ ActionLogSummarySerializer,
  CodingTaskListSerializer,
  CodingTaskSerializer,
  CodingTaskUpdateSerializer,
@@ -660,6 +662,29 @@ class NodeExecutionViewSet(ReadOnlyModelViewSet):
  {"detail": f"触发失败: {e}"},
  status=status.HTTP_500_INTERNAL_SERVER_ERROR,
  )
+ @action(detail=True, methods=["get"], url_path="react-steps")
+ async def react_steps(self, request: Request, pk=None) -> Response:
+ """获取节点执行的 AI 推理步骤列表（摘要模式）。"""
+ from subagent.models import ActionLog
+ node_execution = await self.aget_object
+ action_logs = ActionLog.objects.filter(
+ session__node_execution=node_execution
+ ).order_by("sequence")
+ logs_list = [log async for log in action_logs]
+ serializer = ActionLogSummarySerializer(logs_list, many=True)
+ return Response(serializer.data)
+# =============================================================================
+# ActionLog Detail View
+# =============================================================================
+class ActionLogDetailView(APIView):
+ """单条 ActionLog 完整详情端点。"""
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Request, pk: int) -> Response:
+ """获取单条 ActionLog 的完整数据（含完整 payload）。"""
+ from subagent.models import ActionLog
+ action_log = await aget_object_or_404(ActionLog, pk=pk)
+ serializer = ActionLogDetailSerializer(action_log)
+ return Response(serializer.data)
 # =============================================================================
 # Node Type ViewSet
 # =============================================================================

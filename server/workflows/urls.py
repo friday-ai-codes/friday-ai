@@ -1,7 +1,8 @@
 """Workflows app URL configuration."""
-from django.urls import path
 from adrf.routers import DefaultRouter
+from django.urls import path
 from workflows.api.views import (
+ ActionLogDetailView,
  CodingTaskViewSet,
  ExecutionContextView,
  LLMModelsView,
@@ -81,5 +82,11 @@ urlpatterns = router.urls + [
  "workflow-executions/<uuid:execution_id>/nodes/<uuid:node_id>/<str:action_type>/",
  NodeExecutionActionView.as_view,
  name="node-execution-action",
+ ),
+ # ActionLog detail endpoint
+ path(
+ "action-logs/<int:pk>/",
+ ActionLogDetailView.as_view,
+ name="action-log-detail",
  ),
 ]
