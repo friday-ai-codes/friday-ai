@@ -463,6 +463,10 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  node_executions = NodeExecutionSerializer(many=True, read_only=True)
  duration = serializers.FloatField(read_only=True)
  progress = serializers.FloatField(read_only=True)
+ trigger_log_id: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
+ source="trigger_log", read_only=True, allow_null=True
+ )
+ workflow_definition: serializers.JSONField = serializers.JSONField(read_only=True)
  class Meta:
  model = WorkflowExecution
  fields = [
@@ -474,6 +478,8 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  "triggered_by",
  "triggered_by_name",
  "trigger_data",
+ "trigger_log_id",
+ "workflow_definition",
  "context",
  "input_data",
  "output_data",
@@ -500,6 +506,7 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  "context",
  "output_data",
  "error_message",
+ "workflow_definition",
  "created_at",
  "started_at",
  "completed_at",
@@ -512,6 +519,9 @@ class WorkflowExecutionListSerializer(serializers.ModelSerializer):
  )
  duration = serializers.FloatField(read_only=True)
  progress = serializers.FloatField(read_only=True)
+ trigger_log_id: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
+ source="trigger_log", read_only=True, allow_null=True
+ )
  class Meta:
  model = WorkflowExecution
  fields = [
@@ -521,6 +531,7 @@ class WorkflowExecutionListSerializer(serializers.ModelSerializer):
  "status",
  "trigger_type",
  "triggered_by_name",
+ "trigger_log_id",
  "total_nodes",
  "completed_nodes",
  "failed_nodes",
