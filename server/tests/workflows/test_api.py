@@ -272,3 +272,204 @@ class TestTaskCompatAPI:
  url = "/api/coding-tasks/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_200_OK
+# ============================================================================
+# React Steps Tests (Phase)
+# ============================================================================
+@pytest.mark.django_db
+class TestReactSteps:
+ """Tests for GET /api/node-executions/{id}/react-steps/ endpoint."""
+ def test_react_steps_returns_sorted_by_sequence(
+ self, authenticated_client, obs_node_executions, obs_action_logs
+ ):
+ """react-steps 应按 sequence 升序返回 ActionLog 摘要。"""
+ ne1 = obs_node_executions[0]
+ url = f"/api/node-executions/{ne1.id}/react-steps/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert len(response.data) == 3
+ # 验证按 sequence 排序
+ sequences = [item["sequence"] for item in response.data]
+ assert sequences == [1, 2, 3]
+ def test_react_steps_summary_mode(
+ self, authenticated_client, obs_node_executions, obs_action_logs
+ ):
+ """react-steps 应返回摘要模式（payload_summary 而非完整 payload）。"""
+ ne1 = obs_node_executions[0]
+ url = f"/api/node-executions/{ne1.id}/react-steps/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ for item in response.data:
+ assert "payload_summary" in item
+ assert "payload" not in item
+ assert "action_type" in item
+ assert "sequence" in item
+ assert "duration_ms" in item
+ assert "timestamp" in item
+ def test_react_steps_truncates_long_payload(
+ self, authenticated_client, obs_node_executions, obs_action_logs
+ ):
+ """超过 200 字符的 payload 应被截断。"""
+ ne1 = obs_node_executions[0]
+ url = f"/api/node-executions/{ne1.id}/react-steps/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ # log2 的 payload 包含 300 个 "x"，应被截断
+ log2_data = next(item for item in response.data if item["sequence"] == 2)
+ assert log2_data["payload_summary"].endswith("...")
+ def test_react_steps_empty_for_no_logs(
+ self, authenticated_client, obs_node_executions
+ ):
+ """没有 ActionLog 的节点应返回空列表。"""
+ ne2 = obs_node_executions[1] # 没有关联的 SubAgentSession
+ url = f"/api/node-executions/{ne2.id}/react-steps/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data ==
+ def test_react_steps_404_for_nonexistent(self, authenticated_client):
+ """不存在的 node_execution 应返回 404。"""
+ url = "/api/node-executions/00000000-0000-0000-0000-000000000000/react-steps/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_404_NOT_FOUND
+# ============================================================================
+# ActionLog Detail Tests (Phase)
+# ============================================================================
+@pytest.mark.django_db
+class TestActionLogDetail:
+ """Tests for GET /api/action-logs/{id}/ endpoint."""
+ def test_action_log_detail_returns_full_payload(
+ self, authenticated_client, obs_action_logs
+ ):
+ """action-log 详情应返回完整 payload。"""
+ log1 = obs_action_logs[0]
+ url = f"/api/action-logs/{log1.id}/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data["id"] == log1.id
+ assert response.data["action_type"] == "llm_request"
+ assert "payload" in response.data
+ assert response.data["payload"]["prompt"] == "Generate code for feature X"
+ def test_action_log_detail_404(self, authenticated_client):
+ """不存在的 action_log 应返回 404。"""
+ url = "/api/action-logs/999999/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_404_NOT_FOUND
+# ============================================================================
+# Cost Breakdown Tests (Phase)
+# ============================================================================
+@pytest.mark.django_db
+class TestCostBreakdown:
+ """Tests for GET /api/workflow-executions/{id}/cost-breakdown/ endpoint."""
+ def test_cost_breakdown_structure(
+ self, authenticated_client, obs_execution, obs_node_executions, obs_token_usages
+ ):
+ """cost-breakdown 应返回 nodes 和 summary 结构。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/cost-breakdown/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert "nodes" in response.data
+ assert "summary" in response.data
+ def test_cost_breakdown_model_split(
+ self, authenticated_client, obs_execution, obs_node_executions, obs_token_usages
+ ):
+ """cost-breakdown 应按模型拆分 token 和成本。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/cost-breakdown/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ # 找到有 token 消耗的节点（node1 = AI Coding Node）
+ nodes_with_models = [n for n in response.data["nodes"] if n["models"]]
+ assert len(nodes_with_models) >= 1
+ node = nodes_with_models[0]
+ assert "claude-sonnet-4-20250514" in node["models"]
+ assert "claude-opus-4-20250514" in node["models"]
+ sonnet = node["models"]["claude-sonnet-4-20250514"]
+ assert sonnet["input_tokens"] == 1000
+ assert sonnet["output_tokens"] == 500
+ assert sonnet["cache_read_tokens"] == 200
+ assert sonnet["cache_write_tokens"] == 100
+ def test_cost_breakdown_summary(
+ self, authenticated_client, obs_execution, obs_node_executions, obs_token_usages
+ ):
+ """cost-breakdown summary 应包含总计。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/cost-breakdown/"
+ response = authenticated_client.get(url)
+ summary = response.data["summary"]
+ assert summary["total_input_tokens"] == 3000 # 1000 + 2000
+ assert summary["total_output_tokens"] == 1300 # 500 + 800
+ assert summary["total_tokens"] == 4300 # 3000 + 1300
+ assert summary["total_cost_usd"] == "0.060000" # 0.015 + 0.045
+ assert "model_distribution" in summary
+ def test_cost_breakdown_empty_execution(
+ self, authenticated_client, obs_execution
+ ):
+ """没有节点执行的执行应返回空结果。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/cost-breakdown/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data["nodes"] ==
+ assert response.data["summary"]["total_tokens"] == 0
+ def test_cost_breakdown_404(self, authenticated_client):
+ """不存在的 execution 应返回 404。"""
+ url = "/api/workflow-executions/00000000-0000-0000-0000-000000000000/cost-breakdown/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_404_NOT_FOUND
+# ============================================================================
+# Timeline Tests (Phase)
+# ============================================================================
+@pytest.mark.django_db
+class TestTimeline:
+ """Tests for GET /api/workflow-executions/{id}/timeline/ endpoint."""
+ def test_timeline_structure(
+ self, authenticated_client, obs_execution, obs_node_executions
+ ):
+ """timeline 应返回 nodes 和 summary 结构。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/timeline/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_200_OK
+ assert "nodes" in response.data
+ assert "summary" in response.data
+ assert len(response.data["nodes"]) == 3
+ def test_timeline_bottleneck_identification(
+ self, authenticated_client, obs_execution, obs_node_executions
+ ):
+ """timeline 应标记 Top3 瓶颈（Top1 critical, Top2-3 warning）。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/timeline/"
+ response = authenticated_client.get(url)
+ nodes = response.data["nodes"]
+ bottlenecks = [n for n in nodes if n["is_bottleneck"]]
+ assert len(bottlenecks) == 3
+ # 按 duration 排序找到最慢的
+ bottlenecks.sort(key=lambda n: n["duration_seconds"], reverse=True)
+ assert bottlenecks[0]["bottleneck_level"] == "critical"
+ assert bottlenecks[1]["bottleneck_level"] == "warning"
+ assert bottlenecks[2]["bottleneck_level"] == "warning"
+ def test_timeline_summary(
+ self, authenticated_client, obs_execution, obs_node_executions
+ ):
+ """timeline summary 应包含摘要统计。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/timeline/"
+ response = authenticated_client.get(url)
+ summary = response.data["summary"]
+ assert summary["total_nodes"] == 3
+ assert summary["avg_node_duration_seconds"] is not None
+ assert summary["bottleneck_nodes"] == 3
+ def test_timeline_node_fields(
+ self, authenticated_client, obs_execution, obs_node_executions
+ ):
+ """timeline 每个节点应包含完整字段。"""
+ url = f"/api/workflow-executions/{obs_execution.id}/timeline/"
+ response = authenticated_client.get(url)
+ node = response.data["nodes"][0]
+ assert "node_id" in node
+ assert "node_name" in node
+ assert "node_type" in node
+ assert "status" in node
+ assert "started_at" in node
+ assert "completed_at" in node
+ assert "duration_seconds" in node
+ assert "is_bottleneck" in node
+ assert "bottleneck_level" in node
+ def test_timeline_404(self, authenticated_client):
+ """不存在的 execution 应返回 404。"""
+ url = "/api/workflow-executions/00000000-0000-0000-0000-000000000000/timeline/"
+ response = authenticated_client.get(url)
+ assert response.status_code == status.HTTP_404_NOT_FOUND
