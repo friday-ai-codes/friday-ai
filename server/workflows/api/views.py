@@ -565,6 +565,115 @@ class WorkflowExecutionViewSet(ModelViewSet):
  ]
  serializer = NodeExecutionSerializer(node_executions_list, many=True)
  return Response(serializer.data)
+ @action(detail=True, methods=["get"], url_path="cost-breakdown")
+ async def cost_breakdown(self, request: Request, pk=None) -> Response:
+ """获取执行的成本拆分（按节点 > 模型双层拆分）。"""
+ from decimal import Decimal
+ execution = await self.aget_object
+ total_input = 0
+ total_output = 0
+ total_cache_read = 0
+ total_cache_write = 0
+ total_cost = Decimal("0")
+ model_distribution: dict[str, Decimal] = {}
+ node_costs =
+ async for ne in (
+ NodeExecution.objects
+ .filter(workflow_execution=execution)
+ .select_related("node")
+ ):
+ models_breakdown: dict = {}
+ async for session in ne.subagent_sessions.all:
+ async for usage in session.token_usages.all:
+ model_name = usage.model
+ if model_name not in models_breakdown:
+ models_breakdown[model_name] = {
+ "input_tokens": 0,
+ "output_tokens": 0,
+ "cache_read_tokens": 0,
+ "cache_write_tokens": 0,
+ "total_cost_usd": "0",
+ }
+ mb = models_breakdown[model_name]
+ mb["input_tokens"] += usage.input_tokens
+ mb["output_tokens"] += usage.output_tokens
+ mb["cache_read_tokens"] += usage.cache_read_tokens
+ mb["cache_write_tokens"] += usage.cache_write_tokens
+ mb["total_cost_usd"] = str(
+ Decimal(mb["total_cost_usd"]) + usage.total_cost_usd
+ )
+ # 更新总计
+ total_input += usage.input_tokens
+ total_output += usage.output_tokens
+ total_cache_read += usage.cache_read_tokens
+ total_cache_write += usage.cache_write_tokens
+ total_cost += usage.total_cost_usd
+ model_distribution[model_name] = (
+ model_distribution.get(model_name, Decimal("0"))
+ + usage.total_cost_usd
+ )
+ node_costs.append({
+ "node_id": str(ne.node_id),
+ "node_name": ne.node.name,
+ "node_type": ne.node.node_type,
+ "models": models_breakdown,
+ })
+ return Response({
+ "nodes": node_costs,
+ "summary": {
+ "total_input_tokens": total_input,
+ "total_output_tokens": total_output,
+ "total_cache_read_tokens": total_cache_read,
+ "total_cache_write_tokens": total_cache_write,
+ "total_tokens": total_input + total_output,
+ "total_cost_usd": str(total_cost),
+ "model_distribution": {
+ k: str(v) for k, v in model_distribution.items
+ },
+ },
+ })
+ @action(detail=True, methods=["get"], url_path="timeline")
+ async def timeline(self, request: Request, pk=None) -> Response:
+ """获取执行的时序数据（含瓶颈标识和摘要统计）。"""
+ execution = await self.aget_object
+ nodes_data: list[dict] =
+ async for ne in (
+ NodeExecution.objects
+ .filter(workflow_execution=execution)
+ .select_related("node")
+ .order_by("started_at")
+ ):
+ nodes_data.append({
+ "node_id": str(ne.node_id),
+ "node_name": ne.node.name,
+ "node_type": ne.node.node_type,
+ "status": ne.status,
+ "started_at": ne.started_at.isoformat if ne.started_at else None,
+ "completed_at": ne.completed_at.isoformat if ne.completed_at else None,
+ "duration_seconds": ne.duration,
+ "is_bottleneck": False,
+ "bottleneck_level": None,
+ })
+ # 瓶颈标识：按耗时降序取 Top3
+ timed = [n for n in nodes_data if n["duration_seconds"] is not None]
+ timed.sort(key=lambda n: n["duration_seconds"], reverse=True)
+ for i, node in enumerate(timed[:3]):
+ node["is_bottleneck"] = True
+ node["bottleneck_level"] = "critical" if i == 0 else "warning"
+ # 摘要统计
+ durations = [n["duration_seconds"] for n in nodes_data if n["duration_seconds"] is not None]
+ total_duration = execution.duration
+ return Response({
+ "nodes": nodes_data,
+ "summary": {
+ "total_duration_seconds": total_duration,
+ "total_nodes": len(nodes_data),
+ "avg_node_duration_seconds": (
+ sum(durations) / len(durations) if durations else None
+ ),
+ "bottleneck_nodes": len(timed[:3]),
+ },
+ })
 # =============================================================================
 # Node Execution ViewSet
 # =============================================================================
