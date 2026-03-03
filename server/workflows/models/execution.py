@@ -81,6 +81,13 @@ class WorkflowExecution(models.Model):
  verbose_name="触发日志",
  help_text="关联的飞书 Webhook 触发日志",
  )
+ # 工作流定义快照（执行时的 DAG 布局数据）
+ workflow_definition = models.JSONField(
+ default=dict,
+ blank=True,
+ verbose_name="工作流定义快照",
+ help_text="执行创建时保存的精简 DAG 数据（节点位置、连接关系、类型和名称），确保历史执行始终反映当时的 DAG",
+ )
  # 全局参数（节点可读写，前端可见）
  global_params = models.JSONField(
  default=dict,
