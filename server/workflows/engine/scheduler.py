@@ -79,6 +79,25 @@ class WorkflowEngine:
  ).acount
  if running_count >= workflow.max_concurrent_executions:
  raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
+ # 构建 workflow_definition 快照（DAG 结构 + 节点位置，用于前端可视化）
+ nodes_snapshot: list[dict] =
+ async for node in workflow.nodes.all:
+ nodes_snapshot.append({
+ "id": str(node.id),
+ "name": node.name,
+ "node_type": node.node_type,
+ "position": {"x": node.position_x, "y": node.position_y},
+ "config": node.config or {},
+ })
+ edges_snapshot: list[dict] =
+ async for edge in workflow.edges.all:
+ edges_snapshot.append({
+ "id": str(edge.id),
+ "source": str(edge.source_node_id),
+ "target": str(edge.target_node_id),
+ "sourcePort": edge.source_handle or "default",
+ "targetPort": edge.target_handle or "default",
+ })
  # 使用已有执行实例或创建新的
  if execution is None:
  execution = await WorkflowExecution.objects.acreate(
@@ -88,6 +107,10 @@ class WorkflowEngine:
  triggered_by=triggered_by,
  trigger_data=trigger_data,
  input_data=input_data,
+ workflow_definition={
+ "nodes": nodes_snapshot,
+ "edges": edges_snapshot,
+ },
  context={
  "workflow_id": str(workflow.id),
  "workflow_name": workflow.name,
