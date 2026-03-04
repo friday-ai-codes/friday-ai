@@ -300,7 +300,7 @@ const webhookHeader = computed( => {
  </div>
  <div class="divide-y divide-border/50">
  <RouterLink
- v-for="exec in log.workflow_executions":key="exec.id":to="`/workflows/${exec.workflow_id}/executions/${exec.id}`"
+ v-for="exec in log.workflow_executions":key="exec.id":to="`/executions/${exec.id}`"
  class="flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors group"
  >
  <div class="flex items-center gap-2 min-w-0">

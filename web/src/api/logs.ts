@@ -52,6 +52,8 @@ export interface TriggerLog {
  created_at: string
  // 关联执行状态
  execution_status: string | null
+ // 首个关联执行 ID（用于交叉导航）
+ first_execution_id: string | null
 }
 /**
  * 关联的工作流执行
