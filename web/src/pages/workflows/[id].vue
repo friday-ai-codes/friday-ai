@@ -16,6 +16,13 @@ import {
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
+import {
+ Sheet,
+ SheetContent,
+ SheetHeader,
+ SheetTitle,
+} from '~/components/ui/sheet'
+import ExecutionHistoryList from '~/components/execution/ExecutionHistoryList.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
@@ -34,6 +41,7 @@ const { nodes } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingNavigation = ref<( => void) | null>(null)
+const historySheetOpen = ref(false)
 const hasTriggers = computed( =>
  nodes.value.some((node) => TRIGGER_NODE_TYPES.includes(node.nodeType)),
 )
@@ -207,6 +215,7 @@ async function onUpdateIsActive(isActive: boolean) {
  @undo="onUndo"
  @redo="onRedo"
  @back="onBack"
+ @history="historySheetOpen = true"
  @update:workflow-name="onUpdateWorkflowName"
  @update:is-active="onUpdateIsActive"
  />
@@ -220,6 +229,19 @@ async function onUpdateIsActive(isActive: boolean) {
  <NodeConfigPanel />
  </div>
  </div>
+ <!-- Execution History Sheet -->
+ <Sheet v-model:open="historySheetOpen">
+ <SheetContent side="right" class="w-[420px] sm:max-w-[420px] flex flex-col">
+ <SheetHeader class="px-4 py-3 border-b border-border/50 shrink-0">
+ <SheetTitle>执行历史</SheetTitle>
+ </SheetHeader>
+ <div class="flex-1 overflow-y-auto ">
+ <ExecutionHistoryList:workflow-id="id"
+ @execute="onExecute"
+ />
+ </div>
+ </SheetContent>
+ </Sheet>
  <!-- Leave Confirmation Dialog -->
  <AlertDialog:open="showLeaveDialog">
  <AlertDialogContent @escape-key-down="cancelLeave">
