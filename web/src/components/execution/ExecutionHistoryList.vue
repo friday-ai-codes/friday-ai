@@ -90,6 +90,19 @@ fetchHistory
 function navigateToExecution(executionId: string) {
  router.push(`/executions/${executionId}`)
 }
+async function handleRetry(executionId: string) {
+ try {
+ const { retryExecution } = await import('~/api/workflow')
+ const result = await retryExecution(executionId)
+ if (result?.execution_id) {
+ toast.success('工作流重新执行成功')
+ router.push(`/executions/${result.execution_id}`)
+ }
+ }
+ catch (e: any) {
+ toast.error(`重试失败: ${e.message}`)
+ }
+}
 </script>
 <template>
  <div class="flex flex-col gap-3">
@@ -124,6 +137,7 @@ function navigateToExecution(executionId: string) {
  <ExecutionHistoryCard
  v-for="exec in executions":key="exec.id":execution="exec"
  @click="navigateToExecution(exec.id)"
+ @retry="handleRetry"
  />
  </div>
  <!-- 分页器 -->

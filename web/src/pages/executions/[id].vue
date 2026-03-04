@@ -15,6 +15,7 @@ import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
 import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent } from '~/components/ui/card'
 import {
@@ -114,6 +115,11 @@ const duration = computed( => {
  const minutes = Math.floor(seconds / 60)
  const remainingSeconds = seconds % 60
  return `${minutes}m ${remainingSeconds}s`
+})
+/** 检测是否为重试执行，提取原始执行 ID */
+const retryFromId = computed( => {
+ const metadata = currentExecution.value?.trigger_data?.metadata
+ return metadata?.retry_from || null
 })
 /** 选中节点的配置（从 workflow_definition 中查找） */
 const selectedNodeConfig = computed<Record<string, unknown>>( => {
@@ -275,6 +281,18 @@ async function handleTrigger {
  <!-- 中部：状态 + 进度 + 耗时 -->
  <div v-if="currentExecution" class="flex items-center gap-3">
  <ExecutionStatusBadge:status="currentExecution.status" size="sm" />
+ <!-- 重试来源标记 -->
+ <div v-if="retryFromId" class="flex items-center gap-1.5">
+ <Badge variant="outline" class="border-amber-500/50 text-amber-600 text-[10px] px-1.5 py-0">
+ 重试
+ </Badge>
+ <RouterLink:to="`/executions/${retryFromId}`"
+ class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+ >
+ 原始执行
+ <span class="icon-[lucide--external-link] w-2.5 .5" />
+ </RouterLink>
+ </div>
  <div class="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
  <Progress:model-value="progress" class="w-24 .5" />
  <span class="tabular-nums whitespace-nowrap">{{ Math.round(progress) }}%</span>
