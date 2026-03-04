@@ -3,7 +3,7 @@
  * ExecutionNode — 只读执行节点组件
  *
  * 基于 BaseWorkflowNode 的视觉风格，但独立实现（不包含编辑器逻辑）。
- * 显示图标 + 名称 + 状态色边框 + 耗时标签 + 瓶颈标记。
+ * 显示图标 + 名称 + 状态色边框 + 耗时标签 + 瓶颈标记 + AI 成本徽章。
  */
 import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
@@ -11,6 +11,12 @@ import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import type { ExecutionNodeData } from './composables/useExecutionDag'
 import Badge from '~/components/ui/badge/Badge.vue'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 const props = defineProps<{
  id: string
  data: ExecutionNodeData
@@ -59,6 +65,24 @@ const statusDotClass = computed( => {
  }
  return map[props.data.status] ?? 'bg-gray-300'
 })
+/** 成本格式化 */
+const costFormatter = new Intl.NumberFormat('en-US', {
+ style: 'currency',
+ currency: 'USD',
+ minimumFractionDigits: 2,
+ maximumFractionDigits: 4,
+})
+const costText = computed( => {
+ if (!props.data.cost) return ''
+ const val = Number.parseFloat(props.data.cost.totalCostUsd)
+ if (Number.isNaN(val) || val === 0) return '$0.00'
+ return costFormatter.format(val)
+})
+function formatTokenCount(count: number): string {
+ if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
+ if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
+ return String(count)
+}
 </script>
 <template>
  <div>
@@ -79,9 +103,42 @@ const statusDotClass = computed( => {
  <!-- 状态指示点 -->
  <div class="w-2 rounded-full shrink-0":class="statusDotClass" />
  </div>
- <!-- 底部：耗时 + 瓶颈标签 -->
+ <!-- 底部：耗时 + 成本徽章 + 瓶颈标签 -->
  <div class="flex items-center justify-between text-xs text-muted-foreground">
  <span class="tabular-nums">{{ durationText }}</span>
+ <div class="flex items-center gap-1">
+ <!-- AI 节点成本徽章 + Tooltip -->
+ <TooltipProvider v-if="data.cost">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Badge
+ variant="secondary"
+ class="text-[10px] px-1 tabular-nums cursor-default"
+ >
+ <span class="icon-[lucide--coins] w-2.5 .5 mr-0.5 text-amber-500" />
+ {{ costText }}
+ </Badge>
+ </TooltipTrigger>
+ <TooltipContent side="bottom" class="max-w-xs">
+ <div class="text-xs space-y-1">
+ <div
+ v-for="(modelData, modelName) in data.cost.models":key="modelName"
+ class="flex items-center justify-between gap-3"
+ >
+ <span class="font-medium truncate">{{ modelName }}</span>
+ <span class="text-muted-foreground tabular-nums whitespace-nowrap">
+ {{ formatTokenCount(modelData.input_tokens) }} in /
+ {{ formatTokenCount(modelData.output_tokens) }} out
+ </span>
+ </div>
+ <div class="border-t border-border/50 pt-1 flex items-center justify-between gap-3 font-medium">
+ <span>总计</span>
+ <span class="tabular-nums">{{ formatTokenCount(data.cost.totalTokens) }} tokens</span>
+ </div>
+ </div>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  <Badge
  v-if="data.isBottleneck"
  variant="outline"
@@ -90,6 +147,7 @@ const statusDotClass = computed( => {
  >
  {{ data.bottleneckLevel === 'critical' ? '瓶颈 #1': '瓶颈' }}
  </Badge>
+ </div>
  </div>
  </div>
  <Handle type="source":position="Position.Bottom" />

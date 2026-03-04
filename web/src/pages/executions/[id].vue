@@ -6,12 +6,14 @@
  * 节点状态通过 WebSocket 实时更新，执行完成后自动加载 Timeline 瓶颈数据。
  */
 import type { NodeExecution } from '~/stores/useExecutionsStore'
+import type { CostBreakdown } from '~/types/execution'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
+import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent } from '~/components/ui/card'
@@ -26,6 +28,7 @@ import {
 import { Progress } from '~/components/ui/progress'
 import { Textarea } from '~/components/ui/textarea'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
+import { getCostBreakdown } from '~/api/workflow'
 const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
@@ -42,6 +45,22 @@ const approving = ref(false)
 const triggerDialogOpen = ref(false)
 const triggerInputData = ref('')
 const triggering = ref(false)
+// ----- 成本数据 -----
+const costData = ref<CostBreakdown | null>(null)
+const costLoading = ref(false)
+async function fetchCostData {
+ costLoading.value = true
+ try {
+ costData.value = await getCostBreakdown(executionId.value)
+ }
+ catch {
+ // 成本数据是辅助信息，加载失败不阻塞
+ costData.value = null
+ }
+ finally {
+ costLoading.value = false
+ }
+}
 // ----- 活跃状态判断 -----
 function isActiveStatus(status?: string) {
  return ['running', 'pending', 'queued', 'paused', 'waiting_approval', 'waiting_event', 'suspended'].includes(status || '')
@@ -66,6 +85,8 @@ onMounted(async => {
  if (isTerminalStatus(currentExecution.value?.status)) {
  store.fetchTimeline(executionId.value)
  }
+ // 并行加载成本数据
+ fetchCostData
 })
 onUnmounted( => {
  store.disconnectWebSocket
@@ -78,9 +99,10 @@ watch( => currentExecution.value?.status, (newStatus, oldStatus) => {
  else if (!isActiveStatus(newStatus) && isActiveStatus(oldStatus)) {
  store.disconnectWebSocket
  }
- // 执行结束时获取 Timeline 瓶颈数据
+ // 执行结束时获取 Timeline 瓶颈数据 + 成本数据
  if (isTerminalStatus(newStatus) && !isTerminalStatus(oldStatus)) {
  store.fetchTimeline(executionId.value)
+ if (!costData.value) fetchCostData
  }
 })
 // ----- 计算属性 -----
@@ -350,9 +372,14 @@ async function handleTrigger {
  </div>
  <!-- DAG 视图 -->
  <ExecutionDagView
- v-else:execution="currentExecution":timeline-data="timelineData"
+ v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData"
  @node-click="handleNodeClick"
  />
+ <!-- 成本摘要浮层（右上角） -->
+ <div class="absolute top-3 right-3 z-10">
+ <CostSummaryBar:cost-summary="costData?.summary ?? null":loading="costLoading"
+ />
+ </div>
  <!-- 错误信息浮层（如果有全局错误消息） -->
  <Transition
  enter-active-class="transition-all duration-300 ease-out"
