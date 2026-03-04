@@ -18,6 +18,8 @@ if TYPE_CHECKING:
  from workflows.hooks import HookManager
  from workflows.models import Workflow
 logger = structlog.get_logger
+class ResumeExecutionNotSupportedError(NotImplementedError):
+ """Raised when paused execution resume loop is not implemented yet."""
 def _run_in_thread(coro):
  """Run a coroutine in a new thread with its own event loop."""
  def target:
@@ -462,10 +464,7 @@ class WorkflowEngine:
  """恢复执行"""
  if execution.status != ExecutionStatus.PAUSED:
  raise ValueError("只能恢复已暂停的执行")
- execution.status = ExecutionStatus.RUNNING
- await execution.asave(update_fields=["status"])
- await self.hooks.trigger("execution_resumed", execution=execution)
- raise NotImplementedError("恢复执行循环未实现")
+ raise ResumeExecutionNotSupportedError("恢复执行循环未实现，当前仅支持显式 501 降级")
  async def cancel_execution(self, execution: WorkflowExecution) -> None:
  """取消执行"""
  if execution.status in (ExecutionStatus.COMPLETED, ExecutionStatus.CANCELLED):
