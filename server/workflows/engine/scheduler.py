@@ -4,6 +4,8 @@ import threading
 from collections import deque
 from typing import TYPE_CHECKING, Any
 import structlog
+from asgiref.sync import sync_to_async
+from django.db import transaction
 from django.utils import timezone
 from workflows.engine.dag import DAG
 from workflows.models.execution import (
@@ -52,6 +54,44 @@ class WorkflowEngine:
  for event in HookManager.EVENTS:
  self.hooks.register_hook(event, logging_hook)
  self.hooks.register_hook(event, websocket_hook)
+ @staticmethod
+ def _create_execution_with_atomic_concurrency_guard(
+ *,
+ workflow_id: Any,
+ max_concurrent_executions: int,
+ trigger_type: str,
+ triggered_by_id: Any = None,
+ trigger_data: dict[str, Any] | None = None,
+ input_data: dict[str, Any] | None = None,
+ workflow_definition: dict[str, Any] | None = None,
+ context: dict[str, Any] | None = None,
+ ) -> WorkflowExecution:
+ """Atomically check active executions and create the pending execution."""
+ trigger_data = trigger_data or {}
+ input_data = input_data or {}
+ workflow_definition = workflow_definition or {}
+ context = context or {}
+ with transaction.atomic:
+ # Lock workflow row to serialize concurrent start requests per workflow.
+ from workflows.models import Workflow
+ Workflow.objects.select_for_update.get(pk=workflow_id)
+ if max_concurrent_executions > 0:
+ active_count = WorkflowExecution.objects.select_for_update.filter(
+ workflow_id=workflow_id,
+ status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+ ).count
+ if active_count >= max_concurrent_executions:
+ raise ValueError(f"工作流已达到最大并发数 ({max_concurrent_executions})")
+ return WorkflowExecution.objects.create(
+ workflow_id=workflow_id,
+ status=ExecutionStatus.PENDING,
+ trigger_type=trigger_type,
+ triggered_by_id=triggered_by_id,
+ trigger_data=trigger_data,
+ input_data=input_data,
+ workflow_definition=workflow_definition,
+ context=context,
+ )
  async def start_execution(
  self,
  workflow: "Workflow",
@@ -74,14 +114,6 @@ class WorkflowEngine:
  """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
- # 检查并发限制
- if workflow.max_concurrent_executions > 0:
- running_count = await WorkflowExecution.objects.filter(
- workflow=workflow,
- status=ExecutionStatus.RUNNING,
- ).acount
- if running_count >= workflow.max_concurrent_executions:
- raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
  # 构建 workflow_definition 快照（DAG 结构 + 节点位置，用于前端可视化）
  nodes_snapshot: list[dict] =
  async for node in workflow.nodes.all:
@@ -103,11 +135,14 @@ class WorkflowEngine:
  })
  # 使用已有执行实例或创建新的
  if execution is None:
- execution = await WorkflowExecution.objects.acreate(
- workflow=workflow,
- status=ExecutionStatus.PENDING,
+ execution = await sync_to_async(
+ self._create_execution_with_atomic_concurrency_guard,
+ thread_sensitive=True,
+ )(
+ workflow_id=workflow.id,
+ max_concurrent_executions=workflow.max_concurrent_executions,
  trigger_type=trigger_type,
- triggered_by=triggered_by,
+ triggered_by_id=triggered_by.id if triggered_by else None,
  trigger_data=trigger_data,
  input_data=input_data,
  workflow_definition={
@@ -121,6 +156,13 @@ class WorkflowEngine:
  },
  )
  else:
+ if workflow.max_concurrent_executions > 0:
+ active_count = await WorkflowExecution.objects.filter(
+ workflow=workflow,
+ status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+ ).exclude(pk=execution.pk).acount
+ if active_count >= workflow.max_concurrent_executions:
+ raise ValueError(f"工作流已达到最大并发数 ({workflow.max_concurrent_executions})")
  # 确保执行状态正确
  execution.status = ExecutionStatus.PENDING
  await execution.asave(update_fields=["status"])
