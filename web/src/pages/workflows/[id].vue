@@ -200,7 +200,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->
- <WorkflowToolbar:workflow-name="currentWorkflow?.name":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
+ <WorkflowToolbar:workflow-name="currentWorkflow?.name":workflow-id="id":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
  @save="onSave"
  @save-draft="onSaveDraft"
  @execute="onExecute"

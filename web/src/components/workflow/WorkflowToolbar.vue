@@ -9,8 +9,10 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
+import RunningExecutionsBadge from './RunningExecutionsBadge.vue'
 defineProps<{
  workflowName?: string
+ workflowId?: string
  isActive?: boolean
  canUndo?: boolean
  canRedo?: boolean
@@ -25,6 +27,7 @@ const emit = defineEmits<{
  (e: 'redo'): void
  (e: 'saveDraft'): void
  (e: 'back'): void
+ (e: 'history'): void
  (e: 'update:workflowName', value: string): void
  (e: 'update:isActive', value: boolean): void
 }>
@@ -91,6 +94,21 @@ const emit = defineEmits<{
  </TooltipTrigger>
  <TooltipContent side="bottom">
  <p>重做</p>
+ </TooltipContent>
+ </Tooltip>
+ <div class="w-px bg-border/50 mx-1" />
+ <!-- Running executions badge -->
+ <RunningExecutionsBadge v-if="workflowId":workflow-id="workflowId" />
+ <!-- History -->
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Button variant="ghost" size="sm" class="" @click="emit('history')">
+ <span class="icon-[lucide--history] w-4 mr-1" />
+ <span class="text-xs">历史</span>
+ </Button>
+ </TooltipTrigger>
+ <TooltipContent side="bottom">
+ <p>执行历史</p>
  </TooltipContent>
  </Tooltip>
  <div class="w-px bg-border/50 mx-1" />
