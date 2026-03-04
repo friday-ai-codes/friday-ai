@@ -296,6 +296,28 @@ export async function getActionLogDetail(actionLogId: number): Promise<ActionLog
 export async function getCostBreakdown(executionId: string): Promise<CostBreakdown> {
  return get<CostBreakdown>(`/workflows/workflow-executions/${executionId}/cost-breakdown/`)
 }
+/**
+ * 从失败节点继续执行（创建新的部分重执行实例）
+ */
+export async function resumeFromFailed(
+ executionId: string,
+ nodeId: string,
+): Promise<{ execution_id: string, status: string, resumed_from: string }> {
+ return post<{ execution_id: string, status: string, resumed_from: string }>(
+ `/workflow-executions/${executionId}/resume-from-failed/`,
+ { node_id: nodeId },
+ )
+}
+/**
+ * 检查执行的工作流定义是否在执行后发生变更
+ */
+export async function checkWorkflowChanged(
+ executionId: string,
+): Promise<{ changed: boolean }> {
+ return get<{ changed: boolean }>(
+ `/workflow-executions/${executionId}/check-definition-changed/`,
+ )
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -330,4 +352,7 @@ export default {
  getReactSteps,
  getActionLogDetail,
  getCostBreakdown,
+ // Phase: 从失败节点继续
+ resumeFromFailed,
+ checkWorkflowChanged,
 }

@@ -31,6 +31,10 @@ export interface ExecutionNodeData {
  elapsed?: number
  /** 节点级成本数据（由页面层从 CostBreakdown 注入） */
  cost?: NodeCost
+ /** 是否可以从此节点继续执行（失败 + 定义未变更） */
+ canResume?: boolean
+ /** 从此继续按钮的回调（由 ExecutionDagView 注入） */
+ onResumeClick?: (nodeId: string) => void
 }
 /** 自定义节点类型注册 */
 export const executionNodeTypes: Record<string, NodeComponent> = {
@@ -46,6 +50,7 @@ export const executionEdgeTypes = {
 export function useExecutionDag(
  execution: Ref<WorkflowExecution | null>,
  timelineData: Ref<TimelineData | null>,
+ definitionChanged?: Ref<boolean>,
 ) {
  const dagNodes = computed<Node<ExecutionNodeData>>( => {
  const exec = execution.value
@@ -62,6 +67,7 @@ export function useExecutionDag(
  return definition.nodes.map(defNode => {
  const ne = execMap.get(defNode.id)
  const bn = bottleneckMap.get(defNode.id)
+ const nodeStatus = ne?.status ?? 'pending'
  return {
  id: defNode.id,
  type: 'execution',
@@ -69,13 +75,14 @@ export function useExecutionDag(
  data: {
  nodeType: defNode.node_type,
  name: defNode.name,
- status: ne?.status ?? 'pending',
+ status: nodeStatus,
  duration: ne?.duration ?? null,
  startedAt: ne?.started_at ?? null,
  isBottleneck: bn?.is_bottleneck ?? false,
  bottleneckLevel: bn?.bottleneck_level ?? null,
  nodeExecution: ne ?? null,
  config: defNode.config ?? {},
+ canResume: nodeStatus === 'failed' && !(definitionChanged?.value ?? false),
  },
  }
  })
