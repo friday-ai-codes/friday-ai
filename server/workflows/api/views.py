@@ -45,7 +45,7 @@ from workflows.api.serializers import (
  WorkflowTriggerSerializer,
  WorkflowUpdateSerializer,
 )
-from workflows.engine.scheduler import WorkflowEngine
+from workflows.engine.scheduler import ResumeExecutionNotSupportedError, WorkflowEngine
 from workflows.models import (
  CodingTask,
  NodeExecution,
@@ -509,6 +509,11 @@ class WorkflowExecutionViewSet(ModelViewSet):
  engine = WorkflowEngine
  await engine.resume_execution(execution)
  return Response({"status": "running", "message": "执行已恢复"})
+ except ResumeExecutionNotSupportedError as e:
+ return Response(
+ {"detail": str(e)},
+ status=status.HTTP_501_NOT_IMPLEMENTED,
+ )
  except ValueError as e:
  return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
  @action(detail=True, methods=["post"])
