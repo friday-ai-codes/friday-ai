@@ -1,7 +1,8 @@
 """Workflow execution engine."""
 import asyncio
 import threading
-from typing import TYPE_CHECKING
+from collections import deque
+from typing import TYPE_CHECKING, Any
 import structlog
 from django.utils import timezone
 from workflows.engine.dag import DAG
@@ -151,8 +152,15 @@ class WorkflowEngine:
  execution: WorkflowExecution,
  dag: DAG,
  input_data: dict,
+ initial_outputs: dict[str, dict] | None = None,
  ) -> None:
- """执行工作流主循环"""
+ """执行工作流主循环
+ Args:
+ execution: 执行实例
+ dag: DAG 实例
+ input_data: 输入数据
+ initial_outputs: 预填充的节点输出（从失败节点继续时，包含 skipped 节点的输出）
+ """
  try:
  await execution.amark_started
  await self.hooks.trigger("execution_running", execution=execution)
@@ -164,6 +172,21 @@ class WorkflowEngine:
  skipped_nodes: set[str] = set
  # 待处理节点
  pending_nodes = set(dag.nodes.keys)
+ # 预填充 skipped 节点的输出（从失败节点继续场景）
+ if initial_outputs:
+ node_outputs.update(initial_outputs)
+ # 从数据库查询 skipped 节点，将其加入 completed/skipped 集合
+ skipped_ne_list = [
+ ne async for ne in NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.SKIPPED,
+ )
+ ]
+ for ne in skipped_ne_list:
+ node_id = str(ne.node_id)
+ skipped_nodes.add(node_id)
+ completed_nodes.add(node_id)
+ pending_nodes.discard(node_id)
  # 入口节点的输入数据
  entry_inputs = {dag_node.id: input_data for dag_node in dag.get_entry_nodes}
  while pending_nodes:
@@ -740,3 +763,174 @@ class WorkflowEngine:
  if node_exec.output_data:
  final_output.update(node_exec.output_data)
  return final_output
+ # ===== 从失败节点继续执行 =====
+ def _get_downstream_nodes(self, dag: DAG, start_node_id: str) -> set[str]:
+ """BFS 收集失败节点的所有下游节点 ID（不包含起始节点本身）。"""
+ visited: set[str] = set
+ queue: deque[str] = deque
+ # 从起始节点的所有直接后继开始
+ for successor in dag.get_all_successors(start_node_id):
+ if successor.id not in visited:
+ visited.add(successor.id)
+ queue.append(successor.id)
+ # BFS 遍历所有下游
+ while queue:
+ current_id = queue.popleft
+ for successor in dag.get_all_successors(current_id):
+ if successor.id not in visited:
+ visited.add(successor.id)
+ queue.append(successor.id)
+ return visited
+ async def _compare_workflow_definitions(
+ self,
+ snapshot: dict[str, Any],
+ workflow: "Workflow",
+ ) -> bool:
+ """对比执行快照与当前工作流定义的结构差异。
+ Returns:
+ True 表示定义已变更（结构或配置差异），False 表示未变。
+ 只比较结构（节点 ID、类型、连线）和配置，忽略视觉属性（位置、颜色等）。
+ """
+ # 提取快照中的节点信息（忽略 position、name 等视觉属性）
+ snap_nodes: dict[str, tuple[str, dict]] = {}
+ for n in snapshot.get("nodes", ):
+ snap_nodes[n["id"]] = (n.get("node_type", ""), n.get("config", {}))
+ # 提取当前工作流的节点信息
+ curr_nodes: dict[str, tuple[str, dict]] = {}
+ async for node in workflow.nodes.all:
+ curr_nodes[str(node.id)] = (node.node_type, node.config or {})
+ if snap_nodes != curr_nodes:
+ return True
+ # 提取快照中的边信息
+ snap_edges: set[tuple[str, str, str]] = set
+ for e in snapshot.get("edges", ):
+ snap_edges.add((e["source"], e["target"], e.get("sourcePort", "default")))
+ # 提取当前工作流的边信息
+ curr_edges: set[tuple[str, str, str]] = set
+ async for edge in workflow.edges.all:
+ curr_edges.add((
+ str(edge.source_node_id),
+ str(edge.target_node_id),
+ edge.source_handle or "default",
+ ))
+ return snap_edges != curr_edges
+ async def resume_from_node(
+ self,
+ original_execution: WorkflowExecution,
+ failed_node_id: str,
+ triggered_by: Any = None,
+ run_sync: bool = False,
+ ) -> WorkflowExecution:
+ """从失败节点创建新执行实例并开始执行。
+ 创建一个新的 WorkflowExecution，跳过已成功的节点，从失败节点开始重新执行。
+ 已成功节点被标记为 skipped，其 output_data 被复制到新执行作为上下文。
+ Args:
+ original_execution: 原始失败的执行实例
+ failed_node_id: 要从其继续的失败节点 ID
+ triggered_by: 触发者
+ run_sync: 是否同步执行（用于测试）
+ Returns:
+ 新创建的 WorkflowExecution 实例
+ Raises:
+ ValueError: 执行状态不符合要求、节点未失败、工作流定义已变更等
+ """
+ # 1. 验证原执行状态
+ if original_execution.status not in (
+ ExecutionStatus.FAILED,
+ ExecutionStatus.CANCELLED,
+ ):
+ raise ValueError("只能从失败或已取消的执行继续")
+ # 2. 验证失败节点存在且确实失败
+ failed_ne = await NodeExecution.objects.filter(
+ workflow_execution=original_execution,
+ node_id=failed_node_id,
+ status=NodeExecutionStatus.FAILED,
+ ).afirst
+ if not failed_ne:
+ raise ValueError("指定节点不存在或不是失败状态")
+ # 3. 获取工作流并构建 DAG
+ original_execution = await WorkflowExecution.objects.select_related(
+ "workflow"
+ ).aget(pk=original_execution.pk)
+ workflow = original_execution.workflow
+ dag = await DAG.afrom_workflow(workflow)
+ # 4. 变更检测
+ if original_execution.workflow_definition:
+ changed = await self._compare_workflow_definitions(
+ original_execution.workflow_definition,
+ workflow,
+ )
+ if changed:
+ raise ValueError("工作流定义已修改，无法从此继续")
+ # 5. 计算需要执行的节点范围（失败节点 + 所有下游）
+ downstream_ids = self._get_downstream_nodes(dag, failed_node_id)
+ nodes_to_execute = {failed_node_id} | downstream_ids
+ # 6. 创建新执行实例
+ new_execution = await WorkflowExecution.objects.acreate(
+ workflow=workflow,
+ status=ExecutionStatus.PENDING,
+ trigger_type="resume",
+ triggered_by=triggered_by,
+ trigger_data={
+ "metadata": {
+ "resumed_from": str(original_execution.id),
+ "failed_node_id": failed_node_id,
+ }
+ },
+ input_data=original_execution.input_data,
+ resumed_from=original_execution,
+ workflow_definition=original_execution.workflow_definition,
+ total_nodes=len(dag.nodes),
+ context={
+ "workflow_id": str(workflow.id),
+ "workflow_name": workflow.name,
+ "started_at": timezone.now.isoformat,
+ "resumed_from": str(original_execution.id),
+ },
+ )
+ # 7. 为所有节点创建 NodeExecution，并收集 skipped 节点输出
+ initial_outputs: dict[str, dict] = {}
+ original_node_execs = {
+ str(ne.node_id): ne
+ async for ne in NodeExecution.objects.filter(
+ workflow_execution=original_execution,
+ )
+ }
+ for dag_node in dag.nodes.values:
+ node_id = dag_node.id
+ if node_id in nodes_to_execute:
+ # 需要执行的节点 → PENDING
+ await NodeExecution.objects.acreate(
+ workflow_execution=new_execution,
+ node=dag_node.node,
+ status=NodeExecutionStatus.PENDING,
+ )
+ else:
+ # 跳过的节点 → SKIPPED + 复制原执行的 output_data
+ orig_ne = original_node_execs.get(node_id)
+ output_data = orig_ne.output_data if orig_ne else {}
+ ne = await NodeExecution.objects.acreate(
+ workflow_execution=new_execution,
+ node=dag_node.node,
+ status=NodeExecutionStatus.PENDING, # 先创建为 pending
+ )
+ await ne.amark_skipped("从失败节点继续：复用原执行结果")
+ # 复制原执行的 output_data 到新的 skipped 节点
+ if output_data:
+ ne.output_data = output_data
+ await ne.asave(update_fields=["output_data"])
+ initial_outputs[node_id] = output_data
+ # 8. 触发开始钩子
+ await self.hooks.trigger("execution_started", execution=new_execution)
+ # 9. 启动执行（传入预填充的 node_outputs）
+ if run_sync:
+ await self._run_execution(
+ new_execution, dag, original_execution.input_data, initial_outputs
+ )
+ else:
+ _run_in_thread(
+ self._run_execution(
+ new_execution, dag, original_execution.input_data, initial_outputs
+ )
+ )
+ return new_execution

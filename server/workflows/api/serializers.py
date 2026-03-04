@@ -467,6 +467,9 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  source="trigger_log", read_only=True, allow_null=True
  )
  workflow_definition: serializers.JSONField = serializers.JSONField(read_only=True)
+ resumed_from = serializers.UUIDField(
+ source="resumed_from_id", read_only=True, allow_null=True
+ )
  class Meta:
  model = WorkflowExecution
  fields = [
@@ -480,6 +483,7 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  "trigger_data",
  "trigger_log_id",
  "workflow_definition",
+ "resumed_from",
  "context",
  "input_data",
  "output_data",
@@ -522,6 +526,9 @@ class WorkflowExecutionListSerializer(serializers.ModelSerializer):
  trigger_log_id: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
  source="trigger_log", read_only=True, allow_null=True
  )
+ resumed_from = serializers.UUIDField(
+ source="resumed_from_id", read_only=True, allow_null=True
+ )
  class Meta:
  model = WorkflowExecution
  fields = [
@@ -532,6 +539,7 @@ class WorkflowExecutionListSerializer(serializers.ModelSerializer):
  "trigger_type",
  "triggered_by_name",
  "trigger_log_id",
+ "resumed_from",
  "total_nodes",
  "completed_nodes",
  "failed_nodes",
