@@ -103,10 +103,30 @@ function formatTokenCount(count: number): string {
  <!-- 状态指示点 -->
  <div class="w-2 rounded-full shrink-0":class="statusDotClass" />
  </div>
- <!-- 底部：耗时 + 成本徽章 + 瓶颈标签 -->
+ <!-- 底部：耗时 + 从此继续按钮 + 成本徽章 + 瓶颈标签 -->
  <div class="flex items-center justify-between text-xs text-muted-foreground">
  <span class="tabular-nums">{{ durationText }}</span>
  <div class="flex items-center gap-1">
+ <!-- 失败节点：从此继续快捷入口 -->
+ <TooltipProvider v-if="data.status === 'failed'">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button:disabled="!data.canResume":class="[
+ 'inline-flex items-center justify-center rounded-md transition-colors',
+ 'w-5 ',
+ data.canResume
+ ? 'text-primary hover:bg-primary/10 cursor-pointer': 'text-muted-foreground/40 cursor-not-allowed'
+ ]"
+ @click.stop="data.canResume && data.onResumeClick?.(props.id)"
+ >
+ <span class="icon-[lucide--play-circle] w-3.5 .5" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="bottom">
+ {{ data.canResume ? '从此继续执行': '工作流已修改，无法从此继续' }}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  <!-- AI 节点成本徽章 + Tooltip -->
  <TooltipProvider v-if="data.cost">
  <Tooltip>

@@ -19,13 +19,18 @@ const props = defineProps<{
  execution: WorkflowExecution
  timelineData?: TimelineData | null
  costData?: CostBreakdown | null
+ /** 工作流定义是否在执行后发生变更（Phase） */
+ definitionChanged?: boolean
 }>
 const emit = defineEmits<{
  'node-click': [nodeExecution: NodeExecution | null, nodeId: string]
+ /** Phase: 失败节点「从此继续」点击 */
+ 'resume-click': [nodeId: string]
 }>
 const executionRef = toRef(props, 'execution')
 const timelineRef = computed( => props.timelineData ?? null)
-const { dagNodes, dagEdges } = useExecutionDag(executionRef, timelineRef)
+const definitionChangedRef = computed( => props.definitionChanged ?? false)
+const { dagNodes, dagEdges } = useExecutionDag(executionRef, timelineRef, definitionChangedRef)
 // 运行中节点实时计时
 const nodeExecutionsRef = computed( => props.execution.node_executions ?? )
 const { elapsedMap } = useNodeTimer(nodeExecutionsRef)
@@ -48,22 +53,20 @@ const nodeCostMap = computed<Record<string, NodeCost>>( => {
  }
  return map
 })
-// 将 elapsedMap 和 costMap 注入到 dagNodes
+// 将 elapsedMap 和 costMap 注入到 dagNodes，同时注入 resume 回调
 const nodesWithData = computed( => {
  return dagNodes.value.map((node) => {
  const elapsed = elapsedMap.value[node.id]
  const cost = nodeCostMap.value[node.id]
- if (elapsed !== undefined || cost) {
  return {
  ...node,
  data: {
  ...node.data,
  ...(elapsed !== undefined && { elapsed }),
  ...(cost && { cost }),
+ onResumeClick: (nodeId: string) => emit('resume-click', nodeId),
  },
  }
- }
- return node
  })
 })
 const { onNodeClick } = useVueFlow

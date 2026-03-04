@@ -29,7 +29,7 @@ import {
 import { Progress } from '~/components/ui/progress'
 import { Textarea } from '~/components/ui/textarea'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import { getCostBreakdown } from '~/api/workflow'
+import { getCostBreakdown, resumeFromFailed, checkWorkflowChanged } from '~/api/workflow'
 const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
@@ -62,6 +62,28 @@ async function fetchCostData {
  costLoading.value = false
  }
 }
+// ----- 变更检测（Phase） -----
+const definitionChanged = ref(false)
+async function fetchDefinitionChanged {
+ // 只对已结束的执行检测
+ if (!isTerminalStatus(currentExecution.value?.status)) {
+ definitionChanged.value = false
+ return
+ }
+ try {
+ const result = await checkWorkflowChanged(executionId.value)
+ definitionChanged.value = result.changed
+ }
+ catch {
+ definitionChanged.value = false
+ }
+}
+// ----- 从此继续对话框（Phase） -----
+const resumeDialogOpen = ref(false)
+const resumeNodeId = ref<string | null>(null)
+const resumeNodeName = ref('')
+const resumeSkipCount = ref(0)
+const resuming = ref(false)
 // ----- 活跃状态判断 -----
 function isActiveStatus(status?: string) {
  return ['running', 'pending', 'queued', 'paused', 'waiting_approval', 'waiting_event', 'suspended'].includes(status || '')
@@ -86,8 +108,9 @@ onMounted(async => {
  if (isTerminalStatus(currentExecution.value?.status)) {
  store.fetchTimeline(executionId.value)
  }
- // 并行加载成本数据
+ // 并行加载成本数据 + 变更检测
  fetchCostData
+ fetchDefinitionChanged
 })
 onUnmounted( => {
  store.disconnectWebSocket
@@ -120,6 +143,10 @@ const duration = computed( => {
 const retryFromId = computed( => {
  const metadata = currentExecution.value?.trigger_data?.metadata
  return metadata?.retry_from || null
+})
+/** 检测是否为「从此继续」执行，提取原始执行 ID */
+const resumedFromId = computed( => {
+ return currentExecution.value?.resumed_from || null
 })
 /** 选中节点的配置（从 workflow_definition 中查找） */
 const selectedNodeConfig = computed<Record<string, unknown>>( => {
@@ -184,6 +211,43 @@ async function handleRetry {
  }
  catch (e: any) {
  toast.error(`重试失败: ${e.message}`)
+ }
+}
+// ----- 从此继续（Phase） -----
+function handleResumeClick(nodeId: string) {
+ const exec = currentExecution.value
+ if (!exec?.workflow_definition) return
+ // 找到节点名称
+ const defNode = exec.workflow_definition.nodes.find(n => n.id === nodeId)
+ resumeNodeName.value = defNode?.name ?? nodeId
+ // 计算跳过节点数：已完成 + 已跳过的节点
+ resumeSkipCount.value = (exec.completed_nodes ?? 0) + (exec.skipped_nodes ?? 0)
+ resumeNodeId.value = nodeId
+ resumeDialogOpen.value = true
+}
+async function handleResumeFromFailed {
+ if (!resumeNodeId.value) return
+ resuming.value = true
+ try {
+ const result = await resumeFromFailed(executionId.value, resumeNodeId.value)
+ if (result?.execution_id) {
+ toast.success('已从失败节点继续执行')
+ resumeDialogOpen.value = false
+ router.push(`/executions/${result.execution_id}`)
+ }
+ }
+ catch (e: any) {
+ if (e.response?.status === 409) {
+ toast.error('工作流定义已修改，无法从此继续')
+ definitionChanged.value = true
+ resumeDialogOpen.value = false
+ }
+ else {
+ toast.error(`继续执行失败: ${e.message}`)
+ }
+ }
+ finally {
+ resuming.value = false
  }
 }
 // ----- 审批/触发对话框（备用入口） -----
@@ -287,6 +351,18 @@ async function handleTrigger {
  重试
  </Badge>
  <RouterLink:to="`/executions/${retryFromId}`"
+ class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+ >
+ 原始执行
+ <span class="icon-[lucide--external-link] w-2.5 .5" />
+ </RouterLink>
+ </div>
+ <!-- 从此继续来源标记（Phase） -->
+ <div v-if="resumedFromId" class="flex items-center gap-1.5">
+ <Badge variant="outline" class="border-blue-500/50 text-blue-600 text-[10px] px-1.5 py-0">
+ 继续
+ </Badge>
+ <RouterLink:to="`/executions/${resumedFromId}`"
  class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors"
  >
  原始执行
@@ -400,8 +476,9 @@ async function handleTrigger {
  </div>
  <!-- DAG 视图 -->
  <ExecutionDagView
- v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData"
+ v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged"
  @node-click="handleNodeClick"
+ @resume-click="handleResumeClick"
  />
  <!-- 成本摘要浮层（右上角） -->
  <div class="absolute top-3 right-3 z-10">
@@ -433,9 +510,10 @@ async function handleTrigger {
  </Transition>
  </div>
  <!-- ===== 节点详情抽屉 ===== -->
- <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId"
+ <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')"
  @update:open="sheetOpen = $event"
  @action-complete="handleActionComplete"
+ @resume-from-node="handleResumeClick"
  />
  <!-- ===== 备用对话框（审批） ===== -->
  <Dialog v-model:open="approvalDialogOpen">
@@ -496,6 +574,28 @@ async function handleTrigger {
  <Button:disabled="triggering" @click="handleTrigger">
  <span class="icon-[lucide--zap] w-4 mr-2" />
  触发
+ </Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
+ <!-- ===== 从此继续确认对话框（Phase） ===== -->
+ <Dialog v-model:open="resumeDialogOpen">
+ <DialogContent>
+ <DialogHeader>
+ <DialogTitle>从此继续执行</DialogTitle>
+ <DialogDescription>
+ 将从「{{ resumeNodeName }}」节点开始重新执行。
+ {{ resumeSkipCount }} 个已完成的节点将被跳过，不会重新执行。
+ </DialogDescription>
+ </DialogHeader>
+ <DialogFooter>
+ <Button variant="outline" @click="resumeDialogOpen = false">
+ 取消
+ </Button>
+ <Button:disabled="resuming" @click="handleResumeFromFailed">
+ <span v-if="resuming" class="icon-[lucide--loader-2] w-4 mr-2 animate-spin" />
+ <span v-else class="icon-[lucide--play-circle] w-4 mr-2" />
+ 确认继续
  </Button>
  </DialogFooter>
  </DialogContent>

@@ -26,16 +26,21 @@ import PlanApprovalPanel from './PlanApprovalPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AICodeReviewPanel from './AICodeReviewPanel.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
+import { Button } from '~/components/ui/button'
 const props = defineProps<{
  open: boolean
  nodeExecution: NodeExecution | null
  nodeConfig: Record<string, unknown>
  bottleneckInfo?: { level: string; rank: number; durationPercent: number } | null
  executionId: string
+ /** 是否可以从失败节点继续（Phase） */
+ canResume?: boolean
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
  'action-complete':
+ /** Phase: 从此节点继续执行 */
+ 'resume-from-node': [nodeId: string]
 }>
 /** 当前 Tab 状态（受控模式，切换节点时重置） */
 const activeTab = ref('overview')
@@ -120,6 +125,20 @@ function handleActionComplete {
  <div class="px-6 py-4 space-y-4">
  <NodeOverviewTab:node-execution="nodeExecution":bottleneck-info="bottleneckInfo"
  />
+ <!-- Phase: 从此继续执行按钮（仅失败节点） -->
+ <div v-if="nodeExecution.status === 'failed'" class="space-y-2">
+ <Separator />
+ <Button:disabled="!canResume"
+ class="w-full"
+ @click="nodeExecution && emit('resume-from-node', nodeExecution.node)"
+ >
+ <span class="icon-[lucide--play-circle] w-4 mr-2" />
+ 从此继续执行
+ </Button>
+ <p v-if="!canResume" class="text-xs text-muted-foreground text-center">
+ 工作流已修改，无法从此继续
+ </p>
+ </div>
  <!-- 条件渲染：AI / 审批 / 调试面板 -->
  <template v-if="hasExtraPanels">
  <Separator />
