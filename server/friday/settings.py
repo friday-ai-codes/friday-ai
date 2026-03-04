@@ -7,6 +7,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 import environ
+from django.core.exceptions import ImproperlyConfigured
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve.parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -16,22 +17,35 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "sessions").mkdir(exist_ok=True)
 (DATA_DIR / "credentials").mkdir(exist_ok=True)
 # Initialize django-environ
+INSECURE_SECRET_KEY = "django-insecure-change-me-in-production"
+LOCALHOST_HOSTS = ["localhost", "127.0.0.1", "[:1]"]
 env = environ.Env(
- # Set default values
  DEBUG=(bool, False),
- SECRET_KEY=(str, "django-insecure-change-me-in-production"),
- ALLOWED_HOSTS=(list, ["*"]),
+ SECRET_KEY=(str, INSECURE_SECRET_KEY),
+ ALLOWED_HOSTS=(list, LOCALHOST_HOSTS),
 )
 # Read .env file
 env.read_env(BASE_DIR / ".env", overwrite=False)
 # =============================================================================
 # Core Settings
 # =============================================================================
+debug_override = os.environ.get("FRIDAY_DEBUG")
+if debug_override is not None:
+ DEBUG = debug_override.lower in ("true", "1", "yes")
+else:
+ DEBUG = env.bool("DEBUG", default=False)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("SECRET_KEY")
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("DEBUG") or os.environ.get("FRIDAY_DEBUG", "True").lower in ("true", "1", "yes")
-ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=LOCALHOST_HOSTS)
+FRIDAY_ENV = env.str("FRIDAY_ENV", default="development").lower
+IS_PRODUCTION = FRIDAY_ENV in {"prod", "production"} or env.bool("FRIDAY_PRODUCTION", default=False)
+if IS_PRODUCTION:
+ if DEBUG:
+ raise ImproperlyConfigured("Production mode requires DEBUG=False")
+ if not SECRET_KEY or SECRET_KEY == INSECURE_SECRET_KEY:
+ raise ImproperlyConfigured("Production mode requires a non-default SECRET_KEY")
+ if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
+ raise ImproperlyConfigured("Production mode requires explicit ALLOWED_HOSTS (wildcard not allowed)")
 # =============================================================================
 # Application definition
 # =============================================================================
