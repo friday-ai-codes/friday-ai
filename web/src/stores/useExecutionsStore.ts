@@ -69,6 +69,7 @@ export interface WorkflowExecution {
  triggered_by: string | null
  triggered_by_name: string | null
  trigger_data: Record<string, any>
+ trigger_log_id: string | null
  workflow_definition: WorkflowDefinition | null
  context: Record<string, any>
  input_data: Record<string, any>

@@ -257,8 +257,18 @@ async function handleTrigger {
  <div class="text-sm font-semibold truncate">
  {{ currentExecution?.workflow_name || '工作流执行' }}
  </div>
- <div class="text-[10px] text-muted-foreground font-mono truncate">
+ <div class="flex items-center gap-2">
+ <span class="text-[10px] text-muted-foreground font-mono truncate">
  {{ executionId }}
+ </span>
+ <RouterLink
+ v-if="currentExecution?.trigger_log_id":to="`/logs/triggers/${currentExecution.trigger_log_id}`"
+ class="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-primary transition-colors shrink-0"
+ @click.stop
+ >
+ <span class="icon-[lucide--file-text] w-3 " />
+ 来源日志
+ </RouterLink>
  </div>
  </div>
  </div>
