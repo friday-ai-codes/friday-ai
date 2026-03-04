@@ -186,6 +186,14 @@ async function openDetail(logId: string) {
  </div>
  <!-- 操作 -->
  <div class="lg:col-span-1 flex items-center justify-end gap-1">
+ <RouterLink
+ v-if="log.first_execution_id":to="`/executions/${log.first_execution_id}`"
+ class="inline-flex items-center justify-center w-7 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-muted/50"
+ title="查看执行"
+ @click.stop
+ >
+ <span class="icon-[lucide--play-circle] text-sm text-primary" />
+ </RouterLink>
  <Button
  variant="ghost"
  size="icon"

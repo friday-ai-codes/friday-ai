@@ -5,6 +5,7 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  """Serializer for TriggerLog list view."""
  project_name = serializers.SerializerMethodField
  execution_status = serializers.SerializerMethodField
+ first_execution_id = serializers.SerializerMethodField
  class Meta:
  model = TriggerLog
  fields = [
@@ -21,6 +22,7 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  "description",
  "tech_doc_url",
  "execution_status",
+ "first_execution_id",
  ]
  def get_project_name(self, obj):
  return obj.project.name if obj.project else None
@@ -28,6 +30,10 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  """Get the latest workflow execution status."""
  latest = obj.workflow_executions.order_by("-created_at").first
  return latest.status if latest else None
+ def get_first_execution_id(self, obj) -> str | None:
+ """Get the latest workflow execution ID for cross-navigation."""
+ latest = obj.workflow_executions.order_by("-created_at").first
+ return str(latest.id) if latest else None
 class TriggerLogDetailSerializer(TriggerLogSerializer):
  """Serializer for TriggerLog detail view."""
  webhook_raw_request_parsed = serializers.SerializerMethodField
