@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
 from adrf.views import APIView
@@ -23,6 +23,11 @@ from .serializers import (
  RunnerSerializer,
  RunnerTaskAssignmentSerializer,
 )
+class IsRunnerAuthenticated(BasePermission):
+ """Require a valid runner token-authenticated request."""
+ message = "Runner authentication credentials were not provided."
+ def has_permission(self, request, view) -> bool:
+ return bool(getattr(request, "auth", None))
 class RegistrationTokenViewSet(ModelViewSet):
  """Registration token 管理（JWT 认证）。"""
  queryset = RegistrationToken.objects.all.order_by("-created_at")
@@ -105,7 +110,7 @@ class RunnerRegisterView(APIView):
 class RunnerUnregisterView(APIView):
  """Runner 注销（Runner Token 认证）。"""
  authentication_classes = [RunnerTokenAuthentication]
- permission_classes = [AllowAny]
+ permission_classes = [IsRunnerAuthenticated]
  async def delete(self, request):
  runner = request.auth
  runner.is_active = False
@@ -114,7 +119,7 @@ class RunnerUnregisterView(APIView):
 class RunnerVerifyView(APIView):
  """Runner Token 验证（Runner Token 认证）。"""
  authentication_classes = [RunnerTokenAuthentication]
- permission_classes = [AllowAny]
+ permission_classes = [IsRunnerAuthenticated]
  async def get(self, request):
  runner = request.auth
  return Response({
