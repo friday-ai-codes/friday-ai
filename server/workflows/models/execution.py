@@ -81,6 +81,16 @@ class WorkflowExecution(models.Model):
  verbose_name="触发日志",
  help_text="关联的飞书 Webhook 触发日志",
  )
+ # 从失败节点继续：指向原失败执行实例
+ resumed_from = models.ForeignKey(
+ "self",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="resumed_executions",
+ verbose_name="继续自",
+ help_text="从失败节点继续时，指向原失败执行实例",
+ )
  # 工作流定义快照（执行时的 DAG 布局数据）
  workflow_definition = models.JSONField(
  default=dict,

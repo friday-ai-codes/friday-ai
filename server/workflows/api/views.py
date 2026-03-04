@@ -556,6 +556,73 @@ class WorkflowExecutionViewSet(ModelViewSet):
  },
  status=status.HTTP_201_CREATED,
  )
+ @action(detail=True, methods=["post"], url_path="resume-from-failed")
+ async def resume_from_failed(self, request: Request, pk=None) -> Response:
+ """从失败节点继续执行（创建新的部分重执行实例）。"""
+ execution = await self.aget_object
+ node_id = request.data.get("node_id")
+ if not node_id:
+ return Response(
+ {"detail": "必须提供 node_id 参数"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if execution.status not in ("failed", "cancelled"):
+ return Response(
+ {"detail": "只能从失败或已取消的执行继续"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 验证指定节点确实是失败的
+ failed_ne = await NodeExecution.objects.filter(
+ workflow_execution=execution,
+ node_id=node_id,
+ status=NodeExecutionStatus.FAILED,
+ ).afirst
+ if not failed_ne:
+ return Response(
+ {"detail": "指定节点不存在或不是失败状态"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ engine = WorkflowEngine
+ new_execution = await engine.resume_from_node(
+ original_execution=execution,
+ failed_node_id=node_id,
+ triggered_by=request.user,
+ )
+ return Response(
+ {
+ "execution_id": str(new_execution.id),
+ "status": new_execution.status,
+ "resumed_from": str(execution.id),
+ },
+ status=status.HTTP_201_CREATED,
+ )
+ except ValueError as e:
+ error_msg = str(e)
+ if "已修改" in error_msg:
+ return Response(
+ {"detail": error_msg, "code": "definition_changed"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ return Response(
+ {"detail": error_msg},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ @action(detail=True, methods=["get"], url_path="check-definition-changed")
+ async def check_definition_changed(self, request: Request, pk=None) -> Response:
+ """检查工作流定义是否在执行后发生变更。"""
+ execution = await self.aget_object
+ if not execution.workflow_definition:
+ return Response({"changed": False})
+ execution = await WorkflowExecution.objects.select_related("workflow").aget(
+ pk=execution.pk
+ )
+ engine = WorkflowEngine
+ changed = await engine._compare_workflow_definitions(
+ execution.workflow_definition,
+ execution.workflow,
+ )
+ return Response({"changed": changed})
  @action(detail=True, methods=["get"])
  async def nodes(self, request: Request, pk=None) -> Response:
  """List node executions for this execution."""
