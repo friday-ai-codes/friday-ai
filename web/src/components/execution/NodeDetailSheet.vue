@@ -2,10 +2,11 @@
 /**
  * NodeDetailSheet -- 节点详情右侧抽屉面板
  *
- * 从右侧滑出的抽屉面板，包含三个 Tab：概览、数据、配置。
+ * 从右侧滑出的抽屉面板，包含三个基础 Tab：概览、数据、配置。
+ * AI 节点额外显示「AI 透视」Tab（ReAct 步骤流 + 节点成本）。
  * 根据节点类型和状态，在概览 Tab 底部条件渲染 AI/审批/调试面板。
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { NodeExecution } from '~/stores/useExecutionsStore'
 import {
  Sheet,
@@ -20,6 +21,7 @@ import { Separator } from '~/components/ui/separator'
 import NodeOverviewTab from './NodeOverviewTab.vue'
 import NodeDataTab from './NodeDataTab.vue'
 import NodeConfigTab from './NodeConfigTab.vue'
+import AIInsightTab from './AIInsightTab.vue'
 import PlanApprovalPanel from './PlanApprovalPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AICodeReviewPanel from './AICodeReviewPanel.vue'
@@ -35,10 +37,24 @@ const emit = defineEmits<{
  'update:open': [value: boolean]
  'action-complete':
 }>
+/** 当前 Tab 状态（受控模式，切换节点时重置） */
+const activeTab = ref('overview')
 /** 当前节点类型 */
 const nodeType = computed( => props.nodeExecution?.node_type ?? '')
 /** 当前节点状态 */
 const nodeStatus = computed( => props.nodeExecution?.status ?? '')
+/** AI 节点类型判断 */
+const AI_NODE_TYPES = [
+ 'ai_prompt', 'ai_coding', 'ai_code_review',
+ 'ai_plan_generation', 'ai_coding_dispatcher',
+] as const
+const isAINode = computed( =>
+ AI_NODE_TYPES.includes(nodeType.value as typeof AI_NODE_TYPES[number]),
+)
+/** 切换节点时重置 Tab */
+watch( => props.nodeExecution, => {
+ activeTab.value = 'overview'
+})
 /** 是否显示 PlanApprovalPanel：ai_plan_approval + waiting_event/completed */
 const showPlanApproval = computed( =>
  nodeType.value === 'ai_plan_approval'
@@ -83,7 +99,7 @@ function handleActionComplete {
  </SheetHeader>
  <!-- Tabs 内容区域 -->
  <div v-if="nodeExecution" class="flex-1 min-">
- <Tabs default-value="overview" class="h-full flex flex-col">
+ <Tabs v-model="activeTab" class="h-full flex flex-col">
  <TabsList class="w-full shrink-0 mx-6 mt-4" style="width: calc(100% - 3rem)">
  <TabsTrigger value="overview" class="flex-1">
  概览
@@ -93,6 +109,9 @@ function handleActionComplete {
  </TabsTrigger>
  <TabsTrigger value="config" class="flex-1">
  配置
+ </TabsTrigger>
+ <TabsTrigger v-if="isAINode" value="ai-insight" class="flex-1">
+ AI 透视
  </TabsTrigger>
  </TabsList>
  <!-- 概览 Tab -->
@@ -139,6 +158,15 @@ function handleActionComplete {
  <ScrollArea class="h-full">
  <div class="px-6 py-4">
  <NodeConfigTab:config="nodeConfig" />
+ </div>
+ </ScrollArea>
+ </TabsContent>
+ <!-- AI 透视 Tab（仅 AI 节点） -->
+ <TabsContent v-if="isAINode" value="ai-insight" class="flex-1 min- mt-0">
+ <ScrollArea class="h-full">
+ <div class="px-6 py-4">
+ <AIInsightTab:node-execution-id="nodeExecution.id":execution-id="executionId"
+ />
  </div>
  </ScrollArea>
  </TabsContent>
