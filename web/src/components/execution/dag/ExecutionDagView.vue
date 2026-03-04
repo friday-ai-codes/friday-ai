@@ -12,11 +12,13 @@ import { Controls } from '@vue-flow/controls'
 import '@vue-flow/controls/dist/style.css'
 import { computed, toRef } from 'vue'
 import type { WorkflowExecution, NodeExecution, TimelineData } from '~/stores/useExecutionsStore'
+import type { CostBreakdown, NodeCost } from '~/types/execution'
 import { useExecutionDag, executionNodeTypes, executionEdgeTypes } from './composables/useExecutionDag'
 import { useNodeTimer } from './composables/useNodeTimer'
 const props = defineProps<{
  execution: WorkflowExecution
  timelineData?: TimelineData | null
+ costData?: CostBreakdown | null
 }>
 const emit = defineEmits<{
  'node-click': [nodeExecution: NodeExecution | null, nodeId: string]
@@ -27,16 +29,37 @@ const { dagNodes, dagEdges } = useExecutionDag(executionRef, timelineRef)
 // 运行中节点实时计时
 const nodeExecutionsRef = computed( => props.execution.node_executions ?? )
 const { elapsedMap } = useNodeTimer(nodeExecutionsRef)
-// 将 elapsedMap 注入到 dagNodes 的 data.elapsed 中
-const nodesWithElapsed = computed( => {
- return dagNodes.value.map(node => {
+// 从 costData 构建节点成本 map
+const nodeCostMap = computed<Record<string, NodeCost>>( => {
+ if (!props.costData?.nodes) return {}
+ const map: Record<string, NodeCost> = {}
+ for (const node of props.costData.nodes) {
+ let totalTokens = 0
+ let totalCostUsd = 0
+ for (const model of Object.values(node.models)) {
+ totalTokens += model.input_tokens + model.output_tokens
+ totalCostUsd += Number.parseFloat(model.total_cost_usd) || 0
+ }
+ map[node.node_id] = {
+ totalCostUsd: totalCostUsd.toString,
+ totalTokens,
+ models: node.models,
+ }
+ }
+ return map
+})
+// 将 elapsedMap 和 costMap 注入到 dagNodes
+const nodesWithData = computed( => {
+ return dagNodes.value.map((node) => {
  const elapsed = elapsedMap.value[node.id]
- if (elapsed !== undefined) {
+ const cost = nodeCostMap.value[node.id]
+ if (elapsed !== undefined || cost) {
  return {
  ...node,
  data: {
  ...node.data,
- elapsed,
+ ...(elapsed !== undefined && { elapsed }),
+ ...(cost && { cost }),
  },
  }
  }
@@ -54,7 +77,7 @@ onNodeClick(({ node }: NodeMouseEvent) => {
 </script>
 <template>
  <div class="h-full w-full bg-background">
- <VueFlow:nodes="nodesWithElapsed":edges="dagEdges":node-types="executionNodeTypes":edge-types="executionEdgeTypes":nodes-draggable="false":nodes-connectable="false":elements-selectable="true":zoom-on-scroll="true":pan-on-scroll="true":pan-on-drag="true"
+ <VueFlow:nodes="nodesWithData":edges="dagEdges":node-types="executionNodeTypes":edge-types="executionEdgeTypes":nodes-draggable="false":nodes-connectable="false":elements-selectable="true":zoom-on-scroll="true":pan-on-scroll="true":pan-on-drag="true"
  fit-view-on-init:max-zoom="1.5":min-zoom="0.2"
  >
  <Background

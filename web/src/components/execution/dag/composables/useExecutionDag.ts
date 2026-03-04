@@ -13,6 +13,7 @@ import type {
  TimelineData,
  WorkflowDefinition,
 } from '~/stores/useExecutionsStore'
+import type { NodeCost } from '~/types/execution'
 import GradientEdge from '~/components/workflow/editor/edges/GradientEdge.vue'
 import ExecutionNode from '../ExecutionNode.vue'
 /** Vue Flow 执行节点的 data 载荷类型 */
@@ -28,6 +29,8 @@ export interface ExecutionNodeData {
  config: Record<string, unknown>
  /** 运行中节点的实时 elapsed 秒数（由 useNodeTimer 注入） */
  elapsed?: number
+ /** 节点级成本数据（由页面层从 CostBreakdown 注入） */
+ cost?: NodeCost
 }
 /** 自定义节点类型注册 */
 export const executionNodeTypes: Record<string, NodeComponent> = {
