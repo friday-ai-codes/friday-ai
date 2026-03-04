@@ -7,6 +7,7 @@
  */
 import { computed } from 'vue'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import ExecutionStatusBadge from './ExecutionStatusBadge.vue'
 interface Props {
  execution: {
@@ -48,6 +49,9 @@ const triggerTypeLabel = computed( => {
  }
  return labels[props.execution.trigger_type] || props.execution.trigger_type
 })
+const canRetry = computed( =>
+ ['failed', 'cancelled'].includes(props.execution.status),
+)
 </script>
 <template>
  <div
@@ -60,6 +64,15 @@ const triggerTypeLabel = computed( => {
  <Badge variant="outline" class="text-[10px] shrink-0">
  {{ triggerTypeLabel }}
  </Badge>
- <!-- 重试按钮槽位：由 Plan 添加 -->
+ <Button
+ v-if="canRetry"
+ variant="ghost"
+ size="icon"
+ class=" w-6 text-muted-foreground hover:text-primary shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+ title="重试"
+ @click.stop="$emit('retry', execution.id)"
+ >
+ <span class="icon-[lucide--rotate-ccw] w-3.5 .5" />
+ </Button>
  </div>
 </template>
