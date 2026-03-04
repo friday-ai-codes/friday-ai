@@ -19,6 +19,7 @@
  "dependencies": {
  "@floating-ui/dom": "catalog:",
  "@floating-ui/vue": "catalog:",
+ "@shikijs/markdown-it": "^4.0.1",
  "@tanstack/vue-query": "catalog:",
  "@tiptap/core": "catalog:",
  "@tiptap/extension-bold": "catalog:",
@@ -57,6 +58,7 @@
  "clsx": "catalog:",
  "lowlight": "catalog:",
  "lucide-vue-next": "catalog:",
+ "markdown-it": "^14.1.1",
  "nanoid": "catalog:",
  "pinia": "catalog:",
  "reka-ui": "catalog:",
@@ -79,6 +81,7 @@
  "@iconify/tailwind4": "catalog:",
  "@playwright/test": "catalog:",
  "@tailwindcss/vite": "catalog:",
+ "@types/markdown-it": "^14.1.2",
  "@types/node": "catalog:",
  "@vitejs/plugin-vue": "catalog:",
  "@vue/test-utils": "catalog:",
