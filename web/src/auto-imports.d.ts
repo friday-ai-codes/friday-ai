@@ -352,7 +352,7 @@ declare global {
  export type { ConnectionCheckResult, PortCompatibility } from './composables/useSchemaValidation'
  import('./composables/useSchemaValidation')
  // @ts-ignore
- export type { NodeExecution, WorkflowExecution } from './stores/useExecutionsStore'
+ export type { NodeExecution, WorkflowDefinitionNode, WorkflowDefinitionEdge, WorkflowDefinition, TimelineNode, TimelineData, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
  // @ts-ignore
  export type { PortSchema, NodePort, NodeType } from './stores/useNodeTypesStore'
