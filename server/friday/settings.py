@@ -105,11 +105,33 @@ ASGI_APPLICATION = "friday.asgi.application"
 # =============================================================================
 # Channels / WebSocket
 # =============================================================================
-CHANNEL_LAYERS = {
+USE_REDIS_CHANNEL_LAYER = env.bool("USE_REDIS_CHANNEL_LAYER", default=False)
+REDIS_CHANNEL_LAYER_URL = env.str(
+ "REDIS_CHANNEL_LAYER_URL",
+ default=env.str("REDIS_URL", default="redis://127.0.0.1:6379/0"),
+)
+if USE_REDIS_CHANNEL_LAYER:
+ CHANNEL_LAYERS = {
+ "default": {
+ "BACKEND": "channels_redis.core.RedisChannelLayer",
+ "CONFIG": {
+ "hosts": [REDIS_CHANNEL_LAYER_URL],
+ },
+ },
+ }
+else:
+ CHANNEL_LAYERS = {
  "default": {
  "BACKEND": "channels.layers.InMemoryChannelLayer",
  },
-}
+ }
+# Workflow idempotency backend migration entrypoint.
+# Current default remains in-memory for compatibility.
+WORKFLOW_IDEMPOTENCY_BACKEND = env.str("WORKFLOW_IDEMPOTENCY_BACKEND", default="memory")
+WORKFLOW_IDEMPOTENCY_REDIS_URL = env.str(
+ "WORKFLOW_IDEMPOTENCY_REDIS_URL",
+ default=REDIS_CHANNEL_LAYER_URL,
+)
 # 生产模式下要求 WebSocket 使用 TLS (wss://)
 # 默认值：DEBUG=False 时启用，DEBUG=True 时禁用
 # 可通过环境变量 WEBSOCKET_REQUIRE_TLS 显式控制
