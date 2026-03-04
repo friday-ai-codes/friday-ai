@@ -29,6 +29,67 @@ from .serializers import (
  WebhookTokenUpdateSerializer,
 )
 logger = structlog.get_logger(__name__)
+def _verify_and_decrypt_callback_payload(
+ request,
+ data: dict[str, Any],
+ raw_body: str,
+ *,
+ source: str,
+) -> tuple[dict[str, Any] | None, Response | None]:
+ """Verify Feishu callback signature and decrypt payload when needed.
+ Returns:
+ (payload, None) on success
+ (None, response) when request should be rejected immediately
+ """
+ encrypt_key = getattr(settings, "FEISHU_ENCRYPT_KEY", "")
+ signature_required = bool(getattr(settings, "FEISHU_SIGNATURE_REQUIRED", False))
+ if signature_required and not encrypt_key:
+ logger.error(
+ "feishu_signature_required_but_key_missing",
+ source=source,
+ )
+ return None, Response(
+ {"detail": "服务端未配置 FEISHU_ENCRYPT_KEY"},
+ status=status.HTTP_503_SERVICE_UNAVAILABLE,
+ )
+ if not encrypt_key:
+ logger.warning(
+ "feishu_signature_bypassed_for_dev",
+ source=source,
+ )
+ return data, None
+ timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
+ nonce = request.headers.get("X-Lark-Request-Nonce", "")
+ signature = request.headers.get("X-Lark-Signature", "")
+ if not timestamp or not nonce or not signature:
+ logger.warning("feishu_signature_headers_missing", source=source)
+ return None, Response(
+ {"detail": "缺少签名头"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ if not FeishuIMClient.verify_callback_signature(
+ timestamp=timestamp,
+ nonce=nonce,
+ body=raw_body,
+ signature=signature,
+ encrypt_key=encrypt_key,
+ ):
+ logger.warning("feishu_signature_invalid", source=source)
+ return None, Response(
+ {"detail": "签名验证失败"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ if "encrypt" not in data:
+ return data, None
+ try:
+ decrypted_data = FeishuIMClient.decrypt_callback(data["encrypt"], encrypt_key)
+ except Exception as exc:
+ logger.error("feishu_callback_decrypt_failed", source=source, error=str(exc))
+ return None, Response(
+ {"detail": "解密失败"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ return decrypted_data, None
 # 幂等处理
 _processed_events: set[str] = set
 _MAX_PROCESSED_EVENTS = 10000
@@ -84,36 +145,17 @@ class CardCallbackView(APIView):
  # 1. 处理 challenge 验证 (首次配置回调 URL)
  if "challenge" in data:
  return Response({"challenge": data["challenge"]})
- # 2. 验证签名 (如果配置了 encrypt_key)
- encrypt_key = getattr(settings, "FEISHU_ENCRYPT_KEY", "")
- if encrypt_key:
- timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
- nonce = request.headers.get("X-Lark-Request-Nonce", "")
- signature = request.headers.get("X-Lark-Signature", "")
- if not FeishuIMClient.verify_callback_signature(
- timestamp=timestamp,
- nonce=nonce,
- body=raw_body,
- signature=signature,
- encrypt_key=encrypt_key,
- ):
- logger.warning("card_callback_signature_invalid")
- return Response(
- {"detail": "签名验证失败"},
- status=status.HTTP_401_UNAUTHORIZED,
+ # 2. 验签与解密（生产默认强制）
+ verified_payload, early_response = _verify_and_decrypt_callback_payload(
+ request,
+ data,
+ raw_body,
+ source="card_callback",
  )
- # 解密加密内容
- if "encrypt" in data:
- try:
- data = FeishuIMClient.decrypt_callback(
- data["encrypt"], encrypt_key
- )
- except Exception as e:
- logger.error("card_callback_decrypt_failed", error=str(e))
- return Response(
- {"detail": "解密失败"},
- status=status.HTTP_400_BAD_REQUEST,
- )
+ if early_response:
+ return early_response
+ if verified_payload is not None:
+ data = verified_payload
  # 3. 解析回调数据
  action = data.get("action", {})
  # Pass the full value dict to preserve execution_id, node_id, etc.
@@ -286,36 +328,17 @@ class IMMessageWebhookView(APIView):
  # 1. 处理 URL 验证 (url_verification 事件)
  if data.get("type") == "url_verification":
  return Response({"challenge": data.get("challenge", "")})
- # 2. 验证事件签名 (如果配置了 encrypt_key)
- encrypt_key = getattr(settings, "FEISHU_ENCRYPT_KEY", "")
- if encrypt_key:
- timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
- nonce = request.headers.get("X-Lark-Request-Nonce", "")
- signature = request.headers.get("X-Lark-Signature", "")
- if not FeishuIMClient.verify_callback_signature(
- timestamp=timestamp,
- nonce=nonce,
- body=raw_body,
- signature=signature,
- encrypt_key=encrypt_key,
- ):
- logger.warning("im_message_signature_invalid")
- return Response(
- {"detail": "签名验证失败"},
- status=status.HTTP_401_UNAUTHORIZED,
+ # 2. 验签与解密（生产默认强制）
+ verified_payload, early_response = _verify_and_decrypt_callback_payload(
+ request,
+ data,
+ raw_body,
+ source="im_message",
  )
- # 解密加密内容
- if "encrypt" in data:
- try:
- data = FeishuIMClient.decrypt_callback(
- data["encrypt"], encrypt_key
- )
- except Exception as e:
- logger.error("im_message_decrypt_failed", error=str(e))
- return Response(
- {"detail": "解密失败"},
- status=status.HTTP_400_BAD_REQUEST,
- )
+ if early_response:
+ return early_response
+ if verified_payload is not None:
+ data = verified_payload
  # 3. 解析事件数据
  header = data.get("header", {})
  event = data.get("event", {})

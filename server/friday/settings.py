@@ -213,6 +213,10 @@ SPECTACULAR_SETTINGS = {
 # =============================================================================
 # Encryption key for sensitive data (base64 encoded 32-byte key)
 FRIDAY_ENCRYPTION_KEY = os.environ.get("FRIDAY_ENCRYPTION_KEY", "")
+# Feishu callback signature verification policy.
+# In production, signatures are required by default.
+FEISHU_ENCRYPT_KEY = env.str("FEISHU_ENCRYPT_KEY", default="")
+FEISHU_SIGNATURE_REQUIRED = env.bool("FEISHU_SIGNATURE_REQUIRED", default=IS_PRODUCTION)
 # =============================================================================
 # Logging
 # =============================================================================
