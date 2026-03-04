@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 import pytest
+from django.test import override_settings
+from rest_framework import status
 SERVER_DIR = Path(__file__).resolve.parents[1]
 def _boot_django_with_env(extra_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
  env = os.environ.copy
@@ -70,3 +72,50 @@ def test_development_defaults_allow_bootstrap -> None:
  )
  assert result.returncode == 0
  assert "settings-ok" in result.stdout
+@pytest.mark.django_db
+@override_settings(FEISHU_SIGNATURE_REQUIRED=True, FEISHU_ENCRYPT_KEY="")
+def test_feishu_signature_required_rejects_missing_encrypt_key(api_client) -> None:
+ response = api_client.post(
+ "/api/feishu/card/callback/",
+ {
+ "action": {"value": {"action": "unknown_action"}},
+ "open_message_id": "msg_1",
+ },
+ format="json",
+ )
+ assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+ assert "FEISHU_ENCRYPT_KEY" in response.data["detail"]
+@pytest.mark.django_db
+@override_settings(FEISHU_SIGNATURE_REQUIRED=True, FEISHU_ENCRYPT_KEY="test-encrypt-key")
+def test_feishu_signature_missing_headers_returns_401(api_client) -> None:
+ response = api_client.post(
+ "/api/feishu/im/message/",
+ {
+ "header": {"event_type": "im.message.receive_v1", "event_id": "evt-1"},
+ "event": {},
+ },
+ format="json",
+ )
+ assert response.status_code == status.HTTP_401_UNAUTHORIZED
+ assert "签名头" in response.data["detail"]
+@pytest.mark.django_db
+@override_settings(FEISHU_SIGNATURE_REQUIRED=False, FEISHU_ENCRYPT_KEY="")
+def test_feishu_signature_dev_bypass_allows_request(api_client) -> None:
+ response = api_client.post(
+ "/api/feishu/im/message/",
+ {
+ "header": {"event_type": "im.message.receive_v1", "event_id": "evt-2"},
+ "event": {
+ "message": {
+ "chat_id": "chat_1",
+ "message_id": "msg_1",
+ "message_type": "text",
+ "content": '{\"text\":\"hello\"}',
+ },
+ "sender": {"sender_id": {"open_id": "ou_test"}},
+ },
+ },
+ format="json",
+ )
+ assert response.status_code == status.HTTP_200_OK
+ assert response.data["status"] == "ok"
