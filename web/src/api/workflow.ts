@@ -9,6 +9,11 @@ import type {
  WorkflowTrigger,
  WorkflowTriggerCreate,
 } from '~/types'
+import type {
+ ActionLogDetail,
+ ActionLogSummary,
+ CostBreakdown,
+} from '~/types/execution'
 import { del, get, patch, post, put } from './client'
 // ============================================================================
 // Node Schema API
@@ -270,6 +275,27 @@ export async function answerAgentSession(
  answer,
  })
 }
+// ============================================================================
+// AI 执行透视 API (Phase)
+// ============================================================================
+/**
+ * 获取节点的 ReAct 步骤列表（ActionLog 摘要）
+ */
+export async function getReactSteps(nodeExecutionId: string): Promise<ActionLogSummary> {
+ return get<ActionLogSummary>(`/workflows/node-executions/${nodeExecutionId}/react-steps/`)
+}
+/**
+ * 获取 ActionLog 详情（含完整 payload）
+ */
+export async function getActionLogDetail(actionLogId: number): Promise<ActionLogDetail> {
+ return get<ActionLogDetail>(`/workflows/action-logs/${actionLogId}/`)
+}
+/**
+ * 获取执行的成本拆分数据
+ */
+export async function getCostBreakdown(executionId: string): Promise<CostBreakdown> {
+ return get<CostBreakdown>(`/workflows/workflow-executions/${executionId}/cost-breakdown/`)
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -300,4 +326,8 @@ export default {
  getNodeInteractions,
  answerInteraction,
  answerAgentSession,
+ // AI 执行透视 (Phase)
+ getReactSteps,
+ getActionLogDetail,
+ getCostBreakdown,
 }
