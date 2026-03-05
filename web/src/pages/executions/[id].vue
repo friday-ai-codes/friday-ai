@@ -192,8 +192,18 @@ async function handlePause {
  toast.success('工作流已暂停')
 }
 async function handleResume {
+ try {
  await store.resumeExecution(executionId.value)
  toast.success('工作流已恢复')
+ }
+ catch (e: any) {
+ if (e.status === 501) {
+ toast.warning('暂不支持从当前状态恢复，请使用"重试"功能重新执行')
+ }
+ else {
+ toast.error(`恢复失败: ${e.message}`)
+ }
+ }
 }
 async function handleCancel {
  await store.cancelExecution(executionId.value)
@@ -237,7 +247,7 @@ async function handleResumeFromFailed {
  }
  }
  catch (e: any) {
- if (e.response?.status === 409) {
+ if (e.status === 409) {
  toast.error('工作流定义已修改，无法从此继续')
  definitionChanged.value = true
  resumeDialogOpen.value = false
