@@ -14,6 +14,7 @@ import { Skeleton } from '~/components/ui/skeleton'
 const props = defineProps<{
  nodeExecutionId: string
  executionId: string
+ nodeId?: string // workflow node UUID，用于精确过滤成本数据
 }>
 // ----- ReAct 步骤流 -----
 const steps = ref<ActionLogSummary>
@@ -76,33 +77,23 @@ const iterations = computed<Iteration>( => {
  return result
 })
 // ----- 节点成本 -----
-const nodeCost = ref<CostBreakdownNode | null>(null)
 const costLoading = ref(false)
 async function fetchNodeCost {
  costLoading.value = true
  try {
  const breakdown = await getCostBreakdown(props.executionId)
- // 通过 node_executions 中的 node 字段匹配不太可靠，直接遍历
- nodeCost.value = breakdown.nodes.find(n =>
- // CostBreakdown API 返回的 node_id 是 workflow node id
- // 需要通过 execution 匹配，这里先尝试直接用
- n.node_id !== undefined,
- ) ?? null
- // 退而求其次：取所有节点中名字匹配的
- // 实际上 cost-breakdown 的 node_id 是 workflow node id（与 NodeExecution.node 对应）
- // 但这里我们无法直接获取 node_id，所以用全部数据
- nodeCost.value = breakdown.nodes[0] ?? null
- // 更好的方案：传入 nodeId
- // 暂时展示所有成本节点
- nodeCost.value = null
- const nodes = breakdown.nodes
- if (nodes.length > 0) {
- // 存储所有节点成本用于展示
- allNodeCosts.value = nodes
+ if (props.nodeId) {
+ // 精确过滤当前节点
+ const nodeCostData = breakdown.nodes.find(n => n.node_id === props.nodeId)
+ allNodeCosts.value = nodeCostData ? [nodeCostData]:
+ }
+ else {
+ // 无 nodeId 时展示所有节点（降级行为）
+ allNodeCosts.value = breakdown.nodes
  }
  }
  catch {
- nodeCost.value = null
+ allNodeCosts.value =
  }
  finally {
  costLoading.value = false

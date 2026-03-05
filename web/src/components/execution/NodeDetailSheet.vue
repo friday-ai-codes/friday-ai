@@ -184,7 +184,7 @@ function handleActionComplete {
  <TabsContent v-if="isAINode" value="ai-insight" class="flex-1 min- mt-0">
  <ScrollArea class="h-full">
  <div class="px-6 py-4">
- <AIInsightTab:node-execution-id="nodeExecution.id":execution-id="executionId"
+ <AIInsightTab:node-execution-id="nodeExecution.id":execution-id="executionId":node-id="nodeExecution.node"
  />
  </div>
  </ScrollArea>
