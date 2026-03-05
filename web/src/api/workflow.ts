@@ -282,19 +282,19 @@ export async function answerAgentSession(
  * 获取节点的 ReAct 步骤列表（ActionLog 摘要）
  */
 export async function getReactSteps(nodeExecutionId: string): Promise<ActionLogSummary> {
- return get<ActionLogSummary>(`/workflows/node-executions/${nodeExecutionId}/react-steps/`)
+ return get<ActionLogSummary>(`/node-executions/${nodeExecutionId}/react-steps/`)
 }
 /**
  * 获取 ActionLog 详情（含完整 payload）
  */
 export async function getActionLogDetail(actionLogId: number): Promise<ActionLogDetail> {
- return get<ActionLogDetail>(`/workflows/action-logs/${actionLogId}/`)
+ return get<ActionLogDetail>(`/action-logs/${actionLogId}/`)
 }
 /**
  * 获取执行的成本拆分数据
  */
 export async function getCostBreakdown(executionId: string): Promise<CostBreakdown> {
- return get<CostBreakdown>(`/workflows/workflow-executions/${executionId}/cost-breakdown/`)
+ return get<CostBreakdown>(`/workflow-executions/${executionId}/cost-breakdown/`)
 }
 /**
  * 从失败节点继续执行（创建新的部分重执行实例）
