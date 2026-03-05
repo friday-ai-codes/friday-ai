@@ -114,8 +114,18 @@ async function handlePause {
  toast.success('工作流已暂停')
 }
 async function handleResume {
+ try {
  await store.resumeExecution(executionId)
  toast.success('工作流已恢复')
+ }
+ catch (e: any) {
+ if (e.status === 501) {
+ toast.warning('暂不支持从当前状态恢复，请使用"重试"功能重新执行')
+ }
+ else {
+ toast.error(`恢复失败: ${e.message}`)
+ }
+ }
 }
 async function handleCancel {
  await store.cancelExecution(executionId)
