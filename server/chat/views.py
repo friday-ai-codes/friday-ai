@@ -4,14 +4,26 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from adrf.views import APIView
+from .authentication import ChatKeyAuthentication
+from .conversation_service import ConversationService
+from .models import Conversation
+from .permissions import ChatAuthPermission
 from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
+ ConversationDetailSerializer,
+ ConversationListSerializer,
+ ConversationMessageSerializer,
+ CreateConversationSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
+ SendMessageResponseSerializer,
+ SendMessageSerializer,
 )
 from .services import ChatMessage, ChatServiceError, aget_chat_service
+from projects.models import Project
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
  """API view for getting available models."""
@@ -149,3 +161,145 @@ class ChatCompletionsView(APIView):
  {"error": f"对话请求失败: {str(e)}"},
  status=status.HTTP_500_INTERNAL_SERVER_ERROR,
  )
+# ============================================================================
+# Conversation Views (Phase)
+# ============================================================================
+class ConversationListView(APIView):
+ """对话列表 + 创建。"""
+ authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="获取对话列表",
+ description="返回未删除的对话列表，按 updated_at 降序排列",
+ responses={200: ConversationListSerializer(many=True)},
+ tags=["Conversations"],
+ )
+ async def get(self, request):
+ """获取对话列表。"""
+ conversations = await ConversationService.list_conversations
+ serializer = ConversationListSerializer(conversations, many=True)
+ return Response(serializer.data)
+ @extend_schema(
+ summary="创建对话",
+ description="创建新对话并绑定到指定项目",
+ request=CreateConversationSerializer,
+ responses={
+ 201: ConversationListSerializer,
+ 400: {"description": "请求参数错误"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request):
+ """创建新对话。"""
+ serializer = CreateConversationSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ data = serializer.validated_data
+ project_id = str(data["project_id"])
+ title = data.get("title", "新对话")
+ # 验证 project 存在
+ try:
+ await Project.objects.aget(id=project_id)
+ except Project.DoesNotExist:
+ return Response(
+ {"error": f"项目不存在: {project_id}"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ conversation = await ConversationService.create_conversation(
+ project_id=project_id,
+ title=title,
+ )
+ response_serializer = ConversationListSerializer(conversation)
+ return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+class ConversationDetailView(APIView):
+ """对话详情 + 删除。"""
+ authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="获取对话详情",
+ description="返回对话详情及历史消息列表",
+ responses={
+ 200: ConversationDetailSerializer,
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def get(self, request, conversation_id):
+ """获取对话详情含消息。"""
+ try:
+ result = await ConversationService.get_conversation_with_messages(
+ str(conversation_id),
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ conversation = result["conversation"]
+ messages = result["messages"]
+ response_data = {
+ "id": str(conversation.id),
+ "project_id": str(conversation.project_id),
+ "title": conversation.title,
+ "created_at": conversation.created_at,
+ "updated_at": conversation.updated_at,
+ "messages": ConversationMessageSerializer(messages, many=True).data,
+ }
+ return Response(response_data)
+ @extend_schema(
+ summary="删除对话",
+ description="软删除对话（标记 is_deleted=True）",
+ responses={
+ 204: None,
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def delete(self, request, conversation_id):
+ """软删除对话。"""
+ try:
+ await ConversationService.delete_conversation(str(conversation_id))
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ return Response(status=status.HTTP_204_NO_CONTENT)
+class SendMessageView(APIView):
+ """发送消息。"""
+ authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="发送消息",
+ description="发送消息并获得 AI 回复（同步模式）",
+ request=SendMessageSerializer,
+ responses={
+ 200: SendMessageResponseSerializer,
+ 400: {"description": "请求参数错误"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request, conversation_id):
+ """发送消息获取 AI 回复。"""
+ serializer = SendMessageSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ content = serializer.validated_data["content"]
+ try:
+ result = await ConversationService.send_message(
+ conversation_id=str(conversation_id),
+ content=content,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ message = result["message"]
+ response_data = {
+ "message": ConversationMessageSerializer(message).data,
+ "tool_calls": result.get("tool_calls", ),
+ "usage": result.get("usage"),
+ }
+ return Response(response_data)

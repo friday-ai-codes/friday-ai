@@ -90,3 +90,44 @@ class ChatCompletionResponseSerializer(serializers.Serializer):
  content = serializers.CharField
  model = serializers.CharField
  usage = serializers.DictField(child=serializers.IntegerField, allow_null=True)
+# ============================================================================
+# Conversation Serializers (Phase)
+# ============================================================================
+class CreateConversationSerializer(serializers.Serializer):
+ """创建对话请求。"""
+ project_id = serializers.UUIDField(help_text="项目 ID")
+ title = serializers.CharField(max_length=200, default="新对话", required=False)
+class ConversationListSerializer(serializers.Serializer):
+ """对话列表项。"""
+ id = serializers.UUIDField
+ project_id = serializers.UUIDField
+ title = serializers.CharField
+ created_at = serializers.DateTimeField
+ updated_at = serializers.DateTimeField
+class ConversationMessageSerializer(serializers.Serializer):
+ """对话消息。"""
+ id = serializers.UUIDField
+ role = serializers.CharField
+ content = serializers.CharField(allow_blank=True)
+ tool_calls = serializers.JSONField(required=False, allow_null=True)
+ tool_call_id = serializers.CharField(required=False, allow_blank=True)
+ metadata = serializers.JSONField(required=False)
+ created_at = serializers.DateTimeField
+class ConversationDetailSerializer(serializers.Serializer):
+ """对话详情（含消息列表）。"""
+ id = serializers.UUIDField
+ project_id = serializers.UUIDField
+ title = serializers.CharField
+ created_at = serializers.DateTimeField
+ updated_at = serializers.DateTimeField
+ messages = ConversationMessageSerializer(many=True, required=False)
+class SendMessageSerializer(serializers.Serializer):
+ """发送消息请求。"""
+ content = serializers.CharField(min_length=1, help_text="消息内容")
+class SendMessageResponseSerializer(serializers.Serializer):
+ """发送消息响应。"""
+ message = ConversationMessageSerializer
+ tool_calls = serializers.ListField(
+ child=serializers.DictField, required=False, default=list,
+ )
+ usage = serializers.DictField(required=False, allow_null=True)
