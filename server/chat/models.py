@@ -15,6 +15,12 @@ class Conversation(models.Model):
  related_name="conversations",
  )
  title = models.CharField(max_length=200, default="新对话")
+ model = models.CharField(
+ max_length=100,
+ blank=True,
+ default="",
+ help_text="LLM 模型 ID，为空时使用系统默认模型",
+ )
  is_deleted = models.BooleanField(default=False, db_index=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)

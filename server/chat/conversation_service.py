@@ -19,13 +19,51 @@ from system.models import SettingKeys
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools # noqa: F401
 logger = structlog.get_logger(__name__)
-def _build_system_prompt(project_name: str) -> str:
- """构建基础 system prompt。
- Phase 会替换为更完善的知识增强版本。
+# ============================================================================
+# 角色化 System Prompt
+# ============================================================================
+ROLE_PROMPTS: dict[str, str] = {
+ "developer": (
+ "你是一名资深开发工程师助手。回答问题时关注代码细节、技术实现方案和最佳实践。"
+ "使用专业技术术语，提供代码示例和具体的文件路径引用。"
+ "分析问题时从架构设计、性能影响和可维护性角度出发。"
+ ),
+ "pm": (
+ "你是一名项目经理助手。回答问题时关注项目进度、风险评估和资源依赖关系。"
+ "使用业务术语，避免过多技术细节。"
+ "以要点和时间线形式组织回答，突出影响和优先级。"
+ ),
+ "designer": (
+ "你是一名设计师助手。回答问题时关注用户交互流程、视觉一致性和用户体验。"
+ "关注界面布局、信息层级和操作流畅度。"
+ "从用户视角分析问题，提供交互优化建议。"
+ ),
+ "qa": (
+ "你是一名 QA 工程师助手。回答问题时关注测试覆盖、边界条件和潜在缺陷模式。"
+ "分析代码时识别可能的异常路径、数据验证漏洞和并发问题。"
+ "提供具体的测试用例建议和回归测试策略。"
+ ),
+ "general": (
+ "你是一名全能项目助手。根据问题性质平衡技术细节和业务概览。"
+ "灵活调整回答深度，简单问题简洁回答，复杂问题详细分析。"
+ ),
+}
+VALID_ROLES = frozenset(ROLE_PROMPTS.keys)
+def _build_system_prompt(project_name: str, role: str = "developer") -> str:
+ """构建角色化 system prompt。
+ 根据用户选择的角色生成差异化的 system prompt，
+ 影响 AI 的回答风格、关注点和术语级别。
+ Args:
+ project_name: 项目名称
+ role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
+ Returns:
+ 完整的 system prompt 字符串
  """
+ role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
  return (
- f"你是 Friday AI 项目助手，基于项目「{project_name}」的知识库回答问题。"
- f"请用中文回答，简洁准确。如果不确定，请说明。"
+ f"{role_prompt}\n\n"
+ f"你正在为项目「{project_name}」提供帮助。"
+ f"基于项目知识库回答，如果不确定请说明。用中文回答。"
  )
 async def _get_tool_names(project_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
@@ -70,17 +108,20 @@ class ConversationService:
  async def create_conversation(
  project_id: str,
  title: str = "新对话",
+ model: str = "",
  ) -> Conversation:
  """创建新对话。
  Args:
  project_id: 项目 UUID
  title: 对话标题
+ model: LLM 模型 ID（为空时运行时使用系统默认）
  Returns:
  新创建的 Conversation 实例
  """
  conversation = await Conversation.objects.acreate(
  project_id=project_id,
  title=title,
+ model=model,
  )
  logger.info(
  "conversation_created",
@@ -93,6 +134,7 @@ class ConversationService:
  async def send_message(
  conversation_id: str,
  content: str,
+ role: str = "developer",
  ) -> dict[str, Any]:
  """发送消息并获取 AI 回复。
  流程：保存 user 消息 -> 构建 messages -> 截断 -> AgentLoop.run
@@ -100,6 +142,7 @@ class ConversationService:
  Args:
  conversation_id: 对话 UUID
  content: 用户消息内容
+ role: 用户角色（影响 system prompt 风格）
  Returns:
  包含 message、tool_calls、usage 的 dict
  """
@@ -133,7 +176,9 @@ class ConversationService:
  # 获取 LLM 配置
  api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
  base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
- model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ # 对话级模型优先于系统默认
+ model = conversation.model or system_model
  if not api_key:
  raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
  provider = create_provider(
@@ -145,7 +190,7 @@ class ConversationService:
  # 动态获取工具列表
  tool_names = await _get_tool_names(str(conversation.project_id))
  config = AgentConfig(
- system_prompt=_build_system_prompt(project_name),
+ system_prompt=_build_system_prompt(project_name, role=role),
  max_iterations=15,
  max_tokens=4096,
  tool_names=tool_names,
