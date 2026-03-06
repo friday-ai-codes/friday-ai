@@ -197,6 +197,7 @@ class ConversationListView(APIView):
  data = serializer.validated_data
  project_id = str(data["project_id"])
  title = data.get("title", "新对话")
+ model = data.get("model", "")
  # 验证 project 存在
  try:
  await Project.objects.aget(id=project_id)
@@ -208,6 +209,7 @@ class ConversationListView(APIView):
  conversation = await ConversationService.create_conversation(
  project_id=project_id,
  title=title,
+ model=model,
  )
  response_serializer = ConversationListSerializer(conversation)
  return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -286,10 +288,12 @@ class SendMessageView(APIView):
  if not serializer.is_valid:
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  content = serializer.validated_data["content"]
+ role = serializer.validated_data.get("role", "developer")
  try:
  result = await ConversationService.send_message(
  conversation_id=str(conversation_id),
  content=content,
+ role=role,
  )
  except Conversation.DoesNotExist:
  return Response(
