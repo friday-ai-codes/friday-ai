@@ -14,7 +14,10 @@ from agents.llm.base import create_provider
 from chat.context_manager import DEFAULT_MAX_MESSAGES, truncate_messages
 from chat.models import Conversation, Message
 from chat.services import aget_setting_value
+from repositories.models import Repository
 from system.models import SettingKeys
+# 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
+import agents.tools.chat_tools # noqa: F401
 logger = structlog.get_logger(__name__)
 def _build_system_prompt(project_name: str) -> str:
  """构建基础 system prompt。
@@ -24,6 +27,25 @@ def _build_system_prompt(project_name: str) -> str:
  f"你是 Friday AI 项目助手，基于项目「{project_name}」的知识库回答问题。"
  f"请用中文回答，简洁准确。如果不确定，请说明。"
  )
+async def _get_tool_names(project_id: str) -> list[str]:
+ """根据项目仓库索引状态返回可用工具列表。
+ 有已索引仓库：注入全部 6 个工具（3 个新检索工具 + 3 个已有项目工具）
+ 无仓库或未索引：仅注入 get_project_overview（基础信息）
+ """
+ base_tools = ["get_project_overview"]
+ full_tools = base_tools + [
+ "browse_file_content",
+ "list_project_structure",
+ "search_repository_code",
+ "list_project_repositories",
+ "get_repository_info",
+ ]
+ has_indexed = await Repository.objects.filter(
+ projects__id=project_id,
+ index_status="indexed",
+ is_deleted=False,
+ ).aexists
+ return full_tools if has_indexed else base_tools
 def _extract_tool_calls(result: AgentResult) -> list[dict[str, Any]]:
  """从 AgentResult 中提取工具调用记录。
  工具调用详情在 AgentSession.ToolCallLog 中，
@@ -120,11 +142,13 @@ class ConversationService:
  base_url=base_url,
  model=model,
  )
+ # 动态获取工具列表
+ tool_names = await _get_tool_names(str(conversation.project_id))
  config = AgentConfig(
  system_prompt=_build_system_prompt(project_name),
  max_iterations=15,
  max_tokens=4096,
- tool_names=, # 无工具，Phase 添加
+ tool_names=tool_names,
  )
  context = AgentContext(
  session_id=session_id,
