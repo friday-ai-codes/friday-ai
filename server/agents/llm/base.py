@@ -3,6 +3,7 @@ LLM Provider abstraction for the Agent framework.
 Defines the Protocol for LLM providers and configuration dataclass,
 enabling multi-provider support without changing agent loop code.
 """
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 from agents.llm.types import LLMResponse
@@ -25,6 +26,24 @@ class LLMProvider(Protocol):
  messages: List of message dicts with 'role' and 'content'
  tools: Optional list of tool schemas in provider-specific format
  max_tokens: Maximum tokens for the response
+ Returns:
+ LLMResponse with parsed content, tool calls, and usage
+ """
+ ...
+ async def stream_chat(
+ self,
+ messages: list[dict[str, Any]],
+ tools: list[dict[str, Any]] | None = None,
+ max_tokens: int = 4096,
+ on_text: Callable[[str], Awaitable[None]] | None = None,
+ ) -> LLMResponse:
+ """
+ Stream a chat completion, invoking on_text for each text delta.
+ Args:
+ messages: List of message dicts with 'role' and 'content'
+ tools: Optional list of tool schemas in provider-specific format
+ max_tokens: Maximum tokens for the response
+ on_text: Async callback invoked for each text delta chunk
  Returns:
  LLMResponse with parsed content, tool calls, and usage
  """
