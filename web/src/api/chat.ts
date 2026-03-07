@@ -1,7 +1,8 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import { get, post } from './client'
+import { del, get, post } from './client'
+import type { Conversation, ConversationDetail, CreateConversationParams } from '~/types/chat'
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -176,4 +177,35 @@ export default {
  chatCompletion,
  testSystemConfig,
  testProjectConfig,
+ listConversations,
+ createConversation,
+ getConversationDetail,
+ deleteConversation,
+}
+// ============================================================================
+// Conversation CRUD API (Phase)
+// ============================================================================
+/**
+ * 获取对话列表
+ */
+export async function listConversations: Promise<Conversation> {
+ return get<Conversation>('/chat/conversations/')
+}
+/**
+ * 创建对话
+ */
+export async function createConversation(params: CreateConversationParams): Promise<Conversation> {
+ return post<Conversation>('/chat/conversations/', params)
+}
+/**
+ * 获取对话详情（含消息列表）
+ */
+export async function getConversationDetail(id: string): Promise<ConversationDetail> {
+ return get<ConversationDetail>(`/chat/conversations/${id}/`)
+}
+/**
+ * 删除对话
+ */
+export async function deleteConversation(id: string): Promise<void> {
+ return del(`/chat/conversations/${id}/`)
 }
