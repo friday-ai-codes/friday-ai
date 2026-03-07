@@ -2,6 +2,7 @@
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
+import ChatWelcome from './ChatWelcome.vue'
 const chatStore = useChatStore
 // 滚动容器 ref
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -49,25 +50,10 @@ watch(
  </div>
  </div>
  </div>
- <!-- 空对话提示（Plan 替换为 ChatWelcome） -->
- <div
+ <!-- 空对话欢迎页 -->
+ <ChatWelcome
  v-else-if="!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming)"
- class="h-full flex items-center justify-center"
- >
- <div class="text-center max-w-md px-4">
- <div class="mb-6">
- <div class="inline-flex rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10">
- <span class="icon-[lucide--bot] text-4xl text-primary" />
- </div>
- </div>
- <h2 class="text-xl font-semibold mb-2">
- 开始新的对话
- </h2>
- <p class="text-sm text-muted-foreground">
- 选择一个项目，输入你的问题
- </p>
- </div>
- </div>
+ />
  <!-- 消息列表 -->
  <div
  v-else
