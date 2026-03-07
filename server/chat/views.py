@@ -1,11 +1,13 @@
 """Chat API views."""
 import structlog
+from django.http import StreamingHttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from adrf.views import APIView
+from agents.core.events import ERROR, AgentEvent
 from .authentication import ChatKeyAuthentication
 from .conversation_service import ConversationService
 from .models import Conversation
@@ -23,6 +25,7 @@ from .serializers import (
  SendMessageSerializer,
 )
 from .services import ChatMessage, ChatServiceError, aget_chat_service
+from .streaming import format_keepalive, format_sse
 from projects.models import Project
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
@@ -307,3 +310,84 @@ class SendMessageView(APIView):
  "usage": result.get("usage"),
  }
  return Response(response_data)
+class ChatStreamView(APIView):
+ """SSE 流式消息端点。
+ 通过 Server-Sent Events 返回 AI 回复的实时流，
+ 每个事件包含结构化 JSON，类型包括 text_delta / tool_use_start /
+ tool_use_result / message_complete / title_generated / error。
+ """
+ authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="流式发送消息",
+ description="发送消息并通过 SSE 流式返回 AI 回复（text/event-stream）",
+ request=SendMessageSerializer,
+ responses={
+ 200: {"description": "SSE 事件流（text/event-stream）"},
+ 400: {"description": "请求参数错误"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request, conversation_id): # type: ignore[override]
+ """发送消息并以 SSE 流式返回 AI 回复。"""
+ serializer = SendMessageSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ content = serializer.validated_data["content"]
+ role = serializer.validated_data.get("role", "developer")
+ # 验证对话存在
+ try:
+ await Conversation.objects.aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ response = StreamingHttpResponse(
+ streaming_content=self._stream_events(
+ str(conversation_id), content, role,
+ ),
+ content_type="text/event-stream",
+ )
+ response["Cache-Control"] = "no-cache"
+ response["X-Accel-Buffering"] = "no"
+ return response
+ async def _stream_events(
+ self,
+ conversation_id: str,
+ content: str,
+ role: str,
+ ):
+ """生成 SSE 事件流。"""
+ import uuid as uuid_mod
+ message_id = str(uuid_mod.uuid4)
+ try:
+ async for event in ConversationService.send_message_stream(
+ conversation_id=conversation_id,
+ content=content,
+ role=role,
+ ):
+ if event.type == "keepalive":
+ yield format_keepalive
+ else:
+ yield format_sse(event, message_id=message_id)
+ except Conversation.DoesNotExist:
+ yield format_sse(
+ AgentEvent(type=ERROR, data={"message": "对话不存在"}),
+ message_id=message_id,
+ )
+ except ValueError as e:
+ yield format_sse(
+ AgentEvent(type=ERROR, data={"message": str(e)}),
+ message_id=message_id,
+ )
+ except Exception:
+ logger.exception("sse_stream_error", conversation_id=conversation_id)
+ yield format_sse(
+ AgentEvent(type=ERROR, data={"message": "服务内部错误"}),
+ message_id=message_id,
+ )
