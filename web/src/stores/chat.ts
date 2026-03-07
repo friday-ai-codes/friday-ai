@@ -4,13 +4,14 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, Conversation, ConversationMessage } from '~/types/chat'
+import type { ChatRole, Conversation, ConversationMessage, SSEEvent } from '~/types/chat'
 import {
  createConversation,
  deleteConversation,
  getConversationDetail,
  listConversations,
 } from '~/api/chat'
+import { connectSSE } from '~/composables/useSSEStream'
 export const useChatStore = defineStore('chat', => {
  // ========================================================================
  // State
@@ -132,6 +133,105 @@ export const useChatStore = defineStore('chat', => {
  streamingMessageId.value = ''
  streamingMetadata.value = null
  }
+ // ========================================================================
+ // SSE 流式消息 (Phase, Plan)
+ // ========================================================================
+ function handleSSEEvent(event: SSEEvent) {
+ switch (event.type) {
+ case 'text_delta':
+ streamingContent.value += event.text || ''
+ break
+ case 'tool_use_start':
+ streamingToolCalls.value.push({
+ id: event.tool_call_id || '',
+ name: event.tool_name || '',
+ input: event.input || {},
+ status: 'running',
+ })
+ break
+ case 'tool_use_result': {
+ const tc = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
+ if (tc) {
+ tc.result = event.result
+ tc.status = 'done'
+ }
+ break
+ }
+ case 'message_complete':
+ if (event.message_id) streamingMessageId.value = event.message_id
+ streamingMetadata.value = {
+ model: event.model,
+ usage: event.usage,
+ }
+ break
+ case 'title_generated':
+ // 更新当前对话标题
+ if (event.title) {
+ const conv = conversations.value.find(c => c.id === currentConversationId.value)
+ if (conv) conv.title = event.title
+ }
+ break
+ case 'error':
+ error.value = event.message || '未知错误'
+ break
+ }
+ }
+ async function sendMessage(content: string) {
+ if (!currentConversationId.value || isStreaming.value) return
+ // 清除之前的流式状态
+ streamingContent.value = ''
+ streamingToolCalls.value =
+ streamingMessageId.value = ''
+ streamingMetadata.value = null
+ error.value = null
+ // 添加用户消息到列表（乐观更新）
+ const userMessage: ConversationMessage = {
+ id: crypto.randomUUID,
+ role: 'user',
+ content,
+ created_at: new Date.toISOString,
+ }
+ messages.value.push(userMessage)
+ // 启动 SSE 流
+ isStreaming.value = true
+ const controller = new AbortController
+ abortController.value = controller
+ try {
+ await connectSSE(
+ currentConversationId.value,
+ content,
+ selectedRole.value,
+ (event: SSEEvent) => handleSSEEvent(event),
+ controller.signal,
+ )
+ }
+ catch (e) {
+ if ((e as Error).name !== 'AbortError') {
+ error.value = e instanceof Error ? e.message: '发送消息失败'
+ }
+ }
+ finally {
+ isStreaming.value = false
+ abortController.value = null
+ // 流结束后，将流式内容合并为正式消息
+ if (streamingContent.value) {
+ const assistantMessage: ConversationMessage = {
+ id: streamingMessageId.value || crypto.randomUUID,
+ role: 'assistant',
+ content: streamingContent.value,
+ tool_calls: streamingToolCalls.value.length > 0
+ ? streamingToolCalls.value.map(tc => ({ id: tc.id, name: tc.name, input: tc.input })): undefined,
+ metadata: streamingMetadata.value || undefined,
+ created_at: new Date.toISOString,
+ }
+ messages.value.push(assistantMessage)
+ streamingContent.value = ''
+ streamingToolCalls.value =
+ streamingMessageId.value = ''
+ streamingMetadata.value = null
+ }
+ }
+ }
  return {
  // State
  conversations,
@@ -161,5 +261,6 @@ export const useChatStore = defineStore('chat', => {
  stopStreaming,
  toggleSidebar,
  clearCurrentConversation,
+ sendMessage,
  }
 })
