@@ -16,6 +16,7 @@ declare global {
  const computedEager: typeof import('@vueuse/core').computedEager
  const computedInject: typeof import('@vueuse/core').computedInject
  const computedWithControl: typeof import('@vueuse/core').computedWithControl
+ const connectSSE: typeof import('./composables/useSSEStream').connectSSE
  const controlledComputed: typeof import('@vueuse/core').controlledComputed
  const controlledRef: typeof import('@vueuse/core').controlledRef
  const createApp: typeof import('vue').createApp
@@ -152,6 +153,7 @@ declare global {
  const useBroadcastChannel: typeof import('@vueuse/core').useBroadcastChannel
  const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
  const useCached: typeof import('@vueuse/core').useCached
+ const useChatStore: typeof import('./stores/chat').useChatStore
  const useClipboard: typeof import('@vueuse/core').useClipboard
  const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
  const useCloned: typeof import('@vueuse/core').useCloned
@@ -248,7 +250,6 @@ declare global {
  const usePreferredReducedMotion: typeof import('@vueuse/core').usePreferredReducedMotion
  const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
  const usePrevious: typeof import('@vueuse/core').usePrevious
- const useChatStore: typeof import('./stores/chat').useChatStore
  const useProjectsStore: typeof import('./stores/projects').useProjectsStore
  const useRafFn: typeof import('@vueuse/core').useRafFn
  const useRefHistory: typeof import('@vueuse/core').useRefHistory
@@ -381,6 +382,7 @@ declare module 'vue' {
  readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
  readonly computedInject: UnwrapRef<typeof import('@vueuse/core')['computedInject']>
  readonly computedWithControl: UnwrapRef<typeof import('@vueuse/core')['computedWithControl']>
+ readonly connectSSE: UnwrapRef<typeof import('./composables/useSSEStream')['connectSSE']>
  readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
  readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
  readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
@@ -517,6 +519,7 @@ declare module 'vue' {
  readonly useBroadcastChannel: UnwrapRef<typeof import('@vueuse/core')['useBroadcastChannel']>
  readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
  readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
+ readonly useChatStore: UnwrapRef<typeof import('./stores/chat')['useChatStore']>
  readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>
  readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>
  readonly useCloned: UnwrapRef<typeof import('@vueuse/core')['useCloned']>
@@ -613,7 +616,6 @@ declare module 'vue' {
  readonly usePreferredReducedMotion: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedMotion']>
  readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
  readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
- readonly useChatStore: UnwrapRef<typeof import('./stores/chat')['useChatStore']>
  readonly useProjectsStore: UnwrapRef<typeof import('./stores/projects')['useProjectsStore']>
  readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
  readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>

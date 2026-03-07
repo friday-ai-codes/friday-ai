@@ -3,11 +3,16 @@ import { Button } from '~/components/ui/button'
 import { Textarea } from '~/components/ui/textarea'
 const chatStore = useChatStore
 const inputContent = ref('')
-function handleSend {
+async function handleSend {
  const content = inputContent.value.trim
  if (!content || chatStore.isStreaming) return
- // 发送逻辑在 Plan 实现
+ // 如果没有当前对话，先创建
+ if (!chatStore.currentConversationId) {
+ await chatStore.createNewConversation
+ if (!chatStore.currentConversationId) return // 创建失败（如未选项目）
+ }
  inputContent.value = ''
+ await chatStore.sendMessage(content)
 }
 function handleKeydown(e: KeyboardEvent) {
  // Enter 发送，Shift+Enter 换行
