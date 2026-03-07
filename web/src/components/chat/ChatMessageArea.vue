@@ -1,12 +1,41 @@
 <script setup lang="ts">
-import { Avatar, AvatarFallback } from '~/components/ui/avatar'
-import { ScrollArea } from '~/components/ui/scroll-area'
+import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
+import ChatMessageBubble from './ChatMessageBubble.vue'
 const chatStore = useChatStore
-// 格式化时间
-function formatMessageTime(dateStr: string) {
- return new Date(dateStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+// 滚动容器 ref
+const scrollContainer = ref<HTMLElement | null>(null)
+// 使用 @vueuse/core useScroll 检测滚动状态
+const { arrivedState } = useScroll(scrollContainer, {
+ offset: { bottom: 50 },
+})
+const isAtBottom = computed( => arrivedState.bottom)
+const showScrollToBottom = computed( => !isAtBottom.value && chatStore.messages.length > 0)
+// 滚动到底部
+function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+ if (scrollContainer.value) {
+ scrollContainer.value.scrollTo({
+ top: scrollContainer.value.scrollHeight,
+ behavior,
+ })
+ }
 }
+// 新消息/流式内容到达时自动滚动
+watch(
+ => [chatStore.messages.length, chatStore.streamingContent],
+ => {
+ if (isAtBottom.value || chatStore.isStreaming) {
+ nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
+ }
+ },
+)
+// 选择对话时滚动到底部
+watch(
+ => chatStore.currentConversationId,
+ => {
+ nextTick( => scrollToBottom('instant'))
+ },
+)
 </script>
 <template>
  <div class="flex-1 overflow-hidden relative">
@@ -20,9 +49,9 @@ function formatMessageTime(dateStr: string) {
  </div>
  </div>
  </div>
- <!-- 空对话提示 -->
+ <!-- 空对话提示（Plan 替换为 ChatWelcome） -->
  <div
- v-else-if="!chatStore.hasConversation || chatStore.messages.length === 0"
+ v-else-if="!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming)"
  class="h-full flex items-center justify-center"
  >
  <div class="text-center max-w-md px-4">
@@ -40,43 +69,46 @@ function formatMessageTime(dateStr: string) {
  </div>
  </div>
  <!-- 消息列表 -->
- <ScrollArea v-else class="h-full">
+ <div
+ v-else
+ ref="scrollContainer"
+ class="h-full overflow-y-auto"
+ >
  <div class="max-w-3xl mx-auto px-4 py-6 space-y-6">
- <div
- v-for="msg in chatStore.messages":key="msg.id"
- class="flex gap-3":class="msg.role === 'user' ? 'flex-row-reverse': ''"
+ <!-- 历史消息 -->
+ <ChatMessageBubble
+ v-for="msg in chatStore.messages":key="msg.id":message="msg"
+ />
+ <!-- 流式消息（正在生成） -->
+ <ChatMessageBubble
+ v-if="chatStore.isStreaming":message="{
+ id: 'streaming',
+ role: 'assistant',
+ content: '',
+ created_at: new Date.toISOString,
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-tool-calls="chatStore.streamingToolCalls"
+ />
+ </div>
+ </div>
+ <!-- 回到底部按钮 -->
+ <Transition
+ enter-active-class="transition-all duration-200 ease-out"
+ enter-from-class="opacity-0 translate-y-2"
+ enter-to-class="opacity-100 translate-y-0"
+ leave-active-class="transition-all duration-200 ease-in"
+ leave-from-class="opacity-100 translate-y-0"
+ leave-to-class="opacity-0 translate-y-2"
  >
- <!-- 头像 -->
- <Avatar class=" w-8 shrink-0">
- <AvatarFallback:class="msg.role === 'user'
- ? 'bg-gradient-to-br from-blue-500 to-cyan-400 text-white': 'bg-gradient-to-br from-primary/20 to-primary/10 text-primary'"
+ <Button
+ v-if="showScrollToBottom"
+ variant="outline"
+ size="sm"
+ class="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-lg gap-1 bg-background/80 backdrop-blur-sm"
+ @click="scrollToBottom"
  >
- <span v-if="msg.role === 'user'" class="icon-[lucide--user] text-sm" />
- <span v-else class="icon-[lucide--bot] text-sm" />
- </AvatarFallback>
- </Avatar>
- <!-- 气泡 -->
- <div class="max-w-[80%] space-y-1">
- <div
- class="rounded-2xl px-4 py-3":class="msg.role === 'user'
- ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white': 'bg-card/80 backdrop-blur-sm border border-border/50'"
- >
- <div v-if="msg.role === 'user'" class="text-sm whitespace-pre-wrap">
- {{ msg.content }}
- </div>
- <div v-else class="text-sm prose prose-sm dark:prose-invert max-w-none">
- {{ msg.content }}
- </div>
- </div>
- <!-- 元信息 -->
- <div
- class="px-1 text-[10px] text-muted-foreground/60":class="msg.role === 'user' ? 'text-right': ''"
- >
- {{ formatMessageTime(msg.created_at) }}
- </div>
- </div>
- </div>
- </div>
- </ScrollArea>
+ <span class="icon-[lucide--chevron-down] text-sm" />
+ 回到底部
+ </Button>
+ </Transition>
  </div>
 </template>
