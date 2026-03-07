@@ -6,11 +6,21 @@ Orchestrates the agent's iterative process of:
 3. OBSERVE: Add tool results to conversation and continue
 Supports suspension for human-in-the-loop workflows and resumption.
 """
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 import structlog
 from agents.core.context import AgentContext
+from agents.core.events import (
+ AgentEvent,
+ ERROR,
+ MESSAGE_COMPLETE,
+ TEXT_DELTA,
+ THINKING,
+ TOOL_USE_RESULT,
+ TOOL_USE_START,
+)
 from agents.core.result import AgentResult
 from agents.core.state import AgentState, AgentStateManager, AgentStatus
 from agents.llm.base import LLMProvider
@@ -50,6 +60,7 @@ class AgentLoop:
  context: AgentContext,
  provider: LLMProvider,
  registry: type[ToolRegistry] = ToolRegistry,
+ on_event: Callable[[AgentEvent], Awaitable[None]] | None = None,
  ) -> None:
  """
  Initialize the agent loop.
@@ -58,13 +69,19 @@ class AgentLoop:
  context: Session and project context
  provider: LLM provider for chat completions
  registry: Tool registry class (default: ToolRegistry)
+ on_event: Optional async callback for runtime events (SSE streaming)
  """
  self.config = config
  self.context = context
  self.provider = provider
  self.registry = registry
+ self.on_event = on_event
  self.state_manager = AgentStateManager
  self.logger = structlog.get_logger.bind(session_id=context.session_id)
+ async def _emit(self, event: AgentEvent) -> None:
+ """发射事件给回调。无回调时静默跳过。"""
+ if self.on_event is not None:
+ await self.on_event(event)
  async def run(self, user_message: str) -> AgentResult:
  """
  Start a new agent execution with the given user message.
@@ -161,8 +178,22 @@ class AgentLoop:
  while state.iteration < self.config.max_iterations:
  state.iteration += 1
  self.logger.info("Agent 迭代中", iteration=state.iteration)
- # THINK: Call LLM
+ # 发射 thinking 事件
+ await self._emit(AgentEvent(type=THINKING, data={"iteration": state.iteration}))
+ # THINK: Call LLM (流式或非流式)
  tools = self._get_tool_schemas
+ if self.on_event is not None and hasattr(self.provider, "stream_chat"):
+ # 流式路径：每个 text delta 发射事件
+ async def on_text(delta: str) -> None:
+ await self._emit(AgentEvent(type=TEXT_DELTA, data={"delta": delta}))
+ response = await self.provider.stream_chat(
+ messages=state.messages,
+ tools=tools if tools else None,
+ max_tokens=self.config.max_tokens,
+ on_text=on_text,
+ )
+ else:
+ # 非流式路径：与之前行为一致
  response = await self.provider.chat(
  messages=state.messages,
  tools=tools if tools else None,
@@ -182,6 +213,15 @@ class AgentLoop:
  input_tokens=state.usage["input_tokens"],
  output_tokens=state.usage["output_tokens"],
  )
+ # 发射 message_complete 事件
+ await self._emit(AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "usage": state.usage,
+ "status": "completed",
+ "iterations": state.iteration,
+ },
+ ))
  return AgentResult(
  output=state.output_items,
  final_answer=response.content,
@@ -267,6 +307,15 @@ class AgentLoop:
  iterations=state.iteration,
  tool_calls=tool_calls_count,
  )
+ # 发射 message_complete 事件（max_iterations 场景）
+ await self._emit(AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "usage": state.usage,
+ "status": "max_iterations",
+ "iterations": state.iteration,
+ },
+ ))
  return AgentResult(
  output=state.output_items,
  final_answer="Reached maximum iterations limit",
@@ -313,6 +362,11 @@ class AgentLoop:
  )
  results.append(result)
  continue
+ # 发射 tool_use_start 事件
+ await self._emit(AgentEvent(
+ type=TOOL_USE_START,
+ data={"tool_name": tool_call.name, "arguments": tool_call.arguments},
+ ))
  # Validate arguments
  valid, error_msg = self.registry.validate_tool_arguments(
  tool_call.name, tool_call.arguments
@@ -377,6 +431,16 @@ class AgentLoop:
  started_at=started_at,
  iteration=state.iteration,
  )
+ # 发射 tool_use_result 事件
+ summary = (str(result.output)[:200] if result.output else result.error or "")[:200]
+ await self._emit(AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_name": tool_call.name,
+ "success": result.success,
+ "summary": summary,
+ },
+ ))
  self.logger.debug(
  "工具执行完成",
  tool_name=tool_call.name,

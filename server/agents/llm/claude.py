@@ -4,6 +4,7 @@ Provides the ClaudeProvider class with automatic retry for rate limits
 and network errors, token usage tracking, and tool_use support.
 """
 import os
+from collections.abc import Awaitable, Callable
 from typing import Any
 import anthropic
 import structlog
@@ -127,6 +128,70 @@ class ClaudeProvider:
  result = self._parse_response(response)
  logger.info(
  "llm_chat_complete",
+ model=self.model,
+ input_tokens=result.usage.get("input_tokens", 0),
+ output_tokens=result.usage.get("output_tokens", 0),
+ stop_reason=result.stop_reason,
+ tool_calls=len(result.tool_calls),
+ )
+ return result
+ @retry(
+ stop=stop_after_attempt(3),
+ wait=wait_exponential(multiplier=1, min=1, max=60),
+ retry=retry_if_exception_type(
+ (
+ anthropic.RateLimitError,
+ anthropic.APIConnectionError,
+ )
+ ),
+ before_sleep=_log_retry,
+ )
+ async def stream_chat(
+ self,
+ messages: list[dict[str, Any]],
+ tools: list[dict[str, Any]] | None = None,
+ max_tokens: int | None = None,
+ on_text: Callable[[str], Awaitable[None]] | None = None,
+ ) -> LLMResponse:
+ """流式调用 Claude，每个 text delta 通过 on_text 回调发射。
+ 使用 Anthropic SDK 的 client.messages.stream context manager。
+ 流结束后通过 stream.get_final_message 获取完整消息并解析。
+ Args:
+ messages: 消息列表
+ tools: 可选工具 schemas
+ max_tokens: 最大 tokens
+ on_text: 每个 text delta 的回调函数
+ Returns:
+ 与 chat 相同的 LLMResponse
+ """
+ # 分离 system message
+ system_content: str | None = None
+ chat_messages: list[dict[str, Any]] =
+ for msg in messages:
+ if msg.get("role") == "system":
+ system_content = msg.get("content", "")
+ else:
+ chat_messages.append(msg)
+ # 构建请求参数
+ kwargs: dict[str, Any] = {
+ "model": self.model,
+ "max_tokens": max_tokens or self.max_tokens,
+ "messages": chat_messages,
+ }
+ if system_content:
+ kwargs["system"] = system_content
+ if tools:
+ kwargs["tools"] = tools
+ # 流式调用
+ async with self.client.messages.stream(**kwargs) as stream:
+ async for text in stream.text_stream:
+ if on_text:
+ await on_text(text)
+ # 获取完整消息（在 context manager 外部仍可访问）
+ final_message = await stream.get_final_message
+ result = self._parse_response(final_message)
+ logger.info(
+ "llm_stream_chat_complete",
  model=self.model,
  input_tokens=result.usage.get("input_tokens", 0),
  output_tokens=result.usage.get("output_tokens", 0),
