@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import (
  ChatCompletionsView,
+ ChatStreamView,
  ConversationDetailView,
  ConversationListView,
  ModelsView,
@@ -22,5 +23,10 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/messages/",
  SendMessageView.as_view,
  name="conversation-messages",
+ ),
+ path(
+ "conversations/<uuid:conversation_id>/stream/",
+ ChatStreamView.as_view,
+ name="conversation-stream",
  ),
 ]

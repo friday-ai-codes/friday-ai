@@ -3,11 +3,19 @@
 所有方法为 async staticmethod，支持 Django async ORM。
 """
 from __future__ import annotations
+import asyncio
 import uuid
+from collections.abc import AsyncGenerator
 from typing import Any
 import structlog
 from django.utils import timezone
 from agents.core.context import AgentContext
+from agents.core.events import (
+ AgentEvent,
+ ERROR,
+ MESSAGE_COMPLETE,
+ TITLE_GENERATED,
+)
 from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
 from agents.llm.base import create_provider
@@ -234,6 +242,164 @@ class ConversationService:
  "tool_calls": tool_calls,
  "usage": result.usage,
  }
+ @staticmethod
+ async def send_message_stream(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ """流式发送消息，通过 async generator yield AgentEvent。
+ AgentLoop 在独立 asyncio.Task 中运行，通过 Queue 与 generator 通信。
+ SSE 断线后 Task 继续运行至完成，确保消息落库。
+ Args:
+ conversation_id: 对话 UUID
+ content: 用户消息内容
+ role: 用户角色
+ Yields:
+ AgentEvent 实例
+ """
+ from chat.title_service import generate_title, should_generate_title
+ # 获取对话
+ conversation = await Conversation.objects.select_related("project").aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ # 保存 user 消息
+ await Message.objects.acreate(
+ conversation=conversation,
+ role=Message.Role.USER,
+ content=content,
+ )
+ # 预生成 assistant 消息 ID（用于 SSE 事件中的 message_id）
+ assistant_msg_id = uuid.uuid4
+ # 构建 messages 列表
+ db_messages = [
+ msg async for msg in Message.objects.filter(
+ conversation=conversation,
+ role__in=[Message.Role.USER, Message.Role.ASSISTANT],
+ ).order_by("created_at")
+ ]
+ messages = [
+ {"role": msg.role, "content": msg.content}
+ for msg in db_messages
+ ]
+ messages = truncate_messages(messages, max_messages=DEFAULT_MAX_MESSAGES)
+ # 构建 AgentLoop
+ session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
+ project_name = conversation.project.name
+ api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
+ base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ model = conversation.model or system_model
+ if not api_key:
+ raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
+ provider = create_provider(
+ provider_type="anthropic",
+ api_key=api_key,
+ base_url=base_url,
+ model=model,
+ )
+ tool_names = await _get_tool_names(str(conversation.project_id))
+ config = AgentConfig(
+ system_prompt=_build_system_prompt(project_name, role=role),
+ max_iterations=15,
+ max_tokens=4096,
+ tool_names=tool_names,
+ )
+ context = AgentContext(
+ session_id=session_id,
+ project_id=1,
+ user_id=1,
+ metadata={"conversation_id": str(conversation.id)},
+ )
+ # Queue 桥接 AgentLoop 与 SSE generator
+ queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue(maxsize=200)
+ async def on_event(event: AgentEvent) -> None:
+ try:
+ queue.put_nowait(event)
+ except asyncio.QueueFull:
+ pass # 静默丢弃（断线场景）
+ loop = AgentLoop(
+ config=config, context=context, provider=provider, on_event=on_event,
+ )
+ async def run_agent -> None:
+ """在独立 Task 中运行 AgentLoop，完成后保存消息。"""
+ try:
+ result = await loop.run(content)
+ # 解析结果
+ tool_calls = _extract_tool_calls(result)
+ final_content = result.final_answer or ""
+ # 保存 assistant 消息
+ await Message.objects.acreate(
+ id=assistant_msg_id,
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ content=final_content,
+ tool_calls=tool_calls if tool_calls else None,
+ metadata={
+ "usage": result.usage,
+ "iterations": result.metadata.get("iterations"),
+ "status": result.status,
+ },
+ )
+ # 更新对话时间
+ await Conversation.objects.filter(id=conversation.id).aupdate(
+ updated_at=timezone.now,
+ )
+ # 检查是否需要生成标题
+ if await should_generate_title(str(conversation.id)):
+ title = await generate_title(str(conversation.id), content)
+ if title:
+ try:
+ queue.put_nowait(AgentEvent(
+ type=TITLE_GENERATED,
+ data={"title": title},
+ ))
+ except asyncio.QueueFull:
+ pass
+ logger.info(
+ "stream_message_sent",
+ conversation_id=str(conversation.id),
+ status=result.status,
+ usage=result.usage,
+ )
+ except Exception as e:
+ logger.exception(
+ "stream_agent_error",
+ conversation_id=str(conversation.id),
+ )
+ try:
+ queue.put_nowait(AgentEvent(
+ type=ERROR,
+ data={"message": str(e)},
+ ))
+ except asyncio.QueueFull:
+ pass
+ finally:
+ try:
+ queue.put_nowait(None) # 哨兵
+ except asyncio.QueueFull:
+ pass
+ # 启动 AgentLoop task
+ task = asyncio.create_task(run_agent)
+ # yield 事件
+ try:
+ while True:
+ try:
+ event = await asyncio.wait_for(queue.get, timeout=15.0)
+ except TimeoutError:
+ # 心跳
+ yield AgentEvent(type="keepalive", data={})
+ continue
+ if event is None:
+ break
+ yield event
+ except GeneratorExit:
+ # SSE 连接断开 — task 继续运行（独立 asyncio.Task）
+ logger.info(
+ "sse_disconnected",
+ conversation_id=str(conversation_id),
+ )
  @staticmethod
  async def list_conversations -> list[Conversation]:
  """返回未删除对话列表，按 updated_at 降序。"""

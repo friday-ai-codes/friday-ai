@@ -1,0 +1,198 @@
+"""ChatStreamView SSE 端点集成测试。
+测试 SSE 流式响应的格式、事件序列、错误处理。
+ConversationService.send_message_stream 通过 mock 避免真实 LLM 调用。
+"""
+from __future__ import annotations
+import json
+from unittest.mock import patch
+import pytest
+from django.test import AsyncClient
+from agents.core.events import (
+ MESSAGE_COMPLETE,
+ TEXT_DELTA,
+ TITLE_GENERATED,
+ AgentEvent,
+)
+from chat.models import Conversation
+from chat.conversation_service import ConversationService
+from projects.models import Project
+# ============================================================================
+# Fixtures
+# ============================================================================
+@pytest.fixture
+def test_project(db):
+ """创建测试项目。"""
+ return Project.objects.create(name="Stream Test Project")
+@pytest.fixture
+def conversation(db, test_project):
+ """创建测试对话。"""
+ return Conversation.objects.create(project=test_project, title="新对话")
+# ============================================================================
+# Helpers
+# ============================================================================
+# Mock 路径：patch ConversationService 类上的 staticmethod
+MOCK_STREAM_PATH = "chat.conversation_service.ConversationService.send_message_stream"
+def _apply_stream_mock(events: list[AgentEvent] | None = None):
+ """创建 patch context manager，替换 send_message_stream 为 mock generator。"""
+ if events is None:
+ events = [
+ AgentEvent(type=TEXT_DELTA, data={"delta": "你"}),
+ AgentEvent(type=TEXT_DELTA, data={"delta": "好"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={
+ "usage": {"input_tokens": 10, "output_tokens": 5},
+ "status": "completed",
+ "iterations": 1,
+ }),
+ ]
+ async def mock_send_message_stream(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ):
+ for event in events:
+ yield event
+ return patch.object(ConversationService, "send_message_stream", staticmethod(mock_send_message_stream))
+def _parse_sse_events(raw_content: str) -> list[dict]:
+ """从 SSE 原始内容中解析事件。"""
+ events =
+ for block in raw_content.split("\n\n"):
+ block = block.strip
+ if block.startswith("data: "):
+ events.append(json.loads(block[6:]))
+ return events
+# ============================================================================
+# ChatStreamView 测试
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestChatStreamView:
+ """ChatStreamView SSE 端点测试。"""
+ async def test_stream_returns_sse_content_type(self, conversation):
+ """SSE 端点返回 text/event-stream Content-Type。"""
+ client = AsyncClient
+ with _apply_stream_mock:
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 200
+ assert resp["Content-Type"] == "text/event-stream"
+ assert resp["Cache-Control"] == "no-cache"
+ assert resp["X-Accel-Buffering"] == "no"
+ async def test_stream_events_format(self, conversation):
+ """SSE 事件格式正确：data: {json}\\n\\n。"""
+ client = AsyncClient
+ with _apply_stream_mock:
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ # 收集所有 streaming content
+ raw_parts =
+ async for chunk in resp.streaming_content:
+ text = chunk.decode if isinstance(chunk, bytes) else chunk
+ raw_parts.append(text)
+ raw = "".join(raw_parts)
+ events = _parse_sse_events(raw)
+ assert len(events) == 3
+ assert events[0]["type"] == "text_delta"
+ assert events[0]["delta"] == "你"
+ assert events[1]["type"] == "text_delta"
+ assert events[1]["delta"] == "好"
+ assert events[2]["type"] == "message_complete"
+ async def test_stream_events_contain_message_id(self, conversation):
+ """每个 SSE 事件包含 message_id 字段。"""
+ client = AsyncClient
+ with _apply_stream_mock:
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ raw_parts =
+ async for chunk in resp.streaming_content:
+ text = chunk.decode if isinstance(chunk, bytes) else chunk
+ raw_parts.append(text)
+ raw = "".join(raw_parts)
+ events = _parse_sse_events(raw)
+ assert all("message_id" in e for e in events)
+ # 所有事件的 message_id 相同
+ ids = {e["message_id"] for e in events}
+ assert len(ids) == 1
+ async def test_stream_conversation_not_found(self):
+ """对话不存在返回 404。"""
+ client = AsyncClient
+ resp = await client.post(
+ "/api/chat/conversations/00000000-0000-0000-0000-000000000000/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 404
+ async def test_stream_missing_content(self, conversation):
+ """缺少 content 返回 400。"""
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={},
+ content_type="application/json",
+ )
+ assert resp.status_code == 400
+ async def test_stream_empty_content(self, conversation):
+ """content 为空返回 400。"""
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": ""},
+ content_type="application/json",
+ )
+ assert resp.status_code == 400
+ async def test_stream_with_role(self, conversation):
+ """支持传入 role 参数。"""
+ client = AsyncClient
+ with _apply_stream_mock:
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好", "role": "pm"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 200
+ async def test_stream_includes_title_event(self, conversation):
+ """title_generated 事件包含在 SSE 流中。"""
+ events = [
+ AgentEvent(type=TEXT_DELTA, data={"delta": "回复"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={
+ "usage": {"input_tokens": 10, "output_tokens": 5},
+ "status": "completed",
+ "iterations": 1,
+ }),
+ AgentEvent(type=TITLE_GENERATED, data={"title": "测试标题"}),
+ ]
+ client = AsyncClient
+ with _apply_stream_mock(events):
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ raw_parts =
+ async for chunk in resp.streaming_content:
+ text = chunk.decode if isinstance(chunk, bytes) else chunk
+ raw_parts.append(text)
+ raw = "".join(raw_parts)
+ parsed = _parse_sse_events(raw)
+ types = [e["type"] for e in parsed]
+ assert "title_generated" in types
+ title_event = next(e for e in parsed if e["type"] == "title_generated")
+ assert title_event["title"] == "测试标题"
+ async def test_stream_deleted_conversation_returns_404(self, conversation):
+ """已删除的对话返回 404。"""
+ conversation.is_deleted = True
+ await conversation.asave
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 404
