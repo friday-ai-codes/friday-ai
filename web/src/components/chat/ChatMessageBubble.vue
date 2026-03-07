@@ -2,6 +2,7 @@
 import type { ConversationMessage } from '~/types/chat'
 import { Avatar, AvatarFallback } from '~/components/ui/avatar'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import ChatToolCall from './ChatToolCall.vue'
 import type MarkdownIt from 'markdown-it'
 const props = defineProps<{
  message: ConversationMessage
@@ -86,8 +87,19 @@ const metadata = computed( => props.message.metadata as { model?: string, usage?
  v-if="isStreaming && renderedHtml"
  class="inline-block w-2 bg-primary/60 animate-pulse rounded-sm ml-0.5"
  />
- <!-- 工具调用卡片插槽（Plan 填充） -->
- <slot name="tool-calls" />
+ <!-- 工具调用卡片（流式） -->
+ <template v-if="isStreaming && streamingToolCalls && streamingToolCalls.length > 0">
+ <ChatToolCall
+ v-for="tc in streamingToolCalls":key="tc.id":name="tc.name":input="tc.input":result="tc.result":status="tc.status"
+ />
+ </template>
+ <!-- 工具调用卡片（历史消息） -->
+ <template v-else-if="message.tool_calls && message.tool_calls.length > 0">
+ <ChatToolCall
+ v-for="tc in message.tool_calls":key="tc.id":name="tc.name":input="tc.input"
+ status="done"
+ />
+ </template>
  </div>
  </div>
  <!-- 元信息行 -->
