@@ -426,6 +426,14 @@ class TokenUsage(models.Model):
  )
  # 模型信息
  model = models.CharField(max_length=50, verbose_name="模型")
+ # Provider 类型（v8.1 多模型支持 — 成本归因）
+ provider_type = models.CharField(
+ max_length=50,
+ null=True,
+ blank=True,
+ verbose_name="Provider 类型",
+ help_text="LLM Provider 类型，用于按 Provider 分组统计成本",
+ )
  # 数据来源
  source = models.CharField(
  max_length=20,
