@@ -6,6 +6,9 @@ from .views import (
  ConversationDetailView,
  ConversationListView,
  ModelsView,
+ ProviderHealthView,
+ ProviderListView,
+ ProviderModelsView,
  SendMessageView,
 )
 urlpatterns = [
@@ -28,5 +31,17 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/stream/",
  ChatStreamView.as_view,
  name="conversation-stream",
+ ),
+ # Provider API (Phase)
+ path("providers/", ProviderListView.as_view, name="provider-list"),
+ path(
+ "providers/<str:provider_type>/models/",
+ ProviderModelsView.as_view,
+ name="provider-models",
+ ),
+ path(
+ "providers/<str:provider_type>/health/",
+ ProviderHealthView.as_view,
+ name="provider-health",
  ),
 ]
