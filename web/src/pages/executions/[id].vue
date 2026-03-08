@@ -14,6 +14,7 @@ import { toast } from 'vue-sonner'
 import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
 import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
+import ProviderCostTable from '~/components/execution/ProviderCostTable.vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -491,8 +492,11 @@ async function handleTrigger {
  @resume-click="handleResumeClick"
  />
  <!-- 成本摘要浮层（右上角） -->
- <div class="absolute top-3 right-3 z-10">
+ <div class="absolute top-3 right-3 z-10 space-y-2">
  <CostSummaryBar:cost-summary="costData?.summary ?? null":loading="costLoading"
+ />
+ <ProviderCostTable
+ v-if="costData && isTerminalStatus(currentExecution?.status)":cost-data="costData"
  />
  </div>
  <!-- 错误信息浮层（如果有全局错误消息） -->

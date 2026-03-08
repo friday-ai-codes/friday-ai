@@ -41,6 +41,12 @@ export const PROVIDER_GROUPS: ProviderGroup = [
  { label: 'OpenAI', providers: PROVIDER_REGISTRY.filter(p => p.group === 'openai') },
  { label: 'Google', providers: PROVIDER_REGISTRY.filter(p => p.group === 'google') },
 ]
+/** 健康检查状态（Phase） */
+export interface HealthStatus {
+ status: 'unchecked' | 'checking' | 'available' | 'unavailable'
+ latencyMs?: number
+ error?: string
+}
 /** 根据 ProviderType 查找元数据 */
 export function getProviderMeta(type: ProviderType): ProviderMeta | undefined {
  return PROVIDER_REGISTRY.find(p => p.type === type)

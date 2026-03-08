@@ -3,9 +3,10 @@ import { onMounted, reactive, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { getAllSettings, SettingKey, updateSetting } from '~/api/settings'
 import type { SettingRead } from '~/api/settings'
+import { checkProviderHealth } from '~/api/providers'
 import ProviderIcon from '~/components/provider/ProviderIcon.vue'
 import { PROVIDER_REGISTRY } from '~/types/provider'
-import type { ProviderType } from '~/types/provider'
+import type { HealthStatus, ProviderType } from '~/types/provider'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -134,6 +135,32 @@ async function saveKey(key: SettingKey) {
 function getCredentialMapping(provider: ProviderType): CredentialMapping {
  return CREDENTIAL_MAP[provider]
 }
+// ===== 健康检查状态（Phase）=====
+const healthStates = reactive<Record<string, HealthStatus>>(
+ Object.fromEntries(PROVIDER_REGISTRY.map(p => [p.type, { status: 'unchecked' as const }])),
+)
+const checkingAll = ref(false)
+async function checkHealth(providerType: ProviderType) {
+ healthStates[providerType] = { status: 'checking' }
+ try {
+ const result = await checkProviderHealth(providerType)
+ healthStates[providerType] = {
+ status: result.status,
+ latencyMs: result.latency_ms,
+ error: result.error ?? undefined,
+ }
+ }
+ catch {
+ healthStates[providerType] = { status: 'unavailable', error: '检查请求失败' }
+ }
+}
+async function checkAllHealth {
+ checkingAll.value = true
+ for (const provider of PROVIDER_REGISTRY) {
+ await checkHealth(provider.type)
+ }
+ checkingAll.value = false
+}
 onMounted( => {
  loadSettings
 })
@@ -144,7 +171,8 @@ onMounted( => {
  <div class="absolute inset-0 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
  <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-amber-500/30 group-hover:shadow-lg group-hover:shadow-amber-500/5 transition-all duration-300">
  <!-- 卡片头部 -->
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+ <div class="flex items-center justify-between border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+ <div class="flex items-center gap-3">
  <div class=".5 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-500/10 flex items-center justify-center">
  <span class="icon-[lucide--cpu] text-2xl text-amber-600" />
  </div>
@@ -156,6 +184,12 @@ onMounted( => {
  多 Provider API 凭证配置，用于 Chat AI
  </p>
  </div>
+ </div>
+ <Button size="sm" variant="outline":disabled="checkingAll" @click="checkAllHealth">
+ <span v-if="checkingAll" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
+ <span v-else class="icon-[lucide--activity] mr-1.5" />
+ 检查全部
+ </Button>
  </div>
  <!-- Tab 内容 -->
  <div class="">
@@ -171,6 +205,19 @@ onMounted( => {
  >
  <ProviderIcon:provider="provider.type" size="sm" />
  {{ TAB_LABELS[provider.type] }}
+ <!-- 健康状态圆点 -->
+ <span
+ v-if="healthStates[provider.type]?.status !== 'checking'"
+ class="w-2 rounded-full ml-0.5":class="{
+ 'bg-muted-foreground/30': healthStates[provider.type]?.status === 'unchecked',
+ 'bg-emerald-500': healthStates[provider.type]?.status === 'available',
+ 'bg-red-500': healthStates[provider.type]?.status === 'unavailable',
+ }"
+ />
+ <span
+ v-else
+ class="icon-[lucide--loader-circle] animate-spin w-3 ml-0.5 text-muted-foreground"
+ />
  </TabsTrigger>
  </TabsList>
  <TabsContent
@@ -184,6 +231,37 @@ onMounted( => {
  >
  <span class="icon-[lucide--info] w-4 mt-0.5 shrink-0" />
  <span>{{ getCredentialMapping(provider.type).sharedWith }}</span>
+ </div>
+ <!-- 健康检查状态区域（Phase） -->
+ <div class="flex items-center justify-between rounded-lg bg-muted/20 border border-border/30 px-4 py-3">
+ <div class="flex items-center gap-3">
+ <template v-if="healthStates[provider.type]?.status === 'unchecked'">
+ <span class="w-2.5 .5 rounded-full bg-muted-foreground/30" />
+ <span class="text-sm text-muted-foreground">未检查</span>
+ </template>
+ <template v-else-if="healthStates[provider.type]?.status === 'checking'">
+ <span class="icon-[lucide--loader-circle] animate-spin text-muted-foreground" />
+ <span class="text-sm text-muted-foreground">检查中...</span>
+ </template>
+ <template v-else-if="healthStates[provider.type]?.status === 'available'">
+ <span class="w-2.5 .5 rounded-full bg-emerald-500" />
+ <span class="text-sm text-emerald-600">可用</span>
+ <span class="text-xs text-muted-foreground">{{ healthStates[provider.type].latencyMs }}ms</span>
+ </template>
+ <template v-else>
+ <span class="w-2.5 .5 rounded-full bg-red-500" />
+ <span class="text-sm text-red-600">不可用</span>
+ <span v-if="healthStates[provider.type]?.error" class="text-xs text-muted-foreground truncate max-w-[200px]">{{ healthStates[provider.type].error }}</span>
+ </template>
+ </div>
+ <Button
+ size="sm"
+ variant="ghost":disabled="healthStates[provider.type]?.status === 'checking'"
+ @click="checkHealth(provider.type)"
+ >
+ <span class="icon-[lucide--heart-pulse] mr-1.5" />
+ 检查
+ </Button>
  </div>
  <!-- Anthropic 特殊处理：已在 Claude Code 卡片管理 -->
  <template v-if="provider.type === 'anthropic'">
