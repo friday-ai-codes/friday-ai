@@ -13,6 +13,8 @@ from workflows.models import (
  ExecutionStatus,
  NodeExecution,
  NodeExecutionStatus,
+ NodeSubStep,
+ SubStepStatus,
  Workflow,
  WorkflowEdge,
  WorkflowExecution,
@@ -334,3 +336,166 @@ class TestNodeExecutionModel:
  status=NodeExecutionStatus.WAITING_APPROVAL,
  )
  assert node_exec.status == NodeExecutionStatus.WAITING_APPROVAL
+# ============================================================================
+# NodeSubStep Model Tests
+# ============================================================================
+@pytest.mark.django_db
+class TestNodeSubStepModel:
+ """Tests for the NodeSubStep model."""
+ @pytest.fixture
+ def node_execution(self, workflow):
+ """创建用于测试的 NodeExecution。"""
+ node = WorkflowNode.objects.create(
+ workflow=workflow,
+ node_type="ai_coding",
+ name="AI Coding Node",
+ position_x=100,
+ position_y=100,
+ )
+ execution = WorkflowExecution.objects.create(
+ workflow=workflow,
+ trigger_type="manual",
+ )
+ return NodeExecution.objects.create(
+ workflow_execution=execution,
+ node=node,
+ )
+ def test_create_sub_step(self, node_execution):
+ """Test NodeSubStep 可创建并关联到 NodeExecution。"""
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="调用工具",
+ step_type="tool_call",
+ step_order=1,
+ )
+ assert sub_step.id is not None
+ assert sub_step.status == SubStepStatus.PENDING
+ assert sub_step.name == "调用工具"
+ assert sub_step.step_type == "tool_call"
+ assert sub_step.step_order == 1
+ assert sub_step.input_data == {}
+ assert sub_step.output_data == {}
+ assert sub_step.started_at is None
+ assert sub_step.completed_at is None
+ def test_sub_step_status_enum(self):
+ """Test SubStepStatus 枚举包含四个正确的值。"""
+ assert SubStepStatus.PENDING == "pending"
+ assert SubStepStatus.RUNNING == "running"
+ assert SubStepStatus.COMPLETED == "completed"
+ assert SubStepStatus.FAILED == "failed"
+ assert len(SubStepStatus.choices) == 4
+ def test_sub_steps_ordering(self, node_execution):
+ """Test 子步骤按 step_order 排序。"""
+ NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤3",
+ step_type="code_generation",
+ step_order=3,
+ )
+ NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="thinking",
+ step_order=1,
+ )
+ NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤2",
+ step_type="tool_call",
+ step_order=2,
+ )
+ sub_steps = list(NodeSubStep.objects.filter(node_execution=node_execution))
+ assert len(sub_steps) == 3
+ assert sub_steps[0].name == "步骤1"
+ assert sub_steps[1].name == "步骤2"
+ assert sub_steps[2].name == "步骤3"
+ def test_cascade_delete(self, node_execution):
+ """Test 删除 NodeExecution 级联删除其 sub_steps。"""
+ NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="thinking",
+ step_order=1,
+ )
+ NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤2",
+ step_type="tool_call",
+ step_order=2,
+ )
+ assert NodeSubStep.objects.filter(node_execution=node_execution).count == 2
+ node_execution.delete
+ assert NodeSubStep.objects.count == 0
+ def test_mark_started(self, node_execution):
+ """Test mark_started 方法更新状态和时间戳。"""
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="thinking",
+ step_order=1,
+ )
+ sub_step.mark_started
+ sub_step.refresh_from_db
+ assert sub_step.status == SubStepStatus.RUNNING
+ assert sub_step.started_at is not None
+ def test_mark_completed(self, node_execution):
+ """Test mark_completed 方法更新状态、时间戳和输出数据。"""
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="tool_call",
+ step_order=1,
+ )
+ sub_step.mark_started
+ output = {"result": "success", "data": [1, 2, 3]}
+ sub_step.mark_completed(output_data=output)
+ sub_step.refresh_from_db
+ assert sub_step.status == SubStepStatus.COMPLETED
+ assert sub_step.completed_at is not None
+ assert sub_step.output_data == output
+ def test_mark_failed(self, node_execution):
+ """Test mark_failed 方法更新状态和记录错误。"""
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="code_generation",
+ step_order=1,
+ )
+ sub_step.mark_started
+ sub_step.mark_failed(error="Code generation timeout")
+ sub_step.refresh_from_db
+ assert sub_step.status == SubStepStatus.FAILED
+ assert sub_step.completed_at is not None
+ assert sub_step.output_data["error"] == "Code generation timeout"
+ def test_duration_property(self, node_execution):
+ """Test duration 属性计算。"""
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="步骤1",
+ step_type="thinking",
+ step_order=1,
+ )
+ # 未开始时 duration 为 None
+ assert sub_step.duration is None
+ # 开始但未完成时 duration 为 None
+ sub_step.mark_started
+ assert sub_step.duration is None
+ # 完成后 duration 有值
+ sub_step.mark_completed
+ assert sub_step.duration is not None
+ assert sub_step.duration >= 0
+ def test_sub_step_with_input_output(self, node_execution):
+ """Test 子步骤可存储复杂的输入输出数据。"""
+ input_data = {"tool": "write_file", "path": "src/main.py", "content": "print('hello')"}
+ output_data = {"success": True, "bytes_written": 15}
+ sub_step = NodeSubStep.objects.create(
+ node_execution=node_execution,
+ name="写入文件",
+ step_type="tool_call",
+ step_order=1,
+ input_data=input_data,
+ output_data=output_data,
+ )
+ sub_step.refresh_from_db
+ assert sub_step.input_data == input_data
+ assert sub_step.output_data == output_data
