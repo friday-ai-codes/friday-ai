@@ -50,6 +50,14 @@ class WorkflowExecution(models.Model):
  choices=ExecutionStatus.choices,
  default=ExecutionStatus.PENDING,
  )
+ # Provider 类型（v8.1 成本归因）
+ provider_type = models.CharField(
+ max_length=50,
+ null=True,
+ blank=True,
+ verbose_name="Provider 类型",
+ help_text="执行时使用的主 Provider，用于成本归因",
+ )
  # 触发信息
  trigger_type = models.CharField(max_length=20, verbose_name="触发类型")
  triggered_by = models.ForeignKey(
@@ -327,6 +335,14 @@ class NodeExecution(models.Model):
  max_length=20,
  choices=NodeExecutionStatus.choices,
  default=NodeExecutionStatus.PENDING,
+ )
+ # Provider 类型（v8.1 成本归因）
+ provider_type = models.CharField(
+ max_length=50,
+ null=True,
+ blank=True,
+ verbose_name="Provider 类型",
+ help_text="节点实际使用的 Provider，执行时写入",
  )
  # 输入/输出
  input_data = models.JSONField(default=dict, blank=True)

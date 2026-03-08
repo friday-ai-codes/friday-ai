@@ -37,6 +37,21 @@ class Project(models.Model):
  claude_api_key_encrypted = models.TextField(blank=True, null=True)
  claude_base_url = models.CharField(max_length=500, blank=True, null=True)
  claude_default_model = models.CharField(max_length=200, blank=True, null=True)
+ # Provider 配置（v8.1 多模型支持）
+ default_provider_type = models.CharField(
+ max_length=50,
+ null=True,
+ blank=True,
+ verbose_name="默认 Provider 类型",
+ help_text="项目默认 Provider，为空时使用系统级配置",
+ )
+ default_model = models.CharField(
+ max_length=200,
+ null=True,
+ blank=True,
+ verbose_name="默认模型",
+ help_text="项目默认模型 ID，为空时使用 Provider 默认模型",
+ )
  # Timestamps
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
