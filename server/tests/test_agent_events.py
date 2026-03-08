@@ -27,9 +27,9 @@ class TestAgentEvent:
  """AgentEvent dataclass 基础测试。"""
  def test_agent_event_creation(self):
  """创建 AgentEvent 实例。"""
- event = AgentEvent(type="text_delta", data={"delta": "hello"})
+ event = AgentEvent(type="text_delta", data={"text": "hello"})
  assert event.type == "text_delta"
- assert event.data == {"delta": "hello"}
+ assert event.data == {"text": "hello"}
  def test_agent_event_default_data(self):
  """data 默认为空 dict。"""
  event = AgentEvent(type="thinking")
@@ -133,8 +133,8 @@ class TestAgentLoopOnEvent:
  await loop.run("hello")
  delta_events = [e for e in events if e.type == TEXT_DELTA]
  assert len(delta_events) == 2
- assert delta_events[0].data["delta"] == "你"
- assert delta_events[1].data["delta"] == "好"
+ assert delta_events[0].data["text"] == "你"
+ assert delta_events[1].data["text"] == "好"
  async def test_loop_emits_message_complete(self, mock_state_manager):
  """验证循环结束时发射 message_complete 事件（含 usage）。"""
  from agents.core.context import AgentContext
@@ -197,8 +197,12 @@ class TestAgentLoopOnEvent:
  result_events = [e for e in events if e.type == TOOL_USE_RESULT]
  assert len(start_events) >= 1
  assert start_events[0].data["tool_name"] == "test_echo_tool"
+ assert "tool_call_id" in start_events[0].data
+ assert "input" in start_events[0].data
  assert len(result_events) >= 1
  assert result_events[0].data["success"] is True
+ assert "tool_call_id" in result_events[0].data
+ assert "result" in result_events[0].data
  async def test_loop_emits_message_complete_on_max_iterations(self, mock_state_manager):
  """设置 max_iterations=1 且 provider 总是返回 tool_use，验证 max_iterations 完成事件。"""
  from agents.core.context import AgentContext

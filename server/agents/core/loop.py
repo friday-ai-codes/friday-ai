@@ -185,7 +185,7 @@ class AgentLoop:
  if self.on_event is not None and hasattr(self.provider, "stream_chat"):
  # 流式路径：每个 text delta 发射事件
  async def on_text(delta: str) -> None:
- await self._emit(AgentEvent(type=TEXT_DELTA, data={"delta": delta}))
+ await self._emit(AgentEvent(type=TEXT_DELTA, data={"text": delta}))
  response = await self.provider.stream_chat(
  messages=state.messages,
  tools=tools if tools else None,
@@ -220,6 +220,7 @@ class AgentLoop:
  "usage": state.usage,
  "status": "completed",
  "iterations": state.iteration,
+ "model": getattr(self.provider, "model", ""),
  },
  ))
  return AgentResult(
@@ -314,6 +315,7 @@ class AgentLoop:
  "usage": state.usage,
  "status": "max_iterations",
  "iterations": state.iteration,
+ "model": getattr(self.provider, "model", ""),
  },
  ))
  return AgentResult(
@@ -365,7 +367,11 @@ class AgentLoop:
  # 发射 tool_use_start 事件
  await self._emit(AgentEvent(
  type=TOOL_USE_START,
- data={"tool_name": tool_call.name, "arguments": tool_call.arguments},
+ data={
+ "tool_name": tool_call.name,
+ "tool_call_id": tool_call.id,
+ "input": tool_call.arguments,
+ },
  ))
  # Validate arguments
  valid, error_msg = self.registry.validate_tool_arguments(
@@ -432,13 +438,14 @@ class AgentLoop:
  iteration=state.iteration,
  )
  # 发射 tool_use_result 事件
- summary = (str(result.output)[:200] if result.output else result.error or "")[:200]
+ result_text = (str(result.output)[:200] if result.output else result.error or "")[:200]
  await self._emit(AgentEvent(
  type=TOOL_USE_RESULT,
  data={
  "tool_name": tool_call.name,
+ "tool_call_id": tool_call.id,
  "success": result.success,
- "summary": summary,
+ "result": result_text,
  },
  ))
  self.logger.debug(

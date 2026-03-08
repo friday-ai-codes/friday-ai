@@ -36,8 +36,8 @@ def _apply_stream_mock(events: list[AgentEvent] | None = None):
  """创建 patch context manager，替换 send_message_stream 为 mock generator。"""
  if events is None:
  events = [
- AgentEvent(type=TEXT_DELTA, data={"delta": "你"}),
- AgentEvent(type=TEXT_DELTA, data={"delta": "好"}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "你"}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "好"}),
  AgentEvent(type=MESSAGE_COMPLETE, data={
  "usage": {"input_tokens": 10, "output_tokens": 5},
  "status": "completed",
@@ -97,9 +97,9 @@ class TestChatStreamView:
  events = _parse_sse_events(raw)
  assert len(events) == 3
  assert events[0]["type"] == "text_delta"
- assert events[0]["delta"] == "你"
+ assert events[0]["text"] == "你"
  assert events[1]["type"] == "text_delta"
- assert events[1]["delta"] == "好"
+ assert events[1]["text"] == "好"
  assert events[2]["type"] == "message_complete"
  async def test_stream_events_contain_message_id(self, conversation):
  """每个 SSE 事件包含 message_id 字段。"""
@@ -160,7 +160,7 @@ class TestChatStreamView:
  async def test_stream_includes_title_event(self, conversation):
  """title_generated 事件包含在 SSE 流中。"""
  events = [
- AgentEvent(type=TEXT_DELTA, data={"delta": "回复"}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "回复"}),
  AgentEvent(type=MESSAGE_COMPLETE, data={
  "usage": {"input_tokens": 10, "output_tokens": 5},
  "status": "completed",
