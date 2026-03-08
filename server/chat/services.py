@@ -166,7 +166,7 @@ def get_chat_service(
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
  # 根据 provider_type 选择协议实现
- provider_type = get_setting_value(SettingKeys.PROVIDER_TYPE) or "openai_chat"
+ provider_type = get_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "openai_chat"
  protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)
 async def aget_chat_service(
@@ -196,6 +196,6 @@ async def aget_chat_service(
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
  # 根据 provider_type 选择协议实现
- provider_type = await aget_setting_value(SettingKeys.PROVIDER_TYPE) or "openai_chat"
+ provider_type = await aget_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "openai_chat"
  protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)
