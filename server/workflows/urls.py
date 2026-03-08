@@ -10,6 +10,7 @@ from workflows.api.views import (
  NodeExecutionActionView,
  NodeExecutionViewSet,
  NodeSchemaListView,
+ NodeSubStepListView,
  NodeTypeViewSet,
  WebhookConfigViewSet,
  WebhookLogViewSet,
@@ -88,5 +89,11 @@ urlpatterns = router.urls + [
  "action-logs/<int:pk>/",
  ActionLogDetailView.as_view,
  name="action-log-detail",
+ ),
+ # NodeSubStep list endpoint (nested under node-executions)
+ path(
+ "node-executions/<uuid:node_execution_id>/sub-steps/",
+ NodeSubStepListView.as_view,
+ name="node-execution-sub-steps",
  ),
 ]
