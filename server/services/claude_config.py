@@ -81,7 +81,7 @@ def get_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  base_url=base_url,
  model=model,
  source=source,
- provider_type=get_setting_value(SettingKeys.LLM_PROVIDER_TYPE) or "anthropic",
+ provider_type=get_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "anthropic",
  )
 async def aget_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  """获取 Claude 配置，按优先级依次查找 — async 版本。"""
@@ -115,7 +115,7 @@ async def aget_claude_config(project: Optional[Project] = None) -> ClaudeConfig:
  base_url=base_url,
  model=model,
  source=source,
- provider_type=await aget_setting_value(SettingKeys.LLM_PROVIDER_TYPE) or "anthropic",
+ provider_type=await aget_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "anthropic",
  )
 def get_claude_config_for_task(project_id: str) -> ClaudeConfig:
  """为任务执行获取 Claude 配置。
