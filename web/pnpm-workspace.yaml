@@ -45,7 +45,7 @@ catalogs:
  '@vue-flow/core': 1.48.2
  '@vue/test-utils': ^2.4.6
  '@vue/tsconfig': ^0.8.1
- '@vueuse/core': 'catalog:'
+ '@vueuse/core': ^13.5.0
  '@vueuse/head': ^2.0.0
  class-variance-authority: ^0.7.1
  clsx: ^2.1.1
@@ -57,7 +57,7 @@ catalogs:
  lucide-vue-next: ^0.562.0
  nanoid: ^5.1.6
  pinia: ^3.0.4
- reka-ui: 'catalog:'
+ reka-ui: ^2.4.0
  shiki: ^3.21.0
  tailwind-merge: ^3.4.0
  tailwindcss: ^4.1.18
