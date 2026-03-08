@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 import structlog
 from django.utils import timezone
+from agents.models import ToolCallLog
 from agents.core.context import AgentContext
 from agents.core.events import (
  AgentEvent,
@@ -110,6 +111,88 @@ def _extract_tool_calls(result: AgentResult) -> list[dict[str, Any]]:
  "input": item.get("input", {}),
  })
  return tool_calls
+def _coerce_reference_item(
+ tool_name: str,
+ result_output: dict[str, Any],
+ fallback_repo: str,
+) -> dict[str, Any] | None:
+ path = str(
+ result_output.get("path")
+ or result_output.get("file_path")
+ or result_output.get("file")
+ or ""
+ )
+ line_start = result_output.get("line_start") or result_output.get("start_line")
+ line_end = result_output.get("line_end") or result_output.get("end_line")
+ summary = str(
+ result_output.get("summary")
+ or result_output.get("snippet")
+ or result_output.get("content_preview")
+ or result_output.get("text")
+ or ""
+ ).strip
+ if not (path or summary):
+ return None
+ line = ""
+ if line_start and line_end:
+ line = f"L{line_start}-L{line_end}"
+ elif line_start:
+ line = f"L{line_start}"
+ return {
+ "repository": fallback_repo,
+ "path": path,
+ "line": line,
+ "tool_name": tool_name,
+ "summary": summary[:160],
+ }
+def _extract_reference_candidates(tool_name: str, arguments: dict[str, Any], result_output: Any) -> list[dict[str, Any]]:
+ repo = str(
+ arguments.get("repository")
+ or arguments.get("repository_name")
+ or arguments.get("repo")
+ or "项目上下文"
+ )
+ items: list[dict[str, Any]] =
+ if isinstance(result_output, dict):
+ candidate = _coerce_reference_item(tool_name, result_output, repo)
+ if candidate:
+ items.append(candidate)
+ for key in ("results", "items", "matches"):
+ values = result_output.get(key)
+ if not isinstance(values, list):
+ continue
+ for value in values[:5]:
+ if isinstance(value, dict):
+ candidate = _coerce_reference_item(tool_name, value, repo)
+ if candidate:
+ items.append(candidate)
+ elif isinstance(result_output, list):
+ for value in result_output[:5]:
+ if isinstance(value, dict):
+ candidate = _coerce_reference_item(tool_name, value, repo)
+ if candidate:
+ items.append(candidate)
+ return items
+async def extract_reference_summaries(session_id: str, limit: int = 5) -> list[dict[str, Any]]:
+ """Summarize tool-call outputs for compact card-friendly references."""
+ if not session_id:
+ return
+ references: list[dict[str, Any]] =
+ seen: set[tuple[str, str, str]] = set
+ logs = ToolCallLog.objects.filter(
+ session__session_id=session_id,
+ result_success=True,
+ ).order_by("started_at")
+ async for log in logs:
+ for item in _extract_reference_candidates(log.tool_name, log.arguments or {}, log.result_output):
+ key = (item["repository"], item["path"], item["line"])
+ if key in seen:
+ continue
+ seen.add(key)
+ references.append(item)
+ if len(references) >= limit:
+ return references
+ return references
 class ConversationService:
  """对话系统业务逻辑服务。"""
  @staticmethod
@@ -222,6 +305,8 @@ class ConversationService:
  content=final_content,
  tool_calls=tool_calls if tool_calls else None,
  metadata={
+ "session_id": session_id,
+ "model": model,
  "usage": result.usage,
  "iterations": result.metadata.get("iterations"),
  "status": result.status,
@@ -239,6 +324,7 @@ class ConversationService:
  )
  return {
  "message": assistant_msg,
+ "session_id": session_id,
  "tool_calls": tool_calls,
  "usage": result.usage,
  }

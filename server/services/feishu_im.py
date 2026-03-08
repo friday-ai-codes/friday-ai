@@ -17,6 +17,9 @@ from tenacity import (
  stop_after_attempt,
  wait_exponential,
 )
+from common.encryption import decrypt_value
+from projects.models import Project
+from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
 class FeishuIMError(Exception):
  """飞书 IM API 错误基类。"""
@@ -294,3 +297,53 @@ class FeishuIMClient:
  padding_len = decrypted[-1]
  decrypted = decrypted[:-padding_len]
  return json.loads(decrypted.decode("utf-8"))
+async def _aget_system_feishu_credentials -> tuple[str, str] | None:
+ """Load system-level Feishu IM credentials if configured."""
+ app_id_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_ID).afirst
+ app_secret_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_SECRET).afirst
+ if app_id_setting and app_secret_setting and app_id_setting.value and app_secret_setting.value:
+ app_secret = (
+ decrypt_value(app_secret_setting.value)
+ if app_secret_setting.is_encrypted
+ else app_secret_setting.value
+ )
+ return app_id_setting.value, app_secret
+ return None
+async def create_feishu_im_client_for_project(project: Project | None = None) -> FeishuIMClient:
+ """Create a Feishu IM client from project config or system defaults."""
+ if project and project.feishu_app_id and project.feishu_app_secret_encrypted:
+ return FeishuIMClient(
+ app_id=project.feishu_app_id,
+ app_secret=decrypt_value(project.feishu_app_secret_encrypted),
+ )
+ credentials = await _aget_system_feishu_credentials
+ if credentials:
+ return FeishuIMClient(app_id=credentials[0], app_secret=credentials[1])
+ fallback_project = await Project.objects.exclude(feishu_app_id__isnull=True).exclude(
+ feishu_app_id=""
+ ).exclude(feishu_app_secret_encrypted__isnull=True).exclude(
+ feishu_app_secret_encrypted=""
+ ).order_by("created_at").afirst
+ if fallback_project:
+ return FeishuIMClient(
+ app_id=fallback_project.feishu_app_id or "",
+ app_secret=decrypt_value(fallback_project.feishu_app_secret_encrypted or ""),
+ )
+ raise ValueError("未配置飞书 IM 集成。请先配置项目级或系统级飞书 App ID / App Secret。")
+class FeishuIMService:
+ """Convenience wrapper around `FeishuIMClient` for bot workflows."""
+ def __init__(self, client: FeishuIMClient):
+ self.client = client
+ @classmethod
+ async def create(cls, project: Project | None = None) -> "FeishuIMService":
+ client = await create_feishu_im_client_for_project(project)
+ return cls(client)
+ async def send_card(
+ self,
+ receive_id: str,
+ receive_id_type: Literal["chat_id", "open_id", "user_id"],
+ card: dict[str, Any],
+ ) -> str:
+ return await self.client.send_card(receive_id=receive_id, receive_id_type=receive_id_type, card=card)
+ async def update_card(self, message_id: str, card: dict[str, Any]) -> bool:
+ return await self.client.update_card(message_id=message_id, card=card)
