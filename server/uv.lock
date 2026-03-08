@@ -794,6 +794,7 @@ dependencies = [
  { name = "docker" },
  { name = "drf-spectacular" },
  { name = "gitpython" },
+ { name = "google-genai" },
  { name = "gunicorn" },
  { name = "httpx" },
  { name = "jsonpath-ng" },
@@ -856,6 +857,7 @@ requires-dist = [
  { name = "docker", specifier = ">=7.1.0" },
  { name = "drf-spectacular", specifier = ">=0.27" },
  { name = "gitpython", specifier = ">=3.1.46" },
+ { name = "google-genai", specifier = ">=1.0.0" },
  { name = "gunicorn", specifier = ">=23.0.0" },
  { name = "httpx", specifier = ">=0.27" },
  { name = "jsonpath-ng", specifier = ">=1.7.0" },
@@ -968,6 +970,43 @@ dependencies = [
 sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/df/b5/59d16470a1f0dfe8c793f9ef56fd3826093fc52b3bd96d6b9d6c26c7e27b/gitpython-3.1.46.tar.gz", hash = "sha256:400124c7d0ef4ea03f7310ac2fbf7151e09ff97f2a3288d64a440c584a29c37f", size = 215371, upload-time = "2026-01-01T15:37:32.073Z" }
 wheels = [
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/6a/09/e21df6aef1e1ffc0c816f0522ddc3f6dcded766c3261813131c78a704470/gitpython-3.1.46-py3-none-any.whl", hash = "sha256:79812ed143d9d25b6d176a10bb511de0f9c67b1fa641d82097b0ab90398a2058", size = 208620, upload-time = "2026-01-01T15:37:30.574Z" },
+]
+[[package]]
+name = "google-auth"
+version = "2.49.0"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "cryptography" },
+ { name = "pyasn1-modules" },
+ { name = "rsa" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/7d/59/7371175bfd949abfb1170aa076352131d7281bd9449c0f978604fc4431c3/google_auth-2.49.0.tar.gz", hash = "sha256:9cc2d9259d3700d7a257681f81052db6737495a1a46b610597f4b8bafe5286ae", size = 333444, upload-time = "2026-03-06T21:53:06.07Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/37/45/de64b823b639103de4b63dd193480dce99526bd36be6530c2dba85bf7817/google_auth-2.49.0-py3-none-any.whl", hash = "sha256:f893ef7307f19cf53700b7e2f61b5a6affe3aa0edf9943b13788920ab92d8d87", size = 240676, upload-time = "2026-03-06T21:52:38.304Z" },
+]
+[package.optional-dependencies]
+requests = [
+ { name = "requests" },
+]
+[[package]]
+name = "google-genai"
+version = "1.66.0"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "anyio" },
+ { name = "distro" },
+ { name = "google-auth", extra = ["requests"] },
+ { name = "httpx" },
+ { name = "pydantic" },
+ { name = "requests" },
+ { name = "sniffio" },
+ { name = "tenacity" },
+ { name = "typing-extensions" },
+ { name = "websockets" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/9b/ba/0b343b0770d4710ad2979fd9301d7caa56c940174d5361ed4a7cc4979241/google_genai-1.66.0.tar.gz", hash = "sha256:ffc01647b65046bca6387320057aa51db0ad64bcc72c8e3e914062acfa5f7c49", size = 504386, upload-time = "2026-03-04T22:15:28.156Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/d1/dd/403949d922d4e261b08b64aaa132af4e456c3b15c8e2a2d9e6ef693f66e2/google_genai-1.66.0-py3-none-any.whl", hash = "sha256:7f127a39cf695277104ce4091bb26e417c59bb46e952ff3699c3a982d9c474ee", size = 732174, upload-time = "2026-03-04T22:15:26.63Z" },
 ]
 [[package]]
 name = "greenlet"
@@ -2493,6 +2532,17 @@ wheels = [
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/85/70/92482ccffb96f5441aab93e26c4d66489eb599efdcf96fad90c14bbfb976/rpds_py-0.30.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:dbd936cde57abfee19ab3213cf9c26be06d60750e60a8e4dd85d1ab12c8b1f40", size = 556030, upload-time = "2025-11-30T20:24:10.956Z" },
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/20/53/7c7e784abfa500a2b6b583b147ee4bb5a2b3747a9166bab52fec4b5b5e7d/rpds_py-0.30.0-cp314-cp314t-win32.whl", hash = "sha256:dc824125c72246d924f7f796b4f63c1e9dc810c7d9e2355864b3c3a73d59ade0", size = 211570, upload-time = "2025-11-30T20:24:12.735Z" },
  { url = "https://mirrors.ustc.edu.cn/pypi/packages/d0/02/fa464cdfbe6b26e0600b62c528b72d8608f5cc49f96b8d6e38c95d60c676/rpds_py-0.30.0-cp314-cp314t-win_amd64.whl", hash = "sha256:27f4b0e92de5bfbc6f86e43959e6edd1425c33b5e69aab0984a72047f2bcf1e3", size = 226532, upload-time = "2025-11-30T20:24:14.634Z" },
+]
+[[package]]
+name = "rsa"
+version = "4.9.1"
+source = { registry = "https://pypi.mirrors.ustc.edu.cn/simple/" }
+dependencies = [
+ { name = "pyasn1" },
+]
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/da/8a/22b7beea3ee0d44b1916c0c1cb0ee3af23b700b6da9f04991899d0c555d4/rsa-4.9.1.tar.gz", hash = "sha256:e7bdbfdb5497da4c07dfd35530e1a902659db6ff241e39d9953cad06ebd0ae75", size = 29034, upload-time = "2025-04-16T09:51:18.218Z" }
+wheels = [
+ { url = "https://mirrors.ustc.edu.cn/pypi/packages/64/8d/0133e4eb4beed9e425d9a98ed6e081a55d195481b7632472be1af08d2f6b/rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762", size = 34696, upload-time = "2025-04-16T09:51:17.142Z" },
 ]
 [[package]]
 name = "ruff"

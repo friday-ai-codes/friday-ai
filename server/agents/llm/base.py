@@ -114,7 +114,21 @@ def create_provider(
  from agents.llm.openai_completions import OpenAICompletionsProvider
  return OpenAICompletionsProvider(api_key=api_key, base_url=base_url, model=model)
  case ApiFormat.OPENAI_RESPONSES:
- raise NotImplementedError("OpenAI Responses Provider 将在 实现")
+ from agents.llm.openai_responses import OpenAIResponsesProvider
+ return OpenAIResponsesProvider(
+ api_key=api_key,
+ base_url=base_url,
+ model=model,
+ codex_mode=(provider_type == ProviderType.OPENAI_CODEX_RESPONSES),
+ )
  case ApiFormat.GOOGLE_GENAI:
- raise NotImplementedError("Google Provider 将在 实现")
+ from agents.llm.google import GoogleProvider
+ if provider_type == ProviderType.GOOGLE_ANTIGRAVITY:
+ raise NotImplementedError("Google Antigravity Provider 待产品确认后实现")
+ return GoogleProvider(
+ api_key=api_key,
+ model=model,
+ vertex_mode=(provider_type == ProviderType.GOOGLE_VERTEX),
+ **kwargs,
+ )
  raise ValueError(f"不支持的 API 格式: {metadata['api_format']}")
