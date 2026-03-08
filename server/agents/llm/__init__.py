@@ -3,8 +3,9 @@ LLM Provider abstraction layer for the Agent framework.
 Provides a unified interface for LLM interactions with support for
 tool_use API, token tracking, and automatic retry.
 """
-from agents.llm.base import LLMConfig, LLMProvider
+from agents.llm.base import LLMConfig, LLMProvider, create_provider
 from agents.llm.claude import ClaudeProvider
+from agents.llm.providers import PROVIDER_REGISTRY, ProviderType
 from agents.llm.types import LLMResponse, ToolCall
 __all__ = [
  "LLMProvider",
@@ -12,4 +13,7 @@ __all__ = [
  "LLMResponse",
  "ToolCall",
  "ClaudeProvider",
+ "ProviderType",
+ "PROVIDER_REGISTRY",
+ "create_provider",
 ]

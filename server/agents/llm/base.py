@@ -74,22 +74,47 @@ class LLMConfig:
  api_key: str | None = None
  base_url: str | None = None
 def create_provider(
- provider_type: str = "anthropic",
+ provider_type: "ProviderType | str" = "anthropic",
  api_key: str | None = None,
  base_url: str | None = None,
  model: str = "",
+ **kwargs: Any,
 ) -> Any:
- """Create an LLM provider by type.
+ """通过 ProviderType 枚举或字符串创建 LLM Provider 实例。
+ 向后兼容：接受字符串参数（如 "anthropic"、"openai"），自动转换为 ProviderType。
  Args:
- provider_type: "anthropic" or "openai"
+ provider_type: Provider 类型（ProviderType 枚举或字符串）
  api_key: API key
  base_url: Custom API base URL
  model: Model identifier
+ **kwargs: Provider 特有参数（如 Google 的 project/location）
  Returns:
  LLMProvider instance
+ Raises:
+ ValueError: 不支持的 Provider 类型
+ NotImplementedError: Provider 尚未实现
  """
+ from agents.llm.providers import ApiFormat, ProviderType, PROVIDER_REGISTRY
+ # 向后兼容：字符串参数转换为 ProviderType
+ if isinstance(provider_type, str) and not isinstance(provider_type, ProviderType):
+ # "openai" 是历史遗留值，映射到 OPENAI_COMPLETIONS
  if provider_type == "openai":
- from agents.llm.openai import OpenAIProvider
- return OpenAIProvider(api_key=api_key, base_url=base_url, model=model)
+ provider_type = ProviderType.OPENAI_COMPLETIONS
+ else:
+ try:
+ provider_type = ProviderType(provider_type)
+ except ValueError:
+ raise ValueError(f"不支持的 Provider 类型: {provider_type}")
+ metadata = PROVIDER_REGISTRY[provider_type]
+ match metadata["api_format"]:
+ case ApiFormat.ANTHROPIC:
  from agents.llm.claude import ClaudeProvider
  return ClaudeProvider(api_key=api_key, base_url=base_url, model=model)
+ case ApiFormat.OPENAI_COMPLETIONS:
+ from agents.llm.openai_completions import OpenAICompletionsProvider
+ return OpenAICompletionsProvider(api_key=api_key, base_url=base_url, model=model)
+ case ApiFormat.OPENAI_RESPONSES:
+ raise NotImplementedError("OpenAI Responses Provider 将在 实现")
+ case ApiFormat.GOOGLE_GENAI:
+ raise NotImplementedError("Google Provider 将在 实现")
+ raise ValueError(f"不支持的 API 格式: {metadata['api_format']}")
