@@ -57,7 +57,7 @@ onMounted(async => {
  <SelectValue placeholder="模型（默认）" />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="">
+ <SelectItem value="__default__">
  系统默认
  </SelectItem>
  <SelectItem

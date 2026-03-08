@@ -30,7 +30,8 @@ from projects.models import Project
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
  """API view for getting available models."""
- permission_classes = [IsAuthenticated]
+ authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="获取可用模型列表",
  description="获取 LLM 提供商的可用模型列表，支持系统配置或项目配置",
