@@ -103,7 +103,7 @@ const triggerConfig = computed( => {
  "name": "进行中"
  }
 }`,
- icon: 'icon-[simple-icons--feishu]',
+ icon: 'icon-[lucide--message-square]',
  iconColor: 'text-blue-500',
  bgGradient: 'from-blue-500/20 to-cyan-500/10',
  }
