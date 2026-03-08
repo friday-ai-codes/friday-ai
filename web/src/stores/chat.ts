@@ -40,7 +40,7 @@ export const useChatStore = defineStore('chat', => {
  // 用户偏好（localStorage 持久化）
  const selectedProjectId = useLocalStorage<string | null>('chat-project-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
- const selectedModel = useLocalStorage<string>('chat-model', '')
+ const selectedModel = useLocalStorage<string>('chat-model', '__default__')
  // ========================================================================
  // Getters
  // ========================================================================
@@ -89,7 +89,7 @@ export const useChatStore = defineStore('chat', => {
  try {
  const conv = await createConversation({
  project_id: selectedProjectId.value,
- model: selectedModel.value || undefined,
+ model: selectedModel.value === '__default__' ? undefined: selectedModel.value || undefined,
  })
  conversations.value.unshift(conv)
  currentConversationId.value = conv.id
