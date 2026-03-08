@@ -42,3 +42,42 @@ class TestProviderRegistry:
  def test_google_vertex_uses_service_account(self) -> None:
  from agents.llm.providers import PROVIDER_REGISTRY, CredentialType, ProviderType
  assert PROVIDER_REGISTRY[ProviderType.GOOGLE_VERTEX]["credential_type"] == CredentialType.SERVICE_ACCOUNT_JSON
+class TestCreateProviderFactory:
+ """Tests for the create_provider factory function."""
+ def test_create_provider_with_enum_anthropic(self) -> None:
+ from agents.llm.base import create_provider
+ from agents.llm.claude import ClaudeProvider
+ from agents.llm.providers import ProviderType
+ provider = create_provider(ProviderType.ANTHROPIC)
+ assert isinstance(provider, ClaudeProvider)
+ def test_create_provider_with_enum_openai_completions(self) -> None:
+ from agents.llm.base import create_provider
+ from agents.llm.openai_completions import OpenAICompletionsProvider
+ from agents.llm.providers import ProviderType
+ provider = create_provider(ProviderType.OPENAI_COMPLETIONS, api_key="test-key", model="gpt-4o")
+ assert isinstance(provider, OpenAICompletionsProvider)
+ def test_create_provider_backward_compat_anthropic(self) -> None:
+ from agents.llm.base import create_provider
+ from agents.llm.claude import ClaudeProvider
+ provider = create_provider("anthropic")
+ assert isinstance(provider, ClaudeProvider)
+ def test_create_provider_backward_compat_openai(self) -> None:
+ """现有代码传入 "openai" 字符串，应映射到 OPENAI_COMPLETIONS。"""
+ from agents.llm.base import create_provider
+ from agents.llm.openai_completions import OpenAICompletionsProvider
+ provider = create_provider("openai", api_key="test-key", model="gpt-4o")
+ assert isinstance(provider, OpenAICompletionsProvider)
+ def test_create_provider_openai_responses_not_implemented(self) -> None:
+ from agents.llm.base import create_provider
+ from agents.llm.providers import ProviderType
+ with pytest.raises(NotImplementedError):
+ create_provider(ProviderType.OPENAI_RESPONSES, api_key="test-key", model="gpt-4.1")
+ def test_create_provider_google_not_implemented(self) -> None:
+ from agents.llm.base import create_provider
+ from agents.llm.providers import ProviderType
+ with pytest.raises(NotImplementedError):
+ create_provider(ProviderType.GOOGLE_VERTEX, api_key="test-key", model="gemini-2.5-flash")
+ def test_create_provider_invalid_type(self) -> None:
+ from agents.llm.base import create_provider
+ with pytest.raises(ValueError):
+ create_provider("invalid")
