@@ -31,6 +31,12 @@ class NodeExecutionStatus(models.TextChoices):
  SKIPPED = "skipped", "已跳过"
  CANCELLED = "cancelled", "已取消"
  TIMEOUT = "timeout", "超时"
+class SubStepStatus(models.TextChoices):
+ """子步骤执行状态"""
+ PENDING = "pending", "待执行"
+ RUNNING = "running", "执行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
 class WorkflowExecution(models.Model):
  """工作流执行实例"""
  # 反向关系类型声明
@@ -319,6 +325,7 @@ class NodeExecution(models.Model):
  """节点执行记录"""
  # 反向关系类型声明
  event_subscriptions: "QuerySet[WorkflowEventSubscription]"
+ sub_steps: "QuerySet[NodeSubStep]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  workflow_execution = models.ForeignKey(
  WorkflowExecution,
@@ -517,6 +524,93 @@ class NodeExecution(models.Model):
  self.output_data = subscription_data
  self.approval_data = subscription_data
  await self.asave(update_fields=["status", "output_data", "approval_data"])
+class NodeSubStep(models.Model):
+ """节点执行子步骤。
+ 记录 AI 节点内部的执行步骤（如 tool_call、thinking、code_generation），
+ 由 AI 节点在执行过程中 emit 创建，前端展示时按 step_order 排序。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ node_execution = models.ForeignKey(
+ NodeExecution,
+ on_delete=models.CASCADE,
+ related_name="sub_steps",
+ verbose_name="节点执行",
+ )
+ # 步骤描述
+ name = models.CharField(max_length=200, verbose_name="步骤名称")
+ step_type = models.CharField(
+ max_length=50,
+ verbose_name="步骤类型",
+ help_text="子步骤类型标识，如 tool_call、thinking、code_generation",
+ )
+ step_order = models.IntegerField(verbose_name="步骤顺序")
+ # 状态
+ status = models.CharField(
+ max_length=20,
+ choices=SubStepStatus.choices,
+ default=SubStepStatus.PENDING,
+ verbose_name="状态",
+ )
+ # 输入/输出
+ input_data = models.JSONField(default=dict, blank=True, verbose_name="输入数据")
+ output_data = models.JSONField(default=dict, blank=True, verbose_name="输出数据")
+ # 时间戳
+ started_at = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
+ completed_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
+ class Meta:
+ db_table = "node_sub_steps"
+ verbose_name = "节点子步骤"
+ verbose_name_plural = "节点子步骤"
+ ordering = ["step_order"]
+ indexes = [
+ models.Index(fields=["node_execution", "step_order"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.name} ({self.step_type}) - {self.status}"
+ @property
+ def duration(self) -> float | None:
+ """执行时长（秒）"""
+ if self.started_at and self.completed_at:
+ return (self.completed_at - self.started_at).total_seconds
+ return None
+ def mark_started(self) -> None:
+ """标记开始执行"""
+ self.status = SubStepStatus.RUNNING
+ self.started_at = timezone.now
+ self.save(update_fields=["status", "started_at"])
+ async def amark_started(self) -> None:
+ """标记开始执行（async 版本）"""
+ self.status = SubStepStatus.RUNNING
+ self.started_at = timezone.now
+ await self.asave(update_fields=["status", "started_at"])
+ def mark_completed(self, output_data: dict | None = None) -> None:
+ """标记执行完成"""
+ self.status = SubStepStatus.COMPLETED
+ self.completed_at = timezone.now
+ if output_data:
+ self.output_data = output_data
+ self.save(update_fields=["status", "completed_at", "output_data"])
+ async def amark_completed(self, output_data: dict | None = None) -> None:
+ """标记执行完成（async 版本）"""
+ self.status = SubStepStatus.COMPLETED
+ self.completed_at = timezone.now
+ if output_data:
+ self.output_data = output_data
+ await self.asave(update_fields=["status", "completed_at", "output_data"])
+ def mark_failed(self, error: str = "") -> None:
+ """标记执行失败"""
+ self.status = SubStepStatus.FAILED
+ self.completed_at = timezone.now
+ if error:
+ self.output_data = {**self.output_data, "error": error}
+ self.save(update_fields=["status", "completed_at", "output_data"])
+ async def amark_failed(self, error: str = "") -> None:
+ """标记执行失败（async 版本）"""
+ self.status = SubStepStatus.FAILED
+ self.completed_at = timezone.now
+ if error:
+ self.output_data = {**self.output_data, "error": error}
+ await self.asave(update_fields=["status", "completed_at", "output_data"])
 class WorkflowEventSubscription(models.Model):
  """工作流事件订阅记录
  记录挂起的工作流正在等待的外部事件条件。
