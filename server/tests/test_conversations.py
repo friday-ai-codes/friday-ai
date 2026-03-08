@@ -55,10 +55,20 @@ def mock_agent_loop:
  patch("chat.conversation_service.AgentLoop") as mock_loop_cls,
  patch("chat.conversation_service.create_provider") as mock_provider,
  patch("chat.conversation_service.aget_setting_value") as mock_setting,
+ patch("services.provider_config.ProviderConfigService") as mock_pcs,
  ):
  mock_loop_instance = MagicMock
  mock_loop_instance.run = AsyncMock(return_value=mock_result)
  mock_loop_cls.return_value = mock_loop_instance
+ # 模拟 ProviderConfigService.aresolve
+ from services.provider_config import ResolvedProviderConfig
+ from agents.llm.providers import ProviderType
+ mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="test-api-key",
+ base_url="https://api.anthropic.com",
+ source="system",
+ ))
  # 模拟系统设置
  async def fake_setting(key):
  settings_map = {
@@ -74,6 +84,7 @@ def mock_agent_loop:
  "loop_instance": mock_loop_instance,
  "provider": mock_provider,
  "setting": mock_setting,
+ "provider_config_service": mock_pcs,
  "result": mock_result,
  }
 # ============================================================================

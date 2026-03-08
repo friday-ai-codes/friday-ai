@@ -115,7 +115,17 @@ class TestSendMessageWithRole:
  "anthropic_base_url": None,
  "anthropic_model": "default-model",
  }.get(key),
- ):
+ ), patch(
+ "services.provider_config.ProviderConfigService"
+ ) as mock_pcs:
+ from agents.llm.providers import ProviderType
+ from services.provider_config import ResolvedProviderConfig
+ mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="test-key",
+ base_url="https://api.anthropic.com",
+ source="system",
+ ))
  resp = await client.post(
  f"/api/chat/conversations/{conversation.id}/messages/",
  data=payload,
@@ -159,7 +169,17 @@ class TestConversationModelSelection:
  "anthropic_base_url": None,
  "anthropic_model": "default-model",
  }.get(key),
- ):
+ ), patch(
+ "services.provider_config.ProviderConfigService"
+ ) as mock_pcs:
+ from agents.llm.providers import ProviderType
+ from services.provider_config import ResolvedProviderConfig
+ mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="test-key",
+ base_url="https://api.anthropic.com",
+ source="system",
+ ))
  mock_create_provider.return_value = "mock_provider"
  mock_instance = MockLoop.return_value
  mock_instance.run = AsyncMock(return_value=mock_result)
@@ -197,7 +217,17 @@ class TestConversationModelSelection:
  "anthropic_base_url": None,
  "anthropic_model": "system-default-model",
  }.get(key),
- ):
+ ), patch(
+ "services.provider_config.ProviderConfigService"
+ ) as mock_pcs:
+ from agents.llm.providers import ProviderType
+ from services.provider_config import ResolvedProviderConfig
+ mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="test-key",
+ base_url="https://api.anthropic.com",
+ source="system",
+ ))
  mock_create_provider.return_value = "mock_provider"
  mock_instance = MockLoop.return_value
  mock_instance.run = AsyncMock(return_value=mock_result)
