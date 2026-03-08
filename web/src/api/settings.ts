@@ -7,6 +7,11 @@ export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
  ANTHROPIC_BASE_URL = 'anthropic_base_url',
  ANTHROPIC_MODEL = 'anthropic_model',
+ // Provider 配置（v8.1 多模型支持）
+ DEFAULT_PROVIDER_TYPE = 'default_provider_type',
+ OPENAI_API_KEY = 'openai_api_key',
+ GOOGLE_API_KEY = 'google_api_key',
+ GOOGLE_SERVICE_ACCOUNT_JSON = 'google_service_account_json',
  GIT_HTTP_PROXY = 'git_http_proxy',
  // Vector Index Settings
  QDRANT_URL = 'qdrant_url',
