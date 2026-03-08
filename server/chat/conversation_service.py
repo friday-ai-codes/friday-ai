@@ -264,18 +264,22 @@ class ConversationService:
  # 构建 AgentLoop
  session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
  project_name = conversation.project.name
- # 获取 LLM 配置
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ # 通过 ProviderConfigService 解析 Provider 配置
+ from services.provider_config import ProviderConfigError, ProviderConfigService
+ try:
+ resolved = await ProviderConfigService.aresolve(
+ conversation=conversation,
+ project=conversation.project,
+ )
+ except ProviderConfigError as e:
+ raise ValueError(str(e)) from e
+ # model 解析保持现有逻辑：对话级 > 系统级
  system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
- # 对话级模型优先于系统默认
  model = conversation.model or system_model
- if not api_key:
- raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
  provider = create_provider(
- provider_type="anthropic",
- api_key=api_key,
- base_url=base_url,
+ provider_type=resolved.provider_type,
+ api_key=resolved.api_key,
+ base_url=resolved.base_url,
  model=model,
  )
  # 动态获取工具列表
@@ -373,16 +377,22 @@ class ConversationService:
  # 构建 AgentLoop
  session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
  project_name = conversation.project.name
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ # 通过 ProviderConfigService 解析 Provider 配置
+ from services.provider_config import ProviderConfigError, ProviderConfigService
+ try:
+ resolved = await ProviderConfigService.aresolve(
+ conversation=conversation,
+ project=conversation.project,
+ )
+ except ProviderConfigError as e:
+ raise ValueError(str(e)) from e
+ # model 解析保持现有逻辑：对话级 > 系统级
  system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
  model = conversation.model or system_model
- if not api_key:
- raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
  provider = create_provider(
- provider_type="anthropic",
- api_key=api_key,
- base_url=base_url,
+ provider_type=resolved.provider_type,
+ api_key=resolved.api_key,
+ base_url=resolved.base_url,
  model=model,
  )
  tool_names = await _get_tool_names(str(conversation.project_id))

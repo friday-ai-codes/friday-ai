@@ -72,6 +72,12 @@ class AIAgentBaseNode(BaseNode):
  "enum": ["anthropic", "openai"],
  "default": "anthropic",
  },
+ "provider_type": {
+ "type": "string",
+ "title": "Provider 类型",
+ "description": "LLM Provider 类型，为空时继承项目级或系统级配置",
+ "default": "",
+ },
  "timeout_hours": {
  "type": "integer",
  "title": "Suspension Timeout (hours)",
@@ -160,20 +166,48 @@ class AIAgentBaseNode(BaseNode):
  api_base_url: str = "",
  api_key: str = "",
  api_format: str = "",
+ provider_type: str = "",
  ) -> Any:
- """Get LLM Provider, supporting custom API or system config."""
- if use_custom_api and api_base_url:
- if not model:
- raise ValueError("使用自定义 API 时必须指定模型")
- provider_type = api_format or "anthropic"
- return create_provider(provider_type, api_key=api_key, base_url=api_base_url, model=model)
+ """Get LLM Provider, supporting provider_type, custom API, or system config.
+ 优先级：provider_type > use_custom_api > 系统/项目级默认配置。
+ """
+ from services.provider_config import ProviderConfigService
+ # 分支 1: 有 provider_type → 走 ProviderConfigService
+ if provider_type:
+ resolved = await ProviderConfigService.aresolve(
+ node_config={"provider_type": provider_type},
+ project=project,
+ )
  from services.claude_config import aget_claude_config
  config = await aget_claude_config(project)
  resolved_model = model or config.model
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- provider_type = api_format or config.provider_type
- return create_provider(provider_type, api_key=config.api_key, base_url=config.base_url, model=resolved_model)
+ return create_provider(
+ resolved.provider_type,
+ api_key=resolved.api_key,
+ base_url=resolved.base_url,
+ model=resolved_model,
+ )
+ # 分支 2: 有 use_custom_api → 保持现有逻辑（向后兼容）
+ if use_custom_api and api_base_url:
+ if not model:
+ raise ValueError("使用自定义 API 时必须指定模型")
+ pt = api_format or "anthropic"
+ return create_provider(pt, api_key=api_key, base_url=api_base_url, model=model)
+ # 分支 3: 两者都无 → 走 ProviderConfigService（无 node_config）
+ resolved = await ProviderConfigService.aresolve(project=project)
+ from services.claude_config import aget_claude_config
+ config = await aget_claude_config(project)
+ resolved_model = model or config.model
+ if not resolved_model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ return create_provider(
+ resolved.provider_type,
+ api_key=resolved.api_key,
+ base_url=resolved.base_url,
+ model=resolved_model,
+ )
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
@@ -229,6 +263,7 @@ class AIAgentBaseNode(BaseNode):
  api_base_url: str = config.get("api_base_url", "")
  api_key: str = config.get("api_key", "")
  api_format: str = config.get("api_format", "")
+ provider_type_cfg: str = config.get("provider_type", "")
  logger.info(
  "agent_node_start",
  session_id=session_id,
@@ -255,7 +290,8 @@ class AIAgentBaseNode(BaseNode):
  )
  # Get LLM Provider
  provider = await self._get_provider(
- project, model, use_custom_api, api_base_url, api_key, api_format
+ project, model, use_custom_api, api_base_url, api_key, api_format,
+ provider_type=provider_type_cfg,
  )
  # 3. Execute Agent
  loop = AgentLoop(
