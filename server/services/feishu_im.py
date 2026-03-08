@@ -7,7 +7,7 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 import httpx
 import structlog
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -20,6 +20,8 @@ from tenacity import (
 from common.encryption import decrypt_value
 from projects.models import Project
 from system.models import SettingKeys, SystemSetting
+if TYPE_CHECKING:
+ from services.feishu import FeishuClient, WorkItemInfo
 logger = structlog.get_logger(__name__)
 class FeishuIMError(Exception):
  """飞书 IM API 错误基类。"""
@@ -438,13 +440,41 @@ async def create_feishu_im_client_for_project(project: Project | None = None) ->
  )
  raise ValueError("未配置飞书 IM 集成。请先配置项目级或系统级飞书 App ID / App Secret。")
 class FeishuIMService:
- """Convenience wrapper around `FeishuIMClient` for bot workflows."""
- def __init__(self, client: FeishuIMClient):
+ """Convenience wrapper around `FeishuIMClient` for bot workflows.
+ 可选组合 FeishuClient（项目 API）以支持工作项关联群聊 ID 查询。
+ """
+ def __init__(
+ self,
+ client: FeishuIMClient,
+ project_client: "FeishuClient | None" = None,
+ ):
  self.client = client
+ self.project_client = project_client
  @classmethod
- async def create(cls, project: Project | None = None) -> "FeishuIMService":
+ async def create(
+ cls,
+ project: Project | None = None,
+ *,
+ with_project_client: bool = False,
+ ) -> FeishuIMService:
+ """创建 FeishuIMService 实例。
+ Args:
+ project: 项目实例（可选）
+ with_project_client: 是否同时创建 FeishuClient（项目 API）
+ """
+ from services.feishu import create_feishu_client_for_project
  client = await create_feishu_im_client_for_project(project)
- return cls(client)
+ project_client: "FeishuClient | None" = None
+ if with_project_client and project:
+ try:
+ project_client = create_feishu_client_for_project(project)
+ except (ValueError, Exception):
+ logger.warning(
+ "project_client_creation_failed",
+ project_id=str(project.id),
+ exc_info=True,
+ )
+ return cls(client, project_client=project_client)
  async def send_card(
  self,
  receive_id: str,
@@ -457,3 +487,89 @@ class FeishuIMService:
  async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
  """确保 Bot 在指定群聊中（委托给 client）。"""
  return await self.client.ensure_bot_in_chat(chat_id)
+ async def get_chat_id_for_work_item(
+ self,
+ project_key: str,
+ work_item_id: int,
+ work_item_type: str = "story",
+ ) -> dict[str, Any] | None:
+ """从飞书工作项获取关联群聊 ID。
+ 需要 project_client（FeishuClient）才能调用飞书项目 API。
+ 在工作项的 fields 中搜索包含 "chat" 或 "group" 的字段来定位群聊信息。
+ Args:
+ project_key: 飞书项目空间 Key
+ work_item_id: 工作项 ID
+ work_item_type: 工作项类型（默认 "story"）
+ Returns:
+ 成功时返回 {"chat_id": str, "chat_name": str | None, "owner_id": str | None, "source": "work_item_api"}
+ 无关联群聊或失败时返回 None
+ """
+ log = logger.bind(
+ project_key=project_key,
+ work_item_id=work_item_id,
+ work_item_type=work_item_type,
+ )
+ if self.project_client is None:
+ log.warning("project_client_not_configured")
+ return None
+ try:
+ work_item = await self.project_client.get_work_item(
+ project_key=project_key,
+ work_item_id=work_item_id,
+ work_item_type=work_item_type,
+ )
+ except Exception:
+ log.error("get_work_item_failed", exc_info=True)
+ return None
+ fields = work_item.fields
+ log.debug("work_item_fields", field_keys=list(fields.keys))
+ # 在 fields 中搜索群聊相关字段
+ chat_fields: list[tuple[str, Any]] =
+ for key, value in fields.items:
+ if any(kw in key.lower for kw in ("chat", "group", "群聊")):
+ chat_fields.append((key, value))
+ if not chat_fields:
+ log.warning(
+ "no_chat_field_found",
+ available_fields=list(fields.keys),
+ )
+ return None
+ # 取第一个群聊字段
+ field_key, field_value = chat_fields[0]
+ if len(chat_fields) > 1:
+ log.info(
+ "multiple_chat_fields_found",
+ count=len(chat_fields),
+ using=field_key,
+ )
+ # 解析群聊 ID——支持字符串和字典两种形式
+ chat_id: str | None = None
+ chat_name: str | None = None
+ owner_id: str | None = None
+ if isinstance(field_value, str):
+ chat_id = field_value
+ elif isinstance(field_value, dict):
+ chat_id = field_value.get("chat_id") or field_value.get("id")
+ chat_name = field_value.get("chat_name") or field_value.get("name")
+ owner_id = field_value.get("owner_id")
+ elif isinstance(field_value, list) and field_value:
+ # 多个群聊取第一个
+ first = field_value[0]
+ if isinstance(first, str):
+ chat_id = first
+ elif isinstance(first, dict):
+ chat_id = first.get("chat_id") or first.get("id")
+ chat_name = first.get("chat_name") or first.get("name")
+ owner_id = first.get("owner_id")
+ if len(field_value) > 1:
+ log.info("multiple_chats_found", count=len(field_value), using_first=True)
+ if not chat_id:
+ log.warning("chat_id_empty", field_key=field_key, field_value=field_value)
+ return None
+ log.info("chat_id_resolved", chat_id=chat_id, chat_name=chat_name)
+ return {
+ "chat_id": chat_id,
+ "chat_name": chat_name,
+ "owner_id": owner_id,
+ "source": "work_item_api",
+ }
