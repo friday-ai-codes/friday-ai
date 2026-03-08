@@ -110,6 +110,7 @@ class ConversationListSerializer(serializers.Serializer):
  project_id = serializers.UUIDField
  title = serializers.CharField
  model = serializers.CharField(required=False, allow_blank=True)
+ provider_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
 class ConversationMessageSerializer(serializers.Serializer):
@@ -126,6 +127,7 @@ class ConversationDetailSerializer(serializers.Serializer):
  id = serializers.UUIDField
  project_id = serializers.UUIDField
  title = serializers.CharField
+ provider_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
  messages = ConversationMessageSerializer(many=True, required=False)
@@ -145,3 +147,19 @@ class SendMessageResponseSerializer(serializers.Serializer):
  child=serializers.DictField, required=False, default=list,
  )
  usage = serializers.DictField(required=False, allow_null=True)
+# ============================================================================
+# Provider Serializers (Phase)
+# ============================================================================
+class ProviderSerializer(serializers.Serializer):
+ """Provider 列表项。"""
+ id = serializers.CharField
+ name = serializers.CharField
+ icon = serializers.CharField
+ credential_type = serializers.CharField
+ has_credential = serializers.BooleanField
+class HealthCheckResponseSerializer(serializers.Serializer):
+ """健康检查响应。"""
+ provider_type = serializers.CharField
+ status = serializers.ChoiceField(choices=["available", "unavailable"])
+ latency_ms = serializers.IntegerField
+ error = serializers.CharField(required=False, allow_null=True)

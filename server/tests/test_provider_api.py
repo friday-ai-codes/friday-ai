@@ -3,6 +3,7 @@
 ConversationSerializer 扩展、TokenUsage 扩展、定价计算。
 """
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from django.contrib.auth import get_user_model
@@ -94,7 +95,7 @@ async def test_provider_models_valid(user_and_token):
  """GET /api/chat/providers/anthropic/models/ 返回模型列表。"""
  _, token = user_and_token
  mock_models = [
- MagicMock(id="claude-sonnet-4-20250514", name="Claude Sonnet 4", created=None),
+ SimpleNamespace(id="claude-sonnet-4-20250514", name="Claude Sonnet 4", created=None),
  ]
  with patch("chat.views.aget_setting_value", new_callable=AsyncMock, return_value="sk-test"):
  with patch("chat.views._get_provider_models", new_callable=AsyncMock, return_value=mock_models):
@@ -122,9 +123,11 @@ async def test_provider_models_invalid_type(user_and_token):
 @pytest.mark.asyncio
 async def test_provider_models_cache(user_and_token):
  """模型列表缓存：两次请求只调用一次上游。"""
+ from django.core.cache import cache
+ cache.clear
  _, token = user_and_token
  mock_models = [
- MagicMock(id="claude-sonnet-4-20250514", name="Claude Sonnet 4", created=None),
+ SimpleNamespace(id="claude-sonnet-4-20250514", name="Claude Sonnet 4", created=None),
  ]
  get_models_mock = AsyncMock(return_value=mock_models)
  with patch("chat.views.aget_setting_value", new_callable=AsyncMock, return_value="sk-test"):
