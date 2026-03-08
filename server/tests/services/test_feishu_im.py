@@ -8,7 +8,7 @@
 import time
 from unittest.mock import AsyncMock, Mock, patch
 import pytest
-from services.feishu_im import FeishuIMClient, FeishuIMError
+from services.feishu_im import FeishuIMClient, FeishuIMError, FeishuIMService
 def _make_client -> FeishuIMClient:
  """创建预设 token 的测试客户端。"""
  client = FeishuIMClient(app_id="cli_test_app", app_secret="secret")
@@ -148,3 +148,67 @@ async def test_ensure_bot_in_chat_permission_denied:
  assert result["success"] is False
  assert result["already_member"] is False
  assert "no permission" in result["error"]
+# ============================================================================
+# get_chat_id_for_work_item (FeishuIMService)
+# ============================================================================
+def _make_service_with_project_client -> tuple[FeishuIMService, Mock]:
+ """创建带 mock project_client 的 FeishuIMService。"""
+ client = _make_client
+ project_client = AsyncMock
+ service = FeishuIMService(client=client, project_client=project_client)
+ return service, project_client
+def _work_item_info(fields: dict) -> Mock:
+ """创建模拟的 WorkItemInfo。"""
+ info = Mock
+ info.fields = fields
+ return info
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_success:
+ """get_chat_id_for_work_item 成功返回结构化结果。"""
+ service, project_client = _make_service_with_project_client
+ project_client.get_work_item.return_value = _work_item_info(
+ {"chat_id": "oc_abc123", "title": "需求标题"}
+ )
+ result = await service.get_chat_id_for_work_item("proj_key", 12345)
+ assert result is not None
+ assert result["chat_id"] == "oc_abc123"
+ assert result["source"] == "work_item_api"
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_no_chat:
+ """工作项无关联群聊时返回 None。"""
+ service, project_client = _make_service_with_project_client
+ project_client.get_work_item.return_value = _work_item_info(
+ {"title": "需求标题", "status": "open"}
+ )
+ result = await service.get_chat_id_for_work_item("proj_key", 12345)
+ assert result is None
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_multiple_chats:
+ """多个群聊时只取第一个。"""
+ service, project_client = _make_service_with_project_client
+ project_client.get_work_item.return_value = _work_item_info(
+ {
+ "group_list": [
+ {"chat_id": "oc_first", "name": "群1"},
+ {"chat_id": "oc_second", "name": "群2"},
+ ],
+ }
+ )
+ result = await service.get_chat_id_for_work_item("proj_key", 12345)
+ assert result is not None
+ assert result["chat_id"] == "oc_first"
+ assert result["chat_name"] == "群1"
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_api_failure:
+ """API 调用失败时返回 None。"""
+ service, project_client = _make_service_with_project_client
+ project_client.get_work_item.side_effect = Exception("API timeout")
+ result = await service.get_chat_id_for_work_item("proj_key", 12345)
+ assert result is None
+@pytest.mark.asyncio
+async def test_get_chat_id_for_work_item_no_project_client:
+ """无 project_client 时返回 None。"""
+ client = _make_client
+ service = FeishuIMService(client=client, project_client=None)
+ result = await service.get_chat_id_for_work_item("proj_key", 12345)
+ assert result is None
