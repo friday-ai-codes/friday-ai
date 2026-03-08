@@ -1,0 +1,150 @@
+"""FeishuIMClient 群聊方法单元测试。
+覆盖：
+- get_chat_members：获取群聊成员列表
+- is_bot_in_chat：检查 Bot 是否在群聊中
+- add_bot_to_chat：将 Bot 加入群聊
+- ensure_bot_in_chat：幂等加入 + 降级处理
+"""
+import time
+from unittest.mock import AsyncMock, Mock, patch
+import pytest
+from services.feishu_im import FeishuIMClient, FeishuIMError
+def _make_client -> FeishuIMClient:
+ """创建预设 token 的测试客户端。"""
+ client = FeishuIMClient(app_id="cli_test_app", app_secret="secret")
+ client._tenant_token = "mock_token"
+ client._token_expires_at = time.time + 3600
+ return client
+def _mock_response(data: dict) -> Mock:
+ """创建模拟的 httpx Response。"""
+ resp = Mock
+ resp.json = Mock(return_value=data)
+ return resp
+# ============================================================================
+# get_chat_members
+# ============================================================================
+@pytest.mark.asyncio
+async def test_get_chat_members_success:
+ """get_chat_members 返回群聊成员列表。"""
+ client = _make_client
+ members = [
+ {"member_id": "cli_test_app", "name": "Test Bot"},
+ {"member_id": "cli_other", "name": "Other App"},
+ ]
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.get.return_value = _mock_response(
+ {"code": 0, "data": {"items": members}}
+ )
+ result = await client.get_chat_members("oc_test_chat")
+ assert len(result) == 2
+ assert result[0]["member_id"] == "cli_test_app"
+@pytest.mark.asyncio
+async def test_get_chat_members_api_error:
+ """get_chat_members API 错误时抛出 FeishuIMError。"""
+ client = _make_client
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.get.return_value = _mock_response(
+ {"code": 99991, "msg": "chat not found"}
+ )
+ with pytest.raises(FeishuIMError, match="获取群聊成员失败"):
+ await client.get_chat_members("oc_bad")
+# ============================================================================
+# add_bot_to_chat
+# ============================================================================
+@pytest.mark.asyncio
+async def test_add_bot_to_chat_success:
+ """add_bot_to_chat 成功加入群聊。"""
+ client = _make_client
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.post.return_value = _mock_response({"code": 0, "data": {}})
+ result = await client.add_bot_to_chat("oc_test_chat")
+ assert result == {}
+@pytest.mark.asyncio
+async def test_add_bot_to_chat_permission_denied:
+ """add_bot_to_chat 权限受限时抛出 FeishuIMError。"""
+ client = _make_client
+ with patch("httpx.AsyncClient") as mock_cls:
+ mock_http = AsyncMock
+ mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+ mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+ mock_http.post.return_value = _mock_response(
+ {"code": 230001, "msg": "no permission"}
+ )
+ with pytest.raises(FeishuIMError, match="Bot 加入群聊失败"):
+ await client.add_bot_to_chat("oc_restricted")
+# ============================================================================
+# is_bot_in_chat
+# ============================================================================
+@pytest.mark.asyncio
+async def test_is_bot_in_chat_true:
+ """is_bot_in_chat 返回 True 当 Bot 在群内。"""
+ client = _make_client
+ with patch.object(
+ client, "get_chat_members", return_value=[{"member_id": "cli_test_app"}]
+ ):
+ assert await client.is_bot_in_chat("oc_chat") is True
+@pytest.mark.asyncio
+async def test_is_bot_in_chat_false:
+ """is_bot_in_chat 返回 False 当 Bot 不在群内。"""
+ client = _make_client
+ with patch.object(
+ client, "get_chat_members", return_value=[{"member_id": "cli_other"}]
+ ):
+ assert await client.is_bot_in_chat("oc_chat") is False
+@pytest.mark.asyncio
+async def test_is_bot_in_chat_error_returns_false:
+ """is_bot_in_chat 查询失败时降级返回 False。"""
+ client = _make_client
+ with patch.object(
+ client, "get_chat_members", side_effect=FeishuIMError("network error")
+ ):
+ assert await client.is_bot_in_chat("oc_chat") is False
+# ============================================================================
+# ensure_bot_in_chat
+# ============================================================================
+@pytest.mark.asyncio
+async def test_ensure_bot_in_chat_already_member:
+ """ensure_bot_in_chat 已是成员返回 {success: True, already_member: True}。"""
+ client = _make_client
+ with patch.object(client, "is_bot_in_chat", return_value=True):
+ result = await client.ensure_bot_in_chat("oc_chat")
+ assert result["success"] is True
+ assert result["already_member"] is True
+ assert result["error"] is None
+@pytest.mark.asyncio
+async def test_ensure_bot_in_chat_join_success:
+ """ensure_bot_in_chat 成功加入返回 {success: True, already_member: False}。"""
+ client = _make_client
+ with (
+ patch.object(client, "is_bot_in_chat", return_value=False),
+ patch.object(client, "add_bot_to_chat", return_value={}),
+ ):
+ result = await client.ensure_bot_in_chat("oc_chat")
+ assert result["success"] is True
+ assert result["already_member"] is False
+ assert result["error"] is None
+@pytest.mark.asyncio
+async def test_ensure_bot_in_chat_permission_denied:
+ """ensure_bot_in_chat 权限受限返回 {success: False, error: "..."}。"""
+ client = _make_client
+ with (
+ patch.object(client, "is_bot_in_chat", return_value=False),
+ patch.object(
+ client,
+ "add_bot_to_chat",
+ side_effect=FeishuIMError("no permission", code=230001),
+ ),
+ ):
+ result = await client.ensure_bot_in_chat("oc_restricted")
+ assert result["success"] is False
+ assert result["already_member"] is False
+ assert "no permission" in result["error"]
