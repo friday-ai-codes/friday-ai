@@ -15,6 +15,7 @@ import threading
 from typing import Any
 import lark_oapi as lark
 import structlog
+from asgiref.sync import async_to_sync
 from lark_oapi.ws import Client as WsClient
 logger = structlog.get_logger(__name__)
 # Global client manager for auto-start mode
@@ -114,66 +115,50 @@ class FeishuWebSocketClient:
  return P2CardActionTriggerResponse
  def _process_message_sync(self, data) -> None:
  """Process received message synchronously.
- Forwards the message to the existing IM message handler logic.
+ Forwards the message to the shared dispatcher used by webhook mode.
  """
+ from feishu.bot.dispatcher import dispatch_inbound_message
+ from feishu.bot.parser import normalize_im_message
  event_data = data.event
  if not event_data or not event_data.message:
  return
  message = event_data.message
  sender = event_data.sender
- # Extract message content
- content_str = message.content or "{}"
- try:
- content = json.loads(content_str)
- except json.JSONDecodeError:
- content = {"text": content_str}
- # Get text content
- text = content.get("text", "")
+ raw_payload = {
+ "header": {
+ "event_type": "im.message.receive_v1",
+ "event_id": getattr(getattr(data, "header", None), "event_id", ""),
+ },
+ "event": {
+ "message": {
+ "chat_id": message.chat_id,
+ "chat_type": getattr(message, "chat_type", ""),
+ "message_id": message.message_id,
+ "message_type": message.message_type,
+ "content": message.content or "{}",
+ "mentions": getattr(message, "mentions", ) or,
+ "parent_id": getattr(message, "parent_id", ""),
+ "root_id": getattr(message, "root_id", ""),
+ },
+ "sender": {
+ "sender_id": {
+ "open_id": sender.sender_id.open_id if sender and sender.sender_id else "",
+ },
+ "sender_type": getattr(sender, "sender_type", ""),
+ },
+ },
+ }
+ normalized_message = normalize_im_message(raw_payload)
  logger.info(
  "ws_im_message_processed",
  message_id=message.message_id,
  chat_id=message.chat_id,
  chat_type=message.chat_type,
  message_type=message.message_type,
- text_preview=text[:50] if text else None,
+ text_preview=normalized_message.normalized_text[:50] if normalized_message.normalized_text else None,
  sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
  )
- # Check if this is a reply to an agent question
- # Match by chat_id to find suspended agent sessions
- self._try_resume_agent_from_message(
- chat_id=message.chat_id,
- text=text,
- sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
- )
- def _try_resume_agent_from_message(
- self,
- chat_id: str,
- text: str,
- sender_id: str | None,
- ) -> None:
- """Try to resume a suspended agent session from a chat message.
- Looks for agent sessions waiting for user response in this chat.
- """
- from agents.models import AgentSession
- from tasks.agent_tasks import schedule_resume_agent_session
- try:
- # Find suspended sessions waiting in this chat
- sessions = AgentSession.objects.filter(
- status=AgentSession.Status.SUSPENDED,
- temp_data__chat_id=chat_id,
- ).order_by("-updated_at")[:1]
- if sessions.exists:
- session = sessions.first
- if session is not None:
- logger.info(
- "ws_resuming_agent_from_message",
- session_id=session.session_id,
- chat_id=chat_id,
- answer_preview=text[:50] if text else None,
- )
- schedule_resume_agent_session(session.session_id, text)
- except Exception as e:
- logger.error("ws_resume_agent_error", error=str(e), chat_id=chat_id)
+ async_to_sync(dispatch_inbound_message)(normalized_message)
  def _process_card_action_sync(self, data) -> dict[str, Any] | None:
  """Process card action synchronously (must return within 3s).
  Forwards to existing CardCallbackView logic.

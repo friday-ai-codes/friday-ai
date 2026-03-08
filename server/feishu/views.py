@@ -18,6 +18,8 @@ from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient
 from workflows.triggers.context import TriggerContext
 from workflows.triggers.dispatcher import TriggerDispatcher
+from .bot.dispatcher import dispatch_inbound_message
+from .bot.parser import normalize_im_message
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
 from .models import KeyFields, TriggerLog, TriggerLogStatus
 from .serializers import (
@@ -355,38 +357,33 @@ class IMMessageWebhookView(APIView):
  return Response({"status": "ignored"})
  # 提取消息信息
  message = event.get("message", {})
- sender = event.get("sender", {})
- chat_id = message.get("chat_id", "")
- message_id = message.get("message_id", "")
- msg_type = message.get("message_type", "text")
- content_raw = message.get("content", "{}")
- sender_open_id = sender.get("sender_id", {}).get("open_id", "")
- # 解析消息内容
- content_text = parse_message_content(msg_type, content_raw)
+ normalized_message = normalize_im_message(data)
  logger.info(
  "im_message_received",
- chat_id=chat_id,
- message_id=message_id,
- sender_open_id=sender_open_id,
- msg_type=msg_type,
- content_preview=content_text[:50] if content_text else "",
+ chat_id=normalized_message.chat_id,
+ message_id=normalized_message.message_id,
+ sender_open_id=normalized_message.sender_open_id,
+ msg_type=normalized_message.message_type,
+ content_preview=normalized_message.normalized_text[:50] if normalized_message.normalized_text else "",
  )
- # 4. 存储消息到队列 (供 Phase 匹配)
+ # 保留旧队列以兼容 Phase 调试能力
  message_record = {
- "chat_id": chat_id,
- "message_id": message_id,
- "sender_open_id": sender_open_id,
- "content": content_text,
- "msg_type": msg_type,
- "raw_content": content_raw,
+ "chat_id": normalized_message.chat_id,
+ "message_id": normalized_message.message_id,
+ "sender_open_id": normalized_message.sender_open_id,
+ "content": normalized_message.normalized_text,
+ "msg_type": normalized_message.message_type,
+ "raw_content": message.get("content", "{}"),
  "received_at": header.get("create_time", ""),
  }
- # 队列大小限制
  if len(_im_message_queue) >= _MAX_MESSAGE_QUEUE_SIZE:
- _im_message_queue.pop(0) # 移除最旧的消息
+ _im_message_queue.pop(0)
  _im_message_queue.append(message_record)
- # 5. 返回 200 OK (必须快速响应)
- return Response({"status": "ok"})
+ dispatch_result = await dispatch_inbound_message(normalized_message)
+ response_status = "ok" if dispatch_result.status in {"bot_message_accepted", "resume_agent"} else dispatch_result.status
+ if dispatch_result.status == "ignored" and not normalized_message.chat_type:
+ response_status = "ok"
+ return Response({"status": response_status, "result": dispatch_result.status, "reason": dispatch_result.reason})
 def get_pending_messages(chat_id: str | None = None) -> list[dict[str, Any]]:
  """获取待处理的消息队列 (供 Phase 使用)。
  Args:

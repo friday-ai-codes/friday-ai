@@ -1,4 +1,4 @@
-"""Feishu models: TriggerLog for unified webhook and work item logging."""
+"""Feishu models for webhook logs and bot conversation state."""
 import uuid
 from typing import TYPE_CHECKING
 from django.db import models
@@ -11,6 +11,12 @@ class TriggerLogStatus(models.TextChoices):
  IGNORED = "ignored", "已忽略"
  ERROR = "error", "错误"
  DUPLICATE = "duplicate", "重复"
+class FeishuBotThreadStatus(models.TextChoices):
+ """Feishu bot thread lifecycle."""
+ ACTIVE = "active", "进行中"
+ AWAITING_PROJECT_CLARIFICATION = "awaiting_project_clarification", "待澄清项目"
+ AWAITING_TOPIC_CLARIFICATION = "awaiting_topic_clarification", "待澄清话题"
+ CLOSED = "closed", "已关闭"
 class TriggerLog(models.Model):
  """Unified log for Feishu webhook triggers and work item details.
  Combines the functionality of WebhookLog and WorkItemLog into a single
@@ -56,6 +62,70 @@ class TriggerLog(models.Model):
  ordering = ["-created_at"]
  def __str__(self):
  return f"{self.event_type} - {self.work_item_name or self.work_item_id}"
+class FeishuBotThread(models.Model):
+ """Persistent state for a bot conversation thread inside a Feishu chat."""
+ chat_id = models.CharField(max_length=128, db_index=True)
+ conversation = models.ForeignKey(
+ "chat.Conversation",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="feishu_bot_threads",
+ )
+ project = models.ForeignKey(
+ "projects.Project",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="feishu_bot_threads",
+ )
+ status = models.CharField(
+ max_length=40,
+ choices=FeishuBotThreadStatus.choices,
+ default=FeishuBotThreadStatus.ACTIVE,
+ )
+ root_message_id = models.CharField(max_length=128, blank=True, default="")
+ last_user_message_id = models.CharField(max_length=128, blank=True, default="")
+ last_bot_message_id = models.CharField(max_length=128, blank=True, default="")
+ last_processing_card_id = models.CharField(max_length=128, blank=True, default="")
+ metadata = models.JSONField(default=dict, blank=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "feishu_bot_threads"
+ ordering = ["-updated_at"]
+ indexes = [
+ models.Index(fields=["chat_id", "-updated_at"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.chat_id}:{self.status}"
+class FeishuBotMessage(models.Model):
+ """Inbound Feishu messages normalized for bot processing."""
+ message_id = models.CharField(max_length=128, unique=True)
+ thread = models.ForeignKey(
+ FeishuBotThread,
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="messages",
+ )
+ chat_id = models.CharField(max_length=128, db_index=True)
+ sender_open_id = models.CharField(max_length=128, blank=True, default="")
+ message_type = models.CharField(max_length=32)
+ normalized_text = models.TextField(blank=True, default="")
+ quote_message_id = models.CharField(max_length=128, blank=True, default="")
+ mentioned_bot = models.BooleanField(default=False)
+ processing_card_message_id = models.CharField(max_length=128, blank=True, default="")
+ raw_payload = models.JSONField(default=dict, blank=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "feishu_bot_messages"
+ ordering = ["created_at"]
+ indexes = [
+ models.Index(fields=["chat_id", "-created_at"]),
+ ]
+ def __str__(self) -> str:
+ return self.message_id
 # Key field constants for extracting from work item fields
 class KeyFields:
  """Key field identifiers for work item fields."""
