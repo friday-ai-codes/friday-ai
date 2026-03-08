@@ -21,6 +21,13 @@ class Conversation(models.Model):
  default="",
  help_text="LLM 模型 ID，为空时使用系统默认模型",
  )
+ provider_type = models.CharField(
+ max_length=50,
+ null=True,
+ blank=True,
+ verbose_name="Provider 类型",
+ help_text="LLM Provider 类型，为空时继承上层配置",
+ )
  is_deleted = models.BooleanField(default=False, db_index=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
