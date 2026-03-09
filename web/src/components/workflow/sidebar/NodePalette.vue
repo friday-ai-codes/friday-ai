@@ -41,6 +41,7 @@ const nodeGroups: PaletteGroup = [
  { type: 'mcp_deploy', name: 'MCP 部署', description: 'MCP 服务部署' },
  { type: 'fetch_group_chat', name: '获取群聊', description: '从飞书工作项获取群聊 ID' },
  { type: 'join_group_chat', name: '加入群聊', description: 'Bot 加入目标群聊' },
+ { type: 'group_chat_question', name: '群聊提问', description: '向群聊发送提问卡片等待回答' },
  ],
  },
  {

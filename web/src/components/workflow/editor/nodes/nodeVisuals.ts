@@ -36,6 +36,7 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  // 群聊 (orange)
  fetch_group_chat: { icon: MessageSquare, color: 'orange' },
  join_group_chat: { icon: UserPlus, color: 'orange' },
+ group_chat_question: { icon: MessageSquare, color: 'orange' },
  // 通知 (orange)
  notify_feishu: { icon: Send, color: 'orange' },
  // AI (purple)
