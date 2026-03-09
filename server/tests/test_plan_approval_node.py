@@ -34,8 +34,8 @@ def _make_context(
  mock_execution.workflow = mock_workflow
  mock_execution.triggered_by = MagicMock(id=1)
  ctx = ExecutionContext(
- execution_id="exec-test-002",
- node_id="node-plan-approval-001",
+ execution_id="00000000-0000-0000-0000-000000000002",
+ node_id="00000000-0000-0000-0000-000000000012",
  node_config=config,
  input_data=input_data or {},
  workflow_context={},
@@ -162,11 +162,24 @@ class TestPlanApprovalNode:
  @patch(
  "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project"
  )
+ @patch("workflows.models.WorkflowExecution.objects")
  async def test_output_contains_document_url(
  self,
+ mock_we_objects: MagicMock,
  mock_create_doc_client: MagicMock,
  ) -> None:
  """create_document returns url -> output.document_url has value."""
+ # 模拟 WorkflowExecution DB 查询返回包含 project 的 mock
+ mock_project = MagicMock
+ mock_project.id = 1
+ mock_project.feishu_doc_folder_token = "folder_token_123"
+ mock_workflow = MagicMock
+ mock_workflow.project = mock_project
+ mock_we_instance = MagicMock
+ mock_we_instance.workflow = mock_workflow
+ mock_we_objects.select_related.return_value.aget = AsyncMock(
+ return_value=mock_we_instance
+ )
  expected_url = "https://feishu.cn/docs/plan-doc-456"
  mock_doc_client = MagicMock
  mock_doc_client.create_document = AsyncMock(
