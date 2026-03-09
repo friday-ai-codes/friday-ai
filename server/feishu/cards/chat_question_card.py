@@ -11,6 +11,7 @@ def build_chat_question_card(
  options: list[str] | None = None,
  work_item_name: str = "",
  history: list[dict[str, str]] | None = None,
+ mention_user_id: str | None = None,
 ) -> dict[str, Any]:
  """构建群聊提问交互卡片。
  Args:
@@ -20,10 +21,17 @@ def build_chat_question_card(
  options: 可选的快捷选项列表
  work_item_name: 工作项名称，显示在 header 中
  history: 历史 Q&A 列表，每项含 question 和 answer 键
+ mention_user_id: 要 @mention 的飞书用户 ID
  Returns:
  飞书卡片 JSON 结构
  """
  elements: list[dict[str, Any]] =
+ # @mention 提示（放在最前面）
+ if mention_user_id:
+ elements.append({
+ "tag": "markdown",
+ "content": f'<at id="{mention_user_id}">相关人员</at> 请查看以下问题',
+ })
  # 历史 Q&A 区块
  if history:
  history_content = ""
@@ -127,6 +135,44 @@ def build_chat_answered_card(
  "header": {
  "title": {"tag": "plain_text", "content": "已收到回复"},
  "template": "grey",
+ },
+ "elements": elements,
+ }
+def build_chat_reminder_card(
+ question: str,
+ work_item_name: str = "",
+ remaining_minutes: int = 15,
+) -> dict[str, Any]:
+ """构建超时提醒卡片（orange 主题，只读）。
+ Args:
+ question: 原始问题文本（超过 200 字会截断）
+ work_item_name: 工作项名称
+ remaining_minutes: 剩余时间（分钟）
+ Returns:
+ 飞书卡片 JSON 结构
+ """
+ elements: list[dict[str, Any]] =
+ # 问题摘要（截断到 200 字）
+ summary = question[:200] + "..." if len(question) > 200 else question
+ elements.append({
+ "tag": "markdown",
+ "content": f"**原问题摘要：**\n{summary}",
+ })
+ elements.append({"tag": "hr"})
+ # 剩余时间提示
+ elements.append({
+ "tag": "markdown",
+ "content": f"距离超时还剩 **{remaining_minutes}** 分钟，请尽快回复原提问卡片。",
+ })
+ # Header 标题
+ title = "提醒：待回复提问"
+ if work_item_name:
+ title = f"提醒：待回复提问 — {work_item_name}"
+ return {
+ "config": {"wide_screen_mode": True},
+ "header": {
+ "title": {"tag": "plain_text", "content": title},
+ "template": "orange",
  },
  "elements": elements,
  }
