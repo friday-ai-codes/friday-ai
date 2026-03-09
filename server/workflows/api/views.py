@@ -26,6 +26,7 @@ from workflows.api.serializers import (
  ExecutionContextSerializer,
  NodeApproveSerializer,
  NodeExecutionSerializer,
+ NodeSubStepSerializer,
  NodeRejectSerializer,
  NodeTypeSerializer,
  WebhookConfigSerializer,
@@ -50,6 +51,7 @@ from workflows.models import (
  CodingTask,
  NodeExecution,
  NodeExecutionStatus,
+ NodeSubStep,
  WebhookConfig,
  WebhookLog,
  Workflow,
@@ -994,6 +996,28 @@ class WorkflowTriggerViewSet(ModelViewSet):
 # =============================================================================
 # Execution Context View
 # =============================================================================
+# =============================================================================
+# NodeSubStep View
+# =============================================================================
+class NodeSubStepListView(APIView):
+ """节点子步骤列表视图（只读）。"""
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Request, node_execution_id: uuid.UUID) -> Response:
+ """获取指定 NodeExecution 的所有子步骤，按 step_order 排序。"""
+ node_execution = await NodeExecution.objects.filter(id=node_execution_id).afirst
+ if not node_execution:
+ return Response(
+ {"detail": "未找到指定的节点执行记录。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ sub_steps = [
+ s
+ async for s in NodeSubStep.objects.filter(
+ node_execution_id=node_execution_id
+ ).order_by("step_order")
+ ]
+ serializer = NodeSubStepSerializer(sub_steps, many=True)
+ return Response(serializer.data)
 class ExecutionContextView(APIView):
  """View for getting execution context snapshot."""
  permission_classes = [IsAuthenticated]
