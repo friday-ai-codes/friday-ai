@@ -2,10 +2,13 @@
 GroupChatQuestionNode: 发送提问卡片到群聊并挂起工作流等待回答。
 卡片回调由 chat_question_callback.py 处理。
 """
+from datetime import timedelta
 from typing import Any, ClassVar
 import structlog
+from django.utils import timezone
 from feishu.cards.chat_question_card import build_chat_question_card
 from services.feishu_im import FeishuIMClient, create_feishu_im_client_for_project
+from workflows.models.execution import WorkflowEventSubscription
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -78,6 +81,11 @@ class GroupChatQuestionNode(BaseNode):
  "description": "显示在卡片标题中的工作项名称",
  "default": "",
  },
+ "mention_user_id": {
+ "type": "string",
+ "title": "@mention 用户 ID",
+ "description": "要 @mention 的飞书用户 open_id（可选）",
+ },
  },
  "required": ["chat_id", "question"],
  }
@@ -128,6 +136,7 @@ class GroupChatQuestionNode(BaseNode):
  work_item_name = context.render_template(
  config.get("work_item_name", "")
  ).strip
+ mention_user_id: str | None = config.get("mention_user_id") or None
  if not chat_id:
  return NodeResult(
  status="failed",
@@ -153,6 +162,7 @@ class GroupChatQuestionNode(BaseNode):
  node_id=context.node_id,
  options=options if options else None,
  work_item_name=work_item_name,
+ mention_user_id=mention_user_id,
  )
  # 发送卡片到群聊
  try:
@@ -175,6 +185,16 @@ class GroupChatQuestionNode(BaseNode):
  error=f"发送提问卡片失败: {e}",
  next_handle="error",
  )
+ # 创建事件订阅记录（用于超时检查）
+ if context.workflow_execution and context.node_execution:
+ await WorkflowEventSubscription.objects.acreate(
+ workflow_execution=context.workflow_execution,
+ node_execution=context.node_execution,
+ event_type="ChatQuestionCallback",
+ project_key=context.workflow_context.get("project_key", ""),
+ timeout_at=timezone.now + timedelta(minutes=30),
+ timeout_action="fail",
+ )
  # 返回 waiting_event，等待回调恢复
  return NodeResult(
  status="waiting_event",
@@ -184,5 +204,6 @@ class GroupChatQuestionNode(BaseNode):
  "chat_id": chat_id,
  "options": options,
  "work_item_name": work_item_name,
+ "mention_user_id": mention_user_id or "",
  },
  )
