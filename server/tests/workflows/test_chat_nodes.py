@@ -316,3 +316,50 @@ async def test_chat_question_node_missing_chat_id -> None:
  result = await node.execute(ctx)
  assert result.status == "failed"
  assert result.error is not None
+@pytest.mark.asyncio
+async def test_chat_question_node_config_has_max_rounds -> None:
+ """config_schema 包含 max_rounds 字段（默认 1，最大 5）。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ schema = GroupChatQuestionNode.config_schema
+ props = schema["properties"]
+ assert "max_rounds" in props
+ assert props["max_rounds"]["type"] == "integer"
+ assert props["max_rounds"]["default"] == 1
+ assert props["max_rounds"]["maximum"] == 5
+ assert props["max_rounds"]["minimum"] == 1
+@pytest.mark.asyncio
+async def test_chat_question_node_output_includes_rounds_info -> None:
+ """execute 输出包含 max_rounds、current_round、rounds。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ mock_execution = MagicMock
+ mock_execution.workflow = MagicMock
+ mock_execution.workflow.project = MagicMock
+ mock_execution.id = "we-rounds"
+ mock_ne = MagicMock
+ mock_ne.id = "ne-rounds"
+ ctx = _make_context(
+ config={
+ "chat_id": "oc_rounds",
+ "question": "问题",
+ "max_rounds": 3,
+ },
+ workflow_execution=mock_execution,
+ )
+ ctx.node_execution = mock_ne
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_r1")
+ with patch(
+ "workflows.nodes.integrations.chat_question.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "workflows.nodes.integrations.chat_question._get_feishu_credentials",
+ return_value=("app_id", "app_secret"),
+ ), patch(
+ "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
+ ) as mock_sub_cls:
+ mock_sub_cls.objects.acreate = AsyncMock
+ result = await node.execute(ctx)
+ assert result.output["max_rounds"] == 3
+ assert result.output["current_round"] == 1
+ assert result.output["rounds"] ==
