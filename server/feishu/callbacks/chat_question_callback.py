@@ -3,14 +3,24 @@
 严格参考 approval_callback.py 的模式：
 - 同步处理器（飞书回调需 3 秒内响应）
 - _schedule_chat_answer_completion 在后台线程异步恢复工作流
+支持多轮追问：current_round < max_rounds 时发新卡片继续追问，
+最后一轮汇总所有回复调用 approve_node 完成节点。
 """
 import json
 from typing import Any
 import structlog
-from feishu.cards.chat_question_card import build_chat_answered_card
+from feishu.cards.chat_question_card import (
+ build_chat_answered_card,
+ build_chat_question_card,
+)
 from feishu.views import CardCallback, register_card_callback
+from services.feishu_im import FeishuIMClient, create_feishu_im_client_for_project
 from workflows.engine.scheduler import WorkflowEngine, _run_in_thread
-from workflows.models.execution import NodeExecution, NodeExecutionStatus
+from workflows.models.execution import (
+ ExecutionStatus,
+ NodeExecution,
+ NodeExecutionStatus,
+)
 logger = structlog.get_logger(__name__)
 @register_card_callback("chat_question_answer")
 def handle_chat_question_answer(callback: CardCallback) -> dict[str, Any] | None:
@@ -103,15 +113,36 @@ def _schedule_chat_answer_completion(
  """在后台线程异步完成群聊回答处理。
  复用 approval_callback 的 _run_in_thread 模式，
  避免阻塞飞书回调（必须 3 秒内响应）。
- 首次回复即恢复工作流，后续回复被忽略（通过检查 node_execution 状态）。
  Args:
  execution_id: 工作流执行 ID
  node_id: 节点 ID
  answer: 用户回答内容
  responder_id: 回复者的飞书 open_id
  """
- async def _do_answer -> None:
- from workflows.models.execution import ExecutionStatus
+ _run_in_thread(
+ _do_chat_answer_async(
+ execution_id=execution_id,
+ node_id=node_id,
+ answer=answer,
+ responder_id=responder_id,
+ )
+ )
+async def _do_chat_answer_async(
+ execution_id: str,
+ node_id: str,
+ answer: str,
+ responder_id: str,
+) -> None:
+ """异步处理群聊回答，支持多轮追问。
+ 根据 output_data 中的 max_rounds 和 current_round 决定：
+ - 非最后一轮：记录回复，发新追问卡片，保持 waiting_event
+ - 最后一轮：汇总所有轮次回复，调用 approve_node 完成节点
+ Args:
+ execution_id: 工作流执行 ID
+ node_id: 节点 ID
+ answer: 用户回答内容
+ responder_id: 回复者的飞书 open_id
+ """
  try:
  # 查找处于等待状态的 NodeExecution
  node_execution = await NodeExecution.objects.filter(
@@ -120,19 +151,78 @@ def _schedule_chat_answer_completion(
  status=NodeExecutionStatus.WAITING_EVENT,
  ).select_related("workflow_execution").afirst
  if not node_execution:
- # 已被其他回复处理或状态不符，忽略
  logger.info(
  "chat_answer_ignored_not_waiting",
  execution_id=execution_id,
  node_id=node_id,
  )
  return
- # 恢复 workflow_execution 为 RUNNING
+ output = node_execution.output_data or {}
+ max_rounds = output.get("max_rounds", 1)
+ current_round = output.get("current_round", 1)
+ rounds: list[dict[str, Any]] = output.get("rounds", )
+ # 记录本轮回复
+ rounds.append({
+ "question": output.get("question", ""),
+ "answer": answer,
+ "round": current_round,
+ })
+ if current_round < max_rounds:
+ # 还有追问轮次：更新 output_data，发新卡片，保持 waiting_event
+ next_round = current_round + 1
+ next_question = f"根据您的回复「{answer}」，请补充更多信息："
+ node_execution.output_data = {
+ **output,
+ "current_round": next_round,
+ "rounds": rounds,
+ "question": next_question,
+ }
+ await node_execution.asave(update_fields=["output_data"])
+ # 构建历史
+ history = [{"question": r["question"], "answer": r["answer"]} for r in rounds]
+ # 发新卡片
+ card = build_chat_question_card(
+ question=next_question,
+ execution_id=str(node_execution.workflow_execution_id),
+ node_id=str(node_execution.node_id),
+ work_item_name=output.get("work_item_name", ""),
+ history=history,
+ mention_user_id=output.get("mention_user_id") or None,
+ )
+ # 获取 FeishuIMClient 发卡片
+ try:
+ project = None
+ we = node_execution.workflow_execution
+ if we and hasattr(we, "workflow"):
+ project = getattr(we.workflow, "project", None)
+ im_client = await create_feishu_im_client_for_project(project)
+ except Exception:
+ # 回退到直接构造（无凭证时无法发送）
+ logger.warning("chat_multi_round_im_client_fallback")
+ im_client = FeishuIMClient(app_id="", app_secret="")
+ await im_client.send_card(
+ receive_id=output.get("chat_id", ""),
+ receive_id_type="chat_id",
+ card=card,
+ )
+ logger.info(
+ "chat_multi_round_next_sent",
+ execution_id=execution_id,
+ node_id=node_id,
+ round=next_round,
+ )
+ else:
+ # 最后一轮：汇总结果，调用 approve_node 完成节点
+ node_execution.approval_data = {
+ "rounds": rounds,
+ "total_rounds": current_round,
+ }
+ await node_execution.asave(update_fields=["approval_data"])
+ # 恢复工作流
  workflow_execution = node_execution.workflow_execution
  if workflow_execution.status == ExecutionStatus.SUSPENDED:
  workflow_execution.status = ExecutionStatus.RUNNING
  await workflow_execution.asave(update_fields=["status"])
- engine = WorkflowEngine
  # 构造简单的回复者对象
  class _FeishuResponder:
  def __init__(self, open_id: str) -> None:
@@ -141,11 +231,18 @@ def _schedule_chat_answer_completion(
  def __str__(self) -> str:
  return self.username
  responder = _FeishuResponder(responder_id)
- await engine.approve_node(node_execution, responder, answer)
+ engine = WorkflowEngine
+ # 汇总所有回复作为 answer
+ all_answers = "\n".join(
+ f"[轮次 {r['round']}] Q: {r['question']}\nA: {r['answer']}"
+ for r in rounds
+ )
+ await engine.approve_node(node_execution, responder, all_answers)
  logger.info(
  "chat_answer_completion_done",
  execution_id=execution_id,
  node_id=node_id,
+ total_rounds=current_round,
  )
  except Exception as e:
  logger.exception(
@@ -154,4 +251,3 @@ def _schedule_chat_answer_completion(
  node_id=node_id,
  error=str(e),
  )
- _run_in_thread(_do_answer)
