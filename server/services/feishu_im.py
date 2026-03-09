@@ -299,12 +299,15 @@ class FeishuIMClient:
  padding_len = decrypted[-1]
  decrypted = decrypted[:-padding_len]
  return json.loads(decrypted.decode("utf-8"))
+ # ------------------------------------------------------------------
+ # 群聊成员管理方法
+ # ------------------------------------------------------------------
  async def get_chat_members(self, chat_id: str) -> list[dict[str, Any]]:
  """获取群聊成员列表。
  Args:
  chat_id: 群聊 ID
  Returns:
- 成员列表，每项包含 member_id、member_id_type、name 等
+ 成员列表，每项包含 member_id、name、tenant_key 等
  Raises:
  FeishuIMError: API 调用失败
  """
@@ -327,13 +330,13 @@ class FeishuIMClient:
  log.info("chat_members_fetched", count=len(items))
  return items
  async def is_bot_in_chat(self, chat_id: str) -> bool:
- """检查 Bot 是否已在指定群聊中。
- 通过获取群聊成员列表并检查 app_id 是否在其中。
- 出现异常时降级返回 False。
+ """检查当前 Bot 是否已在指定群聊中。
+ 通过查询群聊成员列表，检查 self.app_id 是否在其中。
+ 查询失败时降级返回 False。
  Args:
  chat_id: 群聊 ID
  Returns:
- Bot 是否在群聊中
+ Bot 在群聊中返回 True，否则返回 False
  """
  try:
  members = await self.get_chat_members(chat_id)
@@ -342,14 +345,14 @@ class FeishuIMClient:
  logger.warning("is_bot_in_chat_check_failed", chat_id=chat_id, exc_info=True)
  return False
  async def add_bot_to_chat(self, chat_id: str) -> dict[str, Any]:
- """将 Bot 加入指定群聊。
+ """将当前 Bot 加入指定群聊。
  Args:
  chat_id: 群聊 ID
  Returns:
  API 响应数据
  Raises:
  RateLimitError: 触发 rate limit
- FeishuIMError: API 调用失败（包括已是成员 code=10007 等）
+ FeishuIMError: API 调用失败
  """
  token = await self.get_tenant_access_token
  log = logger.bind(chat_id=chat_id, app_id=self.app_id)
@@ -366,7 +369,7 @@ class FeishuIMClient:
  data = response.json
  code = data.get("code", -1)
  if code == 99991400 or "rate limit" in str(data).lower:
- log.warning("add_bot_rate_limited", response=data)
+ log.warning("rate_limit_hit", response=data)
  raise RateLimitError(
  f"Rate limit exceeded: {data.get('msg', data)}", code=code
  )
@@ -379,8 +382,8 @@ class FeishuIMClient:
  return data.get("data", {})
  async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
  """确保 Bot 在指定群聊中（幂等 + 降级）。
- 先检查 Bot 是否已在群内，若不在则尝试加入。
- 权限受限时不抛异常，而是返回结构化错误。
+ 先检查 Bot 是否已在群聊中，未在则尝试加入。
+ 加入失败时降级返回结构化错误而非抛异常。
  Args:
  chat_id: 群聊 ID
  Returns:
@@ -388,10 +391,11 @@ class FeishuIMClient:
  """
  log = logger.bind(chat_id=chat_id, app_id=self.app_id)
  # 先检查是否已在群内
- if await self.is_bot_in_chat(chat_id):
+ already = await self.is_bot_in_chat(chat_id)
+ if already:
  log.info("bot_already_in_chat")
  return {"success": True, "already_member": True, "error": None}
- # 尝试加入群聊
+ # 尝试加入
  try:
  await self.add_bot_to_chat(chat_id)
  log.info("bot_joined_chat")
@@ -434,13 +438,12 @@ async def create_feishu_im_client_for_project(project: Project | None = None) ->
  raise ValueError("未配置飞书 IM 集成。请先配置项目级或系统级飞书 App ID / App Secret。")
 class FeishuIMService:
  """Convenience wrapper around `FeishuIMClient` for bot workflows.
- 可选接受 FeishuClient（项目 API）来组合两套认证体系，
- 实现跨 API 的功能（如从工作项获取关联群聊 ID）。
+ 可选组合 FeishuClient（项目 API）以支持工作项关联群聊 ID 查询。
  """
  def __init__(
  self,
  client: FeishuIMClient,
- project_client: FeishuClient | None = None,
+ project_client: "FeishuClient | None" = None,
  ) -> None:
  self.client = client
  self.project_client = project_client
@@ -448,9 +451,26 @@ class FeishuIMService:
  async def create(
  cls,
  project: Project | None = None,
- project_client: FeishuClient | None = None,
+ *,
+ with_project_client: bool = False,
  ) -> FeishuIMService:
+ """创建 FeishuIMService 实例。
+ Args:
+ project: 项目实例（可选）
+ with_project_client: 是否同时创建 FeishuClient（项目 API）
+ """
+ from services.feishu import create_feishu_client_for_project
  client = await create_feishu_im_client_for_project(project)
+ project_client: "FeishuClient | None" = None
+ if with_project_client and project:
+ try:
+ project_client = create_feishu_client_for_project(project)
+ except (ValueError, Exception):
+ logger.warning(
+ "project_client_creation_failed",
+ project_id=str(project.id),
+ exc_info=True,
+ )
  return cls(client, project_client=project_client)
  async def send_card(
  self,
@@ -470,15 +490,16 @@ class FeishuIMService:
  work_item_id: int,
  work_item_type: str = "story",
  ) -> dict[str, Any] | None:
- """从工作项获取关联群聊 ID。
- 通过飞书项目 API 获取工作项详情，从 fields 中查找群聊相关字段。
- 需要 project_client（FeishuClient）支持。
+ """从飞书工作项获取关联群聊 ID。
+ 需要 project_client（FeishuClient）才能调用飞书项目 API。
+ 在工作项的 fields 中搜索包含 "chat" 或 "group" 的字段来定位群聊信息。
  Args:
  project_key: 飞书项目空间 Key
  work_item_id: 工作项 ID
- work_item_type: 工作项类型（story, task, bug 等）
+ work_item_type: 工作项类型（默认 "story"）
  Returns:
- 结构化结果 {"chat_id", "chat_name", "owner_id", "source"} 或 None
+ 成功时返回 {"chat_id": str, "chat_name": str | None, "owner_id": str | None, "source": "work_item_api"}
+ 无关联群聊或失败时返回 None
  """
  log = logger.bind(
  project_key=project_key,
@@ -486,7 +507,7 @@ class FeishuIMService:
  work_item_type=work_item_type,
  )
  if self.project_client is None:
- log.warning("no_project_client", msg="未配置项目 API 客户端，无法获取工作项关联群聊")
+ log.warning("project_client_not_configured")
  return None
  try:
  work_item = await self.project_client.get_work_item(
@@ -498,37 +519,51 @@ class FeishuIMService:
  log.error("get_work_item_failed", exc_info=True)
  return None
  fields = work_item.fields
- log.debug("work_item_fields", available_keys=list(fields.keys))
- # 在 fields 中搜索包含 "chat" 或 "group" 的键
- chat_data: list[dict[str, Any]] | None = None
- chat_field_key: str | None = None
+ log.debug("work_item_fields", field_keys=list(fields.keys))
+ # 在 fields 中搜索群聊相关字段
+ chat_fields: list[tuple[str, Any]] =
  for key, value in fields.items:
- if any(keyword in key.lower for keyword in ("chat", "group", "群聊")):
- if isinstance(value, list) and value:
- chat_data = value
- chat_field_key = key
- break
- if not chat_data:
+ if any(kw in key.lower for kw in ("chat", "group", "群聊")):
+ chat_fields.append((key, value))
+ if not chat_fields:
  log.warning(
  "no_chat_field_found",
  available_fields=list(fields.keys),
- msg="工作项无关联群聊字段",
  )
  return None
- if len(chat_data) > 1:
+ # 取第一个群聊字段
+ field_key, field_value = chat_fields[0]
+ if len(chat_fields) > 1:
  log.info(
- "multiple_chats_found",
- count=len(chat_data),
- field_key=chat_field_key,
- msg="工作项关联多个群聊，取第一个",
+ "multiple_chat_fields_found",
+ count=len(chat_fields),
+ using=field_key,
  )
- first_chat = chat_data[0]
- chat_id = first_chat.get("chat_id") or first_chat.get("id", "")
- chat_name = first_chat.get("name") or first_chat.get("chat_name")
- owner_id = first_chat.get("owner_id") or first_chat.get("owner")
+ # 解析群聊 ID——支持字符串和字典两种形式
+ chat_id: str | None = None
+ chat_name: str | None = None
+ owner_id: str | None = None
+ if isinstance(field_value, str):
+ chat_id = field_value
+ elif isinstance(field_value, dict):
+ chat_id = field_value.get("chat_id") or field_value.get("id")
+ chat_name = field_value.get("chat_name") or field_value.get("name")
+ owner_id = field_value.get("owner_id")
+ elif isinstance(field_value, list) and field_value:
+ # 多个群聊取第一个
+ first = field_value[0]
+ if isinstance(first, str):
+ chat_id = first
+ elif isinstance(first, dict):
+ chat_id = first.get("chat_id") or first.get("id")
+ chat_name = first.get("chat_name") or first.get("name")
+ owner_id = first.get("owner_id")
+ if len(field_value) > 1:
+ log.info("multiple_chats_found", count=len(field_value), using_first=True)
  if not chat_id:
- log.warning("empty_chat_id", raw_chat_data=first_chat)
+ log.warning("chat_id_empty", field_key=field_key, field_value=field_value)
  return None
+ log.info("chat_id_resolved", chat_id=chat_id, chat_name=chat_name)
  return {
  "chat_id": chat_id,
  "chat_name": chat_name,

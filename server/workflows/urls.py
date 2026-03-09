@@ -96,4 +96,10 @@ urlpatterns = router.urls + [
  ActionLogDetailView.as_view,
  name="action-log-detail",
  ),
+ # NodeSubStep list endpoint (nested under node-executions)
+ path(
+ "node-executions/<uuid:node_execution_id>/sub-steps/",
+ NodeSubStepListView.as_view,
+ name="node-execution-sub-steps",
+ ),
 ]
