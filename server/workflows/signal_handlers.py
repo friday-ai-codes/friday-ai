@@ -27,7 +27,7 @@ def handle_sub_step_updated(
  # 从关联的 NodeExecution 获取进度数据和 workflow_execution_id
  from workflows.models.execution import NodeExecution
  try:
- node_exec = NodeExecution.objects.filter(id=node_execution_id).values(
+ node_exec = NodeExecution.objects.filter(id=node_execution_id).values( # type: ignore[attr-defined]
  "sub_step_completed_count", "sub_step_total_count", "workflow_execution_id"
  ).first
  if not node_exec:
