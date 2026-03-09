@@ -72,7 +72,7 @@ class Command(BaseCommand):
  if not app_id:
  try:
  setting = await SystemSetting.objects.aget(key=SettingKeys.FEISHU_APP_ID)
- app_id = setting.value
+ app_id = setting.value or ""
  except SystemSetting.DoesNotExist:
  pass
  if not app_secret:
@@ -81,7 +81,7 @@ class Command(BaseCommand):
  if setting.value and setting.is_encrypted:
  app_secret = decrypt_value(setting.value)
  else:
- app_secret = setting.value
+ app_secret = setting.value or ""
  except SystemSetting.DoesNotExist:
  pass
  if not app_id or not app_secret:

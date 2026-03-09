@@ -37,6 +37,7 @@ class TestFeishuBotWebSocketIntegration:
  with patch("feishu.bot.dispatcher.dispatch_inbound_message", new=AsyncMock) as mock_dispatch:
  client._process_message_sync(data)
  mock_dispatch.assert_awaited_once
+ assert mock_dispatch.await_args is not None
  dispatched_message = mock_dispatch.await_args.args[0]
  assert dispatched_message.message_id == "msg-ws-1"
  assert dispatched_message.mentioned_bot is True

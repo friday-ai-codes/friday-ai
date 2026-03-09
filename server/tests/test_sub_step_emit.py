@@ -9,9 +9,14 @@
 from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+if TYPE_CHECKING:
+ from projects.models import Project
+ from workflows.models.node import WorkflowNode
+ from workflows.models.workflow import Workflow
+ from workflows.nodes.base import ExecutionContext
 from workflows.models.execution import (
  NodeExecution,
  NodeSubStep,
