@@ -124,7 +124,8 @@ module = [
  "*.permissions",
 ]
 # DRF 视图/序列化器/权限的特殊模式
-disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "list-item", "return-value"]
+# type-var: adrf async @action 方法不满足 rest_framework-stubs 的 _View bound
+disable_error_code = ["attr-defined", "arg-type", "assignment", "union-attr", "list-item", "return-value", "type-var"]
 [[tool.mypy.overrides]]
 module = [
  "*.models",

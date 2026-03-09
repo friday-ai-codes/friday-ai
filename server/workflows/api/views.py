@@ -1007,7 +1007,10 @@ class WorkflowTriggerViewSet(ModelViewSet):
 # NodeSubStep View
 # =============================================================================
 class NodeSubStepListView(APIView):
- """节点子步骤列表视图（只读）。"""
+ """列出指定 NodeExecution 的所有子步骤（只读）。
+ GET /api/node-executions/{node_execution_id}/sub-steps/
+ 不分页，直接返回全部子步骤（数量通常少于 20）。
+ """
  permission_classes = [IsAuthenticated]
  async def get(self, request: Request, node_execution_id: uuid.UUID) -> Response:
  """获取指定 NodeExecution 的所有子步骤，按 step_order 排序。"""
@@ -1321,28 +1324,3 @@ class NodeExecutionActionView(APIView):
  "status": "success",
  "message": "已手动触发唤醒，工作流继续执行",
  })
-# =============================================================================
-# NodeSubStep Views
-# =============================================================================
-class NodeSubStepListView(APIView):
- """列出指定 NodeExecution 的所有子步骤（只读）。
- GET /api/node-executions/{node_execution_id}/sub-steps/
- 不分页，直接返回全部子步骤（数量通常少于 20）。
- """
- permission_classes = [IsAuthenticated]
- async def get(self, request: Request, node_execution_id: uuid.UUID) -> Response:
- """获取指定节点执行的子步骤列表。"""
- node_execution = await NodeExecution.objects.filter(id=node_execution_id).afirst
- if not node_execution:
- return Response(
- {"detail": "节点执行不存在"},
- status=status.HTTP_404_NOT_FOUND,
- )
- sub_steps = [
- s
- async for s in NodeSubStep.objects.filter(
- node_execution_id=node_execution_id
- ).order_by("step_order")
- ]
- serializer = NodeSubStepSerializer(sub_steps, many=True)
- return Response(serializer.data)
