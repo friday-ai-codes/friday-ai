@@ -8,6 +8,9 @@ from datetime import timedelta
 from pathlib import Path
 import environ
 from django.core.exceptions import ImproperlyConfigured
+# adrf 0.1.12 兼容性补丁：替换已弃用的 asyncio.iscoroutinefunction
+from core.patches import patch_asyncio_iscoroutinefunction
+patch_asyncio_iscoroutinefunction
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve.parent.parent
 DATA_DIR = BASE_DIR / "data"
