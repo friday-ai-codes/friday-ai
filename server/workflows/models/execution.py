@@ -369,6 +369,13 @@ class NodeExecution(models.Model):
  # 容器执行信息（用于 Docker 节点）
  container_id = models.CharField(max_length=100, blank=True, default="")
  container_logs = models.TextField(blank=True, default="")
+ # 子步骤进度缓存（由 emit_sub_step 同步更新）
+ sub_step_completed_count = models.IntegerField(
+ default=0, verbose_name="已完成子步骤数"
+ )
+ sub_step_total_count = models.IntegerField(
+ default=0, verbose_name="子步骤总数"
+ )
  # 时间戳
  created_at = models.DateTimeField(auto_now_add=True)
  started_at = models.DateTimeField(null=True, blank=True)
