@@ -297,6 +297,106 @@ class FeishuIMClient:
  padding_len = decrypted[-1]
  decrypted = decrypted[:-padding_len]
  return json.loads(decrypted.decode("utf-8"))
+ async def get_chat_members(self, chat_id: str) -> list[dict[str, Any]]:
+ """获取群聊成员列表。
+ Args:
+ chat_id: 群聊 ID
+ Returns:
+ 成员列表，每项包含 member_id、member_id_type、name 等
+ Raises:
+ FeishuIMError: API 调用失败
+ """
+ token = await self.get_tenant_access_token
+ log = logger.bind(chat_id=chat_id)
+ async with httpx.AsyncClient as client:
+ response = await client.get(
+ f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members",
+ params={"member_id_type": "app_id"},
+ headers={"Authorization": f"Bearer {token}"},
+ )
+ data = response.json
+ code = data.get("code", -1)
+ if code != 0:
+ log.error("get_chat_members_failed", response=data)
+ raise FeishuIMError(
+ f"获取群聊成员失败: {data.get('msg', data)}", code=code
+ )
+ items: list[dict[str, Any]] = data.get("data", {}).get("items", )
+ log.info("chat_members_fetched", count=len(items))
+ return items
+ async def is_bot_in_chat(self, chat_id: str) -> bool:
+ """检查 Bot 是否已在指定群聊中。
+ 通过获取群聊成员列表并检查 app_id 是否在其中。
+ 出现异常时降级返回 False。
+ Args:
+ chat_id: 群聊 ID
+ Returns:
+ Bot 是否在群聊中
+ """
+ try:
+ members = await self.get_chat_members(chat_id)
+ return any(m.get("member_id") == self.app_id for m in members)
+ except Exception:
+ logger.warning("is_bot_in_chat_check_failed", chat_id=chat_id, exc_info=True)
+ return False
+ async def add_bot_to_chat(self, chat_id: str) -> dict[str, Any]:
+ """将 Bot 加入指定群聊。
+ Args:
+ chat_id: 群聊 ID
+ Returns:
+ API 响应数据
+ Raises:
+ RateLimitError: 触发 rate limit
+ FeishuIMError: API 调用失败（包括已是成员 code=10007 等）
+ """
+ token = await self.get_tenant_access_token
+ log = logger.bind(chat_id=chat_id, app_id=self.app_id)
+ async with httpx.AsyncClient as client:
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/im/v1/chats/{chat_id}/members",
+ params={"member_id_type": "app_id"},
+ headers={
+ "Authorization": f"Bearer {token}",
+ "Content-Type": "application/json",
+ },
+ json={"id_list": [self.app_id]},
+ )
+ data = response.json
+ code = data.get("code", -1)
+ if code == 99991400 or "rate limit" in str(data).lower:
+ log.warning("add_bot_rate_limited", response=data)
+ raise RateLimitError(
+ f"Rate limit exceeded: {data.get('msg', data)}", code=code
+ )
+ if code != 0:
+ log.error("add_bot_to_chat_failed", response=data)
+ raise FeishuIMError(
+ f"Bot 加入群聊失败: {data.get('msg', data)}", code=code
+ )
+ log.info("bot_added_to_chat")
+ return data.get("data", {})
+ async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
+ """确保 Bot 在指定群聊中（幂等 + 降级）。
+ 先检查 Bot 是否已在群内，若不在则尝试加入。
+ 权限受限时不抛异常，而是返回结构化错误。
+ Args:
+ chat_id: 群聊 ID
+ Returns:
+ 结构化结果: {"success": bool, "already_member": bool, "error": str | None}
+ """
+ log = logger.bind(chat_id=chat_id, app_id=self.app_id)
+ # 先检查是否已在群内
+ if await self.is_bot_in_chat(chat_id):
+ log.info("bot_already_in_chat")
+ return {"success": True, "already_member": True, "error": None}
+ # 尝试加入群聊
+ try:
+ await self.add_bot_to_chat(chat_id)
+ log.info("bot_joined_chat")
+ return {"success": True, "already_member": False, "error": None}
+ except FeishuIMError as e:
+ log.warning("bot_join_chat_failed", error=str(e), code=e.code)
+ return {"success": False, "already_member": False, "error": str(e)}
 async def _aget_system_feishu_credentials -> tuple[str, str] | None:
  """Load system-level Feishu IM credentials if configured."""
  app_id_setting = await SystemSetting.objects.filter(key=SettingKeys.FEISHU_APP_ID).afirst
@@ -347,3 +447,6 @@ class FeishuIMService:
  return await self.client.send_card(receive_id=receive_id, receive_id_type=receive_id_type, card=card)
  async def update_card(self, message_id: str, card: dict[str, Any]) -> bool:
  return await self.client.update_card(message_id=message_id, card=card)
+ async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
+ """确保 Bot 在指定群聊中（委托给 client）。"""
+ return await self.client.ensure_bot_in_chat(chat_id)
