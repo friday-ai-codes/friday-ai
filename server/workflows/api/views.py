@@ -253,8 +253,8 @@ class WorkflowViewSet(ModelViewSet):
  log.info("manual_trigger_complete", execution_id=str(execution.id))
  return Response(
  {
- "workflow_id": str(execution.workflow.id),
- "workflow_name": execution.workflow.name,
+ "workflow_id": str(execution.workflow_id),
+ "workflow_name": await sync_to_async(lambda: execution.workflow.name),
  "execution_id": str(execution.id),
  "status": execution.status,
  "triggered_at": execution.created_at.isoformat,
@@ -274,8 +274,10 @@ class WorkflowViewSet(ModelViewSet):
  new_workflow = await workflow.aclone(new_project=new_project, new_name=new_name)
  new_workflow.created_by = request.user
  await new_workflow.asave
+ # WorkflowSerializer.data 触发 FK 懒加载，需要在线程中执行
+ data = await sync_to_async(lambda: WorkflowSerializer(new_workflow).data)
  return Response(
- WorkflowSerializer(new_workflow).data,
+ data,
  status=status.HTTP_201_CREATED,
  )
  @action(detail=True, methods=["get"])
@@ -303,8 +305,10 @@ class WorkflowViewSet(ModelViewSet):
  project=project,
  created_by=request.user,
  )
+ # WorkflowSerializer.data 触发 FK 懒加载，需要在线程中执行
+ data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)
  return Response(
- WorkflowSerializer(workflow).data,
+ data,
  status=status.HTTP_201_CREATED,
  )
  except Exception as e:
@@ -452,8 +456,10 @@ class WorkflowViewSet(ModelViewSet):
  description=description,
  created_by=request.user,
  )
+ # WorkflowSerializer.data 触发 FK 懒加载，需要在线程中执行
+ data = await sync_to_async(lambda: WorkflowSerializer(workflow).data)
  return Response(
- WorkflowSerializer(workflow).data,
+ data,
  status=status.HTTP_201_CREATED,
  )
  except ValueError as e:
