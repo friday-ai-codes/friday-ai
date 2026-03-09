@@ -80,3 +80,29 @@ export interface NodeCost {
  totalTokens: number
  models: Record<string, CostBreakdownNodeModel>
 }
+// ============================================================================
+// 子步骤类型（Phase: 前端集成）
+// ============================================================================
+/**
+ * 子步骤进度摘要（折叠状态显示 "2/5 steps"）
+ */
+export interface SubStepProgress {
+ completed: number
+ total: number
+}
+/**
+ * 节点执行子步骤
+ * GET /node-executions/{id}/sub-steps/
+ * WebSocket sub_step.update 事件数据
+ */
+export interface SubStep {
+ id: string
+ name: string
+ step_type: string
+ step_order: number
+ status: 'pending' | 'running' | 'completed' | 'failed'
+ input_data: Record<string, any>
+ output_data: Record<string, any>
+ started_at: string | null
+ completed_at: string | null
+}

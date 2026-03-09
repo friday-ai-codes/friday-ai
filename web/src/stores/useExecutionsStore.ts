@@ -2,6 +2,7 @@ import { useIntervalFn, useWebSocket } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '~/api/client'
+import type { SubStep } from '~/types/execution'
 export interface NodeExecution {
  id: string
  node: string
@@ -20,6 +21,7 @@ export interface NodeExecution {
  created_at: string
  started_at: string | null
  completed_at: string | null
+ sub_step_progress: { completed: number; total: number } | null
 }
 export interface WorkflowDefinitionNode {
  id: string
@@ -95,6 +97,8 @@ export const useExecutionsStore = defineStore('executions', => {
  const timelineData = ref<TimelineData | null>(null)
  const loading = ref(false)
  const error = ref<string | null>(null)
+ // 子步骤缓存（key: node_execution_id）
+ const subSteps = ref<Record<string, SubStep>>({})
  // WebSocket connection
  const wsUrl = ref<string | undefined>(undefined)
  const { data: wsData, close: wsClose, open: wsOpen, status: wsStatus } = useWebSocket(wsUrl, {
@@ -315,6 +319,40 @@ export const useExecutionsStore = defineStore('executions', => {
  if (event === 'execution_completed' || event === 'execution_failed') {
  fetchExecution(execution_id)
  }
+ // 处理子步骤实时更新
+ if (data.event === 'sub_step.update') {
+ const { node_execution_id, data: stepData } = data
+ if (!subSteps.value[node_execution_id]) {
+ subSteps.value[node_execution_id] =
+ }
+ const steps = subSteps.value[node_execution_id]
+ const existingIdx = steps.findIndex(s => s.id === stepData.id)
+ if (existingIdx >= 0) {
+ steps[existingIdx] = stepData
+ }
+ else {
+ steps.push(stepData)
+ steps.sort((a: SubStep, b: SubStep) => a.step_order - b.step_order)
+ }
+ // 更新 NodeExecution 的 sub_step_progress
+ if (stepData.progress && currentExecution.value) {
+ const nodeExec = currentExecution.value.node_executions.find(
+ ne => ne.id === node_execution_id,
+ )
+ if (nodeExec) {
+ nodeExec.sub_step_progress = stepData.progress
+ }
+ }
+ }
+ }
+ async function fetchSubSteps(nodeExecutionId: string) {
+ try {
+ const data = await api.get<SubStep>(`/node-executions/${nodeExecutionId}/sub-steps/`)
+ subSteps.value[nodeExecutionId] = data
+ }
+ catch {
+ // 静默失败，子步骤是辅助信息
+ }
  }
  return {
  executions,
@@ -338,5 +376,7 @@ export const useExecutionsStore = defineStore('executions', => {
  startAutoRefresh,
  stopAutoRefresh,
  wsStatus,
+ subSteps,
+ fetchSubSteps,
  }
 })
