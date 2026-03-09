@@ -34,6 +34,16 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "retrieve":
  return RepositoryWithProjectsSerializer
  return RepositorySerializer
+ async def aretrieve(self, request, *args, **kwargs):
+ """显式覆盖 aretrieve 确保使用包含 projects 字段的详情 serializer。
+ adrf 的 aretrieve 默认走 get_serializer_class，但 action 判断在 async
+ 上下文中可能不正确，导致使用了基础 RepositorySerializer 而非
+ RepositoryWithProjectsSerializer。此处显式指定 serializer 以确保正确性。
+ """
+ instance = await self.aget_object
+ serializer = RepositoryWithProjectsSerializer(instance)
+ data = await sync_to_async(lambda: serializer.data)
+ return Response(data)
  async def acreate(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)

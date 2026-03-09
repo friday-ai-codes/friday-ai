@@ -1,4 +1,5 @@
 """Settings views."""
+from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.response import Response
 from adrf.views import APIView
@@ -23,7 +24,7 @@ class SettingsListCreateView(APIView):
  return Response(serializer.data)
  async def post(self, request):
  serializer = SystemSettingCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  key = serializer.validated_data["key"]
  # Check if already exists
  if await SystemSetting.objects.filter(key=key).aexists:
@@ -61,7 +62,7 @@ class SettingsDetailView(APIView):
  return Response(SystemSettingSerializer(setting).data)
  async def put(self, request, key):
  serializer = SystemSettingUpdateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
  setting, created = await SystemSetting.objects.aget_or_create(key=key)
  # Determine if should encrypt
  should_encrypt = serializer.validated_data.get("is_encrypted")
