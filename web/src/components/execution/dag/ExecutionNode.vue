@@ -6,10 +6,11 @@
  * 显示图标 + 名称 + 状态色边框 + 耗时标签 + 瓶颈标记 + AI 成本徽章。
  */
 import { Handle, Position } from '@vue-flow/core'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import type { ExecutionNodeData } from './composables/useExecutionDag'
+import type { SubStep } from '~/types/execution'
 import Badge from '~/components/ui/badge/Badge.vue'
 import {
  Tooltip,
@@ -17,6 +18,8 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
+import SubStepTimeline from './SubStepTimeline.vue'
+import { useExecutionsStore } from '~/stores/useExecutionsStore'
 const props = defineProps<{
  id: string
  data: ExecutionNodeData
@@ -82,6 +85,31 @@ function formatTokenCount(count: number): string {
  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
  return String(count)
+}
+// 子步骤展开/折叠
+const store = useExecutionsStore
+const expanded = ref(false)
+const nodeSubSteps = computed<SubStep>( => {
+ const neId = props.data.nodeExecution?.id
+ if (!neId) return
+ return store.subSteps[neId] ??
+})
+const hasSubSteps = computed( =>
+ props.data.isAINode && props.data.subStepProgress != null && props.data.subStepProgress.total > 0,
+)
+const progressText = computed( => {
+ const p = props.data.subStepProgress
+ if (!p) return ''
+ return `${p.completed}/${p.total} steps`
+})
+function toggleExpand {
+ expanded.value = !expanded.value
+ if (expanded.value && nodeSubSteps.value.length === 0 && props.data.nodeExecution?.id) {
+ store.fetchSubSteps(props.data.nodeExecution.id)
+ }
+}
+function handleSubStepClick(stepId: string) {
+ props.data.onSubStepClick?.(props.data.nodeExecution?.id ?? '', stepId)
 }
 </script>
 <template>
@@ -167,6 +195,24 @@ function formatTokenCount(count: number): string {
  >
  {{ data.bottleneckLevel === 'critical' ? '瓶颈 #1': '瓶颈' }}
  </Badge>
+ </div>
+ </div>
+ <!-- 子步骤展开区域（仅 AI 节点且有进度） -->
+ <div v-if="hasSubSteps" class="mt-1.5 pt-1.5 border-t border-border/30">
+ <button
+ class="flex items-center gap-1.5 w-full text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+ @click.stop="toggleExpand"
+ >
+ <span
+ class="icon-[lucide--chevron-right] w-3 transition-transform duration-200":class="{ 'rotate-90': expanded }"
+ />
+ <span class="tabular-nums">{{ progressText }}</span>
+ </button>
+ <!-- 展开的时间线 -->
+ <div v-if="expanded" class="overflow-hidden">
+ <SubStepTimeline:steps="nodeSubSteps"
+ @step-click="handleSubStepClick"
+ />
  </div>
  </div>
  </div>
