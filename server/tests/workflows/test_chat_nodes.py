@@ -173,3 +173,58 @@ async def test_join_group_chat_permission_denied -> None:
  assert result.error is not None
  assert "权限不足" in (result.error or "")
  assert result.next_handle == "error"
+# ==================== GroupChatQuestionNode 测试 ====================
+@pytest.mark.asyncio
+async def test_chat_question_node_returns_waiting_event -> None:
+ """Test 6: GroupChatQuestionNode 执行后返回 waiting_event 状态。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ mock_execution = MagicMock
+ mock_execution.workflow = MagicMock
+ mock_execution.workflow.project = MagicMock
+ ctx = _make_context(
+ config={
+ "chat_id": "oc_question_test",
+ "question": "选择哪个方案？",
+ "options": ["方案 A", "方案 B"],
+ "work_item_name": "",
+ },
+ workflow_execution=mock_execution,
+ )
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_12345")
+ with patch(
+ "workflows.nodes.integrations.chat_question.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "workflows.nodes.integrations.chat_question._get_feishu_credentials",
+ return_value=("app_id", "app_secret"),
+ ):
+ result = await node.execute(ctx)
+ assert result.status == "waiting_event"
+ assert result.output["message_id"] == "msg_12345"
+ assert result.output["question"] == "选择哪个方案？"
+ assert result.output["chat_id"] == "oc_question_test"
+ # 确认 send_card 被调用
+ mock_im_client.send_card.assert_called_once
+ call_kwargs = mock_im_client.send_card.call_args[1]
+ assert call_kwargs["receive_id"] == "oc_question_test"
+ assert call_kwargs["receive_id_type"] == "chat_id"
+@pytest.mark.asyncio
+async def test_chat_question_node_missing_question -> None:
+ """缺少 question 配置时返回 failed。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ ctx = _make_context(config={"chat_id": "oc_test"})
+ result = await node.execute(ctx)
+ assert result.status == "failed"
+ assert result.error is not None
+@pytest.mark.asyncio
+async def test_chat_question_node_missing_chat_id -> None:
+ """缺少 chat_id 配置时返回 failed。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ ctx = _make_context(config={"question": "问题"})
+ result = await node.execute(ctx)
+ assert result.status == "failed"
+ assert result.error is not None
