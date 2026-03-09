@@ -66,12 +66,12 @@ class GoogleProvider:
  if system_instruction:
  config.system_instruction = system_instruction
  if genai_tools:
- config.tools = genai_tools
+ config.tools = genai_tools # type: ignore[assignment] # google-genai SDK 联合类型过宽
  # 禁用自动函数调用，由 AgentLoop 控制
  config.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
  response = await self.client.aio.models.generate_content(
  model=self.model,
- contents=contents,
+ contents=contents, # type: ignore[arg-type] # list[Content] | str 实际兼容
  config=config,
  )
  result = _parse_genai_response(response)
@@ -103,7 +103,7 @@ class GoogleProvider:
  if system_instruction:
  config.system_instruction = system_instruction
  if genai_tools:
- config.tools = genai_tools
+ config.tools = genai_tools # type: ignore[assignment] # google-genai SDK 联合类型过宽
  config.automatic_function_calling = types.AutomaticFunctionCallingConfig(disable=True)
  text_parts: list[str] =
  tool_calls: list[ToolCall] =
@@ -111,7 +111,7 @@ class GoogleProvider:
  usage: dict[str, int] = {}
  async for chunk in await self.client.aio.models.generate_content_stream(
  model=self.model,
- contents=contents,
+ contents=contents, # type: ignore[arg-type] # list[Content] | str 实际兼容
  config=config,
  ):
  # 安全遍历 chunk 中的 parts，避免 ValueError
@@ -217,7 +217,7 @@ def _convert_messages_to_genai(
  if parts:
  contents.append(types.Content(role=genai_role, parts=parts))
  # 如果只有一条简单消息，直接传字符串
- if len(contents) == 1 and len(contents[0].parts) == 1:
+ if len(contents) == 1 and contents[0].parts and len(contents[0].parts) == 1:
  part = contents[0].parts[0]
  if hasattr(part, "text") and part.text:
  return system_instruction, part.text

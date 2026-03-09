@@ -3,9 +3,12 @@ LLM Provider abstraction for the Agent framework.
 Defines the Protocol for LLM providers and configuration dataclass,
 enabling multi-provider support without changing agent loop code.
 """
+from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+if TYPE_CHECKING:
+ from agents.llm.providers import ProviderType
 from agents.llm.types import LLMResponse
 from agents.tools.base import ToolDefinition
 class LLMProvider(Protocol):
