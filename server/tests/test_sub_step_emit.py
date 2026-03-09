@@ -2,7 +2,7 @@
 覆盖 和 需求：
 - _init_sub_steps 批量创建 pending 记录
 - emit_sub_step 推进状态 + 发送 signal
-- signal handler 广播 sub_step.update 到 MONITOR_GROUP
+- signal handler 广播 sub_step.update 到 execution_{id} 组
 - NodeExecution 进度字段更新
 - NodeExecutionSerializer/NodeExecutionListSerializer 返回 sub_step_progress
 """
@@ -110,14 +110,14 @@ def test_signal_triggers_broadcast(node_execution: NodeExecution) -> None:
  )
  mock_channel_layer.group_send.assert_called_once
  call_args = mock_channel_layer.group_send.call_args
- assert call_args[0][0] == "monitor"
+ assert call_args[0][0] == f"execution_{node_execution.workflow_execution_id}"
  msg = call_args[0][1]
- assert msg["type"] == "monitor.event"
- assert msg["data"]["event"] == "sub_step.update"
- assert msg["data"]["node_execution_id"] == str(node_execution.id)
- assert msg["data"]["data"]["step_type"] == "analyze"
- assert msg["data"]["data"]["status"] == "running"
- assert msg["data"]["data"]["name"] == "分析需求"
+ assert msg["type"] == "workflow.event"
+ assert msg["event"] == "sub_step.update"
+ assert msg["node_execution_id"] == str(node_execution.id)
+ assert msg["data"]["step_type"] == "analyze"
+ assert msg["data"]["status"] == "running"
+ assert msg["data"]["name"] == "分析需求"
 @pytest.mark.django_db
 def test_signal_handler_skips_without_channel_layer -> None:
  """channel_layer 为 None 时 handler 静默跳过。"""
