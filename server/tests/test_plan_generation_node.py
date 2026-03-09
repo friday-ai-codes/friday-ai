@@ -39,8 +39,8 @@ def _make_context(
  mock_execution.workflow = mock_workflow
  mock_execution.triggered_by = MagicMock(id=1)
  ctx = ExecutionContext(
- execution_id="exec-test-001",
- node_id="node-plan-gen-001",
+ execution_id="00000000-0000-0000-0000-000000000001",
+ node_id="00000000-0000-0000-0000-000000000011",
  node_config=config,
  input_data=input_data or {},
  workflow_context={},
@@ -74,14 +74,27 @@ class TestAIPlanGenerationNode:
  @patch("workflows.nodes.ai.base_agent.AgentSession.objects")
  @patch("workflows.nodes.ai.base_agent.AgentLoop")
  @patch("services.claude_config.get_claude_config")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_provider")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_user")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_project")
  async def test_execute_happy_path(
  self,
+ mock_get_project: MagicMock,
+ mock_get_user: MagicMock,
+ mock_get_provider: MagicMock,
  mock_get_config: MagicMock,
  mock_loop_cls: MagicMock,
  mock_session_objects: MagicMock,
  ) -> None:
  """AgentLoop returns a valid plan in metadata -> completed with plan output."""
  # Arrange
+ mock_project = MagicMock
+ mock_project.id = 1
+ mock_project.feishu_doc_folder_token = "folder_token_123"
+ mock_get_project.return_value = mock_project
+ mock_user = MagicMock(id=1)
+ mock_get_user.return_value = mock_user
+ mock_get_provider.return_value = MagicMock
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"
@@ -107,13 +120,26 @@ class TestAIPlanGenerationNode:
  @patch("workflows.nodes.ai.base_agent.AgentSession.objects")
  @patch("workflows.nodes.ai.base_agent.AgentLoop")
  @patch("services.claude_config.get_claude_config")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_provider")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_user")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_project")
  async def test_execute_plan_from_verify_tool(
  self,
+ mock_get_project: MagicMock,
+ mock_get_user: MagicMock,
+ mock_get_provider: MagicMock,
  mock_get_config: MagicMock,
  mock_loop_cls: MagicMock,
  mock_session_objects: MagicMock,
  ) -> None:
  """AgentResult.output contains verify_plan tool call -> map_output extracts plan."""
+ mock_project = MagicMock
+ mock_project.id = 1
+ mock_project.feishu_doc_folder_token = "folder_token_123"
+ mock_get_project.return_value = mock_project
+ mock_user = MagicMock(id=1)
+ mock_get_user.return_value = mock_user
+ mock_get_provider.return_value = MagicMock
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"

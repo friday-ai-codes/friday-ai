@@ -35,8 +35,8 @@ def _make_plan_gen_context(
  mock_execution.workflow = mock_workflow
  mock_execution.triggered_by = MagicMock(id=1)
  return ExecutionContext(
- execution_id="exec-chain-001",
- node_id="node-plan-gen-001",
+ execution_id="00000000-0000-0000-0000-000000000003",
+ node_id="00000000-0000-0000-0000-000000000013",
  node_config={
  "user_prompt": user_prompt,
  "model": "claude-sonnet-4-20250514",
@@ -60,8 +60,8 @@ def _make_approval_context(
  mock_execution.workflow = mock_workflow
  mock_execution.triggered_by = MagicMock(id=1)
  return ExecutionContext(
- execution_id="exec-chain-001",
- node_id="node-approval-001",
+ execution_id="00000000-0000-0000-0000-000000000003",
+ node_id="00000000-0000-0000-0000-000000000014",
  node_config={"chat_id": ""},
  input_data=input_data,
  workflow_context={},
@@ -74,8 +74,8 @@ def _make_coding_context(
 ) -> ExecutionContext:
  """Build ExecutionContext for AICodingNode."""
  return ExecutionContext(
- execution_id="exec-chain-001",
- node_id="node-coding-001",
+ execution_id="00000000-0000-0000-0000-000000000003",
+ node_id="00000000-0000-0000-0000-000000000015",
  node_config={
  "polling_interval": 0,
  "timeout_seconds": 10,
@@ -93,8 +93,8 @@ def _make_review_context(
 ) -> ExecutionContext:
  """Build ExecutionContext for AICodeReviewNode."""
  return ExecutionContext(
- execution_id="exec-chain-001",
- node_id="node-review-001",
+ execution_id="00000000-0000-0000-0000-000000000003",
+ node_id="00000000-0000-0000-0000-000000000016",
  node_config={
  "model": "claude-sonnet-4-20250514",
  "chat_id": "",
@@ -204,6 +204,9 @@ class TestSpecializedChainE2E:
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.AgentLoop") as mock_loop_cls,
  patch("services.claude_config.get_claude_config", return_value=mock_config_obj),
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
+ patch.object(plan_gen_node, "_get_provider", new_callable=AsyncMock, return_value=MagicMock),
  ):
  mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
  loop_instance = MagicMock
@@ -222,9 +225,16 @@ class TestSpecializedChainE2E:
  }
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
- with patch(
+ # 模拟 WorkflowExecution DB 查询，避免 MagicMock.id 导致非法 UUID
+ mock_we_instance = MagicMock
+ mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
+ with (
+ patch("workflows.models.WorkflowExecution.objects") as mock_we_objects,
+ patch(
  "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project"
- ) as mock_doc:
+ ) as mock_doc,
+ ):
+ mock_we_objects.select_related.return_value.aget = AsyncMock(return_value=mock_we_instance)
  mock_doc_client = MagicMock
  mock_doc_client.create_document = AsyncMock(
  return_value={"url": "https://feishu.cn/docs/test", "document_id": "doc1"}
@@ -396,6 +406,9 @@ class TestSpecializedChainE2E:
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.AgentLoop") as mock_loop_cls,
  patch("services.claude_config.get_claude_config", return_value=mock_config_obj),
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
+ patch.object(plan_gen_node, "_get_provider", new_callable=AsyncMock, return_value=MagicMock),
  ):
  mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
  loop_instance = MagicMock
@@ -414,9 +427,16 @@ class TestSpecializedChainE2E:
  }
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
- with patch(
+ # 模拟 WorkflowExecution DB 查询，避免 MagicMock.id 导致非法 UUID
+ mock_we_instance = MagicMock
+ mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
+ with (
+ patch("workflows.models.WorkflowExecution.objects") as mock_we_objects,
+ patch(
  "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project"
- ) as mock_doc:
+ ) as mock_doc,
+ ):
+ mock_we_objects.select_related.return_value.aget = AsyncMock(return_value=mock_we_instance)
  mock_doc_client = MagicMock
  mock_doc_client.create_document = AsyncMock(
  return_value={"url": "https://feishu.cn/docs/chain-test", "document_id": "doc-chain"}

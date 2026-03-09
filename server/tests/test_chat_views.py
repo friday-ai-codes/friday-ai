@@ -12,6 +12,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import AsyncClient
 from rest_framework_simplejwt.tokens import RefreshToken
+from system.models import SettingKeys, SystemSetting
 User = get_user_model
 # ---------------------------------------------------------------------------
 # Mock 数据结构
@@ -198,7 +199,11 @@ class TestChatCompletionsView:
 class TestModelsView:
  """ModelsView GET 端点 HTTP 集成测试。"""
  async def test_unauthenticated_returns_401(self):
- """未认证 GET 请求返回 401 Unauthorized。"""
+ """未认证 GET 请求返回 401 Unauthorized（鉴权开关开启时）。"""
+ # ChatAuthPermission 默认放行；需要开启鉴权开关才能检查认证
+ await SystemSetting.objects.acreate(
+ key=SettingKeys.CHAT_AUTH_ENABLED, value="true"
+ )
  client = AsyncClient
  resp = await client.get(MODELS_URL)
  assert resp.status_code == 401
