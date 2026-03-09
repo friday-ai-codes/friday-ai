@@ -11,6 +11,8 @@ import pytest
 from rest_framework import status
 from projects.models import Project
 from workflows.models import (
+ NodeExecution,
+ NodeSubStep,
  Workflow,
  WorkflowEdge,
  WorkflowExecution,
@@ -474,115 +476,138 @@ class TestTimeline:
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_404_NOT_FOUND
 # ============================================================================
-# NodeSubStep API Tests (Phase)
+# NodeSubStep API Tests
 # ============================================================================
 @pytest.mark.django_db
 class TestNodeSubStepAPI:
  """Tests for GET /api/node-executions/{id}/sub-steps/ endpoint."""
  @pytest.fixture
- def sub_step_setup(self, api_workflow):
- """创建 NodeExecution 和 NodeSubStep 测试数据。"""
- from workflows.models import NodeExecution, NodeSubStep, SubStepStatus
+ def sub_step_data(self, api_project, user):
+ """创建带子步骤的 NodeExecution 测试数据。"""
+ workflow = Workflow.objects.create(
+ name="SubStep Test Workflow",
+ project=api_project,
+ created_by=user,
+ )
  node = WorkflowNode.objects.create(
- workflow=api_workflow,
+ workflow=workflow,
  node_type="ai_coding",
- name="AI Coding",
+ name="AI Node",
  position_x=100,
  position_y=100,
  )
  execution = WorkflowExecution.objects.create(
- workflow=api_workflow,
+ workflow=workflow,
  trigger_type="manual",
+ triggered_by=user,
  )
- node_exec = NodeExecution.objects.create(
+ node_execution = NodeExecution.objects.create(
  workflow_execution=execution,
  node=node,
  )
- # 创建 3 个子步骤（故意乱序创建以验证排序）
+ # 创建三个子步骤（乱序创建，验证排序）
  sub3 = NodeSubStep.objects.create(
- node_execution=node_exec,
+ node_execution=node_execution,
  name="代码生成",
  step_type="code_generation",
  step_order=3,
- status=SubStepStatus.PENDING,
+ status="completed",
+ input_data={"prompt": "生成代码"},
+ output_data={"code": "print('hello')"},
  )
  sub1 = NodeSubStep.objects.create(
- node_execution=node_exec,
- name="分析需求",
+ node_execution=node_execution,
+ name="思考分析",
  step_type="thinking",
  step_order=1,
- status=SubStepStatus.COMPLETED,
- input_data={"prompt": "分析任务"},
- output_data={"analysis": "需要修改 main.py"},
+ status="completed",
+ input_data={"context": "分析需求"},
+ output_data={"analysis": "需要生成Python代码"},
  )
  sub2 = NodeSubStep.objects.create(
- node_execution=node_exec,
+ node_execution=node_execution,
  name="调用工具",
  step_type="tool_call",
  step_order=2,
- status=SubStepStatus.RUNNING,
+ status="running",
  )
- return node_exec, [sub1, sub2, sub3]
- def test_sub_steps_list_returns_200(self, authenticated_client, sub_step_setup):
- """GET /api/node-executions/{id}/sub-steps/ 返回 200 + 子步骤列表。"""
- node_exec, _ = sub_step_setup
- url = f"/api/node-executions/{node_exec.id}/sub-steps/"
+ return {
+ "node_execution": node_execution,
+ "sub_steps": [sub1, sub2, sub3],
+ }
+ def test_list_sub_steps(self, authenticated_client, sub_step_data):
+ """GET /api/node-executions/{id}/sub-steps/ 返回子步骤列表。"""
+ ne = sub_step_data["node_execution"]
+ url = f"/api/node-executions/{ne.id}/sub-steps/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_200_OK
  assert len(response.data) == 3
- def test_sub_steps_ordered_by_step_order(self, authenticated_client, sub_step_setup):
- """响应按 step_order 排序。"""
- node_exec, _ = sub_step_setup
- url = f"/api/node-executions/{node_exec.id}/sub-steps/"
+ def test_sub_steps_ordering(self, authenticated_client, sub_step_data):
+ """子步骤按 step_order 排序返回。"""
+ ne = sub_step_data["node_execution"]
+ url = f"/api/node-executions/{ne.id}/sub-steps/"
  response = authenticated_client.get(url)
- assert response.status_code == status.HTTP_200_OK
- orders = [item["step_order"] for item in response.data]
- assert orders == [1, 2, 3]
- assert response.data[0]["name"] == "分析需求"
+ assert response.data[0]["step_order"] == 1
+ assert response.data[0]["name"] == "思考分析"
+ assert response.data[1]["step_order"] == 2
  assert response.data[1]["name"] == "调用工具"
+ assert response.data[2]["step_order"] == 3
  assert response.data[2]["name"] == "代码生成"
- def test_sub_steps_contains_all_fields(self, authenticated_client, sub_step_setup):
+ def test_sub_step_full_fields(self, authenticated_client, sub_step_data):
  """响应包含全部字段。"""
- node_exec, _ = sub_step_setup
- url = f"/api/node-executions/{node_exec.id}/sub-steps/"
+ ne = sub_step_data["node_execution"]
+ url = f"/api/node-executions/{ne.id}/sub-steps/"
  response = authenticated_client.get(url)
- assert response.status_code == status.HTTP_200_OK
+ step = response.data[0]
  expected_fields = {
  "id", "name", "step_type", "step_order", "status",
  "input_data", "output_data", "started_at", "completed_at",
  }
- for item in response.data:
- assert set(item.keys) == expected_fields
- def test_sub_steps_404_for_nonexistent(self, authenticated_client):
+ assert set(step.keys) == expected_fields
+ def test_sub_step_data_values(self, authenticated_client, sub_step_data):
+ """响应数据值正确。"""
+ ne = sub_step_data["node_execution"]
+ url = f"/api/node-executions/{ne.id}/sub-steps/"
+ response = authenticated_client.get(url)
+ step1 = response.data[0]
+ assert step1["step_type"] == "thinking"
+ assert step1["status"] == "completed"
+ assert step1["input_data"] == {"context": "分析需求"}
+ assert step1["output_data"] == {"analysis": "需要生成Python代码"}
+ def test_nonexistent_node_execution_404(self, authenticated_client):
  """不存在的 node_execution_id 返回 404。"""
  url = "/api/node-executions/00000000-0000-0000-0000-000000000000/sub-steps/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_404_NOT_FOUND
- def test_sub_steps_401_unauthenticated(self, api_client, sub_step_setup):
+ def test_unauthenticated_401(self, api_client, sub_step_data):
  """未认证请求返回 401。"""
- node_exec, _ = sub_step_setup
- url = f"/api/node-executions/{node_exec.id}/sub-steps/"
+ ne = sub_step_data["node_execution"]
+ url = f"/api/node-executions/{ne.id}/sub-steps/"
  response = api_client.get(url)
  assert response.status_code == status.HTTP_401_UNAUTHORIZED
- def test_sub_steps_empty_list(self, authenticated_client, api_workflow):
+ def test_empty_sub_steps(self, authenticated_client, api_project, user):
  """无子步骤时返回空列表。"""
- from workflows.models import NodeExecution
+ workflow = Workflow.objects.create(
+ name="Empty SubStep Workflow",
+ project=api_project,
+ created_by=user,
+ )
  node = WorkflowNode.objects.create(
- workflow=api_workflow,
+ workflow=workflow,
  node_type="ai_coding",
- name="Empty Node",
- position_x=0,
- position_y=0,
+ name="AI Node",
+ position_x=100,
+ position_y=100,
  )
  execution = WorkflowExecution.objects.create(
- workflow=api_workflow,
+ workflow=workflow,
  trigger_type="manual",
  )
- node_exec = NodeExecution.objects.create(
+ node_execution = NodeExecution.objects.create(
  workflow_execution=execution,
  node=node,
  )
- url = f"/api/node-executions/{node_exec.id}/sub-steps/"
+ url = f"/api/node-executions/{node_execution.id}/sub-steps/"
  response = authenticated_client.get(url)
  assert response.status_code == status.HTTP_200_OK
  assert response.data ==

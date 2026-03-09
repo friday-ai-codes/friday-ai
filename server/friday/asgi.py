@@ -1,10 +1,22 @@
 """
 ASGI config for friday project.
-It exposes the ASGI callable as a module-level variable named ``application``.
+It It exposes the ASGI callable as a module-level variable named ``application``.
 For more information on this file, see
 https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
 """
 import os
+import sys
+# Add server directory to sys.path for multiprocessing spawn compatibility
+# This is needed because uvicorn --reload uses multiprocessing on macOS
+server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if server_dir not in sys.path:
+ sys.path.insert(0, server_dir)
+# Also set PYTHONPATH env var so subprocess spawns inherit it
+if os.environ.get("PYTHONPATH"):
+ if server_dir not in os.environ["PYTHONPATH"]:
+ os.environ["PYTHONPATH"] = f"{server_dir}:{os.environ['PYTHONPATH']}"
+else:
+ os.environ["PYTHONPATH"] = server_dir
 from django.core.asgi import get_asgi_application
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "friday.settings")
 # Initialize Django ASGI application early to ensure the AppRegistry
