@@ -422,6 +422,7 @@ class NodeExecutionSerializer(serializers.ModelSerializer):
  node_name = serializers.CharField(source="node.name", read_only=True)
  node_type = serializers.CharField(source="node.node_type", read_only=True)
  duration = serializers.FloatField(read_only=True)
+ sub_step_progress = serializers.SerializerMethodField
  class Meta:
  model = NodeExecution
  fields = [
@@ -439,6 +440,7 @@ class NodeExecutionSerializer(serializers.ModelSerializer):
  "container_id",
  "container_logs",
  "duration",
+ "sub_step_progress",
  "created_at",
  "started_at",
  "completed_at",
@@ -454,10 +456,19 @@ class NodeExecutionSerializer(serializers.ModelSerializer):
  "started_at",
  "completed_at",
  ]
+ def get_sub_step_progress(self, obj: NodeExecution) -> dict | None:
+ """返回子步骤进度摘要，无子步骤时返回 None。"""
+ if obj.sub_step_total_count == 0:
+ return None
+ return {
+ "completed": obj.sub_step_completed_count,
+ "total": obj.sub_step_total_count,
+ }
 class NodeExecutionListSerializer(serializers.ModelSerializer):
  """Lightweight serializer for node execution list."""
  node_name = serializers.CharField(source="node.name", read_only=True)
  node_type = serializers.CharField(source="node.node_type", read_only=True)
+ sub_step_progress = serializers.SerializerMethodField
  class Meta:
  model = NodeExecution
  fields = [
@@ -467,9 +478,18 @@ class NodeExecutionListSerializer(serializers.ModelSerializer):
  "node_type",
  "status",
  "attempt",
+ "sub_step_progress",
  "started_at",
  "completed_at",
  ]
+ def get_sub_step_progress(self, obj: NodeExecution) -> dict | None:
+ """返回子步骤进度摘要，无子步骤时返回 None。"""
+ if obj.sub_step_total_count == 0:
+ return None
+ return {
+ "completed": obj.sub_step_completed_count,
+ "total": obj.sub_step_total_count,
+ }
 class WorkflowExecutionSerializer(serializers.ModelSerializer):
  """Serializer for WorkflowExecution with node executions."""
  workflow_name = serializers.CharField(source="workflow.name", read_only=True)
