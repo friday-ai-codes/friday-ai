@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 import uuid
+from dataclasses import dataclass, field
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from workflows.models.execution import (
@@ -54,13 +56,43 @@ def node_execution(
  node=workflow_node,
  status="running",
  )
+@pytest.fixture
+def execution_context(
+ node_execution: NodeExecution,
+ workflow_execution: WorkflowExecution,
+) -> "ExecutionContext":
+ """创建测试 ExecutionContext（使用真实 node_execution）。"""
+ from workflows.nodes.base import ExecutionContext
+ return ExecutionContext(
+ execution_id=str(workflow_execution.id),
+ node_id=str(node_execution.node_id),
+ node_config={"user_prompt": "test prompt"},
+ input_data={},
+ workflow_context={},
+ previous_outputs={},
+ workflow_execution=workflow_execution,
+ node_execution=node_execution,
+ )
+@pytest.fixture
+def empty_context -> "ExecutionContext":
+ """创建无 node_execution 的 ExecutionContext。"""
+ from workflows.nodes.base import ExecutionContext
+ return ExecutionContext(
+ execution_id="test-exec-id",
+ node_id="test-node-id",
+ node_config={},
+ input_data={},
+ workflow_context={},
+ previous_outputs={},
+ workflow_execution=None,
+ node_execution=None,
+ )
 # ============================================================================
 # Signal + Handler Tests
 # ============================================================================
 @pytest.mark.django_db
 def test_signal_triggers_broadcast(node_execution: NodeExecution) -> None:
  """emit sub_step_updated signal → handler 调用 channel_layer.group_send。"""
- # 创建一个子步骤
  sub_step = NodeSubStep.objects.create(
  node_execution=node_execution,
  step_type="analyze",
@@ -76,12 +108,9 @@ def test_signal_triggers_broadcast(node_execution: NodeExecution) -> None:
  sub_step=sub_step,
  node_execution_id=node_execution.id,
  )
- # 验证 group_send 被调用
  mock_channel_layer.group_send.assert_called_once
  call_args = mock_channel_layer.group_send.call_args
- # 第一个参数是 group name
  assert call_args[0][0] == "monitor"
- # 第二个参数是消息
  msg = call_args[0][1]
  assert msg["type"] == "monitor.event"
  assert msg["data"]["event"] == "sub_step.update"
@@ -95,7 +124,6 @@ def test_signal_handler_skips_without_channel_layer -> None:
  from workflows.signal_handlers import handle_sub_step_updated
  mock_sub_step = MagicMock
  with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
- # 不应抛出异常
  handle_sub_step_updated(
  sender=object,
  sub_step=mock_sub_step,
@@ -109,3 +137,148 @@ def test_progress_count_defaults(node_execution: NodeExecution) -> None:
  """NodeExecution 进度字段默认值为 0。"""
  assert node_execution.sub_step_completed_count == 0
  assert node_execution.sub_step_total_count == 0
+# ============================================================================
+# _init_sub_steps Tests
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_init_sub_steps_creates_pending(
+ execution_context: "ExecutionContext",
+ node_execution: NodeExecution,
+) -> None:
+ """_init_sub_steps 批量创建 pending 记录，设置总数。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ await node._init_sub_steps(execution_context)
+ # 验证创建了 3 个子步骤
+ sub_steps = [
+ s async for s in NodeSubStep.objects.filter(
+ node_execution=node_execution
+ ).order_by("step_order")
+ ]
+ assert len(sub_steps) == 3
+ assert sub_steps[0].step_type == "analyze"
+ assert sub_steps[0].name == "分析需求"
+ assert sub_steps[0].step_order == 0
+ assert sub_steps[0].status == SubStepStatus.PENDING
+ assert sub_steps[1].step_type == "generate_plan"
+ assert sub_steps[2].step_type == "review"
+ # 验证 NodeExecution 总数已更新
+ await node_execution.arefresh_from_db
+ assert node_execution.sub_step_total_count == 3
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_init_sub_steps_no_execution(empty_context: "ExecutionContext") -> None:
+ """node_execution 为 None 时 _init_sub_steps 静默返回。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ # 不应抛出异常
+ await node._init_sub_steps(empty_context)
+# ============================================================================
+# emit_sub_step Tests
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_emit_sub_step_running(
+ execution_context: "ExecutionContext",
+ node_execution: NodeExecution,
+) -> None:
+ """emit_sub_step(running) 更新状态和 started_at。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ await node._init_sub_steps(execution_context)
+ with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.RUNNING)
+ sub_step = await NodeSubStep.objects.aget(
+ node_execution=node_execution, step_type="analyze"
+ )
+ assert sub_step.status == SubStepStatus.RUNNING
+ assert sub_step.started_at is not None
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_emit_sub_step_completed(
+ execution_context: "ExecutionContext",
+ node_execution: NodeExecution,
+) -> None:
+ """emit_sub_step(completed) 更新状态、completed_at 和进度计数。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ await node._init_sub_steps(execution_context)
+ with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.RUNNING)
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.COMPLETED)
+ sub_step = await NodeSubStep.objects.aget(
+ node_execution=node_execution, step_type="analyze"
+ )
+ assert sub_step.status == SubStepStatus.COMPLETED
+ assert sub_step.completed_at is not None
+ await node_execution.arefresh_from_db
+ assert node_execution.sub_step_completed_count == 1
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_emit_sub_step_failed(
+ execution_context: "ExecutionContext",
+ node_execution: NodeExecution,
+) -> None:
+ """emit_sub_step(failed) 更新状态和 completed_at，但不增加 completed_count。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ await node._init_sub_steps(execution_context)
+ with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.RUNNING)
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.FAILED)
+ sub_step = await NodeSubStep.objects.aget(
+ node_execution=node_execution, step_type="analyze"
+ )
+ assert sub_step.status == SubStepStatus.FAILED
+ assert sub_step.completed_at is not None
+ await node_execution.arefresh_from_db
+ assert node_execution.sub_step_completed_count == 0 # failed 不增加
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_emit_sub_step_sends_signal(
+ execution_context: "ExecutionContext",
+ node_execution: NodeExecution,
+) -> None:
+ """emit_sub_step 发送 sub_step_updated signal。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ await node._init_sub_steps(execution_context)
+ signal_received: list[dict[str, Any]] =
+ def signal_handler(sender: type, sub_step: Any, node_execution_id: uuid.UUID, **kwargs: Any) -> None:
+ signal_received.append({
+ "step_type": sub_step.step_type,
+ "status": sub_step.status,
+ "node_execution_id": node_execution_id,
+ })
+ sub_step_updated.connect(signal_handler)
+ try:
+ with patch("workflows.signal_handlers.get_channel_layer", return_value=None):
+ await node.emit_sub_step(execution_context, "analyze", SubStepStatus.RUNNING)
+ finally:
+ sub_step_updated.disconnect(signal_handler)
+ assert len(signal_received) == 1
+ assert signal_received[0]["step_type"] == "analyze"
+ assert signal_received[0]["status"] == SubStepStatus.RUNNING
+ assert signal_received[0]["node_execution_id"] == node_execution.id
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_emit_sub_step_no_execution(empty_context: "ExecutionContext") -> None:
+ """node_execution 为 None 时 emit_sub_step 静默返回。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ node = AIPlanGenerationNode
+ # 不应抛出异常
+ await node.emit_sub_step(empty_context, "analyze", SubStepStatus.RUNNING)
+# ============================================================================
+# AIPlanGenerationNode sub_steps Declaration Tests
+# ============================================================================
+def test_plan_generation_node_sub_steps -> None:
+ """AIPlanGenerationNode 声明 3 个子步骤。"""
+ from workflows.nodes.ai.plan_generation import AIPlanGenerationNode
+ assert len(AIPlanGenerationNode.sub_steps) == 3
+ step_types = [s[0] for s in AIPlanGenerationNode.sub_steps]
+ assert step_types == ["analyze", "generate_plan", "review"]
+def test_base_node_sub_steps_empty -> None:
+ """AIAgentBaseNode 默认 sub_steps 为空列表。"""
+ from workflows.nodes.ai.base_agent import AIAgentBaseNode
+ assert AIAgentBaseNode.sub_steps ==

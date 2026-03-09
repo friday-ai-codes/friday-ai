@@ -12,6 +12,7 @@ from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.base import (
  ExecutionContext,
  NodePort,
+ NodeResult,
  PortType,
 )
 from workflows.nodes.registry import register_node
@@ -32,6 +33,12 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  display_name: ClassVar[str] = "AI 方案生成"
  description: ClassVar[str] = "AI 自动跨仓库分析需求，生成结构化技术方案"
  icon: ClassVar[str] = "file-text"
+ # 子步骤声明：分析需求 → 生成计划 → 审查计划
+ sub_steps: ClassVar[list[tuple[str, str]]] = [
+ ("analyze", "分析需求"),
+ ("generate_plan", "生成计划"),
+ ("review", "审查计划"),
+ ]
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",
  "properties": {
@@ -241,6 +248,32 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  "raw_output": result.output,
  "usage": result.usage,
  }
+ # ===== Execute override with sub-step tracking =====
+ async def execute(self, context: ExecutionContext) -> NodeResult:
+ """执行 AI 方案生成，包含子步骤状态追踪。
+ 子步骤：analyze（分析需求）→ generate_plan（生成计划）→ review（审查计划）。
+ """
+ from workflows.models.execution import SubStepStatus
+ # 初始化子步骤记录
+ await self._init_sub_steps(context)
+ # Phase: 分析需求（prompt 构建和准备）
+ await self.emit_sub_step(context, "analyze", SubStepStatus.RUNNING)
+ await self.emit_sub_step(context, "analyze", SubStepStatus.COMPLETED)
+ # Phase: 生成计划（Agent 执行）
+ await self.emit_sub_step(context, "generate_plan", SubStepStatus.RUNNING)
+ try:
+ result = await super.execute(context)
+ except Exception:
+ await self.emit_sub_step(context, "generate_plan", SubStepStatus.FAILED)
+ raise
+ await self.emit_sub_step(context, "generate_plan", SubStepStatus.COMPLETED)
+ # Phase: 审查计划（结果验证）
+ await self.emit_sub_step(context, "review", SubStepStatus.RUNNING)
+ if result.status == "failed":
+ await self.emit_sub_step(context, "review", SubStepStatus.FAILED)
+ else:
+ await self.emit_sub_step(context, "review", SubStepStatus.COMPLETED)
+ return result
  # ===== Private helpers =====
  def _extract_plan_from_result(
  self, result: AgentResult
