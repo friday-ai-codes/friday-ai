@@ -22,6 +22,7 @@ import NodeOverviewTab from './NodeOverviewTab.vue'
 import NodeDataTab from './NodeDataTab.vue'
 import NodeConfigTab from './NodeConfigTab.vue'
 import AIInsightTab from './AIInsightTab.vue'
+import SubStepDetailTab from './SubStepDetailTab.vue'
 import PlanApprovalPanel from './PlanApprovalPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AICodeReviewPanel from './AICodeReviewPanel.vue'
@@ -35,6 +36,8 @@ const props = defineProps<{
  executionId: string
  /** 是否可以从失败节点继续（Phase） */
  canResume?: boolean
+ /** 子步骤聚焦 ID（从 DAG 时间线点击跳转，Phase） */
+ focusSubStepId?: string
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
@@ -56,9 +59,17 @@ const AI_NODE_TYPES = [
 const isAINode = computed( =>
  AI_NODE_TYPES.includes(nodeType.value as typeof AI_NODE_TYPES[number]),
 )
+/** 是否有子步骤可查看（AI 节点 + 有进度数据） */
+const hasSubSteps = computed( =>
+ isAINode.value && props.nodeExecution?.sub_step_progress != null,
+)
 /** 切换节点时重置 Tab */
 watch( => props.nodeExecution, => {
  activeTab.value = 'overview'
+})
+/** 从 DAG 时间线点击子步骤时自动切换到子步骤 Tab */
+watch( => props.focusSubStepId, (id) => {
+ if (id) activeTab.value = 'sub-steps'
 })
 /** 是否显示 PlanApprovalPanel：ai_plan_approval + waiting_event/completed */
 const showPlanApproval = computed( =>
@@ -114,6 +125,9 @@ function handleActionComplete {
  </TabsTrigger>
  <TabsTrigger value="config" class="flex-1">
  配置
+ </TabsTrigger>
+ <TabsTrigger v-if="hasSubSteps" value="sub-steps" class="flex-1">
+ 子步骤
  </TabsTrigger>
  <TabsTrigger v-if="isAINode" value="ai-insight" class="flex-1">
  AI 透视
@@ -177,6 +191,15 @@ function handleActionComplete {
  <ScrollArea class="h-full">
  <div class="px-6 py-4">
  <NodeConfigTab:config="nodeConfig" />
+ </div>
+ </ScrollArea>
+ </TabsContent>
+ <!-- 子步骤 Tab（AI 节点有进度时） -->
+ <TabsContent v-if="hasSubSteps" value="sub-steps" class="flex-1 min- mt-0">
+ <ScrollArea class="h-full">
+ <div class="px-6 py-4">
+ <SubStepDetailTab:node-execution-id="nodeExecution!.id":focus-step-id="focusSubStepId"
+ />
  </div>
  </ScrollArea>
  </TabsContent>
