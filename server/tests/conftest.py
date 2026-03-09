@@ -1,6 +1,9 @@
 """pytest-django 测试配置和 fixtures。
 使用 pytest + pytest-django 风格，提供更好的表达力和可维护性。
 """
+# adrf 0.1.12 兼容性补丁（需在 Django 加载前执行）
+from core.patches import patch_asyncio_iscoroutinefunction
+patch_asyncio_iscoroutinefunction
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
