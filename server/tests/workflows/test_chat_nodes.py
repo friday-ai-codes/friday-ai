@@ -220,6 +220,94 @@ async def test_chat_question_node_missing_question -> None:
  assert result.status == "failed"
  assert result.error is not None
 @pytest.mark.asyncio
+async def test_chat_question_node_config_has_mention_user_id -> None:
+ """config_schema 包含 mention_user_id 可选字段。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ schema = GroupChatQuestionNode.config_schema
+ props = schema["properties"]
+ assert "mention_user_id" in props
+ assert props["mention_user_id"]["type"] == "string"
+ # mention_user_id 不在 required 中
+ assert "mention_user_id" not in schema.get("required", )
+@pytest.mark.asyncio
+async def test_chat_question_node_passes_mention_user_id -> None:
+ """mention_user_id 传递到 build_chat_question_card 和 output。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ mock_execution = MagicMock
+ mock_execution.workflow = MagicMock
+ mock_execution.workflow.project = MagicMock
+ mock_execution.id = "we-001"
+ mock_ne = MagicMock
+ mock_ne.id = "ne-001"
+ ctx = _make_context(
+ config={
+ "chat_id": "oc_test",
+ "question": "请确认",
+ "mention_user_id": "ou_mention_test",
+ },
+ workflow_execution=mock_execution,
+ )
+ ctx.node_execution = mock_ne
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_m1")
+ with patch(
+ "workflows.nodes.integrations.chat_question.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "workflows.nodes.integrations.chat_question._get_feishu_credentials",
+ return_value=("app_id", "app_secret"),
+ ), patch(
+ "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
+ ) as mock_sub_cls:
+ mock_sub_cls.objects.acreate = AsyncMock
+ result = await node.execute(ctx)
+ assert result.output["mention_user_id"] == "ou_mention_test"
+ # 验证 send_card 的 card 参数包含 @mention
+ card_arg = mock_im_client.send_card.call_args[1]["card"]
+ md_elements = [e for e in card_arg["elements"] if e.get("tag") == "markdown"]
+ mention_found = any('<at id="ou_mention_test">' in e.get("content", "") for e in md_elements)
+ assert mention_found
+@pytest.mark.asyncio
+async def test_chat_question_node_creates_event_subscription -> None:
+ """执行后创建 WorkflowEventSubscription 记录 timeout_at。"""
+ from workflows.nodes.integrations.chat_question import GroupChatQuestionNode
+ node = GroupChatQuestionNode
+ mock_execution = MagicMock
+ mock_execution.workflow = MagicMock
+ mock_execution.workflow.project = MagicMock
+ mock_execution.id = "we-002"
+ mock_ne = MagicMock
+ mock_ne.id = "ne-002"
+ ctx = _make_context(
+ config={
+ "chat_id": "oc_sub_test",
+ "question": "问题",
+ },
+ workflow_execution=mock_execution,
+ )
+ ctx.node_execution = mock_ne
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_s1")
+ with patch(
+ "workflows.nodes.integrations.chat_question.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "workflows.nodes.integrations.chat_question._get_feishu_credentials",
+ return_value=("app_id", "app_secret"),
+ ), patch(
+ "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
+ ) as mock_sub_cls:
+ mock_sub_cls.objects.acreate = AsyncMock
+ result = await node.execute(ctx)
+ assert result.status == "waiting_event"
+ # 验证 acreate 被调用
+ mock_sub_cls.objects.acreate.assert_called_once
+ call_kwargs = mock_sub_cls.objects.acreate.call_args[1]
+ assert call_kwargs["event_type"] == "ChatQuestionCallback"
+ assert call_kwargs["timeout_action"] == "fail"
+ assert call_kwargs["timeout_at"] is not None
+@pytest.mark.asyncio
 async def test_chat_question_node_missing_chat_id -> None:
  """缺少 chat_id 配置时返回 failed。"""
  from workflows.nodes.integrations.chat_question import GroupChatQuestionNode

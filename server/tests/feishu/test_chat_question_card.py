@@ -2,6 +2,7 @@
 from feishu.cards.chat_question_card import (
  build_chat_answered_card,
  build_chat_question_card,
+ build_chat_reminder_card,
 )
 class TestBuildChatQuestionCard:
  """build_chat_question_card 测试。"""
@@ -96,6 +97,53 @@ class TestBuildChatQuestionCard:
  for e in md_elements
  )
  assert "选什么？" in history_text
+ def test_mention_user_id(self) -> None:
+ """Test: mention_user_id 时卡片包含 <at> 标签。"""
+ card = build_chat_question_card(
+ question="请确认方案",
+ execution_id="exec-1",
+ node_id="node-1",
+ mention_user_id="ou_user123",
+ )
+ elements = card["elements"]
+ # 第一个元素应该是 @mention markdown
+ md_elements = [e for e in elements if e.get("tag") == "markdown"]
+ mention_texts = [e["content"] for e in md_elements if "<at" in e.get("content", "")]
+ assert len(mention_texts) > 0
+ assert '<at id="ou_user123">' in mention_texts[0]
+ def test_no_mention(self) -> None:
+ """Test: mention_user_id 为 None 时不包含 @mention。"""
+ card = build_chat_question_card(
+ question="一般问题",
+ execution_id="exec-1",
+ node_id="node-1",
+ )
+ elements = card["elements"]
+ all_content = " ".join(
+ e.get("content", "") for e in elements if e.get("tag") == "markdown"
+ )
+ assert "<at" not in all_content
+ def test_reminder_card(self) -> None:
+ """Test: build_chat_reminder_card 生成 orange 主题提醒卡片。"""
+ card = build_chat_reminder_card(
+ question="这是一个很长的问题需要截断测试" * 20,
+ work_item_name="",
+ remaining_minutes=15,
+ )
+ assert card["header"]["template"] == "orange"
+ assert "提醒" in card["header"]["title"]["content"]
+ elements = card["elements"]
+ all_content = " ".join(
+ e.get("content", "")
+ for e in elements
+ if e.get("tag") == "markdown"
+ )
+ # 问题摘要应被截断到 200 字
+ assert len(all_content) < 500
+ assert "15" in all_content # 剩余时间
+ # 不应包含按钮或表单
+ form_elements = [e for e in elements if e.get("tag") in ("form", "action")]
+ assert len(form_elements) == 0
 class TestBuildChatAnsweredCard:
  """build_chat_answered_card 测试。"""
  def test_answered_card_grey_theme(self) -> None:
