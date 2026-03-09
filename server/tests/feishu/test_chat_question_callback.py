@@ -1,6 +1,7 @@
 """群聊提问回调处理器测试。"""
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 from feishu.callbacks.chat_question_callback import handle_chat_question_answer
 from feishu.views import CardCallback
 def _make_callback(
@@ -117,3 +118,182 @@ class TestHandleChatQuestionAnswer:
  result = handle_chat_question_answer(callback)
  assert result is None
  mock_schedule.assert_not_called
+class TestMultiRoundChat:
+ """多轮追问回调测试。"""
+ @pytest.mark.asyncio
+ async def test_multi_round_continues_when_not_last(self) -> None:
+ """非最后一轮：更新 output_data + 发新卡片 + 保持 waiting_event。"""
+ from feishu.callbacks.chat_question_callback import _do_chat_answer_async
+ mock_ne = MagicMock
+ mock_ne.id = "ne-multi-1"
+ mock_ne.workflow_execution_id = "we-multi-1"
+ mock_ne.node_id = "node-multi-1"
+ mock_ne.status = "waiting_event"
+ mock_ne.output_data = {
+ "question": "第一轮问题",
+ "max_rounds": 3,
+ "current_round": 1,
+ "rounds":,
+ "chat_id": "oc_multi",
+ "work_item_name": "",
+ "mention_user_id": "ou_user1",
+ }
+ mock_ne.asave = AsyncMock
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_new")
+ with patch(
+ "feishu.callbacks.chat_question_callback.NodeExecution"
+ ) as mock_ne_cls, patch(
+ "feishu.callbacks.chat_question_callback.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "feishu.callbacks.chat_question_callback.create_feishu_im_client_for_project",
+ return_value=mock_im_client,
+ ):
+ mock_ne_cls.objects.filter.return_value.select_related.return_value.afirst = AsyncMock(return_value=mock_ne)
+ await _do_chat_answer_async(
+ execution_id="we-multi-1",
+ node_id="node-multi-1",
+ answer="第一轮回答",
+ responder_id="ou_responder",
+ )
+ # 验证 output_data 更新：current_round 增加，rounds 添加
+ mock_ne.asave.assert_called
+ updated_output = mock_ne.output_data
+ assert updated_output["current_round"] == 2
+ assert len(updated_output["rounds"]) == 1
+ assert updated_output["rounds"][0]["answer"] == "第一轮回答"
+ # 发了新卡片
+ mock_im_client.send_card.assert_called_once
+ @pytest.mark.asyncio
+ async def test_multi_round_history_in_new_card(self) -> None:
+ """新追问卡片携带完整 history。"""
+ from feishu.callbacks.chat_question_callback import _do_chat_answer_async
+ mock_ne = MagicMock
+ mock_ne.id = "ne-hist"
+ mock_ne.workflow_execution_id = "we-hist"
+ mock_ne.node_id = "node-hist"
+ mock_ne.status = "waiting_event"
+ mock_ne.output_data = {
+ "question": "第二轮问题",
+ "max_rounds": 3,
+ "current_round": 2,
+ "rounds": [{"question": "第一轮问题", "answer": "第一轮回答", "round": 1}],
+ "chat_id": "oc_hist",
+ "work_item_name": "",
+ "mention_user_id": "",
+ }
+ mock_ne.asave = AsyncMock
+ mock_im_client = AsyncMock
+ mock_im_client.send_card = AsyncMock(return_value="msg_hist")
+ with patch(
+ "feishu.callbacks.chat_question_callback.NodeExecution"
+ ) as mock_ne_cls, patch(
+ "feishu.callbacks.chat_question_callback.FeishuIMClient",
+ return_value=mock_im_client,
+ ), patch(
+ "feishu.callbacks.chat_question_callback.create_feishu_im_client_for_project",
+ return_value=mock_im_client,
+ ):
+ mock_ne_cls.objects.filter.return_value.select_related.return_value.afirst = AsyncMock(return_value=mock_ne)
+ await _do_chat_answer_async(
+ execution_id="we-hist",
+ node_id="node-hist",
+ answer="第二轮回答",
+ responder_id="ou_r",
+ )
+ # 新卡片应包含 history
+ call_kwargs = mock_im_client.send_card.call_args[1]
+ card = call_kwargs["card"]
+ # history 区块存在（div 或 markdown 包含之前的 Q&A）
+ all_content = " ".join(
+ e.get("content", "") or e.get("text", {}).get("content", "")
+ for e in card["elements"]
+ if e.get("tag") in ("div", "markdown")
+ )
+ assert "第一轮问题" in all_content
+ assert "第一轮回答" in all_content
+ @pytest.mark.asyncio
+ async def test_last_round_completes_node(self) -> None:
+ """最后一轮：汇总回复 + approve_node 完成节点。"""
+ from feishu.callbacks.chat_question_callback import _do_chat_answer_async
+ mock_ne = MagicMock
+ mock_ne.id = "ne-last"
+ mock_ne.workflow_execution_id = "we-last"
+ mock_ne.node_id = "node-last"
+ mock_ne.status = "waiting_event"
+ mock_ne.output_data = {
+ "question": "最后一轮",
+ "max_rounds": 2,
+ "current_round": 2,
+ "rounds": [{"question": "第一轮", "answer": "A1", "round": 1}],
+ "chat_id": "oc_last",
+ "work_item_name": "",
+ "mention_user_id": "",
+ }
+ mock_ne.approval_data = {}
+ mock_ne.asave = AsyncMock
+ mock_we = MagicMock
+ mock_we.status = "suspended"
+ mock_we.asave = AsyncMock
+ mock_ne.workflow_execution = mock_we
+ mock_engine = AsyncMock
+ with patch(
+ "feishu.callbacks.chat_question_callback.NodeExecution"
+ ) as mock_ne_cls, patch(
+ "feishu.callbacks.chat_question_callback.WorkflowEngine",
+ return_value=mock_engine,
+ ):
+ mock_ne_cls.objects.filter.return_value.select_related.return_value.afirst = AsyncMock(return_value=mock_ne)
+ await _do_chat_answer_async(
+ execution_id="we-last",
+ node_id="node-last",
+ answer="最后回答",
+ responder_id="ou_final",
+ )
+ # 验证 approval_data 包含所有轮次
+ assert mock_ne.approval_data["total_rounds"] == 2
+ assert len(mock_ne.approval_data["rounds"]) == 2
+ # 验证 approve_node 被调用
+ mock_engine.approve_node.assert_called_once
+ @pytest.mark.asyncio
+ async def test_single_round_completes_immediately(self) -> None:
+ """max_rounds=1 时行为等同于单轮。"""
+ from feishu.callbacks.chat_question_callback import _do_chat_answer_async
+ mock_ne = MagicMock
+ mock_ne.id = "ne-single"
+ mock_ne.workflow_execution_id = "we-single"
+ mock_ne.node_id = "node-single"
+ mock_ne.status = "waiting_event"
+ mock_ne.output_data = {
+ "question": "单轮问题",
+ "max_rounds": 1,
+ "current_round": 1,
+ "rounds":,
+ "chat_id": "oc_single",
+ "work_item_name": "",
+ "mention_user_id": "",
+ }
+ mock_ne.approval_data = {}
+ mock_ne.asave = AsyncMock
+ mock_we = MagicMock
+ mock_we.status = "suspended"
+ mock_we.asave = AsyncMock
+ mock_ne.workflow_execution = mock_we
+ mock_engine = AsyncMock
+ with patch(
+ "feishu.callbacks.chat_question_callback.NodeExecution"
+ ) as mock_ne_cls, patch(
+ "feishu.callbacks.chat_question_callback.WorkflowEngine",
+ return_value=mock_engine,
+ ):
+ mock_ne_cls.objects.filter.return_value.select_related.return_value.afirst = AsyncMock(return_value=mock_ne)
+ await _do_chat_answer_async(
+ execution_id="we-single",
+ node_id="node-single",
+ answer="唯一回答",
+ responder_id="ou_s",
+ )
+ # 单轮应直接完成
+ mock_engine.approve_node.assert_called_once
+ assert mock_ne.approval_data["total_rounds"] == 1
