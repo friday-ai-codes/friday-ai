@@ -9,7 +9,7 @@ import {
  FileCode, FolderSearch, GitBranch, GitFork,
  GitMerge, GitPullRequest, Globe, Hourglass,
  MessageSquare, Play, SearchCode, Send,
- Sparkles, Terminal, Variable, Webhook, Zap,
+ Sparkles, Terminal, UserPlus, Variable, Webhook, Zap,
 } from 'lucide-vue-next'
 export type NodeColorKey = 'blue' | 'green' | 'purple' | 'orange'
 interface NodeVisual {
@@ -33,6 +33,9 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  create_pr: { icon: GitPullRequest, color: 'blue' },
  merge_pr: { icon: GitMerge, color: 'blue' },
  mcp_deploy: { icon: CloudUpload, color: 'blue' },
+ // 群聊 (orange)
+ fetch_group_chat: { icon: MessageSquare, color: 'orange' },
+ join_group_chat: { icon: UserPlus, color: 'orange' },
  // 通知 (orange)
  notify_feishu: { icon: Send, color: 'orange' },
  // AI (purple)
