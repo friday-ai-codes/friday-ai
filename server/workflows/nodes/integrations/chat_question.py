@@ -86,6 +86,14 @@ class GroupChatQuestionNode(BaseNode):
  "title": "@mention 用户 ID",
  "description": "要 @mention 的飞书用户 open_id（可选）",
  },
+ "max_rounds": {
+ "type": "integer",
+ "title": "最大追问轮次",
+ "description": "多轮追问的最大轮次（1 表示单轮，最多 5 轮）",
+ "default": 1,
+ "minimum": 1,
+ "maximum": 5,
+ },
  },
  "required": ["chat_id", "question"],
  }
@@ -137,6 +145,7 @@ class GroupChatQuestionNode(BaseNode):
  config.get("work_item_name", "")
  ).strip
  mention_user_id: str | None = config.get("mention_user_id") or None
+ max_rounds: int = min(max(int(config.get("max_rounds", 1)), 1), 5)
  if not chat_id:
  return NodeResult(
  status="failed",
@@ -205,5 +214,8 @@ class GroupChatQuestionNode(BaseNode):
  "options": options,
  "work_item_name": work_item_name,
  "mention_user_id": mention_user_id or "",
+ "max_rounds": max_rounds,
+ "current_round": 1,
+ "rounds":,
  },
  )
