@@ -13,7 +13,7 @@ import type {
  TimelineData,
  WorkflowDefinition,
 } from '~/stores/useExecutionsStore'
-import type { NodeCost } from '~/types/execution'
+import type { NodeCost, SubStepProgress } from '~/types/execution'
 import GradientEdge from '~/components/workflow/editor/edges/GradientEdge.vue'
 import ExecutionNode from '../ExecutionNode.vue'
 /** Vue Flow 执行节点的 data 载荷类型 */
@@ -35,6 +35,12 @@ export interface ExecutionNodeData {
  canResume?: boolean
  /** 从此继续按钮的回调（由 ExecutionDagView 注入） */
  onResumeClick?: (nodeId: string) => void
+ /** 子步骤进度摘要（折叠时显示） */
+ subStepProgress?: SubStepProgress | null
+ /** 是否为 AI 节点（有子步骤能力） */
+ isAINode?: boolean
+ /** 子步骤点击回调（打开详情） */
+ onSubStepClick?: (nodeExecutionId: string, subStepId: string) => void
 }
 /** 自定义节点类型注册 */
 export const executionNodeTypes: Record<string, NodeComponent> = {
@@ -64,6 +70,7 @@ export function useExecutionDag(
  .filter(n => n.is_bottleneck)
  .map(n => [n.node_id, n]),
  )
+ const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_code_review', 'ai_plan_generation', 'ai_coding_dispatcher']
  return definition.nodes.map(defNode => {
  const ne = execMap.get(defNode.id)
  const bn = bottleneckMap.get(defNode.id)
@@ -83,6 +90,8 @@ export function useExecutionDag(
  nodeExecution: ne ?? null,
  config: defNode.config ?? {},
  canResume: nodeStatus === 'failed' && !(definitionChanged?.value ?? false),
+ subStepProgress: ne?.sub_step_progress ?? null,
+ isAINode: AI_NODE_TYPES.includes(defNode.node_type),
  },
  }
  })
