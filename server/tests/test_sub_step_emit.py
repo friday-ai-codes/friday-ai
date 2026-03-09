@@ -282,3 +282,48 @@ def test_base_node_sub_steps_empty -> None:
  """AIAgentBaseNode 默认 sub_steps 为空列表。"""
  from workflows.nodes.ai.base_agent import AIAgentBaseNode
  assert AIAgentBaseNode.sub_steps ==
+# ============================================================================
+# Serializer sub_step_progress Tests
+# ============================================================================
+@pytest.mark.django_db
+def test_node_execution_serializer_progress_with_steps(
+ node_execution: NodeExecution,
+) -> None:
+ """NodeExecutionSerializer 返回 sub_step_progress（有子步骤时）。"""
+ from workflows.api.serializers import NodeExecutionSerializer
+ node_execution.sub_step_total_count = 3
+ node_execution.sub_step_completed_count = 1
+ node_execution.save(update_fields=["sub_step_total_count", "sub_step_completed_count"])
+ serializer = NodeExecutionSerializer(node_execution)
+ data = serializer.data
+ assert data["sub_step_progress"] == {"completed": 1, "total": 3}
+@pytest.mark.django_db
+def test_node_execution_serializer_progress_none(
+ node_execution: NodeExecution,
+) -> None:
+ """NodeExecutionSerializer 无子步骤时 sub_step_progress 为 None。"""
+ from workflows.api.serializers import NodeExecutionSerializer
+ serializer = NodeExecutionSerializer(node_execution)
+ data = serializer.data
+ assert data["sub_step_progress"] is None
+@pytest.mark.django_db
+def test_node_execution_list_serializer_progress(
+ node_execution: NodeExecution,
+) -> None:
+ """NodeExecutionListSerializer 返回 sub_step_progress。"""
+ from workflows.api.serializers import NodeExecutionListSerializer
+ node_execution.sub_step_total_count = 5
+ node_execution.sub_step_completed_count = 3
+ node_execution.save(update_fields=["sub_step_total_count", "sub_step_completed_count"])
+ serializer = NodeExecutionListSerializer(node_execution)
+ data = serializer.data
+ assert data["sub_step_progress"] == {"completed": 3, "total": 5}
+@pytest.mark.django_db
+def test_node_execution_list_serializer_progress_none(
+ node_execution: NodeExecution,
+) -> None:
+ """NodeExecutionListSerializer 无子步骤时 sub_step_progress 为 None。"""
+ from workflows.api.serializers import NodeExecutionListSerializer
+ serializer = NodeExecutionListSerializer(node_execution)
+ data = serializer.data
+ assert data["sub_step_progress"] is None
