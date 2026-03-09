@@ -3,6 +3,7 @@ from rest_framework import serializers
 from workflows.models import (
  CodingTask,
  NodeExecution,
+ NodeSubStep,
  TriggerEventType,
  WebhookConfig,
  WebhookLog,
@@ -401,6 +402,21 @@ class WorkflowImportSerializer(serializers.Serializer):
 # =============================================================================
 # Execution Serializers
 # =============================================================================
+class NodeSubStepSerializer(serializers.ModelSerializer):
+ """Serializer for NodeSubStep."""
+ class Meta:
+ model = NodeSubStep
+ fields = [
+ "id",
+ "name",
+ "step_type",
+ "step_order",
+ "status",
+ "input_data",
+ "output_data",
+ "started_at",
+ "completed_at",
+ ]
 class NodeExecutionSerializer(serializers.ModelSerializer):
  """Serializer for NodeExecution."""
  node_name = serializers.CharField(source="node.name", read_only=True)

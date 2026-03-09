@@ -10,6 +10,7 @@ from workflows.api.views import (
  NodeExecutionActionView,
  NodeExecutionViewSet,
  NodeSchemaListView,
+ NodeSubStepListView,
  NodeTypeViewSet,
  WebhookConfigViewSet,
  WebhookLogViewSet,
@@ -64,6 +65,12 @@ urlpatterns = router.urls + [
  "workflow-executions/<uuid:execution_id>/coding-tasks/",
  CodingTaskViewSet.as_view({"get": "list"}),
  name="execution-coding-tasks",
+ ),
+ # Nested sub-steps under node execution
+ path(
+ "node-executions/<uuid:node_execution_id>/sub-steps/",
+ NodeSubStepListView.as_view,
+ name="node-execution-sub-steps",
  ),
  # LLM models query endpoint
  path(
