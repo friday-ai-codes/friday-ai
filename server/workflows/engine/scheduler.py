@@ -20,8 +20,6 @@ if TYPE_CHECKING:
  from workflows.hooks import HookManager
  from workflows.models import Workflow
 logger = structlog.get_logger
-class ResumeExecutionNotSupportedError(NotImplementedError):
- """Raised when paused execution resume loop is not implemented yet."""
 def _run_in_thread(coro):
  """Run a coroutine in a new thread with its own event loop."""
  def target:
