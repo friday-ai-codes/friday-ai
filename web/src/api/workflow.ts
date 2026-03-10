@@ -318,6 +318,28 @@ export async function checkWorkflowChanged(
  `/workflow-executions/${executionId}/check-definition-changed/`,
  )
 }
+/**
+ * 预览从失败节点恢复的影响范围
+ */
+export interface ResumePreviewNode {
+ id: string
+ name: string
+ status: string
+}
+export interface ResumePreviewResult {
+ skip_nodes: ResumePreviewNode
+ rerun_nodes: ResumePreviewNode
+ total_skip: number
+ total_rerun: number
+}
+export async function resumePreview(
+ executionId: string,
+ nodeId: string,
+): Promise<ResumePreviewResult> {
+ return get<ResumePreviewResult>(
+ `/workflow-executions/${executionId}/resume-preview/?node_id=${nodeId}`,
+ )
+}
 export default {
  // Node Schema
  getNodeSchemas,
@@ -355,4 +377,6 @@ export default {
  // Phase: 从失败节点继续
  resumeFromFailed,
  checkWorkflowChanged,
+ // Phase: 恢复预览
+ resumePreview,
 }

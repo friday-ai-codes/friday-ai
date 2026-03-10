@@ -622,6 +622,65 @@ class WorkflowExecutionViewSet(ModelViewSet):
  {"detail": error_msg},
  status=status.HTTP_400_BAD_REQUEST,
  )
+ @action(detail=True, methods=["get"], url_path="resume-preview")
+ async def resume_preview(self, request: Request, pk=None) -> Response:
+ """预览从失败节点恢复的影响范围：哪些节点将被跳过、哪些将重新执行。"""
+ execution = await self.aget_object
+ node_id = request.query_params.get("node_id")
+ if not node_id:
+ return Response(
+ {"detail": "必须提供 node_id 参数"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if execution.status not in ("failed", "cancelled", "timeout"):
+ return Response(
+ {"detail": "只能预览失败、已取消或超时执行的恢复"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 从 workflow_definition 快照获取节点名称映射
+ node_names: dict[str, str] = {}
+ if execution.workflow_definition and "nodes" in execution.workflow_definition:
+ for node_def in execution.workflow_definition["nodes"]:
+ node_names[node_def["id"]] = node_def.get("name", node_def["id"])
+ # 获取工作流和 DAG
+ execution = await WorkflowExecution.objects.select_related("workflow").aget(
+ pk=execution.pk
+ )
+ workflow = execution.workflow
+ from workflows.engine.dag import DAG
+ dag = await DAG.afrom_workflow(workflow)
+ # 计算下游节点
+ engine = WorkflowEngine
+ downstream_ids = engine._get_downstream_nodes(dag, node_id)
+ nodes_to_execute = {node_id} | downstream_ids
+ # 获取所有节点执行记录
+ node_execs: dict[str, NodeExecution] = {
+ str(ne.node_id): ne
+ async for ne in NodeExecution.objects.filter(
+ workflow_execution=execution,
+ )
+ }
+ # 分类节点
+ skip_nodes =
+ rerun_nodes =
+ for dag_node in dag.nodes.values:
+ nid = dag_node.id
+ ne = node_execs.get(nid)
+ node_info = {
+ "id": nid,
+ "name": node_names.get(nid, nid),
+ "status": ne.status if ne else "unknown",
+ }
+ if nid in nodes_to_execute:
+ rerun_nodes.append(node_info)
+ else:
+ skip_nodes.append(node_info)
+ return Response({
+ "skip_nodes": skip_nodes,
+ "rerun_nodes": rerun_nodes,
+ "total_skip": len(skip_nodes),
+ "total_rerun": len(rerun_nodes),
+ })
  @action(detail=True, methods=["get"], url_path="check-definition-changed")
  async def check_definition_changed(self, request: Request, pk=None) -> Response:
  """检查工作流定义是否在执行后发生变更。"""
