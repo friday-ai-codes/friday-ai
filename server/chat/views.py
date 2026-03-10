@@ -14,7 +14,6 @@ from adrf.views import APIView
 from agents.core.events import ERROR, AgentEvent
 from agents.llm.base import create_provider
 from agents.llm.providers import (
- CredentialType,
  PROVIDER_REGISTRY,
  ProviderType,
 )
@@ -410,20 +409,10 @@ class ChatStreamView(APIView):
 # Provider icon 映射表（ProviderType → iconify 标识符）
 PROVIDER_ICONS: dict[ProviderType, str] = {
  ProviderType.ANTHROPIC: "simple-icons--anthropic",
- ProviderType.OPENAI_RESPONSES: "simple-icons--openai",
- ProviderType.OPENAI_CODEX_RESPONSES: "simple-icons--openai",
- ProviderType.OPENAI_COMPLETIONS: "simple-icons--openai",
- ProviderType.GOOGLE_VERTEX: "simple-icons--googlecloud",
- ProviderType.GOOGLE_GEMINI_CLI: "simple-icons--googlegemini",
- ProviderType.GOOGLE_ANTIGRAVITY: "simple-icons--google",
 }
 # env_key（PROVIDER_REGISTRY）→ SettingKey 映射
 _ENV_TO_SETTING: dict[str, str] = {
  "ANTHROPIC_API_KEY": "anthropic_api_key",
- "OPENAI_API_KEY": "openai_api_key",
- "GEMINI_API_KEY": "google_api_key",
- "GOOGLE_API_KEY": "google_api_key",
- "GOOGLE_CLOUD_PROJECT": "google_service_account_json",
 }
 # 模型列表缓存 TTL（秒）
 _MODEL_CACHE_TTL = 300 # 5 分钟
@@ -437,8 +426,6 @@ async def _get_credential_setting_key(provider_type: ProviderType) -> str | None
  """获取 Provider 对应的凭据 SettingKey。"""
  metadata = PROVIDER_REGISTRY[provider_type]
  env_key = metadata["env_key"]
- if metadata["credential_type"] == CredentialType.SERVICE_ACCOUNT_JSON:
- return "google_service_account_json"
  return _ENV_TO_SETTING.get(env_key)
 async def _has_credential(provider_type: ProviderType) -> bool:
  """检查 Provider 是否已配置凭据。"""

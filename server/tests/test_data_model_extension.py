@@ -23,9 +23,11 @@ class TestSettingKeysUpdate:
  def test_new_keys_exist(self):
  """新配置键存在且值正确。"""
  assert SettingKeys.DEFAULT_PROVIDER_TYPE == "default_provider_type"
- assert SettingKeys.OPENAI_API_KEY == "openai_api_key"
- assert SettingKeys.GOOGLE_API_KEY == "google_api_key"
- assert SettingKeys.GOOGLE_SERVICE_ACCOUNT_JSON == "google_service_account_json"
+ def test_removed_keys_no_longer_exist(self):
+ """已移除的 OpenAI/Google 配置键不再存在。"""
+ assert not hasattr(SettingKeys, "OPENAI_API_KEY")
+ assert not hasattr(SettingKeys, "GOOGLE_API_KEY")
+ assert not hasattr(SettingKeys, "GOOGLE_SERVICE_ACCOUNT_JSON")
  def test_old_keys_removed(self):
  """旧配置键已删除。"""
  assert not hasattr(SettingKeys, "PROVIDER_TYPE")
