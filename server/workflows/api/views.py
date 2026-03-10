@@ -580,9 +580,9 @@ class WorkflowExecutionViewSet(ModelViewSet):
  {"detail": "必须提供 node_id 参数"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- if execution.status not in ("failed", "cancelled"):
+ if execution.status not in ("failed", "cancelled", "timeout"):
  return Response(
- {"detail": "只能从失败或已取消的执行继续"},
+ {"detail": "只能从失败、已取消或超时的执行继续"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # 验证指定节点确实是失败的

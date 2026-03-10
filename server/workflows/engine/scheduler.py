@@ -197,6 +197,7 @@ class WorkflowEngine:
  dag: DAG,
  input_data: dict,
  initial_outputs: dict[str, dict] | None = None,
+ is_resume: bool = False,
  ) -> None:
  """执行工作流主循环
  Args:
@@ -204,8 +205,10 @@ class WorkflowEngine:
  dag: DAG 实例
  input_data: 输入数据
  initial_outputs: 预填充的节点输出（从失败节点继续时，包含 skipped 节点的输出）
+ is_resume: 是否从暂停恢复（跳过 amark_started 避免覆盖 started_at）
  """
  try:
+ if not is_resume:
  await execution.amark_started
  await self.hooks.trigger("execution_running", execution=execution)
  # 节点输出缓存
@@ -503,10 +506,52 @@ class WorkflowEngine:
  await execution.asave(update_fields=["status"])
  await self.hooks.trigger("execution_paused", execution=execution)
  async def resume_execution(self, execution: WorkflowExecution) -> None:
- """恢复执行"""
+ """恢复暂停的执行，从中断点继续调度。"""
  if execution.status != ExecutionStatus.PAUSED:
  raise ValueError("只能恢复已暂停的执行")
- raise ResumeExecutionNotSupportedError("恢复执行循环未实现，当前仅支持显式 501 降级")
+ # 1. 获取工作流和 DAG
+ execution = await WorkflowExecution.objects.select_related("workflow").aget(
+ pk=execution.pk
+ )
+ workflow = execution.workflow
+ dag = await DAG.afrom_workflow(workflow)
+ # 2. 收集已完成节点的输出作为 initial_outputs
+ initial_outputs: dict[str, dict] = {}
+ async for ne in NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.COMPLETED,
+ ):
+ initial_outputs[str(ne.node_id)] = ne.output_data or {}
+ # 3. 将已完成节点标记为 SKIPPED（让 _run_execution 的 initial_outputs 机制识别）
+ completed_node_ids = list(initial_outputs.keys)
+ await NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status=NodeExecutionStatus.COMPLETED,
+ ).aupdate(status=NodeExecutionStatus.SKIPPED)
+ # 4. 将 PAUSED/QUEUED 节点重置为 PENDING
+ await NodeExecution.objects.filter(
+ workflow_execution=execution,
+ status__in=[
+ NodeExecutionStatus.PAUSED,
+ NodeExecutionStatus.QUEUED,
+ ],
+ ).aupdate(status=NodeExecutionStatus.PENDING)
+ # 5. 更新执行状态并恢复
+ execution.status = ExecutionStatus.RUNNING
+ await execution.asave(update_fields=["status"])
+ await self.hooks.trigger("execution_resumed", execution=execution)
+ logger.info(
+ "execution_resumed",
+ execution_id=str(execution.id),
+ skipped_nodes=len(completed_node_ids),
+ )
+ # 6. 重入主循环（is_resume=True 避免覆盖 started_at）
+ _run_in_thread(
+ self._run_execution(
+ execution, dag, execution.input_data or {}, initial_outputs,
+ is_resume=True,
+ )
+ )
  async def cancel_execution(self, execution: WorkflowExecution) -> None:
  """取消执行"""
  if execution.status in (ExecutionStatus.COMPLETED, ExecutionStatus.CANCELLED):
@@ -879,8 +924,16 @@ class WorkflowEngine:
  if original_execution.status not in (
  ExecutionStatus.FAILED,
  ExecutionStatus.CANCELLED,
+ ExecutionStatus.TIMEOUT,
  ):
- raise ValueError("只能从失败或已取消的执行继续")
+ raise ValueError("只能从失败、已取消或超时的执行继续")
+ # 1.5 互斥锁定：检查是否已有活跃的恢复执行
+ active_resume = await WorkflowExecution.objects.filter(
+ resumed_from=original_execution,
+ status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+ ).aexists
+ if active_resume:
+ raise ValueError("已有恢复执行正在运行，请等待完成后再试")
  # 2. 验证失败节点存在且确实失败
  failed_ne = await NodeExecution.objects.filter(
  workflow_execution=original_execution,
