@@ -14,6 +14,7 @@ import structlog
 from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
+from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -40,7 +41,7 @@ def _slugify(text: str, max_length: int = 30) -> str:
  slug = re.sub(r"[\s_]+", "-", slug).strip("-").lower
  return slug[:max_length] if slug else "task"
 @register_node
-class AICodingNode(BaseNode):
+class AICodingNode(SubStepMixin, BaseNode):
  """AI 编码执行节点。
  从上游 PlanApprovalNode 读取已确认技术方案，按仓库分组并行分发
  SubAgent 编码任务，编码完成后为每个成功仓库创建 MR，最终通过
@@ -61,6 +62,12 @@ class AICodingNode(BaseNode):
  category: ClassVar[NodeCategory] = NodeCategory.AI
  execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "runner_dispatched"
  is_blocking: ClassVar[bool] = True
+ sub_steps: ClassVar[list[tuple[str, str]]] = [
+ ("prepare_plan", "准备方案"),
+ ("coding_execute", "编码执行"),
+ ("create_mr", "创建MR"),
+ ("send_notification", "发送通知"),
+ ]
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",
  "properties": {
@@ -144,6 +151,7 @@ class AICodingNode(BaseNode):
  # ------------------------------------------------------------------
  async def execute(self, context: ExecutionContext) -> NodeResult:
  """执行 AI 编码节点。"""
+ from workflows.models.execution import SubStepStatus
  log = logger.bind(
  execution_id=context.execution_id,
  node_id=context.node_id,
@@ -154,6 +162,8 @@ class AICodingNode(BaseNode):
  if isinstance(output_data, dict):
  # 检查是否有恢复标记（容器完成后）
  if output_data.get("_resume_from_callback"):
+ # 恢复路径：不重复 init，直接从 create_mr 开始
+ await self.emit_sub_step(context, "create_mr", SubStepStatus.RUNNING)
  return await self._resume_after_containers(context, output_data, log)
  # 分支确认恢复（保持不变）
  confirmed_branch = output_data.get("_confirmed_branch_name", "")
@@ -162,6 +172,9 @@ class AICodingNode(BaseNode):
  return await self._execute_with_branch(
  context, confirmed_branch, log
  )
+ # 首次执行：初始化子步骤
+ await self._init_sub_steps(context)
+ await self.emit_sub_step(context, "prepare_plan", SubStepStatus.RUNNING)
  # 1. 提取方案数据
  plan_data = self._extract_plan_data(context)
  if not plan_data:
@@ -204,6 +217,7 @@ class AICodingNode(BaseNode):
  return await self._send_branch_confirmation(
  context, candidate, plan_title, plan_data, log
  )
+ await self.emit_sub_step(context, "prepare_plan", SubStepStatus.COMPLETED)
  return await self._execute_with_branch(context, branch_name, log)
  async def _execute_with_branch(
  self,
@@ -237,6 +251,8 @@ class AICodingNode(BaseNode):
  repo_count=len(repo_groups),
  )
  # 5. 并行分发（通过 TaskDispatcher → Runner）
+ from workflows.models.execution import SubStepStatus
+ await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
  config = context.node_config
  node_execution_id = ""
  if context.node_execution:
@@ -423,7 +439,10 @@ class AICodingNode(BaseNode):
  changes_summary=result.get("output", {}),
  )
  mr_results.append({**result, **mr_result})
+ from workflows.models.execution import SubStepStatus
+ await self.emit_sub_step(context, "create_mr", SubStepStatus.COMPLETED)
  # 发送飞书结果卡片
+ await self.emit_sub_step(context, "send_notification", SubStepStatus.RUNNING)
  await self._send_result_notification(
  context=context,
  plan_title=plan_title,
@@ -433,6 +452,7 @@ class AICodingNode(BaseNode):
  base_branch=base_branch,
  log=log,
  )
+ await self.emit_sub_step(context, "send_notification", SubStepStatus.COMPLETED)
  # 构建输出
  output = self._build_output(
  mr_results=mr_results,

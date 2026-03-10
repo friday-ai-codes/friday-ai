@@ -101,7 +101,7 @@ export async function retryExecution(
  * 获取执行上下文快照
  */
 export async function getExecutionContext(executionId: string): Promise<ExecutionContext> {
- return get<ExecutionContext>(`/workflows/workflow-executions/${executionId}/context/`)
+ return get<ExecutionContext>(`/workflow-executions/${executionId}/context/`)
 }
 // ============================================================================
 // CodingTask API
@@ -110,7 +110,7 @@ export async function getExecutionContext(executionId: string): Promise<Executio
  * 获取执行的编码任务列表
  */
 export async function listCodingTasks(executionId: string): Promise<CodingTask> {
- return get<CodingTask>(`/workflows/workflow-executions/${executionId}/coding-tasks/`)
+ return get<CodingTask>(`/workflow-executions/${executionId}/coding-tasks/`)
 }
 /**
  * 获取编码任务详情

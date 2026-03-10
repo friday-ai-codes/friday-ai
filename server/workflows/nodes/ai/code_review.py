@@ -149,6 +149,11 @@ class AICodeReviewNode(AIAgentBaseNode):
  description: ClassVar[str] = "AI 多维度代码审查"
  icon: ClassVar[str] = "search-code"
  execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "runner_dispatched"
+ sub_steps: ClassVar[list[tuple[str, str]]] = [
+ ("fetch_diff", "获取Diff"),
+ ("ai_review", "AI审查"),
+ ("send_notification", "发送通知"),
+ ]
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",
  "properties": {
@@ -273,6 +278,9 @@ class AICodeReviewNode(AIAgentBaseNode):
  has_plan=bool(execution_plan),
  )
  try:
+ # 初始化子步骤
+ from workflows.models.execution import SubStepStatus
+ await self._init_sub_steps(context)
  # 2. 准备 Agent 基础设施
  project = await self._get_project(context)
  user = await self._get_user(context)
@@ -285,6 +293,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  project, model, use_custom_api, api_base_url, api_key
  )
  # 3. 逐 MR 审查
+ await self.emit_sub_step(context, "fetch_diff", SubStepStatus.RUNNING)
  mr_reviews: list[dict[str, Any]] =
  review_errors: list[str] =
  for mr_info in merge_requests:
@@ -363,6 +372,9 @@ class AICodeReviewNode(AIAgentBaseNode):
  log=log,
  )
  mr_reviews.append(review_data)
+ # 子步骤：diff 获取和 AI 审查完成
+ await self.emit_sub_step(context, "fetch_diff", SubStepStatus.COMPLETED)
+ await self.emit_sub_step(context, "ai_review", SubStepStatus.RUNNING)
  # 4. 汇总审查报告
  total_issues = 0
  total_breakdown: dict[str, int] = {"critical": 0, "warning": 0, "info": 0}
@@ -394,7 +406,9 @@ class AICodeReviewNode(AIAgentBaseNode):
  errors=len(review_errors),
  duration_seconds=duration,
  )
+ await self.emit_sub_step(context, "ai_review", SubStepStatus.COMPLETED)
  # 5. 发送飞书通知
+ await self.emit_sub_step(context, "send_notification", SubStepStatus.RUNNING)
  await self._send_review_notification(
  context=context,
  approved=approved,
@@ -404,6 +418,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  mr_count=len(mr_reviews),
  log=log,
  )
+ await self.emit_sub_step(context, "send_notification", SubStepStatus.COMPLETED)
  # 6. 构建输出
  output: dict[str, Any] = {
  "review_report": review_report,
