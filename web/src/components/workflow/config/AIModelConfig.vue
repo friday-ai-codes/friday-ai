@@ -14,8 +14,6 @@ import {
 } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
-import ProviderSelect from '~/components/provider/ProviderSelect.vue'
-import type { ProviderType } from '~/types/provider'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -34,20 +32,16 @@ interface Props {
  modelLabel?: string
  /** 模型描述文字 */
  modelDescription?: string
- /** Provider 类型 */
- providerType?: ProviderType
 }
 const props = withDefaults(defineProps<Props>, {
  modelLabel: '模型',
  modelDescription: '',
- providerType: undefined,
 })
 const emit = defineEmits<{
  (e: 'update:useCustomApi', value: boolean): void
  (e: 'update:apiBaseUrl', value: string): void
  (e: 'update:apiKey', value: string): void
  (e: 'update:model', value: string): void
- (e: 'update:providerType', value: ProviderType): void
 }>
 // ============================================================================
 // 本地状态（用于 v-model 绑定）
@@ -67,10 +61,6 @@ const localApiKey = computed({
 const localModel = computed({
  get: => props.model,
  set: v => emit('update:model', v),
-})
-const localProviderType = computed({
- get: => props.providerType,
- set: v => { if (v) emit('update:providerType', v) },
 })
 // ============================================================================
 // 系统配置
@@ -192,14 +182,6 @@ const fetchedModelsCount = computed( => {
 </script>
 <template>
  <div class="space-y-4">
- <!-- Provider 选择 -->
- <div class="space-y-2">
- <Label class="text-sm font-medium">Provider</Label>
- <ProviderSelect
- v-model="localProviderType"
- config-source="node"
- />
- </div>
  <!-- 自定义 API 配置 -->
  <div class="space-y-4 rounded-xl bg-muted/30 border border-border/50">
  <div class="flex items-center justify-between">
