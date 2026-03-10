@@ -5,7 +5,6 @@
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
 import type { ChatRole, Conversation, ConversationMessage, SSEEvent } from '~/types/chat'
-import type { ProviderType } from '~/types/provider'
 import {
  createConversation,
  deleteConversation,
@@ -42,7 +41,6 @@ export const useChatStore = defineStore('chat', => {
  const selectedProjectId = useLocalStorage<string | null>('chat-project-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
- const selectedProvider = useLocalStorage<ProviderType | undefined>('chat-provider', undefined)
  // ========================================================================
  // Getters
  // ========================================================================
@@ -252,7 +250,6 @@ export const useChatStore = defineStore('chat', => {
  selectedProjectId,
  selectedRole,
  selectedModel,
- selectedProvider,
  // Getters
  currentConversation,
  hasConversation,
