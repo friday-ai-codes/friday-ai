@@ -40,7 +40,7 @@ const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeTo
 const { nodes } = storeToRefs(store)
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
-const pendingNavigation = ref<( => void) | null>(null)
+const pendingRoute = ref<string | null>(null)
 const historySheetOpen = ref(false)
 const hasTriggers = computed( =>
  nodes.value.some((node) => TRIGGER_NODE_TYPES.includes(node.nodeType)),
@@ -83,38 +83,36 @@ onBeforeUnmount( => {
  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 // Handle Vue Router navigation
-onBeforeRouteLeave((_to, _from, next) => {
+onBeforeRouteLeave((to) => {
  if (hasUnsavedChanges.value) {
  showLeaveDialog.value = true
- pendingNavigation.value = => next
- next(false)
- }
- else {
- next
+ pendingRoute.value = to.fullPath
+ return false
  }
 })
 function confirmLeave {
  showLeaveDialog.value = false
  store.clearDraft
- if (pendingNavigation.value) {
- // Reset unsaved changes to allow navigation
  hasUnsavedChanges.value = false
- pendingNavigation.value
- pendingNavigation.value = null
+ if (pendingRoute.value) {
+ const route = pendingRoute.value
+ pendingRoute.value = null
+ router.push(route)
  }
 }
 function cancelLeave {
  showLeaveDialog.value = false
- pendingNavigation.value = null
+ pendingRoute.value = null
 }
 async function saveAndLeave {
  try {
  await store.saveWorkflow
  toast.success('工作流保存成功')
  showLeaveDialog.value = false
- if (pendingNavigation.value) {
- pendingNavigation.value
- pendingNavigation.value = null
+ if (pendingRoute.value) {
+ const route = pendingRoute.value
+ pendingRoute.value = null
+ router.push(route)
  }
  }
  catch (e: any) {
