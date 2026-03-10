@@ -30,7 +30,8 @@ import {
 import { Progress } from '~/components/ui/progress'
 import { Textarea } from '~/components/ui/textarea'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import { getCostBreakdown, resumeFromFailed, checkWorkflowChanged } from '~/api/workflow'
+import { getCostBreakdown, resumeFromFailed, checkWorkflowChanged, resumePreview } from '~/api/workflow'
+import type { ResumePreviewNode } from '~/api/workflow'
 const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
@@ -79,12 +80,15 @@ async function fetchDefinitionChanged {
  definitionChanged.value = false
  }
 }
-// ----- 从此继续对话框（Phase） -----
+// ----- 从此继续对话框（Phase → Phase 增强） -----
 const resumeDialogOpen = ref(false)
 const resumeNodeId = ref<string | null>(null)
 const resumeNodeName = ref('')
 const resumeSkipCount = ref(0)
 const resuming = ref(false)
+const resumeSkipNodes = ref<ResumePreviewNode>
+const resumeRerunNodes = ref<ResumePreviewNode>
+const resumePreviewLoading = ref(false)
 // ----- 活跃状态判断 -----
 function isActiveStatus(status?: string) {
  return ['running', 'pending', 'queued', 'paused', 'waiting_approval', 'waiting_event', 'suspended'].includes(status || '')
@@ -224,17 +228,32 @@ async function handleRetry {
  toast.error(`重试失败: ${e.message}`)
  }
 }
-// ----- 从此继续（Phase） -----
-function handleResumeClick(nodeId: string) {
+// ----- 从此继续（Phase → Phase 增强） -----
+async function handleResumeClick(nodeId: string) {
  const exec = currentExecution.value
  if (!exec?.workflow_definition) return
  // 找到节点名称
  const defNode = exec.workflow_definition.nodes.find(n => n.id === nodeId)
  resumeNodeName.value = defNode?.name ?? nodeId
- // 计算跳过节点数：已完成 + 已跳过的节点
- resumeSkipCount.value = (exec.completed_nodes ?? 0) + (exec.skipped_nodes ?? 0)
  resumeNodeId.value = nodeId
  resumeDialogOpen.value = true
+ // 异步加载影响范围
+ resumePreviewLoading.value = true
+ resumeSkipNodes.value =
+ resumeRerunNodes.value =
+ try {
+ const preview = await resumePreview(executionId.value, nodeId)
+ resumeSkipNodes.value = preview.skip_nodes
+ resumeRerunNodes.value = preview.rerun_nodes
+ resumeSkipCount.value = preview.total_skip
+ }
+ catch {
+ // 预览加载失败不阻止恢复操作，使用 fallback
+ resumeSkipCount.value = (exec.completed_nodes ?? 0) + (exec.skipped_nodes ?? 0)
+ }
+ finally {
+ resumePreviewLoading.value = false
+ }
 }
 async function handleResumeFromFailed {
  if (!resumeNodeId.value) return
@@ -592,21 +611,51 @@ async function handleTrigger {
  </DialogFooter>
  </DialogContent>
  </Dialog>
- <!-- ===== 从此继续确认对话框（Phase） ===== -->
+ <!-- ===== 从此继续确认对话框（Phase → Phase 增强） ===== -->
  <Dialog v-model:open="resumeDialogOpen">
- <DialogContent>
+ <DialogContent class="max-w-md">
  <DialogHeader>
  <DialogTitle>从此继续执行</DialogTitle>
  <DialogDescription>
  将从「{{ resumeNodeName }}」节点开始重新执行。
- {{ resumeSkipCount }} 个已完成的节点将被跳过，不会重新执行。
  </DialogDescription>
  </DialogHeader>
+ <!-- 影响范围详情 -->
+ <div v-if="resumePreviewLoading" class="flex items-center justify-center py-4">
+ <span class="icon-[lucide--loader-2] w-5 animate-spin text-muted-foreground" />
+ <span class="ml-2 text-sm text-muted-foreground">正在分析影响范围...</span>
+ </div>
+ <div v-else class="space-y-3">
+ <!-- 将被跳过的节点 -->
+ <div v-if="resumeSkipNodes.length > 0">
+ <p class="text-xs font-medium text-muted-foreground mb-1.5">
+ <span class="icon-[lucide--skip-forward] w-3.5 .5 inline-block mr-1 align-text-bottom" />
+ 跳过（复用结果） · {{ resumeSkipNodes.length }} 个
+ </p>
+ <div class="flex flex-wrap gap-1">
+ <Badge v-for="node in resumeSkipNodes":key="node.id" variant="secondary" class="text-xs">
+ {{ node.name }}
+ </Badge>
+ </div>
+ </div>
+ <!-- 将重新执行的节点 -->
+ <div v-if="resumeRerunNodes.length > 0">
+ <p class="text-xs font-medium text-muted-foreground mb-1.5">
+ <span class="icon-[lucide--play] w-3.5 .5 inline-block mr-1 align-text-bottom" />
+ 重新执行 · {{ resumeRerunNodes.length }} 个
+ </p>
+ <div class="flex flex-wrap gap-1">
+ <Badge v-for="node in resumeRerunNodes":key="node.id" variant="outline" class="text-xs border-primary/50">
+ {{ node.name }}
+ </Badge>
+ </div>
+ </div>
+ </div>
  <DialogFooter>
  <Button variant="outline" @click="resumeDialogOpen = false">
  取消
  </Button>
- <Button:disabled="resuming" @click="handleResumeFromFailed">
+ <Button:disabled="resuming || resumePreviewLoading" @click="handleResumeFromFailed">
  <span v-if="resuming" class="icon-[lucide--loader-2] w-4 mr-2 animate-spin" />
  <span v-else class="icon-[lucide--play-circle] w-4 mr-2" />
  确认继续
