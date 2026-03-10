@@ -2,8 +2,7 @@
 覆盖,,,,, 需求。
 """
 import pytest
-from unittest.mock import AsyncMock, patch
-from agents.llm.providers import CredentialType, ProviderType
+from agents.llm.providers import ProviderType
 from system.models import SettingKeys, SystemSetting
 # ============================================================================
 # Fixtures
@@ -24,45 +23,12 @@ def system_setting_anthropic(db):
  value="https://api.anthropic.com",
  )
 @pytest.fixture
-def system_setting_openai(db):
- """创建 OpenAI 系统级配置。"""
- SystemSetting.objects.create(
- key=SettingKeys.DEFAULT_PROVIDER_TYPE,
- value="openai-responses",
- )
- SystemSetting.objects.create(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-test-key",
- )
-@pytest.fixture
-def system_setting_google_gemini(db):
- """创建 Google Gemini 系统级配置。"""
- SystemSetting.objects.create(
- key=SettingKeys.DEFAULT_PROVIDER_TYPE,
- value="google-gemini-cli",
- )
- SystemSetting.objects.create(
- key=SettingKeys.GOOGLE_API_KEY,
- value="google-api-test-key",
- )
-@pytest.fixture
-def system_setting_google_vertex(db):
- """创建 Google Vertex 系统级配置。"""
- SystemSetting.objects.create(
- key=SettingKeys.DEFAULT_PROVIDER_TYPE,
- value="google-vertex",
- )
- SystemSetting.objects.create(
- key=SettingKeys.GOOGLE_SERVICE_ACCOUNT_JSON,
- value='{"type": "service_account", "project_id": "test"}',
- )
-@pytest.fixture
 def project_with_provider(db):
  """创建带 default_provider_type 的项目。"""
  from projects.models import Project
  return Project.objects.create(
  name="Test Provider Project",
- default_provider_type="openai-completions",
+ default_provider_type="anthropic",
  )
 @pytest.fixture
 def conversation_with_provider(db, project_with_provider):
@@ -71,7 +37,7 @@ def conversation_with_provider(db, project_with_provider):
  return Conversation.objects.create(
  project=project_with_provider,
  title="Test Conversation",
- provider_type="openai-responses",
+ provider_type="anthropic",
  )
 # ============================================================================
 # Plan: ProviderConfigService 核心测试
@@ -90,13 +56,8 @@ class TestProviderConfigServiceResolve:
  def test_resolve_project_level(self, system_setting_anthropic, project_with_provider):
  """项目级：project.default_provider_type 优先于系统级。"""
  from services.provider_config import ProviderConfigService
- # 需要 OpenAI 凭据才能通过验证
- SystemSetting.objects.create(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-proj-key",
- )
  result = ProviderConfigService.resolve(project=project_with_provider)
- assert result.provider_type == ProviderType.OPENAI_COMPLETIONS
+ assert result.provider_type == ProviderType.ANTHROPIC
  assert result.source == "project"
  @pytest.mark.django_db
  def test_resolve_conversation_level(
@@ -104,29 +65,20 @@ class TestProviderConfigServiceResolve:
  ):
  """对话级：conversation.provider_type 优先于项目级和系统级。"""
  from services.provider_config import ProviderConfigService
- # 需要 OpenAI 凭据
- SystemSetting.objects.create(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-conv-key",
- )
  result = ProviderConfigService.resolve(
  conversation=conversation_with_provider,
  project=conversation_with_provider.project,
  )
- assert result.provider_type == ProviderType.OPENAI_RESPONSES
+ assert result.provider_type == ProviderType.ANTHROPIC
  assert result.source == "conversation"
  @pytest.mark.django_db
  def test_resolve_node_level(self, system_setting_anthropic):
  """节点级：node_config 的 provider_type 优先于所有其他层级。"""
  from services.provider_config import ProviderConfigService
- SystemSetting.objects.create(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-node-key",
- )
  result = ProviderConfigService.resolve(
- node_config={"provider_type": "openai-responses"},
+ node_config={"provider_type": "anthropic"},
  )
- assert result.provider_type == ProviderType.OPENAI_RESPONSES
+ assert result.provider_type == ProviderType.ANTHROPIC
  assert result.source == "node"
  @pytest.mark.django_db
  def test_resolve_priority_node_over_conversation(
@@ -146,17 +98,11 @@ class TestProviderConfigServiceResolve:
  ):
  """对话级优先于项目级。"""
  from services.provider_config import ProviderConfigService
- SystemSetting.objects.create(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-key",
- )
  result = ProviderConfigService.resolve(
  conversation=conversation_with_provider,
  project=conversation_with_provider.project,
  )
- # conversation.provider_type = "openai-responses"
- # project.default_provider_type = "openai-completions"
- assert result.provider_type == ProviderType.OPENAI_RESPONSES
+ assert result.provider_type == ProviderType.ANTHROPIC
  assert result.source == "conversation"
  @pytest.mark.django_db
  def test_resolve_no_provider_type_anywhere_raises(self, db):
@@ -181,26 +127,6 @@ class TestProviderConfigServiceResolve:
  from services.provider_config import ProviderConfigService
  result = ProviderConfigService.resolve
  assert result.api_key == "sk-ant-test-key"
- @pytest.mark.django_db
- def test_resolve_openai_credential(self, system_setting_openai):
- """OpenAI Provider 正确查找 openai_api_key。"""
- from services.provider_config import ProviderConfigService
- result = ProviderConfigService.resolve
- assert result.api_key == "sk-openai-test-key"
- @pytest.mark.django_db
- def test_resolve_google_api_key_credential(self, system_setting_google_gemini):
- """Google Gemini Provider 正确查找 google_api_key。"""
- from services.provider_config import ProviderConfigService
- result = ProviderConfigService.resolve
- assert result.api_key == "google-api-test-key"
- @pytest.mark.django_db
- def test_resolve_google_service_account_credential(
- self, system_setting_google_vertex
- ):
- """Google Vertex Provider 正确查找 google_service_account_json。"""
- from services.provider_config import ProviderConfigService
- result = ProviderConfigService.resolve
- assert "service_account" in result.api_key
  @pytest.mark.django_db
  def test_resolve_returns_default_base_url(self, system_setting_anthropic):
  """返回 PROVIDER_REGISTRY 中的 default_base_url。"""
@@ -236,16 +162,11 @@ class TestProviderConfigServiceAresolve:
  @pytest.mark.asyncio
  async def test_aresolve_node_level(self, system_setting_anthropic):
  """异步版本：节点级解析正确。"""
- from asgiref.sync import sync_to_async
  from services.provider_config import ProviderConfigService
- await sync_to_async(SystemSetting.objects.create)(
- key=SettingKeys.OPENAI_API_KEY,
- value="sk-openai-async-key",
- )
  result = await ProviderConfigService.aresolve(
- node_config={"provider_type": "openai-responses"},
+ node_config={"provider_type": "anthropic"},
  )
- assert result.provider_type == ProviderType.OPENAI_RESPONSES
+ assert result.provider_type == ProviderType.ANTHROPIC
  assert result.source == "node"
  @pytest.mark.django_db(transaction=True)
  @pytest.mark.asyncio
@@ -262,7 +183,7 @@ class TestProviderConfigServiceAresolve:
  from services.provider_config import ProviderConfigError, ProviderConfigService
  await sync_to_async(SystemSetting.objects.create)(
  key=SettingKeys.DEFAULT_PROVIDER_TYPE,
- value="openai-responses",
+ value="anthropic",
  )
- with pytest.raises(ProviderConfigError, match="OpenAI Responses"):
+ with pytest.raises(ProviderConfigError, match="Anthropic Claude"):
  await ProviderConfigService.aresolve

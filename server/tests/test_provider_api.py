@@ -43,7 +43,7 @@ async def test_provider_list(user_and_token):
  assert resp.status_code == 200
  data = resp.json
  assert isinstance(data, list)
- assert len(data) == 7 # 7 种 Provider
+ assert len(data) == 1 # 仅 Anthropic
  # 验证每个 Provider 有必需字段
  for provider in data:
  assert "id" in provider
@@ -51,6 +51,8 @@ async def test_provider_list(user_and_token):
  assert "icon" in provider
  assert "credential_type" in provider
  assert "has_credential" in provider
+ # 验证唯一的 Provider 是 Anthropic
+ assert data[0]["id"] == "anthropic"
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_provider_list_has_credential_true(user_and_token):
@@ -71,21 +73,6 @@ async def test_provider_list_has_credential_true(user_and_token):
  data = resp.json
  anthropic = next(p for p in data if p["id"] == "anthropic")
  assert anthropic["has_credential"] is True
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_provider_list_has_credential_false(user_and_token):
- """未配置凭据的 Provider has_credential=False。"""
- _, token = user_and_token
- client = AsyncClient
- resp = await client.get(
- "/api/chat/providers/",
- headers={"authorization": f"Bearer {token}"},
- )
- assert resp.status_code == 200
- data = resp.json
- # OpenAI 默认未配置
- openai_resp = next(p for p in data if p["id"] == "openai-responses")
- assert openai_resp["has_credential"] is False
 # ---------------------------------------------------------------------------
 # 模型列表 API
 # ---------------------------------------------------------------------------
