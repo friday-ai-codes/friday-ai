@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any
 import structlog
 from agents.llm.providers import (
- CredentialType,
  PROVIDER_REGISTRY,
  ProviderType,
 )
@@ -19,17 +18,12 @@ class ProviderConfigError(Exception):
 class ResolvedProviderConfig:
  """配置解析结果。"""
  provider_type: ProviderType
- api_key: str # 凭据值（API Key 或 Service Account JSON）
+ api_key: str # 凭据值（API Key）
  base_url: str # 从 PROVIDER_REGISTRY 获取
  source: str # "node" | "conversation" | "project" | "system"
 # PROVIDER_REGISTRY 的 env_key（大写）→ SettingKeys 的值（小写）映射。
-# 特殊情况：GEMINI_API_KEY 和 GOOGLE_API_KEY 都映射到 SettingKeys.GOOGLE_API_KEY，
-# GOOGLE_CLOUD_PROJECT 不直接映射凭据（Vertex 使用 Service Account JSON）。
 ENV_KEY_TO_SETTING_KEY: dict[str, str] = {
  "ANTHROPIC_API_KEY": SettingKeys.ANTHROPIC_API_KEY,
- "OPENAI_API_KEY": SettingKeys.OPENAI_API_KEY,
- "GEMINI_API_KEY": SettingKeys.GOOGLE_API_KEY,
- "GOOGLE_API_KEY": SettingKeys.GOOGLE_API_KEY,
 }
 def _get_setting_value_sync(key: str) -> str | None:
  """同步获取系统设置值（自动解密）。"""
@@ -100,18 +94,8 @@ def _resolve_credential(
  ProviderConfigError: 凭据未配置
  """
  metadata = PROVIDER_REGISTRY[provider_type]
- credential_type = metadata["credential_type"]
  display_name = metadata["display_name"]
  env_key = metadata["env_key"]
- # Service Account JSON 特殊处理
- if credential_type == CredentialType.SERVICE_ACCOUNT_JSON:
- setting_key = SettingKeys.GOOGLE_SERVICE_ACCOUNT_JSON
- credential = get_setting(setting_key)
- if not credential:
- raise ProviderConfigError(
- f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
- )
- return credential
  # API Key 类型
  setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
  if not setting_key:
@@ -177,9 +161,6 @@ class ProviderConfigService:
  Raises:
  ProviderConfigError: 配置缺失或凭据未配置
  """
- # provider_type 解析：前三层不需要 DB 查询，只有系统级需要
- # 为简化逻辑，将异步 get_setting 包装为同步调用接口
- # 但系统级查找需要异步，所以分步处理
  # 1-3 层：同步检查（不涉及 DB）
  if node_config and node_config.get("provider_type"):
  provider_type = _parse_provider_type(node_config["provider_type"])
@@ -201,17 +182,8 @@ class ProviderConfigService:
  source = "system"
  # 凭据解析（需要异步 DB 查询）
  metadata = PROVIDER_REGISTRY[provider_type]
- credential_type = metadata["credential_type"]
  display_name = metadata["display_name"]
  env_key = metadata["env_key"]
- if credential_type == CredentialType.SERVICE_ACCOUNT_JSON:
- setting_key = SettingKeys.GOOGLE_SERVICE_ACCOUNT_JSON
- credential = await _get_setting_value_async(setting_key)
- if not credential:
- raise ProviderConfigError(
- f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
- )
- else:
  setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
  if not setting_key:
  raise ProviderConfigError(
