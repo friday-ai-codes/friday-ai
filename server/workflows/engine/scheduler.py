@@ -528,13 +528,10 @@ class WorkflowEngine:
  workflow_execution=execution,
  status=NodeExecutionStatus.COMPLETED,
  ).aupdate(status=NodeExecutionStatus.SKIPPED)
- # 4. 将 PAUSED/QUEUED 节点重置为 PENDING
+ # 4. 将 QUEUED 节点重置为 PENDING
  await NodeExecution.objects.filter(
  workflow_execution=execution,
- status__in=[
- NodeExecutionStatus.PAUSED,
- NodeExecutionStatus.QUEUED,
- ],
+ status=NodeExecutionStatus.QUEUED,
  ).aupdate(status=NodeExecutionStatus.PENDING)
  # 5. 更新执行状态并恢复
  execution.status = ExecutionStatus.RUNNING
