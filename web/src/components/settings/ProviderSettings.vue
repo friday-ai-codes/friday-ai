@@ -1,149 +1,21 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { toast } from 'vue-sonner'
-import { getAllSettings, SettingKey, updateSetting } from '~/api/settings'
-import type { SettingRead } from '~/api/settings'
 import { checkProviderHealth } from '~/api/providers'
 import ProviderIcon from '~/components/provider/ProviderIcon.vue'
 import { PROVIDER_REGISTRY } from '~/types/provider'
-import type { HealthStatus, ProviderType } from '~/types/provider'
+import type { HealthStatus } from '~/types/provider'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import { Textarea } from '~/components/ui/textarea'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-/** Tab 短标签名映射 */
-const TAB_LABELS: Record<ProviderType, string> = {
- 'anthropic': 'Claude',
- 'openai-responses': 'Responses',
- 'openai-codex-responses': 'Codex',
- 'openai-completions': 'Completions',
- 'google-vertex': 'Vertex',
- 'google-gemini-cli': 'Gemini',
- 'google-antigravity': 'Antigravity',
-}
-/** Provider 到 SettingKey 的凭据映射 */
-interface CredentialMapping {
- apiKeySettingKey: SettingKey | null
- baseUrlSettingKey: SettingKey | null
- sharedWith?: string // 共享提示文字
- useTextarea?: boolean // 是否用 Textarea（如 service account JSON）
-}
-const CREDENTIAL_MAP: Record<ProviderType, CredentialMapping> = {
- 'anthropic': {
- apiKeySettingKey: SettingKey.ANTHROPIC_API_KEY,
- baseUrlSettingKey: SettingKey.ANTHROPIC_BASE_URL,
- sharedWith: '已在上方「Claude Code 配置」中管理',
- },
- 'openai-responses': {
- apiKeySettingKey: SettingKey.OPENAI_API_KEY,
- baseUrlSettingKey: null,
- sharedWith: '此 API Key 同时用于 OpenAI Responses、Codex、Completions',
- },
- 'openai-codex-responses': {
- apiKeySettingKey: SettingKey.OPENAI_API_KEY,
- baseUrlSettingKey: null,
- sharedWith: '此 API Key 同时用于 OpenAI Responses、Codex、Completions',
- },
- 'openai-completions': {
- apiKeySettingKey: SettingKey.OPENAI_API_KEY,
- baseUrlSettingKey: null,
- sharedWith: '此 API Key 同时用于 OpenAI Responses、Codex、Completions',
- },
- 'google-vertex': {
- apiKeySettingKey: SettingKey.GOOGLE_SERVICE_ACCOUNT_JSON,
- baseUrlSettingKey: null,
- useTextarea: true,
- sharedWith: '使用 Service Account JSON 凭证',
- },
- 'google-gemini-cli': {
- apiKeySettingKey: SettingKey.GOOGLE_API_KEY,
- baseUrlSettingKey: null,
- sharedWith: '此 API Key 同时用于 Google Gemini 和 Antigravity',
- },
- 'google-antigravity': {
- apiKeySettingKey: SettingKey.GOOGLE_API_KEY,
- baseUrlSettingKey: null,
- sharedWith: '此 API Key 同时用于 Google Gemini 和 Antigravity',
- },
-}
 // 加载状态
 const loading = ref(true)
-const settings = ref<SettingRead>
-// 各 SettingKey 的表单状态
-const formState = reactive<Record<string, { value: string, dirty: boolean, saving: boolean }>>({})
-// 需要管理的唯一 SettingKey 集合
-const managedKeys = [
- SettingKey.OPENAI_API_KEY,
- SettingKey.GOOGLE_API_KEY,
- SettingKey.GOOGLE_SERVICE_ACCOUNT_JSON,
-]
-function initFormState {
- for (const key of managedKeys) {
- const setting = settings.value.find(s => s.key === key)
- formState[key] = {
- value: setting?.has_value && setting.masked_value ? setting.masked_value: '',
- dirty: false,
- saving: false,
- }
- }
-}
-async function loadSettings {
- loading.value = true
- try {
- settings.value = await getAllSettings
- initFormState
- }
- catch {
- toast.error('加载 Provider 设置失败')
- }
- finally {
- loading.value = false
- }
-}
-function hasValue(key: SettingKey): boolean {
- return settings.value.find(s => s.key === key)?.has_value ?? false
-}
-function onInput(key: string) {
- if (formState[key]) {
- formState[key].dirty = true
- }
-}
-async function saveKey(key: SettingKey) {
- const state = formState[key]
- if (!state || !state.dirty || !state.value.trim) return
- state.saving = true
- try {
- await updateSetting(key, state.value.trim)
- toast.success('设置已保存')
- state.dirty = false
- // 刷新设置
- settings.value = await getAllSettings
- // 更新表单值为遮罩值
- const updated = settings.value.find(s => s.key === key)
- if (updated?.has_value && updated.masked_value) {
- state.value = updated.masked_value
- }
- }
- catch {
- toast.error('保存失败')
- }
- finally {
- state.saving = false
- }
-}
-function getCredentialMapping(provider: ProviderType): CredentialMapping {
- return CREDENTIAL_MAP[provider]
-}
-// ===== 健康检查状态（Phase）=====
+// 健康检查状态
 const healthStates = reactive<Record<string, HealthStatus>>(
  Object.fromEntries(PROVIDER_REGISTRY.map(p => [p.type, { status: 'unchecked' as const }])),
 )
 const checkingAll = ref(false)
-async function checkHealth(providerType: ProviderType) {
+async function checkHealth(providerType: string) {
  healthStates[providerType] = { status: 'checking' }
  try {
- const result = await checkProviderHealth(providerType)
+ const result = await checkProviderHealth(providerType as 'anthropic')
  healthStates[providerType] = {
  status: result.status,
  latencyMs: result.latency_ms,
@@ -162,7 +34,7 @@ async function checkAllHealth {
  checkingAll.value = false
 }
 onMounted( => {
- loadSettings
+ loading.value = false
 })
 </script>
 <template>
@@ -181,7 +53,7 @@ onMounted( => {
  模型提供商配置
  </h2>
  <p class="text-sm text-muted-foreground">
- 多 Provider API 凭证配置，用于 Chat AI
+ Anthropic API 凭证配置，用于 Chat AI
  </p>
  </div>
  </div>
@@ -191,140 +63,55 @@ onMounted( => {
  检查全部
  </Button>
  </div>
- <!-- Tab 内容 -->
+ <!-- 内容 -->
  <div class="">
  <div v-if="loading" class="flex items-center justify-center py-8 text-muted-foreground">
  <span class="icon-[lucide--loader-circle] animate-spin mr-2" />
  加载中...
  </div>
- <Tabs v-else default-value="anthropic">
- <TabsList class="w-full justify-start overflow-x-auto">
- <TabsTrigger
- v-for="provider in PROVIDER_REGISTRY":key="provider.type":value="provider.type"
- class="flex items-center gap-1.5 text-xs"
- >
- <ProviderIcon:provider="provider.type" size="sm" />
- {{ TAB_LABELS[provider.type] }}
- <!-- 健康状态圆点 -->
- <span
- v-if="healthStates[provider.type]?.status !== 'checking'"
- class="w-2 rounded-full ml-0.5":class="{
- 'bg-muted-foreground/30': healthStates[provider.type]?.status === 'unchecked',
- 'bg-emerald-500': healthStates[provider.type]?.status === 'available',
- 'bg-red-500': healthStates[provider.type]?.status === 'unavailable',
- }"
- />
- <span
- v-else
- class="icon-[lucide--loader-circle] animate-spin w-3 ml-0.5 text-muted-foreground"
- />
- </TabsTrigger>
- </TabsList>
- <TabsContent
- v-for="provider in PROVIDER_REGISTRY":key="provider.type":value="provider.type"
- class="mt-4 space-y-4"
- >
- <!-- 共享提示 -->
- <div
- v-if="getCredentialMapping(provider.type).sharedWith"
- class="rounded-lg bg-muted/30 border border-border/50 px-4 py-3 text-sm text-muted-foreground flex items-start gap-2"
- >
- <span class="icon-[lucide--info] w-4 mt-0.5 shrink-0" />
- <span>{{ getCredentialMapping(provider.type).sharedWith }}</span>
+ <div v-else class="space-y-4">
+ <!-- Anthropic Provider 信息 -->
+ <div class="flex items-center gap-3 mb-4">
+ <ProviderIcon provider="anthropic" size="sm" />
+ <span class="font-medium">Anthropic Claude</span>
  </div>
- <!-- 健康检查状态区域（Phase） -->
+ <!-- 健康检查状态区域 -->
  <div class="flex items-center justify-between rounded-lg bg-muted/20 border border-border/30 px-4 py-3">
  <div class="flex items-center gap-3">
- <template v-if="healthStates[provider.type]?.status === 'unchecked'">
+ <template v-if="healthStates['anthropic']?.status === 'unchecked'">
  <span class="w-2.5 .5 rounded-full bg-muted-foreground/30" />
  <span class="text-sm text-muted-foreground">未检查</span>
  </template>
- <template v-else-if="healthStates[provider.type]?.status === 'checking'">
+ <template v-else-if="healthStates['anthropic']?.status === 'checking'">
  <span class="icon-[lucide--loader-circle] animate-spin text-muted-foreground" />
  <span class="text-sm text-muted-foreground">检查中...</span>
  </template>
- <template v-else-if="healthStates[provider.type]?.status === 'available'">
+ <template v-else-if="healthStates['anthropic']?.status === 'available'">
  <span class="w-2.5 .5 rounded-full bg-emerald-500" />
  <span class="text-sm text-emerald-600">可用</span>
- <span class="text-xs text-muted-foreground">{{ healthStates[provider.type].latencyMs }}ms</span>
+ <span class="text-xs text-muted-foreground">{{ healthStates['anthropic'].latencyMs }}ms</span>
  </template>
  <template v-else>
  <span class="w-2.5 .5 rounded-full bg-red-500" />
  <span class="text-sm text-red-600">不可用</span>
- <span v-if="healthStates[provider.type]?.error" class="text-xs text-muted-foreground truncate max-w-[200px]">{{ healthStates[provider.type].error }}</span>
+ <span v-if="healthStates['anthropic']?.error" class="text-xs text-muted-foreground truncate max-w-[200px]">{{ healthStates['anthropic'].error }}</span>
  </template>
  </div>
  <Button
  size="sm"
- variant="ghost":disabled="healthStates[provider.type]?.status === 'checking'"
- @click="checkHealth(provider.type)"
+ variant="ghost":disabled="healthStates['anthropic']?.status === 'checking'"
+ @click="checkHealth('anthropic')"
  >
  <span class="icon-[lucide--heart-pulse] mr-1.5" />
  检查
  </Button>
  </div>
- <!-- Anthropic 特殊处理：已在 Claude Code 卡片管理 -->
- <template v-if="provider.type === 'anthropic'">
- <div class="text-sm text-muted-foreground py-4 text-center">
- Anthropic API 凭证由上方「Claude Code 配置」统一管理
- </div>
- </template>
- <!-- 其他 Provider：API Key / Service Account JSON 输入 -->
- <template v-else>
- <div
- v-if="getCredentialMapping(provider.type).apiKeySettingKey && formState[getCredentialMapping(provider.type).apiKeySettingKey!]"
- class="space-y-3"
- >
- <div class="flex items-center justify-between">
- <Label class="text-sm font-medium">
- {{ getCredentialMapping(provider.type).useTextarea ? 'Service Account JSON': 'API Key' }}
- </Label>
- <span
- v-if="hasValue(getCredentialMapping(provider.type).apiKeySettingKey!)"
- class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-600 bg-emerald-500/10 rounded-full"
- >
- <span class="icon-[lucide--check-circle]" />
- 已配置
- </span>
- </div>
- <!-- Textarea 用于 Service Account JSON -->
- <Textarea
- v-if="getCredentialMapping(provider.type).useTextarea"
- v-model="formState[getCredentialMapping(provider.type).apiKeySettingKey!].value"
- rows="4"
- placeholder="粘贴 Service Account JSON..."
- class="font-mono text-xs bg-muted/30 border-border/50 resize-none"
- @input="onInput(getCredentialMapping(provider.type).apiKeySettingKey!)"
- />
- <!-- Input 用于 API Key -->
- <div v-else class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key] text-muted-foreground" />
- <Input
- v-model="formState[getCredentialMapping(provider.type).apiKeySettingKey!].value"
- type="password"
- placeholder="输入 API Key..."
- class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
- @input="onInput(getCredentialMapping(provider.type).apiKeySettingKey!)"
- />
- </div>
- <!-- 保存按钮 -->
- <div class="flex justify-end">
- <Button
- size="sm":disabled="!formState[getCredentialMapping(provider.type).apiKeySettingKey!].dirty || formState[getCredentialMapping(provider.type).apiKeySettingKey!].saving"
- @click="saveKey(getCredentialMapping(provider.type).apiKeySettingKey!)"
- >
- <span
- v-if="formState[getCredentialMapping(provider.type).apiKeySettingKey!].saving"
- class="icon-[lucide--loader-circle] animate-spin mr-2"
- />
- <span v-else class="icon-[lucide--save] mr-2" />
- 保存
- </Button>
+ <!-- 凭证说明 -->
+ <div class="rounded-lg bg-muted/30 border border-border/50 px-4 py-3 text-sm text-muted-foreground flex items-start gap-2">
+ <span class="icon-[lucide--info] w-4 mt-0.5 shrink-0" />
+ <span>Anthropic API 凭证由上方「Claude Code 配置」统一管理</span>
  </div>
  </div>
- </template>
- </TabsContent>
- </Tabs>
  </div>
  </div>
  </section>

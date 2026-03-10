@@ -2,15 +2,13 @@
 import {
  Select,
  SelectContent,
- SelectGroup,
  SelectItem,
- SelectLabel,
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
 import ProviderIcon from '~/components/provider/ProviderIcon.vue'
 import ProviderBadge from '~/components/provider/ProviderBadge.vue'
-import { PROVIDER_GROUPS } from '~/types/provider'
+import { PROVIDER_REGISTRY } from '~/types/provider'
 import type { ConfigSource, ProviderType } from '~/types/provider'
 const props = withDefaults(defineProps<{
  modelValue?: ProviderType
@@ -40,17 +38,14 @@ function onValueChange(value: any) {
  <SelectValue placeholder="请选择 Provider" />
  </SelectTrigger>
  <SelectContent>
- <SelectGroup v-for="group in PROVIDER_GROUPS":key="group.label">
- <SelectLabel>{{ group.label }}</SelectLabel>
  <SelectItem
- v-for="provider in group.providers":key="provider.type":value="provider.type"
+ v-for="provider in PROVIDER_REGISTRY":key="provider.type":value="provider.type"
  >
  <div class="flex items-center gap-2">
  <ProviderIcon:provider="provider.type" size="sm" />
  <span>{{ provider.displayName }}</span>
  </div>
  </SelectItem>
- </SelectGroup>
  </SelectContent>
  </Select>
  <ProviderBadge v-if="configSource":source="configSource" />
