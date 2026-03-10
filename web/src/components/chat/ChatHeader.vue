@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Model } from '~/api/chat'
+import { getModels } from '~/api/chat'
 import {
  Select,
  SelectContent,
@@ -7,8 +9,6 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { ROLE_OPTIONS } from '~/types/chat'
-import { getModels } from '~/api/chat'
-import type { Model } from '~/api/chat'
 const chatStore = useChatStore
 const projectsStore = useProjectsStore
 // 获取模型列表（当前仅 Anthropic）
