@@ -310,7 +310,7 @@ async def test_resume_rejects_non_failed_execution(linear_workflow):
  original.status = ExecutionStatus.COMPLETED
  await original.asave(update_fields=["status"])
  engine = WorkflowEngine
- with pytest.raises(ValueError, match="只能从失败或已取消的执行继续"):
+ with pytest.raises(ValueError, match="只能从失败、已取消或超时的执行继续"):
  await engine.resume_from_node(
  original_execution=original,
  failed_node_id=str(node_b.id),
@@ -336,3 +336,70 @@ async def test_resume_rejects_definition_changed(linear_workflow):
  original_execution=original,
  failed_node_id=str(node_b.id),
  )
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_resume_from_timeout_execution(linear_workflow):
+ """timeout 状态的执行允许恢复。"""
+ workflow, node_a, node_b, node_c = linear_workflow
+ original = await _create_failed_execution(workflow, node_a, node_b, node_c)
+ # 改为 timeout 状态
+ original.status = ExecutionStatus.TIMEOUT
+ await original.asave(update_fields=["status"])
+ engine = WorkflowEngine
+ new_exec = await engine.resume_from_node(
+ original_execution=original,
+ failed_node_id=str(node_b.id),
+ run_sync=True,
+ )
+ assert new_exec is not None
+ assert new_exec.trigger_type == "resume"
+ assert new_exec.resumed_from_id == original.id
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_resume_mutex_rejects_concurrent(linear_workflow):
+ """互斥锁定：当存在活跃恢复执行时拒绝新恢复。"""
+ workflow, node_a, node_b, node_c = linear_workflow
+ original = await _create_failed_execution(workflow, node_a, node_b, node_c)
+ engine = WorkflowEngine
+ # 第一次恢复成功
+ new_exec = await engine.resume_from_node(
+ original_execution=original,
+ failed_node_id=str(node_b.id),
+ run_sync=True,
+ )
+ # 手动将新执行设为 RUNNING（模拟正在运行）
+ new_exec.status = ExecutionStatus.RUNNING
+ await new_exec.asave(update_fields=["status"])
+ # 第二次恢复应被拒绝
+ with pytest.raises(ValueError, match="已有恢复执行正在运行"):
+ await engine.resume_from_node(
+ original_execution=original,
+ failed_node_id=str(node_b.id),
+ run_sync=True,
+ )
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_resume_mutex_allows_after_completion(linear_workflow):
+ """互斥锁定：活跃恢复执行完成后允许再次恢复。"""
+ workflow, node_a, node_b, node_c = linear_workflow
+ original = await _create_failed_execution(workflow, node_a, node_b, node_c)
+ engine = WorkflowEngine
+ # 第一次恢复
+ new_exec = await engine.resume_from_node(
+ original_execution=original,
+ failed_node_id=str(node_b.id),
+ run_sync=True,
+ )
+ # 标记为已完成（不再阻塞）
+ new_exec.status = ExecutionStatus.COMPLETED
+ await new_exec.asave(update_fields=["status"])
+ # 重新设置原执行为 FAILED（因为恢复后可能被改了状态）
+ original.status = ExecutionStatus.FAILED
+ await original.asave(update_fields=["status"])
+ # 第二次恢复应被允许
+ new_exec_2 = await engine.resume_from_node(
+ original_execution=original,
+ failed_node_id=str(node_b.id),
+ run_sync=True,
+ )
+ assert new_exec_2.id != new_exec.id
