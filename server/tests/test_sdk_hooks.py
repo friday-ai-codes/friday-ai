@@ -35,7 +35,6 @@ def _make_stop_input -> dict[str, Any]:
  "cwd": "/tmp",
  "permission_mode": "plan",
  }
-@pytest.mark.xfail(reason="awaiting hooks.py implementation")
 @pytest.mark.django_db
 async def test_post_tool_use_creates_log -> None:
  """PostToolUse hook 创建 ToolCallLog 记录。"""
@@ -52,7 +51,6 @@ async def test_post_tool_use_creates_log -> None:
  call_kwargs = mock_model.objects.acreate.call_args.kwargs
  assert call_kwargs["tool_name"] == "mcp__chat-tools__search_code"
  assert call_kwargs["tool_call_id"] == "tool_123"
-@pytest.mark.xfail(reason="awaiting hooks.py implementation")
 @pytest.mark.django_db
 async def test_post_tool_use_db_failure_silent -> None:
  """PostToolUse hook DB 写入失败时不抛出异常。"""
@@ -66,7 +64,6 @@ async def test_post_tool_use_db_failure_silent -> None:
  # 不应该抛出异常
  result = await hook(input_data, "tool_123", MagicMock)
  assert result == {}
-@pytest.mark.xfail(reason="awaiting hooks.py implementation")
 @pytest.mark.django_db
 async def test_post_tool_use_sends_event -> None:
  """PostToolUse hook 通过 event_callback 发送 TOOL_USE_RESULT 事件。"""
@@ -82,7 +79,6 @@ async def test_post_tool_use_sends_event -> None:
  event_callback.assert_awaited_once
  event = event_callback.call_args[0][0]
  assert event.type == TOOL_USE_RESULT
-@pytest.mark.xfail(reason="awaiting hooks.py implementation")
 @pytest.mark.django_db
 async def test_stop_hook_updates_session -> None:
  """Stop hook 更新 AgentSession 为 completed 状态。"""
@@ -94,7 +90,6 @@ async def test_stop_hook_updates_session -> None:
  await hook(input_data, "", MagicMock)
  session.asave.assert_awaited_once
  assert session.status == "completed"
-@pytest.mark.xfail(reason="awaiting hooks.py implementation")
 @pytest.mark.django_db
 async def test_stop_hook_db_failure_silent -> None:
  """Stop hook DB 更新失败时不抛出异常。"""
