@@ -10,7 +10,6 @@ import structlog
 from django.utils import timezone
 from agents.core.events import (
  AgentEvent,
- ERROR,
  MESSAGE_COMPLETE,
  TITLE_GENERATED,
 )
