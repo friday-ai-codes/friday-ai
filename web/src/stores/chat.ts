@@ -25,6 +25,7 @@ export const useChatStore = defineStore('chat', => {
  // 流式状态
  const isStreaming = ref(false)
  const streamingContent = ref('')
+ const streamingThinking = ref('')
  const streamingToolCalls = ref<Array<{
  id: string
  name: string
@@ -129,6 +130,7 @@ export const useChatStore = defineStore('chat', => {
  currentConversationId.value = null
  messages.value =
  streamingContent.value = ''
+ streamingThinking.value = ''
  streamingToolCalls.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
@@ -140,6 +142,9 @@ export const useChatStore = defineStore('chat', => {
  switch (event.type) {
  case 'text_delta':
  streamingContent.value += event.text || ''
+ break
+ case 'thinking':
+ streamingThinking.value += event.thinking || ''
  break
  case 'tool_use_start':
  streamingToolCalls.value.push({
@@ -180,6 +185,7 @@ export const useChatStore = defineStore('chat', => {
  if (!currentConversationId.value || isStreaming.value) return
  // 清除之前的流式状态
  streamingContent.value = ''
+ streamingThinking.value = ''
  streamingToolCalls.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
@@ -226,6 +232,7 @@ export const useChatStore = defineStore('chat', => {
  }
  messages.value.push(assistantMessage)
  streamingContent.value = ''
+ streamingThinking.value = ''
  streamingToolCalls.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
@@ -242,6 +249,7 @@ export const useChatStore = defineStore('chat', => {
  error,
  isStreaming,
  streamingContent,
+ streamingThinking,
  streamingToolCalls,
  streamingMessageId,
  streamingMetadata,
