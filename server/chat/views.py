@@ -1,23 +1,13 @@
 """Chat API views."""
-import asyncio
-import time
-from typing import Any
 import structlog
-from django.core.cache import cache
 from django.http import StreamingHttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from adrf.views import APIView
 from agents.core.events import ERROR, AgentEvent
-from agents.llm.base import create_provider
-from agents.llm.providers import (
- PROVIDER_REGISTRY,
- ProviderType,
-)
-from .authentication import ChatKeyAuthentication
+from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
 from .conversation_service import ConversationService
 from .models import Conversation
 from .permissions import ChatAuthPermission
@@ -28,20 +18,17 @@ from .serializers import (
  ConversationListSerializer,
  ConversationMessageSerializer,
  CreateConversationSerializer,
- HealthCheckResponseSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
- ProviderSerializer,
- SendMessageResponseSerializer,
  SendMessageSerializer,
 )
-from .services import ChatMessage, ChatServiceError, aget_chat_service, aget_setting_value
+from .services import ChatMessage, ChatServiceError, aget_chat_service
 from .streaming import format_keepalive, format_sse
 from projects.models import Project
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
  """API view for getting available models."""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="获取可用模型列表",
@@ -181,7 +168,7 @@ class ChatCompletionsView(APIView):
 # ============================================================================
 class ConversationListView(APIView):
  """对话列表 + 创建。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="获取对话列表",
@@ -230,7 +217,7 @@ class ConversationListView(APIView):
  return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 class ConversationDetailView(APIView):
  """对话详情 + 删除。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="获取对话详情",
@@ -282,53 +269,13 @@ class ConversationDetailView(APIView):
  status=status.HTTP_404_NOT_FOUND,
  )
  return Response(status=status.HTTP_204_NO_CONTENT)
-class SendMessageView(APIView):
- """发送消息。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
- permission_classes = [ChatAuthPermission]
- @extend_schema(
- summary="发送消息",
- description="发送消息并获得 AI 回复（同步模式）",
- request=SendMessageSerializer,
- responses={
- 200: SendMessageResponseSerializer,
- 400: {"description": "请求参数错误"},
- 404: {"description": "对话不存在"},
- },
- tags=["Conversations"],
- )
- async def post(self, request, conversation_id):
- """发送消息获取 AI 回复。"""
- serializer = SendMessageSerializer(data=request.data)
- if not serializer.is_valid:
- return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
- content = serializer.validated_data["content"]
- role = serializer.validated_data.get("role", "developer")
- try:
- result = await ConversationService.send_message(
- conversation_id=str(conversation_id),
- content=content,
- role=role,
- )
- except Conversation.DoesNotExist:
- return Response(
- {"error": "对话不存在"},
- status=status.HTTP_404_NOT_FOUND,
- )
- message = result["message"]
- response_data = {
- "message": ConversationMessageSerializer(message).data,
- "tool_calls": result.get("tool_calls", ),
- "usage": result.get("usage"),
- }
- return Response(response_data)
 class ChatStreamView(APIView):
  """SSE 流式消息端点。
  通过 Server-Sent Events 返回 AI 回复的实时流，
  每个事件包含结构化 JSON，类型包括 text_delta / tool_use_start /
- tool_use_result / message_complete / title_generated / error。
+ tool_use_result / message_complete / thinking / title_generated / error。
  """
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="流式发送消息",
@@ -403,210 +350,3 @@ class ChatStreamView(APIView):
  AgentEvent(type=ERROR, data={"message": "服务内部错误"}),
  message_id=message_id,
  )
-# ============================================================================
-# Provider API Views (Phase)
-# ============================================================================
-# Provider icon 映射表（ProviderType → iconify 标识符）
-PROVIDER_ICONS: dict[ProviderType, str] = {
- ProviderType.ANTHROPIC: "simple-icons--anthropic",
-}
-# env_key（PROVIDER_REGISTRY）→ SettingKey 映射
-_ENV_TO_SETTING: dict[str, str] = {
- "ANTHROPIC_API_KEY": "anthropic_api_key",
-}
-# 模型列表缓存 TTL（秒）
-_MODEL_CACHE_TTL = 300 # 5 分钟
-def _validate_provider_type(provider_type_str: str) -> ProviderType | None:
- """验证并转换 provider_type 字符串为枚举值。"""
- try:
- return ProviderType(provider_type_str)
- except ValueError:
- return None
-async def _get_credential_setting_key(provider_type: ProviderType) -> str | None:
- """获取 Provider 对应的凭据 SettingKey。"""
- metadata = PROVIDER_REGISTRY[provider_type]
- env_key = metadata["env_key"]
- return _ENV_TO_SETTING.get(env_key)
-async def _has_credential(provider_type: ProviderType) -> bool:
- """检查 Provider 是否已配置凭据。"""
- setting_key = await _get_credential_setting_key(provider_type)
- if not setting_key:
- return False
- value = await aget_setting_value(setting_key)
- return bool(value)
-async def _get_provider_models(
- provider_type: ProviderType,
- api_key: str,
- base_url: str,
-) -> list[Any]:
- """获取 Provider 的模型列表（通过上游 API 调用）。"""
- provider = create_provider(
- provider_type=provider_type,
- api_key=api_key,
- base_url=base_url,
- )
- # LLMProvider (agents.llm.base) 没有 get_models 方法
- # 对于支持的 Provider，使用 chat 协议层的 ChatService
- service = await aget_chat_service(source="system")
- return await service.get_models
-class ProviderListView(APIView):
- """Provider 列表 API。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
- permission_classes = [ChatAuthPermission]
- @extend_schema(
- summary="获取 Provider 列表",
- description="返回所有可用 Provider 及其凭据配置状态",
- responses={200: ProviderSerializer(many=True)},
- tags=["Providers"],
- )
- async def get(self, request: Any) -> Response:
- """返回所有 Provider 列表。"""
- providers =
- for pt, metadata in PROVIDER_REGISTRY.items:
- has_cred = await _has_credential(pt)
- providers.append({
- "id": str(pt),
- "name": metadata["display_name"],
- "icon": PROVIDER_ICONS.get(pt, "simple-icons--bot"),
- "credential_type": str(metadata["credential_type"]),
- "has_credential": has_cred,
- })
- return Response(providers)
-class ProviderModelsView(APIView):
- """Provider 模型列表 API（带缓存）。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
- permission_classes = [ChatAuthPermission]
- @extend_schema(
- summary="获取 Provider 的模型列表",
- description="返回指定 Provider 可用的模型列表，结果缓存 5 分钟",
- responses={
- 200: {"description": "模型列表"},
- 400: {"description": "无效的 Provider 类型"},
- },
- tags=["Providers"],
- )
- async def get(self, request: Any, provider_type: str) -> Response:
- """获取指定 Provider 的模型列表。"""
- pt = _validate_provider_type(provider_type)
- if pt is None:
- return Response(
- {"error": f"无效的 Provider 类型: {provider_type}"},
- status=status.HTTP_400_BAD_REQUEST,
- )
- # 检查缓存
- cache_key = f"provider_models:{provider_type}"
- cached = cache.get(cache_key)
- if cached is not None:
- return Response(cached)
- try:
- models = await _get_provider_models(pt, "", "")
- data = {
- "models": [
- {"id": m.id, "name": m.name, "created": m.created}
- for m in models
- ]
- }
- cache.set(cache_key, data, _MODEL_CACHE_TTL)
- return Response(data)
- except Exception as e:
- logger.warning("获取模型列表失败", provider_type=provider_type, error=str(e))
- return Response(
- {"error": f"获取模型列表失败: {e!s}"},
- status=status.HTTP_400_BAD_REQUEST,
- )
-class ProviderHealthView(APIView):
- """Provider 健康检查 API。"""
- authentication_classes = [JWTAuthentication, ChatKeyAuthentication]
- permission_classes = [ChatAuthPermission]
- # 健康检查超时（秒）— CONTEXT.md 锁定 10 秒
- _HEALTH_TIMEOUT = 10.0
- @extend_schema(
- summary="检查 Provider 健康状态",
- description="通过微型 completion 探测验证 Provider 可用性，超时 10 秒",
- responses={
- 200: HealthCheckResponseSerializer,
- 400: {"description": "无效的 Provider 类型"},
- },
- tags=["Providers"],
- )
- async def post(self, request: Any, provider_type: str) -> Response:
- """执行 Provider 健康检查。"""
- pt = _validate_provider_type(provider_type)
- if pt is None:
- return Response(
- {"error": f"无效的 Provider 类型: {provider_type}"},
- status=status.HTTP_400_BAD_REQUEST,
- )
- # 获取凭据
- setting_key = await _get_credential_setting_key(pt)
- if not setting_key:
- return Response({
- "provider_type": provider_type,
- "status": "unavailable",
- "latency_ms": 0,
- "error": "Provider 凭据配置未映射",
- })
- credential = await aget_setting_value(setting_key)
- if not credential:
- return Response({
- "provider_type": provider_type,
- "status": "unavailable",
- "latency_ms": 0,
- "error": "凭据未配置",
- })
- # 获取 base_url
- metadata = PROVIDER_REGISTRY[pt]
- base_url = metadata["default_base_url"]
- # 微型 completion 探测
- start = time.perf_counter
- try:
- provider = create_provider(
- provider_type=pt,
- api_key=credential,
- base_url=base_url,
- )
- await asyncio.wait_for(
- provider.chat(
- messages=[{"role": "user", "content": "Hi"}],
- max_tokens=1,
- ),
- timeout=self._HEALTH_TIMEOUT,
- )
- elapsed_ms = int((time.perf_counter - start) * 1000)
- # 成功后自动刷新模型缓存
- cache.delete(f"provider_models:{provider_type}")
- return Response({
- "provider_type": provider_type,
- "status": "available",
- "latency_ms": elapsed_ms,
- "error": None,
- })
- except TimeoutError:
- elapsed_ms = int((time.perf_counter - start) * 1000)
- return Response({
- "provider_type": provider_type,
- "status": "unavailable",
- "latency_ms": elapsed_ms,
- "error": "请求超时（10秒）",
- })
- except NotImplementedError as e:
- elapsed_ms = int((time.perf_counter - start) * 1000)
- return Response({
- "provider_type": provider_type,
- "status": "unavailable",
- "latency_ms": elapsed_ms,
- "error": str(e),
- })
- except Exception as e:
- elapsed_ms = int((time.perf_counter - start) * 1000)
- logger.warning(
- "health_check_failed",
- provider_type=provider_type,
- error=str(e),
- )
- return Response({
- "provider_type": provider_type,
- "status": "unavailable",
- "latency_ms": elapsed_ms,
- "error": str(e),
- })
