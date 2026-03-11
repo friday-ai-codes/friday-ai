@@ -7,8 +7,6 @@ export enum SettingKey {
  ANTHROPIC_API_KEY = 'anthropic_api_key',
  ANTHROPIC_BASE_URL = 'anthropic_base_url',
  ANTHROPIC_MODEL = 'anthropic_model',
- // Provider 配置
- DEFAULT_PROVIDER_TYPE = 'default_provider_type',
  GIT_HTTP_PROXY = 'git_http_proxy',
  // Vector Index Settings
  QDRANT_URL = 'qdrant_url',
