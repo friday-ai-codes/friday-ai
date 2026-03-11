@@ -8,6 +8,7 @@ const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
  streamingContent?: string
+ streamingThinking?: string
  streamingToolCalls?: Array<{ id: string, name: string, input: Record<string, unknown>, result?: string, status: 'running' | 'done' }>
 }>
 // Markdown 渲染
@@ -35,6 +36,9 @@ watch(
  if (mdReady.value) renderContent
  },
 )
+// Thinking 折叠状态
+const thinkingExpanded = ref(false)
+const hasThinking = computed( => !!props.streamingThinking)
 // 格式化时间
 function formatTime(dateStr: string) {
  return new Date(dateStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -67,6 +71,31 @@ const metadata = computed( => props.message.metadata as { model?: string, usage?
  </div>
  <!-- AI 消息 + Markdown 渲染 -->
  <div v-else>
+ <!-- Thinking 折叠面板 -->
+ <div
+ v-if="isStreaming && hasThinking"
+ class="mb-3 rounded-xl bg-muted/30 border border-border/30 overflow-hidden"
+ >
+ <button
+ type="button"
+ class="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+ @click="thinkingExpanded = !thinkingExpanded"
+ >
+ <span class="icon-[lucide--brain] text-primary/60 animate-pulse" />
+ <span class="italic">正在思考...</span>
+ <span
+ class="ml-auto transition-transform duration-200":class="thinkingExpanded ? 'rotate-180': ''"
+ >
+ <span class="icon-[lucide--chevron-down] text-xs" />
+ </span>
+ </button>
+ <div
+ v-show="thinkingExpanded"
+ class="px-3 pb-2 text-xs text-muted-foreground/80 italic whitespace-pre-wrap break-words max- overflow-y-auto"
+ >
+ {{ streamingThinking }}
+ </div>
+ </div>
  <!-- 流式中的光标（无内容时） -->
  <div
  v-if="isStreaming && !renderedHtml"

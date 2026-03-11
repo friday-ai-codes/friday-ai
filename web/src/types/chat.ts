@@ -46,6 +46,8 @@ export interface SSEEvent {
  input?: Record<string, unknown>
  // tool_use_result
  result?: string
+ // thinking
+ thinking?: string
  // message_complete
  usage?: { prompt_tokens: number, completion_tokens: number, total_tokens: number }
  model?: string
