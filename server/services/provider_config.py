@@ -57,8 +57,7 @@ def _resolve_provider_type(
 ) -> tuple[ProviderType, str]:
  """从四层配置中解析 provider_type。
  返回 (ProviderType, source) 元组。
- Raises:
- ProviderConfigError: 四层都没有找到 provider_type
+ 四层都没有时默认使用 ANTHROPIC。
  """
  # 1. 节点级
  if node_config and node_config.get("provider_type"):
@@ -76,9 +75,8 @@ def _resolve_provider_type(
  system_pt = get_setting(SettingKeys.DEFAULT_PROVIDER_TYPE)
  if system_pt:
  return _parse_provider_type(system_pt), "system"
- raise ProviderConfigError(
- "未找到 Provider 配置。请在系统设置中配置 default_provider_type"
- )
+ # 默认使用 Anthropic
+ return ProviderType.ANTHROPIC, "system"
 def _parse_provider_type(value: str) -> ProviderType:
  """将字符串转换为 ProviderType 枚举。"""
  try:
@@ -133,7 +131,11 @@ class ProviderConfigService:
  node_config, conversation, project, _get_setting_value_sync
  )
  credential = _resolve_credential(provider_type, _get_setting_value_sync)
- base_url = PROVIDER_REGISTRY[provider_type]["default_base_url"]
+ # base_url: 系统设置优先，回退到注册表默认值
+ base_url = (
+ _get_setting_value_sync(SettingKeys.ANTHROPIC_BASE_URL)
+ or PROVIDER_REGISTRY[provider_type]["default_base_url"]
+ )
  logger.info(
  "provider_config_resolved",
  provider_type=str(provider_type),
@@ -174,11 +176,11 @@ class ProviderConfigService:
  else:
  # 4. 系统级（需要异步 DB 查询）
  system_pt = await _get_setting_value_async(SettingKeys.DEFAULT_PROVIDER_TYPE)
- if not system_pt:
- raise ProviderConfigError(
- "未找到 Provider 配置。请在系统设置中配置 default_provider_type"
- )
+ if system_pt:
  provider_type = _parse_provider_type(system_pt)
+ else:
+ # 默认使用 Anthropic
+ provider_type = ProviderType.ANTHROPIC
  source = "system"
  # 凭据解析（需要异步 DB 查询）
  metadata = PROVIDER_REGISTRY[provider_type]
@@ -194,7 +196,11 @@ class ProviderConfigService:
  raise ProviderConfigError(
  f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
  )
- base_url = metadata["default_base_url"]
+ # base_url: 系统设置优先，回退到注册表默认值
+ base_url = (
+ await _get_setting_value_async(SettingKeys.ANTHROPIC_BASE_URL)
+ or metadata["default_base_url"]
+ )
  logger.info(
  "provider_config_resolved",
  provider_type=str(provider_type),

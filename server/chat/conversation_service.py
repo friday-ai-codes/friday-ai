@@ -54,12 +54,17 @@ ROLE_PROMPTS: dict[str, str] = {
  ),
 }
 VALID_ROLES = frozenset(ROLE_PROMPTS.keys)
-def _build_system_prompt(project_name: str, role: str = "developer") -> str:
+def _build_system_prompt(
+ project_name: str,
+ project_id: str,
+ role: str = "developer",
+) -> str:
  """构建角色化 system prompt。
  根据用户选择的角色生成差异化的 system prompt，
  影响 AI 的回答风格、关注点和术语级别。
  Args:
  project_name: 项目名称
+ project_id: 项目 UUID（供工具调用时使用）
  role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
  Returns:
  完整的 system prompt 字符串
@@ -67,7 +72,8 @@ def _build_system_prompt(project_name: str, role: str = "developer") -> str:
  role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
  return (
  f"{role_prompt}\n\n"
- f"你正在为项目「{project_name}」提供帮助。"
+ f"你正在为项目「{project_name}」（project_id: {project_id}）提供帮助。"
+ f"调用工具时请使用此 project_id。"
  f"基于项目知识库回答，如果不确定请说明。用中文回答。"
  )
 async def _get_tool_names(project_id: str) -> list[str]:

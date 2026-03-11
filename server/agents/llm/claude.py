@@ -6,6 +6,7 @@ and network errors, token usage tracking, and tool_use support.
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
+import httpx
 import anthropic
 import structlog
 from tenacity import (
@@ -69,7 +70,9 @@ class ClaudeProvider:
  resolved_api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
  resolved_base_url = base_url
  # Initialize async client
- client_kwargs: dict[str, Any] = {}
+ client_kwargs: dict[str, Any] = {
+ "timeout": httpx.Timeout(300.0, connect=30.0),
+ }
  if resolved_api_key:
  client_kwargs["api_key"] = resolved_api_key
  if resolved_base_url:
@@ -82,6 +85,7 @@ class ClaudeProvider:
  (
  anthropic.RateLimitError,
  anthropic.APIConnectionError,
+ anthropic.APITimeoutError,
  )
  ),
  before_sleep=_log_retry,
@@ -142,6 +146,7 @@ class ClaudeProvider:
  (
  anthropic.RateLimitError,
  anthropic.APIConnectionError,
+ anthropic.APITimeoutError,
  )
  ),
  before_sleep=_log_retry,
