@@ -29,11 +29,15 @@ class AgentSession(models.Model):
  Project,
  on_delete=models.CASCADE,
  related_name="agent_sessions",
+ null=True,
+ blank=True,
  )
  user = models.ForeignKey(
  User,
  on_delete=models.CASCADE,
  related_name="agent_sessions",
+ null=True,
+ blank=True,
  )
  # Optional link to Feishu work item
  work_item_id = models.CharField(max_length=64, blank=True, default="")

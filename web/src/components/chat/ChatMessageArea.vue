@@ -23,9 +23,9 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
 }
 // 新消息/流式内容到达时自动滚动
 watch(
- => [chatStore.messages.length, chatStore.streamingContent],
+ => [chatStore.messages.length, chatStore.streamingContent, chatStore.error],
  => {
- if (isAtBottom.value || chatStore.isStreaming) {
+ if (isAtBottom.value || chatStore.isStreaming || chatStore.error) {
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
  }
  },
@@ -74,6 +74,23 @@ watch(
  created_at: new Date.toISOString,
  }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls"
  />
+ <!-- 错误提示 -->
+ <div
+ v-if="chatStore.error"
+ class="flex items-start gap-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm"
+ >
+ <span class="icon-[lucide--alert-circle] text-lg shrink-0 mt-0.5" />
+ <div class="flex-1 min-w-0">
+ <p class="font-medium">请求失败</p>
+ <p class="mt-1 opacity-80 break-words">{{ chatStore.error }}</p>
+ </div>
+ <button
+ class="shrink-0 rounded hover:bg-destructive/10 transition-colors"
+ @click="chatStore.error = null"
+ >
+ <span class="icon-[lucide--x] text-sm" />
+ </button>
+ </div>
  </div>
  </div>
  <!-- 回到底部按钮 -->
