@@ -14,10 +14,10 @@ class AgentContext:
  """
  session_id: str
  """Unique identifier for this agent session."""
- project_id: int
- """ID of the associated project."""
- user_id: int
- """ID of the user who initiated the session."""
+ project_id: Any = None
+ """ID of the associated project (UUID or int)."""
+ user_id: Any = None
+ """ID of the user who initiated the session (UUID or int)."""
  work_item_id: str | None = None
  """Optional Feishu work item ID this session is related to."""
  metadata: dict[str, Any] = field(default_factory=dict)

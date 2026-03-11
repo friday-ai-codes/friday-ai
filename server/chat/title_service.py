@@ -9,8 +9,8 @@ from chat.models import Conversation, Message
 from chat.services import aget_setting_value
 from system.models import SettingKeys
 logger = structlog.get_logger(__name__)
-# 标题生成模型 — 使用 Haiku 级别小模型，与对话模型无关
-TITLE_MODEL = "claude-haiku-4-20250929"
+# 标题生成使用系统配置的默认模型（与对话模型一致）
+TITLE_MODEL_FALLBACK = "claude-sonnet-4-20250514"
 TITLE_PROMPT = (
  "根据以下用户消息，生成一个简短的中文对话标题（10字以内），"
  "描述用户的核心意图。只输出标题文字，不要引号、标点或解释。\n\n"
@@ -48,12 +48,13 @@ async def generate_title(
  if not api_key:
  logger.warning("title_generation_skipped", reason="no_api_key")
  return None
- # 创建独立 provider（Haiku 小模型）
+ # 使用系统配置的模型，回退到轻量默认值
+ model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or TITLE_MODEL_FALLBACK
  provider = create_provider(
  provider_type="anthropic",
  api_key=api_key,
  base_url=base_url,
- model=TITLE_MODEL,
+ model=model,
  )
  # 生成标题
  response = await provider.chat(

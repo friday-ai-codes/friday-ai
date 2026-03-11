@@ -27,8 +27,11 @@ env = environ.Env(
  SECRET_KEY=(str, INSECURE_SECRET_KEY),
  ALLOWED_HOSTS=(list, LOCALHOST_HOSTS),
 )
-# Read .env file
-env.read_env(BASE_DIR / ".env", overwrite=False)
+# Read .env file (server/.env 优先，回退到项目根 .env)
+_env_file = BASE_DIR / ".env"
+if not _env_file.exists:
+ _env_file = BASE_DIR.parent / ".env"
+env.read_env(_env_file, overwrite=False)
 # =============================================================================
 # Core Settings
 # =============================================================================
