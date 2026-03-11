@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from adrf.views import APIView
 from agents.core.events import ERROR, AgentEvent
+from projects.models import Project
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
 from .conversation_service import ConversationService
 from .models import Conversation
@@ -24,7 +25,6 @@ from .serializers import (
 )
 from .services import ChatMessage, ChatServiceError, aget_chat_service
 from .streaming import format_keepalive, format_sse
-from projects.models import Project
 logger = structlog.get_logger(__name__)
 class ModelsView(APIView):
  """API view for getting available models."""
@@ -308,7 +308,9 @@ class ChatStreamView(APIView):
  )
  response = StreamingHttpResponse(
  streaming_content=self._stream_events(
- str(conversation_id), content, role,
+ str(conversation_id),
+ content,
+ role,
  ),
  content_type="text/event-stream",
  )
