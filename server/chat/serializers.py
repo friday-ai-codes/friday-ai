@@ -140,26 +140,3 @@ class SendMessageSerializer(serializers.Serializer):
  required=False,
  help_text="用户角色（影响 AI 回答风格）",
  )
-class SendMessageResponseSerializer(serializers.Serializer):
- """发送消息响应。"""
- message = ConversationMessageSerializer
- tool_calls = serializers.ListField(
- child=serializers.DictField, required=False, default=list,
- )
- usage = serializers.DictField(required=False, allow_null=True)
-# ============================================================================
-# Provider Serializers (Phase)
-# ============================================================================
-class ProviderSerializer(serializers.Serializer):
- """Provider 列表项。"""
- id = serializers.CharField
- name = serializers.CharField
- icon = serializers.CharField
- credential_type = serializers.CharField
- has_credential = serializers.BooleanField
-class HealthCheckResponseSerializer(serializers.Serializer):
- """健康检查响应。"""
- provider_type = serializers.CharField
- status = serializers.ChoiceField(choices=["available", "unavailable"])
- latency_ms = serializers.IntegerField
- error = serializers.CharField(required=False, allow_null=True)
