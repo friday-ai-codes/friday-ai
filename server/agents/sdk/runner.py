@@ -16,7 +16,6 @@ from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
 from agents.sdk.mcp_adapter import build_allowed_tools, create_chat_tools_mcp_server
-from services.provider_config import ProviderConfigService
 logger = structlog.get_logger(__name__)
 @contextmanager
 def clean_claude_env -> Generator[dict[str, str], None, None]:
@@ -54,6 +53,7 @@ class SdkRunnerConfig:
  model: str
  project_id: str
  session_id: str
+ api_key: str = ""
  max_turns: int = 15
  timeout_seconds: float = 300.0 # 5 分钟
  permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "bypassPermissions"
@@ -86,9 +86,10 @@ class SDKAgentRunner:
  Yields:
  AgentEvent 实例（包含 text_delta、tool_use_start 等事件）
  """
- # 1. 解析 API key
- resolved = await ProviderConfigService.aresolve
- api_key = resolved.api_key
+ # 1. API key（由调用方注入）
+ api_key = self._config.api_key
+ if not api_key:
+ raise ValueError("SdkRunnerConfig.api_key 不能为空")
  # 2. 构建 MCP server 和 allowed_tools
  mcp_server = create_chat_tools_mcp_server
  allowed_tools = await build_allowed_tools(self._config.project_id)

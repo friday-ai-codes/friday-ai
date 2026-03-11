@@ -106,7 +106,7 @@ def create_post_tool_use_hook(
  type=TOOL_USE_RESULT,
  data={
  "tool_name": tool_name,
- "tool_use_id": tool_id,
+ "tool_call_id": tool_id,
  "success": not is_error,
  },
  )

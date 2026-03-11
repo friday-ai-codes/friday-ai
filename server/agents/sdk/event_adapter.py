@@ -132,7 +132,7 @@ class EventAdapter:
  type=TOOL_USE_START,
  data=self._inject_metadata({
  "tool_name": tool_name,
- "tool_use_id": tool_use_id,
+ "tool_call_id": tool_use_id,
  }),
  )
  ]
