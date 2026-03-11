@@ -29,7 +29,6 @@ export interface GetModelsParams {
  project_id?: number
  api_key?: string
  base_url?: string
- provider_type?: string
 }
 /** 对话请求 */
 export interface ChatCompletionRequest {
@@ -122,7 +121,6 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
  project_id: params.project_id,
  api_key: params.api_key,
  base_url: params.base_url,
- provider_type: params.provider_type,
  }
  const response = await get<ModelsResponse>('/chat/models', queryParams)
  // 对模型列表进行排序
