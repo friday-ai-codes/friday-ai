@@ -9,7 +9,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from agents.core.events import ERROR, TEXT_DELTA
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_runner_constructs_options -> None:
  """SDKAgentRunner 构造正确的 ClaudeAgentOptions 参数。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -26,7 +25,6 @@ async def test_runner_constructs_options -> None:
  assert runner._config.max_turns == 15
  assert runner._config.timeout_seconds == 300.0
  assert runner._config.permission_mode == "bypassPermissions"
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_api_key_injection -> None:
  """API key 通过 ProviderConfigService.aresolve 注入 env。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -56,7 +54,6 @@ async def test_api_key_injection -> None:
  call_kwargs = mock_query.call_args
  options = call_kwargs.kwargs.get("options") or call_kwargs[1].get("options")
  assert options.env["ANTHROPIC_API_KEY"] == "sk-test-key-123"
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_stream_yields_events -> None:
  """stream 将 SDK StreamEvent 转换为 AgentEvent 并 yield。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -93,7 +90,6 @@ async def test_stream_yields_events -> None:
  events.append(event)
  assert len(events) >= 1
  assert events[0].type == TEXT_DELTA
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_stream_queue_bridge -> None:
  """Queue 桥接正确传递事件，哨兵值终止迭代。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -132,7 +128,6 @@ async def test_stream_queue_bridge -> None:
  events = [e async for e in runner.stream("test") if e.type != "keepalive"]
  # 应该收到所有文本事件 + message_complete
  assert len(events) >= 5
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_stream_timeout -> None:
  """5 分钟超时后产生 ERROR 事件。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -165,7 +160,6 @@ async def test_stream_timeout -> None:
  error_events = [e for e in events if e.type == ERROR]
  assert len(error_events) >= 1
  assert "超时" in error_events[0].data["message"]
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_stream_generator_exit -> None:
  """GeneratorExit（SSE 断线）不导致 SDK Task 泄漏。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -203,7 +197,6 @@ async def test_stream_generator_exit -> None:
  break
  # 不应该有未处理的异常
  await asyncio.sleep(0.1)
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_clean_env_called -> None:
  """stream 中调用 clean_claude_env 隔离环境变量。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -226,7 +219,6 @@ async def test_clean_env_called -> None:
  async for _ in runner.stream("test"):
  pass
  mock_clean.assert_called
-@pytest.mark.xfail(reason="awaiting runner.py implementation")
 async def test_stream_returns_result -> None:
  """流结束后可获取 AgentResult。"""
  from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
