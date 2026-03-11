@@ -110,7 +110,6 @@ class ConversationListSerializer(serializers.Serializer):
  project_id = serializers.UUIDField
  title = serializers.CharField
  model = serializers.CharField(required=False, allow_blank=True)
- provider_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
 class ConversationMessageSerializer(serializers.Serializer):
@@ -127,7 +126,6 @@ class ConversationDetailSerializer(serializers.Serializer):
  id = serializers.UUIDField
  project_id = serializers.UUIDField
  title = serializers.CharField
- provider_type = serializers.CharField(required=False, allow_null=True, allow_blank=True)
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
  messages = ConversationMessageSerializer(many=True, required=False)
