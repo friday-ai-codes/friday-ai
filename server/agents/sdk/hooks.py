@@ -4,16 +4,45 @@ Hook 回调中 DB 写入失败仅记录日志，不影响 SDK 主流程。
 """
 from __future__ import annotations
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Union
 import structlog
+from claude_agent_sdk.types import (
+ AsyncHookJSONOutput,
+ HookContext,
+ PostToolUseHookInput,
+ PreCompactHookInput,
+ PostToolUseFailureHookInput,
+ PreToolUseHookInput,
+ StopHookInput,
+ SubagentStopHookInput,
+ SyncHookJSONOutput,
+ UserPromptSubmitHookInput,
+)
 from django.utils import timezone
 from agents.core.events import TOOL_USE_RESULT, AgentEvent
 from agents.models import AgentSession, ToolCallLog
 logger = structlog.get_logger(__name__)
+# SDK hook 输入类型联合
+HookInput = Union[
+ PreToolUseHookInput,
+ PostToolUseHookInput,
+ PostToolUseFailureHookInput,
+ UserPromptSubmitHookInput,
+ StopHookInput,
+ SubagentStopHookInput,
+ PreCompactHookInput,
+]
+# SDK hook 输出类型
+HookOutput = AsyncHookJSONOutput | SyncHookJSONOutput
+# SDK hook 回调类型
+HookCallback = Callable[
+ [HookInput, str | None, HookContext],
+ Awaitable[HookOutput],
+]
 def create_post_tool_use_hook(
  session: AgentSession,
  event_callback: Callable[[AgentEvent], Awaitable[None]] | None = None,
-) -> Callable[..., Awaitable[dict[str, Any]]]:
+) -> HookCallback:
  """创建 PostToolUse hook 回调。
  每次工具调用完成后：
  1. 写入 ToolCallLog 记录
@@ -25,14 +54,16 @@ def create_post_tool_use_hook(
  符合 SDK hook 签名的 async 回调函数
  """
  async def hook(
- input_data: dict[str, Any],
- tool_use_id: str,
- context: Any,
- ) -> dict[str, Any]:
- tool_name: str = input_data.get("tool_name", "")
- tool_input: dict[str, Any] = input_data.get("tool_input", {})
- tool_response: Any = input_data.get("tool_response")
- tool_id: str = input_data.get("tool_use_id", tool_use_id)
+ input_data: HookInput,
+ tool_use_id: str | None,
+ context: HookContext,
+ ) -> HookOutput:
+ # 从 input_data 提取字段（PostToolUseHookInput 是 TypedDict）
+ data: dict[str, Any] = dict(input_data) # type: ignore[arg-type]
+ tool_name: str = data.get("tool_name", "")
+ tool_input: dict[str, Any] = data.get("tool_input", {})
+ tool_response: Any = data.get("tool_response")
+ tool_id: str = data.get("tool_use_id", tool_use_id or "")
  now = timezone.now
  # 判断工具执行是否成功
  is_error = False
@@ -85,11 +116,11 @@ def create_post_tool_use_hook(
  "tool_use_result_event_failed",
  tool_name=tool_name,
  )
- return {}
+ return {} # type: ignore[return-value]
  return hook
 def create_stop_hook(
  session: AgentSession,
-) -> Callable[..., Awaitable[dict[str, Any]]]:
+) -> HookCallback:
  """创建 Stop hook 回调。
  SDK 运行结束时更新 AgentSession 为 completed 状态。
  Args:
@@ -98,10 +129,10 @@ def create_stop_hook(
  符合 SDK hook 签名的 async 回调函数
  """
  async def hook(
- input_data: dict[str, Any],
- tool_use_id: str,
- context: Any,
- ) -> dict[str, Any]:
+ input_data: HookInput,
+ tool_use_id: str | None,
+ context: HookContext,
+ ) -> HookOutput:
  try:
  session.status = AgentSession.Status.COMPLETED
  await session.asave(update_fields=["status", "updated_at"])
@@ -114,5 +145,5 @@ def create_stop_hook(
  "session_update_failed",
  session_id=session.session_id,
  )
- return {}
+ return {} # type: ignore[return-value]
  return hook
