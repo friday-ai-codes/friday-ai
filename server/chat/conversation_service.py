@@ -1,29 +1,25 @@
 """ConversationService — 对话系统核心业务逻辑。
-封装对话的 CRUD 操作和发送消息流程（AgentLoop 调用）。
+封装对话的 CRUD 操作和发送消息流程（SDKAgentRunner 调用）。
 所有方法为 async staticmethod，支持 Django async ORM。
 """
 from __future__ import annotations
-import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 import structlog
 from django.utils import timezone
-from agents.models import ToolCallLog
-from agents.core.context import AgentContext
 from agents.core.events import (
  AgentEvent,
  ERROR,
  MESSAGE_COMPLETE,
  TITLE_GENERATED,
 )
-from agents.core.loop import AgentConfig, AgentLoop
-from agents.core.result import AgentResult
-from agents.llm.base import create_provider
-from chat.context_manager import DEFAULT_MAX_MESSAGES, truncate_messages
+from agents.models import AgentSession, ToolCallLog
+from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 from chat.models import Conversation, Message
 from chat.services import aget_setting_value
 from repositories.models import Repository
+from services.provider_config import ProviderConfigError, ProviderConfigService
 from system.models import SettingKeys
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools # noqa: F401
@@ -93,24 +89,6 @@ async def _get_tool_names(project_id: str) -> list[str]:
  is_deleted=False,
  ).aexists
  return full_tools if has_indexed else base_tools
-def _extract_tool_calls(result: AgentResult) -> list[dict[str, Any]]:
- """从 AgentResult 中提取工具调用记录。
- 工具调用详情在 AgentSession.ToolCallLog 中，
- Phase 可从那里获取完整信息。当前仅提取基本信息。
- """
- tool_calls: list[dict[str, Any]] =
- # 从 metadata 中提取（如果有）
- if result.metadata.get("tool_calls"):
- return result.metadata["tool_calls"]
- # 从 output 中提取 tool_use block
- for item in result.output:
- if isinstance(item, dict) and item.get("type") == "tool_use":
- tool_calls.append({
- "id": item.get("id", ""),
- "name": item.get("name", ""),
- "input": item.get("input", {}),
- })
- return tool_calls
 def _coerce_reference_item(
  tool_name: str,
  result_output: dict[str, Any],
@@ -222,125 +200,14 @@ class ConversationService:
  )
  return conversation
  @staticmethod
- async def send_message(
- conversation_id: str,
- content: str,
- role: str = "developer",
- ) -> dict[str, Any]:
- """发送消息并获取 AI 回复。
- 流程：保存 user 消息 -> 构建 messages -> 截断 -> AgentLoop.run
- -> 解析结果 -> 保存 assistant 消息 -> 更新 conversation.updated_at
- Args:
- conversation_id: 对话 UUID
- content: 用户消息内容
- role: 用户角色（影响 system prompt 风格）
- Returns:
- 包含 message、tool_calls、usage 的 dict
- """
- # 获取对话
- conversation = await Conversation.objects.select_related("project").aget(
- id=conversation_id,
- is_deleted=False,
- )
- # 保存 user 消息
- await Message.objects.acreate(
- conversation=conversation,
- role=Message.Role.USER,
- content=content,
- )
- # 构建 messages 列表（仅 user/assistant，不加载 tool/system）
- db_messages = [
- msg async for msg in Message.objects.filter(
- conversation=conversation,
- role__in=[Message.Role.USER, Message.Role.ASSISTANT],
- ).order_by("created_at")
- ]
- messages = [
- {"role": msg.role, "content": msg.content}
- for msg in db_messages
- ]
- # 截断
- messages = truncate_messages(messages, max_messages=DEFAULT_MAX_MESSAGES)
- # 构建 AgentLoop
- session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
- project_name = conversation.project.name
- # 通过 ProviderConfigService 解析 Provider 配置
- from services.provider_config import ProviderConfigError, ProviderConfigService
- try:
- resolved = await ProviderConfigService.aresolve(
- conversation=conversation,
- project=conversation.project,
- )
- except ProviderConfigError as e:
- raise ValueError(str(e)) from e
- # model 解析保持现有逻辑：对话级 > 系统级
- system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
- model = conversation.model or system_model
- provider = create_provider(
- provider_type=resolved.provider_type,
- api_key=resolved.api_key,
- base_url=resolved.base_url,
- model=model,
- )
- # 动态获取工具列表
- tool_names = await _get_tool_names(str(conversation.project_id))
- config = AgentConfig(
- system_prompt=_build_system_prompt(project_name, role=role),
- max_iterations=15,
- max_tokens=4096,
- tool_names=tool_names,
- )
- context = AgentContext(
- session_id=session_id,
- project_id=1, # AgentContext 要求 int，此处为占位
- user_id=1,
- metadata={"conversation_id": str(conversation.id)},
- )
- loop = AgentLoop(config=config, context=context, provider=provider)
- # 执行
- result = await loop.run(content)
- # 解析结果
- tool_calls = _extract_tool_calls(result)
- final_content = result.final_answer or ""
- # 保存 assistant 消息
- assistant_msg = await Message.objects.acreate(
- conversation=conversation,
- role=Message.Role.ASSISTANT,
- content=final_content,
- tool_calls=tool_calls if tool_calls else None,
- metadata={
- "session_id": session_id,
- "model": model,
- "usage": result.usage,
- "iterations": result.metadata.get("iterations"),
- "status": result.status,
- },
- )
- # 更新对话时间
- await Conversation.objects.filter(id=conversation.id).aupdate(
- updated_at=timezone.now,
- )
- logger.info(
- "message_sent",
- conversation_id=str(conversation.id),
- status=result.status,
- usage=result.usage,
- )
- return {
- "message": assistant_msg,
- "session_id": session_id,
- "tool_calls": tool_calls,
- "usage": result.usage,
- }
- @staticmethod
  async def send_message_stream(
  conversation_id: str,
  content: str,
  role: str = "developer",
  ) -> AsyncGenerator[AgentEvent, None]:
- """流式发送消息，通过 async generator yield AgentEvent。
- AgentLoop 在独立 asyncio.Task 中运行，通过 Queue 与 generator 通信。
- SSE 断线后 Task 继续运行至完成，确保消息落库。
+ """流式发送消息，通过 SDKAgentRunner 驱动对话。
+ SDKAgentRunner 在独立 asyncio.Task 中运行 SDK，通过 Queue 与
+ generator 通信。SSE 断线后 Task 继续运行至完成，确保消息落库。
  Args:
  conversation_id: 对话 UUID
  content: 用户消息内容
@@ -360,25 +227,9 @@ class ConversationService:
  role=Message.Role.USER,
  content=content,
  )
- # 预生成 assistant 消息 ID（用于 SSE 事件中的 message_id）
+ # 预生成 assistant 消息 ID
  assistant_msg_id = uuid.uuid4
- # 构建 messages 列表
- db_messages = [
- msg async for msg in Message.objects.filter(
- conversation=conversation,
- role__in=[Message.Role.USER, Message.Role.ASSISTANT],
- ).order_by("created_at")
- ]
- messages = [
- {"role": msg.role, "content": msg.content}
- for msg in db_messages
- ]
- messages = truncate_messages(messages, max_messages=DEFAULT_MAX_MESSAGES)
- # 构建 AgentLoop
- session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
- project_name = conversation.project.name
- # 通过 ProviderConfigService 解析 Provider 配置
- from services.provider_config import ProviderConfigError, ProviderConfigService
+ # 解析 API key
  try:
  resolved = await ProviderConfigService.aresolve(
  conversation=conversation,
@@ -386,56 +237,62 @@ class ConversationService:
  )
  except ProviderConfigError as e:
  raise ValueError(str(e)) from e
- # model 解析保持现有逻辑：对话级 > 系统级
+ api_key = resolved.api_key
+ # model 解析：对话级 > 系统级
  system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
  model = conversation.model or system_model
- provider = create_provider(
- provider_type=resolved.provider_type,
- api_key=resolved.api_key,
- base_url=resolved.base_url,
- model=model,
- )
- tool_names = await _get_tool_names(str(conversation.project_id))
- config = AgentConfig(
- system_prompt=_build_system_prompt(project_name, role=role),
- max_iterations=15,
- max_tokens=4096,
- tool_names=tool_names,
- )
- context = AgentContext(
+ # 构建配置
+ session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
+ project_name = conversation.project.name
+ project_id = str(conversation.project_id)
+ # 创建 AgentSession（用于 Hook 持久化）
+ agent_session = await AgentSession.objects.acreate(
  session_id=session_id,
- project_id=1,
- user_id=1,
+ project=conversation.project,
+ user_id=1, # 占位，chat 路径暂无真实 user
+ status=AgentSession.Status.RUNNING,
  metadata={"conversation_id": str(conversation.id)},
  )
- # Queue 桥接 AgentLoop 与 SSE generator
- queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue(maxsize=200)
- async def on_event(event: AgentEvent) -> None:
- try:
- queue.put_nowait(event)
- except asyncio.QueueFull:
- pass # 静默丢弃（断线场景）
- loop = AgentLoop(
- config=config, context=context, provider=provider, on_event=on_event,
+ config = SdkRunnerConfig(
+ system_prompt=_build_system_prompt(project_name, role=role),
+ model=model,
+ project_id=project_id,
+ session_id=session_id,
+ api_key=api_key,
+ max_turns=15,
+ agent_session=agent_session,
  )
- async def run_agent -> None:
- """在独立 Task 中运行 AgentLoop，完成后保存消息。"""
+ runner = SDKAgentRunner(config)
+ # 流式 yield 事件，拦截 message_complete 补充字段
  try:
- result = await loop.run(content)
- # 解析结果
- tool_calls = _extract_tool_calls(result)
- final_content = result.final_answer or ""
+ async for event in runner.stream(content):
+ if event.type == MESSAGE_COMPLETE:
+ # 补充前端契约要求的字段
+ result = runner.result
+ event.data.setdefault("usage", result.usage if result else {})
+ event.data.setdefault("status", result.status if result else "completed")
+ event.data.setdefault("iterations", 0)
+ event.data.setdefault("model", model)
+ yield event
+ except GeneratorExit:
+ logger.info(
+ "sse_disconnected",
+ conversation_id=str(conversation_id),
+ )
+ return
+ # 流结束后：落库
+ result = runner.result
+ final_content = result.final_answer if result else ""
  # 保存 assistant 消息
  await Message.objects.acreate(
  id=assistant_msg_id,
  conversation=conversation,
  role=Message.Role.ASSISTANT,
  content=final_content,
- tool_calls=tool_calls if tool_calls else None,
  metadata={
- "usage": result.usage,
- "iterations": result.metadata.get("iterations"),
- "status": result.status,
+ "session_id": session_id,
+ "model": model,
+ "status": result.status if result else "unknown",
  },
  )
  # 更新对话时间
@@ -446,55 +303,15 @@ class ConversationService:
  if await should_generate_title(str(conversation.id)):
  title = await generate_title(str(conversation.id), content)
  if title:
- try:
- queue.put_nowait(AgentEvent(
+ yield AgentEvent(
  type=TITLE_GENERATED,
  data={"title": title},
- ))
- except asyncio.QueueFull:
- pass
+ )
  logger.info(
  "stream_message_sent",
  conversation_id=str(conversation.id),
- status=result.status,
- usage=result.usage,
- )
- except Exception as e:
- logger.exception(
- "stream_agent_error",
- conversation_id=str(conversation.id),
- )
- try:
- queue.put_nowait(AgentEvent(
- type=ERROR,
- data={"message": str(e)},
- ))
- except asyncio.QueueFull:
- pass
- finally:
- try:
- queue.put_nowait(None) # 哨兵
- except asyncio.QueueFull:
- pass
- # 启动 AgentLoop task
- task = asyncio.create_task(run_agent)
- # yield 事件
- try:
- while True:
- try:
- event = await asyncio.wait_for(queue.get, timeout=15.0)
- except TimeoutError:
- # 心跳
- yield AgentEvent(type="keepalive", data={})
- continue
- if event is None:
- break
- yield event
- except GeneratorExit:
- # SSE 连接断开 — task 继续运行（独立 asyncio.Task）
- logger.info(
- "sse_disconnected",
- conversation_id=str(conversation_id),
+ session_id=session_id,
+ status=result.status if result else "unknown",
  )
  @staticmethod
  async def list_conversations -> list[Conversation]:

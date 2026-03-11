@@ -14,7 +14,6 @@ import {
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
-import ProviderSettings from '~/components/settings/ProviderSettings.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -667,8 +666,6 @@ onMounted( => {
  </div>
  </div>
  </section>
- <!-- 模型提供商配置 -->
- <ProviderSettings />
  <!-- 向量索引配置 -->
  <VectorIndexSettings />
  <!-- 飞书 IM 配置卡片 -->
