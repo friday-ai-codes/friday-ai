@@ -260,7 +260,7 @@ class ConversationService:
  metadata={"conversation_id": str(conversation.id)},
  )
  config = SdkRunnerConfig(
- system_prompt=_build_system_prompt(project_name, role=role),
+ system_prompt=_build_system_prompt(project_name, project_id, role=role),
  model=model,
  project_id=project_id,
  session_id=session_id,
