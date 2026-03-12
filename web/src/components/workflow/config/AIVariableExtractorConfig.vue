@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { AIVariableDefinition, AIVariableExtractorConfig } from '~/types/workflow'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
@@ -36,6 +37,10 @@ const model = field('model', '')
 const useCustomApi = field('use_custom_api', false)
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')
+// 高级设置
+const maxThinkingTokens = field('max_thinking_tokens', null)
+const maxBudgetUsd = field('max_budget_usd', null)
+const advancedOpen = ref(false)
 const variables = computed({
  get: => props.config.variables ??,
  set: v => emit('update:config', { ...props.config, variables: v }),
@@ -179,6 +184,42 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  rows="2"
  />
  </div>
+ <!-- 高级设置 -->
+ <Separator />
+ <Collapsible v-model:open="advancedOpen">
+ <CollapsibleTrigger class="flex items-center gap-2 w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <span
+ class="icon-[lucide--chevron-right] w-4 transition-transform duration-200":class="{ 'rotate-90': advancedOpen }"
+ />
+ 高级设置
+ </CollapsibleTrigger>
+ <CollapsibleContent class="space-y-4 pt-2">
+ <!-- 最大思考 Token 数 -->
+ <div class="space-y-2">
+ <Label>最大思考 Token 数</Label>
+ <Input
+ v-model="maxThinkingTokens"
+ type="number":min="1024":max="128000"
+ placeholder="留空使用默认值"
+ />
+ <p class="text-xs text-muted-foreground">
+ Claude 扩展思考的 token 上限。仅 Claude 模型支持，其他模型将忽略此参数
+ </p>
+ </div>
+ <!-- 预算上限 -->
+ <div class="space-y-2">
+ <Label>预算上限 (USD)</Label>
+ <Input
+ v-model="maxBudgetUsd"
+ type="number":min="0.01":max="100":step="0.01"
+ placeholder="留空不限制"
+ />
+ <p class="text-xs text-muted-foreground">
+ 单次调用的美元成本上限，超出后终止执行
+ </p>
+ </div>
+ </CollapsibleContent>
+ </Collapsible>
  <!-- 使用提示 -->
  <div class="rounded-lg bg-muted/50 ">
  <p class="text-xs text-muted-foreground">
