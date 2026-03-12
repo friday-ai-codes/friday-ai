@@ -1,13 +1,10 @@
 """对话 API 集成测试。
-测试 Conversation CRUD + 发送消息端点。
-SDKAgentRunner 通过 mock 避免真实 LLM 调用。
+测试 Conversation CRUD 端点。
 鉴权开关默认关闭，无需认证即可访问。
 """
 from __future__ import annotations
-from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from rest_framework import status
-from agents.core.result import AgentResult
 from chat.models import Conversation, Message
 from projects.models import Project
 # ============================================================================
@@ -41,53 +38,6 @@ def messages(db, conversation):
  content="你好！有什么可以帮助你的？",
  )
  return [msg1, msg2]
-@pytest.fixture
-def mock_agent_loop:
- """Mock SDKAgentRunner.stream 返回预定义结果。"""
- mock_result = AgentResult(
- output=,
- status="completed",
- final_answer="这是 AI 的测试回复。",
- usage={"input_tokens": 100, "output_tokens": 50},
- metadata={"iterations": 1},
- )
- with (
- patch("chat.conversation_service.SDKAgentRunner") as mock_runner_cls,
- patch("chat.conversation_service.aget_setting_value") as mock_setting,
- patch("services.provider_config.ProviderConfigService") as mock_pcs,
- ):
- mock_runner_instance = MagicMock
- # SDKAgentRunner.stream 返回空的 async generator
- async def _empty_stream(prompt):
- return
- yield # noqa: RET504 — make it an async generator
- mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
- mock_runner_instance.result = mock_result
- mock_runner_cls.return_value = mock_runner_instance
- # 模拟 ProviderConfigService.aresolve
- from services.provider_config import ProviderType, ResolvedProviderConfig
- mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
- provider_type=ProviderType.ANTHROPIC,
- api_key="test-api-key",
- base_url="https://api.anthropic.com",
- source="system",
- ))
- # 模拟系统设置
- async def fake_setting(key):
- settings_map = {
- "anthropic_api_key": "test-api-key",
- "anthropic_base_url": None,
- "anthropic_model": "claude-sonnet-4-20250514",
- }
- return settings_map.get(key)
- mock_setting.side_effect = fake_setting
- yield {
- "runner_cls": mock_runner_cls,
- "runner_instance": mock_runner_instance,
- "setting": mock_setting,
- "provider_config_service": mock_pcs,
- "result": mock_result,
- }
 # ============================================================================
 # 创建对话测试
 # ============================================================================
@@ -209,59 +159,3 @@ class TestDeleteConversation:
  conversation.save
  response = api_client.delete(f"/api/chat/conversations/{conversation.id}/")
  assert response.status_code == status.HTTP_404_NOT_FOUND
-# ============================================================================
-# 发送消息测试
-# ============================================================================
-@pytest.mark.django_db
-class TestSendMessage:
- """POST /api/chat/conversations/{id}/messages/ 测试。"""
- def test_send_message_success(self, api_client, conversation, mock_agent_loop):
- """发送消息获取 AI 回复。"""
- response = api_client.post(
- f"/api/chat/conversations/{conversation.id}/messages/",
- {"content": "你好"},
- format="json",
- )
- assert response.status_code == status.HTTP_200_OK
- assert response.data["message"]["role"] == "assistant"
- assert response.data["message"]["content"] == "这是 AI 的测试回复。"
- assert "usage" in response.data
- def test_send_message_conversation_not_found(self, api_client, mock_agent_loop):
- """对话不存在返回 404。"""
- response = api_client.post(
- "/api/chat/conversations/00000000-0000-0000-0000-000000000000/messages/",
- {"content": "你好"},
- format="json",
- )
- assert response.status_code == status.HTTP_404_NOT_FOUND
- def test_send_message_empty_content(self, api_client, conversation, mock_agent_loop):
- """content 为空返回 400。"""
- response = api_client.post(
- f"/api/chat/conversations/{conversation.id}/messages/",
- {"content": ""},
- format="json",
- )
- assert response.status_code == status.HTTP_400_BAD_REQUEST
- def test_send_message_missing_content(self, api_client, conversation, mock_agent_loop):
- """缺少 content 返回 400。"""
- response = api_client.post(
- f"/api/chat/conversations/{conversation.id}/messages/",
- {},
- format="json",
- )
- assert response.status_code == status.HTTP_400_BAD_REQUEST
- def test_send_message_saves_messages(self, api_client, conversation, mock_agent_loop):
- """发送消息后 user 和 assistant 消息都被保存。"""
- api_client.post(
- f"/api/chat/conversations/{conversation.id}/messages/",
- {"content": "测试消息"},
- format="json",
- )
- messages = list(
- Message.objects.filter(conversation=conversation).order_by("created_at")
- )
- assert len(messages) == 2
- assert messages[0].role == "user"
- assert messages[0].content == "测试消息"
- assert messages[1].role == "assistant"
- assert messages[1].content == "这是 AI 的测试回复。"

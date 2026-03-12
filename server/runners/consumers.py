@@ -211,7 +211,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  session.last_output = output
  await session.asave(update_fields=["last_output", "updated_at"])
  async def _handle_completed(self, payload: dict, log: structlog.stdlib.BoundLogger) -> None:
- from subagent.api.callbacks import _schedule_agent_loop_resume, _schedule_workflow_resume
+ from subagent.api.callbacks import _schedule_agent_session_resume, _schedule_workflow_resume
  from subagent.models import SubAgentSession, TaskResult
  task_id = payload.get("task_id", "")
  session = await SubAgentSession.objects.filter(session_id=task_id).afirst
@@ -231,11 +231,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  )
  await session.amark_completed
  _schedule_workflow_resume(session, log)
- _schedule_agent_loop_resume(session, log)
+ _schedule_agent_session_resume(session, log)
  log.info("task_completed_via_ws")
  async def _handle_failed(self, payload: dict, log: structlog.stdlib.BoundLogger) -> None:
  from subagent.api.callbacks import (
- _schedule_agent_loop_resume,
+ _schedule_agent_session_resume,
  _schedule_workflow_resume,
  _send_failure_notification,
  )
@@ -251,7 +251,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await session.amark_failed(error=error_msg)
  await _send_failure_notification(session, error_msg)
  _schedule_workflow_resume(session, log)
- _schedule_agent_loop_resume(session, log)
+ _schedule_agent_session_resume(session, log)
  log.info("task_failed_via_ws")
  async def _create_question(self, payload: dict) -> tuple | None:
  from subagent.models import InteractionLog, SubAgentSession

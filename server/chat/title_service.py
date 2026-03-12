@@ -63,7 +63,7 @@ async def generate_title(
  "content": TITLE_PROMPT.format(user_message=user_message[:500]),
  }],
  )
- title = response.content[0].text.strip[:200] # 安全截断
+ title = response.content[0].text.strip[:200] # type: ignore[union-attr] # 首个 block 必为 TextBlock
  if not title:
  logger.warning("title_generation_empty", conversation_id=conversation_id)
  return None

@@ -437,7 +437,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  for r in mr_reviews
  ],
  "review_duration_seconds": duration,
- "reviewer_model": model,
+ "reviewer_model": resolved_model,
  }
  if review_errors:
  output["review_errors"] = review_errors
