@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any
 import structlog
+from agents.core.events import MESSAGE_COMPLETE
 from chat.conversation_service import ConversationService, extract_reference_summaries
 from feishu.cards.bot_cards import (
  build_answer_card,
@@ -95,17 +96,34 @@ class FeishuBotService:
  )
  thread.conversation = conversation
  await thread.asave(update_fields=["project", "conversation", "updated_at"])
- result = await ConversationService.send_message(
+ # 消费 send_message_stream AsyncGenerator
+ session_id = ""
+ final_answer = ""
+ usage: dict[str, Any] = {}
+ cost_usd: float = 0
+ async for event in ConversationService.send_message_stream(
  conversation_id=str(thread.conversation_id),
  content=message.normalized_text,
  role="developer",
- )
- references = await extract_reference_summaries(result.get("session_id", ""))
- answer_content = result["message"].content
+ ):
+ if event.type == MESSAGE_COMPLETE:
+ session_id = event.data.get("session_id", "")
+ final_answer = event.data.get("final_answer", "")
+ usage = event.data.get("usage") or {}
+ cost_usd = event.data.get("cost_usd", 0)
+ references = await extract_reference_summaries(session_id)
+ usage_info: dict[str, Any] | None = None
+ if usage or cost_usd:
+ usage_info = {
+ "input_tokens": usage.get("input_tokens", 0),
+ "output_tokens": usage.get("output_tokens", 0),
+ "cost_usd": cost_usd,
+ }
  answer_card = build_answer_card(
  question=message.normalized_text,
- answer=answer_content,
+ answer=final_answer,
  references=references,
+ usage=usage_info,
  )
  updated = await im_service.update_card(processing_card_id, answer_card)
  if updated:
@@ -124,10 +142,10 @@ class FeishuBotService:
  thread.status = FeishuBotThreadStatus.ACTIVE
  metadata = thread.metadata or {}
  metadata["last_reference_count"] = len(references)
- metadata["last_session_id"] = result.get("session_id", "")
+ metadata["last_session_id"] = session_id
  thread.metadata = metadata
  await thread.asave(update_fields=["last_bot_message_id", "status", "metadata", "updated_at"])
- return {"status": "answered", "session_id": result.get("session_id", "")}
+ return {"status": "answered", "session_id": session_id}
  except Exception as exc:
  logger.exception("feishu_bot_processing_failed", message_id=message.message_id, error=str(exc))
  await im_service.send_card(
