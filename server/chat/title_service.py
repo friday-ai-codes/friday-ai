@@ -3,8 +3,8 @@
 使用小模型生成简短中文标题。
 """
 from __future__ import annotations
+import anthropic
 import structlog
-from agents.llm.base import create_provider
 from chat.models import Conversation, Message
 from chat.services import aget_setting_value
 from system.models import SettingKeys
@@ -33,8 +33,8 @@ async def generate_title(
  user_message: str,
 ) -> str | None:
  """异步生成对话标题并更新到数据库。
- 使用小模型生成简短中文标题，失败时静默处理。
- 此函数设计为 fire-and-forget 调用。
+ 使用 anthropic.AsyncAnthropic 直接调用 API 生成简短中文标题，
+ 失败时静默处理。此函数设计为 fire-and-forget 调用。
  Args:
  conversation_id: 对话 UUID
  user_message: 用户首条消息内容
@@ -50,21 +50,20 @@ async def generate_title(
  return None
  # 使用系统配置的模型，回退到轻量默认值
  model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or TITLE_MODEL_FALLBACK
- provider = create_provider(
- provider_type="anthropic",
- api_key=api_key,
- base_url=base_url,
+ # 直接使用 Anthropic SDK 调用
+ client_kwargs: dict[str, str] = {"api_key": api_key}
+ if base_url:
+ client_kwargs["base_url"] = base_url
+ client = anthropic.AsyncAnthropic(**client_kwargs)
+ response = await client.messages.create(
  model=model,
- )
- # 生成标题
- response = await provider.chat(
+ max_tokens=50,
  messages=[{
  "role": "user",
  "content": TITLE_PROMPT.format(user_message=user_message[:500]),
  }],
- max_tokens=50,
  )
- title = response.content.strip[:200] # 安全截断
+ title = response.content[0].text.strip[:200] # 安全截断
  if not title:
  logger.warning("title_generation_empty", conversation_id=conversation_id)
  return None
