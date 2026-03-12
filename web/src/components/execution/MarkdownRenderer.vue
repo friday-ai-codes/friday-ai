@@ -42,6 +42,7 @@ watch( => props.content, renderMarkdown, { immediate: true })
  </div>
 </template>
 <style scoped>
+@reference '~/styles/main.css';
 .markdown-body:deep(h1) {
  @apply text-xl font-bold mt-4 mb-2;
 }
