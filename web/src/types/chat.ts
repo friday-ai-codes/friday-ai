@@ -36,7 +36,7 @@ export interface CreateConversationParams {
 }
 /** SSE 事件 */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning'
  message_id?: string
  // text_delta
  text?: string
@@ -49,12 +49,21 @@ export interface SSEEvent {
  // thinking
  thinking?: string
  // message_complete
- usage?: { prompt_tokens: number, completion_tokens: number, total_tokens: number }
+ usage?: {
+ prompt_tokens?: number
+ completion_tokens?: number
+ total_tokens?: number
+ input_tokens?: number
+ output_tokens?: number
+ }
  model?: string
+ status?: 'completed' | 'interrupted' | 'budget_exceeded'
  // title_generated
  title?: string
  // error
  message?: string
+ // budget_warning
+ budget_usage_percent?: number
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'

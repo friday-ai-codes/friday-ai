@@ -181,6 +181,7 @@ export default {
  createConversation,
  getConversationDetail,
  deleteConversation,
+ interruptConversation,
 }
 // ============================================================================
 // Conversation CRUD API (Phase)
@@ -208,4 +209,10 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
  */
 export async function deleteConversation(id: string): Promise<void> {
  return del(`/chat/conversations/${id}/`)
+}
+/**
+ * 中断对话（通知后端停止 AI 回复生成）
+ */
+export async function interruptConversation(id: string): Promise<void> {
+ await post(`/chat/conversations/${id}/interrupt/`)
 }

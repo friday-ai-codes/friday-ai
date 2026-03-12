@@ -72,7 +72,7 @@ watch(
  role: 'assistant',
  content: '',
  created_at: new Date.toISOString,
- }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls"
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-status="chatStore.streamingStatus"
  />
  <!-- 错误提示 -->
  <div
