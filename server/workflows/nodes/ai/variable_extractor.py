@@ -102,6 +102,21 @@ class AIVariableExtractorNode(BaseNode):
  "description": "使用的 LLM 模型",
  "default": "",
  },
+ # 高级设置
+ "max_thinking_tokens": {
+ "type": "integer",
+ "title": "最大思考 Token 数",
+ "description": "Claude 扩展思考的 token 上限，仅 Claude 模型支持。留空使用默认值",
+ "minimum": 1024,
+ "maximum": 128000,
+ },
+ "max_budget_usd": {
+ "type": "number",
+ "title": "预算上限 (USD)",
+ "description": "单次调用的美元成本上限，留空不限制",
+ "minimum": 0.01,
+ "maximum": 100.0,
+ },
  },
  "required": ["variables"],
  }
@@ -129,6 +144,7 @@ class AIVariableExtractorNode(BaseNode):
  additional_prompt = config.get("additional_prompt", "")
  model = config.get("model", "")
  input_source = config.get("input_source", "")
+ max_thinking_tokens: int | None = config.get("max_thinking_tokens")
  if not variables_config:
  return NodeResult(
  status="completed",
@@ -157,6 +173,7 @@ class AIVariableExtractorNode(BaseNode):
  prompt=prompt,
  model=model,
  context=context,
+ max_thinking_tokens=max_thinking_tokens,
  )
  # 解析响应
  extracted_data = self._parse_ai_response(response)
@@ -299,6 +316,7 @@ class AIVariableExtractorNode(BaseNode):
  prompt: str,
  model: str,
  context: ExecutionContext,
+ max_thinking_tokens: int | None = None,
  ) -> tuple[str, dict]:
  """调用 LLM 服务"""
  import httpx
@@ -323,6 +341,21 @@ class AIVariableExtractorNode(BaseNode):
  raise ValueError("未配置 Anthropic API Key")
  base_url = base_url.rstrip("/")
  async with httpx.AsyncClient as client:
+ payload: dict = {
+ "model": resolved_model,
+ "max_tokens": 4096,
+ "messages": [{"role": "user", "content": prompt}],
+ }
+ # Extended thinking 支持：当 max_thinking_tokens 有值且为 Claude 模型时启用
+ if max_thinking_tokens and resolved_model.startswith("claude"):
+ payload["thinking"] = {
+ "type": "enabled",
+ "budget_tokens": max_thinking_tokens,
+ }
+ # Anthropic API 要求 thinking 模式下 temperature 必须为 1
+ payload["temperature"] = 1
+ else:
+ payload["temperature"] = 0.3 # 低温度保证提取稳定性
  response = await client.post(
  f"{base_url}/v1/messages",
  headers={
@@ -330,12 +363,7 @@ class AIVariableExtractorNode(BaseNode):
  "anthropic-version": "2023-06-01",
  "content-type": "application/json",
  },
- json={
- "model": resolved_model,
- "max_tokens": 4096,
- "temperature": 0.3, # 低温度保证稳定性
- "messages": [{"role": "user", "content": prompt}],
- },
+ json=payload,
  timeout=120,
  )
  if response.status_code != 200:

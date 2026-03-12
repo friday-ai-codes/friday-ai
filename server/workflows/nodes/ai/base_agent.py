@@ -84,6 +84,21 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "description": "Maximum wait time after agent suspension",
  "default": 24,
  },
+ # 高级设置
+ "max_thinking_tokens": {
+ "type": "integer",
+ "title": "最大思考 Token 数",
+ "description": "Claude 扩展思考的 token 上限，仅 Claude 模型支持。留空使用默认值",
+ "minimum": 1024,
+ "maximum": 128000,
+ },
+ "max_budget_usd": {
+ "type": "number",
+ "title": "预算上限 (USD)",
+ "description": "单次调用的美元成本上限，留空不限制",
+ "minimum": 0.01,
+ "maximum": 100.0,
+ },
  },
  "required":,
  }
@@ -273,6 +288,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  api_key=api_key,
  max_turns=max_iterations,
  agent_session=agent_session,
+ max_thinking_tokens=config.get("max_thinking_tokens"),
+ max_budget_usd=config.get("max_budget_usd"),
  )
  runner = SDKAgentRunner(runner_config)
  # 消费完整 stream 以获取结果（workflow 节点不需要 SSE 流式输出）

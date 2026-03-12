@@ -196,6 +196,21 @@ class AIPromptNode(BaseNode):
  "description": "当输出格式为 JSON 时，可指定期望的结构",
  "default": {},
  },
+ # 高级设置
+ "max_thinking_tokens": {
+ "type": "integer",
+ "title": "最大思考 Token 数",
+ "description": "Claude 扩展思考的 token 上限，仅 Claude 模型支持。留空使用默认值",
+ "minimum": 1024,
+ "maximum": 128000,
+ },
+ "max_budget_usd": {
+ "type": "number",
+ "title": "预算上限 (USD)",
+ "description": "单次调用的美元成本上限，留空不限制",
+ "minimum": 0.01,
+ "maximum": 100.0,
+ },
  },
  "required": ["user_prompt"],
  }
@@ -321,6 +336,8 @@ class AIPromptNode(BaseNode):
  max_tokens = config.get("max_tokens", 4096)
  output_format = config.get("output_format", "text")
  json_schema = config.get("json_schema", {})
+ max_thinking_tokens: int | None = config.get("max_thinking_tokens")
+ max_budget_usd: float | None = config.get("max_budget_usd")
  # 自定义 API 配置
  use_custom_api = config.get("use_custom_api", False)
  api_base_url = config.get("api_base_url", "")
@@ -348,6 +365,7 @@ class AIPromptNode(BaseNode):
  use_custom_api=use_custom_api,
  api_base_url=api_base_url,
  api_key=api_key,
+ max_thinking_tokens=max_thinking_tokens,
  )
  # 解析输出
  parsed_response = self._parse_response(llm_response.text, output_format)
@@ -423,6 +441,7 @@ class AIPromptNode(BaseNode):
  use_custom_api: bool = False,
  api_base_url: str = "",
  api_key: str = "",
+ max_thinking_tokens: int | None = None,
  ) -> LLMResponse:
  """调用 LLM 服务
  Returns:
@@ -447,7 +466,8 @@ class AIPromptNode(BaseNode):
  # 根据模型类型选择调用方式
  if model.startswith("claude"):
  return await self._call_anthropic(
- system_prompt, user_prompt, model, temperature, max_tokens, project
+ system_prompt, user_prompt, model, temperature, max_tokens, project,
+ max_thinking_tokens=max_thinking_tokens,
  )
  elif model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
  return await self._call_openai(
@@ -518,6 +538,7 @@ class AIPromptNode(BaseNode):
  temperature: float,
  max_tokens: int,
  project,
+ max_thinking_tokens: int | None = None,
  ) -> LLMResponse:
  """调用 Anthropic Claude API"""
  import httpx
@@ -531,6 +552,22 @@ class AIPromptNode(BaseNode):
  # 确保 base_url 格式正确
  base_url = base_url.rstrip("/")
  async with httpx.AsyncClient as client:
+ payload: dict = {
+ "model": model,
+ "max_tokens": max_tokens,
+ "system": system_prompt,
+ "messages": [{"role": "user", "content": user_prompt}],
+ }
+ # Extended thinking 支持：Claude 模型且 max_thinking_tokens 有值时启用
+ if max_thinking_tokens:
+ payload["thinking"] = {
+ "type": "enabled",
+ "budget_tokens": max_thinking_tokens,
+ }
+ # Anthropic API 要求 thinking 模式下 temperature 必须为 1
+ payload["temperature"] = 1
+ else:
+ payload["temperature"] = temperature
  response = await client.post(
  f"{base_url}/v1/messages",
  headers={
@@ -538,13 +575,7 @@ class AIPromptNode(BaseNode):
  "anthropic-version": "2023-06-01",
  "content-type": "application/json",
  },
- json={
- "model": model,
- "max_tokens": max_tokens,
- "temperature": temperature,
- "system": system_prompt,
- "messages": [{"role": "user", "content": user_prompt}],
- },
+ json=payload,
  timeout=120,
  )
  if response.status_code != 200:
