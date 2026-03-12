@@ -39,9 +39,9 @@ _TERMINAL_STATUSES = {
 }
 # 数据补充类回调绕过终态检查（它们不改变状态，只追加数据）
 _DATA_APPEND_TYPES = {CallbackType.ACTION_LOG, CallbackType.TOKEN_USAGE}
-def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> None:
- """触发 AgentLoop 恢复（当容器完成时）。
- 仅当 session 有 main_session 但无 node_execution 时触发（纯 AgentLoop 场景）。
+def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -> None:
+ """触发 Agent 会话恢复（当容器完成时）。
+ 仅当 session 有 main_session 但无 node_execution 时触发（纯 Agent 场景）。
  如果有 node_execution，由 workflow 恢复处理。
  Args:
  session: SubAgentSession 实例
@@ -56,7 +56,7 @@ def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> N
  log.debug("no_main_session_skip_agent_resume")
  return
  async def _prepare_and_resume:
- """异步准备并调度 AgentLoop 恢复。"""
+ """异步准备并调度 Agent 会话恢复。"""
  try:
  from subagent.models import TaskResult
  # 获取 TaskResult
@@ -74,7 +74,7 @@ def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> N
  result_msg = "SubAgent 任务完成。"
  else:
  result_msg = f"SubAgent 任务失败：{session.last_error}"
- # 调度 AgentLoop 恢复
+ # 调度 Agent 会话恢复
  from tasks.agent_tasks import schedule_resume_agent_session
  # 需要刷新 main_session 关系以获取 session_id
  await session.arefresh_from_db
@@ -84,11 +84,11 @@ def _schedule_agent_loop_resume(session: SubAgentSession, log: BoundLogger) -> N
  user_response=result_msg,
  )
  log.info(
- "agent_loop_resume_scheduled",
+ "agent_session_resume_scheduled",
  main_session_id=session.main_session.session_id,
  )
  except Exception as e:
- log.exception("agent_loop_resume_error", error=str(e))
+ log.exception("agent_session_resume_error", error=str(e))
  try:
  loop = asyncio.get_running_loop
  loop.create_task(_prepare_and_resume)
@@ -321,8 +321,8 @@ async def _handle_completed(
  await session.amark_completed
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
- # 触发 AgentLoop 恢复（如果有 main_session 但无 node_execution）
- _schedule_agent_loop_resume(session, log)
+ # 触发 Agent 会话恢复（如果有 main_session 但无 node_execution）
+ _schedule_agent_session_resume(session, log)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 async def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
@@ -344,8 +344,8 @@ async def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log:
  await _send_failure_notification(session, error_msg)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
- # 触发 AgentLoop 恢复
- _schedule_agent_loop_resume(session, log)
+ # 触发 Agent 会话恢复
+ _schedule_agent_session_resume(session, log)
  log.info("callback_failed_ok", error=error_msg)
  return Response({"status": "ok"})
 async def _handle_heartbeat(
