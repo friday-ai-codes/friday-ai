@@ -1,10 +1,10 @@
 """ConversationService 扩展集成测试：角色 + 模型。
 测试 Phase 新增的角色参数传递和对话级模型选择功能。
-使用 AsyncClient + mock AgentLoop.run 避免真实 LLM 调用。
+使用 AsyncClient + mock SDKAgentRunner.stream 避免真实 LLM 调用。
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from django.contrib.auth import get_user_model
 from django.test import AsyncClient
@@ -97,15 +97,20 @@ class TestSendMessageWithRole:
  }
  mock_result = MockAgentResult
  with patch(
- "chat.conversation_service.AgentLoop"
- ) as MockLoop, patch(
+ "chat.conversation_service.SDKAgentRunner"
+ ) as MockRunner, patch(
  "chat.conversation_service._build_system_prompt",
  wraps=__import__(
  "chat.conversation_service", fromlist=["_build_system_prompt"]
  )._build_system_prompt,
  ) as mock_prompt:
- mock_instance = MockLoop.return_value
- mock_instance.run = AsyncMock(return_value=mock_result)
+ mock_instance = MockRunner.return_value
+ # SDKAgentRunner.stream 返回空的 async generator
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_instance.result = mock_result
  # mock aget_setting_value 以避免 DB 查询
  with patch(
  "chat.conversation_service.aget_setting_value",
@@ -118,8 +123,7 @@ class TestSendMessageWithRole:
  ), patch(
  "services.provider_config.ProviderConfigService"
  ) as mock_pcs:
- from agents.llm.providers import ProviderType
- from services.provider_config import ResolvedProviderConfig
+ from services.provider_config import ProviderType, ResolvedProviderConfig
  mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
  provider_type=ProviderType.ANTHROPIC,
  api_key="test-key",
@@ -146,7 +150,7 @@ class TestSendMessageWithRole:
 class TestConversationModelSelection:
  """对话级 LLM 模型选择测试。"""
  async def test_send_message_uses_conversation_model(self, auth_headers, project):
- """对话指定了模型时，create_provider 使用该模型。"""
+ """对话指定了模型时，SDKAgentRunner 使用该模型。"""
  from chat.conversation_service import ConversationService
  # 创建指定模型的对话
  conversation = await ConversationService.create_conversation(
@@ -158,10 +162,8 @@ class TestConversationModelSelection:
  payload = {"content": "hello"}
  mock_result = MockAgentResult
  with patch(
- "chat.conversation_service.AgentLoop"
- ) as MockLoop, patch(
- "chat.conversation_service.create_provider"
- ) as mock_create_provider, patch(
+ "chat.conversation_service.SDKAgentRunner"
+ ) as MockRunner, patch(
  "chat.conversation_service.aget_setting_value",
  new_callable=AsyncMock,
  side_effect=lambda key: {
@@ -172,17 +174,19 @@ class TestConversationModelSelection:
  ), patch(
  "services.provider_config.ProviderConfigService"
  ) as mock_pcs:
- from agents.llm.providers import ProviderType
- from services.provider_config import ResolvedProviderConfig
+ from services.provider_config import ProviderType, ResolvedProviderConfig
  mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
  provider_type=ProviderType.ANTHROPIC,
  api_key="test-key",
  base_url="https://api.anthropic.com",
  source="system",
  ))
- mock_create_provider.return_value = "mock_provider"
- mock_instance = MockLoop.return_value
- mock_instance.run = AsyncMock(return_value=mock_result)
+ mock_instance = MockRunner.return_value
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_instance.result = mock_result
  resp = await client.post(
  f"/api/chat/conversations/{conversation.id}/messages/",
  data=payload,
@@ -190,10 +194,10 @@ class TestConversationModelSelection:
  headers=auth_headers,
  )
  assert resp.status_code == 200
- # 验证 create_provider 使用了对话级模型
- mock_create_provider.assert_called_once
- call_kwargs = mock_create_provider.call_args
- assert call_kwargs[1]["model"] == "claude-opus-4-20250514"
+ # 验证 SDKAgentRunner 使用了对话级模型
+ MockRunner.assert_called_once
+ runner_config = MockRunner.call_args[0][0] # SdkRunnerConfig
+ assert runner_config.model == "claude-opus-4-20250514"
  async def test_send_message_falls_back_to_system_model(self, auth_headers, project):
  """对话未指定模型时，使用系统默认模型。"""
  from chat.conversation_service import ConversationService
@@ -206,10 +210,8 @@ class TestConversationModelSelection:
  payload = {"content": "hello"}
  mock_result = MockAgentResult
  with patch(
- "chat.conversation_service.AgentLoop"
- ) as MockLoop, patch(
- "chat.conversation_service.create_provider"
- ) as mock_create_provider, patch(
+ "chat.conversation_service.SDKAgentRunner"
+ ) as MockRunner, patch(
  "chat.conversation_service.aget_setting_value",
  new_callable=AsyncMock,
  side_effect=lambda key: {
@@ -220,17 +222,19 @@ class TestConversationModelSelection:
  ), patch(
  "services.provider_config.ProviderConfigService"
  ) as mock_pcs:
- from agents.llm.providers import ProviderType
- from services.provider_config import ResolvedProviderConfig
+ from services.provider_config import ProviderType, ResolvedProviderConfig
  mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
  provider_type=ProviderType.ANTHROPIC,
  api_key="test-key",
  base_url="https://api.anthropic.com",
  source="system",
  ))
- mock_create_provider.return_value = "mock_provider"
- mock_instance = MockLoop.return_value
- mock_instance.run = AsyncMock(return_value=mock_result)
+ mock_instance = MockRunner.return_value
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_instance.result = mock_result
  resp = await client.post(
  f"/api/chat/conversations/{conversation.id}/messages/",
  data=payload,
@@ -239,6 +243,6 @@ class TestConversationModelSelection:
  )
  assert resp.status_code == 200
  # 验证使用系统默认模型（对话 model 为空）
- mock_create_provider.assert_called_once
- call_kwargs = mock_create_provider.call_args
- assert call_kwargs[1]["model"] == "system-default-model"
+ MockRunner.assert_called_once
+ runner_config = MockRunner.call_args[0][0]
+ assert runner_config.model == "system-default-model"

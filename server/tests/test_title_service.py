@@ -4,7 +4,7 @@
 - generate_title 标题生成 + DB 更新 + 错误处理
 """
 from __future__ import annotations
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat.models import Conversation, Message
 from projects.models import Project
@@ -60,12 +60,13 @@ class TestGenerateTitle:
  async def test_generate_title_success(self, conversation, first_message):
  """成功生成标题并更新数据库。"""
  from chat.title_service import generate_title
- mock_response = AsyncMock
- mock_response.content = "项目架构分析"
- mock_response.usage = {"input_tokens": 10, "output_tokens": 5}
- mock_response.stop_reason = "end_turn"
+ # Mock anthropic.AsyncAnthropic 返回
+ mock_text_block = MagicMock
+ mock_text_block.text = "项目架构分析"
+ mock_response = MagicMock
+ mock_response.content = [mock_text_block]
  with (
- patch("chat.title_service.create_provider") as mock_provider,
+ patch("chat.title_service.anthropic") as mock_anthropic_mod,
  patch(
  "chat.title_service.aget_setting_value",
  new_callable=AsyncMock,
@@ -74,10 +75,11 @@ class TestGenerateTitle:
  mock_setting.side_effect = lambda key: {
  "anthropic_api_key": "test-key",
  "anthropic_base_url": None,
+ "anthropic_model": None,
  }.get(key)
- mock_provider_instance = AsyncMock
- mock_provider_instance.chat = AsyncMock(return_value=mock_response)
- mock_provider.return_value = mock_provider_instance
+ mock_client = AsyncMock
+ mock_client.messages.create = AsyncMock(return_value=mock_response)
+ mock_anthropic_mod.AsyncAnthropic.return_value = mock_client
  result = await generate_title(str(conversation.id), "帮我分析一下项目架构")
  assert result == "项目架构分析"
  # 验证数据库更新
@@ -87,7 +89,7 @@ class TestGenerateTitle:
  """API 错误时返回 None，不 raise。"""
  from chat.title_service import generate_title
  with (
- patch("chat.title_service.create_provider") as mock_provider,
+ patch("chat.title_service.anthropic") as mock_anthropic_mod,
  patch(
  "chat.title_service.aget_setting_value",
  new_callable=AsyncMock,
@@ -96,10 +98,11 @@ class TestGenerateTitle:
  mock_setting.side_effect = lambda key: {
  "anthropic_api_key": "test-key",
  "anthropic_base_url": None,
+ "anthropic_model": None,
  }.get(key)
- mock_provider_instance = AsyncMock
- mock_provider_instance.chat = AsyncMock(side_effect=Exception("API Error"))
- mock_provider.return_value = mock_provider_instance
+ mock_client = AsyncMock
+ mock_client.messages.create = AsyncMock(side_effect=Exception("API Error"))
+ mock_anthropic_mod.AsyncAnthropic.return_value = mock_client
  result = await generate_title(str(conversation.id), "test")
  assert result is None
  # 标题未变
@@ -118,12 +121,12 @@ class TestGenerateTitle:
  async def test_generate_title_empty_response_returns_none(self, conversation, first_message):
  """LLM 返回空内容时返回 None。"""
  from chat.title_service import generate_title
- mock_response = AsyncMock
- mock_response.content = " "
- mock_response.usage = {"input_tokens": 10, "output_tokens": 1}
- mock_response.stop_reason = "end_turn"
+ mock_text_block = MagicMock
+ mock_text_block.text = " "
+ mock_response = MagicMock
+ mock_response.content = [mock_text_block]
  with (
- patch("chat.title_service.create_provider") as mock_provider,
+ patch("chat.title_service.anthropic") as mock_anthropic_mod,
  patch(
  "chat.title_service.aget_setting_value",
  new_callable=AsyncMock,
@@ -132,9 +135,10 @@ class TestGenerateTitle:
  mock_setting.side_effect = lambda key: {
  "anthropic_api_key": "test-key",
  "anthropic_base_url": None,
+ "anthropic_model": None,
  }.get(key)
- mock_provider_instance = AsyncMock
- mock_provider_instance.chat = AsyncMock(return_value=mock_response)
- mock_provider.return_value = mock_provider_instance
+ mock_client = AsyncMock
+ mock_client.messages.create = AsyncMock(return_value=mock_response)
+ mock_anthropic_mod.AsyncAnthropic.return_value = mock_client
  result = await generate_title(str(conversation.id), "test")
  assert result is None

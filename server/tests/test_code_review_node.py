@@ -132,17 +132,21 @@ class TestAICodeReviewNode:
  mock_project.id = 1
  mock_user = MagicMock
  mock_user.id = 1
- mock_provider = MagicMock
  with (
  patch.object(node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(node, "_get_provider", new_callable=AsyncMock, return_value=mock_provider),
+ patch.object(node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
  patch.object(node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.AgentLoop") as MockLoop,
+ patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
  ):
- loop_instance = MockLoop.return_value
- loop_instance.run = AsyncMock(return_value=agent_result)
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ MockRunner.return_value = mock_runner_instance
  result: NodeResult = await node.execute(context)
  assert result.status == "completed"
  assert result.next_handle == "default"
@@ -175,17 +179,21 @@ class TestAICodeReviewNode:
  mock_project.id = 1
  mock_user = MagicMock
  mock_user.id = 1
- mock_provider = MagicMock
  with (
  patch.object(node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(node, "_get_provider", new_callable=AsyncMock, return_value=mock_provider),
+ patch.object(node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
  patch.object(node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.AgentLoop") as MockLoop,
+ patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
  ):
- loop_instance = MockLoop.return_value
- loop_instance.run = AsyncMock(return_value=agent_result)
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ MockRunner.return_value = mock_runner_instance
  result: NodeResult = await node.execute(context)
  assert result.status == "completed"
  assert result.output["approved"] is False

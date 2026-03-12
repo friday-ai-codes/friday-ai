@@ -72,21 +72,21 @@ class TestAIPlanGenerationNode:
  """Unit tests for AIPlanGenerationNode independent execution."""
  @pytest.mark.asyncio
  @patch("workflows.nodes.ai.base_agent.AgentSession.objects")
- @patch("workflows.nodes.ai.base_agent.AgentLoop")
+ @patch("workflows.nodes.ai.base_agent.SDKAgentRunner")
  @patch("services.claude_config.get_claude_config")
- @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_provider")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._resolve_api_key_and_model")
  @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_user")
  @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_project")
  async def test_execute_happy_path(
  self,
  mock_get_project: MagicMock,
  mock_get_user: MagicMock,
- mock_get_provider: MagicMock,
+ mock_resolve: MagicMock,
  mock_get_config: MagicMock,
- mock_loop_cls: MagicMock,
+ mock_runner_cls: MagicMock,
  mock_session_objects: MagicMock,
  ) -> None:
- """AgentLoop returns a valid plan in metadata -> completed with plan output."""
+ """SDKAgentRunner returns a valid plan in metadata -> completed with plan output."""
  # Arrange
  mock_project = MagicMock
  mock_project.id = 1
@@ -94,7 +94,7 @@ class TestAIPlanGenerationNode:
  mock_get_project.return_value = mock_project
  mock_user = MagicMock(id=1)
  mock_get_user.return_value = mock_user
- mock_get_provider.return_value = MagicMock
+ mock_resolve.return_value = ("sk-test", "claude-sonnet-4-20250514")
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"
@@ -103,9 +103,14 @@ class TestAIPlanGenerationNode:
  return_value=(MagicMock, True)
  )
  agent_result = _make_agent_result(plan=VALID_TECHNICAL_PLAN)
- mock_loop_instance = MagicMock
- mock_loop_instance.run = AsyncMock(return_value=agent_result)
- mock_loop_cls.return_value = mock_loop_instance
+ # Mock SDKAgentRunner: stream returns empty async generator, result returns AgentResult
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ mock_runner_cls.return_value = mock_runner_instance
  ctx = _make_context
  node = AIPlanGenerationNode
  # Act
@@ -118,18 +123,18 @@ class TestAIPlanGenerationNode:
  assert "usage" in result.output
  @pytest.mark.asyncio
  @patch("workflows.nodes.ai.base_agent.AgentSession.objects")
- @patch("workflows.nodes.ai.base_agent.AgentLoop")
+ @patch("workflows.nodes.ai.base_agent.SDKAgentRunner")
  @patch("services.claude_config.get_claude_config")
- @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_provider")
+ @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._resolve_api_key_and_model")
  @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_user")
  @patch("workflows.nodes.ai.base_agent.AIAgentBaseNode._get_project")
  async def test_execute_plan_from_verify_tool(
  self,
  mock_get_project: MagicMock,
  mock_get_user: MagicMock,
- mock_get_provider: MagicMock,
+ mock_resolve: MagicMock,
  mock_get_config: MagicMock,
- mock_loop_cls: MagicMock,
+ mock_runner_cls: MagicMock,
  mock_session_objects: MagicMock,
  ) -> None:
  """AgentResult.output contains verify_plan tool call -> map_output extracts plan."""
@@ -139,7 +144,7 @@ class TestAIPlanGenerationNode:
  mock_get_project.return_value = mock_project
  mock_user = MagicMock(id=1)
  mock_get_user.return_value = mock_user
- mock_get_provider.return_value = MagicMock
+ mock_resolve.return_value = ("sk-test", "claude-sonnet-4-20250514")
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"
@@ -163,9 +168,13 @@ class TestAIPlanGenerationNode:
  usage={"input_tokens": 2000, "output_tokens": 800},
  metadata={}, # No plan in metadata
  )
- mock_loop_instance = MagicMock
- mock_loop_instance.run = AsyncMock(return_value=agent_result)
- mock_loop_cls.return_value = mock_loop_instance
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ mock_runner_cls.return_value = mock_runner_instance
  ctx = _make_context
  node = AIPlanGenerationNode
  result: NodeResult = await node.execute(ctx)

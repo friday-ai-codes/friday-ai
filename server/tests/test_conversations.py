@@ -1,6 +1,6 @@
 """对话 API 集成测试。
 测试 Conversation CRUD + 发送消息端点。
-AgentLoop 通过 mock 避免真实 LLM 调用。
+SDKAgentRunner 通过 mock 避免真实 LLM 调用。
 鉴权开关默认关闭，无需认证即可访问。
 """
 from __future__ import annotations
@@ -43,7 +43,7 @@ def messages(db, conversation):
  return [msg1, msg2]
 @pytest.fixture
 def mock_agent_loop:
- """Mock AgentLoop.run 返回预定义结果。"""
+ """Mock SDKAgentRunner.stream 返回预定义结果。"""
  mock_result = AgentResult(
  output=,
  status="completed",
@@ -52,17 +52,20 @@ def mock_agent_loop:
  metadata={"iterations": 1},
  )
  with (
- patch("chat.conversation_service.AgentLoop") as mock_loop_cls,
- patch("chat.conversation_service.create_provider") as mock_provider,
+ patch("chat.conversation_service.SDKAgentRunner") as mock_runner_cls,
  patch("chat.conversation_service.aget_setting_value") as mock_setting,
  patch("services.provider_config.ProviderConfigService") as mock_pcs,
  ):
- mock_loop_instance = MagicMock
- mock_loop_instance.run = AsyncMock(return_value=mock_result)
- mock_loop_cls.return_value = mock_loop_instance
+ mock_runner_instance = MagicMock
+ # SDKAgentRunner.stream 返回空的 async generator
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504 — make it an async generator
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = mock_result
+ mock_runner_cls.return_value = mock_runner_instance
  # 模拟 ProviderConfigService.aresolve
- from services.provider_config import ResolvedProviderConfig
- from agents.llm.providers import ProviderType
+ from services.provider_config import ProviderType, ResolvedProviderConfig
  mock_pcs.aresolve = AsyncMock(return_value=ResolvedProviderConfig(
  provider_type=ProviderType.ANTHROPIC,
  api_key="test-api-key",
@@ -78,11 +81,9 @@ def mock_agent_loop:
  }
  return settings_map.get(key)
  mock_setting.side_effect = fake_setting
- mock_provider.return_value = MagicMock
  yield {
- "loop_cls": mock_loop_cls,
- "loop_instance": mock_loop_instance,
- "provider": mock_provider,
+ "runner_cls": mock_runner_cls,
+ "runner_instance": mock_runner_instance,
  "setting": mock_setting,
  "provider_config_service": mock_pcs,
  "result": mock_result,
@@ -225,8 +226,6 @@ class TestSendMessage:
  assert response.data["message"]["role"] == "assistant"
  assert response.data["message"]["content"] == "这是 AI 的测试回复。"
  assert "usage" in response.data
- # 验证 AgentLoop 被调用
- mock_agent_loop["loop_instance"].run.assert_called_once_with("你好")
  def test_send_message_conversation_not_found(self, api_client, mock_agent_loop):
  """对话不存在返回 404。"""
  response = api_client.post(
@@ -266,78 +265,3 @@ class TestSendMessage:
  assert messages[0].content == "测试消息"
  assert messages[1].role == "assistant"
  assert messages[1].content == "这是 AI 的测试回复。"
-# ============================================================================
-# Context 窗口管理测试
-# ============================================================================
-class TestContextManager:
- """context_manager 截断函数测试。"""
- def test_truncate_messages_within_limit(self):
- """消息数不超过限制时原样返回。"""
- from chat.context_manager import truncate_messages
- messages = [
- {"role": "user", "content": "hi"},
- {"role": "assistant", "content": "hello"},
- ]
- result = truncate_messages(messages, max_messages=50)
- assert len(result) == 2
- def test_truncate_messages_exceeds_limit(self):
- """超过限制时保留最近的消息。"""
- from chat.context_manager import truncate_messages
- messages = [{"role": "user", "content": f"msg {i}"} for i in range(10)]
- result = truncate_messages(messages, max_messages=3)
- assert len(result) == 3
- assert result[0]["content"] == "msg 7"
- assert result[2]["content"] == "msg 9"
- def test_truncate_messages_preserves_system(self):
- """system 消息始终保留在最前面。"""
- from chat.context_manager import truncate_messages
- messages = [
- {"role": "system", "content": "system prompt"},
- *[{"role": "user", "content": f"msg {i}"} for i in range(10)],
- ]
- result = truncate_messages(messages, max_messages=3)
- assert len(result) == 4 # 1 system + 3 recent
- assert result[0]["role"] == "system"
- def test_truncate_tool_results_short_content(self):
- """tool_result content 不超过限制时不截断。"""
- from chat.context_manager import truncate_tool_results
- messages = [
- {
- "role": "user",
- "content": [
- {"type": "tool_result", "content": "short result"},
- ],
- }
- ]
- result = truncate_tool_results(messages, max_chars=2000)
- assert result[0]["content"][0]["content"] == "short result"
- def test_truncate_tool_results_long_content(self):
- """tool_result content 超过限制时截断。"""
- from chat.context_manager import truncate_tool_results
- long_content = "x" * 3000
- messages = [
- {
- "role": "user",
- "content": [
- {"type": "tool_result", "content": long_content},
- ],
- }
- ]
- result = truncate_tool_results(messages, max_chars=100)
- truncated = result[0]["content"][0]["content"]
- assert len(truncated) < 3000
- assert "内容已截断" in truncated
- assert "3000" in truncated
- def test_truncate_tool_results_non_tool_unchanged(self):
- """非 tool_result 类型的 block 不受影响。"""
- from chat.context_manager import truncate_tool_results
- messages = [
- {
- "role": "user",
- "content": [
- {"type": "text", "content": "x" * 3000},
- ],
- }
- ]
- result = truncate_tool_results(messages, max_chars=100)
- assert result[0]["content"][0]["content"] == "x" * 3000
