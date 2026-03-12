@@ -68,20 +68,34 @@ def build_clarification_card(question: str, candidates: list[str]) -> dict[str, 
  ),
  ],
  }
-def build_answer_card(question: str, answer: str, references: list[dict[str, Any]]) -> dict[str, Any]:
+def build_answer_card(
+ question: str,
+ answer: str,
+ references: list[dict[str, Any]],
+ usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+ elements: list[dict[str, Any]] = [
+ _markdown_block(f"**原问题**\n{question}"),
+ {"tag": "hr"},
+ _markdown_block(f"**回答**\n{answer}"),
+ {"tag": "hr"},
+ _markdown_block(f"**已参考上下文**\n{_reference_lines(references)}"),
+ ]
+ if usage:
+ input_t = usage.get("input_tokens", 0)
+ output_t = usage.get("output_tokens", 0)
+ cost = usage.get("cost_usd", 0)
+ elements.append({"tag": "hr"})
+ elements.append(
+ _markdown_block(f"💰 输入 {input_t} / 输出 {output_t} tokens · ${cost:.4f}")
+ )
  return {
  "config": {"wide_screen_mode": True},
  "header": {
  "title": {"tag": "plain_text", "content": "Friday 已生成回答"},
  "template": "green",
  },
- "elements": [
- _markdown_block(f"**原问题**\n{question}"),
- {"tag": "hr"},
- _markdown_block(f"**回答**\n{answer}"),
- {"tag": "hr"},
- _markdown_block(f"**已参考上下文**\n{_reference_lines(references)}"),
- ],
+ "elements": elements,
  }
 def build_error_card(question: str, hint_text: str) -> dict[str, Any]:
  hint = hint_text or "请稍后重试，并尽量补充项目/仓库信息。"
