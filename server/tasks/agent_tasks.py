@@ -1,19 +1,18 @@
 """Agent background tasks for session management.
 Provides async functions for resuming suspended agent sessions
 after user responses via Feishu card callbacks.
+Uses SDKAgentRunner for execution.
 """
 import asyncio
 from typing import Any
 import structlog
-from agents.core.context import AgentContext
-from agents.core.loop import AgentConfig, AgentLoop
-from agents.llm.base import create_provider
 from agents.models import AgentSession
+from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 logger = structlog.get_logger(__name__)
 async def resume_agent_session(session_id: str, user_response: str) -> dict[str, Any]:
  """Resume a suspended agent session with user's response.
- Loads the suspended session, injects the user response as a tool result,
- and continues the Think-Act-Observe loop.
+ Loads the suspended session, injects the user response as prompt,
+ and runs SDKAgentRunner to continue the conversation.
  Args:
  session_id: The agent session ID to resume
  user_response: The user's response text
@@ -21,7 +20,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  Dict with status and result information
  Example:
  >>> result = await resume_agent_session("sess-123", "Python")
- >>> print(result["status"]) # "completed" or "suspended"
+ >>> print(result["status"]) # "completed" or "error"
  """
  log = logger.bind(session_id=session_id)
  log.info("开始恢复 Agent 会话", response_preview=user_response[:50])
@@ -58,44 +57,43 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  temp_data["chat_id"] = chat_id
  session.temp_data = temp_data
  await session.asave(update_fields=["temp_data"])
- # Create context and loop
- # Note: AgentContext types expect int but models use UUID - runtime compatible
- context = AgentContext(
- session_id=session_id,
- project_id=session.project_id, # type: ignore[arg-type]
- user_id=session.user_id, # type: ignore[arg-type]
- work_item_id=session.work_item_id or "",
- )
- # Use default config or restore from session metadata
- config = AgentConfig
+ # Restore system prompt from session metadata
+ system_prompt = ""
+ max_turns = 15
  if session.metadata and "config" in session.metadata:
  stored_config = session.metadata["config"]
- config = AgentConfig(
- system_prompt=stored_config.get("system_prompt"),
- max_iterations=stored_config.get("max_iterations", 25),
- max_tokens=stored_config.get("max_tokens", 4096),
- tool_names=stored_config.get("tool_names"),
- )
- # Create provider with project's Claude config
+ system_prompt = stored_config.get("system_prompt", "")
+ max_turns = stored_config.get("max_iterations", 15)
+ # Get API credentials from project's Claude config
  from services.claude_config import aget_claude_config
  claude_config = await aget_claude_config(session.project)
  if not claude_config.api_key:
  raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
  if not claude_config.model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- provider = create_provider(
- claude_config.provider_type,
- api_key=claude_config.api_key,
- base_url=claude_config.base_url,
+ # Build and run SDKAgentRunner
+ runner_config = SdkRunnerConfig(
+ system_prompt=system_prompt,
  model=claude_config.model,
+ project_id=str(session.project_id) if session.project_id else "",
+ session_id=session_id,
+ api_key=claude_config.api_key,
+ max_turns=max_turns,
+ agent_session=session,
  )
- loop = AgentLoop(config=config, context=context, provider=provider)
- # Resume execution
- result = await loop.resume(user_response)
+ runner = SDKAgentRunner(runner_config)
+ # 消费完整 stream 获取结果（用户回复作为 prompt）
+ async for _event in runner.stream(user_response):
+ pass
+ result = runner.result
+ if result is None:
+ return {
+ "status": "error",
+ "error": "SDKAgentRunner returned no result",
+ }
  log.info(
  "Agent 会话恢复完成",
  status=result.status,
- iterations=result.metadata.get("iterations"),
  )
  # Notify workflow engine if this is a workflow node session
  if session_id.startswith("wf-"):
