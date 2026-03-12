@@ -62,7 +62,7 @@ def test_tool_use_start_event -> None:
  assert len(events) == 1
  assert events[0].type == TOOL_USE_START
  assert events[0].data["tool_name"] == "mcp__chat-tools__search_code"
- assert events[0].data["tool_use_id"] == "tool_abc123"
+ assert events[0].data["tool_call_id"] == "tool_abc123"
 def test_thinking_event -> None:
  """content_block_start(type=thinking) → THINKING AgentEvent。"""
  from agents.sdk.event_adapter import EventAdapter

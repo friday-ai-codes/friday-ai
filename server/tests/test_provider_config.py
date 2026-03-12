@@ -2,7 +2,7 @@
 覆盖,,,,, 需求。
 """
 import pytest
-from agents.llm.providers import ProviderType
+from services.provider_config import ProviderType
 from system.models import SettingKeys, SystemSetting
 # ============================================================================
 # Fixtures
@@ -106,9 +106,9 @@ class TestProviderConfigServiceResolve:
  assert result.source == "conversation"
  @pytest.mark.django_db
  def test_resolve_no_provider_type_anywhere_raises(self, db):
- """四层都没有 provider_type 时抛出 ProviderConfigError。"""
+ """四层都没有 provider_type 时，默认使用 Anthropic 但因凭据未配置而抛出 ProviderConfigError。"""
  from services.provider_config import ProviderConfigError, ProviderConfigService
- with pytest.raises(ProviderConfigError, match="未找到 Provider 配置"):
+ with pytest.raises(ProviderConfigError, match="凭据未配置"):
  ProviderConfigService.resolve
  @pytest.mark.django_db
  def test_resolve_missing_credential_raises(self, db):
@@ -171,9 +171,9 @@ class TestProviderConfigServiceAresolve:
  @pytest.mark.django_db(transaction=True)
  @pytest.mark.asyncio
  async def test_aresolve_no_provider_raises(self):
- """异步版本：四层都无 provider_type 时抛出错误。"""
+ """异步版本：四层都无 provider_type 时，默认使用 Anthropic 但因凭据未配置而抛出错误。"""
  from services.provider_config import ProviderConfigError, ProviderConfigService
- with pytest.raises(ProviderConfigError, match="未找到 Provider 配置"):
+ with pytest.raises(ProviderConfigError, match="凭据未配置"):
  await ProviderConfigService.aresolve
  @pytest.mark.django_db(transaction=True)
  @pytest.mark.asyncio
