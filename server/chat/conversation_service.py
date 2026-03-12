@@ -24,6 +24,18 @@ from system.models import SettingKeys
 import agents.tools.chat_tools # noqa: F401
 logger = structlog.get_logger(__name__)
 # ============================================================================
+# Active Runner 注册表（内存级，用于 interrupt API 查找）
+# ============================================================================
+_active_runners: dict[str, SDKAgentRunner] = {}
+def get_active_runner(conversation_id: str) -> SDKAgentRunner | None:
+ """获取对话的活跃 runner（供 interrupt API 调用）。
+ Args:
+ conversation_id: 对话 UUID 字符串
+ Returns:
+ 活跃的 SDKAgentRunner 实例，无活跃对话时返回 None
+ """
+ return _active_runners.get(conversation_id)
+# ============================================================================
 # 角色化 System Prompt
 # ============================================================================
 ROLE_PROMPTS: dict[str, str] = {
@@ -258,6 +270,9 @@ class ConversationService:
  status=AgentSession.Status.RUNNING,
  metadata={"conversation_id": str(conversation.id)},
  )
+ # Budget 配置：从系统设置读取
+ budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
+ max_budget_usd = float(budget_str) if budget_str else None
  config = SdkRunnerConfig(
  system_prompt=_build_system_prompt(project_name, project_id, role=role),
  model=model,
@@ -266,8 +281,12 @@ class ConversationService:
  api_key=api_key,
  max_turns=15,
  agent_session=agent_session,
+ max_budget_usd=max_budget_usd,
  )
  runner = SDKAgentRunner(config)
+ # 注册 active runner（用于 interrupt API 查找）
+ conv_id_str = str(conversation.id)
+ _active_runners[conv_id_str] = runner
  # 流式 yield 事件，拦截 message_complete 补充字段
  try:
  async for event in runner.stream(content):
@@ -285,6 +304,9 @@ class ConversationService:
  conversation_id=str(conversation_id),
  )
  return
+ finally:
+ # 注销 active runner
+ _active_runners.pop(conv_id_str, None)
  # 流结束后：落库
  result = runner.result
  final_content = result.final_answer if result else ""
