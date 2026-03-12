@@ -1,16 +1,15 @@
 """AIAgentBaseNode - Shared base class for AI agent workflow nodes.
-Extracts common execution logic (session management, Agent construction,
+Extracts common execution logic (session management, SDKAgentRunner construction,
 result mapping) into a base class. Subclasses only need to override
 5 hook methods to define specialized node behavior.
 """
 from abc import abstractmethod
 from typing import Any, ClassVar, Literal
 import structlog
-from agents.core.context import AgentContext
-from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
-from agents.llm.base import create_provider
 from agents.models import AgentSession
+from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
+from services.provider_config import ProviderConfigService
 from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.nodes.base import (
  BaseNode,
@@ -27,7 +26,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  3. get_enabled_tools - Return enabled tool names (default: from config)
  4. get_max_iterations - Return max iterations (default: from config)
  5. map_output - Map AgentResult to output dict (default implementation)
- Common infrastructure (session, provider, agent loop) is handled here.
+ Common infrastructure (session, SDKAgentRunner) is handled here.
  """
  category: ClassVar[NodeCategory] = NodeCategory.AI
  execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "server_local"
@@ -116,7 +115,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  tools: list[str] = context.node_config.get("enabled_tools", )
  return tools if tools else None
  def get_max_iterations(self, context: ExecutionContext) -> int:
- """Return maximum agent loop iterations.
+ """Return maximum agent turns.
  Default: reads 'max_iterations' from config, fallback 25.
  Args:
  context: Node execution context.
@@ -159,56 +158,37 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  ).aget(id=context.workflow_execution.id)
  return we.triggered_by
  return None
- async def _get_provider(
+ async def _resolve_api_key_and_model(
  self,
  project: Any,
- model: str = "",
+ config_model: str = "",
  use_custom_api: bool = False,
  api_base_url: str = "",
  api_key: str = "",
- api_format: str = "",
  provider_type: str = "",
- ) -> Any:
- """Get LLM Provider, supporting provider_type, custom API, or system config.
- 优先级：provider_type > use_custom_api > 系统/项目级默认配置。
+ ) -> tuple[str, str]:
+ """Resolve API key and model from config hierarchy.
+ 优先级：use_custom_api > provider_type > 系统/项目级默认配置。
+ Returns:
+ (api_key, model) 元组
  """
- from services.provider_config import ProviderConfigService
- # 分支 1: 有 provider_type → 走 ProviderConfigService
- if provider_type:
+ # 分支 1: 自定义 API
+ if use_custom_api and api_base_url and api_key:
+ if not config_model:
+ raise ValueError("使用自定义 API 时必须指定模型")
+ return api_key, config_model
+ # 分支 2: 通过 ProviderConfigService 解析
+ node_config = {"provider_type": provider_type} if provider_type else None
  resolved = await ProviderConfigService.aresolve(
- node_config={"provider_type": provider_type},
+ node_config=node_config,
  project=project,
  )
  from services.claude_config import aget_claude_config
- config = await aget_claude_config(project)
- resolved_model = model or config.model
+ claude_config = await aget_claude_config(project)
+ resolved_model = config_model or claude_config.model
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- return create_provider(
- resolved.provider_type,
- api_key=resolved.api_key,
- base_url=resolved.base_url,
- model=resolved_model,
- )
- # 分支 2: 有 use_custom_api → 保持现有逻辑（向后兼容）
- if use_custom_api and api_base_url:
- if not model:
- raise ValueError("使用自定义 API 时必须指定模型")
- pt = api_format or "anthropic"
- return create_provider(pt, api_key=api_key, base_url=api_base_url, model=model)
- # 分支 3: 两者都无 → 走 ProviderConfigService（无 node_config）
- resolved = await ProviderConfigService.aresolve(project=project)
- from services.claude_config import aget_claude_config
- config = await aget_claude_config(project)
- resolved_model = model or config.model
- if not resolved_model:
- raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- return create_provider(
- resolved.provider_type,
- api_key=resolved.api_key,
- base_url=resolved.base_url,
- model=resolved_model,
- )
+ return resolved.api_key, resolved_model
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
@@ -218,10 +198,14 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  project: Any,
  user: Any,
  chat_id: str,
- ) -> None:
- """Pre-create AgentSession with chat_id for ask_user_question tool."""
+ ) -> AgentSession | None:
+ """Pre-create AgentSession with chat_id for ask_user_question tool.
+ Returns:
+ AgentSession 实例（用于 SDKAgentRunner hooks），
+ 或 None（无 project/chat_id 时）。
+ """
  if chat_id and project:
- await AgentSession.objects.aupdate_or_create(
+ session, _created = await AgentSession.objects.aupdate_or_create(
  session_id=session_id,
  defaults={
  "project_id": project.id,
@@ -230,6 +214,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "temp_data": {"chat_id": chat_id},
  },
  )
+ return session
+ return None
  def _enhance_system_prompt(self, system_prompt: str, session_id: str) -> str:
  """Inject session_id into system prompt for tools that need it."""
  return (
@@ -240,12 +226,11 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  )
  # ===== Unified execute method =====
  async def execute(self, context: ExecutionContext) -> NodeResult:
- """Execute the AI agent node using hook methods and common infrastructure."""
+ """Execute the AI agent node using SDKAgentRunner."""
  config = context.node_config
  # 1. Call hook methods
  system_prompt = self.get_system_prompt(context)
  user_prompt = self.get_user_prompt(context)
- enabled_tools = self.get_enabled_tools(context)
  max_iterations = self.get_max_iterations(context)
  if not user_prompt:
  return NodeResult(
@@ -259,11 +244,10 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  user = await self._get_user(context)
  session_id = self._build_session_id(context)
  chat_id = context.render_template(config.get("chat_id", ""))
- model: str = config.get("model", "")
+ model_cfg: str = config.get("model", "")
  use_custom_api: bool = config.get("use_custom_api", False)
  api_base_url: str = config.get("api_base_url", "")
- api_key: str = config.get("api_key", "")
- api_format: str = config.get("api_format", "")
+ api_key_cfg: str = config.get("api_key", "")
  provider_type_cfg: str = config.get("provider_type", "")
  logger.info(
  "agent_node_start",
@@ -271,36 +255,36 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  project_id=project.id if project else None,
  user_id=user.id if user else None,
  max_iterations=max_iterations,
- enabled_tools_count=len(enabled_tools) if enabled_tools else "all",
  chat_id=chat_id,
  )
- await self._ensure_agent_session(session_id, project, user, chat_id)
+ agent_session = await self._ensure_agent_session(session_id, project, user, chat_id)
  enhanced_prompt = self._enhance_system_prompt(system_prompt, session_id)
- # Build Agent context
- agent_context = AgentContext(
- session_id=session_id,
- project_id=project.id if project else 0,
- user_id=user.id if user else 0,
- metadata={"chat_id": chat_id} if chat_id else {},
- )
- # Build Agent configuration
- agent_config = AgentConfig(
- system_prompt=enhanced_prompt,
- max_iterations=max_iterations,
- tool_names=enabled_tools,
- )
- # Get LLM Provider
- provider = await self._get_provider(
- project, model, use_custom_api, api_base_url, api_key, api_format,
+ # Resolve API key and model
+ api_key, resolved_model = await self._resolve_api_key_and_model(
+ project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
  )
- # 3. Execute Agent
- loop = AgentLoop(
- config=agent_config,
- context=agent_context,
- provider=provider,
+ # 3. Build and run SDKAgentRunner
+ runner_config = SdkRunnerConfig(
+ system_prompt=enhanced_prompt,
+ model=resolved_model,
+ project_id=str(project.id) if project else "",
+ session_id=session_id,
+ api_key=api_key,
+ max_turns=max_iterations,
+ agent_session=agent_session,
  )
- result = await loop.run(user_prompt)
+ runner = SDKAgentRunner(runner_config)
+ # 消费完整 stream 以获取结果（workflow 节点不需要 SSE 流式输出）
+ async for _event in runner.stream(user_prompt):
+ pass
+ result = runner.result
+ if result is None:
+ return NodeResult(
+ status="failed",
+ error="SDKAgentRunner returned no result",
+ next_handle="error",
+ )
  # 4. Result mapping
  if result.status == "suspended":
  logger.info(
@@ -320,15 +304,13 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  logger.info(
  "agent_node_completed",
  session_id=session_id,
- iterations=result.metadata.get("iterations"),
- tool_calls_count=result.metadata.get("tool_calls_count"),
  )
  return NodeResult(
  status="completed",
  output=self.map_output(result),
  next_handle="default",
  )
- # max_iterations or other non-complete status
+ # error or other non-complete status
  logger.warning(
  "agent_node_incomplete",
  session_id=session_id,
