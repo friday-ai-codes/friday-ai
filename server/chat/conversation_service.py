@@ -288,17 +288,24 @@ class ConversationService:
  # 流结束后：落库
  result = runner.result
  final_content = result.final_answer if result else ""
+ # 构建 metadata：注入 cost 和 token 用量
+ msg_metadata: dict[str, Any] = {
+ "session_id": session_id,
+ "model": model,
+ "status": result.status if result else "unknown",
+ }
+ if result and result.metadata:
+ msg_metadata["cost_usd"] = result.metadata.get("cost_usd", 0)
+ if result and result.usage:
+ msg_metadata["input_tokens"] = result.usage.get("input_tokens", 0)
+ msg_metadata["output_tokens"] = result.usage.get("output_tokens", 0)
  # 保存 assistant 消息
  await Message.objects.acreate(
  id=assistant_msg_id,
  conversation=conversation,
  role=Message.Role.ASSISTANT,
  content=final_content,
- metadata={
- "session_id": session_id,
- "model": model,
- "status": result.status if result else "unknown",
- },
+ metadata=msg_metadata,
  )
  # 更新对话时间
  await Conversation.objects.filter(id=conversation.id).aupdate(
