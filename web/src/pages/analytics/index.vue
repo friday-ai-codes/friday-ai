@@ -3,6 +3,10 @@ import { provide, ref } from 'vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import KpiCards from '~/components/analytics/KpiCards.vue'
 import TimeRangeSelector from '~/components/analytics/TimeRangeSelector.vue'
+import TrendChart from '~/components/analytics/TrendChart.vue'
+import DurationDistribution from '~/components/analytics/DurationDistribution.vue'
+import TokenCostChart from '~/components/analytics/TokenCostChart.vue'
+import NodePerformanceTable from '~/components/analytics/NodePerformanceTable.vue'
 function getDateString(daysAgo: number): string {
  const d = new Date
  d.setDate(d.getDate - daysAgo)
@@ -33,29 +37,13 @@ provide('analyticsDateRange', dateRange)
  <KpiCards class="mb-6" />
  <!-- 趋势和分布图 -->
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
- <!-- TrendChart 占位 — Plan 实现 -->
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl h-[360px] flex items-center justify-center text-muted-foreground">
- <span class="icon-[lucide--trending-up] text-2xl mr-2" />
- 成功/失败趋势
- </div>
- <!-- DurationDistribution 占位 — Plan 实现 -->
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl h-[360px] flex items-center justify-center text-muted-foreground">
- <span class="icon-[lucide--bar-chart] text-2xl mr-2" />
- 执行时长分布
- </div>
+ <TrendChart />
+ <DurationDistribution />
  </div>
  <!-- Token 成本和节点性能 -->
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
- <!-- TokenCostChart 占位 — Plan 实现 -->
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl h-[360px] flex items-center justify-center text-muted-foreground">
- <span class="icon-[lucide--coins] text-2xl mr-2" />
- Token / 成本统计
- </div>
- <!-- NodePerformanceTable 占位 — Plan 实现 -->
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl h-[360px] flex items-center justify-center text-muted-foreground">
- <span class="icon-[lucide--table] text-2xl mr-2" />
- 节点性能排行
- </div>
+ <TokenCostChart />
+ <NodePerformanceTable />
  </div>
  </PageContainer>
 </template>
