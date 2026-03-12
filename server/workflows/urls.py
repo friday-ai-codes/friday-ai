@@ -1,6 +1,13 @@
 """Workflows app URL configuration."""
 from adrf.routers import DefaultRouter
 from django.urls import path
+from workflows.api.analytics import (
+ AnalyticsOverviewView,
+ DurationDistributionView,
+ NodePerformanceView,
+ TokenCostView,
+ TrendView,
+)
 from workflows.api.views import (
  ActionLogDetailView,
  CodingTaskViewSet,
@@ -102,4 +109,10 @@ urlpatterns = router.urls + [
  NodeSubStepListView.as_view,
  name="node-execution-sub-steps",
  ),
+ # Analytics endpoints
+ path("analytics/overview/", AnalyticsOverviewView.as_view, name="analytics-overview"),
+ path("analytics/trends/", TrendView.as_view, name="analytics-trends"),
+ path("analytics/duration-distribution/", DurationDistributionView.as_view, name="analytics-duration-distribution"),
+ path("analytics/token-cost/", TokenCostView.as_view, name="analytics-token-cost"),
+ path("analytics/node-performance/", NodePerformanceView.as_view, name="analytics-node-performance"),
 ]

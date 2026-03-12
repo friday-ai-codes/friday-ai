@@ -122,6 +122,8 @@ module = [
  "*.views",
  "*.serializers",
  "*.permissions",
+ "*.analytics",
+ "*.analytics_serializers",
 ]
 # DRF 视图/序列化器/权限的特殊模式
 # type-var: adrf async @action 方法不满足 rest_framework-stubs 的 _View bound
