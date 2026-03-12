@@ -4,7 +4,7 @@ by repository, dispatches parallel SubAgent coding sessions, creates MRs for
 successful repositories, and sends a Feishu result card.
 Architecture decision: AICodingNode inherits BaseNode (NOT AIAgentBaseNode).
 The orchestrator pattern (multiple SubAgents + polling + MR creation) is
-fundamentally different from AIAgentBaseNode's single AgentLoop model.
+fundamentally different from AIAgentBaseNode's single SDK agent model.
 """
 import asyncio
 import re
