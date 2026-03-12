@@ -25,6 +25,25 @@ function handleKeydown(e: KeyboardEvent) {
 <template>
  <div class="border-t border-border/40 bg-background/80 backdrop-blur-sm ">
  <div class="max-w-3xl mx-auto">
+ <!-- 预算警告条 -->
+ <Transition
+ enter-active-class="transition-all duration-300 ease-out"
+ leave-active-class="transition-all duration-200 ease-in"
+ enter-from-class="opacity-0 -translate-y-2"
+ enter-to-class="opacity-100 translate-y-0"
+ leave-from-class="opacity-100 translate-y-0"
+ leave-to-class="opacity-0 -translate-y-2"
+ >
+ <div
+ v-if="chatStore.budgetWarning"
+ class="px-4 py-2 mb-2 rounded-lg
+ bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400
+ text-xs flex items-center gap-2"
+ >
+ <span class="icon-[lucide--alert-triangle] text-sm" />
+ 本次对话已使用 {{ chatStore.budgetWarning }}% 预算
+ </div>
+ </Transition>
  <!-- 停止生成按钮 -->
  <div v-if="chatStore.isStreaming" class="flex justify-center mb-2">
  <Button

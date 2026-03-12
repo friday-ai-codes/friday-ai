@@ -9,6 +9,7 @@ import {
  createConversation,
  deleteConversation,
  getConversationDetail,
+ interruptConversation,
  listConversations,
 } from '~/api/chat'
 import { connectSSE } from '~/composables/useSSEStream'
@@ -36,6 +37,8 @@ export const useChatStore = defineStore('chat', => {
  const streamingMessageId = ref('')
  const streamingMetadata = ref<Record<string, unknown> | null>(null)
  const abortController = ref<AbortController | null>(null)
+ const streamingStatus = ref<'streaming' | 'interrupted' | 'budget_exceeded' | null>(null)
+ const budgetWarning = ref<number | null>(null)
  // 侧边栏状态
  const sidebarCollapsed = ref(false)
  // 用户偏好（localStorage 持久化）
@@ -116,11 +119,21 @@ export const useChatStore = defineStore('chat', => {
  error.value = e instanceof Error ? e.message: '删除对话失败'
  }
  }
- function stopStreaming {
+ async function stopStreaming {
+ if (!currentConversationId.value) return
+ // 先调 interrupt API 通知后端中断 SDK 运行
+ try {
+ await interruptConversation(currentConversationId.value)
+ }
+ catch {
+ // 忽略错误（对话可能已结束）
+ }
+ // 然后断开 SSE
  if (abortController.value) {
  abortController.value.abort
  abortController.value = null
  }
+ streamingStatus.value = 'interrupted'
  isStreaming.value = false
  }
  function toggleSidebar {
@@ -167,7 +180,15 @@ export const useChatStore = defineStore('chat', => {
  streamingMetadata.value = {
  model: event.model,
  usage: event.usage,
+ input_tokens: event.usage?.input_tokens,
+ output_tokens: event.usage?.output_tokens,
+ status: event.status,
  }
+ if (event.status === 'interrupted') streamingStatus.value = 'interrupted'
+ if (event.status === 'budget_exceeded') streamingStatus.value = 'budget_exceeded'
+ break
+ case 'budget_warning':
+ budgetWarning.value = event.budget_usage_percent || null
  break
  case 'title_generated':
  // 更新当前对话标题
@@ -221,13 +242,18 @@ export const useChatStore = defineStore('chat', => {
  abortController.value = null
  // 流结束后，将流式内容合并为正式消息
  if (streamingContent.value) {
+ // 将 streamingStatus 写入 metadata
+ const finalMetadata = {
+ ...(streamingMetadata.value || {}),
+ ...(streamingStatus.value ? { status: streamingStatus.value }: {}),
+ }
  const assistantMessage: ConversationMessage = {
  id: streamingMessageId.value || crypto.randomUUID,
  role: 'assistant',
  content: streamingContent.value,
  tool_calls: streamingToolCalls.value.length > 0
  ? streamingToolCalls.value.map(tc => ({ id: tc.id, name: tc.name, input: tc.input })): undefined,
- metadata: streamingMetadata.value || undefined,
+ metadata: Object.keys(finalMetadata).length > 0 ? finalMetadata: undefined,
  created_at: new Date.toISOString,
  }
  messages.value.push(assistantMessage)
@@ -237,6 +263,8 @@ export const useChatStore = defineStore('chat', => {
  streamingMessageId.value = ''
  streamingMetadata.value = null
  }
+ streamingStatus.value = null
+ budgetWarning.value = null
  }
  }
  return {
@@ -258,6 +286,8 @@ export const useChatStore = defineStore('chat', => {
  selectedProjectId,
  selectedRole,
  selectedModel,
+ streamingStatus,
+ budgetWarning,
  // Getters
  currentConversation,
  hasConversation,
