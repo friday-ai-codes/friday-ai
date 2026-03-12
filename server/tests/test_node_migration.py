@@ -1,5 +1,5 @@
 """Phase 迁移验证测试。
-验证 AICodingNode 和 AgentLoop 工具从轮询模式迁移到回调驱动模式。
+验证 AICodingNode 和 Agent session 工具从轮询模式迁移到回调驱动模式。
 """
 import pytest
 from workflows.nodes.ai.coding import AICodingNode
@@ -9,10 +9,10 @@ class TestCallbackDrivenMigration:
  """验证 _schedule_workflow_resume 函数可导入。"""
  from subagent.api.callbacks import _schedule_workflow_resume
  assert callable(_schedule_workflow_resume)
- def test_schedule_agent_loop_resume_available(self):
- """验证 _schedule_agent_loop_resume 函数可导入。"""
- from subagent.api.callbacks import _schedule_agent_loop_resume
- assert callable(_schedule_agent_loop_resume)
+ def test_schedule_agent_session_resume_available(self):
+ """验证 _schedule_agent_session_resume 函数可导入。"""
+ from subagent.api.callbacks import _schedule_agent_session_resume
+ assert callable(_schedule_agent_session_resume)
  def test_subagent_session_duration_ms(self):
  """验证 SubAgentSession.duration_ms 属性存在。"""
  from subagent.models import SubAgentSession

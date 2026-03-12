@@ -197,21 +197,26 @@ class TestSpecializedChainE2E:
  usage={"input_tokens": 1000, "output_tokens": 500},
  metadata={"plan": VALID_TECHNICAL_PLAN},
  )
+ with (
+ patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
+ patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
+ patch("services.claude_config.get_claude_config") as mock_config,
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
+ patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ ):
+ mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ mock_runner_cls.return_value = mock_runner_instance
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"
- with (
- patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
- patch("workflows.nodes.ai.base_agent.AgentLoop") as mock_loop_cls,
- patch("services.claude_config.get_claude_config", return_value=mock_config_obj),
- patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
- patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
- patch.object(plan_gen_node, "_get_provider", new_callable=AsyncMock, return_value=MagicMock),
- ):
- mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
- loop_instance = MagicMock
- loop_instance.run = AsyncMock(return_value=agent_result)
- mock_loop_cls.return_value = loop_instance
+ mock_config.return_value = mock_config_obj
  plan_gen_result: NodeResult = await plan_gen_node.execute(plan_gen_ctx)
  assert plan_gen_result.status == "completed"
  assert plan_gen_result.output["plan"] is not None
@@ -225,7 +230,6 @@ class TestSpecializedChainE2E:
  }
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
- # 模拟 WorkflowExecution DB 查询，避免 MagicMock.id 导致非法 UUID
  mock_we_instance = MagicMock
  mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
  with (
@@ -358,17 +362,21 @@ class TestSpecializedChainE2E:
  mock_project.id = 1
  mock_user = MagicMock
  mock_user.id = 1
- mock_provider = MagicMock
  with (
  patch.object(review_node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(review_node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(review_node, "_get_provider", new_callable=AsyncMock, return_value=mock_provider),
+ patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
  patch.object(review_node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(review_node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.AgentLoop") as MockLoop,
+ patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
  ):
- loop_instance = MockLoop.return_value
- loop_instance.run = AsyncMock(return_value=agent_result)
+ mock_runner_instance = MagicMock
+ async def _empty_stream(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
+ mock_runner_instance.result = agent_result
+ MockRunner.return_value = mock_runner_instance
  review_result: NodeResult = await review_node.execute(review_ctx)
  # Verify: CodeReview read MR list, produced review report
  assert review_result.status == "completed"
@@ -399,21 +407,26 @@ class TestSpecializedChainE2E:
  usage={"input_tokens": 1500, "output_tokens": 800},
  metadata={"plan": plan_with_repo},
  )
+ with (
+ patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
+ patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
+ patch("services.claude_config.get_claude_config") as mock_config,
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
+ patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ ):
+ mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
+ mock_runner_instance = MagicMock
+ async def _empty_stream_1(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream_1)
+ mock_runner_instance.result = gen_agent_result
+ mock_runner_cls.return_value = mock_runner_instance
  mock_config_obj = MagicMock
  mock_config_obj.api_key = "sk-test"
  mock_config_obj.base_url = "https://api.anthropic.com"
- with (
- patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
- patch("workflows.nodes.ai.base_agent.AgentLoop") as mock_loop_cls,
- patch("services.claude_config.get_claude_config", return_value=mock_config_obj),
- patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
- patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
- patch.object(plan_gen_node, "_get_provider", new_callable=AsyncMock, return_value=MagicMock),
- ):
- mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
- loop_instance = MagicMock
- loop_instance.run = AsyncMock(return_value=gen_agent_result)
- mock_loop_cls.return_value = loop_instance
+ mock_config.return_value = mock_config_obj
  plan_gen_result = await plan_gen_node.execute(plan_gen_ctx)
  assert plan_gen_result.status == "completed"
  plan_output = plan_gen_result.output
@@ -427,7 +440,6 @@ class TestSpecializedChainE2E:
  }
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
- # 模拟 WorkflowExecution DB 查询，避免 MagicMock.id 导致非法 UUID
  mock_we_instance = MagicMock
  mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
  with (
@@ -537,17 +549,21 @@ class TestSpecializedChainE2E:
  mock_project.id = 1
  mock_user = MagicMock
  mock_user.id = 1
- mock_provider = MagicMock
  with (
  patch.object(review_node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(review_node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(review_node, "_get_provider", new_callable=AsyncMock, return_value=mock_provider),
+ patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
  patch.object(review_node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(review_node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.AgentLoop") as MockLoop,
+ patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
  ):
- loop_instance = MockLoop.return_value
- loop_instance.run = AsyncMock(return_value=review_agent_result)
+ mock_runner_instance = MagicMock
+ async def _empty_stream_2(prompt):
+ return
+ yield # noqa: RET504
+ mock_runner_instance.stream = MagicMock(side_effect=_empty_stream_2)
+ mock_runner_instance.result = review_agent_result
+ MockRunner.return_value = mock_runner_instance
  review_result = await review_node.execute(review_ctx)
  # ==================== Final Assertions ====================
  assert review_result.status == "completed"
