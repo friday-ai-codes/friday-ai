@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generator, Literal
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-from agents.core.events import ERROR, AgentEvent
+from agents.core.events import ERROR, TEXT_DELTA, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
@@ -48,6 +48,8 @@ class SdkRunnerConfig:
  queue_maxsize: 事件队列最大容量
  heartbeat_timeout: 心跳超时（秒），超时后发送 keepalive
  agent_session: 可选的 AgentSession 实例，用于 Hook 持久化
+ max_thinking_tokens: extended thinking token 上限，None 使用 CLI 默认值（adaptive 模式）
+ max_budget_usd: 单次对话预算上限（美元），None 表示不限制
  """
  system_prompt: str
  model: str
@@ -60,6 +62,8 @@ class SdkRunnerConfig:
  queue_maxsize: int = 200
  heartbeat_timeout: float = 15.0
  agent_session: Any = field(default=None) # AgentSession | None
+ max_thinking_tokens: int | None = None
+ max_budget_usd: float | None = None
 class SDKAgentRunner:
  """Claude Agent SDK 运行器。
  通过 query(include_partial_messages=True) 驱动完整对话循环，
@@ -75,10 +79,53 @@ class SDKAgentRunner:
  def __init__(self, config: SdkRunnerConfig) -> None:
  self._config = config
  self._result: AgentResult | None = None
+ self._sdk_task: asyncio.Task[None] | None = None
  @property
  def result(self) -> AgentResult | None:
  """流结束后获取最终结果。"""
  return self._result
+ async def interrupt(self) -> None:
+ """中断正在运行的 SDK 任务。
+ 安全地取消 asyncio.Task，已完成的任务会被忽略。
+ """
+ if self._sdk_task and not self._sdk_task.done:
+ self._sdk_task.cancel
+ logger.info(
+ "sdk_task_interrupted",
+ session_id=self._config.session_id,
+ )
+ @staticmethod
+ def _extract_usage(message: Any) -> dict[str, int]:
+ """从 ResultMessage 提取 token 用量。
+ 尝试从 SDK 的 model_usage / modelUsage 属性提取汇总数据。
+ """
+ usage: dict[str, int] = {}
+ # 尝试获取 model_usage（Python 命名风格）或 modelUsage（JS 风格）
+ model_usage = getattr(message, "model_usage", None) or getattr(
+ message, "modelUsage", None
+ )
+ if model_usage and isinstance(model_usage, dict):
+ total_input = 0
+ total_output = 0
+ for _model_name, entry in model_usage.items:
+ if isinstance(entry, dict):
+ total_input += entry.get("inputTokens", 0) or entry.get(
+ "input_tokens", 0
+ )
+ total_output += entry.get("outputTokens", 0) or entry.get(
+ "output_tokens", 0
+ )
+ else:
+ # entry 可能是 dataclass / namedtuple
+ total_input += getattr(entry, "input_tokens", 0) or getattr(
+ entry, "inputTokens", 0
+ )
+ total_output += getattr(entry, "output_tokens", 0) or getattr(
+ entry, "outputTokens", 0
+ )
+ usage["input_tokens"] = total_input
+ usage["output_tokens"] = total_output
+ return usage
  async def stream(self, prompt: str) -> AsyncGenerator[AgentEvent, None]:
  """运行 SDK 并流式 yield AgentEvent。
  Args:
@@ -122,23 +169,29 @@ class SDKAgentRunner:
  ],
  }
  # 5. 构建 ClaudeAgentOptions
- options = ClaudeAgentOptions(
- system_prompt=self._config.system_prompt,
- model=self._config.model,
- permission_mode=self._config.permission_mode,
- max_turns=self._config.max_turns,
- include_partial_messages=True,
- mcp_servers={"chat-tools": mcp_server},
- allowed_tools=allowed_tools,
- env={"ANTHROPIC_API_KEY": api_key},
- hooks=hooks_config, # type: ignore[arg-type]
- )
+ options_kwargs: dict[str, Any] = {
+ "system_prompt": self._config.system_prompt,
+ "model": self._config.model,
+ "permission_mode": self._config.permission_mode,
+ "max_turns": self._config.max_turns,
+ "include_partial_messages": True,
+ "mcp_servers": {"chat-tools": mcp_server},
+ "allowed_tools": allowed_tools,
+ "env": {"ANTHROPIC_API_KEY": api_key},
+ "hooks": hooks_config,
+ }
+ if self._config.max_thinking_tokens is not None:
+ options_kwargs["max_thinking_tokens"] = self._config.max_thinking_tokens
+ if self._config.max_budget_usd is not None:
+ options_kwargs["max_budget_usd"] = self._config.max_budget_usd
+ options = ClaudeAgentOptions(**options_kwargs) # type: ignore[arg-type]
  # 6. 事件适配器
  adapter = EventAdapter(
  model=self._config.model,
  session_id=self._config.session_id,
  )
  # 7. 在独立 Task 中运行 SDK
+ accumulated_text: list[str] =
  async def run_sdk -> None:
  """运行 SDK query 并将事件放入队列。"""
  try:
@@ -146,29 +199,40 @@ class SDKAgentRunner:
  async for message in query(prompt=prompt, options=options):
  events = adapter.adapt(message)
  for event in events:
+ # 累积文本用于中断时保留部分内容
+ if event.type == "text_delta":
+ accumulated_text.append(event.data.get("text", ""))
  try:
  event_queue.put_nowait(event)
  except asyncio.QueueFull:
  pass
- # 检测 ResultMessage，构建 AgentResult
+ # 检测 ResultMessage，构建 AgentResult（含 cost 数据）
  if hasattr(message, "result") and not hasattr(message, "event"):
  result_text = (
  str(message.result) if message.result else ""
  )
+ # 提取 cost 数据
+ cost_usd = getattr(message, "total_cost_usd", None) or 0
+ usage = self._extract_usage(message)
  self._result = AgentResult(
  output=,
  status="completed",
  final_answer=result_text,
+ usage=usage,
+ metadata={"cost_usd": cost_usd},
  )
  except asyncio.CancelledError:
  logger.info(
  "sdk_task_cancelled",
  session_id=self._config.session_id,
  )
+ # 保留已生成的部分内容
+ partial_text = "".join(accumulated_text)
  self._result = AgentResult(
  output=,
- status="error",
- error="SDK 运行超时",
+ status="interrupted",
+ final_answer=partial_text,
+ metadata={"cost_usd": 0},
  )
  except Exception as e:
  logger.exception(
@@ -192,6 +256,7 @@ class SDKAgentRunner:
  except asyncio.QueueFull:
  pass
  task = asyncio.create_task(run_sdk)
+ self._sdk_task = task
  # 8. yield 事件（带超时和心跳）
  try:
  loop = asyncio.get_event_loop
