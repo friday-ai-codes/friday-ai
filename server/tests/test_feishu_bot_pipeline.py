@@ -1,14 +1,43 @@
 """Tests for Feishu bot processing pipeline."""
 from __future__ import annotations
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 import pytest
+from agents.core.events import MESSAGE_COMPLETE, AgentEvent
 from agents.models import AgentSession, ToolCallLog
 from chat.models import Conversation
 from feishu.bot.service import FeishuBotService
 from feishu.models import FeishuBotMessage, FeishuBotThread, FeishuBotThreadStatus
 from projects.models import Project
 from repositories.models import Repository
+async def _fake_stream(
+ *,
+ session_id: str = "",
+ final_answer: str = "",
+ usage: dict[str, Any] | None = None,
+ cost_usd: float = 0,
+) -> AsyncGenerator[AgentEvent, None]:
+ """构造 fake send_message_stream AsyncGenerator。"""
+ yield AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "session_id": session_id,
+ "final_answer": final_answer,
+ "usage": usage or {},
+ "cost_usd": cost_usd,
+ "status": "completed",
+ "model": "test-model",
+ },
+ )
+async def _error_stream(
+ *_args: Any,
+ **_kwargs: Any,
+) -> AsyncGenerator[AgentEvent, None]:
+ """构造抛出异常的 fake send_message_stream AsyncGenerator。"""
+ raise RuntimeError("boom")
+ yield # pragma: no cover — makes it a generator
 @pytest.mark.django_db(transaction=True)
 class TestFeishuBotPipeline:
  async def test_attachment_only_message_sends_clarification(self) -> None:
@@ -34,8 +63,7 @@ class TestFeishuBotPipeline:
  assert result["status"] == "clarification"
  assert thread.status == FeishuBotThreadStatus.AWAITING_PROJECT_CLARIFICATION
  assert im_service.send_card.await_count == 3
- @pytest.mark.xfail(reason="ConversationService.send_message 已替换为 send_message_stream，feishu bot service 需适配")
- async def test_successful_pipeline_updates_processing_card_with_real_trace(self, user) -> None:
+ async def test_successful_pipeline_updates_processing_card_with_real_trace(self, user: Any) -> None:
  repo = await Repository.objects.acreate(name="server", git_url="https://example.com/server.git")
  project = await Project.objects.acreate(name="Friday Server", feishu_project_key="friday-server")
  await project.repositories.aadd(repo)
@@ -55,8 +83,7 @@ class TestFeishuBotPipeline:
  send_card=AsyncMock(side_effect=["welcome_2", "processing_2", "error_unused"]),
  update_card=AsyncMock(return_value=True),
  )
- assistant_message = SimpleNamespace(content="因为入口还在旧分支里。")
- async def fake_send_message(*args, **kwargs):
+ # 预创建 AgentSession + ToolCallLog 供 extract_reference_summaries 查询
  session = await AgentSession.objects.acreate(
  session_id="chat-session-1",
  project=project,
@@ -76,13 +103,20 @@ class TestFeishuBotPipeline:
  duration_ms=1,
  iteration=1,
  )
- return {"message": assistant_message, "session_id": "chat-session-1", "tool_calls":, "usage": None}
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _fake_stream(
+ session_id="chat-session-1",
+ final_answer="因为入口还在旧分支里。",
+ usage={"input_tokens": 200, "output_tokens": 80},
+ cost_usd=0.005,
+ ):
+ yield event
  with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
  "feishu.bot.service.ConversationService.create_conversation",
  new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ws")),
  ), patch(
- "feishu.bot.service.ConversationService.send_message",
- new=AsyncMock(side_effect=fake_send_message),
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
  ):
  result = await FeishuBotService.process_message("msg_success")
  await thread.arefresh_from_db
@@ -93,7 +127,9 @@ class TestFeishuBotPipeline:
  content = "\n".join(element.get("content", "") for element in updated_card["elements"] if isinstance(element, dict))
  assert "websocket_client.py" in content
  assert "已参考上下文" in content
- @pytest.mark.xfail(reason="ConversationService.send_message 已替换为 send_message_stream，feishu bot service 需适配")
+ # 验证成本信息展示
+ assert "💰" in content
+ assert "200" in content
  async def test_update_failure_falls_back_to_new_answer_card(self) -> None:
  repo = await Repository.objects.acreate(name="web", git_url="https://example.com/web.git")
  project = await Project.objects.acreate(name="Friday Web", feishu_project_key="friday-web")
@@ -114,24 +150,23 @@ class TestFeishuBotPipeline:
  send_card=AsyncMock(side_effect=["welcome_3", "processing_3", "answer_3"]),
  update_card=AsyncMock(return_value=False),
  )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _fake_stream(
+ final_answer="因为后端接口超时。",
+ ):
+ yield event
  with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
  "feishu.bot.service.ConversationService.create_conversation",
  new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="web")),
  ), patch(
- "feishu.bot.service.ConversationService.send_message",
- new=AsyncMock(return_value={
- "message": SimpleNamespace(content="因为后端接口超时。"),
- "session_id": "",
- "tool_calls":,
- "usage": None,
- }),
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
  ):
  result = await FeishuBotService.process_message("msg_fallback")
  await thread.arefresh_from_db
  assert result["status"] == "answered"
  assert thread.last_bot_message_id == "answer_3"
  assert im_service.send_card.await_count == 3
- @pytest.mark.xfail(reason="ConversationService.send_message 已替换为 send_message_stream，feishu bot service 需适配")
  async def test_processing_error_emits_error_card_without_overwriting_processing(self) -> None:
  repo = await Repository.objects.acreate(name="ops", git_url="https://example.com/ops.git")
  project = await Project.objects.acreate(name="Friday Ops", feishu_project_key="friday-ops")
@@ -156,8 +191,8 @@ class TestFeishuBotPipeline:
  "feishu.bot.service.ConversationService.create_conversation",
  new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="ops")),
  ), patch(
- "feishu.bot.service.ConversationService.send_message",
- new=AsyncMock(side_effect=RuntimeError("boom")),
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=_error_stream,
  ):
  result = await FeishuBotService.process_message("msg_error")
  assert result["status"] == "error"
