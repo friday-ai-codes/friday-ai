@@ -196,3 +196,47 @@ class TestChatStreamView:
  content_type="application/json",
  )
  assert resp.status_code == 404
+# ============================================================================
+# ChatInterruptView 测试
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestChatInterruptView:
+ """ChatInterruptView 中断端点测试。"""
+ async def test_interrupt_returns_200_with_active_runner(self, conversation):
+ """有活跃 runner 时返回 200。"""
+ from unittest.mock import AsyncMock, MagicMock
+ from chat.conversation_service import _active_runners
+ mock_runner = MagicMock
+ mock_runner.interrupt = AsyncMock
+ conv_id_str = str(conversation.id)
+ _active_runners[conv_id_str] = mock_runner
+ try:
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ content_type="application/json",
+ )
+ assert resp.status_code == 200
+ data = json.loads(resp.content)
+ assert data["status"] == "interrupted"
+ mock_runner.interrupt.assert_awaited_once
+ finally:
+ _active_runners.pop(conv_id_str, None)
+ async def test_interrupt_no_active_returns_404(self, conversation):
+ """无活跃 runner 时返回 404。"""
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ content_type="application/json",
+ )
+ assert resp.status_code == 404
+ data = json.loads(resp.content)
+ assert "无活跃对话" in data["error"]
+ async def test_interrupt_invalid_conversation_returns_404(self):
+ """无效 UUID 对应无 runner 时返回 404。"""
+ client = AsyncClient
+ resp = await client.post(
+ "/api/chat/conversations/00000000-0000-0000-0000-000000000000/interrupt/",
+ content_type="application/json",
+ )
+ assert resp.status_code == 404

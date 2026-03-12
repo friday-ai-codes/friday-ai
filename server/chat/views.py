@@ -352,3 +352,27 @@ class ChatStreamView(APIView):
  AgentEvent(type=ERROR, data={"message": "服务内部错误"}),
  message_id=message_id,
  )
+class ChatInterruptView(APIView):
+ """中断活跃对话的 SDK 运行。"""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="中断对话",
+ description="中断正在进行的 AI 回复生成",
+ responses={
+ 200: {"description": "中断成功"},
+ 404: {"description": "无活跃对话"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request, conversation_id): # type: ignore[override]
+ """中断活跃对话。"""
+ from .conversation_service import get_active_runner
+ runner = get_active_runner(str(conversation_id))
+ if not runner:
+ return Response(
+ {"error": "无活跃对话或对话已完成"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ await runner.interrupt
+ return Response({"status": "interrupted"})

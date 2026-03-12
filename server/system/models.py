@@ -34,6 +34,8 @@ class SettingKeys:
  # Feishu IM Settings
  FEISHU_APP_ID = "feishu_app_id"
  FEISHU_APP_SECRET = "feishu_app_secret"
+ # Budget Control
+ MAX_BUDGET_USD = "max_budget_usd"
 class CacheVolumeTracker(models.Model):
  """跟踪 Docker 缓存卷的使用情况。
  Docker volume labels 创建后不可变，因此通过数据库模型跟踪
