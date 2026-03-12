@@ -95,6 +95,9 @@ export const aiPromptConfigSchema = z.object({
  temperature: z.number.min(0).max(2).default(0.7),
  max_tokens: z.number.min(100).max(100000).default(4096),
  output_format: z.enum(['text', 'json', 'markdown']).default('text'),
+ // 高级设置
+ max_thinking_tokens: z.number.int.min(1024).max(128000).nullable.optional,
+ max_budget_usd: z.number.min(0.01).max(100).nullable.optional,
 })
 /** AI 编码指派器节点配置 - 严格模式 */
 export const aiCodingDispatcherConfigSchema = z.object({
@@ -152,6 +155,9 @@ export const aiVariableExtractorConfigSchema = z.object({
  variables: z.array(aiVariableDefinitionSchema).default,
  additional_prompt: z.string.default(''),
  model: z.string.default(''),
+ // 高级设置
+ max_thinking_tokens: z.number.int.min(1024).max(128000).nullable.optional,
+ max_budget_usd: z.number.min(0.01).max(100).nullable.optional,
 })
 /** 召回上下文节点配置 */
 export const contextRetrievalConfigSchema = z.object({
