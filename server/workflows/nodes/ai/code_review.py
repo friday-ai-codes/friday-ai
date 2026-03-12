@@ -4,7 +4,7 @@ GitPlatformClient, runs AI review covering code quality, security, and plan
 compliance, then sends a Feishu notification card with the summary.
 Architecture decision: Inherits AIAgentBaseNode for config_schema and helper
 methods, but overrides execute entirely because:
-1. Needs per-MR independent review (loop of Agent calls)
+1. Needs per-MR independent review (loop of SDKAgentRunner calls)
 2. Needs async diff fetching (get_user_prompt is sync)
 3. Needs post-review aggregation + Feishu notification
 """
@@ -13,9 +13,8 @@ import re
 import time
 from typing import Any, ClassVar, Literal
 import structlog
-from agents.core.context import AgentContext
-from agents.core.loop import AgentConfig, AgentLoop
 from agents.core.result import AgentResult
+from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_platform import MRDiffResult, get_git_platform_client
@@ -283,14 +282,16 @@ class AICodeReviewNode(AIAgentBaseNode):
  await self._init_sub_steps(context)
  # 2. 准备 Agent 基础设施
  project = await self._get_project(context)
- user = await self._get_user(context)
- model: str = config.get("model", "")
+ model_cfg: str = config.get("model", "")
  use_custom_api: bool = config.get("use_custom_api", False)
  api_base_url: str = config.get("api_base_url", "")
- api_key: str = config.get("api_key", "")
+ api_key_cfg: str = config.get("api_key", "")
+ provider_type_cfg: str = config.get("provider_type", "")
  max_iterations = self.get_max_iterations(context)
- provider = await self._get_provider(
- project, model, use_custom_api, api_base_url, api_key
+ # 解析 API key 和模型（通过 base 类的方法）
+ api_key, resolved_model = await self._resolve_api_key_and_model(
+ project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
+ provider_type=provider_type_cfg,
  )
  # 3. 逐 MR 审查
  await self.emit_sub_step(context, "fetch_diff", SubStepStatus.RUNNING)
@@ -333,25 +334,26 @@ class AICodeReviewNode(AIAgentBaseNode):
  execution_plan=execution_plan,
  repository_id=repository_id,
  )
- # 3c. 调用 Agent 执行审查
+ # 3c. 调用 SDKAgentRunner 执行审查
  session_id = f"review-{context.execution_id}-{context.node_id}-{mr_id}"
- agent_context = AgentContext(
- session_id=session_id,
- project_id=project.id if project else 0,
- user_id=user.id if user else 0,
- )
- agent_config = AgentConfig(
+ runner_config = SdkRunnerConfig(
  system_prompt=REVIEW_SYSTEM_PROMPT,
- max_iterations=max_iterations,
- tool_names=, # 审查不需要工具
+ model=resolved_model,
+ project_id=str(project.id) if project else "",
+ session_id=session_id,
+ api_key=api_key,
+ max_turns=max_iterations,
  )
- loop = AgentLoop(
- config=agent_config,
- context=agent_context,
- provider=provider,
- )
+ runner = SDKAgentRunner(runner_config)
  try:
- result: AgentResult = await loop.run(user_prompt)
+ async for _event in runner.stream(user_prompt):
+ pass # 只需最终结果
+ result: AgentResult | None = runner.result
+ if result is None:
+ review_errors.append(
+ f"{repository_name} MR#{mr_id}: SDKAgentRunner 无结果"
+ )
+ continue
  except Exception as e:
  log.warning(
  "mr_review_agent_error",
