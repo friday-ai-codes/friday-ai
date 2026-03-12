@@ -297,6 +297,13 @@ class ConversationService:
  event.data.setdefault("status", result.status if result else "completed")
  event.data.setdefault("iterations", 0)
  event.data.setdefault("model", model)
+ # 补充 FeishuBotService 消费所需的字段
+ event.data.setdefault("session_id", session_id)
+ event.data.setdefault("final_answer", result.final_answer if result else "")
+ event.data.setdefault(
+ "cost_usd",
+ result.metadata.get("cost_usd", 0) if result and result.metadata else 0,
+ )
  yield event
  except GeneratorExit:
  logger.info(
