@@ -1,16 +1,41 @@
 """ProviderConfigService — 四层配置优先级解析和凭据验证。
 实现节点级 > 对话级 > 项目级 > 系统级的 Provider 配置解析，
 被 ConversationService 和 AIAgentBaseNode 共用。
+ProviderType / ApiFormat / CredentialType / PROVIDER_REGISTRY 从
+agents.llm.providers 迁移至此，避免对已删除模块的依赖。
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from enum import StrEnum
+from typing import Any, TypedDict
 import structlog
-from agents.llm.providers import (
- PROVIDER_REGISTRY,
- ProviderType,
-)
 from system.models import SettingKeys, SystemSetting
+# === Provider 类型定义（从 agents.llm.providers 迁移） ===
+class ProviderType(StrEnum):
+ """LLM Provider 类型枚举。值为小写字符串，可直接存储到 DB CharField。"""
+ ANTHROPIC = "anthropic"
+class CredentialType(StrEnum):
+ """凭据类型枚举。"""
+ API_KEY = "api_key"
+class ApiFormat(StrEnum):
+ """API 协议格式枚举，决定工厂函数路由到哪个 Provider 实现类。"""
+ ANTHROPIC = "anthropic"
+class ProviderMetadata(TypedDict):
+ """Provider 元数据，描述每个 Provider 的特征。"""
+ display_name: str
+ api_format: ApiFormat
+ credential_type: CredentialType
+ default_base_url: str
+ env_key: str
+PROVIDER_REGISTRY: dict[ProviderType, ProviderMetadata] = {
+ ProviderType.ANTHROPIC: {
+ "display_name": "Anthropic Claude",
+ "api_format": ApiFormat.ANTHROPIC,
+ "credential_type": CredentialType.API_KEY,
+ "default_base_url": "https://api.anthropic.com",
+ "env_key": "ANTHROPIC_API_KEY",
+ },
+}
 logger = structlog.get_logger(__name__)
 class ProviderConfigError(Exception):
  """Provider 配置解析错误。"""
