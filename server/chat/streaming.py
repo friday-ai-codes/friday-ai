@@ -8,7 +8,7 @@ from agents.core.events import AgentEvent
 def format_sse(event: AgentEvent, message_id: str = "") -> str:
  """将 AgentEvent 格式化为 SSE data 行。
  Args:
- event: AgentLoop 事件
+ event: AgentEvent 事件
  message_id: 关联的消息 ID（前端用于断线恢复）
  Returns:
  SSE 格式字符串 "data: {...}\\n\\n"
