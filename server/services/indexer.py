@@ -29,6 +29,9 @@ def qdrant_delete_by_file_path(repository_id: str, file_path: str) -> bool:
 @sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_upsert_vectors(repository_id: str, points: list[dict]) -> bool:
  return QdrantService.upsert_vectors(repository_id, points)
+@sync_to_async # KEEP: Qdrant SDK 同步限制
+def qdrant_update_file_path(repository_id: str, old_path: str, new_path: str) -> bool:
+ return QdrantService.update_file_path(repository_id, old_path, new_path)
 async def update_index_progress(repository_id: str, total: int, processed: int) -> None:
  """Update indexing progress in database."""
  await Repository.objects.filter(id=repository_id).aupdate(
@@ -48,6 +51,7 @@ class DiffAction(Enum):
  UPDATE = "update"
  DELETE = "delete"
  SKIP = "skip"
+ RENAME = "rename"
 @dataclass
 class FileDiff:
  """Represents a file difference for incremental indexing."""
@@ -55,6 +59,7 @@ class FileDiff:
  action: DiffAction
  old_hash: str | None = None
  new_hash: str | None = None
+ old_path: str | None = None
 class IndexerService:
  """Service for indexing repository code into vector database."""
  def __init__(self, repository_id: str):
