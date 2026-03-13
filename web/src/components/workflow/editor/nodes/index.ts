@@ -10,13 +10,16 @@ import type { NodeTypeKey } from '~/types/workflow/registry'
 import { NODE_REGISTRY } from '~/types/workflow/registry'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
 import DynamicPortNode from './DynamicPortNode.vue'
+import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import { allNodeTypeKeys } from './nodeVisuals'
 const baseNode = markRaw(BaseWorkflowNode) as unknown as NodeComponent
 const dynamicNode = markRaw(DynamicPortNode) as unknown as NodeComponent
-/** 特殊节点覆盖（parallel/join 使用动态端口组件） */
+const aiPlanGenNode = markRaw(AIPlanGenerationNode) as unknown as NodeComponent
+/** 特殊节点覆盖 */
 const specialNodes: Record<string, NodeComponent> = {
  parallel: dynamicNode,
  join: dynamicNode,
+ ai_plan_generation: aiPlanGenNode,
 }
 /** 从 NODE_REGISTRY + nodeVisuals 合并生成节点类型映射 */
 const registryTypes = Object.fromEntries(

@@ -4,11 +4,11 @@
  *
  * 根据源/目标节点类别色渲染 SVG 线性渐变，选中时加粗发光。
  */
-import { BaseEdge, getBezierPath, type EdgeProps } from '@vue-flow/core'
+import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@vue-flow/core'
 import { computed } from 'vue'
 import { getNodeDefinition } from '~/types/workflow/registry'
 const props = defineProps<EdgeProps>
-const path = computed( => getBezierPath(props))
+const path = computed( => getSmoothStepPath(props))
 const CATEGORY_COLORS: Record<string, string> = {
  trigger: '#F59E0B',
  action: '#10B981',

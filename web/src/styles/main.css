@@ -88,6 +88,27 @@ a {
 /* 选中文本样式 */:selection {
  background: hsl(213 47% 47% / 0.3); /* #3F72AF 30% */
 }
+/* Vue Flow Handle 样式 — 节点连接点（小圆点） */
+.vue-flow__handle {
+ width: 10px;
+ height: 10px;
+ background-color: hsl(213 47% 47%); /* primary */
+ border: 2px solid white;
+ border-radius: 50%;
+ transition: all 0.15s ease;
+}
+.vue-flow__handle:hover {
+ width: 14px;
+ height: 14px;
+ background-color: hsl(213 47% 57%);
+ box-shadow: 0 0 0 4px hsl(213 47% 47% / 0.2);
+}
+/* 连线时高亮可连接的 handle */
+.vue-flow__handle.connectingto,
+.vue-flow__handle.connectingfrom {
+ background-color: hsl(142 71% 45%); /* success green */
+ box-shadow: 0 0 0 4px hsl(142 71% 45% / 0.25);
+}
 /* Vue Final Modal - shadcn 风格缩放动画 */
 .vfm-zoom-enter-active,
 .vfm-zoom-leave-active {
