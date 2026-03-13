@@ -22,11 +22,23 @@ class IndexStatus(models.TextChoices):
  INDEXING = "indexing", "索引中"
  INDEXED = "indexed", "已索引"
  FAILED = "failed", "索引失败"
+class TriggerType(models.TextChoices):
+ """索引触发类型。"""
+ MANUAL = "manual", "手动触发"
+ WEBHOOK = "webhook", "Webhook 触发"
+ SCHEDULED = "scheduled", "定时触发"
+class IndexHistoryStatus(models.TextChoices):
+ """索引历史记录状态。"""
+ PENDING = "pending", "等待中"
+ RUNNING = "running", "运行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
 class Repository(models.Model):
  """Repository model for Git repositories."""
  # 反向关系类型声明
  coding_tasks: "QuerySet[CodingTask]"
  credential: "GitCredential"
+ index_history: "QuerySet[IndexHistory]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  git_url = models.CharField(max_length=500)
@@ -57,6 +69,10 @@ class Repository(models.Model):
  # Progress tracking - Qdrant write
  index_write_total = models.IntegerField(default=0)
  index_write_processed = models.IntegerField(default=0)
+ # 增量索引与自动触发字段
+ last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
+ auto_index_enabled = models.BooleanField(default=False)
+ webhook_secret = models.CharField(max_length=100, blank=True, null=True)
  # Soft delete fields
  is_deleted = models.BooleanField(default=False)
  deleted_at = models.DateTimeField(blank=True, null=True)
@@ -80,6 +96,36 @@ class Repository(models.Model):
  self.is_deleted = True
  self.deleted_at = timezone.now
  await self.asave(update_fields=["is_deleted", "deleted_at"])
+class IndexHistory(models.Model):
+ """索引操作历史记录，追踪每次索引的完整元数据。"""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ Repository,
+ on_delete=models.CASCADE,
+ related_name="index_history",
+ )
+ trigger_type = models.CharField(max_length=20, choices=TriggerType.choices)
+ status = models.CharField(
+ max_length=20,
+ choices=IndexHistoryStatus.choices,
+ default=IndexHistoryStatus.PENDING,
+ )
+ from_sha = models.CharField(max_length=40, blank=True, null=True)
+ to_sha = models.CharField(max_length=40, blank=True, null=True)
+ files_added = models.IntegerField(default=0)
+ files_modified = models.IntegerField(default=0)
+ files_deleted = models.IntegerField(default=0)
+ error_message = models.TextField(blank=True, null=True)
+ started_at = models.DateTimeField(blank=True, null=True)
+ finished_at = models.DateTimeField(blank=True, null=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "index_history"
+ ordering = ["-created_at"]
+ verbose_name = "索引历史"
+ verbose_name_plural = "索引历史"
+ def __str__(self) -> str:
+ return f"{self.repository.name} - {self.trigger_type} ({self.status})"
 class GitCredential(models.Model):
  """Git credential model for authentication."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
