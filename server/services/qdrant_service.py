@@ -189,6 +189,28 @@ class QdrantService:
  # Collection might not exist
  return {}
  @classmethod
+ def update_file_path(cls, repository_id: str, old_path: str, new_path: str) -> bool:
+ """更新指定文件的路径元数据（用于 rename 不重新索引）。"""
+ client = cls.get_client
+ collection_name = cls.get_collection_name(repository_id)
+ try:
+ client.set_payload(
+ collection_name=collection_name,
+ payload={"file_path": new_path},
+ points=models.Filter(
+ must=[
+ models.FieldCondition(
+ key="file_path",
+ match=models.MatchValue(value=old_path),
+ )
+ ]
+ ),
+ )
+ return True
+ except UnexpectedResponse as e:
+ logger.error("update_file_path_failed", error=str(e), old_path=old_path, new_path=new_path)
+ return False
+ @classmethod
  def delete_by_file_path(cls, repository_id: str, file_path: str) -> bool:
  """Delete all vectors for a specific file path."""
  client = cls.get_client

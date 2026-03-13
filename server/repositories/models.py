@@ -116,6 +116,7 @@ class IndexHistory(models.Model):
  files_modified = models.IntegerField(default=0)
  files_deleted = models.IntegerField(default=0)
  error_message = models.TextField(blank=True, null=True)
+ summary_text = models.TextField(blank=True, null=True, help_text="人可读的差异摘要文本")
  started_at = models.DateTimeField(blank=True, null=True)
  finished_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
