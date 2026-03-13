@@ -1,4 +1,5 @@
 """Repositories views."""
+import secrets
 import subprocess
 from asgiref.sync import sync_to_async
 from django.shortcuts import aget_object_or_404
@@ -126,6 +127,16 @@ class RepositoryViewSet(ModelViewSet):
  })
  except Exception:
  return Response({"cached": False})
+ @action(detail=True, methods=["post"], url_path="generate-webhook-secret")
+ async def generate_webhook_secret(self, request, pk=None):
+ """POST /api/repositories/{id}/generate-webhook-secret/
+ 生成随机 webhook secret 并保存到仓库。
+ """
+ repository = await self.aget_object
+ new_secret = secrets.token_hex(32)
+ repository.webhook_secret = new_secret
+ await repository.asave(update_fields=["webhook_secret"])
+ return Response({"webhook_secret": new_secret})
 class SetAccessTokenView(APIView):
  """View for setting or updating access token."""
  async def post(self, request, repository_id):
