@@ -21,6 +21,7 @@ declare module 'vue' {
  AIModelConfig: typeof import('./components/workflow/config/AIModelConfig.vue')['default']
  AIPlanApprovalConfig: typeof import('./components/workflow/config/AIPlanApprovalConfig.vue')['default']
  AIPlanGenerationConfig: typeof import('./components/workflow/config/AIPlanGenerationConfig.vue')['default']
+ AIPlanGenerationNode: typeof import('./components/workflow/editor/nodes/AIPlanGenerationNode.vue')['default']
  AIPromptConfig: typeof import('./components/workflow/config/AIPromptConfig.vue')['default']
  AIVariableExtractorConfig: typeof import('./components/workflow/config/AIVariableExtractorConfig.vue')['default']
  AlertDialog: typeof import('./components/ui/alert-dialog/AlertDialog.vue')['default']

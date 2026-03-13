@@ -8,7 +8,6 @@ import {
 } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { Separator } from '~/components/ui/separator'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
@@ -110,49 +109,93 @@ const advancedOpen = ref(false)
 </script>
 <template>
  <div class="space-y-4">
- <!-- Introduction -->
- <div class="rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-400/5 border border-emerald-500/20 ">
+ <!-- ================================================================== -->
+ <!-- Introduction Card -->
+ <!-- ================================================================== -->
+ <div class="rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-400/5 border border-violet-500/20 ">
  <div class="flex items-start gap-2">
- <span class="icon-[lucide--file-text] text-emerald-500 text-lg shrink-0 mt-0.5" />
+ <span class="icon-[lucide--sparkles] text-violet-500 text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">
  <h4 class="text-sm font-medium">
  AI 方案生成
  </h4>
  <p class="text-xs text-muted-foreground leading-relaxed">
- 自动分析多仓库代码结构，生成结构化技术方案。支持
- <span class="text-emerald-600 font-medium">verify_plan 验证</span>
- 和飞书卡片多轮迭代。
+ 基于 <span class="text-violet-500 font-medium">ReAct Agent</span> 自动分析多仓库代码，
+ 通过向量检索 (RAG) 理解代码上下文，生成结构化技术方案，
+ 支持自动验证和飞书多轮迭代。
  </p>
- <!-- Workflow Visual -->
- <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
- <span class="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600 font-medium">分析仓库</span>
- <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 font-medium">生成方案</span>
- <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-600 font-medium">验证</span>
- <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 font-medium">用户审阅</span>
- </div>
- <!-- Feature Tags -->
+ <!-- Capability Tags -->
  <div class="flex flex-wrap gap-1 pt-0.5">
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-[9px] font-medium">多仓库分析</span>
- <span class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 text-[9px] font-medium">自动验证</span>
- <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 text-[9px] font-medium">飞书审阅</span>
- <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 text-[9px] font-medium">多轮迭代</span>
+ <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-500 text-[10px] font-medium">ReAct</span>
+ <span class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[10px] font-medium">RAG 向量检索</span>
+ <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[10px] font-medium">verify_plan</span>
+ <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">飞书交互</span>
  </div>
  </div>
  </div>
  </div>
- <!-- Repository Configuration -->
- <div class="space-y-3">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--folder-git-2] text-emerald-500" />
- <Label class="text-sm font-medium">仓库配置</Label>
+ <!-- ================================================================== -->
+ <!-- Phase Timeline -->
+ <!-- ================================================================== -->
+ <div class="relative pl-6">
+ <!-- 左侧竖线 -->
+ <div class="absolute left-[9px] top-2 bottom-2 w-px bg-gradient-to-b from-blue-500/40 via-violet-500/30 to-amber-500/20" />
+ <!-- ============================================================== -->
+ <!-- Phase: 需求输入 -->
+ <!-- ============================================================== -->
+ <div class="relative pb-5">
+ <!-- 步骤圆点 -->
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-blue-500/15 border border-blue-500/30">
+ <span class="text-[10px] font-bold text-blue-500">1</span>
+ </div>
+ <div class="space-y-2.5">
+ <div>
+ <h5 class="text-sm font-medium flex items-center gap-1.5">
+ <span class="icon-[lucide--file-text] text-blue-500 text-sm" />
+ 需求输入
+ </h5>
+ <p class="text-[11px] text-muted-foreground mt-0.5">
+ 描述你的需求，AI 将以此为起点分析代码并生成方案
+ </p>
+ </div>
+ <div class="space-y-1.5">
+ <Label class="text-xs flex items-center gap-1">
+ 用户提示词
+ <span class="text-destructive">*</span>
+ </Label>
+ <SmartMarkdownEditor
+ v-model="userPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
+ placeholder="描述需求内容，输入 {{ 引用上游节点变量...":min-rows="5":show-toolbar="true":compact="true"
+ @expand="userPromptModalOpen = true"
+ />
+ <p class="text-[10px] text-muted-foreground">
+ 支持 Markdown 和 <code class="text-[10px] px-1 py-0.5 bg-muted rounded">{'{{'}nodes.ID.field{'}}'}</code> 变量引用
+ </p>
+ </div>
+ </div>
+ </div>
+ <!-- ============================================================== -->
+ <!-- Phase: 代码检索 -->
+ <!-- ============================================================== -->
+ <div class="relative pb-5">
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-emerald-500/15 border border-emerald-500/30">
+ <span class="text-[10px] font-bold text-emerald-500">2</span>
+ </div>
+ <div class="space-y-2.5">
+ <div>
+ <h5 class="text-sm font-medium flex items-center gap-1.5">
+ <span class="icon-[lucide--search-code] text-emerald-500 text-sm" />
+ 代码检索
+ <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[9px] font-medium">RAG</span>
+ </h5>
+ <p class="text-[11px] text-muted-foreground mt-0.5">
+ 通过向量检索跨仓库搜索相关代码，分析依赖关系和代码结构
+ </p>
  </div>
  <!-- Include Repos -->
  <div class="space-y-1.5">
- <Label class="text-xs text-muted-foreground">必须包含</Label>
- <div class="flex flex-wrap gap-1.5 min-h-[28px]">
+ <Label class="text-xs text-muted-foreground">必须包含的仓库</Label>
+ <div v-if="includeRepos.length" class="flex flex-wrap gap-1.5">
  <span
  v-for="repo in includeRepos":key="repo"
  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
@@ -171,14 +214,11 @@ const advancedOpen = ref(false)
  class="bg-background/50 text-sm"
  @keydown.enter.prevent="addIncludeRepo"
  />
- <p class="text-[10px] text-muted-foreground">
- 未指定的仓库由 AI 自动决定是否分析
- </p>
  </div>
  <!-- Exclude Repos -->
  <div class="space-y-1.5">
- <Label class="text-xs text-muted-foreground">必须排除</Label>
- <div class="flex flex-wrap gap-1.5 min-h-[28px]">
+ <Label class="text-xs text-muted-foreground">必须排除的仓库</Label>
+ <div v-if="excludeRepos.length" class="flex flex-wrap gap-1.5">
  <span
  v-for="repo in excludeRepos":key="repo"
  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-600 border border-red-500/20"
@@ -197,61 +237,64 @@ const advancedOpen = ref(false)
  class="bg-background/50 text-sm"
  @keydown.enter.prevent="addExcludeRepo"
  />
- </div>
- </div>
- <Separator />
- <!-- User Prompt (expanded by default) -->
- <div class="space-y-2">
- <Label class="flex items-center gap-2">
- 用户提示词
- <span class="text-destructive">*</span>
- </Label>
- <SmartMarkdownEditor
- v-model="userPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
- placeholder="描述需求内容，输入 {{ 引用上游节点变量...":min-rows="5":show-toolbar="true":compact="true"
- @expand="userPromptModalOpen = true"
- />
- <p class="text-xs text-muted-foreground">
- 描述需求内容，支持引用上游节点变量
+ <p class="text-[10px] text-muted-foreground">
+ 未指定的仓库由 AI 自动决定是否检索
  </p>
  </div>
- <Separator />
- <!-- System Prompt (collapsed by default) -->
+ </div>
+ </div>
+ <!-- ============================================================== -->
+ <!-- Phase: 方案生成 -->
+ <!-- ============================================================== -->
+ <div class="relative pb-5">
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-violet-500/15 border border-violet-500/30">
+ <span class="text-[10px] font-bold text-violet-500">3</span>
+ </div>
+ <div class="space-y-2.5">
+ <div>
+ <h5 class="text-sm font-medium flex items-center gap-1.5">
+ <span class="icon-[lucide--sparkles] text-violet-500 text-sm" />
+ 方案生成
+ <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-500 text-[9px] font-medium">ReAct</span>
+ </h5>
+ <p class="text-[11px] text-muted-foreground mt-0.5">
+ ReAct Agent 循环推理，基于代码检索结果生成结构化技术方案
+ </p>
+ </div>
+ <!-- System Prompt (collapsed) -->
  <Collapsible v-model:open="systemPromptOpen">
- <CollapsibleTrigger class="flex items-center justify-between w-full py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
- <span class="flex items-center gap-2">
- <span class="icon-[lucide--settings] text-base" />
- 系统提示词（高级）
+ <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+ <span class="flex items-center gap-1.5">
+ <span class="icon-[lucide--settings] text-sm" />
+ 自定义系统指令
  </span>
  <span
- class="icon-[lucide--chevron-down] transition-transform duration-200":class="{ 'rotate-180': systemPromptOpen }"
+ class="icon-[lucide--chevron-down] text-xs transition-transform duration-200":class="{ 'rotate-180': systemPromptOpen }"
  />
  </CollapsibleTrigger>
- <CollapsibleContent class="space-y-2 pt-2">
+ <CollapsibleContent class="space-y-1.5 pt-1.5">
  <SmartMarkdownEditor
  v-model="systemPrompt":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
  placeholder="追加到系统默认提示词末尾的自定义指令...":min-rows="3":show-toolbar="true":compact="true"
  @expand="systemPromptModalOpen = true"
  />
  <p class="text-[10px] text-muted-foreground">
- 追加到系统默认提示词末尾。留空使用默认配置。
+ 追加到系统默认 System Prompt 末尾，留空使用默认配置
  </p>
  </CollapsibleContent>
  </Collapsible>
- <Separator />
- <!-- Advanced Options (Collapsible) -->
+ <!-- Model & Iterations -->
  <Collapsible v-model:open="advancedOpen">
- <CollapsibleTrigger class="flex items-center justify-between w-full py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
- <span class="flex items-center gap-2">
- <span class="icon-[lucide--settings-2] text-base" />
- 高级选项
+ <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+ <span class="flex items-center gap-1.5">
+ <span class="icon-[lucide--cpu] text-sm" />
+ 模型 & 参数
  </span>
  <span
- class="icon-[lucide--chevron-down] transition-transform duration-200":class="{ 'rotate-180': advancedOpen }"
+ class="icon-[lucide--chevron-down] text-xs transition-transform duration-200":class="{ 'rotate-180': advancedOpen }"
  />
  </CollapsibleTrigger>
- <CollapsibleContent class="space-y-4 pt-2">
- <!-- AI 模型配置 -->
+ <CollapsibleContent class="space-y-3 pt-1.5">
  <AIModelConfig
  v-model:use-custom-api="useCustomApi"
  v-model:api-base-url="apiBaseUrl"
@@ -259,8 +302,6 @@ const advancedOpen = ref(false)
  v-model:model="model"
  model-description="方案生成使用的 LLM 模型"
  />
- <Separator />
- <!-- Max Iterations -->
  <div class="space-y-1.5">
  <Label class="text-xs">最大迭代轮次</Label>
  <Input
@@ -269,14 +310,50 @@ const advancedOpen = ref(false)
  class="bg-background/50 text-sm"
  />
  <p class="text-[10px] text-muted-foreground">
- Agent 最多执行的思考-行动循环次数 (10-200)
+ Agent 最多执行的 ReAct 循环次数 (10-200)
  </p>
  </div>
- <Separator />
- <!-- Chat ID -->
+ </CollapsibleContent>
+ </Collapsible>
+ </div>
+ </div>
+ <!-- ============================================================== -->
+ <!-- Phase: 自动验证 -->
+ <!-- ============================================================== -->
+ <div class="relative pb-5">
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-amber-500/15 border border-amber-500/30">
+ <span class="text-[10px] font-bold text-amber-500">4</span>
+ </div>
+ <div>
+ <h5 class="text-sm font-medium flex items-center gap-1.5">
+ <span class="icon-[lucide--shield-check] text-amber-500 text-sm" />
+ 自动验证
+ <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[9px] font-medium">自动</span>
+ </h5>
+ <p class="text-[11px] text-muted-foreground mt-0.5">
+ 调用 <code class="text-[10px] px-1 py-0.5 bg-muted rounded">verify_plan</code> 验证方案格式和完整性，失败自动重试（最多 3 轮）
+ </p>
+ </div>
+ </div>
+ <!-- ============================================================== -->
+ <!-- Phase: 飞书推送 -->
+ <!-- ============================================================== -->
+ <div class="relative">
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-cyan-500/15 border border-cyan-500/30">
+ <span class="text-[10px] font-bold text-cyan-500">5</span>
+ </div>
+ <div class="space-y-2.5">
+ <div>
+ <h5 class="text-sm font-medium flex items-center gap-1.5">
+ <span class="icon-[lucide--send] text-cyan-500 text-sm" />
+ 飞书推送
+ </h5>
+ <p class="text-[11px] text-muted-foreground mt-0.5">
+ 生成飞书文档并发送方案卡片，用户可在线审阅、反馈或确认
+ </p>
+ </div>
  <div class="space-y-1.5">
  <Label class="text-xs flex items-center gap-1.5">
- <span class="icon-[lucide--message-circle] text-blue-500" />
  飞书群聊 ID
  </Label>
  <SmartTextarea
@@ -288,9 +365,12 @@ const advancedOpen = ref(false)
  方案卡片发送的目标群聊，支持变量引用
  </p>
  </div>
- </CollapsibleContent>
- </Collapsible>
- <!-- System Prompt Modal -->
+ </div>
+ </div>
+ </div>
+ <!-- ================================================================== -->
+ <!-- Modals -->
+ <!-- ================================================================== -->
  <MarkdownEditorModal
  v-model:open="systemPromptModalOpen"
  v-model="systemPrompt"
@@ -298,7 +378,6 @@ const advancedOpen = ref(false)
  description="追加到系统默认提示词末尾的自定义指令":workflow-nodes="workflowNodes":workflow-edges="workflowEdges":current-node-id="currentNodeId"
  placeholder="追加到系统默认提示词末尾的自定义指令..."
  />
- <!-- User Prompt Modal -->
  <MarkdownEditorModal
  v-model:open="userPromptModalOpen"
  v-model="userPrompt"

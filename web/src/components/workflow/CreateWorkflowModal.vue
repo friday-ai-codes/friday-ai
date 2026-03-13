@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { VueFinalModal } from 'vue-final-modal'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -13,29 +14,61 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+import client from '~/api/client'
 const emit = defineEmits<{
  close:
  confirm: [data: { name: string, description?: string, project_id: string }]
  cancel:
  closed:
 }>
+const router = useRouter
 const workflowsStore = useWorkflowsStore
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
-// 表单数据
+// ============================================================================
+// Template
+// ============================================================================
+interface WorkflowTemplate {
+ template_id: string
+ name: string
+ description: string
+ version: string
+}
+const templates = ref<WorkflowTemplate>
+const selectedTemplateId = ref<string | null>(null)
+const templatesLoading = ref(false)
+async function fetchTemplates {
+ templatesLoading.value = true
+ try {
+ templates.value = await client.get<WorkflowTemplate>('/workflows/templates/')
+ }
+ catch {
+ templates.value =
+ }
+ finally {
+ templatesLoading.value = false
+ }
+}
+function selectTemplate(id: string | null) {
+ selectedTemplateId.value = id
+ if (id) {
+ const tpl = templates.value.find(t => t.template_id === id)
+ if (tpl && !form.name) {
+ form.name = tpl.name
+ }
+ }
+}
+// ============================================================================
+// Form
+// ============================================================================
 const form = reactive({
  name: '',
  description: '',
  project_id: '',
 })
-// 表单验证
 const errors = reactive({
  name: '',
  project_id: '',
-})
-// 加载项目列表
-onMounted( => {
- projectsStore.fetchProjects
 })
 function validate: boolean {
  errors.name = ''
@@ -48,23 +81,39 @@ function validate: boolean {
  }
  return !errors.name && !errors.project_id
 }
-// 提交表单
+// ============================================================================
+// Submit
+// ============================================================================
 const submitting = ref(false)
 async function handleSubmit {
  if (!validate)
  return
  submitting.value = true
  try {
- await workflowsStore.createWorkflow({
+ let workflow
+ if (selectedTemplateId.value) {
+ workflow = await client.post<{ id: string }>('/workflows/from-template/', {
+ template_id: selectedTemplateId.value,
+ project_id: form.project_id,
+ name: form.name,
+ description: form.description || undefined,
+ })
+ }
+ else {
+ workflow = await workflowsStore.createWorkflow({
  name: form.name,
  description: form.description || undefined,
  project: form.project_id,
- trigger_type: 'manual', // 默认为手动触发
+ trigger_type: 'manual',
  is_active: true,
  })
+ }
  success('创建成功', '工作流已创建')
  emit('close')
  emit('confirm', { name: form.name, description: form.description, project_id: form.project_id })
+ if (workflow?.id) {
+ router.push(`/workflows/${workflow.id}`)
+ }
  }
  catch (e) {
  showError('创建失败', e instanceof Error ? e.message: '无法创建工作流')
@@ -77,6 +126,13 @@ function handleCancel {
  emit('close')
  emit('cancel')
 }
+// ============================================================================
+// Lifecycle
+// ============================================================================
+onMounted( => {
+ projectsStore.fetchProjects
+ fetchTemplates
+})
 </script>
 <template>
  <VueFinalModal
@@ -97,7 +153,7 @@ function handleCancel {
  新建工作流
  </h3>
  <p class="text-sm text-muted-foreground">
- 创建一个新的工作流来自动化您的任务
+ 从模板开始或创建空白工作流
  </p>
  </div>
  </div>
@@ -111,6 +167,55 @@ function handleCancel {
  </div>
  <!-- Body -->
  <form class="px-6 py-5 space-y-5" @submit.prevent="handleSubmit">
+ <!-- 模板选择 -->
+ <div v-if="templates.length > 0 || templatesLoading" class="space-y-2">
+ <Label class="text-foreground">选择模板</Label>
+ <div class="grid grid-cols-2 gap-2">
+ <!-- 空白工作流 -->
+ <button
+ type="button"
+ class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[
+ selectedTemplateId === null
+ ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30',
+ ]"
+ @click="selectTemplate(null)"
+ >
+ <div class="flex items-center gap-2">
+ <span
+ class="icon-[lucide--file-plus] text-base":class="selectedTemplateId === null ? 'text-primary': 'text-muted-foreground'"
+ />
+ <span class="text-sm font-medium">空白工作流</span>
+ </div>
+ <p class="text-[11px] text-muted-foreground leading-snug">
+ 从零开始搭建
+ </p>
+ </button>
+ <!-- 模板列表 -->
+ <button
+ v-for="tpl in templates":key="tpl.template_id"
+ type="button"
+ class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[
+ selectedTemplateId === tpl.template_id
+ ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30',
+ ]"
+ @click="selectTemplate(tpl.template_id)"
+ >
+ <div class="flex items-center gap-2">
+ <span
+ class="icon-[lucide--workflow] text-base":class="selectedTemplateId === tpl.template_id ? 'text-primary': 'text-muted-foreground'"
+ />
+ <span class="text-sm font-medium">{{ tpl.name }}</span>
+ </div>
+ <p class="text-[11px] text-muted-foreground leading-snug line-clamp-2">
+ {{ tpl.description }}
+ </p>
+ </button>
+ </div>
+ <div v-if="templatesLoading" class="flex items-center justify-center py-2">
+ <span class="icon-[lucide--loader-circle] animate-spin text-muted-foreground mr-2" />
+ <span class="text-xs text-muted-foreground">加载模板...</span>
+ </div>
+ </div>
  <!-- 工作流名称 -->
  <div class="space-y-2">
  <Label for="name" class="flex items-center gap-1 text-foreground">

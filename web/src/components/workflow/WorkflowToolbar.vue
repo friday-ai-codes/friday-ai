@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { Play, Redo, Save, Undo } from 'lucide-vue-next'
+import { Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
+import { ref } from 'vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+import { Textarea } from '~/components/ui/textarea'
+import {
+ Dialog,
+ DialogClose,
+ DialogContent,
+ DialogFooter,
+ DialogHeader,
+ DialogTitle,
+ DialogTrigger,
+} from '~/components/ui/dialog'
 import {
  Tooltip,
  TooltipContent,
@@ -10,8 +22,9 @@ import {
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 import RunningExecutionsBadge from './RunningExecutionsBadge.vue'
-defineProps<{
+const props = defineProps<{
  workflowName?: string
+ workflowDescription?: string
  workflowId?: string
  isActive?: boolean
  canUndo?: boolean
@@ -29,8 +42,26 @@ const emit = defineEmits<{
  (e: 'back'): void
  (e: 'history'): void
  (e: 'update:workflowName', value: string): void
+ (e: 'update:workflowDescription', value: string): void
  (e: 'update:isActive', value: boolean): void
 }>
+const dialogOpen = ref(false)
+const editName = ref('')
+const editDescription = ref('')
+function openEditDialog {
+ editName.value = props.workflowName ?? ''
+ editDescription.value = props.workflowDescription ?? ''
+ dialogOpen.value = true
+}
+function confirmEdit {
+ if (editName.value !== props.workflowName) {
+ emit('update:workflowName', editName.value)
+ }
+ if (editDescription.value !== props.workflowDescription) {
+ emit('update:workflowDescription', editDescription.value)
+ }
+ dialogOpen.value = false
+}
 </script>
 <template>
  <TooltipProvider>
@@ -52,13 +83,50 @@ const emit = defineEmits<{
  <div class=".5 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex-shrink-0">
  <span class="icon-[lucide--workflow] text-lg text-amber-500" />
  </div>
- <!-- Editable name -->
- <Input:model-value="workflowName"
- placeholder="工作流名称"
- maxlength="100"
- class=" text-base font-medium bg-transparent border-transparent hover:border-border/50 focus:border-primary/50 max-w-[300px]"
- @update:model-value="emit('update:workflowName', $event as string)"
+ <!-- Name (read-only display) + Edit button -->
+ <div class="flex items-center gap-1.5 min-w-0">
+ <span class="text-base font-medium text-foreground truncate">
+ {{ workflowName || '未命名工作流' }}
+ </span>
+ <span v-if="workflowDescription" class="text-xs text-muted-foreground truncate max-w-[200px]">
+ — {{ workflowDescription }}
+ </span>
+ </div>
+ <!-- Edit dialog trigger -->
+ <Dialog v-model:open="dialogOpen">
+ <DialogTrigger as-child>
+ <Button variant="ghost" size="icon" class=" w-7 flex-shrink-0" @click="openEditDialog">
+ <Pencil class="w-3 " />
+ </Button>
+ </DialogTrigger>
+ <DialogContent class="sm:max-w-md">
+ <DialogHeader>
+ <DialogTitle>编辑工作流信息</DialogTitle>
+ </DialogHeader>
+ <div class="space-y-4 py-2">
+ <div class="space-y-2">
+ <Label>名称</Label>
+ <Input v-model="editName" placeholder="工作流名称" maxlength="100" />
+ </div>
+ <div class="space-y-2">
+ <Label>描述</Label>
+ <Textarea
+ v-model="editDescription"
+ placeholder="工作流的简要描述..."
+ rows="3"
+ maxlength="500"
+ class="resize-none"
  />
+ </div>
+ </div>
+ <DialogFooter>
+ <DialogClose as-child>
+ <Button variant="outline">取消</Button>
+ </DialogClose>
+ <Button @click="confirmEdit">确认</Button>
+ </DialogFooter>
+ </DialogContent>
+ </Dialog>
  <!-- Unsaved indicator -->
  <div v-if="hasUnsavedChanges" class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex-shrink-0">
  <span class="w-1.5 .5 rounded-full bg-amber-500 animate-pulse" />

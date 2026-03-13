@@ -185,6 +185,11 @@ function onUpdateWorkflowName(name: string) {
  store.updateWorkflowSettings({ ...currentWorkflow.value, name })
  }
 }
+function onUpdateWorkflowDescription(description: string) {
+ if (currentWorkflow.value) {
+ store.updateWorkflowSettings({ ...currentWorkflow.value, description })
+ }
+}
 async function onUpdateIsActive(isActive: boolean) {
  if (currentWorkflow.value) {
  try {
@@ -206,7 +211,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->
- <WorkflowToolbar:workflow-name="currentWorkflow?.name":workflow-id="id":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
+ <WorkflowToolbar:workflow-name="currentWorkflow?.name":workflow-description="currentWorkflow?.description":workflow-id="id":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"
  @save="onSave"
  @save-draft="onSaveDraft"
  @execute="onExecute"
@@ -215,6 +220,7 @@ async function onUpdateIsActive(isActive: boolean) {
  @back="onBack"
  @history="historySheetOpen = true"
  @update:workflow-name="onUpdateWorkflowName"
+ @update:workflow-description="onUpdateWorkflowDescription"
  @update:is-active="onUpdateIsActive"
  />
  <div class="flex flex-1 overflow-hidden">

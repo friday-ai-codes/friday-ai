@@ -85,11 +85,18 @@ async function handleToggleActive(workflow: any, isActive: boolean) {
 }
 // 新建工作流弹窗
 async function openCreateWorkflow {
- const { open } = useModal({
+ const { open, close } = useModal({
  component: markRaw(CreateWorkflowModal),
  attrs: {
+ onClose: => {
+ close
+ },
  onConfirm: => {
+ close
  store.fetchWorkflows
+ },
+ onCancel: => {
+ close
  },
  },
  })

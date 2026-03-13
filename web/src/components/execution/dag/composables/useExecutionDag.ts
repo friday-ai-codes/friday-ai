@@ -71,7 +71,7 @@ export function useExecutionDag(
  .map(n => [n.node_id, n]),
  )
  const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_code_review', 'ai_plan_generation', 'ai_coding_dispatcher']
- return definition.nodes.map(defNode => {
+ return definition.nodes?.map(defNode => {
  const ne = execMap.get(defNode.id)
  const bn = bottleneckMap.get(defNode.id)
  const nodeStatus = ne?.status ?? 'pending'
@@ -94,13 +94,13 @@ export function useExecutionDag(
  isAINode: AI_NODE_TYPES.includes(defNode.node_type),
  },
  }
- })
+ }) ??
  })
  const dagEdges = computed<Edge>( => {
  const exec = execution.value
  if (!exec?.workflow_definition) return
  const definition: WorkflowDefinition = exec.workflow_definition
- return definition.edges.map(defEdge => ({
+ return definition.edges?.map(defEdge => ({
  id: defEdge.id,
  source: defEdge.source,
  target: defEdge.target,
@@ -108,7 +108,7 @@ export function useExecutionDag(
  targetHandle: defEdge.targetPort || 'default',
  type: 'gradient',
  markerEnd: MarkerType.ArrowClosed,
- }))
+ })) ??
  })
  return { dagNodes, dagEdges }
 }
