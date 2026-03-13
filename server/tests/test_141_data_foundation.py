@@ -38,7 +38,11 @@ class TestAsyncSubprocess:
  ):
  from services.indexer import clone_and_index_repository
  await clone_and_index_repository(str(repository.id))
- mock_create_subprocess.assert_called_once
+ # 至少调用一次：clone 和 rev-parse HEAD
+ assert mock_create_subprocess.call_count >= 1
+ # 第一次调用是 git clone
+ first_call_args = mock_create_subprocess.call_args_list[0]
+ assert "clone" in first_call_args[0]
  async def test_git_clone_timeout_uses_wait_for(self, repository):
  """超时通过 asyncio.wait_for 实现（TimeoutError 时 kill 进程）"""
  mock_proc = AsyncMock

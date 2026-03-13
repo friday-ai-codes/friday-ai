@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 from typing import Any
 import structlog
@@ -580,14 +579,14 @@ async def clone_and_index_repository(
  last_indexed_commit_sha=head_sha,
  )
  # Update repository status
+ from django.utils import timezone
  await update_repository_status(
  repository,
  IndexStatus.INDEXED,
- last_indexed_at=datetime.now,
+ last_indexed_at=timezone.now,
  )
  # 更新 IndexHistory 状态为完成
  if history_id:
- from django.utils import timezone
  from repositories.models import IndexHistory, IndexHistoryStatus
  # 从 index_result 提取统计信息
  files_added = index_result.get("added", 0)
