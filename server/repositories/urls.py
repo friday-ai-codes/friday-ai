@@ -5,9 +5,13 @@ from .index_views import (
  CodeSearchView,
  EmbeddingHealthView,
  IndexDeleteView,
+ IndexFreshnessView,
+ IndexHistoryListView,
+ IndexStatsView,
  IndexStatusView,
  IndexTriggerView,
  QdrantHealthView,
+ RepositoryCollectionHealthView,
 )
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
@@ -70,5 +74,26 @@ urlpatterns = [
  "<uuid:repository_id>/search/",
  CodeSearchView.as_view,
  name="repository-code-search",
+ ),
+ # Index observability (Phase)
+ path(
+ "<uuid:repository_id>/index/history/",
+ IndexHistoryListView.as_view,
+ name="repository-index-history",
+ ),
+ path(
+ "<uuid:repository_id>/index/stats/",
+ IndexStatsView.as_view,
+ name="repository-index-stats",
+ ),
+ path(
+ "<uuid:repository_id>/index/health/",
+ RepositoryCollectionHealthView.as_view,
+ name="repository-index-health",
+ ),
+ path(
+ "<uuid:repository_id>/index/freshness/",
+ IndexFreshnessView.as_view,
+ name="repository-index-freshness",
  ),
 ]

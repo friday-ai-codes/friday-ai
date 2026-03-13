@@ -211,6 +211,80 @@ class QdrantService:
  logger.error("update_file_path_failed", error=str(e), old_path=old_path, new_path=new_path)
  return False
  @classmethod
+ def get_collection_stats(cls, repository_id: str) -> dict[str, Any]:
+ """获取仓库索引集合的统计信息（chunk 数、语言分布）。"""
+ client = cls.get_client
+ collection_name = cls.get_collection_name(repository_id)
+ try:
+ # 检查 collection 是否存在
+ collections = client.get_collections
+ existing_names = [c.name for c in collections.collections]
+ if collection_name not in existing_names:
+ return {"exists": False, "points_count": 0, "language_distribution": {}}
+ # 精确计数
+ count_result = client.count(collection_name=collection_name, exact=True)
+ points_count = count_result.count
+ # 遍历所有 points 统计语言分布
+ language_counts: dict[str, int] = {}
+ indexed_files: set[str] = set
+ offset = None
+ while True:
+ points, next_offset = client.scroll(
+ collection_name=collection_name,
+ scroll_filter=None,
+ limit=1000,
+ offset=offset,
+ with_payload=["language", "file_path"],
+ with_vectors=False,
+ )
+ for point in points:
+ if point.payload:
+ lang = point.payload.get("language", "unknown")
+ language_counts[lang] = language_counts.get(lang, 0) + 1
+ fp = point.payload.get("file_path")
+ if fp:
+ indexed_files.add(fp)
+ if next_offset is None:
+ break
+ offset = next_offset
+ return {
+ "exists": True,
+ "points_count": points_count,
+ "language_distribution": language_counts,
+ "indexed_files_count": len(indexed_files),
+ }
+ except UnexpectedResponse as e:
+ logger.error("get_collection_stats_failed", error=str(e))
+ return {"exists": False, "points_count": 0, "language_distribution": {}}
+ @classmethod
+ def check_collection_health(cls, repository_id: str) -> dict[str, Any]:
+ """校验仓库索引集合的健康状态。"""
+ client = cls.get_client
+ collection_name = cls.get_collection_name(repository_id)
+ try:
+ collections = client.get_collections
+ existing_names = [c.name for c in collections.collections]
+ if collection_name not in existing_names:
+ return {
+ "status": "unhealthy",
+ "collection_exists": False,
+ "points_count": 0,
+ }
+ count_result = client.count(collection_name=collection_name, exact=True)
+ return {
+ "status": "healthy",
+ "collection_exists": True,
+ "points_count": count_result.count,
+ }
+ except UnexpectedResponse as e:
+ logger.error("check_collection_health_failed", error=str(e))
+ return {
+ "status": "unhealthy",
+ "collection_exists": False,
+ "points_count": 0,
+ "error": str(e),
+ }
+ @classmethod
  def delete_by_file_path(cls, repository_id: str, file_path: str) -> bool:
  """Delete all vectors for a specific file path."""
  client = cls.get_client
