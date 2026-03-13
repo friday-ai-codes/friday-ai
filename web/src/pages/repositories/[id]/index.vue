@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
+import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
+import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
+import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -220,6 +223,12 @@ async function handleEditSuccess {
  </div>
  <!-- 代码索引 -->
  <RepositoryIndexCard:repository-id="repository.id" />
+ <!-- 索引健康与配置 ( + ) -->
+ <WebhookConfigPanel:repository="repository" @updated="repositoriesStore.fetchRepository(repositoryId)" />
+ <!-- 索引统计 -->
+ <IndexStatsPanel:repository-id="repository.id" />
+ <!-- 索引历史 -->
+ <IndexHistoryList:repository-id="repository.id" />
  <!-- 关联项目 -->
  <div class="relative md:col-span-2">
  <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />

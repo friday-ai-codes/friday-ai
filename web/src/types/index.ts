@@ -112,6 +112,8 @@ export interface Repository extends RepositoryBase {
  has_credential: boolean
  projects: ProjectSummary
  proxy_url?: string
+ auto_index_enabled: boolean
+ webhook_secret?: string | null
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）
@@ -130,6 +132,7 @@ export interface RepositoryUpdate {
  git_platform?: GitPlatform
  default_branch?: string
  description?: string
+ auto_index_enabled?: boolean
 }
 // ============================================================================
 // 项目相关类型
