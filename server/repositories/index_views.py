@@ -2,13 +2,46 @@
 import asyncio
 from typing import Any
 from asgiref.sync import sync_to_async
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from adrf.views import APIView
-from repositories.models import IndexStatus, Repository
+from repositories.models import (
+ IndexHistory,
+ IndexHistoryStatus,
+ IndexStatus,
+ Repository,
+ TriggerType,
+)
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
+# 模块级强引用集合：防止 asyncio.create_task 任务被 GC 静默回收
+# 参考：https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
+# 注意：Django dev server 热重载时集合会重置，生产环境不受影响
+_index_tasks: set[asyncio.Task[dict[str, Any]]] = set
+def _acquire_index_lock(repository_id: str) -> Repository | None:
+ """尝试获取仓库索引 DB 锁。返回 None 表示已被其他进程持有（skip_locked）。"""
+ with transaction.atomic:
+ try:
+ return (
+ Repository.objects
+ .select_for_update(skip_locked=True)
+ .get(id=repository_id, is_deleted=False)
+ )
+ except Repository.DoesNotExist:
+ return None
+_acquire_index_lock_async = sync_to_async(_acquire_index_lock)
+def _schedule_index(repository_id: str, history_id: str) -> asyncio.Task[dict[str, Any]]:
+ """创建索引任务并用强引用保护，防止 GC 回收。"""
+ task: asyncio.Task[dict[str, Any]] = asyncio.create_task(
+ clone_and_index_repository(repository_id, history_id=history_id),
+ name=f"index-{repository_id}",
+ )
+ _index_tasks.add(task)
+ task.add_done_callback(_index_tasks.discard)
+ return task
 class IndexStatusSerializer(serializers.Serializer):
  """Serializer for index status response."""
  index_status = serializers.CharField
@@ -34,8 +67,9 @@ class SearchResultSerializer(serializers.Serializer):
  context_header = serializers.CharField
 class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
- async def post(self, request, repository_id):
- """Trigger indexing for the repository."""
+ async def post(self, request: Any, repository_id: str) -> Response:
+ """触发仓库索引（手动）。"""
+ # 快速状态检查（无锁开销，快速路径）
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
@@ -43,18 +77,32 @@ class IndexTriggerView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # Check if already indexing
  if repository.index_status == IndexStatus.INDEXING:
  return Response(
  {"detail": "索引正在进行中"},
  status=status.HTTP_409_CONFLICT,
  )
- # Run indexing in background (fire-and-forget)
- asyncio.create_task(clone_and_index_repository(str(repository.id)))
+ # DB 级并发保护（消除快速检查之后的竞态窗口）
+ locked_repo = await _acquire_index_lock_async(str(repository_id))
+ if locked_repo is None:
+ return Response(
+ {"detail": "索引正在进行中"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ # 创建 IndexHistory 记录（获锁之后，任务启动之前）
+ history = await IndexHistory.objects.acreate(
+ repository_id=repository_id,
+ trigger_type=TriggerType.MANUAL,
+ status=IndexHistoryStatus.RUNNING,
+ started_at=timezone.now,
+ )
+ # 启动后台索引任务（强引用保护）
+ _schedule_index(str(repository_id), str(history.id))
  return Response(
  {
  "message": "索引任务已启动",
- "repository_id": str(repository.id),
+ "repository_id": str(repository_id),
+ "history_id": str(history.id),
  "status": IndexStatus.INDEXING,
  },
  status=status.HTTP_202_ACCEPTED,
