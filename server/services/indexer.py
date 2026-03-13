@@ -167,6 +167,7 @@ class IndexerService:
  "status": "success",
  "files_processed": len(files),
  "chunks_indexed": 0,
+ "added": len(files), # 全量索引所有文件视为新增
  }
  # Set total chunks count
  total_chunks = len(all_chunks)
@@ -217,6 +218,7 @@ class IndexerService:
  "status": "success",
  "files_processed": len(files),
  "chunks_indexed": len(points),
+ "added": len(files), # 全量索引所有文件视为新增
  }
  except Exception as e:
  logger.error(
