@@ -101,7 +101,7 @@ class TestIndexHistoryModel:
  assert field.blank is True
  def test_created_at_field(self):
  field = IndexHistory._meta.get_field("created_at")
- assert field.has_default is True # auto_now_add
+ assert field.auto_now_add is True
  def test_meta_db_table(self):
  assert IndexHistory._meta.db_table == "index_history"
  def test_meta_ordering(self):
