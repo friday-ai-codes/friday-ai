@@ -45,6 +45,8 @@ async def update_write_progress(repository_id: str, total: int, processed: int) 
  index_write_processed=processed,
  )
 logger = structlog.get_logger(__name__)
+class GitDiffError(Exception):
+ """git diff 操作失败时抛出。"""
 class DiffAction(Enum):
  """Action to take for a file during incremental sync."""
  ADD = "add"
@@ -60,6 +62,72 @@ class FileDiff:
  old_hash: str | None = None
  new_hash: str | None = None
  old_path: str | None = None
+async def _get_head_sha(repo_path: str) -> str:
+ """获取仓库当前 HEAD 的 commit SHA。"""
+ proc = await asyncio.create_subprocess_exec(
+ "git", "rev-parse", "HEAD",
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=10.0)
+ if proc.returncode != 0:
+ raise GitDiffError("git rev-parse HEAD failed")
+ return stdout.decode.strip
+async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) -> bool:
+ """尝试 fetch 指定 commit 到浅克隆仓库。失败返回 False。"""
+ cmd: list[str] = ["git"]
+ if proxy_url:
+ cmd.extend(["-c", f"http.proxy={proxy_url}"])
+ cmd.extend(["fetch", "--depth=1", "origin", sha])
+ proc = await asyncio.create_subprocess_exec(
+ *cmd, cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ try:
+ await asyncio.wait_for(proc.communicate, timeout=60.0)
+ except asyncio.TimeoutError:
+ proc.kill
+ await proc.communicate
+ return False
+ return proc.returncode == 0
+def _parse_git_diff_output(output: str) -> list[FileDiff]:
+ """解析 git diff --name-status --find-renames 输出为 FileDiff 列表。"""
+ diffs: list[FileDiff] =
+ for line in output.strip.split("\n"):
+ if not line.strip:
+ continue
+ parts = line.split("\t")
+ status_code = parts[0]
+ if status_code == "A":
+ diffs.append(FileDiff(parts[1], DiffAction.ADD))
+ elif status_code == "M":
+ diffs.append(FileDiff(parts[1], DiffAction.UPDATE))
+ elif status_code == "D":
+ diffs.append(FileDiff(parts[1], DiffAction.DELETE))
+ elif status_code.startswith("R"):
+ old_path, new_path = parts[1], parts[2]
+ similarity = int(status_code[1:]) if len(status_code) > 1 else 100
+ if similarity == 100:
+ diffs.append(FileDiff(new_path, DiffAction.RENAME, old_path=old_path))
+ else:
+ # 内容变更的 rename：拆为 DELETE + ADD
+ diffs.append(FileDiff(old_path, DiffAction.DELETE))
+ diffs.append(FileDiff(new_path, DiffAction.ADD))
+ return diffs
+def _build_summary_text(files_added: int, files_modified: int, files_deleted: int) -> str:
+ """生成人可读的差异摘要文本。"""
+ parts: list[str] =
+ if files_added:
+ parts.append(f"新增 {files_added} 文件")
+ if files_modified:
+ parts.append(f"修改 {files_modified} 文件")
+ if files_deleted:
+ parts.append(f"删除 {files_deleted} 文件")
+ if not parts:
+ return "无变更"
+ return f"本次增量：{'、'.join(parts)}"
 class IndexerService:
  """Service for indexing repository code into vector database."""
  def __init__(self, repository_id: str):
@@ -158,6 +226,117 @@ class IndexerService:
  error=str(e),
  )
  raise
+ async def run_git_diff_index(
+ self, repo_path: str, from_sha: str, to_sha: str
+ ) -> dict[str, Any]:
+ """基于 git diff 的增量索引。
+ Args:
+ repo_path: 克隆仓库路径
+ from_sha: 上次索引的 commit SHA
+ to_sha: 当前 HEAD SHA
+ Returns:
+ Result dict with status and statistics
+ Raises:
+ GitDiffError: git diff 命令执行失败
+ """
+ logger.info(
+ "starting_git_diff_index",
+ repository_id=self.repository_id,
+ from_sha=from_sha,
+ to_sha=to_sha,
+ )
+ # 执行 git diff
+ proc = await asyncio.create_subprocess_exec(
+ "git", "diff", "--name-status", "--find-renames", from_sha, to_sha,
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=30.0)
+ if proc.returncode != 0:
+ raise GitDiffError(f"git diff failed: {stderr.decode}")
+ diffs = _parse_git_diff_output(stdout.decode)
+ if not diffs:
+ logger.info("no_changes_detected", repository_id=self.repository_id)
+ return {"status": "success", "added": 0, "updated": 0, "deleted": 0, "renamed": 0}
+ stats: dict[str, int] = {"added": 0, "updated": 0, "deleted": 0, "renamed": 0}
+ # 处理删除
+ for diff in diffs:
+ if diff.action == DiffAction.DELETE:
+ await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
+ stats["deleted"] += 1
+ # 处理 rename（仅元数据更新）
+ for diff in diffs:
+ if diff.action == DiffAction.RENAME and diff.old_path:
+ await qdrant_update_file_path(
+ self.repository_id, diff.old_path, diff.file_path
+ )
+ stats["renamed"] += 1
+ # 处理新增和修改
+ files_to_index = [
+ d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)
+ ]
+ if files_to_index:
+ for diff in files_to_index:
+ if diff.action == DiffAction.UPDATE:
+ await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
+ stats["updated"] += 1
+ else:
+ stats["added"] += 1
+ all_chunks: list[CodeChunk] =
+ for diff in files_to_index:
+ full_path = os.path.join(repo_path, diff.file_path)
+ if os.path.exists(full_path):
+ chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ all_chunks.extend(chunks)
+ if all_chunks:
+ total_chunks = len(all_chunks)
+ await update_index_progress(self.repository_id, total_chunks, 0)
+ async def on_embedding_progress(processed: int, total: int) -> None:
+ await update_index_progress(self.repository_id, total, processed)
+ texts_to_embed = [
+ f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks
+ ]
+ embeddings = await EmbeddingService.generate_embeddings_batch(
+ texts_to_embed, on_progress=on_embedding_progress
+ )
+ points =
+ for chunk, embedding in zip(all_chunks, embeddings):
+ if embedding is None:
+ continue
+ points.append(
+ {
+ "id": str(uuid.uuid4),
+ "vector": embedding,
+ "payload": {
+ "file_path": chunk.file_path,
+ "file_hash": chunk.file_hash,
+ "language": chunk.language,
+ "node_type": chunk.node_type,
+ "start_line": chunk.start_line,
+ "end_line": chunk.end_line,
+ "content": chunk.content,
+ "context_header": chunk.context_header,
+ },
+ }
+ )
+ batch_size = 100
+ total_points = len(points)
+ await update_write_progress(self.repository_id, total_points, 0)
+ for i in range(0, total_points, batch_size):
+ batch = points[i: i + batch_size]
+ await qdrant_upsert_vectors(self.repository_id, batch)
+ await update_write_progress(
+ self.repository_id,
+ total_points,
+ min(i + batch_size, total_points),
+ )
+ logger.info(
+ "git_diff_indexing_complete",
+ repository_id=self.repository_id,
+ stats=stats,
+ )
+ return {"status": "success", **stats}
  async def run_incremental_index(self, repo_path: str) -> dict[str, Any]:
  """Run incremental indexing for a repository.
  Args:
@@ -368,12 +547,38 @@ async def clone_and_index_repository(
  raise Exception(f"Git clone failed: {stderr.decode}")
  # Run indexing - pass repository_id instead of repository object
  indexer = IndexerService(repository_id)
- # Check if collection exists (incremental) or not (full)
+ # 获取当前 HEAD SHA
+ head_sha = await _get_head_sha(temp_dir)
+ # 决定索引路径：git diff > 文件哈希比较 > 全量
+ last_sha = repository.last_indexed_commit_sha
+ fallback_reason: str | None = None
+ if last_sha:
+ # 尝试 git diff 增量路径
+ fetch_ok = await _fetch_commit(temp_dir, last_sha, proxy_url)
+ if fetch_ok:
+ try:
+ index_result = await indexer.run_git_diff_index(
+ temp_dir, last_sha, head_sha
+ )
+ except GitDiffError as e:
+ logger.warning("git_diff_failed_fallback", error=str(e))
+ fallback_reason = f"git diff 失败: {e}"
+ index_result = await indexer.run_incremental_index(temp_dir)
+ else:
+ logger.warning("fetch_commit_failed_fallback", sha=last_sha)
+ fallback_reason = f"git fetch {last_sha} 失败"
+ index_result = await indexer.run_incremental_index(temp_dir)
+ else:
+ # 首次索引或未记录 SHA
  stored_hashes = await qdrant_get_stored_file_hashes(repository_id)
  if stored_hashes:
  index_result = await indexer.run_incremental_index(temp_dir)
  else:
  index_result = await indexer.run_full_index(temp_dir)
+ # 更新 last_indexed_commit_sha
+ await Repository.objects.filter(id=repository_id).aupdate(
+ last_indexed_commit_sha=head_sha,
+ )
  # Update repository status
  await update_repository_status(
  repository,
@@ -384,9 +589,28 @@ async def clone_and_index_repository(
  if history_id:
  from django.utils import timezone
  from repositories.models import IndexHistory, IndexHistoryStatus
+ # 从 index_result 提取统计信息
+ files_added = index_result.get("added", 0)
+ files_modified = index_result.get("updated", 0)
+ files_deleted = index_result.get("deleted", 0)
+ history_update: dict[str, Any] = {
+ "status": IndexHistoryStatus.COMPLETED,
+ "finished_at": timezone.now,
+ "to_sha": head_sha,
+ "files_added": files_added,
+ "files_modified": files_modified,
+ "files_deleted": files_deleted,
+ "summary_text": _build_summary_text(
+ files_added, files_modified, files_deleted
+ ),
+ }
+ if last_sha:
+ history_update["from_sha"] = last_sha
+ if fallback_reason:
+ # 追加 fallback 信息到 error_message（非失败，仅记录）
+ history_update["error_message"] = f"[fallback] {fallback_reason}"
  await IndexHistory.objects.filter(id=history_id).aupdate(
- status=IndexHistoryStatus.COMPLETED,
- finished_at=timezone.now,
+ **history_update
  )
  return index_result
  except Exception as e:
