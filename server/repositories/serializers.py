@@ -14,11 +14,13 @@ class RepositorySerializer(serializers.ModelSerializer):
  "default_branch",
  "description",
  "proxy_url",
+ "auto_index_enabled",
+ "webhook_secret",
  "created_at",
  "updated_at",
  "has_credential",
  ]
- read_only_fields = ["id", "created_at", "updated_at"]
+ read_only_fields = ["id", "created_at", "updated_at", "webhook_secret"]
  def get_has_credential(self, obj):
  return hasattr(obj, "credential") and obj.credential is not None
 class RepositoryCreateSerializer(serializers.ModelSerializer):

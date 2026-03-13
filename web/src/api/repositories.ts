@@ -61,6 +61,50 @@ export interface HealthCheckResponse {
  dimension?: number
  model?: string
 }
+// Phase: 索引历史记录
+export interface IndexHistoryItem {
+ id: string
+ trigger_type: 'manual' | 'webhook' | 'scheduled'
+ status: 'pending' | 'running' | 'completed' | 'failed'
+ from_sha: string | null
+ to_sha: string | null
+ files_added: number
+ files_modified: number
+ files_deleted: number
+ summary_text: string | null
+ error_message: string | null
+ started_at: string | null
+ finished_at: string | null
+ created_at: string
+}
+export interface IndexHistoryResponse {
+ items: IndexHistoryItem
+ total: number
+}
+// Phase: 索引统计
+export interface IndexStatsResponse {
+ chunks_total: number
+ language_distribution: Record<string, number>
+ indexed_files_count: number
+ coverage_percent: number
+}
+// Phase: 集合健康
+export interface CollectionHealthResponse {
+ status: 'healthy' | 'unhealthy'
+ collection_exists: boolean
+ points_count: number
+ expected_points: number
+ points_match: boolean | null
+ error?: string
+}
+// Phase: 索引新鲜度
+export interface IndexFreshnessResponse {
+ local_sha: string
+ remote_sha: string
+ is_fresh: boolean | null
+ last_indexed_at: string | null
+ error: string | null
+}
 // 连接测试响应
 export interface TestConnectionResponse {
  success: boolean
@@ -186,5 +230,38 @@ export const repositoriesApi = {
  */
  testRepositoryConnection: async (id: string): Promise<TestConnectionResponse> => {
  return post<TestConnectionResponse>(`/repositories/${id}/test-connection/`)
+ },
+ // ==================== Phase: 索引可观测性 API ====================
+ /**
+ * 获取索引历史列表（分页 + 状态筛选）
+ */
+ getIndexHistory: async (id: string, params?: { limit?: number, offset?: number, status?: string }): Promise<IndexHistoryResponse> => {
+ const searchParams = new URLSearchParams
+ if (params?.limit)
+ searchParams.set('limit', String(params.limit))
+ if (params?.offset)
+ searchParams.set('offset', String(params.offset))
+ if (params?.status)
+ searchParams.set('status', params.status)
+ const qs = searchParams.toString
+ return get<IndexHistoryResponse>(`/repositories/${id}/index/history/${qs ? `?${qs}`: ''}`)
+ },
+ /**
+ * 获取索引统计
+ */
+ getIndexStats: async (id: string): Promise<IndexStatsResponse> => {
+ return get<IndexStatsResponse>(`/repositories/${id}/index/stats/`)
+ },
+ /**
+ * 获取集合健康状态
+ */
+ getCollectionHealth: async (id: string): Promise<CollectionHealthResponse> => {
+ return get<CollectionHealthResponse>(`/repositories/${id}/index/health/`)
+ },
+ /**
+ * 获取索引新鲜度
+ */
+ getIndexFreshness: async (id: string): Promise<IndexFreshnessResponse> => {
+ return get<IndexFreshnessResponse>(`/repositories/${id}/index/freshness/`)
  },
 }
