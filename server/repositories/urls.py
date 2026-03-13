@@ -12,6 +12,7 @@ from .index_views import (
  IndexTriggerView,
  QdrantHealthView,
  RepositoryCollectionHealthView,
+ RepositoryWebhookView,
 )
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
@@ -95,5 +96,11 @@ urlpatterns = [
  "<uuid:repository_id>/index/freshness/",
  IndexFreshnessView.as_view,
  name="repository-index-freshness",
+ ),
+ # Webhook (Phase, no auth required)
+ path(
+ "<uuid:repository_id>/webhooks/push/",
+ RepositoryWebhookView.as_view,
+ name="repository-webhook-push",
  ),
 ]

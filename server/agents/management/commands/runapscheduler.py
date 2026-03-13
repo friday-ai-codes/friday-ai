@@ -76,6 +76,16 @@ def prune_cache_volumes_job:
  log.info("job_complete", result=result)
  except Exception as e:
  log.exception("job_error", error=str(e))
+def poll_repository_updates_job:
+ """Job wrapper for poll_repository_updates task (Phase)."""
+ from tasks.index_trigger_tasks import poll_repository_updates
+ log = logger.bind(job="poll_repository_updates")
+ log.info("job_start")
+ try:
+ result = run_async_task(poll_repository_updates)
+ log.info("job_complete", result=result)
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 class Command(BaseCommand):
  help = "Runs APScheduler for session timeout tasks."
  def handle(self, *args, **options):
@@ -131,6 +141,16 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="prune_cache_volumes", schedule="daily at 05:00")
+ # Poll repository updates every 30 minutes (Phase)
+ scheduler.add_job(
+ poll_repository_updates_job,
+ trigger=IntervalTrigger(minutes=30),
+ id="poll_repository_updates",
+ name="Poll for repository updates via git ls-remote",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info("job_registered", job="poll_repository_updates", schedule="every 30 minutes")
  try:
  logger.info("scheduler_starting")
  scheduler.start

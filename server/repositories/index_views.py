@@ -389,3 +389,67 @@ class IndexFreshnessView(APIView):
  if output:
  return output.split[0]
  return ""
+# ---------------------------------------------------------------------------
+# Phase: 自动索引触发
+# ---------------------------------------------------------------------------
+class RepositoryWebhookView(APIView):
+ """: Webhook 端点接收 push 事件并触发增量索引。
+ 支持 GitHub、GitLab、Gitea 三种平台的签名验证。
+ 此端点无需 JWT 认证（使用 webhook secret 验证）。
+ """
+ from rest_framework.permissions import AllowAny
+ permission_classes = [AllowAny]
+ authentication_classes: list = # type: ignore[assignment]
+ async def post(self, request: Any, repository_id: str) -> Response:
+ from tasks.index_trigger_tasks import (
+ parse_push_event,
+ trigger_auto_index,
+ verify_gitlab_token,
+ verify_webhook_signature,
+ )
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ #: 检查开关
+ if not repository.auto_index_enabled:
+ return Response(
+ {"detail": "自动索引未启用"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ #: 签名验证
+ if repository.webhook_secret:
+ payload_bytes = request.body
+ platform = repository.git_platform or "github"
+ if platform == "gitlab":
+ token = request.headers.get("X-Gitlab-Token", "")
+ if not verify_gitlab_token(repository.webhook_secret, token):
+ return Response(
+ {"detail": "签名验证失败"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ else:
+ # GitHub / Gitea 使用 work item
+ signature = request.headers.get(
+ "X-Hub-Signature-256",
+ request.headers.get("X-Gitea-Signature", ""),
+ )
+ if not verify_webhook_signature(
+ payload_bytes, repository.webhook_secret, signature
+ ):
+ return Response(
+ {"detail": "签名验证失败"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ # 解析 push 事件
+ platform = repository.git_platform or "github"
+ event_data = parse_push_event(platform, request.data)
+ commit_sha = event_data.get("after", "")
+ # 触发索引
+ result = await trigger_auto_index(repository, "webhook", commit_sha)
+ status_code = (
+ status.HTTP_202_ACCEPTED
+ if result["status"] == "triggered"
+ else status.HTTP_200_OK
+ )
+ return Response(result, status=status_code)
