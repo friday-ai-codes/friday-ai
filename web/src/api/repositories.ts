@@ -233,6 +233,12 @@ export const repositoriesApi = {
  },
  // ==================== Phase: 索引可观测性 API ====================
  /**
+ * 生成 Webhook Secret
+ */
+ generateWebhookSecret: async (id: string): Promise<{ webhook_secret: string }> => {
+ return post<{ webhook_secret: string }>(`/repositories/${id}/generate-webhook-secret/`)
+ },
+ /**
  * 获取索引历史列表（分页 + 状态筛选）
  */
  getIndexHistory: async (id: string, params?: { limit?: number, offset?: number, status?: string }): Promise<IndexHistoryResponse> => {

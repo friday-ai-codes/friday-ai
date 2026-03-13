@@ -19,6 +19,7 @@ const freshness = ref<IndexFreshnessResponse | null>(null)
 const loadingHealth = ref(true)
 const loadingFreshness = ref(true)
 const togglingAutoIndex = ref(false)
+const generatingSecret = ref(false)
 const webhookUrl = computed( => {
  const base = window.location.origin
  return `${base}/api/repositories/${props.repository.id}/webhooks/push/`
@@ -64,6 +65,25 @@ async function toggleAutoIndex(enabled: boolean) {
 function copyToClipboard(text: string) {
  navigator.clipboard.writeText(text)
  toast.success('已复制到剪贴板')
+}
+async function generateSecret {
+ if (props.repository.webhook_secret) {
+ if (!window.confirm('重新生成将使当前配置的 Webhook 签名验证失效，确认继续？')) {
+ return
+ }
+ }
+ generatingSecret.value = true
+ try {
+ await repositoriesApi.generateWebhookSecret(props.repository.id)
+ toast.success('Webhook Secret 已生成')
+ emit('updated')
+ }
+ catch {
+ toast.error('生成失败')
+ }
+ finally {
+ generatingSecret.value = false
+ }
 }
 onMounted( => {
  loadHealth
@@ -201,6 +221,16 @@ onMounted( => {
  <span class="icon-[lucide--copy] text-muted-foreground" />
  </button>
  </div>
+ </div>
+ <div class="flex items-center gap-2">
+ <button
+ class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors disabled:opacity-50":disabled="generatingSecret"
+ @click="generateSecret"
+ >
+ <span v-if="generatingSecret" class="icon-[lucide--loader-circle] animate-spin" />
+ <span v-else class="icon-[lucide--key-round]" />
+ {{ repository.webhook_secret ? '重新生成 Secret': '生成 Secret' }}
+ </button>
  </div>
  <div v-if="repository.webhook_secret">
  <label class="text-xs text-muted-foreground">Secret</label>
