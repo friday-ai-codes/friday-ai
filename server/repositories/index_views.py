@@ -1,5 +1,6 @@
 """Index management views for repositories."""
 import asyncio
+from collections import Counter
 from typing import Any
 from asgiref.sync import sync_to_async
 from django.db import transaction
@@ -279,3 +280,112 @@ class EmbeddingHealthView(APIView):
  api_url, model, api_key, int(dimension) if dimension else None
  )
  return Response(health)
+# ---------------------------------------------------------------------------
+# Phase: 索引可观测性 API
+# ---------------------------------------------------------------------------
+class IndexHistorySerializer(serializers.Serializer):
+ """IndexHistory 记录序列化器。"""
+ id = serializers.UUIDField
+ trigger_type = serializers.CharField
+ status = serializers.CharField
+ from_sha = serializers.CharField(allow_null=True)
+ to_sha = serializers.CharField(allow_null=True)
+ files_added = serializers.IntegerField
+ files_modified = serializers.IntegerField
+ files_deleted = serializers.IntegerField
+ summary_text = serializers.CharField(allow_null=True)
+ error_message = serializers.CharField(allow_null=True)
+ started_at = serializers.DateTimeField(allow_null=True)
+ finished_at = serializers.DateTimeField(allow_null=True)
+ created_at = serializers.DateTimeField
+class IndexHistoryListView(APIView):
+ """: IndexHistory 操作记录查询 API（分页）。"""
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ limit = min(int(request.query_params.get("limit", 20)), 100)
+ offset = int(request.query_params.get("offset", 0))
+ status_filter = request.query_params.get("status")
+ qs = IndexHistory.objects.filter(repository_id=repository_id)
+ if status_filter:
+ qs = qs.filter(status=status_filter)
+ total = await qs.acount
+ items = [item async for item in qs[offset: offset + limit]]
+ serializer = IndexHistorySerializer(items, many=True)
+ data = await sync_to_async(lambda: serializer.data)
+ return Response({"items": data, "total": total})
+class IndexStatsView(APIView):
+ """: 统计 API（chunk 数、语言分布、覆盖率）。"""
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ stats = await sync_to_async(QdrantService.get_collection_stats)(str(repository_id))
+ # 覆盖率：已索引文件数 / 总可索引文件数
+ indexed_files = stats.get("indexed_files_count", 0)
+ total_chunks = repository.index_total_chunks
+ coverage = 0.0
+ if total_chunks > 0:
+ coverage = round(stats.get("points_count", 0) / total_chunks * 100, 1)
+ return Response({
+ "chunks_total": stats.get("points_count", 0),
+ "language_distribution": stats.get("language_distribution", {}),
+ "indexed_files_count": indexed_files,
+ "coverage_percent": coverage,
+ })
+class RepositoryCollectionHealthView(APIView):
+ """: 仓库 Qdrant 集合健康校验 API。"""
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
+ # 对比 Repository 记录的预期 chunk 数
+ expected = repository.index_total_chunks
+ actual = health.get("points_count", 0)
+ health["expected_points"] = expected
+ health["points_match"] = actual == expected if expected > 0 else None
+ return Response(health)
+class IndexFreshnessView(APIView):
+ """: 索引新鲜度指示 API。"""
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ local_sha = repository.last_indexed_commit_sha or ""
+ remote_sha = ""
+ error = None
+ if repository.git_url:
+ try:
+ remote_sha = await self._get_remote_head(repository.git_url)
+ except Exception as e:
+ error = str(e)
+ is_fresh = bool(local_sha and local_sha == remote_sha) if remote_sha else None
+ return Response({
+ "local_sha": local_sha,
+ "remote_sha": remote_sha,
+ "is_fresh": is_fresh,
+ "last_indexed_at": repository.last_indexed_at,
+ "error": error,
+ })
+ @staticmethod
+ async def _get_remote_head(git_url: str) -> str:
+ """通过 git ls-remote 获取远端 HEAD SHA（无需 clone）。"""
+ proc = await asyncio.create_subprocess_exec(
+ "git", "ls-remote", git_url, "HEAD",
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=15.0)
+ if proc.returncode != 0:
+ msg = "git ls-remote 失败"
+ raise RuntimeError(msg)
+ output = stdout.decode.strip
+ if output:
+ return output.split[0]
+ return ""
