@@ -1,4 +1,5 @@
 """Incremental indexer service for code repositories."""
+import asyncio
 import os
 import shutil
 import tempfile
@@ -287,9 +288,16 @@ class IndexerService:
  FileDiff(file_path, DiffAction.DELETE, old_hash=stored_hashes[file_path])
  )
  return diffs
-async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
+async def clone_and_index_repository(
+ repository_id: str,
+ *,
+ history_id: str | None = None,
+) -> dict[str, Any]:
  """Clone repository and run indexing.
  This is the main entry point for indexing a repository.
+ Args:
+ repository_id: 仓库 ID
+ history_id: 可选的 IndexHistory 记录 ID，完成时更新状态
  """
  from common.encryption import decrypt_value
  async def get_repository_data:
@@ -335,20 +343,24 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  # https://github.com/user/repo.git -> https://token@github.com/user/repo.git
  git_url = git_url.replace("https://", f"https://{token}@")
  # Clone using git
- import subprocess
  clone_cmd = ["git", "clone", "--depth", "1", "--single-branch"]
  # Add proxy if configured
  if proxy_url:
  clone_cmd.extend(["-c", f"http.proxy={proxy_url}"])
  clone_cmd.extend([git_url, temp_dir])
- result = subprocess.run(
- clone_cmd,
- capture_output=True,
- text=True,
- timeout=300,
+ proc = await asyncio.create_subprocess_exec(
+ *clone_cmd,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
  )
- if result.returncode != 0:
- raise Exception(f"Git clone failed: {result.stderr}")
+ try:
+ _stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=300.0)
+ except asyncio.TimeoutError:
+ proc.kill
+ await proc.communicate
+ raise Exception("Git clone timed out after 300s")
+ if proc.returncode != 0:
+ raise Exception(f"Git clone failed: {stderr.decode}")
  # Run indexing - pass repository_id instead of repository object
  indexer = IndexerService(repository_id)
  # Check if collection exists (incremental) or not (full)
@@ -363,6 +375,14 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  IndexStatus.INDEXED,
  last_indexed_at=datetime.now,
  )
+ # 更新 IndexHistory 状态为完成
+ if history_id:
+ from django.utils import timezone
+ from repositories.models import IndexHistory, IndexHistoryStatus
+ await IndexHistory.objects.filter(id=history_id).aupdate(
+ status=IndexHistoryStatus.COMPLETED,
+ finished_at=timezone.now,
+ )
  return index_result
  except Exception as e:
  logger.error(
@@ -372,6 +392,15 @@ async def clone_and_index_repository(repository_id: str) -> dict[str, Any]:
  )
  # Update repository status to failed
  await update_repository_status(repository, IndexStatus.FAILED, error=str(e))
+ # 更新 IndexHistory 状态为失败
+ if history_id:
+ from django.utils import timezone
+ from repositories.models import IndexHistory, IndexHistoryStatus
+ await IndexHistory.objects.filter(id=history_id).aupdate(
+ status=IndexHistoryStatus.FAILED,
+ finished_at=timezone.now,
+ error_message=str(e)[:2000],
+ )
  return {"status": "error", "message": str(e)}
  finally:
  # Clean up temp directory
