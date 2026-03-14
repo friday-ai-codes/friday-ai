@@ -50,6 +50,12 @@ class WorkflowExecution(models.Model):
  on_delete=models.CASCADE,
  related_name="executions",
  )
+ project = models.ForeignKey(
+ "projects.Project",
+ on_delete=models.CASCADE,
+ related_name="workflow_executions",
+ verbose_name="所属项目",
+ )
  # 状态
  status = models.CharField(
  max_length=20,
@@ -158,6 +164,7 @@ class WorkflowExecution(models.Model):
  indexes = [
  models.Index(fields=["workflow", "status"]),
  models.Index(fields=["status", "created_at"]),
+ models.Index(fields=["project", "status"]),
  ]
  def __str__(self) -> str:
  return f"{self.workflow.name} - {self.status} ({self.id})"
