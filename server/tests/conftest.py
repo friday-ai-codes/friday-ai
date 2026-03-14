@@ -7,6 +7,7 @@ patch_asyncio_iscoroutinefunction
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from permissions.models import ProjectMembership, ProjectRole
 from projects.models import Project
 from repositories.models import Repository
 # Register E2E mock fixtures for auto-discovery
@@ -138,3 +139,78 @@ def urls:
  # Feishu webhooks
  feishu_webhook = "/api/feishu/webhook"
  return URLs
+# ============================================================================
+# Multi-Role User Fixtures (Phase: 权限引擎)
+# ============================================================================
+@pytest.fixture
+def member_user(db):
+ """创建 member 角色测试用户。"""
+ return User.objects.create_user(
+ username="member_user",
+ email="member@example.com",
+ password="memberpassword123",
+ )
+@pytest.fixture
+def viewer_user(db):
+ """创建 viewer 角色测试用户。"""
+ return User.objects.create_user(
+ username="viewer_user",
+ email="viewer@example.com",
+ password="viewerpassword123",
+ )
+@pytest.fixture
+def other_user(db):
+ """创建非任何项目成员的用户。"""
+ return User.objects.create_user(
+ username="other_user",
+ email="other@example.com",
+ password="otherpassword123",
+ )
+@pytest.fixture
+def second_project(db):
+ """创建第二个测试项目。"""
+ return Project.objects.create(
+ name="Second Project",
+ description="A second test project",
+ feishu_project_key="second-project-key",
+ )
+@pytest.fixture
+def project_memberships(db, project, user, member_user, viewer_user):
+ """创建项目成员关系。
+ - user → project admin
+ - member_user → project member
+ - viewer_user → project viewer
+ - admin_user 是 superuser，不需要 membership
+ """
+ admin_membership = ProjectMembership.objects.create(
+ user=user, project=project, role=ProjectRole.ADMIN
+ )
+ member_membership = ProjectMembership.objects.create(
+ user=member_user, project=project, role=ProjectRole.MEMBER
+ )
+ viewer_membership = ProjectMembership.objects.create(
+ user=viewer_user, project=project, role=ProjectRole.VIEWER
+ )
+ return {
+ "admin": admin_membership,
+ "member": member_membership,
+ "viewer": viewer_membership,
+ }
+@pytest.fixture
+def authenticated_member_client(api_client, member_user):
+ """创建 member 角色已认证客户端。"""
+ client = APIClient
+ client.force_authenticate(user=member_user)
+ return client
+@pytest.fixture
+def authenticated_viewer_client(api_client, viewer_user):
+ """创建 viewer 角色已认证客户端。"""
+ client = APIClient
+ client.force_authenticate(user=viewer_user)
+ return client
+@pytest.fixture
+def authenticated_admin_client(api_client, admin_user):
+ """创建 superuser 已认证客户端。"""
+ client = APIClient
+ client.force_authenticate(user=admin_user)
+ return client
