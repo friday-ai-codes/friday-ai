@@ -1,18 +1,65 @@
 """Accounts serializers."""
+import hashlib
 from django.contrib.auth import authenticate
 from rest_framework import serializers
-from .models import User
+from .models import Invitation, User
 class UserSerializer(serializers.ModelSerializer):
  """Serializer for User model."""
  class Meta:
  model = User
  fields = ["id", "username", "display_name", "is_active", "is_superuser", "created_at"]
  read_only_fields = ["id", "created_at"]
+class MeSerializer(serializers.ModelSerializer):
+ """当前用户信息序列化器（包含项目关系和 gravatar）。"""
+ gravatar_url = serializers.SerializerMethodField
+ project_memberships = serializers.SerializerMethodField
+ class Meta:
+ model = User
+ fields = [
+ "id", "username", "email", "display_name",
+ "gravatar_url", "is_superuser", "is_active",
+ "project_memberships", "created_at",
+ ]
+ read_only_fields = list(fields)
+ def get_gravatar_url(self, obj: User) -> str | None:
+ if not obj.email:
+ return None
+ email_hash = hashlib.md5(obj.email.lower.strip.encode).hexdigest
+ return f"https://www.gravatar.com/avatar/{email_hash}?d=identicon&s=80"
+ def get_project_memberships(self, obj: User) -> list[dict[str, str]]:
+ # 注意：此方法在同步上下文中调用（由调用方 sync_to_async 包装）
+ from permissions.models import ProjectMembership
+ memberships = ProjectMembership.objects.filter(user=obj).select_related("project")
+ return [
+ {
+ "project_id": str(m.project.id),
+ "project_name": m.project.name,
+ "role": m.role,
+ }
+ for m in memberships
+ ]
+class ProfileUpdateSerializer(serializers.Serializer):
+ """用户个人资料更新序列化器。"""
+ display_name = serializers.CharField(max_length=100, required=True, allow_blank=True)
+class InvitationCreateSerializer(serializers.Serializer):
+ """创建邀请请求。"""
+ email = serializers.EmailField(required=False, allow_blank=True, default="")
+class InvitationResponseSerializer(serializers.ModelSerializer):
+ """邀请创建响应。"""
+ class Meta:
+ model = Invitation
+ fields = ["id", "token", "email", "expires_at", "created_at"]
+class InvitationAcceptSerializer(serializers.Serializer):
+ """接受邀请请求。"""
+ token = serializers.CharField(max_length=64)
+ username = serializers.CharField(max_length=150, min_length=3)
+ password = serializers.CharField(min_length=6, write_only=True)
+ display_name = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
 class LoginSerializer(serializers.Serializer):
  """Serializer for login request."""
  username = serializers.CharField
  password = serializers.CharField(write_only=True)
- def validate(self, attrs):
+ def validate(self, attrs: dict) -> dict:
  username = attrs.get("username")
  password = attrs.get("password")
  user = authenticate(username=username, password=password)
