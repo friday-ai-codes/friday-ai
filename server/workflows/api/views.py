@@ -12,6 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from common.exceptions import TriggerValidationError
+from permissions.mixins import ProjectScopedQuerysetMixin
 from workflows.api.permissions import (
  ApprovalPermission,
  ExecutionPermission,
@@ -179,11 +180,12 @@ def _bulk_update_nodes_and_edges(
 # =============================================================================
 # Workflow ViewSet
 # =============================================================================
-class WorkflowViewSet(ModelViewSet):
+class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """ViewSet for Workflow CRUD and execution."""
  queryset = Workflow.objects.all
  serializer_class = WorkflowSerializer
  permission_classes = [IsAuthenticated, WorkflowPermission]
+ project_field = "project"
  async def perform_acreate(self, serializer):
  # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
@@ -203,7 +205,7 @@ class WorkflowViewSet(ModelViewSet):
  return WorkflowExecuteSerializer
  return WorkflowSerializer
  def get_queryset(self):
- queryset = Workflow.objects.select_related("project", "created_by")
+ queryset = super.get_queryset.select_related("project", "created_by")
  # Filter by project
  project_id = self.request.query_params.get("project_id")
  if project_id:
@@ -473,18 +475,19 @@ class WorkflowViewSet(ModelViewSet):
 # =============================================================================
 # Execution ViewSet
 # =============================================================================
-class WorkflowExecutionViewSet(ModelViewSet):
+class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """ViewSet for WorkflowExecution."""
  queryset = WorkflowExecution.objects.all
  serializer_class = WorkflowExecutionSerializer
  permission_classes = [IsAuthenticated, ExecutionPermission]
  http_method_names = ["get", "post", "delete", "head", "options"] # No create/update, post for actions
+ project_field = "workflow__project"
  def get_serializer_class(self):
  if self.action == "list":
  return WorkflowExecutionListSerializer
  return WorkflowExecutionSerializer
  def get_queryset(self):
- queryset = WorkflowExecution.objects.select_related(
+ queryset = super.get_queryset.select_related(
  "workflow", "triggered_by"
  ).prefetch_related("node_executions")
  # Filter by workflow
@@ -812,13 +815,14 @@ class WorkflowExecutionViewSet(ModelViewSet):
 # =============================================================================
 # Node Execution ViewSet
 # =============================================================================
-class NodeExecutionViewSet(ReadOnlyModelViewSet):
+class NodeExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
  """ViewSet for NodeExecution (read-only + approval actions)."""
  queryset = NodeExecution.objects.all
  serializer_class = NodeExecutionSerializer
  permission_classes = [IsAuthenticated]
+ project_field = "workflow_execution__workflow__project"
  def get_queryset(self):
- queryset = NodeExecution.objects.select_related("node", "workflow_execution")
+ queryset = super.get_queryset.select_related("node", "workflow_execution")
  # Filter by execution
  execution_id = self.request.query_params.get("execution_id")
  if execution_id:
@@ -999,24 +1003,26 @@ class WebhookTriggerView(APIView):
  ],
  status=status.HTTP_201_CREATED,
  )
-class WebhookConfigViewSet(ModelViewSet):
+class WebhookConfigViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """ViewSet for WebhookConfig."""
  queryset = WebhookConfig.objects.all
  serializer_class = WebhookConfigSerializer
  permission_classes = [IsAuthenticated]
+ project_field = "workflow__project"
  def get_queryset(self):
- queryset = WebhookConfig.objects.select_related("workflow")
+ queryset = super.get_queryset.select_related("workflow")
  workflow_id = self.request.query_params.get("workflow_id")
  if workflow_id:
  queryset = queryset.filter(workflow_id=workflow_id)
  return queryset.order_by("-created_at")
-class WebhookLogViewSet(ReadOnlyModelViewSet):
+class WebhookLogViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
  """ViewSet for WebhookLog (read-only)."""
  queryset = WebhookLog.objects.all
  serializer_class = WebhookLogSerializer
  permission_classes = [IsAuthenticated]
+ project_field = "webhook_config__workflow__project"
  def get_queryset(self):
- queryset = WebhookLog.objects.select_related("webhook_config", "execution")
+ queryset = super.get_queryset.select_related("webhook_config", "execution")
  webhook_config_id = self.request.query_params.get("webhook_config_id")
  if webhook_config_id:
  queryset = queryset.filter(webhook_config_id=webhook_config_id)
@@ -1027,17 +1033,18 @@ class WebhookLogViewSet(ReadOnlyModelViewSet):
 # =============================================================================
 # Trigger Management ViewSet
 # =============================================================================
-class WorkflowTriggerViewSet(ModelViewSet):
+class WorkflowTriggerViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """ViewSet for WorkflowTrigger CRUD."""
  queryset = WorkflowTrigger.objects.all
  serializer_class = WorkflowTriggerSerializer
  permission_classes = [IsAuthenticated]
+ project_field = "workflow__project"
  def get_serializer_class(self):
  if self.action == "create":
  return WorkflowTriggerCreateSerializer
  return WorkflowTriggerSerializer
  def get_queryset(self):
- queryset = WorkflowTrigger.objects.select_related("workflow")
+ queryset = super.get_queryset.select_related("workflow")
  workflow_id = self.kwargs.get("workflow_id") or self.request.query_params.get("workflow_id")
  if workflow_id:
  queryset = queryset.filter(workflow_id=workflow_id)
@@ -1196,11 +1203,12 @@ class LLMSystemConfigView(APIView):
 # =============================================================================
 # CodingTask ViewSet
 # =============================================================================
-class CodingTaskViewSet(ModelViewSet):
+class CodingTaskViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """ViewSet for CodingTask."""
  queryset = CodingTask.objects.all
  serializer_class = CodingTaskSerializer
  permission_classes = [IsAuthenticated]
+ project_field = "workflow_execution__workflow__project"
  def get_serializer_class(self):
  if self.action == "list":
  return CodingTaskListSerializer
@@ -1208,7 +1216,7 @@ class CodingTaskViewSet(ModelViewSet):
  return CodingTaskUpdateSerializer
  return CodingTaskSerializer
  def get_queryset(self):
- queryset = CodingTask.objects.select_related("workflow_execution", "repository")
+ queryset = super.get_queryset.select_related("workflow_execution", "repository")
  # Filter by execution
  execution_id = self.kwargs.get("execution_id") or self.request.query_params.get(
  "execution_id"

@@ -2,13 +2,16 @@
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
+from permissions.models import ProjectRole
+from permissions.services import PermissionService
 from workflows.models import NodeExecution, Workflow, WorkflowExecution
 class WorkflowPermission(BasePermission):
  """Permission for Workflow operations.
  - List: User can see workflows for projects they have access to
- - Retrieve: User can view if they have access to the project
- - Create: User can create if they have access to the project
- - Update/Delete: User can modify if they created it or are project admin
+ - Retrieve: User can view if they have access to the project (viewer+)
+ - Create: User can create if they are member+ of the project
+ - Update/Delete: User can modify if they are member+ (creator or admin)
+ - Execute/Duplicate: member+
  """
  def has_permission(self, request: Request, view: APIView) -> bool:
  # All authenticated users can list/create
@@ -20,33 +23,19 @@ class WorkflowPermission(BasePermission):
  return True
  # Check project membership
  project = obj.project
- # For read operations, check if user is project member
+ # For read operations, check if user is project member (viewer+)
  if request.method in ["GET", "HEAD", "OPTIONS"]:
- return self._is_project_member(user, project)
- # For write operations, check if user is creator or project admin
+ return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+ # For write operations, check if user is member+
  if request.method in ["PUT", "PATCH", "DELETE"]:
- if obj.created_by == user:
- return True
- return self._is_project_admin(user, project)
- # For POST (execute, duplicate), check project membership
- return self._is_project_member(user, project)
- def _is_project_member(self, user, project) -> bool:
- """Check if user is a member of the project.
- Currently allows all authenticated users. Real membership check
- deferred to future user permission system.
- """
- return True
- def _is_project_admin(self, user, project) -> bool:
- """Check if user is an admin of the project.
- Currently allows all authenticated users. Real admin check
- deferred to future user permission system.
- """
- return True
+ return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+ # For POST (execute, duplicate), check member+
+ return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
 class ExecutionPermission(BasePermission):
  """Permission for WorkflowExecution operations.
- - List: User can see executions for workflows they have access to
- - Retrieve: User can view if they have access to the workflow
- - Pause/Resume/Cancel: User can control if they have access to the workflow
+ - List: User can see executions for workflows they have access to (viewer+)
+ - Retrieve: User can view if they have access to the workflow (viewer+)
+ - Pause/Resume/Cancel: member+
  """
  def has_permission(self, request: Request, view: APIView) -> bool:
  return request.user and request.user.is_authenticated
@@ -59,25 +48,11 @@ class ExecutionPermission(BasePermission):
  # Check workflow access
  workflow = obj.workflow
  project = workflow.project
- # Read access: project members
+ # Read access: viewer+
  if request.method in ["GET", "HEAD", "OPTIONS"]:
- return self._is_project_member(user, project)
- # Write access (pause/resume/cancel): workflow creator or project admin
- if workflow.created_by == user:
- return True
- return self._is_project_admin(user, project)
- def _is_project_member(self, user, project) -> bool:
- """Check if user is a member of the project.
- Currently allows all authenticated users. Real membership check
- deferred to future user permission system.
- """
- return True
- def _is_project_admin(self, user, project) -> bool:
- """Check if user is an admin of the project.
- Currently allows all authenticated users. Real admin check
- deferred to future user permission system.
- """
- return True
+ return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+ # Write access (pause/resume/cancel): member+
+ return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
 class ApprovalPermission(BasePermission):
  """Permission for approval operations.
  - Approve/Reject: User must be in the approvers list (if specified)
@@ -102,18 +77,13 @@ class ApprovalPermission(BasePermission):
  if user.username in approver_usernames:
  return True
  return False
- # No specific approvers configured - allow any project member
+ # No specific approvers configured - allow any project member (member+)
  project = obj.workflow_execution.workflow.project
- return self._is_project_member(user, project)
- def _is_project_member(self, user, project) -> bool:
- """Check if user is a member of the project.
- Currently allows all authenticated users. Real membership check
- deferred to future user permission system.
- """
- return True
+ return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
 class WebhookConfigPermission(BasePermission):
  """Permission for WebhookConfig operations.
- Same as WorkflowPermission - based on workflow access.
+ - Read: viewer+
+ - Write: admin+ (webhook 配置属于项目配置)
  """
  def has_permission(self, request: Request, view: APIView) -> bool:
  return request.user and request.user.is_authenticated
@@ -124,17 +94,5 @@ class WebhookConfigPermission(BasePermission):
  workflow = obj.workflow
  project = workflow.project
  if request.method in ["GET", "HEAD", "OPTIONS"]:
- return self._is_project_member(user, project)
- return workflow.created_by == user or self._is_project_admin(user, project)
- def _is_project_member(self, user, project) -> bool:
- """Check if user is a member of the project.
- Currently allows all authenticated users. Real membership check
- deferred to future user permission system.
- """
- return True
- def _is_project_admin(self, user, project) -> bool:
- """Check if user is an admin of the project.
- Currently allows all authenticated users. Real admin check
- deferred to future user permission system.
- """
- return True
+ return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
+ return PermissionService.has_project_access(user, project, ProjectRole.ADMIN)

@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from adrf.views import APIView
 from common.encryption import encrypt_value
+from permissions.api_permissions import IsSuperUser
 from .models import SettingKeys, SystemSetting
 from .serializers import (
  SystemSettingCreateSerializer,
@@ -14,10 +15,12 @@ ENCRYPTED_KEYS = {
  SettingKeys.ANTHROPIC_API_KEY,
  SettingKeys.QDRANT_API_KEY,
  SettingKeys.EMBEDDING_API_KEY,
+ SettingKeys.RERANKER_API_KEY,
  SettingKeys.FEISHU_APP_SECRET,
 }
 class SettingsListCreateView(APIView):
  """List and create system settings."""
+ permission_classes = [IsSuperUser]
  async def get(self, request):
  settings = [s async for s in SystemSetting.objects.all]
  serializer = SystemSettingSerializer(settings, many=True)
@@ -51,6 +54,7 @@ class SettingsListCreateView(APIView):
  )
 class SettingsDetailView(APIView):
  """Get, update, and delete a system setting."""
+ permission_classes = [IsSuperUser]
  async def get(self, request, key):
  try:
  setting = await SystemSetting.objects.aget(key=key)
@@ -89,6 +93,7 @@ class SettingsDetailView(APIView):
  return Response(status=status.HTTP_204_NO_CONTENT)
 class FeishuIMTestView(APIView):
  """Test Feishu IM configuration by sending a test message."""
+ permission_classes = [IsSuperUser]
  async def post(self, request):
  from common.encryption import decrypt_value
  receive_id = request.data.get("receive_id") or request.data.get("user_id")
