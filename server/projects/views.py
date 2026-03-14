@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from common.encryption import encrypt_value
+from permissions.models import ProjectMembership, ProjectRole
+from permissions.services import PermissionService
 from repositories.models import AuthType, GitCredential, Repository
 from .models import (
  Project,
@@ -35,6 +37,17 @@ class ProjectViewSet(ModelViewSet):
  """ViewSet for Project CRUD operations."""
  queryset = Project.objects.prefetch_related("repositories__credential").all
  serializer_class = ProjectSerializer
+ def get_queryset(self):
+ """按用户 membership 过滤项目列表。superuser 看所有。"""
+ qs = super.get_queryset
+ user = self.request.user
+ if not user.is_authenticated:
+ return qs.none
+ # superuser 看所有
+ if user.is_superuser:
+ return qs
+ # 普通用户按 membership 过滤
+ return qs.filter(memberships__user=user).distinct
  def get_serializer_class(self):
  if self.action == "create":
  return ProjectCreateSerializer
@@ -46,6 +59,12 @@ class ProjectViewSet(ModelViewSet):
  # KEEP: ProjectCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
+ # 创建项目后自动为创建者添加 admin membership
+ await ProjectMembership.objects.acreate(
+ user=request.user,
+ project=project,
+ role=ProjectRole.ADMIN,
+ )
  # KEEP: ProjectSerializer.get_repositories 触发 repositories.filter DB 查询
  data = await sync_to_async(lambda: ProjectSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)
@@ -90,6 +109,15 @@ class ProjectViewSet(ModelViewSet):
  async def feishu_config(self, request, pk=None):
  """Manage Feishu configuration."""
  project = await self.aget_object
+ # 写操作需要 admin+ 权限
+ if request.method != "GET":
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可修改配置"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  if request.method == "GET":
  return Response(FeishuConfigSerializer(project).data)
  if request.method == "PUT":
@@ -175,6 +203,14 @@ class ProjectViewSet(ModelViewSet):
  async def refresh_webhook_token(self, request, pk=None):
  """Refresh webhook token."""
  project = await self.aget_object
+ # admin+ 权限
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可刷新 webhook token"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  project.feishu_webhook_token = generate_webhook_token
  await project.asave
  return Response(
@@ -184,6 +220,14 @@ class ProjectViewSet(ModelViewSet):
  async def update_webhook_token(self, request, pk=None):
  """Update webhook token with custom value."""
  project = await self.aget_object
+ # admin+ 权限
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可修改 webhook token"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  serializer = WebhookTokenUpdateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  token = serializer.validated_data["token"]
@@ -207,6 +251,15 @@ class ProjectViewSet(ModelViewSet):
  async def claude_config(self, request, pk=None):
  """Manage Claude configuration."""
  project = await self.aget_object
+ # 写操作需要 admin+ 权限
+ if request.method != "GET":
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可修改配置"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  if request.method == "GET":
  has_api_key = bool(project.claude_api_key_encrypted)
  source = "project" if has_api_key else "system"
@@ -257,6 +310,15 @@ class ProjectViewSet(ModelViewSet):
  async def feishu_im_config(self, request, pk=None):
  """Manage Feishu IM App configuration."""
  project = await self.aget_object
+ # 写操作需要 admin+ 权限
+ if request.method != "GET":
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可修改配置"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  if request.method == "GET":
  return Response(FeishuIMConfigSerializer(project).data)
  if request.method == "PUT":
