@@ -575,3 +575,59 @@ export const PLATFORM_LABELS: Record<GitPlatform, string> = {
  gitea: 'Gitea',
  bitbucket: 'Bitbucket',
 }
+// ============================================================================
+// OIDC 相关类型
+// ============================================================================
+/**
+ * OIDC Provider（管理员视角）
+ */
+export interface OIDCProvider {
+ id: string
+ name: string
+ issuer_url: string
+ client_id: string
+ authorization_endpoint: string
+ token_endpoint: string
+ userinfo_endpoint: string
+ scopes: string
+ is_active: boolean
+ has_secret: boolean
+ masked_secret: string | null
+ created_at: string
+ updated_at: string
+}
+/**
+ * OIDC Provider 创建/更新请求
+ */
+export interface OIDCProviderCreate {
+ name: string
+ issuer_url: string
+ client_id: string
+ client_secret?: string
+ authorization_endpoint: string
+ token_endpoint: string
+ userinfo_endpoint?: string
+ scopes?: string
+ is_active?: boolean
+}
+/**
+ * OIDC Provider 公开信息（登录页用）
+ */
+export interface OIDCProviderPublic {
+ id: string
+ name: string
+}
+/**
+ * OIDC Discovery 结果
+ */
+export interface OIDCDiscoveryResult {
+ authorization_endpoint: string
+ token_endpoint: string
+ userinfo_endpoint: string
+}
+/**
+ * OIDC 授权响应
+ */
+export interface OIDCAuthorizeResponse {
+ authorize_url: string
+}
