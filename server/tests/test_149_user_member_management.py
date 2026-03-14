@@ -206,5 +206,69 @@ class TestUserManagement:
 @pytest.mark.django_db
 class TestProjectMembers:
  """项目成员 CRUD API 测试。"""
- # 这些测试在 Plan 实现 API 后填充
- pass
+ def test_project_admin_can_list_members(self, authenticated_client, project, project_memberships):
+ """项目 admin 可查看成员列表。"""
+ resp = authenticated_client.get(f"/api/projects/{project.pk}/members/")
+ assert resp.status_code == status.HTTP_200_OK
+ assert isinstance(resp.data, list)
+ assert len(resp.data) >= 1
+ def test_member_can_list_members(self, authenticated_member_client, project, project_memberships):
+ """项目 member 可查看成员列表。"""
+ resp = authenticated_member_client.get(f"/api/projects/{project.pk}/members/")
+ assert resp.status_code == status.HTTP_200_OK
+ def test_non_member_cannot_list_members(self, api_client, other_user, project, project_memberships):
+ """非成员无法查看成员列表。"""
+ client = APIClient
+ client.force_authenticate(user=other_user)
+ resp = client.get(f"/api/projects/{project.pk}/members/")
+ assert resp.status_code == status.HTTP_403_FORBIDDEN
+ def test_project_admin_can_add_member(self, authenticated_client, project, other_user, project_memberships):
+ """项目 admin 可添加新成员。"""
+ resp = authenticated_client.post(
+ f"/api/projects/{project.pk}/members/",
+ {"user_id": str(other_user.pk), "role": "member"},
+ format="json",
+ )
+ assert resp.status_code == status.HTTP_201_CREATED
+ assert resp.data["role"] == "member"
+ assert ProjectMembership.objects.filter(user=other_user, project=project).exists
+ def test_non_admin_cannot_add_member(self, authenticated_member_client, project, other_user, project_memberships):
+ """非 admin 成员无法添加新成员。"""
+ resp = authenticated_member_client.post(
+ f"/api/projects/{project.pk}/members/",
+ {"user_id": str(other_user.pk), "role": "member"},
+ format="json",
+ )
+ assert resp.status_code == status.HTTP_403_FORBIDDEN
+ def test_add_duplicate_member_returns_409(self, authenticated_client, project, member_user, project_memberships):
+ """重复添加成员返回 409。"""
+ resp = authenticated_client.post(
+ f"/api/projects/{project.pk}/members/",
+ {"user_id": str(member_user.pk), "role": "viewer"},
+ format="json",
+ )
+ assert resp.status_code == status.HTTP_409_CONFLICT
+ def test_project_admin_can_update_member_role(self, authenticated_client, project, member_user, project_memberships):
+ """项目 admin 可变更成员角色。"""
+ resp = authenticated_client.patch(
+ f"/api/projects/{project.pk}/members/{member_user.pk}/",
+ {"role": "viewer"},
+ format="json",
+ )
+ assert resp.status_code == status.HTTP_200_OK
+ assert resp.data["role"] == "viewer"
+ membership = ProjectMembership.objects.get(user=member_user, project=project)
+ assert membership.role == "viewer"
+ def test_project_admin_can_remove_member(self, authenticated_client, project, member_user, project_memberships):
+ """项目 admin 可移除成员。"""
+ resp = authenticated_client.delete(f"/api/projects/{project.pk}/members/{member_user.pk}/")
+ assert resp.status_code == status.HTTP_204_NO_CONTENT
+ assert not ProjectMembership.objects.filter(user=member_user, project=project).exists
+ def test_non_admin_cannot_remove_member(self, authenticated_member_client, project, viewer_user, project_memberships):
+ """非 admin 成员无法移除其他成员。"""
+ resp = authenticated_member_client.delete(f"/api/projects/{project.pk}/members/{viewer_user.pk}/")
+ assert resp.status_code == status.HTTP_403_FORBIDDEN
+ def test_remove_nonexistent_member_returns_404(self, authenticated_client, project, other_user, project_memberships):
+ """移除不存在的成员关系返回 404。"""
+ resp = authenticated_client.delete(f"/api/projects/{project.pk}/members/{other_user.pk}/")
+ assert resp.status_code == status.HTTP_404_NOT_FOUND
