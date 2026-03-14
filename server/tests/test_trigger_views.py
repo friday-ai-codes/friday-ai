@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import User
+from permissions.models import ProjectMembership, ProjectRole
 from projects.models import Project
 from workflows.models import Workflow, WorkflowNode
 @pytest.fixture
@@ -23,6 +24,10 @@ def project(db):
 @pytest.fixture
 def workflow(db, project, user):
  """Create active workflow with manual trigger node."""
+ # 确保 user 是 project 的成员
+ ProjectMembership.objects.get_or_create(
+ user=user, project=project, defaults={"role": ProjectRole.MEMBER}
+ )
  wf = Workflow.objects.create(
  name="Test Workflow",
  project=project,
