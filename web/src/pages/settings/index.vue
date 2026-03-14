@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '~/stores/auth'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
 import UserManagementSettings from '~/components/settings/UserManagementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
@@ -30,7 +31,7 @@ import {
 import { Textarea } from '~/components/ui/textarea'
 const authStore = useAuthStore
 // Tab 管理
-type SettingsTab = 'system' | 'users'
+type SettingsTab = 'system' | 'users' | 'oidc'
 const activeTab = ref<SettingsTab>('system')
 // 设置状态
 const settings = ref<SettingRead>
@@ -425,9 +426,18 @@ onMounted( => {
  <span class="icon-[lucide--users] text-base" />
  用户管理
  </button>
+ <button
+ class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'oidc' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
+ @click="activeTab = 'oidc'"
+ >
+ <span class="icon-[lucide--shield-check] text-base" />
+ OIDC 认证
+ </button>
  </div>
  <!-- 用户管理 Tab 内容 -->
  <UserManagementSettings v-if="activeTab === 'users'" />
+ <!-- OIDC 认证 Tab 内容 -->
+ <OIDCProviderSettings v-if="activeTab === 'oidc'" />
  <!-- 系统配置 Tab 内容 -->
  <!-- 主配置区域 -->
  <div v-if="activeTab === 'system'" class="space-y-6">

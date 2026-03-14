@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import type { OIDCProviderPublic } from '~/types'
 import { toTypedSchema } from '@vee-validate/zod'
 /**
  * 登录页面
  */
 import { useForm } from 'vee-validate'
 import * as z from 'zod'
+import { getAuthorizeUrl, getPublicProviders } from '~/api/oidc'
 import { Button } from '~/components/ui/button'
 import {
  FormControl,
@@ -27,6 +29,9 @@ const { handleSubmit, isSubmitting } = useForm({
  validationSchema: formSchema,
 })
 const loginError = ref<string | null>(null)
+// OIDC Provider 列表
+const oidcProviders = ref<OIDCProviderPublic>
+const oidcLoading = ref(false)
 // 处理登录
 const onSubmit = handleSubmit(async (values) => {
  loginError.value = null
@@ -45,10 +50,36 @@ const onSubmit = handleSubmit(async (values) => {
  loginError.value = e instanceof Error ? e.message: '登录失败，请重试'
  }
 })
+// OIDC 登录
+async function onOIDCLogin(provider: OIDCProviderPublic) {
+ oidcLoading.value = true
+ try {
+ const redirectUri = (route.query.redirect as string) || '/'
+ const result = await getAuthorizeUrl(provider.id, redirectUri)
+ window.location.href = result.authorize_url
+ }
+ catch {
+ loginError.value = 'OIDC 登录初始化失败，请重试'
+ oidcLoading.value = false
+ }
+}
 // 如果已登录，跳转首页
-onMounted( => {
+onMounted(async => {
  if (authStore.isAuthenticated) {
  router.push('/')
+ return
+ }
+ // 检查 OIDC 错误参数
+ const oidcError = route.query.oidc_error as string
+ if (oidcError) {
+ loginError.value = decodeURIComponent(oidcError)
+ }
+ // 加载活跃 OIDC Provider
+ try {
+ oidcProviders.value = await getPublicProviders
+ }
+ catch {
+ // 静默忽略，不影响正常登录
  }
 })
 </script>
@@ -144,6 +175,27 @@ onMounted( => {
  </template>
  </Button>
  </form>
+ <!-- OIDC 登录区域 -->
+ <div v-if="oidcProviders.length > 0" class="mt-6">
+ <!-- 分隔线 -->
+ <div class="flex items-center gap-4 mb-5">
+ <div class="flex-1 h-px bg-border/50" />
+ <span class="text-sm text-muted-foreground">或</span>
+ <div class="flex-1 h-px bg-border/50" />
+ </div>
+ <!-- OIDC Provider 按钮 -->
+ <div class="space-y-3">
+ <Button
+ v-for="provider in oidcProviders":key="provider.id"
+ variant="outline"
+ class="w-full text-base font-medium bg-muted/20 border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all duration-200":disabled="oidcLoading"
+ @click="onOIDCLogin(provider)"
+ >
+ <span class="icon-[lucide--shield-check] mr-2 text-emerald-500" />
+ {{ provider.name }} 登录
+ </Button>
+ </div>
+ </div>
  </div>
  </div>
  <!-- 底部版权 -->
