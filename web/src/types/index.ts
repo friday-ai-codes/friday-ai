@@ -29,6 +29,64 @@ export interface User {
  updated_at: string
 }
 /**
+ * 项目成员关系摘要（嵌入 /me 响应）
+ */
+export interface ProjectMembershipBrief {
+ project_id: string
+ project_name: string
+ role: 'admin' | 'member' | 'viewer'
+}
+/**
+ * 当前用户完整信息（含 gravatar 和项目列表）
+ */
+export interface MeUser {
+ id: string
+ username: string
+ email: string
+ display_name: string
+ gravatar_url: string | null
+ is_superuser: boolean
+ is_active: boolean
+ project_memberships: ProjectMembershipBrief
+ created_at: string
+}
+/**
+ * 系统用户（管理员视角）
+ */
+export interface SystemUser {
+ id: string
+ username: string
+ display_name: string
+ is_active: boolean
+ is_superuser: boolean
+ created_at: string
+}
+/**
+ * 邀请令牌
+ */
+export interface Invitation {
+ id: string
+ token: string
+ email: string
+ expires_at: string
+ created_at: string
+}
+/**
+ * 项目成员关系（项目成员管理 API）
+ */
+export interface ProjectMembership {
+ id: string
+ user: {
+ id: string
+ username: string
+ display_name: string
+ email: string
+ is_active: boolean
+ }
+ role: 'admin' | 'member' | 'viewer'
+ joined_at: string
+}
+/**
  * 登录请求
  */
 export interface LoginRequest {
