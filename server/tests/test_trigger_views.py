@@ -46,6 +46,10 @@ def workflow(db, project, user):
 @pytest.fixture
 def inactive_workflow(db, project, user):
  """Create inactive workflow."""
+ # 确保 user 是 project 的成员
+ ProjectMembership.objects.get_or_create(
+ user=user, project=project, defaults={"role": ProjectRole.MEMBER}
+ )
  return Workflow.objects.create(
  name="Inactive Workflow",
  project=project,
