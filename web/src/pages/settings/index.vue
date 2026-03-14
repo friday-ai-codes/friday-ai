@@ -11,8 +11,11 @@ import {
  testFeishuIM,
  updateSetting,
 } from '~/api/settings'
+import { useAuthStore } from '~/stores/auth'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
+import UserManagementSettings from '~/components/settings/UserManagementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -25,6 +28,10 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+const authStore = useAuthStore
+// Tab 管理
+type SettingsTab = 'system' | 'users'
+const activeTab = ref<SettingsTab>('system')
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -402,8 +409,28 @@ onMounted( => {
  </section>
  <LoadingState v-if="loading" variant="spinner" text="加载设置..." />
  <template v-else>
+ <!-- Tab 切换（超级管理员可见用户管理 Tab） -->
+ <div v-if="authStore.user?.is_superuser" class="flex gap-1 rounded-xl bg-muted/40 border border-border/30 backdrop-blur-sm">
+ <button
+ class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'system' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
+ @click="activeTab = 'system'"
+ >
+ <span class="icon-[lucide--settings] text-base" />
+ 系统配置
+ </button>
+ <button
+ class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'users' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
+ @click="activeTab = 'users'"
+ >
+ <span class="icon-[lucide--users] text-base" />
+ 用户管理
+ </button>
+ </div>
+ <!-- 用户管理 Tab 内容 -->
+ <UserManagementSettings v-if="activeTab === 'users'" />
+ <!-- 系统配置 Tab 内容 -->
  <!-- 主配置区域 -->
- <div class="space-y-6">
+ <div v-if="activeTab === 'system'" class="space-y-6">
  <!-- Claude Code 配置卡片 -->
  <section class="group relative">
  <!-- 悬浮光晕 -->
@@ -668,6 +695,8 @@ onMounted( => {
  </section>
  <!-- 向量索引配置 -->
  <VectorIndexSettings />
+ <!-- RAG 搜索增强 -->
+ <RAGEnhancementSettings />
  <!-- 飞书 IM 配置卡片 -->
  <section class="group relative">
  <!-- 悬浮光晕 -->
