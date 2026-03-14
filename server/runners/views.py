@@ -12,6 +12,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
+from permissions.api_permissions import IsSuperUser
 from .authentication import RunnerTokenAuthentication
 from .models import RegistrationToken, Runner, RunnerEvent, RunnerTaskAssignment, generate_token, hash_token
 from .serializers import (
@@ -29,9 +30,10 @@ class IsRunnerAuthenticated(BasePermission):
  def has_permission(self, request, view) -> bool:
  return bool(getattr(request, "auth", None))
 class RegistrationTokenViewSet(ModelViewSet):
- """Registration token 管理（JWT 认证）。"""
+ """Registration token 管理（JWT 认证，限 superuser）。"""
  queryset = RegistrationToken.objects.all.order_by("-created_at")
  serializer_class = RegistrationTokenSerializer
+ permission_classes = [IsSuperUser]
  http_method_names = ["get", "post", "delete", "head", "options"]
  async def acreate(self, request, *args, **kwargs):
  serializer = RegistrationTokenCreateSerializer(data=request.data)
@@ -136,10 +138,11 @@ class RunnerPagination(PageNumberPagination):
  page_size_query_param = "page_size"
  max_page_size = 100
 class RunnerViewSet(ModelViewSet):
- """Runner 管理（JWT 认证，只读 + 删除）。"""
+ """Runner 管理（JWT 认证，限 superuser）。"""
  queryset = Runner.objects.all.order_by("-registered_at")
  serializer_class = RunnerSerializer
  pagination_class = RunnerPagination
+ permission_classes = [IsSuperUser]
  http_method_names = ["get", "delete", "head", "options"]
  def get_queryset(self) -> Any:
  qs = super.get_queryset

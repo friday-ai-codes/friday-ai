@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from common.encryption import decrypt_value, encrypt_value
+from permissions.api_permissions import IsSuperUser
 from services.dependency_cache import DependencyCacheManager
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
@@ -270,6 +271,7 @@ class TestConnectionView(APIView):
  )
 class CacheManagementView(APIView):
  """缓存管理 API。"""
+ permission_classes = [IsSuperUser]
  async def get(self, request):
  """列出所有缓存卷。
  GET /api/repositories/cache/
