@@ -2,8 +2,9 @@
  * Auth Store
  * 管理用户认证状态
  */
-import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, User } from '~/types'
+import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, ProjectMembershipBrief, User } from '~/types'
 import { authApi } from '~/api'
+import { getMe, updateProfile } from '~/api/users'
 import { clearAccessToken, setAccessToken } from '~/api/client'
 export const useAuthStore = defineStore('auth', => {
  // ============================================================================
@@ -15,6 +16,8 @@ export const useAuthStore = defineStore('auth', => {
  const loading = ref(false)
  const error = ref<string | null>(null)
  const mustChangePassword = ref(false)
+ const projectMemberships = ref<ProjectMembershipBrief>
+ const gravatarUrl = ref<string | null>(null)
  // ============================================================================
  // Getters
  // ============================================================================
@@ -95,6 +98,15 @@ export const useAuthStore = defineStore('auth', => {
  const currentUser = await authApi.getCurrentUser
  user.value = currentUser
  isAuthenticated.value = true
+ // 获取扩展用户信息（含项目成员列表）
+ try {
+ const meData = await getMe
+ projectMemberships.value = meData.project_memberships
+ gravatarUrl.value = meData.gravatar_url
+ }
+ catch {
+ // 忽略 /me 扩展信息获取失败，不影响认证流程
+ }
  }
  catch {
  // 刷新失败，用户未登录
@@ -106,6 +118,33 @@ export const useAuthStore = defineStore('auth', => {
  isInitialized.value = true
  loading.value = false
  }
+ }
+ /**
+ * 获取当前用户完整信息（含项目成员列表和 gravatar）
+ */
+ async function fetchMe {
+ try {
+ const meData = await getMe
+ projectMemberships.value = meData.project_memberships
+ gravatarUrl.value = meData.gravatar_url
+ if (user.value) {
+ user.value.display_name = meData.display_name
+ }
+ return meData
+ }
+ catch {
+ // 忽略错误
+ }
+ }
+ /**
+ * 更新当前用户显示名
+ */
+ async function updateDisplayName(displayName: string) {
+ const meData = await updateProfile({ display_name: displayName })
+ if (user.value) {
+ user.value.display_name = meData.display_name
+ }
+ return meData
  }
  /**
  * 获取当前用户信息
@@ -231,6 +270,8 @@ export const useAuthStore = defineStore('auth', => {
  loading.value = false
  error.value = null
  mustChangePassword.value = false
+ projectMemberships.value =
+ gravatarUrl.value = null
  }
  return {
  // State
@@ -240,6 +281,8 @@ export const useAuthStore = defineStore('auth', => {
  loading,
  error,
  mustChangePassword,
+ projectMemberships,
+ gravatarUrl,
  // Getters
  isAdmin,
  displayName,
@@ -249,6 +292,8 @@ export const useAuthStore = defineStore('auth', => {
  refreshToken,
  initAuth,
  fetchCurrentUser,
+ fetchMe,
+ updateDisplayName,
  changePassword,
  forceChangePassword,
  getAdminProfile,

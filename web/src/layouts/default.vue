@@ -128,6 +128,10 @@ function goToAccountSettings {
  </Button>
  </DropdownMenuTrigger>
  <DropdownMenuContent align="end" class="w-48">
+ <DropdownMenuItem class="cursor-pointer" @click="router.push('/profile')">
+ <span class="icon-[lucide--user] mr-2" />
+ 个人资料
+ </DropdownMenuItem>
  <DropdownMenuItem class="cursor-pointer" @click="goToAccountSettings">
  <span class="icon-[lucide--user-cog] mr-2" />
  账号设置
