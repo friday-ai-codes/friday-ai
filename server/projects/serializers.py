@@ -1,7 +1,9 @@
 """Projects app serializers."""
+from __future__ import annotations
+from typing import Any
 from rest_framework import serializers
 from repositories.models import GitCredential, Repository
-from .models import Project
+from .models import Project, ProjectRepository, RepositoryPermission
 class RepositorySerializer(serializers.ModelSerializer):
  """Serializer for Repository model."""
  has_credential = serializers.SerializerMethodField
@@ -162,3 +164,30 @@ class RepositoryWithProjectsSerializer(RepositorySerializer):
  fields = RepositorySerializer.Meta.fields + ["projects"]
  def get_projects(self, obj):
  return [{"id": str(p.id), "name": p.name} for p in obj.projects.all]
+class ProjectRepositorySerializer(serializers.ModelSerializer):
+ """序列化项目仓库关联记录。"""
+ repository_id = serializers.UUIDField(source="repository.id", read_only=True)
+ repository_name = serializers.CharField(source="repository.name", read_only=True)
+ class Meta:
+ model = ProjectRepository
+ fields = [
+ "id",
+ "repository_id",
+ "repository_name",
+ "permission_level",
+ "created_at",
+ ]
+ read_only_fields = ["id", "created_at"]
+class ProjectRepositoryCreateSerializer(serializers.Serializer):
+ """批量关联仓库请求。"""
+ repository_ids = serializers.ListField(
+ child=serializers.UUIDField,
+ min_length=1,
+ help_text="仓库 ID 列表",
+ )
+class ProjectRepositoryUpdateSerializer(serializers.Serializer):
+ """更新关联权限级别。"""
+ permission_level = serializers.ChoiceField(
+ choices=RepositoryPermission.choices,
+ help_text="权限级别: read_write | read_only",
+ )

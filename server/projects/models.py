@@ -73,15 +73,29 @@ class Project(models.Model):
  def has_feishu_im_config(self) -> bool:
  """Check if Feishu IM App is configured."""
  return bool(self.feishu_app_id and self.feishu_app_secret_encrypted)
+class RepositoryPermission(models.TextChoices):
+ """仓库关联权限级别。"""
+ READ_WRITE = "read_write", "读写"
+ READ_ONLY = "read_only", "只读"
 class ProjectRepository(models.Model):
  """Through model for Project-Repository many-to-many relationship."""
  project = models.ForeignKey(Project, on_delete=models.CASCADE)
  repository = models.ForeignKey("repositories.Repository", on_delete=models.CASCADE)
+ permission_level = models.CharField(
+ max_length=20,
+ choices=RepositoryPermission.choices,
+ default=RepositoryPermission.READ_WRITE,
+ verbose_name="权限级别",
+ )
+ created_at = models.DateTimeField(auto_now_add=True, null=True)
  class Meta:
  db_table = "project_repositories"
  unique_together = ["project", "repository"]
+ def __str__(self) -> str:
+ return f"{self.project.name} - {self.repository.name} ({self.permission_level})"
 __all__ = [
  "Project",
  "ProjectRepository",
+ "RepositoryPermission",
  "generate_webhook_token",
 ]

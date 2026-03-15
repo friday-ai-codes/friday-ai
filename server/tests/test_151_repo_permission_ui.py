@@ -156,7 +156,7 @@ class TestProjectRepositoryLink:
  self, project_admin_client: APIClient, project: Project,
  ) -> None:
  """/me 返回 project_memberships 含 role。"""
- response = project_admin_client.get("/api/accounts/me/")
+ response = project_admin_client.get("/api/auth/me")
  assert response.status_code == 200
  data = response.json
  assert "project_memberships" in data

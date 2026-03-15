@@ -4,6 +4,7 @@ from .models import GitCredential, Repository
 class RepositorySerializer(serializers.ModelSerializer):
  """Serializer for Repository model."""
  has_credential = serializers.SerializerMethodField
+ linked_projects_count = serializers.SerializerMethodField
  class Meta:
  model = Repository
  fields = [
@@ -19,10 +20,14 @@ class RepositorySerializer(serializers.ModelSerializer):
  "created_at",
  "updated_at",
  "has_credential",
+ "linked_projects_count",
  ]
  read_only_fields = ["id", "created_at", "updated_at", "webhook_secret"]
- def get_has_credential(self, obj):
+ def get_has_credential(self, obj: Repository) -> bool:
  return hasattr(obj, "credential") and obj.credential is not None
+ def get_linked_projects_count(self, obj: Repository) -> int:
+ """返回关联到此仓库的项目数量。"""
+ return obj.projects.count
 class RepositoryCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Repository with credential."""
  access_token = serializers.CharField(write_only=True)
