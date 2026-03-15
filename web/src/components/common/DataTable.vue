@@ -116,9 +116,10 @@ const visiblePages = computed<(number | '...')>( => {
 function goToPage(page: number) {
  pagination.value = { ...pagination.value, pageIndex: page - 1 }
 }
-function handlePageSizeChange(val: string) {
- pageSizeStr.value = val
- pagination.value = { pageIndex: 0, pageSize: Number(val) }
+function handlePageSizeChange(val: unknown) {
+ const str = String(val)
+ pageSizeStr.value = str
+ pagination.value = { pageIndex: 0, pageSize: Number(str) }
 }
 /**
  * 从 ColumnDef 中提取人类可读的列名，用于列可见性 Dropdown。
