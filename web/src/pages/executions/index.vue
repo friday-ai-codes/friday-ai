@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '~/api/client'
 import ExecutionCard from '~/components/execution/ExecutionCard.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -127,26 +128,22 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
 <template>
  <PageContainer show-background>
  <!-- Header -->
- <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
- <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 flex items-center justify-center">
- <span class="icon-[lucide--play-circle] text-2xl text-emerald-500" />
- </div>
- <h1 class="text-2xl font-bold">
- 执行监控
- </h1>
+ <PageHeader
+ icon="lucide--play-circle"
+ icon-gradient="from-emerald-500/20 to-teal-500/10"
+ icon-color="text-emerald-500"
+ title="执行监控"
+ description="实时追踪工作流执行状态"
+ >
+ <template #title-suffix>
  <!-- 后台刷新指示器 -->
  <span
  v-if="isFetching && !isLoading"
  class="icon-[lucide--refresh-cw] text-muted-foreground animate-spin"
  title="正在刷新..."
  />
- </div>
- <p class="text-muted-foreground ml-12">
- 实时追踪工作流执行状态
- </p>
- </div>
+ </template>
+ <template #actions>
  <!-- Stats cards -->
  <div class="flex flex-wrap gap-3">
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
@@ -186,7 +183,8 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
  </div>
  </div>
  </div>
- </div>
+ </template>
+ </PageHeader>
  <!-- Filters -->
  <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <div class="flex items-center gap-2">

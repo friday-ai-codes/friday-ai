@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import StatCard from '~/components/common/StatCard.vue'
 useHead({
  title: '首页 - Friday AI',
 })
@@ -109,33 +110,11 @@ function formatDate(dateStr: string) {
  无缝集成飞书项目管理和 Claude Code
  </p>
  </section>
- <!-- 统计卡片 — sub2api stat-card 风格 -->
+ <!-- 统计卡片 — StatCard 组件 -->
  <section class="grid gap-5 grid-cols-2 lg:grid-cols-4">
- <RouterLink
- v-for="stat in stats":key="stat.title":to="stat.link"
- class="card card-interactive group flex items-start gap-4"
- >
- <!-- 图标 -->
- <div class="stat-icon":class="stat.statIconClass">
- <span class="text-xl":class="`icon-[${stat.icon}]`" />
- </div>
- <!-- 内容 -->
- <div class="min-w-0 flex-1">
- <p class="text-sm text-muted-foreground mb-1">
- {{ stat.title }}
- </p>
- <p class="text-2xl font-bold text-foreground truncate">
- <template v-if="loading">
- <span class="inline-block w-10 bg-muted animate-pulse rounded" />
- </template>
- <template v-else>
- {{ stat.value }}
- </template>
- </p>
- </div>
- <!-- 箭头 -->
- <span class="icon-[lucide--arrow-up-right] text-muted-foreground/30 group-hover:text-primary transition-colors" />
- </RouterLink>
+ <StatCard
+ v-for="stat in stats":key="stat.title":title="stat.title":value="stat.value":icon="stat.icon":icon-class="stat.statIconClass":loading="loading":to="stat.link"
+ />
  </section>
  <!-- 快捷操作 — 紧凑横排 -->
  <section class="flex flex-wrap gap-3">

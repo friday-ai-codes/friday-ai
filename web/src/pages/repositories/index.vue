@@ -2,6 +2,7 @@
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -69,26 +70,21 @@ const platformIcons: Record<string, string> = {
 <template>
  <PageContainer>
  <!-- 页面标题 -->
- <div class="flex items-center justify-between">
- <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
- <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
- </div>
- <h1 class="text-2xl font-bold">
- 仓库管理
- </h1>
- </div>
- <p class="text-muted-foreground ml-12">
- 管理您的 Git 仓库和凭证配置
- </p>
- </div>
+ <PageHeader
+ icon="lucide--git-branch"
+ icon-gradient="from-violet-500/20 to-purple-500/10"
+ icon-color="text-violet-500"
+ title="仓库管理"
+ description="管理您的 Git 仓库和凭证配置"
+ >
+ <template #actions>
  <Button class="group relative overflow-hidden" @click="openCreateRepository">
  <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  新建仓库
  </Button>
- </div>
+ </template>
+ </PageHeader>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="card":count="3" />
  <!-- 空状态 -->
