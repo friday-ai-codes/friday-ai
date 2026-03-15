@@ -39,6 +39,13 @@ export const useAuthStore = defineStore('auth', => {
  user.value = response.user
  isAuthenticated.value = true
  mustChangePassword.value = response.must_change_password
+ // 登录成功后立即获取完整用户信息（含 projectMemberships）
+ try {
+ await fetchMe
+ }
+ catch {
+ // 静默忽略，不影响登录流程（与 initAuth 处理方式一致）
+ }
  return { user: response.user, mustChangePassword: response.must_change_password }
  }
  catch (e) {
