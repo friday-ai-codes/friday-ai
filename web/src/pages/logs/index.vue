@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
+import type { ColumnDef } from '@tanstack/vue-table'
+import { h, markRaw } from 'vue'
 import { useHead } from '@vueuse/head'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
+import DataTable from '~/components/common/DataTable.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
-import TriggerLogList from '~/components/logs/TriggerLogList.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -12,6 +17,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 useHead({
  title: '触发日志 - Friday AI',
 })
@@ -93,6 +99,14 @@ function getProjectName(projectId: string | null) {
  const project = projectsStore.projectById(projectId)
  return project?.name || projectId.slice(0, 8)
 }
+// 删除确认状态
+const deleteDialogOpen = ref(false)
+const logToDelete = ref<string | null>(null)
+const deleting = ref(false)
+function confirmDelete(logId: string) {
+ logToDelete.value = logId
+ deleteDialogOpen.value = true
+}
 // 重试日志
 async function handleRetry(logId: string) {
  try {
@@ -105,41 +119,150 @@ async function handleRetry(logId: string) {
  }
 }
 // 删除日志
-async function handleDelete(logId: string) {
+async function handleDelete {
+ if (!logToDelete.value) return
+ deleting.value = true
  try {
- await deleteTriggerLog(logId)
+ await deleteTriggerLog(logToDelete.value)
  success('删除成功', '日志已删除')
+ deleteDialogOpen.value = false
  await fetchLogs
  }
  catch (e) {
  showError('删除失败', e instanceof Error ? e.message: '无法删除')
  }
+ finally {
+ deleting.value = false
+ }
 }
+// 打开详情弹窗
+async function openDetail(logId: string) {
+ const { open } = useModal({
+ component: markRaw(TriggerLogDetailModal),
+ attrs: {
+ logId,
+ onRetry: => handleRetry(logId),
+ onDelete: => confirmDelete(logId),
+ onRefresh: => fetchLogs,
+ },
+ })
+ await open
+}
+// 格式化日期
+function formatDate(dateStr: string) {
+ const date = new Date(dateStr)
+ return date.toLocaleDateString('zh-CN', {
+ month: 'short',
+ day: 'numeric',
+ hour: '2-digit',
+ minute: '2-digit',
+ })
+}
+// --- DataTable 列定义 ---
+const columns: ColumnDef<TriggerLog> = [
+ {
+ accessorKey: 'status',
+ header: '状态',
+ cell: ({ row }) => h(StatusBadge, { type: 'triggerLog', status: row.original.status }),
+ enableSorting: false,
+ enableGlobalFilter: false,
+ },
+ {
+ accessorKey: 'event_type',
+ header: '触发类型',
+ cell: ({ row }) => h(Badge, { variant: 'secondary', class: 'text-xs' }, => row.original.event_type),
+ enableSorting: true,
+ },
+ {
+ id: 'project',
+ header: '项目',
+ cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.project_id)),
+ enableSorting: false,
+ },
+ {
+ accessorKey: 'work_item_name',
+ header: '工作项',
+ cell: ({ row }) => h('span', {
+ class: 'font-medium truncate block max-w-[200px]',
+ title: row.original.work_item_name || undefined,
+ }, row.original.work_item_name || '未命名工作项'),
+ enableSorting: true,
+ },
+ {
+ accessorKey: 'created_at',
+ header: '创建时间',
+ cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, formatDate(row.original.created_at)),
+ enableSorting: true,
+ },
+ {
+ id: 'actions',
+ header: '操作',
+ cell: ({ row }) => {
+ const log = row.original
+ const children =
+ // 查看执行按钮（仅当有关联执行时显示）
+ if (log.first_execution_id) {
+ children.push(
+ h('a', {
+ href: `/executions/${log.first_execution_id}`,
+ class: 'inline-flex items-center justify-center w-8 rounded-md hover:bg-muted/50 transition-colors',
+ title: '查看执行',
+ onClick: (e: Event) => {
+ e.stopPropagation
+ e.preventDefault
+ useRouter.push(`/executions/${log.first_execution_id}`)
+ },
+ }, h('span', { class: 'icon-[lucide--play-circle] text-sm text-primary' })),
+ )
+ }
+ // 重试按钮
+ children.push(
+ h(Button, {
+ variant: 'ghost',
+ size: 'icon',
+ class: ' w-8',
+ title: '重试',
+ onClick: (e: Event) => {
+ e.stopPropagation
+ handleRetry(log.id)
+ },
+ }, => h('span', { class: 'icon-[lucide--refresh-cw] text-sm text-muted-foreground' })),
+ )
+ // 删除按钮
+ children.push(
+ h(Button, {
+ variant: 'ghost',
+ size: 'icon',
+ class: ' w-8 hover:bg-destructive/10 hover:text-destructive',
+ title: '删除',
+ onClick: (e: Event) => {
+ e.stopPropagation
+ confirmDelete(log.id)
+ },
+ }, => h('span', { class: 'icon-[lucide--trash-2] text-sm' })),
+ )
+ return h('div', { class: 'flex items-center gap-1' }, children)
+ },
+ enableSorting: false,
+ enableHiding: false,
+ },
+]
 </script>
 <template>
- <PageContainer>
- <!-- 页面标题 -->
- <div class="flex items-center justify-between">
- <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10 flex items-center justify-center">
- <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
- </div>
- <h1 class="text-2xl font-bold">
- 触发日志
- </h1>
- </div>
- <p class="text-muted-foreground ml-12">
- 查看飞书 Webhook 触发的工作项日志
- </p>
- </div>
- </div>
- <!-- 过滤器 -->
- <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--filter] text-muted-foreground" />
- <span class="text-sm text-muted-foreground">筛选</span>
- </div>
+ <PageContainer show-background>
+ <!-- 页头 -->
+ <PageHeader
+ icon="lucide--file-text"
+ icon-gradient="from-cyan-500/20 to-blue-500/10"
+ icon-color="text-cyan-500"
+ title="触发日志"
+ description="查看飞书 Webhook 触发的工作项日志"
+ />
+ <!-- DataTable -- 集成搜索/排序/分页/列可见性 -->
+ <DataTable:data="triggerLogs":columns="columns"
+ table-id="logs-list":loading="loading":on-row-click="(log) => openDetail(log.id)"
+ >
+ <template #filters>
  <!-- 状态过滤 -->
  <Select v-model="statusFilter">
  <SelectTrigger class="w-[140px]">
@@ -192,32 +315,20 @@ async function handleDelete(logId: string) {
  清除筛选
  </Button>
  <div class="flex-1" />
- <!-- 统计信息 -->
- <div class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--database]" />
- 共 {{ total }} 条记录
- </div>
  <!-- 刷新按钮 -->
  <Button variant="ghost" size="icon" class=" w-8" @click="fetchLogs">
  <span class="icon-[lucide--refresh-cw]" />
  </Button>
- </div>
- <!-- 加载状态 -->
- <LoadingState v-if="loading" variant="skeleton":count="5" />
- <!-- 空状态 -->
- <EmptyState
- v-else-if="triggerLogs.length === 0"
- icon="lucide--file-text"
- title="暂无日志"
- description="飞书 Webhook 触发后将在此显示日志"
- gradient="from-cyan-500/20 to-blue-500/20"
- />
- <!-- 日志列表 -->
- <TriggerLogList
- v-else:logs="triggerLogs":loading="loading":get-project-name="getProjectName"
- @retry="handleRetry"
- @delete="handleDelete"
- @refresh="fetchLogs"
+ </template>
+ </DataTable>
+ <!-- 删除确认 -->
+ <ConfirmDialog
+ v-model:open="deleteDialogOpen"
+ title="删除日志"
+ description="确定要删除这条触发日志吗？此操作无法撤销。"
+ confirm-text="删除"
+ variant="destructive":loading="deleting"
+ @confirm="handleDelete"
  />
  </PageContainer>
 </template>
