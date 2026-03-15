@@ -1,97 +1,23 @@
 <script setup lang="ts">
-import { Button } from '~/components/ui/button'
-import {
- DropdownMenu,
- DropdownMenuContent,
- DropdownMenuItem,
- DropdownMenuSeparator,
- DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu'
 import { Toaster } from '~/components/ui/sonner'
-import { useAuthStore } from '~/stores/auth'
-const authStore = useAuthStore
-const router = useRouter
-// 导航项定义
-const navItems: Array<{ to: string, label: string, icon: string, badge?: string }> = [
- { to: '/', label: '首页', icon: 'lucide--home' },
- { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
- { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
- { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
- { to: '/executions', label: '执行', icon: 'lucide--play-circle' },
- { to: '/analytics', label: '分析', icon: 'lucide--bar-chart-3' },
- { to: '/runners', label: 'Runner', icon: 'lucide--server' },
- { to: '/logs', label: '日志', icon: 'lucide--file-text' },
- { to: '/settings', label: '设置', icon: 'lucide--settings' },
-]
-const route = useRoute
+import AppSidebar from '~/components/layout/AppSidebar.vue'
 // WebSocket 实时监控
 const { status, connect } = useRunnerMonitor
 onMounted( => {
  connect
 })
-// 判断当前路由是否激活
-function isActive(path: string) {
- if (path === '/') {
- return route.path === '/'
- }
- return route.path.startsWith(path)
-}
-// 退出登录
-async function handleLogout {
- await authStore.logout
- router.push('/login')
-}
-// 跳转到账号设置
-function goToAccountSettings {
- router.push('/settings/account')
-}
 </script>
 <template>
- <div class="min-h-screen flex flex-col bg-background">
- <!-- 顶部导航 -->
- <header class="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60">
- <nav class="container mx-auto px-4 flex items-center justify-between">
- <div class="flex items-center gap-8 min-w-0 overflow-hidden">
- <!-- Logo -->
- <RouterLink to="/" class="group flex items-center gap-2.5 text-xl font-bold">
- <div class="relative">
- <div class="absolute inset-0 bg-gradient-to-br from-primary to-primary/50 rounded-lg blur-md opacity-50 group-hover:opacity-75 transition-opacity" />
- <div class="relative .5 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
- <span class="icon-[lucide--bot] text-xl text-white" />
- </div>
- </div>
- <span class="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">Friday AI</span>
- </RouterLink>
- <!-- 导航链接 -->
- <div class="hidden md:flex items-center gap-1 overflow-x-auto scrollbar-hide">
- <RouterLink
- v-for="item in navItems":key="item.to":to="item.to"
- class="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap shrink-0":class="[
- isActive(item.to)
- ? 'text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
- ]"
- >
- <!-- 激活指示器 -->
- <div
- v-if="isActive(item.to)"
- class="absolute inset-0 bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg"
- />
- <span class="relative text-lg":class="[`icon-[${item.icon}]`]" />
- <span class="relative">{{ item.label }}</span>
- <span
- v-if="item.badge"
- class="relative ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-primary/10 text-primary"
- >
- {{ item.badge }}
- </span>
- </RouterLink>
- </div>
- </div>
- <!-- 右侧操作区 -->
- <div class="flex items-center gap-4 shrink-0">
+ <div class="min-h-screen flex bg-background">
+ <!-- 侧边栏 -->
+ <AppSidebar />
+ <!-- 主内容区 -->
+ <div class="flex-1 flex flex-col min-w-0">
+ <!-- 精简顶栏（仅状态指示器） -->
+ <header class="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl flex items-center justify-end px-6 gap-4">
  <!-- WebSocket 连接状态指示器 -->
  <div
- class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{
+ class="flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{
  'bg-emerald-500/10 border border-emerald-500/20': status === 'connected',
  'bg-amber-500/10 border border-amber-500/20': status === 'connecting' || status === 'reconnecting',
  'bg-red-500/10 border border-red-500/20': status === 'disconnected',
@@ -118,65 +44,13 @@ function goToAccountSettings {
  {{ status === 'connected' ? '已连接': status === 'disconnected' ? '已断开': '重连中...' }}
  </span>
  </div>
- <!-- 用户下拉菜单 -->
- <DropdownMenu>
- <DropdownMenuTrigger as-child>
- <Button variant="ghost" class="flex items-center gap-2 px-3">
- <span class="icon-[lucide--user-circle] text-xl" />
- <span class="hidden sm:inline text-sm font-medium">{{ authStore.user?.display_name || authStore.user?.username || '用户' }}</span>
- <span class="icon-[lucide--chevron-down] text-sm" />
- </Button>
- </DropdownMenuTrigger>
- <DropdownMenuContent align="end" class="w-48">
- <DropdownMenuItem class="cursor-pointer" @click="router.push('/profile')">
- <span class="icon-[lucide--user] mr-2" />
- 个人资料
- </DropdownMenuItem>
- <DropdownMenuItem class="cursor-pointer" @click="goToAccountSettings">
- <span class="icon-[lucide--user-cog] mr-2" />
- 账号设置
- </DropdownMenuItem>
- <DropdownMenuSeparator />
- <DropdownMenuItem class="cursor-pointer text-destructive focus:text-destructive" @click="handleLogout">
- <span class="icon-[lucide--log-out] mr-2" />
- 退出登录
- </DropdownMenuItem>
- </DropdownMenuContent>
- </DropdownMenu>
- </div>
- </nav>
  </header>
  <!-- 页面内容 -->
- <main class="flex-1 container mx-auto px-4 py-8">
+ <main class="flex-1 ">
  <RouterView />
  </main>
- <!-- 底部 -->
- <footer class="border-t border-border/40 py-6 bg-muted/30">
- <div class="container mx-auto px-4 flex items-center justify-between text-sm text-muted-foreground">
- <p class="flex items-center gap-2">
- <span class="icon-[lucide--copyright] text-base" />
- <span>{{ new Date.getFullYear }} Friday AI. All rights reserved.</span>
- </p>
- <div class="flex items-center gap-6">
- <a
- href="https://github.com"
- target="_blank"
- class="group flex items-center gap-1.5 hover:text-foreground transition-colors"
- >
- <span class="icon-[lucide--github] text-base group-hover:scale-110 transition-transform" />
- <span>GitHub</span>
- </a>
- <a
- href="/docs"
- class="group flex items-center gap-1.5 hover:text-foreground transition-colors"
- >
- <span class="icon-[lucide--book-open] text-base group-hover:scale-110 transition-transform" />
- <span>API 文档</span>
- </a>
  </div>
  </div>
- </footer>
  <!-- Toast 通知 -->
  <Toaster rich-colors position="top-right" />
- </div>
 </template>
