@@ -9,6 +9,9 @@ import type {
  FeishuConfigTestResult,
  Project,
  ProjectCreate,
+ ProjectRepositoryLink,
+ ProjectRepositoryLinkCreate,
+ ProjectRepositoryLinkUpdate,
  ProjectUpdate,
  WebhookTokenRead,
  WebhookTokenUpdate,
@@ -45,7 +48,34 @@ export async function deleteProject(projectId: string): Promise<void> {
  return del(`/projects/${projectId}/`)
 }
 // ============================================================================
-// 仓库关联管理
+// 仓库关联管理（新 API：批量关联 + 权限管理）
+// ============================================================================
+/**
+ * 获取项目关联的仓库列表
+ */
+export async function getProjectRepositories(projectId: string): Promise<ProjectRepositoryLink> {
+ return get<ProjectRepositoryLink>(`/projects/${projectId}/repositories/`)
+}
+/**
+ * 批量关联仓库到项目
+ */
+export async function linkRepositories(projectId: string, data: ProjectRepositoryLinkCreate): Promise<{ created: ProjectRepositoryLink, skipped: string }> {
+ return post<{ created: ProjectRepositoryLink, skipped: string }>(`/projects/${projectId}/repositories/`, data)
+}
+/**
+ * 修改关联权限级别
+ */
+export async function updateRepositoryLink(projectId: string, linkId: string, data: ProjectRepositoryLinkUpdate): Promise<ProjectRepositoryLink> {
+ return patch<ProjectRepositoryLink>(`/projects/${projectId}/repositories/${linkId}/`, data)
+}
+/**
+ * 移除仓库关联
+ */
+export async function unlinkRepository(projectId: string, linkId: string): Promise<void> {
+ return del(`/projects/${projectId}/repositories/${linkId}/`)
+}
+// ============================================================================
+// 仓库关联管理（旧 API：保留向后兼容）
 // ============================================================================
 /**
  * 关联仓库
@@ -120,6 +150,11 @@ export default {
  delete: deleteProject,
  addRepository,
  removeRepository,
+ // 仓库关联管理（新 API）
+ getProjectRepositories,
+ linkRepositories,
+ updateRepositoryLink,
+ unlinkRepository,
  // 飞书配置
  getFeishuConfig,
  setFeishuConfig,

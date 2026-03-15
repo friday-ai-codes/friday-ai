@@ -172,6 +172,7 @@ export interface Repository extends RepositoryBase {
  proxy_url?: string
  auto_index_enabled: boolean
  webhook_secret?: string | null
+ linked_projects_count?: number
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）
@@ -191,6 +192,35 @@ export interface RepositoryUpdate {
  default_branch?: string
  description?: string
  auto_index_enabled?: boolean
+}
+// ============================================================================
+// 仓库关联权限相关类型
+// ============================================================================
+/**
+ * 仓库关联权限级别
+ */
+export type RepositoryPermissionLevel = 'read_write' | 'read_only'
+/**
+ * 项目仓库关联（API 响应）
+ */
+export interface ProjectRepositoryLink {
+ id: string
+ repository_id: string
+ repository_name: string
+ permission_level: RepositoryPermissionLevel
+ created_at: string
+}
+/**
+ * 批量关联仓库请求
+ */
+export interface ProjectRepositoryLinkCreate {
+ repository_ids: string
+}
+/**
+ * 修改关联权限请求
+ */
+export interface ProjectRepositoryLinkUpdate {
+ permission_level: RepositoryPermissionLevel
 }
 // ============================================================================
 // 项目相关类型
