@@ -71,8 +71,7 @@ describe('DataTable', => {
  props: { data: smallData, columns, tableId: 'test-page', pageSize: 2 },
  })
  const pageText = wrapper.text
- expect(pageText).toContain('第 1 页')
- expect(pageText).toContain('共 3 条')
+ expect(pageText).toContain('显示 1 至 2 共 3 条结果')
  })
  //: 列可见性持久化
  it('列可见性通过 tableId 区分 localStorage key', => {
