@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 useHead({ title: 'Runner 管理 - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
@@ -59,23 +60,24 @@ function formatAbsoluteTime(dateStr: string | null) {
 <template>
  <PageContainer>
  <!-- 页头 -->
- <div class="flex items-center justify-between">
- <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
- <span class="icon-[lucide--server] text-2xl text-violet-500" />
- </div>
- <h1 class="text-2xl font-bold">Runner</h1>
+ <PageHeader
+ icon="lucide--server"
+ icon-gradient="from-violet-500/20 to-purple-500/10"
+ icon-color="text-violet-500"
+ title="Runner"
+ description="管理和监控您的 Runner 实例"
+ >
+ <template #title-suffix>
  <Badge variant="secondary">{{ runnersStore.runners.length }}</Badge>
- </div>
- <p class="text-muted-foreground ml-12">管理和监控您的 Runner 实例</p>
- </div>
+ </template>
+ <template #actions>
  <Button class="group relative overflow-hidden" @click="router.push('/runners/new')">
  <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-1.5" />
  新建 Runner
  </Button>
- </div>
+ </template>
+ </PageHeader>
  <!-- 断线横幅 -->
  <Transition enter-active-class="transition-all duration-300" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0">
  <div v-if="disconnectedTooLong" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-sm">

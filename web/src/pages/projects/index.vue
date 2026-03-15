@@ -2,6 +2,7 @@
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 import { Badge } from '~/components/ui/badge'
 useHead({
@@ -62,25 +63,20 @@ async function handleDelete {
 <template>
  <PageContainer>
  <!-- 页面标题 -->
- <div class="flex items-center justify-between">
- <div class="space-y-1">
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
- <span class="icon-[lucide--folder-git-2] text-2xl text-blue-500" />
- </div>
- <h1 class="text-2xl font-bold">
- 项目管理
- </h1>
- </div>
- <p class="text-muted-foreground ml-12">
- 管理您的 Git 仓库项目和凭证配置
- </p>
- </div>
+ <PageHeader
+ icon="lucide--folder-git-2"
+ icon-gradient="from-blue-500/20 to-cyan-500/10"
+ icon-color="text-blue-500"
+ title="项目管理"
+ description="管理您的 Git 仓库项目和凭证配置"
+ >
+ <template #actions>
  <button class="btn btn-primary" @click="openCreateProject">
  <span class="icon-[lucide--plus]" />
  新建项目
  </button>
- </div>
+ </template>
+ </PageHeader>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="card":count="3" />
  <!-- 空状态 -->
