@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { provide, ref } from 'vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import KpiCards from '~/components/analytics/KpiCards.vue'
 import TimeRangeSelector from '~/components/analytics/TimeRangeSelector.vue'
 import TrendChart from '~/components/analytics/TrendChart.vue'
@@ -22,17 +23,17 @@ provide('analyticsDateRange', dateRange)
 <template>
  <PageContainer>
  <!-- 页头 -->
- <div class="flex items-center justify-between mb-6">
- <div>
- <h1 class="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
- 执行分析
- </h1>
- <p class="text-sm text-muted-foreground mt-1">
- 工作流执行健康状况、性能趋势和成本消耗
- </p>
- </div>
+ <PageHeader
+ icon="lucide--bar-chart-3"
+ icon-gradient="from-teal-500/20 to-cyan-500/10"
+ icon-color="text-teal-500"
+ title="执行分析"
+ description="工作流执行健康状况、性能趋势和成本消耗"
+ >
+ <template #actions>
  <TimeRangeSelector v-model="dateRange" />
- </div>
+ </template>
+ </PageHeader>
  <!-- KPI 概览 -->
  <KpiCards class="mb-6" />
  <!-- 趋势和分布图 -->
