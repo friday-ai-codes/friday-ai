@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 interface Props {
  tasks: CodingTask
  loading?: boolean
@@ -13,34 +14,6 @@ const props = defineProps<Props>
 const emit = defineEmits<{
  (e: 'select', task: CodingTask): void
 }>
-// 状态颜色映射 - 使用 glassmorphism 风格
-const statusColors: Record<string, string> = {
- pending: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
- planning: 'bg-gradient-to-r from-blue-500/20 to-cyan-500/10 text-blue-700 dark:text-blue-400 animate-pulse',
- plan_review: 'bg-gradient-to-r from-violet-500/20 to-purple-500/10 text-violet-700 dark:text-violet-400',
- executing: 'bg-gradient-to-r from-blue-500/20 to-cyan-500/10 text-blue-700 dark:text-blue-400 animate-pulse',
- code_review: 'bg-gradient-to-r from-violet-500/20 to-purple-500/10 text-violet-700 dark:text-violet-400',
- merged: 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-700 dark:text-emerald-400',
- partial_success: 'bg-gradient-to-r from-amber-500/20 to-orange-500/10 text-amber-700 dark:text-amber-400',
- failed: 'bg-gradient-to-r from-red-500/20 to-rose-500/10 text-red-700 dark:text-red-400',
-}
-// 状态中文映射
-const statusLabels: Record<string, string> = {
- pending: '待执行',
- planning: '规划中',
- plan_review: '方案评审',
- executing: '执行中',
- code_review: '代码评审',
- merged: '已合并',
- partial_success: '部分成功',
- failed: '失败',
-}
-function getStatusColor(status: string): string {
- return statusColors[status] || statusColors.pending
-}
-function getStatusLabel(status: string): string {
- return statusLabels[status] || status
-}
 // 任务统计
 const completedCount = computed( =>
  props.tasks.filter(t => t.status === 'merged').length,
@@ -103,11 +76,7 @@ const runningCount = computed( =>
  <div class="flex-1 min-w-0">
  <div class="flex items-center gap-2 flex-wrap">
  <span class="font-medium text-sm truncate">{{ task.name }}</span>
- <Badge:class="getStatusColor(task.status)" class="text-[10px] shrink-0">
- <span v-if="task.status === 'failed'" class="icon-[lucide--x-circle] w-3 mr-0.5" />
- <span v-if="task.status === 'partial_success'" class="icon-[lucide--alert-triangle] w-3 mr-0.5" />
- {{ getStatusLabel(task.status) }}
- </Badge>
+ <StatusBadge type="codingTask":status="task.status" size="sm" />
  <!-- Merged task indicator -->
  <div
  v-if="task.execution_plan_ids?.length > 1"

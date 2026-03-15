@@ -7,6 +7,7 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 const route = useRoute('/logs/webhooks/[id]')
 const router = useRouter
 const { error: showError, success } = useToast
@@ -29,36 +30,6 @@ onMounted(async => {
  loading.value = false
  }
 })
-// 获取状态颜色
-function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
- switch (status) {
- case 'accepted':
- return 'default'
- case 'ignored':
- return 'secondary'
- case 'error':
- return 'destructive'
- case 'duplicate':
- return 'outline'
- default:
- return 'outline'
- }
-}
-// 获取状态标签
-function getStatusLabel(status: TriggerLogStatus): string {
- switch (status) {
- case 'accepted':
- return '已接受'
- case 'ignored':
- return '已忽略'
- case 'error':
- return '错误'
- case 'duplicate':
- return '重复'
- default:
- return status
- }
-}
 // 格式化日期
 function formatDate(dateStr: string) {
  return new Date(dateStr).toLocaleString('zh-CN')
@@ -89,9 +60,7 @@ async function copyJson {
  Webhook 日志
  </h1>
  <div class="flex items-center gap-3">
- <Badge:variant="getStatusVariant(log.status)">
- {{ getStatusLabel(log.status) }}
- </Badge>
+ <StatusBadge type="triggerLog":status="log.status" />
  <span v-if="log.event_type" class="text-muted-foreground">
  {{ log.event_type }}
  </span>

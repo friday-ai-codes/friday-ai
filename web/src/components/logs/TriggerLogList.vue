@@ -13,6 +13,7 @@ import {
 } from '~/components/ui/alert-dialog'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import TriggerLogDetailModal from './TriggerLogDetailModal.vue'
 defineProps<{
  logs: TriggerLog
@@ -40,36 +41,6 @@ function handleDelete {
 }
 function handleRetry(logId: string) {
  emit('retry', logId)
-}
-// 获取状态颜色
-function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
- switch (status) {
- case 'accepted':
- return 'default'
- case 'ignored':
- return 'secondary'
- case 'error':
- return 'destructive'
- case 'duplicate':
- return 'outline'
- default:
- return 'outline'
- }
-}
-// 获取状态标签
-function getStatusLabel(status: TriggerLogStatus): string {
- switch (status) {
- case 'accepted':
- return '已接受'
- case 'ignored':
- return '已忽略'
- case 'error':
- return '错误'
- case 'duplicate':
- return '重复'
- default:
- return status
- }
 }
 // 格式化日期
 function formatDate(dateStr: string) {
@@ -168,9 +139,7 @@ async function openDetail(logId: string) {
  </div>
  <!-- 状态 -->
  <div class="lg:col-span-2 flex items-center gap-2">
- <Badge:variant="getStatusVariant(log.status)" class="text-xs">
- {{ getStatusLabel(log.status) }}
- </Badge>
+ <StatusBadge type="triggerLog":status="log.status" size="sm" />
  <span
  v-if="getExecutionInfo(log.execution_status)"
  class="inline-flex":title="getExecutionInfo(log.execution_status)?.label"

@@ -2,9 +2,10 @@
 import type { IndexHistoryItem, IndexHistoryResponse } from '~/api/repositories'
 import { onMounted, ref, watch } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import StatusBadge from '~/components/common/StatusBadge.vue'
+import { Badge } from '~/components/ui/badge'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -13,13 +14,13 @@ const history = ref<IndexHistoryResponse | null>(null)
 const currentPage = ref(1)
 const statusFilter = ref<string>('')
 const pageSize = 5
-// 状态标签与颜色
-const statusConfig: Record<string, { label: string, class: string }> = {
- pending: { label: '等待中', class: 'bg-muted text-muted-foreground border-border' },
- running: { label: '运行中', class: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
- completed: { label: '已完成', class: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
- failed: { label: '失败', class: 'bg-destructive/10 text-destructive border-destructive/20' },
-}
+// 筛选按钮配置
+const filterButtons = [
+ { status: 'pending', label: '等待中' },
+ { status: 'running', label: '运行中' },
+ { status: 'completed', label: '已完成' },
+ { status: 'failed', label: '失败' },
+]
 const triggerLabels: Record<string, string> = {
  manual: '手动',
  webhook: 'Webhook',
@@ -83,12 +84,12 @@ onMounted(loadHistory)
  <!-- 状态筛选 -->
  <div class="flex gap-2 mb-4">
  <Button
- v-for="(config, status) in statusConfig":key="status":variant="statusFilter === status ? 'default': 'outline'"
+ v-for="btn in filterButtons":key="btn.status":variant="statusFilter === btn.status ? 'default': 'outline'"
  size="sm"
  class=" text-xs"
- @click="setFilter(status)"
+ @click="setFilter(btn.status)"
  >
- {{ config.label }}
+ {{ btn.label }}
  </Button>
  </div>
  <!-- 加载状态 -->
@@ -114,9 +115,7 @@ onMounted(loadHistory)
  <!-- 头部：状态 + 触发方式 + 时间 -->
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
- <Badge variant="outline":class="statusConfig[item.status]?.class">
- {{ statusConfig[item.status]?.label || item.status }}
- </Badge>
+ <StatusBadge type="index":status="item.status" />
  <Badge variant="outline" class="bg-muted/50">
  {{ triggerLabels[item.trigger_type] || item.trigger_type }}
  </Badge>

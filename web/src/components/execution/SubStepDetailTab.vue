@@ -7,6 +7,7 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import Badge from '~/components/ui/badge/Badge.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import type { SubStep } from '~/types/execution'
 const props = defineProps<{
@@ -36,23 +37,6 @@ function statusColor(status: string): string {
  failed: 'bg-red-400',
  }
  return map[status] ?? 'bg-gray-300'
-}
-function statusBadgeClass(status: string): string {
- const map: Record<string, string> = {
- running: 'text-blue-500',
- completed: 'text-green-500',
- failed: 'text-red-500',
- }
- return map[status] ?? ''
-}
-function statusText(status: string): string {
- const map: Record<string, string> = {
- pending: '等待中',
- running: '执行中',
- completed: '已完成',
- failed: '失败',
- }
- return map[status] ?? status
 }
 function formatDuration(step: SubStep): string {
  if (!step.started_at || !step.completed_at) return '-'
@@ -97,9 +81,7 @@ function formatDuration(step: SubStep): string {
  <!-- 状态行 -->
  <div class="flex items-center gap-2 pt-2 text-xs text-muted-foreground flex-wrap">
  <span>状态:</span>
- <Badge variant="secondary" class="text-[10px]":class="statusBadgeClass(step.status)">
- {{ statusText(step.status) }}
- </Badge>
+ <StatusBadge type="execution":status="step.status" size="sm" />
  <span v-if="step.started_at">
  开始: {{ new Date(step.started_at).toLocaleTimeString }}
  </span>

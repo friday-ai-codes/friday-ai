@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 useHead({ title: 'Runner 详情 - Friday AI' })
 const route = useRoute('/runners/[id]')
@@ -106,12 +107,6 @@ function formatTimeAgo(dateStr: string | null) {
  if (!dateStr) return '从未'
  return useTimeAgo(new Date(dateStr)).value
 }
-const statusMap: Record<string, { label: string, class: string }> = {
- assigned: { label: '已分配', class: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
- running: { label: '运行中', class: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
- completed: { label: '已完成', class: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
- failed: { label: '失败', class: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-}
 </script>
 <template>
  <PageContainer>
@@ -167,9 +162,9 @@ const statusMap: Record<string, { label: string, class: string }> = {
  </div>
  <div>
  <div class="text-sm text-muted-foreground">状态</div>
- <Badge class="mt-1 transition-colors duration-300":class="runner.status === 'online' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'">
- {{ runner.status === 'online' ? '在线': '离线' }}
- </Badge>
+ <div class="mt-1">
+ <StatusBadge type="runner":status="runner.status" />
+ </div>
  </div>
  <div>
  <div class="text-sm text-muted-foreground">版本</div>
@@ -193,7 +188,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  </div>
  <div>
  <div class="text-sm text-muted-foreground">活跃状态</div>
- <Badge class="mt-1":class="runner.is_active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400': 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'">
+ <Badge class="mt-1":variant="runner.is_active ? 'success': 'muted'">
  {{ runner.is_active ? '活跃': '停用' }}
  </Badge>
  </div>
@@ -238,7 +233,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  <div v-for="task in runner.current_task_list":key="task.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
  <div class="flex items-center gap-3">
  <span class="font-medium">{{ task.name }}</span>
- <Badge:class="statusMap[task.status]?.class">{{ statusMap[task.status]?.label || task.status }}</Badge>
+ <StatusBadge type="execution":status="task.status" />
  </div>
  <span class="text-xs text-muted-foreground font-mono">{{ task.id.slice(0, 8) }}</span>
  </div>
@@ -264,7 +259,7 @@ const statusMap: Record<string, { label: string, class: string }> = {
  <div v-else class="space-y-0 divide-y divide-border/30">
  <div v-for="task in historyTasks":key="task.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
  <div class="flex items-center gap-3 min-w-0">
- <Badge:class="statusMap[task.status]?.class">{{ statusMap[task.status]?.label || task.status }}</Badge>
+ <StatusBadge type="execution":status="task.status" />
  <span class="text-sm font-medium">{{ task.task_type }}</span>
  <span class="text-xs text-muted-foreground truncate max-w-48">{{ task.repo_url }}</span>
  </div>

@@ -9,32 +9,13 @@ import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import type { NodeExecution } from '~/stores/useExecutionsStore'
 import Badge from '~/components/ui/badge/Badge.vue'
-import {
- CheckCircle, XCircle, Clock, Loader2, Pause,
- Square, UserCheck, Hourglass, PauseCircle, SkipForward,
- AlarmClockOff,
-} from 'lucide-vue-next'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 const props = defineProps<{
  nodeExecution: NodeExecution
  bottleneckInfo?: { level: string, rank: number, durationPercent: number } | null
 }>
 const visual = computed( => getNodeVisual(props.nodeExecution.node_type))
 const style = computed( => useNodeStyle(visual.value.color).value)
-/** 状态配置映射 */
-const statusMap: Record<string, { icon: any, color: string, label: string }> = {
- pending: { icon: Clock, color: 'text-gray-500', label: '等待中' },
- running: { icon: Loader2, color: 'text-blue-500', label: '运行中' },
- completed: { icon: CheckCircle, color: 'text-green-500', label: '已完成' },
- failed: { icon: XCircle, color: 'text-red-500', label: '失败' },
- paused: { icon: Pause, color: 'text-yellow-500', label: '已暂停' },
- cancelled: { icon: Square, color: 'text-gray-500', label: '已取消' },
- waiting_approval: { icon: UserCheck, color: 'text-orange-500', label: '待审批' },
- waiting_event: { icon: Hourglass, color: 'text-indigo-500', label: '等待操作' },
- suspended: { icon: PauseCircle, color: 'text-indigo-500', label: '已挂起' },
- skipped: { icon: SkipForward, color: 'text-gray-400', label: '已跳过' },
- timeout: { icon: AlarmClockOff, color: 'text-red-500', label: '超时' },
-}
-const statusInfo = computed( => statusMap[props.nodeExecution.status] ?? statusMap.pending)
 function formatDuration(seconds: number | null): string {
  if (seconds == null) return '-'
  if (seconds < 60) return `${Math.round(seconds)}s`
@@ -73,9 +54,8 @@ function formatTime(isoStr: string | null): string {
  <!-- 信息行 -->
  <div class="grid grid-cols-2 gap-2 text-sm">
  <div class="text-muted-foreground">状态</div>
- <div class="flex items-center gap-1.5">
- <component:is="statusInfo.icon" class="w-4 ":class="statusInfo.color" />
- <span:class="statusInfo.color">{{ statusInfo.label }}</span>
+ <div class="flex items-center">
+ <StatusBadge type="execution":status="nodeExecution.status" />
  </div>
  <div class="text-muted-foreground">开始时间</div>
  <div>{{ formatTime(nodeExecution.started_at) }}</div>
