@@ -129,7 +129,7 @@ const platformIcons: Record<string, string> = {
  {{ repository.name }}
  </h3>
  <!-- 平台和分支 -->
- <div class="flex items-center gap-2">
+ <div class="flex items-center gap-2 flex-wrap">
  <Badge variant="outline" class="text-xs">
  {{ PLATFORM_LABELS[repository.git_platform] }}
  </Badge>
@@ -137,6 +137,10 @@ const platformIcons: Record<string, string> = {
  <span class="icon-[lucide--git-branch]" />
  {{ repository.default_branch }}
  </span>
+ <Badge v-if="repository.linked_projects_count" variant="secondary" class="text-xs">
+ <span class="icon-[lucide--folder] mr-1" />
+ {{ repository.linked_projects_count }} 个项目
+ </Badge>
  </div>
  <!-- 仓库 URL -->
  <div class="flex items-center gap-2 text-sm text-muted-foreground pt-2">
