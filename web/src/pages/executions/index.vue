@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
+import type { ColumnDef } from '@tanstack/vue-table'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '~/api/client'
-import ExecutionCard from '~/components/execution/ExecutionCard.vue'
+import DataTable from '~/components/common/DataTable.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import { Button } from '~/components/ui/button'
@@ -124,6 +126,67 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
  query.days = timeRangeFilter.value
  router.replace({ query })
 })
+// --- 辅助函数 ---
+/** 通过 workflowsStore 反查项目名称 */
+function getProjectName(workflowId: string): string {
+ const wf = workflowsStore.workflows.find(w => w.id === workflowId)
+ return wf?.project_name || '-'
+}
+/** 触发类型中文标签映射 */
+const triggerTypeLabels: Record<string, string> = {
+ manual: '手动触发',
+ webhook: 'Webhook',
+ schedule: '定时触发',
+ event: '事件触发',
+}
+/** 格式化耗时 */
+function formatDuration(duration: number | null): string {
+ if (duration == null) return '-'
+ if (duration < 60) return `${Math.round(duration)}s`
+ const mins = Math.floor(duration / 60)
+ const secs = Math.round(duration % 60)
+ return `${mins}m ${secs}s`
+}
+// --- DataTable 列定义 ---
+const columns: ColumnDef<WorkflowExecution> = [
+ {
+ accessorKey: 'status',
+ header: '状态',
+ cell: ({ row }) => h(StatusBadge, { type: 'execution', status: row.original.status }),
+ enableSorting: false,
+ enableGlobalFilter: false,
+ },
+ {
+ accessorKey: 'workflow_name',
+ header: '工作流',
+ cell: ({ row }) => h('span', { class: 'font-medium text-foreground' }, row.original.workflow_name),
+ enableSorting: true,
+ },
+ {
+ id: 'project',
+ header: '项目',
+ cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.workflow)),
+ enableSorting: false,
+ },
+ {
+ accessorKey: 'trigger_type',
+ header: '触发类型',
+ cell: ({ row }) => h('span', { class: 'text-sm' }, triggerTypeLabels[row.original.trigger_type] || row.original.trigger_type),
+ enableSorting: false,
+ },
+ {
+ accessorKey: 'duration',
+ header: '耗时',
+ cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, formatDuration(row.original.duration)),
+ enableSorting: true,
+ },
+ {
+ accessorKey: 'created_at',
+ header: '创建时间',
+ cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, new Date(row.original.created_at).toLocaleString('zh-CN')),
+ enableSorting: true,
+ },
+]
 </script>
 <template>
  <PageContainer show-background>
@@ -185,12 +248,11 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
  </div>
  </template>
  </PageHeader>
- <!-- Filters -->
- <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--filter] text-muted-foreground" />
- <span class="text-sm text-muted-foreground">筛选</span>
- </div>
+ <!-- DataTable -- 集成搜索/排序/分页/列可见性 -->
+ <DataTable:data="filteredExecutions":columns="columns"
+ table-id="executions-list":loading="isLoading":on-row-click="(execution) => router.push(`/executions/${execution.id}`)"
+ >
+ <template #filters>
  <Select v-model="statusFilter">
  <SelectTrigger class="w-[140px]">
  <SelectValue placeholder="全部状态" />
@@ -246,34 +308,7 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
  <span class="icon-[lucide--x] mr-1" />
  清除筛选
  </Button>
- </div>
- <!-- Loading state (only on initial load) -->
- <div v-if="isLoading" class="flex justify-center py-12">
- <div class="animate-spin rounded-full w-8 border-b-2 border-primary" />
- </div>
- <!-- Empty state -->
- <div v-else-if="filteredExecutions.length === 0" class="text-center py-16">
- <div class="inline-flex rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 mb-4">
- <span class="icon-[lucide--play-circle] text-4xl text-muted-foreground" />
- </div>
- <h3 class="text-lg font-medium mb-2">
- 暂无执行记录
- </h3>
- <p class="text-muted-foreground mb-4">
- {{ statusFilter !== 'all' || projectFilter !== 'all' || workflowFilter !== 'all' ? '没有符合筛选条件的执行记录': '运行工作流后，执行记录将显示在这里' }}
- </p>
- <RouterLink to="/workflows">
- <Button>
- <span class="icon-[lucide--workflow] mr-2" />
- 查看工作流
- </Button>
- </RouterLink>
- </div>
- <!-- Execution list -->
- <div v-else class="space-y-3">
- <ExecutionCard
- v-for="execution in filteredExecutions":key="execution.id":execution="execution"
- />
- </div>
+ </template>
+ </DataTable>
  </PageContainer>
 </template>
