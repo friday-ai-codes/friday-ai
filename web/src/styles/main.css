@@ -7,43 +7,43 @@
 @source inline("icon-[lucide--folder-git-2] icon-[lucide--layers] icon-[lucide--zap] icon-[lucide--scan-eye] icon-[lucide--sparkles] icon-[lucide--shield] icon-[lucide--git-pull-request-draft]");
 @source inline("icon-[simple-icons--anthropic] icon-[simple-icons--openai] icon-[simple-icons--googlecloud] icon-[simple-icons--googlegemini] icon-[simple-icons--google]");
 /*
- * Friday AI 配色方案
+ * Friday AI 配色方案 — Sub2API Teal/Cyan 风格
  *
  * 主题色:
- * - #F9F7F7 - 浅色背景 (HSL: 0 12% 97%)
- * - #DBE2EF - 浅蓝色次要背景 (HSL: 219 43% 90%)
- * - #3F72AF - 主色调蓝色 (HSL: 213 47% 47%)
- * - #112D4E - 深色文字 (HSL: 212 64% 19%)
+ * - #f8fafc - 浅色背景 (HSL: 210 40% 98%) slate-50
+ * - #f1f5f9 - 浅灰次要背景 (HSL: 210 40% 96%) slate-100
+ * - #14b8a6 - 主色调青色 (HSL: 168 76% 42%) teal-500
+ * - #1e293b - 深色文字 (HSL: 215 28% 17%) slate-800
  */
 @theme {
  /* 背景和前景 */
- --color-background: hsl(0 12% 97%); /* #F9F7F7 */
- --color-foreground: hsl(212 64% 19%); /* #112D4E */
+ --color-background: hsl(210 40% 98%); /* slate-50 */
+ --color-foreground: hsl(215 28% 17%); /* slate-800 */
  /* 卡片 */
  --color-card: hsl(0 0% 100%); /* 纯白色卡片 */
- --color-card-foreground: hsl(212 64% 19%); /* #112D4E */
+ --color-card-foreground: hsl(215 28% 17%); /* slate-800 */
  /* 弹出层 */
  --color-popover: hsl(0 0% 100%); /* 纯白色 */
- --color-popover-foreground: hsl(212 64% 19%); /* #112D4E */
- /* 主色调 - 蓝色 */
- --color-primary: hsl(213 47% 47%); /* #3F72AF */
+ --color-popover-foreground: hsl(215 28% 17%); /* slate-800 */
+ /* 主色调 - Teal 青色 */
+ --color-primary: hsl(168 76% 42%); /* teal-500 #14b8a6 */
  --color-primary-foreground: hsl(0 0% 100%); /* 白色文字 */
- /* 次要色 - 浅蓝 */
- --color-secondary: hsl(219 43% 90%); /* #DBE2EF */
- --color-secondary-foreground: hsl(212 64% 19%); /* #112D4E */
+ /* 次要色 - Slate 浅灰 */
+ --color-secondary: hsl(210 40% 96%); /* slate-100 */
+ --color-secondary-foreground: hsl(215 28% 17%); /* slate-800 */
  /* 淡化区域 */
- --color-muted: hsl(219 43% 90%); /* #DBE2EF */
- --color-muted-foreground: hsl(212 40% 40%); /* 较浅的深色 */
+ --color-muted: hsl(210 40% 96%); /* slate-100 */
+ --color-muted-foreground: hsl(215 16% 47%); /* slate-500 */
  /* 强调色 */
- --color-accent: hsl(219 43% 90%); /* #DBE2EF */
- --color-accent-foreground: hsl(212 64% 19%); /* #112D4E */
+ --color-accent: hsl(210 40% 96%); /* slate-100 */
+ --color-accent-foreground: hsl(215 28% 17%); /* slate-800 */
  /* 危险/错误色 - 保持红色 */
  --color-destructive: hsl(0 72% 51%); /* 红色 */
  --color-destructive-foreground: hsl(0 0% 100%); /* 白色 */
  /* 边框和输入框 */
- --color-border: hsl(219 30% 85%); /* 基于 #DBE2EF 稍深 */
- --color-input: hsl(219 30% 85%);
- --color-ring: hsl(213 47% 47%); /* #3F72AF */
+ --color-border: hsl(214 32% 91%); /* slate-200 */
+ --color-input: hsl(214 32% 91%);
+ --color-ring: hsl(168 76% 42%); /* teal-500 */
  /* 圆角 */
  --radius: 0.5rem;
  /* 成功/警告色 */
@@ -51,6 +51,66 @@
  --color-success-foreground: hsl(0 0% 100%);
  --color-warning: hsl(38 92% 50%);
  --color-warning-foreground: hsl(0 0% 100%);
+ /* Sub2API 风格扩展 */
+ --color-primary-600: hsl(167 76% 32%); /* #0d9488 teal-600 */
+ --color-dark-950: hsl(222 84% 5%); /* #020617 slate-950 */
+ /* 玻璃效果阴影 */
+ --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+ --shadow-glow: 0 0 20px rgba(20, 184, 166, 0.25);
+ --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+ --shadow-card-hover: 0 10px 40px rgba(0, 0, 0, 0.12);
+ /* 动画 */
+ --animate-fade-in: fadeIn 0.5s ease-out;
+ --animate-slide-up: slideUp 0.5s ease-out;
+ --animate-slide-down: slideDown 0.3s ease-out;
+ --animate-slide-in-right: slideInRight 0.3s ease-out;
+ --animate-scale-in: scaleIn 0.2s ease-out;
+ --animate-shimmer: shimmer 2s infinite;
+ --animate-glow: glow 2s ease-in-out infinite alternate;
+}
+/* 动画 @keyframes 定义 */
+@keyframes fadeIn {
+ from { opacity: 0; }
+ to { opacity: 1; }
+}
+@keyframes slideUp {
+ from { opacity: 0; transform: translateY(20px); }
+ to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideDown {
+ from { opacity: 0; transform: translateY(-10px); }
+ to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+ from { opacity: 0; transform: translateX(20px); }
+ to { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+ from { opacity: 0; transform: scale(0.95); }
+ to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+ 0% { background-position: -200% 0; }
+ 100% { background-position: 200% 0; }
+}
+@keyframes glow {
+ from { box-shadow: 0 0 20px rgba(20, 184, 166, 0.2); }
+ to { box-shadow: 0 0 30px rgba(20, 184, 166, 0.4); }
+}
+/* Sub2API 玻璃效果工具类 */
+.glass {
+ @apply bg-white/80 backdrop-blur-xl;
+}
+.glass-card {
+ @apply bg-white/70 backdrop-blur-xl border border-white/20;
+ box-shadow: var(--shadow-glass);
+}
+.glass-card:hover {
+ box-shadow: var(--shadow-card-hover);
+}
+/* 主色渐变背景 */
+.gradient-primary {
+ background-image: linear-gradient(135deg, hsl(168 76% 42%), hsl(167 76% 32%));
 }
 /* 基础样式 */
 body {
@@ -74,25 +134,25 @@ body {
  width: 8px;
  height: 8px;
 }:-webkit-scrollbar-track {
- background: hsl(219 43% 90%); /* #DBE2EF */
+ background: hsl(210 40% 96%); /* slate-100 */
 }:-webkit-scrollbar-thumb {
- background: hsl(213 47% 47%); /* #3F72AF */
+ background: hsl(168 76% 42%); /* teal-500 */
  border-radius: 4px;
 }:-webkit-scrollbar-thumb:hover {
- background: hsl(212 64% 19%); /* #112D4E */
+ background: hsl(167 76% 32%); /* teal-600 */
 }
 /* 链接样式 */
 a {
  @apply text-primary hover:text-primary/80 transition-colors;
 }
 /* 选中文本样式 */:selection {
- background: hsl(213 47% 47% / 0.3); /* #3F72AF 30% */
+ background: hsl(168 76% 42% / 0.3); /* teal-500 30% */
 }
 /* Vue Flow Handle 样式 — 节点连接点（小圆点） */
 .vue-flow__handle {
  width: 10px;
  height: 10px;
- background-color: hsl(213 47% 47%); /* primary */
+ background-color: hsl(168 76% 42%); /* teal-500 primary */
  border: 2px solid white;
  border-radius: 50%;
  transition: all 0.15s ease;
@@ -100,8 +160,8 @@ a {
 .vue-flow__handle:hover {
  width: 14px;
  height: 14px;
- background-color: hsl(213 47% 57%);
- box-shadow: 0 0 0 4px hsl(213 47% 47% / 0.2);
+ background-color: hsl(168 76% 52%);
+ box-shadow: 0 0 0 4px hsl(168 76% 42% / 0.2);
 }
 /* 连线时高亮可连接的 handle */
 .vue-flow__handle.connectingto,
