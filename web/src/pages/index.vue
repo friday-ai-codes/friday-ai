@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
-import StatusBadge from '~/components/common/StatusBadge.vue'
-import StatCard from '~/components/common/StatCard.vue'
+import DashboardKpiCards from '~/components/dashboard/DashboardKpiCards.vue'
+import DashboardQuickActions from '~/components/dashboard/DashboardQuickActions.vue'
+import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActivity.vue'
 useHead({
  title: '首页 - Friday AI',
 })
@@ -82,16 +83,6 @@ const quickActions = [
  iconBg: 'stat-icon-emerald',
  },
 ]
-// 格式化日期
-function formatDate(dateStr: string) {
- const date = new Date(dateStr)
- return date.toLocaleDateString('zh-CN', {
- month: 'short',
- day: 'numeric',
- hour: '2-digit',
- minute: '2-digit',
- })
-}
 </script>
 <template>
  <div class="max-w-[1200px] mx-auto space-y-8">
@@ -110,105 +101,11 @@ function formatDate(dateStr: string) {
  无缝集成飞书项目管理和 Claude Code
  </p>
  </section>
- <!-- 统计卡片 — StatCard 组件 -->
- <section class="grid gap-5 grid-cols-2 lg:grid-cols-4">
- <StatCard
- v-for="stat in stats":key="stat.title":title="stat.title":value="stat.value":icon="stat.icon":icon-class="stat.statIconClass":loading="loading":to="stat.link"
- />
- </section>
+ <!-- 统计卡片 — KPI widget -->
+ <DashboardKpiCards:stats="stats":loading="loading" />
  <!-- 快捷操作 — 紧凑横排 -->
- <section class="flex flex-wrap gap-3">
- <RouterLink
- v-for="action in quickActions":key="action.title":to="action.link"
- class="group inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white border border-border/60 hover:border-primary/40 hover:shadow-md transition-all duration-200"
- >
- <span class="text-base text-muted-foreground group-hover:text-primary transition-colors":class="`icon-[${action.icon}]`" />
- <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ action.title }}</span>
- </RouterLink>
- </section>
- <!-- 最近执行 — sub2api card 风格 -->
- <section>
- <div class="card overflow-hidden">
- <!-- 标题栏 -->
- <div class="flex items-center justify-between px-6 py-4 border-b border-border/50">
- <div class="flex items-center gap-3">
- <div class="stat-icon stat-icon-primary">
- <span class="icon-[lucide--clock] text-lg" />
- </div>
- <div>
- <h2 class="text-base font-semibold text-foreground">
- 最近执行
- </h2>
- <p class="text-xs text-muted-foreground">
- 最近的工作流执行记录
- </p>
- </div>
- </div>
- <RouterLink to="/executions">
- <span class="text-sm font-medium text-muted-foreground hover:text-primary transition-colors group inline-flex items-center">
- 查看全部
- <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-1 transition-transform" />
- </span>
- </RouterLink>
- </div>
- <!-- 执行列表 -->
- <div class="">
- <!-- 加载状态 -->
- <div v-if="loading" class="space-y-2">
- <div v-for="i in 3":key="i" class="flex items-center gap-4 rounded-xl">
- <div class="w-10 rounded-lg bg-muted animate-pulse" />
- <div class="flex-1 space-y-2">
- <div class=" w-2/3 bg-muted animate-pulse rounded" />
- <div class=" w-1/4 bg-muted animate-pulse rounded" />
- </div>
- <div class=" w-16 bg-muted animate-pulse rounded-full" />
- </div>
- </div>
- <!-- 空状态 -->
- <div v-else-if="executionsStore.executions.length === 0" class="py-12 text-center">
- <div class="stat-icon stat-icon-primary mx-auto mb-4 w-16 text-2xl">
- <span class="icon-[lucide--play-circle]" />
- </div>
- <h3 class="text-base font-medium text-foreground mb-1">
- 暂无执行记录
- </h3>
- <p class="text-sm text-muted-foreground mb-5">
- 创建工作流并运行，执行记录将显示在这里
- </p>
- <RouterLink to="/workflows">
- <button class="btn btn-primary">
- <span class="icon-[lucide--workflow]" />
- 查看工作流
- </button>
- </RouterLink>
- </div>
- <!-- 执行列表 -->
- <div v-else class="space-y-1">
- <RouterLink
- v-for="(execution, index) in executionsStore.executions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
- class="group flex items-center gap-4 rounded-xl hover:bg-muted/50 transition-colors duration-200"
- >
- <!-- 序号 -->
- <div class="flex-shrink-0 w-10 rounded-lg bg-muted/50 flex items-center justify-center font-medium text-muted-foreground text-sm group-hover:bg-primary/10 group-hover:text-primary transition-colors">
- {{ index + 1 }}
- </div>
- <!-- 内容 -->
- <div class="flex-1 min-w-0">
- <p class="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
- {{ execution.workflow_name }}
- </p>
- <p class="text-xs text-muted-foreground mt-0.5">
- {{ formatDate(execution.created_at) }}
- </p>
- </div>
- <!-- 状态 -->
- <StatusBadge type="execution":status="execution.status" size="sm" />
- <!-- 箭头 -->
- <span class="icon-[lucide--chevron-right] text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
- </RouterLink>
- </div>
- </div>
- </div>
- </section>
+ <DashboardQuickActions:actions="quickActions" />
+ <!-- 最近执行 — 活动 widget -->
+ <DashboardRecentActivity:executions="executionsStore.executions":loading="loading" />
  </div>
 </template>
