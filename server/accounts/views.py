@@ -4,7 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from adrf.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -117,6 +117,11 @@ class ProfileUpdateView(APIView):
  return Response(data)
 class InvitationView(APIView):
  """邀请令牌管理：创建（POST）或校验（GET）。"""
+ def get_permissions(self) -> list:
+ """按 HTTP method 分派权限：GET 公开（校验令牌），POST 需认证（创建邀请）。"""
+ if self.request.method == "GET":
+ return [AllowAny]
+ return [IsAuthenticated]
  async def post(self, request):
  """创建邀请令牌（仅超级管理员）。"""
  if not request.user.is_superuser:
