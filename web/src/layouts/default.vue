@@ -6,16 +6,30 @@ const { status, connect } = useRunnerMonitor
 onMounted( => {
  connect
 })
+// 从 route.meta 获取页面标题
+const route = useRoute
+const pageTitle = computed( => {
+ const meta = route.meta as { title?: string }
+ return meta.title || ''
+})
 </script>
 <template>
  <div class="min-h-screen flex bg-background">
  <!-- 侧边栏 -->
  <AppSidebar />
  <!-- 主内容区 -->
- <div class="flex-1 flex flex-col min-w-0">
- <!-- 精简顶栏（仅状态指示器） -->
- <header class="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl flex items-center justify-end px-6 gap-4">
- <!-- WebSocket 连接状态指示器 -->
+ <div class="flex-1 flex flex-col min-w-0 bg-gray-50">
+ <!-- Sub2API 风格顶栏 — 玻璃效果 -->
+ <header class="header-glass sticky top-0 z-40 ">
+ <div class="flex h-full items-center justify-between px-6">
+ <!-- 左侧：页面标题 -->
+ <div>
+ <h1 v-if="pageTitle" class="text-lg font-semibold text-foreground">
+ {{ pageTitle }}
+ </h1>
+ </div>
+ <!-- 右侧：WebSocket 连接状态 -->
+ <div class="flex items-center gap-3">
  <div
  class="flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{
  'bg-emerald-500/10 border border-emerald-500/20': status === 'connected',
@@ -36,17 +50,19 @@ onMounted( => {
  </span>
  <span
  class="text-sm font-medium":class="{
- 'text-emerald-600 dark:text-emerald-400': status === 'connected',
- 'text-amber-600 dark:text-amber-400': status === 'connecting' || status === 'reconnecting',
- 'text-red-600 dark:text-red-400': status === 'disconnected',
+ 'text-emerald-600': status === 'connected',
+ 'text-amber-600': status === 'connecting' || status === 'reconnecting',
+ 'text-red-600': status === 'disconnected',
  }"
  >
  {{ status === 'connected' ? '已连接': status === 'disconnected' ? '已断开': '重连中...' }}
  </span>
  </div>
+ </div>
+ </div>
  </header>
  <!-- 页面内容 -->
- <main class="flex-1 ">
+ <main class="flex-1 bg-mesh-gradient">
  <RouterView />
  </main>
  </div>

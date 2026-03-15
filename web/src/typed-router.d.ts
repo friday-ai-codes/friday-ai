@@ -34,6 +34,27 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/admin/': RouteRecordInfo<
+ '/admin/',
+ '/admin',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/admin/oidc': RouteRecordInfo<
+ '/admin/oidc',
+ '/admin/oidc',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/admin/users': RouteRecordInfo<
+ '/admin/users',
+ '/admin/users',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/analytics/': RouteRecordInfo<
  '/analytics/',
  '/analytics',
@@ -216,13 +237,6 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
- '/settings/': RouteRecordInfo<
- '/settings/',
- '/settings',
- Record<never, never>,
- Record<never, never>,
- | never
- >,
  '/workflows/': RouteRecordInfo<
  '/workflows/',
  '/workflows',
@@ -265,6 +279,24 @@ declare module 'vue-router/auto-routes' {
  'src/pages/403.vue': {
  routes:
  | '/403'
+ views:
+ | never
+ }
+ 'src/pages/admin/index.vue': {
+ routes:
+ | '/admin/'
+ views:
+ | never
+ }
+ 'src/pages/admin/oidc.vue': {
+ routes:
+ | '/admin/oidc'
+ views:
+ | never
+ }
+ 'src/pages/admin/users.vue': {
+ routes:
+ | '/admin/users'
  views:
  | never
  }
@@ -421,12 +453,6 @@ declare module 'vue-router/auto-routes' {
  'src/pages/runners/new.vue': {
  routes:
  | '/runners/new'
- views:
- | never
- }
- 'src/pages/settings/index.vue': {
- routes:
- | '/settings/'
  views:
  | never
  }

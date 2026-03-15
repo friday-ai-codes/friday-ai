@@ -226,9 +226,7 @@ onMounted( => {
 </script>
 <template>
  <section class="group relative">
- <!-- 悬浮光晕 -->
- <div class="absolute inset-0 bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-violet-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-cyan-500/30 group-hover:shadow-lg group-hover:shadow-cyan-500/5 transition-all duration-300">
+ <div class="card overflow-hidden">
  <!-- 卡片头部 -->
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-blue-500/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-500/10 flex items-center justify-center">

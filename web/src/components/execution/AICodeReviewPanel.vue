@@ -87,7 +87,7 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
 }
 </script>
 <template>
- <Card class="rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <Card class="card overflow-hidden">
  <!-- Header -->
  <CardHeader class="pb-3">
  <div class="flex items-center justify-between">

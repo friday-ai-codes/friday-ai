@@ -97,20 +97,196 @@
  from { box-shadow: 0 0 20px rgba(20, 184, 166, 0.2); }
  to { box-shadow: 0 0 30px rgba(20, 184, 166, 0.4); }
 }
-/* Sub2API 玻璃效果工具类 */
-.glass {
- @apply bg-white/80 backdrop-blur-xl;
+/* Sub2API 风格卡片系统 */
+.card {
+ background: white;
+ border: 1px solid hsl(214 32% 91%);
+ border-radius: 1rem;
+ box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+ transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
 }
-.glass-card {
- @apply bg-white/70 backdrop-blur-xl border border-white/20;
- box-shadow: var(--shadow-glass);
+.card-interactive:hover {
+ box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+ border-color: hsl(168 76% 42% / 0.3);
+ transform: translateY(-2px);
 }
-.glass-card:hover {
- box-shadow: var(--shadow-card-hover);
+.card-header {
+ display: flex;
+ flex-direction: column;
+ gap: 0.375rem;
+ padding: 1.5rem;
+}
+.card-content {
+ padding: 0 1.5rem 1.5rem;
+}
+.card-footer {
+ display: flex;
+ align-items: center;
+ padding: 1rem 1.5rem;
+ border-top: 1px solid hsl(214 32% 91% / 0.7);
+}
+/* Sub2API 统计卡片图标容器 */
+.stat-icon {
+ width: 3rem;
+ height: 3rem;
+ border-radius: 0.75rem;
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ font-size: 1.25rem;
+}
+.stat-icon-primary {
+ background: hsl(168 76% 42% / 0.1);
+ color: hsl(168 76% 42%);
+}
+.stat-icon-violet {
+ background: hsl(263 70% 50% / 0.1);
+ color: hsl(263 70% 50%);
+}
+.stat-icon-amber {
+ background: hsl(38 92% 50% / 0.1);
+ color: hsl(38 92% 50%);
+}
+.stat-icon-emerald {
+ background: hsl(142 71% 45% / 0.1);
+ color: hsl(142 71% 45%);
+}
+/* Sub2API 风格侧边栏 */
+.sidebar-s2a {
+ background: white;
+ border-right: 1px solid hsl(214 32% 91%);
+}
+.sidebar-s2a-link {
+ display: flex;
+ align-items: center;
+ gap: 0.75rem;
+ padding: 0.5rem 0.75rem;
+ border-radius: 0.75rem;
+ font-size: 0.875rem;
+ font-weight: 500;
+ color: hsl(215 16% 47%);
+ transition: all 0.2s ease;
+}
+.sidebar-s2a-link:hover {
+ background: hsl(210 40% 96%);
+ color: hsl(215 28% 17%);
+}
+.sidebar-s2a-link-active {
+ background: hsl(168 76% 42% / 0.08);
+ color: hsl(168 76% 42%);
+}
+.sidebar-s2a-link-active:hover {
+ background: hsl(168 76% 42% / 0.12);
+}
+/* Sub2API 风格 header */
+.header-glass {
+ background: rgba(255, 255, 255, 0.8);
+ backdrop-filter: blur(20px);
+ -webkit-backdrop-filter: blur(20px);
+ border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+}
+/* Sub2API 风格按钮系统 */
+.btn {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ gap: 0.5rem;
+ border-radius: 0.75rem;
+ padding: 0.625rem 1rem;
+ font-size: 0.875rem;
+ line-height: 1.25rem;
+ font-weight: 500;
+ cursor: pointer;
+ transition: all 0.2s cubic-bezier(0, 0, 0.2, 1);
+}
+.btn:focus {
+ outline: 2px solid transparent;
+ outline-offset: 2px;
+ box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px hsl(168 76% 42% / 0.5);
+}
+.btn:disabled {
+ transform: none;
+ cursor: not-allowed;
+ opacity: 0.5;
+}
+.btn:active:not(:disabled) {
+ transform: scale(0.98);
+}
+.btn-primary {
+ background: linear-gradient(to right, #14b8a6, #0d9488);
+ color: white;
+ box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+ --tw-shadow-color: rgb(20 184 166 / 0.25);
+ box-shadow: 0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color);
+}
+.btn-primary:hover:not(:disabled) {
+ background: linear-gradient(to right, #0d9488, #0f766e);
+ box-shadow: 0 10px 15px -3px rgb(20 184 166 / 0.3), 0 4px 6px -4px rgb(20 184 166 / 0.3);
+}
+.btn-secondary {
+ background-color: white;
+ color: rgb(55 65 81);
+ border: 1px solid rgb(229 231 235);
+ box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+.btn-secondary:hover:not(:disabled) {
+ background-color: rgb(249 250 251);
+ border-color: rgb(209 213 219);
+}
+.btn-ghost {
+ background-color: transparent;
+ color: rgb(75 85 99);
+}
+.btn-ghost:hover:not(:disabled) {
+ background-color: rgb(243 244 246);
+}
+.btn-danger {
+ background: linear-gradient(to right, #ef4444, #dc2626);
+ color: white;
+ box-shadow: 0 4px 6px -1px rgb(239 68 68 / 0.25), 0 2px 4px -2px rgb(239 68 68 / 0.25);
+}
+.btn-danger:hover:not(:disabled) {
+ background: linear-gradient(to right, #dc2626, #b91c1c);
+ box-shadow: 0 10px 15px -3px rgb(239 68 68 / 0.3), 0 4px 6px -4px rgb(239 68 68 / 0.3);
+}
+.btn-success {
+ background: linear-gradient(to right, #10b981, #059669);
+ color: white;
+ box-shadow: 0 4px 6px -1px rgb(16 185 129 / 0.25), 0 2px 4px -2px rgb(16 185 129 / 0.25);
+}
+.btn-success:hover:not(:disabled) {
+ background: linear-gradient(to right, #059669, #047857);
+ box-shadow: 0 10px 15px -3px rgb(16 185 129 / 0.3), 0 4px 6px -4px rgb(16 185 129 / 0.3);
+}
+.btn-warning {
+ background: linear-gradient(to right, #f59e0b, #d97706);
+ color: white;
+ box-shadow: 0 4px 6px -1px rgb(245 158 11 / 0.25), 0 2px 4px -2px rgb(245 158 11 / 0.25);
+}
+.btn-warning:hover:not(:disabled) {
+ background: linear-gradient(to right, #d97706, #b45309);
+ box-shadow: 0 10px 15px -3px rgb(245 158 11 / 0.3), 0 4px 6px -4px rgb(245 158 11 / 0.3);
+}
+.btn-sm {
+ border-radius: 0.5rem;
+ padding: 0.375rem 0.75rem;
+ font-size: 0.75rem;
+ line-height: 1rem;
+}
+.btn-icon {
+ border-radius: 0.75rem;
+ padding: 0.625rem;
 }
 /* 主色渐变背景 */
 .gradient-primary {
  background-image: linear-gradient(135deg, hsl(168 76% 42%), hsl(167 76% 32%));
+}
+/* Sub2API 网格渐变背景 */
+.bg-mesh-gradient {
+ background-image:
+ radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%),
+ radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%),
+ radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%);
 }
 /* 基础样式 */
 body {
@@ -130,16 +306,29 @@ body {
  display: none;
  }
 }
-/* 自定义滚动条样式 */:-webkit-scrollbar {
- width: 8px;
- height: 8px;
+/* 自定义滚动条样式 — sub2api 风格（默认隐藏，悬停显示） */
+* {
+ scrollbar-width: thin;
+ scrollbar-color: transparent transparent;
+}
+*:hover,
+*:focus-within {
+ scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}:-webkit-scrollbar {
+ width: 6px;
+ height: 6px;
 }:-webkit-scrollbar-track {
- background: hsl(210 40% 96%); /* slate-100 */
+ background: transparent;
 }:-webkit-scrollbar-thumb {
- background: hsl(168 76% 42%); /* teal-500 */
- border-radius: 4px;
-}:-webkit-scrollbar-thumb:hover {
- background: hsl(167 76% 32%); /* teal-600 */
+ background: transparent;
+ border-radius: 9999px;
+ transition: background-color 0.2s ease;
+}
+*:hover:-webkit-scrollbar-thumb {
+ background: rgba(148, 163, 184, 0.4);
+}
+*:hover:-webkit-scrollbar-thumb:hover {
+ background: rgba(100, 116, 139, 0.6);
 }
 /* 链接样式 */
 a {

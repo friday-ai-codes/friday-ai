@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
+definePage({
+ meta: { requiresAdmin: true },
+})
 import { onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { getModels } from '~/api/chat'
@@ -11,14 +14,10 @@ import {
  testFeishuIM,
  updateSetting,
 } from '~/api/settings'
-import { useAuthStore } from '~/stores/auth'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
-import OIDCProviderSettings from '~/components/settings/OIDCProviderSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
-import UserManagementSettings from '~/components/settings/UserManagementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
-import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -29,10 +28,6 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
-const authStore = useAuthStore
-// Tab 管理
-type SettingsTab = 'system' | 'users' | 'oidc'
-const activeTab = ref<SettingsTab>('system')
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -410,42 +405,11 @@ onMounted( => {
  </section>
  <LoadingState v-if="loading" variant="spinner" text="加载设置..." />
  <template v-else>
- <!-- Tab 切换（超级管理员可见用户管理 Tab） -->
- <div v-if="authStore.user?.is_superuser" class="flex gap-1 rounded-xl bg-muted/40 border border-border/30 backdrop-blur-sm">
- <button
- class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'system' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
- @click="activeTab = 'system'"
- >
- <span class="icon-[lucide--settings] text-base" />
- 系统配置
- </button>
- <button
- class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'users' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
- @click="activeTab = 'users'"
- >
- <span class="icon-[lucide--users] text-base" />
- 用户管理
- </button>
- <button
- class="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200":class="activeTab === 'oidc' ? 'bg-background shadow-sm text-foreground': 'text-muted-foreground hover:text-foreground'"
- @click="activeTab = 'oidc'"
- >
- <span class="icon-[lucide--shield-check] text-base" />
- OIDC 认证
- </button>
- </div>
- <!-- 用户管理 Tab 内容 -->
- <UserManagementSettings v-if="activeTab === 'users'" />
- <!-- OIDC 认证 Tab 内容 -->
- <OIDCProviderSettings v-if="activeTab === 'oidc'" />
- <!-- 系统配置 Tab 内容 -->
  <!-- 主配置区域 -->
- <div v-if="activeTab === 'system'" class="space-y-6">
+ <div class="space-y-6">
  <!-- Claude Code 配置卡片 -->
  <section class="group relative">
- <!-- 悬浮光晕 -->
- <div class="absolute inset-0 bg-gradient-to-r from-primary/20 via-blue-500/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
+ <div class="card overflow-hidden">
  <!-- 卡片头部 -->
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
@@ -496,15 +460,14 @@ onMounted( => {
  <span:class="showApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
  </button>
  </div>
- <Button
+ <button
  v-if="getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value"
- variant="outline"
- class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ class="btn btn-secondary":disabled="saving"
  @click="removeSetting(SettingKey.ANTHROPIC_API_KEY)"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
+ <span class="icon-[lucide--trash-2]" />
  删除
- </Button>
+ </button>
  </div>
  </div>
  <!-- Base URL 字段 -->
@@ -534,15 +497,14 @@ onMounted( => {
  @input="onBaseUrlInput"
  />
  </div>
- <Button
+ <button
  v-if="getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.has_value"
- variant="outline"
- class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ class="btn btn-secondary":disabled="saving"
  @click="removeSetting(SettingKey.ANTHROPIC_BASE_URL)"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
+ <span class="icon-[lucide--trash-2]" />
  删除
- </Button>
+ </button>
  </div>
  <p v-if="getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value" class="text-sm text-muted-foreground">
  当前值: {{ getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value }}
@@ -594,26 +556,24 @@ onMounted( => {
  />
  </div>
  </div>
- <Button
+ <button
  v-if="canTest"
- variant="outline"
- size="icon"
- class=" w-11 shrink-0":disabled="loadingModels"
+ class="btn btn-secondary btn-icon shrink-0":disabled="loadingModels"
+ title="刷新"
  @click="fetchModels"
  >
  <span
- class="icon-[lucide--refresh-cw]":class="loadingModels && 'animate-spin'"
+ class="icon-[lucide--refresh-cw] w-5":class="loadingModels && 'animate-spin'"
  />
- </Button>
- <Button
+ </button>
+ <button
  v-if="getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.has_value"
- variant="outline"
- class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ class="btn btn-secondary":disabled="saving"
  @click="removeSetting(SettingKey.ANTHROPIC_MODEL)"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
+ <span class="icon-[lucide--trash-2]" />
  删除
- </Button>
+ </button>
  </div>
  <p v-if="getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value" class="text-sm text-muted-foreground">
  当前值: {{ getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value }}
@@ -646,15 +606,14 @@ onMounted( => {
  @input="onGitProxyInput"
  />
  </div>
- <Button
+ <button
  v-if="getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.has_value"
- variant="outline"
- class=" hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="saving"
+ class="btn btn-secondary":disabled="saving"
  @click="removeSetting(SettingKey.GIT_HTTP_PROXY)"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
+ <span class="icon-[lucide--trash-2]" />
  删除
- </Button>
+ </button>
  </div>
  <p v-if="getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value" class="text-sm text-muted-foreground">
  当前值: {{ getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value }}
@@ -663,23 +622,22 @@ onMounted( => {
  </div>
  <!-- 保存按钮区域 -->
  <div class="flex justify-end gap-3 px-6 py-4 border-t border-border/50">
- <Button
+ <button
  v-if="canTest"
- variant="outline"
+ class="btn btn-secondary"
  @click="openTestDialog"
  >
- <span class="icon-[lucide--flask-conical] mr-2" />
+ <span class="icon-[lucide--flask-conical]" />
  连接测试
- </Button>
- <Button:disabled="saving || !hasUnsavedChanges"
- class="group/btn relative overflow-hidden"
+ </button>
+ <button:disabled="saving || !hasUnsavedChanges"
+ class="btn btn-primary"
  @click="saveAllSettings"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />
- <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
- <span v-else class="icon-[lucide--save] mr-2" />
+ <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin" />
+ <span v-else class="icon-[lucide--save]" />
  保存设置
- </Button>
+ </button>
  </div>
  </div>
  </section>
@@ -709,9 +667,7 @@ onMounted( => {
  <RAGEnhancementSettings />
  <!-- 飞书 IM 配置卡片 -->
  <section class="group relative">
- <!-- 悬浮光晕 -->
- <div class="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-cyan-500/20 to-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-blue-500/30 group-hover:shadow-lg group-hover:shadow-blue-500/5 transition-all duration-300">
+ <div class="card overflow-hidden">
  <!-- 卡片头部 -->
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
@@ -798,23 +754,23 @@ onMounted( => {
  </div>
  <!-- 保存按钮区域 -->
  <div class="flex justify-between px-6 py-4 border-t border-border/50">
- <Button
+ <button
  v-if="hasFeishuIMConfig"
- variant="outline"
- class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="savingFeishuIM"
+ class="btn btn-secondary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="savingFeishuIM"
  @click="removeFeishuIMConfig"
  >
- <span class="icon-[lucide--trash-2] mr-2" />
+ <span class="icon-[lucide--trash-2]" />
  删除配置
- </Button>
+ </button>
  <div v-else />
- <Button:disabled="savingFeishuIM || (!feishuAppIdDirty && !feishuAppSecretDirty)"
+ <button:disabled="savingFeishuIM || (!feishuAppIdDirty && !feishuAppSecretDirty)"
+ class="btn btn-primary"
  @click="saveFeishuIMConfig"
  >
- <span v-if="savingFeishuIM" class="icon-[lucide--loader-circle] animate-spin mr-2" />
- <span v-else class="icon-[lucide--save] mr-2" />
+ <span v-if="savingFeishuIM" class="icon-[lucide--loader-circle] animate-spin" />
+ <span v-else class="icon-[lucide--save]" />
  保存 IM 配置
- </Button>
+ </button>
  </div>
  <!-- 测试区域 -->
  <div v-if="hasFeishuIMConfig || feishuAppIdValue.trim" class="px-6 py-4 border-t border-border/50 space-y-4 bg-muted/20">
@@ -868,15 +824,14 @@ onMounted( => {
  />
  </div>
  <div class="flex items-center gap-3">
- <Button
- variant="outline"
- size="sm":disabled="testingFeishuIM"
+ <button
+ class="btn btn-secondary btn-sm":disabled="testingFeishuIM"
  @click="testFeishuIMConfig"
  >
- <span v-if="testingFeishuIM" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
- <span v-else class="icon-[lucide--send] mr-2" />
+ <span v-if="testingFeishuIM" class="icon-[lucide--loader-circle] animate-spin" />
+ <span v-else class="icon-[lucide--send]" />
  发送测试消息
- </Button>
+ </button>
  <!-- 测试结果 -->
  <div
  v-if="feishuTestResult"

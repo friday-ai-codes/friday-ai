@@ -82,8 +82,7 @@ onMounted( => {
  <template v-else-if="meData">
  <!-- 头像与基本信息 -->
  <div class="group relative">
- <div class="absolute inset-0 bg-gradient-to-r from-primary/20 via-blue-500/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 transition-all duration-300">
+ <div class="card overflow-hidden">
  <div class=" flex flex-col items-center gap-6">
  <!-- 头像 -->
  <div class="relative">
@@ -158,8 +157,7 @@ onMounted( => {
  </div>
  <!-- 项目成员关系 -->
  <div class="group relative">
- <div class="absolute inset-0 bg-gradient-to-r from-secondary/20 via-purple-500/10 to-secondary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 transition-all duration-300">
+ <div class="card overflow-hidden">
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-secondary/5 to-primary/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-open] text-2xl text-primary" />

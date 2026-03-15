@@ -3,7 +3,6 @@ import type { Invitation, SystemUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
-import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 const users = ref<SystemUser>
@@ -87,8 +86,7 @@ onMounted( => {
  <div class="space-y-8">
  <!-- 邀请新用户 -->
  <div class="group relative">
- <div class="absolute inset-0 bg-gradient-to-r from-primary/20 via-blue-500/20 to-cyan-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 transition-all duration-300">
+ <div class="card overflow-hidden">
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--user-plus] text-2xl text-primary" />
@@ -117,14 +115,14 @@ onMounted( => {
  />
  </div>
  <div class="flex items-end">
- <Button:disabled="creatingInvite"
- class="gap-2"
+ <button:disabled="creatingInvite"
+ class="btn btn-primary"
  @click="generateInviteLink"
  >
- <span v-if="creatingInvite" class="icon-[lucide--loader-2] animate-spin text-sm" />
- <span v-else class="icon-[lucide--link] text-sm" />
+ <span v-if="creatingInvite" class="icon-[lucide--loader-2] animate-spin" />
+ <span v-else class="icon-[lucide--link]" />
  生成链接
- </Button>
+ </button>
  </div>
  </div>
  <!-- 生成的邀请链接 -->
@@ -136,15 +134,13 @@ onMounted( => {
  <p class="text-xs text-muted-foreground">
  邀请链接（有效期至 {{ newInvitation ? formatDate(newInvitation.expires_at): '' }}）
  </p>
- <Button
- variant="ghost"
- size="sm"
- class=" gap-1.5 text-xs"
+ <button
+ class="btn btn-ghost btn-sm"
  @click="copyInviteLink"
  >
- <span class="icon-[lucide--copy] text-xs" />
+ <span class="icon-[lucide--copy]" />
  复制
- </Button>
+ </button>
  </div>
  <p class="text-sm font-mono break-all text-foreground/70 bg-background/50 rounded-lg ">
  {{ inviteLink }}
@@ -155,8 +151,7 @@ onMounted( => {
  </div>
  <!-- 用户列表 -->
  <div class="group relative">
- <div class="absolute inset-0 bg-gradient-to-r from-secondary/20 via-purple-500/10 to-secondary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden group-hover:border-primary/30 transition-all duration-300">
+ <div class="card overflow-hidden">
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-secondary/5 to-primary/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/10 flex items-center justify-center">
  <span class="icon-[lucide--users] text-2xl text-primary" />
@@ -203,15 +198,13 @@ onMounted( => {
  </p>
  </div>
  </div>
- <Button
+ <button
  v-if="!user.is_superuser"
- variant="outline"
- size="sm":disabled="saving"
- class="text-xs "
+ class="btn btn-secondary btn-sm":disabled="saving"
  @click="toggleUserActive(user)"
  >
  {{ user.is_active ? '禁用': '启用' }}
- </Button>
+ </button>
  </div>
  </div>
  </div>

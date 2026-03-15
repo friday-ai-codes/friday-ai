@@ -18,12 +18,13 @@ interface NavItem {
  to: string
  label: string
  icon: string
+ exact?: boolean
  requiresAdmin?: boolean
 }
 const authStore = useAuthStore
 const router = useRouter
-const route = useRoute
 const { isSystemAdmin } = usePermission
+const appVersion = __APP_VERSION__
 // 收缩状态持久化到 localStorage
 const isCollapsed = useLocalStorage('sidebar-collapsed', false)
 function toggleCollapse {
@@ -31,7 +32,7 @@ function toggleCollapse {
 }
 // 主导航项
 const mainNavItems: NavItem = [
- { to: '/', label: '首页', icon: 'lucide--home' },
+ { to: '/', label: '首页', icon: 'lucide--home', exact: true },
  { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
  { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
@@ -40,17 +41,12 @@ const mainNavItems: NavItem = [
  { to: '/runners', label: 'Runner', icon: 'lucide--server' },
  { to: '/logs', label: '日志', icon: 'lucide--file-text' },
 ]
-// 底部导航项（受权限控制）
-const bottomNavItems: NavItem = [
- { to: '/settings', label: '设置', icon: 'lucide--settings', requiresAdmin: true },
+// 管理导航项（仅 admin 可见）
+const adminNavItems: NavItem = [
+ { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
+ { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
+ { to: '/admin/oidc', label: 'OIDC 认证', icon: 'lucide--shield-check' },
 ]
-// 判断当前路由是否激活
-function isActive(path: string) {
- if (path === '/') {
- return route.path === '/'
- }
- return route.path.startsWith(path)
-}
 // 退出登录
 async function handleLogout {
  await authStore.logout
@@ -60,125 +56,103 @@ async function handleLogout {
 <template>
  <TooltipProvider:delay-duration="300">
  <aside
- class="sticky top-0 relative flex flex-col h-screen shrink-0 border-r border-border/50 bg-card/80 backdrop-blur-xl transition-all duration-300 ease-in-out":class="isCollapsed ? 'w-16': 'w-60'"
+ class="sidebar-s2a sticky top-0 flex flex-col h-screen shrink-0 transition-all duration-300 ease-in-out":class="isCollapsed ? 'w-[72px]': 'w-64'"
  >
  <!-- 顶部区域：Logo + 收缩按钮 -->
  <div
- class="flex items-center justify-center border-b border-border/40":class="isCollapsed ? 'px-2': 'px-3'"
+ class="flex items-center border-b border-border/40":class="isCollapsed ? 'justify-center px-2': 'px-5 gap-3'"
  >
  <RouterLink
  to="/"
  class="group flex items-center gap-2.5 overflow-hidden"
  >
- <div class="relative shrink-0">
- <div class="absolute inset-0 bg-gradient-to-br from-primary to-primary/50 rounded-lg blur-md opacity-50 group-hover:opacity-75 transition-opacity" />
- <div class="relative .5 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
- <span class="icon-[lucide--bot] text-lg text-white" />
+ <!-- Logo 带 glow 效果 -->
+ <div class="relative shrink-0 flex items-center justify-center w-9 rounded-xl overflow-hidden shadow-[0_0_12px_rgba(20,184,166,0.3)]">
+ <div class="absolute inset-0 gradient-primary" />
+ <span class="icon-[lucide--bot] text-lg text-white relative z-10" />
  </div>
- </div>
- <span
- v-if="!isCollapsed"
- class="text-lg font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent whitespace-nowrap"
- >
+ <div v-if="!isCollapsed" class="flex flex-col">
+ <span class="text-lg font-bold text-foreground whitespace-nowrap">
  Friday AI
  </span>
+ <span class="text-[10px] text-muted-foreground leading-none">v{{ appVersion }}</span>
+ </div>
  </RouterLink>
  <button
  v-if="!isCollapsed"
- class="ml-auto .5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+ class="ml-auto .5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
  @click="toggleCollapse"
  >
  <span class="icon-[lucide--panel-left-close] text-lg" />
  </button>
  </div>
  <!-- 主导航区域 -->
- <nav class="flex-1 overflow-y-auto py-2 px-2">
+ <nav class="flex-1 overflow-y-auto py-3 scrollbar-hide":class="isCollapsed ? 'px-2': 'px-3'">
  <template
  v-for="item in mainNavItems":key="item.to"
  >
+ <RouterLink v-slot="{ isActive, isExactActive, navigate, href }":to="item.to" custom>
  <Tooltip v-if="isCollapsed">
  <TooltipTrigger as-child>
- <RouterLink:to="item.to"
- class="relative flex items-center justify-center rounded-lg transition-all duration-200 mb-0.5":class="[
- isActive(item.to)
- ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
- ]"
+ <a:href="href"
+ class="flex items-center justify-center rounded-xl transition-all duration-200 mb-0.5":class="(item.exact ? isExactActive: isActive) ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
+ @click="navigate"
  >
- <!-- 激活指示条 -->
- <div
- v-if="isActive(item.to)"
- class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
- />
  <span class="text-lg":class="[`icon-[${item.icon}]`]" />
- </RouterLink>
+ </a>
  </TooltipTrigger>
  <TooltipContent side="right">
  {{ item.label }}
  </TooltipContent>
  </Tooltip>
- <RouterLink
- v-else:to="item.to"
- class="relative flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5":class="[
- isActive(item.to)
- ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
- ]"
+ <a
+ v-else:href="href"
+ class="sidebar-s2a-link mb-0.5":class="{ 'sidebar-s2a-link-active': item.exact ? isExactActive: isActive }"
+ @click="navigate"
  >
- <!-- 激活指示条 -->
- <div
- v-if="isActive(item.to)"
- class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
- />
  <span class="text-lg shrink-0":class="[`icon-[${item.icon}]`]" />
  <span class="truncate">{{ item.label }}</span>
+ </a>
  </RouterLink>
+ </template>
+ <!-- 管理区域（仅 admin 可见） -->
+ <template v-if="isSystemAdmin">
+ <div class="my-2 border-t border-border/40 mx-1" />
+ <template
+ v-for="item in adminNavItems":key="item.to"
+ >
+ <RouterLink v-slot="{ isActive, isExactActive, navigate, href }":to="item.to" custom>
+ <Tooltip v-if="isCollapsed">
+ <TooltipTrigger as-child>
+ <a:href="href"
+ class="flex items-center justify-center rounded-xl transition-all duration-200 mb-0.5":class="(item.exact ? isExactActive: isActive) ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
+ @click="navigate"
+ >
+ <span class="text-lg":class="[`icon-[${item.icon}]`]" />
+ </a>
+ </TooltipTrigger>
+ <TooltipContent side="right">
+ {{ item.label }}
+ </TooltipContent>
+ </Tooltip>
+ <a
+ v-else:href="href"
+ class="sidebar-s2a-link mb-0.5":class="{ 'sidebar-s2a-link-active': item.exact ? isExactActive: isActive }"
+ @click="navigate"
+ >
+ <span class="text-lg shrink-0":class="[`icon-[${item.icon}]`]" />
+ <span class="truncate">{{ item.label }}</span>
+ </a>
+ </RouterLink>
+ </template>
  </template>
  </nav>
- <!-- 底部导航区域（设置等受权限控制的项） -->
- <div class="px-2 pb-1">
- <template
- v-for="item in bottomNavItems":key="item.to"
- >
- <template v-if="!item.requiresAdmin || isSystemAdmin">
- <Tooltip v-if="isCollapsed">
- <TooltipTrigger as-child>
- <RouterLink:to="item.to"
- class="relative flex items-center justify-center rounded-lg transition-all duration-200 mb-0.5":class="[
- isActive(item.to)
- ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
- ]"
- >
- <div
- v-if="isActive(item.to)"
- class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
- />
- <span class="text-lg":class="[`icon-[${item.icon}]`]" />
- </RouterLink>
- </TooltipTrigger>
- <TooltipContent side="right">
- {{ item.label }}
- </TooltipContent>
- </Tooltip>
- <RouterLink
- v-else:to="item.to"
- class="relative flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-all duration-200 mb-0.5":class="[
- isActive(item.to)
- ? 'bg-primary/10 text-primary': 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
- ]"
- >
- <div
- v-if="isActive(item.to)"
- class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
- />
- <span class="text-lg shrink-0":class="[`icon-[${item.icon}]`]" />
- <span class="truncate">{{ item.label }}</span>
- </RouterLink>
- </template>
- </template>
- <!-- 收起模式下的展开按钮 -->
- <Tooltip v-if="isCollapsed">
+ <!-- 底部区域：收缩按钮 -->
+ <div v-if="isCollapsed":class="isCollapsed ? 'px-2': 'px-3'" class="pb-1">
+ <Tooltip>
  <TooltipTrigger as-child>
  <button
- class="flex items-center justify-center w-full rounded-lg transition-all duration-200 mb-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+ class="sidebar-s2a-link w-full justify-center mb-0.5"
  @click="toggleCollapse"
  >
  <span class="icon-[lucide--panel-left-open] text-lg" />
@@ -190,25 +164,25 @@ async function handleLogout {
  </Tooltip>
  </div>
  <!-- 分隔线 -->
- <div class="mx-2 border-t border-border/40" />
+ <div class="mx-3 border-t border-border/40" />
  <!-- 底部用户区 -->
- <div class="px-2 py-2">
+ <div:class="isCollapsed ? 'px-2': 'px-3'" class="py-2">
  <DropdownMenu>
  <DropdownMenuTrigger as-child>
  <button
- class="flex items-center w-full gap-3 px-2 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors":class="isCollapsed ? 'justify-center': ''"
+ class="sidebar-s2a-link w-full":class="isCollapsed ? 'justify-center': ''"
  >
  <!-- 用户头像 -->
  <div class="relative shrink-0">
  <img
  v-if="authStore.gravatarUrl":src="authStore.gravatarUrl":alt="authStore.displayName"
- class="w-7 rounded-full ring-1 ring-border/50"
+ class="w-8 rounded-xl ring-1 ring-border/50 object-cover"
  >
  <div
  v-else
- class="w-7 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center ring-1 ring-border/50"
+ class="w-8 rounded-xl flex items-center justify-center text-sm font-medium text-white gradient-primary"
  >
- <span class="icon-[lucide--user] text-sm text-primary" />
+ {{ (authStore.displayName || '用')[0].toUpperCase }}
  </div>
  </div>
  <!-- 展开模式下显示用户名 -->
@@ -219,25 +193,35 @@ async function handleLogout {
  </button>
  </DropdownMenuTrigger>
  <DropdownMenuContent:side="isCollapsed ? 'right': 'top'":align="isCollapsed ? 'start': 'start'"
- class="w-48"
+ class="w-56"
  >
- <!-- 用户信息头 -->
- <div class="px-2 py-1.5">
- <p class="text-sm font-medium">{{ authStore.displayName || '用户' }}</p>
- <p class="text-xs text-muted-foreground">{{ authStore.user?.username }}</p>
+ <!-- 用户信息头 — sub2api 风格 -->
+ <div class="px-3 py-3 flex items-center gap-3">
+ <div class="shrink-0">
+ <img
+ v-if="authStore.gravatarUrl":src="authStore.gravatarUrl":alt="authStore.displayName"
+ class="w-10 rounded-xl object-cover"
+ >
+ <div
+ v-else
+ class="w-10 rounded-xl flex items-center justify-center text-sm font-semibold text-white gradient-primary"
+ >
+ {{ (authStore.displayName || '用')[0].toUpperCase }}
+ </div>
+ </div>
+ <div class="min-w-0">
+ <p class="text-sm font-semibold text-foreground truncate">{{ authStore.displayName || '用户' }}</p>
+ <p class="text-xs text-muted-foreground truncate">{{ authStore.user?.username }}</p>
+ </div>
  </div>
  <DropdownMenuSeparator />
  <DropdownMenuItem class="cursor-pointer" @click="router.push('/profile')">
- <span class="icon-[lucide--user] mr-2" />
+ <span class="icon-[lucide--user] mr-2 text-muted-foreground" />
  个人资料
- </DropdownMenuItem>
- <DropdownMenuItem class="cursor-pointer" @click="router.push('/settings/account')">
- <span class="icon-[lucide--user-cog] mr-2" />
- 账号设置
  </DropdownMenuItem>
  <DropdownMenuSeparator />
  <DropdownMenuItem
- class="cursor-pointer text-destructive focus:text-destructive"
+ class="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/5"
  @click="handleLogout"
  >
  <span class="icon-[lucide--log-out] mr-2" />

@@ -107,10 +107,8 @@ const platformIcons: Record<string, string> = {
  v-for="repository in repositoriesStore.repositories":key="repository.id":to="`/repositories/${repository.id}`"
  class="group relative"
  >
- <!-- 悬浮光晕 -->
- <div class="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-purple-500 rounded-2xl opacity-0 group-hover:opacity-20 blur-lg transition-opacity duration-500" />
  <!-- 卡片主体 -->
- <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg transition-all duration-300">
+ <div class="card card-interactive h-full ">
  <!-- 头部 -->
  <div class="flex items-start justify-between mb-4">
  <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 flex items-center justify-center">
