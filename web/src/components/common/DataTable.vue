@@ -12,7 +12,7 @@ import {
  type VisibilityState,
 } from '@tanstack/vue-table'
 import { useLocalStorage } from '@vueuse/core'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import EmptyState from '~/components/common/EmptyState.vue'
 import Button from '~/components/ui/button/Button.vue'
 import {
@@ -20,6 +20,13 @@ import {
  PopoverContent,
  PopoverTrigger,
 } from '~/components/ui/popover'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 import {
  Skeleton,
 } from '~/components/ui/skeleton'
@@ -36,6 +43,7 @@ const props = defineProps<{
  columns: ColumnDef<T>
  tableId: string
  pageSize?: number
+ pageSizeOptions?: number
  loading?: boolean
  onRowClick?: (row: T) => void
 }>
@@ -82,6 +90,36 @@ const table = useVueTable({
  pagination.value = u instanceof Function ? u(pagination.value): u
  },
 })
+// 每页条数选择（字符串适配 Select 组件）
+const pageSizeStr = ref(String(props.pageSize ?? 20))
+const effectivePageSizeOptions = computed( => props.pageSizeOptions ?? [10, 20, 50, 100])
+// 分页信息
+const totalRows = computed( => table.getFilteredRowModel.rows.length)
+const pageCount = computed( => table.getPageCount)
+const currentPage = computed( => table.getState.pagination.pageIndex + 1)
+const rangeStart = computed( => totalRows.value === 0 ? 0: (currentPage.value - 1) * pagination.value.pageSize + 1)
+const rangeEnd = computed( => Math.min(currentPage.value * pagination.value.pageSize, totalRows.value))
+/** 生成带省略号的页码数组，例如 [1, '...', 4, 5, 6, '...', 20] */
+const visiblePages = computed<(number | '...')>( => {
+ const total = pageCount.value
+ const current = currentPage.value
+ if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+ const pages: (number | '...') = [1]
+ if (current > 3) pages.push('...')
+ const start = Math.max(2, current - 1)
+ const end = Math.min(total - 1, current + 1)
+ for (let i = start; i <= end; i++) pages.push(i)
+ if (current < total - 2) pages.push('...')
+ pages.push(total)
+ return pages
+})
+function goToPage(page: number) {
+ pagination.value = { ...pagination.value, pageIndex: page - 1 }
+}
+function handlePageSizeChange(val: string) {
+ pageSizeStr.value = val
+ pagination.value = { pageIndex: 0, pageSize: Number(val) }
+}
 /**
  * 从 ColumnDef 中提取人类可读的列名，用于列可见性 Dropdown。
  * header 为字符串时直接使用，否则 fallback 到 column.id。
@@ -192,26 +230,53 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  </Table>
  <!-- 分页区域 -->
  <div class="flex items-center justify-between px-4 py-3 border-t border-border/50">
+ <!-- 左侧：显示范围 + 每页条数 -->
+ <div class="flex items-center gap-4">
  <span class="text-sm text-muted-foreground">
- 第 {{ table.getState.pagination.pageIndex + 1 }} 页 /
- 共 {{ table.getFilteredRowModel.rows.length }} 条
+ 显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ totalRows }} 条结果
  </span>
  <div class="flex items-center gap-2">
+ <span class="text-sm text-muted-foreground">每页:</span>
+ <Select:model-value="pageSizeStr" @update:model-value="handlePageSizeChange">
+ <SelectTrigger class=" w-[70px]">
+ <SelectValue />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem v-for="size in effectivePageSizeOptions":key="size":value="String(size)">
+ {{ size }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
+ </div>
+ <!-- 右侧：页码按钮 -->
+ <div v-if="pageCount > 1" class="flex items-center gap-1">
  <Button
  variant="outline"
- size="sm":disabled="!table.getCanPreviousPage"
+ size="icon"
+ class=" w-8":disabled="!table.getCanPreviousPage"
  @click="table.previousPage"
  >
- <span class="icon-[lucide--chevron-left]" />
- 上一页
+ <span class="icon-[lucide--chevron-left] w-4 " />
  </Button>
+ <template v-for="page in visiblePages":key="page">
+ <span v-if="page === '...'" class="px-1 text-sm text-muted-foreground">...</span>
+ <Button
+ v-else:variant="page === currentPage ? 'default': 'outline'"
+ size="icon"
+ class=" w-8 text-xs"
+ @click="goToPage(page)"
+ >
+ {{ page }}
+ </Button>
+ </template>
  <Button
  variant="outline"
- size="sm":disabled="!table.getCanNextPage"
+ size="icon"
+ class=" w-8":disabled="!table.getCanNextPage"
  @click="table.nextPage"
  >
- 下一页
- <span class="icon-[lucide--chevron-right]" />
+ <span class="icon-[lucide--chevron-right] w-4 " />
  </Button>
  </div>
  </div>
