@@ -47,8 +47,8 @@ router.beforeEach(async (to, from, next) => {
  await authStore.initAuth
  }
  // 公开页面和强制修改密码页面
- const publicPages = ['/login', '/force-change-password', '/403', '/oidc/callback']
- const authRequired = !publicPages.includes(to.path)
+ const publicPages = ['/login', '/force-change-password', '/403', '/oidc/callback', '/invite']
+ const authRequired = !publicPages.some(p => to.path === p || to.path.startsWith(`${p}/`))
  if (authRequired && !authStore.isAuthenticated) {
  // 需要认证但未登录 -> 跳转登录页
  return next({ path: '/login', query: { redirect: to.fullPath } })

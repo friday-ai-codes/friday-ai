@@ -30,6 +30,8 @@ onMounted(async => {
  // 获取用户信息
  await authStore.fetchCurrentUser
  authStore.isAuthenticated = true
+ // 获取项目成员信息，确保权限系统立即可用
+ await authStore.fetchMe
  // 跳转到目标页面
  router.replace(redirectPath)
  }
