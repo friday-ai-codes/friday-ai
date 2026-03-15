@@ -47,7 +47,7 @@ router.beforeEach(async (to, from, next) => {
  await authStore.initAuth
  }
  // 公开页面和强制修改密码页面
- const publicPages = ['/login', '/force-change-password']
+ const publicPages = ['/login', '/force-change-password', '/403', '/oidc/callback']
  const authRequired = !publicPages.includes(to.path)
  if (authRequired && !authStore.isAuthenticated) {
  // 需要认证但未登录 -> 跳转登录页
@@ -64,6 +64,14 @@ router.beforeEach(async (to, from, next) => {
  if (authStore.isAuthenticated && authStore.mustChangePassword && to.path !== '/force-change-password') {
  return next('/force-change-password')
  }
+ // 检查管理员专属页面
+ if (to.meta.requiresAdmin && !authStore.isAdmin) {
+ return next('/403')
+ }
  next
+})
+// 监听 403 事件，跳转无权访问页面
+window.addEventListener('auth:forbidden', => {
+ router.push('/403')
 })
 app.mount('#app')
