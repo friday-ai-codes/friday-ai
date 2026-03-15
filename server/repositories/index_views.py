@@ -189,20 +189,55 @@ class CodeSearchView(APIView):
  top_k: int,
  filters: dict[str, Any],
  ) -> list[dict[str, Any]]:
- """Execute vector search."""
+ """Execute vector search with optional hybrid search and reranker."""
+ from services.reranker import RerankerService
+ from system.models import SettingKeys, SystemSetting
+ # 检查 reranker 是否启用，决定初筛数量
+ reranker_enabled = await RerankerService.is_enabled
+ fetch_k = min(top_k * 3, 50) if reranker_enabled else top_k
  # Generate query embedding (async)
  query_embedding = await EmbeddingService.generate_embedding(query)
  if not query_embedding:
  return
+ # 检查是否启用 hybrid search
+ hybrid_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.HYBRID_SEARCH_ENABLED
+ ).afirst
+ hybrid_enabled = bool(hybrid_setting and hybrid_setting.value == "true")
+ if hybrid_enabled:
+ # 生成 sparse query vector
+ from services.sparse_encoder import SparseEncoderService
+ sparse_vector = await sync_to_async(SparseEncoderService.encode)(query)
+ # KEEP: Qdrant SDK 同步限制
+ search_results = await sync_to_async(QdrantService.hybrid_search)(
+ repository_id,
+ query_embedding,
+ sparse_vector,
+ top_k=fetch_k,
+ filters=filters,
+ )
+ else:
  # KEEP: Qdrant SDK 同步限制
  search_results = await sync_to_async(QdrantService.search)(
  repository_id,
  query_embedding,
- top_k=top_k,
+ top_k=fetch_k,
  filters=filters,
  )
  if not search_results:
  return
+ # Reranker 精排
+ if reranker_enabled and len(search_results) > top_k:
+ documents = [r["payload"].get("content", "") for r in search_results]
+ reranked = await RerankerService.rerank(query, documents, top_n=top_k)
+ reranked_results =
+ for item in reranked:
+ idx = item["index"]
+ if idx < len(search_results):
+ entry = search_results[idx]
+ entry["score"] = item["relevance_score"]
+ reranked_results.append(entry)
+ search_results = reranked_results
  # Build results
  results =
  for r in search_results:
@@ -279,6 +314,35 @@ class EmbeddingHealthView(APIView):
  health = await EmbeddingService.test_connection_with_config(
  api_url, model, api_key, int(dimension) if dimension else None
  )
+ return Response(health)
+class RerankerHealthView(APIView):
+ """Check Reranker API health."""
+ async def get(self, request):
+ """使用已保存配置测试 reranker 连接。"""
+ from services.reranker import RerankerService
+ health = await RerankerService.test_connection
+ return Response(health)
+ async def post(self, request):
+ """使用提供的配置测试 reranker（保存前测试）。"""
+ from common.encryption import decrypt_value
+ from services.reranker import RerankerService
+ from system.models import SettingKeys, SystemSetting
+ api_url = request.data.get("api_url")
+ model = request.data.get("model", "BAAI/bge-reranker-v2-m3")
+ api_key = request.data.get("api_key")
+ if not api_url:
+ return Response({"status": "error", "message": "Reranker API URL is required"})
+ # 未提供 api_key 时，尝试使用已保存的
+ if not api_key:
+ api_key_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.RERANKER_API_KEY
+ ).afirst
+ if api_key_setting and api_key_setting.value:
+ if api_key_setting.is_encrypted:
+ api_key = decrypt_value(api_key_setting.value)
+ else:
+ api_key = api_key_setting.value
+ health = await RerankerService.test_connection_with_config(api_url, model, api_key)
  return Response(health)
 # ---------------------------------------------------------------------------
 # Phase: 索引可观测性 API

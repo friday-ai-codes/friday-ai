@@ -167,6 +167,13 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
+ '/projects/[id]/repositories': RouteRecordInfo<
+ '/projects/[id]/repositories',
+ '/projects/:id/repositories',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
  '/repositories/': RouteRecordInfo<
  '/repositories/',
  '/repositories',
@@ -372,6 +379,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/projects/[id]/members.vue': {
  routes:
  | '/projects/[id]/members'
+ views:
+ | never
+ }
+ 'src/pages/projects/[id]/repositories.vue': {
+ routes:
+ | '/projects/[id]/repositories'
  views:
  | never
  }
