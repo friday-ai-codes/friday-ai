@@ -5,7 +5,6 @@ import PageContainer from '~/components/layout/PageContainer.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '仓库管理 - Friday AI',
@@ -72,17 +71,16 @@ const platformIcons: Record<string, string> = {
  <!-- 页面标题 -->
  <PageHeader
  icon="lucide--git-branch"
- icon-gradient="from-violet-500/20 to-purple-500/10"
- icon-color="text-violet-500"
+ icon-gradient="from-teal-500/20 to-cyan-500/10"
+ icon-color="text-teal-500"
  title="仓库管理"
  description="管理您的 Git 仓库和凭证配置"
  >
  <template #actions>
- <Button class="group relative overflow-hidden" @click="openCreateRepository">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span class="icon-[lucide--plus] mr-2" />
+ <button class="btn btn-primary" @click="openCreateRepository">
+ <span class="icon-[lucide--plus]" />
  新建仓库
- </Button>
+ </button>
  </template>
  </PageHeader>
  <!-- 加载状态 -->
@@ -94,7 +92,7 @@ const platformIcons: Record<string, string> = {
  title="暂无仓库"
  description="创建您的第一个仓库，关联到项目以开始使用"
  action-label="新建仓库"
- gradient="from-violet-500/20 to-purple-500/20"
+ gradient="from-teal-500/20 to-cyan-500/20"
  @action="$router.push('/repositories/new')"
  />
  <!-- 仓库列表 -->
@@ -107,8 +105,8 @@ const platformIcons: Record<string, string> = {
  <div class="card card-interactive h-full ">
  <!-- 头部 -->
  <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 flex items-center justify-center">
- <span class="text-2xl text-violet-500":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
+ <div class=".5 rounded-xl bg-gradient-to-br from-teal-500/10 to-cyan-500/10 flex items-center justify-center">
+ <span class="text-2xl text-teal-500":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
  </div>
  <Badge:variant="repository.has_credential ? 'default': 'secondary'"
  class="text-xs"
@@ -144,23 +142,21 @@ const platformIcons: Record<string, string> = {
  </div>
  <!-- 操作按钮 -->
  <div class="flex items-center gap-2 mt-6 pt-4 border-t border-border/50">
- <Button variant="outline" size="sm" class="flex-1 group/btn" @click.prevent>
- <span class="icon-[lucide--eye] mr-1.5 group-hover/btn:scale-110 transition-transform" />
+ <button class="btn btn-secondary btn-sm flex-1" @click.prevent>
+ <span class="icon-[lucide--eye]" />
  查看详情
- </Button>
+ </button>
  <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
- <Button variant="ghost" size="sm" title="凭证管理">
+ <button class="btn btn-ghost btn-icon btn-sm" title="凭证管理">
  <span class="icon-[lucide--key]" />
- </Button>
+ </button>
  </RouterLink>
- <Button
- variant="ghost"
- size="sm"
- class="hover:bg-destructive/10 hover:text-destructive"
+ <button
+ class="btn btn-ghost btn-icon btn-sm hover:!bg-red-50 hover:!text-red-500"
  @click.prevent="confirmDelete(repository.id)"
  >
  <span class="icon-[lucide--trash-2]" />
- </Button>
+ </button>
  </div>
  </div>
  </RouterLink>
