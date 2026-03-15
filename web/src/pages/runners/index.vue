@@ -145,7 +145,7 @@ const columns: ColumnDef<Runner> = [
 ]
 </script>
 <template>
- <PageContainer>
+ <PageContainer show-background>
  <!-- 页头 -->
  <PageHeader
  icon="lucide--server"

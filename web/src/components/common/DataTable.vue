@@ -16,13 +16,10 @@ import { ref } from 'vue'
 import EmptyState from '~/components/common/EmptyState.vue'
 import Button from '~/components/ui/button/Button.vue'
 import {
- DropdownMenu,
- DropdownMenuCheckboxItem,
- DropdownMenuContent,
- DropdownMenuLabel,
- DropdownMenuSeparator,
- DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu'
+ Popover,
+ PopoverContent,
+ PopoverTrigger,
+} from '~/components/ui/popover'
 import {
  Skeleton,
 } from '~/components/ui/skeleton'
@@ -97,7 +94,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
 }
 </script>
 <template>
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl overflow-hidden">
+ <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl overflow-hidden shadow-[var(--shadow-glass)]">
  <!-- 工具栏：搜索框 + #filters slot + 列可见性按钮 -->
  <div class="flex items-center justify-between gap-3 ">
  <div class="flex items-center gap-3 flex-1">
@@ -111,24 +108,29 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  <slot name="filters" />
  </div>
  <!-- 列可见性控件 -->
- <DropdownMenu>
- <DropdownMenuTrigger as-child>
+ <Popover>
+ <PopoverTrigger as-child>
  <Button variant="outline" size="sm" class="gap-1.5">
  <span class="icon-[lucide--columns]" />
  列
  </Button>
- </DropdownMenuTrigger>
- <DropdownMenuContent align="end">
- <DropdownMenuLabel>显示/隐藏列</DropdownMenuLabel>
- <DropdownMenuSeparator />
- <DropdownMenuCheckboxItem
- v-for="column in table.getAllLeafColumns.filter(c => c.getCanHide)":key="column.id":checked="column.getIsVisible"
- @update:checked="column.toggleVisibility($event)"
+ </PopoverTrigger>
+ <PopoverContent align="end" class="w-48 ">
+ <p class="px-2 py-1.5 text-sm font-semibold text-muted-foreground">显示/隐藏列</p>
+ <div class="border-t border-border/50 my-1" />
+ <label
+ v-for="column in table.getAllLeafColumns.filter(c => c.getCanHide)":key="column.id"
+ class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+ >
+ <input
+ type="checkbox":checked="column.getIsVisible"
+ class="accent-primary w-4 rounded"
+ @change="column.toggleVisibility(($event.target as HTMLInputElement).checked)"
  >
  {{ getColumnLabel(column) }}
- </DropdownMenuCheckboxItem>
- </DropdownMenuContent>
- </DropdownMenu>
+ </label>
+ </PopoverContent>
+ </Popover>
  </div>
  <!-- 表格区域 -->
  <Table>
