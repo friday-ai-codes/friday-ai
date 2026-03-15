@@ -37,8 +37,11 @@ export const codingTaskStatusConfig: Record<string, StatusConfig> = {
 // 索引状态
 export const indexStatusConfig: Record<string, StatusConfig> = {
  pending: { label: '等待中', icon: 'lucide--clock', variant: 'muted' },
+ not_indexed: { label: '未索引', icon: 'lucide--clock', variant: 'muted' },
  running: { label: '运行中', icon: 'lucide--loader-2', variant: 'info', animate: true },
+ indexing: { label: '索引中', icon: 'lucide--loader-2', variant: 'info', animate: true },
  completed: { label: '已完成', icon: 'lucide--check-circle', variant: 'success' },
+ indexed: { label: '已索引', icon: 'lucide--check-circle', variant: 'success' },
  failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
 }
 // 触发日志状态

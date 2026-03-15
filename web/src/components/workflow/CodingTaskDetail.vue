@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 interface Props {
  task: CodingTask | null
 }
@@ -24,34 +25,6 @@ const emit = defineEmits<{
 }>
 const feedback = ref('')
 const processing = ref(false)
-// 状态颜色映射
-const statusColors: Record<string, string> = {
- pending: 'bg-gray-100 text-gray-700',
- planning: 'bg-blue-100 text-blue-700',
- plan_review: 'bg-yellow-100 text-yellow-700',
- executing: 'bg-blue-100 text-blue-700',
- code_review: 'bg-yellow-100 text-yellow-700',
- merged: 'bg-green-100 text-green-700',
- partial_success: 'bg-amber-100 text-amber-700',
- failed: 'bg-red-100 text-red-700',
-}
-// 状态中文映射
-const statusLabels: Record<string, string> = {
- pending: '待执行',
- planning: '规划中',
- plan_review: '方案评审',
- executing: '执行中',
- code_review: '代码评审',
- merged: '已合并',
- partial_success: '部分成功',
- failed: '失败',
-}
-function getStatusColor(status: string) {
- return statusColors[status] || statusColors.pending
-}
-function getStatusLabel(status: string): string {
- return statusLabels[status] || status
-}
 // 批准方案
 async function handleApprovePlan {
  if (!props.task)
@@ -130,9 +103,7 @@ async function handleRejectCode {
  </CardTitle>
  </div>
  <div class="flex items-center gap-2">
- <Badge:class="getStatusColor(task.status)">
- {{ getStatusLabel(task.status) }}
- </Badge>
+ <StatusBadge type="codingTask":status="task.status" />
  <Button variant="ghost" size="icon" class=" w-7" @click="emit('close')">
  <X class="w-4 " />
  </Button>

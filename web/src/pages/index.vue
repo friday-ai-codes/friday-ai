@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
-import { Badge } from '~/components/ui/badge'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 useHead({
  title: '首页 - Friday AI',
 })
@@ -81,14 +81,6 @@ const quickActions = [
  iconBg: 'stat-icon-emerald',
  },
 ]
-// 执行状态配置
-const statusConfig: Record<string, { label: string, color: string }> = {
- pending: { label: '等待中', color: 'bg-gray-100 text-gray-700' },
- running: { label: '运行中', color: 'bg-blue-100 text-blue-700' },
- completed: { label: '已完成', color: 'bg-emerald-100 text-emerald-700' },
- failed: { label: '失败', color: 'bg-red-100 text-red-700' },
- waiting_approval: { label: '待审批', color: 'bg-amber-100 text-amber-700' },
-}
 // 格式化日期
 function formatDate(dateStr: string) {
  const date = new Date(dateStr)
@@ -231,9 +223,7 @@ function formatDate(dateStr: string) {
  </p>
  </div>
  <!-- 状态 -->
- <Badge:class="statusConfig[execution.status]?.color || statusConfig.pending.color" class="text-xs">
- {{ statusConfig[execution.status]?.label || execution.status }}
- </Badge>
+ <StatusBadge type="execution":status="execution.status" size="sm" />
  <!-- 箭头 -->
  <span class="icon-[lucide--chevron-right] text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
  </RouterLink>

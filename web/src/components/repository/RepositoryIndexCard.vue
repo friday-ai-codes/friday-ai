@@ -3,9 +3,9 @@ import type { IndexStatusResponse } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -14,26 +14,6 @@ const indexStatus = ref<IndexStatusResponse | null>(null)
 const triggering = ref(false)
 const deleting = ref(false)
 let pollInterval: ReturnType<typeof setInterval> | null = null
-// 索引状态标签
-const statusLabels: Record<IndexStatus, string> = {
- [IndexStatus.NOT_INDEXED]: '未索引',
- [IndexStatus.INDEXING]: '索引中',
- [IndexStatus.INDEXED]: '已索引',
- [IndexStatus.FAILED]: '索引失败',
-}
-// 索引状态颜色
-const statusVariants = computed( => {
- switch (indexStatus.value?.index_status) {
- case IndexStatus.INDEXED:
- return 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
- case IndexStatus.INDEXING:
- return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
- case IndexStatus.FAILED:
- return 'bg-destructive/10 text-destructive border-destructive/20'
- default:
- return 'bg-muted text-muted-foreground border-border'
- }
-})
 // 加载索引状态
 async function loadIndexStatus {
  try {
@@ -144,13 +124,7 @@ onUnmounted( => {
  </CardTitle>
  <CardDescription>向量化代码库用于语义搜索</CardDescription>
  </div>
- <Badge v-if="indexStatus":class="statusVariants" variant="outline">
- <span
- v-if="indexStatus.index_status === IndexStatus.INDEXING"
- class="icon-[lucide--loader-circle] animate-spin mr-1.5"
- />
- {{ statusLabels[indexStatus.index_status] }}
- </Badge>
+ <StatusBadge v-if="indexStatus" type="index":status="indexStatus.index_status" />
  </CardHeader>
  <CardContent class="pt-6">
  <!-- 加载状态 -->

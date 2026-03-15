@@ -3,6 +3,7 @@ import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import {
  Collapsible,
  CollapsibleContent,
@@ -17,36 +18,6 @@ defineProps<{
 // 折叠状态
 const webhookExpanded = ref(false)
 const workItemExpanded = ref(false)
-// 获取状态颜色
-function getStatusVariant(status: TriggerLogStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
- switch (status) {
- case 'accepted':
- return 'default'
- case 'ignored':
- return 'secondary'
- case 'error':
- return 'destructive'
- case 'duplicate':
- return 'outline'
- default:
- return 'outline'
- }
-}
-// 获取状态标签
-function getStatusLabel(status: TriggerLogStatus): string {
- switch (status) {
- case 'accepted':
- return '已接受'
- case 'ignored':
- return '已忽略'
- case 'error':
- return '错误'
- case 'duplicate':
- return '重复'
- default:
- return status
- }
-}
 // 格式化日期
 function formatDate(dateStr: string) {
  const date = new Date(dateStr)
@@ -93,9 +64,7 @@ function formatDate(dateStr: string) {
  状态
  </dt>
  <dd class="mt-1">
- <Badge:variant="getStatusVariant(log.status)">
- {{ getStatusLabel(log.status) }}
- </Badge>
+ <StatusBadge type="triggerLog":status="log.status" />
  </dd>
  </div>
  <div>
