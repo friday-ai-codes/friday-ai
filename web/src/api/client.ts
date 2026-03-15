@@ -124,6 +124,19 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  if (response.status === 204) {
  return undefined as T
  }
+ // 处理 403 禁止访问
+ if (response.status === 403) {
+ let detail = '无权访问'
+ try {
+ const error: ApiErrorResponse = await response.json
+ detail = error.detail || detail
+ }
+ catch {
+ // 忽略 JSON 解析错误
+ }
+ window.dispatchEvent(new CustomEvent('auth:forbidden', { detail }))
+ throw new ApiError(403, detail)
+ }
  // 处理 401 未授权 - 尝试刷新 Token
  if (response.status === 401 && !skipAuth && !endpoint.includes('/auth/')) {
  // 如果正在刷新，等待刷新完成后重试

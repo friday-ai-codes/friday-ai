@@ -27,6 +27,13 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/403': RouteRecordInfo<
+ '/403',
+ '/403',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/analytics/': RouteRecordInfo<
  '/analytics/',
  '/analytics',
@@ -60,6 +67,13 @@ declare module 'vue-router/auto-routes' {
  '/force-change-password',
  Record<never, never>,
  Record<never, never>,
+ | never
+ >,
+ '/invite/[token]': RouteRecordInfo<
+ '/invite/[token]',
+ '/invite/:token',
+ { token: ParamValue<true> },
+ { token: ParamValue<false> },
  | never
  >,
  '/login': RouteRecordInfo<
@@ -97,6 +111,20 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
+ '/oidc/callback': RouteRecordInfo<
+ '/oidc/callback',
+ '/oidc/callback',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/profile': RouteRecordInfo<
+ '/profile',
+ '/profile',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/projects/': RouteRecordInfo<
  '/projects/',
  '/projects',
@@ -128,6 +156,13 @@ declare module 'vue-router/auto-routes' {
  '/projects/[id]/feishu': RouteRecordInfo<
  '/projects/[id]/feishu',
  '/projects/:id/feishu',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/projects/[id]/members': RouteRecordInfo<
+ '/projects/[id]/members',
+ '/projects/:id/members',
  { id: ParamValue<true> },
  { id: ParamValue<false> },
  | never
@@ -220,6 +255,12 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
+ 'src/pages/403.vue': {
+ routes:
+ | '/403'
+ views:
+ | never
+ }
  'src/pages/analytics/index.vue': {
  routes:
  | '/analytics/'
@@ -247,6 +288,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/force-change-password.vue': {
  routes:
  | '/force-change-password'
+ views:
+ | never
+ }
+ 'src/pages/invite/[token].vue': {
+ routes:
+ | '/invite/[token]'
  views:
  | never
  }
@@ -280,6 +327,18 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
+ 'src/pages/oidc/callback.vue': {
+ routes:
+ | '/oidc/callback'
+ views:
+ | never
+ }
+ 'src/pages/profile.vue': {
+ routes:
+ | '/profile'
+ views:
+ | never
+ }
  'src/pages/projects/index.vue': {
  routes:
  | '/projects/'
@@ -307,6 +366,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/projects/[id]/feishu.vue': {
  routes:
  | '/projects/[id]/feishu'
+ views:
+ | never
+ }
+ 'src/pages/projects/[id]/members.vue': {
+ routes:
+ | '/projects/[id]/members'
  views:
  | never
  }
