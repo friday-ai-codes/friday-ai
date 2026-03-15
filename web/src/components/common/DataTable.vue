@@ -134,7 +134,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
 <template>
  <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl overflow-hidden shadow-[var(--shadow-glass)]">
  <!-- 工具栏：搜索框 + #filters slot + 列可见性按钮 -->
- <div class="flex items-center justify-between gap-3 ">
+ <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/30">
  <div class="flex items-center gap-3 flex-1">
  <!-- 全局搜索框 -->
  <input
@@ -229,7 +229,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  </TableBody>
  </Table>
  <!-- 分页区域 -->
- <div class="flex items-center justify-between px-4 py-3 border-t border-border/50">
+ <div class="flex items-center justify-between px-4 py-3 border-t border-border/30">
  <!-- 左侧：显示范围 + 每页条数 -->
  <div class="flex items-center gap-4">
  <span class="text-sm text-muted-foreground">
