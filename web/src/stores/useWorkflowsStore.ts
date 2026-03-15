@@ -248,9 +248,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  params.project_id = projectId
  const data = await client.get<{ results?: Workflow }>('/workflows/', params)
  workflows.value = (data.results || data) as Workflow
+ return workflows.value
  }
  catch (e: unknown) {
  error.value = (e as Error).message
+ return
  }
  finally {
  loading.value = false

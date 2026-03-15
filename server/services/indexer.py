@@ -17,8 +17,8 @@ from system.models import SettingKeys, SystemSetting
 # KEEP: Qdrant SDK 使用同步 httpx 客户端，async 化属于独立重构项（Out of Scope）
 # Wrap sync Qdrant operations for use in async context
 @sync_to_async
-def qdrant_create_collection(repository_id: str, vector_size: int) -> bool:
- return QdrantService.create_collection(repository_id, vector_size=vector_size)
+def qdrant_create_collection(repository_id: str, vector_size: int, hybrid: bool = False) -> bool:
+ return QdrantService.create_collection(repository_id, vector_size=vector_size, hybrid=hybrid)
 @sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_get_stored_file_hashes(repository_id: str) -> dict[str, str]:
  return QdrantService.get_stored_file_hashes(repository_id)
@@ -44,6 +44,17 @@ async def update_write_progress(repository_id: str, total: int, processed: int) 
  index_write_processed=processed,
  )
 logger = structlog.get_logger(__name__)
+def _build_embedding_text(chunk: CodeChunk) -> str:
+ """构建用于 embedding 的增强文本，包含上下文信息。"""
+ parts = [chunk.context_header]
+ if chunk.imports:
+ parts.append(f"Imports: {chunk.imports[:300]}")
+ if chunk.module_docstring:
+ parts.append(f"Module: {chunk.module_docstring[:200]}")
+ if chunk.sibling_signatures:
+ parts.append(f"Siblings: {chunk.sibling_signatures[:200]}")
+ parts.append(chunk.content)
+ return "\n".join(parts)
 class GitDiffError(Exception):
  """git diff 操作失败时抛出。"""
 class DiffAction(Enum):
@@ -150,8 +161,10 @@ class IndexerService:
  key=SettingKeys.EMBEDDING_DIMENSION
  ).afirst
  vector_size = int(dimension_setting.value) if dimension_setting else 1024
+ # 检查是否启用 hybrid search
+ hybrid_enabled = await self._is_hybrid_enabled
  # Create collection
- await qdrant_create_collection(self.repository_id, vector_size)
+ await qdrant_create_collection(self.repository_id, vector_size, hybrid=hybrid_enabled)
  # Scan files
  files = scan_directory(repo_path)
  logger.info("files_scanned", count=len(files))
@@ -176,31 +189,16 @@ class IndexerService:
  async def on_embedding_progress(processed: int, total: int) -> None:
  await update_index_progress(self.repository_id, total, processed)
  # Generate embeddings
- texts_to_embed = [f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks]
+ texts_to_embed = [_build_embedding_text(chunk) for chunk in all_chunks]
  embeddings = await EmbeddingService.generate_embeddings_batch(
  texts_to_embed, on_progress=on_embedding_progress
  )
+ # 生成 sparse vectors（如果启用 hybrid）
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
  # Prepare points for Qdrant
- points =
- for i, (chunk, embedding) in enumerate(zip(all_chunks, embeddings)):
- if embedding is None:
- continue
- points.append(
- {
- "id": str(uuid.uuid4),
- "vector": embedding,
- "payload": {
- "file_path": chunk.file_path,
- "file_hash": chunk.file_hash,
- "language": chunk.language,
- "node_type": chunk.node_type,
- "start_line": chunk.start_line,
- "end_line": chunk.end_line,
- "content": chunk.content,
- "context_header": chunk.context_header,
- },
- }
- )
+ points = self._build_points(all_chunks, embeddings, sparse_vectors, hybrid_enabled)
  # Upsert to Qdrant in batches
  batch_size = 100
  total_points = len(points)
@@ -213,6 +211,7 @@ class IndexerService:
  "indexing_complete",
  repository_id=self.repository_id,
  chunks_indexed=len(points),
+ hybrid=hybrid_enabled,
  )
  return {
  "status": "success",
@@ -296,31 +295,17 @@ class IndexerService:
  async def on_embedding_progress(processed: int, total: int) -> None:
  await update_index_progress(self.repository_id, total, processed)
  texts_to_embed = [
- f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks
+ _build_embedding_text(chunk) for chunk in all_chunks
  ]
  embeddings = await EmbeddingService.generate_embeddings_batch(
  texts_to_embed, on_progress=on_embedding_progress
  )
- points =
- for chunk, embedding in zip(all_chunks, embeddings):
- if embedding is None:
- continue
- points.append(
- {
- "id": str(uuid.uuid4),
- "vector": embedding,
- "payload": {
- "file_path": chunk.file_path,
- "file_hash": chunk.file_hash,
- "language": chunk.language,
- "node_type": chunk.node_type,
- "start_line": chunk.start_line,
- "end_line": chunk.end_line,
- "content": chunk.content,
- "context_header": chunk.context_header,
- },
- }
- )
+ # 生成 sparse vectors（如果启用 hybrid）
+ hybrid_enabled = await self._is_hybrid_enabled
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
+ points = self._build_points(all_chunks, embeddings, sparse_vectors, hybrid_enabled)
  batch_size = 100
  total_points = len(points)
  await update_write_progress(self.repository_id, total_points, 0)
@@ -473,6 +458,58 @@ class IndexerService:
  FileDiff(file_path, DiffAction.DELETE, old_hash=stored_hashes[file_path])
  )
  return diffs
+ @staticmethod
+ async def _is_hybrid_enabled -> bool:
+ """检查是否启用 hybrid search。"""
+ setting = await SystemSetting.objects.filter(
+ key=SettingKeys.HYBRID_SEARCH_ENABLED
+ ).afirst
+ return bool(setting and setting.value == "true")
+ @staticmethod
+ def _generate_sparse_vectors(texts: list[str]) -> list[dict]:
+ """生成 BM25 稀疏向量（同步方法，需要 sync_to_async 调用）。"""
+ from services.sparse_encoder import SparseEncoderService
+ return SparseEncoderService.encode_batch(texts)
+ @staticmethod
+ def _build_points(
+ chunks: list[CodeChunk],
+ embeddings: list[list[float] | None],
+ sparse_vectors: list[dict] | None,
+ hybrid: bool,
+ ) -> list[dict]:
+ """构建 Qdrant points，支持 hybrid 和非 hybrid 模式。"""
+ points: list[dict] =
+ for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+ if embedding is None:
+ continue
+ payload = {
+ "file_path": chunk.file_path,
+ "file_hash": chunk.file_hash,
+ "language": chunk.language,
+ "node_type": chunk.node_type,
+ "start_line": chunk.start_line,
+ "end_line": chunk.end_line,
+ "content": chunk.content,
+ "context_header": chunk.context_header,
+ }
+ if hybrid and sparse_vectors and i < len(sparse_vectors):
+ from qdrant_client.http.models import SparseVector
+ sparse = sparse_vectors[i]
+ vector: Any = {
+ "dense": embedding,
+ "sparse": SparseVector(
+ indices=sparse["indices"],
+ values=sparse["values"],
+ ),
+ }
+ else:
+ vector = embedding
+ points.append({
+ "id": str(uuid.uuid4),
+ "vector": vector,
+ "payload": payload,
+ })
+ return points
 async def clone_and_index_repository(
  repository_id: str,
  *,

@@ -60,10 +60,12 @@ async function handleLogout {
 <template>
  <TooltipProvider:delay-duration="300">
  <aside
- class="relative flex flex-col h-screen shrink-0 border-r border-border/50 bg-card/80 backdrop-blur-xl transition-all duration-300 ease-in-out":class="isCollapsed ? 'w-16': 'w-60'"
+ class="sticky top-0 relative flex flex-col h-screen shrink-0 border-r border-border/50 bg-card/80 backdrop-blur-xl transition-all duration-300 ease-in-out":class="isCollapsed ? 'w-16': 'w-60'"
  >
  <!-- 顶部区域：Logo + 收缩按钮 -->
- <div class="flex items-center px-3 border-b border-border/40">
+ <div
+ class="flex items-center justify-center border-b border-border/40":class="isCollapsed ? 'px-2': 'px-3'"
+ >
  <RouterLink
  to="/"
  class="group flex items-center gap-2.5 overflow-hidden"
@@ -87,18 +89,6 @@ async function handleLogout {
  @click="toggleCollapse"
  >
  <span class="icon-[lucide--panel-left-close] text-lg" />
- </button>
- </div>
- <!-- 收缩模式下的展开按钮 -->
- <div
- v-if="isCollapsed"
- class="flex justify-center py-2 border-b border-border/40"
- >
- <button
- class=".5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
- @click="toggleCollapse"
- >
- <span class="icon-[lucide--panel-left-open] text-lg" />
  </button>
  </div>
  <!-- 主导航区域 -->
@@ -184,6 +174,20 @@ async function handleLogout {
  </RouterLink>
  </template>
  </template>
+ <!-- 收起模式下的展开按钮 -->
+ <Tooltip v-if="isCollapsed">
+ <TooltipTrigger as-child>
+ <button
+ class="flex items-center justify-center w-full rounded-lg transition-all duration-200 mb-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+ @click="toggleCollapse"
+ >
+ <span class="icon-[lucide--panel-left-open] text-lg" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="right">
+ 展开侧边栏
+ </TooltipContent>
+ </Tooltip>
  </div>
  <!-- 分隔线 -->
  <div class="mx-2 border-t border-border/40" />

@@ -15,6 +15,14 @@ export enum SettingKey {
  EMBEDDING_API_KEY = 'embedding_api_key',
  EMBEDDING_MODEL = 'embedding_model',
  EMBEDDING_DIMENSION = 'embedding_dimension',
+ // RAG Enhancement Settings
+ RERANKER_ENABLED = 'reranker_enabled',
+ RERANKER_API_URL = 'reranker_api_url',
+ RERANKER_API_KEY = 'reranker_api_key',
+ RERANKER_MODEL = 'reranker_model',
+ RERANKER_TOP_N = 'reranker_top_n',
+ HYBRID_SEARCH_ENABLED = 'hybrid_search_enabled',
+ HYBRID_SEARCH_ALPHA = 'hybrid_search_alpha',
  // Feishu IM Settings
  FEISHU_APP_ID = 'feishu_app_id',
  FEISHU_APP_SECRET = 'feishu_app_secret',

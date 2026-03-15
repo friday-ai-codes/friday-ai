@@ -23,7 +23,7 @@
  },
  {
  "id": "generate_plan",
- "type": "generate_plan",
+ "type": "ai_plan_generation",
  "name": "生成方案",
  "position": {"x": 250, "y": 100},
  "config": {

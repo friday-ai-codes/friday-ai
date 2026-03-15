@@ -11,6 +11,7 @@ from .index_views import (
  IndexStatusView,
  IndexTriggerView,
  QdrantHealthView,
+ RerankerHealthView,
  RepositoryCollectionHealthView,
  RepositoryWebhookView,
 )
@@ -40,6 +41,11 @@ urlpatterns = [
  "health/embedding/",
  EmbeddingHealthView.as_view,
  name="embedding-health",
+ ),
+ path(
+ "health/reranker/",
+ RerankerHealthView.as_view,
+ name="reranker-health",
  ),
  # Router URLs
  path("", include(router.urls)),

@@ -218,6 +218,22 @@ export const repositoriesApi = {
  dimension,
  })
  },
+ /**
+ * Reranker API 健康检查（使用已保存配置）
+ */
+ checkRerankerHealth: async: Promise<HealthCheckResponse> => {
+ return get<HealthCheckResponse>('/repositories/health/reranker/')
+ },
+ /**
+ * Reranker API 健康检查（使用提供的配置，保存前测试）
+ */
+ testRerankerConnection: async (apiUrl: string, model: string, apiKey?: string): Promise<HealthCheckResponse> => {
+ return post<HealthCheckResponse>('/repositories/health/reranker/', {
+ api_url: apiUrl,
+ model,
+ api_key: apiKey,
+ })
+ },
  // ==================== 连接测试 API ====================
  /**
  * 测试仓库连接（新建时使用）

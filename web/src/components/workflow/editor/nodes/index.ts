@@ -34,7 +34,19 @@ const visualOnlyTypes = Object.fromEntries(
  .filter((key) => !(key in registryTypes))
  .map((key) => [key, specialNodes[key] ?? baseNode]),
 )
-export const nodeTypes: Record<string, NodeComponent> = {
+const registeredTypes: Record<string, NodeComponent> = {
  ...registryTypes,
  ...visualOnlyTypes,
 }
+/**
+ * 使用 Proxy 为未注册的节点类型提供 fallback，
+ * 避免数据库中残留旧类型（如 generate_plan）时 Vue Flow 报 "Node type is missing" 警告。
+ */
+export const nodeTypes: Record<string, NodeComponent> = new Proxy(registeredTypes, {
+ get(target, prop, receiver) {
+ if (typeof prop === 'string' && !(prop in target)) {
+ return baseNode
+ }
+ return Reflect.get(target, prop, receiver)
+ },
+})

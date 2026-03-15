@@ -90,8 +90,14 @@ class QdrantService:
  cls,
  repository_id: str,
  vector_size: int = 1024,
+ hybrid: bool = False,
  ) -> bool:
- """Create a collection for repository code index."""
+ """Create a collection for repository code index.
+ Args:
+ repository_id: Repository ID
+ vector_size: Dense vector dimension
+ hybrid: 是否启用混合检索（同时存储 dense + sparse vectors）
+ """
  client = cls.get_client
  collection_name = cls.get_collection_name(repository_id)
  try:
@@ -99,23 +105,49 @@ class QdrantService:
  collections = client.get_collections
  existing_names = [c.name for c in collections.collections]
  if collection_name in existing_names:
- # Check if vector size matches
+ # 检测现有 collection 是否需要重建（维度变化或 hybrid 模式变化）
  collection_info = client.get_collection(collection_name)
- existing_size = collection_info.config.params.vectors.size # type: ignore[union-attr]
- if existing_size != vector_size:
+ vectors_config = collection_info.config.params.vectors
+ # 判断现有 collection 类型
+ if isinstance(vectors_config, dict):
+ # Named vectors 模式（hybrid）
+ existing_hybrid = True
+ existing_size = vectors_config.get("dense", models.VectorParams(size=0, distance=models.Distance.COSINE)).size # type: ignore[union-attr]
+ else:
+ # 单向量模式（非 hybrid）
+ existing_hybrid = False
+ existing_size = vectors_config.size # type: ignore[union-attr]
+ need_recreate = existing_size != vector_size or existing_hybrid != hybrid
+ if need_recreate:
  logger.info(
- "collection_dimension_mismatch",
+ "collection_config_mismatch",
  collection_name=collection_name,
  existing_size=existing_size,
  new_size=vector_size,
+ existing_hybrid=existing_hybrid,
+ new_hybrid=hybrid,
  )
- # Delete and recreate with new dimension
  client.delete_collection(collection_name=collection_name)
- logger.info("collection_deleted_for_resize", collection_name=collection_name)
+ logger.info("collection_deleted_for_recreate", collection_name=collection_name)
  else:
  logger.info("collection_already_exists", collection_name=collection_name)
  return True
- # Create collection with dense vectors
+ # Create collection
+ if hybrid:
+ client.create_collection(
+ collection_name=collection_name,
+ vectors_config={
+ "dense": models.VectorParams(
+ size=vector_size,
+ distance=models.Distance.COSINE,
+ ),
+ },
+ sparse_vectors_config={
+ "sparse": models.SparseVectorParams,
+ },
+ )
+ logger.info("collection_created_hybrid", collection_name=collection_name)
+ else:
  client.create_collection(
  collection_name=collection_name,
  vectors_config=models.VectorParams(
@@ -123,6 +155,7 @@ class QdrantService:
  distance=models.Distance.COSINE,
  ),
  )
+ logger.info("collection_created", collection_name=collection_name)
  # Create payload index for filtering
  client.create_payload_index(
  collection_name=collection_name,
@@ -139,7 +172,6 @@ class QdrantService:
  field_name="language",
  field_schema=models.PayloadSchemaType.KEYWORD,
  )
- logger.info("collection_created", collection_name=collection_name)
  return True
  except UnexpectedResponse as e:
  logger.error("create_collection_failed", error=str(e))
@@ -387,4 +419,74 @@ class QdrantService:
  ]
  except UnexpectedResponse as e:
  logger.error("search_failed", error=str(e))
+ return
+ @classmethod
+ def hybrid_search(
+ cls,
+ repository_id: str,
+ query_dense: list[float],
+ query_sparse: dict[str, Any],
+ top_k: int = 30,
+ filters: dict[str, Any] | None = None,
+ ) -> list[dict[str, Any]]:
+ """混合检索：利用 Qdrant prefetch 机制融合 dense + sparse 结果。
+ Args:
+ repository_id: Repository ID
+ query_dense: Dense query vector
+ query_sparse: Sparse query vector {"indices": [...], "values": [...]}
+ top_k: Number of results to return
+ filters: Optional filters
+ Returns:
+ List of search results with score and payload
+ """
+ client = cls.get_client
+ collection_name = cls.get_collection_name(repository_id)
+ # Build filter
+ filter_conditions =
+ if filters:
+ if "language" in filters:
+ filter_conditions.append(
+ models.FieldCondition(
+ key="language",
+ match=models.MatchValue(value=filters["language"]),
+ )
+ )
+ query_filter = None
+ if filter_conditions:
+ query_filter = models.Filter(must=filter_conditions)
+ try:
+ sparse_vector = models.SparseVector(
+ indices=query_sparse["indices"],
+ values=query_sparse["values"],
+ )
+ results = client.query_points(
+ collection_name=collection_name,
+ prefetch=[
+ models.Prefetch(
+ query=query_dense,
+ using="dense",
+ limit=top_k,
+ filter=query_filter,
+ ),
+ models.Prefetch(
+ query=sparse_vector,
+ using="sparse",
+ limit=top_k,
+ filter=query_filter,
+ ),
+ ],
+ query=models.FusionQuery(fusion=models.Fusion.RRF),
+ limit=top_k,
+ with_payload=True,
+ )
+ return [
+ {
+ "id": str(r.id),
+ "score": r.score,
+ "payload": r.payload,
+ }
+ for r in results.points
+ ]
+ except UnexpectedResponse as e:
+ logger.error("hybrid_search_failed", error=str(e))
  return

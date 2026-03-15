@@ -37,6 +37,10 @@ class CodeChunk:
  end_line: int
  node_type: str # function, class, rule, etc.
  context_header: str # For embedding enrichment
+ # 上下文增强字段（用于提升 embedding 质量，不存入 Qdrant payload）
+ imports: str = "" # 文件级 import 语句
+ module_docstring: str = "" # 模块级 docstring/注释
+ sibling_signatures: str = "" # 同文件其他函数/类签名
 def compute_file_hash(file_path: str) -> str:
  """Compute MD5 hash of a file."""
  hash_md5 = hashlib.md5
@@ -105,16 +109,23 @@ class CodeParser:
  relative_path = os.path.relpath(file_path, base_path) if base_path else file_path
  # Route to appropriate parser
  if language == "vue":
- return self._parse_vue(content, relative_path, file_hash)
+ chunks = self._parse_vue(content, relative_path, file_hash)
  elif language == "markdown":
- return self._parse_markdown(content, relative_path, file_hash)
+ chunks = self._parse_markdown(content, relative_path, file_hash)
  elif language in ("sass",):
- return self._parse_fallback(content, relative_path, file_hash, language)
+ chunks = self._parse_fallback(content, relative_path, file_hash, language)
  else:
  # Try Tree-sitter first, fallback to character-based
  chunks = self._parse_with_tree_sitter(content, relative_path, file_hash, language)
  if not chunks:
  chunks = self._parse_fallback(content, relative_path, file_hash, language)
+ # 注入文件级上下文增强信息
+ if chunks:
+ file_context = self._extract_file_context(content, language)
+ for chunk in chunks:
+ chunk.imports = file_context.get("imports", "")
+ chunk.module_docstring = file_context.get("docstring", "")
+ self._inject_sibling_signatures(chunks)
  return chunks
  def _parse_with_tree_sitter(
  self, content: str, file_path: str, file_hash: str, language: str
@@ -305,6 +316,101 @@ class CodeParser:
  )
  i += self.chunk_lines - self.chunk_overlap
  return chunks
+ def _extract_file_context(self, content: str, language: str) -> dict[str, str]:
+ """提取文件级上下文信息，用于增强 embedding 质量。"""
+ result: dict[str, str] = {}
+ if language in ("python", "typescript", "javascript", "go", "vue"):
+ imports = self._extract_imports(content, language)
+ if imports:
+ result["imports"] = imports
+ if language == "python":
+ docstring = self._extract_module_docstring(content)
+ if docstring:
+ result["docstring"] = docstring
+ elif language in ("typescript", "javascript", "vue"):
+ comment = self._extract_file_header_comment(content)
+ if comment:
+ result["docstring"] = comment
+ return result
+ def _extract_imports(self, content: str, language: str) -> str:
+ """提取文件的 import 语句，最多 500 字符。"""
+ lines = content.split("\n")
+ import_lines: list[str] =
+ if language == "python":
+ for line in lines:
+ stripped = line.strip
+ if stripped.startswith(("import ", "from ")):
+ import_lines.append(stripped)
+ elif stripped and not stripped.startswith(("#", '"""', "'''", '"', "'")):
+ # 跳过空行和注释，遇到非 import 代码停止
+ if import_lines:
+ break
+ elif language in ("typescript", "javascript", "vue"):
+ for line in lines:
+ stripped = line.strip
+ if stripped.startswith("import ") or "require(" in stripped:
+ import_lines.append(stripped)
+ elif stripped and not stripped.startswith(("//", "/*", "*", "'")):
+ if import_lines:
+ break
+ elif language == "go":
+ in_import_block = False
+ for line in lines:
+ stripped = line.strip
+ if stripped.startswith("import ("):
+ in_import_block = True
+ import_lines.append(stripped)
+ elif in_import_block:
+ import_lines.append(stripped)
+ if stripped == ")":
+ in_import_block = False
+ break
+ elif stripped.startswith("import "):
+ import_lines.append(stripped)
+ result = "\n".join(import_lines)
+ return result[:500]
+ def _extract_module_docstring(self, content: str) -> str:
+ """提取 Python 模块级 docstring，最多 200 字符。"""
+ # 匹配文件开头（跳过注释和空行后）的三引号字符串
+ match = re.match(
+ r'^(?:\s*#[^\n]*\n)*\s*("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')',
+ content,
+ )
+ if match:
+ docstring = match.group(1).strip("\"'").strip
+ return docstring[:200]
+ return ""
+ def _extract_file_header_comment(self, content: str) -> str:
+ """提取 JS/TS 文件头部的多行注释或 JSDoc，最多 200 字符。"""
+ match = re.match(r"^\s*/\*\*?([\s\S]*?)\*/", content)
+ if match:
+ comment = match.group(1).strip
+ # 清理每行开头的 * 号
+ cleaned = "\n".join(
+ line.lstrip(" *") for line in comment.split("\n")
+ ).strip
+ return cleaned[:200]
+ return ""
+ def _inject_sibling_signatures(self, chunks: list[CodeChunk]) -> None:
+ """为同文件的 chunks 注入相邻函数/类签名列表。"""
+ # 按 file_path 分组
+ file_chunks: dict[str, list[CodeChunk]] = {}
+ for chunk in chunks:
+ file_chunks.setdefault(chunk.file_path, ).append(chunk)
+ for file_path, group in file_chunks.items:
+ if len(group) <= 1:
+ continue
+ # 提取每个 chunk 的签名（第一行）
+ signatures: list[str] =
+ for chunk in group:
+ first_line = chunk.content.split("\n", 1)[0].strip
+ if first_line:
+ signatures.append(first_line)
+ # 为每个 chunk 注入其他 chunk 的签名
+ for i, chunk in enumerate(group):
+ siblings = [s for j, s in enumerate(signatures) if j != i]
+ if siblings:
+ chunk.sibling_signatures = "; ".join(siblings)[:300]
 def scan_directory(
  directory: str,
  exclude_patterns: list[str] | None = None,

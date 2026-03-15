@@ -36,6 +36,14 @@ class SettingKeys:
  FEISHU_APP_SECRET = "feishu_app_secret"
  # Budget Control
  MAX_BUDGET_USD = "max_budget_usd"
+ # RAG Enhancement Settings
+ RERANKER_ENABLED = "reranker_enabled"
+ RERANKER_API_URL = "reranker_api_url"
+ RERANKER_API_KEY = "reranker_api_key"
+ RERANKER_MODEL = "reranker_model"
+ RERANKER_TOP_N = "reranker_top_n"
+ HYBRID_SEARCH_ENABLED = "hybrid_search_enabled"
+ HYBRID_SEARCH_ALPHA = "hybrid_search_alpha"
 class CacheVolumeTracker(models.Model):
  """跟踪 Docker 缓存卷的使用情况。
  Docker volume labels 创建后不可变，因此通过数据库模型跟踪
