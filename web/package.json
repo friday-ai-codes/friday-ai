@@ -21,6 +21,7 @@
  "@floating-ui/vue": "catalog:",
  "@shikijs/markdown-it": "^4.0.1",
  "@tanstack/vue-query": "catalog:",
+ "@tanstack/vue-table": "catalog:",
  "@tiptap/core": "catalog:",
  "@tiptap/extension-bold": "catalog:",
  "@tiptap/extension-bullet-list": "catalog:",
@@ -104,5 +105,8 @@
  "vitest": "catalog:",
  "vue-macros": "catalog:",
  "vue-tsc": "catalog:"
+ },
+ "optionalDependencies": {
+ "@rolldown/binding-darwin-arm64": "1.0.0-beta.53"
  }
 }
