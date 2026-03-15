@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { Workflow } from '~/stores/useWorkflowsStore'
-import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { Switch } from '~/components/ui/switch'
 import {
@@ -40,7 +39,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <TooltipProvider>
  <!-- Loading State -->
  <div v-if="loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
- <div v-for="i in 8":key="i" class=" rounded-xl bg-card/80 border border-border/50">
+ <div v-for="i in 8":key="i" class=" rounded-2xl bg-card/80 border border-border/50">
  <div class="flex items-center gap-3 mb-3">
  <Skeleton class=" w-9 rounded-lg" />
  <div class="flex-1">
@@ -64,13 +63,13 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <!-- Hover glow effect (only for active workflows) -->
  <div
  v-if="workflow.is_active"
- class="absolute -inset-0.5 bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-500"
+ class="absolute -inset-0.5 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-500"
  />
  <!-- Card body -->
  <div
- class="relative rounded-xl backdrop-blur-sm border transition-all duration-300":class="[
+ class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300":class="[
  workflow.is_active
- ? 'bg-card/80 border-border/50 group-hover:border-primary/30 group-hover:shadow-md': 'bg-muted/30 border-border/30',
+ ? 'bg-card/80 border-border/50 group-hover:border-teal-300/50 group-hover:shadow-lg group-hover:shadow-teal-500/10 group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30',
  ]"
  >
  <!-- Header: Icon + Name + Toggle -->
@@ -79,12 +78,12 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <div
  class=" rounded-lg flex-shrink-0":class="[
  workflow.is_active
- ? 'bg-gradient-to-br from-amber-500/10 to-orange-500/10': 'bg-muted/50',
+ ? 'bg-gradient-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50',
  ]"
  >
  <span
  class="text-lg":class="[
- workflow.is_active ? 'icon-[lucide--workflow] text-amber-500': 'icon-[lucide--workflow] text-muted-foreground',
+ workflow.is_active ? 'icon-[lucide--workflow] text-teal-500': 'icon-[lucide--workflow] text-muted-foreground',
  ]"
  />
  </div>
@@ -121,15 +120,13 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <!-- Execute Button -->
  <Tooltip>
  <TooltipTrigger as-child>
- <Button
- variant="default"
- size="sm"
- class="flex-1 text-xs":disabled="!workflow.is_active"
+ <button
+ class="btn btn-primary btn-sm flex-1 text-xs":disabled="!workflow.is_active"
  @click="onExecuteClick($event, workflow)"
  >
  <span class="icon-[lucide--play] mr-1" />
  执行
- </Button>
+ </button>
  </TooltipTrigger>
  <TooltipContent v-if="!workflow.is_active" side="top">
  <p>工作流已禁用</p>
@@ -138,14 +135,12 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <!-- Delete Button -->
  <Tooltip>
  <TooltipTrigger as-child>
- <Button
- variant="ghost"
- size="icon"
- class=" w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+ <button
+ class="btn btn-ghost btn-icon btn-sm w-7 hover:!bg-red-50 hover:!text-red-500"
  @click="onDeleteClick($event, workflow)"
  >
  <span class="icon-[lucide--trash-2] text-sm" />
- </Button>
+ </button>
  </TooltipTrigger>
  <TooltipContent side="top">
  <p>删除</p>
