@@ -216,7 +216,7 @@ onMounted( => {
  </div>
  <!-- 成员列表 -->
  <div class="group relative">
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <div class="card overflow-hidden">
  <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
  <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--users] text-2xl text-primary" />

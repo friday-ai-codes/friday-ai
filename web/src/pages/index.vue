@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
 useHead({
  title: '首页 - Friday AI',
 })
@@ -26,67 +25,69 @@ const stats = computed( => [
  title: '项目总数',
  value: projectsStore.projectCount,
  icon: 'lucide--folder-git-2',
- iconColor: 'text-blue-500',
- gradient: 'from-blue-500 to-cyan-400',
- bgGradient: 'from-blue-500/10 to-cyan-400/10',
+ statIconClass: 'stat-icon-primary',
  link: '/projects',
  },
  {
  title: '执行总数',
  value: executionsStore.stats.total,
  icon: 'lucide--layers',
- iconColor: 'text-violet-500',
- gradient: 'from-violet-500 to-purple-400',
- bgGradient: 'from-violet-500/10 to-purple-400/10',
+ statIconClass: 'stat-icon-violet',
  link: '/executions',
  },
  {
  title: '运行中',
  value: executionsStore.stats.running,
  icon: 'lucide--zap',
- iconColor: 'text-amber-500',
- gradient: 'from-amber-500 to-orange-400',
- bgGradient: 'from-amber-500/10 to-orange-400/10',
+ statIconClass: 'stat-icon-amber',
  link: '/executions?status=running',
  },
  {
  title: '待审批',
  value: executionsStore.stats.waitingApproval,
  icon: 'lucide--scan-eye',
- iconColor: 'text-emerald-500',
- gradient: 'from-emerald-500 to-teal-400',
- bgGradient: 'from-emerald-500/10 to-teal-400/10',
+ statIconClass: 'stat-icon-emerald',
  link: '/executions?status=waiting_approval',
  },
 ])
-// 功能特性
-const features = [
+// 快捷操作
+const quickActions = [
  {
- icon: 'lucide--sparkles',
- title: '智能工作流',
- description: '可视化工作流编排，AI 驱动的自动化执行',
- gradient: 'from-blue-500 to-indigo-500',
+ icon: 'lucide--plus',
+ title: '新建项目',
+ description: '创建新的开发项目',
+ link: '/projects/new',
+ iconBg: 'stat-icon-primary',
  },
  {
- icon: 'lucide--shield',
- title: '安全隔离',
- description: '独立 Docker 容器执行，确保环境安全与资源隔离',
- gradient: 'from-emerald-500 to-teal-500',
+ icon: 'lucide--workflow',
+ title: '工作流管理',
+ description: '编排自动化流程',
+ link: '/workflows',
+ iconBg: 'stat-icon-violet',
  },
  {
- icon: 'lucide--git-pull-request-draft',
- title: '人工审批',
- description: '完整的状态流转与审批机制，代码质量完全可控',
- gradient: 'from-violet-500 to-purple-500',
+ icon: 'lucide--play-circle',
+ title: '执行监控',
+ description: '查看运行状态',
+ link: '/executions',
+ iconBg: 'stat-icon-amber',
+ },
+ {
+ icon: 'lucide--git-branch',
+ title: '仓库管理',
+ description: '管理代码仓库',
+ link: '/repositories',
+ iconBg: 'stat-icon-emerald',
  },
 ]
 // 执行状态配置
 const statusConfig: Record<string, { label: string, color: string }> = {
- pending: { label: '等待中', color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
- running: { label: '运行中', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
- completed: { label: '已完成', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
- failed: { label: '失败', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
- waiting_approval: { label: '待审批', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+ pending: { label: '等待中', color: 'bg-gray-100 text-gray-700' },
+ running: { label: '运行中', color: 'bg-blue-100 text-blue-700' },
+ completed: { label: '已完成', color: 'bg-emerald-100 text-emerald-700' },
+ failed: { label: '失败', color: 'bg-red-100 text-red-700' },
+ waiting_approval: { label: '待审批', color: 'bg-amber-100 text-amber-700' },
 }
 // 格式化日期
 function formatDate(dateStr: string) {
@@ -100,196 +101,145 @@ function formatDate(dateStr: string) {
 }
 </script>
 <template>
- <div class="min-h-[calc(100vh-8rem)] relative">
- <!-- 背景装饰 -->
- <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/20 to-secondary/40 rounded-full blur-3xl" />
- <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-primary/10 rounded-full blur-3xl" />
- <div class="absolute -bottom-20 right-1/4 w-64 bg-gradient-to-t from-primary/15 to-transparent rounded-full blur-3xl" />
+ <div class="max-w-[1200px] mx-auto space-y-8">
+ <!-- Hero 区域 — sub2api 风格简洁 -->
+ <section class="text-center pt-6 pb-2">
+ <div class="inline-flex items-center justify-center w-20 rounded-2xl gradient-primary mb-5 shadow-[0_0_20px_rgba(20,184,166,0.25)]">
+ <span class="icon-[lucide--bot] text-4xl text-white" />
  </div>
- <div class="space-y-12 relative">
- <!-- Hero 区域 -->
- <section class="text-center pt-8 pb-4 md:pt-16 md:pb-8">
- <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
- <span class="icon-[lucide--bot] text-5xl md:text-6xl text-primary" />
- </div>
- <h1 class="text-4xl md:text-5xl font-bold tracking-tight bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent mb-4">
+ <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-3">
  Friday AI
  </h1>
- <p class="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+ <p class="text-muted-foreground text-base max-w-lg mx-auto">
  AI 驱动的敏捷开发自动化系统
- <br class="hidden md:block">
- <span class="text-primary/80">无缝集成飞书项目管理和 Claude Code</span>
+ </p>
+ <p class="text-primary text-sm mt-1">
+ 无缝集成飞书项目管理和 Claude Code
  </p>
  </section>
- <!-- 统计卡片 -->
- <section class="grid gap-4 md:gap-6 grid-cols-2 lg:grid-cols-4">
+ <!-- 统计卡片 — sub2api stat-card 风格 -->
+ <section class="grid gap-5 grid-cols-2 lg:grid-cols-4">
  <RouterLink
  v-for="stat in stats":key="stat.title":to="stat.link"
- class="group relative"
+ class="card card-interactive group flex items-start gap-4"
  >
- <div
- class="absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10":class="stat.gradient"
- />
- <div class="relative h-full rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 group-hover:border-primary/30 group-hover:shadow-lg group-hover:shadow-primary/5 transition-all duration-300">
- <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br flex items-center justify-center":class="stat.bgGradient">
- <span class="text-2xl":class="[`icon-[${stat.icon}]`, stat.iconColor]" />
+ <!-- 图标 -->
+ <div class="stat-icon":class="stat.statIconClass">
+ <span class="text-xl":class="`icon-[${stat.icon}]`" />
  </div>
- <span class="icon-[lucide--arrow-up-right] text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-300" />
- </div>
- <div class="space-y-1">
- <p class="text-sm font-medium text-muted-foreground">
+ <!-- 内容 -->
+ <div class="min-w-0 flex-1">
+ <p class="text-sm text-muted-foreground mb-1">
  {{ stat.title }}
  </p>
- <p class="text-3xl md:text-4xl font-bold tracking-tight">
+ <p class="text-2xl font-bold text-foreground truncate">
  <template v-if="loading">
- <span class="inline-block w-12 bg-gradient-to-r from-muted to-muted/50 animate-pulse rounded-lg" />
+ <span class="inline-block w-10 bg-muted animate-pulse rounded" />
  </template>
  <template v-else>
- <span class="bg-gradient-to-r bg-clip-text text-transparent":class="stat.gradient">{{ stat.value }}</span>
+ {{ stat.value }}
  </template>
  </p>
  </div>
- </div>
+ <!-- 箭头 -->
+ <span class="icon-[lucide--arrow-up-right] text-muted-foreground/30 group-hover:text-primary transition-colors" />
  </RouterLink>
  </section>
- <!-- 功能介绍 -->
- <section class="grid gap-6 md:grid-cols-3">
- <div
- v-for="(feature, index) in features":key="feature.title"
- class="group relative rounded-2xl bg-card/60 backdrop-blur-sm border border-border/50 hover:border-primary/20 transition-all duration-300"
+ <!-- 快捷操作 — 紧凑横排 -->
+ <section class="flex flex-wrap gap-3">
+ <RouterLink
+ v-for="action in quickActions":key="action.title":to="action.link"
+ class="group inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white border border-border/60 hover:border-primary/40 hover:shadow-md transition-all duration-200"
  >
- <!-- 悬浮时的渐变背景 -->
- <div class="absolute inset-0 rounded-2xl bg-gradient-to-br opacity-0 group-hover:opacity-5 transition-opacity duration-500":class="feature.gradient" />
- <!-- 序号装饰 -->
- <div class="absolute -top-3 -left-3 w-8 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold shadow-lg":class="feature.gradient">
- {{ index + 1 }}
- </div>
- <div class="relative">
- <div class="flex items-center gap-3 mb-3">
- <div class=" rounded-lg bg-gradient-to-br flex items-center justify-center":class="feature.gradient">
- <span class="text-xl text-white":class="`icon-[${feature.icon}]`" />
- </div>
- <h3 class="text-lg font-semibold">
- {{ feature.title }}
- </h3>
- </div>
- <p class="text-muted-foreground leading-relaxed pl-12">
- {{ feature.description }}
- </p>
- </div>
- </div>
+ <span class="text-base text-muted-foreground group-hover:text-primary transition-colors":class="`icon-[${action.icon}]`" />
+ <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ action.title }}</span>
+ </RouterLink>
  </section>
- <!-- 最近执行 -->
- <section class="relative">
- <div class="rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <!-- 最近执行 — sub2api card 风格 -->
+ <section>
+ <div class="card overflow-hidden">
  <!-- 标题栏 -->
- <div class="flex items-center justify-between border-b border-border/50">
+ <div class="flex items-center justify-between px-6 py-4 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--clock] text-xl text-primary" />
+ <div class="stat-icon stat-icon-primary">
+ <span class="icon-[lucide--clock] text-lg" />
  </div>
  <div>
- <h2 class="text-lg font-semibold">
+ <h2 class="text-base font-semibold text-foreground">
  最近执行
  </h2>
- <p class="text-sm text-muted-foreground">
+ <p class="text-xs text-muted-foreground">
  最近的工作流执行记录
  </p>
  </div>
  </div>
  <RouterLink to="/executions">
- <Button variant="ghost" size="sm" class="group">
+ <span class="text-sm font-medium text-muted-foreground hover:text-primary transition-colors group inline-flex items-center">
  查看全部
  <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-1 transition-transform" />
- </Button>
+ </span>
  </RouterLink>
  </div>
  <!-- 执行列表 -->
  <div class="">
  <!-- 加载状态 -->
- <div v-if="loading" class="space-y-3">
- <div v-for="i in 3":key="i" class="flex items-center gap-4 rounded-xl bg-muted/30">
+ <div v-if="loading" class="space-y-2">
+ <div v-for="i in 3":key="i" class="flex items-center gap-4 rounded-xl">
  <div class="w-10 rounded-lg bg-muted animate-pulse" />
  <div class="flex-1 space-y-2">
- <div class=" w-2/3 bg-muted animate-pulse rounded-lg" />
- <div class=" w-1/4 bg-muted animate-pulse rounded-lg" />
+ <div class=" w-2/3 bg-muted animate-pulse rounded" />
+ <div class=" w-1/4 bg-muted animate-pulse rounded" />
  </div>
  <div class=" w-16 bg-muted animate-pulse rounded-full" />
  </div>
  </div>
  <!-- 空状态 -->
- <div v-else-if="executionsStore.executions.length === 0" class="py-16 text-center">
- <div class="inline-flex items-center justify-center w-20 rounded-2xl bg-gradient-to-br from-muted to-muted/50 mb-6">
- <span class="icon-[lucide--play-circle] text-4xl text-muted-foreground/50" />
+ <div v-else-if="executionsStore.executions.length === 0" class="py-12 text-center">
+ <div class="stat-icon stat-icon-primary mx-auto mb-4 w-16 text-2xl">
+ <span class="icon-[lucide--play-circle]" />
  </div>
- <h3 class="text-lg font-medium text-muted-foreground mb-2">
+ <h3 class="text-base font-medium text-foreground mb-1">
  暂无执行记录
  </h3>
- <p class="text-sm text-muted-foreground/70 mb-6">
+ <p class="text-sm text-muted-foreground mb-5">
  创建工作流并运行，执行记录将显示在这里
  </p>
  <RouterLink to="/workflows">
- <Button class="group">
- <span class="icon-[lucide--workflow] mr-2" />
+ <button class="btn btn-primary">
+ <span class="icon-[lucide--workflow]" />
  查看工作流
- <span class="icon-[lucide--arrow-right] ml-2 group-hover:translate-x-1 transition-transform" />
- </Button>
+ </button>
  </RouterLink>
  </div>
  <!-- 执行列表 -->
- <div v-else class="space-y-2">
+ <div v-else class="space-y-1">
  <RouterLink
  v-for="(execution, index) in executionsStore.executions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
- class="group flex items-center gap-4 rounded-xl hover:bg-gradient-to-r hover:from-muted/50 hover:to-transparent transition-all duration-300"
+ class="group flex items-center gap-4 rounded-xl hover:bg-muted/50 transition-colors duration-200"
  >
  <!-- 序号 -->
- <div class="flex-shrink-0 w-10 rounded-lg bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center font-medium text-muted-foreground group-hover:from-primary/20 group-hover:to-primary/10 group-hover:text-primary transition-all duration-300">
+ <div class="flex-shrink-0 w-10 rounded-lg bg-muted/50 flex items-center justify-center font-medium text-muted-foreground text-sm group-hover:bg-primary/10 group-hover:text-primary transition-colors">
  {{ index + 1 }}
  </div>
  <!-- 内容 -->
  <div class="flex-1 min-w-0">
- <p class="font-medium truncate group-hover:text-primary transition-colors">
+ <p class="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
  {{ execution.workflow_name }}
  </p>
- <p class="text-sm text-muted-foreground">
+ <p class="text-xs text-muted-foreground mt-0.5">
  {{ formatDate(execution.created_at) }}
  </p>
  </div>
  <!-- 状态 -->
- <Badge:class="statusConfig[execution.status]?.color || statusConfig.pending.color">
+ <Badge:class="statusConfig[execution.status]?.color || statusConfig.pending.color" class="text-xs">
  {{ statusConfig[execution.status]?.label || execution.status }}
  </Badge>
  <!-- 箭头 -->
- <span class="icon-[lucide--chevron-right] text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+ <span class="icon-[lucide--chevron-right] text-muted-foreground/30 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
  </RouterLink>
  </div>
  </div>
  </div>
  </section>
- <!-- 快速操作 -->
- <section class="flex flex-col sm:flex-row justify-center gap-4 pb-8">
- <RouterLink to="/projects/new">
- <Button size="lg" class="w-full sm:w-auto group relative overflow-hidden">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span class="icon-[lucide--plus] mr-2" />
- 新建项目
- </Button>
- </RouterLink>
- <RouterLink to="/executions">
- <Button variant="outline" size="lg" class="w-full sm:w-auto group hover:border-primary/50">
- <span class="icon-[lucide--play-circle] mr-2 group-hover:text-primary transition-colors" />
- 执行监控
- </Button>
- </RouterLink>
- <RouterLink to="/workflows">
- <Button variant="ghost" size="lg" class="w-full sm:w-auto group">
- <span class="icon-[lucide--workflow] mr-2 group-hover:text-primary transition-colors" />
- 工作流管理
- </Button>
- </RouterLink>
- </section>
- </div>
  </div>
 </template>

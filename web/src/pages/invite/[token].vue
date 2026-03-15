@@ -170,7 +170,7 @@ onMounted( => {
  <!-- 注册表单 -->
  <div
  v-else
- class="rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden"
+ class="card overflow-hidden"
  >
  <!-- 邀请信息 -->
  <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">

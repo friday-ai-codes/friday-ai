@@ -195,7 +195,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <!-- 仓库列表表格 -->
  <div v-else class="relative">
  <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
- <div class="relative rounded-2xl bg-card/80 backdrop-blur-sm border border-border/50 overflow-hidden">
+ <div class="card overflow-hidden">
  <table class="w-full">
  <thead>
  <tr class="border-b border-border/50 bg-muted/30">

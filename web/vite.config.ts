@@ -10,8 +10,12 @@ import VueRouter from 'unplugin-vue-router/vite'
 import { defineConfig } from 'vite'
 import Layouts from 'vite-plugin-vue-layouts'
 import VueMacros from 'vue-macros/vite'
+import pkg from './package.json'
 // https://vite.dev/config/
 export default defineConfig({
+ define: {
+ __APP_VERSION__: JSON.stringify(pkg.version),
+ },
  plugins: [
  VueMacros({
  betterDefine: false,

@@ -403,7 +403,7 @@ watch( => loading.value, (isLoading) => {
  <li>API Key 将加密存储，确保安全</li>
  </ul>
  <RouterLink
- to="/settings"
+ to="/admin"
  class="inline-flex items-center text-sm text-primary hover:underline mt-2 group"
  >
  前往系统设置配置默认值
