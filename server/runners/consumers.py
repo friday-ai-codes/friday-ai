@@ -7,6 +7,8 @@ from django.utils import timezone
 logger = structlog.get_logger
 # 终态集合
 _TERMINAL_STATUSES = {"completed", "error", "timeout", "cancelled"}
+# 断连超时（秒）：5 分钟后未重连则标记任务失败
+DISCONNECT_TIMEOUT = 300
 class RunnerConsumer(AsyncJsonWebsocketConsumer):
  """处理 Runner WS 连接，按 type 分发消息到 handler。"""
  _handlers: dict[str, str] = {
@@ -47,6 +49,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  self.channel_layer, "runner.status_changed", self.runner.id, {"status": "offline"}
  )
  await _alog_runner_event(self.runner.id, "disconnected")
+ # 启动断连超时处理：5 分钟后检查是否重连
+ _schedule_disconnect_timeout(self.runner.id)
  async def receive_json(self, content, **kwargs):
  msg_type = content.get("type")
  handler_name = self._handlers.get(msg_type) if msg_type else None
@@ -65,6 +69,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await _alog_runner_event(
  self.runner.id, "connected", {"version": payload.get("version", "")}
  )
+ # 重连时恢复未完成任务关联
+ await self._recover_pending_tasks
  # 触发分发器检查待分发队列
  from runners.dispatcher import get_dispatcher
  await get_dispatcher.on_runner_online(self.runner.id)
@@ -355,6 +361,96 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  self.runner.status = "offline"
  self.runner.channel_name = ""
  await self.runner.asave(update_fields=["status", "channel_name", "updated_at"])
+ async def _recover_pending_tasks(self) -> None:
+ """重连时恢复未完成任务关联。
+ 查询该 Runner 所有 assigned/running 状态的任务，
+ 对仍有效的任务重新发送 dispatch 消息。
+ """
+ from runners.models import RunnerTaskAssignment
+ pending_assignments = RunnerTaskAssignment.objects.filter(
+ runner=self.runner,
+ status__in=["assigned", "running"],
+ ).select_related("session")
+ recovered_count = 0
+ async for assignment in pending_assignments:
+ session = assignment.session
+ if not session or session.status in _TERMINAL_STATUSES:
+ # 任务已在终态，标记 assignment 为 failed
+ assignment.status = "failed"
+ assignment.completed_at = timezone.now
+ await assignment.asave(update_fields=["status", "completed_at"])
+ continue
+ # 重新分发任务
+ dispatch_task = await self._rebuild_dispatch_task(session.session_id)
+ if dispatch_task:
+ from runners.dispatcher import get_dispatcher
+ await get_dispatcher.dispatch_to_runner(self.runner.id, dispatch_task)
+ recovered_count += 1
+ if recovered_count > 0:
+ logger.info(
+ "runner_tasks_recovered",
+ runner_id=str(self.runner.id),
+ recovered_count=recovered_count,
+ )
+def _schedule_disconnect_timeout(runner_id: uuid.UUID) -> None:
+ """启动断连超时处理。
+ 在后台线程中等待 DISCONNECT_TIMEOUT 秒后检查 Runner 是否仍离线。
+ 如果仍离线，将所有 assigned/running 状态的任务标记为 failed。
+ """
+ import threading
+ def _timeout_handler -> None:
+ loop = asyncio.new_event_loop
+ asyncio.set_event_loop(loop)
+ try:
+ loop.run_until_complete(_handle_disconnect_timeout(runner_id))
+ except Exception as e:
+ logger.exception("disconnect_timeout_error", runner_id=str(runner_id), error=str(e))
+ finally:
+ loop.close
+ timer = threading.Timer(DISCONNECT_TIMEOUT, _timeout_handler)
+ timer.daemon = True
+ timer.start
+async def _handle_disconnect_timeout(runner_id: uuid.UUID) -> None:
+ """断连超时处理：检查 Runner 是否仍离线，如果是则标记任务失败。"""
+ from runners.models import Runner, RunnerTaskAssignment
+ try:
+ runner = await Runner.objects.aget(id=runner_id)
+ except Runner.DoesNotExist:
+ return
+ # Runner 已重连，无需处理
+ if runner.status == "online":
+ logger.info("disconnect_timeout_runner_reconnected", runner_id=str(runner_id))
+ return
+ # Runner 仍离线，标记所有未完成任务为失败
+ pending = RunnerTaskAssignment.objects.filter(
+ runner_id=runner_id,
+ status__in=["assigned", "running"],
+ ).select_related("session")
+ failed_count = 0
+ async for assignment in pending:
+ assignment.status = "failed"
+ assignment.completed_at = timezone.now
+ await assignment.asave(update_fields=["status", "completed_at"])
+ failed_count += 1
+ # 发送失败通知
+ if assignment.session:
+ try:
+ from subagent.api.callbacks import _send_failure_notification
+ await _send_failure_notification(
+ assignment.session,
+ f"Runner 断连超时（{DISCONNECT_TIMEOUT}秒），任务自动标记失败",
+ )
+ except Exception:
+ logger.warning(
+ "disconnect_timeout_notification_failed",
+ session_id=assignment.session.session_id,
+ )
+ if failed_count > 0:
+ logger.warning(
+ "disconnect_timeout_tasks_failed",
+ runner_id=str(runner_id),
+ failed_count=failed_count,
+ )
 # ---------------------------------------------------------------------------
 # Monitor WebSocket — 前端实时监控
 # ---------------------------------------------------------------------------
