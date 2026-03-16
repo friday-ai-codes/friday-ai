@@ -1,0 +1,294 @@
+"""对话全流程端到端集成测试。
+验证对话系统从创建到历史记录加载的完整流程：
+1. 创建对话 -> 201 + 有效 conversation 对象
+2. SSE 流式发送消息 -> text_delta + message_complete 事件
+3. 工具调用事件 -> tool_use_start + tool_use_result 正确传递
+4. 中断流程 -> interrupt API + message_complete(status=interrupted)
+5. 历史记录加载 -> GET 对话详情返回完整消息列表
+6. Keepalive -> SSE 注释行正确发送
+使用 Django AsyncClient + mock ConversationService.send_message_stream。
+mock 策略：patch ConversationService.send_message_stream 替换为返回预定义事件的
+async generator，验证从 HTTP 请求到 SSE 响应的完整链路。
+注意：StreamingHttpResponse 是惰性的（async generator 在 response 被迭代时才执行），
+因此必须在 patch 上下文内消费 streaming_content。
+"""
+from __future__ import annotations
+import json
+from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
+import pytest
+from django.test import AsyncClient
+from agents.core.events import (
+ KEEPALIVE,
+ MESSAGE_COMPLETE,
+ TEXT_DELTA,
+ TOOL_USE_RESULT,
+ TOOL_USE_START,
+ AgentEvent,
+)
+from chat.models import Conversation, Message
+from projects.models import Project
+# ============================================================================
+# 辅助函数
+# ============================================================================
+async def _read_streaming_body(resp) -> str:
+ """读取 StreamingHttpResponse 的完整响应体。
+ Django StreamingHttpResponse 无 .content 属性，
+ 需要通过异步迭代 streaming_content 读取。
+ """
+ chunks: list[str] =
+ async for chunk in resp: # type: ignore[union-attr]
+ if isinstance(chunk, bytes):
+ chunks.append(chunk.decode("utf-8"))
+ else:
+ chunks.append(chunk)
+ return "".join(chunks)
+def _make_mock_stream(events: list[AgentEvent]):
+ """创建 mock send_message_stream 静态方法。
+ 返回一个可被 async for 迭代的 async generator 工厂函数，
+ 签名匹配 ConversationService.send_message_stream。
+ """
+ async def mock_send_message_stream(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ for event in events:
+ yield event
+ return mock_send_message_stream
+def _parse_sse_data_lines(body: str) -> list[dict]:
+ """从 SSE 响应体中提取所有 data 行并解析为 JSON。"""
+ data_lines = [
+ line for line in body.split("\n") if line.startswith("data: ")
+ ]
+ return [json.loads(line[len("data: "):]) for line in data_lines]
+# ============================================================================
+# Fixtures
+# ============================================================================
+@pytest.fixture
+async def test_project(db):
+ """创建测试项目（无仓库依赖）。"""
+ return await Project.objects.acreate(
+ name="E2E Test Project",
+ description="端到端测试用项目",
+ )
+@pytest.fixture
+async def conversation(db, test_project):
+ """创建测试对话。"""
+ return await Conversation.objects.acreate(
+ project=test_project,
+ title="测试对话",
+ )
+# ============================================================================
+# Test 1: 创建对话
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestConversationCreation:
+ """对话创建端到端测试。"""
+ async def test_create_conversation_success(self, test_project):
+ """POST /api/chat/conversations/ 携带 project_id 返回 201。"""
+ client = AsyncClient
+ resp = await client.post(
+ "/api/chat/conversations/",
+ data={"project_id": str(test_project.id)},
+ content_type="application/json",
+ )
+ assert resp.status_code == 201
+ data = resp.json
+ assert "id" in data
+ assert data["project_id"] == str(test_project.id)
+ assert "title" in data
+ async def test_create_conversation_invalid_project(self):
+ """无效 project_id 返回 400。"""
+ client = AsyncClient
+ resp = await client.post(
+ "/api/chat/conversations/",
+ data={"project_id": "00000000-0000-0000-0000-000000000000"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 400
+# ============================================================================
+# Test 2: SSE 流式回复
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestSSEStreamFlow:
+ """SSE 流式回复端到端测试。"""
+ async def test_stream_returns_event_stream_content_type(self, conversation):
+ """流式端点返回 Content-Type: text/event-stream。"""
+ mock_events = [
+ AgentEvent(type=TEXT_DELTA, data={"text": "你好"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ # 必须在 patch 上下文内消费 streaming 响应
+ await _read_streaming_body(resp)
+ assert resp["Content-Type"] == "text/event-stream"
+ async def test_stream_text_delta_events(self, conversation):
+ """SSE 流包含正确格式的 text_delta data 行。"""
+ mock_events = [
+ AgentEvent(type=TEXT_DELTA, data={"text": "Hello"}),
+ AgentEvent(type=TEXT_DELTA, data={"text": " World"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "测试"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ payloads = _parse_sse_data_lines(body)
+ text_deltas = [p for p in payloads if p.get("type") == "text_delta"]
+ assert len(text_deltas) == 2
+ assert text_deltas[0]["text"] == "Hello"
+ assert text_deltas[1]["text"] == " World"
+ async def test_stream_message_complete_event(self, conversation):
+ """SSE 流末尾包含 message_complete 事件。"""
+ mock_events = [
+ AgentEvent(type=TEXT_DELTA, data={"text": "回复内容"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "测试"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ payloads = _parse_sse_data_lines(body)
+ assert payloads[-1]["type"] == "message_complete"
+ async def test_stream_tool_use_events(self, conversation):
+ """SSE 流正确传递 tool_use_start + tool_use_result 事件。"""
+ mock_events = [
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={
+ "tool_name": "search_code",
+ "tool_call_id": "tc_001",
+ "arguments": {"query": "test"},
+ },
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_call_id": "tc_001",
+ "result": "Found 3 matches",
+ "is_error": False,
+ },
+ ),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "搜索代码"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ payloads = _parse_sse_data_lines(body)
+ types = [p["type"] for p in payloads]
+ assert "tool_use_start" in types
+ assert "tool_use_result" in types
+ async def test_stream_keepalive(self, conversation):
+ """SSE 流包含 ': keepalive' 注释行。"""
+ mock_events = [
+ AgentEvent(type=KEEPALIVE, data={}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "内容"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "测试"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ # SSE 注释行格式: ": keepalive\n\n"
+ assert ": keepalive" in body
+# ============================================================================
+# Test 3: 中断流程
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestInterruptFlow:
+ """中断流程端到端测试。"""
+ async def test_interrupt_active_conversation(self, conversation):
+ """注册 mock runner 后 POST interrupt API 返回 200 并调用 interrupt。"""
+ from chat.conversation_service import _active_runners
+ mock_runner = AsyncMock
+ mock_runner.interrupt = AsyncMock
+ conv_id_str = str(conversation.id)
+ _active_runners[conv_id_str] = mock_runner
+ try:
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ )
+ assert resp.status_code == 200
+ data = resp.json
+ assert data["status"] == "interrupted"
+ mock_runner.interrupt.assert_awaited_once
+ finally:
+ _active_runners.pop(conv_id_str, None)
+ async def test_interrupt_no_active_conversation(self, conversation):
+ """无活跃 runner 时 POST interrupt API 返回 404。"""
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ )
+ assert resp.status_code == 404
+# ============================================================================
+# Test 4: 历史记录加载
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestHistoryLoading:
+ """历史记录加载端到端测试。"""
+ async def test_load_conversation_with_messages(self, conversation):
+ """GET 对话详情返回完整消息列表。"""
+ # 手动创建消息记录
+ await Message.objects.acreate(
+ conversation=conversation,
+ role=Message.Role.USER,
+ content="你好，这是测试消息",
+ )
+ await Message.objects.acreate(
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ content="你好！我是 AI 助手。",
+ )
+ client = AsyncClient
+ resp = await client.get(
+ f"/api/chat/conversations/{conversation.id}/",
+ )
+ assert resp.status_code == 200
+ data = resp.json
+ assert "messages" in data
+ assert len(data["messages"]) == 2
+ assert data["messages"][0]["role"] == "user"
+ assert data["messages"][0]["content"] == "你好，这是测试消息"
+ assert data["messages"][1]["role"] == "assistant"
+ assert data["messages"][1]["content"] == "你好！我是 AI 助手。"
