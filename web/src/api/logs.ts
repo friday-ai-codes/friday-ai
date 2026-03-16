@@ -101,13 +101,13 @@ export interface TriggerLogQuery {
 export async function listTriggerLogs(
  query: TriggerLogQuery = {},
 ): Promise<LogListResponse<TriggerLog>> {
- return get<LogListResponse<TriggerLog>>('/feishu/logs', query as Record<string, string | number | undefined>)
+ return get<LogListResponse<TriggerLog>>('/feishu/logs/', query as Record<string, string | number | undefined>)
 }
 /**
  * 获取触发日志详情
  */
 export async function getTriggerLog(logId: string): Promise<TriggerLogDetail> {
- return get<TriggerLogDetail>(`/feishu/logs/${logId}`)
+ return get<TriggerLogDetail>(`/feishu/logs/${logId}/`)
 }
 /**
  * 获取触发日志原始数据
@@ -116,13 +116,13 @@ export async function getTriggerLogRaw(logId: string): Promise<{
  webhook_raw: Record<string, unknown> | null
  work_item_raw: Record<string, unknown> | null
 }> {
- return get(`/feishu/logs/${logId}/raw`)
+ return get(`/feishu/logs/${logId}/raw/`)
 }
 /**
  * 删除触发日志
  */
 export async function deleteTriggerLog(logId: string): Promise<void> {
- return del(`/feishu/logs/${logId}/delete`)
+ return del(`/feishu/logs/${logId}/delete/`)
 }
 /**
  * 重试触发日志
@@ -132,7 +132,7 @@ export async function retryTriggerLog(logId: string): Promise<{
  log_id: string
  result: Record<string, unknown>
 }> {
- return post(`/feishu/logs/${logId}/retry`)
+ return post(`/feishu/logs/${logId}/retry/`)
 }
 export default {
  listTriggerLogs,

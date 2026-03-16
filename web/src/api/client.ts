@@ -61,7 +61,7 @@ function onTokenRefreshed(token: string): void {
  * 刷新 Token
  */
 export async function refreshToken: Promise<string> {
- const response = await fetch(`${API_BASE}/auth/refresh`, {
+ const response = await fetch(`${API_BASE}/auth/refresh/`, {
  method: 'POST',
  credentials: 'include', // 发送 HttpOnly Cookie
  })
@@ -87,8 +87,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
  * 构建带查询参数的 URL
  */
 function buildUrl(endpoint: string, params?: Record<string, string | number | undefined>): string {
- const url = new URL(endpoint, window.location.origin)
- url.pathname = `${API_BASE}${endpoint}`
+ // 确保路径以 / 结尾（防止 Django 301 重定向）
+ const normalizedEndpoint = endpoint.endsWith('/') || endpoint.includes('?')
+ ? endpoint: `${endpoint}/`
+ const url = new URL(normalizedEndpoint, window.location.origin)
+ url.pathname = `${API_BASE}${normalizedEndpoint}`
  if (params) {
  Object.entries(params).forEach(([key, value]) => {
  if (value !== undefined) {
