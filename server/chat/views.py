@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from adrf.views import APIView
-from agents.core.events import ERROR, AgentEvent
+from agents.core.events import ERROR, KEEPALIVE, AgentEvent
 from projects.models import Project
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
 from .conversation_service import ConversationService
@@ -332,7 +332,7 @@ class ChatStreamView(APIView):
  content=content,
  role=role,
  ):
- if event.type == "keepalive":
+ if event.type == KEEPALIVE:
  yield format_keepalive
  else:
  yield format_sse(event, message_id=message_id)

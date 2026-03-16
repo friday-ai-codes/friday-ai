@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generator, Literal
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA, AgentEvent
+from agents.core.events import ERROR, KEEPALIVE, MESSAGE_COMPLETE, TEXT_DELTA, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
@@ -60,6 +60,8 @@ class SdkRunnerConfig:
  timeout_seconds: float = 300.0 # 5 分钟
  permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "bypassPermissions"
  queue_maxsize: int = 200
+ # 15 秒间隔低于主流浏览器（Chrome/Firefox/Safari）默认的网络超时阈值
+ # （通常 60-120 秒），确保长对话不因浏览器超时而断连
  heartbeat_timeout: float = 15.0
  agent_session: Any = field(default=None) # AgentSession | None
  max_thinking_tokens: int | None = None
@@ -285,7 +287,7 @@ class SDKAgentRunner:
  timeout=min(self._config.heartbeat_timeout, remaining),
  )
  except TimeoutError:
- yield AgentEvent(type="keepalive", data={})
+ yield AgentEvent(type=KEEPALIVE, data={})
  continue
  if event is None:
  break
