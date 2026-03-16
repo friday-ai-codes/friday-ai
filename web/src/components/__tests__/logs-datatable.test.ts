@@ -36,14 +36,14 @@ const testData: MockTriggerLog = [
 describe('Logs DataTable', => {
  it('渲染日志列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'logs-test' },
+ props: { data: testData, columns, tableId: 'logs-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('搜索框过滤工作项名称', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'logs-search' },
+ props: { data: testData, columns, tableId: 'logs-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
@@ -59,7 +59,7 @@ describe('Logs DataTable', => {
  columns,
  tableId: 'logs-click',
  onRowClick: => {},
- },
+ } as any,
  })
  const firstRow = wrapper.find('tbody tr')
  expect(firstRow.classes).toContain('cursor-pointer')

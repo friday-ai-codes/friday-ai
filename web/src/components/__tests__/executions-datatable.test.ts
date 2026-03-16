@@ -87,14 +87,14 @@ const testData: MockWorkflowExecution = [
 describe('Executions DataTable', => {
  it('渲染执行列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-test' },
+ props: { data: testData, columns, tableId: 'executions-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('表头包含正确的列名', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-headers' },
+ props: { data: testData, columns, tableId: 'executions-headers' } as any,
  })
  const headers = wrapper.findAll('th').map(th => th.text)
  expect(headers).toContain('状态')
@@ -106,7 +106,7 @@ describe('Executions DataTable', => {
  })
  it('触发类型显示中文标签', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-trigger' },
+ props: { data: testData, columns, tableId: 'executions-trigger' } as any,
  })
  const text = wrapper.text
  expect(text).toContain('手动触发')
@@ -116,7 +116,7 @@ describe('Executions DataTable', => {
  })
  it('耗时格式化正确（秒/分秒/空值）', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-duration' },
+ props: { data: testData, columns, tableId: 'executions-duration' } as any,
  })
  const text = wrapper.text
  // 45s
@@ -128,7 +128,7 @@ describe('Executions DataTable', => {
  })
  it('搜索框过滤工作流名称', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-search' },
+ props: { data: testData, columns, tableId: 'executions-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
@@ -145,21 +145,21 @@ describe('Executions DataTable', => {
  columns,
  tableId: 'executions-click',
  onRowClick: => {},
- },
+ } as any,
  })
  const firstRow = wrapper.find('tbody tr')
  expect(firstRow.classes).toContain('cursor-pointer')
  })
  it('空数据时渲染空状态', => {
  const wrapper = mount(DataTable, {
- props: { data:, columns, tableId: 'executions-empty' },
+ props: { data:, columns, tableId: 'executions-empty' } as any,
  })
  // DataTable 空状态行
  expect(wrapper.findAll('tbody tr').length).toBe(1)
  })
  it('loading 状态显示 skeleton 行', => {
  const wrapper = mount(DataTable, {
- props: { data:, columns, tableId: 'executions-loading', loading: true },
+ props: { data:, columns, tableId: 'executions-loading', loading: true } as any,
  })
  // DataTable loading 状态渲染 8 行 skeleton
  expect(wrapper.findAll('tbody tr').length).toBe(8)

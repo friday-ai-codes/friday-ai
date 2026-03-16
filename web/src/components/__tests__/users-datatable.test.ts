@@ -37,14 +37,14 @@ const testData: MockSystemUser = [
 describe('Users DataTable', => {
  it('渲染用户列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'users-test' },
+ props: { data: testData, columns, tableId: 'users-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('搜索框过滤用户名', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'users-search' },
+ props: { data: testData, columns, tableId: 'users-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
