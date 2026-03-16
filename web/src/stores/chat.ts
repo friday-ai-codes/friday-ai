@@ -200,6 +200,9 @@ export const useChatStore = defineStore('chat', => {
  case 'error':
  error.value = event.message || '未知错误'
  break
+ default:
+ console.warn('[Chat] 收到未知 SSE 事件类型:', event.type, event)
+ break
  }
  }
  async function sendMessage(content: string) {

@@ -34,7 +34,12 @@ export interface CreateConversationParams {
  title?: string
  model?: string
 }
-/** SSE 事件 */
+/**
+ * SSE 事件
+ *
+ * type 联合类型与后端 server/agents/core/events.py 的 ALL_EVENT_TYPES 一一对应。
+ * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
+ */
 export interface SSEEvent {
  type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning'
  message_id?: string
