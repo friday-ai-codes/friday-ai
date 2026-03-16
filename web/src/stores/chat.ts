@@ -121,20 +121,28 @@ export const useChatStore = defineStore('chat', => {
  }
  async function stopStreaming {
  if (!currentConversationId.value) return
- // 先调 interrupt API 通知后端中断 SDK 运行
+ // 标记中断状态（前端立即响应）
+ streamingStatus.value = 'interrupted'
+ // 先调 interrupt API 通知后端取消 SDK task
  try {
  await interruptConversation(currentConversationId.value)
  }
  catch {
  // 忽略错误（对话可能已结束）
  }
- // 然后断开 SSE
+ // 不立即 abort SSE 连接，让后端有时间发送 message_complete 事件
+ // 设置 3 秒超时保底：正常情况下后端中断后流会在几百毫秒内结束
  if (abortController.value) {
- abortController.value.abort
+ const controller = abortController.value
+ setTimeout( => {
+ // 仅在 controller 仍是当前活跃的时候才 abort（防止误断新请求）
+ if (abortController.value === controller) {
+ controller.abort
  abortController.value = null
- }
- streamingStatus.value = 'interrupted'
  isStreaming.value = false
+ }
+ }, 3000)
+ }
  }
  function toggleSidebar {
  sidebarCollapsed.value = !sidebarCollapsed.value

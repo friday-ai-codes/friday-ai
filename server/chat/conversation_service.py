@@ -314,6 +314,12 @@ class ConversationService:
  finally:
  # 注销 active runner
  _active_runners.pop(conv_id_str, None)
+ logger.debug(
+ "active_runner_cleaned",
+ conversation_id=conv_id_str,
+ session_id=session_id,
+ runner_result_status=runner.result.status if runner.result else "no_result",
+ )
  # 流结束后：落库
  result = runner.result
  final_content = result.final_answer if result else ""
