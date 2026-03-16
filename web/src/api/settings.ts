@@ -54,7 +54,7 @@ export interface ClaudeConfigCreate {
  * 获取单个设置
  */
 export async function getSetting(key: SettingKey): Promise<SettingRead> {
- return get<SettingRead>(`/settings/${key}`)
+ return get<SettingRead>(`/settings/${key}/`)
 }
 /**
  * 获取所有设置
@@ -66,13 +66,13 @@ export async function getAllSettings: Promise<SettingRead> {
  * 更新设置
  */
 export async function updateSetting(key: SettingKey, value: string): Promise<SettingRead> {
- return put<SettingRead>(`/settings/${key}`, { value })
+ return put<SettingRead>(`/settings/${key}/`, { value })
 }
 /**
  * 删除设置
  */
 export async function deleteSetting(key: SettingKey): Promise<void> {
- return del(`/settings/${key}`)
+ return del(`/settings/${key}/`)
 }
 /**
  * 获取项目的 Claude 配置

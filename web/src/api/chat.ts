@@ -1,8 +1,8 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import { del, get, post } from './client'
 import type { Conversation, ConversationDetail, CreateConversationParams } from '~/types/chat'
+import { del, get, post } from './client'
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -122,7 +122,7 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
  api_key: params.api_key,
  base_url: params.base_url,
  }
- const response = await get<ModelsResponse>('/chat/models', queryParams)
+ const response = await get<ModelsResponse>('/chat/models/', queryParams)
  // 对模型列表进行排序
  return {
  ...response,
@@ -133,7 +133,7 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
  * 发送对话请求
  */
 export async function chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
- return post<ChatCompletionResponse>('/chat/completions', request)
+ return post<ChatCompletionResponse>('/chat/completions/', request)
 }
 /**
  * 快速测试 - 使用系统配置发送测试消息

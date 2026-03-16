@@ -153,7 +153,7 @@ export const repositoriesApi = {
  * 设置/更新 Access Token
  */
  setAccessToken: async (id: string, data: { token: string, git_user_name?: string, git_user_email?: string }) => {
- return post<GitCredential>(`/repositories/${id}/credential/access-token`, data)
+ return post<GitCredential>(`/repositories/${id}/credential/access-token/`, data)
  },
  /**
  * 删除凭证

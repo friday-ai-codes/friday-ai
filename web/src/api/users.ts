@@ -8,25 +8,25 @@ import { get, patch, post } from './client'
  * 获取当前用户完整信息（含 gravatar_url 和 project_memberships）
  */
 export async function getMe: Promise<MeUser> {
- return get<MeUser>('/auth/me')
+ return get<MeUser>('/auth/me/')
 }
 /**
  * 更新当前用户资料
  */
 export async function updateProfile(data: { display_name: string }): Promise<MeUser> {
- return patch<MeUser>('/auth/me/profile', data)
+ return patch<MeUser>('/auth/me/profile/', data)
 }
 /**
  * 创建邀请令牌（仅超级管理员）
  */
 export async function createInvitation(email?: string): Promise<Invitation> {
- return post<Invitation>('/auth/invite', { email: email ?? '' })
+ return post<Invitation>('/auth/invite/', { email: email ?? '' })
 }
 /**
  * 校验邀请令牌有效性（公开端点）
  */
 export async function validateInvitation(token: string): Promise<Invitation> {
- return get<Invitation>(`/auth/invite?token=${encodeURIComponent(token)}`)
+ return get<Invitation>(`/auth/invite/?token=${encodeURIComponent(token)}`)
 }
 /**
  * 接受邀请并注册新用户（公开端点）
@@ -37,19 +37,19 @@ export async function acceptInvitation(data: {
  password: string
  display_name?: string
 }): Promise<SystemUser> {
- return post<SystemUser>('/auth/invite/accept', data)
+ return post<SystemUser>('/auth/invite/accept/', data)
 }
 /**
  * 获取系统用户列表（仅超级管理员）
  */
 export async function listUsers: Promise<SystemUser> {
- return get<SystemUser>('/auth/users')
+ return get<SystemUser>('/auth/users/')
 }
 /**
  * 更新用户状态（启用/禁用，仅超级管理员）
  */
 export async function updateUser(userId: string, data: { is_active: boolean }): Promise<SystemUser> {
- return patch<SystemUser>(`/auth/users/${userId}`, data)
+ return patch<SystemUser>(`/auth/users/${userId}/`, data)
 }
 export default {
  getMe,
