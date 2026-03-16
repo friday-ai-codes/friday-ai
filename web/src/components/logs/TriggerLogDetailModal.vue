@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
+import type { TriggerLogDetail } from '~/api/logs'
 import { VueFinalModal } from 'vue-final-modal'
 import { deleteTriggerLog, getTriggerLog, retryTriggerLog } from '~/api/logs'
 import {
@@ -12,7 +12,6 @@ import {
  AlertDialogHeader,
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import {

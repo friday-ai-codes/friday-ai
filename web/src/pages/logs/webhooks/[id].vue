@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
+import type { TriggerLogDetail } from '~/api/logs'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
