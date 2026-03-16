@@ -21,7 +21,7 @@ from workflows.triggers.dispatcher import TriggerDispatcher
 from .bot.dispatcher import dispatch_inbound_message
 from .bot.parser import normalize_im_message
 from .client import FeishuClient, create_feishu_client_for_project, verify_webhook_token
-from .models import KeyFields, TriggerLog, TriggerLogStatus
+from .models import KeyFields, ProcessedEvent, TriggerLog, TriggerLogStatus
 from .serializers import (
  FeishuConfigCreateSerializer,
  FeishuConfigSerializer,
@@ -92,17 +92,17 @@ def _verify_and_decrypt_callback_payload(
  status=status.HTTP_400_BAD_REQUEST,
  )
  return decrypted_data, None
-# 幂等处理
-_processed_events: set[str] = set
-_MAX_PROCESSED_EVENTS = 10000
-def is_event_processed(event_uuid: str) -> bool:
- return event_uuid in _processed_events
-def mark_event_processed(event_uuid: str) -> None:
- if len(_processed_events) >= _MAX_PROCESSED_EVENTS:
- to_remove = list(_processed_events)[: _MAX_PROCESSED_EVENTS // 2]
- for uuid in to_remove:
- _processed_events.discard(uuid)
- _processed_events.add(event_uuid)
+# 幂等处理 — DB 级别唯一约束，支持多进程部署和服务重启
+async def is_event_processed_db(event_id: str) -> bool:
+ """检查事件是否已处理（DB 级别幂等）。"""
+ return await ProcessedEvent.objects.filter(event_id=event_id).aexists
+async def mark_event_processed_db(event_id: str) -> bool:
+ """标记事件为已处理，返回 True 表示首次标记成功，False 表示已存在。"""
+ try:
+ await ProcessedEvent.objects.acreate(event_id=event_id)
+ return True
+ except IntegrityError:
+ return False
 # ============ Card Callback ============
 @dataclass
 class CardCallback:
@@ -346,11 +346,11 @@ class IMMessageWebhookView(APIView):
  event = data.get("event", {})
  event_id = header.get("event_id", "")
  event_type = header.get("event_type", "")
- # 幂等检查
- if event_id and is_event_processed(event_id):
+ # 幂等检查 — DB 级别
+ if event_id and await is_event_processed_db(event_id):
  return Response({"status": "duplicate"})
  if event_id:
- mark_event_processed(event_id)
+ await mark_event_processed_db(event_id)
  # 只处理 im.message.receive_v1 事件
  if event_type != "im.message.receive_v1":
  logger.debug("im_message_event_ignored", event_type=event_type)
@@ -434,8 +434,8 @@ class FeishuWebhookView(APIView):
  return Response({"status": "ignored", "reason": "缺少 header 或 payload"})
  event_uuid = header.get("uuid")
  event_type = header.get("event_type", "")
- # Idempotency check — 内存去重
- if event_uuid and is_event_processed(event_uuid):
+ # Idempotency check — DB 级别去重
+ if event_uuid and await is_event_processed_db(event_uuid):
  logger.info("webhook_event_duplicate", event_uuid=event_uuid)
  return Response({"status": "duplicate", "uuid": event_uuid})
  # Get project
@@ -481,9 +481,9 @@ class FeishuWebhookView(APIView):
  {"detail": "Token 验证失败"},
  status=status.HTTP_401_UNAUTHORIZED,
  )
- # Mark as processed
+ # Mark as processed — DB 级别
  if event_uuid:
- mark_event_processed(event_uuid)
+ await mark_event_processed_db(event_uuid)
  logger.info("webhook_event_processing", event_type=event_type, project_key=project_key, event_uuid=event_uuid)
  # Handle event and create trigger log
  work_item_id = payload.get("id")
@@ -502,9 +502,7 @@ class FeishuWebhookView(APIView):
  status=TriggerLogStatus.ACCEPTED,
  )
  except IntegrityError:
- # 服务器重启后内存集合丢失，但 DB unique 约束捕获了重复
- if event_uuid:
- mark_event_processed(event_uuid)
+ # TriggerLog event_uuid unique 约束兜底（DB 级别双重保护）
  logger.info("webhook_event_duplicate_db", event_uuid=event_uuid)
  return Response({"status": "duplicate", "uuid": event_uuid})
  # Handle specific events

@@ -1,7 +1,8 @@
-"""Tests for Feishu TriggerLog API endpoints."""
+"""Tests for Feishu TriggerLog API endpoints and ProcessedEvent idempotency."""
 import json
 import pytest
-from feishu.models import TriggerLog, TriggerLogStatus
+from django.db import IntegrityError
+from feishu.models import ProcessedEvent, TriggerLog, TriggerLogStatus
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -254,3 +255,35 @@ class TestTriggerLogModel:
  event_type="Event2",
  status=TriggerLogStatus.ACCEPTED,
  )
+# ============================================================================
+# ProcessedEvent Model Tests
+# ============================================================================
+@pytest.mark.django_db
+class TestProcessedEvent:
+ """测试 ProcessedEvent 幂等去重模型。"""
+ def test_create_processed_event(self, db):
+ """测试创建已处理事件记录。"""
+ event = ProcessedEvent.objects.create(event_id="test-event-001")
+ assert event.event_id == "test-event-001"
+ assert event.created_at is not None
+ def test_processed_event_unique_constraint(self, db):
+ """测试 event_id 唯一约束：重复插入应抛出 IntegrityError。"""
+ ProcessedEvent.objects.create(event_id="duplicate-event")
+ with pytest.raises(IntegrityError):
+ ProcessedEvent.objects.create(event_id="duplicate-event")
+ def test_processed_event_exists_check(self, db):
+ """测试通过 exists 查询检查事件是否已处理。"""
+ assert not ProcessedEvent.objects.filter(event_id="new-event").exists
+ ProcessedEvent.objects.create(event_id="new-event")
+ assert ProcessedEvent.objects.filter(event_id="new-event").exists
+ def test_processed_event_str_representation(self, db):
+ """测试字符串表示。"""
+ event = ProcessedEvent.objects.create(event_id="str-test-event")
+ assert str(event) == "str-test-event"
+ def test_multiple_events_independent(self, db):
+ """测试多个不同事件互不影响。"""
+ ProcessedEvent.objects.create(event_id="event-a")
+ ProcessedEvent.objects.create(event_id="event-b")
+ ProcessedEvent.objects.create(event_id="event-c")
+ assert ProcessedEvent.objects.count == 3
+ assert ProcessedEvent.objects.filter(event_id="event-b").exists
