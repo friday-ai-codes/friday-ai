@@ -10,6 +10,7 @@ import { getMe } from '~/api/users'
 import { useAuthStore } from '~/stores/auth'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import LoadingState from '~/components/common/LoadingState.vue'
 const authStore = useAuthStore
 const meData = ref<MeUser | null>(null)
 const loading = ref(true)
@@ -76,23 +77,34 @@ onMounted( => {
  个人资料
  </h1>
  </section>
- <div v-if="loading" class="flex items-center justify-center py-12">
- <span class="icon-[lucide--loader-2] animate-spin text-4xl text-muted-foreground" />
- </div>
+ <LoadingState v-if="loading" variant="spinner" text="加载资料..." />
  <template v-else-if="meData">
  <!-- 头像与基本信息 -->
  <div class="group relative">
  <div class="card overflow-hidden">
+ <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--user-circle] text-2xl text-primary" />
+ </div>
+ <div>
+ <h2 class="text-lg font-semibold">
+ 个人信息
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 查看和编辑您的基本信息
+ </p>
+ </div>
+ </div>
  <div class=" flex flex-col items-center gap-6">
  <!-- 头像 -->
  <div class="relative">
  <img
  v-if="meData.gravatar_url":src="meData.gravatar_url":alt="meData.display_name || meData.username"
- class="w-24 rounded-full ring-4 ring-primary/20"
+ class="w-24 rounded-full ring-4 ring-primary/20 ring-offset-2 ring-offset-background"
  >
  <div
  v-else
- class="w-24 rounded-full bg-gradient-to-br from-primary/30 to-secondary/30 ring-4 ring-primary/20 flex items-center justify-center text-3xl font-bold text-primary"
+ class="w-24 rounded-full bg-gradient-to-br from-primary/30 to-secondary/30 ring-4 ring-primary/20 ring-offset-2 ring-offset-background flex items-center justify-center text-3xl font-bold text-primary"
  >
  {{ (meData.display_name || meData.username).charAt(0).toUpperCase }}
  </div>
@@ -104,7 +116,7 @@ onMounted( => {
  <div class="flex items-center gap-2 justify-center max-w-xs mx-auto">
  <Input
  v-model="displayName"
- class="text-center bg-background/50"
+ class=" bg-muted/30 border-border/50 focus:border-primary/50"
  placeholder="输入显示名称"
  @keyup.enter="saveDisplayName"
  />
