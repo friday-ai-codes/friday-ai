@@ -6,6 +6,7 @@ from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from adrf.views import APIView
 from repositories.models import (
@@ -68,6 +69,7 @@ class SearchResultSerializer(serializers.Serializer):
  context_header = serializers.CharField
 class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
+ permission_classes = [IsAuthenticated]
  async def post(self, request: Any, repository_id: str) -> Response:
  """触发仓库索引（手动）。"""
  # 快速状态检查（无锁开销，快速路径）
@@ -110,6 +112,7 @@ class IndexTriggerView(APIView):
  )
 class IndexStatusView(APIView):
  """Get index status for a repository."""
+ permission_classes = [IsAuthenticated]
  async def get(self, request, repository_id):
  """Get current index status."""
  try:
@@ -133,6 +136,7 @@ class IndexStatusView(APIView):
  return Response(serializer.data)
 class IndexDeleteView(APIView):
  """Delete index for a repository."""
+ permission_classes = [IsAuthenticated]
  async def delete(self, request, repository_id):
  """Delete the index for the repository."""
  try:
@@ -152,6 +156,7 @@ class IndexDeleteView(APIView):
  return Response(status=status.HTTP_204_NO_CONTENT)
 class CodeSearchView(APIView):
  """Search code in repository index."""
+ permission_classes = [IsAuthenticated]
  async def post(self, request, repository_id):
  """Search for code in the repository."""
  try:
@@ -256,6 +261,7 @@ class CodeSearchView(APIView):
  return results
 class QdrantHealthView(APIView):
  """Check Qdrant service health."""
+ permission_classes = [IsAuthenticated]
  async def get(self, request):
  """Get Qdrant health status."""
  health = await sync_to_async(QdrantService.health_check) # KEEP: Qdrant SDK 同步限制
@@ -280,6 +286,7 @@ class QdrantHealthView(APIView):
  return Response(health)
 class EmbeddingHealthView(APIView):
  """Check Embedding API health."""
+ permission_classes = [IsAuthenticated]
  async def get(self, request):
  """Get Embedding API health status using saved config."""
  health = await EmbeddingService.test_connection
@@ -317,6 +324,7 @@ class EmbeddingHealthView(APIView):
  return Response(health)
 class RerankerHealthView(APIView):
  """Check Reranker API health."""
+ permission_classes = [IsAuthenticated]
  async def get(self, request):
  """使用已保存配置测试 reranker 连接。"""
  from services.reranker import RerankerService
@@ -364,6 +372,7 @@ class IndexHistorySerializer(serializers.Serializer):
  created_at = serializers.DateTimeField
 class IndexHistoryListView(APIView):
  """: IndexHistory 操作记录查询 API（分页）。"""
+ permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  await Repository.objects.aget(id=repository_id, is_deleted=False)
@@ -382,6 +391,7 @@ class IndexHistoryListView(APIView):
  return Response({"items": data, "total": total})
 class IndexStatsView(APIView):
  """: 统计 API（chunk 数、语言分布、覆盖率）。"""
+ permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
@@ -402,6 +412,7 @@ class IndexStatsView(APIView):
  })
 class RepositoryCollectionHealthView(APIView):
  """: 仓库 Qdrant 集合健康校验 API。"""
+ permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
@@ -416,6 +427,7 @@ class RepositoryCollectionHealthView(APIView):
  return Response(health)
 class IndexFreshnessView(APIView):
  """: 索引新鲜度指示 API。"""
+ permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)

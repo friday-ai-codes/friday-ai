@@ -6,6 +6,7 @@ from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from common.encryption import decrypt_value, encrypt_value
@@ -22,6 +23,7 @@ from .serializers import (
 )
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
+ permission_classes = [IsAuthenticated]
  serializer_class = RepositorySerializer
  def get_queryset(self):
  """Filter out soft-deleted repositories."""
@@ -140,6 +142,7 @@ class RepositoryViewSet(ModelViewSet):
  return Response({"webhook_secret": new_secret})
 class SetAccessTokenView(APIView):
  """View for setting or updating access token."""
+ permission_classes = [IsAuthenticated]
  async def post(self, request, repository_id):
  repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
  token = request.data.get("token")
@@ -171,6 +174,7 @@ class SetAccessTokenView(APIView):
  )
 class TestConnectionView(APIView):
  """View for testing Git repository connection."""
+ permission_classes = [IsAuthenticated]
  async def post(self, request, repository_id=None):
  """Test connection to a Git repository.
  Can be used in two ways:
