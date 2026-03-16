@@ -40,6 +40,15 @@ const apiKey = field('api_key', '')
 // 高级设置
 const maxThinkingTokens = field('max_thinking_tokens', null)
 const maxBudgetUsd = field('max_budget_usd', null)
+// Input 组件不接受 null，转换为 undefined
+const maxThinkingTokensInput = computed({
+ get: => maxThinkingTokens.value ?? undefined,
+ set: (v: string | number | undefined) => { maxThinkingTokens.value = (v != null ? Number(v): null) as any },
+})
+const maxBudgetUsdInput = computed({
+ get: => maxBudgetUsd.value ?? undefined,
+ set: (v: string | number | undefined) => { maxBudgetUsd.value = (v != null ? Number(v): null) as any },
+})
 const advancedOpen = ref(false)
 const variables = computed({
  get: => props.config.variables ??,
@@ -198,7 +207,7 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <div class="space-y-2">
  <Label>最大思考 Token 数</Label>
  <Input
- v-model="maxThinkingTokens"
+ v-model="maxThinkingTokensInput"
  type="number":min="1024":max="128000"
  placeholder="留空使用默认值"
  />
@@ -210,7 +219,7 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  <div class="space-y-2">
  <Label>预算上限 (USD)</Label>
  <Input
- v-model="maxBudgetUsd"
+ v-model="maxBudgetUsdInput"
  type="number":min="0.01":max="100":step="0.01"
  placeholder="留空不限制"
  />
