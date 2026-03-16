@@ -126,6 +126,18 @@ class FeishuBotMessage(models.Model):
  ]
  def __str__(self) -> str:
  return self.message_id
+class ProcessedEvent(models.Model):
+ """飞书事件幂等去重记录。
+ 使用 DB 唯一约束替代内存 set，确保多进程部署和服务重启后幂等性不丢失。
+ """
+ event_id = models.CharField(max_length=100, unique=True, db_index=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "feishu_processed_events"
+ verbose_name = "已处理事件"
+ verbose_name_plural = "已处理事件"
+ def __str__(self) -> str:
+ return self.event_id
 # Key field constants for extracting from work item fields
 class KeyFields:
  """Key field identifiers for work item fields."""
