@@ -26,3 +26,6 @@ func KeyFilePath string {
 func PIDFilePath string {
 	return filepath.Join(DataDir, "runner.pid")
 }
+func LogDir string {
+	return filepath.Join(DataDir, "logs")
+}
