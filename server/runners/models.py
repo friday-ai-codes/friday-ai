@@ -100,6 +100,11 @@ class RunnerTaskAssignment(models.Model):
  session = models.ForeignKey(
  "subagent.SubAgentSession", on_delete=models.CASCADE, related_name="runner_assignments"
  )
+ feishu_message_id = models.CharField(
+ max_length=128, blank=True, default="",
+ db_index=True,
+ help_text="触发此任务的飞书消息 ID，用于断连恢复时映射",
+ )
  assigned_at = models.DateTimeField(auto_now_add=True)
  status = models.CharField(max_length=20, choices=Status.choices, default=Status.ASSIGNED)
  completed_at = models.DateTimeField(null=True, blank=True)
