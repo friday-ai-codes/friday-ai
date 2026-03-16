@@ -84,26 +84,20 @@ onMounted(async => {
 })
 </script>
 <template>
- <div class="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
- <!-- 背景装饰 -->
- <div class="absolute inset-0 -z-10">
- <div class="absolute -top-40 -right-40 w-96 bg-gradient-to-br from-primary/30 to-secondary/50 rounded-full blur-3xl" />
- <div class="absolute -bottom-40 -left-40 w-96 bg-gradient-to-tr from-secondary/40 to-primary/20 rounded-full blur-3xl" />
- <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-primary/5 to-secondary/10 rounded-full blur-3xl" />
- </div>
+ <div class="min-h-screen flex items-center justify-center bg-background bg-mesh-gradient relative overflow-hidden">
  <!-- 登录卡片 -->
  <div class="w-full max-w-md mx-4">
  <div class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-primary/20 via-secondary/30 to-primary/20 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-teal-500/20 via-cyan-500/20 to-teal-500/20 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-primary/5 ">
  <!-- Logo -->
  <div class="text-center mb-8">
- <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/30 to-primary/10 border border-primary/10">
- <span class="icon-[lucide--bot] text-4xl text-primary" />
+ <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/10 border border-teal-500/10">
+ <span class="icon-[lucide--bot] text-4xl text-teal-500" />
  </div>
- <h1 class="text-2xl font-bold bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+ <h1 class="text-2xl font-bold bg-gradient-to-r from-foreground via-teal-500 to-foreground bg-clip-text text-transparent">
  Friday AI
  </h1>
  </div>

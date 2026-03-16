@@ -265,13 +265,19 @@ onMounted( => {
  <!-- 名称 -->
  <div class="space-y-2">
  <Label>名称 *</Label>
- <Input v-model="form.name" placeholder="如：Okta、Azure AD" />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--tag] text-muted-foreground" />
+ <Input v-model="form.name" placeholder="如：Okta、Azure AD" class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  <!-- Issuer URL + Discovery -->
  <div class="space-y-2">
  <Label>Issuer URL *</Label>
  <div class="flex gap-2">
- <Input v-model="form.issuer_url" placeholder="https://your-domain.okta.com" class="flex-1" />
+ <div class="relative flex-1">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--globe] text-muted-foreground" />
+ <Input v-model="form.issuer_url" placeholder="https://your-domain.okta.com" class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  <Button
  variant="outline"
  size="sm":disabled="discovering || !form.issuer_url"
@@ -286,7 +292,10 @@ onMounted( => {
  <!-- Client ID -->
  <div class="space-y-2">
  <Label>Client ID *</Label>
- <Input v-model="form.client_id" placeholder="OIDC Client ID" class="font-mono text-sm" />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--fingerprint] text-muted-foreground" />
+ <Input v-model="form.client_id" placeholder="OIDC Client ID" class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  <!-- Client Secret -->
  <div class="space-y-2">
@@ -296,12 +305,15 @@ onMounted( => {
  留空则保持不变
  </span>
  </div>
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--lock] text-muted-foreground" />
  <Input
  v-model="form.client_secret"
  type="password"
  placeholder="OIDC Client Secret"
- class="font-mono text-sm"
+ class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50"
  />
+ </div>
  </div>
  <!-- 端点配置 -->
  <div class="rounded-lg bg-muted/30 border border-border/30 space-y-3">
@@ -311,21 +323,33 @@ onMounted( => {
  </div>
  <div class="space-y-2">
  <Label class="text-xs">Authorization Endpoint *</Label>
- <Input v-model="form.authorization_endpoint" placeholder="https://..." class="font-mono text-xs " />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--link] text-muted-foreground" />
+ <Input v-model="form.authorization_endpoint" placeholder="https://..." class="pl-10 font-mono text-xs bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  <div class="space-y-2">
  <Label class="text-xs">Token Endpoint *</Label>
- <Input v-model="form.token_endpoint" placeholder="https://..." class="font-mono text-xs " />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--key-round] text-muted-foreground" />
+ <Input v-model="form.token_endpoint" placeholder="https://..." class="pl-10 font-mono text-xs bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  <div class="space-y-2">
  <Label class="text-xs">UserInfo Endpoint</Label>
- <Input v-model="form.userinfo_endpoint" placeholder="https://..." class="font-mono text-xs " />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--user-check] text-muted-foreground" />
+ <Input v-model="form.userinfo_endpoint" placeholder="https://..." class="pl-10 font-mono text-xs bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  </div>
  <!-- Scopes -->
  <div class="space-y-2">
  <Label>Scopes</Label>
- <Input v-model="form.scopes" placeholder="openid profile email" class="font-mono text-sm" />
+ <div class="relative">
+ <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--shield] text-muted-foreground" />
+ <Input v-model="form.scopes" placeholder="openid profile email" class="pl-10 font-mono text-sm bg-muted/30 border-border/50 focus:border-primary/50" />
+ </div>
  </div>
  <!-- 启用状态 -->
  <div class="flex items-center justify-between">
@@ -334,14 +358,14 @@ onMounted( => {
  </div>
  </div>
  <DialogFooter>
- <Button variant="outline" @click="dialogOpen = false">
+ <button class="btn btn-secondary" @click="dialogOpen = false">
  取消
- </Button>
- <Button:disabled="saving" @click="onSave">
- <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
- <span v-else class="icon-[lucide--save] mr-2" />
+ </button>
+ <button class="btn btn-primary":disabled="saving" @click="onSave">
+ <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin" />
+ <span v-else class="icon-[lucide--save]" />
  {{ editingId ? '更新': '创建' }}
- </Button>
+ </button>
  </DialogFooter>
  </DialogContent>
  </Dialog>
