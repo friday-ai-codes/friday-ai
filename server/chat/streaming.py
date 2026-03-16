@@ -18,5 +18,9 @@ def format_sse(event: AgentEvent, message_id: str = "") -> str:
  payload["message_id"] = message_id
  return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 def format_keepalive -> str:
- """SSE keepalive 注释行（不被 EventSource 解析为事件）。"""
+ """SSE keepalive 注释行（不被 EventSource 解析为事件）。
+ 使用 SSE 协议的注释行格式 `": keepalive\\n\\n"`。
+ 浏览器 EventSource API 和手动 ReadableStream 解析均会跳过
+ 以冒号开头的注释行，因此不会被误解析为 data 事件。
+ """
  return ": keepalive\n\n"
