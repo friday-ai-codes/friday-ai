@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { TriggerLogDetail, TriggerLogStatus } from '~/api/logs'
-import { Badge } from '~/components/ui/badge'
+import type { TriggerLogDetail } from '~/api/logs'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import StatusBadge from '~/components/common/StatusBadge.vue'
