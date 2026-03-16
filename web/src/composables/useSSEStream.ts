@@ -65,6 +65,11 @@ export async function connectSSE(
  if (trimmed.startsWith('data: ')) {
  try {
  const data: SSEEvent = JSON.parse(trimmed.slice(6))
+ // 防御检查：跳过缺少 type 字段的异常 SSE 数据
+ if (!data.type) {
+ console.warn('[SSE] 收到缺少 type 字段的事件，已跳过:', data)
+ continue
+ }
  onEvent(data)
  }
  catch {
