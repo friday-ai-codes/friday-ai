@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generator, Literal
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-from agents.core.events import ERROR, TEXT_DELTA, AgentEvent
+from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
@@ -234,6 +234,18 @@ class SDKAgentRunner:
  final_answer=partial_text,
  metadata={"cost_usd": 0},
  )
+ # 向队列发送 message_complete 事件，通知前端中断已完成
+ try:
+ event_queue.put_nowait(AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "status": "interrupted",
+ "usage": {},
+ "model": self._config.model,
+ },
+ ))
+ except asyncio.QueueFull:
+ pass
  except Exception as e:
  logger.exception(
  "sdk_runner_error",
