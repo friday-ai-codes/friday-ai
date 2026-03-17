@@ -490,7 +490,7 @@ async function handleTrigger {
  <div v-else-if="currentExecution" class="flex-1 min- relative">
  <!-- 无 workflow_definition 时的回退提示 -->
  <div
- v-if="!currentExecution.workflow_definition"
+ v-if="!currentExecution.workflow_definition?.nodes?.length"
  class="h-full flex items-center justify-center text-muted-foreground"
  >
  <div class="text-center space-y-2">

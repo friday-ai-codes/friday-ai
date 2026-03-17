@@ -142,9 +142,9 @@ WORKFLOW_IDEMPOTENCY_REDIS_URL = env.str(
  default=REDIS_CHANNEL_LAYER_URL,
 )
 # 生产模式下要求 WebSocket 使用 TLS (wss://)
-# 默认值：DEBUG=False 时启用，DEBUG=True 时禁用
+# 默认值：仅生产环境启用，开发环境允许 ws://
 # 可通过环境变量 WEBSOCKET_REQUIRE_TLS 显式控制
-WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", not DEBUG)
+WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", IS_PRODUCTION)
 # =============================================================================
 # Database
 # =============================================================================

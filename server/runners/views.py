@@ -139,6 +139,8 @@ class RunnerPagination(PageNumberPagination):
  max_page_size = 100
 class RunnerViewSet(ModelViewSet):
  """Runner 管理（JWT 认证，限 superuser）。"""
+ # 心跳超时阈值：3 倍心跳间隔（Runner 每 30 秒发一次心跳）
+ HEARTBEAT_STALE_SECONDS = 90
  queryset = Runner.objects.all.order_by("-registered_at")
  serializer_class = RunnerSerializer
  pagination_class = RunnerPagination
@@ -157,6 +159,14 @@ class RunnerViewSet(ModelViewSet):
  if tag:
  qs = qs.filter(tags__contains=tag)
  return qs
+ async def alist(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+ """列表前先清理心跳超时的虚假在线 Runner。"""
+ stale_threshold = timezone.now - timedelta(seconds=self.HEARTBEAT_STALE_SECONDS)
+ await Runner.objects.filter(
+ status="online",
+ last_heartbeat__lt=stale_threshold,
+ ).aupdate(status="offline", channel_name="")
+ return await super.alist(request, *args, **kwargs) # type: ignore[misc]
  @action(detail=True, methods=["get"]) # type: ignore[type-var]
  async def tasks(self, request: Request, pk: str | None = None) -> Response:
  """GET /api/runners/{id}/tasks/ — Runner 关联任务列表。"""
