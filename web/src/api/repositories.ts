@@ -21,6 +21,9 @@ export interface IndexStatusResponse {
  index_processed_chunks: number
  index_write_total: number
  index_write_processed: number
+ //: 统一进度字段
+ overall_progress: number
+ overall_stage: string
 }
 // 索引触发响应
 export interface IndexTriggerResponse {

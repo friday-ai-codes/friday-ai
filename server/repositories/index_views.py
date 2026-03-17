@@ -53,6 +53,9 @@ class IndexStatusSerializer(serializers.Serializer):
  index_processed_chunks = serializers.IntegerField
  index_write_total = serializers.IntegerField
  index_write_processed = serializers.IntegerField
+ #: 统一进度字段
+ overall_progress = serializers.IntegerField
+ overall_stage = serializers.CharField
 class SearchRequestSerializer(serializers.Serializer):
  """Serializer for search request."""
  query = serializers.CharField(max_length=1000)
@@ -122,15 +125,34 @@ class IndexStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ #: 计算统一进度
+ total_chunks = repository.index_total_chunks
+ processed_chunks = repository.index_processed_chunks
+ write_total = repository.index_write_total
+ write_processed = repository.index_write_processed
+ embedding_pct = (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
+ write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
+ # 加权合并：Embedding 权重 70%，Qdrant 写入权重 30%
+ overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
+ if total_chunks == 0:
+ overall_stage = "解析文件中..."
+ elif write_total == 0:
+ overall_stage = "生成向量中..."
+ elif write_processed < write_total:
+ overall_stage = "写入向量库..."
+ else:
+ overall_stage = "完成"
  serializer = IndexStatusSerializer(
  {
  "index_status": repository.index_status,
  "last_indexed_at": repository.last_indexed_at,
  "index_error": repository.index_error,
- "index_total_chunks": repository.index_total_chunks,
- "index_processed_chunks": repository.index_processed_chunks,
- "index_write_total": repository.index_write_total,
- "index_write_processed": repository.index_write_processed,
+ "index_total_chunks": total_chunks,
+ "index_processed_chunks": processed_chunks,
+ "index_write_total": write_total,
+ "index_write_processed": write_processed,
+ "overall_progress": overall_progress,
+ "overall_stage": overall_stage,
  }
  )
  return Response(serializer.data)

@@ -86,21 +86,12 @@ function formatDate(dateStr: string | null) {
  return '-'
  return new Date(dateStr).toLocaleString('zh-CN')
 }
-// 计算进度百分比
-const progressPercent = computed( => {
- if (!indexStatus.value || indexStatus.value.index_total_chunks === 0)
- return 0
- return Math.round(
- (indexStatus.value.index_processed_chunks / indexStatus.value.index_total_chunks) * 100,
- )
+// 统一进度
+const overallProgress = computed( => {
+ return indexStatus.value?.overall_progress ?? 0
 })
-// 计算写入进度百分比
-const writePercent = computed( => {
- if (!indexStatus.value || indexStatus.value.index_write_total === 0)
- return 0
- return Math.round(
- (indexStatus.value.index_write_processed / indexStatus.value.index_write_total) * 100,
- )
+const overallStage = computed( => {
+ return indexStatus.value?.overall_stage ?? '准备中...'
 })
 onMounted(async => {
  await loadIndexStatus
@@ -181,39 +172,18 @@ onUnmounted( => {
  </p>
  </div>
  </div>
- <!-- 生成向量进度 -->
+ <!-- 统一索引进度 -->
  <div class="space-y-1.5">
  <div class="flex items-center justify-between text-sm">
  <span class="text-muted-foreground">
- <span class="icon-[lucide--cpu] mr-1.5" />
- 生成向量
+ <span class="icon-[lucide--loader-circle] mr-1.5 animate-spin" />
+ {{ overallStage }}
  </span>
- <span v-if="indexStatus.index_total_chunks > 0" class="font-medium text-blue-500">
- {{ indexStatus.index_processed_chunks }} / {{ indexStatus.index_total_chunks }} ({{ progressPercent }}%)
- </span>
- <span v-else class="text-muted-foreground">解析中...</span>
+ <span class="font-medium text-blue-500">{{ overallProgress }}%</span>
  </div>
- <div class=" bg-muted rounded-full overflow-hidden">
+ <div class=".5 bg-muted rounded-full overflow-hidden">
  <div
- class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300":style="{ width: indexStatus.index_total_chunks > 0 ? `${progressPercent}%`: '30%' }":class="{ 'animate-pulse': indexStatus.index_total_chunks === 0 }"
- />
- </div>
- </div>
- <!-- 写入 Qdrant 进度 -->
- <div class="space-y-1.5">
- <div class="flex items-center justify-between text-sm">
- <span class="text-muted-foreground">
- <span class="icon-[lucide--database] mr-1.5" />
- 写入向量库
- </span>
- <span v-if="indexStatus.index_write_total > 0" class="font-medium text-emerald-500">
- {{ indexStatus.index_write_processed }} / {{ indexStatus.index_write_total }} ({{ writePercent }}%)
- </span>
- <span v-else class="text-muted-foreground">等待中...</span>
- </div>
- <div class=" bg-muted rounded-full overflow-hidden">
- <div
- class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-300":style="{ width: indexStatus.index_write_total > 0 ? `${writePercent}%`: '0%' }"
+ class="h-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 transition-all duration-500":style="{ width: `${overallProgress}%` }"
  />
  </div>
  </div>
