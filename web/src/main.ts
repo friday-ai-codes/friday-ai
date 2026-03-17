@@ -74,4 +74,10 @@ router.beforeEach(async (to, from, next) => {
 window.addEventListener('auth:forbidden', => {
  router.push('/403')
 })
+// 监听 401 登出事件（多标签页场景：其他标签页登出后 refresh 失败触发）
+window.addEventListener('auth:logout', => {
+ const authStore = useAuthStore
+ authStore.$reset
+ router.push('/login')
+})
 app.mount('#app')

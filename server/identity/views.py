@@ -135,6 +135,10 @@ class OIDCAuthorizeView(APIView):
  id=provider_id, is_active=True
  ).afirst
  if not provider:
+ logger.warning(
+ "oidc_authorize_provider_not_found",
+ provider_id=provider_id,
+ )
  return Response(
  {"detail": "Provider 不存在或未启用"},
  status=status.HTTP_404_NOT_FOUND,
