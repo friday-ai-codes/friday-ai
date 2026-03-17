@@ -268,14 +268,15 @@ const directPredecessorOutputs = computed(: InputFieldItem => {
  // 如果有详细 schema，展开具体字段
  if (output.schema?.properties) {
  for (const [propKey, propSchema] of Object.entries(output.schema.properties)) {
+ const schema = propSchema as { type?: string, description?: string }
  outputs.push({
  nodeId: sourceNode.id,
  nodeShortId,
  nodeLabel,
  fieldName: propKey,
- fieldLabel: (propSchema as any).description || propKey,
- type: (propSchema as any).type || 'any',
- description: (propSchema as any).description,
+ fieldLabel: schema.description || propKey,
+ type: schema.type || 'any',
+ description: schema.description,
  isNested: true,
  parentOutput: output.name,
  })
