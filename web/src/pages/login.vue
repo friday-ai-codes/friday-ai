@@ -55,11 +55,30 @@ async function onOIDCLogin(provider: OIDCProviderPublic) {
  oidcLoading.value = true
  try {
  const redirectUri = (route.query.redirect as string) || '/'
+ // 添加超时控制：10 秒未响应视为 Provider 不可达
+ const controller = new AbortController
+ const timeout = setTimeout( => controller.abort, 10_000)
+ try {
  const result = await getAuthorizeUrl(provider.id, redirectUri)
+ clearTimeout(timeout)
  window.location.href = result.authorize_url
  }
- catch {
+ catch (e) {
+ clearTimeout(timeout)
+ throw e
+ }
+ }
+ catch (e) {
+ // 区分网络错误（Provider 不可达）和其他错误
+ if (e instanceof DOMException && e.name === 'AbortError') {
+ loginError.value = '认证服务暂时不可用，请稍后重试'
+ }
+ else if (e instanceof TypeError && (e.message.includes('fetch') || e.message.includes('network'))) {
+ loginError.value = '认证服务暂时不可用，请稍后重试'
+ }
+ else {
  loginError.value = 'OIDC 登录初始化失败，请重试'
+ }
  oidcLoading.value = false
  }
 }
