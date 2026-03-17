@@ -39,6 +39,7 @@ class Repository(models.Model):
  coding_tasks: "QuerySet[CodingTask]"
  credential: "GitCredential"
  index_history: "QuerySet[IndexHistory]"
+ file_indexes: "QuerySet[FileIndex]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  git_url = models.CharField(max_length=500)
@@ -127,6 +128,32 @@ class IndexHistory(models.Model):
  verbose_name_plural = "索引历史"
  def __str__(self) -> str:
  return f"{self.repository.name} - {self.trigger_type} ({self.status})"
+class FileIndex(models.Model):
+ """文件级索引记录——DB 级幂等性保障，替代 Qdrant hash 比较。
+ 通过 unique_together(repository, file_path) 约束确保多进程部署下
+ 同一文件不会被重复索引。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ Repository,
+ on_delete=models.CASCADE,
+ related_name="file_indexes",
+ )
+ file_path = models.CharField(max_length=1000)
+ file_hash = models.CharField(max_length=64)
+ indexed_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "file_indexes"
+ verbose_name = "文件索引记录"
+ verbose_name_plural = "文件索引记录"
+ constraints = [
+ models.UniqueConstraint(
+ fields=["repository", "file_path"],
+ name="uq_repo_file_path",
+ ),
+ ]
+ def __str__(self) -> str:
+ return f"{self.file_path} ({self.file_hash[:8]})"
 class GitCredential(models.Model):
  """Git credential model for authentication."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

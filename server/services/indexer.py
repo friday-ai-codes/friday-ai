@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
-from repositories.models import IndexStatus, Repository
+from repositories.models import FileIndex, IndexStatus, Repository
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -84,6 +84,16 @@ async def _get_head_sha(repo_path: str) -> str:
  if proc.returncode != 0:
  raise GitDiffError("git rev-parse HEAD failed")
  return stdout.decode.strip
+async def _is_shallow_clone(repo_path: str) -> bool:
+ """检查仓库是否为 shallow clone。"""
+ proc = await asyncio.create_subprocess_exec(
+ "git", "rev-parse", "--is-shallow-repository",
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=10.0)
+ return stdout.decode.strip == "true"
 async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) -> bool:
  """尝试 fetch 指定 commit 到浅克隆仓库。失败返回 False。"""
  cmd: list[str] = ["git"]
@@ -213,6 +223,27 @@ class IndexerService:
  chunks_indexed=len(points),
  hybrid=hybrid_enabled,
  )
+ # 全量索引后同步 FileIndex 记录：先清空旧记录，再批量创建
+ await FileIndex.objects.filter(repository_id=self.repository_id).adelete
+ file_hashes: dict[str, str] = {}
+ for chunk in all_chunks:
+ if chunk.file_path not in file_hashes:
+ file_hashes[chunk.file_path] = chunk.file_hash
+ file_index_objects = [
+ FileIndex(
+ repository_id=self.repository_id,
+ file_path=fp,
+ file_hash=fh,
+ )
+ for fp, fh in file_hashes.items
+ ]
+ if file_index_objects:
+ await FileIndex.objects.abulk_create(
+ file_index_objects,
+ update_conflicts=True,
+ update_fields=["file_hash"],
+ unique_fields=["repository", "file_path"],
+ )
  return {
  "status": "success",
  "files_processed": len(files),
@@ -264,6 +295,9 @@ class IndexerService:
  for diff in diffs:
  if diff.action == DiffAction.DELETE:
  await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
+ await FileIndex.objects.filter(
+ repository_id=self.repository_id, file_path=diff.file_path
+ ).adelete
  stats["deleted"] += 1
  # 处理 rename（仅元数据更新）
  for diff in diffs:
@@ -322,6 +356,16 @@ class IndexerService:
  repository_id=self.repository_id,
  stats=stats,
  )
+ # 同步 FileIndex 记录：新增/修改的文件更新 hash
+ for diff in files_to_index:
+ full_path = os.path.join(repo_path, diff.file_path)
+ if os.path.exists(full_path):
+ new_hash = compute_file_hash(full_path)
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=diff.file_path,
+ defaults={"file_hash": new_hash},
+ )
  return {"status": "success", **stats}
  async def run_incremental_index(self, repo_path: str) -> dict[str, Any]:
  """Run incremental indexing for a repository.
@@ -335,8 +379,14 @@ class IndexerService:
  repository_id=self.repository_id,
  )
  try:
- # Get stored file hashes from Qdrant
- stored_hashes = await qdrant_get_stored_file_hashes(self.repository_id)
+ # DB 级文件去重——从 FileIndex 查询已索引文件的 hash，替代 Qdrant hash 比较
+ stored_records = {
+ fp: fh
+ async for fp, fh in FileIndex.objects.filter(
+ repository_id=self.repository_id
+ ).values_list("file_path", "file_hash")
+ }
+ stored_hashes: dict[str, str] = stored_records
  # Scan local files and compute hashes
  files = scan_directory(repo_path)
  local_hashes: dict[str, str] = {}
@@ -417,6 +467,23 @@ class IndexerService:
  "incremental_indexing_complete",
  repository_id=self.repository_id,
  stats=stats,
+ )
+ # 同步 FileIndex 记录
+ # 删除已移除的文件记录
+ for diff in diffs:
+ if diff.action == DiffAction.DELETE:
+ await FileIndex.objects.filter(
+ repository_id=self.repository_id, file_path=diff.file_path
+ ).adelete
+ # 新增/修改文件更新记录
+ for diff in diffs:
+ if diff.action in (DiffAction.ADD, DiffAction.UPDATE):
+ new_hash = local_hashes.get(diff.file_path, "")
+ if new_hash:
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=diff.file_path,
+ defaults={"file_hash": new_hash},
  )
  return {
  "status": "success",
@@ -601,10 +668,22 @@ async def clone_and_index_repository(
  except GitDiffError as e:
  logger.warning("git_diff_failed_fallback", error=str(e))
  fallback_reason = f"git diff 失败: {e}"
+ # shallow clone 环境回退到全量索引，否则用增量索引
+ is_shallow = await _is_shallow_clone(temp_dir)
+ if is_shallow:
+ logger.info("shallow_clone_fallback_to_full_index")
+ index_result = await indexer.run_full_index(temp_dir)
+ else:
  index_result = await indexer.run_incremental_index(temp_dir)
  else:
  logger.warning("fetch_commit_failed_fallback", sha=last_sha)
  fallback_reason = f"git fetch {last_sha} 失败"
+ # fetch 失败同样检查是否 shallow clone
+ is_shallow = await _is_shallow_clone(temp_dir)
+ if is_shallow:
+ logger.info("shallow_clone_fallback_to_full_index")
+ index_result = await indexer.run_full_index(temp_dir)
+ else:
  index_result = await indexer.run_incremental_index(temp_dir)
  else:
  # 首次索引或未记录 SHA
