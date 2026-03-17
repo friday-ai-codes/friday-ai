@@ -140,17 +140,18 @@ export function useDesignTimeVariables(
  // 获取节点类型（兼容 WorkflowNode 和 WorkflowNodeStore 两种格式）
  // WorkflowNodeStore: node.nodeType
  // WorkflowNode: node.data?.node_type || node.type
- const nodeTypeKey = (node as any).nodeType || node.data?.node_type || node.type
+ const extNode = node as typeof node & { nodeType?: string, name?: string, shortId?: string }
+ const nodeTypeKey = extNode.nodeType || node.data?.node_type || node.type
  if (!nodeTypeKey)
  continue
  const nodeTypeDef = nodeTypesStore.getNodeType(nodeTypeKey)
  if (!nodeTypeDef)
  continue
  // 节点显示名称：优先用户自定义名称，其次节点类型定义的显示名
- const nodeLabel = (node as any).name || node.data?.name || node.label || nodeTypeDef.display_name
+ const nodeLabel = extNode.name || node.data?.name || node.label || nodeTypeDef.display_name
  // 获取 shortId（用于用户友好的变量路径显示）
  // WorkflowNodeStore 有 shortId，否则截取 UUID 前 8 位
- const shortId = (node as any).shortId || node.id.slice(0, 8)
+ const shortId = extNode.shortId || node.id.slice(0, 8)
  // 是否是直接上游节点（决定是否生成 input.xxx 变量）
  const isDirectUpstream = directUpstreamIds.has(node.id)
  // 遍历该节点的所有输出端口

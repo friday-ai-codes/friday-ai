@@ -34,7 +34,7 @@ describe('DataTable', => {
  //: 开发者接口 smoke test
  it('仅传 data + columns + tableId 即可渲染完整表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'test-smoke' } as any,
+ props: { data: testData, columns, tableId: 'test-smoke' } as Record<string, unknown>,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBeGreaterThan(0)
@@ -42,7 +42,7 @@ describe('DataTable', => {
  //: 全局搜索过滤
  it('输入搜索词后，表格行数减少', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'test-search' } as any,
+ props: { data: testData, columns, tableId: 'test-search' } as Record<string, unknown>,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
@@ -54,7 +54,7 @@ describe('DataTable', => {
  //: 排序
  it('点击可排序列头后行顺序变化', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'test-sort' } as any,
+ props: { data: testData, columns, tableId: 'test-sort' } as Record<string, unknown>,
  })
  const nameHeader = wrapper.findAll('th').find(th => th.text.includes('名称'))
  expect(nameHeader).toBeDefined
@@ -68,7 +68,7 @@ describe('DataTable', => {
  it('显示正确的分页文案', => {
  const smallData = testData.slice(0, 3)
  const wrapper = mount(DataTable, {
- props: { data: smallData, columns, tableId: 'test-page', pageSize: 2 } as any,
+ props: { data: smallData, columns, tableId: 'test-page', pageSize: 2 } as Record<string, unknown>,
  })
  const pageText = wrapper.text
  expect(pageText).toContain('显示 1 至 2 共 3 条结果')
@@ -77,7 +77,7 @@ describe('DataTable', => {
  it('列可见性通过 tableId 区分 localStorage key', => {
  // useLocalStorage mock 已上方注入，验证组件接受 tableId prop 并正常渲染
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'runners-list' } as any,
+ props: { data: testData, columns, tableId: 'runners-list' } as Record<string, unknown>,
  })
  expect(wrapper.exists).toBe(true)
  })
@@ -89,7 +89,7 @@ describe('DataTable', => {
  columns,
  tableId: 'test-click',
  onRowClick: => {},
- } as any,
+ } as Record<string, unknown>,
  })
  const firstRow = wrapper.find('tbody tr')
  expect(firstRow.classes).toContain('cursor-pointer')

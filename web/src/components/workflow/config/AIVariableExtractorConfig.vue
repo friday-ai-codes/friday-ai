@@ -43,11 +43,11 @@ const maxBudgetUsd = field('max_budget_usd', null)
 // Input 组件不接受 null，转换为 undefined
 const maxThinkingTokensInput = computed({
  get: => maxThinkingTokens.value ?? undefined,
- set: (v: string | number | undefined) => { maxThinkingTokens.value = (v != null ? Number(v): null) as any },
+ set: (v: string | number | undefined) => { maxThinkingTokens.value = (v != null ? Number(v): null) as number | null },
 })
 const maxBudgetUsdInput = computed({
  get: => maxBudgetUsd.value ?? undefined,
- set: (v: string | number | undefined) => { maxBudgetUsd.value = (v != null ? Number(v): null) as any },
+ set: (v: string | number | undefined) => { maxBudgetUsd.value = (v != null ? Number(v): null) as number | null },
 })
 const advancedOpen = ref(false)
 const variables = computed({
