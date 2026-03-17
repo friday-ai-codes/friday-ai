@@ -2,10 +2,14 @@
 import asyncio
 import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
 import structlog
 from channels.layers import get_channel_layer
+from django.utils import timezone
 from runners.protocol import MessageType, make_request
 logger = structlog.get_logger
+# 心跳超时阈值（秒）：3 倍心跳间隔（Runner 每 30 秒心跳）
+HEARTBEAT_STALE_SECONDS = 90
 @dataclass
 class DispatchTask:
  task_id: str
@@ -73,8 +77,16 @@ class TaskDispatcher:
  return False
  async def _find_matching_runners(self, tags: list[str]) -> list:
  from runners.models import Runner
+ stale_threshold = timezone.now - timedelta(seconds=HEARTBEAT_STALE_SECONDS)
+ # 自动修正心跳超时但仍标记为 online 的 Runner
+ await Runner.objects.filter(
+ status="online",
+ last_heartbeat__lt=stale_threshold,
+ ).aupdate(status="offline", channel_name="")
  runners = [
- r async for r in Runner.objects.filter(status="online", is_active=True).exclude(channel_name="")
+ r async for r in Runner.objects.filter(
+ status="online", is_active=True, is_paused=False,
+ ).exclude(channel_name="")
  ]
  tag_set = set(tags)
  matched = [r for r in runners if tag_set.issubset(set(r.tags))]
