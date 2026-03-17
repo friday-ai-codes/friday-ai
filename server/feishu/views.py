@@ -955,11 +955,11 @@ class TriggerLogRetryView(APIView):
  {"detail": "无法重试：原始数据格式错误"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- # Remove from processed events to allow re-processing
+ # Remove from processed events to allow re-processing (DB 级别)
  header = data.get("header", {})
  event_uuid = header.get("uuid")
- if event_uuid and event_uuid in _processed_events:
- _processed_events.discard(event_uuid)
+ if event_uuid:
+ await ProcessedEvent.objects.filter(event_id=event_uuid).adelete
  original_log_id = str(log.id)
  raw_request_body = log.webhook_raw_request
  await log.adelete
