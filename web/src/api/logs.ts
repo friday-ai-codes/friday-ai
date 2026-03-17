@@ -110,15 +110,6 @@ export async function getTriggerLog(logId: string): Promise<TriggerLogDetail> {
  return get<TriggerLogDetail>(`/feishu/logs/${logId}/`)
 }
 /**
- * 获取触发日志原始数据
- */
-export async function getTriggerLogRaw(logId: string): Promise<{
- webhook_raw: Record<string, unknown> | null
- work_item_raw: Record<string, unknown> | null
-}> {
- return get(`/feishu/logs/${logId}/raw/`)
-}
-/**
  * 删除触发日志
  */
 export async function deleteTriggerLog(logId: string): Promise<void> {
@@ -137,7 +128,6 @@ export async function retryTriggerLog(logId: string): Promise<{
 export default {
  listTriggerLogs,
  getTriggerLog,
- getTriggerLogRaw,
  deleteTriggerLog,
  retryTriggerLog,
 }
