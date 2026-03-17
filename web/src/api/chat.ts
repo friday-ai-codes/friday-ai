@@ -135,48 +135,10 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
 export async function chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
  return post<ChatCompletionResponse>('/chat/completions/', request)
 }
-/**
- * 快速测试 - 使用系统配置发送测试消息
- */
-export async function testSystemConfig(
- model: string,
- message: string = '你基于什么模型？',
- apiKey?: string,
- baseUrl?: string,
-): Promise<ChatCompletionResponse> {
- return chatCompletion({
- model,
- messages: [{ role: 'user', content: message }],
- source: 'system',
- api_key: apiKey,
- base_url: baseUrl,
- })
-}
-/**
- * 快速测试 - 使用项目配置发送测试消息
- */
-export async function testProjectConfig(
- projectId: number,
- model: string,
- message: string = '你基于什么模型？',
- apiKey?: string,
- baseUrl?: string,
-): Promise<ChatCompletionResponse> {
- return chatCompletion({
- model,
- messages: [{ role: 'user', content: message }],
- source: 'project',
- project_id: projectId,
- api_key: apiKey,
- base_url: baseUrl,
- })
-}
 // 默认导出
 export default {
  getModels,
  chatCompletion,
- testSystemConfig,
- testProjectConfig,
  listConversations,
  createConversation,
  getConversationDetail,

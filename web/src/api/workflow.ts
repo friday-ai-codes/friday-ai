@@ -2,8 +2,6 @@
  * Workflow API - 工作流相关接口
  */
 import type {
- CodingTask,
- ExecutionContext,
  ManualTriggerRequest,
  ManualTriggerResponse,
  WorkflowTrigger,
@@ -14,30 +12,7 @@ import type {
  ActionLogSummary,
  CostBreakdown,
 } from '~/types/execution'
-import { del, get, patch, post, put } from './client'
-// ============================================================================
-// Node Schema API
-// ============================================================================
-/**
- * 节点 Schema 定义
- */
-export interface NodeSchema {
- node_type: string
- display_name: string
- description: string
- category: string
- icon: string
- config_schema: Record<string, any>
- inputs: Array<{ name: string, label: string, port_type: string }>
- outputs: Array<{ name: string, label: string, port_type: string }>
-}
-/**
- * 获取所有节点 Schema
- */
-export async function getNodeSchemas(category?: string): Promise<NodeSchema> {
- const params = category ? { category }: undefined
- return get<NodeSchema>('/workflows/nodes/schemas/', params)
-}
+import { del, get, post, put } from './client'
 // ============================================================================
 // Trigger Management API
 // ============================================================================
@@ -95,38 +70,8 @@ export async function retryExecution(
  )
 }
 // ============================================================================
-// Execution Context API
-// ============================================================================
-/**
- * 获取执行上下文快照
- */
-export async function getExecutionContext(executionId: string): Promise<ExecutionContext> {
- return get<ExecutionContext>(`/workflow-executions/${executionId}/context/`)
-}
-// ============================================================================
 // CodingTask API
 // ============================================================================
-/**
- * 获取执行的编码任务列表
- */
-export async function listCodingTasks(executionId: string): Promise<CodingTask> {
- return get<CodingTask>(`/workflow-executions/${executionId}/coding-tasks/`)
-}
-/**
- * 获取编码任务详情
- */
-export async function getCodingTask(taskId: string): Promise<CodingTask> {
- return get<CodingTask>(`/workflows/coding-tasks/${taskId}/`)
-}
-/**
- * 更新编码任务
- */
-export async function updateCodingTask(
- taskId: string,
- data: Partial<CodingTask>,
-): Promise<CodingTask> {
- return patch<CodingTask>(`/workflows/coding-tasks/${taskId}/`, data)
-}
 /**
  * 批准编码任务方案
  */
@@ -341,8 +286,6 @@ export async function resumePreview(
  )
 }
 export default {
- // Node Schema
- getNodeSchemas,
  // Triggers
  listTriggers,
  createTrigger,
@@ -351,11 +294,7 @@ export default {
  // Execution
  executeWorkflow,
  retryExecution,
- getExecutionContext,
  // CodingTask
- listCodingTasks,
- getCodingTask,
- updateCodingTask,
  approveCodingTaskPlan,
  rejectCodingTaskPlan,
  approveCodingTaskCode,
