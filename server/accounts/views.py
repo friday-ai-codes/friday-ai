@@ -1,4 +1,5 @@
 """Accounts views: Authentication."""
+import structlog
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -7,6 +8,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from adrf.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Invitation
 from .serializers import (
@@ -22,6 +24,7 @@ from .serializers import (
  UserSerializer,
 )
 User = get_user_model
+logger = structlog.get_logger(__name__)
 class LoginView(APIView):
  """User login endpoint."""
  permission_classes = [AllowAny]
@@ -63,7 +66,10 @@ class LogoutView(APIView):
  response.delete_cookie("refresh_token")
  return response
 class RefreshTokenView(APIView):
- """Refresh access token endpoint."""
+ """Refresh access token endpoint.
+ 每次刷新时签发新 Refresh Token 并废弃旧 Token（Token 旋转），
+ 防止泄露的 Token 被持续利用。
+ """
  permission_classes = [AllowAny]
  async def post(self, request):
  refresh_token = request.COOKIES.get("refresh_token")
@@ -73,15 +79,24 @@ class RefreshTokenView(APIView):
  status=status.HTTP_401_UNAUTHORIZED,
  )
  try:
- refresh = RefreshToken(refresh_token)
- access_token = str(refresh.access_token)
- # Create new refresh token (rolling refresh)
- if request.user.is_authenticated:
- # KEEP: simplejwt RefreshToken.for_user 无 async API
- new_refresh = await sync_to_async(RefreshToken.for_user)(request.user)
- else:
- new_refresh = refresh
- new_refresh["sub"] = refresh.get("sub")
+ # simplejwt 的 RefreshToken 构造和 blacklist 涉及 DB 查询，
+ # 需要用 sync_to_async 包装所有同步 DB 操作
+ old_refresh = await sync_to_async(RefreshToken)(refresh_token)
+ # 获取新 access token（在 blacklist 前，因为 blacklist 后 token 不可用）
+ access_token = str(old_refresh.access_token)
+ # 从 token 中提取用户 ID
+ user_id = old_refresh.get("sub") or old_refresh.get("user_id")
+ # 将旧 token 加入黑名单
+ await sync_to_async(old_refresh.blacklist)
+ logger.info(
+ "refresh_token_blacklisted",
+ user_id=str(user_id),
+ jti=str(old_refresh.get("jti", "")),
+ )
+ # 签发新 refresh token
+ user = await User.objects.aget(pk=user_id)
+ new_refresh = await sync_to_async(RefreshToken.for_user)(user)
+ new_refresh["sub"] = str(user.id)
  response = Response(TokenResponseSerializer({"access_token": access_token}).data)
  response.set_cookie(
  key="refresh_token",
@@ -92,7 +107,16 @@ class RefreshTokenView(APIView):
  max_age=7 * 24 * 60 * 60,
  )
  return response
+ except TokenError:
+ logger.warning("refresh_token_invalid_or_blacklisted", token_prefix=refresh_token[:20])
+ response = Response(
+ {"detail": "Refresh Token 无效或已过期"},
+ status=status.HTTP_401_UNAUTHORIZED,
+ )
+ response.delete_cookie("refresh_token")
+ return response
  except Exception:
+ logger.exception("refresh_token_unexpected_error")
  response = Response(
  {"detail": "Refresh Token 无效或已过期"},
  status=status.HTTP_401_UNAUTHORIZED,
