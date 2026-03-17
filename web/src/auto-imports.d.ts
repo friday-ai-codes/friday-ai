@@ -239,6 +239,7 @@ declare global {
  const useParentElement: typeof import('@vueuse/core').useParentElement
  const usePerformanceObserver: typeof import('@vueuse/core').usePerformanceObserver
  const usePermission: typeof import('./composables/usePermission').usePermission
+ const usePermissionSync: typeof import('./composables/usePermissionSync').usePermissionSync
  const usePointer: typeof import('@vueuse/core').usePointer
  const usePointerLock: typeof import('@vueuse/core').usePointerLock
  const usePointerSwipe: typeof import('@vueuse/core').usePointerSwipe
@@ -528,7 +529,6 @@ declare module 'vue' {
  readonly useConfirmDialog: UnwrapRef<typeof import('@vueuse/core')['useConfirmDialog']>
  readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
  readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
- readonly useCounterStore: UnwrapRef<typeof import('./stores/counter')['useCounterStore']>
  readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
  readonly useCssVar: UnwrapRef<typeof import('@vueuse/core')['useCssVar']>
  readonly useCssVars: UnwrapRef<typeof import('vue')['useCssVars']>
@@ -605,6 +605,7 @@ declare module 'vue' {
  readonly useParentElement: UnwrapRef<typeof import('@vueuse/core')['useParentElement']>
  readonly usePerformanceObserver: UnwrapRef<typeof import('@vueuse/core')['usePerformanceObserver']>
  readonly usePermission: UnwrapRef<typeof import('./composables/usePermission')['usePermission']>
+ readonly usePermissionSync: UnwrapRef<typeof import('./composables/usePermissionSync')['usePermissionSync']>
  readonly usePointer: UnwrapRef<typeof import('@vueuse/core')['usePointer']>
  readonly usePointerLock: UnwrapRef<typeof import('@vueuse/core')['usePointerLock']>
  readonly usePointerSwipe: UnwrapRef<typeof import('@vueuse/core')['usePointerSwipe']>
