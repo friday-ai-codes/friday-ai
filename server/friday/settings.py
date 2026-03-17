@@ -65,6 +65,7 @@ INSTALLED_APPS = [
  "rest_framework",
  "adrf",
  "rest_framework_simplejwt",
+ "rest_framework_simplejwt.token_blacklist",
  "drf_spectacular",
  "channels",
  "django_apscheduler",
@@ -219,6 +220,8 @@ SIMPLE_JWT = {
  "REFRESH_TOKEN_LIFETIME": timedelta(
  days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
  ),
+ "ROTATE_REFRESH_TOKENS": True,
+ "BLACKLIST_AFTER_ROTATION": True,
  "SIGNING_KEY": os.environ.get("JWT_SECRET_KEY", "") or SECRET_KEY,
  "AUTH_HEADER_TYPES": ("Bearer",),
  "USER_ID_FIELD": "id",
