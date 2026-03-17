@@ -135,16 +135,6 @@ export async function getModels(params: GetModelsParams = {}): Promise<ModelsRes
 export async function chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
  return post<ChatCompletionResponse>('/chat/completions/', request)
 }
-// 默认导出
-export default {
- getModels,
- chatCompletion,
- listConversations,
- createConversation,
- getConversationDetail,
- deleteConversation,
- interruptConversation,
-}
 // ============================================================================
 // Conversation CRUD API (Phase)
 // ============================================================================
@@ -177,4 +167,16 @@ export async function deleteConversation(id: string): Promise<void> {
  */
 export async function interruptConversation(id: string): Promise<void> {
  await post(`/chat/conversations/${id}/interrupt/`)
+}
+// ============================================================================
+// 默认导出
+// ============================================================================
+export default {
+ getModels,
+ chatCompletion,
+ listConversations,
+ createConversation,
+ getConversationDetail,
+ deleteConversation,
+ interruptConversation,
 }
