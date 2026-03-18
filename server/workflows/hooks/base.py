@@ -33,6 +33,7 @@ class HookManager:
  "node_waiting_event",
  "node_approved",
  "node_rejected",
+ "node_debug_paused",
  ]
  def __init__(self):
  self._hooks: dict[str, list[BaseHook]] = {event: for event in self.EVENTS}
