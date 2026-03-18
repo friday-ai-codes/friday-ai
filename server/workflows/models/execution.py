@@ -91,6 +91,19 @@ class WorkflowExecution(models.Model):
  verbose_name="是否手动触发",
  help_text="手动触发时模拟事件数据",
  )
+ # 调试模式
+ is_debug = models.BooleanField(
+ default=False,
+ db_index=True,
+ verbose_name="调试执行",
+ help_text="调试执行不计入正式记录，不触发通知，不受并发限制",
+ )
+ debug_paused_at_node = models.UUIDField(
+ null=True,
+ blank=True,
+ verbose_name="调试暂停节点",
+ help_text="记录当前暂停在哪个节点 ID，用于前端展示调试状态",
+ )
  # 关联飞书触发日志
  trigger_log = models.ForeignKey(
  "feishu.TriggerLog",
