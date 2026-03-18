@@ -1,7 +1,9 @@
 """Workflow execution engine."""
 import asyncio
+import time
 import threading
 from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async
@@ -33,6 +35,17 @@ def _run_in_thread(coro):
  loop.close
  thread = threading.Thread(target=target, daemon=True)
  thread.start
+@dataclass
+class DebugSession:
+ """调试会话状态——存储暂停/释放的协调信息。"""
+ execution_id: str
+ loop: asyncio.AbstractEventLoop
+ event: asyncio.Event = field(default_factory=asyncio.Event)
+ current_node_id: str | None = None
+ debug_action: str = "" # release / skip / timeout / cancel
+ action_data: dict[str, Any] = field(default_factory=dict)
+ created_at: float = field(default_factory=time.time)
+_debug_sessions: dict[str, DebugSession] = {}
 class WorkflowEngine:
  """工作流执行引擎
  核心调度器，负责：
@@ -77,6 +90,7 @@ class WorkflowEngine:
  active_count = WorkflowExecution.objects.select_for_update.filter(
  workflow_id=workflow_id,
  status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+ is_debug=False, # 调试执行不计入并发限制
  ).count
  if active_count >= max_concurrent_executions:
  raise ValueError(f"工作流已达到最大并发数 ({max_concurrent_executions})")
@@ -99,6 +113,7 @@ class WorkflowEngine:
  trigger_data: dict | None = None,
  execution: WorkflowExecution | None = None,
  run_sync: bool = False,
+ debug_mode: bool = False,
  ) -> WorkflowExecution:
  """启动工作流执行
  Args:
@@ -109,6 +124,7 @@ class WorkflowEngine:
  trigger_data: 触发数据
  execution: 可选的已创建执行实例（如果提供则复用，否则创建新的）
  run_sync: 是否同步执行（用于测试，确保在同一事务/上下文中运行）
+ debug_mode: 是否以调试模式启动（逐节点暂停）
  """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
@@ -179,6 +195,10 @@ class WorkflowEngine:
  node=dag_node.node,
  status=NodeExecutionStatus.PENDING,
  )
+ # 设置调试模式标记
+ if debug_mode:
+ execution.is_debug = True
+ await execution.asave(update_fields=["is_debug"])
  # 触发开始钩子
  await self.hooks.trigger("execution_started", execution=execution)
  # 开始执行
@@ -189,6 +209,54 @@ class WorkflowEngine:
  # 异步执行（在独立线程中运行，避免事件循环退出问题）
  _run_in_thread(self._run_execution(execution, dag, input_data))
  return execution
+ async def _debug_pause_after_node(
+ self,
+ execution: WorkflowExecution,
+ node_execution: NodeExecution,
+ ) -> tuple[str, dict[str, Any]]:
+ """节点执行完后暂停，等待用户调试操作。返回 (action, action_data)。"""
+ loop = asyncio.get_event_loop
+ session = _debug_sessions.get(str(execution.id))
+ if not session:
+ session = DebugSession(execution_id=str(execution.id), loop=loop)
+ _debug_sessions[str(execution.id)] = session
+ # 每次暂停时创建新 Event，确保 Event 属于当前 event loop
+ session.event = asyncio.Event
+ session.current_node_id = str(node_execution.node_id)
+ session.debug_action = ""
+ session.action_data = {}
+ session.loop = loop
+ execution.debug_paused_at_node = node_execution.node_id
+ await execution.asave(update_fields=["debug_paused_at_node"])
+ await self.hooks.trigger("node_debug_paused", execution=execution, node_execution=node_execution)
+ try:
+ await asyncio.wait_for(session.event.wait, timeout=1800)
+ except asyncio.TimeoutError:
+ session.debug_action = "timeout"
+ logger.warning("debug_session_timeout", execution_id=str(execution.id))
+ execution.debug_paused_at_node = None
+ await execution.asave(update_fields=["debug_paused_at_node"])
+ action = session.debug_action or "release"
+ action_data = session.action_data.copy
+ # 超时或取消时清理会话
+ if action in ("timeout", "cancel"):
+ _debug_sessions.pop(str(execution.id), None)
+ return action, action_data
+ @classmethod
+ def release_debug_node(
+ cls,
+ execution_id: str,
+ action: str = "release",
+ action_data: dict[str, Any] | None = None,
+ ) -> bool:
+ """由 WS Consumer 调用，跨线程释放调试暂停。"""
+ session = _debug_sessions.get(execution_id)
+ if not session:
+ return False
+ session.debug_action = action
+ session.action_data = action_data or {}
+ session.loop.call_soon_threadsafe(session.event.set)
+ return True
  async def _run_execution(
  self,
  execution: WorkflowExecution,
@@ -319,6 +387,42 @@ class WorkflowEngine:
  pending_nodes=list(pending_nodes),
  )
  break
+ # 调试模式：串行执行，每次逐节点暂停
+ if execution.is_debug:
+ for dag_node in ready_nodes:
+ if dag_node.id in entry_inputs:
+ node_input = entry_inputs[dag_node.id]
+ else:
+ node_input = self._collect_inputs(dag_node, dag, node_outputs)
+ result = await self._execute_node(execution, dag_node, node_input, node_outputs)
+ pending_nodes.discard(dag_node.id)
+ if isinstance(result, Exception):
+ failed_nodes.add(dag_node.id)
+ elif result.get("status") == "completed":
+ completed_nodes.add(dag_node.id)
+ output = result.get("output", {})
+ node_outputs[dag_node.id] = output
+ if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+ node_outputs[dag_node.node.short_id] = output
+ # 调试暂停点
+ ne = await NodeExecution.objects.aget(
+ workflow_execution=execution, node_id=dag_node.id,
+ )
+ action, _ = await self._debug_pause_after_node(execution, ne)
+ if action == "skip":
+ await ne.amark_skipped("用户调试跳过")
+ completed_nodes.discard(dag_node.id)
+ skipped_nodes.add(dag_node.id)
+ node_outputs[dag_node.id] = {}
+ elif action in ("timeout", "cancel"):
+ if action == "cancel":
+ await execution.amark_cancelled
+ else:
+ await execution.amark_failed("调试会话超时")
+ return
+ else:
+ failed_nodes.add(dag_node.id)
+ continue # 回到 while 循环找下一批就绪节点
  # 并行执行就绪节点
  tasks =
  for dag_node in ready_nodes:
@@ -378,6 +482,8 @@ class WorkflowEngine:
  logger.exception("workflow_execution_error", execution_id=str(execution.id))
  await execution.amark_failed(str(e))
  await self.hooks.trigger("execution_failed", execution=execution, error=e)
+ finally:
+ _debug_sessions.pop(str(execution.id), None)
  async def _execute_node(
  self,
  execution: WorkflowExecution,

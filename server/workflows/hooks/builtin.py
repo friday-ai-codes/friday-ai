@@ -41,6 +41,10 @@ class WebSocketBroadcastHook(BaseHook):
  if node_execution:
  message["node_id"] = str(node_execution.node_id)
  message["node_status"] = node_execution.status
+ # 调试暂停事件：附带节点输入输出数据供前端展示
+ if event == "node_debug_paused":
+ message["node_input"] = node_execution.input_data or {}
+ message["node_output"] = node_execution.output_data or {}
  await channel_layer.group_send(
  f"execution_{execution.id}",
  message,
