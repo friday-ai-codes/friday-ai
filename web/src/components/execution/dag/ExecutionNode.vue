@@ -28,6 +28,10 @@ const visual = computed( => getNodeVisual(props.data.nodeType))
 const style = computed( => useNodeStyle(visual.value.color).value)
 /** 执行状态 → 边框色映射（覆盖默认的节点类型色） */
 const statusBorderClass = computed( => {
+ // 调试暂停优先于普通状态色
+ if (props.data.isDebugPaused) {
+ return 'border-amber-400/70 node-debug-paused-border'
+ }
  const map: Record<string, string> = {
  running: 'border-blue-400/80 node-running-border',
  completed: 'border-green-400/60',
@@ -55,6 +59,9 @@ const durationText = computed( => {
 })
 /** 状态指示点颜色 */
 const statusDotClass = computed( => {
+ if (props.data.isDebugPaused) {
+ return 'bg-amber-400 animate-pulse'
+ }
  const map: Record<string, string> = {
  running: 'bg-blue-400 animate-pulse',
  completed: 'bg-green-400',
@@ -135,6 +142,37 @@ function handleSubStepClick(stepId: string) {
  <div class="flex items-center justify-between text-xs text-muted-foreground">
  <span class="tabular-nums">{{ durationText }}</span>
  <div class="flex items-center gap-1">
+ <!-- 调试暂停节点：放行/跳过操作按钮 -->
+ <template v-if="data.isDebugPaused">
+ <TooltipProvider>
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button
+ class="inline-flex items-center justify-center rounded-md transition-colors
+ w-5 text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
+ @click.stop="data.onDebugRelease?.(props.id)"
+ >
+ <span class="icon-[lucide--play] w-3.5 .5" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="bottom">放行此节点</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <TooltipProvider>
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button
+ class="inline-flex items-center justify-center rounded-md transition-colors
+ w-5 text-muted-foreground hover:bg-muted/50 cursor-pointer"
+ @click.stop="data.onDebugSkip?.(props.id)"
+ >
+ <span class="icon-[lucide--skip-forward] w-3.5 .5" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="bottom">跳过此节点</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ </template>
  <!-- 失败节点：从此继续快捷入口 -->
  <TooltipProvider v-if="data.status === 'failed'">
  <Tooltip>
@@ -232,6 +270,20 @@ function handleSubStepClick(stepId: string) {
  50% {
  border-color: rgba(96, 165, 250, 0.8);
  box-shadow: 0 0 8px 2px rgba(96, 165, 250, 0.15);
+ }
+}
+/* 调试暂停节点脉冲动画 */
+.node-debug-paused-border {
+ animation: node-debug-pulse 1.5s ease-in-out infinite;
+}
+@keyframes node-debug-pulse {
+ 0%, 100% {
+ border-color: rgba(245, 158, 11, 0.5);
+ box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.2);
+ }
+ 50% {
+ border-color: rgba(245, 158, 11, 0.9);
+ box-shadow: 0 0 12px 3px rgba(245, 158, 11, 0.25);
  }
 }
 </style>
