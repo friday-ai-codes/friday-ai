@@ -105,7 +105,7 @@ export const useExecutionsStore = defineStore('executions', => {
  const subSteps = ref<Record<string, SubStep>>({})
  // WebSocket connection
  const wsUrl = ref<string | undefined>(undefined)
- const { data: wsData, close: wsClose, open: wsOpen, status: wsStatus } = useWebSocket(wsUrl, {
+ const { data: wsData, close: wsClose, open: wsOpen, status: wsStatus, send: wsSend } = useWebSocket(wsUrl, {
  immediate: false,
  autoReconnect: {
  retries: 3,
@@ -284,6 +284,14 @@ export const useExecutionsStore = defineStore('executions', => {
  wsClose
  wsUrl.value = undefined
  }
+ /** 通过 WS 发送调试操作命令（release/skip） */
+ function sendDebugAction(action: 'release' | 'skip', data: Record<string, any> = {}) {
+ wsSend(JSON.stringify({
+ type: 'debug_action',
+ action,
+ data,
+ }))
+ }
  function handleWebSocketMessage(data: any) {
  if (!currentExecution.value)
  return
@@ -318,6 +326,14 @@ export const useExecutionsStore = defineStore('executions', => {
  = ((currentExecution.value.completed_nodes + currentExecution.value.skipped_nodes)
  / currentExecution.value.total_nodes)
  * 100
+ }
+ // 处理调试暂停事件
+ if (event === 'node_debug_paused') {
+ currentExecution.value.debug_paused_at_node = node_id || null
+ }
+ // 处理调试操作确认（清除暂停状态）
+ if (event === 'debug_action_ack' || data.type === 'debug_action_ack') {
+ currentExecution.value.debug_paused_at_node = null
  }
  // Refresh full data on execution complete
  if (event === 'execution_completed' || event === 'execution_failed') {
@@ -377,6 +393,7 @@ export const useExecutionsStore = defineStore('executions', => {
  triggerNode,
  connectWebSocket,
  disconnectWebSocket,
+ sendDebugAction,
  startAutoRefresh,
  stopAutoRefresh,
  wsStatus,
