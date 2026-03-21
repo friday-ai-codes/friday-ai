@@ -479,6 +479,7 @@ export interface ExecutionContext {
 export interface ManualTriggerRequest {
  event_type?: TriggerEventType
  input_data?: Record<string, any>
+ debug_mode?: boolean
 }
 /**
  * 手动触发响应
@@ -487,6 +488,7 @@ export interface ManualTriggerResponse {
  execution_id: string
  status: string
  message: string
+ is_debug?: boolean
 }
 // ============================================================================
 // Runner 相关类型
