@@ -536,6 +536,8 @@ class WorkflowExecutionSerializer(serializers.ModelSerializer):
  "started_at",
  "completed_at",
  "timeout_at",
+ "is_debug",
+ "debug_paused_at_node",
  ]
  read_only_fields = [
  "id",
@@ -584,6 +586,7 @@ class WorkflowExecutionListSerializer(serializers.ModelSerializer):
  "created_at",
  "started_at",
  "completed_at",
+ "is_debug",
  ]
 class WorkflowExecuteSerializer(serializers.Serializer):
  """Serializer for executing a workflow."""

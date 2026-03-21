@@ -502,6 +502,10 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  exec_status = self.request.query_params.get("status")
  if exec_status:
  queryset = queryset.filter(status=exec_status)
+ # 默认排除调试执行，除非请求参数明确包含
+ include_debug = self.request.query_params.get("include_debug", "false")
+ if include_debug.lower != "true":
+ queryset = queryset.filter(is_debug=False)
  return queryset.order_by("-created_at")
  @action(detail=True, methods=["post"])
  async def pause(self, request: Request, pk=None) -> Response:
