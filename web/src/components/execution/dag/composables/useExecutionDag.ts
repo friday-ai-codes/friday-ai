@@ -41,6 +41,12 @@ export interface ExecutionNodeData {
  isAINode?: boolean
  /** 子步骤点击回调（打开详情） */
  onSubStepClick?: (nodeExecutionId: string, subStepId: string) => void
+ /** 是否为调试暂停中的节点 */
+ isDebugPaused?: boolean
+ /** 调试放行按钮回调 */
+ onDebugRelease?: (nodeId: string) => void
+ /** 调试跳过按钮回调 */
+ onDebugSkip?: (nodeId: string) => void
 }
 /** 自定义节点类型注册 */
 export const executionNodeTypes: Record<string, NodeComponent> = {
@@ -92,6 +98,7 @@ export function useExecutionDag(
  canResume: nodeStatus === 'failed' && !(definitionChanged?.value ?? false),
  subStepProgress: ne?.sub_step_progress ?? null,
  isAINode: AI_NODE_TYPES.includes(defNode.node_type),
+ isDebugPaused: exec.debug_paused_at_node === defNode.id,
  },
  }
  }) ??
