@@ -369,11 +369,14 @@ export const useWorkflowsStore = defineStore('workflows', => {
  throw e
  }
  }
- async function executeWorkflow(inputData: Record<string, unknown> = {}): Promise<ManualTriggerResponse | null> {
+ async function executeWorkflow(inputData: Record<string, unknown> = {}, debugMode: boolean = false): Promise<ManualTriggerResponse | null> {
  if (!currentWorkflow.value)
  return null
  try {
- return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, { input_data: inputData })
+ return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, {
+ input_data: inputData,
+ debug_mode: debugMode,
+ })
  }
  catch (e: unknown) {
  error.value = (e as Error).message
