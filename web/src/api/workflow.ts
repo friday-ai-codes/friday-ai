@@ -56,8 +56,12 @@ export async function deleteTrigger(workflowId: string, triggerId: string): Prom
 export async function executeWorkflow(
  workflowId: string,
  data: ManualTriggerRequest = {},
+ debugMode: boolean = false,
 ): Promise<ManualTriggerResponse> {
- return post<ManualTriggerResponse>(`/workflows/${workflowId}/execute/`, data)
+ return post<ManualTriggerResponse>(`/workflows/${workflowId}/execute/`, {
+ ...data,
+ debug_mode: debugMode,
+ })
 }
 /**
  * 重试失败/取消的执行（用原始触发数据重新执行）
