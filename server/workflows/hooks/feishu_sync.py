@@ -64,6 +64,10 @@ class FeishuSyncHook(BaseHook):
  )
  async def execute(self, event: str, **kwargs: Any) -> None:
  """Execute hook by routing to the appropriate on_* handler."""
+ # 调试执行不触发飞书推送
+ execution = kwargs.get("execution")
+ if execution and getattr(execution, "is_debug", False):
+ return
  event_map = {
  "node_started": self.on_node_started,
  "node_completed": self.on_node_completed,

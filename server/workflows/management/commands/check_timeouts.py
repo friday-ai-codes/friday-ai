@@ -23,6 +23,7 @@ class Command(BaseCommand):
  WorkflowEventSubscription.objects.select_for_update(skip_locked=True)
  .filter(is_active=True, timeout_at__lte=now, timeout_at__isnull=False)
  .select_related("workflow_execution", "node_execution")
+ .exclude(workflow_execution__is_debug=True)
  )
  processed = 0
  for sub in expired_subs:
