@@ -90,6 +90,10 @@ export interface WorkflowExecution {
  started_at: string | null
  completed_at: string | null
  timeout_at: string | null
+ /** 是否为调试执行 */
+ is_debug?: boolean
+ /** 调试模式下当前暂停在哪个节点的 ID */
+ debug_paused_at_node?: string | null
 }
 export const useExecutionsStore = defineStore('executions', => {
  const executions = ref<WorkflowExecution>
