@@ -85,7 +85,7 @@ class WorkflowEngine:
  with transaction.atomic:
  # Lock workflow row to serialize concurrent start requests per workflow.
  from workflows.models import Workflow
- Workflow.objects.select_for_update.get(pk=workflow_id)
+ workflow = Workflow.objects.select_for_update.get(pk=workflow_id)
  if max_concurrent_executions > 0:
  active_count = WorkflowExecution.objects.select_for_update.filter(
  workflow_id=workflow_id,
@@ -96,6 +96,7 @@ class WorkflowEngine:
  raise ValueError(f"工作流已达到最大并发数 ({max_concurrent_executions})")
  return WorkflowExecution.objects.create(
  workflow_id=workflow_id,
+ project_id=workflow.project_id,
  status=ExecutionStatus.PENDING,
  trigger_type=trigger_type,
  triggered_by_id=triggered_by_id,
