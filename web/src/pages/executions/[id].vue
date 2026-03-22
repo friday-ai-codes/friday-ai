@@ -37,6 +37,15 @@ const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
 const store = useExecutionsStore
 const { currentExecution, timelineData, loading, error, wsStatus } = storeToRefs(store)
+/** Phase: 是否为调试执行 */
+const isDebugExecution = computed( => currentExecution.value?.is_debug === true)
+/** Phase: 当前调试暂停节点名称 */
+const debugPausedNodeName = computed( => {
+ const nodeId = currentExecution.value?.debug_paused_at_node
+ if (!nodeId || !currentExecution.value?.workflow_definition) return null
+ const defNode = currentExecution.value.workflow_definition.nodes.find(n => n.id === nodeId)
+ return defNode?.name ?? nodeId
+})
 // ----- 抽屉状态 -----
 const sheetOpen = ref(false)
 const selectedNodeExecution = ref<NodeExecution | null>(null)
@@ -181,6 +190,20 @@ const selectedBottleneckInfo = computed( => {
  durationPercent: percent,
  }
 })
+// ----- Phase: 调试操作 -----
+/** 调试放行 */
+function handleDebugRelease(nodeId: string) {
+ store.sendDebugAction('release')
+}
+/** 调试跳过 */
+function handleDebugSkip(nodeId: string) {
+ store.sendDebugAction('skip')
+}
+/** 终止调试（取消执行） */
+async function handleCancelDebug {
+ await store.cancelExecution(executionId.value)
+ toast.success('调试执行已终止')
+}
 // ----- 节点点击 -----
 function handleNodeClick(nodeExecution: NodeExecution | null, nodeId: string) {
  selectedNodeExecution.value = nodeExecution
@@ -472,6 +495,37 @@ async function handleTrigger {
  </button>
  </div>
  </Transition>
+ <!-- ===== Phase: 调试模式横幅 ===== -->
+ <Transition
+ enter-active-class="transition-all duration-300 ease-out"
+ enter-from-class="-translate-y-2 opacity-0"
+ enter-to-class="translate-y-0 opacity-100"
+ leave-active-class="transition-all duration-200 ease-in"
+ leave-from-class="translate-y-0 opacity-100"
+ leave-to-class="-translate-y-2 opacity-0"
+ >
+ <div
+ v-if="isDebugExecution && isActiveStatus(currentExecution?.status)"
+ class="shrink-0 flex items-center justify-between bg-amber-500/90 backdrop-blur-sm text-white px-4 py-2 z-10"
+ >
+ <div class="flex items-center gap-2 text-sm">
+ <span class="icon-[lucide--bug] w-4 " />
+ <span class="font-medium">调试模式</span>
+ <span v-if="debugPausedNodeName" class="text-white/80">
+ · 暂停在「{{ debugPausedNodeName }}」
+ </span>
+ </div>
+ <Button
+ variant="ghost"
+ size="sm"
+ class="text-white hover:bg-white/20 text-xs"
+ @click="handleCancelDebug"
+ >
+ <span class="icon-[lucide--square] w-3.5 .5 mr-1" />
+ 终止调试
+ </Button>
+ </div>
+ </Transition>
  <!-- ===== 主内容区域 ===== -->
  <!-- 加载状态 -->
  <div v-if="loading && !currentExecution" class="flex-1 flex items-center justify-center">
@@ -504,6 +558,8 @@ async function handleTrigger {
  v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged"
  @node-click="handleNodeClick"
  @resume-click="handleResumeClick"
+ @debug-release="handleDebugRelease"
+ @debug-skip="handleDebugSkip"
  />
  <!-- 成本摘要浮层（右上角） -->
  <div class="absolute top-3 right-3 z-10 space-y-2">
