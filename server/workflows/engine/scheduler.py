@@ -45,6 +45,8 @@ class DebugSession:
  debug_action: str = "" # release / skip / timeout / cancel
  action_data: dict[str, Any] = field(default_factory=dict)
  created_at: float = field(default_factory=time.time)
+ breakpoints: set[str] = field(default_factory=set) # 断点节点 ID 集合
+ debug_mode: str = "step" # "step" | "breakpoint"
 _debug_sessions: dict[str, DebugSession] = {}
 class WorkflowEngine:
  """工作流执行引擎
@@ -405,6 +407,12 @@ class WorkflowEngine:
  node_outputs[dag_node.id] = output
  if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
  node_outputs[dag_node.node.short_id] = output
+ # 断点模式条件暂停：仅断点节点暂停，非断点节点自动放行
+ session = _debug_sessions.get(str(execution.id))
+ should_pause = True
+ if session and session.debug_mode == "breakpoint":
+ should_pause = dag_node.id in session.breakpoints
+ if should_pause:
  # 调试暂停点
  ne = await NodeExecution.objects.aget(
  workflow_execution=execution, node_id=dag_node.id,

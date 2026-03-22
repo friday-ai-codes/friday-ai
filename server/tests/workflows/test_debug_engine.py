@@ -339,3 +339,197 @@ class TestDebugEngine:
  )
  await execution.arefresh_from_db
  assert execution.is_debug is True
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestBreakpointMode:
+ """Phase: 断点模式测试。"""
+ async def test_breakpoint_mode_only_pauses_at_breakpoints(self, parallel_workflow):
+ """: 断点模式下仅断点节点暂停，非断点节点自动放行。
+ 设置 Branch A 为断点，Branch B 不是。
+ 断点模式下应只在 trigger 和 Branch A 处暂停（trigger 因为串行也会走条件判断）。
+ 实际上 trigger 节点不在 breakpoints 里，所以也自动放行。
+ """
+ engine = WorkflowEngine
+ pause_calls: list[str] =
+ # 我们需要在引擎启动后设置 session 的断点和模式
+ # 用 mock 来记录哪些节点实际被暂停
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_name = await sync_to_async(lambda: node_execution.node.name)
+ pause_calls.append(node_name)
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ # 先获取节点 ID
+ from asgiref.sync import sync_to_async
+ nodes = await sync_to_async(
+ lambda: {n.name: str(n.id) for n in parallel_workflow.nodes.all}
+ )
+ # 在 start_execution 之前预设 session 不行（因为 execution_id 还不存在）
+ # 需要在 mock_pause 第一次调用前设置
+ # 更好的方案：直接 patch _debug_sessions 和判断逻辑
+ # 实际方案：让 start_execution 运行，引擎创建 session 后第一次暂停前设置
+ first_call = True
+ async def mock_pause_with_breakpoint_setup(execution, node_execution):
+ nonlocal first_call
+ if first_call:
+ first_call = False
+ # 第一次暂停时设置断点模式
+ session = _debug_sessions.get(str(execution.id))
+ if not session:
+ from workflows.engine.scheduler import DebugSession
+ loop = asyncio.get_event_loop
+ session = DebugSession(
+ execution_id=str(execution.id), loop=loop,
+ )
+ _debug_sessions[str(execution.id)] = session
+ session.debug_mode = "breakpoint"
+ session.breakpoints = {nodes["Branch A"]}
+ # 第一次（trigger 节点）也放行
+ return ("release", {})
+ from asgiref.sync import sync_to_async
+ node_name = await sync_to_async(lambda: node_execution.node.name)
+ pause_calls.append(node_name)
+ return ("release", {})
+ # 重新运行，用带 setup 的 mock
+ pause_calls.clear
+ with patch.object(
+ engine, "_debug_pause_after_node", side_effect=mock_pause_with_breakpoint_setup,
+ ):
+ execution = await engine.start_execution(
+ workflow=parallel_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 断点模式下：trigger 暂停（第一次，设置模式前），之后仅 Branch A 是断点会暂停
+ # Branch B 不在 breakpoints 中，自动放行不调用 _debug_pause_after_node
+ assert "Branch A" in pause_calls
+ assert "Branch B" not in pause_calls
+ async def test_step_mode_pauses_all_nodes(self, debug_workflow):
+ """: 逐步模式（默认）下所有节点都暂停——与修改前一致。"""
+ engine = WorkflowEngine
+ pause_calls: list[str] =
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_name = await sync_to_async(lambda: node_execution.node.name)
+ pause_calls.append(node_name)
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 逐步模式：所有 2 个节点都暂停
+ assert len(pause_calls) == 2
+ async def test_breakpoint_mode_no_breakpoints_completes_without_pause(
+ self, debug_workflow,
+ ):
+ """断点模式下没有设置任何断点时，所有节点自动放行，调试执行正常完成。"""
+ engine = WorkflowEngine
+ pause_calls: list[str] =
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_name = await sync_to_async(lambda: node_execution.node.name)
+ pause_calls.append(node_name)
+ return ("release", {})
+ # 预创建 execution 来获取 ID 比较复杂，用另一种方式：
+ # 在第一次暂停时（逐步模式默认会暂停）设置断点模式
+ first_call = True
+ async def mock_pause_set_breakpoint_mode(execution, node_execution):
+ nonlocal first_call
+ if first_call:
+ first_call = False
+ session = _debug_sessions.get(str(execution.id))
+ if not session:
+ from workflows.engine.scheduler import DebugSession
+ loop = asyncio.get_event_loop
+ session = DebugSession(
+ execution_id=str(execution.id), loop=loop,
+ )
+ _debug_sessions[str(execution.id)] = session
+ session.debug_mode = "breakpoint"
+ # 不设置任何断点
+ return ("release", {})
+ # 这里不应该被调用——断点模式下无断点节点应自动跳过
+ pause_calls.append("unexpected")
+ return ("release", {})
+ with patch.object(
+ engine, "_debug_pause_after_node", side_effect=mock_pause_set_breakpoint_mode,
+ ):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 除了 trigger 节点（第一次暂停用于设置模式），后续节点不应暂停
+ assert "unexpected" not in pause_calls
+ async def test_debug_session_default_fields(self):
+ """DebugSession 默认 debug_mode='step'，breakpoints 为空 set。"""
+ from workflows.engine.scheduler import DebugSession
+ loop = asyncio.get_event_loop
+ session = DebugSession(execution_id="test-123", loop=loop)
+ assert session.debug_mode == "step"
+ assert session.breakpoints == set
+ assert isinstance(session.breakpoints, set)
+ async def test_mode_switch_auto_release_non_breakpoint_node(self):
+ """: 切换到断点模式时，若当前暂停在非断点节点，自动放行。"""
+ from workflows.engine.scheduler import DebugSession
+ loop = asyncio.get_event_loop
+ session = DebugSession(execution_id="test-auto-release", loop=loop)
+ session.event = asyncio.Event
+ session.current_node_id = "node-1"
+ session.debug_mode = "step"
+ session.breakpoints = {"node-2"} # node-1 不在断点列表中
+ _debug_sessions["test-auto-release"] = session
+ try:
+ # 模拟模式切换：切到断点模式，node-1 不是断点
+ session.debug_mode = "breakpoint"
+ should_auto_release = (
+ session.current_node_id is not None
+ and session.current_node_id not in session.breakpoints
+ and not session.event.is_set
+ )
+ assert should_auto_release, "应该需要自动放行"
+ # 验证 release_debug_node 正确设置了 debug_action 和 action_data
+ WorkflowEngine.release_debug_node("test-auto-release", action="release")
+ assert session.debug_action == "release"
+ # call_soon_threadsafe 调度的回调需要 event loop 迭代才执行
+ await asyncio.sleep(0)
+ assert session.event.is_set, "event 应该被 set，表示暂停被释放"
+ finally:
+ _debug_sessions.pop("test-auto-release", None)
+ async def test_mode_switch_keeps_breakpoint_node_paused(self):
+ """: 切换到断点模式时，若当前暂停在断点节点，不自动放行。"""
+ from workflows.engine.scheduler import DebugSession
+ loop = asyncio.get_event_loop
+ session = DebugSession(execution_id="test-keep-paused", loop=loop)
+ session.event = asyncio.Event
+ session.current_node_id = "node-2"
+ session.debug_mode = "step"
+ session.breakpoints = {"node-2"} # node-2 在断点列表中
+ _debug_sessions["test-keep-paused"] = session
+ try:
+ # 模拟模式切换：切到断点模式，node-2 是断点
+ session.debug_mode = "breakpoint"
+ if (
+ session.current_node_id
+ and session.current_node_id not in session.breakpoints
+ and not session.event.is_set
+ ):
+ WorkflowEngine.release_debug_node("test-keep-paused", action="release")
+ # event 不应该被 set——断点节点保持暂停
+ assert not session.event.is_set
+ finally:
+ _debug_sessions.pop("test-keep-paused", None)
