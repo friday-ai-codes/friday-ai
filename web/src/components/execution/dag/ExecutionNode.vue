@@ -123,12 +123,27 @@ function handleSubStepClick(stepId: string) {
  <div>
  <Handle type="target":position="Position.Top" />
  <div
- class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
+ class="group w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
  transition-all duration-200 cursor-pointer
  hover:shadow-md hover:border-opacity-70":class="[statusBorderClass, bottleneckClass]"
  >
- <!-- 头部：图标 + 名称 -->
+ <!-- 头部：断点指示器 + 图标 + 名称 -->
  <div class="flex items-center gap-2 mb-1.5">
+ <!-- Phase: 断点指示器 -->
+ <div
+ v-if="data.isDebugExecution"
+ class="shrink-0 flex items-center justify-center w-4 cursor-pointer"
+ @click.stop="data.onToggleBreakpoint?.(props.id)"
+ >
+ <div
+ v-if="data.hasBreakpoint"
+ class="w-2.5 .5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]"
+ />
+ <div
+ v-else
+ class="w-2.5 .5 rounded-full border border-gray-400/50 opacity-0 group-hover:opacity-60 transition-opacity"
+ />
+ </div>
  <div:class="['bg-gradient-to-br rounded-lg .5', style.iconBg]">
  <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
  </div>

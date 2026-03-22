@@ -47,6 +47,12 @@ export interface ExecutionNodeData {
  onDebugRelease?: (nodeId: string) => void
  /** 调试跳过按钮回调 */
  onDebugSkip?: (nodeId: string) => void
+ /** 该节点是否设置了断点 */
+ hasBreakpoint?: boolean
+ /** 切换断点的回调 */
+ onToggleBreakpoint?: (nodeId: string) => void
+ /** 是否为调试执行（控制断点指示器显示） */
+ isDebugExecution?: boolean
 }
 /** 自定义节点类型注册 */
 export const executionNodeTypes: Record<string, NodeComponent> = {
