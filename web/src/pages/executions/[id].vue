@@ -165,7 +165,8 @@ const resumedFromId = computed( => {
 /** Phase: 选中节点是否处于调试暂停状态 */
 const isSelectedNodeDebugPaused = computed( =>
  currentExecution.value?.is_debug === true
- && selectedNodeExecution.value?.status === 'debug_paused',
+ && currentExecution.value?.debug_paused_at_node != null
+ && currentExecution.value?.debug_paused_at_node === selectedNodeId.value,
 )
 /** 选中节点的配置（从 workflow_definition 中查找） */
 const selectedNodeConfig = computed<Record<string, unknown>>( => {
