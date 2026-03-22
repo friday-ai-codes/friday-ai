@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { Runner } from '~/types'
 import type { ColumnDef } from '@tanstack/vue-table'
-import { h } from 'vue'
+import type { Runner } from '~/types'
 import { useHead } from '@vueuse/head'
+import { h } from 'vue'
+import PageHeader from '~/components/common/PageHeader.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
+import PageContainer from '~/components/layout/PageContainer.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
-import PageContainer from '~/components/layout/PageContainer.vue'
-import PageHeader from '~/components/common/PageHeader.vue'
-import StatusBadge from '~/components/common/StatusBadge.vue'
 useHead({ title: 'Runner 管理 - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
@@ -19,19 +19,34 @@ let disconnectTimer: ReturnType<typeof setTimeout> | undefined
 watch(status, (val) => {
  if (val === 'connected') {
  disconnectedTooLong.value = false
- if (disconnectTimer) { clearTimeout(disconnectTimer); disconnectTimer = undefined }
+ if (disconnectTimer) {
+ clearTimeout(disconnectTimer)
+ disconnectTimer = undefined
+ }
  }
  else if (!disconnectTimer) {
- disconnectTimer = setTimeout( => { disconnectedTooLong.value = true; disconnectTimer = undefined }, 10_000)
+ disconnectTimer = setTimeout( => {
+ disconnectedTooLong.value = true
+ disconnectTimer = undefined
+ }, 10_000)
  }
 })
 const loading = ref(true)
 onMounted(async => {
- try { await runnersStore.fetchRunners }
- catch (e) { showError('加载失败', e instanceof Error ? e.message: '无法获取 Runner 列表') }
- finally { loading.value = false }
+ try {
+ await runnersStore.fetchRunners
+ }
+ catch (e) {
+ showError('加载失败', e instanceof Error ? e.message: '无法获取 Runner 列表')
+ }
+ finally {
+ loading.value = false
+ }
 })
-onUnmounted( => { if (disconnectTimer) clearTimeout(disconnectTimer) })
+onUnmounted( => {
+ if (disconnectTimer)
+ clearTimeout(disconnectTimer)
+})
 const deleteDialogOpen = ref(false)
 const runnerToDelete = ref<{ id: string, name: string } | null>(null)
 const deleting = ref(false)
@@ -40,7 +55,8 @@ function confirmDelete(runner: Runner) {
  deleteDialogOpen.value = true
 }
 async function handleDelete {
- if (!runnerToDelete.value) return
+ if (!runnerToDelete.value)
+ return
  deleting.value = true
  try {
  await runnersStore.removeRunner(runnerToDelete.value.id)
@@ -51,11 +67,13 @@ async function handleDelete {
  finally { deleting.value = false }
 }
 function formatTimeAgo(dateStr: string | null) {
- if (!dateStr) return '从未'
+ if (!dateStr)
+ return '从未'
  return useTimeAgo(new Date(dateStr)).value
 }
 function formatAbsoluteTime(dateStr: string | null) {
- if (!dateStr) return '从未连接'
+ if (!dateStr)
+ return '从未连接'
  return new Date(dateStr).toLocaleString('zh-CN')
 }
 // --- DataTable 列定义 ---
@@ -117,12 +135,10 @@ const columns: ColumnDef<Runner> = [
  h(TooltipTrigger, { asChild: true }, =>
  h('span', {
  class: 'text-sm text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/30',
- }, formatTimeAgo(dateStr)),
- ),
+ }, formatTimeAgo(dateStr))),
  h(TooltipContent, null, => formatAbsoluteTime(dateStr)),
  ],
- }),
- )
+ }))
  },
  enableSorting: true,
  enableGlobalFilter: false,
@@ -155,7 +171,9 @@ const columns: ColumnDef<Runner> = [
  description="管理和监控您的 Runner 实例"
  >
  <template #title-suffix>
- <Badge variant="secondary">{{ runnersStore.runners.length }}</Badge>
+ <Badge variant="secondary">
+ {{ runnersStore.runners.length }}
+ </Badge>
  </template>
  <template #actions>
  <Button class="group relative overflow-hidden" @click="router.push('/runners/new')">

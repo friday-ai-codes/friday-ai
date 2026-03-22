@@ -2,6 +2,7 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { VueFinalModal } from 'vue-final-modal'
 import { deleteTriggerLog, getTriggerLog, retryTriggerLog } from '~/api/logs'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import {
  AlertDialog,
  AlertDialogAction,
@@ -13,7 +14,6 @@ import {
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
 import { Button } from '~/components/ui/button'
-import StatusBadge from '~/components/common/StatusBadge.vue'
 import {
  Collapsible,
  CollapsibleContent,

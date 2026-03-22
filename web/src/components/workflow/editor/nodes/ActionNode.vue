@@ -1,10 +1,18 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import {
- Variable, GitBranch, GitPullRequest,
- Sparkles, SquareCode, SearchCode, FileText,
- CircleCheck, Terminal, Cog,
+ CircleCheck,
+ Cog,
+ FileText,
+ GitBranch,
+ GitPullRequest,
+ SearchCode,
+ Sparkles,
+ SquareCode,
+ Terminal,
+ Variable,
 } from 'lucide-vue-next'
-import { computed, type Component } from 'vue'
+import { computed } from 'vue'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
 const props = defineProps<{
  id: string
@@ -38,7 +46,9 @@ const icon = computed( => iconMap[props.data.nodeType] ?? Cog)
  <component:is="icon" class="w-4 " />
  </template>
  <template v-if="data.description" #content>
- <p class="text-xs text-muted-foreground">{{ data.description }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ data.description }}
+ </p>
  </template>
  </BaseWorkflowNode>
 </template>

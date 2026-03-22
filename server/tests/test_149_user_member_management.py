@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 from accounts.models import Invitation
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import ProjectMembership
 User = get_user_model
 # ============================================================================
 # Fixtures

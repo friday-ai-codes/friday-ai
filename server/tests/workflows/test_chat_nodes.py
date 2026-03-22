@@ -3,7 +3,7 @@
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from workflows.nodes.base import ExecutionContext, NodeResult
+from workflows.nodes.base import ExecutionContext
 from workflows.nodes.integrations.feishu_chat import (
  FetchGroupChatNode,
  JoinGroupChatNode,

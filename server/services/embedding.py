@@ -263,7 +263,7 @@ class EmbeddingService:
  try:
  data = response.json
  except Exception:
- raise ValueError(f"响应不是有效的 JSON，请检查 API 地址是否正确（如需添加 /v1/embeddings 后缀）")
+ raise ValueError("响应不是有效的 JSON，请检查 API 地址是否正确（如需添加 /v1/embeddings 后缀）")
  # Handle different API response formats
  if "data" in data and len(data["data"]) > 0:
  return data["data"][0]["embedding"]

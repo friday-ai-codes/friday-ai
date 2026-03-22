@@ -81,8 +81,12 @@ watch(
  >
  <span class="icon-[lucide--alert-circle] text-lg shrink-0 mt-0.5" />
  <div class="flex-1 min-w-0">
- <p class="font-medium">请求失败</p>
- <p class="mt-1 opacity-80 break-words">{{ chatStore.error }}</p>
+ <p class="font-medium">
+ 请求失败
+ </p>
+ <p class="mt-1 opacity-80 break-words">
+ {{ chatStore.error }}
+ </p>
  </div>
  <button
  class="shrink-0 rounded hover:bg-destructive/10 transition-colors"

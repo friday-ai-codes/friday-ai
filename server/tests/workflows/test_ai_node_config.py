@@ -2,7 +2,6 @@
 验证 AIPromptNode、AIVariableExtractorNode、AIAgentBaseNode 的 config_schema
 是否包含 max_thinking_tokens 和 max_budget_usd 配置字段。
 """
-import pytest
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.ai.prompt import AIPromptNode
 from workflows.nodes.ai.variable_extractor import AIVariableExtractorNode

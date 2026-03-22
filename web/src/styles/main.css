@@ -71,43 +71,83 @@
 }
 /* 动画 @keyframes 定义 */
 @keyframes fadeIn {
- from { opacity: 0; }
- to { opacity: 1; }
+ from {
+ opacity: 0;
+ }
+ to {
+ opacity: 1;
+ }
 }
 @keyframes slideUp {
- from { opacity: 0; transform: translateY(20px); }
- to { opacity: 1; transform: translateY(0); }
+ from {
+ opacity: 0;
+ transform: translateY(20px);
+ }
+ to {
+ opacity: 1;
+ transform: translateY(0);
+ }
 }
 @keyframes slideDown {
- from { opacity: 0; transform: translateY(-10px); }
- to { opacity: 1; transform: translateY(0); }
+ from {
+ opacity: 0;
+ transform: translateY(-10px);
+ }
+ to {
+ opacity: 1;
+ transform: translateY(0);
+ }
 }
 @keyframes slideInRight {
- from { opacity: 0; transform: translateX(20px); }
- to { opacity: 1; transform: translateX(0); }
+ from {
+ opacity: 0;
+ transform: translateX(20px);
+ }
+ to {
+ opacity: 1;
+ transform: translateX(0);
+ }
 }
 @keyframes scaleIn {
- from { opacity: 0; transform: scale(0.95); }
- to { opacity: 1; transform: scale(1); }
+ from {
+ opacity: 0;
+ transform: scale(0.95);
+ }
+ to {
+ opacity: 1;
+ transform: scale(1);
+ }
 }
 @keyframes shimmer {
- 0% { background-position: -200% 0; }
- 100% { background-position: 200% 0; }
+ 0% {
+ background-position: -200% 0;
+ }
+ 100% {
+ background-position: 200% 0;
+ }
 }
 @keyframes glow {
- from { box-shadow: 0 0 20px rgba(20, 184, 166, 0.2); }
- to { box-shadow: 0 0 30px rgba(20, 184, 166, 0.4); }
+ from {
+ box-shadow: 0 0 20px rgba(20, 184, 166, 0.2);
+ }
+ to {
+ box-shadow: 0 0 30px rgba(20, 184, 166, 0.4);
+ }
 }
 /* Sub2API 风格卡片系统 */
 .card {
  background: white;
  border: 1px solid hsl(214 32% 91%);
  border-radius: 1rem;
- box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+ box-shadow:
+ 0 1px 3px rgba(0, 0, 0, 0.08),
+ 0 1px 2px rgba(0, 0, 0, 0.04);
  transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
 }
 .card-interactive:hover {
- box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+ box-shadow:
+ 0 10px 40px rgba(0, 0, 0, 0.1),
+ 0 2px 8px rgba(0, 0, 0, 0.06);
  border-color: hsl(168 76% 42% / 0.3);
  transform: translateY(-2px);
 }
@@ -203,7 +243,9 @@
 .btn:focus {
  outline: 2px solid transparent;
  outline-offset: 2px;
- box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px hsl(168 76% 42% / 0.5);
+ box-shadow:
+ 0 0 0 2px var(--color-background),
+ 0 0 0 4px hsl(168 76% 42% / 0.5);
 }
 .btn:disabled {
  transform: none;
@@ -216,13 +258,19 @@
 .btn-primary {
  background: linear-gradient(to right, #14b8a6, #0d9488);
  color: white;
- box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+ box-shadow:
+ 0 4px 6px -1px rgb(0 0 0 / 0.1),
+ 0 2px 4px -2px rgb(0 0 0 / 0.1);
  --tw-shadow-color: rgb(20 184 166 / 0.25);
- box-shadow: 0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color);
+ box-shadow:
+ 0 4px 6px -1px var(--tw-shadow-color),
+ 0 2px 4px -2px var(--tw-shadow-color);
 }
 .btn-primary:hover:not(:disabled) {
  background: linear-gradient(to right, #0d9488, #0f766e);
- box-shadow: 0 10px 15px -3px rgb(20 184 166 / 0.3), 0 4px 6px -4px rgb(20 184 166 / 0.3);
+ box-shadow:
+ 0 10px 15px -3px rgb(20 184 166 / 0.3),
+ 0 4px 6px -4px rgb(20 184 166 / 0.3);
 }
 .btn-secondary {
  background-color: white;
@@ -244,29 +292,41 @@
 .btn-danger {
  background: linear-gradient(to right, #ef4444, #dc2626);
  color: white;
- box-shadow: 0 4px 6px -1px rgb(239 68 68 / 0.25), 0 2px 4px -2px rgb(239 68 68 / 0.25);
+ box-shadow:
+ 0 4px 6px -1px rgb(239 68 68 / 0.25),
+ 0 2px 4px -2px rgb(239 68 68 / 0.25);
 }
 .btn-danger:hover:not(:disabled) {
  background: linear-gradient(to right, #dc2626, #b91c1c);
- box-shadow: 0 10px 15px -3px rgb(239 68 68 / 0.3), 0 4px 6px -4px rgb(239 68 68 / 0.3);
+ box-shadow:
+ 0 10px 15px -3px rgb(239 68 68 / 0.3),
+ 0 4px 6px -4px rgb(239 68 68 / 0.3);
 }
 .btn-success {
  background: linear-gradient(to right, #10b981, #059669);
  color: white;
- box-shadow: 0 4px 6px -1px rgb(16 185 129 / 0.25), 0 2px 4px -2px rgb(16 185 129 / 0.25);
+ box-shadow:
+ 0 4px 6px -1px rgb(16 185 129 / 0.25),
+ 0 2px 4px -2px rgb(16 185 129 / 0.25);
 }
 .btn-success:hover:not(:disabled) {
  background: linear-gradient(to right, #059669, #047857);
- box-shadow: 0 10px 15px -3px rgb(16 185 129 / 0.3), 0 4px 6px -4px rgb(16 185 129 / 0.3);
+ box-shadow:
+ 0 10px 15px -3px rgb(16 185 129 / 0.3),
+ 0 4px 6px -4px rgb(16 185 129 / 0.3);
 }
 .btn-warning {
  background: linear-gradient(to right, #f59e0b, #d97706);
  color: white;
- box-shadow: 0 4px 6px -1px rgb(245 158 11 / 0.25), 0 2px 4px -2px rgb(245 158 11 / 0.25);
+ box-shadow:
+ 0 4px 6px -1px rgb(245 158 11 / 0.25),
+ 0 2px 4px -2px rgb(245 158 11 / 0.25);
 }
 .btn-warning:hover:not(:disabled) {
  background: linear-gradient(to right, #d97706, #b45309);
- box-shadow: 0 10px 15px -3px rgb(245 158 11 / 0.3), 0 4px 6px -4px rgb(245 158 11 / 0.3);
+ box-shadow:
+ 0 10px 15px -3px rgb(245 158 11 / 0.3),
+ 0 4px 6px -4px rgb(245 158 11 / 0.3);
 }
 .btn-sm {
  border-radius: 0.5rem;

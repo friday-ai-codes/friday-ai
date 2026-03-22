@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsStore'
 /**
  * NodeDetailSheet -- 节点详情右侧抽屉面板
  *
@@ -7,7 +8,9 @@
  * 根据节点类型和状态，在概览 Tab 底部条件渲染 AI/审批/调试面板。
  */
 import { computed, ref, watch } from 'vue'
-import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsStore'
+import { Button } from '~/components/ui/button'
+import { ScrollArea } from '~/components/ui/scroll-area'
+import { Separator } from '~/components/ui/separator'
 import {
  Sheet,
  SheetContent,
@@ -16,23 +19,20 @@ import {
  SheetTitle,
 } from '~/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
-import { ScrollArea } from '~/components/ui/scroll-area'
-import { Separator } from '~/components/ui/separator'
-import NodeOverviewTab from './NodeOverviewTab.vue'
-import NodeDataTab from './NodeDataTab.vue'
-import NodeConfigTab from './NodeConfigTab.vue'
-import AIInsightTab from './AIInsightTab.vue'
-import SubStepDetailTab from './SubStepDetailTab.vue'
-import PlanApprovalPanel from './PlanApprovalPanel.vue'
-import AICodingPanel from './AICodingPanel.vue'
 import AICodeReviewPanel from './AICodeReviewPanel.vue'
+import AICodingPanel from './AICodingPanel.vue'
+import AIInsightTab from './AIInsightTab.vue'
+import NodeConfigTab from './NodeConfigTab.vue'
+import NodeDataTab from './NodeDataTab.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
-import { Button } from '~/components/ui/button'
+import NodeOverviewTab from './NodeOverviewTab.vue'
+import PlanApprovalPanel from './PlanApprovalPanel.vue'
+import SubStepDetailTab from './SubStepDetailTab.vue'
 const props = defineProps<{
  open: boolean
  nodeExecution: NodeExecution | null
  nodeConfig: Record<string, unknown>
- bottleneckInfo?: { level: string; rank: number; durationPercent: number } | null
+ bottleneckInfo?: { level: string, rank: number, durationPercent: number } | null
  executionId: string
  /** 是否可以从失败节点继续（Phase） */
  canResume?: boolean
@@ -45,9 +45,9 @@ const props = defineProps<{
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
- 'action-complete':
+ 'actionComplete':
  /** Phase: 从此节点继续执行 */
- 'resume-from-node': [nodeId: string]
+ 'resumeFromNode': [nodeId: string]
 }>
 /** 当前 Tab 状态（受控模式，切换节点时重置） */
 const activeTab = ref('overview')
@@ -57,8 +57,11 @@ const nodeType = computed( => props.nodeExecution?.node_type ?? '')
 const nodeStatus = computed( => props.nodeExecution?.status ?? '')
 /** AI 节点类型判断 */
 const AI_NODE_TYPES = [
- 'ai_prompt', 'ai_coding', 'ai_code_review',
- 'ai_plan_generation', 'ai_coding_dispatcher',
+ 'ai_prompt',
+ 'ai_coding',
+ 'ai_code_review',
+ 'ai_plan_generation',
+ 'ai_coding_dispatcher',
 ] as const
 const isAINode = computed( =>
  AI_NODE_TYPES.includes(nodeType.value as typeof AI_NODE_TYPES[number]),
@@ -73,7 +76,8 @@ watch( => props.nodeExecution, => {
 })
 /** 从 DAG 时间线点击子步骤时自动切换到子步骤 Tab */
 watch( => props.focusSubStepId, (id) => {
- if (id) activeTab.value = 'sub-steps'
+ if (id)
+ activeTab.value = 'sub-steps'
 })
 /** 是否显示 PlanApprovalPanel：ai_plan_approval + waiting_event/completed */
 const showPlanApproval = computed( =>
@@ -102,7 +106,7 @@ function handleOpenChange(value: boolean) {
  emit('update:open', value)
 }
 function handleActionComplete {
- emit('action-complete')
+ emit('actionComplete')
 }
 </script>
 <template>
@@ -148,7 +152,7 @@ function handleActionComplete {
  <Separator />
  <Button:disabled="!canResume"
  class="w-full"
- @click="nodeExecution && emit('resume-from-node', nodeExecution.node)"
+ @click="nodeExecution && emit('resumeFromNode', nodeExecution.node)"
  >
  <span class="icon-[lucide--play-circle] w-4 mr-2" />
  从此继续执行

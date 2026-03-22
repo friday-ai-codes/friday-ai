@@ -1,14 +1,13 @@
 """Index management views for repositories."""
 import asyncio
-from collections import Counter
 from typing import Any
+from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from adrf.views import APIView
 from repositories.models import (
  IndexHistory,
  IndexHistoryStatus,

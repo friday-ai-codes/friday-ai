@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsStore'
 /**
  * NodeDataTab -- 抽屉输入/输出数据标签页
  *
@@ -12,16 +13,15 @@
  * - AI 节点默认进入 Mock 模式，真实执行需确认
  */
 import { computed, ref, watch } from 'vue'
-import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsStore'
-import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import { ScrollArea } from '~/components/ui/scroll-area'
 import { Button } from '~/components/ui/button'
-import MarkdownRenderer from './MarkdownRenderer.vue'
-import JsonEditor from './JsonEditor.vue'
-import DownstreamVarWarning from './DownstreamVarWarning.vue'
-import AISafetyConfirm from './AISafetyConfirm.vue'
+import { ScrollArea } from '~/components/ui/scroll-area'
 import { useDebugDataEditor } from '~/composables/useDebugDataEditor'
-import { getDownstreamVarDeps, checkMissingKeys } from '~/composables/useDownstreamVarCheck'
+import { checkMissingKeys, getDownstreamVarDeps } from '~/composables/useDownstreamVarCheck'
+import { useExecutionsStore } from '~/stores/useExecutionsStore'
+import AISafetyConfirm from './AISafetyConfirm.vue'
+import DownstreamVarWarning from './DownstreamVarWarning.vue'
+import JsonEditor from './JsonEditor.vue'
+import MarkdownRenderer from './MarkdownRenderer.vue'
 const props = defineProps<{
  nodeExecution: NodeExecution
  isDebugPaused?: boolean
@@ -30,8 +30,11 @@ const props = defineProps<{
 const store = useExecutionsStore
 /** AI 节点类型常量 */
 const AI_NODE_TYPES = [
- 'ai_prompt', 'ai_coding', 'ai_code_review',
- 'ai_plan_generation', 'ai_coding_dispatcher',
+ 'ai_prompt',
+ 'ai_coding',
+ 'ai_code_review',
+ 'ai_plan_generation',
+ 'ai_coding_dispatcher',
 ] as const
 const isAINode = computed( =>
  AI_NODE_TYPES.includes(props.nodeExecution.node_type as typeof AI_NODE_TYPES[number]),
@@ -105,7 +108,9 @@ function handleSave {
  savedEditedOutput.value = data
  // 重新设定 editedJson 使 isDirty 回到 false 的效果
  showSavedHint.value = true
- setTimeout( => { showSavedHint.value = false }, 2000)
+ setTimeout( => {
+ showSavedHint.value = false
+ }, 2000)
  }
 }
 /** 重置编辑 */
@@ -124,7 +129,8 @@ function handleRelease {
  // 优先使用已保存的数据，否则使用当前编辑数据（如果有修改的话）
  if (savedEditedOutput.value) {
  data.edited_output = savedEditedOutput.value
- } else if (isDirty.value) {
+ }
+ else if (isDirty.value) {
  const edited = getEditedData
  if (edited) {
  data.edited_output = edited
@@ -148,9 +154,11 @@ function handleAIConfirmExecute {
 }
 // ----- 下游变量警告 -----
 const downstreamWarnings = computed( => {
- if (!isEditing.value || !props.workflowDefinition) return
+ if (!isEditing.value || !props.workflowDefinition)
+ return
  const editedData = getEditedData
- if (!editedData) return
+ if (!editedData)
+ return
  const { nodes, edges } = props.workflowDefinition
  const deps = getDownstreamVarDeps(
  nodes as any,
@@ -162,31 +170,47 @@ const downstreamWarnings = computed( => {
 // ----- 原有的 Markdown 渲染逻辑 -----
 /** 智能文本字段检测：判断某个字段是否应该以 Markdown 渲染 */
 function isMarkdownField(key: string, value: unknown): boolean {
- if (typeof value !== 'string') return false
- if (value.length < 20) return false
+ if (typeof value !== 'string')
+ return false
+ if (value.length < 20)
+ return false
  const textFieldNames = [
- 'text', 'content', 'output', 'result', 'summary',
- 'description', 'plan', 'review', 'analysis', 'response',
- 'final_result', 'text_output',
+ 'text',
+ 'content',
+ 'output',
+ 'result',
+ 'summary',
+ 'description',
+ 'plan',
+ 'review',
+ 'analysis',
+ 'response',
+ 'final_result',
+ 'text_output',
  ]
- if (textFieldNames.some(name => key.toLowerCase.includes(name))) return true
+ if (textFieldNames.some(name => key.toLowerCase.includes(name)))
+ return true
  const mdPatterns = /^#{1,6}\s|^\*\*|^- |^\d+\.\s|```|^\|.*\|$/m
  return mdPatterns.test(value)
 }
 /** 分离输出数据：Markdown 可渲染字段 */
 const markdownFields = computed( => {
- if (!isAINode.value || showRawOutput.value) return
+ if (!isAINode.value || showRawOutput.value)
+ return
  const output = props.nodeExecution.output_data
- if (!output) return
+ if (!output)
+ return
  return Object.entries(output)
  .filter(([key, value]) => isMarkdownField(key, value))
  .map(([key, value]) => ({ key, value: value as string }))
 })
 /** 分离输出数据：剩余 JSON 字段 */
 const jsonFields = computed( => {
- if (!isAINode.value || showRawOutput.value) return props.nodeExecution.output_data
+ if (!isAINode.value || showRawOutput.value)
+ return props.nodeExecution.output_data
  const output = props.nodeExecution.output_data
- if (!output) return null
+ if (!output)
+ return null
  const mdKeys = new Set(markdownFields.value.map(f => f.key))
  const remaining = Object.fromEntries(
  Object.entries(output).filter(([key]) => !mdKeys.has(key)),
@@ -194,7 +218,8 @@ const jsonFields = computed( => {
  return Object.keys(remaining).length > 0 ? remaining: null
 })
 function formatJson(data: Record<string, any> | null | undefined): string {
- if (!data || Object.keys(data).length === 0) return ''
+ if (!data || Object.keys(data).length === 0)
+ return ''
  return JSON.stringify(data, null, 2)
 }
 </script>

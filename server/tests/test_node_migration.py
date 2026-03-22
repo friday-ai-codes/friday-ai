@@ -1,7 +1,6 @@
 """Phase 迁移验证测试。
 验证 AICodingNode 和 Agent session 工具从轮询模式迁移到回调驱动模式。
 """
-import pytest
 from workflows.nodes.ai.coding import AICodingNode
 class TestCallbackDrivenMigration:
  """回调驱动迁移验证测试。"""

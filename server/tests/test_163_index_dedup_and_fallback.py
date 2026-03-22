@@ -1,5 +1,4 @@
 """Phase: 索引去重幂等性和 shallow clone 回退测试。"""
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from django.test import TransactionTestCase
@@ -118,7 +117,7 @@ class TestShallowCloneFallback(TransactionTestCase):
  mock_qs.aget = AsyncMock(return_value=self._make_repo_mock)
  mock_sr.return_value = mock_qs
  with patch("common.encryption.decrypt_value", return_value=None):
- result = await clone_and_index_repository(self.repo_id)
+ _result = await clone_and_index_repository(self.repo_id)
  # 应该调用 full_index 而非 incremental
  mock_full.assert_called_once
  mock_incr.assert_not_called
@@ -148,7 +147,7 @@ class TestShallowCloneFallback(TransactionTestCase):
  mock_qs.aget = AsyncMock(return_value=self._make_repo_mock)
  mock_sr.return_value = mock_qs
  with patch("common.encryption.decrypt_value", return_value=None):
- result = await clone_and_index_repository(self.repo_id)
+ _result = await clone_and_index_repository(self.repo_id)
  # 非 shallow 应该调用 incremental 而非 full
  mock_incr.assert_called_once
  mock_full.assert_not_called
@@ -177,7 +176,7 @@ class TestShallowCloneFallback(TransactionTestCase):
  mock_qs.aget = AsyncMock(return_value=self._make_repo_mock)
  mock_sr.return_value = mock_qs
  with patch("common.encryption.decrypt_value", return_value=None):
- result = await clone_and_index_repository(self.repo_id)
+ _result = await clone_and_index_repository(self.repo_id)
  mock_full.assert_called_once
  mock_incr.assert_not_called
  @pytest.mark.asyncio
@@ -243,7 +242,7 @@ class TestShallowCloneFallback(TransactionTestCase):
  mock_qs.aget = AsyncMock(return_value=self._make_repo_mock)
  mock_sr.return_value = mock_qs
  with patch("common.encryption.decrypt_value", return_value=None):
- result = await clone_and_index_repository(self.repo_id)
+ _result = await clone_and_index_repository(self.repo_id)
  # git diff 成功时不应调用 _is_shallow_clone
  mock_shallow.assert_not_called
  mock_diff.assert_called_once

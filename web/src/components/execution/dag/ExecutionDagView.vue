@@ -6,15 +6,15 @@
  * 通过 execution prop 响应式更新节点状态（WebSocket 驱动）。
  */
 import type { NodeMouseEvent } from '@vue-flow/core'
-import { VueFlow, useVueFlow } from '@vue-flow/core'
+import type { NodeExecution, TimelineData, WorkflowExecution } from '~/stores/useExecutionsStore'
+import type { CostBreakdown, NodeCost } from '~/types/execution'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import '@vue-flow/controls/dist/style.css'
+import { useVueFlow, VueFlow } from '@vue-flow/core'
 import { computed, toRef } from 'vue'
-import type { WorkflowExecution, NodeExecution, TimelineData } from '~/stores/useExecutionsStore'
-import type { CostBreakdown, NodeCost } from '~/types/execution'
-import { useExecutionDag, executionNodeTypes, executionEdgeTypes } from './composables/useExecutionDag'
+import { executionEdgeTypes, executionNodeTypes, useExecutionDag } from './composables/useExecutionDag'
 import { useNodeTimer } from './composables/useNodeTimer'
+import '@vue-flow/controls/dist/style.css'
 const props = defineProps<{
  execution: WorkflowExecution
  timelineData?: TimelineData | null
@@ -27,17 +27,17 @@ const props = defineProps<{
  isDebugExecution?: boolean
 }>
 const emit = defineEmits<{
- 'node-click': [nodeExecution: NodeExecution | null, nodeId: string]
+ nodeClick: [nodeExecution: NodeExecution | null, nodeId: string]
  /** Phase: 失败节点「从此继续」点击 */
- 'resume-click': [nodeId: string]
+ resumeClick: [nodeId: string]
  /** Phase: 子步骤详情跳转 */
- 'sub-step-click': [nodeExecutionId: string, subStepId: string]
+ subStepClick: [nodeExecutionId: string, subStepId: string]
  /** Phase: 调试放行 */
- 'debug-release': [nodeId: string]
+ debugRelease: [nodeId: string]
  /** Phase: 调试跳过 */
- 'debug-skip': [nodeId: string]
+ debugSkip: [nodeId: string]
  /** Phase: 切换断点 */
- 'toggle-breakpoint': [nodeId: string]
+ toggleBreakpoint: [nodeId: string]
 }>
 const executionRef = toRef(props, 'execution')
 const timelineRef = computed( => props.timelineData ?? null)
@@ -48,7 +48,8 @@ const nodeExecutionsRef = computed( => props.execution.node_executions ?? )
 const { elapsedMap } = useNodeTimer(nodeExecutionsRef)
 // 从 costData 构建节点成本 map
 const nodeCostMap = computed<Record<string, NodeCost>>( => {
- if (!props.costData?.nodes) return {}
+ if (!props.costData?.nodes)
+ return {}
  const map: Record<string, NodeCost> = {}
  for (const node of props.costData.nodes) {
  let totalTokens = 0
@@ -76,15 +77,15 @@ const nodesWithData = computed( => {
  ...node.data,
  ...(elapsed !== undefined && { elapsed }),
  ...(cost && { cost }),
- onResumeClick: (nodeId: string) => emit('resume-click', nodeId),
+ onResumeClick: (nodeId: string) => emit('resumeClick', nodeId),
  onSubStepClick: (nodeExecutionId: string, subStepId: string) =>
- emit('sub-step-click', nodeExecutionId, subStepId),
+ emit('subStepClick', nodeExecutionId, subStepId),
  // Phase: 调试操作回调
- onDebugRelease: (nodeId: string) => emit('debug-release', nodeId),
- onDebugSkip: (nodeId: string) => emit('debug-skip', nodeId),
+ onDebugRelease: (nodeId: string) => emit('debugRelease', nodeId),
+ onDebugSkip: (nodeId: string) => emit('debugSkip', nodeId),
  // Phase: 断点数据
  hasBreakpoint: props.breakpoints?.has(node.id) ?? false,
- onToggleBreakpoint: (nodeId: string) => emit('toggle-breakpoint', nodeId),
+ onToggleBreakpoint: (nodeId: string) => emit('toggleBreakpoint', nodeId),
  isDebugExecution: props.isDebugExecution ?? false,
  },
  }
@@ -96,7 +97,7 @@ onNodeClick(({ node }: NodeMouseEvent) => {
  const ne = props.execution.node_executions?.find(
  ne => ne.node === node.id,
  ) ?? null
- emit('node-click', ne, node.id)
+ emit('nodeClick', ne, node.id)
 })
 </script>
 <template>

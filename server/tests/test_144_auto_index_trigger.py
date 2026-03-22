@@ -9,13 +9,8 @@ import hashlib
 import hmac as hmac_mod
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from django.utils import timezone
 from repositories.models import (
- IndexHistory,
- IndexHistoryStatus,
- IndexStatus,
  Repository,
- TriggerType,
 )
 from tasks.index_trigger_tasks import (
  _is_duplicate,

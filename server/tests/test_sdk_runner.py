@@ -272,6 +272,7 @@ async def test_interrupt_preserves_partial_content -> None:
  pass
  assert runner.result is not None
  assert runner.result.status == "interrupted"
+ assert runner.result.final_answer is not None
  assert "Hello World!" in runner.result.final_answer
 async def test_interrupt_noop_when_no_task -> None:
  """无活跃任务时 interrupt 不报错。"""

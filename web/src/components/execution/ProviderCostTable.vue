@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CostBreakdown } from '~/types/execution'
 /**
  * ProviderCostTable — 按 Provider 分组的 Token 消耗统计表格
  *
@@ -6,7 +7,6 @@
  * 按 Provider 分组聚合 Token 消耗和成本。
  */
 import { computed } from 'vue'
-import type { CostBreakdown } from '~/types/execution'
 import {
  Table,
  TableBody,
@@ -42,7 +42,8 @@ function formatTokens(n: number): string {
 }
 /** 按 Provider 分组聚合 */
 const providerGroups = computed<ProviderGroup>( => {
- if (!props.costData?.nodes?.length) return
+ if (!props.costData?.nodes?.length)
+ return
  const groupMap = new Map<string, { name: string, input: number, output: number, cost: number }>
  for (const node of props.costData.nodes) {
  for (const [modelId, modelData] of Object.entries(node.models)) {
@@ -73,7 +74,8 @@ const providerGroups = computed<ProviderGroup>( => {
 })
 /** 汇总数据 */
 const summary = computed( => {
- if (!providerGroups.value.length) return null
+ if (!providerGroups.value.length)
+ return null
  return {
  inputTokens: providerGroups.value.reduce((sum, g) => sum + g.inputTokens, 0),
  outputTokens: providerGroups.value.reduce((sum, g) => sum + g.outputTokens, 0),

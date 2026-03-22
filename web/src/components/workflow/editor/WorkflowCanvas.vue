@@ -6,24 +6,24 @@
  * VueFlow 的所有内部变更（拖拽、删除等）通过 @nodes-change/@edges-change 统一回写 store。
  */
 import type { Connection, EdgeChange, NodeChange, NodeMouseEvent } from '@vue-flow/core'
-import { Panel, VueFlow, SelectionMode, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { MiniMap } from '@vue-flow/minimap'
 import { Controls } from '@vue-flow/controls'
-import '@vue-flow/minimap/dist/style.css'
-import '@vue-flow/controls/dist/style.css'
+import { Panel, SelectionMode, useVueFlow, VueFlow } from '@vue-flow/core'
+import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, markRaw } from 'vue'
 import { toast } from 'vue-sonner'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
-import { toVueFlowNodes, toVueFlowEdges } from './composables/useWorkflowTransform'
-import { useConnectionValidator, getValidationError } from './composables/useConnectionValidator'
+import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
-import { nodeTypes } from './nodes'
+import { toVueFlowEdges, toVueFlowNodes } from './composables/useWorkflowTransform'
 import GradientEdge from './edges/GradientEdge.vue'
+import { nodeTypes } from './nodes'
+import '@vue-flow/minimap/dist/style.css'
+import '@vue-flow/controls/dist/style.css'
 const store = useWorkflowsStore
 const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
 const vfNodes = computed( => toVueFlowNodes(storeNodes.value))
@@ -90,9 +90,10 @@ function handleBatchDelete {
 }
 function handleBatchCopy {
  const selected = getSelectedNodes.value
- selected.forEach(node => {
+ selected.forEach((node) => {
  const storeNode = store.nodes.find(n => n.id === node.id)
- if (!storeNode) return
+ if (!storeNode)
+ return
  const newNode = {
  ...JSON.parse(JSON.stringify(storeNode)),
  id: crypto.randomUUID,
@@ -124,7 +125,8 @@ function handleBatchCopy {
  color="#3b82f620"
  />
  <MiniMap
- position="bottom-right":pannable="true":zoomable="true":mask-color="'rgba(0, 0, 0, 0.08)'"
+ position="bottom-right":pannable="true":zoomable="true"
+ mask-color="rgba(0, 0, 0, 0.08)"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
  />
  <Controls

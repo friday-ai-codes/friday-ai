@@ -4,8 +4,8 @@
  */
 import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, ProjectMembershipBrief, User } from '~/types'
 import { authApi } from '~/api'
-import { getMe, updateProfile } from '~/api/users'
 import { clearAccessToken, setAccessToken } from '~/api/client'
+import { getMe, updateProfile } from '~/api/users'
 export const useAuthStore = defineStore('auth', => {
  // ============================================================================
  // State

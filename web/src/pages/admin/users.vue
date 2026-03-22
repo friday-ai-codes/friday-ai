@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { Invitation, SystemUser } from '~/types'
 import type { ColumnDef } from '@tanstack/vue-table'
+import type { Invitation, SystemUser } from '~/types'
 import { h } from 'vue'
 import { toast } from 'vue-sonner'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
 import DataTable from '~/components/common/DataTable.vue'
-import PageContainer from '~/components/layout/PageContainer.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
+import PageContainer from '~/components/layout/PageContainer.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -137,7 +137,8 @@ const columns: ColumnDef<SystemUser> = [
  id: 'actions',
  header: '操作',
  cell: ({ row }) => {
- if (row.original.is_superuser) return null
+ if (row.original.is_superuser)
+ return null
  return h(Button, {
  variant: 'secondary',
  size: 'sm',

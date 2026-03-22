@@ -1,6 +1,8 @@
 """DRF 权限类：项目级分级权限控制。"""
 from __future__ import annotations
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+if TYPE_CHECKING:
+ from accounts.models import User
 import structlog
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -33,7 +35,7 @@ class IsProjectMember(BasePermission):
  if project is None:
  return False
  return PermissionService.has_project_access(
- request.user, project, ProjectRole.VIEWER
+ cast("User", request.user), project, ProjectRole.VIEWER
  )
 class IsProjectAdmin(BasePermission):
  """要求用户是项目管理员（admin+）。
@@ -50,7 +52,7 @@ class IsProjectAdmin(BasePermission):
  if project is None:
  return False
  return PermissionService.has_project_access(
- request.user, project, ProjectRole.ADMIN
+ cast("User", request.user), project, ProjectRole.ADMIN
  )
 class ProjectRolePermission(BasePermission):
  """通用角色权限类，根据 HTTP method 自动分级。
@@ -73,11 +75,11 @@ class ProjectRolePermission(BasePermission):
  # 读操作：viewer+
  if request.method in ("GET", "HEAD", "OPTIONS"):
  return PermissionService.has_project_access(
- request.user, project, ProjectRole.VIEWER
+ cast("User", request.user), project, ProjectRole.VIEWER
  )
  # 写操作：由 write_min_role 控制
  return PermissionService.has_project_access(
- request.user, project, self.write_min_role
+ cast("User", request.user), project, self.write_min_role
  )
 def _get_project(obj: Any) -> Any:
  """从对象链式查找关联的 project。

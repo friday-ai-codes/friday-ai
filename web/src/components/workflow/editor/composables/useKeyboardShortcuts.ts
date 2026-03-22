@@ -22,7 +22,8 @@ export function useKeyboardShortcuts {
  }
  function handleKeyDown(event: KeyboardEvent) {
  // 输入框聚焦时不拦截
- if (isInputFocused(event)) return
+ if (isInputFocused(event))
+ return
  const isModifier = event.ctrlKey || event.metaKey
  // Delete/Backspace 由 VueFlow 内置处理，通过 @nodes-change 回写 store
  // Ctrl+A -> 全选
@@ -42,7 +43,7 @@ export function useKeyboardShortcuts {
  if (isModifier && event.key === 'v') {
  if (clipboard.value.length > 0) {
  event.preventDefault
- clipboard.value.forEach(copiedNode => {
+ clipboard.value.forEach((copiedNode) => {
  const storeNode = store.nodes.find(n => n.id === copiedNode.id)
  // 优先使用 store 数据（含最新编辑），回退到 VueFlow GraphNode 的 data 字段
  const data = copiedNode.data as Record<string, unknown> | undefined

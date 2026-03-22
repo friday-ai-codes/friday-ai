@@ -1,7 +1,7 @@
+import type { ColumnDef } from '@tanstack/vue-table'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { ColumnDef } from '@tanstack/vue-table'
 import DataTable from '~/components/common/DataTable.vue'
 // Mock useLocalStorage 避免 SSR 警告
 vi.mock('@vueuse/core', async (importOriginal) => {
@@ -34,17 +34,17 @@ const testData: MockSystemUser = [
  { id: '2', username: 'alice', display_name: 'Alice Wang', is_active: true, is_superuser: false, created_at: '2026-02-15T00:00:00Z' },
  { id: '3', username: 'bob', display_name: 'Bob Li', is_active: false, is_superuser: false, created_at: '2026-03-01T00:00:00Z' },
 ]
-describe('Users DataTable', => {
+describe('users DataTable', => {
  it('渲染用户列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'users-test' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'users-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('搜索框过滤用户名', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'users-search' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'users-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')

@@ -337,7 +337,6 @@ class AIPromptNode(BaseNode):
  output_format = config.get("output_format", "text")
  json_schema = config.get("json_schema", {})
  max_thinking_tokens: int | None = config.get("max_thinking_tokens")
- max_budget_usd: float | None = config.get("max_budget_usd")
  # 自定义 API 配置
  use_custom_api = config.get("use_custom_api", False)
  api_base_url = config.get("api_base_url", "")

@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import StatCard from '~/components/common/StatCard.vue'
-describe('StatCard', => {
+describe('statCard', => {
  it('should render title and value', => {
  const wrapper = mount(StatCard, {
  props: { title: '项目总数', value: 42, icon: 'lucide--folder-git-2' },

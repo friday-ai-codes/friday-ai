@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ResumePreviewNode } from '~/api/workflow'
 /**
  * 执行详情页 — 全屏 DAG 视图
  *
@@ -11,14 +12,14 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
-import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
-import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
+import { checkWorkflowChanged, getCostBreakdown, resumeFromFailed, resumePreview } from '~/api/workflow'
 import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
-import ProviderCostTable from '~/components/execution/ProviderCostTable.vue'
+import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
+import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
+import ProviderCostTable from '~/components/execution/ProviderCostTable.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Switch } from '~/components/ui/switch'
 import { Card, CardContent } from '~/components/ui/card'
 import {
  Dialog,
@@ -29,10 +30,9 @@ import {
  DialogTitle,
 } from '~/components/ui/dialog'
 import { Progress } from '~/components/ui/progress'
+import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import { getCostBreakdown, resumeFromFailed, checkWorkflowChanged, resumePreview } from '~/api/workflow'
-import type { ResumePreviewNode } from '~/api/workflow'
 const route = useRoute
 const router = useRouter
 const executionId = computed( => (route.params as { id: string }).id)
@@ -43,7 +43,8 @@ const isDebugExecution = computed( => currentExecution.value?.is_debug === true)
 /** Phase: 当前调试暂停节点名称 */
 const debugPausedNodeName = computed( => {
  const nodeId = currentExecution.value?.debug_paused_at_node
- if (!nodeId || !currentExecution.value?.workflow_definition) return null
+ if (!nodeId || !currentExecution.value?.workflow_definition)
+ return null
  const defNode = currentExecution.value.workflow_definition.nodes.find(n => n.id === nodeId)
  return defNode?.name ?? nodeId
 })
@@ -109,8 +110,10 @@ function isTerminalStatus(status?: string) {
 }
 /** WebSocket 断线检测 */
 const wsDisconnected = computed( => {
- if (!currentExecution.value) return false
- if (!isActiveStatus(currentExecution.value.status)) return false
+ if (!currentExecution.value)
+ return false
+ if (!isActiveStatus(currentExecution.value.status))
+ return false
  return wsStatus.value === 'CLOSED'
 })
 // ----- 生命周期 -----
@@ -141,15 +144,18 @@ watch( => currentExecution.value?.status, (newStatus, oldStatus) => {
  // 执行结束时获取 Timeline 瓶颈数据 + 成本数据
  if (isTerminalStatus(newStatus) && !isTerminalStatus(oldStatus)) {
  store.fetchTimeline(executionId.value)
- if (!costData.value) fetchCostData
+ if (!costData.value)
+ fetchCostData
  }
 })
 // ----- 计算属性 -----
 const progress = computed( => currentExecution.value?.progress || 0)
 const duration = computed( => {
- if (!currentExecution.value?.duration) return '-'
+ if (!currentExecution.value?.duration)
+ return '-'
  const seconds = Math.round(currentExecution.value.duration)
- if (seconds < 60) return `${seconds}s`
+ if (seconds < 60)
+ return `${seconds}s`
  const minutes = Math.floor(seconds / 60)
  const remainingSeconds = seconds % 60
  return `${minutes}m ${remainingSeconds}s`
@@ -171,7 +177,8 @@ const isSelectedNodeDebugPaused = computed( =>
 )
 /** 选中节点的配置（从 workflow_definition 中查找） */
 const selectedNodeConfig = computed<Record<string, unknown>>( => {
- if (!selectedNodeId.value || !currentExecution.value?.workflow_definition) return {}
+ if (!selectedNodeId.value || !currentExecution.value?.workflow_definition)
+ return {}
  const defNode = currentExecution.value.workflow_definition.nodes.find(
  n => n.id === selectedNodeId.value,
  )
@@ -179,11 +186,13 @@ const selectedNodeConfig = computed<Record<string, unknown>>( => {
 })
 /** 选中节点的瓶颈信息 */
 const selectedBottleneckInfo = computed( => {
- if (!selectedNodeExecution.value || !timelineData.value) return null
+ if (!selectedNodeExecution.value || !timelineData.value)
+ return null
  const tlNode = timelineData.value.nodes.find(
  n => n.node_id === selectedNodeExecution.value!.node,
  )
- if (!tlNode?.is_bottleneck) return null
+ if (!tlNode?.is_bottleneck)
+ return null
  // 计算排名：critical 排在最前面
  const bottleneckNodes = timelineData.value.nodes
  .filter(n => n.is_bottleneck)
@@ -215,7 +224,8 @@ function handleToggleBreakpoint(nodeId: string) {
  if (breakpoints.value.has(nodeId)) {
  breakpoints.value.delete(nodeId)
  store.sendBreakpointAction('remove_breakpoint', nodeId)
- } else {
+ }
+ else {
  breakpoints.value.add(nodeId)
  store.sendBreakpointAction('set_breakpoint', nodeId)
  }
@@ -229,11 +239,11 @@ watch( => currentExecution.value?.id, => {
 })
 // ----- Phase: 调试操作 -----
 /** 调试放行 */
-function handleDebugRelease(nodeId: string) {
+function handleDebugRelease(_nodeId: string) {
  store.sendDebugAction('release')
 }
 /** 调试跳过 */
-function handleDebugSkip(nodeId: string) {
+function handleDebugSkip(_nodeId: string) {
  store.sendDebugAction('skip')
 }
 /** 终止调试（取消执行） */
@@ -270,7 +280,8 @@ async function handleCancel {
  toast.success('工作流已取消')
 }
 async function handleRetry {
- if (!currentExecution.value) return
+ if (!currentExecution.value)
+ return
  try {
  const { retryExecution } = await import('~/api/workflow')
  const result = await retryExecution(currentExecution.value.id)
@@ -286,7 +297,8 @@ async function handleRetry {
 // ----- 从此继续（Phase → Phase 增强） -----
 async function handleResumeClick(nodeId: string) {
  const exec = currentExecution.value
- if (!exec?.workflow_definition) return
+ if (!exec?.workflow_definition)
+ return
  // 找到节点名称
  const defNode = exec.workflow_definition.nodes.find(n => n.id === nodeId)
  resumeNodeName.value = defNode?.name ?? nodeId
@@ -311,7 +323,8 @@ async function handleResumeClick(nodeId: string) {
  }
 }
 async function handleResumeFromFailed {
- if (!resumeNodeId.value) return
+ if (!resumeNodeId.value)
+ return
  resuming.value = true
  try {
  const result = await resumeFromFailed(executionId.value, resumeNodeId.value)
@@ -337,7 +350,8 @@ async function handleResumeFromFailed {
 }
 // ----- 审批/触发对话框（备用入口） -----
 async function handleApprove {
- if (!selectedNodeExecution.value) return
+ if (!selectedNodeExecution.value)
+ return
  approving.value = true
  try {
  await store.approveNode(selectedNodeExecution.value.id, approvalComment.value)
@@ -353,7 +367,8 @@ async function handleApprove {
  }
 }
 async function handleReject {
- if (!selectedNodeExecution.value) return
+ if (!selectedNodeExecution.value)
+ return
  approving.value = true
  try {
  await store.rejectNode(selectedNodeExecution.value.id, approvalComment.value)
@@ -369,7 +384,8 @@ async function handleReject {
  }
 }
 async function handleTrigger {
- if (!selectedNodeExecution.value) return
+ if (!selectedNodeExecution.value)
+ return
  triggering.value = true
  try {
  let inputData = {}
@@ -595,8 +611,12 @@ async function handleTrigger {
  >
  <div class="text-center space-y-2">
  <span class="icon-[lucide--layout-grid] w-12 mx-auto opacity-30" />
- <p class="text-sm">此执行没有保存工作流定义快照，无法渲染 DAG 视图</p>
- <p class="text-xs text-muted-foreground/60">该执行可能在快照功能上线前创建</p>
+ <p class="text-sm">
+ 此执行没有保存工作流定义快照，无法渲染 DAG 视图
+ </p>
+ <p class="text-xs text-muted-foreground/60">
+ 该执行可能在快照功能上线前创建
+ </p>
  </div>
  </div>
  <!-- DAG 视图 -->

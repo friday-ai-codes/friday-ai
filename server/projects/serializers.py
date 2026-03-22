@@ -1,6 +1,5 @@
 """Projects app serializers."""
 from __future__ import annotations
-from typing import Any
 from rest_framework import serializers
 from repositories.models import GitCredential, Repository
 from .models import Project, ProjectRepository, RepositoryPermission

@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { EdgeProps } from '@vue-flow/core'
 /**
  * GradientEdge - 自定义渐变边组件
  *
  * 根据源/目标节点类别色渲染 SVG 线性渐变，选中时加粗发光。
  */
-import { BaseEdge, getSmoothStepPath, type EdgeProps } from '@vue-flow/core'
+import { BaseEdge, getSmoothStepPath } from '@vue-flow/core'
 import { computed } from 'vue'
 import { getNodeDefinition } from '~/types/workflow/registry'
 const props = defineProps<EdgeProps>
@@ -18,7 +19,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 const DEFAULT_COLOR = '#6B7280'
 function getColor(nodeType: string | undefined): string {
- if (!nodeType) return DEFAULT_COLOR
+ if (!nodeType)
+ return DEFAULT_COLOR
  const def = getNodeDefinition(nodeType)
  return CATEGORY_COLORS[def?.category ?? ''] ?? DEFAULT_COLOR
 }

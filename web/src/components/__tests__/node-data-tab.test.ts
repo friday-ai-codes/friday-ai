@@ -1,12 +1,13 @@
+import type { NodeExecution } from '~/stores/useExecutionsStore'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
-import type { NodeExecution } from '~/stores/useExecutionsStore'
+import { nextTick } from 'vue'
+import NodeDataTab from '../execution/NodeDataTab.vue'
 // Mock JsonEditor 组件（happy-dom 下无法运行 CodeMirror）
 // vi.hoisted 在 vi.mock 之前执行，可以安全引用
 const { MockJsonEditor } = vi.hoisted( => {
- // eslint-disable-next-line @typescript-eslint/no-require-imports
+ // eslint-disable-next-line ts/no-require-imports
  const vue = require('vue')
  return {
  MockJsonEditor: vue.defineComponent({
@@ -20,10 +21,10 @@ const { MockJsonEditor } = vi.hoisted( => {
  setup(props: any, { emit }: any) {
  return => vue.h('div', { class: 'mock-json-editor' }, [
  vue.h('textarea', {
- value: props.modelValue,
- disabled: props.readonly,
+ 'value': props.modelValue,
+ 'disabled': props.readonly,
  'data-testid': 'json-editor',
- onInput: (e: Event) => {
+ 'onInput': (e: Event) => {
  emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
  },
  }),
@@ -54,7 +55,6 @@ vi.mock('../execution/MarkdownRenderer.vue', => ({
  template: '<div class="mock-markdown">{{ content }}</div>',
  },
 }))
-import NodeDataTab from '../execution/NodeDataTab.vue'
 function createNodeExecution(overrides: Partial<NodeExecution> = {}): NodeExecution {
  return {
  id: 'ne-1',
@@ -86,7 +86,7 @@ function createAINodeExecution(overrides: Partial<NodeExecution> = {}): NodeExec
  ...overrides,
  })
 }
-describe('NodeDataTab', => {
+describe('nodeDataTab', => {
  beforeEach( => {
  setActivePinia(createPinia)
  mockSendDebugAction.mockClear
@@ -172,7 +172,7 @@ describe('NodeDataTab', => {
  edited_output: { result: 'edited_value' },
  })
  })
- it('Mock 模式下提交 Mock 调用 sendDebugAction(mock, { mock_output })', async => {
+ it('mock 模式下提交 Mock 调用 sendDebugAction(mock, { mock_output })', async => {
  const wrapper = mount(NodeDataTab, {
  props: {
  nodeExecution: createNodeExecution({ status: 'debug_paused' }),
@@ -203,7 +203,7 @@ describe('NodeDataTab', => {
  mock_output: { mock_key: 'mock_value' },
  })
  })
- it('AI 节点调试暂停时默认进入 Mock 模式', => {
+ it('aI 节点调试暂停时默认进入 Mock 模式', => {
  const wrapper = mount(NodeDataTab, {
  props: {
  nodeExecution: createAINodeExecution({ status: 'debug_paused' }),
@@ -213,7 +213,7 @@ describe('NodeDataTab', => {
  // AI 节点应自动进入 Mock 模式
  expect(wrapper.text).toContain('Mock 模式')
  })
- it('AI 节点真实执行按钮触发 AISafetyConfirm 对话框', async => {
+ it('aI 节点真实执行按钮触发 AISafetyConfirm 对话框', async => {
  const wrapper = mount(NodeDataTab, {
  props: {
  nodeExecution: createAINodeExecution({ status: 'debug_paused' }),

@@ -71,7 +71,7 @@ class TestDispatcherDebugModePassthrough:
  "workflows.triggers.dispatcher.TriggerHandlerRegistry.get",
  return_value=mock_handler_class,
  ):
- executions = await dispatcher.dispatch(context)
+ _executions = await dispatcher.dispatch(context)
  # 验证 start_execution 被调用时包含 debug_mode=True
  dispatcher.engine.start_execution.assert_called_once
  call_kwargs = dispatcher.engine.start_execution.call_args.kwargs

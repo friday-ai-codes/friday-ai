@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T extends object">
+import type { ColumnDef, PaginationState, SortingState, VisibilityState } from '@tanstack/vue-table'
 import {
  FlexRender,
  getCoreRowModel,
@@ -6,10 +7,6 @@ import {
  getPaginationRowModel,
  getSortedRowModel,
  useVueTable,
- type ColumnDef,
- type PaginationState,
- type SortingState,
- type VisibilityState,
 } from '@tanstack/vue-table'
 import { useLocalStorage } from '@vueuse/core'
 import { computed, ref } from 'vue'
@@ -48,7 +45,7 @@ const props = defineProps<{
  onRowClick?: (row: T) => void
 }>
 defineSlots<{
- filters: unknown
+ filters: => unknown
 }>
 // --- 受控状态 ---
 const columnVisibility = useLocalStorage<VisibilityState>(
@@ -76,18 +73,18 @@ const table = useVueTable({
  get pagination { return pagination.value },
  },
  onSortingChange: (u) => {
- sorting.value = u instanceof Function ? u(sorting.value): u
+ sorting.value = typeof u === 'function' ? u(sorting.value): u
  },
  onGlobalFilterChange: (u) => {
- globalFilter.value = u instanceof Function ? u(globalFilter.value): u
+ globalFilter.value = typeof u === 'function' ? u(globalFilter.value): u
  // 搜索词变化时回到第一页，避免过滤后分页越界出现空白页
  pagination.value = { ...pagination.value, pageIndex: 0 }
  },
  onColumnVisibilityChange: (u) => {
- columnVisibility.value = u instanceof Function ? u(columnVisibility.value): u
+ columnVisibility.value = typeof u === 'function' ? u(columnVisibility.value): u
  },
  onPaginationChange: (u) => {
- pagination.value = u instanceof Function ? u(pagination.value): u
+ pagination.value = typeof u === 'function' ? u(pagination.value): u
  },
 })
 // 每页条数选择（字符串适配 Select 组件）
@@ -103,13 +100,16 @@ const rangeEnd = computed( => Math.min(currentPage.value * pagination.value.page
 const visiblePages = computed<(number | '...')>( => {
  const total = pageCount.value
  const current = currentPage.value
- if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+ if (total <= 7)
+ return Array.from({ length: total }, (_, i) => i + 1)
  const pages: (number | '...') = [1]
- if (current > 3) pages.push('...')
+ if (current > 3)
+ pages.push('...')
  const start = Math.max(2, current - 1)
  const end = Math.min(total - 1, current + 1)
  for (let i = start; i <= end; i++) pages.push(i)
- if (current < total - 2) pages.push('...')
+ if (current < total - 2)
+ pages.push('...')
  pages.push(total)
  return pages
 })
@@ -155,7 +155,9 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  </Button>
  </PopoverTrigger>
  <PopoverContent align="end" class="w-48 ">
- <p class="px-2 py-1.5 text-sm font-semibold text-muted-foreground">显示/隐藏列</p>
+ <p class="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
+ 显示/隐藏列
+ </p>
  <div class="border-t border-border/50 my-1" />
  <label
  v-for="column in table.getAllLeafColumns.filter(c => c.getCanHide)":key="column.id"

@@ -2,6 +2,8 @@
 from __future__ import annotations
 from datetime import timedelta
 from typing import Any
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 from rest_framework import status
@@ -10,11 +12,16 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, BasePermission
 from rest_framework.request import Request
 from rest_framework.response import Response
-from adrf.views import APIView
-from adrf.viewsets import ModelViewSet
 from permissions.api_permissions import IsSuperUser
 from .authentication import RunnerTokenAuthentication
-from .models import RegistrationToken, Runner, RunnerEvent, RunnerTaskAssignment, generate_token, hash_token
+from .models import (
+ RegistrationToken,
+ Runner,
+ RunnerEvent,
+ RunnerTaskAssignment,
+ generate_token,
+ hash_token,
+)
 from .serializers import (
  RegistrationTokenCreateSerializer,
  RegistrationTokenSerializer,

@@ -101,8 +101,8 @@ class TestConversationList:
  assert len(response.data) == 0
  def test_list_conversations_ordering(self, api_client, test_project):
  """对话按 updated_at 降序排列。"""
- conv1 = Conversation.objects.create(project=test_project, title="对话 1")
- conv2 = Conversation.objects.create(project=test_project, title="对话 2")
+ _conv1 = Conversation.objects.create(project=test_project, title="对话 1")
+ _conv2 = Conversation.objects.create(project=test_project, title="对话 2")
  response = api_client.get("/api/chat/conversations/")
  assert response.status_code == status.HTTP_200_OK
  assert len(response.data) == 2

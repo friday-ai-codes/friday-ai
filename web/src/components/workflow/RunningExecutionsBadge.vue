@@ -8,6 +8,7 @@
 import { useIntervalFn } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { get } from '~/api/client'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -15,7 +16,6 @@ import {
  PopoverContent,
  PopoverTrigger,
 } from '~/components/ui/popover'
-import { get } from '~/api/client'
 interface RunningExecution {
  id: string
  status: string

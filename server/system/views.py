@@ -1,8 +1,8 @@
 """Settings views."""
+from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from rest_framework import status
 from rest_framework.response import Response
-from adrf.views import APIView
 from common.encryption import encrypt_value
 from permissions.api_permissions import IsSuperUser
 from .models import SettingKeys, SystemSetting

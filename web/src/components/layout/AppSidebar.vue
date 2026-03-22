@@ -210,8 +210,12 @@ async function handleLogout {
  </div>
  </div>
  <div class="min-w-0">
- <p class="text-sm font-semibold text-foreground truncate">{{ authStore.displayName || '用户' }}</p>
- <p class="text-xs text-muted-foreground truncate">{{ authStore.user?.username }}</p>
+ <p class="text-sm font-semibold text-foreground truncate">
+ {{ authStore.displayName || '用户' }}
+ </p>
+ <p class="text-xs text-muted-foreground truncate">
+ {{ authStore.user?.username }}
+ </p>
  </div>
  </div>
  <DropdownMenuSeparator />

@@ -11,6 +11,7 @@ declare global {
  const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
  const asyncComputed: typeof import('@vueuse/core').asyncComputed
  const autoResetRef: typeof import('@vueuse/core').autoResetRef
+ const checkMissingKeys: typeof import('./composables/useDownstreamVarCheck').checkMissingKeys
  const computed: typeof import('vue').computed
  const computedAsync: typeof import('@vueuse/core').computedAsync
  const computedEager: typeof import('@vueuse/core').computedEager
@@ -39,10 +40,12 @@ declare global {
  const eagerComputed: typeof import('@vueuse/core').eagerComputed
  const effectScope: typeof import('vue').effectScope
  const extendRef: typeof import('@vueuse/core').extendRef
+ const extractNodeVarRefs: typeof import('./composables/useDownstreamVarCheck').extractNodeVarRefs
  const getActivePinia: typeof import('pinia').getActivePinia
  const getCurrentInstance: typeof import('vue').getCurrentInstance
  const getCurrentScope: typeof import('vue').getCurrentScope
  const getCurrentWatcher: typeof import('vue').getCurrentWatcher
+ const getDownstreamVarDeps: typeof import('./composables/useDownstreamVarCheck').getDownstreamVarDeps
  const getMarkdownRenderer: typeof import('./composables/useMarkdownRenderer').getMarkdownRenderer
  const h: typeof import('vue').h
  const ignorableWatch: typeof import('@vueuse/core').ignorableWatch
@@ -173,6 +176,7 @@ declare global {
  const useDebounce: typeof import('@vueuse/core').useDebounce
  const useDebounceFn: typeof import('@vueuse/core').useDebounceFn
  const useDebouncedRefHistory: typeof import('@vueuse/core').useDebouncedRefHistory
+ const useDebugDataEditor: typeof import('./composables/useDebugDataEditor').useDebugDataEditor
  const useDesignTimeVariables: typeof import('./composables/useDesignTimeVariables').useDesignTimeVariables
  const useDeviceMotion: typeof import('@vueuse/core').useDeviceMotion
  const useDeviceOrientation: typeof import('@vueuse/core').useDeviceOrientation
@@ -378,6 +382,7 @@ declare module 'vue' {
  readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
  readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
  readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
+ readonly checkMissingKeys: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['checkMissingKeys']>
  readonly computed: UnwrapRef<typeof import('vue')['computed']>
  readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
  readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
@@ -406,10 +411,12 @@ declare module 'vue' {
  readonly eagerComputed: UnwrapRef<typeof import('@vueuse/core')['eagerComputed']>
  readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
  readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
+ readonly extractNodeVarRefs: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['extractNodeVarRefs']>
  readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
  readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
  readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
  readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
+ readonly getDownstreamVarDeps: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['getDownstreamVarDeps']>
  readonly getMarkdownRenderer: UnwrapRef<typeof import('./composables/useMarkdownRenderer')['getMarkdownRenderer']>
  readonly h: UnwrapRef<typeof import('vue')['h']>
  readonly ignorableWatch: UnwrapRef<typeof import('@vueuse/core')['ignorableWatch']>
@@ -539,6 +546,7 @@ declare module 'vue' {
  readonly useDebounce: UnwrapRef<typeof import('@vueuse/core')['useDebounce']>
  readonly useDebounceFn: UnwrapRef<typeof import('@vueuse/core')['useDebounceFn']>
  readonly useDebouncedRefHistory: UnwrapRef<typeof import('@vueuse/core')['useDebouncedRefHistory']>
+ readonly useDebugDataEditor: UnwrapRef<typeof import('./composables/useDebugDataEditor')['useDebugDataEditor']>
  readonly useDesignTimeVariables: UnwrapRef<typeof import('./composables/useDesignTimeVariables')['useDesignTimeVariables']>
  readonly useDeviceMotion: UnwrapRef<typeof import('@vueuse/core')['useDeviceMotion']>
  readonly useDeviceOrientation: UnwrapRef<typeof import('@vueuse/core')['useDeviceOrientation']>

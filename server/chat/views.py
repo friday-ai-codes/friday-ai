@@ -1,11 +1,11 @@
 """Chat API views."""
 import structlog
+from adrf.views import APIView
 from django.http import StreamingHttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from adrf.views import APIView
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
 from projects.models import Project
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication

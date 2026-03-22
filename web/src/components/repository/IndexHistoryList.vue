@@ -2,10 +2,10 @@
 import type { IndexHistoryItem, IndexHistoryResponse } from '~/api/repositories'
 import { onMounted, ref, watch } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  repositoryId: string
 }>

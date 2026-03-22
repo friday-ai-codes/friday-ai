@@ -9,9 +9,9 @@ import structlog
 from claude_agent_sdk.types import (
  AsyncHookJSONOutput,
  HookContext,
+ PostToolUseFailureHookInput,
  PostToolUseHookInput,
  PreCompactHookInput,
- PostToolUseFailureHookInput,
  PreToolUseHookInput,
  StopHookInput,
  SubagentStopHookInput,

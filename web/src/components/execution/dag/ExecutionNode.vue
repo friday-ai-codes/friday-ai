@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ExecutionNodeData } from './composables/useExecutionDag'
+import type { SubStep } from '~/types/execution'
 /**
  * ExecutionNode — 只读执行节点组件
  *
@@ -7,10 +9,6 @@
  */
 import { Handle, Position } from '@vue-flow/core'
 import { computed, ref } from 'vue'
-import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
-import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
-import type { ExecutionNodeData } from './composables/useExecutionDag'
-import type { SubStep } from '~/types/execution'
 import Badge from '~/components/ui/badge/Badge.vue'
 import {
  Tooltip,
@@ -18,8 +16,10 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
-import SubStepTimeline from './SubStepTimeline.vue'
+import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
+import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
+import SubStepTimeline from './SubStepTimeline.vue'
 const props = defineProps<{
  id: string
  data: ExecutionNodeData
@@ -47,14 +47,17 @@ const statusBorderClass = computed( => {
 })
 /** 瓶颈光晕 — 用 shadow + ring 避免与状态色 border 冲突 */
 const bottleneckClass = computed( => {
- if (!props.data.isBottleneck) return ''
+ if (!props.data.isBottleneck)
+ return ''
  return props.data.bottleneckLevel === 'critical'
  ? 'shadow-[0_0_12px_rgba(239,68,68,0.4)] ring-2 ring-red-400/50': 'shadow-[0_0_10px_rgba(234,179,8,0.35)] ring-2 ring-yellow-400/50'
 })
 const durationText = computed( => {
  const seconds = props.data.elapsed ?? props.data.duration
- if (seconds == null) return '-'
- if (seconds < 60) return `${Math.round(seconds)}s`
+ if (seconds == null)
+ return '-'
+ if (seconds < 60)
+ return `${Math.round(seconds)}s`
  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
 })
 /** 状态指示点颜色 */
@@ -83,14 +86,18 @@ const costFormatter = new Intl.NumberFormat('en-US', {
  maximumFractionDigits: 4,
 })
 const costText = computed( => {
- if (!props.data.cost) return ''
+ if (!props.data.cost)
+ return ''
  const val = Number.parseFloat(props.data.cost.totalCostUsd)
- if (Number.isNaN(val) || val === 0) return '$0.00'
+ if (Number.isNaN(val) || val === 0)
+ return '$0.00'
  return costFormatter.format(val)
 })
 function formatTokenCount(count: number): string {
- if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
- if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
+ if (count >= 1_000_000)
+ return `${(count / 1_000_000).toFixed(1)}M`
+ if (count >= 1_000)
+ return `${(count / 1_000).toFixed(1)}k`
  return String(count)
 }
 // 子步骤展开/折叠
@@ -98,7 +105,8 @@ const store = useExecutionsStore
 const expanded = ref(false)
 const nodeSubSteps = computed<SubStep>( => {
  const neId = props.data.nodeExecution?.id
- if (!neId) return
+ if (!neId)
+ return
  return store.subSteps[neId] ??
 })
 const hasSubSteps = computed( =>
@@ -106,7 +114,8 @@ const hasSubSteps = computed( =>
 )
 const progressText = computed( => {
  const p = props.data.subStepProgress
- if (!p) return ''
+ if (!p)
+ return ''
  return `${p.completed}/${p.total} steps`
 })
 function toggleExpand {
@@ -144,7 +153,7 @@ function handleSubStepClick(stepId: string) {
  class="w-2.5 .5 rounded-full border border-gray-400/50 opacity-0 group-hover:opacity-60 transition-opacity"
  />
  </div>
- <div:class="['bg-gradient-to-br rounded-lg .5', style.iconBg]">
+ <div class="bg-gradient-to-br rounded-lg .5":class="[style.iconBg]">
  <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
  </div>
  <span class="text-sm font-medium text-foreground truncate flex-1">
@@ -170,7 +179,9 @@ function handleSubStepClick(stepId: string) {
  <span class="icon-[lucide--play] w-3.5 .5" />
  </button>
  </TooltipTrigger>
- <TooltipContent side="bottom">放行此节点</TooltipContent>
+ <TooltipContent side="bottom">
+ 放行此节点
+ </TooltipContent>
  </Tooltip>
  </TooltipProvider>
  <TooltipProvider>
@@ -184,7 +195,9 @@ function handleSubStepClick(stepId: string) {
  <span class="icon-[lucide--skip-forward] w-3.5 .5" />
  </button>
  </TooltipTrigger>
- <TooltipContent side="bottom">跳过此节点</TooltipContent>
+ <TooltipContent side="bottom">
+ 跳过此节点
+ </TooltipContent>
  </Tooltip>
  </TooltipProvider>
  </template>
@@ -192,11 +205,10 @@ function handleSubStepClick(stepId: string) {
  <TooltipProvider v-if="data.status === 'failed'">
  <Tooltip>
  <TooltipTrigger as-child>
- <button:disabled="!data.canResume":class="[
- 'inline-flex items-center justify-center rounded-md transition-colors',
- 'w-5 ',
+ <button:disabled="!data.canResume"
+ class="inline-flex items-center justify-center rounded-md transition-colors w-5 ":class="[
  data.canResume
- ? 'text-primary hover:bg-primary/10 cursor-pointer': 'text-muted-foreground/40 cursor-not-allowed'
+ ? 'text-primary hover:bg-primary/10 cursor-pointer': 'text-muted-foreground/40 cursor-not-allowed',
  ]"
  @click.stop="data.canResume && data.onResumeClick?.(props.id)"
  >
@@ -278,7 +290,8 @@ function handleSubStepClick(stepId: string) {
  animation: node-pulse 2s ease-in-out infinite;
 }
 @keyframes node-pulse {
- 0%, 100% {
+ 0%,
+ 100% {
  border-color: rgba(96, 165, 250, 0.5);
  box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.2);
  }
@@ -292,7 +305,8 @@ function handleSubStepClick(stepId: string) {
  animation: node-debug-pulse 1.5s ease-in-out infinite;
 }
 @keyframes node-debug-pulse {
- 0%, 100% {
+ 0%,
+ 100% {
  border-color: rgba(245, 158, 11, 0.5);
  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.2);
  }

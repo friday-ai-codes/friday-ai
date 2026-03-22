@@ -52,7 +52,8 @@ export async function connectSSE(
  try {
  while (true) {
  const { done, value } = await reader.read
- if (done) break
+ if (done)
+ break
  buffer += decoder.decode(value, { stream: true })
  const lines = buffer.split('\n')
  // 保留最后一个可能不完整的行
@@ -60,7 +61,8 @@ export async function connectSSE(
  for (const line of lines) {
  const trimmed = line.trim
  // 跳过空行和注释行（keepalive）
- if (!trimmed || trimmed.startsWith(':')) continue
+ if (!trimmed || trimmed.startsWith(':'))
+ continue
  // 解析 SSE data 行
  if (trimmed.startsWith('data: ')) {
  try {

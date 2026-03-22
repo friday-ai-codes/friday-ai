@@ -5,11 +5,13 @@ const chatStore = useChatStore
 const inputContent = ref('')
 async function handleSend {
  const content = inputContent.value.trim
- if (!content || chatStore.isStreaming) return
+ if (!content || chatStore.isStreaming)
+ return
  // 如果没有当前对话，先创建
  if (!chatStore.currentConversationId) {
  await chatStore.createNewConversation
- if (!chatStore.currentConversationId) return // 创建失败（如未选项目）
+ if (!chatStore.currentConversationId)
+ return // 创建失败（如未选项目）
  }
  inputContent.value = ''
  await chatStore.sendMessage(content)

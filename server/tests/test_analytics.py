@@ -9,7 +9,7 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 if TYPE_CHECKING:
- from django.contrib.auth.models import AbstractUser
+ pass
 from agents.models import AgentSession
 from subagent.models import SubAgentSession, TokenUsage
 from workflows.models.execution import (

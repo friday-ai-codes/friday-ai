@@ -11,7 +11,8 @@ const quickPrompts = [
 async function handleQuickPrompt(prompt: string) {
  if (!chatStore.currentConversationId) {
  await chatStore.createNewConversation
- if (!chatStore.currentConversationId) return
+ if (!chatStore.currentConversationId)
+ return
  }
  await chatStore.sendMessage(prompt)
 }

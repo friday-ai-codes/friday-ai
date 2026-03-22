@@ -18,7 +18,8 @@ export function useDragAndDrop {
  }
  function onDrop(event: DragEvent) {
  const nodeType = event.dataTransfer?.getData('application/vueflow')
- if (!nodeType) return
+ if (!nodeType)
+ return
  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY })
  const def = getNodeDefinition(nodeType)
  const dragName = event.dataTransfer?.getData('application/vueflow-name')

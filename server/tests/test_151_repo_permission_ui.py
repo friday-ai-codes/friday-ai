@@ -4,7 +4,6 @@
 """
 import pytest
 from rest_framework.test import APIClient
-from permissions.models import ProjectMembership, ProjectRole
 from projects.models import Project, ProjectRepository
 from repositories.models import Repository
 @pytest.fixture

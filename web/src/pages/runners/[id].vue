@@ -2,14 +2,14 @@
 import type { RunnerTaskAssignment } from '~/types'
 import { useHead } from '@vueuse/head'
 import { runnersApi } from '~/api'
-import { Badge } from '~/components/ui/badge'
-import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 useHead({ title: 'Runner 详情 - Friday AI' })
 const route = useRoute('/runners/[id]')
 const router = useRouter
@@ -100,11 +100,13 @@ async function handleDelete {
  }
 }
 function formatTime(dateStr: string | null) {
- if (!dateStr) return '从未'
+ if (!dateStr)
+ return '从未'
  return new Date(dateStr).toLocaleString('zh-CN')
 }
 function formatTimeAgo(dateStr: string | null) {
- if (!dateStr) return '从未'
+ if (!dateStr)
+ return '从未'
  return useTimeAgo(new Date(dateStr)).value
 }
 </script>
@@ -116,7 +118,9 @@ function formatTimeAgo(dateStr: string | null) {
  <Button variant="ghost" size="icon" @click="router.push('/runners')">
  <span class="icon-[lucide--arrow-left] w-5 " />
  </Button>
- <h1 class="text-2xl font-bold">{{ runner?.name || '加载中...' }}</h1>
+ <h1 class="text-2xl font-bold">
+ {{ runner?.name || '加载中...' }}
+ </h1>
  <div v-if="runner" class="relative flex-shrink-0 transition-all duration-300">
  <template v-if="runner.status === 'online'">
  <span class="absolute inline-flex w-3 rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -157,60 +161,100 @@ function formatTimeAgo(dateStr: string | null) {
  <CardContent class="pt-6">
  <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
  <div>
- <div class="text-sm text-muted-foreground">名称</div>
- <div class="font-medium mt-1">{{ runner.name }}</div>
+ <div class="text-sm text-muted-foreground">
+ 名称
+ </div>
+ <div class="font-medium mt-1">
+ {{ runner.name }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">状态</div>
+ <div class="text-sm text-muted-foreground">
+ 状态
+ </div>
  <div class="mt-1">
  <StatusBadge type="runner":status="runner.status" />
  </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">版本</div>
- <div class="font-medium mt-1">{{ runner.version || '-' }}</div>
+ <div class="text-sm text-muted-foreground">
+ 版本
+ </div>
+ <div class="font-medium mt-1">
+ {{ runner.version || '-' }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">IP 地址</div>
- <div class="font-medium mt-1 font-mono text-sm">{{ runner.ip_address || '-' }}</div>
+ <div class="text-sm text-muted-foreground">
+ IP 地址
+ </div>
+ <div class="font-medium mt-1 font-mono text-sm">
+ {{ runner.ip_address || '-' }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">并发数</div>
- <div class="font-medium mt-1">{{ runner.concurrent }}</div>
+ <div class="text-sm text-muted-foreground">
+ 并发数
+ </div>
+ <div class="font-medium mt-1">
+ {{ runner.concurrent }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">当前任务数</div>
- <div class="font-medium mt-1">{{ runner.current_tasks }}</div>
+ <div class="text-sm text-muted-foreground">
+ 当前任务数
+ </div>
+ <div class="font-medium mt-1">
+ {{ runner.current_tasks }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">作用域</div>
- <Badge variant="outline" class="mt-1">{{ runner.scope === 'global' ? '全局': '项目' }}</Badge>
+ <div class="text-sm text-muted-foreground">
+ 作用域
+ </div>
+ <Badge variant="outline" class="mt-1">
+ {{ runner.scope === 'global' ? '全局': '项目' }}
+ </Badge>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">活跃状态</div>
+ <div class="text-sm text-muted-foreground">
+ 活跃状态
+ </div>
  <Badge class="mt-1":variant="runner.is_active ? 'success': 'muted'">
  {{ runner.is_active ? '活跃': '停用' }}
  </Badge>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">注册时间</div>
- <div class="font-medium mt-1 text-sm">{{ formatTime(runner.registered_at) }}</div>
+ <div class="text-sm text-muted-foreground">
+ 注册时间
+ </div>
+ <div class="font-medium mt-1 text-sm">
+ {{ formatTime(runner.registered_at) }}
+ </div>
  </div>
  <div>
- <div class="text-sm text-muted-foreground">最后心跳</div>
+ <div class="text-sm text-muted-foreground">
+ 最后心跳
+ </div>
  <TooltipProvider>
  <Tooltip>
  <TooltipTrigger as-child>
- <div class="font-medium mt-1 text-sm cursor-help border-b border-dotted border-muted-foreground/30 w-fit">{{ formatTimeAgo(runner.last_heartbeat) }}</div>
+ <div class="font-medium mt-1 text-sm cursor-help border-b border-dotted border-muted-foreground/30 w-fit">
+ {{ formatTimeAgo(runner.last_heartbeat) }}
+ </div>
  </TooltipTrigger>
  <TooltipContent>{{ formatTime(runner.last_heartbeat) }}</TooltipContent>
  </Tooltip>
  </TooltipProvider>
  </div>
  <div class="col-span-2">
- <div class="text-sm text-muted-foreground">标签</div>
+ <div class="text-sm text-muted-foreground">
+ 标签
+ </div>
  <div class="flex flex-wrap gap-1.5 mt-1">
- <Badge v-for="tag in runner.tags":key="tag" variant="secondary">{{ tag }}</Badge>
+ <Badge v-for="tag in runner.tags":key="tag" variant="secondary">
+ {{ tag }}
+ </Badge>
  <span v-if="runner.tags.length === 0" class="text-sm text-muted-foreground">-</span>
  </div>
  </div>
@@ -224,11 +268,15 @@ function formatTimeAgo(dateStr: string | null) {
  <CardTitle class="flex items-center gap-2">
  <span class="icon-[lucide--play-circle] text-blue-500" />
  当前任务
- <Badge variant="secondary" class="ml-auto transition-colors duration-300">{{ runner.current_task_list.length }}</Badge>
+ <Badge variant="secondary" class="ml-auto transition-colors duration-300">
+ {{ runner.current_task_list.length }}
+ </Badge>
  </CardTitle>
  </CardHeader>
  <CardContent class="pt-6">
- <p v-if="runner.current_task_list.length === 0" class="text-sm text-muted-foreground">暂无正在执行的任务</p>
+ <p v-if="runner.current_task_list.length === 0" class="text-sm text-muted-foreground">
+ 暂无正在执行的任务
+ </p>
  <TransitionGroup v-else name="task-list" tag="div" class="space-y-0 divide-y divide-border/30">
  <div v-for="task in runner.current_task_list":key="task.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
  <div class="flex items-center gap-3">
@@ -246,16 +294,26 @@ function formatTimeAgo(dateStr: string | null) {
  <CardTitle class="flex items-center gap-2">
  <span class="icon-[lucide--history] text-emerald-500" />
  历史任务
- <Badge variant="secondary" class="ml-auto">{{ historyTotal }}</Badge>
+ <Badge variant="secondary" class="ml-auto">
+ {{ historyTotal }}
+ </Badge>
  </CardTitle>
  <div class="flex gap-2 mt-2">
- <Button size="sm":variant="!historyStatus ? 'default': 'outline'" @click="historyStatus = undefined">全部</Button>
- <Button size="sm":variant="historyStatus === 'completed' ? 'default': 'outline'" @click="historyStatus = 'completed'">已完成</Button>
- <Button size="sm":variant="historyStatus === 'failed' ? 'default': 'outline'" @click="historyStatus = 'failed'">失败</Button>
+ <Button size="sm":variant="!historyStatus ? 'default': 'outline'" @click="historyStatus = undefined">
+ 全部
+ </Button>
+ <Button size="sm":variant="historyStatus === 'completed' ? 'default': 'outline'" @click="historyStatus = 'completed'">
+ 已完成
+ </Button>
+ <Button size="sm":variant="historyStatus === 'failed' ? 'default': 'outline'" @click="historyStatus = 'failed'">
+ 失败
+ </Button>
  </div>
  </CardHeader>
  <CardContent class="pt-6">
- <p v-if="historyTasks.length === 0" class="text-sm text-muted-foreground">暂无历史任务</p>
+ <p v-if="historyTasks.length === 0" class="text-sm text-muted-foreground">
+ 暂无历史任务
+ </p>
  <div v-else class="space-y-0 divide-y divide-border/30">
  <div v-for="task in historyTasks":key="task.id" class="flex items-center justify-between py-3 first:pt-0 last:pb-0">
  <div class="flex items-center gap-3 min-w-0">

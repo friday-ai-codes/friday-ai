@@ -1,6 +1,6 @@
-import type { Node, Edge } from '@vue-flow/core'
+import type { Edge, Node } from '@vue-flow/core'
+import type { WorkflowEdgeStore, WorkflowNodeStore } from '~/types/workflow/store'
 import { MarkerType } from '@vue-flow/core'
-import type { WorkflowNodeStore, WorkflowEdgeStore } from '~/types/workflow/store'
 /** Vue Flow Node 的 data 载荷类型 */
 interface WorkflowNodeData {
  nodeType: string
@@ -24,7 +24,7 @@ interface WorkflowEdgeData {
  * 其余业务字段全部放入 data 中，保证往返转换无丢失。
  */
 export function toVueFlowNodes(storeNodes: WorkflowNodeStore): Node<WorkflowNodeData> {
- return storeNodes.map((storeNode) => ({
+ return storeNodes.map(storeNode => ({
  id: storeNode.id,
  type: storeNode.nodeType,
  position: { ...storeNode.position },
@@ -48,7 +48,7 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore): Node<WorkflowNode
  * 使用自定义 gradient 边类型 + 箭头标记。
  */
 export function toVueFlowEdges(storeEdges: WorkflowEdgeStore): Edge<WorkflowEdgeData> {
- return storeEdges.map((storeEdge) => ({
+ return storeEdges.map(storeEdge => ({
  id: storeEdge.id,
  source: storeEdge.source,
  target: storeEdge.target,
@@ -88,7 +88,7 @@ export function fromVueFlowNodes(vfNodes: Node<WorkflowNodeData>): WorkflowNodeS
  * sourceHandle/targetHandle 映射回 sourcePort/targetPort，空值 fallback 到 "default"。
  */
 export function fromVueFlowEdges(vfEdges: Edge<WorkflowEdgeData>): WorkflowEdgeStore {
- return vfEdges.map((vfEdge) => ({
+ return vfEdges.map(vfEdge => ({
  id: vfEdge.id,
  source: vfEdge.source,
  target: vfEdge.target,

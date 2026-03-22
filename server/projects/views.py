@@ -1,13 +1,13 @@
 """Projects app views."""
 from __future__ import annotations
 import structlog
+from adrf.views import APIView
+from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from adrf.views import APIView
-from adrf.viewsets import ModelViewSet
 from common.encryption import encrypt_value
 from permissions.models import ProjectMembership, ProjectRole
 from permissions.services import PermissionService

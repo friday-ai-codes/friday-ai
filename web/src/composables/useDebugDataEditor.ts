@@ -1,10 +1,11 @@
+import type { ComputedRef, Ref } from 'vue'
 /**
  * useDebugDataEditor — 调试数据编辑状态管理
  *
  * 管理 JSON 编辑器的编辑状态：开始编辑、保存修改、重置、脏检测。
  * 配合 JsonEditor.vue 组件使用。
  */
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, ref } from 'vue'
 interface DebugDataEditorReturn {
  /** 编辑中的 JSON 字符串 */
  editedJson: Ref<string>
@@ -32,11 +33,13 @@ export function useDebugDataEditor(
  return data ? JSON.stringify(data, null, 2): '{}'
  }
  const isDirty = computed( => {
- if (!isEditing.value) return false
+ if (!isEditing.value)
+ return false
  return editedJson.value !== serialize(originalData.value)
  })
  const jsonError = computed<string | null>( => {
- if (!isEditing.value) return null
+ if (!isEditing.value)
+ return null
  try {
  JSON.parse(editedJson.value)
  return null

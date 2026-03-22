@@ -88,6 +88,9 @@ async def check_timeout_reminders -> dict[str, Any]:
  continue
  # Get project credentials for Feishu client
  project = session.project
+ if project is None:
+ session_log.warning("no_project_in_session")
+ continue
  try:
  client = await create_feishu_im_client_for_project(project)
  except ValueError:

@@ -2,10 +2,10 @@
 import secrets
 import uuid
 from collections.abc import Iterable
-from django.db.models.base import ModelBase
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.base import ModelBase
 from django.utils import timezone
 def _generate_invitation_token -> str:
  """生成 URL 安全的邀请令牌（Django migration 可序列化）。"""

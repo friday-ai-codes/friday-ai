@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
-definePage({
- meta: { requiresAdmin: true },
-})
 import { onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { getModels } from '~/api/chat'
@@ -28,6 +25,9 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+definePage({
+ meta: { requiresAdmin: true },
+})
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { SubStep } from '~/types/execution'
 /**
  * SubStepDetailTab — 子步骤详情 Tab
  *
@@ -6,10 +7,9 @@
  * 每个子步骤可展开查看输入/输出数据、状态和耗时。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import Badge from '~/components/ui/badge/Badge.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import Badge from '~/components/ui/badge/Badge.vue'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
-import type { SubStep } from '~/types/execution'
 const props = defineProps<{
  nodeExecutionId: string
  /** 外部传入的聚焦子步骤 ID（从时间线点击跳转） */
@@ -27,7 +27,8 @@ onMounted( => {
 })
 // 外部聚焦
 watch( => props.focusStepId, (id) => {
- if (id) expandedStepId.value = id
+ if (id)
+ expandedStepId.value = id
 }, { immediate: true })
 function statusColor(status: string): string {
  const map: Record<string, string> = {
@@ -39,9 +40,11 @@ function statusColor(status: string): string {
  return map[status] ?? 'bg-gray-300'
 }
 function formatDuration(step: SubStep): string {
- if (!step.started_at || !step.completed_at) return '-'
+ if (!step.started_at || !step.completed_at)
+ return '-'
  const ms = new Date(step.completed_at).getTime - new Date(step.started_at).getTime
- if (ms < 1000) return `${ms}ms`
+ if (ms < 1000)
+ return `${ms}ms`
  return `${(ms / 1000).toFixed(1)}s`
 }
 </script>

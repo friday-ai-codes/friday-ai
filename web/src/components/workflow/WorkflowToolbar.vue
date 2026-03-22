@@ -2,10 +2,6 @@
 import { Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
-import { Label } from '~/components/ui/label'
-import { Switch } from '~/components/ui/switch'
-import { Textarea } from '~/components/ui/textarea'
 import {
  Dialog,
  DialogClose,
@@ -15,6 +11,10 @@ import {
  DialogTitle,
  DialogTrigger,
 } from '~/components/ui/dialog'
+import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
+import { Switch } from '~/components/ui/switch'
+import { Textarea } from '~/components/ui/textarea'
 import {
  Tooltip,
  TooltipContent,
@@ -121,9 +121,13 @@ function confirmEdit {
  </div>
  <DialogFooter>
  <DialogClose as-child>
- <Button variant="outline">取消</Button>
+ <Button variant="outline">
+ 取消
+ </Button>
  </DialogClose>
- <Button @click="confirmEdit">确认</Button>
+ <Button @click="confirmEdit">
+ 确认
+ </Button>
  </DialogFooter>
  </DialogContent>
  </Dialog>

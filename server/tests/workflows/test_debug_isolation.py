@@ -7,18 +7,14 @@
 -: 调试会话超时清理
 -: check_timeouts 排除调试执行
 """
-import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 import pytest
 from asgiref.sync import sync_to_async
-from django.test import RequestFactory
 from django.utils import timezone
 from projects.models import Project
 from workflows.engine.scheduler import (
- DebugSession,
  WorkflowEngine,
- _debug_sessions,
 )
 from workflows.hooks.feishu_sync import FeishuSyncHook
 from workflows.models import (
@@ -93,7 +89,7 @@ class TestDebugExecutionExcludedFromList:
  is_debug=False,
  )
  # 创建一个调试执行
- debug_exec = WorkflowExecution.objects.create(
+ _debug_exec = WorkflowExecution.objects.create(
  workflow=iso_workflow,
  project=iso_project,
  trigger_type="manual",
@@ -106,14 +102,14 @@ class TestDebugExecutionExcludedFromList:
  assert default_qs.first.id == normal_exec.id
  def test_debug_execution_included_with_param(self, iso_workflow, iso_project):
  """include_debug=true 参数时返回调试执行。"""
- normal_exec = WorkflowExecution.objects.create(
+ _normal_exec = WorkflowExecution.objects.create(
  workflow=iso_workflow,
  project=iso_project,
  trigger_type="manual",
  status=ExecutionStatus.COMPLETED,
  is_debug=False,
  )
- debug_exec = WorkflowExecution.objects.create(
+ _debug_exec = WorkflowExecution.objects.create(
  workflow=iso_workflow,
  project=iso_project,
  trigger_type="manual",
@@ -160,7 +156,7 @@ class TestDebugSessionTimeoutCleanup:
  engine = WorkflowEngine
  pause_count = 0
  timeout_triggered = False
- original_pause = engine._debug_pause_after_node
+ _original_pause = engine._debug_pause_after_node
  async def mock_pause_with_timeout(execution, node_execution):
  nonlocal pause_count, timeout_triggered
  pause_count += 1
@@ -210,7 +206,7 @@ class TestCheckTimeoutsExcludesDebug:
  status=NodeExecutionStatus.WAITING_EVENT,
  )
  # 创建已超时的订阅
- sub = WorkflowEventSubscription.objects.create(
+ _sub = WorkflowEventSubscription.objects.create(
  workflow_execution=debug_exec,
  node_execution=node_exec,
  event_type="test_event",
@@ -241,7 +237,7 @@ class TestConcurrencyGuardExcludesDebug:
  workflow.max_concurrent_executions = 1
  await workflow.asave(update_fields=["max_concurrent_executions"])
  # 创建一个 is_debug=True 且 RUNNING 的执行
- debug_exec = await sync_to_async(WorkflowExecution.objects.create)(
+ _debug_exec = await sync_to_async(WorkflowExecution.objects.create)(
  workflow=workflow,
  project_id=workflow.project_id,
  trigger_type="manual",

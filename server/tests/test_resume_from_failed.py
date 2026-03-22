@@ -99,21 +99,21 @@ async def _create_failed_execution(
  error_message="Node B failed",
  )
  # Node A: completed with output
- ne_a = await NodeExecution.objects.acreate(
+ _ne_a = await NodeExecution.objects.acreate(
  workflow_execution=execution,
  node=node_a,
  status=NodeExecutionStatus.COMPLETED,
  output_data={"result_a": "value_a"},
  )
  # Node B: failed
- ne_b = await NodeExecution.objects.acreate(
+ _ne_b = await NodeExecution.objects.acreate(
  workflow_execution=execution,
  node=node_b,
  status=NodeExecutionStatus.FAILED,
  error_message="Simulated failure",
  )
  # Node C: skipped (因为 B 失败)
- ne_c = await NodeExecution.objects.acreate(
+ _ne_c = await NodeExecution.objects.acreate(
  workflow_execution=execution,
  node=node_c,
  status=NodeExecutionStatus.SKIPPED,

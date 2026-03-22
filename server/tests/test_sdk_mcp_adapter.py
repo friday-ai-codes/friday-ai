@@ -103,10 +103,10 @@ class TestCreateMcpServer:
  assert "instance" in config
  def test_create_mcp_server_registers_project_tools(self) -> None:
  """验证注册了正确数量的 PROJECT 类别工具。"""
- from agents.tools.base import ToolCategory, _tool_registry
  # 确保工具已注册
  import agents.tools.chat_tools # noqa: F401
  import agents.tools.project_tools # noqa: F401
+ from agents.tools.base import ToolCategory, _tool_registry
  expected_count = sum(
  1
  for td in _tool_registry.values
@@ -120,13 +120,13 @@ class TestCreateMcpServer:
  create_chat_tools_mcp_server
  mock_create.assert_called_once
  call_kwargs = mock_create.call_args
- tools_arg = call_kwargs.kwargs.get("tools") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else call_kwargs.kwargs.get("tools")
+ _tools_arg = call_kwargs.kwargs.get("tools") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else call_kwargs.kwargs.get("tools")
  # 从 call_args 获取 tools 参数
  if call_kwargs.kwargs.get("tools"):
- tools_passed = call_kwargs.kwargs["tools"]
+ _tools_passed = call_kwargs.kwargs["tools"]
  else:
  # positional: name, tools
- tools_passed = call_kwargs[1]["tools"] if isinstance(call_kwargs[1], dict) else
+ _tools_passed = call_kwargs[1]["tools"] if isinstance(call_kwargs[1], dict) else
  # 更简单的方式：直接检查 call 的参数
  actual_call = mock_create.call_args
  # create_sdk_mcp_server(name="chat-tools", tools=[...])

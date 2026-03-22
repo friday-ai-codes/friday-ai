@@ -88,8 +88,10 @@ export const useRunnersStore = defineStore('runners', => {
  */
  function patchRunner(runnerId: string, data: Record<string, unknown>) {
  const idx = runners.value.findIndex(r => r.id === runnerId)
- if (idx !== -1) Object.assign(runners.value[idx], data)
- if (currentRunner.value?.id === runnerId) Object.assign(currentRunner.value, data)
+ if (idx !== -1)
+ Object.assign(runners.value[idx], data)
+ if (currentRunner.value?.id === runnerId)
+ Object.assign(currentRunner.value, data)
  }
  /**
  * WS 事件：patch runner 的任务状态
@@ -107,7 +109,8 @@ export const useRunnersStore = defineStore('runners', => {
  }
  // running 不再 +1，因为 assigned 已经 +1
  // 更新详情页 currentRunner 的 current_task_list
- if (currentRunner.value?.id !== runnerId) return
+ if (currentRunner.value?.id !== runnerId)
+ return
  if (taskStatus === 'assigned') {
  currentRunner.value.current_tasks += 1
  currentRunner.value.current_task_list.push({
@@ -122,7 +125,8 @@ export const useRunnersStore = defineStore('runners', => {
  }
  else if (taskStatus === 'running') {
  const task = currentRunner.value.current_task_list.find(t => t.id === taskId)
- if (task) task.status = 'running'
+ if (task)
+ task.status = 'running'
  }
  }
  return {

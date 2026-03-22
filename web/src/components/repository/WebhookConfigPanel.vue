@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { Repository } from '~/types'
 import type { CollectionHealthResponse, IndexFreshnessResponse } from '~/api/repositories'
+import type { Repository } from '~/types'
 import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
@@ -68,6 +68,7 @@ function copyToClipboard(text: string) {
 }
 async function generateSecret {
  if (props.repository.webhook_secret) {
+ // eslint-disable-next-line no-alert
  if (!window.confirm('重新生成将使当前配置的 Webhook 签名验证失效，确认继续？')) {
  return
  }

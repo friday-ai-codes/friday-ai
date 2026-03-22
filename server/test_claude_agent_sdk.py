@@ -134,7 +134,7 @@ async def verify_env_isolation -> bool:
  if original_values[key] is None:
  os.environ.pop(key, None)
  else:
- os.environ[key] = original_values[key]
+ os.environ[key] = original_values[key] # type: ignore[assignment]
 async def verify_asgi_compat -> bool:
  """验证 Django ASGI 环境下 SDK 调用无 event loop 冲突。"""
  try:

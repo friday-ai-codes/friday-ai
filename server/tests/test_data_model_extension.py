@@ -1,8 +1,6 @@
 """Phase: 数据模型扩展测试。
 覆盖 至 需求：验证模型字段定义、SettingKeys 更新、迁移兼容性。
 """
-import pytest
-from services.provider_config import ProviderType
 from system.models import SettingKeys
 class TestConversationProviderType:
  """: Conversation 模型有 provider_type 字段。"""

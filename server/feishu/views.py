@@ -5,6 +5,7 @@ import uuid as uuid_module
 from dataclasses import dataclass
 from typing import Any, Callable
 import structlog
+from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.db import IntegrityError
@@ -12,7 +13,6 @@ from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from adrf.views import APIView
 from common.encryption import decrypt_value, encrypt_value
 from projects.models import Project, generate_webhook_token
 from services.feishu_im import FeishuIMClient

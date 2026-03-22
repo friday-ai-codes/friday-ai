@@ -5,11 +5,29 @@
  */
 import type { Component } from 'vue'
 import {
- Bot, Briefcase, CheckCircle, Clock, CloudUpload,
- FileCode, FolderSearch, GitBranch, GitFork,
- GitMerge, GitPullRequest, Globe, Hourglass,
- MessageSquare, Play, SearchCode, Send,
- Sparkles, Terminal, UserPlus, Variable, Webhook, Zap,
+ Bot,
+ Briefcase,
+ CheckCircle,
+ Clock,
+ CloudUpload,
+ FileCode,
+ FolderSearch,
+ GitBranch,
+ GitFork,
+ GitMerge,
+ GitPullRequest,
+ Globe,
+ Hourglass,
+ MessageSquare,
+ Play,
+ SearchCode,
+ Send,
+ Sparkles,
+ Terminal,
+ UserPlus,
+ Variable,
+ Webhook,
+ Zap,
 } from 'lucide-vue-next'
 export type NodeColorKey = 'blue' | 'green' | 'purple' | 'orange'
 interface NodeVisual {

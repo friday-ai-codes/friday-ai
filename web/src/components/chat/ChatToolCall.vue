@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import type MarkdownIt from 'markdown-it'
 import {
  Collapsible,
  CollapsibleContent,
  CollapsibleTrigger,
 } from '~/components/ui/collapsible'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
-import type MarkdownIt from 'markdown-it'
 const props = defineProps<{
  name: string
  input: Record<string, unknown>
@@ -21,16 +21,17 @@ onMounted(async => {
  mdInstance = await getMarkdownRenderer
  // 渲染参数为 JSON 代码块
  const jsonStr = JSON.stringify(props.input, null, 2)
- renderedInput.value = mdInstance.render('```json\n' + jsonStr + '\n```')
+ renderedInput.value = mdInstance.render(`\`\`\`json\n${jsonStr}\n\`\`\``)
  // 渲染结果（纯文本截断）
  if (props.result) {
  renderResult(props.result)
  }
 })
 function renderResult(text: string) {
- if (!mdInstance) return
+ if (!mdInstance)
+ return
  const truncated = text.length > 500
- ? text.slice(0, 500) + '...': text
+ ? `${text.slice(0, 500)}...`: text
  renderedResult.value = mdInstance.render(truncated)
 }
 // 监听 result 变化（流式更新）

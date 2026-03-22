@@ -2,7 +2,6 @@
 验证 Repository 新字段和 IndexHistory 模型定义。
 """
 import uuid
-import pytest
 from django.db import models
 from repositories.models import (
  IndexHistory,

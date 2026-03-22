@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { VueFinalModal } from 'vue-final-modal'
+import { useRouter } from 'vue-router'
+import client from '~/api/client'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -14,7 +15,6 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
-import client from '~/api/client'
 const emit = defineEmits<{
  close:
  confirm: [data: { name: string, description?: string, project_id: string }]
@@ -25,6 +25,14 @@ const router = useRouter
 const workflowsStore = useWorkflowsStore
 const projectsStore = useProjectsStore
 const { success, error: showError } = useToast
+// ============================================================================
+// Form
+// ============================================================================
+const form = reactive({
+ name: '',
+ description: '',
+ project_id: '',
+})
 // ============================================================================
 // Template
 // ============================================================================
@@ -58,14 +66,6 @@ function selectTemplate(id: string | null) {
  }
  }
 }
-// ============================================================================
-// Form
-// ============================================================================
-const form = reactive({
- name: '',
- description: '',
- project_id: '',
-})
 const errors = reactive({
  name: '',
  project_id: '',

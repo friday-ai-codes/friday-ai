@@ -1,5 +1,6 @@
-import { computed, type ComputedRef } from 'vue'
+import type { ComputedRef } from 'vue'
 import type { NodeColorKey } from '../nodeVisuals'
+import { computed } from 'vue'
 export interface NodeStyleTokens {
  borderColor: string
  gradientFrom: string

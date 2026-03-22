@@ -32,9 +32,11 @@ const formattedTime = computed( => {
  })
 })
 const formattedDuration = computed( => {
- if (!props.execution.duration) return '-'
+ if (!props.execution.duration)
+ return '-'
  const seconds = Math.round(props.execution.duration)
- if (seconds < 60) return `${seconds}s`
+ if (seconds < 60)
+ return `${seconds}s`
  const minutes = Math.floor(seconds / 60)
  const remainingSeconds = seconds % 60
  return `${minutes}m ${remainingSeconds}s`

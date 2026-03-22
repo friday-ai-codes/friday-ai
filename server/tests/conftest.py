@@ -4,12 +4,12 @@
 # adrf 0.1.12 兼容性补丁（需在 Django 加载前执行）
 from core.patches import patch_asyncio_iscoroutinefunction
 patch_asyncio_iscoroutinefunction
-import pytest
-from django.contrib.auth import get_user_model
-from rest_framework.test import APIClient
-from permissions.models import ProjectMembership, ProjectRole
-from projects.models import Project
-from repositories.models import Repository
+import pytest # noqa: E402
+from django.contrib.auth import get_user_model # noqa: E402
+from rest_framework.test import APIClient # noqa: E402
+from permissions.models import ProjectMembership, ProjectRole # noqa: E402
+from projects.models import Project # noqa: E402
+from repositories.models import Repository # noqa: E402
 # Register E2E mock fixtures for auto-discovery
 pytest_plugins = [
  "tests.e2e.fixtures.mock_services",

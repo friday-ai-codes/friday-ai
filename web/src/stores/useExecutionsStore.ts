@@ -1,8 +1,8 @@
+import type { SubStep } from '~/types/execution'
 import { useIntervalFn, useWebSocket } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import api from '~/api/client'
-import type { SubStep } from '~/types/execution'
 export interface NodeExecution {
  id: string
  node: string
@@ -21,13 +21,13 @@ export interface NodeExecution {
  created_at: string
  started_at: string | null
  completed_at: string | null
- sub_step_progress: { completed: number; total: number } | null
+ sub_step_progress: { completed: number, total: number } | null
 }
 export interface WorkflowDefinitionNode {
  id: string
  name: string
  node_type: string
- position: { x: number; y: number }
+ position: { x: number, y: number }
  config: Record<string, unknown>
 }
 export interface WorkflowDefinitionEdge {

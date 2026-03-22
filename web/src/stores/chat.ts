@@ -120,7 +120,8 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function stopStreaming {
- if (!currentConversationId.value) return
+ if (!currentConversationId.value)
+ return
  // 标记中断状态（前端立即响应）
  streamingStatus.value = 'interrupted'
  // 先调 interrupt API 通知后端取消 SDK task
@@ -184,7 +185,8 @@ export const useChatStore = defineStore('chat', => {
  break
  }
  case 'message_complete':
- if (event.message_id) streamingMessageId.value = event.message_id
+ if (event.message_id)
+ streamingMessageId.value = event.message_id
  streamingMetadata.value = {
  model: event.model,
  usage: event.usage,
@@ -192,8 +194,10 @@ export const useChatStore = defineStore('chat', => {
  output_tokens: event.usage?.output_tokens,
  status: event.status,
  }
- if (event.status === 'interrupted') streamingStatus.value = 'interrupted'
- if (event.status === 'budget_exceeded') streamingStatus.value = 'budget_exceeded'
+ if (event.status === 'interrupted')
+ streamingStatus.value = 'interrupted'
+ if (event.status === 'budget_exceeded')
+ streamingStatus.value = 'budget_exceeded'
  break
  case 'budget_warning':
  budgetWarning.value = event.budget_usage_percent || null
@@ -202,7 +206,8 @@ export const useChatStore = defineStore('chat', => {
  // 更新当前对话标题
  if (event.title) {
  const conv = conversations.value.find(c => c.id === currentConversationId.value)
- if (conv) conv.title = event.title
+ if (conv)
+ conv.title = event.title
  }
  break
  case 'error':
@@ -214,7 +219,8 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function sendMessage(content: string) {
- if (!currentConversationId.value || isStreaming.value) return
+ if (!currentConversationId.value || isStreaming.value)
+ return
  // 清除之前的流式状态
  streamingContent.value = ''
  streamingThinking.value = ''

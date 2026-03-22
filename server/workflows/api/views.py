@@ -27,7 +27,6 @@ from workflows.api.serializers import (
  ExecutionContextSerializer,
  NodeApproveSerializer,
  NodeExecutionSerializer,
- NodeSubStepSerializer,
  NodeRejectSerializer,
  NodeSubStepSerializer,
  NodeTypeSerializer,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { badgeVariants } from '~/components/ui/badge'
-describe('Badge cva variants', => {
+describe('badge cva variants', => {
  it('should include emerald classes for success variant', => {
  const result = badgeVariants({ variant: 'success' })
  expect(result).toContain('emerald')

@@ -11,7 +11,7 @@
 from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 import pytest
 from agents.core.events import (
  MESSAGE_COMPLETE,

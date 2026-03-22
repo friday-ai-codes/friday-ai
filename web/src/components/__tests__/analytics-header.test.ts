@@ -16,7 +16,7 @@ vi.mock('~/components/analytics/TimeRangeSelector.vue', => ({
  template: '<div class="time-range-selector" />',
  },
 }))
-describe('Analytics Page Header', => {
+describe('analytics Page Header', => {
  const globalConfig = {
  stubs: {
  PageContainer: { template: '<div><slot /></div>' },

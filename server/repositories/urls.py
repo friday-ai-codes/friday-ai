@@ -1,6 +1,6 @@
 """Repositories URL configuration."""
-from django.urls import include, path
 from adrf.routers import DefaultRouter
+from django.urls import include, path
 from .index_views import (
  CodeSearchView,
  EmbeddingHealthView,
@@ -11,9 +11,9 @@ from .index_views import (
  IndexStatusView,
  IndexTriggerView,
  QdrantHealthView,
- RerankerHealthView,
  RepositoryCollectionHealthView,
  RepositoryWebhookView,
+ RerankerHealthView,
 )
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
@@ -51,7 +51,7 @@ urlpatterns = [
  path("", include(router.urls)),
  # Repository-specific endpoints
  path(
- "<uuid:repository_id>/credential/access-token",
+ "<uuid:repository_id>/credential/access-token/",
  SetAccessTokenView.as_view,
  name="set-access-token",
  ),
