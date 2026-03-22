@@ -592,6 +592,7 @@ class WorkflowExecuteSerializer(serializers.Serializer):
  """Serializer for executing a workflow."""
  input_data = serializers.JSONField(required=False, default=dict)
  trigger_data = serializers.JSONField(required=False, default=dict)
+ debug_mode = serializers.BooleanField(required=False, default=False)
 class NodeApproveSerializer(serializers.Serializer):
  """Serializer for approving a node."""
  comment = serializers.CharField(required=False, allow_blank=True, default="")
