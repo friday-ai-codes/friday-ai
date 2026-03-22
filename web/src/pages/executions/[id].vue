@@ -18,6 +18,7 @@ import ProviderCostTable from '~/components/execution/ProviderCostTable.vue'
 import ExecutionStatusBadge from '~/components/execution/ExecutionStatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import { Switch } from '~/components/ui/switch'
 import { Card, CardContent } from '~/components/ui/card'
 import {
  Dialog,
@@ -195,6 +196,36 @@ const selectedBottleneckInfo = computed( => {
  rank,
  durationPercent: percent,
  }
+})
+// ----- Phase: 断点状态管理 -----
+/** 断点集合 */
+const breakpoints = ref<Set<string>>(new Set)
+/** 当前调试模式 */
+const debugMode = ref<'step' | 'breakpoint'>('step')
+/** 是否为断点模式（双向绑定用于 Switch） */
+const isBreakpointMode = computed({
+ get: => debugMode.value === 'breakpoint',
+ set: (val: boolean) => {
+ debugMode.value = val ? 'breakpoint': 'step'
+ store.sendDebugModeSwitch(debugMode.value)
+ },
+})
+/** 切换节点断点 */
+function handleToggleBreakpoint(nodeId: string) {
+ if (breakpoints.value.has(nodeId)) {
+ breakpoints.value.delete(nodeId)
+ store.sendBreakpointAction('remove_breakpoint', nodeId)
+ } else {
+ breakpoints.value.add(nodeId)
+ store.sendBreakpointAction('set_breakpoint', nodeId)
+ }
+ // 触发响应式更新
+ breakpoints.value = new Set(breakpoints.value)
+}
+/** 执行切换时重置断点状态 */
+watch( => currentExecution.value?.id, => {
+ breakpoints.value = new Set
+ debugMode.value = 'step'
 })
 // ----- Phase: 调试操作 -----
 /** 调试放行 */
@@ -517,6 +548,15 @@ async function handleTrigger {
  <div class="flex items-center gap-2 text-sm">
  <span class="icon-[lucide--bug] w-4 " />
  <span class="font-medium">调试模式</span>
+ <!-- Phase: 逐步/断点模式切换 -->
+ <div class="flex items-center gap-1.5 ml-3 pl-3 border-l border-white/30">
+ <span class="text-xs text-white/70">逐步</span>
+ <Switch:checked="isBreakpointMode"
+ class="data-[state=checked]:bg-white/30 data-[state=unchecked]:bg-white/20 w-7"
+ @update:checked="isBreakpointMode = $event"
+ />
+ <span class="text-xs text-white/70">断点</span>
+ </div>
  <span v-if="debugPausedNodeName" class="text-white/80">
  · 暂停在「{{ debugPausedNodeName }}」
  </span>
@@ -561,11 +601,12 @@ async function handleTrigger {
  </div>
  <!-- DAG 视图 -->
  <ExecutionDagView
- v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged"
+ v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution"
  @node-click="handleNodeClick"
  @resume-click="handleResumeClick"
  @debug-release="handleDebugRelease"
  @debug-skip="handleDebugSkip"
+ @toggle-breakpoint="handleToggleBreakpoint"
  />
  <!-- 成本摘要浮层（右上角） -->
  <div class="absolute top-3 right-3 z-10 space-y-2">

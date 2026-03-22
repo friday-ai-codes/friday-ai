@@ -21,6 +21,10 @@ const props = defineProps<{
  costData?: CostBreakdown | null
  /** 工作流定义是否在执行后发生变更（Phase） */
  definitionChanged?: boolean
+ /** Phase: 已设置断点的节点 ID 集合 */
+ breakpoints?: Set<string>
+ /** Phase: 是否为调试执行 */
+ isDebugExecution?: boolean
 }>
 const emit = defineEmits<{
  'node-click': [nodeExecution: NodeExecution | null, nodeId: string]
@@ -32,6 +36,8 @@ const emit = defineEmits<{
  'debug-release': [nodeId: string]
  /** Phase: 调试跳过 */
  'debug-skip': [nodeId: string]
+ /** Phase: 切换断点 */
+ 'toggle-breakpoint': [nodeId: string]
 }>
 const executionRef = toRef(props, 'execution')
 const timelineRef = computed( => props.timelineData ?? null)
@@ -76,6 +82,10 @@ const nodesWithData = computed( => {
  // Phase: 调试操作回调
  onDebugRelease: (nodeId: string) => emit('debug-release', nodeId),
  onDebugSkip: (nodeId: string) => emit('debug-skip', nodeId),
+ // Phase: 断点数据
+ hasBreakpoint: props.breakpoints?.has(node.id) ?? false,
+ onToggleBreakpoint: (nodeId: string) => emit('toggle-breakpoint', nodeId),
+ isDebugExecution: props.isDebugExecution ?? false,
  },
  }
  })

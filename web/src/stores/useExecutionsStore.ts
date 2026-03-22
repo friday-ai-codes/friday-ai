@@ -292,6 +292,14 @@ export const useExecutionsStore = defineStore('executions', => {
  data,
  }))
  }
+ /** Phase: 发送断点管理消息 */
+ function sendBreakpointAction(type: 'set_breakpoint' | 'remove_breakpoint', nodeId: string) {
+ wsSend(JSON.stringify({ type, node_id: nodeId }))
+ }
+ /** Phase: 发送调试模式切换消息 */
+ function sendDebugModeSwitch(mode: 'step' | 'breakpoint') {
+ wsSend(JSON.stringify({ type: 'set_debug_mode', mode }))
+ }
  function handleWebSocketMessage(data: any) {
  if (!currentExecution.value)
  return
@@ -334,6 +342,10 @@ export const useExecutionsStore = defineStore('executions', => {
  // 处理调试操作确认（清除暂停状态）
  if (event === 'debug_action_ack' || data.type === 'debug_action_ack') {
  currentExecution.value.debug_paused_at_node = null
+ }
+ // Phase: 断点/模式 ack 确认（状态由页面层 optimistic 管理，此处仅做日志）
+ if (data.type === 'breakpoint_ack' || data.type === 'debug_mode_ack') {
+ // ack 已收到，前端已做 optimistic update，无需额外处理
  }
  // Refresh full data on execution complete
  if (event === 'execution_completed' || event === 'execution_failed') {
@@ -394,6 +406,8 @@ export const useExecutionsStore = defineStore('executions', => {
  connectWebSocket,
  disconnectWebSocket,
  sendDebugAction,
+ sendBreakpointAction,
+ sendDebugModeSwitch,
  startAutoRefresh,
  stopAutoRefresh,
  wsStatus,
