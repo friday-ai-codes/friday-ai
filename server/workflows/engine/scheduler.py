@@ -409,8 +409,24 @@ class WorkflowEngine:
  ne = await NodeExecution.objects.aget(
  workflow_execution=execution, node_id=dag_node.id,
  )
- action, _ = await self._debug_pause_after_node(execution, ne)
- if action == "skip":
+ action, action_data = await self._debug_pause_after_node(execution, ne)
+ if action == "release":
+ edited_output = action_data.get("edited_output")
+ if edited_output is not None:
+ # 用编辑后数据覆盖原始输出
+ node_outputs[dag_node.id] = edited_output
+ if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+ node_outputs[dag_node.node.short_id] = edited_output
+ ne.output_data = edited_output
+ await ne.asave(update_fields=["output_data"])
+ elif action == "mock":
+ mock_data = action_data.get("mock_output", {})
+ node_outputs[dag_node.id] = mock_data
+ if hasattr(dag_node, 'node') and hasattr(dag_node.node, 'short_id') and dag_node.node.short_id:
+ node_outputs[dag_node.node.short_id] = mock_data
+ ne.output_data = mock_data
+ await ne.asave(update_fields=["output_data"])
+ elif action == "skip":
  await ne.amark_skipped("用户调试跳过")
  completed_nodes.discard(dag_node.id)
  skipped_nodes.add(dag_node.id)

@@ -29,7 +29,7 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  msg_type = data.get("type")
  if msg_type == "debug_action":
  action = data.get("action")
- if action not in ("release", "skip"):
+ if action not in ("release", "skip", "mock"):
  await self.send(text_data=json.dumps({
  "type": "error",
  "message": f"未知调试操作: {action}",
