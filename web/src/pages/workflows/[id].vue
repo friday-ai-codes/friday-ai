@@ -138,9 +138,9 @@ function onExecute {
  component: markRaw(ExecuteWorkflowModal),
  attrs: {
  workflow: currentWorkflow.value,
- onConfirm: async (inputData: Record<string, any>) => {
+ onConfirm: async (inputData: Record<string, any>, debugMode: boolean) => {
  close
- await executeWorkflowAction(inputData)
+ await executeWorkflowAction(inputData, debugMode)
  },
  onCancel: => {
  close
@@ -149,9 +149,9 @@ function onExecute {
  })
  open
 }
-async function executeWorkflowAction(inputData: Record<string, any>) {
+async function executeWorkflowAction(inputData: Record<string, any>, debugMode: boolean = false) {
  try {
- const result = await store.executeWorkflow(inputData)
+ const result = await store.executeWorkflow(inputData, debugMode)
  if (result?.execution_id) {
  toast.success('工作流已启动')
  router.push(`/executions/${result.execution_id}`)
