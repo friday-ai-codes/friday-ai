@@ -20,15 +20,18 @@ export function getValidationError(connection: Connection): string | null {
  // 防环：从 target 出发 BFS，看能否到达 source
  const adjacency = new Map<string, string>
  for (const edge of edges) {
- if (!adjacency.has(edge.source)) adjacency.set(edge.source, )
+ if (!adjacency.has(edge.source))
+ adjacency.set(edge.source, )
  adjacency.get(edge.source)!.push(edge.target)
  }
  const visited = new Set<string>
  const queue = [connection.target]
  while (queue.length > 0) {
  const current = queue.shift!
- if (current === connection.source) return '会形成环路'
- if (visited.has(current)) continue
+ if (current === connection.source)
+ return '会形成环路'
+ if (visited.has(current))
+ continue
  visited.add(current)
  for (const neighbor of adjacency.get(current) ?? ) {
  queue.push(neighbor)

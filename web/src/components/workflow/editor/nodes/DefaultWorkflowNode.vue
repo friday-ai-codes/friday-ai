@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NodeCategory } from '~/types/workflow/registry'
 /**
  * DefaultWorkflowNode - Phase 临时基础节点组件
  *
@@ -7,7 +8,6 @@
  */
 import { Handle, Position } from '@vue-flow/core'
 import { computed } from 'vue'
-import type { NodeCategory } from '~/types/workflow/registry'
 const props = defineProps<{
  id: string
  data: {

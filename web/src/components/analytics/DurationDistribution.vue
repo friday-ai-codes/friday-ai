@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, type Ref } from 'vue'
+import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
+import { computed, inject } from 'vue'
 import api from '~/api/client'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -54,7 +55,10 @@ const chartOption = computed( => {
  itemStyle: {
  color: {
  type: 'linear' as const,
- x: 0, y: 0, x2: 0, y2: 1,
+ x: 0,
+ y: 0,
+ x2: 0,
+ y2: 1,
  colorStops: [
  { offset: 0, color: '#3b82f6' },
  { offset: 1, color: '#06b6d4' },
@@ -70,7 +74,9 @@ const chartOption = computed( => {
 </script>
 <template>
  <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30">
- <h3 class="text-sm font-medium text-muted-foreground mb-4">执行时长分布</h3>
+ <h3 class="text-sm font-medium text-muted-foreground mb-4">
+ 执行时长分布
+ </h3>
  <Skeleton v-if="isLoading" class="h-[300px] w-full" />
  <div v-else-if="!data?.some(b => b.count > 0)" class="h-[300px] flex items-center justify-center text-muted-foreground">
  暂无执行数据

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
+import PageContainer from '~/components/layout/PageContainer.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
-import PageContainer from '~/components/layout/PageContainer.vue'
 useHead({ title: '新建 Runner - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
@@ -50,7 +50,8 @@ async function copyCommand {
  toastSuccess('已复制注册命令')
 }
 async function copyToken {
- if (!createdToken.value) return
+ if (!createdToken.value)
+ return
  await copy(createdToken.value)
  toastSuccess('已复制令牌')
 }
@@ -63,7 +64,9 @@ async function copyToken {
  <span class="icon-[lucide--arrow-left] w-5 " />
  </Button>
  <div>
- <h1 class="text-2xl font-bold">{{ step === 'form' ? '创建 Runner': '注册 Runner' }}</h1>
+ <h1 class="text-2xl font-bold">
+ {{ step === 'form' ? '创建 Runner': '注册 Runner' }}
+ </h1>
  <p class="text-muted-foreground text-sm mt-0.5">
  {{ step === 'form' ? '创建实例 Runner 来生成一个命令，该命令使用其所有配置注册 Runner。': '使用以下命令在目标机器上注册 Runner。' }}
  </p>
@@ -76,19 +79,25 @@ async function copyToken {
  <div class="space-y-2">
  <Label class="text-sm font-medium">标签</Label>
  <Input v-model="form.tags" placeholder="使用逗号分隔多个标签。例如，macos, shared" />
- <p class="text-xs text-muted-foreground">添加标签以指定 Runner 可以运行的作业。</p>
+ <p class="text-xs text-muted-foreground">
+ 添加标签以指定 Runner 可以运行的作业。
+ </p>
  </div>
  <!-- 运行未打标签的作业 -->
  <div class="flex items-center justify-between">
  <div>
  <Label class="text-sm font-medium">运行未打标签的作业</Label>
- <p class="text-xs text-muted-foreground mt-0.5">除了标记的任务外，使用 Runner 来执行没有标签的任务。</p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 除了标记的任务外，使用 Runner 来执行没有标签的任务。
+ </p>
  </div>
  <Switch v-model:checked="form.run_untagged" />
  </div>
  <!-- 配置（可选） -->
  <div class="space-y-6 border-t border-border/50 pt-6">
- <h3 class="text-base font-medium text-muted-foreground">配置（可选）</h3>
+ <h3 class="text-base font-medium text-muted-foreground">
+ 配置（可选）
+ </h3>
  <!-- Runner 描述 -->
  <div class="space-y-2">
  <Label class="text-sm font-medium">Runner 描述</Label>
@@ -98,7 +107,9 @@ async function copyToken {
  <div class="flex items-center justify-between">
  <div>
  <Label class="text-sm font-medium">已暂停</Label>
- <p class="text-xs text-muted-foreground mt-0.5">停止 Runner 接收新的作业。</p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 停止 Runner 接收新的作业。
+ </p>
  </div>
  <Switch v-model:checked="form.is_paused" />
  </div>
@@ -106,7 +117,9 @@ async function copyToken {
  <div class="flex items-center justify-between">
  <div>
  <Label class="text-sm font-medium">受保护</Label>
- <p class="text-xs text-muted-foreground mt-0.5">只为受保护的分支使用流水线上的 Runner。</p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 只为受保护的分支使用流水线上的 Runner。
+ </p>
  </div>
  <Switch v-model:checked="form.is_protected" />
  </div>
@@ -114,7 +127,9 @@ async function copyToken {
  <div class="space-y-2">
  <Label class="text-sm font-medium">最大作业超时</Label>
  <Input v-model="form.max_timeout" type="number" min="600" placeholder="请以秒为单位输入作业超时时间。必须至少 600 秒。" />
- <p class="text-xs text-muted-foreground">Runner 在结束前可以运行的最大时间。如果一个项目的任务超时时间较短，则使用实例 Runner 的任务超时时间。</p>
+ <p class="text-xs text-muted-foreground">
+ Runner 在结束前可以运行的最大时间。如果一个项目的任务超时时间较短，则使用实例 Runner 的任务超时时间。
+ </p>
  </div>
  </div>
  <!-- 提交按钮 -->

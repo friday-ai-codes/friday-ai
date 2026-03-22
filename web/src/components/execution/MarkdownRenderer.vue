@@ -6,8 +6,8 @@
  * 延迟初始化渲染器实例，首次使用时加载。
  */
 import { ref, watch } from 'vue'
-import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import { Skeleton } from '~/components/ui/skeleton'
+import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 const props = defineProps<{
  content: string
 }>

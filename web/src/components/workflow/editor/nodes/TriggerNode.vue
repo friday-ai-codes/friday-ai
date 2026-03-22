@@ -19,7 +19,9 @@ defineProps<{
  <Zap class="w-4 " />
  </template>
  <template v-if="data.description" #content>
- <p class="text-xs text-muted-foreground">{{ data.description }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ data.description }}
+ </p>
  </template>
  </BaseWorkflowNode>
 </template>

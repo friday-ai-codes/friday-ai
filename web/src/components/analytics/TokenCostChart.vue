@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, type Ref } from 'vue'
+import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
+import { computed, inject } from 'vue'
 import api from '~/api/client'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -63,6 +64,7 @@ const chartOption = computed( => {
  axisLine: { lineStyle: { color: '#374151' } },
  axisLabel: {
  color: '#9ca3af',
+ // eslint-disable-next-line no-template-curly-in-string
  formatter: '${value}',
  },
  splitLine: { show: false },
@@ -100,7 +102,9 @@ const chartOption = computed( => {
 </script>
 <template>
  <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30">
- <h3 class="text-sm font-medium text-muted-foreground mb-4">Token 消耗 / 成本趋势</h3>
+ <h3 class="text-sm font-medium text-muted-foreground mb-4">
+ Token 消耗 / 成本趋势
+ </h3>
  <Skeleton v-if="isLoading" class="h-[300px] w-full" />
  <div v-else-if="!data?.length" class="h-[300px] flex items-center justify-center text-muted-foreground">
  暂无 Token 数据

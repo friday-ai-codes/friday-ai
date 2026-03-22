@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, type Ref } from 'vue'
+import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
+import { computed, inject } from 'vue'
 import api from '~/api/client'
 import { Skeleton } from '~/components/ui/skeleton'
 interface OverviewData {
@@ -22,14 +23,19 @@ const { data, isLoading } = useQuery({
  placeholderData: keepPreviousData,
 })
 function formatDuration(seconds: number | null): string {
- if (seconds === null || seconds === undefined) return '—'
- if (seconds < 60) return `${seconds.toFixed(1)}s`
- if (seconds < 3600) return `${(seconds / 60).toFixed(1)}min`
+ if (seconds === null || seconds === undefined)
+ return '—'
+ if (seconds < 60)
+ return `${seconds.toFixed(1)}s`
+ if (seconds < 3600)
+ return `${(seconds / 60).toFixed(1)}min`
  return `${(seconds / 3600).toFixed(1)}h`
 }
 function formatCost(usd: number): string {
- if (usd === 0) return '$0.00'
- if (usd < 0.01) return `$${usd.toFixed(4)}`
+ if (usd === 0)
+ return '$0.00'
+ if (usd < 0.01)
+ return `$${usd.toFixed(4)}`
  return `$${usd.toFixed(2)}`
 }
 const kpis = computed( => [
@@ -70,16 +76,20 @@ const kpis = computed( => [
  class="group bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30"
  >
  <div class="flex items-center gap-4">
- <div:class="['bg-gradient-to-br rounded-lg .5', kpi.bgGradient]">
+ <div class="bg-gradient-to-br rounded-lg .5":class="[kpi.bgGradient]">
  <span
- v-if="!isLoading":class="['text-xl', `icon-[${kpi.icon}]`]"
+ v-if="!isLoading"
+ class="text-xl":class="[`icon-[${kpi.icon}]`]"
  />
  <Skeleton v-else class=" w-5" />
  </div>
  <div class="flex-1 min-w-0">
- <p class="text-sm text-muted-foreground">{{ kpi.label }}</p>
+ <p class="text-sm text-muted-foreground">
+ {{ kpi.label }}
+ </p>
  <template v-if="!isLoading">
- <p:class="['text-2xl font-bold bg-gradient-to-r bg-clip-text text-transparent', kpi.gradient]"
+ <p
+ class="text-2xl font-bold bg-gradient-to-r bg-clip-text text-transparent":class="[kpi.gradient]"
  >
  {{ kpi.value }}
  </p>

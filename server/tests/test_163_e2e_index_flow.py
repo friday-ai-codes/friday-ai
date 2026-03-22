@@ -1,5 +1,4 @@
 """Phase: 索引全流程端到端集成测试 。"""
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from django.test import TransactionTestCase
@@ -120,7 +119,11 @@ class TestWebhookTriggerFlow(TransactionTestCase):
  @pytest.mark.asyncio
  async def test_webhook_trigger_creates_history_and_starts_task(self) -> None:
  """Webhook 触发创建 IndexHistory 并启动后台索引任务。"""
- from tasks.index_trigger_tasks import clear_dedup_cache, parse_push_event, trigger_auto_index
+ from tasks.index_trigger_tasks import (
+ clear_dedup_cache,
+ parse_push_event,
+ trigger_auto_index,
+ )
  clear_dedup_cache
  # 验证 parse_push_event 解析 GitHub payload
  payload = {"ref": "refs/heads/main", "after": "commit_sha_abc123"}

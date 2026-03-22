@@ -6,7 +6,7 @@
  * 警告仅提示，不阻止放行/提交操作。
  */
 defineProps<{
- warnings: Array<{ nodeName: string; missingKeys: string }>
+ warnings: Array<{ nodeName: string, missingKeys: string }>
 }>
 </script>
 <template>

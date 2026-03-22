@@ -1,6 +1,6 @@
 """Runners URL configuration."""
-from django.urls import include, path
 from adrf.routers import DefaultRouter
+from django.urls import include, path
 from .views import (
  RegistrationTokenViewSet,
  RunnerRegisterView,

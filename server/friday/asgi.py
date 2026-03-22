@@ -17,7 +17,7 @@ if os.environ.get("PYTHONPATH"):
  os.environ["PYTHONPATH"] = f"{server_dir}:{os.environ['PYTHONPATH']}"
 else:
  os.environ["PYTHONPATH"] = server_dir
-from django.core.asgi import get_asgi_application
+from django.core.asgi import get_asgi_application # noqa: E402
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "friday.settings")
 # Initialize Django ASGI application early to ensure the AppRegistry
 # is populated before importing code that may import ORM models.

@@ -10,15 +10,15 @@ POST /api/containers/callback/
 import asyncio
 from typing import Any
 import structlog
+from adrf.views import APIView
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from adrf.views import APIView
 from structlog.stdlib import BoundLogger
 from services.protocols import CallbackType
-from subagent.models import ActionLog, ExecutionContext, SubAgentSession, TaskResult, TokenUsage
+from subagent.models import ActionLog, SubAgentSession, TaskResult, TokenUsage
 from .serializers import (
  ActionLogPayloadSerializer,
  CallbackSerializer,

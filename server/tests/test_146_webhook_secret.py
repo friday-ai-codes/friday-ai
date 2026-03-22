@@ -5,7 +5,7 @@
 - 全量索引统计返回值修复（run_full_index 返回 added 字段）
 """
 import re
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 import pytest
 from rest_framework.test import APIClient
 from repositories.models import Repository

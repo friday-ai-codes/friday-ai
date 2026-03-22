@@ -147,7 +147,9 @@ async function onSave {
 }
 // 删除 Provider
 async function onDelete(provider: OIDCProvider) {
- if (!confirm(`确定删除 "${provider.name}"？`)) return
+ // eslint-disable-next-line no-alert
+ if (!confirm(`确定删除 "${provider.name}"？`))
+ return
  try {
  await deleteProvider(provider.id)
  toast.success('Provider 已删除')
@@ -202,12 +204,12 @@ onMounted( => {
  加载中...
  </div>
  <!-- 空状态 -->
- <div v-else-if="providers.length === 0" class="text-center py-8 text-muted-foreground">
- <span class="icon-[lucide--shield-off] text-3xl mb-3 block opacity-50" />
- <p class="text-sm">
+ <div v-else-if="providers.length === 0" class="flex flex-col items-center justify-center py-10 text-muted-foreground">
+ <span class="icon-[lucide--shield-off] text-4xl mb-3 opacity-30" />
+ <p class="text-sm font-medium">
  尚未配置 OIDC Provider
  </p>
- <p class="text-xs mt-1">
+ <p class="text-xs mt-1 opacity-70">
  添加 Provider 后，用户可通过 OIDC 单点登录
  </p>
  </div>

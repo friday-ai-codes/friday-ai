@@ -1,3 +1,5 @@
+import type { NodeComponent } from '@vue-flow/core'
+import type { NodeTypeKey } from '~/types/workflow/registry'
 /**
  * Vue Flow 节点类型注册
  *
@@ -5,12 +7,10 @@
  * parallel/join 使用 DynamicPortNode（需要动态端口管理）。
  */
 import { markRaw } from 'vue'
-import type { NodeComponent } from '@vue-flow/core'
-import type { NodeTypeKey } from '~/types/workflow/registry'
 import { NODE_REGISTRY } from '~/types/workflow/registry'
+import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import BaseWorkflowNode from './BaseWorkflowNode.vue'
 import DynamicPortNode from './DynamicPortNode.vue'
-import AIPlanGenerationNode from './AIPlanGenerationNode.vue'
 import { allNodeTypeKeys } from './nodeVisuals'
 const baseNode = markRaw(BaseWorkflowNode) as unknown as NodeComponent
 const dynamicNode = markRaw(DynamicPortNode) as unknown as NodeComponent
@@ -23,7 +23,7 @@ const specialNodes: Record<string, NodeComponent> = {
 }
 /** 从 NODE_REGISTRY + nodeVisuals 合并生成节点类型映射 */
 const registryTypes = Object.fromEntries(
- (Object.keys(NODE_REGISTRY) as NodeTypeKey).map((key) => [
+ (Object.keys(NODE_REGISTRY) as NodeTypeKey).map(key => [
  key,
  specialNodes[key] ?? baseNode,
  ]),
@@ -31,8 +31,8 @@ const registryTypes = Object.fromEntries(
 /** nodeVisuals 中有但 NODE_REGISTRY 中没有的节点类型也注册（如 manual_trigger） */
 const visualOnlyTypes = Object.fromEntries(
  allNodeTypeKeys
- .filter((key) => !(key in registryTypes))
- .map((key) => [key, specialNodes[key] ?? baseNode]),
+ .filter(key => !(key in registryTypes))
+ .map(key => [key, specialNodes[key] ?? baseNode]),
 )
 const registeredTypes: Record<string, NodeComponent> = {
  ...registryTypes,

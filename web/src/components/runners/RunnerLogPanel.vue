@@ -77,20 +77,27 @@ const newLogCount = ref(0)
 type LogType = 'connection' | 'heartbeat' | 'task' | 'error'
 function getLogType(log: MonitorLog): LogType {
  if (log.event === 'runner.status_changed') {
- if (log.data.status === 'online' || log.data.status === 'offline') return 'connection'
- if (log.data.current_tasks !== undefined) return 'heartbeat'
+ if (log.data.status === 'online' || log.data.status === 'offline')
+ return 'connection'
+ if (log.data.current_tasks !== undefined)
+ return 'heartbeat'
  }
- if (log.event === 'task.status_changed') return 'task'
+ if (log.event === 'task.status_changed')
+ return 'task'
  return 'error'
 }
 function getLogColor(log: MonitorLog): string {
  const type = getLogType(log)
- if (type === 'connection') return 'text-blue-400'
- if (type === 'heartbeat') return 'text-muted-foreground'
+ if (type === 'connection')
+ return 'text-blue-400'
+ if (type === 'heartbeat')
+ return 'text-muted-foreground'
  if (type === 'task') {
  const status = log.data.status as string | undefined
- if (status === 'completed') return 'text-emerald-400'
- if (status === 'failed') return 'text-red-400'
+ if (status === 'completed')
+ return 'text-emerald-400'
+ if (status === 'failed')
+ return 'text-red-400'
  return 'text-violet-400'
  }
  return 'text-destructive'
@@ -100,8 +107,10 @@ function getLogIcon(log: MonitorLog): string {
  if (type === 'connection') {
  return log.data.status === 'online' ? 'icon-[lucide--wifi]': 'icon-[lucide--wifi-off]'
  }
- if (type === 'heartbeat') return 'icon-[lucide--heart-pulse]'
- if (type === 'task') return 'icon-[lucide--play-circle]'
+ if (type === 'heartbeat')
+ return 'icon-[lucide--heart-pulse]'
+ if (type === 'task')
+ return 'icon-[lucide--play-circle]'
  return 'icon-[lucide--alert-circle]'
 }
 function formatLogMessage(log: MonitorLog): string {
@@ -109,8 +118,10 @@ function formatLogMessage(log: MonitorLog): string {
  if (type === 'connection') {
  if (log.data.status === 'online') {
  const parts = ['Runner 上线']
- if (log.data.name) parts.push(`${log.data.name}`)
- if (log.data.version) parts.push(`v${log.data.version}`)
+ if (log.data.name)
+ parts.push(`${log.data.name}`)
+ if (log.data.version)
+ parts.push(`v${log.data.version}`)
  return parts.join(' · ')
  }
  return 'Runner 下线'
@@ -122,8 +133,10 @@ function formatLogMessage(log: MonitorLog): string {
  if (type === 'task') {
  const taskId = ((log.data.task_id as string) || '').slice(0, 8)
  const status = log.data.status as string
- if (status === 'completed') return `任务完成: ${taskId}`
- if (status === 'failed') return `任务失败: ${taskId}`
+ if (status === 'completed')
+ return `任务完成: ${taskId}`
+ if (status === 'failed')
+ return `任务失败: ${taskId}`
  return `任务开始: ${taskId}`
  }
  return `${log.event}: ${JSON.stringify(log.data)}`
@@ -147,7 +160,8 @@ const filteredLogs = computed( => {
  if (!heartbeatExpanded.value) {
  const heartbeats: number =
  for (let i = 0; i < result.length; i++) {
- if (getLogType(result[i]) === 'heartbeat') heartbeats.push(i)
+ if (getLogType(result[i]) === 'heartbeat')
+ heartbeats.push(i)
  }
  if (heartbeats.length > 5) {
  const toRemove = new Set(heartbeats.slice(0, heartbeats.length - 5))
@@ -158,7 +172,8 @@ const filteredLogs = computed( => {
 })
 // 被折叠的心跳数量
 const hiddenHeartbeatCount = computed( => {
- if (heartbeatExpanded.value) return 0
+ if (heartbeatExpanded.value)
+ return 0
  const combined = [
  ...historyLogs.value,
  ...logs.value.filter(l => l.runner_id === props.runnerId),
@@ -169,13 +184,16 @@ const hiddenHeartbeatCount = computed( => {
 // 滚动事件
 function onScroll {
  const el = scrollContainer.value
- if (!el) return
+ if (!el)
+ return
  isAtBottom.value = el.scrollTop + el.clientHeight >= el.scrollHeight - 30
- if (isAtBottom.value) newLogCount.value = 0
+ if (isAtBottom.value)
+ newLogCount.value = 0
 }
 function scrollToBottom {
  const el = scrollContainer.value
- if (!el) return
+ if (!el)
+ return
  el.scrollTop = el.scrollHeight
  isAtBottom.value = true
  newLogCount.value = 0

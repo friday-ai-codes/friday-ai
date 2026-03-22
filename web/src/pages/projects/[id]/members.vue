@@ -108,6 +108,7 @@ async function handleRoleChange(member: ProjectMembership, newRole: 'admin' | 'm
  }
 }
 async function handleRemoveMember(member: ProjectMembership) {
+ // eslint-disable-next-line no-alert
  if (!confirm(`确定要移除 ${member.user.display_name || member.user.username} 吗？`))
  return
  saving.value = true

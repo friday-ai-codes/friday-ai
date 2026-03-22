@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import type { StatusConfig } from '~/config/status'
 import { computed } from 'vue'
 import { Badge } from '~/components/ui/badge'
-import type { StatusConfig } from '~/config/status'
 import { getStatusConfig } from '~/config/status'
 const props = withDefaults(defineProps<{
  type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog'

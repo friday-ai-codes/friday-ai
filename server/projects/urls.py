@@ -1,12 +1,12 @@
 """Projects URL configuration."""
-from django.urls import include, path
 from adrf.routers import DefaultRouter
+from django.urls import include, path
+from .members_views import ProjectMemberDetailView, ProjectMemberListView
 from .views import (
  ProjectRepositoryDetailView,
  ProjectRepositoryListCreateView,
  ProjectViewSet,
 )
-from .members_views import ProjectMemberDetailView, ProjectMemberListView
 router = DefaultRouter # trailing_slash=True by default
 router.register("", ProjectViewSet, basename="project")
 urlpatterns = [

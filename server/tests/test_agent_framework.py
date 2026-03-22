@@ -1,5 +1,4 @@
 """Integration tests for Agent tool framework."""
-from unittest.mock import AsyncMock, MagicMock
 import pytest
 from agents.tools import ToolRegistry, ToolResult, tool
 # Test tool

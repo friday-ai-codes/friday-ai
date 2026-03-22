@@ -169,7 +169,7 @@ const advancedOpen = ref(false)
  @expand="userPromptModalOpen = true"
  />
  <p class="text-[10px] text-muted-foreground">
- 支持 Markdown 和 <code class="text-[10px] px-1 py-0.5 bg-muted rounded">{'{{'}nodes.ID.field{'}}'}</code> 变量引用
+ 支持 Markdown 和 <code class="text-[10px] px-1 py-0.5 bg-muted rounded">{'{{ '}nodes.ID.field{' }}'}</code> 变量引用
  </p>
  </div>
  </div>

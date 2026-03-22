@@ -8,10 +8,12 @@ from collections.abc import AsyncGenerator
 from typing import Any
 import structlog
 from django.utils import timezone
+# 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
+import agents.tools.chat_tools # noqa: F401
 from agents.core.events import (
- AgentEvent,
  MESSAGE_COMPLETE,
  TITLE_GENERATED,
+ AgentEvent,
 )
 from agents.models import AgentSession, ToolCallLog
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -20,8 +22,6 @@ from chat.services import aget_setting_value
 from repositories.models import Repository
 from services.provider_config import ProviderConfigError, ProviderConfigService
 from system.models import SettingKeys
-# 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
-import agents.tools.chat_tools # noqa: F401
 logger = structlog.get_logger(__name__)
 # ============================================================================
 # Active Runner 注册表（内存级，用于 interrupt API 查找）

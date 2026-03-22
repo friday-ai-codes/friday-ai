@@ -11,7 +11,8 @@ export function usePermission(projectId?: Ref<string | undefined> | string) {
  // 当前用户在指定项目中的角色
  const projectRole = computed( => {
  const pid = typeof projectId === 'string' ? projectId: projectId?.value
- if (!pid) return null
+ if (!pid)
+ return null
  return authStore.projectMemberships.find(
  m => m.project_id === pid,
  )?.role ?? null

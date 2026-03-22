@@ -15,7 +15,7 @@ export async function listProjectMembers(projectId: string): Promise<ProjectMemb
  */
 export async function addProjectMember(
  projectId: string,
- data: { user_id: string; role: 'admin' | 'member' | 'viewer' },
+ data: { user_id: string, role: 'admin' | 'member' | 'viewer' },
 ): Promise<ProjectMembership> {
  return post<ProjectMembership>(`/projects/${projectId}/members/`, data)
 }

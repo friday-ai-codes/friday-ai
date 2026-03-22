@@ -5,7 +5,6 @@ from rest_framework import status
 from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine
 from workflows.models import ExecutionStatus, Workflow, WorkflowExecution
-from workflows.models.execution import NodeExecution, NodeExecutionStatus
 @pytest.fixture
 def paused_execution(db, user):
  """创建一个暂停的执行实例（含已完成节点信息）。"""

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import type { ColumnDef } from '@tanstack/vue-table'
+import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
 import { computed, h, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '~/api/client'
 import DataTable from '~/components/common/DataTable.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
-import PageHeader from '~/components/common/PageHeader.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -141,8 +141,10 @@ const triggerTypeLabels: Record<string, string> = {
 }
 /** 格式化耗时 */
 function formatDuration(duration: number | null): string {
- if (duration == null) return '-'
- if (duration < 60) return `${Math.round(duration)}s`
+ if (duration == null)
+ return '-'
+ if (duration < 60)
+ return `${Math.round(duration)}s`
  const mins = Math.floor(duration / 60)
  const secs = Math.round(duration % 60)
  return `${mins}m ${secs}s`

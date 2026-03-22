@@ -384,7 +384,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  dispatch_task = await self._rebuild_dispatch_task(session.session_id)
  if dispatch_task:
  from runners.dispatcher import get_dispatcher
- await get_dispatcher.dispatch_to_runner(self.runner.id, dispatch_task)
+ await get_dispatcher.dispatch(dispatch_task)
  recovered_count += 1
  if recovered_count > 0:
  logger.info(

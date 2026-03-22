@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import type { Extension } from '@codemirror/state'
+import { json, jsonParseLinter } from '@codemirror/lang-json'
+import { linter } from '@codemirror/lint'
+import { search } from '@codemirror/search'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { EditorView } from '@codemirror/view'
 /**
  * JsonEditor — CodeMirror 6 JSON 编辑器组件
  *
@@ -8,12 +14,6 @@
  */
 import { computed } from 'vue'
 import { Codemirror } from 'vue-codemirror'
-import { json, jsonParseLinter } from '@codemirror/lang-json'
-import { oneDark } from '@codemirror/theme-one-dark'
-import { search } from '@codemirror/search'
-import { linter } from '@codemirror/lint'
-import { EditorView } from '@codemirror/view'
-import type { Extension } from '@codemirror/state'
 const props = withDefaults(defineProps<{
  modelValue: string
  readonly?: boolean

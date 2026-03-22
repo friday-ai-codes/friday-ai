@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import StatusBadge from '~/components/common/StatusBadge.vue'
-describe('StatusBadge', => {
+describe('statusBadge', => {
  it('should render running execution status with correct label', => {
  const wrapper = mount(StatusBadge, {
  props: { type: 'execution', status: 'running' },

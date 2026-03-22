@@ -1,10 +1,10 @@
 <script setup lang="ts">
-interface NodePaletteItemData { type: string, name: string, description: string }
 import { storeToRefs } from 'pinia'
 import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useModal } from 'vue-final-modal'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
+import ExecutionHistoryList from '~/components/execution/ExecutionHistoryList.vue'
 import {
  AlertDialog,
  AlertDialogAction,
@@ -22,15 +22,15 @@ import {
  SheetHeader,
  SheetTitle,
 } from '~/components/ui/sheet'
-import ExecutionHistoryList from '~/components/execution/ExecutionHistoryList.vue'
+import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
+import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
 import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
-import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
+interface NodePaletteItemData { type: string, name: string, description: string }
 const route = useRoute('/workflows/[id]')
 const router = useRouter
 const id = route.params.id
@@ -43,7 +43,7 @@ const showLeaveDialog = ref(false)
 const pendingRoute = ref<string | null>(null)
 const historySheetOpen = ref(false)
 const hasTriggers = computed( =>
- nodes.value.some((node) => TRIGGER_NODE_TYPES.includes(node.nodeType)),
+ nodes.value.some(node => TRIGGER_NODE_TYPES.includes(node.nodeType)),
 )
 onMounted(async => {
  // Fetch node types and workflow data in parallel
@@ -133,7 +133,8 @@ function onSaveDraft {
  toast.success('草稿已保存到本地')
 }
 function onExecute {
- if (!currentWorkflow.value) return
+ if (!currentWorkflow.value)
+ return
  const { open, close } = useModal({
  component: markRaw(ExecuteWorkflowModal),
  attrs: {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import StatusBadge from '~/components/common/StatusBadge.vue'
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 defineProps<{
  executions: WorkflowExecution
  loading: boolean

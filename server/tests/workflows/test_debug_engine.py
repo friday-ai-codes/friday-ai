@@ -8,7 +8,7 @@
 - start_execution debug_mode 设置 is_debug 标记
 """
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 import pytest
 from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine, _debug_sessions
@@ -17,7 +17,6 @@ from workflows.models import (
  NodeExecutionStatus,
  Workflow,
  WorkflowEdge,
- WorkflowExecution,
  WorkflowNode,
 )
 @pytest.fixture

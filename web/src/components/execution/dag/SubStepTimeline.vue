@@ -10,7 +10,7 @@ defineProps<{
  steps: SubStep
 }>
 const emit = defineEmits<{
- 'step-click': [stepId: string]
+ stepClick: [stepId: string]
 }>
 function stepStatusColor(status: string): string {
  const map: Record<string, string> = {
@@ -32,7 +32,7 @@ function stepStatusColor(status: string): string {
  <div
  v-for="(step, index) in steps":key="step.id"
  class="relative flex items-start gap-2 cursor-pointer hover:bg-muted/30 rounded px-1 py-0.5 transition-colors"
- @click.stop="emit('step-click', step.id)"
+ @click.stop="emit('stepClick', step.id)"
  >
  <!-- 垂直连线（除最后一个） -->
  <div

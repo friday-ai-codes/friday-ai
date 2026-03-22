@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
-import PageContainer from '~/components/layout/PageContainer.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
+import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { PLATFORM_LABELS } from '~/types'

@@ -13,8 +13,8 @@ from agents.core.events import (
  TITLE_GENERATED,
  AgentEvent,
 )
-from chat.models import Conversation
 from chat.conversation_service import ConversationService
+from chat.models import Conversation
 from projects.models import Project
 # ============================================================================
 # Fixtures

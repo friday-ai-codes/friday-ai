@@ -6,7 +6,7 @@
  */
 import type { CostBreakdownSummary } from '~/types/execution'
 import { Skeleton } from '~/components/ui/skeleton'
-const props = defineProps<{
+const _props = defineProps<{
  costSummary: CostBreakdownSummary | null
  loading: boolean
 }>
@@ -18,12 +18,15 @@ const costFormatter = new Intl.NumberFormat('en-US', {
 })
 function formatCost(costUsdString: string): string {
  const val = Number.parseFloat(costUsdString)
- if (Number.isNaN(val) || val === 0) return '$0.00'
+ if (Number.isNaN(val) || val === 0)
+ return '$0.00'
  return costFormatter.format(val)
 }
 function formatTokenCount(count: number): string {
- if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
- if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
+ if (count >= 1_000_000)
+ return `${(count / 1_000_000).toFixed(1)}M`
+ if (count >= 1_000)
+ return `${(count / 1_000).toFixed(1)}k`
  return String(count)
 }
 </script>

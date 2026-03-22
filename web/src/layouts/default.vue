@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Toaster } from '~/components/ui/sonner'
 import AppSidebar from '~/components/layout/AppSidebar.vue'
+import { Toaster } from '~/components/ui/sonner'
 // WebSocket 实时监控
 const { status, connect } = useRunnerMonitor
 onMounted( => {

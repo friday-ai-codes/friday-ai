@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import type { ColumnDef } from '@tanstack/vue-table'
-import { h, markRaw } from 'vue'
+import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
+import { h, markRaw } from 'vue'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
 import DataTable from '~/components/common/DataTable.vue'
+import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
-import PageHeader from '~/components/common/PageHeader.vue'
+import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -17,7 +18,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import TriggerLogDetailModal from '~/components/logs/TriggerLogDetailModal.vue'
 useHead({
  title: '触发日志 - Friday AI',
 })
@@ -120,7 +120,8 @@ async function handleRetry(logId: string) {
 }
 // 删除日志
 async function handleDelete {
- if (!logToDelete.value) return
+ if (!logToDelete.value)
+ return
  deleting.value = true
  try {
  await deleteTriggerLog(logToDelete.value)

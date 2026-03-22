@@ -7,10 +7,10 @@ import type { MeUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { getMe } from '~/api/users'
-import { useAuthStore } from '~/stores/auth'
+import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
-import LoadingState from '~/components/common/LoadingState.vue'
+import { useAuthStore } from '~/stores/auth'
 const authStore = useAuthStore
 const meData = ref<MeUser | null>(null)
 const loading = ref(true)

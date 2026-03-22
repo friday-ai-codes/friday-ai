@@ -171,15 +171,6 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>
- <Button
- v-else-if="isProjectAdmin"
- class="group relative overflow-hidden"
- @click="openLinkDialog"
- >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
- <span class="icon-[lucide--plus] mr-2" />
- 关联仓库
- </Button>
  </div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="card":count="3" />

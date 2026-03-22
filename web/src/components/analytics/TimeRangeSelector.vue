@@ -7,7 +7,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-const props = defineProps<{
+const _props = defineProps<{
  modelValue: { from: string, to: string }
 }>
 const emit = defineEmits<{
@@ -31,7 +31,8 @@ function getDateString(daysAgo: number): string {
  return d.toISOString.split('T')[0]
 }
 function onPresetChange(value: string | number | bigint | Record<string, any> | null) {
- if (typeof value !== 'string') return
+ if (typeof value !== 'string')
+ return
  selectedPreset.value = value as PresetOption
  if (value === '7' || value === '30') {
  const days = Number.parseInt(value)

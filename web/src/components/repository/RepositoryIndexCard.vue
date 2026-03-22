@@ -3,9 +3,9 @@ import type { IndexStatusResponse } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
-import StatusBadge from '~/components/common/StatusBadge.vue'
 const props = defineProps<{
  repositoryId: string
 }>

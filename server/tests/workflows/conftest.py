@@ -33,7 +33,7 @@ def obs_workflow(db, obs_project, user):
 @pytest.fixture
 def obs_nodes(obs_workflow):
  """创建 3 个测试节点（用于 timeline 瓶颈标识测试）。"""
- now = timezone.now
+ _now = timezone.now
  node1 = WorkflowNode.objects.create(
  workflow=obs_workflow,
  node_type="ai_coding",

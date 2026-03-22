@@ -47,7 +47,7 @@ class Command(BaseCommand):
  folder_token=folder_token,
  content=content,
  )
- self.stdout.write(self.style.SUCCESS(f"文档创建成功!"))
+ self.stdout.write(self.style.SUCCESS("文档创建成功!"))
  self.stdout.write(f" 文档 ID: {result['document_id']}")
  self.stdout.write(f" 链接: {result['url']}")
  async def _resolve_config(self, options: dict) -> tuple[str, str, str]:

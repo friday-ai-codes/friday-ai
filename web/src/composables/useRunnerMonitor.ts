@@ -27,12 +27,14 @@ export function useRunnerMonitor {
  return `${proto}//${location.host}/ws/v1/runners/monitor/`
  }
  function connect {
- if (ws && ws.readyState <= WebSocket.OPEN) return
+ if (ws && ws.readyState <= WebSocket.OPEN)
+ return
  status.value = retryCount > 0 ? 'reconnecting': 'connecting'
  ws = new WebSocket(getWsUrl)
  ws.onopen = => {
  const token = getAccessToken
- if (token) ws!.send(JSON.stringify({ type: 'auth', token }))
+ if (token)
+ ws!.send(JSON.stringify({ type: 'auth', token }))
  }
  ws.onmessage = (e: MessageEvent) => {
  const msg = JSON.parse(e.data)
@@ -80,7 +82,8 @@ export function useRunnerMonitor {
  }
  }
  function scheduleReconnect {
- if (retryCount >= MAX_RETRIES) return
+ if (retryCount >= MAX_RETRIES)
+ return
  const delay = Math.min(1000 * 2 ** retryCount, 30000)
  retryCount++
  status.value = 'reconnecting'
@@ -96,7 +99,8 @@ export function useRunnerMonitor {
  }
  }
  function disconnect {
- if (retryTimer) clearTimeout(retryTimer)
+ if (retryTimer)
+ clearTimeout(retryTimer)
  retryTimer = null
  retryCount = 0
  ws?.close

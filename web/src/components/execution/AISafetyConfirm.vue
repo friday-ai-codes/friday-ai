@@ -15,7 +15,7 @@ import {
  AlertDialogHeader,
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
-const props = defineProps<{
+const _props = defineProps<{
  open: boolean
  nodeName: string
 }>

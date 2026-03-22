@@ -216,7 +216,7 @@ async def list_project_structure(project_id: str) -> ToolResult:
  if next_offset is None:
  break
  offset = next_offset
- return [{"path": p, "language": l} for p, l in sorted(file_info.items)]
+ return [{"path": p, "language": lang} for p, lang in sorted(file_info.items)]
  except UnexpectedResponse:
  return
  # 收集所有仓库的文件信息

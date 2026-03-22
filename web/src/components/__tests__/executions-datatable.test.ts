@@ -1,7 +1,7 @@
+import type { ColumnDef } from '@tanstack/vue-table'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { h, ref } from 'vue'
-import type { ColumnDef } from '@tanstack/vue-table'
 import DataTable from '~/components/common/DataTable.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 // Mock useLocalStorage 避免 SSR 警告
@@ -32,8 +32,10 @@ const triggerTypeLabels: Record<string, string> = {
  event: '事件触发',
 }
 function formatDuration(duration: number | null): string {
- if (duration == null) return '-'
- if (duration < 60) return `${Math.round(duration)}s`
+ if (duration == null)
+ return '-'
+ if (duration < 60)
+ return `${Math.round(duration)}s`
  const mins = Math.floor(duration / 60)
  const secs = Math.round(duration % 60)
  return `${mins}m ${secs}s`
@@ -84,17 +86,17 @@ const testData: MockWorkflowExecution = [
  { id: '3', workflow: 'wf-1', workflow_name: '代码审查', status: 'failed', trigger_type: 'schedule', duration: 120, created_at: '2026-03-15T12:00:00Z' },
  { id: '4', workflow: 'wf-3', workflow_name: '数据同步', status: 'pending', trigger_type: 'event', duration: null, created_at: '2026-03-15T13:00:00Z' },
 ]
-describe('Executions DataTable', => {
+describe('executions DataTable', => {
  it('渲染执行列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-test' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'executions-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('表头包含正确的列名', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-headers' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'executions-headers' } as any,
  })
  const headers = wrapper.findAll('th').map(th => th.text)
  expect(headers).toContain('状态')
@@ -106,7 +108,7 @@ describe('Executions DataTable', => {
  })
  it('触发类型显示中文标签', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-trigger' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'executions-trigger' } as any,
  })
  const text = wrapper.text
  expect(text).toContain('手动触发')
@@ -116,7 +118,7 @@ describe('Executions DataTable', => {
  })
  it('耗时格式化正确（秒/分秒/空值）', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-duration' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'executions-duration' } as any,
  })
  const text = wrapper.text
  // 45s
@@ -128,7 +130,7 @@ describe('Executions DataTable', => {
  })
  it('搜索框过滤工作流名称', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'executions-search' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'executions-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
@@ -145,21 +147,21 @@ describe('Executions DataTable', => {
  columns,
  tableId: 'executions-click',
  onRowClick: => {},
- } as Record<string, unknown>,
+ } as any,
  })
  const firstRow = wrapper.find('tbody tr')
  expect(firstRow.classes).toContain('cursor-pointer')
  })
  it('空数据时渲染空状态', => {
  const wrapper = mount(DataTable, {
- props: { data:, columns, tableId: 'executions-empty' } as Record<string, unknown>,
+ props: { data:, columns, tableId: 'executions-empty' } as any,
  })
  // DataTable 空状态行
  expect(wrapper.findAll('tbody tr').length).toBe(1)
  })
  it('loading 状态显示 skeleton 行', => {
  const wrapper = mount(DataTable, {
- props: { data:, columns, tableId: 'executions-loading', loading: true } as Record<string, unknown>,
+ props: { data:, columns, tableId: 'executions-loading', loading: true } as any,
  })
  // DataTable loading 状态渲染 8 行 skeleton
  expect(wrapper.findAll('tbody tr').length).toBe(8)

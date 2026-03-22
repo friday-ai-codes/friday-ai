@@ -11,6 +11,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8000'
@@ -39,7 +40,8 @@ async function main: Promise<void> {
  }
  const data = (await res.json) as { node_type: string }
  backendSet = new Set(data.map(n => n.node_type))
- } catch (err: unknown) {
+ }
+ catch (err: unknown) {
  // Node fetch 将网络错误包裹在 cause 中
  const cause = (err as { cause?: { code?: string } }).cause
  const code = cause?.code ?? (err as NodeJS.ErrnoException).code
@@ -56,8 +58,14 @@ async function main: Promise<void> {
  const missing = diff(backendSet, paletteSet)
  const extra = diff(paletteSet, backendSet)
  let hasError = false
- if (missing.length) { console.error(`[NodePalette] missing: ${missing.join(', ')}`); hasError = true }
- if (extra.length) { console.error(`[NodePalette] extra: ${extra.join(', ')}`); hasError = true }
+ if (missing.length) {
+ console.error(`[NodePalette] missing: ${missing.join(', ')}`)
+ hasError = true
+ }
+ if (extra.length) {
+ console.error(`[NodePalette] extra: ${extra.join(', ')}`)
+ hasError = true
+ }
  if (hasError) {
  process.exit(1)
  }

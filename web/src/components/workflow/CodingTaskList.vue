@@ -2,10 +2,10 @@
 import type { CodingTask } from '~/types'
 import { ExternalLink, GitBranch } from 'lucide-vue-next'
 import { computed } from 'vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
-import StatusBadge from '~/components/common/StatusBadge.vue'
 interface Props {
  tasks: CodingTask
  loading?: boolean

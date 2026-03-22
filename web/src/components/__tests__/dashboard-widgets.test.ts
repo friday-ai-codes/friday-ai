@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import DashboardKpiCards from '~/components/dashboard/DashboardKpiCards.vue'
 import DashboardQuickActions from '~/components/dashboard/DashboardQuickActions.vue'
 import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActivity.vue'
-describe('DashboardKpiCards', => {
+describe('dashboardKpiCards', => {
  const stats = [
  { title: '项目总数', value: 10, icon: 'lucide--folder-git-2', statIconClass: 'stat-icon-primary', link: '/projects' },
  { title: '执行总数', value: 25, icon: 'lucide--layers', statIconClass: 'stat-icon-violet', link: '/executions' },
@@ -26,7 +26,7 @@ describe('DashboardKpiCards', => {
  })
  })
 })
-describe('DashboardQuickActions', => {
+describe('dashboardQuickActions', => {
  const actions = [
  { icon: 'lucide--plus', title: '新建项目', description: '创建新的开发项目', link: '/projects/new', iconBg: 'stat-icon-primary' },
  { icon: 'lucide--workflow', title: '工作流管理', description: '编排自动化流程', link: '/workflows', iconBg: 'stat-icon-violet' },
@@ -51,7 +51,7 @@ describe('DashboardQuickActions', => {
  })
  })
 })
-describe('DashboardRecentActivity', => {
+describe('dashboardRecentActivity', => {
  const executions = [
  {
  id: '1',

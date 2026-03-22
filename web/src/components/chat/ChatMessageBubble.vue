@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage } from '~/types/chat'
 import { Avatar, AvatarFallback } from '~/components/ui/avatar'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import ChatToolCall from './ChatToolCall.vue'
-import type MarkdownIt from 'markdown-it'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -16,25 +16,27 @@ const props = defineProps<{
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
-onMounted(async => {
- mdInstance = await getMarkdownRenderer
- mdReady.value = true
- renderContent
-})
 // 渲染内容（含节流：流式期间 100ms，避免长回复卡顿）
 const renderContent = useDebounceFn( => {
- if (!mdInstance) return
+ if (!mdInstance)
+ return
  const content = props.isStreaming
  ? (props.streamingContent || ''): props.message.content
  if (content) {
  renderedHtml.value = mdInstance.render(content)
  }
 }, 100)
+onMounted(async => {
+ mdInstance = await getMarkdownRenderer
+ mdReady.value = true
+ renderContent
+})
 // 监听内容变化
 watch(
  => props.isStreaming ? props.streamingContent: props.message.content,
  => {
- if (mdReady.value) renderContent
+ if (mdReady.value)
+ renderContent
  },
 )
 // Thinking 折叠状态
@@ -70,11 +72,13 @@ const tokenDisplay = computed( => {
  const m = props.message.metadata as Record<string, unknown> | undefined
  const inputTokens = m?.input_tokens as number | undefined
  const outputTokens = m?.output_tokens as number | undefined
- if (!inputTokens && !outputTokens) return ''
+ if (!inputTokens && !outputTokens)
+ return ''
  return `\u2191${formatTokens(inputTokens || 0)} \u2193${formatTokens(outputTokens || 0)}`
 })
 function formatTokens(n: number): string {
- if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+ if (n >= 1000)
+ return `${(n / 1000).toFixed(1)}k`
  return String(n)
 }
 // 格式化时间

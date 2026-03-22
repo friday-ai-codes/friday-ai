@@ -3,8 +3,8 @@
  * 定期轮询 /api/auth/me/ 检测权限变更，通过 toast 通知用户
  */
 import type { ProjectMembershipBrief } from '~/types'
-import { useAuthStore } from '~/stores/auth'
 import { usePolling } from '~/composables/usePolling'
+import { useAuthStore } from '~/stores/auth'
 /** 角色等级映射，用于判断权限升降 */
 const ROLE_LEVELS: Record<string, number> = {
  viewer: 1,

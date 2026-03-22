@@ -9,7 +9,7 @@
 7. 写入 answer.json
 """
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 import pytest
 @pytest.fixture
 def mock_session(db):

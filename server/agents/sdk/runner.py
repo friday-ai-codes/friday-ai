@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generator, Literal
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
-from agents.core.events import ERROR, KEEPALIVE, MESSAGE_COMPLETE, TEXT_DELTA, AgentEvent
+from agents.core.events import ERROR, KEEPALIVE, MESSAGE_COMPLETE, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook

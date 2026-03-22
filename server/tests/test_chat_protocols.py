@@ -12,7 +12,14 @@ import httpx
 import pytest
 from chat.protocols.base import ProviderProtocol
 from chat.protocols.openai_chat import OpenAIChatProtocol
-from chat.services import ChatCompletionResult, ChatMessage, ChatService, ChatServiceError, Model, get_chat_service
+from chat.services import (
+ ChatCompletionResult,
+ ChatMessage,
+ ChatService,
+ ChatServiceError,
+ Model,
+ get_chat_service,
+)
 # --- ProviderProtocol Interface Tests ---
 class TestProviderProtocolInterface:
  """验证 ProviderProtocol 是 ABC 且包含正确的抽象方法。"""

@@ -1,7 +1,7 @@
+import type { ColumnDef } from '@tanstack/vue-table'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { ColumnDef } from '@tanstack/vue-table'
 import DataTable from '~/components/common/DataTable.vue'
 // Mock useLocalStorage 避免 SSR 警告
 vi.mock('@vueuse/core', async (importOriginal) => {
@@ -33,17 +33,17 @@ const testData: MockTriggerLog = [
  { id: '3', event_type: 'schedule', work_item_name: '定时同步任务', status: 'pending', created_at: '2026-03-15T12:00:00Z' },
  { id: '4', event_type: 'push', work_item_name: 'feat: 添加登录功能', status: 'completed', created_at: '2026-03-15T13:00:00Z' },
 ]
-describe('Logs DataTable', => {
+describe('logs DataTable', => {
  it('渲染日志列表表格', => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'logs-test' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'logs-test' } as any,
  })
  expect(wrapper.find('table').exists).toBe(true)
  expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
  })
  it('搜索框过滤工作项名称', async => {
  const wrapper = mount(DataTable, {
- props: { data: testData, columns, tableId: 'logs-search' } as Record<string, unknown>,
+ props: { data: testData, columns, tableId: 'logs-search' } as any,
  })
  const allRows = wrapper.findAll('tbody tr').length
  const input = wrapper.find('input[placeholder]')
@@ -59,7 +59,7 @@ describe('Logs DataTable', => {
  columns,
  tableId: 'logs-click',
  onRowClick: => {},
- } as Record<string, unknown>,
+ } as any,
  })
  const firstRow = wrapper.find('tbody tr')
  expect(firstRow.classes).toContain('cursor-pointer')

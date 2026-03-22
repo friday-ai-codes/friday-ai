@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 import structlog
 from .models import ProjectMembership, ProjectRole
 if TYPE_CHECKING:
- from django.contrib.auth.models import AbstractBaseUser
  from django.db.models import QuerySet
+ from accounts.models import User
  from projects.models import Project
 logger = structlog.get_logger(__name__)
 # 角色优先级映射：数值越大权限越高
@@ -22,7 +22,7 @@ class PermissionService:
  @classmethod
  def has_project_access(
  cls,
- user: AbstractBaseUser,
+ user: User,
  project: Project,
  min_role: str = ProjectRole.VIEWER,
  ) -> bool:
@@ -35,7 +35,7 @@ class PermissionService:
  True 如果用户满足权限要求
  """
  # superuser 始终有权限
- if user.is_superuser: # type: ignore[union-attr]
+ if user.is_superuser:
  return True
  role = cls.get_user_role(user, project)
  if role is None:
@@ -60,7 +60,7 @@ class PermissionService:
  @classmethod
  def get_user_role(
  cls,
- user: AbstractBaseUser,
+ user: User,
  project: Project,
  ) -> str | None:
  """获取用户在项目中的角色。
@@ -76,11 +76,11 @@ class PermissionService:
  except ProjectMembership.DoesNotExist:
  return None
  @classmethod
- def get_user_projects(cls, user: AbstractBaseUser) -> QuerySet[Project]:
+ def get_user_projects(cls, user: User) -> QuerySet[Project]:
  """获取用户所属的所有项目。
  superuser 返回所有项目，普通用户按 membership 过滤。
  """
  from projects.models import Project
- if user.is_superuser: # type: ignore[union-attr]
+ if user.is_superuser:
  return Project.objects.all
  return Project.objects.filter(memberships__user=user).distinct

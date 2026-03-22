@@ -10,8 +10,8 @@ from .views import (
 )
 urlpatterns = [
  # 现有 Chat Protocol API
- path("models", ModelsView.as_view, name="chat-models"),
- path("completions", ChatCompletionsView.as_view, name="chat-completions"),
+ path("models/", ModelsView.as_view, name="chat-models"),
+ path("completions/", ChatCompletionsView.as_view, name="chat-completions"),
  # Conversation API (Phase)
  path("conversations/", ConversationListView.as_view, name="conversation-list"),
  path(

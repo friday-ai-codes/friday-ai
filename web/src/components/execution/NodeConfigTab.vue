@@ -9,13 +9,16 @@ defineProps<{
  config: Record<string, unknown>
 }>
 function formatJson(data: Record<string, unknown> | null | undefined): string {
- if (!data || Object.keys(data).length === 0) return ''
+ if (!data || Object.keys(data).length === 0)
+ return ''
  return JSON.stringify(data, null, 2)
 }
 </script>
 <template>
  <div class="space-y-2">
- <div class="text-sm font-medium text-foreground">节点配置</div>
+ <div class="text-sm font-medium text-foreground">
+ 节点配置
+ </div>
  <ScrollArea class="max-h-[400px]">
  <div
  v-if="formatJson(config)"

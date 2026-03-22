@@ -10,7 +10,6 @@ Features:
 - Auto-reconnect on connection loss
 - Forwards events to existing Django handlers
 """
-import json
 import threading
 from typing import Any
 import lark_oapi as lark

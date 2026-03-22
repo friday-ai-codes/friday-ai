@@ -11,8 +11,6 @@ import pytest
 from repositories.models import (
  IndexHistory,
  IndexHistoryStatus,
- IndexStatus,
- Repository,
  TriggerType,
 )
 # SQLite 内存数据库 + async 需要 transaction=True 避免跨线程锁冲突
@@ -171,7 +169,7 @@ class TestIndexHistoryStatusUpdate:
  patch("services.indexer.asyncio.wait_for", return_value=(b"", b"clone error")),
  ):
  from services.indexer import clone_and_index_repository
- result = await clone_and_index_repository(str(repository.id), history_id=str(history.id))
+ _result = await clone_and_index_repository(str(repository.id), history_id=str(history.id))
  await history.arefresh_from_db
  assert history.status == IndexHistoryStatus.FAILED
  assert history.finished_at is not None

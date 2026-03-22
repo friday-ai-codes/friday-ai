@@ -3,17 +3,17 @@
  *
  * 独立于编辑器的 useWorkflowsStore，避免只读视图和编辑视图的状态冲突。
  */
-import type { Node, Edge, NodeComponent } from '@vue-flow/core'
-import { MarkerType } from '@vue-flow/core'
-import { markRaw } from 'vue'
-import { computed, type Ref } from 'vue'
+import type { Edge, Node, NodeComponent } from '@vue-flow/core'
+import type { Ref } from 'vue'
 import type {
- WorkflowExecution,
  NodeExecution,
  TimelineData,
  WorkflowDefinition,
+ WorkflowExecution,
 } from '~/stores/useExecutionsStore'
 import type { NodeCost, SubStepProgress } from '~/types/execution'
+import { MarkerType } from '@vue-flow/core'
+import { computed, markRaw } from 'vue'
 import GradientEdge from '~/components/workflow/editor/edges/GradientEdge.vue'
 import ExecutionNode from '../ExecutionNode.vue'
 /** Vue Flow 执行节点的 data 载荷类型 */
@@ -72,7 +72,8 @@ export function useExecutionDag(
 ) {
  const dagNodes = computed<Node<ExecutionNodeData>>( => {
  const exec = execution.value
- if (!exec?.workflow_definition) return
+ if (!exec?.workflow_definition)
+ return
  const definition: WorkflowDefinition = exec.workflow_definition
  const execMap = new Map<string, NodeExecution>(
  (exec.node_executions ?? ).map(ne => [ne.node, ne]),
@@ -83,7 +84,7 @@ export function useExecutionDag(
  .map(n => [n.node_id, n]),
  )
  const AI_NODE_TYPES = ['ai_prompt', 'ai_coding', 'ai_code_review', 'ai_plan_generation', 'ai_coding_dispatcher']
- return definition.nodes?.map(defNode => {
+ return definition.nodes?.map((defNode) => {
  const ne = execMap.get(defNode.id)
  const bn = bottleneckMap.get(defNode.id)
  const nodeStatus = ne?.status ?? 'pending'
@@ -111,7 +112,8 @@ export function useExecutionDag(
  })
  const dagEdges = computed<Edge>( => {
  const exec = execution.value
- if (!exec?.workflow_definition) return
+ if (!exec?.workflow_definition)
+ return
  const definition: WorkflowDefinition = exec.workflow_definition
  return definition.edges?.map(defEdge => ({
  id: defEdge.id,

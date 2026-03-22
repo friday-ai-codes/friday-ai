@@ -8,11 +8,11 @@
 from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import Any
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from typing import Any
+from unittest.mock import MagicMock, patch
 import pytest
-from agents.core.events import MESSAGE_COMPLETE, TEXT_DELTA, AgentEvent
+from agents.core.events import MESSAGE_COMPLETE, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 # ============================================================================

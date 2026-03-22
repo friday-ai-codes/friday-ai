@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import PageHeader from '~/components/common/PageHeader.vue'
-describe('PageHeader', => {
+describe('pageHeader', => {
  it('should render title text', => {
  const wrapper = mount(PageHeader, {
  props: { icon: 'lucide--folder-git-2', title: '项目管理' },

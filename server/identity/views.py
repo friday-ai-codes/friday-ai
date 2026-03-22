@@ -1,6 +1,7 @@
 """OIDC Identity views: Provider 管理、授权流程。"""
 import secrets
 import structlog
+from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core import signing
@@ -9,7 +10,6 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from adrf.views import APIView
 from identity.models import OIDCProvider
 from identity.serializers import (
  OIDCDiscoverySerializer,
@@ -37,7 +37,9 @@ class OIDCProviderListView(APIView):
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
- providers = await sync_to_async(list)(OIDCProvider.objects.all.order_by("created_at"))
+ providers: list[OIDCProvider] = await sync_to_async(list)( # type: ignore[arg-type,call-arg]
+ OIDCProvider.objects.all.order_by("created_at")
+ )
  serializer = OIDCProviderSerializer(providers, many=True)
  return Response(serializer.data)
  async def post(self, request: object) -> Response:
@@ -118,7 +120,7 @@ class OIDCProviderPublicListView(APIView):
  permission_classes = [AllowAny]
  async def get(self, request: object) -> Response:
  """返回所有活跃 Provider 的 id + name。"""
- providers = await sync_to_async(list)(
+ providers: list[OIDCProvider] = await sync_to_async(list)( # type: ignore[arg-type,call-arg]
  OIDCProvider.objects.filter(is_active=True).order_by("name")
  )
  serializer = OIDCProviderPublicSerializer(providers, many=True)

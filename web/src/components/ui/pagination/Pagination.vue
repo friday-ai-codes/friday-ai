@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { PaginationRootEmits, PaginationRootProps } from 'reka-ui'
 import { PaginationList, PaginationRoot } from 'reka-ui'
+import { Button } from '~/components/ui/button'
 import { cn } from '~/lib/utils'
 import PaginationEllipsis from './PaginationEllipsis.vue'
 import PaginationFirst from './PaginationFirst.vue'
 import PaginationLast from './PaginationLast.vue'
 import PaginationNext from './PaginationNext.vue'
 import PaginationPrev from './PaginationPrev.vue'
-import { Button } from '~/components/ui/button'
 const props = withDefaults(defineProps<PaginationRootProps & { class?: string }>, {
  showEdges: true,
  defaultPage: 1,

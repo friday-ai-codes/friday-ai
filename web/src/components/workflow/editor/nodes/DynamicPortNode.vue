@@ -33,23 +33,27 @@ const defaultPorts: Port = [
 ]
 const ports = computed( => props.data.ports ?? defaultPorts)
 function portLeft(index: number, total: number): string {
- if (total <= 1) return '50%'
+ if (total <= 1)
+ return '50%'
  return `${((index + 1) / (total + 1)) * 100}%`
 }
 function addPort {
- if (ports.value.length >= 5) return
+ if (ports.value.length >= 5)
+ return
  const newPorts = [...ports.value, { id: `port-${Date.now}`, name: `分支${ports.value.length + 1}` }]
  updateNodeData(props.id, { ports: newPorts })
 }
 function removePort(portId: string) {
- if (ports.value.length <= 2) return
+ if (ports.value.length <= 2)
+ return
  const newPorts = ports.value.filter(p => p.id !== portId)
  // 删除关联边
  const connected = getEdges.value.filter(e =>
  (e.sourceHandle === portId && e.source === props.id)
  || (e.targetHandle === portId && e.target === props.id),
  )
- if (connected.length) removeEdges(connected)
+ if (connected.length)
+ removeEdges(connected)
  updateNodeData(props.id, { ports: newPorts })
 }
 function updatePortName(portId: string, name: string) {
@@ -96,6 +100,6 @@ function updatePortName(portId: string, name: string) {
  </BaseWorkflowNode>
  <!-- 动态 Handle：parallel 渲染 source（底部），join 渲染 target（顶部） -->
  <Handle
- v-for="(port, i) in ports":key="port.id":id="port.id":type="isParallel ? 'source': 'target'":position="isParallel ? Position.Bottom: Position.Top":style="{ left: portLeft(i, ports.length) }"
+ v-for="(port, i) in ports":id="port.id":key="port.id":type="isParallel ? 'source': 'target'":position="isParallel ? Position.Bottom: Position.Top":style="{ left: portLeft(i, ports.length) }"
  />
 </template>

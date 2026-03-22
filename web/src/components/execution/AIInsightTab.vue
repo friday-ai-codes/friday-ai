@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ActionLogDetail, ActionLogSummary, CostBreakdownNode } from '~/types/execution'
 /**
  * AIInsightTab — AI 透视 Tab 组件
  *
@@ -6,10 +7,9 @@
  * 步骤默认折叠，展开时按需加载 payload 详情。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import type { ActionLogDetail, ActionLogSummary, CostBreakdownNode } from '~/types/execution'
-import { getReactSteps, getActionLogDetail, getCostBreakdown } from '~/api/workflow'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
+import { getActionLogDetail, getCostBreakdown, getReactSteps } from '~/api/workflow'
 import JsonHighlighter from '~/components/logs/JsonHighlighter.vue'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Skeleton } from '~/components/ui/skeleton'
 const props = defineProps<{
  nodeExecutionId: string
@@ -78,6 +78,7 @@ const iterations = computed<Iteration>( => {
 })
 // ----- 节点成本 -----
 const costLoading = ref(false)
+const allNodeCosts = ref<CostBreakdownNode>
 async function fetchNodeCost {
  costLoading.value = true
  try {
@@ -99,16 +100,19 @@ async function fetchNodeCost {
  costLoading.value = false
  }
 }
-const allNodeCosts = ref<CostBreakdownNode>
 // ----- 格式化工具 -----
 function formatDuration(ms: number | null): string {
- if (ms == null) return '-'
- if (ms < 1000) return `${ms}ms`
+ if (ms == null)
+ return '-'
+ if (ms < 1000)
+ return `${ms}ms`
  return `${(ms / 1000).toFixed(1)}s`
 }
 function formatTokenCount(count: number): string {
- if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
- if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
+ if (count >= 1_000_000)
+ return `${(count / 1_000_000).toFixed(1)}M`
+ if (count >= 1_000)
+ return `${(count / 1_000).toFixed(1)}k`
  return String(count)
 }
 const costFormatter = new Intl.NumberFormat('en-US', {
@@ -119,7 +123,8 @@ const costFormatter = new Intl.NumberFormat('en-US', {
 })
 function formatCost(costUsdString: string): string {
  const val = Number.parseFloat(costUsdString)
- if (Number.isNaN(val) || val === 0) return '$0.00'
+ if (Number.isNaN(val) || val === 0)
+ return '$0.00'
  return costFormatter.format(val)
 }
 /** 步骤类型映射 */

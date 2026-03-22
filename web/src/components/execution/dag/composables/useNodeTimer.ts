@@ -1,3 +1,5 @@
+import type { Ref } from 'vue'
+import type { NodeExecution } from '~/stores/useExecutionsStore'
 /**
  * useNodeTimer — 批量管理运行中节点的 elapsed 时间
  *
@@ -5,8 +7,7 @@
  * 仅在有 running 节点时启动 interval，无 running 节点时自动暂停。
  */
 import { useIntervalFn } from '@vueuse/core'
-import { ref, watch, type Ref } from 'vue'
-import type { NodeExecution } from '~/stores/useExecutionsStore'
+import { ref, watch } from 'vue'
 /**
  * 返回 elapsedMap: key 是 node ID（NodeExecution.node），value 是 elapsed 秒数。
  */

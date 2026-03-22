@@ -6,7 +6,7 @@ class TestRunnerTaskAssignmentFeishuMessageId:
  """测试 RunnerTaskAssignment feishu_message_id 字段。"""
  def test_feishu_message_id_default_empty(self, db):
  """测试 feishu_message_id 默认为空字符串。"""
- runner = Runner.objects.create(
+ _runner = Runner.objects.create(
  name="test-runner",
  token_hash="a" * 64,
  )

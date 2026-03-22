@@ -1,7 +1,6 @@
 """WorkflowExecution 三步租户迁移正确性测试。"""
 import pytest
 from django.db import connection
-from projects.models import Project
 from workflows.models.execution import WorkflowExecution
 from workflows.models.workflow import Workflow
 @pytest.fixture

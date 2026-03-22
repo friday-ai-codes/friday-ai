@@ -1,9 +1,8 @@
 """权限引擎核心测试：PermissionService + 权限类 + Mixin。"""
 import pytest
 from django.contrib.auth import get_user_model
-from permissions.models import ProjectMembership, ProjectRole
+from permissions.models import ProjectRole
 from permissions.services import PermissionService
-from projects.models import Project
 User = get_user_model
 @pytest.mark.django_db
 class TestPermissionServiceHasProjectAccess:
@@ -135,21 +134,21 @@ class TestPermissionServiceGetUserProjects:
 class TestIsSuperUser:
  """测试 IsSuperUser 权限类。"""
  def test_superuser_allowed(self, admin_user):
- from permissions.api_permissions import IsSuperUser
  from types import SimpleNamespace
+ from permissions.api_permissions import IsSuperUser
  request = SimpleNamespace(user=admin_user)
  perm = IsSuperUser
  assert perm.has_permission(request, None) is True
  def test_regular_user_denied(self, user):
- from permissions.api_permissions import IsSuperUser
  from types import SimpleNamespace
+ from permissions.api_permissions import IsSuperUser
  request = SimpleNamespace(user=user)
  perm = IsSuperUser
  assert perm.has_permission(request, None) is False
  def test_unauthenticated_denied(self):
+ from types import SimpleNamespace
  from django.contrib.auth.models import AnonymousUser
  from permissions.api_permissions import IsSuperUser
- from types import SimpleNamespace
  request = SimpleNamespace(user=AnonymousUser)
  perm = IsSuperUser
  assert perm.has_permission(request, None) is False

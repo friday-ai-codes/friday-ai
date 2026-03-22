@@ -62,6 +62,12 @@ async def ask_user_question(
  error=f"会话不存在: {session_id}",
  )
  project = session.project
+ if project is None:
+ log.error("project_not_set")
+ return ToolResult(
+ success=False,
+ error="会话未关联项目",
+ )
  # Get question history and message_id from temp_data
  temp_data = session.temp_data or {}
  history: list[dict[str, str]] = temp_data.get("question_history", )

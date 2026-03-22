@@ -10,10 +10,10 @@ import { NodeToolbar } from '@vue-flow/node-toolbar'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
-import { getDefaultPortsForNodeType } from '../utils/portConfig'
 import { generateShortId } from '~/utils/shortId'
-import { getNodeVisual } from './nodeVisuals'
+import { getDefaultPortsForNodeType } from '../utils/portConfig'
 import { useNodeStyle } from './composables/useNodeStyle'
+import { getNodeVisual } from './nodeVisuals'
 const props = withDefaults(defineProps<{
  id: string
  data: {
@@ -37,7 +37,8 @@ const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
 const isMultiSelect = computed( => getSelectedNodes.value.length > 1)
 /** 多端口时均匀分布的 left 百分比 */
 function portLeft(index: number, total: number): string {
- if (total <= 1) return '50%'
+ if (total <= 1)
+ return '50%'
  return `${((index + 1) / (total + 1)) * 100}%`
 }
 function handleDelete {
@@ -45,7 +46,8 @@ function handleDelete {
 }
 function handleCopy {
  const currentNode = store.nodes.find(n => n.id === props.id)
- if (!currentNode) return
+ if (!currentNode)
+ return
  const newNode = {
  ...JSON.parse(JSON.stringify(currentNode)),
  id: crypto.randomUUID,
@@ -93,12 +95,12 @@ function handleCopy {
  <!-- Input Handles -->
  <Handle
  v-for="(port, i) in inputPorts"
- v-show="hideHandles !== 'input' && hideHandles !== 'both'":key="port.id":id="port.id"
+ v-show="hideHandles !== 'input' && hideHandles !== 'both'":id="port.id":key="port.id"
  type="target":position="Position.Top":style="{ left: portLeft(i, inputPorts.length) }"
  />
  <!-- 头部：图标 + 名称 -->
  <div class="flex items-center gap-2 mb-2">
- <div:class="['bg-gradient-to-br rounded-lg .5', style.iconBg]">
+ <div class="bg-gradient-to-br rounded-lg .5":class="[style.iconBg]">
  <slot name="icon">
  <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
  </slot>
@@ -112,7 +114,7 @@ function handleCopy {
  <!-- Output Handles -->
  <Handle
  v-for="(port, i) in outputPorts"
- v-show="hideHandles !== 'output' && hideHandles !== 'both'":key="port.id":id="port.id"
+ v-show="hideHandles !== 'output' && hideHandles !== 'both'":id="port.id":key="port.id"
  type="source":position="Position.Bottom":style="{ left: portLeft(i, outputPorts.length) }"
  />
  </div>

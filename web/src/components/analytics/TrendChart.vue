@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, inject, type Ref } from 'vue'
+import type { Ref } from 'vue'
 import { keepPreviousData, useQuery } from '@tanstack/vue-query'
+import { computed, inject } from 'vue'
 import api from '~/api/client'
 import { VChart } from '~/components/analytics/echarts-setup'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -61,7 +62,10 @@ const chartOption = computed( => {
  areaStyle: {
  color: {
  type: 'linear' as const,
- x: 0, y: 0, x2: 0, y2: 1,
+ x: 0,
+ y: 0,
+ x2: 0,
+ y2: 1,
  colorStops: [
  { offset: 0, color: 'rgba(16, 185, 129, 0.8)' },
  { offset: 1, color: 'rgba(20, 184, 166, 0.1)' },
@@ -79,7 +83,10 @@ const chartOption = computed( => {
  areaStyle: {
  color: {
  type: 'linear' as const,
- x: 0, y: 0, x2: 0, y2: 1,
+ x: 0,
+ y: 0,
+ x2: 0,
+ y2: 1,
  colorStops: [
  { offset: 0, color: 'rgba(245, 158, 11, 0.8)' },
  { offset: 1, color: 'rgba(249, 115, 22, 0.1)' },
@@ -96,7 +103,9 @@ const chartOption = computed( => {
 </script>
 <template>
  <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30">
- <h3 class="text-sm font-medium text-muted-foreground mb-4">成功/失败趋势</h3>
+ <h3 class="text-sm font-medium text-muted-foreground mb-4">
+ 成功/失败趋势
+ </h3>
  <Skeleton v-if="isLoading" class="h-[300px] w-full" />
  <div v-else-if="!data?.length" class="h-[300px] flex items-center justify-center text-muted-foreground">
  暂无执行数据
