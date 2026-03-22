@@ -284,8 +284,8 @@ export const useExecutionsStore = defineStore('executions', => {
  wsClose
  wsUrl.value = undefined
  }
- /** 通过 WS 发送调试操作命令（release/skip） */
- function sendDebugAction(action: 'release' | 'skip', data: Record<string, any> = {}) {
+ /** 通过 WS 发送调试操作命令（release/skip/mock） */
+ function sendDebugAction(action: 'release' | 'skip' | 'mock', data: Record<string, any> = {}) {
  wsSend(JSON.stringify({
  type: 'debug_action',
  action,
