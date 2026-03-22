@@ -225,6 +225,105 @@ class TestDebugEngine:
  assert pause_order[0] == "Start"
  # 后续两个是 Branch A 和 Branch B（顺序可能因 DAG 遍历顺序不同而异，但都出现）
  assert set(pause_order[1:]) == {"Branch A", "Branch B"}
+ async def test_release_with_edited_output(self, debug_workflow):
+ """release + edited_output 时，编辑数据覆盖 node_outputs 并持久化到 NodeExecution.output_data。"""
+ engine = WorkflowEngine
+ edited = {"result": "edited_value", "score": 42}
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_type = await sync_to_async(lambda: node_execution.node.node_type)
+ if node_type == "condition":
+ # condition 节点返回 release + edited_output
+ return ("release", {"edited_output": edited})
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 验证 NodeExecution.output_data 被持久化为编辑数据
+ from asgiref.sync import sync_to_async
+ condition_ne = await sync_to_async(
+ lambda: execution.node_executions.get(node__node_type="condition")
+ )
+ assert condition_ne.output_data == edited
+ async def test_release_without_edited_output(self, debug_workflow):
+ """release 不带 edited_output 时，行为不变（原始输出保留）。"""
+ engine = WorkflowEngine
+ async def mock_pause(execution, node_execution):
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 验证原始输出仍然保留（condition 节点有默认输出）
+ from asgiref.sync import sync_to_async
+ condition_ne = await sync_to_async(
+ lambda: execution.node_executions.get(node__node_type="condition")
+ )
+ # 没有 edited_output 时，output_data 应该是原始执行结果，不应为 None
+ assert condition_ne.output_data is not None
+ async def test_mock_action(self, debug_workflow):
+ """mock action 用 mock_output 填充 node_outputs，节点标记完成。"""
+ engine = WorkflowEngine
+ mock_data = {"mocked": True, "value": "test_mock"}
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_type = await sync_to_async(lambda: node_execution.node.node_type)
+ if node_type == "condition":
+ return ("mock", {"mock_output": mock_data})
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ # 验证 NodeExecution.output_data 为 mock 数据
+ from asgiref.sync import sync_to_async
+ condition_ne = await sync_to_async(
+ lambda: execution.node_executions.get(node__node_type="condition")
+ )
+ assert condition_ne.output_data == mock_data
+ async def test_mock_action_with_empty_output(self, debug_workflow):
+ """mock action 不带 mock_output 时使用空字典 {}。"""
+ engine = WorkflowEngine
+ async def mock_pause(execution, node_execution):
+ from asgiref.sync import sync_to_async
+ node_type = await sync_to_async(lambda: node_execution.node.node_type)
+ if node_type == "condition":
+ return ("mock", {}) # 不提供 mock_output
+ return ("release", {})
+ with patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause):
+ execution = await engine.start_execution(
+ workflow=debug_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ from asgiref.sync import sync_to_async
+ condition_ne = await sync_to_async(
+ lambda: execution.node_executions.get(node__node_type="condition")
+ )
+ assert condition_ne.output_data == {}
  async def test_start_execution_debug_mode_sets_is_debug(self, debug_workflow):
  """start_execution(debug_mode=True) 后 execution.is_debug == True。"""
  engine = WorkflowEngine
