@@ -7,7 +7,7 @@
  * 根据节点类型和状态，在概览 Tab 底部条件渲染 AI/审批/调试面板。
  */
 import { computed, ref, watch } from 'vue'
-import type { NodeExecution } from '~/stores/useExecutionsStore'
+import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsStore'
 import {
  Sheet,
  SheetContent,
@@ -38,6 +38,10 @@ const props = defineProps<{
  canResume?: boolean
  /** 子步骤聚焦 ID（从 DAG 时间线点击跳转，Phase） */
  focusSubStepId?: string
+ /** Phase: 当前节点是否处于调试暂停状态 */
+ isDebugPaused?: boolean
+ /** Phase: 工作流定义（用于下游变量检查） */
+ workflowDefinition?: WorkflowDefinition | null
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
@@ -182,7 +186,8 @@ function handleActionComplete {
  <TabsContent value="data" class="flex-1 min- mt-0">
  <ScrollArea class="h-full">
  <div class="px-6 py-4">
- <NodeDataTab:node-execution="nodeExecution" />
+ <NodeDataTab:node-execution="nodeExecution":is-debug-paused="isDebugPaused":workflow-definition="workflowDefinition"
+ />
  </div>
  </ScrollArea>
  </TabsContent>
