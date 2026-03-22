@@ -5,12 +5,13 @@ import { VueFinalModal } from 'vue-final-modal'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Label } from '~/components/ui/label'
+import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
 const props = defineProps<{
  workflow: Workflow
 }>
 const emit = defineEmits<{
- confirm: [inputData: Record<string, any>]
+ confirm: [inputData: Record<string, any>, debugMode: boolean]
  cancel:
  closed:
 }>
@@ -19,6 +20,7 @@ const inputJson = ref('')
 const parseError = ref('')
 const validationErrors = ref<string>
 const submitting = ref(false)
+const debugMode = ref(false)
 // 字段定义
 interface FieldDefinition {
  path: string
@@ -189,7 +191,7 @@ async function handleSubmit {
  inputData = triggerNodeType.value === 'feishu'
  ? extractFeishuPayload(rawData): rawData
  }
- emit('confirm', inputData)
+ emit('confirm', inputData, debugMode.value)
  }
  finally {
  submitting.value = false
@@ -203,6 +205,7 @@ watch( => props.workflow, => {
  inputJson.value = ''
  parseError.value = ''
  validationErrors.value =
+ debugMode.value = false
 })
 </script>
 <template>
@@ -336,13 +339,24 @@ watch( => props.workflow, => {
  </template>
  <!-- Footer -->
  <div class="flex justify-end gap-3 pt-4 border-t border-border/50">
+ <!-- 调试模式开关 -->
+ <div class="flex items-center gap-2 mr-auto">
+ <Switch:checked="debugMode"
+ @update:checked="debugMode = $event"
+ />
+ <label class="text-sm text-muted-foreground cursor-pointer select-none flex items-center gap-1" @click="debugMode = !debugMode">
+ <span class="icon-[lucide--bug] w-3.5 .5" />
+ 调试模式
+ </label>
+ </div>
  <Button type="button" variant="outline":disabled="submitting" @click="handleCancel">
  取消
  </Button>
  <Button type="submit":disabled="submitting">
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ <span v-else-if="debugMode" class="icon-[lucide--bug] mr-2" />
  <span v-else class="icon-[lucide--play] mr-2" />
- 执行
+ {{ debugMode ? '开始调试': '执行' }}
  </Button>
  </div>
  </form>
