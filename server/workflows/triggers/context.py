@@ -29,6 +29,8 @@ class TriggerContext:
  triggered_by: "User | None" = None
  idempotency_key: str | None = None
  metadata: dict = field(default_factory=dict)
+ # 调试模式标记，仅手动触发时设置
+ debug_mode: bool = False
  def get_payload_value(self, key: str, default: Any = None) -> Any:
  """获取 raw_payload 中的嵌套值
  支持点分隔路径访问嵌套数据。
