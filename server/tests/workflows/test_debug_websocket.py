@@ -80,6 +80,50 @@ class TestDebugWebSocket:
  sent_data = json.loads(consumer.send.call_args[1]["text_data"])
  assert sent_data["type"] == "error"
  assert "未知调试操作" in sent_data["message"]
+ async def test_mock_action_accepted(self):
+ """WS 发送 mock action，收到 debug_action_ack，action 为 mock。"""
+ consumer = self._make_consumer
+ with patch.object(
+ WorkflowEngine, "release_debug_node", return_value=True
+ ) as mock_release:
+ await consumer.receive(
+ text_data=json.dumps({
+ "type": "debug_action",
+ "action": "mock",
+ "data": {"mock_output": {"result": "mocked"}},
+ })
+ )
+ mock_release.assert_called_once_with(
+ execution_id="test-exec-123",
+ action="mock",
+ action_data={"mock_output": {"result": "mocked"}},
+ )
+ consumer.send.assert_called_once
+ sent_data = json.loads(consumer.send.call_args[1]["text_data"])
+ assert sent_data["type"] == "debug_action_ack"
+ assert sent_data["action"] == "mock"
+ async def test_release_with_edited_output_accepted(self):
+ """WS 发送 release + edited_output，收到 debug_action_ack。"""
+ consumer = self._make_consumer
+ with patch.object(
+ WorkflowEngine, "release_debug_node", return_value=True
+ ) as mock_release:
+ await consumer.receive(
+ text_data=json.dumps({
+ "type": "debug_action",
+ "action": "release",
+ "data": {"edited_output": {"key": "edited"}},
+ })
+ )
+ mock_release.assert_called_once_with(
+ execution_id="test-exec-123",
+ action="release",
+ action_data={"edited_output": {"key": "edited"}},
+ )
+ consumer.send.assert_called_once
+ sent_data = json.loads(consumer.send.call_args[1]["text_data"])
+ assert sent_data["type"] == "debug_action_ack"
+ assert sent_data["action"] == "release"
  async def test_ws_disconnect_cleanup(self):
  """模拟 disconnect，验证 _debug_sessions 被清理 + session.event 被 set。"""
  execution_id = "test-disconnect-exec"
