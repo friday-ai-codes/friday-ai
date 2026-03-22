@@ -51,6 +51,88 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  "type": "debug_action_ack",
  "action": action,
  }))
+ elif msg_type == "set_breakpoint":
+ await self._handle_breakpoint(data, action="set")
+ elif msg_type == "remove_breakpoint":
+ await self._handle_breakpoint(data, action="remove")
+ elif msg_type == "set_debug_mode":
+ await self._handle_debug_mode(data)
+ async def _handle_breakpoint(self, data: dict, action: str) -> None:
+ """处理断点设置/取消消息。"""
+ node_id = data.get("node_id")
+ if not node_id:
+ await self.send(text_data=json.dumps({
+ "type": "error",
+ "message": "缺少 node_id",
+ }))
+ return
+ from workflows.engine.scheduler import _debug_sessions
+ session = _debug_sessions.get(self.execution_id)
+ if not session:
+ await self.send(text_data=json.dumps({
+ "type": "error",
+ "message": "调试会话不存在",
+ }))
+ return
+ if action == "set":
+ session.breakpoints.add(node_id)
+ else:
+ session.breakpoints.discard(node_id)
+ await self.send(text_data=json.dumps({
+ "type": "breakpoint_ack",
+ "action": action,
+ "node_id": node_id,
+ }))
+ logger.info(
+ "debug_breakpoint_updated",
+ execution_id=self.execution_id,
+ node_id=node_id,
+ action=action,
+ )
+ async def _handle_debug_mode(self, data: dict) -> None:
+ """处理调试模式切换消息。"""
+ mode = data.get("mode")
+ if mode not in ("step", "breakpoint"):
+ await self.send(text_data=json.dumps({
+ "type": "error",
+ "message": f"无效调试模式: {mode}",
+ }))
+ return
+ from workflows.engine.scheduler import WorkflowEngine, _debug_sessions
+ session = _debug_sessions.get(self.execution_id)
+ if not session:
+ await self.send(text_data=json.dumps({
+ "type": "error",
+ "message": "调试会话不存在",
+ }))
+ return
+ old_mode = session.debug_mode
+ session.debug_mode = mode
+ # 切换到断点模式且当前暂停在非断点节点时自动放行
+ if mode == "breakpoint" and old_mode == "step":
+ if (
+ session.current_node_id
+ and session.current_node_id not in session.breakpoints
+ and not session.event.is_set
+ ):
+ WorkflowEngine.release_debug_node(
+ self.execution_id, action="release",
+ )
+ logger.info(
+ "debug_mode_switch_auto_release",
+ execution_id=self.execution_id,
+ node_id=session.current_node_id,
+ )
+ await self.send(text_data=json.dumps({
+ "type": "debug_mode_ack",
+ "mode": mode,
+ }))
+ logger.info(
+ "debug_mode_switched",
+ execution_id=self.execution_id,
+ old_mode=old_mode,
+ new_mode=mode,
+ )
  async def workflow_event(self, event: dict) -> None:
  """Handle workflow event message from group."""
  # Send message to WebSocket
