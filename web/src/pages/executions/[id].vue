@@ -162,6 +162,11 @@ const retryFromId = computed( => {
 const resumedFromId = computed( => {
  return currentExecution.value?.resumed_from || null
 })
+/** Phase: 选中节点是否处于调试暂停状态 */
+const isSelectedNodeDebugPaused = computed( =>
+ currentExecution.value?.is_debug === true
+ && selectedNodeExecution.value?.status === 'debug_paused',
+)
 /** 选中节点的配置（从 workflow_definition 中查找） */
 const selectedNodeConfig = computed<Record<string, unknown>>( => {
  if (!selectedNodeId.value || !currentExecution.value?.workflow_definition) return {}
@@ -594,7 +599,7 @@ async function handleTrigger {
  </Transition>
  </div>
  <!-- ===== 节点详情抽屉 ===== -->
- <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')"
+ <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')":is-debug-paused="isSelectedNodeDebugPaused":workflow-definition="currentExecution?.workflow_definition"
  @update:open="sheetOpen = $event"
  @action-complete="handleActionComplete"
  @resume-from-node="handleResumeClick"
