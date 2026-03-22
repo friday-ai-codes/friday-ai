@@ -28,6 +28,10 @@ const emit = defineEmits<{
  'resume-click': [nodeId: string]
  /** Phase: 子步骤详情跳转 */
  'sub-step-click': [nodeExecutionId: string, subStepId: string]
+ /** Phase: 调试放行 */
+ 'debug-release': [nodeId: string]
+ /** Phase: 调试跳过 */
+ 'debug-skip': [nodeId: string]
 }>
 const executionRef = toRef(props, 'execution')
 const timelineRef = computed( => props.timelineData ?? null)
@@ -69,6 +73,9 @@ const nodesWithData = computed( => {
  onResumeClick: (nodeId: string) => emit('resume-click', nodeId),
  onSubStepClick: (nodeExecutionId: string, subStepId: string) =>
  emit('sub-step-click', nodeExecutionId, subStepId),
+ // Phase: 调试操作回调
+ onDebugRelease: (nodeId: string) => emit('debug-release', nodeId),
+ onDebugSkip: (nodeId: string) => emit('debug-skip', nodeId),
  },
  }
  })
