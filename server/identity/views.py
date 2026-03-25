@@ -243,7 +243,7 @@ class OIDCCallbackView(APIView):
  user, is_new = await jit_provision_user(provider, userinfo)
  # 签发 simplejwt token
  refresh = await sync_to_async(RefreshToken.for_user)(user)
- refresh["sub"] = str(user.id) # type: ignore[index]
+ refresh["sub"] = str(user.id) # type: ignore[index] # JWT refresh token 字典动态索引，类型系统无法推断
  access_token = str(refresh.access_token)
  # 构造前端回调 URL
  frontend_redirect = state_data.get("redirect_uri", "/")

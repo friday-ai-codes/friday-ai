@@ -22,7 +22,7 @@ class OptionalJWTAuthentication(JWTAuthentication):
  这样 ChatAuthPermission 才能正常根据鉴权开关决定是否放行，
  避免「开关关闭但过期 token 仍导致 401」的问题。
  """
- def authenticate(self, request): # type: ignore[override]
+ def authenticate(self, request): # type: ignore[override] # DRF BaseAuthentication.authenticate 方法返回类型为 optional tuple
  try:
  return super.authenticate(request)
  except AuthenticationFailed:

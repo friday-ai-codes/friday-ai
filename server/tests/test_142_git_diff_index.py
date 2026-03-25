@@ -217,7 +217,7 @@ class TestRenameHandling:
 # ============================================================================
 class TestCloneAndIndexGitDiffPath:
  """clone_and_index_repository git diff 路径测试。"""
- async def test_uses_git_diff_when_last_sha_exists(self, repository) -> None: # type: ignore[no-untyped-def]
+ async def test_uses_git_diff_when_last_sha_exists(self, repository) -> None:
  """有 last_indexed_commit_sha 时走 git diff 路径"""
  repository.last_indexed_commit_sha = "abc123"
  await repository.asave(update_fields=["last_indexed_commit_sha"])
@@ -255,8 +255,7 @@ class TestCloneAndIndexGitDiffPath:
  from services.indexer import clone_and_index_repository
  await clone_and_index_repository(str(repository.id))
  mock_diff_index.assert_called_once
- async def test_updates_last_indexed_commit_sha(self, repository) -> None: # type: ignore[no-untyped-def]
- """索引完成后 last_indexed_commit_sha 更新为 HEAD SHA"""
+ async def test_updates_last_indexed_commit_sha(self, repository) -> None: """索引完成后 last_indexed_commit_sha 更新为 HEAD SHA"""
  mock_proc = AsyncMock
  mock_proc.communicate = AsyncMock(return_value=(b"", b""))
  mock_proc.returncode = 0
@@ -304,8 +303,7 @@ class TestDiffSummary:
 # ============================================================================
 class TestFallback:
  """Git diff 不可用时的 fallback 行为。"""
- async def test_fetch_failure_falls_back_to_hash(self, repository) -> None: # type: ignore[no-untyped-def]
- """fetch 旧 commit 失败时自动 fallback 到文件哈希比较"""
+ async def test_fetch_failure_falls_back_to_hash(self, repository) -> None: """fetch 旧 commit 失败时自动 fallback 到文件哈希比较"""
  repository.last_indexed_commit_sha = "nonexistent_sha"
  await repository.asave(update_fields=["last_indexed_commit_sha"])
  mock_proc = AsyncMock
@@ -342,8 +340,7 @@ class TestFallback:
  from services.indexer import clone_and_index_repository
  await clone_and_index_repository(str(repository.id))
  mock_incr.assert_called_once
- async def test_git_diff_error_falls_back_to_hash(self, repository) -> None: # type: ignore[no-untyped-def]
- """git diff 命令失败时自动 fallback 到文件哈希比较"""
+ async def test_git_diff_error_falls_back_to_hash(self, repository) -> None: """git diff 命令失败时自动 fallback 到文件哈希比较"""
  repository.last_indexed_commit_sha = "old_sha"
  await repository.asave(update_fields=["last_indexed_commit_sha"])
  mock_proc = AsyncMock
@@ -385,8 +382,7 @@ class TestFallback:
  from services.indexer import clone_and_index_repository
  await clone_and_index_repository(str(repository.id))
  mock_incr.assert_called_once
- async def test_no_last_sha_uses_original_logic(self, repository) -> None: # type: ignore[no-untyped-def]
- """无 last_indexed_commit_sha 时走原有逻辑"""
+ async def test_no_last_sha_uses_original_logic(self, repository) -> None: """无 last_indexed_commit_sha 时走原有逻辑"""
  assert repository.last_indexed_commit_sha is None
  mock_proc = AsyncMock
  mock_proc.communicate = AsyncMock(return_value=(b"", b""))
@@ -417,8 +413,7 @@ class TestFallback:
 # ============================================================================
 class TestIndexHistoryPopulation:
  """IndexHistory 字段在索引完成后正确填充。"""
- async def test_history_fields_populated_after_git_diff_index(self, repository) -> None: # type: ignore[no-untyped-def]
- """git diff 索引后 IndexHistory 填充所有统计字段"""
+ async def test_history_fields_populated_after_git_diff_index(self, repository) -> None: """git diff 索引后 IndexHistory 填充所有统计字段"""
  from django.utils import timezone
  from repositories.models import IndexHistory, IndexHistoryStatus, TriggerType
  repository.last_indexed_commit_sha = "old_sha_123"
@@ -472,8 +467,7 @@ class TestIndexHistoryPopulation:
  assert history.files_modified == 2
  assert history.files_deleted == 1
  assert history.summary_text == "本次增量：新增 3 文件、修改 2 文件、删除 1 文件"
- async def test_fallback_records_reason_in_history(self, repository) -> None: # type: ignore[no-untyped-def]
- """fallback 时 IndexHistory 记录 fallback 原因"""
+ async def test_fallback_records_reason_in_history(self, repository) -> None: """fallback 时 IndexHistory 记录 fallback 原因"""
  from django.utils import timezone
  from repositories.models import IndexHistory, IndexHistoryStatus, TriggerType
  repository.last_indexed_commit_sha = "bad_sha"
