@@ -10,6 +10,8 @@ if TYPE_CHECKING:
  from workflows.models.workflow import Workflow
 class WorkflowNode(models.Model):
  """工作流节点"""
+ # 管理器类型声明
+ objects: "models.Manager[WorkflowNode]"
  # 反向关系类型声明
  executions: "QuerySet[NodeExecution]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -132,6 +134,8 @@ class WorkflowNode(models.Model):
  )
 class WorkflowEdge(models.Model):
  """工作流边（节点连接）"""
+ # 管理器类型声明
+ objects: "models.Manager[WorkflowEdge]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  workflow = models.ForeignKey(
  "workflows.Workflow",
@@ -149,6 +153,9 @@ class WorkflowEdge(models.Model):
  on_delete=models.CASCADE,
  related_name="incoming_edges",
  )
+ # 外键字段的类型声明（Django 自动生成的 _id 字段）
+ source_node_id: uuid.UUID
+ target_node_id: uuid.UUID
  # 连接点（用于条件分支等多输出节点）
  source_handle = models.CharField(
  max_length=50,
@@ -183,8 +190,8 @@ class WorkflowEdge(models.Model):
  def to_json(self) -> dict:
  """导出为 JSON"""
  return {
- "source_node_id": str(self.source_node_id), # type: ignore[attr-defined]
- "target_node_id": str(self.target_node_id), # type: ignore[attr-defined]
+ "source_node_id": str(self.source_node_id),
+ "target_node_id": str(self.target_node_id),
  "source_handle": self.source_handle,
  "target_handle": self.target_handle,
  "condition": self.condition,
@@ -196,8 +203,8 @@ class WorkflowEdge(models.Model):
  """克隆边到新工作流"""
  return WorkflowEdge.objects.create(
  workflow=new_workflow,
- source_node_id=node_mapping[self.source_node_id], # type: ignore[attr-defined]
- target_node_id=node_mapping[self.target_node_id], # type: ignore[attr-defined]
+ source_node_id=node_mapping[self.source_node_id],
+ target_node_id=node_mapping[self.target_node_id],
  source_handle=self.source_handle,
  target_handle=self.target_handle,
  condition=self.condition,
