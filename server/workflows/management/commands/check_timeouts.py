@@ -20,7 +20,7 @@ class Command(BaseCommand):
  # 查询超时的活跃订阅（带 select_for_update 防竞态）
  with transaction.atomic:
  expired_subs = list(
- WorkflowEventSubscription.objects.select_for_update(skip_locked=True) # type: ignore[attr-defined]
+ WorkflowEventSubscription.objects.select_for_update(skip_locked=True)
  .filter(is_active=True, timeout_at__lte=now, timeout_at__isnull=False)
  .select_related("workflow_execution", "node_execution")
  .exclude(workflow_execution__is_debug=True)

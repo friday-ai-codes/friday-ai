@@ -12,10 +12,10 @@ class LoggingHook(BaseHook):
  log_data = {"workflow_event_type": event}
  if execution:
  log_data["execution_id"] = str(execution.id)
- exe = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id) # type: ignore[attr-defined]
+ exe = await WorkflowExecution.objects.select_related("workflow").aget(id=execution.id)
  log_data["workflow"] = exe.workflow.name
  if node_execution:
- ne = await NodeExecution.objects.select_related("node").aget(id=node_execution.id) # type: ignore[attr-defined]
+ ne = await NodeExecution.objects.select_related("node").aget(id=node_execution.id)
  log_data["node_id"] = str(ne.node.id)
  log_data["node_name"] = ne.node.name
  logger.info("工作流事件", **log_data)

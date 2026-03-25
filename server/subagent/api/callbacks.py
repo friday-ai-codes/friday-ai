@@ -212,7 +212,7 @@ async def _resolve_notification_chat_id(session: SubAgentSession) -> str:
  # 从 node_execution 获取
  if session.node_execution_id:
  from workflows.models.execution import NodeExecution
- ne = await NodeExecution.objects.select_related("node").filter( # type: ignore[attr-defined]
+ ne = await NodeExecution.objects.select_related("node").filter(
  pk=session.node_execution_id
  ).afirst
  if ne and ne.node and ne.node.config:
