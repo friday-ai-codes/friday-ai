@@ -490,7 +490,7 @@ class ProjectRepositoryListCreateView(APIView):
  project = await aget_object_or_404(Project, id=project_id)
  # 权限：viewer+ 可查看
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.VIEWER, # type: ignore[arg-type]
+ request.user, project, ProjectRole.VIEWER,
  )
  if not has_access:
  return Response(
@@ -509,7 +509,7 @@ class ProjectRepositoryListCreateView(APIView):
  project = await aget_object_or_404(Project, id=project_id)
  # 权限：admin+ 可创建
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.ADMIN, # type: ignore[arg-type]
+ request.user, project, ProjectRole.ADMIN,
  )
  if not has_access:
  return Response(
@@ -557,7 +557,7 @@ class ProjectRepositoryDetailView(APIView):
  async def _check_admin(self, request: object, project: Project) -> Response | None:
  """检查 admin 权限，无权返回 403 Response，有权返回 None。"""
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.ADMIN, # type: ignore[arg-type]
+ request.user, project, ProjectRole.ADMIN,
  )
  if not has_access:
  return Response(

@@ -33,13 +33,12 @@ class OIDCProviderListView(APIView):
  """OIDC Provider 列表和创建（仅超级管理员）。"""
  async def get(self, request: object) -> Response:
  """列出所有 OIDC Provider。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
- providers: list[OIDCProvider] = await sync_to_async(list)( # type: ignore[arg-type,call-arg]
- OIDCProvider.objects.all.order_by("created_at")
- )
+ providers_qs = OIDCProvider.objects.all.order_by("created_at")
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs)
  serializer = OIDCProviderSerializer(providers, many=True)
  return Response(serializer.data)
  async def post(self, request: object) -> Response:
@@ -120,9 +119,8 @@ class OIDCProviderPublicListView(APIView):
  permission_classes = [AllowAny]
  async def get(self, request: object) -> Response:
  """返回所有活跃 Provider 的 id + name。"""
- providers: list[OIDCProvider] = await sync_to_async(list)( # type: ignore[arg-type,call-arg]
- OIDCProvider.objects.filter(is_active=True).order_by("name")
- )
+ providers_qs = OIDCProvider.objects.filter(is_active=True).order_by("name")
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs)
  serializer = OIDCProviderPublicSerializer(providers, many=True)
  return Response(serializer.data)
 # =============================================================================
