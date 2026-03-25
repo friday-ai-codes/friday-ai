@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import hmac
 import time
+from typing import Any
 import structlog
 from repositories.models import (
  IndexHistory,
@@ -79,7 +80,7 @@ def parse_push_event(platform: str, payload: dict) -> dict[str, str]:
 # 触发索引（共用逻辑）
 # ---------------------------------------------------------------------------
 # 模块级强引用集合：防止 asyncio.create_task 被 GC 回收
-_auto_index_tasks: set[asyncio.Task] = set # type: ignore[type-arg]
+_auto_index_tasks: set[asyncio.Task[Any]] = set
 async def trigger_auto_index(
  repository: Repository, trigger_type: str, commit_sha: str = ""
 ) -> dict[str, str]:
@@ -106,7 +107,7 @@ async def trigger_auto_index(
  started_at=timezone.now,
  )
  # 启动后台任务
- task: asyncio.Task = asyncio.create_task( # type: ignore[type-arg]
+ task: asyncio.Task[Any] = asyncio.create_task(
  clone_and_index_repository(repo_id, history_id=str(history.id)),
  name=f"auto-index-{repo_id}",
  )

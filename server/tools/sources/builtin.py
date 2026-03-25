@@ -14,5 +14,5 @@ async def execute_builtin(tool: RemoteTool, arguments: dict[str, Any]) -> str:
  result = await func(**arguments)
  # ToolResult -> string for LLM consumption
  if hasattr(result, "to_content"):
- return result.to_content # type: ignore[no-any-return]
+ return result.to_content
  return str(result)
