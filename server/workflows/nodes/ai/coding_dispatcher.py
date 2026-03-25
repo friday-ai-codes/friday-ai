@@ -142,13 +142,13 @@ class AICodingDispatcherNode(BaseNode):
  def _get_plan_data(self, context: ExecutionContext) -> dict[str, Any] | None:
  """从上下文获取技术方案数据"""
  # 首先尝试从输入端口获取
- plan_data = context.get_node_output("plan")
- if plan_data:
- return plan_data # type: ignore[return-value]
+ plan_data = context.get_previous_output("plan")
+ if plan_data and isinstance(plan_data, dict):
+ return plan_data
  # 尝试从全局参数获取 (向后兼容)
  plan_data = context.get_global_param("technical_plan")
- if plan_data:
- return plan_data # type: ignore[return-value]
+ if plan_data and isinstance(plan_data, dict):
+ return plan_data
  return None
  async def _fetch_repositories(
  self, repo_ids: set[str]

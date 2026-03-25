@@ -32,7 +32,7 @@ class OutputItem:
 @dataclass
 class MessageItem(OutputItem):
  """Message output item containing text content."""
- type: Literal["message"] = "message" # type: ignore[assignment]
+ type: Literal["message"] = field(default="message")
  role: str = "assistant"
  content: str = ""
  def to_dict(self) -> dict[str, Any]:
@@ -40,7 +40,7 @@ class MessageItem(OutputItem):
 @dataclass
 class ReasoningItem(OutputItem):
  """Reasoning output item containing thinking content."""
- type: Literal["reasoning"] = "reasoning" # type: ignore[assignment]
+ type: Literal["reasoning"] = field(default="reasoning")
  content: str = ""
  summary: str | None = None
  def to_dict(self) -> dict[str, Any]:
