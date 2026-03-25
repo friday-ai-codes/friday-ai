@@ -159,7 +159,7 @@ WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", IS_PRODUCTION)
 # 使用 MySQL/MariaDB 需安装 mysqlclient
 DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'friday.db'}"
 DATABASES = {
- "default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL) # type: ignore[arg-type]
+ "default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL) # type: ignore[arg-type] # django-environ library typing issue
 }
 # =============================================================================
 # Custom User Model
