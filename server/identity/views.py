@@ -38,16 +38,16 @@ class OIDCProviderListView(APIView):
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
  providers_qs = OIDCProvider.objects.all.order_by("created_at")
- providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs)
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[arg-type,call-arg] # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderSerializer(providers, many=True)
  return Response(serializer.data)
  async def post(self, request: object) -> Response:
  """创建 OIDC Provider。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
- serializer = OIDCProviderSerializer(data=request.data) # type: ignore[union-attr]
+ serializer = OIDCProviderSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  provider = await sync_to_async(serializer.save)
  logger.info("oidc_provider_created", provider_id=str(provider.id), name=provider.name)
@@ -58,7 +58,7 @@ class OIDCProviderDetailView(APIView):
  """OIDC Provider 详情、更新、删除（仅超级管理员）。"""
  async def get(self, request: object, pk: str) -> Response:
  """获取 Provider 详情。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
@@ -70,7 +70,7 @@ class OIDCProviderDetailView(APIView):
  return Response(OIDCProviderSerializer(provider).data)
  async def put(self, request: object, pk: str) -> Response:
  """更新 Provider。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
@@ -79,14 +79,14 @@ class OIDCProviderDetailView(APIView):
  return Response(
  {"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND
  )
- serializer = OIDCProviderSerializer(provider, data=request.data, partial=True) # type: ignore[union-attr]
+ serializer = OIDCProviderSerializer(provider, data=request.data, partial=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  updated = await sync_to_async(serializer.save)
  logger.info("oidc_provider_updated", provider_id=str(updated.id))
  return Response(OIDCProviderSerializer(updated).data)
  async def delete(self, request: object, pk: str) -> Response:
  """删除 Provider。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
@@ -102,11 +102,11 @@ class OIDCDiscoveryView(APIView):
  """OIDC Discovery URL 自动填充（仅超级管理员）。"""
  async def post(self, request: object) -> Response:
  """从 issuer_url 获取 OIDC 端点配置。"""
- if not request.user.is_superuser: # type: ignore[union-attr]
+ if not request.user.is_authenticated or not request.user.is_superuser:
  return Response(
  {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
  )
- serializer = OIDCDiscoverySerializer(data=request.data) # type: ignore[union-attr]
+ serializer = OIDCDiscoverySerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  issuer_url = serializer.validated_data["issuer_url"]
  try:
@@ -120,7 +120,7 @@ class OIDCProviderPublicListView(APIView):
  async def get(self, request: object) -> Response:
  """返回所有活跃 Provider 的 id + name。"""
  providers_qs = OIDCProvider.objects.filter(is_active=True).order_by("name")
- providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs)
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[arg-type,call-arg] # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderPublicSerializer(providers, many=True)
  return Response(serializer.data)
 # =============================================================================
@@ -145,7 +145,7 @@ class OIDCAuthorizeView(APIView):
  )
  # 生成 state
  state_value = secrets.token_urlsafe(32)
- redirect_uri = request.query_params.get("redirect_uri", "/") # type: ignore[union-attr]
+ redirect_uri = request.query_params.get("redirect_uri", "/")
  # 签名 state 数据
  signed_state = signing.dumps({
  "state": state_value,
@@ -176,7 +176,7 @@ class OIDCCallbackView(APIView):
  permission_classes = [AllowAny]
  async def get(self, request: object) -> Response | HttpResponseRedirect:
  """处理授权回调：state 校验 → token exchange → JIT → JWT 签发。"""
- params = request.query_params # type: ignore[union-attr]
+ params = request.query_params
  error = params.get("error")
  code = params.get("code")
  state = params.get("state")
@@ -192,7 +192,7 @@ class OIDCCallbackView(APIView):
  status=status.HTTP_400_BAD_REQUEST,
  )
  # 校验 state cookie
- cookie_value = request.COOKIES.get("oidc_state") # type: ignore[union-attr]
+ cookie_value = request.COOKIES.get("oidc_state")
  if not cookie_value:
  return Response(
  {"detail": "State cookie 缺失"},
