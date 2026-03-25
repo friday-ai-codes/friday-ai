@@ -39,6 +39,8 @@ class SubStepStatus(models.TextChoices):
  FAILED = "failed", "失败"
 class WorkflowExecution(models.Model):
  """工作流执行实例"""
+ # 管理器类型声明
+ objects: "models.Manager[WorkflowExecution]"
  # 反向关系类型声明
  node_executions: "QuerySet[NodeExecution]"
  event_subscriptions: "QuerySet[WorkflowEventSubscription]"
@@ -343,6 +345,8 @@ class WorkflowExecution(models.Model):
  return self.context.get("global_variables", {})
 class NodeExecution(models.Model):
  """节点执行记录"""
+ # 管理器类型声明
+ objects: "models.Manager[NodeExecution]"
  # 反向关系类型声明
  event_subscriptions: "QuerySet[WorkflowEventSubscription]"
  sub_steps: "QuerySet[NodeSubStep]"
@@ -556,6 +560,8 @@ class NodeSubStep(models.Model):
  记录 AI 节点内部的执行步骤（如 tool_call、thinking、code_generation），
  由 AI 节点在执行过程中 emit 创建，前端展示时按 step_order 排序。
  """
+ # 管理器类型声明
+ objects: "models.Manager[NodeSubStep]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  node_execution = models.ForeignKey(
  NodeExecution,
@@ -643,6 +649,8 @@ class WorkflowEventSubscription(models.Model):
  记录挂起的工作流正在等待的外部事件条件。
  当 Webhook 收到匹配事件时，通过此表查找并唤醒对应工作流。
  """
+ # 管理器类型声明
+ objects: "models.Manager[WorkflowEventSubscription]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  workflow_execution = models.ForeignKey(
  WorkflowExecution,

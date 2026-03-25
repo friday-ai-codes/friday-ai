@@ -128,7 +128,7 @@ async def _recover_chat_id_from_node(session_id: str, log: Any) -> str:
  """
  try:
  from workflows.models.execution import NodeExecution
- node_exec = await NodeExecution.objects.filter( # type: ignore[attr-defined]
+ node_exec = await NodeExecution.objects.filter(
  output_data__session_id=session_id,
  ).select_related("node").afirst
  if node_exec and node_exec.node:
@@ -165,7 +165,7 @@ async def _notify_workflow_completion(
  WorkflowExecution,
  )
  # Find the node execution linked to this session
- node_exec = await NodeExecution.objects.filter( # type: ignore[attr-defined]
+ node_exec = await NodeExecution.objects.filter(
  output_data__session_id=session_id,
  status=NodeExecutionStatus.WAITING_EVENT,
  ).select_related("workflow_execution").afirst
