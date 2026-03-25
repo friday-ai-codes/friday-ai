@@ -175,7 +175,7 @@ async def test_batch_create_pr_with_cross_references -> None:
  # Test cross-reference generation for first PR
  cross_ref = node._generate_cross_reference_section(
  "https://github.com/org/frontend/pull/1",
- results, # type: ignore[arg-type]
+ results, # type: ignore[arg-type] # 测试模拟数据，不完全匹配函数参数类型
  )
  assert "## Related PRs" in cross_ref
  assert "[backend]" in cross_ref
@@ -184,7 +184,7 @@ async def test_batch_create_pr_with_cross_references -> None:
  # Test cross-reference generation for second PR
  cross_ref2 = node._generate_cross_reference_section(
  "https://gitlab.com/org/backend/-/merge_requests/2",
- results, # type: ignore[arg-type]
+ results, # type: ignore[arg-type] # 测试模拟数据，不完全匹配函数参数类型
  )
  assert "[frontend]" in cross_ref2
  assert "https://github.com/org/frontend/pull/1" in cross_ref2
