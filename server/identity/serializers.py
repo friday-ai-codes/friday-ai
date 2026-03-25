@@ -1,4 +1,5 @@
 """OIDC Provider 序列化器。"""
+from typing import Any
 from rest_framework import serializers
 from common.encryption import encrypt_value
 from identity.models import OIDCProvider
@@ -36,13 +37,13 @@ class OIDCProviderSerializer(serializers.ModelSerializer):
  if not obj.client_secret_encrypted:
  return None
  return "••••••••••••"
- def create(self, validated_data: dict) -> OIDCProvider: # type: ignore[type-arg]
+ def create(self, validated_data: dict[str, Any]) -> OIDCProvider:
  """创建 Provider，加密 client_secret。"""
  secret = validated_data.pop("client_secret", None)
  if secret:
  validated_data["client_secret_encrypted"] = encrypt_value(secret)
  return super.create(validated_data)
- def update(self, instance: OIDCProvider, validated_data: dict) -> OIDCProvider: # type: ignore[type-arg]
+ def update(self, instance: OIDCProvider, validated_data: dict[str, Any]) -> OIDCProvider:
  """更新 Provider，可选更新 client_secret。"""
  secret = validated_data.pop("client_secret", None)
  if secret:
