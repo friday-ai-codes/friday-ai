@@ -13,12 +13,12 @@ from .members_serializers import (
  ProjectMembershipSerializer,
 )
 User = get_user_model
-async def _get_project_or_404(project_id: str) -> Project:
+async def _get_project_or_404(project_id: str) -> Project | None:
  """获取项目对象，不存在时返回 404 响应数据（内部辅助）。"""
  try:
  return await sync_to_async(Project.objects.get)(pk=project_id)
  except Project.DoesNotExist:
- return None # type: ignore[return-value]
+ return None
 class ProjectMemberListView(APIView):
  """项目成员列表：GET 查看 / POST 添加。"""
  async def get(self, request, project_id: str):
