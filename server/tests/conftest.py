@@ -137,7 +137,7 @@ def urls:
  def repository_credential(repo_id):
  return reverse("repository-credential", args=[repo_id])
  # Feishu webhooks
- feishu_webhook = "/api/feishu/webhook"
+ feishu_webhook = "/api/feishu/webhook/"
  return URLs
 # ============================================================================
 # Multi-Role User Fixtures (Phase: 权限引擎)

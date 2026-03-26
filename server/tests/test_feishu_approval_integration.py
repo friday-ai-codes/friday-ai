@@ -6,7 +6,7 @@ from feishu.models import TriggerLog
 @pytest.fixture
 def webhook_url:
  """Feishu webhook URL."""
- return "/api/feishu/webhook"
+ return "/api/feishu/webhook/"
 def create_comment_payload(project, comment: str, work_item_id: str = "12345"):
  """Create a WorkitemCommentEvent webhook payload."""
  return {

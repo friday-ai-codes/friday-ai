@@ -74,14 +74,12 @@ class TestChatKeyAuthentication:
  request = _make_request(chat_key="any-key")
  result = auth.authenticate(request)
  assert result is None
- def test_encrypted_key_decrypted_correctly(self, db):
- """加密存储的密钥应被正确解密后比较。"""
- from common.encryption import encrypt_value
- encrypted = encrypt_value("secret-chat-key-99")
+ def test_plaintext_key_compared_correctly(self, db):
+ """明文存储的密钥应被正确比较。"""
  SystemSetting.objects.create(
  key=SettingKeys.CHAT_KEY,
- value=encrypted,
- is_encrypted=True,
+ value="secret-chat-key-99",
+ is_encrypted=False,
  )
  auth = ChatKeyAuthentication
  request = _make_request(chat_key="secret-chat-key-99")

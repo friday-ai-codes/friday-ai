@@ -96,8 +96,8 @@ def auth_headers(user_and_token):
 # ---------------------------------------------------------------------------
 # 常量
 # ---------------------------------------------------------------------------
-COMPLETIONS_URL = "/api/chat/completions"
-MODELS_URL = "/api/chat/models"
+COMPLETIONS_URL = "/api/chat/completions/"
+MODELS_URL = "/api/chat/models/"
 VALID_PAYLOAD = {
  "model": "gpt-4",
  "messages": [{"role": "user", "content": "Hello"}],

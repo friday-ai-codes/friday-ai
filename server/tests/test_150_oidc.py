@@ -6,7 +6,6 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.core import signing
 from rest_framework.test import APIClient
-from common.encryption import decrypt_value, encrypt_value
 from identity.models import OIDCIdentity, OIDCProvider
 from identity.services import (
  build_authorize_url,
@@ -23,7 +22,7 @@ def oidc_provider(db):
  name="Test Provider",
  issuer_url="https://accounts.example.com",
  client_id="test-client-id",
- client_secret_encrypted=encrypt_value("test-client-secret"),
+ client_secret_encrypted="test-client-secret",
  authorization_endpoint="https://accounts.example.com/authorize",
  token_endpoint="https://accounts.example.com/token",
  userinfo_endpoint="https://accounts.example.com/userinfo",
@@ -128,31 +127,26 @@ class TestProviderCRUD:
 @pytest.mark.django_db
 class TestSecretEncryption:
  """client_secret 加密存储测试。"""
- def test_secret_encrypted_in_db(self, admin_api):
- """创建 Provider 后 DB 中存储加密值。"""
+ def test_secret_stored_plaintext_in_db(self, admin_api):
+ """创建 Provider 后 DB 中明文存储 secret。"""
  data = {
- "name": "Encrypted Provider",
- "issuer_url": "https://encrypted.example.com",
- "client_id": "enc-client-id",
+ "name": "Plaintext Provider",
+ "issuer_url": "https://plaintext.example.com",
+ "client_id": "pt-client-id",
  "client_secret": "my-super-secret",
- "authorization_endpoint": "https://encrypted.example.com/authorize",
- "token_endpoint": "https://encrypted.example.com/token",
+ "authorization_endpoint": "https://plaintext.example.com/authorize",
+ "token_endpoint": "https://plaintext.example.com/token",
  }
  response = admin_api.post("/api/oidc/providers/", data=data, format="json")
  assert response.status_code == 201
  provider_id = response.json["id"]
  provider = OIDCProvider.objects.get(id=provider_id)
- # DB 中是加密值
- assert provider.client_secret_encrypted != "my-super-secret"
- assert provider.client_secret_encrypted
- # 可以解密回原始值
- assert decrypt_value(provider.client_secret_encrypted) == "my-super-secret"
- def test_api_returns_masked_secret(self, admin_api, oidc_provider):
- """API 返回掩码值，不暴露 secret。"""
+ assert provider.client_secret_encrypted == "my-super-secret"
+ def test_api_returns_has_secret(self, admin_api, oidc_provider):
+ """API 返回 has_secret 标志。"""
  response = admin_api.get(f"/api/oidc/providers/{oidc_provider.id}/")
  result = response.json
  assert result["has_secret"] is True
- assert result["masked_secret"] == "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
  assert "client_secret_encrypted" not in result
 # =============================================================================
 # Discovery 测试

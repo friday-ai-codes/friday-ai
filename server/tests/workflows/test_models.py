@@ -229,6 +229,7 @@ class TestWorkflowExecutionModel:
  """Test basic execution creation."""
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  input_data={"key": "value"},
  )
@@ -239,6 +240,7 @@ class TestWorkflowExecutionModel:
  """Test execution status can be updated."""
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  # Update to running
@@ -260,6 +262,7 @@ class TestWorkflowExecutionModel:
  }
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="feishu_webhook",
  context=context,
  )
@@ -282,6 +285,7 @@ class TestNodeExecutionModel:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  node_exec = NodeExecution.objects.create(
@@ -301,6 +305,7 @@ class TestNodeExecutionModel:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  node_exec = NodeExecution.objects.create(
@@ -328,6 +333,7 @@ class TestNodeExecutionModel:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  node_exec = NodeExecution.objects.create(
@@ -354,6 +360,7 @@ class TestNodeSubStepModel:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  return NodeExecution.objects.create(

@@ -33,7 +33,6 @@ export interface SettingRead {
  value: string | null
  is_encrypted: boolean
  has_value: boolean
- masked_value: string | null
  description: string | null
  updated_at: string | null
 }

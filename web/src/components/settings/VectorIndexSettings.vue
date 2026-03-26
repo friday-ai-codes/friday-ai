@@ -78,7 +78,7 @@ async function loadSettings {
  const getValue = (key: SettingKey) => settings.value.find(s => s.key === key)?.value || ''
  const getMasked = (key: SettingKey) => {
  const setting = settings.value.find(s => s.key === key)
- return setting?.has_value ? setting.masked_value || '': ''
+ return setting?.has_value ? setting.value || '': ''
  }
  qdrantUrlValue.value = getValue(SettingKey.QDRANT_URL)
  qdrantApiKeyValue.value = getMasked(SettingKey.QDRANT_API_KEY)

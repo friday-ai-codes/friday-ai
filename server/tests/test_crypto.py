@@ -1,32 +1,32 @@
-"""Tests for crypto service."""
+"""Tests for crypto service (encryption disabled — plain text pass-through)."""
 class TestCryptoService:
- """Test encryption/decryption service."""
- def test_encrypt_decrypt_value(self):
- """Test that encrypt and decrypt are reversible."""
+ """Test that encrypt/decrypt are now pass-throughs."""
+ def test_encrypt_decrypt_passthrough(self):
+ """encrypt_value returns input unchanged; decrypt_value returns it back."""
  from common.encryption import decrypt_value, encrypt_value
  original = "test-secret-value-12345"
  encrypted = encrypt_value(original)
- assert encrypted != original
+ assert encrypted == original
  assert decrypt_value(encrypted) == original
  def test_encrypt_empty_value(self):
- """Test encrypting empty value."""
+ """Empty / None values are returned as-is."""
  from common.encryption import encrypt_value
  assert encrypt_value("") == ""
- assert encrypt_value(None) is None # 测试故意传入 None 值的边界情况
+ assert encrypt_value(None) is None # type: ignore[arg-type]
  def test_decrypt_empty_value(self):
- """Test decrypting empty value."""
+ """Empty / None values are returned as-is."""
  from common.encryption import decrypt_value
  assert decrypt_value("") == ""
- assert decrypt_value(None) is None # 测试故意传入 None 值的边界情况
- def test_encrypt_special_characters(self):
- """Test encrypting values with special characters."""
+ assert decrypt_value(None) is None # type: ignore[arg-type]
+ def test_special_characters(self):
+ """Special characters pass through unchanged."""
  from common.encryption import decrypt_value, encrypt_value
  special_value = "特殊字符!@#$%^&*_+-={}|;':\",./<>?"
- encrypted = encrypt_value(special_value)
- assert decrypt_value(encrypted) == special_value
- def test_encrypt_long_value(self):
- """Test encrypting long values."""
+ assert encrypt_value(special_value) == special_value
+ assert decrypt_value(special_value) == special_value
+ def test_long_value(self):
+ """Long values pass through unchanged."""
  from common.encryption import decrypt_value, encrypt_value
  long_value = "a" * 10000
- encrypted = encrypt_value(long_value)
- assert decrypt_value(encrypted) == long_value
+ assert encrypt_value(long_value) == long_value
+ assert decrypt_value(long_value) == long_value
