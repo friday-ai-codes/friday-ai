@@ -100,6 +100,13 @@ class WorkflowExecution(models.Model):
  verbose_name="调试执行",
  help_text="调试执行不计入正式记录，不触发通知，不受并发限制",
  )
+ feishu_message_id = models.CharField(
+ max_length=128,
+ blank=True,
+ default="",
+ verbose_name="飞书消息 ID",
+ help_text="最近一次工作流通知的飞书消息 ID",
+ )
  debug_paused_at_node = models.UUIDField(
  null=True,
  blank=True,
