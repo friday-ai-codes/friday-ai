@@ -2,7 +2,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 import pytest
+from projects.models import Project
+from workflows.engine.scheduler import WorkflowEngine
 from workflows.hooks.builtin import NotificationHook
+from workflows.models import ExecutionStatus, Workflow, WorkflowNode
 @pytest.fixture
 def hook -> NotificationHook:
  return NotificationHook
@@ -27,6 +30,25 @@ def node_execution -> SimpleNamespace:
  config={"description_template": "请审批本次变更"},
  )
  return SimpleNamespace(node=node)
+@pytest.fixture
+def notification_integration_workflow(db) -> Workflow:
+ project = Project.objects.create(
+ name="Notification Integration Project",
+ description="NotificationHook engine integration test project",
+ )
+ workflow = Workflow.objects.create(
+ name="Notification Integration Workflow",
+ project=project,
+ trigger_type="manual",
+ )
+ WorkflowNode.objects.create(
+ workflow=workflow,
+ node_type="manual_trigger",
+ name="Start",
+ position_x=0,
+ position_y=0,
+ )
+ return workflow
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
  ("event", "error_message", "expected_color", "expected_texts", "use_node_execution"),
@@ -167,3 +189,26 @@ async def test_feishu_errors_are_swallowed_without_overwriting_message_id(
  await hook.execute("execution_failed", execution=execution)
  assert execution.feishu_message_id == "existing-message"
  execution.asave.assert_not_awaited
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+async def test_engine_execution_path_persists_message_id(
+ notification_integration_workflow: Workflow,
+) -> None:
+ engine = WorkflowEngine
+ mock_service = AsyncMock
+ mock_service.send_card = AsyncMock(return_value="msg_engine_123")
+ with patch(
+ "services.feishu_im.FeishuIMService.create",
+ new_callable=AsyncMock,
+ return_value=mock_service,
+ ) as mock_create:
+ execution = await engine.start_execution(
+ workflow=notification_integration_workflow,
+ input_data={"chat_id": "oc_integration_chat"},
+ trigger_type="manual",
+ run_sync=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ assert execution.feishu_message_id == "msg_engine_123"
+ mock_create.assert_awaited_once_with(notification_integration_workflow.project)

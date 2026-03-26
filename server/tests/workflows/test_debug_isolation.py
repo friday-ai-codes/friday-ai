@@ -16,6 +16,7 @@ from projects.models import Project
 from workflows.engine.scheduler import (
  WorkflowEngine,
 )
+from workflows.hooks.builtin import NotificationHook
 from workflows.hooks.feishu_sync import FeishuSyncHook
 from workflows.models import (
  ExecutionStatus,
@@ -147,6 +148,34 @@ class TestDebugExecutionIsolation:
  with patch.object(hook, "on_execution_completed", new_callable=AsyncMock) as mock_handler:
  await hook.execute("execution_completed", execution=mock_execution)
  mock_handler.assert_called_once
+ async def test_debug_execution_with_notification_hook_does_not_send_feishu(
+ self,
+ iso_workflow_with_nodes,
+ ):
+ """NotificationHook 接线后，调试执行仍不应触发飞书发送。"""
+ engine = WorkflowEngine
+ completed_hooks = engine.hooks._hooks["execution_completed"]
+ assert any(isinstance(hook, NotificationHook) for hook in completed_hooks)
+ async def mock_pause(execution, node_execution):
+ del execution, node_execution
+ return ("release", {})
+ with (
+ patch.object(engine, "_debug_pause_after_node", side_effect=mock_pause),
+ patch(
+ "services.feishu_im.FeishuIMService.create",
+ new_callable=AsyncMock,
+ ) as mock_create,
+ ):
+ execution = await engine.start_execution(
+ workflow=iso_workflow_with_nodes,
+ input_data={"chat_id": "oc_debug_isolation_chat"},
+ trigger_type="manual",
+ run_sync=True,
+ debug_mode=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ mock_create.assert_not_called
 @pytest.mark.asyncio
 @pytest.mark.django_db(transaction=True)
 class TestDebugSessionTimeoutCleanup:
