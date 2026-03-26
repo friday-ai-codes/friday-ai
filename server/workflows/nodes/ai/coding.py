@@ -353,6 +353,7 @@ class AICodingNode(SubStepMixin, BaseNode):
  branch_name = output_data.get("branch_name", "")
  base_branch = output_data.get("base_branch", "")
  plan_title = output_data.get("plan_title", "")
+ plan_data = output_data.get("plan_data")
  _repositories_info = output_data.get("repositories", {})
  # 查询每个 session 的结果
  from subagent.models import SubAgentSession, TaskResult
@@ -459,6 +460,7 @@ class AICodingNode(SubStepMixin, BaseNode):
  failed_repos=failed_repos,
  branch_name=branch_name,
  base_branch=base_branch,
+ plan_data=plan_data,
  )
  if not mr_results:
  return NodeResult(
@@ -949,6 +951,7 @@ class AICodingNode(SubStepMixin, BaseNode):
  failed_repos: list[dict[str, Any]],
  branch_name: str,
  base_branch: str,
+ plan_data: dict[str, Any] | None = None,
  ) -> dict[str, Any]:
  """构建节点输出数据。"""
  merge_requests = [
@@ -968,6 +971,7 @@ class AICodingNode(SubStepMixin, BaseNode):
  total_insertions = sum(r.get("insertions", 0) for r in mr_results)
  total_deletions = sum(r.get("deletions", 0) for r in mr_results)
  return {
+ "coding_result": {
  "merge_requests": merge_requests,
  "branches": {
  "branch_name": branch_name,
@@ -982,6 +986,9 @@ class AICodingNode(SubStepMixin, BaseNode):
  "total_deletions": total_deletions,
  },
  "failed_details": failed_repos,
+ },
+ "merge_requests": merge_requests,
+ "plan": plan_data,
  }
  # ------------------------------------------------------------------
  # 取消处理

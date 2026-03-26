@@ -248,8 +248,12 @@ class AICodeReviewNode(AIAgentBaseNode):
  node_id=context.node_id,
  )
  # 1. 提取上游数据
+ # coding_result 端口（AICodingNode 包装输出）或扁平的 merge_requests（直连兼容）
  coding_result = context.get_input("coding_result")
  if not coding_result or not isinstance(coding_result, dict):
+ if context.input_data and isinstance(context.input_data.get("merge_requests"), list):
+ coding_result = context.input_data
+ else:
  return NodeResult(
  status="failed",
  error="缺少编码结果数据（coding_result 输入端口为空）",
