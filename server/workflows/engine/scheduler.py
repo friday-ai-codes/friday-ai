@@ -59,14 +59,31 @@ class WorkflowEngine:
  """
  def __init__(self, hooks: "HookManager | None" = None):
  from workflows.hooks import HookManager
- from workflows.hooks.builtin import LoggingHook, WebSocketBroadcastHook
+ from workflows.hooks.builtin import (
+ LoggingHook,
+ NotificationHook,
+ WebSocketBroadcastHook,
+ )
  self.hooks = hooks or HookManager
  # Register built-in hooks
  logging_hook = LoggingHook
  websocket_hook = WebSocketBroadcastHook
+ notification_hook = NotificationHook
  for event in HookManager.EVENTS:
  self.hooks.register_hook(event, logging_hook)
  self.hooks.register_hook(event, websocket_hook)
+ for event in (
+ "execution_completed",
+ "execution_failed",
+ "node_waiting_approval",
+ ):
+ self.hooks.register_hook(event, notification_hook)
+ async def _load_execution_for_hooks(self, execution: WorkflowExecution) -> WorkflowExecution:
+ """Load execution with related objects to keep hook handlers async-safe."""
+ return await WorkflowExecution.objects.select_related(
+ "workflow__project",
+ "project",
+ ).aget(pk=execution.pk)
  @staticmethod
  def _create_execution_with_atomic_concurrency_guard(
  *,
@@ -131,6 +148,10 @@ class WorkflowEngine:
  """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
+ # Ensure related project is preloaded to keep hook execution async-safe.
+ if "project" not in workflow._state.fields_cache:
+ from workflows.models import Workflow as WorkflowModel
+ workflow = await WorkflowModel.objects.select_related("project").aget(pk=workflow.pk)
  # 构建 workflow_definition 快照（DAG 结构 + 节点位置，用于前端可视化）
  nodes_snapshot: list[dict] =
  async for node in workflow.nodes.all:
@@ -183,11 +204,22 @@ class WorkflowEngine:
  # 确保执行状态正确
  execution.status = ExecutionStatus.PENDING
  await execution.asave(update_fields=["status"])
+ # Cache related objects on execution to avoid sync FK lazy-load in async hooks.
+ execution.workflow = workflow
+ execution.project_id = workflow.project_id
+ if "project" in workflow._state.fields_cache:
+ execution.project = workflow.project
+ # 设置调试模式标记（需在失败路径触发 hook 前生效，保证 debug 执行不发通知）
+ if debug_mode and not execution.is_debug:
+ execution.is_debug = True
+ await execution.asave(update_fields=["is_debug"])
  # 构建 DAG
  dag = await DAG.afrom_workflow(workflow)
  errors = dag.validate
  if errors:
  await execution.amark_failed("\n".join(errors))
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
  return execution
  # 初始化节点执行记录
  execution.total_nodes = len(dag.nodes)
@@ -198,10 +230,6 @@ class WorkflowEngine:
  node=dag_node.node,
  status=NodeExecutionStatus.PENDING,
  )
- # 设置调试模式标记
- if debug_mode:
- execution.is_debug = True
- await execution.asave(update_fields=["is_debug"])
  # 触发开始钩子
  await self.hooks.trigger("execution_started", execution=execution)
  # 开始执行
@@ -444,6 +472,8 @@ class WorkflowEngine:
  await execution.amark_cancelled
  else:
  await execution.amark_failed("调试会话超时")
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
  return
  else:
  failed_nodes.add(dag_node.id)
@@ -494,6 +524,8 @@ class WorkflowEngine:
  # 执行完成
  if failed_nodes:
  await execution.amark_failed(f"失败节点: {len(failed_nodes)}")
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
  else:
  # 收集最终输出（终端节点的输出）
  final_output = {}
@@ -502,11 +534,13 @@ class WorkflowEngine:
  if dag_node and not dag_node.outgoing:
  final_output.update(node_outputs.get(node_id, {}))
  await execution.amark_completed(final_output)
- await self.hooks.trigger("execution_completed", execution=execution)
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_completed", execution=hook_execution)
  except Exception as e:
  logger.exception("workflow_execution_error", execution_id=str(execution.id))
  await execution.amark_failed(str(e))
- await self.hooks.trigger("execution_failed", execution=execution, error=e)
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution, error=e)
  finally:
  _debug_sessions.pop(str(execution.id), None)
  async def _execute_node(
@@ -566,9 +600,10 @@ class WorkflowEngine:
  }
  elif result.status == "waiting_approval":
  await node_execution.amark_waiting_approval(result.output)
+ hook_execution = await self._load_execution_for_hooks(execution)
  await self.hooks.trigger(
  "node_waiting_approval",
- execution=execution,
+ execution=hook_execution,
  node_execution=node_execution,
  )
  return {"status": "waiting_approval"}
@@ -901,7 +936,8 @@ class WorkflowEngine:
  await execution.amark_failed(
  f"节点 {node_execution.node.name} 执行失败: {node_execution.error_message}"
  )
- await self.hooks.trigger("execution_failed", execution=execution)
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
  async def _check_execution_complete(self, execution: WorkflowExecution) -> None:
  """Check if workflow execution is complete and update status."""
  # Count node statuses
@@ -921,11 +957,14 @@ class WorkflowEngine:
  # All nodes are done
  if stats["failed"] > 0:
  await execution.amark_failed(f"失败节点: {stats['failed']}")
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
  else:
  # Collect final outputs
  final_output = await self._collect_final_outputs(execution)
  await execution.amark_completed(final_output)
- await self.hooks.trigger("execution_completed", execution=execution)
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_completed", execution=hook_execution)
  async def _check_dependencies_ready(
  self,
  execution: WorkflowExecution,

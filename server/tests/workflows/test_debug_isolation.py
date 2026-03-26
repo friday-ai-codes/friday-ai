@@ -148,6 +148,7 @@ class TestDebugExecutionIsolation:
  with patch.object(hook, "on_execution_completed", new_callable=AsyncMock) as mock_handler:
  await hook.execute("execution_completed", execution=mock_execution)
  mock_handler.assert_called_once
+ @pytest.mark.django_db(transaction=True)
  async def test_debug_execution_with_notification_hook_does_not_send_feishu(
  self,
  iso_workflow_with_nodes,
