@@ -20,7 +20,6 @@ class CodingTaskStatus(models.TextChoices):
  PARTIAL_SUCCESS = "partial_success", "部分成功"
  MERGED = "merged", "已合并"
  FAILED = "failed", "失败"
- CANCELLED = "cancelled", "已取消"
 class CodingTask(models.Model):
  """AI 编码任务 (Canonical Location)
  由 AI 编码指派器节点创建，存储编码任务的 Prompt、状态和 Git 产物。
