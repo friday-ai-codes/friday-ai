@@ -4,9 +4,23 @@
 """
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 import pytest
+from projects.models import Project
+from workflows.engine.scheduler import WorkflowEngine
+from workflows.hooks.builtin import NotificationHook
 from workflows.hooks.base import BaseHook, HookManager
+from workflows.models import (
+ ExecutionStatus,
+ NodeExecution,
+ NodeExecutionStatus,
+ Workflow,
+ WorkflowEdge,
+ WorkflowExecution,
+ WorkflowNode,
+)
 class TestHookManagerEvents:
  """验证 HookManager.EVENTS 列表完整性"""
  def test_node_waiting_event_registered(self) -> None:
@@ -59,3 +73,183 @@ class TestHookManagerEvents:
  pass
  with pytest.raises(ValueError, match="未知事件"):
  manager.register_hook("nonexistent_event", DummyHook)
+ def test_workflow_engine_registers_notification_hook_for_target_events(self) -> None:
+ """WorkflowEngine 初始化后应只在目标事件注册 NotificationHook。"""
+ engine = WorkflowEngine
+ target_events = {
+ "execution_completed",
+ "execution_failed",
+ "node_waiting_approval",
+ }
+ for event in target_events:
+ hooks = engine.hooks._hooks[event]
+ assert any(isinstance(hook, NotificationHook) for hook in hooks), (
+ f"NotificationHook 未注册到 {event}"
+ )
+ for event in set(HookManager.EVENTS) - target_events:
+ hooks = engine.hooks._hooks[event]
+ assert not any(isinstance(hook, NotificationHook) for hook in hooks), (
+ f"NotificationHook 不应注册到 {event}"
+ )
+@pytest.fixture
+def scheduler_project(db):
+ return Project.objects.create(
+ name="Scheduler Event Test Project",
+ description="Scheduler terminal event semantics tests",
+ )
+@pytest.fixture
+def scheduler_single_node_workflow(db, scheduler_project):
+ workflow = Workflow.objects.create(
+ name="Scheduler Single Node Workflow",
+ project=scheduler_project,
+ trigger_type="manual",
+ )
+ WorkflowNode.objects.create(
+ workflow=workflow,
+ node_type="manual_trigger",
+ name="Start",
+ position_x=0,
+ position_y=0,
+ )
+ return workflow
+@pytest.fixture
+def scheduler_failing_workflow(db, scheduler_project):
+ workflow = Workflow.objects.create(
+ name="Scheduler Failing Workflow",
+ project=scheduler_project,
+ trigger_type="manual",
+ )
+ trigger_node = WorkflowNode.objects.create(
+ workflow=workflow,
+ node_type="manual_trigger",
+ name="Start",
+ position_x=0,
+ position_y=0,
+ )
+ broken_node = WorkflowNode.objects.create(
+ workflow=workflow,
+ node_type="nonexistent_node_type",
+ name="Broken Node",
+ position_x=200,
+ position_y=0,
+ )
+ WorkflowEdge.objects.create(
+ workflow=workflow,
+ source_node=trigger_node,
+ target_node=broken_node,
+ source_handle="default",
+ target_handle="default",
+ )
+ return workflow
+@pytest.mark.asyncio
+@pytest.mark.django_db(transaction=True)
+class TestSchedulerTerminalEvents:
+ """失败/成功终态事件语义回归测试。"""
+ async def test_start_execution_dag_validation_error_triggers_failed_event_once(
+ self,
+ scheduler_single_node_workflow,
+ ) -> None:
+ engine = WorkflowEngine
+ events: list[str] =
+ async def capture_event(event: str, **kwargs) -> None:
+ del kwargs
+ events.append(event)
+ fake_dag = SimpleNamespace(
+ nodes={},
+ validate=lambda: ["dag invalid for test"],
+ )
+ with (
+ patch.object(engine.hooks, "trigger", new=AsyncMock(side_effect=capture_event)),
+ patch(
+ "workflows.engine.scheduler.DAG.afrom_workflow",
+ new=AsyncMock(return_value=fake_dag),
+ ),
+ ):
+ execution = await engine.start_execution(
+ workflow=scheduler_single_node_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.FAILED
+ assert events.count("execution_failed") == 1
+ assert "execution_completed" not in events
+ async def test_run_execution_with_failed_nodes_emits_execution_failed_only(
+ self,
+ scheduler_failing_workflow,
+ ) -> None:
+ engine = WorkflowEngine
+ events: list[str] =
+ async def capture_event(event: str, **kwargs) -> None:
+ del kwargs
+ events.append(event)
+ with patch.object(engine.hooks, "trigger", new=AsyncMock(side_effect=capture_event)):
+ execution = await engine.start_execution(
+ workflow=scheduler_failing_workflow,
+ input_data={},
+ trigger_type="manual",
+ run_sync=True,
+ )
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.FAILED
+ assert events.count("execution_failed") == 1
+ assert "execution_completed" not in events
+ async def test_check_execution_complete_failed_state_emits_execution_failed(
+ self,
+ scheduler_single_node_workflow,
+ ) -> None:
+ engine = WorkflowEngine
+ events: list[str] =
+ node = await WorkflowNode.objects.filter(workflow=scheduler_single_node_workflow).afirst
+ assert node is not None
+ execution = await WorkflowExecution.objects.acreate(
+ workflow=scheduler_single_node_workflow,
+ project=scheduler_single_node_workflow.project,
+ trigger_type="manual",
+ status=ExecutionStatus.RUNNING,
+ )
+ await NodeExecution.objects.acreate(
+ workflow_execution=execution,
+ node=node,
+ status=NodeExecutionStatus.FAILED,
+ error_message="test failure",
+ )
+ async def capture_event(event: str, **kwargs) -> None:
+ del kwargs
+ events.append(event)
+ with patch.object(engine.hooks, "trigger", new=AsyncMock(side_effect=capture_event)):
+ await engine._check_execution_complete(execution)
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.FAILED
+ assert events.count("execution_failed") == 1
+ assert "execution_completed" not in events
+ async def test_check_execution_complete_success_emits_execution_completed(
+ self,
+ scheduler_single_node_workflow,
+ ) -> None:
+ engine = WorkflowEngine
+ events: list[str] =
+ node = await WorkflowNode.objects.filter(workflow=scheduler_single_node_workflow).afirst
+ assert node is not None
+ execution = await WorkflowExecution.objects.acreate(
+ workflow=scheduler_single_node_workflow,
+ project=scheduler_single_node_workflow.project,
+ trigger_type="manual",
+ status=ExecutionStatus.RUNNING,
+ )
+ await NodeExecution.objects.acreate(
+ workflow_execution=execution,
+ node=node,
+ status=NodeExecutionStatus.COMPLETED,
+ output_data={"ok": True},
+ )
+ async def capture_event(event: str, **kwargs) -> None:
+ del kwargs
+ events.append(event)
+ with patch.object(engine.hooks, "trigger", new=AsyncMock(side_effect=capture_event)):
+ await engine._check_execution_complete(execution)
+ await execution.arefresh_from_db
+ assert execution.status == ExecutionStatus.COMPLETED
+ assert events.count("execution_completed") == 1
+ assert "execution_failed" not in events
