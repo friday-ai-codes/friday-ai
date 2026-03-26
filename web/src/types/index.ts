@@ -624,7 +624,6 @@ export interface OIDCProvider {
  scopes: string
  is_active: boolean
  has_secret: boolean
- masked_secret: string | null
  created_at: string
  updated_at: string
 }

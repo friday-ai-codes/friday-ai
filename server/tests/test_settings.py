@@ -28,8 +28,8 @@ class TestSettingsListCreate:
  assert response.data["has_value"] is True
  assert response.data["is_encrypted"] is False
  assert response.data["description"] == "测试设置描述"
- def test_create_encrypted_setting(self, authenticated_admin_client, urls):
- """测试创建加密的系统设置。"""
+ def test_create_setting_always_plaintext(self, authenticated_admin_client, urls):
+ """测试创建设置总是明文存储（加密已禁用）。"""
  setting_data = {
  "key": "anthropic_api_key",
  "value": "sk-ant-test-key-12345",
@@ -40,7 +40,8 @@ class TestSettingsListCreate:
  assert response.status_code == status.HTTP_201_CREATED
  assert response.data["key"] == "anthropic_api_key"
  assert response.data["has_value"] is True
- assert response.data["is_encrypted"] is True
+ assert response.data["is_encrypted"] is False
+ assert response.data["value"] == "sk-ant-test-key-12345"
  def test_create_duplicate_setting(self, authenticated_admin_client, urls):
  """测试创建重复的设置键返回错误。"""
  setting_data = {
@@ -121,27 +122,24 @@ class TestSettingsDetail:
  response = authenticated_admin_client.delete(urls.settings_detail("nonexistent_key"))
  assert response.status_code == status.HTTP_404_NOT_FOUND
 # ============================================================================
-# 加密设置测试
+# 明文设置测试（加密已禁用）
 # ============================================================================
 @pytest.mark.django_db
-class TestSettingsEncryption:
- """加密设置测试。"""
- def test_encrypted_setting_masked_in_list(self, authenticated_admin_client, urls):
- """测试加密设置在列表中返回遮罩值。"""
- # 创建加密设置
+class TestSettingsPlainText:
+ """设置值明文存储和回显测试。"""
+ def test_setting_value_visible_in_list(self, authenticated_admin_client, urls):
+ """测试设置值在列表中直接可见。"""
  setting_data = {
- "key": "masked_api_key",
+ "key": "visible_api_key",
  "value": "sk-test-placeholder",
- "is_encrypted": True,
+ "is_encrypted": False,
  }
  response = authenticated_admin_client.post(urls.settings_list, setting_data, format="json")
  assert response.status_code == status.HTTP_201_CREATED
- # 列出设置，检查遮罩值
  list_response = authenticated_admin_client.get(urls.settings_list)
  assert list_response.status_code == status.HTTP_200_OK
- masked_setting = next((s for s in list_response.data if s["key"] == "masked_api_key"), None)
- assert masked_setting is not None
- assert masked_setting["has_value"] is True
- assert masked_setting["is_encrypted"] is True
- # 加密设置返回遮罩值
- assert masked_setting.get("masked_value") is not None or masked_setting.get("value") is None
+ setting = next((s for s in list_response.data if s["key"] == "visible_api_key"), None)
+ assert setting is not None
+ assert setting["has_value"] is True
+ assert setting["is_encrypted"] is False
+ assert setting["value"] == "sk-test-placeholder"

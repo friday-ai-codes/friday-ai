@@ -47,13 +47,13 @@ def trigger_log_with_error(db, project):
 def feishu_urls:
  """Feishu 相关 URL。"""
  class FeishuURLs:
- logs_list = "/api/feishu/logs"
+ logs_list = "/api/feishu/logs/"
  @staticmethod
  def logs_detail(log_id):
- return f"/api/feishu/logs/{log_id}"
+ return f"/api/feishu/logs/{log_id}/"
  @staticmethod
  def logs_raw(log_id):
- return f"/api/feishu/logs/{log_id}/raw"
+ return f"/api/feishu/logs/{log_id}/raw/"
  return FeishuURLs
 # ============================================================================
 # TriggerLog List Tests

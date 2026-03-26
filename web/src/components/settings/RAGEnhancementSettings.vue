@@ -45,7 +45,7 @@ async function loadSettings {
  const getValue = (key: SettingKey) => settings.value.find(s => s.key === key)?.value || ''
  const getMasked = (key: SettingKey) => {
  const setting = settings.value.find(s => s.key === key)
- return setting?.has_value ? setting.masked_value || '': ''
+ return setting?.has_value ? setting.value || '': ''
  }
  hybridEnabled.value = getValue(SettingKey.HYBRID_SEARCH_ENABLED) === 'true'
  hybridAlpha.value = getValue(SettingKey.HYBRID_SEARCH_ALPHA) || '0.7'

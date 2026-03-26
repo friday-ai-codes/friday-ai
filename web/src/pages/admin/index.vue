@@ -103,9 +103,9 @@ async function loadSettings {
  else {
  gitProxyValue.value = ''
  }
- // API Key 使用遮罩值显示
- if (apiKeySetting?.has_value && apiKeySetting.masked_value) {
- apiKeyValue.value = apiKeySetting.masked_value
+ // API Key 直接显示值
+ if (apiKeySetting?.has_value && apiKeySetting.value) {
+ apiKeyValue.value = apiKeySetting.value
  }
  else {
  apiKeyValue.value = ''
@@ -124,8 +124,8 @@ async function loadSettings {
  else {
  feishuAppIdValue.value = ''
  }
- if (feishuAppSecretSetting?.has_value && feishuAppSecretSetting.masked_value) {
- feishuAppSecretValue.value = feishuAppSecretSetting.masked_value
+ if (feishuAppSecretSetting?.has_value && feishuAppSecretSetting.value) {
+ feishuAppSecretValue.value = feishuAppSecretSetting.value
  }
  else {
  feishuAppSecretValue.value = ''

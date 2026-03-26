@@ -3,6 +3,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/friday-ai-codes/friday-ai/runner/internal/api"
@@ -54,7 +55,10 @@ func runRegister(cmd *cobra.Command, _ string) error {
 	if concurrent == 0 {
  concurrent = config.DetectConcurrent
 	}
-	// 校验 URL 格式
+	serverURL = strings.TrimRight(serverURL, "/")
+	if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
+ serverURL = "http://" + serverURL
+	}
 	if _, err:= url.ParseRequestURI(serverURL); err != nil {
  ui.Error("无效的 Server URL")
  return fmt.Errorf("无效 URL: %w", err)

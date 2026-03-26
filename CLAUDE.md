@@ -1,6 +1,6 @@
 # Claude Code 项目指令
 ## 语言要求
-**必须使用中文。** 所有回复、对话、解释、commit message、文档、注释、计划、报告一律使用中文。技术术语和代码标识符保持原文。这是最高优先级的硬性要求，无例外。
+**必须使用中文。** 所有回复、对话、解释、commit message、文档、注释、计划、报告，以及所有 `gsd / codex` 工作流过程回复一律使用中文。技术术语和代码标识符保持原文。这是最高优先级的硬性要求，无例外。
 ## 项目结构
 全栈 Monorepo：`web/`（Vue 3 + TypeScript + shadcn-vue + Tailwind CSS）、`server/`（Django 6.0 + DRF + Python 3.14+）
 ---

@@ -49,14 +49,25 @@ func init {
 }
 func newServiceManager(cmd *cobra.Command) (service.ServiceManager, error) {
 	system, _:= cmd.Flags.GetBool("system")
-	if system && os.Geteuid != 0 {
- ui.Error("系统级服务需要 root 权限")
- ui.Hint("sudo friday-runner service " + cmd.Name + " --system")
- return nil, fmt.Errorf("权限不足")
-	}
 	return service.New(system)
 }
+func requireRoot(cmd *cobra.Command) error {
+	if os.Geteuid != 0 {
+ system, _:= cmd.Flags.GetBool("system")
+ ui.Error("安装到 /usr/local/bin 需要 root 权限")
+ if system {
+ ui.Hint("sudo friday-runner service " + cmd.Name + " --system")
+ } else {
+ ui.Hint("sudo friday-runner service " + cmd.Name)
+ }
+ return fmt.Errorf("权限不足")
+	}
+	return nil
+}
 func runServiceInstall(cmd *cobra.Command, _ string) error {
+	if err:= requireRoot(cmd); err != nil {
+ return err
+	}
 	if !config.IsRegistered {
  ui.Error("未注册，请先注册 Runner")
  ui.Hint("friday-runner register --token <TOKEN>")
@@ -71,9 +82,11 @@ func runServiceInstall(cmd *cobra.Command, _ string) error {
  return fmt.Errorf("检查服务状态失败: %w", err)
 	}
 	if info.Installed {
- ui.Warn("服务已安装")
- ui.Hint("如需重新安装，请先执行: friday-runner service uninstall")
- return fmt.Errorf("服务已安装")
+ ui.Warn("检测到已有安装，正在重新安装...")
+ if err:= mgr.Uninstall; err != nil {
+ ui.Error(fmt.Sprintf("卸载旧服务失败: %s", err))
+ return fmt.Errorf("卸载失败: %w", err)
+ }
 	}
 	// 获取可执行文件绝对路径
 	exePath, err:= os.Executable
@@ -94,18 +107,24 @@ func runServiceInstall(cmd *cobra.Command, _ string) error {
  ui.Error(fmt.Sprintf("安装服务失败: %s", err))
  return fmt.Errorf("安装失败: %w", err)
 	}
+	system, _:= cmd.Flags.GetBool("system")
 	ui.Success("服务安装成功")
+	ui.Info(fmt.Sprintf("二进制文件: %s", service.BinInstallPath))
+	if system {
+ ui.Info(fmt.Sprintf("配置文件: %s", service.SystemConfigPath))
+ ui.Info(fmt.Sprintf("日志目录: %s", service.SystemLogDir))
+	}
 	ui.Info("Runner 将在系统启动时自动运行")
 	ui.Hint("使用 friday-runner service status 查看状态")
-	if runtime.GOOS == "linux" {
- system, _:= cmd.Flags.GetBool("system")
- if !system {
+	if runtime.GOOS == "linux" && !system {
  ui.Hint("如需在非登录状态下运行，请执行: loginctl enable-linger $USER")
- }
 	}
 	return nil
 }
 func runServiceUninstall(cmd *cobra.Command, _ string) error {
+	if err:= requireRoot(cmd); err != nil {
+ return err
+	}
 	mgr, err:= newServiceManager(cmd)
 	if err != nil {
  return err
@@ -123,6 +142,7 @@ func runServiceUninstall(cmd *cobra.Command, _ string) error {
  return fmt.Errorf("卸载失败: %w", err)
 	}
 	ui.Success("服务已卸载")
+	ui.Info(fmt.Sprintf("已移除: %s", service.BinInstallPath))
 	return nil
 }
 func runServiceStatus(cmd *cobra.Command, _ string) error {

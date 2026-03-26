@@ -43,6 +43,18 @@ func (m *systemdManager) systemctl(args ...string) (string, error) {
 	return run("systemctl", args...)
 }
 func (m *systemdManager) Install(opts InstallOptions) error {
+	installedBin, err:= InstallBinary(opts.ExePath)
+	if err != nil {
+ return err
+	}
+	configPath:= opts.ConfigPath
+	if m.system {
+ cp, err:= InstallConfig(opts.ConfigPath)
+ if err != nil {
+ return err
+ }
+ configPath = cp
+	}
 	unitPath:= m.unitPath
 	if err:= os.MkdirAll(filepath.Dir(unitPath), 0755); err != nil {
  return fmt.Errorf("创建目录失败: %w", err)
@@ -52,8 +64,8 @@ func (m *systemdManager) Install(opts InstallOptions) error {
  wantedBy = "multi-user.target"
 	}
 	data:= map[string]string{
- "ExePath": opts.ExePath,
- "ConfigPath": opts.ConfigPath,
+ "ExePath": installedBin,
+ "ConfigPath": configPath,
  "WantedBy": wantedBy,
 	}
 	var buf bytes.Buffer
@@ -75,7 +87,6 @@ func (m *systemdManager) Install(opts InstallOptions) error {
 	return nil
 }
 func (m *systemdManager) Uninstall error {
-	// 停止服务（忽略错误，可能已停止）
 	_, _ = m.systemctl("stop", unitName)
 	_, _ = m.systemctl("disable", unitName)
 	unitPath:= m.unitPath
@@ -83,6 +94,9 @@ func (m *systemdManager) Uninstall error {
  return fmt.Errorf("删除 unit 文件失败: %w", err)
 	}
 	_, _ = m.systemctl("daemon-reload")
+	if err:= RemoveBinary; err != nil {
+ return err
+	}
 	return nil
 }
 func (m *systemdManager) Status (ServiceInfo, error) {

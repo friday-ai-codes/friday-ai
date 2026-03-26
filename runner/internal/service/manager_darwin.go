@@ -40,6 +40,8 @@ var plistTemplate = template.Must(template.New("plist").Parse(`<?xml version="1.
  <string>{{ .StderrLog }}</string>
  <key>EnvironmentVariables</key>
  <dict>
+ <key>HOME</key>
+ <string>{{ .HomeDir }}</string>
  <key>PATH</key>
  <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
  </dict>
@@ -60,19 +62,38 @@ func (m *launchdManager) plistPath string {
 	return filepath.Join(home, userAgentsRelPath, plistFileName)
 }
 func (m *launchdManager) Install(opts InstallOptions) error {
+	installedBin, err:= InstallBinary(opts.ExePath)
+	if err != nil {
+ return err
+	}
+	configPath:= opts.ConfigPath
+	logDir:= opts.LogDir
+	if m.system {
+ cp, err:= InstallConfig(opts.ConfigPath)
+ if err != nil {
+ return err
+ }
+ configPath = cp
+ logDir = SystemLogDir
+	}
+	if err:= os.MkdirAll(logDir, 0755); err != nil {
+ return fmt.Errorf("创建日志目录失败: %w", err)
+	}
 	plistPath:= m.plistPath
 	if err:= os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
  return fmt.Errorf("创建目录失败: %w", err)
 	}
-	if err:= os.MkdirAll(opts.LogDir, 0755); err != nil {
- return fmt.Errorf("创建日志目录失败: %w", err)
+	home, _:= os.UserHomeDir
+	if sudoUser:= os.Getenv("SUDO_USER"); sudoUser != "" && home == "/var/root" {
+ home = filepath.Join("/Users", sudoUser)
 	}
 	data:= map[string]string{
  "Label": launchdLabel,
- "ExePath": opts.ExePath,
- "ConfigPath": opts.ConfigPath,
- "StdoutLog": filepath.Join(opts.LogDir, "friday-runner.stdout.log"),
- "StderrLog": filepath.Join(opts.LogDir, "friday-runner.stderr.log"),
+ "ExePath": installedBin,
+ "ConfigPath": configPath,
+ "HomeDir": home,
+ "StdoutLog": filepath.Join(logDir, "friday-runner.stdout.log"),
+ "StderrLog": filepath.Join(logDir, "friday-runner.stderr.log"),
 	}
 	var buf bytes.Buffer
 	if err:= plistTemplate.Execute(&buf, data); err != nil {
@@ -88,10 +109,12 @@ func (m *launchdManager) Install(opts InstallOptions) error {
 }
 func (m *launchdManager) Uninstall error {
 	plistPath:= m.plistPath
-	// 尝试停止服务，即使失败也继续删除文件
 	_, _ = run("launchctl", "unload", plistPath)
 	if err:= os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
  return fmt.Errorf("删除 plist 失败: %w", err)
+	}
+	if err:= RemoveBinary; err != nil {
+ return err
 	}
 	return nil
 }
