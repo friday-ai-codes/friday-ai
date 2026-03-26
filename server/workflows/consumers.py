@@ -8,7 +8,7 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  Clients connect to: /ws/workflow-executions/{execution_id}/
  """
  async def connect(self) -> None:
- self.execution_id = self.scope["url_route"]["kwargs"]["execution_id"] # type: ignore[typeddict-item]
+ self.execution_id = self.scope["url_route"]["kwargs"]["execution_id"]
  self.group_name = f"execution_{self.execution_id}"
  # Join execution group
  await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -30,10 +30,14 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  if msg_type == "debug_action":
  action = data.get("action")
  if action not in ("release", "skip", "mock"):
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": f"未知调试操作: {action}",
- }))
+ }
+ )
+ )
  return
  from workflows.engine.scheduler import WorkflowEngine
  success = WorkflowEngine.release_debug_node(
@@ -42,15 +46,23 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  action_data=data.get("data", {}),
  )
  if not success:
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": "调试会话不存在或已结束",
- }))
+ }
+ )
+ )
  else:
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "debug_action_ack",
  "action": action,
- }))
+ }
+ )
+ )
  elif msg_type == "set_breakpoint":
  await self._handle_breakpoint(data, action="set")
  elif msg_type == "remove_breakpoint":
@@ -61,28 +73,40 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  """处理断点设置/取消消息。"""
  node_id = data.get("node_id")
  if not node_id:
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": "缺少 node_id",
- }))
+ }
+ )
+ )
  return
  from workflows.engine.scheduler import _debug_sessions
  session = _debug_sessions.get(self.execution_id)
  if not session:
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": "调试会话不存在",
- }))
+ }
+ )
+ )
  return
  if action == "set":
  session.breakpoints.add(node_id)
  else:
  session.breakpoints.discard(node_id)
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "breakpoint_ack",
  "action": action,
  "node_id": node_id,
- }))
+ }
+ )
+ )
  logger.info(
  "debug_breakpoint_updated",
  execution_id=self.execution_id,
@@ -93,18 +117,26 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  """处理调试模式切换消息。"""
  mode = data.get("mode")
  if mode not in ("step", "breakpoint"):
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": f"无效调试模式: {mode}",
- }))
+ }
+ )
+ )
  return
  from workflows.engine.scheduler import WorkflowEngine, _debug_sessions
  session = _debug_sessions.get(self.execution_id)
  if not session:
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "error",
  "message": "调试会话不存在",
- }))
+ }
+ )
+ )
  return
  old_mode = session.debug_mode
  session.debug_mode = mode
@@ -116,17 +148,22 @@ class WorkflowExecutionConsumer(AsyncWebsocketConsumer):
  and not session.event.is_set
  ):
  WorkflowEngine.release_debug_node(
- self.execution_id, action="release",
+ self.execution_id,
+ action="release",
  )
  logger.info(
  "debug_mode_switch_auto_release",
  execution_id=self.execution_id,
  node_id=session.current_node_id,
  )
- await self.send(text_data=json.dumps({
+ await self.send(
+ text_data=json.dumps(
+ {
  "type": "debug_mode_ack",
  "mode": mode,
- }))
+ }
+ )
+ )
  logger.info(
  "debug_mode_switched",
  execution_id=self.execution_id,

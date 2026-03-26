@@ -99,7 +99,7 @@ async def create_mr_for_task(
 ) -> MRCreateResult:
  """Create MR/PR for a completed coding task."""
  log = logger.bind(task_id=str(task.id), branch=branch_name)
- repository: Repository = task.repository # type: ignore[assignment]
+ repository: Repository = task.repository
  # Get token from repository credential
  credential = getattr(repository, "credential", None)
  if not credential or not credential.encrypted_token:

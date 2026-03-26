@@ -22,7 +22,9 @@ class OptionalJWTAuthentication(JWTAuthentication):
  这样 ChatAuthPermission 才能正常根据鉴权开关决定是否放行，
  避免「开关关闭但过期 token 仍导致 401」的问题。
  """
- def authenticate(self, request): # type: ignore[override] # DRF BaseAuthentication.authenticate 方法返回类型为 optional tuple
+ def authenticate(
+ self, request
+ ): # DRF BaseAuthentication.authenticate 方法返回类型为 optional tuple
  try:
  return super.authenticate(request)
  except AuthenticationFailed:
@@ -51,11 +53,7 @@ class ChatKeyAuthentication(BaseAuthentication):
  if not setting.value:
  return None
  # 解密（如果加密存储）
- expected_key = (
- decrypt_value(setting.value)
- if setting.is_encrypted
- else setting.value
- )
+ expected_key = decrypt_value(setting.value) if setting.is_encrypted else setting.value
  # 常量时间比较，防止 timing attack
  if hmac.compare_digest(chat_key, expected_key):
  return (AnonymousUser, "chat-key")

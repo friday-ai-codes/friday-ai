@@ -65,7 +65,7 @@ class RegistrationTokenViewSet(ModelViewSet):
  return Response(response_data, status=status.HTTP_201_CREATED)
 class RunnerRegisterView(APIView):
  """Runner 注册（无认证，用 registration token）。"""
- authentication_classes: list = # type: ignore[assignment]
+ authentication_classes: list =
  permission_classes = [AllowAny]
  async def post(self, request):
  serializer = RunnerRegisterSerializer(data=request.data)
@@ -108,12 +108,14 @@ class RunnerRegisterView(APIView):
  reg_token.used_by_runner = runner
  await reg_token.asave(update_fields=["used_by_runner"])
  return Response(
- RunnerRegisterResponseSerializer({
+ RunnerRegisterResponseSerializer(
+ {
  "runner_id": runner.id,
  "runner_token": runner_token,
  "name": runner.name,
  "scope": runner.scope,
- }).data,
+ }
+ ).data,
  status=status.HTTP_201_CREATED,
  )
 class RunnerUnregisterView(APIView):
@@ -131,7 +133,8 @@ class RunnerVerifyView(APIView):
  permission_classes = [IsRunnerAuthenticated]
  async def get(self, request):
  runner = request.auth
- return Response({
+ return Response(
+ {
  "id": str(runner.id),
  "name": runner.name,
  "scope": runner.scope,
@@ -139,7 +142,8 @@ class RunnerVerifyView(APIView):
  "concurrent": runner.concurrent,
  "version": runner.version,
  "last_heartbeat": runner.last_heartbeat,
- })
+ }
+ )
 class RunnerPagination(PageNumberPagination):
  page_size = 20
  page_size_query_param = "page_size"
@@ -173,14 +177,18 @@ class RunnerViewSet(ModelViewSet):
  status="online",
  last_heartbeat__lt=stale_threshold,
  ).aupdate(status="offline", channel_name="")
- return await super.alist(request, *args, **kwargs) # type: ignore[misc]
- @action(detail=True, methods=["get"]) # type: ignore[type-var]
+ return await super.alist(request, *args, **kwargs)
+ @action(detail=True, methods=["get"])
  async def tasks(self, request: Request, pk: str | None = None) -> Response:
  """GET /api/runners/{id}/tasks/ — Runner 关联任务列表。"""
  runner = await self.aget_object
- qs = RunnerTaskAssignment.objects.filter(
+ qs = (
+ RunnerTaskAssignment.objects.filter(
  runner=runner,
- ).select_related("session").order_by("-assigned_at")
+ )
+ .select_related("session")
+ .order_by("-assigned_at")
+ )
  params = request.query_params
  if s:= params.get("status"):
  qs = qs.filter(status=s)
@@ -188,16 +196,20 @@ class RunnerViewSet(ModelViewSet):
  qs = qs.filter(assigned_at__gte=since)
  if until:= params.get("until"):
  qs = qs.filter(assigned_at__lte=until)
- page = await sync_to_async(self.paginate_queryset)(qs) # KEEP: DRF paginate_queryset 无 async API
+ page = await sync_to_async(self.paginate_queryset)(
+ qs
+ ) # KEEP: DRF paginate_queryset 无 async API
  serializer = RunnerTaskAssignmentSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)
- @action(detail=True, methods=["get"]) # type: ignore[type-var]
+ @action(detail=True, methods=["get"])
  async def logs(self, request: Request, pk: str | None = None) -> Response:
  """GET /api/runners/{id}/logs/ — Runner 事件日志。"""
  runner = await self.aget_object
  qs = RunnerEvent.objects.filter(runner=runner)
  if event_type:= request.query_params.get("event_type"):
  qs = qs.filter(event_type=event_type)
- page = await sync_to_async(self.paginate_queryset)(qs) # KEEP: DRF paginate_queryset 无 async API
+ page = await sync_to_async(self.paginate_queryset)(
+ qs
+ ) # KEEP: DRF paginate_queryset 无 async API
  serializer = RunnerEventSerializer(page, many=True)
  return self.get_paginated_response(serializer.data)

@@ -81,9 +81,7 @@ async def test_batch_create_pr_all_success -> None:
  **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
- patch(
- "workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client
- ),
+ patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
  ):
  node = CreatePRNode
  result = await node.execute(context)
@@ -135,9 +133,7 @@ async def test_batch_create_pr_partial_failure -> None:
  **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
- patch(
- "workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client
- ),
+ patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
  ):
  node = CreatePRNode
  result = await node.execute(context)
@@ -175,7 +171,7 @@ async def test_batch_create_pr_with_cross_references -> None:
  # Test cross-reference generation for first PR
  cross_ref = node._generate_cross_reference_section(
  "https://github.com/org/frontend/pull/1",
- results, # type: ignore[arg-type] # 测试模拟数据，不完全匹配函数参数类型
+ results, # 测试模拟数据，不完全匹配函数参数类型
  )
  assert "## Related PRs" in cross_ref
  assert "[backend]" in cross_ref
@@ -184,7 +180,7 @@ async def test_batch_create_pr_with_cross_references -> None:
  # Test cross-reference generation for second PR
  cross_ref2 = node._generate_cross_reference_section(
  "https://gitlab.com/org/backend/-/merge_requests/2",
- results, # type: ignore[arg-type] # 测试模拟数据，不完全匹配函数参数类型
+ results, # 测试模拟数据，不完全匹配函数参数类型
  )
  assert "[frontend]" in cross_ref2
  assert "https://github.com/org/frontend/pull/1" in cross_ref2
@@ -222,9 +218,7 @@ async def test_batch_create_pr_cross_reference_disabled -> None:
  **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
- patch(
- "workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client
- ),
+ patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
  ):
  node = CreatePRNode
  result = await node.execute(context)
@@ -264,9 +258,7 @@ async def test_batch_create_pr_backward_compat -> None:
  **{"return_value.afirst": AsyncMock(return_value=credential)},
  ),
  patch("workflows.nodes.git.pr.decrypt_value", return_value="decrypted_token"),
- patch(
- "workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client
- ),
+ patch("workflows.nodes.git.pr.get_git_platform_client", return_value=mock_client),
  ):
  node = CreatePRNode
  result = await node.execute(context)

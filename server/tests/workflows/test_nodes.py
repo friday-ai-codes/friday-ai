@@ -128,7 +128,7 @@ class TestManualTriggerNode:
  registry = NodeRegistry
  node_class = registry.get("manual_trigger")
  # Use class attribute instead of removed get_output_ports method
- output_ports = node_class.outputs # type: ignore[union-attr]
+ output_ports = node_class.outputs
  assert len(output_ports) >= 1
 # ============================================================================
 # Condition Node Tests
@@ -158,7 +158,7 @@ class TestConditionNode:
  ],
  "default_branch": "else",
  }
- output_ports = node_class.get_dynamic_outputs(sample_config) # type: ignore[union-attr]
+ output_ports = node_class.get_dynamic_outputs(sample_config)
  # Should have at least branch_0 and default (else) outputs
  assert len(output_ports) >= 2
 # ============================================================================
@@ -179,7 +179,7 @@ class TestApprovalNode:
  registry = NodeRegistry
  node_class = registry.get("human_approval")
  # Use class attribute instead of removed get_output_ports method
- output_ports = node_class.outputs # type: ignore[union-attr]
+ output_ports = node_class.outputs
  port_names = [p.name for p in output_ports]
  assert "approved" in port_names or "default" in port_names
 # ============================================================================
@@ -200,7 +200,7 @@ class TestHTTPRequestNode:
  registry = NodeRegistry
  node_class = registry.get("http_request")
  # Use class attribute instead of removed get_config_schema method
- schema = node_class.config_schema # type: ignore[union-attr]
+ schema = node_class.config_schema
  # Should have URL in config
  assert schema is not None
 # ============================================================================

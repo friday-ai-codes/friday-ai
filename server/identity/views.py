@@ -34,51 +34,39 @@ class OIDCProviderListView(APIView):
  async def get(self, request: object) -> Response:
  """列出所有 OIDC Provider。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  providers_qs = OIDCProvider.objects.all.order_by("created_at")
- providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[arg-type,call-arg] # Django QuerySet 转 sync list 的类型推断限制
+ providers: list[OIDCProvider] = await sync_to_async(list)(
+ providers_qs
+ ) # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderSerializer(providers, many=True)
  return Response(serializer.data)
  async def post(self, request: object) -> Response:
  """创建 OIDC Provider。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  serializer = OIDCProviderSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  provider = await sync_to_async(serializer.save)
  logger.info("oidc_provider_created", provider_id=str(provider.id), name=provider.name)
- return Response(
- OIDCProviderSerializer(provider).data, status=status.HTTP_201_CREATED
- )
+ return Response(OIDCProviderSerializer(provider).data, status=status.HTTP_201_CREATED)
 class OIDCProviderDetailView(APIView):
  """OIDC Provider 详情、更新、删除（仅超级管理员）。"""
  async def get(self, request: object, pk: str) -> Response:
  """获取 Provider 详情。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  provider = await OIDCProvider.objects.filter(pk=pk).afirst
  if not provider:
- return Response(
- {"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND
- )
+ return Response({"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND)
  return Response(OIDCProviderSerializer(provider).data)
  async def put(self, request: object, pk: str) -> Response:
  """更新 Provider。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  provider = await OIDCProvider.objects.filter(pk=pk).afirst
  if not provider:
- return Response(
- {"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND
- )
+ return Response({"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND)
  serializer = OIDCProviderSerializer(provider, data=request.data, partial=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  updated = await sync_to_async(serializer.save)
@@ -87,14 +75,10 @@ class OIDCProviderDetailView(APIView):
  async def delete(self, request: object, pk: str) -> Response:
  """删除 Provider。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  provider = await OIDCProvider.objects.filter(pk=pk).afirst
  if not provider:
- return Response(
- {"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND
- )
+ return Response({"detail": "Provider 不存在"}, status=status.HTTP_404_NOT_FOUND)
  await provider.adelete
  logger.info("oidc_provider_deleted", provider_id=str(pk))
  return Response(status=status.HTTP_204_NO_CONTENT)
@@ -103,9 +87,7 @@ class OIDCDiscoveryView(APIView):
  async def post(self, request: object) -> Response:
  """从 issuer_url 获取 OIDC 端点配置。"""
  if not request.user.is_authenticated or not request.user.is_superuser:
- return Response(
- {"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN
- )
+ return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  serializer = OIDCDiscoverySerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  issuer_url = serializer.validated_data["issuer_url"]
@@ -120,7 +102,9 @@ class OIDCProviderPublicListView(APIView):
  async def get(self, request: object) -> Response:
  """返回所有活跃 Provider 的 id + name。"""
  providers_qs = OIDCProvider.objects.filter(is_active=True).order_by("name")
- providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[arg-type,call-arg] # Django QuerySet 转 sync list 的类型推断限制
+ providers: list[OIDCProvider] = await sync_to_async(list)(
+ providers_qs
+ ) # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderPublicSerializer(providers, many=True)
  return Response(serializer.data)
 # =============================================================================
@@ -131,9 +115,7 @@ class OIDCAuthorizeView(APIView):
  permission_classes = [AllowAny]
  async def get(self, request: object, provider_id: str) -> Response:
  """生成 Provider 授权 URL 并设置 state cookie。"""
- provider = await OIDCProvider.objects.filter(
- id=provider_id, is_active=True
- ).afirst
+ provider = await OIDCProvider.objects.filter(id=provider_id, is_active=True).afirst
  if not provider:
  logger.warning(
  "oidc_authorize_provider_not_found",
@@ -147,11 +129,13 @@ class OIDCAuthorizeView(APIView):
  state_value = secrets.token_urlsafe(32)
  redirect_uri = request.query_params.get("redirect_uri", "/")
  # 签名 state 数据
- signed_state = signing.dumps({
+ signed_state = signing.dumps(
+ {
  "state": state_value,
  "redirect_uri": redirect_uri,
  "provider_id": str(provider.id),
- })
+ }
+ )
  # 构造授权 URL
  callback_url = build_callback_url(request)
  authorize_url = build_authorize_url(provider, state_value, callback_url)
@@ -243,7 +227,7 @@ class OIDCCallbackView(APIView):
  user, is_new = await jit_provision_user(provider, userinfo)
  # 签发 simplejwt token
  refresh = await sync_to_async(RefreshToken.for_user)(user)
- refresh["sub"] = str(user.id) # type: ignore[index] # JWT refresh token 字典动态索引，类型系统无法推断
+ refresh["sub"] = str(user.id) # JWT refresh token 字典动态索引，类型系统无法推断
  access_token = str(refresh.access_token)
  # 构造前端回调 URL
  frontend_redirect = state_data.get("redirect_uri", "/")

@@ -12,12 +12,12 @@ class TestCryptoService:
  """Test encrypting empty value."""
  from common.encryption import encrypt_value
  assert encrypt_value("") == ""
- assert encrypt_value(None) is None # type: ignore[arg-type] # 测试故意传入 None 值的边界情况
+ assert encrypt_value(None) is None # 测试故意传入 None 值的边界情况
  def test_decrypt_empty_value(self):
  """Test decrypting empty value."""
  from common.encryption import decrypt_value
  assert decrypt_value("") == ""
- assert decrypt_value(None) is None # type: ignore[arg-type] # 测试故意传入 None 值的边界情况
+ assert decrypt_value(None) is None # 测试故意传入 None 值的边界情况
  def test_encrypt_special_characters(self):
  """Test encrypting values with special characters."""
  from common.encryption import decrypt_value, encrypt_value

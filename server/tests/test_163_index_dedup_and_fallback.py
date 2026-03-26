@@ -20,12 +20,11 @@ class TestFileIndexDedup(TransactionTestCase):
  file_path="src/main.py",
  defaults={"file_hash": f"hash_{i}"},
  )
- assert FileIndex.objects.filter(
- repository_id=self.repo_id, file_path="src/main.py"
- ).count == 1
- record = FileIndex.objects.get(
- repository_id=self.repo_id, file_path="src/main.py"
+ assert (
+ FileIndex.objects.filter(repository_id=self.repo_id, file_path="src/main.py").count
+ == 1
  )
+ record = FileIndex.objects.get(repository_id=self.repo_id, file_path="src/main.py")
  # 最后一次写入的 hash
  assert record.file_hash == "hash_2"
  def test_unique_constraint_prevents_duplicates(self) -> None:
@@ -85,20 +84,35 @@ class TestShallowCloneFallback(TransactionTestCase):
  def _make_repo_mock(self) -> Repository:
  """返回一个预设了 credential 缓存的 repo 实例，避免同步 DB 查询。"""
  # 通过 Django 内部缓存机制避免 getattr 触发同步 DB 访问
- self.repo._state.fields_cache["credential"] = None # type: ignore[attr-defined]
+ self.repo._state.fields_cache["credential"] = None
  return self.repo
  @pytest.mark.asyncio
  async def test_shallow_clone_git_diff_fails_fallback_to_full(self) -> None:
  """shallow clone 环境 git diff 失败时回退到 run_full_index。"""
  from services.indexer import clone_and_index_repository
- mock_full_result = {"status": "success", "files_processed": 5, "chunks_indexed": 10, "added": 5}
+ mock_full_result = {
+ "status": "success",
+ "files_processed": 5,
+ "chunks_indexed": 10,
+ "added": 5,
+ }
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"
+ ),
  patch("services.indexer._fetch_commit", new_callable=AsyncMock, return_value=True),
  patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True),
- patch("services.indexer.IndexerService.run_git_diff_index", new_callable=AsyncMock) as mock_diff,
- patch("services.indexer.IndexerService.run_full_index", new_callable=AsyncMock, return_value=mock_full_result) as mock_full,
- patch("services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock) as mock_incr,
+ patch(
+ "services.indexer.IndexerService.run_git_diff_index", new_callable=AsyncMock
+ ) as mock_diff,
+ patch(
+ "services.indexer.IndexerService.run_full_index",
+ new_callable=AsyncMock,
+ return_value=mock_full_result,
+ ) as mock_full,
+ patch(
+ "services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock
+ ) as mock_incr,
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
  patch("os.path.exists", return_value=True),
@@ -125,14 +139,32 @@ class TestShallowCloneFallback(TransactionTestCase):
  async def test_non_shallow_git_diff_fails_fallback_to_incremental(self) -> None:
  """非 shallow clone 环境 git diff 失败时回退到 run_incremental_index。"""
  from services.indexer import GitDiffError, clone_and_index_repository
- mock_incr_result = {"status": "success", "added": 1, "updated": 0, "deleted": 0, "skipped": 3}
+ mock_incr_result = {
+ "status": "success",
+ "added": 1,
+ "updated": 0,
+ "deleted": 0,
+ "skipped": 3,
+ }
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"
+ ),
  patch("services.indexer._fetch_commit", new_callable=AsyncMock, return_value=True),
  patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=False),
- patch("services.indexer.IndexerService.run_git_diff_index", new_callable=AsyncMock, side_effect=GitDiffError("diff failed")),
- patch("services.indexer.IndexerService.run_full_index", new_callable=AsyncMock) as mock_full,
- patch("services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock, return_value=mock_incr_result) as mock_incr,
+ patch(
+ "services.indexer.IndexerService.run_git_diff_index",
+ new_callable=AsyncMock,
+ side_effect=GitDiffError("diff failed"),
+ ),
+ patch(
+ "services.indexer.IndexerService.run_full_index", new_callable=AsyncMock
+ ) as mock_full,
+ patch(
+ "services.indexer.IndexerService.run_incremental_index",
+ new_callable=AsyncMock,
+ return_value=mock_incr_result,
+ ) as mock_incr,
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
  patch("os.path.exists", return_value=True),
@@ -155,13 +187,26 @@ class TestShallowCloneFallback(TransactionTestCase):
  async def test_fetch_fails_shallow_fallback_to_full(self) -> None:
  """git fetch 失败 + shallow clone 时回退到 run_full_index。"""
  from services.indexer import clone_and_index_repository
- mock_full_result = {"status": "success", "files_processed": 3, "chunks_indexed": 6, "added": 3}
+ mock_full_result = {
+ "status": "success",
+ "files_processed": 3,
+ "chunks_indexed": 6,
+ "added": 3,
+ }
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_123"
+ ),
  patch("services.indexer._fetch_commit", new_callable=AsyncMock, return_value=False),
  patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True),
- patch("services.indexer.IndexerService.run_full_index", new_callable=AsyncMock, return_value=mock_full_result) as mock_full,
- patch("services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock) as mock_incr,
+ patch(
+ "services.indexer.IndexerService.run_full_index",
+ new_callable=AsyncMock,
+ return_value=mock_full_result,
+ ) as mock_full,
+ patch(
+ "services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock
+ ) as mock_incr,
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
  patch("os.path.exists", return_value=True),
@@ -189,13 +234,28 @@ class TestShallowCloneFallback(TransactionTestCase):
  status=IndexHistoryStatus.RUNNING,
  )
  history_id = str(history.id)
- mock_full_result = {"status": "success", "files_processed": 2, "chunks_indexed": 4, "added": 2}
+ mock_full_result = {
+ "status": "success",
+ "files_processed": 2,
+ "chunks_indexed": 4,
+ "added": 2,
+ }
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_456"),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_456"
+ ),
  patch("services.indexer._fetch_commit", new_callable=AsyncMock, return_value=True),
  patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True),
- patch("services.indexer.IndexerService.run_git_diff_index", new_callable=AsyncMock, side_effect=GitDiffError("fatal: bad object")),
- patch("services.indexer.IndexerService.run_full_index", new_callable=AsyncMock, return_value=mock_full_result),
+ patch(
+ "services.indexer.IndexerService.run_git_diff_index",
+ new_callable=AsyncMock,
+ side_effect=GitDiffError("fatal: bad object"),
+ ),
+ patch(
+ "services.indexer.IndexerService.run_full_index",
+ new_callable=AsyncMock,
+ return_value=mock_full_result,
+ ),
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
  patch("os.path.exists", return_value=True),
@@ -220,14 +280,30 @@ class TestShallowCloneFallback(TransactionTestCase):
  async def test_normal_git_diff_no_fallback(self) -> None:
  """非 shallow clone 正常 git diff 成功时不触发回退。"""
  from services.indexer import clone_and_index_repository
- mock_diff_result = {"status": "success", "added": 1, "updated": 0, "deleted": 0, "renamed": 0}
+ mock_diff_result = {
+ "status": "success",
+ "added": 1,
+ "updated": 0,
+ "deleted": 0,
+ "renamed": 0,
+ }
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_789"),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="new_sha_789"
+ ),
  patch("services.indexer._fetch_commit", new_callable=AsyncMock, return_value=True),
  patch("services.indexer._is_shallow_clone", new_callable=AsyncMock) as mock_shallow,
- patch("services.indexer.IndexerService.run_git_diff_index", new_callable=AsyncMock, return_value=mock_diff_result) as mock_diff,
- patch("services.indexer.IndexerService.run_full_index", new_callable=AsyncMock) as mock_full,
- patch("services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock) as mock_incr,
+ patch(
+ "services.indexer.IndexerService.run_git_diff_index",
+ new_callable=AsyncMock,
+ return_value=mock_diff_result,
+ ) as mock_diff,
+ patch(
+ "services.indexer.IndexerService.run_full_index", new_callable=AsyncMock
+ ) as mock_full,
+ patch(
+ "services.indexer.IndexerService.run_incremental_index", new_callable=AsyncMock
+ ) as mock_incr,
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
  patch("os.path.exists", return_value=True),

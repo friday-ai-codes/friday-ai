@@ -288,7 +288,7 @@ class ChatStreamView(APIView):
  },
  tags=["Conversations"],
  )
- async def post(self, request, conversation_id): # type: ignore[override]
+ async def post(self, request, conversation_id):
  """发送消息并以 SSE 流式返回 AI 回复。"""
  serializer = SendMessageSerializer(data=request.data)
  if not serializer.is_valid:
@@ -365,7 +365,7 @@ class ChatInterruptView(APIView):
  },
  tags=["Conversations"],
  )
- async def post(self, request, conversation_id): # type: ignore[override]
+ async def post(self, request, conversation_id):
  """中断活跃对话。"""
  from .conversation_service import get_active_runner
  runner = get_active_runner(str(conversation_id))
