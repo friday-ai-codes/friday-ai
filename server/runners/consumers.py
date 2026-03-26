@@ -482,7 +482,7 @@ AUTH_TIMEOUT = 5
 async def _broadcast_monitor_event(
  channel_layer: object, event_type: str, runner_id: uuid.UUID, data: dict
 ) -> None:
- await channel_layer.group_send(
+ await channel_layer.group_send( # type: ignore[attr-defined]
  MONITOR_GROUP,
  {
  "type": "monitor.event",

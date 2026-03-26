@@ -36,9 +36,7 @@ class OIDCProviderListView(APIView):
  if not request.user.is_authenticated or not request.user.is_superuser:
  return Response({"detail": "仅超级管理员可访问"}, status=status.HTTP_403_FORBIDDEN)
  providers_qs = OIDCProvider.objects.all.order_by("created_at")
- providers: list[OIDCProvider] = await sync_to_async(list)(
- providers_qs
- ) # Django QuerySet 转 sync list 的类型推断限制
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[call-arg] # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderSerializer(providers, many=True)
  return Response(serializer.data)
  async def post(self, request: object) -> Response:
@@ -102,9 +100,7 @@ class OIDCProviderPublicListView(APIView):
  async def get(self, request: object) -> Response:
  """返回所有活跃 Provider 的 id + name。"""
  providers_qs = OIDCProvider.objects.filter(is_active=True).order_by("name")
- providers: list[OIDCProvider] = await sync_to_async(list)(
- providers_qs
- ) # Django QuerySet 转 sync list 的类型推断限制
+ providers: list[OIDCProvider] = await sync_to_async(list)(providers_qs) # type: ignore[call-arg] # Django QuerySet 转 sync list 的类型推断限制
  serializer = OIDCProviderPublicSerializer(providers, many=True)
  return Response(serializer.data)
 # =============================================================================
