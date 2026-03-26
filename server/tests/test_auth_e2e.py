@@ -59,12 +59,12 @@ class TestAuthE2EFlow:
  def test_permission_check_admin_access(self, api_client, admin_user, urls):
  """超级管理员可访问管理端点。"""
  api_client.force_authenticate(user=admin_user)
- response = api_client.get("/api/auth/users")
+ response = api_client.get("/api/auth/users/")
  assert response.status_code == status.HTTP_200_OK
  def test_permission_check_normal_user_denied(self, api_client, user, urls):
  """普通用户无法访问管理端点。"""
  api_client.force_authenticate(user=user)
- response = api_client.get("/api/auth/users")
+ response = api_client.get("/api/auth/users/")
  assert response.status_code == status.HTTP_403_FORBIDDEN
  def test_project_role_based_access(
  self, api_client, user, member_user, viewer_user, project, project_memberships
@@ -72,7 +72,7 @@ class TestAuthE2EFlow:
  """不同项目角色的权限验证（通过 /me 接口确认角色）。"""
  # admin 角色
  api_client.force_authenticate(user=user)
- response = api_client.get("/api/auth/me")
+ response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
  memberships = response.data.get("project_memberships", )
  admin_m = next((m for m in memberships if m["project_id"] == str(project.id)), None)
@@ -80,7 +80,7 @@ class TestAuthE2EFlow:
  assert admin_m["role"] == "admin"
  # viewer 角色
  api_client.force_authenticate(user=viewer_user)
- response = api_client.get("/api/auth/me")
+ response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
  memberships = response.data.get("project_memberships", )
  viewer_m = next((m for m in memberships if m["project_id"] == str(project.id)), None)
@@ -223,7 +223,7 @@ class TestOIDCE2EFlow:
  """权限变更后 /me 接口反映最新角色。"""
  api_client.force_authenticate(user=user)
  # 初始无 membership
- response = api_client.get("/api/auth/me")
+ response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
  assert len(response.data.get("project_memberships", )) == 0
  # 添加 membership
@@ -231,7 +231,7 @@ class TestOIDCE2EFlow:
  user=user, project=project, role=ProjectRole.ADMIN
  )
  # /me 应该反映新角色
- response = api_client.get("/api/auth/me")
+ response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
  memberships = response.data.get("project_memberships", )
  assert len(memberships) == 1
