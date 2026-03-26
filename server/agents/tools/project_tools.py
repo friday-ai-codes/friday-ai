@@ -127,10 +127,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  },
  )
  # Use async for M2M project query
- projects = [
- {"id": str(p.id), "name": p.name}
- async for p in repo.projects.all # type: ignore[attr-defined]
- ]
+ projects = [{"id": str(p.id), "name": p.name} async for p in repo.projects.all]
  logger.info(
  "get_repository_info_success",
  repository_id=repository_id,
@@ -257,7 +254,8 @@ async def search_repository_code(
  },
  )
  project_repo_ids = [
- str(rid) async for rid in Repository.objects.filter(
+ str(rid)
+ async for rid in Repository.objects.filter(
  projects=project,
  is_deleted=False,
  index_status="indexed",

@@ -12,16 +12,29 @@ class RegistrationTokenCreateSerializer(serializers.Serializer):
  run_untagged = serializers.BooleanField(required=False, default=True)
  is_paused = serializers.BooleanField(required=False, default=False)
  is_protected = serializers.BooleanField(required=False, default=False)
- max_timeout = serializers.IntegerField(required=False, allow_null=True, default=None, min_value=600)
+ max_timeout = serializers.IntegerField(
+ required=False, allow_null=True, default=None, min_value=600
+ )
 class RegistrationTokenSerializer(serializers.ModelSerializer):
  is_valid = serializers.BooleanField(read_only=True)
  project_id = serializers.UUIDField(read_only=True, allow_null=True)
  class Meta:
  model = RegistrationToken
  fields = [
- "id", "description", "scope", "project_id",
- "tags", "run_untagged", "is_paused", "is_protected", "max_timeout",
- "is_used", "used_at", "expires_at", "created_at", "is_valid",
+ "id",
+ "description",
+ "scope",
+ "project_id",
+ "tags",
+ "run_untagged",
+ "is_paused",
+ "is_protected",
+ "max_timeout",
+ "is_used",
+ "used_at",
+ "expires_at",
+ "created_at",
+ "is_valid",
  ]
  read_only_fields = fields
 class RunnerRegisterSerializer(serializers.Serializer):
@@ -46,29 +59,50 @@ class RunnerTaskAssignmentSerializer(serializers.ModelSerializer):
  class Meta:
  model = RunnerTaskAssignment
  fields = [
- "id", "session_id", "task_type", "session_status",
- "repo_url", "assigned_at", "status", "completed_at",
+ "id",
+ "session_id",
+ "task_type",
+ "session_status",
+ "repo_url",
+ "assigned_at",
+ "status",
+ "completed_at",
  ]
 class RunnerSerializer(serializers.ModelSerializer):
  current_task_list = serializers.SerializerMethodField
  class Meta:
  model = Runner
  fields = [
- "id", "name", "token_prefix", "scope", "concurrent",
- "status", "version", "is_active", "is_paused", "is_protected",
- "run_untagged", "max_timeout", "description",
- "last_heartbeat", "ip_address", "registered_at", "tags",
- "current_tasks", "current_task_list",
+ "id",
+ "name",
+ "token_prefix",
+ "scope",
+ "concurrent",
+ "status",
+ "version",
+ "is_active",
+ "is_paused",
+ "is_protected",
+ "run_untagged",
+ "max_timeout",
+ "description",
+ "last_heartbeat",
+ "ip_address",
+ "registered_at",
+ "tags",
+ "current_tasks",
+ "current_task_list",
  ]
  read_only_fields = fields
  def get_current_task_list(self, obj: Runner) -> list[dict[str, Any]]:
  qs = RunnerTaskAssignment.objects.filter(
- runner=obj, status__in=["assigned", "running"],
+ runner=obj,
+ status__in=["assigned", "running"],
  ).select_related("session")
  request = self.context.get("request")
  if request and "current_tasks" in request.query_params.get("expand", ""):
- return RunnerTaskAssignmentSerializer(qs, many=True).data # type: ignore[return-value]
- return RunnerTaskBriefSerializer(qs, many=True).data # type: ignore[return-value]
+ return RunnerTaskAssignmentSerializer(qs, many=True).data
+ return RunnerTaskBriefSerializer(qs, many=True).data
 class RunnerEventSerializer(serializers.ModelSerializer):
  class Meta:
  model = RunnerEvent

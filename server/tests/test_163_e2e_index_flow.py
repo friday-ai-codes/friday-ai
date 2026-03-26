@@ -21,7 +21,7 @@ class TestManualTriggerFullFlow(TransactionTestCase):
  self.repo_id = str(self.repo.id)
  def _make_repo_mock(self) -> Repository:
  """预设 credential 缓存避免同步 DB 查询。"""
- self.repo._state.fields_cache["credential"] = None # type: ignore[attr-defined]
+ self.repo._state.fields_cache["credential"] = None
  return self.repo
  @pytest.mark.asyncio
  async def test_manual_trigger_full_flow(self) -> None:
@@ -33,18 +33,38 @@ class TestManualTriggerFullFlow(TransactionTestCase):
  upserted_points.extend(points)
  return True
  # 模拟搜索：从 upserted_points 中返回匹配结果
- def mock_search(repo_id: str, query_embedding: list, top_k: int = 10, filters: dict | None = None) -> list:
+ def mock_search(
+ repo_id: str, query_embedding: list, top_k: int = 10, filters: dict | None = None
+ ) -> list:
  results =
  for pt in upserted_points[:top_k]:
  results.append({"score": 0.95, "payload": pt["payload"]})
  return results
  fake_embedding = [0.1] * 128
  with (
- patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="abc123head"),
- patch("services.indexer.qdrant_create_collection", new_callable=AsyncMock, return_value=True),
- patch("services.indexer.qdrant_get_stored_file_hashes", new_callable=AsyncMock, return_value={}),
- patch("services.indexer.qdrant_upsert_vectors", new_callable=AsyncMock, side_effect=mock_upsert),
- patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock, return_value=[fake_embedding]),
+ patch(
+ "services.indexer._get_head_sha", new_callable=AsyncMock, return_value="abc123head"
+ ),
+ patch(
+ "services.indexer.qdrant_create_collection",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "services.indexer.qdrant_get_stored_file_hashes",
+ new_callable=AsyncMock,
+ return_value={},
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors",
+ new_callable=AsyncMock,
+ side_effect=mock_upsert,
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ new_callable=AsyncMock,
+ return_value=[fake_embedding],
+ ),
  patch("services.indexer.scan_directory", return_value=["/tmp/fake_clone/src/main.py"]),
  patch("services.indexer.CodeParser.parse_file") as mock_parse,
  patch("services.indexer.SystemSetting") as mock_setting_cls,
@@ -195,11 +215,29 @@ class TestIncrementalIndexFlow(TransactionTestCase):
  upserted_points.extend(points)
  return True
  with (
- patch("services.indexer.scan_directory", return_value=["/tmp/repo/src/a.py", "/tmp/repo/src/b.py"]),
- patch("services.indexer.compute_file_hash", side_effect=lambda fp: "hash_a_v2" if "a.py" in fp else "hash_b_v1"),
- patch("services.indexer.qdrant_delete_by_file_path", new_callable=AsyncMock, return_value=True),
- patch("services.indexer.qdrant_upsert_vectors", new_callable=AsyncMock, side_effect=mock_upsert),
- patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock, return_value=[fake_embedding]),
+ patch(
+ "services.indexer.scan_directory",
+ return_value=["/tmp/repo/src/a.py", "/tmp/repo/src/b.py"],
+ ),
+ patch(
+ "services.indexer.compute_file_hash",
+ side_effect=lambda fp: "hash_a_v2" if "a.py" in fp else "hash_b_v1",
+ ),
+ patch(
+ "services.indexer.qdrant_delete_by_file_path",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors",
+ new_callable=AsyncMock,
+ side_effect=mock_upsert,
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ new_callable=AsyncMock,
+ return_value=[fake_embedding],
+ ),
  patch("services.indexer.update_index_progress", new_callable=AsyncMock),
  patch("services.indexer.update_write_progress", new_callable=AsyncMock),
  patch("services.indexer.CodeParser.parse_file") as mock_parse,

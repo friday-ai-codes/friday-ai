@@ -59,7 +59,7 @@ def create_post_tool_use_hook(
  context: HookContext,
  ) -> HookOutput:
  # 从 input_data 提取字段（PostToolUseHookInput 是 TypedDict）
- data: dict[str, Any] = dict(input_data) # type: ignore[arg-type]
+ data: dict[str, Any] = dict(input_data)
  tool_name: str = data.get("tool_name", "")
  tool_input: dict[str, Any] = data.get("tool_input", {})
  tool_response: Any = data.get("tool_response")
@@ -116,7 +116,7 @@ def create_post_tool_use_hook(
  "tool_use_result_event_failed",
  tool_name=tool_name,
  )
- return {} # type: ignore[return-value]
+ return {}
  return hook
 def create_stop_hook(
  session: AgentSession,
@@ -145,5 +145,5 @@ def create_stop_hook(
  "session_update_failed",
  session_id=session.session_id,
  )
- return {} # type: ignore[return-value]
+ return {}
  return hook

@@ -39,11 +39,13 @@ class TestSSEFieldContract:
  def test_text_delta_fields(self) -> None:
  """text_delta 事件必须包含 'text' 字段（而非 'delta'）。"""
  adapter = EventAdapter(model="claude-sonnet-4-20250514", session_id="contract-text")
- stream_event = _make_stream_event({
+ stream_event = _make_stream_event(
+ {
  "type": "content_block_delta",
  "index": 0,
  "delta": {"type": "text_delta", "text": "Hello"},
- })
+ }
+ )
  events = adapter.adapt(stream_event)
  assert len(events) == 1
  event = events[0]
@@ -57,7 +59,8 @@ class TestSSEFieldContract:
  def test_tool_use_start_fields(self) -> None:
  """tool_use_start 事件必须包含 tool_name, tool_call_id。"""
  adapter = EventAdapter(model="claude-sonnet-4-20250514", session_id="contract-tool-start")
- stream_event = _make_stream_event({
+ stream_event = _make_stream_event(
+ {
  "type": "content_block_start",
  "index": 1,
  "content_block": {
@@ -65,7 +68,8 @@ class TestSSEFieldContract:
  "id": "toolu_01abc",
  "name": "search_code",
  },
- })
+ }
+ )
  events = adapter.adapt(stream_event)
  assert len(events) == 1
  event = events[0]
@@ -78,7 +82,9 @@ class TestSSEFieldContract:
  assert isinstance(event.data["tool_call_id"], str)
  assert event.data["tool_call_id"] == "toolu_01abc"
  # 旧字段名不应存在
- assert "tool_use_id" not in event.data, f"tool_use_start 仍包含旧字段 'tool_use_id': {event.data}"
+ assert "tool_use_id" not in event.data, (
+ f"tool_use_start 仍包含旧字段 'tool_use_id': {event.data}"
+ )
  @pytest.mark.django_db
  async def test_tool_use_result_fields(self) -> None:
  """tool_use_result 事件必须包含 tool_name, tool_call_id, success。"""
@@ -100,7 +106,7 @@ class TestSSEFieldContract:
  "tool_use_id": "toolu_02xyz",
  }
  mock_context = MagicMock
- await hook(input_data, "toolu_02xyz", mock_context) # type: ignore[arg-type]
+ await hook(input_data, "toolu_02xyz", mock_context)
  # 验证 TOOL_USE_RESULT 事件
  result_events = [e for e in captured_events if e.type == TOOL_USE_RESULT]
  assert len(result_events) == 1
@@ -113,7 +119,9 @@ class TestSSEFieldContract:
  assert "success" in event.data, f"tool_use_result 缺少 'success': {event.data}"
  assert isinstance(event.data["success"], bool)
  # 旧字段名不应存在
- assert "tool_use_id" not in event.data, f"tool_use_result 仍包含旧字段 'tool_use_id': {event.data}"
+ assert "tool_use_id" not in event.data, (
+ f"tool_use_result 仍包含旧字段 'tool_use_id': {event.data}"
+ )
  def test_message_complete_fields(self) -> None:
  """message_complete 事件必须包含 result（来自 adapter），
  ConversationService 会补充 usage, status, iterations, model。"""
@@ -131,11 +139,13 @@ class TestSSEFieldContract:
  """thinking 事件必须包含 'thinking' 字段。"""
  adapter = EventAdapter(model="claude-sonnet-4-20250514", session_id="contract-thinking")
  # thinking_delta 事件
- stream_event = _make_stream_event({
+ stream_event = _make_stream_event(
+ {
  "type": "content_block_delta",
  "index": 0,
  "delta": {"type": "thinking_delta", "thinking": "让我思考一下..."},
- })
+ }
+ )
  events = adapter.adapt(stream_event)
  assert len(events) == 1
  event = events[0]

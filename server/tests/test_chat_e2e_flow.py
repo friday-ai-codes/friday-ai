@@ -37,7 +37,7 @@ async def _read_streaming_body(resp) -> str:
  需要通过异步迭代 streaming_content 读取。
  """
  chunks: list[str] =
- async for chunk in resp: # type: ignore[union-attr]
+ async for chunk in resp:
  if isinstance(chunk, bytes):
  chunks.append(chunk.decode("utf-8"))
  else:
@@ -58,9 +58,7 @@ def _make_mock_stream(events: list[AgentEvent]):
  return mock_send_message_stream
 def _parse_sse_data_lines(body: str) -> list[dict]:
  """从 SSE 响应体中提取所有 data 行并解析为 JSON。"""
- data_lines = [
- line for line in body.split("\n") if line.startswith("data: ")
- ]
+ data_lines = [line for line in body.split("\n") if line.startswith("data: ")]
  return [json.loads(line[len("data: "):]) for line in data_lines]
 # ============================================================================
 # Fixtures

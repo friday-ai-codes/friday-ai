@@ -58,7 +58,9 @@ class SdkRunnerConfig:
  api_key: str = ""
  max_turns: int = 15
  timeout_seconds: float = 300.0 # 5 分钟
- permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = "bypassPermissions"
+ permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = (
+ "bypassPermissions"
+ )
  queue_maxsize: int = 200
  # 15 秒间隔低于主流浏览器（Chrome/Firefox/Safari）默认的网络超时阈值
  # （通常 60-120 秒），确保长对话不因浏览器超时而断连
@@ -103,20 +105,14 @@ class SDKAgentRunner:
  """
  usage: dict[str, int] = {}
  # 尝试获取 model_usage（Python 命名风格）或 modelUsage（JS 风格）
- model_usage = getattr(message, "model_usage", None) or getattr(
- message, "modelUsage", None
- )
+ model_usage = getattr(message, "model_usage", None) or getattr(message, "modelUsage", None)
  if model_usage and isinstance(model_usage, dict):
  total_input = 0
  total_output = 0
  for _model_name, entry in model_usage.items:
  if isinstance(entry, dict):
- total_input += entry.get("inputTokens", 0) or entry.get(
- "input_tokens", 0
- )
- total_output += entry.get("outputTokens", 0) or entry.get(
- "output_tokens", 0
- )
+ total_input += entry.get("inputTokens", 0) or entry.get("input_tokens", 0)
+ total_output += entry.get("outputTokens", 0) or entry.get("output_tokens", 0)
  else:
  # entry 可能是 dataclass / namedtuple
  total_input += getattr(entry, "input_tokens", 0) or getattr(
@@ -186,7 +182,7 @@ class SDKAgentRunner:
  options_kwargs["max_thinking_tokens"] = self._config.max_thinking_tokens
  if self._config.max_budget_usd is not None:
  options_kwargs["max_budget_usd"] = self._config.max_budget_usd
- options = ClaudeAgentOptions(**options_kwargs) # type: ignore[arg-type]
+ options = ClaudeAgentOptions(**options_kwargs)
  # 6. 事件适配器
  adapter = EventAdapter(
  model=self._config.model,
@@ -210,9 +206,7 @@ class SDKAgentRunner:
  pass
  # 检测 ResultMessage，构建 AgentResult（含 cost 数据）
  if hasattr(message, "result") and not hasattr(message, "event"):
- result_text = (
- str(message.result) if message.result else ""
- )
+ result_text = str(message.result) if message.result else ""
  # 提取 cost 数据
  cost_usd = getattr(message, "total_cost_usd", None) or 0
  usage = self._extract_usage(message)
@@ -238,14 +232,16 @@ class SDKAgentRunner:
  )
  # 向队列发送 message_complete 事件，通知前端中断已完成
  try:
- event_queue.put_nowait(AgentEvent(
+ event_queue.put_nowait(
+ AgentEvent(
  type=MESSAGE_COMPLETE,
  data={
  "status": "interrupted",
  "usage": {},
  "model": self._config.model,
  },
- ))
+ )
+ )
  except asyncio.QueueFull:
  pass
  except Exception as e:

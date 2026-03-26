@@ -212,9 +212,11 @@ async def _resolve_notification_chat_id(session: SubAgentSession) -> str:
  # 从 node_execution 获取
  if session.node_execution_id:
  from workflows.models.execution import NodeExecution
- ne = await NodeExecution.objects.select_related("node").filter(
- pk=session.node_execution_id
- ).afirst
+ ne = (
+ await NodeExecution.objects.select_related("node")
+ .filter(pk=session.node_execution_id)
+ .afirst
+ )
  if ne and ne.node and ne.node.config:
  return ne.node.config.get("chat_id", "")
  return ""
@@ -241,7 +243,7 @@ class ContainerCallbackView(APIView):
  使用 CONTAINER_CALLBACK_TOKEN 进行身份验证。
  """
  permission_classes = [AllowAny]
- async def post(self, request): # type: ignore[override]
+ async def post(self, request):
  # 1. 反序列化 + 基础验证
  serializer = CallbackSerializer(data=request.data)
  if not serializer.is_valid:
@@ -325,7 +327,9 @@ async def _handle_completed(
  _schedule_agent_session_resume(session, log)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
-async def _handle_failed(session: SubAgentSession, payload: dict[str, Any], log: BoundLogger) -> Response:
+async def _handle_failed(
+ session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
+) -> Response:
  """处理 failed 回调 — 标记失败，通知，恢复 workflow/agent。
  Phase: Runner 端独立处理重试，Server 端不再重试。
  """

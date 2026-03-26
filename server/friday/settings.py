@@ -51,7 +51,9 @@ if IS_PRODUCTION:
  if not SECRET_KEY or SECRET_KEY == INSECURE_SECRET_KEY:
  raise ImproperlyConfigured("Production mode requires a non-default SECRET_KEY")
  if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:
- raise ImproperlyConfigured("Production mode requires explicit ALLOWED_HOSTS (wildcard not allowed)")
+ raise ImproperlyConfigured(
+ "Production mode requires explicit ALLOWED_HOSTS (wildcard not allowed)"
+ )
 # =============================================================================
 # Application definition
 # =============================================================================
@@ -158,9 +160,7 @@ WEBSOCKET_REQUIRE_TLS = env.bool("WEBSOCKET_REQUIRE_TLS", IS_PRODUCTION)
 # 注意：使用 PostgreSQL 需安装 psycopg[binary]
 # 使用 MySQL/MariaDB 需安装 mysqlclient
 DEFAULT_DATABASE_URL = f"sqlite:///{DATA_DIR / 'friday.db'}"
-DATABASES = {
- "default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL) # type: ignore[arg-type] # django-environ library typing issue
-}
+DATABASES = {"default": env.db("DATABASE_URL", default=DEFAULT_DATABASE_URL)}
 # =============================================================================
 # Custom User Model
 # =============================================================================

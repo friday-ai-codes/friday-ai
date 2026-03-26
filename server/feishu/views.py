@@ -167,7 +167,11 @@ class CardCallbackView(APIView):
  if isinstance(form_value, dict) and isinstance(action_value_dict, dict):
  action_value_dict = {**action_value_dict, **form_value}
  # Extract action name for routing (string used for prefix matching)
- action_name = action_value_dict.get("action", "") if isinstance(action_value_dict, dict) else str(action_value_dict)
+ action_name = (
+ action_value_dict.get("action", "")
+ if isinstance(action_value_dict, dict)
+ else str(action_value_dict)
+ )
  message_id = data.get("open_message_id", "")
  user_open_id = data.get("open_id", "")
  chat_id = data.get("open_chat_id", "")
@@ -364,7 +368,9 @@ class IMMessageWebhookView(APIView):
  message_id=normalized_message.message_id,
  sender_open_id=normalized_message.sender_open_id,
  msg_type=normalized_message.message_type,
- content_preview=normalized_message.normalized_text[:50] if normalized_message.normalized_text else "",
+ content_preview=normalized_message.normalized_text[:50]
+ if normalized_message.normalized_text
+ else "",
  )
  # 保留旧队列以兼容 Phase 调试能力
  message_record = {
@@ -380,10 +386,20 @@ class IMMessageWebhookView(APIView):
  _im_message_queue.pop(0)
  _im_message_queue.append(message_record)
  dispatch_result = await dispatch_inbound_message(normalized_message)
- response_status = "ok" if dispatch_result.status in {"bot_message_accepted", "resume_agent"} else dispatch_result.status
+ response_status = (
+ "ok"
+ if dispatch_result.status in {"bot_message_accepted", "resume_agent"}
+ else dispatch_result.status
+ )
  if dispatch_result.status == "ignored" and not normalized_message.chat_type:
  response_status = "ok"
- return Response({"status": response_status, "result": dispatch_result.status, "reason": dispatch_result.reason})
+ return Response(
+ {
+ "status": response_status,
+ "result": dispatch_result.status,
+ "reason": dispatch_result.reason,
+ }
+ )
 def get_pending_messages(chat_id: str | None = None) -> list[dict[str, Any]]:
  """获取待处理的消息队列 (供 Phase 使用)。
  Args:
@@ -484,7 +500,12 @@ class FeishuWebhookView(APIView):
  # Mark as processed — DB 级别
  if event_uuid:
  await mark_event_processed_db(event_uuid)
- logger.info("webhook_event_processing", event_type=event_type, project_key=project_key, event_uuid=event_uuid)
+ logger.info(
+ "webhook_event_processing",
+ event_type=event_type,
+ project_key=project_key,
+ event_uuid=event_uuid,
+ )
  # Handle event and create trigger log
  work_item_id = payload.get("id")
  work_item_name = payload.get("name", "")
@@ -607,7 +628,12 @@ class FeishuWebhookView(APIView):
  return
  cur_state_key = cur_status.get("state_key", "")
  pre_state_key = pre_status.get("state_key", "")
- logger.info("workitem_status_changed", work_item_id=work_item_id, from_state=pre_state_key, to_state=cur_state_key)
+ logger.info(
+ "workitem_status_changed",
+ work_item_id=work_item_id,
+ from_state=pre_state_key,
+ to_state=cur_state_key,
+ )
  await self._fetch_and_update_work_item(project, work_item_id, work_item_type, trigger_log)
  await self._check_and_resume_suspended_workflows(
  project=project,
@@ -621,7 +647,9 @@ class FeishuWebhookView(APIView):
  status_change_type = payload.get("status_change_type", "")
  if not work_item_id:
  return
- logger.info("workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type)
+ logger.info(
+ "workflow_node_status", work_item_id=work_item_id, status_change_type=status_change_type
+ )
  async def _handle_workitem_comment(self, project, payload, trigger_log):
  """处理工作项评论事件。"""
  work_item_id = payload.get("id")
@@ -634,7 +662,12 @@ class FeishuWebhookView(APIView):
  is_approved = any(kw in comment_lower for kw in approval_keywords)
  is_rejected = any(kw in comment_lower for kw in rejection_keywords)
  if is_approved or is_rejected:
- logger.info("workitem_comment_approval", work_item_id=work_item_id, approved=is_approved, rejected=is_rejected)
+ logger.info(
+ "workitem_comment_approval",
+ work_item_id=work_item_id,
+ approved=is_approved,
+ rejected=is_rejected,
+ )
  from feishu.approval import FeishuApprovalHandler
  handler = FeishuApprovalHandler
  try:
@@ -668,7 +701,9 @@ class FeishuWebhookView(APIView):
  changed_fields = payload.get("changed_fields", ) or
  if not work_item_id:
  return
- logger.info("workitem_fields_updated", work_item_id=work_item_id, field_count=len(changed_fields))
+ logger.info(
+ "workitem_fields_updated", work_item_id=work_item_id, field_count=len(changed_fields)
+ )
  await self._check_and_resume_suspended_workflows(
  project=project,
  work_item_id=str(work_item_id),
@@ -737,9 +772,7 @@ class FeishuWebhookView(APIView):
  except Exception as e:
  logger.warning("work_item_fields_fetch_failed", error=str(e))
  return {}
- async def _resume_node_execution(
- self, subscription, matched_fields: dict
- ) -> None:
+ async def _resume_node_execution(self, subscription, matched_fields: dict) -> None:
  """恢复节点执行"""
  from django.utils import timezone
  from workflows.engine.scheduler import WorkflowEngine
@@ -754,17 +787,13 @@ class FeishuWebhookView(APIView):
  node_execution.output_data = {
  "matched": True,
  "field_value": matched_fields,
- "wait_duration": (
- timezone.now - subscription.created_at
- ).total_seconds,
+ "wait_duration": (timezone.now - subscription.created_at).total_seconds,
  }
  await node_execution.asave(update_fields=["status", "completed_at", "output_data"])
  workflow_execution.completed_nodes += 1
  await workflow_execution.asave(update_fields=["completed_nodes"])
  engine = WorkflowEngine
- await engine._continue_after_node(
- workflow_execution, node_execution
- )
+ await engine._continue_after_node(workflow_execution, node_execution)
  logger.info(
  "node_resumed",
  node_execution_id=str(node_execution.id),
@@ -972,7 +1001,7 @@ class TriggerLogRetryView(APIView):
  mock_http_request.method = "POST"
  mock_http_request._body = raw_request_body.encode("utf-8")
  mock_http_request.content_type = "application/json"
- mock_request = Request(mock_http_request) # type: ignore[call-arg]
+ mock_request = Request(mock_http_request)
  try:
  response = await webhook_view.post(mock_request)
  return Response(

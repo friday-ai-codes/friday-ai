@@ -82,9 +82,7 @@ class ProjectViewSet(ModelViewSet):
  async def list_repositories(self, request, pk=None):
  """List repositories associated with the project."""
  project = await self.aget_object
- repositories = project.repositories.filter(is_deleted=False).select_related(
- "credential"
- )
+ repositories = project.repositories.filter(is_deleted=False).select_related("credential")
  serializer = RepositorySerializer([r async for r in repositories], many=True)
  return Response(serializer.data)
  @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
@@ -490,7 +488,9 @@ class ProjectRepositoryListCreateView(APIView):
  project = await aget_object_or_404(Project, id=project_id)
  # 权限：viewer+ 可查看
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.VIEWER,
+ request.user,
+ project,
+ ProjectRole.VIEWER,
  )
  if not has_access:
  return Response(
@@ -509,21 +509,24 @@ class ProjectRepositoryListCreateView(APIView):
  project = await aget_object_or_404(Project, id=project_id)
  # 权限：admin+ 可创建
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.ADMIN,
+ request.user,
+ project,
+ ProjectRole.ADMIN,
  )
  if not has_access:
  return Response(
  {"detail": "仅项目管理员可管理仓库关联"},
  status=status.HTTP_403_FORBIDDEN,
  )
- serializer = ProjectRepositoryCreateSerializer(data=request.data) # type: ignore[attr-defined]
+ serializer = ProjectRepositoryCreateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  repository_ids: list[str] = serializer.validated_data["repository_ids"]
  created: list[dict[str, object]] =
  skipped: list[str] =
  for repo_id in repository_ids:
  repo = await Repository.objects.filter(
- id=repo_id, is_deleted=False,
+ id=repo_id,
+ is_deleted=False,
  ).afirst
  if repo is None:
  logger.warning("repo_not_found_skip", repo_id=str(repo_id))
@@ -557,7 +560,9 @@ class ProjectRepositoryDetailView(APIView):
  async def _check_admin(self, request: object, project: Project) -> Response | None:
  """检查 admin 权限，无权返回 403 Response，有权返回 None。"""
  has_access = await sync_to_async(PermissionService.has_project_access)(
- request.user, project, ProjectRole.ADMIN,
+ request.user,
+ project,
+ ProjectRole.ADMIN,
  )
  if not has_access:
  return Response(
@@ -572,7 +577,7 @@ class ProjectRepositoryDetailView(APIView):
  if denied:
  return denied
  link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
- serializer = ProjectRepositoryUpdateSerializer(data=request.data) # type: ignore[attr-defined]
+ serializer = ProjectRepositoryUpdateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  link.permission_level = serializer.validated_data["permission_level"]
  await link.asave(update_fields=["permission_level"])

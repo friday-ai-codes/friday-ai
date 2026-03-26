@@ -46,7 +46,9 @@ class TaskDispatcher:
  runner.channel_name,
  {
  "type": "runner.message",
- "message": make_request(MessageType.TASK_ASSIGN, {
+ "message": make_request(
+ MessageType.TASK_ASSIGN,
+ {
  "task_id": task.task_id,
  "task_type": task.task_type,
  "image": task.image,
@@ -58,20 +60,29 @@ class TaskDispatcher:
  "session_id": task.session_id,
  "metadata": task.metadata,
  "remote_tools": remote_tools,
- }),
+ },
+ ),
  },
  )
  await self._increment_tasks(runner)
  await self._create_assignment(runner, task)
  self._log.info("task_dispatched", task_id=task.task_id, runner=str(runner.id))
- await channel_layer.group_send("runner_monitor", {
+ await channel_layer.group_send(
+ "runner_monitor",
+ {
  "type": "monitor.event",
  "data": {
  "event": "task.status_changed",
  "runner_id": str(runner.id),
- "data": {"task_id": task.task_id, "session_id": task.session_id, "status": "assigned", "task_type": task.task_type},
+ "data": {
+ "task_id": task.task_id,
+ "session_id": task.session_id,
+ "status": "assigned",
+ "task_type": task.task_type,
  },
- })
+ },
+ },
+ )
  await self._log_dispatch_event(runner, task)
  return True
  return False
@@ -84,15 +95,18 @@ class TaskDispatcher:
  last_heartbeat__lt=stale_threshold,
  ).aupdate(status="offline", channel_name="")
  runners = [
- r async for r in Runner.objects.filter(
- status="online", is_active=True, is_paused=False,
+ r
+ async for r in Runner.objects.filter(
+ status="online",
+ is_active=True,
+ is_paused=False,
  ).exclude(channel_name="")
  ]
  tag_set = set(tags)
  matched = [r for r in runners if tag_set.issubset(set(r.tags))]
  matched.sort(key=lambda r: r.current_tasks)
  return matched
- async def _increment_tasks(self, runner) -> None: # type: ignore[no-untyped-def]
+ async def _increment_tasks(self, runner) -> None:
  from django.db import models as db_models
  from runners.models import Runner
  await Runner.objects.filter(id=runner.id).aupdate(

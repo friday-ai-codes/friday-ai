@@ -21,7 +21,7 @@ def _make_context(
  input_data=input_data or {},
  workflow_context={},
  previous_outputs={},
- workflow_execution=workflow_execution, # type: ignore[arg-type]
+ workflow_execution=workflow_execution,
  )
  return ctx
 def _mock_im_service(
@@ -193,12 +193,15 @@ async def test_chat_question_node_returns_waiting_event -> None:
  )
  mock_im_client = AsyncMock
  mock_im_client.send_card = AsyncMock(return_value="msg_12345")
- with patch(
+ with (
+ patch(
  "workflows.nodes.integrations.chat_question.FeishuIMClient",
  return_value=mock_im_client,
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question._get_feishu_credentials",
  return_value=("app_id", "app_secret"),
+ ),
  ):
  result = await node.execute(ctx)
  assert result.status == "waiting_event"
@@ -251,15 +254,19 @@ async def test_chat_question_node_passes_mention_user_id -> None:
  ctx.node_execution = mock_ne
  mock_im_client = AsyncMock
  mock_im_client.send_card = AsyncMock(return_value="msg_m1")
- with patch(
+ with (
+ patch(
  "workflows.nodes.integrations.chat_question.FeishuIMClient",
  return_value=mock_im_client,
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question._get_feishu_credentials",
  return_value=("app_id", "app_secret"),
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
- ) as mock_sub_cls:
+ ) as mock_sub_cls,
+ ):
  mock_sub_cls.objects.acreate = AsyncMock
  result = await node.execute(ctx)
  assert result.output["mention_user_id"] == "ou_mention_test"
@@ -289,15 +296,19 @@ async def test_chat_question_node_creates_event_subscription -> None:
  ctx.node_execution = mock_ne
  mock_im_client = AsyncMock
  mock_im_client.send_card = AsyncMock(return_value="msg_s1")
- with patch(
+ with (
+ patch(
  "workflows.nodes.integrations.chat_question.FeishuIMClient",
  return_value=mock_im_client,
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question._get_feishu_credentials",
  return_value=("app_id", "app_secret"),
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
- ) as mock_sub_cls:
+ ) as mock_sub_cls,
+ ):
  mock_sub_cls.objects.acreate = AsyncMock
  result = await node.execute(ctx)
  assert result.status == "waiting_event"
@@ -349,15 +360,19 @@ async def test_chat_question_node_output_includes_rounds_info -> None:
  ctx.node_execution = mock_ne
  mock_im_client = AsyncMock
  mock_im_client.send_card = AsyncMock(return_value="msg_r1")
- with patch(
+ with (
+ patch(
  "workflows.nodes.integrations.chat_question.FeishuIMClient",
  return_value=mock_im_client,
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question._get_feishu_credentials",
  return_value=("app_id", "app_secret"),
- ), patch(
+ ),
+ patch(
  "workflows.nodes.integrations.chat_question.WorkflowEventSubscription",
- ) as mock_sub_cls:
+ ) as mock_sub_cls,
+ ):
  mock_sub_cls.objects.acreate = AsyncMock
  result = await node.execute(ctx)
  assert result.output["max_rounds"] == 3

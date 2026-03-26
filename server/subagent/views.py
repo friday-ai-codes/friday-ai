@@ -17,12 +17,18 @@ class ExecutionContextPagination(PageNumberPagination):
  page_size = 20
  page_size_query_param = "page_size"
  max_page_size = 100
-class ExecutionContextViewSet(ModelViewSet): # type: ignore[type-arg]
+class ExecutionContextViewSet(ModelViewSet):
  """ExecutionContext 完整 CRUD + 批量导出。"""
  queryset = ExecutionContext.objects.select_related("session").order_by("-created_at")
  permission_classes = [IsAuthenticated]
  pagination_class = ExecutionContextPagination
- def get_serializer_class(self) -> type[ExecutionContextDetailSerializer | ExecutionContextListSerializer | ExecutionContextWriteSerializer]:
+ def get_serializer_class(
+ self,
+ ) -> type[
+ ExecutionContextDetailSerializer
+ | ExecutionContextListSerializer
+ | ExecutionContextWriteSerializer
+ ]:
  if self.action == "retrieve":
  return ExecutionContextDetailSerializer
  if self.action in ("create", "update", "partial_update"):
@@ -44,7 +50,7 @@ class ExecutionContextViewSet(ModelViewSet): # type: ignore[type-arg]
  if params.get("has_failure") == "true":
  qs = qs.exclude(session__failure_reason="")
  return qs
- @action(detail=False, methods=["post"]) # type: ignore[type-var]
+ @action(detail=False, methods=["post"])
  async def export(self, request: Request) -> Response:
  """批量导出执行上下文（JSON 格式）。"""
  ids = request.data.get("ids")

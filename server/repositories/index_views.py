@@ -26,10 +26,8 @@ def _acquire_index_lock(repository_id: str) -> Repository | None:
  """尝试获取仓库索引 DB 锁。返回 None 表示已被其他进程持有（skip_locked）。"""
  with transaction.atomic:
  try:
- return (
- Repository.objects
- .select_for_update(skip_locked=True)
- .get(id=repository_id, is_deleted=False)
+ return Repository.objects.select_for_update(skip_locked=True).get(
+ id=repository_id, is_deleted=False
  )
  except Repository.DoesNotExist:
  return None
@@ -303,7 +301,9 @@ class QdrantHealthView(APIView):
  api_key = decrypt_value(api_key_setting.value)
  else:
  api_key = api_key_setting.value
- health = await sync_to_async(QdrantService.health_check_with_config)(url, api_key) # KEEP: Qdrant SDK 同步限制
+ health = await sync_to_async(QdrantService.health_check_with_config)(
+ url, api_key
+ ) # KEEP: Qdrant SDK 同步限制
  return Response(health)
 class EmbeddingHealthView(APIView):
  """Check Embedding API health."""
@@ -425,12 +425,14 @@ class IndexStatsView(APIView):
  coverage = 0.0
  if total_chunks > 0:
  coverage = round(stats.get("points_count", 0) / total_chunks * 100, 1)
- return Response({
+ return Response(
+ {
  "chunks_total": stats.get("points_count", 0),
  "language_distribution": stats.get("language_distribution", {}),
  "indexed_files_count": indexed_files,
  "coverage_percent": coverage,
- })
+ }
+ )
 class RepositoryCollectionHealthView(APIView):
  """: 仓库 Qdrant 集合健康校验 API。"""
  permission_classes = [IsAuthenticated]
@@ -463,18 +465,23 @@ class IndexFreshnessView(APIView):
  except Exception as e:
  error = str(e)
  is_fresh = bool(local_sha and local_sha == remote_sha) if remote_sha else None
- return Response({
+ return Response(
+ {
  "local_sha": local_sha,
  "remote_sha": remote_sha,
  "is_fresh": is_fresh,
  "last_indexed_at": repository.last_indexed_at,
  "error": error,
- })
+ }
+ )
  @staticmethod
  async def _get_remote_head(git_url: str) -> str:
  """通过 git ls-remote 获取远端 HEAD SHA（无需 clone）。"""
  proc = await asyncio.create_subprocess_exec(
- "git", "ls-remote", git_url, "HEAD",
+ "git",
+ "ls-remote",
+ git_url,
+ "HEAD",
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
  )
@@ -496,7 +503,7 @@ class RepositoryWebhookView(APIView):
  """
  from rest_framework.permissions import AllowAny
  permission_classes = [AllowAny]
- authentication_classes: list = # type: ignore[assignment]
+ authentication_classes: list =
  async def post(self, request: Any, repository_id: str) -> Response:
  from tasks.index_trigger_tasks import (
  parse_push_event,
@@ -545,8 +552,6 @@ class RepositoryWebhookView(APIView):
  # 触发索引
  result = await trigger_auto_index(repository, "webhook", commit_sha)
  status_code = (
- status.HTTP_202_ACCEPTED
- if result["status"] == "triggered"
- else status.HTTP_200_OK
+ status.HTTP_202_ACCEPTED if result["status"] == "triggered" else status.HTTP_200_OK
  )
  return Response(result, status=status_code)

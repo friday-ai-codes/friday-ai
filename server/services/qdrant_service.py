@@ -26,7 +26,9 @@ class QdrantService:
  config = {}
  url_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_URL).afirst
  config["url"] = url_setting.value if url_setting else "http://localhost:6333"
- api_key_setting = await SystemSetting.objects.filter(key=SettingKeys.QDRANT_API_KEY).afirst
+ api_key_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.QDRANT_API_KEY
+ ).afirst
  if api_key_setting and api_key_setting.value:
  from common.encryption import decrypt_value
  config["api_key"] = decrypt_value(api_key_setting.value)
@@ -71,7 +73,9 @@ class QdrantService:
  "error": str(e),
  }
  @staticmethod
- def health_check_with_config(url: str | None = None, api_key: str | None = None) -> dict[str, Any]:
+ def health_check_with_config(
+ url: str | None = None, api_key: str | None = None
+ ) -> dict[str, Any]:
  """Check Qdrant health with provided config (before saving)."""
  try:
  client = QdrantClient(url=url or "http://localhost:6333", api_key=api_key or None)
@@ -112,7 +116,9 @@ class QdrantService:
  if isinstance(vectors_config, dict):
  # Named vectors 模式（hybrid）
  existing_hybrid = True
- existing_size = vectors_config.get("dense", models.VectorParams(size=0, distance=models.Distance.COSINE)).size # type: ignore[union-attr]
+ existing_size = vectors_config.get(
+ "dense", models.VectorParams(size=0, distance=models.Distance.COSINE)
+ ).size
  else:
  # 单向量模式（非 hybrid）
  existing_hybrid = False
@@ -240,7 +246,9 @@ class QdrantService:
  )
  return True
  except UnexpectedResponse as e:
- logger.error("update_file_path_failed", error=str(e), old_path=old_path, new_path=new_path)
+ logger.error(
+ "update_file_path_failed", error=str(e), old_path=old_path, new_path=new_path
+ )
  return False
  @classmethod
  def get_collection_stats(cls, repository_id: str) -> dict[str, Any]:
