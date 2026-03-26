@@ -62,6 +62,7 @@ def obs_execution(obs_workflow, user):
  now = timezone.now
  return WorkflowExecution.objects.create(
  workflow=obs_workflow,
+ project=obs_workflow.project,
  trigger_type="manual",
  triggered_by=user,
  status="completed",

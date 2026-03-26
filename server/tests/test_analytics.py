@@ -48,6 +48,7 @@ def sample_analytics_data(
  # 创建 5 个 WorkflowExecution（3 completed + 1 failed + 1 running）
  exec1 = WorkflowExecution.objects.create(
  workflow=analytics_workflow,
+ project=analytics_workflow.project,
  status=ExecutionStatus.COMPLETED,
  trigger_type="webhook",
  started_at=now - timedelta(days=2, hours=1),
@@ -55,6 +56,7 @@ def sample_analytics_data(
  )
  exec2 = WorkflowExecution.objects.create(
  workflow=analytics_workflow,
+ project=analytics_workflow.project,
  status=ExecutionStatus.COMPLETED,
  trigger_type="webhook",
  started_at=now - timedelta(days=1, minutes=30),
@@ -62,6 +64,7 @@ def sample_analytics_data(
  )
  exec3 = WorkflowExecution.objects.create(
  workflow=analytics_workflow,
+ project=analytics_workflow.project,
  status=ExecutionStatus.COMPLETED,
  trigger_type="manual",
  started_at=now - timedelta(hours=5),
@@ -69,6 +72,7 @@ def sample_analytics_data(
  )
  exec_failed = WorkflowExecution.objects.create(
  workflow=analytics_workflow,
+ project=analytics_workflow.project,
  status=ExecutionStatus.FAILED,
  trigger_type="webhook",
  started_at=now - timedelta(days=1, hours=2),
@@ -76,6 +80,7 @@ def sample_analytics_data(
  )
  _exec_running = WorkflowExecution.objects.create(
  workflow=analytics_workflow,
+ project=analytics_workflow.project,
  status=ExecutionStatus.RUNNING,
  trigger_type="webhook",
  started_at=now - timedelta(minutes=10),

@@ -1127,6 +1127,7 @@ class WorkflowEngine:
  # 6. 创建新执行实例
  new_execution = await WorkflowExecution.objects.acreate(
  workflow=workflow,
+ project_id=workflow.project_id,
  status=ExecutionStatus.PENDING,
  trigger_type="resume",
  triggered_by=triggered_by,

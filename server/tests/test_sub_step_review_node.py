@@ -42,6 +42,7 @@ def workflow_execution(db: None, workflow: "Workflow") -> WorkflowExecution:
  """创建测试工作流执行实例。"""
  return WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  status="running",
  )
 @pytest.fixture

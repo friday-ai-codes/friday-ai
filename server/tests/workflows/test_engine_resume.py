@@ -17,6 +17,7 @@ def paused_execution(db, user):
  )
  return WorkflowExecution.objects.create(
  workflow=workflow,
+ project=project,
  trigger_type="manual",
  triggered_by=user,
  status=ExecutionStatus.PAUSED,

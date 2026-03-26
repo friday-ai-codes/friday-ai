@@ -190,6 +190,7 @@ class TestWorkflowExecutionAPI:
  # Create an execution first
  WorkflowExecution.objects.create(
  workflow=api_workflow_with_nodes,
+ project=api_workflow_with_nodes.project,
  trigger_type="manual",
  )
  url = "/api/workflow-executions/"
@@ -199,6 +200,7 @@ class TestWorkflowExecutionAPI:
  """Test getting execution detail."""
  execution = WorkflowExecution.objects.create(
  workflow=api_workflow_with_nodes,
+ project=api_workflow_with_nodes.project,
  trigger_type="manual",
  )
  url = f"/api/workflow-executions/{execution.id}/"
@@ -498,6 +500,7 @@ class TestNodeSubStepAPI:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  triggered_by=user,
  )
@@ -601,6 +604,7 @@ class TestNodeSubStepAPI:
  )
  execution = WorkflowExecution.objects.create(
  workflow=workflow,
+ project=workflow.project,
  trigger_type="manual",
  )
  node_execution = NodeExecution.objects.create(

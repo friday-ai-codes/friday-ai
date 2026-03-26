@@ -89,6 +89,7 @@ async def _create_failed_execution(
  })
  execution = await WorkflowExecution.objects.acreate(
  workflow=workflow,
+ project=workflow.project,
  status=ExecutionStatus.FAILED,
  trigger_type="manual",
  input_data={"test": "data"},
