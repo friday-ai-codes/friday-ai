@@ -75,35 +75,35 @@ class TestInvitationAPI:
  """邀请 API 端点测试。"""
  def test_admin_can_create_invitation(self, authenticated_admin_client):
  """管理员可创建邀请令牌。"""
- resp = authenticated_admin_client.post("/api/auth/invite", {"email": "new@example.com"}, format="json")
+ resp = authenticated_admin_client.post("/api/auth/invite/", {"email": "new@example.com"}, format="json")
  assert resp.status_code == status.HTTP_201_CREATED
  assert "token" in resp.data
  assert resp.data["email"] == "new@example.com"
  def test_non_admin_cannot_create_invitation(self, authenticated_client):
  """非管理员无法创建邀请令牌。"""
- resp = authenticated_client.post("/api/auth/invite", {"email": "new@example.com"}, format="json")
+ resp = authenticated_client.post("/api/auth/invite/", {"email": "new@example.com"}, format="json")
  assert resp.status_code == status.HTTP_403_FORBIDDEN
  def test_create_invitation_without_email(self, authenticated_admin_client):
  """创建邀请令牌时邮箱可选。"""
- resp = authenticated_admin_client.post("/api/auth/invite", {}, format="json")
+ resp = authenticated_admin_client.post("/api/auth/invite/", {}, format="json")
  assert resp.status_code == status.HTTP_201_CREATED
  assert "token" in resp.data
  def test_validate_valid_invitation(self, authenticated_admin_client, invitation):
  """校验有效的邀请令牌。"""
- resp = authenticated_admin_client.get(f"/api/auth/invite?token={invitation.token}")
+ resp = authenticated_admin_client.get(f"/api/auth/invite/?token={invitation.token}")
  assert resp.status_code == status.HTTP_200_OK
  assert resp.data["token"] == invitation.token
  def test_validate_expired_invitation_returns_410(self, authenticated_admin_client, expired_invitation):
  """校验已过期的邀请令牌返回 410。"""
- resp = authenticated_admin_client.get(f"/api/auth/invite?token={expired_invitation.token}")
+ resp = authenticated_admin_client.get(f"/api/auth/invite/?token={expired_invitation.token}")
  assert resp.status_code == status.HTTP_410_GONE
  def test_validate_nonexistent_token_returns_404(self, authenticated_admin_client):
  """校验不存在的令牌返回 404。"""
- resp = authenticated_admin_client.get("/api/auth/invite?token=nonexistent-token-abc")
+ resp = authenticated_admin_client.get("/api/auth/invite/?token=nonexistent-token-abc")
  assert resp.status_code == status.HTTP_404_NOT_FOUND
  def test_accept_invitation_creates_user(self, api_client, invitation):
  """接受邀请令牌后创建新用户。"""
- resp = api_client.post("/api/auth/invite/accept", {
+ resp = api_client.post("/api/auth/invite/accept/", {
  "token": invitation.token,
  "username": "newuser",
  "password": "securepassword123",
@@ -114,7 +114,7 @@ class TestInvitationAPI:
  assert User.objects.filter(username="newuser").exists
  def test_accept_invitation_marks_it_used(self, api_client, invitation):
  """接受邀请令牌后令牌被标记为已使用。"""
- api_client.post("/api/auth/invite/accept", {
+ api_client.post("/api/auth/invite/accept/", {
  "token": invitation.token,
  "username": "newuser2",
  "password": "securepassword123",
@@ -124,7 +124,7 @@ class TestInvitationAPI:
  assert invitation.is_valid is False
  def test_accept_used_invitation_returns_410(self, api_client, used_invitation):
  """无法使用已使用的邀请令牌注册。"""
- resp = api_client.post("/api/auth/invite/accept", {
+ resp = api_client.post("/api/auth/invite/accept/", {
  "token": used_invitation.token,
  "username": "anotheruser",
  "password": "securepassword123",
@@ -138,7 +138,7 @@ class TestMeApi:
  """扩展 /me API 测试。"""
  def test_me_returns_gravatar_url(self, authenticated_client, user):
  """GET /me 返回 gravatar_url 字段。"""
- resp = authenticated_client.get("/api/auth/me")
+ resp = authenticated_client.get("/api/auth/me/")
  assert resp.status_code == status.HTTP_200_OK
  assert "gravatar_url" in resp.data
  # user 有 email=test@example.com，应有 gravatar_url
@@ -146,7 +146,7 @@ class TestMeApi:
  assert "gravatar.com/avatar/" in resp.data["gravatar_url"]
  def test_me_returns_project_memberships(self, authenticated_client, user, project_memberships):
  """GET /me 返回用户所属项目列表。"""
- resp = authenticated_client.get("/api/auth/me")
+ resp = authenticated_client.get("/api/auth/me/")
  assert resp.status_code == status.HTTP_200_OK
  assert "project_memberships" in resp.data
  assert len(resp.data["project_memberships"]) >= 1
@@ -156,7 +156,7 @@ class TestMeApi:
  assert "role" in membership
  def test_me_profile_update(self, authenticated_client, user):
  """PATCH /me/profile 更新用户显示名。"""
- resp = authenticated_client.patch("/api/auth/me/profile", {"display_name": "Updated Name"}, format="json")
+ resp = authenticated_client.patch("/api/auth/me/profile/", {"display_name": "Updated Name"}, format="json")
  assert resp.status_code == status.HTTP_200_OK
  assert resp.data["display_name"] == "Updated Name"
  user.refresh_from_db
@@ -169,19 +169,19 @@ class TestUserManagement:
  """系统用户管理 API 测试。"""
  def test_admin_can_list_users(self, authenticated_admin_client, user):
  """管理员可查看用户列表。"""
- resp = authenticated_admin_client.get("/api/auth/users")
+ resp = authenticated_admin_client.get("/api/auth/users/")
  assert resp.status_code == status.HTTP_200_OK
  assert isinstance(resp.data, list)
  usernames = [u["username"] for u in resp.data]
  assert "testuser" in usernames or user.username in usernames
  def test_non_admin_cannot_list_users(self, authenticated_client):
  """非管理员无法查看用户列表。"""
- resp = authenticated_client.get("/api/auth/users")
+ resp = authenticated_client.get("/api/auth/users/")
  assert resp.status_code == status.HTTP_403_FORBIDDEN
  def test_admin_can_disable_user(self, authenticated_admin_client, user):
  """管理员可禁用用户账号。"""
  resp = authenticated_admin_client.patch(
- f"/api/auth/users/{user.pk}",
+ f"/api/auth/users/{user.pk}/",
  {"is_active": False},
  format="json",
  )
@@ -194,7 +194,7 @@ class TestUserManagement:
  user.is_active = False
  user.save
  resp = authenticated_admin_client.patch(
- f"/api/auth/users/{user.pk}",
+ f"/api/auth/users/{user.pk}/",
  {"is_active": True},
  format="json",
  )

@@ -119,7 +119,7 @@ class TestFeishuWebhookView:
  def test_url_verification_challenge(self, api_client):
  """URL verification should return challenge."""
  response = api_client.post(
- "/api/feishu/webhook",
+ "/api/feishu/webhook/",
  data={
  "type": "url_verification",
  "challenge": "test_challenge_string",
@@ -132,7 +132,7 @@ class TestFeishuWebhookView:
  def test_missing_header_payload(self, api_client):
  """Request without header/payload should be ignored."""
  response = api_client.post(
- "/api/feishu/webhook",
+ "/api/feishu/webhook/",
  data={"some": "data"},
  format="json",
  )
