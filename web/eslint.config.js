@@ -3,7 +3,8 @@ export default antfu({
  formatters: true,
  vue: true,
  markdown: false,
- // ignores: [
- // '**/*.md',
- // ],
+ rules: {
+ 'no-console': 'warn',
+ '@typescript-eslint/no-explicit-any': 'warn',
+ },
 })
