@@ -9,6 +9,7 @@
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.test import AsyncClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -86,7 +87,7 @@ async def user_and_token(db):
  username="testuser",
  password="testpass123",
  )
- token = RefreshToken.for_user(user)
+ token = await sync_to_async(RefreshToken.for_user)(user)
  return user, str(token.access_token)
 @pytest.fixture
 def auth_headers(user_and_token):
