@@ -2,6 +2,7 @@ import type { ManualTriggerResponse, WorkflowEdgeStore, WorkflowNodeStore } from
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import client from '~/api/client'
+import { migratePortId } from '~/components/workflow/editor/utils/portConfig'
 import { getDefaultConfig as getRegistryDefaultConfig } from '~/types/workflow/registry'
 // Backend API response types (snake_case)
 export interface WorkflowNode {
@@ -111,15 +112,18 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }))
  }
  /**
- * Convert backend edges to store format
+ * Convert backend edges to store format.
+ * Normalizes old indexed port IDs (e.g. "output-0") to semantic names
+ * (e.g. "default", "approved") for backward compatibility.
  */
- function toStoreEdges(workflowEdges: WorkflowEdge): WorkflowEdgeStore {
+ function toStoreEdges(workflowEdges: WorkflowEdge, workflowNodes: WorkflowNode): WorkflowEdgeStore {
+ const nodeTypeMap = new Map(workflowNodes.map(n => [n.id, n.node_type]))
  return workflowEdges.map(edge => ({
  id: edge.id,
  source: edge.source_node,
- sourcePort: edge.source_handle,
+ sourcePort: migratePortId(edge.source_handle, nodeTypeMap.get(edge.source_node), 'output'),
  target: edge.target_node,
- targetPort: edge.target_handle,
+ targetPort: migratePortId(edge.target_handle, nodeTypeMap.get(edge.target_node), 'input'),
  label: edge.label,
  condition: edge.condition,
  }))
@@ -265,8 +269,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  const workflow = await client.get<Workflow>(`/workflows/${id}/`)
  currentWorkflow.value = workflow
  // Convert to store format
- nodes.value = toStoreNodes(workflow.nodes || )
- edges.value = toStoreEdges(workflow.edges || )
+ const apiNodes = workflow.nodes ||
+ nodes.value = toStoreNodes(apiNodes)
+ edges.value = toStoreEdges(workflow.edges ||, apiNodes)
  // Initialize history
  history.value = [{ nodes: JSON.parse(JSON.stringify(nodes.value)), edges: JSON.parse(JSON.stringify(edges.value)) }]
  historyIndex.value = 0
@@ -309,8 +314,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  })
  currentWorkflow.value = workflow
  // Update nodes and edges with server IDs
- nodes.value = toStoreNodes(workflow.nodes || )
- edges.value = toStoreEdges(workflow.edges || )
+ const savedNodes = workflow.nodes ||
+ nodes.value = toStoreNodes(savedNodes)
+ edges.value = toStoreEdges(workflow.edges ||, savedNodes)
  // Reset unsaved changes flag and clear draft
  hasUnsavedChanges.value = false
  clearDraft
