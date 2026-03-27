@@ -214,6 +214,7 @@ export const useChatStore = defineStore('chat', => {
  error.value = event.message || '未知错误'
  break
  default:
+ // eslint-disable-next-line no-console
  console.warn('[Chat] 收到未知 SSE 事件类型:', event.type, event)
  break
  }
