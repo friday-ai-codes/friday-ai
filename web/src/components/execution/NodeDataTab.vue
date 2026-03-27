@@ -161,7 +161,7 @@ const downstreamWarnings = computed( => {
  return
  const { nodes, edges } = props.workflowDefinition
  const deps = getDownstreamVarDeps(
- nodes as any,
+ nodes,
  edges,
  props.nodeExecution.node,
  )
