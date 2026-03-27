@@ -149,6 +149,17 @@ watch( => currentExecution.value?.status, (newStatus, oldStatus) => {
  }
 })
 // ----- 计算属性 -----
+/** 预执行失败：执行在节点运行前就失败（如 DAG 验证错误） */
+const isPreExecutionFailure = computed( => {
+ const exec = currentExecution.value
+ if (!exec)
+ return false
+ return exec.status === 'failed'
+ && exec.total_nodes === 0
+ && exec.completed_nodes === 0
+ && exec.failed_nodes === 0
+ && !!exec.error_message
+})
 const progress = computed( => currentExecution.value?.progress || 0)
 const duration = computed( => {
  if (!currentExecution.value?.duration)
@@ -636,7 +647,42 @@ async function handleTrigger {
  v-if="costData && isTerminalStatus(currentExecution?.status)":cost-data="costData"
  />
  </div>
- <!-- 错误信息浮层（如果有全局错误消息） -->
+ <!-- 预执行失败：居中醒目展示（DAG 验证等初始化阶段错误） -->
+ <div
+ v-if="isPreExecutionFailure"
+ class="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-sm"
+ >
+ <div class="max-w-md w-full mx-4">
+ <div class="bg-red-50 dark:bg-red-900/20 border border-red-200/60 dark:border-red-800/50 rounded-2xl shadow-xl space-y-3">
+ <div class="flex items-center gap-3">
+ <div class="shrink-0 w-10 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center">
+ <span class="icon-[lucide--alert-triangle] w-5 text-red-500" />
+ </div>
+ <div>
+ <h3 class="text-sm font-semibold text-red-700 dark:text-red-300">
+ 工作流启动失败
+ </h3>
+ <p class="text-xs text-red-500/70 dark:text-red-400/70">
+ 执行在节点运行前终止
+ </p>
+ </div>
+ </div>
+ <pre class="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap break-words bg-red-100/50 dark:bg-red-900/30 rounded-xl px-4 py-3">{{ currentExecution.error_message }}</pre>
+ <div class="flex justify-end">
+ <Button
+ variant="outline"
+ size="sm"
+ class="border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+ @click="handleRetry"
+ >
+ <span class="icon-[lucide--rotate-ccw] w-3.5 .5 mr-1.5" />
+ 重新执行
+ </Button>
+ </div>
+ </div>
+ </div>
+ </div>
+ <!-- 运行时错误信息浮层（节点执行后的全局错误） -->
  <Transition
  enter-active-class="transition-all duration-300 ease-out"
  enter-from-class="translate-y-2 opacity-0"
@@ -646,7 +692,7 @@ async function handleTrigger {
  leave-to-class="translate-y-2 opacity-0"
  >
  <div
- v-if="currentExecution.error_message"
+ v-if="currentExecution.error_message && !isPreExecutionFailure"
  class="absolute bottom-4 left-4 right-4 max-w-lg mx-auto z-10"
  >
  <div class="bg-red-50 dark:bg-red-900/30 backdrop-blur-sm border border-red-200/50 dark:border-red-800/50 rounded-2xl px-4 py-3 shadow-lg">

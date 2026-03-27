@@ -339,13 +339,13 @@ class WorkflowEngine:
  nodes_to_remove =
  for node_id in pending_nodes:
  dag_node = dag.nodes[node_id]
- # 检查所有前置节点是否完成
+ # 用 forward_incoming 检查依赖（排除反馈环 back-edge）
+ forward_deps = dag_node.forward_incoming
  all_deps_completed = all(
  dep_id in completed_nodes or dep_id in skipped_nodes
- for dep_id in dag_node.incoming
+ for dep_id in forward_deps
  )
- # 检查是否有前置失败（需要跳过）
- any_dep_failed = any(dep_id in failed_nodes for dep_id in dag_node.incoming)
+ any_dep_failed = any(dep_id in failed_nodes for dep_id in forward_deps)
  if any_dep_failed:
  # 前置失败，跳过此节点
  await self._skip_node(execution, dag_node, "前置节点失败")
@@ -410,13 +410,24 @@ class WorkflowEngine:
  pending_nodes.discard(str(ne.node_id))
  continue
  else:
- # 死锁检测
+ # 死锁：有 pending 节点但没有任何节点可以调度
  if pending_nodes:
  logger.error(
  "workflow_deadlock",
  execution_id=str(execution.id),
  pending_nodes=list(pending_nodes),
  )
+ pending_names =
+ for nid in pending_nodes:
+ dn = dag.nodes.get(nid)
+ if dn:
+ pending_names.append(dn.node.name)
+ await execution.amark_failed(
+ f"工作流死锁：{len(pending_nodes)} 个节点无法调度 ({', '.join(pending_names)})"
+ )
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_failed", execution=hook_execution)
+ return
  break
  # 调试模式：串行执行，每次逐节点暂停
  if execution.is_debug:
@@ -970,8 +981,8 @@ class WorkflowEngine:
  execution: WorkflowExecution,
  dag_node,
  ) -> bool:
- """Check if all dependencies of a node are completed."""
- for dep_id in dag_node.incoming:
+ """Check if all forward dependencies of a node are completed."""
+ for dep_id in dag_node.forward_incoming:
  dep_exec = await NodeExecution.objects.filter(
  workflow_execution=execution,
  node_id=dep_id,
@@ -980,7 +991,10 @@ class WorkflowEngine:
  return False
  return True
  async def _collect_all_outputs(self, execution: WorkflowExecution) -> dict:
- """Collect outputs from all completed nodes."""
+ """Collect outputs from all completed nodes.
+ 同时按 UUID 和 short_id 存储，确保模板变量
+ {{nodes.<short_id>.field}} 能正确解析。
+ """
  completed_nodes = [
  ne async for ne in NodeExecution.objects.filter(
  workflow_execution=execution,
@@ -989,7 +1003,10 @@ class WorkflowEngine:
  ]
  outputs = {}
  for node_exec in completed_nodes:
- outputs[str(node_exec.node_id)] = node_exec.output_data or {}
+ output_data = node_exec.output_data or {}
+ outputs[str(node_exec.node_id)] = output_data
+ if node_exec.node.short_id:
+ outputs[node_exec.node.short_id] = output_data
  return outputs
  async def _collect_final_outputs(self, execution: WorkflowExecution) -> dict:
  """Collect outputs from terminal nodes."""

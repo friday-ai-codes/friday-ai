@@ -10,7 +10,7 @@
  "name": "飞书事件触发",
  "position": {"x": 400, "y": 0},
  "config": {
- "event_type": "work_item_status_changed",
+ "event_type": "WorkitemStatusEvent",
  "filter_work_item_type": "",
  "filter_status":
  }
@@ -19,7 +19,7 @@
  "id": "fetch_work_item",
  "type": "fetch_work_item",
  "name": "获取工作项详情",
- "position": {"x": 400, "y": 140},
+ "position": {"x": 400, "y": 160},
  "config": {
  "work_item_id": "{{input.work_item_id}}",
  "work_item_type": ""
@@ -29,7 +29,7 @@
  "id": "generate_plan",
  "type": "ai_plan_generation",
  "name": "AI 方案生成",
- "position": {"x": 400, "y": 280},
+ "position": {"x": 400, "y": 340},
  "config": {
  "user_prompt": "## 需求\n\n**{{nodes.fetch_work_item.name}}**\n\n{{nodes.fetch_work_item.description}}"
  }
@@ -38,7 +38,7 @@
  "id": "plan_approval",
  "type": "ai_plan_approval",
  "name": "方案审批",
- "position": {"x": 400, "y": 420},
+ "position": {"x": 700, "y": 540},
  "config": {
  "chat_id": ""
  }
@@ -47,7 +47,7 @@
  "id": "ai_coding",
  "type": "ai_coding",
  "name": "AI 编码执行",
- "position": {"x": 400, "y": 560},
+ "position": {"x": 400, "y": 740},
  "config": {
  "container_image": "friday/claude-code:latest",
  "timeout_seconds": 1800,
@@ -58,7 +58,7 @@
  "id": "code_review",
  "type": "ai_code_review",
  "name": "AI 代码审查",
- "position": {"x": 400, "y": 700},
+ "position": {"x": 400, "y": 920},
  "config": {
  "chat_id": ""
  }

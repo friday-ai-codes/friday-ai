@@ -111,13 +111,18 @@ function handleActionComplete {
 </script>
 <template>
  <Sheet:open="open" @update:open="handleOpenChange">
- <SheetContent side="right" class="w-[450px] sm:max-w-[450px] flex flex-col">
+ <SheetContent
+ side="right"
+ class="w-[480px] sm:max-w-[480px] flex flex-col
+ bg-background/80 backdrop-blur-xl border-l border-border/30
+ shadow-[-8px_0_30px_rgba(0,0,0,0.15)]"
+ >
  <!-- Header -->
- <SheetHeader class="px-6 pt-6 pb-4 border-b border-border/50 shrink-0">
- <SheetTitle class="text-base">
+ <SheetHeader class="px-6 pt-6 pb-4 border-b border-border/30 shrink-0">
+ <SheetTitle class="text-base font-semibold">
  {{ nodeExecution?.node_name ?? '节点详情' }}
  </SheetTitle>
- <SheetDescription>
+ <SheetDescription class="text-xs text-muted-foreground/70 font-mono">
  {{ nodeExecution?.node_type ?? '' }}
  </SheetDescription>
  </SheetHeader>
