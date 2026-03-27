@@ -181,17 +181,17 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  api_base_url: str = "",
  api_key: str = "",
  provider_type: str = "",
- ) -> tuple[str, str]:
- """Resolve API key and model from config hierarchy.
+ ) -> tuple[str, str, str]:
+ """Resolve API key, model, and base URL from config hierarchy.
  优先级：use_custom_api > provider_type > 系统/项目级默认配置。
  Returns:
- (api_key, model) 元组
+ (api_key, model, base_url) 元组
  """
  # 分支 1: 自定义 API
  if use_custom_api and api_base_url and api_key:
  if not config_model:
  raise ValueError("使用自定义 API 时必须指定模型")
- return api_key, config_model
+ return api_key, config_model, api_base_url
  # 分支 2: 通过 ProviderConfigService 解析
  node_config = {"provider_type": provider_type} if provider_type else None
  resolved = await ProviderConfigService.aresolve(
@@ -203,7 +203,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  resolved_model = config_model or claude_config.model
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- return resolved.api_key, resolved_model
+ resolved_base_url = getattr(resolved, "base_url", "") or ""
+ return resolved.api_key, resolved_model, resolved_base_url
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
@@ -274,8 +275,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  )
  agent_session = await self._ensure_agent_session(session_id, project, user, chat_id)
  enhanced_prompt = self._enhance_system_prompt(system_prompt, session_id)
- # Resolve API key and model
- api_key, resolved_model = await self._resolve_api_key_and_model(
+ # Resolve API key, model, and base URL
+ api_key, resolved_model, resolved_base_url = await self._resolve_api_key_and_model(
  project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
  )
@@ -286,6 +287,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  project_id=str(project.id) if project else "",
  session_id=session_id,
  api_key=api_key,
+ api_base_url=resolved_base_url,
  max_turns=max_iterations,
  agent_session=agent_session,
  max_thinking_tokens=config.get("max_thinking_tokens"),
@@ -328,14 +330,19 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  next_handle="default",
  )
  # error or other non-complete status
+ error_detail = result.error or ""
  logger.warning(
  "agent_node_incomplete",
  session_id=session_id,
  status=result.status,
+ error=error_detail,
  )
+ error_msg = f"Agent execution incomplete: {result.status}"
+ if error_detail:
+ error_msg += f"\n{error_detail}"
  return NodeResult(
  status="failed",
- error=f"Agent execution incomplete: {result.status}",
+ error=error_msg,
  next_handle="error",
  )
  except Exception as e:

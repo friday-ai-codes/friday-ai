@@ -292,8 +292,8 @@ class AICodeReviewNode(AIAgentBaseNode):
  api_key_cfg: str = config.get("api_key", "")
  provider_type_cfg: str = config.get("provider_type", "")
  max_iterations = self.get_max_iterations(context)
- # 解析 API key 和模型（通过 base 类的方法）
- api_key, resolved_model = await self._resolve_api_key_and_model(
+ # 解析 API key、模型和 base URL（通过 base 类的方法）
+ api_key, resolved_model, _resolved_base_url = await self._resolve_api_key_and_model(
  project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
  )

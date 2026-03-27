@@ -9,14 +9,21 @@ logger = structlog.get_logger
 class DAGNode:
  """DAG 节点包装"""
  node: "WorkflowNode"
- incoming: set[str] = field(default_factory=set) # 入边的源节点 ID
+ incoming: set[str] = field(default_factory=set) # 入边的源节点 ID（含 back-edge）
  outgoing: dict[str, set[str]] = field(default_factory=dict) # {handle: {target_node_ids}}
+ back_edge_sources: set[str] = field(default_factory=set) # 来自反馈环的源节点 ID
  @property
  def id(self) -> str:
  return str(self.node.id)
  @property
  def in_degree(self) -> int:
  return len(self.incoming)
+ @property
+ def forward_incoming(self) -> set[str]:
+ """前向依赖（排除反馈环 back-edge 的源节点）。
+ 调度器用此属性判断节点是否可以首次执行。
+ """
+ return self.incoming - self.back_edge_sources
 class DAG:
  """有向无环图
  用于工作流的拓扑排序和执行调度。
@@ -28,22 +35,19 @@ class DAG:
  def from_workflow(cls, workflow: "Workflow") -> "DAG":
  """从工作流模型构建 DAG"""
  dag = cls
- # 添加所有节点
  for node in workflow.nodes.all:
  dag.nodes[str(node.id)] = DAGNode(node=node)
- # 添加所有边
  for edge in workflow.edges.all:
  source_id = str(edge.source_node_id)
  target_id = str(edge.target_node_id)
  handle = edge.source_handle
  if source_id in dag.nodes and target_id in dag.nodes:
- # 记录入边
  dag.nodes[target_id].incoming.add(source_id)
- # 记录出边
  if handle not in dag.nodes[source_id].outgoing:
  dag.nodes[source_id].outgoing[handle] = set
  dag.nodes[source_id].outgoing[handle].add(target_id)
  dag.edges.append(edge)
+ dag._detect_back_edges
  return dag
  @classmethod
  async def afrom_workflow(cls, workflow: "Workflow") -> "DAG":
@@ -61,7 +65,30 @@ class DAG:
  dag.nodes[source_id].outgoing[handle] = set
  dag.nodes[source_id].outgoing[handle].add(target_id)
  dag.edges.append(edge)
+ dag._detect_back_edges
  return dag
+ def _detect_back_edges(self) -> None:
+ """识别反馈环中的 back-edge 并标记到目标节点。
+ 通过 DFS 检测：当一条非 "default" handle 的边指向 DFS 栈中的
+ 祖先节点时，该边为 back-edge（如审批驳回回退、条件 false 分支回退）。
+ 目标节点的 back_edge_sources 记录这些来源，调度器据此判断首次执行
+ 时不需要等待这些上游节点。
+ """
+ WHITE, GRAY, BLACK = 0, 1, 2
+ color: dict[str, int] = {node_id: WHITE for node_id in self.nodes}
+ def dfs(node_id: str) -> None:
+ color[node_id] = GRAY
+ dag_node = self.nodes[node_id]
+ for handle, targets in dag_node.outgoing.items:
+ for target_id in targets:
+ if color[target_id] == GRAY and handle != "default":
+ self.nodes[target_id].back_edge_sources.add(node_id)
+ elif color[target_id] == WHITE:
+ dfs(target_id)
+ color[node_id] = BLACK
+ for node_id in self.nodes:
+ if color[node_id] == WHITE:
+ dfs(node_id)
  def validate(self) -> list[str]:
  """验证 DAG 是否有效"""
  errors =
@@ -82,16 +109,22 @@ class DAG:
  errors.append(f"节点 '{dag_node.node.name}' 是孤立的")
  return errors
  def has_cycle(self) -> bool:
- """检测是否存在环（使用 DFS）"""
+ """检测是否存在无条件环（使用 DFS）。
+ 条件分支（非 "default" handle）的回退边被视为合法的循环模式
+ （如审批驳回重新生成、条件 false 分支回退），不算作环。
+ 只有通过 "default" handle 形成的环才被判定为循环依赖。
+ """
  WHITE, GRAY, BLACK = 0, 1, 2
  color = {node_id: WHITE for node_id in self.nodes}
  def dfs(node_id: str) -> bool:
  color[node_id] = GRAY
  dag_node = self.nodes[node_id]
- for targets in dag_node.outgoing.values:
+ for handle, targets in dag_node.outgoing.items:
  for target_id in targets:
  if color[target_id] == GRAY:
- return True # 发现回边，存在环
+ if handle != "default":
+ continue
+ return True
  if color[target_id] == WHITE and dfs(target_id):
  return True
  color[node_id] = BLACK

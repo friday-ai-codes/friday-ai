@@ -17,6 +17,14 @@ from agents.sdk.event_adapter import EventAdapter
 from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
 from agents.sdk.mcp_adapter import build_allowed_tools, create_chat_tools_mcp_server
 logger = structlog.get_logger(__name__)
+def _unwrap_exception(exc: BaseException) -> str:
+ """从 ExceptionGroup 等嵌套异常中提取可读的错误信息。"""
+ if isinstance(exc, BaseExceptionGroup):
+ parts = [str(exc)]
+ for sub in exc.exceptions:
+ parts.append(f" Caused by: {type(sub).__name__}: {sub}")
+ return "\n".join(parts)
+ return str(exc)
 @contextmanager
 def clean_claude_env -> Generator[dict[str, str], None, None]:
  """临时移除 os.environ 中所有 CLAUDE 前缀的环境变量。
@@ -56,6 +64,7 @@ class SdkRunnerConfig:
  project_id: str
  session_id: str
  api_key: str = ""
+ api_base_url: str = ""
  max_turns: int = 15
  timeout_seconds: float = 300.0 # 5 分钟
  permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = (
@@ -167,6 +176,16 @@ class SDKAgentRunner:
  ],
  }
  # 5. 构建 ClaudeAgentOptions
+ env_vars: dict[str, str] = {"ANTHROPIC_API_KEY": api_key}
+ extra_args: dict[str, str | None] = {}
+ settings_json: str | None = None
+ if self._config.api_base_url:
+ import json
+ settings_json = json.dumps({"apiBaseUrl": self._config.api_base_url})
+ extra_args["bare"] = None
+ # 优先使用系统安装的 CLI，避免 bundled CLI 的 ProcessTransport bug
+ import shutil
+ system_cli = shutil.which("claude")
  options_kwargs: dict[str, Any] = {
  "system_prompt": self._config.system_prompt,
  "model": self._config.model,
@@ -175,9 +194,16 @@ class SDKAgentRunner:
  "include_partial_messages": True,
  "mcp_servers": {"chat-tools": mcp_server},
  "allowed_tools": allowed_tools,
- "env": {"ANTHROPIC_API_KEY": api_key},
+ "env": env_vars,
  "hooks": hooks_config,
+ "setting_sources": ["user"],
  }
+ if system_cli:
+ options_kwargs["cli_path"] = system_cli
+ if settings_json:
+ options_kwargs["settings"] = settings_json
+ if extra_args:
+ options_kwargs["extra_args"] = extra_args
  if self._config.max_thinking_tokens is not None:
  options_kwargs["max_thinking_tokens"] = self._config.max_thinking_tokens
  if self._config.max_budget_usd is not None:
@@ -207,7 +233,6 @@ class SDKAgentRunner:
  # 检测 ResultMessage，构建 AgentResult（含 cost 数据）
  if hasattr(message, "result") and not hasattr(message, "event"):
  result_text = str(message.result) if message.result else ""
- # 提取 cost 数据
  cost_usd = getattr(message, "total_cost_usd", None) or 0
  usage = self._extract_usage(message)
  self._result = AgentResult(
@@ -216,6 +241,14 @@ class SDKAgentRunner:
  final_answer=result_text,
  usage=usage,
  metadata={"cost_usd": cost_usd},
+ )
+ # query 正常结束但没有检测到 ResultMessage 时，用累积文本构建结果
+ if self._result is None and accumulated_text:
+ self._result = AgentResult(
+ output=,
+ status="completed",
+ final_answer="".join(accumulated_text),
+ metadata={"cost_usd": 0, "fallback_result": True},
  )
  except asyncio.CancelledError:
  logger.info(
@@ -245,9 +278,11 @@ class SDKAgentRunner:
  except asyncio.QueueFull:
  pass
  except Exception as e:
+ error_msg = _unwrap_exception(e)
  logger.exception(
  "sdk_runner_error",
  session_id=self._config.session_id,
+ error=error_msg,
  )
  try:
  error_events = adapter.adapt_error(e)
@@ -258,7 +293,7 @@ class SDKAgentRunner:
  self._result = AgentResult(
  output=,
  status="error",
- error=str(e),
+ error=error_msg,
  )
  finally:
  try:

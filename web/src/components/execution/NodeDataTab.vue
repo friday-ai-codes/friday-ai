@@ -14,13 +14,13 @@ import type { NodeExecution, WorkflowDefinition } from '~/stores/useExecutionsSt
  */
 import { computed, ref, watch } from 'vue'
 import { Button } from '~/components/ui/button'
-import { ScrollArea } from '~/components/ui/scroll-area'
 import { useDebugDataEditor } from '~/composables/useDebugDataEditor'
 import { checkMissingKeys, getDownstreamVarDeps } from '~/composables/useDownstreamVarCheck'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 import AISafetyConfirm from './AISafetyConfirm.vue'
 import DownstreamVarWarning from './DownstreamVarWarning.vue'
 import JsonEditor from './JsonEditor.vue'
+import JsonViewer from './JsonViewer.vue'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 const props = defineProps<{
  nodeExecution: NodeExecution
@@ -217,11 +217,6 @@ const jsonFields = computed( => {
  )
  return Object.keys(remaining).length > 0 ? remaining: null
 })
-function formatJson(data: Record<string, any> | null | undefined): string {
- if (!data || Object.keys(data).length === 0)
- return ''
- return JSON.stringify(data, null, 2)
-}
 </script>
 <template>
  <div class="space-y-4">
@@ -230,16 +225,7 @@ function formatJson(data: Record<string, any> | null | undefined): string {
  <div class="text-sm font-medium text-foreground">
  输入数据
  </div>
- <ScrollArea class="max-h-[250px]">
- <JsonEditor
- v-if="formatJson(nodeExecution.input_data)":model-value="formatJson(nodeExecution.input_data)"
- readonly
- height="200px"
- />
- <div v-else class="text-sm text-muted-foreground italic">
- (空)
- </div>
- </ScrollArea>
+ <JsonViewer:data="nodeExecution.input_data" max-height="250px" />
  </div>
  <!-- 输出数据 -->
  <div class="space-y-2">
@@ -380,7 +366,6 @@ function formatJson(data: Record<string, any> | null | undefined): string {
  </template>
  <!-- 只读模式 -->
  <template v-else>
- <ScrollArea class="max-h-[400px]">
  <!-- AI 节点智能渲染模式 -->
  <template v-if="isAINode && !showRawOutput && markdownFields.length > 0">
  <!-- Markdown 字段 -->
@@ -400,24 +385,13 @@ function formatJson(data: Record<string, any> | null | undefined): string {
  <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
  其他数据
  </div>
- <JsonEditor:model-value="formatJson(jsonFields)"
- readonly
- height="200px"
- />
+ <JsonViewer:data="jsonFields" max-height="250px" />
  </div>
  </template>
  <!-- 原始 JSON 模式（非 AI 节点 / showRawOutput） -->
  <template v-else>
- <JsonEditor
- v-if="formatJson(nodeExecution.output_data)":model-value="formatJson(nodeExecution.output_data)"
- readonly
- height="300px"
- />
- <div v-else class="text-sm text-muted-foreground italic">
- (空)
- </div>
+ <JsonViewer:data="nodeExecution.output_data" max-height="400px" />
  </template>
- </ScrollArea>
  <!-- 只读模式下调试暂停时的快捷放行按钮 -->
  <template v-if="isDebugPaused && currentMode === 'none'">
  <Button
