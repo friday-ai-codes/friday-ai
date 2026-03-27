@@ -121,13 +121,13 @@ function formatTimeAgo(dateStr: string | null) {
  <h1 class="text-2xl font-bold">
  {{ runner?.name || '加载中...' }}
  </h1>
- <div v-if="runner" class="relative flex-shrink-0 transition-all duration-300">
+ <div v-if="runner" class="relative flex-shrink-0 w-3 transition-all duration-300">
  <template v-if="runner.status === 'online'">
- <span class="absolute inline-flex w-3 rounded-full bg-emerald-400 opacity-75 animate-ping" />
- <span class="relative inline-flex w-3 rounded-full bg-emerald-500" />
+ <span class="absolute inset-0 rounded-full bg-emerald-400 opacity-75 animate-ping" />
+ <span class="absolute inset-0 rounded-full bg-emerald-500" />
  </template>
  <template v-else>
- <span class="inline-flex w-3 rounded-full bg-gray-400" />
+ <span class="absolute inset-0 rounded-full bg-gray-400" />
  </template>
  </div>
  </div>

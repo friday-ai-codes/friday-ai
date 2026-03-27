@@ -2,6 +2,7 @@
 import type { MonitorLog } from '~/composables/useRunnerMonitor'
 import { getRunnerLogs } from '~/api/runners'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
+import { Checkbox } from '~/components/ui/checkbox'
 const props = defineProps<{
  runnerId: string
 }>
@@ -66,15 +67,49 @@ onMounted(async => {
 })
 // 折叠偏好（localStorage 持久化）
 const collapsed = useStorage('runner-log-panel-collapsed', false)
+type LogType = 'connection' | 'heartbeat' | 'task' | 'error'
 // 过滤器
-const filters = ref({ connection: true, heartbeat: true, task: true, error: true })
+const filters = ref<Record<LogType, boolean>>({ connection: true, heartbeat: true, task: true, error: true })
+const logFilterOptions: Array<{
+ key: LogType
+ label: string
+ textClass: string
+ checkboxClass: string
+}> = [
+ {
+ key: 'connection',
+ label: '连接',
+ textClass: 'text-blue-400',
+ checkboxClass: 'border-blue-400/60 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500',
+ },
+ {
+ key: 'heartbeat',
+ label: '心跳',
+ textClass: 'text-muted-foreground',
+ checkboxClass: 'border-muted-foreground/60 data-[state=checked]:bg-muted-foreground data-[state=checked]:border-muted-foreground data-[state=checked]:text-background',
+ },
+ {
+ key: 'task',
+ label: '任务',
+ textClass: 'text-violet-400',
+ checkboxClass: 'border-violet-400/60 data-[state=checked]:bg-violet-500 data-[state=checked]:border-violet-500',
+ },
+ {
+ key: 'error',
+ label: '错误',
+ textClass: 'text-red-400',
+ checkboxClass: 'border-red-400/60 data-[state=checked]:bg-red-500 data-[state=checked]:border-red-500',
+ },
+]
+function updateFilter(type: LogType, checked: boolean | 'indeterminate') {
+ filters.value[type] = checked === true
+}
 // 心跳展开
 const heartbeatExpanded = ref(false)
 // 自动滚动
 const scrollContainer = ref<HTMLElement | null>(null)
 const isAtBottom = ref(true)
 const newLogCount = ref(0)
-type LogType = 'connection' | 'heartbeat' | 'task' | 'error'
 function getLogType(log: MonitorLog): LogType {
  if (log.event === 'runner.status_changed') {
  if (log.data.status === 'online' || log.data.status === 'offline')
@@ -211,7 +246,7 @@ watch( => filteredLogs.value.length, => {
 <template>
  <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
  <CardHeader
- class="border-b border-border/50 bg-gradient-to-r from-gray-500/5 to-slate-500/5 cursor-pointer select-none"
+ class="border-b border-border/50 bg-linear-to-r from-gray-500/5 to-slate-500/5 cursor-pointer select-none"
  @click="collapsed = !collapsed"
  >
  <div class="flex items-center justify-between">
@@ -224,22 +259,16 @@ watch( => filteredLogs.value.length, => {
  />
  </div>
  <!-- 过滤器 -->
- <div v-show="!collapsed" class="flex items-center gap-3 text-xs mt-2" @click.stop>
- <label class="flex items-center gap-1 cursor-pointer">
- <input v-model="filters.connection" type="checkbox" class="rounded">
- <span class="text-blue-400">连接</span>
- </label>
- <label class="flex items-center gap-1 cursor-pointer">
- <input v-model="filters.heartbeat" type="checkbox" class="rounded">
- <span class="text-muted-foreground">心跳</span>
- </label>
- <label class="flex items-center gap-1 cursor-pointer">
- <input v-model="filters.task" type="checkbox" class="rounded">
- <span class="text-violet-400">任务</span>
- </label>
- <label class="flex items-center gap-1 cursor-pointer">
- <input v-model="filters.error" type="checkbox" class="rounded">
- <span class="text-red-400">错误</span>
+ <div v-show="!collapsed" class="flex flex-wrap items-center gap-2 text-xs mt-3" @click.stop>
+ <label
+ v-for="option in logFilterOptions":key="option.key":for="`runner-log-filter-${option.key}`"
+ class="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-2.5 py-1.5 cursor-pointer transition-colors hover:bg-muted/60"
+ >
+ <Checkbox:id="`runner-log-filter-${option.key}`":checked="filters[option.key]"
+ class=".5 w-3.5 rounded-[4px] ring-offset-0 focus-visible:ring-1 focus-visible:ring-offset-0":class="option.checkboxClass"
+ @update:checked="updateFilter(option.key, $event)"
+ />
+ <span class="font-medium":class="option.textClass">{{ option.label }}</span>
  </label>
  </div>
  </CardHeader>
@@ -271,8 +300,8 @@ watch( => filteredLogs.value.length, => {
  v-for="log in filteredLogs":key="log.id"
  class="flex items-start gap-2 py-0.5 leading-5"
  >
- <span class="text-gray-500 flex-shrink-0">{{ formatTimestamp(log.timestamp) }}</span>
- <span class="flex-shrink-0 w-4 mt-0.5":class="[getLogIcon(log), getLogColor(log)]" />
+ <span class="text-gray-500 shrink-0">{{ formatTimestamp(log.timestamp) }}</span>
+ <span class="shrink-0 w-4 mt-0.5":class="[getLogIcon(log), getLogColor(log)]" />
  <span:class="getLogColor(log)">{{ formatLogMessage(log) }}</span>
  </div>
  </div>

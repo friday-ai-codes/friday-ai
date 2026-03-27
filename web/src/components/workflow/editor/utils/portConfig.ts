@@ -1,8 +1,9 @@
 /**
- * 端口配置 — 从 X6 portGroups 迁移的共享工具函数。
+ * 端口配置 — Vue Flow 节点 Handle 的 ID 与分组配置。
  *
- * 保留节点端口逻辑，移除所有 X6 特定依赖（PortGroupConfig、workflowPortGroups 等）。
- * 仅保留 Vue Flow 需要的 PortMetadata 和 getDefaultPortsForNodeType。
+ * 端口 ID 使用与后端 NodePort.name 一致的语义化名称（如 "default"、
+ * "approved"、"rejected"），确保模板创建的工作流和用户手动连线的
+ * 工作流都能正确匹配 Handle。
  */
 /**
  * 端口元数据接口（简化版，移除 X6 特定字段）。
@@ -20,9 +21,9 @@ export const TRIGGER_NODE_TYPES = [
  'feishu_event_trigger',
 ]
 /**
- * 条件节点类型（一个输入，两个分支输出）。
+ * 审批节点类型（一个输入，两个分支输出：approved/rejected）。
  */
-const CONDITION_NODE_TYPES = ['condition', 'human_approval']
+const APPROVAL_NODE_TYPES = ['ai_plan_approval', 'human_approval']
 /**
  * 带错误输出端口的节点类型（1 个输入，2 个输出：default + error）。
  */
@@ -35,51 +36,67 @@ const ERROR_OUTPUT_NODE_TYPES = [
 ]
 /**
  * 根据输入/输出名称生成端口项。
- *
- * @param inputs - 输入端口名称数组
- * @param outputs - 输出端口名称数组
- * @returns 端口元数据数组
+ * 直接使用名称作为端口 ID，与后端 NodePort.name 保持一致。
  */
 function generatePortItems(inputs: string, outputs: string): PortMetadata {
  const items: PortMetadata =
- inputs.forEach((_name, index) => {
- items.push({ id: `input-${index}`, group: 'input' })
- })
- outputs.forEach((_name, index) => {
- items.push({ id: `output-${index}`, group: 'output' })
- })
+ for (const name of inputs) {
+ items.push({ id: name, group: 'input' })
+ }
+ for (const name of outputs) {
+ items.push({ id: name, group: 'output' })
+ }
  return items
 }
 /**
  * 获取节点类型的默认端口配置。
  * - 触发器节点: 0 输入, 1 输出
+ * - 审批节点: 1 输入, 2 输出 (approved/rejected)
  * - 条件节点: 1 输入, 2 输出 (true/false 分支)
  * - 错误输出节点: 1 输入, 2 输出 (default/error)
  * - 动作节点: 1 输入, 1 输出
- *
- * @param nodeType - 节点类型
- * @returns 端口元数据数组
  */
 export function getDefaultPortsForNodeType(nodeType: string): PortMetadata {
  if (TRIGGER_NODE_TYPES.includes(nodeType)) {
- return generatePortItems(, ['output'])
+ return generatePortItems(, ['default'])
  }
- // ai_plan_approval: 1 输入, 2 输出 (approved/rejected)
- if (nodeType === 'ai_plan_approval') {
- return generatePortItems(['input'], ['approved', 'rejected'])
+ if (APPROVAL_NODE_TYPES.includes(nodeType)) {
+ return generatePortItems(['default'], ['approved', 'rejected'])
  }
- if (CONDITION_NODE_TYPES.includes(nodeType)) {
- return generatePortItems(['input'], ['true', 'false'])
+ if (nodeType === 'condition') {
+ return generatePortItems(['default'], ['true', 'false'])
  }
  if (ERROR_OUTPUT_NODE_TYPES.includes(nodeType)) {
- return generatePortItems(['input'], ['default', 'error'])
+ return generatePortItems(['default'], ['default', 'error'])
  }
  if (nodeType === 'parallel') {
- return generatePortItems(['input'], ['branch_0', 'branch_1'])
+ return generatePortItems(['default'], ['branch_0', 'branch_1'])
  }
  if (nodeType === 'join') {
- return generatePortItems(['input_0', 'input_1'], ['output'])
+ return generatePortItems(['input_0', 'input_1'], ['default'])
  }
- // 动作节点: 1 输入, 1 输出
- return generatePortItems(['input'], ['output'])
+ return generatePortItems(['default'], ['default'])
+}
+/**
+ * 将旧版索引式端口 ID（如 "output-0"）迁移为语义化名称。
+ * 用于加载已有工作流时的向后兼容。
+ */
+export function migratePortId(
+ handle: string,
+ nodeType: string | undefined,
+ direction: 'input' | 'output',
+): string {
+ if (!/^(input|output)-\d+$/.test(handle)) {
+ return handle
+ }
+ if (!nodeType) {
+ return 'default'
+ }
+ const ports = getDefaultPortsForNodeType(nodeType)
+ const dirPorts = ports.filter(p => p.group === direction)
+ const index = Number.parseInt(handle.split('-')[1], 10)
+ if (index < dirPorts.length) {
+ return dirPorts[index].id
+ }
+ return 'default'
 }

@@ -40,7 +40,7 @@ dependencies = [
  "tree-sitter-css>=0.21.0",
  "tree-sitter-html>=0.21.0",
  "tree-sitter-json>=0.21.0",
- "claude-agent-sdk>=0.1.27",
+ "claude-agent-sdk>=0.1.50",
  # Type checking
  "mypy>=1.14.0",
  "django-stubs>=5.1.0",

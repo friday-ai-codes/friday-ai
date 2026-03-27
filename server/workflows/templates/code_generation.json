@@ -25,7 +25,7 @@
  "id": "generate_plan",
  "type": "ai_plan_generation",
  "name": "AI 方案生成",
- "position": {"x": 400, "y": 140},
+ "position": {"x": 400, "y": 180},
  "config": {
  "user_prompt": "## 需求\n\n**{{input.title}}**\n\n{{input.description}}"
  }
@@ -34,7 +34,7 @@
  "id": "plan_approval",
  "type": "ai_plan_approval",
  "name": "方案审批",
- "position": {"x": 400, "y": 280},
+ "position": {"x": 700, "y": 380},
  "config": {
  "chat_id": ""
  }
@@ -43,7 +43,7 @@
  "id": "ai_coding",
  "type": "ai_coding",
  "name": "AI 编码执行",
- "position": {"x": 400, "y": 420},
+ "position": {"x": 400, "y": 580},
  "config": {
  "container_image": "friday/claude-code:latest",
  "timeout_seconds": 1800,
@@ -54,7 +54,7 @@
  "id": "code_review",
  "type": "ai_code_review",
  "name": "AI 代码审查",
- "position": {"x": 400, "y": 560},
+ "position": {"x": 400, "y": 760},
  "config": {
  "chat_id": ""
  }

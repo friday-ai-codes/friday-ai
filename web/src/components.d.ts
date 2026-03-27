@@ -147,6 +147,7 @@ declare module 'vue' {
  IssuesPanel: typeof import('./components/workflow/validation/IssuesPanel.vue')['default']
  JsonEditor: typeof import('./components/execution/JsonEditor.vue')['default']
  JsonHighlighter: typeof import('./components/logs/JsonHighlighter.vue')['default']
+ JsonViewer: typeof import('./components/execution/JsonViewer.vue')['default']
  KeyFieldsCard: typeof import('./components/logs/KeyFieldsCard.vue')['default']
  KpiCards: typeof import('./components/analytics/KpiCards.vue')['default']
  Label: typeof import('./components/ui/label/Label.vue')['default']

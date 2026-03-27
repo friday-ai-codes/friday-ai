@@ -4,12 +4,16 @@ import type { EdgeProps } from '@vue-flow/core'
  * GradientEdge - 自定义渐变边组件
  *
  * 根据源/目标节点类别色渲染 SVG 线性渐变，选中时加粗发光。
+ * 支持 label 显示（如审批驳回的「驳回修改」标签）。
  */
 import { BaseEdge, getSmoothStepPath } from '@vue-flow/core'
 import { computed } from 'vue'
 import { getNodeDefinition } from '~/types/workflow/registry'
 const props = defineProps<EdgeProps>
-const path = computed( => getSmoothStepPath(props))
+const path = computed( => getSmoothStepPath({
+ ...props,
+ borderRadius: 16,
+}))
 const CATEGORY_COLORS: Record<string, string> = {
  trigger: '#F59E0B',
  action: '#10B981',
@@ -46,5 +50,6 @@ export default { inheritAttrs: false }
  <stop offset="100%":stop-color="targetColor" />
  </linearGradient>
  </defs>
- <BaseEdge:id="id":path="path[0]":marker-end="markerEnd":style="edgeStyle" />
+ <BaseEdge:id="id":path="path[0]":label="label":label-x="path[1]":label-y="path[2]":label-style="{ fill: 'hsl(var(--foreground))', fontSize: '11px', fontWeight: 500 }":label-bg-style="{ fill: 'hsl(var(--card))', fillOpacity: 0.9 }":label-bg-padding="[4, 8]":label-bg-border-radius="6":marker-end="markerEnd":style="edgeStyle"
+ />
 </template>
