@@ -6,6 +6,7 @@ from core.patches import patch_asyncio_iscoroutinefunction
 patch_asyncio_iscoroutinefunction
 import pytest # noqa: E402
 from django.contrib.auth import get_user_model # noqa: E402
+from django.core.cache import cache as django_cache # noqa: E402
 from rest_framework.test import APIClient # noqa: E402
 from permissions.models import ProjectMembership, ProjectRole # noqa: E402
 from projects.models import Project # noqa: E402
@@ -15,6 +16,35 @@ pytest_plugins = [
  "tests.e2e.fixtures.mock_services",
 ]
 User = get_user_model
+# ============================================================================
+# Cache Cleanup — 防止 throttle 等缓存在测试间泄漏
+# ============================================================================
+@pytest.fixture(autouse=True)
+def _clear_throttle_cache:
+ """每个测试前后清理 Django 缓存，并放宽 throttle 限速，避免非 throttle 测试被误拦截。
+ SimpleRateThrottle.THROTTLE_RATES 是类变量（模块加载时评估），
+ 修改 settings.REST_FRAMEWORK 不会生效，需要直接 patch 类变量。
+ """
+ from accounts.throttles import LoginRateThrottle, RefreshRateThrottle
+ # 保存原始 rate（如果有的话）
+ orig_login_rate = getattr(LoginRateThrottle, "rate", None)
+ orig_refresh_rate = getattr(RefreshRateThrottle, "rate", None)
+ orig_login_throttle_rates = LoginRateThrottle.THROTTLE_RATES.copy
+ orig_refresh_throttle_rates = RefreshRateThrottle.THROTTLE_RATES.copy
+ # 放宽限速——非 throttle 专项测试不受影响
+ relaxed = {"auth_login": "1000/min", "auth_refresh": "1000/min"}
+ LoginRateThrottle.THROTTLE_RATES = relaxed
+ RefreshRateThrottle.THROTTLE_RATES = relaxed
+ django_cache.clear
+ yield
+ django_cache.clear
+ # 恢复原始值
+ LoginRateThrottle.THROTTLE_RATES = orig_login_throttle_rates
+ RefreshRateThrottle.THROTTLE_RATES = orig_refresh_throttle_rates
+ if orig_login_rate is not None:
+ LoginRateThrottle.rate = orig_login_rate
+ if orig_refresh_rate is not None:
+ RefreshRateThrottle.rate = orig_refresh_rate
 # ============================================================================
 # API Client Fixtures
 # ============================================================================
