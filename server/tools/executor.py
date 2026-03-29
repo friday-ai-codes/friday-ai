@@ -5,7 +5,7 @@ import structlog
 from tools.models import RemoteTool
 from tools.registry import RemoteToolRegistry
 from tools.sources.builtin import execute_builtin
-from tools.sources.mcp_source import execute_mcp
+from tools.sources.mcp_source import CommandNotAllowedError, execute_mcp
 from tools.sources.skill import execute_skill
 logger = structlog.get_logger(__name__)
 async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -16,6 +16,9 @@ async def execute_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, A
  try:
  result = await asyncio.wait_for(_dispatch(tool, arguments), timeout=tool.timeout)
  return {"ok": True, "result": result}
+ except CommandNotAllowedError as e:
+ logger.warning("mcp_command_not_allowed", tool=tool_name, command=e.command)
+ return {"ok": False, "error": {"code": "command_not_allowed", "message": str(e)}}
  except TimeoutError:
  return {"ok": False, "error": {"code": "timeout", "message": f"Tool {tool_name} timed out after {tool.timeout}s"}}
  except Exception as e:
