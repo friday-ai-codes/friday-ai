@@ -2,7 +2,7 @@ import type { SubStep } from '~/types/execution'
 import { useIntervalFn, useWebSocket } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import api from '~/api/client'
+import api, { ApiError } from '~/api/client'
 export interface NodeExecution {
  id: string
  node: string
@@ -150,6 +150,12 @@ export const useExecutionsStore = defineStore('executions', => {
  5000,
  { immediate: false },
  )
+ /** 从 unknown 错误中提取错误消息 */
+ function extractErrorMessage(e: unknown): string {
+ if (e instanceof ApiError) return e.detail
+ if (e instanceof Error) return e.message
+ return '未知错误'
+ }
  async function fetchExecutions(workflowId?: string, projectId?: string, createdAfter?: string, silent = false) {
  // silent 模式下不显示 loading 状态，避免页面抖动
  if (!silent) {
@@ -168,8 +174,8 @@ export const useExecutionsStore = defineStore('executions', => {
  const data = await api.get<any>('/workflow-executions/', params)
  executions.value = data.results || data
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  }
  finally {
  if (!silent) {
@@ -185,8 +191,8 @@ export const useExecutionsStore = defineStore('executions', => {
  try {
  currentExecution.value = await api.get<WorkflowExecution>(`/workflow-executions/${id}/`)
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  }
  finally {
  loading.value = false
@@ -208,8 +214,8 @@ export const useExecutionsStore = defineStore('executions', => {
  currentExecution.value.status = 'paused'
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
@@ -220,8 +226,8 @@ export const useExecutionsStore = defineStore('executions', => {
  currentExecution.value.status = 'running'
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
@@ -232,8 +238,8 @@ export const useExecutionsStore = defineStore('executions', => {
  currentExecution.value.status = 'cancelled'
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
@@ -245,8 +251,8 @@ export const useExecutionsStore = defineStore('executions', => {
  await fetchExecution(currentExecution.value.id)
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
@@ -258,8 +264,8 @@ export const useExecutionsStore = defineStore('executions', => {
  await fetchExecution(currentExecution.value.id)
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
@@ -271,8 +277,8 @@ export const useExecutionsStore = defineStore('executions', => {
  await fetchExecution(currentExecution.value.id)
  }
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  throw e
  }
  }
