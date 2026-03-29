@@ -11,12 +11,12 @@ export interface NodeStyleTokens {
 }
 const COLOR_STYLES: Record<NodeColorKey, NodeStyleTokens> = {
  blue: {
- borderColor: 'border-blue-500/50',
- gradientFrom: 'from-blue-500',
+ borderColor: 'border-primary/50',
+ gradientFrom: 'from-teal-500',
  gradientTo: 'to-cyan-400',
- iconBg: 'from-blue-500/20 to-cyan-400/10',
- iconColor: 'text-blue-500',
- ringColor: 'ring-blue-500/40',
+ iconBg: 'from-primary/20 to-primary/10',
+ iconColor: 'text-primary',
+ ringColor: 'ring-primary/40',
  },
  green: {
  borderColor: 'border-emerald-500/50',

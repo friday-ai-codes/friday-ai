@@ -465,7 +465,7 @@ class FeishuIMService:
  if with_project_client and project:
  try:
  project_client = create_feishu_client_for_project(project)
- except (ValueError, Exception):
+ except Exception:
  logger.warning(
  "project_client_creation_failed",
  project_id=str(project.id),

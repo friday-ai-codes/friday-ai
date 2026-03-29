@@ -22,7 +22,7 @@ const props = defineProps<Props>
 const { toast } = useToast
 // 端口类型颜色映射
 const typeColors: Record<string, string> = {
- string: 'bg-blue-500/10 text-blue-600',
+ string: 'bg-primary/10 text-primary',
  object: 'bg-purple-500/10 text-purple-600',
  array: 'bg-amber-500/10 text-amber-600',
  number: 'bg-emerald-500/10 text-emerald-600',
@@ -46,7 +46,7 @@ function copyVariablePath(portName: string) {
  <!-- 输入端口 -->
  <div v-if="inputs.length > 0" class="space-y-2">
  <div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
- <ArrowDownToLine class="w-4 text-blue-500" />
+ <ArrowDownToLine class="w-4 text-primary" />
  <span>输入</span>
  </div>
  <div class="rounded-lg bg-muted/30 border border-border/50 divide-y divide-border/50">

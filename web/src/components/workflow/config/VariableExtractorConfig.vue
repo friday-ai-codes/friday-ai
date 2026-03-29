@@ -112,7 +112,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  <!-- 工作原理 -->
  <div class="space-y-2">
  <h4 class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--workflow] text-blue-500" />
+ <span class="icon-[lucide--workflow] text-primary" />
  工作原理
  </h4>
  <p class="text-sm text-muted-foreground">

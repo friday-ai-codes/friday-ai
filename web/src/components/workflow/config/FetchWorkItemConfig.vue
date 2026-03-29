@@ -91,7 +91,7 @@ onMounted( => {
 })
 // 变量语法示例
 const variableSyntaxExamples = [
- { syntax: '{{input.xxx}}', desc: '上游节点输出', color: 'text-blue-500' },
+ { syntax: '{{input.xxx}}', desc: '上游节点输出', color: 'text-primary' },
  { syntax: '{{global.xxx}}', desc: '全局参数', color: 'text-green-500' },
  { syntax: '{{trigger.xxx}}', desc: '触发器数据', color: 'text-amber-500' },
  { syntax: '{{nodes.id.xxx}}', desc: '指定节点输出', color: 'text-purple-500' },
@@ -108,16 +108,16 @@ const variableSyntaxExamples = [
  <!-- 自动填充提示 -->
  <div
  v-if="showAutoFillHint"
- class="flex items-center gap-2 rounded-lg bg-blue-500/10 border border-blue-500/20"
+ class="flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/20"
  >
- <span class="icon-[lucide--lightbulb] text-blue-500" />
- <span class="text-xs text-blue-600 dark:text-blue-400 flex-1">
+ <span class="icon-[lucide--lightbulb] text-primary" />
+ <span class="text-xs text-primary flex-1">
  检测到上游有飞书事件触发器
  </span>
  <Button
  variant="ghost"
  size="sm"
- class=" text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-500/20"
+ class=" text-xs text-primary hover:text-primary hover:bg-primary/20"
  @click="autoFill"
  >
  自动填充

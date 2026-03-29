@@ -67,7 +67,7 @@ class RepoCacheManager:
  ).aupdate(last_used_at=dj_timezone.now)
  return volume_name
  except NotFound:
- pass
+ logger.debug("repo_cache_volume_not_found", volume_name=volume_name)
  # Create volume with labels
  try:
  labels = {

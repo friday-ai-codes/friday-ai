@@ -261,7 +261,7 @@ async function handleReject {
  <Collapsible v-if="planAssumptions.length > 0" v-model:open="assumptionsOpen">
  <CollapsibleTrigger class="flex items-center justify-between w-full py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors group">
  <span class="flex items-center gap-2">
- <span class="icon-[lucide--lightbulb] w-4 text-blue-500" />
+ <span class="icon-[lucide--lightbulb] w-4 text-primary" />
  假设
  <Badge variant="secondary" class="text-[10px] px-1.5 py-0">
  {{ planAssumptions.length }}
@@ -274,9 +274,9 @@ async function handleReject {
  <CollapsibleContent class="space-y-1.5 pt-2">
  <div
  v-for="(assumption, index) in planAssumptions":key="index"
- class="flex items-start gap-2 text-sm rounded-lg bg-blue-500/5 border border-blue-500/10"
+ class="flex items-start gap-2 text-sm rounded-lg bg-primary/5 border border-primary/10"
  >
- <span class="icon-[lucide--lightbulb] w-3.5 .5 text-blue-500 mt-0.5 shrink-0" />
+ <span class="icon-[lucide--lightbulb] w-3.5 .5 text-primary mt-0.5 shrink-0" />
  <span>{{ typeof assumption === 'string' ? assumption: assumption.description || assumption.name || JSON.stringify(assumption) }}</span>
  </div>
  </CollapsibleContent>

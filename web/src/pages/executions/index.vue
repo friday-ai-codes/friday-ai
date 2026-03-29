@@ -212,8 +212,8 @@ const columns: ColumnDef<WorkflowExecution> = [
  <!-- Stats cards -->
  <div class="flex flex-wrap gap-3">
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
- <div class=" rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-400/10">
- <span class="icon-[lucide--loader-2] w-5 text-blue-500":class="stats.running > 0 ? 'animate-spin': ''" />
+ <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <span class="icon-[lucide--loader-2] w-5 text-primary":class="stats.running > 0 ? 'animate-spin': ''" />
  </div>
  <div>
  <span class="text-xs text-muted-foreground block">运行中</span>

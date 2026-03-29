@@ -60,7 +60,7 @@ function toggleIssue(key: string) {
 const severityStyles: Record<string, { bg: string, text: string, border: string }> = {
  critical: { bg: 'bg-red-500/10', text: 'text-red-600', border: 'border-red-500/20' },
  warning: { bg: 'bg-amber-500/10', text: 'text-amber-600', border: 'border-amber-500/20' },
- info: { bg: 'bg-blue-500/10', text: 'text-blue-600', border: 'border-blue-500/20' },
+ info: { bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/20' },
 }
 function getSeverityStyle(severity: string) {
  return severityStyles[severity] || severityStyles.info
@@ -152,8 +152,8 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  Warning
  </div>
  </div>
- <div class="text-center rounded-xl bg-blue-500/5 border border-blue-500/10">
- <div class="text-lg font-bold text-blue-600">
+ <div class="text-center rounded-xl bg-primary/5 border border-primary/10">
+ <div class="text-lg font-bold text-primary">
  {{ severityBreakdown.info || 0 }}
  </div>
  <div class="text-xs text-muted-foreground">

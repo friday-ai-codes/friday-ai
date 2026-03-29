@@ -59,7 +59,7 @@ function getExecutionInfo(status: string | null): { icon: string, color: string,
  case 'completed':
  return { icon: 'icon-[lucide--circle-check]', color: 'text-emerald-500', label: '执行成功' }
  case 'running':
- return { icon: 'icon-[lucide--loader-2] animate-spin', color: 'text-blue-500', label: '执行中' }
+ return { icon: 'icon-[lucide--loader-2] animate-spin', color: 'text-primary', label: '执行中' }
  case 'pending':
  return { icon: 'icon-[lucide--clock]', color: 'text-amber-500', label: '待执行' }
  case 'failed':

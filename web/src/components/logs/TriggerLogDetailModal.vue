@@ -138,12 +138,12 @@ const webhookHeader = computed( => {
  <div class="relative overflow-hidden shrink-0">
  <!-- Background gradient decoration -->
  <div class="absolute inset-0 -z-10">
- <div class="absolute -top-20 -right-20 w-40 bg-gradient-to-br from-cyan-500/20 to-blue-500/30 rounded-full blur-3xl" />
+ <div class="absolute -top-20 -right-20 w-40 bg-gradient-to-br from-primary/20 to-primary/30 rounded-full blur-3xl" />
  <div class="absolute top-10 -left-10 w-32 bg-gradient-to-tr from-violet-500/20 to-purple-500/10 rounded-full blur-3xl" />
  </div>
  <div class="flex items-start justify-between border-b border-border/50">
  <div class="flex items-center gap-4">
- <div class=" rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/10">
+ <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <div>
@@ -275,7 +275,7 @@ const webhookHeader = computed( => {
  <span
  class="w-2 rounded-full shrink-0":class="{
  'bg-emerald-500': exec.status === 'completed',
- 'bg-blue-500 animate-pulse': exec.status === 'running',
+ 'bg-primary animate-pulse': exec.status === 'running',
  'bg-amber-500': exec.status === 'pending',
  'bg-red-500': exec.status === 'failed',
  'bg-gray-400': exec.status === 'cancelled',

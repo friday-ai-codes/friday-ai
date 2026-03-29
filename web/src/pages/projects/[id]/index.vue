@@ -230,8 +230,8 @@ async function handleCustomToken {
  <div class="flex items-start justify-between">
  <div class="space-y-2">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
- <span class="icon-[lucide--folder-open] text-2xl text-blue-500" />
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--folder-open] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-2xl font-bold">
@@ -259,11 +259,11 @@ async function handleCustomToken {
  <div class="grid gap-6 md:grid-cols-2">
  <!-- 基本信息 -->
  <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
  <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--info] text-blue-500" />
+ <span class="icon-[lucide--info] text-primary" />
  基本信息
  </CardTitle>
  </CardHeader>
@@ -443,9 +443,9 @@ async function handleCustomToken {
  </div>
  <!-- Webhook Token 管理 -->
  <div class="relative md:col-span-2">
- <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-cyan-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
  <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-blue-500/5">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
  <CardTitle class="flex items-center gap-2">
  <span class="icon-[lucide--key] text-cyan-500" />
  Webhook Token
@@ -530,7 +530,7 @@ async function handleCustomToken {
  <Badge
  class="ml-3":class="{
  'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300': execution.status === 'pending',
- 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300': execution.status === 'running',
+ 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary': execution.status === 'running',
  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300': execution.status === 'completed',
  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': execution.status === 'failed',
  'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': execution.status === 'waiting_approval',
@@ -559,7 +559,7 @@ async function handleCustomToken {
  title="项目不存在"
  description="未找到该项目，可能已被删除"
  action-label="返回列表"
- gradient="from-blue-500/20 to-cyan-500/20"
+ gradient="from-primary/20 to-primary/20"
  @action="router.push('/projects')"
  />
  <!-- 删除确认对话框 -->

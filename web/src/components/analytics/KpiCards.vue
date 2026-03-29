@@ -43,8 +43,8 @@ const kpis = computed( => [
  label: '执行总数',
  value: data.value?.total_executions ?? '—',
  icon: 'lucide--play-circle',
- gradient: 'from-blue-500 to-cyan-400',
- bgGradient: 'from-blue-500/20 to-cyan-400/10',
+ gradient: 'from-teal-500 to-cyan-400',
+ bgGradient: 'from-primary/20 to-primary/10',
  },
  {
  label: '成功率',

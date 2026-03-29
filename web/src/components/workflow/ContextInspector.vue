@@ -75,7 +75,7 @@ const hasData = computed( => {
  <div v-if="context" class="flex items-center gap-2 mt-2">
  <span
  class="text-xs px-2 py-0.5 rounded-full":class="{
- 'bg-blue-100 text-blue-700': context.status === 'running',
+ 'bg-primary/10 text-primary': context.status === 'running',
  'bg-green-100 text-green-700': context.status === 'completed',
  'bg-red-100 text-red-700': context.status === 'failed',
  'bg-gray-100 text-gray-700': !['running', 'completed', 'failed'].includes(context.status),
@@ -108,7 +108,7 @@ const hasData = computed( => {
  <Collapsible v-if="getEntries(context?.trigger_data || {}).length > 0":open="expandedSections.trigger">
  <CollapsibleTrigger class="flex items-center gap-2 w-full hover:bg-accent rounded-md" @click="toggleSection('trigger')">
  <component:is="expandedSections.trigger ? ChevronDown: ChevronRight" class="w-4 " />
- <Zap class="w-4 text-blue-500" />
+ <Zap class="w-4 text-primary" />
  <span class="text-sm font-medium">触发器数据</span>
  <span class="text-xs text-muted-foreground ml-auto">trigger.*</span>
  </CollapsibleTrigger>
@@ -118,7 +118,7 @@ const hasData = computed( => {
  v-for="[key, value] in getEntries(context?.trigger_data || {})":key="key"
  class="group flex items-start gap-2 text-xs hover:bg-accent/50 rounded "
  >
- <code class="text-blue-600 dark:text-blue-400 shrink-0">{{ key }}</code>
+ <code class="text-primary shrink-0">{{ key }}</code>
  <span class="text-muted-foreground">:</span>
  <pre v-if="isObject(value)" class="flex-1 text-foreground overflow-x-auto">{{ formatValue(value) }}</pre>
  <span v-else class="flex-1 text-foreground truncate">{{ formatValue(value) }}</span>

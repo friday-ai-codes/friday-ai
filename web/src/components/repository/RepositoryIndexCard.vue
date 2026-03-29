@@ -105,9 +105,9 @@ onUnmounted( => {
 </script>
 <template>
  <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-cyan-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-primary/10 to-cyan-500/10 rounded-3xl blur-xl opacity-70" />
  <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-blue-500/5">
+ <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-primary/5">
  <div>
  <CardTitle class="flex items-center gap-2">
  <span class="icon-[lucide--database] text-cyan-500" />
@@ -163,8 +163,8 @@ onUnmounted( => {
  <!-- 索引中状态 -->
  <div v-else-if="indexStatus.index_status === IndexStatus.INDEXING" class="space-y-4">
  <div class="flex items-center gap-3">
- <div class=" rounded-full bg-blue-500/10">
- <span class="icon-[lucide--loader-circle] text-2xl text-blue-500 animate-spin" />
+ <div class=" rounded-full bg-primary/10">
+ <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
  </div>
  <div class="flex-1">
  <p class="font-medium">
@@ -179,11 +179,11 @@ onUnmounted( => {
  <span class="icon-[lucide--loader-circle] mr-1.5 animate-spin" />
  {{ overallStage }}
  </span>
- <span class="font-medium text-blue-500">{{ overallProgress }}%</span>
+ <span class="font-medium text-primary">{{ overallProgress }}%</span>
  </div>
  <div class=".5 bg-muted rounded-full overflow-hidden">
  <div
- class="h-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 transition-all duration-500":style="{ width: `${overallProgress}%` }"
+ class="h-full bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 transition-all duration-500":style="{ width: `${overallProgress}%` }"
  />
  </div>
  </div>

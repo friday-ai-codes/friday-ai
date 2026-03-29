@@ -55,9 +55,9 @@ const pollingIntervalStr = computed({
 <template>
  <div class="space-y-4">
  <!-- Introduction -->
- <div class="rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-400/5 border border-blue-500/20 ">
+ <div class="rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 ">
  <div class="flex items-start gap-2">
- <span class="icon-[lucide--terminal] text-blue-500 text-lg shrink-0 mt-0.5" />
+ <span class="icon-[lucide--terminal] text-primary text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">
  <h4 class="text-sm font-medium">
  AI 编码执行
@@ -67,7 +67,7 @@ const pollingIntervalStr = computed({
  </p>
  <!-- Workflow Visual -->
  <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
- <span class="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600 font-medium">读取方案</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">读取方案</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
  <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-600 font-medium">SubAgent 编码</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
@@ -81,7 +81,7 @@ const pollingIntervalStr = computed({
  <!-- Container Image -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--container] text-blue-500" />
+ <span class="icon-[lucide--container] text-primary" />
  容器镜像
  </Label>
  <Input
@@ -96,7 +96,7 @@ const pollingIntervalStr = computed({
  <!-- Timeout Seconds -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--timer] text-blue-500" />
+ <span class="icon-[lucide--timer] text-primary" />
  编码超时（秒）
  </Label>
  <Input
@@ -114,7 +114,7 @@ const pollingIntervalStr = computed({
  <!-- Polling Interval -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--refresh-cw] text-blue-500" />
+ <span class="icon-[lucide--refresh-cw] text-primary" />
  轮询间隔（秒）
  </Label>
  <Input
@@ -132,7 +132,7 @@ const pollingIntervalStr = computed({
  <!-- Chat ID -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--message-circle] text-blue-500" />
+ <span class="icon-[lucide--message-circle] text-primary" />
  飞书群 ID
  </Label>
  <Input

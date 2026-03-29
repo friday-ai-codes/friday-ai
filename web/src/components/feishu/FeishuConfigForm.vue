@@ -121,7 +121,7 @@ async function handleDelete {
  配置飞书插件凭证，用于接收 Webhook 和调用飞书项目 API
  </CardDescription>
  </div>
- <Badge v-if="isConfigured" variant="default" class="bg-green-500">
+ <Badge v-if="isConfigured" variant="success">
  已配置
  </Badge>
  <Badge v-else variant="secondary">

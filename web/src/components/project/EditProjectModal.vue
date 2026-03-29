@@ -204,8 +204,8 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
- <span class="icon-[lucide--pencil] text-xl text-blue-600" />
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <span class="icon-[lucide--pencil] text-xl text-primary" />
  </div>
  <div>
  <h3 class="text-lg font-semibold text-foreground">
@@ -278,7 +278,7 @@ function handleCancel {
  <Collapsible v-model:open="feishuIMOpen">
  <CollapsibleTrigger class="flex items-center justify-between w-full py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
  <span class="flex items-center gap-2">
- <span class="icon-[lucide--message-circle] text-base text-blue-500" />
+ <span class="icon-[lucide--message-circle] text-base text-primary" />
  飞书 IM 消息配置
  <span
  v-if="feishuIMConfig.is_configured"
@@ -292,8 +292,8 @@ function handleCancel {
  />
  </CollapsibleTrigger>
  <CollapsibleContent class="space-y-4 pt-3">
- <div class="rounded-lg bg-blue-500/5 border border-blue-500/20 text-xs text-muted-foreground space-y-1">
- <p class="font-medium text-blue-600">
+ <div class="rounded-lg bg-primary/5 border border-primary/20 text-xs text-muted-foreground space-y-1">
+ <p class="font-medium text-primary">
  配置说明
  </p>
  <p>用于 AI Agent 发送飞书消息（如提问卡片、通知等）。</p>

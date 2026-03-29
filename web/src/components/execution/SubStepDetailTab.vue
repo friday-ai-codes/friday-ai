@@ -33,7 +33,7 @@ watch( => props.focusStepId, (id) => {
 function statusColor(status: string): string {
  const map: Record<string, string> = {
  pending: 'bg-gray-300',
- running: 'bg-blue-400 animate-pulse',
+ running: 'bg-primary animate-pulse',
  completed: 'bg-green-400',
  failed: 'bg-red-400',
  }

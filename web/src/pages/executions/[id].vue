@@ -459,7 +459,7 @@ async function handleTrigger {
  <ExecutionStatusBadge:status="currentExecution.status" size="sm" />
  <!-- 重试来源标记 -->
  <div v-if="retryFromId" class="flex items-center gap-1.5">
- <Badge variant="outline" class="border-amber-500/50 text-amber-600 text-[10px] px-1.5 py-0">
+ <Badge variant="warning" class="text-[10px] px-1.5 py-0">
  重试
  </Badge>
  <RouterLink:to="`/executions/${retryFromId}`"
@@ -471,7 +471,7 @@ async function handleTrigger {
  </div>
  <!-- 从此继续来源标记（Phase） -->
  <div v-if="resumedFromId" class="flex items-center gap-1.5">
- <Badge variant="outline" class="border-blue-500/50 text-blue-600 text-[10px] px-1.5 py-0">
+ <Badge variant="outline" class="border-primary/50 text-primary text-[10px] px-1.5 py-0">
  继续
  </Badge>
  <RouterLink:to="`/executions/${resumedFromId}`"

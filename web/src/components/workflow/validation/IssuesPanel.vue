@@ -39,7 +39,7 @@ const isOpen = ref(true)
  <AlertTriangle class="w-4 text-amber-600" />
  </div>
  <span class="text-sm font-medium">问题</span>
- <Badge variant="secondary" class="bg-amber-500/20 text-amber-700">
+ <Badge variant="warning">
  {{ warningCount }}
  </Badge>
  </div>

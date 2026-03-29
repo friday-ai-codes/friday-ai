@@ -80,7 +80,7 @@ function getGroupColor(group: PaletteGroup): string {
 }
 function getCategoryGradient(color: string): string {
  const gradients: Record<string, string> = {
- blue: 'bg-gradient-to-r from-blue-500 to-cyan-400',
+ blue: 'bg-gradient-to-r from-teal-500 to-cyan-400',
  green: 'bg-gradient-to-r from-emerald-500 to-teal-400',
  purple: 'bg-gradient-to-r from-violet-500 to-purple-400',
  orange: 'bg-gradient-to-r from-amber-500 to-orange-400',

@@ -10,7 +10,7 @@ function deleteNode {
  as="span"
  class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md select-none transition-colors duration-150":class="[
  selected
- ? 'bg-blue-500 text-white border border-blue-600': 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20',
+ ? 'bg-primary text-white border border-primary': 'bg-primary/10 text-primary dark:text-primary border border-primary/20',
  ]"
  contenteditable="false"
  >
@@ -22,7 +22,7 @@ function deleteNode {
  <button
  v-if="editor.isEditable"
  type="button"
- class="self-start rounded .5":class="selected ? 'hover:bg-white/20': 'hover:bg-blue-500/20'"
+ class="self-start rounded .5":class="selected ? 'hover:bg-white/20': 'hover:bg-primary/20'"
  @click="deleteNode"
  >
  <span class="icon-[lucide--x] w-2.5 .5" />

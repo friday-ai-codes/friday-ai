@@ -127,7 +127,7 @@ const advancedOpen = ref(false)
  <!-- Capability Tags -->
  <div class="flex flex-wrap gap-1 pt-0.5">
  <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-500 text-[10px] font-medium">ReAct</span>
- <span class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[10px] font-medium">RAG 向量检索</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">RAG 向量检索</span>
  <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[10px] font-medium">verify_plan</span>
  <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">飞书交互</span>
  </div>
@@ -139,19 +139,19 @@ const advancedOpen = ref(false)
  <!-- ================================================================== -->
  <div class="relative pl-6">
  <!-- 左侧竖线 -->
- <div class="absolute left-[9px] top-2 bottom-2 w-px bg-gradient-to-b from-blue-500/40 via-violet-500/30 to-amber-500/20" />
+ <div class="absolute left-[9px] top-2 bottom-2 w-px bg-gradient-to-b from-primary/40 via-violet-500/30 to-amber-500/20" />
  <!-- ============================================================== -->
  <!-- Phase: 需求输入 -->
  <!-- ============================================================== -->
  <div class="relative pb-5">
  <!-- 步骤圆点 -->
- <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-blue-500/15 border border-blue-500/30">
- <span class="text-[10px] font-bold text-blue-500">1</span>
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
+ <span class="text-[10px] font-bold text-primary">1</span>
  </div>
  <div class="space-y-2.5">
  <div>
  <h5 class="text-sm font-medium flex items-center gap-1.5">
- <span class="icon-[lucide--file-text] text-blue-500 text-sm" />
+ <span class="icon-[lucide--file-text] text-primary text-sm" />
  需求输入
  </h5>
  <p class="text-[11px] text-muted-foreground mt-0.5">

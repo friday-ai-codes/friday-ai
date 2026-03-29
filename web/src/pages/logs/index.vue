@@ -254,7 +254,7 @@ const columns: ColumnDef<TriggerLog> = [
  <!-- 页头 -->
  <PageHeader
  icon="lucide--file-text"
- icon-gradient="from-cyan-500/20 to-blue-500/10"
+ icon-gradient="from-primary/20 to-primary/10"
  icon-color="text-cyan-500"
  title="触发日志"
  description="查看飞书 Webhook 触发的工作项日志"

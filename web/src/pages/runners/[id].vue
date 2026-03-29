@@ -264,9 +264,9 @@ function formatTimeAgo(dateStr: string | null) {
  </div>
  <!-- 当前任务卡片 -->
  <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--play-circle] text-blue-500" />
+ <span class="icon-[lucide--play-circle] text-primary" />
  当前任务
  <Badge variant="secondary" class="ml-auto transition-colors duration-300">
  {{ runner.current_task_list.length }}

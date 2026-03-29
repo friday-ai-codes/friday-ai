@@ -79,8 +79,8 @@ const logFilterOptions: Array<{
  {
  key: 'connection',
  label: '连接',
- textClass: 'text-blue-400',
- checkboxClass: 'border-blue-400/60 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500',
+ textClass: 'text-primary',
+ checkboxClass: 'border-primary/60 data-[state=checked]:bg-primary data-[state=checked]:border-primary',
  },
  {
  key: 'heartbeat',
@@ -124,7 +124,7 @@ function getLogType(log: MonitorLog): LogType {
 function getLogColor(log: MonitorLog): string {
  const type = getLogType(log)
  if (type === 'connection')
- return 'text-blue-400'
+ return 'text-primary'
  if (type === 'heartbeat')
  return 'text-muted-foreground'
  if (type === 'task') {
