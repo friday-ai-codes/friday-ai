@@ -317,3 +317,13 @@ APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 APSCHEDULER_RUN_NOW_TIMEOUT = 25
 # Enable scheduler (can be disabled in tests)
 FF_ENABLE_SCHEDULER = env.bool("FF_ENABLE_SCHEDULER", True)
+# =============================================================================
+# MCP 工具安全
+# =============================================================================
+# MCP 工具执行白名单：仅允许以下 server_command 值
+MCP_ALLOWED_COMMANDS: list[str] = [
+ "npx",
+ "uvx",
+ "node",
+ "python",
+]
