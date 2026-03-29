@@ -98,7 +98,7 @@ const availableVariables = computed(: VariableCategory => {
  category: 'trigger',
  categoryLabel: '触发器数据',
  icon: Zap,
- color: 'text-blue-500',
+ color: 'text-primary',
  items,
  })
  }
@@ -191,7 +191,7 @@ const presetVariables = computed(: VariableCategory => [
  category: 'trigger',
  categoryLabel: '触发器数据',
  icon: Zap,
- color: 'text-blue-500',
+ color: 'text-primary',
  items: [
  { key: 'event_type', path: 'trigger.event_type' },
  { key: 'trigger_log_id', path: 'trigger.trigger_log_id' },

@@ -133,7 +133,7 @@ function getStepMeta(actionType: string) {
  case 'llm_request':
  return { label: '思考', iconClass: 'icon-[lucide--brain]', colorClass: 'text-violet-500', bgClass: 'bg-violet-500/10' }
  case 'tool_call':
- return { label: '执行', iconClass: 'icon-[lucide--wrench]', colorClass: 'text-blue-500', bgClass: 'bg-blue-500/10' }
+ return { label: '执行', iconClass: 'icon-[lucide--wrench]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  case 'llm_response':
  return { label: '观察', iconClass: 'icon-[lucide--eye]', colorClass: 'text-emerald-500', bgClass: 'bg-emerald-500/10' }
  case 'state_change':

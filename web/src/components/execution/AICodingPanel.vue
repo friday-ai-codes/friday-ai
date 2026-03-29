@@ -62,8 +62,8 @@ const failedOpen = ref(true)
  <CardHeader class="pb-3">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class="bg-gradient-to-br from-blue-500/20 to-cyan-400/10 rounded-lg ">
- <span class="icon-[lucide--terminal] w-5 text-blue-500" />
+ <div class="bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg ">
+ <span class="icon-[lucide--terminal] w-5 text-primary" />
  </div>
  <CardTitle class="text-base">
  AI 编码执行
@@ -79,7 +79,7 @@ const failedOpen = ref(true)
  </Badge>
  <Badge
  v-else-if="isWaitingEvent"
- class="bg-blue-500/10 text-blue-600 border-blue-500/20"
+ class="bg-primary/10 text-primary border-primary/20"
  >
  <span class="icon-[lucide--git-branch] w-3 mr-1" />
  待确认分支
@@ -110,24 +110,24 @@ const failedOpen = ref(true)
  <CardContent class="space-y-4">
  <!-- Branch Info (always visible when available) -->
  <div v-if="branches.branch_name" class="flex items-center gap-2 text-sm">
- <span class="icon-[lucide--git-branch] w-4 text-blue-500" />
- <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600">{{ branches.branch_name }}</code>
+ <span class="icon-[lucide--git-branch] w-4 text-primary" />
+ <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{{ branches.branch_name }}</code>
  <span class="icon-[lucide--arrow-right] w-3 text-muted-foreground" />
  <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{{ branches.base_branch || 'main' }}</code>
  </div>
  <!-- Waiting Event: branch confirmation -->
  <div
  v-if="isWaitingEvent"
- class=" rounded-xl bg-blue-500/5 border border-blue-500/10"
+ class=" rounded-xl bg-primary/5 border border-primary/10"
  >
- <div class="flex items-center gap-2 text-sm text-blue-600">
+ <div class="flex items-center gap-2 text-sm text-primary">
  <span class="icon-[lucide--hourglass] w-4 animate-pulse" />
  <span>正在等待飞书确认分支名...</span>
  </div>
  <div v-if="branches.candidates" class="mt-2 flex flex-wrap gap-1">
  <code
  v-for="candidate in branches.candidates":key="candidate"
- class="font-mono text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600"
+ class="font-mono text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary"
  >
  {{ candidate }}
  </code>
@@ -207,7 +207,7 @@ const failedOpen = ref(true)
  <span class="flex items-center gap-2">
  <span class="icon-[lucide--x-circle] w-4 text-red-500" />
  失败仓库
- <Badge variant="secondary" class="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-600">
+ <Badge variant="destructive" class="text-[10px] px-1.5 py-0">
  {{ failedDetails.length }}
  </Badge>
  </span>

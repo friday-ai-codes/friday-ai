@@ -14,7 +14,7 @@ function handleDragStart(event: DragEvent) {
 }
 function getIconGradient(color: string): string {
  const gradients: Record<string, string> = {
- blue: 'bg-gradient-to-br from-blue-500/20 to-cyan-400/10',
+ blue: 'bg-gradient-to-br from-primary/20 to-primary/10',
  green: 'bg-gradient-to-br from-emerald-500/20 to-teal-400/10',
  purple: 'bg-gradient-to-br from-violet-500/20 to-purple-400/10',
  orange: 'bg-gradient-to-br from-amber-500/20 to-orange-400/10',
@@ -23,7 +23,7 @@ function getIconGradient(color: string): string {
 }
 function getIconColor(color: string): string {
  const colors: Record<string, string> = {
- blue: 'text-blue-500',
+ blue: 'text-primary',
  green: 'text-emerald-500',
  purple: 'text-violet-500',
  orange: 'text-amber-500',
@@ -32,7 +32,7 @@ function getIconColor(color: string): string {
 }
 function getHoverGlow(color: string): string {
  const glows: Record<string, string> = {
- blue: 'group-hover:shadow-blue-500/10 group-hover:border-blue-500/30',
+ blue: 'group-hover:shadow-primary/10 group-hover:border-primary/30',
  green: 'group-hover:shadow-emerald-500/10 group-hover:border-emerald-500/30',
  purple: 'group-hover:shadow-violet-500/10 group-hover:border-violet-500/30',
  orange: 'group-hover:shadow-amber-500/10 group-hover:border-amber-500/30',

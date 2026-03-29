@@ -158,8 +158,8 @@ const addCrossReferences = field('add_cross_references', true)
  <!-- 交叉引用 - 使用 Glassmorphism 卡片样式 -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-500/10">
- <span class="icon-[lucide--link] text-blue-500" />
+ <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <span class="icon-[lucide--link] text-primary" />
  </div>
  <div>
  <span class="text-sm font-medium">添加交叉引用</span>

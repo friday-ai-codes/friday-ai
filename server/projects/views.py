@@ -4,6 +4,7 @@ import structlog
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
+from django.db.models import Prefetch
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -41,7 +42,12 @@ from .serializers import (
 logger = structlog.get_logger(__name__)
 class ProjectViewSet(ModelViewSet):
  """ViewSet for Project CRUD operations."""
- queryset = Project.objects.prefetch_related("repositories__credential").all
+ queryset = Project.objects.prefetch_related(
+ Prefetch(
+ "repositories",
+ queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
+ ),
+ ).all
  serializer_class = ProjectSerializer
  def get_queryset(self):
  """按用户 membership 过滤项目列表。superuser 看所有。"""

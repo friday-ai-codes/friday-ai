@@ -45,7 +45,7 @@ const runningCount = computed( =>
  <span v-if="failedCount" class="text-red-500">
  {{ failedCount }} 失败
  </span>
- <span v-if="runningCount" class="text-blue-500">
+ <span v-if="runningCount" class="text-primary">
  {{ runningCount }} 执行中
  </span>
  </div>
@@ -81,8 +81,8 @@ const runningCount = computed( =>
  <div
  v-if="task.execution_plan_ids?.length > 1"
  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
- bg-gradient-to-r from-blue-500/20 to-cyan-500/10
- text-xs text-blue-600 dark:text-blue-400"
+ bg-gradient-to-r from-primary/20 to-primary/10
+ text-xs text-primary"
  >
  <span class="icon-[lucide--git-merge] text-sm" />
  {{ task.execution_plan_ids.length }} 个任务合并

@@ -74,8 +74,8 @@
 ```vue
 <PageHeader
  icon="lucide--folder-git-2"
- icon-gradient="from-blue-500/20 to-cyan-500/10"
- icon-color="text-blue-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="项目管理"
  description="管理您的 Git 仓库项目和凭证配置"
 >

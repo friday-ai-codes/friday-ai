@@ -54,7 +54,7 @@ const roleLabels: Record<string, string> = {
 }
 const roleColors: Record<string, string> = {
  admin: 'bg-primary/10 text-primary',
- member: 'bg-blue-500/10 text-blue-600',
+ member: 'bg-primary/10 text-primary',
  viewer: 'bg-muted text-muted-foreground',
 }
 onMounted( => {

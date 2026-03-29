@@ -106,8 +106,8 @@ const triggerConfig = computed( => {
  }
 }`,
  icon: 'icon-[lucide--message-square]',
- iconColor: 'text-blue-500',
- bgGradient: 'from-blue-500/20 to-cyan-500/10',
+ iconColor: 'text-primary',
+ bgGradient: 'from-primary/20 to-primary/10',
  }
  case 'webhook':
  return {

@@ -215,7 +215,7 @@ const regexValidation = computed( => {
  <!-- 工作项类型 - 必选 -->
  <div class="space-y-3">
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--file-text] text-blue-500" />
+ <span class="icon-[lucide--file-text] text-primary" />
  <Label class="text-sm font-medium">工作项类型</Label>
  <span class="text-destructive">*</span>
  </div>

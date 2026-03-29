@@ -143,7 +143,7 @@ function refreshModels {
  >
  <div class="flex flex-col h-[85vh] sm:h-auto sm:max-h-[85vh]">
  <!-- 装饰性顶部条纹 -->
- <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 shrink-0" />
+ <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-teal-500 shrink-0" />
  <!-- 头部 -->
  <div class="px-6 pt-5 pb-4 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-cyan-500/5 shrink-0">
  <div class="flex items-center gap-3">

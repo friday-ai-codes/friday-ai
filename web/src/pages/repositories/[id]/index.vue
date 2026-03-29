@@ -231,11 +231,11 @@ async function handleEditSuccess {
  <IndexHistoryList:repository-id="repository.id" />
  <!-- 关联项目 -->
  <div class="relative md:col-span-2">
- <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
  <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--folder] text-blue-500" />
+ <span class="icon-[lucide--folder] text-primary" />
  关联项目
  </CardTitle>
  <CardDescription>使用此仓库的项目</CardDescription>
@@ -250,13 +250,13 @@ async function handleEditSuccess {
  <div v-else class="space-y-2">
  <RouterLink
  v-for="(project, index) in repository.projects":key="project.id":to="`/projects/${project.id}`"
- class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-blue-500/30 transition-all group"
+ class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 transition-all group"
  >
  <div class="flex items-center gap-4">
- <div class="w-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center text-sm font-medium text-blue-600">
+ <div class="w-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-sm font-medium text-primary">
  {{ index + 1 }}
  </div>
- <span class="font-medium group-hover:text-blue-600 transition-colors">{{ project.name }}</span>
+ <span class="font-medium group-hover:text-primary transition-colors">{{ project.name }}</span>
  </div>
  <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
  </RouterLink>

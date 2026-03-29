@@ -104,8 +104,8 @@ function onKeyDown(event: KeyboardEvent): boolean {
 function getTypeColor(type: string): string {
  const colors: Record<string, string> = {
  string: 'text-green-600 bg-green-500/10',
- number: 'text-blue-600 bg-blue-500/10',
- integer: 'text-blue-600 bg-blue-500/10',
+ number: 'text-primary bg-primary/10',
+ integer: 'text-primary bg-primary/10',
  boolean: 'text-amber-600 bg-amber-500/10',
  object: 'text-purple-600 bg-purple-500/10',
  array: 'text-cyan-600 bg-cyan-500/10',

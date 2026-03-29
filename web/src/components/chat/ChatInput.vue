@@ -68,7 +68,7 @@ function handleKeydown(e: KeyboardEvent) {
  />
  <Button
  size="icon"
- class="shrink-0 w-11 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-400 hover:from-blue-600 hover:to-cyan-500":disabled="!inputContent.trim || chatStore.isStreaming"
+ class="shrink-0 w-11 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-400 hover:from-teal-600 hover:to-cyan-500":disabled="!inputContent.trim || chatStore.isStreaming"
  @click="handleSend"
  >
  <span class="icon-[lucide--send] text-white" />

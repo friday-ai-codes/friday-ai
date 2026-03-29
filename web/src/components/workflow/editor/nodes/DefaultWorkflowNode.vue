@@ -19,7 +19,7 @@ const props = defineProps<{
 /** 按节点类别映射边框色 */
 const categoryBorderClass = computed( => {
  const map: Record<string, string> = {
- trigger: 'border-blue-500/50',
+ trigger: 'border-primary/50',
  action: 'border-violet-500/50',
  control: 'border-amber-500/50',
  integration: 'border-emerald-500/50',

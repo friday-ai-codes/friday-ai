@@ -669,9 +669,9 @@ onMounted( => {
  <section class="group relative">
  <div class="card overflow-hidden">
  <!-- 卡片头部 -->
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-500/10 flex items-center justify-center">
- <span class="icon-[lucide--message-circle] text-2xl text-blue-500" />
+ <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--message-circle] text-2xl text-primary" />
  </div>
  <div class="flex-1">
  <h2 class="text-lg font-semibold">
@@ -692,8 +692,8 @@ onMounted( => {
  <!-- 表单内容 -->
  <div class=" space-y-6">
  <!-- 说明 -->
- <div class="rounded-lg bg-blue-500/5 border border-blue-500/20 text-sm text-muted-foreground space-y-2">
- <p class="font-medium text-blue-600 flex items-center gap-2">
+ <div class="rounded-lg bg-primary/5 border border-primary/20 text-sm text-muted-foreground space-y-2">
+ <p class="font-medium text-primary flex items-center gap-2">
  <span class="icon-[lucide--info]" />
  配置说明
  </p>

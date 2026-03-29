@@ -65,8 +65,8 @@ async function handleDelete {
  <!-- 页面标题 -->
  <PageHeader
  icon="lucide--folder-git-2"
- icon-gradient="from-blue-500/20 to-cyan-500/10"
- icon-color="text-blue-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="项目管理"
  description="管理您的 Git 仓库项目和凭证配置"
  >
@@ -86,7 +86,7 @@ async function handleDelete {
  title="暂无项目"
  description="创建您的第一个项目，开始使用 AI 辅助开发"
  action-label="新建项目"
- gradient="from-blue-500/20 to-cyan-500/20"
+ gradient="from-primary/20 to-primary/20"
  @action="openCreateProject"
  />
  <!-- 项目列表 -->

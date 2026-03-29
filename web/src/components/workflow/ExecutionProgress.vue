@@ -38,9 +38,9 @@ const statusConfig = {
  },
  running: {
  icon: Loader2,
- color: 'text-blue-500',
- bg: 'bg-blue-50 dark:bg-blue-900/20',
- border: 'border-blue-200 dark:border-blue-800',
+ color: 'text-primary',
+ bg: 'bg-primary/5 dark:bg-primary/10',
+ border: 'border-primary/20 dark:border-primary/30',
  label: '运行中',
  animate: true,
  },

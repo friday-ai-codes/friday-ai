@@ -95,7 +95,7 @@ const metadata = computed( => props.message.metadata as { model?: string, usage?
  <!-- 头像 -->
  <Avatar class=" w-8 shrink-0 mt-1">
  <AvatarFallback:class="message.role === 'user'
- ? 'bg-gradient-to-br from-blue-500 to-cyan-400 text-white text-xs': 'bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-xs'"
+ ? 'bg-gradient-to-br from-teal-500 to-cyan-400 text-white text-xs': 'bg-gradient-to-br from-primary/20 to-primary/10 text-primary text-xs'"
  >
  <span v-if="message.role === 'user'" class="icon-[lucide--user] text-sm" />
  <span v-else class="icon-[lucide--bot] text-sm" />
@@ -105,7 +105,7 @@ const metadata = computed( => props.message.metadata as { model?: string, usage?
  <div class="max-w-[80%] space-y-1">
  <div
  class="rounded-2xl px-4 py-3":class="message.role === 'user'
- ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-white': 'bg-card/80 backdrop-blur-sm border border-border/50'"
+ ? 'bg-gradient-to-r from-teal-500 to-cyan-400 text-white': 'bg-card/80 backdrop-blur-sm border border-border/50'"
  >
  <!-- 用户消息 -->
  <div v-if="message.role === 'user'" class="text-sm whitespace-pre-wrap break-words">

@@ -61,9 +61,8 @@ class ProjectSerializer(serializers.ModelSerializer):
  def get_has_feishu_config(self, obj):
  return obj.has_feishu_config
  def get_repositories(self, obj):
- """Return only non-deleted repositories."""
- active_repos = obj.repositories.filter(is_deleted=False)
- return RepositorySerializer(active_repos, many=True).data
+ """Return only non-deleted repositories (already filtered via Prefetch in ViewSet)."""
+ return RepositorySerializer(obj.repositories.all, many=True).data
 class ProjectCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Project."""
  class Meta:

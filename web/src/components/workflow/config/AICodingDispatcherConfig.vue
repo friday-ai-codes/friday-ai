@@ -50,8 +50,8 @@ const mergeSameBranch = field('merge_same_branch', true)
  bg-card/70 backdrop-blur-sm border border-border/50"
  >
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/10">
- <span class="icon-[lucide--git-merge] text-xl text-blue-500" />
+ <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <span class="icon-[lucide--git-merge] text-xl text-primary" />
  </div>
  <div>
  <label class="text-sm font-medium">

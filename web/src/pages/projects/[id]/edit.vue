@@ -83,14 +83,14 @@ async function handleSubmit {
  <!-- 表单卡片 -->
  <div v-else class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-blue-500/10 via-cyan-500/10 to-blue-500/10 rounded-3xl blur-xl opacity-70" />
+ <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden">
  <!-- 标题区域 -->
- <div class=" border-b border-border/50 bg-gradient-to-r from-blue-500/5 to-cyan-500/5">
+ <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 flex items-center justify-center">
- <span class="icon-[lucide--pencil] text-2xl text-blue-500" />
+ <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--pencil] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-xl font-bold">

@@ -208,7 +208,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <!-- 背景装饰 -->
  <div class="absolute inset-0 -z-10 overflow-hidden">
  <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/15 to-violet-500/20 rounded-full blur-3xl" />
- <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-blue-500/15 to-cyan-400/10 rounded-full blur-3xl" />
+ <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-primary/15 to-primary/10 rounded-full blur-3xl" />
  <div class="absolute -bottom-20 right-1/3 w-64 bg-gradient-to-t from-emerald-500/10 to-transparent rounded-full blur-3xl" />
  </div>
  <!-- Toolbar -->

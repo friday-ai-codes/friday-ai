@@ -325,7 +325,7 @@ onMounted( => {
  <div class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
  <span class="icon-[lucide--file-text]" />
  <span>Chunk 上下文增强</span>
- <Badge variant="secondary" class="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+ <Badge variant="success" class="text-xs">
  已内置
  </Badge>
  </div>

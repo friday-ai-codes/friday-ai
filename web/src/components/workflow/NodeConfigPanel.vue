@@ -305,7 +305,7 @@ const hasPredecessor = computed( => directPredecessorOutputs.value.length > 0)
 function getPortTypeColor(type: string): string {
  const colors: Record<string, string> = {
  string: 'text-green-500',
- number: 'text-blue-500',
+ number: 'text-primary',
  boolean: 'text-amber-500',
  object: 'text-purple-500',
  array: 'text-cyan-500',
@@ -496,7 +496,7 @@ function getOutputFieldCount: number {
  <Separator class="bg-border/50 mb-4" />
  <CollapsibleTrigger class="flex items-center justify-between w-full group">
  <div class="flex items-center gap-2 text-sm font-medium">
- <span class="icon-[lucide--arrow-left-from-line] text-base text-blue-500" />
+ <span class="icon-[lucide--arrow-left-from-line] text-base text-primary" />
  输入字段
  <Badge variant="outline" class="text-xs">
  {{ directPredecessorOutputs.length }}

@@ -33,7 +33,7 @@ const statusBorderClass = computed( => {
  return 'border-amber-400/70 node-debug-paused-border'
  }
  const map: Record<string, string> = {
- running: 'border-blue-400/80 node-running-border',
+ running: 'border-primary/80 node-running-border',
  completed: 'border-green-400/60',
  failed: 'border-red-400/70',
  pending: 'border-gray-300/50',
@@ -66,7 +66,7 @@ const statusDotClass = computed( => {
  return 'bg-amber-400 animate-pulse'
  }
  const map: Record<string, string> = {
- running: 'bg-blue-400 animate-pulse',
+ running: 'bg-primary animate-pulse',
  completed: 'bg-green-400',
  failed: 'bg-red-400',
  pending: 'bg-gray-300',

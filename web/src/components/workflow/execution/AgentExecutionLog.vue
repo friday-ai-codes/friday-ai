@@ -156,7 +156,7 @@ function getStatusColor(status: string): string {
  case 'error':
  return 'text-red-500'
  default:
- return 'text-blue-500'
+ return 'text-primary'
  }
 }
 // Check for errors
@@ -226,12 +226,12 @@ const errorMessage = computed( => {
  </div>
  <!-- Act Section (Tool Call) -->
  <div v-if="iteration.act" class="flex gap-3">
- <div class="shrink-0 rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-400/10">
- <Wrench class="w-4 text-blue-500" />
+ <div class="shrink-0 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <Wrench class="w-4 text-primary" />
  </div>
  <div class="flex-1 min-w-0">
  <div class="flex items-center gap-2 mb-1">
- <span class="text-xs font-medium text-blue-500">执行</span>
+ <span class="text-xs font-medium text-primary">执行</span>
  <span class="text-xs font-mono bg-muted/50 px-1.5 py-0.5 rounded">
  {{ iteration.act.name }}
  </span>
@@ -318,7 +318,7 @@ const errorMessage = computed( => {
  class="relative z-10 shrink-0 w-8 rounded-full flex items-center justify-center border-2":class="[
  tool.status === 'success' && 'bg-emerald-500/20 border-emerald-500',
  tool.status === 'error' && 'bg-red-500/20 border-red-500',
- tool.status === 'running' && 'bg-blue-500/20 border-blue-500',
+ tool.status === 'running' && 'bg-primary/20 border-primary',
  ]"
  >
  <component:is="getStatusIcon(tool.status)"
@@ -337,7 +337,7 @@ const errorMessage = computed( => {
  class="text-xs px-1.5 py-0.5 rounded-full":class="[
  tool.status === 'success' && 'bg-emerald-500/20 text-emerald-500',
  tool.status === 'error' && 'bg-red-500/20 text-red-500',
- tool.status === 'running' && 'bg-blue-500/20 text-blue-500',
+ tool.status === 'running' && 'bg-primary/20 text-primary',
  ]"
  >
  {{ tool.status === 'success' ? '成功': tool.status === 'error' ? '失败': '运行中' }}
@@ -387,7 +387,7 @@ const errorMessage = computed( => {
  v-else-if="!hasError"
  class="text-center py-8 text-muted-foreground"
  >
- <Loader2 class="w-8 mx-auto mb-2 animate-spin text-blue-500" />
+ <Loader2 class="w-8 mx-auto mb-2 animate-spin text-primary" />
  <div class="text-sm">
  正在执行...
  </div>
