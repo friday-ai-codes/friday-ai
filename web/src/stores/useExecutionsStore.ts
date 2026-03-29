@@ -178,6 +178,8 @@ export const useExecutionsStore = defineStore('executions', => {
  }
  }
  async function fetchExecution(id: string) {
+ // 切换 execution 时清理 subSteps 缓存，防止残留旧数据
+ subSteps.value = {}
  loading.value = true
  error.value = null
  try {
