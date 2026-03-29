@@ -29,21 +29,26 @@ const loading = ref(true)
 const claudeConfig = ref<ClaudeConfigRead | null>(null)
 onMounted(async => {
  try {
- await Promise.all([
+ const results = await Promise.allSettled([
  projectsStore.fetchProject(projectId.value),
  projectsStore.fetchFeishuConfig(projectId.value),
  executionsStore.fetchExecutions(undefined, projectId.value),
  repositoriesStore.fetchRepositories,
  ])
+ // 逐个检查结果，失败的部分通过 toast 提示
+ const names = ['项目信息', '飞书配置', '执行记录', '仓库列表']
+ results.forEach((result, index) => {
+ if (result.status === 'rejected') {
+ showError('加载失败', `${names[index]}加载失败`)
+ }
+ })
+ // claudeConfig 单独处理，不在 allSettled 中
  try {
  claudeConfig.value = await getProjectClaudeConfig(projectId.value)
  }
  catch {
  claudeConfig.value = null
  }
- }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取项目详情')
  }
  finally {
  loading.value = false
