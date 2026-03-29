@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Invitation
+from .throttles import LoginRateThrottle, RefreshRateThrottle
 from .serializers import (
  ChangePasswordSerializer,
  InvitationAcceptSerializer,
@@ -28,6 +29,7 @@ logger = structlog.get_logger(__name__)
 class LoginView(APIView):
  """User login endpoint."""
  permission_classes = [AllowAny]
+ throttle_classes = [LoginRateThrottle]
  async def post(self, request):
  serializer = LoginSerializer(data=request.data)
  # KEEP: LoginSerializer.is_valid 内部调用 authenticate，涉及 DB 查询
@@ -71,6 +73,7 @@ class RefreshTokenView(APIView):
  防止泄露的 Token 被持续利用。
  """
  permission_classes = [AllowAny]
+ throttle_classes = [RefreshRateThrottle]
  async def post(self, request):
  refresh_token = request.COOKIES.get("refresh_token")
  if not refresh_token:

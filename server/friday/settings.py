@@ -209,6 +209,10 @@ REST_FRAMEWORK = {
  ],
  "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
  "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
+ "DEFAULT_THROTTLE_RATES": {
+ "auth_login": "5/min",
+ "auth_refresh": "5/min",
+ },
 }
 # =============================================================================
 # JWT Settings
