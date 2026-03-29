@@ -52,7 +52,18 @@ export interface VariableSuggestionOptions {
 export function createVariableSuggestion(options: VariableSuggestionOptions): Extension {
  return Extension.create({
  name: 'variableSuggestion',
+ addStorage {
+ return {
+ cleanup: null as ( => void) | null,
+ }
+ },
+ onDestroy {
+ // 扩展销毁时确保清理残留的 scroll listener 和 popup
+ this.storage.cleanup?.
+ this.storage.cleanup = null
+ },
  addProseMirrorPlugins {
+ const extensionStorage = this.storage
  return [
  Suggestion<DesignTimeVariable, VariableNodeAttrs>({
  pluginKey: variableSuggestionPluginKey,
@@ -237,6 +248,23 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  // Listen to scroll events on all scrollable ancestors
  scrollHandler = onScroll
  window.addEventListener('scroll', scrollHandler, true)
+ // 将清理函数存入 extension storage，供 onDestroy 调用
+ extensionStorage.cleanup = => {
+ if (scrollHandler) {
+ window.removeEventListener('scroll', scrollHandler, true)
+ scrollHandler = null
+ }
+ if (app) {
+ app.unmount
+ app = null
+ }
+ if (popup) {
+ popup.remove
+ popup = null
+ }
+ componentRef = null
+ currentProps = null
+ }
  },
  onUpdate(props: SuggestionProps) {
  currentProps = props
@@ -296,6 +324,7 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  }
  componentRef = null
  currentProps = null
+ extensionStorage.cleanup = null
  },
  }
  }),

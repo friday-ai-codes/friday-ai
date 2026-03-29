@@ -71,13 +71,22 @@ router.beforeEach(async (to, from, next) => {
  next
 })
 // 监听 403 事件，跳转无权访问页面
-window.addEventListener('auth:forbidden', => {
+const onForbidden = => {
  router.push('/403')
-})
+}
 // 监听 401 登出事件（多标签页场景：其他标签页登出后 refresh 失败触发）
-window.addEventListener('auth:logout', => {
+const onLogout = => {
  const authStore = useAuthStore
  authStore.$reset
  router.push('/login')
-})
+}
+window.addEventListener('auth:forbidden', onForbidden)
+window.addEventListener('auth:logout', onLogout)
+// HMR 热重载时移除旧监听器，防止累积
+if (import.meta.hot) {
+ import.meta.hot.dispose( => {
+ window.removeEventListener('auth:forbidden', onForbidden)
+ window.removeEventListener('auth:logout', onLogout)
+ })
+}
 app.mount('#app')
