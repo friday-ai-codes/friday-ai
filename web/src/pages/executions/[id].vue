@@ -12,6 +12,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
+import { ApiError } from '~/api/client'
 import { checkWorkflowChanged, getCostBreakdown, resumeFromFailed, resumePreview } from '~/api/workflow'
 import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
 import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
@@ -59,6 +60,11 @@ const approving = ref(false)
 const triggerDialogOpen = ref(false)
 const triggerInputData = ref('')
 const triggering = ref(false)
+// ----- 操作按钮 loading 态 -----
+const isPausing = ref(false)
+const isResuming = ref(false)
+const isCancelling = ref(false)
+const isRetrying = ref(false)
 // ----- 成本数据 -----
 const costData = ref<CostBreakdown | null>(null)
 const costLoading = ref(false)
@@ -274,25 +280,47 @@ function handleActionComplete {
 }
 // ----- 顶部栏操作按钮 -----
 async function handlePause {
+ if (isPausing.value) return
+ isPausing.value = true
+ try {
  await store.pauseExecution(executionId.value)
  toast.success('工作流已暂停')
+ } catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`暂停失败: ${message}`)
+ } finally {
+ isPausing.value = false
+ }
 }
 async function handleResume {
+ if (isResuming.value) return
+ isResuming.value = true
  try {
  await store.resumeExecution(executionId.value)
  toast.success('工作流已恢复')
- }
- catch (e: any) {
- toast.error(`恢复失败: ${e.message}`)
+ } catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`恢复失败: ${message}`)
+ } finally {
+ isResuming.value = false
  }
 }
 async function handleCancel {
+ if (isCancelling.value) return
+ isCancelling.value = true
+ try {
  await store.cancelExecution(executionId.value)
  toast.success('工作流已取消')
+ } catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`取消失败: ${message}`)
+ } finally {
+ isCancelling.value = false
+ }
 }
 async function handleRetry {
- if (!currentExecution.value)
- return
+ if (!currentExecution.value || isRetrying.value) return
+ isRetrying.value = true
  try {
  const { retryExecution } = await import('~/api/workflow')
  const result = await retryExecution(currentExecution.value.id)
@@ -300,9 +328,11 @@ async function handleRetry {
  toast.success('工作流重新执行成功')
  router.push(`/executions/${result.execution_id}`)
  }
- }
- catch (e: any) {
- toast.error(`重试失败: ${e.message}`)
+ } catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`重试失败: ${message}`)
+ } finally {
+ isRetrying.value = false
  }
 }
 // ----- 从此继续（Phase → Phase 增强） -----
@@ -345,14 +375,15 @@ async function handleResumeFromFailed {
  router.push(`/executions/${result.execution_id}`)
  }
  }
- catch (e: any) {
- if (e.status === 409) {
+ catch (e: unknown) {
+ if (e instanceof ApiError && e.status === 409) {
  toast.error('工作流定义已修改，无法从此继续')
  definitionChanged.value = true
  resumeDialogOpen.value = false
  }
  else {
- toast.error(`继续执行失败: ${e.message}`)
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`继续执行失败: ${message}`)
  }
  }
  finally {
@@ -370,8 +401,9 @@ async function handleApprove {
  approvalComment.value = ''
  toast.success('节点已批准')
  }
- catch (e: any) {
- toast.error(`批准失败: ${e.message}`)
+ catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`批准失败: ${message}`)
  }
  finally {
  approving.value = false
@@ -387,8 +419,9 @@ async function handleReject {
  approvalComment.value = ''
  toast.success('节点已拒绝')
  }
- catch (e: any) {
- toast.error(`拒绝失败: ${e.message}`)
+ catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`拒绝失败: ${message}`)
  }
  finally {
  approving.value = false
@@ -415,8 +448,9 @@ async function handleTrigger {
  triggerInputData.value = '{}'
  toast.success('节点已触发')
  }
- catch (e: any) {
- toast.error(`触发失败: ${e.message}`)
+ catch (e: unknown) {
+ const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
+ toast.error(`触发失败: ${message}`)
  }
  finally {
  triggering.value = false
@@ -495,40 +529,44 @@ async function handleTrigger {
  v-if="currentExecution?.status === 'running'"
  variant="outline"
  size="sm"
- class=" text-xs"
+ class=" text-xs":disabled="isPausing"
  @click="handlePause"
  >
- <span class="icon-[lucide--pause] w-3.5 .5 mr-1" />
+ <span v-if="isPausing" class="icon-[lucide--loader-2] w-3.5 .5 mr-1 animate-spin" />
+ <span v-else class="icon-[lucide--pause] w-3.5 .5 mr-1" />
  暂停
  </Button>
  <Button
  v-if="currentExecution?.status === 'paused'"
  variant="outline"
  size="sm"
- class=" text-xs"
+ class=" text-xs":disabled="isResuming"
  @click="handleResume"
  >
- <span class="icon-[lucide--play] w-3.5 .5 mr-1" />
+ <span v-if="isResuming" class="icon-[lucide--loader-2] w-3.5 .5 mr-1 animate-spin" />
+ <span v-else class="icon-[lucide--play] w-3.5 .5 mr-1" />
  继续
  </Button>
  <Button
  v-if="['running', 'paused', 'pending', 'waiting_approval', 'waiting_event', 'suspended'].includes(currentExecution?.status || '')"
  variant="destructive"
  size="sm"
- class=" text-xs"
+ class=" text-xs":disabled="isCancelling"
  @click="handleCancel"
  >
- <span class="icon-[lucide--square] w-3.5 .5 mr-1" />
+ <span v-if="isCancelling" class="icon-[lucide--loader-2] w-3.5 .5 mr-1 animate-spin" />
+ <span v-else class="icon-[lucide--square] w-3.5 .5 mr-1" />
  取消
  </Button>
  <Button
  v-if="currentExecution?.status === 'failed' || currentExecution?.status === 'cancelled'"
  variant="default"
  size="sm"
- class=" text-xs"
+ class=" text-xs":disabled="isRetrying"
  @click="handleRetry"
  >
- <span class="icon-[lucide--rotate-ccw] w-3.5 .5 mr-1" />
+ <span v-if="isRetrying" class="icon-[lucide--loader-2] w-3.5 .5 mr-1 animate-spin" />
+ <span v-else class="icon-[lucide--rotate-ccw] w-3.5 .5 mr-1" />
  重试
  </Button>
  <Button variant="ghost" size="icon" class=" w-7" @click="store.fetchExecution(executionId)">
