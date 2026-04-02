@@ -266,7 +266,7 @@ class ConversationService:
  agent_session = await AgentSession.objects.acreate(
  session_id=session_id,
  project=conversation.project,
- user_id=1, # 占位，chat 路径暂无真实 user
+ user=None, # chat 路径暂无真实 user，字段允许 null
  status=AgentSession.Status.RUNNING,
  metadata={"conversation_id": str(conversation.id)},
  )
