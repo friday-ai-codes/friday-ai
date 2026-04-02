@@ -3,6 +3,7 @@ import type { ColumnDef } from '@tanstack/vue-table'
 import type { Runner } from '~/types'
 import { useHead } from '@vueuse/head'
 import { h } from 'vue'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -12,7 +13,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/comp
 useHead({ title: 'Runner 管理 - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const { status } = useRunnerMonitor
 const disconnectedTooLong = ref(false)
 let disconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -36,8 +38,8 @@ onMounted(async => {
  try {
  await runnersStore.fetchRunners
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取 Runner 列表')
+ catch (e: unknown) {
+ handleError(e, '加载 Runner 列表')
  }
  finally {
  loading.value = false
@@ -63,7 +65,7 @@ async function handleDelete {
  success('删除成功', `Runner「${runnerToDelete.value.name}」已删除`)
  deleteDialogOpen.value = false
  }
- catch (e) { showError('删除失败', e instanceof Error ? e.message: '无法删除 Runner') }
+ catch (e: unknown) { handleError(e, '删除 Runner') }
  finally { deleting.value = false }
 }
 function formatTimeAgo(dateStr: string | null) {

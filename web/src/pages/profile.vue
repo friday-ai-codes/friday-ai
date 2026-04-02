@@ -5,13 +5,16 @@
  */
 import type { MeUser } from '~/types'
 import { onMounted, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { getMe } from '~/api/users'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { useAuthStore } from '~/stores/auth'
 const authStore = useAuthStore
+const { handleError } = useErrorHandler
+const { success } = useToast
 const meData = ref<MeUser | null>(null)
 const loading = ref(true)
 const saving = ref(false)
@@ -23,8 +26,8 @@ async function loadProfile {
  meData.value = await getMe
  displayName.value = meData.value.display_name
  }
- catch {
- toast.error('加载资料失败')
+ catch (e: unknown) {
+ handleError(e, '加载资料')
  }
  finally {
  loading.value = false
@@ -38,10 +41,10 @@ async function saveDisplayName {
  meData.value.display_name = displayName.value
  }
  editingName.value = false
- toast.success('资料已更新')
+ success('资料已更新')
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存资料')
  }
  finally {
  saving.value = false

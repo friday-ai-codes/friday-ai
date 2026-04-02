@@ -7,8 +7,9 @@ import { useHead } from '@vueuse/head'
  * 用于配置项目的 Claude Code 设置
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
 import { getModels } from '~/api/chat'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  deleteProjectClaudeConfig,
  getProjectClaudeConfig,
@@ -33,6 +34,8 @@ const route = useRoute('/projects/[id]/claude')
 const router = useRouter
 const projectsStore = useProjectsStore
 const projectId = computed( => route.params.id)
+const { handleError } = useErrorHandler
+const { success, info } = useToast
 useHead({
  title: 'Claude 配置 - Friday AI',
 })
@@ -66,10 +69,8 @@ async function loadData {
  baseUrlDirty.value = false
  defaultModelDirty.value = false
  }
- catch (e) {
- toast.error('加载失败', {
- description: e instanceof Error ? e.message: '无法获取项目详情',
- })
+ catch (e: unknown) {
+ handleError(e, '加载配置')
  }
  finally {
  loading.value = false
@@ -122,7 +123,7 @@ async function saveConfig {
  config.default_model = modelVal || undefined
  }
  if (!config.api_key && config.base_url === undefined && config.default_model === undefined) {
- toast.info('没有需要保存的更改')
+ info('没有需要保存的更改')
  return
  }
  claudeConfig.value = await updateProjectClaudeConfig(projectId.value, config)
@@ -130,12 +131,10 @@ async function saveConfig {
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  defaultModelDirty.value = false
- toast.success('配置已保存')
+ success('配置已保存')
  }
- catch (e) {
- toast.error('保存失败', {
- description: e instanceof Error ? e.message: '未知错误',
- })
+ catch (e: unknown) {
+ handleError(e, '保存配置')
  }
  finally {
  saving.value = false
@@ -153,13 +152,11 @@ async function removeConfig {
  apiKeyDirty.value = false
  baseUrlDirty.value = false
  defaultModelDirty.value = false
- toast.success('配置已删除，将使用系统默认值')
+ success('配置已删除，将使用系统默认值')
  await loadData
  }
- catch (e) {
- toast.error('删除失败', {
- description: e instanceof Error ? e.message: '未知错误',
- })
+ catch (e: unknown) {
+ handleError(e, '删除配置')
  }
  finally {
  saving.value = false

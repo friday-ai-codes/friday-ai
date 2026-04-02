@@ -2,6 +2,7 @@
 import type { RunnerTaskAssignment } from '~/types'
 import { useHead } from '@vueuse/head'
 import { runnersApi } from '~/api'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
@@ -14,7 +15,8 @@ useHead({ title: 'Runner 详情 - Friday AI' })
 const route = useRoute('/runners/[id]')
 const router = useRouter
 const runnersStore = useRunnersStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // WS 实时状态
 const { status: wsStatus } = useRunnerMonitor
 // 断线横幅：断开超过 10 秒后显示
@@ -74,8 +76,8 @@ onMounted(async => {
  await runnersStore.fetchRunner(runnerId.value)
  await fetchHistoryTasks({ currentPage: 1, currentPageSize: 10 })
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取 Runner 详情')
+ catch (e: unknown) {
+ handleError(e, '加载 Runner 详情')
  }
  finally {
  loading.value = false
@@ -91,8 +93,8 @@ async function handleDelete {
  success('删除成功', `Runner「${runner.value?.name}」已删除`)
  router.push('/runners')
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除 Runner')
+ catch (e: unknown) {
+ handleError(e, '删除 Runner')
  }
  finally {
  deleting.value = false
