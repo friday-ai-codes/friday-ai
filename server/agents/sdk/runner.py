@@ -14,9 +14,13 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, query
 from agents.core.events import ERROR, KEEPALIVE, MESSAGE_COMPLETE, AgentEvent
 from agents.core.result import AgentResult
 from agents.sdk.event_adapter import EventAdapter
-from agents.sdk.hooks import create_post_tool_use_hook, create_stop_hook
+from agents.sdk.hooks import create_post_tool_use_hook
 from agents.sdk.mcp_adapter import build_allowed_tools, create_chat_tools_mcp_server
 logger = structlog.get_logger(__name__)
+_SDK_SHUTDOWN_ERROR_MARKERS = (
+ "ProcessTransport is not ready for writing",
+ "Tool permission stream closed before response received",
+)
 def _unwrap_exception(exc: BaseException) -> str:
  """从 ExceptionGroup 等嵌套异常中提取可读的错误信息。"""
  if isinstance(exc, BaseExceptionGroup):
@@ -25,6 +29,9 @@ def _unwrap_exception(exc: BaseException) -> str:
  parts.append(f" Caused by: {type(sub).__name__}: {sub}")
  return "\n".join(parts)
  return str(exc)
+def _is_sdk_shutdown_race(error_msg: str) -> bool:
+ """判断是否为 SDK/CLI 关闭阶段的已知传输竞态错误。"""
+ return any(marker in error_msg for marker in _SDK_SHUTDOWN_ERROR_MARKERS)
 @contextmanager
 def clean_claude_env -> Generator[dict[str, str], None, None]:
  """临时移除 os.environ 中所有 CLAUDE 前缀的环境变量。
@@ -168,12 +175,6 @@ class SDKAgentRunner:
  hooks=[create_post_tool_use_hook(session, event_callback=event_callback)],
  ),
  ],
- "Stop": [
- HookMatcher(
- matcher="*",
- hooks=[create_stop_hook(session)],
- ),
- ],
  }
  # 5. 构建 ClaudeAgentOptions
  env_vars: dict[str, str] = {"ANTHROPIC_API_KEY": api_key}
@@ -279,9 +280,53 @@ class SDKAgentRunner:
  pass
  except Exception as e:
  error_msg = _unwrap_exception(e)
- logger.exception(
+ partial_text = "".join(accumulated_text)
+ # 已生成最终结果后，忽略 SDK 关闭阶段竞态错误，避免将成功会话误标记为 error
+ if _is_sdk_shutdown_race(error_msg) and self._result is not None:
+ logger.warning(
+ "sdk_shutdown_race_ignored_after_result",
+ session_id=self._config.session_id,
+ error=error_msg,
+ )
+ return
+ # SDK 关闭阶段已知竞态：尽量回退到已输出文本，避免用户看到整段报错
+ if _is_sdk_shutdown_race(error_msg):
+ logger.warning(
+ "sdk_shutdown_race_recovered_with_partial",
+ session_id=self._config.session_id,
+ partial_text_len=len(partial_text),
+ error=error_msg,
+ )
+ if partial_text:
+ self._result = AgentResult(
+ output=,
+ status="completed",
+ final_answer=partial_text,
+ metadata={
+ "cost_usd": 0,
+ "fallback_result": True,
+ "recovered_from_sdk_shutdown_race": True,
+ },
+ )
+ try:
+ event_queue.put_nowait(
+ AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "result": partial_text,
+ "status": "completed",
+ "usage": {},
+ "model": self._config.model,
+ },
+ )
+ )
+ except asyncio.QueueFull:
+ pass
+ return
+ logger.error(
  "sdk_runner_error",
  session_id=self._config.session_id,
+ error_type=type(e).__name__,
  error=error_msg,
  )
  try:

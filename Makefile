@@ -15,12 +15,10 @@ dev:
  tmux new-session -d -s $(SESSION) -n dev \; \
  set-option -t $(SESSION) mouse on \; \
  send-keys -t $(SESSION) 'cd server' Enter \; \
- send-keys -t $(SESSION) 'uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port $(DEV_SERVER_PORT)' Enter \; \
+ send-keys -t $(SESSION) 'uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port $(DEV_SERVER_PORT) 2>&1 | tee -a $(DEV_SERVER_LOG)' Enter \; \
  split-window -h -t $(SESSION) \; \
- pipe-pane -o -t $(SESSION):dev.0 'cat >> $(DEV_SERVER_LOG)' \; \
- pipe-pane -o -t $(SESSION):dev.1 'cat >> $(DEV_WEB_LOG)' \; \
  send-keys -t $(SESSION) 'cd web' Enter \; \
- send-keys -t $(SESSION) 'VITE_USE_POLLING=true pnpm dev --host 0.0.0.0 --port $(DEV_WEB_PORT) --strictPort' Enter \; \
+ send-keys -t $(SESSION) 'VITE_USE_POLLING=true pnpm dev --host 0.0.0.0 --port $(DEV_WEB_PORT) --strictPort 2>&1 | tee -a $(DEV_WEB_LOG)' Enter \; \
  attach -t $(SESSION); \
 	fi
 dev-server:

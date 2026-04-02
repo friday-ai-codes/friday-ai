@@ -8,7 +8,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from agents.core.events import ERROR, TEXT_DELTA
+from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA
 # ==================== Helpers ====================
 class AsyncIteratorMock:
  """模拟 async iterator（SDK query 返回值）。"""
@@ -411,3 +411,43 @@ async def test_stream_returns_result -> None:
  assert runner.result.status == "completed"
  assert runner.result.final_answer == "最终回复"
  assert runner.result.metadata["cost_usd"] == 0.02
+async def test_hooks_only_register_post_tool_use -> None:
+ """有 session 时仅注册 PostToolUse，避免 Stop hook 关闭阶段竞态。"""
+ from agents.sdk.runner import SDKAgentRunner
+ session = MagicMock
+ config = _make_config(agent_session=session)
+ runner = SDKAgentRunner(config)
+ p_query, p_mcp, p_tools, p_env = _stream_patches
+ with p_query as mock_query, p_mcp, p_tools, p_env:
+ mock_query.return_value = AsyncIteratorMock
+ async for _ in runner.stream("test"):
+ pass
+ call_kwargs = mock_query.call_args
+ options = call_kwargs.kwargs.get("options") or call_kwargs[1].get("options")
+ assert options.hooks is not None
+ assert "PostToolUse" in options.hooks
+ assert "Stop" not in options.hooks
+async def test_shutdown_race_recovers_with_partial_result -> None:
+ """已知 SDK 传输关闭竞态发生时，保留部分输出并回退为 completed。"""
+ from agents.sdk.runner import SDKAgentRunner
+ config = _make_config
+ runner = SDKAgentRunner(config)
+ async def flaky_query(*args: Any, **kwargs: Any) -> Any:
+ msg = MagicMock
+ msg.event = {
+ "type": "content_block_delta",
+ "index": 0,
+ "delta": {"type": "text_delta", "text": "partial"},
+ }
+ del msg.result
+ yield msg
+ raise RuntimeError("ProcessTransport is not ready for writing")
+ p_query, p_mcp, p_tools, p_env = _stream_patches
+ with p_query as mock_query, p_mcp, p_tools, p_env:
+ mock_query.side_effect = flaky_query
+ events = [event async for event in runner.stream("test") if event.type != "keepalive"]
+ assert runner.result is not None
+ assert runner.result.status == "completed"
+ assert runner.result.final_answer == "partial"
+ assert any(event.type == TEXT_DELTA for event in events)
+ assert any(event.type == MESSAGE_COMPLETE for event in events)
