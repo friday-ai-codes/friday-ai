@@ -3,7 +3,6 @@ import AppSidebar from '~/components/layout/AppSidebar.vue'
 import ChatHeader from '~/components/chat/ChatHeader.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
-import ChatSidebar from '~/components/chat/ChatSidebar.vue'
 import { Toaster } from '~/components/ui/sonner'
 import { useAppMode } from '~/composables/useAppMode'
 const { mode, chatInitialized } = useAppMode
@@ -33,14 +32,12 @@ const pageTitle = computed( => {
 </script>
 <template>
  <div class="min-h-screen flex bg-background">
- <!-- ==================== 侧边栏区域（直接切换，不用 Transition） ==================== -->
- <AppSidebar v-if="mode === 'friday'" />
- <ChatSidebar v-else />
- <!-- ==================== 主内容区域 ==================== -->
+ <!-- 统一侧边栏 -->
+ <AppSidebar />
+ <!-- 主内容区域 -->
  <Transition name="mode-content" mode="out-in">
- <!-- Friday 工作台模式 -->
+ <!-- 工作台模式 -->
  <div v-if="mode === 'friday'" key="content-friday" class="flex-1 flex flex-col min-w-0 bg-gray-50">
- <!-- Sub2API 风格顶栏 — 玻璃效果 -->
  <header class="header-glass sticky top-0 z-40 ">
  <div class="flex h-full items-center justify-between px-6">
  <div>
@@ -84,7 +81,7 @@ const pageTitle = computed( => {
  <RouterView />
  </main>
  </div>
- <!-- Chat AI 对话模式 -->
+ <!-- Chat 对话模式 -->
  <div v-else key="content-chat" class="flex-1 flex flex-col min-w-0">
  <ChatHeader />
  <ChatMessageArea />
@@ -92,11 +89,9 @@ const pageTitle = computed( => {
  </div>
  </Transition>
  </div>
- <!-- Toast 通知 -->
  <Toaster rich-colors position="top-right" />
 </template>
 <style scoped>
-/* 主内容区切换 — 平滑淡入 + 微位移 */
 .mode-content-enter-active {
  transition: opacity 0.3s ease, transform 0.3s ease;
 }
