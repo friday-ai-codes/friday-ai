@@ -40,6 +40,7 @@ declare global {
  const eagerComputed: typeof import('@vueuse/core').eagerComputed
  const effectScope: typeof import('vue').effectScope
  const extendRef: typeof import('@vueuse/core').extendRef
+ const extractErrorMessage: typeof import('./composables/useErrorHandler').extractErrorMessage
  const extractNodeVarRefs: typeof import('./composables/useDownstreamVarCheck').extractNodeVarRefs
  const getActivePinia: typeof import('pinia').getActivePinia
  const getCurrentInstance: typeof import('vue').getCurrentInstance
@@ -133,6 +134,7 @@ declare global {
  const until: typeof import('@vueuse/core').until
  const useActiveElement: typeof import('@vueuse/core').useActiveElement
  const useAnimate: typeof import('@vueuse/core').useAnimate
+ const useAppMode: typeof import('./composables/useAppMode').useAppMode
  const useArrayDifference: typeof import('@vueuse/core').useArrayDifference
  const useArrayEvery: typeof import('@vueuse/core').useArrayEvery
  const useArrayFilter: typeof import('@vueuse/core').useArrayFilter
@@ -162,7 +164,7 @@ declare global {
  const useCloned: typeof import('@vueuse/core').useCloned
  const useColorMode: typeof import('@vueuse/core').useColorMode
  const useConfigModel: typeof import('./composables/useConfigModel').useConfigModel
- const useConfirmDialog: typeof import('@vueuse/core').useConfirmDialog
+ const useConfirmDialog: typeof import('./composables/useConfirmDialog').useConfirmDialog
  const useCountdown: typeof import('@vueuse/core').useCountdown
  const useCounter: typeof import('@vueuse/core').useCounter
  const useCounterStore: typeof import('./stores/counter').useCounterStore
@@ -191,6 +193,7 @@ declare global {
  const useElementHover: typeof import('@vueuse/core').useElementHover
  const useElementSize: typeof import('@vueuse/core').useElementSize
  const useElementVisibility: typeof import('@vueuse/core').useElementVisibility
+ const useErrorHandler: typeof import('./composables/useErrorHandler').useErrorHandler
  const useEventBus: typeof import('@vueuse/core').useEventBus
  const useEventListener: typeof import('@vueuse/core').useEventListener
  const useEventSource: typeof import('@vueuse/core').useEventSource
@@ -342,6 +345,9 @@ declare global {
  export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
  import('vue')
  // @ts-ignore
+ export type { AppMode } from './composables/useAppMode'
+ import('./composables/useAppMode')
+ // @ts-ignore
  export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
  import('./composables/useConfigModel')
  // @ts-ignore
@@ -411,6 +417,7 @@ declare module 'vue' {
  readonly eagerComputed: UnwrapRef<typeof import('@vueuse/core')['eagerComputed']>
  readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
  readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
+ readonly extractErrorMessage: UnwrapRef<typeof import('./composables/useErrorHandler')['extractErrorMessage']>
  readonly extractNodeVarRefs: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['extractNodeVarRefs']>
  readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
  readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
@@ -504,6 +511,7 @@ declare module 'vue' {
  readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>
  readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
  readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>
+ readonly useAppMode: UnwrapRef<typeof import('./composables/useAppMode')['useAppMode']>
  readonly useArrayDifference: UnwrapRef<typeof import('@vueuse/core')['useArrayDifference']>
  readonly useArrayEvery: UnwrapRef<typeof import('@vueuse/core')['useArrayEvery']>
  readonly useArrayFilter: UnwrapRef<typeof import('@vueuse/core')['useArrayFilter']>
@@ -533,7 +541,7 @@ declare module 'vue' {
  readonly useCloned: UnwrapRef<typeof import('@vueuse/core')['useCloned']>
  readonly useColorMode: UnwrapRef<typeof import('@vueuse/core')['useColorMode']>
  readonly useConfigModel: UnwrapRef<typeof import('./composables/useConfigModel')['useConfigModel']>
- readonly useConfirmDialog: UnwrapRef<typeof import('@vueuse/core')['useConfirmDialog']>
+ readonly useConfirmDialog: UnwrapRef<typeof import('./composables/useConfirmDialog')['useConfirmDialog']>
  readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
  readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
  readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
@@ -561,6 +569,7 @@ declare module 'vue' {
  readonly useElementHover: UnwrapRef<typeof import('@vueuse/core')['useElementHover']>
  readonly useElementSize: UnwrapRef<typeof import('@vueuse/core')['useElementSize']>
  readonly useElementVisibility: UnwrapRef<typeof import('@vueuse/core')['useElementVisibility']>
+ readonly useErrorHandler: UnwrapRef<typeof import('./composables/useErrorHandler')['useErrorHandler']>
  readonly useEventBus: UnwrapRef<typeof import('@vueuse/core')['useEventBus']>
  readonly useEventListener: UnwrapRef<typeof import('@vueuse/core')['useEventListener']>
  readonly useEventSource: UnwrapRef<typeof import('@vueuse/core')['useEventSource']>
