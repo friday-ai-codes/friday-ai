@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
@@ -10,15 +11,16 @@ useHead({
 })
 const router = useRouter
 const projectsStore = useProjectsStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 加载项目列表
 const loading = ref(true)
 onMounted(async => {
  try {
  await projectsStore.fetchProjects
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取项目列表')
+ catch (e: unknown) {
+ handleError(e, '加载项目列表')
  }
  finally {
  loading.value = false
@@ -52,8 +54,8 @@ async function handleDelete {
  success('删除成功', '项目已删除')
  deleteDialogOpen.value = false
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除项目')
+ catch (e: unknown) {
+ handleError(e, '删除项目')
  }
  finally {
  deleting.value = false

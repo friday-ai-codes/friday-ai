@@ -4,12 +4,14 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 const route = useRoute('/logs/webhooks/[id]')
 const router = useRouter
-const { error: showError, success } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const { copy } = useClipboard
 const logId = computed( => route.params.id)
 useHead({
@@ -22,8 +24,8 @@ onMounted(async => {
  try {
  log.value = await getTriggerLog(logId.value)
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
+ catch (e: unknown) {
+ handleError(e, '加载日志详情')
  }
  finally {
  loading.value = false

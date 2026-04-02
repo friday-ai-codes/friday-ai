@@ -4,6 +4,7 @@ import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { h, markRaw } from 'vue'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import DataTable from '~/components/common/DataTable.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
@@ -21,7 +22,8 @@ import {
 useHead({
  title: '触发日志 - Friday AI',
 })
-const { error: showError, success } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 过滤器
 const projectFilter = ref('__all__')
 const statusFilter = ref('__all__')
@@ -46,8 +48,8 @@ onMounted(async => {
  await projectsStore.fetchProjects
  await fetchLogs
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取日志列表')
+ catch (e: unknown) {
+ handleError(e, '加载日志列表')
  }
  finally {
  loading.value = false
@@ -114,8 +116,8 @@ async function handleRetry(logId: string) {
  success('重试成功', '已重新处理该触发事件')
  await fetchLogs
  }
- catch (e) {
- showError('重试失败', e instanceof Error ? e.message: '无法重试')
+ catch (e: unknown) {
+ handleError(e, '重试日志')
  }
 }
 // 删除日志
@@ -129,8 +131,8 @@ async function handleDelete {
  deleteDialogOpen.value = false
  await fetchLogs
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除')
+ catch (e: unknown) {
+ handleError(e, '删除日志')
  }
  finally {
  deleting.value = false
