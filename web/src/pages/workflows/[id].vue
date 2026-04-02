@@ -25,7 +25,7 @@ import {
 import { TRIGGER_NODE_TYPES } from '~/components/workflow/editor/utils/portConfig'
 import WorkflowCanvas from '~/components/workflow/editor/WorkflowCanvas.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
-import NodeConfigPanel from '~/components/workflow/NodeConfigPanel.vue'
+import NodeConfigPanel from '~/components/workflow/node-config/NodeConfigPanel.vue'
 import NodePalette from '~/components/workflow/sidebar/NodePalette.vue'
 import WorkflowToolbar from '~/components/workflow/WorkflowToolbar.vue'
 import { useNodeTypesStore } from '~/stores/useNodeTypesStore'
