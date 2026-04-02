@@ -322,7 +322,7 @@ class ConversationService:
  )
  # 流结束后：落库
  result = runner.result
- final_content = result.final_answer if result else ""
+ final_content = (result.final_answer if result else None) or ""
  # 构建 metadata：注入 cost 和 token 用量
  msg_metadata: dict[str, Any] = {
  "session_id": session_id,
