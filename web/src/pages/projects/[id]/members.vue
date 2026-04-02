@@ -7,6 +7,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiError } from '~/api/client'
 import { addProjectMember, listProjectMembers, removeProjectMember, updateProjectMember } from '~/api/members'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { listUsers } from '~/api/users'
@@ -20,6 +21,7 @@ import {
 } from '~/components/ui/select'
 const route = useRoute
 const projectId = (route.params as { id: string }).id
+const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
 const members = ref<ProjectMembership>
@@ -112,8 +114,13 @@ async function handleRoleChange(member: ProjectMembership, newRole: 'admin' | 'm
  }
 }
 async function handleRemoveMember(member: ProjectMembership) {
- // eslint-disable-next-line no-alert
- if (!confirm(`确定要移除 ${member.user.display_name || member.user.username} 吗？`))
+ const confirmed = await confirm({
+ title: '移除成员',
+ description: `确定要移除 ${member.user.display_name || member.user.username} 吗？`,
+ confirmText: '移除',
+ variant: 'destructive',
+ })
+ if (!confirmed)
  return
  saving.value = true
  try {

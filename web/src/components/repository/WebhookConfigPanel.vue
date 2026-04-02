@@ -3,6 +3,7 @@ import type { CollectionHealthResponse, IndexFreshnessResponse } from '~/api/rep
 import type { Repository } from '~/types'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
@@ -15,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
  updated:
 }>
+const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
 const health = ref<CollectionHealthResponse | null>(null)
@@ -71,10 +73,14 @@ function copyToClipboard(text: string) {
 }
 async function generateSecret {
  if (props.repository.webhook_secret) {
- // eslint-disable-next-line no-alert
- if (!window.confirm('重新生成将使当前配置的 Webhook 签名验证失效，确认继续？')) {
+ const confirmed = await confirm({
+ title: '重新生成 Secret',
+ description: '重新生成将使当前配置的 Webhook 签名验证失效，确认继续？',
+ confirmText: '重新生成',
+ variant: 'destructive',
+ })
+ if (!confirmed)
  return
- }
  }
  generatingSecret.value = true
  try {
