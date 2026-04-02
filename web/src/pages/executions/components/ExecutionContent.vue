@@ -63,7 +63,7 @@ const emit = defineEmits<{
  <!-- DAG 视图 -->
  <ExecutionDagView
  v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution"
- @node-click="emit('nodeClick', $event, $event)"
+ @node-click="(ne: NodeExecution | null, nid: string) => emit('nodeClick', ne, nid)"
  @resume-click="emit('resumeClick', $event)"
  @debug-release="emit('debugRelease', $event)"
  @debug-skip="emit('debugSkip', $event)"
