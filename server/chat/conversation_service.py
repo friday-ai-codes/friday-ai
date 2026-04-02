@@ -323,6 +323,24 @@ class ConversationService:
  # 流结束后：落库
  result = runner.result
  final_content = (result.final_answer if result else None) or ""
+ # 更新 AgentSession 最终状态（不依赖 SDK Stop hook）
+ try:
+ session_status = AgentSession.Status.ERROR
+ if result and result.status == "completed":
+ session_status = AgentSession.Status.COMPLETED
+ elif result and result.status == "interrupted":
+ session_status = AgentSession.Status.SUSPENDED
+ await AgentSession.objects.filter(id=agent_session.id).aupdate(
+ status=session_status,
+ final_answer=final_content,
+ updated_at=timezone.now,
+ )
+ except Exception:
+ logger.exception(
+ "agent_session_finalize_failed",
+ conversation_id=str(conversation.id),
+ session_id=session_id,
+ )
  # 构建 metadata：注入 cost 和 token 用量
  msg_metadata: dict[str, Any] = {
  "session_id": session_id,

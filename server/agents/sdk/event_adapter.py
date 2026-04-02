@@ -47,9 +47,16 @@ class EventAdapter:
  if hasattr(message, "event"):
  return self._adapt_stream_event(message)
  # 未识别的消息类型
+ message_type = type(message).__name__
+ if message_type in {"SystemMessage", "AssistantMessage"}:
+ logger.debug(
+ "sdk_message_type_ignored",
+ message_type=message_type,
+ )
+ return
  logger.warning(
  "unknown_sdk_message_type",
- message_type=type(message).__name__,
+ message_type=message_type,
  )
  return
  def adapt_error(self, error: Exception) -> list[AgentEvent]:
