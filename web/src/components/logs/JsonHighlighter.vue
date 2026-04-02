@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createHighlighterCore } from 'shiki/core'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
 const props = withDefaults(defineProps<{
  json: Record<string, unknown> | null
@@ -7,7 +8,8 @@ const props = withDefaults(defineProps<{
 }>, {
  showCopy: true,
 })
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 细粒度加载：只包含需要的语言和主题，使用轻量 JS 引擎
 const highlighter = createHighlighterCore({
  themes: [import('shiki/themes/vitesse-dark.mjs')],
@@ -62,8 +64,8 @@ async function copyToClipboard {
  copied.value = false
  }, 2000)
  }
- catch {
- showError('复制失败', '无法复制到剪贴板')
+ catch (e: unknown) {
+ handleError(e, '复制')
  }
 }
 </script>

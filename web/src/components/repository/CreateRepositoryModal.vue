@@ -2,6 +2,7 @@
 import type { GitPlatform } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -20,6 +21,7 @@ const emit = defineEmits<{
  closed:
 }>
 const repositoriesStore = useRepositoriesStore
+const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 // 表单数据
 const form = reactive({
@@ -89,9 +91,9 @@ async function handleTestConnection {
  showError('连接失败', result.error || '无法连接到仓库')
  }
  }
- catch (e) {
+ catch (e: unknown) {
  testResult.value = { success: false, error: e instanceof Error ? e.message: '测试连接失败' }
- showError('测试失败', e instanceof Error ? e.message: '无法测试连接')
+ handleError(e, '测试连接')
  }
  finally {
  testing.value = false
@@ -108,8 +110,8 @@ async function handleSubmit {
  success('创建成功', '仓库和凭证已创建')
  emit('confirm', repository.id)
  }
- catch (e) {
- showError('创建失败', e instanceof Error ? e.message: '无法创建仓库')
+ catch (e: unknown) {
+ handleError(e, '创建仓库')
  }
  finally {
  submitting.value = false

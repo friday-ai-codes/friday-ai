@@ -10,6 +10,7 @@ import {
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useToast } from '~/composables/useToast'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 interface Props {
  /** 输入端口列表 */
  inputs: NodePort
@@ -19,7 +20,7 @@ interface Props {
  nodeId: string
 }
 const props = defineProps<Props>
-const { toast } = useToast
+const { success } = useToast
 // 端口类型颜色映射
 const typeColors: Record<string, string> = {
  string: 'bg-primary/10 text-primary',
@@ -35,10 +36,7 @@ function getTypeColor(type: string): string {
 function copyVariablePath(portName: string) {
  const path = `{{nodes.${props.nodeId}.${portName}}}`
  navigator.clipboard.writeText(path)
- toast({
- title: '已复制',
- description: path,
- })
+ success('已复制', path)
 }
 </script>
 <template>
