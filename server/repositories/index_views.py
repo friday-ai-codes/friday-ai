@@ -122,6 +122,32 @@ class IndexStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ # 实时校验：当 PostgreSQL 记录为 INDEXED 时，验证 Qdrant 实际状态
+ # 防止 Qdrant 数据库被外部变更后前端仍显示过期的索引状态
+ if repository.index_status == IndexStatus.INDEXED:
+ health = await sync_to_async(QdrantService.check_collection_health)(
+ str(repository_id)
+ )
+ if not health.get("collection_exists") or health.get("points_count", 0) == 0:
+ # Qdrant 中 collection 不存在或为空，修正 PostgreSQL 状态
+ repository.index_status = IndexStatus.NOT_INDEXED
+ repository.last_indexed_at = None
+ repository.index_error = None
+ repository.index_total_chunks = 0
+ repository.index_processed_chunks = 0
+ repository.index_write_total = 0
+ repository.index_write_processed = 0
+ await repository.asave(
+ update_fields=[
+ "index_status",
+ "last_indexed_at",
+ "index_error",
+ "index_total_chunks",
+ "index_processed_chunks",
+ "index_write_total",
+ "index_write_processed",
+ ]
+ )
  #: 计算统一进度
  total_chunks = repository.index_total_chunks
  processed_chunks = repository.index_processed_chunks
