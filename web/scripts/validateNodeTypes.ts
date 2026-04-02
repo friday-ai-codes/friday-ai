@@ -2,7 +2,7 @@
  * CI 验证脚本：检测前端节点列表与后端 NodeRegistry 的一致性。
  *
  * 运行方式：npm run validate:node-types
- * 环境变量：API_BASE_URL（默认 http://localhost:8000）
+ * 环境变量：API_BASE_URL（默认 http://localhost:10241）
  *
  * Exit codes:
  * 0 — 节点一致，或后端未运行（跳过验证）
@@ -14,7 +14,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const apiBase = process.env.API_BASE_URL ?? 'http://localhost:8000'
+const apiBase = process.env.API_BASE_URL ?? 'http://localhost:10241'
 /** 从 NodePalette.vue 用正则提取 type 字段 */
 function getPaletteTypes: Set<string> {
  const file = path.resolve(__dirname, '../src/components/workflow/sidebar/NodePalette.vue')

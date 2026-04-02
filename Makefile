@@ -1,5 +1,7 @@
 .PHONY: dev dev-server dev-web install install-server install-web
 SESSION:= friday-ai
+DEV_WEB_PORT ?= 10240
+DEV_SERVER_PORT ?= 10241
 # 一键启动前后端（tmux 分屏，支持鼠标滚动查看历史日志）
 dev:
 	@if tmux has-session -t $(SESSION) 2>/dev/null; then \
@@ -9,16 +11,16 @@ dev:
  tmux new-session -d -s $(SESSION) -n dev \; \
  set-option -t $(SESSION) mouse on \; \
  send-keys -t $(SESSION) 'cd server' Enter \; \
- send-keys -t $(SESSION) 'uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port 8080' Enter \; \
+ send-keys -t $(SESSION) 'uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port $(DEV_SERVER_PORT)' Enter \; \
  split-window -h -t $(SESSION) \; \
  send-keys -t $(SESSION) 'cd web' Enter \; \
- send-keys -t $(SESSION) 'pnpm dev' Enter \; \
+ send-keys -t $(SESSION) 'VITE_USE_POLLING=true pnpm dev --host 0.0.0.0 --port $(DEV_WEB_PORT) --strictPort' Enter \; \
  attach -t $(SESSION); \
 	fi
 dev-server:
-	cd server && uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port 8080
+	cd server && uv run uvicorn friday.asgi:application --reload --host 0.0.0.0 --port $(DEV_SERVER_PORT)
 dev-web:
-	cd web && pnpm dev
+	cd web && VITE_USE_POLLING=true pnpm dev --host 0.0.0.0 --port $(DEV_WEB_PORT) --strictPort
 # 安装依赖
 install: install-server install-web
 install-server:
