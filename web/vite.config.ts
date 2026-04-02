@@ -11,6 +11,7 @@ import { defineConfig } from 'vite'
 import Layouts from 'vite-plugin-vue-layouts'
 import VueMacros from 'vue-macros/vite'
 import pkg from './package.json'
+const usePolling = process.env.VITE_USE_POLLING === 'true'
 // https://vite.dev/config/
 export default defineConfig({
  define: {
@@ -67,15 +68,22 @@ export default defineConfig({
  },
  },
  server: {
- port: 3000,
+ host: '0.0.0.0',
+ port: 10240,
+ strictPort: true,
  open: true,
+ watch: usePolling
+ ? {
+ usePolling: true,
+ interval: 120,
+ }: undefined,
  proxy: {
  '/api': {
- target: 'http://localhost:8080',
+ target: 'http://localhost:10241',
  changeOrigin: false,
  },
  '/ws': {
- target: 'http://localhost:8080',
+ target: 'http://localhost:10241',
  ws: true,
  },
  },

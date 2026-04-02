@@ -293,11 +293,11 @@ LOGGING = {
 # SubAgent Settings
 # =============================================================================
 # SubAgent container API URL
-SUBAGENT_API_URL = os.environ.get("SUBAGENT_API_URL", "http://localhost:8080")
+SUBAGENT_API_URL = os.environ.get("SUBAGENT_API_URL", "http://localhost:10241")
 # Base URL for callbacks (this server's external URL)
-FRIDAY_BASE_URL = os.environ.get("FRIDAY_BASE_URL", "http://localhost:8000")
+FRIDAY_BASE_URL = os.environ.get("FRIDAY_BASE_URL", "http://localhost:10241")
 # Frontend URL for OIDC redirects
-FRIDAY_FRONTEND_URL = os.environ.get("FRIDAY_FRONTEND_URL", "http://localhost:5173")
+FRIDAY_FRONTEND_URL = os.environ.get("FRIDAY_FRONTEND_URL", "http://localhost:10240")
 # Container callback authentication (Phase)
 CONTAINER_CALLBACK_TOKEN = os.environ.get(
  "CONTAINER_CALLBACK_TOKEN",

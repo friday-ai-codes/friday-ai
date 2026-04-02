@@ -40,6 +40,8 @@ web/
 pnpm install
 # 启动开发服务器
 pnpm dev
+# 默认访问地址
+# http://localhost:10240 (API 代理到 http://localhost:10241)
 # 构建生产版本
 pnpm build
 # 预览生产构建
