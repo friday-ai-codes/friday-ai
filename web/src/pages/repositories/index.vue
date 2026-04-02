@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
@@ -11,15 +12,16 @@ useHead({
 })
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 加载仓库列表
 const loading = ref(true)
 onMounted(async => {
  try {
  await repositoriesStore.fetchRepositories
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取仓库列表')
+ catch (e: unknown) {
+ handleError(e, '加载仓库列表')
  }
  finally {
  loading.value = false
@@ -52,8 +54,8 @@ async function handleDelete {
  success('删除成功', '仓库已删除')
  deleteDialogOpen.value = false
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除仓库')
+ catch (e: unknown) {
+ handleError(e, '删除仓库')
  }
  finally {
  deleting.value = false

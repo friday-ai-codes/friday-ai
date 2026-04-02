@@ -4,6 +4,7 @@
  * 用于查看和更新仓库的 Git 凭证（仅 Access Token）
  */
 import { useHead } from '@vueuse/head'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -14,7 +15,8 @@ import { Separator } from '~/components/ui/separator'
 const route = useRoute('/repositories/[id]/credential')
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const repositoryId = computed( => route.params.id)
 useHead({
  title: '凭证配置 - Friday AI',
@@ -27,8 +29,8 @@ async function loadData {
  await repositoriesStore.fetchRepository(repositoryId.value)
  await repositoriesStore.fetchCredential(repositoryId.value)
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取仓库详情')
+ catch (e: unknown) {
+ handleError(e, '加载凭证')
  }
  finally {
  loading.value = false
@@ -47,7 +49,7 @@ const updateDialogOpen = ref(false)
 // 提交更新或创建 Access Token
 async function handleAccessTokenUpdate {
  if (!accessToken.value.trim) {
- showError('请输入新的 Access Token')
+ handleError(new Error('请输入新的 Access Token'), '保存凭证')
  return
  }
  submitting.value = true
@@ -62,8 +64,8 @@ async function handleAccessTokenUpdate {
  updateDialogOpen.value = false
  await repositoriesStore.fetchCredential(repositoryId.value)
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法保存 Access Token')
+ catch (e: unknown) {
+ handleError(e, '保存 Access Token')
  }
  finally {
  submitting.value = false

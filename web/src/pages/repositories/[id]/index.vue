@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
@@ -14,7 +15,8 @@ import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/repositories/[id]/')
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const repositoryId = computed( => route.params.id)
 useHead({
  title: computed( => repositoriesStore.currentRepository?.name
@@ -29,8 +31,8 @@ onMounted(async => {
  repositoriesStore.fetchCredential(repositoryId.value),
  ])
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取仓库详情')
+ catch (e: unknown) {
+ handleError(e, '加载仓库详情')
  }
  finally {
  loading.value = false
@@ -46,8 +48,8 @@ async function handleDelete {
  success('删除成功', '仓库已删除')
  router.push('/repositories')
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除仓库')
+ catch (e: unknown) {
+ handleError(e, '删除仓库')
  }
  finally {
  deleting.value = false

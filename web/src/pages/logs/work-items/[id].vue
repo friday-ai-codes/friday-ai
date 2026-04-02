@@ -2,13 +2,15 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 const route = useRoute('/logs/work-items/[id]')
 const router = useRouter
-const { error: showError, success } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const logId = computed( => route.params.id)
 useHead({
  title: computed( => `工作项日志 - Friday AI`),
@@ -20,8 +22,8 @@ onMounted(async => {
  try {
  log.value = await getTriggerLog(logId.value)
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
+ catch (e: unknown) {
+ handleError(e, '加载日志详情')
  }
  finally {
  loading.value = false
@@ -39,8 +41,8 @@ async function copyJson {
  await navigator.clipboard.writeText(JSON.stringify(log.value.work_item_raw_response_parsed, null, 2))
  success('复制成功', 'JSON 已复制到剪贴板')
  }
- catch {
- showError('复制失败', '无法复制到剪贴板')
+ catch (e: unknown) {
+ handleError(e, '复制')
  }
 }
 </script>

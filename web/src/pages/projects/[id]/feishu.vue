@@ -7,10 +7,11 @@ import type { FeishuConfig } from '~/types'
 import { useHead } from '@vueuse/head'
 import { getFeishuConfig } from '~/api/projects'
 import { FeishuConfigForm } from '~/components/feishu'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/projects/[id]/feishu')
 const router = useRouter
 const projectsStore = useProjectsStore
-const { error: showError } = useToast
+const { handleError } = useErrorHandler
 const projectId = computed( => route.params.id)
 useHead({
  title: '飞书配置 - Friday AI',
@@ -29,8 +30,8 @@ async function loadData {
  feishuConfig.value = null
  }
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取项目详情')
+ catch (e: unknown) {
+ handleError(e, '加载飞书配置')
  }
  finally {
  loading.value = false

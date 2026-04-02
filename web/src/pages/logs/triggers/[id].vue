@@ -3,13 +3,14 @@ import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
 import TriggerLogDetailComponent from '~/components/logs/TriggerLogDetail.vue'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 const route = useRoute('/logs/triggers/[id]')
 const router = useRouter
 useHead({
  title: '触发日志详情 - Friday AI',
 })
-const { error: showError } = useToast
+const { handleError } = useErrorHandler
 // 日志数据
 const log = ref<TriggerLogDetail | null>(null)
 const loading = ref(true)
@@ -26,8 +27,8 @@ async function fetchLog {
  await projectsStore.fetchProjects
  log.value = await getTriggerLog(logId.value)
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
+ catch (e: unknown) {
+ handleError(e, '加载日志详情')
  router.push('/logs')
  }
  finally {

@@ -4,6 +4,7 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { getProjectClaudeConfig } from '~/api/settings'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -17,7 +18,8 @@ const router = useRouter
 const projectsStore = useProjectsStore
 const repositoriesStore = useRepositoriesStore
 const executionsStore = useExecutionsStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const { copy } = useClipboard
 const projectId = computed( => route.params.id)
 useHead({
@@ -39,7 +41,7 @@ onMounted(async => {
  const names = ['项目信息', '飞书配置', '执行记录', '仓库列表']
  results.forEach((result, index) => {
  if (result.status === 'rejected') {
- showError('加载失败', `${names[index]}加载失败`)
+ handleError(result.reason, `加载${names[index]}`)
  }
  })
  // claudeConfig 单独处理，不在 allSettled 中
@@ -64,8 +66,8 @@ async function handleDelete {
  success('删除成功', '项目已删除')
  router.push('/projects')
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除项目')
+ catch (e: unknown) {
+ handleError(e, '删除项目')
  }
  finally {
  deleting.value = false
@@ -134,8 +136,8 @@ async function handleLinkSelected {
  success('关联成功', `已关联 ${selectedToLink.value.size} 个仓库`)
  selectedToLink.value.clear
  }
- catch (e) {
- showError('关联失败', e instanceof Error ? e.message: '无法关联仓库')
+ catch (e: unknown) {
+ handleError(e, '关联仓库')
  }
  finally {
  linking.value = false
@@ -153,8 +155,8 @@ async function handleUnlinkSelected {
  success('解除关联成功', `已解除 ${selectedToUnlink.value.size} 个仓库`)
  selectedToUnlink.value.clear
  }
- catch (e) {
- showError('解除关联失败', e instanceof Error ? e.message: '无法解除关联仓库')
+ catch (e: unknown) {
+ handleError(e, '解除关联')
  }
  finally {
  linking.value = false
@@ -182,8 +184,8 @@ async function handleRefreshToken {
  success('刷新成功', '已生成新的 Webhook Token')
  refreshTokenDialogOpen.value = false
  }
- catch (e) {
- showError('刷新失败', e instanceof Error ? e.message: '无法刷新 Token')
+ catch (e: unknown) {
+ handleError(e, '刷新 Token')
  }
  finally {
  refreshingToken.value = false
@@ -198,11 +200,11 @@ function openCustomTokenDialog {
 }
 async function handleCustomToken {
  if (!customTokenValue.value.trim) {
- showError('验证错误', 'Token 不能为空')
+ handleError(new Error('Token 不能为空'), '验证')
  return
  }
  if (customTokenValue.value.length > 32) {
- showError('验证错误', 'Token 长度不能超过 32 个字符')
+ handleError(new Error('Token 长度不能超过 32 个字符'), '验证')
  return
  }
  customTokenLoading.value = true
@@ -212,8 +214,8 @@ async function handleCustomToken {
  success('保存成功', 'Webhook Token 已更新')
  customTokenDialogOpen.value = false
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法更新 Token')
+ catch (e: unknown) {
+ handleError(e, '更新 Token')
  }
  finally {
  customTokenLoading.value = false
