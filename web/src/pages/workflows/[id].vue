@@ -3,7 +3,8 @@ import { storeToRefs } from 'pinia'
 import { computed, markRaw, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import ExecutionHistoryList from '~/components/execution/ExecutionHistoryList.vue'
 import {
  AlertDialog,
@@ -38,6 +39,8 @@ const store = useWorkflowsStore
 const nodeTypesStore = useNodeTypesStore
 const { saving, canUndo, canRedo, hasUnsavedChanges, currentWorkflow } = storeToRefs(store)
 const { nodes } = storeToRefs(store)
+const { handleError } = useErrorHandler
+const { success, info } = useToast
 // Leave confirmation dialog state
 const showLeaveDialog = ref(false)
 const pendingRoute = ref<string | null>(null)
@@ -55,17 +58,10 @@ onMounted(async => {
  if (store.hasDraft) {
  const draftInfo = store.getDraftInfo
  if (draftInfo) {
- toast.info('发现未保存的草稿', {
- description: `保存于 ${new Date(draftInfo.savedAt).toLocaleString}`,
- action: {
- label: '恢复',
- onClick: => {
+ info(`发现未保存的草稿，保存于 ${new Date(draftInfo.savedAt).toLocaleString}`)
+ // 自动恢复草稿
  store.loadDraft
- toast.success('草稿已恢复')
- },
- },
- duration: 10000,
- })
+ success('草稿已恢复')
  }
  }
 })
@@ -107,7 +103,7 @@ function cancelLeave {
 async function saveAndLeave {
  try {
  await store.saveWorkflow
- toast.success('工作流保存成功')
+ success('工作流保存成功')
  showLeaveDialog.value = false
  if (pendingRoute.value) {
  const route = pendingRoute.value
@@ -115,22 +111,22 @@ async function saveAndLeave {
  router.push(route)
  }
  }
- catch (e: any) {
- toast.error(`保存失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '保存工作流')
  }
 }
 async function onSave {
  try {
  await store.saveWorkflow
- toast.success('工作流保存成功')
+ success('工作流保存成功')
  }
- catch (e: any) {
- toast.error(`保存失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '保存工作流')
  }
 }
 function onSaveDraft {
  store.saveDraft
- toast.success('草稿已保存到本地')
+ success('草稿已保存到本地')
 }
 function onExecute {
  if (!currentWorkflow.value)
@@ -154,12 +150,12 @@ async function executeWorkflowAction(inputData: Record<string, any>, debugMode: 
  try {
  const result = await store.executeWorkflow(inputData, debugMode)
  if (result?.execution_id) {
- toast.success('工作流已启动')
+ success('工作流已启动')
  router.push(`/executions/${result.execution_id}`)
  }
  }
- catch (e: any) {
- toast.error(`执行失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '执行工作流')
  }
 }
 function onUndo {
@@ -195,10 +191,10 @@ async function onUpdateIsActive(isActive: boolean) {
  if (currentWorkflow.value) {
  try {
  await store.toggleWorkflowActive(currentWorkflow.value.id, isActive)
- toast.success(isActive ? '工作流已启用': '工作流已禁用')
+ success(isActive ? '工作流已启用': '工作流已禁用')
  }
- catch (e: any) {
- toast.error(`操作失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '切换工作流状态')
  }
  }
 }

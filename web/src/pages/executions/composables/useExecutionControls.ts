@@ -2,14 +2,16 @@ import type { Ref } from 'vue'
 import type { NodeExecution, useExecutionsStore } from '~/stores/useExecutionsStore'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
-import { ApiError } from '~/api/client'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 export function useExecutionControls(
  executionId: Ref<string>,
  store: ReturnType<typeof useExecutionsStore>,
  selectedNodeExecution: Ref<NodeExecution | null>,
 ) {
  const router = useRouter
+ const { handleError } = useErrorHandler
+ const { success } = useToast
  // ----- 操作按钮 loading 态 -----
  const isPausing = ref(false)
  const isResuming = ref(false)
@@ -28,11 +30,10 @@ export function useExecutionControls(
  isPausing.value = true
  try {
  await store.pauseExecution(executionId.value)
- toast.success('工作流已暂停')
+ success('工作流已暂停')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`暂停失败: ${message}`)
+ handleError(e, '暂停')
  }
  finally {
  isPausing.value = false
@@ -43,11 +44,10 @@ export function useExecutionControls(
  isResuming.value = true
  try {
  await store.resumeExecution(executionId.value)
- toast.success('工作流已恢复')
+ success('工作流已恢复')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`恢复失败: ${message}`)
+ handleError(e, '恢复')
  }
  finally {
  isResuming.value = false
@@ -58,11 +58,10 @@ export function useExecutionControls(
  isCancelling.value = true
  try {
  await store.cancelExecution(executionId.value)
- toast.success('工作流已取消')
+ success('工作流已取消')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`取消失败: ${message}`)
+ handleError(e, '取消')
  }
  finally {
  isCancelling.value = false
@@ -75,13 +74,12 @@ export function useExecutionControls(
  const { retryExecution } = await import('~/api/workflow')
  const result = await retryExecution(executionId.value)
  if (result?.execution_id) {
- toast.success('工作流重新执行成功')
+ success('工作流重新执行成功')
  router.push(`/executions/${result.execution_id}`)
  }
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`重试失败: ${message}`)
+ handleError(e, '重试')
  }
  finally {
  isRetrying.value = false
@@ -96,11 +94,10 @@ export function useExecutionControls(
  await store.approveNode(selectedNodeExecution.value.id, approvalComment.value)
  approvalDialogOpen.value = false
  approvalComment.value = ''
- toast.success('节点已批准')
+ success('节点已批准')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`批准失败: ${message}`)
+ handleError(e, '批准')
  }
  finally {
  approving.value = false
@@ -114,11 +111,10 @@ export function useExecutionControls(
  await store.rejectNode(selectedNodeExecution.value.id, approvalComment.value)
  approvalDialogOpen.value = false
  approvalComment.value = ''
- toast.success('节点已拒绝')
+ success('节点已拒绝')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`拒绝失败: ${message}`)
+ handleError(e, '拒绝')
  }
  finally {
  approving.value = false
@@ -135,7 +131,7 @@ export function useExecutionControls(
  inputData = JSON.parse(triggerInputData.value)
  }
  catch {
- toast.error('输入数据格式错误，请输入有效的 JSON')
+ handleError(new Error('输入数据格式错误，请输入有效的 JSON'), '解析输入')
  triggering.value = false
  return
  }
@@ -143,11 +139,10 @@ export function useExecutionControls(
  await store.triggerNode(selectedNodeExecution.value.id, inputData)
  triggerDialogOpen.value = false
  triggerInputData.value = '{}'
- toast.success('节点已触发')
+ success('节点已触发')
  }
  catch (e: unknown) {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`触发失败: ${message}`)
+ handleError(e, '触发')
  }
  finally {
  triggering.value = false

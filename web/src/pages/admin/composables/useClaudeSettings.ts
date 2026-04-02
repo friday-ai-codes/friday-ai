@@ -1,8 +1,9 @@
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
 import { computed, onMounted, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
 import { getModels } from '~/api/chat'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  deleteSetting,
  getAllSettings,
@@ -35,6 +36,8 @@ const settingsMeta: Record<ManagedSettingKey, { label: string, description: stri
  },
 }
 export function useClaudeSettings {
+ const { handleError } = useErrorHandler
+ const { success, info } = useToast
  // 设置状态
  const settings = ref<SettingRead>
  const loading = ref(true)
@@ -88,7 +91,7 @@ export function useClaudeSettings {
  gitProxyDirty.value = false
  }
  catch {
- toast.error('加载设置失败')
+ handleError(new Error('加载设置失败'), '加载设置')
  }
  finally {
  loading.value = false
@@ -118,15 +121,15 @@ export function useClaudeSettings {
  promises.push(updateSetting(SettingKey.GIT_HTTP_PROXY, gitProxyValue.value.trim))
  }
  if (promises.length === 0) {
- toast.info('没有需要保存的更改')
+ info('没有需要保存的更改')
  return
  }
  await Promise.all(promises)
- toast.success('设置已保存')
+ success('设置已保存')
  await loadSettings
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存设置')
  }
  finally {
  saving.value = false
@@ -137,7 +140,7 @@ export function useClaudeSettings {
  saving.value = true
  try {
  await deleteSetting(key)
- toast.success('设置已删除')
+ success('设置已删除')
  if (key === SettingKey.ANTHROPIC_API_KEY) {
  apiKeyValue.value = ''
  apiKeyDirty.value = false
@@ -156,8 +159,8 @@ export function useClaudeSettings {
  }
  await loadSettings
  }
- catch {
- toast.error('删除失败')
+ catch (e: unknown) {
+ handleError(e, '删除设置')
  }
  finally {
  saving.value = false

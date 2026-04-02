@@ -4,7 +4,8 @@ import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateWorkflowModal from '~/components/workflow/CreateWorkflowModal.vue'
 import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue'
@@ -15,6 +16,8 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const router = useRouter
 const store = useWorkflowsStore
 const { workflows, loading } = storeToRefs(store)
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 当前要执行的工作流
 const workflowToExecute = ref<Workflow | null>(null)
 onMounted( => {
@@ -45,8 +48,8 @@ async function openExecuteModal(workflowId: string) {
  await open
  }
  }
- catch (e: any) {
- toast.error(`加载工作流失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '加载工作流')
  }
 }
 // 执行工作流
@@ -54,12 +57,12 @@ async function executeWorkflow(inputData: Record<string, any>, debugMode: boolea
  try {
  const result = await store.executeWorkflow(inputData, debugMode)
  if (result?.execution_id) {
- toast.success('工作流已启动')
+ success('工作流已启动')
  router.push(`/executions/${result.execution_id}`)
  }
  }
- catch (e: any) {
- toast.error(`执行失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '执行工作流')
  }
 }
 async function handleDelete(workflow: any) {
@@ -68,19 +71,19 @@ async function handleDelete(workflow: any) {
  return
  try {
  await store.deleteWorkflow(workflow.id)
- toast.success('工作流已删除')
+ success('工作流已删除')
  }
- catch (e: any) {
- toast.error(`删除失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '删除工作流')
  }
 }
 async function handleToggleActive(workflow: any, isActive: boolean) {
  try {
  await store.toggleWorkflowActive(workflow.id, isActive)
- toast.success(isActive ? '工作流已启用': '工作流已禁用')
+ success(isActive ? '工作流已启用': '工作流已禁用')
  }
- catch (e: any) {
- toast.error(`操作失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '切换工作流状态')
  }
 }
 // 新建工作流弹窗

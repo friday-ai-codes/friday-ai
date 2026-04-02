@@ -5,8 +5,10 @@
 import type { ProjectMembership, SystemUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { ApiError } from '~/api/client'
 import { addProjectMember, listProjectMembers, removeProjectMember, updateProjectMember } from '~/api/members'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { listUsers } from '~/api/users'
 import { Button } from '~/components/ui/button'
 import {
@@ -18,6 +20,8 @@ import {
 } from '~/components/ui/select'
 const route = useRoute
 const projectId = (route.params as { id: string }).id
+const { handleError } = useErrorHandler
+const { success } = useToast
 const members = ref<ProjectMembership>
 const loading = ref(true)
 const saving = ref(false)
@@ -37,8 +41,8 @@ async function loadMembers {
  try {
  members.value = await listProjectMembers(projectId)
  }
- catch {
- toast.error('加载成员列表失败')
+ catch (e: unknown) {
+ handleError(e, '加载成员列表')
  }
  finally {
  loading.value = false
@@ -50,8 +54,8 @@ async function openAddForm {
  try {
  allUsers.value = await listUsers
  }
- catch {
- toast.error('加载用户列表失败')
+ catch (e: unknown) {
+ handleError(e, '加载用户列表')
  }
  finally {
  loadingUsers.value = false
@@ -64,7 +68,7 @@ function getNonMembers {
 }
 async function handleAddMember {
  if (!selectedUserId.value) {
- toast.error('请选择用户')
+ handleError(new Error('请选择用户'), '添加成员')
  return
  }
  saving.value = true
@@ -77,14 +81,14 @@ async function handleAddMember {
  showAddForm.value = false
  selectedUserId.value = ''
  selectedRole.value = 'member'
- toast.success('成员已添加')
+ success('成员已添加')
  }
- catch (error: any) {
- if (error?.status === 409) {
- toast.error('该用户已是项目成员')
+ catch (e: unknown) {
+ if (e instanceof ApiError && e.status === 409) {
+ handleError(e, '添加成员')
  }
  else {
- toast.error('添加成员失败')
+ handleError(e, '添加成员')
  }
  }
  finally {
@@ -98,10 +102,10 @@ async function handleRoleChange(member: ProjectMembership, newRole: 'admin' | 'm
  const idx = members.value.findIndex(m => m.id === member.id)
  if (idx !== -1)
  members.value[idx] = updated
- toast.success('角色已更新')
+ success('角色已更新')
  }
- catch {
- toast.error('更新角色失败')
+ catch (e: unknown) {
+ handleError(e, '更新角色')
  }
  finally {
  saving.value = false
@@ -115,10 +119,10 @@ async function handleRemoveMember(member: ProjectMembership) {
  try {
  await removeProjectMember(projectId, member.user.id)
  members.value = members.value.filter(m => m.id !== member.id)
- toast.success('成员已移除')
+ success('成员已移除')
  }
- catch {
- toast.error('移除成员失败')
+ catch (e: unknown) {
+ handleError(e, '移除成员')
  }
  finally {
  saving.value = false
