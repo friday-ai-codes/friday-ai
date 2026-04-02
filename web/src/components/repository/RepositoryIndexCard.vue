@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { IndexStatusResponse } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -13,6 +14,8 @@ const loading = ref(true)
 const indexStatus = ref<IndexStatusResponse | null>(null)
 const triggering = ref(false)
 const deleting = ref(false)
+const { handleError } = useErrorHandler
+const { success, error: showError } = useToast
 let pollInterval: ReturnType<typeof setInterval> | null = null
 // 加载索引状态
 async function loadIndexStatus {
@@ -31,12 +34,12 @@ async function triggerIndex {
  triggering.value = true
  try {
  await repositoriesApi.triggerIndex(props.repositoryId)
- toast.success('索引任务已启动')
+ success('索引任务已启动')
  await loadIndexStatus
  startPolling
  }
- catch {
- toast.error('启动索引失败')
+ catch (e: unknown) {
+ handleError(e, '启动索引')
  }
  finally {
  triggering.value = false
@@ -47,11 +50,11 @@ async function deleteIndex {
  deleting.value = true
  try {
  await repositoriesApi.deleteIndex(props.repositoryId)
- toast.success('索引已删除')
+ success('索引已删除')
  await loadIndexStatus
  }
- catch {
- toast.error('删除索引失败')
+ catch (e: unknown) {
+ handleError(e, '删除索引')
  }
  finally {
  deleting.value = false
@@ -66,10 +69,10 @@ function startPolling {
  if (indexStatus.value?.index_status !== IndexStatus.INDEXING) {
  stopPolling
  if (indexStatus.value?.index_status === IndexStatus.INDEXED) {
- toast.success('索引构建完成')
+ success('索引构建完成')
  }
  else if (indexStatus.value?.index_status === IndexStatus.FAILED) {
- toast.error('索引构建失败')
+ showError('索引构建失败')
  }
  }
  }, 3000)

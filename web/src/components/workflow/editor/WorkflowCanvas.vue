@@ -13,7 +13,7 @@ import { MiniMap } from '@vue-flow/minimap'
 import { Copy, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, markRaw } from 'vue'
-import { toast } from 'vue-sonner'
+import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
@@ -29,6 +29,7 @@ const { nodes: storeNodes, edges: storeEdges } = storeToRefs(store)
 const vfNodes = computed( => toVueFlowNodes(storeNodes.value))
 const vfEdges = computed( => toVueFlowEdges(storeEdges.value))
 const edgeTypes = { gradient: markRaw(GradientEdge) }
+const { error: showError } = useToast
 const { getSelectedNodes } = useVueFlow
 const { validateConnection } = useConnectionValidator
 const { onDragOver, onDrop } = useDragAndDrop
@@ -69,9 +70,9 @@ function onPaneClick {
  store.selectNode(null)
 }
 function onConnect(connection: Connection) {
- const error = getValidationError(connection)
- if (error) {
- toast.error('连线失败', { description: error })
+ const validationError = getValidationError(connection)
+ if (validationError) {
+ showError('连线失败', validationError)
  return
  }
  store.addEdge({

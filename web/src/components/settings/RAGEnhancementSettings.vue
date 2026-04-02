@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  getAllSettings,
  SettingKey,
@@ -13,6 +14,8 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+const { handleError } = useErrorHandler
+const { success, error: showError, info, warning } = useToast
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -56,8 +59,8 @@ async function loadSettings {
  rerankerTopN.value = getValue(SettingKey.RERANKER_TOP_N) || '10'
  resetDirtyFlags
  }
- catch {
- toast.error('加载 RAG 增强设置失败')
+ catch (e: unknown) {
+ handleError(e, '加载 RAG 增强设置')
  }
  finally {
  loading.value = false
@@ -97,15 +100,15 @@ async function saveAllSettings {
  if (rerankerTopNDirty.value && rerankerTopN.value)
  promises.push(updateSetting(SettingKey.RERANKER_TOP_N, rerankerTopN.value))
  if (promises.length === 0) {
- toast.info('没有需要保存的更改')
+ info('没有需要保存的更改')
  return
  }
  await Promise.all(promises)
- toast.success('RAG 增强设置已保存')
+ success('RAG 增强设置已保存')
  await loadSettings
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存')
  }
  finally {
  saving.value = false
@@ -117,7 +120,7 @@ async function testRerankerConnection {
  const apiUrl = rerankerApiUrl.value.trim
  const model = rerankerModel.value.trim || 'BAAI/bge-reranker-v2-m3'
  if (!apiUrl) {
- toast.error('请先填写 Reranker API 地址')
+ showError('请先填写 Reranker API 地址')
  rerankerHealth.value = { status: 'error', message: '未填写 API 地址' }
  return
  }
@@ -128,15 +131,15 @@ async function testRerankerConnection {
  )
  rerankerHealth.value = result
  if (result.status === 'healthy') {
- toast.success('Reranker API 连接成功')
+ success('Reranker API 连接成功')
  }
  else {
- toast.error(`Reranker API 连接失败: ${result.message}`)
+ showError(`Reranker API 连接失败: ${result.message}`)
  }
  }
- catch (error) {
- toast.error('测试连接失败')
- rerankerHealth.value = { status: 'error', message: String(error) }
+ catch (e: unknown) {
+ handleError(e, '测试 Reranker 连接')
+ rerankerHealth.value = { status: 'error', message: String(e) }
  }
  finally {
  testingReranker.value = false

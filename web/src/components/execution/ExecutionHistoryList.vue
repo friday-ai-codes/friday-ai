@@ -7,8 +7,9 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
 import { get } from '~/api/client'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Pagination } from '~/components/ui/pagination'
 import ExecutionHistoryCard from './ExecutionHistoryCard.vue'
@@ -19,6 +20,8 @@ const emit = defineEmits<{
  execute:
 }>
 const router = useRouter
+const { handleError } = useErrorHandler
+const { success } = useToast
 // ----- 数据状态 -----
 interface HistoryExecution {
  id: string
@@ -67,8 +70,8 @@ async function fetchHistory {
  totalCount.value = data.length
  }
  }
- catch {
- toast.error('加载执行历史失败')
+ catch (e: unknown) {
+ handleError(e, '加载执行历史')
  }
  finally {
  loading.value = false
@@ -94,12 +97,12 @@ async function handleRetry(executionId: string) {
  const { retryExecution } = await import('~/api/workflow')
  const result = await retryExecution(executionId)
  if (result?.execution_id) {
- toast.success('工作流重新执行成功')
+ success('工作流重新执行成功')
  router.push(`/executions/${result.execution_id}`)
  }
  }
- catch (e: any) {
- toast.error(`重试失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '重试')
  }
 }
 </script>

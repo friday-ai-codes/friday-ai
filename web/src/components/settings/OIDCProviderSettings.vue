@@ -5,7 +5,6 @@
  */
 import type { OIDCProvider, OIDCProviderCreate } from '~/types'
 import { ref } from 'vue'
-import { toast } from 'vue-sonner'
 import {
  createProvider,
  deleteProvider,
@@ -14,6 +13,8 @@ import {
  updateProvider,
 } from '~/api/oidc'
 import { Button } from '~/components/ui/button'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  Dialog,
  DialogContent,
@@ -25,6 +26,8 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+const { handleError } = useErrorHandler
+const { success, error: showError } = useToast
 // 状态
 const providers = ref<OIDCProvider>
 const loading = ref(true)
@@ -50,8 +53,8 @@ async function loadProviders {
  try {
  providers.value = await getProviders
  }
- catch {
- toast.error('加载 OIDC Provider 失败')
+ catch (e: unknown) {
+ handleError(e, '加载 OIDC Provider')
  }
  finally {
  loading.value = false
@@ -92,7 +95,7 @@ function openEditDialog(provider: OIDCProvider) {
 // Discovery 自动填充
 async function onDiscover {
  if (!form.value.issuer_url) {
- toast.error('请先输入 Issuer URL')
+ showError('请先输入 Issuer URL')
  return
  }
  discovering.value = true
@@ -101,10 +104,10 @@ async function onDiscover {
  form.value.authorization_endpoint = result.authorization_endpoint
  form.value.token_endpoint = result.token_endpoint
  form.value.userinfo_endpoint = result.userinfo_endpoint
- toast.success('端点信息已自动填充')
+ success('端点信息已自动填充')
  }
- catch {
- toast.error('Discovery 失败，请手动填写端点')
+ catch (e: unknown) {
+ handleError(e, 'Discovery')
  }
  finally {
  discovering.value = false
@@ -113,11 +116,11 @@ async function onDiscover {
 // 保存（创建或更新）
 async function onSave {
  if (!form.value.name || !form.value.issuer_url || !form.value.client_id) {
- toast.error('请填写必填项（名称、Issuer URL、Client ID）')
+ showError('请填写必填项（名称、Issuer URL、Client ID）')
  return
  }
  if (!form.value.authorization_endpoint || !form.value.token_endpoint) {
- toast.error('请填写授权端点和 Token 端点（可通过自动发现填充）')
+ showError('请填写授权端点和 Token 端点（可通过自动发现填充）')
  return
  }
  saving.value = true
@@ -129,17 +132,17 @@ async function onSave {
  }
  if (editingId.value) {
  await updateProvider(editingId.value, data)
- toast.success('Provider 已更新')
+ success('Provider 已更新')
  }
  else {
  await createProvider(data)
- toast.success('Provider 已创建')
+ success('Provider 已创建')
  }
  dialogOpen.value = false
  await loadProviders
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存')
  }
  finally {
  saving.value = false
@@ -152,11 +155,11 @@ async function onDelete(provider: OIDCProvider) {
  return
  try {
  await deleteProvider(provider.id)
- toast.success('Provider 已删除')
+ success('Provider 已删除')
  await loadProviders
  }
- catch {
- toast.error('删除失败')
+ catch (e: unknown) {
+ handleError(e, '删除')
  }
 }
 // 切换启用/禁用
@@ -165,8 +168,8 @@ async function onToggleActive(provider: OIDCProvider) {
  await updateProvider(provider.id, { is_active: !provider.is_active })
  await loadProviders
  }
- catch {
- toast.error('状态切换失败')
+ catch (e: unknown) {
+ handleError(e, '状态切换')
  }
 }
 onMounted( => {

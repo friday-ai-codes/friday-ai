@@ -11,8 +11,9 @@ import {
  XCircle,
 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { skipNodeWait, triggerNodeResume } from '~/api/workflow'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
 import { cn } from '~/lib/utils'
@@ -191,6 +192,8 @@ function getTaskCounts(node: NodeExecution): { success: number, failed: number }
  return { success: successCount, failed: failedCount }
 }
 // Manual intervention handlers
+const { handleError } = useErrorHandler
+const { success } = useToast
 const isOperating = ref(false)
 async function handleSkipWait(node: NodeExecution) {
  if (isOperating.value)
@@ -198,11 +201,10 @@ async function handleSkipWait(node: NodeExecution) {
  try {
  isOperating.value = true
  await skipNodeWait(props.execution.id, node.id)
- toast.success('已跳过等待，工作流继续执行')
+ success('已跳过等待，工作流继续执行')
  }
- catch (error: unknown) {
- const errorMessage = error instanceof Error ? error.message: '操作失败'
- toast.error(errorMessage)
+ catch (e: unknown) {
+ handleError(e, '跳过等待')
  }
  finally {
  isOperating.value = false
@@ -214,11 +216,10 @@ async function handleTriggerResume(node: NodeExecution) {
  try {
  isOperating.value = true
  await triggerNodeResume(props.execution.id, node.id)
- toast.success('已手动触发唤醒，工作流继续执行')
+ success('已手动触发唤醒，工作流继续执行')
  }
- catch (error: unknown) {
- const errorMessage = error instanceof Error ? error.message: '操作失败'
- toast.error(errorMessage)
+ catch (e: unknown) {
+ handleError(e, '手动唤醒')
  }
  finally {
  isOperating.value = false

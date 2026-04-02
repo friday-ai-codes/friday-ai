@@ -5,8 +5,9 @@
  */
 import type { ChatCompletionResponse, ConfigSource, Model } from '~/api/chat'
 import { computed, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
 import { chatCompletion, getModels } from '~/api/chat'
+import { extractErrorMessage } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -41,6 +42,7 @@ const models = ref<Model>
 const selectedModel = ref('')
 const testPrompt = ref('你基于什么模型？')
 const result = ref<ChatCompletionResponse | null>(null)
+const { error: showError } = useToast
 const error = ref('')
 // 计算属性
 const isOpen = computed({
@@ -88,8 +90,8 @@ async function fetchModels {
  selectedModel.value = models.value[0].id
  }
  }
- catch (e) {
- error.value = e instanceof Error ? e.message: '获取模型列表失败'
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  }
  finally {
  loadingModels.value = false
@@ -98,11 +100,11 @@ async function fetchModels {
 // 发送测试
 async function sendTest {
  if (!selectedModel.value) {
- toast.error('请选择模型')
+ showError('请选择模型')
  return
  }
  if (!testPrompt.value.trim) {
- toast.error('请输入测试内容')
+ showError('请输入测试内容')
  return
  }
  loading.value = true
@@ -118,8 +120,8 @@ async function sendTest {
  base_url: props.baseUrl,
  })
  }
- catch (e) {
- error.value = e instanceof Error ? e.message: '测试失败'
+ catch (e: unknown) {
+ error.value = extractErrorMessage(e)
  }
  finally {
  loading.value = false

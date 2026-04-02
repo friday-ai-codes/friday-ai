@@ -2,8 +2,9 @@
 import type { CollectionHealthResponse, IndexFreshnessResponse } from '~/api/repositories'
 import type { Repository } from '~/types'
 import { onMounted, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
@@ -14,6 +15,8 @@ const props = defineProps<{
 const emit = defineEmits<{
  updated:
 }>
+const { handleError } = useErrorHandler
+const { success } = useToast
 const health = ref<CollectionHealthResponse | null>(null)
 const freshness = ref<IndexFreshnessResponse | null>(null)
 const loadingHealth = ref(true)
@@ -52,11 +55,11 @@ async function toggleAutoIndex(enabled: boolean) {
  togglingAutoIndex.value = true
  try {
  await repositoriesApi.update(props.repository.id, { auto_index_enabled: enabled })
- toast.success(enabled ? '自动索引已启用': '自动索引已禁用')
+ success(enabled ? '自动索引已启用': '自动索引已禁用')
  emit('updated')
  }
- catch {
- toast.error('设置失败')
+ catch (e: unknown) {
+ handleError(e, '设置自动索引')
  }
  finally {
  togglingAutoIndex.value = false
@@ -64,7 +67,7 @@ async function toggleAutoIndex(enabled: boolean) {
 }
 function copyToClipboard(text: string) {
  navigator.clipboard.writeText(text)
- toast.success('已复制到剪贴板')
+ success('已复制到剪贴板')
 }
 async function generateSecret {
  if (props.repository.webhook_secret) {
@@ -76,11 +79,11 @@ async function generateSecret {
  generatingSecret.value = true
  try {
  await repositoriesApi.generateWebhookSecret(props.repository.id)
- toast.success('Webhook Secret 已生成')
+ success('Webhook Secret 已生成')
  emit('updated')
  }
- catch {
- toast.error('生成失败')
+ catch (e: unknown) {
+ handleError(e, '生成 Secret')
  }
  finally {
  generatingSecret.value = false
