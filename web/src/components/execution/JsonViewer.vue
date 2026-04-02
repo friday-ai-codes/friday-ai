@@ -6,13 +6,16 @@
  * 自适应高度、一键复制。配色适配 glassmorphism 暗色主题。
  */
 import { computed, ref } from 'vue'
-import { toast } from 'vue-sonner'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = withDefaults(defineProps<{
  data: Record<string, any> | null | undefined
  maxHeight?: string
 }>, {
  maxHeight: '400px',
 })
+const { handleError } = useErrorHandler
+const { success } = useToast
 const collapsed = ref<Set<string>>(new Set)
 function toggleCollapse(path: string) {
  if (collapsed.value.has(path))
@@ -110,10 +113,10 @@ function handleClick(e: MouseEvent) {
 async function handleCopy {
  try {
  await navigator.clipboard.writeText(rawJson.value)
- toast.success('已复制到剪贴板')
+ success('已复制到剪贴板')
  }
- catch {
- toast.error('复制失败')
+ catch (e: unknown) {
+ handleError(e, '复制')
  }
 }
 </script>

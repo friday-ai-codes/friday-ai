@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { InteractionLog } from '~/api/workflow'
 import { computed, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
 import { answerAgentSession, answerInteraction, getNodeInteractions } from '~/api/workflow'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Textarea } from '~/components/ui/textarea'
@@ -14,6 +15,8 @@ const props = defineProps<{
 const emit = defineEmits<{
  answered:
 }>
+const { handleError } = useErrorHandler
+const { success } = useToast
 // === InteractionLog 场景 (SubAgent 容器) ===
 const interactions = ref<InteractionLog>
 const loading = ref(false)
@@ -66,10 +69,10 @@ async function submitInteractionAnswer(interaction: InteractionLog, answer: stri
  if (idx !== -1)
  interactions.value[idx] = updated
  customAnswer.value = ''
- toast.success('回答已提交')
+ success('回答已提交')
  }
- catch (e: any) {
- toast.error(`提交失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '提交')
  }
  finally {
  submitting.value = false
@@ -83,11 +86,11 @@ async function submitAgentAnswer(answer: string) {
  await answerAgentSession(agentSessionId.value, answer)
  customAnswer.value = ''
  answered.value = true
- toast.success('回答已提交')
+ success('回答已提交')
  emit('answered')
  }
- catch (e: any) {
- toast.error(`提交失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '提交')
  }
  finally {
  submitting.value = false

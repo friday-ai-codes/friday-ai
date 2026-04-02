@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
@@ -19,6 +18,8 @@ import {
 } from '~/components/ui/dialog'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { useExecutionsStore } from '~/stores/useExecutionsStore'
 /**
  * PlanApprovalPanel - AI 方案审批专用面板
@@ -43,6 +44,8 @@ const emit = defineEmits<{
  actionComplete:
 }>
 const store = useExecutionsStore
+const { handleError } = useErrorHandler
+const { success, error: showError } = useToast
 // 方案数据提取
 const planData = computed( => {
  const data = props.nodeExecution.approval_data || props.nodeExecution.output_data || {}
@@ -86,11 +89,11 @@ async function handleApprove {
  submitting.value = true
  try {
  await store.approveNode(props.nodeExecution.id, '')
- toast.success('方案已通过')
+ success('方案已通过')
  emit('actionComplete')
  }
- catch (e: any) {
- toast.error(`操作失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '审批')
  }
  finally {
  submitting.value = false
@@ -102,18 +105,18 @@ function openRejectDialog {
 }
 async function handleReject {
  if (!rejectReasonInput.value.trim) {
- toast.error('请输入驳回理由')
+ showError('请输入驳回理由')
  return
  }
  submitting.value = true
  try {
  await store.rejectNode(props.nodeExecution.id, rejectReasonInput.value)
  rejectDialogOpen.value = false
- toast.success('方案已驳回')
+ success('方案已驳回')
  emit('actionComplete')
  }
- catch (e: any) {
- toast.error(`操作失败: ${e.message}`)
+ catch (e: unknown) {
+ handleError(e, '驳回')
  }
  finally {
  submitting.value = false

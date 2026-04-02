@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { repositoriesApi } from '~/api/repositories'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  getAllSettings,
  SettingKey,
@@ -11,6 +12,8 @@ import {
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+const { handleError } = useErrorHandler
+const { success, error: showError, info, warning } = useToast
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
@@ -89,8 +92,8 @@ async function loadSettings {
  // 重置脏标记
  resetDirtyFlags
  }
- catch {
- toast.error('加载设置失败')
+ catch (e: unknown) {
+ handleError(e, '加载设置')
  }
  finally {
  loading.value = false
@@ -122,15 +125,15 @@ async function saveAllSettings {
  if (embeddingDimensionDirty.value && embeddingDimensionValue.value)
  promises.push(updateSetting(SettingKey.EMBEDDING_DIMENSION, String(embeddingDimensionValue.value)))
  if (promises.length === 0) {
- toast.info('没有需要保存的更改')
+ info('没有需要保存的更改')
  return
  }
  await Promise.all(promises)
- toast.success('设置已保存')
+ success('设置已保存')
  await loadSettings
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存')
  }
  finally {
  saving.value = false
@@ -148,15 +151,15 @@ async function testQdrantConnection {
  const result = await repositoriesApi.testQdrantConnection(qdrantUrlValue.value, qdrantApiKeyDirty.value ? qdrantApiKeyValue.value || undefined: undefined)
  qdrantHealth.value = result
  if (result.status === 'healthy') {
- toast.success('Qdrant 连接成功')
+ success('Qdrant 连接成功')
  }
  else {
- toast.error(`Qdrant 连接失败: ${result.message}`)
+ showError(`Qdrant 连接失败: ${result.message}`)
  }
  }
- catch (error) {
- toast.error('测试连接失败')
- qdrantHealth.value = { status: 'error', message: String(error) }
+ catch (e: unknown) {
+ handleError(e, '测试 Qdrant 连接')
+ qdrantHealth.value = { status: 'error', message: String(e) }
  }
  finally {
  testingQdrant.value = false
@@ -170,7 +173,7 @@ async function testEmbeddingConnection {
  const apiUrl = embeddingApiUrlValue.value.trim
  const model = embeddingModelValue.value.trim || 'BAAI/bge-m3'
  if (!apiUrl) {
- toast.error('请先填写 Embedding API 地址')
+ showError('请先填写 Embedding API 地址')
  embeddingHealth.value = { status: 'error', message: 'Embedding API URL is required' }
  return
  }
@@ -182,18 +185,18 @@ async function testEmbeddingConnection {
  )
  embeddingHealth.value = result
  if (result.status === 'healthy') {
- toast.success(`Embedding API 连接成功，维度: ${result.dimension}`)
+ success(`Embedding API 连接成功，维度: ${result.dimension}`)
  }
  else if (result.status === 'warning') {
- toast.warning(result.message ?? '连接警告')
+ warning(result.message ?? '连接警告')
  }
  else {
- toast.error(`Embedding API 连接失败: ${result.message}`)
+ showError(`Embedding API 连接失败: ${result.message}`)
  }
  }
- catch (error) {
- toast.error('测试连接失败')
- embeddingHealth.value = { status: 'error', message: String(error) }
+ catch (e: unknown) {
+ handleError(e, '测试 Embedding 连接')
+ embeddingHealth.value = { status: 'error', message: String(e) }
  }
  finally {
  testingEmbedding.value = false

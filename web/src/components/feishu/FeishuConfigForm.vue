@@ -6,8 +6,9 @@
  */
 import type { FeishuConfig, FeishuConfigCreate } from '~/types'
 import { computed, ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { deleteFeishuConfig, setFeishuConfig, testFeishuConfig } from '~/api/projects'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -27,6 +28,8 @@ const props = defineProps<{
 const emit = defineEmits<{
  (e: 'updated'): void
 }>
+const { handleError } = useErrorHandler
+const { success, error: showError } = useToast
 // 表单数据
 const formData = ref<FeishuConfigCreate>({
  plugin_id: props.config?.plugin_id || '',
@@ -43,24 +46,23 @@ const isConfigured = computed( => props.config?.is_configured ?? false)
 // 提交配置
 async function handleSubmit {
  if (!formData.value.plugin_id || !formData.value.plugin_secret) {
- toast.error('请填写插件 ID 和插件 Secret')
+ showError('请填写插件 ID 和插件 Secret')
  return
  }
  if (!formData.value.user_key) {
- toast.error('请填写用户 Key')
+ showError('请填写用户 Key')
  return
  }
  isLoading.value = true
  try {
  await setFeishuConfig(props.projectId, formData.value)
- toast.success('飞书配置保存成功')
+ success('飞书配置保存成功')
  // 清空敏感信息
  formData.value.plugin_secret = ''
  emit('updated')
  }
- catch (error: unknown) {
- const message = error instanceof Error ? error.message: '未知错误'
- toast.error(`保存失败: ${message}`)
+ catch (e: unknown) {
+ handleError(e, '保存')
  }
  finally {
  isLoading.value = false
@@ -78,15 +80,14 @@ async function handleTest {
  }
  const result = await testFeishuConfig(props.projectId, testConfig)
  if (result.success) {
- toast.success(result.message)
+ success(result.message)
  }
  else {
- toast.error(result.message)
+ showError(result.message)
  }
  }
- catch (error: unknown) {
- const message = error instanceof Error ? error.message: '未知错误'
- toast.error(`测试失败: ${message}`)
+ catch (e: unknown) {
+ handleError(e, '测试')
  }
  finally {
  isTesting.value = false
@@ -97,13 +98,12 @@ async function handleDelete {
  isDeleting.value = true
  try {
  await deleteFeishuConfig(props.projectId)
- toast.success('飞书配置已删除')
+ success('飞书配置已删除')
  formData.value = { plugin_id: '', plugin_secret: '', user_key: '' }
  emit('updated')
  }
- catch (error: unknown) {
- const message = error instanceof Error ? error.message: '未知错误'
- toast.error(`删除失败: ${message}`)
+ catch (e: unknown) {
+ handleError(e, '删除')
  }
  finally {
  isDeleting.value = false
