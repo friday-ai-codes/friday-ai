@@ -41,6 +41,34 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/admin/components/ClaudeConfigSection': RouteRecordInfo<
+ '/admin/components/ClaudeConfigSection',
+ '/admin/components/ClaudeConfigSection',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/admin/components/FeishuIMConfigSection': RouteRecordInfo<
+ '/admin/components/FeishuIMConfigSection',
+ '/admin/components/FeishuIMConfigSection',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/admin/components/FeishuTestPanel': RouteRecordInfo<
+ '/admin/components/FeishuTestPanel',
+ '/admin/components/FeishuTestPanel',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/admin/components/SettingsInfoCard': RouteRecordInfo<
+ '/admin/components/SettingsInfoCard',
+ '/admin/components/SettingsInfoCard',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/admin/oidc': RouteRecordInfo<
  '/admin/oidc',
  '/admin/oidc',
@@ -81,6 +109,34 @@ declare module 'vue-router/auto-routes' {
  '/executions/:id',
  { id: ParamValue<true> },
  { id: ParamValue<false> },
+ | never
+ >,
+ '/executions/components/ExecutionContent': RouteRecordInfo<
+ '/executions/components/ExecutionContent',
+ '/executions/components/ExecutionContent',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/executions/components/ExecutionDialogs': RouteRecordInfo<
+ '/executions/components/ExecutionDialogs',
+ '/executions/components/ExecutionDialogs',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/executions/components/ExecutionHeader': RouteRecordInfo<
+ '/executions/components/ExecutionHeader',
+ '/executions/components/ExecutionHeader',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/executions/components/ExecutionStatusBanners': RouteRecordInfo<
+ '/executions/components/ExecutionStatusBanners',
+ '/executions/components/ExecutionStatusBanners',
+ Record<never, never>,
+ Record<never, never>,
  | never
  >,
  '/force-change-password': RouteRecordInfo<
@@ -288,6 +344,30 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
+ 'src/pages/admin/components/ClaudeConfigSection.vue': {
+ routes:
+ | '/admin/components/ClaudeConfigSection'
+ views:
+ | never
+ }
+ 'src/pages/admin/components/FeishuIMConfigSection.vue': {
+ routes:
+ | '/admin/components/FeishuIMConfigSection'
+ views:
+ | never
+ }
+ 'src/pages/admin/components/FeishuTestPanel.vue': {
+ routes:
+ | '/admin/components/FeishuTestPanel'
+ views:
+ | never
+ }
+ 'src/pages/admin/components/SettingsInfoCard.vue': {
+ routes:
+ | '/admin/components/SettingsInfoCard'
+ views:
+ | never
+ }
  'src/pages/admin/oidc.vue': {
  routes:
  | '/admin/oidc'
@@ -321,6 +401,30 @@ declare module 'vue-router/auto-routes' {
  'src/pages/executions/[id].vue': {
  routes:
  | '/executions/[id]'
+ views:
+ | never
+ }
+ 'src/pages/executions/components/ExecutionContent.vue': {
+ routes:
+ | '/executions/components/ExecutionContent'
+ views:
+ | never
+ }
+ 'src/pages/executions/components/ExecutionDialogs.vue': {
+ routes:
+ | '/executions/components/ExecutionDialogs'
+ views:
+ | never
+ }
+ 'src/pages/executions/components/ExecutionHeader.vue': {
+ routes:
+ | '/executions/components/ExecutionHeader'
+ views:
+ | never
+ }
+ 'src/pages/executions/components/ExecutionStatusBanners.vue': {
+ routes:
+ | '/executions/components/ExecutionStatusBanners'
  views:
  | never
  }
