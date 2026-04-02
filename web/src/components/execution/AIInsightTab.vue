@@ -30,8 +30,8 @@ async function fetchSteps {
  try {
  steps.value = await getReactSteps(props.nodeExecutionId)
  }
- catch (e: any) {
- stepsError.value = e.message || '加载失败'
+ catch (e: unknown) {
+ stepsError.value = (e instanceof Error ? e.message: '加载失败')
  }
  finally {
  stepsLoading.value = false

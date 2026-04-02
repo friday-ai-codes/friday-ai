@@ -46,7 +46,7 @@ const onSubmit = handleSubmit(async (values) => {
  const redirect = route.query.redirect as string || '/'
  router.push(redirect)
  }
- catch (e) {
+ catch (e: unknown) {
  loginError.value = e instanceof Error ? e.message: '登录失败，请重试'
  }
 })
@@ -63,12 +63,12 @@ async function onOIDCLogin(provider: OIDCProviderPublic) {
  clearTimeout(timeout)
  window.location.href = result.authorize_url
  }
- catch (e) {
+ catch (e: unknown) {
  clearTimeout(timeout)
  throw e
  }
  }
- catch (e) {
+ catch (e: unknown) {
  // 区分网络错误（Provider 不可达）和其他错误
  if (e instanceof DOMException && e.name === 'AbortError') {
  loginError.value = '认证服务暂时不可用，请稍后重试'

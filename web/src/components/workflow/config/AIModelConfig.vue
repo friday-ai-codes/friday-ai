@@ -14,6 +14,7 @@ import {
 } from '~/components/ui/select'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
+import { extractErrorMessage } from '~/composables/useErrorHandler'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -109,8 +110,8 @@ async function fetchCustomModels {
  localModel.value = result.models[0].id
  }
  }
- catch (e: any) {
- modelError.value = e.message || '查询模型失败'
+ catch (e: unknown) {
+ modelError.value = extractErrorMessage(e) || '查询模型失败'
  customModels.value =
  }
  finally {
@@ -133,8 +134,8 @@ async function fetchSystemModels {
  localModel.value = result.models[0].id
  }
  }
- catch (e: any) {
- modelError.value = e.message || '查询模型失败'
+ catch (e: unknown) {
+ modelError.value = extractErrorMessage(e) || '查询模型失败'
  systemModels.value =
  }
  finally {
