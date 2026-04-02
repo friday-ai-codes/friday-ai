@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import AppModeSwitcher from '~/components/layout/AppModeSwitcher.vue'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
 const chatStore = useChatStore
-const router = useRouter
 function handleNewConversation {
  chatStore.createNewConversation
 }
@@ -11,9 +11,6 @@ function handleSelectConversation(id: string) {
 }
 function handleDeleteConversation(id: string) {
  chatStore.removeConversation(id)
-}
-function handleGoHome {
- router.push('/')
 }
 // 格式化时间
 function formatTime(dateStr: string) {
@@ -32,10 +29,10 @@ function formatTime(dateStr: string) {
 </script>
 <template>
  <aside
- class="border-r border-border/40 bg-background/80 backdrop-blur-xl transition-all duration-300 flex flex-col":class="chatStore.sidebarCollapsed ? 'w-16': 'w-72'"
+ class="border-r border-border/40 bg-background/80 backdrop-blur-xl transition-all duration-300 flex flex-col":class="chatStore.sidebarCollapsed ? 'w-[72px]': 'w-72'"
  >
  <!-- 顶部操作区 -->
- <div class=" flex items-center gap-2 border-b border-border/40">
+ <div class="flex items-center border-b border-border/40":class="chatStore.sidebarCollapsed ? 'justify-center px-2': 'px-4 gap-2'">
  <Button
  variant="ghost"
  size="icon"
@@ -46,19 +43,12 @@ function formatTime(dateStr: string) {
  <span v-else class="icon-[lucide--panel-left-open] text-lg" />
  </Button>
  <template v-if="!chatStore.sidebarCollapsed">
- <Button
- variant="ghost"
- size="icon"
- class="shrink-0"
- @click="handleGoHome"
- >
- <span class="icon-[lucide--home] text-lg" />
- </Button>
+ <span class="text-sm font-semibold text-foreground">AI 对话</span>
  <div class="flex-1" />
  <Button
  variant="outline"
  size="sm"
- class="gap-1.5"
+ class="gap-1.5 "
  @click="handleNewConversation"
  >
  <span class="icon-[lucide--plus] text-sm" />
@@ -66,25 +56,21 @@ function formatTime(dateStr: string) {
  </Button>
  </template>
  </div>
- <!-- 折叠态：仅显示图标按钮 -->
- <template v-if="chatStore.sidebarCollapsed">
- <div class=" flex flex-col items-center gap-2">
+ <!-- 模式切换器 -->
+ <div:class="chatStore.sidebarCollapsed ? 'px-2': 'px-3'" class="pt-3 pb-2">
+ <AppModeSwitcher:collapsed="chatStore.sidebarCollapsed" />
+ </div>
+ <!-- 折叠态：仅显示新建按钮 -->
+ <div v-if="chatStore.sidebarCollapsed" class="px-2 pb-2">
  <Button
  variant="ghost"
  size="icon"
- @click="handleGoHome"
- >
- <span class="icon-[lucide--home] text-lg" />
- </Button>
- <Button
- variant="ghost"
- size="icon"
+ class="w-full"
  @click="handleNewConversation"
  >
  <span class="icon-[lucide--plus] text-lg" />
  </Button>
  </div>
- </template>
  <!-- 展开态：对话列表 -->
  <ScrollArea v-if="!chatStore.sidebarCollapsed" class="flex-1">
  <div class=" space-y-1">

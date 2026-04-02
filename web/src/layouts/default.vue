@@ -1,11 +1,29 @@
 <script setup lang="ts">
 import AppSidebar from '~/components/layout/AppSidebar.vue'
+import ChatHeader from '~/components/chat/ChatHeader.vue'
+import ChatInput from '~/components/chat/ChatInput.vue'
+import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
+import ChatSidebar from '~/components/chat/ChatSidebar.vue'
 import { Toaster } from '~/components/ui/sonner'
+import { useAppMode } from '~/composables/useAppMode'
+const { mode, chatInitialized } = useAppMode
 // WebSocket 实时监控
 const { status, connect } = useRunnerMonitor
 onMounted( => {
  connect
 })
+// Chat 模式懒加载：首次进入 chat 模式时初始化数据
+const chatStore = useChatStore
+const projectsStore = useProjectsStore
+watch(mode, async (m) => {
+ if (m === 'chat' && !chatInitialized.value) {
+ chatInitialized.value = true
+ await Promise.all([
+ chatStore.fetchConversations,
+ projectsStore.fetchProjects,
+ ])
+ }
+}, { immediate: true })
 // 从 route.meta 获取页面标题
 const route = useRoute
 const pageTitle = computed( => {
@@ -15,20 +33,23 @@ const pageTitle = computed( => {
 </script>
 <template>
  <div class="min-h-screen flex bg-background">
- <!-- 侧边栏 -->
- <AppSidebar />
- <!-- 主内容区 -->
- <div class="flex-1 flex flex-col min-w-0 bg-gray-50">
+ <!-- ==================== 侧边栏区域 ==================== -->
+ <Transition name="mode-sidebar" mode="out-in">
+ <AppSidebar v-if="mode === 'friday'" key="sidebar-friday" />
+ <ChatSidebar v-else key="sidebar-chat" />
+ </Transition>
+ <!-- ==================== 主内容区域 ==================== -->
+ <Transition name="mode-content" mode="out-in">
+ <!-- Friday 工作台模式 -->
+ <div v-if="mode === 'friday'" key="content-friday" class="flex-1 flex flex-col min-w-0 bg-gray-50">
  <!-- Sub2API 风格顶栏 — 玻璃效果 -->
  <header class="header-glass sticky top-0 z-40 ">
  <div class="flex h-full items-center justify-between px-6">
- <!-- 左侧：页面标题 -->
  <div>
  <h1 v-if="pageTitle" class="text-lg font-semibold text-foreground">
  {{ pageTitle }}
  </h1>
  </div>
- <!-- 右侧：WebSocket 连接状态 -->
  <div class="flex items-center gap-3">
  <div
  class="flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{
@@ -61,12 +82,43 @@ const pageTitle = computed( => {
  </div>
  </div>
  </header>
- <!-- 页面内容 -->
  <main class="flex-1 bg-mesh-gradient">
  <RouterView />
  </main>
  </div>
+ <!-- Chat AI 对话模式 -->
+ <div v-else key="content-chat" class="flex-1 flex flex-col min-w-0">
+ <ChatHeader />
+ <ChatMessageArea />
+ <ChatInput />
+ </div>
+ </Transition>
  </div>
  <!-- Toast 通知 -->
  <Toaster rich-colors position="top-right" />
 </template>
+<style scoped>
+/* 侧边栏切换 — 快速淡入淡出 */
+.mode-sidebar-enter-active,
+.mode-sidebar-leave-active {
+ transition: opacity 0.2s ease;
+}
+.mode-sidebar-enter-from,
+.mode-sidebar-leave-to {
+ opacity: 0;
+}
+/* 主内容区切换 — 平滑淡入 + 微位移 */
+.mode-content-enter-active {
+ transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.mode-content-leave-active {
+ transition: opacity 0.15s ease;
+}
+.mode-content-enter-from {
+ opacity: 0;
+ transform: translateY(8px);
+}
+.mode-content-leave-to {
+ opacity: 0;
+}
+</style>

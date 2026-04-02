@@ -82,6 +82,13 @@ const quickActions = [
  link: '/repositories',
  iconBg: 'stat-icon-emerald',
  },
+ {
+ icon: 'lucide--message-square',
+ title: 'AI 对话',
+ description: '与 AI 助手交流',
+ link: '/chat',
+ iconBg: 'stat-icon-violet',
+ },
 ]
 </script>
 <template>
