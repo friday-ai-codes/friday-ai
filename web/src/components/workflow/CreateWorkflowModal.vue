@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { VueFinalModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
 import client from '~/api/client'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -24,7 +25,8 @@ const emit = defineEmits<{
 const router = useRouter
 const workflowsStore = useWorkflowsStore
 const projectsStore = useProjectsStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // ============================================================================
 // Form
 // ============================================================================
@@ -115,8 +117,8 @@ async function handleSubmit {
  router.push(`/workflows/${workflow.id}`)
  }
  }
- catch (e) {
- showError('创建失败', e instanceof Error ? e.message: '无法创建工作流')
+ catch (e: unknown) {
+ handleError(e, '创建工作流')
  }
  finally {
  submitting.value = false

@@ -3,6 +3,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { VueFinalModal } from 'vue-final-modal'
 import * as z from 'zod'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
@@ -14,7 +15,8 @@ const emit = defineEmits<{
  closed:
 }>
 const authStore = useAuthStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // ============================================================================
 // State
 // ============================================================================
@@ -39,8 +41,8 @@ const onProfileSubmit = handleProfileSubmit(async (values) => {
  success('保存成功', '个人资料已更新')
  // Don't close modal, just show success
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法更新资料')
+ catch (e: unknown) {
+ handleError(e, '保存资料')
  }
 })
 // ============================================================================
@@ -66,8 +68,8 @@ const onPasswordSubmit = handlePasswordSubmit(async (values) => {
  success('修改成功', '密码已修改')
  resetPasswordForm
  }
- catch (e) {
- showError('修改失败', e instanceof Error ? e.message: '无法修改密码')
+ catch (e: unknown) {
+ handleError(e, '修改密码')
  }
 })
 // ============================================================================
@@ -82,8 +84,8 @@ async function loadProfile {
  display_name: profile.display_name || '',
  })
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法加载用户信息')
+ catch (e: unknown) {
+ handleError(e, '加载用户信息')
  }
  finally {
  loading.value = false

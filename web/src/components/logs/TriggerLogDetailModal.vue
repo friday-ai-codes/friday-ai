@@ -2,6 +2,7 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { VueFinalModal } from 'vue-final-modal'
 import { deleteTriggerLog, getTriggerLog, retryTriggerLog } from '~/api/logs'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import {
  AlertDialog,
@@ -30,7 +31,8 @@ const emit = defineEmits<{
  closed:
  refresh:
 }>
-const { error: showError, success } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 加载数据
 const loading = ref(true)
 const log = ref<TriggerLogDetail | null>(null)
@@ -43,8 +45,8 @@ onMounted(async => {
  try {
  log.value = await getTriggerLog(props.logId)
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取日志详情')
+ catch (e: unknown) {
+ handleError(e, '加载日志详情')
  }
  finally {
  loading.value = false
@@ -68,8 +70,8 @@ async function handleRetry {
  success('重试成功', '已重新处理该触发事件')
  emit('refresh')
  }
- catch (e) {
- showError('重试失败', e instanceof Error ? e.message: '无法重试')
+ catch (e: unknown) {
+ handleError(e, '重试')
  }
  finally {
  retrying.value = false
@@ -87,8 +89,8 @@ async function handleDelete {
  emit('refresh')
  handleClose
  }
- catch (e) {
- showError('删除失败', e instanceof Error ? e.message: '无法删除')
+ catch (e: unknown) {
+ handleError(e, '删除')
  }
  finally {
  deleting.value = false

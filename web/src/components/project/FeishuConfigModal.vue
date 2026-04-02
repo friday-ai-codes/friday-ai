@@ -2,6 +2,7 @@
 import type { FeishuConfig } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { getFeishuConfig, setFeishuConfig } from '~/api/projects'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -13,7 +14,8 @@ const emit = defineEmits<{
  cancel:
  closed:
 }>
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 表单数据
 const form = reactive({
  plugin_id: '',
@@ -89,8 +91,8 @@ async function handleSubmit {
  success('保存成功', '飞书配置已更新')
  emit('confirm')
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法更新飞书配置')
+ catch (e: unknown) {
+ handleError(e, '保存飞书配置')
  }
  finally {
  submitting.value = false

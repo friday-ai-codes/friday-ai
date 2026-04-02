@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
 import { get, post, put } from '~/api/client'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import {
  Collapsible,
@@ -20,6 +21,7 @@ const emit = defineEmits<{
  closed:
 }>
 const projectsStore = useProjectsStore
+const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 // 表单数据
 const form = reactive({
@@ -70,8 +72,8 @@ async function fetchProjectData {
  // 获取飞书 IM 配置
  await fetchFeishuIMConfig
  }
- catch (e) {
- showError('加载失败', e instanceof Error ? e.message: '无法获取项目详情')
+ catch (e: unknown) {
+ handleError(e, '加载项目详情')
  emit('cancel')
  }
  finally {
@@ -110,8 +112,8 @@ async function handleSubmit {
  success('更新成功', '项目已更新')
  emit('confirm', project)
  }
- catch (e) {
- showError('更新失败', e instanceof Error ? e.message: '无法更新项目')
+ catch (e: unknown) {
+ handleError(e, '更新项目')
  }
  finally {
  submitting.value = false
@@ -142,8 +144,8 @@ async function saveFeishuIMConfig {
  feishuIMConfig.is_configured = true
  feishuIMConfig.app_secret = '' // 清空密钥输入
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法保存配置')
+ catch (e: unknown) {
+ handleError(e, '保存飞书 IM 配置')
  }
  finally {
  savingFeishuIM.value = false
@@ -181,9 +183,9 @@ async function testFeishuIMConfig {
  showError('测试失败', result.message)
  }
  }
- catch (e) {
+ catch (e: unknown) {
  testResult.value = { success: false, message: e instanceof Error ? e.message: '测试失败' }
- showError('测试失败', e instanceof Error ? e.message: '无法发送测试消息')
+ handleError(e, '测试飞书 IM')
  }
  finally {
  testingFeishuIM.value = false

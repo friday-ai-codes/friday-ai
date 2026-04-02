@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -10,7 +11,8 @@ const emit = defineEmits<{
  closed:
 }>
 const projectsStore = useProjectsStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 表单数据
 const form = reactive({
  name: '',
@@ -43,8 +45,8 @@ async function handleSubmit {
  success('创建成功', '项目已创建')
  emit('confirm', project.id)
  }
- catch (e) {
- showError('创建失败', e instanceof Error ? e.message: '无法创建项目')
+ catch (e: unknown) {
+ handleError(e, '创建项目')
  }
  finally {
  submitting.value = false

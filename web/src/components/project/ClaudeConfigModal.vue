@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
 import { getProjectClaudeConfig, updateProjectClaudeConfig } from '~/api/settings'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -13,7 +14,8 @@ const emit = defineEmits<{
  cancel:
  closed:
 }>
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 // 状态
 const loading = ref(false)
 const submitting = ref(false)
@@ -57,8 +59,8 @@ async function handleSubmit {
  success('配置已保存')
  emit('confirm')
  }
- catch (e) {
- showError('保存失败', e instanceof Error ? e.message: '无法保存配置')
+ catch (e: unknown) {
+ handleError(e, '保存配置')
  }
  finally {
  submitting.value = false
