@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -16,6 +17,7 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const router = useRouter
 const store = useWorkflowsStore
 const { workflows, loading } = storeToRefs(store)
+const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
 // 当前要执行的工作流
@@ -66,8 +68,13 @@ async function executeWorkflow(inputData: Record<string, any>, debugMode: boolea
  }
 }
 async function handleDelete(workflow: any) {
- // eslint-disable-next-line no-alert
- if (!window.confirm('确定要删除该工作流吗？此操作无法撤销。'))
+ const confirmed = await confirm({
+ title: '删除工作流',
+ description: '确定要删除该工作流吗？此操作无法撤销。',
+ confirmText: '删除',
+ variant: 'destructive',
+ })
+ if (!confirmed)
  return
  try {
  await store.deleteWorkflow(workflow.id)

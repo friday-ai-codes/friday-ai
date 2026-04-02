@@ -13,6 +13,7 @@ import {
  updateProvider,
 } from '~/api/oidc'
 import { Button } from '~/components/ui/button'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import {
@@ -26,6 +27,7 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 // 状态
@@ -150,8 +152,13 @@ async function onSave {
 }
 // 删除 Provider
 async function onDelete(provider: OIDCProvider) {
- // eslint-disable-next-line no-alert
- if (!confirm(`确定删除 "${provider.name}"？`))
+ const confirmed = await confirm({
+ title: '删除 Provider',
+ description: `确定删除 "${provider.name}"？`,
+ confirmText: '删除',
+ variant: 'destructive',
+ })
+ if (!confirmed)
  return
  try {
  await deleteProvider(provider.id)

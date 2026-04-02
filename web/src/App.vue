@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { ModalsContainer } from 'vue-final-modal'
+import GlobalConfirmDialog from '~/components/GlobalConfirmDialog.vue'
 import { usePermissionSync } from '~/composables/usePermissionSync'
 // 设置页面默认标题
 useHead({
@@ -15,4 +16,5 @@ usePermissionSync
 <template>
  <RouterView />
  <ModalsContainer />
+ <GlobalConfirmDialog />
 </template>
