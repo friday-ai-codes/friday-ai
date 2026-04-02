@@ -73,7 +73,6 @@ export function useExecutionControls(
  isRetrying.value = true
  try {
  const { retryExecution } = await import('~/api/workflow')
- const currentExec = store.$state ? undefined: undefined
  const result = await retryExecution(executionId.value)
  if (result?.execution_id) {
  toast.success('工作流重新执行成功')
