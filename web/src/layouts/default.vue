@@ -33,11 +33,9 @@ const pageTitle = computed( => {
 </script>
 <template>
  <div class="min-h-screen flex bg-background">
- <!-- ==================== 侧边栏区域 ==================== -->
- <Transition name="mode-sidebar" mode="out-in">
- <AppSidebar v-if="mode === 'friday'" key="sidebar-friday" />
- <ChatSidebar v-else key="sidebar-chat" />
- </Transition>
+ <!-- ==================== 侧边栏区域（直接切换，不用 Transition） ==================== -->
+ <AppSidebar v-if="mode === 'friday'" />
+ <ChatSidebar v-else />
  <!-- ==================== 主内容区域 ==================== -->
  <Transition name="mode-content" mode="out-in">
  <!-- Friday 工作台模式 -->
@@ -98,15 +96,6 @@ const pageTitle = computed( => {
  <Toaster rich-colors position="top-right" />
 </template>
 <style scoped>
-/* 侧边栏切换 — 快速淡入淡出 */
-.mode-sidebar-enter-active,
-.mode-sidebar-leave-active {
- transition: opacity 0.2s ease;
-}
-.mode-sidebar-enter-from,
-.mode-sidebar-leave-to {
- opacity: 0;
-}
 /* 主内容区切换 — 平滑淡入 + 微位移 */
 .mode-content-enter-active {
  transition: opacity 0.3s ease, transform 0.3s ease;
