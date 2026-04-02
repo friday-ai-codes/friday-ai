@@ -10,7 +10,6 @@ import {
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useToast } from '~/composables/useToast'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 interface Props {
  /** 输入端口列表 */
  inputs: NodePort
