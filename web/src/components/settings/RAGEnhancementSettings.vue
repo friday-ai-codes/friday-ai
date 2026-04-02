@@ -15,7 +15,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
 const { handleError } = useErrorHandler
-const { success, error: showError, info, warning } = useToast
+const { success, error: showError, info } = useToast
 // 设置状态
 const settings = ref<SettingRead>
 const loading = ref(true)
