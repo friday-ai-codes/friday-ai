@@ -5,8 +5,8 @@ import { toTypedSchema } from '@vee-validate/zod'
  * 首次登录或密码重置后必须修改密码
  */
 import { useForm } from 'vee-validate'
-import { toast } from 'vue-sonner'
 import * as z from 'zod'
+import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import {
  FormControl,
@@ -19,6 +19,7 @@ import { Input } from '~/components/ui/input'
 import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const authStore = useAuthStore
+const { success } = useToast
 // 表单验证 schema
 const formSchema = toTypedSchema(z.object({
  new_password: z.string.min(6, '密码至少 6 位'),
@@ -36,12 +37,12 @@ const onSubmit = handleSubmit(async (values) => {
  submitError.value = null
  try {
  await authStore.forceChangePassword({ new_password: values.new_password })
- toast.success('密码修改成功，请重新登录')
+ success('密码修改成功，请重新登录')
  // 清除登录状态，要求重新登录
  await authStore.logout
  router.push('/login')
  }
- catch (e) {
+ catch (e: unknown) {
  submitError.value = e instanceof Error ? e.message: '修改密码失败，请重试'
  }
 })

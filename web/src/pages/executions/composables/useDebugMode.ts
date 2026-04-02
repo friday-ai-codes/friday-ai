@@ -1,12 +1,13 @@
 import type { Ref } from 'vue'
 import type { useExecutionsStore, WorkflowExecution } from '~/stores/useExecutionsStore'
 import { computed, ref, watch } from 'vue'
-import { toast } from 'vue-sonner'
+import { useToast } from '~/composables/useToast'
 export function useDebugMode(
  executionId: Ref<string>,
  store: ReturnType<typeof useExecutionsStore>,
  currentExecution: Ref<WorkflowExecution | null>,
 ) {
+ const { success } = useToast
  /** Phase: 断点集合 */
  const breakpoints = ref<Set<string>>(new Set)
  /** 当前调试模式 */
@@ -48,7 +49,7 @@ export function useDebugMode(
  /** 终止调试（取消执行） */
  async function handleCancelDebug {
  await store.cancelExecution(executionId.value)
- toast.success('调试执行已终止')
+ success('调试执行已终止')
  }
  return {
  breakpoints,

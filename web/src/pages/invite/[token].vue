@@ -6,13 +6,17 @@
 import type { Invitation } from '~/types'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { toast } from 'vue-sonner'
+import { ApiError } from '~/api/client'
 import { acceptInvitation, validateInvitation } from '~/api/users'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 const route = useRoute
 const router = useRouter
+const { handleError } = useErrorHandler
+const { success } = useToast
 const token = (route.params as { token: string }).token
 // 页面状态
 type PageState = 'loading' | 'valid' | 'invalid' | 'success'
@@ -35,12 +39,17 @@ async function loadInvitation {
  }
  pageState.value = 'valid'
  }
- catch (error: any) {
- if (error?.status === 410) {
+ catch (e: unknown) {
+ if (e instanceof ApiError) {
+ if (e.status === 410) {
  errorMessage.value = '此邀请链接已过期或已被使用'
  }
- else if (error?.status === 404) {
+ else if (e.status === 404) {
  errorMessage.value = '邀请链接不存在'
+ }
+ else {
+ errorMessage.value = '邀请链接无效'
+ }
  }
  else {
  errorMessage.value = '邀请链接无效'
@@ -50,19 +59,19 @@ async function loadInvitation {
 }
 async function handleRegister {
  if (!username.value.trim) {
- toast.error('请输入用户名')
+ handleError(new Error('请输入用户名'), '注册')
  return
  }
  if (username.value.length < 3) {
- toast.error('用户名至少 3 个字符')
+ handleError(new Error('用户名至少 3 个字符'), '注册')
  return
  }
  if (!password.value || password.value.length < 6) {
- toast.error('密码至少 6 个字符')
+ handleError(new Error('密码至少 6 个字符'), '注册')
  return
  }
  if (password.value !== confirmPassword.value) {
- toast.error('两次密码输入不一致')
+ handleError(new Error('两次密码输入不一致'), '注册')
  return
  }
  submitting.value = true
@@ -74,22 +83,27 @@ async function handleRegister {
  display_name: displayName.value.trim,
  })
  pageState.value = 'success'
- toast.success('注册成功！即将跳转到登录页')
+ success('注册成功！即将跳转到登录页')
  setTimeout( => {
  router.push('/login')
  }, 2000)
  }
- catch (error: any) {
- if (error?.status === 409) {
- toast.error('该用户名已被使用，请换一个')
+ catch (e: unknown) {
+ if (e instanceof ApiError) {
+ if (e.status === 409) {
+ handleError(new Error('该用户名已被使用，请换一个'), '注册')
  }
- else if (error?.status === 410) {
- toast.error('邀请链接已失效')
+ else if (e.status === 410) {
+ handleError(e, '注册')
  pageState.value = 'invalid'
  errorMessage.value = '此邀请链接已过期或已被使用'
  }
  else {
- toast.error('注册失败，请重试')
+ handleError(e, '接受邀请')
+ }
+ }
+ else {
+ handleError(e, '接受邀请')
  }
  }
  finally {
