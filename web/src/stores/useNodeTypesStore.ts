@@ -58,8 +58,8 @@ export const useNodeTypesStore = defineStore('nodeTypes', => {
  const data = await api.get<any>('/node-types/')
  nodeTypes.value = data.results || data
  }
- catch (e: any) {
- error.value = e.message
+ catch (e: unknown) {
+ error.value = e instanceof Error ? e.message: '加载失败'
  }
  finally {
  loading.value = false
