@@ -9,7 +9,7 @@ interface OverrideField {
  newValue: string
 }
 export function useAutoFill(
- nodeTypeInfo: ComputedRef<{ inputs?: Array<{ name: string, label?: string, type: string }>, [key: string]: any } | null>,
+ nodeTypeInfo: ComputedRef<{ inputs?: Array<{ name: string, label?: string, type: string }>, [key: string]: any } | null | undefined>,
  designTimeVariables: Ref<DesignTimeVariable>,
  nodeConfig: Ref<Record<string, any>>,
 ) {

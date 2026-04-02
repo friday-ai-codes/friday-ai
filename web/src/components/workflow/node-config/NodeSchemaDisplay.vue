@@ -55,7 +55,7 @@ function getPortTypeColor(type: string): string {
  <div class="rounded-xl bg-muted/30 border border-border/50 overflow-hidden">
  <div
  v-for="(input, idx) in directPredecessorOutputs":key="`${input.nodeId}-${input.fieldName}`"
- class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
+ class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': Number(idx) > 0 }"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -108,7 +108,7 @@ function getPortTypeColor(type: string): string {
  <template v-if="output.schema?.properties">
  <div
  v-for="(propSchema, propKey, propIdx) in output.schema.properties":key="`${output.name}-${propKey}`"
- class="px-3 py-2 text-xs":class="{ 'border-t border-border/50': idx > 0 || propIdx > 0 }"
+ class="px-3 py-2 text-xs":class="{ 'border-t border-border/50': Number(idx) > 0 || Number(propIdx) > 0 }"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -133,7 +133,7 @@ function getPortTypeColor(type: string): string {
  <!-- 没有详细 schema，显示端口级别信息 -->
  <template v-else>
  <div
- class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': idx > 0 }"
+ class="px-3 py-2.5 text-xs":class="{ 'border-t border-border/50': Number(idx) > 0 }"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
