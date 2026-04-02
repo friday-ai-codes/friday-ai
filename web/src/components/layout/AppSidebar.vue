@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppModeSwitcher from '~/components/layout/AppModeSwitcher.vue'
 import {
  DropdownMenu,
  DropdownMenuContent,
@@ -86,8 +87,12 @@ async function handleLogout {
  <span class="icon-[lucide--panel-left-close] text-lg" />
  </button>
  </div>
+ <!-- 模式切换器 -->
+ <div:class="isCollapsed ? 'px-2': 'px-3'" class="pt-3 pb-2">
+ <AppModeSwitcher:collapsed="isCollapsed" />
+ </div>
  <!-- 主导航区域 -->
- <nav class="flex-1 overflow-y-auto py-3 scrollbar-hide":class="isCollapsed ? 'px-2': 'px-3'">
+ <nav class="flex-1 overflow-y-auto py-1 scrollbar-hide":class="isCollapsed ? 'px-2': 'px-3'">
  <template
  v-for="item in mainNavItems":key="item.to"
  >
