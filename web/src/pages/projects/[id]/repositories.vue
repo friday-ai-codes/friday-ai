@@ -5,7 +5,8 @@
  */
 import type { ProjectRepositoryLink, Repository, RepositoryPermissionLevel } from '~/types'
 import { useHead } from '@vueuse/head'
-import { toast } from 'vue-sonner'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  getProjectRepositories,
  linkRepositories,
@@ -21,6 +22,8 @@ import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/projects/[id]/repositories')
 const projectId = computed( => route.params.id)
 const { isProjectAdmin, isViewer } = usePermission(projectId)
+const { handleError } = useErrorHandler
+const { success } = useToast
 useHead({ title: '仓库管理 - Friday AI' })
 // 数据状态
 const links = ref<ProjectRepositoryLink>
@@ -45,8 +48,8 @@ async function loadLinks {
  try {
  links.value = await getProjectRepositories(projectId.value)
  }
- catch {
- toast.error('加载仓库关联列表失败')
+ catch (e: unknown) {
+ handleError(e, '加载仓库关联')
  }
 }
 onMounted(async => {
@@ -65,8 +68,8 @@ async function openLinkDialog {
  try {
  allRepositories.value = await repositoriesApi.list
  }
- catch {
- toast.error('加载仓库列表失败')
+ catch (e: unknown) {
+ handleError(e, '加载仓库列表')
  }
 }
 // 切换仓库选择
@@ -87,12 +90,12 @@ async function handleLink {
  const result = await linkRepositories(projectId.value, {
  repository_ids: Array.from(selectedRepoIds.value),
  })
- toast.success(`已关联 ${result.created.length} 个仓库`)
+ success(`已关联 ${result.created.length} 个仓库`)
  await loadLinks
  dialogOpen.value = false
  }
- catch {
- toast.error('关联仓库失败')
+ catch (e: unknown) {
+ handleError(e, '关联仓库')
  }
  finally {
  linking.value = false
@@ -106,10 +109,10 @@ async function togglePermission(link: ProjectRepositoryLink) {
  const idx = links.value.findIndex(l => l.id === link.id)
  if (idx >= 0)
  links.value[idx] = updated
- toast.success(`权限已更新为${newLevel === 'read_write' ? '读写': '只读'}`)
+ success(`权限已更新为${newLevel === 'read_write' ? '读写': '只读'}`)
  }
- catch {
- toast.error('更新权限失败')
+ catch (e: unknown) {
+ handleError(e, '更新权限')
  }
 }
 // 移除关联
@@ -117,10 +120,10 @@ async function handleUnlink(link: ProjectRepositoryLink) {
  try {
  await unlinkRepository(projectId.value, link.id)
  links.value = links.value.filter(l => l.id !== link.id)
- toast.success(`已移除 ${link.repository_name}`)
+ success(`已移除 ${link.repository_name}`)
  }
- catch {
- toast.error('移除关联失败')
+ catch (e: unknown) {
+ handleError(e, '移除关联')
  }
 }
 // 权限级别标签

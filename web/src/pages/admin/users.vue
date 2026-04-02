@@ -2,8 +2,9 @@
 import type { ColumnDef } from '@tanstack/vue-table'
 import type { Invitation, SystemUser } from '~/types'
 import { h } from 'vue'
-import { toast } from 'vue-sonner'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import DataTable from '~/components/common/DataTable.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -14,6 +15,8 @@ import { Label } from '~/components/ui/label'
 definePage({
  meta: { requiresAdmin: true },
 })
+const { handleError } = useErrorHandler
+const { success } = useToast
 const users = ref<SystemUser>
 const loading = ref(true)
 const saving = ref(false)
@@ -27,8 +30,8 @@ async function loadUsers {
  try {
  users.value = await listUsers
  }
- catch {
- toast.error('加载用户列表失败')
+ catch (e: unknown) {
+ handleError(e, '加载用户')
  }
  finally {
  loading.value = false
@@ -41,10 +44,10 @@ async function toggleUserActive(user: SystemUser) {
  const idx = users.value.findIndex(u => u.id === user.id)
  if (idx !== -1)
  users.value[idx] = updated
- toast.success(updated.is_active ? '用户已启用': '用户已禁用')
+ success(updated.is_active ? '用户已启用': '用户已禁用')
  }
- catch {
- toast.error('操作失败')
+ catch (e: unknown) {
+ handleError(e, '切换用户状态')
  }
  finally {
  saving.value = false
@@ -60,10 +63,10 @@ async function generateInviteLink {
  const baseUrl = window.location.origin
  inviteLink.value = `${baseUrl}/invite/${invitation.token}`
  inviteEmail.value = ''
- toast.success('邀请链接已生成')
+ success('邀请链接已生成')
  }
- catch {
- toast.error('生成邀请链接失败')
+ catch (e: unknown) {
+ handleError(e, '生成邀请链接')
  }
  finally {
  creatingInvite.value = false
@@ -74,10 +77,10 @@ async function copyInviteLink {
  return
  try {
  await navigator.clipboard.writeText(inviteLink.value)
- toast.success('链接已复制到剪贴板')
+ success('链接已复制到剪贴板')
  }
- catch {
- toast.error('复制失败，请手动复制')
+ catch (e: unknown) {
+ handleError(e, '复制链接')
  }
 }
 function formatDate(dateStr: string) {

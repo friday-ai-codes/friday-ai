@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -9,7 +10,8 @@ import { Switch } from '~/components/ui/switch'
 useHead({ title: '新建 Runner - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
-const { success: toastSuccess, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success: toastSuccess } = useToast
 const { copy } = useClipboard
 const step = ref<'form' | 'success'>('form')
 const createdToken = ref<string | null>(null)
@@ -39,7 +41,7 @@ async function handleSubmit {
  createdToken.value = result.token
  step.value = 'success'
  }
- catch (e) { showError('创建失败', e instanceof Error ? e.message: '无法创建 Runner') }
+ catch (e: unknown) { handleError(e, '创建 Runner') }
  finally { submitting.value = false }
 }
 const registerCommand = computed( =>

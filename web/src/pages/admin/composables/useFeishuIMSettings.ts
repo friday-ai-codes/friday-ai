@@ -1,7 +1,8 @@
 import type { Ref } from 'vue'
 import type { SettingRead } from '~/api/settings'
 import { ref } from 'vue'
-import { toast } from 'vue-sonner'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import {
  deleteSetting,
  SettingKey,
@@ -12,6 +13,8 @@ export function useFeishuIMSettings(
  settings: Ref<SettingRead>,
  loadSettings: => Promise<void>,
 ) {
+ const { handleError } = useErrorHandler
+ const { success, info } = useToast
  // 表单值
  const feishuAppIdValue = ref('')
  const feishuAppSecretValue = ref('')
@@ -49,12 +52,12 @@ export function useFeishuIMSettings(
  }
  async function saveFeishuIMConfig {
  if (!feishuAppIdValue.value.trim) {
- toast.error('请输入 App ID')
+ handleError(new Error('请输入 App ID'), '保存飞书配置')
  return
  }
  const hasExistingSecret = getSettingByKey(SettingKey.FEISHU_APP_SECRET)?.has_value
  if (!feishuAppSecretValue.value.trim && !hasExistingSecret) {
- toast.error('请输入 App Secret')
+ handleError(new Error('请输入 App Secret'), '保存飞书配置')
  return
  }
  savingFeishuIM.value = true
@@ -68,18 +71,18 @@ export function useFeishuIMSettings(
  }
  if (promises.length > 0) {
  await Promise.all(promises)
- toast.success('飞书 IM 配置已保存')
+ success('飞书 IM 配置已保存')
  feishuAppSecretValue.value = ''
  feishuAppIdDirty.value = false
  feishuAppSecretDirty.value = false
  await loadSettings
  }
  else {
- toast.info('没有需要保存的更改')
+ info('没有需要保存的更改')
  }
  }
- catch {
- toast.error('保存失败')
+ catch (e: unknown) {
+ handleError(e, '保存飞书配置')
  }
  finally {
  savingFeishuIM.value = false
@@ -92,15 +95,15 @@ export function useFeishuIMSettings(
  deleteSetting(SettingKey.FEISHU_APP_ID),
  deleteSetting(SettingKey.FEISHU_APP_SECRET),
  ])
- toast.success('飞书 IM 配置已删除')
+ success('飞书 IM 配置已删除')
  feishuAppIdValue.value = ''
  feishuAppSecretValue.value = ''
  feishuAppIdDirty.value = false
  feishuAppSecretDirty.value = false
  await loadSettings
  }
- catch {
- toast.error('删除失败')
+ catch (e: unknown) {
+ handleError(e, '删除飞书配置')
  }
  finally {
  savingFeishuIM.value = false
@@ -108,7 +111,7 @@ export function useFeishuIMSettings(
  }
  async function testFeishuIMConfig {
  if (!feishuTestReceiveId.value.trim) {
- toast.error(feishuTestReceiveIdType.value === 'chat_id' ? '请输入群聊 ID': '请输入用户 ID')
+ handleError(new Error(feishuTestReceiveIdType.value === 'chat_id' ? '请输入群聊 ID': '请输入用户 ID'), '测试飞书')
  return
  }
  testingFeishuIM.value = true
@@ -121,16 +124,16 @@ export function useFeishuIMSettings(
  })
  feishuTestResult.value = result
  if (result.success) {
- toast.success('消息已发送，请检查飞书')
+ success('消息已发送，请检查飞书')
  }
  else {
- toast.error(result.message)
+ handleError(new Error(result.message), '测试飞书')
  }
  }
- catch (error) {
- const message = error instanceof Error ? error.message: '测试失败'
+ catch (e: unknown) {
+ const message = e instanceof Error ? e.message: '测试失败'
  feishuTestResult.value = { success: false, message }
- toast.error(message)
+ handleError(e, '测试飞书')
  }
  finally {
  testingFeishuIM.value = false

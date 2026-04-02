@@ -3,8 +3,9 @@ import type { Router } from 'vue-router'
 import type { ResumePreviewNode } from '~/api/workflow'
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import { ref } from 'vue'
-import { toast } from 'vue-sonner'
 import { ApiError } from '~/api/client'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { resumeFromFailed, resumePreview } from '~/api/workflow'
 export function useResumeLogic(
  executionId: Ref<string>,
@@ -12,6 +13,8 @@ export function useResumeLogic(
  definitionChanged: Ref<boolean>,
  router: Router,
 ) {
+ const { handleError } = useErrorHandler
+ const { success } = useToast
  const resumeDialogOpen = ref(false)
  const resumeNodeId = ref<string | null>(null)
  const resumeNodeName = ref('')
@@ -51,20 +54,19 @@ export function useResumeLogic(
  try {
  const result = await resumeFromFailed(executionId.value, resumeNodeId.value)
  if (result?.execution_id) {
- toast.success('已从失败节点继续执行')
+ success('已从失败节点继续执行')
  resumeDialogOpen.value = false
  router.push(`/executions/${result.execution_id}`)
  }
  }
  catch (e: unknown) {
  if (e instanceof ApiError && e.status === 409) {
- toast.error('工作流定义已修改，无法从此继续')
+ handleError(e, '继续执行')
  definitionChanged.value = true
  resumeDialogOpen.value = false
  }
  else {
- const message = e instanceof ApiError ? e.detail: (e instanceof Error ? e.message: '未知错误')
- toast.error(`继续执行失败: ${message}`)
+ handleError(e, '继续执行')
  }
  }
  finally {

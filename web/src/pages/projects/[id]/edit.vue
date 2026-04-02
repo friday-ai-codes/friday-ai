@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -7,7 +8,8 @@ import { Textarea } from '~/components/ui/textarea'
 const route = useRoute('/projects/[id]/edit')
 const router = useRouter
 const projectsStore = useProjectsStore
-const { success, error: showError } = useToast
+const { handleError } = useErrorHandler
+const { success } = useToast
 const projectId = route.params.id
 useHead({
  title: '编辑项目 - Friday AI',
@@ -29,8 +31,8 @@ onMounted(async => {
  form.feishu_project_key = project.feishu_project_key || ''
  }
  }
- catch {
- showError('加载失败', '无法加载项目信息')
+ catch (e: unknown) {
+ handleError(e, '加载项目')
  router.push('/projects')
  }
  finally {
@@ -63,8 +65,8 @@ async function handleSubmit {
  success('更新成功', '项目信息已更新')
  router.push(`/projects/${projectId}`)
  }
- catch (e) {
- showError('更新失败', e instanceof Error ? e.message: '无法更新项目')
+ catch (e: unknown) {
+ handleError(e, '更新项目')
  }
  finally {
  submitting.value = false
