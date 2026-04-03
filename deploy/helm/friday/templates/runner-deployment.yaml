@@ -1,0 +1,53 @@
+{{- if .Values.runner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: {{ include "friday.fullname" . }}-runner
+ labels:
+ {{- include "friday.labels" . | nindent 4 }}
+ app.kubernetes.io/component: runner
+spec:
+ replicas: {{ .Values.runner.replicaCount }}
+ selector:
+ matchLabels:
+ {{- include "friday.selectorLabels" . | nindent 6 }}
+ app.kubernetes.io/component: runner
+ template:
+ metadata:
+ labels:
+ {{- include "friday.selectorLabels" . | nindent 8 }}
+ app.kubernetes.io/component: runner
+ spec:
+ securityContext:
+ runAsUser: 65534
+ supplementalGroups:
+ - {{ .Values.runner.dockerGID }}
+ containers:
+ - name: runner
+ image: "{{ .Values.runner.image.repository }}:{{ .Values.runner.image.tag }}"
+ imagePullPolicy: {{ .Values.runner.image.pullPolicy }}
+ env:
+ - name: FRIDAY_RUNNER_URL
+ value: "http://{{ include "friday.fullname" . }}-server:8000"
+ - name: FRIDAY_RUNNER_TOKEN
+ valueFrom:
+ secretKeyRef:
+ name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+ key: RUNNER_REGISTRATION_TOKEN
+ - name: FRIDAY_RUNNER_NAME
+ value: {{ .Values.runner.name | quote }}
+ - name: FRIDAY_RUNNER_EXECUTOR
+ value: {{ .Values.runner.executor | quote }}
+ volumeMounts:
+ - name: docker-sock
+ mountPath: /var/run/docker.sock
+ {{- with .Values.runner.resources }}
+ resources:
+ {{- toYaml . | nindent 12 }}
+ {{- end }}
+ volumes:
+ - name: docker-sock
+ hostPath:
+ path: {{ .Values.runner.dockerSocketPath }}
+ type: Socket
+{{- end }}
