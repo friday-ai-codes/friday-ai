@@ -214,11 +214,14 @@ async function handleLogout {
  <span class="icon-[lucide--message-square-plus] text-2xl block mb-2 opacity-50" />
  暂无对话
  </div>
- <button
+ <div
  v-for="conv in chatStore.conversations":key="conv.id"
- class="group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2":class="chatStore.currentConversationId === conv.id
+ role="button"
+ tabindex="0"
+ class="group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer":class="chatStore.currentConversationId === conv.id
  ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
  @click="handleSelectConversation(conv.id)"
+ @keydown.enter="handleSelectConversation(conv.id)"
  >
  <span class="icon-[lucide--message-square] text-base shrink-0" />
  <div class="flex-1 min-w-0">
@@ -235,7 +238,7 @@ async function handleLogout {
  >
  <span class="icon-[lucide--trash-2] text-xs text-destructive" />
  </button>
- </button>
+ </div>
  </div>
  </ScrollArea>
  </template>
