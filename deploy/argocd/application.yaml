@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+ name: friday
+ namespace: argocd
+ labels:
+ app.kubernetes.io/name: friday
+ app.kubernetes.io/part-of: friday-ai
+ app.kubernetes.io/managed-by: argocd
+ # finalizer 确保删除 Application 时级联清理集群资源
+ # 如需保留集群资源（仅删除 ArgoCD 跟踪），移除此 finalizer
+ finalizers:
+ - resources-finalizer.argocd.argoproj.io
+spec:
+ project: default
+ source:
+ # 用户须替换为实际 Git 仓库地址
+ repoURL: https://github.com/your-org/friday-ai.git
+ # 用户须替换为目标分支或 tag
+ targetRevision: main
+ path: deploy/helm/friday
+ helm:
+ releaseName: friday
+ valueFiles:
+ - values.yaml
+ destination:
+ # 用户须替换为目标集群 API server 地址
+ server: https://kubernetes.default.svc
+ # 用户须替换为目标命名空间
+ namespace: friday
+ syncPolicy:
+ automated:
+ prune: true # 自动删除 Git 中已移除的资源
+ selfHeal: true # 集群手动修改自动回滚到 Git 定义状态
+ syncOptions:
+ - CreateNamespace=true
+ - PrunePropagationPolicy=foreground
+ retry:
+ limit: 5
+ backoff:
+ duration: 5s
+ factor: 2
+ maxDuration: 3m

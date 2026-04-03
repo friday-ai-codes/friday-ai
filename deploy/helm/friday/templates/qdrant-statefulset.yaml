@@ -6,6 +6,8 @@ metadata:
  labels:
  {{- include "friday.labels" . | nindent 4 }}
  app.kubernetes.io/component: qdrant
+ annotations:
+ argocd.argoproj.io/sync-options: Delete=false
 spec:
  serviceName: {{ include "friday.fullname" . }}-qdrant
  replicas: 1
@@ -59,6 +61,8 @@ spec:
  volumeClaimTemplates:
  - metadata:
  name: data
+ annotations:
+ argocd.argoproj.io/sync-options: Delete=false
  spec:
  accessModes: ["ReadWriteOnce"]
  {{- if .Values.qdrant.persistence.storageClass }}
