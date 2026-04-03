@@ -24,17 +24,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  default-mysql-client \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+# 创建非 root 用户
+RUN groupadd -r friday && useradd -r -g friday -d /app -s /sbin/nologin friday
 # Copy app from builder
 COPY --from=builder /app /app
 # Copy installed packages from builder's system Python
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+# Entrypoint 脚本
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 # Create data directory
 RUN mkdir -p /app/data
+# 设置目录权限并切换到非 root 用户
+RUN chown -R friday:friday /app
+USER friday
 # Expose port
 EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
  CMD curl -f http://localhost:8000/health || exit 1
-# Run the application
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py init_superuser && gunicorn friday.asgi:application --workers 1 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --capture-output --timeout 120"]
+ENTRYPOINT ["/app/entrypoint.sh"]
