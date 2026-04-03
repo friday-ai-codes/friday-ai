@@ -12,6 +12,7 @@ from django.utils import timezone
 import agents.tools.chat_tools # noqa: F401
 from agents.core.events import (
  MESSAGE_COMPLETE,
+ THINKING,
  TITLE_GENERATED,
  AgentEvent,
 )
@@ -279,6 +280,7 @@ class ConversationService:
  project_id=project_id,
  session_id=session_id,
  api_key=api_key,
+ api_base_url=resolved.base_url,
  max_turns=15,
  agent_session=agent_session,
  max_budget_usd=max_budget_usd,
@@ -287,10 +289,15 @@ class ConversationService:
  # 注册 active runner（用于 interrupt API 查找）
  conv_id_str = str(conversation.id)
  _active_runners[conv_id_str] = runner
- # 流式 yield 事件，拦截 message_complete 补充字段
+ # 流式 yield 事件，拦截 message_complete 补充字段，累积 thinking
+ accumulated_thinking: list[str] =
  try:
  async for event in runner.stream(content):
- if event.type == MESSAGE_COMPLETE:
+ if event.type == THINKING:
+ thinking_text = event.data.get("thinking", "")
+ if thinking_text:
+ accumulated_thinking.append(thinking_text)
+ elif event.type == MESSAGE_COMPLETE:
  # 补充前端契约要求的字段
  result = runner.result
  event.data.setdefault("usage", result.usage if result else {})
@@ -341,7 +348,7 @@ class ConversationService:
  conversation_id=str(conversation.id),
  session_id=session_id,
  )
- # 构建 metadata：注入 cost 和 token 用量
+ # 构建 metadata：注入 cost、token 用量和 thinking
  msg_metadata: dict[str, Any] = {
  "session_id": session_id,
  "model": model,
@@ -352,12 +359,40 @@ class ConversationService:
  if result and result.usage:
  msg_metadata["input_tokens"] = result.usage.get("input_tokens", 0)
  msg_metadata["output_tokens"] = result.usage.get("output_tokens", 0)
+ if accumulated_thinking:
+ msg_metadata["thinking"] = "".join(accumulated_thinking)
+ # 收集本次 session 的工具调用记录
+ tool_calls_data = None
+ try:
+ tool_logs = ToolCallLog.objects.filter(session=agent_session).order_by("iteration")
+ tool_calls_list = [
+ {
+ "id": log.tool_call_id,
+ "name": log.tool_name,
+ "input": log.arguments or {},
+ "result": (
+ str(log.result_output)[:1000]
+ if log.result_output is not None
+ else None
+ ),
+ "status": "done",
+ }
+ async for log in tool_logs
+ ]
+ if tool_calls_list:
+ tool_calls_data = tool_calls_list
+ except Exception:
+ logger.exception(
+ "tool_calls_collect_failed",
+ session_id=session_id,
+ )
  # 保存 assistant 消息
  await Message.objects.acreate(
  id=assistant_msg_id,
  conversation=conversation,
  role=Message.Role.ASSISTANT,
  content=final_content,
+ tool_calls=tool_calls_data,
  metadata=msg_metadata,
  )
  # 更新对话时间
