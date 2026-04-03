@@ -1,0 +1,20 @@
+# Friday AI - 源码构建 Override
+# 用法: docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build
+#
+# 此文件覆盖 docker-compose.yaml 中的 image 指令，改为从本地源码构建。
+services:
+ server:
+ build:
+ context: ./server
+ dockerfile: Dockerfile
+ image: friday-server:local
+ web:
+ build:
+ context: ./web
+ dockerfile: Dockerfile
+ image: friday-web:local
+ runner:
+ build:
+ context: ./runner
+ dockerfile: Dockerfile
+ image: friday-runner:local
