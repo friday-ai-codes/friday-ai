@@ -1,0 +1,114 @@
+# Friday AI - Docker Compose 部署配置
+# 预构建镜像版本
+#
+# 启动（无内置数据库）: docker compose up -d
+# 启动（含内置 PostgreSQL）: docker compose --profile postgres up -d
+# 源码构建启动: docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build
+services:
+ server:
+ image: ghcr.io/anthropic-ai/friday-ai/server:latest
+ container_name: friday-server
+ ports:
+ - "${FRIDAY_PORT:-10241}:8000"
+ environment:
+ - SECRET_KEY=${SECRET_KEY}
+ - DEBUG=${DEBUG:-false}
+ - DATABASE_URL=${DATABASE_URL:-postgres://friday:${POSTGRES_PASSWORD:-friday}@postgres:5432/friday}
+ - FRIDAY_ENCRYPTION_KEY=${FRIDAY_ENCRYPTION_KEY}
+ - ALLOWED_HOSTS=${ALLOWED_HOSTS:-*}
+ - RUNNER_REGISTRATION_TOKEN=${RUNNER_REGISTRATION_TOKEN}
+ - GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
+ - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
+ - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
+ - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
+ volumes:
+ - server-data:/app/data
+ networks:
+ - friday-network
+ restart: unless-stopped
+ healthcheck:
+ test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+ interval: 30s
+ timeout: 10s
+ retries: 5
+ start_period: 30s
+ web:
+ image: ghcr.io/anthropic-ai/friday-ai/web:latest
+ container_name: friday-web
+ ports:
+ - "${FRIDAY_WEB_PORT:-10240}:8080"
+ networks:
+ - friday-network
+ depends_on:
+ server:
+ condition: service_healthy
+ restart: unless-stopped
+ healthcheck:
+ test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+ interval: 30s
+ timeout: 10s
+ retries: 3
+ start_period: 5s
+ runner:
+ image: ghcr.io/anthropic-ai/friday-ai/runner:latest
+ container_name: friday-runner
+ user: "65534:${DOCKER_GID:-999}"
+ environment:
+ - FRIDAY_RUNNER_URL=http://server:8000
+ - FRIDAY_RUNNER_TOKEN=${RUNNER_REGISTRATION_TOKEN}
+ - FRIDAY_RUNNER_NAME=${FRIDAY_RUNNER_NAME:-compose-runner}
+ - FRIDAY_RUNNER_EXECUTOR=docker
+ volumes:
+ - /var/run/docker.sock:/var/run/docker.sock
+ - runner-data:/data
+ networks:
+ - friday-network
+ depends_on:
+ server:
+ condition: service_healthy
+ restart: unless-stopped
+ postgres:
+ image: postgres:17-alpine
+ profiles: ["postgres"]
+ container_name: friday-postgres
+ environment:
+ POSTGRES_USER: ${POSTGRES_USER:-friday}
+ POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-friday}
+ POSTGRES_DB: ${POSTGRES_DB:-friday}
+ volumes:
+ - postgres-data:/var/lib/postgresql/data
+ networks:
+ - friday-network
+ healthcheck:
+ test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-friday}"]
+ interval: 10s
+ timeout: 5s
+ retries: 5
+ restart: unless-stopped
+ qdrant:
+ image: qdrant/qdrant:latest
+ container_name: friday-qdrant
+ ports:
+ - "${QDRANT_HTTP_PORT:-6333}:6333"
+ - "${QDRANT_GRPC_PORT:-6334}:6334"
+ environment:
+ - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY:-}
+ volumes:
+ - qdrant-data:/qdrant/storage
+ networks:
+ - friday-network
+ restart: unless-stopped
+ healthcheck:
+ test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/readyz"]
+ interval: 30s
+ timeout: 10s
+ retries: 3
+ start_period: 10s
+volumes:
+ server-data:
+ postgres-data:
+ qdrant-data:
+ runner-data:
+networks:
+ friday-network:
+ driver: bridge
