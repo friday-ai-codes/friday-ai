@@ -27,6 +27,7 @@
  "@floating-ui/dom": "catalog:",
  "@floating-ui/vue": "catalog:",
  "@shikijs/markdown-it": "catalog:",
+ "@tailwindcss/typography": "^0.5.19",
  "@tanstack/vue-query": "catalog:",
  "@tanstack/vue-table": "catalog:",
  "@tiptap/core": "catalog:",

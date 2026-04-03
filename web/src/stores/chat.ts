@@ -39,6 +39,8 @@ export const useChatStore = defineStore('chat', => {
  const abortController = ref<AbortController | null>(null)
  const streamingStatus = ref<'streaming' | 'interrupted' | 'budget_exceeded' | null>(null)
  const budgetWarning = ref<number | null>(null)
+ // 重试状态：记录最后失败的用户消息
+ const lastFailedContent = ref<string | null>(null)
  // 侧边栏状态
  const sidebarCollapsed = ref(false)
  // 用户偏好（localStorage 持久化）
@@ -168,18 +170,25 @@ export const useChatStore = defineStore('chat', => {
  case 'thinking':
  streamingThinking.value += event.thinking || ''
  break
- case 'tool_use_start':
+ case 'tool_use_start': {
+ const existing = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
+ if (!existing) {
  streamingToolCalls.value.push({
  id: event.tool_call_id || '',
  name: event.tool_name || '',
- input: event.input || {},
+ input: (event.input as Record<string, unknown>) || {},
  status: 'running',
  })
+ }
  break
+ }
  case 'tool_use_result': {
  const tc = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
  if (tc) {
- tc.result = event.result
+ if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
+ tc.input = event.input as Record<string, unknown>
+ if (event.result)
+ tc.result = event.result as string
  tc.status = 'done'
  }
  break
@@ -229,6 +238,7 @@ export const useChatStore = defineStore('chat', => {
  streamingMessageId.value = ''
  streamingMetadata.value = null
  error.value = null
+ lastFailedContent.value = null
  // 添加用户消息到列表（乐观更新）
  const userMessage: ConversationMessage = {
  id: crypto.randomUUID,
@@ -258,12 +268,25 @@ export const useChatStore = defineStore('chat', => {
  finally {
  isStreaming.value = false
  abortController.value = null
+ // 错误时：记录失败内容用于重试，移除乐观更新的用户消息
+ if (error.value && !streamingContent.value) {
+ lastFailedContent.value = content
+ messages.value = messages.value.filter(m => m.id !== userMessage.id)
+ }
  // 流结束后，将流式内容合并为正式消息
- if (streamingContent.value) {
- // 将 streamingStatus 写入 metadata
- const finalMetadata = {
+ if (streamingContent.value || streamingToolCalls.value.length > 0) {
+ const finalMetadata: Record<string, unknown> = {
  ...(streamingMetadata.value || {}),
  ...(streamingStatus.value ? { status: streamingStatus.value }: {}),
+ }
+ // 持久化 thinking 内容
+ if (streamingThinking.value)
+ finalMetadata.thinking = streamingThinking.value
+ // 持久化 tool calls 的 result
+ if (streamingToolCalls.value.length > 0) {
+ finalMetadata.tool_results = streamingToolCalls.value
+ .filter(tc => tc.result)
+ .map(tc => ({ id: tc.id, result: tc.result }))
  }
  const assistantMessage: ConversationMessage = {
  id: streamingMessageId.value || crypto.randomUUID,
@@ -284,6 +307,14 @@ export const useChatStore = defineStore('chat', => {
  streamingStatus.value = null
  budgetWarning.value = null
  }
+ }
+ async function retryLastMessage {
+ if (!lastFailedContent.value)
+ return
+ const content = lastFailedContent.value
+ lastFailedContent.value = null
+ error.value = null
+ await sendMessage(content)
  }
  return {
  // State
@@ -306,6 +337,7 @@ export const useChatStore = defineStore('chat', => {
  selectedModel,
  streamingStatus,
  budgetWarning,
+ lastFailedContent,
  // Getters
  currentConversation,
  hasConversation,
@@ -318,5 +350,6 @@ export const useChatStore = defineStore('chat', => {
  toggleSidebar,
  clearCurrentConversation,
  sendMessage,
+ retryLastMessage,
  }
 })

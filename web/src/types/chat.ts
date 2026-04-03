@@ -23,6 +23,8 @@ export interface ToolCallData {
  id: string
  name: string
  input: Record<string, unknown>
+ result?: string
+ status?: 'running' | 'done'
 }
 /** 对话详情（含消息列表） */
 export interface ConversationDetail extends Conversation {

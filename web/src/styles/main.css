@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin "@tailwindcss/typography";
 @plugin "@iconify/tailwind4";
 /*
  * Safelist 动态图标类
