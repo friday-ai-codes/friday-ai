@@ -6,6 +6,8 @@ metadata:
  labels:
  {{- include "friday.labels" . | nindent 4 }}
  app.kubernetes.io/component: postgresql
+ annotations:
+ argocd.argoproj.io/sync-options: Delete=false
 spec:
  serviceName: {{ include "friday.fullname" . }}-postgresql
  replicas: 1
@@ -63,6 +65,8 @@ spec:
  volumeClaimTemplates:
  - metadata:
  name: data
+ annotations:
+ argocd.argoproj.io/sync-options: Delete=false
  spec:
  accessModes: ["ReadWriteOnce"]
  {{- if .Values.postgresql.persistence.storageClass }}
