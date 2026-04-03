@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: {{ include "friday.fullname" . }}-config
+ labels:
+ {{- include "friday.labels" . | nindent 4 }}
+data:
+ DEBUG: {{ .Values.server.debug | quote }}
+ ALLOWED_HOSTS: {{ .Values.server.allowedHosts | quote }}
+ GUNICORN_WORKERS: {{ .Values.server.gunicornWorkers | quote }}
+ GUNICORN_TIMEOUT: {{ .Values.server.gunicornTimeout | quote }}
+ FRIDAY_ADMIN_USERNAME: {{ .Values.server.adminUsername | quote }}
+ FRIDAY_RUNNER_NAME: {{ .Values.runner.name | quote }}
+ FRIDAY_RUNNER_EXECUTOR: {{ .Values.runner.executor | quote }}

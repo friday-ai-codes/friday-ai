@@ -1,0 +1,123 @@
+# -- 全局配置
+nameOverride: ""
+fullnameOverride: ""
+# -- 引用已有 Secret（优先于 Chart 创建 Secret）
+existingSecret: ""
+# -- Server 配置
+server:
+ replicaCount: 1
+ image:
+ repository: ghcr.io/anthropic-ai/friday-ai/server
+ tag: latest
+ pullPolicy: IfNotPresent
+ secretKey: "" # Django SECRET_KEY（existingSecret 优先）
+ encryptionKey: "" # FRIDAY_ENCRYPTION_KEY
+ debug: "false"
+ allowedHosts: "*"
+ gunicornWorkers: 1
+ gunicornTimeout: 300
+ adminUsername: "admin"
+ adminPassword: ""
+ resources:
+ requests:
+ cpu: 100m
+ memory: 256Mi
+ limits:
+ cpu: "1"
+ memory: 512Mi
+ livenessProbe:
+ httpGet:
+ path: /health
+ port: 8000
+ initialDelaySeconds: 30
+ periodSeconds: 30
+ timeoutSeconds: 10
+ readinessProbe:
+ httpGet:
+ path: /health
+ port: 8000
+ initialDelaySeconds: 10
+ periodSeconds: 10
+ timeoutSeconds: 5
+# -- Web (nginx) 配置
+web:
+ replicaCount: 1
+ image:
+ repository: ghcr.io/anthropic-ai/friday-ai/web
+ tag: latest
+ pullPolicy: IfNotPresent
+ resources:
+ requests:
+ cpu: 50m
+ memory: 64Mi
+ limits:
+ cpu: 500m
+ memory: 128Mi
+# -- Runner 配置
+runner:
+ enabled: true
+ replicaCount: 1
+ image:
+ repository: ghcr.io/anthropic-ai/friday-ai/runner
+ tag: latest
+ pullPolicy: IfNotPresent
+ registrationToken: "" # RUNNER_REGISTRATION_TOKEN
+ name: "k8s-runner"
+ executor: "docker"
+ dockerSocketPath: /var/run/docker.sock
+ dockerGID: 999
+ resources:
+ requests:
+ cpu: 50m
+ memory: 64Mi
+ limits:
+ cpu: 500m
+ memory: 128Mi
+# -- PostgreSQL 内置部署
+postgresql:
+ enabled: true
+ auth:
+ username: friday
+ password: friday
+ database: friday
+ persistence:
+ size: 10Gi
+ storageClass: ""
+ resources:
+ requests:
+ cpu: 100m
+ memory: 256Mi
+ limits:
+ cpu: "1"
+ memory: 512Mi
+# -- 外部数据库（postgresql.enabled=false 时使用）
+externalDatabase:
+ url: "" # postgres://user:${POSTGRES_PASSWORD}@host:5432/dbname
+# -- Qdrant 向量数据库
+qdrant:
+ enabled: true
+ image:
+ repository: qdrant/qdrant
+ tag: latest
+ apiKey: ""
+ persistence:
+ size: 10Gi
+ storageClass: ""
+ resources:
+ requests:
+ cpu: 100m
+ memory: 256Mi
+ limits:
+ cpu: "1"
+ memory: 512Mi
+# -- Ingress 配置
+ingress:
+ enabled: false
+ className: nginx
+ host: friday.local
+ annotations: {}
+ tls:
+# -- 数据库迁移 Job
+migration:
+ enabled: true
+ activeDeadlineSeconds: 300
