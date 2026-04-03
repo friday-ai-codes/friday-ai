@@ -9,7 +9,14 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 FROM nginx:alpine AS production
+# 非 root 用户运行 nginx
+RUN chown -R nginx:nginx /var/cache/nginx /var/log/nginx /etc/nginx/conf.d && \
+ chmod -R 755 /var/cache/nginx && \
+ touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+# 修改 nginx 主配置使用 /tmp/nginx.pid（非 root 兼容）
+RUN sed -i 's|/var/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf
+USER nginx
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
