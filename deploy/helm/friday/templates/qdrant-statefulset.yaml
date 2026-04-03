@@ -1,0 +1,70 @@
+{{- if .Values.qdrant.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+ name: {{ include "friday.fullname" . }}-qdrant
+ labels:
+ {{- include "friday.labels" . | nindent 4 }}
+ app.kubernetes.io/component: qdrant
+spec:
+ serviceName: {{ include "friday.fullname" . }}-qdrant
+ replicas: 1
+ selector:
+ matchLabels:
+ {{- include "friday.selectorLabels" . | nindent 6 }}
+ app.kubernetes.io/component: qdrant
+ template:
+ metadata:
+ labels:
+ {{- include "friday.selectorLabels" . | nindent 8 }}
+ app.kubernetes.io/component: qdrant
+ spec:
+ containers:
+ - name: qdrant
+ image: "{{ .Values.qdrant.image.repository }}:{{ .Values.qdrant.image.tag }}"
+ ports:
+ - name: http
+ containerPort: 6333
+ - name: grpc
+ containerPort: 6334
+ env:
+ {{- if or .Values.qdrant.apiKey .Values.existingSecret }}
+ - name: QDRANT__SERVICE__API_KEY
+ valueFrom:
+ secretKeyRef:
+ name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+ key: QDRANT_API_KEY
+ {{- end }}
+ livenessProbe:
+ httpGet:
+ path: /healthz
+ port: 6333
+ initialDelaySeconds: 10
+ periodSeconds: 30
+ timeoutSeconds: 10
+ readinessProbe:
+ httpGet:
+ path: /readyz
+ port: 6333
+ initialDelaySeconds: 5
+ periodSeconds: 10
+ timeoutSeconds: 5
+ volumeMounts:
+ - name: data
+ mountPath: /qdrant/storage
+ {{- with .Values.qdrant.resources }}
+ resources:
+ {{- toYaml . | nindent 12 }}
+ {{- end }}
+ volumeClaimTemplates:
+ - metadata:
+ name: data
+ spec:
+ accessModes: ["ReadWriteOnce"]
+ {{- if .Values.qdrant.persistence.storageClass }}
+ storageClassName: {{ .Values.qdrant.persistence.storageClass | quote }}
+ {{- end }}
+ resources:
+ requests:
+ storage: {{ .Values.qdrant.persistence.size }}
+{{- end }}
