@@ -1,11 +1,4 @@
 <script setup lang="ts">
-import type MarkdownIt from 'markdown-it'
-import {
- Collapsible,
- CollapsibleContent,
- CollapsibleTrigger,
-} from '~/components/ui/collapsible'
-import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 const props = defineProps<{
  name: string
  input: Record<string, unknown>
@@ -13,103 +6,192 @@ const props = defineProps<{
  status: 'running' | 'done'
 }>
 const isOpen = ref(false)
-// 用 Shiki 渲染参数 JSON
-const renderedInput = ref('')
-const renderedResult = ref('')
-let mdInstance: MarkdownIt | null = null
-onMounted(async => {
- mdInstance = await getMarkdownRenderer
- // 渲染参数为 JSON 代码块
- const jsonStr = JSON.stringify(props.input, null, 2)
- renderedInput.value = mdInstance.render(`\`\`\`json\n${jsonStr}\n\`\`\``)
- // 渲染结果（纯文本截断）
- if (props.result) {
- renderResult(props.result)
+const TOOL_LABELS: Record<string, { label: string, icon: string }> = {
+ browse_file_content: { label: '浏览文件', icon: 'icon-[lucide--file-text]' },
+ list_project_structure: { label: '项目结构', icon: 'icon-[lucide--folder-tree]' },
+ get_project_overview: { label: '项目概览', icon: 'icon-[lucide--layout-dashboard]' },
+ search_repository_code: { label: '搜索代码', icon: 'icon-[lucide--search]' },
+ list_project_repositories: { label: '仓库列表', icon: 'icon-[lucide--git-branch]' },
+ get_repository_info: { label: '仓库信息', icon: 'icon-[lucide--info]' },
+}
+function stripMcpPrefix(name: string): string {
+ return name.replace(/^mcp__[^_]+__/, '')
+}
+const tool = computed( => {
+ const bare = stripMcpPrefix(props.name)
+ return TOOL_LABELS[bare] || { label: bare, icon: 'icon-[lucide--wrench]' }
+})
+const actionDescription = computed( => {
+ const bare = stripMcpPrefix(props.name)
+ const inp = props.input || {}
+ switch (bare) {
+ case 'search_repository_code': {
+ const q = (inp.query as string) || ''
+ return q ? `搜索「${q.slice(0, 50)}${q.length > 50 ? '...': ''}」`: ''
+ }
+ case 'browse_file_content': {
+ const path = (inp.file_path as string) || (inp.path as string) || ''
+ return path ? `查看 ${path}`: ''
+ }
+ case 'get_repository_info':
+ return '获取仓库详情'
+ case 'list_project_repositories':
+ return '列出项目下所有仓库'
+ case 'list_project_structure':
+ return '浏览项目文件结构'
+ case 'get_project_overview':
+ return '获取项目概览信息'
+ default: {
+ const entries = Object.entries(inp).slice(0, 2)
+ return entries.map(([k, v]) => {
+ const val = typeof v === 'string' ? (v.length > 30 ? `${v.slice(0, 30)}...`: v): JSON.stringify(v)
+ return `${k}: ${val}`
+ }).join(', ')
+ }
  }
 })
-function renderResult(text: string) {
- if (!mdInstance)
- return
- const truncated = text.length > 500
- ? `${text.slice(0, 500)}...`: text
- renderedResult.value = mdInstance.render(truncated)
-}
-// 监听 result 变化（流式更新）
-watch( => props.result, (newResult) => {
- if (newResult) {
- renderResult(newResult)
- }
-})
-// 工具名称映射（友好显示名）
-const TOOL_LABELS: Record<string, string> = {
- browse_file_content: '浏览文件',
- list_project_structure: '项目结构',
- get_project_overview: '项目概览',
- search_repository_code: '搜索代码',
- list_project_repositories: '仓库列表',
- get_repository_info: '仓库信息',
-}
-const displayName = computed( => TOOL_LABELS[props.name] || props.name)
 </script>
 <template>
- <Collapsible v-model:open="isOpen" class="my-2">
- <CollapsibleTrigger class="w-full">
- <div
- class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors
- bg-muted/30 hover:bg-muted/50 border border-border/30"
- >
- <!-- 状态图标 -->
- <span
- v-if="status === 'running'"
- class="icon-[lucide--loader-2] text-sm text-primary animate-spin"
- />
- <span
- v-else
- class="icon-[lucide--check-circle-2] text-sm text-emerald-500"
- />
- <!-- 工具图标 -->
- <span class="icon-[lucide--wrench] text-sm text-muted-foreground" />
- <!-- 工具名称 -->
- <span class="font-medium text-foreground">{{ displayName }}</span>
+ <div class="tool-card":class="{ 'tool-card--open': isOpen }">
+ <button class="tool-header" @click="isOpen = !isOpen">
+ <!-- 状态指示点 -->
+ <span v-if="status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <!-- 图标 + 名称 -->
+ <span:class="tool.icon" class="text-[13px] text-muted-foreground" />
+ <span class="tool-name">{{ tool.label }}</span>
+ <!-- 行为描述 -->
+ <span v-if="actionDescription" class="tool-summary">{{ actionDescription }}</span>
  <!-- 状态文本 -->
- <span class="text-muted-foreground">
- {{ status === 'running' ? '调用中...': '已完成' }}
+ <span v-if="status === 'running'" class="tool-status">
+ <span class="icon-[lucide--loader-2] text-[10px] animate-spin" />
+ 执行中
  </span>
- <!-- 展开/折叠指示 -->
- <span class="ml-auto">
+ <!-- 展开 -->
  <span
- class="icon-[lucide--chevron-down] text-sm text-muted-foreground transition-transform duration-200":class="isOpen ? 'rotate-180': ''"
+ class="icon-[lucide--chevron-right] text-[11px] text-muted-foreground/50 ml-auto transition-transform duration-200":class="isOpen ? 'rotate-90': ''"
  />
- </span>
+ </button>
+ <Transition
+ enter-active-class="transition-all duration-200 ease-out"
+ enter-from-class="opacity-0 max-"
+ enter-to-class="opacity-100 max-h-[600px]"
+ leave-active-class="transition-all duration-150 ease-in"
+ leave-from-class="opacity-100 max-h-[600px]"
+ leave-to-class="opacity-0 max-"
+ >
+ <div v-show="isOpen" class="tool-body">
+ <div class="tool-section">
+ <span class="tool-section-label">输入</span>
+ <pre class="tool-json">{{ JSON.stringify(input, null, 2) }}</pre>
  </div>
- </CollapsibleTrigger>
- <CollapsibleContent>
- <div class="mt-1 px-3 py-2 rounded-xl bg-muted/20 border border-border/20 space-y-2">
- <!-- 参数 -->
- <div>
- <p class="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
- 参数
- </p>
- <div
- class="text-xs prose prose-sm dark:prose-invert max-w-none
- prose-pre:text-[11px] prose-pre:bg-muted/50 prose-pre:border prose-pre:border-border/30 prose-pre:rounded-lg prose-pre:"
- v-html="renderedInput"
- />
+ <div v-if="result" class="tool-section">
+ <span class="tool-section-label">输出</span>
+ <pre class="tool-json tool-json--result">{{ result.length > 800 ? result.slice(0, 800) + '...': result }}</pre>
  </div>
- <!-- 结果 -->
- <div v-if="result">
- <p class="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
- 结果
- </p>
- <div
- class="text-xs prose prose-sm dark:prose-invert max-w-none overflow-hidden"
- v-html="renderedResult"
- />
- </div>
- <div v-else-if="status === 'running'" class="text-xs text-muted-foreground italic">
- 等待返回...
+ <div v-else-if="status === 'running'" class="tool-section">
+ <span class="text-[11px] text-muted-foreground/60 italic">等待返回...</span>
  </div>
  </div>
- </CollapsibleContent>
- </Collapsible>
+ </Transition>
+ </div>
 </template>
+<style scoped>
+.tool-card {
+ border-radius: 0.625rem;
+ border: 1px solid hsl(214 32% 91% / 0.7);
+ background: hsl(210 40% 98% / 0.5);
+ overflow: hidden;
+ transition: border-color 0.15s;
+}
+.tool-card:hover {
+ border-color: hsl(214 32% 91%);
+}
+.tool-header {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ width: 100%;
+ padding: 0.5rem 0.75rem;
+ cursor: pointer;
+ font-size: 0.75rem;
+}
+.tool-dot {
+ width: 6px;
+ height: 6px;
+ border-radius: 50%;
+ flex-shrink: 0;
+}
+.tool-dot--running {
+ background: hsl(168 76% 42%);
+ box-shadow: 0 0 0 2px hsl(168 76% 42% / 0.2);
+ animation: pulse-dot 1.5s infinite;
+}
+.tool-dot--done {
+ background: hsl(142 71% 45%);
+}
+.tool-name {
+ font-weight: 550;
+ color: hsl(215 28% 17%);
+ white-space: nowrap;
+}
+.tool-summary {
+ flex: 1;
+ min-width: 0;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ color: hsl(215 16% 47% / 0.6);
+ font-size: 0.6875rem;
+}
+.tool-status {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.25rem;
+ color: hsl(168 76% 36%);
+ font-size: 0.6875rem;
+ white-space: nowrap;
+}
+.tool-body {
+ border-top: 1px solid hsl(214 32% 91% / 0.5);
+ padding: 0.5rem 0.75rem;
+ display: flex;
+ flex-direction: column;
+ gap: 0.5rem;
+ overflow: hidden;
+}
+.tool-section {
+ display: flex;
+ flex-direction: column;
+ gap: 0.25rem;
+}
+.tool-section-label {
+ font-size: 0.625rem;
+ font-weight: 600;
+ text-transform: uppercase;
+ letter-spacing: 0.05em;
+ color: hsl(215 16% 47% / 0.6);
+}
+.tool-json {
+ font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+ font-size: 0.6875rem;
+ line-height: 1.5;
+ padding: 0.5rem;
+ border-radius: 0.5rem;
+ background: hsl(210 40% 96% / 0.8);
+ color: hsl(215 28% 25%);
+ overflow-x: auto;
+ white-space: pre-wrap;
+ word-break: break-all;
+ margin: 0;
+ max-height: 12rem;
+ overflow-y: auto;
+}
+.tool-json--result {
+ max-height: 16rem;
+}
+@keyframes pulse-dot {
+ 0%, 100% { opacity: 1; }
+ 50% { opacity: 0.4; }
+}
+</style>

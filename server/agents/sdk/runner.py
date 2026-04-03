@@ -5,7 +5,7 @@
 from __future__ import annotations
 import asyncio
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generator, Literal
@@ -20,6 +20,7 @@ logger = structlog.get_logger(__name__)
 _SDK_SHUTDOWN_ERROR_MARKERS = (
  "ProcessTransport is not ready for writing",
  "Tool permission stream closed before response received",
+ "Stream closed",
 )
 def _unwrap_exception(exc: BaseException) -> str:
  """从 ExceptionGroup 等嵌套异常中提取可读的错误信息。"""
@@ -73,7 +74,7 @@ class SdkRunnerConfig:
  api_key: str = ""
  api_base_url: str = ""
  max_turns: int = 15
- timeout_seconds: float = 300.0 # 5 分钟
+ timeout_seconds: float = 600.0 # 10 分钟
  permission_mode: Literal["default", "acceptEdits", "plan", "bypassPermissions"] = (
  "bypassPermissions"
  )
@@ -217,11 +218,26 @@ class SDKAgentRunner:
  )
  # 7. 在独立 Task 中运行 SDK
  accumulated_text: list[str] =
+ async def make_prompt_stream(content: str) -> AsyncIterator[dict[str, Any]]:
+ """将 string prompt 包装为 AsyncIterator。
+ SDK 的 query 在 string prompt 模式下，会先阻塞等待 result 再消费消息流，
+ 导致所有 stream_event 被缓冲、最后一次性返回。
+ 使用 AsyncIterable prompt 模式时，SDK 将 stream_input 放入后台任务，
+ 立即开始消费消息流，实现真正的实时流式。
+ """
+ yield {
+ "type": "user",
+ "session_id": "",
+ "message": {"role": "user", "content": content},
+ "parent_tool_use_id": None,
+ }
  async def run_sdk -> None:
  """运行 SDK query 并将事件放入队列。"""
  try:
  with clean_claude_env:
- async for message in query(prompt=prompt, options=options):
+ async for message in query(
+ prompt=make_prompt_stream(prompt), options=options
+ ):
  events = adapter.adapt(message)
  for event in events:
  # 累积文本用于中断时保留部分内容
@@ -355,7 +371,15 @@ class SDKAgentRunner:
  remaining = deadline - loop.time
  if remaining <= 0:
  task.cancel
- yield AgentEvent(type=ERROR, data={"message": "SDK 运行超时"})
+ timeout_min = int(self._config.timeout_seconds / 60)
+ yield AgentEvent(
+ type=ERROR,
+ data={
+ "message": f"AI 回复超时（已等待 {timeout_min} 分钟）",
+ "error_code": "SDK_TIMEOUT",
+ "timeout_seconds": self._config.timeout_seconds,
+ },
+ )
  break
  try:
  event = await asyncio.wait_for(
