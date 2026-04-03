@@ -1,0 +1,24 @@
+恭喜！Friday AI 已成功部署到 Kubernetes 集群。
+访问方式:
+{{- if .Values.ingress.enabled }}
+ 浏览器访问: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+ 执行以下命令进行端口转发:
+ kubectl port-forward svc/{{ include "friday.fullname" . }}-web 8080:8080
+ 然后访问: http://localhost:8080
+{{- end }}
+组件状态:
+ kubectl get pods -l "app.kubernetes.io/instance={{ .Release.Name }}"
+{{- if not .Values.ingress.enabled }}
+提示: 要启用外部访问，请在 values.yaml 中设置:
+ ingress:
+ enabled: true
+ host: your-domain.com
+注意: 需要先在集群中安装 Ingress Controller（如 nginx-ingress）。
+{{- end }}
+{{- if .Values.runner.enabled }}
+Runner 说明:
+ Runner 使用 DooD（Docker-out-of-Docker）模式，需要宿主机上有 Docker 运行时。
+ 如果遇到 docker.sock 权限问题，请调整 runner.dockerGID 匹配宿主机 docker 组 GID:
+ stat -c '%g' /var/run/docker.sock
+{{- end }}

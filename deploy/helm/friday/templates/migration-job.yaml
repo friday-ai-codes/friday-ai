@@ -1,0 +1,69 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+ name: {{ include "friday.fullname" . }}-migrate-{{ now | unixEpoch }}
+ labels:
+ {{- include "friday.labels" . | nindent 4 }}
+ app.kubernetes.io/component: migration
+ annotations:
+ "helm.sh/hook": pre-install,pre-upgrade
+ "helm.sh/hook-weight": "0"
+ "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+ activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+ backoffLimit: 0
+ template:
+ metadata:
+ labels:
+ {{- include "friday.selectorLabels" . | nindent 8 }}
+ app.kubernetes.io/component: migration
+ spec:
+ restartPolicy: Never
+ initContainers:
+ {{- if .Values.postgresql.enabled }}
+ - name: wait-for-db
+ image: postgres:17-alpine
+ command:
+ - sh
+ - -c
+ - |
+ until pg_isready -h {{ include "friday.fullname" . }}-postgresql -p 5432 -U {{ .Values.postgresql.auth.username }}; do
+ echo "等待数据库就绪..."
+ sleep 2
+ done
+ {{- end }}
+ containers:
+ - name: migrate
+ image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+ imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+ command:
+ - sh
+ - -c
+ - |
+ echo "执行数据库迁移..."
+ python manage.py migrate --noinput
+ echo "初始化管理员..."
+ python manage.py init_superuser
+ echo "迁移完成"
+ # 直接使用 env 而非 envFrom，避免 pre-install hook 阶段 ConfigMap/Secret 尚未创建的问题
+ env:
+ - name: SECRET_KEY
+ value: {{ .Values.server.secretKey | quote }}
+ - name: FRIDAY_ENCRYPTION_KEY
+ value: {{ .Values.server.encryptionKey | quote }}
+ - name: DATABASE_URL
+ {{- if .Values.postgresql.enabled }}
+ value: {{ printf "postgres://%s:%s@%s-postgresql:5432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "friday.fullname" .) .Values.postgresql.auth.database | quote }}
+ {{- else }}
+ value: {{ .Values.externalDatabase.url | quote }}
+ {{- end }}
+ - name: FRIDAY_ADMIN_USERNAME
+ value: {{ .Values.server.adminUsername | quote }}
+ - name: FRIDAY_ADMIN_PASSWORD
+ value: {{ .Values.server.adminPassword | quote }}
+ - name: DEBUG
+ value: {{ .Values.server.debug | quote }}
+ - name: ALLOWED_HOSTS
+ value: {{ .Values.server.allowedHosts | quote }}
+{{- end }}
