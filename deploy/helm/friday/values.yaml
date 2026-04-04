@@ -7,7 +7,7 @@ existingSecret: ""
 server:
  replicaCount: 1
  image:
- repository: ghcr.io/anthropic-ai/friday-ai/server
+ repository: ghcr.io/friday-ai-codes/friday-ai/server
  tag: latest
  pullPolicy: IfNotPresent
  secretKey: "" # Django SECRET_KEY（existingSecret 优先）
@@ -43,7 +43,7 @@ server:
 web:
  replicaCount: 1
  image:
- repository: ghcr.io/anthropic-ai/friday-ai/web
+ repository: ghcr.io/friday-ai-codes/friday-ai/web
  tag: latest
  pullPolicy: IfNotPresent
  resources:
@@ -58,7 +58,7 @@ runner:
  enabled: true
  replicaCount: 1
  image:
- repository: ghcr.io/anthropic-ai/friday-ai/runner
+ repository: ghcr.io/friday-ai-codes/friday-ai/runner
  tag: latest
  pullPolicy: IfNotPresent
  registrationToken: "" # RUNNER_REGISTRATION_TOKEN
