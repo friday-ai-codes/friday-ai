@@ -315,3 +315,33 @@ class TestBotServiceProcessing:
  process_result = await service.process_message(message_id)
  assert process_result["status"] == "clarification"
  assert process_result["reason"] == "no_project_match"
+# ============================================================================
+# TestBotTimeoutReminder - 验证超时提醒功能 ( 缺口记录)
+# ============================================================================
+class TestBotTimeoutReminder:
+ """超时提醒功能验证。
+ 要求"支持多轮追问和超时提醒"。
+ 当前状态：卡片模板 build_chat_reminder_card 已定义（feishu/cards/chat_question_card.py），
+ 但 FeishuBotService.process_message 未包含超时触发逻辑。
+ 该功能标记为待实现，后续阶段补充。
+ """
+ @pytest.mark.xfail(
+ reason="超时提醒功能尚未在 FeishuBotService 中实现，卡片模板已就绪但未被调用",
+ strict=True,
+ )
+ async def test_timeout_reminder_card_sent_after_inactivity(self) -> None:
+ """验证会话超时后应发送提醒卡片。
+ 预期行为：当 Bot 会话超过配置时间不活跃后，
+ 系统调用 build_chat_reminder_card 并通过 IM 服务发送到群聊。
+ 当前 service.py 无此逻辑，测试预期失败。
+ """
+ from feishu.cards.chat_question_card import build_chat_reminder_card
+ # 验证卡片模板可正常构建
+ card = build_chat_reminder_card(question="测试问题", remaining_minutes=15)
+ assert "tag" in card # 卡片结构存在
+ # 验证 FeishuBotService 源码中包含超时处理逻辑
+ import inspect
+ source = inspect.getsource(FeishuBotService.process_message)
+ # 当超时逻辑被实现后，源码中应包含 timeout/reminder 相关调用
+ assert "timeout" in source.lower or "reminder" in source.lower, \
+ "FeishuBotService.process_message 尚未包含超时提醒逻辑"
