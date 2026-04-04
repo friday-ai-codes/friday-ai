@@ -1,6 +1,6 @@
 """AI Coding Dispatcher node for dispatching coding tasks from technical plans.
 Strict Mode Implementation:
-This dispatcher parses execution_plan from upstream TechnicalPlanNode output
+This dispatcher parses execution_plan from upstream AIPlanGenerationNode output
 and creates CodingTasks directly without LLM analysis. Tasks targeting the
 same repository and branch strategy are merged into a single CodingTask.
 """
@@ -23,7 +23,7 @@ logger = structlog.get_logger
 @register_node
 class AICodingDispatcherNode(BaseNode):
  """AI 编码指派器节点 (严格模式)
- 从上游 TechnicalPlanNode 解析 execution_plan，
+ 从上游 AIPlanGenerationNode 解析 execution_plan，
  直接创建 CodingTask 记录，无需 LLM 分析。
  特性:
  - 验证技术方案的 execution_plan 结构
@@ -54,7 +54,7 @@ class AICodingDispatcherNode(BaseNode):
  label="技术方案",
  port_type=PortType.OBJECT,
  required=True,
- description="上游 TechnicalPlanNode 输出的技术方案",
+ description="上游 AIPlanGenerationNode 输出的技术方案",
  ),
  ]
  outputs = [
@@ -81,7 +81,7 @@ class AICodingDispatcherNode(BaseNode):
  if not plan_data:
  return NodeResult(
  status="failed",
- error="缺少技术方案输入，请确保上游 TechnicalPlanNode 已执行",
+ error="缺少技术方案输入，请确保上游 AIPlanGenerationNode 已执行",
  next_handle="error",
  )
  # 2. 验证技术方案结构
