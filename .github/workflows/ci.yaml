@@ -1,0 +1,112 @@
+name: CI
+on:
+ pull_request:
+ branches: [main]
+permissions:
+ pull-requests: read
+jobs:
+ # ─── 1. 路径检测：判断 PR 修改了哪些组件 ───
+ changes:
+ runs-on: ubuntu-latest
+ outputs:
+ server: ${{ steps.filter.outputs.server }}
+ web: ${{ steps.filter.outputs.web }}
+ runner: ${{ steps.filter.outputs.runner }}
+ steps:
+ - uses: dorny/paths-filter@v3
+ id: filter
+ with:
+ filters: |
+ server:
+ - 'server/**'
+ web:
+ - 'web/**'
+ runner:
+ - 'runner/**'
+ # ─── 2. 后端 CI：ruff + mypy + pytest ───
+ server-ci:
+ needs: changes
+ if: needs.changes.outputs.server == 'true'
+ runs-on: ubuntu-latest
+ defaults:
+ run:
+ working-directory: server
+ steps:
+ - uses: actions/checkout@v4
+ - uses: astral-sh/setup-uv@v5
+ with:
+ enable-cache: true
+ - uses: actions/setup-python@v5
+ with:
+ python-version: "3.14"
+ allow-prereleases: true
+ - name: Install dependencies
+ run: uv sync --locked --dev
+ - name: Ruff lint
+ run: uv run ruff check .
+ - name: Mypy type check
+ run: uv run mypy .
+ - name: Pytest
+ run: uv run pytest
+ # ─── 3. 前端 CI：eslint + vue-tsc + vite build ───
+ web-ci:
+ needs: changes
+ if: needs.changes.outputs.web == 'true'
+ runs-on: ubuntu-latest
+ defaults:
+ run:
+ working-directory: web
+ steps:
+ - uses: actions/checkout@v4
+ - uses: pnpm/action-setup@v4
+ - uses: actions/setup-node@v4
+ with:
+ node-version: 22
+ cache: 'pnpm'
+ cache-dependency-path: web/pnpm-lock.yaml
+ - name: Install dependencies
+ run: pnpm install --frozen-lockfile
+ - name: ESLint
+ run: pnpm lint
+ - name: Type check
+ run: pnpm type-check
+ - name: Build
+ run: pnpm build
+ # ─── 4. Runner CI：go vet + go build ───
+ runner-ci:
+ needs: changes
+ if: needs.changes.outputs.runner == 'true'
+ runs-on: ubuntu-latest
+ defaults:
+ run:
+ working-directory: runner
+ steps:
+ - uses: actions/checkout@v4
+ - uses: actions/setup-go@v5
+ with:
+ go-version-file: runner/go.mod
+ - name: Go vet
+ run: go vet ./...
+ - name: Go build
+ run: go build ./...
+ # ─── 5. CI Gate：汇总检查结果，作为唯一 required check ───
+ ci-gate:
+ needs: [server-ci, web-ci, runner-ci]
+ if: always
+ runs-on: ubuntu-latest
+ steps:
+ - name: Check CI results
+ run: |
+ echo "server-ci: ${{ needs.server-ci.result }}"
+ echo "web-ci: ${{ needs.web-ci.result }}"
+ echo "runner-ci: ${{ needs.runner-ci.result }}"
+ for result in \
+ "${{ needs.server-ci.result }}" \
+ "${{ needs.web-ci.result }}" \
+ "${{ needs.runner-ci.result }}"; do
+ if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+ echo "CI failed: found '$result'"
+ exit 1
+ fi
+ done
+ echo "CI passed: all checks succeeded or were skipped"
