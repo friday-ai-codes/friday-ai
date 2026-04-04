@@ -126,7 +126,72 @@ jobs:
  cache-from: type=gha
  cache-to: type=gha,mode=max
  # ─────────────────────────────────────────────
- # 5. 更新 Kustomize newTag 并提交回主分支
+ # 5. 生成 Changelog 并创建 GitHub Release
+ # ─────────────────────────────────────────────
+ create-release:
+ needs: [resolve, build-server, build-web, build-runner]
+ if: |
+ always &&
+ needs.resolve.result == 'success' &&
+ (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') &&
+ (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
+ (needs.build-runner.result == 'success' || needs.build-runner.result == 'skipped')
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v4
+ with:
+ fetch-depth: 0
+ - name: Determine release params
+ id: params
+ run: |
+ TAG="${GITHUB_REF_NAME}"
+ # 判断 tag 类型和组件 (per, )
+ if [[ "$TAG" == server-v* ]]; then
+ echo "component=server" >> "$GITHUB_OUTPUT"
+ echo "title=Server ${TAG#server-}" >> "$GITHUB_OUTPUT"
+ echo "cliff_args=--tag-pattern server-v.* --include-path server/**/* --latest" >> "$GITHUB_OUTPUT"
+ elif [[ "$TAG" == web-v* ]]; then
+ echo "component=web" >> "$GITHUB_OUTPUT"
+ echo "title=Web ${TAG#web-}" >> "$GITHUB_OUTPUT"
+ echo "cliff_args=--tag-pattern web-v.* --include-path web/**/* --latest" >> "$GITHUB_OUTPUT"
+ elif [[ "$TAG" == runner-v* ]]; then
+ echo "component=runner" >> "$GITHUB_OUTPUT"
+ echo "title=Runner ${TAG#runner-}" >> "$GITHUB_OUTPUT"
+ echo "cliff_args=--tag-pattern runner-v.* --include-path runner/**/* --latest" >> "$GITHUB_OUTPUT"
+ else
+ # 全局 tag (per: 包含所有路径变更)
+ echo "component=all" >> "$GITHUB_OUTPUT"
+ echo "title=${TAG}" >> "$GITHUB_OUTPUT"
+ echo "cliff_args=--latest" >> "$GITHUB_OUTPUT"
+ fi
+ # prerelease 检测 (per )
+ if [[ "$TAG" =~ -(rc|beta|alpha) ]]; then
+ echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
+ else
+ echo "prerelease=" >> "$GITHUB_OUTPUT"
+ fi
+ - name: Generate changelog
+ uses: orhun/git-cliff-action@v4
+ id: cliff
+ with:
+ config: cliff.toml
+ args: ${{ steps.params.outputs.cliff_args }}
+ env:
+ GITHUB_REPO: ${{ github.repository }}
+ - name: Create GitHub Release
+ env:
+ GH_TOKEN: ${{ github.token }}
+ run: |
+ # 使用 notes-file 避免 shell 转义问题 (per Research Pitfall 5)
+ cat << 'CLIFF_EOF' > /tmp/release-notes.md
+ ${{ steps.cliff.outputs.content }}
+ CLIFF_EOF
+ gh release create "$GITHUB_REF_NAME" \
+ --title "${{ steps.params.outputs.title }}" \
+ --notes-file /tmp/release-notes.md \
+ ${{ steps.params.outputs.prerelease }}
+ # ─────────────────────────────────────────────
+ # 6. 更新 Kustomize newTag 并提交回主分支
  # ─────────────────────────────────────────────
  update-manifests:
  needs: [resolve, build-server, build-web, build-runner]
