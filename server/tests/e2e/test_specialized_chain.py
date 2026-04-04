@@ -203,7 +203,7 @@ class TestSpecializedChainE2E:
  patch("services.claude_config.get_claude_config") as mock_config,
  patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
- patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  ):
  mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
  mock_runner_instance = MagicMock
@@ -365,7 +365,7 @@ class TestSpecializedChainE2E:
  with (
  patch.object(review_node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(review_node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  patch.object(review_node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(review_node, "_send_review_notification", new_callable=AsyncMock),
  patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
@@ -413,7 +413,7 @@ class TestSpecializedChainE2E:
  patch("services.claude_config.get_claude_config") as mock_config,
  patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
- patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  ):
  mock_session.aupdate_or_create = AsyncMock(return_value=(MagicMock, True))
  mock_runner_instance = MagicMock
@@ -552,7 +552,7 @@ class TestSpecializedChainE2E:
  with (
  patch.object(review_node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
  patch.object(review_node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
+ patch.object(review_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  patch.object(review_node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
  patch.object(review_node, "_send_review_notification", new_callable=AsyncMock),
  patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
