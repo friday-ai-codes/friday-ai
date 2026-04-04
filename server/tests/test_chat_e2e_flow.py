@@ -290,3 +290,161 @@ class TestHistoryLoading:
  assert data["messages"][0]["content"] == "你好，这是测试消息"
  assert data["messages"][1]["role"] == "assistant"
  assert data["messages"][1]["content"] == "你好！我是 AI 助手。"
+# ============================================================================
+# Test 5: 对话持久化验证
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestMessagePersistence:
+ """对话持久化端到端测试。"""
+ async def test_message_persistence_after_stream(self, conversation):
+ """SSE 流结束后 user + assistant Message 记录正确持久化。
+ mock send_message_stream 内部手动创建 Message 记录，
+ 模拟真实 service 的持久化行为，验证流结束后 DB 中有完整消息。
+ """
+ async def mock_stream_with_persistence(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ # 保存 user message（模拟真实 service 行为）
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.USER,
+ content=content,
+ )
+ yield AgentEvent(type=TEXT_DELTA, data={"text": "AI 回复内容"})
+ # 保存 assistant message（模拟真实 service 行为）
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.ASSISTANT,
+ content="AI 回复内容",
+ )
+ yield AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "status": "completed",
+ "final_answer": "AI 回复内容",
+ "session_id": "sess_001",
+ },
+ )
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=mock_stream_with_persistence,
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ # 必须在 patch 上下文内消费 streaming 响应
+ body = await _read_streaming_body(resp)
+ # 验证 SSE 响应包含预期事件
+ payloads = _parse_sse_data_lines(body)
+ assert any(p.get("type") == "message_complete" for p in payloads)
+ # 验证 DB 持久化：应有 user + assistant 两条消息
+ from asgiref.sync import sync_to_async
+ messages = await sync_to_async(
+ lambda: list(
+ Message.objects.filter(conversation=conversation).order_by(
+ "created_at"
+ )
+ )
+ )
+ assert len(messages) == 2
+ assert messages[0].role == "user"
+ assert messages[0].content == "你好"
+ assert messages[1].role == "assistant"
+ assert messages[1].content == "AI 回复内容"
+ async def test_conversation_list_returns_conversations(self, test_project):
+ """GET /api/chat/conversations/ 返回已创建的对话列表。"""
+ # 创建 2 个对话
+ await Conversation.objects.acreate(
+ project=test_project, title="对话 A"
+ )
+ await Conversation.objects.acreate(
+ project=test_project, title="对话 B"
+ )
+ client = AsyncClient
+ resp = await client.get("/api/chat/conversations/")
+ assert resp.status_code == 200
+ data = resp.json
+ titles = [c["title"] for c in data]
+ assert "对话 A" in titles
+ assert "对话 B" in titles
+# ============================================================================
+# Test 6: 错误处理验证
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestErrorHandling:
+ """错误处理端到端测试。"""
+ async def test_stream_error_event(self, conversation):
+ """SSE 流中包含 error 事件时格式正确。"""
+ from agents.core.events import ERROR as ERROR_TYPE
+ mock_events = [
+ AgentEvent(
+ type=ERROR_TYPE,
+ data={"message": "Provider error", "code": "llm_error"},
+ ),
+ AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={"status": "error"},
+ ),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(mock_events),
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "触发错误"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ assert resp["Content-Type"] == "text/event-stream"
+ payloads = _parse_sse_data_lines(body)
+ error_events = [p for p in payloads if p.get("type") == "error"]
+ assert len(error_events) >= 1
+ assert error_events[0]["message"] == "Provider error"
+ assert error_events[0]["code"] == "llm_error"
+ async def test_stream_service_exception_returns_error(self, conversation):
+ """send_message_stream 抛异常时返回 SSE error 事件而非 500。
+ views.py _stream_events 捕获 Exception 并 yield error 事件，
+ 因此响应仍是 200 text/event-stream，包含错误信息。
+ """
+ async def mock_raise_exception(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ raise Exception("LLM service unavailable")
+ # 使其成为 async generator（unreachable yield）
+ yield AgentEvent(type=TEXT_DELTA, data={}) # type: ignore[unreachable]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=mock_raise_exception,
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "触发异常"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ # 响应是 200 text/event-stream（异常在 generator 内被捕获）
+ assert resp.status_code == 200
+ assert resp["Content-Type"] == "text/event-stream"
+ payloads = _parse_sse_data_lines(body)
+ error_events = [p for p in payloads if p.get("type") == "error"]
+ assert len(error_events) >= 1
+ assert "服务内部错误" in error_events[0]["message"]
+ async def test_stream_nonexistent_conversation_returns_404(self):
+ """POST 不存在的对话 ID 返回 404。"""
+ client = AsyncClient
+ resp = await client.post(
+ "/api/chat/conversations/00000000-0000-0000-0000-000000000000/stream/",
+ data={"content": "你好"},
+ content_type="application/json",
+ )
+ assert resp.status_code == 404
