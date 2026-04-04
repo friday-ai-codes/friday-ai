@@ -1,0 +1,23 @@
+[
+ {
+ "text": "API 参考",
+ "items": [
+ {
+ "text": "概览",
+ "link": "/api/"
+ },
+ {
+ "text": "accounts",
+ "link": "/api/accounts"
+ },
+ {
+ "text": "chat",
+ "link": "/api/chat"
+ },
+ {
+ "text": "projects",
+ "link": "/api/projects"
+ }
+ ]
+ }
+]
