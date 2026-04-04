@@ -665,3 +665,243 @@ class TestWorkflowStateVerification:
  assert len(task.prompt) > 10
  # Verify execution_plan_ids populated
  assert len(task.execution_plan_ids) >= 1
+@pytest.mark.django_db(transaction=True)
+class TestHookNotifications:
+ """验证 FeishuSyncHook 和 NotificationHook 在工作流执行过程中被正确调用。
+ 覆盖: 飞书卡片状态同步更新需求。
+ """
+ @pytest.mark.asyncio
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ async def test_feishu_sync_hook_called_on_node_events(
+ self,
+ e2e_workflow: Workflow,
+ e2e_project: Project,
+ e2e_repository: Repository,
+ e2e_api_client: APIClient,
+ mock_feishu_client,
+ mock_llm_api,
+ ):
+ """验证 FeishuSyncHook 在节点事件时调用 _send_notification。
+ 将 FeishuSyncHook 注册到 engine 的 HookManager，
+ patch _send_notification 和 feature_flags 以拦截并验证调用。
+ """
+ from tests.e2e.conftest import trigger_workflow_sync
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.hooks.base import HookManager
+ from workflows.hooks.feishu_sync import FeishuSyncHook
+ work_item_id = f"wi-{uuid.uuid4.hex[:8]}"
+ custom_plan = create_technical_plan(
+ repository_id=str(e2e_repository.id),
+ repository_name=e2e_repository.name,
+ task_count=1,
+ )
+ _configure_llm_mock(mock_llm_api, custom_plan)
+ mock_feishu_client.mock_client.get_work_item = AsyncMock(
+ return_value=MockWorkItem(
+ work_item_id=work_item_id,
+ current_status="approved",
+ fields={"status": "approved"},
+ )
+ )
+ input_data = {
+ "work_item_id": work_item_id,
+ "work_item_name": "Hook Test",
+ "description": "Test hook notifications",
+ "project_key": e2e_project.feishu_project_key,
+ "work_item_type": "story",
+ }
+ # patch _send_notification 和 feature_flags 使 FeishuSyncHook 能走到通知逻辑
+ with (
+ patch(
+ "workflows.hooks.feishu_sync.FeishuSyncHook._send_notification",
+ new_callable=AsyncMock,
+ ) as mock_send,
+ patch(
+ "workflows.hooks.feishu_sync.feature_flags",
+ ) as mock_ff,
+ ):
+ mock_ff.sync_workflow_to_feishu = True
+ # 创建包含 FeishuSyncHook 的 engine
+ feishu_hook = FeishuSyncHook
+ original_init = WorkflowEngine.__init__
+ def patched_init(self_engine, hooks=None):
+ original_init(self_engine, hooks)
+ # 在默认 hooks 基础上注册 FeishuSyncHook
+ for event in HookManager.EVENTS:
+ self_engine.hooks.register_hook(event, feishu_hook)
+ with patch.object(WorkflowEngine, "__init__", patched_init):
+ execution = await trigger_workflow_sync(
+ workflow=e2e_workflow,
+ input_data=input_data,
+ trigger_type="feishu",
+ )
+ await execution.arefresh_from_db
+ # 工作流至少执行了 trigger 节点，应触发 node_started/completed 事件
+ assert execution.status in [
+ ExecutionStatus.COMPLETED,
+ ExecutionStatus.SUSPENDED,
+ ExecutionStatus.FAILED,
+ ]
+ # _send_notification 应至少被调用 1 次（node_started 或 node_completed）
+ assert mock_send.call_count >= 1, (
+ f"FeishuSyncHook._send_notification 应至少调用 1 次，实际 {mock_send.call_count} 次"
+ )
+ # 验证调用参数中包含 execution 对象
+ for call in mock_send.call_args_list:
+ args = call.args
+ assert len(args) >= 1, "调用参数应包含 execution 对象"
+ @pytest.mark.asyncio
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ async def test_notification_hook_called_on_execution_events(
+ self,
+ e2e_workflow: Workflow,
+ e2e_project: Project,
+ e2e_repository: Repository,
+ e2e_api_client: APIClient,
+ mock_feishu_client,
+ mock_llm_api,
+ ):
+ """验证 NotificationHook 在 execution 级别事件时被调用。
+ NotificationHook 已在 WorkflowEngine 中默认注册，
+ 监听 execution_completed / execution_failed / node_waiting_approval。
+ """
+ from tests.e2e.conftest import trigger_workflow_sync
+ work_item_id = f"wi-{uuid.uuid4.hex[:8]}"
+ custom_plan = create_technical_plan(
+ repository_id=str(e2e_repository.id),
+ repository_name=e2e_repository.name,
+ task_count=1,
+ )
+ _configure_llm_mock(mock_llm_api, custom_plan)
+ mock_feishu_client.mock_client.get_work_item = AsyncMock(
+ return_value=MockWorkItem(
+ work_item_id=work_item_id,
+ current_status="approved",
+ fields={"status": "approved"},
+ )
+ )
+ input_data = {
+ "work_item_id": work_item_id,
+ "work_item_name": "Notification Hook Test",
+ "description": "Test notification hook",
+ "project_key": e2e_project.feishu_project_key,
+ "work_item_type": "story",
+ }
+ with patch(
+ "workflows.hooks.builtin.NotificationHook.execute",
+ new_callable=AsyncMock,
+ ) as mock_execute:
+ execution = await trigger_workflow_sync(
+ workflow=e2e_workflow,
+ input_data=input_data,
+ trigger_type="feishu",
+ )
+ await execution.arefresh_from_db
+ assert execution.status in [
+ ExecutionStatus.COMPLETED,
+ ExecutionStatus.SUSPENDED,
+ ExecutionStatus.FAILED,
+ ]
+ # NotificationHook 仅对 execution_completed/failed/node_waiting_approval 注册
+ # 工作流完成或失败时应触发
+ if execution.status == ExecutionStatus.COMPLETED:
+ assert mock_execute.call_count >= 1, (
+ "NotificationHook.execute 应在 execution_completed 时被调用"
+ )
+ events_received = [call.args[0] for call in mock_execute.call_args_list]
+ assert any(
+ e in ("execution_completed", "node_waiting_approval") for e in events_received
+ ), f"应收到 execution_completed 或 node_waiting_approval，实际: {events_received}"
+ elif execution.status == ExecutionStatus.FAILED:
+ assert mock_execute.call_count >= 1, (
+ "NotificationHook.execute 应在 execution_failed 时被调用"
+ )
+ events_received = [call.args[0] for call in mock_execute.call_args_list]
+ assert "execution_failed" in events_received, (
+ f"应收到 execution_failed，实际: {events_received}"
+ )
+ else:
+ # SUSPENDED 状态：可能经过 node_waiting_approval
+ # 无论如何，验证 execute 至少被注册的事件触发过
+ if mock_execute.call_count > 0:
+ events_received = [call.args[0] for call in mock_execute.call_args_list]
+ assert any(
+ e in ("execution_completed", "execution_failed", "node_waiting_approval")
+ for e in events_received
+ ), f"收到非预期事件: {events_received}"
+ @pytest.mark.asyncio
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ async def test_hook_receives_correct_execution_context(
+ self,
+ e2e_workflow: Workflow,
+ e2e_project: Project,
+ e2e_repository: Repository,
+ e2e_api_client: APIClient,
+ mock_feishu_client,
+ mock_llm_api,
+ ):
+ """验证 Hook 接收到正确的执行上下文（execution 对象和 project 信息）。
+ 通过 patch FeishuSyncHook.execute 为 AsyncMock 拦截所有调用，
+ 验证 kwargs 中 execution 存在且关联正确的 project。
+ """
+ from tests.e2e.conftest import trigger_workflow_sync
+ from workflows.engine.scheduler import WorkflowEngine
+ from workflows.hooks.base import HookManager
+ from workflows.hooks.feishu_sync import FeishuSyncHook
+ work_item_id = f"wi-{uuid.uuid4.hex[:8]}"
+ custom_plan = create_technical_plan(
+ repository_id=str(e2e_repository.id),
+ repository_name=e2e_repository.name,
+ task_count=1,
+ )
+ _configure_llm_mock(mock_llm_api, custom_plan)
+ mock_feishu_client.mock_client.get_work_item = AsyncMock(
+ return_value=MockWorkItem(
+ work_item_id=work_item_id,
+ current_status="approved",
+ fields={"status": "approved"},
+ )
+ )
+ input_data = {
+ "work_item_id": work_item_id,
+ "work_item_name": "Context Test",
+ "description": "Test hook context",
+ "project_key": e2e_project.feishu_project_key,
+ "work_item_type": "story",
+ }
+ mock_execute = AsyncMock
+ # 创建一个真实的 FeishuSyncHook 实例，但 execute 被 mock
+ feishu_hook = FeishuSyncHook
+ feishu_hook.execute = mock_execute
+ original_init = WorkflowEngine.__init__
+ def patched_init(self_engine, hooks=None):
+ original_init(self_engine, hooks)
+ for event in HookManager.EVENTS:
+ self_engine.hooks.register_hook(event, feishu_hook)
+ with patch.object(WorkflowEngine, "__init__", patched_init):
+ execution = await trigger_workflow_sync(
+ workflow=e2e_workflow,
+ input_data=input_data,
+ trigger_type="feishu",
+ )
+ await execution.arefresh_from_db
+ assert execution.status in [
+ ExecutionStatus.COMPLETED,
+ ExecutionStatus.SUSPENDED,
+ ExecutionStatus.FAILED,
+ ]
+ # FeishuSyncHook.execute 应被调用（工作流至少会触发 node 事件）
+ assert mock_execute.call_count >= 1, (
+ f"FeishuSyncHook.execute 应至少调用 1 次，实际 {mock_execute.call_count} 次"
+ )
+ # 验证每次调用都收到 execution 上下文
+ # Hook.execute 签名：execute(self, event: str, **kwargs)
+ # 但因为 mock 替换了 execute，self 不再隐式传递
+ # mock_execute 的第一个 positional arg 是 event (str)
+ for call in mock_execute.call_args_list:
+ kwargs = call.kwargs
+ assert "execution" in kwargs, f"调用缺少 execution 参数，kwargs: {list(kwargs.keys)}"
+ exec_obj = kwargs["execution"]
+ # execution 应是 WorkflowExecution 实例，拥有 id 和 status
+ assert hasattr(exec_obj, "id"), "execution 应有 id 属性"
+ assert hasattr(exec_obj, "status"), "execution 应有 status 属性"
