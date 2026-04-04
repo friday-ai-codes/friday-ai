@@ -22,16 +22,23 @@ Friday 工作流引擎基于 DAG（有向无环图）实现可视化自动化编
 **配置项：**
 | 字段 | 必填 | 说明 |
 |------|------|------|
-| `event_type` | 是 | 监听的飞书事件类型 |
-| `project_ids` | 否 | 要监听的项目 ID 列表，留空监听所有项目 |
+| `event_type` | 是 | 监听的飞书事件类型（单选） |
+| `project_ids` | 否 | 要监听的 Friday 项目 ID 列表，留空监听所有项目 |
+| `filter_project_key` | 否 | 飞书项目 Key（高级用法：直接指定飞书项目标识） |
+| `filter_work_item_type` | 否 | 仅处理指定类型的工作项（story/task/bug/epic/feature） |
 | `filter_status` | 否 | 状态过滤，仅在指定状态变更时触发 |
-| `filter_work_item_type` | 否 | 仅处理指定类型的工作项 |
+| `filter_status_custom` | 否 | 自定义状态 key，多个用逗号分隔 |
+| `exclude_project_ids` | 否 | 要排除的项目 ID 列表 |
+| `exclude_work_item_pattern` | 否 | 排除工作项（包含匹配）：工作项名称包含此文本时被排除 |
+| `exclude_work_item_regex` | 否 | 排除工作项（正则匹配）：使用正则表达式匹配要排除的工作项 |
 **配置示例：**
 ```json
 {
  "event_type": "work_item_status_changed",
  "filter_status": ["开发中"],
- "filter_work_item_type": "story"
+ "filter_work_item_type": "story",
+ "exclude_work_item_pattern": "测试",
+ "exclude_work_item_regex": "^\\[SKIP\\]"
 }
 ```
 ### 手动触发（manual_trigger）
