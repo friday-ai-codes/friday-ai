@@ -259,6 +259,142 @@ class TestInterruptFlow:
  f"/api/chat/conversations/{conversation.id}/interrupt/",
  )
  assert resp.status_code == 404
+ async def test_resume_after_interrupt(self, conversation):
+ """中断对话后重新发送消息，新 SSE 流正常启动。"""
+ from chat.conversation_service import _active_runners
+ # Phase: 中断
+ mock_runner = AsyncMock
+ mock_runner.interrupt = AsyncMock
+ conv_id_str = str(conversation.id)
+ _active_runners[conv_id_str] = mock_runner
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ )
+ assert resp.status_code == 200
+ mock_runner.interrupt.assert_awaited_once
+ _active_runners.pop(conv_id_str, None)
+ # Phase: 恢复 — 新消息流正常
+ resume_events = [
+ AgentEvent(type=TEXT_DELTA, data={"text": "恢复回复"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"}),
+ ]
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=_make_mock_stream(resume_events),
+ ):
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "继续对话"},
+ content_type="application/json",
+ )
+ body = await _read_streaming_body(resp)
+ assert resp.status_code == 200
+ payloads = _parse_sse_data_lines(body)
+ assert any(p.get("type") == "text_delta" for p in payloads)
+ assert any(p.get("type") == "message_complete" for p in payloads)
+ # 验证恢复回复内容正确
+ text_deltas = [p for p in payloads if p.get("type") == "text_delta"]
+ assert text_deltas[0]["text"] == "恢复回复"
+ async def test_interrupted_message_status_persisted(self, conversation):
+ """被中断消息 metadata.status='interrupted'，后续消息独立记录。"""
+ from asgiref.sync import sync_to_async
+ # Phase: 中断场景 — mock stream 创建 interrupted 消息
+ async def mock_interrupted_stream(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.USER,
+ content=content,
+ )
+ yield AgentEvent(type=TEXT_DELTA, data={"text": "部分回复"})
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.ASSISTANT,
+ content="部分回复",
+ metadata={"status": "interrupted"},
+ )
+ yield AgentEvent(type=MESSAGE_COMPLETE, data={"status": "interrupted"})
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=mock_interrupted_stream,
+ ):
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "第一条消息"},
+ content_type="application/json",
+ )
+ await _read_streaming_body(resp)
+ # Phase: 恢复场景 — mock stream 创建 completed 消息
+ async def mock_resumed_stream(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ ) -> AsyncGenerator[AgentEvent, None]:
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.USER,
+ content=content,
+ )
+ yield AgentEvent(type=TEXT_DELTA, data={"text": "完整回复"})
+ await Message.objects.acreate(
+ conversation_id=conversation_id,
+ role=Message.Role.ASSISTANT,
+ content="完整回复",
+ metadata={"status": "completed"},
+ )
+ yield AgentEvent(type=MESSAGE_COMPLETE, data={"status": "completed"})
+ with patch(
+ "chat.conversation_service.ConversationService.send_message_stream",
+ new=mock_resumed_stream,
+ ):
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data={"content": "第二条消息"},
+ content_type="application/json",
+ )
+ await _read_streaming_body(resp)
+ # 验证 DB 中消息状态
+ messages = await sync_to_async(
+ lambda: list(
+ Message.objects.filter(
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ ).order_by("created_at")
+ )
+ )
+ assert len(messages) == 2
+ assert messages[0].metadata["status"] == "interrupted"
+ assert messages[0].content == "部分回复"
+ assert messages[1].metadata["status"] == "completed"
+ assert messages[1].content == "完整回复"
+ async def test_duplicate_interrupt_idempotent(self, conversation):
+ """重复中断请求不导致异常（幂等性）。"""
+ from chat.conversation_service import _active_runners
+ mock_runner = AsyncMock
+ mock_runner.interrupt = AsyncMock
+ conv_id_str = str(conversation.id)
+ _active_runners[conv_id_str] = mock_runner
+ try:
+ client = AsyncClient
+ # 第一次中断
+ resp1 = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ )
+ assert resp1.status_code == 200
+ # 第二次中断（runner 仍在 _active_runners 中）
+ resp2 = await client.post(
+ f"/api/chat/conversations/{conversation.id}/interrupt/",
+ )
+ assert resp2.status_code == 200
+ # 两次均成功调用 interrupt，无异常
+ assert mock_runner.interrupt.await_count == 2
+ finally:
+ _active_runners.pop(conv_id_str, None)
 # ============================================================================
 # Test 4: 历史记录加载
 # ============================================================================
