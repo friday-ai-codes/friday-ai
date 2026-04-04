@@ -1,6 +1,21 @@
 // VitePress 主配置文件
 // 参考: https://vitepress.dev/reference/site-config
 import { defineConfig } from 'vitepress'
+import { readFileSync, existsSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const apiSidebarPath = resolve(__dirname, 'api-sidebar.json')
+/**
+ * 动态加载 API 侧边栏配置（由 generate-api-docs.mjs 生成）
+ * 如果配置文件不存在，返回默认的概览链接
+ */
+function loadApiSidebar {
+ if (existsSync(apiSidebarPath)) {
+ return JSON.parse(readFileSync(apiSidebarPath, 'utf-8'))
+ }
+ return [{ text: 'API 参考', items: [{ text: '概览', link: '/api/' }] }]
+}
 export default defineConfig({
  title: 'Friday AI',
  description: 'AI 驱动的敏捷开发自动化系统',
@@ -50,7 +65,7 @@ export default defineConfig({
  ],
  },
  ],
- '/api/':,
+ '/api/': loadApiSidebar,
  '/dev/': [
  {
  text: '开发文档',
