@@ -8,6 +8,9 @@ importers:
  vitepress:
  specifier: ^1.6.4
  version: 1.6.4(@algolia/client-search@5.50.1)(postcss@8.5.8)(search-insights@2.17.3)
+ vue:
+ specifier: ^3.5.32
+ version: 3.5.32
 packages:
  '@algolia/abtesting@1.16.1':
  resolution: {integrity: sha512-Xxk4l00pYI+jE0PNw8y0MvsQWh5278WRtZQav8/BMMi3HKi2xmeuqe11WJ3y8/6nuBHdv39w76OpJb09TMfAVQ==}

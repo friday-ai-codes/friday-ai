@@ -5,13 +5,20 @@ export default defineConfig({
  title: 'Friday AI',
  description: 'AI 驱动的敏捷开发自动化系统',
  lang: 'zh-CN',
- // 排除中文文件名的旧文档，避免路由冲突
+ // 排除旧文档（已迁移到子目录或不再需要），避免路由冲突
  srcExclude: [
  '**/技术原理*.md',
  '**/获取工作项*.md',
  '**/飞书项目*.md',
  '**/claude-code-docs.md',
  '**/migration/**',
+ 'quick-start.md',
+ 'ai-agent-system-design.md',
+ 'node-spec.md',
+ ],
+ // 忽略 localhost 链接的 dead link 检查
+ ignoreDeadLinks: [
+ /^https?:\/\/localhost/,
  ],
  themeConfig: {
  nav: [
