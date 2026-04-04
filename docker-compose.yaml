@@ -5,6 +5,21 @@
 # 启动（含内置 PostgreSQL）: docker compose --profile postgres up -d
 # 源码构建启动: docker compose -f docker-compose.yaml -f docker-compose.build.yaml up --build
 services:
+ redis:
+ image: redis:7-alpine
+ container_name: friday-redis
+ ports:
+ - "${REDIS_PORT:-6379}:6379"
+ volumes:
+ - redis-data:/data
+ networks:
+ - friday-network
+ restart: unless-stopped
+ healthcheck:
+ test: ["CMD", "redis-cli", "ping"]
+ interval: 10s
+ timeout: 5s
+ retries: 5
  server:
  image: ghcr.io/anthropic-ai/friday-ai/server:latest
  container_name: friday-server
@@ -21,10 +36,15 @@ services:
  - GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
  - FRIDAY_ADMIN_USERNAME=${FRIDAY_ADMIN_USERNAME:-admin}
  - FRIDAY_ADMIN_PASSWORD=${FRIDAY_ADMIN_PASSWORD:-}
+ - USE_REDIS_CHANNEL_LAYER=${USE_REDIS_CHANNEL_LAYER:-true}
+ - REDIS_URL=redis://redis:6379/0
  volumes:
  - server-data:/app/data
  networks:
  - friday-network
+ depends_on:
+ redis:
+ condition: service_healthy
  restart: unless-stopped
  healthcheck:
  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -105,6 +125,7 @@ services:
  retries: 3
  start_period: 10s
 volumes:
+ redis-data:
  server-data:
  postgres-data:
  qdrant-data:
