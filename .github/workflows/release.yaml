@@ -11,7 +11,7 @@ permissions:
  packages: write # 推送 GHCR 镜像
 env:
  REGISTRY: ghcr.io
- IMAGE_PREFIX: ghcr.io/zanel1u/friday-ai
+ IMAGE_PREFIX: ghcr.io/friday-ai-codes/friday-ai
 jobs:
  # ─────────────────────────────────────────────
  # 1. 解析 tag，决定构建哪些服务
@@ -154,19 +154,19 @@ jobs:
  run: |
  if [[ "$BUILD_SERVER" == "true" ]]; then
  cd .kube/server/base
- kustomize edit set image ghcr.io/zanel1u/friday-ai/server:${VERSION}
+ kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/server:${VERSION}
  cd -
  echo "✓ server → ${VERSION}"
  fi
  if [[ "$BUILD_WEB" == "true" ]]; then
  cd .kube/web/base
- kustomize edit set image ghcr.io/zanel1u/friday-ai/web:${VERSION}
+ kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/web:${VERSION}
  cd -
  echo "✓ web → ${VERSION}"
  fi
  if [[ "$BUILD_RUNNER" == "true" ]]; then
  cd .kube/runner/base
- kustomize edit set image ghcr.io/zanel1u/friday-ai/runner:${VERSION}
+ kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/runner:${VERSION}
  cd -
  echo "✓ runner → ${VERSION}"
  fi
