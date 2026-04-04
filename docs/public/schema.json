@@ -1,0 +1,436 @@
+{
+ "_comment": "开发用示例 schema。生产环境应通过 cd server && python manage.py spectacular --color --file ../docs/public/schema.json 生成",
+ "openapi": "3.0.3",
+ "info": {
+ "title": "Friday AI API",
+ "version": "1.0.0",
+ "description": "AI 驱动的敏捷开发自动化系统 API"
+ },
+ "paths": {
+ "/api/accounts/users/": {
+ "get": {
+ "operationId": "accounts_users_list",
+ "tags": ["accounts"],
+ "summary": "获取用户列表",
+ "description": "返回系统中所有用户的分页列表",
+ "parameters": [
+ {
+ "name": "page",
+ "in": "query",
+ "required": false,
+ "schema": { "type": "integer" },
+ "description": "页码"
+ },
+ {
+ "name": "page_size",
+ "in": "query",
+ "required": false,
+ "schema": { "type": "integer", "default": 20 },
+ "description": "每页数量"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回用户列表",
+ "content": {
+ "application/json": {
+ "schema": {
+ "type": "object",
+ "properties": {
+ "count": { "type": "integer" },
+ "results": {
+ "type": "array",
+ "items": { "$ref": "#/components/schemas/User" }
+ }
+ }
+ }
+ }
+ }
+ }
+ }
+ },
+ "post": {
+ "operationId": "accounts_users_create",
+ "tags": ["accounts"],
+ "summary": "创建用户",
+ "description": "创建新用户账户",
+ "requestBody": {
+ "required": true,
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/UserCreate" }
+ }
+ }
+ },
+ "responses": {
+ "201": {
+ "description": "用户创建成功",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/User" }
+ }
+ }
+ },
+ "400": {
+ "description": "请求参数错误"
+ }
+ }
+ }
+ },
+ "/api/accounts/users/{id}/": {
+ "get": {
+ "operationId": "accounts_users_retrieve",
+ "tags": ["accounts"],
+ "summary": "获取用户详情",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "用户 ID"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回用户详情",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/User" }
+ }
+ }
+ },
+ "404": {
+ "description": "用户不存在"
+ }
+ }
+ }
+ },
+ "/api/projects/": {
+ "get": {
+ "operationId": "projects_list",
+ "tags": ["projects"],
+ "summary": "获取项目列表",
+ "description": "返回当前用户可见的所有项目",
+ "parameters": [
+ {
+ "name": "status",
+ "in": "query",
+ "required": false,
+ "schema": { "type": "string", "enum": ["active", "archived"] },
+ "description": "项目状态过滤"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回项目列表",
+ "content": {
+ "application/json": {
+ "schema": {
+ "type": "object",
+ "properties": {
+ "count": { "type": "integer" },
+ "results": {
+ "type": "array",
+ "items": { "$ref": "#/components/schemas/Project" }
+ }
+ }
+ }
+ }
+ }
+ }
+ }
+ },
+ "post": {
+ "operationId": "projects_create",
+ "tags": ["projects"],
+ "summary": "创建项目",
+ "description": "创建新的自动化项目",
+ "requestBody": {
+ "required": true,
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/ProjectCreate" }
+ }
+ }
+ },
+ "responses": {
+ "201": {
+ "description": "项目创建成功",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/Project" }
+ }
+ }
+ }
+ }
+ }
+ },
+ "/api/projects/{id}/": {
+ "get": {
+ "operationId": "projects_retrieve",
+ "tags": ["projects"],
+ "summary": "获取项目详情",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "项目 ID"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回项目详情",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/Project" }
+ }
+ }
+ }
+ }
+ },
+ "patch": {
+ "operationId": "projects_partial_update",
+ "tags": ["projects"],
+ "summary": "更新项目",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "项目 ID"
+ }
+ ],
+ "requestBody": {
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/ProjectCreate" }
+ }
+ }
+ },
+ "responses": {
+ "200": {
+ "description": "项目更新成功"
+ }
+ }
+ },
+ "delete": {
+ "operationId": "projects_destroy",
+ "tags": ["projects"],
+ "summary": "删除项目",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "项目 ID"
+ }
+ ],
+ "responses": {
+ "204": {
+ "description": "项目删除成功"
+ }
+ }
+ }
+ },
+ "/api/chat/conversations/": {
+ "get": {
+ "operationId": "chat_conversations_list",
+ "tags": ["chat"],
+ "summary": "获取对话列表",
+ "description": "返回当前用户的所有 AI 对话记录",
+ "parameters": [
+ {
+ "name": "project",
+ "in": "query",
+ "required": false,
+ "schema": { "type": "integer" },
+ "description": "关联项目 ID"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回对话列表",
+ "content": {
+ "application/json": {
+ "schema": {
+ "type": "array",
+ "items": { "$ref": "#/components/schemas/Conversation" }
+ }
+ }
+ }
+ }
+ }
+ },
+ "post": {
+ "operationId": "chat_conversations_create",
+ "tags": ["chat"],
+ "summary": "创建对话",
+ "description": "开始一个新的 AI 对话",
+ "requestBody": {
+ "required": true,
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/ConversationCreate" }
+ }
+ }
+ },
+ "responses": {
+ "201": {
+ "description": "对话创建成功",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/Conversation" }
+ }
+ }
+ }
+ }
+ }
+ },
+ "/api/chat/conversations/{id}/messages/": {
+ "get": {
+ "operationId": "chat_messages_list",
+ "tags": ["chat"],
+ "summary": "获取对话消息列表",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "对话 ID"
+ }
+ ],
+ "responses": {
+ "200": {
+ "description": "成功返回消息列表",
+ "content": {
+ "application/json": {
+ "schema": {
+ "type": "array",
+ "items": { "$ref": "#/components/schemas/Message" }
+ }
+ }
+ }
+ }
+ }
+ },
+ "post": {
+ "operationId": "chat_messages_create",
+ "tags": ["chat"],
+ "summary": "发送消息",
+ "description": "向对话发送新消息并获取 AI 响应",
+ "parameters": [
+ {
+ "name": "id",
+ "in": "path",
+ "required": true,
+ "schema": { "type": "integer" },
+ "description": "对话 ID"
+ }
+ ],
+ "requestBody": {
+ "required": true,
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/MessageCreate" }
+ }
+ }
+ },
+ "responses": {
+ "201": {
+ "description": "消息发送成功",
+ "content": {
+ "application/json": {
+ "schema": { "$ref": "#/components/schemas/Message" }
+ }
+ }
+ }
+ }
+ }
+ }
+ },
+ "components": {
+ "schemas": {
+ "User": {
+ "type": "object",
+ "properties": {
+ "id": { "type": "integer", "readOnly": true },
+ "username": { "type": "string", "maxLength": 150 },
+ "email": { "type": "string", "format": "email" },
+ "is_active": { "type": "boolean" },
+ "created_at": { "type": "string", "format": "date-time", "readOnly": true }
+ },
+ "required": ["username", "email"]
+ },
+ "UserCreate": {
+ "type": "object",
+ "properties": {
+ "username": { "type": "string", "maxLength": 150 },
+ "email": { "type": "string", "format": "email" },
+ "password": { "type": "string", "minLength": 8, "writeOnly": true }
+ },
+ "required": ["username", "email", "password"]
+ },
+ "Project": {
+ "type": "object",
+ "properties": {
+ "id": { "type": "integer", "readOnly": true },
+ "name": { "type": "string", "maxLength": 200 },
+ "description": { "type": "string" },
+ "status": { "type": "string", "enum": ["active", "archived"] },
+ "owner": { "$ref": "#/components/schemas/User" },
+ "created_at": { "type": "string", "format": "date-time", "readOnly": true },
+ "updated_at": { "type": "string", "format": "date-time", "readOnly": true }
+ },
+ "required": ["name"]
+ },
+ "ProjectCreate": {
+ "type": "object",
+ "properties": {
+ "name": { "type": "string", "maxLength": 200 },
+ "description": { "type": "string" }
+ },
+ "required": ["name"]
+ },
+ "Conversation": {
+ "type": "object",
+ "properties": {
+ "id": { "type": "integer", "readOnly": true },
+ "title": { "type": "string", "maxLength": 200 },
+ "project": { "type": "integer", "nullable": true },
+ "created_at": { "type": "string", "format": "date-time", "readOnly": true }
+ }
+ },
+ "ConversationCreate": {
+ "type": "object",
+ "properties": {
+ "title": { "type": "string", "maxLength": 200 },
+ "project": { "type": "integer", "nullable": true }
+ },
+ "required": ["title"]
+ },
+ "Message": {
+ "type": "object",
+ "properties": {
+ "id": { "type": "integer", "readOnly": true },
+ "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+ "content": { "type": "string" },
+ "created_at": { "type": "string", "format": "date-time", "readOnly": true }
+ },
+ "required": ["role", "content"]
+ },
+ "MessageCreate": {
+ "type": "object",
+ "properties": {
+ "content": { "type": "string" }
+ },
+ "required": ["content"]
+ }
+ }
+ }
+}
