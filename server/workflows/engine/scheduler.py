@@ -78,6 +78,12 @@ class WorkflowEngine:
  "node_waiting_approval",
  ):
  self.hooks.register_hook(event, notification_hook)
+ # FeishuSyncHook: 飞书卡片状态同步
+ # execute 内部有 event_map 路由，对未处理事件是 no-op，注册所有事件安全
+ from workflows.hooks.feishu_sync import FeishuSyncHook
+ feishu_hook = FeishuSyncHook
+ for event in HookManager.EVENTS:
+ self.hooks.register_hook(event, feishu_hook)
  async def _load_execution_for_hooks(self, execution: WorkflowExecution) -> WorkflowExecution:
  """Load execution with related objects to keep hook handlers async-safe."""
  return await WorkflowExecution.objects.select_related(
