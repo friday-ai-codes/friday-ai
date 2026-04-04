@@ -145,6 +145,8 @@ jobs:
  token: ${{ secrets.GITHUB_TOKEN }}
  - name: Setup Kustomize
  uses: imranismail/setup-kustomize@v2
+ - name: Setup yq
+ uses: mikefarah/yq@master
  - name: Update image tags
  env:
  VERSION: ${{ needs.resolve.outputs.version }}
@@ -170,11 +172,31 @@ jobs:
  cd -
  echo "✓ runner → ${VERSION}"
  fi
+ - name: Update Helm image tags
+ env:
+ VERSION: ${{ needs.resolve.outputs.version }}
+ BUILD_SERVER: ${{ needs.resolve.outputs.build_server }}
+ BUILD_WEB: ${{ needs.resolve.outputs.build_web }}
+ BUILD_RUNNER: ${{ needs.resolve.outputs.build_runner }}
+ run: |
+ HELM_VALUES="deploy/helm/friday/values.yaml"
+ if [[ "$BUILD_SERVER" == "true" ]]; then
+ VERSION=$VERSION yq -i '.server.image.tag = strenv(VERSION)' "$HELM_VALUES"
+ echo "✓ helm server → ${VERSION}"
+ fi
+ if [[ "$BUILD_WEB" == "true" ]]; then
+ VERSION=$VERSION yq -i '.web.image.tag = strenv(VERSION)' "$HELM_VALUES"
+ echo "✓ helm web → ${VERSION}"
+ fi
+ if [[ "$BUILD_RUNNER" == "true" ]]; then
+ VERSION=$VERSION yq -i '.runner.image.tag = strenv(VERSION)' "$HELM_VALUES"
+ echo "✓ helm runner → ${VERSION}"
+ fi
  - name: Commit & push
  run: |
  git config user.name "github-actions[bot]"
  git config user.email "github-actions[bot]@users.noreply.github.com"
- git add .kube/
+ git add .kube/ deploy/helm/friday/values.yaml
  # 如果没有变更（newTag 已经是目标版本）则跳过
  if git diff --cached --quiet; then
  echo "No manifest changes, skipping commit"
