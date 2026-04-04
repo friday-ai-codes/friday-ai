@@ -33,3 +33,8 @@ venv/
 *.sqlite3
 # Runtime data
 server/data/
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/api/
+docs/public/schema.json
