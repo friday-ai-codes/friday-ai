@@ -253,3 +253,15 @@ class TestSchedulerTerminalEvents:
  assert execution.status == ExecutionStatus.COMPLETED
  assert events.count("execution_completed") == 1
  assert "execution_failed" not in events
+def test_feishu_sync_hook_registered_in_engine -> None:
+ """FeishuSyncHook 必须在生产 WorkflowEngine 中注册（ 回归测试）。"""
+ from workflows.hooks.feishu_sync import FeishuSyncHook
+ engine = WorkflowEngine
+ # 验证 node_started 事件中有 FeishuSyncHook 实例
+ node_started_hooks = engine.hooks._hooks.get("node_started", )
+ assert any(isinstance(h, FeishuSyncHook) for h in node_started_hooks), \
+ "FeishuSyncHook 未注册到 node_started 事件"
+ # 验证 execution_completed 事件中也有
+ exec_completed_hooks = engine.hooks._hooks.get("execution_completed", )
+ assert any(isinstance(h, FeishuSyncHook) for h in exec_completed_hooks), \
+ "FeishuSyncHook 未注册到 execution_completed 事件"
