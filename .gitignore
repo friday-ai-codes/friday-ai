@@ -37,4 +37,3 @@ server/data/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 docs/api/
-docs/public/schema.json
