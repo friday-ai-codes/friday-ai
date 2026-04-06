@@ -39,6 +39,45 @@ _TERMINAL_STATUSES = {
 }
 # 数据补充类回调绕过终态检查（它们不改变状态，只追加数据）
 _DATA_APPEND_TYPES = {CallbackType.ACTION_LOG, CallbackType.TOKEN_USAGE}
+def _notify_barrier_manager(session: SubAgentSession, log: BoundLogger) -> None:
+ """通知 BarrierManager 任务完成/失败 — 由 chat_deep_analysis 回调触发。"""
+ is_success = session.status == SubAgentSession.Status.COMPLETED
+ async def _do_notify -> None:
+ try:
+ from orchestration.barrier import get_barrier_manager
+ from orchestration.contracts import BlockingTaskResult
+ output_text = ""
+ error_text = ""
+ if is_success:
+ task_result = await TaskResult.objects.filter(session=session).afirst
+ if task_result:
+ output_text = task_result.text_output or ""
+ if not output_text and task_result.raw_output:
+ output_text = str(task_result.raw_output)[:3000]
+ else:
+ error_text = session.last_error or f"Task {session.status}"
+ result: BlockingTaskResult = {
+ "task_id": session.session_id,
+ "task_type": session.task_type or "deep_analysis",
+ "success": is_success,
+ "output": output_text,
+ "error": error_text,
+ }
+ barrier = get_barrier_manager
+ satisfied = await barrier.task_completed(session.session_id, result)
+ log.info(
+ "barrier_task_notified",
+ session_id=session.session_id,
+ success=is_success,
+ barrier_satisfied=satisfied,
+ )
+ except Exception:
+ log.exception("barrier_notify_error", session_id=session.session_id)
+ try:
+ loop = asyncio.get_running_loop
+ loop.create_task(_do_notify)
+ except RuntimeError:
+ asyncio.run(_do_notify)
 def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -> None:
  """触发 Agent 会话恢复（当容器完成时）。
  仅当 session 有 main_session 但无 node_execution 时触发（纯 Agent 场景）。
@@ -52,7 +91,8 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
  log.debug("has_node_execution_skip_agent_resume")
  return
  if isinstance(session.last_output, dict) and session.last_output.get("source") == "chat_deep_analysis":
- log.debug("chat_deep_analysis_skip_agent_resume")
+ log.info("chat_deep_analysis_notify_barrier", session_id=session.session_id)
+ _notify_barrier_manager(session, log)
  return
  # 检查是否有 main_session
  if not session.main_session_id:
