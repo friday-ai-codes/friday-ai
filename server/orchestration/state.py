@@ -11,11 +11,19 @@ class RunPhase(str, enum.Enum):
  ERROR = "error"
 class WorkflowState(TypedDict, total=False):
  """LangGraph 编排 graph state — authoritative source。
- 只存编排语义，不存消息历史或工具调用细节。
+ 编排语义字段（Phase）：run_id / phase / blocking_tasks / user_message / final_answer
+ SDK 运行结果字段（Phase）：accumulated_thinking / tool_calls / result_metadata / agent_session_id
+ 所有字段为 JSON 可序列化类型，支持 checkpoint 持久化。
  DB 模型（Message, AgentSession, OrchestrationRun）是此 state 的投影。
  """
+ # 编排语义（Phase）
  run_id: str
  phase: str # RunPhase.value — 用 str 保持 JSON 序列化兼容
  blocking_tasks: list[dict[str, Any]]
  user_message: str
  final_answer: str
+ # SDK 运行结果（Phase）
+ accumulated_thinking: list[str]
+ tool_calls: list[dict[str, Any]]
+ result_metadata: dict[str, Any]
+ agent_session_id: str
