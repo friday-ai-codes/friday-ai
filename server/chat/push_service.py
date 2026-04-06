@@ -124,12 +124,20 @@ class ChatPushService:
  ) -> int:
  if not user_id:
  return 0
+ try:
  subscriptions = [
  sub async for sub in ChatPushSubscription.objects.filter(
  user_id=user_id,
  is_active=True,
  )
  ]
+ except Exception:
+ logger.warning(
+ "web_push_subscription_query_failed",
+ user_id=user_id,
+ conversation_id=conversation_id,
+ )
+ return 0
  if not subscriptions:
  return 0
  config = await ChatPushService.aget_or_create_vapid_config

@@ -102,6 +102,48 @@ def test_unknown_event_passthrough -> None:
  events = adapter.adapt(msg)
  assert len(events) == 1
  assert events[0].type == "some_future_event"
+class _FakeAssistantMessage:
+ def __init__(self, content_blocks: list[Any]) -> None:
+ self.content = content_blocks
+class _FakeToolUseBlock:
+ def __init__(self, tool_id: str, name: str, tool_input: dict[str, Any] | None = None) -> None:
+ self.id = tool_id
+ self.name = name
+ self.input = tool_input or {}
+_FakeToolUseBlock.__name__ = "ToolUseBlock"
+_FakeAssistantMessage.__name__ = "AssistantMessage"
+def _make_assistant_message(content_blocks: list[Any]) -> _FakeAssistantMessage:
+ """创建模拟 SDK AssistantMessage 的假对象。"""
+ return _FakeAssistantMessage(content_blocks)
+def _make_tool_use_block(tool_id: str, name: str, tool_input: dict[str, Any] | None = None) -> _FakeToolUseBlock:
+ return _FakeToolUseBlock(tool_id, name, tool_input)
+def test_tool_use_block_no_duplicate_on_input_update -> None:
+ """同一 tool_id 输入更新时不应再次发 TOOL_USE_START。"""
+ from agents.sdk.event_adapter import EventAdapter
+ adapter = EventAdapter(model=MODEL, session_id=SESSION_ID)
+ block_v1 = _make_tool_use_block("tool_1", "mcp__chat-tools__deep_analysis", {})
+ msg1 = _make_assistant_message([block_v1])
+ events1 = adapter.adapt(msg1)
+ assert len(events1) == 1
+ assert events1[0].type == TOOL_USE_START
+ block_v2 = _make_tool_use_block("tool_1", "mcp__chat-tools__deep_analysis", {"task_description": "分析代码"})
+ msg2 = _make_assistant_message([block_v2])
+ events2 = adapter.adapt(msg2)
+ assert len(events2) == 0, "Same tool_id with updated input should NOT emit another TOOL_USE_START"
+def test_multiple_different_tool_ids_each_emit_once -> None:
+ """不同 tool_id 应各自发出一次 TOOL_USE_START。"""
+ from agents.sdk.event_adapter import EventAdapter
+ adapter = EventAdapter(model=MODEL, session_id=SESSION_ID)
+ block_a = _make_tool_use_block("tool_a", "mcp__chat-tools__search_code", {"query": "test"})
+ block_b = _make_tool_use_block("tool_b", "mcp__chat-tools__deep_analysis", {"task_description": "分析"})
+ msg = _make_assistant_message([block_a, block_b])
+ events = adapter.adapt(msg)
+ assert len(events) == 2
+ assert events[0].data["tool_call_id"] == "tool_a"
+ assert events[1].data["tool_call_id"] == "tool_b"
+ msg2 = _make_assistant_message([block_a, block_b])
+ events2 = adapter.adapt(msg2)
+ assert len(events2) == 0, "Already-seen tool_ids should not emit again"
 def test_metadata_injection -> None:
  """所有事件 data 中注入 model 和 session_id 元数据。"""
  from agents.sdk.event_adapter import EventAdapter
