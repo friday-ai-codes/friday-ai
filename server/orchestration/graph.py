@@ -17,13 +17,18 @@ async def executing_node(
  config: RunnableConfig,
  writer: StreamWriter,
 ) -> dict[str, Any]:
- """驱动 SDKAgentRunner 并通过 StreamWriter 桥接流式事件。
- 从 config["configurable"] 获取运行时参数，在节点内部构建
- SdkRunnerConfig + SDKAgentRunner，运行 stream 并将每个
- AgentEvent 推送给外层 astream(stream_mode="custom") 消费者。
+ """驱动 SDKAgentRunner — 支持首次运行和 blocking_results 注入两种模式。
+ 模式 A（首次）：正常运行 SDK，提取 __blocking_task__ 标记。
+ 模式 B（二次）：注入 blocking_results 作为上下文再运行 SDK 生成最终回答。
  """
- if state.get("blocking_tasks"):
- return {"phase": RunPhase.WAITING.value}
+ blocking_results = state.get("blocking_results")
+ if blocking_results:
+ return await _execute_with_results(state, config, writer, blocking_results)
+ return await _execute_first_run(state, config, writer)
+async def _build_sdk_runner(
+ config: RunnableConfig,
+) -> tuple[SDKAgentRunner, str] | dict[str, Any]:
+ """从 config 构建 SDKAgentRunner，返回 (runner, agent_session_id) 或 error dict。"""
  cfg = config.get("configurable", {})
  api_key = cfg.get("api_key", "")
  if not api_key:
@@ -52,11 +57,16 @@ async def executing_node(
  agent_session=agent_session,
  max_budget_usd=cfg.get("max_budget_usd"),
  )
- runner = SDKAgentRunner(sdk_config)
+ return SDKAgentRunner(sdk_config), agent_session_id
+async def _run_sdk_stream(
+ runner: SDKAgentRunner,
+ prompt: str,
+ writer: StreamWriter,
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+ """运行 SDK stream，返回 (accumulated_thinking, tool_calls_by_id)。"""
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
- try:
- async for event in runner.stream(state.get("user_message", "")):
+ async for event in runner.stream(prompt):
  writer({"type": event.type, "data": event.data})
  if event.type == THINKING:
  thinking_text = event.data.get("thinking", "")
@@ -89,6 +99,55 @@ async def executing_node(
  entry["name"] = event.data["tool_name"]
  if "result" in event.data:
  entry["result"] = event.data["result"]
+ return accumulated_thinking, tool_calls_by_id
+async def _extract_blocking_tasks(
+ tool_calls_by_id: dict[str, dict[str, Any]],
+ session_id: str,
+) -> list[dict[str, Any]]:
+ """从 tool_calls 结果中提取 __blocking_task__ 标记，并 drain fallback registry。"""
+ from agents.tools.blocking_task_registry import drain_blocking_tasks
+ blocking_tasks: list[dict[str, Any]] =
+ for tc in tool_calls_by_id.values:
+ result = tc.get("result")
+ if isinstance(result, dict) and result.get("__blocking_task__"):
+ blocking_tasks.append({
+ "task_type": result["task_type"],
+ "task_id": result["task_id"],
+ "params": result.get("params", {}),
+ })
+ fallback_tasks = await drain_blocking_tasks(session_id)
+ if fallback_tasks:
+ blocking_tasks.extend(fallback_tasks)
+ return blocking_tasks
+def _build_result_metadata(runner: SDKAgentRunner) -> dict[str, Any]:
+ """从 runner.result 构建 result_metadata。"""
+ result = runner.result
+ result_metadata: dict[str, Any] = {
+ "status": result.status if result else "unknown",
+ }
+ if result and result.metadata:
+ result_metadata["cost_usd"] = result.metadata.get("cost_usd", 0)
+ if result and result.usage:
+ result_metadata["input_tokens"] = result.usage.get("input_tokens", 0)
+ result_metadata["output_tokens"] = result.usage.get("output_tokens", 0)
+ return result_metadata
+async def _execute_first_run(
+ state: WorkflowState,
+ config: RunnableConfig,
+ writer: StreamWriter,
+) -> dict[str, Any]:
+ """首次运行 SDK：正常执行并提取 blocking task 标记。"""
+ build_result = await _build_sdk_runner(config)
+ if isinstance(build_result, dict):
+ return build_result
+ runner, agent_session_id = build_result
+ cfg = config.get("configurable", {})
+ accumulated_thinking: list[str] =
+ tool_calls_by_id: dict[str, dict[str, Any]] = {}
+ try:
+ accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
+ runner, state.get("user_message", ""), writer,
+ )
  except Exception:
  logger.exception(
  "executing_node_sdk_error",
@@ -103,16 +162,25 @@ async def executing_node(
  "result_metadata": {"error": "SDK 运行异常"},
  "agent_session_id": agent_session_id,
  }
+ blocking_tasks = await _extract_blocking_tasks(
+ tool_calls_by_id, cfg.get("session_id", ""),
+ )
+ if blocking_tasks:
+ logger.info(
+ "executing_node_blocking_tasks_detected",
+ count=len(blocking_tasks),
+ task_ids=[t["task_id"] for t in blocking_tasks],
+ )
+ return {
+ "phase": RunPhase.WAITING.value,
+ "accumulated_thinking": accumulated_thinking,
+ "tool_calls": list(tool_calls_by_id.values),
+ "blocking_tasks": blocking_tasks,
+ "agent_session_id": agent_session_id,
+ }
+ result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
- result_metadata: dict[str, Any] = {
- "status": result.status if result else "unknown",
- }
- if result and result.metadata:
- result_metadata["cost_usd"] = result.metadata.get("cost_usd", 0)
- if result and result.usage:
- result_metadata["input_tokens"] = result.usage.get("input_tokens", 0)
- result_metadata["output_tokens"] = result.usage.get("output_tokens", 0)
  return {
  "phase": RunPhase.FINALIZING.value,
  "final_answer": final_answer,
@@ -120,6 +188,62 @@ async def executing_node(
  "tool_calls": list(tool_calls_by_id.values),
  "result_metadata": result_metadata,
  "agent_session_id": agent_session_id,
+ }
+async def _execute_with_results(
+ state: WorkflowState,
+ config: RunnableConfig,
+ writer: StreamWriter,
+ blocking_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+ """二次运行 SDK：注入 blocking_results 作为上下文生成最终回答。"""
+ build_result = await _build_sdk_runner(config)
+ if isinstance(build_result, dict):
+ return build_result
+ runner, agent_session_id = build_result
+ results_text = "\n\n".join(
+ f"=== {r.get('task_type', 'unknown')} (task_id: {r.get('task_id', '?')}) ===\n"
+ + (r.get("output", "") if r.get("success") else f"失败: {r.get('error', '未知错误')}")
+ for r in blocking_results
+ )
+ prompt = (
+ f"用户原始问题: {state.get('user_message', '')}\n\n"
+ f"你之前发起了以下分析任务，现在所有结果已返回：\n\n"
+ f"{results_text}\n\n"
+ f"请根据这些分析结果，综合回答用户的问题。"
+ )
+ cfg = config.get("configurable", {})
+ try:
+ accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
+ runner, prompt, writer,
+ )
+ except Exception:
+ logger.exception(
+ "executing_node_sdk_error_second_run",
+ session_id=cfg.get("session_id", ""),
+ )
+ result = runner.result
+ return {
+ "phase": RunPhase.ERROR.value,
+ "final_answer": (result.final_answer if result else None) or "",
+ "accumulated_thinking": state.get("accumulated_thinking", ),
+ "tool_calls": state.get("tool_calls", ),
+ "result_metadata": {"error": "SDK 二次运行异常"},
+ "agent_session_id": agent_session_id,
+ "blocking_results":,
+ }
+ all_thinking = state.get("accumulated_thinking", ) + accumulated_thinking
+ all_tool_calls = state.get("tool_calls", ) + list(tool_calls_by_id.values)
+ result_metadata = _build_result_metadata(runner)
+ result = runner.result
+ final_answer = (result.final_answer if result else None) or ""
+ return {
+ "phase": RunPhase.FINALIZING.value,
+ "final_answer": final_answer,
+ "accumulated_thinking": all_thinking,
+ "tool_calls": all_tool_calls,
+ "result_metadata": result_metadata,
+ "agent_session_id": agent_session_id,
+ "blocking_results":,
  }
 async def waiting_node(state: WorkflowState) -> dict[str, Any]:
  """等待阻塞任务完成，resume 后回到 executing 继续推理。

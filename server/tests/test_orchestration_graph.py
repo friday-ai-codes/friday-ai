@@ -94,36 +94,78 @@ async def test_normal_flow_without_blocking(graph_config: dict[str, Any]) -> Non
  assert result["phase"] == "completed"
  assert result["final_answer"] == "Hello!"
 @pytest.mark.asyncio
-async def test_interrupt_pauses_on_blocking_tasks -> None:
- """: 有阻塞任务时 graph 在 waiting 节点暂停。"""
+async def test_interrupt_pauses_on_blocking_tasks(graph_config: dict[str, Any]) -> None:
+ """: SDK tool 返回 __blocking_task__ 标记时 graph 在 waiting 节点暂停。"""
+ blocking_result = {
+ "__blocking_task__": True,
+ "task_type": "deep_analysis",
+ "task_id": "",
+ "params": {"query": "review this"},
+ }
+ events = [
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "input": {}},
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "result": blocking_result},
+ ),
+ *_default_events,
+ ]
+ mock_runner = _make_mock_runner(events, _default_result)
+ with _patch_sdk(mock_runner):
  graph = build_graph.compile(checkpointer=MemorySaver)
- config = {"configurable": {"thread_id": "test-interrupt-1"}}
- blocking = [{"task_type": "code_review", "task_id": "", "params": {}}]
  result = await graph.ainvoke(
- {"user_message": "review this", "run_id": "run-int-1", "blocking_tasks": blocking},
- config=config,
+ {"user_message": "review this", "run_id": "run-int-1"},
+ config=graph_config,
  )
  assert result["phase"] == "waiting"
- state = await graph.aget_state(config)
+ state = await graph.aget_state(graph_config)
  assert "waiting" in state.next
  assert any(t.interrupts for t in state.tasks)
 @pytest.mark.asyncio
-async def test_resume_continues_after_interrupt -> None:
- """: Command(resume=...) 恢复 graph 并传入结果。"""
- graph = build_graph.compile(checkpointer=MemorySaver)
- config = {"configurable": {"thread_id": "test-resume-1"}}
- blocking = [{"task_type": "code_review", "task_id": "", "params": {}}]
- await graph.ainvoke(
- {"user_message": "review this", "run_id": "run-res-1", "blocking_tasks": blocking},
- config=config,
+async def test_resume_continues_after_interrupt(graph_config: dict[str, Any]) -> None:
+ """: Command(resume=list[BlockingTaskResult]) 恢复 graph 回到 executing。"""
+ blocking_result = {
+ "__blocking_task__": True,
+ "task_type": "deep_analysis",
+ "task_id": "",
+ "params": {"query": "review this"},
+ }
+ events_first = [
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "input": {}},
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "result": blocking_result},
+ ),
+ *_default_events,
+ ]
+ mock_runner_first = _make_mock_runner(events_first, _default_result)
+ mock_runner_second = _make_mock_runner(
+ _default_events("综合回答"), _default_result("综合回答"),
  )
+ with _patch_sdk(mock_runner_first):
+ graph = build_graph.compile(checkpointer=MemorySaver)
+ await graph.ainvoke(
+ {"user_message": "review this", "run_id": "run-res-1"},
+ config=graph_config,
+ )
+ resume_results = [
+ {"task_id": "", "task_type": "deep_analysis", "success": True, "output": "分析结果", "error": ""},
+ ]
+ with _patch_sdk(mock_runner_second):
  result = await graph.ainvoke(
- Command(resume={"task_id": "", "output": "review approved"}),
- config=config,
+ Command(resume=resume_results),
+ config=graph_config,
  )
  assert result["phase"] == "completed"
- assert result["final_answer"] == "review approved"
+ assert result["final_answer"] == "综合回答"
  assert result["blocking_tasks"] ==
+ assert result.get("blocking_results") ==
 @pytest.mark.asyncio
 async def test_phase_transitions(graph_config: dict[str, Any]) -> None:
  """: graph state 中 phase 字段在每个节点正确转换。"""
