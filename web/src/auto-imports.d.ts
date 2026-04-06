@@ -44,6 +44,7 @@ declare global {
  const extractNodeVarRefs: typeof import('./composables/useDownstreamVarCheck').extractNodeVarRefs
  const getActivePinia: typeof import('pinia').getActivePinia
  const getCurrentInstance: typeof import('vue').getCurrentInstance
+ const getCurrentRunId: typeof import('./composables/useSSEStream').getCurrentRunId
  const getCurrentScope: typeof import('vue').getCurrentScope
  const getCurrentWatcher: typeof import('vue').getCurrentWatcher
  const getDownstreamVarDeps: typeof import('./composables/useDownstreamVarCheck').getDownstreamVarDeps
@@ -422,6 +423,7 @@ declare module 'vue' {
  readonly extractNodeVarRefs: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['extractNodeVarRefs']>
  readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
  readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
+ readonly getCurrentRunId: UnwrapRef<typeof import('./composables/useSSEStream')['getCurrentRunId']>
  readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
  readonly getCurrentWatcher: UnwrapRef<typeof import('vue')['getCurrentWatcher']>
  readonly getDownstreamVarDeps: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['getDownstreamVarDeps']>

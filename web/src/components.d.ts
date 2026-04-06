@@ -54,6 +54,7 @@ declare module 'vue' {
  ChatMessageArea: typeof import('./components/chat/ChatMessageArea.vue')['default']
  ChatMessageBubble: typeof import('./components/chat/ChatMessageBubble.vue')['default']
  ChatSidebar: typeof import('./components/chat/ChatSidebar.vue')['default']
+ ChatStatusBar: typeof import('./components/chat/ChatStatusBar.vue')['default']
  ChatToolCall: typeof import('./components/chat/ChatToolCall.vue')['default']
  ChatWelcome: typeof import('./components/chat/ChatWelcome.vue')['default']
  Checkbox: typeof import('./components/ui/checkbox/Checkbox.vue')['default']

@@ -2,7 +2,6 @@
 import type { IndexStatsResponse } from '~/api/repositories'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Progress } from '~/components/ui/progress'
 const props = defineProps<{
  repositoryId: string
@@ -78,16 +77,12 @@ function getPieSlices(distribution: Record<string, number>) {
 onMounted(loadStats)
 </script>
 <template>
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--bar-chart-3] text-indigo-500" />
- 索引统计
- </CardTitle>
- </CardHeader>
- <CardContent class="pt-6">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--bar-chart-3] text-primary" />
+ <h3 class="text-sm font-semibold">索引统计</h3>
+ </div>
+ <div class="">
  <!-- 加载状态 -->
  <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
  <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
@@ -114,20 +109,16 @@ onMounted(loadStats)
  <!-- 统计内容 -->
  <div v-else class="space-y-6">
  <!-- 数字指标 -->
- <div class="grid grid-cols-2 gap-4">
- <div class=" rounded-xl bg-indigo-500/5 border border-indigo-500/10">
- <p class="text-sm text-muted-foreground">
- 索引块数
- </p>
- <p class="text-2xl font-bold text-indigo-600">
+ <div class="grid grid-cols-2 gap-3">
+ <div class=" rounded-lg bg-muted/40 border border-border/50">
+ <p class="text-xs text-muted-foreground">索引块数</p>
+ <p class="text-xl font-bold text-foreground mt-0.5">
  {{ stats.chunks_total.toLocaleString }}
  </p>
  </div>
- <div class=" rounded-xl bg-emerald-500/5 border border-emerald-500/10">
- <p class="text-sm text-muted-foreground">
- 已索引文件
- </p>
- <p class="text-2xl font-bold text-emerald-600">
+ <div class=" rounded-lg bg-muted/40 border border-border/50">
+ <p class="text-xs text-muted-foreground">已索引文件</p>
+ <p class="text-xl font-bold text-foreground mt-0.5">
  {{ stats.indexed_files_count.toLocaleString }}
  </p>
  </div>
@@ -174,7 +165,6 @@ onMounted(loadStats)
  </div>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
 </template>

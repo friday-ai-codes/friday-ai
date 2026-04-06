@@ -9,7 +9,6 @@ import BaseModal from '~/components/modal/BaseModal.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
@@ -264,213 +263,173 @@ async function handleCustomToken {
  </Button>
  </div>
  </div>
- <div class="grid gap-6 md:grid-cols-2">
+ <div class="grid gap-4 md:grid-cols-2">
  <!-- 基本信息 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
- <CardTitle class="flex items-center gap-2">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--info] text-primary" />
- 基本信息
- </CardTitle>
- </CardHeader>
- <CardContent class="space-y-4 pt-6">
+ <h3 class="text-sm font-semibold">基本信息</h3>
+ </div>
+ <div class=" space-y-4">
  <div>
- <label class="text-sm text-muted-foreground">飞书项目 Key</label>
- <p class="font-mono text-sm mt-1">
+ <label class="text-xs text-muted-foreground">飞书项目 Key</label>
+ <p class="font-mono text-sm mt-1 text-foreground">
  {{ project.feishu_project_key || '未配置' }}
  </p>
  </div>
  <Separator class="bg-border/50" />
  <div class="flex gap-8">
  <div>
- <label class="text-sm text-muted-foreground">创建时间</label>
- <p class="text-sm mt-1">
+ <label class="text-xs text-muted-foreground">创建时间</label>
+ <p class="text-sm mt-1 text-foreground">
  {{ formatDate(project.created_at) }}
  </p>
  </div>
  <div>
- <label class="text-sm text-muted-foreground">更新时间</label>
- <p class="text-sm mt-1">
+ <label class="text-xs text-muted-foreground">更新时间</label>
+ <p class="text-sm mt-1 text-foreground">
  {{ formatDate(project.updated_at) }}
  </p>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  <!-- 关联仓库 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
- <div>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--git-branch] text-violet-500" />
- 关联仓库
- </CardTitle>
- <CardDescription>关联的 Git 仓库</CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--git-branch] text-primary" />
+ <h3 class="text-sm font-semibold">关联仓库</h3>
+ <span class="text-xs text-muted-foreground">({{ project.repositories?.length || 0 }})</span>
  </div>
- <Button variant="outline" size="sm" class="group" @click="openLinkDialog">
- <span class="icon-[lucide--settings-2] mr-2 group-hover:rotate-90 transition-transform" />
- 管理仓库
+ <Button variant="outline" size="sm" class=" text-xs" @click="openLinkDialog">
+ <span class="icon-[lucide--settings-2] mr-1.5" />
+ 管理
  </Button>
- </CardHeader>
- <CardContent class="pt-6">
- <div v-if="project.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
- <span class="icon-[lucide--git-branch] text-3xl mb-2 block opacity-50" />
- 暂无关联仓库
  </div>
- <div v-else class="space-y-3">
+ <div class="">
+ <div v-if="project.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
+ <span class="icon-[lucide--git-branch] text-2xl mb-2 block opacity-40" />
+ <p class="text-sm">暂无关联仓库</p>
+ </div>
+ <div v-else class="space-y-2">
  <div
  v-for="repo in project.repositories":key="repo.id"
- class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors"
+ class="flex items-center justify-between .5 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors"
  >
- <div>
+ <div class="min-w-0 flex-1">
  <div class="flex items-center gap-2">
- <span class="font-medium">{{ repo.name }}</span>
+ <span class="text-sm font-medium text-foreground">{{ repo.name }}</span>
  <Badge variant="outline" class="text-xs">
  {{ PLATFORM_LABELS[repo.git_platform] }}
  </Badge>
  </div>
- <div class="text-sm text-muted-foreground mt-1 font-mono text-xs">
+ <p class="text-xs text-muted-foreground mt-0.5 font-mono truncate">
  {{ repo.git_url }}
- </div>
+ </p>
  </div>
  <RouterLink:to="`/repositories/${repo.id}`">
- <Button variant="ghost" size="icon" class=" w-8" title="查看详情">
- <span class="icon-[lucide--eye]" />
+ <Button variant="ghost" size="icon" class=" w-7" title="查看详情">
+ <span class="icon-[lucide--eye] text-sm" />
  </Button>
  </RouterLink>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  <!-- 飞书配置 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-green-500/5">
- <div>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--message-square] text-emerald-500" />
- 飞书配置
- </CardTitle>
- <CardDescription>飞书项目 Webhook 集成</CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--message-square] text-primary" />
+ <h3 class="text-sm font-semibold">飞书配置</h3>
  </div>
  <RouterLink:to="`/projects/${project.id}/feishu`">
- <Button variant="outline" size="sm" class="group">
- <span class="icon-[lucide--settings] mr-2 group-hover:rotate-90 transition-transform" />
- 管理配置
+ <Button variant="ghost" size="sm" class=" text-xs group">
+ 管理
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
  </Button>
  </RouterLink>
- </CardHeader>
- <CardContent class="pt-6">
+ </div>
+ <div class="">
  <div v-if="feishuConfig?.is_configured" class="flex items-center gap-3">
- <div class=" rounded-full bg-emerald-500/10">
- <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
+ <div class=".5 rounded-full bg-emerald-500/10">
+ <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">
- 已配置
- </p>
- <p class="text-sm text-muted-foreground">
- 插件 ID：{{ feishuConfig.plugin_id }}
- </p>
+ <p class="text-sm font-medium text-foreground">已配置</p>
+ <p class="text-xs text-muted-foreground">插件 ID：{{ feishuConfig.plugin_id }}</p>
  </div>
  </div>
- <div v-else class="text-center py-6">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--link] text-3xl text-muted-foreground" />
+ <div v-else class="flex items-center gap-3 text-muted-foreground">
+ <span class="icon-[lucide--link] text-lg opacity-40" />
+ <div class="flex-1">
+ <p class="text-sm">尚未配置飞书集成</p>
  </div>
- <p class="text-muted-foreground">
- 尚未配置飞书集成
- </p>
  <RouterLink:to="`/projects/${project.id}/feishu`">
- <Button class="mt-4" size="sm">
- 配置飞书
- </Button>
+ <Button size="sm" class=" text-xs">配置</Button>
  </RouterLink>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  <!-- Claude 配置 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
- <div>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--bot] text-orange-500" />
- Claude 配置
- </CardTitle>
- <CardDescription>AI 开发任务配置</CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--bot] text-primary" />
+ <h3 class="text-sm font-semibold">Claude 配置</h3>
  </div>
  <RouterLink:to="`/projects/${project.id}/claude`">
- <Button variant="outline" size="sm" class="group">
- <span class="icon-[lucide--bot] mr-2 group-hover:scale-110 transition-transform" />
- 管理配置
+ <Button variant="ghost" size="sm" class=" text-xs group">
+ 管理
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
  </Button>
  </RouterLink>
- </CardHeader>
- <CardContent class="pt-6">
+ </div>
+ <div class="">
  <div v-if="claudeConfig?.has_api_key" class="flex items-center gap-3">
- <div class=" rounded-full bg-emerald-500/10">
- <span class="icon-[lucide--check-circle] text-2xl text-emerald-500" />
+ <div class=".5 rounded-full bg-emerald-500/10">
+ <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="font-medium">
- 已配置
- </p>
- <p class="text-sm text-muted-foreground">
+ <p class="text-sm font-medium text-foreground">已配置</p>
+ <p class="text-xs text-muted-foreground">
  来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
  </p>
- <p v-if="claudeConfig.base_url" class="text-sm text-muted-foreground">
+ <p v-if="claudeConfig.base_url" class="text-xs text-muted-foreground">
  Base URL：{{ claudeConfig.base_url }}
  </p>
  </div>
  </div>
- <div v-else class="text-center py-6">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--bot] text-3xl text-muted-foreground" />
+ <div v-else class="flex items-center gap-3 text-muted-foreground">
+ <span class="icon-[lucide--bot] text-lg opacity-40" />
+ <div class="flex-1">
+ <p class="text-sm">尚未配置 Claude API 密钥</p>
  </div>
- <p class="text-muted-foreground">
- 尚未配置 Claude API 密钥
- </p>
  <RouterLink:to="`/projects/${project.id}/claude`">
- <Button class="mt-4" size="sm">
- 配置 Claude
- </Button>
+ <Button size="sm" class=" text-xs">配置</Button>
  </RouterLink>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  <!-- Webhook Token 管理 -->
- <div class="relative md:col-span-2">
- <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--key] text-cyan-500" />
- Webhook Token
- </CardTitle>
- <CardDescription>用于验证飞书 Webhook 请求的来源</CardDescription>
- </CardHeader>
- <CardContent class="space-y-4 pt-6">
+ <div class="card md:col-span-2">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--key] text-primary" />
+ <h3 class="text-sm font-semibold">Webhook Token</h3>
+ <span class="text-xs text-muted-foreground ml-1">用于验证飞书 Webhook 请求的来源</span>
+ </div>
+ <div class=" space-y-4">
  <div class="space-y-2">
- <Label class="text-muted-foreground">当前 Token</Label>
+ <Label class="text-xs text-muted-foreground">当前 Token</Label>
  <div class="flex items-center gap-2">
- <code class="flex-1 px-4 py-3 bg-muted/50 rounded-xl font-mono text-sm overflow-hidden text-ellipsis border border-border/50">
+ <code class="flex-1 px-3 py-2 bg-muted/40 rounded-lg font-mono text-sm overflow-hidden text-ellipsis border border-border/50 text-foreground">
  {{ project.webhook_token }}
  </code>
  <Button
  variant="outline"
  size="icon"
- class=" w-11"
+ class=" w-9"
  title="复制 Token"
  @click="copyWebhookToken"
  >
@@ -478,76 +437,67 @@ async function handleCustomToken {
  </Button>
  </div>
  </div>
- <div class="flex items-start gap-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
- <span class="icon-[lucide--alert-triangle] text-xl text-amber-500 shrink-0 mt-0.5" />
- <p class="text-sm text-amber-700 dark:text-amber-300">
- 请勿泄露此 Token，它用于验证 Webhook 请求的来源。如果 Token 泄露，请立即刷新。
+ <div class="flex items-start gap-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+ <span class="icon-[lucide--alert-triangle] text-amber-500 shrink-0 mt-0.5" />
+ <p class="text-xs text-amber-700 dark:text-amber-300">
+ 请勿泄露此 Token。如果 Token 泄露，请立即刷新。
  </p>
  </div>
- <div class="flex gap-3">
- <Button variant="outline" class="group" @click="refreshTokenDialogOpen = true">
- <span class="icon-[lucide--refresh-cw] mr-2 group-hover:rotate-180 transition-transform duration-500" />
+ <div class="flex gap-2">
+ <Button variant="outline" size="sm" @click="refreshTokenDialogOpen = true">
+ <span class="icon-[lucide--refresh-cw] mr-1.5" />
  刷新 Token
  </Button>
- <Button variant="outline" class="group" @click="openCustomTokenDialog">
- <span class="icon-[lucide--pencil] mr-2 group-hover:scale-110 transition-transform" />
+ <Button variant="outline" size="sm" @click="openCustomTokenDialog">
+ <span class="icon-[lucide--pencil] mr-1.5" />
  自定义 Token
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  </div>
  <!-- 相关执行 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
- <div>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--layers] text-amber-500" />
- 相关执行
- </CardTitle>
- <CardDescription>此项目下的工作流执行记录</CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--layers] text-primary" />
+ <h3 class="text-sm font-semibold">相关执行</h3>
  </div>
  <RouterLink:to="`/executions?project_id=${project.id}`">
- <Button variant="outline" size="sm" class="group">
+ <Button variant="ghost" size="sm" class=" text-xs group">
  查看全部
- <span class="icon-[lucide--arrow-right] ml-2 group-hover:translate-x-1 transition-transform" />
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
  </Button>
  </RouterLink>
- </CardHeader>
- <CardContent class="pt-6">
- <div v-if="projectExecutions.length === 0" class="text-center py-8 text-muted-foreground">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--inbox] text-3xl" />
  </div>
- <p>暂无执行记录</p>
+ <div class="">
+ <div v-if="projectExecutions.length === 0" class="text-center py-6 text-muted-foreground">
+ <span class="icon-[lucide--inbox] text-2xl mb-2 block opacity-40" />
+ <p class="text-sm">暂无执行记录</p>
  </div>
- <div v-else class="space-y-2">
+ <div v-else class="space-y-1.5">
  <RouterLink
  v-for="(execution, index) in projectExecutions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
- class="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-amber-500/30 transition-all group"
+ class="flex items-center justify-between rounded-lg hover:bg-muted/40 transition-colors group"
  >
- <div class="flex items-center gap-4">
- <div class="w-8 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center text-sm font-medium text-amber-600">
+ <div class="flex items-center gap-3">
+ <div class="w-6 rounded bg-muted/60 flex items-center justify-center text-xs font-medium text-muted-foreground">
  {{ index + 1 }}
  </div>
  <div>
- <span class="font-medium group-hover:text-amber-600 transition-colors">{{ execution.workflow_name }}</span>
- <StatusBadge type="execution":status="execution.status" size="sm" class="ml-3" />
+ <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ execution.workflow_name }}</span>
+ <StatusBadge type="execution":status="execution.status" size="sm" class="ml-2" />
  </div>
  </div>
- <div class="flex items-center gap-3">
- <span class="text-sm text-muted-foreground">
+ <div class="flex items-center gap-2">
+ <span class="text-xs text-muted-foreground">
  {{ formatDate(execution.created_at) }}
  </span>
- <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
+ <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
  </div>
  </RouterLink>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
  </template>
  <!-- 项目不存在 -->
