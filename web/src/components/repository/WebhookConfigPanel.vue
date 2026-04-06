@@ -7,7 +7,6 @@ import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 const props = defineProps<{
@@ -101,17 +100,15 @@ onMounted( => {
 })
 </script>
 <template>
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-rose-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-rose-500/5 to-pink-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--shield-check] text-rose-500" />
- 索引健康与配置
- </CardTitle>
- <CardDescription>健康状态、新鲜度与自动索引配置</CardDescription>
- </CardHeader>
- <CardContent class="pt-6 space-y-5">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--shield-check] text-primary" />
+ <h3 class="text-sm font-semibold">索引健康与配置</h3>
+ </div>
+ <p class="text-xs text-muted-foreground mt-0.5">健康状态、新鲜度与自动索引配置</p>
+ </div>
+ <div class=" space-y-5">
  <!-- 健康状态 -->
  <div class="space-y-2">
  <p class="text-sm font-medium text-muted-foreground">
@@ -267,7 +264,6 @@ onMounted( => {
  <p>3. 如有 Secret，填入上方的 Secret 值用于签名验证</p>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
 </template>

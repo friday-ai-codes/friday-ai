@@ -5,7 +5,6 @@ import { repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -70,17 +69,15 @@ watch([currentPage, statusFilter], loadHistory)
 onMounted(loadHistory)
 </script>
 <template>
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-teal-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-teal-500/5 to-emerald-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--history] text-teal-500" />
- 索引历史
- </CardTitle>
- <CardDescription>查看每次索引操作的详细记录</CardDescription>
- </CardHeader>
- <CardContent class="pt-6">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--history] text-primary" />
+ <h3 class="text-sm font-semibold">索引历史</h3>
+ </div>
+ <p class="text-xs text-muted-foreground mt-0.5">查看每次索引操作的详细记录</p>
+ </div>
+ <div class="">
  <!-- 状态筛选 -->
  <div class="flex gap-2 mb-4">
  <Button
@@ -176,7 +173,6 @@ onMounted(loadHistory)
  </div>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
 </template>

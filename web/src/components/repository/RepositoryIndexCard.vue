@@ -6,7 +6,6 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -107,20 +106,16 @@ onUnmounted( => {
 })
 </script>
 <template>
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-cyan-500/10 via-primary/10 to-cyan-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="flex flex-row items-center justify-between border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-primary/5">
- <div>
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--database] text-cyan-500" />
- 代码索引
- </CardTitle>
- <CardDescription>向量化代码库用于语义搜索</CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--database] text-primary" />
+ <h3 class="text-sm font-semibold">代码索引</h3>
+ <span class="text-xs text-muted-foreground">向量化代码库</span>
  </div>
  <StatusBadge v-if="indexStatus" type="index":status="indexStatus.index_status" />
- </CardHeader>
- <CardContent class="pt-6">
+ </div>
+ <div class="">
  <!-- 加载状态 -->
  <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
  <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
@@ -242,7 +237,6 @@ onUnmounted( => {
  </Button>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
  </div>
 </template>

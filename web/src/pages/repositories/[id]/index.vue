@@ -96,24 +96,22 @@ function copyUrl {
  <!-- 仓库详情 -->
  <template v-else-if="repository">
  <!-- ==================== 头部区域 ==================== -->
- <div class="relative">
- <div class="absolute -inset-2 bg-gradient-to-r from-violet-500/8 via-purple-500/5 to-cyan-500/8 rounded-3xl blur-2xl" />
- <div class="relative bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl overflow-hidden">
- <!-- 顶部渐变装饰线 -->
- <div class=" bg-gradient-to-r from-violet-500 via-purple-500 to-cyan-500" />
- <div class=" space-y-5">
+ <div class="card overflow-hidden">
+ <!-- 顶部装饰线 -->
+ <div class=".5 bg-gradient-to-r from-primary via-primary/70 to-primary/40" />
+ <div class=" space-y-4">
  <!-- 第一行：标题 + 操作按钮 -->
  <div class="flex items-start justify-between gap-4">
- <div class="flex items-center gap-4 min-w-0">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/15 to-purple-500/10 shrink-0">
- <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
+ <div class="flex items-center gap-3 min-w-0">
+ <div class=" rounded-lg bg-primary/10 shrink-0">
+ <span class="icon-[lucide--git-branch] text-xl text-primary" />
  </div>
  <div class="min-w-0">
- <div class="flex items-center gap-3 flex-wrap">
- <h1 class="text-2xl font-bold truncate">
+ <div class="flex items-center gap-2 flex-wrap">
+ <h1 class="text-xl font-bold text-foreground truncate">
  {{ repository.name }}
  </h1>
- <Badge variant="outline" class="shrink-0">
+ <Badge variant="outline" class="shrink-0 text-xs">
  <span:class="platformIcons[repository.git_platform]" class="mr-1" />
  {{ PLATFORM_LABELS[repository.git_platform] }}
  </Badge>
@@ -123,12 +121,12 @@ function copyUrl {
  </Badge>
  </div>
  <!-- Git URL -->
- <div class="flex items-center gap-2 mt-1.5">
- <p class="text-sm text-muted-foreground font-mono truncate">
+ <div class="flex items-center gap-1.5 mt-1">
+ <p class="text-xs text-muted-foreground font-mono truncate">
  {{ repository.git_url }}
  </p>
  <button
- class=" rounded hover:bg-muted/60 transition-colors shrink-0"
+ class=".5 rounded hover:bg-muted/60 transition-colors shrink-0"
  title="复制 URL"
  @click="copyUrl"
  >
@@ -138,40 +136,36 @@ function copyUrl {
  </div>
  </div>
  <div class="flex items-center gap-2 shrink-0">
- <Button variant="outline" size="sm" class="group" @click="editDialogOpen = true">
- <span class="icon-[lucide--pencil] mr-1.5 group-hover:scale-110 transition-transform" />
+ <Button variant="outline" size="sm" class=" text-xs" @click="editDialogOpen = true">
+ <span class="icon-[lucide--pencil] mr-1.5" />
  编辑
  </Button>
- <Button variant="outline" size="sm" class="group hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-1.5 group-hover:scale-110 transition-transform" />
+ <Button variant="outline" size="sm" class=" text-xs hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50" @click="deleteDialogOpen = true">
+ <span class="icon-[lucide--trash-2] mr-1.5" />
  删除
  </Button>
  </div>
  </div>
  <!-- 描述 -->
- <div v-if="repository.description" class="text-sm text-muted-foreground pl-[68px]">
+ <div v-if="repository.description" class="text-sm text-muted-foreground pl-[52px]">
  <MarkdownPreview:content="repository.description" />
  </div>
  <!-- 快速状态指示器 -->
- <div class="flex items-center gap-3 pl-[68px] flex-wrap">
- <!-- 凭证状态 -->
+ <div class="flex items-center gap-2 pl-[52px] flex-wrap">
  <div
- class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors":class="credential
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="credential
  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': 'bg-muted/60 text-muted-foreground border border-border/50'"
  >
  <span:class="credential ? 'icon-[lucide--shield-check]': 'icon-[lucide--shield-off]'" />
  {{ credential ? '凭证已配置': '未配置凭证' }}
  </div>
- <!-- 关联项目数 -->
- <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50">
+ <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50">
  <span class="icon-[lucide--folder]" />
  {{ repository.projects?.length || 0 }} 个关联项目
  </div>
- <!-- 代理 URL -->
- <div v-if="repository.proxy_url" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
+ <div v-if="repository.proxy_url" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
  <span class="icon-[lucide--globe]" />
  已配置代理
- </div>
  </div>
  </div>
  </div>
@@ -193,103 +187,88 @@ function copyUrl {
  </TabsTrigger>
  </TabsList>
  <!-- ========== 概览 Tab ========== -->
- <TabsContent value="overview" class="space-y-6 mt-0">
- <div class="grid gap-6 lg:grid-cols-3">
+ <TabsContent value="overview" class="space-y-4 mt-0">
+ <div class="grid gap-4 lg:grid-cols-3">
  <!-- 左侧：基本信息 -->
- <div class="lg:col-span-2 space-y-6">
+ <div class="lg:col-span-2 space-y-4">
  <!-- 仓库信息卡片 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/5 to-violet-500/10 rounded-3xl blur-xl opacity-60" />
- <div class="relative bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl">
- <div class="px-6 py-4 border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
- <h3 class="font-semibold flex items-center gap-2">
- <span class="icon-[lucide--info] text-violet-500" />
- 仓库信息
- </h3>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--info] text-primary" />
+ <h3 class="text-sm font-semibold">仓库信息</h3>
  </div>
  <div class="">
- <div class="grid gap-6 sm:grid-cols-2">
+ <div class="grid gap-5 sm:grid-cols-2">
  <div>
- <label class="text-xs text-muted-foreground uppercase tracking-wider">Git 平台</label>
- <p class="text-sm mt-1 font-medium">
+ <label class="text-xs text-muted-foreground">Git 平台</label>
+ <p class="text-sm mt-1 font-medium text-foreground">
  {{ PLATFORM_LABELS[repository.git_platform] }}
  </p>
  </div>
  <div>
- <label class="text-xs text-muted-foreground uppercase tracking-wider">默认分支</label>
- <p class="text-sm mt-1 font-mono">
+ <label class="text-xs text-muted-foreground">默认分支</label>
+ <p class="text-sm mt-1 font-mono text-foreground">
  {{ repository.default_branch }}
  </p>
  </div>
  <div v-if="repository.proxy_url">
- <label class="text-xs text-muted-foreground uppercase tracking-wider">代理 URL</label>
- <p class="text-sm mt-1 font-mono break-all">
+ <label class="text-xs text-muted-foreground">代理 URL</label>
+ <p class="text-sm mt-1 font-mono break-all text-foreground">
  {{ repository.proxy_url }}
  </p>
  </div>
  <div>
- <label class="text-xs text-muted-foreground uppercase tracking-wider">创建时间</label>
- <p class="text-sm mt-1">
+ <label class="text-xs text-muted-foreground">创建时间</label>
+ <p class="text-sm mt-1 text-foreground">
  {{ formatDate(repository.created_at) }}
  </p>
  </div>
  <div>
- <label class="text-xs text-muted-foreground uppercase tracking-wider">最近更新</label>
- <p class="text-sm mt-1">
+ <label class="text-xs text-muted-foreground">最近更新</label>
+ <p class="text-sm mt-1 text-foreground">
  {{ formatDate(repository.updated_at) }}
  </p>
  </div>
  </div>
  </div>
  </div>
- </div>
  <!-- 关联项目 -->
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-60" />
- <div class="relative bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl">
- <div class="px-6 py-4 border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
- <h3 class="font-semibold flex items-center gap-2">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--folder] text-primary" />
- 关联项目
- </h3>
+ <h3 class="text-sm font-semibold">关联项目</h3>
+ <span class="text-xs text-muted-foreground">({{ repository.projects?.length || 0 }})</span>
  </div>
  <div class="">
- <div v-if="!repository.projects || repository.projects.length === 0" class="text-center py-8">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--folder] text-2xl text-muted-foreground" />
+ <div v-if="!repository.projects || repository.projects.length === 0" class="text-center py-6">
+ <span class="icon-[lucide--folder] text-2xl text-muted-foreground/40 block mb-2" />
+ <p class="text-sm text-muted-foreground">暂无关联项目</p>
  </div>
- <p class="text-sm text-muted-foreground">
- 暂无关联项目
- </p>
- </div>
- <div v-else class="space-y-2">
+ <div v-else class="space-y-1.5">
  <RouterLink
  v-for="project in repository.projects":key="project.id":to="`/projects/${project.id}`"
- class="flex items-center justify-between .5 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/40 hover:border-primary/30 transition-all group"
+ class="flex items-center justify-between .5 rounded-lg hover:bg-muted/40 transition-colors group"
  >
- <div class="flex items-center gap-3">
- <div class="w-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--folder-open] text-sm text-primary" />
+ <div class="flex items-center gap-2.5">
+ <div class="w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--folder-open] text-xs text-primary" />
  </div>
- <span class="font-medium text-sm group-hover:text-primary transition-colors">{{ project.name }}</span>
+ <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ project.name }}</span>
  </div>
- <span class="icon-[lucide--chevron-right] text-muted-foreground group-hover:translate-x-1 transition-transform" />
+ <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
  </RouterLink>
- </div>
  </div>
  </div>
  </div>
  </div>
  <!-- 右侧：凭证状态 -->
  <div>
- <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 rounded-3xl blur-xl opacity-60" />
- <div class="relative bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl">
- <div class="px-6 py-4 border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5 flex items-center justify-between">
- <h3 class="font-semibold flex items-center gap-2">
- <span class="icon-[lucide--key] text-amber-500" />
- 凭证配置
- </h3>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--key] text-primary" />
+ <h3 class="text-sm font-semibold">凭证配置</h3>
+ </div>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
  <Button variant="ghost" size="sm" class=" text-xs group">
  管理
@@ -298,44 +277,38 @@ function copyUrl {
  </RouterLink>
  </div>
  <div class="">
- <div v-if="credential" class="space-y-5">
- <div class="flex items-center gap-3">
+ <div v-if="credential" class="space-y-4">
+ <div class="flex items-center gap-2.5">
  <div class=".5 rounded-full bg-emerald-500/10">
- <span class="icon-[lucide--check-circle] text-xl text-emerald-500" />
+ <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="font-medium text-sm">
- 凭证已配置
- </p>
- <p class="text-xs text-muted-foreground mt-0.5">
+ <p class="text-sm font-medium text-foreground">凭证已配置</p>
+ <p class="text-xs text-muted-foreground">
  {{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
  </p>
  </div>
  </div>
- <div class="space-y-3 pt-2 border-t border-border/50">
+ <div class="space-y-3 pt-3 border-t border-border/50">
  <div>
  <label class="text-xs text-muted-foreground">Git 用户名</label>
- <p class="text-sm mt-0.5 font-medium">
+ <p class="text-sm mt-0.5 font-medium text-foreground">
  {{ credential.git_user_name || '-' }}
  </p>
  </div>
  <div>
  <label class="text-xs text-muted-foreground">Git 邮箱</label>
- <p class="text-sm mt-0.5">
+ <p class="text-sm mt-0.5 text-foreground">
  {{ credential.git_user_email || '-' }}
  </p>
  </div>
  </div>
  </div>
- <div v-else class="text-center py-8">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--lock] text-2xl text-muted-foreground" />
- </div>
- <p class="text-sm text-muted-foreground mb-4">
- 尚未配置凭证
- </p>
+ <div v-else class="text-center py-6">
+ <span class="icon-[lucide--lock] text-2xl text-muted-foreground/40 block mb-2" />
+ <p class="text-sm text-muted-foreground mb-3">尚未配置凭证</p>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
- <Button size="sm">
+ <Button size="sm" class=" text-xs">
  <span class="icon-[lucide--key] mr-1.5" />
  配置凭证
  </Button>
@@ -345,17 +318,13 @@ function copyUrl {
  </div>
  </div>
  </div>
- </div>
  </TabsContent>
  <!-- ========== 代码索引 Tab ========== -->
- <TabsContent value="indexing" class="space-y-6 mt-0">
- <div class="grid gap-6 lg:grid-cols-2">
- <!-- 索引状态与操作 -->
+ <TabsContent value="indexing" class="space-y-4 mt-0">
+ <div class="grid gap-4 lg:grid-cols-2">
  <RepositoryIndexCard:repository-id="repository.id" />
- <!-- 索引统计 -->
  <IndexStatsPanel:repository-id="repository.id" />
  </div>
- <!-- 索引历史 - 全宽 -->
  <IndexHistoryList:repository-id="repository.id" />
  </TabsContent>
  <!-- ========== 自动化 Tab ========== -->

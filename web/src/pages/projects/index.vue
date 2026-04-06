@@ -92,33 +92,27 @@ async function handleDelete {
  @action="openCreateProject"
  />
  <!-- 项目列表 -->
- <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+ <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
  <RouterLink
  v-for="project in projectsStore.projects":key="project.id":to="`/projects/${project.id}`"
- class="group relative rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-teal-500/10 hover:-translate-y-0.5"
+ class="card card-interactive group flex flex-col"
  >
- <!-- 渐变背景层 -->
- <div class="absolute inset-0 bg-gradient-to-br from-card via-card/90 to-primary/5" />
- <div class="absolute inset-0 bg-gradient-to-br from-primary/[0.03] via-transparent to-cyan-500/[0.06] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
- <!-- 边框 -->
- <div class="absolute inset-0 rounded-2xl border border-border/50 group-hover:border-primary/30 transition-colors duration-300" />
- <!-- 内容 -->
- <div class="relative space-y-4">
+ <div class=" flex-1 space-y-3">
  <!-- 标题行 -->
- <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 shrink-0 shadow-sm shadow-primary/10">
- <span class="icon-[lucide--folder-git-2] text-lg text-primary" />
+ <div class="flex items-center gap-2.5">
+ <div class=".5 rounded-lg bg-primary/10 shrink-0">
+ <span class="icon-[lucide--folder-git-2] text-base text-primary" />
  </div>
- <h3 class="text-base font-semibold text-foreground group-hover:text-primary transition-colors truncate flex-1">
+ <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate flex-1">
  {{ project.name }}
  </h3>
  </div>
  <!-- 描述 -->
- <p class="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+ <p class="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
  {{ project.description || '暂无描述' }}
  </p>
  <!-- 底部信息行 -->
- <div class="flex items-center justify-between pt-1">
+ <div class="flex items-center justify-between">
  <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
  <span class="icon-[lucide--git-branch] text-primary/60" />
  <span>{{ project.repositories?.length || 0 }} 个仓库</span>
@@ -131,8 +125,8 @@ async function handleDelete {
  </Badge>
  </div>
  </div>
- <!-- 悬浮操作栏 -->
- <div class="relative flex items-center gap-2 px-5 py-3 border-t border-border/30 bg-card/50">
+ <!-- 底部操作栏 -->
+ <div class="flex items-center gap-2 px-4 py-2.5 border-t border-border/50">
  <button class="btn btn-secondary btn-sm flex-1" @click.prevent>
  <span class="icon-[lucide--arrow-right]" />
  查看详情

@@ -98,30 +98,26 @@ const platformIcons: Record<string, string> = {
  @action="$router.push('/repositories/new')"
  />
  <!-- 仓库列表 -->
- <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+ <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
  <RouterLink
  v-for="repository in repositoriesStore.repositories":key="repository.id":to="`/repositories/${repository.id}`"
- class="group relative"
+ class="card card-interactive group flex flex-col"
  >
- <!-- 卡片主体 -->
- <div class="card card-interactive h-full ">
- <!-- 头部 -->
- <div class="flex items-start justify-between mb-4">
- <div class=".5 rounded-xl bg-gradient-to-br from-teal-500/10 to-cyan-500/10 flex items-center justify-center">
- <span class="text-2xl text-teal-500":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
+ <div class=" flex-1 space-y-3">
+ <!-- 标题行 -->
+ <div class="flex items-center gap-2.5">
+ <div class=".5 rounded-lg bg-primary/10 shrink-0">
+ <span class="text-base text-primary":class="`icon-[${platformIcons[repository.git_platform] || 'lucide--git-branch'}]`" />
  </div>
- <Badge:variant="repository.has_credential ? 'default': 'secondary'"
- class="text-xs"
- >
- <span:class="repository.has_credential ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
- {{ repository.has_credential ? '已配置凭证': '未配置凭证' }}
- </Badge>
- </div>
- <!-- 内容 -->
- <div class="space-y-3">
- <h3 class="text-lg font-semibold group-hover:text-primary transition-colors">
+ <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate flex-1">
  {{ repository.name }}
  </h3>
+ <Badge:variant="repository.has_credential ? 'default': 'secondary'"
+ class="text-xs shrink-0"
+ >
+ {{ repository.has_credential ? '凭证': '无凭证' }}
+ </Badge>
+ </div>
  <!-- 平台和分支 -->
  <div class="flex items-center gap-2 flex-wrap">
  <Badge variant="outline" class="text-xs">
@@ -131,19 +127,18 @@ const platformIcons: Record<string, string> = {
  <span class="icon-[lucide--git-branch]" />
  {{ repository.default_branch }}
  </span>
- <Badge v-if="repository.linked_projects_count" variant="secondary" class="text-xs">
- <span class="icon-[lucide--folder] mr-1" />
+ <span v-if="repository.linked_projects_count" class="text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--folder]" />
  {{ repository.linked_projects_count }} 个项目
- </Badge>
+ </span>
  </div>
  <!-- 仓库 URL -->
- <div class="flex items-center gap-2 text-sm text-muted-foreground pt-2">
- <span class="icon-[lucide--link] flex-shrink-0" />
- <span class="truncate":title="repository.git_url">{{ repository.git_url }}</span>
+ <p class="text-xs text-muted-foreground font-mono truncate":title="repository.git_url">
+ {{ repository.git_url }}
+ </p>
  </div>
- </div>
- <!-- 操作按钮 -->
- <div class="flex items-center gap-2 mt-6 pt-4 border-t border-border/50">
+ <!-- 底部操作栏 -->
+ <div class="flex items-center gap-2 px-4 py-2.5 border-t border-border/50">
  <button class="btn btn-secondary btn-sm flex-1" @click.prevent>
  <span class="icon-[lucide--eye]" />
  查看详情
@@ -159,7 +154,6 @@ const platformIcons: Record<string, string> = {
  >
  <span class="icon-[lucide--trash-2]" />
  </button>
- </div>
  </div>
  </RouterLink>
  </div>

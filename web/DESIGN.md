@@ -1,14 +1,20 @@
-# 前端设计规范 — Glassmorphism 玻璃拟态
+# 前端设计规范 — Sub2API Clean Card 风格
+## 设计理念（来自 sub2api 参考）
+- **统一主色**：全站只用 primary（teal）作为强调色，不给每个卡片分配不同颜色
+- **干净卡片**：纯白底 + 极细边框 + 微阴影，不使用彩色 glow/blur 背景层
+- **清晰文字层次**：`text-foreground` 用于标题和值，`text-muted-foreground` 用于标签，禁止灰到看不见
+- **紧凑间距**：卡片内边距 ``~``，卡片间距 `gap-4`，避免大面积空白
 ## 核心特征
 | 元素 | 类名 |
 | ---------------- | -------------------------------------------------------------------- |
-| 玻璃卡片 | `bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl` |
-| 玻璃卡片（增强） | `glass-card rounded-2xl`（使用 sub2api 风格阴影） |
-| 环境光晕 | 背景用 `blur-3xl` 渐变圆形 |
-| 图标容器 | `bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg ` |
-| 渐变文字 | `bg-gradient-to-r bg-clip-text text-transparent` |
-| 悬浮效果 | `group-hover:shadow-lg group-hover:border-primary/30 transition-all` |
-| Glow 光效 | `shadow-glow`（青色辉光效果） |
+| 标准卡片 | `.card`（白底、`rounded-2xl`、`shadow-card`、`border-border/50`） |
+| 可交互卡片 | `.card .card-interactive`（hover 上浮 + 加深阴影） |
+| 卡片头部 | `px-5 py-3.5 border-b border-border/50` + 图标 + 标题 |
+| 卡片内容 | `` |
+| 图标容器（小） | `.5 rounded-lg bg-primary/10` |
+| 图标容器（大） | ` rounded-lg bg-primary/10` |
+| 悬浮效果 | `.card-interactive`（translateY + shadow-card-hover） |
+| 玻璃卡片（特殊） | `glass-card rounded-2xl`（仅用于 Hero/登录等特殊场景） |
 ## CSS 双轨分层原则
 项目同时使用 **shadcn 原语组件** 和 **语义 CSS 类** 两套体系，各有分工：
 | 体系 | 用途 | 示例 |
@@ -24,11 +30,43 @@
 <!-- 错误：混用两套体系 -->
 <Button class="btn btn-primary">操作</Button>
 ```
+## 卡片模式
+### 详情页卡片（统一风格）
+```vue
+<!-- 正确：干净的 .card + 统一 primary 图标 -->
+<div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--info] text-primary" />
+ <h3 class="text-sm font-semibold">卡片标题</h3>
+ </div>
+ <div class="">内容</div>
+</div>
+<!-- 错误：每个卡片用不同彩色 glow -->
+<div class="relative">
+ <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 ..." />
+ <Card class="relative bg-card/80 backdrop-blur-sm">...</Card>
+</div>
+```
+### 列表页卡片
+```vue
+<RouterLink class="card card-interactive group flex flex-col">
+ <div class=" flex-1 space-y-3">...</div>
+ <div class="px-4 py-2.5 border-t border-border/50">操作栏</div>
+</RouterLink>
+```
+### 文字层次
+| 用途 | 类名 | 说明 |
+| -------- | ----------------------- | ------------------------ |
+| 标题 | `text-foreground` | 深色，清晰可读 |
+| 值/数据 | `text-foreground` | 与标题同色 |
+| 标签 | `text-muted-foreground` | 灰色辅助文字 |
+| 描述 | `text-muted-foreground` | 配合 `text-xs` 或 `text-sm` |
+| mono 值 | `font-mono text-foreground` | 代码/URL/Token |
 ## 功能色系
-- 主要：`from-teal-500 to-cyan-400`（青色系）
-- 任务：`from-violet-500 to-purple-400`
-- 警示：`from-amber-500 to-orange-400`
-- 成功：`from-emerald-500 to-teal-400`
+- 主要强调：`text-primary`（所有卡片图标统一用 primary）
+- 成功状态：`text-emerald-500`（仅用于状态指示器）
+- 警告提示：`text-amber-500`（仅用于警告提示框）
+- 错误状态：`text-destructive`（仅用于错误/危险操作）
 ## Badge 使用规范
 ### 可用 variant
 | variant | 用途 | 色系 |
@@ -133,9 +171,13 @@ Emits: `clear`
 - 卡片阴影：`shadow-card` — 基础卡片投影
 - 悬浮阴影：`shadow-card-hover` — 悬浮时增强投影
 ## 禁止
+- **彩虹卡片**：给同一页面的不同卡片分配不同颜色（violet、emerald、orange、rose 等）
+- **Glow 背景层**：`absolute -inset-1 bg-gradient-to-r ... blur-xl` 的彩色光晕效果
+- **渐变卡片头**：`bg-gradient-to-r from-xxx/5 to-yyy/5` 给每个卡片头染不同色
+- 使用 shadcn `<Card>` 组件包裹详情页区块（用 `.card` CSS 类代替，更简洁）
 - 扁平无装饰卡片、小圆角（`rounded-md` 或更小）
-- 单调 hover 效果（仅变色，无阴影/光效）
 - 使用旧蓝色系 (#3F72AF) 硬编码颜色值
 - 在 Badge 上使用 `:class` 追加颜色类覆盖样式
 - 在各页面/组件内部独立定义状态颜色映射（`statusColors` / `statusMap` 等）
 - 在列表页手写 header HTML 结构（应使用 `PageHeader` 组件）
+- 标签/值文字用过浅的灰色（`text-xs text-muted-foreground uppercase tracking-wider` 导致看不清）
