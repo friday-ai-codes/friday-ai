@@ -5,8 +5,16 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter, interrupt
-from agents.core.events import PHASE_TRANSITION, TASK_PROGRESS, THINKING, TOOL_USE_RESULT, TOOL_USE_START
-from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
+from agents.core.events import (
+ MESSAGE_COMPLETE,
+ PHASE_TRANSITION,
+ TASK_PROGRESS,
+ TEXT_DELTA,
+ THINKING,
+ TOOL_USE_RESULT,
+ TOOL_USE_START,
+)
+from agents.chat_runner import ChatAnthropicRunner, ChatRunnerConfig
 from orchestration.checkpointer import get_checkpointer
 from orchestration.runner_registry import register_runner, unregister_runner
 from orchestration.state import RunPhase, WorkflowState
@@ -19,7 +27,7 @@ async def executing_node(
  config: RunnableConfig,
  writer: StreamWriter,
 ) -> dict[str, Any]:
- """驱动 SDKAgentRunner — 支持首次运行和 blocking_results 注入两种模式。
+ """驱动 ChatAnthropicRunner — 支持首次运行和 blocking_results 注入两种模式。
  模式 A（首次）：正常运行 SDK，提取 __blocking_task__ 标记。
  模式 B（二次）：注入 blocking_results 作为上下文再运行 SDK 生成最终回答。
  """
@@ -27,10 +35,10 @@ async def executing_node(
  if blocking_results:
  return await _execute_with_results(state, config, writer, blocking_results)
  return await _execute_first_run(state, config, writer)
-async def _build_sdk_runner(
+async def _build_chat_runner(
  config: RunnableConfig,
-) -> tuple[SDKAgentRunner, str] | dict[str, Any]:
- """从 config 构建 SDKAgentRunner，返回 (runner, agent_session_id) 或 error dict。"""
+) -> tuple[ChatAnthropicRunner, str] | dict[str, Any]:
+ """从 config 构建 ChatAnthropicRunner，返回 (runner, agent_session_id) 或 error dict。"""
  cfg = config.get("configurable", {})
  api_key = cfg.get("api_key", "")
  if not api_key:
@@ -46,7 +54,7 @@ async def _build_sdk_runner(
  agent_session = await AgentSession.objects.aget(id=agent_session_id)
  except AgentSession.DoesNotExist:
  pass
- sdk_config = SdkRunnerConfig(
+ runner_config = ChatRunnerConfig(
  system_prompt=cfg.get("system_prompt", ""),
  model=cfg.get("model", ""),
  project_id=cfg.get("project_id", ""),
@@ -59,20 +67,20 @@ async def _build_sdk_runner(
  agent_session=agent_session,
  max_budget_usd=cfg.get("max_budget_usd"),
  )
- return SDKAgentRunner(sdk_config), agent_session_id
-async def _run_sdk_stream(
- runner: SDKAgentRunner,
+ return ChatAnthropicRunner(runner_config), agent_session_id
+async def _run_chat_stream(
+ runner: ChatAnthropicRunner,
  prompt: str,
  writer: StreamWriter,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
- """运行 SDK stream，返回 (accumulated_thinking, tool_calls_by_id)。
+ """运行 Chat runner stream，返回 (accumulated_thinking, tool_calls_by_id)。
  中断时通过 writer 推送 phase_transition interrupted 确认事件后重新抛出。
  """
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
+ blocking_marker_seen = False
  try:
  async for event in runner.stream(prompt):
- writer({"type": event.type, "data": event.data})
  if event.type == THINKING:
  thinking_text = event.data.get("thinking", "")
  if thinking_text:
@@ -104,6 +112,13 @@ async def _run_sdk_stream(
  entry["name"] = event.data["tool_name"]
  if "result" in event.data:
  entry["result"] = event.data["result"]
+ if isinstance(event.data["result"], dict) and event.data["result"].get("__blocking_task__"):
+ blocking_marker_seen = True
+ should_forward = True
+ if blocking_marker_seen and event.type in {THINKING, TEXT_DELTA, MESSAGE_COMPLETE}:
+ should_forward = False
+ if should_forward:
+ writer({"type": event.type, "data": event.data})
  except asyncio.CancelledError:
  try:
  writer({"type": PHASE_TRANSITION, "data": {"phase": "interrupted"}})
@@ -130,7 +145,7 @@ async def _extract_blocking_tasks(
  if fallback_tasks:
  blocking_tasks.extend(fallback_tasks)
  return blocking_tasks
-def _build_result_metadata(runner: SDKAgentRunner) -> dict[str, Any]:
+def _build_result_metadata(runner: ChatAnthropicRunner) -> dict[str, Any]:
  """从 runner.result 构建 result_metadata。"""
  result = runner.result
  result_metadata: dict[str, Any] = {
@@ -147,8 +162,8 @@ async def _execute_first_run(
  config: RunnableConfig,
  writer: StreamWriter,
 ) -> dict[str, Any]:
- """首次运行 SDK：正常执行并提取 blocking task 标记。"""
- build_result = await _build_sdk_runner(config)
+ """首次运行 Chat runner：正常执行并提取 blocking task 标记。"""
+ build_result = await _build_chat_runner(config)
  if isinstance(build_result, dict):
  return build_result
  runner, agent_session_id = build_result
@@ -160,12 +175,12 @@ async def _execute_first_run(
  if conv_id:
  register_runner(conv_id, runner)
  try:
- accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
+ accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
  runner, state.get("user_message", ""), writer,
  )
  except Exception:
  logger.exception(
- "executing_node_sdk_error",
+ "executing_node_chat_runner_error",
  session_id=cfg.get("session_id", ""),
  )
  result = runner.result
@@ -174,7 +189,7 @@ async def _execute_first_run(
  "final_answer": (result.final_answer if result else None) or "",
  "accumulated_thinking": accumulated_thinking,
  "tool_calls": list(tool_calls_by_id.values),
- "result_metadata": {"error": "SDK 运行异常"},
+ "result_metadata": {"error": "Chat runner 运行异常"},
  "agent_session_id": agent_session_id,
  }
  finally:
@@ -216,8 +231,8 @@ async def _execute_with_results(
  writer: StreamWriter,
  blocking_results: list[dict[str, Any]],
 ) -> dict[str, Any]:
- """二次运行 SDK：注入 blocking_results 作为上下文生成最终回答。"""
- build_result = await _build_sdk_runner(config)
+ """二次运行 Chat runner：注入 blocking_results 作为上下文生成最终回答。"""
+ build_result = await _build_chat_runner(config)
  if isinstance(build_result, dict):
  return build_result
  runner, agent_session_id = build_result
@@ -238,12 +253,12 @@ async def _execute_with_results(
  if conv_id:
  register_runner(conv_id, runner)
  try:
- accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
+ accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
  runner, prompt, writer,
  )
  except Exception:
  logger.exception(
- "executing_node_sdk_error_second_run",
+ "executing_node_chat_runner_error_second_run",
  session_id=cfg.get("session_id", ""),
  )
  result = runner.result
@@ -252,7 +267,7 @@ async def _execute_with_results(
  "final_answer": (result.final_answer if result else None) or "",
  "accumulated_thinking": state.get("accumulated_thinking", ),
  "tool_calls": state.get("tool_calls", ),
- "result_metadata": {"error": "SDK 二次运行异常"},
+ "result_metadata": {"error": "Chat runner 二次运行异常"},
  "agent_session_id": agent_session_id,
  "blocking_results":,
  }

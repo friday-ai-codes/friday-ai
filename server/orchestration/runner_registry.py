@@ -3,16 +3,17 @@
 graph executing_node 注册，send_message_stream finally 注销。
 """
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
- from agents.sdk.runner import SDKAgentRunner
-_active_runners: dict[str, "SDKAgentRunner"] = {}
-def register_runner(conversation_id: str, runner: "SDKAgentRunner") -> None:
+ class InterruptibleRunner(Protocol):
+ async def interrupt(self) -> None: ...
+_active_runners: dict[str, "InterruptibleRunner"] = {}
+def register_runner(conversation_id: str, runner: "InterruptibleRunner") -> None:
  """注册活跃 runner（executing_node 进入时调用）。"""
  _active_runners[conversation_id] = runner
 def unregister_runner(conversation_id: str) -> None:
  """注销 runner（executing_node 退出时调用）。"""
  _active_runners.pop(conversation_id, None)
-def get_active_runner(conversation_id: str) -> "SDKAgentRunner | None":
+def get_active_runner(conversation_id: str) -> "InterruptibleRunner | None":
  """获取对话的活跃 runner（供 interrupt API 调用）。"""
  return _active_runners.get(conversation_id)

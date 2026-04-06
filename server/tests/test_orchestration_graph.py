@@ -1,8 +1,9 @@
 from __future__ import annotations
 from collections.abc import AsyncGenerator
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 import pytest
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 from agents.core.events import (
@@ -19,9 +20,9 @@ from orchestration.graph import build_graph
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def graph_config -> dict[str, Any]:
- """带 SDK 运行时配置的 graph config。"""
- return {
+def graph_config -> RunnableConfig:
+ """带 Chat runner 运行时配置的 graph config。"""
+ return cast(RunnableConfig, {
  "configurable": {
  "thread_id": "test-sdk-1",
  "conversation_id": "conv-123",
@@ -37,7 +38,7 @@ def graph_config -> dict[str, Any]:
  "api_base_url": "",
  "max_budget_usd": None,
  }
- }
+ })
 def _make_mock_runner(
  events: list[AgentEvent],
  result: AgentResult | None = None,
@@ -71,8 +72,8 @@ def _default_events(text: str = "Hello!") -> list[AgentEvent]:
  ),
  ]
 def _patch_sdk(mock_runner: MagicMock): # noqa: ANN202
- """Patch SDKAgentRunner 构造函数返回 mock_runner。"""
- return patch("orchestration.graph.SDKAgentRunner", return_value=mock_runner)
+ """Patch ChatAnthropicRunner 构造函数返回 mock_runner。"""
+ return patch("orchestration.graph.ChatAnthropicRunner", return_value=mock_runner)
 # ---------------------------------------------------------------------------
 # Phase 保留测试（更新为兼容 SDK 集成后的 executing_node）
 # ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ async def test_graph_compiles -> None:
  graph = build_graph.compile(checkpointer=MemorySaver)
  assert graph is not None
 @pytest.mark.asyncio
-async def test_normal_flow_without_blocking(graph_config: dict[str, Any]) -> None:
+async def test_normal_flow_without_blocking(graph_config: RunnableConfig) -> None:
  """: 无阻塞任务时 graph 完整执行 planning → executing → finalizing。"""
  mock_runner = _make_mock_runner(_default_events, _default_result)
  with _patch_sdk(mock_runner):
@@ -94,7 +95,7 @@ async def test_normal_flow_without_blocking(graph_config: dict[str, Any]) -> Non
  assert result["phase"] == "completed"
  assert result["final_answer"] == "Hello!"
 @pytest.mark.asyncio
-async def test_interrupt_pauses_on_blocking_tasks(graph_config: dict[str, Any]) -> None:
+async def test_interrupt_pauses_on_blocking_tasks(graph_config: RunnableConfig) -> None:
  """: SDK tool 返回 __blocking_task__ 标记时 graph 在 waiting 节点暂停。"""
  blocking_result = {
  "__blocking_task__": True,
@@ -125,7 +126,7 @@ async def test_interrupt_pauses_on_blocking_tasks(graph_config: dict[str, Any]) 
  assert "waiting" in state.next
  assert any(t.interrupts for t in state.tasks)
 @pytest.mark.asyncio
-async def test_resume_continues_after_interrupt(graph_config: dict[str, Any]) -> None:
+async def test_resume_continues_after_interrupt(graph_config: RunnableConfig) -> None:
  """: Command(resume=list[BlockingTaskResult]) 恢复 graph 回到 executing。"""
  blocking_result = {
  "__blocking_task__": True,
@@ -167,7 +168,7 @@ async def test_resume_continues_after_interrupt(graph_config: dict[str, Any]) ->
  assert result["blocking_tasks"] ==
  assert result.get("blocking_results") ==
 @pytest.mark.asyncio
-async def test_phase_transitions(graph_config: dict[str, Any]) -> None:
+async def test_phase_transitions(graph_config: RunnableConfig) -> None:
  """: graph state 中 phase 字段在每个节点正确转换。"""
  mock_runner = _make_mock_runner(_default_events, _default_result)
  with _patch_sdk(mock_runner):
@@ -185,7 +186,7 @@ async def test_phase_transitions(graph_config: dict[str, Any]) -> None:
  phases_seen.reverse
  assert phases_seen == ["executing", "finalizing", "completed"]
 @pytest.mark.asyncio
-async def test_graph_state_is_authoritative(graph_config: dict[str, Any]) -> None:
+async def test_graph_state_is_authoritative(graph_config: RunnableConfig) -> None:
  """: graph checkpoint 保存的 state 为 authoritative source。"""
  mock_runner = _make_mock_runner(_default_events, _default_result)
  with _patch_sdk(mock_runner):
@@ -202,7 +203,7 @@ async def test_graph_state_is_authoritative(graph_config: dict[str, Any]) -> Non
 # Phase 新增 SDK 集成测试
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_executing_node_runs_sdk_and_streams_events(graph_config: dict[str, Any]) -> None:
+async def test_executing_node_runs_sdk_and_streams_events(graph_config: RunnableConfig) -> None:
  """executing_node 运行 SDK 并通过 StreamWriter 推送事件。"""
  events = _default_events("SDK response")
  mock_runner = _make_mock_runner(events, _default_result("SDK response"))
@@ -219,7 +220,7 @@ async def test_executing_node_runs_sdk_and_streams_events(graph_config: dict[str
  assert TEXT_DELTA in types
  assert MESSAGE_COMPLETE in types
 @pytest.mark.asyncio
-async def test_executing_node_accumulates_thinking(graph_config: dict[str, Any]) -> None:
+async def test_executing_node_accumulates_thinking(graph_config: RunnableConfig) -> None:
  """executing_node 累积 thinking 事件到 state。"""
  events = [
  AgentEvent(type=THINKING, data={"thinking": "Let me think about this..."}),
@@ -239,7 +240,7 @@ async def test_executing_node_accumulates_thinking(graph_config: dict[str, Any])
  assert "Let me think about this..." in thinking
  assert "The answer is clear." in thinking
 @pytest.mark.asyncio
-async def test_executing_node_accumulates_tool_calls(graph_config: dict[str, Any]) -> None:
+async def test_executing_node_accumulates_tool_calls(graph_config: RunnableConfig) -> None:
  """executing_node 累积 tool call 事件到 state。"""
  events = [
  AgentEvent(
@@ -266,7 +267,7 @@ async def test_executing_node_accumulates_tool_calls(graph_config: dict[str, Any
  assert tool_calls[0]["result"] == "found 3 results"
  assert tool_calls[0]["input"] == {"query": "test"}
 @pytest.mark.asyncio
-async def test_executing_node_populates_result_metadata(graph_config: dict[str, Any]) -> None:
+async def test_executing_node_populates_result_metadata(graph_config: RunnableConfig) -> None:
  """executing_node 将 SDK result 中的 usage/cost 写入 result_metadata。"""
  mock_runner = _make_mock_runner(_default_events, _default_result)
  with _patch_sdk(mock_runner):
@@ -282,7 +283,7 @@ async def test_executing_node_populates_result_metadata(graph_config: dict[str, 
  assert meta["input_tokens"] == 100
  assert meta["output_tokens"] == 50
 @pytest.mark.asyncio
-async def test_graph_full_flow_with_sdk(graph_config: dict[str, Any]) -> None:
+async def test_graph_full_flow_with_sdk(graph_config: RunnableConfig) -> None:
  """端到端 flow: planning → executing (mock SDK) → finalizing → completed。"""
  mock_runner = _make_mock_runner(_default_events("full flow"), _default_result("full flow"))
  with _patch_sdk(mock_runner):
@@ -304,7 +305,7 @@ async def test_graph_full_flow_with_sdk(graph_config: dict[str, Any]) -> None:
  phases_seen.reverse
  assert phases_seen == ["executing", "finalizing", "completed"]
 @pytest.mark.asyncio
-async def test_executing_node_handles_sdk_error(graph_config: dict[str, Any]) -> None:
+async def test_executing_node_handles_sdk_error(graph_config: RunnableConfig) -> None:
  """SDK 异常时 executing_node 返回 phase=ERROR + result_metadata 包含错误。"""
  mock_runner = _make_mock_runner(, error=RuntimeError("SDK crashed"))
  mock_runner.result = None
@@ -315,7 +316,7 @@ async def test_executing_node_handles_sdk_error(graph_config: dict[str, Any]) ->
  config=graph_config,
  )
  assert result["phase"] == "error"
- assert result["result_metadata"]["error"] == "SDK 运行异常"
+ assert result["result_metadata"]["error"] == "Chat runner 运行异常"
 # ---------------------------------------------------------------------------
 # Phase 新增 — blocking task 提取、循环拓扑、结果注入
 # ---------------------------------------------------------------------------
@@ -347,7 +348,7 @@ def _blocking_task_events(
  events.extend(_default_events)
  return events
 @pytest.mark.asyncio
-async def test_waiting_resumes_to_executing(graph_config: dict[str, Any]) -> None:
+async def test_waiting_resumes_to_executing(graph_config: RunnableConfig) -> None:
  """Phase: resume 后 graph 回到 executing（非 finalizing）。"""
  events_first = _blocking_task_events(("bt-1", "deep_analysis"))
  mock_runner_first = _make_mock_runner(events_first, _default_result)
@@ -379,7 +380,7 @@ async def test_waiting_resumes_to_executing(graph_config: dict[str, Any]) -> Non
  assert "executing" in phases_seen
  assert "waiting" in phases_seen
 @pytest.mark.asyncio
-async def test_multiple_blocking_tasks_collected(graph_config: dict[str, Any]) -> None:
+async def test_multiple_blocking_tasks_collected(graph_config: RunnableConfig) -> None:
  """Phase: 同一轮 SDK 运行中多个 blocking tasks 都被收集。"""
  events = _blocking_task_events(
  ("bt-a", "deep_analysis"),
@@ -398,7 +399,49 @@ async def test_multiple_blocking_tasks_collected(graph_config: dict[str, Any]) -
  task_ids = {t["task_id"] for t in blocking_tasks}
  assert task_ids == {"bt-a", "bt-b"}
 @pytest.mark.asyncio
-async def test_blocking_results_injection(graph_config: dict[str, Any]) -> None:
+async def test_blocking_marker_suppresses_premature_text_events(graph_config: RunnableConfig) -> None:
+ """blocking tool 返回后，后续同轮正文不应再透传给前端。"""
+ events = [
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "input": {}},
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_call_id": "tc-block-1",
+ "tool_name": "deep_analysis",
+ "result": {
+ "__blocking_task__": True,
+ "task_type": "deep_analysis",
+ "task_id": "bt-cut-1",
+ "params": {},
+ },
+ },
+ ),
+ AgentEvent(type=THINKING, data={"thinking": "不该继续暴露这段思考"}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "我还拿不到结果"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"result": "我还拿不到结果", "status": "completed"}),
+ ]
+ mock_runner = _make_mock_runner(events, _default_result("我还拿不到结果"))
+ with _patch_sdk(mock_runner):
+ graph = build_graph.compile(checkpointer=MemorySaver)
+ streamed_types: list[str] =
+ async for chunk in graph.astream(
+ {"user_message": "分析代码", "run_id": "run-work-item"},
+ config=graph_config,
+ stream_mode=["custom", "values"],
+ version="v2",
+ ):
+ if chunk["type"] == "custom":
+ streamed_types.append(chunk["data"]["type"])
+ assert TOOL_USE_START in streamed_types
+ assert TOOL_USE_RESULT in streamed_types
+ assert THINKING not in streamed_types
+ assert TEXT_DELTA not in streamed_types
+ assert MESSAGE_COMPLETE not in streamed_types
+@pytest.mark.asyncio
+async def test_blocking_results_injection(graph_config: RunnableConfig) -> None:
  """Phase: 二次 executing 运行注入 blocking_results 生成最终回答。"""
  events_first = _blocking_task_events(("bt-inj-1", "deep_analysis"))
  mock_runner_first = _make_mock_runner(events_first, _default_result)
@@ -430,7 +473,7 @@ async def test_blocking_results_injection(graph_config: dict[str, Any]) -> None:
  assert result["final_answer"] == "根据分析结果，以下是建议"
  assert result.get("blocking_results") ==
 @pytest.mark.asyncio
-async def test_loop_count_prevents_infinite_loops(graph_config: dict[str, Any]) -> None:
+async def test_loop_count_prevents_infinite_loops(graph_config: RunnableConfig) -> None:
  """Phase: wait-execute 循环超过 2 次时强制走 finalizing。"""
  blocking_events = _blocking_task_events(("bt-loop", "deep_analysis"))
  mock_runner_1 = _make_mock_runner(blocking_events, _default_result)
@@ -454,7 +497,7 @@ async def test_loop_count_prevents_infinite_loops(graph_config: dict[str, Any]) 
  assert r["phase"] == "completed"
  assert r.get("wait_execute_loops", 0) >= 2
 @pytest.mark.asyncio
-async def test_blocking_results_cleared_after_second_run(graph_config: dict[str, Any]) -> None:
+async def test_blocking_results_cleared_after_second_run(graph_config: RunnableConfig) -> None:
  """Phase: blocking_results 在二次运行后被清空。"""
  events_first = _blocking_task_events(("bt-clr-1", "deep_analysis"))
  mock_runner_first = _make_mock_runner(events_first, _default_result)

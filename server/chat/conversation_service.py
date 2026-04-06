@@ -289,6 +289,28 @@ async def _handle_waiting_state(
  conversation_id=conv_id_str,
  blocking_task_count=len(blocking_tasks),
  )
+def _build_message_complete_event(
+ *,
+ final_content: str,
+ result_metadata: dict[str, Any],
+ model: str,
+ session_id: str,
+) -> AgentEvent:
+ """构建兜底 MESSAGE_COMPLETE 事件，确保前端能收到最终正文。"""
+ payload: dict[str, Any] = {
+ "final_answer": final_content,
+ "result": final_content,
+ "status": result_metadata.get("status", "completed"),
+ "model": model,
+ "session_id": session_id,
+ "usage": {
+ "input_tokens": result_metadata.get("input_tokens", 0),
+ "output_tokens": result_metadata.get("output_tokens", 0),
+ },
+ }
+ if "cost_usd" in result_metadata:
+ payload["cost_usd"] = result_metadata.get("cost_usd", 0)
+ return AgentEvent(type=MESSAGE_COMPLETE, data=payload)
 class ConversationService:
  """对话系统业务逻辑服务。"""
  @staticmethod
@@ -419,6 +441,7 @@ class ConversationService:
  pass
  graph_task = asyncio.create_task(_run_graph)
  detached_finalizer = False
+ message_complete_seen = False
  try:
  # 事件消费循环（带 keepalive 心跳）
  while True:
@@ -432,6 +455,7 @@ class ConversationService:
  if event is None:
  break
  if event.type == MESSAGE_COMPLETE:
+ message_complete_seen = True
  event.data.setdefault("model", model)
  event.data.setdefault("session_id", session_id)
  yield event
@@ -478,6 +502,13 @@ class ConversationService:
  user_message=content,
  notification_user_id=notification_user_id,
  publish_title_event=True,
+ )
+ if not message_complete_seen:
+ yield _build_message_complete_event(
+ final_content=final_content,
+ result_metadata=result_metadata,
+ model=model,
+ session_id=session_id,
  )
  for title_event in final_events:
  yield title_event

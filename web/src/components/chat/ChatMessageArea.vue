@@ -58,7 +58,7 @@ watch(
  role: 'assistant',
  content: '',
  created_at: new Date.toISOString,
- }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs"
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs"
  />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">

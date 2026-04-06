@@ -1,9 +1,8 @@
-"""SDK 配置构建 — 从对话和 provider 配置构建 SdkRunnerConfig。"""
+"""Chat 运行配置构建。"""
 from __future__ import annotations
 import uuid
-from typing import Any
 from agents.models import AgentSession
-from agents.sdk.runner import SdkRunnerConfig
+from agents.chat_runner import ChatRunnerConfig
 from chat.conversation_service import _build_system_prompt
 from chat.models import Conversation
 from chat.services import aget_setting_value
@@ -13,13 +12,13 @@ async def build_sdk_config(
  conversation: Conversation,
  role: str = "developer",
  notification_user_id: str | None = None,
-) -> tuple[SdkRunnerConfig, AgentSession]:
- """从 Conversation 实例构建 SdkRunnerConfig 和 AgentSession。
+) -> tuple[ChatRunnerConfig, AgentSession]:
+ """从 Conversation 实例构建 ChatRunnerConfig 和 AgentSession。
  提取自 ConversationService.send_message_stream 的配置构建段，
  将散落在 40+ 行中的 API key 解析、model 解析、session 创建等逻辑
  收敛为单一函数。调用方需确保 conversation 已 select_related("project")。
  Returns:
- (SdkRunnerConfig, AgentSession) 元组
+ (ChatRunnerConfig, AgentSession) 元组
  Raises:
  ValueError: provider 配置解析失败（API key 缺失等）
  """
@@ -47,7 +46,7 @@ async def build_sdk_config(
  )
  budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
  max_budget_usd = float(budget_str) if budget_str else None
- config = SdkRunnerConfig(
+ config = ChatRunnerConfig(
  system_prompt=_build_system_prompt(project_name, project_id, role=role),
  model=model,
  project_id=project_id,
