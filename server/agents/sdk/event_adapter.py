@@ -122,18 +122,8 @@ class EventAdapter:
  }),
  )
  )
- elif tool_input and tool_input != self._last_tool_input.get(tool_id):
+ else:
  self._last_tool_input[tool_id] = tool_input
- events.append(
- AgentEvent(
- type=TOOL_USE_START,
- data=self._inject_metadata({
- "tool_name": tool_name,
- "tool_call_id": tool_id,
- "input": tool_input,
- }),
- )
- )
  if events:
  logger.debug(
  "assistant_message_extracted",
