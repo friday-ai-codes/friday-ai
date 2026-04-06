@@ -65,9 +65,9 @@ function getExecutionInfo(status: string | null): { icon: string, color: string,
  case 'failed':
  return { icon: 'icon-[lucide--circle-x]', color: 'text-red-500', label: '执行失败' }
  case 'cancelled':
- return { icon: 'icon-[lucide--circle-slash]', color: 'text-gray-400', label: '已取消' }
+ return { icon: 'icon-[lucide--circle-slash]', color: 'text-muted-foreground', label: '已取消' }
  default:
- return { icon: 'icon-[lucide--circle-dot]', color: 'text-gray-400', label: status }
+ return { icon: 'icon-[lucide--circle-dot]', color: 'text-muted-foreground', label: status }
  }
 }
 // 打开详情弹窗

@@ -40,19 +40,19 @@ function handleCancel {
  @closed="emit('closed')"
  >
  <!-- Header -->
- <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
- <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+ <div class="px-6 py-4 border-b border-border/30">
+ <h3 class="text-lg font-semibold text-foreground">
  {{ title }}
  </h3>
  </div>
  <!-- Body -->
  <div class="px-6 py-4">
- <p class="text-gray-600 dark:text-gray-400">
+ <p class="text-muted-foreground">
  {{ message }}
  </p>
  </div>
  <!-- Footer -->
- <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+ <div class="flex justify-end gap-3 px-6 py-4 border-t border-border/30">
  <Button variant="outline":disabled="isLoading" @click="handleCancel">
  {{ cancelText }}
  </Button>

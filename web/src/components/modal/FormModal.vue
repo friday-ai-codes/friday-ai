@@ -44,13 +44,13 @@ function handleCancel {
  @closed="emit('closed')"
  >
  <!-- Header -->
- <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
- <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+ <div class="flex items-center justify-between px-6 py-4 border-b border-border/30">
+ <h3 class="text-lg font-semibold text-foreground">
  {{ title }}
  </h3>
  <button
  type="button"
- class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+ class="text-muted-foreground hover:text-foreground transition-colors"
  @click="handleCancel"
  >
  <svg class="w-5 " fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,7 +64,7 @@ function handleCancel {
  <slot />
  </div>
  <!-- Footer -->
- <div class="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+ <div class="flex justify-end gap-3 px-6 py-4 border-t border-border/30">
  <Button type="button" variant="outline":disabled="isLoading" @click="handleCancel">
  {{ cancelText }}
  </Button>

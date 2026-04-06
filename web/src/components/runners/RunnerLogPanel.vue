@@ -251,7 +251,7 @@ watch( => filteredLogs.value.length, => {
  >
  <div class="flex items-center justify-between">
  <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--terminal] text-gray-500" />
+ <span class="icon-[lucide--terminal] text-muted-foreground" />
  实时日志
  </CardTitle>
  <span
@@ -300,7 +300,7 @@ watch( => filteredLogs.value.length, => {
  v-for="log in filteredLogs":key="log.id"
  class="flex items-start gap-2 py-0.5 leading-5"
  >
- <span class="text-gray-500 shrink-0">{{ formatTimestamp(log.timestamp) }}</span>
+ <span class="text-muted-foreground shrink-0">{{ formatTimestamp(log.timestamp) }}</span>
  <span class="shrink-0 w-4 mt-0.5":class="[getLogIcon(log), getLogColor(log)]" />
  <span:class="getLogColor(log)">{{ formatLogMessage(log) }}</span>
  </div>

@@ -36,14 +36,14 @@ const statusBorderClass = computed( => {
  running: 'border-primary/80 node-running-border',
  completed: 'border-green-400/60',
  failed: 'border-red-400/70',
- pending: 'border-gray-300/50',
- skipped: 'border-gray-300/30 opacity-50',
+ pending: 'border-border/50',
+ skipped: 'border-border/30 opacity-50',
  waiting_approval: 'border-orange-400/60',
  waiting_event: 'border-indigo-400/60',
  paused: 'border-yellow-400/60',
- cancelled: 'border-gray-400/50',
+ cancelled: 'border-border/50',
  }
- return map[props.data.status] ?? 'border-gray-300/50'
+ return map[props.data.status] ?? 'border-border/50'
 })
 /** 瓶颈光晕 — 用 shadow + ring 避免与状态色 border 冲突 */
 const bottleneckClass = computed( => {
@@ -69,14 +69,14 @@ const statusDotClass = computed( => {
  running: 'bg-primary animate-pulse',
  completed: 'bg-green-400',
  failed: 'bg-red-400',
- pending: 'bg-gray-300',
- skipped: 'bg-gray-300',
+ pending: 'bg-muted-foreground/50',
+ skipped: 'bg-muted-foreground/50',
  waiting_approval: 'bg-orange-400 animate-pulse',
  waiting_event: 'bg-indigo-400 animate-pulse',
  paused: 'bg-yellow-400',
- cancelled: 'bg-gray-400',
+ cancelled: 'bg-muted-foreground/50',
  }
- return map[props.data.status] ?? 'bg-gray-300'
+ return map[props.data.status] ?? 'bg-muted-foreground/50'
 })
 /** 成本格式化 */
 const costFormatter = new Intl.NumberFormat('en-US', {
