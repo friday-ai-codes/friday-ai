@@ -233,6 +233,22 @@ async def _execute_with_results(
  }
  all_thinking = state.get("accumulated_thinking", ) + accumulated_thinking
  all_tool_calls = state.get("tool_calls", ) + list(tool_calls_by_id.values)
+ new_blocking = await _extract_blocking_tasks(
+ tool_calls_by_id, cfg.get("session_id", ""),
+ )
+ if new_blocking:
+ logger.info(
+ "executing_node_blocking_tasks_in_second_run",
+ count=len(new_blocking),
+ )
+ return {
+ "phase": RunPhase.WAITING.value,
+ "accumulated_thinking": all_thinking,
+ "tool_calls": all_tool_calls,
+ "blocking_tasks": new_blocking,
+ "agent_session_id": agent_session_id,
+ "blocking_results":,
+ }
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
