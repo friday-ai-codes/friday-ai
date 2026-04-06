@@ -209,6 +209,90 @@ async def extract_reference_summaries(session_id: str, limit: int = 5) -> list[d
  if len(references) >= limit:
  return references
  return references
+async def _handle_waiting_state(
+ *,
+ state: dict[str, Any],
+ orch_run: OrchestrationRun,
+ graph_config: dict[str, Any],
+ conversation: Conversation,
+ assistant_msg_id: uuid.UUID,
+ agent_session: Any,
+ session_id: str,
+ model: str,
+ content: str,
+ notification_user_id: str | None,
+ conv_id_str: str,
+ do_finalize: Any,
+) -> None:
+ """处理 graph interrupt WAITING 状态：更新 OrchestrationRun + 注册 BarrierManager barrier。
+ barrier 满足后由 _on_barrier_complete 回调执行 graph resume + finalize_conversation 落库。
+ """
+ from langgraph.types import Command
+ from orchestration.barrier import get_barrier_manager
+ await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ status=OrchestrationRun.Status.WAITING,
+ phase="waiting",
+ )
+ blocking_tasks = state.get("blocking_tasks", )
+ async def _on_barrier_complete(results: list[dict[str, Any]]) -> None:
+ """barrier 满足后：resume graph + finalize。"""
+ try:
+ graph_for_resume = await get_compiled_graph
+ final_state: dict[str, Any] = {}
+ async for chunk in graph_for_resume.astream(
+ Command(resume=results),
+ config=graph_config,
+ stream_mode=["custom", "values"],
+ version="v2",
+ ):
+ if chunk["type"] == "values":
+ final_state = chunk["data"]
+ await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ status=OrchestrationRun.Status.COMPLETED,
+ phase=final_state.get("phase", "completed"),
+ )
+ await do_finalize(
+ conversation=conversation,
+ assistant_msg_id=assistant_msg_id,
+ final_content=final_state.get("final_answer", ""),
+ accumulated_thinking=final_state.get("accumulated_thinking", ),
+ tool_calls=final_state.get("tool_calls", ),
+ result_metadata=final_state.get("result_metadata", {}),
+ agent_session=agent_session,
+ session_id=session_id,
+ model=model,
+ user_message=content,
+ notification_user_id=notification_user_id,
+ publish_title_event=True,
+ )
+ logger.info(
+ "barrier_resume_finalized",
+ conversation_id=conv_id_str,
+ session_id=session_id,
+ )
+ except Exception:
+ logger.exception(
+ "barrier_resume_error",
+ conversation_id=conv_id_str,
+ session_id=session_id,
+ )
+ await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ status=OrchestrationRun.Status.ERROR,
+ phase="error",
+ )
+ barrier = get_barrier_manager
+ await barrier.register(
+ run_id=str(orch_run.run_id),
+ thread_id=conv_id_str,
+ tasks=blocking_tasks,
+ graph_config=graph_config,
+ on_complete=_on_barrier_complete,
+ )
+ logger.info(
+ "graph_waiting_barrier_registered",
+ conversation_id=conv_id_str,
+ blocking_task_count=len(blocking_tasks),
+ )
 class ConversationService:
  """对话系统业务逻辑服务。"""
  @staticmethod
@@ -358,6 +442,25 @@ class ConversationService:
  # graph 完成，等待 Task 清理
  await graph_task
  state = graph_state_holder
+ phase = state.get("phase", "")
+ if phase == "waiting":
+ # graph interrupt — blocking tasks 等待中
+ await _handle_waiting_state(
+ state=state,
+ orch_run=orch_run,
+ graph_config=graph_config,
+ conversation=conversation,
+ assistant_msg_id=assistant_msg_id,
+ agent_session=agent_session,
+ session_id=session_id,
+ model=model,
+ content=content,
+ notification_user_id=notification_user_id,
+ conv_id_str=conv_id_str,
+ do_finalize=do_finalize,
+ )
+ else:
+ # 正常完成 / 错误
  final_content = state.get("final_answer", "")
  accumulated_thinking = state.get("accumulated_thinking", )
  tool_calls = state.get("tool_calls", )
@@ -394,6 +497,23 @@ class ConversationService:
  try:
  await graph_task
  state = graph_state_holder
+ phase = state.get("phase", "")
+ if phase == "waiting":
+ await _handle_waiting_state(
+ state=state,
+ orch_run=orch_run,
+ graph_config=graph_config,
+ conversation=conversation,
+ assistant_msg_id=assistant_msg_id,
+ agent_session=agent_session,
+ session_id=session_id,
+ model=model,
+ content=content,
+ notification_user_id=notification_user_id,
+ conv_id_str=conv_id_str,
+ do_finalize=do_finalize,
+ )
+ else:
  await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
  status=OrchestrationRun.Status.COMPLETED,
  phase=state.get("phase", OrchestrationRun.Phase.COMPLETED),
