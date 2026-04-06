@@ -5,7 +5,7 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter, interrupt
-from agents.core.events import PHASE_TRANSITION, THINKING, TOOL_USE_RESULT, TOOL_USE_START
+from agents.core.events import PHASE_TRANSITION, TASK_PROGRESS, THINKING, TOOL_USE_RESULT, TOOL_USE_START
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 from orchestration.checkpointer import get_checkpointer
 from orchestration.runner_registry import register_runner, unregister_runner
@@ -189,6 +189,7 @@ async def _execute_first_run(
  count=len(blocking_tasks),
  task_ids=[t["task_id"] for t in blocking_tasks],
  )
+ writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(blocking_tasks)}})
  writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(blocking_tasks)}})
  return {
  "phase": RunPhase.WAITING.value,
@@ -268,6 +269,7 @@ async def _execute_with_results(
  "executing_node_blocking_tasks_in_second_run",
  count=len(new_blocking),
  )
+ writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(new_blocking)}})
  writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(new_blocking)}})
  return {
  "phase": RunPhase.WAITING.value,

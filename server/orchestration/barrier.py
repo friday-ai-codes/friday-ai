@@ -22,6 +22,7 @@ class BarrierState:
  results: dict[str, BlockingTaskResult]
  on_complete: Callable[[list[BlockingTaskResult]], Awaitable[None]]
  graph_config: dict[str, Any]
+ on_progress: Callable[[int, int], Awaitable[None]] | None = None
  timeout_task: asyncio.Task[None] | None = None
  created_at: float = field(default_factory=time.monotonic)
 class BarrierManager:
@@ -38,6 +39,7 @@ class BarrierManager:
  graph_config: dict[str, Any],
  on_complete: Callable[[list[BlockingTaskResult]], Awaitable[None]],
  timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+ on_progress: Callable[[int, int], Awaitable[None]] | None = None,
  ) -> None:
  """注册 barrier — 将 tasks 绑定到 run_id，启动安全超时。"""
  task_map = {t["task_id"]: t for t in tasks}
@@ -47,6 +49,7 @@ class BarrierManager:
  results={},
  on_complete=on_complete,
  graph_config=graph_config,
+ on_progress=on_progress,
  )
  self._barriers[run_id] = state
  for task_id in task_map:
@@ -75,6 +78,11 @@ class BarrierManager:
  return False
  barrier.results[task_id] = result
  await self._persist_progress(run_id, len(barrier.results), len(barrier.tasks))
+ if barrier.on_progress is not None:
+ try:
+ await barrier.on_progress(len(barrier.results), len(barrier.tasks))
+ except Exception:
+ logger.debug("barrier_on_progress_error", run_id=run_id)
  if len(barrier.results) < len(barrier.tasks):
  logger.info(
  "barrier_task_recorded",

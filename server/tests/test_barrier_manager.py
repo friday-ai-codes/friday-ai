@@ -199,6 +199,36 @@ async def test_on_complete_exception_does_not_crash(manager: BarrierManager) -> 
  satisfied = await manager.task_completed("t1", _make_result("t1"))
  assert satisfied is True
  failing_callback.assert_awaited_once
+# ── TASK_PROGRESS 事件契约 + 增量回调测试 ──
+@pytest.mark.asyncio
+async def test_task_progress_event_emitted -> None:
+ """TASK_PROGRESS 事件 data 格式与前端 SSEEvent 接口一致。"""
+ from agents.core.events import TASK_PROGRESS
+ event = {
+ "type": TASK_PROGRESS,
+ "data": {"completed_count": 0, "total_count": 3},
+ }
+ assert event["type"] == "task_progress"
+ data = event["data"]
+ assert "completed_count" in data
+ assert "total_count" in data
+ assert isinstance(data["completed_count"], int)
+ assert isinstance(data["total_count"], int)
+@pytest.mark.asyncio
+async def test_barrier_incremental_progress_callback(
+ manager: BarrierManager, on_complete: AsyncMock
+) -> None:
+ """task_completed 在每个任务完成后通过 on_progress 回调发射增量进度。"""
+ on_progress = AsyncMock
+ tasks = [_make_request("t1"), _make_request("t2")]
+ await manager.register(
+ "run-1", "thread-1", tasks, {}, on_complete, on_progress=on_progress,
+ )
+ await manager.task_completed("t1", _make_result("t1"))
+ on_progress.assert_awaited_once_with(1, 2)
+ await manager.task_completed("t2", _make_result("t2"))
+ assert on_progress.await_count == 2
+ on_progress.assert_awaited_with(2, 2)
 @pytest.mark.asyncio
 async def test_cancel_all_on_complete_exception_does_not_crash(
  manager: BarrierManager,
