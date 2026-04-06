@@ -113,7 +113,7 @@ async def _run_sdk_stream(
  return accumulated_thinking, tool_calls_by_id
 async def _extract_blocking_tasks(
  tool_calls_by_id: dict[str, dict[str, Any]],
- session_id: str,
+ conversation_id: str,
 ) -> list[dict[str, Any]]:
  """从 tool_calls 结果中提取 __blocking_task__ 标记，并 drain fallback registry。"""
  from agents.tools.blocking_task_registry import drain_blocking_tasks
@@ -126,7 +126,7 @@ async def _extract_blocking_tasks(
  "task_id": result["task_id"],
  "params": result.get("params", {}),
  })
- fallback_tasks = await drain_blocking_tasks(session_id)
+ fallback_tasks = await drain_blocking_tasks(conversation_id)
  if fallback_tasks:
  blocking_tasks.extend(fallback_tasks)
  return blocking_tasks
@@ -181,7 +181,7 @@ async def _execute_first_run(
  if conv_id:
  unregister_runner(conv_id)
  blocking_tasks = await _extract_blocking_tasks(
- tool_calls_by_id, cfg.get("session_id", ""),
+ tool_calls_by_id, cfg.get("conversation_id", ""),
  )
  if blocking_tasks:
  logger.info(
@@ -261,7 +261,7 @@ async def _execute_with_results(
  all_thinking = state.get("accumulated_thinking", ) + accumulated_thinking
  all_tool_calls = state.get("tool_calls", ) + list(tool_calls_by_id.values)
  new_blocking = await _extract_blocking_tasks(
- tool_calls_by_id, cfg.get("session_id", ""),
+ tool_calls_by_id, cfg.get("conversation_id", ""),
  )
  if new_blocking:
  logger.info(

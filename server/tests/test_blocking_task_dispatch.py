@@ -187,6 +187,30 @@ async def test_deep_analysis_no_online_runner -> None:
  result = await _call_deep_analysis(mocks)
  assert result.success is False
  assert "Runner" in (result.error or "")
+# ── _extract_blocking_tasks + registry key 一致性测试 ──
+@pytest.mark.asyncio
+async def test_extract_blocking_tasks_uses_conversation_id -> None:
+ """_extract_blocking_tasks 使用 conversation_id 作为 drain key。"""
+ mock_drain = AsyncMock(return_value=)
+ with patch("agents.tools.blocking_task_registry.drain_blocking_tasks", mock_drain):
+ from orchestration.graph import _extract_blocking_tasks
+ await _extract_blocking_tasks({}, "conv-uuid-123")
+ mock_drain.assert_awaited_once_with("conv-uuid-123")
+@pytest.mark.asyncio
+async def test_registry_key_consistency -> None:
+ """register 和 drain 使用同一 UUID 格式 conversation_id 时数据能匹配。"""
+ from agents.tools.blocking_task_registry import (
+ _store,
+ drain_blocking_tasks,
+ register_blocking_task,
+ )
+ _store.clear
+ conv_id = str(uuid.uuid4)
+ task_info = {"task_id": "t-abc", "task_type": "deep_analysis"}
+ await register_blocking_task(conv_id, task_info)
+ tasks = await drain_blocking_tasks(conv_id)
+ assert len(tasks) == 1
+ assert tasks[0]["task_id"] == "t-abc"
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_reuse_existing_session -> None:
