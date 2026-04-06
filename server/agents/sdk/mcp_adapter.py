@@ -1,26 +1,43 @@
 """MCP 适配层：将现有工具注册为 SDK MCP server。
 工具本体零改动 — 通过适配器将 ToolDefinition 转为 SdkMcpTool，
 handler 通过 **args 解包 dict 为命名参数调用原函数。
+project_id 在适配层自动注入，不暴露给 LLM（避免 LLM 编造 UUID）。
 """
 from __future__ import annotations
+import copy
 from typing import Any
 import structlog
 from claude_agent_sdk import McpSdkServerConfig, SdkMcpTool, create_sdk_mcp_server
 from agents.tools.base import ToolCategory, ToolDefinition, ToolResult, _tool_registry
 logger = structlog.get_logger(__name__)
 MCP_SERVER_NAME = "chat-tools"
-def _adapt_tool(tool_def: ToolDefinition) -> SdkMcpTool[dict[str, Any]]:
+def _adapt_tool(
+ tool_def: ToolDefinition,
+ inject_values: dict[str, Any] | None = None,
+) -> SdkMcpTool[dict[str, Any]]:
  """将 ToolDefinition 适配为 SdkMcpTool。
- 工具函数本体不修改：通过 **args 解包 dict 为命名参数。
- ToolResult 返回值映射为 MCP 响应格式。
+ 对于 inject_values 中的字段（如 project_id），从 input_schema 中移除
+ 使 LLM 看不到该参数，在 handler 中自动注入。
  Args:
  tool_def: 现有工具定义
+ inject_values: 需要自动注入的字段 → 值映射
  Returns:
  适配后的 SdkMcpTool 实例
  """
+ inject_values = inject_values or {}
+ schema = copy.deepcopy(tool_def.parameters)
+ props = schema.get("properties", {})
+ required = schema.get("required", )
+ for field_name in inject_values:
+ props.pop(field_name, None)
+ if field_name in required:
+ required = [r for r in required if r != field_name]
+ schema["properties"] = props
+ schema["required"] = required
  async def handler(args: dict[str, Any]) -> dict[str, Any]:
+ merged = {**inject_values, **args}
  try:
- result: ToolResult = await tool_def.func(**args)
+ result: ToolResult = await tool_def.func(**merged)
  content_text = result.to_content
  response: dict[str, Any] = {
  "content": [{"type": "text", "text": content_text}],
@@ -41,29 +58,46 @@ def _adapt_tool(tool_def: ToolDefinition) -> SdkMcpTool[dict[str, Any]]:
  return SdkMcpTool(
  name=tool_def.name,
  description=tool_def.description,
- input_schema=tool_def.parameters,
+ input_schema=schema,
  handler=handler,
  )
-def create_chat_tools_mcp_server -> McpSdkServerConfig:
+def create_chat_tools_mcp_server(
+ project_id: str = "",
+ conversation_id: str = "",
+ event_callback: Any = None,
+) -> McpSdkServerConfig:
  """创建包含所有 PROJECT 类别工具的 MCP server。
- 遍历 _tool_registry 中 category == PROJECT 的工具，
- 为每个生成 SdkMcpTool 适配器。返回值可直接放入
- ClaudeAgentOptions.mcp_servers 字典。
+ project_id、conversation_id、event_callback 被自动注入到需要它们的工具中，LLM 不可见。
+ Args:
+ project_id: 当前项目 UUID
+ conversation_id: 当前对话 UUID（用于 deep_analysis 失败时中断会话）
+ event_callback: 向 SSE 流推送事件的回调（用于深度分析实时进度）
  Returns:
- McpSdkServerConfig (TypedDict)，包含 type="sdk"、name 和 server 实例
+ McpSdkServerConfig (TypedDict)
  """
- # 确保工具模块已导入（@tool 装饰器在导入时注册）
  import agents.tools.chat_tools # noqa: F401
  import agents.tools.project_tools # noqa: F401
+ inject_values: dict[str, Any] = {}
+ if project_id:
+ inject_values["project_id"] = project_id
+ if conversation_id:
+ inject_values["conversation_id"] = conversation_id
+ if event_callback:
+ inject_values["event_callback"] = event_callback
  sdk_tools: list[SdkMcpTool[dict[str, Any]]] =
  for tool_def in _tool_registry.values:
  if tool_def.category == ToolCategory.PROJECT:
- sdk_tools.append(_adapt_tool(tool_def))
+ tool_props = tool_def.parameters.get("properties", {})
+ tool_inject = {k: v for k, v in inject_values.items if k in tool_props}
+ sdk_tools.append(
+ _adapt_tool(tool_def, tool_inject if tool_inject else None)
+ )
  logger.info(
  "mcp_server_created",
  server=MCP_SERVER_NAME,
  tool_count=len(sdk_tools),
  tools=[t.name for t in sdk_tools],
+ project_id=project_id,
  )
  return create_sdk_mcp_server(name=MCP_SERVER_NAME, tools=sdk_tools)
 async def build_allowed_tools(project_id: str) -> list[str]:

@@ -10,9 +10,16 @@ meta:
 import { useAppMode } from '~/composables/useAppMode'
 const { setMode } = useAppMode
 const router = useRouter
+const route = useRoute
 onMounted( => {
  setMode('chat')
+ const convId = route.query.conversation as string | undefined
+ if (convId) {
+ router.replace(`/?conversation=${convId}`)
+ }
+ else {
  router.replace('/')
+ }
 })
 </script>
 <template>

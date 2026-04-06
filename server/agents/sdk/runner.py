@@ -43,7 +43,7 @@ def clean_claude_env -> Generator[dict[str, str], None, None]:
  """
  saved: dict[str, str] = {}
  for key in list(os.environ):
- if key.startswith("CLAUDE") or key == "CLAUDECODE":
+ if key.startswith("CLAUDE") or key == "CLAUDECODE" or key == "ANTHROPIC_AUTH_TOKEN":
  saved[key] = os.environ.pop(key)
  try:
  yield saved
@@ -71,6 +71,7 @@ class SdkRunnerConfig:
  model: str
  project_id: str
  session_id: str
+ conversation_id: str = ""
  api_key: str = ""
  api_base_url: str = ""
  max_turns: int = 15
@@ -152,10 +153,7 @@ class SDKAgentRunner:
  api_key = self._config.api_key
  if not api_key:
  raise ValueError("SdkRunnerConfig.api_key 不能为空")
- # 2. 构建 MCP server 和 allowed_tools
- mcp_server = create_chat_tools_mcp_server
- allowed_tools = await build_allowed_tools(self._config.project_id)
- # 3. 事件队列
+ # 2. 事件队列（提前创建，MCP server 需要引用 event_callback）
  event_queue: asyncio.Queue[AgentEvent | None] = asyncio.Queue(
  maxsize=self._config.queue_maxsize
  )
@@ -165,6 +163,13 @@ class SDKAgentRunner:
  event_queue.put_nowait(event)
  except asyncio.QueueFull:
  pass
+ # 3. 构建 MCP server 和 allowed_tools（project_id/conversation_id/event_callback 自动注入）
+ mcp_server = create_chat_tools_mcp_server(
+ project_id=self._config.project_id,
+ conversation_id=self._config.conversation_id,
+ event_callback=event_callback,
+ )
+ allowed_tools = await build_allowed_tools(self._config.project_id)
  # 4. 构建 hooks（仅在有 session 时启用）
  hooks_config: dict[str, list[HookMatcher]] | None = None
  session = self._config.agent_session
@@ -178,13 +183,18 @@ class SDKAgentRunner:
  ],
  }
  # 5. 构建 ClaudeAgentOptions
- env_vars: dict[str, str] = {"ANTHROPIC_API_KEY": api_key}
- extra_args: dict[str, str | None] = {}
- settings_json: str | None = None
+ # 按官方文档 (https://code.claude.com/docs/en/env-vars)，通过环境变量配置：
+ # - ANTHROPIC_API_KEY: 覆盖 Claude 订阅认证
+ # - ANTHROPIC_BASE_URL: 覆盖默认 API endpoint（用于 proxy/gateway）
+ # --bare: 跳过 hooks/LSP 等，auth 严格使用 ANTHROPIC_API_KEY
+ # setting_sources=: 生成 --setting-sources ""，阻止加载 ~/.claude/settings.json
+ # （settings.json 的 env 段会注入 ANTHROPIC_AUTH_TOKEN/ANTHROPIC_BASE_URL 覆盖我们的值）
+ # 不传 settings 参数（与 --setting-sources "" 组合时会导致 auth 失败）
+ env_vars: dict[str, str] = {
+ "ANTHROPIC_API_KEY": api_key,
+ }
  if self._config.api_base_url:
- import json
- settings_json = json.dumps({"apiBaseUrl": self._config.api_base_url})
- extra_args["bare"] = None
+ env_vars["ANTHROPIC_BASE_URL"] = self._config.api_base_url
  # 优先使用系统安装的 CLI，避免 bundled CLI 的 ProcessTransport bug
  import shutil
  system_cli = shutil.which("claude")
@@ -196,16 +206,19 @@ class SDKAgentRunner:
  "include_partial_messages": True,
  "mcp_servers": {"chat-tools": mcp_server},
  "allowed_tools": allowed_tools,
+ "disallowed_tools": [
+ "Read", "Write", "Edit", "MultiEdit",
+ "Bash", "Glob", "Grep", "LS",
+ "WebFetch", "WebSearch",
+ "TodoRead", "TodoWrite",
+ ],
  "env": env_vars,
  "hooks": hooks_config,
- "setting_sources": ["user"],
+ "setting_sources":,
+ "extra_args": {"bare": None},
  }
  if system_cli:
  options_kwargs["cli_path"] = system_cli
- if settings_json:
- options_kwargs["settings"] = settings_json
- if extra_args:
- options_kwargs["extra_args"] = extra_args
  if self._config.max_thinking_tokens is not None:
  options_kwargs["max_thinking_tokens"] = self._config.max_thinking_tokens
  if self._config.max_budget_usd is not None:
@@ -363,11 +376,13 @@ class SDKAgentRunner:
  pass
  task = asyncio.create_task(run_sdk)
  self._sdk_task = task
- # 8. yield 事件（带超时和心跳）
+ # 8. yield 事件（带心跳，timeout_seconds=0 表示无超时）
  try:
+ no_timeout = self._config.timeout_seconds <= 0
  loop = asyncio.get_event_loop
- deadline = loop.time + self._config.timeout_seconds
+ deadline = 0.0 if no_timeout else loop.time + self._config.timeout_seconds
  while True:
+ if not no_timeout:
  remaining = deadline - loop.time
  if remaining <= 0:
  task.cancel
@@ -381,10 +396,13 @@ class SDKAgentRunner:
  },
  )
  break
+ wait_timeout = min(self._config.heartbeat_timeout, remaining)
+ else:
+ wait_timeout = self._config.heartbeat_timeout
  try:
  event = await asyncio.wait_for(
  event_queue.get,
- timeout=min(self._config.heartbeat_timeout, remaining),
+ timeout=wait_timeout,
  )
  except TimeoutError:
  yield AgentEvent(type=KEEPALIVE, data={})

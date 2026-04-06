@@ -51,6 +51,7 @@ type CallbackFactory func(queue *MessageQueue, token string, port int) CallbackS
 type ExecutorService interface {
 	StartContainer(ctx context.Context, task TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
 	WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (exitCode int, logs string, err error)
+	ReadContainerFile(ctx context.Context, containerID, path string) (string, error)
 	StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error
 	RemoveContainer(ctx context.Context, containerID string) error
 	StartupCleanup(ctx context.Context) (int, error)
@@ -341,7 +342,15 @@ func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackServi
  return
 	}
 	cfg.Scheduler.RegisterContainer(task.TaskID, containerID)
-	defer cfg.Executor.RemoveContainer(context.Background, containerID)
+	// 失败时保留容器用于调试，成功时清理
+	taskFailed:= true
+	defer func {
+ if taskFailed {
+ log.Info.Str("task_id", task.TaskID).Str("container_id", containerID).Msg("container_retained_for_debug")
+ } else {
+ cfg.Executor.RemoveContainer(context.Background, containerID)
+ }
+	}
 	if answerEndpoint != "" {
  queue.Push(NewMessage(TypeTaskAccepted, map[string]any{
  "task_id": task.TaskID, "answer_endpoint": answerEndpoint,
@@ -374,8 +383,19 @@ func runTask(ctx context.Context, task TaskPayload, cfg Config, cb CallbackServi
  return
 	}
 	if exitCode == 0 {
+ taskFailed = false
+ var sessionData map[string]any
+ var textOutput string
+ if rawSession, readErr:= cfg.Executor.ReadContainerFile(ctx, containerID, fmt.Sprintf("/app/sessions/%s.json", task.TaskID)); readErr != nil {
+ log.Warn.Str("task_id", task.TaskID).Err(readErr).Msg("read_session_file_failed")
+ } else if err:= json.Unmarshal(byte(rawSession), &sessionData); err != nil {
+ log.Warn.Str("task_id", task.TaskID).Err(err).Msg("parse_session_file_failed")
+ } else if out, ok:= sessionData["last_output"].(string); ok {
+ textOutput = out
+ }
  queue.Push(NewMessage(TypeTaskCompleted, map[string]any{
  "task_id": task.TaskID, "exit_code": 0, "duration_ms": durationMs, "logs": "",
+ "text_output": textOutput, "output": sessionData,
  }))
 	} else {
  errMsg:= "timeout"

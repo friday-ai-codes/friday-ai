@@ -13,9 +13,11 @@ from agents.core.events import (
  TITLE_GENERATED,
  AgentEvent,
 )
+from agents.models import AgentSession
 from chat.conversation_service import ConversationService
 from chat.models import Conversation
 from projects.models import Project
+from subagent.models import SubAgentSession
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -48,6 +50,7 @@ def _apply_stream_mock(events: list[AgentEvent] | None = None):
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
  ):
  for event in events:
  yield event
@@ -230,8 +233,51 @@ class TestChatInterruptView:
  content_type="application/json",
  )
  assert resp.status_code == 404
- data = json.loads(resp.content)
- assert "无活跃对话" in data["error"]
+@pytest.mark.django_db(transaction=True)
+class TestConversationRuntimeView:
+ """ConversationRuntimeView 运行态查询测试。"""
+ async def test_runtime_returns_inactive_by_default(self, conversation):
+ client = AsyncClient
+ resp = await client.get(f"/api/chat/conversations/{conversation.id}/runtime/")
+ assert resp.status_code == 200
+ payload = resp.json
+ assert payload["conversation_id"] == str(conversation.id)
+ assert payload["active"] is False
+ assert payload["logs"] ==
+ async def test_runtime_returns_deep_analysis_snapshot(self, conversation, test_project):
+ agent_session = await AgentSession.objects.acreate(
+ session_id="agent-runtime-test",
+ project=test_project,
+ status=AgentSession.Status.RUNNING,
+ metadata={"conversation_id": str(conversation.id), "source": "chat_deep_analysis"},
+ )
+ await SubAgentSession.objects.acreate(
+ session_id="deep-runtime-test",
+ main_session=agent_session,
+ repo_url="https://example.com/repo.git",
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.RUNNING,
+ last_output={
+ "source": "chat_deep_analysis",
+ "conversation_id": str(conversation.id),
+ "task_description": "分析登录流程",
+ "progress": {"message": "正在读取关键文件", "progress": 0.5},
+ "logs": [
+ {"type": "tool_call", "content": "Read({\"file_path\":\"src/auth.ts\"})", "ts": 1},
+ {"type": "text", "content": "已找到登录入口。", "ts": 2},
+ ],
+ },
+ )
+ client = AsyncClient
+ resp = await client.get(f"/api/chat/conversations/{conversation.id}/runtime/")
+ assert resp.status_code == 200
+ payload = resp.json
+ assert payload["active"] is True
+ assert payload["mode"] == "deep_analysis"
+ assert payload["session_id"] == "deep-runtime-test"
+ assert payload["task_description"] == "分析登录流程"
+ assert payload["progress_message"] == "正在读取关键文件"
+ assert payload["logs"][0]["type"] == "tool_call"
  async def test_interrupt_invalid_conversation_returns_404(self):
  """无效 UUID 对应无 runner 时返回 404。"""
  client = AsyncClient
@@ -240,3 +286,5 @@ class TestChatInterruptView:
  content_type="application/json",
  )
  assert resp.status_code == 404
+ data = json.loads(resp.content)
+ assert "无活跃对话" in data["error"]

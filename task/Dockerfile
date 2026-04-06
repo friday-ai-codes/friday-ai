@@ -34,13 +34,18 @@ WORKDIR /app
 COPY --from=node-tools /usr/local/bin/node /usr/local/bin/
 COPY --from=node-tools /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
- ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+ ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+ npm install -g @anthropic-ai/claude-code
 # 从 builder 复制已安装的 Python 包
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
-RUN git config --global --add safe.directory "*"
-RUN mkdir -p /app/workspace /app/sessions
+RUN adduser -D -u 1000 friday && \
+ git config --global --add safe.directory "*" && \
+ mkdir -p /app/workspace /app/sessions /home/friday/.claude && \
+ chown -R friday:friday /app /home/friday
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
+ENV PYTHONUNBUFFERED=1
+USER friday
 ENTRYPOINT ["/app/entrypoint.sh"]

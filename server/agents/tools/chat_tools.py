@@ -1,11 +1,16 @@
-"""Chat 对话工具 — 项目知识检索。
-Phase 新增的 3 个检索工具，数据全部来自 Qdrant 已索引内容：
+"""Chat 对话工具 — 项目知识检索 + 深度分析。
+检索工具（数据来自 Qdrant 已索引内容）：
 - browse_file_content: 浏览已索引文件内容（按 chunk 返回）
 - list_project_structure: 查看项目文件树结构
 - get_project_overview: 获取项目概览信息
+深度分析工具：
+- deep_analysis: 将复杂分析任务 dispatch 到 Runner 上的 Claude Code 执行
 """
 from __future__ import annotations
+import asyncio
+import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
@@ -398,3 +403,295 @@ async def get_project_overview(project_id: str) -> ToolResult:
  },
  },
  )
+# ============================================================================
+# 深度分析工具 — dispatch 到 Runner 上的 Claude Code
+# ============================================================================
+DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
+DEEP_ANALYSIS_POLL_INTERVAL = 3 # 轮询间隔（秒）
+@tool(
+ name="deep_analysis",
+ description=(
+ "Dispatch a deep code analysis task to Claude Code running on a remote Runner. "
+ "Use for complex tasks: architecture analysis, cross-module tracing, "
+ "understanding complex business logic. Claude Code has full repository access. "
+ "IMPORTANT: This is a long-running blocking call (may take several minutes). "
+ "Do NOT call any other tools in the same turn. Wait for this tool to return "
+ "before proceeding. The result will contain the full analysis."
+ ),
+ category="PROJECT",
+ parameters={
+ "type": "object",
+ "properties": {
+ "project_id": {
+ "type": "string",
+ "description": "UUID of the project (auto-injected)",
+ },
+ "task_description": {
+ "type": "string",
+ "description": "Analysis task description, e.g. 'Analyze the authentication module architecture'",
+ },
+ "repository_id": {
+ "type": "string",
+ "description": "Target repository UUID (optional, analyzes first indexed repo if omitted)",
+ },
+ "conversation_id": {
+ "type": "string",
+ "description": "Conversation UUID (auto-injected, used to interrupt on failure)",
+ },
+ "event_callback": {
+ "type": "string",
+ "description": "SSE event callback (auto-injected)",
+ },
+ },
+ "required": ["project_id", "task_description"],
+ },
+)
+async def deep_analysis(
+ project_id: str,
+ task_description: str,
+ repository_id: str | None = None,
+ conversation_id: str = "",
+ event_callback: Callable[..., Any] | None = None,
+) -> ToolResult:
+ """将复杂分析任务 dispatch 到 Runner 上的 Claude Code。
+ 1. 查找项目关联仓库
+ 2. 创建 SubAgentSession
+ 3. dispatch 到 Runner
+ 4. 轮询等待结果（同时转发容器日志到 SSE 流）
+ """
+ from runners.dispatcher import DispatchTask, get_dispatcher
+ from subagent.models import SubAgentSession, TaskResult
+ logger.info(
+ "deep_analysis_requested",
+ project_id=project_id,
+ task_description=task_description[:100],
+ repository_id=repository_id,
+ )
+ # 1. 查找目标仓库
+ try:
+ project = await Project.objects.aget(id=project_id)
+ except Project.DoesNotExist:
+ return ToolResult(success=False, error=f"Project not found: {project_id}")
+ if repository_id:
+ repos = [
+ repo async for repo in Repository.objects.filter(
+ id=repository_id, projects=project, is_deleted=False, index_status="indexed",
+ )
+ ]
+ else:
+ repos = [
+ repo async for repo in Repository.objects.filter(
+ projects=project, is_deleted=False, index_status="indexed",
+ )[:1]
+ ]
+ if not repos:
+ return ToolResult(
+ success=False,
+ error="No indexed repositories found. Deep analysis requires at least one indexed repository.",
+ )
+ repo = repos[0]
+ # 2.1 同一会话内若已有未结束的深度分析，直接复用等待，避免重复开容器
+ existing_session = None
+ async for candidate in SubAgentSession.objects.filter(
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status__in=[SubAgentSession.Status.PENDING, SubAgentSession.Status.RUNNING],
+ ).select_related("main_session"):
+ output = candidate.last_output or {}
+ if (
+ isinstance(output, dict)
+ and output.get("source") == "chat_deep_analysis"
+ and output.get("conversation_id") == conversation_id
+ ):
+ existing_session = candidate
+ break
+ # 2. 检查是否有在线 Runner（重试 3 次，每次等 5 秒，应对 server reload 后 Runner 重连间隙）
+ from django.utils import timezone as tz
+ from runners.models import Runner
+ online_runners = 0
+ for _attempt in range(3):
+ heartbeat_threshold = tz.now - __import__("datetime").timedelta(seconds=120)
+ online_runners = await Runner.objects.filter(
+ status="online", last_heartbeat__gte=heartbeat_threshold,
+ ).acount
+ if online_runners > 0:
+ break
+ await asyncio.sleep(5)
+ if online_runners == 0:
+ return ToolResult(success=False, error="没有可用的 Runner（等待 15 秒后仍无心跳）")
+ # 3. 创建 AgentSession（SubAgentSession 的 main_session 外键）
+ from agents.models import AgentSession
+ if existing_session is not None:
+ session = existing_session
+ session_id = session.session_id
+ logger.info(
+ "deep_analysis_reuse_existing_session",
+ session_id=session_id,
+ conversation_id=conversation_id,
+ )
+ output = session.last_output or {}
+ output["task_description"] = task_description
+ session.last_output = output
+ await session.asave(update_fields=["last_output", "updated_at"])
+ else:
+ session_id = f"deep-{uuid.uuid4.hex[:12]}"
+ agent_session = await AgentSession.objects.acreate(
+ session_id=f"agent-{session_id}",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ metadata={"source": "chat_deep_analysis", "conversation_id": conversation_id},
+ )
+ session = await SubAgentSession.objects.acreate(
+ session_id=session_id,
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.PENDING,
+ last_output={
+ "task_type": "explore",
+ "source": "chat_deep_analysis",
+ "project_id": project_id,
+ "conversation_id": conversation_id,
+ "repository_id": str(repo.id),
+ "task_description": task_description,
+ },
+ )
+ # 4. 构建 prompt
+ prompt = (
+ f"你正在分析项目「{project.name}」的代码仓库「{repo.name}」。\n\n"
+ f"任务：{task_description}\n\n"
+ f"请深入分析代码，给出详细的技术分析结果。用中文回答。"
+ )
+ # 5. 从系统设置获取 API 凭据 + Git 凭据，通过 metadata 注入容器
+ from chat.services import aget_setting_value
+ from common.encryption import decrypt_value
+ from repositories.models import GitCredential
+ from system.models import SettingKeys
+ api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY) or ""
+ base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL) or ""
+ system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ small_model = await aget_setting_value(SettingKeys.ANTHROPIC_SMALL_MODEL) or ""
+ env_metadata: dict[str, str] = {
+ "repository_id": str(repo.id),
+ "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
+ "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
+ "env_FRIDAY_TASK_CLAUDE_MODEL": system_model,
+ "env_FRIDAY_TASK_CLAUDE_SMALL_MODEL": small_model,
+ }
+ repo_url = repo.git_url
+ try:
+ cred = await GitCredential.objects.aget(repository=repo)
+ if cred.encrypted_token:
+ token = decrypt_value(cred.encrypted_token)
+ env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+ env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+ env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
+ # SSH URL → HTTPS（token 认证需要 HTTPS）
+ if repo_url.startswith("git@"):
+ import re
+ m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
+ if m:
+ repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
+ except GitCredential.DoesNotExist:
+ pass
+ dispatch_task = DispatchTask(
+ task_id=session_id,
+ task_type="explore",
+ tags=,
+ image="",
+ repo_url=repo_url,
+ branch=repo.default_branch,
+ target_branch="",
+ prompt=prompt,
+ timeout=DEEP_ANALYSIS_TIMEOUT,
+ node_execution_id="",
+ session_id=session_id,
+ metadata=env_metadata,
+ )
+ if existing_session is None:
+ await get_dispatcher.dispatch(dispatch_task)
+ logger.info(
+ "deep_analysis_dispatched",
+ session_id=session_id,
+ repo_name=repo.name,
+ repo_url=repo.git_url,
+ )
+ # 6. 轮询等待结果，同时转发容器日志到 SSE 流
+ from agents.core.events import DEEP_ANALYSIS_PROGRESS, AgentEvent
+ from agents.tools.deep_analysis_registry import register, unregister
+ log_queue = register(session_id)
+ terminal_statuses = {"completed", "error", "timeout", "cancelled"}
+ poll_state = {"count": 0}
+ async def _poll_until_terminal -> None:
+ while True:
+ await asyncio.sleep(DEEP_ANALYSIS_POLL_INTERVAL)
+ poll_state["count"] += 1
+ if event_callback:
+ while True:
+ try:
+ log_event = log_queue.get_nowait
+ except asyncio.QueueEmpty:
+ break
+ await event_callback(AgentEvent(
+ type=DEEP_ANALYSIS_PROGRESS,
+ data={"session_id": session_id, **log_event},
+ ))
+ await session.arefresh_from_db
+ if session.status in terminal_statuses:
+ logger.info(
+ "deep_analysis_poll_exit",
+ session_id=session_id,
+ status=session.status,
+ poll_count=poll_state["count"],
+ )
+ return
+ poll_task = asyncio.create_task(_poll_until_terminal)
+ try:
+ try:
+ await asyncio.shield(poll_task)
+ except asyncio.CancelledError:
+ logger.warning(
+ "deep_analysis_poll_cancelled_but_waiting_continues",
+ session_id=session_id,
+ poll_count=poll_state["count"],
+ )
+ current = asyncio.current_task
+ if current is not None:
+ current.uncancel
+ await poll_task
+ except Exception:
+ logger.exception("deep_analysis_poll_error", session_id=session_id)
+ raise
+ finally:
+ unregister(session_id)
+ # 7. 提取结果
+ if session.status == "completed":
+ try:
+ result = await TaskResult.objects.aget(session=session)
+ text = result.text_output or ""
+ if not text and result.raw_output:
+ text = str(result.raw_output)[:3000]
+ logger.info(
+ "deep_analysis_completed",
+ session_id=session_id,
+ result_len=len(text),
+ )
+ return ToolResult(
+ success=True,
+ output={
+ "data": {
+ "session_id": session_id,
+ "analysis": text,
+ "repository": repo.name,
+ "duration_ms": result.duration_ms,
+ },
+ },
+ )
+ except TaskResult.DoesNotExist:
+ return ToolResult(success=False, error=f"深度分析失败 (session: {session_id}): 结果未保存")
+ error_msg = getattr(session, "failure_reason", "") or f"Analysis {session.status}"
+ logger.error(
+ "deep_analysis_failed",
+ session_id=session_id,
+ status=session.status,
+ error=error_msg,
+ )
+ return ToolResult(success=False, error=f"深度分析失败 (session: {session_id}): {error_msg}")

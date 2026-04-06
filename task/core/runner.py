@@ -83,6 +83,8 @@ class TaskRunner:
  # Execute based on mode
  if self.config.task_mode == "plan":
  return await self._run_plan_mode(log, branch_name)
+ elif self.config.task_mode == "explore":
+ return await self._run_explore_mode(log)
  else:
  return await self._run_execute_mode(log, branch_name)
  except Exception as e:
@@ -105,6 +107,18 @@ class TaskRunner:
  plan = result.get("output", "")
  await self.callback.report_plan_ready(plan)
  log.info("Plan mode completed successfully")
+ return 0
+ async def _run_explore_mode(self, log) -> int:
+ """Run in explore mode for deep code analysis (no commits)."""
+ log.info("Running in explore mode")
+ assert self.claude is not None, "ClaudeRunner not initialized"
+ result = await self.claude.run_explore_mode
+ if not result.get("success"):
+ error = result.get("error", "Unknown error")
+ log.error("Explore failed", error=error)
+ await self.callback.report_error(error, "execution")
+ return 1
+ log.info("Explore mode completed successfully")
  return 0
  async def _run_execute_mode(self, log, branch_name: str) -> int:
  """Run in execute mode to implement changes."""

@@ -18,10 +18,14 @@ from .serializers import (
  ConversationDetailSerializer,
  ConversationListSerializer,
  ConversationMessageSerializer,
+ ConversationRuntimeSerializer,
  CreateConversationSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
  SendMessageSerializer,
+ WebPushPublicKeySerializer,
+ WebPushSubscriptionSerializer,
+ WebPushUnsubscribeSerializer,
 )
 from .services import ChatMessage, ChatServiceError, aget_chat_service
 from .streaming import format_keepalive, format_sse
@@ -269,6 +273,92 @@ class ConversationDetailView(APIView):
  status=status.HTTP_404_NOT_FOUND,
  )
  return Response(status=status.HTTP_204_NO_CONTENT)
+class ConversationRuntimeView(APIView):
+ """对话运行态查询。"""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="获取对话运行态",
+ description="返回对话当前是否仍在执行，以及最近的深度分析日志/进度快照",
+ responses={200: ConversationRuntimeSerializer},
+ tags=["Conversations"],
+ )
+ async def get(self, request, conversation_id):
+ try:
+ await Conversation.objects.aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ runtime = await ConversationService.get_conversation_runtime(str(conversation_id))
+ return Response(runtime)
+class WebPushPublicKeyView(APIView):
+ """返回浏览器 Push 订阅所需的 VAPID 公钥。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ @extend_schema(
+ summary="获取 Web Push 公钥",
+ responses={200: WebPushPublicKeySerializer},
+ tags=["Conversations"],
+ )
+ async def get(self, request):
+ from .push_service import ChatPushService
+ config = await ChatPushService.aget_or_create_vapid_config
+ return Response(
+ {
+ "public_key": config.public_key,
+ "subject": config.subject,
+ }
+ )
+class WebPushSubscriptionView(APIView):
+ """保存当前浏览器的 Push 订阅。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ @extend_schema(
+ summary="保存 Web Push 订阅",
+ request=WebPushSubscriptionSerializer,
+ responses={200: {"description": "保存成功"}},
+ tags=["Conversations"],
+ )
+ async def post(self, request):
+ from .push_service import ChatPushService
+ serializer = WebPushSubscriptionSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ data = serializer.validated_data
+ keys = data["keys"]
+ await ChatPushService.asave_subscription(
+ user_id=str(request.user.id),
+ endpoint=data["endpoint"],
+ p256dh=keys["p256dh"],
+ auth=keys["auth"],
+ user_agent=data.get("user_agent", ""),
+ )
+ return Response({"status": "ok"})
+class WebPushUnsubscribeView(APIView):
+ """停用浏览器 Push 订阅。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ @extend_schema(
+ summary="取消 Web Push 订阅",
+ request=WebPushUnsubscribeSerializer,
+ responses={200: {"description": "取消成功"}},
+ tags=["Conversations"],
+ )
+ async def post(self, request):
+ from .push_service import ChatPushService
+ serializer = WebPushUnsubscribeSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ await ChatPushService.adeactivate_subscription(
+ user_id=str(request.user.id),
+ endpoint=serializer.validated_data["endpoint"],
+ )
+ return Response({"status": "ok"})
 class ChatStreamView(APIView):
  """SSE 流式消息端点。
  通过 Server-Sent Events 返回 AI 回复的实时流，
@@ -311,6 +401,7 @@ class ChatStreamView(APIView):
  str(conversation_id),
  content,
  role,
+ str(request.user.id) if getattr(request.user, "is_authenticated", False) else None,
  ),
  content_type="text/event-stream",
  )
@@ -322,6 +413,7 @@ class ChatStreamView(APIView):
  conversation_id: str,
  content: str,
  role: str,
+ notification_user_id: str | None,
  ):
  """生成 SSE 事件流。"""
  import uuid as uuid_mod
@@ -331,6 +423,7 @@ class ChatStreamView(APIView):
  conversation_id=conversation_id,
  content=content,
  role=role,
+ notification_user_id=notification_user_id,
  ):
  if event.type == KEEPALIVE:
  yield format_keepalive

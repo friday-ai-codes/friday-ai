@@ -9,6 +9,7 @@ logger = structlog.get_logger
 _TERMINAL_STATUSES = {"completed", "error", "timeout", "cancelled"}
 # 断连超时（秒）：5 分钟后未重连则标记任务失败
 DISCONNECT_TIMEOUT = 300
+HELLO_TIMEOUT = 10
 class RunnerConsumer(AsyncJsonWebsocketConsumer):
  """处理 Runner WS 连接，按 type 分发消息到 handler。"""
  _handlers: dict[str, str] = {
@@ -32,23 +33,39 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  self.runner = runner
  self.group_name = f"runner_{runner.id}"
  self._heartbeat_count = 0
- # 踢旧连接
- if runner.channel_name:
- await self.channel_layer.send(runner.channel_name, {"type": "force.disconnect"})
+ self._hello_received = False
  await self.channel_layer.group_add(self.group_name, self.channel_name)
  await self.accept
  await self._update_channel_name(self.channel_name)
+ # 握手超时：runner 必须在 HELLO_TIMEOUT 秒内发送 runner.hello
+ self._hello_timeout = asyncio.ensure_future(self._hello_timeout_handler)
+ async def _hello_timeout_handler(self) -> None:
+ await asyncio.sleep(HELLO_TIMEOUT)
+ if not self._hello_received:
+ logger.warning(
+ "runner_hello_timeout",
+ runner_id=str(self.runner.id),
+ runner_name=self.runner.name,
+ )
+ await self.close(code=4004)
  async def disconnect(self, close_code):
+ if hasattr(self, "_hello_timeout"):
+ self._hello_timeout.cancel
  if hasattr(self, "group_name"):
  await self.channel_layer.group_discard(self.group_name, self.channel_name)
  if hasattr(self, "runner") and close_code != 4002:
+ if self._hello_received:
  await self._mark_offline
  await _broadcast_monitor_event(
  self.channel_layer, "runner.status_changed", self.runner.id, {"status": "offline"}
  )
  await _alog_runner_event(self.runner.id, "disconnected")
- # 启动断连超时处理：5 分钟后检查是否重连
  _schedule_disconnect_timeout(self.runner.id)
+ else:
+ logger.debug(
+ "runner_disconnected_without_hello",
+ runner_id=str(self.runner.id),
+ )
  async def receive_json(self, content, **kwargs):
  msg_type = content.get("type")
  handler_name = self._handlers.get(msg_type) if msg_type else None
@@ -58,6 +75,9 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  logger.warning("unknown_message_type", type=msg_type)
  # -- message handlers --
  async def _handle_hello(self, content):
+ self._hello_received = True
+ if hasattr(self, "_hello_timeout"):
+ self._hello_timeout.cancel
  payload = content.get("payload", {})
  await self._update_hello(payload)
  await _broadcast_monitor_event(
@@ -169,16 +189,28 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await self._handle_token_usage(payload, log)
  async def _handle_task_log(self, content):
  payload = content.get("payload", {})
+ task_id = payload.get("task_id", "")
+ message = payload.get("message", "")
  logger.debug(
  "task_log",
  runner=str(self.runner.id),
- task_id=payload.get("task_id", ""),
- message=payload.get("message", ""),
+ task_id=task_id,
+ message=message,
  )
+ for prefix, log_type in _TASK_LOG_PREFIXES.items:
+ if message.startswith(prefix):
+ await _append_runtime_log(
+ task_id=task_id,
+ log_type=log_type,
+ content=message[len(prefix):].strip,
+ )
+ break
+ _forward_task_log(task_id, message)
  async def _handle_task_progress(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
  await self._handle_progress(task_id, payload)
+ _forward_task_progress(task_id, payload)
  async def _handle_task_rejected(self, content):
  payload = content.get("payload", {})
  task_id = payload.get("task_id", "")
@@ -214,7 +246,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  r = self.runner
  r.status = "online"
  r.version = payload.get("version", "")
- await r.asave(update_fields=["status", "version", "updated_at"])
+ r.last_heartbeat = timezone.now
+ await r.asave(update_fields=["status", "version", "last_heartbeat", "updated_at"])
  async def _update_heartbeat(self, payload: dict) -> None:
  r = self.runner
  r.status = "online"
@@ -252,6 +285,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  )
  await session.amark_completed
  _schedule_workflow_resume(session, log)
+ source = (session.last_output or {}).get("source") if session.last_output else None
+ if source != "chat_deep_analysis":
  _schedule_agent_session_resume(session, log)
  log.info("task_completed_via_ws")
  async def _handle_failed(self, payload: dict, log: structlog.stdlib.BoundLogger) -> None:
@@ -274,6 +309,8 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await session.amark_failed(error=error_msg)
  await _send_failure_notification(session, error_msg)
  _schedule_workflow_resume(session, log)
+ source = (session.last_output or {}).get("source") if session.last_output else None
+ if source != "chat_deep_analysis":
  _schedule_agent_session_resume(session, log)
  log.info("task_failed_via_ws")
  async def _create_question(self, payload: dict) -> tuple | None:
@@ -341,6 +378,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  },
  }
  await session.asave(update_fields=["last_output", "updated_at"])
+ await _append_runtime_log(
+ task_id=task_id,
+ log_type="progress",
+ content=payload.get("message", ""),
+ )
  async def _rebuild_dispatch_task(self, session_id: str):
  from runners.dispatcher import DispatchTask
  from runners.models import RunnerTaskAssignment
@@ -474,6 +516,52 @@ async def _handle_disconnect_timeout(runner_id: uuid.UUID) -> None:
  runner_id=str(runner_id),
  failed_count=failed_count,
  )
+# ---------------------------------------------------------------------------
+# 深度分析日志转发
+# ---------------------------------------------------------------------------
+_TASK_LOG_PREFIXES = {
+ "[task:text]": "text",
+ "[task:tool]": "tool_call",
+ "[task:block]": "block",
+ "[task:result]": "result",
+ "[task:system]": "system",
+ "[task:msg]": "message",
+}
+_MAX_RUNTIME_LOGS = 80
+async def _append_runtime_log(task_id: str, log_type: str, content: str) -> None:
+ from subagent.models import SubAgentSession
+ session = await SubAgentSession.objects.filter(session_id=task_id).afirst
+ if not session:
+ return
+ output = session.last_output or {}
+ logs = output.get("logs")
+ if not isinstance(logs, list):
+ logs =
+ logs.append(
+ {
+ "type": log_type,
+ "content": content,
+ "ts": int(timezone.now.timestamp * 1000),
+ }
+ )
+ output["logs"] = logs[-_MAX_RUNTIME_LOGS:]
+ session.last_output = output
+ await session.asave(update_fields=["last_output", "updated_at"])
+def _forward_task_log(task_id: str, message: str) -> None:
+ """解析容器日志的 [task:*] 前缀并推送到深度分析注册表。"""
+ from agents.tools.deep_analysis_registry import push_event
+ for prefix, log_type in _TASK_LOG_PREFIXES.items:
+ if message.startswith(prefix):
+ content = message[len(prefix):].strip
+ push_event(task_id, {"log_type": log_type, "content": content})
+ return
+def _forward_task_progress(task_id: str, payload: dict) -> None:
+ """将 task.progress 推送到深度分析注册表。"""
+ from agents.tools.deep_analysis_registry import push_event
+ push_event(task_id, {
+ "log_type": "progress",
+ "content": payload.get("message", ""),
+ })
 # ---------------------------------------------------------------------------
 # Monitor WebSocket — 前端实时监控
 # ---------------------------------------------------------------------------

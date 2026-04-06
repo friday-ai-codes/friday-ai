@@ -31,6 +31,7 @@ class EventAdapter:
  self._seen_text_len: int = 0
  self._seen_thinking_len: int = 0
  self._seen_tool_ids: set[str] = set
+ self._last_tool_input: dict[str, dict[str, Any]] = {}
  def _inject_metadata(self, data: dict[str, Any]) -> dict[str, Any]:
  data["model"] = self._model
  data["session_id"] = self._session_id
@@ -104,10 +105,25 @@ class EventAdapter:
  )
  elif block_type == "ToolUseBlock":
  tool_id = getattr(block, "id", "") or ""
- if tool_id and tool_id not in self._seen_tool_ids:
- self._seen_tool_ids.add(tool_id)
+ if not tool_id:
+ continue
  tool_name = getattr(block, "name", "") or ""
  tool_input = getattr(block, "input", {}) or {}
+ if tool_id not in self._seen_tool_ids:
+ self._seen_tool_ids.add(tool_id)
+ self._last_tool_input[tool_id] = tool_input
+ events.append(
+ AgentEvent(
+ type=TOOL_USE_START,
+ data=self._inject_metadata({
+ "tool_name": tool_name,
+ "tool_call_id": tool_id,
+ "input": tool_input,
+ }),
+ )
+ )
+ elif tool_input and tool_input != self._last_tool_input.get(tool_id):
+ self._last_tool_input[tool_id] = tool_input
  events.append(
  AgentEvent(
  type=TOOL_USE_START,

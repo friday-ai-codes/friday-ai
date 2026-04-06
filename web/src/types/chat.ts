@@ -26,6 +26,22 @@ export interface ToolCallData {
  result?: string
  status?: 'running' | 'done'
 }
+export interface DeepAnalysisLog {
+ type: string
+ content: string
+ ts: number
+}
+export interface ConversationRuntime {
+ conversation_id: string
+ active: boolean
+ mode?: 'chat' | 'deep_analysis' | null
+ status?: string | null
+ session_id?: string
+ task_description?: string
+ progress_message?: string
+ progress_percent?: number | null
+ logs?: DeepAnalysisLog
+}
 /** 对话详情（含消息列表） */
 export interface ConversationDetail extends Conversation {
  messages: ConversationMessage
@@ -43,7 +59,7 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress'
  message_id?: string
  // text_delta
  text?: string
@@ -56,6 +72,8 @@ export interface SSEEvent {
  // thinking
  thinking?: string
  // message_complete
+ final_answer?: string
+ cost_usd?: number
  usage?: {
  prompt_tokens?: number
  completion_tokens?: number
@@ -71,6 +89,10 @@ export interface SSEEvent {
  message?: string
  // budget_warning
  budget_usage_percent?: number
+ // deep_analysis_progress
+ session_id?: string
+ log_type?: string
+ content?: string
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'

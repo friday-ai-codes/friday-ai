@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import AppSidebar from '~/components/layout/AppSidebar.vue'
 import ChatHeader from '~/components/chat/ChatHeader.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
+import AppSidebar from '~/components/layout/AppSidebar.vue'
 import { Toaster } from '~/components/ui/sonner'
 import { useAppMode } from '~/composables/useAppMode'
 const { mode, chatInitialized } = useAppMode
@@ -21,6 +21,8 @@ watch(mode, async (m) => {
  chatStore.fetchConversations,
  projectsStore.fetchProjects,
  ])
+ await chatStore.restoreFromURL
+ chatStore.requestNotificationPermission
  }
 }, { immediate: true })
 // 从 route.meta 获取页面标题
@@ -93,7 +95,9 @@ const pageTitle = computed( => {
 </template>
 <style scoped>
 .mode-content-enter-active {
- transition: opacity 0.3s ease, transform 0.3s ease;
+ transition:
+ opacity 0.3s ease,
+ transform 0.3s ease;
 }
 .mode-content-leave-active {
  transition: opacity 0.15s ease;
