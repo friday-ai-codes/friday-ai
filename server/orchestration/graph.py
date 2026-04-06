@@ -140,7 +140,9 @@ async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
  """收尾节点，标记 workflow 完成。"""
  return {"phase": RunPhase.COMPLETED.value}
 def route_after_executing(state: WorkflowState) -> str:
- """条件路由：有 blocking_tasks 走 waiting，否则走 finalizing。"""
+ """条件路由：error 直接结束，有 blocking_tasks 走 waiting，否则走 finalizing。"""
+ if state.get("phase") == RunPhase.ERROR.value:
+ return END
  if state.get("blocking_tasks"):
  return "waiting"
  return "finalizing"
