@@ -3,7 +3,8 @@
 编排层使用 LangGraph StateGraph 将 Web Chat 会话建模为显式 workflow：
 ```
 START → planning → executing →(条件路由)→ finalizing → END
- ↘ waiting ↗
+ ↑ ↓
+ └── waiting ┘
 ```
 ### 节点
 | 节点 | 职责 | Phase 行为 |
@@ -20,7 +21,7 @@ START → planning → executing →(条件路由)→ finalizing → END
 - `START → planning`：固定入口
 - `planning → executing`：固定边
 - `executing → waiting | finalizing`：条件边
-- `waiting → finalizing`：固定边（interrupt 恢复后继续）
+- `waiting → executing`：固定边（interrupt 恢复后回到执行节点继续推理）
 - `finalizing → END`：固定出口
 ## 状态模型（State Model）
 ### WorkflowState — 编排语义真源
@@ -35,7 +36,7 @@ class WorkflowState(TypedDict, total=False):
 **真源原则**：`WorkflowState` 存储在 LangGraph checkpoint 中，是编排语义的 authoritative source。其他存储（`OrchestrationRun` DB 模型、`Message`、SSE 推送）是此 state 的**投影**，而非反向依赖。
 ### RunPhase — 阶段枚举
 `planning → executing → waiting → finalizing → completed`
-`error` 为异常态，Phase 骨架暂未使用。
+`error` 为异常态，`route_after_executing` 中检测到 ERROR 时短路到 END。
 ### 节点返回值
 所有节点函数返回 **部分 state 更新**（`dict`），LangGraph 自动合并到累积 state。节点不返回完整 state，只返回变更的字段。
 ## 中断/恢复协议（Interrupt / Resume Protocol）
@@ -46,10 +47,11 @@ class WorkflowState(TypedDict, total=False):
 4. LangGraph 自动保存 checkpoint，`ainvoke` 返回当前 state
 5. 外部系统可通过 `graph.aget_state(config)` 获取中断信息
 ### 恢复
-1. 阻塞任务完成后，调用 `graph.ainvoke(Command(resume=result), config)`
-2. `waiting` 节点重新执行，`interrupt` 返回 resume 值
-3. 节点提取 `result["output"]` 作为 `final_answer`，清空 `blocking_tasks`
-4. 继续执行 `finalizing → END`
+1. 阻塞任务完成后，调用 `graph.astream(Command(resume=results), config)`
+2. `waiting` 节点重新执行，`interrupt` 返回 resume 值（`list[BlockingTaskResult]`）
+3. 节点将结果存入 `blocking_results`，清空 `blocking_tasks`，设置 `phase="executing"`
+4. 沿 `waiting → executing` 边回到执行节点，注入结果上下文生成最终回答
+5. `executing` 无新 blocking_tasks 时路由到 `finalizing → END`
 ### 关键约定
 - `thread_id`：标识一个会话的 graph 执行线程，用于定位 checkpoint
 - `run_id`：标识一次编排运行，跨 interrupt/resume 保持不变
