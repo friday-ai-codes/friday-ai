@@ -22,6 +22,9 @@ class WorkflowState(TypedDict, total=False):
  blocking_tasks: list[dict[str, Any]]
  user_message: str
  final_answer: str
+ # Blocking task 循环（Phase）
+ blocking_results: list[dict[str, Any]]
+ wait_execute_loops: int
  # SDK 运行结果（Phase）
  accumulated_thinking: list[str]
  tool_calls: list[dict[str, Any]]

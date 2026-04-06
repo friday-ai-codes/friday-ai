@@ -122,34 +122,36 @@ async def executing_node(
  "agent_session_id": agent_session_id,
  }
 async def waiting_node(state: WorkflowState) -> dict[str, Any]:
- """等待阻塞任务完成。
+ """等待阻塞任务完成，resume 后回到 executing 继续推理。
  interrupt 暂停 graph 并将 blocking_tasks 作为 payload 保存。
- resume 值（BlockingTaskResult）作为 interrupt 的返回值传入。
+ resume 值为 list[BlockingTaskResult]，作为 interrupt 的返回值传入。
  不在 interrupt 前放置副作用 — 避免 resume 时重放。
  """
- result = interrupt(state.get("blocking_tasks", ))
- output = ""
- if isinstance(result, dict):
- output = str(result.get("output", ""))
+ results = interrupt(state.get("blocking_tasks", ))
+ blocking_results = results if isinstance(results, list) else [results]
+ loop_count = state.get("wait_execute_loops", 0)
  return {
- "phase": RunPhase.FINALIZING.value,
- "final_answer": output,
+ "phase": RunPhase.EXECUTING.value,
+ "blocking_results": blocking_results,
  "blocking_tasks":,
+ "wait_execute_loops": loop_count + 1,
  }
 async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
  """收尾节点，标记 workflow 完成。"""
  return {"phase": RunPhase.COMPLETED.value}
 def route_after_executing(state: WorkflowState) -> str:
- """条件路由：error 直接结束，有 blocking_tasks 走 waiting，否则走 finalizing。"""
+ """条件路由：error 直接结束，有 blocking_tasks 走 waiting（含循环计数保护），否则走 finalizing。"""
  if state.get("phase") == RunPhase.ERROR.value:
  return END
  if state.get("blocking_tasks"):
+ if state.get("wait_execute_loops", 0) >= 2:
+ return "finalizing"
  return "waiting"
  return "finalizing"
 def build_graph -> StateGraph:
  """构建编排 StateGraph builder。
  拓扑: START → planning → executing → (conditional) → finalizing → END
- ↘ waiting ↗
+ ↘ waiting → executing（循环）↗
  """
  builder: StateGraph = StateGraph(WorkflowState)
  builder.add_node("planning", planning_node)
@@ -159,7 +161,7 @@ def build_graph -> StateGraph:
  builder.add_edge(START, "planning")
  builder.add_edge("planning", "executing")
  builder.add_conditional_edges("executing", route_after_executing)
- builder.add_edge("waiting", "finalizing")
+ builder.add_edge("waiting", "executing")
  builder.add_edge("finalizing", END)
  return builder
 async def get_compiled_graph -> Any:
