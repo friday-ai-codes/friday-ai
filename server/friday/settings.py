@@ -84,6 +84,7 @@ INSTALLED_APPS = [
  "tools",
  "identity",
  "permissions",
+ "orchestration",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
