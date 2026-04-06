@@ -1,15 +1,18 @@
 """BarrierManager 单元测试 — all_of 汇聚逻辑。
 纯 asyncio 测试，不依赖 Django ORM。
+_persist_progress 通过 mock 跳过 DB 操作。
 """
 from __future__ import annotations
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 import pytest
 from orchestration.barrier import BarrierManager, BarrierState, get_barrier_manager
 from orchestration.contracts import BlockingTaskRequest, BlockingTaskResult
 @pytest.fixture
 def manager -> BarrierManager:
- return BarrierManager
+ mgr = BarrierManager
+ mgr._persist_progress = AsyncMock # type: ignore[assignment]
+ return mgr
 @pytest.fixture
 def on_complete -> AsyncMock:
  return AsyncMock
@@ -162,3 +165,49 @@ def test_get_barrier_manager_singleton -> None:
  m2 = get_barrier_manager
  assert m1 is m2
  mod._barrier_manager = None # cleanup
+# ── 进度持久化测试 ──
+@pytest.mark.asyncio
+async def test_task_completed_persists_progress(
+ manager: BarrierManager, on_complete: AsyncMock
+) -> None:
+ """task_completed 每次记录结果后调用 _persist_progress。"""
+ tasks = [_make_request("t1"), _make_request("t2")]
+ await manager.register("run-1", "thread-1", tasks, {}, on_complete)
+ await manager.task_completed("t1", _make_result("t1"))
+ manager._persist_progress.assert_awaited # type: ignore[union-attr]
+ call_args = manager._persist_progress.call_args # type: ignore[union-attr]
+ assert call_args[0] == ("run-1", 1, 2)
+@pytest.mark.asyncio
+async def test_task_completed_final_persists_full_progress(
+ manager: BarrierManager, on_complete: AsyncMock
+) -> None:
+ """全部完成时进度持久化为 completed == total。"""
+ tasks = [_make_request("t1"), _make_request("t2")]
+ await manager.register("run-1", "thread-1", tasks, {}, on_complete)
+ await manager.task_completed("t1", _make_result("t1"))
+ await manager.task_completed("t2", _make_result("t2"))
+ calls = manager._persist_progress.call_args_list # type: ignore[union-attr]
+ assert len(calls) == 2
+ assert calls[0][0] == ("run-1", 1, 2)
+ assert calls[1][0] == ("run-1", 2, 2)
+@pytest.mark.asyncio
+async def test_on_complete_exception_does_not_crash(manager: BarrierManager) -> None:
+ """on_complete 抛异常时 task_completed 不应传播异常。"""
+ failing_callback = AsyncMock(side_effect=RuntimeError("callback boom"))
+ tasks = [_make_request("t1")]
+ await manager.register("run-1", "thread-1", tasks, {}, failing_callback)
+ satisfied = await manager.task_completed("t1", _make_result("t1"))
+ assert satisfied is True
+ failing_callback.assert_awaited_once
+@pytest.mark.asyncio
+async def test_cancel_all_on_complete_exception_does_not_crash(
+ manager: BarrierManager,
+) -> None:
+ """cancel_all 中 on_complete 抛异常时不应传播异常。"""
+ failing_callback = AsyncMock(side_effect=RuntimeError("cancel callback boom"))
+ mgr = BarrierManager
+ mgr._persist_progress = AsyncMock # type: ignore[assignment]
+ tasks = [_make_request("t1")]
+ await mgr.register("run-1", "thread-1", tasks, {}, failing_callback)
+ await mgr.cancel_all("run-1")
+ failing_callback.assert_awaited_once

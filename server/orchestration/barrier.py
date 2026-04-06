@@ -74,6 +74,7 @@ class BarrierManager:
  if task_id in barrier.results:
  return False
  barrier.results[task_id] = result
+ await self._persist_progress(run_id, len(barrier.results), len(barrier.tasks))
  if len(barrier.results) < len(barrier.tasks):
  logger.info(
  "barrier_task_recorded",
@@ -88,7 +89,10 @@ class BarrierManager:
  results = list(barrier.results.values)
  self._cleanup(run_id)
  logger.info("barrier_satisfied", run_id=run_id, task_count=len(results))
+ try:
  await barrier.on_complete(results)
+ except Exception:
+ logger.exception("barrier_on_complete_error", run_id=run_id)
  return True
  async def cancel_all(self, run_id: str) -> None:
  """取消所有未完成任务并触发 on_complete。"""
@@ -107,10 +111,14 @@ class BarrierManager:
  "output": "",
  "error": "用户取消",
  }
+ await self._persist_progress(run_id, len(barrier.results), len(barrier.tasks))
  results = list(barrier.results.values)
  self._cleanup(run_id)
  logger.info("barrier_cancelled", run_id=run_id)
+ try:
  await barrier.on_complete(results)
+ except Exception:
+ logger.exception("barrier_on_complete_error", run_id=run_id)
  async def _handle_timeout(self, run_id: str, timeout_seconds: float) -> None:
  """安全超时 — 未完成任务标记 timed_out，触发 on_complete。"""
  await asyncio.sleep(timeout_seconds)
@@ -127,10 +135,25 @@ class BarrierManager:
  "output": "",
  "error": "barrier timeout",
  }
+ await self._persist_progress(run_id, len(barrier.results), len(barrier.tasks))
  results = list(barrier.results.values)
  self._cleanup(run_id)
  logger.warning("barrier_timeout", run_id=run_id)
+ try:
  await barrier.on_complete(results)
+ except Exception:
+ logger.exception("barrier_on_complete_error", run_id=run_id)
+ async def _persist_progress(self, run_id: str, completed: int, total: int) -> None:
+ """持久化进度到 OrchestrationRun.metadata（read-modify-write 保护已有字段）。"""
+ try:
+ from orchestration.models import OrchestrationRun
+ orch_run = await OrchestrationRun.objects.filter(run_id=run_id).afirst
+ if orch_run:
+ metadata = orch_run.metadata or {}
+ metadata["progress"] = {"completed": completed, "total": total}
+ await OrchestrationRun.objects.filter(run_id=run_id).aupdate(metadata=metadata)
+ except Exception:
+ logger.warning("barrier_progress_persist_failed", run_id=run_id, exc_info=True)
  def _cleanup(self, run_id: str) -> None:
  """从内部映射中移除 barrier 数据。"""
  barrier = self._barriers.pop(run_id, None)
