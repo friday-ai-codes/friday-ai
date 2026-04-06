@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AcceptableValue } from 'reka-ui'
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
 import { SettingKey } from '~/api/settings'
@@ -169,7 +170,7 @@ const emit = defineEmits<{
  </div>
  <Select
  v-else-if="props.models.length > 0":model-value="props.defaultModelValue"
- @update:model-value="(v) => { emit('update:defaultModelValue', String(v)); emit('defaultModelInput') }"
+ @update:model-value="(v: AcceptableValue) => { emit('update:defaultModelValue', String(v ?? '')); emit('defaultModelInput') }"
  >
  <SelectTrigger class=" bg-muted/30 border-border/50">
  <SelectValue placeholder="选择默认模型" />
