@@ -36,4 +36,4 @@ server/data/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
-docs/api/
+docs/api/.claude/worktrees/
