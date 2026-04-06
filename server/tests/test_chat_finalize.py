@@ -1,0 +1,173 @@
+"""chat.finalize.finalize_conversation 单元测试。"""
+from __future__ import annotations
+import uuid
+from unittest.mock import AsyncMock, patch
+import pytest
+from agents.core.events import TITLE_GENERATED
+from agents.models import AgentSession
+from chat.models import Conversation, Message
+@pytest.mark.django_db(transaction=True)
+class TestFinalizeConversation:
+ """finalize_conversation 收尾逻辑测试。"""
+ @pytest.fixture
+ async def setup_data(self, project):
+ conversation = await Conversation.objects.acreate(
+ project=project,
+ title="test conv",
+ model="claude-sonnet-4-5",
+ )
+ session_id = f"chat-{conversation.id}-abc12345"
+ agent_session = await AgentSession.objects.acreate(
+ session_id=session_id,
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ metadata={"conversation_id": str(conversation.id)},
+ )
+ return conversation, agent_session, session_id
+ async def test_creates_assistant_message(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Hello from AI",
+ accumulated_thinking=["thinking step 1"],
+ tool_calls=[{"id": "tc1", "name": "search", "input": {}, "result": "ok", "status": "done"}],
+ result_metadata={"status": "completed", "cost_usd": 0.01},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ assert msg.role == Message.Role.ASSISTANT
+ assert msg.content == "Hello from AI"
+ assert msg.metadata["session_id"] == session_id
+ assert msg.metadata["model"] == "claude-sonnet-4-5"
+ assert msg.metadata["cost_usd"] == 0.01
+ assert msg.metadata["thinking"] == "thinking step 1"
+ assert msg.tool_calls is not None
+ assert len(msg.tool_calls) == 1
+ async def test_is_idempotent(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ await Message.objects.acreate(
+ id=msg_id,
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ content="Already saved",
+ )
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Different content",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ assert msg.content == "Already saved"
+ async def test_updates_agent_session_status(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Done",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ await agent_session.arefresh_from_db
+ assert agent_session.status == AgentSession.Status.COMPLETED
+ async def test_interrupted_status_maps_to_suspended(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Interrupted",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "interrupted"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ await agent_session.arefresh_from_db
+ assert agent_session.status == AgentSession.Status.SUSPENDED
+ async def test_generates_title_and_returns_event(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=True)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value="Generated Title")),
+ ):
+ events = await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Response",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ publish_title_event=True,
+ )
+ assert len(events) == 1
+ assert events[0].type == TITLE_GENERATED
+ assert events[0].data["title"] == "Generated Title"
+ async def test_no_title_event_when_publish_disabled(self, setup_data):
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=True)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value="Generated Title")),
+ ):
+ events = await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="Response",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ publish_title_event=False,
+ )
+ assert len(events) == 0
