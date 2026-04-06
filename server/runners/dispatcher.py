@@ -127,6 +127,43 @@ class TaskDispatcher:
  event_type="task_assigned",
  detail={"task_id": task.task_id, "session_id": task.session_id},
  )
+ async def cancel(self, task_id: str) -> bool:
+ """向 Runner 发送取消信号。通过 RunnerTaskAssignment 找到 Runner 的 channel。
+ Returns:
+ True 表示取消信号已发送，False 表示未找到 assignment。
+ """
+ from runners.models import RunnerTaskAssignment
+ assignment = await (
+ RunnerTaskAssignment.objects.filter(
+ session__session_id=task_id,
+ status__in=[
+ RunnerTaskAssignment.Status.ASSIGNED,
+ RunnerTaskAssignment.Status.RUNNING,
+ ],
+ )
+ .select_related("runner")
+ .afirst
+ )
+ if not assignment or not assignment.runner.channel_name:
+ self._log.warning("cancel_no_assignment", task_id=task_id)
+ return False
+ channel_layer = get_channel_layer
+ await channel_layer.send(
+ assignment.runner.channel_name,
+ {
+ "type": "runner.message",
+ "message": make_request(
+ MessageType.TASK_CANCEL,
+ {"task_id": task_id},
+ ),
+ },
+ )
+ self._log.info(
+ "task_cancel_sent",
+ task_id=task_id,
+ runner_id=str(assignment.runner.id),
+ )
+ return True
  async def on_runner_online(self, runner_id: uuid.UUID) -> None:
  while not self._pending.empty:
  try:

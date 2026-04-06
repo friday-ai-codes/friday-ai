@@ -446,12 +446,12 @@ class ChatStreamView(APIView):
  message_id=message_id,
  )
 class ChatInterruptView(APIView):
- """中断活跃对话的 SDK 运行。"""
+ """中断活跃对话 — 支持 SDK 运行中断和 graph waiting 取消。"""
  authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [ChatAuthPermission]
  @extend_schema(
  summary="中断对话",
- description="中断正在进行的 AI 回复生成",
+ description="中断正在进行的 AI 回复生成，支持 SDK 运行中断和 blocking tasks 等待中取消",
  responses={
  200: {"description": "中断成功"},
  404: {"description": "无活跃对话"},
@@ -459,13 +459,45 @@ class ChatInterruptView(APIView):
  tags=["Conversations"],
  )
  async def post(self, request, conversation_id):
- """中断活跃对话。"""
+ """中断活跃对话。
+ 场景 1: SDK 运行中 — 通过 runner.interrupt 中断
+ 场景 2: graph waiting — 逐个取消 dispatched tasks + barrier.cancel_all
+ """
  from .conversation_service import get_active_runner
- runner = get_active_runner(str(conversation_id))
- if not runner:
+ conv_id_str = str(conversation_id)
+ # 场景 1: 检查是否有活跃 SDK runner
+ runner = get_active_runner(conv_id_str)
+ if runner:
+ await runner.interrupt
+ return Response({"status": "interrupted"})
+ # 场景 2: 检查是否有活跃 barrier（graph waiting 状态）
+ from orchestration.barrier import get_barrier_manager
+ from orchestration.models import OrchestrationRun
+ barrier = get_barrier_manager
+ if barrier.has_barrier_for_thread(conv_id_str):
+ orch_run = await OrchestrationRun.objects.filter(
+ conversation_id=conv_id_str,
+ status=OrchestrationRun.Status.WAITING,
+ ).order_by("-created_at").afirst
+ if orch_run:
+ run_id = str(orch_run.run_id)
+ # per CONTEXT 步骤 1+2: 查询 pending tasks + 逐个取消
+ pending_tasks = barrier.get_pending_tasks(run_id)
+ for task_info in pending_tasks:
+ await _cancel_dispatched_task(task_info)
+ # per CONTEXT 步骤 3+4: barrier 标记 cancelled + resume graph
+ await barrier.cancel_all(run_id)
+ return Response({"status": "cancelled"})
  return Response(
  {"error": "无活跃对话或对话已完成"},
  status=status.HTTP_404_NOT_FOUND,
  )
- await runner.interrupt
- return Response({"status": "interrupted"})
+async def _cancel_dispatched_task(task_info: dict) -> None:
+ """通过 TaskDispatcher 向 Runner 发送取消信号。"""
+ from runners.dispatcher import get_dispatcher
+ task_id = task_info.get("task_id", "")
+ try:
+ dispatcher = get_dispatcher
+ await dispatcher.cancel(task_id)
+ except Exception:
+ logger.warning("dispatched_task_cancel_failed", task_id=task_id, exc_info=True)
