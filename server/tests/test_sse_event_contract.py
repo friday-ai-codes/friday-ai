@@ -10,10 +10,11 @@ from agents.core.events import (
  ALL_EVENT_TYPES,
  BUDGET_WARNING,
  KEEPALIVE,
+ PHASE_TRANSITION,
+ TASK_PROGRESS,
 )
 class TestSSEEventTypeContract:
  """SSE 事件类型契约：后端常量必须覆盖所有前端已知事件类型。"""
- # 前端 SSEEvent.type 联合类型中的全部事件类型
  EXPECTED_EVENT_TYPES: frozenset[str] = frozenset({
  "text_delta",
  "tool_use_start",
@@ -24,22 +25,30 @@ class TestSSEEventTypeContract:
  "title_generated",
  "budget_warning",
  "deep_analysis_progress",
+ "phase_transition",
+ "task_progress",
  })
  def test_all_event_types_contains_expected(self) -> None:
- """ALL_EVENT_TYPES 恰好包含 9 种预期事件类型。"""
+ """ALL_EVENT_TYPES 恰好包含 11 种预期事件类型。"""
  assert ALL_EVENT_TYPES == self.EXPECTED_EVENT_TYPES, (
  f"ALL_EVENT_TYPES 与预期不符。\n"
  f" 多余: {ALL_EVENT_TYPES - self.EXPECTED_EVENT_TYPES}\n"
  f" 缺少: {self.EXPECTED_EVENT_TYPES - ALL_EVENT_TYPES}"
  )
  def test_all_event_types_count(self) -> None:
- """ALL_EVENT_TYPES 应恰好包含 9 种类型。"""
- assert len(ALL_EVENT_TYPES) == 9, (
- f"期望 9 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
+ """ALL_EVENT_TYPES 应恰好包含 11 种类型。"""
+ assert len(ALL_EVENT_TYPES) == 11, (
+ f"期望 11 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
  )
  def test_budget_warning_constant(self) -> None:
  """BUDGET_WARNING 常量值为 'budget_warning'。"""
  assert BUDGET_WARNING == "budget_warning"
+ def test_phase_transition_constant(self) -> None:
+ """PHASE_TRANSITION 常量值为 'phase_transition'。"""
+ assert PHASE_TRANSITION == "phase_transition"
+ def test_task_progress_constant(self) -> None:
+ """TASK_PROGRESS 常量值为 'task_progress'。"""
+ assert TASK_PROGRESS == "task_progress"
  def test_keepalive_constant(self) -> None:
  """KEEPALIVE 常量值为 'keepalive'。"""
  assert KEEPALIVE == "keepalive"
@@ -51,7 +60,6 @@ class TestSSEEventTypeContract:
  def test_heartbeat_default_interval(self) -> None:
  """Keepalive 心跳间隔默认值为 15.0 秒。"""
  from agents.sdk.runner import SdkRunnerConfig
- # 使用必须参数创建默认配置
  config = SdkRunnerConfig(
  system_prompt="test",
  model="test",

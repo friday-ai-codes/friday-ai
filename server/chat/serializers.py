@@ -134,12 +134,19 @@ class RuntimeLogSerializer(serializers.Serializer):
  type = serializers.CharField
  content = serializers.CharField(allow_blank=True)
  ts = serializers.IntegerField
+class TaskProgressSerializer(serializers.Serializer):
+ """编排任务进度。"""
+ completed = serializers.IntegerField
+ total = serializers.IntegerField
 class ConversationRuntimeSerializer(serializers.Serializer):
  """对话运行态。"""
  conversation_id = serializers.UUIDField
  active = serializers.BooleanField
  mode = serializers.CharField(allow_null=True, required=False)
  status = serializers.CharField(allow_null=True, required=False)
+ orchestration_run_id = serializers.CharField(allow_blank=True, required=False)
+ phase = serializers.CharField(allow_null=True, allow_blank=True, required=False)
+ task_progress = TaskProgressSerializer(allow_null=True, required=False)
  session_id = serializers.CharField(allow_blank=True, required=False)
  task_description = serializers.CharField(allow_blank=True, required=False)
  progress_message = serializers.CharField(allow_blank=True, required=False)

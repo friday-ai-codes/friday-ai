@@ -19,30 +19,18 @@ from agents.core.events import (
  AgentEvent,
 )
 from agents.models import ToolCallLog
-from agents.sdk.runner import SDKAgentRunner
 from chat.models import Conversation, Message
 from orchestration.graph import get_compiled_graph
 from orchestration.models import OrchestrationRun
+from orchestration.runner_registry import unregister_runner
 from repositories.models import Repository
 logger = structlog.get_logger(__name__)
-# ============================================================================
-# Active Runner 注册表（内存级，用于 interrupt API 查找）
-# ============================================================================
-_active_runners: dict[str, SDKAgentRunner] = {}
 def _bare_tool_name(name: str) -> str:
  if name.startswith("mcp__"):
  parts = name.split("__", 2)
  if len(parts) == 3:
  return parts[2]
  return name
-def get_active_runner(conversation_id: str) -> SDKAgentRunner | None:
- """获取对话的活跃 runner（供 interrupt API 调用）。
- Args:
- conversation_id: 对话 UUID 字符串
- Returns:
- 活跃的 SDKAgentRunner 实例，无活跃对话时返回 None
- """
- return _active_runners.get(conversation_id)
 # ============================================================================
 # 角色化 System Prompt
 # ============================================================================
@@ -541,7 +529,7 @@ class ConversationService:
  return
  finally:
  if not detached_finalizer:
- _active_runners.pop(conv_id_str, None)
+ unregister_runner(conv_id_str)
  logger.debug(
  "conversation_facade_completed",
  conversation_id=conv_id_str,
@@ -584,20 +572,68 @@ class ConversationService:
  async def get_conversation_runtime(
  conversation_id: str,
  ) -> dict[str, Any]:
- """返回对话当前运行态，用于刷新/回访后恢复执行状态。"""
+ """返回对话当前运行态 — 从 OrchestrationRun DB 读取真实 phase/status。"""
+ from datetime import timedelta
+ from django.utils import timezone
  from subagent.models import SubAgentSession
- active_runner = get_active_runner(conversation_id)
+ terminal_statuses = {
+ OrchestrationRun.Status.COMPLETED,
+ OrchestrationRun.Status.ERROR,
+ OrchestrationRun.Status.INTERRUPTED,
+ }
+ orch_run = await OrchestrationRun.objects.filter(
+ conversation_id=conversation_id,
+ ).order_by("-created_at").afirst
+ is_active = False
+ orch_phase: str | None = None
+ orch_status: str | None = None
+ orch_run_id = ""
+ task_progress: dict[str, int] | None = None
+ if orch_run is not None:
+ if orch_run.status in terminal_statuses:
+ is_active = False
+ elif (
+ orch_run.status in {OrchestrationRun.Status.RUNNING, OrchestrationRun.Status.WAITING}
+ and orch_run.created_at < timezone.now - timedelta(hours=1)
+ ):
+ # 超时窗口：running/waiting 超 1 小时 → 视为 error，auto-close
+ await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ status=OrchestrationRun.Status.ERROR,
+ phase=OrchestrationRun.Phase.ERROR,
+ )
+ is_active = False
+ orch_status = OrchestrationRun.Status.ERROR
+ else:
+ is_active = True
+ if orch_status is None:
+ orch_status = orch_run.status
+ orch_phase = orch_run.phase
+ orch_run_id = str(orch_run.run_id)
+ progress_meta = orch_run.metadata.get("progress") if isinstance(orch_run.metadata, dict) else None
+ if isinstance(progress_meta, dict):
+ task_progress = {
+ "completed": progress_meta.get("completed", 0),
+ "total": progress_meta.get("total", 0),
+ }
+ # 从 phase 推导向后兼容 mode
+ mode: str | None = None
+ if is_active:
+ mode = "chat"
  runtime: dict[str, Any] = {
  "conversation_id": conversation_id,
- "active": active_runner is not None,
- "mode": "chat" if active_runner is not None else None,
- "status": "running" if active_runner is not None else None,
+ "active": is_active,
+ "mode": mode,
+ "status": orch_status,
+ "orchestration_run_id": orch_run_id,
+ "phase": orch_phase,
+ "task_progress": task_progress,
  "session_id": "",
  "task_description": "",
  "progress_message": "",
  "progress_percent": None,
  "logs":,
  }
+ # deep_analysis 会话信息（向后兼容）
  latest_deep_session = None
  async for candidate in SubAgentSession.objects.filter(
  task_type=SubAgentSession.TaskType.EXPLORE,

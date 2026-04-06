@@ -1,12 +1,14 @@
 from __future__ import annotations
+import asyncio
 from typing import Any
 import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter, interrupt
-from agents.core.events import THINKING, TOOL_USE_RESULT, TOOL_USE_START
+from agents.core.events import PHASE_TRANSITION, THINKING, TOOL_USE_RESULT, TOOL_USE_START
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 from orchestration.checkpointer import get_checkpointer
+from orchestration.runner_registry import register_runner, unregister_runner
 from orchestration.state import RunPhase, WorkflowState
 logger = structlog.get_logger(__name__)
 async def planning_node(state: WorkflowState) -> dict[str, Any]:
@@ -63,9 +65,12 @@ async def _run_sdk_stream(
  prompt: str,
  writer: StreamWriter,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
- """运行 SDK stream，返回 (accumulated_thinking, tool_calls_by_id)。"""
+ """运行 SDK stream，返回 (accumulated_thinking, tool_calls_by_id)。
+ 中断时通过 writer 推送 phase_transition interrupted 确认事件后重新抛出。
+ """
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
+ try:
  async for event in runner.stream(prompt):
  writer({"type": event.type, "data": event.data})
  if event.type == THINKING:
@@ -99,6 +104,12 @@ async def _run_sdk_stream(
  entry["name"] = event.data["tool_name"]
  if "result" in event.data:
  entry["result"] = event.data["result"]
+ except asyncio.CancelledError:
+ try:
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "interrupted"}})
+ except Exception:
+ pass
+ raise
  return accumulated_thinking, tool_calls_by_id
 async def _extract_blocking_tasks(
  tool_calls_by_id: dict[str, dict[str, Any]],
@@ -142,8 +153,12 @@ async def _execute_first_run(
  return build_result
  runner, agent_session_id = build_result
  cfg = config.get("configurable", {})
+ conv_id = cfg.get("conversation_id", "")
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
+ if conv_id:
+ register_runner(conv_id, runner)
  try:
  accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
  runner, state.get("user_message", ""), writer,
@@ -162,6 +177,9 @@ async def _execute_first_run(
  "result_metadata": {"error": "SDK 运行异常"},
  "agent_session_id": agent_session_id,
  }
+ finally:
+ if conv_id:
+ unregister_runner(conv_id)
  blocking_tasks = await _extract_blocking_tasks(
  tool_calls_by_id, cfg.get("session_id", ""),
  )
@@ -171,6 +189,7 @@ async def _execute_first_run(
  count=len(blocking_tasks),
  task_ids=[t["task_id"] for t in blocking_tasks],
  )
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(blocking_tasks)}})
  return {
  "phase": RunPhase.WAITING.value,
  "accumulated_thinking": accumulated_thinking,
@@ -181,6 +200,7 @@ async def _execute_first_run(
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
  "phase": RunPhase.FINALIZING.value,
  "final_answer": final_answer,
@@ -200,6 +220,9 @@ async def _execute_with_results(
  if isinstance(build_result, dict):
  return build_result
  runner, agent_session_id = build_result
+ cfg = config.get("configurable", {})
+ conv_id = cfg.get("conversation_id", "")
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  results_text = "\n\n".join(
  f"=== {r.get('task_type', 'unknown')} (task_id: {r.get('task_id', '?')}) ===\n"
  + (r.get("output", "") if r.get("success") else f"失败: {r.get('error', '未知错误')}")
@@ -211,7 +234,8 @@ async def _execute_with_results(
  f"{results_text}\n\n"
  f"请根据这些分析结果，综合回答用户的问题。"
  )
- cfg = config.get("configurable", {})
+ if conv_id:
+ register_runner(conv_id, runner)
  try:
  accumulated_thinking, tool_calls_by_id = await _run_sdk_stream(
  runner, prompt, writer,
@@ -231,6 +255,9 @@ async def _execute_with_results(
  "agent_session_id": agent_session_id,
  "blocking_results":,
  }
+ finally:
+ if conv_id:
+ unregister_runner(conv_id)
  all_thinking = state.get("accumulated_thinking", ) + accumulated_thinking
  all_tool_calls = state.get("tool_calls", ) + list(tool_calls_by_id.values)
  new_blocking = await _extract_blocking_tasks(
@@ -241,6 +268,7 @@ async def _execute_with_results(
  "executing_node_blocking_tasks_in_second_run",
  count=len(new_blocking),
  )
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(new_blocking)}})
  return {
  "phase": RunPhase.WAITING.value,
  "accumulated_thinking": all_thinking,
@@ -252,6 +280,7 @@ async def _execute_with_results(
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
  "phase": RunPhase.FINALIZING.value,
  "final_answer": final_answer,
