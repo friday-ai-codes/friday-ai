@@ -268,6 +268,13 @@ async def _handle_waiting_state(
  status=OrchestrationRun.Status.ERROR,
  phase="error",
  )
+ async def _on_barrier_progress(completed: int, total: int) -> None:
+ logger.info(
+ "barrier_task_progress",
+ conversation_id=conv_id_str,
+ completed_count=completed,
+ total_count=total,
+ )
  barrier = get_barrier_manager
  await barrier.register(
  run_id=str(orch_run.run_id),
@@ -275,6 +282,7 @@ async def _handle_waiting_state(
  tasks=blocking_tasks,
  graph_config=graph_config,
  on_complete=_on_barrier_complete,
+ on_progress=_on_barrier_progress,
  )
  logger.info(
  "graph_waiting_barrier_registered",
