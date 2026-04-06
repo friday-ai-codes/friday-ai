@@ -10,6 +10,7 @@ class OrchestrationRun(models.Model):
  PENDING = "pending", "待处理"
  RUNNING = "running", "运行中"
  WAITING = "waiting", "等待中"
+ INTERRUPTED = "interrupted", "已中断"
  COMPLETED = "completed", "已完成"
  ERROR = "error", "错误"
  class Phase(models.TextChoices):

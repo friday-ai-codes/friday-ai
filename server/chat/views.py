@@ -417,7 +417,15 @@ class ChatStreamView(APIView):
  ):
  """生成 SSE 事件流。"""
  import uuid as uuid_mod
+ from orchestration.models import OrchestrationRun
  message_id = str(uuid_mod.uuid4)
+ # 获取当前 OrchestrationRun.run_id 用于所有 SSE 事件
+ run_id = ""
+ orch_run = await OrchestrationRun.objects.filter(
+ conversation_id=conversation_id,
+ ).order_by("-created_at").afirst
+ if orch_run:
+ run_id = str(orch_run.run_id)
  try:
  async for event in ConversationService.send_message_stream(
  conversation_id=conversation_id,
@@ -428,22 +436,32 @@ class ChatStreamView(APIView):
  if event.type == KEEPALIVE:
  yield format_keepalive
  else:
- yield format_sse(event, message_id=message_id)
+ # 延迟获取 run_id：send_message_stream 内部创建 OrchestrationRun
+ if not run_id:
+ latest = await OrchestrationRun.objects.filter(
+ conversation_id=conversation_id,
+ ).order_by("-created_at").afirst
+ if latest:
+ run_id = str(latest.run_id)
+ yield format_sse(event, message_id=message_id, run_id=run_id)
  except Conversation.DoesNotExist:
  yield format_sse(
  AgentEvent(type=ERROR, data={"message": "对话不存在"}),
  message_id=message_id,
+ run_id=run_id,
  )
  except ValueError as e:
  yield format_sse(
  AgentEvent(type=ERROR, data={"message": str(e)}),
  message_id=message_id,
+ run_id=run_id,
  )
  except Exception:
  logger.exception("sse_stream_error", conversation_id=conversation_id)
  yield format_sse(
  AgentEvent(type=ERROR, data={"message": "服务内部错误"}),
  message_id=message_id,
+ run_id=run_id,
  )
 class ChatInterruptView(APIView):
  """中断活跃对话 — 支持 SDK 运行中断和 graph waiting 取消。"""
@@ -460,15 +478,32 @@ class ChatInterruptView(APIView):
  )
  async def post(self, request, conversation_id):
  """中断活跃对话。
- 场景 1: SDK 运行中 — 通过 runner.interrupt 中断
+ 场景 1: SDK 运行中 — 通过 runner.interrupt 中断 + 更新 DB 状态
  场景 2: graph waiting — 逐个取消 dispatched tasks + barrier.cancel_all
  """
- from .conversation_service import get_active_runner
+ from orchestration.runner_registry import get_active_runner
  conv_id_str = str(conversation_id)
  # 场景 1: 检查是否有活跃 SDK runner
  runner = get_active_runner(conv_id_str)
  if runner:
  await runner.interrupt
+ # 更新 OrchestrationRun 状态为 interrupted
+ from orchestration.models import OrchestrationRun
+ await OrchestrationRun.objects.filter(
+ conversation_id=conv_id_str,
+ status__in=[OrchestrationRun.Status.RUNNING, OrchestrationRun.Status.WAITING],
+ ).aupdate(status=OrchestrationRun.Status.INTERRUPTED)
+ # 标记最新 assistant 消息 metadata.status = interrupted
+ from chat.models import Message
+ latest_msg = await Message.objects.filter(
+ conversation_id=conv_id_str,
+ role=Message.Role.ASSISTANT,
+ ).order_by("-created_at").afirst
+ if latest_msg is not None:
+ metadata = latest_msg.metadata if isinstance(latest_msg.metadata, dict) else {}
+ metadata["status"] = "interrupted"
+ latest_msg.metadata = metadata
+ await latest_msg.asave(update_fields=["metadata"])
  return Response({"status": "interrupted"})
  # 场景 2: 检查是否有活跃 barrier（graph waiting 状态）
  from orchestration.barrier import get_barrier_manager
@@ -481,11 +516,9 @@ class ChatInterruptView(APIView):
  ).order_by("-created_at").afirst
  if orch_run:
  run_id = str(orch_run.run_id)
- # per CONTEXT 步骤 1+2: 查询 pending tasks + 逐个取消
  pending_tasks = barrier.get_pending_tasks(run_id)
  for task_info in pending_tasks:
  await _cancel_dispatched_task(task_info)
- # per CONTEXT 步骤 3+4: barrier 标记 cancelled + resume graph
  await barrier.cancel_all(run_id)
  return Response({"status": "cancelled"})
  return Response(
