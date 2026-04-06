@@ -21,7 +21,11 @@ class TestRunPhase:
 class TestWorkflowState:
  def test_fields(self) -> None:
  hints = get_type_hints(WorkflowState)
- expected_fields = {"run_id", "phase", "blocking_tasks", "user_message", "final_answer"}
+ expected_fields = {
+ "run_id", "phase", "blocking_tasks", "user_message", "final_answer",
+ "blocking_results", "wait_execute_loops",
+ "accumulated_thinking", "tool_calls", "result_metadata", "agent_session_id",
+ }
  assert set(hints.keys) == expected_fields
  def test_total_false(self) -> None:
  state: WorkflowState = {} # type: ignore[typeddict-item]
