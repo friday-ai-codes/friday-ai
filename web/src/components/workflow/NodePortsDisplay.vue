@@ -27,7 +27,7 @@ const typeColors: Record<string, string> = {
  array: 'bg-amber-500/10 text-amber-600',
  number: 'bg-emerald-500/10 text-emerald-600',
  boolean: 'bg-rose-500/10 text-rose-600',
- any: 'bg-gray-500/10 text-gray-600',
+ any: 'bg-muted text-muted-foreground',
 }
 function getTypeColor(type: string): string {
  return typeColors[type.toLowerCase] || typeColors.any
@@ -58,9 +58,9 @@ function copyVariablePath(portName: string) {
  必填
  </Badge>
  </div>
- <Badge:class="getTypeColor(port.type)" class="text-[10px] font-normal">
+ <span:class="getTypeColor(port.type)" class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-normal">
  {{ port.type }}
- </Badge>
+ </span>
  </div>
  <p v-if="port.description" class="text-xs text-muted-foreground mt-1">
  {{ port.description }}
@@ -83,9 +83,9 @@ function copyVariablePath(portName: string) {
  <div class="flex items-center gap-2">
  <span class="text-sm font-medium">{{ port.label }}</span>
  </div>
- <Badge:class="getTypeColor(port.type)" class="text-[10px] font-normal">
+ <span:class="getTypeColor(port.type)" class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-normal">
  {{ port.type }}
- </Badge>
+ </span>
  </div>
  <p v-if="port.description" class="text-xs text-muted-foreground mt-1">
  {{ port.description }}

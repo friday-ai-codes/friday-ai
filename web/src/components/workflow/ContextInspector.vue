@@ -76,9 +76,9 @@ const hasData = computed( => {
  <span
  class="text-xs px-2 py-0.5 rounded-full":class="{
  'bg-primary/10 text-primary': context.status === 'running',
- 'bg-green-100 text-green-700': context.status === 'completed',
- 'bg-red-100 text-red-700': context.status === 'failed',
- 'bg-gray-100 text-gray-700': !['running', 'completed', 'failed'].includes(context.status),
+ 'bg-emerald-500/10 text-emerald-700': context.status === 'completed',
+ 'bg-red-500/10 text-red-700': context.status === 'failed',
+ 'bg-muted text-muted-foreground': !['running', 'completed', 'failed'].includes(context.status),
  }"
  >
  {{ context.status }}

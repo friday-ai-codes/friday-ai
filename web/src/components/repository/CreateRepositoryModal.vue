@@ -287,7 +287,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  v-model="form.access_token"
  type="password"
  placeholder="GITHUB_TOKEN_PLACEHOLDER 或 glpat-xxxxxxxxxxxx"
- class=" bg-white":class="{ 'border-destructive': errors.access_token }"
+ class=" bg-card":class="{ 'border-destructive': errors.access_token }"
  />
  <p v-if="errors.access_token" class="text-sm text-destructive flex items-center gap-1">
  <span class="icon-[lucide--alert-circle]" />
@@ -305,7 +305,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  id="git_user_name"
  v-model="form.git_user_name"
  placeholder="Friday AI Agent"
- class=" bg-white"
+ class=" bg-card"
  />
  </div>
  <div class="space-y-2">
@@ -315,7 +315,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  v-model="form.git_user_email"
  type="email"
  placeholder="ai@friday.codes"
- class=" bg-white"
+ class=" bg-card"
  />
  </div>
  </div>

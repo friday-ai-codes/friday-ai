@@ -141,7 +141,7 @@ function getStepMeta(actionType: string) {
  case 'decision':
  return { label: '决策', iconClass: 'icon-[lucide--compass]', colorClass: 'text-purple-500', bgClass: 'bg-purple-500/10' }
  default:
- return { label: actionType, iconClass: 'icon-[lucide--circle]', colorClass: 'text-gray-500', bgClass: 'bg-gray-500/10' }
+ return { label: actionType, iconClass: 'icon-[lucide--circle]', colorClass: 'text-muted-foreground', bgClass: 'bg-muted' }
  }
 }
 // ----- 生命周期 -----

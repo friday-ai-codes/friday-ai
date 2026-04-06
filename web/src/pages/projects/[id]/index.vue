@@ -6,6 +6,7 @@ import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { getProjectClaudeConfig } from '~/api/settings'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import BaseModal from '~/components/modal/BaseModal.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
@@ -534,17 +535,7 @@ async function handleCustomToken {
  </div>
  <div>
  <span class="font-medium group-hover:text-amber-600 transition-colors">{{ execution.workflow_name }}</span>
- <Badge
- class="ml-3":class="{
- 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300': execution.status === 'pending',
- 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary': execution.status === 'running',
- 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300': execution.status === 'completed',
- 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': execution.status === 'failed',
- 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': execution.status === 'waiting_approval',
- }"
- >
- {{ execution.status === 'pending' ? '等待中': execution.status === 'running' ? '运行中': execution.status === 'completed' ? '已完成': execution.status === 'failed' ? '失败': execution.status === 'waiting_approval' ? '待审批': execution.status }}
- </Badge>
+ <StatusBadge type="execution":status="execution.status" size="sm" class="ml-3" />
  </div>
  </div>
  <div class="flex items-center gap-3">

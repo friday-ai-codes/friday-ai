@@ -32,12 +32,12 @@ watch( => props.focusStepId, (id) => {
 }, { immediate: true })
 function statusColor(status: string): string {
  const map: Record<string, string> = {
- pending: 'bg-gray-300',
+ pending: 'bg-muted-foreground/50',
  running: 'bg-primary animate-pulse',
- completed: 'bg-green-400',
+ completed: 'bg-emerald-400',
  failed: 'bg-red-400',
  }
- return map[status] ?? 'bg-gray-300'
+ return map[status] ?? 'bg-muted-foreground/50'
 }
 function formatDuration(step: SubStep): string {
  if (!step.started_at || !step.completed_at)

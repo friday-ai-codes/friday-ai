@@ -90,7 +90,7 @@ watch([projectFilter, statusFilter, timeRangeFilter], => {
 const statusOptions: { value: string, label: string, color: string } = [
  { value: '__all__', label: '全部状态', color: 'bg-muted' },
  { value: 'accepted', label: '已接受', color: 'bg-emerald-500' },
- { value: 'ignored', label: '已忽略', color: 'bg-gray-400' },
+ { value: 'ignored', label: '已忽略', color: 'bg-muted-foreground' },
  { value: 'error', label: '错误', color: 'bg-red-500' },
  { value: 'duplicate', label: '重复', color: 'bg-amber-500' },
 ]
