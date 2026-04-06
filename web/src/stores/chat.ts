@@ -13,7 +13,7 @@ import {
  interruptConversation,
  listConversations,
 } from '~/api/chat'
-import { connectSSE } from '~/composables/useSSEStream'
+import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
 export const useChatStore = defineStore('chat', => {
  const { requestAndEnableWebPush, webPushReady } = useWebPush
@@ -49,6 +49,11 @@ export const useChatStore = defineStore('chat', => {
  const deepAnalysisLogs = ref<DeepAnalysisLog>
  const deepAnalysisSessionId = ref<string | null>(null)
  const restoredRuntimeConversationId = ref<string | null>(null)
+ // Phase 感知状态（graph 运行态）
+ const currentPhase = ref<string | null>(null)
+ const taskProgress = ref<{ completed: number, total: number } | null>(null)
+ const isInterrupting = ref(false)
+ let interruptTimeout: ReturnType<typeof setTimeout> | null = null
  let runtimePollTimer: ReturnType<typeof setTimeout> | null = null
  // 重试状态：记录最后失败的用户消息
  const lastFailedContent = ref<string | null>(null)
@@ -139,8 +144,17 @@ export const useChatStore = defineStore('chat', => {
  async function stopStreaming {
  if (!currentConversationId.value)
  return
- // 标记中断状态（前端立即响应，停止渲染新内容）
+ // 乐观更新：立即进入"正在中断"过渡态
+ isInterrupting.value = true
  streamingStatus.value = 'interrupted'
+ // 3 秒超时：若仍未收到 message_complete，提示中断可能未完成
+ if (interruptTimeout)
+ clearTimeout(interruptTimeout)
+ interruptTimeout = setTimeout( => {
+ if (isInterrupting.value) {
+ console.warn('[Chat] 中断超时，中断可能未完成')
+ }
+ }, 3000)
  // 先调 interrupt API 通知后端取消 SDK task
  try {
  await interruptConversation(currentConversationId.value)
@@ -194,6 +208,13 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisSessionId.value = null
  budgetWarning.value = null
  restoredRuntimeConversationId.value = null
+ currentPhase.value = null
+ taskProgress.value = null
+ isInterrupting.value = false
+ if (interruptTimeout) {
+ clearTimeout(interruptTimeout)
+ interruptTimeout = null
+ }
  }
  function stopRuntimePolling {
  if (runtimePollTimer) {
@@ -218,6 +239,8 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisSessionId.value = runtime.session_id || null
  deepAnalysisLogs.value = runtime.logs ||
  restoredRuntimeConversationId.value = runtime.conversation_id
+ currentPhase.value = runtime.phase || null
+ taskProgress.value = runtime.task_progress || null
  if (runtime.mode === 'deep_analysis') {
  streamingToolCalls.value = [
  {
@@ -345,11 +368,27 @@ export const useChatStore = defineStore('chat', => {
  streamingStatus.value = 'interrupted'
  if (event.status === 'budget_exceeded')
  streamingStatus.value = 'budget_exceeded'
+ // 重置 phase 感知状态
+ currentPhase.value = null
+ taskProgress.value = null
+ isInterrupting.value = false
+ if (interruptTimeout) {
+ clearTimeout(interruptTimeout)
+ interruptTimeout = null
+ }
  // 深度分析完成时发送浏览器通知
  if (finalAnswer && deepAnalysisSessionId.value)
  _notifyDeepAnalysisComplete
  break
  }
+ case 'phase_transition':
+ currentPhase.value = event.phase || null
+ if (event.blocking_task_count != null)
+ taskProgress.value = { completed: 0, total: event.blocking_task_count }
+ break
+ case 'task_progress':
+ taskProgress.value = { completed: event.completed_count || 0, total: event.total_count || 0 }
+ break
  case 'budget_warning':
  budgetWarning.value = event.budget_usage_percent || null
  break
@@ -418,6 +457,12 @@ export const useChatStore = defineStore('chat', => {
  }
  catch (e) {
  if ((e as Error).name !== 'AbortError') {
+ // SSE 断线恢复：连接异常但流仍在后端执行时，切换到 runtime 轮询
+ const runId = getCurrentRunId
+ if (runId && currentConversationId.value && !streamingContent.value) {
+ scheduleRuntimePoll(currentConversationId.value, 1000)
+ return
+ }
  error.value = e instanceof Error ? e.message: '发送消息失败'
  }
  }
@@ -559,6 +604,9 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisLogs,
  deepAnalysisSessionId,
  restoredRuntimeConversationId,
+ currentPhase,
+ taskProgress,
+ isInterrupting,
  webPushReady,
  // Getters
  currentConversation,

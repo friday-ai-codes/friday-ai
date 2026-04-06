@@ -34,6 +34,9 @@ export interface DeepAnalysisLog {
 export interface ConversationRuntime {
  conversation_id: string
  active: boolean
+ orchestration_run_id?: string
+ phase?: string
+ task_progress?: { completed: number, total: number } | null
  mode?: 'chat' | 'deep_analysis' | null
  status?: string | null
  session_id?: string
@@ -59,8 +62,9 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress'
  message_id?: string
+ run_id?: string
  // text_delta
  text?: string
  // tool_use_start
@@ -93,6 +97,12 @@ export interface SSEEvent {
  session_id?: string
  log_type?: string
  content?: string
+ // phase_transition
+ phase?: string
+ blocking_task_count?: number
+ // task_progress
+ completed_count?: number
+ total_count?: number
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'
