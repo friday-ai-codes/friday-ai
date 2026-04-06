@@ -6,7 +6,11 @@ from .views import (
  ChatStreamView,
  ConversationDetailView,
  ConversationListView,
+ ConversationRuntimeView,
  ModelsView,
+ WebPushPublicKeyView,
+ WebPushSubscriptionView,
+ WebPushUnsubscribeView,
 )
 urlpatterns = [
  # 现有 Chat Protocol API
@@ -25,8 +29,28 @@ urlpatterns = [
  name="conversation-stream",
  ),
  path(
+ "conversations/<uuid:conversation_id>/runtime/",
+ ConversationRuntimeView.as_view,
+ name="conversation-runtime",
+ ),
+ path(
  "conversations/<uuid:conversation_id>/interrupt/",
  ChatInterruptView.as_view,
  name="conversation-interrupt",
+ ),
+ path(
+ "push/public-key/",
+ WebPushPublicKeyView.as_view,
+ name="chat-push-public-key",
+ ),
+ path(
+ "push/subscriptions/",
+ WebPushSubscriptionView.as_view,
+ name="chat-push-subscriptions",
+ ),
+ path(
+ "push/subscriptions/unsubscribe/",
+ WebPushUnsubscribeView.as_view,
+ name="chat-push-unsubscribe",
  ),
 ]

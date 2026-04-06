@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { Conversation, ConversationDetail, CreateConversationParams } from '~/types/chat'
+import type { Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams } from '~/types/chat'
 import { del, get, post } from './client'
 // ============================================================================
 // 类型定义
@@ -49,6 +49,18 @@ export interface ChatCompletionResponse {
  completion_tokens: number
  total_tokens: number
  } | null
+}
+export interface PushPublicKeyResponse {
+ public_key: string
+ subject: string
+}
+export interface PushSubscriptionPayload {
+ endpoint: string
+ keys: {
+ p256dh: string
+ auth: string
+ }
+ user_agent?: string
 }
 // ============================================================================
 // 模型排序
@@ -157,6 +169,12 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
  return get<ConversationDetail>(`/chat/conversations/${id}/`)
 }
 /**
+ * 获取对话运行态（用于刷新后恢复执行状态）
+ */
+export async function getConversationRuntime(id: string): Promise<ConversationRuntime> {
+ return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/`)
+}
+/**
  * 删除对话
  */
 export async function deleteConversation(id: string): Promise<void> {
@@ -168,6 +186,24 @@ export async function deleteConversation(id: string): Promise<void> {
 export async function interruptConversation(id: string): Promise<void> {
  await post(`/chat/conversations/${id}/interrupt/`)
 }
+/**
+ * 获取 Web Push VAPID 公钥
+ */
+export async function getPushPublicKey: Promise<PushPublicKeyResponse> {
+ return get<PushPublicKeyResponse>('/chat/push/public-key/')
+}
+/**
+ * 保存当前浏览器的 Push 订阅
+ */
+export async function savePushSubscription(payload: PushSubscriptionPayload): Promise<void> {
+ await post('/chat/push/subscriptions/', payload)
+}
+/**
+ * 取消当前浏览器的 Push 订阅
+ */
+export async function removePushSubscription(endpoint: string): Promise<void> {
+ await post('/chat/push/subscriptions/unsubscribe/', { endpoint })
+}
 // ============================================================================
 // 默认导出
 // ============================================================================
@@ -177,6 +213,10 @@ export default {
  listConversations,
  createConversation,
  getConversationDetail,
+ getConversationRuntime,
  deleteConversation,
  interruptConversation,
+ getPushPublicKey,
+ savePushSubscription,
+ removePushSubscription,
 }

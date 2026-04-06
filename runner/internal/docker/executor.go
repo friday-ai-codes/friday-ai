@@ -1,10 +1,12 @@
 package docker
 import (
+	"archive/tar"
 	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -19,6 +21,7 @@ import (
 type Executor interface {
 	StartContainer(ctx context.Context, task ws.TaskPayload, callbackURL, callbackToken string) (containerID, answerEndpoint string, err error)
 	WaitContainer(ctx context.Context, containerID string, timeout time.Duration) (exitCode int, logs string, err error)
+	ReadContainerFile(ctx context.Context, containerID, path string) (string, error)
 	StreamLogs(ctx context.Context, containerID string, onLine func(line string)) error
 	KillContainer(ctx context.Context, containerID string) error
 	RemoveContainer(ctx context.Context, containerID string) error
@@ -47,7 +50,9 @@ func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload
  image = e.defaultImage
 	}
 	remoteTools, _:= json.Marshal(task.Payload["remote_tools"])
+	prompt, _:= task.Payload["prompt"].(string)
 	env:= string{
+ // 旧协议变量（兼容已有代码）
  "FRIDAY_SESSION_ID=" + task.TaskID,
  "FRIDAY_TASK_TYPE=" + task.TaskType,
  "FRIDAY_CALLBACK_URL=" + callbackURL,
@@ -57,6 +62,29 @@ func (e *DockerExecutor) StartContainer(ctx context.Context, task ws.TaskPayload
  fmt.Sprintf("FRIDAY_TASK_TIMEOUT=%d", task.Timeout),
  "FRIDAY_ANSWER_PORT=8977",
  "FRIDAY_REMOTE_TOOLS=" + string(remoteTools),
+ // pydantic TaskConfig 需要 FRIDAY_TASK_ 前缀
+ "FRIDAY_TASK_TASK_ID=" + task.TaskID,
+ "FRIDAY_TASK_TASK_DESCRIPTION=" + prompt,
+ "FRIDAY_TASK_TASK_MODE=" + task.TaskType,
+ "FRIDAY_TASK_GIT_REPO_URL=" + task.RepoURL,
+ "FRIDAY_TASK_GIT_BRANCH=" + task.Branch,
+ "FRIDAY_TASK_CALLBACK_URL=" + callbackURL,
+ "FRIDAY_TASK_CALLBACK_TOKEN=" + callbackToken,
+ fmt.Sprintf("FRIDAY_TASK_EXECUTION_TIMEOUT=%d", task.Timeout),
+ "GIT_SSL_NO_VERIFY=true",
+ "CLAUDE_CODE_DISABLE_NONINTERACTIVE_SUBAGENTS=true",
+	}
+	// 从 task.Payload["metadata"] 中提取 env_ 前缀的字段注入容器环境变量
+	// 服务端通过 DispatchTask.metadata 传入，例如 {"env_FRIDAY_TASK_CLAUDE_API_KEY": "sk-..."}
+	if meta, ok:= task.Payload["metadata"].(map[string]any); ok {
+ for k, v:= range meta {
+ if strings.HasPrefix(k, "env_") {
+ envKey:= strings.TrimPrefix(k, "env_")
+ if s, ok:= v.(string); ok && s != "" {
+ env = append(env, envKey+"="+s)
+ }
+ }
+ }
 	}
 	exposed, _:= nat.NewPort("tcp", "8977")
 	cfg:= &container.Config{
@@ -122,6 +150,32 @@ func (e *DockerExecutor) StreamLogs(ctx context.Context, containerID string, onL
  onLine(s.Text)
 	}
 	return s.Err
+}
+func (e *DockerExecutor) ReadContainerFile(ctx context.Context, containerID, path string) (string, error) {
+	reader, _, err:= e.cli.CopyFromContainer(ctx, containerID, path)
+	if err != nil {
+ return "", fmt.Errorf("从容器读取文件失败: %w", err)
+	}
+	defer reader.Close
+	tr:= tar.NewReader(reader)
+	for {
+ hdr, err:= tr.Next
+ if err == io.EOF {
+ break
+ }
+ if err != nil {
+ return "", fmt.Errorf("读取容器归档失败: %w", err)
+ }
+ if hdr.Typeflag != tar.TypeReg {
+ continue
+ }
+ data, err:= io.ReadAll(tr)
+ if err != nil {
+ return "", fmt.Errorf("读取容器文件内容失败: %w", err)
+ }
+ return string(data), nil
+	}
+	return "", fmt.Errorf("容器文件不存在: %s", path)
 }
 func (e *DockerExecutor) KillContainer(ctx context.Context, containerID string) error {
 	err:= e.cli.ContainerKill(ctx, containerID, "KILL")

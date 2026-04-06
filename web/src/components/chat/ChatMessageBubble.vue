@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
-import type { ConversationMessage } from '~/types/chat'
+import type { ConversationMessage, ToolCallData } from '~/types/chat'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 const props = defineProps<{
  message: ConversationMessage
@@ -9,17 +9,22 @@ const props = defineProps<{
  streamingThinking?: string
  streamingToolCalls?: Array<{ id: string, name: string, input: Record<string, unknown>, result?: string, status: 'running' | 'done' }>
  streamingStatus?: 'streaming' | 'interrupted' | 'budget_exceeded' | null
+ streamingNarrations?: string
+ streamingPendingText?: string
+ deepAnalysisLogs?: Array<{ type: string, content: string, ts: number }>
 }>
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
+const contentSource = computed( => (
+ props.isStreaming
+ ? (props.streamingContent || ''): props.message.content
+))
 const renderContent = useDebounceFn( => {
  if (!mdInstance)
  return
- const content = props.isStreaming
- ? (props.streamingContent || ''): props.message.content
- if (content)
- renderedHtml.value = mdInstance.render(content)
+ renderedHtml.value = contentSource.value
+ ? mdInstance.render(contentSource.value): ''
 }, 80)
 onMounted(async => {
  mdInstance = await getMarkdownRenderer
@@ -27,8 +32,11 @@ onMounted(async => {
  renderContent
 })
 watch(
- => props.isStreaming ? props.streamingContent: props.message.content,
- => { if (mdReady.value) renderContent },
+ contentSource,
+ => {
+ if (mdReady.value)
+ renderContent
+ },
 )
 // Thinking：流式来自 props，历史来自 metadata
 const thinkingText = computed( => {
@@ -40,6 +48,7 @@ const thinkingText = computed( => {
 const hasThinking = computed( => !!thinkingText.value)
 const thinkingStartTime = ref<number | null>(null)
 const thinkingDuration = ref(0)
+const showThinking = ref(!!props.isStreaming)
 watch( => props.streamingThinking, (val) => {
  if (val && !thinkingStartTime.value)
  thinkingStartTime.value = Date.now
@@ -47,6 +56,9 @@ watch( => props.streamingThinking, (val) => {
 watch( => props.isStreaming, (streaming) => {
  if (!streaming && thinkingStartTime.value)
  thinkingDuration.value = Math.round((Date.now - thinkingStartTime.value) / 1000)
+})
+watch( => props.message.id, => {
+ showThinking.value = !!props.isStreaming
 })
 const messageStatus = computed( => {
  if (props.streamingStatus === 'interrupted' || props.streamingStatus === 'budget_exceeded')
@@ -83,7 +95,7 @@ const toolCalls = computed( => {
  if (props.isStreaming && props.streamingToolCalls && props.streamingToolCalls.length > 0)
  return props.streamingToolCalls
  if (props.message.tool_calls && props.message.tool_calls.length > 0) {
- return props.message.tool_calls.map((tc: any) => ({
+ return props.message.tool_calls.map((tc: ToolCallData) => ({
  ...tc,
  status: tc.status || 'done',
  result: tc.result || undefined,
@@ -99,12 +111,13 @@ const TOOL_LABELS: Record<string, string> = {
  search_repository_code: '搜索代码',
  list_project_repositories: '仓库列表',
  get_repository_info: '仓库信息',
+ deep_analysis: '深度分析',
 }
 function toolLabel(name: string): string {
  const bare = name.replace(/^mcp__[^_]+__/, '')
  return TOOL_LABELS[bare] || bare
 }
-function toolAction(name: string, input: Record<string, unknown>): string {
+function toolAction(name: string, input: Record<string, unknown>, result?: string): string {
  const bare = name.replace(/^mcp__[^_]+__/, '')
  switch (bare) {
  case 'search_repository_code': {
@@ -123,12 +136,46 @@ function toolAction(name: string, input: Record<string, unknown>): string {
  return '浏览文件结构'
  case 'get_repository_info':
  return '获取仓库详情'
- default:
- return Object.entries(input || {}).slice(0, 2)
- .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.slice(0, 30): JSON.stringify(v)}`)
- .join(', ') || '执行操作'
+ case 'deep_analysis': {
+ const desc = (input?.task_description as string) || ''
+ let label = desc ? `分析「${desc.slice(0, 30)}${desc.length > 30 ? '...': ''}」`: '深度代码分析'
+ if (result) {
+ try {
+ const parsed = JSON.parse(result)
+ const sid = parsed?.data?.session_id
+ if (sid)
+ label += ` · ${sid}`
+ }
+ catch {
+ const m = result.match(/session: ([\w-]+)/)
+ if (m)
+ label += ` · ${m[1]}`
+ }
+ }
+ return label
+ }
+ default: {
+ const entries = Object.entries(input || {}).slice(0, 2)
+ const desc = entries.map(([k, v]) => `${k}: ${typeof v === 'string' ? v.slice(0, 30): JSON.stringify(v)}`).join(', ')
+ return desc || '执行操作'
+ }
  }
 }
+// 叙述文本（流式或历史）
+const narrations = computed( => {
+ if (props.isStreaming)
+ return props.streamingNarrations ||
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ return (meta?.narrations as string) ||
+})
+const showNarrations = ref(false)
+const hasNarrations = computed( => narrations.value.length > 0)
+// 流式中正在输入的叙述文本（尚未归档到 narrations）
+const pendingNarration = computed( => {
+ if (!props.isStreaming)
+ return ''
+ return props.streamingPendingText || ''
+})
 // 工具调用详情展开
 const expandedTools = ref<Set<string>>(new Set)
 function toggleTool(id: string) {
@@ -136,6 +183,174 @@ function toggleTool(id: string) {
  expandedTools.value.delete(id)
  else
  expandedTools.value.add(id)
+}
+// 深度分析实时日志
+const deepAnalysisExpanded = ref(true)
+const resolvedDeepAnalysisLogs = computed( => {
+ if (props.isStreaming)
+ return props.deepAnalysisLogs ||
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ const logs = meta?.deep_analysis_logs
+ return Array.isArray(logs) ? logs as Array<{ type: string, content: string, ts: number }>:
+})
+const hasDeepAnalysisLogs = computed( =>
+ resolvedDeepAnalysisLogs.value.length > 0,
+)
+function isDeepAnalysisTool(name: string): boolean {
+ return name.replace(/^mcp__[^_]+__/, '') === 'deep_analysis'
+}
+const expandedRuntimeLogs = ref<Set<number>>(new Set)
+function toggleRuntimeLog(index: number) {
+ if (expandedRuntimeLogs.value.has(index))
+ expandedRuntimeLogs.value.delete(index)
+ else
+ expandedRuntimeLogs.value.add(index)
+}
+const TOOL_LABELS_CN: Record<string, string> = {
+ Read: '读取文件',
+ Grep: '搜索代码',
+ Glob: '查找文件',
+ LS: '列出目录',
+ Bash: '执行命令',
+ Write: '写入文件',
+ Edit: '编辑文件',
+ MultiEdit: '批量编辑',
+ WebFetch: '网页抓取',
+ WebSearch: '网络搜索',
+ TodoRead: '读取待办',
+ TodoWrite: '写入待办',
+}
+function tryParseToolCall(content: string): { toolName: string, toolLabel: string, argsText: string, parsedArgs: Record<string, unknown> | null } | null {
+ const matched = content.match(/^(\w+)\((.*)\)$/)
+ if (!matched)
+ return null
+ const toolName = matched[1]
+ const argsText = matched[2]
+ let parsedArgs: Record<string, unknown> | null = null
+ try {
+ parsedArgs = JSON.parse(argsText)
+ }
+ catch {
+ parsedArgs = null
+ }
+ return {
+ toolName,
+ toolLabel: TOOL_LABELS_CN[toolName] || toolName,
+ argsText,
+ parsedArgs,
+ }
+}
+function humanizeToolSummary(parsed: ReturnType<typeof tryParseToolCall>): string {
+ if (!parsed)
+ return '开始执行'
+ const { toolName, parsedArgs, argsText } = parsed
+ if (toolName === 'Read') {
+ const filePath = (parsedArgs?.file_path as string) || ''
+ return filePath ? `读取文件 ${filePath}`: '读取文件内容'
+ }
+ if (toolName === 'Glob') {
+ const pattern = (parsedArgs?.pattern as string) || (parsedArgs?.path as string) || argsText
+ return pattern ? `查找 ${pattern}`: '查找文件'
+ }
+ if (toolName === 'Grep') {
+ const pattern = (parsedArgs?.pattern as string) || argsText
+ return pattern ? `搜索 ${pattern}`: '搜索代码'
+ }
+ if (toolName === 'Bash') {
+ const command = (parsedArgs?.command as string) || argsText
+ return command ? `执行命令 ${command}`: '执行命令'
+ }
+ return argsText ? `参数：${argsText}`: '开始执行'
+}
+function prettyJson(value: unknown): string {
+ if (!value)
+ return ''
+ if (typeof value === 'string')
+ return value
+ try {
+ return JSON.stringify(value, null, 2)
+ }
+ catch {
+ return String(value)
+ }
+}
+function runtimeLogTitle(log: { type: string, content: string }, index: number): string {
+ if (log.type === 'tool_call') {
+ const parsed = tryParseToolCall(log.content)
+ return `第 ${index + 1} 步 · ${parsed?.toolLabel || '工具调用'}`
+ }
+ if (log.type === 'text')
+ return `第 ${index + 1} 步 · 分析输出`
+ if (log.type === 'progress')
+ return `第 ${index + 1} 步 · 进度更新`
+ if (log.type === 'result')
+ return `第 ${index + 1} 步 · 分析完成`
+ if (log.type === 'system')
+ return `第 ${index + 1} 步 · 系统状态`
+ return `第 ${index + 1} 步 · 执行日志`
+}
+function runtimeLogSummary(log: { type: string, content: string }): string {
+ const c = log.content.trim
+ if (log.type === 'tool_call') {
+ return humanizeToolSummary(tryParseToolCall(c))
+ }
+ if (log.type === 'text')
+ return c || 'AI 正在整理分析内容'
+ if (log.type === 'progress')
+ return c || '任务仍在执行中'
+ if (log.type === 'result') {
+ const costMatch = c.match(/cost=\$([\d.]+)/)
+ return costMatch ? `任务已完成，费用 $${costMatch[1]}`: '任务已完成'
+ }
+ if (log.type === 'system')
+ return c || '系统状态更新'
+ return c || '执行中'
+}
+function runtimeLogDetail(log: { type: string, content: string }): string {
+ if (log.type === 'tool_call') {
+ const parsed = tryParseToolCall(log.content)
+ if (!parsed)
+ return log.content
+ return prettyJson(parsed.parsedArgs || parsed.argsText)
+ }
+ return log.content
+}
+function shouldShowRuntimeDetail(log: { type: string, content: string }): boolean {
+ return !!runtimeLogDetail(log).trim
+}
+function formatLogContent(log: { type: string, content: string }): string {
+ const c = log.content
+ if (log.type === 'tool_call') {
+ return runtimeLogSummary(log)
+ }
+ if (log.type === 'text') {
+ return runtimeLogSummary(log)
+ }
+ if (log.type === 'result') {
+ return runtimeLogSummary(log)
+ }
+ if (log.type === 'system') {
+ return runtimeLogSummary(log)
+ }
+ if (log.type === 'message' || log.type === 'block') {
+ return runtimeLogSummary(log)
+ }
+ if (log.type === 'progress')
+ return runtimeLogSummary(log)
+ return c.slice(0, 100)
+}
+function logIcon(type: string): string {
+ switch (type) {
+ case 'tool_call': return 'icon-[lucide--terminal]'
+ case 'text': return 'icon-[lucide--file-text]'
+ case 'result': return 'icon-[lucide--check-circle-2]'
+ case 'system': return 'icon-[lucide--cpu]'
+ case 'progress': return 'icon-[lucide--loader]'
+ default: return 'icon-[lucide--info]'
+ }
+}
+function shouldShowLog(log: { type: string, content: string }): boolean {
+ return !!formatLogContent(log)
 }
 </script>
 <template>
@@ -147,16 +362,42 @@ function toggleTool(id: string) {
  </div>
  <!-- ======================== AI 消息 ======================== -->
  <div v-else class="ai-message group pr-8">
- <!-- 正文 -->
- <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0" class="flex items-center py-2">
- <span class="typing-cursor" />
- </div>
- <div
- v-if="renderedHtml"
- class="ai-prose"
- v-html="renderedHtml"
+ <!-- Thinking：流式默认展开，历史默认收起 -->
+ <div v-if="hasThinking" class="thinking-block">
+ <button class="thinking-header" @click="showThinking = !showThinking">
+ <span class="thinking-icon":class="isStreaming ? 'animate-pulse': ''">
+ <span class="icon-[lucide--sparkles] text-[10px]" />
+ </span>
+ <span v-if="isStreaming">思考中...</span>
+ <span v-else-if="thinkingDuration > 0">思考过程 · {{ thinkingDuration }}s</span>
+ <span v-else>思考过程</span>
+ <span
+ class="icon-[lucide--chevron-right] ml-auto text-[10px] text-muted-foreground/60 transition-transform duration-150":class="showThinking ? 'rotate-90': ''"
  />
- <span v-if="isStreaming && renderedHtml" class="typing-cursor" />
+ </button>
+ <div v-if="showThinking" class="thinking-content">
+ {{ thinkingText }}
+ </div>
+ </div>
+ <!-- 叙述文本折叠块（工具调用间的操作描述） -->
+ <div v-if="hasNarrations || pendingNarration" class="narration-block">
+ <button class="narration-toggle" @click="showNarrations = !showNarrations">
+ <span class="icon-[lucide--bot] text-[10px]" />
+ <span>{{ isStreaming ? '分析中...': '分析过程' }}</span>
+ <span class="narration-count">{{ narrations.length }}{{ pendingNarration ? '+1': '' }} 步</span>
+ <span
+ class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="showNarrations ? 'rotate-90': ''"
+ />
+ </button>
+ <div v-if="showNarrations" class="narration-content">
+ <p v-for="(n, i) in narrations":key="i">
+ {{ n.trim }}
+ </p>
+ <p v-if="pendingNarration" class="opacity-60">
+ {{ pendingNarration.trim }}
+ </p>
+ </div>
+ </div>
  <!-- 工具调用 — 行内 pill 流 -->
  <div v-if="toolCalls.length > 0" class="tool-flow">
  <div v-for="tc in toolCalls":key="tc.id" class="tool-inline">
@@ -165,11 +406,44 @@ function toggleTool(id: string) {
  <span v-if="tc.status === 'running'" class="tool-dot tool-dot--running" />
  <span v-else class="tool-dot tool-dot--done" />
  <span class="tool-pill-name">{{ toolLabel(tc.name) }}</span>
- <span class="tool-pill-desc">{{ toolAction(tc.name, tc.input || {}) }}</span>
+ <span class="tool-pill-desc">{{ toolAction(tc.name, tc.input || {}, tc.result) }}</span>
  <span
  v-if="tc.input && Object.keys(tc.input).length > 0"
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(tc.id) ? 'rotate-90': ''"
  />
+ </div>
+ <!-- 深度分析实时日志面板 -->
+ <div
+ v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs"
+ class="deep-analysis-panel"
+ >
+ <button class="deep-analysis-toggle" @click="deepAnalysisExpanded = !deepAnalysisExpanded">
+ <span class="icon-[lucide--activity] text-[10px] text-primary" />
+ <span>{{ tc.status === 'running' ? '执行日志': '执行记录' }}</span>
+ <span class="deep-analysis-count">{{ resolvedDeepAnalysisLogs.length }} 条</span>
+ <span
+ class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="deepAnalysisExpanded ? 'rotate-90': ''"
+ />
+ </button>
+ <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
+ <template v-for="(log, i) in resolvedDeepAnalysisLogs.slice(-50)":key="i">
+ <div v-if="shouldShowLog(log)" class="deep-analysis-log-card">
+ <button class="deep-analysis-log-head" @click="toggleRuntimeLog(i)">
+ <span:class="logIcon(log.type)" class="text-[10px] text-muted-foreground/70 shrink-0 mt-px" />
+ <span class="deep-analysis-log-title">{{ runtimeLogTitle(log, i) }}</span>
+ <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
+ <span
+ v-if="shouldShowRuntimeDetail(log)"
+ class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/50 transition-transform duration-150":class="expandedRuntimeLogs.has(i) ? 'rotate-90': ''"
+ />
+ </button>
+ <pre
+ v-if="expandedRuntimeLogs.has(i) && shouldShowRuntimeDetail(log)"
+ class="deep-analysis-log-detail"
+ >{{ runtimeLogDetail(log) }}</pre>
+ </div>
+ </template>
+ </div>
  </div>
  <!-- 展开详情 -->
  <div v-if="expandedTools.has(tc.id)" class="tool-detail">
@@ -179,13 +453,23 @@ function toggleTool(id: string) {
  </div>
  <div v-if="tc.result" class="tool-detail-section">
  <span class="tool-detail-label">输出</span>
- <pre class="tool-detail-json">{{ typeof tc.result === 'string' && tc.result.length > 600 ? tc.result.slice(0, 600) + '...': tc.result }}</pre>
+ <pre class="tool-detail-json">{{ typeof tc.result === 'string' && tc.result.length > 600 ? `${tc.result.slice(0, 600)}…`: tc.result }}</pre>
  </div>
  </div>
  </div>
  </div>
+ <!-- 正文（工具调用全部完成后的最终回答） -->
+ <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0 && !hasNarrations" class="flex items-center py-2">
+ <span class="typing-cursor" />
+ </div>
+ <div
+ v-if="renderedHtml"
+ class="ai-prose"
+ v-html="renderedHtml"
+ />
+ <span v-if="isStreaming && renderedHtml" class="typing-cursor" />
  <!-- 流式中等待工具返回的光标 -->
- <div v-if="isStreaming && !renderedHtml && toolCalls.length > 0" class="flex items-center py-1">
+ <div v-if="isStreaming && !renderedHtml && (toolCalls.length > 0 || hasNarrations)" class="flex items-center py-1">
  <span class="typing-cursor" />
  </div>
  <!-- 状态 Badge -->
@@ -196,20 +480,6 @@ function toggleTool(id: string) {
  <div v-else-if="messageStatus === 'budget_exceeded'" class="status-badge status-badge--budget">
  <span class="icon-[lucide--wallet] text-[10px]" />
  已达到预算上限
- </div>
- <!-- Thinking — 全量展示，不折叠 -->
- <div v-if="hasThinking" class="thinking-block">
- <div class="thinking-header">
- <span class="thinking-icon":class="isStreaming ? 'animate-pulse': ''">
- <span class="icon-[lucide--sparkles] text-[10px]" />
- </span>
- <span v-if="isStreaming">思考中...</span>
- <span v-else-if="thinkingDuration > 0">思考过程 · {{ thinkingDuration }}s</span>
- <span v-else>思考过程</span>
- </div>
- <div class="thinking-content">
- {{ thinkingText }}
- </div>
  </div>
  <!-- 操作栏 -->
  <div class="action-bar">
@@ -249,6 +519,44 @@ function toggleTool(id: string) {
  display: flex;
  flex-direction: column;
  gap: 0.625rem;
+}
+/* ============ Narration — 叙述折叠块 ============ */
+.narration-block {
+ border-radius: 0.5rem;
+ border: 1px solid hsl(214 32% 91% / 0.5);
+ background: hsl(210 40% 98% / 0.4);
+ overflow: hidden;
+}
+.narration-toggle {
+ display: flex;
+ align-items: center;
+ gap: 0.375rem;
+ width: 100%;
+ padding: 0.375rem 0.625rem;
+ font-size: 0.6875rem;
+ color: hsl(215 16% 47% / 0.7);
+ cursor: pointer;
+ transition: background 0.1s;
+}
+.narration-toggle:hover {
+ background: hsl(210 40% 96% / 0.6);
+}
+.narration-count {
+ margin-left: auto;
+ font-size: 0.625rem;
+ color: hsl(215 16% 47% / 0.4);
+}
+.narration-content {
+ padding: 0.375rem 0.625rem;
+ border-top: 1px solid hsl(214 32% 91% / 0.4);
+ font-size: 0.6875rem;
+ line-height: 1.6;
+ color: hsl(215 16% 47% / 0.6);
+ max-height: 12rem;
+ overflow-y: auto;
+}
+.narration-content p {
+ margin: 0.25rem 0;
 }
 /* ============ Tool Flow — 行内 pill ============ */
 .tool-flow {
@@ -301,6 +609,86 @@ function toggleTool(id: string) {
  white-space: nowrap;
  min-width: 0;
 }
+/* Deep Analysis Panel */
+.deep-analysis-panel {
+ margin-left: 1.25rem;
+ margin-top: 0.125rem;
+ border-radius: 0.375rem;
+ border: 1px solid hsl(214 32% 91% / 0.5);
+ background: hsl(210 40% 98% / 0.3);
+ overflow: hidden;
+}
+.dark .deep-analysis-panel {
+ border-color: hsl(214 32% 20% / 0.5);
+ background: hsl(220 20% 12% / 0.3);
+}
+.deep-analysis-toggle {
+ display: flex;
+ align-items: center;
+ gap: 0.375rem;
+ padding: 0.25rem 0.5rem;
+ font-size: 0.6875rem;
+ color: hsl(215 20% 50%);
+ cursor: pointer;
+ width: 100%;
+ text-align: left;
+}
+.deep-analysis-toggle:hover {
+ background: hsl(210 40% 95% / 0.5);
+}
+.deep-analysis-count {
+ margin-left: auto;
+ font-size: 0.625rem;
+ opacity: 0.6;
+ font-variant-numeric: tabular-nums;
+}
+.deep-analysis-logs {
+ max-height: 16rem;
+ overflow-y: auto;
+ padding: 0.25rem 0.5rem 0.375rem;
+ display: flex;
+ flex-direction: column;
+ gap: 0.375rem;
+}
+.deep-analysis-log-card {
+ border-radius: 0.5rem;
+ border: 1px solid hsl(214 32% 91% / 0.55);
+ background: hsl(210 40% 99% / 0.75);
+ overflow: hidden;
+}
+.deep-analysis-log-head {
+ display: flex;
+ align-items: flex-start;
+ gap: 0.5rem;
+ width: 100%;
+ padding: 0.375rem 0.5rem;
+ text-align: left;
+ cursor: pointer;
+}
+.deep-analysis-log-title {
+ flex-shrink: 0;
+ font-size: 0.625rem;
+ font-weight: 600;
+ color: hsl(215 28% 20%);
+}
+.deep-analysis-log-summary {
+ min-width: 0;
+ font-size: 0.625rem;
+ line-height: 1.5;
+ color: hsl(215 20% 45%);
+ word-break: break-word;
+}
+.deep-analysis-log-detail {
+ margin: 0;
+ padding: 0.375rem 0.5rem 0.5rem 1.75rem;
+ border-top: 1px solid hsl(214 32% 91% / 0.5);
+ font-size: 0.625rem;
+ line-height: 1.55;
+ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+ color: hsl(215 20% 42%);
+ white-space: pre-wrap;
+ word-break: break-all;
+}
 /* Tool detail (展开) */
 .tool-detail {
  margin-left: 1.25rem;
@@ -351,6 +739,13 @@ function toggleTool(id: string) {
  font-size: 0.6875rem;
  color: hsl(215 16% 47% / 0.7);
  border-bottom: 1px solid hsl(214 32% 91% / 0.4);
+ width: 100%;
+ background: transparent;
+ border-left: 0;
+ border-right: 0;
+ border-top: 0;
+ text-align: left;
+ cursor: pointer;
 }
 .thinking-icon {
  display: flex;
@@ -385,7 +780,9 @@ function toggleTool(id: string) {
  margin: 1.75rem 0 0.75rem;
  color: hsl(215 28% 12%);
 }
-.ai-prose:deep(h1:first-child) { margin-top: 0; }
+.ai-prose:deep(h1:first-child) {
+ margin-top: 0;
+}
 .ai-prose:deep(h2) {
  font-size: 1.175rem;
  font-weight: 650;
@@ -393,17 +790,27 @@ function toggleTool(id: string) {
  margin: 1.5rem 0 0.5rem;
  color: hsl(215 28% 12%);
 }
-.ai-prose:deep(h2:first-child) { margin-top: 0; }
+.ai-prose:deep(h2:first-child) {
+ margin-top: 0;
+}
 .ai-prose:deep(h3) {
  font-size: 1rem;
  font-weight: 600;
  margin: 1.25rem 0 0.375rem;
  color: hsl(215 28% 15%);
 }
-.ai-prose:deep(h3:first-child) { margin-top: 0; }
-.ai-prose:deep(p) { margin: 0.625rem 0; }
-.ai-prose:deep(p:first-child) { margin-top: 0; }
-.ai-prose:deep(p:last-child) { margin-bottom: 0; }
+.ai-prose:deep(h3:first-child) {
+ margin-top: 0;
+}
+.ai-prose:deep(p) {
+ margin: 0.625rem 0;
+}
+.ai-prose:deep(p:first-child) {
+ margin-top: 0;
+}
+.ai-prose:deep(p:last-child) {
+ margin-bottom: 0;
+}
 .ai-prose:deep(strong) {
  font-weight: 600;
  color: hsl(215 28% 12%);
@@ -414,12 +821,29 @@ function toggleTool(id: string) {
  border-bottom: 1px solid hsl(168 76% 42% / 0.3);
  transition: border-color 0.15s;
 }
-.ai-prose:deep(a:hover) { border-bottom-color: hsl(168 76% 42%); }
-.ai-prose:deep(ul) { list-style: disc; padding-left: 1.375rem; margin: 0.5rem 0; }
-.ai-prose:deep(ol) { list-style: decimal; padding-left: 1.375rem; margin: 0.5rem 0; }
-.ai-prose:deep(li) { margin: 0.25rem 0; padding-left: 0.25rem; }
-.ai-prose:deep(li > p) { margin: 0.125rem 0; }
-.ai-prose:deep(li:marker) { color: hsl(215 16% 60%); }
+.ai-prose:deep(a:hover) {
+ border-bottom-color: hsl(168 76% 42%);
+}
+.ai-prose:deep(ul) {
+ list-style: disc;
+ padding-left: 1.375rem;
+ margin: 0.5rem 0;
+}
+.ai-prose:deep(ol) {
+ list-style: decimal;
+ padding-left: 1.375rem;
+ margin: 0.5rem 0;
+}
+.ai-prose:deep(li) {
+ margin: 0.25rem 0;
+ padding-left: 0.25rem;
+}
+.ai-prose:deep(li > p) {
+ margin: 0.125rem 0;
+}
+.ai-prose:deep(li:marker) {
+ color: hsl(215 16% 60%);
+}
 .ai-prose:deep(code) {
  font-size: 0.8125rem;
  font-weight: 500;
@@ -450,12 +874,33 @@ function toggleTool(id: string) {
  margin: 0.75rem 0;
  color: hsl(215 16% 47%);
 }
-.ai-prose:deep(blockquote p) { margin: 0.25rem 0; }
-.ai-prose:deep(hr) { border: none; border-top: 1px solid hsl(214 32% 91%); margin: 1.5rem 0; }
-.ai-prose:deep(table) { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin: 0.875rem 0; }
-.ai-prose:deep(th) { text-align: left; font-weight: 600; padding: 0.5rem 0.75rem; border-bottom: 2px solid hsl(214 32% 91%); }
-.ai-prose:deep(td) { padding: 0.5rem 0.75rem; border-bottom: 1px solid hsl(214 32% 91% / 0.6); }
-.ai-prose:deep(tr:last-child td) { border-bottom: none; }
+.ai-prose:deep(blockquote p) {
+ margin: 0.25rem 0;
+}
+.ai-prose:deep(hr) {
+ border: none;
+ border-top: 1px solid hsl(214 32% 91%);
+ margin: 1.5rem 0;
+}
+.ai-prose:deep(table) {
+ width: 100%;
+ border-collapse: collapse;
+ font-size: 0.8125rem;
+ margin: 0.875rem 0;
+}
+.ai-prose:deep(th) {
+ text-align: left;
+ font-weight: 600;
+ padding: 0.5rem 0.75rem;
+ border-bottom: 2px solid hsl(214 32% 91%);
+}
+.ai-prose:deep(td) {
+ padding: 0.5rem 0.75rem;
+ border-bottom: 1px solid hsl(214 32% 91% / 0.6);
+}
+.ai-prose:deep(tr:last-child td) {
+ border-bottom: none;
+}
 /* ============ Typing Cursor ============ */
 .typing-cursor {
  display: inline-block;
@@ -467,7 +912,11 @@ function toggleTool(id: string) {
  vertical-align: text-bottom;
  margin-left: 1px;
 }
-@keyframes blink { 50% { opacity: 0; } }
+@keyframes blink {
+ 50% {
+ opacity: 0;
+ }
+}
 /* ============ Status Badge ============ */
 .status-badge {
  display: inline-flex;
@@ -497,7 +946,9 @@ function toggleTool(id: string) {
  opacity: 0;
  transition: opacity 0.15s;
 }
-.group:hover .action-bar { opacity: 1; }
+.group:hover .action-bar {
+ opacity: 1;
+}
 .action-btn {
  display: flex;
  align-items: center;
@@ -510,11 +961,27 @@ function toggleTool(id: string) {
  cursor: pointer;
  transition: all 0.15s;
 }
-.action-btn:hover { background: hsl(210 40% 96%); color: hsl(215 28% 17%); }
-.action-divider { width: 1px; height: 0.75rem; background: hsl(214 32% 91%); margin: 0 0.125rem; }
-.action-meta { font-size: 0.6875rem; color: hsl(215 16% 60% / 0.7); }
+.action-btn:hover {
+ background: hsl(210 40% 96%);
+ color: hsl(215 28% 17%);
+}
+.action-divider {
+ width: 1px;
+ height: 0.75rem;
+ background: hsl(214 32% 91%);
+ margin: 0 0.125rem;
+}
+.action-meta {
+ font-size: 0.6875rem;
+ color: hsl(215 16% 60% / 0.7);
+}
 @keyframes pulse-dot {
- 0%, 100% { opacity: 1; }
- 50% { opacity: 0.4; }
+ 0%,
+ 100% {
+ opacity: 1;
+ }
+ 50% {
+ opacity: 0.4;
+ }
 }
 </style>

@@ -16,6 +16,9 @@ func (k *KubernetesExecutor) StartContainer(_ context.Context, _ ws.TaskPayload,
 func (k *KubernetesExecutor) WaitContainer(_ context.Context, _ string, _ time.Duration) (int, string, error) {
 	return 0, "", ErrNotImplemented
 }
+func (k *KubernetesExecutor) ReadContainerFile(_ context.Context, _, _ string) (string, error) {
+	return "", ErrNotImplemented
+}
 func (k *KubernetesExecutor) StreamLogs(_ context.Context, _ string, _ func(string)) error {
 	return ErrNotImplemented
 }

@@ -18,6 +18,7 @@ class SettingKeys:
  ANTHROPIC_API_KEY = "anthropic_api_key"
  ANTHROPIC_BASE_URL = "anthropic_base_url"
  ANTHROPIC_MODEL = "anthropic_model"
+ ANTHROPIC_SMALL_MODEL = "anthropic_small_model"
  # Provider 配置
  DEFAULT_PROVIDER_TYPE = "default_provider_type"
  GIT_HTTP_PROXY = "git_http_proxy"
@@ -36,6 +37,10 @@ class SettingKeys:
  FEISHU_APP_SECRET = "feishu_app_secret"
  # Budget Control
  MAX_BUDGET_USD = "max_budget_usd"
+ # Web Push
+ WEB_PUSH_VAPID_PUBLIC_KEY = "web_push_vapid_public_key"
+ WEB_PUSH_VAPID_PRIVATE_KEY = "web_push_vapid_private_key"
+ WEB_PUSH_VAPID_SUBJECT = "web_push_vapid_subject"
  # RAG Enhancement Settings
  RERANKER_ENABLED = "reranker_enabled"
  RERANKER_API_URL = "reranker_api_url"

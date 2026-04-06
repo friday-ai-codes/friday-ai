@@ -14,7 +14,7 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  }
 }
 watch(
- => [chatStore.messages.length, chatStore.streamingContent, chatStore.error],
+ => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error],
  => {
  if (isAtBottom.value || chatStore.isStreaming || chatStore.error)
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
@@ -57,7 +57,7 @@ watch(
  role: 'assistant',
  content: '',
  created_at: new Date.toISOString,
- }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-status="chatStore.streamingStatus"
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs"
  />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">

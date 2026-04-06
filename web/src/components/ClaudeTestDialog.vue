@@ -275,11 +275,9 @@ function refreshModels {
  </div>
  <!-- 响应内容 -->
  <div class="">
- <div class="prose prose-sm dark:prose-invert max-w-none">
- <p class="whitespace-pre-wrap leading-relaxed">
+ <p class="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
  {{ result.content }}
  </p>
- </div>
  </div>
  <!-- 元信息 -->
  <div v-if="result.usage" class="px-4 py-3 bg-muted/30 flex items-center gap-4 text-xs text-muted-foreground">

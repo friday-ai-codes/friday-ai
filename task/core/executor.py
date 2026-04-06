@@ -6,7 +6,6 @@
 bypassPermissions 在 Docker 容器隔离环境中是安全的，可以支持无人值守执行。
 """
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -47,9 +46,23 @@ class ClaudeRunner:
  prompt = self._build_execute_prompt(plan)
  result = await self._execute_claude(
  prompt=prompt,
- permission_mode="bypassPermissions", # 跳过所有权限检查，支持无人值守执行
+ permission_mode="bypassPermissions",
  )
  log.info("Execute mode completed", success=result.get("success", False))
+ return result
+ async def run_explore_mode(self) -> dict:
+ """Run Claude Agent in explore mode for deep code analysis.
+ 使用 bypassPermissions 权限模式（需要执行命令来分析代码），
+ 但不会修改或提交代码。Prompt 引导 Claude 只做分析。
+ """
+ log = logger.bind(task_id=self.config.task_id, mode="explore")
+ log.info("Starting explore mode execution with claude-agent-sdk")
+ prompt = self._build_explore_prompt
+ result = await self._execute_claude(
+ prompt=prompt,
+ permission_mode="bypassPermissions",
+ )
+ log.info("Explore mode completed", success=result.get("success", False))
  return result
  def _build_plan_prompt(self) -> str:
  """Build the prompt for plan mode."""
@@ -68,6 +81,22 @@ Analyze the codebase and create a detailed implementation plan. Do NOT make any 
 4. Estimate the complexity and potential risks
 ## Output Format
 Provide your plan in a structured markdown format that can be reviewed by a human.
+"""
+ def _build_explore_prompt(self) -> str:
+ """Build the prompt for explore/analysis mode."""
+ return f"""You are a senior code analyst performing deep analysis on a codebase.
+## Analysis Task
+{self.config.task_description}
+## Instructions
+1. Explore the codebase thoroughly to understand its structure
+2. Read relevant source files, trace call chains, analyze architecture
+3. Run commands if needed to understand runtime behavior
+4. Provide a detailed, well-structured analysis result
+## Important
+- Do NOT modify any source files
+- Do NOT create new branches or commits
+- Focus on analysis and explanation only
+- Output your findings in clear, structured Chinese (中文)
 """
  def _build_execute_prompt(self, plan: str | None = None) -> str:
  """Build the prompt for execute mode."""
@@ -101,15 +130,8 @@ Implement the task as described. Make necessary code changes.
  """Execute Claude Agent SDK with the given prompt."""
  log = logger.bind(task_id=self.config.task_id)
  try:
- # 设置环境变量
- if self.config.claude_api_key:
- os.environ["ANTHROPIC_API_KEY"] = self.config.claude_api_key
- log.debug("ANTHROPIC_API_KEY set", key_length=len(self.config.claude_api_key))
- else:
+ if not self.config.claude_api_key:
  log.warning("No ANTHROPIC_API_KEY configured!")
- if self.config.claude_base_url:
- os.environ["ANTHROPIC_BASE_URL"] = self.config.claude_base_url
- log.debug("ANTHROPIC_BASE_URL set", url=self.config.claude_base_url)
  # 检查工作目录
  workspace_path = Path(self.workspace)
  if not workspace_path.exists:
@@ -121,13 +143,32 @@ Implement the task as described. Make necessary code changes.
  path=str(self.workspace),
  files=file_count,
  )
- # 构建 Claude Agent 选项
+ # Claude Code stderr 转发到 stdout（被 docker logs 和 Runner StreamLogs 捕获）
+ def _stderr_handler(line: str) -> None:
+ print(f"[claude] {line}", flush=True)
+ # 构建 env：通过 ClaudeAgentOptions(env=...) 注入，不污染宿主 os.environ
+ env_vars: dict[str, str] = {}
+ if self.config.claude_api_key:
+ env_vars["ANTHROPIC_API_KEY"] = self.config.claude_api_key
+ if self.config.claude_base_url:
+ env_vars["ANTHROPIC_BASE_URL"] = self.config.claude_base_url
+ # 使用第三方网关时，子代理（Explore 等）默认用 haiku 可能不可用，
+ # 需要用 ANTHROPIC_DEFAULT_HAIKU_MODEL / CLAUDE_CODE_SUBAGENT_MODEL 覆盖
+ small_model = self.config.claude_small_model or self.config.claude_model
+ if small_model:
+ env_vars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = small_model
+ env_vars["CLAUDE_CODE_SUBAGENT_MODEL"] = small_model
+ log.debug("Sub-agent model override", model=small_model)
  options = ClaudeAgentOptions(
  system_prompt=self._get_system_prompt,
  permission_mode=permission_mode,
  cwd=str(self.workspace),
- model="opus",
- setting_sources=["project"], # 加载项目级 developer-notes.md
+ model=self.config.claude_model or "sonnet",
+ max_turns=self.config.claude_max_turns,
+ setting_sources=["project"],
+ stderr=_stderr_handler,
+ env=env_vars,
+ extra_args={"debug-to-stderr": None},
  )
  log.info(
  "Executing Claude Agent SDK",
@@ -144,20 +185,28 @@ Implement the task as described. Make necessary code changes.
  result_output = None # ResultMessage 的 result 字段
  async for message in query(prompt=prompt, options=options):
  messages.append(message)
- log.debug("Received message", message_type=type(message).__name__)
- # 处理 AssistantMessage - 获取文本输出
+ msg_type = type(message).__name__
  if isinstance(message, AssistantMessage):
  for block in message.content:
  if isinstance(block, TextBlock):
  text_outputs.append(block.text)
- log.debug("Collected text block", text_length=len(block.text))
- # 处理 ResultMessage - 获取会话信息和错误状态
- if isinstance(message, ResultMessage):
+ preview = block.text[:500]
+ print(f"[task:text] {preview}", flush=True)
+ elif isinstance(block, ToolUseBlock):
+ tool_input = json.dumps(block.input, ensure_ascii=False)[:300]
+ print(f"[task:tool] {block.name}({tool_input})", flush=True)
+ else:
+ print(f"[task:block] {type(block).__name__}", flush=True)
+ elif isinstance(message, SystemMessage):
+ print(f"[task:system] subtype={getattr(message, 'subtype', '')}", flush=True)
+ elif isinstance(message, ResultMessage):
  session_id = message.session_id
  total_cost = message.total_cost_usd
  if message.result:
  result_output = message.result
- log.debug("Received result", result_length=len(message.result))
+ print(f"[task:result] session={session_id} cost=${total_cost}", flush=True)
+ else:
+ print(f"[task:msg] {msg_type}", flush=True)
  # 检查是否有 SDK 执行错误
  # 如果没有收到任何 AssistantMessage，且 usage 显示 0 tokens，说明 API 调用失败
  result_message = next((m for m in messages if isinstance(m, ResultMessage)), None)
@@ -272,6 +321,7 @@ Implement the task as described. Make necessary code changes.
  session_id = result.get("session_id")
  output = result.get("output", "")
  # 保存任务会话文件
+ max_output = 50000 if self.config.task_mode == "explore" else 5000
  session_data = {
  "task_id": self.config.task_id,
  "session_id": session_id,
@@ -279,7 +329,7 @@ Implement the task as described. Make necessary code changes.
  "description": self.config.task_description,
  "git_url": self.config.git_repo_url,
  "git_branch": self.config.git_branch,
- "last_output": output[:2000], # 截断存储
+ "last_output": output[:max_output],
  "message_count": result.get("messages", 0),
  "cost": result.get("cost"),
  "created_at": datetime.utcnow.isoformat,

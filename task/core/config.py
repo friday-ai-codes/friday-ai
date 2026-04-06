@@ -47,7 +47,15 @@ class TaskConfig(BaseSettings):
  default="", description="Anthropic API base URL（可选，用于代理服务）"
  )
  claude_model: str = Field(default="", description="Claude model to use")
+ claude_small_model: str = Field(
+ default="",
+ description="Claude 子代理模型（Explore 等），不设置时回退到主模型",
+ )
  claude_max_tokens: int = Field(default=8192, description="Max tokens per request")
+ claude_max_turns: int = Field(
+ default=50,
+ description="Claude Code 最大对话轮数，防止非 Claude 模型死循环",
+ )
  # Callback configuration (可选 - 不设置则仅记录日志)
  callback_url: str = Field(
  default="",

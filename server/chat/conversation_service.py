@@ -3,6 +3,7 @@
 所有方法为 async staticmethod，支持 Django async ORM。
 """
 from __future__ import annotations
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -11,9 +12,13 @@ from django.utils import timezone
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools # noqa: F401
 from agents.core.events import (
+ KEEPALIVE,
  MESSAGE_COMPLETE,
+ TEXT_DELTA,
  THINKING,
  TITLE_GENERATED,
+ TOOL_USE_RESULT,
+ TOOL_USE_START,
  AgentEvent,
 )
 from agents.models import AgentSession, ToolCallLog
@@ -28,6 +33,12 @@ logger = structlog.get_logger(__name__)
 # Active Runner 注册表（内存级，用于 interrupt API 查找）
 # ============================================================================
 _active_runners: dict[str, SDKAgentRunner] = {}
+def _bare_tool_name(name: str) -> str:
+ if name.startswith("mcp__"):
+ parts = name.split("__", 2)
+ if len(parts) == 3:
+ return parts[2]
+ return name
 def get_active_runner(conversation_id: str) -> SDKAgentRunner | None:
  """获取对话的活跃 runner（供 interrupt API 调用）。
  Args:
@@ -84,9 +95,21 @@ def _build_system_prompt(
  role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
  return (
  f"{role_prompt}\n\n"
- f"你正在为项目「{project_name}」（project_id: {project_id}）提供帮助。"
- f"调用工具时请使用此 project_id。"
- f"基于项目知识库回答，如果不确定请说明。用中文回答。"
+ f"当前项目：{project_name}\n\n"
+ f"你有两种策略应对用户问题：\n\n"
+ f"策略一 - 快速检索（定位代码、查看文件、简单问答）：\n"
+ f" 调用 search_repository_code / browse_file_content 等工具搜索向量库\n"
+ f" 根据需要灵活调用，但要有目的性，避免无方向地反复搜索同一内容\n"
+ f" 信息足够时立即回答，不要为了全面而过度检索\n\n"
+ f"策略二 - 深度分析（梳理架构、跨模块分析、复杂代码追踪）：\n"
+ f" 先用 RAG 搜索掌握基本上下文，辅助判断是否确实需要深度分析\n"
+ f" 然后调用 deep_analysis(task_description=...) 启动 Claude Code 分析\n"
+ f" deep_analysis 会花较长时间执行，必须等待结果返回后再回答\n"
+ f" 不要在 deep_analysis 执行期间调用其他工具\n\n"
+ f"根据问题复杂度自主选择策略。\n"
+ f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
+ f"不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
+ f"用中文回答。\n"
  )
 async def _get_tool_names(project_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
@@ -222,6 +245,7 @@ class ConversationService:
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息，通过 SDKAgentRunner 驱动对话。
  SDKAgentRunner 在独立 asyncio.Task 中运行 SDK，通过 Queue 与
@@ -269,7 +293,10 @@ class ConversationService:
  project=conversation.project,
  user=None, # chat 路径暂无真实 user，字段允许 null
  status=AgentSession.Status.RUNNING,
- metadata={"conversation_id": str(conversation.id)},
+ metadata={
+ "conversation_id": str(conversation.id),
+ "notification_user_id": notification_user_id or "",
+ },
  )
  # Budget 配置：从系统设置读取
  budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
@@ -279,9 +306,11 @@ class ConversationService:
  model=model,
  project_id=project_id,
  session_id=session_id,
+ conversation_id=str(conversation.id),
  api_key=api_key,
  api_base_url=resolved.base_url,
- max_turns=15,
+ max_turns=30,
+ timeout_seconds=0,
  agent_session=agent_session,
  max_budget_usd=max_budget_usd,
  )
@@ -289,47 +318,80 @@ class ConversationService:
  # 注册 active runner（用于 interrupt API 查找）
  conv_id_str = str(conversation.id)
  _active_runners[conv_id_str] = runner
- # 流式 yield 事件，拦截 message_complete 补充字段，累积 thinking
+ detached_finalizer = False
+ # 流式 yield 事件，拦截 message_complete 补充字段，累积 thinking / tool calls
  accumulated_thinking: list[str] =
- try:
- async for event in runner.stream(content):
- if event.type == THINKING:
- thinking_text = event.data.get("thinking", "")
- if thinking_text:
- accumulated_thinking.append(thinking_text)
- elif event.type == MESSAGE_COMPLETE:
- # 补充前端契约要求的字段
- result = runner.result
- event.data.setdefault("usage", result.usage if result else {})
- event.data.setdefault("status", result.status if result else "completed")
- event.data.setdefault("iterations", 0)
- event.data.setdefault("model", model)
- # 补充 FeishuBotService 消费所需的字段
- event.data.setdefault("session_id", session_id)
- event.data.setdefault("final_answer", result.final_answer if result else "")
- event.data.setdefault(
- "cost_usd",
- result.metadata.get("cost_usd", 0) if result and result.metadata else 0,
- )
- yield event
- except GeneratorExit:
- logger.info(
- "sse_disconnected",
- conversation_id=str(conversation_id),
- )
- return
- finally:
- # 注销 active runner
- _active_runners.pop(conv_id_str, None)
- logger.debug(
- "active_runner_cleaned",
- conversation_id=conv_id_str,
- session_id=session_id,
- runner_result_status=runner.result.status if runner.result else "no_result",
- )
- # 流结束后：落库
- result = runner.result
+ tool_calls_by_id: dict[str, dict[str, Any]] = {}
+ deep_analysis_started = False
+ deep_analysis_tool_id = ""
+ deep_analysis_tool_name = "deep_analysis"
+ deep_analysis_tool_input: dict[str, Any] = {}
+ deep_analysis_final_answer = ""
+ pending_message_complete: AgentEvent | None = None
+ async def wait_for_deep_analysis_result -> tuple[Any | None, str | None, str | None]:
+ from subagent.models import SubAgentSession, TaskResult
+ while True:
+ target_session = None
+ async for candidate in SubAgentSession.objects.filter(
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ ).order_by("-id"):
+ output = candidate.last_output or {}
+ if (
+ isinstance(output, dict)
+ and output.get("source") == "chat_deep_analysis"
+ and output.get("conversation_id") == conv_id_str
+ ):
+ target_session = candidate
+ break
+ if target_session is None:
+ await asyncio.sleep(1)
+ continue
+ if target_session.status in {
+ SubAgentSession.Status.PENDING,
+ SubAgentSession.Status.RUNNING,
+ }:
+ await asyncio.sleep(2)
+ continue
+ if target_session.status == SubAgentSession.Status.COMPLETED:
+ result = await TaskResult.objects.filter(session=target_session).afirst
+ if result:
+ text = result.text_output or ""
+ if not text and result.raw_output:
+ text = str(result.raw_output)[:3000]
+ return target_session, text, None
+ return target_session, None, "深度分析已完成，但未找到结果输出"
+ error_msg = getattr(target_session, "failure_reason", "") or target_session.status
+ return target_session, None, f"深度分析失败：{error_msg}"
+ async def wait_for_runner_result -> Any | None:
+ while runner.result is None:
+ sdk_task = getattr(runner, "_sdk_task", None)
+ if sdk_task is not None and sdk_task.done:
+ break
+ await asyncio.sleep(0.2)
+ return runner.result
+ async def finalize_conversation(publish_title_event: bool) -> list[AgentEvent]:
+ final_events: list[AgentEvent] =
+ deep_analysis_session = None
+ result = await wait_for_runner_result
  final_content = (result.final_answer if result else None) or ""
+ if deep_analysis_started:
+ (
+ deep_analysis_session,
+ deep_text,
+ deep_error,
+ ) = await wait_for_deep_analysis_result
+ deep_result_text = deep_text or deep_error or "深度分析未返回结果"
+ nonlocal deep_analysis_final_answer
+ deep_analysis_final_answer = deep_result_text
+ final_content = deep_result_text
+ if deep_analysis_tool_id:
+ tool_calls_by_id[deep_analysis_tool_id] = {
+ "id": deep_analysis_tool_id,
+ "name": deep_analysis_tool_name,
+ "input": deep_analysis_tool_input,
+ "result": deep_result_text[:2000],
+ "status": "done",
+ }
  # 更新 AgentSession 最终状态（不依赖 SDK Stop hook）
  try:
  session_status = AgentSession.Status.ERROR
@@ -361,32 +423,15 @@ class ConversationService:
  msg_metadata["output_tokens"] = result.usage.get("output_tokens", 0)
  if accumulated_thinking:
  msg_metadata["thinking"] = "".join(accumulated_thinking)
- # 收集本次 session 的工具调用记录
- tool_calls_data = None
- try:
- tool_logs = ToolCallLog.objects.filter(session=agent_session).order_by("iteration")
- tool_calls_list = [
- {
- "id": log.tool_call_id,
- "name": log.tool_name,
- "input": log.arguments or {},
- "result": (
- str(log.result_output)[:1000]
- if log.result_output is not None
- else None
- ),
- "status": "done",
- }
- async for log in tool_logs
- ]
- if tool_calls_list:
- tool_calls_data = tool_calls_list
- except Exception:
- logger.exception(
- "tool_calls_collect_failed",
- session_id=session_id,
- )
- # 保存 assistant 消息
+ if deep_analysis_started:
+ msg_metadata["deep_analysis_session_id"] = deep_analysis_session.session_id if deep_analysis_session else ""
+ if deep_analysis_session and isinstance(deep_analysis_session.last_output, dict):
+ logs = deep_analysis_session.last_output.get("logs")
+ if isinstance(logs, list) and logs:
+ msg_metadata["deep_analysis_logs"] = logs
+ tool_calls_data = list(tool_calls_by_id.values) or None
+ # 保存 assistant 消息（幂等：避免断流后台收尾与前台正常流重复写入）
+ if not await Message.objects.filter(id=assistant_msg_id).aexists:
  await Message.objects.acreate(
  id=assistant_msg_id,
  conversation=conversation,
@@ -402,16 +447,151 @@ class ConversationService:
  # 检查是否需要生成标题
  if await should_generate_title(str(conversation.id)):
  title = await generate_title(str(conversation.id), content)
- if title:
- yield AgentEvent(
+ if title and publish_title_event:
+ final_events.append(
+ AgentEvent(
  type=TITLE_GENERATED,
  data={"title": title},
+ )
  )
  logger.info(
  "stream_message_sent",
  conversation_id=str(conversation.id),
  session_id=session_id,
  status=result.status if result else "unknown",
+ )
+ if deep_analysis_started:
+ try:
+ from .push_service import ChatPushService
+ await ChatPushService.anotify_deep_analysis_complete(
+ user_id=notification_user_id,
+ conversation_id=str(conversation.id),
+ conversation_title=conversation.title,
+ answer_preview=final_content,
+ )
+ except Exception:
+ logger.exception(
+ "deep_analysis_push_notify_failed",
+ conversation_id=str(conversation.id),
+ session_id=session_id,
+ )
+ _active_runners.pop(conv_id_str, None)
+ return final_events
+ try:
+ async for event in runner.stream(content):
+ if event.type == KEEPALIVE:
+ yield event
+ continue
+ event_tool_name = _bare_tool_name(str(event.data.get("tool_name", "") or ""))
+ if event.type == THINKING:
+ thinking_text = event.data.get("thinking", "")
+ if thinking_text:
+ accumulated_thinking.append(thinking_text)
+ elif event.type == TOOL_USE_START:
+ tool_id = str(event.data.get("tool_call_id", "") or "")
+ if tool_id and tool_id not in tool_calls_by_id:
+ tool_calls_by_id[tool_id] = {
+ "id": tool_id,
+ "name": event.data.get("tool_name", ""),
+ "input": event.data.get("input", {}) or {},
+ "result": None,
+ "status": "done",
+ }
+ if event_tool_name == "deep_analysis":
+ deep_analysis_started = True
+ deep_analysis_tool_id = tool_id
+ deep_analysis_tool_name = str(event.data.get("tool_name", "") or "deep_analysis")
+ deep_analysis_tool_input = event.data.get("input", {}) or {}
+ elif event.type == TOOL_USE_RESULT:
+ tool_id = str(event.data.get("tool_call_id", "") or "")
+ if tool_id:
+ entry = tool_calls_by_id.setdefault(
+ tool_id,
+ {
+ "id": tool_id,
+ "name": event.data.get("tool_name", ""),
+ "input": event.data.get("input", {}) or {},
+ "result": None,
+ "status": "done",
+ },
+ )
+ if event.data.get("tool_name"):
+ entry["name"] = event.data.get("tool_name", "")
+ if event.data.get("input"):
+ entry["input"] = event.data.get("input", {}) or {}
+ if "result" in event.data:
+ entry["result"] = event.data.get("result")
+ elif event.type == MESSAGE_COMPLETE:
+ # 补充前端契约要求的字段
+ result = runner.result
+ event.data.setdefault("usage", result.usage if result else {})
+ event.data.setdefault("status", result.status if result else "completed")
+ event.data.setdefault("iterations", 0)
+ event.data.setdefault("model", model)
+ # 补充 FeishuBotService 消费所需的字段
+ event.data.setdefault("session_id", session_id)
+ event.data.setdefault("final_answer", result.final_answer if result else "")
+ event.data.setdefault(
+ "cost_usd",
+ result.metadata.get("cost_usd", 0) if result and result.metadata else 0,
+ )
+ if deep_analysis_started:
+ pending_message_complete = event
+ continue
+ if deep_analysis_started:
+ if event.type in {TEXT_DELTA, THINKING, TOOL_USE_START, TOOL_USE_RESULT, MESSAGE_COMPLETE}:
+ if not (event.type == TOOL_USE_START and event_tool_name == "deep_analysis"):
+ continue
+ yield event
+ if deep_analysis_started:
+ _deep_session, deep_text, deep_error = await wait_for_deep_analysis_result
+ deep_result_text = deep_text or deep_error or "深度分析未返回结果"
+ deep_analysis_final_answer = deep_result_text
+ if deep_analysis_tool_id:
+ tool_calls_by_id[deep_analysis_tool_id] = {
+ "id": deep_analysis_tool_id,
+ "name": deep_analysis_tool_name,
+ "input": deep_analysis_tool_input,
+ "result": deep_result_text[:1000],
+ "status": "done",
+ }
+ yield AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_name": deep_analysis_tool_name,
+ "tool_call_id": deep_analysis_tool_id,
+ "success": deep_error is None,
+ "input": deep_analysis_tool_input,
+ "result": deep_result_text[:1000],
+ },
+ )
+ completion_event = pending_message_complete or AgentEvent(type=MESSAGE_COMPLETE, data={})
+ completion_event.data.setdefault("usage", runner.result.usage if runner.result else {})
+ completion_event.data["status"] = "completed" if deep_error is None else "error"
+ completion_event.data["model"] = model
+ completion_event.data["session_id"] = session_id
+ completion_event.data["final_answer"] = deep_result_text
+ completion_event.data["result"] = deep_result_text
+ yield completion_event
+ for title_event in await finalize_conversation(publish_title_event=True):
+ yield title_event
+ except GeneratorExit:
+ detached_finalizer = True
+ logger.info(
+ "sse_disconnected",
+ conversation_id=str(conversation_id),
+ session_id=session_id,
+ )
+ asyncio.create_task(finalize_conversation(publish_title_event=False))
+ return
+ finally:
+ if not detached_finalizer:
+ _active_runners.pop(conv_id_str, None)
+ logger.debug(
+ "active_runner_cleaned",
+ conversation_id=conv_id_str,
+ session_id=session_id,
+ runner_result_status=runner.result.status if runner.result else "no_result",
  )
  @staticmethod
  async def list_conversations -> list[Conversation]:
@@ -446,6 +626,76 @@ class ConversationService:
  "conversation": conversation,
  "messages": messages,
  }
+ @staticmethod
+ async def get_conversation_runtime(
+ conversation_id: str,
+ ) -> dict[str, Any]:
+ """返回对话当前运行态，用于刷新/回访后恢复执行状态。"""
+ from subagent.models import SubAgentSession
+ active_runner = get_active_runner(conversation_id)
+ runtime: dict[str, Any] = {
+ "conversation_id": conversation_id,
+ "active": active_runner is not None,
+ "mode": "chat" if active_runner is not None else None,
+ "status": "running" if active_runner is not None else None,
+ "session_id": "",
+ "task_description": "",
+ "progress_message": "",
+ "progress_percent": None,
+ "logs":,
+ }
+ latest_deep_session = None
+ async for candidate in SubAgentSession.objects.filter(
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ main_session__metadata__conversation_id=conversation_id,
+ ).order_by("-id"):
+ output = candidate.last_output or {}
+ if isinstance(output, dict) and output.get("source") == "chat_deep_analysis":
+ latest_deep_session = candidate
+ break
+ if latest_deep_session is not None:
+ output = latest_deep_session.last_output or {}
+ progress = output.get("progress", {}) if isinstance(output, dict) else {}
+ logs = output.get("logs", ) if isinstance(output, dict) else
+ if latest_deep_session.status in {
+ SubAgentSession.Status.PENDING,
+ SubAgentSession.Status.RUNNING,
+ }:
+ runtime.update(
+ {
+ "active": True,
+ "mode": "deep_analysis",
+ "status": latest_deep_session.status,
+ "session_id": latest_deep_session.session_id,
+ "task_description": output.get("task_description", "")
+ if isinstance(output, dict)
+ else "",
+ "progress_message": progress.get("message", "")
+ if isinstance(progress, dict)
+ else "",
+ "progress_percent": progress.get("progress")
+ if isinstance(progress, dict)
+ else None,
+ "logs": logs if isinstance(logs, list) else,
+ }
+ )
+ elif runtime["mode"] is None:
+ runtime.update(
+ {
+ "session_id": latest_deep_session.session_id,
+ "task_description": output.get("task_description", "")
+ if isinstance(output, dict)
+ else "",
+ "progress_message": progress.get("message", "")
+ if isinstance(progress, dict)
+ else "",
+ "progress_percent": progress.get("progress")
+ if isinstance(progress, dict)
+ else None,
+ "logs": logs if isinstance(logs, list) else,
+ }
+ )
+ return runtime
  @staticmethod
  async def delete_conversation(conversation_id: str) -> None:
  """软删除对话。

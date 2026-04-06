@@ -314,6 +314,7 @@ declare global {
  const useVirtualList: typeof import('@vueuse/core').useVirtualList
  const useWakeLock: typeof import('@vueuse/core').useWakeLock
  const useWebNotification: typeof import('@vueuse/core').useWebNotification
+ const useWebPush: typeof import('./composables/useWebPush').useWebPush
  const useWebSocket: typeof import('@vueuse/core').useWebSocket
  const useWebWorker: typeof import('@vueuse/core').useWebWorker
  const useWebWorkerFn: typeof import('@vueuse/core').useWebWorkerFn
@@ -690,6 +691,7 @@ declare module 'vue' {
  readonly useVirtualList: UnwrapRef<typeof import('@vueuse/core')['useVirtualList']>
  readonly useWakeLock: UnwrapRef<typeof import('@vueuse/core')['useWakeLock']>
  readonly useWebNotification: UnwrapRef<typeof import('@vueuse/core')['useWebNotification']>
+ readonly useWebPush: UnwrapRef<typeof import('./composables/useWebPush')['useWebPush']>
  readonly useWebSocket: UnwrapRef<typeof import('@vueuse/core')['useWebSocket']>
  readonly useWebWorker: UnwrapRef<typeof import('@vueuse/core')['useWebWorker']>
  readonly useWebWorkerFn: UnwrapRef<typeof import('@vueuse/core')['useWebWorkerFn']>

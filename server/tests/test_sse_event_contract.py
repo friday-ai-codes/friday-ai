@@ -23,18 +23,19 @@ class TestSSEEventTypeContract:
  "error",
  "title_generated",
  "budget_warning",
+ "deep_analysis_progress",
  })
  def test_all_event_types_contains_expected(self) -> None:
- """ALL_EVENT_TYPES 恰好包含 8 种预期事件类型。"""
+ """ALL_EVENT_TYPES 恰好包含 9 种预期事件类型。"""
  assert ALL_EVENT_TYPES == self.EXPECTED_EVENT_TYPES, (
  f"ALL_EVENT_TYPES 与预期不符。\n"
  f" 多余: {ALL_EVENT_TYPES - self.EXPECTED_EVENT_TYPES}\n"
  f" 缺少: {self.EXPECTED_EVENT_TYPES - ALL_EVENT_TYPES}"
  )
  def test_all_event_types_count(self) -> None:
- """ALL_EVENT_TYPES 应恰好包含 8 种类型。"""
- assert len(ALL_EVENT_TYPES) == 8, (
- f"期望 8 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
+ """ALL_EVENT_TYPES 应恰好包含 9 种类型。"""
+ assert len(ALL_EVENT_TYPES) == 9, (
+ f"期望 9 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
  )
  def test_budget_warning_constant(self) -> None:
  """BUDGET_WARNING 常量值为 'budget_warning'。"""

@@ -129,6 +129,38 @@ class ConversationDetailSerializer(serializers.Serializer):
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
  messages = ConversationMessageSerializer(many=True, required=False)
+class RuntimeLogSerializer(serializers.Serializer):
+ """运行态日志。"""
+ type = serializers.CharField
+ content = serializers.CharField(allow_blank=True)
+ ts = serializers.IntegerField
+class ConversationRuntimeSerializer(serializers.Serializer):
+ """对话运行态。"""
+ conversation_id = serializers.UUIDField
+ active = serializers.BooleanField
+ mode = serializers.CharField(allow_null=True, required=False)
+ status = serializers.CharField(allow_null=True, required=False)
+ session_id = serializers.CharField(allow_blank=True, required=False)
+ task_description = serializers.CharField(allow_blank=True, required=False)
+ progress_message = serializers.CharField(allow_blank=True, required=False)
+ progress_percent = serializers.FloatField(allow_null=True, required=False)
+ logs = RuntimeLogSerializer(many=True, required=False)
+class WebPushPublicKeySerializer(serializers.Serializer):
+ """Web Push 公钥响应。"""
+ public_key = serializers.CharField
+ subject = serializers.CharField
+class WebPushSubscriptionKeysSerializer(serializers.Serializer):
+ """Push 订阅密钥。"""
+ p256dh = serializers.CharField
+ auth = serializers.CharField
+class WebPushSubscriptionSerializer(serializers.Serializer):
+ """Push 订阅请求。"""
+ endpoint = serializers.CharField
+ keys = WebPushSubscriptionKeysSerializer
+ user_agent = serializers.CharField(required=False, allow_blank=True)
+class WebPushUnsubscribeSerializer(serializers.Serializer):
+ """Push 取消订阅请求。"""
+ endpoint = serializers.CharField
 class SendMessageSerializer(serializers.Serializer):
  """发送消息请求。"""
  content = serializers.CharField(min_length=1, help_text="消息内容")

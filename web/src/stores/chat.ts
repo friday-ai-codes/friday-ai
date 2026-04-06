@@ -4,16 +4,19 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, Conversation, ConversationMessage, SSEEvent } from '~/types/chat'
+import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, SSEEvent } from '~/types/chat'
 import {
  createConversation,
  deleteConversation,
  getConversationDetail,
+ getConversationRuntime,
  interruptConversation,
  listConversations,
 } from '~/api/chat'
 import { connectSSE } from '~/composables/useSSEStream'
+import { useWebPush } from '~/composables/useWebPush'
 export const useChatStore = defineStore('chat', => {
+ const { requestAndEnableWebPush, webPushReady } = useWebPush
  // ========================================================================
  // State
  // ========================================================================
@@ -39,6 +42,14 @@ export const useChatStore = defineStore('chat', => {
  const abortController = ref<AbortController | null>(null)
  const streamingStatus = ref<'streaming' | 'interrupted' | 'budget_exceeded' | null>(null)
  const budgetWarning = ref<number | null>(null)
+ // 叙述/正文分离：工具调用前后的文本归为叙述，最终文本为正文
+ const streamingNarrations = ref<string>
+ const streamingPendingText = ref('')
+ // 深度分析实时日志
+ const deepAnalysisLogs = ref<DeepAnalysisLog>
+ const deepAnalysisSessionId = ref<string | null>(null)
+ const restoredRuntimeConversationId = ref<string | null>(null)
+ let runtimePollTimer: ReturnType<typeof setTimeout> | null = null
  // 重试状态：记录最后失败的用户消息
  const lastFailedContent = ref<string | null>(null)
  // 侧边栏状态
@@ -71,12 +82,15 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function selectConversation(id: string) {
+ stopRuntimePolling
  currentConversationId.value = id
+ syncConversationToURL(id)
  messagesLoading.value = true
  error.value = null
  try {
  const detail = await getConversationDetail(id)
  messages.value = detail.messages
+ await restoreConversationRuntime(id)
  }
  catch (e) {
  error.value = e instanceof Error ? e.message: '获取对话详情失败'
@@ -99,6 +113,7 @@ export const useChatStore = defineStore('chat', => {
  })
  conversations.value.unshift(conv)
  currentConversationId.value = conv.id
+ syncConversationToURL(conv.id)
  messages.value =
  }
  catch (e) {
@@ -124,7 +139,7 @@ export const useChatStore = defineStore('chat', => {
  async function stopStreaming {
  if (!currentConversationId.value)
  return
- // 标记中断状态（前端立即响应）
+ // 标记中断状态（前端立即响应，停止渲染新内容）
  streamingStatus.value = 'interrupted'
  // 先调 interrupt API 通知后端取消 SDK task
  try {
@@ -133,44 +148,154 @@ export const useChatStore = defineStore('chat', => {
  catch {
  // 忽略错误（对话可能已结束）
  }
- // 不立即 abort SSE 连接，让后端有时间发送 message_complete 事件
- // 设置 3 秒超时保底：正常情况下后端中断后流会在几百毫秒内结束
+ // 1 秒后强制 abort SSE 连接
  if (abortController.value) {
  const controller = abortController.value
  setTimeout( => {
- // 仅在 controller 仍是当前活跃的时候才 abort（防止误断新请求）
  if (abortController.value === controller) {
  controller.abort
  abortController.value = null
+ stopRuntimePolling
  isStreaming.value = false
  }
- }, 3000)
+ }, 1000)
  }
  }
  function toggleSidebar {
  sidebarCollapsed.value = !sidebarCollapsed.value
  }
  function clearCurrentConversation {
+ stopRuntimePolling
  currentConversationId.value = null
+ syncConversationToURL(null)
  messages.value =
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingToolCalls.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
+ streamingNarrations.value =
+ deepAnalysisLogs.value =
+ deepAnalysisSessionId.value = null
+ streamingPendingText.value = ''
+ restoredRuntimeConversationId.value = null
+ }
+ function resetStreamingState {
+ isStreaming.value = false
+ streamingContent.value = ''
+ streamingThinking.value = ''
+ streamingToolCalls.value =
+ streamingMessageId.value = ''
+ streamingMetadata.value = null
+ streamingStatus.value = null
+ streamingNarrations.value =
+ streamingPendingText.value = ''
+ deepAnalysisLogs.value =
+ deepAnalysisSessionId.value = null
+ budgetWarning.value = null
+ restoredRuntimeConversationId.value = null
+ }
+ function stopRuntimePolling {
+ if (runtimePollTimer) {
+ clearTimeout(runtimePollTimer)
+ runtimePollTimer = null
+ }
+ }
+ function scheduleRuntimePoll(id: string, delay = 2000) {
+ stopRuntimePolling
+ runtimePollTimer = setTimeout( => {
+ void pollConversationRuntime(id)
+ }, delay)
+ }
+ function applyRuntimeSnapshot(runtime: ConversationRuntime) {
+ isStreaming.value = true
+ streamingStatus.value = 'streaming'
+ streamingContent.value = ''
+ streamingThinking.value = ''
+ streamingPendingText.value = ''
+ streamingMetadata.value = null
+ streamingMessageId.value = ''
+ deepAnalysisSessionId.value = runtime.session_id || null
+ deepAnalysisLogs.value = runtime.logs ||
+ restoredRuntimeConversationId.value = runtime.conversation_id
+ if (runtime.mode === 'deep_analysis') {
+ streamingToolCalls.value = [
+ {
+ id: runtime.session_id || 'deep-analysis-runtime',
+ name: 'mcp__chat-tools__deep_analysis',
+ input: runtime.task_description ? { task_description: runtime.task_description }: {},
+ status: 'running',
+ },
+ ]
+ }
+ else {
+ streamingToolCalls.value =
+ if (runtime.progress_message)
+ streamingPendingText.value = runtime.progress_message
+ }
+ }
+ async function hydrateConversationMessages(id: string) {
+ const detail = await getConversationDetail(id)
+ messages.value = detail.messages
+ }
+ async function pollConversationRuntime(id: string) {
+ if (currentConversationId.value !== id)
+ return
+ try {
+ const runtime = await getConversationRuntime(id)
+ if (runtime.active) {
+ applyRuntimeSnapshot(runtime)
+ scheduleRuntimePoll(id)
+ return
+ }
+ const wasRestoringRuntime = restoredRuntimeConversationId.value === id
+ stopRuntimePolling
+ if (wasRestoringRuntime) {
+ const completedSessionId = deepAnalysisSessionId.value
+ await hydrateConversationMessages(id)
+ if (completedSessionId)
+ _notifyDeepAnalysisComplete(completedSessionId)
+ }
+ resetStreamingState
+ }
+ catch {
+ scheduleRuntimePoll(id, 4000)
+ }
+ }
+ async function restoreConversationRuntime(id: string) {
+ try {
+ const runtime = await getConversationRuntime(id)
+ if (!runtime.active) {
+ resetStreamingState
+ return
+ }
+ applyRuntimeSnapshot(runtime)
+ scheduleRuntimePoll(id)
+ }
+ catch {
+ resetStreamingState
+ }
  }
  // ========================================================================
  // SSE 流式消息 (Phase, Plan)
  // ========================================================================
  function handleSSEEvent(event: SSEEvent) {
+ // 用户已中断，忽略后续事件（仅保留 message_complete 用于清理）
+ if (streamingStatus.value === 'interrupted' && event.type !== 'message_complete')
+ return
  switch (event.type) {
  case 'text_delta':
- streamingContent.value += event.text || ''
+ streamingPendingText.value += event.text || ''
  break
  case 'thinking':
  streamingThinking.value += event.thinking || ''
  break
  case 'tool_use_start': {
+ // 工具调用前的文本归为叙述（如"让我搜索一下..."）
+ if (streamingPendingText.value.trim) {
+ streamingNarrations.value.push(streamingPendingText.value)
+ }
+ streamingPendingText.value = ''
  const existing = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
  if (!existing) {
  streamingToolCalls.value.push({
@@ -179,6 +304,9 @@ export const useChatStore = defineStore('chat', => {
  input: (event.input as Record<string, unknown>) || {},
  status: 'running',
  })
+ }
+ else if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0) {
+ existing.input = event.input as Record<string, unknown>
  }
  break
  }
@@ -193,7 +321,16 @@ export const useChatStore = defineStore('chat', => {
  }
  break
  }
- case 'message_complete':
+ case 'message_complete': {
+ // deep_analysis 返回结果在 final_answer/result 中（text_delta 被过滤）
+ const finalAnswer = event.final_answer || event.result || ''
+ if (finalAnswer) {
+ streamingContent.value = finalAnswer
+ }
+ else {
+ streamingContent.value = streamingPendingText.value
+ }
+ streamingPendingText.value = ''
  if (event.message_id)
  streamingMessageId.value = event.message_id
  streamingMetadata.value = {
@@ -201,16 +338,31 @@ export const useChatStore = defineStore('chat', => {
  usage: event.usage,
  input_tokens: event.usage?.input_tokens,
  output_tokens: event.usage?.output_tokens,
+ cost_usd: event.cost_usd,
  status: event.status,
  }
  if (event.status === 'interrupted')
  streamingStatus.value = 'interrupted'
  if (event.status === 'budget_exceeded')
  streamingStatus.value = 'budget_exceeded'
+ // 深度分析完成时发送浏览器通知
+ if (finalAnswer && deepAnalysisSessionId.value)
+ _notifyDeepAnalysisComplete
  break
+ }
  case 'budget_warning':
  budgetWarning.value = event.budget_usage_percent || null
  break
+ case 'deep_analysis_progress': {
+ const logType = event.log_type || 'info'
+ const logContent = event.content || ''
+ const sid = event.session_id || ''
+ if (sid && !deepAnalysisSessionId.value)
+ deepAnalysisSessionId.value = sid
+ if (logContent)
+ deepAnalysisLogs.value.push({ type: logType, content: logContent, ts: Date.now })
+ break
+ }
  case 'title_generated':
  // 更新当前对话标题
  if (event.title) {
@@ -223,7 +375,6 @@ export const useChatStore = defineStore('chat', => {
  error.value = event.message || '未知错误'
  break
  default:
- // eslint-disable-next-line no-console
  console.warn('[Chat] 收到未知 SSE 事件类型:', event.type, event)
  break
  }
@@ -231,12 +382,17 @@ export const useChatStore = defineStore('chat', => {
  async function sendMessage(content: string) {
  if (!currentConversationId.value || isStreaming.value)
  return
+ stopRuntimePolling
  // 清除之前的流式状态
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingToolCalls.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
+ streamingNarrations.value =
+ streamingPendingText.value = ''
+ deepAnalysisLogs.value =
+ deepAnalysisSessionId.value = null
  error.value = null
  lastFailedContent.value = null
  // 添加用户消息到列表（乐观更新）
@@ -282,6 +438,9 @@ export const useChatStore = defineStore('chat', => {
  // 持久化 thinking 内容
  if (streamingThinking.value)
  finalMetadata.thinking = streamingThinking.value
+ // 持久化 narrations（工具调用间的叙述文本）
+ if (streamingNarrations.value.length > 0)
+ finalMetadata.narrations = [...streamingNarrations.value]
  // 持久化 tool calls 的 result
  if (streamingToolCalls.value.length > 0) {
  finalMetadata.tool_results = streamingToolCalls.value
@@ -293,19 +452,31 @@ export const useChatStore = defineStore('chat', => {
  role: 'assistant',
  content: streamingContent.value,
  tool_calls: streamingToolCalls.value.length > 0
- ? streamingToolCalls.value.map(tc => ({ id: tc.id, name: tc.name, input: tc.input })): undefined,
- metadata: Object.keys(finalMetadata).length > 0 ? finalMetadata: undefined,
+ ? streamingToolCalls.value.map(tc => ({
+ id: tc.id,
+ name: tc.name,
+ input: tc.input,
+ result: tc.result,
+ status: tc.status,
+ })): undefined,
+ metadata: Object.keys({
+ ...finalMetadata,
+ ...(deepAnalysisLogs.value.length > 0 ? { deep_analysis_logs: [...deepAnalysisLogs.value] }: {}),
+ ...(deepAnalysisSessionId.value ? { deep_analysis_session_id: deepAnalysisSessionId.value }: {}),
+ }).length > 0
+ ? {
+ ...finalMetadata,
+ ...(deepAnalysisLogs.value.length > 0 ? { deep_analysis_logs: [...deepAnalysisLogs.value] }: {}),
+ ...(deepAnalysisSessionId.value ? { deep_analysis_session_id: deepAnalysisSessionId.value }: {}),
+ }: undefined,
  created_at: new Date.toISOString,
  }
  messages.value.push(assistantMessage)
- streamingContent.value = ''
- streamingThinking.value = ''
- streamingToolCalls.value =
- streamingMessageId.value = ''
- streamingMetadata.value = null
+ resetStreamingState
  }
- streamingStatus.value = null
- budgetWarning.value = null
+ else {
+ resetStreamingState
+ }
  }
  }
  async function retryLastMessage {
@@ -315,6 +486,51 @@ export const useChatStore = defineStore('chat', => {
  lastFailedContent.value = null
  error.value = null
  await sendMessage(content)
+ }
+ // ========================================================================
+ // URL 路由 — 对话 ID 持久化到地址栏
+ // ========================================================================
+ function syncConversationToURL(id: string | null) {
+ const url = new URL(window.location.href)
+ if (id) {
+ url.searchParams.set('conversation', id)
+ }
+ else {
+ url.searchParams.delete('conversation')
+ }
+ window.history.replaceState({}, '', url.toString)
+ }
+ async function restoreFromURL {
+ const url = new URL(window.location.href)
+ const convId = url.searchParams.get('conversation')
+ if (convId && convId !== currentConversationId.value) {
+ await selectConversation(convId)
+ }
+ }
+ // ========================================================================
+ // 浏览器通知
+ // ========================================================================
+ function requestNotificationPermission {
+ void requestAndEnableWebPush
+ }
+ function _notifyDeepAnalysisComplete(sessionId: string | null = deepAnalysisSessionId.value) {
+ if (webPushReady.value)
+ return
+ if (!('Notification' in window) || Notification.permission !== 'granted')
+ return
+ if (document.hasFocus)
+ return
+ const conv = conversations.value.find(c => c.id === currentConversationId.value)
+ const title = conv?.title || '对话'
+ const n = new Notification('深度分析完成', {
+ body: `「${title}」的深度分析已完成，点击查看结果`,
+ icon: '/favicon.ico',
+ tag: `deep-analysis-${sessionId || currentConversationId.value || 'chat'}`,
+ })
+ n.onclick = => {
+ window.focus
+ n.close
+ }
  }
  return {
  // State
@@ -338,6 +554,12 @@ export const useChatStore = defineStore('chat', => {
  streamingStatus,
  budgetWarning,
  lastFailedContent,
+ streamingNarrations,
+ streamingPendingText,
+ deepAnalysisLogs,
+ deepAnalysisSessionId,
+ restoredRuntimeConversationId,
+ webPushReady,
  // Getters
  currentConversation,
  hasConversation,
@@ -351,5 +573,9 @@ export const useChatStore = defineStore('chat', => {
  clearCurrentConversation,
  sendMessage,
  retryLastMessage,
+ restoreFromURL,
+ restoreConversationRuntime,
+ requestNotificationPermission,
+ syncConversationToURL,
  }
 })

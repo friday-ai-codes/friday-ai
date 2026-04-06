@@ -51,6 +51,9 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
  if session.node_execution_id:
  log.debug("has_node_execution_skip_agent_resume")
  return
+ if isinstance(session.last_output, dict) and session.last_output.get("source") == "chat_deep_analysis":
+ log.debug("chat_deep_analysis_skip_agent_resume")
+ return
  # 检查是否有 main_session
  if not session.main_session_id:
  log.debug("no_main_session_skip_agent_resume")
@@ -75,17 +78,21 @@ def _schedule_agent_session_resume(session: SubAgentSession, log: BoundLogger) -
  else:
  result_msg = f"SubAgent 任务失败：{session.last_error}"
  # 调度 Agent 会话恢复
+ from agents.models import AgentSession
  from tasks.agent_tasks import schedule_resume_agent_session
- # 需要刷新 main_session 关系以获取 session_id
  await session.arefresh_from_db
- if session.main_session:
+ if session.main_session_id:
+ main_session = await AgentSession.objects.filter(
+ id=session.main_session_id,
+ ).afirst
+ if main_session:
  schedule_resume_agent_session(
- session_id=session.main_session.session_id,
+ session_id=main_session.session_id,
  user_response=result_msg,
  )
  log.info(
  "agent_session_resume_scheduled",
- main_session_id=session.main_session.session_id,
+ main_session_id=main_session.session_id,
  )
  except Exception as e:
  log.exception("agent_session_resume_error", error=str(e))

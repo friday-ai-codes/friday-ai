@@ -4,6 +4,7 @@ Message 支持 user/assistant/system/tool 四种角色，
 用于存储完整的对话历史（含工具调用记录）。
 """
 import uuid
+from django.conf import settings
 from django.db import models
 from projects.models import Project
 class Conversation(models.Model):
@@ -68,3 +69,28 @@ class Message(models.Model):
  def __str__(self) -> str:
  preview = self.content[:50] if self.content else ""
  return f"{self.role}: {preview}..."
+class ChatPushSubscription(models.Model):
+ """浏览器 Web Push 订阅。"""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ user = models.ForeignKey(
+ settings.AUTH_USER_MODEL,
+ on_delete=models.CASCADE,
+ related_name="chat_push_subscriptions",
+ )
+ endpoint = models.TextField(unique=True)
+ p256dh = models.CharField(max_length=255)
+ auth = models.CharField(max_length=255)
+ user_agent = models.TextField(blank=True, default="")
+ is_active = models.BooleanField(default=True, db_index=True)
+ last_used_at = models.DateTimeField(auto_now=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "chat_push_subscriptions"
+ verbose_name = "聊天 Push 订阅"
+ verbose_name_plural = "聊天 Push 订阅"
+ indexes = [
+ models.Index(fields=["user", "is_active"]),
+ ]
+ def __str__(self) -> str:
+ return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
