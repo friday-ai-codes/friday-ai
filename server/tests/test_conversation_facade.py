@@ -235,6 +235,44 @@ class TestConversationFacade:
  title_events = [e for e in events if e.type == TITLE_GENERATED]
  assert len(title_events) == 1
  assert title_events[0].data["title"] == "Auto Title"
+ async def test_facade_synthesizes_message_complete_when_graph_omits_it(
+ self, project: Any,
+ ) -> None:
+ """: 若 SDK/graph 未显式发送 message_complete，facade 仍兜底补发。"""
+ conversation = await _create_conversation(project)
+ graph = _make_graph(
+ events=[{"type": TEXT_DELTA, "data": {"text": "Partial answer"}}],
+ state={
+ "final_answer": "Partial answer",
+ "accumulated_thinking": ["thinking..."],
+ "tool_calls":,
+ "result_metadata": {
+ "status": "completed",
+ "input_tokens": 12,
+ "output_tokens": 34,
+ "cost_usd": 0.01,
+ },
+ "phase": "completed",
+ },
+ )
+ (p1, p2, p3), _ = _facade_patches(conversation, graph=graph)
+ with p1, p2, p3:
+ from chat.conversation_service import ConversationService
+ events = [
+ e
+ async for e in ConversationService.send_message_stream(
+ conversation_id=str(conversation.id),
+ content="Hello",
+ )
+ if e.type != KEEPALIVE
+ ]
+ completion_events = [e for e in events if e.type == MESSAGE_COMPLETE]
+ assert len(completion_events) == 1
+ assert completion_events[0].data["final_answer"] == "Partial answer"
+ assert completion_events[0].data["usage"] == {
+ "input_tokens": 12,
+ "output_tokens": 34,
+ }
  async def test_facade_handles_generator_exit(self, project: Any) -> None:
  """: SSE 断连后后台 Task 完成 finalize。"""
  conversation = await _create_conversation(project)

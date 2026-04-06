@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, SSEEvent } from '~/types/chat'
+import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import {
  createConversation,
  deleteConversation,
@@ -37,6 +37,7 @@ export const useChatStore = defineStore('chat', => {
  result?: string
  status: 'running' | 'done'
  }>>
+ const streamingTimeline = ref<StreamTimelineItem>
  const streamingMessageId = ref('')
  const streamingMetadata = ref<Record<string, unknown> | null>(null)
  const abortController = ref<AbortController | null>(null)
@@ -55,6 +56,9 @@ export const useChatStore = defineStore('chat', => {
  const isInterrupting = ref(false)
  let interruptTimeout: ReturnType<typeof setTimeout> | null = null
  let runtimePollTimer: ReturnType<typeof setTimeout> | null = null
+ function isTimelineToolItem(item: StreamTimelineItem): item is Extract<StreamTimelineItem, { kind: 'tool' }> {
+ return item.kind === 'tool'
+ }
  // 重试状态：记录最后失败的用户消息
  const lastFailedContent = ref<string | null>(null)
  // 侧边栏状态
@@ -186,6 +190,7 @@ export const useChatStore = defineStore('chat', => {
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingToolCalls.value =
+ streamingTimeline.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
  streamingNarrations.value =
@@ -199,6 +204,7 @@ export const useChatStore = defineStore('chat', => {
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingToolCalls.value =
+ streamingTimeline.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
  streamingStatus.value = null
@@ -250,12 +256,43 @@ export const useChatStore = defineStore('chat', => {
  status: 'running',
  },
  ]
+ streamingTimeline.value = [
+ {
+ id: runtime.session_id || 'deep-analysis-runtime',
+ kind: 'tool',
+ name: 'mcp__chat-tools__deep_analysis',
+ input: runtime.task_description ? { task_description: runtime.task_description }: {},
+ status: 'running',
+ },
+ ]
  }
  else {
  streamingToolCalls.value =
+ streamingTimeline.value =
  if (runtime.progress_message)
  streamingPendingText.value = runtime.progress_message
  }
+ }
+ function appendTimelineText(kind: 'thinking' | 'narration', text: string) {
+ if (!text)
+ return
+ const last = streamingTimeline.value[streamingTimeline.value.length - 1]
+ if (last && last.kind === kind) {
+ last.text += text
+ return
+ }
+ streamingTimeline.value.push({
+ id: crypto.randomUUID,
+ kind,
+ text,
+ })
+ }
+ function flushPendingNarrationToTimeline {
+ if (!streamingPendingText.value.trim)
+ return
+ appendTimelineText('narration', streamingPendingText.value)
+ streamingNarrations.value.push(streamingPendingText.value)
+ streamingPendingText.value = ''
  }
  async function hydrateConversationMessages(id: string) {
  const detail = await getConversationDetail(id)
@@ -312,13 +349,11 @@ export const useChatStore = defineStore('chat', => {
  break
  case 'thinking':
  streamingThinking.value += event.thinking || ''
+ appendTimelineText('thinking', event.thinking || '')
  break
  case 'tool_use_start': {
  // 工具调用前的文本归为叙述（如"让我搜索一下..."）
- if (streamingPendingText.value.trim) {
- streamingNarrations.value.push(streamingPendingText.value)
- }
- streamingPendingText.value = ''
+ flushPendingNarrationToTimeline
  const existing = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
  if (!existing) {
  streamingToolCalls.value.push({
@@ -331,6 +366,23 @@ export const useChatStore = defineStore('chat', => {
  else if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0) {
  existing.input = event.input as Record<string, unknown>
  }
+ const timelineTool = streamingTimeline.value.find((item): item is Extract<StreamTimelineItem, { kind: 'tool' }> =>
+ isTimelineToolItem(item) && item.id === event.tool_call_id,
+ )
+ if (!timelineTool) {
+ streamingTimeline.value.push({
+ id: event.tool_call_id || crypto.randomUUID,
+ kind: 'tool',
+ name: event.tool_name || '',
+ input: (event.input as Record<string, unknown>) || {},
+ status: 'running',
+ })
+ }
+ else {
+ timelineTool.name = event.tool_name || timelineTool.name
+ if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
+ timelineTool.input = event.input as Record<string, unknown>
+ }
  break
  }
  case 'tool_use_result': {
@@ -341,6 +393,16 @@ export const useChatStore = defineStore('chat', => {
  if (event.result)
  tc.result = event.result as string
  tc.status = 'done'
+ }
+ const timelineTool = streamingTimeline.value.find((item): item is Extract<StreamTimelineItem, { kind: 'tool' }> =>
+ isTimelineToolItem(item) && item.id === event.tool_call_id,
+ )
+ if (timelineTool) {
+ if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
+ timelineTool.input = event.input as Record<string, unknown>
+ if (event.result)
+ timelineTool.result = event.result as string
+ timelineTool.status = 'done'
  }
  break
  }
@@ -426,6 +488,7 @@ export const useChatStore = defineStore('chat', => {
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingToolCalls.value =
+ streamingTimeline.value =
  streamingMessageId.value = ''
  streamingMetadata.value = null
  streamingNarrations.value =
@@ -486,6 +549,8 @@ export const useChatStore = defineStore('chat', => {
  // 持久化 narrations（工具调用间的叙述文本）
  if (streamingNarrations.value.length > 0)
  finalMetadata.narrations = [...streamingNarrations.value]
+ if (streamingTimeline.value.length > 0)
+ finalMetadata.timeline = [...streamingTimeline.value]
  // 持久化 tool calls 的 result
  if (streamingToolCalls.value.length > 0) {
  finalMetadata.tool_results = streamingToolCalls.value
@@ -589,6 +654,7 @@ export const useChatStore = defineStore('chat', => {
  streamingContent,
  streamingThinking,
  streamingToolCalls,
+ streamingTimeline,
  streamingMessageId,
  streamingMetadata,
  abortController,

@@ -31,6 +31,28 @@ export interface DeepAnalysisLog {
  content: string
  ts: number
 }
+export interface StreamTimelineThinkingItem {
+ id: string
+ kind: 'thinking'
+ text: string
+}
+export interface StreamTimelineNarrationItem {
+ id: string
+ kind: 'narration'
+ text: string
+}
+export interface StreamTimelineToolItem {
+ id: string
+ kind: 'tool'
+ name: string
+ input: Record<string, unknown>
+ result?: string
+ status: 'running' | 'done'
+}
+export type StreamTimelineItem
+ = | StreamTimelineThinkingItem
+ | StreamTimelineNarrationItem
+ | StreamTimelineToolItem
 export interface ConversationRuntime {
  conversation_id: string
  active: boolean

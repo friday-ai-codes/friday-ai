@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, patch
 import pytest
-from agents.sdk.runner import SdkRunnerConfig
+from agents.chat_runner import ChatRunnerConfig
 @dataclass
 class _ResolvedStub:
  api_key: str = "sk-test-key"
@@ -33,7 +33,7 @@ class TestBuildSdkConfig:
  ),
  ):
  config, agent_session = await build_sdk_config(conversation)
- assert isinstance(config, SdkRunnerConfig)
+ assert isinstance(config, ChatRunnerConfig)
  assert config.api_key == "sk-test-key"
  assert config.api_base_url == "https://api.example.com"
  assert config.model == "claude-sonnet-4-5"

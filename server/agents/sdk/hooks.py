@@ -99,13 +99,9 @@ def create_post_tool_use_hook(
  tool_use_id=tool_id,
  session_id=session.session_id,
  )
- # 2. 发送 TOOL_USE_RESULT 事件（含 input 和 result 摘要）
+ # 2. 发送 TOOL_USE_RESULT 事件（保留结构化结果，供 graph 识别 blocking marker）
  if event_callback is not None:
  try:
- result_summary = ""
- if tool_response is not None:
- raw = str(tool_response)
- result_summary = raw[:1000] if len(raw) > 1000 else raw
  event = AgentEvent(
  type=TOOL_USE_RESULT,
  data={
@@ -113,7 +109,7 @@ def create_post_tool_use_hook(
  "tool_call_id": tool_id,
  "success": not is_error,
  "input": tool_input,
- "result": result_summary,
+ "result": tool_response,
  },
  )
  await event_callback(event)

@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
-import type { ConversationMessage, ToolCallData } from '~/types/chat'
+import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
-const chatStore = useChatStore
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
  streamingContent?: string
  streamingThinking?: string
  streamingToolCalls?: Array<{ id: string, name: string, input: Record<string, unknown>, result?: string, status: 'running' | 'done' }>
+ streamingTimeline?: StreamTimelineItem
  streamingStatus?: 'streaming' | 'interrupted' | 'budget_exceeded' | null
  streamingNarrations?: string
  streamingPendingText?: string
  deepAnalysisLogs?: Array<{ type: string, content: string, ts: number }>
 }>
+const chatStore = useChatStore
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
@@ -119,7 +120,8 @@ const toolCalls = computed( => {
  // 按 id 去重，保留首次出现
  const seen = new Set<string>
  return calls.filter((tc) => {
- if (seen.has(tc.id)) return false
+ if (seen.has(tc.id))
+ return false
  seen.add(tc.id)
  return true
  })
@@ -197,6 +199,20 @@ const pendingNarration = computed( => {
  return ''
  return props.streamingPendingText || ''
 })
+const timelineItems = computed<StreamTimelineItem>( => {
+ const items = props.isStreaming
+ ? [...(props.streamingTimeline || )]: Array.isArray((props.message.metadata as Record<string, unknown> | undefined)?.timeline)
+ ? [...((props.message.metadata as Record<string, unknown>).timeline as StreamTimelineItem)]:
+ if (props.isStreaming && pendingNarration.value.trim) {
+ items.push({
+ id: '__pending_narration__',
+ kind: 'narration',
+ text: pendingNarration.value,
+ })
+ }
+ return items
+})
+const hasTimeline = computed( => timelineItems.value.length > 0)
 // 工具调用详情展开
 const expandedTools = ref<Set<string>>(new Set)
 function toggleTool(id: string) {
@@ -389,7 +405,7 @@ const hideEmptyBubble = computed( =>
  <!-- ======================== AI 消息 ======================== -->
  <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
  <!-- Thinking：流式默认展开，历史默认收起 -->
- <div v-if="hasThinking" class="thinking-block">
+ <div v-if="!hasTimeline && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
  <span class="thinking-icon":class="isStreaming ? 'animate-pulse': ''">
  <span class="icon-[lucide--sparkles] text-[10px]" />
@@ -406,7 +422,7 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- 叙述文本折叠块（工具调用间的操作描述） -->
- <div v-if="hasNarrations || pendingNarration" class="narration-block">
+ <div v-if="!hasTimeline && (hasNarrations || pendingNarration)" class="narration-block">
  <button class="narration-toggle" @click="showNarrations = !showNarrations">
  <span class="icon-[lucide--bot] text-[10px]" />
  <span>{{ isStreaming ? '分析中...': '分析过程' }}</span>
@@ -425,7 +441,83 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- 工具调用 — 行内 pill 流 -->
- <div v-if="toolCalls.length > 0" class="tool-flow">
+ <div v-if="hasTimeline" class="timeline-flow">
+ <template v-for="item in timelineItems":key="item.id">
+ <div v-if="item.kind === 'thinking'" class="timeline-step timeline-step--thinking">
+ <div class="timeline-step-label">
+ <span class="icon-[lucide--sparkles] text-[10px]" />
+ 思考
+ </div>
+ <div class="timeline-step-text">
+ {{ item.text.trim }}
+ </div>
+ </div>
+ <div v-else-if="item.kind === 'narration'" class="timeline-step timeline-step--narration">
+ <div class="timeline-step-label">
+ <span class="icon-[lucide--bot] text-[10px]" />
+ 分析
+ </div>
+ <div class="timeline-step-text">
+ {{ item.text.trim }}
+ </div>
+ </div>
+ <div v-else class="tool-flow">
+ <div class="tool-inline">
+ <div class="tool-pill" @click="toggleTool(item.id)">
+ <span v-if="item.status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-name">{{ toolLabel(item.name) }}</span>
+ <span class="tool-pill-desc">{{ toolAction(item.name, item.input || {}, item.result) }}</span>
+ <span
+ v-if="item.input && Object.keys(item.input).length > 0"
+ class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
+ />
+ </div>
+ <div
+ v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
+ class="deep-analysis-panel"
+ >
+ <button class="deep-analysis-toggle" @click="deepAnalysisExpanded = !deepAnalysisExpanded">
+ <span class="icon-[lucide--activity] text-[10px] text-primary" />
+ <span>{{ item.status === 'running' ? '执行日志': '执行记录' }}</span>
+ <span class="deep-analysis-count">{{ resolvedDeepAnalysisLogs.length }} 条</span>
+ <span
+ class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="deepAnalysisExpanded ? 'rotate-90': ''"
+ />
+ </button>
+ <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
+ <template v-for="(log, i) in resolvedDeepAnalysisLogs":key="i">
+ <div v-if="shouldShowLog(log)" class="deep-analysis-log-card">
+ <div class="deep-analysis-log-head">
+ <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
+ <div class="deep-analysis-log-body">
+ <span class="deep-analysis-log-title">{{ runtimeLogTitle(log, i) }}</span>
+ <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
+ </div>
+ </div>
+ <pre
+ v-if="shouldShowRuntimeDetail(log)"
+ class="deep-analysis-log-detail"
+ >{{ runtimeLogDetail(log) }}</pre>
+ </div>
+ </template>
+ </div>
+ </div>
+ <div v-if="expandedTools.has(item.id)" class="tool-detail">
+ <div class="tool-detail-section">
+ <span class="tool-detail-label">输入</span>
+ <pre class="tool-detail-json">{{ JSON.stringify(item.input, null, 2) }}</pre>
+ </div>
+ <div v-if="item.result" class="tool-detail-section">
+ <span class="tool-detail-label">输出</span>
+ <pre class="tool-detail-json">{{ typeof item.result === 'string' && item.result.length > 600 ? `${item.result.slice(0, 600)}…`: item.result }}</pre>
+ </div>
+ </div>
+ </div>
+ </div>
+ </template>
+ </div>
+ <div v-else-if="toolCalls.length > 0" class="tool-flow">
  <div v-for="tc in toolCalls":key="tc.id" class="tool-inline">
  <!-- 主行：状态 + 名称 + 描述 -->
  <div class="tool-pill" @click="toggleTool(tc.id)">
@@ -483,7 +575,7 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- 正文（工具调用全部完成后的最终回答） -->
- <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0 && !hasNarrations" class="flex items-center py-2">
+ <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0 && !hasNarrations && !hasTimeline" class="flex items-center py-2">
  <span class="typing-cursor" />
  </div>
  <div
@@ -493,7 +585,7 @@ const hideEmptyBubble = computed( =>
  />
  <span v-if="isStreaming && renderedHtml" class="typing-cursor" />
  <!-- 流式中等待工具返回的光标 -->
- <div v-if="isStreaming && !renderedHtml && (toolCalls.length > 0 || hasNarrations)" class="flex items-center py-1">
+ <div v-if="isStreaming && !renderedHtml && (toolCalls.length > 0 || hasNarrations || hasTimeline)" class="flex items-center py-1">
  <span class="typing-cursor" />
  </div>
  <!-- 状态 Badge -->
@@ -543,6 +635,40 @@ const hideEmptyBubble = computed( =>
  display: flex;
  flex-direction: column;
  gap: 0.625rem;
+}
+/* ============ Timeline ============ */
+.timeline-flow {
+ display: flex;
+ flex-direction: column;
+ gap: 0.375rem;
+}
+.timeline-step {
+ border-radius: 0.625rem;
+ border: 1px solid hsl(214 32% 91% / 0.5);
+ background: hsl(210 40% 98% / 0.55);
+ padding: 0.5rem 0.625rem;
+}
+.timeline-step--thinking {
+ background: hsl(168 76% 96% / 0.55);
+}
+.timeline-step--narration {
+ background: hsl(210 40% 98% / 0.7);
+}
+.timeline-step-label {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.375rem;
+ font-size: 0.6875rem;
+ font-weight: 600;
+ color: hsl(215 16% 42% / 0.8);
+ margin-bottom: 0.25rem;
+}
+.timeline-step-text {
+ font-size: 0.75rem;
+ line-height: 1.7;
+ color: hsl(215 16% 35%);
+ white-space: pre-wrap;
+ word-break: break-word;
 }
 /* ============ Narration — 叙述折叠块 ============ */
 .narration-block {
