@@ -2,6 +2,7 @@
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
+import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
 const chatStore = useChatStore
 const scrollContainer = ref<HTMLElement | null>(null)
@@ -14,7 +15,7 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  }
 }
 watch(
- => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error],
+ => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase],
  => {
  if (isAtBottom.value || chatStore.isStreaming || chatStore.error)
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
@@ -90,6 +91,19 @@ watch(
  <span class="icon-[lucide--x] text-xs" />
  </button>
  </div>
+ <!-- 运行态 status bar -->
+ <Transition
+ enter-active-class="transition-all duration-300 ease-out"
+ enter-from-class="opacity-0 translate-y-2"
+ enter-to-class="opacity-100 translate-y-0"
+ leave-active-class="transition-all duration-200 ease-in"
+ leave-from-class="opacity-100 translate-y-0"
+ leave-to-class="opacity-0 translate-y-2"
+ >
+ <ChatStatusBar
+ v-if="chatStore.currentPhase && (chatStore.isStreaming || chatStore.restoredRuntimeConversationId)":phase="chatStore.currentPhase":task-progress="chatStore.taskProgress":is-interrupting="chatStore.isInterrupting"
+ />
+ </Transition>
  </div>
  </div>
  <!-- 回到底部 -->

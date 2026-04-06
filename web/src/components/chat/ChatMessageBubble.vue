@@ -2,6 +2,7 @@
 import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, ToolCallData } from '~/types/chat'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+const chatStore = useChatStore
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -90,18 +91,38 @@ function copyContent {
  setTimeout( => toggleCopied(false), 2000)
  }
 }
-// 工具调用数据（流式或历史）
+// 工具调用数据（流式或历史），含 id 去重
 const toolCalls = computed( => {
- if (props.isStreaming && props.streamingToolCalls && props.streamingToolCalls.length > 0)
- return props.streamingToolCalls
- if (props.message.tool_calls && props.message.tool_calls.length > 0) {
- return props.message.tool_calls.map((tc: ToolCallData) => ({
+ let calls: Array<{ id: string, name: string, input: Record<string, unknown>, result?: string, status: string }>
+ if (props.isStreaming && props.streamingToolCalls && props.streamingToolCalls.length > 0) {
+ calls = props.streamingToolCalls
+ }
+ else if (props.message.tool_calls && props.message.tool_calls.length > 0) {
+ const mapped = props.message.tool_calls.map((tc: ToolCallData) => ({
  ...tc,
  status: tc.status || 'done',
  result: tc.result || undefined,
  }))
+ const deepCalls = mapped.filter(tc => isDeepAnalysisTool(tc.name))
+ if (deepCalls.length > 1) {
+ const primary = deepCalls.find(tc => tc.result || (tc.input && Object.keys(tc.input).length > 0)) || deepCalls[0]
+ const ghostIds = new Set(deepCalls.filter(tc => tc.id !== primary.id).map(tc => tc.id))
+ calls = mapped.filter(tc => !ghostIds.has(tc.id))
  }
+ else {
+ calls = mapped
+ }
+ }
+ else {
  return
+ }
+ // 按 id 去重，保留首次出现
+ const seen = new Set<string>
+ return calls.filter((tc) => {
+ if (seen.has(tc.id)) return false
+ seen.add(tc.id)
+ return true
+ })
 })
 // 工具名称映射
 const TOOL_LABELS: Record<string, string> = {
@@ -199,13 +220,10 @@ const hasDeepAnalysisLogs = computed( =>
 function isDeepAnalysisTool(name: string): boolean {
  return name.replace(/^mcp__[^_]+__/, '') === 'deep_analysis'
 }
-const expandedRuntimeLogs = ref<Set<number>>(new Set)
-function toggleRuntimeLog(index: number) {
- if (expandedRuntimeLogs.value.has(index))
- expandedRuntimeLogs.value.delete(index)
- else
- expandedRuntimeLogs.value.add(index)
-}
+const primaryDeepAnalysisId = computed( => {
+ const da = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
+ return da?.id || ''
+})
 const TOOL_LABELS_CN: Record<string, string> = {
  Read: '读取文件',
  Grep: '搜索代码',
@@ -352,6 +370,14 @@ function logIcon(type: string): string {
 function shouldShowLog(log: { type: string, content: string }): boolean {
  return !!formatLogContent(log)
 }
+// waiting phase 空内容时隐藏空 bubble，让 ChatStatusBar 单独呈现
+const hideEmptyBubble = computed( =>
+ props.isStreaming
+ && !renderedHtml.value
+ && toolCalls.value.length === 0
+ && !hasNarrations.value
+ && chatStore.currentPhase === 'waiting',
+)
 </script>
 <template>
  <!-- ======================== 用户消息 ======================== -->
@@ -361,7 +387,7 @@ function shouldShowLog(log: { type: string, content: string }): boolean {
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
- <div v-else class="ai-message group pr-8">
+ <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
  <!-- Thinking：流式默认展开，历史默认收起 -->
  <div v-if="hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
@@ -412,9 +438,9 @@ function shouldShowLog(log: { type: string, content: string }): boolean {
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(tc.id) ? 'rotate-90': ''"
  />
  </div>
- <!-- 深度分析实时日志面板 -->
+ <!-- 深度分析实时日志面板（同一消息只渲染一次） -->
  <div
- v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs"
+ v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs && tc.id === primaryDeepAnalysisId"
  class="deep-analysis-panel"
  >
  <button class="deep-analysis-toggle" @click="deepAnalysisExpanded = !deepAnalysisExpanded">
@@ -426,19 +452,17 @@ function shouldShowLog(log: { type: string, content: string }): boolean {
  />
  </button>
  <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
- <template v-for="(log, i) in resolvedDeepAnalysisLogs.slice(-50)":key="i">
+ <template v-for="(log, i) in resolvedDeepAnalysisLogs":key="i">
  <div v-if="shouldShowLog(log)" class="deep-analysis-log-card">
- <button class="deep-analysis-log-head" @click="toggleRuntimeLog(i)">
- <span:class="logIcon(log.type)" class="text-[10px] text-muted-foreground/70 shrink-0 mt-px" />
+ <div class="deep-analysis-log-head">
+ <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
+ <div class="deep-analysis-log-body">
  <span class="deep-analysis-log-title">{{ runtimeLogTitle(log, i) }}</span>
  <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
- <span
- v-if="shouldShowRuntimeDetail(log)"
- class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/50 transition-transform duration-150":class="expandedRuntimeLogs.has(i) ? 'rotate-90': ''"
- />
- </button>
+ </div>
+ </div>
  <pre
- v-if="expandedRuntimeLogs.has(i) && shouldShowRuntimeDetail(log)"
+ v-if="shouldShowRuntimeDetail(log)"
  class="deep-analysis-log-detail"
  >{{ runtimeLogDetail(log) }}</pre>
  </div>
@@ -643,46 +667,65 @@ function shouldShowLog(log: { type: string, content: string }): boolean {
  font-variant-numeric: tabular-nums;
 }
 .deep-analysis-logs {
- max-height: 16rem;
- overflow-y: auto;
- padding: 0.25rem 0.5rem 0.375rem;
+ overflow: visible;
+ padding: 0.5rem;
  display: flex;
  flex-direction: column;
- gap: 0.375rem;
+ gap: 0.625rem;
 }
 .deep-analysis-log-card {
  border-radius: 0.5rem;
- border: 1px solid hsl(214 32% 91% / 0.55);
- background: hsl(210 40% 99% / 0.75);
+ border: 1px solid hsl(214 32% 88% / 0.9);
+ background: hsl(0 0% 100% / 0.92);
  overflow: hidden;
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.04);
 }
 .deep-analysis-log-head {
  display: flex;
  align-items: flex-start;
- gap: 0.5rem;
+ gap: 0.625rem;
  width: 100%;
- padding: 0.375rem 0.5rem;
+ padding: 0.625rem 0.75rem;
  text-align: left;
- cursor: pointer;
+}
+.deep-analysis-log-icon {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ width: 1.25rem;
+ height: 1.25rem;
+ margin-top: 1px;
+ border-radius: 9999px;
+ background: hsl(168 76% 42% / 0.08);
+ font-size: 10px;
+ color: hsl(168 76% 36%);
+ flex-shrink: 0;
+}
+.deep-analysis-log-body {
+ display: flex;
+ flex-direction: column;
+ gap: 0.25rem;
+ min-width: 0;
+ flex: 1;
 }
 .deep-analysis-log-title {
- flex-shrink: 0;
- font-size: 0.625rem;
+ font-size: 0.75rem;
  font-weight: 600;
- color: hsl(215 28% 20%);
+ color: hsl(215 28% 17%);
+ line-height: 1.4;
 }
 .deep-analysis-log-summary {
- min-width: 0;
- font-size: 0.625rem;
- line-height: 1.5;
- color: hsl(215 20% 45%);
+ font-size: 0.6875rem;
+ line-height: 1.55;
+ color: hsl(215 16% 42%);
+ white-space: pre-wrap;
  word-break: break-word;
 }
 .deep-analysis-log-detail {
  margin: 0;
- padding: 0.375rem 0.5rem 0.5rem 1.75rem;
- border-top: 1px solid hsl(214 32% 91% / 0.5);
- font-size: 0.625rem;
+ padding: 0.5rem 0.75rem 0.75rem 2.625rem;
+ border-top: 1px solid hsl(214 32% 91% / 0.7);
+ font-size: 0.6875rem;
  line-height: 1.55;
  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
  color: hsl(215 20% 42%);

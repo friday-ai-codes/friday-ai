@@ -7,6 +7,13 @@
 import type { SSEEvent } from '~/types/chat'
 import { getAccessToken } from '~/api/client'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+let currentRunId: string | null = null
+/**
+ * 获取当前 SSE 流的 run_id，用于断线恢复时比对
+ */
+export function getCurrentRunId: string | null {
+ return currentRunId
+}
 /**
  * 连接 SSE 流并消费事件
  *
@@ -23,6 +30,7 @@ export async function connectSSE(
  onEvent: (event: SSEEvent) => void,
  signal: AbortSignal,
 ): Promise<void> {
+ currentRunId = null
  const token = getAccessToken
  const headers: Record<string, string> = {
  'Content-Type': 'application/json',
@@ -56,22 +64,22 @@ export async function connectSSE(
  break
  buffer += decoder.decode(value, { stream: true })
  const lines = buffer.split('\n')
- // 保留最后一个可能不完整的行
  buffer = lines.pop || ''
  for (const line of lines) {
  const trimmed = line.trim
- // 跳过空行和注释行（keepalive）
  if (!trimmed || trimmed.startsWith(':'))
  continue
- // 解析 SSE data 行
  if (trimmed.startsWith('data: ')) {
  try {
  const data: SSEEvent = JSON.parse(trimmed.slice(6))
- // 防御检查：跳过缺少 type 字段的异常 SSE 数据
  if (!data.type) {
  // eslint-disable-next-line no-console
  console.warn('[SSE] 收到缺少 type 字段的事件，已跳过:', data)
  continue
+ }
+ // run_id 追踪：检测新的运行实例，防止跨 run 状态污染
+ if (data.run_id && data.run_id !== currentRunId) {
+ currentRunId = data.run_id
  }
  onEvent(data)
  }
