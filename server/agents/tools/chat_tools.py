@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
@@ -407,16 +406,14 @@ async def get_project_overview(project_id: str) -> ToolResult:
 # 深度分析工具 — dispatch 到 Runner 上的 Claude Code
 # ============================================================================
 DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
-DEEP_ANALYSIS_POLL_INTERVAL = 3 # 轮询间隔（秒）
 @tool(
  name="deep_analysis",
  description=(
  "Dispatch a deep code analysis task to Claude Code running on a remote Runner. "
  "Use for complex tasks: architecture analysis, cross-module tracing, "
  "understanding complex business logic. Claude Code has full repository access. "
- "IMPORTANT: This is a long-running blocking call (may take several minutes). "
- "Do NOT call any other tools in the same turn. Wait for this tool to return "
- "before proceeding. The result will contain the full analysis."
+ "This tool dispatches the task and returns immediately. Results will be provided "
+ "when the analysis completes."
  ),
  category="PROJECT",
  parameters={
@@ -436,11 +433,7 @@ DEEP_ANALYSIS_POLL_INTERVAL = 3 # 轮询间隔（秒）
  },
  "conversation_id": {
  "type": "string",
- "description": "Conversation UUID (auto-injected, used to interrupt on failure)",
- },
- "event_callback": {
- "type": "string",
- "description": "SSE event callback (auto-injected)",
+ "description": "Conversation UUID (auto-injected)",
  },
  },
  "required": ["project_id", "task_description"],
@@ -451,16 +444,13 @@ async def deep_analysis(
  task_description: str,
  repository_id: str | None = None,
  conversation_id: str = "",
- event_callback: Callable[..., Any] | None = None,
 ) -> ToolResult:
  """将复杂分析任务 dispatch 到 Runner 上的 Claude Code。
- 1. 查找项目关联仓库
- 2. 创建 SubAgentSession
- 3. dispatch 到 Runner
- 4. 轮询等待结果（同时转发容器日志到 SSE 流）
+ Fire-and-forget 模式：dispatch 后立即返回 __blocking_task__ 标记，
+ 等待和恢复由 graph interrupt/resume 机制处理。
  """
  from runners.dispatcher import DispatchTask, get_dispatcher
- from subagent.models import SubAgentSession, TaskResult
+ from subagent.models import SubAgentSession
  logger.info(
  "deep_analysis_requested",
  project_id=project_id,
@@ -614,84 +604,29 @@ async def deep_analysis(
  repo_name=repo.name,
  repo_url=repo.git_url,
  )
- # 6. 轮询等待结果，同时转发容器日志到 SSE 流
- from agents.core.events import DEEP_ANALYSIS_PROGRESS, AgentEvent
- from agents.tools.deep_analysis_registry import register, unregister
- log_queue = register(session_id)
- terminal_statuses = {"completed", "error", "timeout", "cancelled"}
- poll_state = {"count": 0}
- async def _poll_until_terminal -> None:
- while True:
- await asyncio.sleep(DEEP_ANALYSIS_POLL_INTERVAL)
- poll_state["count"] += 1
- if event_callback:
- while True:
- try:
- log_event = log_queue.get_nowait
- except asyncio.QueueEmpty:
- break
- await event_callback(AgentEvent(
- type=DEEP_ANALYSIS_PROGRESS,
- data={"session_id": session_id, **log_event},
- ))
- await session.arefresh_from_db
- if session.status in terminal_statuses:
- logger.info(
- "deep_analysis_poll_exit",
- session_id=session_id,
- status=session.status,
- poll_count=poll_state["count"],
- )
- return
- poll_task = asyncio.create_task(_poll_until_terminal)
- try:
- try:
- await asyncio.shield(poll_task)
- except asyncio.CancelledError:
- logger.warning(
- "deep_analysis_poll_cancelled_but_waiting_continues",
- session_id=session_id,
- poll_count=poll_state["count"],
- )
- current = asyncio.current_task
- if current is not None:
- current.uncancel
- await poll_task
- except Exception:
- logger.exception("deep_analysis_poll_error", session_id=session_id)
- raise
- finally:
- unregister(session_id)
- # 7. 提取结果
- if session.status == "completed":
- try:
- result = await TaskResult.objects.aget(session=session)
- text = result.text_output or ""
- if not text and result.raw_output:
- text = str(result.raw_output)[:3000]
- logger.info(
- "deep_analysis_completed",
- session_id=session_id,
- result_len=len(text),
- )
+ # 6. Fire-and-forget: 注册到 blocking_task_registry 后立即返回
+ from agents.tools.blocking_task_registry import register_blocking_task
+ blocking_info: dict[str, Any] = {
+ "task_id": session_id,
+ "task_type": "deep_analysis",
+ "params": {
+ "task_description": task_description,
+ "project_id": project_id,
+ "repository_id": str(repo.id),
+ },
+ }
+ await register_blocking_task(conversation_id, blocking_info)
  return ToolResult(
  success=True,
  output={
- "data": {
- "session_id": session_id,
- "analysis": text,
- "repository": repo.name,
- "duration_ms": result.duration_ms,
+ "__blocking_task__": True,
+ "task_id": session_id,
+ "task_type": "deep_analysis",
+ "params": {
+ "task_description": task_description,
+ "project_id": project_id,
+ "repository_id": str(repo.id),
  },
+ "placeholder": f"已启动深度分析任务 ({session_id})，分析完成后将自动返回结果。",
  },
  )
- except TaskResult.DoesNotExist:
- return ToolResult(success=False, error=f"深度分析失败 (session: {session_id}): 结果未保存")
- error_msg = getattr(session, "failure_reason", "") or f"Analysis {session.status}"
- logger.error(
- "deep_analysis_failed",
- session_id=session_id,
- status=session.status,
- error=error_msg,
- )
- return ToolResult(success=False, error=f"深度分析失败 (session: {session_id}): {error_msg}")
