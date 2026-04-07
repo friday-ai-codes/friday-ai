@@ -20,6 +20,15 @@ class FeishuDocAPIError(Exception):
 class RateLimitError(FeishuDocAPIError):
  """Rate limit error, should retry with backoff."""
  pass
+class PermissionDeniedError(FeishuDocAPIError):
+ """用户无权限访问文档。"""
+ pass
+class DocumentNotFoundError(FeishuDocAPIError):
+ """文档不存在或已删除。"""
+ pass
+# 飞书 API 错误码分类集合
+PERMISSION_CODES: frozenset[int] = frozenset({91003, 91004, 91204, 95008, 95009, 99991672})
+NOT_FOUND_CODES: frozenset[int] = frozenset({1002, 18066, 91402, 95006, 95007})
 class FeishuDocClient:
  """Feishu Document API client using tenant_access_token authentication.
  Provides methods to read and create Feishu cloud documents with
@@ -95,10 +104,15 @@ class FeishuDocClient:
  )
  data = response.json
  if data.get("code") != 0:
+ error_code = data.get("code", 0)
  error_msg = data.get("msg", "Unknown error")
- if "rate limit" in error_msg.lower or data.get("code") == 99991400:
+ if error_code == 99991400 or "rate limit" in error_msg.lower:
  raise RateLimitError(f"Rate limit hit: {error_msg}")
- raise FeishuDocAPIError(f"Failed to read document: {error_msg}")
+ if error_code in PERMISSION_CODES:
+ raise PermissionDeniedError(f"无权限访问文档: {error_msg}")
+ if error_code in NOT_FOUND_CODES:
+ raise DocumentNotFoundError(f"文档不存在: {error_msg}")
+ raise FeishuDocAPIError(f"读取文档失败: {error_msg}")
  blocks = data.get("data", {}).get("items", )
  markdown = blocks_to_markdown(blocks)
  logger.info(
