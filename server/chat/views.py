@@ -386,6 +386,7 @@ class ChatStreamView(APIView):
  content = serializer.validated_data["content"]
  role = serializer.validated_data.get("role", "developer")
  force_deep_analysis = serializer.validated_data.get("force_deep_analysis", False)
+ feishu_doc_id = serializer.validated_data.get("feishu_doc_id", "")
  # 验证对话存在
  try:
  await Conversation.objects.aget(
@@ -404,6 +405,7 @@ class ChatStreamView(APIView):
  role,
  str(request.user.id) if getattr(request.user, "is_authenticated", False) else None,
  force_deep_analysis=force_deep_analysis,
+ feishu_doc_id=feishu_doc_id,
  ),
  content_type="text/event-stream",
  )
@@ -418,6 +420,7 @@ class ChatStreamView(APIView):
  notification_user_id: str | None,
  *,
  force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
  ):
  """生成 SSE 事件流。"""
  import uuid as uuid_mod
@@ -437,6 +440,7 @@ class ChatStreamView(APIView):
  role=role,
  notification_user_id=notification_user_id,
  force_deep_analysis=force_deep_analysis,
+ feishu_doc_id=feishu_doc_id,
  ):
  if event.type == KEEPALIVE:
  yield format_keepalive
