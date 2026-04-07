@@ -65,6 +65,8 @@ def _build_system_prompt(
  project_name: str,
  project_id: str,
  role: str = "developer",
+ *,
+ force_deep_analysis: bool = False,
 ) -> str:
  """构建角色化 system prompt。
  根据用户选择的角色生成差异化的 system prompt，
@@ -73,25 +75,41 @@ def _build_system_prompt(
  project_name: 项目名称
  project_id: 项目 UUID（供工具调用时使用）
  role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
+ force_deep_analysis: 用户开启了深度分析开关，强制走策略二
  Returns:
  完整的 system prompt 字符串
  """
  role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
+ if force_deep_analysis:
+ strategy = (
+ "用户已开启「深度分析」模式，你必须使用深度分析策略：\n"
+ " 1. 用 1-2 次 RAG 快速获取入口上下文\n"
+ " 2. 立即调用 deep_analysis(task_description=...) 启动 Claude Code 分析\n"
+ " 3. deep_analysis 结果返回后直接回答，不要再调用任何工具\n"
+ " 4. 每轮回答只能调用一次 deep_analysis\n"
+ " 禁止仅用 RAG 工具拼凑回答。必须调用 deep_analysis。\n"
+ )
+ else:
+ strategy = (
+ "你有两种策略应对用户问题：\n\n"
+ "策略一 - 快速检索（定位代码、查看文件、简单问答）：\n"
+ " 调用 search_repository_code / browse_file_content 等工具搜索向量库\n"
+ " 根据需要灵活调用，但要有目的性，避免无方向地反复搜索同一内容\n"
+ " 信息足够时立即回答，不要为了全面而过度检索\n\n"
+ "策略二 - 深度分析（梳理架构、跨模块分析、复杂代码追踪）：\n"
+ " 先用 1-2 次 RAG 快速获取入口上下文，然后立即调用 deep_analysis(task_description=...)\n"
+ " deep_analysis 会启动 Claude Code 对完整仓库做深入分析，结果返回后直接回答\n"
+ " 每轮回答只能调用一次 deep_analysis，不要在其执行期间或之后再调用任何工具\n\n"
+ "策略选择规则：\n"
+ " - 用户明确要求「深度分析」「详细分析」「分析一下架构」等，必须使用策略二\n"
+ " - 问题涉及跨模块追踪、架构梳理、实现原理分析，优先使用策略二\n"
+ " - 简单的代码定位、查看文件、事实性问答，使用策略一\n"
+ " - 拿不准时倾向策略二，deep_analysis 的分析质量远优于多次 RAG 拼凑\n"
+ )
  return (
  f"{role_prompt}\n\n"
  f"当前项目：{project_name}\n\n"
- f"你有两种策略应对用户问题：\n\n"
- f"策略一 - 快速检索（定位代码、查看文件、简单问答）：\n"
- f" 调用 search_repository_code / browse_file_content 等工具搜索向量库\n"
- f" 根据需要灵活调用，但要有目的性，避免无方向地反复搜索同一内容\n"
- f" 信息足够时立即回答，不要为了全面而过度检索\n\n"
- f"策略二 - 深度分析（梳理架构、跨模块分析、复杂代码追踪）：\n"
- f" 先用 RAG 搜索掌握基本上下文，辅助判断是否确实需要深度分析\n"
- f" 然后调用 deep_analysis(task_description=...) 启动 Claude Code 分析\n"
- f" deep_analysis 会花较长时间执行，必须等待结果返回后再回答\n"
- f" 每轮回答只能调用一次 deep_analysis，绝对不要重复调用\n"
- f" 不要在 deep_analysis 执行期间或之后再调用任何工具，直接基于返回结果回答\n\n"
- f"根据问题复杂度自主选择策略。\n"
+ f"{strategy}\n"
  f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
  f"不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
  f"用中文回答。\n"
@@ -345,6 +363,7 @@ class ConversationService:
  content: str,
  role: str = "developer",
  notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息 — 通过 LangGraph graph 驱动。
  签名保持不变，内部改为：
@@ -369,7 +388,10 @@ class ConversationService:
  )
  assistant_msg_id = uuid.uuid4
  sdk_config, agent_session = await build_sdk_config(
- conversation, role=role, notification_user_id=notification_user_id,
+ conversation,
+ role=role,
+ notification_user_id=notification_user_id,
+ force_deep_analysis=force_deep_analysis,
  )
  session_id = sdk_config.session_id
  model = sdk_config.model

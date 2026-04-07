@@ -27,7 +27,7 @@ watch(
 )
 </script>
 <template>
- <div class="flex-1 overflow-hidden relative">
+ <div class="absolute inset-0 overflow-hidden">
  <!-- Loading 骨架屏 -->
  <div v-if="chatStore.messagesLoading" class="max-w-3xl mx-auto px-6 py-8 space-y-6">
  <div v-for="i in 3":key="i">
@@ -47,7 +47,7 @@ watch(
  />
  <!-- 消息列表 -->
  <div v-else ref="scrollContainer" class="h-full overflow-y-auto">
- <div class="max-w-3xl mx-auto px-6 pt-8 pb-28 space-y-7">
+ <div class="max-w-3xl mx-auto px-6 pt-8 pb-40 space-y-7">
  <ChatMessageBubble
  v-for="msg in chatStore.messages":key="msg.id":message="msg"
  />
@@ -149,7 +149,7 @@ watch(
 }
 .scroll-btn {
  position: absolute;
- bottom: 5rem;
+ bottom: 8rem;
  left: 50%;
  transform: translateX(-50%);
  display: flex;

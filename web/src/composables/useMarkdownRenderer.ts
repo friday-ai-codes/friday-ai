@@ -17,7 +17,7 @@ export function getMarkdownRenderer: Promise<MarkdownIt> {
  const { default: Shiki } = await import('@shikijs/markdown-it')
  const md = MdIt({ linkify: true, breaks: true, html: false })
  md.use(await Shiki({
- themes: { dark: 'vitesse-dark' },
+ themes: { light: 'vitesse-light', dark: 'vitesse-dark' },
  }))
  return md
  })

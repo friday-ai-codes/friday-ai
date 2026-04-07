@@ -177,3 +177,8 @@ class SendMessageSerializer(serializers.Serializer):
  required=False,
  help_text="用户角色（影响 AI 回答风格）",
  )
+ force_deep_analysis = serializers.BooleanField(
+ default=False,
+ required=False,
+ help_text="强制使用深度分析模式（跳过 RAG，直接调用 Runner + Claude Code）",
+ )

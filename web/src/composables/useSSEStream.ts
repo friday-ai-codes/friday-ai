@@ -16,12 +16,6 @@ export function getCurrentRunId: string | null {
 }
 /**
  * 连接 SSE 流并消费事件
- *
- * @param conversationId 对话 ID
- * @param content 用户消息内容
- * @param role 用户角色
- * @param onEvent 事件回调
- * @param signal AbortSignal 用于取消连接
  */
 export async function connectSSE(
  conversationId: string,
@@ -29,6 +23,7 @@ export async function connectSSE(
  role: string,
  onEvent: (event: SSEEvent) => void,
  signal: AbortSignal,
+ options?: { forceDeepAnalysis?: boolean },
 ): Promise<void> {
  currentRunId = null
  const token = getAccessToken
@@ -38,12 +33,15 @@ export async function connectSSE(
  if (token) {
  headers.Authorization = `Bearer ${token}`
  }
+ const body: Record<string, unknown> = { content, role }
+ if (options?.forceDeepAnalysis)
+ body.force_deep_analysis = true
  const response = await fetch(
  `${API_BASE}/chat/conversations/${conversationId}/stream/`,
  {
  method: 'POST',
  headers,
- body: JSON.stringify({ content, role }),
+ body: JSON.stringify(body),
  signal,
  },
  )
