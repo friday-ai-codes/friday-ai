@@ -29,6 +29,12 @@ class DocumentNotFoundError(FeishuDocAPIError):
 # 飞书 API 错误码分类集合
 PERMISSION_CODES: frozenset[int] = frozenset({91003, 91004, 91204, 95008, 95009, 99991672})
 NOT_FOUND_CODES: frozenset[int] = frozenset({1002, 18066, 91402, 95006, 95007})
+MAX_DOC_CHARS: int = 30_000
+def truncate_doc_content(markdown: str) -> tuple[str, bool]:
+ """截断过长文档内容。返回 (内容, 是否截断)。"""
+ if len(markdown) <= MAX_DOC_CHARS:
+ return markdown, False
+ return markdown[:MAX_DOC_CHARS], True
 class FeishuDocClient:
  """Feishu Document API client using tenant_access_token authentication.
  Provides methods to read and create Feishu cloud documents with
