@@ -2,6 +2,7 @@
 import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import DocSummaryCard from './DocSummaryCard.vue'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -13,8 +14,26 @@ const props = defineProps<{
  streamingNarrations?: string
  streamingPendingText?: string
  deepAnalysisLogs?: Array<{ type: string, content: string, ts: number }>
+ streamingDocSummary?: {
+ type: 'summary' | 'error' | 'loading'
+ title?: string
+ wordCount?: number
+ preview?: string
+ truncated?: boolean
+ truncatedLength?: number
+ errorType?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
+ errorMessage?: string
+ } | null
 }>
 const chatStore = useChatStore
+// 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
+const docSummary = computed( => {
+ if (props.isStreaming && props.streamingDocSummary) {
+ return props.streamingDocSummary
+ }
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ return (meta?.docSummary as typeof props.streamingDocSummary) || null
+})
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
@@ -405,6 +424,10 @@ const hideEmptyBubble = computed( =>
  </div>
  <!-- ======================== AI 消息 ======================== -->
  <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
+ <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
+ <DocSummaryCard
+ v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
+ />
  <!-- Thinking：流式默认展开，历史默认收起 -->
  <div v-if="!hasTimeline && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
