@@ -84,7 +84,7 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error'
  message_id?: string
  run_id?: string
  // text_delta
@@ -125,6 +125,14 @@ export interface SSEEvent {
  // task_progress
  completed_count?: number
  total_count?: number
+ // doc_summary
+ doc_title?: string
+ word_count?: number
+ preview?: string
+ truncated?: boolean
+ truncated_length?: number
+ // doc_error
+ error_type?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'

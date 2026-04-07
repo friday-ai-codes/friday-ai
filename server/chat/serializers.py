@@ -182,3 +182,9 @@ class SendMessageSerializer(serializers.Serializer):
  required=False,
  help_text="强制使用深度分析模式（跳过 RAG，直接调用 Runner + Claude Code）",
  )
+ feishu_doc_id = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ help_text="前端从消息中提取的飞书文档 ID",
+ )
