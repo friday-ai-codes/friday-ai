@@ -257,6 +257,14 @@ class IndexerService:
  error=str(e),
  )
  raise
+ async def _ensure_collection(self) -> None:
+ """确保 Qdrant collection 存在，不存在则创建。"""
+ dimension_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.EMBEDDING_DIMENSION
+ ).afirst
+ vector_size = int(dimension_setting.value) if dimension_setting else 1024
+ hybrid_enabled = await self._is_hybrid_enabled
+ await qdrant_create_collection(self.repository_id, vector_size, hybrid=hybrid_enabled)
  async def run_git_diff_index(
  self, repo_path: str, from_sha: str, to_sha: str
  ) -> dict[str, Any]:
@@ -276,6 +284,7 @@ class IndexerService:
  from_sha=from_sha,
  to_sha=to_sha,
  )
+ await self._ensure_collection
  # 执行 git diff
  proc = await asyncio.create_subprocess_exec(
  "git", "diff", "--name-status", "--find-renames", from_sha, to_sha,
@@ -379,6 +388,7 @@ class IndexerService:
  repository_id=self.repository_id,
  )
  try:
+ await self._ensure_collection
  # DB 级文件去重——从 FileIndex 查询已索引文件的 hash，替代 Qdrant hash 比较
  stored_records = {
  fp: fh
@@ -657,7 +667,10 @@ async def clone_and_index_repository(
  # 决定索引路径：git diff > 文件哈希比较 > 全量
  last_sha = repository.last_indexed_commit_sha
  fallback_reason: str | None = None
- if last_sha:
+ # 先检查 collection 是否有数据；如果为空则必须走全量索引
+ stored_hashes = await qdrant_get_stored_file_hashes(repository_id)
+ collection_has_data = bool(stored_hashes)
+ if last_sha and collection_has_data:
  # 尝试 git diff 增量路径
  fetch_ok = await _fetch_commit(temp_dir, last_sha, proxy_url)
  if fetch_ok:
@@ -685,12 +698,18 @@ async def clone_and_index_repository(
  index_result = await indexer.run_full_index(temp_dir)
  else:
  index_result = await indexer.run_incremental_index(temp_dir)
- else:
- # 首次索引或未记录 SHA
- stored_hashes = await qdrant_get_stored_file_hashes(repository_id)
- if stored_hashes:
+ elif collection_has_data:
+ # 有数据但无 last_sha，走增量比较
  index_result = await indexer.run_incremental_index(temp_dir)
  else:
+ # collection 为空或不存在，走全量索引
+ if last_sha:
+ logger.info(
+ "collection_empty_fallback_to_full_index",
+ repository_id=repository_id,
+ last_sha=last_sha,
+ )
+ fallback_reason = "collection 为空，回退到全量索引"
  index_result = await indexer.run_full_index(temp_dir)
  # 更新 last_indexed_commit_sha
  await Repository.objects.filter(id=repository_id).aupdate(

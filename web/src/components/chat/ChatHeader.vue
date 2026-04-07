@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { Model } from '~/api/chat'
-import { getModels } from '~/api/chat'
 import {
  Select,
  SelectContent,
@@ -11,23 +9,12 @@ import {
 import { ROLE_OPTIONS } from '~/types/chat'
 const chatStore = useChatStore
 const projectsStore = useProjectsStore
-// 获取模型列表（当前仅 Anthropic）
-const models = ref<Model>
-onMounted(async => {
- try {
- const resp = await getModels({})
- models.value = resp.models
- }
- catch {
- // 静默处理模型列表加载失败
- }
-})
 </script>
 <template>
- <div class="px-4 py-2 border-b border-border/40 bg-background/80 backdrop-blur-sm flex items-center gap-3 flex-wrap">
+ <div class="chat-header">
  <!-- 项目选择 -->
  <Select v-model="chatStore.selectedProjectId">
- <SelectTrigger class="w-48 text-xs">
+ <SelectTrigger class="w-44 text-xs border-border/40 bg-transparent shadow-none">
  <SelectValue placeholder="选择项目" />
  </SelectTrigger>
  <SelectContent>
@@ -40,7 +27,7 @@ onMounted(async => {
  </Select>
  <!-- 角色选择 -->
  <Select v-model="chatStore.selectedRole">
- <SelectTrigger class="w-32 text-xs">
+ <SelectTrigger class="w-28 text-xs border-border/40 bg-transparent shadow-none">
  <SelectValue placeholder="角色" />
  </SelectTrigger>
  <SelectContent>
@@ -51,21 +38,14 @@ onMounted(async => {
  </SelectItem>
  </SelectContent>
  </Select>
- <!-- 模型选择 -->
- <Select v-model="chatStore.selectedModel">
- <SelectTrigger class="w-56 text-xs">
- <SelectValue placeholder="模型（默认）" />
- </SelectTrigger>
- <SelectContent>
- <SelectItem value="__default__">
- 系统默认
- </SelectItem>
- <SelectItem
- v-for="model in models":key="model.id":value="model.id"
- >
- {{ model.name || model.id }}
- </SelectItem>
- </SelectContent>
- </Select>
  </div>
 </template>
+<style scoped>
+.chat-header {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ padding: 0.5rem 1rem;
+ border-bottom: 1px solid hsl(var(--border) / 0.3);
+}
+</style>

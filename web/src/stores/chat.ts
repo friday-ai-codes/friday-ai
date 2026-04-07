@@ -67,6 +67,8 @@ export const useChatStore = defineStore('chat', => {
  const selectedProjectId = useLocalStorage<string | null>('chat-project-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
+ const forceDeepAnalysis = useLocalStorage<boolean>('chat-force-deep-analysis', false)
+ const notificationsEnabled = useLocalStorage<boolean>('chat-notifications-enabled', false)
  // ========================================================================
  // Getters
  // ========================================================================
@@ -516,6 +518,7 @@ export const useChatStore = defineStore('chat', => {
  selectedRole.value,
  (event: SSEEvent) => handleSSEEvent(event),
  controller.signal,
+ { forceDeepAnalysis: forceDeepAnalysis.value },
  )
  }
  catch (e) {
@@ -621,7 +624,20 @@ export const useChatStore = defineStore('chat', => {
  // 浏览器通知
  // ========================================================================
  function requestNotificationPermission {
+ if (notificationsEnabled.value)
  void requestAndEnableWebPush
+ }
+ async function toggleNotifications(enabled: boolean) {
+ notificationsEnabled.value = enabled
+ if (enabled) {
+ const success = await requestAndEnableWebPush
+ if (!success)
+ notificationsEnabled.value = false
+ }
+ else {
+ const { disableWebPush } = useWebPush
+ await disableWebPush
+ }
  }
  function _notifyDeepAnalysisComplete(sessionId: string | null = deepAnalysisSessionId.value) {
  if (webPushReady.value)
@@ -662,6 +678,8 @@ export const useChatStore = defineStore('chat', => {
  selectedProjectId,
  selectedRole,
  selectedModel,
+ forceDeepAnalysis,
+ notificationsEnabled,
  streamingStatus,
  budgetWarning,
  lastFailedContent,
@@ -690,6 +708,7 @@ export const useChatStore = defineStore('chat', => {
  restoreFromURL,
  restoreConversationRuntime,
  requestNotificationPermission,
+ toggleNotifications,
  syncConversationToURL,
  }
 })

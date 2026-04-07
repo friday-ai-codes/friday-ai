@@ -12,6 +12,7 @@ async def build_sdk_config(
  conversation: Conversation,
  role: str = "developer",
  notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
 ) -> tuple[ChatRunnerConfig, AgentSession]:
  """从 Conversation 实例构建 ChatRunnerConfig 和 AgentSession。
  提取自 ConversationService.send_message_stream 的配置构建段，
@@ -47,7 +48,9 @@ async def build_sdk_config(
  budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
  max_budget_usd = float(budget_str) if budget_str else None
  config = ChatRunnerConfig(
- system_prompt=_build_system_prompt(project_name, project_id, role=role),
+ system_prompt=_build_system_prompt(
+ project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
+ ),
  model=model,
  project_id=project_id,
  session_id=session_id,

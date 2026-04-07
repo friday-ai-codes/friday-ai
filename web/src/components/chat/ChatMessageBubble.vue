@@ -163,14 +163,15 @@ function toolAction(name: string, input: Record<string, unknown>, result?: strin
  const desc = (input?.task_description as string) || ''
  let label = desc ? `分析「${desc.slice(0, 30)}${desc.length > 30 ? '...': ''}」`: '深度代码分析'
  if (result) {
+ const resultStr = typeof result === 'string' ? result: JSON.stringify(result)
  try {
- const parsed = JSON.parse(result)
+ const parsed = JSON.parse(resultStr)
  const sid = parsed?.data?.session_id
  if (sid)
  label += ` · ${sid}`
  }
  catch {
- const m = result.match(/session: ([\w-]+)/)
+ const m = resultStr.match(/session: ([\w-]+)/)
  if (m)
  label += ` · ${m[1]}`
  }

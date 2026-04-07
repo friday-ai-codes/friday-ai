@@ -6,6 +6,52 @@ from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
 class EmbeddingService:
  """Service for generating embeddings via remote API."""
+ @staticmethod
+ def _is_multimodal(api_url: str) -> bool:
+ return "/embeddings/multimodal" in api_url
+ @staticmethod
+ def _is_ollama(api_url: str) -> bool:
+ return "/api/embeddings" in api_url
+ @classmethod
+ def _build_request_body(cls, api_url: str, model: str, text: str) -> dict[str, Any]:
+ """Build request body according to API type."""
+ if cls._is_ollama(api_url):
+ return {"model": model, "prompt": text}
+ if cls._is_multimodal(api_url):
+ return {"model": model, "input": [{"type": "text", "text": text}]}
+ return {"model": model, "input": text}
+ @classmethod
+ def _build_batch_request_body(cls, api_url: str, model: str, texts: list[str]) -> dict[str, Any]:
+ """Build batch request body according to API type."""
+ if cls._is_multimodal(api_url):
+ return {"model": model, "input": [{"type": "text", "text": t} for t in texts]}
+ return {"model": model, "input": texts}
+ @staticmethod
+ def _extract_embedding(data: dict[str, Any]) -> list[float] | None:
+ """Extract embedding vector from various response formats."""
+ if "data" in data:
+ d = data["data"]
+ if isinstance(d, list) and len(d) > 0:
+ return d[0]["embedding"]
+ if isinstance(d, dict) and "embedding" in d:
+ return d["embedding"]
+ if "embedding" in data:
+ return data["embedding"]
+ if "embeddings" in data and len(data["embeddings"]) > 0:
+ return data["embeddings"][0]
+ return None
+ @staticmethod
+ def _extract_batch_embeddings(data: dict[str, Any]) -> list[list[float]] | None:
+ """Extract batch embeddings from various response formats."""
+ if "data" in data:
+ d = data["data"]
+ if isinstance(d, list):
+ return [item["embedding"] for item in d]
+ if isinstance(d, dict) and "embedding" in d:
+ return [d["embedding"]]
+ if "embeddings" in data:
+ return data["embeddings"]
+ return None
  @classmethod
  async def get_config(cls) -> dict[str, Any]:
  """Get embedding configuration from system settings."""
@@ -41,44 +87,18 @@ class EmbeddingService:
  return None
  try:
  async with httpx.AsyncClient(timeout=60.0) as client:
- # Detect API type and build request accordingly
  model = config.get("model", "BAAI/bge-m3")
  api_key = config.get("api_key")
- # Build headers
  headers = {"Content-Type": "application/json"}
  if api_key:
  headers["Authorization"] = f"Bearer {api_key}"
- # Check if it's Ollama API (contains /api/embeddings)
- if "/api/embeddings" in api_url:
- # Ollama format
- request_body = {
- "model": model,
- "prompt": text,
- }
- else:
- # OpenAI-compatible format
- request_body = {
- "model": model,
- "input": text,
- }
- response = await client.post(
- api_url,
- json=request_body,
- headers=headers,
- )
+ request_body = cls._build_request_body(api_url, model, text)
+ response = await client.post(api_url, json=request_body, headers=headers)
  response.raise_for_status
  data = response.json
- # Handle different API response formats
- if "data" in data and len(data["data"]) > 0:
- # OpenAI-compatible format
- return data["data"][0]["embedding"]
- elif "embedding" in data:
- # Ollama / Simple format
- return data["embedding"]
- elif "embeddings" in data and len(data["embeddings"]) > 0:
- # Batch format
- return data["embeddings"][0]
- else:
+ embedding = cls._extract_embedding(data)
+ if embedding is not None:
+ return embedding
  logger.error("unexpected_embedding_response", data=data)
  return None
  except httpx.HTTPError as e:
@@ -106,71 +126,50 @@ class EmbeddingService:
  return [None] * len(texts)
  results: list[list[float] | None] =
  total = len(texts)
- # Build headers
- api_key = config.get("api_key")
+ model = config.get("model", "BAAI/bge-m3")
  headers = {"Content-Type": "application/json"}
+ api_key = config.get("api_key")
  if api_key:
  headers["Authorization"] = f"Bearer {api_key}"
- # Check if it's Ollama API (doesn't support batch)
- is_ollama = "/api/embeddings" in api_url
- if is_ollama:
- # Ollama: process one at a time
+ one_by_one = cls._is_ollama(api_url) or cls._is_multimodal(api_url)
+ if one_by_one:
  async with httpx.AsyncClient(timeout=120.0) as client:
  for idx, text in enumerate(texts):
  try:
- response = await client.post(
- api_url,
- json={
- "model": config.get("model", "BAAI/bge-m3"),
- "prompt": text,
- },
- headers=headers,
- )
+ request_body = cls._build_request_body(api_url, model, text)
+ response = await client.post(api_url, json=request_body, headers=headers)
  response.raise_for_status
  data = response.json
- if "embedding" in data and data["embedding"]:
- results.append(data["embedding"])
+ embedding = cls._extract_embedding(data)
+ if embedding is not None:
+ results.append(embedding)
  else:
- logger.error("unexpected_ollama_embedding_response", data=data)
+ logger.error("unexpected_embedding_response", data=data)
  results.append(None)
  except httpx.HTTPError as e:
- logger.error("ollama_embedding_failed", error=str(e))
+ logger.error("embedding_api_failed", error=str(e))
  results.append(None)
- # Call progress callback
  if on_progress:
  await on_progress(idx + 1, total)
  else:
- # OpenAI-compatible: batch processing
  processed = 0
  for i in range(0, len(texts), batch_size):
  batch = texts[i: i + batch_size]
  try:
  async with httpx.AsyncClient(timeout=120.0) as client:
- response = await client.post(
- api_url,
- json={
- "model": config.get("model", "BAAI/bge-m3"),
- "input": batch,
- },
- headers=headers,
- )
+ request_body = cls._build_batch_request_body(api_url, model, batch)
+ response = await client.post(api_url, json=request_body, headers=headers)
  response.raise_for_status
  data = response.json
- # Handle different API response formats
- if "data" in data:
- # OpenAI-compatible format
- batch_embeddings = [item["embedding"] for item in data["data"]]
- elif "embeddings" in data:
- # Batch format
- batch_embeddings = data["embeddings"]
+ batch_embeddings = cls._extract_batch_embeddings(data)
+ if batch_embeddings is not None:
+ results.extend(batch_embeddings)
  else:
  logger.error("unexpected_batch_embedding_response", data=data)
- batch_embeddings = [None] * len(batch)
- results.extend(batch_embeddings)
+ results.extend([None] * len(batch))
  except httpx.HTTPError as e:
  logger.error("batch_embedding_api_failed", error=str(e), batch_index=i)
  results.extend([None] * len(batch))
- # Call progress callback
  processed += len(batch)
  if on_progress:
  await on_progress(processed, total)
@@ -212,6 +211,8 @@ class EmbeddingService:
  embedding = await cls._generate_embedding_with_config(
  api_url, model, "test connection", api_key
  )
+ if embedding is None:
+ raise ValueError("未能生成 embedding，请检查 API 配置")
  actual_dim = len(embedding)
  result: dict[str, Any] = {
  "status": "healthy",
@@ -234,28 +235,11 @@ class EmbeddingService:
  """Generate embedding using provided config instead of saved settings."""
  try:
  async with httpx.AsyncClient(timeout=60.0) as client:
- # Build headers
  headers = {"Content-Type": "application/json"}
  if api_key:
  headers["Authorization"] = f"Bearer {api_key}"
- # Check if it's Ollama API (contains /api/embeddings)
- if "/api/embeddings" in api_url:
- # Ollama format
- request_body = {
- "model": model,
- "prompt": text,
- }
- else:
- # OpenAI-compatible format
- request_body = {
- "model": model,
- "input": text,
- }
- response = await client.post(
- api_url,
- json=request_body,
- headers=headers,
- )
+ request_body = cls._build_request_body(api_url, model, text)
+ response = await client.post(api_url, json=request_body, headers=headers)
  if response.status_code != 200:
  body = response.text[:200]
  msg = f"HTTP {response.status_code}: {body}" if body else f"HTTP {response.status_code}"
@@ -264,14 +248,9 @@ class EmbeddingService:
  data = response.json
  except Exception:
  raise ValueError("响应不是有效的 JSON，请检查 API 地址是否正确（如需添加 /v1/embeddings 后缀）")
- # Handle different API response formats
- if "data" in data and len(data["data"]) > 0:
- return data["data"][0]["embedding"]
- elif "embedding" in data:
- return data["embedding"]
- elif "embeddings" in data and len(data["embeddings"]) > 0:
- return data["embeddings"][0]
- else:
+ embedding = cls._extract_embedding(data)
+ if embedding is not None:
+ return embedding
  logger.error("unexpected_embedding_response", data=data)
  raise ValueError(f"无法解析 embedding 响应: {str(data)[:200]}")
  except httpx.HTTPError as e:

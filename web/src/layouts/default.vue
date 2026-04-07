@@ -22,6 +22,7 @@ watch(mode, async (m) => {
  projectsStore.fetchProjects,
  ])
  await chatStore.restoreFromURL
+ if (chatStore.notificationsEnabled)
  chatStore.requestNotificationPermission
  }
 }, { immediate: true })
@@ -84,10 +85,12 @@ const pageTitle = computed( => {
  </main>
  </div>
  <!-- Chat 对话模式 -->
- <div v-else key="content-chat" class="flex-1 flex flex-col min-w-0 relative">
+ <div v-else key="content-chat" class="flex-1 flex flex-col min-w-0">
  <ChatHeader />
+ <div class="flex-1 min- relative">
  <ChatMessageArea />
  <ChatInput class="chat-input-float" />
+ </div>
  </div>
  </Transition>
  </div>
@@ -115,5 +118,6 @@ const pageTitle = computed( => {
  left: 0;
  right: 0;
  z-index: 10;
+ pointer-events: none;
 }
 </style>
