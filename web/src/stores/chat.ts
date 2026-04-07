@@ -421,6 +421,7 @@ export const useChatStore = defineStore('chat', => {
  if (event.message_id)
  streamingMessageId.value = event.message_id
  streamingMetadata.value = {
+ ...(streamingMetadata.value || {}),
  model: event.model,
  usage: event.usage,
  input_tokens: event.usage?.input_tokens,
@@ -472,6 +473,27 @@ export const useChatStore = defineStore('chat', => {
  const conv = conversations.value.find(c => c.id === currentConversationId.value)
  if (conv)
  conv.title = event.title
+ }
+ break
+ case 'doc_summary':
+ // 飞书文档摘要事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
+ if (!streamingMetadata.value) streamingMetadata.value = {}
+ streamingMetadata.value.docSummary = {
+ type: 'summary' as const,
+ title: event.doc_title,
+ wordCount: event.word_count,
+ preview: event.preview,
+ truncated: event.truncated,
+ truncatedLength: event.truncated_length,
+ }
+ break
+ case 'doc_error':
+ // 飞书文档错误事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
+ if (!streamingMetadata.value) streamingMetadata.value = {}
+ streamingMetadata.value.docSummary = {
+ type: 'error' as const,
+ errorType: event.error_type,
+ errorMessage: event.message,
  }
  break
  case 'error':
