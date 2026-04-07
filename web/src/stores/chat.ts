@@ -482,7 +482,7 @@ export const useChatStore = defineStore('chat', => {
  break
  }
  }
- async function sendMessage(content: string) {
+ async function sendMessage(content: string, feishuDocId?: string) {
  if (!currentConversationId.value || isStreaming.value)
  return
  stopRuntimePolling
@@ -518,7 +518,7 @@ export const useChatStore = defineStore('chat', => {
  selectedRole.value,
  (event: SSEEvent) => handleSSEEvent(event),
  controller.signal,
- { forceDeepAnalysis: forceDeepAnalysis.value },
+ { forceDeepAnalysis: forceDeepAnalysis.value, feishuDocId },
  )
  }
  catch (e) {
