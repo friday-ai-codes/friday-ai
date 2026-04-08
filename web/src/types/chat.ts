@@ -59,7 +59,8 @@ export interface ConversationRuntime {
  orchestration_run_id?: string
  phase?: string
  task_progress?: { completed: number, total: number } | null
- mode?: 'chat' | 'deep_analysis' | null
+ mode?: 'chat' | 'deep_analysis' | 'coding' | null
+ coding_session?: CodingSessionRuntime | null
  status?: string | null
  session_id?: string
  task_description?: string
@@ -84,7 +85,7 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed'
  message_id?: string
  run_id?: string
  // text_delta
@@ -133,6 +134,14 @@ export interface SSEEvent {
  truncated_length?: number
  // doc_error
  error_type?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
+ // coding_progress (Phase)
+ coding_session_id?: string
+ steps?: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
+ modified_files_count?: number
+ // coding_complete (Phase)
+ pr_url?: string
+ branch_name?: string
+ // coding_failed — 复用 message 字段
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'
@@ -163,4 +172,49 @@ export interface ExportToFeishuResponse {
 export interface ExportToFeishuError {
  error: string
  error_type: 'permission_denied' | 'not_configured' | 'api_error'
+}
+// ============================================================================
+// 编码会话 (Phase)
+// ============================================================================
+/** CodingSession API 响应 */
+export interface CodingSessionResponse {
+ id: string
+ status: 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
+ tech_plan: string
+ affected_files: Array<{ path: string; change_type: string }>
+ revision_count: number
+ repository_id: string
+ branch_name: string
+ pr_url: string
+ error_message: string
+ created_at: string
+ updated_at: string
+}
+/** ConversationRuntime 中的 CodingSession 快照 */
+export interface CodingSessionRuntime {
+ id: string
+ status: string
+ tech_plan?: string
+ affected_files?: Array<{ path: string; change_type: string }>
+ branch_name?: string
+ pr_url?: string
+ error_message?: string
+}
+/** Store 中的编码进度数据 */
+export interface CodingProgressData {
+ sessionId: string
+ steps: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
+ modifiedFilesCount: number
+}
+/** Store 中的编码结果数据 */
+export interface CodingResultData {
+ sessionId: string
+ prUrl: string
+ branchName: string
+ modifiedFilesCount: number
+}
+/** Store 中的编码错误数据 */
+export interface CodingErrorData {
+ sessionId: string
+ errorMessage: string
 }
