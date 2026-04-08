@@ -19,6 +19,9 @@ PHASE_TRANSITION = "phase_transition"
 TASK_PROGRESS = "task_progress"
 DOC_SUMMARY = "doc_summary"
 DOC_ERROR = "doc_error"
+CODING_PROGRESS = "coding_progress"
+CODING_COMPLETE = "coding_complete"
+CODING_FAILED = "coding_failed"
 # 所有 SSE data 事件类型集合（用于契约测试验证前后端一致性）
 ALL_EVENT_TYPES: frozenset[str] = frozenset({
  TEXT_DELTA,
@@ -34,6 +37,9 @@ ALL_EVENT_TYPES: frozenset[str] = frozenset({
  TASK_PROGRESS,
  DOC_SUMMARY,
  DOC_ERROR,
+ CODING_PROGRESS,
+ CODING_COMPLETE,
+ CODING_FAILED,
 })
 # 连接级事件类型 — 不走 SSE data 行，通过 SSE 注释行发送
 KEEPALIVE = "keepalive"
