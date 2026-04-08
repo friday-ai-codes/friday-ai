@@ -7,7 +7,6 @@ from .views import (
  ConversationDetailView,
  ConversationListView,
  ConversationRuntimeView,
- ExportToFeishuView,
  ModelsView,
  WebPushPublicKeyView,
  WebPushSubscriptionView,
@@ -53,11 +52,5 @@ urlpatterns = [
  "push/subscriptions/unsubscribe/",
  WebPushUnsubscribeView.as_view,
  name="chat-push-unsubscribe",
- ),
- # Phase: 导出对话消息到飞书文档
- path(
- "conversations/<uuid:conversation_id>/export-to-feishu/",
- ExportToFeishuView.as_view,
- name="conversation-export-to-feishu",
  ),
 ]

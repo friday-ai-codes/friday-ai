@@ -33,13 +33,6 @@ class Project(models.Model):
  blank=True, null=True,
  help_text="飞书自建应用 App Secret (加密存储)"
  )
- # 飞书文档导出目标文件夹
- feishu_doc_folder_token = models.CharField(
- max_length=200,
- blank=True,
- default="",
- help_text="飞书文档导出目标文件夹 token",
- )
  # Claude configuration
  claude_api_key_encrypted = models.TextField(blank=True, null=True)
  claude_base_url = models.CharField(max_length=500, blank=True, null=True)

@@ -84,7 +84,7 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress'
  message_id?: string
  run_id?: string
  // text_delta
@@ -125,14 +125,6 @@ export interface SSEEvent {
  // task_progress
  completed_count?: number
  total_count?: number
- // doc_summary
- doc_title?: string
- word_count?: number
- preview?: string
- truncated?: boolean
- truncated_length?: number
- // doc_error
- error_type?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'
@@ -144,23 +136,3 @@ export const ROLE_OPTIONS: Array<{ value: ChatRole, label: string }> = [
  { value: 'qa', label: '测试工程师' },
  { value: 'general', label: '通用' },
 ]
-// ============================================================================
-// 导出到飞书文档 (Phase)
-// ============================================================================
-/** 导出到飞书文档请求 */
-export interface ExportToFeishuRequest {
- message_ids: string
- title: string
- folder_token?: string
-}
-/** 导出到飞书文档成功响应 */
-export interface ExportToFeishuResponse {
- document_id: string
- url: string
- title: string
-}
-/** 导出到飞书文档错误响应 */
-export interface ExportToFeishuError {
- error: string
- error_type: 'permission_denied' | 'not_configured' | 'api_error'
-}

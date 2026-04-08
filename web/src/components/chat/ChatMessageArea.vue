@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import type { ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
-import ExportConfirmDialog from './ExportConfirmDialog.vue'
-import ExportSuccessCard from './ExportSuccessCard.vue'
-import MessageSelectBar from './MessageSelectBar.vue'
 const chatStore = useChatStore
 const scrollContainer = ref<HTMLElement | null>(null)
 const { arrivedState } = useScroll(scrollContainer, { offset: { bottom: 50 } })
@@ -29,41 +25,6 @@ watch(
  => chatStore.currentConversationId,
  => nextTick( => scrollToBottom('instant')),
 )
-// ============================================================================
-// 导出到飞书 (Phase)
-// ============================================================================
-const showExportDialog = ref(false)
-const exportDefaultTitle = ref('')
-const exportSelectedIds = ref<string>
-const exportResults = ref<Array<ExportToFeishuResponse & { exportedAt: string }>>
-const currentTitle = computed( => {
- const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
- return conv?.title || '新对话'
-})
-function generateDefaultTitle {
- const date = new Date.toISOString.slice(0, 10)
- return `${currentTitle.value} - ${date}`
-}
-/** 单条快速导出 (per ) */
-function handleExportSingle(messageId: string) {
- exportSelectedIds.value = [messageId]
- exportDefaultTitle.value = generateDefaultTitle
- showExportDialog.value = true
-}
-/** 多选导出确认 */
-function handleMultiExport {
- exportSelectedIds.value = [...chatStore.selectedMessageIds]
- exportDefaultTitle.value = generateDefaultTitle
- showExportDialog.value = true
-}
-/** 导出成功回调 (per ) */
-function handleExportSuccess(result: ExportToFeishuResponse) {
- exportResults.value.push({
- ...result,
- exportedAt: new Date.toISOString,
- })
- chatStore.exitExportSelectMode
-}
 </script>
 <template>
  <div class="absolute inset-0 overflow-hidden">
@@ -86,15 +47,9 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  />
  <!-- 消息列表 -->
  <div v-else ref="scrollContainer" class="h-full overflow-y-auto">
- <!-- 多选操作条 -->
- <MessageSelectBar
- v-if="chatStore.isExportSelectMode"
- @export="handleMultiExport"
- />
  <div class="max-w-3xl mx-auto px-6 pt-8 pb-40 space-y-7">
  <ChatMessageBubble
  v-for="msg in chatStore.messages":key="msg.id":message="msg"
- @export-single="handleExportSingle"
  />
  <!-- 流式消息 -->
  <ChatMessageBubble
@@ -103,11 +58,7 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  role: 'assistant',
  content: '',
  created_at: new Date.toISOString,
- }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs":streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
- />
- <!-- 导出成功卡片 (per ) -->
- <ExportSuccessCard
- v-for="(result, idx) in exportResults":key="`export-${idx}`":title="result.title":url="result.url":exported-at="result.exportedAt"
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs"
  />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">
@@ -172,11 +123,6 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  <span class="icon-[lucide--chevron-down] text-sm" />
  </button>
  </Transition>
- <!-- 导出确认弹窗 -->
- <ExportConfirmDialog
- v-model:open="showExportDialog":selected-count="exportSelectedIds.length":default-title="exportDefaultTitle":selected-message-ids="exportSelectedIds"
- @success="handleExportSuccess"
- />
  </div>
 </template>
 <style scoped>

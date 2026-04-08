@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
-import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
-import DocSummaryCard from './DocSummaryCard.vue'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -15,32 +13,8 @@ const props = defineProps<{
  streamingNarrations?: string
  streamingPendingText?: string
  deepAnalysisLogs?: Array<{ type: string, content: string, ts: number }>
- streamingDocSummary?: {
- type: 'summary' | 'error' | 'loading'
- title?: string
- wordCount?: number
- preview?: string
- truncated?: boolean
- truncatedLength?: number
- errorType?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
- errorMessage?: string
- } | null
 }>
 const chatStore = useChatStore
-const emit = defineEmits<{
- exportSingle: [messageId: string]
-}>
-const isSelected = computed( =>
- chatStore.selectedMessageIds.has(props.message.id),
-)
-// 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
-const docSummary = computed( => {
- if (props.isStreaming && props.streamingDocSummary) {
- return props.streamingDocSummary
- }
- const meta = props.message.metadata as Record<string, unknown> | undefined
- return (meta?.docSummary as typeof props.streamingDocSummary) || null
-})
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
@@ -430,16 +404,7 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
- <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8 flex">
- <!-- 多选模式 Checkbox (per, ) -->
- <div v-if="chatStore.isExportSelectMode && props.message.role === 'assistant'" class="mr-2 flex items-center shrink-0">
- <Checkbox:checked="isSelected" @update:checked="chatStore.toggleMessageSelect(props.message.id)" />
- </div>
- <div class="flex-1 min-w-0">
- <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
- <DocSummaryCard
- v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
- />
+ <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
  <!-- Thinking：流式默认展开，历史默认收起 -->
  <div v-if="!hasTimeline && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
@@ -639,14 +604,6 @@ const hideEmptyBubble = computed( =>
  <span v-if="copied" class="icon-[lucide--check] text-primary" />
  <span v-else class="icon-[lucide--copy]" />
  </button>
- <button
- v-if="props.message.role === 'assistant'"
- class="action-btn"
- title="导出到飞书"
- @click="emit('exportSingle', props.message.id)"
- >
- <span class="icon-[lucide--file-up]" />
- </button>
  <span class="action-divider" />
  <span class="action-meta">{{ formatTime(message.created_at) }}</span>
  <template v-if="metadata?.model">
@@ -659,7 +616,6 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- </div>
 </template>
 <style scoped>
 /* ============ User Bubble ============ */
@@ -667,12 +623,13 @@ const hideEmptyBubble = computed( =>
  max-width: 80%;
  padding: 0.625rem 1rem;
  border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
- background: hsl(var(--primary));
- color: hsl(var(--primary-foreground));
+ background: linear-gradient(135deg, #14b8a6, #06b6d4);
+ color: white;
  font-size: 0.875rem;
  line-height: 1.625;
  white-space: pre-wrap;
  word-break: break-word;
+ box-shadow: 0 1px 3px rgba(20, 184, 166, 0.2);
 }
 /* ============ AI Message ============ */
 .ai-message {

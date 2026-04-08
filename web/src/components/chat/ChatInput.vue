@@ -2,7 +2,6 @@
 import type { Model } from '~/api/chat'
 import { getModels } from '~/api/chat'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
-import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 const chatStore = useChatStore
 const inputContent = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
@@ -40,10 +39,9 @@ async function handleSend {
  if (!chatStore.currentConversationId)
  return
  }
- const feishuDocId = extractFirstFeishuDocId(content)
  inputContent.value = ''
  nextTick(autoResize)
- await chatStore.sendMessage(content, feishuDocId ?? undefined)
+ await chatStore.sendMessage(content)
 }
 function handleKeydown(e: KeyboardEvent) {
  if (e.key === 'Enter' && !e.shiftKey) {
