@@ -397,236 +397,190 @@ def markdown_to_blocks(content: str) -> list[dict[str, Any]]:
  blocks.extend(token_blocks)
  return blocks
 def _token_to_blocks(token: Any) -> list[dict[str, Any]]:
- """Convert a mistune token to Feishu blocks.
- Handles list tokens by extracting all list items.
- Args:
- token: Mistune parsed token
- Returns:
- List of Feishu block definitions
- """
+ """Convert a mistune token to Feishu blocks."""
  if not isinstance(token, dict):
  return
  token_type = token.get("type", "")
- # Handle list tokens specially - extract all items
  if token_type == "list":
  blocks: list[dict[str, Any]] =
  is_ordered = token.get("attrs", {}).get("ordered", False)
- children = token.get("children", )
- for child in children:
+ for child in token.get("children", ):
  if child.get("type") == "list_item":
- text = _extract_token_text(child)
- if text:
- if is_ordered:
- blocks.append(_create_ordered_block(text))
- else:
- blocks.append(_create_bullet_block(text))
+ elements = _extract_token_elements(child)
+ if elements:
+ blocks.append(_create_block_with_elements(
+ 13 if is_ordered else 12,
+ "ordered" if is_ordered else "bullet",
+ elements,
+ ))
  return blocks
- # For other tokens, convert single token
+ if token_type == "table":
+ return _table_to_blocks(token)
  block = _token_to_block(token)
  return [block] if block else
 def _token_to_block(token: Any) -> dict[str, Any] | None:
- """Convert a mistune token to a Feishu block.
- Args:
- token: Mistune parsed token
- Returns:
- Feishu block definition or None
- """
+ """Convert a mistune token to a Feishu block."""
  if not isinstance(token, dict):
  return None
  token_type = token.get("type", "")
  if token_type == "paragraph":
- text = _extract_token_text(token)
- return _create_text_block(text)
+ elements = _extract_token_elements(token)
+ return _create_block_with_elements(2, "text", elements)
  elif token_type == "heading":
  level = token.get("attrs", {}).get("level", 1)
- text = _extract_token_text(token)
- return _create_heading_block(level, text)
- elif token_type == "list":
- # Lists are handled as individual items
- # Return None here, items are processed by caller
- return None
- elif token_type == "list_item":
- text = _extract_token_text(token)
- ordered = token.get("attrs", {}).get("ordered", False)
- if ordered:
- return _create_ordered_block(text)
- return _create_bullet_block(text)
+ elements = _extract_token_elements(token)
+ block_type = min(level + 2, 11)
+ return _create_block_with_elements(block_type, f"heading{level}", elements)
  elif token_type == "block_code":
  code = token.get("raw", "")
  lang = token.get("attrs", {}).get("info", "") or ""
  return _create_code_block(code, lang)
  elif token_type == "block_quote":
- text = _extract_token_text(token)
- return _create_quote_block(text)
+ elements = _extract_token_elements(token)
+ return _create_block_with_elements(15, "quote", elements)
+ elif token_type == "thematic_break":
+ return {"block_type": 22} # Divider
  return None
-def _extract_token_text(token: dict[str, Any]) -> str:
- """Extract plain text from a token.
- Args:
- token: Mistune token
- Returns:
- Plain text content
+def _extract_token_elements(
+ token: dict[str, Any],
+ style: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+ """Extract structured elements (with inline styles) from a mistune token.
+ Returns a list of text_run dicts for use in Feishu block elements.
  """
+ if style is None:
+ style = {}
  # Direct text content
- if "raw" in token:
- return token["raw"]
- # Children tokens
+ if token.get("type") == "text" or (
+ "raw" in token and token.get("type") not in ("block_code", "codespan", "paragraph", "list_item", "strong", "emphasis", "link")
+ ):
+ raw = token.get("raw", "")
+ if not raw:
+ return
+ element: dict[str, Any] = {"text_run": {"content": raw}}
+ if style:
+ element["text_run"]["text_element_style"] = style
+ return [element]
+ # Inline code
+ if token.get("type") == "codespan":
+ raw = token.get("raw", token.get("children", ""))
+ if isinstance(raw, list):
+ raw = "".join(c.get("raw", "") if isinstance(c, dict) else str(c) for c in raw)
+ return [{"text_run": {"content": str(raw), "text_element_style": {**style, "inline_code": True}}}]
+ # Bold
+ if token.get("type") == "strong":
+ return _extract_children_elements(token, {**style, "bold": True})
+ # Italic
+ if token.get("type") == "emphasis":
+ return _extract_children_elements(token, {**style, "italic": True})
+ # Link
+ if token.get("type") == "link":
+ url = token.get("attrs", {}).get("url", "")
+ link_style = {**style, "link": {"url": url}} if url else style
+ return _extract_children_elements(token, link_style)
+ # Strikethrough
+ if token.get("type") == "strikethrough":
+ return _extract_children_elements(token, {**style, "strikethrough": True})
+ # Container types (paragraph, list_item, etc.) — recurse into children
+ return _extract_children_elements(token, style)
+def _extract_children_elements(
+ token: dict[str, Any],
+ style: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+ """Recurse into children and collect elements."""
  children = token.get("children", )
  if not children:
- return ""
- parts: list[str] =
+ return
+ elements: list[dict[str, Any]] =
  for child in children:
  if isinstance(child, dict):
- child_type = child.get("type", "")
- if child_type == "text":
- parts.append(child.get("raw", ""))
- elif child_type == "codespan":
- parts.append(f"`{child.get('raw', '')}`")
- elif child_type == "strong":
- inner = _extract_token_text(child)
- parts.append(f"**{inner}**")
- elif child_type == "emphasis":
- inner = _extract_token_text(child)
- parts.append(f"*{inner}*")
- elif child_type == "link":
- text = _extract_token_text(child)
- url = child.get("attrs", {}).get("url", "")
- parts.append(f"[{text}]({url})")
- elif child_type == "paragraph":
- parts.append(_extract_token_text(child))
- else:
- # Recursively extract from other types
- parts.append(_extract_token_text(child))
- elif isinstance(child, str):
- parts.append(child)
- return "".join(parts)
-def _create_text_block(text: str) -> dict[str, Any]:
- """Create a text/paragraph block.
- Args:
- text: Block text content
- Returns:
- Feishu text block definition
- """
- return {
- "block_type": 2, # Text
- "text": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
-def _create_heading_block(level: int, text: str) -> dict[str, Any]:
- """Create a heading block.
- Args:
- level: Heading level (1-9)
- text: Heading text
- Returns:
- Feishu heading block definition
- """
- # Feishu heading types: 3=H1, 4=H2, ..., 11=H9
- block_type = min(level + 2, 11) # Cap at heading 9
+ elements.extend(_extract_token_elements(child, style))
+ elif isinstance(child, str) and child:
+ element: dict[str, Any] = {"text_run": {"content": child}}
+ if style:
+ element["text_run"]["text_element_style"] = style
+ elements.append(element)
+ return elements
+def _table_to_blocks(token: dict[str, Any]) -> list[dict[str, Any]]:
+ """Convert a Markdown table to text blocks (飞书表格需要 descendants API，这里用文本模拟)."""
+ blocks: list[dict[str, Any]] =
+ # Header
+ headers = token.get("children", )
+ if not headers:
+ return blocks
+ head = None
+ body_rows: list[Any] =
+ for child in headers:
+ if isinstance(child, dict):
+ if child.get("type") == "table_head":
+ head = child
+ elif child.get("type") == "table_body":
+ body_rows = child.get("children", )
+ # Build header row
+ if head:
+ head_cells = head.get("children", )
+ if head_cells:
+ row = head_cells[0] if head_cells else None
+ if row:
+ cells = row.get("children", )
+ header_texts =
+ for cell in cells:
+ elements = _extract_token_elements(cell)
+ text = "".join(e.get("text_run", {}).get("content", "") for e in elements)
+ header_texts.append(text)
+ # Header as bold text block
+ header_elements: list[dict[str, Any]] =
+ for i, ht in enumerate(header_texts):
+ if i > 0:
+ header_elements.append({"text_run": {"content": " | "}})
+ header_elements.append({"text_run": {"content": ht, "text_element_style": {"bold": True}}})
+ blocks.append(_create_block_with_elements(2, "text", header_elements))
+ # Divider
+ blocks.append({"block_type": 22})
+ # Body rows
+ for row in body_rows:
+ if not isinstance(row, dict):
+ continue
+ cells = row.get("children", )
+ row_elements: list[dict[str, Any]] =
+ for i, cell in enumerate(cells):
+ if i > 0:
+ row_elements.append({"text_run": {"content": " | "}})
+ cell_elems = _extract_token_elements(cell)
+ row_elements.extend(cell_elems)
+ if row_elements:
+ blocks.append(_create_block_with_elements(2, "text", row_elements))
+ return blocks
+def _create_block_with_elements(
+ block_type: int,
+ block_key: str,
+ elements: list[dict[str, Any]],
+) -> dict[str, Any]:
+ """Create a Feishu block with pre-built elements."""
+ if not elements:
+ elements = [{"text_run": {"content": ""}}]
  return {
  "block_type": block_type,
- f"heading{level}": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
-def _create_bullet_block(text: str) -> dict[str, Any]:
- """Create a bullet list item block.
- Args:
- text: List item text
- Returns:
- Feishu bullet block definition
- """
- return {
- "block_type": 12, # Bullet
- "bullet": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
-def _create_ordered_block(text: str) -> dict[str, Any]:
- """Create an ordered list item block.
- Args:
- text: List item text
- Returns:
- Feishu ordered block definition
- """
- return {
- "block_type": 13, # Ordered
- "ordered": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
+ block_key: {
+ "elements": elements,
  "style": {},
  },
  }
 def _create_code_block(code: str, language: str = "") -> dict[str, Any]:
- """Create a code block.
- Args:
- code: Code content
- language: Programming language name
- Returns:
- Feishu code block definition
- """
- # Map language name to Feishu code
+ """Create a code block."""
  lang_code = _get_language_code(language)
  return {
- "block_type": 14, # Code
+ "block_type": 14,
  "code": {
  "elements": [
- {
- "text_run": {
- "content": code.rstrip("\n"),
- }
- }
+ {"text_run": {"content": code.rstrip("\n")}}
  ],
- "style": {
- "language": lang_code,
- },
+ "style": {"language": lang_code},
  },
  }
 def _create_quote_block(text: str) -> dict[str, Any]:
- """Create a quote block.
- Args:
- text: Quote text content
- Returns:
- Feishu quote block definition
- """
- return {
- "block_type": 15, # Quote
- "quote": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
+ """Create a quote block (plain text version, used by blocks_to_markdown)."""
+ return _create_block_with_elements(15, "quote", [{"text_run": {"content": text}}])
 def _get_language_code(language: str) -> int:
  """Map language name to Feishu language code.
  Args:
