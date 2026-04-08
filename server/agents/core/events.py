@@ -17,8 +17,6 @@ BUDGET_WARNING = "budget_warning"
 DEEP_ANALYSIS_PROGRESS = "deep_analysis_progress"
 PHASE_TRANSITION = "phase_transition"
 TASK_PROGRESS = "task_progress"
-DOC_SUMMARY = "doc_summary"
-DOC_ERROR = "doc_error"
 # 所有 SSE data 事件类型集合（用于契约测试验证前后端一致性）
 ALL_EVENT_TYPES: frozenset[str] = frozenset({
  TEXT_DELTA,
@@ -32,8 +30,6 @@ ALL_EVENT_TYPES: frozenset[str] = frozenset({
  DEEP_ANALYSIS_PROGRESS,
  PHASE_TRANSITION,
  TASK_PROGRESS,
- DOC_SUMMARY,
- DOC_ERROR,
 })
 # 连接级事件类型 — 不走 SSE data 行，通过 SSE 注释行发送
 KEEPALIVE = "keepalive"

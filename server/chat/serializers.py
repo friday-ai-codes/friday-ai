@@ -182,26 +182,3 @@ class SendMessageSerializer(serializers.Serializer):
  required=False,
  help_text="强制使用深度分析模式（跳过 RAG，直接调用 Runner + Claude Code）",
  )
- feishu_doc_id = serializers.CharField(
- required=False,
- allow_blank=True,
- default="",
- help_text="前端从消息中提取的飞书文档 ID",
- )
-class ExportToFeishuSerializer(serializers.Serializer):
- """导出对话消息到飞书文档。"""
- message_ids = serializers.ListField(
- child=serializers.UUIDField,
- min_length=1,
- help_text="要导出的消息 ID 列表",
- )
- title = serializers.CharField(
- max_length=200,
- help_text="飞书文档标题",
- )
- folder_token = serializers.CharField(
- required=False,
- allow_blank=True,
- default="",
- help_text="目标文件夹 token（可选，覆盖项目配置）",
- )

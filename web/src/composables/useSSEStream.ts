@@ -23,7 +23,7 @@ export async function connectSSE(
  role: string,
  onEvent: (event: SSEEvent) => void,
  signal: AbortSignal,
- options?: { forceDeepAnalysis?: boolean, feishuDocId?: string },
+ options?: { forceDeepAnalysis?: boolean },
 ): Promise<void> {
  currentRunId = null
  const token = getAccessToken
@@ -36,8 +36,6 @@ export async function connectSSE(
  const body: Record<string, unknown> = { content, role }
  if (options?.forceDeepAnalysis)
  body.force_deep_analysis = true
- if (options?.feishuDocId)
- body.feishu_doc_id = options.feishuDocId
  const response = await fetch(
  `${API_BASE}/chat/conversations/${conversationId}/stream/`,
  {
