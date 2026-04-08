@@ -191,6 +191,81 @@ class FeishuDocClient:
  "document_id": document_id,
  "url": doc_url,
  }
+ @retry(
+ stop=stop_after_attempt(3),
+ wait=wait_exponential(multiplier=1, min=4, max=60),
+ retry=retry_if_exception_type(RateLimitError),
+ reraise=True,
+ )
+ async def create_wiki_document(
+ self,
+ title: str,
+ space_id: str,
+ content: str,
+ parent_node_token: str = "",
+ ) -> dict[str, str]:
+ """Create a document in Feishu Wiki (知识库).
+ Args:
+ title: Document title
+ space_id: Wiki space ID
+ content: Document content in Markdown format
+ parent_node_token: Optional parent node token for nesting
+ Returns:
+ Dict with document_id, node_token, and url
+ Raises:
+ FeishuDocAPIError: API call failed
+ PermissionDeniedError: No permission to write to wiki space
+ """
+ token = await self.get_tenant_access_token
+ async with httpx.AsyncClient as client:
+ # 1. Create wiki node (type=docx)
+ body: dict[str, Any] = {
+ "obj_type": "docx",
+ "title": title,
+ }
+ if parent_node_token:
+ body["parent_node_token"] = parent_node_token
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/wiki/v2/spaces/{space_id}/nodes",
+ headers={
+ "Authorization": f"Bearer {token}",
+ "Content-Type": "application/json",
+ },
+ json=body,
+ )
+ data = response.json
+ if data.get("code") != 0:
+ error_code = data.get("code", 0)
+ error_msg = data.get("msg", "Unknown error")
+ if error_code == 99991400 or "rate limit" in error_msg.lower:
+ raise RateLimitError(f"Rate limit hit: {error_msg}")
+ if error_code in PERMISSION_CODES:
+ raise PermissionDeniedError(f"无权限写入知识库: {error_msg}")
+ raise FeishuDocAPIError(f"Failed to create wiki node: {error_msg}")
+ node = data.get("data", {}).get("node", {})
+ node_token = node.get("node_token", "")
+ obj_token = node.get("obj_token", "")
+ if not obj_token:
+ raise FeishuDocAPIError("No obj_token in wiki node response")
+ # 2. Write content blocks (same API as cloud docs)
+ blocks = markdown_to_blocks(content)
+ if blocks:
+ await self._write_blocks(obj_token, blocks, token)
+ # Wiki document URL
+ doc_url = f"https://feishu.cn/wiki/{node_token}" if node_token else f"https://feishu.cn/docx/{obj_token}"
+ logger.info(
+ "feishu_wiki_document_created",
+ node_token=node_token,
+ obj_token=obj_token,
+ space_id=space_id,
+ title=title,
+ block_count=len(blocks),
+ )
+ return {
+ "document_id": obj_token,
+ "node_token": node_token,
+ "url": doc_url,
+ }
  async def _write_blocks(
  self,
  document_id: str,

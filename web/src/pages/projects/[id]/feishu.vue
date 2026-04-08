@@ -128,14 +128,14 @@ async function handleUpdated {
  </div>
  <div class=" space-y-4">
  <div class="space-y-2">
- <label class="text-sm font-medium">目标文件夹 Token</label>
+ <label class="text-sm font-medium">知识库 Space ID</label>
  <Input
  v-model="folderToken"
- placeholder="输入飞书文件夹 token"
+ placeholder="输入飞书知识库 space_id"
  class="font-mono"
  />
  <p class="text-xs text-muted-foreground">
- 在飞书中打开目标文件夹，从 URL 中复制 token（如 https://feishu.cn/drive/folder/xxxxx 中的 xxxxx）
+ 在飞书知识库设置中找到 Space ID，或从知识库 URL 中提取（如 https://xxx.feishu.cn/wiki/settings/space_id）
  </p>
  </div>
  <Button

@@ -569,13 +569,13 @@ class ExportToFeishuView(APIView):
  project = conversation.project
  message_ids = serializer.validated_data["message_ids"]
  title = serializer.validated_data["title"]
- folder_token = (
- serializer.validated_data.get("folder_token")
+ space_id = (
+ serializer.validated_data.get("space_id")
  or project.feishu_doc_folder_token
  )
- if not folder_token:
+ if not space_id:
  return Response(
- {"error": "未配置导出文件夹", "error_type": "not_configured"},
+ {"error": "未配置知识库", "error_type": "not_configured"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # 安全：同时过滤 conversation_id 防止跨对话消息泄露 (T-)
@@ -596,9 +596,9 @@ class ExportToFeishuView(APIView):
  merged_content = "\n\n---\n\n".join(msg.content for msg in msgs)
  try:
  client = await create_feishu_doc_client_for_project(project)
- result = await client.create_document(
+ result = await client.create_wiki_document(
  title=title,
- folder_token=folder_token,
+ space_id=space_id,
  content=merged_content,
  )
  return Response(
@@ -610,7 +610,7 @@ class ExportToFeishuView(APIView):
  )
  except PermissionDeniedError:
  return Response(
- {"error": "飞书应用无该文件夹的写入权限", "error_type": "permission_denied"},
+ {"error": "飞书应用无该知识库的写入权限", "error_type": "permission_denied"},
  status=status.HTTP_403_FORBIDDEN,
  )
  except FeishuDocAPIError as exc:
