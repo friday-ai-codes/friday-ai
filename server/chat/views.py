@@ -608,6 +608,11 @@ class ExportToFeishuView(APIView):
  "title": title,
  }
  )
+ except ValueError as exc:
+ return Response(
+ {"error": str(exc), "error_type": "not_configured"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  except PermissionDeniedError:
  return Response(
  {"error": "飞书应用无该文件夹的写入权限", "error_type": "permission_denied"},
