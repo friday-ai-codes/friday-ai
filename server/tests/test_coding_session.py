@@ -282,3 +282,66 @@ class TestCodingSessionCallback:
  # 不应抛出异常
  await _update_coding_session_on_complete(sub_session)
  await _update_coding_session_on_fail(sub_session, "some error")
+# ============================================================================
+# 查询恢复 API 测试 ( Task 3)
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionQueryAPI:
+ """CodingSession 查询恢复 API 测试。"""
+ @pytest.fixture
+ def conversation_with_sessions(self, project, repository):
+ """创建一个 conversation 并关联 2 个 CodingSession。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="查询测试对话")
+ session1 = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案 1",
+ status=CodingSession.Status.COMPLETED,
+ pr_url="https://github.com/test/repo/pull/1",
+ )
+ session2 = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案 2",
+ status=CodingSession.Status.DRAFT,
+ )
+ return conversation, session1, session2
+ def test_list_by_conversation(self, authenticated_client, conversation_with_sessions):
+ """GET /api/chat/coding-sessions/?conversation_id=xxx 返回 2 条。"""
+ conversation, _, _ = conversation_with_sessions
+ url = f"/api/chat/coding-sessions/?conversation_id={conversation.id}"
+ response = authenticated_client.get(url)
+ assert response.status_code == 200
+ assert len(response.data) == 2
+ def test_list_empty_conversation(self, authenticated_client, project):
+ """GET 带无 CodingSession 的 conversation_id 返回空列表。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="空对话")
+ url = f"/api/chat/coding-sessions/?conversation_id={conversation.id}"
+ response = authenticated_client.get(url)
+ assert response.status_code == 200
+ assert len(response.data) == 0
+ def test_list_missing_param_returns_400(self, authenticated_client):
+ """GET 不带 conversation_id 返回 400。"""
+ url = "/api/chat/coding-sessions/"
+ response = authenticated_client.get(url)
+ assert response.status_code == 400
+ def test_detail_returns_session(self, authenticated_client, conversation_with_sessions):
+ """GET /api/chat/coding-sessions/{id}/ 返回完整字段。"""
+ _, session1, _ = conversation_with_sessions
+ url = f"/api/chat/coding-sessions/{session1.id}/"
+ response = authenticated_client.get(url)
+ assert response.status_code == 200
+ assert response.data["id"] == str(session1.id)
+ assert response.data["status"] == "completed"
+ assert response.data["pr_url"] == "https://github.com/test/repo/pull/1"
+ assert "tech_plan" in response.data
+ assert "created_at" in response.data
+ def test_detail_not_found_returns_404(self, authenticated_client):
+ """GET 不存在 id 返回 404。"""
+ import uuid
+ fake_id = uuid.uuid4
+ url = f"/api/chat/coding-sessions/{fake_id}/"
+ response = authenticated_client.get(url)
+ assert response.status_code == 404
