@@ -1,4 +1,4 @@
-"""CodingSession 模型测试 — 状态机、辅助方法、默认值。"""
+"""CodingSession 模型测试 — 状态机、辅助方法、默认值 + API 测试。"""
 import pytest
 from chat.models import CodingSession
 @pytest.mark.django_db
@@ -98,3 +98,106 @@ class TestCodingSessionStateMachine:
  assert draft_session.revision_count == 1
  assert draft_session.tech_plan == "## 更新后方案\n- 新步骤"
  assert draft_session.affected_files == [{"path": "src/main.py", "change_type": "modify"}]
+# ============================================================================
+# Confirm API 测试 ( Task 1)
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionConfirmAPI:
+ """CodingSession confirm API 端点测试。"""
+ @pytest.fixture
+ def draft_session(self, project, repository):
+ """创建 draft 状态的 CodingSession（含 Conversation）。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="测试对话")
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 技术方案\n- 步骤 1\n- 步骤 2",
+ affected_files=[{"path": "src/main.py", "change_type": "modify"}],
+ )
+ def test_confirm_only_draft(self, authenticated_client, draft_session):
+ """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。"""
+ from unittest.mock import AsyncMock, patch
+ from repositories.models import GitCredential
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200
+ draft_session.refresh_from_db
+ assert draft_session.status == CodingSession.Status.RUNNING
+ def test_confirm_non_draft_returns_400(self, authenticated_client, draft_session):
+ """POST confirm 对 non-draft 状态返回 400。"""
+ draft_session.status = CodingSession.Status.CONFIRMED
+ draft_session.save(update_fields=["status"])
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 400
+ def test_confirm_creates_subagent_session(self, authenticated_client, draft_session):
+ """confirm 后创建了 SubAgentSession（task_type=coding）。"""
+ from unittest.mock import AsyncMock, patch
+ from repositories.models import GitCredential
+ from subagent.models import SubAgentSession
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200
+ draft_session.refresh_from_db
+ assert draft_session.subagent_session is not None
+ sub_session = SubAgentSession.objects.get(id=draft_session.subagent_session_id)
+ assert sub_session.task_type == SubAgentSession.TaskType.CODING
+ def test_confirm_dispatches_task(self, authenticated_client, draft_session):
+ """confirm 后 dispatch 被调用且 DispatchTask.task_type="coding"。"""
+ from unittest.mock import AsyncMock, patch
+ from repositories.models import GitCredential
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200
+ mock_dispatcher.dispatch.assert_called_once
+ dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
+ assert dispatch_task.task_type == "coding"
+ def test_confirm_not_found_returns_404(self, authenticated_client):
+ """传入不存在 UUID 返回 404。"""
+ import uuid
+ fake_id = uuid.uuid4
+ url = f"/api/chat/coding-sessions/{fake_id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 404
+ def test_confirm_unauthenticated_returns_401(self, api_client, draft_session):
+ """未认证请求返回 401。"""
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = api_client.post(url)
+ assert response.status_code in (401, 403)
