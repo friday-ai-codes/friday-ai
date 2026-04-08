@@ -201,3 +201,84 @@ class TestCodingSessionConfirmAPI:
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = api_client.post(url)
  assert response.status_code in (401, 403)
+# ============================================================================
+# 回调处理扩展测试 ( Task 2)
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionCallback:
+ """CodingSession 回调处理扩展测试。"""
+ @pytest.fixture
+ def running_session_with_subagent(self, project, repository):
+ """创建 running 状态的 CodingSession + 关联 SubAgentSession。"""
+ from agents.models import AgentSession
+ from chat.models import Conversation
+ from subagent.models import SubAgentSession
+ conversation = Conversation.objects.create(project=project, title="回调测试对话")
+ agent_session = AgentSession.objects.create(
+ session_id="agent-coding-test-001",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ )
+ sub_session = SubAgentSession.objects.create(
+ session_id="coding-test-001",
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.CODING,
+ status=SubAgentSession.Status.RUNNING,
+ repo_url="https://github.com/test/repo.git",
+ )
+ coding_session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 技术方案",
+ status=CodingSession.Status.RUNNING,
+ subagent_session=sub_session,
+ )
+ return coding_session, sub_session
+ @pytest.mark.asyncio
+ async def test_callback_updates_pr_url(self, running_session_with_subagent):
+ """completed 回调后 CodingSession.status=completed, pr_url 被回填。"""
+ from subagent.api.callbacks import _update_coding_session_on_complete
+ from subagent.models import TaskResult
+ coding_session, sub_session = running_session_with_subagent
+ # 创建 TaskResult with pr_url
+ await TaskResult.objects.acreate(
+ session=sub_session,
+ result_type=TaskResult.ResultType.GIT,
+ pr_url="https://github.com/test/repo/pull/1",
+ raw_output={"text": "done"},
+ )
+ await sub_session.amark_completed
+ await _update_coding_session_on_complete(sub_session)
+ await coding_session.arefresh_from_db
+ assert coding_session.status == CodingSession.Status.COMPLETED
+ assert coding_session.pr_url == "https://github.com/test/repo/pull/1"
+ @pytest.mark.asyncio
+ async def test_callback_failed_updates_error(self, running_session_with_subagent):
+ """failed 回调后 CodingSession.status=failed, error_message 被设置。"""
+ from subagent.api.callbacks import _update_coding_session_on_fail
+ coding_session, sub_session = running_session_with_subagent
+ await _update_coding_session_on_fail(sub_session, "容器执行超时")
+ await coding_session.arefresh_from_db
+ assert coding_session.status == CodingSession.Status.FAILED
+ assert coding_session.error_message == "容器执行超时"
+ @pytest.mark.asyncio
+ async def test_callback_no_coding_session_passes(self, project):
+ """无关联 CodingSession 的 session 回调不报错。"""
+ from agents.models import AgentSession
+ from subagent.api.callbacks import _update_coding_session_on_complete, _update_coding_session_on_fail
+ from subagent.models import SubAgentSession
+ agent_session = await AgentSession.objects.acreate(
+ session_id="agent-no-coding-001",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ )
+ sub_session = await SubAgentSession.objects.acreate(
+ session_id="no-coding-001",
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.COMPLETED,
+ repo_url="https://github.com/test/repo.git",
+ )
+ # 不应抛出异常
+ await _update_coding_session_on_complete(sub_session)
+ await _update_coding_session_on_fail(sub_session, "some error")
