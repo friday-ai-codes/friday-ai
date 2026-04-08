@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
+import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import DocSummaryCard from './DocSummaryCard.vue'
 const props = defineProps<{
@@ -26,6 +27,12 @@ const props = defineProps<{
  } | null
 }>
 const chatStore = useChatStore
+const emit = defineEmits<{
+ exportSingle: [messageId: string]
+}>
+const isSelected = computed( =>
+ chatStore.selectedMessageIds.has(props.message.id),
+)
 // 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
 const docSummary = computed( => {
  if (props.isStreaming && props.streamingDocSummary) {
@@ -423,7 +430,12 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
- <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
+ <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8 flex">
+ <!-- 多选模式 Checkbox (per, ) -->
+ <div v-if="chatStore.isExportSelectMode && props.message.role === 'assistant'" class="mr-2 flex items-center shrink-0">
+ <Checkbox:checked="isSelected" @update:checked="chatStore.toggleMessageSelect(props.message.id)" />
+ </div>
+ <div class="flex-1 min-w-0">
  <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
  <DocSummaryCard
  v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
@@ -627,6 +639,14 @@ const hideEmptyBubble = computed( =>
  <span v-if="copied" class="icon-[lucide--check] text-primary" />
  <span v-else class="icon-[lucide--copy]" />
  </button>
+ <button
+ v-if="props.message.role === 'assistant'"
+ class="action-btn"
+ title="导出到飞书"
+ @click="emit('exportSingle', props.message.id)"
+ >
+ <span class="icon-[lucide--file-up]" />
+ </button>
  <span class="action-divider" />
  <span class="action-meta">{{ formatTime(message.created_at) }}</span>
  <template v-if="metadata?.model">
@@ -637,6 +657,7 @@ const hideEmptyBubble = computed( =>
  <span class="action-meta">·</span>
  <span class="action-meta font-mono">{{ tokenDisplay }}</span>
  </template>
+ </div>
  </div>
  </div>
 </template>

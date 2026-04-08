@@ -6,6 +6,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { Button } from '~/components/ui/button'
 import { ROLE_OPTIONS } from '~/types/chat'
 const chatStore = useChatStore
 const projectsStore = useProjectsStore
@@ -38,6 +39,28 @@ const projectsStore = useProjectsStore
  </SelectItem>
  </SelectContent>
  </Select>
+ <!-- 导出到飞书入口 (per ) -->
+ <div class="ml-auto flex items-center gap-2">
+ <Button
+ v-if="!chatStore.isExportSelectMode"
+ variant="ghost"
+ size="sm"
+ class="text-xs":disabled="chatStore.isStreaming || chatStore.messages.length === 0"
+ @click="chatStore.enterExportSelectMode"
+ >
+ <span class="icon-[lucide--file-up] mr-1 text-sm" />
+ 导出到飞书
+ </Button>
+ <Button
+ v-else
+ variant="outline"
+ size="sm"
+ class="text-xs text-primary"
+ @click="chatStore.exitExportSelectMode"
+ >
+ 退出多选
+ </Button>
+ </div>
  </div>
 </template>
 <style scoped>
