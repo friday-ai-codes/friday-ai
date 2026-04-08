@@ -667,13 +667,12 @@ const hideEmptyBubble = computed( =>
  max-width: 80%;
  padding: 0.625rem 1rem;
  border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
- background: linear-gradient(135deg, #14b8a6, #06b6d4);
- color: white;
+ background: hsl(var(--primary));
+ color: hsl(var(--primary-foreground));
  font-size: 0.875rem;
  line-height: 1.625;
  white-space: pre-wrap;
  word-break: break-word;
- box-shadow: 0 1px 3px rgba(20, 184, 166, 0.2);
 }
 /* ============ AI Message ============ */
 .ai-message {
