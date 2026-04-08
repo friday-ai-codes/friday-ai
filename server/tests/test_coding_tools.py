@@ -150,3 +150,17 @@ class TestUpdateCodingPlan:
  )
  assert result.success is False
  assert "not found" in result.error.lower
+# ============================================================================
+# 工具注册测试
+# ============================================================================
+def test_coding_tools_registered_in_registry:
+ """验证 coding_tools 模块的 @tool 已注册到全局 _tool_registry。"""
+ import agents.tools.coding_tools # noqa: F401
+ from agents.tools.base import _tool_registry
+ assert "create_coding_plan" in _tool_registry
+ assert "update_coding_plan" in _tool_registry
+def test_coding_tools_in_full_tool_names:
+ """验证 chat_runner._FULL_TOOL_NAMES 包含 coding tools。"""
+ from agents.chat_runner import _FULL_TOOL_NAMES
+ assert "create_coding_plan" in _FULL_TOOL_NAMES
+ assert "update_coding_plan" in _FULL_TOOL_NAMES
