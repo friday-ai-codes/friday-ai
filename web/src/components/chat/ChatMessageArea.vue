@@ -6,6 +6,9 @@ import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
 import ExportConfirmDialog from './ExportConfirmDialog.vue'
+import CodingErrorCard from './CodingErrorCard.vue'
+import CodingProgressCard from './CodingProgressCard.vue'
+import CodingResultCard from './CodingResultCard.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 const chatStore = useChatStore
@@ -19,12 +22,31 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  }
 }
 watch(
- => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase],
+ => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase, chatStore.codingProgress, chatStore.codingResult, chatStore.codingError],
  => {
  if (isAtBottom.value || chatStore.isStreaming || chatStore.error)
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
  },
 )
+// 从消息历史 metadata 恢复编码结果（刷新页面后 codingResult/codingError 为空）
+const historyCodingResult = computed( => {
+ for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+ const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
+ if (meta?.codingResult) {
+ return meta.codingResult as { sessionId: string; prUrl: string; branchName: string; modifiedFilesCount: number }
+ }
+ }
+ return null
+})
+const historyCodingError = computed( => {
+ for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+ const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
+ if (meta?.codingError) {
+ return meta.codingError as { sessionId: string; errorMessage: string }
+ }
+ }
+ return null
+})
 watch(
  => chatStore.currentConversationId,
  => nextTick( => scrollToBottom('instant')),
@@ -104,6 +126,18 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  content: '',
  created_at: new Date.toISOString,
  }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs":streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
+ />
+ <!-- 编码进度卡片 (per: inline 嵌入消息流) -->
+ <CodingProgressCard
+ v-if="chatStore.activeCodingSession?.status === 'running' && chatStore.codingProgress":steps="chatStore.codingProgress.steps":modified-files-count="chatStore.codingProgress.modifiedFilesCount":is-complete="false"
+ />
+ <!-- 编码结果卡片 (per ) -->
+ <CodingResultCard
+ v-if="chatStore.codingResult || (!chatStore.codingError && historyCodingResult)":pr-url="(chatStore.codingResult?.prUrl || historyCodingResult?.prUrl) ?? ''":branch-name="(chatStore.codingResult?.branchName || historyCodingResult?.branchName) ?? ''":modified-files-count="(chatStore.codingResult?.modifiedFilesCount || historyCodingResult?.modifiedFilesCount) ?? 0"
+ />
+ <!-- 编码错误卡片 (per ) -->
+ <CodingErrorCard
+ v-if="chatStore.codingError || (!chatStore.codingResult && historyCodingError)":error-message="(chatStore.codingError?.errorMessage || historyCodingError?.errorMessage) ?? ''"
  />
  <!-- 导出成功卡片 (per ) -->
  <ExportSuccessCard
