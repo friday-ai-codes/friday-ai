@@ -4,14 +4,18 @@
  * 用于配置项目的飞书集成
  */
 import type { FeishuConfig } from '~/types'
+import type { FeishuDocConfig } from '~/api/projects'
 import { useHead } from '@vueuse/head'
-import { getFeishuConfig } from '~/api/projects'
+import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/projects'
 import { FeishuConfigForm } from '~/components/feishu'
+import { Button } from '~/components/ui/button'
+import { Input } from '~/components/ui/input'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/projects/[id]/feishu')
 const router = useRouter
 const projectsStore = useProjectsStore
 const { handleError } = useErrorHandler
+const { toast } = useToast
 const projectId = computed( => route.params.id)
 useHead({
  title: '飞书配置 - Friday AI',
@@ -19,6 +23,10 @@ useHead({
 // 加载数据
 const loading = ref(true)
 const feishuConfig = ref<FeishuConfig | null>(null)
+// 飞书文档导出配置 (Phase)
+const docConfig = ref<FeishuDocConfig | null>(null)
+const folderToken = ref('')
+const savingDocConfig = ref(false)
 async function loadData {
  loading.value = true
  try {
@@ -29,12 +37,35 @@ async function loadData {
  catch {
  feishuConfig.value = null
  }
+ // 加载飞书文档导出配置
+ try {
+ docConfig.value = await getFeishuDocConfig(projectId.value)
+ folderToken.value = docConfig.value.feishu_doc_folder_token
+ }
+ catch {
+ docConfig.value = null
+ }
  }
  catch (e: unknown) {
  handleError(e, '加载飞书配置')
  }
  finally {
  loading.value = false
+ }
+}
+async function saveDocConfig {
+ savingDocConfig.value = true
+ try {
+ await updateFeishuDocConfig(projectId.value, {
+ feishu_doc_folder_token: folderToken.value,
+ })
+ toast({ title: '保存成功', description: '飞书文档导出配置已更新' })
+ }
+ catch (e: unknown) {
+ handleError(e, '保存飞书文档导出配置')
+ }
+ finally {
+ savingDocConfig.value = false
  }
 }
 onMounted(loadData)
@@ -89,6 +120,34 @@ async function handleUpdated {
  <FeishuConfigForm:project-id="projectId":config="feishuConfig"
  @updated="handleUpdated"
  />
+ <!-- 飞书文档导出配置 (Phase, ) -->
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--file-up] text-primary" />
+ <h2 class="font-semibold">飞书文档导出</h2>
+ </div>
+ <div class=" space-y-4">
+ <div class="space-y-2">
+ <label class="text-sm font-medium">目标文件夹 Token</label>
+ <Input
+ v-model="folderToken"
+ placeholder="输入飞书文件夹 token"
+ class="font-mono"
+ />
+ <p class="text-xs text-muted-foreground">
+ 在飞书中打开目标文件夹，从 URL 中复制 token（如 https://feishu.cn/drive/folder/xxxxx 中的 xxxxx）
+ </p>
+ </div>
+ <Button
+ variant="outline"
+ size="sm":disabled="savingDocConfig"
+ @click="saveDocConfig"
+ >
+ <span v-if="savingDocConfig" class="icon-[lucide--loader-2] animate-spin mr-1" />
+ 保存
+ </Button>
+ </div>
+ </div>
  <!-- 使用说明 -->
  <div class="relative">
  <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
