@@ -197,37 +197,38 @@ class FeishuDocClient:
  blocks: list[dict[str, Any]],
  token: str,
  ) -> None:
- """Write blocks to a document.
- Args:
- document_id: Target document ID
- blocks: List of block definitions
- token: Authorization token
- """
- async with httpx.AsyncClient as client:
- # Get the document's root block ID first
- response = await client.get(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}",
- headers={"Authorization": f"Bearer {token}"},
- )
- data = response.json
- if data.get("code") != 0:
- raise FeishuDocAPIError(f"Failed to get document info: {data}")
- # The document itself is the root block
- # We need to add children to the page block
- payload = {"children": blocks, "index": 0}
- logger.debug(
- "feishu_write_blocks_payload",
- document_id=document_id,
- block_count=len(blocks),
- payload=payload,
- )
- response = await client.post(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
- headers={
+ """Write blocks to a document. Handles tables specially."""
+ # Split blocks into regular blocks and table data
+ regular_blocks: list[dict[str, Any]] =
+ # table_insertions: list of (insert_index, table_data)
+ table_insertions: list[tuple[int, dict[str, Any]]] =
+ for block in blocks:
+ if block.get("_table_data"):
+ table_insertions.append((len(regular_blocks), block["_table_data"]))
+ # Insert a table skeleton as placeholder
+ td = block["_table_data"]
+ regular_blocks.append({
+ "block_type": 31,
+ "table": {
+ "property": {
+ "row_size": td["row_size"],
+ "column_size": td["column_size"],
+ },
+ },
+ })
+ else:
+ regular_blocks.append(block)
+ async with httpx.AsyncClient(timeout=30.0) as client:
+ headers = {
  "Authorization": f"Bearer {token}",
  "Content-Type": "application/json",
- },
- json=payload,
+ }
+ # Write all blocks (including table skeletons)
+ if regular_blocks:
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+ headers=headers,
+ json={"children": regular_blocks, "index": 0},
  )
  data = response.json
  if data.get("code") != 0:
@@ -240,6 +241,70 @@ class FeishuDocClient:
  )
  raise FeishuDocAPIError(
  f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
+ )
+ # Fill table cells if any
+ if table_insertions:
+ await self._fill_tables(document_id, table_insertions, token, client)
+ async def _fill_tables(
+ self,
+ document_id: str,
+ table_insertions: list[tuple[int, dict[str, Any]]],
+ token: str,
+ client: Any,
+ ) -> None:
+ """Fill table cells after table skeletons are created."""
+ headers = {
+ "Authorization": f"Bearer {token}",
+ "Content-Type": "application/json",
+ }
+ # Get all blocks in the document to find table block IDs
+ response = await client.get(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks",
+ headers={"Authorization": f"Bearer {token}"},
+ params={"page_size": 500},
+ )
+ doc_data = response.json
+ if doc_data.get("code") != 0:
+ logger.warning("feishu_get_blocks_failed", error=doc_data)
+ return
+ all_blocks = doc_data.get("data", {}).get("items", )
+ # Find table blocks (block_type 31)
+ table_blocks = [b for b in all_blocks if b.get("block_type") == 31]
+ for table_idx, (_, table_data) in enumerate(table_insertions):
+ if table_idx >= len(table_blocks):
+ break
+ table_block = table_blocks[table_idx]
+ table_block_id = table_block.get("block_id", "")
+ cell_ids = table_block.get("table", {}).get("cells", )
+ cells_data = table_data.get("cells", )
+ col_size = table_data["column_size"]
+ # Fill each cell: cell_ids is a flat list, row-major order
+ for cell_idx, cell_block_id in enumerate(cell_ids):
+ row = cell_idx // col_size
+ col = cell_idx % col_size
+ if row < len(cells_data) and col < len(cells_data[row]):
+ elements = cells_data[row][col]
+ if not elements:
+ continue
+ # Create a text block inside the cell
+ cell_block = {
+ "block_type": 2,
+ "text": {"elements": elements, "style": {}},
+ }
+ resp = await client.post(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{cell_block_id}/children",
+ headers=headers,
+ json={"children": [cell_block], "index": 0},
+ )
+ resp_data = resp.json
+ if resp_data.get("code") != 0:
+ logger.warning(
+ "feishu_table_cell_write_failed",
+ table_block_id=table_block_id,
+ cell_block_id=cell_block_id,
+ row=row,
+ col=col,
+ error=resp_data,
  )
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
  """Convert Feishu document blocks to Markdown.
@@ -506,55 +571,61 @@ def _extract_children_elements(
  elements.append(element)
  return elements
 def _table_to_blocks(token: dict[str, Any]) -> list[dict[str, Any]]:
- """Convert a Markdown table to text blocks (飞书表格需要 descendants API，这里用文本模拟)."""
- blocks: list[dict[str, Any]] =
- # Header
- headers = token.get("children", )
- if not headers:
- return blocks
+ """Convert a Markdown table to a Feishu table block with _table_data marker."""
  head = None
  body_rows: list[Any] =
- for child in headers:
+ for child in token.get("children", ):
  if isinstance(child, dict):
  if child.get("type") == "table_head":
  head = child
  elif child.get("type") == "table_body":
  body_rows = child.get("children", )
- # Build header row
+ # Collect all rows as cells: list[list[elements]]
+ all_rows: list[list[list[dict[str, Any]]]] =
+ # Header row (bold)
  if head:
- head_cells = head.get("children", )
- if head_cells:
- row = head_cells[0] if head_cells else None
- if row:
+ head_rows = head.get("children", )
+ if head_rows:
+ row = head_rows[0]
  cells = row.get("children", )
- header_texts =
+ header_row: list[list[dict[str, Any]]] =
  for cell in cells:
  elements = _extract_token_elements(cell)
- text = "".join(e.get("text_run", {}).get("content", "") for e in elements)
- header_texts.append(text)
- # Header as bold text block
- header_elements: list[dict[str, Any]] =
- for i, ht in enumerate(header_texts):
- if i > 0:
- header_elements.append({"text_run": {"content": " | "}})
- header_elements.append({"text_run": {"content": ht, "text_element_style": {"bold": True}}})
- blocks.append(_create_block_with_elements(2, "text", header_elements))
- # Divider
- blocks.append({"block_type": 22, "divider": {}})
+ # Make header cells bold
+ for elem in elements:
+ tr = elem.get("text_run", {})
+ style = tr.get("text_element_style", {})
+ style["bold"] = True
+ tr["text_element_style"] = style
+ header_row.append(elements)
+ all_rows.append(header_row)
  # Body rows
  for row in body_rows:
  if not isinstance(row, dict):
  continue
  cells = row.get("children", )
- row_elements: list[dict[str, Any]] =
- for i, cell in enumerate(cells):
- if i > 0:
- row_elements.append({"text_run": {"content": " | "}})
- cell_elems = _extract_token_elements(cell)
- row_elements.extend(cell_elems)
- if row_elements:
- blocks.append(_create_block_with_elements(2, "text", row_elements))
- return blocks
+ body_row: list[list[dict[str, Any]]] =
+ for cell in cells:
+ elements = _extract_token_elements(cell)
+ body_row.append(elements)
+ all_rows.append(body_row)
+ if not all_rows:
+ return
+ row_size = len(all_rows)
+ col_size = max(len(r) for r in all_rows) if all_rows else 0
+ if col_size == 0:
+ return
+ # Pad rows to uniform column count
+ for row in all_rows:
+ while len(row) < col_size:
+ row.append([{"text_run": {"content": ""}}])
+ return [{
+ "_table_data": {
+ "row_size": row_size,
+ "column_size": col_size,
+ "cells": all_rows,
+ },
+ }]
 def _create_block_with_elements(
  block_type: int,
  block_key: str,
