@@ -342,6 +342,7 @@ class ContainerCallbackView(APIView):
 # === CodingSession 回调扩展 (Phase) ===
 async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  """回调完成时更新关联的 CodingSession（如果有）。"""
+ from chat.coding_events import store_coding_complete_to_message
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
  subagent_session=session
@@ -351,6 +352,7 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  task_result = await TaskResult.objects.filter(session=session).afirst
  pr_url = task_result.pr_url if task_result else ""
  await coding_session.amark_completed(pr_url=pr_url)
+ await store_coding_complete_to_message(coding_session)
  logger.info(
  "coding_session_completed",
  coding_session_id=str(coding_session.id),
@@ -358,6 +360,7 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  )
 async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -> None:
  """回调失败时更新关联的 CodingSession（如果有）。"""
+ from chat.coding_events import store_coding_failed_to_message
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
  subagent_session=session
@@ -365,6 +368,7 @@ async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -
  if coding_session is None:
  return
  await coding_session.amark_failed(error=error)
+ await store_coding_failed_to_message(coding_session)
  logger.info(
  "coding_session_failed",
  coding_session_id=str(coding_session.id),
