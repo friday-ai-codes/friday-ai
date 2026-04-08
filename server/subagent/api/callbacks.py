@@ -339,6 +339,37 @@ class ContainerCallbackView(APIView):
  status=status.HTTP_400_BAD_REQUEST,
  )
  return await handler(session, payload, log)
+# === CodingSession 回调扩展 (Phase) ===
+async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
+ """回调完成时更新关联的 CodingSession（如果有）。"""
+ from chat.models import CodingSession
+ coding_session = await CodingSession.objects.filter(
+ subagent_session=session
+ ).afirst
+ if coding_session is None:
+ return
+ task_result = await TaskResult.objects.filter(session=session).afirst
+ pr_url = task_result.pr_url if task_result else ""
+ await coding_session.amark_completed(pr_url=pr_url)
+ logger.info(
+ "coding_session_completed",
+ coding_session_id=str(coding_session.id),
+ pr_url=pr_url,
+ )
+async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -> None:
+ """回调失败时更新关联的 CodingSession（如果有）。"""
+ from chat.models import CodingSession
+ coding_session = await CodingSession.objects.filter(
+ subagent_session=session
+ ).afirst
+ if coding_session is None:
+ return
+ await coding_session.amark_failed(error=error)
+ logger.info(
+ "coding_session_failed",
+ coding_session_id=str(coding_session.id),
+ error=error,
+ )
 # === 回调处理函数 ===
 async def _handle_completed(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
@@ -368,6 +399,8 @@ async def _handle_completed(
  )
  # 更新 session 状态
  await session.amark_completed
+ # 更新关联的 CodingSession（如果有）
+ await _update_coding_session_on_complete(session)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
  # 触发 Agent 会话恢复（如果有 main_session 但无 node_execution）
@@ -392,6 +425,8 @@ async def _handle_failed(
  session.failure_reason = error_msg
  await session.asave(update_fields=["failure_reason"])
  await session.amark_failed(error=error_msg)
+ # 更新关联的 CodingSession（如果有）
+ await _update_coding_session_on_fail(session, error_msg)
  await _send_failure_notification(session, error_msg)
  # 触发 workflow 恢复（如果有 node_execution）
  _schedule_workflow_resume(session, log)
