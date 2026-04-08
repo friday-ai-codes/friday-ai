@@ -114,17 +114,29 @@ def _build_system_prompt(
  " - 简单的代码定位、查看文件、事实性问答，使用策略一\n"
  " - 拿不准时倾向策略二，deep_analysis 的分析质量远优于多次 RAG 拼凑\n"
  )
+ coding_guidance = (
+ "\n编码任务识别：\n"
+ " 当用户描述了具体的代码变更需求（如「帮我实现...」「修改...功能」「添加...接口」「重构...」），\n"
+ " 你应该调用 create_coding_plan 工具生成结构化技术方案，而非直接给出代码片段。\n"
+ " 技术方案包含：① 影响文件列表（文件路径 + 变更类型：新增/修改/删除）② 分步实现步骤。\n"
+ " 用户确认方案后才会在 Runner 容器中执行编码。\n"
+ " 用户要求调整方案时，调用 update_coding_plan 更新方案内容。\n"
+ " 不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
+ " - deep_analysis：分析理解代码（只读）\n"
+ " - create_coding_plan：执行代码变更（写入）\n"
+ )
  return (
  f"{role_prompt}\n\n"
  f"当前项目：{project_name}\n\n"
  f"{strategy}\n"
+ f"{coding_guidance}\n"
  f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
  f"不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
  f"用中文回答。\n"
  )
 async def _get_tool_names(project_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
- 有已索引仓库：注入全部 6 个工具（3 个新检索工具 + 3 个已有项目工具）
+ 有已索引仓库：注入全部工具（检索工具 + 项目工具 + 编码工具）
  无仓库或未索引：仅注入 get_project_overview（基础信息）
  """
  base_tools = ["get_project_overview"]
@@ -134,6 +146,8 @@ async def _get_tool_names(project_id: str) -> list[str]:
  "search_repository_code",
  "list_project_repositories",
  "get_repository_info",
+ "create_coding_plan",
+ "update_coding_plan",
  ]
  has_indexed = await Repository.objects.filter(
  projects__id=project_id,
