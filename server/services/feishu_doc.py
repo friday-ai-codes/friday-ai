@@ -197,38 +197,47 @@ class FeishuDocClient:
  blocks: list[dict[str, Any]],
  token: str,
  ) -> None:
- """Write blocks to a document. Handles tables specially."""
- # Split blocks into regular blocks and table data
- regular_blocks: list[dict[str, Any]] =
- # table_insertions: list of (insert_index, table_data)
- table_insertions: list[tuple[int, dict[str, Any]]] =
+ """Write blocks to a document. Uses descendants API for tables."""
+ # Split into groups: consecutive regular blocks, or single table
+ groups: list[dict[str, Any]] = # {"type": "regular"|"table", "data": ...}
+ current_regular: list[dict[str, Any]] =
  for block in blocks:
  if block.get("_table_data"):
- table_insertions.append((len(regular_blocks), block["_table_data"]))
- # Insert a table skeleton as placeholder
- td = block["_table_data"]
- regular_blocks.append({
- "block_type": 31,
- "table": {
- "property": {
- "row_size": td["row_size"],
- "column_size": td["column_size"],
- },
- },
- })
+ if current_regular:
+ groups.append({"type": "regular", "data": current_regular})
+ current_regular =
+ groups.append({"type": "table", "data": block["_table_data"]})
  else:
- regular_blocks.append(block)
+ current_regular.append(block)
+ if current_regular:
+ groups.append({"type": "regular", "data": current_regular})
  async with httpx.AsyncClient(timeout=30.0) as client:
  headers = {
  "Authorization": f"Bearer {token}",
  "Content-Type": "application/json",
  }
- # Write all blocks (including table skeletons)
- if regular_blocks:
+ # Write each group sequentially to maintain order
+ for group in groups:
+ if group["type"] == "regular":
+ await self._write_regular_blocks(
+ document_id, group["data"], headers, client,
+ )
+ else:
+ await self._write_table_via_descendants(
+ document_id, group["data"], headers, client,
+ )
+ async def _write_regular_blocks(
+ self,
+ document_id: str,
+ blocks: list[dict[str, Any]],
+ headers: dict[str, str],
+ client: Any,
+ ) -> None:
+ """Write regular (non-table) blocks via children API."""
  response = await client.post(
  f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
  headers=headers,
- json={"children": regular_blocks, "index": 0},
+ json={"children": blocks, "index": -1},
  )
  data = response.json
  if data.get("code") != 0:
@@ -242,70 +251,79 @@ class FeishuDocClient:
  raise FeishuDocAPIError(
  f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
  )
- # Fill table cells if any
- if table_insertions:
- await self._fill_tables(document_id, table_insertions, token, client)
- async def _fill_tables(
+ async def _write_table_via_descendants(
  self,
  document_id: str,
- table_insertions: list[tuple[int, dict[str, Any]]],
- token: str,
+ table_data: dict[str, Any],
+ headers: dict[str, str],
  client: Any,
  ) -> None:
- """Fill table cells after table skeletons are created."""
- headers = {
- "Authorization": f"Bearer {token}",
- "Content-Type": "application/json",
- }
- # Get all blocks in the document to find table block IDs
- response = await client.get(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks",
- headers={"Authorization": f"Bearer {token}"},
- params={"page_size": 500},
- )
- doc_data = response.json
- if doc_data.get("code") != 0:
- logger.warning("feishu_get_blocks_failed", error=doc_data)
- return
- all_blocks = doc_data.get("data", {}).get("items", )
- # Find table blocks (block_type 31)
- table_blocks = [b for b in all_blocks if b.get("block_type") == 31]
- for table_idx, (_, table_data) in enumerate(table_insertions):
- if table_idx >= len(table_blocks):
- break
- table_block = table_blocks[table_idx]
- table_block_id = table_block.get("block_id", "")
- cell_ids = table_block.get("table", {}).get("cells", )
- cells_data = table_data.get("cells", )
+ """Write a table using the descendants API (single request, full structure)."""
+ row_size = table_data["row_size"]
  col_size = table_data["column_size"]
- # Fill each cell: cell_ids is a flat list, row-major order
- for cell_idx, cell_block_id in enumerate(cell_ids):
- row = cell_idx // col_size
- col = cell_idx % col_size
- if row < len(cells_data) and col < len(cells_data[row]):
- elements = cells_data[row][col]
- if not elements:
- continue
- # Create a text block inside the cell
- cell_block = {
+ cells = table_data["cells"] # list[list[list[element_dict]]]
+ table_id = "tbl_1"
+ descendants: list[dict[str, Any]] =
+ cell_ids: list[str] =
+ # Build cell blocks (row-major order)
+ for r in range(row_size):
+ for c in range(col_size):
+ cell_id = f"cell_{r}_{c}"
+ text_id = f"txt_{r}_{c}"
+ cell_ids.append(cell_id)
+ # Get elements for this cell
+ elements: list[dict[str, Any]] = [{"text_run": {"content": ""}}]
+ if r < len(cells) and c < len(cells[r]):
+ cell_elements = cells[r][c]
+ if cell_elements:
+ elements = cell_elements
+ # Table cell block
+ descendants.append({
+ "block_id": cell_id,
+ "block_type": 32,
+ "children": [text_id],
+ "table_cell": {},
+ })
+ # Text block inside cell
+ descendants.append({
+ "block_id": text_id,
  "block_type": 2,
  "text": {"elements": elements, "style": {}},
+ })
+ # Table block (parent of all cells)
+ table_block = {
+ "block_id": table_id,
+ "block_type": 31,
+ "children": cell_ids,
+ "table": {
+ "property": {
+ "row_size": row_size,
+ "column_size": col_size,
+ "header_row": True,
+ },
+ },
  }
- resp = await client.post(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{cell_block_id}/children",
+ descendants.insert(0, table_block)
+ payload = {
+ "children_id": [table_id],
+ "index": -1,
+ "descendants": descendants,
+ }
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/descendant",
  headers=headers,
- json={"children": [cell_block], "index": 0},
+ json=payload,
  )
- resp_data = resp.json
- if resp_data.get("code") != 0:
- logger.warning(
- "feishu_table_cell_write_failed",
- table_block_id=table_block_id,
- cell_block_id=cell_block_id,
- row=row,
- col=col,
- error=resp_data,
+ data = response.json
+ if data.get("code") != 0:
+ logger.error(
+ "feishu_write_table_failed",
+ document_id=document_id,
+ error_code=data.get("code"),
+ error_msg=data.get("msg"),
+ error_data=data,
  )
+ # Don't raise — table failure shouldn't block the rest of the doc
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
  """Convert Feishu document blocks to Markdown.
  Supports:
