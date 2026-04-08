@@ -392,6 +392,22 @@ class ProjectViewSet(ModelViewSet):
  "message": f"发送失败: {str(e)}",
  }
  )
+ # === Feishu Doc Export configuration ===
+ @action(detail=True, methods=["get", "put"], url_path="feishu-doc-config")
+ async def feishu_doc_config(self, request, pk=None):
+ """管理飞书文档导出配置。"""
+ project = await self.aget_object
+ if request.method == "GET":
+ return Response({
+ "feishu_doc_folder_token": project.feishu_doc_folder_token,
+ })
+ # PUT
+ folder_token = request.data.get("feishu_doc_folder_token", "")
+ project.feishu_doc_folder_token = folder_token
+ await project.asave(update_fields=["feishu_doc_folder_token", "updated_at"])
+ return Response({
+ "feishu_doc_folder_token": project.feishu_doc_folder_token,
+ })
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  queryset = (
