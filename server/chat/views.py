@@ -20,6 +20,7 @@ from .serializers import (
  ConversationMessageSerializer,
  ConversationRuntimeSerializer,
  CreateConversationSerializer,
+ ExportToFeishuSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
  SendMessageSerializer,
@@ -386,6 +387,7 @@ class ChatStreamView(APIView):
  content = serializer.validated_data["content"]
  role = serializer.validated_data.get("role", "developer")
  force_deep_analysis = serializer.validated_data.get("force_deep_analysis", False)
+ feishu_doc_id = serializer.validated_data.get("feishu_doc_id", "")
  # 验证对话存在
  try:
  await Conversation.objects.aget(
@@ -404,6 +406,7 @@ class ChatStreamView(APIView):
  role,
  str(request.user.id) if getattr(request.user, "is_authenticated", False) else None,
  force_deep_analysis=force_deep_analysis,
+ feishu_doc_id=feishu_doc_id,
  ),
  content_type="text/event-stream",
  )
@@ -418,6 +421,7 @@ class ChatStreamView(APIView):
  notification_user_id: str | None,
  *,
  force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
  ):
  """生成 SSE 事件流。"""
  import uuid as uuid_mod
@@ -437,6 +441,7 @@ class ChatStreamView(APIView):
  role=role,
  notification_user_id=notification_user_id,
  force_deep_analysis=force_deep_analysis,
+ feishu_doc_id=feishu_doc_id,
  ):
  if event.type == KEEPALIVE:
  yield format_keepalive
@@ -539,3 +544,87 @@ async def _cancel_dispatched_task(task_info: dict) -> None:
  await dispatcher.cancel(task_id)
  except Exception:
  logger.warning("dispatched_task_cancel_failed", task_id=task_id, exc_info=True)
+# ============================================================================
+# Export to Feishu (Phase)
+# ============================================================================
+class ExportToFeishuView(APIView):
+ """导出对话消息到飞书文档（用户触发的 REST API 路径）。"""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ async def post(self, request, conversation_id): # type: ignore[override]
+ """导出选中的 assistant 消息为飞书文档。"""
+ from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
+ from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError
+ from .models import Message
+ serializer = ExportToFeishuSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ try:
+ conversation = await Conversation.objects.select_related("project").aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response({"error": "对话不存在"}, status=status.HTTP_404_NOT_FOUND)
+ project = conversation.project
+ message_ids = serializer.validated_data["message_ids"]
+ title = serializer.validated_data["title"]
+ folder_token = (
+ serializer.validated_data.get("folder_token")
+ or project.feishu_doc_folder_token
+ )
+ if not folder_token:
+ return Response(
+ {"error": "未配置导出文件夹", "error_type": "not_configured"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 安全：同时过滤 conversation_id 防止跨对话消息泄露 (T-)
+ msgs = [
+ msg
+ async for msg in Message.objects.filter(
+ id__in=message_ids,
+ conversation_id=conversation_id,
+ role=Message.Role.ASSISTANT,
+ ).order_by("created_at")
+ ]
+ if not msgs:
+ return Response(
+ {"error": "未找到可导出的消息"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ #: 多条消息间用分隔线区分
+ merged_content = "\n\n---\n\n".join(msg.content for msg in msgs)
+ try:
+ client = await create_feishu_doc_client_for_project(project)
+ result = await client.create_document(
+ title=title,
+ folder_token=folder_token,
+ content=merged_content,
+ )
+ return Response(
+ {
+ "document_id": result["document_id"],
+ "url": result["url"],
+ "title": title,
+ }
+ )
+ except ValueError as exc:
+ return Response(
+ {"error": str(exc), "error_type": "not_configured"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ except PermissionDeniedError:
+ return Response(
+ {"error": "飞书应用无该文件夹的写入权限", "error_type": "permission_denied"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ except FeishuDocAPIError as exc:
+ logger.warning(
+ "feishu_doc_export_failed",
+ error=str(exc),
+ conversation_id=str(conversation_id),
+ )
+ return Response(
+ {"error": f"导出失败: {exc}", "error_type": "api_error"},
+ status=status.HTTP_502_BAD_GATEWAY,
+ )
