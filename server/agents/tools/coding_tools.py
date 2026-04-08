@@ -131,3 +131,80 @@ async def create_coding_plan(
  "message": f"技术方案已创建，session_id={session.id}。用户确认后可执行编码。",
  },
  )
+@tool(
+ name="update_coding_plan",
+ description=(
+ "更新编码技术方案。当用户要求调整方案时调用。"
+ "传入更新后的方案内容，后端更新 CodingSession 并递增修订计数。"
+ ),
+ category="PROJECT",
+ parameters={
+ "type": "object",
+ "properties": {
+ "session_id": {
+ "type": "string",
+ "description": "CodingSession UUID",
+ },
+ "tech_plan": {
+ "type": "string",
+ "description": "更新后的 Markdown 技术方案",
+ },
+ "affected_files": {
+ "type": "array",
+ "items": {
+ "type": "object",
+ "properties": {
+ "path": {"type": "string"},
+ "change_type": {
+ "type": "string",
+ "enum": ["add", "modify", "delete"],
+ },
+ },
+ "required": ["path", "change_type"],
+ },
+ "description": "更新后的影响文件列表",
+ },
+ },
+ "required": ["session_id", "tech_plan", "affected_files"],
+ },
+)
+async def update_coding_plan(
+ session_id: str,
+ tech_plan: str,
+ affected_files: list[dict[str, str]],
+) -> ToolResult:
+ """更新编码技术方案，递增修订计数。"""
+ from chat.models import CodingSession
+ logger.info(
+ "update_coding_plan_requested",
+ session_id=session_id,
+ )
+ # 查找 CodingSession
+ try:
+ session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return ToolResult(
+ success=False,
+ error=f"CodingSession not found: {session_id}",
+ )
+ # 只有草稿状态可更新
+ if session.status != CodingSession.Status.DRAFT:
+ return ToolResult(
+ success=False,
+ error="只有草稿状态的方案可以更新",
+ )
+ # 更新方案
+ await session.aupdate_plan(tech_plan=tech_plan, affected_files=affected_files)
+ logger.info(
+ "coding_plan_updated",
+ session_id=str(session.id),
+ revision_count=session.revision_count,
+ )
+ return ToolResult(
+ success=True,
+ output={
+ "session_id": str(session.id),
+ "revision_count": session.revision_count,
+ "message": f"技术方案已更新（第 {session.revision_count} 次修订）。",
+ },
+ )
