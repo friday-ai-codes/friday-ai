@@ -408,40 +408,6 @@ class ProjectViewSet(ModelViewSet):
  return Response({
  "feishu_doc_folder_token": project.feishu_doc_folder_token,
  })
- @action(detail=True, methods=["get"], url_path="feishu-wiki-spaces")
- async def feishu_wiki_spaces(self, request, pk=None):
- """列出飞书应用可访问的知识库空间。"""
- from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
- project = await self.aget_object
- try:
- client = await create_feishu_doc_client_for_project(project)
- except ValueError as exc:
- return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
- import httpx as _httpx
- token = await client.get_tenant_access_token
- async with _httpx.AsyncClient as http:
- resp = await http.get(
- f"{client.OPEN_API_BASE}/wiki/v2/spaces",
- headers={"Authorization": f"Bearer {token}"},
- params={"page_size": 50},
- )
- data = resp.json
- if data.get("code") != 0:
- return Response(
- {"error": f"获取知识库列表失败: {data.get('msg', '')}"},
- status=status.HTTP_502_BAD_GATEWAY,
- )
- spaces = data.get("data", {}).get("items", )
- return Response({
- "spaces": [
- {
- "space_id": s.get("space_id", ""),
- "name": s.get("name", ""),
- "description": s.get("description", ""),
- }
- for s in spaces
- ],
- })
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  queryset = (

@@ -83,11 +83,11 @@ const projectId = computed( => chatStore.selectedProjectId)
  </div>
  <!-- 错误区域 -->
  <div v-if="errorMsg" class="mt-2 rounded-lg border animate-fade-in">
- <!-- 未配置知识库 -->
+ <!-- 未配置文件夹 -->
  <div v-if="errorType === 'not_configured'" class="flex items-start gap-2">
  <span class="icon-[lucide--folder-x] text-amber-500 text-base shrink-0 mt-0.5" />
  <div class="space-y-1">
- <p class="text-sm text-foreground">尚未配置导出知识库</p>
+ <p class="text-sm text-foreground">尚未配置导出目标文件夹</p>
  <RouterLink:to="`/projects/${projectId}/feishu`"
  class="text-sm text-primary hover:underline"
  @click="emit('update:open', false)"
