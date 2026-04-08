@@ -4,12 +4,14 @@
  * 用于配置项目的飞书集成
  */
 import type { FeishuConfig } from '~/types'
-import type { FeishuDocConfig } from '~/api/projects'
+import type { FeishuDocConfig, FeishuWikiSpace } from '~/api/projects'
 import { useHead } from '@vueuse/head'
-import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/projects'
+import { getFeishuConfig, getFeishuDocConfig, getFeishuWikiSpaces, updateFeishuDocConfig } from '~/api/projects'
 import { FeishuConfigForm } from '~/components/feishu'
 import { Button } from '~/components/ui/button'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '~/components/ui/command'
 import { Input } from '~/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/projects/[id]/feishu')
 const router = useRouter
@@ -27,6 +29,43 @@ const feishuConfig = ref<FeishuConfig | null>(null)
 const docConfig = ref<FeishuDocConfig | null>(null)
 const folderToken = ref('')
 const savingDocConfig = ref(false)
+// 知识库空间选择器
+const wikiSpaces = ref<FeishuWikiSpace>
+const loadingSpaces = ref(false)
+const spacesOpen = ref(false)
+const spaceSearch = ref('')
+const selectedSpaceName = computed( => {
+ if (!folderToken.value) return ''
+ const found = wikiSpaces.value.find(s => s.space_id === folderToken.value)
+ return found ? found.name: ''
+})
+const filteredSpaces = computed( => {
+ if (!spaceSearch.value) return wikiSpaces.value
+ const q = spaceSearch.value.toLowerCase
+ return wikiSpaces.value.filter(
+ s => s.name.toLowerCase.includes(q)
+ || s.space_id.toLowerCase.includes(q)
+ || s.description.toLowerCase.includes(q),
+ )
+})
+async function loadWikiSpaces {
+ loadingSpaces.value = true
+ try {
+ const res = await getFeishuWikiSpaces(projectId.value)
+ wikiSpaces.value = res.spaces
+ }
+ catch {
+ wikiSpaces.value =
+ }
+ finally {
+ loadingSpaces.value = false
+ }
+}
+function selectSpace(spaceId: string) {
+ folderToken.value = spaceId
+ spacesOpen.value = false
+ spaceSearch.value = ''
+}
 async function loadData {
  loading.value = true
  try {
@@ -45,6 +84,8 @@ async function loadData {
  catch {
  docConfig.value = null
  }
+ // 加载知识库列表
+ await loadWikiSpaces
  }
  catch (e: unknown) {
  handleError(e, '加载飞书配置')
@@ -128,19 +169,68 @@ async function handleUpdated {
  </div>
  <div class=" space-y-4">
  <div class="space-y-2">
- <label class="text-sm font-medium">知识库 Space ID</label>
+ <label class="text-sm font-medium">目标知识库</label>
+ <!-- Combobox: 选择或手动输入 -->
+ <Popover v-model:open="spacesOpen">
+ <PopoverTrigger as-child>
+ <button
+ class="flex w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent/50 focus:outline-none focus:ring-1 focus:ring-ring":class="{ 'text-muted-foreground': !folderToken }"
+ >
+ <span v-if="selectedSpaceName" class="truncate">
+ {{ selectedSpaceName }}
+ <span class="text-xs text-muted-foreground ml-1">({{ folderToken }})</span>
+ </span>
+ <span v-else-if="folderToken" class="font-mono truncate">{{ folderToken }}</span>
+ <span v-else>选择知识库...</span>
+ <span class="icon-[lucide--chevrons-up-down] text-xs text-muted-foreground shrink-0 ml-2" />
+ </button>
+ </PopoverTrigger>
+ <PopoverContent class="w-[--reka-popover-trigger-width] " align="start">
+ <Command>
+ <CommandInput v-model="spaceSearch" placeholder="搜索知识库名称或 ID..." />
+ <CommandList>
+ <CommandEmpty>
+ <div v-if="loadingSpaces" class="flex items-center gap-2 py-2">
+ <span class="icon-[lucide--loader-2] animate-spin text-muted-foreground" />
+ <span class="text-sm text-muted-foreground">加载中...</span>
+ </div>
+ <span v-else class="text-sm text-muted-foreground">未找到匹配的知识库</span>
+ </CommandEmpty>
+ <CommandGroup>
+ <CommandItem
+ v-for="space in filteredSpaces":key="space.space_id":value="space.name"
+ class="flex items-center gap-2 cursor-pointer"
+ @select="selectSpace(space.space_id)"
+ >
+ <span
+ class="icon-[lucide--check] text-sm":class="folderToken === space.space_id ? 'opacity-100': 'opacity-0'"
+ />
+ <div class="flex-1 min-w-0">
+ <div class="text-sm font-medium truncate">{{ space.name }}</div>
+ <div class="text-xs text-muted-foreground truncate">
+ {{ space.space_id }}
+ <span v-if="space.description"> · {{ space.description }}</span>
+ </div>
+ </div>
+ </CommandItem>
+ </CommandGroup>
+ </CommandList>
+ </Command>
+ </PopoverContent>
+ </Popover>
+ <!-- 手动输入 fallback -->
+ <div class="flex items-center gap-2">
+ <span class="text-xs text-muted-foreground">或手动输入 Space ID：</span>
  <Input
  v-model="folderToken"
- placeholder="输入飞书知识库 space_id"
- class="font-mono"
+ placeholder="space_id"
+ class="font-mono text-xs flex-1"
  />
- <p class="text-xs text-muted-foreground">
- 在飞书知识库设置中找到 Space ID，或从知识库 URL 中提取（如 https://xxx.feishu.cn/wiki/settings/space_id）
- </p>
+ </div>
  </div>
  <Button
  variant="outline"
- size="sm":disabled="savingDocConfig"
+ size="sm":disabled="savingDocConfig || !folderToken"
  @click="saveDocConfig"
  >
  <span v-if="savingDocConfig" class="icon-[lucide--loader-2] animate-spin mr-1" />

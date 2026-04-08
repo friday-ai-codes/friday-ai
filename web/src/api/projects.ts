@@ -163,6 +163,18 @@ export async function updateFeishuDocConfig(
 ): Promise<FeishuDocConfig> {
  return put<FeishuDocConfig>(`/projects/${projectId}/feishu-doc-config/`, data)
 }
+/** 知识库空间 */
+export interface FeishuWikiSpace {
+ space_id: string
+ name: string
+ description: string
+}
+/**
+ * 获取飞书知识库空间列表
+ */
+export async function getFeishuWikiSpaces(projectId: string): Promise<{ spaces: FeishuWikiSpace }> {
+ return get<{ spaces: FeishuWikiSpace }>(`/projects/${projectId}/feishu-wiki-spaces/`)
+}
 export default {
  list: listProjects,
  create: createProject,
