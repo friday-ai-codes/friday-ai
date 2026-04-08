@@ -780,6 +780,7 @@ class ConversationService:
  "progress_message": "",
  "progress_percent": None,
  "logs":,
+ "coding_session": None,
  }
  # deep_analysis 会话信息（向后兼容）
  latest_deep_session = None
@@ -833,6 +834,39 @@ class ConversationService:
  "logs": logs if isinstance(logs, list) else,
  }
  )
+ # CodingSession 运行态检测 (Phase)
+ from chat.models import CodingSession
+ coding_session = await CodingSession.objects.filter(
+ conversation_id=conversation_id,
+ status=CodingSession.Status.RUNNING,
+ ).order_by("-created_at").afirst
+ if coding_session is not None:
+ runtime["active"] = True
+ runtime["mode"] = "coding"
+ runtime["coding_session"] = {
+ "id": str(coding_session.id),
+ "status": coding_session.status,
+ "tech_plan": coding_session.tech_plan,
+ "affected_files": coding_session.affected_files,
+ "branch_name": coding_session.branch_name,
+ }
+ else:
+ # 检查是否有刚完成/失败的 CodingSession（最近 5 分钟内）
+ recent_cutoff = timezone.now - timedelta(minutes=5)
+ recent_coding = await CodingSession.objects.filter(
+ conversation_id=conversation_id,
+ status__in=[CodingSession.Status.COMPLETED, CodingSession.Status.FAILED],
+ updated_at__gte=recent_cutoff,
+ ).order_by("-updated_at").afirst
+ if recent_coding is not None:
+ runtime["coding_session"] = {
+ "id": str(recent_coding.id),
+ "status": recent_coding.status,
+ "pr_url": recent_coding.pr_url,
+ "branch_name": recent_coding.branch_name,
+ "error_message": recent_coding.error_message,
+ "affected_files": recent_coding.affected_files,
+ }
  return runtime
  @staticmethod
  async def delete_conversation(conversation_id: str) -> None:
