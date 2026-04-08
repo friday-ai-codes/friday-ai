@@ -3,6 +3,7 @@ import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
 import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import CodingPlanCard from './CodingPlanCard.vue'
 import DocSummaryCard from './DocSummaryCard.vue'
 const props = defineProps<{
  message: ConversationMessage
@@ -161,6 +162,8 @@ const TOOL_LABELS: Record<string, string> = {
  list_project_repositories: '仓库列表',
  get_repository_info: '仓库信息',
  deep_analysis: '深度分析',
+ create_coding_plan: '编码方案',
+ update_coding_plan: '更新方案',
 }
 function toolLabel(name: string): string {
  const bare = name.replace(/^mcp__[^_]+__/, '')
@@ -263,6 +266,49 @@ const hasDeepAnalysisLogs = computed( =>
 function isDeepAnalysisTool(name: string): boolean {
  return name.replace(/^mcp__[^_]+__/, '') === 'deep_analysis'
 }
+function isCodingPlanTool(name: string): boolean {
+ const bare = name.replace(/^mcp__[^_]+__/, '')
+ return bare === 'create_coding_plan' || bare === 'update_coding_plan'
+}
+// 从 toolCalls 中提取 coding plan 数据
+const codingPlanData = computed( => {
+ const planTool = toolCalls.value.find(tc => isCodingPlanTool(tc.name))
+ if (!planTool) return null
+ // tech_plan 和 affected_files 来自 tool input（不在 result 中）
+ const input = planTool.input || {}
+ const techPlan = (input.tech_plan as string) || ''
+ const affectedFiles = (input.affected_files as Array<{ path: string; change_type: string }>) ||
+ // session_id 和 status 来自 tool result (JSON 字符串)
+ let sessionId = ''
+ let sessionStatus: string = 'draft'
+ if (planTool.result) {
+ try {
+ const parsed = JSON.parse(planTool.result)
+ sessionId = parsed.session_id || ''
+ sessionStatus = parsed.status || 'draft'
+ }
+ catch {
+ // result 可能不是 JSON
+ }
+ }
+ return { sessionId, techPlan, affectedFiles, status: sessionStatus }
+})
+// 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
+const codingPlanStatus = computed( => {
+ const data = codingPlanData.value
+ if (!data) return 'draft'
+ const active = chatStore.activeCodingSession
+ if (active && active.sessionId === data.sessionId) {
+ return active.status
+ }
+ return data.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
+})
+const codingPlanConfirming = computed( => {
+ const data = codingPlanData.value
+ if (!data) return false
+ const active = chatStore.activeCodingSession
+ return !!(active && active.sessionId === data.sessionId && active.isConfirming)
+})
 const primaryDeepAnalysisId = computed( => {
  const da = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
  return da?.id || ''
@@ -509,6 +555,11 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
  />
  </div>
+ <!-- 编码方案卡片（替代默认 tool-detail） -->
+ <CodingPlanCard
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ @confirm="chatStore.handleConfirmCodingSession"
+ />
  <div
  v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
  class="deep-analysis-panel"
@@ -539,7 +590,7 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- <div v-if="expandedTools.has(item.id)" class="tool-detail">
+ <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
  <div class="tool-detail-section">
  <span class="tool-detail-label">输入</span>
  <pre class="tool-detail-json">{{ JSON.stringify(item.input, null, 2) }}</pre>
@@ -566,6 +617,11 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(tc.id) ? 'rotate-90': ''"
  />
  </div>
+ <!-- 编码方案卡片（替代默认 tool-detail） -->
+ <CodingPlanCard
+ v-if="isCodingPlanTool(tc.name) && tc.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ @confirm="chatStore.handleConfirmCodingSession"
+ />
  <!-- 深度分析实时日志面板（同一消息只渲染一次） -->
  <div
  v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs && tc.id === primaryDeepAnalysisId"
@@ -597,8 +653,8 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- <!-- 展开详情 -->
- <div v-if="expandedTools.has(tc.id)" class="tool-detail">
+ <!-- 展开详情（排除 coding plan tool） -->
+ <div v-if="expandedTools.has(tc.id) && !isCodingPlanTool(tc.name)" class="tool-detail">
  <div class="tool-detail-section">
  <span class="tool-detail-label">输入</span>
  <pre class="tool-detail-json">{{ JSON.stringify(tc.input, null, 2) }}</pre>
