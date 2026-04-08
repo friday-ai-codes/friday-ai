@@ -169,7 +169,18 @@ async function handleUpdated {
  </div>
  <div class=" space-y-4">
  <div class="space-y-2">
+ <div class="flex items-center justify-between">
  <label class="text-sm font-medium">目标知识库</label>
+ <button
+ class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors":disabled="loadingSpaces"
+ @click="loadWikiSpaces"
+ >
+ <span
+ class="icon-[lucide--refresh-cw] text-xs":class="{ 'animate-spin': loadingSpaces }"
+ />
+ {{ loadingSpaces ? '获取中...': '获取全部知识库' }}
+ </button>
+ </div>
  <!-- Combobox: 选择或手动输入 -->
  <Popover v-model:open="spacesOpen">
  <PopoverTrigger as-child>
