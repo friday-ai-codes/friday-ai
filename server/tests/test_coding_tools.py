@@ -164,3 +164,23 @@ def test_coding_tools_in_full_tool_names:
  from agents.chat_runner import _FULL_TOOL_NAMES
  assert "create_coding_plan" in _FULL_TOOL_NAMES
  assert "update_coding_plan" in _FULL_TOOL_NAMES
+# ============================================================================
+# system prompt + _get_tool_names 测试
+# ============================================================================
+def test_system_prompt_contains_coding_guidance:
+ """验证 system prompt 包含编码意图识别指引。"""
+ from chat.conversation_service import _build_system_prompt
+ prompt = _build_system_prompt("Test Project", "test-uuid", "developer")
+ assert "create_coding_plan" in prompt
+ assert "编码" in prompt or "代码变更" in prompt
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_get_tool_names_includes_coding_tools(project, repository):
+ """有索引仓库时，_get_tool_names 返回列表包含 coding tools。"""
+ from chat.conversation_service import _get_tool_names
+ # 将 repository 设置为已索引状态
+ repository.index_status = "indexed"
+ await repository.asave(update_fields=["index_status"])
+ tool_names = await _get_tool_names(str(project.id))
+ assert "create_coding_plan" in tool_names
+ assert "update_coding_plan" in tool_names
