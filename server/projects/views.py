@@ -412,6 +412,11 @@ class ProjectViewSet(ModelViewSet):
  })
  # PUT
  folder_token = request.data.get("feishu_doc_folder_token", "")
+ if len(folder_token) > 200:
+ return Response(
+ {"detail": "folder_token 长度不能超过 200 个字符"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  project.feishu_doc_folder_token = folder_token
  await project.asave(update_fields=["feishu_doc_folder_token", "updated_at"])
  return Response({
