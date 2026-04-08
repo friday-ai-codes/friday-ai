@@ -4,10 +4,11 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import {
  createConversation,
  deleteConversation,
+ exportToFeishu,
  getConversationDetail,
  getConversationRuntime,
  interruptConversation,
@@ -50,6 +51,9 @@ export const useChatStore = defineStore('chat', => {
  const deepAnalysisLogs = ref<DeepAnalysisLog>
  const deepAnalysisSessionId = ref<string | null>(null)
  const restoredRuntimeConversationId = ref<string | null>(null)
+ // 导出多选模式 (Phase)
+ const isExportSelectMode = ref(false)
+ const selectedMessageIds = ref<Set<string>>(new Set)
  // Phase 感知状态（graph 运行态）
  const currentPhase = ref<string | null>(null)
  const taskProgress = ref<{ completed: number, total: number } | null>(null)
@@ -421,6 +425,7 @@ export const useChatStore = defineStore('chat', => {
  if (event.message_id)
  streamingMessageId.value = event.message_id
  streamingMetadata.value = {
+ ...(streamingMetadata.value || {}),
  model: event.model,
  usage: event.usage,
  input_tokens: event.usage?.input_tokens,
@@ -474,6 +479,27 @@ export const useChatStore = defineStore('chat', => {
  conv.title = event.title
  }
  break
+ case 'doc_summary':
+ // 飞书文档摘要事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
+ if (!streamingMetadata.value) streamingMetadata.value = {}
+ streamingMetadata.value.docSummary = {
+ type: 'summary' as const,
+ title: event.doc_title,
+ wordCount: event.word_count,
+ preview: event.preview,
+ truncated: event.truncated,
+ truncatedLength: event.truncated_length,
+ }
+ break
+ case 'doc_error':
+ // 飞书文档错误事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
+ if (!streamingMetadata.value) streamingMetadata.value = {}
+ streamingMetadata.value.docSummary = {
+ type: 'error' as const,
+ errorType: event.error_type,
+ errorMessage: event.message,
+ }
+ break
  case 'error':
  error.value = event.message || '未知错误'
  break
@@ -482,7 +508,7 @@ export const useChatStore = defineStore('chat', => {
  break
  }
  }
- async function sendMessage(content: string) {
+ async function sendMessage(content: string, feishuDocId?: string) {
  if (!currentConversationId.value || isStreaming.value)
  return
  stopRuntimePolling
@@ -518,7 +544,7 @@ export const useChatStore = defineStore('chat', => {
  selectedRole.value,
  (event: SSEEvent) => handleSSEEvent(event),
  controller.signal,
- { forceDeepAnalysis: forceDeepAnalysis.value },
+ { forceDeepAnalysis: forceDeepAnalysis.value, feishuDocId },
  )
  }
  catch (e) {
@@ -658,6 +684,62 @@ export const useChatStore = defineStore('chat', => {
  n.close
  }
  }
+ // ========================================================================
+ // 导出到飞书 (Phase)
+ // ========================================================================
+ /** 进入多选导出模式，默认选中最近一轮 AI 回答 (per ) */
+ function enterExportSelectMode {
+ isExportSelectMode.value = true
+ selectedMessageIds.value = new Set
+ // 默认选中最近一条 assistant 消息
+ const lastAssistant = [...messages.value]
+ .reverse
+ .find(m => m.role === 'assistant')
+ if (lastAssistant) {
+ selectedMessageIds.value.add(lastAssistant.id)
+ }
+ }
+ /** 退出多选导出模式 */
+ function exitExportSelectMode {
+ isExportSelectMode.value = false
+ selectedMessageIds.value = new Set
+ }
+ /** 切换消息选中状态 (per: 仅 assistant 可选) */
+ function toggleMessageSelect(messageId: string) {
+ const msg = messages.value.find(m => m.id === messageId)
+ if (!msg || msg.role !== 'assistant') return
+ const next = new Set(selectedMessageIds.value)
+ if (next.has(messageId)) {
+ next.delete(messageId)
+ }
+ else {
+ next.add(messageId)
+ }
+ selectedMessageIds.value = next
+ }
+ /** 全选所有 AI 回答 (per ) */
+ function selectAllAssistant {
+ const ids = messages.value
+ .filter(m => m.role === 'assistant')
+ .map(m => m.id)
+ selectedMessageIds.value = new Set(ids)
+ }
+ /** 执行导出到飞书 */
+ async function doExportToFeishu(
+ title: string,
+ messageIds: string,
+ folderToken?: string,
+ ): Promise<ExportToFeishuResponse> {
+ if (!currentConversationId.value) {
+ throw new Error('没有活动对话')
+ }
+ const data: ExportToFeishuRequest = {
+ message_ids: messageIds,
+ title,
+ ...(folderToken ? { folder_token: folderToken }: {}),
+ }
+ return exportToFeishu(currentConversationId.value, data)
+ }
  return {
  // State
  conversations,
@@ -710,5 +792,13 @@ export const useChatStore = defineStore('chat', => {
  requestNotificationPermission,
  toggleNotifications,
  syncConversationToURL,
+ // 导出到飞书 (Phase)
+ isExportSelectMode,
+ selectedMessageIds,
+ enterExportSelectMode,
+ exitExportSelectMode,
+ toggleMessageSelect,
+ selectAllAssistant,
+ doExportToFeishu,
  }
 })

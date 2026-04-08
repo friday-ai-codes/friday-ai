@@ -142,6 +142,27 @@ export async function updateWebhookToken(
 ): Promise<WebhookTokenRead> {
  return put<WebhookTokenRead>(`/feishu/projects/${projectId}/token/`, data)
 }
+// ============================================================================
+// 飞书文档导出配置 (Phase)
+// ============================================================================
+export interface FeishuDocConfig {
+ feishu_doc_folder_token: string
+}
+/**
+ * 获取飞书文档导出配置
+ */
+export async function getFeishuDocConfig(projectId: string): Promise<FeishuDocConfig> {
+ return get<FeishuDocConfig>(`/projects/${projectId}/feishu-doc-config/`)
+}
+/**
+ * 更新飞书文档导出配置
+ */
+export async function updateFeishuDocConfig(
+ projectId: string,
+ data: FeishuDocConfig,
+): Promise<FeishuDocConfig> {
+ return put<FeishuDocConfig>(`/projects/${projectId}/feishu-doc-config/`, data)
+}
 export default {
  list: listProjects,
  create: createProject,

@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams } from '~/types/chat'
+import type { Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
 import { del, get, post } from './client'
 // ============================================================================
 // 类型定义
@@ -205,6 +205,21 @@ export async function removePushSubscription(endpoint: string): Promise<void> {
  await post('/chat/push/subscriptions/unsubscribe/', { endpoint })
 }
 // ============================================================================
+// 导出到飞书文档 (Phase)
+// ============================================================================
+/**
+ * 导出对话消息到飞书文档
+ */
+export async function exportToFeishu(
+ conversationId: string,
+ data: ExportToFeishuRequest,
+): Promise<ExportToFeishuResponse> {
+ return post<ExportToFeishuResponse>(
+ `/chat/conversations/${conversationId}/export-to-feishu/`,
+ data,
+ )
+}
+// ============================================================================
 // 默认导出
 // ============================================================================
 export default {
@@ -219,4 +234,5 @@ export default {
  getPushPublicKey,
  savePushSubscription,
  removePushSubscription,
+ exportToFeishu,
 }
