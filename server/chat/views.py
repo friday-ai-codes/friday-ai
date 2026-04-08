@@ -2,6 +2,7 @@
 import structlog
 from adrf.views import APIView
 from django.http import StreamingHttpResponse
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -32,6 +33,19 @@ from .serializers import (
 from .services import ChatMessage, ChatServiceError, aget_chat_service
 from .streaming import format_keepalive, format_sse
 logger = structlog.get_logger(__name__)
+def _append_feishu_export_record(message, record: dict[str, str]) -> None:
+ """Persist export history on message metadata for refresh-safe recovery."""
+ metadata = message.metadata if isinstance(message.metadata, dict) else {}
+ raw_exports = metadata.get("feishu_exports", )
+ exports = raw_exports if isinstance(raw_exports, list) else
+ document_id = record.get("document_id", "")
+ if document_id and any(
+ isinstance(item, dict) and item.get("document_id") == document_id
+ for item in exports
+ ):
+ return
+ metadata["feishu_exports"] = [*exports, record]
+ message.metadata = metadata
 class ModelsView(APIView):
  """API view for getting available models."""
  authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
@@ -602,11 +616,22 @@ class ExportToFeishuView(APIView):
  folder_token=folder_token,
  content=merged_content,
  )
+ exported_at = timezone.now.isoformat
+ export_record = {
+ "document_id": result["document_id"],
+ "url": result["url"],
+ "title": title,
+ "exported_at": exported_at,
+ }
+ latest_msg = msgs[-1]
+ _append_feishu_export_record(latest_msg, export_record)
+ await latest_msg.asave(update_fields=["metadata"])
  return Response(
  {
  "document_id": result["document_id"],
  "url": result["url"],
  "title": title,
+ "exported_at": exported_at,
  }
  )
  except ValueError as exc:

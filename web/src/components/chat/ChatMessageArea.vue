@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ExportToFeishuResponse } from '~/types/chat'
+import type { ConversationMessage, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
@@ -57,7 +57,7 @@ watch(
 const showExportDialog = ref(false)
 const exportDefaultTitle = ref('')
 const exportSelectedIds = ref<string>
-const exportResults = ref<Array<ExportToFeishuResponse & { exportedAt: string }>>
+type FeishuExportHistoryItem = ExportToFeishuResponse & { exportedAt: string }
 const currentTitle = computed( => {
  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
  return conv?.title || '新对话'
@@ -78,12 +78,63 @@ function handleMultiExport {
  exportDefaultTitle.value = generateDefaultTitle
  showExportDialog.value = true
 }
+function readExportHistory(msg: ConversationMessage): FeishuExportHistoryItem {
+ const metadata = msg.metadata
+ if (!metadata || typeof metadata !== 'object')
+ return
+ const raw = (metadata as Record<string, unknown>).feishu_exports
+ if (!Array.isArray(raw))
+ return
+ return raw.flatMap((item) => {
+ if (!item || typeof item !== 'object')
+ return
+ const record = item as Record<string, unknown>
+ const documentId = typeof record.document_id === 'string' ? record.document_id: ''
+ const url = typeof record.url === 'string' ? record.url: ''
+ const title = typeof record.title === 'string' ? record.title: ''
+ const exportedAt = typeof record.exported_at === 'string'
+ ? record.exported_at: new Date.toISOString
+ if (!documentId || !url || !title)
+ return
+ return [{
+ document_id: documentId,
+ url,
+ title,
+ exportedAt,
+ exported_at: exportedAt,
+ }]
+ })
+}
+const exportResults = computed<FeishuExportHistoryItem>( => {
+ const deduped = new Map<string, FeishuExportHistoryItem>
+ for (const msg of chatStore.messages) {
+ for (const item of readExportHistory(msg)) {
+ deduped.set(item.document_id, item)
+ }
+ }
+ return [...deduped.values].sort((a, b) => a.exportedAt.localeCompare(b.exportedAt))
+})
 /** 导出成功回调 (per ) */
 function handleExportSuccess(result: ExportToFeishuResponse) {
- exportResults.value.push({
- ...result,
- exportedAt: new Date.toISOString,
- })
+ const exportedAt = result.exported_at || new Date.toISOString
+ const target = [...chatStore.messages]
+ .filter(msg => exportSelectedIds.value.includes(msg.id) && msg.role === 'assistant')
+ .at(-1)
+ if (target) {
+ const metadata = (target.metadata && typeof target.metadata === 'object')
+ ? { ...target.metadata }: {}
+ const existing = Array.isArray((metadata as Record<string, unknown>).feishu_exports)
+ ? [...((metadata as Record<string, unknown>).feishu_exports as Array<Record<string, unknown>>)]:
+ if (!existing.some(item => item?.document_id === result.document_id)) {
+ existing.push({
+ document_id: result.document_id,
+ url: result.url,
+ title: result.title,
+ exported_at: exportedAt,
+ });(metadata as Record<string, unknown>).feishu_exports = existing
+ target.metadata = metadata
+ }
+ }
  chatStore.exitExportSelectMode
 }
 </script>
