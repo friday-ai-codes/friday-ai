@@ -199,9 +199,9 @@ class ExportToFeishuSerializer(serializers.Serializer):
  max_length=200,
  help_text="飞书文档标题",
  )
- space_id = serializers.CharField(
+ folder_token = serializers.CharField(
  required=False,
  allow_blank=True,
  default="",
- help_text="知识库 space_id（可选，覆盖项目配置）",
+ help_text="目标文件夹 token（可选，覆盖项目配置）",
  )
