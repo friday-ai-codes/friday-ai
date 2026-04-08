@@ -167,6 +167,7 @@ export interface ExportToFeishuResponse {
  document_id: string
  url: string
  title: string
+ exported_at?: string
 }
 /** 导出到飞书文档错误响应 */
 export interface ExportToFeishuError {

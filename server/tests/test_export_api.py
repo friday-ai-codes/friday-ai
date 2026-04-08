@@ -100,7 +100,7 @@ class TestExportToFeishuView:
  new_callable=AsyncMock,
  )
  def test_export_success(self, mock_create_client, export_client, conversation_with_messages):
- """POST 有效 message_ids + title -> 200 + {document_id, url, title}。"""
+ """POST 有效 message_ids + title -> 200，并持久化导出历史到消息 metadata。"""
  mock_client = AsyncMock
  mock_client.create_document.return_value = MOCK_DOC_RESULT
  mock_create_client.return_value = mock_client
@@ -116,6 +116,14 @@ class TestExportToFeishuView:
  assert response.data["document_id"] == "doxcnTEST"
  assert response.data["url"] == "https://feishu.cn/docx/doxcnTEST"
  assert response.data["title"] == "测试文档"
+ assert response.data["exported_at"]
+ data["msg_assistant_2"].refresh_from_db
+ exports = data["msg_assistant_2"].metadata.get("feishu_exports", )
+ assert len(exports) == 1
+ assert exports[0]["document_id"] == "doxcnTEST"
+ assert exports[0]["url"] == "https://feishu.cn/docx/doxcnTEST"
+ assert exports[0]["title"] == "测试文档"
+ assert exports[0]["exported_at"] == response.data["exported_at"]
  @patch(
  "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
