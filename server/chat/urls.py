@@ -4,6 +4,9 @@ from .views import (
  ChatCompletionsView,
  ChatInterruptView,
  ChatStreamView,
+ CodingSessionConfirmView,
+ CodingSessionDetailView,
+ CodingSessionListView,
  ConversationDetailView,
  ConversationListView,
  ConversationRuntimeView,
@@ -59,5 +62,21 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/export-to-feishu/",
  ExportToFeishuView.as_view,
  name="conversation-export-to-feishu",
+ ),
+ # Phase: 编码会话
+ path(
+ "coding-sessions/",
+ CodingSessionListView.as_view,
+ name="coding-session-list",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/",
+ CodingSessionDetailView.as_view,
+ name="coding-session-detail",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/confirm/",
+ CodingSessionConfirmView.as_view,
+ name="coding-session-confirm",
  ),
 ]

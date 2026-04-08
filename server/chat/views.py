@@ -15,6 +15,7 @@ from .permissions import ChatAuthPermission
 from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
+ CodingSessionSerializer,
  ConversationDetailSerializer,
  ConversationListSerializer,
  ConversationMessageSerializer,
@@ -628,3 +629,194 @@ class ExportToFeishuView(APIView):
  {"error": f"导出失败: {exc}", "error_type": "api_error"},
  status=status.HTTP_502_BAD_GATEWAY,
  )
+# ============================================================================
+# CodingSession Views (Phase)
+# ============================================================================
+class CodingSessionConfirmView(APIView):
+ """POST /api/chat/coding-sessions/{id}/confirm/ -- 确认编码会话并 dispatch 到 Runner。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def post(self, request, session_id): # type: ignore[override]
+ """确认 draft CodingSession，创建 SubAgentSession 并 dispatch 到 Runner。"""
+ import uuid as uuid_mod
+ from datetime import timedelta
+ from django.utils import timezone as tz
+ from agents.models import AgentSession
+ from chat.services import aget_setting_value
+ from common.encryption import decrypt_value
+ from repositories.models import GitCredential
+ from runners.dispatcher import DispatchTask, get_dispatcher
+ from runners.models import Runner
+ from subagent.models import SubAgentSession
+ from system.models import SettingKeys
+ from .models import CodingSession
+ # 1. 获取 CodingSession
+ try:
+ coding_session = await CodingSession.objects.select_related(
+ "repository", "conversation__project"
+ ).aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 2. 状态机校验：只有 draft 可 confirm
+ try:
+ await coding_session.aconfirm
+ except ValueError as exc:
+ return Response(
+ {"detail": str(exc)},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ repo = coding_session.repository
+ project = coding_session.conversation.project
+ # 3. 检查 Runner 在线（重试 3 次，每次等 2 秒）
+ import asyncio
+ online_runners = 0
+ for _attempt in range(3):
+ heartbeat_threshold = tz.now - timedelta(seconds=120)
+ online_runners = await Runner.objects.filter(
+ status="online", last_heartbeat__gte=heartbeat_threshold,
+ ).acount
+ if online_runners > 0:
+ break
+ await asyncio.sleep(2)
+ if online_runners == 0:
+ # 回滚状态到 draft
+ coding_session.status = CodingSession.Status.DRAFT
+ await coding_session.asave(update_fields=["status", "updated_at"])
+ return Response(
+ {"detail": "没有可用的 Runner"},
+ status=status.HTTP_503_SERVICE_UNAVAILABLE,
+ )
+ # 4. 创建 AgentSession + SubAgentSession
+ session_id_str = f"coding-{uuid_mod.uuid4.hex[:12]}"
+ agent_session = await AgentSession.objects.acreate(
+ session_id=f"agent-{session_id_str}",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ metadata={
+ "source": "coding_session_confirm",
+ "conversation_id": str(coding_session.conversation_id),
+ "coding_session_id": str(coding_session.id),
+ },
+ )
+ sub_session = await SubAgentSession.objects.acreate(
+ session_id=session_id_str,
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.CODING,
+ status=SubAgentSession.Status.PENDING,
+ repo_url=repo.git_url,
+ last_output={
+ "task_type": "coding",
+ "source": "coding_session_confirm",
+ "project_id": str(project.id),
+ "conversation_id": str(coding_session.conversation_id),
+ "coding_session_id": str(coding_session.id),
+ },
+ )
+ # 5. 先关联 SubAgentSession FK（dispatch 前保存，防竞态 Pitfall 6）
+ coding_session.subagent_session = sub_session
+ await coding_session.asave(update_fields=["subagent_session", "updated_at"])
+ # 6. 获取 API/Git 凭据
+ api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY) or ""
+ base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL) or ""
+ system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ small_model = await aget_setting_value(SettingKeys.ANTHROPIC_SMALL_MODEL) or ""
+ env_metadata: dict[str, str] = {
+ "repository_id": str(repo.id),
+ "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
+ "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
+ "env_FRIDAY_TASK_CLAUDE_MODEL": system_model,
+ "env_FRIDAY_TASK_CLAUDE_SMALL_MODEL": small_model,
+ }
+ repo_url = repo.git_url
+ try:
+ cred = await GitCredential.objects.aget(repository=repo)
+ if cred.encrypted_token:
+ token = decrypt_value(cred.encrypted_token)
+ env_metadata["env_FRIDAY_TASK_GIT_ACCESS_TOKEN"] = token
+ env_metadata["env_FRIDAY_TASK_GIT_AUTH_TYPE"] = "token"
+ env_metadata["env_FRIDAY_TASK_GIT_SSL_VERIFY"] = "false"
+ # SSH URL -> HTTPS（token 认证需要 HTTPS）
+ if repo_url.startswith("git@"):
+ import re
+ m = re.match(r"git@([^:]+):(.+?)(?:\.git)?$", repo_url)
+ if m:
+ repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
+ except GitCredential.DoesNotExist:
+ pass
+ # 7. 构建编码 prompt
+ prompt = (
+ f"你正在对项目「{project.name}」的代码仓库「{repo.name}」执行编码任务。\n\n"
+ f"技术方案：\n{coding_session.tech_plan}\n\n"
+ f"请根据以上技术方案进行编码实现，完成后创建 PR。"
+ )
+ # 8. 构建 DispatchTask 并 dispatch
+ target_branch = coding_session.branch_name or repo.default_branch
+ dispatch_task = DispatchTask(
+ task_id=session_id_str,
+ task_type="coding",
+ tags=,
+ image="",
+ repo_url=repo_url,
+ branch=repo.default_branch,
+ target_branch=target_branch,
+ prompt=prompt,
+ timeout=3600,
+ node_execution_id="",
+ session_id=session_id_str,
+ metadata=env_metadata,
+ )
+ await get_dispatcher.dispatch(dispatch_task)
+ # 9. 标记为 running
+ await coding_session.amark_running(subagent_session_id=sub_session.id)
+ logger.info(
+ "coding_session_confirmed",
+ coding_session_id=str(coding_session.id),
+ session_id=session_id_str,
+ )
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
+class CodingSessionListView(APIView):
+ """GET /api/chat/coding-sessions/ -- 按 conversation 查询 CodingSession 列表（ 恢复用）。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request): # type: ignore[override]
+ """按 conversation_id 查询 CodingSession 列表。"""
+ from .models import CodingSession
+ conversation_id = request.query_params.get("conversation_id")
+ if not conversation_id:
+ return Response(
+ {"detail": "conversation_id query parameter is required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 验证 conversation 存在
+ try:
+ await Conversation.objects.select_related("project").aget(id=conversation_id)
+ except Conversation.DoesNotExist:
+ return Response(, status=status.HTTP_200_OK)
+ sessions = [
+ session
+ async for session in CodingSession.objects.filter(
+ conversation_id=conversation_id
+ ).order_by("-created_at")
+ ]
+ serializer = CodingSessionSerializer(sessions, many=True)
+ return Response(serializer.data)
+class CodingSessionDetailView(APIView):
+ """GET /api/chat/coding-sessions/{id}/ -- CodingSession 详情。"""
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, session_id): # type: ignore[override]
+ """返回 CodingSession 详情。"""
+ from .models import CodingSession
+ try:
+ session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ serializer = CodingSessionSerializer(session)
+ return Response(serializer.data)
