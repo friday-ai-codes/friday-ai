@@ -162,5 +162,5 @@ export interface ExportToFeishuResponse {
 /** 导出到飞书文档错误响应 */
 export interface ExportToFeishuError {
  error: string
- error_type: 'permission_denied' | 'not_configured' | 'folder_not_found' | 'api_error'
+ error_type: 'permission_denied' | 'not_configured' | 'api_error'
 }
