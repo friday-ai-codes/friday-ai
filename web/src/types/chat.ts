@@ -144,3 +144,23 @@ export const ROLE_OPTIONS: Array<{ value: ChatRole, label: string }> = [
  { value: 'qa', label: '测试工程师' },
  { value: 'general', label: '通用' },
 ]
+// ============================================================================
+// 导出到飞书文档 (Phase)
+// ============================================================================
+/** 导出到飞书文档请求 */
+export interface ExportToFeishuRequest {
+ message_ids: string
+ title: string
+ folder_token?: string
+}
+/** 导出到飞书文档成功响应 */
+export interface ExportToFeishuResponse {
+ document_id: string
+ url: string
+ title: string
+}
+/** 导出到飞书文档错误响应 */
+export interface ExportToFeishuError {
+ error: string
+ error_type: 'permission_denied' | 'not_configured' | 'folder_not_found' | 'api_error'
+}
