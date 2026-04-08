@@ -15,7 +15,7 @@ const route = useRoute('/projects/[id]/feishu')
 const router = useRouter
 const projectsStore = useProjectsStore
 const { handleError } = useErrorHandler
-const { toast } = useToast
+const { success } = useToast
 const projectId = computed( => route.params.id)
 useHead({
  title: '飞书配置 - Friday AI',
@@ -59,7 +59,7 @@ async function saveDocConfig {
  await updateFeishuDocConfig(projectId.value, {
  feishu_doc_folder_token: folderToken.value,
  })
- toast({ title: '保存成功', description: '飞书文档导出配置已更新' })
+ success('保存成功', '飞书文档导出配置已更新')
  }
  catch (e: unknown) {
  handleError(e, '保存飞书文档导出配置')
