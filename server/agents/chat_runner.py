@@ -18,6 +18,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
 import agents.tools.chat_tools # noqa: F401
+import agents.tools.coding_tools # noqa: F401
 import agents.tools.project_tools # noqa: F401
 from agents.core.events import (
  ERROR,
@@ -41,6 +42,8 @@ _FULL_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "list_project_repositories",
  "get_repository_info",
  "deep_analysis",
+ "create_coding_plan",
+ "update_coding_plan",
 ]
 @dataclass
 class ChatRunnerConfig:
