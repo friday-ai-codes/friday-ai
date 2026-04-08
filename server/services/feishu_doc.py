@@ -3,6 +3,7 @@ Provides FeishuDocClient for document operations with Markdown conversion suppor
 Uses tenant_access_token authentication (same as IM API, different from Project API).
 """
 import time
+import unicodedata
 from typing import Any
 import httpx
 import mistune
@@ -299,6 +300,7 @@ class FeishuDocClient:
  "property": {
  "row_size": row_size,
  "column_size": col_size,
+ "column_width": _estimate_table_column_widths(cells, col_size),
  "header_row": True,
  },
  },
@@ -425,6 +427,66 @@ def _extract_text_content(block: dict[str, Any]) -> str:
  content = f"[{content}]({url})"
  parts.append(content)
  return "".join(parts)
+def _estimate_table_column_widths(
+ cells: list[list[list[dict[str, Any]]]],
+ column_count: int,
+) -> list[int]:
+ """Estimate Feishu table column widths in px from cell contents.
+ 飞书表格支持在 `table.property.column_width` 中传列宽。这里按每列最宽内容做
+ 估算，并对总宽度做约束，避免短列过宽或整张表无限膨胀。
+ """
+ if column_count <= 0:
+ return
+ min_width = 120
+ max_width = 420
+ total_width_budget = 1080
+ widths = [min_width] * column_count
+ for col_idx in range(column_count):
+ max_content_width = 0
+ for row in cells:
+ if col_idx >= len(row):
+ continue
+ cell_text = _elements_to_plain_text(row[col_idx])
+ max_content_width = max(max_content_width, _estimate_text_display_width(cell_text))
+ # 预留内边距，并让长文本列明显更宽一些。
+ estimated_px = 56 + (max_content_width * 14)
+ widths[col_idx] = max(min_width, min(max_width, estimated_px))
+ total_width = sum(widths)
+ if total_width <= total_width_budget:
+ return widths
+ shrinkable_total = sum(max(width - min_width, 0) for width in widths)
+ if shrinkable_total <= 0:
+ return widths
+ overflow = total_width - total_width_budget
+ adjusted: list[int] =
+ for width in widths:
+ shrinkable = max(width - min_width, 0)
+ shrink = round(overflow * (shrinkable / shrinkable_total)) if shrinkable_total else 0
+ adjusted.append(max(min_width, width - shrink))
+ # 处理四舍五入导致的残差，优先从最宽列继续回收。
+ while sum(adjusted) > total_width_budget:
+ widest_idx = max(range(len(adjusted)), key=lambda idx: adjusted[idx])
+ if adjusted[widest_idx] <= min_width:
+ break
+ adjusted[widest_idx] -= 1
+ return adjusted
+def _elements_to_plain_text(elements: list[dict[str, Any]]) -> str:
+ """Flatten Feishu text elements into plain text for width estimation."""
+ parts: list[str] =
+ for elem in elements:
+ text_run = elem.get("text_run", {})
+ content = text_run.get("content", "")
+ if content:
+ parts.append(str(content))
+ return "".join(parts)
+def _estimate_text_display_width(text: str) -> int:
+ """Estimate display width where CJK chars occupy more visual space."""
+ width = 0
+ for ch in text.strip:
+ if ch == "\n":
+ continue
+ width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+ return max(width, 1)
 def _get_language_name(language_code: int | str) -> str:
  """Map Feishu language code to language name.
  Args:
@@ -473,8 +535,10 @@ def markdown_to_blocks(content: str) -> list[dict[str, Any]]:
  if not content.strip:
  return
  blocks: list[dict[str, Any]] =
- # Parse Markdown using mistune
- md = mistune.create_markdown(renderer=None)
+ # Mistune AST does not recognize GitHub-style tables unless the table
+ # plugin is enabled explicitly. Without it, pipe table syntax is parsed as
+ # plain paragraph text and Feishu receives literal `| ... |` lines.
+ md = mistune.create_markdown(renderer=None, plugins=["table"])
  tokens = md(content)
  if tokens is None:
  return blocks
