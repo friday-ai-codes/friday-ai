@@ -287,6 +287,46 @@ class TestMarkdownToBlocks:
  assert 2 in block_types, "应包含 paragraph block (type=2)"
  assert 3 in block_types, "应包含 heading1 block (type=3)"
  assert 14 in block_types, "应包含 code block (type=14)"
+ def test_markdown_table_converts_to_feishu_table_block(self):
+ """GitHub 风格 Markdown 表格应转换为飞书 table block，而不是普通文本。"""
+ from services.feishu_doc import markdown_to_blocks
+ md = (
+ "| 属性 | 必填 | 说明 |\n"
+ "|------|------|------|\n"
+ "| currentProblem | ✅ | 题目数据 (VoiceProblem) |\n"
+ "| onNext | ✅ | 下一题回调 |\n"
+ )
+ blocks = markdown_to_blocks(md)
+ assert len(blocks) == 1
+ assert "_table_data" in blocks[0]
+ table_data = blocks[0]["_table_data"]
+ assert table_data["row_size"] == 3
+ assert table_data["column_size"] == 3
+ assert table_data["cells"][0][0][0]["text_run"]["content"] == "属性"
+ assert table_data["cells"][1][0][0]["text_run"]["content"] == "currentProblem"
+ assert table_data["cells"][2][2][0]["text_run"]["content"] == "下一题回调"
+ def test_estimate_table_column_widths_prefers_verbose_columns(self):
+ """长描述列应获得更宽的列宽，避免飞书默认窄列导致频繁换行。"""
+ from services.feishu_doc import _estimate_table_column_widths
+ cells = [
+ [
+ [{"text_run": {"content": "类型"}}],
+ [{"text_run": {"content": "说明"}}],
+ ],
+ [
+ [{"text_run": {"content": "read_aloud"}}],
+ [{"text_run": {"content": "朗读题 - 用户需要朗读给定的内容"}}],
+ ],
+ [
+ [{"text_run": {"content": "recite"}}],
+ [{"text_run": {"content": "背诵题 - 用户需要背诵内容（通常不显示原文）"}}],
+ ],
+ ]
+ widths = _estimate_table_column_widths(cells, 2)
+ assert len(widths) == 2
+ assert widths[1] > widths[0]
+ assert widths[0] >= 120
+ assert widths[1] <= 420
  def test_code_block_language_mapping(self):
  """含 python 标记的代码块转换后 language 字段为正确飞书语言码。"""
  from services.feishu_doc import _get_language_code, markdown_to_blocks
