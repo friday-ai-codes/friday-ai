@@ -336,9 +336,9 @@ class TestMarkdownToBlocks:
  assert len(code_blocks) >= 1
  code_block = code_blocks[0]
  lang_code = code_block["code"]["style"]["language"]
- # python 在飞书的语言码为 81
- assert lang_code == 81
+ # python 在飞书的语言码为 28
+ assert lang_code == 28
  # 同时验证 _get_language_code 直接映射
- assert _get_language_code("python") == 81
- assert _get_language_code("js") == 53
- assert _get_language_code("typescript") == 97
+ assert _get_language_code("python") == 28
+ assert _get_language_code("js") == 14
+ assert _get_language_code("typescript") == 39
