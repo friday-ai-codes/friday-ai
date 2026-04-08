@@ -92,3 +92,61 @@ class TestCreateCodingPlan:
  )
  assert result.success is False
  assert "error" is not None
+# ============================================================================
+# update_coding_plan 测试
+# ============================================================================
+@pytest.fixture
+def draft_coding_session(conversation, repository):
+ """创建 draft 状态的 CodingSession 供 update 测试使用。"""
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 初始方案",
+ affected_files=[{"path": "src/old.py", "change_type": "modify"}],
+ branch_name="coding-test1234",
+ )
+@pytest.mark.django_db(transaction=True)
+class TestUpdateCodingPlan:
+ """update_coding_plan @tool 测试。"""
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_success(self, draft_coding_session):
+ """更新 draft session 的 tech_plan，revision_count 从 0 递增到 1。"""
+ from agents.tools.coding_tools import update_coding_plan
+ assert draft_coding_session.revision_count == 0
+ result = await update_coding_plan(
+ session_id=str(draft_coding_session.id),
+ tech_plan="## 更新后方案\n- 新步骤",
+ affected_files=[{"path": "src/new.py", "change_type": "add"}],
+ )
+ assert result.success is True
+ assert result.output["revision_count"] == 1
+ # 验证数据库
+ await draft_coding_session.arefresh_from_db
+ assert draft_coding_session.tech_plan == "## 更新后方案\n- 新步骤"
+ assert draft_coding_session.revision_count == 1
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_non_draft_error(self, draft_coding_session):
+ """非 draft 状态 session 不可更新方案。"""
+ from agents.tools.coding_tools import update_coding_plan
+ # 将 session 改为 confirmed
+ draft_coding_session.status = CodingSession.Status.CONFIRMED
+ await draft_coding_session.asave(update_fields=["status"])
+ result = await update_coding_plan(
+ session_id=str(draft_coding_session.id),
+ tech_plan="## 更新",
+ affected_files=,
+ )
+ assert result.success is False
+ assert "草稿" in result.error or "draft" in result.error.lower
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_session_not_found(self):
+ """传入不存在的 session_id 返回 error。"""
+ from agents.tools.coding_tools import update_coding_plan
+ fake_id = str(uuid.uuid4)
+ result = await update_coding_plan(
+ session_id=fake_id,
+ tech_plan="## 方案",
+ affected_files=,
+ )
+ assert result.success is False
+ assert "not found" in result.error.lower
