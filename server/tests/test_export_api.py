@@ -93,11 +93,10 @@ MOCK_DOC_RESULT = {
  "url": "https://feishu.cn/docx/doxcnTEST",
 }
 @pytest.mark.django_db
-@pytest.mark.asyncio
 class TestExportToFeishuView:
  """ExportToFeishuView endpoint 测试。"""
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_success(self, mock_create_client, export_client, conversation_with_messages):
@@ -118,7 +117,7 @@ class TestExportToFeishuView:
  assert response.data["url"] == "https://feishu.cn/docx/doxcnTEST"
  assert response.data["title"] == "测试文档"
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_filters_cross_conversation_messages(
@@ -155,7 +154,7 @@ class TestExportToFeishuView:
  assert "AAA" in call_args.kwargs.get("content", call_args[1].get("content", ""))
  assert "OTHER" not in call_args.kwargs.get("content", call_args[1].get("content", ""))
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_only_user_messages_returns_400(
@@ -193,7 +192,7 @@ class TestExportToFeishuView:
  assert response.status_code == 400
  assert response.data["error_type"] == "not_configured"
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_permission_denied_returns_403(
@@ -217,7 +216,7 @@ class TestExportToFeishuView:
  assert response.status_code == 403
  assert response.data["error_type"] == "permission_denied"
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_api_error_returns_502(
@@ -250,7 +249,7 @@ class TestExportToFeishuView:
  )
  assert response.status_code == 404
  @patch(
- "chat.views.create_feishu_doc_client_for_project",
+ "agents.tools.feishu_doc_tools.create_feishu_doc_client_for_project",
  new_callable=AsyncMock,
  )
  def test_export_messages_joined_with_separator(
