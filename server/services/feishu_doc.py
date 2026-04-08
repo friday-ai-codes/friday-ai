@@ -227,13 +227,16 @@ class FeishuDocClient:
  )
  data = response.json
  if data.get("code") != 0:
- logger.warning(
+ logger.error(
  "feishu_write_blocks_failed",
  document_id=document_id,
- error=data,
+ error_code=data.get("code"),
+ error_msg=data.get("msg"),
+ error_data=data,
  )
- # Don't raise - document was created, content write failed
- # This is a partial success
+ raise FeishuDocAPIError(
+ f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
+ )
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
  """Convert Feishu document blocks to Markdown.
  Supports:
