@@ -214,16 +214,20 @@ class FeishuDocClient:
  raise FeishuDocAPIError(f"Failed to get document info: {data}")
  # The document itself is the root block
  # We need to add children to the page block
+ payload = {"children": blocks, "index": 0}
+ logger.debug(
+ "feishu_write_blocks_payload",
+ document_id=document_id,
+ block_count=len(blocks),
+ payload=payload,
+ )
  response = await client.post(
  f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
  headers={
  "Authorization": f"Bearer {token}",
  "Content-Type": "application/json",
  },
- json={
- "children": blocks,
- "index": 0,
- },
+ json=payload,
  )
  data = response.json
  if data.get("code") != 0:
@@ -439,7 +443,7 @@ def _token_to_block(token: Any) -> dict[str, Any] | None:
  elements = _extract_token_elements(token)
  return _create_block_with_elements(15, "quote", elements)
  elif token_type == "thematic_break":
- return {"block_type": 22} # Divider
+ return {"block_type": 22, "divider": {}} # Divider
  return None
 def _extract_token_elements(
  token: dict[str, Any],
@@ -536,7 +540,7 @@ def _table_to_blocks(token: dict[str, Any]) -> list[dict[str, Any]]:
  header_elements.append({"text_run": {"content": ht, "text_element_style": {"bold": True}}})
  blocks.append(_create_block_with_elements(2, "text", header_elements))
  # Divider
- blocks.append({"block_type": 22})
+ blocks.append({"block_type": 22, "divider": {}})
  # Body rows
  for row in body_rows:
  if not isinstance(row, dict):
