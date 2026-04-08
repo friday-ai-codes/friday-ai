@@ -4,8 +4,9 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import {
+ confirmCodingSession as apiConfirmCodingSession,
  createConversation,
  deleteConversation,
  exportToFeishu,
@@ -51,6 +52,15 @@ export const useChatStore = defineStore('chat', => {
  const deepAnalysisLogs = ref<DeepAnalysisLog>
  const deepAnalysisSessionId = ref<string | null>(null)
  const restoredRuntimeConversationId = ref<string | null>(null)
+ // 编码会话状态 (Phase)
+ const activeCodingSession = ref<{
+ sessionId: string
+ status: 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
+ isConfirming: boolean
+ } | null>(null)
+ const codingProgress = ref<CodingProgressData | null>(null)
+ const codingResult = ref<CodingResultData | null>(null)
+ const codingError = ref<CodingErrorData | null>(null)
  // 导出多选模式 (Phase)
  const isExportSelectMode = ref(false)
  const selectedMessageIds = ref<Set<string>>(new Set)
@@ -105,6 +115,10 @@ export const useChatStore = defineStore('chat', => {
  try {
  const detail = await getConversationDetail(id)
  messages.value = detail.messages
+ activeCodingSession.value = null
+ codingProgress.value = null
+ codingResult.value = null
+ codingError.value = null
  await restoreConversationRuntime(id)
  }
  catch (e) {
@@ -223,6 +237,8 @@ export const useChatStore = defineStore('chat', => {
  currentPhase.value = null
  taskProgress.value = null
  isInterrupting.value = false
+ // 不清理 activeCodingSession / codingResult / codingError（保留给 UI 展示）
+ codingProgress.value = null
  if (interruptTimeout) {
  clearTimeout(interruptTimeout)
  interruptTimeout = null
@@ -272,6 +288,17 @@ export const useChatStore = defineStore('chat', => {
  },
  ]
  }
+ else if (runtime.mode === 'coding' && runtime.coding_session) {
+ // 恢复编码会话状态
+ const cs = runtime.coding_session as CodingSessionRuntime
+ activeCodingSession.value = {
+ sessionId: cs.id,
+ status: cs.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed',
+ isConfirming: false,
+ }
+ streamingToolCalls.value =
+ streamingTimeline.value =
+ }
  else {
  streamingToolCalls.value =
  streamingTimeline.value =
@@ -313,6 +340,28 @@ export const useChatStore = defineStore('chat', => {
  applyRuntimeSnapshot(runtime)
  scheduleRuntimePoll(id)
  return
+ }
+ // 检查是否有编码完成/失败
+ const cs = runtime.coding_session as CodingSessionRuntime | undefined
+ if (cs && cs.status === 'completed') {
+ codingResult.value = {
+ sessionId: cs.id,
+ prUrl: cs.pr_url || '',
+ branchName: cs.branch_name || '',
+ modifiedFilesCount: cs.affected_files?.length || 0,
+ }
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'completed'
+ }
+ }
+ else if (cs && cs.status === 'failed') {
+ codingError.value = {
+ sessionId: cs.id,
+ errorMessage: cs.error_message || '编码失败',
+ }
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'failed'
+ }
  }
  const wasRestoringRuntime = restoredRuntimeConversationId.value === id
  stopRuntimePolling
@@ -500,12 +549,81 @@ export const useChatStore = defineStore('chat', => {
  errorMessage: event.message,
  }
  break
+ case 'coding_progress': {
+ codingProgress.value = {
+ sessionId: event.coding_session_id || '',
+ steps: event.steps ||,
+ modifiedFilesCount: event.modified_files_count || 0,
+ }
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'running'
+ }
+ break
+ }
+ case 'coding_complete': {
+ codingResult.value = {
+ sessionId: event.coding_session_id || '',
+ prUrl: event.pr_url || '',
+ branchName: event.branch_name || '',
+ modifiedFilesCount: event.modified_files_count || 0,
+ }
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'completed'
+ }
+ isStreaming.value = false
+ break
+ }
+ case 'coding_failed': {
+ codingError.value = {
+ sessionId: event.coding_session_id || '',
+ errorMessage: event.message || '编码失败',
+ }
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'failed'
+ }
+ isStreaming.value = false
+ break
+ }
  case 'error':
  error.value = event.message || '未知错误'
  break
  default:
  console.warn('[Chat] 收到未知 SSE 事件类型:', event.type, event)
  break
+ }
+ }
+ /**
+ * 确认编码方案 — 调用 confirm API 并启动 runtime 轮询
+ */
+ async function handleConfirmCodingSession(sessionId: string) {
+ if (!currentConversationId.value) return
+ if (activeCodingSession.value?.isConfirming) return
+ // 乐观 UI: 立即显示 loading
+ activeCodingSession.value = {
+ sessionId,
+ status: 'confirmed',
+ isConfirming: true,
+ }
+ try {
+ const result = await apiConfirmCodingSession(sessionId)
+ activeCodingSession.value = {
+ sessionId: result.id,
+ status: result.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed',
+ isConfirming: false,
+ }
+ // 编码 running 期间禁用输入
+ isStreaming.value = true
+ // 启动 runtime 轮询（与 deep_analysis 模式一致）
+ scheduleRuntimePoll(currentConversationId.value, 3000)
+ }
+ catch (err) {
+ // 回滚
+ activeCodingSession.value = {
+ sessionId,
+ status: 'draft',
+ isConfirming: false,
+ }
+ error.value = err instanceof Error ? err.message: '确认失败'
  }
  }
  async function sendMessage(content: string, feishuDocId?: string) {
@@ -792,6 +910,12 @@ export const useChatStore = defineStore('chat', => {
  requestNotificationPermission,
  toggleNotifications,
  syncConversationToURL,
+ // 编码会话 (Phase)
+ activeCodingSession,
+ codingProgress,
+ codingResult,
+ codingError,
+ handleConfirmCodingSession,
  // 导出到飞书 (Phase)
  isExportSelectMode,
  selectedMessageIds,
