@@ -9,6 +9,7 @@ on:
 permissions:
  contents: write # 推送 [skip ci] 提交
  packages: write # 推送 GHCR 镜像
+ pull-requests: read # git-cliff 读取 PR 元数据
 env:
  REGISTRY: ghcr.io
  IMAGE_PREFIX: ghcr.io/friday-ai-codes/friday-ai
@@ -183,6 +184,7 @@ jobs:
  config: cliff.toml
  args: ${{ steps.params.outputs.cliff_args }}
  env:
+ GITHUB_TOKEN: ${{ github.token }}
  GITHUB_REPO: ${{ github.repository }}
  - name: Create GitHub Release
  env:
