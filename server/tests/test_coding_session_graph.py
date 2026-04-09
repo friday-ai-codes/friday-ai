@@ -62,19 +62,20 @@ def _patch_get_coding_session(mock_session: MagicMock) -> Any:
 class TestGraphTopology:
  """验证 build_coding_graph 节点和边连接。"""
  def test_graph_topology(self) -> None:
- """build_coding_graph 包含 8 个节点和正确的边连接。"""
+ """build_coding_graph 包含 9 个节点和正确的边连接。"""
  graph = build_coding_graph
  # StateGraph builder 的 nodes 属性记录节点
  node_names = set(graph.nodes.keys)
  assert "dispatch_coding" in node_names
  assert "wait_coding_complete" in node_names
  assert "await_commit_confirm" in node_names
+ assert "conflict_check" in node_names
  assert "dispatch_commit" in node_names
  assert "wait_commit_complete" in node_names
  assert "generate_pr_draft" in node_names
  assert "await_pr_confirm" in node_names
  assert "create_pr_or_skip" in node_names
- assert len(node_names) == 8
+ assert len(node_names) == 9
  def test_graph_compiles_with_memory_saver(self) -> None:
  """graph 可使用 MemorySaver 编译。"""
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
@@ -617,3 +618,80 @@ class TestPRPhase:
  state = await graph.aget_state(graph_config)
  assert not state.next
  mock_store.assert_awaited_once
+# ---------------------------------------------------------------------------
+# ConflictCheck 节点测试
+# ---------------------------------------------------------------------------
+class TestConflictCheckNode:
+ """验证 conflict_check_node 非阻断性冲突预检行为。"""
+ @pytest.mark.asyncio
+ async def test_conflict_check_no_credential(
+ self, mock_coding_session: MagicMock
+ ) -> None:
+ """无 Git 凭据时直接返回 {"phase": "committing"}，不抛异常。"""
+ from orchestration.coding_graph import conflict_check_node
+ state: CodingSessionState = {
+ "coding_session_id": "cs-test-123",
+ "phase": "committing",
+ }
+ with _patch_get_coding_session(mock_coding_session), \
+ patch("repositories.models.GitCredential.objects") as mock_cred_objects:
+ mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=None)
+ result = await conflict_check_node(state)
+ assert result == {"phase": "committing"}
+ @pytest.mark.asyncio
+ async def test_conflict_check_success_no_conflicts(
+ self, mock_coding_session: MagicMock
+ ) -> None:
+ """compare_branches 返回 success=True, behind_by=0 时持久化结果且 has_conflicts=False。"""
+ from services.git_platform.models import BranchCompareResult, CompareFileEntry
+ from orchestration.coding_graph import conflict_check_node
+ state: CodingSessionState = {
+ "coding_session_id": "cs-test-123",
+ "phase": "committing",
+ }
+ compare_result = BranchCompareResult(
+ success=True,
+ ahead_by=1,
+ behind_by=0,
+ files=[CompareFileEntry(path="src/main.py", change_type="modified", additions=10, deletions=2)],
+ total_additions=10,
+ total_deletions=2,
+ truncated=False,
+ has_potential_conflicts=False,
+ conflicting_files=,
+ )
+ mock_cred = MagicMock
+ mock_cred.encrypted_token = "encrypted-token"
+ mock_client = AsyncMock
+ mock_client.compare_branches = AsyncMock(return_value=compare_result)
+ with _patch_get_coding_session(mock_coding_session), \
+ patch("repositories.models.GitCredential.objects") as mock_cred_objects, \
+ patch("common.encryption.decrypt_value", return_value="test-token"), \
+ patch("services.git_platform.get_git_platform_client", return_value=mock_client):
+ mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ result = await conflict_check_node(state)
+ assert result == {"phase": "committing"}
+ mock_coding_session.asave.assert_awaited_once
+ assert mock_coding_session.conflict_check_result["has_conflicts"] is False
+ assert mock_coding_session.diff_summary["total_additions"] == 10
+ @pytest.mark.asyncio
+ async def test_conflict_check_exception_non_blocking(
+ self, mock_coding_session: MagicMock
+ ) -> None:
+ """compare_branches 抛出异常时返回 {"phase": "committing"}，不阻断流程。"""
+ from orchestration.coding_graph import conflict_check_node
+ state: CodingSessionState = {
+ "coding_session_id": "cs-test-123",
+ "phase": "committing",
+ }
+ mock_cred = MagicMock
+ mock_cred.encrypted_token = "encrypted-token"
+ mock_client = AsyncMock
+ mock_client.compare_branches = AsyncMock(side_effect=Exception("Network error"))
+ with _patch_get_coding_session(mock_coding_session), \
+ patch("repositories.models.GitCredential.objects") as mock_cred_objects, \
+ patch("common.encryption.decrypt_value", return_value="test-token"), \
+ patch("services.git_platform.get_git_platform_client", return_value=mock_client):
+ mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ result = await conflict_check_node(state)
+ assert result == {"phase": "committing"}

@@ -1,12 +1,12 @@
 """CodingSession 专用 LangGraph StateGraph -- 三阶段 dispatch 编排。
 拓扑: START -> dispatch_coding -> wait_coding_complete(interrupt)
- -> await_commit_confirm(interrupt) -> dispatch_commit
+ -> await_commit_confirm(interrupt) -> conflict_check -> dispatch_commit
  -> wait_commit_complete(interrupt)
  -> (conditional: failed->END, success->generate_pr_draft)
  -> generate_pr_draft -> await_pr_confirm(interrupt)
  -> create_pr_or_skip -> (conditional) -> END
 Phase: 编码 dispatch + 等待完成
-Phase: commit message 确认 + commit dispatch + 等待完成
+Phase: commit message 确认 + conflict_check 冲突预检 + commit dispatch + 等待完成
 Phase: PR 草稿生成（LLM） + PR 确认/跳过 + PR 创建
 每个 wait/await 节点使用 interrupt 暂停 graph，通过 Command(resume=...) 恢复。
 interrupt 前只做幂等操作（UPDATE 同值），避免 resume 时重放副作用。
@@ -99,6 +99,80 @@ async def await_commit_confirm_node(state: CodingSessionState) -> dict[str, Any]
  confirmed_commit_message=confirmed_msg,
  )
  return {"phase": "committing", "confirmed_commit_message": confirmed_msg}
+async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
+ """冲突预检节点 -- 检查功能分支与 base 分支的潜在冲突（per ）。
+ 非阻断性: 任何错误都不阻止后续 dispatch_commit 流程（per ）。
+ 一次 compare 调用同时产出冲突预检和 diff 摘要数据（per ）。
+ 结果持久化到 CodingSession.conflict_check_result 和 diff_summary（per, ）。
+ """
+ coding_session = await _get_coding_session(state)
+ repo = coding_session.repository
+ try:
+ from common.encryption import decrypt_value
+ from repositories.models import GitCredential
+ from services.git_platform import get_git_platform_client
+ cred = await GitCredential.objects.filter(repository=repo).afirst
+ if cred is None or not cred.encrypted_token:
+ logger.info("conflict_check_no_credential", coding_session_id=state["coding_session_id"])
+ return {"phase": "committing"}
+ token = decrypt_value(cred.encrypted_token)
+ client = get_git_platform_client(repo, token)
+ result = await client.compare_branches(
+ source_branch=coding_session.branch_name,
+ target_branch=repo.default_branch,
+ )
+ if result.success:
+ from django.utils import timezone
+ suggestion = ""
+ if result.has_potential_conflicts:
+ suggestion = f"以下 {len(result.conflicting_files)} 个文件同时被修改，可能存在合并冲突，建议在 push 前本地解决"
+ elif result.behind_by > 0:
+ suggestion = f"目标分支有 {result.behind_by} 个新 commit，但未修改相同文件，预计可自动合并"
+ conflict_data = {
+ "has_conflicts": result.has_potential_conflicts,
+ "conflicting_files": result.conflicting_files,
+ "behind_by": result.behind_by,
+ "suggestion": suggestion,
+ "checked_at": timezone.now.isoformat,
+ }
+ coding_session.conflict_check_result = conflict_data
+ diff_data = {
+ "files": [
+ {
+ "path": f.path,
+ "additions": f.additions,
+ "deletions": f.deletions,
+ "change_type": f.change_type,
+ }
+ for f in result.files
+ ],
+ "total_additions": result.total_additions,
+ "total_deletions": result.total_deletions,
+ "truncated": result.truncated,
+ }
+ coding_session.diff_summary = diff_data
+ await coding_session.asave(update_fields=[
+ "conflict_check_result", "diff_summary", "updated_at",
+ ])
+ logger.info(
+ "conflict_check_completed",
+ coding_session_id=state["coding_session_id"],
+ has_conflicts=result.has_potential_conflicts,
+ behind_by=result.behind_by,
+ file_count=len(result.files),
+ )
+ else:
+ logger.warning(
+ "conflict_check_api_error",
+ coding_session_id=state["coding_session_id"],
+ error=result.error,
+ )
+ except Exception:
+ logger.exception(
+ "conflict_check_error",
+ coding_session_id=state["coding_session_id"],
+ )
+ return {"phase": "committing"}
 async def dispatch_commit_node(state: CodingSessionState) -> dict[str, Any]:
  """Phase: dispatch commit 修正任务到 Runner。
  使用 coding_commit task_type，通过 extra_metadata 传递用户确认的 commit message。
@@ -373,7 +447,7 @@ def build_coding_graph -> StateGraph:
  拓扑（三阶段）:
  START -> dispatch_coding -> wait_coding_complete
  -> (conditional: failed->END, success->await_commit_confirm)
- -> await_commit_confirm -> dispatch_commit -> wait_commit_complete
+ -> await_commit_confirm -> conflict_check -> dispatch_commit -> wait_commit_complete
  -> (conditional: failed->END, success->generate_pr_draft)
  -> generate_pr_draft -> await_pr_confirm -> create_pr_or_skip
  -> (conditional) -> END
@@ -383,6 +457,7 @@ def build_coding_graph -> StateGraph:
  builder.add_node("dispatch_coding", dispatch_coding_node)
  builder.add_node("wait_coding_complete", wait_coding_complete_node)
  builder.add_node("await_commit_confirm", await_commit_confirm_node)
+ builder.add_node("conflict_check", conflict_check_node)
  builder.add_node("dispatch_commit", dispatch_commit_node)
  builder.add_node("wait_commit_complete", wait_commit_complete_node)
  # Phase 新增节点
@@ -394,7 +469,8 @@ def build_coding_graph -> StateGraph:
  builder.add_edge("dispatch_coding", "wait_coding_complete")
  builder.add_conditional_edges("wait_coding_complete", route_after_coding)
  # Phase 边
- builder.add_edge("await_commit_confirm", "dispatch_commit")
+ builder.add_edge("await_commit_confirm", "conflict_check")
+ builder.add_edge("conflict_check", "dispatch_commit")
  builder.add_edge("dispatch_commit", "wait_commit_complete")
  builder.add_conditional_edges("wait_commit_complete", route_after_commit)
  # Phase 边
