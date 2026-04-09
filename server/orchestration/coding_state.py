@@ -14,7 +14,7 @@ class CodingSessionState(TypedDict, total=False):
  conversation_id: str
  repository_id: str
  # 编排语义
- phase: str # coding / waiting_coding / awaiting_commit_confirm / committing / waiting_commit / pr_pending / awaiting_pr_confirm / creating_pr / skipping_pr / completed / failed
+ phase: str # coding / waiting_coding / awaiting_commit_confirm / conflict_checking / committing / waiting_commit / pr_pending / awaiting_pr_confirm / creating_pr / skipping_pr / completed / failed
  error: str
  # Phase 结果
  phase1_session_id: str
