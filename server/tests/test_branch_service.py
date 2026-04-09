@@ -76,15 +76,14 @@ class TestBranchNameGeneration:
  assert re.fullmatch(r"feat\d{8}\.user-auth", result), f"格式不匹配: {result}"
  def test_date_utc(self) -> None:
  """使用 UTC 日期。"""
- from datetime import datetime
+ from datetime import datetime as real_datetime
+ fixed_dt = real_datetime(2026, 4, 9, 12, 0, 0, tzinfo=timezone.utc)
  with patch("chat.branch_service.datetime") as mock_dt:
- mock_dt.now.return_value = datetime(2026, 4, 9, tzinfo=timezone.utc)
- mock_dt.now.return_value.strftime = datetime(
- 2026, 4, 9, tzinfo=timezone.utc
- ).strftime
+ mock_dt.now.return_value = fixed_dt
+ mock_dt.side_effect = lambda *a, **kw: real_datetime(*a, **kw)
  result = generate_branch_name("fix", "login-bug")
  mock_dt.now.assert_called_once_with(timezone.utc)
- assert "20260409" in result
+ assert result == "fix20260409.login-bug"
 # ============================================================================
 # TestBranchValidation — 分支名校验（不含唯一性）
 # ============================================================================
