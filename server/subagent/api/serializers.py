@@ -57,6 +57,8 @@ class ProgressPayloadSerializer(serializers.Serializer):
  phase = serializers.CharField(required=False, default="", allow_blank=True)
  progress = serializers.FloatField(required=False, default=0.0)
  message = serializers.CharField(required=False, default="", allow_blank=True)
+ # Phase: 编码任务中间产出（modified_files + recent_tool_calls）
+ coding_progress = serializers.JSONField(required=False, default=None)
 class ActionLogPayloadSerializer(serializers.Serializer):
  """type=action_log 时的 payload 验证。"""
  action_type = serializers.ChoiceField(choices=ActionLog.ActionType.choices)

@@ -572,7 +572,9 @@ async def _handle_question(
 async def _handle_progress(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
- """处理 progress 回调 — 更新 last_output（临时进度数据）。"""
+ """处理 progress 回调 — 更新 last_output（临时进度数据）。
+ 编码任务 (coding task_type) 时额外保存 coding_progress 中间产出（per, ）。
+ """
  ser = ProgressPayloadSerializer(data=payload)
  if not ser.is_valid:
  return Response(
@@ -580,7 +582,8 @@ async def _handle_progress(
  status=status.HTTP_400_BAD_REQUEST,
  )
  p = ser.validated_data
- session.last_output = {
+ # 基础 progress 数据
+ output: dict[str, Any] = {
  "progress": {
  "phase": p.get("phase", ""),
  "progress": p.get("progress", 0.0),
@@ -588,6 +591,16 @@ async def _handle_progress(
  "updated_at": timezone.now.isoformat,
  },
  }
+ # 编码任务中间产出扩展（per,, ）
+ # 容器侧在 progress payload 中携带 coding_progress 字段
+ coding_progress = p.get("coding_progress")
+ if coding_progress and isinstance(coding_progress, dict):
+ output["coding_progress"] = {
+ "modified_files": coding_progress.get("modified_files", ),
+ "recent_tool_calls": coding_progress.get("recent_tool_calls", ),
+ "updated_at": timezone.now.isoformat,
+ }
+ session.last_output = output
  await session.asave(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
