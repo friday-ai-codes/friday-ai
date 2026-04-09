@@ -365,6 +365,132 @@ class TestCodingSessionQueryAPI:
  response = authenticated_client.get(url)
  assert response.status_code == 404
 # ============================================================================
+# CodingSession awaiting_confirmation 状态扩展测试 ( Task 1)
+# ============================================================================
+@pytest.mark.django_db
+class TestCodingSessionAwaitingConfirmationDefaults:
+ """验证新增的 confirmation_step 和 suggested_commit_message 字段默认值。"""
+ def test_new_fields_defaults(self, project, repository):
+ """新字段 confirmation_step 和 suggested_commit_message 默认为空字符串。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="默认值测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 技术方案",
+ )
+ assert session.confirmation_step == ""
+ assert session.suggested_commit_message == ""
+ def test_status_choices_include_awaiting_confirmation(self):
+ """Status TextChoices 包含 AWAITING_CONFIRMATION。"""
+ assert hasattr(CodingSession.Status, "AWAITING_CONFIRMATION")
+ assert CodingSession.Status.AWAITING_CONFIRMATION == "awaiting_confirmation"
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionAwaitingConfirmationStateMachine:
+ """验证 awaiting_confirmation 双向状态转换。"""
+ @pytest.fixture
+ def running_session(self, project, repository):
+ """创建 running 状态的 CodingSession。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="状态转换测试")
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ status=CodingSession.Status.RUNNING,
+ )
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_from_running(self, running_session):
+ """running -> awaiting_confirmation 转换成功，设置 step 和 suggested_commit_message。"""
+ await running_session.amark_awaiting_confirmation(
+ step="commit_message",
+ suggested_commit_message="feat: 添加用户认证",
+ )
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ assert running_session.confirmation_step == "commit_message"
+ assert running_session.suggested_commit_message == "feat: 添加用户认证"
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_without_commit_message(self, running_session):
+ """running -> awaiting_confirmation 不传 suggested_commit_message 时保留原值。"""
+ running_session.suggested_commit_message = "旧消息"
+ await running_session.asave(update_fields=["suggested_commit_message"])
+ await running_session.amark_awaiting_confirmation(step="pr_review")
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ assert running_session.confirmation_step == "pr_review"
+ # 不传 suggested_commit_message 时保留旧值
+ assert running_session.suggested_commit_message == "旧消息"
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_from_non_running_raises(self, running_session):
+ """非 running 状态调用 amark_awaiting_confirmation 抛出 ValueError。"""
+ # draft 状态
+ running_session.status = CodingSession.Status.DRAFT
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 running 状态可进入等待确认"):
+ await running_session.amark_awaiting_confirmation(step="commit_message")
+ # completed 状态
+ running_session.status = CodingSession.Status.COMPLETED
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 running 状态可进入等待确认"):
+ await running_session.amark_awaiting_confirmation(step="commit_message")
+ @pytest.mark.asyncio
+ async def test_aresume_running_from_awaiting_confirmation(self, running_session):
+ """awaiting_confirmation -> running 转换成功，清空 confirmation_step。"""
+ # 先进入 awaiting_confirmation
+ await running_session.amark_awaiting_confirmation(
+ step="commit_message",
+ suggested_commit_message="feat: test",
+ )
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ # 恢复 running
+ await running_session.aresume_running
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.RUNNING
+ assert running_session.confirmation_step == ""
+ @pytest.mark.asyncio
+ async def test_aresume_running_from_non_awaiting_raises(self, running_session):
+ """非 awaiting_confirmation 状态调用 aresume_running 抛出 ValueError。"""
+ # running 状态
+ with pytest.raises(ValueError, match="只有 awaiting_confirmation 状态可恢复运行"):
+ await running_session.aresume_running
+ # draft 状态
+ running_session.status = CodingSession.Status.DRAFT
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 awaiting_confirmation 状态可恢复运行"):
+ await running_session.aresume_running
+@pytest.mark.django_db
+class TestCodingSessionSerializerNewFields:
+ """验证 CodingSessionSerializer 包含新字段。"""
+ def test_serializer_includes_confirmation_step(self, project, repository):
+ """CodingSessionSerializer 序列化结果包含 confirmation_step。"""
+ from chat.models import Conversation
+ from chat.serializers import CodingSessionSerializer
+ conversation = Conversation.objects.create(project=project, title="序列化测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ )
+ serializer = CodingSessionSerializer(session)
+ assert "confirmation_step" in serializer.data
+ assert serializer.data["confirmation_step"] == ""
+ def test_serializer_includes_suggested_commit_message(self, project, repository):
+ """CodingSessionSerializer 序列化结果包含 suggested_commit_message。"""
+ from chat.models import Conversation
+ from chat.serializers import CodingSessionSerializer
+ conversation = Conversation.objects.create(project=project, title="序列化测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ suggested_commit_message="feat: 实现功能",
+ )
+ serializer = CodingSessionSerializer(session)
+ assert "suggested_commit_message" in serializer.data
+ assert serializer.data["suggested_commit_message"] == "feat: 实现功能"
+# ============================================================================
 # 分支名校验 + metadata 注入测试 ( Task 2)
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
