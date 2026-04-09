@@ -1,8 +1,9 @@
 """分支名生成与校验 service 测试。
-覆盖：类型推断、短描述提取、分支名格式拼接、字符集/长度/保护分支校验。
+覆盖：类型推断、短描述提取、分支名格式拼接、字符集/长度/保护分支校验、唯一性校验。
 """
+import uuid
 from datetime import timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat.branch_service import (
  BranchValidationResult,
@@ -186,3 +187,137 @@ class TestBranchValidation:
  result = await validate_branch_name("..lock", dummy_repo_id)
  assert result.valid is False
  assert len(result.errors) >= 2
+# ============================================================================
+# TestGitPlatformBranchExists — GitPlatformClient.branch_exists
+# ============================================================================
+class TestGitPlatformBranchExists:
+ """测试 GitHub/GitLab 客户端的 branch_exists 实现。"""
+ @pytest.mark.asyncio
+ async def test_github_branch_exists_true(self) -> None:
+ """mock PyGithub repo.get_branch 返回成功 -> True。"""
+ from services.git_platform.github_client import GitHubClient
+ client = GitHubClient(token="fake", owner="test", repo="repo")
+ mock_repo = MagicMock
+ mock_repo.get_branch.return_value = MagicMock # 成功返回
+ with patch.object(client, "_get_repo", return_value=mock_repo):
+ result = await client.branch_exists("feat20260409.test")
+ assert result is True
+ mock_repo.get_branch.assert_called_once_with("feat20260409.test")
+ @pytest.mark.asyncio
+ async def test_github_branch_not_exists(self) -> None:
+ """mock PyGithub repo.get_branch 抛 GithubException 404 -> False。"""
+ from github import GithubException
+ from services.git_platform.github_client import GitHubClient
+ client = GitHubClient(token="fake", owner="test", repo="repo")
+ mock_repo = MagicMock
+ mock_repo.get_branch.side_effect = GithubException(
+ 404, {"message": "Branch not found"}, None
+ )
+ with patch.object(client, "_get_repo", return_value=mock_repo):
+ result = await client.branch_exists("nonexistent")
+ assert result is False
+ @pytest.mark.asyncio
+ async def test_gitlab_branch_exists_true(self) -> None:
+ """mock python-gitlab project.branches.get 返回成功 -> True。"""
+ from services.git_platform.gitlab_client import GitLabClient
+ client = GitLabClient(
+ base_url="https://gitlab.com", token="fake", project_path="ns/proj"
+ )
+ mock_project = MagicMock
+ mock_project.branches.get.return_value = MagicMock
+ with patch.object(client, "_get_project", return_value=mock_project):
+ result = await client.branch_exists("feat20260409.test")
+ assert result is True
+ mock_project.branches.get.assert_called_once_with("feat20260409.test")
+ @pytest.mark.asyncio
+ async def test_gitlab_branch_not_exists(self) -> None:
+ """mock python-gitlab project.branches.get 抛 GitlabGetError -> False。"""
+ import gitlab.exceptions
+ from services.git_platform.gitlab_client import GitLabClient
+ client = GitLabClient(
+ base_url="https://gitlab.com", token="fake", project_path="ns/proj"
+ )
+ mock_project = MagicMock
+ mock_project.branches.get.side_effect = gitlab.exceptions.GitlabGetError(
+ "404 Branch Not Found"
+ )
+ with patch.object(client, "_get_project", return_value=mock_project):
+ result = await client.branch_exists("nonexistent")
+ assert result is False
+# ============================================================================
+# TestBranchUniqueness — 唯一性校验（DB + remote）
+# ============================================================================
+@pytest.mark.django_db
+class TestBranchUniqueness:
+ """测试 validate_branch_name 的 DB 活跃会话 + remote 双重唯一性校验。"""
+ @pytest.fixture
+ def repo_id(self, repository):
+ """返回测试仓库的 UUID。"""
+ return repository.id
+ @pytest.fixture
+ def _create_session(self, repository, db):
+ """工厂 fixture：创建带指定分支名和状态的 CodingSession。"""
+ from chat.models import Conversation, CodingSession
+ from projects.models import Project
+ # 获取或创建 project
+ project = Project.objects.filter(repositories=repository).first
+ if not project:
+ project = Project.objects.create(
+ name="Test Project",
+ feishu_project_key="test-key",
+ )
+ project.repositories.add(repository)
+ conversation = Conversation.objects.create(
+ project=project,
+ title="test conv",
+ )
+ def _factory(branch_name: str, status: str) -> CodingSession:
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ branch_name=branch_name,
+ status=status,
+ tech_plan="test plan",
+ )
+ return _factory
+ @pytest.mark.asyncio
+ async def test_db_duplicate_active(self, repo_id, _create_session) -> None:
+ """DB 中有同名 running 状态的 CodingSession -> 返回错误。"""
+ _create_session("feat20260409.dup-branch", "running")
+ result = await validate_branch_name("feat20260409.dup-branch", repo_id)
+ assert result.valid is False
+ assert any("已被" in e or "使用" in e for e in result.errors)
+ @pytest.mark.asyncio
+ async def test_db_duplicate_completed_ok(self, repo_id, _create_session) -> None:
+ """DB 中有同名 completed 状态 -> 不冲突，通过。"""
+ _create_session("feat20260409.completed-branch", "completed")
+ result = await validate_branch_name(
+ "feat20260409.completed-branch", repo_id
+ )
+ assert result.valid is True
+ @pytest.mark.asyncio
+ async def test_remote_exists(self, repo_id) -> None:
+ """mock git_client.branch_exists 返回 True -> 返回错误。"""
+ mock_client = AsyncMock
+ mock_client.branch_exists.return_value = True
+ result = await validate_branch_name(
+ "feat20260409.remote-dup", repo_id, git_client=mock_client
+ )
+ assert result.valid is False
+ assert any("远程" in e for e in result.errors)
+ @pytest.mark.asyncio
+ async def test_remote_not_exists(self, repo_id) -> None:
+ """mock git_client.branch_exists 返回 False -> 通过。"""
+ mock_client = AsyncMock
+ mock_client.branch_exists.return_value = False
+ result = await validate_branch_name(
+ "feat20260409.remote-ok", repo_id, git_client=mock_client
+ )
+ assert result.valid is True
+ @pytest.mark.asyncio
+ async def test_no_git_client_skip_remote(self, repo_id) -> None:
+ """git_client=None 时跳过 remote 校验，仅 DB 校验。"""
+ result = await validate_branch_name(
+ "feat20260409.no-client", repo_id, git_client=None
+ )
+ assert result.valid is True
