@@ -44,7 +44,7 @@ web:
  replicaCount: 1
  image:
  repository: ghcr.io/friday-ai-codes/friday-ai/web
- tag: v18.0.1
+ tag: v18.0.4
  pullPolicy: IfNotPresent
  resources:
  requests:
