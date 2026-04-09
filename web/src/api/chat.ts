@@ -234,6 +234,82 @@ export async function confirmCodingSession(sessionId: string): Promise<CodingSes
 export async function getCodingSession(sessionId: string): Promise<CodingSessionResponse> {
  return get<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/`)
 }
+/**
+ * 确认编码方案（附带可选的分支名覆盖）— Phase 扩展
+ */
+export async function confirmCodingSessionWithBranch(
+ sessionId: string,
+ branchName?: string,
+): Promise<CodingSessionResponse> {
+ const body = branchName ? { branch_name: branchName }: {}
+ return post<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/confirm/`, body)
+}
+/**
+ * 确认 Commit Message
+ */
+export async function confirmCommit(
+ sessionId: string,
+ commitMessage: string,
+): Promise<CodingSessionResponse> {
+ return post<CodingSessionResponse>(
+ `/chat/coding-sessions/${sessionId}/commit-confirm/`,
+ { commit_message: commitMessage },
+ )
+}
+/**
+ * 获取 Commit 确认数据（GET）
+ */
+export async function getCommitConfirmData(sessionId: string) {
+ return get<{
+ suggested_commit_message: string
+ affected_files: Array<{ path: string; change_type: string }>
+ }>(`/chat/coding-sessions/${sessionId}/commit-confirm/`)
+}
+/**
+ * 确认/跳过 PR
+ */
+export async function confirmPR(
+ sessionId: string,
+ data: { title: string; description: string; target_branch: string } | { skip: true },
+): Promise<CodingSessionResponse> {
+ return post<CodingSessionResponse>(
+ `/chat/coding-sessions/${sessionId}/pr-confirm/`,
+ data,
+ )
+}
+/**
+ * 获取 PR 确认数据（GET）
+ */
+export async function getPRConfirmData(sessionId: string) {
+ return get<{
+ suggested_pr_title: string
+ suggested_pr_description: string
+ target_branch: string
+ branch_url: string
+ }>(`/chat/coding-sessions/${sessionId}/pr-confirm/`)
+}
+/**
+ * 获取冲突检查结果
+ */
+export async function getConflictCheck(sessionId: string) {
+ return get<{
+ has_conflicts?: boolean
+ conflicting_files?: string
+ behind_by?: number
+ suggestion?: string
+ }>(`/chat/coding-sessions/${sessionId}/conflict-check/`)
+}
+/**
+ * 获取 Diff 摘要
+ */
+export async function getDiffSummary(sessionId: string) {
+ return get<{
+ files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ total_additions?: number
+ total_deletions?: number
+ truncated?: boolean
+ }>(`/chat/coding-sessions/${sessionId}/diff-summary/`)
+}
 // ============================================================================
 // 默认导出
 // ============================================================================
@@ -252,4 +328,11 @@ export default {
  exportToFeishu,
  confirmCodingSession,
  getCodingSession,
+ confirmCodingSessionWithBranch,
+ confirmCommit,
+ getCommitConfirmData,
+ confirmPR,
+ getPRConfirmData,
+ getConflictCheck,
+ getDiffSummary,
 }
