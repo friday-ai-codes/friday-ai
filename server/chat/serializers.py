@@ -182,3 +182,58 @@ class SendMessageSerializer(serializers.Serializer):
  required=False,
  help_text="强制使用深度分析模式（跳过 RAG，直接调用 Runner + Claude Code）",
  )
+ feishu_doc_id = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ help_text="前端从消息中提取的飞书文档 ID",
+ )
+# ============================================================================
+# CodingSession Serializers (Phase)
+# ============================================================================
+class CodingSessionSerializer(serializers.Serializer):
+ """CodingSession 详情序列化器。"""
+ id = serializers.UUIDField(read_only=True)
+ status = serializers.CharField(read_only=True)
+ tech_plan = serializers.CharField(read_only=True)
+ affected_files = serializers.JSONField(read_only=True)
+ revision_count = serializers.IntegerField(read_only=True)
+ repository_id = serializers.UUIDField(read_only=True)
+ branch_name = serializers.CharField(read_only=True)
+ pr_url = serializers.URLField(read_only=True, allow_blank=True)
+ error_message = serializers.CharField(read_only=True, allow_blank=True)
+ created_at = serializers.DateTimeField(read_only=True)
+ updated_at = serializers.DateTimeField(read_only=True)
+class ExportToFeishuSerializer(serializers.Serializer):
+ """导出对话消息到飞书文档。"""
+ message_ids = serializers.ListField(
+ child=serializers.UUIDField,
+ min_length=1,
+ help_text="要导出的消息 ID 列表",
+ )
+ title = serializers.CharField(
+ max_length=200,
+ help_text="飞书文档标题",
+ )
+ folder_token = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ help_text="目标文件夹 token（可选，覆盖项目配置）",
+ )
+# ============================================================================
+# CodingSession Serializers (Phase)
+# ============================================================================
+class CodingSessionSerializer(serializers.Serializer):
+ """CodingSession 详情序列化器。"""
+ id = serializers.UUIDField(read_only=True)
+ status = serializers.CharField(read_only=True)
+ tech_plan = serializers.CharField(read_only=True)
+ affected_files = serializers.JSONField(read_only=True)
+ revision_count = serializers.IntegerField(read_only=True)
+ repository_id = serializers.UUIDField(read_only=True)
+ branch_name = serializers.CharField(read_only=True)
+ pr_url = serializers.URLField(read_only=True, allow_blank=True)
+ error_message = serializers.CharField(read_only=True, allow_blank=True)
+ created_at = serializers.DateTimeField(read_only=True)
+ updated_at = serializers.DateTimeField(read_only=True)

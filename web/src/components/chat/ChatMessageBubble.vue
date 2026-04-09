@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
+import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import CodingPlanCard from './CodingPlanCard.vue'
+import DocSummaryCard from './DocSummaryCard.vue'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -13,8 +16,32 @@ const props = defineProps<{
  streamingNarrations?: string
  streamingPendingText?: string
  deepAnalysisLogs?: Array<{ type: string, content: string, ts: number }>
+ streamingDocSummary?: {
+ type: 'summary' | 'error' | 'loading'
+ title?: string
+ wordCount?: number
+ preview?: string
+ truncated?: boolean
+ truncatedLength?: number
+ errorType?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
+ errorMessage?: string
+ } | null
 }>
 const chatStore = useChatStore
+const emit = defineEmits<{
+ exportSingle: [messageId: string]
+}>
+const isSelected = computed( =>
+ chatStore.selectedMessageIds.has(props.message.id),
+)
+// 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
+const docSummary = computed( => {
+ if (props.isStreaming && props.streamingDocSummary) {
+ return props.streamingDocSummary
+ }
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ return (meta?.docSummary as typeof props.streamingDocSummary) || null
+})
 const renderedHtml = ref('')
 const mdReady = ref(false)
 let mdInstance: MarkdownIt | null = null
@@ -135,6 +162,8 @@ const TOOL_LABELS: Record<string, string> = {
  list_project_repositories: '仓库列表',
  get_repository_info: '仓库信息',
  deep_analysis: '深度分析',
+ create_coding_plan: '编码方案',
+ update_coding_plan: '更新方案',
 }
 function toolLabel(name: string): string {
  const bare = name.replace(/^mcp__[^_]+__/, '')
@@ -237,6 +266,49 @@ const hasDeepAnalysisLogs = computed( =>
 function isDeepAnalysisTool(name: string): boolean {
  return name.replace(/^mcp__[^_]+__/, '') === 'deep_analysis'
 }
+function isCodingPlanTool(name: string): boolean {
+ const bare = name.replace(/^mcp__[^_]+__/, '')
+ return bare === 'create_coding_plan' || bare === 'update_coding_plan'
+}
+// 从 toolCalls 中提取 coding plan 数据
+const codingPlanData = computed( => {
+ const planTool = toolCalls.value.find(tc => isCodingPlanTool(tc.name))
+ if (!planTool) return null
+ // tech_plan 和 affected_files 来自 tool input（不在 result 中）
+ const input = planTool.input || {}
+ const techPlan = (input.tech_plan as string) || ''
+ const affectedFiles = (input.affected_files as Array<{ path: string; change_type: string }>) ||
+ // session_id 和 status 来自 tool result (JSON 字符串)
+ let sessionId = ''
+ let sessionStatus: string = 'draft'
+ if (planTool.result) {
+ try {
+ const parsed = JSON.parse(planTool.result)
+ sessionId = parsed.session_id || ''
+ sessionStatus = parsed.status || 'draft'
+ }
+ catch {
+ // result 可能不是 JSON
+ }
+ }
+ return { sessionId, techPlan, affectedFiles, status: sessionStatus }
+})
+// 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
+const codingPlanStatus = computed( => {
+ const data = codingPlanData.value
+ if (!data) return 'draft'
+ const active = chatStore.activeCodingSession
+ if (active && active.sessionId === data.sessionId) {
+ return active.status
+ }
+ return data.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
+})
+const codingPlanConfirming = computed( => {
+ const data = codingPlanData.value
+ if (!data) return false
+ const active = chatStore.activeCodingSession
+ return !!(active && active.sessionId === data.sessionId && active.isConfirming)
+})
 const primaryDeepAnalysisId = computed( => {
  const da = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
  return da?.id || ''
@@ -404,7 +476,16 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
- <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8">
+ <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8 flex">
+ <!-- 多选模式 Checkbox (per, ) -->
+ <div v-if="chatStore.isExportSelectMode && props.message.role === 'assistant'" class="mr-2 flex items-center shrink-0">
+ <Checkbox:checked="isSelected" @update:checked="chatStore.toggleMessageSelect(props.message.id)" />
+ </div>
+ <div class="flex-1 min-w-0">
+ <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
+ <DocSummaryCard
+ v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
+ />
  <!-- Thinking：流式默认展开，历史默认收起 -->
  <div v-if="!hasTimeline && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
@@ -474,6 +555,11 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
  />
  </div>
+ <!-- 编码方案卡片（替代默认 tool-detail） -->
+ <CodingPlanCard
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ @confirm="chatStore.handleConfirmCodingSession"
+ />
  <div
  v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
  class="deep-analysis-panel"
@@ -504,7 +590,7 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- <div v-if="expandedTools.has(item.id)" class="tool-detail">
+ <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
  <div class="tool-detail-section">
  <span class="tool-detail-label">输入</span>
  <pre class="tool-detail-json">{{ JSON.stringify(item.input, null, 2) }}</pre>
@@ -531,6 +617,11 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(tc.id) ? 'rotate-90': ''"
  />
  </div>
+ <!-- 编码方案卡片（替代默认 tool-detail） -->
+ <CodingPlanCard
+ v-if="isCodingPlanTool(tc.name) && tc.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ @confirm="chatStore.handleConfirmCodingSession"
+ />
  <!-- 深度分析实时日志面板（同一消息只渲染一次） -->
  <div
  v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs && tc.id === primaryDeepAnalysisId"
@@ -562,8 +653,8 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- <!-- 展开详情 -->
- <div v-if="expandedTools.has(tc.id)" class="tool-detail">
+ <!-- 展开详情（排除 coding plan tool） -->
+ <div v-if="expandedTools.has(tc.id) && !isCodingPlanTool(tc.name)" class="tool-detail">
  <div class="tool-detail-section">
  <span class="tool-detail-label">输入</span>
  <pre class="tool-detail-json">{{ JSON.stringify(tc.input, null, 2) }}</pre>
@@ -604,6 +695,14 @@ const hideEmptyBubble = computed( =>
  <span v-if="copied" class="icon-[lucide--check] text-primary" />
  <span v-else class="icon-[lucide--copy]" />
  </button>
+ <button
+ v-if="props.message.role === 'assistant'"
+ class="action-btn"
+ title="导出到飞书"
+ @click="emit('exportSingle', props.message.id)"
+ >
+ <span class="icon-[lucide--file-up]" />
+ </button>
  <span class="action-divider" />
  <span class="action-meta">{{ formatTime(message.created_at) }}</span>
  <template v-if="metadata?.model">
@@ -616,6 +715,7 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
+ </div>
 </template>
 <style scoped>
 /* ============ User Bubble ============ */
@@ -623,13 +723,12 @@ const hideEmptyBubble = computed( =>
  max-width: 80%;
  padding: 0.625rem 1rem;
  border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
- background: linear-gradient(135deg, #14b8a6, #06b6d4);
- color: white;
+ background: hsl(var(--primary));
+ color: hsl(var(--primary-foreground));
  font-size: 0.875rem;
  line-height: 1.625;
  white-space: pre-wrap;
  word-break: break-word;
- box-shadow: 0 1px 3px rgba(20, 184, 166, 0.2);
 }
 /* ============ AI Message ============ */
 .ai-message {

@@ -3,6 +3,7 @@ Provides FeishuDocClient for document operations with Markdown conversion suppor
 Uses tenant_access_token authentication (same as IM API, different from Project API).
 """
 import time
+import unicodedata
 from typing import Any
 import httpx
 import mistune
@@ -20,6 +21,21 @@ class FeishuDocAPIError(Exception):
 class RateLimitError(FeishuDocAPIError):
  """Rate limit error, should retry with backoff."""
  pass
+class PermissionDeniedError(FeishuDocAPIError):
+ """用户无权限访问文档。"""
+ pass
+class DocumentNotFoundError(FeishuDocAPIError):
+ """文档不存在或已删除。"""
+ pass
+# 飞书 API 错误码分类集合
+PERMISSION_CODES: frozenset[int] = frozenset({91003, 91004, 91204, 95008, 95009, 99991672})
+NOT_FOUND_CODES: frozenset[int] = frozenset({1002, 18066, 91402, 95006, 95007})
+MAX_DOC_CHARS: int = 30_000
+def truncate_doc_content(markdown: str) -> tuple[str, bool]:
+ """截断过长文档内容。返回 (内容, 是否截断)。"""
+ if len(markdown) <= MAX_DOC_CHARS:
+ return markdown, False
+ return markdown[:MAX_DOC_CHARS], True
 class FeishuDocClient:
  """Feishu Document API client using tenant_access_token authentication.
  Provides methods to read and create Feishu cloud documents with
@@ -95,10 +111,15 @@ class FeishuDocClient:
  )
  data = response.json
  if data.get("code") != 0:
+ error_code = data.get("code", 0)
  error_msg = data.get("msg", "Unknown error")
- if "rate limit" in error_msg.lower or data.get("code") == 99991400:
+ if error_code == 99991400 or "rate limit" in error_msg.lower:
  raise RateLimitError(f"Rate limit hit: {error_msg}")
- raise FeishuDocAPIError(f"Failed to read document: {error_msg}")
+ if error_code in PERMISSION_CODES:
+ raise PermissionDeniedError(f"无权限访问文档: {error_msg}")
+ if error_code in NOT_FOUND_CODES:
+ raise DocumentNotFoundError(f"文档不存在: {error_msg}")
+ raise FeishuDocAPIError(f"读取文档失败: {error_msg}")
  blocks = data.get("data", {}).get("items", )
  markdown = blocks_to_markdown(blocks)
  logger.info(
@@ -177,43 +198,134 @@ class FeishuDocClient:
  blocks: list[dict[str, Any]],
  token: str,
  ) -> None:
- """Write blocks to a document.
- Args:
- document_id: Target document ID
- blocks: List of block definitions
- token: Authorization token
- """
- async with httpx.AsyncClient as client:
- # Get the document's root block ID first
- response = await client.get(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}",
- headers={"Authorization": f"Bearer {token}"},
- )
- data = response.json
- if data.get("code") != 0:
- raise FeishuDocAPIError(f"Failed to get document info: {data}")
- # The document itself is the root block
- # We need to add children to the page block
- response = await client.post(
- f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
- headers={
+ """Write blocks to a document. Uses descendants API for tables."""
+ # Split into groups: consecutive regular blocks, or single table
+ groups: list[dict[str, Any]] = # {"type": "regular"|"table", "data": ...}
+ current_regular: list[dict[str, Any]] =
+ for block in blocks:
+ if block.get("_table_data"):
+ if current_regular:
+ groups.append({"type": "regular", "data": current_regular})
+ current_regular =
+ groups.append({"type": "table", "data": block["_table_data"]})
+ else:
+ current_regular.append(block)
+ if current_regular:
+ groups.append({"type": "regular", "data": current_regular})
+ async with httpx.AsyncClient(timeout=30.0) as client:
+ headers = {
  "Authorization": f"Bearer {token}",
  "Content-Type": "application/json",
- },
- json={
- "children": blocks,
- "index": 0,
- },
+ }
+ # Write each group sequentially to maintain order
+ for group in groups:
+ if group["type"] == "regular":
+ await self._write_regular_blocks(
+ document_id, group["data"], headers, client,
+ )
+ else:
+ await self._write_table_via_descendants(
+ document_id, group["data"], headers, client,
+ )
+ async def _write_regular_blocks(
+ self,
+ document_id: str,
+ blocks: list[dict[str, Any]],
+ headers: dict[str, str],
+ client: Any,
+ ) -> None:
+ """Write regular (non-table) blocks via children API."""
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/children",
+ headers=headers,
+ json={"children": blocks, "index": -1},
  )
  data = response.json
  if data.get("code") != 0:
- logger.warning(
+ logger.error(
  "feishu_write_blocks_failed",
  document_id=document_id,
- error=data,
+ error_code=data.get("code"),
+ error_msg=data.get("msg"),
+ error_data=data,
  )
- # Don't raise - document was created, content write failed
- # This is a partial success
+ raise FeishuDocAPIError(
+ f"文档已创建但内容写入失败: {data.get('msg', 'Unknown error')} (code={data.get('code')})"
+ )
+ async def _write_table_via_descendants(
+ self,
+ document_id: str,
+ table_data: dict[str, Any],
+ headers: dict[str, str],
+ client: Any,
+ ) -> None:
+ """Write a table using the descendants API (single request, full structure)."""
+ row_size = table_data["row_size"]
+ col_size = table_data["column_size"]
+ cells = table_data["cells"] # list[list[list[element_dict]]]
+ table_id = "tbl_1"
+ descendants: list[dict[str, Any]] =
+ cell_ids: list[str] =
+ # Build cell blocks (row-major order)
+ for r in range(row_size):
+ for c in range(col_size):
+ cell_id = f"cell_{r}_{c}"
+ text_id = f"txt_{r}_{c}"
+ cell_ids.append(cell_id)
+ # Get elements for this cell
+ elements: list[dict[str, Any]] = [{"text_run": {"content": ""}}]
+ if r < len(cells) and c < len(cells[r]):
+ cell_elements = cells[r][c]
+ if cell_elements:
+ elements = cell_elements
+ # Table cell block
+ descendants.append({
+ "block_id": cell_id,
+ "block_type": 32,
+ "children": [text_id],
+ "table_cell": {},
+ })
+ # Text block inside cell
+ descendants.append({
+ "block_id": text_id,
+ "block_type": 2,
+ "text": {"elements": elements, "style": {}},
+ })
+ # Table block (parent of all cells)
+ table_block = {
+ "block_id": table_id,
+ "block_type": 31,
+ "children": cell_ids,
+ "table": {
+ "property": {
+ "row_size": row_size,
+ "column_size": col_size,
+ "column_width": _estimate_table_column_widths(cells, col_size),
+ "header_row": True,
+ },
+ },
+ }
+ descendants.insert(0, table_block)
+ payload = {
+ "children_id": [table_id],
+ "index": -1,
+ "descendants": descendants,
+ }
+ response = await client.post(
+ f"{self.OPEN_API_BASE}/docx/v1/documents/{document_id}/blocks/{document_id}/descendant",
+ headers=headers,
+ json=payload,
+ )
+ data = response.json
+ if data.get("code") != 0:
+ logger.error(
+ "feishu_write_table_failed",
+ document_id=document_id,
+ error_code=data.get("code"),
+ error_msg=data.get("msg"),
+ error_data=data,
+ )
+ # Don't raise — table failure shouldn't block the rest of the doc
 def blocks_to_markdown(blocks: list[dict[str, Any]]) -> str:
  """Convert Feishu document blocks to Markdown.
  Supports:
@@ -315,6 +427,66 @@ def _extract_text_content(block: dict[str, Any]) -> str:
  content = f"[{content}]({url})"
  parts.append(content)
  return "".join(parts)
+def _estimate_table_column_widths(
+ cells: list[list[list[dict[str, Any]]]],
+ column_count: int,
+) -> list[int]:
+ """Estimate Feishu table column widths in px from cell contents.
+ 飞书表格支持在 `table.property.column_width` 中传列宽。这里按每列最宽内容做
+ 估算，并对总宽度做约束，避免短列过宽或整张表无限膨胀。
+ """
+ if column_count <= 0:
+ return
+ min_width = 120
+ max_width = 420
+ total_width_budget = 1080
+ widths = [min_width] * column_count
+ for col_idx in range(column_count):
+ max_content_width = 0
+ for row in cells:
+ if col_idx >= len(row):
+ continue
+ cell_text = _elements_to_plain_text(row[col_idx])
+ max_content_width = max(max_content_width, _estimate_text_display_width(cell_text))
+ # 预留内边距，并让长文本列明显更宽一些。
+ estimated_px = 56 + (max_content_width * 14)
+ widths[col_idx] = max(min_width, min(max_width, estimated_px))
+ total_width = sum(widths)
+ if total_width <= total_width_budget:
+ return widths
+ shrinkable_total = sum(max(width - min_width, 0) for width in widths)
+ if shrinkable_total <= 0:
+ return widths
+ overflow = total_width - total_width_budget
+ adjusted: list[int] =
+ for width in widths:
+ shrinkable = max(width - min_width, 0)
+ shrink = round(overflow * (shrinkable / shrinkable_total)) if shrinkable_total else 0
+ adjusted.append(max(min_width, width - shrink))
+ # 处理四舍五入导致的残差，优先从最宽列继续回收。
+ while sum(adjusted) > total_width_budget:
+ widest_idx = max(range(len(adjusted)), key=lambda idx: adjusted[idx])
+ if adjusted[widest_idx] <= min_width:
+ break
+ adjusted[widest_idx] -= 1
+ return adjusted
+def _elements_to_plain_text(elements: list[dict[str, Any]]) -> str:
+ """Flatten Feishu text elements into plain text for width estimation."""
+ parts: list[str] =
+ for elem in elements:
+ text_run = elem.get("text_run", {})
+ content = text_run.get("content", "")
+ if content:
+ parts.append(str(content))
+ return "".join(parts)
+def _estimate_text_display_width(text: str) -> int:
+ """Estimate display width where CJK chars occupy more visual space."""
+ width = 0
+ for ch in text.strip:
+ if ch == "\n":
+ continue
+ width += 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+ return max(width, 1)
 def _get_language_name(language_code: int | str) -> str:
  """Map Feishu language code to language name.
  Args:
@@ -322,43 +494,32 @@ def _get_language_name(language_code: int | str) -> str:
  Returns:
  Language name for code fence
  """
- # Common language code mappings
+ # 飞书 API 代码块语言码 (1-75) 反向映射
  lang_map: dict[int, str] = {
  1: "plaintext",
- 2: "abap",
- 3: "ada",
- 4: "apache",
- 5: "apex",
- 22: "c",
- 23: "cpp",
- 24: "csharp",
- 25: "css",
- 26: "coffeescript",
- 27: "d",
- 28: "dart",
- 43: "go",
- 49: "html",
- 50: "http",
- 52: "java",
- 53: "javascript",
- 54: "json",
- 59: "kotlin",
- 60: "latex",
- 69: "markdown",
- 73: "objectivec",
- 78: "php",
- 79: "perl",
- 80: "plaintext",
- 81: "python",
- 85: "ruby",
- 86: "rust",
- 88: "scala",
- 90: "shell",
- 91: "sql",
- 92: "swift",
- 97: "typescript",
- 105: "xml",
- 106: "yaml",
+ 2: "bash",
+ 4: "c",
+ 5: "cpp",
+ 6: "csharp",
+ 7: "css",
+ 9: "go",
+ 12: "html",
+ 13: "java",
+ 14: "javascript",
+ 16: "json",
+ 18: "kotlin",
+ 20: "markdown",
+ 24: "objectivec",
+ 25: "php",
+ 28: "python",
+ 31: "ruby",
+ 32: "rust",
+ 33: "scala",
+ 36: "sql",
+ 37: "swift",
+ 39: "typescript",
+ 44: "xml",
+ 45: "yaml",
  }
  if isinstance(language_code, int):
  return lang_map.get(language_code, "")
@@ -374,8 +535,10 @@ def markdown_to_blocks(content: str) -> list[dict[str, Any]]:
  if not content.strip:
  return
  blocks: list[dict[str, Any]] =
- # Parse Markdown using mistune
- md = mistune.create_markdown(renderer=None)
+ # Mistune AST does not recognize GitHub-style tables unless the table
+ # plugin is enabled explicitly. Without it, pipe table syntax is parsed as
+ # plain paragraph text and Feishu receives literal `| ... |` lines.
+ md = mistune.create_markdown(renderer=None, plugins=["table"])
  tokens = md(content)
  if tokens is None:
  return blocks
@@ -385,236 +548,196 @@ def markdown_to_blocks(content: str) -> list[dict[str, Any]]:
  blocks.extend(token_blocks)
  return blocks
 def _token_to_blocks(token: Any) -> list[dict[str, Any]]:
- """Convert a mistune token to Feishu blocks.
- Handles list tokens by extracting all list items.
- Args:
- token: Mistune parsed token
- Returns:
- List of Feishu block definitions
- """
+ """Convert a mistune token to Feishu blocks."""
  if not isinstance(token, dict):
  return
  token_type = token.get("type", "")
- # Handle list tokens specially - extract all items
  if token_type == "list":
  blocks: list[dict[str, Any]] =
  is_ordered = token.get("attrs", {}).get("ordered", False)
- children = token.get("children", )
- for child in children:
+ for child in token.get("children", ):
  if child.get("type") == "list_item":
- text = _extract_token_text(child)
- if text:
- if is_ordered:
- blocks.append(_create_ordered_block(text))
- else:
- blocks.append(_create_bullet_block(text))
+ elements = _extract_token_elements(child)
+ if elements:
+ blocks.append(_create_block_with_elements(
+ 13 if is_ordered else 12,
+ "ordered" if is_ordered else "bullet",
+ elements,
+ ))
  return blocks
- # For other tokens, convert single token
+ if token_type == "table":
+ return _table_to_blocks(token)
  block = _token_to_block(token)
  return [block] if block else
 def _token_to_block(token: Any) -> dict[str, Any] | None:
- """Convert a mistune token to a Feishu block.
- Args:
- token: Mistune parsed token
- Returns:
- Feishu block definition or None
- """
+ """Convert a mistune token to a Feishu block."""
  if not isinstance(token, dict):
  return None
  token_type = token.get("type", "")
  if token_type == "paragraph":
- text = _extract_token_text(token)
- return _create_text_block(text)
+ elements = _extract_token_elements(token)
+ return _create_block_with_elements(2, "text", elements)
  elif token_type == "heading":
  level = token.get("attrs", {}).get("level", 1)
- text = _extract_token_text(token)
- return _create_heading_block(level, text)
- elif token_type == "list":
- # Lists are handled as individual items
- # Return None here, items are processed by caller
- return None
- elif token_type == "list_item":
- text = _extract_token_text(token)
- ordered = token.get("attrs", {}).get("ordered", False)
- if ordered:
- return _create_ordered_block(text)
- return _create_bullet_block(text)
+ elements = _extract_token_elements(token)
+ block_type = min(level + 2, 11)
+ return _create_block_with_elements(block_type, f"heading{level}", elements)
  elif token_type == "block_code":
  code = token.get("raw", "")
  lang = token.get("attrs", {}).get("info", "") or ""
  return _create_code_block(code, lang)
  elif token_type == "block_quote":
- text = _extract_token_text(token)
- return _create_quote_block(text)
+ elements = _extract_token_elements(token)
+ return _create_block_with_elements(15, "quote", elements)
+ elif token_type == "thematic_break":
+ return {"block_type": 22, "divider": {}} # Divider
  return None
-def _extract_token_text(token: dict[str, Any]) -> str:
- """Extract plain text from a token.
- Args:
- token: Mistune token
- Returns:
- Plain text content
+def _extract_token_elements(
+ token: dict[str, Any],
+ style: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+ """Extract structured elements (with inline styles) from a mistune token.
+ Returns a list of text_run dicts for use in Feishu block elements.
  """
+ if style is None:
+ style = {}
  # Direct text content
- if "raw" in token:
- return token["raw"]
- # Children tokens
+ if token.get("type") == "text" or (
+ "raw" in token and token.get("type") not in ("block_code", "codespan", "paragraph", "list_item", "strong", "emphasis", "link")
+ ):
+ raw = token.get("raw", "")
+ if not raw:
+ return
+ element: dict[str, Any] = {"text_run": {"content": raw}}
+ if style:
+ element["text_run"]["text_element_style"] = style
+ return [element]
+ # Inline code
+ if token.get("type") == "codespan":
+ raw = token.get("raw", token.get("children", ""))
+ if isinstance(raw, list):
+ raw = "".join(c.get("raw", "") if isinstance(c, dict) else str(c) for c in raw)
+ return [{"text_run": {"content": str(raw), "text_element_style": {**style, "inline_code": True}}}]
+ # Bold
+ if token.get("type") == "strong":
+ return _extract_children_elements(token, {**style, "bold": True})
+ # Italic
+ if token.get("type") == "emphasis":
+ return _extract_children_elements(token, {**style, "italic": True})
+ # Link
+ if token.get("type") == "link":
+ url = token.get("attrs", {}).get("url", "")
+ link_style = {**style, "link": {"url": url}} if url else style
+ return _extract_children_elements(token, link_style)
+ # Strikethrough
+ if token.get("type") == "strikethrough":
+ return _extract_children_elements(token, {**style, "strikethrough": True})
+ # Container types (paragraph, list_item, etc.) — recurse into children
+ return _extract_children_elements(token, style)
+def _extract_children_elements(
+ token: dict[str, Any],
+ style: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+ """Recurse into children and collect elements."""
  children = token.get("children", )
  if not children:
- return ""
- parts: list[str] =
+ return
+ elements: list[dict[str, Any]] =
  for child in children:
  if isinstance(child, dict):
- child_type = child.get("type", "")
- if child_type == "text":
- parts.append(child.get("raw", ""))
- elif child_type == "codespan":
- parts.append(f"`{child.get('raw', '')}`")
- elif child_type == "strong":
- inner = _extract_token_text(child)
- parts.append(f"**{inner}**")
- elif child_type == "emphasis":
- inner = _extract_token_text(child)
- parts.append(f"*{inner}*")
- elif child_type == "link":
- text = _extract_token_text(child)
- url = child.get("attrs", {}).get("url", "")
- parts.append(f"[{text}]({url})")
- elif child_type == "paragraph":
- parts.append(_extract_token_text(child))
- else:
- # Recursively extract from other types
- parts.append(_extract_token_text(child))
- elif isinstance(child, str):
- parts.append(child)
- return "".join(parts)
-def _create_text_block(text: str) -> dict[str, Any]:
- """Create a text/paragraph block.
- Args:
- text: Block text content
- Returns:
- Feishu text block definition
- """
- return {
- "block_type": 2, # Text
- "text": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
+ elements.extend(_extract_token_elements(child, style))
+ elif isinstance(child, str) and child:
+ element: dict[str, Any] = {"text_run": {"content": child}}
+ if style:
+ element["text_run"]["text_element_style"] = style
+ elements.append(element)
+ return elements
+def _table_to_blocks(token: dict[str, Any]) -> list[dict[str, Any]]:
+ """Convert a Markdown table to a Feishu table block with _table_data marker."""
+ head = None
+ body_rows: list[Any] =
+ for child in token.get("children", ):
+ if isinstance(child, dict):
+ if child.get("type") == "table_head":
+ head = child
+ elif child.get("type") == "table_body":
+ body_rows = child.get("children", )
+ # Collect all rows as cells: list[list[elements]]
+ all_rows: list[list[list[dict[str, Any]]]] =
+ # Header row (bold)
+ if head:
+ head_rows = head.get("children", )
+ if head_rows:
+ row = head_rows[0]
+ cells = row.get("children", )
+ header_row: list[list[dict[str, Any]]] =
+ for cell in cells:
+ elements = _extract_token_elements(cell)
+ # Make header cells bold
+ for elem in elements:
+ tr = elem.get("text_run", {})
+ style = tr.get("text_element_style", {})
+ style["bold"] = True
+ tr["text_element_style"] = style
+ header_row.append(elements)
+ all_rows.append(header_row)
+ # Body rows
+ for row in body_rows:
+ if not isinstance(row, dict):
+ continue
+ cells = row.get("children", )
+ body_row: list[list[dict[str, Any]]] =
+ for cell in cells:
+ elements = _extract_token_elements(cell)
+ body_row.append(elements)
+ all_rows.append(body_row)
+ if not all_rows:
+ return
+ row_size = len(all_rows)
+ col_size = max(len(r) for r in all_rows) if all_rows else 0
+ if col_size == 0:
+ return
+ # Pad rows to uniform column count
+ for row in all_rows:
+ while len(row) < col_size:
+ row.append([{"text_run": {"content": ""}}])
+ return [{
+ "_table_data": {
+ "row_size": row_size,
+ "column_size": col_size,
+ "cells": all_rows,
  },
- }
-def _create_heading_block(level: int, text: str) -> dict[str, Any]:
- """Create a heading block.
- Args:
- level: Heading level (1-9)
- text: Heading text
- Returns:
- Feishu heading block definition
- """
- # Feishu heading types: 3=H1, 4=H2, ..., 11=H9
- block_type = min(level + 2, 11) # Cap at heading 9
+ }]
+def _create_block_with_elements(
+ block_type: int,
+ block_key: str,
+ elements: list[dict[str, Any]],
+) -> dict[str, Any]:
+ """Create a Feishu block with pre-built elements."""
+ if not elements:
+ elements = [{"text_run": {"content": ""}}]
  return {
  "block_type": block_type,
- f"heading{level}": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
-def _create_bullet_block(text: str) -> dict[str, Any]:
- """Create a bullet list item block.
- Args:
- text: List item text
- Returns:
- Feishu bullet block definition
- """
- return {
- "block_type": 12, # Bullet
- "bullet": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
-def _create_ordered_block(text: str) -> dict[str, Any]:
- """Create an ordered list item block.
- Args:
- text: List item text
- Returns:
- Feishu ordered block definition
- """
- return {
- "block_type": 13, # Ordered
- "ordered": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
+ block_key: {
+ "elements": elements,
  "style": {},
  },
  }
 def _create_code_block(code: str, language: str = "") -> dict[str, Any]:
- """Create a code block.
- Args:
- code: Code content
- language: Programming language name
- Returns:
- Feishu code block definition
- """
- # Map language name to Feishu code
+ """Create a code block."""
  lang_code = _get_language_code(language)
  return {
- "block_type": 14, # Code
+ "block_type": 14,
  "code": {
  "elements": [
- {
- "text_run": {
- "content": code.rstrip("\n"),
- }
- }
+ {"text_run": {"content": code.rstrip("\n")}}
  ],
- "style": {
- "language": lang_code,
- },
+ "style": {"language": lang_code},
  },
  }
 def _create_quote_block(text: str) -> dict[str, Any]:
- """Create a quote block.
- Args:
- text: Quote text content
- Returns:
- Feishu quote block definition
- """
- return {
- "block_type": 15, # Quote
- "quote": {
- "elements": [
- {
- "text_run": {
- "content": text,
- }
- }
- ],
- "style": {},
- },
- }
+ """Create a quote block (plain text version, used by blocks_to_markdown)."""
+ return _create_block_with_elements(15, "quote", [{"text_run": {"content": text}}])
 def _get_language_code(language: str) -> int:
  """Map language name to Feishu language code.
  Args:
@@ -622,45 +745,51 @@ def _get_language_code(language: str) -> int:
  Returns:
  Feishu language code (defaults to plaintext)
  """
+ # 飞书 API 代码块语言码范围为 1-75
+ # 参考: https://open.feishu.cn/document/client-docs/docs-add-on/06-code-block
  lang_map: dict[str, int] = {
  "": 1,
  "text": 1,
  "plaintext": 1,
- "c": 22,
- "cpp": 23,
- "c++": 23,
- "csharp": 24,
- "c#": 24,
- "css": 25,
- "go": 43,
- "golang": 43,
- "html": 49,
- "java": 52,
- "javascript": 53,
- "js": 53,
- "json": 54,
- "kotlin": 59,
- "markdown": 69,
- "md": 69,
- "objectivec": 73,
- "objc": 73,
- "php": 78,
- "python": 81,
- "py": 81,
- "ruby": 85,
- "rb": 85,
- "rust": 86,
- "rs": 86,
- "scala": 88,
- "shell": 90,
- "bash": 90,
- "sh": 90,
- "sql": 91,
- "swift": 92,
- "typescript": 97,
- "ts": 97,
- "xml": 105,
- "yaml": 106,
- "yml": 106,
+ "bash": 2,
+ "sh": 2,
+ "shell": 2,
+ "c": 4,
+ "cpp": 5,
+ "c++": 5,
+ "csharp": 6,
+ "c#": 6,
+ "css": 7,
+ "go": 9,
+ "golang": 9,
+ "html": 12,
+ "java": 13,
+ "javascript": 14,
+ "js": 14,
+ "json": 16,
+ "kotlin": 18,
+ "markdown": 20,
+ "md": 20,
+ "objectivec": 24,
+ "objc": 24,
+ "php": 25,
+ "python": 28,
+ "py": 28,
+ "ruby": 31,
+ "rb": 31,
+ "rust": 32,
+ "rs": 32,
+ "scala": 33,
+ "sql": 36,
+ "swift": 37,
+ "typescript": 39,
+ "ts": 39,
+ "xml": 44,
+ "yaml": 45,
+ "yml": 45,
  }
- return lang_map.get(language.lower, 1)
+ code = lang_map.get(language.lower, 1)
+ # 安全兜底：确保不超出 API 允许范围
+ if code < 1 or code > 75:
+ return 1
+ return code

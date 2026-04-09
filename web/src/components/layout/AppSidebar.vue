@@ -90,9 +90,8 @@ async function handleLogout {
  to="/"
  class="group flex items-center gap-2.5 overflow-hidden"
  >
- <div class="relative shrink-0 flex items-center justify-center w-9 rounded-xl overflow-hidden shadow-[0_0_12px_rgba(20,184,166,0.3)]">
- <div class="absolute inset-0 gradient-primary" />
- <span class="icon-[lucide--bot] text-lg text-white relative z-10" />
+ <div class="shrink-0 w-9 rounded-xl overflow-hidden shadow-[0_0_12px_rgba(20,184,166,0.3)]">
+ <img src="/friday-ai.svg" alt="Friday AI" class="w-full h-full" />
  </div>
  <div v-if="!isCollapsed" class="flex flex-col">
  <span class="text-lg font-bold text-foreground whitespace-nowrap">Friday AI</span>

@@ -41,6 +41,7 @@ declare global {
  const effectScope: typeof import('vue').effectScope
  const extendRef: typeof import('@vueuse/core').extendRef
  const extractErrorMessage: typeof import('./composables/useErrorHandler').extractErrorMessage
+ const extractFirstFeishuDocId: typeof import('./composables/useFeishuDocDetect').extractFirstFeishuDocId
  const extractNodeVarRefs: typeof import('./composables/useDownstreamVarCheck').extractNodeVarRefs
  const getActivePinia: typeof import('pinia').getActivePinia
  const getCurrentInstance: typeof import('vue').getCurrentInstance
@@ -420,6 +421,7 @@ declare module 'vue' {
  readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
  readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
  readonly extractErrorMessage: UnwrapRef<typeof import('./composables/useErrorHandler')['extractErrorMessage']>
+ readonly extractFirstFeishuDocId: UnwrapRef<typeof import('./composables/useFeishuDocDetect')['extractFirstFeishuDocId']>
  readonly extractNodeVarRefs: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['extractNodeVarRefs']>
  readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
  readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>

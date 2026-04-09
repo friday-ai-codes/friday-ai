@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams } from '~/types/chat'
+import type { CodingSessionResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
 import { del, get, post } from './client'
 // ============================================================================
 // 类型定义
@@ -205,6 +205,36 @@ export async function removePushSubscription(endpoint: string): Promise<void> {
  await post('/chat/push/subscriptions/unsubscribe/', { endpoint })
 }
 // ============================================================================
+// 导出到飞书文档 (Phase)
+// ============================================================================
+/**
+ * 导出对话消息到飞书文档
+ */
+export async function exportToFeishu(
+ conversationId: string,
+ data: ExportToFeishuRequest,
+): Promise<ExportToFeishuResponse> {
+ return post<ExportToFeishuResponse>(
+ `/chat/conversations/${conversationId}/export-to-feishu/`,
+ data,
+ )
+}
+// ============================================================================
+// 编码会话 (Phase)
+// ============================================================================
+/**
+ * 确认编码方案 — 触发 Runner 编码执行
+ */
+export async function confirmCodingSession(sessionId: string): Promise<CodingSessionResponse> {
+ return post<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/confirm/`)
+}
+/**
+ * 获取编码会话详情
+ */
+export async function getCodingSession(sessionId: string): Promise<CodingSessionResponse> {
+ return get<CodingSessionResponse>(`/chat/coding-sessions/${sessionId}/`)
+}
+// ============================================================================
 // 默认导出
 // ============================================================================
 export default {
@@ -219,4 +249,7 @@ export default {
  getPushPublicKey,
  savePushSubscription,
  removePushSubscription,
+ exportToFeishu,
+ confirmCodingSession,
+ getCodingSession,
 }
