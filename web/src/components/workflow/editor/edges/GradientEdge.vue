@@ -6,13 +6,16 @@ import type { EdgeProps } from '@vue-flow/core'
  * 根据源/目标节点类别色渲染 SVG 线性渐变，选中时加粗发光。
  * 支持 label 显示（如审批驳回的「驳回修改」标签）。
  */
-import { BaseEdge, getSmoothStepPath } from '@vue-flow/core'
+import { BaseEdge } from '@vue-flow/core'
 import { computed } from 'vue'
 import { getNodeDefinition } from '~/types/workflow/registry'
+import { getWorkflowEdgeRoute } from '../utils/edgeRouting'
 const props = defineProps<EdgeProps>
-const path = computed( => getSmoothStepPath({
- ...props,
- borderRadius: 16,
+const route = computed( => getWorkflowEdgeRoute({
+ sourceX: props.sourceX,
+ sourceY: props.sourceY,
+ targetX: props.targetX,
+ targetY: props.targetY,
 }))
 const CATEGORY_COLORS: Record<string, string> = {
  trigger: '#F59E0B',
@@ -33,9 +36,10 @@ const targetColor = computed( => getColor(props.targetNode?.data?.nodeType as st
 const gradientId = computed( => `edge-gradient-${props.id}`)
 const edgeStyle = computed( => ({
  stroke: `url(#${gradientId.value})`,
- strokeWidth: props.selected ? 3: 1.5,
- filter: props.selected ? 'drop-shadow(0 0 4px rgba(139,92,246,0.5))': 'none',
- transition: 'stroke-width 0.2s, filter 0.2s',
+ strokeWidth: props.selected ? 3: 2,
+ strokeOpacity: props.selected ? 0.95: 0.82,
+ filter: props.selected ? 'drop-shadow(0 0 6px rgba(139,92,246,0.45))': 'drop-shadow(0 1px 2px rgba(15,23,42,0.08))',
+ transition: 'stroke-width 0.2s, stroke-opacity 0.2s, filter 0.2s',
 }))
 </script>
 <script lang="ts">
@@ -50,6 +54,6 @@ export default { inheritAttrs: false }
  <stop offset="100%":stop-color="targetColor" />
  </linearGradient>
  </defs>
- <BaseEdge:id="id":path="path[0]":label="label":label-x="path[1]":label-y="path[2]":label-style="{ fill: 'hsl(var(--foreground))', fontSize: '11px', fontWeight: 500 }":label-bg-style="{ fill: 'hsl(var(--card))', fillOpacity: 0.9 }":label-bg-padding="[4, 8]":label-bg-border-radius="6":marker-end="markerEnd":style="edgeStyle"
+ <BaseEdge:id="id":path="route.path":label="label":label-x="route.labelX":label-y="route.labelY":label-style="{ fill: 'hsl(var(--foreground))', fontSize: '11px', fontWeight: 600 }":label-bg-style="{ fill: 'hsl(var(--card))', fillOpacity: 0.94, stroke: 'rgba(148, 163, 184, 0.22)', strokeWidth: 1 }":label-bg-padding="[4, 9]":label-bg-border-radius="999":marker-end="markerEnd":style="edgeStyle"
  />
 </template>
