@@ -15,7 +15,7 @@ env:
  IMAGE_PREFIX: ghcr.io/friday-ai-codes/friday-ai
 jobs:
  # ─────────────────────────────────────────────
- # 1. 解析 tag，决定构建哪些服务
+ # 1. 解析 tag，决定构建哪些服务并生成并行矩阵
  # ─────────────────────────────────────────────
  resolve:
  runs-on: ubuntu-latest
@@ -24,8 +24,13 @@ jobs:
  build_server: ${{ steps.meta.outputs.build_server }}
  build_web: ${{ steps.meta.outputs.build_web }}
  build_runner: ${{ steps.meta.outputs.build_runner }}
+ build_any: ${{ steps.meta.outputs.build_any }}
+ build_matrix: ${{ steps.meta.outputs.build_matrix }}
  steps:
- - name: Parse tag
+ - uses: actions/checkout@v4
+ with:
+ fetch-depth: 0
+ - name: Parse tag and detect changed services
  id: meta
  run: |
  TAG="${GITHUB_REF_NAME}"
@@ -35,114 +40,243 @@ jobs:
  VERSION="${VERSION#web-}"
  VERSION="${VERSION#runner-}"
  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+ BUILD_SERVER=false
+ BUILD_WEB=false
+ BUILD_RUNNER=false
  # 决定构建范围
  if [[ "$TAG" == server-v* ]]; then
- echo "build_server=true" >> "$GITHUB_OUTPUT"
- echo "build_web=false" >> "$GITHUB_OUTPUT"
- echo "build_runner=false" >> "$GITHUB_OUTPUT"
+ BUILD_SERVER=true
  elif [[ "$TAG" == web-v* ]]; then
- echo "build_server=false" >> "$GITHUB_OUTPUT"
- echo "build_web=true" >> "$GITHUB_OUTPUT"
- echo "build_runner=false" >> "$GITHUB_OUTPUT"
+ BUILD_WEB=true
  elif [[ "$TAG" == runner-v* ]]; then
- echo "build_server=false" >> "$GITHUB_OUTPUT"
- echo "build_web=false" >> "$GITHUB_OUTPUT"
- echo "build_runner=true" >> "$GITHUB_OUTPUT"
+ BUILD_RUNNER=true
  else
- # 全局 tag（v*）：构建全部
- echo "build_server=true" >> "$GITHUB_OUTPUT"
- echo "build_web=true" >> "$GITHUB_OUTPUT"
- echo "build_runner=true" >> "$GITHUB_OUTPUT"
+ PREV_TAG="$(python - "$TAG" <<'PY'
+ import subprocess
+ import sys
+ current = sys.argv[1]
+ tags = subprocess.check_output(
+ ["git", "tag", "--list", "v*", "--sort=-version:refname"],
+ text=True,
+ ).splitlines
+ for tag in tags:
+ if tag and tag != current and not tag.startswith(("server-", "web-", "runner-")):
+ print(tag)
+ break
+ PY
+ )"
+ if [[ -n "$PREV_TAG" ]]; then
+ echo "Comparing changed files against ${PREV_TAG}"
+ CHANGED_FILES="$(git diff --name-only "${PREV_TAG}..${TAG}")"
+ else
+ echo "No previous global tag found, building all services"
+ CHANGED_FILES="$(git ls-tree -r --name-only "${TAG}")"
  fi
+ if printf '%s\n' "$CHANGED_FILES" | rg -q '^server/'; then
+ BUILD_SERVER=true
+ fi
+ if printf '%s\n' "$CHANGED_FILES" | rg -q '^(web/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+ BUILD_WEB=true
+ fi
+ if printf '%s\n' "$CHANGED_FILES" | rg -q '^runner/'; then
+ BUILD_RUNNER=true
+ fi
+ fi
+ echo "build_server=${BUILD_SERVER}" >> "$GITHUB_OUTPUT"
+ echo "build_web=${BUILD_WEB}" >> "$GITHUB_OUTPUT"
+ echo "build_runner=${BUILD_RUNNER}" >> "$GITHUB_OUTPUT"
+ if [[ "$BUILD_SERVER" == "true" || "$BUILD_WEB" == "true" || "$BUILD_RUNNER" == "true" ]]; then
+ echo "build_any=true" >> "$GITHUB_OUTPUT"
+ else
+ echo "build_any=false" >> "$GITHUB_OUTPUT"
+ fi
+ BUILD_SERVER="$BUILD_SERVER" BUILD_WEB="$BUILD_WEB" BUILD_RUNNER="$BUILD_RUNNER" python <<'PY' >> "$GITHUB_OUTPUT"
+ import json
+ import os
+ services =
+ if os.environ["BUILD_SERVER"] == "true":
+ services.append(("server", "./server", "./server/Dockerfile"))
+ if os.environ["BUILD_WEB"] == "true":
+ services.append(("web", "./web", "./web/Dockerfile"))
+ if os.environ["BUILD_RUNNER"] == "true":
+ services.append(("runner", "./runner", "./runner/Dockerfile"))
+ matrix = {"include": }
+ for service, context, dockerfile in services:
+ for platform, platform_pair in (
+ ("linux/amd64", "amd64"),
+ ("linux/arm64", "arm64"),
+ ):
+ matrix["include"].append(
+ {
+ "service": service,
+ "context": context,
+ "dockerfile": dockerfile,
+ "platform": platform,
+ "platform_pair": platform_pair,
+ }
+ )
+ print(f"build_matrix={json.dumps(matrix, separators=(',', ':'))}")
+ PY
  # ─────────────────────────────────────────────
- # 2. 构建并推送 Server 镜像
+ # 2. 并行构建并按 digest 推送单架构镜像
  # ─────────────────────────────────────────────
- build-server:
+ build-images:
+ name: build-${{ matrix.service }}-${{ matrix.platform_pair }}
  needs: resolve
+ if: needs.resolve.outputs.build_any == 'true'
+ runs-on: ubuntu-latest
+ strategy:
+ fail-fast: false
+ matrix: ${{ fromJSON(needs.resolve.outputs.build_matrix) }}
+ steps:
+ - uses: actions/checkout@v4
+ - uses: docker/login-action@v3
+ with:
+ registry: ${{ env.REGISTRY }}
+ username: ${{ github.actor }}
+ password: ${{ secrets.GITHUB_TOKEN }}
+ - uses: docker/setup-qemu-action@v3
+ if: matrix.platform_pair == 'arm64'
+ - uses: docker/setup-buildx-action@v3
+ - name: Build and push by digest
+ id: build
+ uses: docker/build-push-action@v6
+ with:
+ context: ${{ matrix.context }}
+ file: ${{ matrix.dockerfile }}
+ platforms: ${{ matrix.platform }}
+ outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+ cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.platform_pair }}
+ cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ matrix.platform_pair }}
+ - name: Export digest
+ run: |
+ mkdir -p /tmp/digests
+ digest="${{ steps.build.outputs.digest }}"
+ touch "/tmp/digests/${digest#sha256:}"
+ - name: Upload digest artifact
+ uses: actions/upload-artifact@v4
+ with:
+ name: digests-${{ matrix.service }}-${{ matrix.platform_pair }}
+ path: /tmp/digests/*
+ if-no-files-found: error
+ retention-days: 1
+ # ─────────────────────────────────────────────
+ # 3. 合并各架构 digest 为多架构 manifest
+ # ─────────────────────────────────────────────
+ merge-server:
+ name: merge-server-manifest
+ needs: [resolve, build-images]
  if: needs.resolve.outputs.build_server == 'true'
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v4
  - uses: docker/login-action@v3
  with:
  registry: ${{ env.REGISTRY }}
  username: ${{ github.actor }}
  password: ${{ secrets.GITHUB_TOKEN }}
- - uses: docker/setup-qemu-action@v3
  - uses: docker/setup-buildx-action@v3
- - uses: docker/build-push-action@v6
+ - uses: actions/download-artifact@v4
  with:
- context: ./server
- platforms: linux/amd64,linux/arm64
- push: true
- tags: |
- ${{ env.IMAGE_PREFIX }}/server:${{ needs.resolve.outputs.version }}
- ${{ env.IMAGE_PREFIX }}/server:latest
- cache-from: type=gha
- cache-to: type=gha,mode=max
- # ─────────────────────────────────────────────
- # 3. 构建并推送 Web 镜像
- # ─────────────────────────────────────────────
- build-web:
- needs: resolve
+ path: /tmp/digests
+ pattern: digests-server-*
+ merge-multiple: true
+ - name: Create multi-arch manifest
+ env:
+ IMAGE: ${{ env.IMAGE_PREFIX }}/server
+ VERSION: ${{ needs.resolve.outputs.version }}
+ run: |
+ DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
+ import os
+ image = os.environ["IMAGE"]
+ digests_dir = "/tmp/digests"
+ digests = sorted(name for name in os.listdir(digests_dir) if name)
+ print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
+ PY
+ )"
+ docker buildx imagetools create \
+ -t "${IMAGE}:${VERSION}" \
+ -t "${IMAGE}:latest" \
+ ${DIGEST_REFS}
+ merge-web:
+ name: merge-web-manifest
+ needs: [resolve, build-images]
  if: needs.resolve.outputs.build_web == 'true'
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v4
  - uses: docker/login-action@v3
  with:
  registry: ${{ env.REGISTRY }}
  username: ${{ github.actor }}
  password: ${{ secrets.GITHUB_TOKEN }}
- - uses: docker/setup-qemu-action@v3
  - uses: docker/setup-buildx-action@v3
- - uses: docker/build-push-action@v6
+ - uses: actions/download-artifact@v4
  with:
- context: ./web
- platforms: linux/amd64,linux/arm64
- push: true
- tags: |
- ${{ env.IMAGE_PREFIX }}/web:${{ needs.resolve.outputs.version }}
- ${{ env.IMAGE_PREFIX }}/web:latest
- cache-from: type=gha
- cache-to: type=gha,mode=max
- # ─────────────────────────────────────────────
- # 4. 构建并推送 Runner 镜像
- # ─────────────────────────────────────────────
- build-runner:
- needs: resolve
+ path: /tmp/digests
+ pattern: digests-web-*
+ merge-multiple: true
+ - name: Create multi-arch manifest
+ env:
+ IMAGE: ${{ env.IMAGE_PREFIX }}/web
+ VERSION: ${{ needs.resolve.outputs.version }}
+ run: |
+ DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
+ import os
+ image = os.environ["IMAGE"]
+ digests_dir = "/tmp/digests"
+ digests = sorted(name for name in os.listdir(digests_dir) if name)
+ print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
+ PY
+ )"
+ docker buildx imagetools create \
+ -t "${IMAGE}:${VERSION}" \
+ -t "${IMAGE}:latest" \
+ ${DIGEST_REFS}
+ merge-runner:
+ name: merge-runner-manifest
+ needs: [resolve, build-images]
  if: needs.resolve.outputs.build_runner == 'true'
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v4
  - uses: docker/login-action@v3
  with:
  registry: ${{ env.REGISTRY }}
  username: ${{ github.actor }}
  password: ${{ secrets.GITHUB_TOKEN }}
- - uses: docker/setup-qemu-action@v3
  - uses: docker/setup-buildx-action@v3
- - uses: docker/build-push-action@v6
+ - uses: actions/download-artifact@v4
  with:
- context: ./runner
- platforms: linux/amd64,linux/arm64
- push: true
- tags: |
- ${{ env.IMAGE_PREFIX }}/runner:${{ needs.resolve.outputs.version }}
- ${{ env.IMAGE_PREFIX }}/runner:latest
- cache-from: type=gha
- cache-to: type=gha,mode=max
+ path: /tmp/digests
+ pattern: digests-runner-*
+ merge-multiple: true
+ - name: Create multi-arch manifest
+ env:
+ IMAGE: ${{ env.IMAGE_PREFIX }}/runner
+ VERSION: ${{ needs.resolve.outputs.version }}
+ run: |
+ DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
+ import os
+ image = os.environ["IMAGE"]
+ digests_dir = "/tmp/digests"
+ digests = sorted(name for name in os.listdir(digests_dir) if name)
+ print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
+ PY
+ )"
+ docker buildx imagetools create \
+ -t "${IMAGE}:${VERSION}" \
+ -t "${IMAGE}:latest" \
+ ${DIGEST_REFS}
  # ─────────────────────────────────────────────
  # 5. 生成 Changelog 并创建 GitHub Release
  # ─────────────────────────────────────────────
  create-release:
- needs: [resolve, build-server, build-web, build-runner]
+ needs: [resolve, build-images, merge-server, merge-web, merge-runner]
  if: |
  always &&
  needs.resolve.result == 'success' &&
- (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') &&
- (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
- (needs.build-runner.result == 'success' || needs.build-runner.result == 'skipped')
+ (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+ (needs.merge-server.result == 'success' || needs.merge-server.result == 'skipped') &&
+ (needs.merge-web.result == 'success' || needs.merge-web.result == 'skipped') &&
+ (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
  runs-on: ubuntu-latest
  steps:
  - uses: actions/checkout@v4
@@ -202,14 +336,16 @@ jobs:
  # 6. 更新 Kustomize newTag 并提交回主分支
  # ─────────────────────────────────────────────
  update-manifests:
- needs: [resolve, build-server, build-web, build-runner]
- # 只要 resolve 成功且至少一个 build 成功就执行
+ needs: [resolve, build-images, merge-server, merge-web, merge-runner]
+ # 只有真正构建了镜像才回写 manifests
  if: |
  always &&
+ needs.resolve.outputs.build_any == 'true' &&
  needs.resolve.result == 'success' &&
- (needs.build-server.result == 'success' || needs.build-server.result == 'skipped') &&
- (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
- (needs.build-runner.result == 'success' || needs.build-runner.result == 'skipped')
+ (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
+ (needs.merge-server.result == 'success' || needs.merge-server.result == 'skipped') &&
+ (needs.merge-web.result == 'success' || needs.merge-web.result == 'skipped') &&
+ (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
  runs-on: ubuntu-latest
  steps:
  - uses: actions/checkout@v4
