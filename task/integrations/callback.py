@@ -157,3 +157,19 @@ class CallbackClient:
  "modified_files": modified_files,
  },
  )
+ async def report_suggested_commit_message(
+ self,
+ suggested_commit_message: str,
+ ) -> bool:
+ """回传 AI 建议的 commit message 到 SubAgentSession.last_output。
+ 通过 progress 回调写入 last_output，供 Phase 完成回调读取。
+ Per: Phase 容器通过 SubAgentSession.last_output 回传 suggested_commit_message。
+ """
+ return await self.report_status(
+ status="progress",
+ message="AI suggested commit message generated",
+ details={
+ "suggested_commit_message": suggested_commit_message,
+ "phase": "coding_complete",
+ },
+ )
