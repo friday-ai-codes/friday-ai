@@ -155,6 +155,19 @@ class CodingSession(models.Model):
  verbose_name="AI 建议的 commit message",
  help_text="Phase 容器回传，支持页面刷新后恢复",
  )
+ suggested_pr_title = models.CharField(
+ max_length=200,
+ blank=True,
+ default="",
+ verbose_name="AI 建议的 PR 标题",
+ help_text="generate_pr_draft 节点生成，支持页面刷新后恢复",
+ )
+ suggested_pr_description = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="AI 建议的 PR 描述",
+ help_text="generate_pr_draft 节点生成，支持页面刷新后恢复",
+ )
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

@@ -183,7 +183,7 @@ class TestGraphInterrupt:
  ) -> None:
  """Phase 成功后 graph 进入 generate_pr_draft（而非直接结束）。"""
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- patch("orchestration.coding_graph.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
  patch("orchestration.coding_graph.anthropic") as mock_anthropic:
  # mock LLM 返回 PR 草稿
  mock_response = MagicMock
@@ -259,7 +259,7 @@ class TestDBStateSync:
  ) -> None:
  """完整流程中各节点调用正确的 DB 方法（到 Phase 完成进入 PR 流程）。"""
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- patch("orchestration.coding_graph.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
  patch("orchestration.coding_graph.anthropic") as mock_anthropic:
  # mock LLM
  mock_response = MagicMock
@@ -303,16 +303,17 @@ class TestCodingSessionStateFields:
  """验证 CodingSessionState TypedDict 包含 PR 相关字段。"""
  def test_state_has_pr_fields(self) -> None:
  """CodingSessionState 包含 PR Phase 相关字段。"""
- annotations = CodingSessionState.__annotations__
- assert "suggested_pr_title" in annotations
- assert "suggested_pr_description" in annotations
- assert "confirmed_pr_title" in annotations
- assert "confirmed_pr_description" in annotations
- assert "target_branch" in annotations
- assert "skip_pr" in annotations
- # 类型正确性
- assert annotations["suggested_pr_title"] is str
- assert annotations["skip_pr"] is bool
+ import typing
+ hints = typing.get_type_hints(CodingSessionState)
+ assert "suggested_pr_title" in hints
+ assert "suggested_pr_description" in hints
+ assert "confirmed_pr_title" in hints
+ assert "confirmed_pr_description" in hints
+ assert "target_branch" in hints
+ assert "skip_pr" in hints
+ # 类型正确性（使用 get_type_hints 解析 ForwardRef）
+ assert hints["suggested_pr_title"] is str
+ assert hints["skip_pr"] is bool
 # ---------------------------------------------------------------------------
 # PR Phase 测试
 # ---------------------------------------------------------------------------
@@ -328,7 +329,7 @@ def _setup_llm_mock(mock_anthropic: MagicMock, title: str = "feat: test PR", des
 def _patch_llm_and_settings -> tuple:
  """返回 LLM 和 settings 的 patch context managers。"""
  return (
- patch("orchestration.coding_graph.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
  patch("orchestration.coding_graph.anthropic"),
  )
 async def _drive_to_phase2_complete(
@@ -440,7 +441,8 @@ class TestPRPhase:
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
  """LLM 调用抛异常时使用 fallback 模板。"""
- mock_coding_session.confirmed_commit_message = "feat: fallback commit message line 1\nline 2"
+ # confirmed_commit_message 来自 graph state（由 await_commit_confirm 设置），
+ # _drive_to_phase2_complete 中 commit confirm resume 传入 "feat: user message"
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic:
@@ -450,8 +452,11 @@ class TestPRPhase:
  mock_anthropic.AsyncAnthropic.return_value = mock_client
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  result = await _drive_to_phase2_complete(graph, graph_config)
- # 使用 fallback: commit message 第一行作为 title
- assert mock_coding_session.suggested_pr_title == "feat: fallback commit message line 1"
+ # 使用 fallback: state 中 confirmed_commit_message 第一行作为 title
+ # _drive_to_phase2_complete 中 commit confirm resume 传入 "feat: user message"
+ assert mock_coding_session.suggested_pr_title == "feat: user message"
+ # tech_plan 前 500 字作为 description
+ assert mock_coding_session.suggested_pr_description == mock_coding_session.tech_plan[:500]
  # 流程不阻塞，仍然进入 await_pr_confirm
  state = await graph.aget_state(graph_config)
  assert "await_pr_confirm" in state.next
@@ -463,7 +468,7 @@ class TestPRPhase:
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic, \
- patch("orchestration.coding_graph.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store:
+ patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store:
  _setup_llm_mock(mock_anthropic)
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  await _drive_to_phase2_complete(graph, graph_config)
@@ -489,10 +494,10 @@ class TestPRPhase:
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic, \
- patch("orchestration.coding_graph.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store, \
- patch("orchestration.coding_graph.GitCredential") as mock_git_cred_cls, \
- patch("orchestration.coding_graph.decrypt_value", return_value="test-token"), \
- patch("orchestration.coding_graph.get_git_platform_client") as mock_get_client:
+ patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store, \
+ patch("repositories.models.GitCredential") as mock_git_cred_cls, \
+ patch("common.encryption.decrypt_value", return_value="test-token"), \
+ patch("services.git_platform.get_git_platform_client") as mock_get_client:
  _setup_llm_mock(mock_anthropic)
  # mock GitCredential
  mock_cred = MagicMock
@@ -529,9 +534,9 @@ class TestPRPhase:
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic, \
- patch("orchestration.coding_graph.GitCredential") as mock_git_cred_cls, \
- patch("orchestration.coding_graph.decrypt_value", return_value="test-token"), \
- patch("orchestration.coding_graph.get_git_platform_client") as mock_get_client:
+ patch("repositories.models.GitCredential") as mock_git_cred_cls, \
+ patch("common.encryption.decrypt_value", return_value="test-token"), \
+ patch("services.git_platform.get_git_platform_client") as mock_get_client:
  _setup_llm_mock(mock_anthropic)
  mock_cred = MagicMock
  mock_cred.encrypted_token = "encrypted-token"
@@ -563,10 +568,10 @@ class TestPRPhase:
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  settings_patch, anthropic_patch as mock_anthropic, \
- patch("orchestration.coding_graph.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store, \
- patch("orchestration.coding_graph.GitCredential") as mock_git_cred_cls, \
- patch("orchestration.coding_graph.decrypt_value", return_value="test-token"), \
- patch("orchestration.coding_graph.get_git_platform_client") as mock_get_client:
+ patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock) as mock_store, \
+ patch("repositories.models.GitCredential") as mock_git_cred_cls, \
+ patch("common.encryption.decrypt_value", return_value="test-token"), \
+ patch("services.git_platform.get_git_platform_client") as mock_get_client:
  _setup_llm_mock(mock_anthropic)
  mock_cred = MagicMock
  mock_cred.encrypted_token = "encrypted-token"

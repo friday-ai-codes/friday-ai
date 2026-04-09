@@ -7,8 +7,14 @@ from __future__ import annotations
 import structlog
 from chat.models import CodingSession, Message
 logger = structlog.get_logger(__name__)
-async def store_coding_complete_to_message(coding_session: CodingSession) -> None:
- """编码完成时，将 PR 结果写入关联 Message.metadata。"""
+async def store_coding_complete_to_message(
+ coding_session: CodingSession, branch_url: str = "",
+) -> None:
+ """编码完成时，将 PR 结果写入关联 Message.metadata。
+ Args:
+ coding_session: CodingSession 实例。
+ branch_url: 分支 URL（skip PR 场景下提供，per ）。
+ """
  if not coding_session.message_id:
  logger.warning("coding_complete_no_message", session_id=str(coding_session.id))
  return
@@ -20,6 +26,7 @@ async def store_coding_complete_to_message(coding_session: CodingSession) -> Non
  "sessionId": str(coding_session.id),
  "status": "completed",
  "prUrl": coding_session.pr_url,
+ "branchUrl": branch_url,
  "branchName": coding_session.branch_name,
  "modifiedFilesCount": len(coding_session.affected_files) if coding_session.affected_files else 0,
  }
