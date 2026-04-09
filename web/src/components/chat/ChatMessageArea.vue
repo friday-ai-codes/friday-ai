@@ -9,6 +9,8 @@ import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import CodingErrorCard from './CodingErrorCard.vue'
 import CodingProgressCard from './CodingProgressCard.vue'
 import CodingResultCard from './CodingResultCard.vue'
+import CommitConfirmCard from './CommitConfirmCard.vue'
+import PRConfirmCard from './PRConfirmCard.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 const chatStore = useChatStore
@@ -33,7 +35,7 @@ const historyCodingResult = computed( => {
  for (let i = chatStore.messages.length - 1; i >= 0; i--) {
  const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
  if (meta?.codingResult) {
- return meta.codingResult as { sessionId: string; prUrl: string; branchName: string; modifiedFilesCount: number }
+ return meta.codingResult as { sessionId: string; prUrl: string; branchName: string; modifiedFilesCount: number; branchUrl?: string }
  }
  }
  return null
@@ -51,6 +53,33 @@ watch(
  => chatStore.currentConversationId,
  => nextTick( => scrollToBottom('instant')),
 )
+// ============================================================================
+// 编码确认流程事件 (Phase)
+// ============================================================================
+function handleCommitConfirmed(sessionId: string, commitMessage: string) {
+ // 记录已完成步骤（ 折叠摘要）
+ chatStore.completedConfirmSteps.push({
+ step: 'commit_message',
+ summary: `Commit: ${commitMessage.split('\n')[0].slice(0, 60)}`,
+ })
+ // Store 状态将由后端 SSE 事件（awaiting_pr_review）驱动更新
+ // 如果后端通过 Runtime 轮询而非 SSE，启动轮询
+ if (chatStore.currentConversationId) {
+ chatStore.isStreaming = true
+ }
+}
+function handleCreatePR(sessionId: string, data: { title: string; description: string; target_branch: string }) {
+ chatStore.completedConfirmSteps.push({
+ step: 'pr_review',
+ summary: `PR: ${data.title.slice(0, 60)}`,
+ })
+}
+function handleSkipPR(sessionId: string) {
+ chatStore.completedConfirmSteps.push({
+ step: 'pr_review',
+ summary: 'PR: 已跳过',
+ })
+}
 // ============================================================================
 // 导出到飞书 (Phase)
 // ============================================================================
@@ -180,11 +209,26 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  />
  <!-- 编码进度卡片 (per: inline 嵌入消息流) -->
  <CodingProgressCard
- v-if="chatStore.activeCodingSession?.status === 'running' && chatStore.codingProgress":steps="chatStore.codingProgress.steps":modified-files-count="chatStore.codingProgress.modifiedFilesCount":is-complete="false"
+ v-if="chatStore.activeCodingSession?.status === 'running' && chatStore.codingProgress":steps="chatStore.codingProgress.steps":modified-files-count="chatStore.codingProgress.modifiedFilesCount":is-complete="false":modified-files="chatStore.codingProgress.modifiedFiles":recent-tool-calls="chatStore.codingProgress.recentToolCalls"
+ />
+ <!-- Commit 确认卡片 (/, Phase) -->
+ <CommitConfirmCard
+ v-if="chatStore.activeCodingSession?.status === 'awaiting_confirmation'
+ && chatStore.activeCodingSession.confirmationStep === 'commit_message'
+ && chatStore.commitConfirmData":session-id="chatStore.activeCodingSession.sessionId":suggested-commit-message="chatStore.commitConfirmData.suggestedCommitMessage":conflict-data="chatStore.commitConfirmData.conflictCheck":completed-steps="chatStore.completedConfirmSteps"
+ @confirmed="handleCommitConfirmed"
+ />
+ <!-- PR 确认卡片 (/, Phase) -->
+ <PRConfirmCard
+ v-if="chatStore.activeCodingSession?.status === 'awaiting_confirmation'
+ && chatStore.activeCodingSession.confirmationStep === 'pr_review'
+ && chatStore.prConfirmData":session-id="chatStore.activeCodingSession.sessionId":suggested-pr-title="chatStore.prConfirmData.suggestedPrTitle":suggested-pr-description="chatStore.prConfirmData.suggestedPrDescription":target-branch="chatStore.prConfirmData.targetBranch":branch-url="chatStore.prConfirmData.branchUrl":completed-steps="chatStore.completedConfirmSteps"
+ @create-pr="handleCreatePR"
+ @skip-pr="handleSkipPR"
  />
  <!-- 编码结果卡片 (per ) -->
  <CodingResultCard
- v-if="chatStore.codingResult || (!chatStore.codingError && historyCodingResult)":pr-url="(chatStore.codingResult?.prUrl || historyCodingResult?.prUrl) ?? ''":branch-name="(chatStore.codingResult?.branchName || historyCodingResult?.branchName) ?? ''":modified-files-count="(chatStore.codingResult?.modifiedFilesCount || historyCodingResult?.modifiedFilesCount) ?? 0"
+ v-if="chatStore.codingResult || (!chatStore.codingError && historyCodingResult)":pr-url="(chatStore.codingResult?.prUrl || historyCodingResult?.prUrl) ?? ''":branch-name="(chatStore.codingResult?.branchName || historyCodingResult?.branchName) ?? ''":modified-files-count="(chatStore.codingResult?.modifiedFilesCount || historyCodingResult?.modifiedFilesCount) ?? 0":branch-url="(chatStore.codingResult?.branchUrl || (historyCodingResult as any)?.branchUrl) ?? ''"
  />
  <!-- 编码错误卡片 (per ) -->
  <CodingErrorCard
