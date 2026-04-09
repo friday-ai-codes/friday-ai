@@ -59,7 +59,7 @@ runner:
  replicaCount: 1
  image:
  repository: ghcr.io/friday-ai-codes/friday-ai/runner
- tag: v18.0.1
+ tag: v18.0.3
  pullPolicy: IfNotPresent
  registrationToken: "" # RUNNER_REGISTRATION_TOKEN
  name: "k8s-runner"
