@@ -7,10 +7,10 @@
 - Git 仓库可被 ArgoCD 访问（私有仓库需先配置认证，见下文）
 ## 快速开始
 ### 1. 配置 Application Manifest
-编辑 `application.yaml`，替换以下占位符为实际值：
+编辑 `application.yaml`，按实际环境调整以下字段：
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
-| `spec.source.repoURL` | `https://github.com/your-org/friday-ai.git` | 替换为实际 Git 仓库地址 |
+| `spec.source.repoURL` | `https://github.com/friday-ai-codes/friday-ai.git` | Friday AI Git 仓库地址 |
 | `spec.source.targetRevision` | `main` | 替换为目标分支或 tag |
 | `spec.destination.server` | `https://kubernetes.default.svc` | 目标集群 API 地址（本地集群无需修改） |
 | `spec.destination.namespace` | `friday` | 目标命名空间 |
@@ -18,11 +18,11 @@
 如果 Git 仓库为私有仓库，需先在 ArgoCD 中配置认证：
 ```bash
 # 使用用户名 + Token 认证
-argocd repo add https://github.com/your-org/friday-ai.git \
+argocd repo add https://github.com/friday-ai-codes/friday-ai.git \
  --username <username> \
  --password <token>
 # 或使用 SSH 认证
-argocd repo add git@github.com:your-org/friday-ai.git \
+argocd repo add git@github.com:friday-ai-codes/friday-ai.git \
  --ssh-private-key-path ~/.ssh/id_rsa
 ```
 ### 3. 部署 Application

@@ -14,9 +14,9 @@ metadata:
 spec:
  project: default
  source:
- # 用户须替换为实际 Git 仓库地址
- repoURL: https://github.com/your-org/friday-ai.git
- # 用户须替换为目标分支或 tag
+ # Friday AI 官方 Git 仓库地址
+ repoURL: https://github.com/friday-ai-codes/friday-ai.git
+ # 目标分支或 tag
  targetRevision: main
  path: deploy/helm/friday
  helm:
