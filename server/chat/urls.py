@@ -7,6 +7,7 @@ from .views import (
  CodingSessionConfirmView,
  CodingSessionDetailView,
  CodingSessionListView,
+ CommitConfirmView,
  ConversationDetailView,
  ConversationListView,
  ConversationRuntimeView,
@@ -78,5 +79,10 @@ urlpatterns = [
  "coding-sessions/<uuid:session_id>/confirm/",
  CodingSessionConfirmView.as_view,
  name="coding-session-confirm",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/commit-confirm/",
+ CommitConfirmView.as_view,
+ name="coding-session-commit-confirm",
  ),
 ]

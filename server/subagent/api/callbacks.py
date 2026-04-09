@@ -341,32 +341,89 @@ class ContainerCallbackView(APIView):
  return await handler(session, payload, log)
 # === CodingSession 回调扩展 (Phase) ===
 async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
- """回调完成时更新关联的 CodingSession（如果有）。"""
+ """容器完成回调 -- 根据 task_type 区分 Phase/2，resume CodingSession graph。
+ Phase (coding): 提取 suggested_commit_message，resume graph 进入 awaiting_confirmation。
+ Phase (coding_commit): resume graph 标记 completed。
+ 兼容旧流程: 非 graph 管理的 session 直接 amark_completed。
+ """
  from chat.coding_events import store_coding_complete_to_message
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
- subagent_session=session
+ subagent_session=session,
  ).afirst
  if coding_session is None:
  return
+ if session.task_type == "coding":
+ # Phase 完成: 提取 suggested_commit_message，resume graph
+ suggested_msg = ""
+ if isinstance(session.last_output, dict):
+ suggested_msg = session.last_output.get("suggested_commit_message", "")
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ await graph.ainvoke(
+ Command(resume={"success": True, "suggested_commit_message": suggested_msg}),
+ config=config,
+ )
+ logger.info("coding_session_phase1_complete", coding_session_id=str(coding_session.id))
+ elif session.task_type == "coding_commit":
+ # Phase 完成: resume graph 标记 completed
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ pr_url = ""
+ if isinstance(session.last_output, dict):
+ pr_url = session.last_output.get("pr_url", "")
+ await graph.ainvoke(
+ Command(resume={"success": True, "pr_url": pr_url}),
+ config=config,
+ )
+ await store_coding_complete_to_message(coding_session)
+ logger.info("coding_session_phase2_complete", coding_session_id=str(coding_session.id))
+ else:
+ # 兼容旧流程（非 graph 管理的 session）
  task_result = await TaskResult.objects.filter(session=session).afirst
  pr_url = task_result.pr_url if task_result else ""
  await coding_session.amark_completed(pr_url=pr_url)
  await store_coding_complete_to_message(coding_session)
- logger.info(
- "coding_session_completed",
- coding_session_id=str(coding_session.id),
- pr_url=pr_url,
- )
+ logger.info("coding_session_completed", coding_session_id=str(coding_session.id), pr_url=pr_url)
 async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -> None:
- """回调失败时更新关联的 CodingSession（如果有）。"""
+ """容器失败回调 -- resume graph 标记 CodingSession failed。
+ graph 管理的 session (coding/coding_commit): 通过 Command(resume=) 恢复 graph 处理失败。
+ graph resume 本身失败时降级为直接更新 DB。
+ 兼容旧流程: 非 graph 管理的 session 直接 amark_failed。
+ """
  from chat.coding_events import store_coding_failed_to_message
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
- subagent_session=session
+ subagent_session=session,
  ).afirst
  if coding_session is None:
  return
+ if session.task_type in ("coding", "coding_commit"):
+ # graph 管理的 session: resume graph 处理失败
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ try:
+ await graph.ainvoke(
+ Command(resume={"success": False, "error": error}),
+ config=config,
+ )
+ except Exception:
+ # graph resume 失败时直接更新 DB
+ logger.exception("coding_graph_resume_fail", coding_session_id=str(coding_session.id))
+ await coding_session.amark_failed(error=error)
+ else:
  await coding_session.amark_failed(error=error)
  await store_coding_failed_to_message(coding_session)
  logger.info(
