@@ -5,9 +5,10 @@ WORKDIR /src
 # 先复制依赖文件以利用 Docker 层缓存
 COPY go.mod go.sum ./
 RUN go mod download
-# 复制源码并编译
+# 复制源码并编译（TARGETARCH 由 buildx 自动注入：amd64 或 arm64）
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build \
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
  -ldflags="-s -w" \
  -o /friday-runner \
  ./cmd/friday-runner
