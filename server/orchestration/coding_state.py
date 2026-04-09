@@ -34,3 +34,6 @@ class CodingSessionState(TypedDict, total=False):
  # 最终结果
  branch_url: str
  pr_url: str
+ # Phase: 冲突预检与 diff 摘要
+ conflict_check_result: dict[str, Any]
+ diff_summary: dict[str, Any]
