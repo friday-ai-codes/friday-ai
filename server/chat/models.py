@@ -168,6 +168,18 @@ class CodingSession(models.Model):
  verbose_name="AI 建议的 PR 描述",
  help_text="generate_pr_draft 节点生成，支持页面刷新后恢复",
  )
+ conflict_check_result = models.JSONField(
+ blank=True,
+ default=dict,
+ verbose_name="冲突预检结果",
+ help_text="compare_branches 冲突检测结果，支持页面刷新恢复",
+ )
+ diff_summary = models.JSONField(
+ blank=True,
+ default=dict,
+ verbose_name="Diff 摘要",
+ help_text="相对 base 分支的文件变更统计，支持页面刷新恢复",
+ )
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

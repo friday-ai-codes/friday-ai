@@ -13,6 +13,7 @@ from agents.core.events import (
  CODING_COMPLETE,
  CODING_FAILED,
  CODING_PROGRESS,
+ CONFLICT_CHECK,
  KEEPALIVE,
  PHASE_TRANSITION,
  TASK_PROGRESS,
@@ -37,6 +38,7 @@ class TestSSEEventTypeContract:
  "coding_complete",
  "coding_failed",
  "awaiting_pr_review",
+ "conflict_check",
  })
  def test_all_event_types_contains_expected(self) -> None:
  """ALL_EVENT_TYPES 恰好包含 16 种预期事件类型。"""
@@ -46,9 +48,9 @@ class TestSSEEventTypeContract:
  f" 缺少: {self.EXPECTED_EVENT_TYPES - ALL_EVENT_TYPES}"
  )
  def test_all_event_types_count(self) -> None:
- """ALL_EVENT_TYPES 应恰好包含 17 种类型。"""
- assert len(ALL_EVENT_TYPES) == 17, (
- f"期望 17 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
+ """ALL_EVENT_TYPES 应恰好包含 18 种类型。"""
+ assert len(ALL_EVENT_TYPES) == 18, (
+ f"期望 18 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
  )
  def test_budget_warning_constant(self) -> None:
  """BUDGET_WARNING 常量值为 'budget_warning'。"""
@@ -74,6 +76,9 @@ class TestSSEEventTypeContract:
  def test_awaiting_pr_review_constant(self) -> None:
  """AWAITING_PR_REVIEW 常量值为 'awaiting_pr_review'。"""
  assert AWAITING_PR_REVIEW == "awaiting_pr_review"
+ def test_conflict_check_constant(self) -> None:
+ """CONFLICT_CHECK 常量值为 'conflict_check'。"""
+ assert CONFLICT_CHECK == "conflict_check"
  def test_keepalive_not_in_all_event_types(self) -> None:
  """KEEPALIVE 不应在 ALL_EVENT_TYPES 中（它是连接级事件，不走 SSE data 行）。"""
  assert KEEPALIVE not in ALL_EVENT_TYPES, (
