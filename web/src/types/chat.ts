@@ -85,7 +85,7 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed' | 'awaiting_commit_confirm' | 'awaiting_pr_review' | 'conflict_check'
  message_id?: string
  run_id?: string
  // text_delta
@@ -142,6 +142,22 @@ export interface SSEEvent {
  pr_url?: string
  branch_name?: string
  // coding_failed — 复用 message 字段
+ // awaiting_commit_confirm (Phase)
+ suggested_commit_message?: string
+ confirmation_step?: string
+ // awaiting_pr_review (Phase)
+ suggested_pr_title?: string
+ suggested_pr_description?: string
+ target_branch?: string
+ branch_url?: string
+ // conflict_check (Phase)
+ has_conflicts?: boolean
+ conflicting_files?: string
+ behind_by?: number
+ suggestion?: string
+ // coding_progress enhanced (Phase/210)
+ modified_files?: Array<{ path: string; change_type: string }>
+ recent_tool_calls?: Array<{ tool: string; summary: string }>
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'
@@ -188,6 +204,24 @@ export interface CodingSessionResponse {
  branch_name: string
  pr_url: string
  error_message: string
+ confirmation_step: string
+ suggested_commit_message: string
+ suggested_pr_title: string
+ suggested_pr_description: string
+ target_branch: string
+ branch_url: string
+ conflict_check_result: {
+ has_conflicts?: boolean
+ conflicting_files?: string
+ behind_by?: number
+ suggestion?: string
+ } | null
+ diff_summary: {
+ files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ total_additions?: number
+ total_deletions?: number
+ truncated?: boolean
+ } | null
  created_at: string
  updated_at: string
 }
@@ -200,12 +234,22 @@ export interface CodingSessionRuntime {
  branch_name?: string
  pr_url?: string
  error_message?: string
+ confirmation_step?: string
+ suggested_commit_message?: string
+ suggested_pr_title?: string
+ suggested_pr_description?: string
+ target_branch?: string
+ branch_url?: string
+ conflict_check_result?: Record<string, unknown> | null
+ diff_summary?: Record<string, unknown> | null
 }
 /** Store 中的编码进度数据 */
 export interface CodingProgressData {
  sessionId: string
  steps: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
  modifiedFilesCount: number
+ modifiedFiles?: Array<{ path: string; change_type: string }>
+ recentToolCalls?: Array<{ tool: string; summary: string }>
 }
 /** Store 中的编码结果数据 */
 export interface CodingResultData {
@@ -213,6 +257,7 @@ export interface CodingResultData {
  prUrl: string
  branchName: string
  modifiedFilesCount: number
+ branchUrl: string
 }
 /** Store 中的编码错误数据 */
 export interface CodingErrorData {
