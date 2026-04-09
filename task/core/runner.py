@@ -108,65 +108,18 @@ class TaskRunner:
  await self.callback.report_plan_ready(plan)
  log.info("Plan mode completed successfully")
  return 0
- async def _check_workspace_clean(self, log) -> bool:
- """检查工作区是否干净，返回 True 表示干净。
- explore 任务结束时自动调用。
- 非 clean（有未提交修改或未跟踪文件）则标记任务失败。
- """
- if not self.git_ops.repo:
- return True # 没有 repo 无法检查
- try:
- # --porcelain 输出机器可读格式，空输出 = 干净
- status_output = self.git_ops.repo.git.status("--porcelain")
- if status_output.strip:
- log.error(
- "workspace_not_clean",
- git_status=status_output,
- task_id=self.config.task_id,
- )
- await self.callback.report_error(
- f"explore 模式工作区不干净:\n{status_output}",
- "workspace_check",
- )
- return False
- log.info("workspace_clean", task_id=self.config.task_id)
- return True
- except Exception as e:
- log.error(
- "workspace_check_failed",
- error=str(e),
- task_id=self.config.task_id,
- )
- return False
  async def _run_explore_mode(self, log) -> int:
  """Run in explore mode for deep code analysis (no commits)."""
  log.info("Running in explore mode")
- explore_exit_code = 0
- try:
  assert self.claude is not None, "ClaudeRunner not initialized"
  result = await self.claude.run_explore_mode
  if not result.get("success"):
  error = result.get("error", "Unknown error")
  log.error("Explore failed", error=error)
  await self.callback.report_error(error, "execution")
- explore_exit_code = 1
- except Exception as e:
- log.exception("Explore mode execution error")
- await self.callback.report_error(str(e), "execution")
- explore_exit_code = 1
- finally:
- # 工作区干净度校验
- # 无论 explore 成功或失败，都检查工作区状态
- workspace_clean = await self._check_workspace_clean(log)
- if not workspace_clean:
- log.error(
- "explore_workspace_dirty",
- task_id=self.config.task_id,
- )
- explore_exit_code = 1
- if explore_exit_code == 0:
+ return 1
  log.info("Explore mode completed successfully")
- return explore_exit_code
+ return 0
  async def _run_execute_mode(self, log, branch_name: str) -> int:
  """Run in execute mode to implement changes."""
  log.info("Running in execute mode")

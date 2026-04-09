@@ -45,19 +45,6 @@ class GitHubClient(GitPlatformClient):
  except Exception as e:
  logger.warning("github_user_lookup_error", username=username, error=str(e))
  return None
- async def branch_exists(self, branch_name: str) -> bool:
- """检查 GitHub 远程仓库是否存在指定分支。
- Args:
- branch_name: 分支名称。
- Returns:
- True if branch exists, False otherwise.
- """
- try:
- repo = self._get_repo
- await asyncio.to_thread(repo.get_branch, branch_name)
- return True
- except GithubException:
- return False
  async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
  """Create a GitHub pull request with optional reviewers.
  Args:
