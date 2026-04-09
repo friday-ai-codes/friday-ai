@@ -309,6 +309,22 @@ const codingPlanConfirming = computed( => {
  const active = chatStore.activeCodingSession
  return !!(active && active.sessionId === data.sessionId && active.isConfirming)
 })
+// 从 tool result 中提取分支名（: 服务端推断的分支名传给 CodingPlanCard）
+const codingPlanBranchName = computed( => {
+ const data = codingPlanData.value
+ if (!data) return undefined
+ const active = chatStore.activeCodingSession
+ if (active && active.sessionId === data.sessionId && active.status === 'draft') {
+ try {
+ const parsed = JSON.parse(toolCalls.value.find(tc => isCodingPlanTool(tc.name))?.result || '{}')
+ return parsed.branch_name || undefined
+ }
+ catch {
+ return undefined
+ }
+ }
+ return undefined
+})
 const primaryDeepAnalysisId = computed( => {
  const da = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
  return da?.id || ''
@@ -557,7 +573,7 @@ const hideEmptyBubble = computed( =>
  </div>
  <!-- 编码方案卡片（替代默认 tool-detail） -->
  <CodingPlanCard
- v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
  @confirm="chatStore.handleConfirmCodingSession"
  />
  <div
