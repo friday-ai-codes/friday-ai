@@ -79,6 +79,15 @@ class TaskConfig(BaseSettings):
  default=None,
  description="MR target branch from tech plan (defaults to git_branch)",
  )
+ # Phase: 两阶段 dispatch 支持
+ task_type: str = Field(
+ default="coding",
+ description="任务类型: coding (完整编码) / coding_commit (仅 commit+push)",
+ )
+ commit_message: str = Field(
+ default="",
+ description="用户确认的 commit message（Phase 容器通过 FRIDAY_TASK_COMMIT_MESSAGE 环境变量接收）",
+ )
  # Timeouts
  execution_timeout: int = Field(default=3600, description="Max execution time in seconds")
  git_timeout: int = Field(default=300, description="Git operation timeout in seconds")
