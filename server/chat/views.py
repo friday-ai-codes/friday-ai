@@ -675,6 +675,20 @@ class CodingSessionConfirmView(APIView):
  {"detail": "CodingSession not found"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ # Phase: 处理前端传入的分支名覆盖
+ branch_name = request.data.get("branch_name") if request.data else None
+ if branch_name:
+ from chat.branch_service import validate_branch_name
+ validation = await validate_branch_name(
+ branch_name, coding_session.repository_id,
+ )
+ if not validation.valid:
+ return Response(
+ {"detail": "; ".join(validation.errors)},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ coding_session.branch_name = branch_name
+ await coding_session.asave(update_fields=["branch_name", "updated_at"])
  # 2. 状态机校验：只有 draft 可 confirm
  try:
  await coding_session.aconfirm

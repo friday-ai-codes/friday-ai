@@ -838,7 +838,7 @@ class ConversationService:
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
  conversation_id=conversation_id,
- status=CodingSession.Status.RUNNING,
+ status__in=[CodingSession.Status.RUNNING, CodingSession.Status.AWAITING_CONFIRMATION],
  ).order_by("-created_at").afirst
  if coding_session is not None:
  runtime["active"] = True
@@ -849,6 +849,12 @@ class ConversationService:
  "tech_plan": coding_session.tech_plan,
  "affected_files": coding_session.affected_files,
  "branch_name": coding_session.branch_name,
+ "confirmation_step": coding_session.confirmation_step,
+ "suggested_commit_message": coding_session.suggested_commit_message,
+ "suggested_pr_title": coding_session.suggested_pr_title,
+ "suggested_pr_description": coding_session.suggested_pr_description,
+ "conflict_check_result": coding_session.conflict_check_result or None,
+ "diff_summary": coding_session.diff_summary or None,
  }
  # Phase: 从 SubAgentSession.last_output 获取编码中间产出（per, ）
  if coding_session.subagent_session_id:
