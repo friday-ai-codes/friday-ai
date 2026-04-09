@@ -106,7 +106,7 @@ class TestCodingSessionConfirmAPI:
  """CodingSession confirm API 端点测试。"""
  @pytest.fixture
  def draft_session(self, project, repository):
- """创建 draft 状态的 CodingSession（含 Conversation）。"""
+ """创建 draft 状态的 CodingSession（含 Conversation + 有效分支名）。"""
  from chat.models import Conversation
  conversation = Conversation.objects.create(project=project, title="测试对话")
  return CodingSession.objects.create(
@@ -114,16 +114,23 @@ class TestCodingSessionConfirmAPI:
  repository=repository,
  tech_plan="## 技术方案\n- 步骤 1\n- 步骤 2",
  affected_files=[{"path": "src/main.py", "change_type": "modify"}],
+ branch_name="feat20260409.test-coding",
  )
  def test_confirm_only_draft(self, authenticated_client, draft_session):
  """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。"""
  from unittest.mock import AsyncMock, patch
+ from chat.branch_service import BranchValidationResult
  from repositories.models import GitCredential
  with (
  patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
  patch("runners.models.Runner.objects") as mock_runner_objects,
  patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
  patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
  ):
  mock_runner_qs = AsyncMock
  mock_runner_qs.acount = AsyncMock(return_value=1)
@@ -146,6 +153,7 @@ class TestCodingSessionConfirmAPI:
  def test_confirm_creates_subagent_session(self, authenticated_client, draft_session):
  """confirm 后创建了 SubAgentSession（task_type=coding）。"""
  from unittest.mock import AsyncMock, patch
+ from chat.branch_service import BranchValidationResult
  from repositories.models import GitCredential
  from subagent.models import SubAgentSession
  with (
@@ -153,6 +161,11 @@ class TestCodingSessionConfirmAPI:
  patch("runners.models.Runner.objects") as mock_runner_objects,
  patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
  patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
  ):
  mock_runner_qs = AsyncMock
  mock_runner_qs.acount = AsyncMock(return_value=1)
@@ -170,12 +183,18 @@ class TestCodingSessionConfirmAPI:
  def test_confirm_dispatches_task(self, authenticated_client, draft_session):
  """confirm 后 dispatch 被调用且 DispatchTask.task_type="coding"。"""
  from unittest.mock import AsyncMock, patch
+ from chat.branch_service import BranchValidationResult
  from repositories.models import GitCredential
  with (
  patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
  patch("runners.models.Runner.objects") as mock_runner_objects,
  patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
  patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
  ):
  mock_runner_qs = AsyncMock
  mock_runner_qs.acount = AsyncMock(return_value=1)
@@ -347,3 +366,282 @@ class TestCodingSessionQueryAPI:
  url = f"/api/chat/coding-sessions/{fake_id}/"
  response = authenticated_client.get(url)
  assert response.status_code == 404
+# ============================================================================
+# CodingSession awaiting_confirmation 状态扩展测试 ( Task 1)
+# ============================================================================
+@pytest.mark.django_db
+class TestCodingSessionAwaitingConfirmationDefaults:
+ """验证新增的 confirmation_step 和 suggested_commit_message 字段默认值。"""
+ def test_new_fields_defaults(self, project, repository):
+ """新字段 confirmation_step 和 suggested_commit_message 默认为空字符串。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="默认值测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 技术方案",
+ )
+ assert session.confirmation_step == ""
+ assert session.suggested_commit_message == ""
+ def test_status_choices_include_awaiting_confirmation(self):
+ """Status TextChoices 包含 AWAITING_CONFIRMATION。"""
+ assert hasattr(CodingSession.Status, "AWAITING_CONFIRMATION")
+ assert CodingSession.Status.AWAITING_CONFIRMATION == "awaiting_confirmation"
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionAwaitingConfirmationStateMachine:
+ """验证 awaiting_confirmation 双向状态转换。"""
+ @pytest.fixture
+ def running_session(self, project, repository):
+ """创建 running 状态的 CodingSession。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="状态转换测试")
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ status=CodingSession.Status.RUNNING,
+ )
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_from_running(self, running_session):
+ """running -> awaiting_confirmation 转换成功，设置 step 和 suggested_commit_message。"""
+ await running_session.amark_awaiting_confirmation(
+ step="commit_message",
+ suggested_commit_message="feat: 添加用户认证",
+ )
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ assert running_session.confirmation_step == "commit_message"
+ assert running_session.suggested_commit_message == "feat: 添加用户认证"
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_without_commit_message(self, running_session):
+ """running -> awaiting_confirmation 不传 suggested_commit_message 时保留原值。"""
+ running_session.suggested_commit_message = "旧消息"
+ await running_session.asave(update_fields=["suggested_commit_message"])
+ await running_session.amark_awaiting_confirmation(step="pr_review")
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ assert running_session.confirmation_step == "pr_review"
+ # 不传 suggested_commit_message 时保留旧值
+ assert running_session.suggested_commit_message == "旧消息"
+ @pytest.mark.asyncio
+ async def test_amark_awaiting_confirmation_from_non_running_raises(self, running_session):
+ """非 running 状态调用 amark_awaiting_confirmation 抛出 ValueError。"""
+ # draft 状态
+ running_session.status = CodingSession.Status.DRAFT
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 running 状态可进入等待确认"):
+ await running_session.amark_awaiting_confirmation(step="commit_message")
+ # completed 状态
+ running_session.status = CodingSession.Status.COMPLETED
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 running 状态可进入等待确认"):
+ await running_session.amark_awaiting_confirmation(step="commit_message")
+ @pytest.mark.asyncio
+ async def test_aresume_running_from_awaiting_confirmation(self, running_session):
+ """awaiting_confirmation -> running 转换成功，清空 confirmation_step。"""
+ # 先进入 awaiting_confirmation
+ await running_session.amark_awaiting_confirmation(
+ step="commit_message",
+ suggested_commit_message="feat: test",
+ )
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ # 恢复 running
+ await running_session.aresume_running
+ await running_session.arefresh_from_db
+ assert running_session.status == CodingSession.Status.RUNNING
+ assert running_session.confirmation_step == ""
+ @pytest.mark.asyncio
+ async def test_aresume_running_from_non_awaiting_raises(self, running_session):
+ """非 awaiting_confirmation 状态调用 aresume_running 抛出 ValueError。"""
+ # running 状态
+ with pytest.raises(ValueError, match="只有 awaiting_confirmation 状态可恢复运行"):
+ await running_session.aresume_running
+ # draft 状态
+ running_session.status = CodingSession.Status.DRAFT
+ await running_session.asave(update_fields=["status"])
+ with pytest.raises(ValueError, match="只有 awaiting_confirmation 状态可恢复运行"):
+ await running_session.aresume_running
+@pytest.mark.django_db
+class TestCodingSessionSerializerNewFields:
+ """验证 CodingSessionSerializer 包含新字段。"""
+ def test_serializer_includes_confirmation_step(self, project, repository):
+ """CodingSessionSerializer 序列化结果包含 confirmation_step。"""
+ from chat.models import Conversation
+ from chat.serializers import CodingSessionSerializer
+ conversation = Conversation.objects.create(project=project, title="序列化测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ )
+ serializer = CodingSessionSerializer(session)
+ assert "confirmation_step" in serializer.data
+ assert serializer.data["confirmation_step"] == ""
+ def test_serializer_includes_suggested_commit_message(self, project, repository):
+ """CodingSessionSerializer 序列化结果包含 suggested_commit_message。"""
+ from chat.models import Conversation
+ from chat.serializers import CodingSessionSerializer
+ conversation = Conversation.objects.create(project=project, title="序列化测试")
+ session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 方案",
+ suggested_commit_message="feat: 实现功能",
+ )
+ serializer = CodingSessionSerializer(session)
+ assert "suggested_commit_message" in serializer.data
+ assert serializer.data["suggested_commit_message"] == "feat: 实现功能"
+# ============================================================================
+# 分支名校验 + metadata 注入测试 ( Task 2)
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestCodingSessionConfirmBranchValidation:
+ """CodingSessionConfirmView 分支名校验与 metadata 注入测试。"""
+ @pytest.fixture
+ def draft_session_with_branch(self, project, repository):
+ """创建带有效分支名的 draft CodingSession。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="测试编码")
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 实现 user auth",
+ branch_name="feat20260409.user-auth",
+ )
+ @pytest.fixture
+ def draft_session_with_bad_branch(self, project, repository):
+ """创建带非法分支名（保护分支）的 draft CodingSession。"""
+ from chat.models import Conversation
+ conversation = Conversation.objects.create(project=project, title="测试编码")
+ return CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 实现 user auth",
+ branch_name="main",
+ )
+ def test_confirm_rejects_protected_branch(self, authenticated_client, draft_session_with_bad_branch):
+ """分支名为 main 时 confirm 应返回 400。"""
+ from unittest.mock import AsyncMock, patch
+ from repositories.models import GitCredential
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{draft_session_with_bad_branch.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 400
+ assert "errors" in response.data
+ # 确认包含保护分支错误信息
+ errors_str = str(response.data["errors"])
+ assert "保护分支" in errors_str or "main" in errors_str
+ def test_confirm_rejects_dotdot_branch(self, authenticated_client, project, repository):
+ """分支名包含 .. 时 confirm 应返回 400。"""
+ from unittest.mock import AsyncMock, patch
+ from chat.models import Conversation
+ from repositories.models import GitCredential
+ conversation = Conversation.objects.create(project=project, title="dotdot 测试")
+ bad_session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 测试",
+ branch_name="feat/../../etc/passwd",
+ )
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{bad_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 400
+ assert "errors" in response.data
+ def test_metadata_contains_branch_strategy(self, authenticated_client, draft_session_with_branch):
+ """dispatch 时 metadata 应包含 env_FRIDAY_TASK_BRANCH_STRATEGY = session.branch_name，
+ 且 target_branch 应为 repo.default_branch。"""
+ from unittest.mock import AsyncMock, patch
+ from chat.branch_service import BranchValidationResult
+ from repositories.models import GitCredential
+ session = draft_session_with_branch
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ # mock validate_branch_name 返回有效结果（避免 DB 唯一性检查误判自身）
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200, f"confirm 应返回 200，实际返回 {response.status_code}: {response.data}"
+ # 从 mock_dispatcher.dispatch.call_args 提取 DispatchTask
+ assert mock_dispatcher.dispatch.called, "dispatch 应被调用"
+ dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
+ # 验证 env_FRIDAY_TASK_BRANCH_STRATEGY
+ assert "env_FRIDAY_TASK_BRANCH_STRATEGY" in dispatch_task.metadata, \
+ "metadata 应包含 env_FRIDAY_TASK_BRANCH_STRATEGY"
+ assert dispatch_task.metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] == session.branch_name, \
+ f"branch_strategy 应为 {session.branch_name}，实际为 {dispatch_task.metadata.get('env_FRIDAY_TASK_BRANCH_STRATEGY')}"
+ # 验证 target_branch 为 repo.default_branch（非功能分支名）
+ repo = session.repository
+ assert dispatch_task.target_branch == repo.default_branch, \
+ f"target_branch 应为 {repo.default_branch}，实际为 {dispatch_task.target_branch}"
+ def test_target_branch_is_default_branch_not_feature_branch(
+ self, authenticated_client, draft_session_with_branch
+ ):
+ """target_branch 始终为 repo.default_branch，而非功能分支名。"""
+ from unittest.mock import AsyncMock, patch
+ from chat.branch_service import BranchValidationResult
+ from repositories.models import GitCredential
+ session = draft_session_with_branch
+ with (
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("runners.models.Runner.objects") as mock_runner_objects,
+ patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
+ patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
+ ):
+ mock_runner_qs = AsyncMock
+ mock_runner_qs.acount = AsyncMock(return_value=1)
+ mock_runner_objects.filter.return_value = mock_runner_qs
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ url = f"/api/chat/coding-sessions/{session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200
+ dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
+ # target_branch 不应等于功能分支名
+ assert dispatch_task.target_branch != session.branch_name, \
+ "target_branch 不应等于功能分支名"
+ assert dispatch_task.target_branch == "main", \
+ f"target_branch 应为 main，实际为 {dispatch_task.target_branch}"

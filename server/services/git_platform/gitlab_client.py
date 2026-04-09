@@ -50,6 +50,19 @@ class GitLabClient(GitPlatformClient):
  except Exception as e:
  logger.warning("gitlab_user_lookup_failed", username=username, error=str(e))
  return None
+ async def branch_exists(self, branch_name: str) -> bool:
+ """检查 GitLab 远程仓库是否存在指定分支。
+ Args:
+ branch_name: 分支名称。
+ Returns:
+ True if branch exists, False otherwise.
+ """
+ try:
+ project = self._get_project
+ await asyncio.to_thread(project.branches.get, branch_name)
+ return True
+ except Exception:
+ return False
  async def create_merge_request(self, request: MRCreateRequest) -> MRCreateResult:
  """Create a GitLab merge request with optional reviewers.
  Args:

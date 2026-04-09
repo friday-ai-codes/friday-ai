@@ -22,6 +22,15 @@ class GitPlatformClient(ABC):
  """
  pass
  @abstractmethod
+ async def branch_exists(self, branch_name: str) -> bool:
+ """检查远程仓库是否存在指定分支。
+ Args:
+ branch_name: 分支名称。
+ Returns:
+ True if branch exists, False otherwise.
+ """
+ pass
+ @abstractmethod
  async def get_merge_request_diff(
  self,
  mr_id: str,
