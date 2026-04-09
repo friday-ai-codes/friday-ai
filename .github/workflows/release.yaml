@@ -62,7 +62,7 @@ jobs:
  if printf '%s\n' "$CHANGED_FILES" | grep -qE '^server/'; then
  BUILD_SERVER=true
  fi
- if printf '%s\n' "$CHANGED_FILES" | grep -qE '^(web/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+ if printf '%s\n' "$CHANGED_FILES" | grep -qE '^(web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)'; then
  BUILD_WEB=true
  fi
  if printf '%s\n' "$CHANGED_FILES" | grep -qE '^runner/'; then
