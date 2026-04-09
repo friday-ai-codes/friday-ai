@@ -4,10 +4,10 @@ metadata:
  name: friday
  namespace: argocd
 spec:
- writeBackConfig:
- method: argocd
  commonUpdateSettings:
  updateStrategy: semver
+ writeBackConfig:
+ method: argocd
  applicationRefs:
  - namePattern: "friday"
  images:
