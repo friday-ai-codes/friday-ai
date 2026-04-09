@@ -2,94 +2,29 @@ name: Build & Release
 on:
  push:
  tags:
- - "v*" # v1.0.0, v16.0.0-rc.1 等
- - "server-v*" # server-v1.0.0（仅后端）
- - "web-v*" # web-v1.0.0（仅前端）
- - "runner-v*" # runner-v1.0.0（仅 runner）
+ - "v*"
 permissions:
- contents: write # 推送 [skip ci] 提交
- packages: write # 推送 GHCR 镜像
- pull-requests: read # git-cliff 读取 PR 元数据
+ contents: write
+ packages: write
+ pull-requests: read
 env:
  REGISTRY: ghcr.io
  IMAGE_PREFIX: ghcr.io/friday-ai-codes/friday-ai
 jobs:
- # ─────────────────────────────────────────────
- # 1. 解析 tag，决定构建哪些服务并生成并行矩阵
- # ─────────────────────────────────────────────
- resolve:
- runs-on: ubuntu-latest
- outputs:
- version: ${{ steps.meta.outputs.version }}
- build_server: ${{ steps.meta.outputs.build_server }}
- build_web: ${{ steps.meta.outputs.build_web }}
- build_runner: ${{ steps.meta.outputs.build_runner }}
- build_any: ${{ steps.meta.outputs.build_any }}
- build_matrix: ${{ steps.meta.outputs.build_matrix }}
- steps:
- - uses: actions/checkout@v5
- with:
- fetch-depth: 0
- - name: Parse tag and detect changed services
- id: meta
- run: |
- TAG="${GITHUB_REF_NAME}"
- echo "tag=$TAG"
- # 提取版本号
- VERSION="${TAG#server-}"
- VERSION="${VERSION#web-}"
- VERSION="${VERSION#runner-}"
- echo "version=$VERSION" >> "$GITHUB_OUTPUT"
- BUILD_SERVER=false
- BUILD_WEB=false
- BUILD_RUNNER=false
- # 决定构建范围
- if [[ "$TAG" == server-v* ]]; then
- BUILD_SERVER=true
- elif [[ "$TAG" == web-v* ]]; then
- BUILD_WEB=true
- elif [[ "$TAG" == runner-v* ]]; then
- BUILD_RUNNER=true
- else
- PREV_TAG="$(python -c 'import subprocess, sys; current = sys.argv[1]; tags = subprocess.check_output(["git", "tag", "--list", "v*", "--sort=-version:refname"], text=True).splitlines; print(next((tag for tag in tags if tag and tag != current and not tag.startswith(("server-", "web-", "runner-"))), ""))' "$TAG")"
- if [[ -n "$PREV_TAG" ]]; then
- echo "Comparing changed files against ${PREV_TAG}"
- CHANGED_FILES="$(git diff --name-only "${PREV_TAG}..${TAG}")"
- else
- echo "No previous global tag found, building all services"
- CHANGED_FILES="$(git ls-tree -r --name-only "${TAG}")"
- fi
- if printf '%s\n' "$CHANGED_FILES" | grep -qE '^server/'; then
- BUILD_SERVER=true
- fi
- if printf '%s\n' "$CHANGED_FILES" | grep -qE '^(web/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)'; then
- BUILD_WEB=true
- fi
- if printf '%s\n' "$CHANGED_FILES" | grep -qE '^runner/'; then
- BUILD_RUNNER=true
- fi
- fi
- echo "build_server=${BUILD_SERVER}" >> "$GITHUB_OUTPUT"
- echo "build_web=${BUILD_WEB}" >> "$GITHUB_OUTPUT"
- echo "build_runner=${BUILD_RUNNER}" >> "$GITHUB_OUTPUT"
- if [[ "$BUILD_SERVER" == "true" || "$BUILD_WEB" == "true" || "$BUILD_RUNNER" == "true" ]]; then
- echo "build_any=true" >> "$GITHUB_OUTPUT"
- else
- echo "build_any=false" >> "$GITHUB_OUTPUT"
- fi
- BUILD_MATRIX="$(BUILD_SERVER="$BUILD_SERVER" BUILD_WEB="$BUILD_WEB" BUILD_RUNNER="$BUILD_RUNNER" python -c 'import json, os; services =; services.extend([("server", "./server", "./server/Dockerfile")] if os.environ["BUILD_SERVER"] == "true" else ); services.extend([("web", "./web", "./web/Dockerfile")] if os.environ["BUILD_WEB"] == "true" else ); services.extend([("runner", "./runner", "./runner/Dockerfile")] if os.environ["BUILD_RUNNER"] == "true" else ); matrix = {"include": [{"service": service, "context": context, "dockerfile": dockerfile, "platform": platform, "platform_pair": platform_pair} for service, context, dockerfile in services for platform, platform_pair in (("linux/amd64", "amd64"), ("linux/arm64", "arm64"))]}; print(json.dumps(matrix, separators=(",", ":")))' )"
- echo "build_matrix=${BUILD_MATRIX}" >> "$GITHUB_OUTPUT"
- # ─────────────────────────────────────────────
- # 2. 并行构建并按 digest 推送单架构镜像
- # ─────────────────────────────────────────────
- build-images:
+ # ── 1. 并行构建各服务的单架构镜像 ──────────────────
+ build:
  name: build-${{ matrix.service }}-${{ matrix.platform_pair }}
- needs: resolve
- if: needs.resolve.outputs.build_any == 'true'
  runs-on: ubuntu-latest
  strategy:
  fail-fast: false
- matrix: ${{ fromJSON(needs.resolve.outputs.build_matrix) }}
+ matrix:
+ service:
+ - { name: server, context: ./server, dockerfile: ./server/Dockerfile }
+ - { name: web, context: ./web, dockerfile: ./web/Dockerfile }
+ - { name: runner, context: ./runner, dockerfile: ./runner/Dockerfile }
+ platform:
+ - { os: linux/amd64, pair: amd64 }
+ - { os: linux/arm64, pair: arm64 }
  steps:
  - uses: actions/checkout@v5
  - uses: docker/login-action@v3
@@ -98,38 +33,37 @@ jobs:
  username: ${{ github.actor }}
  password: ${{ secrets.GITHUB_TOKEN }}
  - uses: docker/setup-qemu-action@v3
- if: matrix.platform_pair == 'arm64'
+ if: matrix.platform.pair == 'arm64'
  - uses: docker/setup-buildx-action@v3
  - name: Build and push by digest
  id: build
  uses: docker/build-push-action@v6
  with:
- context: ${{ matrix.context }}
- file: ${{ matrix.dockerfile }}
- platforms: ${{ matrix.platform }}
- outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
- cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.platform_pair }}
- cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ matrix.platform_pair }}
+ context: ${{ matrix.service.context }}
+ file: ${{ matrix.service.dockerfile }}
+ platforms: ${{ matrix.platform.os }}
+ outputs: type=image,name=${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }},push-by-digest=true,name-canonical=true,push=true
+ cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
+ cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ matrix.platform.pair }}
  - name: Export digest
  run: |
  mkdir -p /tmp/digests
  digest="${{ steps.build.outputs.digest }}"
  touch "/tmp/digests/${digest#sha256:}"
- - name: Upload digest artifact
- uses: actions/upload-artifact@v4
+ - uses: actions/upload-artifact@v4
  with:
- name: digests-${{ matrix.service }}-${{ matrix.platform_pair }}
+ name: digests-${{ matrix.service.name }}-${{ matrix.platform.pair }}
  path: /tmp/digests/*
  if-no-files-found: error
  retention-days: 1
- # ─────────────────────────────────────────────
- # 3. 合并各架构 digest 为多架构 manifest
- # ─────────────────────────────────────────────
- merge-server:
- name: merge-server-manifest
- needs: [resolve, build-images]
- if: needs.resolve.outputs.build_server == 'true'
+ # ── 2. 合并多架构 manifest ─────────────────────────
+ merge:
+ name: merge-${{ matrix.service }}
+ needs: build
  runs-on: ubuntu-latest
+ strategy:
+ matrix:
+ service: [server, web, runner]
  steps:
  - uses: docker/login-action@v3
  with:
@@ -140,84 +74,21 @@ jobs:
  - uses: actions/download-artifact@v4
  with:
  path: /tmp/digests
- pattern: digests-server-*
+ pattern: digests-${{ matrix.service }}-*
  merge-multiple: true
  - name: Create multi-arch manifest
- env:
- IMAGE: ${{ env.IMAGE_PREFIX }}/server
- VERSION: ${{ needs.resolve.outputs.version }}
  run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
+ IMAGE="${IMAGE_PREFIX}/${{ matrix.service }}"
+ VERSION="${GITHUB_REF_NAME}"
+ DIGESTS=$(ls /tmp/digests | sort)
+ REFS=$(for d in $DIGESTS; do echo "${IMAGE}@sha256:${d}"; done)
  docker buildx imagetools create \
  -t "${IMAGE}:${VERSION}" \
  -t "${IMAGE}:latest" \
- ${DIGEST_REFS}
- merge-web:
- name: merge-web-manifest
- needs: [resolve, build-images]
- if: needs.resolve.outputs.build_web == 'true'
- runs-on: ubuntu-latest
- steps:
- - uses: docker/login-action@v3
- with:
- registry: ${{ env.REGISTRY }}
- username: ${{ github.actor }}
- password: ${{ secrets.GITHUB_TOKEN }}
- - uses: docker/setup-buildx-action@v3
- - uses: actions/download-artifact@v4
- with:
- path: /tmp/digests
- pattern: digests-web-*
- merge-multiple: true
- - name: Create multi-arch manifest
- env:
- IMAGE: ${{ env.IMAGE_PREFIX }}/web
- VERSION: ${{ needs.resolve.outputs.version }}
- run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
- docker buildx imagetools create \
- -t "${IMAGE}:${VERSION}" \
- -t "${IMAGE}:latest" \
- ${DIGEST_REFS}
- merge-runner:
- name: merge-runner-manifest
- needs: [resolve, build-images]
- if: needs.resolve.outputs.build_runner == 'true'
- runs-on: ubuntu-latest
- steps:
- - uses: docker/login-action@v3
- with:
- registry: ${{ env.REGISTRY }}
- username: ${{ github.actor }}
- password: ${{ secrets.GITHUB_TOKEN }}
- - uses: docker/setup-buildx-action@v3
- - uses: actions/download-artifact@v4
- with:
- path: /tmp/digests
- pattern: digests-runner-*
- merge-multiple: true
- - name: Create multi-arch manifest
- env:
- IMAGE: ${{ env.IMAGE_PREFIX }}/runner
- VERSION: ${{ needs.resolve.outputs.version }}
- run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
- docker buildx imagetools create \
- -t "${IMAGE}:${VERSION}" \
- -t "${IMAGE}:latest" \
- ${DIGEST_REFS}
- # ─────────────────────────────────────────────
- # 5. 生成 Changelog 并创建 GitHub Release
- # ─────────────────────────────────────────────
- create-release:
- needs: [resolve, build-images, merge-server, merge-web, merge-runner]
- if: |
- always &&
- needs.resolve.result == 'success' &&
- (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
- (needs.merge-server.result == 'success' || needs.merge-server.result == 'skipped') &&
- (needs.merge-web.result == 'success' || needs.merge-web.result == 'skipped') &&
- (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
+ ${REFS}
+ # ── 3. 创建 GitHub Release ────────────────────────
+ release:
+ needs: merge
  runs-on: ubuntu-latest
  steps:
  - uses: actions/checkout@v5
@@ -227,26 +98,7 @@ jobs:
  id: params
  run: |
  TAG="${GITHUB_REF_NAME}"
- # 判断 tag 类型和组件 (per, )
- if [[ "$TAG" == server-v* ]]; then
- echo "component=server" >> "$GITHUB_OUTPUT"
- echo "title=Server ${TAG#server-}" >> "$GITHUB_OUTPUT"
- echo "cliff_args=--tag-pattern server-v.* --include-path server/**/* --latest" >> "$GITHUB_OUTPUT"
- elif [[ "$TAG" == web-v* ]]; then
- echo "component=web" >> "$GITHUB_OUTPUT"
- echo "title=Web ${TAG#web-}" >> "$GITHUB_OUTPUT"
- echo "cliff_args=--tag-pattern web-v.* --include-path web/**/* --latest" >> "$GITHUB_OUTPUT"
- elif [[ "$TAG" == runner-v* ]]; then
- echo "component=runner" >> "$GITHUB_OUTPUT"
- echo "title=Runner ${TAG#runner-}" >> "$GITHUB_OUTPUT"
- echo "cliff_args=--tag-pattern runner-v.* --include-path runner/**/* --latest" >> "$GITHUB_OUTPUT"
- else
- # 全局 tag (per: 包含所有路径变更)
- echo "component=all" >> "$GITHUB_OUTPUT"
  echo "title=${TAG}" >> "$GITHUB_OUTPUT"
- echo "cliff_args=--latest" >> "$GITHUB_OUTPUT"
- fi
- # prerelease 检测 (per )
  if [[ "$TAG" =~ -(rc|beta|alpha) ]]; then
  echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
  else
@@ -257,7 +109,7 @@ jobs:
  id: cliff
  with:
  config: cliff.toml
- args: ${{ steps.params.outputs.cliff_args }}
+ args: --latest
  env:
  GITHUB_TOKEN: ${{ github.token }}
  GITHUB_REPO: ${{ github.repository }}
@@ -265,7 +117,6 @@ jobs:
  env:
  GH_TOKEN: ${{ github.token }}
  run: |
- # 使用 notes-file 避免 shell 转义问题 (per Research Pitfall 5)
  cat << 'CLIFF_EOF' > /tmp/release-notes.md
  ${{ steps.cliff.outputs.content }}
  CLIFF_EOF
@@ -273,84 +124,3 @@ jobs:
  --title "${{ steps.params.outputs.title }}" \
  --notes-file /tmp/release-notes.md \
  ${{ steps.params.outputs.prerelease }}
- # ─────────────────────────────────────────────
- # 6. 更新 Kustomize newTag 并提交回主分支
- # ─────────────────────────────────────────────
- update-manifests:
- needs: [resolve, build-images, merge-server, merge-web, merge-runner]
- # 只有真正构建了镜像才回写 manifests
- if: |
- always &&
- needs.resolve.outputs.build_any == 'true' &&
- needs.resolve.result == 'success' &&
- (needs.build-images.result == 'success' || needs.build-images.result == 'skipped') &&
- (needs.merge-server.result == 'success' || needs.merge-server.result == 'skipped') &&
- (needs.merge-web.result == 'success' || needs.merge-web.result == 'skipped') &&
- (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
- runs-on: ubuntu-latest
- steps:
- - uses: actions/checkout@v5
- with:
- ref: main
- token: ${{ secrets.GITHUB_TOKEN }}
- - name: Setup Kustomize
- uses: imranismail/setup-kustomize@v2
- - name: Setup yq
- uses: mikefarah/yq@master
- - name: Update image tags
- env:
- VERSION: ${{ needs.resolve.outputs.version }}
- BUILD_SERVER: ${{ needs.resolve.outputs.build_server }}
- BUILD_WEB: ${{ needs.resolve.outputs.build_web }}
- BUILD_RUNNER: ${{ needs.resolve.outputs.build_runner }}
- run: |
- if [[ "$BUILD_SERVER" == "true" ]]; then
- cd .kube/server/base
- kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/server:${VERSION}
- cd -
- echo "✓ server → ${VERSION}"
- fi
- if [[ "$BUILD_WEB" == "true" ]]; then
- cd .kube/web/base
- kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/web:${VERSION}
- cd -
- echo "✓ web → ${VERSION}"
- fi
- if [[ "$BUILD_RUNNER" == "true" ]]; then
- cd .kube/runner/base
- kustomize edit set image ghcr.io/friday-ai-codes/friday-ai/runner:${VERSION}
- cd -
- echo "✓ runner → ${VERSION}"
- fi
- - name: Update Helm image tags
- env:
- VERSION: ${{ needs.resolve.outputs.version }}
- BUILD_SERVER: ${{ needs.resolve.outputs.build_server }}
- BUILD_WEB: ${{ needs.resolve.outputs.build_web }}
- BUILD_RUNNER: ${{ needs.resolve.outputs.build_runner }}
- run: |
- HELM_VALUES="deploy/helm/friday/values.yaml"
- if [[ "$BUILD_SERVER" == "true" ]]; then
- VERSION=$VERSION yq -i '.server.image.tag = strenv(VERSION)' "$HELM_VALUES"
- echo "✓ helm server → ${VERSION}"
- fi
- if [[ "$BUILD_WEB" == "true" ]]; then
- VERSION=$VERSION yq -i '.web.image.tag = strenv(VERSION)' "$HELM_VALUES"
- echo "✓ helm web → ${VERSION}"
- fi
- if [[ "$BUILD_RUNNER" == "true" ]]; then
- VERSION=$VERSION yq -i '.runner.image.tag = strenv(VERSION)' "$HELM_VALUES"
- echo "✓ helm runner → ${VERSION}"
- fi
- - name: Commit & push
- run: |
- git config user.name "github-actions[bot]"
- git config user.email "github-actions[bot]@users.noreply.github.com"
- git add .kube/ deploy/helm/friday/values.yaml
- # 如果没有变更（newTag 已经是目标版本）则跳过
- if git diff --cached --quiet; then
- echo "No manifest changes, skipping commit"
- exit 0
- fi
- git commit -m "release: update image tags to ${{ needs.resolve.outputs.version }} [skip ci]"
- git push origin main

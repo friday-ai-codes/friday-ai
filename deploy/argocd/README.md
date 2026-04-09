@@ -38,24 +38,20 @@ kubectl get application friday -n argocd
 # 查看同步详情
 argocd app sync friday --dry-run
 ```
-## 镜像更新流程
-标准 GitOps 镜像更新流程——通过修改 Git 仓库中的 values.yaml 触发自动部署：
-1. 修改 `deploy/helm/friday/values.yaml` 中对应服务的 `image.tag`
-2. 提交并推送到 Git 仓库
-3. ArgoCD 自动检测变更并同步到集群
-示例：
+## 镜像自动更新（Image Updater）
+镜像版本由 [ArgoCD Image Updater](https://argocd-image-updater.readthedocs.io/) 全自动管理：
+1. 打 tag 并推送：`git tag v1.2.0 && git push origin v1.2.0`
+2. CI 构建镜像推送到 GHCR
+3. Image Updater 每 2 分钟轮询 GHCR，发现新 semver tag 后自动更新 ArgoCD Application 的 Helm 参数
+4. ArgoCD 自动 sync，Pod 滚动更新
+### 安装 Image Updater
 ```bash
-# 更新 server 镜像版本
-# 编辑 deploy/helm/friday/values.yaml:
-# server:
-# image:
-# tag: "v1.2.0" # 修改为新版本
-git add deploy/helm/friday/values.yaml
-git commit -m "chore: update server image to v1.2.0"
-git push
-# ArgoCD 将在数秒内检测到变更并自动同步
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/config/install.yaml
 ```
-同样适用于 `web`、`runner`、`qdrant` 等服务的镜像更新。
+### 部署 ImageUpdater CR
+```bash
+kubectl apply -f deploy/argocd/image-updater.yaml
+```
 ## 同步策略说明
 当前 Application 配置的同步策略如下：
 | 策略 | 值 | 说明 |

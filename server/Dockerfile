@@ -11,10 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  pkg-config \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-# Copy project files
+# 先复制依赖声明以利用 Docker 层缓存
+COPY pyproject.toml uv.lock ./
+# 安装依赖（源码变动不会触发重新安装）
+RUN pip install uv && uv pip install --system --frozen .
+# 再复制全部源码
 COPY . .
-# Install dependencies directly to system Python (no venv)
-RUN pip install uv && uv pip install --system -e .
 # Stage 2: Runtime image
 FROM python:3.14-slim
 # Install runtime dependencies only
