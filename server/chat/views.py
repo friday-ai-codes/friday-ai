@@ -919,6 +919,39 @@ class PRConfirmView(APIView):
  await coding_session.arefresh_from_db
  serializer = CodingSessionSerializer(coding_session)
  return Response(serializer.data)
+class ConflictCheckView(APIView):
+ """GET /api/chat/coding-sessions/{id}/conflict-check/
+ 返回冲突预检结果（per ），供页面刷新恢复场景和前端主动查询。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, session_id): # type: ignore[override]
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ return Response(coding_session.conflict_check_result or {})
+class DiffSummaryView(APIView):
+ """GET /api/chat/coding-sessions/{id}/diff-summary/
+ 返回相对 base 的 diff 摘要（per ）。
+ 文件级截断 + truncated 布尔标记，默认最多 50 文件（per ）。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, session_id): # type: ignore[override]
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ return Response(coding_session.diff_summary or {})
 class CodingSessionListView(APIView):
  """GET /api/chat/coding-sessions/ -- 按 conversation 查询 CodingSession 列表（ 恢复用）。"""
  authentication_classes = [OptionalJWTAuthentication]
