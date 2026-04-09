@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Workflow } from '~/stores/useWorkflowsStore'
+import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { Switch } from '~/components/ui/switch'
 import {
@@ -15,7 +16,7 @@ defineProps<{
 const emit = defineEmits<{
  (e: 'click', workflow: Workflow): void
  (e: 'execute', workflow: Workflow): void
- (e: 'delete', workflow: Workflow): void
+ (e: 'requestDelete', workflow: Workflow): void
  (e: 'toggleActive', workflow: Workflow, isActive: boolean): void
 }>
 function onCardClick(workflow: Workflow) {
@@ -29,7 +30,7 @@ function onExecuteClick(e: Event, workflow: Workflow) {
 }
 function onDeleteClick(e: Event, workflow: Workflow) {
  e.stopPropagation
- emit('delete', workflow)
+ emit('requestDelete', workflow)
 }
 function onToggleActive(checked: boolean, workflow: Workflow) {
  emit('toggleActive', workflow, checked)
@@ -63,7 +64,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <!-- Hover glow effect (only for active workflows) -->
  <div
  v-if="workflow.is_active"
- class="absolute -inset-0.5 bg-gradient-to-r from-teal-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-500"
+ class="absolute -inset-0.5 bg-linear-to-r from-teal-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-500"
  />
  <!-- Card body -->
  <div
@@ -76,9 +77,9 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <div class="flex items-start gap-3 mb-3">
  <!-- Icon -->
  <div
- class=" rounded-lg flex-shrink-0":class="[
+ class=" rounded-lg shrink-0":class="[
  workflow.is_active
- ? 'bg-gradient-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50',
+ ? 'bg-linear-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50',
  ]"
  >
  <span
@@ -133,19 +134,15 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  </TooltipContent>
  </Tooltip>
  <!-- Delete Button -->
- <Tooltip>
- <TooltipTrigger as-child>
- <button
- class="btn btn-ghost btn-icon btn-sm w-7 hover:!bg-red-50 hover:!text-red-500"
- @click="onDeleteClick($event, workflow)"
+ <Button
+ variant="ghost"
+ size="icon"
+ class=" w-7 shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+ title="删除工作流"
+ @click.stop.prevent="onDeleteClick($event, workflow)"
  >
  <span class="icon-[lucide--trash-2] text-sm" />
- </button>
- </TooltipTrigger>
- <TooltipContent side="top">
- <p>删除</p>
- </TooltipContent>
- </Tooltip>
+ </Button>
  </div>
  </div>
  </div>

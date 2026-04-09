@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia'
 import { markRaw, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -13,15 +12,25 @@ import ExecuteWorkflowModal from '~/components/workflow/ExecuteWorkflowModal.vue
 import WorkflowDataTable from '~/components/workflow/WorkflowDataTable.vue'
 import WorkflowEmptyState from '~/components/workflow/WorkflowEmptyState.vue'
 import WorkflowPageHeader from '~/components/workflow/WorkflowPageHeader.vue'
+import {
+ AlertDialog,
+ AlertDialogAction,
+ AlertDialogCancel,
+ AlertDialogContent,
+ AlertDialogDescription,
+ AlertDialogFooter,
+ AlertDialogHeader,
+ AlertDialogTitle,
+} from '~/components/ui/alert-dialog'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const router = useRouter
 const store = useWorkflowsStore
 const { workflows, loading } = storeToRefs(store)
-const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
 // 当前要执行的工作流
 const workflowToExecute = ref<Workflow | null>(null)
+const workflowToDelete = ref<Workflow | null>(null)
 onMounted( => {
  store.fetchWorkflows
 })
@@ -67,18 +76,19 @@ async function executeWorkflow(inputData: Record<string, any>, debugMode: boolea
  handleError(e, '执行工作流')
  }
 }
-async function handleDelete(workflow: any) {
- const confirmed = await confirm({
- title: '删除工作流',
- description: '确定要删除该工作流吗？此操作无法撤销。',
- confirmText: '删除',
- variant: 'destructive',
- })
- if (!confirmed)
+function requestDelete(workflow: Workflow) {
+ workflowToDelete.value = workflow
+}
+function cancelDelete {
+ workflowToDelete.value = null
+}
+async function handleDelete {
+ if (!workflowToDelete.value)
  return
  try {
- await store.deleteWorkflow(workflow.id)
+ await store.deleteWorkflow(workflowToDelete.value.id)
  success('工作流已删除')
+ workflowToDelete.value = null
  }
  catch (e: unknown) {
  handleError(e, '删除工作流')
@@ -125,8 +135,31 @@ async function openCreateWorkflow {
  @click="navigateToEditor($event.id)"
  @execute="openExecuteModal($event.id)"
  @edit="navigateToEditor($event.id)"
- @delete="handleDelete"
+ @request-delete="requestDelete"
  @toggle-active="handleToggleActive"
  />
+ <AlertDialog:open="!!workflowToDelete" @update:open="(open) => { if (!open) cancelDelete }">
+ <AlertDialogContent>
+ <AlertDialogHeader>
+ <AlertDialogTitle>删除工作流</AlertDialogTitle>
+ <AlertDialogDescription>
+ 确定要删除
+ <span class="font-medium text-foreground">{{ workflowToDelete?.name }}</span>
+ 吗？此操作无法撤销。
+ </AlertDialogDescription>
+ </AlertDialogHeader>
+ <AlertDialogFooter>
+ <AlertDialogCancel @click="cancelDelete">
+ 取消
+ </AlertDialogCancel>
+ <AlertDialogAction
+ class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+ @click="handleDelete"
+ >
+ 删除
+ </AlertDialogAction>
+ </AlertDialogFooter>
+ </AlertDialogContent>
+ </AlertDialog>
  </PageContainer>
 </template>
