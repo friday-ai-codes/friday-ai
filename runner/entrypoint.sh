@@ -3,6 +3,10 @@ set -e
 # 配置 XDG 目录（nobody 用户无默认 home）
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/data/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-/data/.local/share}"
+if [ -z "${FRIDAY_RUNNER_URL:-}" ]; then
+ echo "错误: 未设置 FRIDAY_RUNNER_URL"
+ exit 1
+fi
 # 等待 server 就绪
 echo "等待 server 就绪..."
 retries=0
