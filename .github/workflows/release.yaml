@@ -27,7 +27,7 @@ jobs:
  build_any: ${{ steps.meta.outputs.build_any }}
  build_matrix: ${{ steps.meta.outputs.build_matrix }}
  steps:
- - uses: actions/checkout@v4
+ - uses: actions/checkout@v5
  with:
  fetch-depth: 0
  - name: Parse tag and detect changed services
@@ -91,7 +91,7 @@ jobs:
  fail-fast: false
  matrix: ${{ fromJSON(needs.resolve.outputs.build_matrix) }}
  steps:
- - uses: actions/checkout@v4
+ - uses: actions/checkout@v5
  - uses: docker/login-action@v3
  with:
  registry: ${{ env.REGISTRY }}
@@ -220,7 +220,7 @@ jobs:
  (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v4
+ - uses: actions/checkout@v5
  with:
  fetch-depth: 0
  - name: Determine release params
@@ -289,7 +289,7 @@ jobs:
  (needs.merge-runner.result == 'success' || needs.merge-runner.result == 'skipped')
  runs-on: ubuntu-latest
  steps:
- - uses: actions/checkout@v4
+ - uses: actions/checkout@v5
  with:
  ref: main
  token: ${{ secrets.GITHUB_TOKEN }}
