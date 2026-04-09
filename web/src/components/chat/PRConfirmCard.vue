@@ -69,7 +69,7 @@ async function handleCreatePR {
  target_branch: targetBranchInput.value,
  })
  completed.value = true
- completedResult.value = { type: 'pr', url: (result as Record<string, unknown>).pr_url as string || '' }
+ completedResult.value = { type: 'pr', url: (result as unknown as Record<string, unknown>).pr_url as string || '' }
  emit('create-pr', props.sessionId, {
  title: prTitle.value,
  description: prDescription.value,
