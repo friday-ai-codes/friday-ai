@@ -1,6 +1,6 @@
 """Abstract base class for Git platform clients."""
 from abc import ABC, abstractmethod
-from .models import MRCreateRequest, MRCreateResult, MRDiffResult
+from .models import BranchCompareResult, MRCreateRequest, MRCreateResult, MRDiffResult
 class GitPlatformClient(ABC):
  """Abstract base class for Git platform operations."""
  @abstractmethod
@@ -44,5 +44,21 @@ class GitPlatformClient(ABC):
  max_diff_lines: 单个文件 diff 最大行数
  Returns:
  MRDiffResult 包含文件列表和 diff 内容
+ """
+ pass
+ @abstractmethod
+ async def compare_branches(
+ self,
+ source_branch: str,
+ target_branch: str,
+ max_files: int = 50,
+ ) -> BranchCompareResult:
+ """对比两个分支的差异（per ）。
+ Args:
+ source_branch: 功能分支名。
+ target_branch: 目标（base）分支名。
+ max_files: 最大返回文件数（per 默认 50）。
+ Returns:
+ BranchCompareResult 包含文件变更统计和冲突推断。
  """
  pass

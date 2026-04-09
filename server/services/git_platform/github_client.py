@@ -3,7 +3,14 @@ import asyncio
 import structlog
 from github import Auth, Github, GithubException
 from .base import GitPlatformClient
-from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult
+from .models import (
+ BranchCompareResult,
+ CompareFileEntry,
+ MRCreateRequest,
+ MRCreateResult,
+ MRDiffFile,
+ MRDiffResult,
+)
 logger = structlog.get_logger
 class GitHubClient(GitPlatformClient):
  """GitHub platform client for pull request operations."""
@@ -206,3 +213,85 @@ class GitHubClient(GitPlatformClient):
  error=error_msg,
  )
  return MRDiffResult(success=False, error=error_msg)
+ async def compare_branches(
+ self,
+ source_branch: str,
+ target_branch: str,
+ max_files: int = 50,
+ ) -> BranchCompareResult:
+ """对比两个分支的差异（GitHub 实现）。
+ 使用 PyGithub repo.compare 获取文件变更，当 behind_by > 0 时
+ 执行反向 compare 检测潜在冲突（文件路径交集）。
+ Args:
+ source_branch: 功能分支名。
+ target_branch: 目标（base）分支名。
+ max_files: 最大返回文件数。
+ Returns:
+ BranchCompareResult 包含文件变更统计和冲突推断。
+ """
+ try:
+ repo = self._get_repo
+ # 正向 compare: target...source（显示 source 相对于 target 的变更）
+ comparison = await asyncio.to_thread(
+ repo.compare, target_branch, source_branch
+ )
+ # 提取文件列表
+ raw_files = comparison.files or
+ truncated = False
+ if len(raw_files) > max_files:
+ raw_files = raw_files[:max_files]
+ truncated = True
+ total_additions = 0
+ total_deletions = 0
+ files: list[CompareFileEntry] =
+ for f in raw_files:
+ entry = CompareFileEntry(
+ path=f.filename,
+ change_type=f.status,
+ additions=f.additions,
+ deletions=f.deletions,
+ old_path=f.previous_filename or "",
+ )
+ files.append(entry)
+ total_additions += f.additions
+ total_deletions += f.deletions
+ # 冲突推断: 当 behind_by > 0 时执行反向 compare
+ has_potential_conflicts = False
+ conflicting_files: list[str] =
+ if comparison.behind_by > 0:
+ reverse_comparison = await asyncio.to_thread(
+ repo.compare, source_branch, target_branch
+ )
+ forward_paths = {f.filename for f in comparison.files or }
+ reverse_paths = {f.filename for f in reverse_comparison.files or }
+ conflicting_files = sorted(forward_paths & reverse_paths)
+ has_potential_conflicts = len(conflicting_files) > 0
+ logger.info(
+ "github_compare_branches",
+ source=source_branch,
+ target=target_branch,
+ ahead_by=comparison.ahead_by,
+ behind_by=comparison.behind_by,
+ files_count=len(files),
+ has_conflicts=has_potential_conflicts,
+ )
+ return BranchCompareResult(
+ success=True,
+ ahead_by=comparison.ahead_by,
+ behind_by=comparison.behind_by,
+ files=files,
+ total_additions=total_additions,
+ total_deletions=total_deletions,
+ truncated=truncated,
+ has_potential_conflicts=has_potential_conflicts,
+ conflicting_files=conflicting_files,
+ )
+ except Exception as e:
+ error_msg = str(e)
+ logger.error(
+ "github_compare_branches_error",
+ source=source_branch,
+ target=target_branch,
+ error=error_msg,
+ )
+ return BranchCompareResult(success=False, error=error_msg)

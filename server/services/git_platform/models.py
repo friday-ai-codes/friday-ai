@@ -33,3 +33,24 @@ class MRDiffResult:
  files: list[MRDiffFile] = field(default_factory=list)
  error: str | None = None
  truncated: bool = False # diff 是否因过大被截断
+@dataclass
+class CompareFileEntry:
+ """分支对比中的单个文件变更。"""
+ path: str
+ change_type: str # added / modified / deleted / renamed
+ additions: int = 0
+ deletions: int = 0
+ old_path: str = ""
+@dataclass
+class BranchCompareResult:
+ """分支对比结果 -- 同时服务冲突预检和 diff 摘要（per ）。"""
+ success: bool
+ ahead_by: int = 0
+ behind_by: int = 0
+ files: list[CompareFileEntry] = field(default_factory=list)
+ total_additions: int = 0
+ total_deletions: int = 0
+ truncated: bool = False
+ has_potential_conflicts: bool = False
+ conflicting_files: list[str] = field(default_factory=list)
+ error: str = ""
