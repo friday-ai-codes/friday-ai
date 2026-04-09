@@ -565,6 +565,11 @@ async def deep_analysis(
  "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
  "env_FRIDAY_TASK_CLAUDE_MODEL": system_model,
  "env_FRIDAY_TASK_CLAUDE_SMALL_MODEL": small_model,
+ # explore 模式标识：双层 git 写操作拦截
+ # FRIDAY_TASK_MODE -> wrapper 脚本读取（Shell 层）
+ # FRIDAY_TASK_TASK_MODE -> pydantic-settings 映射到 TaskConfig.task_mode（Python 层）
+ "env_FRIDAY_TASK_MODE": "explore",
+ "env_FRIDAY_TASK_TASK_MODE": "explore",
  }
  repo_url = repo.git_url
  try:

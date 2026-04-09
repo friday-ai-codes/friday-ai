@@ -39,3 +39,21 @@ def mock_config(temp_session_dir):
  config.callback_url = ""
  config.callback_token = ""
  return config
+@pytest.fixture
+def mock_explore_config(temp_session_dir):
+ """创建 explore 模式的模拟 TaskConfig。"""
+ config = MagicMock
+ config.task_id = "test-explore-001"
+ config.project_id = "test-project-001"
+ config.task_title = "Explore Task"
+ config.task_description = "Deep analysis task"
+ config.task_mode = "explore"
+ config.git_repo_url = "git@github.com:test/repo.git"
+ config.git_branch = "main"
+ config.git_new_branch = None
+ config.session_dir = temp_session_dir
+ config.claude_api_key = ""
+ config.claude_base_url = ""
+ config.callback_url = ""
+ config.callback_token = ""
+ return config
