@@ -168,10 +168,10 @@ async def _call_llm_for_pr_draft(
  model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or "claude-sonnet-4-20250514"
  if not api_key:
  raise ValueError("Anthropic API key 未配置")
- client_kwargs: dict[str, str] = {"api_key": api_key}
  if base_url:
- client_kwargs["base_url"] = base_url
- client = anthropic.AsyncAnthropic(**client_kwargs)
+ client = anthropic.AsyncAnthropic(api_key=api_key, base_url=base_url)
+ else:
+ client = anthropic.AsyncAnthropic(api_key=api_key)
  # 构建 prompt
  affected_files_str = ""
  if coding_session.affected_files:
@@ -319,7 +319,7 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
  # 创建 PR 路径
  try:
  cred = await GitCredential.objects.aget(repository=repo)
- token = decrypt_value(cred.encrypted_token)
+ token = decrypt_value(cred.encrypted_token or "")
  except GitCredential.DoesNotExist:
  error_msg = "Git 凭据未配置，无法创建 PR"
  await coding_session.amark_failed(error_msg)
