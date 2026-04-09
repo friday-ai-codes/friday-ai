@@ -96,12 +96,13 @@ class ChatPushSubscription(models.Model):
  return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
 class CodingSession(models.Model):
  """编码会话 -- 追踪从技术方案到 PR 的全流程。
- 状态机: draft -> confirmed -> running -> completed/failed
+ 状态机: draft -> confirmed -> running -> awaiting_confirmation -> running -> completed/failed
  """
  class Status(models.TextChoices):
  DRAFT = "draft", "方案草稿"
  CONFIRMED = "confirmed", "已确认"
  RUNNING = "running", "执行中"
+ AWAITING_CONFIRMATION = "awaiting_confirmation", "等待确认"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "已失败"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -119,7 +120,7 @@ class CodingSession(models.Model):
  help_text="创建该方案的 AI 消息",
  )
  status = models.CharField(
- max_length=20,
+ max_length=30,
  choices=Status.choices,
  default=Status.DRAFT,
  )
@@ -141,6 +142,19 @@ class CodingSession(models.Model):
  )
  pr_url = models.URLField(blank=True, default="")
  error_message = models.TextField(blank=True, default="")
+ confirmation_step = models.CharField(
+ max_length=50,
+ blank=True,
+ default="",
+ verbose_name="当前确认步骤",
+ help_text="awaiting_confirmation 状态下标识具体确认类型: commit_message, pr_review",
+ )
+ suggested_commit_message = models.TextField(
+ blank=True,
+ default="",
+ verbose_name="AI 建议的 commit message",
+ help_text="Phase 容器回传，支持页面刷新后恢复",
+ )
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:
@@ -175,6 +189,24 @@ class CodingSession(models.Model):
  self.status = self.Status.FAILED
  self.error_message = error
  await self.asave(update_fields=["status", "error_message", "updated_at"])
+ async def amark_awaiting_confirmation(self, step: str, suggested_commit_message: str = "") -> None:
+ """running -> awaiting_confirmation 状态转换。"""
+ if self.status != self.Status.RUNNING:
+ raise ValueError("只有 running 状态可进入等待确认")
+ self.status = self.Status.AWAITING_CONFIRMATION
+ self.confirmation_step = step
+ if suggested_commit_message:
+ self.suggested_commit_message = suggested_commit_message
+ await self.asave(update_fields=[
+ "status", "confirmation_step", "suggested_commit_message", "updated_at",
+ ])
+ async def aresume_running(self) -> None:
+ """awaiting_confirmation -> running 状态转换（用户确认后）。"""
+ if self.status != self.Status.AWAITING_CONFIRMATION:
+ raise ValueError("只有 awaiting_confirmation 状态可恢复运行")
+ self.status = self.Status.RUNNING
+ self.confirmation_step = ""
+ await self.asave(update_fields=["status", "confirmation_step", "updated_at"])
  async def aupdate_plan(
  self,
  tech_plan: str,
