@@ -18,13 +18,7 @@ server:
  gunicornTimeout: 300
  adminUsername: "admin"
  adminPassword: ""
- resources:
- requests:
- cpu: 100m
- memory: 256Mi
- limits:
- cpu: "1"
- memory: 512Mi
+ resources: {}
  livenessProbe:
  httpGet:
  path: /health
