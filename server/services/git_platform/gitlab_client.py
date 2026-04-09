@@ -4,8 +4,32 @@ from typing import Any
 import gitlab
 import structlog
 from .base import GitPlatformClient
-from .models import MRCreateRequest, MRCreateResult, MRDiffFile, MRDiffResult
+from .models import (
+ BranchCompareResult,
+ CompareFileEntry,
+ MRCreateRequest,
+ MRCreateResult,
+ MRDiffFile,
+ MRDiffResult,
+)
 logger = structlog.get_logger
+def _parse_diff_stats(diff_text: str) -> tuple[int, int]:
+ """从 unified diff 文本中解析增删行数。
+ 遍历 diff 文本行，`+` 开头且非 `+++` 计为 addition，
+ `-` 开头且非 `---` 计为 deletion。
+ Args:
+ diff_text: unified diff 文本。
+ Returns:
+ (additions, deletions) 元组。
+ """
+ additions = 0
+ deletions = 0
+ for line in diff_text.split("\n"):
+ if line.startswith("+") and not line.startswith("+++"):
+ additions += 1
+ elif line.startswith("-") and not line.startswith("---"):
+ deletions += 1
+ return additions, deletions
 class GitLabClient(GitPlatformClient):
  """GitLab platform client for merge request operations."""
  def __init__(self, base_url: str, token: str, project_path: str) -> None:
@@ -188,3 +212,104 @@ class GitLabClient(GitPlatformClient):
  error=error_msg,
  )
  return MRDiffResult(success=False, error=error_msg)
+ async def compare_branches(
+ self,
+ source_branch: str,
+ target_branch: str,
+ max_files: int = 50,
+ ) -> BranchCompareResult:
+ """对比两个分支的差异（GitLab 实现）。
+ 使用 python-gitlab repository_compare 获取 diff，从文本解析增删行数。
+ 反向 compare 获取 behind_by，当 behind_by > 0 时比较文件路径交集推断冲突。
+ Args:
+ source_branch: 功能分支名。
+ target_branch: 目标（base）分支名。
+ max_files: 最大返回文件数。
+ Returns:
+ BranchCompareResult 包含文件变更统计和冲突推断。
+ """
+ try:
+ project = self._get_project
+ # 正向 compare: target -> source（显示 source 相对于 target 的变更）
+ forward = await asyncio.to_thread(
+ project.repository_compare, target_branch, source_branch
+ )
+ # 从正向 commits 获取 ahead_by
+ ahead_by = len(forward.get("commits", ))
+ # 提取文件列表
+ raw_diffs: list[dict[str, Any]] = forward.get("diffs", )
+ truncated = False
+ if len(raw_diffs) > max_files:
+ raw_diffs = raw_diffs[:max_files]
+ truncated = True
+ total_additions = 0
+ total_deletions = 0
+ files: list[CompareFileEntry] =
+ for diff_entry in raw_diffs:
+ diff_text = diff_entry.get("diff", "")
+ additions, deletions = _parse_diff_stats(diff_text)
+ # 判断变更类型
+ if diff_entry.get("new_file"):
+ change_type = "added"
+ elif diff_entry.get("deleted_file"):
+ change_type = "deleted"
+ elif diff_entry.get("renamed_file"):
+ change_type = "renamed"
+ else:
+ change_type = "modified"
+ entry = CompareFileEntry(
+ path=diff_entry.get("new_path", ""),
+ change_type=change_type,
+ additions=additions,
+ deletions=deletions,
+ old_path=diff_entry.get("old_path", ""),
+ )
+ files.append(entry)
+ total_additions += additions
+ total_deletions += deletions
+ # 反向 compare: source -> target（获取 behind_by）
+ reverse = await asyncio.to_thread(
+ project.repository_compare, source_branch, target_branch
+ )
+ behind_by = len(reverse.get("commits", ))
+ # 冲突推断: 当 behind_by > 0 时比较文件路径交集
+ has_potential_conflicts = False
+ conflicting_files: list[str] =
+ if behind_by > 0:
+ forward_paths = {
+ d.get("new_path", "") for d in forward.get("diffs", )
+ }
+ reverse_paths = {
+ d.get("new_path", "") for d in reverse.get("diffs", )
+ }
+ conflicting_files = sorted(forward_paths & reverse_paths)
+ has_potential_conflicts = len(conflicting_files) > 0
+ logger.info(
+ "gitlab_compare_branches",
+ source=source_branch,
+ target=target_branch,
+ ahead_by=ahead_by,
+ behind_by=behind_by,
+ files_count=len(files),
+ has_conflicts=has_potential_conflicts,
+ )
+ return BranchCompareResult(
+ success=True,
+ ahead_by=ahead_by,
+ behind_by=behind_by,
+ files=files,
+ total_additions=total_additions,
+ total_deletions=total_deletions,
+ truncated=truncated,
+ has_potential_conflicts=has_potential_conflicts,
+ conflicting_files=conflicting_files,
+ )
+ except Exception as e:
+ error_msg = str(e)
+ logger.error(
+ "gitlab_compare_branches_error",
+ source=source_branch,
+ target=target_branch,
+ error=error_msg,
+ )
+ return BranchCompareResult(success=False, error=error_msg)
