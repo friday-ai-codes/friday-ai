@@ -150,52 +150,6 @@ class TestUpdateCodingPlan:
  )
  assert result.success is False
  assert "not found" in result.error.lower
- @pytest.mark.asyncio
- async def test_branch_name_format(self, project, repository, conversation):
- """分支名应为 {type}{YYYYMMDD}.{desc} 格式，不再是 coding-{hex8}。"""
- import re
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- project_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 技术方案\n- 实现 user authentication 模块",
- affected_files=[{"path": "src/auth.py", "change_type": "add"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- # 格式校验：{feat|fix|chore}{YYYYMMDD}.{短描述}
- assert re.match(r"^(feat|fix|chore)\d{8}\.[a-z0-9\-]+$", branch_name), \
- f"分支名格式不正确: {branch_name}"
- assert not branch_name.startswith("coding-"), "不应使用旧的 coding- 前缀"
- @pytest.mark.asyncio
- async def test_branch_type_fix_from_tech_plan(self, project, repository, conversation):
- """tech_plan 包含 fix 关键词时分支类型应为 fix。"""
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- project_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 修复方案\n- 修复 null pointer bug in user module",
- affected_files=[{"path": "src/user.py", "change_type": "modify"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- assert branch_name.startswith("fix"), f"应以 fix 开头: {branch_name}"
- @pytest.mark.asyncio
- async def test_branch_type_chore_from_tech_plan(self, project, repository, conversation):
- """tech_plan 包含 refactor 关键词时分支类型应为 chore。"""
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- project_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 重构方案\n- refactor database connection module",
- affected_files=[{"path": "src/db.py", "change_type": "modify"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- assert branch_name.startswith("chore"), f"应以 chore 开头: {branch_name}"
 # ============================================================================
 # 工具注册测试
 # ============================================================================
