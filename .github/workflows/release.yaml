@@ -13,7 +13,7 @@ env:
 jobs:
  # ── 1. 并行构建各服务的单架构镜像 ──────────────────
  build:
- name: build-${{ matrix.service }}-${{ matrix.platform_pair }}
+ name: build-${{ matrix.service.name }}-${{ matrix.platform.pair }}
  runs-on: ubuntu-latest
  strategy:
  fail-fast: false
