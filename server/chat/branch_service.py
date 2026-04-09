@@ -160,10 +160,37 @@ async def validate_branch_name(
  if pattern.match(branch_name):
  errors.append(f"'{branch_name}' 匹配保护分支模式，不允许直接使用")
  break
- # 本地校验失败时提前返回
+ # 本地校验失败时提前返回，不做唯一性查询
  if errors:
  return BranchValidationResult(valid=False, errors=errors)
- # --- 唯一性校验占位（Task 2 补全） ---
+ # 8. DB 唯一性校验 — 查询活跃状态（非 completed/failed）的同名分支
+ from chat.models import CodingSession
+ active_statuses = [
+ CodingSession.Status.DRAFT,
+ CodingSession.Status.CONFIRMED,
+ CodingSession.Status.RUNNING,
+ ]
+ db_conflict = await CodingSession.objects.filter(
+ branch_name=branch_name,
+ status__in=active_statuses,
+ ).aexists
+ if db_conflict:
+ errors.append(f"分支名 '{branch_name}' 已被活跃的编码会话使用")
+ # 9. Remote refs 唯一性校验
+ if git_client is not None:
+ try:
+ remote_exists = await git_client.branch_exists(branch_name)
+ if remote_exists:
+ errors.append(f"远程仓库已存在同名分支 '{branch_name}'")
+ except Exception as exc:
+ logger.warning(
+ "remote_branch_check_failed",
+ branch_name=branch_name,
+ error=str(exc),
+ )
+ # remote 校验失败不阻塞，仅警告
+ if errors:
+ return BranchValidationResult(valid=False, errors=errors)
  return BranchValidationResult(valid=True, errors=)
 def generate_default_branch_name(tech_plan: str) -> tuple[str, str, str]:
  """便捷入口：根据 tech_plan 生成默认分支名。

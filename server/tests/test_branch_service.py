@@ -88,6 +88,7 @@ class TestBranchNameGeneration:
 # ============================================================================
 # TestBranchValidation — 分支名校验（不含唯一性）
 # ============================================================================
+@pytest.mark.django_db(transaction=True)
 class TestBranchValidation:
  """测试 validate_branch_name 多层校验逻辑。"""
  @pytest.fixture
@@ -247,7 +248,7 @@ class TestGitPlatformBranchExists:
 # ============================================================================
 # TestBranchUniqueness — 唯一性校验（DB + remote）
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestBranchUniqueness:
  """测试 validate_branch_name 的 DB 活跃会话 + remote 双重唯一性校验。"""
  @pytest.fixture
@@ -256,7 +257,7 @@ class TestBranchUniqueness:
  return repository.id
  @pytest.fixture
  def _create_session(self, repository, db):
- """工厂 fixture：创建带指定分支名和状态的 CodingSession。"""
+ """工厂 fixture：创建带指定分支名和状态的 CodingSession（同步）。"""
  from chat.models import Conversation, CodingSession
  from projects.models import Project
  # 获取或创建 project
@@ -283,14 +284,18 @@ class TestBranchUniqueness:
  @pytest.mark.asyncio
  async def test_db_duplicate_active(self, repo_id, _create_session) -> None:
  """DB 中有同名 running 状态的 CodingSession -> 返回错误。"""
- _create_session("feat20260409.dup-branch", "running")
+ from asgiref.sync import sync_to_async
+ await sync_to_async(_create_session)("feat20260409.dup-branch", "running")
  result = await validate_branch_name("feat20260409.dup-branch", repo_id)
  assert result.valid is False
  assert any("已被" in e or "使用" in e for e in result.errors)
  @pytest.mark.asyncio
  async def test_db_duplicate_completed_ok(self, repo_id, _create_session) -> None:
  """DB 中有同名 completed 状态 -> 不冲突，通过。"""
- _create_session("feat20260409.completed-branch", "completed")
+ from asgiref.sync import sync_to_async
+ await sync_to_async(_create_session)(
+ "feat20260409.completed-branch", "completed"
+ )
  result = await validate_branch_name(
  "feat20260409.completed-branch", repo_id
  )
