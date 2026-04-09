@@ -80,3 +80,49 @@ class TestStoreCodingFailedToMessage:
  session.id = uuid.uuid4
  await store_coding_failed_to_message(session)
  # 不报错即可
+class TestStoreCodingCompleteWithBranchUrl:
+ """store_coding_complete_to_message 支持 branch_url 参数。"""
+ @pytest.mark.asyncio
+ async def test_store_coding_complete_with_branch_url(self) -> None:
+ """传入 branch_url 后 Message.metadata.codingResult 包含 branchUrl 字段。"""
+ from chat.coding_events import store_coding_complete_to_message
+ session_id = uuid.uuid4
+ message_id = uuid.uuid4
+ mock_msg = MagicMock
+ mock_msg.metadata = {}
+ mock_msg.asave = AsyncMock
+ mock_session = MagicMock
+ mock_session.id = session_id
+ mock_session.message_id = message_id
+ mock_session.pr_url = ""
+ mock_session.branch_name = "feat20260409.test-feature"
+ mock_session.affected_files = [{"path": "a.py", "change_type": "modify"}]
+ with patch("chat.coding_events.Message") as MockMessage:
+ MockMessage.objects.filter.return_value.afirst = AsyncMock(return_value=mock_msg)
+ await store_coding_complete_to_message(
+ mock_session,
+ branch_url="https://github.com/test/repo/tree/feat-branch",
+ )
+ assert mock_msg.metadata["codingResult"]["branchUrl"] == "https://github.com/test/repo/tree/feat-branch"
+ assert mock_msg.metadata["codingResult"]["status"] == "completed"
+ mock_msg.asave.assert_awaited_once
+ @pytest.mark.asyncio
+ async def test_store_coding_complete_without_branch_url(self) -> None:
+ """不传 branch_url 时 branchUrl 为空字符串（向后兼容）。"""
+ from chat.coding_events import store_coding_complete_to_message
+ session_id = uuid.uuid4
+ message_id = uuid.uuid4
+ mock_msg = MagicMock
+ mock_msg.metadata = {}
+ mock_msg.asave = AsyncMock
+ mock_session = MagicMock
+ mock_session.id = session_id
+ mock_session.message_id = message_id
+ mock_session.pr_url = "https://github.com/org/repo/pull/1"
+ mock_session.branch_name = "coding-abc12345"
+ mock_session.affected_files =
+ with patch("chat.coding_events.Message") as MockMessage:
+ MockMessage.objects.filter.return_value.afirst = AsyncMock(return_value=mock_msg)
+ await store_coding_complete_to_message(mock_session)
+ assert mock_msg.metadata["codingResult"]["branchUrl"] == ""
+ mock_msg.asave.assert_awaited_once
