@@ -8,9 +8,11 @@ from .views import (
  CodingSessionDetailView,
  CodingSessionListView,
  CommitConfirmView,
+ ConflictCheckView,
  ConversationDetailView,
  ConversationListView,
  ConversationRuntimeView,
+ DiffSummaryView,
  ExportToFeishuView,
  ModelsView,
  PRConfirmView,
@@ -90,5 +92,15 @@ urlpatterns = [
  "coding-sessions/<uuid:session_id>/pr-confirm/",
  PRConfirmView.as_view,
  name="coding-session-pr-confirm",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/conflict-check/",
+ ConflictCheckView.as_view,
+ name="coding-session-conflict-check",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/diff-summary/",
+ DiffSummaryView.as_view,
+ name="coding-session-diff-summary",
  ),
 ]
