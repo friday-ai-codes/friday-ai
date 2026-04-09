@@ -3,7 +3,6 @@
 追踪从方案草稿到 PR 的全流程。
 """
 from __future__ import annotations
-import uuid
 import structlog
 from agents.tools.base import ToolResult, tool
 logger = structlog.get_logger(__name__)
@@ -105,8 +104,15 @@ async def create_coding_plan(
  success=False,
  error=f"Conversation not found: {conversation_id}",
  )
- # 生成 branch_name
- branch_name = f"coding-{uuid.uuid4.hex[:8]}"
+ # 生成模板格式分支名 (, per /)
+ from chat.branch_service import generate_default_branch_name
+ branch_name, branch_type, short_desc = generate_default_branch_name(tech_plan)
+ logger.info(
+ "branch_name_generated",
+ branch_name=branch_name,
+ branch_type=branch_type,
+ short_desc=short_desc,
+ )
  # 创建 CodingSession
  session = await CodingSession.objects.acreate(
  conversation=conversation,

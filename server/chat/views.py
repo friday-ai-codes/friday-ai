@@ -771,6 +771,30 @@ class CodingSessionConfirmView(APIView):
  repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
  except GitCredential.DoesNotExist:
  pass
+ # 7.5 分支名校验 (, per /)
+ from chat.branch_service import validate_branch_name
+ from services.git_platform import get_git_platform_client
+ git_client = None
+ try:
+ # 复用上方已获取的 cred（line 898）
+ if cred.encrypted_token:
+ token_for_git = decrypt_value(cred.encrypted_token)
+ git_client = get_git_platform_client(repo, token_for_git)
+ except (GitCredential.DoesNotExist, UnboundLocalError):
+ pass # 无凭据时跳过 remote 校验
+ validation = await validate_branch_name(
+ branch_name=coding_session.branch_name,
+ repository_id=repo.id,
+ git_client=git_client,
+ )
+ if not validation.valid:
+ # 回滚状态到 draft
+ coding_session.status = CodingSession.Status.DRAFT
+ await coding_session.asave(update_fields=["status", "updated_at"])
+ return Response(
+ {"detail": "分支名校验失败", "errors": validation.errors},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  # 7. 构建编码 prompt
  prompt = (
  f"你正在对项目「{project.name}」的代码仓库「{repo.name}」执行编码任务。\n\n"
@@ -778,7 +802,12 @@ class CodingSessionConfirmView(APIView):
  f"请根据以上技术方案进行编码实现，完成后创建 PR。"
  )
  # 8. 构建 DispatchTask 并 dispatch
- target_branch = coding_session.branch_name or repo.default_branch
+ # target_branch = PR base branch，功能分支名通过 metadata 传入
+ target_branch = repo.default_branch
+ # 功能分支名通过 env_ 前缀注入容器环境变量
+ # Runner Go 代码自动将 env_FRIDAY_TASK_BRANCH_STRATEGY 转为 FRIDAY_TASK_BRANCH_STRATEGY 环境变量
+ # 容器侧 TaskConfig.branch_strategy 通过 pydantic-settings 自动读取
+ env_metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] = coding_session.branch_name
  dispatch_task = DispatchTask(
  task_id=session_id_str,
  task_type="coding",
