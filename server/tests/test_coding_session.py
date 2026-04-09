@@ -228,7 +228,7 @@ class TestCodingSessionCallback:
  """CodingSession 回调处理扩展测试。"""
  @pytest.fixture
  def running_session_with_subagent(self, project, repository):
- """创建 running 状态的 CodingSession + 关联 SubAgentSession。"""
+ """创建 running 状态的 CodingSession + 关联 SubAgentSession (兼容旧流程 task_type=explore)。"""
  from agents.models import AgentSession
  from chat.models import Conversation
  from subagent.models import SubAgentSession
@@ -238,10 +238,12 @@ class TestCodingSessionCallback:
  project=project,
  status=AgentSession.Status.RUNNING,
  )
+ # task_type=EXPLORE 测试兼容旧流程路径（非 graph 管理的 session）
+ # graph 管理路径 (coding/coding_commit) 的测试在 test_commit_confirm_api.py 中
  sub_session = SubAgentSession.objects.create(
  session_id="coding-test-001",
  main_session=agent_session,
- task_type=SubAgentSession.TaskType.CODING,
+ task_type=SubAgentSession.TaskType.EXPLORE,
  status=SubAgentSession.Status.RUNNING,
  repo_url="https://github.com/test/repo.git",
  )
@@ -255,7 +257,7 @@ class TestCodingSessionCallback:
  return coding_session, sub_session
  @pytest.mark.asyncio
  async def test_callback_updates_pr_url(self, running_session_with_subagent):
- """completed 回调后 CodingSession.status=completed, pr_url 被回填。"""
+ """completed 回调后 CodingSession.status=completed, pr_url 被回填（兼容旧流程）。"""
  from subagent.api.callbacks import _update_coding_session_on_complete
  from subagent.models import TaskResult
  coding_session, sub_session = running_session_with_subagent
@@ -273,7 +275,7 @@ class TestCodingSessionCallback:
  assert coding_session.pr_url == "https://github.com/test/repo/pull/1"
  @pytest.mark.asyncio
  async def test_callback_failed_updates_error(self, running_session_with_subagent):
- """failed 回调后 CodingSession.status=failed, error_message 被设置。"""
+ """failed 回调后 CodingSession.status=failed, error_message 被设置（兼容旧流程）。"""
  from subagent.api.callbacks import _update_coding_session_on_fail
  coding_session, sub_session = running_session_with_subagent
  await _update_coding_session_on_fail(sub_session, "容器执行超时")

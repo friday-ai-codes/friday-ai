@@ -724,6 +724,78 @@ class CodingSessionConfirmView(APIView):
  )
  serializer = CodingSessionSerializer(coding_session)
  return Response(serializer.data)
+class CommitConfirmView(APIView):
+ """GET/POST /api/chat/coding-sessions/{id}/commit-confirm/
+ GET: 返回 AI 建议的 commit message + 影响文件摘要
+ POST: 接受用户编辑后的 commit message，resume CodingSession graph
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, session_id): # type: ignore[override]
+ """返回 AI 建议的 commit message 和影响文件列表。"""
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ #: 状态校验 -- 仅 awaiting_confirmation + commit_message 步骤接受
+ if not (
+ coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ and coding_session.confirmation_step == "commit_message"
+ ):
+ return Response(
+ {"detail": "当前状态不支持此操作"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ return Response({
+ "suggested_commit_message": coding_session.suggested_commit_message,
+ "affected_files": coding_session.affected_files,
+ })
+ async def post(self, request, session_id): # type: ignore[override]
+ """接受用户编辑后的 commit message 并 resume CodingSession graph。"""
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ #: 状态校验
+ if not (
+ coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ and coding_session.confirmation_step == "commit_message"
+ ):
+ return Response(
+ {"detail": "当前状态不支持此操作"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ commit_message = request.data.get("commit_message", "").strip
+ if not commit_message:
+ return Response(
+ {"detail": "commit message 不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 长度限制 (ASVS V5 Input Validation, T-)
+ if len(commit_message) > 5000:
+ return Response(
+ {"detail": "commit message 超过最大长度限制"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Resume CodingSession graph
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ await graph.ainvoke(Command(resume=commit_message), config=config)
+ await coding_session.arefresh_from_db
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
 class CodingSessionListView(APIView):
  """GET /api/chat/coding-sessions/ -- 按 conversation 查询 CodingSession 列表（ 恢复用）。"""
  authentication_classes = [OptionalJWTAuthentication]
