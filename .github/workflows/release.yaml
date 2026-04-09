@@ -51,20 +51,7 @@ jobs:
  elif [[ "$TAG" == runner-v* ]]; then
  BUILD_RUNNER=true
  else
- PREV_TAG="$(python - "$TAG" <<'PY'
- import subprocess
- import sys
- current = sys.argv[1]
- tags = subprocess.check_output(
- ["git", "tag", "--list", "v*", "--sort=-version:refname"],
- text=True,
- ).splitlines
- for tag in tags:
- if tag and tag != current and not tag.startswith(("server-", "web-", "runner-")):
- print(tag)
- break
- PY
- )"
+ PREV_TAG="$(python -c 'import subprocess, sys; current = sys.argv[1]; tags = subprocess.check_output(["git", "tag", "--list", "v*", "--sort=-version:refname"], text=True).splitlines; print(next((tag for tag in tags if tag and tag != current and not tag.startswith(("server-", "web-", "runner-"))), ""))' "$TAG")"
  if [[ -n "$PREV_TAG" ]]; then
  echo "Comparing changed files against ${PREV_TAG}"
  CHANGED_FILES="$(git diff --name-only "${PREV_TAG}..${TAG}")"
@@ -90,33 +77,8 @@ jobs:
  else
  echo "build_any=false" >> "$GITHUB_OUTPUT"
  fi
- BUILD_SERVER="$BUILD_SERVER" BUILD_WEB="$BUILD_WEB" BUILD_RUNNER="$BUILD_RUNNER" python <<'PY' >> "$GITHUB_OUTPUT"
- import json
- import os
- services =
- if os.environ["BUILD_SERVER"] == "true":
- services.append(("server", "./server", "./server/Dockerfile"))
- if os.environ["BUILD_WEB"] == "true":
- services.append(("web", "./web", "./web/Dockerfile"))
- if os.environ["BUILD_RUNNER"] == "true":
- services.append(("runner", "./runner", "./runner/Dockerfile"))
- matrix = {"include": }
- for service, context, dockerfile in services:
- for platform, platform_pair in (
- ("linux/amd64", "amd64"),
- ("linux/arm64", "arm64"),
- ):
- matrix["include"].append(
- {
- "service": service,
- "context": context,
- "dockerfile": dockerfile,
- "platform": platform,
- "platform_pair": platform_pair,
- }
- )
- print(f"build_matrix={json.dumps(matrix, separators=(',', ':'))}")
- PY
+ BUILD_MATRIX="$(BUILD_SERVER="$BUILD_SERVER" BUILD_WEB="$BUILD_WEB" BUILD_RUNNER="$BUILD_RUNNER" python -c 'import json, os; services =; services.extend([("server", "./server", "./server/Dockerfile")] if os.environ["BUILD_SERVER"] == "true" else ); services.extend([("web", "./web", "./web/Dockerfile")] if os.environ["BUILD_WEB"] == "true" else ); services.extend([("runner", "./runner", "./runner/Dockerfile")] if os.environ["BUILD_RUNNER"] == "true" else ); matrix = {"include": [{"service": service, "context": context, "dockerfile": dockerfile, "platform": platform, "platform_pair": platform_pair} for service, context, dockerfile in services for platform, platform_pair in (("linux/amd64", "amd64"), ("linux/arm64", "arm64"))]}; print(json.dumps(matrix, separators=(",", ":")))' )"
+ echo "build_matrix=${BUILD_MATRIX}" >> "$GITHUB_OUTPUT"
  # ─────────────────────────────────────────────
  # 2. 并行构建并按 digest 推送单架构镜像
  # ─────────────────────────────────────────────
@@ -185,14 +147,7 @@ jobs:
  IMAGE: ${{ env.IMAGE_PREFIX }}/server
  VERSION: ${{ needs.resolve.outputs.version }}
  run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
- import os
- image = os.environ["IMAGE"]
- digests_dir = "/tmp/digests"
- digests = sorted(name for name in os.listdir(digests_dir) if name)
- print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
- PY
- )"
+ DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
  docker buildx imagetools create \
  -t "${IMAGE}:${VERSION}" \
  -t "${IMAGE}:latest" \
@@ -219,14 +174,7 @@ jobs:
  IMAGE: ${{ env.IMAGE_PREFIX }}/web
  VERSION: ${{ needs.resolve.outputs.version }}
  run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
- import os
- image = os.environ["IMAGE"]
- digests_dir = "/tmp/digests"
- digests = sorted(name for name in os.listdir(digests_dir) if name)
- print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
- PY
- )"
+ DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
  docker buildx imagetools create \
  -t "${IMAGE}:${VERSION}" \
  -t "${IMAGE}:latest" \
@@ -253,14 +201,7 @@ jobs:
  IMAGE: ${{ env.IMAGE_PREFIX }}/runner
  VERSION: ${{ needs.resolve.outputs.version }}
  run: |
- DIGEST_REFS="$(IMAGE="$IMAGE" python <<'PY'
- import os
- image = os.environ["IMAGE"]
- digests_dir = "/tmp/digests"
- digests = sorted(name for name in os.listdir(digests_dir) if name)
- print(" ".join(f"{image}@sha256:{digest}" for digest in digests))
- PY
- )"
+ DIGEST_REFS="$(IMAGE="$IMAGE" python -c 'import os; image = os.environ["IMAGE"]; digests = sorted(name for name in os.listdir("/tmp/digests") if name); print(" ".join(f"{image}@sha256:{digest}" for digest in digests))')"
  docker buildx imagetools create \
  -t "${IMAGE}:${VERSION}" \
  -t "${IMAGE}:latest" \
