@@ -13,10 +13,18 @@ import structlog
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools # noqa: F401
 from agents.core.events import (
+ DOC_ERROR,
+ DOC_SUMMARY,
  ERROR,
  KEEPALIVE,
  MESSAGE_COMPLETE,
  AgentEvent,
+)
+from services.feishu_doc import (
+ DocumentNotFoundError,
+ FeishuDocAPIError,
+ PermissionDeniedError,
+ truncate_doc_content,
 )
 from agents.models import ToolCallLog
 from chat.models import Conversation, Message
@@ -106,17 +114,29 @@ def _build_system_prompt(
  " - 简单的代码定位、查看文件、事实性问答，使用策略一\n"
  " - 拿不准时倾向策略二，deep_analysis 的分析质量远优于多次 RAG 拼凑\n"
  )
+ coding_guidance = (
+ "\n编码任务识别：\n"
+ " 当用户描述了具体的代码变更需求（如「帮我实现...」「修改...功能」「添加...接口」「重构...」），\n"
+ " 你应该调用 create_coding_plan 工具生成结构化技术方案，而非直接给出代码片段。\n"
+ " 技术方案包含：① 影响文件列表（文件路径 + 变更类型：新增/修改/删除）② 分步实现步骤。\n"
+ " 用户确认方案后才会在 Runner 容器中执行编码。\n"
+ " 用户要求调整方案时，调用 update_coding_plan 更新方案内容。\n"
+ " 不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
+ " - deep_analysis：分析理解代码（只读）\n"
+ " - create_coding_plan：执行代码变更（写入）\n"
+ )
  return (
  f"{role_prompt}\n\n"
  f"当前项目：{project_name}\n\n"
  f"{strategy}\n"
+ f"{coding_guidance}\n"
  f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
  f"不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
  f"用中文回答。\n"
  )
 async def _get_tool_names(project_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
- 有已索引仓库：注入全部 6 个工具（3 个新检索工具 + 3 个已有项目工具）
+ 有已索引仓库：注入全部工具（检索工具 + 项目工具 + 编码工具）
  无仓库或未索引：仅注入 get_project_overview（基础信息）
  """
  base_tools = ["get_project_overview"]
@@ -126,6 +146,8 @@ async def _get_tool_names(project_id: str) -> list[str]:
  "search_repository_code",
  "list_project_repositories",
  "get_repository_info",
+ "create_coding_plan",
+ "update_coding_plan",
  ]
  has_indexed = await Repository.objects.filter(
  projects__id=project_id,
@@ -358,12 +380,64 @@ class ConversationService:
  )
  return conversation
  @staticmethod
+ async def _fetch_doc_for_context(
+ project: Any,
+ doc_id: str,
+ ) -> tuple[str | None, AgentEvent]:
+ """读取飞书文档并返回 (markdown_content, sse_event)。
+ 成功时返回 (markdown, doc_summary_event)。
+ 失败时返回 (None, doc_error_event)。
+ """
+ from agents.tools.feishu_doc_tools import create_feishu_doc_client_for_project
+ try:
+ client = await create_feishu_doc_client_for_project(project)
+ except ValueError as e:
+ return None, AgentEvent(
+ type=DOC_ERROR,
+ data={"error_type": "not_configured", "message": str(e)},
+ )
+ try:
+ markdown, _blocks = await client.get_document_content(doc_id)
+ # 提取标题：取第一个非空行，去掉 # 前缀
+ lines = [ln.strip for ln in markdown.split("\n") if ln.strip]
+ title = lines[0].lstrip("# ").strip if lines else "飞书文档"
+ word_count = len(markdown)
+ preview = "\n".join(lines[:3])
+ markdown, was_truncated = truncate_doc_content(markdown)
+ return markdown, AgentEvent(
+ type=DOC_SUMMARY,
+ data={
+ "doc_title": title,
+ "word_count": word_count,
+ "preview": preview,
+ "truncated": was_truncated,
+ "truncated_length": len(markdown) if was_truncated else word_count,
+ },
+ )
+ except PermissionDeniedError as e:
+ return None, AgentEvent(
+ type=DOC_ERROR,
+ data={"error_type": "permission_denied", "message": str(e)},
+ )
+ except DocumentNotFoundError as e:
+ return None, AgentEvent(
+ type=DOC_ERROR,
+ data={"error_type": "not_found", "message": str(e)},
+ )
+ except FeishuDocAPIError as e:
+ logger.warning("feishu_doc_read_failed", doc_id=doc_id, error=str(e))
+ return None, AgentEvent(
+ type=DOC_ERROR,
+ data={"error_type": "unknown", "message": str(e)},
+ )
+ @staticmethod
  async def send_message_stream(
  conversation_id: str,
  content: str,
  role: str = "developer",
  notification_user_id: str | None = None,
  force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息 — 通过 LangGraph graph 驱动。
  签名保持不变，内部改为：
@@ -385,6 +459,19 @@ class ConversationService:
  conversation=conversation,
  role=Message.Role.USER,
  content=content,
+ )
+ # 飞书文档预处理（per: 读取成功即自动注入上下文）
+ doc_context_prefix = ""
+ if feishu_doc_id:
+ doc_markdown, doc_event = await ConversationService._fetch_doc_for_context(
+ conversation.project, feishu_doc_id,
+ )
+ yield doc_event # 推送 doc_summary 或 doc_error
+ if doc_markdown:
+ doc_title = doc_event.data.get("doc_title", "飞书文档")
+ doc_context_prefix = (
+ f"\n\n---\n## 参考文档：{doc_title}\n\n"
+ f"{doc_markdown}\n---\n\n"
  )
  assistant_msg_id = uuid.uuid4
  sdk_config, agent_session = await build_sdk_config(
@@ -426,7 +513,7 @@ class ConversationService:
  try:
  final_state: dict[str, Any] = {}
  async for chunk in graph.astream(
- {"user_message": content, "run_id": str(orch_run.run_id)},
+ {"user_message": doc_context_prefix + content, "run_id": str(orch_run.run_id)},
  config=graph_config,
  stream_mode=["custom", "values"],
  version="v2",
@@ -693,6 +780,7 @@ class ConversationService:
  "progress_message": "",
  "progress_percent": None,
  "logs":,
+ "coding_session": None,
  }
  # deep_analysis 会话信息（向后兼容）
  latest_deep_session = None
@@ -746,6 +834,39 @@ class ConversationService:
  "logs": logs if isinstance(logs, list) else,
  }
  )
+ # CodingSession 运行态检测 (Phase)
+ from chat.models import CodingSession
+ coding_session = await CodingSession.objects.filter(
+ conversation_id=conversation_id,
+ status=CodingSession.Status.RUNNING,
+ ).order_by("-created_at").afirst
+ if coding_session is not None:
+ runtime["active"] = True
+ runtime["mode"] = "coding"
+ runtime["coding_session"] = {
+ "id": str(coding_session.id),
+ "status": coding_session.status,
+ "tech_plan": coding_session.tech_plan,
+ "affected_files": coding_session.affected_files,
+ "branch_name": coding_session.branch_name,
+ }
+ else:
+ # 检查是否有刚完成/失败的 CodingSession（最近 5 分钟内）
+ recent_cutoff = timezone.now - timedelta(minutes=5)
+ recent_coding = await CodingSession.objects.filter(
+ conversation_id=conversation_id,
+ status__in=[CodingSession.Status.COMPLETED, CodingSession.Status.FAILED],
+ updated_at__gte=recent_cutoff,
+ ).order_by("-updated_at").afirst
+ if recent_coding is not None:
+ runtime["coding_session"] = {
+ "id": str(recent_coding.id),
+ "status": recent_coding.status,
+ "pr_url": recent_coding.pr_url,
+ "branch_name": recent_coding.branch_name,
+ "error_message": recent_coding.error_message,
+ "affected_files": recent_coding.affected_files,
+ }
  return runtime
  @staticmethod
  async def delete_conversation(conversation_id: str) -> None:

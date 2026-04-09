@@ -392,6 +392,36 @@ class ProjectViewSet(ModelViewSet):
  "message": f"发送失败: {str(e)}",
  }
  )
+ # === Feishu Doc Export configuration ===
+ @action(detail=True, methods=["get", "put"], url_path="feishu-doc-config")
+ async def feishu_doc_config(self, request, pk=None):
+ """管理飞书文档导出配置。"""
+ project = await self.aget_object
+ # 写操作需要 admin+ 权限
+ if request.method != "GET":
+ if not request.user.is_superuser and not PermissionService.has_project_access(
+ request.user, project, ProjectRole.ADMIN
+ ):
+ return Response(
+ {"detail": "仅项目管理员可修改配置"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ if request.method == "GET":
+ return Response({
+ "feishu_doc_folder_token": project.feishu_doc_folder_token,
+ })
+ # PUT
+ folder_token = request.data.get("feishu_doc_folder_token", "")
+ if len(folder_token) > 200:
+ return Response(
+ {"detail": "folder_token 长度不能超过 200 个字符"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ project.feishu_doc_folder_token = folder_token
+ await project.asave(update_fields=["feishu_doc_folder_token", "updated_at"])
+ return Response({
+ "feishu_doc_folder_token": project.feishu_doc_folder_token,
+ })
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  queryset = (

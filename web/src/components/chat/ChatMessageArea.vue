@@ -1,9 +1,16 @@
 <script setup lang="ts">
+import type { ConversationMessage, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
+import ExportConfirmDialog from './ExportConfirmDialog.vue'
+import CodingErrorCard from './CodingErrorCard.vue'
+import CodingProgressCard from './CodingProgressCard.vue'
+import CodingResultCard from './CodingResultCard.vue'
+import ExportSuccessCard from './ExportSuccessCard.vue'
+import MessageSelectBar from './MessageSelectBar.vue'
 const chatStore = useChatStore
 const scrollContainer = ref<HTMLElement | null>(null)
 const { arrivedState } = useScroll(scrollContainer, { offset: { bottom: 50 } })
@@ -15,16 +22,121 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  }
 }
 watch(
- => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase],
+ => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase, chatStore.codingProgress, chatStore.codingResult, chatStore.codingError],
  => {
  if (isAtBottom.value || chatStore.isStreaming || chatStore.error)
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
  },
 )
+// 从消息历史 metadata 恢复编码结果（刷新页面后 codingResult/codingError 为空）
+const historyCodingResult = computed( => {
+ for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+ const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
+ if (meta?.codingResult) {
+ return meta.codingResult as { sessionId: string; prUrl: string; branchName: string; modifiedFilesCount: number }
+ }
+ }
+ return null
+})
+const historyCodingError = computed( => {
+ for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+ const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
+ if (meta?.codingError) {
+ return meta.codingError as { sessionId: string; errorMessage: string }
+ }
+ }
+ return null
+})
 watch(
  => chatStore.currentConversationId,
  => nextTick( => scrollToBottom('instant')),
 )
+// ============================================================================
+// 导出到飞书 (Phase)
+// ============================================================================
+const showExportDialog = ref(false)
+const exportDefaultTitle = ref('')
+const exportSelectedIds = ref<string>
+type FeishuExportHistoryItem = ExportToFeishuResponse & { exportedAt: string }
+const currentTitle = computed( => {
+ const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
+ return conv?.title || '新对话'
+})
+function generateDefaultTitle {
+ const date = new Date.toISOString.slice(0, 10)
+ return `${currentTitle.value} - ${date}`
+}
+/** 单条快速导出 (per ) */
+function handleExportSingle(messageId: string) {
+ exportSelectedIds.value = [messageId]
+ exportDefaultTitle.value = generateDefaultTitle
+ showExportDialog.value = true
+}
+/** 多选导出确认 */
+function handleMultiExport {
+ exportSelectedIds.value = [...chatStore.selectedMessageIds]
+ exportDefaultTitle.value = generateDefaultTitle
+ showExportDialog.value = true
+}
+function readExportHistory(msg: ConversationMessage): FeishuExportHistoryItem {
+ const metadata = msg.metadata
+ if (!metadata || typeof metadata !== 'object')
+ return
+ const raw = (metadata as Record<string, unknown>).feishu_exports
+ if (!Array.isArray(raw))
+ return
+ return raw.flatMap((item) => {
+ if (!item || typeof item !== 'object')
+ return
+ const record = item as Record<string, unknown>
+ const documentId = typeof record.document_id === 'string' ? record.document_id: ''
+ const url = typeof record.url === 'string' ? record.url: ''
+ const title = typeof record.title === 'string' ? record.title: ''
+ const exportedAt = typeof record.exported_at === 'string'
+ ? record.exported_at: new Date.toISOString
+ if (!documentId || !url || !title)
+ return
+ return [{
+ document_id: documentId,
+ url,
+ title,
+ exportedAt,
+ exported_at: exportedAt,
+ }]
+ })
+}
+const exportResults = computed<FeishuExportHistoryItem>( => {
+ const deduped = new Map<string, FeishuExportHistoryItem>
+ for (const msg of chatStore.messages) {
+ for (const item of readExportHistory(msg)) {
+ deduped.set(item.document_id, item)
+ }
+ }
+ return [...deduped.values].sort((a, b) => a.exportedAt.localeCompare(b.exportedAt))
+})
+/** 导出成功回调 (per ) */
+function handleExportSuccess(result: ExportToFeishuResponse) {
+ const exportedAt = result.exported_at || new Date.toISOString
+ const target = [...chatStore.messages]
+ .filter(msg => exportSelectedIds.value.includes(msg.id) && msg.role === 'assistant')
+ .at(-1)
+ if (target) {
+ const metadata = (target.metadata && typeof target.metadata === 'object')
+ ? { ...target.metadata }: {}
+ const existing = Array.isArray((metadata as Record<string, unknown>).feishu_exports)
+ ? [...((metadata as Record<string, unknown>).feishu_exports as Array<Record<string, unknown>>)]:
+ if (!existing.some(item => item?.document_id === result.document_id)) {
+ existing.push({
+ document_id: result.document_id,
+ url: result.url,
+ title: result.title,
+ exported_at: exportedAt,
+ });(metadata as Record<string, unknown>).feishu_exports = existing
+ target.metadata = metadata
+ }
+ }
+ chatStore.exitExportSelectMode
+}
 </script>
 <template>
  <div class="absolute inset-0 overflow-hidden">
@@ -47,9 +159,15 @@ watch(
  />
  <!-- 消息列表 -->
  <div v-else ref="scrollContainer" class="h-full overflow-y-auto">
+ <!-- 多选操作条 -->
+ <MessageSelectBar
+ v-if="chatStore.isExportSelectMode"
+ @export="handleMultiExport"
+ />
  <div class="max-w-3xl mx-auto px-6 pt-8 pb-40 space-y-7">
  <ChatMessageBubble
  v-for="msg in chatStore.messages":key="msg.id":message="msg"
+ @export-single="handleExportSingle"
  />
  <!-- 流式消息 -->
  <ChatMessageBubble
@@ -58,7 +176,23 @@ watch(
  role: 'assistant',
  content: '',
  created_at: new Date.toISOString,
- }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs"
+ }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs":streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
+ />
+ <!-- 编码进度卡片 (per: inline 嵌入消息流) -->
+ <CodingProgressCard
+ v-if="chatStore.activeCodingSession?.status === 'running' && chatStore.codingProgress":steps="chatStore.codingProgress.steps":modified-files-count="chatStore.codingProgress.modifiedFilesCount":is-complete="false"
+ />
+ <!-- 编码结果卡片 (per ) -->
+ <CodingResultCard
+ v-if="chatStore.codingResult || (!chatStore.codingError && historyCodingResult)":pr-url="(chatStore.codingResult?.prUrl || historyCodingResult?.prUrl) ?? ''":branch-name="(chatStore.codingResult?.branchName || historyCodingResult?.branchName) ?? ''":modified-files-count="(chatStore.codingResult?.modifiedFilesCount || historyCodingResult?.modifiedFilesCount) ?? 0"
+ />
+ <!-- 编码错误卡片 (per ) -->
+ <CodingErrorCard
+ v-if="chatStore.codingError || (!chatStore.codingResult && historyCodingError)":error-message="(chatStore.codingError?.errorMessage || historyCodingError?.errorMessage) ?? ''"
+ />
+ <!-- 导出成功卡片 (per ) -->
+ <ExportSuccessCard
+ v-for="(result, idx) in exportResults":key="`export-${idx}`":title="result.title":url="result.url":exported-at="result.exportedAt"
  />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">
@@ -123,6 +257,11 @@ watch(
  <span class="icon-[lucide--chevron-down] text-sm" />
  </button>
  </Transition>
+ <!-- 导出确认弹窗 -->
+ <ExportConfirmDialog
+ v-model:open="showExportDialog":selected-count="exportSelectedIds.length":default-title="exportDefaultTitle":selected-message-ids="exportSelectedIds"
+ @success="handleExportSuccess"
+ />
  </div>
 </template>
 <style scoped>

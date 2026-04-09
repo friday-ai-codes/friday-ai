@@ -94,3 +94,96 @@ class ChatPushSubscription(models.Model):
  ]
  def __str__(self) -> str:
  return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
+class CodingSession(models.Model):
+ """编码会话 -- 追踪从技术方案到 PR 的全流程。
+ 状态机: draft -> confirmed -> running -> completed/failed
+ """
+ class Status(models.TextChoices):
+ DRAFT = "draft", "方案草稿"
+ CONFIRMED = "confirmed", "已确认"
+ RUNNING = "running", "执行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "已失败"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ conversation = models.ForeignKey(
+ "chat.Conversation",
+ on_delete=models.CASCADE,
+ related_name="coding_sessions",
+ )
+ message = models.ForeignKey(
+ "chat.Message",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="coding_sessions",
+ help_text="创建该方案的 AI 消息",
+ )
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.DRAFT,
+ )
+ tech_plan = models.TextField(verbose_name="技术方案 (Markdown)")
+ affected_files = models.JSONField(default=list, verbose_name="影响文件列表")
+ revision_count = models.IntegerField(default=0, verbose_name="修订次数")
+ repository = models.ForeignKey(
+ "repositories.Repository",
+ on_delete=models.CASCADE,
+ related_name="coding_sessions",
+ )
+ branch_name = models.CharField(max_length=255, blank=True, default="")
+ subagent_session = models.OneToOneField(
+ "subagent.SubAgentSession",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="coding_session",
+ )
+ pr_url = models.URLField(blank=True, default="")
+ error_message = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "coding_sessions"
+ ordering = ["-created_at"]
+ indexes = [
+ models.Index(fields=["conversation", "status"]),
+ ]
+ verbose_name = "编码会话"
+ verbose_name_plural = "编码会话"
+ def __str__(self) -> str:
+ return f"CodingSession({self.id}, {self.status})"
+ async def aconfirm(self) -> None:
+ """draft -> confirmed 状态转换。"""
+ if self.status != self.Status.DRAFT:
+ raise ValueError("只有 draft 状态可确认")
+ self.status = self.Status.CONFIRMED
+ await self.asave(update_fields=["status", "updated_at"])
+ async def amark_running(self, subagent_session_id: int | None = None) -> None:
+ """confirmed -> running 状态转换，关联 SubAgentSession。"""
+ self.status = self.Status.RUNNING
+ if subagent_session_id is not None:
+ self.subagent_session_id = subagent_session_id # type: ignore[assignment]
+ await self.asave(update_fields=["status", "subagent_session", "updated_at"])
+ async def amark_completed(self, pr_url: str = "") -> None:
+ """running -> completed 状态转换，设置 PR URL。"""
+ self.status = self.Status.COMPLETED
+ self.pr_url = pr_url
+ await self.asave(update_fields=["status", "pr_url", "updated_at"])
+ async def amark_failed(self, error: str = "") -> None:
+ """running -> failed 状态转换，设置错误信息。"""
+ self.status = self.Status.FAILED
+ self.error_message = error
+ await self.asave(update_fields=["status", "error_message", "updated_at"])
+ async def aupdate_plan(
+ self,
+ tech_plan: str,
+ affected_files: list[dict[str, str]],
+ ) -> None:
+ """更新技术方案并递增修订计数。"""
+ self.tech_plan = tech_plan
+ self.affected_files = affected_files
+ self.revision_count += 1
+ await self.asave(
+ update_fields=["tech_plan", "affected_files", "revision_count", "updated_at"]
+ )
