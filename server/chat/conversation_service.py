@@ -850,6 +850,19 @@ class ConversationService:
  "affected_files": coding_session.affected_files,
  "branch_name": coding_session.branch_name,
  }
+ # Phase: 从 SubAgentSession.last_output 获取编码中间产出（per, ）
+ if coding_session.subagent_session_id:
+ subagent_session = await SubAgentSession.objects.filter(
+ id=coding_session.subagent_session_id,
+ ).afirst
+ if subagent_session and isinstance(subagent_session.last_output, dict):
+ coding_progress = subagent_session.last_output.get("coding_progress")
+ if coding_progress and isinstance(coding_progress, dict):
+ runtime["coding_session"]["coding_progress"] = {
+ "modified_files": coding_progress.get("modified_files", ),
+ "recent_tool_calls": coding_progress.get("recent_tool_calls", ),
+ "updated_at": coding_progress.get("updated_at", ""),
+ }
  else:
  # 检查是否有刚完成/失败的 CodingSession（最近 5 分钟内）
  recent_cutoff = timezone.now - timedelta(minutes=5)
