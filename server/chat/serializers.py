@@ -204,6 +204,8 @@ class CodingSessionSerializer(serializers.Serializer):
  error_message = serializers.CharField(read_only=True, allow_blank=True)
  confirmation_step = serializers.CharField(read_only=True, allow_blank=True)
  suggested_commit_message = serializers.CharField(read_only=True, allow_blank=True)
+ suggested_pr_title = serializers.CharField(read_only=True, allow_blank=True)
+ suggested_pr_description = serializers.CharField(read_only=True, allow_blank=True)
  created_at = serializers.DateTimeField(read_only=True)
  updated_at = serializers.DateTimeField(read_only=True)
 class ExportToFeishuSerializer(serializers.Serializer):

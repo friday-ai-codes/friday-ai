@@ -796,6 +796,129 @@ class CommitConfirmView(APIView):
  await coding_session.arefresh_from_db
  serializer = CodingSessionSerializer(coding_session)
  return Response(serializer.data)
+class PRConfirmView(APIView):
+ """GET/POST /api/chat/coding-sessions/{id}/pr-confirm/
+ GET: 返回 AI 建议的 PR 标题、描述、默认 target_branch、branch_url
+ POST: 接受用户编辑后的 PR 信息或跳过，resume CodingSession graph
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, session_id): # type: ignore[override]
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.select_related(
+ "repository",
+ ).aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ #: 状态校验 -- 仅 awaiting_confirmation + pr_review
+ if not (
+ coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ and coding_session.confirmation_step == "pr_review"
+ ):
+ return Response(
+ {"detail": "当前状态不支持此操作"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ #: 构建 branch_url
+ from orchestration.coding_graph import build_branch_url
+ branch_url = build_branch_url(
+ coding_session.repository.git_url,
+ coding_session.repository.git_platform,
+ coding_session.branch_name,
+ )
+ return Response({
+ "suggested_pr_title": coding_session.suggested_pr_title,
+ "suggested_pr_description": coding_session.suggested_pr_description,
+ "target_branch": coding_session.repository.default_branch,
+ "branch_url": branch_url,
+ })
+ async def post(self, request, session_id): # type: ignore[override]
+ from .models import CodingSession
+ try:
+ coding_session = await CodingSession.objects.aget(id=session_id)
+ except CodingSession.DoesNotExist:
+ return Response(
+ {"detail": "CodingSession not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ #: 状态校验
+ if not (
+ coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION
+ and coding_session.confirmation_step == "pr_review"
+ ):
+ return Response(
+ {"detail": "当前状态不支持此操作"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ skip = request.data.get("skip", False)
+ if skip:
+ #: 跳过 PR 创建
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ await graph.ainvoke(
+ Command(resume={"skip_pr": True}),
+ config=config,
+ )
+ await coding_session.arefresh_from_db
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
+ #: 非 skip 时校验字段
+ title = request.data.get("title", "").strip
+ description = request.data.get("description", "").strip
+ target_branch = request.data.get("target_branch", "").strip
+ if not title:
+ return Response(
+ {"detail": "PR 标题不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if not description:
+ return Response(
+ {"detail": "PR 描述不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # ASVS V5 Input Validation: 长度限制
+ if len(title) > 200:
+ return Response(
+ {"detail": "PR 标题超过最大长度限制（200 字符）"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if len(description) > 10000:
+ return Response(
+ {"detail": "PR 描述超过最大长度限制（10000 字符）"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if not target_branch:
+ return Response(
+ {"detail": "目标分支不能为空"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Resume CodingSession graph
+ from langgraph.types import Command
+ from orchestration.checkpointer import get_checkpointer
+ from orchestration.coding_graph import build_coding_graph
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ await graph.ainvoke(
+ Command(resume={
+ "skip_pr": False,
+ "title": title,
+ "description": description,
+ "target_branch": target_branch,
+ }),
+ config=config,
+ )
+ await coding_session.arefresh_from_db
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
 class CodingSessionListView(APIView):
  """GET /api/chat/coding-sessions/ -- 按 conversation 查询 CodingSession 列表（ 恢复用）。"""
  authentication_classes = [OptionalJWTAuthentication]
