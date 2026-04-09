@@ -9,7 +9,7 @@ spec:
  writeBackConfig:
  method: argocd
  applicationRefs:
- - namePattern: "friday"
+ - namePattern: "friday-ai-*"
  images:
  - alias: server
  imageName: "ghcr.io/friday-ai-codes/friday-ai/server"
