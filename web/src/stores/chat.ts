@@ -7,6 +7,7 @@
 import type { ChatRole, CodingErrorData, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import {
  confirmCodingSession as apiConfirmCodingSession,
+ confirmCodingSessionWithBranch as apiConfirmCodingSessionWithBranch,
  createConversation,
  deleteConversation,
  exportToFeishu,
@@ -55,12 +56,40 @@ export const useChatStore = defineStore('chat', => {
  // 编码会话状态 (Phase)
  const activeCodingSession = ref<{
  sessionId: string
- status: 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
+ status: 'draft' | 'confirmed' | 'running' | 'awaiting_confirmation' | 'completed' | 'failed'
  isConfirming: boolean
+ confirmationStep?: 'branch_name' | 'commit_message' | 'pr_review'
  } | null>(null)
  const codingProgress = ref<CodingProgressData | null>(null)
  const codingResult = ref<CodingResultData | null>(null)
  const codingError = ref<CodingErrorData | null>(null)
+ // 编码确认数据 (Phase)
+ const commitConfirmData = ref<{
+ suggestedCommitMessage: string
+ conflictCheck: {
+ has_conflicts?: boolean
+ conflicting_files?: string
+ behind_by?: number
+ suggestion?: string
+ } | null
+ } | null>(null)
+ const prConfirmData = ref<{
+ suggestedPrTitle: string
+ suggestedPrDescription: string
+ targetBranch: string
+ branchUrl: string
+ } | null>(null)
+ const diffSummaryData = ref<{
+ files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ total_additions?: number
+ total_deletions?: number
+ truncated?: boolean
+ } | null>(null)
+ // 已完成确认步骤记录（ 折叠摘要）
+ const completedConfirmSteps = ref<Array<{
+ step: string
+ summary: string
+ }>>
  // 导出多选模式 (Phase)
  const isExportSelectMode = ref(false)
  const selectedMessageIds = ref<Set<string>>(new Set)
@@ -119,6 +148,10 @@ export const useChatStore = defineStore('chat', => {
  codingProgress.value = null
  codingResult.value = null
  codingError.value = null
+ commitConfirmData.value = null
+ prConfirmData.value = null
+ diffSummaryData.value = null
+ completedConfirmSteps.value =
  await restoreConversationRuntime(id)
  }
  catch (e) {
@@ -237,6 +270,10 @@ export const useChatStore = defineStore('chat', => {
  currentPhase.value = null
  taskProgress.value = null
  isInterrupting.value = false
+ commitConfirmData.value = null
+ prConfirmData.value = null
+ diffSummaryData.value = null
+ // completedConfirmSteps 不清理（保留已确认步骤给后续卡片展示）
  // 不清理 activeCodingSession / codingResult / codingError（保留给 UI 展示）
  codingProgress.value = null
  if (interruptTimeout) {
@@ -291,10 +328,29 @@ export const useChatStore = defineStore('chat', => {
  else if (runtime.mode === 'coding' && runtime.coding_session) {
  // 恢复编码会话状态
  const cs = runtime.coding_session as CodingSessionRuntime
+ const csStatus = cs.status as 'draft' | 'confirmed' | 'running' | 'awaiting_confirmation' | 'completed' | 'failed'
  activeCodingSession.value = {
  sessionId: cs.id,
- status: cs.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed',
+ status: csStatus,
  isConfirming: false,
+ confirmationStep: (cs.confirmation_step as 'branch_name' | 'commit_message' | 'pr_review') || undefined,
+ }
+ // 恢复确认数据（ 页面刷新恢复）
+ if (csStatus === 'awaiting_confirmation') {
+ isStreaming.value = false // 确认态不锁定输入框
+ if (cs.confirmation_step === 'commit_message') {
+ commitConfirmData.value = {
+ suggestedCommitMessage: cs.suggested_commit_message || '',
+ conflictCheck: (cs.conflict_check_result as typeof commitConfirmData.value extends null ? never: NonNullable<typeof commitConfirmData.value>['conflictCheck']) || null,
+ }
+ } else if (cs.confirmation_step === 'pr_review') {
+ prConfirmData.value = {
+ suggestedPrTitle: cs.suggested_pr_title || '',
+ suggestedPrDescription: cs.suggested_pr_description || '',
+ targetBranch: cs.target_branch || 'main',
+ branchUrl: cs.branch_url || '',
+ }
+ }
  }
  streamingToolCalls.value =
  streamingTimeline.value =
@@ -349,6 +405,7 @@ export const useChatStore = defineStore('chat', => {
  prUrl: cs.pr_url || '',
  branchName: cs.branch_name || '',
  modifiedFilesCount: cs.affected_files?.length || 0,
+ branchUrl: cs.branch_url || '',
  }
  if (activeCodingSession.value) {
  activeCodingSession.value.status = 'completed'
@@ -554,6 +611,8 @@ export const useChatStore = defineStore('chat', => {
  sessionId: event.coding_session_id || '',
  steps: event.steps ||,
  modifiedFilesCount: event.modified_files_count || 0,
+ modifiedFiles: event.modified_files ||,
+ recentToolCalls: event.recent_tool_calls ||,
  }
  if (activeCodingSession.value) {
  activeCodingSession.value.status = 'running'
@@ -566,6 +625,7 @@ export const useChatStore = defineStore('chat', => {
  prUrl: event.pr_url || '',
  branchName: event.branch_name || '',
  modifiedFilesCount: event.modified_files_count || 0,
+ branchUrl: event.branch_url || '',
  }
  if (activeCodingSession.value) {
  activeCodingSession.value.status = 'completed'
@@ -584,6 +644,44 @@ export const useChatStore = defineStore('chat', => {
  isStreaming.value = false
  break
  }
+ case 'awaiting_commit_confirm': {
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'awaiting_confirmation'
+ activeCodingSession.value.confirmationStep = 'commit_message'
+ }
+ commitConfirmData.value = {
+ suggestedCommitMessage: event.suggested_commit_message || '',
+ conflictCheck: null,
+ }
+ // 恢复输入框（非 streaming 态）
+ isStreaming.value = false
+ break
+ }
+ case 'awaiting_pr_review': {
+ if (activeCodingSession.value) {
+ activeCodingSession.value.status = 'awaiting_confirmation'
+ activeCodingSession.value.confirmationStep = 'pr_review'
+ }
+ prConfirmData.value = {
+ suggestedPrTitle: event.suggested_pr_title || '',
+ suggestedPrDescription: event.suggested_pr_description || '',
+ targetBranch: event.target_branch || 'main',
+ branchUrl: event.branch_url || '',
+ }
+ isStreaming.value = false
+ break
+ }
+ case 'conflict_check': {
+ if (commitConfirmData.value) {
+ commitConfirmData.value.conflictCheck = {
+ has_conflicts: event.has_conflicts,
+ conflicting_files: event.conflicting_files,
+ behind_by: event.behind_by,
+ suggestion: event.suggestion,
+ }
+ }
+ break
+ }
  case 'error':
  error.value = event.message || '未知错误'
  break
@@ -595,7 +693,7 @@ export const useChatStore = defineStore('chat', => {
  /**
  * 确认编码方案 — 调用 confirm API 并启动 runtime 轮询
  */
- async function handleConfirmCodingSession(sessionId: string) {
+ async function handleConfirmCodingSession(sessionId: string, branchName?: string) {
  if (!currentConversationId.value) return
  if (activeCodingSession.value?.isConfirming) return
  // 乐观 UI: 立即显示 loading
@@ -605,10 +703,11 @@ export const useChatStore = defineStore('chat', => {
  isConfirming: true,
  }
  try {
- const result = await apiConfirmCodingSession(sessionId)
+ const result = branchName
+ ? await apiConfirmCodingSessionWithBranch(sessionId, branchName): await apiConfirmCodingSession(sessionId)
  activeCodingSession.value = {
  sessionId: result.id,
- status: result.status as 'draft' | 'confirmed' | 'running' | 'completed' | 'failed',
+ status: result.status as 'draft' | 'confirmed' | 'running' | 'awaiting_confirmation' | 'completed' | 'failed',
  isConfirming: false,
  }
  // 编码 running 期间禁用输入
@@ -916,6 +1015,11 @@ export const useChatStore = defineStore('chat', => {
  codingResult,
  codingError,
  handleConfirmCodingSession,
+ // 编码确认数据 (Phase)
+ commitConfirmData,
+ prConfirmData,
+ diffSummaryData,
+ completedConfirmSteps,
  // 导出到飞书 (Phase)
  isExportSelectMode,
  selectedMessageIds,
