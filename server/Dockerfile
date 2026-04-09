@@ -19,7 +19,7 @@ RUN pip install uv \
  && uv pip install --system -r requirements.txt
 # 再复制全部源码并安装项目本身（不重装依赖）
 COPY . .
-RUN uv pip install --system --no-deps -e .
+RUN uv pip install --system --no-deps .
 # Stage 2: Runtime image
 FROM python:3.14-slim
 # Install runtime dependencies only
