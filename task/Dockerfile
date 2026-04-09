@@ -1,5 +1,5 @@
 # Stage 0: Node.js tools
-FROM node:22.12.0-alpine AS node-tools
+FROM node:24-alpine AS node-tools
 # Node is pre-installed, we just need this layer
 # Stage 1: Build dependencies
 FROM python:3.14-alpine AS builder
