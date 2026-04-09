@@ -370,21 +370,18 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  )
  logger.info("coding_session_phase1_complete", coding_session_id=str(coding_session.id))
  elif session.task_type == "coding_commit":
- # Phase 完成: resume graph 标记 completed
+ # Phase 完成: resume graph，三阶段流程中 graph 继续执行到 PR 创建/跳过，
+ # store_coding_complete_to_message 已在 create_pr_or_skip_node 中调用
  from langgraph.types import Command
  from orchestration.checkpointer import get_checkpointer
  from orchestration.coding_graph import build_coding_graph
  checkpointer = await get_checkpointer
  graph = build_coding_graph.compile(checkpointer=checkpointer)
  config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
- pr_url = ""
- if isinstance(session.last_output, dict):
- pr_url = session.last_output.get("pr_url", "")
  await graph.ainvoke(
- Command(resume={"success": True, "pr_url": pr_url}),
+ Command(resume={"success": True}),
  config=config,
  )
- await store_coding_complete_to_message(coding_session)
  logger.info("coding_session_phase2_complete", coding_session_id=str(coding_session.id))
  else:
  # 兼容旧流程（非 graph 管理的 session）
