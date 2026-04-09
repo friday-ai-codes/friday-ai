@@ -13,6 +13,7 @@ from .views import (
  ConversationRuntimeView,
  ExportToFeishuView,
  ModelsView,
+ PRConfirmView,
  WebPushPublicKeyView,
  WebPushSubscriptionView,
  WebPushUnsubscribeView,
@@ -84,5 +85,10 @@ urlpatterns = [
  "coding-sessions/<uuid:session_id>/commit-confirm/",
  CommitConfirmView.as_view,
  name="coding-session-commit-confirm",
+ ),
+ path(
+ "coding-sessions/<uuid:session_id>/pr-confirm/",
+ PRConfirmView.as_view,
+ name="coding-session-pr-confirm",
  ),
 ]
