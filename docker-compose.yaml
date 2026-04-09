@@ -57,6 +57,8 @@ services:
  container_name: friday-web
  ports:
  - "${FRIDAY_WEB_PORT:-10240}:8080"
+ volumes:
+ - ./deploy/docker/nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
  networks:
  - friday-network
  depends_on:

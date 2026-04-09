@@ -6,10 +6,14 @@ metadata:
  labels:
  {{- include "friday.labels" . | nindent 4 }}
  annotations:
- # WebSocket 长连接超时 + SSE 支持
+ {{- if eq (.Values.ingress.className | default "nginx") "nginx" }}
  nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
  nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
  nginx.ingress.kubernetes.io/proxy-buffering: "off"
+ {{- end }}
+ {{- if eq (.Values.ingress.className | default "nginx") "traefik" }}
+ traefik.ingress.kubernetes.io/router.middlewares: ""
+ {{- end }}
  {{- with .Values.ingress.annotations }}
  {{- toYaml . | nindent 4 }}
  {{- end }}
@@ -23,20 +27,30 @@ spec:
  - host: {{ .Values.ingress.host }}
  http:
  paths:
+ # WebSocket — 直接路由到后端
  - path: /ws/
  pathType: Prefix
  backend:
  service:
- name: {{ include "friday.fullname" . }}-web
+ name: {{ include "friday.fullname" . }}-server
  port:
- number: 8080
+ number: 8000
+ # API + 健康检查 — 直接路由到后端
  - path: /api/
  pathType: Prefix
  backend:
  service:
- name: {{ include "friday.fullname" . }}-web
+ name: {{ include "friday.fullname" . }}-server
  port:
- number: 8080
+ number: 8000
+ - path: /health
+ pathType: Prefix
+ backend:
+ service:
+ name: {{ include "friday.fullname" . }}-server
+ port:
+ number: 8000
+ # 其余所有 — 前端静态文件
  - path: /
  pathType: Prefix
  backend:
