@@ -113,7 +113,7 @@ qdrant:
 # -- Ingress 配置
 ingress:
  enabled: false
- className: nginx
+ className: traefik
  host: friday.local
  annotations: {}
  tls:
