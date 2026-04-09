@@ -11,6 +11,7 @@ from git import Actor, Repo
 from git.exc import GitCommandError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from core.config import TaskConfig
+from core.exceptions import ExploreModeForbiddenError
 logger = structlog.get_logger
 class GitOperations:
  """Handle Git operations for task execution.
@@ -23,6 +24,15 @@ class GitOperations:
  self.workspace: Path | None = None
  self.repo: Repo | None = None
  self._ssh_key_file: str | None = None
+ def _check_explore_guard(self, operation: str) -> None:
+ """检查 explore 模式守卫，写操作时抛出异常。"""
+ if self.config.task_mode == "explore":
+ logger.warning(
+ "explore_mode_write_blocked",
+ operation=operation,
+ task_id=self.config.task_id,
+ )
+ raise ExploreModeForbiddenError(operation)
  def _mask_url(self, url: str) -> str:
  """遮蔽 URL 中的敏感信息（如 token）用于日志输出."""
  import re
@@ -154,6 +164,7 @@ class GitOperations:
  raise
  async def create_feature_branch(self, branch_name: str) -> str:
  """Create a new feature branch for the task."""
+ self._check_explore_guard("create_feature_branch")
  if not self.repo:
  if not self.workspace:
  raise RuntimeError("Workspace not initialized")
@@ -169,6 +180,7 @@ class GitOperations:
  raise
  async def commit_changes(self, message: str) -> str | None:
  """Commit all changes with the given message."""
+ self._check_explore_guard("commit_changes")
  if not self.repo:
  if not self.workspace:
  raise RuntimeError("Workspace not initialized")
@@ -191,6 +203,7 @@ class GitOperations:
  raise
  async def push_branch(self, branch_name: str) -> None:
  """Push branch to remote."""
+ self._check_explore_guard("push_branch")
  if not self.repo:
  if not self.workspace:
  raise RuntimeError("Workspace not initialized")
@@ -210,6 +223,7 @@ class GitOperations:
  )
  async def push_branch_with_retry(self, branch_name: str) -> None:
  """Push branch with exponential backoff retry (2s, 4s, 8s delays)."""
+ self._check_explore_guard("push_branch_with_retry")
  logger.info("Pushing branch", branch=branch_name, attempt="with retry")
  await self.push_branch(branch_name)
  async def get_modified_files(self, base_branch: str | None = None) -> list[str]:
@@ -265,6 +279,7 @@ class GitOperations:
  Returns:
  The actual branch name created/checked out
  """
+ self._check_explore_guard("setup_task_branch")
  if not self.repo:
  raise RuntimeError("Repository not initialized. Call setup first.")
  # Determine branch name
