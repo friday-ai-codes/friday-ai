@@ -25,6 +25,7 @@ FROM python:3.14-slim
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
  curl \
+ git \
  libpq5 \
  default-mysql-client \
  && rm -rf /var/lib/apt/lists/*
