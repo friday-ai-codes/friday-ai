@@ -571,3 +571,103 @@ class TestProgressParsingConsistency:
  == "coding"
  )
  assert http_last["source"] == ws_last["source"] == "web"
+# ============================================================================
+# TestPhaseRuntimePollingSmoke — Phase 方案 B 轮询路径 end-to-end smoke
+# ============================================================================
+class TestPhaseRuntimePollingSmoke:
+ """Phase 方案 B 轮询路径 smoke。
+ 证明 progress 回调写入 SubAgentSession.last_output 后,
+ ConversationRuntime 快照在一次 HTTP 调用内可读到 coding_progress。
+ 这是 "感知延迟 ≤ 2s" 的**后端侧**可达性证据
+ (真实延迟由前端 scheduleRuntimePoll 的 setTimeout(2000) 在应用层决定)。
+ 本用例使用 Option C 结构: payload 同时携带
+ - details.suggested_commit_message (证明 Phase 顶层透传未回归)
+ - coding_progress 嵌套 dict (证明 runtime 快照轮询路径端到端可达)
+ Phase 决策详见 project-docs/phases/work-item/work-item.md
+ """
+ @pytest.mark.asyncio
+ @pytest.mark.django_db(transaction=True)
+ async def test_progress_suggested_commit_message_visible_via_runtime_snapshot(
+ self, user: Any, project: Any, repository: Any
+ ) -> None:
+ """progress 回调 → session.last_output → runtime 快照一次调用内可达。"""
+ from agents.models import AgentSession
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingSession, Conversation
+ # --- Setup: 创建 Conversation + AgentSession + SubAgentSession + CodingSession ---
+ conversation = await Conversation.objects.acreate(
+ project=project,
+ title="Phase smoke",
+ )
+ agent_session = await AgentSession.objects.acreate(
+ session_id="main-phase-smoke",
+ user=user,
+ )
+ subagent_session = await SubAgentSession.objects.acreate(
+ session_id="sub-phase-smoke",
+ main_session=agent_session,
+ repo_url="https://github.com/test/repo.git",
+ task_type="coding",
+ status=SubAgentSession.Status.RUNNING,
+ last_output={},
+ )
+ await CodingSession.objects.acreate(
+ conversation=conversation,
+ repository=repository,
+ status=CodingSession.Status.RUNNING,
+ tech_plan="# Phase smoke plan",
+ affected_files=,
+ subagent_session=subagent_session,
+ )
+ # --- Act 1: 触发 progress 回调(Option C 结构 — 同时带 details + coding_progress) ---
+ log = structlog.get_logger("phase.smoke")
+ payload: dict[str, Any] = {
+ "phase": "coding",
+ "progress": 0.6,
+ "message": "正在编辑 Phase smoke 文件",
+ "details": {"suggested_commit_message": "feat: Phase gap closure"},
+ "coding_progress": {
+ "modified_files": [
+ {"path": "server/tests/test_coding_progress.py", "change_type": "modified"},
+ ],
+ "recent_tool_calls": [
+ {"tool": "Edit", "summary": "Added Phase smoke"},
+ ],
+ "updated_at": "2026-04-10T12:00:00Z",
+ },
+ }
+ response = await _handle_progress(subagent_session, payload, log)
+ assert response.status_code == status.HTTP_200_OK
+ # --- Act 2: DB 回读验证 Phase 顶层透传 + coding_progress 嵌套保留 ---
+ await subagent_session.arefresh_from_db
+ saved = subagent_session.last_output
+ assert saved["suggested_commit_message"] == "feat: Phase gap closure", (
+ "Phase regression: details.suggested_commit_message 未透传到 last_output 顶层"
+ )
+ assert "coding_progress" in saved
+ cp = saved["coding_progress"]
+ assert len(cp["modified_files"]) == 1
+ assert cp["modified_files"][0]["path"] == "server/tests/test_coding_progress.py"
+ # NOTE: Phase 公共 parse_progress_payload 会用服务端 timezone.now
+ # 覆盖调用方传入的 updated_at(既有模板用例 test_progress_callback_with_coding_progress
+ # 的断言也是"存在即可")。此处断言存在性 + 字符串类型,不校验字面值。
+ assert isinstance(cp["updated_at"], str) and cp["updated_at"]
+ # --- Act 3: 同一次调用链内立即拉取 runtime 快照(证明后端轮询路径可达) ---
+ runtime = await ConversationService.get_conversation_runtime(str(conversation.id))
+ assert runtime["active"] is True
+ assert runtime["mode"] == "coding"
+ assert "coding_session" in runtime
+ cs = runtime["coding_session"]
+ assert "coding_progress" in cs, (
+ "Phase 方案 B 轮询路径断裂: runtime 快照未暴露 coding_progress"
+ )
+ cp_runtime = cs["coding_progress"]
+ assert len(cp_runtime["modified_files"]) == 1
+ assert cp_runtime["modified_files"][0]["path"] == "server/tests/test_coding_progress.py"
+ # 与 Act 2 一致:updated_at 由生产 parser 统一写入,不校验字面值
+ assert isinstance(cp_runtime["updated_at"], str) and cp_runtime["updated_at"]
+ # NOTE: 不断言 runtime["coding_session"]["suggested_commit_message"] — 该字段
+ # 源自 CodingSession.suggested_commit_message model 字段,只在 _update_coding_session_on_complete
+ # (completed 回调) 时才透传写入。本 smoke 不触发 completed,所以该字段仍为空字符串。
+ # Phase 决策交叉引用详见 server/agents/core/events.py Phase 决策注释块
+ # 与 project-docs/phases/work-item/work-item.md 。
