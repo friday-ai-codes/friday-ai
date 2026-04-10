@@ -3,6 +3,7 @@
 以避免真实 DB 和 Runner 依赖。
 """
 from __future__ import annotations
+import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -35,6 +36,8 @@ def mock_coding_session -> MagicMock:
  session.suggested_pr_title = ""
  session.suggested_pr_description = ""
  session.pr_url = ""
+ session.conflict_check_result = None
+ session.diff_summary = None
  session.amark_awaiting_confirmation = AsyncMock
  session.amark_failed = AsyncMock
  session.aresume_running = AsyncMock
@@ -48,15 +51,33 @@ def _patch_dispatch -> Any:
  new_callable=AsyncMock,
  return_value="sub-session-abc",
  )
-def _patch_get_coding_session(mock_session: MagicMock) -> Any:
+@contextlib.contextmanager
+def _patch_get_coding_session(
+ mock_session: MagicMock,
+ git_credential: MagicMock | None = None,
+) -> Any:
  """Patch _get_coding_session 返回 mock session。
  直接 mock 内部的 _get_coding_session 函数，避免复杂的 ORM 链式调用 mock。
+ Phase 修复：由于 conflict_check_node 被前置到 await_commit_confirm 之前，
+ 既有测试（使用 MagicMock repository）会在 Phase resume 成功后立即触及
+ GitCredential.objects.filter(repository=<MagicMock>) ORM 查询，导致
+ ValidationError (UUID 字段不接受 MagicMock)。此 helper 默认附带
+ mock GitCredential.objects.filter.afirst 返回 None，让 conflict_check_node
+ 走"无凭据早退"分支。
+ Args:
+ mock_session: 要返回的 CodingSession mock 实例
+ git_credential: 可选的 GitCredential mock 实例，传入则让 conflict_check_node
+ 走"有凭据"分支触发真实 compare_branches 调用链（调用方需额外
+ patch common.encryption.decrypt_value 和
+ services.git_platform.get_git_platform_client）
  """
- return patch(
+ with patch(
  "orchestration.coding_graph._get_coding_session",
  new_callable=AsyncMock,
  return_value=mock_session,
- )
+ ) as m_session, patch("repositories.models.GitCredential.objects") as m_cred_objects:
+ m_cred_objects.filter.return_value.afirst = AsyncMock(return_value=git_credential)
+ yield m_session
 # ---------------------------------------------------------------------------
 # 拓扑测试
 # ---------------------------------------------------------------------------
@@ -628,17 +649,17 @@ class TestConflictCheckNode:
  async def test_conflict_check_no_credential(
  self, mock_coding_session: MagicMock
  ) -> None:
- """无 Git 凭据时直接返回 {"phase": "committing"}，不抛异常。"""
+ """无 Git 凭据时静默早退（返回 {}），不推进 phase（Phase）。"""
  from orchestration.coding_graph import conflict_check_node
  state: CodingSessionState = {
  "coding_session_id": "cs-test-123",
- "phase": "committing",
+ "phase": "awaiting_commit_confirm",
  }
  with _patch_get_coding_session(mock_coding_session), \
  patch("repositories.models.GitCredential.objects") as mock_cred_objects:
  mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=None)
  result = await conflict_check_node(state)
- assert result == {"phase": "committing"}
+ assert result == {}
  @pytest.mark.asyncio
  async def test_conflict_check_success_no_conflicts(
  self, mock_coding_session: MagicMock
@@ -648,7 +669,7 @@ class TestConflictCheckNode:
  from orchestration.coding_graph import conflict_check_node
  state: CodingSessionState = {
  "coding_session_id": "cs-test-123",
- "phase": "committing",
+ "phase": "awaiting_commit_confirm",
  }
  compare_result = BranchCompareResult(
  success=True,
@@ -671,7 +692,7 @@ class TestConflictCheckNode:
  patch("services.git_platform.get_git_platform_client", return_value=mock_client):
  mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
  result = await conflict_check_node(state)
- assert result == {"phase": "committing"}
+ assert result == {}
  mock_coding_session.asave.assert_awaited_once
  assert mock_coding_session.conflict_check_result["has_conflicts"] is False
  assert mock_coding_session.diff_summary["total_additions"] == 10
@@ -679,11 +700,11 @@ class TestConflictCheckNode:
  async def test_conflict_check_exception_non_blocking(
  self, mock_coding_session: MagicMock
  ) -> None:
- """compare_branches 抛出异常时返回 {"phase": "committing"}，不阻断流程。"""
+ """compare_branches 抛出异常时静默吞掉并返回 {}，不阻断流程也不推进 phase。"""
  from orchestration.coding_graph import conflict_check_node
  state: CodingSessionState = {
  "coding_session_id": "cs-test-123",
- "phase": "committing",
+ "phase": "awaiting_commit_confirm",
  }
  mock_cred = MagicMock
  mock_cred.encrypted_token = "encrypted-token"
@@ -695,7 +716,7 @@ class TestConflictCheckNode:
  patch("services.git_platform.get_git_platform_client", return_value=mock_client):
  mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
  result = await conflict_check_node(state)
- assert result == {"phase": "committing"}
+ assert result == {}
 # ---------------------------------------------------------------------------
 # Phase: LangGraph 拓扑静态断言测试
 # ---------------------------------------------------------------------------
@@ -753,15 +774,17 @@ class TestRouteAfterCoding:
 # ---------------------------------------------------------------------------
 # Phase: resume 集成测试 -- conflict_check 前置 + interrupt payload + 失败 bypass
 # ---------------------------------------------------------------------------
-def _patch_conflict_check_compare(
+def _build_conflict_compare_mocks(
  has_conflicts: bool = True,
  conflicting_files: list[str] | None = None,
-) -> tuple[Any, Any, Any, MagicMock]:
- """构造 conflict_check_node 依赖链的完整 mock：
- - GitCredential.objects.filter.afirst 返回带 encrypted_token 的 mock cred
- - common.encryption.decrypt_value 返回明文 token
- - services.git_platform.get_git_platform_client 返回 compare_branches 已设置的 client
- 返回 (cred_patch, decrypt_patch, client_patch, mock_cred)。
+) -> tuple[MagicMock, Any, Any]:
+ """构造 conflict_check_node 真实执行所需的 mock 组件：
+ 返回:
+ (mock_cred, decrypt_patch, client_patch)
+ - mock_cred: 传给 _patch_get_coding_session(..., git_credential=...)
+ - decrypt_patch: common.encryption.decrypt_value context manager
+ - client_patch: services.git_platform.get_git_platform_client context manager
+ （client.compare_branches 已预设返回带 has_conflicts 的 BranchCompareResult）
  """
  from services.git_platform.models import BranchCompareResult, CompareFileEntry
  files = conflicting_files if conflicting_files is not None else ["src/main.py"]
@@ -787,13 +810,12 @@ def _patch_conflict_check_compare(
  mock_cred.encrypted_token = "encrypted-token"
  mock_platform_client = AsyncMock
  mock_platform_client.compare_branches = AsyncMock(return_value=compare_result)
- cred_patch = patch("repositories.models.GitCredential.objects")
  decrypt_patch = patch("common.encryption.decrypt_value", return_value="test-token")
  client_patch = patch(
  "services.git_platform.get_git_platform_client",
  return_value=mock_platform_client,
  )
- return cred_patch, decrypt_patch, client_patch, mock_cred
+ return mock_cred, decrypt_patch, client_patch
 class TestCodingSessionGraphResume:
  """G2 (Phase Wave): conflict_check 前置后的 resume 集成测试。"""
  @pytest.mark.asyncio
@@ -808,12 +830,12 @@ class TestCodingSessionGraphResume:
  # 初始化 mock session 的 conflict / diff 字段（避免 MagicMock 自动属性导致 assertion 误判）
  mock_coding_session.conflict_check_result = None
  mock_coding_session.diff_summary = None
- cred_patch, decrypt_patch, client_patch, mock_cred = _patch_conflict_check_compare(
+ mock_cred, decrypt_patch, client_patch = _build_conflict_compare_mocks(
  has_conflicts=True, conflicting_files=["src/main.py"]
  )
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- cred_patch as mock_cred_objects, decrypt_patch, client_patch:
- mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ with _patch_dispatch, \
+ _patch_get_coding_session(mock_coding_session, git_credential=mock_cred), \
+ decrypt_patch, client_patch:
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  # Phase: dispatch -> wait_coding_complete
  await graph.ainvoke(
@@ -847,12 +869,12 @@ class TestCodingSessionGraphResume:
  """await_commit_confirm 的 interrupt payload 必须包含 conflict_check_result + diff_summary。"""
  mock_coding_session.conflict_check_result = None
  mock_coding_session.diff_summary = None
- cred_patch, decrypt_patch, client_patch, mock_cred = _patch_conflict_check_compare(
+ mock_cred, decrypt_patch, client_patch = _build_conflict_compare_mocks(
  has_conflicts=True, conflicting_files=["src/main.py"]
  )
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- cred_patch as mock_cred_objects, decrypt_patch, client_patch:
- mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ with _patch_dispatch, \
+ _patch_get_coding_session(mock_coding_session, git_credential=mock_cred), \
+ decrypt_patch, client_patch:
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},

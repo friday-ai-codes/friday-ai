@@ -1,13 +1,17 @@
 """CodingSession 专用 LangGraph StateGraph -- 三阶段 dispatch 编排。
-拓扑: START -> dispatch_coding -> wait_coding_complete(interrupt)
- -> await_commit_confirm(interrupt) -> conflict_check -> dispatch_commit
+拓扑（Phase 修复后）:
+ START -> dispatch_coding -> wait_coding_complete(interrupt)
+ -> conflict_check -> await_commit_confirm(interrupt) -> dispatch_commit
  -> wait_commit_complete(interrupt)
  -> (conditional: failed->END, success->generate_pr_draft)
  -> generate_pr_draft -> await_pr_confirm(interrupt)
  -> create_pr_or_skip -> (conditional) -> END
 Phase: 编码 dispatch + 等待完成
-Phase: commit message 确认 + conflict_check 冲突预检 + commit dispatch + 等待完成
+Phase: conflict_check 冲突预检 + commit message 确认 + commit dispatch + 等待完成
 Phase: PR 草稿生成（LLM） + PR 确认/跳过 + PR 创建
+Phase 关键修复：conflict_check_node 从 await_commit_confirm 之后前置到之前，
+让 CommitConfirmCard 在 interrupt 发生时能读到 conflict_check_result（via DB 或
+interrupt payload 冗余字段）。
 每个 wait/await 节点使用 interrupt 暂停 graph，通过 Command(resume=...) 恢复。
 interrupt 前只做幂等操作（UPDATE 同值），避免 resume 时重放副作用。
 """
@@ -83,15 +87,27 @@ async def wait_coding_complete_node(state: CodingSessionState) -> dict[str, Any]
  return {"phase": "failed", "error": error}
 async def await_commit_confirm_node(state: CodingSessionState) -> dict[str, Any]:
  """等待用户确认 commit message: interrupt 暂停等待用户确认。
- 先同步 DB 状态为 awaiting_confirmation（幂等 UPDATE，resume 时重放安全）。
+ Phase 修复:
+ - 前置节点为 conflict_check_node（由 build_coding_graph Phase 边拓扑决定）
+ - interrupt 前 refresh DB 读取最新 conflict_check_result + diff_summary
+ （由刚刚执行的 conflict_check_node 写入）
+ - interrupt payload 新增 conflict_check_result 和 diff_summary 两个 key，
+ 作为前端 CommitConfirmCard 冲突警告区的冗余保底数据源
+ （主数据源通过 conversation_service.build_runtime_state 轮询 DB 获取）
  resume 值为 confirmed_commit_message 字符串。
  resume 后同步 CodingSession DB 状态为 running。
+ LangGraph interrupt 重放语义保证 resume 时 node 函数从头执行，
+ _get_coding_session 会再次 refresh DB -- 安全读取最新状态。
  """
- confirmed_msg: str = interrupt({
+ # Phase: interrupt 前 refresh DB 拿 conflict_check_node 写入的最新结果
+ coding_session = await _get_coding_session(state)
+ interrupt_payload: dict[str, Any] = {
  "waiting_for": "commit_confirm",
  "suggested_commit_message": state.get("suggested_commit_message", ""),
- })
- coding_session = await _get_coding_session(state)
+ "conflict_check_result": coding_session.conflict_check_result,
+ "diff_summary": coding_session.diff_summary,
+ }
+ confirmed_msg: str = interrupt(interrupt_payload)
  await coding_session.aresume_running
  logger.info(
  "coding_graph_commit_confirmed",
@@ -104,6 +120,9 @@ async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
  非阻断性: 任何错误都不阻止后续 dispatch_commit 流程（per ）。
  一次 compare 调用同时产出冲突预检和 diff 摘要数据（per ）。
  结果持久化到 CodingSession.conflict_check_result 和 diff_summary（per, ）。
+ Phase 修复后: 此节点在 await_commit_confirm 之前运行，
+ 不能推进 phase —— 必须保留 wait_coding_complete_node 设置的 "awaiting_commit_confirm"，
+ 由 await_commit_confirm_node 在 resume 后自行推进到 "committing"。
  """
  coding_session = await _get_coding_session(state)
  repo = coding_session.repository
@@ -114,7 +133,7 @@ async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
  cred = await GitCredential.objects.filter(repository=repo).afirst
  if cred is None or not cred.encrypted_token:
  logger.info("conflict_check_no_credential", coding_session_id=state["coding_session_id"])
- return {"phase": "committing"}
+ return {}
  token = decrypt_value(cred.encrypted_token)
  client = get_git_platform_client(repo, token)
  result = await client.compare_branches(
@@ -172,7 +191,7 @@ async def conflict_check_node(state: CodingSessionState) -> dict[str, Any]:
  "conflict_check_error",
  coding_session_id=state["coding_session_id"],
  )
- return {"phase": "committing"}
+ return {}
 async def dispatch_commit_node(state: CodingSessionState) -> dict[str, Any]:
  """Phase: dispatch commit 修正任务到 Runner。
  使用 coding_commit task_type，通过 extra_metadata 传递用户确认的 commit message。
@@ -430,10 +449,14 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
 # 条件路由
 # ---------------------------------------------------------------------------
 def route_after_coding(state: CodingSessionState) -> str:
- """条件路由: Phase 失败 -> END, 否则 -> await_commit_confirm。"""
+ """条件路由: Phase 失败 -> END, 否则 -> conflict_check (Phase 修复)。
+ 修复前: 成功路径返回 'await_commit_confirm'，导致 conflict_check 在 interrupt 之后才运行，
+ CommitConfirmCard 的冲突警告区永远看不到数据。
+ 修复后: 成功路径先经过 conflict_check，确保 interrupt 发生时 conflict_check_result 已写入 DB。
+ """
  if state.get("phase") == "failed":
  return END
- return "await_commit_confirm"
+ return "conflict_check"
 def route_after_commit(state: CodingSessionState) -> str:
  """条件路由: Phase 失败 -> END, 成功 -> generate_pr_draft。"""
  if state.get("phase") == "failed":
@@ -444,13 +467,19 @@ def route_after_pr(state: CodingSessionState) -> str:
  return END
 def build_coding_graph -> StateGraph:
  """构建 CodingSession 编排 StateGraph builder。
- 拓扑（三阶段）:
+ 拓扑（三阶段，Phase 修复后）:
  START -> dispatch_coding -> wait_coding_complete
- -> (conditional: failed->END, success->await_commit_confirm)
- -> await_commit_confirm -> conflict_check -> dispatch_commit -> wait_commit_complete
+ -> (conditional: failed->END, success->conflict_check)
+ -> conflict_check -> await_commit_confirm -> dispatch_commit -> wait_commit_complete
  -> (conditional: failed->END, success->generate_pr_draft)
  -> generate_pr_draft -> await_pr_confirm -> create_pr_or_skip
  -> (conditional) -> END
+ Phase 修复要点:
+ - conflict_check_node 前置到 await_commit_confirm 之前（原顺序是 await 之后）
+ - 这样 await_commit_confirm 发 interrupt 时 DB 已包含 conflict_check_result，
+ CommitConfirmCard 的冲突警告区才有数据可渲染
+ - 原 (await_commit_confirm, conflict_check) 和 (conflict_check, dispatch_commit)
+ 两条边完全删除
  """
  builder: StateGraph = StateGraph(CodingSessionState)
  # Phase + 2 原有节点
@@ -468,9 +497,9 @@ def build_coding_graph -> StateGraph:
  builder.add_edge(START, "dispatch_coding")
  builder.add_edge("dispatch_coding", "wait_coding_complete")
  builder.add_conditional_edges("wait_coding_complete", route_after_coding)
- # Phase 边
- builder.add_edge("await_commit_confirm", "conflict_check")
- builder.add_edge("conflict_check", "dispatch_commit")
+ # Phase 边（Phase 修复：conflict_check 前置到 await_commit_confirm 之前）
+ builder.add_edge("conflict_check", "await_commit_confirm")
+ builder.add_edge("await_commit_confirm", "dispatch_commit")
  builder.add_edge("dispatch_commit", "wait_commit_complete")
  builder.add_conditional_edges("wait_commit_complete", route_after_commit)
  # Phase 边
