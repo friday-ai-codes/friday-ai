@@ -23,6 +23,8 @@ echo "数据库已就绪，执行迁移..."
 python manage.py migrate --noinput
 echo "初始化管理员..."
 python manage.py init_superuser
+echo "收集静态文件..."
+python manage.py collectstatic --noinput
 echo "启动 gunicorn..."
 exec gunicorn friday.asgi:application \
  --workers "${GUNICORN_WORKERS:-1}" \
