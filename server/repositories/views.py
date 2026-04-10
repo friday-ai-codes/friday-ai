@@ -21,6 +21,9 @@ from .serializers import (
  RepositorySerializer,
  RepositoryWithProjectsSerializer,
 )
+def is_https_git_url(git_url: str) -> bool:
+ """当前 Access Token 流程只支持 HTTPS 仓库地址。"""
+ return git_url.startswith(("http://", "https://"))
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  permission_classes = [IsAuthenticated]
@@ -209,6 +212,14 @@ class TestConnectionView(APIView):
  if not token:
  return Response(
  {"success": False, "error": "请提供 Access Token"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if not is_https_git_url(git_url):
+ return Response(
+ {
+ "success": False,
+ "error": "当前仅支持 HTTPS 仓库 URL；SSH URL 需要 SSH Key，暂未支持。",
+ },
  status=status.HTTP_400_BAD_REQUEST,
  )
  # Build authenticated URL

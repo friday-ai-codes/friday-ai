@@ -26,6 +26,7 @@ FROM python:3.14-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
  curl \
  git \
+ openssh-client \
  libpq5 \
  default-mysql-client \
  && rm -rf /var/lib/apt/lists/*

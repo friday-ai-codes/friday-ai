@@ -2,6 +2,7 @@
 使用 pytest + pytest-django 风格，提供更好的表达力和可维护性。
 """
 import pytest
+from django.urls import reverse
 from rest_framework import status
 # ============================================================================
 # 仓库列表和创建测试
@@ -48,6 +49,19 @@ class TestRepositoryListCreate:
  format="json",
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
+ def test_create_repository_rejects_ssh_git_url(self, authenticated_client, urls):
+ """测试创建仓库时拒绝 SSH URL。"""
+ response = authenticated_client.post(
+ urls.repository_list,
+ {
+ "name": "SSH Repo",
+ "git_url": "git@github.com:test/repo.git",
+ "access_token": "GITHUB_TOKEN_PLACEHOLDER",
+ },
+ format="json",
+ )
+ assert response.status_code == status.HTTP_400_BAD_REQUEST
+ assert "仅支持 HTTPS" in str(response.data)
  def test_create_repository_unauthenticated(self, api_client, urls):
  """测试未认证用户无法创建仓库。"""
  response = api_client.post(
@@ -77,6 +91,17 @@ class TestRepositoryDetail:
  )
  assert response.status_code == status.HTTP_200_OK
  assert response.data["name"] == "Updated Repo"
+ def test_update_repository_rejects_ssh_git_url(
+ self, authenticated_client, repository, urls
+ ):
+ """测试更新仓库时拒绝 SSH URL。"""
+ response = authenticated_client.patch(
+ urls.repository_detail(repository.id),
+ {"git_url": "git@github.com:test/repo.git"},
+ format="json",
+ )
+ assert response.status_code == status.HTTP_400_BAD_REQUEST
+ assert "仅支持 HTTPS" in str(response.data)
  def test_delete_repository(self, authenticated_client, repository, urls):
  """测试删除仓库。"""
  response = authenticated_client.delete(urls.repository_detail(repository.id))
@@ -129,3 +154,19 @@ class TestRepositoryCredential:
  response = authenticated_client.get(urls.repository_credential(repo_id))
  assert response.status_code == status.HTTP_200_OK
  assert response.data is None
+@pytest.mark.django_db
+class TestRepositoryConnection:
+ """仓库连接测试接口。"""
+ def test_test_connection_rejects_ssh_git_url(self, authenticated_client):
+ """测试连接接口拒绝 SSH URL。"""
+ response = authenticated_client.post(
+ reverse("test-connection"),
+ {
+ "git_url": "git@github.com:test/repo.git",
+ "access_token": "GITHUB_TOKEN_PLACEHOLDER",
+ },
+ format="json",
+ )
+ assert response.status_code == status.HTTP_400_BAD_REQUEST
+ assert response.data["success"] is False
+ assert "仅支持 HTTPS" in response.data["error"]
