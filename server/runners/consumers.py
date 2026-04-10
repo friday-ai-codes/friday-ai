@@ -364,19 +364,16 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  )
  log.debug("token_usage_recorded_via_ws")
  async def _handle_progress(self, task_id: str, payload: dict) -> None:
+ # Phase: 调用公共 parse_progress_payload，与 HTTP 路径
+ # subagent/api/callbacks.py:_handle_progress 保持同一解析逻辑
+ from orchestration.progress_payload import parse_progress_payload
  from subagent.models import SubAgentSession
  session = await SubAgentSession.objects.filter(session_id=task_id).afirst
  if not session:
  return
- session.last_output = {
- **(session.last_output or {}),
- "progress": {
- "phase": payload.get("phase", ""),
- "progress": payload.get("progress", 0.0),
- "message": payload.get("message", ""),
- "updated_at": timezone.now.isoformat,
- },
- }
+ output = parse_progress_payload(payload)
+ # Phase: merge 语义保留既有 meta（task_type/source/conversation_id/logs 等）
+ session.last_output = {**(session.last_output or {}), **output}
  await session.asave(update_fields=["last_output", "updated_at"])
  await _append_runtime_log(
  task_id=task_id,
