@@ -4,7 +4,7 @@ import type {
  RepositoryCreate,
  RepositoryUpdate,
 } from '~/types'
-import { del, get, patch, post } from './client'
+import { ApiError, del, get, getAccessToken, patch, post, upload } from './client'
 // 索引状态枚举
 export enum IndexStatus {
  NOT_INDEXED = 'not_indexed',
@@ -288,5 +288,40 @@ export const repositoriesApi = {
  */
  getIndexFreshness: async (id: string): Promise<IndexFreshnessResponse> => {
  return get<IndexFreshnessResponse>(`/repositories/${id}/index/freshness/`)
+ },
+ // ==================== 索引快照导入导出 ====================
+ /**
+ * 导出索引快照（备份下载）
+ */
+ downloadSnapshot: async (id: string): Promise<void> => {
+ const baseUrl = import.meta.env.VITE_API_BASE || '/api'
+ const token = getAccessToken
+ const headers: HeadersInit = {}
+ if (token)
+ headers.Authorization = `Bearer ${token}`
+ const response = await fetch(`${baseUrl}/repositories/${id}/index/snapshot/export/`, {
+ method: 'POST',
+ headers,
+ })
+ if (!response.ok) {
+ const err = await response.json.catch( => ({ detail: '下载快照失败' }))
+ throw new ApiError(response.status, err.detail || '下载快照失败')
+ }
+ const blob = await response.blob
+ const disposition = response.headers.get('Content-Disposition') || ''
+ const filename = disposition.match(/filename="?(.+?)"?$/)?.[1] || `snapshot-${id}.snapshot`
+ const a = document.createElement('a')
+ a.href = URL.createObjectURL(blob)
+ a.download = filename
+ a.click
+ URL.revokeObjectURL(a.href)
+ },
+ /**
+ * 导入索引快照（恢复上传）
+ */
+ uploadSnapshot: async (id: string, file: File): Promise<{ message: string, points_count: number }> => {
+ const formData = new FormData
+ formData.append('snapshot', file)
+ return upload<{ message: string, points_count: number }>(`/repositories/${id}/index/snapshot/import/`, formData)
  },
 }

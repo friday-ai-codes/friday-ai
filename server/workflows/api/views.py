@@ -192,11 +192,11 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  # KEEP: serializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
  def get_serializer_class(self):
- if self.action == "create":
+ if self.action in ["create", "acreate"]:
  return WorkflowCreateSerializer
- if self.action in ["update", "partial_update"]:
+ if self.action in ["update", "partial_update", "aupdate", "apartial_update"]:
  return WorkflowUpdateSerializer
- if self.action == "list":
+ if self.action in ["list", "alist"]:
  return WorkflowListSerializer
  if self.action == "import_workflow":
  return WorkflowImportSerializer
@@ -483,7 +483,7 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  http_method_names = ["get", "post", "delete", "head", "options"] # No create/update, post for actions
  project_field = "workflow__project"
  def get_serializer_class(self):
- if self.action == "list":
+ if self.action in ["list", "alist"]:
  return WorkflowExecutionListSerializer
  return WorkflowExecutionSerializer
  def get_queryset(self):
@@ -1214,9 +1214,9 @@ class CodingTaskViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  permission_classes = [IsAuthenticated]
  project_field = "workflow_execution__workflow__project"
  def get_serializer_class(self):
- if self.action == "list":
+ if self.action in ["list", "alist"]:
  return CodingTaskListSerializer
- if self.action in ["update", "partial_update"]:
+ if self.action in ["update", "partial_update", "aupdate", "apartial_update"]:
  return CodingTaskUpdateSerializer
  return CodingTaskSerializer
  def get_queryset(self):

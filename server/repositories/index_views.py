@@ -1,11 +1,14 @@
 """Index management views for repositories."""
 import asyncio
 from typing import Any
+import httpx
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.db import transaction
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers, status
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from repositories.models import (
@@ -122,40 +125,14 @@ class IndexStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # 实时校验：当 PostgreSQL 记录为 INDEXED 时，验证 Qdrant 实际状态
- # 防止 Qdrant 数据库被外部变更后前端仍显示过期的索引状态
- if repository.index_status == IndexStatus.INDEXED:
- health = await sync_to_async(QdrantService.check_collection_health)(
- str(repository_id)
- )
- if not health.get("collection_exists") or health.get("points_count", 0) == 0:
- # Qdrant 中 collection 不存在或为空，修正 PostgreSQL 状态
- repository.index_status = IndexStatus.NOT_INDEXED
- repository.last_indexed_at = None
- repository.index_error = None
- repository.index_total_chunks = 0
- repository.index_processed_chunks = 0
- repository.index_write_total = 0
- repository.index_write_processed = 0
- await repository.asave(
- update_fields=[
- "index_status",
- "last_indexed_at",
- "index_error",
- "index_total_chunks",
- "index_processed_chunks",
- "index_write_total",
- "index_write_processed",
- ]
- )
- #: 计算统一进度
+ # 索引进行中 → 进度信息从 DB 读取（indexer 实时更新这些字段）
+ if repository.index_status == IndexStatus.INDEXING:
  total_chunks = repository.index_total_chunks
  processed_chunks = repository.index_processed_chunks
  write_total = repository.index_write_total
  write_processed = repository.index_write_processed
  embedding_pct = (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
  write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
- # 加权合并：Embedding 权重 70%，Qdrant 写入权重 30%
  overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
  if total_chunks == 0:
  overall_stage = "解析文件中..."
@@ -167,15 +144,58 @@ class IndexStatusView(APIView):
  overall_stage = "完成"
  serializer = IndexStatusSerializer(
  {
- "index_status": repository.index_status,
+ "index_status": IndexStatus.INDEXING,
  "last_indexed_at": repository.last_indexed_at,
- "index_error": repository.index_error,
+ "index_error": None,
  "index_total_chunks": total_chunks,
  "index_processed_chunks": processed_chunks,
  "index_write_total": write_total,
  "index_write_processed": write_processed,
  "overall_progress": overall_progress,
  "overall_stage": overall_stage,
+ }
+ )
+ return Response(serializer.data)
+ # 非索引中 → Qdrant 是唯一事实来源
+ health = await sync_to_async(QdrantService.check_collection_health)(
+ str(repository_id)
+ )
+ qdrant_has_data = (
+ health.get("collection_exists") and health.get("points_count", 0) > 0
+ )
+ if qdrant_has_data:
+ points_count = health.get("points_count", 0)
+ actual_status = IndexStatus.INDEXED
+ # DB 状态落后时同步一下
+ if repository.index_status != IndexStatus.INDEXED:
+ repository.index_status = IndexStatus.INDEXED
+ repository.index_error = None
+ if not repository.last_indexed_at:
+ repository.last_indexed_at = timezone.now
+ await repository.asave(
+ update_fields=["index_status", "index_error", "last_indexed_at"]
+ )
+ else:
+ points_count = 0
+ actual_status = IndexStatus.NOT_INDEXED
+ if repository.index_status == IndexStatus.INDEXED:
+ repository.index_status = IndexStatus.NOT_INDEXED
+ repository.last_indexed_at = None
+ repository.index_error = None
+ await repository.asave(
+ update_fields=["index_status", "last_indexed_at", "index_error"]
+ )
+ serializer = IndexStatusSerializer(
+ {
+ "index_status": actual_status,
+ "last_indexed_at": repository.last_indexed_at,
+ "index_error": repository.index_error if actual_status == IndexStatus.FAILED else None,
+ "index_total_chunks": points_count,
+ "index_processed_chunks": points_count,
+ "index_write_total": points_count,
+ "index_write_processed": points_count,
+ "overall_progress": 100 if qdrant_has_data else 0,
+ "overall_stage": "完成" if qdrant_has_data else "",
  }
  )
  return Response(serializer.data)
@@ -519,6 +539,105 @@ class IndexFreshnessView(APIView):
  if output:
  return output.split[0]
  return ""
+# ---------------------------------------------------------------------------
+# 索引快照导入导出
+# ---------------------------------------------------------------------------
+class IndexSnapshotExportView(APIView):
+ """导出索引快照（备份）。
+ POST /api/repositories/{id}/index/snapshot/export/
+ 创建 Qdrant 快照并以流式响应返回文件下载。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(self, request: Any, repository_id: str) -> StreamingHttpResponse | Response:
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
+ if not health.get("collection_exists") or health.get("points_count", 0) == 0:
+ return Response({"detail": "索引不存在或为空"}, status=status.HTTP_404_NOT_FOUND)
+ snapshot_name = await sync_to_async(QdrantService.create_snapshot)(str(repository_id))
+ if not snapshot_name:
+ return Response(
+ {"detail": "创建快照失败"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+ config = await QdrantService.get_config
+ base_url = config.get("url", "http://localhost:6333")
+ collection_name = QdrantService.get_collection_name(str(repository_id))
+ download_url = f"{base_url}/collections/{collection_name}/snapshots/{snapshot_name}"
+ qdrant_headers: dict[str, str] = {}
+ if config.get("api_key"):
+ qdrant_headers["api-key"] = config["api_key"]
+ async def stream_snapshot:
+ async with httpx.AsyncClient(timeout=httpx.Timeout(300)) as client:
+ async with client.stream("GET", download_url, headers=qdrant_headers) as resp:
+ async for chunk in resp.aiter_bytes(chunk_size=65536):
+ yield chunk
+ response = StreamingHttpResponse(
+ stream_snapshot,
+ content_type="application/octet-stream",
+ )
+ response["Content-Disposition"] = f'attachment; filename="{snapshot_name}"'
+ return response
+class IndexSnapshotImportView(APIView):
+ """导入索引快照（恢复）。
+ POST /api/repositories/{id}/index/snapshot/import/
+ 上传 Qdrant 快照文件，恢复到对应 collection。
+ """
+ permission_classes = [IsAuthenticated]
+ parser_classes = [MultiPartParser]
+ async def post(self, request: Any, repository_id: str) -> Response:
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ snapshot_file = request.FILES.get("snapshot")
+ if not snapshot_file:
+ return Response({"detail": "请上传快照文件"}, status=status.HTTP_400_BAD_REQUEST)
+ config = await QdrantService.get_config
+ base_url = config.get("url", "http://localhost:6333")
+ collection_name = QdrantService.get_collection_name(str(repository_id))
+ upload_url = f"{base_url}/collections/{collection_name}/snapshots/upload"
+ qdrant_headers: dict[str, str] = {}
+ if config.get("api_key"):
+ qdrant_headers["api-key"] = config["api_key"]
+ file_content = await sync_to_async(snapshot_file.read)
+ async with httpx.AsyncClient(timeout=httpx.Timeout(600)) as client:
+ resp = await client.post(
+ upload_url,
+ params={"priority": "snapshot"},
+ content=file_content,
+ headers={**qdrant_headers, "Content-Type": "application/octet-stream"},
+ )
+ if resp.status_code not in (200, 201):
+ return Response(
+ {"detail": f"恢复快照失败: {resp.text}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+ health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
+ points_count = health.get("points_count", 0)
+ if points_count > 0:
+ repository.index_status = IndexStatus.INDEXED
+ repository.index_error = None
+ repository.index_total_chunks = points_count
+ repository.index_processed_chunks = points_count
+ repository.index_write_total = points_count
+ repository.index_write_processed = points_count
+ if not repository.last_indexed_at:
+ repository.last_indexed_at = timezone.now
+ await repository.asave(
+ update_fields=[
+ "index_status",
+ "last_indexed_at",
+ "index_error",
+ "index_total_chunks",
+ "index_processed_chunks",
+ "index_write_total",
+ "index_write_processed",
+ ]
+ )
+ return Response({"message": "索引快照已恢复", "points_count": points_count})
 # ---------------------------------------------------------------------------
 # Phase: 自动索引触发
 # ---------------------------------------------------------------------------

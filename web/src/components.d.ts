@@ -274,6 +274,7 @@ declare module 'vue' {
  WorkflowCanvas: typeof import('./components/workflow/editor/WorkflowCanvas.vue')['default']
  WorkflowDataTable: typeof import('./components/workflow/WorkflowDataTable.vue')['default']
  WorkflowEmptyState: typeof import('./components/workflow/WorkflowEmptyState.vue')['default']
+ WorkflowMiniMap: typeof import('./components/workflow/WorkflowMiniMap.vue')['default']
  WorkflowPageHeader: typeof import('./components/workflow/WorkflowPageHeader.vue')['default']
  WorkflowToolbar: typeof import('./components/workflow/WorkflowToolbar.vue')['default']
  }

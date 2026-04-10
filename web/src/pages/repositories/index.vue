@@ -3,6 +3,7 @@ import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
+import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
@@ -95,7 +96,7 @@ const platformIcons: Record<string, string> = {
  description="创建您的第一个仓库，关联到项目以开始使用"
  action-label="新建仓库"
  gradient="from-teal-500/20 to-cyan-500/20"
- @action="$router.push('/repositories/new')"
+ @action="openCreateRepository"
  />
  <!-- 仓库列表 -->
  <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -103,6 +104,15 @@ const platformIcons: Record<string, string> = {
  v-for="repository in repositoriesStore.repositories":key="repository.id":to="`/repositories/${repository.id}`"
  class="card card-interactive group flex flex-col"
  >
+ <!-- 索引状态顶部指示条 -->
+ <div
+ class=".5 rounded-t-[inherit]":class="{
+ 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500': repository.index_status === 'indexed',
+ 'bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500 animate-pulse': repository.index_status === 'indexing',
+ 'bg-gradient-to-r from-red-500 to-orange-500': repository.index_status === 'failed',
+ 'bg-border/30': repository.index_status === 'not_indexed',
+ }"
+ />
  <div class=" flex-1 space-y-3">
  <!-- 标题行 -->
  <div class="flex items-center gap-2.5">
@@ -112,11 +122,7 @@ const platformIcons: Record<string, string> = {
  <h3 class="text-sm font-semibold text-foreground group-hover:text-primary transition-colors truncate flex-1">
  {{ repository.name }}
  </h3>
- <Badge:variant="repository.has_credential ? 'default': 'secondary'"
- class="text-xs shrink-0"
- >
- {{ repository.has_credential ? '凭证': '无凭证' }}
- </Badge>
+ <StatusBadge type="index":status="repository.index_status" size="sm" />
  </div>
  <!-- 平台和分支 -->
  <div class="flex items-center gap-2 flex-wrap">
@@ -136,6 +142,11 @@ const platformIcons: Record<string, string> = {
  <p class="text-xs text-muted-foreground font-mono truncate":title="repository.git_url">
  {{ repository.git_url }}
  </p>
+ <!-- 索引时间 -->
+ <p v-if="repository.last_indexed_at" class="text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--clock]" />
+ 索引于 {{ new Date(repository.last_indexed_at).toLocaleString('zh-CN') }}
+ </p>
  </div>
  <!-- 底部操作栏 -->
  <div class="flex items-center gap-2 px-4 py-2.5 border-t border-border/50">
@@ -143,6 +154,11 @@ const platformIcons: Record<string, string> = {
  <span class="icon-[lucide--eye]" />
  查看详情
  </button>
+ <RouterLink:to="`/repositories/${repository.id}?tab=indexing`" @click.stop>
+ <button class="btn btn-ghost btn-icon btn-sm" title="代码索引">
+ <span class="icon-[lucide--database]" />
+ </button>
+ </RouterLink>
  <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
  <button class="btn btn-ghost btn-icon btn-sm" title="凭证管理">
  <span class="icon-[lucide--key]" />

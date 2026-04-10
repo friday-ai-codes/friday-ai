@@ -7,6 +7,8 @@ from .index_views import (
  IndexDeleteView,
  IndexFreshnessView,
  IndexHistoryListView,
+ IndexSnapshotExportView,
+ IndexSnapshotImportView,
  IndexStatsView,
  IndexStatusView,
  IndexTriggerView,
@@ -102,6 +104,17 @@ urlpatterns = [
  "<uuid:repository_id>/index/freshness/",
  IndexFreshnessView.as_view,
  name="repository-index-freshness",
+ ),
+ # Snapshot export/import
+ path(
+ "<uuid:repository_id>/index/snapshot/export/",
+ IndexSnapshotExportView.as_view,
+ name="repository-index-snapshot-export",
+ ),
+ path(
+ "<uuid:repository_id>/index/snapshot/import/",
+ IndexSnapshotImportView.as_view,
+ name="repository-index-snapshot-import",
  ),
  # Webhook (Phase, no auth required)
  path(

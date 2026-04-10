@@ -99,6 +99,13 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "minimum": 0.01,
  "maximum": 100.0,
  },
+ "timeout_minutes": {
+ "type": "integer",
+ "title": "超时时间 (分钟)",
+ "description": "Agent 执行的最大超时时间，超时后自动终止。留空使用默认值（10 分钟）",
+ "minimum": 1,
+ "maximum": 120,
+ },
  },
  "required":,
  }
@@ -281,6 +288,8 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  provider_type=provider_type_cfg,
  )
  # 3. Build and run SDKAgentRunner
+ timeout_minutes = config.get("timeout_minutes")
+ timeout_seconds = timeout_minutes * 60.0 if timeout_minutes else 600.0
  runner_config = SdkRunnerConfig(
  system_prompt=enhanced_prompt,
  model=resolved_model,
@@ -292,6 +301,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  agent_session=agent_session,
  max_thinking_tokens=config.get("max_thinking_tokens"),
  max_budget_usd=config.get("max_budget_usd"),
+ timeout_seconds=timeout_seconds,
  )
  runner = SDKAgentRunner(runner_config)
  # 消费完整 stream 以获取结果（workflow 节点不需要 SSE 流式输出）

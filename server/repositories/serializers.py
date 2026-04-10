@@ -24,12 +24,21 @@ class RepositorySerializer(serializers.ModelSerializer):
  "proxy_url",
  "auto_index_enabled",
  "webhook_secret",
+ "index_status",
+ "last_indexed_at",
  "created_at",
  "updated_at",
  "has_credential",
  "linked_projects_count",
  ]
- read_only_fields = ["id", "created_at", "updated_at", "webhook_secret"]
+ read_only_fields = [
+ "id",
+ "created_at",
+ "updated_at",
+ "webhook_secret",
+ "index_status",
+ "last_indexed_at",
+ ]
  def get_has_credential(self, obj: Repository) -> bool:
  return hasattr(obj, "credential") and obj.credential is not None
  def get_linked_projects_count(self, obj: Repository) -> int:

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import type { IndexStatusResponse } from '~/api/repositories'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
+import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
@@ -10,7 +12,6 @@ import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { MarkdownPreview } from '~/components/ui/markdown-editor'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/repositories/[id]/')
 const router = useRouter
@@ -25,11 +26,21 @@ useHead({
 })
 // 加载仓库
 const loading = ref(true)
+const indexStatus = ref<IndexStatusResponse | null>(null)
+async function loadIndexStatus {
+ try {
+ indexStatus.value = await repositoriesApi.getIndexStatus(repositoryId.value)
+ }
+ catch {
+ // intentionally ignored
+ }
+}
 onMounted(async => {
  try {
  await Promise.all([
  repositoriesStore.fetchRepository(repositoryId.value),
  repositoriesStore.fetchCredential(repositoryId.value),
+ loadIndexStatus,
  ])
  }
  catch (e: unknown) {
@@ -64,6 +75,8 @@ function formatDate(dateStr: string) {
 // 计算属性
 const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
+// 描述折叠
+const descExpanded = ref(false)
 // 编辑仓库
 const editDialogOpen = ref(false)
 async function handleEditSuccess {
@@ -146,12 +159,27 @@ function copyUrl {
  </Button>
  </div>
  </div>
- <!-- 描述 -->
- <div v-if="repository.description" class="text-sm text-muted-foreground pl-[52px]">
- <MarkdownPreview:content="repository.description" />
- </div>
  <!-- 快速状态指示器 -->
  <div class="flex items-center gap-2 pl-[52px] flex-wrap">
+ <div
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{
+ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED,
+ 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING,
+ 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED,
+ 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED,
+ }"
+ >
+ <span:class="{
+ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED,
+ 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING,
+ 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED,
+ 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED,
+ }"
+ />
+ {{
+ indexStatus?.index_status === IndexStatus.INDEXED ? '索引就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '索引构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': '未建索引'
+ }}
+ </div>
  <div
  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="credential
  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': 'bg-muted/60 text-muted-foreground border border-border/50'"
@@ -168,28 +196,37 @@ function copyUrl {
  已配置代理
  </div>
  </div>
+ <!-- 描述（可折叠，默认收起） -->
+ <div v-if="repository.description" class="pl-[52px]">
+ <button
+ class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+ @click="descExpanded = !descExpanded"
+ >
+ <span
+ class="icon-[lucide--chevron-right] transition-transform duration-200":class="{ 'rotate-90': descExpanded }"
+ />
+ <span class="icon-[lucide--file-text]" />
+ AI 描述
+ </button>
+ <div
+ v-if="descExpanded"
+ class="mt-2 text-sm text-muted-foreground max-h-[200px] overflow-y-auto rounded-lg bg-muted/30 border border-border/40 "
+ >
+ <MarkdownPreview:content="repository.description" />
  </div>
  </div>
- <!-- ==================== Tab 内容区域 ==================== -->
- <Tabs default-value="overview" class="space-y-6">
- <TabsList class="bg-muted/50 border border-border/50">
- <TabsTrigger value="overview" class="gap-1.5">
- <span class="icon-[lucide--layout-dashboard] text-sm" />
- 概览
- </TabsTrigger>
- <TabsTrigger value="indexing" class="gap-1.5">
- <span class="icon-[lucide--database] text-sm" />
- 代码索引
- </TabsTrigger>
- <TabsTrigger value="automation" class="gap-1.5">
- <span class="icon-[lucide--webhook] text-sm" />
- 自动化
- </TabsTrigger>
- </TabsList>
- <!-- ========== 概览 Tab ========== -->
- <TabsContent value="overview" class="space-y-4 mt-0">
+ </div>
+ </div>
+ <!-- ==================== 代码索引（第一优先级） ==================== -->
+ <div class="space-y-4">
+ <div class="grid gap-4 lg:grid-cols-2">
+ <RepositoryIndexCard:repository-id="repository.id" />
+ <IndexStatsPanel:repository-id="repository.id" />
+ </div>
+ <IndexHistoryList:repository-id="repository.id" />
+ </div>
+ <!-- ==================== 仓库信息 & 凭证 ==================== -->
  <div class="grid gap-4 lg:grid-cols-3">
- <!-- 左侧：基本信息 -->
  <div class="lg:col-span-2 space-y-4">
  <!-- 仓库信息卡片 -->
  <div class="card">
@@ -261,9 +298,8 @@ function copyUrl {
  </div>
  </div>
  </div>
- <!-- 右侧：凭证状态 -->
- <div>
- <div class="card">
+ <!-- 右侧：凭证 -->
+ <div class="card h-fit">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--key] text-primary" />
@@ -317,23 +353,10 @@ function copyUrl {
  </div>
  </div>
  </div>
- </div>
- </TabsContent>
- <!-- ========== 代码索引 Tab ========== -->
- <TabsContent value="indexing" class="space-y-4 mt-0">
- <div class="grid gap-4 lg:grid-cols-2">
- <RepositoryIndexCard:repository-id="repository.id" />
- <IndexStatsPanel:repository-id="repository.id" />
- </div>
- <IndexHistoryList:repository-id="repository.id" />
- </TabsContent>
- <!-- ========== 自动化 Tab ========== -->
- <TabsContent value="automation" class="mt-0">
+ <!-- ==================== 自动化 ==================== -->
  <div class="max-w-3xl">
  <WebhookConfigPanel:repository="repository" @updated="repositoriesStore.fetchRepository(repositoryId)" />
  </div>
- </TabsContent>
- </Tabs>
  </template>
  <!-- 仓库不存在 -->
  <EmptyState
