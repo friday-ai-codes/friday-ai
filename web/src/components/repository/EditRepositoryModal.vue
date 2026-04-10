@@ -57,8 +57,8 @@ function validate: boolean {
  if (!form.git_url.trim) {
  errors.git_url = '请输入仓库 URL'
  }
- else if (!form.git_url.match(/^(https?:\/\/|git@)/)) {
- errors.git_url = '请输入有效的仓库 URL'
+ else if (!form.git_url.match(/^https?:\/\//)) {
+ errors.git_url = '当前仅支持 HTTPS 仓库 URL'
  }
  return !errors.name && !errors.git_url
 }

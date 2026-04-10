@@ -1,6 +1,13 @@
 """Repositories serializers."""
 from rest_framework import serializers
 from .models import GitCredential, Repository
+def validate_https_git_url(git_url: str) -> str:
+ """仅允许与 Access Token 认证兼容的 HTTPS 仓库地址。"""
+ if not git_url.startswith(("http://", "https://")):
+ raise serializers.ValidationError(
+ "当前仅支持 HTTPS 仓库 URL；SSH URL 需要 SSH Key，暂未支持。"
+ )
+ return git_url
 class RepositorySerializer(serializers.ModelSerializer):
  """Serializer for Repository model."""
  has_credential = serializers.SerializerMethodField
@@ -28,6 +35,8 @@ class RepositorySerializer(serializers.ModelSerializer):
  def get_linked_projects_count(self, obj: Repository) -> int:
  """返回关联到此仓库的项目数量。"""
  return obj.projects.count
+ def validate_git_url(self, value: str) -> str:
+ return validate_https_git_url(value)
 class RepositoryCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Repository with credential."""
  access_token = serializers.CharField(write_only=True)
@@ -46,6 +55,8 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
  "git_user_name",
  "git_user_email",
  ]
+ def validate_git_url(self, value: str) -> str:
+ return validate_https_git_url(value)
 class RepositoryWithProjectsSerializer(RepositorySerializer):
  """Serializer for Repository with associated projects."""
  projects = serializers.SerializerMethodField
