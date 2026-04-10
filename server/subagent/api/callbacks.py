@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from structlog.stdlib import BoundLogger
+from orchestration.progress_payload import parse_progress_payload
 from services.protocols import CallbackType
 from subagent.models import ActionLog, SubAgentSession, TaskResult, TokenUsage
 from .serializers import (
@@ -573,7 +574,14 @@ async def _handle_progress(
  session: SubAgentSession, payload: dict[str, Any], log: BoundLogger
 ) -> Response:
  """处理 progress 回调 — 更新 last_output（临时进度数据）。
- 编码任务 (coding task_type) 时额外保存 coding_progress 中间产出（per, ）。
+ Phase + G4 + G5 修复（v18.1 audit gap closure）:
+ - G4: 调用公共 ``parse_progress_payload`` 与 WebSocket 路径
+ (runners/consumers.py:RunnerConsumer._handle_progress) 共享同一解析逻辑，
+ 避免两条路径分叉。
+ - G1 (BLOCKER): ``details.suggested_commit_message`` scalar 透传到 output 顶层，
+ 使下游 ``GET /api/chat/coding-sessions/{id}/commit-confirm/`` 返回真实 AI 建议。
+ - G5: 使用 dict spread merge 语义写入 ``session.last_output``，保留既有
+ task_type/source/conversation_id/logs 等 meta 而非整体覆盖。
  """
  ser = ProgressPayloadSerializer(data=payload)
  if not ser.is_valid:
@@ -582,25 +590,9 @@ async def _handle_progress(
  status=status.HTTP_400_BAD_REQUEST,
  )
  p = ser.validated_data
- # 基础 progress 数据
- output: dict[str, Any] = {
- "progress": {
- "phase": p.get("phase", ""),
- "progress": p.get("progress", 0.0),
- "message": p.get("message", ""),
- "updated_at": timezone.now.isoformat,
- },
- }
- # 编码任务中间产出扩展（per,, ）
- # 容器侧在 progress payload 中携带 coding_progress 字段
- coding_progress = p.get("coding_progress")
- if coding_progress and isinstance(coding_progress, dict):
- output["coding_progress"] = {
- "modified_files": coding_progress.get("modified_files", ),
- "recent_tool_calls": coding_progress.get("recent_tool_calls", ),
- "updated_at": timezone.now.isoformat,
- }
- session.last_output = output
+ output = parse_progress_payload(p)
+ # G5 merge 语义：严格使用 (session.last_output or {}) fallback 防御 None
+ session.last_output = {**(session.last_output or {}), **output}
  await session.asave(update_fields=["last_output", "updated_at"])
  log.debug("callback_progress_ok", phase=p.get("phase", ""))
  return Response({"status": "ok"})
