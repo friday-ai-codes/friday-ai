@@ -641,6 +641,7 @@ class TestPhaseRuntimePollingSmoke:
  # --- Act 2: DB 回读验证 Phase 顶层透传 + coding_progress 嵌套保留 ---
  await subagent_session.arefresh_from_db
  saved = subagent_session.last_output
+ assert saved is not None, "last_output 应已被 _handle_progress 写入,不应为 None"
  assert saved["suggested_commit_message"] == "feat: Phase gap closure", (
  "Phase regression: details.suggested_commit_message 未透传到 last_output 顶层"
  )
