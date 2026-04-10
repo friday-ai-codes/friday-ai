@@ -7,8 +7,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END
 from langgraph.types import Command
-from orchestration.coding_graph import build_coding_graph
+from orchestration.coding_graph import build_coding_graph, route_after_coding
 from orchestration.coding_state import CodingSessionState
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -695,3 +696,232 @@ class TestConflictCheckNode:
  mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
  result = await conflict_check_node(state)
  assert result == {"phase": "committing"}
+# ---------------------------------------------------------------------------
+# Phase: LangGraph 拓扑静态断言测试
+# ---------------------------------------------------------------------------
+class TestCodingGraphTopology:
+ """G2 (Phase Wave): LangGraph 静态拓扑断言 -- conflict_check 必须在 await_commit_confirm 之前。"""
+ def test_conflict_check_precedes_await_commit_confirm(self) -> None:
+ """build_coding_graph 编译后 edges 包含 (conflict_check, await_commit_confirm) 且不包含反向边。"""
+ builder = build_coding_graph
+ # 优先尝试直接属性访问 builder.edges
+ raw_edges: set[tuple[str, str]] = set
+ if hasattr(builder, "edges"):
+ for edge in builder.edges:
+ if isinstance(edge, tuple) and len(edge) == 2:
+ raw_edges.add(edge)
+ else:
+ src = getattr(edge, "source", None)
+ dst = getattr(edge, "target", None) or getattr(edge, "destination", None)
+ if src and dst:
+ raw_edges.add((src, dst))
+ # fallback: compile + introspect graph.get_graph.edges
+ if not raw_edges:
+ compiled = builder.compile(checkpointer=MemorySaver)
+ g = compiled.get_graph
+ raw_edges = {(e.source, e.target) for e in g.edges}
+ assert ("conflict_check", "await_commit_confirm") in raw_edges, (
+ f"expected ('conflict_check', 'await_commit_confirm') in edges, got {raw_edges}"
+ )
+ assert ("await_commit_confirm", "conflict_check") not in raw_edges, (
+ f"legacy edge ('await_commit_confirm', 'conflict_check') must be removed, got {raw_edges}"
+ )
+ assert ("await_commit_confirm", "dispatch_commit") in raw_edges, (
+ f"expected ('await_commit_confirm', 'dispatch_commit') in edges, got {raw_edges}"
+ )
+# ---------------------------------------------------------------------------
+# Phase: route_after_coding 条件路由分支覆盖测试
+# ---------------------------------------------------------------------------
+class TestRouteAfterCoding:
+ """G2 (Phase Wave): route_after_coding 条件路由分支覆盖。"""
+ def test_route_after_coding_success_returns_conflict_check(self) -> None:
+ """Phase 成功后 route_after_coding 返回 'conflict_check'（而非旧值 'await_commit_confirm'）。"""
+ state: dict[str, Any] = {
+ "coding_session_id": "cs-test-123",
+ "phase": "awaiting_commit_confirm",
+ }
+ assert route_after_coding(state) == "conflict_check" # type: ignore[arg-type]
+ def test_route_after_coding_failed_returns_end(self) -> None:
+ """Phase 失败时 route_after_coding 返回 END（不经过 conflict_check）。"""
+ state: dict[str, Any] = {
+ "coding_session_id": "cs-test-123",
+ "phase": "failed",
+ }
+ result = route_after_coding(state) # type: ignore[arg-type]
+ assert result == END
+ assert result != "conflict_check"
+# ---------------------------------------------------------------------------
+# Phase: resume 集成测试 -- conflict_check 前置 + interrupt payload + 失败 bypass
+# ---------------------------------------------------------------------------
+def _patch_conflict_check_compare(
+ has_conflicts: bool = True,
+ conflicting_files: list[str] | None = None,
+) -> tuple[Any, Any, Any, MagicMock]:
+ """构造 conflict_check_node 依赖链的完整 mock：
+ - GitCredential.objects.filter.afirst 返回带 encrypted_token 的 mock cred
+ - common.encryption.decrypt_value 返回明文 token
+ - services.git_platform.get_git_platform_client 返回 compare_branches 已设置的 client
+ 返回 (cred_patch, decrypt_patch, client_patch, mock_cred)。
+ """
+ from services.git_platform.models import BranchCompareResult, CompareFileEntry
+ files = conflicting_files if conflicting_files is not None else ["src/main.py"]
+ compare_result = BranchCompareResult(
+ success=True,
+ ahead_by=3,
+ behind_by=2,
+ files=[
+ CompareFileEntry(
+ path="src/main.py",
+ change_type="modified",
+ additions=10,
+ deletions=5,
+ )
+ ],
+ total_additions=10,
+ total_deletions=5,
+ truncated=False,
+ has_potential_conflicts=has_conflicts,
+ conflicting_files=files,
+ )
+ mock_cred = MagicMock
+ mock_cred.encrypted_token = "encrypted-token"
+ mock_platform_client = AsyncMock
+ mock_platform_client.compare_branches = AsyncMock(return_value=compare_result)
+ cred_patch = patch("repositories.models.GitCredential.objects")
+ decrypt_patch = patch("common.encryption.decrypt_value", return_value="test-token")
+ client_patch = patch(
+ "services.git_platform.get_git_platform_client",
+ return_value=mock_platform_client,
+ )
+ return cred_patch, decrypt_patch, client_patch, mock_cred
+class TestCodingSessionGraphResume:
+ """G2 (Phase Wave): conflict_check 前置后的 resume 集成测试。"""
+ @pytest.mark.asyncio
+ async def test_conflict_check_runs_before_await_commit_confirm(
+ self, graph_config: dict[str, Any], mock_coding_session: MagicMock
+ ) -> None:
+ """Phase resume 成功后，graph 先跑 conflict_check 再暂停在 await_commit_confirm。
+ 断言:
+ 1. conflict_check_node 成功执行 -- mock_coding_session.conflict_check_result 被写入非 None
+ 2. graph 暂停在 await_commit_confirm（即 conflict_check 已在 interrupt 之前完成）
+ """
+ # 初始化 mock session 的 conflict / diff 字段（避免 MagicMock 自动属性导致 assertion 误判）
+ mock_coding_session.conflict_check_result = None
+ mock_coding_session.diff_summary = None
+ cred_patch, decrypt_patch, client_patch, mock_cred = _patch_conflict_check_compare(
+ has_conflicts=True, conflicting_files=["src/main.py"]
+ )
+ with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
+ cred_patch as mock_cred_objects, decrypt_patch, client_patch:
+ mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ graph = build_coding_graph.compile(checkpointer=MemorySaver)
+ # Phase: dispatch -> wait_coding_complete
+ await graph.ainvoke(
+ {"coding_session_id": "cs-test-123", "phase": "coding"},
+ config=graph_config,
+ )
+ # Phase 完成 -> 应先执行 conflict_check，再停在 await_commit_confirm
+ await graph.ainvoke(
+ Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
+ config=graph_config,
+ )
+ # 断言 conflict_check_node 已运行并写入 DB
+ assert mock_coding_session.conflict_check_result is not None, (
+ "conflict_check_result 未被写入 -- conflict_check_node 未在 await 之前运行"
+ )
+ assert mock_coding_session.conflict_check_result["has_conflicts"] is True
+ assert mock_coding_session.conflict_check_result["conflicting_files"] == ["src/main.py"]
+ # 断言 diff_summary 也被写入
+ assert mock_coding_session.diff_summary is not None
+ assert mock_coding_session.diff_summary["total_additions"] == 10
+ assert mock_coding_session.diff_summary["total_deletions"] == 5
+ # 断言 graph 停在 await_commit_confirm（next 节点名含 await_commit_confirm）
+ state = await graph.aget_state(graph_config)
+ assert "await_commit_confirm" in state.next, (
+ f"graph 应停在 await_commit_confirm，当前 next={state.next}"
+ )
+ @pytest.mark.asyncio
+ async def test_await_commit_confirm_interrupt_includes_conflict_data(
+ self, graph_config: dict[str, Any], mock_coding_session: MagicMock
+ ) -> None:
+ """await_commit_confirm 的 interrupt payload 必须包含 conflict_check_result + diff_summary。"""
+ mock_coding_session.conflict_check_result = None
+ mock_coding_session.diff_summary = None
+ cred_patch, decrypt_patch, client_patch, mock_cred = _patch_conflict_check_compare(
+ has_conflicts=True, conflicting_files=["src/main.py"]
+ )
+ with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
+ cred_patch as mock_cred_objects, decrypt_patch, client_patch:
+ mock_cred_objects.filter.return_value.afirst = AsyncMock(return_value=mock_cred)
+ graph = build_coding_graph.compile(checkpointer=MemorySaver)
+ await graph.ainvoke(
+ {"coding_session_id": "cs-test-123", "phase": "coding"},
+ config=graph_config,
+ )
+ await graph.ainvoke(
+ Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
+ config=graph_config,
+ )
+ # 通过 snapshot.tasks[*].interrupts[*].value 读取 interrupt payload
+ snapshot = await graph.aget_state(graph_config)
+ interrupt_payloads: list[dict[str, Any]] =
+ for task in snapshot.tasks:
+ for itrp in task.interrupts:
+ if isinstance(itrp.value, dict):
+ interrupt_payloads.append(itrp.value)
+ assert interrupt_payloads, (
+ f"应至少有一个 await_commit_confirm interrupt payload，snapshot.tasks={snapshot.tasks}"
+ )
+ # 找到 waiting_for == "commit_confirm" 的 payload
+ commit_confirm_payloads = [
+ p for p in interrupt_payloads if p.get("waiting_for") == "commit_confirm"
+ ]
+ assert commit_confirm_payloads, (
+ f"应有 waiting_for=commit_confirm 的 payload，实际 payloads={interrupt_payloads}"
+ )
+ payload = commit_confirm_payloads[0]
+ # 断言新增字段存在
+ assert "conflict_check_result" in payload, (
+ f"interrupt payload 必须包含 'conflict_check_result' key，实际 keys={list(payload.keys)}"
+ )
+ assert "diff_summary" in payload, (
+ f"interrupt payload 必须包含 'diff_summary' key，实际 keys={list(payload.keys)}"
+ )
+ assert payload["conflict_check_result"] is not None
+ assert payload["conflict_check_result"]["has_conflicts"] is True
+ assert payload["conflict_check_result"]["conflicting_files"] == ["src/main.py"]
+ # 既有字段未回归
+ assert "suggested_commit_message" in payload
+ assert payload["suggested_commit_message"] == "feat: test"
+ @pytest.mark.asyncio
+ async def test_phase1_failure_bypasses_conflict_check(
+ self, graph_config: dict[str, Any], mock_coding_session: MagicMock
+ ) -> None:
+ """Phase 失败时 route_after_coding 直接到 END，conflict_check_node 不被执行。"""
+ mock_coding_session.conflict_check_result = None
+ mock_coding_session.diff_summary = None
+ # 不 patch GitCredential / compare_branches -- 如果失败路径错误触及 conflict_check_node，
+ # GitCredential ORM 查询会 raise（未 patch DB 访问），测试会额外失败
+ with _patch_dispatch, _patch_get_coding_session(mock_coding_session):
+ graph = build_coding_graph.compile(checkpointer=MemorySaver)
+ await graph.ainvoke(
+ {"coding_session_id": "cs-test-123", "phase": "coding"},
+ config=graph_config,
+ )
+ # Phase 失败 resume
+ result = await graph.ainvoke(
+ Command(resume={"success": False, "error": "compile failed"}),
+ config=graph_config,
+ )
+ # 断言 graph 已结束
+ state = await graph.aget_state(graph_config)
+ assert not state.next, f"失败路径下 graph 应到达 END，当前 next={state.next}"
+ # 断言 conflict_check_node 未执行 -- mock session 的 conflict 字段仍为 None
+ assert mock_coding_session.conflict_check_result is None, (
+ "失败路径不应执行 conflict_check_node"
+ )
+ assert mock_coding_session.diff_summary is None
+ # 断言 Phase 失败状态同步
+ mock_coding_session.amark_failed.assert_awaited_once_with("compile failed")
+ assert result["phase"] == "failed"
+ assert result["error"] == "compile failed"
