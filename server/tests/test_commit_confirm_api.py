@@ -145,3 +145,99 @@ class TestStateRecovery:
  response2 = authenticated_client.get(url)
  assert response2.status_code == 200
  assert response2.data["suggested_commit_message"] == "feat: add new feature"
+# ---------------------------------------------------------------------------
+# Phase Wave 端到端测试
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+class TestCommitConfirmE2E:
+ """ 端到端 — progress 回调 → GET /commit-confirm/ 数据流。
+ audit v18.1 G1 (BLOCKER) 指出：容器通过 progress 回调携带
+ details.suggested_commit_message，但服务端 _handle_progress 未提取该字段，
+ 导致 GET /api/chat/coding-sessions/{id}/commit-confirm/ 返回空字符串。
+ 本测试覆盖 端到端闭环：
+ 1. 通过真实调用 _handle_progress(sub_session, payload, log) 模拟容器 progress 回调
+ 2. 从 sub_session.last_output 提取 suggested_commit_message 写入 CodingSession
+ 3. 通过 GET /commit-confirm/ 读取，断言返回值非空且等于容器上报值
+ """
+ def test_suggested_commit_message_flows_from_progress_to_get(
+ self,
+ authenticated_client,
+ project,
+ repository,
+ ) -> None:
+ """端到端数据流 — progress 回调写入 → GET API 返回真实 AI 建议（非空字符串）。
+ 关键修复证据：若 Wave G1 未修复，session.last_output 不会包含
+ suggested_commit_message，于是 coding_session.suggested_commit_message 无法
+ 被填充，GET 返回的字段将是空字符串。本测试断言 != "" 即捕捉该回归。
+ """
+ import asyncio
+ import structlog
+ from agents.models import AgentSession
+ from chat.models import CodingSession, Conversation
+ from subagent.api.callbacks import _handle_progress
+ from subagent.models import SubAgentSession
+ expected_msg = "feat: add user auth per "
+ # ---- Arrange: 创建 conversation + running CodingSession + SubAgentSession ----
+ conversation = Conversation.objects.create(
+ project=project, title=" E2E 测试对话"
+ )
+ coding_session = CodingSession.objects.create(
+ conversation=conversation,
+ repository=repository,
+ tech_plan="## 技术方案\n- 步骤 1",
+ affected_files=[{"path": "src/auth.py", "change_type": "create"}],
+ branch_name="feat20260410.e2e-suggested",
+ status=CodingSession.Status.RUNNING,
+ )
+ # 创建 AgentSession + SubAgentSession（progress 回调的作用对象）
+ agent_session = AgentSession.objects.create(
+ session_id=f"main-e2e-{uuid.uuid4.hex[:8]}",
+ )
+ sub_session = SubAgentSession.objects.create(
+ session_id=f"sub-e2e-{uuid.uuid4.hex[:8]}",
+ main_session=agent_session,
+ repo_url="https://github.com/test/repo.git",
+ task_type="coding",
+ status=SubAgentSession.Status.RUNNING,
+ last_output={"task_type": "coding", "source": "web"},
+ )
+ # ---- Act 1: 模拟容器 progress 回调（含 details.suggested_commit_message） ----
+ payload: dict = {
+ "phase": "coding_complete",
+ "progress": 1.0,
+ "message": "AI suggested commit message generated",
+ "details": {"suggested_commit_message": expected_msg},
+ }
+ log = structlog.get_logger("test")
+ # 同步测试中调用 async _handle_progress，用 asyncio.run
+ async def _run_progress -> None:
+ # 回到"活对象"语境确保 asave 生效
+ fresh = await SubAgentSession.objects.aget(session_id=sub_session.session_id)
+ await _handle_progress(fresh, payload, log)
+ asyncio.run(_run_progress)
+ # 回读 sub_session 确认 G1 + G5 修复生效（verification-level）
+ sub_session.refresh_from_db
+ assert sub_session.last_output is not None
+ assert sub_session.last_output["suggested_commit_message"] == expected_msg
+ # G5 merge 语义：预设 task_type/source 保留
+ assert sub_session.last_output["task_type"] == "coding"
+ assert sub_session.last_output["source"] == "web"
+ # ---- Act 2: 模拟 coding_graph 消费 suggested_commit_message 并推进到 awaiting ----
+ # (在生产代码中此步由 _update_coding_session_on_complete / coding_graph 节点完成)
+ suggested_from_sub = sub_session.last_output["suggested_commit_message"]
+ async def _mark_awaiting -> None:
+ cs = await CodingSession.objects.aget(id=coding_session.id)
+ await cs.amark_awaiting_confirmation("commit_message", suggested_from_sub)
+ asyncio.run(_mark_awaiting)
+ # ---- Act 3: GET /commit-confirm/ 读取数据 ----
+ url = f"/api/chat/coding-sessions/{coding_session.id}/commit-confirm/"
+ response = authenticated_client.get(url)
+ # ---- Assert: GET 返回真实 AI 建议（G1 闭环的核心证据） ----
+ assert response.status_code == 200
+ assert response.data["suggested_commit_message"] == expected_msg
+ # 核心断言：G1 修复前此字段会是空字符串
+ assert response.data["suggested_commit_message"] != ""
+ # affected_files 也被正确返回
+ assert response.data["affected_files"] == [
+ {"path": "src/auth.py", "change_type": "create"}
+ ]

@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 import pytest
+import structlog
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -145,6 +146,76 @@ class TestHandleProgressCodingProgress:
  # recent_tool_calls 缺失时默认空列表
  assert cp["recent_tool_calls"] ==
  assert "updated_at" in cp
+ # ------------------------------------------------------------------
+ # Phase + G5 Wave 新增（RED → GREEN）
+ # ------------------------------------------------------------------
+ @pytest.mark.asyncio
+ async def test_progress_callback_extracts_details_suggested_commit_message(
+ self,
+ ) -> None:
+ """G1: _handle_progress 提取 details.suggested_commit_message 到 last_output。
+ audit v18.1 G1 (BLOCKER): 容器通过 progress 回调 details.suggested_commit_message
+ 传递 AI 生成的 commit message，但原 callbacks.py 内联拼装逻辑未提取该字段，
+ 导致 GET /commit-confirm/ 返回空字符串。本测试验证 Wave 修复后 session.last_output
+ 顶层携带 suggested_commit_message，证明 parse_progress_payload 被正确调用。
+ """
+ session = _make_session
+ log = structlog.get_logger("test")
+ payload: dict[str, Any] = {
+ "phase": "coding_complete",
+ "progress": 1.0,
+ "message": "done",
+ "details": {"suggested_commit_message": "feat: add authentication"},
+ }
+ response: Response = await _handle_progress(session, payload, log)
+ assert response.status_code == status.HTTP_200_OK
+ assert session.last_output is not None
+ # G1: details.suggested_commit_message 已透传到 last_output 顶层
+ assert (
+ session.last_output["suggested_commit_message"]
+ == "feat: add authentication"
+ )
+ # 既有 progress 字段保留（parse_progress_payload 规范化输出）
+ assert session.last_output["progress"]["phase"] == "coding_complete"
+ assert session.last_output["progress"]["progress"] == 1.0
+ session.asave.assert_awaited
+ @pytest.mark.asyncio
+ async def test_progress_callback_merges_and_preserves_meta(self) -> None:
+ """G5: session.last_output 采用 merge 语义，预设 meta 完整保留。
+ audit v18.1 G5 (MEDIUM): 原 callbacks.py 使用 session.last_output = output 整体覆盖，
+ 会丢失既有 task_type / source / conversation_id / logs 等 meta 字段。
+ 本测试验证 Wave 修复后使用 {**(session.last_output or {}), **output} merge 语义，
+ 预设的 4 个 meta key 在 progress 回调写入后全部保留。
+ """
+ preset_meta = {
+ "task_type": "coding",
+ "source": "web",
+ "conversation_id": "conv-123",
+ "logs": [{"ts": "2026-04-09T00:00:00Z", "msg": "start"}],
+ }
+ session = _make_session(last_output=dict(preset_meta))
+ log = structlog.get_logger("test")
+ payload: dict[str, Any] = {
+ "phase": "coding",
+ "progress": 0.5,
+ "message": "halfway",
+ }
+ response: Response = await _handle_progress(session, payload, log)
+ assert response.status_code == status.HTTP_200_OK
+ assert session.last_output is not None
+ # 所有预设 meta 必须保留（G5 merge 语义核心证据）
+ assert session.last_output["task_type"] == "coding"
+ assert session.last_output["source"] == "web"
+ assert session.last_output["conversation_id"] == "conv-123"
+ assert session.last_output["logs"] == [
+ {"ts": "2026-04-09T00:00:00Z", "msg": "start"}
+ ]
+ # 新增 progress 字段必须 merge 入同一 dict（不是覆盖）
+ assert session.last_output["progress"]["phase"] == "coding"
+ assert session.last_output["progress"]["progress"] == 0.5
+ # 既有 meta 与新 progress 共存
+ assert "task_type" in session.last_output
+ assert "progress" in session.last_output
 # ============================================================================
 # TestConversationRuntimeCodingProgress — ConversationRuntime 轮询扩展
 # ============================================================================
@@ -386,3 +457,117 @@ class TestWSProgressParsesViaCommon:
  assert last_output["source"] == "web"
  # 5) _append_runtime_log 被调用（验证原有副作用保留）
  mock_append_log.assert_awaited_once
+# ============================================================================
+# TestProgressParsingConsistency — Phase Wave HTTP + WS 双路径一致性
+# ============================================================================
+class TestProgressParsingConsistency:
+ """G4: HTTP 与 WS 两条 progress 路径对同一 payload 产生一致的 session.last_output。
+ Plan (Wave) 已独立验证 WS 路径的端到端正确性（TestWSProgressParsesViaCommon）。
+ Plan (Wave) 的本测试是 G4 端到端闭环的核心证据：
+ - HTTP 路径（callbacks.py:_handle_progress）Wave 修复后也调用 parse_progress_payload
+ - 两条路径对同一 payload 产生字段级等价的 session.last_output
+ - 两条路径均遵守 merge 语义，保留预设 meta
+ """
+ @pytest.mark.asyncio
+ @pytest.mark.django_db(transaction=True)
+ async def test_ws_and_http_paths_produce_identical_output(
+ self, monkeypatch: pytest.MonkeyPatch
+ ) -> None:
+ """HTTP 路径 (_handle_progress) 与 WS 路径 (RunnerConsumer._handle_progress)
+ 对同一 payload 产生一致的 session.last_output（除 updated_at 时间戳外）。
+ """
+ import uuid
+ from agents.models import AgentSession
+ from runners.consumers import RunnerConsumer
+ # 避免 WS 路径触发 runtime log 外部副作用
+ mock_append_log = AsyncMock
+ monkeypatch.setattr(
+ "runners.consumers._append_runtime_log",
+ mock_append_log,
+ )
+ run_tag = uuid.uuid4.hex[:8]
+ http_sid = f"http-sid--{run_tag}"
+ ws_sid = f"ws-sid--{run_tag}"
+ # 预设 meta 用于验证 merge 语义
+ preset_meta = {"task_type": "coding", "source": "web"}
+ agent_session = await AgentSession.objects.acreate(
+ session_id=f"main-{run_tag}",
+ )
+ await SubAgentSession.objects.acreate(
+ session_id=http_sid,
+ main_session=agent_session,
+ repo_url="https://github.com/test/repo.git",
+ task_type="coding",
+ status=SubAgentSession.Status.RUNNING,
+ last_output=dict(preset_meta),
+ )
+ await SubAgentSession.objects.acreate(
+ session_id=ws_sid,
+ main_session=agent_session,
+ repo_url="https://github.com/test/repo.git",
+ task_type="coding",
+ status=SubAgentSession.Status.RUNNING,
+ last_output=dict(preset_meta),
+ )
+ payload: dict[str, Any] = {
+ "phase": "coding",
+ "progress": 0.5,
+ "message": "hi",
+ "coding_progress": {
+ "modified_files": ["a.py"],
+ "recent_tool_calls":,
+ },
+ "details": {"suggested_commit_message": "feat: test"},
+ }
+ log = structlog.get_logger("test")
+ # HTTP 路径: _handle_progress 需要 session 对象作为第一参数
+ http_session = await SubAgentSession.objects.aget(session_id=http_sid)
+ await _handle_progress(http_session, payload, log)
+ http_session = await SubAgentSession.objects.aget(session_id=http_sid)
+ # WS 路径: RunnerConsumer._handle_progress 是实例方法但未使用 self.*
+ await RunnerConsumer._handle_progress(MagicMock, ws_sid, payload)
+ ws_session = await SubAgentSession.objects.aget(session_id=ws_sid)
+ http_last = http_session.last_output
+ ws_last = ws_session.last_output
+ assert http_last is not None
+ assert ws_last is not None
+ # 1) details.suggested_commit_message 两路径均透传
+ assert (
+ http_last["suggested_commit_message"]
+ == ws_last["suggested_commit_message"]
+ == "feat: test"
+ )
+ # 2) progress nested dict phase/progress 字段一致（updated_at 除外，为时间戳）
+ assert (
+ http_last["progress"]["phase"]
+ == ws_last["progress"]["phase"]
+ == "coding"
+ )
+ assert (
+ http_last["progress"]["progress"]
+ == ws_last["progress"]["progress"]
+ == 0.5
+ )
+ assert (
+ http_last["progress"]["message"]
+ == ws_last["progress"]["message"]
+ == "hi"
+ )
+ # 3) coding_progress nested dict 两路径字段一致
+ assert (
+ http_last["coding_progress"]["modified_files"]
+ == ws_last["coding_progress"]["modified_files"]
+ == ["a.py"]
+ )
+ assert (
+ http_last["coding_progress"]["recent_tool_calls"]
+ == ws_last["coding_progress"]["recent_tool_calls"]
+ ==
+ )
+ # 4) merge 语义：预设 meta (task_type/source) 两路径均保留
+ assert (
+ http_last["task_type"]
+ == ws_last["task_type"]
+ == "coding"
+ )
+ assert http_last["source"] == ws_last["source"] == "web"
