@@ -635,7 +635,7 @@ const hideEmptyBubble = computed( =>
  </div>
  <!-- 编码方案卡片（替代默认 tool-detail） -->
  <CodingPlanCard
- v-if="isCodingPlanTool(tc.name) && tc.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming"
+ v-if="isCodingPlanTool(tc.name) && tc.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
  @confirm="chatStore.handleConfirmCodingSession"
  />
  <!-- 深度分析实时日志面板（同一消息只渲染一次） -->
