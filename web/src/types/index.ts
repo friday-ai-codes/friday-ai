@@ -173,6 +173,8 @@ export interface Repository extends RepositoryBase {
  auto_index_enabled: boolean
  webhook_secret?: string | null
  linked_projects_count?: number
+ index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed'
+ last_indexed_at: string | null
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）

@@ -387,10 +387,22 @@ class SDKAgentRunner:
  if remaining <= 0:
  task.cancel
  timeout_min = int(self._config.timeout_seconds / 60)
+ timeout_msg = f"AI 回复超时（已等待 {timeout_min} 分钟）"
+ # task.cancel 只是调度取消，CancelledError 处理器不会立即执行，
+ # 必须在此处设置 _result，否则调用方检查 result 时仍为 None
+ if self._result is None:
+ partial_text = "".join(accumulated_text)
+ self._result = AgentResult(
+ output=,
+ status="error",
+ error=timeout_msg,
+ final_answer=partial_text,
+ metadata={"cost_usd": 0, "timeout": True},
+ )
  yield AgentEvent(
  type=ERROR,
  data={
- "message": f"AI 回复超时（已等待 {timeout_min} 分钟）",
+ "message": timeout_msg,
  "error_code": "SDK_TIMEOUT",
  "timeout_seconds": self._config.timeout_seconds,
  },

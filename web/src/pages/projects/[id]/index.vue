@@ -670,7 +670,7 @@ async function handleCustomToken {
  </div>
  </div>
  <p v-if="availableRepositories.length === 0 && linkedRepositories.length === 0" class="text-sm text-muted-foreground text-center py-2">
- 没有可用的仓库，请先<RouterLink to="/repositories/new" class="text-primary hover:underline">
+ 没有可用的仓库，请先<RouterLink to="/repositories" class="text-primary hover:underline">
  创建仓库
  </RouterLink>
  </p>

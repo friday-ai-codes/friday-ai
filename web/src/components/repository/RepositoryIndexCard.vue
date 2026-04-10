@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { IndexStatusResponse } from '~/api/repositories'
+import type { IndexStatusResponse, SearchResultItem } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
+import { Input } from '~/components/ui/input'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -13,6 +14,9 @@ const loading = ref(true)
 const indexStatus = ref<IndexStatusResponse | null>(null)
 const triggering = ref(false)
 const deleting = ref(false)
+const exporting = ref(false)
+const importing = ref(false)
+const fileInput = ref<HTMLInputElement>
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 let pollInterval: ReturnType<typeof setInterval> | null = null
@@ -57,6 +61,72 @@ async function deleteIndex {
  }
  finally {
  deleting.value = false
+ }
+}
+// 导出索引快照
+async function exportSnapshot {
+ exporting.value = true
+ try {
+ await repositoriesApi.downloadSnapshot(props.repositoryId)
+ success('索引快照已下载')
+ }
+ catch (e: unknown) {
+ handleError(e, '导出索引快照')
+ }
+ finally {
+ exporting.value = false
+ }
+}
+// 触发导入文件选择
+function triggerImport {
+ fileInput.value?.click
+}
+// 导入索引快照
+async function handleImportFile(event: Event) {
+ const target = event.target as HTMLInputElement
+ const file = target.files?.[0]
+ if (!file)
+ return
+ importing.value = true
+ try {
+ const result = await repositoriesApi.uploadSnapshot(props.repositoryId, file)
+ success('索引快照已恢复', `已恢复 ${result.points_count} 个索引块`)
+ await loadIndexStatus
+ }
+ catch (e: unknown) {
+ handleError(e, '导入索引快照')
+ }
+ finally {
+ importing.value = false
+ target.value = ''
+ }
+}
+// 搜索测试
+const searchQuery = ref('')
+const searching = ref(false)
+const searchResults = ref<SearchResultItem>
+const searchTotal = ref(0)
+const hasSearched = ref(false)
+async function testSearch {
+ if (!searchQuery.value.trim)
+ return
+ searching.value = true
+ searchResults.value =
+ hasSearched.value = false
+ try {
+ const res = await repositoriesApi.searchCode(props.repositoryId, {
+ query: searchQuery.value,
+ top_k: 10,
+ })
+ searchResults.value = res.results
+ searchTotal.value = res.total
+ hasSearched.value = true
+ }
+ catch (e: unknown) {
+ handleError(e, '搜索测试')
+ }
+ finally {
+ searching.value = false
  }
 }
 // 开始轮询（索引进行中时）
@@ -138,7 +208,7 @@ onUnmounted( => {
  </p>
  </div>
  </div>
- <div class="flex gap-2">
+ <div class="flex flex-wrap gap-2">
  <Button
  variant="outline":disabled="triggering"
  @click="triggerIndex"
@@ -146,6 +216,22 @@ onUnmounted( => {
  <span v-if="triggering" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--refresh-cw] mr-2" />
  重新索引
+ </Button>
+ <Button
+ variant="outline":disabled="exporting"
+ @click="exportSnapshot"
+ >
+ <span v-if="exporting" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--download] mr-2" />
+ 备份索引
+ </Button>
+ <Button
+ variant="outline":disabled="importing"
+ @click="triggerImport"
+ >
+ <span v-if="importing" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--upload] mr-2" />
+ 导入索引
  </Button>
  <Button
  variant="outline"
@@ -156,6 +242,60 @@ onUnmounted( => {
  <span v-else class="icon-[lucide--trash-2] mr-2" />
  删除索引
  </Button>
+ </div>
+ <!-- 搜索测试 -->
+ <div class="border-t border-border/50 pt-4 mt-2 space-y-3">
+ <div class="flex items-center gap-1.5 text-sm text-muted-foreground">
+ <span class="icon-[lucide--search]" />
+ 搜索测试
+ </div>
+ <div class="space-y-3">
+ <form class="flex gap-2" @submit.prevent="testSearch">
+ <Input
+ v-model="searchQuery"
+ placeholder="输入关键词测试召回效果..."
+ class="flex-1"
+ />
+ <Button
+ type="submit"
+ size="sm":disabled="searching || !searchQuery.trim"
+ >
+ <span v-if="searching" class="icon-[lucide--loader-circle] animate-spin mr-1.5" />
+ <span v-else class="icon-[lucide--search] mr-1.5" />
+ 搜索
+ </Button>
+ </form>
+ <!-- 搜索结果 -->
+ <div v-if="searchResults.length > 0" class="space-y-2">
+ <p class="text-xs text-muted-foreground">
+ 共召回 {{ searchTotal }} 条结果
+ </p>
+ <div class="max-h-[400px] overflow-y-auto space-y-2">
+ <div
+ v-for="(item, idx) in searchResults":key="idx"
+ class="rounded-lg border border-border/60 bg-muted/30 overflow-hidden"
+ >
+ <div class="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border/40">
+ <div class="flex items-center gap-2 text-xs min-w-0">
+ <span class="icon-[lucide--file-code] text-primary shrink-0" />
+ <span class="font-mono truncate":title="item.file_path">{{ item.file_path }}</span>
+ <span class="text-muted-foreground shrink-0">L{{ item.start_line }}-{{ item.end_line }}</span>
+ </div>
+ <div class="flex items-center gap-2 text-xs shrink-0 ml-2">
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">{{ item.language }}</span>
+ <span class="text-muted-foreground">{{ (item.score * 100).toFixed(1) }}%</span>
+ </div>
+ </div>
+ <pre class="px-3 py-2 text-xs leading-relaxed overflow-x-auto max-h-[200px]"><code>{{ item.content }}</code></pre>
+ </div>
+ </div>
+ </div>
+ <!-- 无结果 -->
+ <div v-else-if="hasSearched && searchTotal === 0 && !searching" class="text-center py-4">
+ <span class="icon-[lucide--search-x] text-2xl text-muted-foreground" />
+ <p class="text-sm text-muted-foreground mt-1">没有匹配的结果</p>
+ </div>
+ </div>
  </div>
  </div>
  <!-- 索引中状态 -->
@@ -201,13 +341,21 @@ onUnmounted( => {
  </p>
  </div>
  </div>
- <div class="flex gap-2">
+ <div class="flex flex-wrap gap-2">
  <Button:disabled="triggering"
  @click="triggerIndex"
  >
  <span v-if="triggering" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--refresh-cw] mr-2" />
  重试
+ </Button>
+ <Button
+ variant="outline":disabled="importing"
+ @click="triggerImport"
+ >
+ <span v-if="importing" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--upload] mr-2" />
+ 导入索引
  </Button>
  <Button
  variant="outline"
@@ -228,6 +376,7 @@ onUnmounted( => {
  <p class="text-muted-foreground mb-4">
  尚未建立代码索引
  </p>
+ <div class="flex justify-center gap-2">
  <Button:disabled="triggering"
  @click="triggerIndex"
  >
@@ -235,8 +384,25 @@ onUnmounted( => {
  <span v-else class="icon-[lucide--play] mr-2" />
  新建索引
  </Button>
+ <Button
+ variant="outline":disabled="importing"
+ @click="triggerImport"
+ >
+ <span v-if="importing" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--upload] mr-2" />
+ 导入索引
+ </Button>
  </div>
  </div>
  </div>
+ </div>
+ <!-- 隐藏的文件选择器 -->
+ <input
+ ref="fileInput"
+ type="file"
+ accept=".snapshot"
+ class="hidden"
+ @change="handleImportFile"
+ >
  </div>
 </template>

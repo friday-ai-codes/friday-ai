@@ -183,6 +183,17 @@ class QdrantService:
  logger.error("create_collection_failed", error=str(e))
  return False
  @classmethod
+ def create_snapshot(cls, repository_id: str) -> str | None:
+ """Create a snapshot for repository's collection. Returns snapshot filename."""
+ client = cls.get_client
+ collection_name = cls.get_collection_name(repository_id)
+ try:
+ result = client.create_snapshot(collection_name=collection_name)
+ return result.name if result else None
+ except UnexpectedResponse as e:
+ logger.error("create_snapshot_failed", error=str(e))
+ return None
+ @classmethod
  def delete_collection(cls, repository_id: str) -> bool:
  """Delete a collection for repository."""
  client = cls.get_client

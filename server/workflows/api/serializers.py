@@ -296,6 +296,8 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  node_count = serializers.SerializerMethodField
  execution_count = serializers.SerializerMethodField
  last_execution = serializers.SerializerMethodField
+ node_summary = serializers.SerializerMethodField
+ edge_summary = serializers.SerializerMethodField
  class Meta:
  model = Workflow
  fields = [
@@ -311,6 +313,8 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  "node_count",
  "execution_count",
  "last_execution",
+ "node_summary",
+ "edge_summary",
  "created_at",
  "updated_at",
  ]
@@ -327,6 +331,18 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  "created_at": last.created_at.isoformat,
  }
  return None
+ def get_node_summary(self, obj: Workflow) -> list[dict]:
+ return list(
+ obj.nodes.order_by("created_at").values(
+ "id", "node_type", "name", "position_x", "position_y"
+ )
+ )
+ def get_edge_summary(self, obj: Workflow) -> list[dict]:
+ return list(
+ obj.edges.order_by("created_at").values(
+ "source_node_id", "target_node_id"
+ )
+ )
 class WorkflowCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Workflow."""
  nodes = WorkflowNodeCreateSerializer(many=True, required=False)

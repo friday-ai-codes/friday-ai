@@ -9,6 +9,8 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
+import WorkflowMiniMap from '~/components/workflow/WorkflowMiniMap.vue'
+import { NODE_REGISTRY } from '~/types/workflow/registry'
 defineProps<{
  workflows: Workflow
  loading?: boolean
@@ -35,12 +37,29 @@ function onDeleteClick(e: Event, workflow: Workflow) {
 function onToggleActive(checked: boolean, workflow: Workflow) {
  emit('toggleActive', workflow, checked)
 }
+function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, icon: string, count: number } {
+ const summary = (workflow as any).node_summary as { node_type: string } | undefined
+ if (!summary?.length) return
+ const countMap = new Map<string, number>
+ for (const n of summary) {
+ countMap.set(n.node_type, (countMap.get(n.node_type) || 0) + 1)
+ }
+ return Array.from(countMap.entries).map(([type, count]) => {
+ const def = NODE_REGISTRY[type as keyof typeof NODE_REGISTRY]
+ return {
+ type,
+ name: def?.displayName ?? type,
+ icon: def?.icon ?? 'icon-[lucide--circle]',
+ count,
+ }
+ })
+}
 </script>
 <template>
  <TooltipProvider>
  <!-- Loading State -->
- <div v-if="loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
- <div v-for="i in 8":key="i" class=" rounded-2xl bg-card/80 border border-border/50">
+ <div v-if="loading" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+ <div v-for="i in 6":key="i" class=" rounded-2xl bg-card/80 border border-border/50">
  <div class="flex items-center gap-3 mb-3">
  <Skeleton class=" w-9 rounded-lg" />
  <div class="flex-1">
@@ -48,6 +67,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <Skeleton class=" w-1/2" />
  </div>
  </div>
+ <Skeleton class=" w-full rounded-lg mb-3" />
  <div class="flex items-center justify-between">
  <Skeleton class=" w-16" />
  <Skeleton class=" w-20" />
@@ -55,7 +75,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  </div>
  </div>
  <!-- Workflow Cards -->
- <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+ <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
  <div
  v-for="workflow in workflows":key="workflow.id"
  class="group relative cursor-pointer"
@@ -68,22 +88,40 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  />
  <!-- Card body -->
  <div
- class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300":class="[
+ class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden":class="[
  workflow.is_active
  ? 'bg-card/80 border-border/50 group-hover:border-teal-300/50 group-hover:shadow-lg group-hover:shadow-teal-500/10 group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30',
  ]"
  >
+ <!-- Mini Map Preview -->
+ <div
+ class="relative w-full border-b transition-colors":class="[
+ workflow.is_active
+ ? 'bg-linear-to-b from-background/20 to-background/60 border-border/30': 'bg-muted/20 border-border/20',
+ ]"
+ >
+ <WorkflowMiniMap:nodes="(workflow as any).node_summary || ":edges="(workflow as any).edge_summary || ":width="400":height="100"
+ class="w-full h-auto"
+ />
+ <!-- Node count badge -->
+ <div class="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-background/70 backdrop-blur-sm text-[10px] text-muted-foreground">
+ <span class="icon-[lucide--shapes] text-[10px]" />
+ {{ (workflow as any).node_count ?? 0 }} 节点
+ </div>
+ </div>
+ <!-- Content -->
+ <div class="">
  <!-- Header: Icon + Name + Toggle -->
- <div class="flex items-start gap-3 mb-3">
+ <div class="flex items-start gap-3 mb-2.5">
  <!-- Icon -->
  <div
- class=" rounded-lg shrink-0":class="[
+ class=".5 rounded-lg shrink-0":class="[
  workflow.is_active
  ? 'bg-linear-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50',
  ]"
  >
  <span
- class="text-lg":class="[
+ class="text-base":class="[
  workflow.is_active ? 'icon-[lucide--workflow] text-teal-500': 'icon-[lucide--workflow] text-muted-foreground',
  ]"
  />
@@ -91,7 +129,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  <!-- Name & Description -->
  <div class="flex-1 min-w-0">
  <h3
- class="font-medium leading-tight truncate transition-colors":class="[
+ class="text-sm font-medium leading-tight truncate transition-colors":class="[
  workflow.is_active ? 'group-hover:text-primary': 'text-muted-foreground',
  ]"
  >
@@ -116,8 +154,18 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  </Tooltip>
  </div>
  </div>
+ <!-- Node Type Tags -->
+ <div v-if="getNodeTypeCounts(workflow).length" class="flex flex-wrap gap-1 mb-3">
+ <span
+ v-for="nt in getNodeTypeCounts(workflow)":key="nt.type"
+ class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted/50 text-[10px] text-muted-foreground"
+ >
+ <span:class="nt.icon" class="text-[10px]" />
+ {{ nt.name }}<template v-if="nt.count > 1">&times;{{ nt.count }}</template>
+ </span>
+ </div>
  <!-- Actions Row -->
- <div class="flex items-center gap-2 pt-3 border-t border-border/50">
+ <div class="flex items-center gap-2 pt-2.5 border-t border-border/50">
  <!-- Execute Button -->
  <Tooltip>
  <TooltipTrigger as-child>
@@ -143,6 +191,7 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
  >
  <span class="icon-[lucide--trash-2] text-sm" />
  </Button>
+ </div>
  </div>
  </div>
  </div>

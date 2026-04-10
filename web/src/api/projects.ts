@@ -75,13 +75,13 @@ export async function unlinkRepository(projectId: string, linkId: string): Promi
  return del(`/projects/${projectId}/repositories/${linkId}/`)
 }
 // ============================================================================
-// 仓库关联管理（旧 API：保留向后兼容）
+// 仓库关联管理（兼容旧调用方式，内部委托批量 API）
 // ============================================================================
 /**
- * 关联仓库
+ * 关联单个仓库（委托 linkRepositories 批量 API）
  */
 export async function addRepository(projectId: string, repositoryId: string): Promise<void> {
- return post(`/projects/${projectId}/repositories/${repositoryId}/`)
+ await linkRepositories(projectId, { repository_ids: [repositoryId] })
 }
 /**
  * 解除关联仓库

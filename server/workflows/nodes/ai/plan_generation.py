@@ -74,6 +74,14 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  "minimum": 10,
  "maximum": 200,
  },
+ "timeout_minutes": {
+ "type": "integer",
+ "title": "超时时间 (分钟)",
+ "description": "方案生成的最大超时时间（默认 30 分钟，方案生成涉及多轮工具调用需要更长时间）",
+ "default": 30,
+ "minimum": 5,
+ "maximum": 120,
+ },
  "enabled_tools": {
  "type": "array",
  "title": "额外工具",
