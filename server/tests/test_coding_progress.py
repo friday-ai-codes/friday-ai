@@ -290,3 +290,99 @@ class TestConversationRuntimeCodingProgress:
  assert runtime["mode"] == "coding"
  cs = runtime["coding_session"]
  assert "coding_progress" not in cs
+# ============================================================================
+# TestProgressPayloadSerializer — Phase 阻塞前置条件（Wave）
+# ============================================================================
+class TestProgressPayloadSerializer:
+ """验证 ProgressPayloadSerializer 声明了 details 字段，避免 DRF 静默丢弃。
+ Phase 依赖 G1 阻塞前置条件：若 serializer 未声明 details，
+ 则 callbacks.py 的 _handle_progress 永远无法从 validated_data 中拿到 details，
+ 导致下游 parse_progress_payload 的 suggested_commit_message 提取永远失败。
+ """
+ def test_details_field_accepted(self) -> None:
+ """serializer 应接受并保留 details 字段的内容。"""
+ from subagent.api.serializers import ProgressPayloadSerializer
+ serializer = ProgressPayloadSerializer(
+ data={
+ "phase": "coding",
+ "details": {"suggested_commit_message": "feat: test"},
+ }
+ )
+ assert serializer.is_valid, serializer.errors
+ assert serializer.validated_data["details"] == {
+ "suggested_commit_message": "feat: test"
+ }
+ def test_details_field_defaults_to_empty_dict_when_missing(self) -> None:
+ """未提供 details 时应默认为空 dict，消费侧可安全 .get('details', {})。"""
+ from subagent.api.serializers import ProgressPayloadSerializer
+ serializer = ProgressPayloadSerializer(data={"phase": "coding"})
+ assert serializer.is_valid, serializer.errors
+ assert serializer.validated_data.get("details") == {}
+# ============================================================================
+# TestWSProgressParsesViaCommon — Phase WS 路径调用公共 parser（Wave）
+# ============================================================================
+class TestWSProgressParsesViaCommon:
+ """验证 runners.consumers.RunnerConsumer._handle_progress 实际调用
+ parse_progress_payload 并采用 merge 语义写入 session.last_output。
+ HTTP 路径（callbacks.py）的一致性断言推迟到 Plan（那时 HTTP 路径也已修复）。
+ """
+ @pytest.mark.asyncio
+ @pytest.mark.django_db(transaction=True)
+ async def test_ws_handle_progress_uses_parse_progress_payload(
+ self, monkeypatch: pytest.MonkeyPatch
+ ) -> None:
+ """WS 路径端到端：构造真实 SubAgentSession，调用 _handle_progress，
+ DB 回读验证 suggested_commit_message 透传 + 预设 meta 保留 + nested dict。
+ """
+ import uuid
+ from agents.models import AgentSession
+ from runners.consumers import RunnerConsumer
+ # 预设 meta 用于验证 merge 语义（task_type/source）
+ task_id = f"ws-test-{uuid.uuid4.hex[:8]}"
+ agent_session = await AgentSession.objects.acreate(
+ session_id=f"main-{task_id}",
+ )
+ await SubAgentSession.objects.acreate(
+ session_id=task_id,
+ main_session=agent_session,
+ repo_url="https://github.com/test/repo.git",
+ task_type="coding",
+ status=SubAgentSession.Status.RUNNING,
+ last_output={"task_type": "coding", "source": "web"},
+ )
+ # 构造 payload：同时含 phase/progress/message/coding_progress/details
+ payload: dict[str, Any] = {
+ "phase": "coding",
+ "progress": 0.5,
+ "message": "hi",
+ "coding_progress": {
+ "modified_files": ["a.py"],
+ "recent_tool_calls":,
+ },
+ "details": {"suggested_commit_message": "feat: test"},
+ }
+ # monkeypatch _append_runtime_log 为 AsyncMock 避免触发 runtime log 外部副作用
+ mock_append_log = AsyncMock
+ monkeypatch.setattr(
+ "runners.consumers._append_runtime_log",
+ mock_append_log,
+ )
+ # _handle_progress 是实例方法，但函数体内不使用 self.* 属性（仅 SubAgentSession 全局查询）
+ # 以类方法形式 invoke，self 用 MagicMock 填充（兼容 CPython bound method 语义）
+ await RunnerConsumer._handle_progress(MagicMock, task_id, payload)
+ # DB 回读验证
+ session_reloaded = await SubAgentSession.objects.aget(session_id=task_id)
+ last_output = session_reloaded.last_output
+ assert last_output is not None
+ # 1) details.suggested_commit_message 透传生效（证明 parse_progress_payload 被调用）
+ assert last_output["suggested_commit_message"] == "feat: test"
+ # 2) progress nested dict 正确
+ assert last_output["progress"]["phase"] == "coding"
+ assert last_output["progress"]["progress"] == 0.5
+ # 3) coding_progress nested dict 正确
+ assert last_output["coding_progress"]["modified_files"] == ["a.py"]
+ # 4) merge 语义：预设 meta (task_type/source) 必须保留
+ assert last_output["task_type"] == "coding"
+ assert last_output["source"] == "web"
+ # 5) _append_runtime_log 被调用（验证原有副作用保留）
+ mock_append_log.assert_awaited_once
