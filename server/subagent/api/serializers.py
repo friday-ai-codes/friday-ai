@@ -59,6 +59,10 @@ class ProgressPayloadSerializer(serializers.Serializer):
  message = serializers.CharField(required=False, default="", allow_blank=True)
  # Phase: 编码任务中间产出（modified_files + recent_tool_calls）
  coding_progress = serializers.JSONField(required=False, default=None)
+ # Phase: 容器通过 details 传递结构化载荷（suggested_commit_message 等）
+ # 消费侧 parse_progress_payload 会对 details 做 isinstance(dict) 双重校验并按
+ # scalar 字段透传（跳过保留字段 progress/coding_progress）。
+ details = serializers.JSONField(required=False, default=dict)
 class ActionLogPayloadSerializer(serializers.Serializer):
  """type=action_log 时的 payload 验证。"""
  action_type = serializers.ChoiceField(choices=ActionLog.ActionType.choices)
