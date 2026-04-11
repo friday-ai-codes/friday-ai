@@ -1,5 +1,6 @@
 """Regression tests for Feishu WebSocket bot entry."""
 from __future__ import annotations
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 import pytest
@@ -70,3 +71,15 @@ class TestFeishuBotWebSocketIntegration:
  client._process_message_sync(plain_data)
  assert not FeishuBotMessage.objects.filter(message_id__in=["msg-ws-3", "msg-ws-4"]).exists
  mock_schedule.assert_not_called
+ @pytest.mark.asyncio
+ async def test_process_message_sync_uses_running_loop_without_async_to_sync_error(self) -> None:
+ client = FeishuWebSocketClient(app_id="cli_test", app_secret="secret")
+ data = _ws_event(
+ message_id="msg-ws-5",
+ content='{"text":"@Friday 你是？","mentions":[{"name":"Friday"}]}',
+ mentions=[{"name": "Friday"}],
+ )
+ with patch("feishu.bot.dispatcher.dispatch_inbound_message", new=AsyncMock) as mock_dispatch:
+ client._process_message_sync(data)
+ await asyncio.sleep(0)
+ mock_dispatch.assert_awaited_once

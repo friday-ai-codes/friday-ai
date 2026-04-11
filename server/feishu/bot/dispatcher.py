@@ -46,9 +46,11 @@ async def dispatch_inbound_message(message: InboundLarkMessage) -> DispatchResul
  return DispatchResult(status="resume_agent", reason="suspended_session")
  if message.sender_is_bot:
  return DispatchResult(status="ignored", reason="sender_is_bot")
- if message.chat_type and message.chat_type != "group":
+ is_p2p = message.chat_type == "p2p"
+ is_group = message.chat_type == "group"
+ if message.chat_type and not is_p2p and not is_group:
  return DispatchResult(status="ignored", reason="unsupported_chat_type")
- if not message.mentioned_bot:
+ if is_group and not message.mentioned_bot:
  return DispatchResult(status="ignored", reason="mention_required")
  if not message.has_effective_body:
  return DispatchResult(status="ignored", reason="empty_body")
@@ -71,6 +73,7 @@ async def dispatch_inbound_message(message: InboundLarkMessage) -> DispatchResul
  message_id=message.message_id,
  thread=thread,
  chat_id=message.chat_id,
+ chat_type=message.chat_type,
  sender_open_id=message.sender_open_id,
  message_type=message.message_type,
  normalized_text=message.normalized_text,

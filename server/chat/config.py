@@ -13,6 +13,7 @@ async def build_sdk_config(
  role: str = "developer",
  notification_user_id: str | None = None,
  force_deep_analysis: bool = False,
+ project_context_line: str | None = None,
 ) -> tuple[ChatRunnerConfig, AgentSession]:
  """从 Conversation 实例构建 ChatRunnerConfig 和 AgentSession。
  提取自 ConversationService.send_message_stream 的配置构建段，
@@ -35,6 +36,9 @@ async def build_sdk_config(
  session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
  project_name = conversation.project.name
  project_id = str(conversation.project_id)
+ effective_project_context_line = project_context_line
+ if effective_project_context_line is None:
+ effective_project_context_line = f"当前项目：{project_name}"
  agent_session = await AgentSession.objects.acreate(
  session_id=session_id,
  project=conversation.project,
@@ -49,7 +53,11 @@ async def build_sdk_config(
  max_budget_usd = float(budget_str) if budget_str else None
  config = ChatRunnerConfig(
  system_prompt=_build_system_prompt(
- project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
+ project_name,
+ project_id,
+ role=role,
+ force_deep_analysis=force_deep_analysis,
+ project_context_line=effective_project_context_line,
  ),
  model=model,
  project_id=project_id,

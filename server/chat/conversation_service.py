@@ -75,6 +75,7 @@ def _build_system_prompt(
  role: str = "developer",
  *,
  force_deep_analysis: bool = False,
+ project_context_line: str = "",
 ) -> str:
  """构建角色化 system prompt。
  根据用户选择的角色生成差异化的 system prompt，
@@ -127,7 +128,7 @@ def _build_system_prompt(
  )
  return (
  f"{role_prompt}\n\n"
- f"当前项目：{project_name}\n\n"
+ f"{project_context_line + '\n\n' if project_context_line else ''}"
  f"{strategy}\n"
  f"{coding_guidance}\n"
  f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
@@ -438,6 +439,7 @@ class ConversationService:
  notification_user_id: str | None = None,
  force_deep_analysis: bool = False,
  feishu_doc_id: str = "",
+ project_context_line: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息 — 通过 LangGraph graph 驱动。
  签名保持不变，内部改为：
@@ -479,6 +481,7 @@ class ConversationService:
  role=role,
  notification_user_id=notification_user_id,
  force_deep_analysis=force_deep_analysis,
+ project_context_line=project_context_line,
  )
  session_id = sdk_config.session_id
  model = sdk_config.model

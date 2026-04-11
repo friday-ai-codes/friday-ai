@@ -23,6 +23,17 @@ def test_answer_card_renders_real_reference_section -> None:
  content = "\n".join(element.get("content", "") for element in card["elements"] if isinstance(element, dict))
  assert "已参考上下文" in content
  assert "websocket_client.py" in content
+def test_compact_answer_card_can_render_auto_matched_space -> None:
+ card = build_answer_card(
+ question="你是？",
+ answer="我是 Friday。",
+ references=,
+ compact=True,
+ matched_space_label="learning-platform",
+ )
+ content = "\n".join(element.get("content", "") for element in card["elements"] if isinstance(element, dict))
+ assert "已自动匹配「learning-platform」空间" in content
+ assert "我是 Friday。" in content
 def test_welcome_clarification_and_error_cards_expose_expected_copy -> None:
  welcome = build_welcome_card
  clarify = build_clarification_card("这是哪个项目？", ["api-server", "web-app"])
