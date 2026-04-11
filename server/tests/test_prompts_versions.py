@@ -73,7 +73,7 @@ class TestPromptVersioning:
  created_by=admin_user,
  )
  v1 = await append_version(prompt, "v1", admin_user)
- v2 = await append_version(prompt, "v2", admin_user)
+ await append_version(prompt, "v2", admin_user)
  # 当前 active=v2;切回 v1
  await activate_version(prompt, v1)
  await prompt.arefresh_from_db(fields=["active_version"])
