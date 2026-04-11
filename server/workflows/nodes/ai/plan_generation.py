@@ -8,6 +8,8 @@ import re
 from typing import Any, ClassVar, Final
 import structlog
 from agents.core.result import AgentResult
+from prompts.keys import PromptSlugs
+from prompts.services import render_prompt
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.base import (
  ExecutionContext,
@@ -91,6 +93,11 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  ("generate_plan", "生成计划"),
  ("review", "审查计划"),
  ]
+ def __init__(self) -> None:
+ """初始化实例，声明 Phase 预渲染 base_prompt 实例属性。"""
+ super.__init__
+ # Phase: execute 预渲染结果注入口；get_system_prompt 从此读取
+ self._precomputed_base_prompt: str | None = None
  config_schema: ClassVar[dict[str, Any]] = {
  "type": "object",
  "properties": {
@@ -274,6 +281,18 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  子步骤：analyze（分析需求）→ generate_plan（生成计划）→ review（审查计划）。
  """
  from workflows.models.execution import SubStepStatus
+ # Phase: 预渲染 base prompt（必须在 super.execute 之前）
+ # super.execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
+ schema_json = json.dumps(
+ TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
+ )
+ project = await self._get_project(context)
+ self._precomputed_base_prompt = await render_prompt(
+ PromptSlugs.AI_NODE_PLAN_GENERATION,
+ project_id=str(project.id) if project else None,
+ variables={"schema_json": schema_json},
+ fallback=_PLAN_GENERATION_BASE_PROMPT,
+ )
  # 初始化子步骤记录
  await self._init_sub_steps(context)
  # Phase: 分析需求（prompt 构建和准备）
