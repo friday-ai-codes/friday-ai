@@ -187,6 +187,9 @@ catalogs:
  codemirror:
  specifier: ^6.0.2
  version: 6.0.2
+ diff:
+ specifier: ^8.0.4
+ version: 8.0.4
  echarts:
  specifier: ^6.0.0
  version: 6.0.0
@@ -440,6 +443,9 @@ importers:
  codemirror:
  specifier: 'catalog:'
  version: 6.0.2
+ diff:
+ specifier: 'catalog:'
+ version: 8.0.4
  echarts:
  specifier: 'catalog:'
  version: 6.0.0
@@ -2246,6 +2252,9 @@ packages:
  diff-sequences@27.5.1:
  resolution: {integrity: sha512-k1gCAXAsNgLwEL+Y8Wvl+M6oEFj5bgazfZULpS5CneoPPXRaCCW7dm+q21Ky2VEE5X+VeRDBVg1Pcvvsr4TtNQ==}
  engines: {node: ^10.13.0 || ^12.13.0 || ^14.15.0 || >=15.0.0}
+ diff@8.0.4:
+ resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
+ engines: {node: '>=0.3.1'}
  dom-serializer@2.0.0:
  resolution: {integrity: sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg==}
  domelementtype@2.3.0:
@@ -5251,6 +5260,7 @@ snapshots:
  dependencies:
  dequal: 2.0.3
  diff-sequences@27.5.1: {}
+ diff@8.0.4: {}
  dom-serializer@2.0.0:
  dependencies:
  domelementtype: 2.3.0
