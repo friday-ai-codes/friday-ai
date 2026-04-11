@@ -156,6 +156,7 @@ declare global {
  const useBase64: typeof import('@vueuse/core').useBase64
  const useBattery: typeof import('@vueuse/core').useBattery
  const useBluetooth: typeof import('@vueuse/core').useBluetooth
+ const useBranchValidation: typeof import('./composables/useBranchValidation').useBranchValidation
  const useBreakpoints: typeof import('@vueuse/core').useBreakpoints
  const useBroadcastChannel: typeof import('@vueuse/core').useBroadcastChannel
  const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
@@ -261,6 +262,7 @@ declare global {
  const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
  const usePrevious: typeof import('@vueuse/core').usePrevious
  const useProjectsStore: typeof import('./stores/projects').useProjectsStore
+ const usePromptsStore: typeof import('./stores/prompts').usePromptsStore
  const useRafFn: typeof import('@vueuse/core').useRafFn
  const useRefHistory: typeof import('@vueuse/core').useRefHistory
  const useRepositoriesStore: typeof import('./stores/repositories').useRepositoriesStore
@@ -351,6 +353,9 @@ declare global {
  export type { AppMode } from './composables/useAppMode'
  import('./composables/useAppMode')
  // @ts-ignore
+ export type { ParsedBranchName, ValidationResult } from './composables/useBranchValidation'
+ import('./composables/useBranchValidation')
+ // @ts-ignore
  export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
  import('./composables/useConfigModel')
  // @ts-ignore
@@ -368,6 +373,9 @@ declare global {
  // @ts-ignore
  export type { ConnectionCheckResult, PortCompatibility } from './composables/useSchemaValidation'
  import('./composables/useSchemaValidation')
+ // @ts-ignore
+ export type { MergedProjectListItem } from './stores/prompts'
+ import('./stores/prompts')
  // @ts-ignore
  export type { NodeExecution, WorkflowDefinitionNode, WorkflowDefinitionEdge, WorkflowDefinition, TimelineNode, TimelineData, WorkflowExecution } from './stores/useExecutionsStore'
  import('./stores/useExecutionsStore')
@@ -536,6 +544,7 @@ declare module 'vue' {
  readonly useBase64: UnwrapRef<typeof import('@vueuse/core')['useBase64']>
  readonly useBattery: UnwrapRef<typeof import('@vueuse/core')['useBattery']>
  readonly useBluetooth: UnwrapRef<typeof import('@vueuse/core')['useBluetooth']>
+ readonly useBranchValidation: UnwrapRef<typeof import('./composables/useBranchValidation')['useBranchValidation']>
  readonly useBreakpoints: UnwrapRef<typeof import('@vueuse/core')['useBreakpoints']>
  readonly useBroadcastChannel: UnwrapRef<typeof import('@vueuse/core')['useBroadcastChannel']>
  readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
@@ -640,6 +649,7 @@ declare module 'vue' {
  readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
  readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
  readonly useProjectsStore: UnwrapRef<typeof import('./stores/projects')['useProjectsStore']>
+ readonly usePromptsStore: UnwrapRef<typeof import('./stores/prompts')['usePromptsStore']>
  readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
  readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
  readonly useRepositoriesStore: UnwrapRef<typeof import('./stores/repositories')['useRepositoriesStore']>
