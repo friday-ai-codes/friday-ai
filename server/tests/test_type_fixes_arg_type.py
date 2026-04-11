@@ -1,14 +1,10 @@
 """
 Task 1: 测试修复参数类型不匹配错误 (arg-type)
 """
+from unittest.mock import MagicMock
 import pytest
-from unittest.mock import MagicMock, AsyncMock
-from django.test import TestCase
-from django.http import HttpRequest
-from django.contrib.auth.models import AnonymousUser
 from asgiref.sync import sync_to_async
-from projects.models import Project
-from identity.models import OIDCProvider
+from django.test import TestCase
 from permissions.models import ProjectRole
 from permissions.services import PermissionService
 class TestArgTypeFixes(TestCase):

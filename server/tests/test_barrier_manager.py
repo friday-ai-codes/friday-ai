@@ -4,9 +4,9 @@ _persist_progress 通过 mock 跳过 DB 操作。
 """
 from __future__ import annotations
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 import pytest
-from orchestration.barrier import BarrierManager, BarrierState, get_barrier_manager
+from orchestration.barrier import BarrierManager, get_barrier_manager
 from orchestration.contracts import BlockingTaskRequest, BlockingTaskResult
 @pytest.fixture
 def manager -> BarrierManager:

@@ -5,13 +5,12 @@
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 import pytest
 from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine
-from workflows.hooks.builtin import NotificationHook
 from workflows.hooks.base import BaseHook, HookManager
+from workflows.hooks.builtin import NotificationHook
 from workflows.models import (
  ExecutionStatus,
  NodeExecution,

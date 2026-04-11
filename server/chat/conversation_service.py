@@ -20,12 +20,6 @@ from agents.core.events import (
  MESSAGE_COMPLETE,
  AgentEvent,
 )
-from services.feishu_doc import (
- DocumentNotFoundError,
- FeishuDocAPIError,
- PermissionDeniedError,
- truncate_doc_content,
-)
 from agents.models import ToolCallLog
 from chat.models import Conversation, Message
 from orchestration.graph import get_compiled_graph
@@ -34,6 +28,12 @@ from orchestration.runner_registry import unregister_runner
 from prompts.keys import PromptSlugs
 from prompts.services import render_prompt
 from repositories.models import Repository
+from services.feishu_doc import (
+ DocumentNotFoundError,
+ FeishuDocAPIError,
+ PermissionDeniedError,
+ truncate_doc_content,
+)
 logger = structlog.get_logger(__name__)
 def _bare_tool_name(name: str) -> str:
  if name.startswith("mcp__"):

@@ -4,7 +4,6 @@
 """
 from unittest.mock import AsyncMock, patch
 import pytest
-import structlog
 from django.test import override_settings
 from structlog.testing import capture_logs
 from tools.models import RemoteTool
@@ -40,7 +39,7 @@ class TestMcpWhitelist:
  mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
  mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
  tool = self._make_tool(server_command="npx")
- result = await execute_mcp(tool, {"arg": "value"})
+ _ = await execute_mcp(tool, {"arg": "value"})
  # 白名单内的命令应该正常调用 stdio_client
  mock_stdio.assert_called_once
  @override_settings(MCP_ALLOWED_COMMANDS=["npx"])

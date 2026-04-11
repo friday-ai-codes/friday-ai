@@ -11,7 +11,6 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Invitation
-from .throttles import LoginRateThrottle, RefreshRateThrottle
 from .serializers import (
  ChangePasswordSerializer,
  InvitationAcceptSerializer,
@@ -24,6 +23,7 @@ from .serializers import (
  TokenResponseSerializer,
  UserSerializer,
 )
+from .throttles import LoginRateThrottle, RefreshRateThrottle
 User = get_user_model
 logger = structlog.get_logger(__name__)
 class LoginView(APIView):

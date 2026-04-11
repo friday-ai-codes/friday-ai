@@ -286,7 +286,10 @@ class TestCodingSessionCallback:
  async def test_callback_no_coding_session_passes(self, project):
  """无关联 CodingSession 的 session 回调不报错。"""
  from agents.models import AgentSession
- from subagent.api.callbacks import _update_coding_session_on_complete, _update_coding_session_on_fail
+ from subagent.api.callbacks import (
+ _update_coding_session_on_complete,
+ _update_coding_session_on_fail,
+ )
  from subagent.models import SubAgentSession
  agent_session = await AgentSession.objects.acreate(
  session_id="agent-no-coding-001",

@@ -114,7 +114,7 @@ class TestGraphInterrupt:
  """启动 graph 后第一次 interrupt 在 wait_coding_complete。"""
  with _patch_dispatch as mock_dispatch, _patch_get_coding_session(mock_coding_session):
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
- result = await graph.ainvoke(
+ _ = await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},
  config=graph_config,
  )
@@ -435,7 +435,7 @@ class TestPRPhase:
  settings_patch, anthropic_patch as mock_anthropic:
  _setup_llm_mock(mock_anthropic, title="feat: awesome PR", description="Awesome changes")
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
- result = await _drive_to_phase2_complete(graph, graph_config)
+ _ = await _drive_to_phase2_complete(graph, graph_config)
  # LLM 应被调用
  mock_client = mock_anthropic.AsyncAnthropic.return_value
  mock_client.messages.create.assert_awaited_once
@@ -455,7 +455,7 @@ class TestPRPhase:
  settings_patch, anthropic_patch as mock_anthropic:
  _setup_llm_mock(mock_anthropic)
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
- result = await _drive_to_phase2_complete(graph, graph_config)
+ _ = await _drive_to_phase2_complete(graph, graph_config)
  # LLM 不应被调用（幂等跳过）
  mock_client = mock_anthropic.AsyncAnthropic.return_value
  mock_client.messages.create.assert_not_awaited
@@ -474,7 +474,7 @@ class TestPRPhase:
  mock_client.messages.create = AsyncMock(side_effect=Exception("LLM API error"))
  mock_anthropic.AsyncAnthropic.return_value = mock_client
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
- result = await _drive_to_phase2_complete(graph, graph_config)
+ _ = await _drive_to_phase2_complete(graph, graph_config)
  # 使用 fallback: state 中 confirmed_commit_message 第一行作为 title
  # _drive_to_phase2_complete 中 commit confirm resume 传入 "feat: user message"
  assert mock_coding_session.suggested_pr_title == "feat: user message"
@@ -665,8 +665,8 @@ class TestConflictCheckNode:
  self, mock_coding_session: MagicMock
  ) -> None:
  """compare_branches 返回 success=True, behind_by=0 时持久化结果且 has_conflicts=False。"""
- from services.git_platform.models import BranchCompareResult, CompareFileEntry
  from orchestration.coding_graph import conflict_check_node
+ from services.git_platform.models import BranchCompareResult, CompareFileEntry
  state: CodingSessionState = {
  "coding_session_id": "cs-test-123",
  "phase": "awaiting_commit_confirm",

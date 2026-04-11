@@ -27,10 +27,10 @@ def _load_seed_data -> list[tuple[str, str, str, str]]:
  Django RunPython 回调允许普通 Python import（非 apps.get_model）。
  """
  from chat.conversation_service import (
- ROLE_PROMPTS,
  _CODING_GUIDANCE,
  _STRATEGY_DEEP_ANALYSIS,
  _STRATEGY_DEFAULT,
+ ROLE_PROMPTS,
  )
  from chat.title_service import TITLE_PROMPT
  from workflows.nodes.ai.code_review import REVIEW_SYSTEM_PROMPT

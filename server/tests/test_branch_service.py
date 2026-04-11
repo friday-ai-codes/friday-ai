@@ -6,9 +6,7 @@ from datetime import timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat.branch_service import (
- BranchValidationResult,
  generate_branch_name,
- generate_default_branch_name,
  generate_short_description,
  infer_branch_type,
  validate_branch_name,
@@ -94,7 +92,6 @@ class TestBranchValidation:
  @pytest.fixture
  def dummy_repo_id(self):
  """提供一个虚拟的 repository UUID。"""
- import uuid
  return uuid.uuid4
  @pytest.mark.asyncio
  async def test_valid_name(self, dummy_repo_id) -> None:
@@ -258,7 +255,7 @@ class TestBranchUniqueness:
  @pytest.fixture
  def _create_session(self, repository, db):
  """工厂 fixture：创建带指定分支名和状态的 CodingSession（同步）。"""
- from chat.models import Conversation, CodingSession
+ from chat.models import CodingSession, Conversation
  from projects.models import Project
  # 获取或创建 project
  project = Project.objects.filter(repositories=repository).first

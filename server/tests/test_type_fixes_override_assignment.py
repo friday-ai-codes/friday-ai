@@ -1,8 +1,6 @@
 """
 Task 3: 测试修复方法重写和其他类型错误
 """
-import pytest
-from unittest.mock import MagicMock
 from typing import Any, Protocol, runtime_checkable
 from django.test import TestCase
 @runtime_checkable

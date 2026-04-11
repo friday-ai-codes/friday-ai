@@ -4,7 +4,6 @@
 import subprocess
 import sys
 from pathlib import Path
-import pytest
 SERVER_DIR = str(Path(__file__).resolve.parent.parent)
 class TestIdentityViewsUnionAttrFix:
  """测试 identity/views.py 中 union-attr 错误的修复"""

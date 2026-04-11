@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from rest_framework.test import APIClient
 from chat.models import CodingSession
 # ---------------------------------------------------------------------------
 # Fixtures
