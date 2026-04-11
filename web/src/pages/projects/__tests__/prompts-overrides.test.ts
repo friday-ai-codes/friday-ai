@@ -34,7 +34,8 @@ const mocks = vi.hoisted( => ({
  handleErrorMock: vi.fn,
  mergedProjectListRef: null as unknown as ReturnType<typeof import('vue').ref<MergedProjectListItem>>,
  loadingRef: null as unknown as ReturnType<typeof import('vue').ref<boolean>>,
- canEditRef: null as unknown as ReturnType<typeof import('vue').computed<boolean>>,
+ // canEditRef 是 readonly ComputedRef<boolean>。用 import('vue').ComputedRef 类型
+ canEditRef: null as unknown as import('vue').ComputedRef<boolean>,
  canEditValue: { current: true },
 }))
 vi.mock('vue-router', => ({
@@ -188,6 +189,29 @@ function callCell(
  throw new Error('column has no cell renderer')
  return cell({ row: { original: row } })
 }
+/**
+ * Vue 3 h(Component, props, slot) 第三参数若为 => 子节点 函数，
+ * vue 在 createBlock 阶段会包装为 { default: fn, _: 1 } slot 对象。
+ * 此 helper 统一从 vnode.children 提取 default slot 调用结果。
+ */
+function callDefaultSlot(vnode: { children?: unknown }): string {
+ const children = vnode.children
+ if (typeof children === 'function')
+ return (children as => string)
+ if (children && typeof children === 'object' && 'default' in children) {
+ const slot = (children as { default: => unknown }).default
+ if (typeof slot === 'function') {
+ const result = slot
+ // slot 可能返回 string | string | VNode
+ if (Array.isArray(result))
+ return result.map(r => (typeof r === 'string' ? r: '')).join('')
+ return String(result)
+ }
+ }
+ if (typeof children === 'string')
+ return children
+ return ''
+}
 // ============================================================================
 // Tests
 // ============================================================================
@@ -232,11 +256,8 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, overriddenRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode).toBeTruthy
- // h(Badge, { variant: 'default' }, => '项目级已覆盖')
  expect(vnode.props?.variant).toBe('default')
- // children 是 => string slot
- const slot = vnode.children as => string
- expect(slot).toBe('项目级已覆盖')
+ expect(callDefaultSlot(vnode)).toBe('项目级已覆盖')
  })
  it('5. status="fallback" 渲染 Badge variant=outline 文案 "使用系统级 fallback"', async => {
  const wrapper = mountPage
@@ -246,7 +267,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, fallbackRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode.props?.variant).toBe('outline')
- expect((vnode.children as => string)).toBe('使用系统级 fallback')
+ expect(callDefaultSlot(vnode)).toBe('使用系统级 fallback')
  })
  it('6. status="project_only" 渲染 Badge variant=secondary 文案 "仅项目级"', async => {
  const wrapper = mountPage
@@ -256,7 +277,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, projectOnlyRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode.props?.variant).toBe('secondary')
- expect((vnode.children as => string)).toBe('仅项目级')
+ expect(callDefaultSlot(vnode)).toBe('仅项目级')
  })
  it('7. canEdit=false 时所有操作按钮 disabled + tooltip "仅项目管理员可操作"', async => {
  mocks.canEditValue.current = false
@@ -277,8 +298,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as { children?: unknown }
- const label = (vnode.children as => string)
- expect(label).toBe('创建项目级副本')
+ expect(callDefaultSlot(vnode)).toBe('创建项目级副本')
  })
  it('9. canEdit=true 时 overridden 行操作按钮文案 "编辑"', async => {
  const wrapper = mountPage
@@ -287,7 +307,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, overriddenRow) as { children?: unknown }
- expect((vnode.children as => string)).toBe('编辑')
+ expect(callDefaultSlot(vnode)).toBe('编辑')
  })
  it('10. 点击 fallback 行按钮 → editor 切到 create + clearCurrent + open=true', async => {
  const wrapper = mountPage

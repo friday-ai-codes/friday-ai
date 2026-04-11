@@ -412,6 +412,36 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ <!-- Prompt 覆盖 -->
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--file-text] text-primary" />
+ <h3 class="text-sm font-semibold">
+ Prompt 覆盖
+ </h3>
+ </div>
+ <RouterLink:to="`/projects/${project.id}/prompts`">
+ <Button variant="ghost" size="sm" class=" text-xs group">
+ 管理
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+ </Button>
+ </RouterLink>
+ </div>
+ <div class="">
+ <div class="flex items-center gap-3 text-muted-foreground">
+ <span class="icon-[lucide--file-text] text-lg opacity-40" />
+ <div class="flex-1">
+ <p class="text-sm">
+ 查看与编辑项目级提示词覆盖
+ </p>
+ <p class="text-xs text-muted-foreground">
+ 未覆盖的提示词会 fallback 到系统级
+ </p>
+ </div>
+ </div>
+ </div>
+ </div>
  <!-- Webhook Token 管理 -->
  <div class="card md:col-span-2">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
