@@ -46,6 +46,9 @@ jobs:
  run: uv run ruff check .
  - name: Mypy type check
  run: uv run mypy .
+ - name: Check prompt hardcoding
+ run: bash ../scripts/check_prompt_hardcoding.sh
+ working-directory: server
  - name: Pytest
  run: uv run pytest
  # ─── 3. 前端 CI：eslint + vue-tsc + vite build ───
