@@ -2,6 +2,8 @@
 import json
 from typing import Final
 import structlog
+from prompts.keys import PromptSlugs
+from prompts.services import render_prompt
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -12,26 +14,29 @@ from workflows.nodes.base import (
 )
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger(__name__)
+# Phase:
+# - 3 个真变量从 .format 单花括号 → Jinja2 双花括号: {variable_definitions}/{input_text}/{additional_prompt}
+# - 原 JSON 示例内 f-string 转义 {{/}} 剥回真实 {/}（不再经过 .format）
 # AI 提取提示词模板
 EXTRACTION_PROMPT_TEMPLATE: Final[str] = """请从以下文本中提取指定的变量信息。
 需要提取的变量：
-{variable_definitions}
+{{variable_definitions}}
 文本内容：
 ---
-{input_text}
+{{input_text}}
 ---
-{additional_prompt}
+{{additional_prompt}}
 请严格按照以下 JSON 格式返回提取结果：
 ```json
-{{
- "variables": {{
+{
+ "variables": {
  "variableKey": "提取的值",
  ...
- }},
- "extraction_notes": {{
+ },
+ "extraction_notes": {
  "variableKey": "提取说明或未能提取的原因"
- }}
-}}
+ }
+}
 ```
 注意：
 1. 如果某个变量无法从文本中提取，请在 extraction_notes 中说明原因，variables 中不要包含该 key
@@ -162,11 +167,25 @@ class AIVariableExtractorNode(BaseNode):
  variable_definitions = "\n".join(
  f"- {v['key']} ({v['name']}): {v['desc']}" for v in variables_config
  )
- # 构建完整提示词
- prompt = EXTRACTION_PROMPT_TEMPLATE.format(
- variable_definitions=variable_definitions,
- input_text=input_text,
- additional_prompt=additional_prompt,
+ # Phase: 提取 project_id 传给 Prompt Center（允许项目级覆盖）
+ project_id: str | None = None
+ if context.workflow_execution:
+ from workflows.models import WorkflowExecution
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ if we.workflow and we.workflow.project:
+ project_id = str(we.workflow.project.id)
+ # Phase: 构建完整提示词（走 Prompt Center + fallback 双轨）
+ prompt = await render_prompt(
+ PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
+ project_id=project_id,
+ variables={
+ "variable_definitions": variable_definitions,
+ "input_text": input_text,
+ "additional_prompt": additional_prompt,
+ },
+ fallback=EXTRACTION_PROMPT_TEMPLATE,
  )
  try:
  # 调用 AI
