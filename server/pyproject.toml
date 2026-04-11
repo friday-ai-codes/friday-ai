@@ -158,6 +158,7 @@ module = [
  "services.*",
  "chat.*",
  "projects.*",
+ "prompts.*",
 ]
 # 服务层放宽检查
 disable_error_code = ["attr-defined", "arg-type", "assignment", "misc", "var-annotated"]
