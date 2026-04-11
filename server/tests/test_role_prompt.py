@@ -49,10 +49,10 @@ class TestBuildSystemPrompt:
  prompt = _build_system_prompt("TestProject", "proj-1", role="developer")
  assert "TestProject" in prompt
  def test_all_roles_have_reasonable_length(self):
- """所有角色 prompt 长度在合理范围内（80-500 字符）。"""
+ """所有角色 prompt 长度在合理范围内（完整 prompt 含 strategy + coding_guidance + ending，约 1000-1100 字符）。"""
  for role in ROLE_PROMPTS:
  prompt = _build_system_prompt("P", "proj-1", role=role)
- assert 80 < len(prompt) < 600, (
+ assert 80 < len(prompt) < 1200, (
  f"Role '{role}' prompt length {len(prompt)} out of range"
  )
  def test_all_five_roles_defined(self):

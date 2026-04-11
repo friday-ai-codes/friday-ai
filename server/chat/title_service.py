@@ -3,6 +3,7 @@
 使用小模型生成简短中文标题。
 """
 from __future__ import annotations
+from typing import Final
 import anthropic
 import structlog
 from chat.models import Conversation, Message
@@ -10,8 +11,8 @@ from chat.services import aget_setting_value
 from system.models import SettingKeys
 logger = structlog.get_logger(__name__)
 # 标题生成使用系统配置的默认模型（与对话模型一致）
-TITLE_MODEL_FALLBACK = "claude-sonnet-4-20250514"
-TITLE_PROMPT = (
+TITLE_MODEL_FALLBACK: Final[str] = "claude-sonnet-4-20250514"
+TITLE_PROMPT: Final[str] = (
  "根据以下用户消息，生成一个简短的中文对话标题（10字以内），"
  "描述用户的核心意图。只输出标题文字，不要引号、标点或解释。\n\n"
  "用户消息：{user_message}"

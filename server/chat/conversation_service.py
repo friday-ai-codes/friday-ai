@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Final
 import structlog
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
 import agents.tools.chat_tools # noqa: F401
@@ -42,7 +42,7 @@ def _bare_tool_name(name: str) -> str:
 # ============================================================================
 # 角色化 System Prompt
 # ============================================================================
-ROLE_PROMPTS: dict[str, str] = {
+ROLE_PROMPTS: Final[dict[str, str]] = {
  "developer": (
  "你是一名资深开发工程师助手。回答问题时关注代码细节、技术实现方案和最佳实践。"
  "使用专业技术术语，提供代码示例和具体的文件路径引用。"
@@ -69,36 +69,18 @@ ROLE_PROMPTS: dict[str, str] = {
  ),
 }
 VALID_ROLES = frozenset(ROLE_PROMPTS.keys)
-def _build_system_prompt(
- project_name: str,
- project_id: str,
- role: str = "developer",
- *,
- force_deep_analysis: bool = False,
-) -> str:
- """构建角色化 system prompt。
- 根据用户选择的角色生成差异化的 system prompt，
- 影响 AI 的回答风格、关注点和术语级别。
- Args:
- project_name: 项目名称
- project_id: 项目 UUID（供工具调用时使用）
- role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
- force_deep_analysis: 用户开启了深度分析开关，强制走策略二
- Returns:
- 完整的 system prompt 字符串
- """
- role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
- if force_deep_analysis:
- strategy = (
+# Phase Task 1: 抽取 _build_system_prompt 内的 fragment 为模块级 Final[str]
+# 字节级无损从原函数局部变量复制而来，供 0002 data migration 跨 app import 作为 seed。
+# 重构后 _build_system_prompt 的拼接结果与迁移前字节级一致（由 test_role_prompt.py 10 用例保证）。
+_STRATEGY_DEEP_ANALYSIS: Final[str] = (
  "用户已开启「深度分析」模式，你必须使用深度分析策略：\n"
  " 1. 用 1-2 次 RAG 快速获取入口上下文\n"
  " 2. 立即调用 deep_analysis(task_description=...) 启动 Claude Code 分析\n"
  " 3. deep_analysis 结果返回后直接回答，不要再调用任何工具\n"
  " 4. 每轮回答只能调用一次 deep_analysis\n"
  " 禁止仅用 RAG 工具拼凑回答。必须调用 deep_analysis。\n"
- )
- else:
- strategy = (
+)
+_STRATEGY_DEFAULT: Final[str] = (
  "你有两种策略应对用户问题：\n\n"
  "策略一 - 快速检索（定位代码、查看文件、简单问答）：\n"
  " 调用 search_repository_code / browse_file_content 等工具搜索向量库\n"
@@ -113,8 +95,8 @@ def _build_system_prompt(
  " - 问题涉及跨模块追踪、架构梳理、实现原理分析，优先使用策略二\n"
  " - 简单的代码定位、查看文件、事实性问答，使用策略一\n"
  " - 拿不准时倾向策略二，deep_analysis 的分析质量远优于多次 RAG 拼凑\n"
- )
- coding_guidance = (
+)
+_CODING_GUIDANCE: Final[str] = (
  "\n编码任务识别：\n"
  " 当用户描述了具体的代码变更需求（如「帮我实现...」「修改...功能」「添加...接口」「重构...」），\n"
  " 你应该调用 create_coding_plan 工具生成结构化技术方案，而非直接给出代码片段。\n"
@@ -124,15 +106,41 @@ def _build_system_prompt(
  " 不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
  " - deep_analysis：分析理解代码（只读）\n"
  " - create_coding_plan：执行代码变更（写入）\n"
- )
+)
+_ENDING_RULES: Final[str] = (
+ "不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
+ "不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
+ "用中文回答。\n"
+)
+def _build_system_prompt(
+ project_name: str,
+ project_id: str,
+ role: str = "developer",
+ *,
+ force_deep_analysis: bool = False,
+) -> str:
+ """构建角色化 system prompt。
+ 根据用户选择的角色生成差异化的 system prompt，
+ 影响 AI 的回答风格、关注点和术语级别。
+ Phase Task 1 重构：strategy/coding_guidance/ending 抽为模块级常量，
+ 函数体改为对常量的直接引用，行为字节级无损。
+ Args:
+ project_name: 项目名称
+ project_id: 项目 UUID(供工具调用时使用)
+ role: 用户角色(developer/pm/designer/qa/general)，无效值回退 general
+ force_deep_analysis: 用户开启了深度分析开关，强制走策略二
+ Returns:
+ 完整的 system prompt 字符串
+ """
+ role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
+ strategy = _STRATEGY_DEEP_ANALYSIS if force_deep_analysis else _STRATEGY_DEFAULT
+ coding_guidance = _CODING_GUIDANCE
  return (
  f"{role_prompt}\n\n"
  f"当前项目：{project_name}\n\n"
  f"{strategy}\n"
  f"{coding_guidance}\n"
- f"不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
- f"不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
- f"用中文回答。\n"
+ f"{_ENDING_RULES}"
  )
 async def _get_tool_names(project_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
