@@ -47,10 +47,12 @@ async def build_sdk_config(
  )
  budget_str = await aget_setting_value(SettingKeys.MAX_BUDGET_USD)
  max_budget_usd = float(budget_str) if budget_str else None
- config = ChatRunnerConfig(
- system_prompt=_build_system_prompt(
+ # Phase Task 7: _build_system_prompt 改为 async，调用处必须 await
+ system_prompt = await _build_system_prompt(
  project_name, project_id, role=role, force_deep_analysis=force_deep_analysis,
- ),
+ )
+ config = ChatRunnerConfig(
+ system_prompt=system_prompt,
  model=model,
  project_id=project_id,
  session_id=session_id,

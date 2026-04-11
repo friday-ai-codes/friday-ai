@@ -31,6 +31,8 @@ from chat.models import Conversation, Message
 from orchestration.graph import get_compiled_graph
 from orchestration.models import OrchestrationRun
 from orchestration.runner_registry import unregister_runner
+from prompts.keys import PromptSlugs
+from prompts.services import render_prompt
 from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 def _bare_tool_name(name: str) -> str:
@@ -69,6 +71,14 @@ ROLE_PROMPTS: Final[dict[str, str]] = {
  ),
 }
 VALID_ROLES = frozenset(ROLE_PROMPTS.keys)
+# Phase Task 7: role → slug 映射，用于 _build_system_prompt 分发到 render_prompt
+ROLE_SLUG_MAP: Final[dict[str, str]] = {
+ "developer": PromptSlugs.CHAT_SYSTEM_DEVELOPER,
+ "pm": PromptSlugs.CHAT_SYSTEM_PM,
+ "designer": PromptSlugs.CHAT_SYSTEM_DESIGNER,
+ "qa": PromptSlugs.CHAT_SYSTEM_QA,
+ "general": PromptSlugs.CHAT_SYSTEM_GENERAL,
+}
 # Phase Task 1: 抽取 _build_system_prompt 内的 fragment 为模块级 Final[str]
 # 字节级无损从原函数局部变量复制而来，供 0002 data migration 跨 app import 作为 seed。
 # 重构后 _build_system_prompt 的拼接结果与迁移前字节级一致（由 test_role_prompt.py 10 用例保证）。
@@ -112,34 +122,60 @@ _ENDING_RULES: Final[str] = (
  "不要重复浏览同一个文件。如果信息已足够，直接给出回答。\n"
  "用中文回答。\n"
 )
-def _build_system_prompt(
+async def _build_system_prompt(
  project_name: str,
  project_id: str,
  role: str = "developer",
  *,
  force_deep_analysis: bool = False,
 ) -> str:
- """构建角色化 system prompt。
- 根据用户选择的角色生成差异化的 system prompt，
- 影响 AI 的回答风格、关注点和术语级别。
- Phase Task 1 重构：strategy/coding_guidance/ending 抽为模块级常量，
- 函数体改为对常量的直接引用，行为字节级无损。
+ """构建角色化 system prompt（异步版，Phase Task 7 fragment 化）。
+ Phase: 每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
+ 条件拼接逻辑保留在 Python 层（不进 Jinja2 控制流 DSL）。
+ 结尾规则 _ENDING_RULES 保留 Python 字面量(非可运营 Prompt)，不占用 slug。
  Args:
  project_name: 项目名称
- project_id: 项目 UUID(供工具调用时使用)
- role: 用户角色(developer/pm/designer/qa/general)，无效值回退 general
+ project_id: 项目 UUID（供工具调用时使用）
+ role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
  force_deep_analysis: 用户开启了深度分析开关，强制走策略二
  Returns:
  完整的 system prompt 字符串
  """
- role_prompt = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
- strategy = _STRATEGY_DEEP_ANALYSIS if force_deep_analysis else _STRATEGY_DEFAULT
- coding_guidance = _CODING_GUIDANCE
+ # 1. 角色 fragment
+ role_slug = ROLE_SLUG_MAP.get(role, PromptSlugs.CHAT_SYSTEM_GENERAL)
+ role_fallback = ROLE_PROMPTS.get(role, ROLE_PROMPTS["general"])
+ role_fragment = await render_prompt(
+ role_slug,
+ project_id=project_id,
+ variables={},
+ fallback=role_fallback,
+ )
+ # 2. 策略 fragment（条件分支保留 Python 层，防并行调两个 strategy slug）
+ if force_deep_analysis:
+ strategy_slug = PromptSlugs.CHAT_STRATEGY_DEEP_ANALYSIS
+ strategy_fallback = _STRATEGY_DEEP_ANALYSIS
+ else:
+ strategy_slug = PromptSlugs.CHAT_STRATEGY_DEFAULT
+ strategy_fallback = _STRATEGY_DEFAULT
+ strategy_fragment = await render_prompt(
+ strategy_slug,
+ project_id=project_id,
+ variables={},
+ fallback=strategy_fallback,
+ )
+ # 3. 编码指引 fragment（无条件）
+ coding_guidance_fragment = await render_prompt(
+ PromptSlugs.CHAT_CODING_GUIDANCE,
+ project_id=project_id,
+ variables={},
+ fallback=_CODING_GUIDANCE,
+ )
+ # 4. 组装（结尾规则 _ENDING_RULES 保持 Python 字面量，非可运营 Prompt）
  return (
- f"{role_prompt}\n\n"
+ f"{role_fragment}\n\n"
  f"当前项目：{project_name}\n\n"
- f"{strategy}\n"
- f"{coding_guidance}\n"
+ f"{strategy_fragment}\n"
+ f"{coding_guidance_fragment}\n"
  f"{_ENDING_RULES}"
  )
 async def _get_tool_names(project_id: str) -> list[str]:

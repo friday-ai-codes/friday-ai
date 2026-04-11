@@ -213,10 +213,17 @@ def test_coding_tools_in_full_tool_names:
 # ============================================================================
 # system prompt + _get_tool_names 测试
 # ============================================================================
-def test_system_prompt_contains_coding_guidance:
- """验证 system prompt 包含编码意图识别指引。"""
+@pytest.mark.asyncio
+async def test_system_prompt_contains_coding_guidance(monkeypatch):
+ """验证 system prompt 包含编码意图识别指引。
+ Phase Task 7: async 化 + 强制 fallback 路径（避免依赖 DB seed）。
+ """
  from chat.conversation_service import _build_system_prompt
- prompt = _build_system_prompt("Test Project", "test-uuid", "developer")
+ monkeypatch.setenv(
+ "PROMPT_CENTER_DISABLED_KEYS",
+ "chat.system.developer,chat.strategy.default,chat.coding_guidance",
+ )
+ prompt = await _build_system_prompt("Test Project", "test-uuid", "developer")
  assert "create_coding_plan" in prompt
  assert "编码" in prompt or "代码变更" in prompt
 @pytest.mark.django_db(transaction=True)
