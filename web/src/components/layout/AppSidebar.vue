@@ -50,6 +50,7 @@ const adminNavItems: NavItem = [
  { to: '/admin', label: '系统设置', icon: 'lucide--settings', exact: true },
  { to: '/admin/users', label: '用户管理', icon: 'lucide--users' },
  { to: '/admin/oidc', label: 'OIDC 认证', icon: 'lucide--shield-check' },
+ { to: '/admin/prompts', label: 'Prompt 管理', icon: 'lucide--file-text' },
 ]
 // ==================== Chat 对话 ====================
 function handleNewConversation {
