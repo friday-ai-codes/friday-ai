@@ -7,6 +7,7 @@ Phase 唯一不可 skip 的 Wave 测试：
 from __future__ import annotations
 import pytest
 from prompts.keys import BUILTIN_SLUGS, PromptSlugs
+from prompts.models import Prompt
 from prompts.services import render_prompt
 class TestPromptSlugContract:
  """防 v18.1 G3 同型：BUILTIN_SLUGS 契约锁死（参考 server/agents/core/events.py ALL_EVENT_TYPES）。"""
@@ -35,12 +36,18 @@ class TestPromptSlugContract:
  assert "." in slug, f"slug 缺少点分: {slug}"
  assert " " not in slug, f"slug 含空格: {slug}"
  @pytest.mark.parametrize("slug", sorted(BUILTIN_SLUGS))
- @pytest.mark.django_db
+ @pytest.mark.django_db(transaction=True)
  async def test_every_slug_renderable_via_fallback(self, slug: str) -> None:
- """Phase DB 无 seed —— 所有 slug 必须走 fallback 路径可达。
+ """所有 slug 必须走 fallback 路径可达（DB 先清空，锁死 fallback 链路）。
  这是防 G3 同型的核心契约：Registry 写入但调用点未读取的情况，
  通过遍历 BUILTIN_SLUGS + render_prompt(fallback="STUB") 必然返回 "STUB"。
+ Phase 更新：0002_seed_system_defaults 现在会在测试 DB 中种下
+ 12 个系统 slug，若不先清空会走 DB body 渲染路径并触发
+ PromptVariableMissingError（因新的 `{{user_message}}` 等占位符）。
+ 本测试专门验证 fallback **路径**可达性（不是 DB 路径），故先 adelete。
  """
+ # 清空测试 DB 中该 slug 的种子记录，强制走 fallback 路径
+ await Prompt.objects.filter(slug=slug).adelete
  result = await render_prompt(
  slug=slug,
  project_id=None,
