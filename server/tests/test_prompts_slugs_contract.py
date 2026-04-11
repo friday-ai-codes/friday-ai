@@ -19,10 +19,14 @@ class TestPromptSlugContract:
  }
  assert BUILTIN_SLUGS == frozenset(expected)
  def test_builtin_slugs_exact_count_locked(self) -> None:
- """锁死 15 个 slug — 新增 slug 必须同时更新此断言。"""
- assert len(BUILTIN_SLUGS) == 15, (
+ """锁死 16 个 slug — 新增 slug 必须同时更新此断言。
+ 分类统计：Chat 8 (5 role + 2 strategy + 1 coding) + Aux 2 + AI Node 4
+ + Feishu 1 + Repo 1 = 16。Plan 原写 "=15" 系算术笔误
+ (5+2+1+2+4+1+1=16)，Task 4 执行时 Rule 1 自动修正。
+ """
+ assert len(BUILTIN_SLUGS) == 16, (
  f"BUILTIN_SLUGS count drift: got {len(BUILTIN_SLUGS)}, "
- "expected 15. 若确认新增，请同步更新此断言与 PLAN 文档。"
+ "expected 16. 若确认新增，请同步更新此断言与 PLAN 文档。"
  )
  def test_every_slug_follows_naming_convention(self) -> None:
  """所有 slug 必须遵循 `{category}.{...}` 小写点分命名。"""
