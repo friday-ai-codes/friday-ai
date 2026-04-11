@@ -11,7 +11,7 @@ methods, but overrides execute entirely because:
 import json
 import re
 import time
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Final, Literal
 import structlog
 from agents.core.result import AgentResult
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
@@ -28,9 +28,9 @@ from workflows.nodes.base import (
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger(__name__)
 # 单个 MR diff 总字符数上限（避免超出 LLM 上下文窗口）
-_MAX_DIFF_CHARS = 100000
+_MAX_DIFF_CHARS: Final[int] = 100000
 # 审查系统 prompt
-REVIEW_SYSTEM_PROMPT = """你是一位资深代码审查专家。你需要从三个维度审查代码变更：
+REVIEW_SYSTEM_PROMPT: Final[str] = """你是一位资深代码审查专家。你需要从三个维度审查代码变更：
 1. 代码质量：可读性、可维护性、最佳实践、潜在 bug、错误处理
 2. 安全性：SQL 注入、XSS、敏感信息泄露、权限问题、依赖安全
 3. 方案符合度：代码变更是否忠实实现了技术方案中的任务

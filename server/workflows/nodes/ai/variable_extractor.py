@@ -1,5 +1,6 @@
 """AI Variable Extractor Node - Extract variables from text using AI."""
 import json
+from typing import Final
 import structlog
 from workflows.nodes.base import (
  BaseNode,
@@ -12,7 +13,7 @@ from workflows.nodes.base import (
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger(__name__)
 # AI 提取提示词模板
-EXTRACTION_PROMPT_TEMPLATE = """请从以下文本中提取指定的变量信息。
+EXTRACTION_PROMPT_TEMPLATE: Final[str] = """请从以下文本中提取指定的变量信息。
 需要提取的变量：
 {variable_definitions}
 文本内容：
