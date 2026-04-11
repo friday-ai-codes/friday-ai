@@ -16,6 +16,8 @@ import structlog
 from agents.core.result import AgentResult
 from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
 from common.encryption import decrypt_value
+from prompts.keys import PromptSlugs
+from prompts.services import render_prompt
 from repositories.models import Repository
 from services.git_platform import MRDiffResult, get_git_platform_client
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
@@ -297,6 +299,13 @@ class AICodeReviewNode(AIAgentBaseNode):
  project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
  )
+ # Phase: 循环外预渲染 system prompt（避免 per-MR 重复渲染）
+ rendered_system_prompt = await render_prompt(
+ PromptSlugs.AI_NODE_CODE_REVIEW,
+ project_id=str(project.id) if project else None,
+ variables={}, # REVIEW_SYSTEM_PROMPT 当前无占位符
+ fallback=REVIEW_SYSTEM_PROMPT,
+ )
  # 3. 逐 MR 审查
  await self.emit_sub_step(context, "fetch_diff", SubStepStatus.RUNNING)
  mr_reviews: list[dict[str, Any]] =
@@ -341,7 +350,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  # 3c. 调用 SDKAgentRunner 执行审查
  session_id = f"review-{context.execution_id}-{context.node_id}-{mr_id}"
  runner_config = SdkRunnerConfig(
- system_prompt=REVIEW_SYSTEM_PROMPT,
+ system_prompt=rendered_system_prompt, # Phase: 预渲染结果
  model=resolved_model,
  project_id=str(project.id) if project else "",
  session_id=session_id,
