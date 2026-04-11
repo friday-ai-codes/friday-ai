@@ -31,6 +31,8 @@ api_patterns = [
  path("oidc/", include("identity.urls")),
  # Chat (LLM conversation)
  path("chat/", include("chat.urls")),
+ # Prompts (v19.0 Phase 统一提示词管理)
+ path("prompts/", include("prompts.urls")),
  # Workflows
  path("", include("workflows.urls")),
  # SubAgent integration
