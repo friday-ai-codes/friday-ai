@@ -4,12 +4,13 @@ via LLM-driven tool scheduling. Supports iterative refinement through Feishu
 card interactions with verify_plan validation loop.
 """
 import json
+import os
 import re
 from typing import Any, ClassVar, Final
 import structlog
 from agents.core.result import AgentResult
 from prompts.keys import PromptSlugs
-from prompts.services import render_prompt
+from prompts.services import get_active_prompt
 from workflows.nodes.ai.base_agent import AIAgentBaseNode
 from workflows.nodes.base import (
  ExecutionContext,
@@ -294,11 +295,26 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
  )
  project = await self._get_project(context)
- self._precomputed_base_prompt = await render_prompt(
+ # retreat path: schema_json 体量 4KB+，如果走 render_prompt 会被
+ # Phase services._sanitize_variables 的 1024 字符截断切成残缺 JSON。
+ # 此处手工读取 active version body（或 fallback 常量）并做 str.replace，
+ # 绕过 Jinja2 sandbox + 清洗流程。仍然保留 3 态语义：DB hit / DB empty /
+ # PROMPT_CENTER_DISABLED_KEYS 命中（与 render_prompt 行为等价）。
+ disabled_keys = {
+ s.strip
+ for s in os.environ.get("PROMPT_CENTER_DISABLED_KEYS", "").split(",")
+ if s.strip
+ }
+ if PromptSlugs.AI_NODE_PLAN_GENERATION in disabled_keys:
+ body_template = _PLAN_GENERATION_BASE_PROMPT
+ else:
+ version = await get_active_prompt(
  PromptSlugs.AI_NODE_PLAN_GENERATION,
  project_id=str(project.id) if project else None,
- variables={"schema_json": schema_json},
- fallback=_PLAN_GENERATION_BASE_PROMPT,
+ )
+ body_template = version.body if version is not None else _PLAN_GENERATION_BASE_PROMPT
+ self._precomputed_base_prompt = body_template.replace(
+ "{{schema_json}}", schema_json
  )
  # 初始化子步骤记录
  await self._init_sub_steps(context)

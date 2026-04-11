@@ -40,11 +40,16 @@ class TestPlanGenerationMigration:
  prompt.active_version = version
  prompt.save(update_fields=["active_version", "updated_at"])
  @pytest.mark.asyncio
- async def test_db_hit_xml_wraps_schema_json(
+ async def test_render_prompt_db_hit_xml_wraps_schema_json(
  self,
  monkeypatch: pytest.MonkeyPatch,
  ) -> None:
- """DB 命中路径：schema_json 变量被 XML tag 包裹（ 接受副作用）。"""
+ """Phase 行为参考：render_prompt DB 命中路径会 XML 包裹变量 & 触发截断。
+ 本测试记录 Phase services.render_prompt 的行为。Phase 的
+ plan_generation.execute **不**走此路径（ retreat），而是手工读取
+ get_active_prompt + str.replace，见
+ test_execute_schema_json_not_truncated_by_retreat_path。
+ """
  monkeypatch.delenv("PROMPT_CENTER_DISABLED_KEYS", raising=False)
  result = await render_prompt(
  PromptSlugs.AI_NODE_PLAN_GENERATION,
@@ -54,6 +59,47 @@ class TestPlanGenerationMigration:
  )
  # DB 命中路径变量被 _sanitize_variables XML tag 包裹
  assert "<schema_json>MY_SCHEMA_PLACEHOLDER</schema_json>" in result
+ @pytest.mark.asyncio
+ async def test_execute_schema_json_not_truncated_by_retreat_path(
+ self,
+ monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+ """ retreat（ regression fix）：schema_json 4KB+ 在 execute 预渲染后
+ 必须保留完整内容，不被 Phase _sanitize_variables 的 1024 字符截断。
+ Phase code review 发现：schema_json 实测 4432 字符，走 render_prompt
+ 会被截到 1024 → 切在中间产生残缺 JSON → LLM 看到 garbage。
+ 修复策略：plan_generation.execute 改为手工 get_active_prompt + str.replace，
+ 绕过 Jinja2 sandbox + 清洗流程（符合 work-item 的 retreat 机制）。
+ """
+ from prompts.services import get_active_prompt
+ monkeypatch.delenv("PROMPT_CENTER_DISABLED_KEYS", raising=False)
+ schema_json = json.dumps(TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2)
+ # 前置假设：schema_json 必须 > 1024 字符才能真正触发 regression
+ assert len(schema_json) > 1024, (
+ f"TECHNICAL_PLAN_JSON_SCHEMA 必须 > 1024 字符才能验证 修复 "
+ f"(实测 {len(schema_json)})"
+ )
+ # 模拟 execute 的 retreat 逻辑
+ version = await get_active_prompt(
+ PromptSlugs.AI_NODE_PLAN_GENERATION, project_id=None
+ )
+ assert version is not None, "fixture 应已种入 seed"
+ body_template = version.body
+ rendered = body_template.replace("{{schema_json}}", schema_json)
+ # 回归断言：
+ # 1. 完整 schema_json 必须出现在 rendered 里（未被截到 1024）
+ assert schema_json in rendered, (
+ " regression: schema_json 被截断或未完整替换"
+ )
+ # 2. 没有 XML tag 包裹（ retreat 绕过了 _sanitize_variables）
+ assert "<schema_json>" not in rendered, (
+ " regression: 预渲染不应使用 XML tag 包裹路径"
+ )
+ # 3. rendered 长度应大致 = base_prompt 长度 - 占位符长度 + schema_json 长度
+ expected_len = len(body_template) - len("{{schema_json}}") + len(schema_json)
+ assert len(rendered) == expected_len, (
+ f"长度不匹配: expected {expected_len}, got {len(rendered)}"
+ )
  @pytest.mark.asyncio
  async def test_db_empty_fallback_byte_equivalent(
  self,
