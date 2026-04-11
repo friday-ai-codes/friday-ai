@@ -299,7 +299,11 @@ async def _call_llm_for_pr_draft(
  return title, description
 def build_branch_url(git_url: str, git_platform: str, branch_name: str) -> str:
  """构建分支 URL。"""
- from services.git_platform import extract_github_owner_repo, extract_gitlab_url, extract_project_path
+ from services.git_platform import (
+ extract_github_owner_repo,
+ extract_gitlab_url,
+ extract_project_path,
+ )
  if git_platform == "github":
  try:
  owner, repo = extract_github_owner_repo(git_url)

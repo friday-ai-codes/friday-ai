@@ -3,7 +3,6 @@
 不再阻塞轮询。同时验证 blocking_task_registry 的 register/drain 接口。
 """
 from __future__ import annotations
-import asyncio
 import time
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch

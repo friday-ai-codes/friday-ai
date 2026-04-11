@@ -5,6 +5,7 @@ import structlog
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter, interrupt
+from agents.chat_runner import ChatAnthropicRunner, ChatRunnerConfig
 from agents.core.events import (
  MESSAGE_COMPLETE,
  PHASE_TRANSITION,
@@ -14,7 +15,6 @@ from agents.core.events import (
  TOOL_USE_RESULT,
  TOOL_USE_START,
 )
-from agents.chat_runner import ChatAnthropicRunner, ChatRunnerConfig
 from orchestration.checkpointer import get_checkpointer
 from orchestration.runner_registry import register_runner, unregister_runner
 from orchestration.state import RunPhase, WorkflowState

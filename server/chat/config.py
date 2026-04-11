@@ -1,8 +1,8 @@
 """Chat 运行配置构建。"""
 from __future__ import annotations
 import uuid
-from agents.models import AgentSession
 from agents.chat_runner import ChatRunnerConfig
+from agents.models import AgentSession
 from chat.conversation_service import _build_system_prompt
 from chat.models import Conversation
 from chat.services import aget_setting_value

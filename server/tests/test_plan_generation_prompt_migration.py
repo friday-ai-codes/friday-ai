@@ -8,9 +8,9 @@ from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope, PromptVersion
 from prompts.services import render_prompt
 from workflows.nodes.ai.plan_generation import (
- AIPlanGenerationNode,
- TECHNICAL_PLAN_JSON_SCHEMA,
  _PLAN_GENERATION_BASE_PROMPT,
+ TECHNICAL_PLAN_JSON_SCHEMA,
+ AIPlanGenerationNode,
 )
 @pytest.mark.django_db(transaction=True)
 class TestPlanGenerationMigration:

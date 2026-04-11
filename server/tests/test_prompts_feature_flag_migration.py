@@ -4,8 +4,6 @@ from typing import Any
 import pytest
 from chat.conversation_service import (
  ROLE_PROMPTS,
- _CODING_GUIDANCE,
- _STRATEGY_DEFAULT,
 )
 from chat.title_service import TITLE_PROMPT
 from prompts.keys import PromptSlugs

@@ -2,7 +2,6 @@
 import uuid
 import pytest
 from chat.models import CodingSession, Conversation
-from projects.models import Project
 from repositories.models import Repository
 @pytest.fixture
 def conversation(project):
@@ -91,7 +90,7 @@ class TestCreateCodingPlan:
  affected_files=,
  )
  assert result.success is False
- assert "error" is not None
+ assert "error" != None
 # ============================================================================
 # update_coding_plan 测试
 # ============================================================================

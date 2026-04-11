@@ -1,10 +1,8 @@
 """
 Task 2: 测试修复返回值和泛型类型错误
 """
-import pytest
 import asyncio
-from typing import Optional, Any
-from unittest.mock import MagicMock
+from typing import Any, Optional
 from django.test import TestCase
 class TestReturnTypeAndTypeArgFixes(TestCase):
  """测试返回值和泛型类型修复"""

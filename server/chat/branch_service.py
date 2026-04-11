@@ -137,7 +137,7 @@ async def validate_branch_name(
  # 2. 字符集正则
  if not _VALID_BRANCH_CHARS.match(branch_name):
  errors.append(
- f"分支名包含非法字符，仅允许字母、数字、'.', '_', '/', '-'"
+ "分支名包含非法字符，仅允许字母、数字、'.', '_', '/', '-'"
  )
  # 3. '..' 路径遍历检查
  if ".." in branch_name:

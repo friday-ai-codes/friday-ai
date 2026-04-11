@@ -4,7 +4,6 @@ import asyncio
 import base64
 import json
 from dataclasses import dataclass
-from typing import Any
 import structlog
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from django.conf import settings

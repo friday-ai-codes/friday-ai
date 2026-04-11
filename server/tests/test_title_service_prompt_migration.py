@@ -1,7 +1,6 @@
 """Phase: title_service 迁移三态回退测试 + T- 注入防护。"""
 from __future__ import annotations
 from typing import Any
-from unittest.mock import AsyncMock
 import pytest
 from chat.models import Conversation, Message
 from chat.title_service import TITLE_PROMPT, generate_title

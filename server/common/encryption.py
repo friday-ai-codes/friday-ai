@@ -18,7 +18,7 @@ def decrypt_value(encrypted_value: str) -> str:
  try:
  import base64
  import hashlib
- from cryptography.fernet import Fernet, InvalidToken
+ from cryptography.fernet import Fernet
  from django.conf import settings
  secret = getattr(settings, "FRIDAY_ENCRYPTION_KEY", "") or settings.SECRET_KEY
  try:

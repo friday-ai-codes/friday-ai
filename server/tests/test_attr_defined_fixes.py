@@ -40,14 +40,14 @@ class TestAttrDefinedFixes(TestCase):
  try:
  # 测试 filter.afirst 模式
  queryset = NodeExecution.objects.filter(output_data__session_id="test-id")
- result = await queryset.afirst
+ _ = await queryset.afirst
  # 结果可能是 None，这是正常的
  except Exception:
  # 测试环境问题，但类型应该正确
  pass
  try:
  # 测试 select_related.aget 模式
- result = await NodeExecution.objects.select_related("node").aget(pk="test-id")
+ _ = await NodeExecution.objects.select_related("node").aget(pk="test-id")
  except Exception:
  # 测试环境问题，但类型应该正确
  pass
