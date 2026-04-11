@@ -13,55 +13,63 @@
  * 9. dirty=true 时用户关闭 Sheet → confirm 拦截；返回 true 才关闭；返回 false 强制保持 open=true
  * 10. PromptBodyEditor 通过 v-model 绑定 editedBody（状态提升到 PromptEditor 外层）
  *
- * Mock 策略（与 Plan 测试相同）：
- * - ~/stores/prompts：usePromptsStore 返回全部 state ref + action mock
+ * Mock 策略：
+ * - ~/stores/prompts：usePromptsStore 返回全部 state ref-like + action mock
  * - ~/composables/useConfirmDialog：confirm mock 返回 Promise
  * - ~/composables/useToast & useErrorHandler：success/error/handleError mock
  * - Sheet/Tabs 家族以及子组件透传渲染到默认 DOM 以便 class 断言
+ *
+ * vitest 与 ESLint 兼容：vi.mock 会被 vitest 自动 hoist 到文件顶部，所以 closure
+ * 变量必须通过 vi.hoisted 一并 hoist；mock 中 currentPrompt / versions / saving
+ * 使用 plain `{ value: T }` 对象而非真正的 ref —— 每个测试在 mount 前直接赋值，
+ * 组件 setup 期的 `computed( => storeCurrentPrompt.value)` 会读到当前快照。
  */
-import type { PromptDetail, PromptVersion } from '~/types/prompts'
+import type { PromptDetail } from '~/types/prompts'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref } from 'vue'
+import { nextTick } from 'vue'
+import PromptEditor from '../PromptEditor.vue'
 // ============================================================================
-// 模块 mock —— 必须在组件 import 之前
+// 模块 mock —— 所有 closure 变量通过 vi.hoisted 与 vi.mock 工厂一同提升
 // ============================================================================
-const confirmMock = vi.fn
-vi.mock('~/composables/useConfirmDialog', => ({
- useConfirmDialog: => ({ confirm: confirmMock }),
+const mocks = vi.hoisted( => ({
+ confirmMock: vi.fn,
+ updatePromptMock: vi.fn,
+ createPromptMock: vi.fn,
+ clearCurrentMock: vi.fn,
+ loadVersionsMock: vi.fn,
+ successMock: vi.fn,
+ handleErrorMock: vi.fn,
+ // plain ref-like 对象 —— PromptEditor setup 中通过 .value 读取即可
+ currentPromptRef: { value: null as PromptDetail | null },
+ versionsRef: { value: as unknown },
+ savingRef: { value: false },
 }))
-const updatePromptMock = vi.fn
-const createPromptMock = vi.fn
-const clearCurrentMock = vi.fn
-const loadVersionsMock = vi.fn
-const currentPromptRef = ref<PromptDetail | null>(null)
-const versionsRef = ref<PromptVersion>
-const savingRef = ref(false)
+vi.mock('~/composables/useConfirmDialog', => ({
+ useConfirmDialog: => ({ confirm: mocks.confirmMock }),
+}))
 vi.mock('~/stores/prompts', => ({
  usePromptsStore: => ({
- updatePrompt: updatePromptMock,
- createPrompt: createPromptMock,
- clearCurrent: clearCurrentMock,
- loadVersions: loadVersionsMock,
- currentPrompt: currentPromptRef,
- versions: versionsRef,
- saving: savingRef,
+ updatePrompt: mocks.updatePromptMock,
+ createPrompt: mocks.createPromptMock,
+ clearCurrent: mocks.clearCurrentMock,
+ loadVersions: mocks.loadVersionsMock,
+ currentPrompt: mocks.currentPromptRef,
+ versions: mocks.versionsRef,
+ saving: mocks.savingRef,
  }),
 }))
-const successMock = vi.fn
 vi.mock('~/composables/useToast', => ({
  useToast: => ({
- success: successMock,
+ success: mocks.successMock,
  error: vi.fn,
  warning: vi.fn,
  info: vi.fn,
  }),
 }))
-const handleErrorMock = vi.fn
 vi.mock('~/composables/useErrorHandler', => ({
- useErrorHandler: => ({ handleError: handleErrorMock }),
+ useErrorHandler: => ({ handleError: mocks.handleErrorMock }),
 }))
-import PromptEditor from '../PromptEditor.vue'
 // ============================================================================
 // Fixture
 // ============================================================================
@@ -109,10 +117,12 @@ const SheetContentStub = {
  props: ['class', 'side'],
  template: '<div data-testid="sheet-content":class="$props.class"><slot /></div>',
 }
-const PassthroughStub = (name: string) => ({
+function PassthroughStub(name: string) {
+ return {
  name,
  template: `<div data-stub="${name}"><slot /></div>`,
-})
+ }
+}
 const TabsStub = {
  name: 'Tabs',
  props: ['modelValue'],
@@ -199,16 +209,16 @@ function mountEditor(props: { open: boolean, mode: 'edit' | 'create', projectId?
 // ============================================================================
 describe('promptEditor.vue', => {
  beforeEach( => {
- confirmMock.mockReset
- updatePromptMock.mockReset
- createPromptMock.mockReset
- clearCurrentMock.mockReset
- loadVersionsMock.mockReset
- successMock.mockReset
- handleErrorMock.mockReset
- currentPromptRef.value = null
- versionsRef.value =
- savingRef.value = false
+ mocks.confirmMock.mockReset
+ mocks.updatePromptMock.mockReset
+ mocks.createPromptMock.mockReset
+ mocks.clearCurrentMock.mockReset
+ mocks.loadVersionsMock.mockReset
+ mocks.successMock.mockReset
+ mocks.handleErrorMock.mockReset
+ mocks.currentPromptRef.value = null
+ mocks.versionsRef.value =
+ mocks.savingRef.value = false
  })
  it('1. open=false 时 Sheet 不渲染内容（sheet-content stub 不存在）', => {
  const wrapper = mountEditor({ open: false, mode: 'edit' })
@@ -216,14 +226,13 @@ describe('promptEditor.vue', => {
  expect(wrapper.find('[data-testid="sheet-root"]').attributes('data-open')).toBe('false')
  })
  it('2. open=true + mode=edit + currentPrompt 已加载 → 渲染 4 个 Tab 触发器', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
  const triggers = wrapper.findAll('[data-tab-trigger]')
  expect(triggers.length).toBe(4)
  const values = triggers.map(t => t.attributes('data-tab-trigger'))
  expect(values).toEqual(['metadata', 'body', 'preview', 'versions'])
- // 4 个中文文案
  const texts = triggers.map(t => t.text)
  expect(texts).toContain('基础信息')
  expect(texts).toContain('正文编辑')
@@ -240,7 +249,7 @@ describe('promptEditor.vue', => {
  expect(values).not.toContain('versions')
  })
  it('4. SheetContent 包含 sm:!max-w-3xl 和 w-full flex flex-col class', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
  const sheetContent = wrapper.find('[data-testid="sheet-content"]')
@@ -251,7 +260,7 @@ describe('promptEditor.vue', => {
  expect(cls).toContain('flex-col')
  })
  it('5. 所有 TabsContent 都传递 force-mount=true 给 reka-ui', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
  const contents = wrapper.findAll('[data-tab-content]')
@@ -262,20 +271,18 @@ describe('promptEditor.vue', => {
  })
  })
  it('6. body 初始与 currentPrompt.active_version.body 相同 → isDirty=false 保存按钮 disabled', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
- // 查找保存按钮（文案 "保存"）
  const buttons = wrapper.findAll('button')
  const saveBtn = buttons.find(b => b.text === '保存')
  expect(saveBtn).toBeTruthy
  expect(saveBtn!.attributes('disabled')).toBeDefined
  })
  it('7. body 修改后 isDirty=true，保存按钮 enabled', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
- // 通过 PromptBodyEditor stub 发 update:modelValue 事件模拟用户输入
  const bodyEditor = wrapper.findComponent(PromptBodyEditorStub)
  await bodyEditor.vm.$emit('update:modelValue', 'Hello {{input_text}} CHANGED')
  await nextTick
@@ -285,9 +292,9 @@ describe('promptEditor.vue', => {
  expect(saveBtn!.attributes('disabled')).toBeUndefined
  })
  it('8. 点击保存 → confirm 被调用 → store.updatePrompt 被调用 → emit update:open=false', async => {
- currentPromptRef.value = makePrompt
- confirmMock.mockResolvedValueOnce(true)
- updatePromptMock.mockResolvedValueOnce(makePrompt)
+ mocks.currentPromptRef.value = makePrompt
+ mocks.confirmMock.mockResolvedValueOnce(true)
+ mocks.updatePromptMock.mockResolvedValueOnce(makePrompt)
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
  // 触发 body 变更让 isDirty=true
@@ -298,9 +305,9 @@ describe('promptEditor.vue', => {
  expect(saveBtn).toBeTruthy
  await saveBtn!.trigger('click')
  await flushAsync
- expect(confirmMock).toHaveBeenCalledTimes(1)
- expect(updatePromptMock).toHaveBeenCalledTimes(1)
- expect(updatePromptMock).toHaveBeenCalledWith(
+ expect(mocks.confirmMock).toHaveBeenCalledTimes(1)
+ expect(mocks.updatePromptMock).toHaveBeenCalledTimes(1)
+ expect(mocks.updatePromptMock).toHaveBeenCalledWith(
  'prompt-abc',
  expect.objectContaining({
  title: '开发者提示词',
@@ -308,44 +315,38 @@ describe('promptEditor.vue', => {
  body: 'Hello {{input_text}} NEW',
  }),
  )
- // Sheet 应被关闭
  const emitted = wrapper.emitted('update:open')
  expect(emitted).toBeTruthy
  expect(emitted![emitted!.length - 1]).toEqual([false])
- expect(successMock).toHaveBeenCalledWith('保存成功')
+ expect(mocks.successMock).toHaveBeenCalledWith('保存成功')
  })
  it('9. dirty=true 时关闭 Sheet 走 confirm 拦截；返回 false 重置 open=true', async => {
- currentPromptRef.value = makePrompt
- confirmMock.mockResolvedValueOnce(false)
+ mocks.currentPromptRef.value = makePrompt
+ mocks.confirmMock.mockResolvedValueOnce(false)
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
- // body 变更让 dirty=true
  const bodyEditor = wrapper.findComponent(PromptBodyEditorStub)
  await bodyEditor.vm.$emit('update:modelValue', 'DIRTY')
  await nextTick
- // 触发 Sheet update:open=false（模拟点击遮罩/ESC/关闭按钮）
  const sheetStub = wrapper.findComponent(SheetStub)
  await sheetStub.vm.$emit('update:open', false)
  await flushAsync
- expect(confirmMock).toHaveBeenCalledTimes(1)
- // confirm 返回 false → 最后一次 emit 应为 true（强制保持打开）
+ expect(mocks.confirmMock).toHaveBeenCalledTimes(1)
  const emitted = wrapper.emitted('update:open') ??
  expect(emitted.length).toBeGreaterThan(0)
  expect(emitted[emitted.length - 1]).toEqual([true])
- expect(clearCurrentMock).not.toHaveBeenCalled
+ expect(mocks.clearCurrentMock).not.toHaveBeenCalled
  })
  it('10. PromptBodyEditor 通过 v-model 绑定 editedBody（状态提升到 PromptEditor 外层）', async => {
- currentPromptRef.value = makePrompt
+ mocks.currentPromptRef.value = makePrompt
  const wrapper = mountEditor({ open: true, mode: 'edit' })
  await nextTick
  const bodyEditor = wrapper.findComponent(PromptBodyEditorStub)
  // 初始值 = currentPrompt.active_version.body
  expect(bodyEditor.props('modelValue')).toBe('Hello {{input_text}}')
- // 修改后外层 ref 同步
  await bodyEditor.vm.$emit('update:modelValue', 'NEW BODY')
  await nextTick
  // PromptVariablePanel 接收的 body prop 应当也同步到 NEW BODY
- // （因为 editedBody 提升到外层 + 同时传给 PromptBodyEditor 与 PromptVariablePanel）
  const variablePanel = wrapper.findComponent(PromptVariablePanelStub)
  expect(variablePanel.props('body')).toBe('NEW BODY')
  })
