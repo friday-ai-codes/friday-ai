@@ -31,7 +31,8 @@ def _make_context(
  config.update(extra_config)
  # Build project -> workflow -> workflow_execution mock chain
  mock_project = MagicMock
- mock_project.id = 1
+ # Phase Task 6: Project.id 是 UUIDField，必须用 UUID 字符串（render_prompt 会查 DB）
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_project.feishu_doc_folder_token = "folder_token_123"
  mock_workflow = MagicMock
  mock_workflow.project = mock_project
@@ -89,7 +90,8 @@ class TestAIPlanGenerationNode:
  """SDKAgentRunner returns a valid plan in metadata -> completed with plan output."""
  # Arrange
  mock_project = MagicMock
- mock_project.id = 1
+ # Phase Task 6: Project.id 是 UUIDField，必须用 UUID 字符串（render_prompt 会查 DB）
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_project.feishu_doc_folder_token = "folder_token_123"
  mock_get_project.return_value = mock_project
  mock_user = MagicMock(id=1)

@@ -27,7 +27,7 @@ def _make_plan_gen_context(
 ) -> ExecutionContext:
  """Build ExecutionContext for AIPlanGenerationNode."""
  mock_project = MagicMock
- mock_project.id = 1
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_project.feishu_doc_folder_token = "folder_token_123"
  mock_workflow = MagicMock
  mock_workflow.project = mock_project
@@ -52,7 +52,7 @@ def _make_approval_context(
 ) -> ExecutionContext:
  """Build ExecutionContext for PlanApprovalNode."""
  mock_project = MagicMock
- mock_project.id = 1
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_project.feishu_doc_folder_token = "folder_token_123"
  mock_workflow = MagicMock
  mock_workflow.project = mock_project
@@ -201,7 +201,7 @@ class TestSpecializedChainE2E:
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
  patch("services.claude_config.get_claude_config") as mock_config,
- patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
  patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  ):
@@ -231,7 +231,7 @@ class TestSpecializedChainE2E:
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
  mock_we_instance = MagicMock
- mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
+ mock_we_instance.workflow = MagicMock(project=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123"))
  with (
  patch("workflows.models.WorkflowExecution.objects") as mock_we_objects,
  patch(
@@ -359,7 +359,7 @@ class TestSpecializedChainE2E:
  truncated=False,
  )
  mock_project = MagicMock
- mock_project.id = 1
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_user = MagicMock
  mock_user.id = 1
  with (
@@ -411,7 +411,7 @@ class TestSpecializedChainE2E:
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
  patch("services.claude_config.get_claude_config") as mock_config,
- patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id=1, feishu_doc_folder_token="folder_token_123")),
+ patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
  patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
  ):
@@ -441,7 +441,7 @@ class TestSpecializedChainE2E:
  approval_ctx = _make_approval_context(input_data=approval_input)
  approval_node = PlanApprovalNode
  mock_we_instance = MagicMock
- mock_we_instance.workflow = MagicMock(project=MagicMock(id=1, feishu_doc_folder_token="folder_token_123"))
+ mock_we_instance.workflow = MagicMock(project=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123"))
  with (
  patch("workflows.models.WorkflowExecution.objects") as mock_we_objects,
  patch(
@@ -546,7 +546,7 @@ class TestSpecializedChainE2E:
  truncated=False,
  )
  mock_project = MagicMock
- mock_project.id = 1
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_user = MagicMock
  mock_user.id = 1
  with (

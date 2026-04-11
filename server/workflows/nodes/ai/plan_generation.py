@@ -283,6 +283,13 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  from workflows.models.execution import SubStepStatus
  # Phase: 预渲染 base prompt（必须在 super.execute 之前）
  # super.execute 会调用 self.get_system_prompt(context) 读取 self._precomputed_base_prompt
+ # 但若 user_prompt 为空，按惯例应立刻短路返回 failed，不做任何昂贵 DB/Prompt 查询
+ if not context.node_config.get("user_prompt", "").strip:
+ return NodeResult(
+ status="failed",
+ error="User Prompt 不能为空",
+ next_handle="error",
+ )
  schema_json = json.dumps(
  TECHNICAL_PLAN_JSON_SCHEMA, ensure_ascii=False, indent=2
  )
