@@ -76,6 +76,13 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/admin/prompts/': RouteRecordInfo<
+ '/admin/prompts/',
+ '/admin/prompts',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/admin/users': RouteRecordInfo<
  '/admin/users',
  '/admin/users',
@@ -371,6 +378,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/admin/oidc.vue': {
  routes:
  | '/admin/oidc'
+ views:
+ | never
+ }
+ 'src/pages/admin/prompts/index.vue': {
+ routes:
+ | '/admin/prompts/'
  views:
  | never
  }

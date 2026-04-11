@@ -18,20 +18,27 @@
 import type { PromptListItem } from '~/types/prompts'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import PromptsAdminPage from '../prompts/index.vue'
 // ============================================================================
 // Mock —— closure 变量统一通过 vi.hoisted 提升
+//
+// 注意：systemList / loading 必须是真实的 vue ref，因为页面通过 storeToRefs(store)
+// 解构后传递给 DataTable 的:data="systemList" 在模板里会自动 unwrap，
+// 测试断言通过 props('data') 拿到的也应是 unwrap 后的数组而非 ref-like 对象。
 // ============================================================================
-const mocks = vi.hoisted( => ({
+const mocks = vi.hoisted( => {
+ // 注意：vi.hoisted 在 vue 模块加载前运行，因此用 plain 占位 + beforeEach 注入
+ return {
  loadSystemListMock: vi.fn,
  loadDetailMock: vi.fn,
  loadVersionsMock: vi.fn,
  clearCurrentMock: vi.fn,
  handleErrorMock: vi.fn,
- systemListRef: { value: as PromptListItem },
- loadingRef: { value: false },
-}))
+ systemListRef: null as unknown as ReturnType<typeof import('vue').ref<PromptListItem>>,
+ loadingRef: null as unknown as ReturnType<typeof import('vue').ref<boolean>>,
+ }
+})
 vi.mock('~/stores/prompts', => ({
  usePromptsStore: => ({
  systemList: mocks.systemListRef,
@@ -45,7 +52,8 @@ vi.mock('~/stores/prompts', => ({
 vi.mock('~/composables/useErrorHandler', => ({
  useErrorHandler: => ({ handleError: mocks.handleErrorMock }),
 }))
-// pinia storeToRefs 在 setup-syntax store 上需要兼容 plain ref-like
+// pinia storeToRefs 对真实 vue ref 是 identity 行为，这里 mock 为 identity
+// 以免 createTestingPinia 之外的 setup-syntax store 解构错误。
 vi.mock('pinia', async => {
  const actual = await vi.importActual<typeof import('pinia')>('pinia')
  return {
@@ -151,8 +159,9 @@ describe('pages/admin/prompts/index.vue ', => {
  mocks.loadVersionsMock.mockReset.mockResolvedValue(undefined)
  mocks.clearCurrentMock.mockReset
  mocks.handleErrorMock.mockReset
- mocks.systemListRef.value =
- mocks.loadingRef.value = false
+ // 在 vue 模块已加载后用真实 ref 重新挂载到 mocks（vi.hoisted 时刻 vue 尚未加载）
+ mocks.systemListRef = ref<PromptListItem>
+ mocks.loadingRef = ref<boolean>(false)
  })
  it('1. 组件挂载后自动调用 store.loadSystemList', async => {
  mountPage
