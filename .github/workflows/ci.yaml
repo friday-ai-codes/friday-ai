@@ -12,6 +12,7 @@ jobs:
  server: ${{ steps.filter.outputs.server }}
  web: ${{ steps.filter.outputs.web }}
  runner: ${{ steps.filter.outputs.runner }}
+ task: ${{ steps.filter.outputs.task }}
  steps:
  - uses: dorny/paths-filter@v3
  id: filter
@@ -23,6 +24,8 @@ jobs:
  - 'web/**'
  runner:
  - 'runner/**'
+ task:
+ - 'task/**'
  # ─── 2. 后端 CI：ruff + mypy + pytest ───
  server-ci:
  needs: changes
@@ -92,9 +95,64 @@ jobs:
  run: go vet ./...
  - name: Go build
  run: go build ./...
+ # ─── 4.5. Task CI：ruff + pytest ───
+ task-ci:
+ needs: changes
+ if: needs.changes.outputs.task == 'true'
+ runs-on: ubuntu-latest
+ defaults:
+ run:
+ working-directory: task
+ steps:
+ - uses: actions/checkout@v5
+ - uses: astral-sh/setup-uv@v5
+ with:
+ enable-cache: true
+ - uses: actions/setup-python@v5
+ with:
+ python-version: "3.14"
+ allow-prereleases: true
+ - name: Install dependencies
+ run: uv sync --locked --dev
+ - name: Ruff lint
+ run: uv run ruff check .
+ - name: Pytest
+ run: uv run pytest
+ # ─── 4.6. Task Image CI：docker build + size check + trivy + smoke ───
+ task-image-ci:
+ needs: changes
+ if: needs.changes.outputs.task == 'true'
+ runs-on: ubuntu-latest
+ steps:
+ - uses: actions/checkout@v5
+ - name: Build task image
+ run: docker build -t friday-task:test task/
+ - name: Check image size
+ run: |
+ SIZE=$(docker image inspect friday-task:test --format '{{.Size}}')
+ MAX_SIZE=$((750 * 1024 * 1024))
+ SIZE_MB=$(( SIZE / 1024 / 1024 ))
+ echo "镜像体积: ${SIZE_MB} MB"
+ if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+ echo ":error:镜像体积 ${SIZE_MB} MB 超过 750 MB 限制"
+ exit 1
+ fi
+ - name: Trivy CVE scan
+ uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0 immutable SHA pin
+ with:
+ image-ref: friday-task:test
+ format: table
+ exit-code: '1'
+ severity: CRITICAL,HIGH
+ - name: Smoke test - coding import
+ run: |
+ docker run --rm friday-task:test python -c "from core.runner import TaskRunner; print('coding import ok')"
+ - name: Smoke test - repo_summary config
+ run: |
+ docker run --rm -e TASK_MODE=repo_summary friday-task:test python -c "from core.config import TaskConfig; print('repo_summary config ok')"
  # ─── 5. CI Gate：汇总检查结果，作为唯一 required check ───
  ci-gate:
- needs: [server-ci, web-ci, runner-ci]
+ needs: [server-ci, web-ci, runner-ci, task-ci, task-image-ci]
  if: always
  runs-on: ubuntu-latest
  steps:
@@ -103,10 +161,14 @@ jobs:
  echo "server-ci: ${{ needs.server-ci.result }}"
  echo "web-ci: ${{ needs.web-ci.result }}"
  echo "runner-ci: ${{ needs.runner-ci.result }}"
+ echo "task-ci: ${{ needs.task-ci.result }}"
+ echo "task-image-ci: ${{ needs.task-image-ci.result }}"
  for result in \
  "${{ needs.server-ci.result }}" \
  "${{ needs.web-ci.result }}" \
- "${{ needs.runner-ci.result }}"; do
+ "${{ needs.runner-ci.result }}" \
+ "${{ needs.task-ci.result }}" \
+ "${{ needs.task-image-ci.result }}"; do
  if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
  echo "CI failed: found '$result'"
  exit 1
