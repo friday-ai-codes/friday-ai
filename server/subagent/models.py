@@ -30,6 +30,7 @@ class SubAgentSession(models.Model):
  ASK = "ask", "Ask Question"
  PLAN = "plan", "Generate Plan"
  CODING = "coding", "Coding Task"
+ REPO_SUMMARY = "repo_summary", "Repository Summary"
  class HealthStatus(models.TextChoices):
  HEALTHY = "healthy", "Healthy"
  UNHEALTHY = "unhealthy", "Unhealthy"

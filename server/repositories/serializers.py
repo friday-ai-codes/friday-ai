@@ -30,6 +30,10 @@ class RepositorySerializer(serializers.ModelSerializer):
  "updated_at",
  "has_credential",
  "linked_projects_count",
+ "ai_summary",
+ "ai_summary_status",
+ "ai_summary_generated_at",
+ "ai_summary_error",
  ]
  read_only_fields = [
  "id",
@@ -38,6 +42,10 @@ class RepositorySerializer(serializers.ModelSerializer):
  "webhook_secret",
  "index_status",
  "last_indexed_at",
+ "ai_summary",
+ "ai_summary_status",
+ "ai_summary_generated_at",
+ "ai_summary_error",
  ]
  def get_has_credential(self, obj: Repository) -> bool:
  return hasattr(obj, "credential") and obj.credential is not None
