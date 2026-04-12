@@ -93,13 +93,6 @@ class CallbackClient:
  else:
  log.error("Failed to report status", error=str(e))
  return False
- async def report_plan_ready(self, plan: str) -> bool:
- """Report that a plan is ready for review."""
- return await self.report_status(
- status="plan_ready",
- message="Implementation plan is ready for review",
- details={"plan": plan},
- )
  async def report_execution_complete(
  self,
  branch_name: str,
