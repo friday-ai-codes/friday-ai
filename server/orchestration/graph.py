@@ -19,8 +19,17 @@ from orchestration.checkpointer import get_checkpointer
 from orchestration.runner_registry import register_runner, unregister_runner
 from orchestration.state import RunPhase, WorkflowState
 logger = structlog.get_logger(__name__)
-async def planning_node(state: WorkflowState) -> dict[str, Any]:
- """接收用户消息，决定执行策略。Phase 仅推进 phase。"""
+async def _persist_run_phase(run_id: str, phase: str) -> None:
+ """将 phase 写入 OrchestrationRun — SSE 推流前调用，确保 DB >= SSE。"""
+ try:
+ from orchestration.models import OrchestrationRun
+ await OrchestrationRun.objects.filter(run_id=run_id).aupdate(phase=phase)
+ except Exception:
+ logger.warning("persist_run_phase_failed", run_id=run_id, phase=phase, exc_info=True)
+async def planning_node(state: WorkflowState, writer: StreamWriter) -> dict[str, Any]:
+ """接收用户消息，决定执行策略。发射 PHASE_TRANSITION executing。"""
+ await _persist_run_phase(state.get("run_id", ""), RunPhase.EXECUTING.value)
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  return {"phase": RunPhase.EXECUTING.value}
 async def executing_node(
  state: WorkflowState,
@@ -72,6 +81,7 @@ async def _run_chat_stream(
  runner: ChatAnthropicRunner,
  prompt: str,
  writer: StreamWriter,
+ run_id: str,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
  """运行 Chat runner stream，返回 (accumulated_thinking, tool_calls_by_id)。
  中断时通过 writer 推送 phase_transition interrupted 确认事件后重新抛出。
@@ -121,6 +131,7 @@ async def _run_chat_stream(
  writer({"type": event.type, "data": event.data})
  except asyncio.CancelledError:
  try:
+ await _persist_run_phase(run_id, "interrupted")
  writer({"type": PHASE_TRANSITION, "data": {"phase": "interrupted"}})
  except Exception:
  pass
@@ -169,6 +180,8 @@ async def _execute_first_run(
  runner, agent_session_id = build_result
  cfg = config.get("configurable", {})
  conv_id = cfg.get("conversation_id", "")
+ run_id = state.get("run_id", "")
+ await _persist_run_phase(run_id, RunPhase.EXECUTING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
@@ -176,7 +189,7 @@ async def _execute_first_run(
  register_runner(conv_id, runner)
  try:
  accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
- runner, state.get("user_message", ""), writer,
+ runner, state.get("user_message", ""), writer, run_id,
  )
  except Exception:
  logger.exception(
@@ -205,6 +218,7 @@ async def _execute_first_run(
  task_ids=[t["task_id"] for t in blocking_tasks],
  )
  writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(blocking_tasks)}})
+ await _persist_run_phase(run_id, RunPhase.WAITING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(blocking_tasks)}})
  return {
  "phase": RunPhase.WAITING.value,
@@ -216,6 +230,7 @@ async def _execute_first_run(
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ await _persist_run_phase(run_id, RunPhase.FINALIZING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
  "phase": RunPhase.FINALIZING.value,
@@ -238,6 +253,8 @@ async def _execute_with_results(
  runner, agent_session_id = build_result
  cfg = config.get("configurable", {})
  conv_id = cfg.get("conversation_id", "")
+ run_id = state.get("run_id", "")
+ await _persist_run_phase(run_id, RunPhase.EXECUTING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  results_text = "\n\n".join(
  f"=== {r.get('task_type', 'unknown')} (task_id: {r.get('task_id', '?')}) ===\n"
@@ -254,7 +271,7 @@ async def _execute_with_results(
  register_runner(conv_id, runner)
  try:
  accumulated_thinking, tool_calls_by_id = await _run_chat_stream(
- runner, prompt, writer,
+ runner, prompt, writer, run_id,
  )
  except Exception:
  logger.exception(
@@ -285,6 +302,7 @@ async def _execute_with_results(
  count=len(new_blocking),
  )
  writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(new_blocking)}})
+ await _persist_run_phase(run_id, RunPhase.WAITING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(new_blocking)}})
  return {
  "phase": RunPhase.WAITING.value,
@@ -297,6 +315,7 @@ async def _execute_with_results(
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ await _persist_run_phase(run_id, RunPhase.FINALIZING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
  "phase": RunPhase.FINALIZING.value,
