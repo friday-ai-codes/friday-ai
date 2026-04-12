@@ -31,6 +31,11 @@ from .serializers import (
  WebhookTokenUpdateSerializer,
 )
 logger = structlog.get_logger(__name__)
+def _mask_identifier(value: str | None, prefix: int = 6) -> str:
+ """Mask identifiers for debug logs without leaking full values."""
+ if not value:
+ return ""
+ return value[:prefix]
 def _verify_and_decrypt_callback_payload(
  request,
  data: dict[str, Any],
@@ -804,7 +809,17 @@ class FeishuConfigView(APIView):
  """Manage Feishu configuration for a project."""
  async def get(self, request, project_id):
  project = await aget_object_or_404(Project, id=project_id)
- return Response(FeishuConfigSerializer(project).data)
+ data = FeishuConfigSerializer(project).data
+ logger.info(
+ "feishu_config_view_get",
+ project_id=str(project.id),
+ project_name=project.name,
+ project_key=data.get("project_key") or "",
+ plugin_id_prefix=_mask_identifier(data.get("plugin_id")),
+ has_plugin_secret=bool(data.get("has_plugin_secret")),
+ user_key_prefix=_mask_identifier(data.get("user_key")),
+ )
+ return Response(data)
  async def put(self, request, project_id):
  project = await aget_object_or_404(Project, id=project_id)
  serializer = FeishuConfigCreateSerializer(data=request.data)
@@ -856,6 +871,17 @@ class FeishuConfigTestView(APIView):
  "project_accessible": False,
  }
  )
+ logger.info(
+ "feishu_config_test_started",
+ project_id=str(project.id),
+ project_name=project.name,
+ project_key=project.feishu_project_key or "",
+ using_temp_plugin_id=bool(test_plugin_id),
+ using_temp_plugin_secret=bool(test_plugin_secret),
+ using_temp_user_key=bool(test_user_key),
+ plugin_id_prefix=_mask_identifier(plugin_id),
+ user_key_prefix=_mask_identifier(user_key),
+ )
  try:
  client = FeishuClient(
  plugin_id=plugin_id,
@@ -864,8 +890,21 @@ class FeishuConfigTestView(APIView):
  user_key=user_key,
  )
  test_result = await client.test_connection(project.feishu_project_key)
+ logger.info(
+ "feishu_config_test_finished",
+ project_id=str(project.id),
+ success=bool(test_result.get("success")),
+ plugin_token_valid=bool(test_result.get("plugin_token_valid")),
+ project_accessible=bool(test_result.get("project_accessible")),
+ message=test_result.get("message", ""),
+ )
  return Response(test_result)
  except Exception as e:
+ logger.error(
+ "feishu_config_test_failed",
+ project_id=str(project.id),
+ error=str(e),
+ )
  return Response(
  {
  "success": False,
