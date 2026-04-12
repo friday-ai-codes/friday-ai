@@ -464,6 +464,9 @@ async def _handle_completed(
  _schedule_workflow_resume(session, log)
  # 触发 Agent 会话恢复（如果有 main_session 但无 node_execution）
  _schedule_agent_session_resume(session, log)
+ # repo_summary 完成写回 Repository
+ if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+ await _update_repository_on_summary_complete(session, p)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 async def _handle_failed(
@@ -491,6 +494,9 @@ async def _handle_failed(
  _schedule_workflow_resume(session, log)
  # 触发 Agent 会话恢复
  _schedule_agent_session_resume(session, log)
+ # repo_summary 失败写回 Repository
+ if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+ await _update_repository_on_summary_fail(session, error_msg)
  log.info("callback_failed_ok", error=error_msg)
  return Response({"status": "ok"})
 async def _handle_heartbeat(
@@ -646,6 +652,79 @@ async def _handle_token_usage(
  )
  log.debug("callback_token_usage_ok", model=p["model"])
  return Response({"status": "ok"})
+# === repo_summary 回调辅助函数 (Phase) ===
+def _parse_summary_json(raw_text: str) -> str:
+ """尝试从 Claude 输出中提取 JSON summary；失败返回原始文本。"""
+ import json as json_mod
+ import re as re_mod
+ if not raw_text:
+ return raw_text
+ # 1. 先尝试 ```json ... ``` 代码块提取
+ m = re_mod.search(r"```json\s*(\{.*?\})\s*```", raw_text, re_mod.DOTALL)
+ if m:
+ try:
+ obj = json_mod.loads(m.group(1))
+ return json_mod.dumps(obj, ensure_ascii=False, indent=2)
+ except json_mod.JSONDecodeError:
+ pass
+ # 2. 直接尝试 json.loads
+ try:
+ obj = json_mod.loads(raw_text.strip)
+ return json_mod.dumps(obj, ensure_ascii=False, indent=2)
+ except json_mod.JSONDecodeError:
+ pass
+ # 3. 降级：返回原始文本（markdown 存储）
+ return raw_text
+async def _update_repository_on_summary_complete(
+ session: SubAgentSession, p: dict[str, Any]
+) -> None:
+ """repo_summary 完成 -- 解析结果写回 Repository。"""
+ from repositories.models import Repository
+ repo_id = (session.last_output or {}).get("repository_id")
+ if not repo_id:
+ logger.warning("repo_summary_complete_no_repo_id", session_id=session.session_id)
+ return
+ repo = await Repository.objects.filter(id=repo_id).afirst
+ if not repo:
+ logger.warning("repo_summary_complete_repo_not_found", repo_id=repo_id)
+ return
+ raw_text = p["output"].get("text", "") if p["result_type"] == "text" else ""
+ parsed_summary = _parse_summary_json(raw_text)
+ repo.ai_summary = parsed_summary[:8192]
+ repo.ai_summary_status = "completed"
+ repo.ai_summary_generated_at = timezone.now
+ repo.ai_summary_error = ""
+ await repo.asave(
+ update_fields=[
+ "ai_summary",
+ "ai_summary_status",
+ "ai_summary_generated_at",
+ "ai_summary_error",
+ "updated_at",
+ ]
+ )
+ logger.info(
+ "repo_summary_written",
+ repository_id=repo_id,
+ summary_length=len(parsed_summary),
+ )
+async def _update_repository_on_summary_fail(
+ session: SubAgentSession, error_msg: str
+) -> None:
+ """repo_summary 失败 -- 写回错误状态。"""
+ from repositories.models import Repository
+ repo_id = (session.last_output or {}).get("repository_id")
+ if not repo_id:
+ return
+ repo = await Repository.objects.filter(id=repo_id).afirst
+ if not repo:
+ return
+ repo.ai_summary_status = "failed"
+ repo.ai_summary_error = error_msg[:2000]
+ await repo.asave(
+ update_fields=["ai_summary_status", "ai_summary_error", "updated_at"]
+ )
+ logger.info("repo_summary_fail_written", repository_id=repo_id, error=error_msg[:100])
 # 处理器映射
 _HANDLERS = {
  CallbackType.COMPLETED: _handle_completed,
