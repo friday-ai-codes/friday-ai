@@ -25,12 +25,13 @@ class GitOperations:
  self.repo: Repo | None = None
  self._ssh_key_file: str | None = None
  def _check_explore_guard(self, operation: str) -> None:
- """检查 explore 模式守卫，写操作时抛出异常。"""
- if self.config.task_mode == "explore":
+ """检查 explore/repo_summary 模式守卫，写操作时抛出异常。"""
+ if self.config.task_mode in ("explore", "repo_summary"):
  logger.warning(
  "explore_mode_write_blocked",
  operation=operation,
  task_id=self.config.task_id,
+ mode=self.config.task_mode,
  )
  raise ExploreModeForbiddenError(operation)
  def _mask_url(self, url: str) -> str:
