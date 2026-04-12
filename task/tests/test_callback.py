@@ -32,11 +32,14 @@ class TestCallbackClient:
  result = await client.report_started
  assert result is True
  @pytest.mark.asyncio
- async def test_report_plan_ready(self, mock_config):
- """测试报告计划就绪。"""
+ async def test_report_completed_coding_plan(self, mock_config):
+ """测试通过 report_completed 报告 coding_plan 结果（替代已删除的 report_plan_ready）。"""
  mock_config.callback_url = ""
  client = CallbackClient(mock_config)
- result = await client.report_plan_ready("## Test Plan\n\n1. Step 1\n2. Step 2")
+ result = await client.report_completed(
+ output={"text": "## Test Plan\n\n1. Step 1\n2. Step 2", "task_type": "coding_plan"},
+ result_type="text",
+ )
  assert result is True
  @pytest.mark.asyncio
  async def test_report_execution_complete(self, mock_config):
