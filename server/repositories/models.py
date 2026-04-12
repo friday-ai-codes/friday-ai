@@ -33,6 +33,13 @@ class IndexHistoryStatus(models.TextChoices):
  RUNNING = "running", "运行中"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
+class AISummaryStatus(models.TextChoices):
+ """AI 描述生成状态。"""
+ NOT_STARTED = "not_started", "未生成"
+ PENDING = "pending", "等待中"
+ RUNNING = "running", "生成中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "生成失败"
 class Repository(models.Model):
  """Repository model for Git repositories."""
  # 反向关系类型声明
@@ -79,6 +86,15 @@ class Repository(models.Model):
  deleted_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
+ # AI 描述生成字段（Phase）
+ ai_summary = models.TextField(null=True, blank=True)
+ ai_summary_status = models.CharField(
+ max_length=20,
+ choices=AISummaryStatus.choices,
+ default=AISummaryStatus.NOT_STARTED,
+ )
+ ai_summary_generated_at = models.DateTimeField(null=True, blank=True)
+ ai_summary_error = models.TextField(blank=True, default="")
  class Meta:
  db_table = "repositories"
  verbose_name = "仓库"
