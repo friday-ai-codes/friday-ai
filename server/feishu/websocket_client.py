@@ -10,6 +10,7 @@ Features:
 - Auto-reconnect on connection loss
 - Forwards events to existing Django handlers
 """
+import asyncio
 import threading
 from typing import Any
 import lark_oapi as lark
@@ -79,6 +80,12 @@ class FeishuWebSocketClient:
  self._process_message_sync(data)
  except Exception as e:
  logger.error("ws_message_handle_error", error=str(e))
+ @staticmethod
+ def _log_dispatch_task_result(task: asyncio.Task[object]) -> None:
+ try:
+ task.result
+ except Exception as exc:
+ logger.error("ws_message_dispatch_task_error", error=str(exc))
  def _handle_card_action(self, data):
  """Handle card action events (button clicks, form submissions).
  Called when a user interacts with a card (clicks button, submits form).
@@ -157,7 +164,13 @@ class FeishuWebSocketClient:
  text_preview=normalized_message.normalized_text[:50] if normalized_message.normalized_text else None,
  sender_id=sender.sender_id.open_id if sender and sender.sender_id else None,
  )
+ try:
+ loop = asyncio.get_running_loop
+ except RuntimeError:
  async_to_sync(dispatch_inbound_message)(normalized_message)
+ return
+ task = loop.create_task(dispatch_inbound_message(normalized_message))
+ task.add_done_callback(self._log_dispatch_task_result)
  def _process_card_action_sync(self, data) -> dict[str, Any] | None:
  """Process card action synchronously (must return within 3s).
  Forwards to existing CardCallbackView logic.

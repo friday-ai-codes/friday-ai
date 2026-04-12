@@ -110,6 +110,7 @@ class FeishuBotMessage(models.Model):
  related_name="messages",
  )
  chat_id = models.CharField(max_length=128, db_index=True)
+ chat_type = models.CharField(max_length=16, blank=True, default="group")
  sender_open_id = models.CharField(max_length=128, blank=True, default="")
  message_type = models.CharField(max_length=32)
  normalized_text = models.TextField(blank=True, default="")

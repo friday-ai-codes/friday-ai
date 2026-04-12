@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import pytest
-from agents.core.events import MESSAGE_COMPLETE, AgentEvent
+from agents.core.events import MESSAGE_COMPLETE, TOOL_USE_START, AgentEvent
 from agents.models import AgentSession, ToolCallLog
 from chat.models import Conversation
 from feishu.bot.service import FeishuBotService
@@ -38,6 +38,30 @@ async def _error_stream(
  """构造抛出异常的 fake send_message_stream AsyncGenerator。"""
  raise RuntimeError("boom")
  yield # pragma: no cover — makes it a generator
+async def _tool_then_complete_stream(
+ *,
+ tool_name: str,
+ final_answer: str,
+ session_id: str = "",
+) -> AsyncGenerator[AgentEvent, None]:
+ yield AgentEvent(
+ type=TOOL_USE_START,
+ data={
+ "tool_name": tool_name,
+ "tool_call_id": "toolu_1",
+ },
+ )
+ yield AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data={
+ "session_id": session_id,
+ "final_answer": final_answer,
+ "usage": {},
+ "cost_usd": 0,
+ "status": "completed",
+ "model": "test-model",
+ },
+ )
 @pytest.mark.django_db(transaction=True)
 class TestFeishuBotPipeline:
  async def test_attachment_only_message_sends_clarification(self) -> None:
@@ -56,6 +80,7 @@ class TestFeishuBotPipeline:
  im_service = SimpleNamespace(
  send_card=AsyncMock(side_effect=["welcome_1", "processing_1", "clarify_1"]),
  update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
  )
  with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)):
  result = await FeishuBotService.process_message("msg_attach")
@@ -82,6 +107,7 @@ class TestFeishuBotPipeline:
  im_service = SimpleNamespace(
  send_card=AsyncMock(side_effect=["welcome_2", "processing_2", "error_unused"]),
  update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
  )
  # 预创建 AgentSession + ToolCallLog 供 extract_reference_summaries 查询
  session = await AgentSession.objects.acreate(
@@ -149,6 +175,7 @@ class TestFeishuBotPipeline:
  im_service = SimpleNamespace(
  send_card=AsyncMock(side_effect=["welcome_3", "processing_3", "answer_3"]),
  update_card=AsyncMock(return_value=False),
+ get_chat_history=AsyncMock(return_value=),
  )
  async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
  async for event in _fake_stream(
@@ -186,6 +213,7 @@ class TestFeishuBotPipeline:
  im_service = SimpleNamespace(
  send_card=AsyncMock(side_effect=["welcome_4", "processing_4", "error_4"]),
  update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
  )
  with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
  "feishu.bot.service.ConversationService.create_conversation",
@@ -196,7 +224,118 @@ class TestFeishuBotPipeline:
  ):
  result = await FeishuBotService.process_message("msg_error")
  assert result["status"] == "error"
- im_service.update_card.assert_not_awaited
- error_card = im_service.send_card.await_args_list[-1].kwargs["card"]
+ im_service.update_card.assert_awaited_once
+ error_card = im_service.update_card.await_args.args[1]
  content = "\n".join(element.get("content", "") for element in error_card["elements"] if isinstance(element, dict))
  assert "联系管理员" in content
+ async def test_tool_use_updates_streaming_card(self) -> None:
+ project = await Project.objects.acreate(name="Friday Tooling", feishu_project_key="friday-tooling")
+ thread = await FeishuBotThread.objects.acreate(chat_id="chat_tool", root_message_id="msg_tool")
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_tool",
+ thread=thread,
+ chat_id="chat_tool",
+ sender_open_id="ou_tool",
+ message_type="text",
+ normalized_text="friday-tooling 看一下这个文件",
+ quote_message_id="",
+ mentioned_bot=True,
+ raw_payload={},
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["welcome_tool", "processing_tool"]),
+ update_card=AsyncMock(return_value=True),
+ get_chat_history=AsyncMock(return_value=),
+ )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _tool_then_complete_stream(
+ tool_name="browse_file_content",
+ final_answer="已经看过了。",
+ ):
+ yield event
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="tool")),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ):
+ result = await FeishuBotService.process_message("msg_tool")
+ assert result["status"] == "answered"
+ assert im_service.update_card.await_count == 2
+ streaming_card = im_service.update_card.await_args_list[0].args[1]
+ content = "\n".join(element.get("content", "") for element in streaming_card["elements"] if isinstance(element, dict))
+ assert "思考中..." in content
+ assert "浏览文件" in content
+ async def test_p2p_message_answers_without_project_clarification(self) -> None:
+ project = await Project.objects.acreate(name="Friday Private", feishu_project_key="friday-private")
+ thread = await FeishuBotThread.objects.acreate(chat_id="chat_p2p", root_message_id="msg_p2p")
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_p2p",
+ thread=thread,
+ chat_id="chat_p2p",
+ chat_type="p2p",
+ sender_open_id="ou_p2p",
+ message_type="text",
+ normalized_text="帮我分析下这个问题",
+ quote_message_id="",
+ mentioned_bot=False,
+ raw_payload={},
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["processing_p2p"]),
+ update_card=AsyncMock(return_value=True),
+ )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _fake_stream(final_answer="这是私聊直接回复。"):
+ yield event
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="p2p")),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ):
+ result = await FeishuBotService.process_message("msg_p2p")
+ await thread.arefresh_from_db
+ assert result["status"] == "answered"
+ assert thread.project_id == project.id
+ assert im_service.send_card.await_count == 1
+ assert im_service.update_card.await_count == 1
+ final_card = im_service.update_card.await_args.args[1]
+ content = "\n".join(element.get("content", "") for element in final_card["elements"] if isinstance(element, dict))
+ assert "已自动匹配" not in content
+ async def test_p2p_message_with_explicit_project_match_shows_space_badge(self) -> None:
+ project = await Project.objects.acreate(name="Friday Explicit", feishu_project_key="friday-explicit")
+ thread = await FeishuBotThread.objects.acreate(chat_id="chat_p2p_explicit", root_message_id="msg_p2p_explicit")
+ await FeishuBotMessage.objects.acreate(
+ message_id="msg_p2p_explicit",
+ thread=thread,
+ chat_id="chat_p2p_explicit",
+ chat_type="p2p",
+ sender_open_id="ou_p2p_explicit",
+ message_type="text",
+ normalized_text="friday-explicit 这个空间里有什么？",
+ quote_message_id="",
+ mentioned_bot=False,
+ raw_payload={},
+ )
+ im_service = SimpleNamespace(
+ send_card=AsyncMock(side_effect=["processing_p2p_explicit"]),
+ update_card=AsyncMock(return_value=True),
+ )
+ async def fake_send_message_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[AgentEvent, None]:
+ async for event in _fake_stream(final_answer="这是自动匹配后的回复。"):
+ yield event
+ with patch("feishu.bot.service.FeishuIMService.create", new=AsyncMock(return_value=im_service)), patch(
+ "feishu.bot.service.ConversationService.create_conversation",
+ new=AsyncMock(return_value=await Conversation.objects.acreate(project=project, title="p2p-explicit")),
+ ), patch(
+ "feishu.bot.service.ConversationService.send_message_stream",
+ new=fake_send_message_stream,
+ ):
+ result = await FeishuBotService.process_message("msg_p2p_explicit")
+ assert result["status"] == "answered"
+ final_card = im_service.update_card.await_args.args[1]
+ content = "\n".join(element.get("content", "") for element in final_card["elements"] if isinstance(element, dict))
+ assert "已自动匹配「friday-explicit」空间" in content

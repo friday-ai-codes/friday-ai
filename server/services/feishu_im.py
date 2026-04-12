@@ -250,6 +250,68 @@ class FeishuIMClient:
  else:
  log.warning("card_update_failed", response=data)
  return False
+ async def get_chat_history(
+ self,
+ chat_id: str,
+ *,
+ page_size: int = 50,
+ max_messages: int = 500,
+ start_time: str = "",
+ end_time: str = "",
+ ) -> list[dict[str, Any]]:
+ """获取群聊/私聊的历史消息。
+ Args:
+ chat_id: 聊天 ID
+ page_size: 每页条数（最大 50）
+ max_messages: 最多返回多少条消息
+ start_time: 起始时间戳（秒级字符串）
+ end_time: 结束时间戳（秒级字符串）
+ Returns:
+ 消息列表，每项包含 message_id、sender_id、msg_type、body 等
+ """
+ token = await self.get_tenant_access_token
+ log = logger.bind(chat_id=chat_id)
+ items: list[dict[str, Any]] =
+ page_token = ""
+ async with httpx.AsyncClient as client:
+ while len(items) < max_messages:
+ params: dict[str, Any] = {
+ "container_id_type": "chat",
+ "container_id": chat_id,
+ "page_size": min(page_size, 50),
+ "sort_type": "ByCreateTimeDesc",
+ }
+ if start_time:
+ params["start_time"] = start_time
+ if end_time:
+ params["end_time"] = end_time
+ if page_token:
+ params["page_token"] = page_token
+ response = await client.get(
+ f"{self.OPEN_API_BASE}/im/v1/messages",
+ params=params,
+ headers={"Authorization": f"Bearer {token}"},
+ )
+ data = response.json
+ code = data.get("code", -1)
+ if code != 0:
+ log.warning("get_chat_history_failed", response=data)
+ return items
+ payload = data.get("data", {})
+ page_items = payload.get("items", )
+ if not isinstance(page_items, list) or not page_items:
+ break
+ items.extend(page_items)
+ if len(items) >= max_messages:
+ break
+ if not payload.get("has_more"):
+ break
+ page_token = str(payload.get("page_token") or "")
+ if not page_token:
+ break
+ items = items[:max_messages]
+ log.info("chat_history_fetched", count=len(items))
+ return items
  @staticmethod
  def verify_callback_signature(
  timestamp: str,
@@ -484,6 +546,19 @@ class FeishuIMService:
  async def ensure_bot_in_chat(self, chat_id: str) -> dict[str, Any]:
  """确保 Bot 在指定群聊中（委托给 client）。"""
  return await self.client.ensure_bot_in_chat(chat_id)
+ async def get_chat_history(
+ self,
+ chat_id: str,
+ *,
+ page_size: int = 50,
+ max_messages: int = 500,
+ ) -> list[dict[str, Any]]:
+ """获取聊天历史消息。"""
+ return await self.client.get_chat_history(
+ chat_id,
+ page_size=page_size,
+ max_messages=max_messages,
+ )
  async def get_chat_id_for_work_item(
  self,
  project_key: str,
