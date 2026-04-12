@@ -9,6 +9,10 @@
 #
 #: Shell 层防御
 REAL_GIT="/usr/bin/git"
+# repo_summary 模式：等同 explore 模式的只读约束
+if [ "$FRIDAY_TASK_MODE" = "repo_summary" ]; then
+ FRIDAY_TASK_MODE="explore"
+fi
 # 非 explore 模式：直接放行所有命令
 if [ "$FRIDAY_TASK_MODE" != "explore" ]; then
  exec "$REAL_GIT" "$@"
