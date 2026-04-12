@@ -17,6 +17,24 @@ spec:
  {{- include "friday.selectorLabels" . | nindent 8 }}
  app.kubernetes.io/component: server
  spec:
+ {{- if .Values.postgresql.enabled }}
+ initContainers:
+ - name: wait-for-db
+ image: postgres:17-alpine
+ command:
+ - sh
+ - -c
+ - |
+ until pg_isready -d "$DATABASE_URL"; do
+ echo "等待数据库就绪..."
+ sleep 2
+ done
+ envFrom:
+ - configMapRef:
+ name: {{ include "friday.fullname" . }}-config
+ - secretRef:
+ name: {{ if .Values.existingSecret }}{{ .Values.existingSecret }}{{ else }}{{ include "friday.fullname" . }}-secret{{ end }}
+ {{- end }}
  containers:
  - name: server
  image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
