@@ -18,11 +18,11 @@ async def test_blocking_task_registry_register_and_drain -> None:
  register_blocking_task,
  )
  _store.clear
- await register_blocking_task("session-1", {"task_id": "", "task_type": "deep_analysis"})
- tasks = await drain_blocking_tasks("session-1")
+ await register_blocking_task("cid", {"task_id": "", "task_type": "deep_analysis"})
+ tasks = await drain_blocking_tasks("cid")
  assert len(tasks) == 1
  assert tasks[0]["task_id"] == ""
- assert await drain_blocking_tasks("session-1") ==
+ assert await drain_blocking_tasks("cid") ==
 @pytest.mark.asyncio
 async def test_blocking_task_registry_multiple_tasks -> None:
  """同一 session 注册多个 blocking task 后一次性 drain。"""
@@ -32,14 +32,14 @@ async def test_blocking_task_registry_multiple_tasks -> None:
  register_blocking_task,
  )
  _store.clear
- await register_blocking_task("s-2", {"task_id": "a", "task_type": "deep_analysis"})
- await register_blocking_task("s-2", {"task_id": "b", "task_type": "deep_analysis"})
- tasks = await drain_blocking_tasks("s-2")
+ await register_blocking_task("conv-2", {"task_id": "a", "task_type": "deep_analysis"})
+ await register_blocking_task("conv-2", {"task_id": "b", "task_type": "deep_analysis"})
+ tasks = await drain_blocking_tasks("conv-2")
  assert len(tasks) == 2
  assert {t["task_id"] for t in tasks} == {"a", "b"}
 @pytest.mark.asyncio
 async def test_blocking_task_registry_drain_nonexistent -> None:
- """drain 不存在的 session_id 返回空列表。"""
+ """drain 不存在的 conversation_id 返回空列表。"""
  from agents.tools.blocking_task_registry import _store, drain_blocking_tasks
  _store.clear
  assert await drain_blocking_tasks("nonexistent") ==

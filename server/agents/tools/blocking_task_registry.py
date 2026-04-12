@@ -11,23 +11,23 @@ import structlog
 logger = structlog.get_logger(__name__)
 _store: dict[str, list[dict[str, Any]]] = {}
 _lock = asyncio.Lock
-async def register_blocking_task(session_id: str, task_info: dict[str, Any]) -> None:
- """按 session_id 注册一个 blocking task。"""
+async def register_blocking_task(conversation_id: str, task_info: dict[str, Any]) -> None:
+ """按 conversation_id 注册一个 blocking task。"""
  async with _lock:
- _store.setdefault(session_id, ).append(task_info)
+ _store.setdefault(conversation_id, ).append(task_info)
  logger.debug(
  "blocking_task_registered",
- session_id=session_id,
+ conversation_id=conversation_id,
  task_id=task_info.get("task_id"),
  )
-async def drain_blocking_tasks(session_id: str) -> list[dict[str, Any]]:
- """读取并清空指定 session 的所有 blocking tasks。"""
+async def drain_blocking_tasks(conversation_id: str) -> list[dict[str, Any]]:
+ """读取并清空指定 conversation 的所有 blocking tasks。"""
  async with _lock:
- tasks = _store.pop(session_id, )
+ tasks = _store.pop(conversation_id, )
  if tasks:
  logger.debug(
  "blocking_tasks_drained",
- session_id=session_id,
+ conversation_id=conversation_id,
  count=len(tasks),
  )
  return tasks
