@@ -1,6 +1,24 @@
 """Card builders for Feishu bot lifecycle messages."""
 from __future__ import annotations
 from typing import Any
+TOOL_NAME_DISPLAY: dict[str, str] = {
+ "search_repository_code": "🔍 搜索代码",
+ "browse_file_content": "📄 浏览文件",
+ "list_project_structure": "📂 查看目录结构",
+ "list_project_repositories": "📦 列出仓库",
+ "get_repository_info": "ℹ️ 获取仓库信息",
+ "get_project_overview": "📋 获取项目概览",
+ "deep_analysis": "🧠 深度分析",
+ "create_coding_plan": "📝 生成编码方案",
+ "update_coding_plan": "✏️ 更新编码方案",
+ "fetch_feishu_document": "📑 读取飞书文档",
+}
+def _display_tool_name(name: str) -> str:
+ if name.startswith("mcp__"):
+ parts = name.split("__", 2)
+ if len(parts) == 3:
+ name = parts[2]
+ return TOOL_NAME_DISPLAY.get(name, f"🔧 {name}")
 def _markdown_block(content: str) -> dict[str, Any]:
  return {"tag": "markdown", "content": content}
 def _reference_lines(references: list[dict[str, Any]]) -> str:
@@ -29,6 +47,34 @@ def build_welcome_card -> dict[str, Any]:
  "我会先识别项目/仓库，再检索上下文并给出回答；"
  "如果信息不够明确，我会先发澄清卡。"
  ),
+ ],
+ }
+def build_thinking_card -> dict[str, Any]:
+ """初始「思考中...」卡片，收到消息后立即发送。"""
+ return {
+ "config": {"wide_screen_mode": True},
+ "header": {
+ "title": {"tag": "plain_text", "content": "Friday"},
+ "template": "blue",
+ "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+ },
+ "elements": [
+ _markdown_block("思考中..."),
+ ],
+ }
+def build_streaming_card(tool_names: list[str]) -> dict[str, Any]:
+ """流式更新卡片，逐行展示正在调用的工具。"""
+ lines = "\n".join(_display_tool_name(name) for name in tool_names)
+ content = f"思考中...\n\n{lines}" if lines else "思考中..."
+ return {
+ "config": {"wide_screen_mode": True},
+ "header": {
+ "title": {"tag": "plain_text", "content": "Friday"},
+ "template": "blue",
+ "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+ },
+ "elements": [
+ _markdown_block(content),
  ],
  }
 def build_processing_card(question: str, progress_state: str = "项目识别中", thread_hint: str = "") -> dict[str, Any]:
@@ -73,14 +119,36 @@ def build_answer_card(
  answer: str,
  references: list[dict[str, Any]],
  usage: dict[str, Any] | None = None,
+ *,
+ compact: bool = False,
+ matched_space_label: str = "",
 ) -> dict[str, Any]:
- elements: list[dict[str, Any]] = [
+ """构建最终回答卡片。
+ compact=True 用于私聊场景，只显示回答正文。
+ """
+ elements: list[dict[str, Any]] =
+ if matched_space_label:
+ elements.append(_markdown_block(f"已自动匹配「{matched_space_label}」空间"))
+ if not compact:
+ elements.append({"tag": "hr"})
+ if compact:
+ elements.append(_markdown_block(answer or "（无回复内容）"))
+ return {
+ "config": {"wide_screen_mode": True},
+ "header": {
+ "title": {"tag": "plain_text", "content": "Friday"},
+ "template": "blue",
+ "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
+ },
+ "elements": elements,
+ }
+ elements.extend([
  _markdown_block(f"**原问题**\n{question}"),
  {"tag": "hr"},
  _markdown_block(f"**回答**\n{answer}"),
  {"tag": "hr"},
  _markdown_block(f"**已参考上下文**\n{_reference_lines(references)}"),
- ]
+ ])
  if usage:
  input_t = usage.get("input_tokens", 0)
  output_t = usage.get("output_tokens", 0)
@@ -92,8 +160,9 @@ def build_answer_card(
  return {
  "config": {"wide_screen_mode": True},
  "header": {
- "title": {"tag": "plain_text", "content": "Friday 已生成回答"},
- "template": "green",
+ "title": {"tag": "plain_text", "content": "Friday"},
+ "template": "blue",
+ "ud_icon": {"tag": "standard_icon", "token": "ai-sparkle_outlined"},
  },
  "elements": elements,
  }
