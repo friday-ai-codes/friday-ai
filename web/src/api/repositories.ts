@@ -115,6 +115,19 @@ export interface TestConnectionResponse {
  error?: string
  branches?: string
 }
+// Phase: AI 智能描述
+export type AISummaryStatus = 'not_started' | 'pending' | 'running' | 'completed' | 'failed'
+export interface AISummaryStatusResponse {
+ status: AISummaryStatus
+ progress: null
+ summary: string | null
+ generated_at: string | null
+ error: string | null
+}
+export interface GenerateSummaryResponse {
+ dispatch_task_id: string
+ status: 'pending'
+}
 export const repositoriesApi = {
  /**
  * 获取仓库列表
@@ -323,5 +336,18 @@ export const repositoriesApi = {
  const formData = new FormData
  formData.append('snapshot', file)
  return upload<{ message: string, points_count: number }>(`/repositories/${id}/index/snapshot/import/`, formData)
+ },
+ // ==================== Phase: AI 智能描述 ====================
+ /**
+ * 触发生成 AI 智能描述
+ */
+ generateSummary: async (id: string): Promise<GenerateSummaryResponse> => {
+ return post<GenerateSummaryResponse>(`/repositories/${id}/generate-summary/`)
+ },
+ /**
+ * 获取 AI 描述生成状态
+ */
+ getSummaryStatus: async (id: string): Promise<AISummaryStatusResponse> => {
+ return get<AISummaryStatusResponse>(`/repositories/${id}/summary-status/`)
  },
 }
