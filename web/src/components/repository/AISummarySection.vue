@@ -44,28 +44,6 @@ const parsedSummary = computed( => {
  return null
  }
 })
-// Badge variant 映射
-const badgeVariant = computed( => {
- const map: Record<AISummaryStatus, string> = {
- not_started: 'secondary',
- pending: 'warning',
- running: 'info',
- completed: 'success',
- failed: 'destructive',
- }
- return map[status.value]
-})
-// Badge 文案映射
-const badgeText = computed( => {
- const map: Record<AISummaryStatus, string> = {
- not_started: '',
- pending: '排队中',
- running: '生成中',
- completed: '已完成',
- failed: '生成失败',
- }
- return map[status.value]
-})
 // 获取状态
 async function fetchStatus {
  try {
