@@ -7,6 +7,7 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
+import AISummarySection from '~/components/repository/AISummarySection.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -217,6 +218,8 @@ function copyUrl {
  </div>
  </div>
  </div>
+ <!-- ==================== AI 智能描述 ==================== -->
+ <AISummarySection:repository-id="repository.id" />
  <!-- ==================== 代码索引（第一优先级） ==================== -->
  <div class="space-y-4">
  <div class="grid gap-4 lg:grid-cols-2">
