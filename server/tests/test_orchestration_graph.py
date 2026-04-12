@@ -575,3 +575,28 @@ async def test_planning_node_persists_before_emit -> None:
  mock_cls.objects.filter.return_value.aupdate = mock_aupdate
  await planning_node(state, writer)
  assert call_order == ["db", "sse"], f"期望先 DB 再 SSE，实际顺序: {call_order}"
+# ---------------------------------------------------------------------------
+# 集成测试: planning_node 在 graph 端到端流中发射 PHASE_TRANSITION
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_planning_node_phase_transition_in_stream(graph_config: RunnableConfig) -> None:
+ """ 集成: graph astream 中 planning_node 发射的 PHASE_TRANSITION executing 事件可见。"""
+ from agents.core.events import PHASE_TRANSITION
+ mock_runner = _make_mock_runner(_default_events, _default_result)
+ with _patch_sdk(mock_runner):
+ graph = build_graph.compile(checkpointer=MemorySaver)
+ streamed: list[dict[str, Any]] =
+ async for chunk in graph.astream(
+ {"user_message": "integration test", "run_id": "run-int-pt-1"},
+ config=graph_config,
+ stream_mode="custom",
+ ):
+ streamed.append(chunk)
+ # planning_node 和 executing_node 都会发射 PHASE_TRANSITION executing，
+ # 所以至少应有 2 个 phase_transition 事件
+ pt_events = [e for e in streamed if e.get("type") == PHASE_TRANSITION]
+ assert len(pt_events) >= 2, f"期望至少 2 个 phase_transition 事件，实际: {len(pt_events)}"
+ # 第一个应该来自 planning_node（executing）
+ assert pt_events[0]["data"]["phase"] == "executing"
+ # 最后一个应该是 finalizing（从 _execute_first_run）
+ assert pt_events[-1]["data"]["phase"] == "finalizing"
