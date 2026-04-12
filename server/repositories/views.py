@@ -14,7 +14,7 @@ from permissions.api_permissions import IsSuperUser
 from services.dependency_cache import DependencyCacheManager
 from services.repo_cache_manager import RepoCacheManager
 from tasks.cache_tasks import prune_cache_volumes, warmup_repo_cache
-from .models import AuthType, GitCredential, Repository
+from .models import AISummaryStatus, AuthType, GitCredential, Repository
 from .serializers import (
  GitCredentialSerializer,
  RepositoryCreateSerializer,
@@ -133,6 +133,39 @@ class RepositoryViewSet(ModelViewSet):
  })
  except Exception:
  return Response({"cached": False})
+ @action(detail=True, methods=["post"], url_path="generate-summary")
+ async def generate_summary(self, request, pk=None):
+ """POST /api/repositories/{id}/generate-summary/
+ 触发仓库 AI 描述生成。幂等检查：status=running/pending 时返回 409。
+ """
+ repository = await self.aget_object
+ if repository.ai_summary_status in (
+ AISummaryStatus.RUNNING,
+ AISummaryStatus.PENDING,
+ ):
+ return Response(
+ {
+ "detail": "摘要正在生成中，请稍候",
+ "status": repository.ai_summary_status,
+ },
+ status=status.HTTP_409_CONFLICT,
+ )
+ from .summary_service import dispatch_repo_summary
+ session_id = await dispatch_repo_summary(repository)
+ return Response({"dispatch_task_id": session_id, "status": "pending"})
+ @action(detail=True, methods=["get"], url_path="summary-status")
+ async def summary_status(self, request, pk=None):
+ """GET /api/repositories/{id}/summary-status/
+ 返回仓库 AI 描述生成状态。
+ """
+ repository = await self.aget_object
+ return Response({
+ "status": repository.ai_summary_status,
+ "progress": None,
+ "summary": repository.ai_summary,
+ "generated_at": repository.ai_summary_generated_at,
+ "error": repository.ai_summary_error or None,
+ })
  @action(detail=True, methods=["post"], url_path="generate-webhook-secret")
  async def generate_webhook_secret(self, request, pk=None):
  """POST /api/repositories/{id}/generate-webhook-secret/
