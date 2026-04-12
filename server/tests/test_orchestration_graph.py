@@ -520,3 +520,58 @@ async def test_blocking_results_cleared_after_second_run(graph_config: RunnableC
  )
  assert result["phase"] == "completed"
  assert result.get("blocking_results") ==
+# ---------------------------------------------------------------------------
+#: _persist_run_phase 单元测试
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_persist_run_phase_calls_aupdate -> None:
+ """: _persist_run_phase 调用 aupdate(phase=X)。"""
+ from unittest.mock import AsyncMock, patch as _patch
+ from orchestration.graph import _persist_run_phase
+ mock_aupdate = AsyncMock(return_value=1)
+ with _patch("orchestration.models.OrchestrationRun") as mock_cls:
+ mock_cls.objects.filter.return_value.aupdate = mock_aupdate
+ await _persist_run_phase("run-123", "executing")
+ mock_aupdate.assert_awaited_once_with(phase="executing")
+@pytest.mark.asyncio
+async def test_persist_run_phase_swallows_exception -> None:
+ """: DB 写入失败时 log warning 不抛异常。"""
+ from unittest.mock import AsyncMock, patch as _patch
+ from orchestration.graph import _persist_run_phase
+ mock_aupdate = AsyncMock(side_effect=RuntimeError("db down"))
+ with _patch("orchestration.models.OrchestrationRun") as mock_cls:
+ mock_cls.objects.filter.return_value.aupdate = mock_aupdate
+ # 不应抛异常
+ await _persist_run_phase("run-fail", "executing")
+# ---------------------------------------------------------------------------
+#: planning_node 单元测试
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_planning_node_emits_phase_transition -> None:
+ """: planning_node 发射 PHASE_TRANSITION executing 事件。"""
+ from unittest.mock import AsyncMock, patch as _patch
+ from agents.core.events import PHASE_TRANSITION
+ from orchestration.graph import planning_node
+ writer = MagicMock
+ state: dict[str, Any] = {"user_message": "hello", "run_id": "test-run-1"}
+ with _patch("orchestration.models.OrchestrationRun") as mock_cls:
+ mock_cls.objects.filter.return_value.aupdate = AsyncMock(return_value=1)
+ result = await planning_node(state, writer)
+ writer.assert_called_once
+ call_args = writer.call_args[0][0]
+ assert call_args["type"] == PHASE_TRANSITION
+ assert call_args["data"]["phase"] == "executing"
+ assert result["phase"] == "executing"
+@pytest.mark.asyncio
+async def test_planning_node_persists_before_emit -> None:
+ """+02: planning_node 先落库再推 SSE。"""
+ from unittest.mock import AsyncMock, patch as _patch
+ from orchestration.graph import planning_node
+ call_order: list[str] =
+ mock_aupdate = AsyncMock(return_value=1, side_effect=lambda **kw: call_order.append("db"))
+ writer = MagicMock(side_effect=lambda *a: call_order.append("sse"))
+ state: dict[str, Any] = {"user_message": "hi", "run_id": "run-order"}
+ with _patch("orchestration.models.OrchestrationRun") as mock_cls:
+ mock_cls.objects.filter.return_value.aupdate = mock_aupdate
+ await planning_node(state, writer)
+ assert call_order == ["db", "sse"], f"期望先 DB 再 SSE，实际顺序: {call_order}"
