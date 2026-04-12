@@ -122,10 +122,25 @@ Implement the task as described. Make necessary code changes.
 4. Commit your changes with meaningful commit messages
 """
  return base_prompt
+ async def run_repo_summary_mode(self) -> dict:
+ """Run Claude Agent in repo summary mode — plan permission, max 15 turns.
+ 以 plan 权限只读扫描仓库，生成结构化 JSON 描述。
+ """
+ log = logger.bind(task_id=self.config.task_id, mode="repo_summary")
+ log.info("Starting repo summary mode execution with claude-agent-sdk")
+ prompt = self.config.task_description # dispatch 时已渲染好的 prompt
+ result = await self._execute_claude(
+ prompt=prompt,
+ permission_mode="plan",
+ max_turns=15, # 覆盖默认 50，控制成本
+ )
+ log.info("Repo summary mode completed", success=result.get("success", False))
+ return result
  async def _execute_claude(
  self,
  prompt: str,
  permission_mode: PermissionModeType = "bypassPermissions",
+ max_turns: int | None = None,
  ) -> dict:
  """Execute Claude Agent SDK with the given prompt."""
  log = logger.bind(task_id=self.config.task_id)
@@ -164,7 +179,7 @@ Implement the task as described. Make necessary code changes.
  permission_mode=permission_mode,
  cwd=str(self.workspace),
  model=self.config.claude_model or "sonnet",
- max_turns=self.config.claude_max_turns,
+ max_turns=max_turns or self.config.claude_max_turns,
  setting_sources=["project"],
  stderr=_stderr_handler,
  env=env_vars,

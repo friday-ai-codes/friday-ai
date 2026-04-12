@@ -157,6 +157,67 @@ class CallbackClient:
  "modified_files": modified_files,
  },
  )
+ async def report_completed(
+ self,
+ output: dict[str, Any],
+ result_type: str = "text",
+ ) -> bool:
+ """通过新回调协议报告完成 — POST /api/containers/callback/。"""
+ log = logger.bind(task_id=self.config.task_id, result_type=result_type)
+ if not self.enabled:
+ log.info("report_completed_standalone", output_keys=list(output.keys))
+ return True
+ payload = {
+ "type": "completed",
+ "session_id": self.config.task_id,
+ "token": self.config.callback_token,
+ "payload": {
+ "result_type": result_type,
+ "output": output,
+ },
+ }
+ try:
+ async with httpx.AsyncClient as client:
+ response = await client.post(
+ f"{self.base_url}/api/containers/callback/",
+ json=payload,
+ headers=self.headers,
+ timeout=30.0,
+ )
+ response.raise_for_status
+ log.info("report_completed_ok")
+ return True
+ except httpx.HTTPError as e:
+ log.error("report_completed_failed", error=str(e))
+ return False
+ async def report_failed(self, error: str) -> bool:
+ """通过新回调协议报告失败 — POST /api/containers/callback/。"""
+ log = logger.bind(task_id=self.config.task_id)
+ if not self.enabled:
+ log.info("report_failed_standalone", error=error)
+ return True
+ payload = {
+ "type": "failed",
+ "session_id": self.config.task_id,
+ "token": self.config.callback_token,
+ "payload": {
+ "error": error,
+ },
+ }
+ try:
+ async with httpx.AsyncClient as client:
+ response = await client.post(
+ f"{self.base_url}/api/containers/callback/",
+ json=payload,
+ headers=self.headers,
+ timeout=30.0,
+ )
+ response.raise_for_status
+ log.info("report_failed_ok")
+ return True
+ except httpx.HTTPError as e:
+ log.error("report_failed_failed", error=str(e))
+ return False
  async def report_suggested_commit_message(
  self,
  suggested_commit_message: str,

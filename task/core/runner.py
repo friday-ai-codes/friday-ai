@@ -86,6 +86,8 @@ class TaskRunner:
  return await self._run_plan_mode(log, branch_name)
  elif self.config.task_mode == "explore":
  return await self._run_explore_mode(log)
+ elif self.config.task_mode == "repo_summary":
+ return await self._run_repo_summary_mode(log)
  else:
  return await self._run_execute_mode(log, branch_name)
  except Exception as e:
@@ -120,6 +122,24 @@ class TaskRunner:
  await self.callback.report_error(error, "execution")
  return 1
  log.info("Explore mode completed successfully")
+ return 0
+ async def _run_repo_summary_mode(self, log: BoundLogger) -> int:
+ """Run in repo summary mode — plan permission, sanitize output, new callback."""
+ log.info("Running in repo summary mode")
+ assert self.claude is not None, "ClaudeRunner not initialized"
+ result = await self.claude.run_repo_summary_mode
+ if not result.get("success"):
+ error_msg = result.get("error", "Unknown error")
+ log.error("repo_summary_failed", error=error_msg)
+ await self.callback.report_failed(error_msg)
+ return 1
+ raw_output = result.get("output", "")
+ sanitized = _sanitize_summary(raw_output)[:2000]
+ await self.callback.report_completed(
+ output={"text": sanitized, "task_type": "repo_summary"},
+ result_type="text",
+ )
+ log.info("repo_summary_completed", output_length=len(sanitized))
  return 0
  async def _run_execute_mode(self, log, branch_name: str) -> int:
  """Run in execute mode to implement changes.
@@ -298,6 +318,16 @@ async def main -> int:
  return 1
  runner = TaskRunner(config)
  return await runner.run
+def _sanitize_summary(text: str) -> str:
+ """脱敏 — 移除凭据、API key、邮箱等敏感信息。"""
+ import re
+ # Email 地址
+ text = re.sub(r"[a-zA-._%+-]+@[a-zA-.-]+\.[a-zA-Z]{2,}", "[EMAIL]", text)
+ # Bearer token
+ text = re.sub(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", "Bearer [REDACTED]", text)
+ # API key 前缀 (ghp_, glpat-, sk-, xoxb-, xoxp-)
+ text = re.sub(r"(ghp_|glpat-|sk-|xoxb-|xoxp-)[A-Za-z0-9_\-]{10,}", r"\1[REDACTED]", text)
+ return text
 if __name__ == "__main__":
  exit_code = asyncio.run(main)
  sys.exit(exit_code)
