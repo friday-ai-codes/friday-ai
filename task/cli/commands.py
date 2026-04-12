@@ -324,7 +324,10 @@ async def _run_plan_mode(claude: ClaudeRunner, callback: CallbackClient, log) ->
  click.echo("=" * 60)
  click.echo(plan)
  click.echo("=" * 60 + "\n")
- await callback.report_plan_ready(plan)
+ await callback.report_completed(
+ output={"text": plan, "task_type": "coding_plan"},
+ result_type="text",
+ )
  return 0
 async def _run_execute_mode(
  claude: ClaudeRunner,
