@@ -11,4 +11,6 @@ asyncio
 # Logging and utilities
 structlog>=24.1.0
 # Claude Agent SDK for AI-powered development
-claude-agent-sdk>=0.1.0
+claude-agent-sdk==0.1.58
+# Jinja2 模板引擎（Prompt Center 渲染依赖）
+jinja2>=3.1.6,<4.0
