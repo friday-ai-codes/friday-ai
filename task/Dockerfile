@@ -33,13 +33,20 @@ WORKDIR /app
 # Copy Node.js from node-tools
 COPY --from=node-tools /usr/local/bin/node /usr/local/bin/
 COPY --from=node-tools /usr/local/lib/node_modules /usr/local/lib/node_modules
+# Pin claude-code 版本 (2026-04-12)，定期升级时更新此版本号
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
  ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
- npm install -g @anthropic-ai/claude-code
+ npm install -g @anthropic-ai/claude-code@2.1.104
 # 从 builder 复制已安装的 Python 包
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
+# 清理 Python 编译缓存以减小镜像体积
+# 注意: rm -rf /root/.cache/pip 是防御性操作——虽然 pip cache 主要在 builder stage，
+# 但 COPY --from=builder 可能携带残留缓存文件，此步骤确保 runtime 镜像干净
+RUN find /usr/local/lib/python3.14 -name "*.pyc" -delete && \
+ find /usr/local/lib/python3.14 -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+ rm -rf /root/.cache/pip
 RUN adduser -D -u 1000 friday && \
  git config --global --add safe.directory "*" && \
  mkdir -p /app/workspace /app/sessions /home/friday/.claude && \
