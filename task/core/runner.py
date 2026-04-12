@@ -108,7 +108,10 @@ class TaskRunner:
  await self.callback.report_error(error, "planning")
  return 1
  plan = result.get("output", "")
- await self.callback.report_plan_ready(plan)
+ await self.callback.report_completed(
+ output={"text": plan, "task_type": "coding_plan"},
+ result_type="text",
+ )
  log.info("Plan mode completed successfully")
  return 0
  async def _run_explore_mode(self, log) -> int:
