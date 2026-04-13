@@ -440,6 +440,91 @@ class QdrantService:
  logger.error("search_failed", error=str(e))
  return
  @classmethod
+ def create_collection_by_name(
+ cls,
+ collection_name: str,
+ vector_size: int = 1024,
+ hybrid: bool = False,
+ ) -> bool:
+ """创建指定名称的 collection（用于 overlay branch collection）。
+ 与 create_collection 逻辑一致但接受 collection_name 而非 repository_id。
+ """
+ client = cls.get_client
+ try:
+ collections = client.get_collections
+ existing_names = [c.name for c in collections.collections]
+ if collection_name in existing_names:
+ logger.info("collection_already_exists", collection_name=collection_name)
+ return True
+ if hybrid:
+ client.create_collection(
+ collection_name=collection_name,
+ vectors_config={
+ "dense": models.VectorParams(
+ size=vector_size,
+ distance=models.Distance.COSINE,
+ ),
+ },
+ sparse_vectors_config={
+ "sparse": models.SparseVectorParams,
+ },
+ )
+ else:
+ client.create_collection(
+ collection_name=collection_name,
+ vectors_config=models.VectorParams(
+ size=vector_size,
+ distance=models.Distance.COSINE,
+ ),
+ )
+ for field in ("file_path", "file_hash", "language", "branch_name"):
+ client.create_payload_index(
+ collection_name=collection_name,
+ field_name=field,
+ field_schema=models.PayloadSchemaType.KEYWORD,
+ )
+ logger.info("overlay_collection_created", collection_name=collection_name)
+ return True
+ except UnexpectedResponse as e:
+ logger.error("create_collection_by_name_failed", error=str(e))
+ return False
+ @classmethod
+ def delete_collection_by_name(cls, collection_name: str) -> bool:
+ """按名称删除 collection（用于清理 overlay branch collection）。"""
+ client = cls.get_client
+ try:
+ client.delete_collection(collection_name=collection_name)
+ logger.info("overlay_collection_deleted", collection_name=collection_name)
+ return True
+ except UnexpectedResponse as e:
+ logger.error("delete_collection_by_name_failed", error=str(e))
+ return False
+ @classmethod
+ def upsert_vectors_by_name(
+ cls,
+ collection_name: str,
+ points: list[dict[str, Any]],
+ ) -> bool:
+ """向指定名称的 collection upsert points。"""
+ client = cls.get_client
+ try:
+ qdrant_points = [
+ models.PointStruct(
+ id=p["id"],
+ vector=p["vector"],
+ payload=p["payload"],
+ )
+ for p in points
+ ]
+ client.upsert(
+ collection_name=collection_name,
+ points=qdrant_points,
+ )
+ return True
+ except UnexpectedResponse as e:
+ logger.error("upsert_vectors_by_name_failed", error=str(e))
+ return False
+ @classmethod
  def hybrid_search(
  cls,
  repository_id: str,
