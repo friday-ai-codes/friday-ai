@@ -20,6 +20,44 @@ from projects.models import Project
 from repositories.models import Repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
+# ---------------------------------------------------------------------------
+# 共享 scroll 辅助 — 按 collection 名 + file_path 拉取全部 chunk
+# ---------------------------------------------------------------------------
+@sync_to_async # KEEP: Qdrant SDK 同步限制
+def _scroll_file_from_collection(
+ collection_name: str, file_path: str
+) -> list[dict[str, Any]]:
+ """从指定 collection 按 file_path 拉取所有 chunk payload。"""
+ try:
+ client = QdrantService.get_client
+ all_points: list[dict[str, Any]] =
+ offset = None
+ while True:
+ result = client.scroll(
+ collection_name=collection_name,
+ scroll_filter=qdrant_models.Filter(
+ must=[
+ qdrant_models.FieldCondition(
+ key="file_path",
+ match=qdrant_models.MatchValue(value=file_path),
+ )
+ ]
+ ),
+ limit=100,
+ offset=offset,
+ with_payload=True,
+ with_vectors=False,
+ )
+ points, next_offset = result
+ for point in points:
+ if point.payload:
+ all_points.append(point.payload)
+ if next_offset is None:
+ break
+ offset = next_offset
+ return all_points
+ except UnexpectedResponse:
+ return
 @tool(
  name="browse_file_content",
  description=(
@@ -47,6 +85,10 @@ logger = structlog.get_logger(__name__)
  "type": "integer",
  "description": "End line number (1-based, optional)",
  },
+ "branch": {
+ "type": "string",
+ "description": "Branch name for branch-aware file browsing (optional)",
+ },
  },
  "required": ["repository_id", "file_path"],
  },
@@ -56,10 +98,11 @@ async def browse_file_content(
  file_path: str,
  start_line: int | None = None,
  end_line: int | None = None,
+ branch: str | None = None,
 ) -> ToolResult:
  """浏览已索引文件的内容。
  从 Qdrant 按 file_path 过滤获取所有 chunk，
- 按 chunk_index 排序后返回。支持行范围过滤。
+ 按 chunk_index 排序后返回。支持行范围过滤和分支感知路由。
  """
  logger.info(
  "browse_file_content",
@@ -67,41 +110,52 @@ async def browse_file_content(
  file_path=file_path,
  start_line=start_line,
  end_line=end_line,
+ branch=branch,
  )
- @sync_to_async # KEEP: Qdrant SDK 同步限制
- def _scroll_file -> list[dict[str, Any]]:
- try:
- client = QdrantService.get_client
- collection = QdrantService.get_collection_name(repository_id)
- all_points: list[dict[str, Any]] =
- offset = None
- while True:
- result = client.scroll(
- collection_name=collection,
- scroll_filter=qdrant_models.Filter(
- must=[
- qdrant_models.FieldCondition(
- key="file_path",
- match=qdrant_models.MatchValue(value=file_path),
+ chunks_raw: list[dict[str, Any]] =
+ # 分支路由：功能分支文件需要从 overlay collection 获取
+ if branch:
+ from repositories.models import BranchFileIndex
+ from services.branch_utils import (
+ is_branch_index_enabled_async,
+ resolve_branch_for_query,
  )
- ]
- ),
- limit=100,
- offset=offset,
- with_payload=True,
- with_vectors=False,
+ if await is_branch_index_enabled_async(repository_id):
+ _, branch_index = await resolve_branch_for_query(repository_id, branch)
+ if (
+ branch_index
+ and not branch_index.is_base_branch
+ and branch_index.status != "inherited"
+ ):
+ file_change = await BranchFileIndex.objects.filter(
+ branch_index=branch_index, file_path=file_path
+ ).afirst
+ if file_change and file_change.change_type == "deleted":
+ return ToolResult(
+ success=True,
+ output={
+ "data": {
+ "file_path": file_path,
+ "repository_id": repository_id,
+ "branch": branch,
+ "chunks":,
+ "total_chunks": 0,
+ },
+ "error": "File deleted in this branch",
+ },
  )
- points, next_offset = result
- for point in points:
- if point.payload:
- all_points.append(point.payload)
- if next_offset is None:
- break
- offset = next_offset
- return all_points
- except UnexpectedResponse:
- return
- chunks_raw = await _scroll_file
+ if (
+ file_change
+ and file_change.change_type in ("added", "modified")
+ and branch_index.collection_name
+ ):
+ chunks_raw = await _scroll_file_from_collection(
+ branch_index.collection_name, file_path
+ )
+ # 默认：从 base collection 获取（未命中分支路由或无 branch 参数）
+ if not chunks_raw:
+ base_collection = QdrantService.get_collection_name(repository_id)
+ chunks_raw = await _scroll_file_from_collection(base_collection, file_path)
  if not chunks_raw:
  return ToolResult(
  success=True,
@@ -163,11 +217,18 @@ async def browse_file_content(
  "type": "string",
  "description": "UUID of the project to query",
  },
+ "branch": {
+ "type": "string",
+ "description": "Branch name for branch-aware file tree (optional)",
+ },
  },
  "required": ["project_id"],
  },
 )
-async def list_project_structure(project_id: str) -> ToolResult:
+async def list_project_structure(
+ project_id: str,
+ branch: str | None = None,
+) -> ToolResult:
  """查看项目文件树结构。
  查询项目关联的所有已索引仓库，从 Qdrant 获取文件路径列表，
  构建缩进格式的树状结构。
@@ -232,6 +293,43 @@ async def list_project_structure(project_id: str) -> ToolResult:
  files = await _get_file_paths(repo_id)
  for f in files:
  f["repo_name"] = repo.name
+ # 分支视图叠加：base 文件树 + BranchFileIndex 差异
+ if branch:
+ from repositories.models import BranchFileIndex
+ from services.branch_utils import (
+ is_branch_index_enabled_async,
+ resolve_branch_for_query,
+ )
+ if await is_branch_index_enabled_async(repo_id):
+ _, branch_index = await resolve_branch_for_query(repo_id, branch)
+ if (
+ branch_index
+ and not branch_index.is_base_branch
+ and branch_index.status != "inherited"
+ ):
+ added: set[str] = set
+ deleted: set[str] = set
+ async for fi in BranchFileIndex.objects.filter(
+ branch_index=branch_index,
+ ):
+ if fi.change_type == "added":
+ added.add(fi.file_path)
+ elif fi.change_type == "deleted":
+ deleted.add(fi.file_path)
+ base_paths = {f["path"] for f in files}
+ final_paths = (base_paths - deleted) | added
+ base_map = {f["path"]: f for f in files}
+ merged_files: list[dict[str, str]] =
+ for p in sorted(final_paths):
+ if p in base_map:
+ merged_files.append(base_map[p])
+ else:
+ merged_files.append({
+ "path": p,
+ "language": "",
+ "repo_name": repo.name,
+ })
+ files = merged_files
  all_files.extend(files)
  # 构建树状结构
  tree_lines: list[str] =
@@ -303,11 +401,18 @@ def _build_tree(files: list[dict[str, str]]) -> list[str]:
  "type": "string",
  "description": "UUID of the project to query",
  },
+ "branch": {
+ "type": "string",
+ "description": "Branch name for branch-aware overview (optional)",
+ },
  },
  "required": ["project_id"],
  },
 )
-async def get_project_overview(project_id: str) -> ToolResult:
+async def get_project_overview(
+ project_id: str,
+ branch: str | None = None,
+) -> ToolResult:
  """获取项目概览信息。
  返回项目基本信息、关联仓库列表（含索引状态、文件数、语言分布）。
  """
@@ -381,6 +486,33 @@ async def get_project_overview(project_id: str) -> ToolResult:
  stats = await _get_repo_stats(str(repo.id))
  repo_info["file_count"] = stats["file_count"]
  repo_info["languages"] = stats["languages"]
+ # 分支统计调整
+ if branch:
+ from repositories.models import BranchFileIndex
+ from services.branch_utils import (
+ is_branch_index_enabled_async,
+ resolve_branch_for_query,
+ )
+ repo_id_str = str(repo.id)
+ if await is_branch_index_enabled_async(repo_id_str):
+ _, branch_index = await resolve_branch_for_query(
+ repo_id_str, branch
+ )
+ if (
+ branch_index
+ and not branch_index.is_base_branch
+ and branch_index.status != "inherited"
+ ):
+ added_count = await BranchFileIndex.objects.filter(
+ branch_index=branch_index, change_type="added"
+ ).acount
+ deleted_count = await BranchFileIndex.objects.filter(
+ branch_index=branch_index, change_type="deleted"
+ ).acount
+ repo_info["file_count"] = (
+ repo_info["file_count"] - deleted_count + added_count
+ )
+ repo_info["branch"] = branch
  else:
  repo_info["file_count"] = 0
  repo_info["languages"] = {}
@@ -435,6 +567,10 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
  "type": "string",
  "description": "Conversation UUID (auto-injected)",
  },
+ "branch": {
+ "type": "string",
+ "description": "Branch name for analysis context (optional)",
+ },
  },
  "required": ["project_id", "task_description"],
  },
@@ -444,6 +580,7 @@ async def deep_analysis(
  task_description: str,
  repository_id: str | None = None,
  conversation_id: str = "",
+ branch: str | None = None,
 ) -> ToolResult:
  """将复杂分析任务 dispatch 到 Runner 上的 Claude Code。
  Fire-and-forget 模式：dispatch 后立即返回 __blocking_task__ 标记，
@@ -545,8 +682,9 @@ async def deep_analysis(
  },
  )
  # 4. 构建 prompt
+ branch_context = f"\n分支：{branch}\n请基于该分支的代码进行分析。" if branch else ""
  prompt = (
- f"你正在分析项目「{project.name}」的代码仓库「{repo.name}」。\n\n"
+ f"你正在分析项目「{project.name}」的代码仓库「{repo.name}」。{branch_context}\n\n"
  f"任务：{task_description}\n\n"
  f"请深入分析代码，给出详细的技术分析结果。用中文回答。"
  )
@@ -593,7 +731,7 @@ async def deep_analysis(
  tags=,
  image="",
  repo_url=repo_url,
- branch=repo.default_branch,
+ branch=branch or repo.default_branch,
  target_branch="",
  prompt=prompt,
  timeout=DEEP_ANALYSIS_TIMEOUT,
