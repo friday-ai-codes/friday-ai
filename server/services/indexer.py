@@ -981,11 +981,19 @@ async def clone_and_index_repository(
  raise Exception(f"Git clone failed: {stderr.decode}")
  # Run indexing - pass repository_id instead of repository object
  indexer = IndexerService(repository_id)
+ head_sha: str | None = None
+ last_sha: str | None = None
+ fallback_reason: str | None = None
+ if branch:
+ # 功能分支 overlay 索引路径
+ index_result = await indexer.run_branch_index(temp_dir, branch, repository)
+ else:
+ # 现有 base branch 索引路径
+ base_branch = repository.base_branch or repository.default_branch
  # 获取当前 HEAD SHA
  head_sha = await _get_head_sha(temp_dir)
  # 决定索引路径：git diff > 文件哈希比较 > 全量
  last_sha = repository.last_indexed_commit_sha
- fallback_reason: str | None = None
  # 先检查 collection 是否有数据；如果为空则必须走全量索引
  stored_hashes = await qdrant_get_stored_file_hashes(repository_id)
  collection_has_data = bool(stored_hashes)
@@ -995,33 +1003,40 @@ async def clone_and_index_repository(
  if fetch_ok:
  try:
  index_result = await indexer.run_git_diff_index(
- temp_dir, last_sha, head_sha
+ temp_dir, last_sha, head_sha,
+ branch_name=base_branch, is_base_branch=True,
  )
  except GitDiffError as e:
  logger.warning("git_diff_failed_fallback", error=str(e))
  fallback_reason = f"git diff 失败: {e}"
- # shallow clone 环境回退到全量索引，否则用增量索引
  is_shallow = await _is_shallow_clone(temp_dir)
  if is_shallow:
  logger.info("shallow_clone_fallback_to_full_index")
- index_result = await indexer.run_full_index(temp_dir)
+ index_result = await indexer.run_full_index(
+ temp_dir, branch_name=base_branch,
+ )
  else:
- index_result = await indexer.run_incremental_index(temp_dir)
+ index_result = await indexer.run_incremental_index(
+ temp_dir, branch_name=base_branch, is_base_branch=True,
+ )
  else:
  logger.warning("fetch_commit_failed_fallback", sha=last_sha)
  fallback_reason = f"git fetch {last_sha} 失败"
- # fetch 失败同样检查是否 shallow clone
  is_shallow = await _is_shallow_clone(temp_dir)
  if is_shallow:
  logger.info("shallow_clone_fallback_to_full_index")
- index_result = await indexer.run_full_index(temp_dir)
+ index_result = await indexer.run_full_index(
+ temp_dir, branch_name=base_branch,
+ )
  else:
- index_result = await indexer.run_incremental_index(temp_dir)
+ index_result = await indexer.run_incremental_index(
+ temp_dir, branch_name=base_branch, is_base_branch=True,
+ )
  elif collection_has_data:
- # 有数据但无 last_sha，走增量比较
- index_result = await indexer.run_incremental_index(temp_dir)
+ index_result = await indexer.run_incremental_index(
+ temp_dir, branch_name=base_branch, is_base_branch=True,
+ )
  else:
- # collection 为空或不存在，走全量索引
  if last_sha:
  logger.info(
  "collection_empty_fallback_to_full_index",
@@ -1029,13 +1044,16 @@ async def clone_and_index_repository(
  last_sha=last_sha,
  )
  fallback_reason = "collection 为空，回退到全量索引"
- index_result = await indexer.run_full_index(temp_dir)
- # 更新 last_indexed_commit_sha
+ index_result = await indexer.run_full_index(
+ temp_dir, branch_name=base_branch,
+ )
+ # base 路径：更新 last_indexed_commit_sha
  await Repository.objects.filter(id=repository_id).aupdate(
  last_indexed_commit_sha=head_sha,
  )
  # Update repository status
  from django.utils import timezone
+ if not branch:
  await update_repository_status(
  repository,
  IndexStatus.INDEXED,
@@ -1044,25 +1062,31 @@ async def clone_and_index_repository(
  # 更新 IndexHistory 状态为完成
  if history_id:
  from repositories.models import IndexHistory, IndexHistoryStatus
- # 从 index_result 提取统计信息
- files_added = index_result.get("added", 0)
- files_modified = index_result.get("updated", 0)
- files_deleted = index_result.get("deleted", 0)
  history_update: dict[str, Any] = {
  "status": IndexHistoryStatus.COMPLETED,
  "finished_at": timezone.now,
- "to_sha": head_sha,
- "files_added": files_added,
- "files_modified": files_modified,
- "files_deleted": files_deleted,
- "summary_text": _build_summary_text(
- files_added, files_modified, files_deleted
- ),
  }
+ if branch:
+ # 分支索引路径：从 index_result 提取分支相关信息
+ history_update["summary_text"] = (
+ f"分支 {branch}: {index_result.get('status', 'unknown')}"
+ f"（diff {index_result.get('diff_files', 0)} 文件）"
+ )
+ else:
+ # base 路径：从 index_result 提取统计信息
+ files_added = index_result.get("added", 0)
+ files_modified = index_result.get("updated", 0)
+ files_deleted = index_result.get("deleted", 0)
+ history_update["to_sha"] = head_sha
+ history_update["files_added"] = files_added
+ history_update["files_modified"] = files_modified
+ history_update["files_deleted"] = files_deleted
+ history_update["summary_text"] = _build_summary_text(
+ files_added, files_modified, files_deleted,
+ )
  if last_sha:
  history_update["from_sha"] = last_sha
  if fallback_reason:
- # 追加 fallback 信息到 error_message（非失败，仅记录）
  history_update["error_message"] = f"[fallback] {fallback_reason}"
  await IndexHistory.objects.filter(id=history_id).aupdate(
  **history_update
