@@ -6,12 +6,10 @@ and semantic code search via Qdrant vectors.
 from datetime import datetime, timezone
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
 from services.embedding import EmbeddingService
-from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
 @tool(
  name="list_project_repositories",
@@ -189,6 +187,10 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  "description": "Minimum similarity score threshold (default: 0.5)",
  "default": 0.5,
  },
+ "branch": {
+ "type": "string",
+ "description": "Branch name for branch-aware search (optional, defaults to base_branch)",
+ },
  },
  "required": ["query"],
  },
@@ -199,6 +201,7 @@ async def search_repository_code(
  project_id: str | None = None,
  limit: int = 20,
  min_score: float = 0.5,
+ branch: str | None = None,
 ) -> ToolResult:
  """
  Perform semantic code search across repositories.
@@ -288,16 +291,15 @@ async def search_repository_code(
  error="Failed to generate query embedding",
  )
  # Search across all repositories
+ from services.branch_search import BranchAwareSearchService
  all_results: list[dict[str, Any]] =
- @sync_to_async # KEEP: Qdrant SDK 同步限制
- def search_repo(repo_id: str) -> list[dict[str, Any]]:
- return QdrantService.search(
- repository_id=repo_id,
- query_vector=query_vector,
+ for repo_id in repo_ids:
+ search_results = await BranchAwareSearchService.search(
+ repo_id,
+ query_vector,
+ branch_name=branch,
  top_k=limit,
  )
- for repo_id in repo_ids:
- search_results = await search_repo(repo_id)
  for r in search_results:
  if r["score"] >= min_score:
  payload = r.get("payload", {})
