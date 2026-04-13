@@ -183,6 +183,23 @@ class QdrantService:
  logger.error("create_collection_failed", error=str(e))
  return False
  @classmethod
+ def create_branch_payload_index(cls, collection_name: str) -> bool:
+ """为指定 collection 创建 branch_name keyword payload index。"""
+ client = cls.get_client
+ try:
+ client.create_payload_index(
+ collection_name=collection_name,
+ field_name="branch_name",
+ field_schema=models.PayloadSchemaType.KEYWORD,
+ )
+ return True
+ except UnexpectedResponse:
+ logger.warning(
+ "branch_payload_index_may_exist",
+ collection_name=collection_name,
+ )
+ return False
+ @classmethod
  def create_snapshot(cls, repository_id: str) -> str | None:
  """Create a snapshot for repository's collection. Returns snapshot filename."""
  client = cls.get_client

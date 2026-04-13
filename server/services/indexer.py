@@ -19,6 +19,9 @@ from system.models import SettingKeys, SystemSetting
 @sync_to_async
 def qdrant_create_collection(repository_id: str, vector_size: int, hybrid: bool = False) -> bool:
  return QdrantService.create_collection(repository_id, vector_size=vector_size, hybrid=hybrid)
+@sync_to_async
+def qdrant_create_branch_payload_index(collection_name: str) -> bool:
+ return QdrantService.create_branch_payload_index(collection_name)
 @sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_get_stored_file_hashes(repository_id: str) -> dict[str, str]:
  return QdrantService.get_stored_file_hashes(repository_id)
@@ -153,10 +156,13 @@ class IndexerService:
  def __init__(self, repository_id: str):
  self.repository_id = repository_id
  self.parser = CodeParser
- async def run_full_index(self, repo_path: str) -> dict[str, Any]:
+ async def run_full_index(
+ self, repo_path: str, *, branch_name: str | None = None,
+ ) -> dict[str, Any]:
  """Run full indexing for a repository.
  Args:
  repo_path: Path to the cloned repository
+ branch_name: 分支名称，非空时在 payload 中注入分支元数据
  Returns:
  Result dict with status and statistics
  """
@@ -175,6 +181,10 @@ class IndexerService:
  hybrid_enabled = await self._is_hybrid_enabled
  # Create collection
  await qdrant_create_collection(self.repository_id, vector_size, hybrid=hybrid_enabled)
+ if branch_name:
+ await qdrant_create_branch_payload_index(
+ QdrantService.get_collection_name(self.repository_id)
+ )
  # Scan files
  files = scan_directory(repo_path)
  logger.info("files_scanned", count=len(files))
@@ -208,7 +218,10 @@ class IndexerService:
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
  # Prepare points for Qdrant
- points = self._build_points(all_chunks, embeddings, sparse_vectors, hybrid_enabled)
+ points = self._build_points(
+ all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=branch_name is not None,
+ )
  # Upsert to Qdrant in batches
  batch_size = 100
  total_points = len(points)
@@ -266,13 +279,21 @@ class IndexerService:
  hybrid_enabled = await self._is_hybrid_enabled
  await qdrant_create_collection(self.repository_id, vector_size, hybrid=hybrid_enabled)
  async def run_git_diff_index(
- self, repo_path: str, from_sha: str, to_sha: str
+ self,
+ repo_path: str,
+ from_sha: str,
+ to_sha: str,
+ *,
+ branch_name: str | None = None,
+ is_base_branch: bool = False,
  ) -> dict[str, Any]:
  """基于 git diff 的增量索引。
  Args:
  repo_path: 克隆仓库路径
  from_sha: 上次索引的 commit SHA
  to_sha: 当前 HEAD SHA
+ branch_name: 分支名称，非空时在 payload 中注入分支元数据
+ is_base_branch: 是否为 base 分支
  Returns:
  Result dict with status and statistics
  Raises:
@@ -348,7 +369,10 @@ class IndexerService:
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
- points = self._build_points(all_chunks, embeddings, sparse_vectors, hybrid_enabled)
+ points = self._build_points(
+ all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=is_base_branch,
+ )
  batch_size = 100
  total_points = len(points)
  await update_write_progress(self.repository_id, total_points, 0)
@@ -553,13 +577,16 @@ class IndexerService:
  embeddings: list[list[float] | None],
  sparse_vectors: list[dict] | None,
  hybrid: bool,
+ *,
+ branch_name: str | None = None,
+ is_base_branch: bool = False,
  ) -> list[dict]:
  """构建 Qdrant points，支持 hybrid 和非 hybrid 模式。"""
  points: list[dict] =
  for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
  if embedding is None:
  continue
- payload = {
+ payload: dict[str, Any] = {
  "file_path": chunk.file_path,
  "file_hash": chunk.file_hash,
  "language": chunk.language,
@@ -569,6 +596,9 @@ class IndexerService:
  "content": chunk.content,
  "context_header": chunk.context_header,
  }
+ if branch_name is not None:
+ payload["branch_name"] = branch_name
+ payload["is_base_branch"] = is_base_branch
  if hybrid and sparse_vectors and i < len(sparse_vectors):
  from qdrant_client.http.models import SparseVector
  sparse = sparse_vectors[i]
