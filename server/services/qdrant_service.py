@@ -542,6 +542,109 @@ class QdrantService:
  logger.error("upsert_vectors_by_name_failed", error=str(e))
  return False
  @classmethod
+ def _build_filter(cls, filters: dict[str, Any] | None) -> models.Filter | None:
+ """构建 Qdrant 查询过滤条件。"""
+ filter_conditions =
+ if filters:
+ if "language" in filters:
+ filter_conditions.append(
+ models.FieldCondition(
+ key="language",
+ match=models.MatchValue(value=filters["language"]),
+ )
+ )
+ if filter_conditions:
+ return models.Filter(must=filter_conditions)
+ return None
+ @classmethod
+ def search_by_name(
+ cls,
+ collection_name: str,
+ query_vector: list[float],
+ top_k: int = 30,
+ filters: dict[str, Any] | None = None,
+ ) -> list[dict[str, Any]]:
+ """按 collection 名称搜索（用于 overlay / 任意已知 collection）。
+ 与 search 逻辑相同但直接接受 collection_name。
+ collection 不存在时返回空列表。
+ """
+ client = cls.get_client
+ query_filter = cls._build_filter(filters)
+ try:
+ results = client.query_points(
+ collection_name=collection_name,
+ query=query_vector,
+ query_filter=query_filter,
+ limit=top_k,
+ with_payload=True,
+ )
+ return [
+ {
+ "id": str(r.id),
+ "score": r.score,
+ "payload": r.payload,
+ }
+ for r in results.points
+ ]
+ except UnexpectedResponse as e:
+ logger.warning("search_by_name_failed", collection_name=collection_name, error=str(e))
+ return
+ @classmethod
+ def hybrid_search_by_name(
+ cls,
+ collection_name: str,
+ query_dense: list[float],
+ query_sparse: dict[str, Any],
+ top_k: int = 30,
+ filters: dict[str, Any] | None = None,
+ ) -> list[dict[str, Any]]:
+ """按 collection 名称混合检索（dense + sparse RRF 融合）。
+ 与 hybrid_search 逻辑相同但直接接受 collection_name。
+ collection 不存在时返回空列表。
+ """
+ client = cls.get_client
+ query_filter = cls._build_filter(filters)
+ try:
+ sparse_vector = models.SparseVector(
+ indices=query_sparse["indices"],
+ values=query_sparse["values"],
+ )
+ results = client.query_points(
+ collection_name=collection_name,
+ prefetch=[
+ models.Prefetch(
+ query=query_dense,
+ using="dense",
+ limit=top_k,
+ filter=query_filter,
+ ),
+ models.Prefetch(
+ query=sparse_vector,
+ using="sparse",
+ limit=top_k,
+ filter=query_filter,
+ ),
+ ],
+ query=models.FusionQuery(fusion=models.Fusion.RRF),
+ limit=top_k,
+ with_payload=True,
+ )
+ return [
+ {
+ "id": str(r.id),
+ "score": r.score,
+ "payload": r.payload,
+ }
+ for r in results.points
+ ]
+ except UnexpectedResponse as e:
+ logger.warning(
+ "hybrid_search_by_name_failed",
+ collection_name=collection_name,
+ error=str(e),
+ )
+ return
+ @classmethod
  def hybrid_search(
  cls,
  repository_id: str,
