@@ -22,6 +22,13 @@ class IndexStatus(models.TextChoices):
  INDEXING = "indexing", "索引中"
  INDEXED = "indexed", "已索引"
  FAILED = "failed", "索引失败"
+class BranchIndexStatus(models.TextChoices):
+ """分支索引状态。"""
+ NOT_INDEXED = "not_indexed", "未索引"
+ INDEXING = "indexing", "索引中"
+ INDEXED = "indexed", "已索引"
+ INHERITED = "inherited", "继承自基础分支"
+ FAILED = "failed", "索引失败"
 class TriggerType(models.TextChoices):
  """索引触发类型。"""
  MANUAL = "manual", "手动触发"
@@ -47,6 +54,7 @@ class Repository(models.Model):
  credential: "GitCredential"
  index_history: "QuerySet[IndexHistory]"
  file_indexes: "QuerySet[FileIndex]"
+ branch_indexes: "QuerySet[RepositoryBranchIndex]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  git_url = models.CharField(max_length=500)
@@ -201,3 +209,62 @@ class GitCredential(models.Model):
  verbose_name_plural = "Git 凭证"
  def __str__(self):
  return f"Credential for {self.repository.name}"
+class RepositoryBranchIndex(models.Model):
+ """分支索引记录——追踪每个分支的索引状态与 overlay collection 映射。"""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ Repository,
+ on_delete=models.CASCADE,
+ related_name="branch_indexes",
+ )
+ branch_name = models.CharField(max_length=200)
+ is_base_branch = models.BooleanField(default=False)
+ head_sha = models.CharField(max_length=40, blank=True, null=True)
+ merge_base_sha = models.CharField(max_length=40, blank=True, null=True)
+ last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
+ last_indexed_at = models.DateTimeField(blank=True, null=True)
+ is_stale = models.BooleanField(default=False)
+ status = models.CharField(
+ max_length=20,
+ choices=BranchIndexStatus.choices,
+ default=BranchIndexStatus.NOT_INDEXED,
+ )
+ effective_chunks_count = models.IntegerField(default=0)
+ collection_name = models.CharField(max_length=300, blank=True, null=True)
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "repository_branch_indexes"
+ verbose_name = "分支索引"
+ verbose_name_plural = "分支索引"
+ constraints = [
+ models.UniqueConstraint(
+ fields=["repository", "branch_name"],
+ name="uq_repo_branch",
+ ),
+ ]
+ def __str__(self) -> str:
+ return f"{self.repository.name}:{self.branch_name} ({self.status})"
+class BranchFileIndex(models.Model):
+ """分支内文件级变更记录——追踪 overlay 中每个文件的变更类型。"""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ branch_index = models.ForeignKey(
+ RepositoryBranchIndex,
+ on_delete=models.CASCADE,
+ related_name="file_indexes",
+ )
+ file_path = models.CharField(max_length=1000)
+ change_type = models.CharField(max_length=20)
+ indexed_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "branch_file_indexes"
+ verbose_name = "分支文件索引"
+ verbose_name_plural = "分支文件索引"
+ constraints = [
+ models.UniqueConstraint(
+ fields=["branch_index", "file_path"],
+ name="uq_branch_file",
+ ),
+ ]
+ def __str__(self) -> str:
+ return f"{self.file_path} ({self.change_type})"
