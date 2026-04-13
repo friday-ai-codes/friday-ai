@@ -3,11 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 import structlog
-from asgiref.sync import sync_to_async
 if TYPE_CHECKING:
  from repositories.models import Repository
 from services.embedding import EmbeddingService
-from services.qdrant_service import QdrantService
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -69,6 +67,12 @@ class ContextRetrievalNode(BaseNode):
  "default": 0.5,
  "minimum": 0,
  "maximum": 1,
+ },
+ "branch": {
+ "type": "string",
+ "title": "分支",
+ "description": "可选，指定分支名进行分支感知检索",
+ "default": "",
  },
  "language_filter": {
  "type": "string",
@@ -136,6 +140,7 @@ class ContextRetrievalNode(BaseNode):
  query = context.render_template(config.get("query", ""))
  top_k = config.get("top_k", 10) # Default 10 per repo
  score_threshold = config.get("score_threshold", 0.5)
+ branch = context.render_template(config.get("branch", "")) or None
  language_filter = context.render_template(config.get("language_filter", ""))
  include_content = config.get("include_content", True)
  format_as_markdown = config.get("format_as_markdown", True)
@@ -225,7 +230,8 @@ class ContextRetrievalNode(BaseNode):
  filters = {"language": language_filter}
  # 并行搜索所有仓库
  search_results = await self._search_all_repositories(
- valid_repos, query_embedding, top_k, filters, timeout
+ valid_repos, query_embedding, top_k, filters, timeout,
+ branch=branch,
  )
  # 聚合结果（按仓库分组）
  aggregated = self._aggregate_results(
@@ -408,16 +414,19 @@ class ContextRetrievalNode(BaseNode):
  top_k: int,
  filters: dict[str, Any] | None,
  timeout: float = 30.0,
+ *,
+ branch: str | None = None,
  ) -> dict[str, Any]:
- """Search single repository with timeout.
+ """Search single repository with timeout (branch-aware).
  Returns a dict with repository_id, repository_name, status, results, and error (if any).
  """
+ from services.branch_search import BranchAwareSearchService
  repo_id = str(repository.id)
  try:
- # KEEP: Qdrant SDK 同步限制
- search_coro = sync_to_async(QdrantService.search, thread_sensitive=True)(
+ search_coro = BranchAwareSearchService.search(
  repo_id,
  query_embedding,
+ branch_name=branch or None,
  top_k=top_k,
  filters=filters,
  )
@@ -451,13 +460,17 @@ class ContextRetrievalNode(BaseNode):
  top_k: int,
  filters: dict[str, Any] | None,
  timeout: float = 30.0,
+ *,
+ branch: str | None = None,
  ) -> list[dict[str, Any]]:
- """Search all repositories in parallel.
+ """Search all repositories in parallel (branch-aware).
  Uses asyncio.gather with return_exceptions=True to ensure all tasks complete.
  Any unexpected exceptions are converted to error dicts.
  """
  search_tasks = [
- self._search_repository(repo, query_embedding, top_k, filters, timeout)
+ self._search_repository(
+ repo, query_embedding, top_k, filters, timeout, branch=branch
+ )
  for repo in repositories
  ]
  # gather with return_exceptions=True ensures all tasks complete
