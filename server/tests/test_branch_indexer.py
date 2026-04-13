@@ -1,7 +1,8 @@
 """分支感知索引管线测试：payload 注入、branch payload index、DB 记录管理。"""
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from django.utils import timezone
 from services.indexer import IndexerService
 class TestBaseBranchMetadata:
  """测试 _build_points 的分支元数据注入。"""
@@ -82,3 +83,122 @@ class TestBaseBranchMetadata:
  )
  result = QdrantService.create_branch_payload_index("test_collection")
  assert result is False
+@pytest.mark.django_db(transaction=True)
+class TestBranchIndexRecord:
+ """测试 _update_branch_index_record 创建/更新 DB 记录。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="test-repo",
+ git_url="https://github.com/test/repo.git",
+ default_branch="main",
+ )
+ @pytest.fixture
+ def indexer(self, repository):
+ return IndexerService(str(repository.id))
+ @pytest.mark.asyncio
+ @patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="abc1234567890abcdef1234567890abcdef123456")
+ async def test_creates_branch_index_record(self, mock_sha, repository, indexer):
+ """run_full_index 后应创建 RepositoryBranchIndex 记录。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ await indexer._update_branch_index_record(
+ repo_path="/tmp/fake",
+ branch_name="main",
+ is_base_branch=True,
+ points_count=42,
+ )
+ record = await RepositoryBranchIndex.objects.aget(
+ repository=repository, branch_name="main",
+ )
+ assert record.is_base_branch is True
+ assert record.head_sha == "abc1234567890abcdef1234567890abcdef123456"
+ assert record.status == BranchIndexStatus.INDEXED
+ assert record.effective_chunks_count == 42
+ assert record.is_stale is False
+ @pytest.mark.asyncio
+ @patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="def456")
+ async def test_updates_existing_branch_index_record(self, mock_sha, repository, indexer):
+ """重新索引时应更新已有记录。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ await RepositoryBranchIndex.objects.acreate(
+ repository=repository,
+ branch_name="main",
+ is_base_branch=True,
+ status=BranchIndexStatus.INDEXED,
+ effective_chunks_count=10,
+ )
+ await indexer._update_branch_index_record(
+ repo_path="/tmp/fake",
+ branch_name="main",
+ is_base_branch=True,
+ points_count=99,
+ )
+ record = await RepositoryBranchIndex.objects.aget(
+ repository=repository, branch_name="main",
+ )
+ assert record.effective_chunks_count == 99
+ assert record.head_sha == "def456"
+@pytest.mark.django_db(transaction=True)
+class TestStalePropagate:
+ """测试 base 重索引后 overlay stale 传播。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="test-repo-stale",
+ git_url="https://github.com/test/stale-repo.git",
+ default_branch="main",
+ )
+ @pytest.fixture
+ def indexer(self, repository):
+ return IndexerService(str(repository.id))
+ @pytest.mark.asyncio
+ @patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="head123")
+ async def test_base_reindex_marks_overlays_stale(self, mock_sha, repository, indexer):
+ """base 分支重索引后，所有非 base 的 overlay 应标记为 is_stale=True。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ overlay1 = await RepositoryBranchIndex.objects.acreate(
+ repository=repository,
+ branch_name="feature/a",
+ is_base_branch=False,
+ is_stale=False,
+ status=BranchIndexStatus.INDEXED,
+ )
+ overlay2 = await RepositoryBranchIndex.objects.acreate(
+ repository=repository,
+ branch_name="feature/b",
+ is_base_branch=False,
+ is_stale=False,
+ status=BranchIndexStatus.INDEXED,
+ )
+ await indexer._update_branch_index_record(
+ repo_path="/tmp/fake",
+ branch_name="main",
+ is_base_branch=True,
+ points_count=50,
+ )
+ await overlay1.arefresh_from_db
+ await overlay2.arefresh_from_db
+ assert overlay1.is_stale is True
+ assert overlay2.is_stale is True
+ @pytest.mark.asyncio
+ @patch("services.indexer._get_head_sha", new_callable=AsyncMock, return_value="head456")
+ async def test_non_base_reindex_does_not_mark_stale(self, mock_sha, repository, indexer):
+ """非 base 分支索引不应触发 stale 传播。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ overlay = await RepositoryBranchIndex.objects.acreate(
+ repository=repository,
+ branch_name="feature/c",
+ is_base_branch=False,
+ is_stale=False,
+ status=BranchIndexStatus.INDEXED,
+ )
+ await indexer._update_branch_index_record(
+ repo_path="/tmp/fake",
+ branch_name="feature/x",
+ is_base_branch=False,
+ points_count=10,
+ )
+ await overlay.arefresh_from_db
+ assert overlay.is_stale is False

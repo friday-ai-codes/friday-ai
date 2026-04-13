@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 from repositories.models import FileIndex, IndexStatus, Repository
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
@@ -257,6 +258,14 @@ class IndexerService:
  update_fields=["file_hash"],
  unique_fields=["repository", "file_path"],
  )
+ # 创建/更新 RepositoryBranchIndex 记录并传播 stale
+ if branch_name:
+ await self._update_branch_index_record(
+ repo_path=repo_path,
+ branch_name=branch_name,
+ is_base_branch=True,
+ points_count=len(points),
+ )
  return {
  "status": "success",
  "files_processed": len(files),
@@ -270,6 +279,42 @@ class IndexerService:
  error=str(e),
  )
  raise
+ async def _update_branch_index_record(
+ self,
+ *,
+ repo_path: str,
+ branch_name: str,
+ is_base_branch: bool,
+ points_count: int,
+ ) -> None:
+ """创建/更新 RepositoryBranchIndex 记录，base 分支索引后触发 overlay stale 传播。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ head_sha = await _get_head_sha(repo_path)
+ await RepositoryBranchIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ branch_name=branch_name,
+ defaults={
+ "is_base_branch": is_base_branch,
+ "head_sha": head_sha,
+ "last_indexed_commit_sha": head_sha,
+ "last_indexed_at": timezone.now,
+ "is_stale": False,
+ "status": BranchIndexStatus.INDEXED,
+ "effective_chunks_count": points_count,
+ "collection_name": QdrantService.get_collection_name(self.repository_id),
+ },
+ )
+ if is_base_branch:
+ stale_count = await RepositoryBranchIndex.objects.filter(
+ repository_id=self.repository_id,
+ is_base_branch=False,
+ ).aupdate(is_stale=True)
+ if stale_count:
+ logger.info(
+ "overlays_marked_stale",
+ repository_id=self.repository_id,
+ count=stale_count,
+ )
  async def _ensure_collection(self) -> None:
  """确保 Qdrant collection 存在，不存在则创建。"""
  dimension_setting = await SystemSetting.objects.filter(
@@ -399,11 +444,28 @@ class IndexerService:
  file_path=diff.file_path,
  defaults={"file_hash": new_hash},
  )
+ # 更新 RepositoryBranchIndex 记录
+ if branch_name:
+ total_points = sum(stats.get(k, 0) for k in ("added", "updated"))
+ await self._update_branch_index_record(
+ repo_path=repo_path,
+ branch_name=branch_name,
+ is_base_branch=is_base_branch,
+ points_count=total_points,
+ )
  return {"status": "success", **stats}
- async def run_incremental_index(self, repo_path: str) -> dict[str, Any]:
+ async def run_incremental_index(
+ self,
+ repo_path: str,
+ *,
+ branch_name: str | None = None,
+ is_base_branch: bool = False,
+ ) -> dict[str, Any]:
  """Run incremental indexing for a repository.
  Args:
  repo_path: Path to the cloned repository
+ branch_name: 分支名称，非空时在 payload 中注入分支元数据
+ is_base_branch: 是否为基础分支
  Returns:
  Result dict with status and statistics
  """
@@ -464,31 +526,19 @@ class IndexerService:
  await update_index_progress(self.repository_id, total, processed)
  # Generate embeddings
  texts_to_embed = [
- f"{chunk.context_header}\n{chunk.content}" for chunk in all_chunks
+ _build_embedding_text(chunk) for chunk in all_chunks
  ]
  embeddings = await EmbeddingService.generate_embeddings_batch(
  texts_to_embed, on_progress=on_embedding_progress
  )
- # Prepare and upsert points
- points =
- for chunk, embedding in zip(all_chunks, embeddings):
- if embedding is None:
- continue
- points.append(
- {
- "id": str(uuid.uuid4),
- "vector": embedding,
- "payload": {
- "file_path": chunk.file_path,
- "file_hash": chunk.file_hash,
- "language": chunk.language,
- "node_type": chunk.node_type,
- "start_line": chunk.start_line,
- "end_line": chunk.end_line,
- "content": chunk.content,
- "context_header": chunk.context_header,
- },
- }
+ # 生成 sparse vectors（如果启用 hybrid）
+ hybrid_enabled = await self._is_hybrid_enabled
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
+ points = self._build_points(
+ all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=is_base_branch,
  )
  batch_size = 100
  total_points = len(points)
