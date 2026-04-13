@@ -158,6 +158,7 @@ export interface RepositoryBase {
  git_url: string
  git_platform: GitPlatform
  default_branch: string
+ base_branch?: string | null
  description?: string
 }
 /**
@@ -192,6 +193,7 @@ export interface RepositoryUpdate {
  git_url?: string
  git_platform?: GitPlatform
  default_branch?: string
+ base_branch?: string | null
  description?: string
  auto_index_enabled?: boolean
 }

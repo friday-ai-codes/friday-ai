@@ -114,6 +114,7 @@ export interface TestConnectionResponse {
  message?: string
  error?: string
  branches?: string
+ recommended_branch?: string | null
 }
 // Phase: AI 智能描述
 export type AISummaryStatus = 'not_started' | 'pending' | 'running' | 'completed' | 'failed'
