@@ -15,6 +15,7 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { PLATFORM_LABELS } from '~/types'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 const props = defineProps<{
  repository: {
  id: string
@@ -22,8 +23,10 @@ const props = defineProps<{
  git_url: string
  git_platform: GitPlatform
  default_branch: string
+ base_branch?: string | null
  description?: string
  proxy_url?: string
+ has_credential: boolean
  }
 }>
 const emit = defineEmits<{
@@ -40,9 +43,31 @@ const form = reactive({
  git_url: props.repository.git_url,
  git_platform: props.repository.git_platform,
  default_branch: props.repository.default_branch,
+ base_branch: props.repository.base_branch || '',
  description: props.repository.description || '',
  proxy_url: props.repository.proxy_url || '',
 })
+const branches = ref<string>
+const recommendedBranch = ref<string | null>(null)
+const loadingBranches = ref(false)
+async function fetchBranches {
+ if (!props.repository.has_credential) return
+ loadingBranches.value = true
+ try {
+ const result = await repositoriesApi.testRepositoryConnection(props.repository.id)
+ if (result.success) {
+ branches.value = result.branches ||
+ recommendedBranch.value = result.recommended_branch ?? null
+ }
+ }
+ catch {
+ // 降级为文本输入（branches 保持空数组）
+ }
+ finally {
+ loadingBranches.value = false
+ }
+}
+onMounted(fetchBranches)
 // 表单验证
 const errors = reactive({
  name: '',
@@ -92,12 +117,15 @@ watch( => props.repository, (newRepo) => {
  form.git_url = newRepo.git_url
  form.git_platform = newRepo.git_platform
  form.default_branch = newRepo.default_branch
+ form.base_branch = newRepo.base_branch || ''
  form.description = newRepo.description || ''
  form.proxy_url = newRepo.proxy_url || ''
- // 清除验证错误和测试结果
  errors.name = ''
  errors.git_url = ''
  testResult.value = null
+ branches.value =
+ recommendedBranch.value = null
+ fetchBranches
 }, { deep: true })
 async function handleTestConnection {
  testing.value = true
@@ -247,6 +275,21 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  class=""
  />
  </div>
+ </div>
+ <!-- 基础分支（索引用） -->
+ <div class="space-y-2">
+ <Label class="text-foreground">基础分支（索引用）</Label>
+ <div v-if="loadingBranches" class="flex items-center gap-2 px-3 text-sm text-muted-foreground">
+ <span class="icon-[lucide--loader-circle] animate-spin" />
+ 加载分支列表...
+ </div>
+ <BranchCombobox
+ v-else
+ v-model="form.base_branch":branches="branches":recommended-branch="recommendedBranch"
+ />
+ <p class="text-xs text-muted-foreground">
+ 用于代码索引的基准分支，通常与默认分支相同
+ </p>
  </div>
  <!-- 描述 -->
  <div class="space-y-2">
