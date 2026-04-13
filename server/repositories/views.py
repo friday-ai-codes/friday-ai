@@ -1,11 +1,13 @@
 """Repositories views."""
+import os
 import secrets
 import subprocess
+import structlog
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
 from django.shortcuts import aget_object_or_404
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -21,9 +23,34 @@ from .serializers import (
  RepositorySerializer,
  RepositoryWithProjectsSerializer,
 )
+logger = structlog.get_logger(__name__)
 def is_https_git_url(git_url: str) -> bool:
  """当前 Access Token 流程只支持 HTTPS 仓库地址。"""
  return git_url.startswith(("http://", "https://"))
+async def _validate_base_branch(
+ git_url: str,
+ token: str,
+ base_branch: str,
+ proxy_url: str | None = None,
+) -> bool:
+ """通过 git ls-remote 检查分支是否存在于远端。"""
+ auth_url = git_url
+ if token and git_url.startswith("https://"):
+ auth_url = git_url.replace("https://", f"https://{token}@")
+ cmd = ["git", "ls-remote", "--heads", auth_url, f"refs/heads/{base_branch}"]
+ env = None
+ if proxy_url:
+ env = os.environ.copy
+ env["http_proxy"] = proxy_url
+ env["https_proxy"] = proxy_url
+ try:
+ result = await sync_to_async(subprocess.run)(
+ cmd, capture_output=True, text=True, timeout=15, env=env,
+ )
+ return bool(result.stdout.strip)
+ except (subprocess.TimeoutExpired, Exception):
+ logger.warning("base_branch_validation_failed", branch=base_branch, git_url=git_url)
+ return False
 class RepositoryViewSet(ModelViewSet):
  """ViewSet for Repository CRUD operations."""
  permission_classes = [IsAuthenticated]
@@ -63,6 +90,19 @@ class RepositoryViewSet(ModelViewSet):
  {"detail": "Access Token 不能为空"},
  status=status.HTTP_400_BAD_REQUEST,
  )
+ base_branch = data.get("base_branch")
+ if base_branch:
+ is_valid = await _validate_base_branch(
+ git_url=data["git_url"],
+ token=access_token,
+ base_branch=base_branch,
+ proxy_url=data.get("proxy_url"),
+ )
+ if not is_valid:
+ return Response(
+ {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  # Create repository
  repository = await Repository.objects.acreate(**data)
  # Create credential
@@ -77,6 +117,22 @@ class RepositoryViewSet(ModelViewSet):
  resp_data = await sync_to_async(lambda: RepositorySerializer(repository).data)
  return Response(resp_data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
+ base_branch = serializer.validated_data.get("base_branch")
+ if base_branch:
+ instance = serializer.instance
+ credential = await GitCredential.objects.filter(repository=instance).afirst
+ if credential and credential.encrypted_token:
+ token = decrypt_value(credential.encrypted_token)
+ is_valid = await _validate_base_branch(
+ git_url=instance.git_url,
+ token=token,
+ base_branch=base_branch,
+ proxy_url=instance.proxy_url,
+ )
+ if not is_valid:
+ raise serializers.ValidationError(
+ {"base_branch": [f"所选分支 '{base_branch}' 在远端仓库中不存在"]}
+ )
  # KEEP: RepositorySerializer 继承自 rest_framework，不支持 asave
  await sync_to_async(serializer.save)
  @action(detail=True, methods=["get", "delete"], url_path="credential")
@@ -285,11 +341,18 @@ class TestConnectionView(APIView):
  ref = line.split("\t")[1]
  if ref.startswith("refs/heads/"):
  branches.append(ref.replace("refs/heads/", ""))
+ recommended_priority = ["main", "master", "develop"]
+ recommended_branch = None
+ for candidate in recommended_priority:
+ if candidate in branches:
+ recommended_branch = candidate
+ break
  return Response(
  {
  "success": True,
  "message": "连接成功",
- "branches": branches[:10], # Limit to first 10 branches
+ "branches": sorted(branches),
+ "recommended_branch": recommended_branch,
  }
  )
  else:
