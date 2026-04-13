@@ -63,6 +63,12 @@ class Repository(models.Model):
  null=True,
  help_text="HTTP proxy URL for Git operations (e.g. http://proxy.example.com:8080)",
  )
+ base_branch = models.CharField(
+ max_length=100,
+ null=True,
+ blank=True,
+ help_text="索引基础分支，为空时回退到 default_branch",
+ )
  # Index status fields
  index_status = models.CharField(
  max_length=20,
