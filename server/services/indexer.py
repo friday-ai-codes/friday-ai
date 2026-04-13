@@ -10,7 +10,19 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
-from repositories.models import FileIndex, IndexStatus, Repository
+from repositories.models import (
+ BranchFileIndex,
+ BranchIndexStatus,
+ FileIndex,
+ IndexStatus,
+ Repository,
+ RepositoryBranchIndex,
+)
+from services.branch_utils import (
+ MAX_OVERLAY_COLLECTIONS_PER_REPO,
+ BranchOverlayLimitExceeded,
+ get_overlay_collection_name,
+)
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -35,6 +47,12 @@ def qdrant_upsert_vectors(repository_id: str, points: list[dict]) -> bool:
 @sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_update_file_path(repository_id: str, old_path: str, new_path: str) -> bool:
  return QdrantService.update_file_path(repository_id, old_path, new_path)
+@sync_to_async # KEEP: Qdrant SDK 同步限制
+def qdrant_create_collection_by_name(collection_name: str, vector_size: int, hybrid: bool = False) -> bool:
+ return QdrantService.create_collection_by_name(collection_name, vector_size, hybrid=hybrid)
+@sync_to_async # KEEP: Qdrant SDK 同步限制
+def qdrant_upsert_vectors_by_name(collection_name: str, points: list[dict]) -> bool:
+ return QdrantService.upsert_vectors_by_name(collection_name, points)
 async def update_index_progress(repository_id: str, total: int, processed: int) -> None:
  """Update indexing progress in database."""
  await Repository.objects.filter(id=repository_id).aupdate(
@@ -116,6 +134,76 @@ async def _fetch_commit(repo_path: str, sha: str, proxy_url: str | None = None) 
  await proc.communicate
  return False
  return proc.returncode == 0
+async def _get_merge_base(repo_path: str, base_ref: str, feature_ref: str) -> str:
+ """计算两个分支的 merge-base SHA。"""
+ proc = await asyncio.create_subprocess_exec(
+ "git", "merge-base", base_ref, feature_ref,
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=30.0)
+ if proc.returncode != 0:
+ raise GitDiffError(f"git merge-base failed: {stderr.decode}")
+ return stdout.decode.strip
+async def _fetch_branch(repo_path: str, branch_name: str, proxy_url: str | None = None) -> bool:
+ """Fetch 单个分支引用到本地（不检出）。"""
+ cmd: list[str] = ["git"]
+ if proxy_url:
+ cmd.extend(["-c", f"http.proxy={proxy_url}"])
+ cmd.extend(["fetch", "--depth=1", "origin", f"{branch_name}:refs/remotes/origin/{branch_name}"])
+ proc = await asyncio.create_subprocess_exec(
+ *cmd, cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ try:
+ await asyncio.wait_for(proc.communicate, timeout=60.0)
+ except asyncio.TimeoutError:
+ proc.kill
+ await proc.communicate
+ return False
+ return proc.returncode == 0
+async def _deepen_for_merge_base(
+ repo_path: str, base_ref: str, feature_ref: str, proxy_url: str | None = None,
+) -> str:
+ """渐进加深 shallow clone 以获取可靠的 merge-base。
+ 尝试 deepen=50 → deepen=200 → unshallow，最多 3 次。
+ 失败时回退到 base branch tip-to-tip diff。
+ """
+ for depth in [50, 200, None]:
+ cmd: list[str] = ["git"]
+ if proxy_url:
+ cmd.extend(["-c", f"http.proxy={proxy_url}"])
+ if depth:
+ cmd.extend(["fetch", f"--deepen={depth}", "origin"])
+ else:
+ cmd.extend(["fetch", "--unshallow", "origin"])
+ proc = await asyncio.create_subprocess_exec(
+ *cmd, cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ try:
+ await asyncio.wait_for(proc.communicate, timeout=120.0)
+ except asyncio.TimeoutError:
+ proc.kill
+ await proc.communicate
+ continue
+ try:
+ return await _get_merge_base(repo_path, base_ref, feature_ref)
+ except GitDiffError:
+ continue
+ # 全部失败，回退到 base branch 的 tip SHA（tip-to-tip diff）
+ logger.warning("merge_base_fallback_to_tip", base=base_ref, feature=feature_ref)
+ proc = await asyncio.create_subprocess_exec(
+ "git", "rev-parse", f"refs/remotes/origin/{base_ref}",
+ cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=10.0)
+ if proc.returncode == 0:
+ return stdout.decode.strip
+ raise GitDiffError(f"无法获取 merge-base 也无法解析 {base_ref} 的 HEAD")
 def _parse_git_diff_output(output: str) -> list[FileDiff]:
  """解析 git diff --name-status --find-renames 输出为 FileDiff 列表。"""
  diffs: list[FileDiff] =
@@ -315,6 +403,154 @@ class IndexerService:
  repository_id=self.repository_id,
  count=stale_count,
  )
+ async def run_branch_index(
+ self, repo_path: str, branch_name: str, repository: Repository,
+ ) -> dict[str, Any]:
+ """功能分支 overlay 索引：merge-base + diff → overlay collection。
+ 无差异时标记 inherited_from_base，不创建 overlay。
+ Args:
+ repo_path: 克隆仓库路径
+ branch_name: 功能分支名称
+ repository: 仓库 ORM 实例
+ Returns:
+ Result dict with status/stats
+ Raises:
+ BranchOverlayLimitExceeded: overlay 数量超过硬上限
+ GitDiffError: git 操作失败
+ """
+ base_branch = repository.base_branch or repository.default_branch
+ # overlay 硬上限检查
+ overlay_count = await RepositoryBranchIndex.objects.filter(
+ repository=repository, is_base_branch=False,
+ ).exclude(status=BranchIndexStatus.INHERITED).acount
+ if overlay_count >= MAX_OVERLAY_COLLECTIONS_PER_REPO:
+ raise BranchOverlayLimitExceeded(
+ f"仓库 {repository.name} 已有 {overlay_count} 个 overlay collection，"
+ f"超过上限 {MAX_OVERLAY_COLLECTIONS_PER_REPO}"
+ )
+ # fetch feature branch
+ await _fetch_branch(repo_path, branch_name, repository.proxy_url)
+ # 获取 merge-base
+ is_shallow = await _is_shallow_clone(repo_path)
+ feature_ref = f"origin/{branch_name}"
+ if is_shallow:
+ merge_base_sha = await _deepen_for_merge_base(
+ repo_path, base_branch, feature_ref, repository.proxy_url,
+ )
+ else:
+ merge_base_sha = await _get_merge_base(repo_path, base_branch, feature_ref)
+ # 获取 feature HEAD SHA
+ proc = await asyncio.create_subprocess_exec(
+ "git", "rev-parse", feature_ref,
+ cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=10.0)
+ if proc.returncode != 0:
+ raise GitDiffError(f"无法解析 {feature_ref} 的 HEAD")
+ feature_head = stdout.decode.strip
+ # git diff
+ diff_proc = await asyncio.create_subprocess_exec(
+ "git", "diff", "--name-status", "--find-renames", merge_base_sha, feature_head,
+ cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+ )
+ diff_stdout, diff_stderr = await asyncio.wait_for(diff_proc.communicate, timeout=30.0)
+ if diff_proc.returncode != 0:
+ raise GitDiffError(f"git diff failed: {diff_stderr.decode}")
+ diffs = _parse_git_diff_output(diff_stdout.decode)
+ # 无差异 → inherited_from_base
+ if not diffs:
+ await RepositoryBranchIndex.objects.aupdate_or_create(
+ repository=repository, branch_name=branch_name,
+ defaults={
+ "status": BranchIndexStatus.INHERITED,
+ "merge_base_sha": merge_base_sha,
+ "is_base_branch": False,
+ "is_stale": False,
+ "head_sha": feature_head,
+ },
+ )
+ logger.info("branch_inherited_from_base", branch=branch_name, repository=repository.name)
+ return {"status": "inherited", "diff_files": 0}
+ # 有差异 → 创建/确保 overlay collection
+ collection_name = get_overlay_collection_name(str(repository.id), branch_name)
+ dimension_setting = await SystemSetting.objects.filter(
+ key=SettingKeys.EMBEDDING_DIMENSION,
+ ).afirst
+ vector_size = int(dimension_setting.value) if dimension_setting else 1024
+ hybrid_enabled = await self._is_hybrid_enabled
+ await qdrant_create_collection_by_name(collection_name, vector_size, hybrid=hybrid_enabled)
+ await sync_to_async(QdrantService.create_branch_payload_index)(collection_name)
+ # checkout feature branch 文件
+ checkout_proc = await asyncio.create_subprocess_exec(
+ "git", "checkout", feature_ref, "--", ".",
+ cwd=repo_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+ )
+ await asyncio.wait_for(checkout_proc.communicate, timeout=60.0)
+ # 仅索引 ADD / UPDATE 文件
+ files_to_index = [d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)]
+ points: list[dict] =
+ if files_to_index:
+ all_chunks: list[CodeChunk] =
+ for diff in files_to_index:
+ full_path = os.path.join(repo_path, diff.file_path)
+ if os.path.exists(full_path):
+ chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ all_chunks.extend(chunks)
+ if all_chunks:
+ texts_to_embed = [_build_embedding_text(chunk) for chunk in all_chunks]
+ embeddings = await EmbeddingService.generate_embeddings_batch(texts_to_embed)
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
+ points = self._build_points(
+ all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=False,
+ )
+ # upsert to overlay collection
+ batch_size = 100
+ for i in range(0, len(points), batch_size):
+ batch = points[i: i + batch_size]
+ await qdrant_upsert_vectors_by_name(collection_name, batch)
+ # 记录 BranchFileIndex
+ branch_index, _ = await RepositoryBranchIndex.objects.aupdate_or_create(
+ repository=repository, branch_name=branch_name,
+ defaults={
+ "is_base_branch": False,
+ "head_sha": feature_head,
+ "merge_base_sha": merge_base_sha,
+ "last_indexed_commit_sha": feature_head,
+ "last_indexed_at": timezone.now,
+ "is_stale": False,
+ "status": BranchIndexStatus.INDEXED,
+ "effective_chunks_count": len(points),
+ "collection_name": collection_name,
+ },
+ )
+ await BranchFileIndex.objects.filter(branch_index=branch_index).adelete
+ file_index_objs = [
+ BranchFileIndex(
+ branch_index=branch_index,
+ file_path=d.file_path,
+ change_type=d.action.value,
+ )
+ for d in diffs
+ ]
+ if file_index_objs:
+ await BranchFileIndex.objects.abulk_create(file_index_objs)
+ logger.info(
+ "branch_overlay_index_complete",
+ branch=branch_name,
+ repository=repository.name,
+ diff_files=len(diffs),
+ indexed_files=len(files_to_index),
+ chunks=len(points),
+ )
+ return {
+ "status": "indexed",
+ "diff_files": len(diffs),
+ "indexed_files": len(files_to_index),
+ "chunks_indexed": len(points),
+ }
  async def _ensure_collection(self) -> None:
  """确保 Qdrant collection 存在，不存在则创建。"""
  dimension_setting = await SystemSetting.objects.filter(
