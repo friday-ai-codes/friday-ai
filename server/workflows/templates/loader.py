@@ -3,6 +3,7 @@ This module provides utilities for loading workflow templates from JSON files
 and creating Workflow instances from them.
 """
 import json
+import re
 from pathlib import Path
 from typing import Any
 import structlog
@@ -43,12 +44,39 @@ def load_template(template_id: str) -> dict:
  raise ValueError(f"Template not found: {template_id}")
  with open(template_path) as f:
  return json.load(f)
+def _rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
+ """Rewrite template node ID references in config values to actual short_ids.
+ Scans all string values in the config dict for {{nodes.<template_id>.xxx}}
+ patterns and replaces <template_id> with the corresponding short_id.
+ Args:
+ config: Node config dict
+ id_map: Mapping from template node ID to actual short_id
+ Returns:
+ Config dict with rewritten references
+ """
+ if not id_map:
+ return config
+ pattern = re.compile(
+ r"\{\{(\s*(?:\$\.?)?nodes\.)(" + "|".join(re.escape(k) for k in id_map) + r")(\.)"
+ )
+ def _rewrite_value(value: Any) -> Any:
+ if isinstance(value, str):
+ return pattern.sub(
+ lambda m: "{{" + m.group(1) + id_map[m.group(2)] + m.group(3),
+ value,
+ )
+ if isinstance(value, dict):
+ return {k: _rewrite_value(v) for k, v in value.items}
+ if isinstance(value, list):
+ return [_rewrite_value(item) for item in value]
+ return value
+ return _rewrite_value(config)
 def create_workflow_from_template(
  project_id: str,
  template_id: str,
  name: str | None = None,
  description: str | None = None,
- created_by=None,
+ created_by: Any = None,
 ) -> Any:
  """Create a Workflow instance from a template.
  Args:
@@ -74,8 +102,10 @@ def create_workflow_from_template(
  "template_version": template.get("version", "1.0"),
  },
  )
- # Create nodes
- node_id_map: dict[str, str] = {} # template_id -> db_id
+ # Phase: Create nodes and build ID mappings
+ node_id_map: dict[str, str] = {} # template_id -> db_uuid
+ template_to_short: dict[str, str] = {} # template_id -> short_id
+ created_nodes: list[Any] =
  for node_data in template.get("nodes", ):
  position = node_data.get("position", {})
  node = WorkflowNode.objects.create(
@@ -88,7 +118,16 @@ def create_workflow_from_template(
  config=node_data.get("config", {}),
  )
  node_id_map[node_data["id"]] = str(node.id)
- # Create edges
+ template_to_short[node_data["id"]] = node.short_id
+ created_nodes.append(node)
+ # Phase: Rewrite template variable references in all node configs
+ if template_to_short:
+ for node in created_nodes:
+ rewritten = _rewrite_template_refs(node.config, template_to_short)
+ if rewritten != node.config:
+ node.config = rewritten
+ node.save(update_fields=["config"])
+ # Phase: Create edges
  for edge_data in template.get("edges", ):
  source_id = node_id_map.get(edge_data["source"])
  target_id = node_id_map.get(edge_data["target"])
@@ -119,7 +158,7 @@ async def acreate_workflow_from_template(
  template_id: str,
  name: str | None = None,
  description: str | None = None,
- created_by=None,
+ created_by: Any = None,
 ) -> Any:
  """Async version of create_workflow_from_template.
  Uses native async ORM calls instead of sync_to_async wrapper.
@@ -138,8 +177,10 @@ async def acreate_workflow_from_template(
  "template_version": template.get("version", "1.0"),
  },
  )
- # Create nodes
- node_id_map: dict[str, str] = {} # template_id -> db_id
+ # Phase: Create nodes and build ID mappings
+ node_id_map: dict[str, str] = {} # template_id -> db_uuid
+ template_to_short: dict[str, str] = {} # template_id -> short_id
+ created_nodes: list[Any] =
  for node_data in template.get("nodes", ):
  position = node_data.get("position", {})
  node = await WorkflowNode.objects.acreate(
@@ -152,7 +193,16 @@ async def acreate_workflow_from_template(
  config=node_data.get("config", {}),
  )
  node_id_map[node_data["id"]] = str(node.id)
- # Create edges
+ template_to_short[node_data["id"]] = node.short_id
+ created_nodes.append(node)
+ # Phase: Rewrite template variable references in all node configs
+ if template_to_short:
+ for node in created_nodes:
+ rewritten = _rewrite_template_refs(node.config, template_to_short)
+ if rewritten != node.config:
+ node.config = rewritten
+ await node.asave(update_fields=["config"])
+ # Phase: Create edges
  for edge_data in template.get("edges", ):
  source_id = node_id_map.get(edge_data["source"])
  target_id = node_id_map.get(edge_data["target"])
