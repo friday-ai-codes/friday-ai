@@ -15,6 +15,7 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { PLATFORM_LABELS } from '~/types'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 const emit = defineEmits<{
  confirm: [repositoryId: string]
  cancel:
@@ -29,6 +30,7 @@ const form = reactive({
  git_url: '',
  git_platform: 'gitlab' as GitPlatform,
  default_branch: 'main',
+ base_branch: '' as string,
  description: '',
  proxy_url: '',
  // 凭证信息（必填）
@@ -62,7 +64,7 @@ function validate: boolean {
 }
 // 测试连接
 const testing = ref(false)
-const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string } | null>(null)
+const testResult = ref<{ success: boolean, message?: string, error?: string, branches?: string, recommended_branch?: string | null } | null>(null)
 async function handleTestConnection {
  // 验证必填字段
  errors.git_url = ''
@@ -89,6 +91,9 @@ async function handleTestConnection {
  })
  testResult.value = result
  if (result.success) {
+ if (result.recommended_branch && !form.base_branch) {
+ form.base_branch = result.recommended_branch
+ }
  success('连接成功', result.branches?.length ? `发现 ${result.branches.length} 个分支`: '仓库可访问')
  }
  else {
@@ -342,12 +347,19 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <span:class="testResult.success ? 'icon-[lucide--check-circle]': 'icon-[lucide--x-circle]'" />
  {{ testResult.success ? '连接成功': testResult.error }}
  </div>
- <div v-if="testResult.success && testResult.branches?.length" class="mt-1 text-xs opacity-80">
- 分支: {{ testResult.branches.slice(0, 5).join(', ') }}{{ testResult.branches.length > 5 ? '...': '' }}
  </div>
  </div>
  </div>
  </div>
+ <!-- 基础分支选择（测试连接成功后展示） -->
+ <div v-if="testResult?.success" class="space-y-2">
+ <Label class="text-foreground">基础分支（索引用）</Label>
+ <BranchCombobox
+ v-model="form.base_branch":branches="testResult?.branches || ":recommended-branch="testResult?.recommended_branch"
+ />
+ <p class="text-xs text-muted-foreground">
+ 用于代码索引的基准分支，通常与默认分支相同
+ </p>
  </div>
  <!-- Footer -->
  <div class="flex justify-end gap-3 pt-4 border-t border-border/50">
