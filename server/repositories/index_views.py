@@ -63,6 +63,7 @@ class SearchRequestSerializer(serializers.Serializer):
  query = serializers.CharField(max_length=1000)
  top_k = serializers.IntegerField(default=10, min_value=1, max_value=50)
  filters = serializers.DictField(required=False, default=dict)
+ branch = serializers.CharField(required=False, allow_blank=True, default="")
 class SearchResultSerializer(serializers.Serializer):
  """Serializer for search result item."""
  file_path = serializers.CharField
@@ -247,8 +248,9 @@ class CodeSearchView(APIView):
  query = serializer.validated_data["query"]
  top_k = serializer.validated_data["top_k"]
  filters = serializer.validated_data.get("filters", {})
+ branch = serializer.validated_data.get("branch", "") or None
  # Run search
- results = await self._search(repository_id, query, top_k, filters)
+ results = await self._search(repository_id, query, top_k, filters, branch=branch)
  return Response(
  {
  "query": query,
@@ -262,45 +264,37 @@ class CodeSearchView(APIView):
  query: str,
  top_k: int,
  filters: dict[str, Any],
+ *,
+ branch: str | None = None,
  ) -> list[dict[str, Any]]:
  """Execute vector search with optional hybrid search and reranker."""
+ from services.branch_search import BranchAwareSearchService
  from services.reranker import RerankerService
  from system.models import SettingKeys, SystemSetting
- # 检查 reranker 是否启用，决定初筛数量
  reranker_enabled = await RerankerService.is_enabled
  fetch_k = min(top_k * 3, 50) if reranker_enabled else top_k
- # Generate query embedding (async)
  query_embedding = await EmbeddingService.generate_embedding(query)
  if not query_embedding:
  return
- # 检查是否启用 hybrid search
  hybrid_setting = await SystemSetting.objects.filter(
  key=SettingKeys.HYBRID_SEARCH_ENABLED
  ).afirst
  hybrid_enabled = bool(hybrid_setting and hybrid_setting.value == "true")
+ query_sparse = None
  if hybrid_enabled:
- # 生成 sparse query vector
  from services.sparse_encoder import SparseEncoderService
- sparse_vector = await sync_to_async(SparseEncoderService.encode)(query)
- # KEEP: Qdrant SDK 同步限制
- search_results = await sync_to_async(QdrantService.hybrid_search)(
+ query_sparse = await sync_to_async(SparseEncoderService.encode)(query)
+ search_results = await BranchAwareSearchService.search(
  repository_id,
  query_embedding,
- sparse_vector,
- top_k=fetch_k,
- filters=filters,
- )
- else:
- # KEEP: Qdrant SDK 同步限制
- search_results = await sync_to_async(QdrantService.search)(
- repository_id,
- query_embedding,
+ query_sparse=query_sparse,
+ branch_name=branch,
  top_k=fetch_k,
  filters=filters,
  )
  if not search_results:
  return
- # Reranker 精排
+ # Reranker 精排（在 overlay+base 合并后统一执行一次）
  if reranker_enabled and len(search_results) > top_k:
  documents = [r["payload"].get("content", "") for r in search_results]
  reranked = await RerankerService.rerank(query, documents, top_n=top_k)
@@ -312,7 +306,6 @@ class CodeSearchView(APIView):
  entry["score"] = item["relevance_score"]
  reranked_results.append(entry)
  search_results = reranked_results
- # Build results
  results =
  for r in search_results:
  payload = r["payload"]
