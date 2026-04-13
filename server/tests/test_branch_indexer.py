@@ -46,7 +46,7 @@ class TestBaseBranchMetadata:
  chunk = self._make_chunk
  embedding = [0.1] * 3
  sparse = {"indices": [0, 1], "values": [0.5, 0.3]}
- with patch("services.indexer.SparseVector") as mock_sv:
+ with patch("qdrant_client.http.models.SparseVector") as mock_sv:
  mock_sv.return_value = MagicMock
  points = IndexerService._build_points(
  [chunk], [embedding], [sparse], True,
@@ -75,8 +75,10 @@ class TestBaseBranchMetadata:
  from services.qdrant_service import QdrantService
  mock_client = MagicMock
  mock_get_client.return_value = mock_client
+ import httpx
  mock_client.create_payload_index.side_effect = UnexpectedResponse(
- status_code=400, reason_phrase="Bad Request", content=b"already exists"
+ status_code=400, reason_phrase="Bad Request",
+ content=b"already exists", headers=httpx.Headers,
  )
  result = QdrantService.create_branch_payload_index("test_collection")
  assert result is False
