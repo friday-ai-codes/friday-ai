@@ -376,7 +376,6 @@ class IndexerService:
  points_count: int,
  ) -> None:
  """创建/更新 RepositoryBranchIndex 记录，base 分支索引后触发 overlay stale 传播。"""
- from repositories.models import BranchIndexStatus, RepositoryBranchIndex
  head_sha = await _get_head_sha(repo_path)
  await RepositoryBranchIndex.objects.aupdate_or_create(
  repository_id=self.repository_id,
@@ -907,12 +906,14 @@ async def clone_and_index_repository(
  repository_id: str,
  *,
  history_id: str | None = None,
+ branch: str | None = None,
 ) -> dict[str, Any]:
  """Clone repository and run indexing.
  This is the main entry point for indexing a repository.
  Args:
  repository_id: 仓库 ID
  history_id: 可选的 IndexHistory 记录 ID，完成时更新状态
+ branch: 可选的功能分支名称，非空时走 overlay 索引路径
  """
  from common.encryption import decrypt_value
  async def get_repository_data:
@@ -958,7 +959,9 @@ async def clone_and_index_repository(
  # https://github.com/user/repo.git -> https://token@github.com/user/repo.git
  git_url = git_url.replace("https://", f"https://{token}@")
  # Clone using git
- clone_cmd = ["git", "clone", "--depth", "1", "--single-branch"]
+ clone_cmd = ["git", "clone", "--depth", "1"]
+ if not branch:
+ clone_cmd.append("--single-branch")
  # Add proxy if configured
  if proxy_url:
  clone_cmd.extend(["-c", f"http.proxy={proxy_url}"])
