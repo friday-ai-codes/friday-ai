@@ -1,9 +1,10 @@
-"""分支感知索引管线测试：payload 注入、branch payload index、DB 记录管理。"""
+"""分支感知索引管线测试：payload 注入、branch payload index、DB 记录管理、overlay 索引管线。"""
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from django.utils import timezone
-from services.indexer import IndexerService
+from services.branch_utils import BranchOverlayLimitExceeded, MAX_OVERLAY_COLLECTIONS_PER_REPO
+from services.indexer import DiffAction, FileDiff, IndexerService
 class TestBaseBranchMetadata:
  """测试 _build_points 的分支元数据注入。"""
  @staticmethod
@@ -202,3 +203,169 @@ class TestStalePropagate:
  )
  await overlay.arefresh_from_db
  assert overlay.is_stale is False
+@pytest.mark.django_db(transaction=True)
+class TestOverlayIndex:
+ """测试 run_branch_index 功能分支 overlay 索引。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="overlay-repo",
+ git_url="https://github.com/test/overlay.git",
+ default_branch="main",
+ )
+ @pytest.fixture
+ def indexer(self, repository):
+ return IndexerService(str(repository.id))
+ @pytest.mark.asyncio
+ @patch("services.indexer.qdrant_upsert_vectors_by_name", new_callable=AsyncMock, return_value=True)
+ @patch("services.indexer.qdrant_create_collection_by_name", new_callable=AsyncMock, return_value=True)
+ @patch("services.indexer.QdrantService.create_branch_payload_index", return_value=True)
+ @patch("services.indexer.EmbeddingService.generate_embeddings_batch", new_callable=AsyncMock)
+ @patch("services.indexer._parse_git_diff_output")
+ @patch("services.indexer.os.path.exists", return_value=True)
+ @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
+ @patch("services.indexer._deepen_for_merge_base", new_callable=AsyncMock, return_value="merge111")
+ @patch("services.indexer._fetch_branch", new_callable=AsyncMock, return_value=True)
+ @patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=True)
+ async def test_run_branch_index_creates_overlay(
+ self, mock_shallow, mock_fetch_br, mock_deepen, mock_subprocess,
+ mock_exists, mock_parse, mock_embed, mock_branch_idx, mock_create_coll, mock_upsert,
+ repository, indexer,
+ ):
+ """有差异的功能分支应创建 overlay collection 并记录 BranchFileIndex。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ from services.indexer import DiffAction, FileDiff
+ mock_parse.return_value = [FileDiff("src/new.py", DiffAction.ADD)]
+ mock_embed.return_value = [[0.1, 0.2, 0.3]]
+ mock_proc = AsyncMock
+ mock_proc.communicate = AsyncMock(return_value=(b"feature_head_sha_abc", b""))
+ mock_proc.returncode = 0
+ mock_subprocess.return_value = mock_proc
+ indexer.parser = MagicMock
+ chunk = MagicMock
+ chunk.file_path = "src/new.py"
+ chunk.file_hash = "hash1"
+ chunk.language = "python"
+ chunk.node_type = "function"
+ chunk.start_line = 1
+ chunk.end_line = 5
+ chunk.content = "def new: pass"
+ chunk.context_header = "module:new"
+ chunk.imports = ""
+ chunk.module_docstring = ""
+ chunk.sibling_signatures = ""
+ indexer.parser.parse_file.return_value = [chunk]
+ result = await indexer.run_branch_index("/tmp/fake", "feature/x", repository)
+ assert result["status"] == "indexed"
+ assert result["diff_files"] == 1
+ mock_create_coll.assert_called_once
+ mock_upsert.assert_called_once
+ record = await RepositoryBranchIndex.objects.aget(
+ repository=repository, branch_name="feature/x",
+ )
+ assert record.status == BranchIndexStatus.INDEXED
+ assert record.is_base_branch is False
+ assert record.collection_name is not None
+@pytest.mark.django_db(transaction=True)
+class TestInheritedFromBase:
+ """测试无差异分支标记为 inherited_from_base。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="inherited-repo",
+ git_url="https://github.com/test/inherited.git",
+ default_branch="main",
+ )
+ @pytest.fixture
+ def indexer(self, repository):
+ return IndexerService(str(repository.id))
+ @pytest.mark.asyncio
+ @patch("services.indexer._parse_git_diff_output", return_value=)
+ @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
+ @patch("services.indexer._get_merge_base", new_callable=AsyncMock, return_value="merge222")
+ @patch("services.indexer._fetch_branch", new_callable=AsyncMock, return_value=True)
+ @patch("services.indexer._is_shallow_clone", new_callable=AsyncMock, return_value=False)
+ async def test_no_diff_marks_inherited(
+ self, mock_shallow, mock_fetch_br, mock_merge, mock_subprocess,
+ mock_parse, repository, indexer,
+ ):
+ """diff 为空时应标记 INHERITED，不创建 overlay collection。"""
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ mock_proc = AsyncMock
+ mock_proc.communicate = AsyncMock(return_value=(b"feature_head_sha_def", b""))
+ mock_proc.returncode = 0
+ mock_subprocess.return_value = mock_proc
+ result = await indexer.run_branch_index("/tmp/fake", "feature/same", repository)
+ assert result["status"] == "inherited"
+ assert result["diff_files"] == 0
+ record = await RepositoryBranchIndex.objects.aget(
+ repository=repository, branch_name="feature/same",
+ )
+ assert record.status == BranchIndexStatus.INHERITED
+ assert record.is_base_branch is False
+@pytest.mark.django_db(transaction=True)
+class TestOverlayLimit:
+ """测试 overlay 硬上限检查。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="limit-repo",
+ git_url="https://github.com/test/limit.git",
+ default_branch="main",
+ )
+ @pytest.fixture
+ def indexer(self, repository):
+ return IndexerService(str(repository.id))
+ @pytest.mark.asyncio
+ async def test_overlay_limit_exceeded_raises(self, repository, indexer):
+ """overlay 数量达到硬上限时应抛出 BranchOverlayLimitExceeded。"""
+ from services.branch_utils import (
+ MAX_OVERLAY_COLLECTIONS_PER_REPO,
+ BranchOverlayLimitExceeded,
+ )
+ from repositories.models import BranchIndexStatus, RepositoryBranchIndex
+ for i in range(MAX_OVERLAY_COLLECTIONS_PER_REPO):
+ await RepositoryBranchIndex.objects.acreate(
+ repository=repository,
+ branch_name=f"feature/limit-{i}",
+ is_base_branch=False,
+ status=BranchIndexStatus.INDEXED,
+ )
+ with pytest.raises(BranchOverlayLimitExceeded):
+ await indexer.run_branch_index("/tmp/fake", "feature/over-limit", repository)
+@pytest.mark.django_db(transaction=True)
+class TestCloneAndIndexBranch:
+ """测试 clone_and_index_repository 分支参数路由。"""
+ @pytest.fixture
+ def repository(self):
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="clone-branch-repo",
+ git_url="https://github.com/test/clone-branch.git",
+ default_branch="main",
+ )
+ @pytest.mark.asyncio
+ @patch("services.indexer.IndexerService.run_branch_index", new_callable=AsyncMock)
+ @patch("services.indexer.asyncio.create_subprocess_exec", new_callable=AsyncMock)
+ async def test_branch_param_routes_to_run_branch_index(
+ self, mock_subprocess, mock_run_branch, repository,
+ ):
+ """clone_and_index_repository 传入 branch 时应路由到 run_branch_index。"""
+ from services.indexer import clone_and_index_repository
+ mock_proc = AsyncMock
+ mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+ mock_proc.returncode = 0
+ mock_subprocess.return_value = mock_proc
+ mock_run_branch.return_value = {
+ "status": "indexed", "diff_files": 3, "indexed_files": 2, "chunks_indexed": 10,
+ }
+ result = await clone_and_index_repository(
+ str(repository.id), branch="feature/test",
+ )
+ assert result["status"] == "indexed"
+ mock_run_branch.assert_called_once
+ call_args = mock_run_branch.call_args
+ assert call_args[0][1] == "feature/test"

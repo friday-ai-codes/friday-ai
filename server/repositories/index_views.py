@@ -35,10 +35,12 @@ def _acquire_index_lock(repository_id: str) -> Repository | None:
  except Repository.DoesNotExist:
  return None
 _acquire_index_lock_async = sync_to_async(_acquire_index_lock)
-def _schedule_index(repository_id: str, history_id: str) -> asyncio.Task[dict[str, Any]]:
+def _schedule_index(
+ repository_id: str, history_id: str, *, branch: str | None = None,
+) -> asyncio.Task[dict[str, Any]]:
  """创建索引任务并用强引用保护，防止 GC 回收。"""
  task: asyncio.Task[dict[str, Any]] = asyncio.create_task(
- clone_and_index_repository(repository_id, history_id=history_id),
+ clone_and_index_repository(repository_id, history_id=history_id, branch=branch),
  name=f"index-{repository_id}",
  )
  _index_tasks.add(task)
@@ -74,7 +76,7 @@ class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
  permission_classes = [IsAuthenticated]
  async def post(self, request: Any, repository_id: str) -> Response:
- """触发仓库索引（手动）。"""
+ """触发仓库索引（手动），支持可选 branch 参数触发分支索引。"""
  # 快速状态检查（无锁开销，快速路径）
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
@@ -83,6 +85,7 @@ class IndexTriggerView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ branch: str | None = request.data.get("branch")
  if repository.index_status == IndexStatus.INDEXING:
  return Response(
  {"detail": "索引正在进行中"},
@@ -103,13 +106,14 @@ class IndexTriggerView(APIView):
  started_at=timezone.now,
  )
  # 启动后台索引任务（强引用保护）
- _schedule_index(str(repository_id), str(history.id))
+ _schedule_index(str(repository_id), str(history.id), branch=branch)
  return Response(
  {
  "message": "索引任务已启动",
  "repository_id": str(repository_id),
  "history_id": str(history.id),
  "status": IndexStatus.INDEXING,
+ "branch": branch,
  },
  status=status.HTTP_202_ACCEPTED,
  )
