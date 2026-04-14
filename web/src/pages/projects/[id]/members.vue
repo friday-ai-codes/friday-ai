@@ -8,6 +8,7 @@ import { useRoute } from 'vue-router'
 import { ApiError } from '~/api/client'
 import { addProjectMember, listProjectMembers, removeProjectMember, updateProjectMember } from '~/api/members'
 import { listUsers } from '~/api/users'
+import EmptyState from '~/components/common/EmptyState.vue'
 import { Button } from '~/components/ui/button'
 import {
  Select,
@@ -142,7 +143,7 @@ onMounted( => {
 <template>
  <div class="min-h-[calc(100vh-8rem)] relative">
  <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
+ <div class="absolute inset-x-0 top-0 bg-linear-to-b from-primary/6 to-transparent" />
  </div>
  <div class="max-w-2xl mx-auto space-y-8 relative pt-8">
  <!-- 页面标题 -->
@@ -246,9 +247,12 @@ onMounted( => {
  <div v-if="loading" class="flex items-center justify-center py-8">
  <span class="icon-[lucide--loader-2] animate-spin text-2xl text-muted-foreground" />
  </div>
- <div v-else-if="members.length === 0" class="text-center py-8 text-muted-foreground">
- 暂无成员，点击「添加成员」开始添加
- </div>
+ <EmptyState
+ v-else-if="members.length === 0"
+ icon="lucide--users"
+ title="暂无成员"
+ description="当前项目还没有成员，点击右上角「添加成员」开始添加。"
+ />
  <div v-else class="space-y-3">
  <div
  v-for="member in members":key="member.id"

@@ -17,7 +17,7 @@ interface Props {
  getOutputPath: (name: string) => string
  getInputPath: (name: string) => string
 }
-const props = defineProps<Props>
+defineProps<Props>
 const emit = defineEmits<{
  'update:inputSchemaOpen': [value: boolean]
  'update:outputSchemaOpen': [value: boolean]
@@ -74,7 +74,7 @@ function getPortTypeColor(type: string): string {
  {{ input.description }}
  </div>
  <!-- 引用提示 -->
- <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
  <span class="icon-[lucide--code] text-xs" />
  <code class="font-mono">{{ getInputPath(input.fieldName) }}</code>
  </div>
@@ -124,7 +124,7 @@ function getPortTypeColor(type: string): string {
  {{ propSchema.description }}
  </div>
  <!-- 引用提示 -->
- <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
  <span class="icon-[lucide--code] text-xs" />
  <code class="font-mono">{{ getOutputPath(String(propKey)) }}</code>
  </div>
@@ -149,7 +149,7 @@ function getPortTypeColor(type: string): string {
  {{ output.description }}
  </div>
  <!-- 引用提示 -->
- <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+ <div class="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
  <span class="icon-[lucide--code] text-xs" />
  <code class="font-mono">{{ getOutputPath(output.name) }}</code>
  </div>

@@ -120,8 +120,8 @@ const triggerConfig = computed( => {
  }
 }`,
  icon: 'icon-[lucide--webhook]',
- iconColor: 'text-violet-500',
- bgGradient: 'from-violet-500/20 to-purple-500/10',
+ iconColor: 'text-primary',
+ bgGradient: 'from-primary/20 to-primary/10',
  }
  default:
  return {
@@ -264,7 +264,7 @@ watch( => props.workflow, => {
  {{ field.path }}
  </Badge>
  <span class="text-muted-foreground">{{ field.name }}</span>
- <span v-if="field.description" class="text-xs text-muted-foreground/70">
+ <span v-if="field.description" class="text-xs text-muted-foreground">
  - {{ field.description }}
  </span>
  </div>
@@ -285,7 +285,7 @@ watch( => props.workflow, => {
  {{ field.path }}
  </Badge>
  <span class="text-muted-foreground">{{ field.name }}</span>
- <span v-if="field.description" class="text-xs text-muted-foreground/70">
+ <span v-if="field.description" class="text-xs text-muted-foreground">
  - {{ field.description }}
  </span>
  </div>

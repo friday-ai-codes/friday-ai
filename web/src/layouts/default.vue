@@ -5,7 +5,7 @@ import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 import AppSidebar from '~/components/layout/AppSidebar.vue'
 import { Toaster } from '~/components/ui/sonner'
 import { useAppMode } from '~/composables/useAppMode'
-const { mode, chatInitialized } = useAppMode
+const { mode, chatInitialized, setMode } = useAppMode
 // WebSocket 实时监控
 const { status, connect } = useRunnerMonitor
 onMounted( => {
@@ -26,8 +26,18 @@ watch(mode, async (m) => {
  chatStore.requestNotificationPermission
  }
 }, { immediate: true })
-// 从 route.meta 获取页面标题
 const route = useRoute
+const displayMode = computed( => (route.path === '/' ? mode.value: 'friday'))
+watch(
+ => route.path,
+ (path) => {
+ if (path !== '/' && mode.value === 'chat') {
+ setMode('friday')
+ }
+ },
+ { immediate: true },
+)
+// 从 route.meta 获取页面标题
 const pageTitle = computed( => {
  const meta = route.meta as { title?: string }
  return meta.title || ''
@@ -40,7 +50,7 @@ const pageTitle = computed( => {
  <!-- 主内容区域 -->
  <Transition name="mode-content" mode="out-in">
  <!-- 工作台模式 -->
- <div v-if="mode === 'friday'" key="content-friday" class="flex-1 flex flex-col min-w-0 bg-gray-50">
+ <div v-if="displayMode === 'friday'" key="content-friday" class="flex-1 flex flex-col min-w-0 bg-gray-50">
  <header class="header-glass sticky top-0 z-40 ">
  <div class="flex h-full items-center justify-between px-6">
  <div>

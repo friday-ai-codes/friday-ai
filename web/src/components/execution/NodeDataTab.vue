@@ -372,16 +372,16 @@ const jsonFields = computed( => {
  v-for="field in markdownFields":key="field.key"
  class="space-y-1 mb-4"
  >
- <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+ <div class="text-xs font-medium text-muted-foreground">
  {{ field.key }}
  </div>
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-xl ">
+ <div class="card ">
  <MarkdownRenderer:content="field.value" />
  </div>
  </div>
  <!-- 剩余 JSON 字段 -->
  <div v-if="jsonFields" class="space-y-1">
- <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+ <div class="text-xs font-medium text-muted-foreground">
  其他数据
  </div>
  <JsonViewer:data="jsonFields" max-height="250px" />

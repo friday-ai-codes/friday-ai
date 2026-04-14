@@ -516,7 +516,7 @@ const hideEmptyBubble = computed( =>
  <span v-else-if="thinkingDuration > 0">思考过程 · {{ thinkingDuration }}s</span>
  <span v-else>思考过程</span>
  <span
- class="icon-[lucide--chevron-right] ml-auto text-[10px] text-muted-foreground/60 transition-transform duration-150":class="showThinking ? 'rotate-90': ''"
+ class="icon-[lucide--chevron-right] ml-auto text-[10px] text-muted-foreground transition-transform duration-150":class="showThinking ? 'rotate-90': ''"
  />
  </button>
  <div v-if="showThinking" class="thinking-content">

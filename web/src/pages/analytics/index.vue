@@ -25,8 +25,8 @@ provide('analyticsDateRange', dateRange)
  <!-- 页头 -->
  <PageHeader
  icon="lucide--bar-chart-3"
- icon-gradient="from-teal-500/20 to-cyan-500/10"
- icon-color="text-teal-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="执行分析"
  description="工作流执行健康状况、性能趋势和成本消耗"
  >

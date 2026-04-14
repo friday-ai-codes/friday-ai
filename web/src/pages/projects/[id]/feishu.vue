@@ -104,7 +104,7 @@ async function handleUpdated {
  <div class="space-y-1">
  <div class="flex items-center gap-3">
  <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--message-square] text-2xl text-emerald-500" />
+ <span class="icon-[lucide--message-square] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-2xl font-bold">
@@ -154,7 +154,7 @@ async function handleUpdated {
  <div class="relative">
  <div class="relative rounded-2xl border border-dashed border-border/50 bg-card/80 backdrop-blur-sm">
  <div class="flex items-start gap-3">
- <span class="icon-[lucide--info] text-xl text-emerald-500 flex-shrink-0 mt-0.5" />
+ <span class="icon-[lucide--info] text-xl text-emerald-500 shrink-0 mt-0.5" />
  <div class="space-y-3">
  <h3 class="font-semibold">
  配置说明
@@ -181,7 +181,7 @@ async function handleUpdated {
  title="项目不存在"
  description="未找到该项目"
  action-label="返回列表"
- gradient="from-emerald-500/20 to-green-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="router.push('/projects')"
  />
  </div>

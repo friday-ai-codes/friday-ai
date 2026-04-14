@@ -285,7 +285,7 @@ function getValuePreview(value: any): string {
  <span class="text-muted-foreground/50">-</span>
  <code class="text-xs font-medium":class="category.color">{{ item.outputLabel }}</code>
  </div>
- <span v-if="item.type" class="text-[10px] text-muted-foreground/70 ml-2 shrink-0">
+ <span v-if="item.type" class="text-[10px] text-muted-foreground ml-2 shrink-0">
  {{ item.type }}
  </span>
  </template>

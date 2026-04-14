@@ -145,7 +145,7 @@ onMounted( => {
  复制
  </button>
  </div>
- <p class="text-sm font-mono break-all text-foreground/70 bg-background/50 rounded-lg ">
+ <p class="text-sm font-mono break-all text-muted-foreground bg-background/50 rounded-lg ">
  {{ inviteLink }}
  </p>
  </div>

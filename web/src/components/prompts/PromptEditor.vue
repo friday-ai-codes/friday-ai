@@ -70,17 +70,24 @@ const { handleError } = useErrorHandler
 // ============================================================================
 // Store state 桥接
 // ============================================================================
-// store 的 currentPrompt / versions / saving 在 Pinia setup-syntax 内部是 ref<T>。
-// 这里通过 RefLike 断言统一运行时（Pinia 代理）与测试时（直接注入 ref）两种形态，
-// 然后用 computed 产出 plain 局部变量供模板与脚本使用 —— Vue 模板自动解包机制
-// 会把变量名结尾看似 Ref 的变量 unwrap，但 computed 的语义清晰、可读性更好。
+// store 在运行时会自动解包 ref，而单测中又可能直接注入 ref-like 对象。
+// 这里统一兼容两种形态，避免 currentPrompt 为 null 时继续访问 null.value。
 interface RefLike<T> { value: T }
-const storeCurrentPrompt = store.currentPrompt as unknown as RefLike<PromptDetail | null>
-const storeVersions = store.versions as unknown as RefLike<PromptVersion>
-const storeSaving = store.saving as unknown as RefLike<boolean>
-const currentPrompt = computed<PromptDetail | null>( => storeCurrentPrompt.value)
-const versionsList = computed<PromptVersion>( => storeVersions.value)
-const isSaving = computed<boolean>( => storeSaving.value)
+function readStoreState<T>(state: T | RefLike<T>): T {
+ if (state && typeof state === 'object' && 'value' in state) {
+ return (state as RefLike<T>).value
+ }
+ return state as T
+}
+const currentPrompt = computed<PromptDetail | null>( =>
+ readStoreState<PromptDetail | null>(store.currentPrompt as PromptDetail | null | RefLike<PromptDetail | null>),
+)
+const versionsList = computed<PromptVersion>( =>
+ readStoreState<PromptVersion>(store.versions as PromptVersion | RefLike<PromptVersion>),
+)
+const isSaving = computed<boolean>( =>
+ readStoreState<boolean>(store.saving as boolean | RefLike<boolean>),
+)
 // ============================================================================
 // 可写字段本地状态（状态提升：所有 Tab 共享外层 ref，防止 Tab 切换丢失）
 // ============================================================================
@@ -223,7 +230,7 @@ async function handleOpenChange(newOpen: boolean): Promise<void> {
  <Sheet:open="open" @update:open="handleOpenChange">
  <SheetContent
  side="right"
- class="sm:!max-w-3xl w-full flex flex-col"
+ class="sm:max-w-3xl! w-full flex flex-col"
  >
  <SheetHeader>
  <SheetTitle>

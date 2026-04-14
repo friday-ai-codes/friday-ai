@@ -203,9 +203,7 @@ async function onUpdateIsActive(isActive: boolean) {
  <div class="flex flex-col h-[calc(100vh-4rem)] w-full bg-background overflow-hidden relative">
  <!-- 背景装饰 -->
  <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
- <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-primary/15 to-primary/10 rounded-full blur-3xl" />
- <div class="absolute -bottom-20 right-1/3 w-64 bg-primary/10 rounded-full blur-3xl" />
+ <div class="absolute inset-x-0 top-0 bg-linear-to-b from-primary/6 to-transparent" />
  </div>
  <!-- Toolbar -->
  <WorkflowToolbar:workflow-name="currentWorkflow?.name":workflow-description="currentWorkflow?.description":workflow-id="id":is-active="currentWorkflow?.is_active ?? true":saving="saving":can-undo="canUndo":can-redo="canRedo":has-unsaved-changes="hasUnsavedChanges":has-triggers="hasTriggers"

@@ -150,12 +150,19 @@
  0 1px 2px rgba(0, 0, 0, 0.04);
  transition: all 0.3s cubic-bezier(0, 0, 0.2, 1);
 }
+.card-interactive {
+ cursor: pointer;
+}
 .card-interactive:hover {
  box-shadow:
  0 10px 40px rgba(0, 0, 0, 0.1),
  0 2px 8px rgba(0, 0, 0, 0.06);
  border-color: hsl(168 76% 42% / 0.3);
  transform: translateY(-2px);
+}
+.card-interactive:focus-visible {
+ outline: 2px solid hsl(168 76% 42% / 0.5);
+ outline-offset: 2px;
 }
 .card-header {
  display: flex;
@@ -403,6 +410,23 @@ a {
 }
 /* 选中文本样式 */:selection {
  background: hsl(168 76% 42% / 0.3); /* teal-500 30% */
+}
+/* 自定义交互元素焦点环 */
+.btn:focus-visible,
+.sidebar-s2a-link:focus-visible {
+ outline: 2px solid hsl(168 76% 42% / 0.5);
+ outline-offset: 2px;
+}
+/* 减少运动偏好 — WCAG 2.1 SC 2.3.3 */
+@media (prefers-reduced-motion: reduce) {
+ *,
+ *:before,
+ *:after {
+ animation-duration: 0.01ms !important;
+ animation-iteration-count: 1 !important;
+ transition-duration: 0.01ms !important;
+ scroll-behavior: auto !important;
+ }
 }
 /* Vue Flow Handle 样式 — 节点连接点（小圆点） */
 .vue-flow__handle {

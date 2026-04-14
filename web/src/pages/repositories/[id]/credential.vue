@@ -91,7 +91,7 @@ function formatDate(dateStr: string) {
  <div class="space-y-1">
  <div class="flex items-center gap-3">
  <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--key] text-2xl text-amber-500" />
+ <span class="icon-[lucide--key] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-2xl font-bold">
@@ -177,7 +177,7 @@ function formatDate(dateStr: string) {
  需要配置 Access Token 才能执行 Git 操作（如克隆、推送分支等）。
  </p>
  <Button class="group relative overflow-hidden" @click="updateDialogOpen = true">
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  配置 Access Token
  </Button>
@@ -187,7 +187,7 @@ function formatDate(dateStr: string) {
  <!-- 安全说明 -->
  <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
  <div class="flex items-start gap-3">
- <span class="icon-[lucide--shield] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
+ <span class="icon-[lucide--shield] text-xl text-muted-foreground shrink-0 mt-0.5" />
  <div class="space-y-3">
  <h3 class="font-medium">
  安全说明
@@ -209,7 +209,7 @@ function formatDate(dateStr: string) {
  title="仓库不存在"
  description="未找到该仓库"
  action-label="返回列表"
- gradient="from-amber-500/20 to-orange-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="router.push('/repositories')"
  />
  <!-- 更新凭证对话框 -->
@@ -265,7 +265,7 @@ function formatDate(dateStr: string) {
  form="credential-form":disabled="!accessToken.trim || submitting"
  class="group relative overflow-hidden"
  >
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ submitting ? '保存中...': '保存' }}
  </Button>

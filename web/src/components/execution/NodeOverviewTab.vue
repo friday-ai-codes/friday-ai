@@ -35,8 +35,7 @@ function formatTime(isoStr: string | null): string {
  <div class="space-y-4">
  <!-- 瓶颈标识 -->
  <div v-if="bottleneckInfo" class="flex items-center gap-2">
- <Badge
- variant="outline":class="bottleneckInfo.level === 'critical' ? 'border-red-400/50 text-red-500 bg-red-50 dark:bg-red-900/20': 'border-yellow-400/50 text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'"
+ <Badge:variant="bottleneckInfo.level === 'critical' ? 'destructive': 'warning'"
  >
  {{ bottleneckInfo.level === 'critical' ? `瓶颈 #${bottleneckInfo.rank}`: `瓶颈 #${bottleneckInfo.rank}` }}
  · 占总耗时 {{ bottleneckInfo.durationPercent }}%
@@ -46,7 +45,7 @@ function formatTime(isoStr: string | null): string {
  <div class="bg-card/60 backdrop-blur-sm border border-border/50 rounded-xl space-y-3">
  <!-- 节点类型 + 图标 -->
  <div class="flex items-center gap-3">
- <div class="bg-gradient-to-br rounded-lg ":class="[style.iconBg]">
+ <div class="bg-linear-to-br rounded-lg ":class="[style.iconBg]">
  <component:is="visual.icon" class="w-5 ":class="style.iconColor" />
  </div>
  <div>
@@ -96,12 +95,12 @@ function formatTime(isoStr: string | null): string {
  <div class="text-sm font-medium text-red-600 dark:text-red-400">
  错误信息
  </div>
- <pre class="text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap break-words">{{ nodeExecution.error_message }}</pre>
+ <pre class="text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap wrap-break-word">{{ nodeExecution.error_message }}</pre>
  <details v-if="nodeExecution.error_traceback" class="mt-2">
  <summary class="text-xs text-red-500 cursor-pointer hover:text-red-600">
  查看堆栈
  </summary>
- <pre class="mt-1 text-xs text-red-600/80 dark:text-red-400/80 whitespace-pre-wrap break-words overflow-auto max-">{{ nodeExecution.error_traceback }}</pre>
+ <pre class="mt-1 text-xs text-red-600/80 dark:text-red-400/80 whitespace-pre-wrap wrap-break-word overflow-auto max-">{{ nodeExecution.error_traceback }}</pre>
  </details>
  </div>
  </div>

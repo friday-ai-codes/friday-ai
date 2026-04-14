@@ -112,8 +112,8 @@ onMounted(async => {
  <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-primary/5 ">
  <!-- Logo -->
  <div class="text-center mb-8">
- <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-primary/10 border border-teal-500/10">
- <span class="icon-[lucide--bot] text-4xl text-teal-500" />
+ <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-primary/10 border border-primary/10">
+ <span class="icon-[lucide--bot] text-4xl text-primary" />
  </div>
  <h1 class="text-2xl font-bold">
  Friday AI
@@ -203,7 +203,7 @@ onMounted(async => {
  class="w-full text-base font-medium bg-muted/20 border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all duration-200":disabled="oidcLoading"
  @click="onOIDCLogin(provider)"
  >
- <span class="icon-[lucide--shield-check] mr-2 text-emerald-500" />
+ <span class="icon-[lucide--shield-check] mr-2 text-primary" />
  {{ provider.name }} 登录
  </Button>
  </div>

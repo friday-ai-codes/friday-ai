@@ -133,7 +133,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
 }
 </script>
 <template>
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl overflow-hidden shadow-[var(--shadow-glass)]">
+ <div class="card overflow-hidden shadow-[var(--shadow-glass)]">
  <!-- 工具栏：搜索框 + #filters slot + 列可见性按钮 -->
  <div class="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/30">
  <div class="flex items-center gap-3 flex-1">

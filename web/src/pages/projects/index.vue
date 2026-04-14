@@ -4,7 +4,6 @@ import { markRaw } from 'vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
-import { Badge } from '~/components/ui/badge'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({
  title: '项目管理 - Friday AI',
@@ -108,29 +107,38 @@ async function handleDelete {
  </h3>
  </div>
  <!-- 描述 -->
- <p class="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
- {{ project.description || '暂无描述' }}
+ <p v-if="project.description" class="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+ {{ project.description }}
  </p>
+ <!-- 最近工作项 -->
+ <div v-if="project.recent_work_items?.length" class="flex flex-col gap-1.5 pt-1">
+ <button
+ v-for="item in project.recent_work_items":key="item.id"
+ class="group/item flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors text-left w-full"
+ @click.prevent="router.push(`/logs/triggers/${item.id}`)"
+ >
+ <span class="w-1 rounded-full bg-muted-foreground/30 group-hover/item:bg-primary group-hover/item:scale-150 transition-all shrink-0" />
+ <span class="truncate flex-1 group-hover/item:text-primary transition-colors":title="item.name">{{ item.name }}</span>
+ </button>
+ </div>
  <!-- 底部信息行 -->
- <div class="flex items-center justify-between">
+ <div class="flex items-center gap-4 mt-auto pt-2">
  <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
  <span class="icon-[lucide--git-branch] text-primary/60" />
  <span>{{ project.repositories?.length || 0 }} 个仓库</span>
  </div>
- <Badge:variant="project.has_feishu_config ? 'default': 'secondary'"
- class="text-xs"
- >
- <span:class="project.has_feishu_config ? 'icon-[lucide--check]': 'icon-[lucide--x]'" class="mr-1" />
- {{ project.has_feishu_config ? '飞书': '未配置' }}
- </Badge>
+ <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+ <span class="icon-[lucide--play-circle] text-primary/60" />
+ <span>{{ project.execution_count || 0 }} 次执行</span>
+ </div>
  </div>
  </div>
  <!-- 底部操作栏 -->
- <div class="flex items-center gap-2 px-4 py-2.5 border-t border-border/50">
- <button class="btn btn-secondary btn-sm flex-1" @click.prevent>
- <span class="icon-[lucide--arrow-right]" />
+ <div class="flex items-center justify-between px-4 py-2.5 border-t border-border/50 bg-muted/20">
+ <span class="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">
  查看详情
- </button>
+ <span class="icon-[lucide--arrow-right]" />
+ </span>
  <button
  class="btn btn-ghost btn-icon btn-sm hover:!bg-red-50 hover:!text-red-500"
  @click.prevent="confirmDelete(project.id)"

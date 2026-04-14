@@ -43,29 +43,25 @@ const kpis = computed( => [
  label: '执行总数',
  value: data.value?.total_executions ?? '—',
  icon: 'lucide--play-circle',
- gradient: 'from-teal-500 to-cyan-400',
  bgGradient: 'from-primary/20 to-primary/10',
  },
  {
  label: '成功率',
  value: data.value ? `${data.value.success_rate.toFixed(1)}%`: '—',
  icon: 'lucide--check-circle-2',
- gradient: 'from-emerald-500 to-teal-400',
- bgGradient: 'from-emerald-500/20 to-teal-400/10',
+ bgGradient: 'from-primary/20 to-primary/10',
  },
  {
  label: '平均时长',
  value: data.value ? formatDuration(data.value.avg_duration_seconds): '—',
  icon: 'lucide--clock',
- gradient: 'from-amber-500 to-orange-400',
- bgGradient: 'from-amber-500/20 to-orange-400/10',
+ bgGradient: 'from-primary/20 to-primary/10',
  },
  {
  label: '总成本',
  value: data.value ? formatCost(data.value.total_cost_usd): '—',
  icon: 'lucide--dollar-sign',
- gradient: 'from-violet-500 to-purple-400',
- bgGradient: 'from-violet-500/20 to-purple-400/10',
+ bgGradient: 'from-primary/20 to-primary/10',
  },
 ])
 </script>
@@ -73,10 +69,10 @@ const kpis = computed( => [
  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
  <div
  v-for="kpi in kpis":key="kpi.label"
- class="group bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30"
+ class="group card transition-all duration-200 hover:shadow-lg hover:border-primary/30"
  >
  <div class="flex items-center gap-4">
- <div class="bg-gradient-to-br rounded-lg .5":class="[kpi.bgGradient]">
+ <div class="bg-linear-to-br rounded-lg .5":class="[kpi.bgGradient]">
  <span
  v-if="!isLoading"
  class="text-xl":class="[`icon-[${kpi.icon}]`]"

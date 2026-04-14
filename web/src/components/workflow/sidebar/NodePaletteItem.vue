@@ -24,18 +24,18 @@ function getIconGradient(color: string): string {
 function getIconColor(color: string): string {
  const colors: Record<string, string> = {
  blue: 'text-primary',
- green: 'text-emerald-500',
- purple: 'text-violet-500',
- orange: 'text-amber-500',
+ green: 'text-primary',
+ purple: 'text-primary',
+ orange: 'text-primary',
  }
  return colors[color] || colors.blue
 }
 function getHoverGlow(color: string): string {
  const glows: Record<string, string> = {
  blue: 'group-hover:shadow-primary/10 group-hover:border-primary/30',
- green: 'group-hover:shadow-emerald-500/10 group-hover:border-emerald-500/30',
- purple: 'group-hover:shadow-violet-500/10 group-hover:border-violet-500/30',
- orange: 'group-hover:shadow-amber-500/10 group-hover:border-amber-500/30',
+ green: 'group-hover:shadow-primary/10 group-hover:border-primary/30',
+ purple: 'group-hover:shadow-primary/10 group-hover:border-primary/30',
+ orange: 'group-hover:shadow-primary/10 group-hover:border-primary/30',
  }
  return glows[color] || glows.blue
 }

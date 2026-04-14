@@ -23,10 +23,10 @@ const { success } = useToast
 // 端口类型颜色映射
 const typeColors: Record<string, string> = {
  string: 'bg-primary/10 text-primary',
- object: 'bg-purple-500/10 text-purple-600',
- array: 'bg-amber-500/10 text-amber-600',
- number: 'bg-emerald-500/10 text-emerald-600',
- boolean: 'bg-rose-500/10 text-rose-600',
+ object: 'bg-primary/10 text-primary',
+ array: 'bg-primary/10 text-primary',
+ number: 'bg-primary/10 text-primary',
+ boolean: 'bg-primary/10 text-primary',
  any: 'bg-muted text-muted-foreground',
 }
 function getTypeColor(type: string): string {

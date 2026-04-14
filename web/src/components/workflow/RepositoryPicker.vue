@@ -153,7 +153,7 @@ function handleManualKeydown(event: KeyboardEvent) {
  <p class="text-sm text-muted-foreground">
  暂无可用仓库
  </p>
- <p v-if="allowManualInput" class="text-xs text-muted-foreground/70 mt-1">
+ <p v-if="allowManualInput" class="text-xs text-muted-foreground mt-1">
  请切换到手动输入模式
  </p>
  </div>

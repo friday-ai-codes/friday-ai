@@ -461,7 +461,7 @@ const regexValidation = computed( => {
  <span class="icon-[lucide--x] text-xs" />
  </button>
  </Badge>
- <Badge v-if="excludedProjects.length > 2" variant="outline" class="text-xs text-red-500">
+ <Badge v-if="excludedProjects.length > 2" variant="destructive" class="text-xs">
  +{{ excludedProjects.length - 2 }}
  </Badge>
  </template>
@@ -519,7 +519,7 @@ const regexValidation = computed( => {
  class="bg-background/50 text-sm pr-16":class="{ 'font-mono': isRegexMode, 'border-red-500/50': regexValidation.valid === false, 'border-green-500/50': regexValidation.valid === true && isRegexMode }"
  />
  <span
- class="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 rounded":class="isRegexMode ? 'bg-violet-500/10 text-violet-500': 'bg-muted text-muted-foreground'"
+ class="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 rounded":class="isRegexMode ? 'bg-primary/10 text-primary': 'bg-muted text-muted-foreground'"
  >
  {{ isRegexMode ? '正则': '包含' }}
  </span>

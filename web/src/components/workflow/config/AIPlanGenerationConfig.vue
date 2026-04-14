@@ -112,24 +112,24 @@ const advancedOpen = ref(false)
  <!-- ================================================================== -->
  <!-- Introduction Card -->
  <!-- ================================================================== -->
- <div class="rounded-xl bg-primary/10 border border-violet-500/20 ">
+ <div class="rounded-xl bg-primary/10 border border-primary/20 ">
  <div class="flex items-start gap-2">
- <span class="icon-[lucide--sparkles] text-violet-500 text-lg shrink-0 mt-0.5" />
+ <span class="icon-[lucide--sparkles] text-primary text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">
  <h4 class="text-sm font-medium">
  AI 方案生成
  </h4>
  <p class="text-xs text-muted-foreground leading-relaxed">
- 基于 <span class="text-violet-500 font-medium">ReAct Agent</span> 自动分析多仓库代码，
+ 基于 <span class="text-primary font-medium">ReAct Agent</span> 自动分析多仓库代码，
  通过向量检索 (RAG) 理解代码上下文，生成结构化技术方案，
  支持自动验证和飞书多轮迭代。
  </p>
  <!-- Capability Tags -->
  <div class="flex flex-wrap gap-1 pt-0.5">
- <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-500 text-[10px] font-medium">ReAct</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">ReAct</span>
  <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">RAG 向量检索</span>
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[10px] font-medium">verify_plan</span>
- <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[10px] font-medium">飞书交互</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">verify_plan</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">飞书交互</span>
  </div>
  </div>
  </div>
@@ -139,7 +139,7 @@ const advancedOpen = ref(false)
  <!-- ================================================================== -->
  <div class="relative pl-6">
  <!-- 左侧竖线 -->
- <div class="absolute left-[9px] top-2 bottom-2 w-px bg-gradient-to-b from-primary/40 via-violet-500/30 to-amber-500/20" />
+ <div class="absolute left-[9px] top-2 bottom-2 w-px bg-linear-to-b from-primary/40 via-primary/30 to-primary/20" />
  <!-- ============================================================== -->
  <!-- Phase: 需求输入 -->
  <!-- ============================================================== -->
@@ -178,15 +178,15 @@ const advancedOpen = ref(false)
  <!-- Phase: 代码检索 -->
  <!-- ============================================================== -->
  <div class="relative pb-5">
- <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-emerald-500/15 border border-emerald-500/30">
- <span class="text-[10px] font-bold text-emerald-500">2</span>
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
+ <span class="text-[10px] font-bold text-primary">2</span>
  </div>
  <div class="space-y-2.5">
  <div>
  <h5 class="text-sm font-medium flex items-center gap-1.5">
- <span class="icon-[lucide--search-code] text-emerald-500 text-sm" />
+ <span class="icon-[lucide--search-code] text-primary text-sm" />
  代码检索
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[9px] font-medium">RAG</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-medium">RAG</span>
  </h5>
  <p class="text-[11px] text-muted-foreground mt-0.5">
  通过向量检索跨仓库搜索相关代码，分析依赖关系和代码结构
@@ -198,7 +198,7 @@ const advancedOpen = ref(false)
  <div v-if="includeRepos.length" class="flex flex-wrap gap-1.5">
  <span
  v-for="repo in includeRepos":key="repo"
- class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+ class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
  >
  {{ repo }}
  <button
@@ -221,7 +221,7 @@ const advancedOpen = ref(false)
  <div v-if="excludeRepos.length" class="flex flex-wrap gap-1.5">
  <span
  v-for="repo in excludeRepos":key="repo"
- class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-600 border border-red-500/20"
+ class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-destructive/10 text-destructive border border-destructive/20"
  >
  {{ repo }}
  <button
@@ -247,15 +247,15 @@ const advancedOpen = ref(false)
  <!-- Phase: 方案生成 -->
  <!-- ============================================================== -->
  <div class="relative pb-5">
- <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-violet-500/15 border border-violet-500/30">
- <span class="text-[10px] font-bold text-violet-500">3</span>
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
+ <span class="text-[10px] font-bold text-primary">3</span>
  </div>
  <div class="space-y-2.5">
  <div>
  <h5 class="text-sm font-medium flex items-center gap-1.5">
- <span class="icon-[lucide--sparkles] text-violet-500 text-sm" />
+ <span class="icon-[lucide--sparkles] text-primary text-sm" />
  方案生成
- <span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-500 text-[9px] font-medium">ReAct</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-medium">ReAct</span>
  </h5>
  <p class="text-[11px] text-muted-foreground mt-0.5">
  ReAct Agent 循环推理，基于代码检索结果生成结构化技术方案
@@ -321,14 +321,14 @@ const advancedOpen = ref(false)
  <!-- Phase: 自动验证 -->
  <!-- ============================================================== -->
  <div class="relative pb-5">
- <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-amber-500/15 border border-amber-500/30">
- <span class="text-[10px] font-bold text-amber-500">4</span>
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
+ <span class="text-[10px] font-bold text-primary">4</span>
  </div>
  <div>
  <h5 class="text-sm font-medium flex items-center gap-1.5">
- <span class="icon-[lucide--shield-check] text-amber-500 text-sm" />
+ <span class="icon-[lucide--shield-check] text-primary text-sm" />
  自动验证
- <span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 text-[9px] font-medium">自动</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[9px] font-medium">自动</span>
  </h5>
  <p class="text-[11px] text-muted-foreground mt-0.5">
  调用 <code class="text-[10px] px-1 py-0.5 bg-muted rounded">verify_plan</code> 验证方案格式和完整性，失败自动重试（最多 3 轮）
@@ -339,13 +339,13 @@ const advancedOpen = ref(false)
  <!-- Phase: 飞书推送 -->
  <!-- ============================================================== -->
  <div class="relative">
- <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-cyan-500/15 border border-cyan-500/30">
- <span class="text-[10px] font-bold text-cyan-500">5</span>
+ <div class="absolute -left-6 top-0.5 flex items-center justify-center w-[19px] h-[19px] rounded-full bg-primary/15 border border-primary/30">
+ <span class="text-[10px] font-bold text-primary">5</span>
  </div>
  <div class="space-y-2.5">
  <div>
  <h5 class="text-sm font-medium flex items-center gap-1.5">
- <span class="icon-[lucide--send] text-cyan-500 text-sm" />
+ <span class="icon-[lucide--send] text-primary text-sm" />
  飞书推送
  </h5>
  <p class="text-[11px] text-muted-foreground mt-0.5">

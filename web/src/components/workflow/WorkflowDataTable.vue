@@ -82,14 +82,9 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
  class="group relative cursor-pointer"
  @click="onCardClick(workflow)"
  >
- <!-- Hover glow effect (only for active workflows) -->
- <div
- v-if="workflow.is_active"
- class="absolute -inset-0.5 bg-linear-to-r from-teal-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-500"
- />
  <!-- Card body -->
  <div
- class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden":class="[workflow.is_active ? 'bg-card/80 border-border/50 group-hover:border-teal-300/50 group-hover:shadow-lg group-hover:shadow-teal-500/10 group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30']"
+ class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden":class="[workflow.is_active ? 'bg-card/80 border-border/50 group-hover:border-primary/30 group-hover:shadow-card-hover group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30']"
  >
  <!-- Mini Map Preview -->
  <div

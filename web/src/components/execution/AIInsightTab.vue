@@ -131,15 +131,15 @@ function formatCost(costUsdString: string): string {
 function getStepMeta(actionType: string) {
  switch (actionType) {
  case 'llm_request':
- return { label: '思考', iconClass: 'icon-[lucide--brain]', colorClass: 'text-violet-500', bgClass: 'bg-violet-500/10' }
+ return { label: '思考', iconClass: 'icon-[lucide--brain]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  case 'tool_call':
  return { label: '执行', iconClass: 'icon-[lucide--wrench]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  case 'llm_response':
- return { label: '观察', iconClass: 'icon-[lucide--eye]', colorClass: 'text-emerald-500', bgClass: 'bg-emerald-500/10' }
+ return { label: '观察', iconClass: 'icon-[lucide--eye]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  case 'state_change':
- return { label: '状态变更', iconClass: 'icon-[lucide--git-branch]', colorClass: 'text-amber-500', bgClass: 'bg-amber-500/10' }
+ return { label: '状态变更', iconClass: 'icon-[lucide--git-branch]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  case 'decision':
- return { label: '决策', iconClass: 'icon-[lucide--compass]', colorClass: 'text-purple-500', bgClass: 'bg-purple-500/10' }
+ return { label: '决策', iconClass: 'icon-[lucide--compass]', colorClass: 'text-primary', bgClass: 'bg-primary/10' }
  default:
  return { label: actionType, iconClass: 'icon-[lucide--circle]', colorClass: 'text-muted-foreground', bgClass: 'bg-muted' }
  }
@@ -180,7 +180,7 @@ watch( => props.nodeExecutionId, => {
  <div v-else class="space-y-3">
  <div
  v-for="iteration in iterations":key="iteration.index"
- class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden"
+ class="card overflow-hidden"
  >
  <!-- 迭代标题 -->
  <div class="px-3 py-2 bg-muted/30 border-b border-border/30 text-xs font-medium text-muted-foreground">
@@ -272,7 +272,7 @@ watch( => props.nodeExecutionId, => {
  暂无成本数据
  </div>
  <!-- 成本列表 -->
- <div v-else class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden">
+ <div v-else class="card overflow-hidden">
  <div
  v-for="node in allNodeCosts":key="node.node_id"
  class="divide-y divide-border/30"
