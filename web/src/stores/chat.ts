@@ -18,6 +18,7 @@ import {
 } from '~/api/chat'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
+import { useProjectsStore } from '~/stores/projects'
 export const useChatStore = defineStore('chat', => {
  const { requestAndEnableWebPush, webPushReady } = useWebPush
  // ========================================================================
@@ -112,6 +113,17 @@ export const useChatStore = defineStore('chat', => {
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
  const forceDeepAnalysis = useLocalStorage<boolean>('chat-force-deep-analysis', false)
  const notificationsEnabled = useLocalStorage<boolean>('chat-notifications-enabled', false)
+ /** 按仓库 ID 记忆检索分支（与仓库详情 sessionStorage 协同） */
+ const searchBranchByRepository = useLocalStorage<Record<string, string>>(
+ 'friday:chat-search-branch',
+ => ({}),
+ )
+ function setSearchBranchForRepository(repositoryId: string, branch: string) {
+ searchBranchByRepository.value = {
+ ...searchBranchByRepository.value,
+ [repositoryId]: branch,
+ }
+ }
  // ========================================================================
  // Getters
  // ========================================================================
@@ -755,13 +767,35 @@ export const useChatStore = defineStore('chat', => {
  const controller = new AbortController
  abortController.value = controller
  try {
+ const projectsStore = useProjectsStore
+ let streamBranch: string | undefined
+ const pid = selectedProjectId.value
+ if (pid) {
+ try {
+ if (projectsStore.currentProject?.id !== pid)
+ await projectsStore.fetchProject(pid)
+ const repoId = projectsStore.currentProject?.repositories?.[0]?.id
+ if (repoId) {
+ const remembered = searchBranchByRepository.value[repoId]
+ if (remembered)
+ streamBranch = remembered
+ }
+ }
+ catch {
+ // 项目/仓库不可用时仍允许发消息（不带 branch）
+ }
+ }
  await connectSSE(
  currentConversationId.value,
  content,
  selectedRole.value,
  (event: SSEEvent) => handleSSEEvent(event),
  controller.signal,
- { forceDeepAnalysis: forceDeepAnalysis.value, feishuDocId },
+ {
+ forceDeepAnalysis: forceDeepAnalysis.value,
+ feishuDocId,
+ branch: streamBranch,
+ },
  )
  }
  catch (e) {
@@ -979,6 +1013,7 @@ export const useChatStore = defineStore('chat', => {
  selectedModel,
  forceDeepAnalysis,
  notificationsEnabled,
+ searchBranchByRepository,
  streamingStatus,
  budgetWarning,
  lastFailedContent,
@@ -1003,6 +1038,7 @@ export const useChatStore = defineStore('chat', => {
  toggleSidebar,
  clearCurrentConversation,
  sendMessage,
+ setSearchBranchForRepository,
  retryLastMessage,
  restoreFromURL,
  restoreConversationRuntime,

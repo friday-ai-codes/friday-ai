@@ -63,6 +63,12 @@ async def _build_chat_runner(
  agent_session = await AgentSession.objects.aget(id=agent_session_id)
  except AgentSession.DoesNotExist:
  pass
+ dsb = cfg.get("default_search_branch")
+ default_search_branch: str | None = None
+ if isinstance(dsb, str):
+ s = dsb.strip
+ if s:
+ default_search_branch = s
  runner_config = ChatRunnerConfig(
  system_prompt=cfg.get("system_prompt", ""),
  model=cfg.get("model", ""),
@@ -75,6 +81,7 @@ async def _build_chat_runner(
  timeout_seconds=0,
  agent_session=agent_session,
  max_budget_usd=cfg.get("max_budget_usd"),
+ default_search_branch=default_search_branch,
  )
  return ChatAnthropicRunner(runner_config), agent_session_id
 async def _run_chat_stream(

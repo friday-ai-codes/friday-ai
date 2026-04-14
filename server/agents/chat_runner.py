@@ -59,6 +59,7 @@ class ChatRunnerConfig:
  timeout_seconds: float = 0
  agent_session: Any = field(default=None)
  max_budget_usd: float | None = None
+ default_search_branch: str | None = None
 @dataclass
 class _ChatToolSpec:
  """LangChain tool 与本地执行器的桥接定义。"""
@@ -236,7 +237,12 @@ def _make_agent_result(
  metadata or {},
  error,
  )
-async def _build_tool_specs(project_id: str, conversation_id: str) -> dict[str, _ChatToolSpec]:
+async def _build_tool_specs(
+ project_id: str,
+ conversation_id: str,
+ *,
+ default_search_branch: str | None = None,
+) -> dict[str, _ChatToolSpec]:
  tool_specs: dict[str, _ChatToolSpec] = {}
  for tool_name in await _get_tool_names(project_id):
  tool_def = _tool_registry[tool_name]
@@ -248,8 +254,19 @@ async def _build_tool_specs(project_id: str, conversation_id: str) -> dict[str, 
  injected_values["conversation_id"] = conversation_id
  hidden_fields = set(injected_values.keys)
  args_schema = _build_args_schema(tool_def, hidden_fields)
- async def _execute(arguments: dict[str, Any], *, _tool_def: ToolDefinition = tool_def, _injected: dict[str, Any] = injected_values) -> ToolResult:
+ async def _execute(
+ arguments: dict[str, Any],
+ *,
+ _tool_def: ToolDefinition = tool_def,
+ _injected: dict[str, Any] = injected_values,
+ _dsb: str | None = default_search_branch,
+ ) -> ToolResult:
  merged = {**_injected, **arguments}
+ props = _tool_def.parameters.get("properties") or {}
+ if "branch" in props and _dsb:
+ cur = merged.get("branch")
+ if cur in (None, ""):
+ merged["branch"] = _dsb
  return await _tool_def.func(**merged)
  async def _langchain_tool(**kwargs: Any) -> str:
  result = await _execute(kwargs)
@@ -330,6 +347,7 @@ class ChatAnthropicRunner:
  tool_specs = await _build_tool_specs(
  self._config.project_id,
  self._config.conversation_id,
+ default_search_branch=self._config.default_search_branch,
  )
  model_with_tools = model.bind_tools([spec.tool for spec in tool_specs.values])
  messages: list[Any] = [

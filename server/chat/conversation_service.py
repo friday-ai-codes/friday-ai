@@ -485,6 +485,7 @@ class ConversationService:
  force_deep_analysis: bool = False,
  feishu_doc_id: str = "",
  project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  """流式发送消息 — 通过 LangGraph graph 驱动。
  签名保持不变，内部改为：
@@ -537,6 +538,7 @@ class ConversationService:
  status=OrchestrationRun.Status.RUNNING,
  phase=OrchestrationRun.Phase.PLANNING,
  )
+ branch_for_tools = (search_branch or "").strip or None
  graph_config: dict[str, Any] = {
  "configurable": {
  "thread_id": conv_id_str,
@@ -551,6 +553,7 @@ class ConversationService:
  "agent_session_id": str(agent_session.id),
  "notification_user_id": notification_user_id or "",
  "max_budget_usd": sdk_config.max_budget_usd,
+ "default_search_branch": branch_for_tools,
  }
  }
  graph = await get_compiled_graph
