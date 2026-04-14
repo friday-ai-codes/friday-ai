@@ -86,6 +86,16 @@ def poll_repository_updates_job:
  log.info("job_complete", result=result)
  except Exception as e:
  log.exception("job_error", error=str(e))
+def cleanup_stale_branch_indexes_job:
+ """Job wrapper for cleanup_stale_branch_indexes (Phase)."""
+ from tasks.index_trigger_tasks import cleanup_stale_branch_indexes
+ log = logger.bind(job="cleanup_stale_branch_indexes")
+ log.info("job_start")
+ try:
+ result = run_async_task(cleanup_stale_branch_indexes)
+ log.info("job_complete", result=result)
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 class Command(BaseCommand):
  help = "Runs APScheduler for session timeout tasks."
  def handle(self, *args, **options):
@@ -151,6 +161,19 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="poll_repository_updates", schedule="every 30 minutes")
+ scheduler.add_job(
+ cleanup_stale_branch_indexes_job,
+ trigger=IntervalTrigger(hours=1),
+ id="cleanup_stale_branch_indexes",
+ name="Cleanup orphaned branch overlays via git ls-remote",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info(
+ "job_registered",
+ job="cleanup_stale_branch_indexes",
+ schedule="every 1 hour",
+ )
  try:
  logger.info("scheduler_starting")
  scheduler.start

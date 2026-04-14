@@ -648,8 +648,10 @@ class RepositoryWebhookView(APIView):
  authentication_classes: list =
  async def post(self, request: Any, repository_id: str) -> Response:
  from tasks.index_trigger_tasks import (
+ cleanup_branch_index,
  parse_push_event,
  trigger_auto_index,
+ trigger_branch_rebuild,
  verify_gitlab_token,
  verify_webhook_signature,
  )
@@ -691,7 +693,21 @@ class RepositoryWebhookView(APIView):
  platform = repository.git_platform or "github"
  event_data = parse_push_event(platform, request.data)
  commit_sha = event_data.get("after", "")
- # 触发索引
+ branch_name = str(event_data.get("branch_name", "") or "")
+ is_delete = bool(event_data.get("is_delete", False))
+ base_branch = repository.base_branch or repository.default_branch
+ if is_delete and branch_name and branch_name != base_branch:
+ result = await cleanup_branch_index(repository, branch_name)
+ elif branch_name == base_branch:
+ result = await trigger_auto_index(
+ repository,
+ "webhook",
+ commit_sha,
+ dedup_branch_name=base_branch,
+ )
+ elif branch_name:
+ result = await trigger_branch_rebuild(repository, branch_name, commit_sha)
+ else:
  result = await trigger_auto_index(repository, "webhook", commit_sha)
  status_code = (
  status.HTTP_202_ACCEPTED if result["status"] == "triggered" else status.HTTP_200_OK
