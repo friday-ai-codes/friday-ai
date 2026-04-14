@@ -2,6 +2,7 @@
 import asyncio
 from typing import Any
 import httpx
+import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.db import transaction
@@ -16,11 +17,13 @@ from repositories.models import (
  IndexHistoryStatus,
  IndexStatus,
  Repository,
+ RepositoryBranchIndex,
  TriggerType,
 )
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
+logger = structlog.get_logger(__name__)
 # 模块级强引用集合：防止 asyncio.create_task 任务被 GC 静默回收
 # 参考：https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
 # 注意：Django dev server 热重载时集合会重置，生产环境不受影响
@@ -58,6 +61,18 @@ class IndexStatusSerializer(serializers.Serializer):
  #: 统一进度字段
  overall_progress = serializers.IntegerField
  overall_stage = serializers.CharField
+class RepositoryBranchIndexRowSerializer(serializers.ModelSerializer):
+ """只读：分支索引行（与 RepositoryBranchIndex 字段对齐）。"""
+ class Meta:
+ model = RepositoryBranchIndex
+ fields = (
+ "branch_name",
+ "is_base_branch",
+ "is_stale",
+ "last_indexed_at",
+ "last_indexed_commit_sha",
+ "effective_chunks_count",
+ )
 class SearchRequestSerializer(serializers.Serializer):
  """Serializer for search request."""
  query = serializers.CharField(max_length=1000)
@@ -73,6 +88,32 @@ class SearchResultSerializer(serializers.Serializer):
  start_line = serializers.IntegerField
  end_line = serializers.IntegerField
  context_header = serializers.CharField
+class BranchIndexListView(APIView):
+ """GET 仓库下全部分支索引行（只读）。"""
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ try:
+ qs = RepositoryBranchIndex.objects.filter(repository_id=repository_id).order_by(
+ "branch_name"
+ )
+ items = [obj async for obj in qs]
+ serializer = RepositoryBranchIndexRowSerializer(items, many=True)
+ data = await sync_to_async(lambda: serializer.data)
+ return Response(data)
+ except Exception as exc:
+ logger.error(
+ "branch_index_list_failed",
+ repository_id=repository_id,
+ exc_info=exc,
+ )
+ return Response(
+ {"detail": "加载分支索引失败"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
 class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
  permission_classes = [IsAuthenticated]

@@ -2,6 +2,7 @@
 from adrf.routers import DefaultRouter
 from django.urls import include, path
 from .index_views import (
+ BranchIndexListView,
  CodeSearchView,
  EmbeddingHealthView,
  IndexDeleteView,
@@ -61,6 +62,11 @@ urlpatterns = [
  "<uuid:repository_id>/test-connection/",
  TestConnectionView.as_view,
  name="repository-test-connection",
+ ),
+ path(
+ "<uuid:repository_id>/branch-indexes/",
+ BranchIndexListView.as_view,
+ name="repository-branch-indexes",
  ),
  # Index management
  path(
