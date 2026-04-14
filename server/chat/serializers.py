@@ -188,6 +188,12 @@ class SendMessageSerializer(serializers.Serializer):
  default="",
  help_text="前端从消息中提取的飞书文档 ID",
  )
+ branch = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ help_text="检索默认分支（RAG/工具未显式指定 branch 时使用）",
+ )
 # ============================================================================
 # CodingSession Serializers (Phase)
 # ============================================================================

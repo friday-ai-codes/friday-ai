@@ -51,6 +51,7 @@ def _apply_stream_mock(events: list[AgentEvent] | None = None):
  content: str,
  role: str = "developer",
  notification_user_id: str | None = None,
+ **kwargs: object,
  ):
  for event in events:
  yield event
@@ -160,6 +161,43 @@ class TestChatStreamView:
  content_type="application/json",
  )
  assert resp.status_code == 200
+ async def test_stream_accepts_optional_branch(self, conversation, monkeypatch):
+ """可选 branch 字段不导致 400，并传入 send_message_stream。"""
+ captured: dict[str, object] = {}
+ async def mock_send(
+ conversation_id: str,
+ content: str,
+ role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
+ ):
+ captured["search_branch"] = search_branch
+ yield AgentEvent(type=MESSAGE_COMPLETE, data={
+ "usage": {"input_tokens": 1, "output_tokens": 1},
+ "status": "completed",
+ "iterations": 1,
+ })
+ monkeypatch.setattr(
+ ConversationService,
+ "send_message_stream",
+ staticmethod(mock_send),
+ )
+ client = AsyncClient
+ resp = await client.post(
+ f"/api/chat/conversations/{conversation.id}/stream/",
+ data=json.dumps({"content": "hi", "branch": "feature/Phase"}),
+ content_type="application/json",
+ )
+ assert resp.status_code == 200
+ raw_parts: list[str] =
+ async for chunk in resp.streaming_content:
+ text = chunk.decode if isinstance(chunk, bytes) else chunk
+ raw_parts.append(text)
+ assert "".join(raw_parts)
+ assert captured.get("search_branch") == "feature/Phase"
  async def test_stream_includes_title_event(self, conversation):
  """title_generated 事件包含在 SSE 流中。"""
  events = [
