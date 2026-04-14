@@ -25,3 +25,7 @@
 ## 通用
 - 提交信息清晰、原子化，适用时引用 issue
 - 代码自文档化，注释解释"为什么"而非"是什么"
+---
+## GSD 命令命名约定
+**向用户展示 GSD 命令时一律使用 `/gsd:<name>` 冒号命名空间格式**（例如 `/gsd:plan-phase`、`/gsd:update`），**禁止使用 `/gsd-<name>` 连字符格式**。
+**原因：** 本项目使用 Claude Code runtime，GSD 命令安装于 `./.claude/commands/gsd/*.md`，Claude Code 将其暴露为 `/gsd:<name>`。GSD 官方文档、workflow、agent prompt 中仍大量使用遗留的 `/gsd-<name>` 写法（为兼容 Codex/OpenCode 等不支持冒号命名空间的 runtime），用户在 Claude Code 中无法直接调用。遇到 `/gsd-xxx` 应在输出前改写为 `/gsd:xxx`。
