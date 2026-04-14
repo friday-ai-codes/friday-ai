@@ -67,13 +67,13 @@ const pollingIntervalStr = computed({
  </p>
  <!-- Workflow Visual -->
  <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
- <span class="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">读取方案</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">读取方案</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-600 font-medium">SubAgent 编码</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">SubAgent 编码</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-600 font-medium">创建 MR</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">创建 MR</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 font-medium">通知结果</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">通知结果</span>
  </div>
  </div>
  </div>

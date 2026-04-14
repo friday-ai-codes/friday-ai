@@ -193,7 +193,7 @@ const errorMessage = computed( => {
  </div>
  <div
  v-for="(iteration, index) in parsedOutput.iterations":key="index"
- class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-xl overflow-hidden"
+ class="card overflow-hidden"
  >
  <!-- Iteration Header -->
  <div class="px-4 py-2 bg-muted/30 border-b border-border/30">

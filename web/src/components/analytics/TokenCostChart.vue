@@ -101,7 +101,7 @@ const chartOption = computed( => {
 })
 </script>
 <template>
- <div class="bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-200 hover:shadow-lg hover:border-primary/30">
+ <div class="card transition-all duration-200 hover:shadow-lg hover:border-primary/30">
  <h3 class="text-sm font-medium text-muted-foreground mb-4">
  Token 消耗 / 成本趋势
  </h3>

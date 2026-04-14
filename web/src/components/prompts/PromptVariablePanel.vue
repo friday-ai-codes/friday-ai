@@ -67,7 +67,7 @@ function isRequired(varName: string): boolean {
  <Badge v-else-if="isDeclared(varName) && !isRequired(varName)" variant="outline">
  可选
  </Badge>
- <Badge v-else variant="secondary" class="text-amber-700">
+ <Badge v-else variant="warning">
  未声明
  </Badge>
  </div>

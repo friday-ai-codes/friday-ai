@@ -247,6 +247,8 @@ export interface Project extends ProjectBase {
  has_feishu_config: boolean
  webhook_token: string
  repositories?: Repository
+ execution_count?: number
+ recent_work_items?: Array<{ id: string, name: string }>
 }
 /**
  * 创建项目请求

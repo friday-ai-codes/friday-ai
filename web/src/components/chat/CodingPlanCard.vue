@@ -66,10 +66,10 @@ function handleConfirm {
 }
 const badgeClass = computed( => {
  if (props.status === 'confirmed' || props.status === 'running') {
- return 'text-blue-500 border-blue-500/30 bg-blue-500/5'
+ return 'text-primary border-primary/30 bg-primary/5'
  }
  if (props.status === 'awaiting_confirmation') {
- return 'text-blue-500 border-blue-500/30 bg-blue-500/5'
+ return 'text-primary border-primary/30 bg-primary/5'
  }
  if (props.status === 'completed') {
  return 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5'

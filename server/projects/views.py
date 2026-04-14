@@ -4,7 +4,7 @@ import structlog
 from adrf.views import APIView
 from adrf.viewsets import ModelViewSet
 from asgiref.sync import sync_to_async
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Count
 from django.shortcuts import aget_object_or_404
 from rest_framework import status
 from rest_framework.decorators import action
@@ -40,6 +40,7 @@ from .serializers import (
  WebhookTokenUpdateSerializer,
 )
 logger = structlog.get_logger(__name__)
+from django.db.models import Prefetch, Count, Count
 class ProjectViewSet(ModelViewSet):
  """ViewSet for Project CRUD operations."""
  queryset = Project.objects.prefetch_related(
@@ -47,6 +48,8 @@ class ProjectViewSet(ModelViewSet):
  "repositories",
  queryset=Repository.objects.filter(is_deleted=False).select_related("credential"),
  ),
+ ).annotate(
+ execution_count=Count("workflow_executions", distinct=True)
  ).all
  serializer_class = ProjectSerializer
  def get_queryset(self):

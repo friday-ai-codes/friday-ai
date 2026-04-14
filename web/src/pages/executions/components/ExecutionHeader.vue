@@ -72,7 +72,7 @@ const emit = defineEmits<{
  </div>
  <!-- 从此继续来源标记 -->
  <div v-if="resumedFromId" class="flex items-center gap-1.5">
- <Badge variant="outline" class="border-primary/50 text-primary text-[10px] px-1.5 py-0">
+ <Badge variant="outline" class="text-[10px] px-1.5 py-0">
  继续
  </Badge>
  <RouterLink:to="`/executions/${resumedFromId}`"
