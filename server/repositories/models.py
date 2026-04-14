@@ -29,6 +29,7 @@ class BranchIndexStatus(models.TextChoices):
  INDEXED = "indexed", "已索引"
  INHERITED = "inherited", "继承自基础分支"
  FAILED = "failed", "索引失败"
+ UPGRADING = "upgrading", "升级中"
 class TriggerType(models.TextChoices):
  """索引触发类型。"""
  MANUAL = "manual", "手动触发"
