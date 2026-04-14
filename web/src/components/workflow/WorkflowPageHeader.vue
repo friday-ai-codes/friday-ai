@@ -7,8 +7,8 @@ defineEmits<{
 <template>
  <PageHeader
  icon="lucide--workflow"
- icon-gradient="from-teal-500/20 to-cyan-500/10"
- icon-color="text-teal-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="工作流"
  description="管理和自动化您的开发工作流"
  >

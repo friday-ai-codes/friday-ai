@@ -132,7 +132,7 @@ defineExpose({ onKeyDown })
  <p class="text-xs font-medium text-muted-foreground">
  当前无可用变量
  </p>
- <p class="text-[10px] text-muted-foreground/70 mt-0.5">
+ <p class="text-[10px] text-muted-foreground mt-0.5">
  请先连接上游节点
  </p>
  </div>
@@ -170,7 +170,7 @@ defineExpose({ onKeyDown })
  </span>
  </div>
  <!-- Full path (secondary) -->
- <div class="mt-0.5 text-[10px] text-muted-foreground/70 font-mono truncate">
+ <div class="mt-0.5 text-[10px] text-muted-foreground font-mono truncate">
  {{ item.path }}
  </div>
  </button>

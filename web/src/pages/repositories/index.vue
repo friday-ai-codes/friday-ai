@@ -74,8 +74,8 @@ const platformIcons: Record<string, string> = {
  <!-- 页面标题 -->
  <PageHeader
  icon="lucide--git-branch"
- icon-gradient="from-teal-500/20 to-cyan-500/10"
- icon-color="text-teal-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="仓库管理"
  description="管理您的 Git 仓库和凭证配置"
  >
@@ -95,7 +95,7 @@ const platformIcons: Record<string, string> = {
  title="暂无仓库"
  description="创建您的第一个仓库，关联到项目以开始使用"
  action-label="新建仓库"
- gradient="from-teal-500/20 to-cyan-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="openCreateRepository"
  />
  <!-- 仓库列表 -->
@@ -144,11 +144,12 @@ const platformIcons: Record<string, string> = {
  </p>
  </div>
  <!-- 底部操作栏 -->
- <div class="flex items-center gap-2 px-4 py-2.5 border-t border-border/50">
- <button class="btn btn-secondary btn-sm flex-1" @click.prevent>
- <span class="icon-[lucide--eye]" />
+ <div class="flex items-center justify-between px-4 py-2.5 border-t border-border/50 bg-muted/20">
+ <span class="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">
  查看详情
- </button>
+ <span class="icon-[lucide--arrow-right]" />
+ </span>
+ <div class="flex items-center gap-1">
  <RouterLink:to="`/repositories/${repository.id}?tab=indexing`" @click.stop>
  <button class="btn btn-ghost btn-icon btn-sm" title="代码索引">
  <span class="icon-[lucide--database]" />
@@ -160,11 +161,12 @@ const platformIcons: Record<string, string> = {
  </button>
  </RouterLink>
  <button
- class="btn btn-ghost btn-icon btn-sm hover:!bg-red-50 hover:!text-red-500"
+ class="btn btn-ghost btn-icon btn-sm hover:bg-red-50! hover:text-red-500!"
  @click.prevent="confirmDelete(repository.id)"
  >
  <span class="icon-[lucide--trash-2]" />
  </button>
+ </div>
  </div>
  </RouterLink>
  </div>

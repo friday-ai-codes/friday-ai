@@ -129,7 +129,7 @@ function getCategoryGradient(color: string): string {
  </div>
  <!-- Footer hint -->
  <div class=" border-t border-border/30">
- <div class="flex items-center justify-center gap-2 text-[10px] text-muted-foreground/60">
+ <div class="flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
  <span class="icon-[lucide--grip-vertical]" />
  <span>拖拽手柄添加节点</span>
  </div>

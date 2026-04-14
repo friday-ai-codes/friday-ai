@@ -163,7 +163,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  class="group relative overflow-hidden":disabled="isViewer"
  @click="openLinkDialog"
  >
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  关联仓库
  </Button>
@@ -183,7 +183,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  icon="lucide--git-branch"
  title="暂无关联仓库"
  description="将仓库关联到此项目以开始使用":action-label="isProjectAdmin ? '关联仓库': undefined"
- gradient="from-violet-500/20 to-purple-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="openLinkDialog"
  />
  <!-- 仓库列表表格 -->
@@ -329,7 +329,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  class="group relative overflow-hidden"
  @click="handleLink"
  >
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  确认关联 ({{ selectedRepoIds.size }})
  </Button>

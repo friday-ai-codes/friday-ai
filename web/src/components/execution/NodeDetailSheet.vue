@@ -120,7 +120,7 @@ function handleActionComplete {
  <SheetTitle class="text-base font-semibold">
  {{ nodeExecution?.node_name ?? '节点详情' }}
  </SheetTitle>
- <SheetDescription class="text-xs text-muted-foreground/70 font-mono">
+ <SheetDescription class="text-xs text-muted-foreground font-mono">
  {{ nodeExecution?.node_type ?? '' }}
  </SheetDescription>
  </SheetHeader>

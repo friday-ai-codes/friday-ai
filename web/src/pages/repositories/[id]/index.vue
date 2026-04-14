@@ -507,7 +507,7 @@ function copyUrl {
  title="仓库不存在"
  description="未找到该仓库，可能已被删除"
  action-label="返回列表"
- gradient="from-violet-500/20 to-purple-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="router.push('/repositories')"
  />
  <!-- 删除确认对话框 -->

@@ -136,17 +136,11 @@ const webhookHeader = computed( => {
  </div>
  <!-- 日志详情 -->
  <template v-else>
- <!-- Header with Glassmorphism -->
  <div class="relative overflow-hidden shrink-0">
- <!-- Background gradient decoration -->
- <div class="absolute inset-0 -z-10">
- <div class="absolute -top-20 -right-20 w-40 bg-primary/10 rounded-full blur-3xl" />
- <div class="absolute top-10 -left-10 w-32 bg-gradient-to-tr from-violet-500/20 to-purple-500/10 rounded-full blur-3xl" />
- </div>
  <div class="flex items-start justify-between border-b border-border/50">
  <div class="flex items-center gap-4">
  <div class=" rounded-xl bg-primary/10">
- <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
+ <span class="icon-[lucide--file-text] text-2xl text-primary" />
  </div>
  <div>
  <h3 class="text-xl font-semibold">
@@ -184,7 +178,7 @@ const webhookHeader = computed( => {
  <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
  <div class=".5 rounded-md bg-primary/10">
- <span class="icon-[lucide--webhook] text-sm text-violet-500" />
+ <span class="icon-[lucide--webhook] text-sm text-primary" />
  </div>
  <h4 class="text-sm font-medium">
  事件信息
@@ -296,7 +290,7 @@ const webhookHeader = computed( => {
  >
  <div class="flex items-center gap-2">
  <div class=".5 rounded-md bg-primary/10">
- <span class="icon-[lucide--code] text-sm text-amber-500" />
+ <span class="icon-[lucide--code] text-sm text-primary" />
  </div>
  <h4 class="text-sm font-medium">
  原始数据

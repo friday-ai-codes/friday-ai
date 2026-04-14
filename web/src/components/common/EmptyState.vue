@@ -10,7 +10,7 @@ withDefaults(defineProps<{
  icon: 'lucide--inbox',
  title: '暂无数据',
  description: '这里还没有任何内容',
- gradient: 'from-primary/20 to-secondary/40',
+ gradient: 'from-primary/20 to-primary/10',
 })
 const emit = defineEmits<{
  action:
@@ -36,7 +36,7 @@ const emit = defineEmits<{
  </p>
  <!-- 操作按钮 -->
  <Button v-if="actionLabel" class="group relative overflow-hidden" @click="emit('action')">
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  {{ actionLabel }}
  </Button>

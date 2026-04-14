@@ -34,21 +34,21 @@ const stats = computed( => [
  title: '执行总数',
  value: executionsStore.stats.total,
  icon: 'lucide--layers',
- statIconClass: 'stat-icon-violet',
+ statIconClass: 'stat-icon-primary',
  link: '/executions',
  },
  {
  title: '运行中',
  value: executionsStore.stats.running,
  icon: 'lucide--zap',
- statIconClass: 'stat-icon-amber',
+ statIconClass: 'stat-icon-primary',
  link: '/executions?status=running',
  },
  {
  title: '待审批',
  value: executionsStore.stats.waitingApproval,
  icon: 'lucide--scan-eye',
- statIconClass: 'stat-icon-emerald',
+ statIconClass: 'stat-icon-primary',
  link: '/executions?status=waiting_approval',
  },
 ])
@@ -66,28 +66,28 @@ const quickActions = [
  title: '工作流管理',
  description: '编排自动化流程',
  link: '/workflows',
- iconBg: 'stat-icon-violet',
+ iconBg: 'stat-icon-primary',
  },
  {
  icon: 'lucide--play-circle',
  title: '执行监控',
  description: '查看运行状态',
  link: '/executions',
- iconBg: 'stat-icon-amber',
+ iconBg: 'stat-icon-primary',
  },
  {
  icon: 'lucide--git-branch',
  title: '仓库管理',
  description: '管理代码仓库',
  link: '/repositories',
- iconBg: 'stat-icon-emerald',
+ iconBg: 'stat-icon-primary',
  },
  {
  icon: 'lucide--message-square',
  title: 'AI 对话',
  description: '与 AI 助手交流',
  link: '/chat',
- iconBg: 'stat-icon-violet',
+ iconBg: 'stat-icon-primary',
  },
 ]
 </script>
@@ -95,7 +95,7 @@ const quickActions = [
  <div class="max-w-[1200px] mx-auto space-y-8">
  <!-- Hero 区域 — sub2api 风格简洁 -->
  <section class="text-center pt-6 pb-2">
- <div class="inline-flex items-center justify-center w-20 rounded-2xl gradient-primary mb-5 shadow-[0_0_20px_rgba(20,184,166,0.25)]">
+ <div class="inline-flex items-center justify-center w-20 rounded-2xl gradient-primary mb-5 shadow-glow">
  <span class="icon-[lucide--bot] text-4xl text-white" />
  </div>
  <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-3">

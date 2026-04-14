@@ -195,8 +195,8 @@ const columns: ColumnDef<WorkflowExecution> = [
  <!-- Header -->
  <PageHeader
  icon="lucide--play-circle"
- icon-gradient="from-emerald-500/20 to-teal-500/10"
- icon-color="text-emerald-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="执行监控"
  description="实时追踪工作流执行状态"
  >
@@ -222,7 +222,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <div class=" rounded-xl bg-primary/10">
- <span class="icon-[lucide--user-check] w-5 text-orange-500" />
+ <span class="icon-[lucide--user-check] w-5 text-primary" />
  </div>
  <div>
  <span class="text-xs text-muted-foreground block">待审批</span>
@@ -231,7 +231,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <div class=" rounded-xl bg-primary/10">
- <span class="icon-[lucide--check-circle] w-5 text-emerald-500" />
+ <span class="icon-[lucide--check-circle] w-5 text-primary" />
  </div>
  <div>
  <span class="text-xs text-muted-foreground block">已完成</span>
@@ -240,7 +240,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  </div>
  <div class="flex items-center gap-3 px-4 py-2 rounded-2xl bg-card/70 backdrop-blur-sm border border-border/50">
  <div class=" rounded-xl bg-primary/10">
- <span class="icon-[lucide--x-circle] w-5 text-red-500" />
+ <span class="icon-[lucide--x-circle] w-5 text-primary" />
  </div>
  <div>
  <span class="text-xs text-muted-foreground block">失败</span>

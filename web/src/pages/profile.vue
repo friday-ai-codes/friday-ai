@@ -67,8 +67,7 @@ onMounted( => {
 <template>
  <div class="min-h-[calc(100vh-8rem)] relative">
  <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
- <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-primary/10 rounded-full blur-3xl" />
+ <div class="absolute inset-x-0 top-0 bg-linear-to-b from-primary/6 to-transparent" />
  </div>
  <div class="max-w-xl mx-auto space-y-8 relative">
  <!-- 页面标题 -->

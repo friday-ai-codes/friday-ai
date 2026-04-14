@@ -215,7 +215,7 @@ watch( => loading.value, (isLoading) => {
  <div class="space-y-1">
  <div class="flex items-center gap-3">
  <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--bot] text-2xl text-orange-500" />
+ <span class="icon-[lucide--bot] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-2xl font-bold">
@@ -372,7 +372,7 @@ watch( => loading.value, (isLoading) => {
  class="group relative overflow-hidden"
  @click="saveConfig"
  >
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
@@ -385,7 +385,7 @@ watch( => loading.value, (isLoading) => {
  <!-- 配置说明 -->
  <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
  <div class="flex items-start gap-3">
- <span class="icon-[lucide--info] text-xl text-muted-foreground flex-shrink-0 mt-0.5" />
+ <span class="icon-[lucide--info] text-xl text-muted-foreground shrink-0 mt-0.5" />
  <div class="space-y-3">
  <h3 class="font-medium">
  配置说明
@@ -413,7 +413,7 @@ watch( => loading.value, (isLoading) => {
  title="项目不存在"
  description="未找到该项目"
  action-label="返回列表"
- gradient="from-orange-500/20 to-amber-500/20"
+ gradient="from-primary/20 to-primary/10"
  @action="router.push('/projects')"
  />
  <!-- 测试对话框 -->

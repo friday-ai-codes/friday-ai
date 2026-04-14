@@ -42,7 +42,7 @@ async function copyNodeId {
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
  <div class=" rounded-xl bg-primary/10">
- <Settings class="w-5 text-violet-500" />
+ <Settings class="w-5 text-primary" />
  </div>
  <div>
  <h3 class="text-base font-semibold">

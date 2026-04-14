@@ -167,8 +167,8 @@ const columns: ColumnDef<Runner> = [
  <!-- 页头 -->
  <PageHeader
  icon="lucide--server"
- icon-gradient="from-violet-500/20 to-purple-500/10"
- icon-color="text-violet-500"
+ icon-gradient="from-primary/20 to-primary/10"
+ icon-color="text-primary"
  title="Runner"
  description="管理和监控您的 Runner 实例"
  >
@@ -179,7 +179,7 @@ const columns: ColumnDef<Runner> = [
  </template>
  <template #actions>
  <Button class="group relative overflow-hidden" @click="router.push('/runners/new')">
- <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-1.5" />
  新建 Runner
  </Button>

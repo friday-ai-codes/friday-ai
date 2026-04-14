@@ -6,7 +6,7 @@ import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActiv
 describe('dashboardKpiCards', => {
  const stats = [
  { title: '项目总数', value: 10, icon: 'lucide--folder-git-2', statIconClass: 'stat-icon-primary', link: '/projects' },
- { title: '执行总数', value: 25, icon: 'lucide--layers', statIconClass: 'stat-icon-violet', link: '/executions' },
+ { title: '执行总数', value: 25, icon: 'lucide--layers', statIconClass: 'stat-icon-primary', link: '/executions' },
  ]
  it('should render correct number of StatCard components', => {
  const wrapper = mount(DashboardKpiCards, {
@@ -29,8 +29,8 @@ describe('dashboardKpiCards', => {
 describe('dashboardQuickActions', => {
  const actions = [
  { icon: 'lucide--plus', title: '新建项目', description: '创建新的开发项目', link: '/projects/new', iconBg: 'stat-icon-primary' },
- { icon: 'lucide--workflow', title: '工作流管理', description: '编排自动化流程', link: '/workflows', iconBg: 'stat-icon-violet' },
- { icon: 'lucide--play-circle', title: '执行监控', description: '查看运行状态', link: '/executions', iconBg: 'stat-icon-amber' },
+ { icon: 'lucide--workflow', title: '工作流管理', description: '编排自动化流程', link: '/workflows', iconBg: 'stat-icon-primary' },
+ { icon: 'lucide--play-circle', title: '执行监控', description: '查看运行状态', link: '/executions', iconBg: 'stat-icon-primary' },
  ]
  it('should render correct number of quick action items', => {
  const wrapper = mount(DashboardQuickActions, {

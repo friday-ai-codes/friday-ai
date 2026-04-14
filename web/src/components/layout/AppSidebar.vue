@@ -27,9 +27,11 @@ interface NavItem {
 const authStore = useAuthStore
 const chatStore = useChatStore
 const router = useRouter
+const route = useRoute
 const { isSystemAdmin } = usePermission
 const { mode } = useAppMode
 const appVersion = __APP_VERSION__
+const displayMode = computed( => (route.path === '/' ? mode.value: 'friday'))
 // 收缩状态持久化到 localStorage
 const isCollapsed = useLocalStorage('sidebar-collapsed', false)
 function toggleCollapse {
@@ -116,7 +118,7 @@ async function handleLogout {
  </div>
  <!-- ==================== 中间内容区（模式相关） ==================== -->
  <!-- ===== 工作台模式：导航菜单 ===== -->
- <nav v-if="mode === 'friday'" class="flex-1 overflow-y-auto py-1 scrollbar-hide":class="isCollapsed ? 'px-2': 'px-3'">
+ <nav v-if="displayMode === 'friday'" class="flex-1 overflow-y-auto py-1 scrollbar-hide":class="isCollapsed ? 'px-2': 'px-3'">
  <template
  v-for="item in mainNavItems":key="item.to"
  >
