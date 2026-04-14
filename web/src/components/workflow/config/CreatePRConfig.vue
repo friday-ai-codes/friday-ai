@@ -158,7 +158,7 @@ const addCrossReferences = field('add_cross_references', true)
  <!-- 交叉引用 - 使用 Glassmorphism 卡片样式 -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-lg bg-primary/10">
  <span class="icon-[lucide--link] text-primary" />
  </div>
  <div>
@@ -174,7 +174,7 @@ const addCrossReferences = field('add_cross_references', true)
  <!-- 输出变量说明 -->
  <div class="rounded-lg bg-muted/50 space-y-2">
  <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
- <span class="icon-[lucide--code] text-cyan-500" />
+ <span class="icon-[lucide--code] text-primary" />
  输出变量
  </p>
  <div class="bg-muted rounded-lg space-y-1.5 text-xs">

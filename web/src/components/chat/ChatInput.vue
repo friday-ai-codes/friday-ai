@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { BranchIndexRow } from '~/api/repositories'
 import type { Model } from '~/api/chat'
+import type { BranchIndexRow } from '~/api/repositories'
 import { getModels } from '~/api/chat'
 import { repositoriesApi } from '~/api/repositories'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
@@ -271,12 +271,7 @@ function toggleNotifications {
 <style scoped>
 .chat-input-dock {
  padding: 0 1rem 1.25rem;
- background: linear-gradient(
- to top,
- hsl(210 40% 98%) 60%,
- hsl(210 40% 98% / 0.95) 75%,
- hsl(210 40% 98% / 0) 100%
- );
+ background: linear-gradient(to top, hsl(210 40% 98%) 60%, hsl(210 40% 98% / 0.95) 75%, hsl(210 40% 98% / 0) 100%);
  pointer-events: none;
 }
 .chat-input-dock > * {
@@ -333,7 +328,9 @@ function toggleNotifications {
  0 1px 3px rgba(0, 0, 0, 0.06),
  0 4px 16px rgba(0, 0, 0, 0.04),
  0 8px 32px rgba(0, 0, 0, 0.02);
- transition: border-color 0.2s, box-shadow 0.2s;
+ transition:
+ border-color 0.2s,
+ box-shadow 0.2s;
  overflow: hidden;
 }
 .input-card:focus-within {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
 import { get, post, put } from '~/api/client'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import {
  Collapsible,
@@ -12,6 +11,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = defineProps<{
  projectId: string
 }>
@@ -206,7 +206,7 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--pencil] text-xl text-primary" />
  </div>
  <div>
@@ -344,7 +344,7 @@ function handleCancel {
  <!-- 测试发送 -->
  <div class="space-y-3">
  <p class="text-xs font-medium text-foreground flex items-center gap-1.5">
- <span class="icon-[lucide--flask-conical] text-amber-500" />
+ <span class="icon-[lucide--flask-conical] text-primary" />
  测试消息发送
  </p>
  <div class="space-y-1.5">

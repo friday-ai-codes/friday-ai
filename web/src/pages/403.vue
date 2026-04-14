@@ -15,15 +15,14 @@ function goBack {
  <div class="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
  <!-- 背景装饰 -->
  <div class="absolute inset-0 -z-10">
- <div class="absolute -top-40 -right-40 w-96 bg-gradient-to-br from-destructive/20 to-secondary/30 rounded-full blur-3xl" />
+ <div class="absolute -top-40 -right-40 w-96 bg-primary/10 rounded-full blur-3xl" />
  <div class="absolute -bottom-40 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-destructive/10 rounded-full blur-3xl" />
- <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-destructive/5 to-secondary/10 rounded-full blur-3xl" />
+ <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-3xl" />
  </div>
  <!-- 内容卡片 -->
  <div class="w-full max-w-md mx-4">
  <div class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-destructive/20 via-secondary/30 to-destructive/20 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-destructive/5 text-center">
  <!-- 图标 -->

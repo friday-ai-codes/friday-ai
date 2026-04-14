@@ -329,7 +329,7 @@ watch( => props.workflow, => {
  <!-- 无需输入数据时显示 -->
  <template v-else>
  <div class="flex flex-col items-center py-6 text-center">
- <div class=" rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 mb-4">
+ <div class=" rounded-2xl bg-primary/10 mb-4">
  <span class="icon-[lucide--play-circle] text-4xl text-emerald-500" />
  </div>
  <p class="text-muted-foreground">

@@ -3,8 +3,6 @@ import type { ColumnDef } from '@tanstack/vue-table'
 import type { Invitation, SystemUser } from '~/types'
 import { h } from 'vue'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import DataTable from '~/components/common/DataTable.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -12,6 +10,8 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 definePage({
  meta: { requiresAdmin: true },
 })
@@ -104,7 +104,7 @@ const columns: ColumnDef<SystemUser> = [
  const initial = displayName.charAt(0).toUpperCase
  return h('div', { class: 'flex items-center gap-3' }, [
  h('div', {
- class: 'w-9 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-sm font-medium shrink-0',
+ class: 'w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium shrink-0',
  }, initial),
  h('div', { class: 'min-w-0' }, [
  h('span', { class: 'font-medium text-sm text-foreground block' }, displayName),
@@ -170,8 +170,8 @@ const columns: ColumnDef<SystemUser> = [
  <!-- 邀请新用户 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--user-plus] text-2xl text-primary" />
  </div>
  <div>

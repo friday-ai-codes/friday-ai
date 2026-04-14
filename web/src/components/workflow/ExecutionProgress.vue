@@ -1,21 +1,14 @@
 <script setup lang="ts">
 import type { NodeExecution, WorkflowExecution } from '~/stores/useExecutionsStore'
 import { useIntervalFn } from '@vueuse/core'
-import {
- AlertCircle,
- CheckCircle2,
- Clock,
- Loader2,
- Play,
- SkipForward,
- XCircle,
-} from 'lucide-vue-next'
+import { Play, SkipForward } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { skipNodeWait, triggerNodeResume } from '~/api/workflow'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Progress } from '~/components/ui/progress'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
+import { getStatusConfig } from '~/config/status'
 import { cn } from '~/lib/utils'
 interface Props {
  execution: WorkflowExecution
@@ -28,90 +21,19 @@ const props = withDefaults(defineProps<Props>, {
 const emit = defineEmits<{
  (e: 'selectNode', node: NodeExecution): void
 }>
-const statusConfig = {
- pending: {
- icon: Clock,
- color: 'text-muted-foreground',
- bg: 'bg-muted/50',
- border: 'border-border/50',
- label: '等待中',
- animate: false,
- },
- running: {
- icon: Loader2,
- color: 'text-primary',
- bg: 'bg-primary/5 dark:bg-primary/10',
- border: 'border-primary/20 dark:border-primary/30',
- label: '运行中',
- animate: true,
- },
- completed: {
- icon: CheckCircle2,
- color: 'text-emerald-500',
- bg: 'bg-emerald-500/10',
- border: 'border-emerald-500/20',
- label: '已完成',
- animate: false,
- },
- failed: {
- icon: XCircle,
- color: 'text-red-500',
- bg: 'bg-red-500/10',
- border: 'border-red-500/20',
- label: '失败',
- animate: false,
- },
- waiting_approval: {
- icon: Clock,
- color: 'text-amber-500',
- bg: 'bg-amber-500/10',
- border: 'border-amber-500/20',
- label: '待审批',
- animate: false,
- },
- paused: {
- icon: AlertCircle,
- color: 'text-yellow-500',
- bg: 'bg-yellow-500/10',
- border: 'border-yellow-500/20',
- label: '已暂停',
- animate: false,
- },
- cancelled: {
- icon: XCircle,
- color: 'text-muted-foreground',
- bg: 'bg-muted/50',
- border: 'border-border/50',
- label: '已取消',
- animate: false,
- },
- waiting_event: {
- icon: Clock,
- color: 'text-amber-500',
- bg: 'bg-amber-500/10',
- border: 'border-amber-500/20',
- label: '等待事件',
- animate: false,
- },
- suspended: {
- icon: Clock,
- color: 'text-amber-500',
- bg: 'bg-amber-500/10',
- border: 'border-amber-500/20',
- label: '挂起中',
- animate: false,
- },
- partial_success: {
- icon: AlertCircle,
- color: 'text-amber-500',
- bg: 'bg-gradient-to-br from-amber-500/20 to-orange-500/10',
- border: 'border-amber-200 dark:border-amber-800',
- label: '部分完成',
- animate: false,
- },
-} as const
-function getStatusConfig(status: string) {
- return statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
+function getVariantStyles(variant: string) {
+ switch (variant) {
+ case 'success': return { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', color: 'text-emerald-500' }
+ case 'destructive': return { bg: 'bg-red-500/10', border: 'border-red-500/20', color: 'text-red-500' }
+ case 'warning': return { bg: 'bg-amber-500/10', border: 'border-amber-500/20', color: 'text-amber-500' }
+ case 'info': return { bg: 'bg-primary/10', border: 'border-primary/20', color: 'text-primary' }
+ default: return { bg: 'bg-muted/50', border: 'border-border/50', color: 'text-muted-foreground' }
+ }
+}
+function getExecutionStatus(status: string) {
+ const config = getStatusConfig('execution', status)
+ const styles = getVariantStyles(config.variant)
+ return { ...config, ...styles }
 }
 const formattedDuration = computed( => {
  if (!props.execution.duration)
@@ -232,22 +154,13 @@ async function handleTriggerResume(node: NodeExecution) {
  <div class="space-y-3">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
- <div:class="cn(
- '.5 rounded-md border',
- getStatusConfig(execution.status).bg,
- getStatusConfig(execution.status).border,
- )"
+ <div:class="cn('.5 rounded-md border', getExecutionStatus(execution.status).bg, getExecutionStatus(execution.status).border)"
  >
- <component:is="getStatusConfig(execution.status).icon":class="cn(
- 'w-4 ',
- getStatusConfig(execution.status).color,
- getStatusConfig(execution.status).animate && 'animate-spin',
- )"
- />
+ <span:class="cn('w-4 ', `icon-[${getExecutionStatus(execution.status).icon}]`, getExecutionStatus(execution.status).color, getExecutionStatus(execution.status).animate && 'animate-spin')" />
  </div>
  <div class="flex flex-col">
  <span class="font-medium leading-none">
- {{ getStatusConfig(execution.status).label }}
+ {{ getExecutionStatus(execution.status).label }}
  </span>
  <span v-if="!compact" class="text-xs text-muted-foreground mt-1">
  {{ formattedDuration }}
@@ -265,11 +178,7 @@ async function handleTriggerResume(node: NodeExecution) {
  <span>{{ Math.round(execution.progress) }}%</span>
  </div>
  <Progress:model-value="execution.progress"
- class="":class="cn(
- execution.status === 'failed' && '[&>div]:bg-red-500',
- execution.status === 'completed' && '[&>div]:bg-green-500',
- execution.status === 'partial_success' && '[&>div]:bg-amber-500',
- )"
+ class="":class="cn(execution.status === 'failed' && '[&>div]:bg-red-500', execution.status === 'completed' && '[&>div]:bg-green-500', execution.status === 'partial_success' && '[&>div]:bg-amber-500')"
  />
  </div>
  </div>
@@ -285,18 +194,9 @@ async function handleTriggerResume(node: NodeExecution) {
  @click="emit('selectNode', node)"
  >
  <!-- Node Status Icon -->
- <div:class="cn(
- 'flex-shrink-0 w-6 rounded-full flex items-center justify-center border',
- getStatusConfig(node.status).bg,
- getStatusConfig(node.status).border,
- )"
+ <div:class="cn('flex-shrink-0 w-6 rounded-full flex items-center justify-center border', getExecutionStatus(node.status).bg, getExecutionStatus(node.status).border)"
  >
- <component:is="getStatusConfig(node.status).icon":class="cn(
- 'w-3.5 .5',
- getStatusConfig(node.status).color,
- getStatusConfig(node.status).animate && 'animate-spin',
- )"
- />
+ <span:class="cn('w-3.5 .5', `icon-[${getExecutionStatus(node.status).icon}]`, getExecutionStatus(node.status).color, getExecutionStatus(node.status).animate && 'animate-spin')" />
  </div>
  <!-- Node Info -->
  <div class="flex-1 min-w-0">
@@ -352,8 +252,8 @@ async function handleTriggerResume(node: NodeExecution) {
  <!-- Other statuses -->
  <template v-else>
  <div class="flex items-center gap-2 text-xs text-muted-foreground">
- <span:class="getStatusConfig(node.status).color">
- {{ getStatusConfig(node.status).label }}
+ <span:class="getExecutionStatus(node.status).color">
+ {{ getExecutionStatus(node.status).label }}
  </span>
  <!-- Success/failed counts for partial_success nodes -->
  <template v-if="node.status === 'partial_success' && getTaskCounts(node)">

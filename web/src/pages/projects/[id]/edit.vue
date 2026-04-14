@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/projects/[id]/edit')
 const router = useRouter
 const projectsStore = useProjectsStore
@@ -85,13 +85,12 @@ async function handleSubmit {
  <!-- 表单卡片 -->
  <div v-else class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-sm rounded-2xl border border-border/50 overflow-hidden">
  <!-- 标题区域 -->
- <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
+ <div class=" border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--pencil] text-2xl text-primary" />
  </div>
  <div>
@@ -156,7 +155,7 @@ async function handleSubmit {
  type="submit":disabled="submitting"
  class="group relative overflow-hidden"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <template v-if="submitting">
  <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  保存中...

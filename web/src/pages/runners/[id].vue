@@ -2,15 +2,14 @@
 import type { RunnerTaskAssignment } from '~/types'
 import { useHead } from '@vueuse/head'
 import { runnersApi } from '~/api'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({ title: 'Runner 详情 - Friday AI' })
 const route = useRoute('/runners/[id]')
 const router = useRouter
@@ -152,15 +151,14 @@ function formatTimeAgo(dateStr: string | null) {
  <template v-else-if="runner">
  <!-- 基本信息卡片 -->
  <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--info] text-violet-500" />
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ <span class="icon-[lucide--info] text-primary" />
  基本信息
- </CardTitle>
- </CardHeader>
- <CardContent class="pt-6">
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
  <div>
  <div class="text-sm text-muted-foreground">
@@ -261,21 +259,21 @@ function formatTimeAgo(dateStr: string | null) {
  </div>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
  <!-- 当前任务卡片 -->
- <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
- <CardTitle class="flex items-center gap-2">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--play-circle] text-primary" />
  当前任务
  <Badge variant="secondary" class="ml-auto transition-colors duration-300">
  {{ runner.current_task_list.length }}
  </Badge>
- </CardTitle>
- </CardHeader>
- <CardContent class="pt-6">
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <p v-if="runner.current_task_list.length === 0" class="text-sm text-muted-foreground">
  暂无正在执行的任务
  </p>
@@ -288,18 +286,18 @@ function formatTimeAgo(dateStr: string | null) {
  <span class="text-xs text-muted-foreground font-mono">{{ task.id.slice(0, 8) }}</span>
  </div>
  </TransitionGroup>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 历史任务卡片 -->
- <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-teal-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--history] text-emerald-500" />
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ <span class="icon-[lucide--history] text-primary" />
  历史任务
  <Badge variant="secondary" class="ml-auto">
  {{ historyTotal }}
  </Badge>
- </CardTitle>
+ </h3>
  <div class="flex gap-2 mt-2">
  <Button size="sm":variant="!historyStatus ? 'default': 'outline'" @click="historyStatus = undefined">
  全部
@@ -311,8 +309,8 @@ function formatTimeAgo(dateStr: string | null) {
  失败
  </Button>
  </div>
- </CardHeader>
- <CardContent class="pt-6">
+ </div>
+ <div class=" space-y-4">
  <p v-if="historyTasks.length === 0" class="text-sm text-muted-foreground">
  暂无历史任务
  </p>
@@ -342,8 +340,8 @@ function formatTimeAgo(dateStr: string | null) {
  </Button>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 实时日志 -->
  <RunnerLogPanel:runner-id="runnerId" />
  </template>

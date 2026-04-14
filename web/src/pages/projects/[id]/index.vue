@@ -4,14 +4,14 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import { getProjectClaudeConfig } from '~/api/settings'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import BaseModal from '~/components/modal/BaseModal.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/projects/[id]/')
 const router = useRouter
@@ -237,7 +237,7 @@ async function handleCustomToken {
  <div class="flex items-start justify-between">
  <div class="space-y-2">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-open] text-2xl text-primary" />
  </div>
  <div>
@@ -268,7 +268,9 @@ async function handleCustomToken {
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--info] text-primary" />
- <h3 class="text-sm font-semibold">基本信息</h3>
+ <h3 class="text-sm font-semibold">
+ 基本信息
+ </h3>
  </div>
  <div class=" space-y-4">
  <div>
@@ -299,7 +301,9 @@ async function handleCustomToken {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--git-branch] text-primary" />
- <h3 class="text-sm font-semibold">关联仓库</h3>
+ <h3 class="text-sm font-semibold">
+ 关联仓库
+ </h3>
  <span class="text-xs text-muted-foreground">({{ project.repositories?.length || 0 }})</span>
  </div>
  <Button variant="outline" size="sm" class=" text-xs" @click="openLinkDialog">
@@ -310,7 +314,9 @@ async function handleCustomToken {
  <div class="">
  <div v-if="project.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
  <span class="icon-[lucide--git-branch] text-2xl mb-2 block opacity-40" />
- <p class="text-sm">暂无关联仓库</p>
+ <p class="text-sm">
+ 暂无关联仓库
+ </p>
  </div>
  <div v-else class="space-y-2">
  <div
@@ -342,7 +348,9 @@ async function handleCustomToken {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--message-square] text-primary" />
- <h3 class="text-sm font-semibold">飞书配置</h3>
+ <h3 class="text-sm font-semibold">
+ 飞书配置
+ </h3>
  </div>
  <RouterLink:to="`/projects/${project.id}/feishu`">
  <Button variant="ghost" size="sm" class=" text-xs group">
@@ -357,17 +365,25 @@ async function handleCustomToken {
  <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="text-sm font-medium text-foreground">已配置</p>
- <p class="text-xs text-muted-foreground">插件 ID：{{ feishuConfig.plugin_id }}</p>
+ <p class="text-sm font-medium text-foreground">
+ 已配置
+ </p>
+ <p class="text-xs text-muted-foreground">
+ 插件 ID：{{ feishuConfig.plugin_id }}
+ </p>
  </div>
  </div>
  <div v-else class="flex items-center gap-3 text-muted-foreground">
  <span class="icon-[lucide--link] text-lg opacity-40" />
  <div class="flex-1">
- <p class="text-sm">尚未配置飞书集成</p>
+ <p class="text-sm">
+ 尚未配置飞书集成
+ </p>
  </div>
  <RouterLink:to="`/projects/${project.id}/feishu`">
- <Button size="sm" class=" text-xs">配置</Button>
+ <Button size="sm" class=" text-xs">
+ 配置
+ </Button>
  </RouterLink>
  </div>
  </div>
@@ -377,7 +393,9 @@ async function handleCustomToken {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--bot] text-primary" />
- <h3 class="text-sm font-semibold">Claude 配置</h3>
+ <h3 class="text-sm font-semibold">
+ Claude 配置
+ </h3>
  </div>
  <RouterLink:to="`/projects/${project.id}/claude`">
  <Button variant="ghost" size="sm" class=" text-xs group">
@@ -392,7 +410,9 @@ async function handleCustomToken {
  <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="text-sm font-medium text-foreground">已配置</p>
+ <p class="text-sm font-medium text-foreground">
+ 已配置
+ </p>
  <p class="text-xs text-muted-foreground">
  来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
  </p>
@@ -404,10 +424,14 @@ async function handleCustomToken {
  <div v-else class="flex items-center gap-3 text-muted-foreground">
  <span class="icon-[lucide--bot] text-lg opacity-40" />
  <div class="flex-1">
- <p class="text-sm">尚未配置 Claude API 密钥</p>
+ <p class="text-sm">
+ 尚未配置 Claude API 密钥
+ </p>
  </div>
  <RouterLink:to="`/projects/${project.id}/claude`">
- <Button size="sm" class=" text-xs">配置</Button>
+ <Button size="sm" class=" text-xs">
+ 配置
+ </Button>
  </RouterLink>
  </div>
  </div>
@@ -446,7 +470,9 @@ async function handleCustomToken {
  <div class="card md:col-span-2">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--key] text-primary" />
- <h3 class="text-sm font-semibold">Webhook Token</h3>
+ <h3 class="text-sm font-semibold">
+ Webhook Token
+ </h3>
  <span class="text-xs text-muted-foreground ml-1">用于验证飞书 Webhook 请求的来源</span>
  </div>
  <div class=" space-y-4">
@@ -491,7 +517,9 @@ async function handleCustomToken {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--layers] text-primary" />
- <h3 class="text-sm font-semibold">相关执行</h3>
+ <h3 class="text-sm font-semibold">
+ 相关执行
+ </h3>
  </div>
  <RouterLink:to="`/executions?project_id=${project.id}`">
  <Button variant="ghost" size="sm" class=" text-xs group">
@@ -503,7 +531,9 @@ async function handleCustomToken {
  <div class="">
  <div v-if="projectExecutions.length === 0" class="text-center py-6 text-muted-foreground">
  <span class="icon-[lucide--inbox] text-2xl mb-2 block opacity-40" />
- <p class="text-sm">暂无执行记录</p>
+ <p class="text-sm">
+ 暂无执行记录
+ </p>
  </div>
  <div v-else class="space-y-1.5">
  <RouterLink
@@ -634,7 +664,7 @@ async function handleCustomToken {
  <!-- 标题栏 - 固定高度 -->
  <div class="flex items-center justify-between mb-3">
  <h4 class="text-sm font-medium flex items-center gap-2">
- <span class="icon-[lucide--link] text-violet-500" />
+ <span class="icon-[lucide--link] text-primary" />
  已关联仓库
  <span class="text-xs text-muted-foreground font-normal">({{ linkedRepositories.length }})</span>
  </h4>
@@ -754,7 +784,7 @@ async function handleCustomToken {
  取消
  </Button>
  <Button:disabled="customTokenLoading" class="group relative overflow-hidden" @click="handleCustomToken">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span v-if="customTokenLoading" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ customTokenLoading ? '保存中...': '保存' }}
  </Button>

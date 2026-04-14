@@ -29,11 +29,7 @@ const iconSizeClass = computed( => ({
 <template>
  <Badge:variant="config.variant":class="sizeClass">
  <span
- v-if="showIcon":class="[
- `icon-[${config.icon}]`,
- iconSizeClass,
- config.animate ? 'animate-spin': '',
- ]"
+ v-if="showIcon":class="[`icon-[${config.icon}]`, iconSizeClass, config.animate ? 'animate-spin': '']"
  />
  <span v-if="showLabel">{{ config.label }}</span>
  </Badge>

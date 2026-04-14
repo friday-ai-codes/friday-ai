@@ -5,7 +5,6 @@ import { computed, onMounted, ref } from 'vue'
 import { deleteTrigger, listTriggers, updateTrigger } from '~/api/workflow'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Switch } from '~/components/ui/switch'
 interface Props {
  workflowId: string
@@ -92,14 +91,14 @@ onMounted( => {
 defineExpose({ refresh: loadTriggers })
 </script>
 <template>
- <Card class="h-full flex flex-col">
- <CardHeader class="pb-3 border-b">
+ <div class="card h-full flex flex-col">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
  <Zap class="w-4 text-primary" />
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  触发器配置
- </CardTitle>
+ </h3>
  <Badge v-if="activeTriggerCount > 0" variant="secondary" class="text-xs">
  {{ activeTriggerCount }} 个启用
  </Badge>
@@ -109,8 +108,8 @@ defineExpose({ refresh: loadTriggers })
  添加
  </Button>
  </div>
- </CardHeader>
- <CardContent class="flex-1 space-y-2 overflow-auto">
+ </div>
+ <div class=" space-y-4 flex-1 overflow-auto">
  <!-- Loading -->
  <div v-if="loading" class="text-center py-8 text-muted-foreground">
  <div class="animate-spin w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
@@ -170,8 +169,8 @@ defineExpose({ refresh: loadTriggers })
  </Button>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 删除确认对话框 -->
  <ConfirmDialog
  v-model:open="deleteDialogOpen"

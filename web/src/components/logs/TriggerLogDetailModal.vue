@@ -2,7 +2,6 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { VueFinalModal } from 'vue-final-modal'
 import { deleteTriggerLog, getTriggerLog, retryTriggerLog } from '~/api/logs'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import {
  AlertDialog,
@@ -20,6 +19,7 @@ import {
  CollapsibleContent,
  CollapsibleTrigger,
 } from '~/components/ui/collapsible'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import JsonHighlighter from './JsonHighlighter.vue'
 interface Props {
  logId: string
@@ -140,12 +140,12 @@ const webhookHeader = computed( => {
  <div class="relative overflow-hidden shrink-0">
  <!-- Background gradient decoration -->
  <div class="absolute inset-0 -z-10">
- <div class="absolute -top-20 -right-20 w-40 bg-gradient-to-br from-primary/20 to-primary/30 rounded-full blur-3xl" />
+ <div class="absolute -top-20 -right-20 w-40 bg-primary/10 rounded-full blur-3xl" />
  <div class="absolute top-10 -left-10 w-32 bg-gradient-to-tr from-violet-500/20 to-purple-500/10 rounded-full blur-3xl" />
  </div>
  <div class="flex items-start justify-between border-b border-border/50">
  <div class="flex items-center gap-4">
- <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-xl bg-primary/10">
  <span class="icon-[lucide--file-text] text-2xl text-cyan-500" />
  </div>
  <div>
@@ -183,7 +183,7 @@ const webhookHeader = computed( => {
  <!-- Webhook 事件信息 -->
  <div class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
- <div class=".5 rounded-md bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-md bg-primary/10">
  <span class="icon-[lucide--webhook] text-sm text-violet-500" />
  </div>
  <h4 class="text-sm font-medium">
@@ -260,7 +260,7 @@ const webhookHeader = computed( => {
  <!-- 关联的工作流执行 -->
  <div v-if="log.workflow_executions?.length" class="rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 overflow-hidden">
  <div class="flex items-center gap-2 px-3 py-2 border-b border-border/50">
- <div class=".5 rounded-md bg-gradient-to-br from-emerald-500/20 to-teal-500/10">
+ <div class=".5 rounded-md bg-primary/10">
  <span class="icon-[lucide--play-circle] text-sm text-emerald-500" />
  </div>
  <h4 class="text-sm font-medium">
@@ -275,13 +275,7 @@ const webhookHeader = computed( => {
  >
  <div class="flex items-center gap-2 min-w-0">
  <span
- class="w-2 rounded-full shrink-0":class="{
- 'bg-emerald-500': exec.status === 'completed',
- 'bg-primary animate-pulse': exec.status === 'running',
- 'bg-amber-500': exec.status === 'pending',
- 'bg-red-500': exec.status === 'failed',
- 'bg-gray-400': exec.status === 'cancelled',
- }"
+ class="w-2 rounded-full shrink-0":class="{ 'bg-emerald-500': exec.status === 'completed', 'bg-primary animate-pulse': exec.status === 'running', 'bg-amber-500': exec.status === 'pending', 'bg-red-500': exec.status === 'failed', 'bg-gray-400': exec.status === 'cancelled' }"
  />
  <span class="text-sm truncate">{{ exec.workflow_name }}</span>
  </div>
@@ -301,7 +295,7 @@ const webhookHeader = computed( => {
  class="flex items-center justify-between w-full px-3 py-2 hover:bg-muted/30 transition-colors"
  >
  <div class="flex items-center gap-2">
- <div class=".5 rounded-md bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <div class=".5 rounded-md bg-primary/10">
  <span class="icon-[lucide--code] text-sm text-amber-500" />
  </div>
  <h4 class="text-sm font-medium">

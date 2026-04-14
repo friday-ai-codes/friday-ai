@@ -112,7 +112,7 @@ const advancedOpen = ref(false)
  <!-- ================================================================== -->
  <!-- Introduction Card -->
  <!-- ================================================================== -->
- <div class="rounded-xl bg-gradient-to-br from-violet-500/10 to-purple-400/5 border border-violet-500/20 ">
+ <div class="rounded-xl bg-primary/10 border border-violet-500/20 ">
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--sparkles] text-violet-500 text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">

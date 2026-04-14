@@ -38,11 +38,7 @@ const sideClasses = computed( => {
  class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
  />
  <DialogContent
- v-bind="forwarded":class="cn(
- 'fixed z-50 gap-4 bg-background shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
- sideClasses,
- props.class,
- )"
+ v-bind="forwarded":class="cn('fixed z-50 gap-4 bg-background shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500', sideClasses, props.class)"
  >
  <slot />
  <DialogClose

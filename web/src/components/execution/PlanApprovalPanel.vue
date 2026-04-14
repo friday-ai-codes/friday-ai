@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Collapsible,
  CollapsibleContent,
@@ -124,18 +123,18 @@ async function handleReject {
 }
 </script>
 <template>
- <Card class="card overflow-hidden">
+ <div class="card card overflow-hidden">
  <!-- Header -->
- <CardHeader class="pb-3">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class="bg-gradient-to-br from-amber-500/20 to-orange-400/10 rounded-lg ">
+ <div class="bg-primary/10 rounded-lg ">
  <span class="icon-[lucide--check-circle] w-5 text-amber-500" />
  </div>
  <div>
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  {{ planTitle }}
- </CardTitle>
+ </h3>
  <a
  v-if="documentUrl":href="documentUrl"
  target="_blank"
@@ -170,8 +169,8 @@ async function handleReject {
  待审批
  </Badge>
  </div>
- </CardHeader>
- <CardContent class="space-y-4">
+ </div>
+ <div class=" space-y-4">
  <!-- Summary (always visible) -->
  <div v-if="planSummary" class="space-y-1.5">
  <div class="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
@@ -301,7 +300,7 @@ async function handleReject {
  <!-- Action buttons (only when waiting) -->
  <div v-if="isWaiting" class="flex items-center gap-3 pt-1">
  <Button:disabled="submitting"
- class="flex-1 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-600 hover:to-teal-500 text-white shadow-md hover:shadow-lg transition-all"
+ class="flex-1 hover:from-emerald-600 hover:to-teal-500 text-white shadow-md hover:shadow-lg transition-all"
  @click="handleApprove"
  >
  <span class="icon-[lucide--check] w-4 mr-2" />
@@ -316,8 +315,8 @@ async function handleReject {
  驳回
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- Reject Dialog -->
  <Dialog v-model:open="rejectDialogOpen">
  <DialogContent>

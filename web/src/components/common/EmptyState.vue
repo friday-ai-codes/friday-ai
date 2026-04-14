@@ -19,13 +19,11 @@ const emit = defineEmits<{
 <template>
  <div class="relative flex flex-col items-center justify-center py-16 text-center">
  <!-- 背景装饰 -->
- <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 bg-gradient-to-br rounded-full blur-3xl opacity-30":class="gradient" />
- </div>
+ <div class="absolute inset-0 -z-10 overflow-hidden" />
  <!-- 图标容器 -->
  <div class="relative mb-6">
- <div class="absolute inset-0 bg-gradient-to-br from-muted to-muted/30 rounded-2xl blur-xl" />
- <div class="relative inline-flex items-center justify-center w-20 rounded-2xl bg-gradient-to-br from-muted/80 to-muted/40 border border-border/50 backdrop-blur-sm">
+ <div class="absolute inset-0 bg-primary/10 rounded-2xl blur-xl" />
+ <div class="relative inline-flex items-center justify-center w-20 rounded-2xl bg-primary/10 border border-border/50 backdrop-blur-sm">
  <span class="text-4xl text-muted-foreground/60":class="[`icon-[${icon}]`]" />
  </div>
  </div>
@@ -38,7 +36,7 @@ const emit = defineEmits<{
  </p>
  <!-- 操作按钮 -->
  <Button v-if="actionLabel" class="group relative overflow-hidden" @click="emit('action')">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  {{ actionLabel }}
  </Button>

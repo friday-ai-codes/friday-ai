@@ -14,10 +14,10 @@ function handleDragStart(event: DragEvent) {
 }
 function getIconGradient(color: string): string {
  const gradients: Record<string, string> = {
- blue: 'bg-gradient-to-br from-primary/20 to-primary/10',
- green: 'bg-gradient-to-br from-emerald-500/20 to-teal-400/10',
- purple: 'bg-gradient-to-br from-violet-500/20 to-purple-400/10',
- orange: 'bg-gradient-to-br from-amber-500/20 to-orange-400/10',
+ blue: 'bg-primary/10',
+ green: 'bg-primary/10',
+ purple: 'bg-primary/10',
+ orange: 'bg-primary/10',
  }
  return gradients[color] || gradients.blue
 }
@@ -43,16 +43,12 @@ function getHoverGlow(color: string): string {
 <template>
  <div
  draggable="true"
- class="group flex items-center gap-3 text-sm rounded-xl
- bg-card/70 backdrop-blur-sm border border-border/50
- transition-all duration-300 cursor-grab active:cursor-grabbing
- hover:bg-card/90 hover:shadow-md":class="getHoverGlow(visual.color)"
+ class="group flex items-center gap-3 text-sm rounded-xl bg-card/70 backdrop-blur-sm border border-border/50 transition-all duration-300 cursor-grab active:cursor-grabbing hover:bg-card/90 hover:shadow-md":class="getHoverGlow(visual.color)"
  @dragstart="handleDragStart"
  >
  <!-- Drag Handle (6-dot grip) -->
  <div
- class=".5 rounded-lg bg-muted/50
- hover:bg-muted transition-colors duration-200"
+ class=".5 rounded-lg bg-muted/50 hover:bg-muted transition-colors duration-200"
  >
  <span class="icon-[lucide--grip-vertical] text-lg text-muted-foreground" />
  </div>
@@ -74,8 +70,7 @@ function getHoverGlow(color: string): string {
  <!-- Arrow indicator on hover -->
  <div class="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
  <span
- class="icon-[lucide--arrow-right] text-sm text-muted-foreground/60
- group-hover:translate-x-1 transition-transform duration-200"
+ class="icon-[lucide--arrow-right] text-sm text-muted-foreground/60 group-hover:translate-x-1 transition-transform duration-200"
  />
  </div>
  </div>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import type { FeishuDocConfig } from '~/api/projects'
 /**
  * 飞书配置页面
  * 用于配置项目的飞书集成
  */
 import type { FeishuConfig } from '~/types'
-import type { FeishuDocConfig } from '~/api/projects'
 import { useHead } from '@vueuse/head'
 import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/projects'
 import { FeishuConfigForm } from '~/components/feishu'
@@ -103,7 +103,7 @@ async function handleUpdated {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--message-square] text-2xl text-emerald-500" />
  </div>
  <div>
@@ -124,7 +124,9 @@ async function handleUpdated {
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--file-up] text-primary" />
- <h2 class="font-semibold">飞书文档导出</h2>
+ <h2 class="font-semibold">
+ 飞书文档导出
+ </h2>
  </div>
  <div class=" space-y-4">
  <div class="space-y-2">
@@ -150,7 +152,6 @@ async function handleUpdated {
  </div>
  <!-- 使用说明 -->
  <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
  <div class="relative rounded-2xl border border-dashed border-border/50 bg-card/80 backdrop-blur-sm">
  <div class="flex items-start gap-3">
  <span class="icon-[lucide--info] text-xl text-emerald-500 flex-shrink-0 mt-0.5" />

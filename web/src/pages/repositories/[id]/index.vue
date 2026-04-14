@@ -3,19 +3,19 @@ import type { BranchIndexRow, IndexStatusResponse } from '~/api/repositories'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
-import { useErrorHandler } from '~/composables/useErrorHandler'
+import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
+import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
-import AISummarySection from '~/components/repository/AISummarySection.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
-import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { MarkdownPreview } from '~/components/ui/markdown-editor'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/repositories/[id]/')
 const router = useRouter
@@ -216,7 +216,7 @@ function copyUrl {
  <!-- ==================== 头部区域 ==================== -->
  <div class="card overflow-hidden">
  <!-- 顶部装饰线 -->
- <div class=".5 bg-gradient-to-r from-primary via-primary/70 to-primary/40" />
+ <div class=".5" />
  <div class=" space-y-4">
  <!-- 第一行：标题 + 操作按钮 -->
  <div class="flex items-start justify-between gap-4">
@@ -267,27 +267,16 @@ function copyUrl {
  <!-- 快速状态指示器 -->
  <div class="flex items-center gap-2 pl-[52px] flex-wrap">
  <div
- class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{
- 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED,
- 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING,
- 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED,
- 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED,
- }"
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED, 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING, 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED, 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  >
- <span:class="{
- 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED,
- 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING,
- 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED,
- 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED,
- }"
+ <span:class="{ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED, 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING, 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED, 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  />
  {{
  indexStatus?.index_status === IndexStatus.INDEXED ? '索引就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '索引构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': '未建索引'
  }}
  </div>
  <div
- class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="credential
- ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': 'bg-muted/60 text-muted-foreground border border-border/50'"
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="credential ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': 'bg-muted/60 text-muted-foreground border border-border/50'"
  >
  <span:class="credential ? 'icon-[lucide--shield-check]': 'icon-[lucide--shield-off]'" />
  {{ credential ? '凭证已配置': '未配置凭证' }}
@@ -329,7 +318,9 @@ function copyUrl {
  <div v-if="branchNames.length > 0" class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--git-branch] text-primary" />
- <h3 class="text-sm font-semibold">分支索引</h3>
+ <h3 class="text-sm font-semibold">
+ 分支索引
+ </h3>
  <span class="text-xs text-muted-foreground">选择检索分支与健康状态</span>
  </div>
  <div class=" space-y-4">
@@ -371,7 +362,9 @@ function copyUrl {
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--info] text-primary" />
- <h3 class="text-sm font-semibold">仓库信息</h3>
+ <h3 class="text-sm font-semibold">
+ 仓库信息
+ </h3>
  </div>
  <div class="">
  <div class="grid gap-5 sm:grid-cols-2">
@@ -412,13 +405,17 @@ function copyUrl {
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--folder] text-primary" />
- <h3 class="text-sm font-semibold">关联项目</h3>
+ <h3 class="text-sm font-semibold">
+ 关联项目
+ </h3>
  <span class="text-xs text-muted-foreground">({{ repository.projects?.length || 0 }})</span>
  </div>
  <div class="">
  <div v-if="!repository.projects || repository.projects.length === 0" class="text-center py-6">
  <span class="icon-[lucide--folder] text-2xl text-muted-foreground/40 block mb-2" />
- <p class="text-sm text-muted-foreground">暂无关联项目</p>
+ <p class="text-sm text-muted-foreground">
+ 暂无关联项目
+ </p>
  </div>
  <div v-else class="space-y-1.5">
  <RouterLink
@@ -442,7 +439,9 @@ function copyUrl {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--key] text-primary" />
- <h3 class="text-sm font-semibold">凭证配置</h3>
+ <h3 class="text-sm font-semibold">
+ 凭证配置
+ </h3>
  </div>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
  <Button variant="ghost" size="sm" class=" text-xs group">
@@ -458,7 +457,9 @@ function copyUrl {
  <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
  </div>
  <div>
- <p class="text-sm font-medium text-foreground">凭证已配置</p>
+ <p class="text-sm font-medium text-foreground">
+ 凭证已配置
+ </p>
  <p class="text-xs text-muted-foreground">
  {{ credential.auth_type === 'ssh_key' ? 'SSH 密钥': 'Access Token' }}
  </p>
@@ -481,7 +482,9 @@ function copyUrl {
  </div>
  <div v-else class="text-center py-6">
  <span class="icon-[lucide--lock] text-2xl text-muted-foreground/40 block mb-2" />
- <p class="text-sm text-muted-foreground mb-3">尚未配置凭证</p>
+ <p class="text-sm text-muted-foreground mb-3">
+ 尚未配置凭证
+ </p>
  <RouterLink:to="`/repositories/${repository.id}/credential`">
  <Button size="sm" class=" text-xs">
  <span class="icon-[lucide--key] mr-1.5" />

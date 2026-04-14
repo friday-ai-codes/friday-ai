@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import type { AISummaryStatus, AISummaryStatusResponse } from '~/api/repositories'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ApiError } from '~/api/client'
 import { repositoriesApi } from '~/api/repositories'
-import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { Skeleton } from '~/components/ui/skeleton'
 import { MarkdownPreview } from '~/components/ui/markdown-editor'
+import { Skeleton } from '~/components/ui/skeleton'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -34,10 +34,12 @@ const sections = reactive({
 })
 // 解析 JSON summary
 const parsedSummary = computed( => {
- if (!summary.value) return null
+ if (!summary.value)
+ return null
  try {
  const parsed = JSON.parse(summary.value)
- if (typeof parsed === 'object' && parsed !== null) return parsed
+ if (typeof parsed === 'object' && parsed !== null)
+ return parsed
  return null
  }
  catch {
@@ -135,7 +137,9 @@ onUnmounted( => {
  <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/50">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--sparkles] text-primary" />
- <h3 class="text-base font-semibold text-foreground">AI 智能描述</h3>
+ <h3 class="text-base font-semibold text-foreground">
+ AI 智能描述
+ </h3>
  </div>
  <div class="flex items-center gap-2">
  <!-- pending / running Badge -->
@@ -179,7 +183,9 @@ onUnmounted( => {
  <!-- 状态 A: not_started 空状态 -->
  <div v-if="status === 'not_started'" class="flex flex-col items-center justify-center py-8 space-y-3">
  <span class="icon-[lucide--sparkles] text-2xl text-muted-foreground/40" />
- <p class="text-sm font-semibold text-foreground">尚未生成 AI 描述</p>
+ <p class="text-sm font-semibold text-foreground">
+ 尚未生成 AI 描述
+ </p>
  <p class="text-xs text-muted-foreground text-center">
  点击下方按钮，AI 将自动分析仓库结构并生成智能描述
  </p>
@@ -283,7 +289,9 @@ onUnmounted( => {
  <!-- 状态 D: failed -->
  <div v-else-if="status === 'failed'" class="flex flex-col items-center justify-center py-8 space-y-3">
  <span class="icon-[lucide--alert-triangle] text-2xl text-destructive" />
- <p class="text-sm font-semibold text-foreground">描述生成失败</p>
+ <p class="text-sm font-semibold text-foreground">
+ 描述生成失败
+ </p>
  <p v-if="errorMsg" class="text-sm text-destructive text-center max-w-md">
  {{ errorMsg }}
  </p>

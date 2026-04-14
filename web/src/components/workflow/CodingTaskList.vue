@@ -4,7 +4,6 @@ import { ExternalLink, GitBranch } from 'lucide-vue-next'
 import { computed } from 'vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
 interface Props {
  tasks: CodingTask
@@ -26,13 +25,13 @@ const runningCount = computed( =>
 )
 </script>
 <template>
- <Card class="h-full flex flex-col">
- <CardHeader class="pb-3 border-b">
+ <div class="card h-full flex flex-col">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center gap-2">
  <GitBranch class="w-4 text-primary" />
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  编码任务
- </CardTitle>
+ </h3>
  <Badge v-if="tasks.length > 0" variant="secondary" class="text-xs">
  {{ tasks.length }} 个任务
  </Badge>
@@ -49,9 +48,9 @@ const runningCount = computed( =>
  {{ runningCount }} 执行中
  </span>
  </div>
- </CardHeader>
+ </div>
  <ScrollArea class="flex-1">
- <CardContent class=" space-y-2">
+ <div class=" space-y-4">
  <!-- Loading -->
  <div v-if="loading" class="text-center py-8 text-muted-foreground">
  <div class="animate-spin w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
@@ -68,8 +67,7 @@ const runningCount = computed( =>
  <!-- Task list -->
  <div
  v-for="task in tasks":key="task.id"
- class="group border rounded-xl bg-card/70 backdrop-blur-sm border-border/50
- hover:bg-accent/50 hover:border-primary/30 cursor-pointer transition-all duration-300"
+ class="group border rounded-xl bg-card/70 backdrop-blur-sm border-border/50 hover:bg-accent/50 hover:border-primary/30 cursor-pointer transition-all duration-300"
  @click="emit('select', task)"
  >
  <div class="flex items-start justify-between gap-2">
@@ -80,9 +78,7 @@ const runningCount = computed( =>
  <!-- Merged task indicator -->
  <div
  v-if="task.execution_plan_ids?.length > 1"
- class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full
- bg-gradient-to-r from-primary/20 to-primary/10
- text-xs text-primary"
+ class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-primary"
  >
  <span class="icon-[lucide--git-merge] text-sm" />
  {{ task.execution_plan_ids.length }} 个任务合并
@@ -103,8 +99,7 @@ const runningCount = computed( =>
  <!-- Failed task error message -->
  <div
  v-if="task.status === 'failed' && task.error_message"
- class="mt-2 rounded-lg bg-red-50 dark:bg-red-900/20
- border border-red-200 dark:border-red-800"
+ class="mt-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
  >
  <p class="text-sm text-red-600 dark:text-red-400">
  {{ task.error_message }}
@@ -113,8 +108,7 @@ const runningCount = computed( =>
  <!-- Partial success info -->
  <div
  v-if="task.status === 'partial_success'"
- class="mt-2 rounded-lg bg-amber-50 dark:bg-amber-900/20
- border border-amber-200 dark:border-amber-800"
+ class="mt-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
  >
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--alert-triangle] w-4 text-amber-500 shrink-0 mt-0.5" />
@@ -142,11 +136,7 @@ const runningCount = computed( =>
  v-if="task.pr_url":href="task.pr_url"
  target="_blank"
  rel="noopener noreferrer"
- class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg
- bg-gradient-to-r from-emerald-500/20 to-teal-500/10
- text-emerald-700 dark:text-emerald-400
- hover:from-emerald-500/30 hover:to-teal-500/20
- transition-all duration-300"
+ class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-emerald-700 dark:text-emerald-400 hover:from-emerald-500/30 hover:to-teal-500/20 transition-all duration-300"
  @click.stop
  >
  <span class="icon-[lucide--git-pull-request] w-4 " />
@@ -156,9 +146,7 @@ const runningCount = computed( =>
  <!-- Conflict warning badge -->
  <div
  v-if="task.pr_url && task.mr_has_conflicts"
- class="inline-flex items-center gap-1 px-2 py-1 rounded-lg
- bg-gradient-to-r from-amber-500/20 to-orange-500/10
- text-amber-600 dark:text-amber-400"
+ class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-amber-600 dark:text-amber-400"
  title="MR 有合并冲突，需要人工解决"
  >
  <span class="icon-[lucide--alert-triangle] w-3 " />
@@ -167,7 +155,7 @@ const runningCount = computed( =>
  </div>
  </div>
  </div>
- </CardContent>
+ </div>
  </ScrollArea>
- </Card>
+ </div>
 </template>

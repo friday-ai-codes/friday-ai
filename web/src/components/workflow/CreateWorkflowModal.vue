@@ -3,7 +3,6 @@ import { onMounted } from 'vue'
 import { VueFinalModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
 import client from '~/api/client'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -16,6 +15,7 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const emit = defineEmits<{
  close:
  confirm: [data: { name: string, description?: string, project_id: string }]
@@ -147,7 +147,7 @@ onMounted( => {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--git-branch-plus] text-xl text-purple-600" />
  </div>
  <div>
@@ -176,10 +176,7 @@ onMounted( => {
  <!-- 空白工作流 -->
  <button
  type="button"
- class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[
- selectedTemplateId === null
- ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30',
- ]"
+ class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[selectedTemplateId === null ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30']"
  @click="selectTemplate(null)"
  >
  <div class="flex items-center gap-2">
@@ -196,10 +193,7 @@ onMounted( => {
  <button
  v-for="tpl in templates":key="tpl.template_id"
  type="button"
- class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[
- selectedTemplateId === tpl.template_id
- ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30',
- ]"
+ class="flex flex-col items-start gap-1.5 rounded-xl border text-left transition-all duration-150":class="[selectedTemplateId === tpl.template_id ? 'border-primary bg-primary/5 ring-1 ring-primary/30': 'border-border/50 hover:border-border hover:bg-muted/30']"
  @click="selectTemplate(tpl.template_id)"
  >
  <div class="flex items-center gap-2">

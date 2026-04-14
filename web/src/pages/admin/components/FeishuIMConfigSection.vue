@@ -28,8 +28,8 @@ const emit = defineEmits<{
  <section class="group relative">
  <div class="card overflow-hidden">
  <!-- 卡片头部 -->
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-primary/10">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--message-circle] text-2xl text-primary" />
  </div>
  <div class="flex-1">

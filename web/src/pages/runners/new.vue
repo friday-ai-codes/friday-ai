@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({ title: '新建 Runner - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore

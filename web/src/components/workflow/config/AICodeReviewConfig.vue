@@ -58,7 +58,7 @@ const maxIterationsStr = computed({
 <template>
  <div class="space-y-4">
  <!-- Introduction -->
- <div class="rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-400/5 border border-amber-500/20 ">
+ <div class="rounded-xl bg-primary/10 border border-amber-500/20 ">
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--search-code] text-amber-500 text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">
@@ -84,7 +84,7 @@ const maxIterationsStr = computed({
  <!-- Model -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--brain] text-amber-500" />
+ <span class="icon-[lucide--brain] text-primary" />
  模型
  </Label>
  <Input
@@ -102,14 +102,14 @@ const maxIterationsStr = computed({
  @update:model-value="(v: boolean | 'indeterminate') => useCustomApi = v === true"
  />
  <Label class="flex items-center gap-1.5 cursor-pointer">
- <span class="icon-[lucide--plug] text-amber-500" />
+ <span class="icon-[lucide--plug] text-primary" />
  使用自定义 API
  </Label>
  </div>
  <!-- API Base URL (conditional) -->
  <div v-if="useCustomApi" class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--link] text-amber-500" />
+ <span class="icon-[lucide--link] text-primary" />
  API Base URL
  </Label>
  <Input
@@ -121,7 +121,7 @@ const maxIterationsStr = computed({
  <!-- API Key (conditional) -->
  <div v-if="useCustomApi" class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--key] text-amber-500" />
+ <span class="icon-[lucide--key] text-primary" />
  API Key
  </Label>
  <Input
@@ -134,7 +134,7 @@ const maxIterationsStr = computed({
  <!-- Max Iterations -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--repeat] text-amber-500" />
+ <span class="icon-[lucide--repeat] text-primary" />
  审查迭代上限
  </Label>
  <Input
@@ -152,7 +152,7 @@ const maxIterationsStr = computed({
  <!-- Chat ID -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1.5">
- <span class="icon-[lucide--message-circle] text-amber-500" />
+ <span class="icon-[lucide--message-circle] text-primary" />
  飞书群 ID
  </Label>
  <Input

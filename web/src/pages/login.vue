@@ -108,15 +108,14 @@ onMounted(async => {
  <div class="w-full max-w-md mx-4">
  <div class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-teal-500/20 via-cyan-500/20 to-teal-500/20 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-primary/5 ">
  <!-- Logo -->
  <div class="text-center mb-8">
- <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/10 border border-teal-500/10">
+ <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-primary/10 border border-teal-500/10">
  <span class="icon-[lucide--bot] text-4xl text-teal-500" />
  </div>
- <h1 class="text-2xl font-bold bg-gradient-to-r from-foreground via-teal-500 to-foreground bg-clip-text text-transparent">
+ <h1 class="text-2xl font-bold">
  Friday AI
  </h1>
  </div>
@@ -177,7 +176,7 @@ onMounted(async => {
  type="submit"
  class="w-full text-base font-medium group relative overflow-hidden":disabled="isSubmitting"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <template v-if="isSubmitting">
  <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  登录中...

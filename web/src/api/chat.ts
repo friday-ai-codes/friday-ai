@@ -262,7 +262,7 @@ export async function confirmCommit(
 export async function getCommitConfirmData(sessionId: string) {
  return get<{
  suggested_commit_message: string
- affected_files: Array<{ path: string; change_type: string }>
+ affected_files: Array<{ path: string, change_type: string }>
  }>(`/chat/coding-sessions/${sessionId}/commit-confirm/`)
 }
 /**
@@ -270,7 +270,7 @@ export async function getCommitConfirmData(sessionId: string) {
  */
 export async function confirmPR(
  sessionId: string,
- data: { title: string; description: string; target_branch: string } | { skip: true },
+ data: { title: string, description: string, target_branch: string } | { skip: true },
 ): Promise<CodingSessionResponse> {
  return post<CodingSessionResponse>(
  `/chat/coding-sessions/${sessionId}/pr-confirm/`,
@@ -304,7 +304,7 @@ export async function getConflictCheck(sessionId: string) {
  */
 export async function getDiffSummary(sessionId: string) {
  return get<{
- files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ files?: Array<{ path: string, additions: number, deletions: number, change_type: string }>
  total_additions?: number
  total_deletions?: number
  truncated?: boolean

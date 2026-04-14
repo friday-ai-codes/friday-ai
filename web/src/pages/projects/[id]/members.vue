@@ -7,9 +7,6 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiError } from '~/api/client'
 import { addProjectMember, listProjectMembers, removeProjectMember, updateProjectMember } from '~/api/members'
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { listUsers } from '~/api/users'
 import { Button } from '~/components/ui/button'
 import {
@@ -19,6 +16,9 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const route = useRoute
 const projectId = (route.params as { id: string }).id
 const { confirm } = useConfirmDialog
@@ -142,7 +142,7 @@ onMounted( => {
 <template>
  <div class="min-h-[calc(100vh-8rem)] relative">
  <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/20 to-secondary/40 rounded-full blur-3xl" />
+ <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
  </div>
  <div class="max-w-2xl mx-auto space-y-8 relative pt-8">
  <!-- 页面标题 -->
@@ -229,8 +229,8 @@ onMounted( => {
  <!-- 成员列表 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--users] text-2xl text-primary" />
  </div>
  <div>
@@ -255,7 +255,7 @@ onMounted( => {
  class="flex items-center justify-between rounded-xl bg-background/50 border border-border/30 hover:border-primary/20 transition-colors"
  >
  <div class="flex items-center gap-3">
- <div class="w-9 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-sm font-medium">
+ <div class="w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
  {{ (member.user.display_name || member.user.username).charAt(0).toUpperCase }}
  </div>
  <div>

@@ -36,8 +36,7 @@ function formatTime(isoStr: string | null): string {
  <!-- 瓶颈标识 -->
  <div v-if="bottleneckInfo" class="flex items-center gap-2">
  <Badge
- variant="outline":class="bottleneckInfo.level === 'critical'
- ? 'border-red-400/50 text-red-500 bg-red-50 dark:bg-red-900/20': 'border-yellow-400/50 text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'"
+ variant="outline":class="bottleneckInfo.level === 'critical' ? 'border-red-400/50 text-red-500 bg-red-50 dark:bg-red-900/20': 'border-yellow-400/50 text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20'"
  >
  {{ bottleneckInfo.level === 'critical' ? `瓶颈 #${bottleneckInfo.rank}`: `瓶颈 #${bottleneckInfo.rank}` }}
  · 占总耗时 {{ bottleneckInfo.durationPercent }}%

@@ -3,8 +3,8 @@ import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
 import TriggerLogDetailComponent from '~/components/logs/TriggerLogDetail.vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/logs/triggers/[id]')
 const router = useRouter
 useHead({

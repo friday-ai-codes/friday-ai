@@ -80,7 +80,7 @@ function confirmEdit {
  </TooltipContent>
  </Tooltip>
  <!-- Workflow icon -->
- <div class=".5 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex-shrink-0">
+ <div class=".5 rounded-lg bg-primary/10 flex-shrink-0">
  <span class="icon-[lucide--workflow] text-lg text-amber-500" />
  </div>
  <!-- Name (read-only display) + Edit button -->

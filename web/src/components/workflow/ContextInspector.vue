@@ -4,7 +4,6 @@ import { useClipboard } from '@vueuse/core'
 import { ChevronDown, ChevronRight, Copy, Database, Globe, Layers, Zap } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Collapsible,
  CollapsibleContent,
@@ -64,22 +63,17 @@ const hasData = computed( => {
 })
 </script>
 <template>
- <Card class="h-full flex flex-col bg-card/80 backdrop-blur-sm">
- <CardHeader class="pb-3 border-b">
+ <div class="card h-full flex flex-col">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center gap-2">
  <Database class="w-4 text-primary" />
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  执行上下文
- </CardTitle>
+ </h3>
  </div>
  <div v-if="context" class="flex items-center gap-2 mt-2">
  <span
- class="text-xs px-2 py-0.5 rounded-full":class="{
- 'bg-primary/10 text-primary': context.status === 'running',
- 'bg-emerald-500/10 text-emerald-700': context.status === 'completed',
- 'bg-red-500/10 text-red-700': context.status === 'failed',
- 'bg-muted text-muted-foreground': !['running', 'completed', 'failed'].includes(context.status),
- }"
+ class="text-xs px-2 py-0.5 rounded-full":class="{ 'bg-primary/10 text-primary': context.status === 'running', 'bg-emerald-500/10 text-emerald-700': context.status === 'completed', 'bg-red-500/10 text-red-700': context.status === 'failed', 'bg-muted text-muted-foreground': !['running', 'completed', 'failed'].includes(context.status) }"
  >
  {{ context.status }}
  </span>
@@ -90,9 +84,9 @@ const hasData = computed( => {
  手动触发
  </span>
  </div>
- </CardHeader>
+ </div>
  <ScrollArea class="flex-1">
- <CardContent class=" space-y-2">
+ <div class=" space-y-4">
  <!-- Loading state -->
  <div v-if="loading" class="text-center py-8 text-muted-foreground">
  <div class="animate-spin w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-2" />
@@ -232,7 +226,7 @@ const hasData = computed( => {
  </CollapsibleContent>
  </Collapsible>
  </template>
- </CardContent>
+ </div>
  </ScrollArea>
- </Card>
+ </div>
 </template>

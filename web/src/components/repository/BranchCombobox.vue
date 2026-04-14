@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { BranchIndexRow } from '~/api/repositories'
 import { computed, ref } from 'vue'
-import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import {
  Command,
  CommandEmpty,
@@ -13,6 +12,7 @@ import {
  CommandList,
  CommandSeparator,
 } from '~/components/ui/command'
+import { Input } from '~/components/ui/input'
 import {
  Popover,
  PopoverContent,
@@ -25,6 +25,9 @@ const props = defineProps<{
  recommendedBranch?: string | null
  modelValue?: string | null
  disabled?: boolean
+}>
+const emit = defineEmits<{
+ 'update:modelValue': [value: string | null]
 }>
 const rowByName = computed( => {
  const map = new Map<string, BranchIndexRow>
@@ -54,20 +57,19 @@ function formatIndexedAgo(iso: string | null): string {
  return `${d} 天前`
  return new Date(iso).toLocaleDateString('zh-CN')
 }
-const emit = defineEmits<{
- 'update:modelValue': [value: string | null]
-}>
 const open = ref(false)
 const selectedValue = computed({
  get: => props.modelValue ?? null,
  set: (val: string | null) => emit('update:modelValue', val),
 })
 const recommendedBranches = computed( => {
- if (!props.recommendedBranch) return
+ if (!props.recommendedBranch)
+ return
  return props.branches.filter(b => b === props.recommendedBranch)
 })
 const otherBranches = computed( => {
- if (!props.recommendedBranch) return [...props.branches].sort
+ if (!props.recommendedBranch)
+ return [...props.branches].sort
  return props.branches.filter(b => b !== props.recommendedBranch).sort
 })
 function selectBranch(branch: string) {
@@ -114,7 +116,9 @@ function selectBranch(branch: string) {
  <div class="flex flex-1 min-w-0 flex-col gap-0.5">
  <div class="flex items-center gap-2 min-w-0 flex-wrap">
  <span class="font-mono text-sm truncate">{{ branch }}</span>
- <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">推荐</Badge>
+ <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">
+ 推荐
+ </Badge>
  <template v-if="richMode && rowByName.get(branch)">
  <Badge
  v-if="rowByName.get(branch)!.is_stale"

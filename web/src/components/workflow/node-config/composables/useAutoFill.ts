@@ -1,6 +1,6 @@
 import type { ComputedRef, Ref } from 'vue'
-import { ref } from 'vue'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
+import { ref } from 'vue'
 import { areTypesCompatible } from '~/composables/useSchemaValidation'
 interface OverrideField {
  key: string

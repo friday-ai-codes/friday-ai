@@ -2,7 +2,6 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Collapsible,
  CollapsibleContent,
@@ -33,14 +32,14 @@ function formatDate(dateStr: string) {
 <template>
  <div class="space-y-6">
  <!-- 基本信息 -->
- <Card>
- <CardHeader>
- <CardTitle class="flex items-center gap-2">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--info] w-5" />
  基本信息
- </CardTitle>
- </CardHeader>
- <CardContent>
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
  <div>
  <dt class="text-sm font-medium text-muted-foreground">
@@ -100,20 +99,20 @@ function formatDate(dateStr: string) {
  {{ log.error_message }}
  </p>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 关键字段 -->
  <KeyFieldsCard:prd-url="log.prd_url":description="log.description":tech-doc-url="log.tech_doc_url"
  />
  <!-- 原始数据 -->
- <Card>
- <CardHeader>
- <CardTitle class="flex items-center gap-2">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--code] w-5" />
  原始数据
- </CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <!-- Webhook 请求 -->
  <Collapsible v-model:open="webhookExpanded">
  <CollapsibleTrigger as-child>
@@ -148,7 +147,7 @@ function formatDate(dateStr: string) {
  <JsonHighlighter:json="log.work_item_raw_response_parsed" />
  </CollapsibleContent>
  </Collapsible>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
 </template>

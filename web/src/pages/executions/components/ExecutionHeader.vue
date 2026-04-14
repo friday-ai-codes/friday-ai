@@ -29,8 +29,7 @@ const emit = defineEmits<{
 </script>
 <template>
  <header
- class="shrink-0 flex items-center justify-between px-4 py-2
- bg-background/80 backdrop-blur-sm border-b border-border/50 z-20"
+ class="shrink-0 flex items-center justify-between px-4 py-2 bg-background/80 backdrop-blur-sm border-b border-border/50 z-20"
  >
  <!-- 左侧：返回 + 名称 -->
  <div class="flex items-center gap-3 min-w-0">

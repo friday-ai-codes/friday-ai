@@ -31,12 +31,14 @@ const colorMap: Record<string, string> = {
 }
 function getNodeColor(nodeType: string): string {
  const def = NODE_REGISTRY[nodeType as keyof typeof NODE_REGISTRY]
- if (def) return colorMap[def.category] ?? '#64748b'
+ if (def)
+ return colorMap[def.category] ?? '#64748b'
  return '#64748b'
 }
 const layout = computed( => {
  const nodeList = props.nodes
- if (nodeList.length === 0) return { nodes:, edges: }
+ if (nodeList.length === 0)
+ return { nodes:, edges: }
  const xs = nodeList.map(n => n.position_x)
  const ys = nodeList.map(n => n.position_y)
  const minX = Math.min(...xs)
@@ -66,7 +68,8 @@ const layout = computed( => {
  .map((e) => {
  const src = posMap.get(String(e.source_node_id))
  const tgt = posMap.get(String(e.target_node_id))
- if (!src || !tgt) return null
+ if (!src || !tgt)
+ return null
  return { x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, color: src.color }
  })
  .filter(Boolean) as { x1: number, y1: number, x2: number, y2: number, color: string }

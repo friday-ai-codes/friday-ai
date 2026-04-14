@@ -81,7 +81,7 @@ export const useChatStore = defineStore('chat', => {
  branchUrl: string
  } | null>(null)
  const diffSummaryData = ref<{
- files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ files?: Array<{ path: string, additions: number, deletions: number, change_type: string }>
  total_additions?: number
  total_deletions?: number
  truncated?: boolean
@@ -355,7 +355,8 @@ export const useChatStore = defineStore('chat', => {
  suggestedCommitMessage: cs.suggested_commit_message || '',
  conflictCheck: (cs.conflict_check_result as typeof commitConfirmData.value extends null ? never: NonNullable<typeof commitConfirmData.value>['conflictCheck']) || null,
  }
- } else if (cs.confirmation_step === 'pr_review') {
+ }
+ else if (cs.confirmation_step === 'pr_review') {
  prConfirmData.value = {
  suggestedPrTitle: cs.suggested_pr_title || '',
  suggestedPrDescription: cs.suggested_pr_description || '',
@@ -599,7 +600,8 @@ export const useChatStore = defineStore('chat', => {
  break
  case 'doc_summary':
  // 飞书文档摘要事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
- if (!streamingMetadata.value) streamingMetadata.value = {}
+ if (!streamingMetadata.value)
+ streamingMetadata.value = {}
  streamingMetadata.value.docSummary = {
  type: 'summary' as const,
  title: event.doc_title,
@@ -611,7 +613,8 @@ export const useChatStore = defineStore('chat', => {
  break
  case 'doc_error':
  // 飞书文档错误事件 -- 存入 streamingMetadata 供 ChatMessageBubble 渲染
- if (!streamingMetadata.value) streamingMetadata.value = {}
+ if (!streamingMetadata.value)
+ streamingMetadata.value = {}
  streamingMetadata.value.docSummary = {
  type: 'error' as const,
  errorType: event.error_type,
@@ -706,8 +709,10 @@ export const useChatStore = defineStore('chat', => {
  * 确认编码方案 — 调用 confirm API 并启动 runtime 轮询
  */
  async function handleConfirmCodingSession(sessionId: string, branchName?: string) {
- if (!currentConversationId.value) return
- if (activeCodingSession.value?.isConfirming) return
+ if (!currentConversationId.value)
+ return
+ if (activeCodingSession.value?.isConfirming)
+ return
  // 乐观 UI: 立即显示 loading
  activeCodingSession.value = {
  sessionId,
@@ -958,7 +963,8 @@ export const useChatStore = defineStore('chat', => {
  /** 切换消息选中状态 (per: 仅 assistant 可选) */
  function toggleMessageSelect(messageId: string) {
  const msg = messages.value.find(m => m.id === messageId)
- if (!msg || msg.role !== 'assistant') return
+ if (!msg || msg.role !== 'assistant')
+ return
  const next = new Set(selectedMessageIds.value)
  if (next.has(messageId)) {
  next.delete(messageId)

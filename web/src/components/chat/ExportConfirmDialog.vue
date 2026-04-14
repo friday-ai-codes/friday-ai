@@ -4,6 +4,7 @@
  * 导出失败时弹窗不关闭，显示分类错误提示 (per,,, )。
  */
 import type { ExportToFeishuResponse } from '~/types/chat'
+import { Button } from '~/components/ui/button'
 import {
  Dialog,
  DialogContent,
@@ -12,7 +13,6 @@ import {
  DialogHeader,
  DialogTitle,
 } from '~/components/ui/dialog'
-import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 const props = defineProps<{
  open: boolean
@@ -22,7 +22,7 @@ const props = defineProps<{
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
- success: [result: ExportToFeishuResponse]
+ 'success': [result: ExportToFeishuResponse]
 }>
 const chatStore = useChatStore
 const docTitle = ref(props.defaultTitle)
@@ -87,7 +87,9 @@ const projectId = computed( => chatStore.selectedProjectId)
  <div v-if="errorType === 'not_configured'" class="flex items-start gap-2">
  <span class="icon-[lucide--folder-x] text-amber-500 text-base shrink-0 mt-0.5" />
  <div class="space-y-1">
- <p class="text-sm text-foreground">尚未配置导出目标文件夹</p>
+ <p class="text-sm text-foreground">
+ 尚未配置导出目标文件夹
+ </p>
  <RouterLink:to="`/projects/${projectId}/feishu`"
  class="text-sm text-primary hover:underline"
  @click="emit('update:open', false)"
@@ -99,13 +101,17 @@ const projectId = computed( => chatStore.selectedProjectId)
  <!-- 无写权限 -->
  <div v-else-if="errorType === 'permission_denied'" class="flex items-start gap-2">
  <span class="icon-[lucide--lock] text-destructive text-base shrink-0 mt-0.5" />
- <p class="text-sm text-foreground">飞书应用无该文件夹的写入权限</p>
+ <p class="text-sm text-foreground">
+ 飞书应用无该文件夹的写入权限
+ </p>
  </div>
  <!-- 其他错误 -->
  <div v-else class="flex items-start gap-2">
  <span class="icon-[lucide--alert-circle] text-destructive text-base shrink-0 mt-0.5" />
  <div class="flex-1 space-y-1">
- <p class="text-sm text-foreground">{{ errorMsg }}</p>
+ <p class="text-sm text-foreground">
+ {{ errorMsg }}
+ </p>
  <button
  class="text-sm text-primary hover:underline cursor-pointer"
  @click="handleExport"

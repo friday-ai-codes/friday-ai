@@ -110,10 +110,7 @@ function navigateToExecution(executionId: string) {
  >
  <div class="flex items-center gap-2 min-w-0">
  <span
- class="w-2 rounded-full shrink-0":class="{
- 'bg-primary animate-pulse': exec.status === 'running',
- 'bg-amber-500': exec.status === 'pending' || exec.status === 'queued',
- }"
+ class="w-2 rounded-full shrink-0":class="{ 'bg-primary animate-pulse': exec.status === 'running', 'bg-amber-500': exec.status === 'pending' || exec.status === 'queued' }"
  />
  <span class="text-xs text-muted-foreground truncate">
  {{ formatTime(exec.created_at) }}

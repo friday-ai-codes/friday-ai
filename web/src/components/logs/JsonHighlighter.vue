@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createHighlighterCore } from 'shiki/core'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = withDefaults(defineProps<{
  json: Record<string, unknown> | null
  showCopy?: boolean

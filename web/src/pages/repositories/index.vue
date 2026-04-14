@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
  title: '仓库管理 - Friday AI',
@@ -106,12 +106,7 @@ const platformIcons: Record<string, string> = {
  >
  <!-- 索引状态顶部指示条 -->
  <div
- class=".5 rounded-t-[inherit]":class="{
- 'bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500': repository.index_status === 'indexed',
- 'bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500 animate-pulse': repository.index_status === 'indexing',
- 'bg-gradient-to-r from-red-500 to-orange-500': repository.index_status === 'failed',
- 'bg-border/30': repository.index_status === 'not_indexed',
- }"
+ class=".5 rounded-t-[inherit]":class="{ 'bg-emerald-500': repository.index_status === 'indexed', 'bg-blue-500 animate-pulse': repository.index_status === 'indexing', 'bg-red-500': repository.index_status === 'failed', 'bg-border/30': repository.index_status === 'not_indexed' }"
  />
  <div class=" flex-1 space-y-3">
  <!-- 标题行 -->

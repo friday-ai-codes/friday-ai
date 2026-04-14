@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const emit = defineEmits<{
  confirm: [projectId: string]
  cancel:
@@ -67,7 +67,7 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--folder-plus] text-xl text-primary" />
  </div>
  <div>

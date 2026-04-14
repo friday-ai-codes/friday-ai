@@ -73,9 +73,13 @@ onMounted(loadHistory)
  <div class="px-5 py-3.5 border-b border-border/50">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--history] text-primary" />
- <h3 class="text-sm font-semibold">索引历史</h3>
+ <h3 class="text-sm font-semibold">
+ 索引历史
+ </h3>
  </div>
- <p class="text-xs text-muted-foreground mt-0.5">查看每次索引操作的详细记录</p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 查看每次索引操作的详细记录
+ </p>
  </div>
  <div class="">
  <!-- 状态筛选 -->

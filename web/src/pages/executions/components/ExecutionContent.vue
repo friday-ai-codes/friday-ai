@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import type { CostBreakdown } from '~/types/execution'
 import type { NodeExecution, TimelineData, WorkflowExecution } from '~/stores/useExecutionsStore'
+import type { CostBreakdown } from '~/types/execution'
 import CostSummaryBar from '~/components/execution/CostSummaryBar.vue'
 import ExecutionDagView from '~/components/execution/dag/ExecutionDagView.vue'
 import ProviderCostTable from '~/components/execution/ProviderCostTable.vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent } from '~/components/ui/card'
 interface Props {
  loading: boolean
  error: string | null
@@ -36,12 +35,12 @@ const emit = defineEmits<{
  </div>
  <!-- 错误状态 -->
  <div v-else-if="error" class="flex-1 flex items-center justify-center ">
- <Card class="border-destructive max-w-md w-full">
- <CardContent class="py-6 text-center text-destructive">
+ <div class="card border-destructive max-w-md w-full">
+ <div class=" space-y-4 py-6 text-center text-destructive">
  <span class="icon-[lucide--x-circle] w-12 mx-auto mb-4" />
  <p>{{ error }}</p>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
  <!-- DAG 画布 -->
  <div v-else-if="currentExecution" class="flex-1 min- relative">

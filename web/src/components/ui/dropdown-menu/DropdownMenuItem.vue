@@ -10,11 +10,7 @@ const forwardedProps = useForwardProps(delegatedProps)
 </script>
 <template>
  <DropdownMenuItem
- v-bind="forwardedProps":class="cn(
- 'relative flex cursor-default select-none items-center rounded-lg gap-2 px-3 py-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0',
- inset && 'pl-8',
- props.class,
- )"
+ v-bind="forwardedProps":class="cn('relative flex cursor-default select-none items-center rounded-lg gap-2 px-3 py-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0', inset && 'pl-8', props.class)"
  >
  <slot />
  </DropdownMenuItem>

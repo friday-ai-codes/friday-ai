@@ -6,7 +6,7 @@
  * - type="summary": 成功读取，显示标题+字数+预览（per, ）
  * - type="error": 读取失败，按 error_type 区分展示（per,, ）
  */
-const props = defineProps<{
+defineProps<{
  type: 'summary' | 'error' | 'loading'
  // 成功状态
  title?: string
@@ -39,7 +39,9 @@ const showAuthGuide = ref(false)
  <span class="text-xs text-muted-foreground ml-auto">{{ wordCount }} 字</span>
  </div>
  <div class=" text-sm text-muted-foreground">
- <p class="line-clamp-3 whitespace-pre-line">{{ preview }}</p>
+ <p class="line-clamp-3 whitespace-pre-line">
+ {{ preview }}
+ </p>
  <p v-if="truncated" class="mt-2 text-xs text-amber-600">
  文档较长，已截取前 {{ truncatedLength }} 字
  </p>
@@ -48,7 +50,7 @@ const showAuthGuide = ref(false)
  <!-- 权限不足 -->
  <div v-else-if="type === 'error' && errorType === 'permission_denied'" class="card mt-2 border-amber-200 animate-fade-in">
  <div class="px-4 py-3 flex items-center gap-2">
- <span class="icon-[lucide--lock] text-amber-500" aria-label="无权限" />
+ <span class="icon-[lucide--lock] text-primary" aria-label="无权限" />
  <span class="text-sm font-medium">无法访问此文档</span>
  </div>
  <div class="px-4 pb-3">

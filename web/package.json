@@ -98,6 +98,7 @@
  "@iconify/tailwind4": "catalog:",
  "@playwright/test": "catalog:",
  "@tailwindcss/vite": "catalog:",
+ "@types/diff": "^8.0.0",
  "@types/markdown-it": "catalog:",
  "@types/node": "catalog:",
  "@vitejs/plugin-vue": "catalog:",

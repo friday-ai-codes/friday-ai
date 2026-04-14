@@ -94,7 +94,7 @@ const identifierTypeOptions = [
  <!-- 仓库列表 -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-lg bg-primary/10">
  <span class="icon-[lucide--git-branch] text-primary" />
  </div>
  <div>
@@ -109,8 +109,8 @@ const identifierTypeOptions = [
  <!-- 飞书配置 -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-500/10">
- <span class="icon-[lucide--message-square] text-emerald-500" />
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--message-square] text-primary" />
  </div>
  <div>
  <span class="text-sm font-medium">飞书配置</span>
@@ -124,8 +124,8 @@ const identifierTypeOptions = [
  <!-- Claude 配置 -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-violet-500/20 to-violet-500/10">
- <span class="icon-[lucide--bot] text-violet-500" />
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--bot] text-primary" />
  </div>
  <div>
  <span class="text-sm font-medium">Claude 配置</span>
@@ -139,8 +139,8 @@ const identifierTypeOptions = [
  <!-- Webhook Token -->
  <div class="flex items-center justify-between rounded-lg border border-border/50 ">
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-500/10">
- <span class="icon-[lucide--key] text-amber-500" />
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--key] text-primary" />
  </div>
  <div>
  <span class="text-sm font-medium">Webhook Token</span>

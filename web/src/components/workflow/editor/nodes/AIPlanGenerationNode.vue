@@ -49,8 +49,7 @@ const capabilities = ['ReAct', 'RAG', '多轮迭代']
  <div class="flex flex-wrap gap-1">
  <span
  v-for="cap in capabilities":key="cap"
- class="text-[10px] leading-none px-1.5 py-0.5 rounded-full
- bg-violet-500/10 text-violet-400/80 border border-violet-500/15"
+ class="text-[10px] leading-none px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-400/80 border border-violet-500/15"
  >
  {{ cap }}
  </span>

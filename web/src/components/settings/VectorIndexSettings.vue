@@ -2,8 +2,6 @@
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  getAllSettings,
  SettingKey,
@@ -12,6 +10,8 @@ import {
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const { handleError } = useErrorHandler
 const { success, error: showError, info, warning } = useToast
 // 设置状态
@@ -231,8 +231,8 @@ onMounted( => {
  <section class="group relative">
  <div class="card overflow-hidden">
  <!-- 卡片头部 -->
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-cyan-500/5 to-primary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-cyan-500/20 to-cyan-500/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--database] text-2xl text-cyan-500" />
  </div>
  <div>
@@ -398,7 +398,7 @@ onMounted( => {
  class="group/btn relative overflow-hidden"
  @click="saveAllSettings"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置

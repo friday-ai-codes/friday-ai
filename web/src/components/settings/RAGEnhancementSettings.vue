@@ -2,8 +2,6 @@
 import type { SettingRead } from '~/api/settings'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  getAllSettings,
  SettingKey,
@@ -14,6 +12,8 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const { handleError } = useErrorHandler
 const { success, error: showError, info } = useToast
 // 设置状态
@@ -159,8 +159,8 @@ onMounted( => {
  <section class="group relative">
  <div class="card overflow-hidden">
  <!-- 卡片头部 -->
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-violet-500/5 to-purple-500/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-500/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--sparkles] text-2xl text-violet-500" />
  </div>
  <div>
@@ -338,15 +338,15 @@ onMounted( => {
  </p>
  <div class="grid gap-2 text-sm">
  <div class="flex items-center gap-2 text-muted-foreground">
- <span class="icon-[lucide--check] text-emerald-500" />
+ <span class="icon-[lucide--check] text-primary" />
  <span>文件级 import / require 语句</span>
  </div>
  <div class="flex items-center gap-2 text-muted-foreground">
- <span class="icon-[lucide--check] text-emerald-500" />
+ <span class="icon-[lucide--check] text-primary" />
  <span>模块级 docstring / 文件头注释</span>
  </div>
  <div class="flex items-center gap-2 text-muted-foreground">
- <span class="icon-[lucide--check] text-emerald-500" />
+ <span class="icon-[lucide--check] text-primary" />
  <span>同文件相邻函数 / 类签名</span>
  </div>
  </div>
@@ -362,7 +362,7 @@ onMounted( => {
  class="group/btn relative overflow-hidden"
  @click="saveAllSettings"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置

@@ -26,7 +26,8 @@ export function useExecutionControls(
  const triggering = ref(false)
  // ----- 顶部栏操作按钮 -----
  async function handlePause {
- if (isPausing.value) return
+ if (isPausing.value)
+ return
  isPausing.value = true
  try {
  await store.pauseExecution(executionId.value)
@@ -40,7 +41,8 @@ export function useExecutionControls(
  }
  }
  async function handleResume {
- if (isResuming.value) return
+ if (isResuming.value)
+ return
  isResuming.value = true
  try {
  await store.resumeExecution(executionId.value)
@@ -54,7 +56,8 @@ export function useExecutionControls(
  }
  }
  async function handleCancel {
- if (isCancelling.value) return
+ if (isCancelling.value)
+ return
  isCancelling.value = true
  try {
  await store.cancelExecution(executionId.value)
@@ -68,7 +71,8 @@ export function useExecutionControls(
  }
  }
  async function handleRetry {
- if (isRetrying.value) return
+ if (isRetrying.value)
+ return
  isRetrying.value = true
  try {
  const { retryExecution } = await import('~/api/workflow')

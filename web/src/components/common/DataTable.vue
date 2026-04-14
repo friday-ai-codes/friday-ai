@@ -188,11 +188,7 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  />
  <span
  v-if="header.column.getCanSort"
- class="text-muted-foreground/60":class="{
- 'icon-[lucide--chevron-up]': header.column.getIsSorted === 'asc',
- 'icon-[lucide--chevron-down]': header.column.getIsSorted === 'desc',
- 'icon-[lucide--chevrons-up-down]': !header.column.getIsSorted,
- }"
+ class="text-muted-foreground/60":class="{ 'icon-[lucide--chevron-up]': header.column.getIsSorted === 'asc', 'icon-[lucide--chevron-down]': header.column.getIsSorted === 'desc', 'icon-[lucide--chevrons-up-down]': !header.column.getIsSorted }"
  />
  </div>
  </TableHead>

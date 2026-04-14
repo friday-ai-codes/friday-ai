@@ -4,14 +4,13 @@
  * 用于查看和更新仓库的 Git 凭证（仅 Access Token）
  */
 import { useHead } from '@vueuse/head'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/repositories/[id]/credential')
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
@@ -91,7 +90,7 @@ function formatDate(dateStr: string) {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--key] text-2xl text-amber-500" />
  </div>
  <div>
@@ -106,16 +105,17 @@ function formatDate(dateStr: string) {
  </div>
  <!-- 已有凭证显示 -->
  <div v-if="credential" class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 via-green-500/10 to-emerald-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-green-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--check-circle] text-emerald-500" />
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ <span class="icon-[lucide--check-circle] text-primary" />
  凭证已配置
- </CardTitle>
- <CardDescription>当前凭证信息（Access Token 已脱敏，不会显示原文）</CardDescription>
- </CardHeader>
- <CardContent class="space-y-4 pt-6">
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
+ 当前凭证信息（Access Token 已脱敏，不会显示原文）
+ </p>
+ </div>
+ <div class=" space-y-4">
  <div class="grid gap-4">
  <div>
  <Label class="text-muted-foreground">认证类型</Label>
@@ -157,31 +157,32 @@ function formatDate(dateStr: string) {
  更新凭证
  </Button>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
  <!-- 无凭证提示 -->
  <div v-else class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
- <CardTitle class="flex items-center gap-2 text-amber-600">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--alert-triangle]" />
  凭证未配置
- </CardTitle>
- <CardDescription>该仓库尚未配置 Git 访问凭证，请配置 Access Token</CardDescription>
- </CardHeader>
- <CardContent class="space-y-4 pt-6">
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
+ 该仓库尚未配置 Git 访问凭证，请配置 Access Token
+ </p>
+ </div>
+ <div class=" space-y-4">
  <p class="text-sm text-muted-foreground">
  需要配置 Access Token 才能执行 Git 操作（如克隆、推送分支等）。
  </p>
  <Button class="group relative overflow-hidden" @click="updateDialogOpen = true">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  配置 Access Token
  </Button>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
  <!-- 安全说明 -->
  <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
@@ -264,7 +265,7 @@ function formatDate(dateStr: string) {
  form="credential-form":disabled="!accessToken.trim || submitting"
  class="group relative overflow-hidden"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  {{ submitting ? '保存中...': '保存' }}
  </Button>

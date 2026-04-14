@@ -2,11 +2,11 @@
 import type { InteractionLog } from '~/api/workflow'
 import { computed, ref, watch } from 'vue'
 import { answerAgentSession, answerInteraction, getNodeInteractions } from '~/api/workflow'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Textarea } from '~/components/ui/textarea'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  nodeExecutionId: string
  outputData?: Record<string, any>
@@ -101,7 +101,7 @@ watch( => props.nodeExecutionId, fetchInteractions, { immediate: true })
 <template>
  <div v-if="hasContent || loading" class="space-y-3">
  <div class="flex items-center gap-2">
- <div class="bg-gradient-to-br from-amber-500/20 to-orange-400/10 rounded-lg .5">
+ <div class="bg-primary/10 rounded-lg .5">
  <span class="icon-[lucide--message-circle-question] w-4 text-amber-500" />
  </div>
  <span class="text-sm font-medium">调试交互</span>

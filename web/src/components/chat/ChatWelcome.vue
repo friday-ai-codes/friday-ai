@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Card } from '~/components/ui/card'
 const chatStore = useChatStore
 // 快捷提示词
 const quickPrompts = [
@@ -22,10 +21,10 @@ async function handleQuickPrompt(prompt: string) {
  <div class="text-center max-w-lg px-4">
  <!-- Logo + 标题 -->
  <div class="mb-8">
- <div class="inline-flex rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 mb-4">
+ <div class="inline-flex rounded-2xl bg-primary/10 mb-4">
  <span class="icon-[lucide--bot] text-5xl text-primary" />
  </div>
- <h1 class="text-2xl font-bold mb-2 bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+ <h1 class="text-2xl font-bold mb-2">
  Friday AI
  </h1>
  <p class="text-sm text-muted-foreground">
@@ -34,14 +33,13 @@ async function handleQuickPrompt(prompt: string) {
  </div>
  <!-- 快捷提示词卡片 -->
  <div class="grid grid-cols-2 gap-3">
- <Card
+ <div
  v-for="item in quickPrompts":key="item.label"
- class="group cursor-pointer bg-card/80 backdrop-blur-sm border-border/50
- hover:shadow-lg hover:border-primary/30 transition-all duration-200"
+ class="card group cursor-pointer hover:shadow-lg hover:border-primary/30 transition-all duration-200"
  @click="handleQuickPrompt(item.prompt)"
  >
  <div class="flex items-start gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 shrink-0">
+ <div class=" rounded-lg bg-primary/10 shrink-0">
  <span:class="item.icon" class="text-lg text-primary" />
  </div>
  <div class="text-left">
@@ -50,7 +48,7 @@ async function handleQuickPrompt(prompt: string) {
  </p>
  </div>
  </div>
- </Card>
+ </div>
  </div>
  <!-- 提示 -->
  <p class="mt-6 text-xs text-muted-foreground/50">

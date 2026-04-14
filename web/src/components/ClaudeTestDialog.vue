@@ -6,8 +6,6 @@
 import type { ChatCompletionResponse, ConfigSource, Model } from '~/api/chat'
 import { computed, ref, watch } from 'vue'
 import { chatCompletion, getModels } from '~/api/chat'
-import { extractErrorMessage } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -20,6 +18,8 @@ import {
  SelectValue,
 } from '~/components/ui/select'
 import { Textarea } from '~/components/ui/textarea'
+import { extractErrorMessage } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  /** 是否显示对话框 */
  open: boolean
@@ -145,13 +145,13 @@ function refreshModels {
  >
  <div class="flex flex-col h-[85vh] sm:h-auto sm:max-h-[85vh]">
  <!-- 装饰性顶部条纹 -->
- <div class=" bg-gradient-to-r from-emerald-500 via-cyan-500 to-teal-500 shrink-0" />
+ <div class=" shrink-0" />
  <!-- 头部 -->
- <div class="px-6 pt-5 pb-4 border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-cyan-500/5 shrink-0">
+ <div class="px-6 pt-5 pb-4 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
  <div class="relative">
- <div class="absolute inset-0 bg-gradient-to-br from-emerald-500 to-cyan-500 rounded-xl blur-sm opacity-40" />
- <div class="relative .5 rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center">
+ <div class="absolute inset-0 bg-primary/10 rounded-xl blur-sm opacity-40" />
+ <div class="relative .5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--flask-conical] text-xl text-white" />
  </div>
  </div>
@@ -234,16 +234,12 @@ function refreshModels {
  <!-- 结果区域 -->
  <div
  v-if="testStatus !== 'idle'"
- class="rounded-xl border overflow-hidden":class="{
- 'border-border/50 bg-muted/20': testStatus === 'loading',
- 'border-destructive/30 bg-destructive/5': testStatus === 'error',
- 'border-emerald-500/30 bg-gradient-to-br from-emerald-50/50 to-cyan-50/30 dark:from-emerald-950/20 dark:to-cyan-950/10': testStatus === 'success',
- }"
+ class="rounded-xl border overflow-hidden":class="{ 'border-border/50 bg-muted/20': testStatus === 'loading', 'border-destructive/30 bg-destructive/5': testStatus === 'error', 'border-emerald-500/30 bg-primary/10 dark:from-emerald-950/20 dark:to-cyan-950/10': testStatus === 'success' }"
  >
  <!-- 加载状态 -->
  <div v-if="testStatus === 'loading'" class="flex items-center justify-center gap-3 py-10">
  <div class="relative">
- <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 rounded-full blur animate-pulse" />
+ <div class="absolute inset-0 bg-primary/10 rounded-full blur animate-pulse" />
  <span class="relative icon-[lucide--loader-circle] text-2xl text-emerald-500 animate-spin" />
  </div>
  <span class="text-sm text-muted-foreground">正在测试连接...</span>
@@ -251,7 +247,7 @@ function refreshModels {
  <!-- 错误状态 -->
  <div v-else-if="testStatus === 'error'" class="">
  <div class="flex items-start gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-destructive/20 to-destructive/10 flex items-center justify-center flex-shrink-0">
+ <div class=" rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
  <span class="icon-[lucide--x] text-lg text-destructive" />
  </div>
  <div class="flex-1 min-w-0">
@@ -267,11 +263,11 @@ function refreshModels {
  <!-- 成功状态 -->
  <div v-else-if="testStatus === 'success' && result" class="divide-y divide-emerald-500/20">
  <!-- 成功标识 -->
- <div class="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-emerald-500/10 to-cyan-500/5">
- <div class=".5 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/25">
+ <div class="flex items-center gap-3 px-4 py-3">
+ <div class=".5 rounded-full bg-primary/10 shadow-lg shadow-emerald-500/25">
  <span class="icon-[lucide--check] text-sm text-white" />
  </div>
- <span class="font-semibold bg-gradient-to-r from-emerald-600 to-cyan-600 bg-clip-text text-transparent">连接成功</span>
+ <span class="font-semibold">连接成功</span>
  </div>
  <!-- 响应内容 -->
  <div class="">
@@ -299,10 +295,10 @@ function refreshModels {
  关闭
  </Button>
  <Button:disabled="loading || !selectedModel"
- class="group relative overflow-hidden bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:shadow-none"
+ class="group relative overflow-hidden hover:from-emerald-500 hover:to-cyan-500 text-white shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:shadow-none"
  @click="sendTest"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span
  v-if="loading"
  class="icon-[lucide--loader-circle] animate-spin mr-2"

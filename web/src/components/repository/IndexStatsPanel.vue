@@ -80,7 +80,9 @@ onMounted(loadStats)
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--bar-chart-3] text-primary" />
- <h3 class="text-sm font-semibold">索引统计</h3>
+ <h3 class="text-sm font-semibold">
+ 索引统计
+ </h3>
  </div>
  <div class="">
  <!-- 加载状态 -->
@@ -111,13 +113,17 @@ onMounted(loadStats)
  <!-- 数字指标 -->
  <div class="grid grid-cols-2 gap-3">
  <div class=" rounded-lg bg-muted/40 border border-border/50">
- <p class="text-xs text-muted-foreground">索引块数</p>
+ <p class="text-xs text-muted-foreground">
+ 索引块数
+ </p>
  <p class="text-xl font-bold text-foreground mt-0.5">
  {{ stats.chunks_total.toLocaleString }}
  </p>
  </div>
  <div class=" rounded-lg bg-muted/40 border border-border/50">
- <p class="text-xs text-muted-foreground">已索引文件</p>
+ <p class="text-xs text-muted-foreground">
+ 已索引文件
+ </p>
  <p class="text-xl font-bold text-foreground mt-0.5">
  {{ stats.indexed_files_count.toLocaleString }}
  </p>

@@ -1,14 +1,14 @@
 import type { Ref } from 'vue'
 import type { SettingRead } from '~/api/settings'
 import { ref } from 'vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  deleteSetting,
  SettingKey,
  testFeishuIM,
  updateSetting,
 } from '~/api/settings'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 export function useFeishuIMSettings(
  settings: Ref<SettingRead>,
  loadSettings: => Promise<void>,

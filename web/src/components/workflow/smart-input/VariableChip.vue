@@ -8,10 +8,7 @@ function deleteNode {
 <template>
  <NodeViewWrapper
  as="span"
- class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md select-none transition-colors duration-150":class="[
- selected
- ? 'bg-primary text-white border border-primary': 'bg-primary/10 text-primary dark:text-primary border border-primary/20',
- ]"
+ class="inline-flex items-center gap-1 pl-1.5 pr-1 py-0.5 rounded-md select-none transition-colors duration-150":class="[selected ? 'bg-primary text-white border border-primary': 'bg-primary/10 text-primary dark:text-primary border border-primary/20']"
  contenteditable="false"
  >
  <span class="icon-[lucide--variable] text-[10px]":class="selected ? 'opacity-90': 'opacity-70'" />

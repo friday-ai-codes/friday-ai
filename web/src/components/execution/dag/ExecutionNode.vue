@@ -132,9 +132,7 @@ function handleSubStepClick(stepId: string) {
  <div>
  <Handle type="target":position="Position.Top" />
  <div
- class="group w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
- transition-all duration-200 cursor-pointer
- hover:shadow-md hover:border-opacity-70":class="[statusBorderClass, bottleneckClass]"
+ class="group w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl transition-all duration-200 cursor-pointer hover:shadow-md hover:border-opacity-70":class="[statusBorderClass, bottleneckClass]"
  >
  <!-- 头部：断点指示器 + 图标 + 名称 -->
  <div class="flex items-center gap-2 mb-1.5">
@@ -172,8 +170,7 @@ function handleSubStepClick(stepId: string) {
  <Tooltip>
  <TooltipTrigger as-child>
  <button
- class="inline-flex items-center justify-center rounded-md transition-colors
- w-5 text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
+ class="inline-flex items-center justify-center rounded-md transition-colors w-5 text-emerald-500 hover:bg-emerald-500/10 cursor-pointer"
  @click.stop="data.onDebugRelease?.(props.id)"
  >
  <span class="icon-[lucide--play] w-3.5 .5" />
@@ -188,8 +185,7 @@ function handleSubStepClick(stepId: string) {
  <Tooltip>
  <TooltipTrigger as-child>
  <button
- class="inline-flex items-center justify-center rounded-md transition-colors
- w-5 text-muted-foreground hover:bg-muted/50 cursor-pointer"
+ class="inline-flex items-center justify-center rounded-md transition-colors w-5 text-muted-foreground hover:bg-muted/50 cursor-pointer"
  @click.stop="data.onDebugSkip?.(props.id)"
  >
  <span class="icon-[lucide--skip-forward] w-3.5 .5" />
@@ -206,10 +202,7 @@ function handleSubStepClick(stepId: string) {
  <Tooltip>
  <TooltipTrigger as-child>
  <button:disabled="!data.canResume"
- class="inline-flex items-center justify-center rounded-md transition-colors w-5 ":class="[
- data.canResume
- ? 'text-primary hover:bg-primary/10 cursor-pointer': 'text-muted-foreground/40 cursor-not-allowed',
- ]"
+ class="inline-flex items-center justify-center rounded-md transition-colors w-5 ":class="[data.canResume ? 'text-primary hover:bg-primary/10 cursor-pointer': 'text-muted-foreground/40 cursor-not-allowed']"
  @click.stop="data.canResume && data.onResumeClick?.(props.id)"
  >
  <span class="icon-[lucide--play-circle] w-3.5 .5" />
@@ -255,8 +248,7 @@ function handleSubStepClick(stepId: string) {
  <Badge
  v-if="data.isBottleneck"
  variant="outline"
- class="text-[10px] px-1":class="data.bottleneckLevel === 'critical'
- ? 'border-red-400/50 text-red-500': 'border-yellow-400/50 text-yellow-600'"
+ class="text-[10px] px-1":class="data.bottleneckLevel === 'critical' ? 'border-red-400/50 text-red-500': 'border-yellow-400/50 text-yellow-600'"
  >
  {{ data.bottleneckLevel === 'critical' ? '瓶颈 #1': '瓶颈' }}
  </Badge>

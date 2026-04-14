@@ -8,10 +8,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { get } from '~/api/client'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Pagination } from '~/components/ui/pagination'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import ExecutionHistoryCard from './ExecutionHistoryCard.vue'
 const props = defineProps<{
  workflowId: string

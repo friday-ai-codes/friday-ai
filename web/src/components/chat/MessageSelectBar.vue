@@ -3,9 +3,9 @@
  * 多选模式操作条 -- 显示选中消息数、全选/取消/导出操作 (per,, )。
  */
 import { Button } from '~/components/ui/button'
+const emit = defineEmits<{ export: }>
 const chatStore = useChatStore
 const selectedCount = computed( => chatStore.selectedMessageIds.size)
-const emit = defineEmits<{ export: }>
 </script>
 <template>
  <div class="sticky top-0 z-10 bg-background/95 backdrop-blur-sm flex items-center px-4 border-b border-border/30 animate-slide-down">
