@@ -44,6 +44,8 @@ class ProjectSerializer(serializers.ModelSerializer):
  has_feishu_config = serializers.SerializerMethodField
  webhook_token = serializers.CharField(source="feishu_webhook_token", read_only=True)
  repositories = serializers.SerializerMethodField
+ execution_count = serializers.SerializerMethodField
+ recent_work_items = serializers.SerializerMethodField
  class Meta:
  model = Project
  fields = [
@@ -54,6 +56,8 @@ class ProjectSerializer(serializers.ModelSerializer):
  "has_feishu_config",
  "webhook_token",
  "repositories",
+ "execution_count",
+ "recent_work_items",
  "created_at",
  "updated_at",
  ]
@@ -63,6 +67,11 @@ class ProjectSerializer(serializers.ModelSerializer):
  def get_repositories(self, obj):
  """Return only non-deleted repositories (already filtered via Prefetch in ViewSet)."""
  return RepositorySerializer(obj.repositories.all, many=True).data
+ def get_execution_count(self, obj):
+ return getattr(obj, 'execution_count', 0)
+ def get_recent_work_items(self, obj):
+ logs = obj.trigger_logs.exclude(work_item_name="").order_by("-created_at")[:3]
+ return [{"id": log.work_item_id, "name": log.work_item_name} for log in logs]
 class ProjectCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Project."""
  class Meta:

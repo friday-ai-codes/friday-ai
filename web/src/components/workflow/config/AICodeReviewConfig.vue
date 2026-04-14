@@ -70,13 +70,13 @@ const maxIterationsStr = computed({
  </p>
  <!-- Workflow Visual -->
  <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
- <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 font-medium">读取 MR</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">读取 MR</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-600 font-medium">获取 Diff</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">获取 Diff</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-600 font-medium">AI 审查</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">AI 审查</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 font-medium">生成报告</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">生成报告</span>
  </div>
  </div>
  </div>

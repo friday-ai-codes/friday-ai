@@ -51,11 +51,11 @@ const chatId = field('chat_id', '') as import('vue').WritableComputedRef<string>
  </p>
  <!-- Workflow Visual -->
  <div class="flex items-center gap-1 text-[10px] py-1.5 px-2 rounded-lg bg-muted/50">
- <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 font-medium">接收方案</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">接收方案</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">飞书卡片</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">飞书卡片</span>
  <span class="icon-[lucide--arrow-right] text-muted-foreground" />
- <span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-600 font-medium">审批结果</span>
+ <span class="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">审批结果</span>
  </div>
  </div>
  </div>
