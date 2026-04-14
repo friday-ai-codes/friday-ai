@@ -136,7 +136,7 @@ export interface SSEEvent {
  error_type?: 'permission_denied' | 'not_found' | 'not_configured' | 'unknown'
  // coding_progress (Phase)
  coding_session_id?: string
- steps?: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
+ steps?: Array<{ name: string, status: 'pending' | 'running' | 'done' }>
  modified_files_count?: number
  // coding_complete (Phase)
  pr_url?: string
@@ -156,8 +156,8 @@ export interface SSEEvent {
  behind_by?: number
  suggestion?: string
  // coding_progress enhanced (Phase/210)
- modified_files?: Array<{ path: string; change_type: string }>
- recent_tool_calls?: Array<{ tool: string; summary: string }>
+ modified_files?: Array<{ path: string, change_type: string }>
+ recent_tool_calls?: Array<{ tool: string, summary: string }>
 }
 /** 用户角色 */
 export type ChatRole = 'developer' | 'pm' | 'designer' | 'qa' | 'general'
@@ -198,7 +198,7 @@ export interface CodingSessionResponse {
  id: string
  status: 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
  tech_plan: string
- affected_files: Array<{ path: string; change_type: string }>
+ affected_files: Array<{ path: string, change_type: string }>
  revision_count: number
  repository_id: string
  branch_name: string
@@ -217,7 +217,7 @@ export interface CodingSessionResponse {
  suggestion?: string
  } | null
  diff_summary: {
- files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ files?: Array<{ path: string, additions: number, deletions: number, change_type: string }>
  total_additions?: number
  total_deletions?: number
  truncated?: boolean
@@ -230,7 +230,7 @@ export interface CodingSessionRuntime {
  id: string
  status: string
  tech_plan?: string
- affected_files?: Array<{ path: string; change_type: string }>
+ affected_files?: Array<{ path: string, change_type: string }>
  branch_name?: string
  pr_url?: string
  error_message?: string
@@ -246,10 +246,10 @@ export interface CodingSessionRuntime {
 /** Store 中的编码进度数据 */
 export interface CodingProgressData {
  sessionId: string
- steps: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
+ steps: Array<{ name: string, status: 'pending' | 'running' | 'done' }>
  modifiedFilesCount: number
- modifiedFiles?: Array<{ path: string; change_type: string }>
- recentToolCalls?: Array<{ tool: string; summary: string }>
+ modifiedFiles?: Array<{ path: string, change_type: string }>
+ recentToolCalls?: Array<{ tool: string, summary: string }>
 }
 /** Store 中的编码结果数据 */
 export interface CodingResultData {

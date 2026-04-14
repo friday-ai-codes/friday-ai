@@ -3,7 +3,7 @@
 <template>
  <section class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">
  <div class="flex items-start gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center">
+ <div class=" rounded-lg bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--info] text-xl text-muted-foreground" />
  </div>
  <div class="space-y-2">

@@ -10,10 +10,7 @@ const delegatedProps = reactiveOmit(props, 'class')
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 <template>
- <SliderRoot:class="cn(
- 'relative flex w-full touch-none select-none items-center data-[orientation=vertical]:flex-col data-[orientation=vertical]:w-2 data-[orientation=vertical]:h-full',
- props.class,
- )"
+ <SliderRoot:class="cn('relative flex w-full touch-none select-none items-center data-[orientation=vertical]:flex-col data-[orientation=vertical]:w-2 data-[orientation=vertical]:h-full', props.class)"
  v-bind="forwarded"
  >
  <SliderTrack class="relative w-full data-[orientation=vertical]:w-2 grow overflow-hidden rounded-full bg-secondary">

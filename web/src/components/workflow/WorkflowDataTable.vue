@@ -39,7 +39,8 @@ function onToggleActive(checked: boolean, workflow: Workflow) {
 }
 function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, icon: string, count: number } {
  const summary = (workflow as any).node_summary as { node_type: string } | undefined
- if (!summary?.length) return
+ if (!summary?.length)
+ return
  const countMap = new Map<string, number>
  for (const n of summary) {
  countMap.set(n.node_type, (countMap.get(n.node_type) || 0) + 1)
@@ -88,17 +89,11 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
  />
  <!-- Card body -->
  <div
- class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden":class="[
- workflow.is_active
- ? 'bg-card/80 border-border/50 group-hover:border-teal-300/50 group-hover:shadow-lg group-hover:shadow-teal-500/10 group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30',
- ]"
+ class="relative rounded-2xl backdrop-blur-sm border transition-all duration-300 overflow-hidden":class="[workflow.is_active ? 'bg-card/80 border-border/50 group-hover:border-teal-300/50 group-hover:shadow-lg group-hover:shadow-teal-500/10 group-hover:-translate-y-0.5': 'bg-muted/30 border-border/30']"
  >
  <!-- Mini Map Preview -->
  <div
- class="relative w-full border-b transition-colors":class="[
- workflow.is_active
- ? 'bg-linear-to-b from-background/20 to-background/60 border-border/30': 'bg-muted/20 border-border/20',
- ]"
+ class="relative w-full border-b transition-colors":class="[workflow.is_active ? 'bg-linear-to-b from-background/20 to-background/60 border-border/30': 'bg-muted/20 border-border/20']"
  >
  <WorkflowMiniMap:nodes="(workflow as any).node_summary || ":edges="(workflow as any).edge_summary || ":width="400":height="100"
  class="w-full h-auto"
@@ -115,23 +110,16 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
  <div class="flex items-start gap-3 mb-2.5">
  <!-- Icon -->
  <div
- class=".5 rounded-lg shrink-0":class="[
- workflow.is_active
- ? 'bg-linear-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50',
- ]"
+ class=".5 rounded-lg shrink-0":class="[workflow.is_active ? 'bg-linear-to-br from-teal-500/10 to-cyan-500/10': 'bg-muted/50']"
  >
  <span
- class="text-base":class="[
- workflow.is_active ? 'icon-[lucide--workflow] text-teal-500': 'icon-[lucide--workflow] text-muted-foreground',
- ]"
+ class="text-base":class="[workflow.is_active ? 'icon-[lucide--workflow] text-teal-500': 'icon-[lucide--workflow] text-muted-foreground']"
  />
  </div>
  <!-- Name & Description -->
  <div class="flex-1 min-w-0">
  <h3
- class="text-sm font-medium leading-tight truncate transition-colors":class="[
- workflow.is_active ? 'group-hover:text-primary': 'text-muted-foreground',
- ]"
+ class="text-sm font-medium leading-tight truncate transition-colors":class="[workflow.is_active ? 'group-hover:text-primary': 'text-muted-foreground']"
  >
  {{ workflow.name }}
  </h3>

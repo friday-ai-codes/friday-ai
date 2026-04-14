@@ -168,10 +168,7 @@ onBeforeUnmount( => {
 </script>
 <template>
  <div
- class="smart-textarea-wrapper relative rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm
- focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2
- focus-within:ring-offset-background transition-shadow
- max- overflow-y-auto":class="{ 'opacity-50 cursor-not-allowed': disabled }"
+ class="smart-textarea-wrapper relative rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background transition-shadow max- overflow-y-auto":class="{ 'opacity-50 cursor-not-allowed': disabled }"
  >
  <EditorContent:editor="editor" />
  </div>

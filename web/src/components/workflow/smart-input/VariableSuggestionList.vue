@@ -151,10 +151,7 @@ defineExpose({ onKeyDown })
  <button
  v-for="(item, itemIndex) in group.items":key="item.path"
  type="button":data-selected="isSelected(groupIndex, itemIndex)"
- class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[
- isSelected(groupIndex, itemIndex)
- ? 'bg-accent': 'hover:bg-accent/50',
- ]"
+ class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[isSelected(groupIndex, itemIndex) ? 'bg-accent': 'hover:bg-accent/50']"
  @click="selectItem(getFlatIndex(groupIndex, itemIndex))"
  >
  <div class="flex items-center justify-between gap-2">

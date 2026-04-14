@@ -37,10 +37,10 @@ const emit = defineEmits<{
  'update:triggerDialogOpen': [value: boolean]
  'update:triggerInputData': [value: string]
  'update:resumeDialogOpen': [value: boolean]
- approve:
- reject:
- trigger:
- resumeFromFailed:
+ 'approve':
+ 'reject':
+ 'trigger':
+ 'resumeFromFailed':
 }>
 </script>
 <template>

@@ -120,8 +120,8 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  >
  <div class="flex items-start justify-between">
  <div class="flex items-center gap-2">
- <div class=".5 rounded-md bg-gradient-to-br from-violet-500/20 to-violet-500/10">
- <span class="icon-[lucide--sparkles] text-violet-500" />
+ <div class=".5 rounded-md bg-primary/10">
+ <span class="icon-[lucide--sparkles] text-primary" />
  </div>
  <span class="font-medium text-sm">{{ variable.name || '未命名变量' }}</span>
  <span v-if="variable.required" class="text-xs text-destructive">必填</span>

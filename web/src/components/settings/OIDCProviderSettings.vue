@@ -13,9 +13,6 @@ import {
  updateProvider,
 } from '~/api/oidc'
 import { Button } from '~/components/ui/button'
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  Dialog,
  DialogContent,
@@ -27,6 +24,9 @@ import {
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Switch } from '~/components/ui/switch'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
@@ -187,9 +187,9 @@ onMounted( => {
  <section class="group relative">
  <div class="card overflow-hidden">
  <!-- 卡片头部 -->
- <div class="flex items-center justify-between border-b border-border/50 bg-gradient-to-r from-emerald-500/5 to-teal-500/5">
+ <div class="flex items-center justify-between border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--shield-check] text-2xl text-emerald-500" />
  </div>
  <div>

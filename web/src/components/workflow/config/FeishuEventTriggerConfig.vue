@@ -190,7 +190,7 @@ const regexValidation = computed( => {
  <!-- 事件类型 - 单选 -->
  <div class="space-y-3">
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--zap] text-amber-500" />
+ <span class="icon-[lucide--zap] text-primary" />
  <Label class="text-sm font-medium">事件类型</Label>
  <span class="text-destructive">*</span>
  </div>
@@ -265,7 +265,7 @@ const regexValidation = computed( => {
  <!-- 状态过滤 - 标签化 -->
  <div class="space-y-3">
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--git-branch] text-violet-500" />
+ <span class="icon-[lucide--git-branch] text-primary" />
  <Label class="text-sm font-medium">状态过滤</Label>
  <Badge variant="outline" class="text-xs">
  可选
@@ -516,11 +516,7 @@ const regexValidation = computed( => {
  <div class="relative">
  <Input
  v-model="excludeWorkItemPattern":placeholder="isRegexMode ? '如: /^\\[测试\\].*/': '如: [测试]、临时'"
- class="bg-background/50 text-sm pr-16":class="{
- 'font-mono': isRegexMode,
- 'border-red-500/50': regexValidation.valid === false,
- 'border-green-500/50': regexValidation.valid === true && isRegexMode,
- }"
+ class="bg-background/50 text-sm pr-16":class="{ 'font-mono': isRegexMode, 'border-red-500/50': regexValidation.valid === false, 'border-green-500/50': regexValidation.valid === true && isRegexMode }"
  />
  <span
  class="absolute right-3 top-1/2 -translate-y-1/2 text-xs px-1.5 py-0.5 rounded":class="isRegexMode ? 'bg-violet-500/10 text-violet-500': 'bg-muted text-muted-foreground'"

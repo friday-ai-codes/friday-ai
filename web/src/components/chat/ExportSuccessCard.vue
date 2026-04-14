@@ -31,7 +31,9 @@ const formattedTime = computed( => {
  </Badge>
  </div>
  <div class=" space-y-1.5">
- <p class="text-sm font-semibold text-foreground">{{ title }}</p>
+ <p class="text-sm font-semibold text-foreground">
+ {{ title }}
+ </p>
  <a:href="url"
  target="_blank"
  rel="noopener noreferrer"
@@ -40,7 +42,9 @@ const formattedTime = computed( => {
  在飞书中查看
  <span class="icon-[lucide--external-link] text-[10px]" />
  </a>
- <p class="text-xs text-muted-foreground">{{ formattedTime }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ formattedTime }}
+ </p>
  </div>
  </div>
 </template>

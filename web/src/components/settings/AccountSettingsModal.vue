@@ -3,11 +3,11 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { VueFinalModal } from 'vue-final-modal'
 import * as z from 'zod'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useAuthStore } from '~/stores/auth'
 const emit = defineEmits<{
  confirm:
@@ -109,8 +109,8 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 sticky top-0 bg-card z-10">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/10">
- <span class="icon-[lucide--user-cog] text-xl text-indigo-500" />
+ <div class=".5 rounded-xl bg-primary/10">
+ <span class="icon-[lucide--user-cog] text-xl text-primary" />
  </div>
  <div>
  <h3 class="text-lg font-semibold text-foreground">

@@ -34,8 +34,7 @@ function formatTokenCount(count: number): string {
  <!-- loading 状态 -->
  <div
  v-if="loading"
- class="flex items-center gap-3 px-3 py-1.5 bg-card/80 backdrop-blur-sm
- border border-border/50 rounded-2xl shadow-sm"
+ class="flex items-center gap-3 px-3 py-1.5 bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl shadow-sm"
  >
  <Skeleton class=" w-16" />
  <Skeleton class=" w-20" />
@@ -43,8 +42,7 @@ function formatTokenCount(count: number): string {
  <!-- 有数据时渲染 -->
  <div
  v-else-if="costSummary"
- class="flex items-center gap-3 px-3 py-1.5 bg-card/80 backdrop-blur-sm
- border border-border/50 rounded-2xl shadow-sm text-xs"
+ class="flex items-center gap-3 px-3 py-1.5 bg-card/80 backdrop-blur-sm border border-border/50 rounded-2xl shadow-sm text-xs"
  >
  <!-- 总成本 -->
  <div class="flex items-center gap-1 text-foreground">

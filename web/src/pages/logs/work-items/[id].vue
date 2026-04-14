@@ -2,11 +2,10 @@
 import type { TriggerLogDetail } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/logs/work-items/[id]')
 const router = useRouter
 const { handleError } = useErrorHandler
@@ -78,11 +77,13 @@ async function copyJson {
  </Button>
  </div>
  <!-- 基本信息卡片 -->
- <Card>
- <CardHeader>
- <CardTitle>基本信息</CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ 基本信息
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <div class="grid gap-4 md:grid-cols-2">
  <div>
  <label class="text-sm text-muted-foreground">日志 ID</label>
@@ -127,22 +128,24 @@ async function copyJson {
  </p>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 原始响应卡片 -->
- <Card>
- <CardHeader>
- <CardTitle>飞书 API 响应数据</CardTitle>
- <CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ 飞书 API 响应数据
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
  从飞书项目 API 获取的工作项详细信息
- </CardDescription>
- </CardHeader>
- <CardContent>
+ </p>
+ </div>
+ <div class=" space-y-4">
  <div class="bg-muted rounded-lg overflow-auto max-h-[600px]">
  <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.work_item_raw_response_parsed, null, 2) }}</pre>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </template>
  <!-- 日志不存在 -->
  <EmptyState

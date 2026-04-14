@@ -25,25 +25,33 @@ function formatWhen(iso: string | null): string {
  </div>
  <dl class="grid gap-3 sm:grid-cols-2 text-sm">
  <div>
- <dt class="text-xs text-muted-foreground">上次索引时间</dt>
+ <dt class="text-xs text-muted-foreground">
+ 上次索引时间
+ </dt>
  <dd class="mt-0.5 font-medium text-foreground tabular-nums">
  {{ formatWhen(props.row.last_indexed_at) }}
  </dd>
  </div>
  <div>
- <dt class="text-xs text-muted-foreground">索引提交 SHA</dt>
+ <dt class="text-xs text-muted-foreground">
+ 索引提交 SHA
+ </dt>
  <dd class="mt-0.5 font-mono text-xs break-all text-foreground">
  {{ props.row.last_indexed_commit_sha || '—' }}
  </dd>
  </div>
  <div>
- <dt class="text-xs text-muted-foreground">有效块数</dt>
+ <dt class="text-xs text-muted-foreground">
+ 有效块数
+ </dt>
  <dd class="mt-0.5 font-medium tabular-nums">
  {{ props.row.effective_chunks_count }}
  </dd>
  </div>
  <div>
- <dt class="text-xs text-muted-foreground">基准分支</dt>
+ <dt class="text-xs text-muted-foreground">
+ 基准分支
+ </dt>
  <dd class="mt-0.5">
  {{ props.row.is_base_branch ? '是': '否' }}
  </dd>

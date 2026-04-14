@@ -110,7 +110,7 @@ function handleManualKeydown(event: KeyboardEvent) {
  <Badge
  v-for="item in selectedItems":key="item.id"
  variant="secondary"
- class="gap-1.5 bg-gradient-to-br from-primary/20 to-primary/10 pr-1"
+ class="gap-1.5 bg-primary/10 pr-1"
  >
  <span class="icon-[lucide--git-branch] w-3 " />
  <span class="max-w-[150px] truncate">{{ item.displayName }}</span>

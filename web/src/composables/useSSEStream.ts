@@ -75,7 +75,6 @@ export async function connectSSE(
  try {
  const data: SSEEvent = JSON.parse(trimmed.slice(6))
  if (!data.type) {
- // eslint-disable-next-line no-console
  console.warn('[SSE] 收到缺少 type 字段的事件，已跳过:', data)
  continue
  }

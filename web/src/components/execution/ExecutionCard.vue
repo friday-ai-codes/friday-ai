@@ -60,7 +60,7 @@ const isActive = computed( => {
  >
  <!-- Hover glow effect -->
  <div
- class="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10"
+ class="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl blur-xl -z-10"
  />
  <!-- Card -->
  <div
@@ -69,7 +69,7 @@ const isActive = computed( => {
  <div class="flex items-center justify-between gap-4">
  <!-- Left: Workflow info -->
  <div class="flex items-center gap-3 min-w-0 flex-1">
- <div class=" rounded-xl bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-xl bg-primary/10">
  <span class="icon-[lucide--workflow] text-xl text-primary" />
  </div>
  <div class="min-w-0">
@@ -92,7 +92,7 @@ const isActive = computed( => {
  <div v-if="isActive && execution.total_nodes > 0" class="hidden sm:flex items-center gap-2 min-w-[120px]">
  <div class="flex-1 .5 bg-muted rounded-full overflow-hidden">
  <div
- class="h-full bg-gradient-to-r from-primary to-primary/70 transition-all duration-300":style="{ width: `${execution.progress}%` }"
+ class="h-full bg-primary transition-all duration-300":style="{ width: `${execution.progress}%` }"
  />
  </div>
  <span class="text-xs text-muted-foreground whitespace-nowrap">

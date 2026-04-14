@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { confirmPR, getDiffSummary } from '~/api/chat'
+import { Badge } from '~/components/ui/badge'
 /**
  * PR 确认卡片 -- 支持编辑 PR 标题/描述/目标分支，创建或跳过 PR。
  *
@@ -6,11 +8,9 @@
  * 顶部展示已完成确认步骤折叠摘要。
  */
 import { Button } from '~/components/ui/button'
-import { Badge } from '~/components/ui/badge'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Textarea } from '~/components/ui/textarea'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { confirmPR, getDiffSummary } from '~/api/chat'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  sessionId: string
@@ -18,10 +18,10 @@ const props = defineProps<{
  suggestedPrDescription: string
  targetBranch: string
  branchUrl: string
- completedSteps: Array<{ step: string; summary: string }>
+ completedSteps: Array<{ step: string, summary: string }>
 }>
 const emit = defineEmits<{
- 'create-pr': [sessionId: string, data: { title: string; description: string; target_branch: string }]
+ 'create-pr': [sessionId: string, data: { title: string, description: string, target_branch: string }]
  'skip-pr': [sessionId: string]
 }>
 const { error: toastError } = useToast
@@ -31,10 +31,10 @@ const targetBranchInput = ref(props.targetBranch)
 const submitting = ref(false)
 const submitAction = ref<'create' | 'skip' | null>(null)
 const completed = ref(false)
-const completedResult = ref<{ type: 'pr' | 'branch'; url: string } | null>(null)
+const completedResult = ref<{ type: 'pr' | 'branch', url: string } | null>(null)
 // Diff 摘要数据
 const diffData = ref<{
- files?: Array<{ path: string; additions: number; deletions: number; change_type: string }>
+ files?: Array<{ path: string, additions: number, deletions: number, change_type: string }>
  total_additions?: number
  total_deletions?: number
  truncated?: boolean
@@ -45,10 +45,12 @@ onMounted(async => {
  diffLoading.value = true
  try {
  diffData.value = await getDiffSummary(props.sessionId)
- } catch {
+ }
+ catch {
  // 静默失败 -- diff 摘要为增强功能，不阻断 PR 操作
  toastError('加载 Diff 摘要失败')
- } finally {
+ }
+ finally {
  diffLoading.value = false
  }
 })
@@ -59,7 +61,8 @@ function autoResize(event: Event) {
  el.style.height = `${Math.min(el.scrollHeight, 300)}px`
 }
 async function handleCreatePR {
- if (!isValid.value || submitting.value) return
+ if (!isValid.value || submitting.value)
+ return
  submitting.value = true
  submitAction.value = 'create'
  try {
@@ -75,15 +78,18 @@ async function handleCreatePR {
  description: prDescription.value,
  target_branch: targetBranchInput.value,
  })
- } catch {
+ }
+ catch {
  toastError('PR 创建失败，请重试')
- } finally {
+ }
+ finally {
  submitting.value = false
  submitAction.value = null
  }
 }
 async function handleSkipPR {
- if (submitting.value) return
+ if (submitting.value)
+ return
  submitting.value = true
  submitAction.value = 'skip'
  try {
@@ -91,9 +97,11 @@ async function handleSkipPR {
  completed.value = true
  completedResult.value = { type: 'branch', url: props.branchUrl }
  emit('skip-pr', props.sessionId)
- } catch {
+ }
+ catch {
  toastError('跳过 PR 失败，请重试')
- } finally {
+ }
+ finally {
  submitting.value = false
  submitAction.value = null
  }
@@ -107,7 +115,9 @@ async function handleSkipPR {
  <span class="text-sm font-semibold">
  {{ completedResult.type === 'pr' ? 'PR 已创建': '编码完成' }}
  </span>
- <Badge variant="success" class="ml-auto">编码完成</Badge>
+ <Badge variant="success" class="ml-auto">
+ 编码完成
+ </Badge>
  </div>
  <div class=" space-y-1.5">
  <!-- 已完成步骤摘要 -->
@@ -147,7 +157,9 @@ async function handleSkipPR {
  <div class="px-4 py-3 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--git-pull-request] text-primary" />
  <span class="text-sm font-semibold">创建 Pull Request</span>
- <Badge variant="info" class="ml-auto">待确认</Badge>
+ <Badge variant="info" class="ml-auto">
+ 待确认
+ </Badge>
  </div>
  <!-- 内容区 -->
  <div class=" space-y-3">

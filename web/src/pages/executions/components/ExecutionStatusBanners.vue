@@ -10,8 +10,8 @@ interface Props {
 }
 defineProps<Props>
 const emit = defineEmits<{
- reconnectWs:
- cancelDebug:
+ 'reconnectWs':
+ 'cancelDebug':
  'update:isBreakpointMode': [value: boolean]
 }>
 </script>

@@ -1,5 +1,5 @@
-import type { CostBreakdown } from '~/types/execution'
 import type { TimelineData, WorkflowExecution } from '~/stores/useExecutionsStore'
+import type { CostBreakdown } from '~/types/execution'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

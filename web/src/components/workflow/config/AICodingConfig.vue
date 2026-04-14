@@ -55,7 +55,7 @@ const pollingIntervalStr = computed({
 <template>
  <div class="space-y-4">
  <!-- Introduction -->
- <div class="rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 ">
+ <div class="rounded-xl bg-primary/10 border border-primary/20 ">
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--terminal] text-primary text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">

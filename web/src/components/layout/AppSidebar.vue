@@ -67,9 +67,12 @@ function formatTime(dateStr: string) {
  const now = new Date
  const diff = now.getTime - date.getTime
  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
- if (days === 0) return '今天'
- if (days === 1) return '昨天'
- if (days < 7) return `${days}天前`
+ if (days === 0)
+ return '今天'
+ if (days === 1)
+ return '昨天'
+ if (days < 7)
+ return `${days}天前`
  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 // ==================== 退出登录 ====================
@@ -92,7 +95,7 @@ async function handleLogout {
  class="group flex items-center gap-2.5 overflow-hidden"
  >
  <div class="shrink-0 w-9 rounded-xl overflow-hidden shadow-[0_0_12px_rgba(20,184,166,0.3)]">
- <img src="/friday-ai.svg" alt="Friday AI" class="w-full h-full" />
+ <img src="/friday-ai.svg" alt="Friday AI" class="w-full h-full">
  </div>
  <div v-if="!isCollapsed" class="flex flex-col">
  <span class="text-lg font-bold text-foreground whitespace-nowrap">Friday AI</span>
@@ -218,8 +221,7 @@ async function handleLogout {
  v-for="conv in chatStore.conversations":key="conv.id"
  role="button"
  tabindex="0"
- class="group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer":class="chatStore.currentConversationId === conv.id
- ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
+ class="group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer":class="chatStore.currentConversationId === conv.id ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
  @click="handleSelectConversation(conv.id)"
  @keydown.enter="handleSelectConversation(conv.id)"
  >

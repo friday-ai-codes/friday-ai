@@ -9,12 +9,12 @@
 import { ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-const props = defineProps<{
- steps: Array<{ name: string; status: 'pending' | 'running' | 'done' }>
+defineProps<{
+ steps: Array<{ name: string, status: 'pending' | 'running' | 'done' }>
  modifiedFilesCount: number
  isComplete: boolean
- modifiedFiles?: Array<{ path: string; change_type: string }>
- recentToolCalls?: Array<{ tool: string; summary: string }>
+ modifiedFiles?: Array<{ path: string, change_type: string }>
+ recentToolCalls?: Array<{ tool: string, summary: string }>
 }>
 const filesExpanded = ref(false)
 </script>
@@ -44,11 +44,7 @@ const filesExpanded = ref(false)
  />
  <span v-else class="icon-[lucide--check-circle] text-emerald-500 text-[14px]" />
  <!-- 步骤文字 -->
- <span:class="{
- 'text-muted-foreground': step.status === 'pending',
- 'text-foreground font-semibold': step.status === 'running',
- 'text-muted-foreground line-through': step.status === 'done',
- }"
+ <span:class="{ 'text-muted-foreground': step.status === 'pending', 'text-foreground font-semibold': step.status === 'running', 'text-muted-foreground line-through': step.status === 'done' }"
  >
  {{ step.name }}
  </span>
@@ -77,12 +73,8 @@ const filesExpanded = ref(false)
  >
  <code class="truncate">{{ file.path }}</code>
  <Badge
- variant="outline":class="[
- 'text-[10px] px-1 py-0',
- file.change_type === 'added' ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5':
- file.change_type === 'deleted' ? 'text-destructive border-destructive/30 bg-destructive/5':
- 'text-blue-500 border-blue-500/30 bg-blue-500/5'
- ]"
+ variant="outline"
+ class="text-[10px] px-1 py-0":class="[file.change_type === 'added' ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5': file.change_type === 'deleted' ? 'text-destructive border-destructive/30 bg-destructive/5': 'text-blue-500 border-blue-500/30 bg-blue-500/5']"
  >
  {{ file.change_type }}
  </Badge>

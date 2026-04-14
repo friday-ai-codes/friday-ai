@@ -19,10 +19,14 @@ const expanded = ref(false)
  </div>
  <div class="px-4 pb-3">
  <template v-if="errorMessage.length <= 100">
- <p class="text-xs text-muted-foreground">{{ errorMessage }}</p>
+ <p class="text-xs text-muted-foreground">
+ {{ errorMessage }}
+ </p>
  </template>
  <template v-else>
- <p class="text-xs text-muted-foreground">{{ errorMessage.slice(0, 100) }}...</p>
+ <p class="text-xs text-muted-foreground">
+ {{ errorMessage.slice(0, 100) }}...
+ </p>
  <button
  class="text-xs text-primary mt-1 cursor-pointer"
  @click="expanded = !expanded"

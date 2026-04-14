@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Collapsible,
  CollapsibleContent,
@@ -57,17 +56,17 @@ const succeededOpen = ref(true)
 const failedOpen = ref(true)
 </script>
 <template>
- <Card class="card overflow-hidden">
+ <div class="card card overflow-hidden">
  <!-- Header -->
- <CardHeader class="pb-3">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class="bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg ">
+ <div class="bg-primary/10 rounded-lg ">
  <span class="icon-[lucide--terminal] w-5 text-primary" />
  </div>
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  AI 编码执行
- </CardTitle>
+ </h3>
  </div>
  <!-- Status Badge -->
  <Badge
@@ -106,8 +105,8 @@ const failedOpen = ref(true)
  编码失败
  </Badge>
  </div>
- </CardHeader>
- <CardContent class="space-y-4">
+ </div>
+ <div class=" space-y-4">
  <!-- Branch Info (always visible when available) -->
  <div v-if="branches.branch_name" class="flex items-center gap-2 text-sm">
  <span class="icon-[lucide--git-branch] w-4 text-primary" />
@@ -267,6 +266,6 @@ const failedOpen = ref(true)
  </div>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
 </template>

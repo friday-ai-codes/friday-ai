@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { confirmCommit } from '~/api/chat'
+import { Badge } from '~/components/ui/badge'
 /**
  * Commit 确认卡片 -- 展示 AI 建议的 commit message，支持用户编辑后确认。
  *
@@ -6,9 +8,7 @@
  * 顶部展示已完成确认步骤折叠摘要。
  */
 import { Button } from '~/components/ui/button'
-import { Badge } from '~/components/ui/badge'
 import { Textarea } from '~/components/ui/textarea'
-import { confirmCommit } from '~/api/chat'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  sessionId: string
@@ -19,7 +19,7 @@ const props = defineProps<{
  behind_by?: number
  suggestion?: string
  } | null
- completedSteps: Array<{ step: string; summary: string }>
+ completedSteps: Array<{ step: string, summary: string }>
 }>
 const emit = defineEmits<{
  confirmed: [sessionId: string, commitMessage: string]
@@ -48,14 +48,17 @@ onMounted( => {
  })
 })
 async function handleConfirm {
- if (!isValid.value || submitting.value) return
+ if (!isValid.value || submitting.value)
+ return
  submitting.value = true
  try {
  await confirmCommit(props.sessionId, commitMessage.value)
  emit('confirmed', props.sessionId, commitMessage.value)
- } catch {
+ }
+ catch {
  toastError('Commit 确认失败，请重试')
- } finally {
+ }
+ finally {
  submitting.value = false
  }
 }
@@ -66,7 +69,9 @@ async function handleConfirm {
  <div class="px-4 py-3 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--git-commit-horizontal] text-primary" />
  <span class="text-sm font-semibold">确认 Commit</span>
- <Badge variant="info" class="ml-auto">待确认</Badge>
+ <Badge variant="info" class="ml-auto">
+ 待确认
+ </Badge>
  </div>
  <!-- 内容区 -->
  <div class=" space-y-3">

@@ -1,32 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '~/api/client'
+// 在 mock 之后导入被测模块
+import { extractErrorMessage, useErrorHandler } from '~/composables/useErrorHandler'
 // mock useToast，返回一个包含 error spy 的对象
 const mockError = vi.fn
 vi.mock('~/composables/useToast', => ({
  useToast: => ({ error: mockError }),
 }))
-// 在 mock 之后导入被测模块
-import { extractErrorMessage, useErrorHandler } from '~/composables/useErrorHandler'
 describe('extractErrorMessage', => {
- it('ApiError(401, "") 返回 "请重新登录"', => {
+ it('apiError(401, "") 返回 "请重新登录"', => {
  expect(extractErrorMessage(new ApiError(401, ''))).toBe('请重新登录')
  })
- it('ApiError(403, "") 返回 "无权限"', => {
+ it('apiError(403, "") 返回 "无权限"', => {
  expect(extractErrorMessage(new ApiError(403, ''))).toBe('无权限')
  })
- it('ApiError(404, "") 返回 "资源不存在"', => {
+ it('apiError(404, "") 返回 "资源不存在"', => {
  expect(extractErrorMessage(new ApiError(404, ''))).toBe('资源不存在')
  })
- it('ApiError(500, "") 返回 "服务器错误"', => {
+ it('apiError(500, "") 返回 "服务器错误"', => {
  expect(extractErrorMessage(new ApiError(500, ''))).toBe('服务器错误')
  })
- it('ApiError 有 detail 时优先使用 detail', => {
+ it('apiError 有 detail 时优先使用 detail', => {
  expect(extractErrorMessage(new ApiError(422, '字段格式错误'))).toBe('字段格式错误')
  })
- it('ApiError(500, "") 无 detail 时回退到 STATUS_MESSAGES', => {
+ it('apiError(500, "") 无 detail 时回退到 STATUS_MESSAGES', => {
  expect(extractErrorMessage(new ApiError(500, ''))).toBe('服务器错误')
  })
- it('TypeError("Failed to fetch") 返回网络错误提示', => {
+ it('typeError("Failed to fetch") 返回网络错误提示', => {
  expect(extractErrorMessage(new TypeError('Failed to fetch'))).toBe('网络连接失败，请检查网络')
  })
  it('普通 Error 返回 message', => {

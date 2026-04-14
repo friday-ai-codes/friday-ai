@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { VueFinalModal } from 'vue-final-modal'
 import { getProjectClaudeConfig, updateProjectClaudeConfig } from '~/api/settings'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = defineProps<{
  projectId: string
 }>
@@ -84,7 +84,7 @@ function openTestDialog {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--bot] text-xl text-emerald-600" />
  </div>
  <div>
@@ -172,7 +172,7 @@ function openTestDialog {
  <Button type="button" variant="outline":disabled="submitting" @click="handleCancel">
  取消
  </Button>
- <Button type="submit":disabled="submitting" class="bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white border-0">
+ <Button type="submit":disabled="submitting" class="hover:from-emerald-500 hover:to-cyan-500 text-white border-0">
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存配置

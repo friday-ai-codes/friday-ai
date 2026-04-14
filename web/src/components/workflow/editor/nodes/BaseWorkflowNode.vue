@@ -84,13 +84,7 @@ function handleCopy {
  </div>
  </NodeToolbar>
  <div
- class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl
- transition-all duration-200 group
- hover:shadow-md hover:border-opacity-70":class="[
- style.borderColor,
- selected ? `ring-2 ${style.ringColor} shadow-lg`: '',
- data.disabled ? 'grayscale opacity-50': '',
- ]"
+ class="w-[200px] bg-card/80 backdrop-blur-sm border rounded-2xl transition-all duration-200 group hover:shadow-md hover:border-opacity-70":class="[style.borderColor, selected ? `ring-2 ${style.ringColor} shadow-lg`: '', data.disabled ? 'grayscale opacity-50': '']"
  >
  <!-- Input Handles -->
  <Handle

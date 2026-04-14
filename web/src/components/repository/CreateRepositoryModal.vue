@@ -2,7 +2,7 @@
 import type { GitPlatform } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
-import { useErrorHandler } from '~/composables/useErrorHandler'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -14,8 +14,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
-import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 const emit = defineEmits<{
  confirm: [repositoryId: string]
  cancel:
@@ -149,7 +149,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--git-branch] text-xl text-violet-600" />
  </div>
  <div>
@@ -270,9 +270,9 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  </div>
  </div>
  <!-- 凭证配置区域 -->
- <div class="relative -mx-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/50 rounded-xl">
+ <div class="relative -mx-2 border border-amber-200/50 rounded-xl">
  <div class="flex items-center gap-3 mb-4">
- <div class=" rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10">
+ <div class=" rounded-lg bg-primary/10">
  <span class="icon-[lucide--key] text-lg text-amber-600" />
  </div>
  <div>

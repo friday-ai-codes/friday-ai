@@ -2,14 +2,14 @@ import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getModels } from '~/api/chat'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  deleteSetting,
  getAllSettings,
  SettingKey,
  updateSetting,
 } from '~/api/settings'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 // 本页面管理的设置键（向量索引设置由 VectorIndexSettings 组件管理）
 type ManagedSettingKey = SettingKey.ANTHROPIC_API_KEY | SettingKey.ANTHROPIC_BASE_URL | SettingKey.ANTHROPIC_MODEL | SettingKey.GIT_HTTP_PROXY
 // 设置项元数据

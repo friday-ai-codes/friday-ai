@@ -120,7 +120,7 @@ const push = field('push', false)
  <!-- 输出变量说明 -->
  <div class="rounded-lg bg-muted/50 space-y-2">
  <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
- <span class="icon-[lucide--code] text-cyan-500" />
+ <span class="icon-[lucide--code] text-primary" />
  输出变量
  </p>
  <div class="bg-muted rounded-lg space-y-1.5 text-xs">

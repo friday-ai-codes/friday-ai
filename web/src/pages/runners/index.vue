@@ -3,13 +3,13 @@ import type { ColumnDef } from '@tanstack/vue-table'
 import type { Runner } from '~/types'
 import { useHead } from '@vueuse/head'
 import { h } from 'vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({ title: 'Runner 管理 - Friday AI' })
 const router = useRouter
 const runnersStore = useRunnersStore
@@ -179,7 +179,7 @@ const columns: ColumnDef<Runner> = [
  </template>
  <template #actions>
  <Button class="group relative overflow-hidden" @click="router.push('/runners/new')">
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-1.5" />
  新建 Runner
  </Button>

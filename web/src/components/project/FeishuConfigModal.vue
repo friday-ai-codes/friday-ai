@@ -2,10 +2,10 @@
 import type { FeishuConfig } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { getFeishuConfig, setFeishuConfig } from '~/api/projects'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = defineProps<{
  projectId: string
 }>
@@ -113,7 +113,7 @@ function handleCancel {
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-purple-500/20 to-violet-500/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--message-square] text-xl text-purple-600" />
  </div>
  <div>

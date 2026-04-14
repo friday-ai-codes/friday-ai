@@ -10,7 +10,6 @@ import {
 } from '~/api/workflow'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { ScrollArea } from '~/components/ui/scroll-area'
 import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
@@ -92,14 +91,14 @@ async function handleRejectCode {
 }
 </script>
 <template>
- <Card v-if="task" class="h-full flex flex-col">
- <CardHeader class="pb-3 border-b">
+ <div v-if="task" class="card h-full flex flex-col">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-2">
  <GitBranch class="w-4 text-primary" />
- <CardTitle class="text-base truncate">
+ <h3 class="text-sm font-semibold truncate">
  {{ task.name }}
- </CardTitle>
+ </h3>
  </div>
  <div class="flex items-center gap-2">
  <StatusBadge type="codingTask":status="task.status" />
@@ -108,9 +107,9 @@ async function handleRejectCode {
  </Button>
  </div>
  </div>
- </CardHeader>
+ </div>
  <ScrollArea class="flex-1">
- <CardContent class=" space-y-4">
+ <div class=" space-y-4">
  <!-- 基本信息 -->
  <div class="space-y-2">
  <h4 class="text-sm font-medium">
@@ -170,10 +169,7 @@ async function handleRejectCode {
  v-if="task.pr_url":href="task.pr_url"
  target="_blank"
  rel="noopener noreferrer"
- class="block rounded-xl bg-gradient-to-r from-emerald-500/10 to-teal-500/5
- border border-emerald-200 dark:border-emerald-800
- hover:from-emerald-500/20 hover:to-teal-500/10
- transition-all duration-300 group"
+ class="block rounded-xl border border-emerald-200 dark:border-emerald-800 hover:from-emerald-500/20 hover:to-teal-500/10 transition-all duration-300 group"
  >
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
@@ -190,15 +186,13 @@ async function handleRejectCode {
  </div>
  </div>
  <span
- class="icon-[lucide--external-link] w-4 text-emerald-500
- group-hover:translate-x-1 transition-transform"
+ class="icon-[lucide--external-link] w-4 text-emerald-500 group-hover:translate-x-1 transition-transform"
  />
  </div>
  <!-- Conflict warning -->
  <div
  v-if="task.mr_has_conflicts"
- class="mt-3 rounded-lg bg-amber-100 dark:bg-amber-900/30
- flex items-center gap-2"
+ class="mt-3 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center gap-2"
  >
  <span class="icon-[lucide--alert-triangle] w-4 text-amber-500" />
  <span class="text-sm text-amber-700 dark:text-amber-400">
@@ -209,8 +203,7 @@ async function handleRejectCode {
  <!-- Partial success guidance -->
  <div
  v-else-if="task.status === 'partial_success'"
- class=" rounded-xl bg-amber-50 dark:bg-amber-900/20
- border border-amber-200 dark:border-amber-800"
+ class=" rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
  >
  <div class="flex items-start gap-3">
  <div class=" rounded-lg bg-amber-500/20">
@@ -314,14 +307,14 @@ async function handleRejectCode {
  </Button>
  </div>
  </div>
- </CardContent>
+ </div>
  </ScrollArea>
- </Card>
+ </div>
  <!-- Empty state -->
- <Card v-else class="h-full flex items-center justify-center">
+ <div v-else class="card h-full flex items-center justify-center">
  <div class="text-center text-muted-foreground">
  <GitBranch class="w-8 mx-auto mb-2 opacity-50" />
  <p>选择任务查看详情</p>
  </div>
- </Card>
+ </div>
 </template>

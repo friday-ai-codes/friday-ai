@@ -28,8 +28,7 @@ const mergeSameBranch = field('merge_same_branch', true)
  <div class="space-y-4">
  <!-- 严格模式说明 -->
  <div
- class=" rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/5
- border border-amber-200/50 dark:border-amber-800/50"
+ class=" rounded-xl bg-primary/10 border border-amber-200/50 dark:border-amber-800/50"
  >
  <div class="flex items-start gap-3">
  <span class="icon-[lucide--info] text-lg text-amber-500 mt-0.5" />
@@ -46,11 +45,10 @@ const mergeSameBranch = field('merge_same_branch', true)
  </div>
  <!-- 合并同仓库任务 -->
  <div
- class="flex items-center justify-between rounded-xl
- bg-card/70 backdrop-blur-sm border border-border/50"
+ class="flex items-center justify-between rounded-xl bg-card/70 backdrop-blur-sm border border-border/50"
  >
  <div class="flex items-center gap-3">
- <div class=" rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=" rounded-lg bg-primary/10">
  <span class="icon-[lucide--git-merge] text-xl text-primary" />
  </div>
  <div>

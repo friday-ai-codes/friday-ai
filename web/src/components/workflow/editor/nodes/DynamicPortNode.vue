@@ -74,8 +74,7 @@ function updatePortName(portId: string, name: string) {
  class="flex items-center gap-1"
  >
  <input:value="port.name"
- class="flex-1 text-xs bg-transparent border-b border-border/50
- text-foreground outline-none focus:border-primary/50 transition-colors"
+ class="flex-1 text-xs bg-transparent border-b border-border/50 text-foreground outline-none focus:border-primary/50 transition-colors"
  @change="updatePortName(port.id, ($event.target as HTMLInputElement).value)"
  >
  <button
@@ -88,8 +87,7 @@ function updatePortName(portId: string, name: string) {
  </div>
  <button
  v-if="ports.length < 5"
- class="flex items-center gap-1 text-xs text-muted-foreground
- hover:text-foreground transition-colors mt-1"
+ class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-1"
  @click="addPort"
  >
  <Plus class="w-3 " />

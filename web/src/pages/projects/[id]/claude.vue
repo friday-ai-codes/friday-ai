@@ -8,8 +8,6 @@ import { useHead } from '@vueuse/head'
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { getModels } from '~/api/chat'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  deleteProjectClaudeConfig,
  getProjectClaudeConfig,
@@ -20,7 +18,6 @@ import EmptyState from '~/components/common/EmptyState.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -30,6 +27,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const route = useRoute('/projects/[id]/claude')
 const router = useRouter
 const projectsStore = useProjectsStore
@@ -215,7 +214,7 @@ watch( => loading.value, (isLoading) => {
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 flex items-center justify-center">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--bot] text-2xl text-orange-500" />
  </div>
  <div>
@@ -230,18 +229,17 @@ watch( => loading.value, (isLoading) => {
  </div>
  <!-- 配置表单 -->
  <div class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/10 rounded-3xl blur-xl opacity-70" />
- <Card class="relative bg-card/80 backdrop-blur-sm border-border/50">
- <CardHeader class="border-b border-border/50 bg-gradient-to-r from-orange-500/5 to-amber-500/5">
- <CardTitle class="flex items-center gap-2">
- <span class="icon-[lucide--bot] text-orange-500" />
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ <span class="icon-[lucide--bot] text-primary" />
  项目级配置
- </CardTitle>
- <CardDescription>
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
  为此项目单独配置 Claude Code，将覆盖系统默认设置
- </CardDescription>
- </CardHeader>
- <CardContent class="space-y-6 pt-6">
+ </p>
+ </div>
+ <div class=" space-y-4">
  <!-- API Key -->
  <div class="space-y-3">
  <Label for="api-key" class="text-base">Anthropic API Key</Label>
@@ -341,9 +339,7 @@ watch( => loading.value, (isLoading) => {
  @click="fetchModels"
  >
  <span
- class="icon-[lucide--refresh-cw]":class="[
- loadingModels && 'animate-spin',
- ]"
+ class="icon-[lucide--refresh-cw]":class="[loadingModels && 'animate-spin']"
  />
  </Button>
  </div>
@@ -376,15 +372,15 @@ watch( => loading.value, (isLoading) => {
  class="group relative overflow-hidden"
  @click="saveConfig"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--save] mr-2" />
  保存设置
  </Button>
  </div>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </div>
  <!-- 配置说明 -->
  <div class=" rounded-2xl border border-dashed border-border/50 bg-muted/20">

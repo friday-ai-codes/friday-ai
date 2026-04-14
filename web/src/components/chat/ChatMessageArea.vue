@@ -5,14 +5,14 @@ import { Skeleton } from '~/components/ui/skeleton'
 import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
-import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import CodingErrorCard from './CodingErrorCard.vue'
 import CodingProgressCard from './CodingProgressCard.vue'
 import CodingResultCard from './CodingResultCard.vue'
 import CommitConfirmCard from './CommitConfirmCard.vue'
-import PRConfirmCard from './PRConfirmCard.vue'
+import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
+import PRConfirmCard from './PRConfirmCard.vue'
 const chatStore = useChatStore
 const scrollContainer = ref<HTMLElement | null>(null)
 const { arrivedState } = useScroll(scrollContainer, { offset: { bottom: 50 } })
@@ -35,7 +35,7 @@ const historyCodingResult = computed( => {
  for (let i = chatStore.messages.length - 1; i >= 0; i--) {
  const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
  if (meta?.codingResult) {
- return meta.codingResult as { sessionId: string; prUrl: string; branchName: string; modifiedFilesCount: number; branchUrl?: string }
+ return meta.codingResult as { sessionId: string, prUrl: string, branchName: string, modifiedFilesCount: number, branchUrl?: string }
  }
  }
  return null
@@ -44,7 +44,7 @@ const historyCodingError = computed( => {
  for (let i = chatStore.messages.length - 1; i >= 0; i--) {
  const meta = chatStore.messages[i].metadata as Record<string, unknown> | undefined
  if (meta?.codingError) {
- return meta.codingError as { sessionId: string; errorMessage: string }
+ return meta.codingError as { sessionId: string, errorMessage: string }
  }
  }
  return null
@@ -68,7 +68,7 @@ function handleCommitConfirmed(sessionId: string, commitMessage: string) {
  chatStore.isStreaming = true
  }
 }
-function handleCreatePR(sessionId: string, data: { title: string; description: string; target_branch: string }) {
+function handleCreatePR(sessionId: string, data: { title: string, description: string, target_branch: string }) {
  chatStore.completedConfirmSteps.push({
  step: 'pr_review',
  summary: `PR: ${data.title.slice(0, 60)}`,

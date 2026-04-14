@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 const props = defineProps<{
  prdUrl: string
  description: string
@@ -38,14 +37,14 @@ function isValidUrl(url: string): boolean {
 }
 </script>
 <template>
- <Card class="border-primary/20 bg-primary/5">
- <CardHeader class="pb-3">
- <CardTitle class="flex items-center gap-2 text-base">
+ <div class="card border-primary/20 bg-primary/5">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--star] w-4 text-primary" />
  关键字段
- </CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <!-- 需求文档链接 -->
  <div class="space-y-1">
  <div class="flex items-center justify-between">
@@ -130,6 +129,6 @@ function isValidUrl(url: string): boolean {
  -
  </p>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
 </template>

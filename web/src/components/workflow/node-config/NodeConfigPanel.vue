@@ -2,14 +2,14 @@
 import { Trash2 } from 'lucide-vue-next'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
-import OverrideConfirmDialog from '../validation/OverrideConfirmDialog.vue'
 import IssuesPanel from '../validation/IssuesPanel.vue'
-import NodeConfigForm from './NodeConfigForm.vue'
-import NodeConfigHeader from './NodeConfigHeader.vue'
-import NodeSchemaDisplay from './NodeSchemaDisplay.vue'
+import OverrideConfirmDialog from '../validation/OverrideConfirmDialog.vue'
 import { useAutoFill } from './composables/useAutoFill'
 import { useNodeConfig } from './composables/useNodeConfig'
 import { useNodeSchema } from './composables/useNodeSchema'
+import NodeConfigForm from './NodeConfigForm.vue'
+import NodeConfigHeader from './NodeConfigHeader.vue'
+import NodeSchemaDisplay from './NodeSchemaDisplay.vue'
 // 组合 3 个 composables
 const {
  selectedNode,

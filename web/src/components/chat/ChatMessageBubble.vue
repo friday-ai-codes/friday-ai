@@ -27,10 +27,10 @@ const props = defineProps<{
  errorMessage?: string
  } | null
 }>
-const chatStore = useChatStore
 const emit = defineEmits<{
  exportSingle: [messageId: string]
 }>
+const chatStore = useChatStore
 const isSelected = computed( =>
  chatStore.selectedMessageIds.has(props.message.id),
 )
@@ -273,11 +273,12 @@ function isCodingPlanTool(name: string): boolean {
 // 从 toolCalls 中提取 coding plan 数据
 const codingPlanData = computed( => {
  const planTool = toolCalls.value.find(tc => isCodingPlanTool(tc.name))
- if (!planTool) return null
+ if (!planTool)
+ return null
  // tech_plan 和 affected_files 来自 tool input（不在 result 中）
  const input = planTool.input || {}
  const techPlan = (input.tech_plan as string) || ''
- const affectedFiles = (input.affected_files as Array<{ path: string; change_type: string }>) ||
+ const affectedFiles = (input.affected_files as Array<{ path: string, change_type: string }>) ||
  // session_id 和 status 来自 tool result (JSON 字符串)
  let sessionId = ''
  let sessionStatus: string = 'draft'
@@ -296,7 +297,8 @@ const codingPlanData = computed( => {
 // 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
 const codingPlanStatus = computed( => {
  const data = codingPlanData.value
- if (!data) return 'draft'
+ if (!data)
+ return 'draft'
  const active = chatStore.activeCodingSession
  if (active && active.sessionId === data.sessionId) {
  return active.status
@@ -305,14 +307,16 @@ const codingPlanStatus = computed( => {
 })
 const codingPlanConfirming = computed( => {
  const data = codingPlanData.value
- if (!data) return false
+ if (!data)
+ return false
  const active = chatStore.activeCodingSession
  return !!(active && active.sessionId === data.sessionId && active.isConfirming)
 })
 // 从 tool result 中提取分支名（: 服务端推断的分支名传给 CodingPlanCard）
 const codingPlanBranchName = computed( => {
  const data = codingPlanData.value
- if (!data) return undefined
+ if (!data)
+ return undefined
  const active = chatStore.activeCodingSession
  if (active && active.sessionId === data.sessionId && active.status === 'draft') {
  try {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Badge } from '~/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import {
  Collapsible,
  CollapsibleContent,
@@ -87,17 +86,17 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
 }
 </script>
 <template>
- <Card class="card overflow-hidden">
+ <div class="card card overflow-hidden">
  <!-- Header -->
- <CardHeader class="pb-3">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class="bg-gradient-to-br from-amber-500/20 to-orange-400/10 rounded-lg ">
+ <div class="bg-primary/10 rounded-lg ">
  <span class="icon-[lucide--search-code] w-5 text-amber-500" />
  </div>
- <CardTitle class="text-base">
+ <h3 class="text-sm font-semibold">
  AI 代码审查
- </CardTitle>
+ </h3>
  </div>
  <!-- Status Badge -->
  <Badge
@@ -129,8 +128,8 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  审查失败
  </Badge>
  </div>
- </CardHeader>
- <CardContent class="space-y-4">
+ </div>
+ <div class=" space-y-4">
  <!-- Severity Overview Stats -->
  <div
  v-if="issuesCount > 0 || isCompleted"
@@ -211,11 +210,7 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  <!-- Collapsed: severity + truncated description -->
  <div class="flex items-center gap-2 .5">
  <Badge
- class="text-[10px] px-1.5 py-0 shrink-0":class="[
- getSeverityStyle(issue.severity).bg,
- getSeverityStyle(issue.severity).text,
- getSeverityStyle(issue.severity).border,
- ]"
+ class="text-[10px] px-1.5 py-0 shrink-0":class="[getSeverityStyle(issue.severity).bg, getSeverityStyle(issue.severity).text, getSeverityStyle(issue.severity).border]"
  >
  {{ issue.severity }}
  </Badge>
@@ -263,6 +258,6 @@ function groupIssuesByDimension(issues: Record<string, any>): Record<string, Rec
  {{ reviewReport.conclusion }}
  </p>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
 </template>

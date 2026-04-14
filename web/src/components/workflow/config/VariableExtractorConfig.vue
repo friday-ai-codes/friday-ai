@@ -141,7 +141,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  <!-- 提取规则配置 -->
  <div class="space-y-2">
  <h4 class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--settings] text-orange-500" />
+ <span class="icon-[lucide--settings] text-primary" />
  提取规则配置
  </h4>
  <div class="bg-muted rounded-lg space-y-2 text-sm">
@@ -170,7 +170,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  <!-- 输出示例 -->
  <div class="space-y-2">
  <h4 class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--file-output] text-purple-500" />
+ <span class="icon-[lucide--file-output] text-primary" />
  输出示例（提取结果）
  </h4>
  <pre class="bg-muted rounded-lg text-xs overflow-x-auto"><code>{
@@ -194,7 +194,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  <!-- JSONPath 语法 -->
  <div class="space-y-2">
  <h4 class="font-medium flex items-center gap-2">
- <span class="icon-[lucide--code] text-cyan-500" />
+ <span class="icon-[lucide--code] text-primary" />
  常用 JSONPath 语法
  </h4>
  <div class="bg-muted rounded-lg space-y-1.5 text-xs">
@@ -303,7 +303,7 @@ function updateRule(index: number, field: keyof ExtractionRule, value: any) {
  >
  <div class="flex items-start justify-between">
  <div class="flex items-center gap-2">
- <div class=".5 rounded-md bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class=".5 rounded-md bg-primary/10">
  <span class="icon-[lucide--variable] text-primary" />
  </div>
  <span class="font-medium text-sm">{{ rule.name || '未命名变量' }}</span>

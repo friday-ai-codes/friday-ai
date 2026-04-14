@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { MonitorLog } from '~/composables/useRunnerMonitor'
 import { getRunnerLogs } from '~/api/runners'
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Checkbox } from '~/components/ui/checkbox'
 const props = defineProps<{
  runnerId: string
@@ -244,16 +243,16 @@ watch( => filteredLogs.value.length, => {
 })
 </script>
 <template>
- <Card class="bg-card/80 backdrop-blur-sm border-border/50 rounded-2xl">
- <CardHeader
- class="border-b border-border/50 bg-linear-to-r from-gray-500/5 to-slate-500/5 cursor-pointer select-none"
+ <div class="card">
+ <div
+ class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2 bg-linear- cursor-pointer select-none"
  @click="collapsed = !collapsed"
  >
  <div class="flex items-center justify-between">
- <CardTitle class="flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
  <span class="icon-[lucide--terminal] text-muted-foreground" />
  实时日志
- </CardTitle>
+ </h3>
  <span
  class="w-5 transition-transform duration-200":class="collapsed ? 'icon-[lucide--chevron-down]': 'icon-[lucide--chevron-up]'"
  />
@@ -271,8 +270,8 @@ watch( => filteredLogs.value.length, => {
  <span class="font-medium":class="option.textClass">{{ option.label }}</span>
  </label>
  </div>
- </CardHeader>
- <CardContent v-show="!collapsed" class="">
+ </div>
+ <div v-show="!collapsed" class=" space-y-4 ">
  <div class="relative">
  <div
  ref="scrollContainer"
@@ -323,6 +322,6 @@ watch( => filteredLogs.value.length, => {
  </button>
  </Transition>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
 </template>

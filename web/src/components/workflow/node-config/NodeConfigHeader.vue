@@ -41,7 +41,7 @@ async function copyNodeId {
  <div class=" border-b border-border/50">
  <div class="flex items-center justify-between">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-400/10">
+ <div class=" rounded-xl bg-primary/10">
  <Settings class="w-5 text-violet-500" />
  </div>
  <div>

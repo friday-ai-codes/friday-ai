@@ -5,8 +5,6 @@
  */
 import type { ProjectRepositoryLink, Repository, RepositoryPermissionLevel } from '~/types'
 import { useHead } from '@vueuse/head'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import {
  getProjectRepositories,
  linkRepositories,
@@ -18,6 +16,8 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/projects/[id]/repositories')
 const projectId = computed( => route.params.id)
@@ -142,8 +142,8 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <div class="flex items-center justify-between">
  <div class="space-y-1">
  <div class="flex items-center gap-3">
- <div class=" rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10 flex items-center justify-center">
- <span class="icon-[lucide--git-branch] text-2xl text-violet-500" />
+ <div class=" rounded-xl bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--git-branch] text-2xl text-primary" />
  </div>
  <div>
  <h1 class="text-2xl font-bold">
@@ -163,7 +163,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  class="group relative overflow-hidden":disabled="isViewer"
  @click="openLinkDialog"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span class="icon-[lucide--plus] mr-2" />
  关联仓库
  </Button>
@@ -188,7 +188,6 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  />
  <!-- 仓库列表表格 -->
  <div v-else class="relative">
- <div class="absolute -inset-1 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-violet-500/10 rounded-3xl blur-xl opacity-70" />
  <div class="card overflow-hidden">
  <table class="w-full">
  <thead>
@@ -330,7 +329,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  class="group relative overflow-hidden"
  @click="handleLink"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <span v-if="linking" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  确认关联 ({{ selectedRepoIds.size }})
  </Button>

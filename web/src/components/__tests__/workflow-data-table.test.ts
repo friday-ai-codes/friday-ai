@@ -1,6 +1,6 @@
+import type { Workflow } from '~/stores/useWorkflowsStore'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { Workflow } from '~/stores/useWorkflowsStore'
 import WorkflowDataTable from '../workflow/WorkflowDataTable.vue'
 const workflow: Workflow = {
  id: 'wf-1',
@@ -25,7 +25,7 @@ const workflow: Workflow = {
  created_at: '',
  updated_at: '',
 }
-describe('WorkflowDataTable', => {
+describe('workflowDataTable', => {
  it('点击删除按钮时应发出 requestDelete 事件', async => {
  const wrapper = mount(WorkflowDataTable, {
  props: {

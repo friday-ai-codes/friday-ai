@@ -4,9 +4,9 @@ import type { ResumePreviewNode } from '~/api/workflow'
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import { ref } from 'vue'
 import { ApiError } from '~/api/client'
+import { resumeFromFailed, resumePreview } from '~/api/workflow'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
-import { resumeFromFailed, resumePreview } from '~/api/workflow'
 export function useResumeLogic(
  executionId: Ref<string>,
  currentExecution: Ref<WorkflowExecution | null>,

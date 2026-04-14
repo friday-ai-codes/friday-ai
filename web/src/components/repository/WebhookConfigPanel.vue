@@ -3,12 +3,12 @@ import type { CollectionHealthResponse, IndexFreshnessResponse } from '~/api/rep
 import type { Repository } from '~/types'
 import { onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  repository: Repository
 }>
@@ -104,9 +104,13 @@ onMounted( => {
  <div class="px-5 py-3.5 border-b border-border/50">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--shield-check] text-primary" />
- <h3 class="text-sm font-semibold">索引健康与配置</h3>
+ <h3 class="text-sm font-semibold">
+ 索引健康与配置
+ </h3>
  </div>
- <p class="text-xs text-muted-foreground mt-0.5">健康状态、新鲜度与自动索引配置</p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 健康状态、新鲜度与自动索引配置
+ </p>
  </div>
  <div class=" space-y-5">
  <!-- 健康状态 -->

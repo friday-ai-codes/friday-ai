@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type MarkdownIt from 'markdown-it'
 /**
  * 编码方案卡片 -- 在对话消息流中展示 AI 生成的技术方案。
  *
@@ -6,18 +7,17 @@
  * 状态流转：draft -> confirming -> confirmed -> running -> completed/failed
  * 分支名编辑区：类型 Select + 只读日期 + 短描述 Input + 实时校验 + 预览
  */
-import { ref, computed, watch, watchEffect, onMounted } from 'vue'
-import type MarkdownIt from 'markdown-it'
-import { Button } from '~/components/ui/button'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
-import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 import { useBranchValidation } from '~/composables/useBranchValidation'
+import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
 const props = defineProps<{
  sessionId: string
  techPlan: string
- affectedFiles: Array<{ path: string; change_type: string }>
+ affectedFiles: Array<{ path: string, change_type: string }>
  status: 'draft' | 'confirmed' | 'running' | 'awaiting_confirmation' | 'completed' | 'failed'
  isConfirming: boolean
  branchName?: string
@@ -48,7 +48,7 @@ const shortDesc = ref(parsed.value?.shortDesc || '')
 const validation = computed( => validateShortDesc(shortDesc.value))
 // 实时预览
 const previewBranchName = computed( =>
- branchDate.value ? buildBranchName(branchType.value, branchDate.value, shortDesc.value): ''
+ branchDate.value ? buildBranchName(branchType.value, branchDate.value, shortDesc.value): '',
 )
 // 当 props.branchName 变化时更新本地状态
 watch( => props.branchName, (newVal) => {
@@ -77,10 +77,14 @@ const badgeClass = computed( => {
  return ''
 })
 const badgeText = computed( => {
- if (props.status === 'confirmed' || props.status === 'running') return '已确认'
- if (props.status === 'awaiting_confirmation') return '确认中'
- if (props.status === 'completed') return '已完成'
- if (props.status === 'failed') return '失败'
+ if (props.status === 'confirmed' || props.status === 'running')
+ return '已确认'
+ if (props.status === 'awaiting_confirmation')
+ return '确认中'
+ if (props.status === 'completed')
+ return '已完成'
+ if (props.status === 'failed')
+ return '失败'
  return ''
 })
 </script>
@@ -91,7 +95,8 @@ const badgeText = computed( => {
  <span class="icon-[lucide--file-code] text-primary" />
  <span class="text-sm font-semibold">编码方案</span>
  <Badge
- v-if="status !== 'draft'":variant="status === 'failed' ? 'destructive': 'outline'":class="['ml-auto', badgeClass]"
+ v-if="status !== 'draft'":variant="status === 'failed' ? 'destructive': 'outline'"
+ class="ml-auto":class="[badgeClass]"
  >
  {{ badgeText }}
  </Badge>
@@ -101,7 +106,9 @@ const badgeText = computed( => {
  <div v-if="mdReady" class="prose prose-sm max-w-none" v-html="renderedPlan" />
  <!-- 影响文件列表 -->
  <div v-if="affectedFiles.length > 0" class="space-y-1">
- <p class="text-xs text-muted-foreground font-medium">影响文件</p>
+ <p class="text-xs text-muted-foreground font-medium">
+ 影响文件
+ </p>
  <div
  v-for="(file, i) in affectedFiles":key="i"
  class="text-xs text-muted-foreground flex items-center gap-1"
@@ -116,7 +123,9 @@ const badgeText = computed( => {
  <div v-if="status === 'draft'" class="px-4 pb-4">
  <!-- 分支名编辑区 -->
  <div v-if="branchName" class="space-y-3 mb-3">
- <p class="text-xs text-muted-foreground font-medium">功能分支</p>
+ <p class="text-xs text-muted-foreground font-medium">
+ 功能分支
+ </p>
  <div class="flex items-end gap-2">
  <!-- 分支类型 Select -->
  <Select v-model="branchType">
@@ -124,9 +133,15 @@ const badgeText = computed( => {
  <SelectValue />
  </SelectTrigger>
  <SelectContent>
- <SelectItem value="feat">feat</SelectItem>
- <SelectItem value="fix">fix</SelectItem>
- <SelectItem value="chore">chore</SelectItem>
+ <SelectItem value="feat">
+ feat
+ </SelectItem>
+ <SelectItem value="fix">
+ fix
+ </SelectItem>
+ <SelectItem value="chore">
+ chore
+ </SelectItem>
  </SelectContent>
  </Select>
  <!-- 日期（只读） -->
@@ -158,7 +173,7 @@ const badgeText = computed( => {
  <!-- 已确认提示 -->
  <div v-else-if="status === 'confirmed' || status === 'running'" class="px-4 pb-3">
  <div class="text-xs text-muted-foreground flex items-center gap-1">
- <span class="icon-[lucide--check] text-emerald-500" />
+ <span class="icon-[lucide--check] text-primary" />
  已确认，正在启动编码...
  </div>
  </div>

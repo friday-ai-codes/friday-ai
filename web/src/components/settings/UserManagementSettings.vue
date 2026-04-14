@@ -2,10 +2,10 @@
 import type { Invitation, SystemUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const { handleError } = useErrorHandler
 const { success } = useToast
 const users = ref<SystemUser>
@@ -90,8 +90,8 @@ onMounted( => {
  <!-- 邀请新用户 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--user-plus] text-2xl text-primary" />
  </div>
  <div>
@@ -155,8 +155,8 @@ onMounted( => {
  <!-- 用户列表 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-secondary/5 to-primary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--users] text-2xl text-primary" />
  </div>
  <div>
@@ -181,7 +181,7 @@ onMounted( => {
  class="flex items-center justify-between rounded-xl bg-background/50 border border-border/30 hover:border-primary/20 transition-colors"
  >
  <div class="flex items-center gap-3">
- <div class="w-9 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-sm font-medium">
+ <div class="w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
  {{ (user.display_name || user.username).charAt(0).toUpperCase }}
  </div>
  <div>

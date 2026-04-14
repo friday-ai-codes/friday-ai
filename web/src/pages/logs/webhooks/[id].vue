@@ -4,10 +4,9 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { getTriggerLog } from '~/api/logs'
 import StatusBadge from '~/components/common/StatusBadge.vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import { Button } from '~/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card'
 import { Separator } from '~/components/ui/separator'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 const route = useRoute('/logs/webhooks/[id]')
 const router = useRouter
 const { handleError } = useErrorHandler
@@ -73,11 +72,13 @@ async function copyJson {
  </Button>
  </div>
  <!-- 基本信息卡片 -->
- <Card>
- <CardHeader>
- <CardTitle>基本信息</CardTitle>
- </CardHeader>
- <CardContent class="space-y-4">
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ 基本信息
+ </h3>
+ </div>
+ <div class=" space-y-4">
  <div class="grid gap-4 md:grid-cols-2">
  <div>
  <label class="text-sm text-muted-foreground">日志 ID</label>
@@ -129,22 +130,24 @@ async function copyJson {
  {{ log.error_message }}
  </p>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  <!-- 原始请求卡片 -->
- <Card>
- <CardHeader>
- <CardTitle>原始请求数据</CardTitle>
- <CardDescription>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <h3 class="text-sm font-semibold">
+ 原始请求数据
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
  飞书 Webhook 发送的完整 JSON 请求体
- </CardDescription>
- </CardHeader>
- <CardContent>
+ </p>
+ </div>
+ <div class=" space-y-4">
  <div class="bg-muted rounded-lg overflow-auto max-h-[600px]">
  <pre class="text-sm font-mono whitespace-pre-wrap">{{ JSON.stringify(log.webhook_raw_request_parsed, null, 2) }}</pre>
  </div>
- </CardContent>
- </Card>
+ </div>
+ </div>
  </template>
  <!-- 日志不存在 -->
  <EmptyState

@@ -87,7 +87,7 @@ const actionDescription = computed( => {
  </div>
  <div v-if="result" class="tool-section">
  <span class="tool-section-label">输出</span>
- <pre class="tool-json tool-json--result">{{ result.length > 800 ? result.slice(0, 800) + '...': result }}</pre>
+ <pre class="tool-json tool-json--result">{{ result.length > 800 ? `${result.slice(0, 800)}...`: result }}</pre>
  </div>
  <div v-else-if="status === 'running'" class="tool-section">
  <span class="text-[11px] text-muted-foreground/60 italic">等待返回...</span>
@@ -191,7 +191,12 @@ const actionDescription = computed( => {
  max-height: 16rem;
 }
 @keyframes pulse-dot {
- 0%, 100% { opacity: 1; }
- 50% { opacity: 0.4; }
+ 0%,
+ 100% {
+ opacity: 1;
+ }
+ 50% {
+ opacity: 0.4;
+ }
 }
 </style>

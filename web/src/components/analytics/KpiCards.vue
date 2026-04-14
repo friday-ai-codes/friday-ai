@@ -89,7 +89,7 @@ const kpis = computed( => [
  </p>
  <template v-if="!isLoading">
  <p
- class="text-2xl font-bold bg-gradient-to-r bg-clip-text text-transparent":class="[kpi.gradient]"
+ class="text-2xl font-bold"
  >
  {{ kpi.value }}
  </p>

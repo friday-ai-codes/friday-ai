@@ -204,7 +204,7 @@ const errorMessage = computed( => {
  <div class=" space-y-3">
  <!-- Think Section -->
  <div v-if="iteration.think" class="flex gap-3">
- <div class="shrink-0 rounded-lg bg-gradient-to-br from-violet-500/20 to-purple-400/10">
+ <div class="shrink-0 rounded-lg bg-primary/10">
  <Brain class="w-4 text-violet-500" />
  </div>
  <div class="flex-1 min-w-0">
@@ -226,7 +226,7 @@ const errorMessage = computed( => {
  </div>
  <!-- Act Section (Tool Call) -->
  <div v-if="iteration.act" class="flex gap-3">
- <div class="shrink-0 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10">
+ <div class="shrink-0 rounded-lg bg-primary/10">
  <Wrench class="w-4 text-primary" />
  </div>
  <div class="flex-1 min-w-0">
@@ -236,10 +236,7 @@ const errorMessage = computed( => {
  {{ iteration.act.name }}
  </span>
  <component:is="getStatusIcon(iteration.act.status)"
- class="w-3.5 .5":class="[
- getStatusColor(iteration.act.status),
- iteration.act.status === 'running' && 'animate-spin',
- ]"
+ class="w-3.5 .5":class="[getStatusColor(iteration.act.status), iteration.act.status === 'running' && 'animate-spin']"
  />
  <span v-if="iteration.act.duration" class="text-xs text-muted-foreground">
  {{ formatDuration(iteration.act.duration) }}
@@ -277,7 +274,7 @@ const errorMessage = computed( => {
  </div>
  <!-- Observe Section -->
  <div v-if="iteration.observe" class="flex gap-3">
- <div class="shrink-0 rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-400/10">
+ <div class="shrink-0 rounded-lg bg-primary/10">
  <Eye class="w-4 text-emerald-500" />
  </div>
  <div class="flex-1 min-w-0">
@@ -315,17 +312,10 @@ const errorMessage = computed( => {
  >
  <!-- Timeline Dot -->
  <div
- class="relative z-10 shrink-0 w-8 rounded-full flex items-center justify-center border-2":class="[
- tool.status === 'success' && 'bg-emerald-500/20 border-emerald-500',
- tool.status === 'error' && 'bg-red-500/20 border-red-500',
- tool.status === 'running' && 'bg-primary/20 border-primary',
- ]"
+ class="relative z-10 shrink-0 w-8 rounded-full flex items-center justify-center border-2":class="[tool.status === 'success' && 'bg-emerald-500/20 border-emerald-500', tool.status === 'error' && 'bg-red-500/20 border-red-500', tool.status === 'running' && 'bg-primary/20 border-primary']"
  >
  <component:is="getStatusIcon(tool.status)"
- class="w-4 ":class="[
- getStatusColor(tool.status),
- tool.status === 'running' && 'animate-spin',
- ]"
+ class="w-4 ":class="[getStatusColor(tool.status), tool.status === 'running' && 'animate-spin']"
  />
  </div>
  <!-- Tool Card -->
@@ -334,11 +324,7 @@ const errorMessage = computed( => {
  <div class="flex items-center gap-2">
  <span class="font-mono text-sm font-medium">{{ tool.name }}</span>
  <span
- class="text-xs px-1.5 py-0.5 rounded-full":class="[
- tool.status === 'success' && 'bg-emerald-500/20 text-emerald-500',
- tool.status === 'error' && 'bg-red-500/20 text-red-500',
- tool.status === 'running' && 'bg-primary/20 text-primary',
- ]"
+ class="text-xs px-1.5 py-0.5 rounded-full":class="[tool.status === 'success' && 'bg-emerald-500/20 text-emerald-500', tool.status === 'error' && 'bg-red-500/20 text-red-500', tool.status === 'running' && 'bg-primary/20 text-primary']"
  >
  {{ tool.status === 'success' ? '成功': tool.status === 'error' ? '失败': '运行中' }}
  </span>

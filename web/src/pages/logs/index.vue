@@ -4,7 +4,6 @@ import type { TriggerLog, TriggerLogStatus } from '~/api/logs'
 import { useHead } from '@vueuse/head'
 import { h, markRaw } from 'vue'
 import { deleteTriggerLog, listTriggerLogs, retryTriggerLog } from '~/api/logs'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import DataTable from '~/components/common/DataTable.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
@@ -19,6 +18,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({
  title: '触发日志 - Friday AI',
 })

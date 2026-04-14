@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import {
  AlertDialog,
  AlertDialogAction,
@@ -10,6 +9,7 @@ import {
  AlertDialogHeader,
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
+import { useConfirmDialog } from '~/composables/useConfirmDialog'
 const { isOpen, options, handleConfirm, handleCancel } = useConfirmDialog
 </script>
 <template>

@@ -6,11 +6,11 @@
 import type { MeUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { getMe } from '~/api/users'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import LoadingState from '~/components/common/LoadingState.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 import { useAuthStore } from '~/stores/auth'
 const authStore = useAuthStore
 const { handleError } = useErrorHandler
@@ -67,7 +67,7 @@ onMounted( => {
 <template>
  <div class="min-h-[calc(100vh-8rem)] relative">
  <div class="absolute inset-0 -z-10 overflow-hidden">
- <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/20 to-secondary/40 rounded-full blur-3xl" />
+ <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
  <div class="absolute top-1/2 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-primary/10 rounded-full blur-3xl" />
  </div>
  <div class="max-w-xl mx-auto space-y-8 relative">
@@ -76,7 +76,7 @@ onMounted( => {
  <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
  <span class="icon-[lucide--user] text-4xl text-primary" />
  </div>
- <h1 class="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent mb-3">
+ <h1 class="text-3xl font-bold tracking-tight mb-3">
  个人资料
  </h1>
  </section>
@@ -85,8 +85,8 @@ onMounted( => {
  <!-- 头像与基本信息 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--user-circle] text-2xl text-primary" />
  </div>
  <div>
@@ -107,7 +107,7 @@ onMounted( => {
  >
  <div
  v-else
- class="w-24 rounded-full bg-gradient-to-br from-primary/30 to-secondary/30 ring-4 ring-primary/20 ring-offset-2 ring-offset-background flex items-center justify-center text-3xl font-bold text-primary"
+ class="w-24 rounded-full bg-primary/10 ring-4 ring-primary/20 ring-offset-2 ring-offset-background flex items-center justify-center text-3xl font-bold text-primary"
  >
  {{ (meData.display_name || meData.username).charAt(0).toUpperCase }}
  </div>
@@ -173,8 +173,8 @@ onMounted( => {
  <!-- 项目成员关系 -->
  <div class="group relative">
  <div class="card overflow-hidden">
- <div class="flex items-center gap-3 border-b border-border/50 bg-gradient-to-r from-secondary/5 to-primary/5">
- <div class=".5 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/10 flex items-center justify-center">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-open] text-2xl text-primary" />
  </div>
  <div>
@@ -196,7 +196,7 @@ onMounted( => {
  class="flex items-center justify-between rounded-xl bg-background/50 border border-border/30 hover:border-primary/20 transition-colors"
  >
  <div class="flex items-center gap-3">
- <div class="w-8 rounded-lg bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
+ <div class="w-8 rounded-lg bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder] text-sm text-primary" />
  </div>
  <span class="font-medium text-sm">{{ membership.project_name }}</span>

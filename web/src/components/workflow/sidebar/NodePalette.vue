@@ -80,10 +80,10 @@ function getGroupColor(group: PaletteGroup): string {
 }
 function getCategoryGradient(color: string): string {
  const gradients: Record<string, string> = {
- blue: 'bg-gradient-to-r from-teal-500 to-cyan-400',
- green: 'bg-gradient-to-r from-emerald-500 to-teal-400',
- purple: 'bg-gradient-to-r from-violet-500 to-purple-400',
- orange: 'bg-gradient-to-r from-amber-500 to-orange-400',
+ blue: '',
+ green: '',
+ purple: '',
+ orange: '',
  }
  return gradients[color] || gradients.blue
 }
@@ -93,12 +93,12 @@ function getCategoryGradient(color: string): string {
  <!-- Header -->
  <div class=" border-b border-border/50">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--boxes] text-xl text-primary" />
  </div>
  <div>
  <h3 class="text-base font-semibold flex items-center gap-2">
- <div class="w-2 rounded-full bg-gradient-to-r from-primary to-secondary animate-pulse" />
+ <div class="w-2 rounded-full animate-pulse" />
  节点库
  </h3>
  <p class="text-xs text-muted-foreground">
@@ -117,7 +117,7 @@ function getCategoryGradient(color: string): string {
  >
  {{ group.name }}
  </div>
- <div class="flex-1 h-px bg-gradient-to-r from-border/50 to-transparent" />
+ <div class="flex-1 h-px" />
  </div>
  <!-- Node Items -->
  <div class="space-y-1.5">

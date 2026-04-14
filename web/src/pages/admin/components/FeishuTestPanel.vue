@@ -21,7 +21,7 @@ const emit = defineEmits<{
 <template>
  <div v-if="props.visible" class="px-6 py-4 border-t border-border/50 space-y-4 bg-muted/20">
  <div class="flex items-center gap-2 text-sm font-medium">
- <span class="icon-[lucide--flask-conical] text-amber-500" />
+ <span class="icon-[lucide--flask-conical] text-primary" />
  测试消息发送
  </div>
  <div class="space-y-3">

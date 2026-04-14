@@ -2,7 +2,7 @@
 import type { GitPlatform } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
 import { repositoriesApi } from '~/api'
-import { useErrorHandler } from '~/composables/useErrorHandler'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -14,8 +14,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
-import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 const props = defineProps<{
  repository: {
  id: string
@@ -51,7 +51,8 @@ const branches = ref<string>
 const recommendedBranch = ref<string | null>(null)
 const loadingBranches = ref(false)
 async function fetchBranches {
- if (!props.repository.has_credential) return
+ if (!props.repository.has_credential)
+ return
  loadingBranches.value = true
  try {
  const result = await repositoriesApi.testRepositoryConnection(props.repository.id)
@@ -168,7 +169,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <!-- Header -->
  <div class="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0">
  <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/10">
+ <div class=".5 rounded-xl bg-primary/10">
  <span class="icon-[lucide--edit] text-xl text-violet-600" />
  </div>
  <div>
@@ -309,7 +310,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <div class="flex items-center justify-between rounded-xl bg-muted/30 border border-border/50">
  <div class="flex items-center gap-3">
  <div
- class=" rounded-lg transition-colors":class="testResult?.success ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/10': testResult && !testResult.success ? 'bg-gradient-to-br from-red-500/20 to-red-500/10': 'bg-gradient-to-br from-muted to-muted/50'"
+ class=" rounded-lg transition-colors":class="testResult?.success ? 'bg-primary/10': testResult && !testResult.success ? 'bg-primary/10': 'bg-primary/10'"
  >
  <span
  v-if="testing"

@@ -8,11 +8,11 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError } from '~/api/client'
 import { acceptInvitation, validateInvitation } from '~/api/users'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const route = useRoute
 const router = useRouter
 const { handleError } = useErrorHandler
@@ -127,7 +127,7 @@ onMounted( => {
  <div class="min-h-screen flex items-center justify-center relative overflow-hidden bg-background">
  <!-- 背景装饰 -->
  <div class="absolute inset-0 -z-10">
- <div class="absolute -top-40 -right-40 w-80 bg-gradient-to-br from-primary/20 to-secondary/40 rounded-full blur-3xl" />
+ <div class="absolute -top-40 -right-40 w-80 bg-primary/10 rounded-full blur-3xl" />
  <div class="absolute bottom-0 -left-40 w-96 bg-gradient-to-tr from-secondary/30 to-primary/10 rounded-full blur-3xl" />
  </div>
  <div class="w-full max-w-md px-4">
@@ -136,7 +136,7 @@ onMounted( => {
  <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
  <span class="icon-[lucide--user-plus] text-4xl text-primary" />
  </div>
- <h1 class="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+ <h1 class="text-3xl font-bold tracking-tight">
  加入 Friday AI
  </h1>
  </div>
@@ -187,7 +187,7 @@ onMounted( => {
  class="card overflow-hidden"
  >
  <!-- 邀请信息 -->
- <div class=" border-b border-border/50 bg-gradient-to-r from-primary/5 to-secondary/5">
+ <div class=" border-b border-border/50">
  <p class="text-sm text-muted-foreground">
  您收到了来自团队的邀请。链接有效期至
  <span class="font-medium text-foreground">{{ invitation ? formatExpiry(invitation.expires_at): '' }}</span>

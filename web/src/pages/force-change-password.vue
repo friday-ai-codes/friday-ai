@@ -6,7 +6,6 @@ import { toTypedSchema } from '@vee-validate/zod'
  */
 import { useForm } from 'vee-validate'
 import * as z from 'zod'
-import { useToast } from '~/composables/useToast'
 import { Button } from '~/components/ui/button'
 import {
  FormControl,
@@ -16,6 +15,7 @@ import {
  FormMessage,
 } from '~/components/ui/form'
 import { Input } from '~/components/ui/input'
+import { useToast } from '~/composables/useToast'
 import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const authStore = useAuthStore
@@ -60,15 +60,14 @@ onMounted( => {
  <div class="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
  <!-- 背景装饰 -->
  <div class="absolute inset-0 -z-10">
- <div class="absolute -top-40 -right-40 w-96 bg-gradient-to-br from-amber-500/20 to-orange-500/30 rounded-full blur-3xl" />
+ <div class="absolute -top-40 -right-40 w-96 bg-primary/10 rounded-full blur-3xl" />
  <div class="absolute -bottom-40 -left-40 w-96 bg-gradient-to-tr from-secondary/40 to-primary/20 rounded-full blur-3xl" />
- <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-r from-primary/5 to-secondary/10 rounded-full blur-3xl" />
+ <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-3xl" />
  </div>
  <!-- 修改密码卡片 -->
  <div class="w-full max-w-md mx-4">
  <div class="relative">
  <!-- 卡片光晕 -->
- <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 rounded-3xl blur-xl opacity-70" />
  <!-- 卡片主体 -->
  <div class="relative bg-card/80 backdrop-blur-xl rounded-2xl border border-border/50 shadow-2xl shadow-amber-500/5 ">
  <!-- Logo -->
@@ -143,9 +142,9 @@ onMounted( => {
  <!-- 提交按钮 -->
  <Button
  type="submit"
- class="w-full text-base font-medium bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 group relative overflow-hidden":disabled="isSubmitting"
+ class="w-full text-base font-medium hover:from-amber-600 hover:to-orange-600 group relative overflow-hidden":disabled="isSubmitting"
  >
- <span class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+ <span class="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
  <template v-if="isSubmitting">
  <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  提交中...

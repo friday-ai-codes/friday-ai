@@ -2,11 +2,11 @@
 import type { IndexStatusResponse, SearchResultItem } from '~/api/repositories'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  repositoryId: string
 }>
@@ -180,7 +180,9 @@ onUnmounted( => {
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--database] text-primary" />
- <h3 class="text-sm font-semibold">代码索引</h3>
+ <h3 class="text-sm font-semibold">
+ 代码索引
+ </h3>
  <span class="text-xs text-muted-foreground">向量化代码库</span>
  </div>
  <StatusBadge v-if="indexStatus" type="index":status="indexStatus.index_status" />
@@ -293,7 +295,9 @@ onUnmounted( => {
  <!-- 无结果 -->
  <div v-else-if="hasSearched && searchTotal === 0 && !searching" class="text-center py-4">
  <span class="icon-[lucide--search-x] text-2xl text-muted-foreground" />
- <p class="text-sm text-muted-foreground mt-1">没有匹配的结果</p>
+ <p class="text-sm text-muted-foreground mt-1">
+ 没有匹配的结果
+ </p>
  </div>
  </div>
  </div>
@@ -321,7 +325,7 @@ onUnmounted( => {
  </div>
  <div class=".5 bg-muted rounded-full overflow-hidden">
  <div
- class="h-full bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 transition-all duration-500":style="{ width: `${overallProgress}%` }"
+ class="h-full bg-primary transition-all duration-500":style="{ width: `${overallProgress}%` }"
  />
  </div>
  </div>

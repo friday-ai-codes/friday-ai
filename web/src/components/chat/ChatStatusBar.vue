@@ -102,8 +102,13 @@ const progressDots = computed( => {
  background: hsl(214 32% 91%);
 }
 @keyframes status-pulse {
- 0%, 100% { opacity: 1; }
- 50% { opacity: 0.4; }
+ 0%,
+ 100% {
+ opacity: 1;
+ }
+ 50% {
+ opacity: 0.4;
+ }
 }
 @keyframes status-fade-in {
  from {

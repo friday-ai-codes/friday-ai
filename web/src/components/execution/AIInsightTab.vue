@@ -227,8 +227,7 @@ watch( => props.nodeExecutionId, => {
  class="icon-[lucide--alert-triangle] w-3.5 .5 text-red-500"
  />
  <span
- class="text-[11px] tabular-nums":class="step.duration_ms != null && step.duration_ms > 30000
- ? 'text-red-500 font-medium': 'text-muted-foreground'"
+ class="text-[11px] tabular-nums":class="step.duration_ms != null && step.duration_ms > 30000 ? 'text-red-500 font-medium': 'text-muted-foreground'"
  >
  {{ formatDuration(step.duration_ms) }}
  </span>

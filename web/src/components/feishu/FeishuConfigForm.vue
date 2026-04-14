@@ -7,20 +7,12 @@
 import type { FeishuConfig, FeishuConfigCreate } from '~/types'
 import { computed, ref } from 'vue'
 import { deleteFeishuConfig, setFeishuConfig, testFeishuConfig } from '~/api/projects'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import {
- Card,
- CardContent,
- CardDescription,
- CardFooter,
- CardHeader,
- CardTitle,
-} from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  projectId: string
  config: FeishuConfig | null
@@ -112,14 +104,16 @@ async function handleDelete {
 }
 </script>
 <template>
- <Card>
- <CardHeader>
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <div class="flex items-center justify-between">
  <div>
- <CardTitle>飞书项目集成</CardTitle>
- <CardDescription>
+ <h3 class="text-sm font-semibold">
+ 飞书项目集成
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
  配置飞书插件凭证，用于接收 Webhook 和调用飞书项目 API
- </CardDescription>
+ </p>
  </div>
  <Badge v-if="isConfigured" variant="success">
  已配置
@@ -128,8 +122,8 @@ async function handleDelete {
  未配置
  </Badge>
  </div>
- </CardHeader>
- <CardContent>
+ </div>
+ <div class=" space-y-4">
  <form class="space-y-4" @submit.prevent="handleSubmit">
  <!-- Plugin ID -->
  <div class="space-y-2">
@@ -192,8 +186,8 @@ async function handleDelete {
  </div>
  </div>
  </form>
- </CardContent>
- <CardFooter class="flex justify-between">
+ </div>
+ <div class="px-5 py-4 border-t border-border/50 flex justify-between">
  <div class="flex gap-2">
  <Button
  type="submit":disabled="isLoading"
@@ -216,6 +210,6 @@ async function handleDelete {
  >
  {{ isDeleting ? '删除中...': '删除配置' }}
  </Button>
- </CardFooter>
- </Card>
+ </div>
+ </div>
 </template>

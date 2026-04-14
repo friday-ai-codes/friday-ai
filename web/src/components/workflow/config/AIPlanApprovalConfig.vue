@@ -35,7 +35,7 @@ const chatId = field('chat_id', '') as import('vue').WritableComputedRef<string>
 <template>
  <div class="space-y-4">
  <!-- Introduction -->
- <div class="rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-400/5 border border-amber-500/20 ">
+ <div class="rounded-xl bg-primary/10 border border-amber-500/20 ">
  <div class="flex items-start gap-2">
  <span class="icon-[lucide--check-circle] text-amber-500 text-lg shrink-0 mt-0.5" />
  <div class="space-y-1.5">

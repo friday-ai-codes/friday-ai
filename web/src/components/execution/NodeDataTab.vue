@@ -272,8 +272,7 @@ const jsonFields = computed( => {
  <!-- 模式标签 -->
  <div class="flex items-center gap-2">
  <span
- class="text-xs font-medium px-2 py-0.5 rounded-full":class="currentMode === 'edit'
- ? 'bg-primary/10 text-primary border border-primary/30': 'bg-purple-500/10 text-purple-400 border border-purple-500/30'"
+ class="text-xs font-medium px-2 py-0.5 rounded-full":class="currentMode === 'edit' ? 'bg-primary/10 text-primary border border-primary/30': 'bg-purple-500/10 text-purple-400 border border-purple-500/30'"
  >
  {{ currentMode === 'edit' ? '编辑模式': 'Mock 模式' }}
  </span>

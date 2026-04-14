@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { useHead } from '@vueuse/head'
 import { markRaw } from 'vue'
-import { useErrorHandler } from '~/composables/useErrorHandler'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
 import { Badge } from '~/components/ui/badge'
+import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({
  title: '项目管理 - Friday AI',
 })
