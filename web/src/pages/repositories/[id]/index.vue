@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import type { IndexStatusResponse } from '~/api/repositories'
+import type { BranchIndexRow, IndexStatusResponse } from '~/api/repositories'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
+import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
+import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { MarkdownPreview } from '~/components/ui/markdown-editor'
@@ -28,6 +31,11 @@ useHead({
 // 加载仓库
 const loading = ref(true)
 const indexStatus = ref<IndexStatusResponse | null>(null)
+const branchIndexRows = ref<BranchIndexRow>
+const selectedBranch = ref<string | null>(null)
+const rebuildDialogOpen = ref(false)
+const rebuildingBranch = ref(false)
+let branchIndexPollTimer: ReturnType<typeof setInterval> | null = null
 async function loadIndexStatus {
  try {
  indexStatus.value = await repositoriesApi.getIndexStatus(repositoryId.value)
@@ -36,6 +44,54 @@ async function loadIndexStatus {
  // intentionally ignored
  }
 }
+function branchStorageKey(repoId: string) {
+ return `friday:repo-branch:${repoId}`
+}
+async function loadBranchIndexes {
+ try {
+ branchIndexRows.value = await repositoriesApi.getBranchIndexes(repositoryId.value)
+ const names = branchIndexRows.value.map(r => r.branch_name)
+ const repo = repositoriesStore.currentRepository
+ const fromSession = sessionStorage.getItem(branchStorageKey(repositoryId.value))
+ if (fromSession && names.includes(fromSession)) {
+ selectedBranch.value = fromSession
+ return
+ }
+ if (selectedBranch.value && names.includes(selectedBranch.value))
+ return
+ const baseRow = branchIndexRows.value.find(r => r.is_base_branch)
+ const baseName = repo?.base_branch ?? null
+ const defName = repo?.default_branch ?? null
+ selectedBranch.value
+ = baseRow?.branch_name
+ ?? (baseName && names.includes(baseName) ? baseName: null)
+ ?? (defName && names.includes(defName) ? defName: null)
+ ?? names[0]
+ ?? null
+ }
+ catch {
+ branchIndexRows.value =
+ }
+}
+function startBranchIndexPolling {
+ if (branchIndexPollTimer)
+ return
+ branchIndexPollTimer = setInterval(async => {
+ await loadIndexStatus
+ await loadBranchIndexes
+ if (indexStatus.value?.index_status !== IndexStatus.INDEXING) {
+ if (branchIndexPollTimer) {
+ clearInterval(branchIndexPollTimer)
+ branchIndexPollTimer = null
+ }
+ }
+ }, 3000)
+}
+watch(selectedBranch, (name) => {
+ const id = repositoryId.value
+ if (name && id)
+ sessionStorage.setItem(branchStorageKey(id), name)
+})
 onMounted(async => {
  try {
  await Promise.all([
@@ -43,12 +99,21 @@ onMounted(async => {
  repositoriesStore.fetchCredential(repositoryId.value),
  loadIndexStatus,
  ])
+ await loadBranchIndexes
+ if (indexStatus.value?.index_status === IndexStatus.INDEXING)
+ startBranchIndexPolling
  }
  catch (e: unknown) {
  handleError(e, '加载仓库详情')
  }
  finally {
  loading.value = false
+ }
+})
+onUnmounted( => {
+ if (branchIndexPollTimer) {
+ clearInterval(branchIndexPollTimer)
+ branchIndexPollTimer = null
  }
 })
 // 删除仓库
@@ -76,6 +141,45 @@ function formatDate(dateStr: string) {
 // 计算属性
 const repository = computed( => repositoriesStore.currentRepository)
 const credential = computed( => repositoriesStore.currentCredential)
+const branchNames = computed( => branchIndexRows.value.map(r => r.branch_name))
+const recommendedBaseBranch = computed( => {
+ const base = branchIndexRows.value.find(r => r.is_base_branch)
+ if (base)
+ return base.branch_name
+ const b = repository.value?.base_branch
+ if (b && branchNames.value.includes(b))
+ return b
+ return repository.value?.default_branch ?? null
+})
+const selectedBranchRow = computed(
+ => branchIndexRows.value.find(r => r.branch_name === selectedBranch.value) ?? null,
+)
+const indexGlobalBusy = computed(
+ => indexStatus.value?.index_status === IndexStatus.INDEXING,
+)
+const rebuildConfirmDescription = computed( => {
+ const b = selectedBranch.value ?? '—'
+ return `将为分支 ${b} 触发后台重建；全局索引进行中时请勿重复提交。`
+})
+async function confirmRebuildBranchIndex {
+ if (!repository.value || !selectedBranch.value)
+ return
+ rebuildingBranch.value = true
+ try {
+ await repositoriesApi.triggerIndex(repository.value.id, { branch: selectedBranch.value })
+ success('已提交重建任务', selectedBranch.value)
+ rebuildDialogOpen.value = false
+ await loadIndexStatus
+ await loadBranchIndexes
+ startBranchIndexPolling
+ }
+ catch (e: unknown) {
+ handleError(e, '重建分支索引')
+ }
+ finally {
+ rebuildingBranch.value = false
+ }
+}
 // 描述折叠
 const descExpanded = ref(false)
 // 编辑仓库
@@ -222,6 +326,38 @@ function copyUrl {
  <AISummarySection:repository-id="repository.id" />
  <!-- ==================== 代码索引（第一优先级） ==================== -->
  <div class="space-y-4">
+ <div v-if="branchNames.length > 0" class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--git-branch] text-primary" />
+ <h3 class="text-sm font-semibold">分支索引</h3>
+ <span class="text-xs text-muted-foreground">选择检索分支与健康状态</span>
+ </div>
+ <div class=" space-y-4">
+ <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+ <div class="space-y-2">
+ <label class="text-xs text-muted-foreground">当前分支</label>
+ <BranchCombobox
+ v-model="selectedBranch":branches="branchNames":index-rows="branchIndexRows":recommended-branch="recommendedBaseBranch":disabled="indexGlobalBusy"
+ />
+ </div>
+ <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+ <Button
+ v-if="selectedBranchRow?.is_stale":disabled="indexGlobalBusy || rebuildingBranch"
+ class="w-full sm:w-auto"
+ @click="rebuildDialogOpen = true"
+ >
+ <span
+ v-if="rebuildingBranch"
+ class="icon-[lucide--loader-circle] animate-spin mr-2"
+ />
+ <span v-else class="icon-[lucide--refresh-cw] mr-2" />
+ 重建索引
+ </Button>
+ </div>
+ </div>
+ <BranchIndexHealthSection:row="selectedBranchRow" />
+ </div>
+ </div>
  <div class="grid gap-4 lg:grid-cols-2">
  <RepositoryIndexCard:repository-id="repository.id" />
  <IndexStatsPanel:repository-id="repository.id" />
@@ -387,6 +523,12 @@ function copyUrl {
  @confirm="handleEditSuccess"
  @cancel="editDialogOpen = false"
  @closed="editDialogOpen = false"
+ />
+ <ConfirmDialog
+ v-model:open="rebuildDialogOpen"
+ title="确认重建此分支索引？":description="rebuildConfirmDescription"
+ confirm-text="确认重建":loading="rebuildingBranch"
+ @confirm="confirmRebuildBranchIndex"
  />
  </div>
 </template>

@@ -108,6 +108,15 @@ export interface IndexFreshnessResponse {
  last_indexed_at: string | null
  error: string | null
 }
+/** Phase: GET branch-indexes 单行，与后端 RepositoryBranchIndex 对齐 */
+export interface BranchIndexRow {
+ branch_name: string
+ is_base_branch: boolean
+ is_stale: boolean
+ last_indexed_at: string | null
+ last_indexed_commit_sha: string | null
+ effective_chunks_count: number
+}
 // 连接测试响应
 export interface TestConnectionResponse {
  success: boolean
@@ -180,10 +189,24 @@ export const repositoriesApi = {
  },
  // ==================== 索引管理 API ====================
  /**
- * 触发仓库索引
+ * 触发仓库索引（可选 branch 用于重建指定分支 overlay）
  */
- triggerIndex: async (id: string): Promise<IndexTriggerResponse> => {
+ triggerIndex: async (
+ id: string,
+ options?: { branch?: string | null },
+ ): Promise<IndexTriggerResponse> => {
+ if (options?.branch) {
+ return post<IndexTriggerResponse>(`/repositories/${id}/index/`, {
+ branch: options.branch,
+ })
+ }
  return post<IndexTriggerResponse>(`/repositories/${id}/index/`)
+ },
+ /**
+ * Phase: 分支索引行列表（只读）
+ */
+ getBranchIndexes: async (id: string): Promise<BranchIndexRow> => {
+ return get<BranchIndexRow>(`/repositories/${id}/branch-indexes/`)
  },
  /**
  * 获取索引状态

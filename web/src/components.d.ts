@@ -43,6 +43,8 @@ declare module 'vue' {
  Badge: typeof import('./components/ui/badge/Badge.vue')['default']
  BaseModal: typeof import('./components/modal/BaseModal.vue')['default']
  BaseWorkflowNode: typeof import('./components/workflow/editor/nodes/BaseWorkflowNode.vue')['default']
+ BranchCombobox: typeof import('./components/repository/BranchCombobox.vue')['default']
+ BranchIndexHealthSection: typeof import('./components/repository/BranchIndexHealthSection.vue')['default']
  Button: typeof import('./components/ui/button/Button.vue')['default']
  Card: typeof import('./components/ui/card/Card.vue')['default']
  CardContent: typeof import('./components/ui/card/CardContent.vue')['default']

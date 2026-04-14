@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { BranchIndexRow } from '~/api/repositories'
 import { computed, ref } from 'vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -19,10 +20,40 @@ import {
 } from '~/components/ui/popover'
 const props = defineProps<{
  branches: string
+ /** 提供时列表行展示 stale / 相对索引时间（Phase） */
+ indexRows?: BranchIndexRow
  recommendedBranch?: string | null
  modelValue?: string | null
  disabled?: boolean
 }>
+const rowByName = computed( => {
+ const map = new Map<string, BranchIndexRow>
+ for (const row of props.indexRows ?? ) {
+ map.set(row.branch_name, row)
+ }
+ return map
+})
+const richMode = computed( => (props.indexRows?.length ?? 0) > 0)
+function formatIndexedAgo(iso: string | null): string {
+ if (!iso)
+ return '—'
+ const then = new Date(iso).getTime
+ if (Number.isNaN(then))
+ return '—'
+ const sec = Math.floor((Date.now - then) / 1000)
+ if (sec < 45)
+ return '刚刚'
+ const min = Math.floor(sec / 60)
+ if (min < 60)
+ return `${min} 分钟前`
+ const h = Math.floor(min / 60)
+ if (h < 24)
+ return `${h} 小时前`
+ const d = Math.floor(h / 24)
+ if (d < 30)
+ return `${d} 天前`
+ return new Date(iso).toLocaleDateString('zh-CN')
+}
 const emit = defineEmits<{
  'update:modelValue': [value: string | null]
 }>
@@ -78,10 +109,26 @@ function selectBranch(branch: string) {
  @select="selectBranch(branch)"
  >
  <span
- class="icon-[lucide--check] mr-2 w-4":class="selectedValue === branch ? 'opacity-100': 'opacity-0'"
+ class="icon-[lucide--check] mr-2 w-4 shrink-0":class="selectedValue === branch ? 'opacity-100': 'opacity-0'"
  />
- <span class="flex-1 truncate">{{ branch }}</span>
- <Badge variant="secondary" class="ml-2 text-[10px] px-1.5 py-0">推荐</Badge>
+ <div class="flex flex-1 min-w-0 flex-col gap-0.5">
+ <div class="flex items-center gap-2 min-w-0 flex-wrap">
+ <span class="font-mono text-sm truncate">{{ branch }}</span>
+ <Badge variant="secondary" class="text-[10px] px-1.5 py-0 shrink-0">推荐</Badge>
+ <template v-if="richMode && rowByName.get(branch)">
+ <Badge
+ v-if="rowByName.get(branch)!.is_stale"
+ variant="destructive"
+ class="text-[10px] px-1.5 py-0 shrink-0"
+ >
+ stale
+ </Badge>
+ <span class="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+ {{ formatIndexedAgo(rowByName.get(branch)!.last_indexed_at) }}
+ </span>
+ </template>
+ </div>
+ </div>
  </CommandItem>
  </CommandGroup>
  <CommandSeparator v-if="recommendedBranches.length > 0 && otherBranches.length > 0" />
@@ -92,9 +139,23 @@ function selectBranch(branch: string) {
  @select="selectBranch(branch)"
  >
  <span
- class="icon-[lucide--check] mr-2 w-4":class="selectedValue === branch ? 'opacity-100': 'opacity-0'"
+ class="icon-[lucide--check] mr-2 w-4 shrink-0":class="selectedValue === branch ? 'opacity-100': 'opacity-0'"
  />
- <span class="truncate">{{ branch }}</span>
+ <div class="flex flex-1 min-w-0 items-center gap-2">
+ <span class="font-mono text-sm truncate">{{ branch }}</span>
+ <template v-if="richMode && rowByName.get(branch)">
+ <Badge
+ v-if="rowByName.get(branch)!.is_stale"
+ variant="destructive"
+ class="text-[10px] px-1.5 py-0 shrink-0"
+ >
+ stale
+ </Badge>
+ <span class="text-[10px] text-muted-foreground ml-auto shrink-0 tabular-nums">
+ {{ formatIndexedAgo(rowByName.get(branch)!.last_indexed_at) }}
+ </span>
+ </template>
+ </div>
  </CommandItem>
  </CommandGroup>
  </CommandList>
