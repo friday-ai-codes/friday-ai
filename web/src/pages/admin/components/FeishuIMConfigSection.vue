@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SettingRead } from '~/api/settings'
 import { SettingKey } from '~/api/settings'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -41,13 +42,13 @@ const emit = defineEmits<{
  用于 AI Agent 发送飞书消息（提问卡片、通知等）
  </p>
  </div>
- <span
+ <Badge
  v-if="props.hasFeishuIMConfig"
- class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-600 bg-emerald-500/10 rounded-full"
+ variant="success"
  >
  <span class="icon-[lucide--check-circle]" />
  已配置
- </span>
+ </Badge>
  </div>
  <!-- 表单内容 -->
  <div class=" space-y-6">

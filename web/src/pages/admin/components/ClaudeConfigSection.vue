@@ -3,6 +3,7 @@ import type { AcceptableValue } from 'reka-ui'
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
 import { SettingKey } from '~/api/settings'
+import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -69,13 +70,13 @@ const emit = defineEmits<{
  <Label for="api-key" class="text-base font-medium">
  {{ props.settingsMeta[SettingKey.ANTHROPIC_API_KEY].label }}
  </Label>
- <span
+ <Badge
  v-if="props.getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value"
- class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-600 bg-emerald-500/10 rounded-full"
+ variant="success"
  >
  <span class="icon-[lucide--check-circle]" />
  已配置
- </span>
+ </Badge>
  </div>
  <p class="text-sm text-muted-foreground">
  {{ props.settingsMeta[SettingKey.ANTHROPIC_API_KEY].description }}
