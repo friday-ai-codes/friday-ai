@@ -2,6 +2,7 @@
 import type { Invitation, SystemUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
@@ -118,14 +119,13 @@ onMounted( => {
  />
  </div>
  <div class="flex items-end">
- <button:disabled="creatingInvite"
- class="btn btn-primary"
+ <Button:disabled="creatingInvite"
  @click="generateInviteLink"
  >
  <span v-if="creatingInvite" class="icon-[lucide--loader-2] animate-spin" />
  <span v-else class="icon-[lucide--link]" />
  生成链接
- </button>
+ </Button>
  </div>
  </div>
  <!-- 生成的邀请链接 -->
@@ -137,13 +137,14 @@ onMounted( => {
  <p class="text-xs text-muted-foreground">
  邀请链接（有效期至 {{ newInvitation ? formatDate(newInvitation.expires_at): '' }}）
  </p>
- <button
- class="btn btn-ghost btn-sm"
+ <Button
+ variant="ghost"
+ size="sm"
  @click="copyInviteLink"
  >
  <span class="icon-[lucide--copy]" />
  复制
- </button>
+ </Button>
  </div>
  <p class="text-sm font-mono break-all text-muted-foreground bg-background/50 rounded-lg ">
  {{ inviteLink }}
@@ -201,13 +202,14 @@ onMounted( => {
  </p>
  </div>
  </div>
- <button
+ <Button
  v-if="!user.is_superuser"
- class="btn btn-secondary btn-sm":disabled="saving"
+ variant="outline"
+ size="sm":disabled="saving"
  @click="toggleUserActive(user)"
  >
  {{ user.is_active ? '禁用': '启用' }}
- </button>
+ </Button>
  </div>
  </div>
  </div>

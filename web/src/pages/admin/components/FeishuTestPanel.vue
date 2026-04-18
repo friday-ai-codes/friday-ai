@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
@@ -70,14 +71,15 @@ const emit = defineEmits<{
  />
  </div>
  <div class="flex items-center gap-3">
- <button
- class="btn btn-secondary btn-sm":disabled="props.testingFeishuIM"
+ <Button
+ variant="outline"
+ size="sm":disabled="props.testingFeishuIM"
  @click="emit('test')"
  >
  <span v-if="props.testingFeishuIM" class="icon-[lucide--loader-circle] animate-spin" />
  <span v-else class="icon-[lucide--send]" />
  发送测试消息
- </button>
+ </Button>
  <!-- 测试结果 -->
  <div
  v-if="props.feishuTestResult"

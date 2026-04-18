@@ -370,14 +370,14 @@ onMounted( => {
  </div>
  </div>
  <DialogFooter>
- <button class="btn btn-secondary" @click="dialogOpen = false">
+ <Button variant="outline" @click="dialogOpen = false">
  取消
- </button>
- <button class="btn btn-primary":disabled="saving" @click="onSave">
+ </Button>
+ <Button:disabled="saving" @click="onSave">
  <span v-if="saving" class="icon-[lucide--loader-circle] animate-spin" />
  <span v-else class="icon-[lucide--save]" />
  {{ editingId ? '更新': '创建' }}
- </button>
+ </Button>
  </DialogFooter>
  </DialogContent>
  </Dialog>

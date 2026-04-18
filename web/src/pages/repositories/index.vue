@@ -6,6 +6,7 @@ import StatusBadge from '~/components/common/StatusBadge.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
+import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
@@ -80,10 +81,10 @@ const platformIcons: Record<string, string> = {
  description="管理您的 Git 仓库和凭证配置"
  >
  <template #actions>
- <button class="btn btn-primary" @click="openCreateRepository">
+ <Button @click="openCreateRepository">
  <span class="icon-[lucide--plus]" />
  新建仓库
- </button>
+ </Button>
  </template>
  </PageHeader>
  <!-- 加载状态 -->
@@ -151,21 +152,23 @@ const platformIcons: Record<string, string> = {
  </span>
  <div class="flex items-center gap-1">
  <RouterLink:to="`/repositories/${repository.id}?tab=indexing`" @click.stop>
- <button class="btn btn-ghost btn-icon btn-sm" title="代码索引">
+ <Button variant="ghost" size="icon-sm" title="代码索引">
  <span class="icon-[lucide--database]" />
- </button>
+ </Button>
  </RouterLink>
  <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
- <button class="btn btn-ghost btn-icon btn-sm" title="凭证管理">
+ <Button variant="ghost" size="icon-sm" title="凭证管理">
  <span class="icon-[lucide--key]" />
- </button>
+ </Button>
  </RouterLink>
- <button
- class="btn btn-ghost btn-icon btn-sm hover:bg-red-50! hover:text-red-500!"
+ <Button
+ variant="ghost"
+ size="icon-sm"
+ class="hover:bg-red-50! hover:text-red-500!"
  @click.prevent="confirmDelete(repository.id)"
  >
  <span class="icon-[lucide--trash-2]" />
- </button>
+ </Button>
  </div>
  </div>
  </RouterLink>

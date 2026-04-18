@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SettingRead } from '~/api/settings'
 import { SettingKey } from '~/api/settings'
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 interface Props {
@@ -113,23 +114,23 @@ const emit = defineEmits<{
  </div>
  <!-- 保存按钮区域 -->
  <div class="flex justify-between px-6 py-4 border-t border-border/50">
- <button
+ <Button
  v-if="props.hasFeishuIMConfig"
- class="btn btn-secondary hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="props.savingFeishuIM"
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="props.savingFeishuIM"
  @click="emit('remove')"
  >
  <span class="icon-[lucide--trash-2]" />
  删除配置
- </button>
+ </Button>
  <div v-else />
- <button:disabled="props.savingFeishuIM || (!props.feishuAppIdDirty && !props.feishuAppSecretDirty)"
- class="btn btn-primary"
+ <Button:disabled="props.savingFeishuIM || (!props.feishuAppIdDirty && !props.feishuAppSecretDirty)"
  @click="emit('save')"
  >
  <span v-if="props.savingFeishuIM" class="icon-[lucide--loader-circle] animate-spin" />
  <span v-else class="icon-[lucide--save]" />
  保存 IM 配置
- </button>
+ </Button>
  </div>
  </div>
  </section>
