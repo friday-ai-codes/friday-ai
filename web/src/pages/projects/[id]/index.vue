@@ -11,6 +11,12 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/projects/[id]/')
@@ -335,9 +341,16 @@ async function handleCustomToken {
  </p>
  </div>
  <RouterLink:to="`/repositories/${repo.id}`">
- <Button variant="ghost" size="icon" class=" w-7" title="查看详情">
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Button variant="ghost" size="icon" class=" w-7">
  <span class="icon-[lucide--eye] text-sm" />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>查看详情</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </RouterLink>
  </div>
  </div>
@@ -482,15 +495,21 @@ async function handleCustomToken {
  <code class="flex-1 px-3 py-2 bg-muted/40 rounded-lg font-mono text-sm overflow-hidden text-ellipsis border border-border/50 text-foreground">
  {{ project.webhook_token }}
  </code>
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="outline"
  size="icon"
  class=" w-9"
- title="复制 Token"
  @click="copyWebhookToken"
  >
  <span class="icon-[lucide--copy]" />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>复制 Token</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </div>
  </div>
  <div class="flex items-start gap-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
