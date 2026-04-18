@@ -196,16 +196,13 @@ async def _check_qdrant -> ServiceStatus:
  }
 def _overall_status(services: list[ServiceStatus]) -> str:
  """根据各依赖状态汇总整体状态。
+ 只有"正常 / 异常"两种业务态——未配置视为正常。
+ 例如 Redis 未启用 Channel Layer 属于预期配置，不算连接异常。
  - 任一 unhealthy → unhealthy
- - 否则若存在 not_configured → degraded
- - 全部 healthy → healthy
+ - 其余（healthy / not_configured）→ healthy
  """
- has_unhealthy = any(s.get("status") == "unhealthy" for s in services)
- if has_unhealthy:
+ if any(s.get("status") == "unhealthy" for s in services):
  return "unhealthy"
- has_not_configured = any(s.get("status") == "not_configured" for s in services)
- if has_not_configured:
- return "degraded"
  return "healthy"
 class SystemHealthView(APIView):
  """聚合返回系统各依赖的连接状态。

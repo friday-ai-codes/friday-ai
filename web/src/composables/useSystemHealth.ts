@@ -19,7 +19,14 @@ import type { MonitorStatus } from '~/composables/useRunnerMonitor'
 import { getSystemHealth } from '~/api/system'
 import { useRunnerMonitor } from '~/composables/useRunnerMonitor'
 const POLL_INTERVAL_MS = 30_000
-type Pill = 'healthy' | 'degraded' | 'unhealthy' | 'loading'
+/**
+ * 顶栏胶囊只有两个业务态：healthy（正常）/ unhealthy（异常）。
+ * loading 用于首次加载未拿到数据时的占位。
+ * not_configured / warn 的服务在 Popover 里单独展示，但不让整体状态
+ * 降级为"部分可用"——例如 Redis 未启用 Channel Layer 属于预期配置，
+ * 不算连接异常。
+ */
+type Pill = 'healthy' | 'unhealthy' | 'loading'
 interface AggregatedService extends ServiceHealth {
  /** 仅用于展示的图标/颜色分组 */
  tone: 'ok' | 'warn' | 'error' | 'muted'
@@ -129,16 +136,12 @@ export function useSystemHealth {
  const services = aggregatedServices.value
  if (services.some(s => s.tone === 'error'))
  return 'unhealthy'
- if (services.some(s => s.tone === 'warn' || s.tone === 'muted'))
- return 'degraded'
  return 'healthy'
  })
  const pillLabel = computed( => {
  switch (pill.value) {
  case 'healthy':
  return '已连接'
- case 'degraded':
- return '部分可用'
  case 'unhealthy':
  return '连接异常'
  case 'loading':

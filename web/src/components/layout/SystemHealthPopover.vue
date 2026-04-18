@@ -57,7 +57,7 @@ function statusText(status: string): string {
  type="button"
  class="flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300 border outline-none":class="{
  'bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/15': pill === 'healthy',
- 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/15': pill === 'degraded' || pill === 'loading',
+ 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/15': pill === 'loading',
  'bg-red-500/10 border-red-500/20 hover:bg-red-500/15': pill === 'unhealthy',
  }":title="pillLabel"
  >
@@ -69,7 +69,7 @@ function statusText(status: string): string {
  <span
  class="relative inline-flex rounded-full w-2":class="{
  'bg-emerald-500': pill === 'healthy',
- 'bg-amber-500 animate-pulse': pill === 'degraded' || pill === 'loading',
+ 'bg-amber-500 animate-pulse': pill === 'loading',
  'bg-red-500': pill === 'unhealthy',
  }"
  />
@@ -77,7 +77,7 @@ function statusText(status: string): string {
  <span
  class="text-sm font-medium":class="{
  'text-emerald-600': pill === 'healthy',
- 'text-amber-600': pill === 'degraded' || pill === 'loading',
+ 'text-amber-600': pill === 'loading',
  'text-red-600': pill === 'unhealthy',
  }"
  >
