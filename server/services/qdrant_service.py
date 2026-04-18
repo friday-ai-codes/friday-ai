@@ -45,6 +45,11 @@ class QdrantService:
  cls._client = QdrantClient(
  url=url,
  api_key=config.get("api_key"),
+ # 禁止 httpx 自动加载系统/环境代理（macOS 系统代理、HTTP(S)_PROXY 等）。
+ # Qdrant 通常部署在内网 / Tailscale，走代理会被反代成 502。
+ trust_env=False,
+ # 关闭启动时的版本兼容探测，避免走系统代理失败时产生噪音警告。
+ check_compatibility=False,
  )
  return cls._client
  @classmethod
@@ -78,7 +83,12 @@ class QdrantService:
  ) -> dict[str, Any]:
  """Check Qdrant health with provided config (before saving)."""
  try:
- client = QdrantClient(url=url or "http://localhost:6333", api_key=api_key or None)
+ client = QdrantClient(
+ url=url or "http://localhost:6333",
+ api_key=api_key or None,
+ trust_env=False,
+ check_compatibility=False,
+ )
  info = client.get_collections
  client.close
  return {"status": "healthy", "collections_count": len(info.collections)}
