@@ -7,6 +7,12 @@ import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateRepositoryModal from '~/components/repository/CreateRepositoryModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 useHead({
@@ -151,16 +157,29 @@ const platformIcons: Record<string, string> = {
  <span class="icon-[lucide--arrow-right]" />
  </span>
  <div class="flex items-center gap-1">
+ <TooltipProvider:delay-duration="300">
  <RouterLink:to="`/repositories/${repository.id}?tab=indexing`" @click.stop>
- <Button variant="ghost" size="icon-sm" title="代码索引">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Button variant="ghost" size="icon-sm">
  <span class="icon-[lucide--database]" />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>代码索引</TooltipContent>
+ </Tooltip>
  </RouterLink>
  <RouterLink:to="`/repositories/${repository.id}/credential`" @click.stop>
- <Button variant="ghost" size="icon-sm" title="凭证管理">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Button variant="ghost" size="icon-sm">
  <span class="icon-[lucide--key]" />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>凭证管理</TooltipContent>
+ </Tooltip>
  </RouterLink>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon-sm"
@@ -169,6 +188,10 @@ const platformIcons: Record<string, string> = {
  >
  <span class="icon-[lucide--trash-2]" />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>删除仓库</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </div>
  </div>
  </RouterLink>

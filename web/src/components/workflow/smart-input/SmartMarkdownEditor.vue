@@ -17,6 +17,12 @@ import Text from '@tiptap/extension-text'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Button } from '~/components/ui/button'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
 import { createVariableSuggestion, VariableNode } from './extensions'
 interface Props {
@@ -367,111 +373,151 @@ defineExpose({
  class="smart-markdown-editor rounded-lg border border-border/50 bg-background/50 overflow-hidden":class="{ 'opacity-50 cursor-not-allowed': disabled }"
  >
  <!-- Toolbar -->
+ <TooltipProvider v-if="showToolbar && !disabled":delay-duration="300">
  <div
- v-if="showToolbar && !disabled"
  class="flex items-center gap-0.5 px-2 py-1 border-b border-border/30 bg-muted/30"
  >
  <!-- Text formatting -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('bold') }"
- title="粗体 (Ctrl+B)"
  @click="toggleBold"
  >
  <span class="icon-[lucide--bold] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>粗体 (Ctrl+B)</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('italic') }"
- title="斜体 (Ctrl+I)"
  @click="toggleItalic"
  >
  <span class="icon-[lucide--italic] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>斜体 (Ctrl+I)</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('code') }"
- title="行内代码"
  @click="toggleCode"
  >
  <span class="icon-[lucide--code] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>行内代码</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border/50 mx-1" />
  <!-- Headings (compact mode only shows H1/H2) -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('heading', { level: 1 }) }"
- title="标题 1"
  @click="setHeading(1)"
  >
  <span class="text-xs font-bold">H1</span>
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>标题 1</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('heading', { level: 2 }) }"
- title="标题 2"
  @click="setHeading(2)"
  >
  <span class="text-xs font-bold">H2</span>
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>标题 2</TooltipContent>
+ </Tooltip>
+ <Tooltip v-if="!compact">
+ <TooltipTrigger as-child>
  <Button
- v-if="!compact"
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('heading', { level: 3 }) }"
- title="标题 3"
  @click="setHeading(3)"
  >
  <span class="text-xs font-bold">H3</span>
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>标题 3</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border/50 mx-1" />
  <!-- Lists -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('bulletList') }"
- title="无序列表"
  @click="toggleBulletList"
  >
  <span class="icon-[lucide--list] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>无序列表</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('orderedList') }"
- title="有序列表"
  @click="toggleOrderedList"
  >
  <span class="icon-[lucide--list-ordered] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>有序列表</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border/50 mx-1" />
  <!-- Code block -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7":class="{ 'bg-accent': isActive('codeBlock') }"
- title="代码块"
  @click="toggleCodeBlock"
  >
  <span class="icon-[lucide--file-code] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>代码块</TooltipContent>
+ </Tooltip>
  <!-- Expand button -->
  <div class="flex-1" />
+ <Tooltip>
+ <TooltipTrigger as-child>
  <Button
  variant="ghost"
  size="icon"
  class=" w-7"
- title="放大编辑"
  @click="$emit('expand')"
  >
  <span class="icon-[lucide--maximize-2] w-4 " />
  </Button>
+ </TooltipTrigger>
+ <TooltipContent>放大编辑</TooltipContent>
+ </Tooltip>
  </div>
+ </TooltipProvider>
  <!-- Editor content -->
  <div
  class="px-3 py-2 text-sm overflow-y-auto":class="compact ? 'max-': 'max-'":style="{ minHeight: `${minRows * 1.5}rem` }"

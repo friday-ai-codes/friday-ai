@@ -12,6 +12,12 @@ import BaseModal from '~/components/modal/BaseModal.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 const props = withDefaults(defineProps<Props>, {
  placeholder: '请输入内容，支持 Markdown 语法...',
  height: undefined,
@@ -154,124 +160,177 @@ function unsetLink {
 <template>
  <div class="tiptap-editor-wrapper rounded-xl border border-border bg-background overflow-hidden":style="containerStyle">
  <!-- 工具栏 -->
+ <TooltipProvider v-if="editable":delay-duration="300">
  <div
- v-if="editable"
  class="flex flex-wrap items-center gap-0.5 border-b border-border bg-muted/30":class="{ 'sticky top-0 z-10': stickyToolbar }"
  >
  <!-- 标题 -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('heading', { level: 1 }) }"
- title="标题 1"
  @click="toggleHeading(1)"
  >
  <span class="icon-[lucide--heading-1] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>标题 1</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('heading', { level: 2 }) }"
- title="标题 2"
  @click="toggleHeading(2)"
  >
  <span class="icon-[lucide--heading-2] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>标题 2</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('heading', { level: 3 }) }"
- title="标题 3"
  @click="toggleHeading(3)"
  >
  <span class="icon-[lucide--heading-3] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>标题 3</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border mx-1" />
  <!-- 格式 -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('bold') }"
- title="粗体"
  @click="toggleBold"
  >
  <span class="icon-[lucide--bold] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>粗体</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('italic') }"
- title="斜体"
  @click="toggleItalic"
  >
  <span class="icon-[lucide--italic] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>斜体</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('strike') }"
- title="删除线"
  @click="toggleStrike"
  >
  <span class="icon-[lucide--strikethrough] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>删除线</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('code') }"
- title="行内代码"
  @click="toggleCode"
  >
  <span class="icon-[lucide--code] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>行内代码</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border mx-1" />
  <!-- 列表 -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('bulletList') }"
- title="无序列表"
  @click="toggleBulletList"
  >
  <span class="icon-[lucide--list] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>无序列表</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('orderedList') }"
- title="有序列表"
  @click="toggleOrderedList"
  >
  <span class="icon-[lucide--list-ordered] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>有序列表</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('taskList') }"
- title="任务列表"
  @click="toggleTaskList"
  >
  <span class="icon-[lucide--list-checks] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>任务列表</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border mx-1" />
  <!-- 块级 -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('blockquote') }"
- title="引用"
  @click="toggleBlockquote"
  >
  <span class="icon-[lucide--quote] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>引用</TooltipContent>
+ </Tooltip>
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('codeBlock') }"
- title="代码块"
  @click="toggleCodeBlock"
  >
  <span class="icon-[lucide--file-code] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>代码块</TooltipContent>
+ </Tooltip>
  <div class="w-px bg-border mx-1" />
  <!-- 链接 -->
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  type="button"
  class="toolbar-btn":class="{ 'is-active': editor?.isActive('link') }"
- title="链接"
  @click="editor?.isActive('link') ? unsetLink: setLink"
  >
  <span class="icon-[lucide--link] text-base" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>链接</TooltipContent>
+ </Tooltip>
  </div>
+ </TooltipProvider>
  <!-- 编辑区 -->
  <EditorContent:editor="editor" class="tiptap-content":style="contentStyle" />
  <!-- 链接输入弹窗 -->

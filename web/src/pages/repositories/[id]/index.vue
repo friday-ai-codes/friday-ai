@@ -15,6 +15,12 @@ import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { MarkdownPreview } from '~/components/ui/markdown-editor'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/repositories/[id]/')
@@ -243,13 +249,19 @@ function copyUrl {
  <p class="text-xs text-muted-foreground font-mono truncate">
  {{ repository.git_url }}
  </p>
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
  <button
  class=".5 rounded hover:bg-muted/60 transition-colors shrink-0"
- title="复制 URL"
  @click="copyUrl"
  >
  <span class="icon-[lucide--copy] text-xs text-muted-foreground" />
  </button>
+ </TooltipTrigger>
+ <TooltipContent>复制 URL</TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </div>
  </div>
  </div>
