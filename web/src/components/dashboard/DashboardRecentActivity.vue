@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { WorkflowExecution } from '~/stores/useExecutionsStore'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import { Button } from '~/components/ui/button'
 defineProps<{
  executions: WorkflowExecution
  loading: boolean
@@ -65,10 +66,10 @@ function formatDate(dateStr: string) {
  创建工作流并运行，执行记录将显示在这里
  </p>
  <RouterLink to="/workflows">
- <button class="btn btn-primary">
+ <Button>
  <span class="icon-[lucide--workflow]" />
  查看工作流
- </button>
+ </Button>
  </RouterLink>
  </div>
  <!-- 执行列表 -->

@@ -152,13 +152,14 @@ function getNodeTypeCounts(workflow: Workflow): { type: string, name: string, ic
  <!-- Execute Button -->
  <Tooltip>
  <TooltipTrigger as-child>
- <button
- class="btn btn-primary btn-sm flex-1 text-xs":disabled="!workflow.is_active"
+ <Button
+ size="sm"
+ class="flex-1 text-xs":disabled="!workflow.is_active"
  @click="onExecuteClick($event, workflow)"
  >
  <span class="icon-[lucide--play] mr-1" />
  执行
- </button>
+ </Button>
  </TooltipTrigger>
  <TooltipContent v-if="!workflow.is_active" side="top">
  <p>工作流已禁用</p>

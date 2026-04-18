@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import PageHeader from '~/components/common/PageHeader.vue'
+import { Button } from '~/components/ui/button'
 defineEmits<{
  (e: 'create'): void
 }>
@@ -13,10 +14,10 @@ defineEmits<{
  description="管理和自动化您的开发工作流"
  >
  <template #actions>
- <button class="btn btn-primary" @click="$emit('create')">
+ <Button @click="$emit('create')">
  <span class="icon-[lucide--plus]" />
  新建工作流
- </button>
+ </Button>
  </template>
  </PageHeader>
 </template>

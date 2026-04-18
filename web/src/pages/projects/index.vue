@@ -4,6 +4,7 @@ import { markRaw } from 'vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
 import CreateProjectModal from '~/components/project/CreateProjectModal.vue'
+import { Button } from '~/components/ui/button'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 useHead({
  title: '项目管理 - Friday AI',
@@ -72,10 +73,10 @@ async function handleDelete {
  description="管理您的 Git 仓库项目和凭证配置"
  >
  <template #actions>
- <button class="btn btn-primary" @click="openCreateProject">
+ <Button @click="openCreateProject">
  <span class="icon-[lucide--plus]" />
  新建项目
- </button>
+ </Button>
  </template>
  </PageHeader>
  <!-- 加载状态 -->
@@ -139,12 +140,14 @@ async function handleDelete {
  查看详情
  <span class="icon-[lucide--arrow-right]" />
  </span>
- <button
- class="btn btn-ghost btn-icon btn-sm hover:!bg-red-50 hover:!text-red-500"
+ <Button
+ variant="ghost"
+ size="icon-sm"
+ class="hover:bg-red-50! hover:text-red-500!"
  @click.prevent="confirmDelete(project.id)"
  >
  <span class="icon-[lucide--trash-2]" />
- </button>
+ </Button>
  </div>
  </RouterLink>
  </div>

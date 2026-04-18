@@ -3,6 +3,7 @@ import type { AcceptableValue } from 'reka-ui'
 import type { Model } from '~/api/chat'
 import type { SettingRead } from '~/api/settings'
 import { SettingKey } from '~/api/settings'
+import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import {
@@ -96,14 +97,14 @@ const emit = defineEmits<{
  <span:class="props.showApiKey ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'" />
  </button>
  </div>
- <button
+ <Button
  v-if="props.getSettingByKey(SettingKey.ANTHROPIC_API_KEY)?.has_value"
- class="btn btn-secondary":disabled="props.saving"
+ variant="outline":disabled="props.saving"
  @click="emit('remove', SettingKey.ANTHROPIC_API_KEY)"
  >
  <span class="icon-[lucide--trash-2]" />
  删除
- </button>
+ </Button>
  </div>
  </div>
  <!-- Base URL 字段 -->
@@ -133,14 +134,14 @@ const emit = defineEmits<{
  @input="emit('baseUrlInput')"
  />
  </div>
- <button
+ <Button
  v-if="props.getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.has_value"
- class="btn btn-secondary":disabled="props.saving"
+ variant="outline":disabled="props.saving"
  @click="emit('remove', SettingKey.ANTHROPIC_BASE_URL)"
  >
  <span class="icon-[lucide--trash-2]" />
  删除
- </button>
+ </Button>
  </div>
  <p v-if="props.getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value" class="text-sm text-muted-foreground">
  当前值: {{ props.getSettingByKey(SettingKey.ANTHROPIC_BASE_URL)?.value }}
@@ -195,24 +196,26 @@ const emit = defineEmits<{
  />
  </div>
  </div>
- <button
+ <Button
  v-if="props.canTest"
- class="btn btn-secondary btn-icon shrink-0":disabled="props.loadingModels"
+ variant="outline"
+ size="icon"
+ class="shrink-0":disabled="props.loadingModels"
  title="刷新"
  @click="emit('fetchModels')"
  >
  <span
  class="icon-[lucide--refresh-cw] w-5":class="props.loadingModels && 'animate-spin'"
  />
- </button>
- <button
+ </Button>
+ <Button
  v-if="props.getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.has_value"
- class="btn btn-secondary":disabled="props.saving"
+ variant="outline":disabled="props.saving"
  @click="emit('remove', SettingKey.ANTHROPIC_MODEL)"
  >
  <span class="icon-[lucide--trash-2]" />
  删除
- </button>
+ </Button>
  </div>
  <p v-if="props.getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value" class="text-sm text-muted-foreground">
  当前值: {{ props.getSettingByKey(SettingKey.ANTHROPIC_MODEL)?.value }}
@@ -245,14 +248,14 @@ const emit = defineEmits<{
  @input="emit('gitProxyInput')"
  />
  </div>
- <button
+ <Button
  v-if="props.getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.has_value"
- class="btn btn-secondary":disabled="props.saving"
+ variant="outline":disabled="props.saving"
  @click="emit('remove', SettingKey.GIT_HTTP_PROXY)"
  >
  <span class="icon-[lucide--trash-2]" />
  删除
- </button>
+ </Button>
  </div>
  <p v-if="props.getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value" class="text-sm text-muted-foreground">
  当前值: {{ props.getSettingByKey(SettingKey.GIT_HTTP_PROXY)?.value }}
@@ -261,22 +264,21 @@ const emit = defineEmits<{
  </div>
  <!-- 保存按钮区域 -->
  <div class="flex justify-end gap-3 px-6 py-4 border-t border-border/50">
- <button
+ <Button
  v-if="props.canTest"
- class="btn btn-secondary"
+ variant="outline"
  @click="emit('openTest')"
  >
  <span class="icon-[lucide--flask-conical]" />
  连接测试
- </button>
- <button:disabled="props.saving || !props.hasUnsavedChanges"
- class="btn btn-primary"
+ </Button>
+ <Button:disabled="props.saving || !props.hasUnsavedChanges"
  @click="emit('save')"
  >
  <span v-if="props.saving" class="icon-[lucide--loader-circle] animate-spin" />
  <span v-else class="icon-[lucide--save]" />
  保存设置
- </button>
+ </Button>
  </div>
  </div>
  </section>
