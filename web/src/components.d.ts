@@ -248,6 +248,7 @@ declare module 'vue' {
  SubStepDetailTab: typeof import('./components/execution/SubStepDetailTab.vue')['default']
  SubStepTimeline: typeof import('./components/execution/dag/SubStepTimeline.vue')['default']
  Switch: typeof import('./components/ui/switch/Switch.vue')['default']
+ SystemHealthPopover: typeof import('./components/layout/SystemHealthPopover.vue')['default']
  Table: typeof import('./components/ui/table/Table.vue')['default']
  TableBody: typeof import('./components/ui/table/TableBody.vue')['default']
  TableCaption: typeof import('./components/ui/table/TableCaption.vue')['default']
