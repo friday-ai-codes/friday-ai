@@ -290,6 +290,7 @@ declare global {
  const useStyleTag: typeof import('@vueuse/core').useStyleTag
  const useSupported: typeof import('@vueuse/core').useSupported
  const useSwipe: typeof import('@vueuse/core').useSwipe
+ const useSystemHealth: typeof import('./composables/useSystemHealth').useSystemHealth
  const useTemplateRef: typeof import('vue').useTemplateRef
  const useTemplateRefsList: typeof import('@vueuse/core').useTemplateRefsList
  const useTextDirection: typeof import('@vueuse/core').useTextDirection
@@ -373,6 +374,9 @@ declare global {
  // @ts-ignore
  export type { ConnectionCheckResult, PortCompatibility } from './composables/useSchemaValidation'
  import('./composables/useSchemaValidation')
+ // @ts-ignore
+ export type { UseSystemHealthReturn } from './composables/useSystemHealth'
+ import('./composables/useSystemHealth')
  // @ts-ignore
  export type { MergedProjectListItem } from './stores/prompts'
  import('./stores/prompts')
@@ -677,6 +681,7 @@ declare module 'vue' {
  readonly useStyleTag: UnwrapRef<typeof import('@vueuse/core')['useStyleTag']>
  readonly useSupported: UnwrapRef<typeof import('@vueuse/core')['useSupported']>
  readonly useSwipe: UnwrapRef<typeof import('@vueuse/core')['useSwipe']>
+ readonly useSystemHealth: UnwrapRef<typeof import('./composables/useSystemHealth')['useSystemHealth']>
  readonly useTemplateRef: UnwrapRef<typeof import('vue')['useTemplateRef']>
  readonly useTemplateRefsList: UnwrapRef<typeof import('@vueuse/core')['useTemplateRefsList']>
  readonly useTextDirection: UnwrapRef<typeof import('@vueuse/core')['useTextDirection']>

@@ -27,6 +27,8 @@ api_patterns = [
  path("feishu/", include("feishu.urls")),
  # System settings
  path("settings/", include("system.urls")),
+ # System-level health and status
+ path("system/", include("system.urls_system")),
  # OIDC authentication
  path("oidc/", include("identity.urls")),
  # Chat (LLM conversation)

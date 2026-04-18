@@ -3,11 +3,12 @@ import ChatHeader from '~/components/chat/ChatHeader.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 import AppSidebar from '~/components/layout/AppSidebar.vue'
+import SystemHealthPopover from '~/components/layout/SystemHealthPopover.vue'
 import { Toaster } from '~/components/ui/sonner'
 import { useAppMode } from '~/composables/useAppMode'
 const { mode, chatInitialized, setMode } = useAppMode
-// WebSocket 实时监控
-const { status, connect } = useRunnerMonitor
+// WebSocket 实时监控：保留自动连接逻辑；状态展示由 SystemHealthPopover 聚合
+const { connect } = useRunnerMonitor
 onMounted( => {
  connect
 })
@@ -59,22 +60,7 @@ const pageTitle = computed( => {
  </h1>
  </div>
  <div class="flex items-center gap-3">
- <div
- class="flex items-center gap-2 px-3 py-1.5 rounded-full cursor-pointer transition-colors duration-300":class="{ 'bg-emerald-500/10 border border-emerald-500/20': status === 'connected', 'bg-amber-500/10 border border-amber-500/20': status === 'connecting' || status === 'reconnecting', 'bg-red-500/10 border border-red-500/20': status === 'disconnected' }"
- @click="status === 'disconnected' && connect"
- >
- <span class="relative flex w-2">
- <span v-if="status === 'connected'" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
- <span
- class="relative inline-flex rounded-full w-2":class="{ 'bg-emerald-500': status === 'connected', 'bg-amber-500 animate-pulse': status === 'connecting' || status === 'reconnecting', 'bg-red-500': status === 'disconnected' }"
- />
- </span>
- <span
- class="text-sm font-medium":class="{ 'text-emerald-600': status === 'connected', 'text-amber-600': status === 'connecting' || status === 'reconnecting', 'text-red-600': status === 'disconnected' }"
- >
- {{ status === 'connected' ? '已连接': status === 'disconnected' ? '已断开': '重连中...' }}
- </span>
- </div>
+ <SystemHealthPopover />
  </div>
  </div>
  </header>
