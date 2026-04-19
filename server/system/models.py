@@ -1,4 +1,7 @@
-"""Settings models: SystemSetting, CacheVolumeTracker."""
+"""Settings models: SystemSetting, CacheVolumeTracker, ProviderCredential。"""
+from __future__ import annotations
+import json
+import uuid
 from django.db import models
 class SystemSetting(models.Model):
  """System-wide configuration settings."""
@@ -11,7 +14,7 @@ class SystemSetting(models.Model):
  db_table = "system_settings"
  verbose_name = "系统设置"
  verbose_name_plural = "系统设置"
- def __str__(self):
+ def __str__(self) -> str:
  return self.key
 class SettingKeys:
  """Predefined setting keys."""
@@ -69,3 +72,105 @@ class CacheVolumeTracker(models.Model):
  verbose_name_plural = "缓存卷跟踪"
  def __str__(self) -> str:
  return f"{self.volume_name} ({self.volume_type})"
+class ProviderCredential(models.Model):
+ """多 Provider 凭证（v21.0 引入）。系统级 + 项目级双作用域。
+ 设计要点：
+ - encrypted_config 字段存 Fernet 整体加密的 JSON 字符串（由 service 层显式
+ encrypt_value(json.dumps(...))），不在 save override 里自动加密，
+ 避免 ORM 查询副作用与 update_fields 漏加密。
+ - scope_id 用 UUIDField(null=True) 而非 FK，避免 Project 级联删除时凭证消失。
+ - last_health_check_* / available_models 字段一次性预留 Phase/229 所需，
+ schema 一次到位，避免未来再加 AddField 迁移。
+ """
+ class Scope(models.TextChoices):
+ SYSTEM = "system", "系统级"
+ PROJECT = "project", "项目级"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ provider_type = models.CharField(
+ max_length=32,
+ db_index=True,
+ help_text=(
+ "Provider 类型字符串。本 phase 仅 'anthropic'，Phase 扩展为 5 种。"
+ ),
+ )
+ name = models.CharField(
+ max_length=64,
+ default="default",
+ help_text=(
+ "同 Provider 多凭证区分键。例 'openai-prod' / 'openai-dev'。"
+ ),
+ )
+ scope = models.CharField(
+ max_length=16, choices=Scope.choices, default=Scope.SYSTEM
+ )
+ scope_id = models.UUIDField(
+ null=True,
+ blank=True,
+ help_text=(
+ "scope=PROJECT 时为 project.id；scope=SYSTEM 时为 NULL。"
+ "刻意不用 FK，避免 Project 级联删除导致凭证消失。"
+ ),
+ )
+ encrypted_config = models.TextField(
+ help_text=(
+ "encrypt_value(json.dumps({...})) Fernet 整体加密；"
+ "service 层显式加解密。"
+ ),
+ )
+ base_url = models.CharField(max_length=500, blank=True, default="")
+ default_model = models.CharField(max_length=128, blank=True, default="")
+ is_active = models.BooleanField(default=True)
+ # Phase 健康检查预留字段
+ last_health_check_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ help_text="Phase 写入；本 phase 仅预留字段。",
+ )
+ last_health_check_status = models.CharField(
+ max_length=16,
+ blank=True,
+ default="",
+ help_text="ok/error/untested。Phase 写入；本 phase 仅预留字段。",
+ )
+ last_health_check_error = models.TextField(blank=True, default="")
+ # Phase/229 模型清单缓存预留字段
+ available_models = models.JSONField(
+ default=list,
+ blank=True,
+ help_text=(
+ "模型清单缓存。Phase/229 写入；本 phase 仅预留字段。"
+ ),
+ )
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "provider_credentials"
+ verbose_name = "Provider 凭证"
+ verbose_name_plural = "Provider 凭证"
+ constraints = [
+ # 系统级：每 (provider_type, name) 唯一
+ models.UniqueConstraint(
+ fields=["provider_type", "name"],
+ condition=models.Q(scope="system"),
+ name="uniq_system_provider_credential",
+ ),
+ # 项目级：每 (scope_id, provider_type, name) 唯一
+ models.UniqueConstraint(
+ fields=["scope_id", "provider_type", "name"],
+ condition=models.Q(scope="project"),
+ name="uniq_project_provider_credential",
+ ),
+ ]
+ indexes = [
+ models.Index(fields=["scope", "scope_id", "provider_type"]),
+ models.Index(fields=["is_active", "provider_type"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.provider_type}/{self.scope}/{self.name}"
+ def get_decrypted_config(self) -> dict:
+ """Service 层 helper：解密 + JSON parse 一步到位。
+ 只读 helper；不在模型层做 set_config，避免 ORM 副作用（CONTEXT 决策 1）。
+ """
+ from common.encryption import decrypt_value
+ plain = decrypt_value(self.encrypted_config)
+ return json.loads(plain) if plain else {}
