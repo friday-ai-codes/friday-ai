@@ -433,7 +433,7 @@ class TokenUsage(models.Model):
  null=True,
  blank=True,
  verbose_name="Provider 类型",
- help_text="LLM Provider 类型，用于按 Provider 分组统计成本",
+ help_text="LLM Provider 类型，用于按 Provider 分组统计成本 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
  )
  # 数据来源
  source = models.CharField(
