@@ -27,7 +27,7 @@ class Conversation(models.Model):
  null=True,
  blank=True,
  verbose_name="Provider 类型",
- help_text="LLM Provider 类型，为空时继承上层配置",
+ help_text="LLM Provider 类型，为空时继承上层配置 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
  )
  is_deleted = models.BooleanField(default=False, db_index=True)
  created_at = models.DateTimeField(auto_now_add=True)
