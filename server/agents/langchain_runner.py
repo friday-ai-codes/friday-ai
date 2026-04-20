@@ -28,6 +28,7 @@ from langchain_core.messages import (
  HumanMessage,
  ToolMessage,
 )
+from langchain_core.messages.utils import count_tokens_approximately, trim_messages
 from langchain_core.tools import BaseTool
 from agents.core.events import (
  BUDGET_WARNING,
@@ -42,9 +43,12 @@ from agents.core.events import (
 from agents.core.result import AgentResult
 from agents.llm_factory import build_chat_model
 from agents.types import TokenUsage
-from services.model_capabilities import ModelCapabilitiesEntry
+from services.model_capabilities import ModelCapabilities, ModelCapabilitiesEntry
 from services.provider_config import ResolvedProviderConfig
 logger = structlog.get_logger(__name__)
+#：上下文安全缓冲硬编码 800 tokens，禁暴露节点配置
+# 决策依据：CONTEXT （预算公式 max_input - max_output - 800 safety_buffer）
+_CONTEXT_SAFETY_BUFFER = 800
 class ContextWindowExceededError(Exception):
  """Context window 预算超限（，继承 Exception 避免掩盖其他 ValueError）。"""
 # ========== helpers（PATTERNS §1.2 / §1.3 —— 与 chat_runner.py 对齐） ==========
@@ -167,11 +171,63 @@ class LangChainAgentRunner:
  def _check_context_window(
  self, messages: list[BaseMessage]
  ) -> tuple[list[BaseMessage], bool]:
- """占位：Plan 落实 strict_error / auto_trim 分派。
- Wave 恒返回 `(messages, False)`，不触发 BUDGET_WARNING；
- Wave 实现后会根据 `context_strategy` 选择抛 `ContextWindowExceededError`
- 或 `trim_messages` 修剪并写入 `self._last_trim_meta`。
+ """ 预算公式：``budget = max_input - max_output - 800 safety_buffer``。
+ 流程（CONTEXT / RESEARCH Example 2 权威模板）：
+ 1. 从 ``config.capabilities``（缺省 ``ModelCapabilities.get``）拿
+ ``max_input_tokens`` / ``max_output_tokens``；
+ 2. ``effective_max_out = config.max_output_tokens or caps.max_output_tokens``；
+ 3. ``budget = max_input - effective_max_out - 800``；
+ 4. ``current = count_tokens_approximately(messages)``；若 ≤ budget 直接透传；
+ 5. 超预算 + ``context_strategy == "strict_error"`` → 抛
+ ``ContextWindowExceededError``（错误消息含 tokens / budget / max_input /
+ max_output / buffer 5 字段）；
+ 6. 超预算 + ``context_strategy == "auto_trim"`` → 用
+ ``trim_messages(strategy="last", include_system=True, allow_partial=False)``
+ 修剪至 ≤ budget；
+ 7. 修剪真的发生（``len(trimmed) < len(messages)``）则写入
+ ``self._last_trim_meta = {trimmed_count, budget, original_tokens}``
+ 并返回 ``(list(trimmed), True)``；否则返回 ``(messages, False)``。
+ 修剪仅在每 turn 进入 ``astream`` 之前做一次，**不**在流中途 resize；
+ BUDGET_WARNING event 由 ``stream`` 在读到 ``trimmed=True`` 时发射。
+ Returns:
+ ``(messages, trimmed_flag)``。``trimmed_flag=True`` 才触发 BUDGET_WARNING。
  """
+ caps = self._config.capabilities or ModelCapabilities.get(
+ str(self._config.resolved.provider_type), self._config.model
+ )
+ effective_max_out = (
+ self._config.max_output_tokens or caps.max_output_tokens
+ )
+ budget = caps.max_input_tokens - effective_max_out - _CONTEXT_SAFETY_BUFFER
+ current = count_tokens_approximately(messages)
+ if current <= budget:
+ return messages, False
+ if self._config.context_strategy == "strict_error":
+ raise ContextWindowExceededError(
+ f"context too long: {current} tokens > budget {budget} "
+ f"(max_input={caps.max_input_tokens}, "
+ f"max_output={effective_max_out}, "
+ f"buffer={_CONTEXT_SAFETY_BUFFER})"
+ )
+ # auto_trim 策略—— RESEARCH Example 2 live venv 实证实现模板
+ trimmed = trim_messages(
+ messages,
+ max_tokens=budget,
+ strategy="last",
+ token_counter=count_tokens_approximately,
+ include_system=True,
+ allow_partial=False,
+ )
+ if len(trimmed) < len(messages):
+ self._last_trim_meta = {
+ "trimmed_count": len(messages) - len(trimmed),
+ "budget": budget,
+ "original_tokens": current,
+ }
+ return list(trimmed), True
+ # trim 未见效（罕见：系统消息已贴近 budget 上限）→ 降级为未触发
+ # Security T- 缓解：下一 turn astream 会由 LangChain 上层触发
+ # 上下文溢出异常，走 except Exception 分支转 ERROR event。
  return messages, False
  def _normalize_prompt(self, prompt: str | list[BaseMessage]) -> list[BaseMessage]:
  """：str → [HumanMessage]；list[BaseMessage] 直接透传。"""
@@ -275,11 +331,19 @@ class LangChainAgentRunner:
  for turn in range(self._config.max_turns):
  messages, trimmed = self._check_context_window(messages)
  if trimmed:
- # Plan auto_trim 策略触发；本 plan stub 永远不进入
+ # Plan auto_trim 策略触发 —— BUDGET_WARNING
+ # data 字段锁定：warning_type / trimmed_count / budget /
+ # original_tokens / model / session_id（前端 SSE 合约冻结）
+ warn_meta = self._last_trim_meta
  yield AgentEvent(
  type=BUDGET_WARNING,
  data=_inject_metadata(
- {"warning_type": "context_trimmed"},
+ {
+ "warning_type": "context_trimmed",
+ "trimmed_count": warn_meta.get("trimmed_count", 0),
+ "budget": warn_meta.get("budget", 0),
+ "original_tokens": warn_meta.get("original_tokens", 0),
+ },
  self._config.model,
  self._config.session_id,
  ),
@@ -406,6 +470,12 @@ class LangChainAgentRunner:
  session_id=self._config.session_id,
  max_turns=self._config.max_turns,
  )
+ except ContextWindowExceededError:
+ # /：strict_error 策略必须向外抛出 ContextWindowExceededError，
+ # **不**降级为 ERROR event —— 调用方（Phase AIAgentBaseNode）需要
+ # 区分"预算超限需降级引导"与"LLM provider 异常"两类错误分支。
+ # 该异常必须先于下方 `except Exception` 捕获，否则会被吞为 ERROR event。
+ raise
  except asyncio.CancelledError:
  # S-4 + Pitfall F：partial text 保留 + MESSAGE_COMPLETE(status='interrupted') + 必须 raise
  partial_text = "".join(accumulated_text)
