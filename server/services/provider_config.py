@@ -340,12 +340,16 @@ async def _resolve_credential_async(
  return None, "system"
 async def _resolve_from_system_setting_legacy(
  provider_type: ProviderType,
+ source: str = "system",
 ) -> ResolvedProviderConfig | None:
  """SystemSetting 兼容降级层（仅 Anthropic）。
  D3 锁定：仅 provider_type == ANTHROPIC 时尝试从
  SystemSetting.ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL 读取；
  其他 Provider 不降级（v21.0 不在 SystemSetting 引入新 key）。
  Phase 完全清理 SystemSetting 后移除此函数。
+ source 参数：沿用调用方（aresolve_or_error）解析出的节点/对话/项目/系统 source，
+ 保持旧 aresolve 向后兼容契约（`node_config["provider_type"]="anthropic"` 走降级
+ 时 source 仍需为 "node"）。
  """
  if provider_type != ProviderType.ANTHROPIC:
  return None
@@ -360,7 +364,7 @@ async def _resolve_from_system_setting_legacy(
  provider_type=ProviderType.ANTHROPIC,
  api_key=api_key,
  base_url=base_url,
- source="system",
+ source=source,
  credential_id=None,
  extra={},
  )
@@ -406,67 +410,163 @@ class ProviderConfigService:
  source=source,
  )
  @staticmethod
+ async def aresolve_or_error(
+ node_config: dict[str, Any] | None = None,
+ conversation: Any | None = None,
+ project: Any | None = None,
+ ) -> AResolveResult:
+ """ Result 模式入口。不抛异常，返回 ResolvedProviderConfig | ProviderMissingError。
+ 四层优先级：节点 > 对话 > 项目 > 系统。
+ 系统级未命中且 provider=anthropic 时尝试 SystemSetting.ANTHROPIC_* 兼容降级。
+ 全部未命中或 Pydantic 校验失败 → ProviderMissingError。
+ """
+ # 1. 复用现有 _resolve_provider_type 决定 provider_type（不重写，沿用 sync 同层算法）
+ # _resolve_provider_type 的前三层（node/conversation/project）不访问 DB；
+ # 第四层会调用 get_setting 读 SystemSetting —— 这里传入 sync 版本前会先兜底
+ # 异步读系统级 DEFAULT_PROVIDER_TYPE。
+ # 同步推导调用方 source（node/conversation/project/system），
+ # 用于 SystemSetting 降级路径保持向后兼容（aresolve 旧契约）。
+ caller_source = "system"
+ try:
+ if node_config and node_config.get("provider_type"):
+ provider_type = _parse_provider_type(node_config["provider_type"])
+ caller_source = "node"
+ elif conversation is not None and getattr(
+ conversation, "provider_type", None
+ ):
+ provider_type = _parse_provider_type(conversation.provider_type)
+ caller_source = "conversation"
+ elif project is not None and getattr(
+ project, "default_provider_type", None
+ ):
+ provider_type = _parse_provider_type(project.default_provider_type)
+ caller_source = "project"
+ else:
+ system_pt = await _get_setting_value_async(
+ SettingKeys.DEFAULT_PROVIDER_TYPE
+ )
+ provider_type = (
+ _parse_provider_type(system_pt) if system_pt else ProviderType.ANTHROPIC
+ )
+ caller_source = "system"
+ except ProviderConfigError as e:
+ # provider_type 字段非法
+ return ProviderMissingError(
+ missing_provider="",
+ recommended_action=str(e),
+ source_attempted="system",
+ )
+ # 2. 四层优先级查 ProviderCredential
+ credential, source = await _resolve_credential_async(
+ provider_type, node_config, conversation, project
+ )
+ # 3. 系统级未命中 → 尝试 SystemSetting 兼容降级（仅 Anthropic）
+ # 降级时 source 沿用 caller_source（向后兼容旧 aresolve 的 source 语义：
+ # "provider_type 来自哪一层"；ProviderCredential 命中路径 source 描述
+ # "凭证来自哪一层"）
+ if credential is None:
+ legacy = await _resolve_from_system_setting_legacy(
+ provider_type, source=caller_source
+ )
+ if legacy is not None:
+ logger.info(
+ "provider_config_resolved_via_legacy_systemsetting",
+ provider_type=str(provider_type),
+ )
+ return legacy
+ # 4. 全部未命中 → 结构化错误
+ metadata = PROVIDER_REGISTRY[provider_type]
+ return ProviderMissingError(
+ missing_provider=str(provider_type),
+ recommended_action=(
+ f"{metadata.display_name} 凭据未配置，"
+ f"请在系统设置添加 {metadata.display_name} 凭证"
+ ),
+ source_attempted=source,
+ )
+ # 5. 解密 + Pydantic credential_schema 校验
+ # T- / T- 缓解：失败时不把 ValidationError 内容写入日志
+ try:
+ raw_config = credential.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[provider_type].credential_schema
+ validated = schema_cls.model_validate(raw_config)
+ except ValidationError:
+ # 不在 logger 中写 raw_config 或 ValidationError.errors 的 input_value（T-）
+ logger.error(
+ "provider_credential_schema_invalid",
+ provider=str(provider_type),
+ credential_id=str(credential.id),
+ error_summary="schema_validate_failed",
+ )
+ return ProviderMissingError(
+ missing_provider=str(provider_type),
+ recommended_action=(
+ f"凭证字段校验失败（{PROVIDER_REGISTRY[provider_type].display_name}），"
+ f"请检查必填字段"
+ ),
+ source_attempted=source,
+ )
+ except Exception as e:
+ # 解密失败 / JSON parse 失败
+ logger.error(
+ "provider_credential_decrypt_failed",
+ provider=str(provider_type),
+ credential_id=str(credential.id),
+ error_type=type(e).__name__,
+ )
+ return ProviderMissingError(
+ missing_provider=str(provider_type),
+ recommended_action=(
+ f"凭证解密失败（{PROVIDER_REGISTRY[provider_type].display_name}）"
+ ),
+ source_attempted=source,
+ )
+ # 6. 装入 ResolvedProviderConfig（SecretStr → 明文仅在最终返回时 unwrap）
+ api_key_value = ""
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ api_key_value = (
+ secret.get_secret_value if hasattr(secret, "get_secret_value") else str(secret)
+ )
+ base_url_value = (
+ getattr(validated, "base_url", "")
+ or PROVIDER_REGISTRY[provider_type].default_base_url
+ )
+ # extra 字段：剔除 api_key / base_url / bearer_token 等已被解构字段，
+ # 剩余 Provider-specific 字段（如 OpenAI organization_id）
+ extra: dict[str, Any] = {}
+ dumped = validated.model_dump(exclude={"api_key", "base_url", "bearer_token"})
+ for k, v in dumped.items:
+ extra[k] = v
+ logger.info(
+ "provider_config_resolved",
+ provider_type=str(provider_type),
+ source=source,
+ credential_id=str(credential.id),
+ )
+ return ResolvedProviderConfig(
+ provider_type=provider_type,
+ api_key=api_key_value,
+ base_url=base_url_value,
+ source=source,
+ credential_id=credential.id,
+ extra=extra,
+ )
+ @staticmethod
  async def aresolve(
  node_config: dict[str, Any] | None = None,
  conversation: Any | None = None,
  project: Any | None = None,
  ) -> ResolvedProviderConfig:
- """异步解析 Provider 配置。
- Args:
- node_config: 节点级配置（含 provider_type 键）
- conversation: 对话实例（含 provider_type 字段）
- project: 项目实例（含 default_provider_type 字段）
- Returns:
- ResolvedProviderConfig 配置解析结果
+ """向后兼容：失败时仍抛 ProviderConfigError。
+ ChatAnthropicRunner / orchestration/coding_graph.py 等现有调用方零改动。
+ 新代码（Phase/229）应直接用 aresolve_or_error 走 Result 模式。
  Raises:
- ProviderConfigError: 配置缺失或凭据未配置
+ ProviderConfigError: 配置缺失或凭据校验失败
  """
- # 1-3 层：同步检查（不涉及 DB）
- if node_config and node_config.get("provider_type"):
- provider_type = _parse_provider_type(node_config["provider_type"])
- source = "node"
- elif conversation is not None and getattr(conversation, "provider_type", None):
- provider_type = _parse_provider_type(conversation.provider_type)
- source = "conversation"
- elif project is not None and getattr(project, "default_provider_type", None):
- provider_type = _parse_provider_type(project.default_provider_type)
- source = "project"
- else:
- # 4. 系统级（需要异步 DB 查询）
- system_pt = await _get_setting_value_async(SettingKeys.DEFAULT_PROVIDER_TYPE)
- if system_pt:
- provider_type = _parse_provider_type(system_pt)
- else:
- # 默认使用 Anthropic
- provider_type = ProviderType.ANTHROPIC
- source = "system"
- # 凭据解析（需要异步 DB 查询）
- metadata = PROVIDER_REGISTRY[provider_type]
- display_name = metadata.display_name
- env_key = metadata.env_key
- setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
- if not setting_key:
- raise ProviderConfigError(
- f"{display_name} 的凭据键 {env_key} 没有对应的系统设置映射"
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config, conversation, project
  )
- credential = await _get_setting_value_async(setting_key)
- if not credential:
- raise ProviderConfigError(
- f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
- )
- # base_url: 系统设置优先，回退到注册表默认值
- base_url = (
- await _get_setting_value_async(SettingKeys.ANTHROPIC_BASE_URL)
- or metadata.default_base_url
- )
- logger.info(
- "provider_config_resolved",
- provider_type=str(provider_type),
- source=source,
- )
- return ResolvedProviderConfig(
- provider_type=provider_type,
- api_key=credential,
- base_url=base_url,
- source=source,
- )
+ if isinstance(result, ProviderMissingError):
+ raise ProviderConfigError(result.recommended_action or "Provider 凭证缺失")
+ return result
