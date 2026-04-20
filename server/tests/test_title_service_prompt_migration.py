@@ -1,48 +1,71 @@
-"""Phase: title_service 迁移三态回退测试 + T- 注入防护。"""
+"""Phase / Phase: title_service prompt 迁移字节级等价测试。
+Phase（Plan）迁移后：
+- 原 Anthropic SDK 客户端拦截改为 `build_chat_model` seam + `FakeChatModel`
+- 保留字节级 hash 比对能力：通过 `_CapturingFake` 子类在 `ainvoke` 时捕获
+ `HumanMessage.content`，验证 3 个分支（DB 命中 / DB 空 / PROMPT_CENTER_DISABLED_KEYS）
+ 与 fallback `.replace('{{user_message}}', ...)` 字节级等价
+- T- 注入防护（变量值中 `{{ }}` HTML entity 替换）不变
+"""
 from __future__ import annotations
 from typing import Any
 import pytest
+from langchain_core.messages import HumanMessage
 from chat.models import Conversation, Message
 from chat.title_service import TITLE_PROMPT, generate_title
 from projects.models import Project
 from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope
+from services.provider_config import ProviderType, ResolvedProviderConfig
+from tests.helpers.fake_chat_model import FakeChatModel
+def _resolved_anthropic_stub -> ResolvedProviderConfig:
+ return ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="sk-fake",
+ base_url="https://api.anthropic.com",
+ source="system",
+ )
 @pytest.fixture
-def mock_anthropic(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
- """拦截 anthropic.AsyncAnthropic 并记录最后一次 messages.create 的 content。"""
+def mock_langchain(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+ """ 迁移后的 prompt 迁移 fixture：捕获 ainvoke 收到的 HumanMessage.content。
+ 关键：`_CapturingFake.ainvoke` 捕获 `messages[0].content` 字节级字符串，
+ 等价于原 `anthropic messages.create` kwargs["messages"][0]["content"] 的值。
+ """
  captured: dict[str, Any] = {}
- class _Block:
- def __init__(self, text: str) -> None:
- self.text = text
- class _Response:
- def __init__(self) -> None:
- self.content = [_Block("标题文本")]
- class _Messages:
- async def create(self, **kwargs: Any) -> _Response:
- captured["last_content"] = kwargs["messages"][0]["content"]
- return _Response
- class _Client:
- def __init__(self, *args: Any, **kwargs: Any) -> None:
- self.messages = _Messages
- import anthropic
- monkeypatch.setattr(anthropic, "AsyncAnthropic", _Client)
- # 注入 api_key 与 model
+ class _CapturingFake(FakeChatModel):
+ async def ainvoke(
+ self, input_: Any, config: Any = None, **kwargs: Any
+ ) -> Any:
+ if isinstance(input_, list) and input_:
+ last = input_[-1]
+ captured["last_content"] = getattr(last, "content", "") or str(last)
+ return await super.ainvoke(input_, config, **kwargs)
+ fake = _CapturingFake(responses=["标题文本"])
+ monkeypatch.setattr(
+ "chat.title_service.build_chat_model",
+ lambda *a, **kw: fake,
+ )
+ monkeypatch.setattr(
+ "chat.title_service.ProviderConfigService.aresolve_or_error",
+ _make_resolve_stub,
+ )
  from chat import title_service as ts_module
  async def _fake_setting(key: Any) -> str | None:
- # 任意 key 都返回固定测试值（SettingKeys 是小写字符串）
  key_str = str(key).lower
- if "api_key" in key_str:
- return "fake-key"
- if "base_url" in key_str:
- return None
  if "model" in key_str:
  return "claude-3-haiku"
  return None
  monkeypatch.setattr(ts_module, "aget_setting_value", _fake_setting)
  return captured
+def _make_resolve_stub -> Any:
+ """构造 aresolve_or_error 的 async stub。"""
+ async def _stub(
+ node_config: Any = None, conversation: Any = None, project: Any = None
+ ) -> ResolvedProviderConfig:
+ return _resolved_anthropic_stub
+ return _stub
 @pytest.mark.django_db(transaction=True)
 class TestTitleServiceMigration:
- """title_service 三态 + 注入防护。"""
+ """title_service 三态 + 注入防护（ 迁移后）。"""
  @pytest.fixture(autouse=True)
  def _ensure_title_seed(self, db: Any) -> None:
  """每个测试开始前确保 AUX_TITLE_GENERATION seed 存在（避免前测 delete 污染）。"""
@@ -86,14 +109,14 @@ class TestTitleServiceMigration:
  async def test_db_hit_uses_db_body(
  self,
  conversation: Conversation,
- mock_anthropic: dict[str, Any],
+ mock_langchain: dict[str, Any],
  monkeypatch: pytest.MonkeyPatch,
  ) -> None:
  """DB 命中：LLM 收到的 prompt 来自 DB body（含 XML tag 包裹变量）。"""
  monkeypatch.delenv("PROMPT_CENTER_DISABLED_KEYS", raising=False)
  # pytest-django 已通过 0002 migration seed AUX_TITLE_GENERATION —— 直接调用
  await generate_title(str(conversation.id), "帮我实现登录功能")
- content = mock_anthropic["last_content"]
+ content = mock_langchain["last_content"]
  # DB 路径变量被 XML tag 包裹（_sanitize_variables 输出）
  assert "<user_message>" in content
  assert "</user_message>" in content
@@ -102,7 +125,7 @@ class TestTitleServiceMigration:
  async def test_db_empty_returns_fallback(
  self,
  conversation: Conversation,
- mock_anthropic: dict[str, Any],
+ mock_langchain: dict[str, Any],
  monkeypatch: pytest.MonkeyPatch,
  ) -> None:
  """DB 空：走 fallback 路径，与 .replace('{{user_message}}', ...) 字节级等价。"""
@@ -113,21 +136,21 @@ class TestTitleServiceMigration:
  scope=PromptScope.SYSTEM,
  ).adelete
  await generate_title(str(conversation.id), "hello")
- content = mock_anthropic["last_content"]
+ content = mock_langchain["last_content"]
  expected = TITLE_PROMPT.replace("{{user_message}}", "hello")
  assert content == expected
  @pytest.mark.asyncio
  async def test_flag_disabled_returns_fallback(
  self,
  conversation: Conversation,
- mock_anthropic: dict[str, Any],
+ mock_langchain: dict[str, Any],
  monkeypatch: pytest.MonkeyPatch,
  ) -> None:
  """PROMPT_CENTER_DISABLED_KEYS 命中：即使 DB 有记录也走 fallback。"""
  monkeypatch.setenv("PROMPT_CENTER_DISABLED_KEYS", "aux.title_generation")
  # DB 仍有 seed 记录（不删）
  await generate_title(str(conversation.id), "flag test")
- content = mock_anthropic["last_content"]
+ content = mock_langchain["last_content"]
  expected = TITLE_PROMPT.replace("{{user_message}}", "flag test")
  assert content == expected
  assert "<user_message>" not in content # 证明没走 DB 命中路径
@@ -135,7 +158,7 @@ class TestTitleServiceMigration:
  async def test_title_prompt_injection_sanitized(
  self,
  conversation: Conversation,
- mock_anthropic: dict[str, Any],
+ mock_langchain: dict[str, Any],
  monkeypatch: pytest.MonkeyPatch,
  ) -> None:
  """T-: 变量值中的 {{ }} 应被 HTML entity 替换，不二次渲染。"""
@@ -147,6 +170,40 @@ class TestTitleServiceMigration:
  ).afirst
  assert prompt is not None, "seed should have provided AUX_TITLE_GENERATION"
  await generate_title(str(conversation.id), "{{evil}}")
- content = mock_anthropic["last_content"]
+ content = mock_langchain["last_content"]
  assert "{{evil}}" not in content # 裸 {{evil}} 不得出现
  assert "&#123;&#123;evil&#125;&#125;" in content # 被 HTML entity 替换
+ @pytest.mark.asyncio
+ async def test_passes_human_message_to_langchain(
+ self,
+ conversation: Conversation,
+ mock_langchain: dict[str, Any],
+ monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+ """：验证 ainvoke 输入是 [HumanMessage(content=rendered_prompt)] 单一路径。
+ 保证 Phase 字节级 hash 等价契约：title_service 不引入
+ ChatPromptTemplate 二次封装，保留 rendered_prompt → HumanMessage 透传。
+ """
+ captured_inputs: list[Any] =
+ # 再包一层捕获 input_ 类型
+ orig_ainvoke_setter = mock_langchain
+ class _TypeCheckingFake(FakeChatModel):
+ async def ainvoke(
+ self, input_: Any, config: Any = None, **kwargs: Any
+ ) -> Any:
+ captured_inputs.append(input_)
+ return await super.ainvoke(input_, config, **kwargs)
+ fake = _TypeCheckingFake(responses=["ok"])
+ monkeypatch.setattr(
+ "chat.title_service.build_chat_model",
+ lambda *a, **kw: fake,
+ )
+ await generate_title(str(conversation.id), "hello")
+ assert len(captured_inputs) == 1
+ input_ = captured_inputs[0]
+ assert isinstance(input_, list)
+ assert len(input_) == 1
+ assert isinstance(input_[0], HumanMessage)
+ # 兼容中文 prompt 的 str 或 list content（本路径应是 str）
+ assert isinstance(input_[0].content, str)
+ assert "hello" in input_[0].content

@@ -1,15 +1,30 @@
 """异步对话标题自动生成服务。
 首条 AI 回复完成后 fire-and-forget 调用，
 使用小模型生成简短中文标题。
+Phase（Plan）：调用链从旧 Anthropic SDK 直调迁至
+``agents.llm_factory.build_chat_model(resolved).ainvoke(...)`` 统一 seam 层。
+原因 / 收益：
+- 与 LangChainAgentRunner / AIAgentBaseNode 共享同一工厂入口，Provider 切换零改动
+- 测试 mock 点从旧 SDK 客户端收敛到 ``build_chat_model`` 单点
+- 凭证解析走 ``ProviderConfigService.aresolve_or_error``（ Result 模式），
+ 四层优先级 + SystemSetting 兼容降级自理
+- rendered_prompt 继续通过 ``HumanMessage(content=...)`` 单路径透传，
+ 字节级 hash 等价契约不变
 """
 from __future__ import annotations
 from typing import Final
-import anthropic
 import structlog
+from langchain_core.messages import HumanMessage
+from agents.llm_factory import build_chat_model
 from chat.models import Conversation, Message
 from chat.services import aget_setting_value
 from prompts.keys import PromptSlugs
 from prompts.services import render_prompt
+from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ProviderType,
+)
 from system.models import SettingKeys
 logger = structlog.get_logger(__name__)
 # 标题生成使用系统配置的默认模型（与对话模型一致）
@@ -37,7 +52,7 @@ async def generate_title(
  user_message: str,
 ) -> str | None:
  """异步生成对话标题并更新到数据库。
- 使用 anthropic.AsyncAnthropic 直接调用 API 生成简短中文标题，
+ 使用 ``build_chat_model(resolved).ainvoke(...)`` 统一 seam 层生成简短中文标题，
  失败时静默处理。此函数设计为 fire-and-forget 调用。
  Args:
  conversation_id: 对话 UUID
@@ -46,41 +61,57 @@ async def generate_title(
  生成的标题字符串，失败时返回 None
  """
  try:
- # 获取 API 配置
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
- if not api_key:
- logger.warning("title_generation_skipped", reason="no_api_key")
+ # Phase：走 ProviderConfigService.aresolve_or_error（ Result 模式）
+ # 四层优先级（node/conversation/project/system）+ SystemSetting 兼容降级自理
+ resolved = await ProviderConfigService.aresolve_or_error
+ if isinstance(resolved, ProviderMissingError):
+ logger.warning(
+ "title_generation_skipped",
+ reason="no_credential",
+ missing_provider=resolved.missing_provider,
+ )
  return None
- # 使用系统配置的模型，回退到轻量默认值
- model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or TITLE_MODEL_FALLBACK
- # 直接使用 Anthropic SDK 调用
- client_kwargs: dict[str, str] = {"api_key": api_key}
- if base_url:
- client_kwargs["base_url"] = base_url
- client = anthropic.AsyncAnthropic(**client_kwargs)
+ # title_service 场景强制走 Anthropic 小模型；若 resolve 结果非 Anthropic，走 fallback
+ if resolved.provider_type != ProviderType.ANTHROPIC:
+ logger.warning(
+ "title_generation_skipped",
+ reason="non_anthropic_provider",
+ provider_type=str(resolved.provider_type),
+ )
+ return None
+ # 使用系统配置的 Anthropic 模型，回退到轻量默认值
+ model = (
+ await aget_setting_value(SettingKeys.ANTHROPIC_MODEL)
+ or TITLE_MODEL_FALLBACK
+ )
  # Phase: 走 Prompt Center 渲染，fallback 保留原常量（ 双轨）
+ # rendered_prompt 字节级 hash 等价契约不变（ Phase 会再验一次）
  rendered_prompt = await render_prompt(
  PromptSlugs.AUX_TITLE_GENERATION,
  project_id=None, # title_service 无项目上下文
  variables={"user_message": user_message[:500]},
  fallback=TITLE_PROMPT,
  )
- response = await client.messages.create(
- model=model,
- max_tokens=50,
- messages=[{
- "role": "user",
- "content": rendered_prompt,
- }],
+ # Phase：build_chat_model seam + 单 turn ainvoke（非 streaming）
+ chat_model = build_chat_model(
+ resolved,
+ model,
+ max_output_tokens=50,
+ streaming=False,
  )
- # 确保首个内容块是文本块
- first_content = response.content[0]
- if hasattr(first_content, 'text'):
- title = first_content.text.strip[:200]
+ ai_msg = await chat_model.ainvoke([HumanMessage(content=rendered_prompt)])
+ # ai_msg.content 可能是 str 或 content_blocks 列表；统一转 str 后 strip
+ content = ai_msg.content
+ if isinstance(content, list):
+ # content_blocks 列表 → 拼接首个 text block
+ text_parts: list[str] =
+ for block in content:
+ if isinstance(block, dict) and block.get("type") == "text":
+ text_parts.append(str(block.get("text", "")))
+ title_raw = "".join(text_parts)
  else:
- logger.warning("title_generation_non_text_content", conversation_id=conversation_id)
- return None
+ title_raw = str(content) if content else ""
+ title = title_raw.strip[:200]
  if not title:
  logger.warning("title_generation_empty", conversation_id=conversation_id)
  return None

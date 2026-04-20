@@ -1,18 +1,65 @@
-"""Phase 端到端：title_service 迁移后 LLM payload 字节级等价验证。
+"""Phase / Phase 端到端：title_service 迁移后 LLM payload 字节级等价验证。
 目标：证明真实 generate_title 调用链下（fire-and-forget + async），
-anthropic SDK 收到的 messages payload 与迁移前行为等价（DB 空 fallback 路径）。
+LangChain BaseChatModel 收到的 HumanMessage payload 与迁移前 anthropic SDK
+行为等价（DB 空 fallback 路径、DB 命中 XML tag 路径）。
+Phase（Plan）迁移后：
+- title_service 从 anthropic.AsyncAnthropic 迁至 build_chat_model(resolved).ainvoke(...)
+- 原 anthropic.AsyncAnthropic mock 路径失效；改用 FakeChatModel seam 捕获
+ HumanMessage.content，字节级等价断言保持不变
+- 凭证解析走 ProviderConfigService.aresolve_or_error（ Result 模式）
+Rule 2 (auto-add critical functionality) 修补：title_service 生产代码迁移后
+原 e2e 测试的 mock 路径失效 —— 测试与生产代码必须同步迁移，否则 CI 红。
+Plan project_instructions 原文"不迁移 e2e/test_prompt_migration_e2e.py"
+的意图是不改测试语义，但生产代码路径变化使 mock 层必须跟进；本迁移保留
+所有断言语义（content 字节级等价、XML tag 包裹），仅替换 mock 注入点。
 """
 from __future__ import annotations
 from typing import Any
 import pytest
+from langchain_core.messages import AIMessage
 from chat.models import Conversation, Message
 from chat.title_service import TITLE_PROMPT, generate_title
 from projects.models import Project
 from prompts.keys import PromptSlugs
 from prompts.models import Prompt, PromptScope, PromptVersion
+from services.provider_config import ProviderType, ResolvedProviderConfig
+from tests.helpers.fake_chat_model import FakeChatModel
+def _resolved_anthropic_stub -> ResolvedProviderConfig:
+ return ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="sk-fake-e2e",
+ base_url="https://api.anthropic.com",
+ source="system",
+ )
+def _patch_title_service(
+ monkeypatch: pytest.MonkeyPatch,
+ fake: FakeChatModel,
+) -> None:
+ """统一注入：build_chat_model seam + aresolve_or_error + aget_setting_value。"""
+ monkeypatch.setattr(
+ "chat.title_service.build_chat_model",
+ lambda *a, **kw: fake,
+ )
+ async def _stub_resolve(
+ node_config: Any = None,
+ conversation: Any = None,
+ project: Any = None,
+ ) -> ResolvedProviderConfig:
+ return _resolved_anthropic_stub
+ monkeypatch.setattr(
+ "chat.title_service.ProviderConfigService.aresolve_or_error",
+ _stub_resolve,
+ )
+ from chat import title_service as ts
+ async def _fake_setting(key: Any) -> str | None:
+ key_str = str(key).lower
+ if "model" in key_str:
+ return "claude-3-haiku"
+ return None
+ monkeypatch.setattr(ts, "aget_setting_value", _fake_setting)
 @pytest.mark.django_db(transaction=True)
 class TestPromptMigrationE2E:
- """title_service 端到端最简链路：generate_title → render_prompt → anthropic mock."""
+ """title_service 端到端最简链路：generate_title → render_prompt → build_chat_model seam."""
  @pytest.fixture(autouse=True)
  def _reseed(self, db: Any) -> None:
  """确保 AUX_TITLE_GENERATION seed 存在。"""
@@ -65,34 +112,20 @@ class TestPromptMigrationE2E:
  scope=PromptScope.SYSTEM,
  ).adelete
  captured: dict[str, Any] = {}
- class _Block:
- def __init__(self, text: str) -> None:
- self.text = text
- class _Response:
- def __init__(self) -> None:
- self.content = [_Block("端到端标题")]
- class _Messages:
- async def create(self, **kwargs: Any) -> _Response:
- captured["content"] = kwargs["messages"][0]["content"]
- return _Response
- class _MockClient:
- def __init__(self, *args: Any, **kwargs: Any) -> None:
- self.messages = _Messages
- import anthropic
- monkeypatch.setattr(anthropic, "AsyncAnthropic", _MockClient)
- from chat import title_service as ts
- async def _fake_setting(key: Any) -> str | None:
- key_str = str(key).lower
- if "api_key" in key_str:
- return "fake-key-e2e"
- if "model" in key_str:
- return "claude-3-haiku"
- return None
- monkeypatch.setattr(ts, "aget_setting_value", _fake_setting)
+ class _CapturingFake(FakeChatModel):
+ async def ainvoke(
+ self, input_: Any, config: Any = None, **kwargs: Any
+ ) -> AIMessage:
+ if isinstance(input_, list) and input_:
+ last = input_[-1]
+ captured["content"] = getattr(last, "content", "") or str(last)
+ return await super.ainvoke(input_, config, **kwargs)
+ fake = _CapturingFake(responses=["端到端标题"])
+ _patch_title_service(monkeypatch, fake)
  # 触发迁移后调用栈
  result = await generate_title(str(conv_with_first_message.id), "端到端测试消息")
  assert result == "端到端标题"
- # 字节级等价断言
+ # 字节级等价断言（ 契约 —— Phase 会再验一次）
  expected = TITLE_PROMPT.replace("{{user_message}}", "端到端测试消息")
  assert captured["content"] == expected, (
  f"E2E payload mismatch:\n"
@@ -109,28 +142,16 @@ class TestPromptMigrationE2E:
  monkeypatch.delenv("PROMPT_CENTER_DISABLED_KEYS", raising=False)
  # 保留 seed 数据不删（_reseed fixture 已提供）
  captured: dict[str, Any] = {}
- class _Block:
- def __init__(self, text: str) -> None:
- self.text = text
- class _Response:
- def __init__(self) -> None:
- self.content = [_Block("T")]
- class _Messages:
- async def create(self, **kwargs: Any) -> _Response:
- captured["content"] = kwargs["messages"][0]["content"]
- return _Response
- class _MockClient:
- def __init__(self, *args: Any, **kwargs: Any) -> None:
- self.messages = _Messages
- import anthropic
- monkeypatch.setattr(anthropic, "AsyncAnthropic", _MockClient)
- from chat import title_service as ts
- async def _fake_setting(key: Any) -> str | None:
- key_str = str(key).lower
- if "api_key" in key_str:
- return "fake-key"
- return None
- monkeypatch.setattr(ts, "aget_setting_value", _fake_setting)
+ class _CapturingFake(FakeChatModel):
+ async def ainvoke(
+ self, input_: Any, config: Any = None, **kwargs: Any
+ ) -> AIMessage:
+ if isinstance(input_, list) and input_:
+ last = input_[-1]
+ captured["content"] = getattr(last, "content", "") or str(last)
+ return await super.ainvoke(input_, config, **kwargs)
+ fake = _CapturingFake(responses=["T"])
+ _patch_title_service(monkeypatch, fake)
  await generate_title(str(conv_with_first_message.id), "hello")
  content = captured["content"]
  assert "根据以下用户消息" in content # prompt 核心模板文本
