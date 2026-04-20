@@ -70,6 +70,9 @@ dependencies = [
  "langgraph-checkpoint-sqlite>=3.0.3",
  "langchain>=1.2.15",
  "langchain-anthropic>=1.3.5",
+ "langchain-openai>=1.1.14,<2.0",
+ "langchain-google-genai>=4.2.1,<5.0",
+ "langchain-ollama>=1.1.0,<2.0",
 ]
 [build-system]
 requires = ["hatchling"]
@@ -162,6 +165,10 @@ module = [
 ]
 # 服务层放宽检查
 disable_error_code = ["attr-defined", "arg-type", "assignment", "misc", "var-annotated"]
+[[tool.mypy.overrides]]
+module = ["agents.llm_factory"]
+# Phase：service-provider adapter 宽松域（ / 限定单模块，禁止扩散）
+disable_error_code = ["attr-defined", "arg-type", "assignment"]
 [[tool.mypy.overrides]]
 module = [
  "*.urls",
