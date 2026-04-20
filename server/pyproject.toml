@@ -88,13 +88,15 @@ dev = [
  "factory-boy>=3.3",
  "types-docker>=7.1.0.20260109",
  "django-stubs-ext>=5.2.8",
+ "respx>=0.21.0", # Phase: 5 Provider 健康检查 httpx mock
+ "pytest-socket>=0.7.0", # Phase: --disable-socket 强制隔离外部 HTTP
 ]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "friday.settings"
 pythonpath = ["."]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --disable-socket --allow-unix-socket"
 asyncio_mode = "auto"
 [tool.coverage.run]
 source = ["friday"]
