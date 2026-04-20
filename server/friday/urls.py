@@ -29,6 +29,8 @@ api_patterns = [
  path("settings/", include("system.urls")),
  # System-level health and status
  path("system/", include("system.urls_system")),
+ # Phase：Provider 凭证（仅 test-connection；CRUD 归 Phase）
+ path("providers/", include("system.urls_providers")),
  # OIDC authentication
  path("oidc/", include("identity.urls")),
  # Chat (LLM conversation)

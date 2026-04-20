@@ -1,10 +1,12 @@
 """Settings views."""
+from uuid import UUID
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from permissions.api_permissions import IsSuperUser
-from .models import SettingKeys, SystemSetting
+from .models import ProviderCredential, SettingKeys, SystemSetting
 from .serializers import (
  SystemSettingCreateSerializer,
  SystemSettingSerializer,
@@ -125,4 +127,41 @@ class FeishuIMTestView(APIView):
  return Response({
  "success": False,
  "message": f"发送失败: {e!s}",
+ })
+# ============================================================================
+# Phase：ProviderCredential 健康检查端点
+# ============================================================================
+class ProviderCredentialTestConnectionView(APIView):
+ """POST /api/providers/credentials/{credential_id}/test-connection/
+ 对指定 ProviderCredential 触发一次健康检查；上游 5s httpx timeout；
+ 同次往返原子写回 last_health_check_at/status/error 三字段；
+ Ollama 路径额外写 available_models（ 协同）。
+ 权限：本 phase 用 IsAuthenticated；Phase 升级到
+ IsSuperUserOrProjectAdmin + ProjectScopedQuerysetMixin 过滤。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(self, request, credential_id: UUID): # type: ignore[no-untyped-def]
+ from services.provider_health import health_check
+ try:
+ cred = await ProviderCredential.objects.aget(id=credential_id)
+ except ProviderCredential.DoesNotExist:
+ return Response(
+ {"detail": "Credential not found."},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ result = await health_check(cred)
+ # 健康检查完成后 aupdate 已写回三字段；重新读取最新 last_health_check_at
+ refreshed = await ProviderCredential.objects.aget(id=credential_id)
+ return Response({
+ "ok": result.ok,
+ "status": result.status,
+ "latency_ms": result.latency_ms,
+ "error": result.error,
+ "last_check_at": (
+ refreshed.last_health_check_at.isoformat
+ if refreshed.last_health_check_at
+ else None
+ ),
+ # 仅 Ollama 路径非 None；其他 Provider 保持 null
+ "available_models": result.available_models,
  })
