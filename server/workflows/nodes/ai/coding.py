@@ -10,10 +10,12 @@ import asyncio
 import re
 import uuid
 from typing import Any, ClassVar, Literal
+from urllib.parse import urlparse
 import structlog
 from common.encryption import decrypt_value
 from repositories.models import Repository
 from services.git_platform import MRCreateRequest, MRCreateResult, get_git_platform_client
+from services.provider_config import ProviderConfigError
 from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.nodes.base import (
  BaseNode,
@@ -40,6 +42,31 @@ def _slugify(text: str, max_length: int = 30) -> str:
  slug = re.sub(r"[^a-zA-\s-]", "", text)
  slug = re.sub(r"[\s_]+", "-", slug).strip("-").lower
  return slug[:max_length] if slug else "task"
+def _validate_anthropic_base_url(url: str) -> str:
+ """ 锁定的最小校验：scheme 白名单（http/https）+ 非空 + 去首尾空格。
+ 允许用户自部署的 Anthropic 兼容网关（Moonshot / LiteLLM / OpenRouter 等）；
+ 空输入直接返回空字符串（调用方按 不注入 metadata env_FRIDAY_TASK_CLAUDE_BASE_URL 键）。
+ Args:
+ url: 用户填写的 base_url（来自 ResolvedProviderConfig.base_url）。
+ Returns:
+ trimmed 后的合法 URL 字符串，或空串。
+ Raises:
+ ProviderConfigError: scheme 不在 {http, https} 白名单 或 缺少 host
+ （T- 缓解：阻断 javascript: / file:// 等注入容器）。
+ """
+ stripped = (url or "").strip
+ if not stripped:
+ return ""
+ parsed = urlparse(stripped)
+ if parsed.scheme not in {"http", "https"}:
+ raise ProviderConfigError(
+ f"ANTHROPIC_BASE_URL scheme 必须是 http 或 https，实际：{parsed.scheme!r}"
+ )
+ if not parsed.netloc:
+ raise ProviderConfigError(
+ f"ANTHROPIC_BASE_URL 缺少 host：{stripped!r}"
+ )
+ return stripped
 @register_node
 class AICodingNode(SubStepMixin, BaseNode):
  """AI 编码执行节点。
