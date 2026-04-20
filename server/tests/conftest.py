@@ -20,6 +20,15 @@ User = get_user_model
 # Cache Cleanup — 防止 throttle 等缓存在测试间泄漏
 # ============================================================================
 @pytest.fixture(autouse=True)
+def _disable_scheduler_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+ """Phase：pytest 下关闭 APScheduler，避免 BackgroundScheduler
+ 起后台线程污染测试（T- Availability mitigation）。
+ 生产路径 `python manage.py runapscheduler` 不受影响；此 fixture 仅保护 pytest。
+ 沿用现有 FF_ENABLE_SCHEDULER 标志（PATTERNS 关键分歧 B：禁止新增 SCHEDULER_ENABLED）。
+ """
+ from django.conf import settings
+ monkeypatch.setattr(settings, "FF_ENABLE_SCHEDULER", False, raising=False)
+@pytest.fixture(autouse=True)
 def _clear_throttle_cache:
  """每个测试前后清理 Django 缓存，并放宽 throttle 限速，避免非 throttle 测试被误拦截。
  SimpleRateThrottle.THROTTLE_RATES 是类变量（模块加载时评估），
