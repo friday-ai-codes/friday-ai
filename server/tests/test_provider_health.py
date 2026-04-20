@@ -287,3 +287,78 @@ class TestHealthCheckDispatchMatrix:
  await health_check(cred_chat)
  await health_check(cred_resp)
  assert stub.call_count == 2
+# ============================================================================
+# DRF 端点：ProviderCredentialTestConnectionView
+# ============================================================================
+@pytest.mark.django_db
+class TestTestConnectionEndpoint:
+ """POST /api/providers/credentials/{id}/test-connection/ 契约。
+ 本 phase 权限：IsAuthenticated（Phase 升级 IsSuperUserOrProjectAdmin）；
+ Ollama 凭证走 respx mock；鉴权失败 / 不存在 credential / URL reverse 链路验证。
+ """
+ @respx.mock
+ def test_test_connection_anthropic_ok(self) -> None:
+ from django.contrib.auth import get_user_model
+ from rest_framework.test import APIClient
+ UserModel = get_user_model
+ user = UserModel.objects.create_user(
+ username="health-user",
+ email="h@example.com",
+ password="x",
+ )
+ cred = _make_credential(
+ "anthropic",
+ {"api_key": "sk-ant-test", "base_url": "https://api.anthropic.com"},
+ )
+ respx.post("https://api.anthropic.com/v1/messages/count_tokens").mock(
+ return_value=httpx.Response(200, json={"input_tokens": 8})
+ )
+ client = APIClient
+ client.force_authenticate(user=user)
+ resp = client.post(
+ f"/api/providers/credentials/{cred.id}/test-connection/",
+ format="json",
+ )
+ assert resp.status_code == 200, resp.content
+ body = resp.json
+ assert body["ok"] is True
+ assert body["status"] == "ok"
+ assert body["latency_ms"] >= 0
+ assert body["last_check_at"] is not None
+ assert body["error"] == ""
+ def test_test_connection_unauth_returns_401(self) -> None:
+ from rest_framework.test import APIClient
+ cred = _make_credential("anthropic", {"api_key": "sk-ant-test"})
+ client = APIClient
+ resp = client.post(
+ f"/api/providers/credentials/{cred.id}/test-connection/",
+ format="json",
+ )
+ assert resp.status_code == 401
+ def test_test_connection_404_credential_missing(self) -> None:
+ from uuid import uuid4
+ from django.contrib.auth import get_user_model
+ from rest_framework.test import APIClient
+ UserModel = get_user_model
+ user = UserModel.objects.create_user(
+ username="missing-cred-user",
+ email="m@example.com",
+ password="x",
+ )
+ client = APIClient
+ client.force_authenticate(user=user)
+ resp = client.post(
+ f"/api/providers/credentials/{uuid4}/test-connection/",
+ format="json",
+ )
+ assert resp.status_code == 404
+ def test_test_connection_url_mounted_at_correct_path(self) -> None:
+ """URL reverse 必须解析到 /api/providers/credentials/<uuid>/test-connection/。"""
+ from uuid import uuid4
+ from django.urls import reverse
+ url = reverse(
+ "provider-credential-test-connection",
+ kwargs={"credential_id": uuid4},
+ )
+ assert url.startswith("/api/providers/credentials/"), url
+ assert url.endswith("/test-connection/"), url
