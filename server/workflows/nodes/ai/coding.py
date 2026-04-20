@@ -277,6 +277,45 @@ class AICodingNode(SubStepMixin, BaseNode):
  base_branch=base_branch,
  repo_count=len(repo_groups),
  )
+ # 5.0：解析 Anthropic 凭证（四层优先级 + Result 模式）
+ # 在 _run_repo_coding 分发循环之前外层一次性完成，避免每 repo 重复 DB 往返
+ # （RESEARCH Open Question #1 推荐外层加载）。
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ )
+ from workflows.models import WorkflowExecution
+ project = None
+ if context.workflow_execution:
+ we = await WorkflowExecution.objects.select_related(
+ "workflow__project"
+ ).aget(id=context.workflow_execution.id)
+ project = we.workflow.project if we.workflow else None
+ # 强制 provider_type="anthropic"（Pitfall 5 缓解：防止上游 node_config 漂移
+ # 到非 Anthropic Provider；AICodingNode 容器永久 Anthropic-only）
+ anthropic_node_config = {
+ **(context.node_config or {}),
+ "provider_type": "anthropic",
+ }
+ resolved = await ProviderConfigService.aresolve_or_error(
+ node_config=anthropic_node_config,
+ conversation=None, # AICodingNode 无 conversation 上下文
+ project=project,
+ )
+ if isinstance(resolved, ProviderMissingError):
+ raise ProviderConfigError(
+ resolved.recommended_action or "Anthropic 凭证缺失"
+ )
+ # resolved: ResolvedProviderConfig —— api_key / base_url 为明文
+ validated_base_url = _validate_anthropic_base_url(resolved.base_url)
+ # 只记 boolean / source，不记 api_key 明文值（T- 缓解 + Pitfall 4 硬规则；
+ # 另有 Phase redact_credentials structlog processor 对 api_key 字段名兜底脱敏）
+ log.info(
+ "anthropic_credential_resolved",
+ source=resolved.source,
+ has_base_url=bool(validated_base_url),
+ has_api_key=bool(resolved.api_key),
+ )
  # 5. 并行分发（通过 TaskDispatcher → Runner）
  from workflows.models.execution import SubStepStatus
  await self.emit_sub_step(context, "coding_execute", SubStepStatus.RUNNING)
@@ -293,6 +332,8 @@ class AICodingNode(SubStepMixin, BaseNode):
  global_context=global_context,
  config=config,
  node_execution_id=node_execution_id,
+ anthropic_api_key=resolved.api_key,
+ anthropic_base_url=validated_base_url,
  )
  for repo_id, tasks in repo_groups.items
  ]
@@ -653,6 +694,8 @@ class AICodingNode(SubStepMixin, BaseNode):
  global_context: str,
  config: dict[str, Any],
  node_execution_id: str = "",
+ anthropic_api_key: str = "", # W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
+ anthropic_base_url: str = "", # W-1：Task 2 前置签名扩展；Task 3 在 metadata 中消费
  ) -> dict[str, Any]:
  """通过 TaskDispatcher 分发编码任务到 Runner。"""
  log = logger.bind(
