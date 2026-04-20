@@ -18,6 +18,7 @@ from agents.tools.feishu_doc_tools import (
  fetch_feishu_document,
 )
 from agents.tools.feishu_im_tools import send_card_message
+from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.project_tools import (
  get_repository_info,
  list_project_repositories,
@@ -38,6 +39,8 @@ __all__ = [
  "ToolDefinition",
  "ToolCategory",
  "ToolRegistry",
+ # LangChain bridge (Phase)
+ "build_langchain_tools",
  # Project tools
  "list_project_repositories",
  "get_repository_info",
