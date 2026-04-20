@@ -714,6 +714,16 @@ class AICodingNode(SubStepMixin, BaseNode):
  "access_token": token,
  "ssl_verify": str(repository.credential.ssl_verify).lower,
  }
+ #：构造 env_FRIDAY_TASK_CLAUDE_* 字段（ 纠偏命名；Runner Docker executor
+ # `env_` 前缀自动 TrimPrefix 约定，见 runner/internal/docker/executor.go:84-95）
+ # - api_key 非空时写入 env_FRIDAY_TASK_CLAUDE_API_KEY
+ # - base_url 非空时写入 env_FRIDAY_TASK_CLAUDE_BASE_URL（：空 base_url 不注入该键，
+ # 容器内沿用 claude-agent-sdk 默认 https://api.anthropic.com 官方端点）
+ anthropic_env: dict[str, str] = {}
+ if anthropic_api_key:
+ anthropic_env["env_FRIDAY_TASK_CLAUDE_API_KEY"] = anthropic_api_key
+ if anthropic_base_url:
+ anthropic_env["env_FRIDAY_TASK_CLAUDE_BASE_URL"] = anthropic_base_url
  dispatch_task = DispatchTask(
  task_id=session_id,
  task_type="coding",
@@ -731,6 +741,7 @@ class AICodingNode(SubStepMixin, BaseNode):
  "repository_name": repository.name,
  "work_item_id": config.get("work_item_id", ""),
  "git_credentials": git_credentials,
+ **anthropic_env, #：env_FRIDAY_TASK_CLAUDE_API_KEY + env_FRIDAY_TASK_CLAUDE_BASE_URL
  },
  )
  # 预创建 SubAgentSession（PENDING 状态）

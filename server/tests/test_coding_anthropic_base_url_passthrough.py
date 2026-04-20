@@ -90,13 +90,27 @@ def node_execution(
  )
 @pytest.fixture
 def conv02_repository(db: None) -> Any:
- """创建 测试用 Repository。不复用 conftest 的 repository fixture（字段冲突风险小）。"""
- from repositories.models import Repository
- return Repository.objects.create(
+ """创建 测试用 Repository（带 GitCredential，避免 _run_repo_coding 内
+ repository.credential OneToOne DoesNotExist 访问异常）。
+ 注：生产 coding.py L790 访问 `repository.credential.ssl_verify`，但 GitCredential 模型
+ 未定义此字段（既有差异，非本 task 范围）。测试 fixture 通过 setattr 动态补字段以
+ 让 _run_repo_coding 正常跑通 Git 凭证分支。
+ """
+ from common.encryption import encrypt_value
+ from repositories.models import AuthType, GitCredential, Repository
+ repo = Repository.objects.create(
  name=f"conv02-repo-{uuid4.hex[:8]}",
  git_url="https://git.example.com/test/conv02-repo.git",
  default_branch="main",
  )
+ cred = GitCredential.objects.create(
+ repository=repo,
+ auth_type=AuthType.ACCESS_TOKEN,
+ encrypted_token=encrypt_value("conv02-test-token"),
+ )
+ # 动态补字段 ssl_verify（生产 coding.py 访问此字段）。
+ cred.ssl_verify = True # type: ignore[attr-defined]
+ return repo
 @pytest.fixture
 def execution_context(
  node_execution: Any,
@@ -159,6 +173,26 @@ def mock_subagent_session_create(monkeypatch: pytest.MonkeyPatch) -> None:
  SubAgentSession.objects, "aupdate_or_create", _fake_sub_aupdate_or_create
  )
 @pytest.fixture
+def mock_fetch_repositories_with_credential(
+ monkeypatch: pytest.MonkeyPatch, conv02_repository: Any
+) -> None:
+ """Patch AICodingNode._fetch_repositories 使其 select_related("credential") 预加载，
+ 避免 _run_repo_coding 内 `repository.credential` 反向 OneToOne 触发 SynchronousOnlyOperation。
+ 同时在 GitCredential 类上注入 ssl_verify 属性（生产 coding.py L790 访问该字段，
+ 但模型未定义——本 plan 边界不修生产，测试侧兜底）。"""
+ from repositories.models import GitCredential
+ from workflows.nodes.ai.coding import AICodingNode
+ monkeypatch.setattr(GitCredential, "ssl_verify", True, raising=False)
+ async def _fake_fetch(self: Any, repo_ids: set[str]) -> dict[str, Any]:
+ from repositories.models import Repository
+ return {
+ str(r.id): r
+ async for r in Repository.objects.select_related("credential").filter(
+ id__in=repo_ids, is_deleted=False
+ )
+ }
+ monkeypatch.setattr(AICodingNode, "_fetch_repositories", _fake_fetch)
+@pytest.fixture
 def log -> Any:
  """structlog-bind 兼容 log 对象供 _execute_with_branch 使用。"""
  return structlog.get_logger("test-conv-02")
@@ -172,6 +206,7 @@ async def test_provider_missing_error_blocks_dispatch(
  execution_context: Any,
  mock_dispatcher: list[Any],
  mock_subagent_session_create: None,
+ mock_fetch_repositories_with_credential: None,
  log: Any,
 ) -> None:
  """T- 缓解：ProviderMissingError 时抛 ProviderConfigError 阻止 dispatch。"""
@@ -201,6 +236,7 @@ async def test_illegal_base_url_raises_provider_config_error(
  execution_context: Any,
  mock_dispatcher: list[Any],
  mock_subagent_session_create: None,
+ mock_fetch_repositories_with_credential: None,
  log: Any,
 ) -> None:
  """T- 缓解：非法 scheme base_url 阻止 dispatch。"""
@@ -234,6 +270,7 @@ async def test_metadata_contains_env_fields_when_base_url_present(
  execution_context: Any,
  mock_dispatcher: list[Any],
  mock_subagent_session_create: None,
+ mock_fetch_repositories_with_credential: None,
  log: Any,
 ) -> None:
  """ 纠偏命名 + ROADMAP SC3：非空 base_url 时 metadata 同时含两键。"""
@@ -270,6 +307,7 @@ async def test_metadata_omits_base_url_key_when_empty(
  execution_context: Any,
  mock_dispatcher: list[Any],
  mock_subagent_session_create: None,
+ mock_fetch_repositories_with_credential: None,
  log: Any,
 ) -> None:
  """ 契约：空 base_url → metadata 不含 env_FRIDAY_TASK_CLAUDE_BASE_URL 键（api_key 仍注入）。"""
