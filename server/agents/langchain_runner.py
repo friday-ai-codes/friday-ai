@@ -20,6 +20,7 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 import structlog
+from django.utils import timezone
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
  AIMessage,
@@ -42,6 +43,7 @@ from agents.core.events import (
 )
 from agents.core.result import AgentResult
 from agents.llm_factory import build_chat_model
+from agents.models import AgentSession, ToolCallLog
 from agents.types import TokenUsage
 from services.model_capabilities import ModelCapabilities, ModelCapabilitiesEntry
 from services.provider_config import ResolvedProviderConfig
@@ -250,6 +252,72 @@ class LangChainAgentRunner:
  tool_call_id=str(tc["id"]),
  name=tool_name,
  )
+ async def _persist_usage(self, usage: Any) -> None:
+ """：把单 turn usage 写到 AgentSession.metadata。
+ 模板来源：chat_runner.py （一字不改迁移，仅改日志事件名以便区分 Runner）。
+ usage 是 `TokenUsage` TypedDict（六字段 total=False），add_usage 仅消费 input/output 两字段。
+ agent_session=None 时静默跳过；DB 异常走 logger.exception 兜底不 crash 主循环。
+ """
+ sess = self._config.agent_session
+ if sess is None:
+ return
+ try:
+ sess.add_usage(
+ int(usage.get("input", 0) or 0),
+ int(usage.get("output", 0) or 0),
+ )
+ await AgentSession.objects.filter(
+ session_id=sess.session_id,
+ ).aupdate(metadata=sess.metadata)
+ except Exception:
+ logger.exception(
+ "langchain_runner_usage_update_failed",
+ session_id=self._config.session_id,
+ )
+ async def _log_tool_call(
+ self,
+ *,
+ tool_name: str,
+ tool_call_id: str,
+ arguments: dict[str, Any],
+ tool_msg: Any,
+ ) -> None:
+ """：每次工具执行成功后写 ToolCallLog + increment_tool_calls。
+ 模板来源：chat_runner.py （一字不改迁移，仅适配 ToolMessage 代替 ToolResult）。
+ tool_msg.status: Literal["success", "error"]（LangChain ToolMessage 默认 "success"；
+ Phase langchain_runner.py L521 error 分支构造 status="error"，本方法仅由成功分支调用）。
+ agent_session=None 时静默跳过；DB 异常走 logger.exception 兜底不 crash 主循环。
+ """
+ sess = self._config.agent_session
+ if sess is None:
+ return
+ try:
+ iteration = sess.increment_tool_calls
+ now = timezone.now
+ await AgentSession.objects.filter(
+ session_id=sess.session_id,
+ ).aupdate(metadata=sess.metadata)
+ is_error = getattr(tool_msg, "status", "success") == "error"
+ await ToolCallLog.objects.acreate(
+ session=sess,
+ tool_name=tool_name,
+ tool_call_id=tool_call_id,
+ arguments=arguments,
+ result_success=not is_error,
+ result_output=str(getattr(tool_msg, "content", "") or ""),
+ result_error="",
+ started_at=now,
+ completed_at=now,
+ duration_ms=0,
+ iteration=iteration,
+ )
+ except Exception:
+ logger.exception(
+ "langchain_runner_tool_log_failed",
+ tool_name=tool_name,
+ tool_use_id=tool_call_id,
+ session_id=self._config.session_id,
+ )
  def _adapt_chunk(self, chunk: AIMessageChunk) -> list[AgentEvent]:
  """ 内联 EventAdapter：按 `content_blocks.type` 分派 TEXT_DELTA / THINKING。
  _inject_metadata 注入 {model, session_id}（ 跨 Provider 字段一致性）。
@@ -368,6 +436,8 @@ class LangChainAgentRunner:
  for key, value in cast(dict[str, int], usage).items:
  merged[key] = merged.get(key, 0) + value
  total_usage = cast(TokenUsage, merged)
+ # Phase：每 turn 结束持久化 usage 到 AgentSession.metadata
+ await self._persist_usage(usage)
  tool_calls = list(getattr(aimsg, "tool_calls", ) or )
  if not tool_calls:
  final_answer = "".join(accumulated_text) or _extract_message_text(aimsg)
@@ -455,6 +525,13 @@ class LangChainAgentRunner:
  self._config.model,
  self._config.session_id,
  ),
+ )
+ # Phase：工具执行成功后记录 ToolCallLog
+ await self._log_tool_call(
+ tool_name=tool_name,
+ tool_call_id=tool_call_id,
+ arguments=tool_args,
+ tool_msg=tool_msg,
  )
  messages.append(tool_msg)
  # max_turns 用尽
