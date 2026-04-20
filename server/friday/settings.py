@@ -339,3 +339,10 @@ MCP_ALLOWED_COMMANDS: list[str] = [
  "node",
  "python",
 ]
+# =============================================================================
+# Logging — Structlog 配置（Phase 凭证泄漏防护）
+# =============================================================================
+# configure_structlog 必须在 LOGGING dictConfig 之后、任何业务 logger 实例化之前调用。
+# settings.py 末尾是最早安全点（pytest-django / gunicorn / daphne 启动时一次性配置完成）。
+from common.logging import configure_structlog # noqa: E402
+configure_structlog
