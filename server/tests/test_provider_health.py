@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 import json
+import uuid
 from typing import Any
 from unittest import mock
 import httpx
@@ -12,11 +13,14 @@ import respx
 from asgiref.sync import sync_to_async
 from common.encryption import encrypt_value
 def _make_credential(provider_type: str, config: dict[str, Any], **overrides: Any):
- """同步版本的凭证构造 helper（由 sync_to_async 包装调用）。"""
+ """同步版本的凭证构造 helper（由 sync_to_async 包装调用）。
+ 默认使用随机 uuid4 作为 name 以避免 (provider_type, name) 在系统 scope 下
+ UniqueConstraint 在 async pytest 测试间事务未彻底回滚时碰撞。
+ """
  from system.models import ProviderCredential
  defaults: dict[str, Any] = dict(
  provider_type=provider_type,
- name="default",
+ name=f"test-{uuid.uuid4.hex[:8]}",
  scope="system",
  scope_id=None,
  encrypted_config=encrypt_value(json.dumps(config)),
@@ -214,60 +218,72 @@ class TestHealthCheckErrorPaths:
 @pytest.mark.asyncio
 @pytest.mark.django_db
 class TestHealthCheckDispatchMatrix:
+ """契约：_PING_DISPATCH 5 ProviderType -> 4 helper（openai_chat / openai_responses 共享 _ping_openai）。
+ patch `_PING_DISPATCH` dict 中的项而非模块级 name —— 字典已在 import 时持有原始函数引用，
+ patch 模块属性不生效。
+ """
  async def test_dispatch_anthropic_goes_to_ping_anthropic(self) -> None:
  from services import provider_health
  from services.provider_health import HealthCheckResult, health_check
  cred = await sync_to_async(_make_credential)(
  "anthropic", {"api_key": "sk-ant-test"}
  )
- with mock.patch.object(
- provider_health,
- "_ping_anthropic",
+ stub = mock.AsyncMock(
  return_value=HealthCheckResult(
  ok=True, status="ok", latency_ms=1, error=""
- ),
- ) as m:
+ )
+ )
+ with mock.patch.dict(
+ provider_health._PING_DISPATCH,
+ {provider_health.ProviderType.ANTHROPIC: stub},
+ ):
  await health_check(cred)
- assert m.call_count == 1
+ assert stub.call_count == 1
  async def test_dispatch_ollama_goes_to_ping_ollama(self) -> None:
  from services import provider_health
  from services.provider_health import HealthCheckResult, health_check
  cred = await sync_to_async(_make_credential)(
  "ollama", {"base_url": "http://localhost:11434"}
  )
- with mock.patch.object(
- provider_health,
- "_ping_ollama",
+ stub = mock.AsyncMock(
  return_value=HealthCheckResult(
  ok=True,
  status="ok",
  latency_ms=1,
  error="",
  available_models=,
- ),
- ) as m:
+ )
+ )
+ with mock.patch.dict(
+ provider_health._PING_DISPATCH,
+ {provider_health.ProviderType.OLLAMA: stub},
+ ):
  await health_check(cred)
- assert m.call_count == 1
+ assert stub.call_count == 1
  async def test_dispatch_openai_chat_and_responses_share_ping_openai(self) -> None:
  from services import provider_health
  from services.provider_health import HealthCheckResult, health_check
  cred_chat = await sync_to_async(_make_credential)(
  "openai_chat",
  {"api_key": "sk-test-placeholder"},
- name="chat",
  )
  cred_resp = await sync_to_async(_make_credential)(
  "openai_responses",
  {"api_key": "sk-test-placeholder"},
- name="resp",
  )
- with mock.patch.object(
- provider_health,
- "_ping_openai",
+ stub = mock.AsyncMock(
  return_value=HealthCheckResult(
  ok=True, status="ok", latency_ms=1, error=""
- ),
- ) as m:
+ )
+ )
+ # 同一 stub 绑定到两种 OpenAI ProviderType，验证 2 次调用
+ with mock.patch.dict(
+ provider_health._PING_DISPATCH,
+ {
+ provider_health.ProviderType.OPENAI_CHAT: stub,
+ provider_health.ProviderType.OPENAI_RESPONSES: stub,
+ },
+ ):
  await health_check(cred_chat)
  await health_check(cred_resp)
- assert m.call_count == 2
+ assert stub.call_count == 2
