@@ -62,3 +62,32 @@ def calculate_cost(
  output_cost = Decimal(pricing["output_per_1k"]) * output_tokens / 1000
  total = input_cost + output_cost
  return total.quantize(Decimal("0.000001"))
+# === Phase：calculate_cost_v2 六字段定价 ===
+# 保留 calculate_cost(model, input_tokens, output_tokens) 旧 API 不删
+# (CONTEXT D2 锁定，Phase 单独清理 plan)。
+from services.model_capabilities import ModelCapabilities # noqa: E402
+def calculate_cost_v2(
+ provider: str,
+ model: str,
+ usage: dict[str, int],
+) -> Decimal:
+ """六字段成本计算。
+ 通过 ModelCapabilities.get(provider, model) 查询六字段 per-token 单价，
+ 与 TokenUsage (agents.types) 的六字段对齐累加，返回 Decimal(6 位小数精度)。
+ fixture 无对应 cost 字段时该字段按 Decimal("0") 计算，不抛 AttributeError。
+ Args:
+ provider: "anthropic" / "openai" / "gemini" / "ollama" / ...
+ model: e.g. "claude-sonnet-4-5-20250929"
+ usage: TokenUsage 字段字典（可部分）；缺失字段按 0 计算。
+ Returns:
+ 总成本 Decimal（美元，6 位小数精度）；fixture 无 cost 字段时该字段按 0 算。
+ """
+ caps = ModelCapabilities.get(provider, model)
+ cost = Decimal("0")
+ cost += caps.input_cost_per_token * usage.get("input", 0)
+ cost += caps.cached_input_cost_per_token * usage.get("cached_input", 0)
+ cost += caps.cache_creation_cost_per_token * usage.get("cache_creation", 0)
+ cost += caps.output_cost_per_token * usage.get("output", 0)
+ cost += caps.reasoning_cost_per_token * usage.get("reasoning", 0)
+ cost += caps.vision_cost_per_token * usage.get("vision", 0)
+ return cost.quantize(Decimal("0.000001"))
