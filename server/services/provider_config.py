@@ -3,38 +3,160 @@
 被 ConversationService 和 AIAgentBaseNode 共用。
 ProviderType / ApiFormat / CredentialType / PROVIDER_REGISTRY 从
 agents.llm.providers 迁移至此，避免对已删除模块的依赖。
+Phase（v21.0）：扩展为 5 种 ProviderType（anthropic / openai_responses /
+openai_chat / gemini / ollama），ProviderMetadata 迁移为 @dataclass(frozen=True)
+（Pitfall 26 规避），新增 4 个 Pydantic credential_schema 类统一承载凭证字段
+校验与脱敏（SecretStr + ConfigDict(hide_input_in_errors=True)，缓解
+T- / T- 凭证泄漏威胁）。
 """
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, TypedDict
+from typing import Any
 import structlog
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from system.models import SettingKeys, SystemSetting
 # === Provider 类型定义（从 agents.llm.providers 迁移） ===
 class ProviderType(StrEnum):
  """LLM Provider 类型枚举。值为小写字符串，可直接存储到 DB CharField。"""
  ANTHROPIC = "anthropic"
+ OPENAI_RESPONSES = "openai_responses"
+ OPENAI_CHAT = "openai_chat"
+ GEMINI = "gemini"
+ OLLAMA = "ollama"
 class CredentialType(StrEnum):
  """凭据类型枚举。"""
  API_KEY = "api_key"
+ API_KEY_WITH_ORG = "api_key_with_org"
+ API_KEY_OPTIONAL = "api_key_optional"
 class ApiFormat(StrEnum):
- """API 协议格式枚举，决定工厂函数路由到哪个 Provider 实现类。"""
+ """API 协议格式枚举，决定 Phase Runner 工厂分派路由。"""
  ANTHROPIC = "anthropic"
-class ProviderMetadata(TypedDict):
- """Provider 元数据，描述每个 Provider 的特征。"""
+ OPENAI_RESPONSES = "openai_responses"
+ OPENAI_CHAT_COMPLETIONS = "openai_chat_completions"
+ GEMINI = "gemini"
+ OLLAMA_NATIVE = "ollama_native"
+# === Pydantic credential_schema 类（Phase 决策 1） ===
+#
+# 每个类必须 model_config = ConfigDict(hide_input_in_errors=True)
+# —— 这是 T- 缓解的强制契约，防止 ValidationError.errors 中
+# 回显原始 api_key 明文。
+# SecretStr 字段在 repr/log 时自动返回 "**********"，缓解 T-。
+class AnthropicCredentialSchema(BaseModel):
+ """Anthropic 凭证字段。"""
+ model_config = ConfigDict(hide_input_in_errors=True)
+ api_key: SecretStr = Field(..., description="Anthropic API Key（sk-ant-...）")
+ base_url: str = Field(
+ default="https://api.anthropic.com",
+ description="覆盖默认端点（Moonshot Anthropic 兼容 / one-api 网关）",
+ )
+class OpenAICredentialSchema(BaseModel):
+ """OpenAI 凭证字段（Responses API 与 Chat Completions 共享）。"""
+ model_config = ConfigDict(hide_input_in_errors=True)
+ api_key: SecretStr = Field(..., description="OpenAI API Key（sk-...）")
+ base_url: str = Field(
+ default="https://api.openai.com/v1",
+ description="覆盖默认端点（DeepSeek / Qwen / OpenRouter 走这里）",
+ )
+ organization_id: str | None = Field(
+ default=None,
+ description="OpenAI organization ID（可选，多 org 账户用）",
+ )
+class GeminiCredentialSchema(BaseModel):
+ """Gemini 凭证字段（AI Studio 路径）。"""
+ model_config = ConfigDict(hide_input_in_errors=True)
+ api_key: SecretStr = Field(..., description="Google AI Studio API Key（AIza...）")
+class OllamaCredentialSchema(BaseModel):
+ """Ollama 凭证字段。"""
+ model_config = ConfigDict(hide_input_in_errors=True)
+ base_url: str = Field(
+ default="http://localhost:11434",
+ description="Ollama 实例 URL（通常 localhost；远程时用 HTTPS）",
+ )
+ bearer_token: SecretStr | None = Field(
+ default=None,
+ description="反向代理 / 网关鉴权用（OpenWebUI / Cloudflare Tunnel），本地部署通常留空",
+ )
+@dataclass(frozen=True)
+class ProviderMetadata:
+ """Provider 元数据。
+ @dataclass(frozen=True) 防止 Pitfall 26（TypedDict total= 矛盾）。
+ 新增字段必须带默认值以避免破坏已有字面量。
+ """
  display_name: str
  api_format: ApiFormat
  credential_type: CredentialType
  default_base_url: str
  env_key: str
+ langchain_prefix: str # Phase init_chat_model 前缀（本 phase 仅声明字符串）
+ credential_schema: type[BaseModel] # Pydantic 类引用，service 层 .model_validate 入口
+ health_check_path: str = "/v1/models" # 健康检查端点路径（D4 锁定，registry 集中管理）
+ health_check_method: str = "GET"
+ supports_thinking: bool = False # 仅 Anthropic
+ supports_reasoning: bool = False # OpenAI o1/o3/gpt-5 + Gemini 2.5
+ supports_vision: bool = False
+ supports_function_calling: bool = True
+ supports_streaming: bool = True
 PROVIDER_REGISTRY: dict[ProviderType, ProviderMetadata] = {
- ProviderType.ANTHROPIC: {
- "display_name": "Anthropic Claude",
- "api_format": ApiFormat.ANTHROPIC,
- "credential_type": CredentialType.API_KEY,
- "default_base_url": "https://api.anthropic.com",
- "env_key": "ANTHROPIC_API_KEY",
- },
+ ProviderType.ANTHROPIC: ProviderMetadata(
+ display_name="Anthropic Claude",
+ api_format=ApiFormat.ANTHROPIC,
+ credential_type=CredentialType.API_KEY,
+ default_base_url="https://api.anthropic.com",
+ env_key="ANTHROPIC_API_KEY",
+ langchain_prefix="anthropic",
+ credential_schema=AnthropicCredentialSchema,
+ health_check_path="/v1/messages/count_tokens",
+ health_check_method="POST",
+ supports_thinking=True,
+ supports_vision=True,
+ ),
+ ProviderType.OPENAI_RESPONSES: ProviderMetadata(
+ display_name="OpenAI (Responses API)",
+ api_format=ApiFormat.OPENAI_RESPONSES,
+ credential_type=CredentialType.API_KEY_WITH_ORG,
+ default_base_url="https://api.openai.com/v1",
+ env_key="OPENAI_API_KEY",
+ langchain_prefix="openai",
+ credential_schema=OpenAICredentialSchema,
+ health_check_path="/models",
+ supports_reasoning=True,
+ supports_vision=True,
+ ),
+ ProviderType.OPENAI_CHAT: ProviderMetadata(
+ display_name="OpenAI (Chat Completions)",
+ api_format=ApiFormat.OPENAI_CHAT_COMPLETIONS,
+ credential_type=CredentialType.API_KEY_WITH_ORG,
+ default_base_url="https://api.openai.com/v1",
+ env_key="OPENAI_API_KEY",
+ langchain_prefix="openai",
+ credential_schema=OpenAICredentialSchema,
+ health_check_path="/models",
+ supports_reasoning=True,
+ supports_vision=True,
+ ),
+ ProviderType.GEMINI: ProviderMetadata(
+ display_name="Google Gemini",
+ api_format=ApiFormat.GEMINI,
+ credential_type=CredentialType.API_KEY,
+ default_base_url="https://generativelanguage.googleapis.com/v1beta",
+ env_key="GOOGLE_API_KEY",
+ langchain_prefix="google_genai",
+ credential_schema=GeminiCredentialSchema,
+ health_check_path="/models",
+ supports_reasoning=True,
+ supports_vision=True,
+ ),
+ ProviderType.OLLAMA: ProviderMetadata(
+ display_name="Ollama",
+ api_format=ApiFormat.OLLAMA_NATIVE,
+ credential_type=CredentialType.API_KEY_OPTIONAL,
+ default_base_url="http://localhost:11434",
+ env_key="",
+ langchain_prefix="ollama",
+ credential_schema=OllamaCredentialSchema,
+ health_check_path="/api/tags",
+ ),
 }
 logger = structlog.get_logger(__name__)
 class ProviderConfigError(Exception):
@@ -117,8 +239,8 @@ def _resolve_credential(
  ProviderConfigError: 凭据未配置
  """
  metadata = PROVIDER_REGISTRY[provider_type]
- display_name = metadata["display_name"]
- env_key = metadata["env_key"]
+ display_name = metadata.display_name
+ env_key = metadata.env_key
  # API Key 类型
  setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
  if not setting_key:
@@ -159,7 +281,7 @@ class ProviderConfigService:
  # base_url: 系统设置优先，回退到注册表默认值
  base_url = (
  _get_setting_value_sync(SettingKeys.ANTHROPIC_BASE_URL)
- or PROVIDER_REGISTRY[provider_type]["default_base_url"]
+ or PROVIDER_REGISTRY[provider_type].default_base_url
  )
  logger.info(
  "provider_config_resolved",
@@ -209,8 +331,8 @@ class ProviderConfigService:
  source = "system"
  # 凭据解析（需要异步 DB 查询）
  metadata = PROVIDER_REGISTRY[provider_type]
- display_name = metadata["display_name"]
- env_key = metadata["env_key"]
+ display_name = metadata.display_name
+ env_key = metadata.env_key
  setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
  if not setting_key:
  raise ProviderConfigError(
@@ -224,7 +346,7 @@ class ProviderConfigService:
  # base_url: 系统设置优先，回退到注册表默认值
  base_url = (
  await _get_setting_value_async(SettingKeys.ANTHROPIC_BASE_URL)
- or metadata["default_base_url"]
+ or metadata.default_base_url
  )
  logger.info(
  "provider_config_resolved",
