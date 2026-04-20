@@ -253,3 +253,179 @@ def authenticated_admin_client(api_client, admin_user):
  client = APIClient
  client.force_authenticate(user=admin_user)
  return client
+# ============================================================================
+# Phase Wave：AI 节点测试公共 fixture（Q6 决策落地 / 弥补）
+#
+# ~ 所有新建 AI 节点测试统一引用以下 4 fixture，禁止重复定义。
+# 违反由 静态扫描拦截。
+# ============================================================================
+@pytest.fixture
+def fake_chat_model_factory(monkeypatch):
+ """参数化 FakeChatModel factory fixture（ 测试脚手架）。
+ 返回一个 callable，生产 FakeChatModel 并自动注入 build_chat_model seam 到
+ 所有 AI 节点模块的 build_chat_model 符号（双 patch 模式；Pitfall #5 规避）。
+ Usage:
+ async def test_xxx(fake_chat_model_factory):
+ fake = fake_chat_model_factory(
+ responses=["ok"],
+ tool_calls=[[{"name": "echo", "args": {}, "id": "c1"}]],
+ usage_metadata={"input_tokens": 50, "output_tokens": 30, "total_tokens": 80},
+ )
+ # seam 已注入；直接构造 runner / 节点即可
+ Seam 注入点（按优先级）：
+ - agents.llm_factory.build_chat_model（始终）
+ - agents.langchain_runner.build_chat_model（始终）
+ - workflows.nodes.ai.prompt.build_chat_model（若存在）
+ - workflows.nodes.ai.variable_extractor.build_chat_model（若存在）
+ """
+ from typing import Any, Sequence
+ from tests.helpers.fake_chat_model import FakeChatModel
+ def _factory(
+ *,
+ responses: Sequence[str] = ("done",),
+ tool_calls: Sequence[Sequence[dict[str, Any]]] | None = None,
+ usage_metadata: dict[str, int] | None = None,
+ ) -> FakeChatModel:
+ fake = FakeChatModel(
+ responses=responses,
+ tool_calls=tool_calls or,
+ usage_metadata=usage_metadata
+ or {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+ )
+ # 核心 seam（始终有效）
+ monkeypatch.setattr(
+ "agents.llm_factory.build_chat_model",
+ lambda *a, **kw: fake,
+ )
+ monkeypatch.setattr(
+ "agents.langchain_runner.build_chat_model",
+ lambda *a, **kw: fake,
+ raising=False,
+ )
+ # 节点级可选 seam（Phase Wave+ 才会存在；raising=False 兼容缺失）
+ for mod_path in (
+ "workflows.nodes.ai.prompt.build_chat_model",
+ "workflows.nodes.ai.variable_extractor.build_chat_model",
+ "workflows.nodes.ai.base_agent.build_chat_model",
+ ):
+ monkeypatch.setattr(
+ mod_path, lambda *a, **kw: fake, raising=False
+ )
+ return fake
+ return _factory
+@pytest.fixture
+def mock_aresolve_ok(monkeypatch):
+ """注入 ProviderConfigService.aresolve_or_error stub 返回合法 ResolvedProviderConfig。
+ Usage:
+ async def test_xxx(mock_aresolve_ok):
+ resolved = mock_aresolve_ok(source="system", provider_type="anthropic")
+ # 之后的 aresolve_or_error 调用都会返回该 resolved 对象
+ 参数默认值使用 Anthropic system-scope，满足 ~08 多数测试需求；传入
+ `provider_type="openai_chat"` 可切 OpenAI 链路。
+ """
+ def _setup(
+ *,
+ source: str = "system",
+ provider_type: str = "anthropic",
+ api_key: str = "sk-fake",
+ base_url: str = "https://api.anthropic.com",
+ ):
+ from services.provider_config import (
+ ProviderType,
+ ResolvedProviderConfig,
+ )
+ pt = (
+ provider_type
+ if isinstance(provider_type, ProviderType)
+ else ProviderType(provider_type)
+ )
+ resolved = ResolvedProviderConfig(
+ provider_type=pt,
+ api_key=api_key,
+ base_url=base_url,
+ source=source,
+ )
+ async def _stub(node_config=None, conversation=None, project=None):
+ return resolved
+ monkeypatch.setattr(
+ "services.provider_config.ProviderConfigService.aresolve_or_error",
+ _stub,
+ )
+ return resolved
+ return _setup
+@pytest.fixture
+def mock_aresolve_missing(monkeypatch):
+ """注入 ProviderConfigService.aresolve_or_error stub 返回 ProviderMissingError。
+ Usage:
+ async def test_xxx(mock_aresolve_missing):
+ mock_aresolve_missing(missing_provider="openai_chat")
+ # 之后 aresolve_or_error 调用都返回 ProviderMissingError（ Result 模式）
+ 上层节点（AIAgentBaseNode / AIPromptNode 等）应基于 isinstance 分支转
+ NodeResult(status="failed") + 结构化 error。
+ """
+ def _setup(
+ *,
+ missing_provider: str = "openai_chat",
+ recommended_action: str = "请在系统设置中配置 OpenAI 凭证",
+ source_attempted: str = "system",
+ ):
+ from services.provider_config import ProviderMissingError
+ err = ProviderMissingError(
+ missing_provider=missing_provider,
+ recommended_action=recommended_action,
+ source_attempted=source_attempted,
+ )
+ async def _stub(node_config=None, conversation=None, project=None):
+ return err
+ monkeypatch.setattr(
+ "services.provider_config.ProviderConfigService.aresolve_or_error",
+ _stub,
+ )
+ return err
+ return _setup
+@pytest.fixture
+def make_minimal_context:
+ """构造最小 ExecutionContext 供 AI 节点 execute 调用。
+ Usage:
+ def test_xxx(make_minimal_context):
+ ctx = make_minimal_context(
+ node_config={"user_prompt": "hi"},
+ execution_id="test-exec",
+ node_id="n1",
+ )
+ result = await node.execute(ctx)
+ 默认值：
+ - execution_id="test-exec-id-12345"（固定便于 字节级 hash 稳定）
+ - node_id="n1"
+ - input_data={} / workflow_context={} / previous_outputs={} / trigger_data={}
+ 不注入 workflow_execution / node_execution（execute 路径在大多数节点可 None）。
+ ExecutionContext 真实签名来自 workflows/nodes/base.py：
+ execution_id / node_id / node_config / input_data / workflow_context /
+ previous_outputs / trigger_data / workflow_execution / node_execution
+ """
+ from typing import Any
+ def _make(
+ *,
+ node_config: dict[str, Any] | None = None,
+ execution_id: str = "test-exec-id-12345",
+ node_id: str = "n1",
+ input_data: dict[str, Any] | None = None,
+ workflow_context: dict[str, Any] | None = None,
+ previous_outputs: dict[str, dict[str, Any]] | None = None,
+ trigger_data: dict[str, Any] | None = None,
+ workflow_execution: Any = None,
+ node_execution: Any = None,
+ ):
+ from workflows.nodes.base import ExecutionContext
+ return ExecutionContext(
+ execution_id=execution_id,
+ node_id=node_id,
+ node_config=node_config or {},
+ input_data=input_data or {},
+ workflow_context=workflow_context or {},
+ previous_outputs=previous_outputs or {},
+ trigger_data=trigger_data or {},
+ workflow_execution=workflow_execution,
+ node_execution=node_execution,
+ )
+ return _make
