@@ -32,6 +32,7 @@ from agents.core.events import (
 from agents.core.result import AgentResult
 from agents.models import AgentSession, ToolCallLog
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
+from agents.tools.langchain_adapter import build_langchain_tools
 from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 _BASE_TOOL_NAMES = ["get_project_overview"]
@@ -243,42 +244,48 @@ async def _build_tool_specs(
  *,
  default_search_branch: str | None = None,
 ) -> dict[str, _ChatToolSpec]:
+ """装配 chat 场景可用的工具清单。
+ 内部通过 `build_langchain_tools` (Phase) 统一产出 StructuredTool：
+ project_id / conversation_id 由 adapter 从 args_schema 剔除 + 闭包注入。
+ `default_search_branch` "LLM 未提供 branch 时回填"语义属于 chat 场景特有
+ （非强制覆盖；Pitfall #12 / Q2 选项 B），保留在本二次闭包中，不下沉到
+ adapter。二次闭包 `execute(arguments: dict) -> ToolResult` 的签名保持
+ 不变，下游 `_execute_tool_call` 契约零破坏。
+ """
+ tool_names = await _get_tool_names(project_id)
+ langchain_tools = build_langchain_tools(
+ tool_names,
+ injected_values={
+ "project_id": project_id,
+ "conversation_id": conversation_id,
+ },
+ )
  tool_specs: dict[str, _ChatToolSpec] = {}
- for tool_name in await _get_tool_names(project_id):
- tool_def = _tool_registry[tool_name]
+ for lc_tool in langchain_tools:
+ tool_def = _tool_registry[lc_tool.name]
  properties = tool_def.parameters.get("properties", {})
  injected_values: dict[str, Any] = {}
  if "project_id" in properties:
  injected_values["project_id"] = project_id
  if "conversation_id" in properties:
  injected_values["conversation_id"] = conversation_id
- hidden_fields = set(injected_values.keys)
- args_schema = _build_args_schema(tool_def, hidden_fields)
  async def _execute(
  arguments: dict[str, Any],
  *,
  _tool_def: ToolDefinition = tool_def,
  _injected: dict[str, Any] = injected_values,
+ _props: dict[str, Any] = properties,
  _dsb: str | None = default_search_branch,
  ) -> ToolResult:
  merged = {**_injected, **arguments}
- props = _tool_def.parameters.get("properties") or {}
- if "branch" in props and _dsb:
+ # Pitfall #12：LLM 未提供 branch 时用 default，非无条件覆盖
+ if "branch" in _props and _dsb:
  cur = merged.get("branch")
  if cur in (None, ""):
  merged["branch"] = _dsb
  return await _tool_def.func(**merged)
- async def _langchain_tool(**kwargs: Any) -> str:
- result = await _execute(kwargs)
- return result.to_content
- tool_specs[tool_name] = _ChatToolSpec(
- tool=StructuredTool.from_function(
- coroutine=_langchain_tool,
- name=tool_def.name,
- description=tool_def.description,
- args_schema=args_schema,
- infer_schema=False,
- ),
+ tool_specs[lc_tool.name] = _ChatToolSpec(
+ tool=lc_tool, # type: ignore[arg-type]
  definition=tool_def,
  execute=_execute,
  )
