@@ -4,6 +4,7 @@ Starts the background scheduler for session timeout tasks:
 - cleanup_expired_sessions: Daily at 3:00 AM
 - refresh_repo_caches: Daily at 2:00 AM (Phase)
 - prune_cache_volumes: Daily at 5:00 AM (Phase)
+- cleanup_orchestration_checkpoints: Daily at 3:30 UTC (Phase)
 """
 import asyncio
 import structlog
@@ -96,6 +97,20 @@ def cleanup_stale_branch_indexes_job:
  log.info("job_complete", result=result)
  except Exception as e:
  log.exception("job_error", error=str(e))
+def cleanup_orchestration_checkpoints_job:
+ """Job wrapper for cleanup_orchestration_checkpoints command (Phase).
+ 与其他 *_job 的差异：
+ - 不用 run_async_task 包装（cleanup command 内部已 asyncio.run）
+ - 通过 call_command 调 management command（而非 tasks.* 的异步函数）
+ """
+ from django.core.management import call_command
+ log = logger.bind(job="cleanup_orchestration_checkpoints")
+ log.info("job_start")
+ try:
+ call_command("cleanup_orchestration_checkpoints")
+ log.info("job_complete")
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 class Command(BaseCommand):
  help = "Runs APScheduler for session timeout tasks."
  def handle(self, *args, **options):
@@ -121,6 +136,21 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="cleanup_expired_sessions", schedule="daily at 03:00")
+ # Cleanup orchestration checkpoints daily at 3:30 UTC (Phase)
+ # 选 3:30 而非 3:00 避免与 cleanup_expired_sessions 争 SQLite 写锁（Claude's Discretion）
+ scheduler.add_job(
+ cleanup_orchestration_checkpoints_job,
+ trigger=CronTrigger(hour=3, minute=30),
+ id="cleanup_orchestration_checkpoints",
+ name="Cleanup orchestration checkpoints older than 7 days",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info(
+ "job_registered",
+ job="cleanup_orchestration_checkpoints",
+ schedule="daily at 03:30",
+ )
  # Delete old job executions weekly
  scheduler.add_job(
  delete_old_job_executions,
