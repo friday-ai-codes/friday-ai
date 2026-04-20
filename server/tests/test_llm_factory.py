@@ -183,8 +183,15 @@ def test_thinking_requires_both_capability_and_tokens -> None:
 #：reasoning 分派（OpenAI o 系列 / gpt-5 + Gemini 2.5）
 # ============================================================================
 @pytest.mark.parametrize("model_name", ["o1-mini", "o3-pro", "o4-mini", "gpt-5-turbo"])
-def test_reasoning_strip_params(model_name: str) -> None:
- """：reasoning model 下 temperature / top_p 被 pop（正则兜底）。"""
+def test_reasoning_strip_params(
+ model_name: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+ """：reasoning model 下 temperature / top_p 被 pop（正则兜底）。
+ 断言策略（ 实证）：直接构造对象无法断言"kwargs 内已被 pop"，因为
+ langchain-openai 对 o 系列模型有自己的 default temperature=1.0 硬编码。本测试
+ 通过 structlog event `llm_factory_reasoning_strip_temperature` 的发射验证
+ strip 分支命中，并确保 build 不抛错（与非 reasoning 分支的 kwargs 组装差异得到 log 证据）。
+ """
  resolved = _make_resolved(ProviderType.OPENAI_CHAT)
  # capabilities 故意设 supports_reasoning=False，依赖正则兜底
  caps = _make_caps(supports_reasoning=False)
@@ -194,11 +201,10 @@ def test_reasoning_strip_params(model_name: str) -> None:
  capabilities=caps,
  timeout_seconds=5.0,
  )
- # reasoning model 的 temperature 不应等于 1（Anthropic thinking 特殊值），
- # ChatOpenAI 默认 temperature 是 None/未设，strip 后确保不被意外注入。
- temp = getattr(model, "temperature", None)
- # 断言：构造器未接收 temperature kwarg（字段是 None 或未被 set 过）
- assert temp is None or temp == 0.7 # langchain-openai 的默认值，非 build_chat_model 主动注入
+ assert isinstance(model, BaseChatModel)
+ # structlog 事件必须发射（证明 strip 分支命中）
+ captured = capsys.readouterr
+ assert "llm_factory_reasoning_strip_temperature" in captured.out
 def test_reasoning_effort_passed_through -> None:
  """：reasoning_effort='high' 透传到底层 kwargs。"""
  resolved = _make_resolved(ProviderType.OPENAI_CHAT)
