@@ -10,12 +10,15 @@ openai_chat / gemini / ollama），ProviderMetadata 迁移为 @dataclass(frozen=
 T- / T- 凭证泄漏威胁）。
 """
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, Union
+from uuid import UUID
 import structlog
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 from system.models import SettingKeys, SystemSetting
+if TYPE_CHECKING:
+ from system.models import ProviderCredential
 # === Provider 类型定义（从 agents.llm.providers 迁移） ===
 class ProviderType(StrEnum):
  """LLM Provider 类型枚举。值为小写字符串，可直接存储到 DB CharField。"""
@@ -163,11 +166,26 @@ class ProviderConfigError(Exception):
  """Provider 配置解析错误。"""
 @dataclass
 class ResolvedProviderConfig:
- """配置解析结果。"""
+ """配置解析结果。Phase 扩展 credential_id / extra 字段（向后兼容默认值）。"""
  provider_type: ProviderType
  api_key: str # 凭据值（API Key）
  base_url: str # 从 PROVIDER_REGISTRY 获取
  source: str # "node" | "conversation" | "project" | "system"
+ # Phase 新增（默认值保持向后兼容；ChatAnthropicRunner 等现有调用方零改动）
+ credential_id: UUID | None = None
+ extra: dict[str, Any] = field(default_factory=dict)
+@dataclass(frozen=True)
+class ProviderMissingError:
+ """凭证解析失败的结构化错误。
+ 返回给上层（Phase API 层 / Phase 工作流节点）的 Result 模式错误对象。
+ code 字段 Literal 锁定，前端可基于此分支转 HTTP 4xx + i18n 提示。
+ """
+ code: Literal["provider_credential_missing"] = "provider_credential_missing"
+ missing_provider: str = "" # e.g. "openai_responses" / "anthropic"
+ recommended_action: str = "" # e.g. "请在系统设置添加 OpenAI 凭证"
+ source_attempted: str = "" # 四层中哪一层断流："system" / "project" / "conversation" / "node"
+# Result 模式 Union 类型（Phase / 229 调用方 isinstance 分派）
+AResolveResult = Union[ResolvedProviderConfig, ProviderMissingError]
 # PROVIDER_REGISTRY 的 env_key（大写）→ SettingKeys 的值（小写）映射。
 ENV_KEY_TO_SETTING_KEY: dict[str, str] = {
  "ANTHROPIC_API_KEY": SettingKeys.ANTHROPIC_API_KEY,
@@ -253,6 +271,99 @@ def _resolve_credential(
  f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
  )
  return credential
+# === Phase 重构：纯函数 + IO 分层（Pitfall 28 sync/async drift 规避）===
+async def _fetch_credential_by_id(credential_id: UUID) -> "ProviderCredential | None":
+ """IO 函数：异步查单行凭证（按 UUID）。"""
+ from system.models import ProviderCredential
+ try:
+ return await ProviderCredential.objects.aget(
+ id=credential_id, is_active=True
+ )
+ except ProviderCredential.DoesNotExist:
+ return None
+async def _fetch_system_default_credential(
+ provider_type: ProviderType,
+) -> "ProviderCredential | None":
+ """IO 函数：异步查系统级 default 凭证（scope=system, name=default, is_active=True）。"""
+ from system.models import ProviderCredential
+ try:
+ return await ProviderCredential.objects.aget(
+ scope="system",
+ provider_type=str(provider_type),
+ name="default",
+ is_active=True,
+ )
+ except ProviderCredential.DoesNotExist:
+ return None
+async def _resolve_credential_async(
+ provider_type: ProviderType,
+ node_config: dict[str, Any] | None,
+ conversation: Any | None,
+ project: Any | None,
+) -> tuple["ProviderCredential | None", str]:
+ """纯逻辑函数：按四层优先级查 ProviderCredential。
+ 返回 (credential, source_attempted)。
+ Phase / 229 引入 conversation.provider_credential_id /
+ project.default_provider_credential_id 字段后自动启用。
+ """
+ # 1. 节点级 FK
+ if node_config and node_config.get("provider_credential_id"):
+ cred = await _fetch_credential_by_id(
+ UUID(str(node_config["provider_credential_id"]))
+ )
+ if cred is not None:
+ return cred, "node"
+ # 2. 对话级 FK（Phase/229 加字段后启用）
+ conv_fk = (
+ getattr(conversation, "provider_credential_id", None)
+ if conversation is not None
+ else None
+ )
+ if conv_fk:
+ cred = await _fetch_credential_by_id(UUID(str(conv_fk)))
+ if cred is not None:
+ return cred, "conversation"
+ # 3. 项目级 FK（Phase/229 加字段后启用）
+ proj_fk = (
+ getattr(project, "default_provider_credential_id", None)
+ if project is not None
+ else None
+ )
+ if proj_fk:
+ cred = await _fetch_credential_by_id(UUID(str(proj_fk)))
+ if cred is not None:
+ return cred, "project"
+ # 4. 系统级 default
+ cred = await _fetch_system_default_credential(provider_type)
+ if cred is not None:
+ return cred, "system"
+ return None, "system"
+async def _resolve_from_system_setting_legacy(
+ provider_type: ProviderType,
+) -> ResolvedProviderConfig | None:
+ """SystemSetting 兼容降级层（仅 Anthropic）。
+ D3 锁定：仅 provider_type == ANTHROPIC 时尝试从
+ SystemSetting.ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL 读取；
+ 其他 Provider 不降级（v21.0 不在 SystemSetting 引入新 key）。
+ Phase 完全清理 SystemSetting 后移除此函数。
+ """
+ if provider_type != ProviderType.ANTHROPIC:
+ return None
+ api_key = await _get_setting_value_async(SettingKeys.ANTHROPIC_API_KEY)
+ if not api_key:
+ return None
+ base_url = (
+ await _get_setting_value_async(SettingKeys.ANTHROPIC_BASE_URL)
+ or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
+ )
+ return ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key=api_key,
+ base_url=base_url,
+ source="system",
+ credential_id=None,
+ extra={},
+ )
 class ProviderConfigService:
  """四层配置优先级解析服务。
  解析顺序：节点级 > 对话级 > 项目级 > 系统级。
