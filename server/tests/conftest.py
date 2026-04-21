@@ -730,9 +730,19 @@ def analytics_token_usage_factory(db):
  ) -> list[Any]:
  TokenUsage = apps.get_model("subagent", "TokenUsage")
  SubAgentSession = apps.get_model("subagent", "SubAgentSession")
+ AgentSession = apps.get_model("agents", "AgentSession")
  if session is None:
+ # SubAgentSession 需要 main_session (AgentSession FK) + repo_url + task_type
+ # Phase Plan Rule 1 bug fix：Plan stub 未创建 main_session 致 NOT NULL 失败
+ main = AgentSession.objects.create(
+ session_id=f"main-{uuid4.hex}",
+ status=AgentSession.Status.COMPLETED,
+ )
  session = SubAgentSession.objects.create(
  session_id=f"sess-{uuid4.hex}",
+ main_session=main,
+ repo_url="https://github.com/test/analytics.git",
+ task_type=SubAgentSession.TaskType.CODING,
  )
  created: list[Any] =
  for _ in range(count):
