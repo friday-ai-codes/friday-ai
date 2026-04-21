@@ -135,6 +135,7 @@ declare global {
  const unrefElement: typeof import('@vueuse/core').unrefElement
  const until: typeof import('@vueuse/core').until
  const useActiveElement: typeof import('@vueuse/core').useActiveElement
+ const useAnalyticsFiltersStore: typeof import('./stores/analyticsFilters').useAnalyticsFiltersStore
  const useAnimate: typeof import('@vueuse/core').useAnimate
  const useAppMode: typeof import('./composables/useAppMode').useAppMode
  const useArrayDifference: typeof import('@vueuse/core').useArrayDifference
@@ -383,7 +384,10 @@ declare global {
  export type { UseSystemHealthReturn } from './composables/useSystemHealth'
  import('./composables/useSystemHealth')
  // @ts-ignore
- export type { CredentialMissingPayload } from './stores/chat'
+ export type { AnalyticsGrouping } from './stores/analyticsFilters'
+ import('./stores/analyticsFilters')
+ // @ts-ignore
+ export type { CredentialMissingPayload, ContextExceededPayload } from './stores/chat'
  import('./stores/chat')
  // @ts-ignore
  export type { MergedProjectListItem } from './stores/prompts'
@@ -535,6 +539,7 @@ declare module 'vue' {
  readonly unrefElement: UnwrapRef<typeof import('@vueuse/core')['unrefElement']>
  readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>
  readonly useActiveElement: UnwrapRef<typeof import('@vueuse/core')['useActiveElement']>
+ readonly useAnalyticsFiltersStore: UnwrapRef<typeof import('./stores/analyticsFilters')['useAnalyticsFiltersStore']>
  readonly useAnimate: UnwrapRef<typeof import('@vueuse/core')['useAnimate']>
  readonly useAppMode: UnwrapRef<typeof import('./composables/useAppMode')['useAppMode']>
  readonly useArrayDifference: UnwrapRef<typeof import('@vueuse/core')['useArrayDifference']>

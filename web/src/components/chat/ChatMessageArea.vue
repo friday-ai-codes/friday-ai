@@ -13,11 +13,25 @@ import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 import PRConfirmCard from './PRConfirmCard.vue'
+import CleanupDialog from './CleanupDialog.vue'
+import ContextExceededCard from './ContextExceededCard.vue'
 import ProviderCredentialMissingCard from './ProviderCredentialMissingCard.vue'
 import { usePermission } from '~/composables/usePermission'
 import { useAuthStore } from '~/stores/auth'
 const chatStore = useChatStore
 const authStore = useAuthStore
+// Phase：switch_model 按钮透传给父页面（/pages/chat/[id].vue 监听后调用
+// ChatHeader.focusModelSelect）。cleanup_history 按钮走本地 CleanupDialog（下方 ref）。
+const emit = defineEmits<{
+ 'open-model-select':
+}>
+const cleanupDialogOpen = ref(false)
+function handleCleanupConfirmed(_beforeId: string) {
+ // 清理成功后重置 lastContextExceeded + 重新 fetch conversation 详情刷新消息列表
+ chatStore.resetContextExceeded?.
+ if (chatStore.currentConversationId)
+ chatStore.selectConversation(chatStore.currentConversationId)
+}
 // Phase：按角色分流 CTA。system_admin 走 /admin/providers 主按钮；其他走项目设置。
 const currentProjectIdRef = computed( => {
  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
@@ -262,6 +276,12 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  <ProviderCredentialMissingCard
  v-if="chatStore.credentialMissingPayload":missing-provider="chatStore.credentialMissingPayload.missingProvider":user-role="userRole":project-id="currentProjectIdRef"
  />
+ <!-- Phase /：上下文超限结构化引导卡片 + CleanupDialog -->
+ <ContextExceededCard
+ v-if="chatStore.lastContextExceeded":estimated-tokens="chatStore.lastContextExceeded.estimated_tokens":max-tokens="chatStore.lastContextExceeded.max_tokens":exceeded-by="chatStore.lastContextExceeded.exceeded_by":model="chatStore.lastContextExceeded.model":recommended-actions="chatStore.lastContextExceeded.recommended_actions"
+ @cleanup-click="cleanupDialogOpen = true"
+ @switch-model-click="emit('open-model-select')"
+ />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">
  <div class="error-icon">
@@ -329,6 +349,12 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  <ExportConfirmDialog
  v-model:open="showExportDialog":selected-count="exportSelectedIds.length":default-title="exportDefaultTitle":selected-message-ids="exportSelectedIds"
  @success="handleExportSuccess"
+ />
+ <!-- Phase：对话历史清理弹窗（从 ContextExceededCard 的清理按钮触发） -->
+ <CleanupDialog
+ v-if="chatStore.currentConversationId"
+ v-model:open="cleanupDialogOpen":conversation-id="chatStore.currentConversationId"
+ @confirm="handleCleanupConfirmed"
  />
  </div>
 </template>
