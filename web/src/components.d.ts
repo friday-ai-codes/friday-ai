@@ -135,6 +135,7 @@ declare module 'vue' {
  ExecutionHistoryList: typeof import('./components/execution/ExecutionHistoryList.vue')['default']
  ExecutionNode: typeof import('./components/execution/dag/ExecutionNode.vue')['default']
  ExecutionProgress: typeof import('./components/workflow/ExecutionProgress.vue')['default']
+ ExecutionProviderSnapshot: typeof import('./components/workflow/execution/ExecutionProviderSnapshot.vue')['default']
  ExecutionStatusBadge: typeof import('./components/execution/ExecutionStatusBadge.vue')['default']
  ExportConfirmDialog: typeof import('./components/chat/ExportConfirmDialog.vue')['default']
  ExportSuccessCard: typeof import('./components/chat/ExportSuccessCard.vue')['default']

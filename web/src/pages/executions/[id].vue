@@ -96,6 +96,37 @@ const selectedNodeConfig = computed<Record<string, unknown>>( => {
  )
  return defNode?.config ?? {}
 })
+/**：选中节点的 Provider 快照
+ * - undefined: 非 AI 节点（不渲染 ExecutionProviderSnapshot）
+ * - null: AI 节点但历史 Execution miss（渲染 "未快照" 降级态）
+ * - NodeSnapshot: AI 节点命中快照
+ */
+const AI_NODE_TYPES_WEB = new Set([
+ 'ai_prompt',
+ 'ai_variable_extractor',
+ 'ai_plan_generation',
+ 'ai_code_review',
+ 'ai_coding',
+ 'ai_coding_dispatcher',
+])
+const selectedProviderSnapshot = computed( => {
+ if (!selectedNodeExecution.value || !selectedNodeId.value)
+ return undefined
+ const nodeType = selectedNodeExecution.value.node_type ?? ''
+ if (!AI_NODE_TYPES_WEB.has(nodeType))
+ return undefined
+ const snapshots = (currentExecution.value?.context as any)?.node_snapshots ?? {}
+ return snapshots[selectedNodeId.value] ?? null
+})
+/**：Replay 可用性——execution 处于终态才允许 */
+const canReplaySnapshot = computed( => {
+ const status = currentExecution.value?.status
+ return status === 'completed' || status === 'failed' || status === 'error' || status === 'cancelled'
+})
+/**：基于快照重放 handler（委托 useExecutionControls.handleRetry） */
+function handleReplaySnapshot(_nodeId: string) {
+ handleRetry
+}
 /** 选中节点的瓶颈信息 */
 const selectedBottleneckInfo = computed( => {
  if (!selectedNodeExecution.value || !timelineData.value)
@@ -152,10 +183,11 @@ function handleActionComplete {
  @retry="handleRetry"
  />
  <!-- 节点详情抽屉 -->
- <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')":is-debug-paused="isSelectedNodeDebugPaused":workflow-definition="currentExecution?.workflow_definition"
+ <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')":is-debug-paused="isSelectedNodeDebugPaused":workflow-definition="currentExecution?.workflow_definition":provider-snapshot="selectedProviderSnapshot":can-replay-snapshot="canReplaySnapshot"
  @update:open="sheetOpen = $event"
  @action-complete="handleActionComplete"
  @resume-from-node="handleResumeClick"
+ @replay-snapshot="handleReplaySnapshot"
  />
  <ExecutionDialogs:approval-dialog-open="approvalDialogOpen":approval-comment="approvalComment":approving="approving":selected-node-execution="selectedNodeExecution":trigger-dialog-open="triggerDialogOpen":trigger-input-data="triggerInputData":triggering="triggering":resume-dialog-open="resumeDialogOpen":resume-node-name="resumeNodeName":resume-preview-loading="resumePreviewLoading":resume-skip-nodes="resumeSkipNodes":resume-rerun-nodes="resumeRerunNodes":resuming="resuming"
  @update:approval-dialog-open="approvalDialogOpen = $event"
