@@ -192,6 +192,7 @@ declare module 'vue' {
  PaginationLast: typeof import('./components/ui/pagination/PaginationLast.vue')['default']
  PaginationNext: typeof import('./components/ui/pagination/PaginationNext.vue')['default']
  PaginationPrev: typeof import('./components/ui/pagination/PaginationPrev.vue')['default']
+ PinConfirmDialog: typeof import('./components/chat/PinConfirmDialog.vue')['default']
  PlanApprovalPanel: typeof import('./components/execution/PlanApprovalPanel.vue')['default']
  Popover: typeof import('./components/ui/popover/Popover.vue')['default']
  PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']

@@ -29,10 +29,13 @@ interface Props {
  providerFilter?: ProviderType
  scope: 'system' | 'project'
  projectId?: string
+ /** Phase：frozen 态对话 Provider 下拉禁用。 */
+ disabled?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
  providerFilter: undefined,
  projectId: undefined,
+ disabled: false,
 })
 const emit = defineEmits<{
  (e: 'update:modelValue', v: string | null): void
@@ -89,10 +92,10 @@ function onChange(id: unknown) {
 }
 </script>
 <template>
- <Select:model-value="props.modelValue ?? ''"
+ <Select:model-value="props.modelValue ?? ''":disabled="props.disabled"
  @update:model-value="onChange"
  >
- <SelectTrigger>
+ <SelectTrigger:disabled="props.disabled":aria-disabled="props.disabled">
  <SelectValue placeholder="请选择凭证" />
  </SelectTrigger>
  <SelectContent>

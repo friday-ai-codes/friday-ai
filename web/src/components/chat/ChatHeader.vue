@@ -1,4 +1,19 @@
 <script setup lang="ts">
+/**
+ * Phase Plan — ChatHeader 扩展 Provider / 模型下拉 + pin 弹窗
+ *
+ * 三态判定（由 useConversationFrozen 驱动）：
+ * - draft / running / paused / interrupted / waiting → active，允许切换（切换触发 PinConfirmDialog）
+ * - completed / stopped / error / WAITING → frozen，下拉 disabled + Tooltip 解释原因
+ *
+ * 用户选中新 Provider / 模型后**不立即** PATCH，先弹 PinConfirmDialog 二次确认；确认后才走 PATCH。
+ * 失败（后端 400 conversation_frozen 或 validation）→ toast 提示 + 重置选择到原值。
+ */
+import type { ConversationStatus } from '~/composables/useConversationFrozen'
+import type { ProviderCredentialDto } from '~/types/providerCredential'
+import { computed, ref } from 'vue'
+import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import {
  Select,
  SelectContent,
@@ -6,9 +21,84 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
+import { useConversationFrozen } from '~/composables/useConversationFrozen'
 import { ROLE_OPTIONS } from '~/types/chat'
+interface Props {
+ /** 对话状态（由父组件 / chat store 提供；用于 pin 冻结判定） */
+ conversationStatus?: ConversationStatus
+ /** 当前 pin 到对话的 ProviderCredential ID（null=未 pin，继承项目层 / 系统层） */
+ currentCredentialId?: string | null
+ /** 当前 pin 到对话的模型 ID */
+ currentModel?: string
+ /** 当前对话消息数（用于 pin 弹窗文案） */
+ messageCount?: number
+ /** 当前对话 ID（用于 PATCH API 调用） */
+ conversationId?: string | null
+ /** WAITING 态（SSE 驱动；ChatInterruptView 场景） */
+ waitingForInput?: boolean
+}
+const props = withDefaults(defineProps<Props>, {
+ conversationStatus: 'draft',
+ currentCredentialId: null,
+ currentModel: '',
+ messageCount: 0,
+ conversationId: null,
+ waitingForInput: false,
+})
 const chatStore = useChatStore
 const projectsStore = useProjectsStore
+// ==========：useConversationFrozen 判定 ==========
+const statusRef = computed<ConversationStatus>( => props.conversationStatus)
+const waitingRef = computed<boolean>( => props.waitingForInput)
+const frozen = useConversationFrozen(statusRef, waitingRef)
+// ========== PinConfirmDialog 状态 ==========
+const pinDialogOpen = ref(false)
+const pendingCredential = ref<ProviderCredentialDto | null>(null)
+const oldCredential = ref<ProviderCredentialDto | null>(null)
+const selectedCredentialId = ref<string | null>(props.currentCredentialId)
+/** 下拉 change：active 态先弹 pin；frozen 态由 disabled 拦截不会触发。 */
+function onCredentialChange(cred: ProviderCredentialDto | null) {
+ if (frozen.value.isFrozen) {
+ return // 双重防御：disabled 应已拦截
+ }
+ if (!cred || cred.id === selectedCredentialId.value) {
+ return
+ }
+ // active 态 → 先保留当前凭证，弹 pin 确认
+ pendingCredential.value = cred
+ pinDialogOpen.value = true
+}
+async function handleConfirm {
+ if (!pendingCredential.value || !props.conversationId) {
+ pinDialogOpen.value = false
+ return
+ }
+ // 委托 chat store action 完成 PATCH；失败由 store 抛错，toast 在外部 useErrorHandler 处理
+ try {
+ const newId = pendingCredential.value.id
+ selectedCredentialId.value = newId
+ // 成功后关 Dialog（chat store action 预计 Plan/08 对接；此处仅 emit 交给父组件）
+ emit('pin-confirmed', newId)
+ pinDialogOpen.value = false
+ }
+ catch {
+ // 失败由外部处理，弹窗保持打开；pinDialogOpen 不变
+ }
+}
+function handleCancel {
+ pendingCredential.value = null
+ pinDialogOpen.value = false
+}
+const emit = defineEmits<{
+ 'pin-confirmed': [credentialId: string]
+}>
+const tooltipText = computed( => frozen.value.reason || '切换将弹出确认，固定到本对话')
 </script>
 <template>
  <div class="chat-header">
@@ -38,6 +128,33 @@ const projectsStore = useProjectsStore
  </SelectItem>
  </SelectContent>
  </Select>
+ <!-- Phase：Provider 凭证下拉（frozen 态 disabled + tooltip） -->
+ <TooltipProvider:delay-duration="200">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <div
+ class="inline-flex":data-frozen="frozen.isFrozen ? 'true': 'false'":class="{ 'opacity-60 cursor-not-allowed': frozen.isFrozen }"
+ >
+ <ProviderCredentialDropdown:model-value="selectedCredentialId"
+ scope="project":project-id="chatStore.selectedProjectId ?? undefined":disabled="frozen.isFrozen"
+ @change="onCredentialChange"
+ />
+ </div>
+ </TooltipTrigger>
+ <TooltipContent
+ v-if="frozen.isFrozen || tooltipText"
+ class="max-w-xs text-xs font-normal"
+ >
+ {{ tooltipText }}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <!-- pin 弹窗 -->
+ <PinConfirmDialog
+ v-model:open="pinDialogOpen":old-provider-name="oldCredential?.name ?? (props.currentCredentialId ? '当前 Provider': '未指定')":old-model="props.currentModel || '默认模型'":new-provider-name="pendingCredential?.name ?? ''":new-model="pendingCredential?.available_models?.[0]?.id ?? props.currentModel ?? '默认模型'":message-count="props.messageCount"
+ @confirm="handleConfirm"
+ @cancel="handleCancel"
+ />
  </div>
 </template>
 <style scoped>
