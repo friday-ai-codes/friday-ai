@@ -1,0 +1,269 @@
+""" / /: CRUD + toggle + refresh-models 行为测试 + W4 脱敏链路断言。
+覆盖契约：
+-：Pydantic dispatch 校验 + Read Serializer 不回显 encrypted_config
+-：scope=system / scope=project 过滤
+-：toggle-active 切 is_active + aresolve 下次解析跳过
+-：refresh-models 写回 available_models + 上游异常脱敏链路
+- W4（T-）：mock 上游异常含 `sk-ant-realkey...` 时，HTTP body + DB 字段
+ 双路径均不含明文且含脱敏标记（***REDACTED***）
+测试路径：DRF APIClient + force_authenticate 同步路径
+（与既有 tests/test_provider_credential_permissions 完全一致）。
+DRF Router 把 POST 同步分派到 create，不经 async perform_acreate；
+toggle-active / refresh-models 是 adrf @action 的 async 方法，APIClient
+通过 asgiref.sync 兼容同步调用。
+"""
+from __future__ import annotations
+from unittest.mock import patch
+import pytest
+from rest_framework.test import APIClient
+# ======================================================================
+# helper
+# ======================================================================
+def _client_for(user) -> APIClient:
+ """force_authenticate 注入用户（与 test_provider_credential_permissions 同模式）。"""
+ client = APIClient
+ client.force_authenticate(user=user)
+ return client
+# ======================================================================
+#：Create Serializer Pydantic dispatch 校验
+# ======================================================================
+@pytest.mark.django_db
+def test_create_credential_pydantic_dispatch_invalid_anthropic(
+ system_admin_user,
+) -> None:
+ """anthropic credential_schema 校验失败（api_key 缺失）应返 400。
+ AnthropicCredentialSchema 把 api_key 标记为 Required SecretStr，
+ 传入空 config 会触发 Pydantic missing 错误 → DRF 400 ValidationError。
+ """
+ client = _client_for(system_admin_user)
+ resp = client.post(
+ "/api/providers/credentials/",
+ data={
+ "provider_type": "anthropic",
+ "name": "bad-anth",
+ "scope": "system",
+ "config": {}, # 缺 api_key → Pydantic missing
+ },
+ format="json",
+ )
+ assert resp.status_code == 400, f"应 400 got {resp.status_code}: {resp.content!r}"
+ # Pydantic ConfigDict(hide_input_in_errors=True) 保证错误结构不回显输入；
+ # DRF ValidationError 可能把字段错误挂到 'config' 或归到 'detail'（取决于 serializer
+ # 层抛 ValidationError 的参数结构）—— 只要 400 且错误消息提及 api_key required 即可。
+ body_text = resp.content.decode("utf-8", errors="replace")
+ assert "api_key" in body_text.lower or "field required" in body_text.lower, (
+ f"错误消息应提示 api_key 字段缺失，实际: {body_text!r}"
+ )
+@pytest.mark.django_db
+def test_create_credential_pydantic_dispatch_valid_anthropic(
+ system_admin_user,
+) -> None:
+ """anthropic schema 校验通过返 201；Read Serializer 不回显 encrypted_config / config 明文。"""
+ client = _client_for(system_admin_user)
+ resp = client.post(
+ "/api/providers/credentials/",
+ data={
+ "provider_type": "anthropic",
+ "name": "good-anth",
+ "scope": "system",
+ "config": {
+ "api_key": "sk-test-placeholder",
+ "base_url": "https://api.anthropic.com",
+ },
+ },
+ format="json",
+ )
+ assert resp.status_code == 201, f"应 201 got {resp.status_code}: {resp.content!r}"
+ body = resp.json
+ # Pitfall 3 防御：config / encrypted_config 不在 response 明文回显
+ assert "encrypted_config" not in body, "encrypted_config 不应回显"
+ assert "config" not in body, "config write_only 不应回显"
+ # 基础字段（POST 201 使用 CreateSerializer 回显，Read 派生字段 has_api_key /
+ # api_key_last4 仅在 GET retrieve 时由 ProviderCredentialSerializer 产生）
+ assert body.get("provider_type") == "anthropic"
+ assert body.get("scope") == "system"
+ # 原明文不应泄漏在响应中
+ assert b"sk-test-placeholder" not in resp.content, (
+ "完整 api_key 明文泄漏到响应"
+ )
+ # GET retrieve 验证 Read Serializer 契约：has_api_key + api_key_last4 末 4 位脱敏
+ # Create Serializer 不回显 id，从 DB 按 name 读取刚创建的凭证
+ from system.models import ProviderCredential
+ cred_id = ProviderCredential.objects.get(name="good-anth").id
+ retrieve_resp = client.get(f"/api/providers/credentials/{cred_id}/")
+ assert retrieve_resp.status_code == 200, retrieve_resp.content
+ retrieve_body = retrieve_resp.json
+ assert retrieve_body.get("has_api_key") is True, (
+ f"retrieve 应回显 has_api_key=True: {retrieve_body!r}"
+ )
+ assert retrieve_body.get("api_key_last4", "").endswith("cdef"), (
+ f"api_key_last4 应末 4 位匹配，实际: {retrieve_body.get('api_key_last4')!r}"
+ )
+ # retrieve 响应也不应泄漏完整明文
+ assert b"sk-test-placeholder" not in retrieve_resp.content, (
+ "完整 api_key 明文泄漏到 retrieve 响应"
+ )
+ assert "encrypted_config" not in retrieve_body, "retrieve 不应回显 encrypted_config"
+# ======================================================================
+#：toggle-active + aresolve_or_error 跳过验证
+# ======================================================================
+@pytest.mark.django_db(transaction=True)
+def test_toggle_active_skips_in_aresolve(
+ system_admin_user, system_default_anthropic_credential
+) -> None:
+ """PATCH toggle-active 反转 is_active；aresolve_or_error 下次解析不再命中该凭证。
+ Phase `_fetch_credential_by_id / _fetch_system_default_credential` 的
+ queryset 均带 `filter(is_active=True)`，is_active=false 时系统级 anthropic
+ 解析应返回 ProviderMissingError（测试库里除本凭证外没有其他 system-anthropic）。
+ 使用 `transaction=True`：aresolve_or_error 内部经 asgiref.sync_to_async 访问
+ DB 时需跨线程共享 connection；默认 `@pytest.mark.django_db` 单事务封装
+ 会导致 SQLite 'database table is locked' 错误。transaction=True 下每次
+ 数据库操作走真实事务，容许跨线程访问。
+ """
+ from asgiref.sync import async_to_sync
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ProviderType,
+ )
+ client = _client_for(system_admin_user)
+ resp = client.patch(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/toggle-active/",
+ )
+ assert resp.status_code == 200, f"toggle-active 应 200: {resp.content!r}"
+ assert resp.json["is_active"] is False
+ # DB 回读确认
+ system_default_anthropic_credential.refresh_from_db
+ assert system_default_anthropic_credential.is_active is False
+ # aresolve_or_error（ Result 模式）应返回 ProviderMissingError；
+ # 没有其他 system-scope anthropic 凭证可用，且 node_config 强制 anthropic 类型。
+ result = async_to_sync(ProviderConfigService.aresolve_or_error)(
+ node_config={"provider_type": ProviderType.ANTHROPIC.value},
+ conversation=None,
+ project=None,
+ )
+ assert isinstance(result, ProviderMissingError), (
+ f"期望 ProviderMissingError，实际: {type(result).__name__} value={result!r}"
+ )
+# ======================================================================
+#：refresh-models 写回 available_models（成功路径）
+# ======================================================================
+@pytest.mark.django_db
+def test_refresh_models_writes_available(
+ system_admin_user, system_default_anthropic_credential
+) -> None:
+ """mock fetch_models_for_credential 返回 list → POST refresh-models →
+ HTTP 响应 + DB 字段 available_models 均被写入。
+ """
+ from system.models import ProviderCredential
+ client = _client_for(system_admin_user)
+ fake_list = [
+ {"id": "claude-opus-4-7", "display_name": "Claude Opus 4.7"},
+ {"id": "claude-sonnet-4", "display_name": "Claude Sonnet 4"},
+ ]
+ async def _fake_fetch(cred):
+ return fake_list
+ with patch(
+ "services.provider_health.fetch_models_for_credential",
+ new=_fake_fetch,
+ ):
+ resp = client.post(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/refresh-models/",
+ )
+ assert resp.status_code == 200, f"应 200: {resp.content!r}"
+ assert resp.json["available_models"] == fake_list
+ # DB 回读确认
+ cred = ProviderCredential.objects.get(id=system_default_anthropic_credential.id)
+ assert cred.available_models == fake_list
+# ======================================================================
+# W4 修复：refresh-models 上游异常脱敏链路（T- 核心）
+# ======================================================================
+@pytest.mark.django_db
+def test_refresh_models_upstream_error_redacted(
+ system_admin_user, system_default_anthropic_credential
+) -> None:
+ """W4 + T-：上游错误经 redact_secrets_in_text 脱敏后入库 + 不泄漏到响应。
+ 断言链：
+ 1. fetch_models_for_credential 被 mock 替换为抛含 sk-ant-realkey... 的异常
+ 2. view 层 except 分支将异常 message 脱敏后写入 credential.last_health_check_error
+ 3. HTTP 响应 body 不含明文 sk-ant-realkey...
+ 4. DB 回读 last_health_check_error 不含明文，且含脱敏标记 ***REDACTED***
+ 5. DB 字段长度 ≤ ERROR_TRUNCATE_LIMIT（500 字符契约）
+ """
+ from system.models import ProviderCredential
+ client = _client_for(system_admin_user)
+ leaking_key = "sk-test-placeholder"
+ upstream_exc_msg = (
+ f"401 Unauthorized: invalid api_key={leaking_key} at /v1/models"
+ )
+ async def _raise_with_key(cred):
+ raise RuntimeError(upstream_exc_msg)
+ with patch(
+ "services.provider_health.fetch_models_for_credential",
+ new=_raise_with_key,
+ ):
+ resp = client.post(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/refresh-models/",
+ )
+ # view 层兜底异常分支：返 502（契约允许 200 或 502；实际用 502 语义更清晰）
+ assert resp.status_code in (200, 502, 500), (
+ f"status={resp.status_code} body={resp.content!r}"
+ )
+ # ==== 断言 1: HTTP 响应 body 不含明文 api_key ====
+ assert leaking_key.encode not in resp.content, (
+ f"明文 api_key 泄漏到 HTTP 响应:\n{resp.content!r}"
+ )
+ assert leaking_key not in resp.content.decode("utf-8", errors="replace"), (
+ "明文 api_key 泄漏到 HTTP 响应（字符串层）"
+ )
+ # ==== 断言 2: DB 回读 last_health_check_error 不含明文 ====
+ cred = ProviderCredential.objects.get(id=system_default_anthropic_credential.id)
+ err_text = cred.last_health_check_error or ""
+ assert leaking_key not in err_text, (
+ f"明文 api_key 泄漏到 DB.last_health_check_error:\n{err_text!r}"
+ )
+ # ==== 断言 3: DB 字段含脱敏标记 ====
+ assert ("***REDACTED***" in err_text) or ("sk-ant-***" in err_text), (
+ f"last_health_check_error 缺脱敏占位，实际: {err_text!r}; "
+ f"预期含 '***REDACTED***' 或 'sk-ant-***'（common.logging.redact_secrets_in_text 契约）"
+ )
+ # ==== 断言 4: DB 字段长度 ≤ 500（ERROR_TRUNCATE_LIMIT 契约）====
+ assert len(err_text) <= 500, (
+ f"last_health_check_error 长度 {len(err_text)} > 500 违反截断契约"
+ )
+# ======================================================================
+# list/retrieve scope 过滤
+# ======================================================================
+@pytest.mark.django_db
+def test_list_scope_filter_system(
+ system_admin_user,
+ system_default_anthropic_credential,
+ project_a_anthropic_credential,
+) -> None:
+ """?scope=system 只返回 system 凭证，不含 project 凭证。"""
+ client = _client_for(system_admin_user)
+ resp = client.get("/api/providers/credentials/?scope=system")
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(system_default_anthropic_credential.id) in ids
+ assert str(project_a_anthropic_credential.id) not in ids
+@pytest.mark.django_db
+def test_list_scope_filter_project(
+ system_admin_user,
+ system_default_anthropic_credential,
+ project_a_anthropic_credential,
+ project_a,
+) -> None:
+ """?scope=project&project_id=<uuid> 只返回该项目凭证，不含 system 凭证。"""
+ client = _client_for(system_admin_user)
+ resp = client.get(
+ f"/api/providers/credentials/?scope=project&project_id={project_a.id}"
+ )
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(project_a_anthropic_credential.id) in ids
+ assert str(system_default_anthropic_credential.id) not in ids
