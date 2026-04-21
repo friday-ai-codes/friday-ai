@@ -1,15 +1,33 @@
 """AIAgentBaseNode - Shared base class for AI agent workflow nodes.
-Extracts common execution logic (session management, SDKAgentRunner construction,
-result mapping) into a base class. Subclasses only need to override
-5 hook methods to define specialized node behavior.
+Extracts common execution logic (session management, LangChainAgentRunner
+construction, result mapping) into a base class. Subclasses only need to
+override 5 hook methods to define specialized node behavior.
+Phase Wave：AIAgentBaseNode.execute 从 SDKAgentRunner 切换到
+LangChainAgentRunner；`_resolve_api_key_and_model` 签名由三元组
+`(api_key, model, base_url)` 调整为二元组
+`(ResolvedProviderConfig, model)`；use_custom_api 路径构造临时
+ResolvedProviderConfig(source="node", extra={"custom_api": True, ...})
+（分歧 A 覆盖 ）；None -> 工具映射（分歧 B 覆盖 ）。
 """
+import asyncio
 from abc import abstractmethod
 from typing import Any, ClassVar, Literal
 import structlog
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from agents.core.result import AgentResult
+from agents.langchain_runner import (
+ ContextWindowExceededError,
+ LangChainAgentRunner,
+ LangChainRunnerConfig,
+)
 from agents.models import AgentSession
-from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
-from services.provider_config import ProviderConfigService
+from agents.tools.langchain_adapter import build_langchain_tools
+from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ProviderType,
+ ResolvedProviderConfig,
+)
 from workflows.nodes.ai.sub_step_mixin import SubStepMixin
 from workflows.nodes.base import (
  BaseNode,
@@ -92,6 +110,13 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "minimum": 1024,
  "maximum": 128000,
  },
+ "max_output_tokens": {
+ "type": "integer",
+ "title": "最大输出 Token 数",
+ "description": "LLM 单次响应的最大 token 数。留空使用模型 capabilities 默认值。",
+ "minimum": 100,
+ "maximum": 200000,
+ },
  "max_budget_usd": {
  "type": "number",
  "title": "预算上限 (USD)",
@@ -105,6 +130,13 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "description": "Agent 执行的最大超时时间，超时后自动终止。留空使用默认值（10 分钟）",
  "minimum": 1,
  "maximum": 120,
+ },
+ "provider_credential_id": {
+ "type": "string",
+ "format": "uuid",
+ "title": "Provider 凭证（节点级）",
+ "description": "指定本节点使用的凭证 ID，空则按项目/系统默认解析。",
+ "default": "",
  },
  },
  "required":,
@@ -188,30 +220,69 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  api_base_url: str = "",
  api_key: str = "",
  provider_type: str = "",
- ) -> tuple[str, str, str]:
- """Resolve API key, model, and base URL from config hierarchy.
- 优先级：use_custom_api > provider_type > 系统/项目级默认配置。
+ provider_credential_id: str = "",
+ ) -> tuple[ResolvedProviderConfig, str]:
+ """四层优先级解析 Provider 凭证 + 模型（Phase 二元组新签名）。
+ 优先级：use_custom_api > provider_credential_id(节点 FK) > provider_type(节点类型)
+ > conversation > project > system。
+ 分歧 A（覆盖 CONTEXT ）：use_custom_api=True 路径构造临时
+ ResolvedProviderConfig(source="node", extra={"custom_api": True,
+ "source_detail": "node_custom_api"})；source 仍为四态 ("node")，
+ 不新增第 5 种枚举值（严禁 D）。
+ Args:
+ project: 关联的项目对象（可能为 None）。
+ config_model: 节点 config.model 字段值。
+ use_custom_api: 节点是否启用自定义 API 分支。
+ api_base_url: 自定义 API 地址（仅 use_custom_api=True 生效）。
+ api_key: 自定义 API Key（仅 use_custom_api=True 生效）。
+ provider_type: 节点级 provider_type 字段（兼容老字段）。
+ provider_credential_id: 节点级凭证 FK（， Task 1 传真值；
+ 本 plan 默认空字符串保持兼容）。
  Returns:
- (api_key, model, base_url) 元组
+ (resolved, model) 二元组。``resolved`` 可传给
+ ``LangChainRunnerConfig.resolved`` 或 ``build_chat_model``。
+ Raises:
+ ValueError: 凭证缺失（ProviderMissingError 转发）或 model 未配置。
  """
- # 分支 1: 自定义 API
- if use_custom_api and api_base_url and api_key:
+ # 分支 1：自定义 API（分歧 A：source="node" + extra.custom_api=True）
+ if use_custom_api and api_base_url:
  if not config_model:
  raise ValueError("使用自定义 API 时必须指定模型")
- return api_key, config_model, api_base_url
- # 分支 2: 通过 ProviderConfigService 解析
- node_config = {"provider_type": provider_type} if provider_type else None
- resolved = await ProviderConfigService.aresolve(
- node_config=node_config,
+ resolved = ResolvedProviderConfig(
+ provider_type=ProviderType.OPENAI_CHAT,
+ api_key=api_key,
+ base_url=api_base_url,
+ source="node", # 四态之一；严禁 D 守护
+ credential_id=None,
+ extra={"custom_api": True, "source_detail": "node_custom_api"},
+ )
+ return resolved, config_model
+ # 分支 2：四层解析（ Result 模式）
+ node_config: dict[str, Any] = {}
+ if provider_credential_id:
+ node_config["provider_credential_id"] = provider_credential_id
+ if provider_type:
+ node_config["provider_type"] = provider_type
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=node_config or None,
  project=project,
  )
+ if isinstance(result, ProviderMissingError):
+ raise ValueError(
+ f"未配置 {result.missing_provider} Provider 凭证："
+ f"{result.recommended_action}"
+ )
+ resolved = result
+ # 模型 fallback：config_model 为空时读 claude_config.model
+ if config_model:
+ resolved_model = config_model
+ else:
  from services.claude_config import aget_claude_config
- claude_config = await aget_claude_config(project)
- resolved_model = config_model or claude_config.model
+ cc = await aget_claude_config(project)
+ resolved_model = cc.model or ""
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- resolved_base_url = getattr(resolved, "base_url", "") or ""
- return resolved.api_key, resolved_model, resolved_base_url
+ return resolved, resolved_model
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
  return f"wf-{context.execution_id}-{context.node_id}"
