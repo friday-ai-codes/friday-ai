@@ -2,8 +2,8 @@
 Extracts common execution logic (session management, LangChainAgentRunner
 construction, result mapping) into a base class. Subclasses only need to
 override 5 hook methods to define specialized node behavior.
-Phase Wave：AIAgentBaseNode.execute 从 SDKAgentRunner 切换到
-LangChainAgentRunner；`_resolve_api_key_and_model` 签名由三元组
+Phase Wave：AIAgentBaseNode.execute 统一走 LangChainAgentRunner
+（替换 v20.0 之前的 SDK 子工厂路径）；`_resolve_api_key_and_model` 签名由三元组
 `(api_key, model, base_url)` 调整为二元组
 `(ResolvedProviderConfig, model)`；use_custom_api 路径构造临时
 ResolvedProviderConfig(source="node", extra={"custom_api": True, ...})
@@ -44,7 +44,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  3. get_enabled_tools - Return enabled tool names (default: from config)
  4. get_max_iterations - Return max iterations (default: from config)
  5. map_output - Map AgentResult to output dict (default implementation)
- Common infrastructure (session, SDKAgentRunner) is handled here.
+ Common infrastructure (session, LangChainAgentRunner) is handled here.
  """
  category: ClassVar[NodeCategory] = NodeCategory.AI
  execution_mode: ClassVar[Literal["server_local", "runner_dispatched"]] = "server_local"
@@ -295,7 +295,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  ) -> AgentSession | None:
  """Pre-create AgentSession with chat_id for ask_user_question tool.
  Returns:
- AgentSession 实例（用于 SDKAgentRunner hooks），
+ AgentSession 实例（用于 LangChainAgentRunner usage/ToolCallLog 持久化 hooks），
  或 None（无 project/chat_id 时）。
  """
  if chat_id and project:
@@ -320,7 +320,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  )
  # ===== Unified execute method =====
  async def execute(self, context: ExecutionContext) -> NodeResult:
- """Execute the AI agent node using SDKAgentRunner."""
+ """Execute the AI agent node using LangChainAgentRunner (Phase Wave)."""
  config = context.node_config
  # 1. Call hook methods
  system_prompt = self.get_system_prompt(context)
@@ -350,39 +350,58 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  user_id=user.id if user else None,
  max_iterations=max_iterations,
  chat_id=chat_id,
+ custom_api=bool(use_custom_api), # Pitfall #8：仅布尔，不泄漏 api_key / api_base_url
  )
  agent_session = await self._ensure_agent_session(session_id, project, user, chat_id)
  enhanced_prompt = self._enhance_system_prompt(system_prompt, session_id)
- # Resolve API key, model, and base URL
- api_key, resolved_model, resolved_base_url = await self._resolve_api_key_and_model(
+ # 解析 Provider 凭证 + 模型（Phase 二元组新签名）
+ resolved, resolved_model = await self._resolve_api_key_and_model(
  project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
+ provider_credential_id=config.get("provider_credential_id", ""),
  )
- # 3. Build and run SDKAgentRunner
+ # 工具桥接（ + 分歧 B 覆盖：None -> 不走全量注册表）
+ hook_tool_names = self.get_enabled_tools(context)
+ tool_names: list[str] = (
+ hook_tool_names if hook_tool_names is not None else
+ )
+ tools = build_langchain_tools(
+ tool_names,
+ injected_values={
+ "project_id": str(project.id) if project else "",
+ "session_id": session_id,
+ },
+ )
+ # 3. Build and run LangChainAgentRunner
  timeout_minutes = config.get("timeout_minutes")
- timeout_seconds = timeout_minutes * 60.0 if timeout_minutes else 600.0
- runner_config = SdkRunnerConfig(
- system_prompt=enhanced_prompt,
- model=resolved_model,
- project_id=str(project.id) if project else "",
- session_id=session_id,
- api_key=api_key,
- api_base_url=resolved_base_url,
- max_turns=max_iterations,
- agent_session=agent_session,
- max_thinking_tokens=config.get("max_thinking_tokens"),
- max_budget_usd=config.get("max_budget_usd"),
- timeout_seconds=timeout_seconds,
+ timeout_seconds: float = (
+ float(timeout_minutes * 60) if timeout_minutes else 600.0
  )
- runner = SDKAgentRunner(runner_config)
+ runner_config = LangChainRunnerConfig(
+ resolved=resolved,
+ model=resolved_model,
+ session_id=session_id,
+ max_turns=max_iterations,
+ timeout_seconds=timeout_seconds,
+ tools=tools,
+ max_thinking_tokens=config.get("max_thinking_tokens"),
+ max_output_tokens=config.get("max_output_tokens"),
+ agent_session=agent_session,
+ )
+ runner = LangChainAgentRunner(runner_config)
  # 消费完整 stream 以获取结果（workflow 节点不需要 SSE 流式输出）
- async for _event in runner.stream(user_prompt):
+ # / 严禁 A：纯字符串双包装，禁 ChatPromptTemplate
+ messages: list[BaseMessage] = [
+ SystemMessage(content=enhanced_prompt),
+ HumanMessage(content=user_prompt),
+ ]
+ async for _event in runner.stream(messages):
  pass
  result = runner.result
  if result is None:
  return NodeResult(
  status="failed",
- error="SDKAgentRunner returned no result",
+ error="LangChainAgentRunner returned no result",
  next_handle="error",
  )
  # 4. Result mapping
@@ -426,10 +445,52 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  error=error_msg,
  next_handle="error",
  )
+ except ProviderMissingError as e:
+ # 兜底分支；_resolve_api_key_and_model 已把 ProviderMissingError 转 ValueError。
+ # 此处保留用于 aresolve_or_error 直接被其他路径捕获到的场景。
+ return NodeResult(
+ status="failed",
+ error=str(e),
+ output={
+ "error_code": "provider_credential_missing",
+ "missing_provider": getattr(e, "missing_provider", ""),
+ "recommended_action": getattr(e, "recommended_action", ""),
+ },
+ next_handle="error",
+ )
+ except ContextWindowExceededError as e:
+ return NodeResult(
+ status="failed",
+ error=str(e),
+ output={"error_code": "context_window_exceeded", "detail": str(e)},
+ next_handle="error",
+ )
+ except ValueError as e:
+ msg = str(e)
+ if "exceeds model limit" in msg:
+ code = "max_tokens_exceeds_model_limit"
+ elif "未配置" in msg and "凭证" in msg:
+ code = "provider_credential_missing"
+ else:
+ code = "internal_error"
+ return NodeResult(
+ status="failed",
+ error=msg,
+ output={"error_code": code},
+ next_handle="error",
+ )
+ except asyncio.CancelledError:
+ return NodeResult(
+ status="failed",
+ error="Agent execution cancelled",
+ output={"error_code": "execution_cancelled"},
+ next_handle="error",
+ )
  except Exception as e:
  logger.exception("agent_node_error", error=str(e))
  return NodeResult(
  status="failed",
  error=str(e),
+ output={"error_code": "internal_error"},
  next_handle="error",
  )
