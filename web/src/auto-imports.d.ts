@@ -168,6 +168,7 @@ declare global {
  const useColorMode: typeof import('@vueuse/core').useColorMode
  const useConfigModel: typeof import('./composables/useConfigModel').useConfigModel
  const useConfirmDialog: typeof import('./composables/useConfirmDialog').useConfirmDialog
+ const useConversationFrozen: typeof import('./composables/useConversationFrozen').useConversationFrozen
  const useCountdown: typeof import('@vueuse/core').useCountdown
  const useCounter: typeof import('@vueuse/core').useCounter
  const useCounterStore: typeof import('./stores/counter').useCounterStore
@@ -360,6 +361,9 @@ declare global {
  // @ts-ignore
  export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
  import('./composables/useConfigModel')
+ // @ts-ignore
+ export type { ConversationStatus, FrozenState } from './composables/useConversationFrozen'
+ import('./composables/useConversationFrozen')
  // @ts-ignore
  export type { DesignTimeVariable, VariableCategory } from './composables/useDesignTimeVariables'
  import('./composables/useDesignTimeVariables')
@@ -561,6 +565,7 @@ declare module 'vue' {
  readonly useColorMode: UnwrapRef<typeof import('@vueuse/core')['useColorMode']>
  readonly useConfigModel: UnwrapRef<typeof import('./composables/useConfigModel')['useConfigModel']>
  readonly useConfirmDialog: UnwrapRef<typeof import('./composables/useConfirmDialog')['useConfirmDialog']>
+ readonly useConversationFrozen: UnwrapRef<typeof import('./composables/useConversationFrozen')['useConversationFrozen']>
  readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
  readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
  readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
