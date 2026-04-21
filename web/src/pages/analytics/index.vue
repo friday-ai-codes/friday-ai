@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { storeToRefs } from 'pinia'
 import { provide, ref } from 'vue'
+import AnalyticsGroupingSelector from '~/components/analytics/AnalyticsGroupingSelector.vue'
 import DurationDistribution from '~/components/analytics/DurationDistribution.vue'
 import KpiCards from '~/components/analytics/KpiCards.vue'
 import NodePerformanceTable from '~/components/analytics/NodePerformanceTable.vue'
@@ -8,6 +10,7 @@ import TokenCostChart from '~/components/analytics/TokenCostChart.vue'
 import TrendChart from '~/components/analytics/TrendChart.vue'
 import PageHeader from '~/components/common/PageHeader.vue'
 import PageContainer from '~/components/layout/PageContainer.vue'
+import { useAnalyticsFiltersStore } from '~/stores/analyticsFilters'
 function getDateString(daysAgo: number): string {
  const d = new Date
  d.setDate(d.getDate - daysAgo)
@@ -19,6 +22,9 @@ const dateRange = ref({
 })
 // 通过 provide 让所有子组件共享时间范围
 provide('analyticsDateRange', dateRange)
+// Phase Plan: 分组维度筛选状态
+const filtersStore = useAnalyticsFiltersStore
+const { grouping } = storeToRefs(filtersStore)
 </script>
 <template>
  <PageContainer>
@@ -31,11 +37,15 @@ provide('analyticsDateRange', dateRange)
  description="工作流执行健康状况、性能趋势和成本消耗"
  >
  <template #actions>
- <TimeRangeSelector v-model="dateRange" />
+ <TimeRangeSelector v-model="dateRange">
+ <template #right>
+ <AnalyticsGroupingSelector v-model="grouping" />
+ </template>
+ </TimeRangeSelector>
  </template>
  </PageHeader>
  <!-- KPI 概览 -->
- <KpiCards class="mb-6" />
+ <KpiCards class="mb-6":grouping="grouping" />
  <!-- 趋势和分布图 -->
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
  <TrendChart />
@@ -43,7 +53,7 @@ provide('analyticsDateRange', dateRange)
  </div>
  <!-- Token 成本和节点性能 -->
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
- <TokenCostChart />
+ <TokenCostChart:grouping="grouping" />
  <NodePerformanceTable />
  </div>
  </PageContainer>
