@@ -73,6 +73,15 @@ class Project(models.Model):
  verbose_name="默认模型",
  help_text="项目默认模型 ID，为空时使用 Provider 默认模型 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
  )
+ # Phase：项目级默认 Provider 凭证（四层解析 L3）
+ default_provider_credential_id = models.ForeignKey(
+ "system.ProviderCredential",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="default_for_projects",
+ help_text="项目级默认 Provider 凭证（ 四层解析 L3）",
+ )
  # Timestamps
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)

@@ -1,6 +1,7 @@
 """Chat API views."""
 import structlog
 from adrf.views import APIView
+from asgiref.sync import sync_to_async
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
@@ -20,6 +21,7 @@ from .serializers import (
  ConversationDetailSerializer,
  ConversationListSerializer,
  ConversationMessageSerializer,
+ ConversationPatchSerializer,
  ConversationRuntimeSerializer,
  CreateConversationSerializer,
  ExportToFeishuSerializer,
@@ -289,6 +291,100 @@ class ConversationDetailView(APIView):
  status=status.HTTP_404_NOT_FOUND,
  )
  return Response(status=status.HTTP_204_NO_CONTENT)
+ @extend_schema(
+ summary="更新对话（pin 语义）",
+ description=(
+ "部分更新对话的 provider_credential_id / model / title。"
+ "frozen 状态（completed/stopped/error）下拒绝修改 provider_credential_id 和 model，"
+ "返回 HTTP 400 + {code: 'conversation_frozen'}（Phase 后端防御）。"
+ ),
+ request=ConversationPatchSerializer,
+ responses={
+ 200: ConversationDetailSerializer,
+ 400: {"description": "对话已冻结或字段校验失败"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def patch(self, request, conversation_id):
+ """Phase /：对话 pin 更新 + frozen 校验。"""
+ # 1. 对话存在性（Conversation.DoesNotExist → 404）
+ try:
+ conversation = await Conversation.objects.aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 2. Frozen 校验（ 双重防御）
+ FROZEN_STATUSES = {"completed", "stopped", "error"}
+ if conversation.status in FROZEN_STATUSES:
+ if any(k in request.data for k in ("provider_credential_id", "model")):
+ logger.info(
+ "conversation.patch_rejected_frozen",
+ conversation_id=str(conversation.id),
+ status=conversation.status,
+ )
+ return Response(
+ {
+ "code": "conversation_frozen",
+ "detail": (
+ f"对话状态为 {conversation.status}，"
+ "Provider / 模型不可修改"
+ ),
+ },
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 3. Validation（provider_credential_id FK + is_active 校验）
+ serializer = ConversationPatchSerializer(data=request.data)
+ try:
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ except Exception:
+ logger.info(
+ "conversation.patch_validation_failed",
+ conversation_id=str(conversation.id),
+ )
+ raise
+ # 4. 应用变更（provider_credential_id 需写 FK 的 _id 列；Django 生成的 DB 列名
+ # 为 `<field_name>_id` → 对本字段即 `provider_credential_id_id`，setattr 更稳妥。）
+ data = serializer.validated_data
+ updated_fields: list[str] =
+ if "provider_credential_id" in data:
+ # 赋 UUID 到 FK 的 _id 列：Django ORM 约定 `{field}_id` 持久化 FK ID
+ setattr(
+ conversation,
+ "provider_credential_id_id",
+ data["provider_credential_id"],
+ )
+ updated_fields.append("provider_credential_id")
+ if "model" in data:
+ conversation.model = data["model"]
+ updated_fields.append("model")
+ if "title" in data:
+ conversation.title = data["title"]
+ updated_fields.append("title")
+ if updated_fields:
+ updated_fields.append("updated_at")
+ await sync_to_async(conversation.save)(update_fields=updated_fields)
+ logger.info(
+ "conversation.patch_applied",
+ conversation_id=str(conversation.id),
+ fields_updated=list(data.keys),
+ )
+ # 5. 响应（复用 ConversationDetailSerializer）
+ return Response(
+ {
+ "id": str(conversation.id),
+ "project_id": str(conversation.project_id),
+ "title": conversation.title,
+ "created_at": conversation.created_at,
+ "updated_at": conversation.updated_at,
+ "messages":,
+ },
+ )
 class ConversationRuntimeView(APIView):
  """对话运行态查询。"""
  authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]

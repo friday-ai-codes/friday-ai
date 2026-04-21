@@ -104,6 +104,32 @@ class CreateConversationSerializer(serializers.Serializer):
  allow_blank=True,
  help_text="LLM 模型 ID（可选，为空时使用系统默认）",
  )
+class ConversationPatchSerializer(serializers.Serializer):
+ """Phase：对话部分更新 Serializer。
+ 允许字段：
+ - provider_credential_id（UUID，null 表示清空 pin）
+ - model（LLM 模型 ID 字符串）
+ - title（对话标题）
+ frozen 校验由 ConversationDetailView.patch 在 serializer 前完成（ 双重防御）。
+ """
+ provider_credential_id = serializers.UUIDField(required=False, allow_null=True)
+ model = serializers.CharField(
+ required=False, allow_blank=True, max_length=200,
+ )
+ title = serializers.CharField(required=False, max_length=500)
+ def validate_provider_credential_id(self, value):
+ """FK 存在性 + is_active 校验，防止指向已软删 / 已禁用凭证（T-）。"""
+ if value is None:
+ return value
+ # lazy import 避免 chat ↔ system 循环依赖
+ from system.models import ProviderCredential
+ try:
+ ProviderCredential.objects.get(id=value, is_active=True)
+ except ProviderCredential.DoesNotExist as exc:
+ raise serializers.ValidationError(
+ "Provider 凭证不存在或已禁用",
+ ) from exc
+ return value
 class ConversationListSerializer(serializers.Serializer):
  """对话列表项。"""
  id = serializers.UUIDField
