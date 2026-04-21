@@ -78,5 +78,7 @@ function onCustomDateChange {
  @change="onCustomDateChange"
  >
  </template>
+ <!-- Phase Plan: Analytics 工具栏右侧扩展插槽（放分组维度 Selector 等） -->
+ <slot name="right" />
  </div>
 </template>
