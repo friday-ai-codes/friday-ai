@@ -599,3 +599,272 @@ def make_minimal_context:
  node_execution=node_execution,
  )
  return _make
+# ============= Phase Wave fixtures =============
+#
+# Plan 新增 5 个 factory fixture，供 Plan 的后端测试直接注入。
+# 所有 fixture 遵循 developer-notes.md 规范：
+# - 函数附类型注解
+# - docstring 中文 + 列参数语义
+# - 使用 `apps.get_model(...)` 避免 Django app registry race（T- 缓解）
+#
+# 注意：部分 fixture 引用的字段（Conversation.provider_credential_id /
+# Conversation.status / Project.default_provider_credential_id / ResolvedProviderChain）
+# 尚未落地，**当前 Plan/06 尚未执行**；fixture 实现采用 forward-compatible 写法：
+# - 工厂通过 **overrides 透传字段，避免字段不存在时强设默认值
+# - resolve_chain_builder 暂以 dict 代替 dataclass，Plan 完成后可升级 type hint
+# =====================================================
+@pytest.fixture
+def frozen_conversation_factory(db, project):
+ """Phase：创建 status ∈ {active, completed, stopped, error} 的 Conversation。
+ Plan pin 冻结用例的主入口 fixture。
+ Args:
+ status: 对话状态，默认 "completed"（冻结态）。可选 active/completed/stopped/error。
+ **overrides: 其余字段 override（title / model / provider_type / provider_credential_id ...）
+ Usage:
+ def test_frozen_cannot_repin(frozen_conversation_factory):
+ conv = frozen_conversation_factory(status="completed")
+ # 此后 API 修改 conv.provider_credential_id 应 400
+ 实现说明：
+ - 使用 apps.get_model 防 app registry race
+ - status 字段 Plan Wave 新增；若当前模型未含则通过 setattr 兼容写入
+ （DB 列可能缺失，仅影响未 migrate 的本地环境）
+ - project 字段复用既有 `project` fixture，保证 Conversation 必填 FK 满足
+ """
+ from typing import Any
+ from django.apps import apps
+ def _factory(*, status: str = "completed", **overrides: Any):
+ Conversation = apps.get_model("chat", "Conversation")
+ # 避免触发未迁移的 status 列（Plan W0 前）
+ status_kwarg: dict[str, Any] = {}
+ if "status" in {f.name for f in Conversation._meta.get_fields}:
+ status_kwarg["status"] = status
+ defaults: dict[str, Any] = {
+ "project": overrides.pop("project", project),
+ "title": overrides.pop("title", f"frozen-{status}"),
+ "model": overrides.pop("model", ""),
+ }
+ defaults.update(status_kwarg)
+ defaults.update(overrides)
+ return Conversation.objects.create(**defaults)
+ return _factory
+@pytest.fixture
+def execution_with_snapshot_factory(db, project):
+ """Phase：创建 WorkflowExecution 并把 node_snapshots 写入 context JSONField。
+ Args:
+ node_snapshots: dict[str, dict]，形如
+ {"node-1": {"provider_type": "anthropic", "model": "claude-3-5",
+ "resolved_source": "project", "api_key_fingerprint": "..."}}
+ **overrides: 其余字段（status / trigger_type / workflow ...）
+ Usage:
+ def test_replay_uses_snapshot(execution_with_snapshot_factory):
+ ex = execution_with_snapshot_factory(node_snapshots={
+ "n1": {"provider_type": "anthropic", "model": "claude-3-5-sonnet-20241022"},
+ })
+ assert ex.context["node_snapshots"]["n1"]["model"] == "claude-3-5-sonnet-20241022"
+ 实现说明：
+ - context 是 JSONField（workflows/models/execution.py 实测）
+ - workflow FK 由 caller 通过 `workflow=` override 传入；不传则创建最小 Workflow
+ """
+ from typing import Any
+ from uuid import uuid4
+ from django.apps import apps
+ def _factory(
+ *,
+ node_snapshots: dict[str, dict] | None = None,
+ **overrides: Any,
+ ):
+ WorkflowExecution = apps.get_model("workflows", "WorkflowExecution")
+ Workflow = apps.get_model("workflows", "Workflow")
+ workflow = overrides.pop("workflow", None)
+ if workflow is None:
+ workflow = Workflow.objects.create(
+ name=f"wf-snapshot-{uuid4.hex[:8]}",
+ project=project,
+ )
+ context = overrides.pop("context", {}) or {}
+ if node_snapshots is not None:
+ context["node_snapshots"] = node_snapshots
+ defaults: dict[str, Any] = {
+ "workflow": workflow,
+ "project": project,
+ "status": "completed",
+ "trigger_type": "manual",
+ "context": context,
+ }
+ defaults.update(overrides)
+ return WorkflowExecution.objects.create(**defaults)
+ return _factory
+@pytest.fixture
+def analytics_token_usage_factory(db):
+ """Phase：批量创建 TokenUsage，按 provider_type 聚合统计用。
+ Args:
+ provider_type: "anthropic" | "openai_chat" | "openai_responses" | "gemini" | "ollama"
+ count: 创建条数（默认 1）
+ cost_usd: 单条成本（Decimal，默认 0.01）
+ input_tokens: 单条 input token（默认 500）
+ output_tokens: 单条 output token（默认 500）
+ Returns:
+ list[TokenUsage] — 新创建记录列表
+ Usage:
+ def test_group_by_provider(analytics_token_usage_factory):
+ analytics_token_usage_factory(provider_type="anthropic", count=3)
+ analytics_token_usage_factory(provider_type="openai_chat", count=2)
+ # 之后 GET /analytics/overview/?group_by=provider_type 应返 2 组
+ 实现说明：
+ - TokenUsage 必须挂 SubAgentSession FK；自动创建最小 SubAgentSession
+ - 使用 apps.get_model 避免 direct import 导致的 circular import
+ """
+ from decimal import Decimal
+ from typing import Any
+ from uuid import uuid4
+ from django.apps import apps
+ def _factory(
+ *,
+ provider_type: str = "anthropic",
+ count: int = 1,
+ cost_usd: Decimal = Decimal("0.01"),
+ input_tokens: int = 500,
+ output_tokens: int = 500,
+ model: str = "claude-3-5-sonnet-20241022",
+ session: Any = None,
+ ) -> list[Any]:
+ TokenUsage = apps.get_model("subagent", "TokenUsage")
+ SubAgentSession = apps.get_model("subagent", "SubAgentSession")
+ if session is None:
+ session = SubAgentSession.objects.create(
+ session_id=f"sess-{uuid4.hex}",
+ )
+ created: list[Any] =
+ for _ in range(count):
+ created.append(
+ TokenUsage.objects.create(
+ session=session,
+ input_tokens=input_tokens,
+ output_tokens=output_tokens,
+ total_cost_usd=cost_usd,
+ model=model,
+ provider_type=provider_type,
+ )
+ )
+ return created
+ return _factory
+@pytest.fixture
+def sse_error_emitter:
+ """Phase /：SSE ERROR 事件 payload 构造 helper。
+ 返回一个 dataclass-like 对象，暴露 3 个 method，每个返回结构化 SSE 事件 dict：
+ - context_exceeded(estimated, max_tokens, model) →
+ - provider_credential_missing(provider_type) →
+ - generic(message) → 通用兜底
+ Usage:
+ def test_context_exceeded_payload(sse_error_emitter):
+ evt = sse_error_emitter.context_exceeded(
+ estimated=200000, max_tokens=150000, model="claude-3-5-sonnet",
+ )
+ assert evt["type"] == "error"
+ assert evt["code"] == "context_window_exceeded"
+ assert evt["data"]["exceeded_by"] == 50000
+ Payload 形状锁定 work-item.md §SSE ERROR payload 契约。
+ """
+ from dataclasses import dataclass
+ @dataclass
+ class _SSEErrorEmitter:
+ """SSE ERROR 事件 payload 工厂。"""
+ def context_exceeded(
+ self,
+ *,
+ estimated: int,
+ max_tokens: int,
+ model: str,
+ ) -> dict:
+ """：context_window_exceeded 结构化 payload。"""
+ return {
+ "type": "error",
+ "code": "context_window_exceeded",
+ "data": {
+ "estimated_tokens": estimated,
+ "max_tokens": max_tokens,
+ "exceeded_by": max(0, estimated - max_tokens),
+ "model": model,
+ "recommended_actions": [
+ "cleanup_history",
+ "switch_larger_context_model",
+ "trim_system_prompt",
+ ],
+ },
+ }
+ def provider_credential_missing(self, *, provider_type: str) -> dict:
+ """：provider_credential_missing 结构化 payload。"""
+ return {
+ "type": "error",
+ "code": "provider_credential_missing",
+ "data": {
+ "provider_type": provider_type,
+ "recommended_actions": [
+ "configure_credential",
+ "switch_provider",
+ ],
+ },
+ }
+ def generic(self, *, message: str) -> dict:
+ """通用兜底 ERROR payload。"""
+ return {
+ "type": "error",
+ "code": "generic",
+ "data": {"message": message},
+ }
+ return _SSEErrorEmitter
+@pytest.fixture
+def resolve_chain_builder:
+ """Phase：构造四层 ResolvedProviderChain dict（Plan aresolve_with_chain 产出）。
+ Args:
+ winning_layer: "node" | "conversation" | "project" | "system"
+ —— 标识哪一层解析命中（优先级：node > conversation > project > system）
+ values: dict[str, str] | None — 可选 layer-specific override，形如
+ {"node": "pc-node-id", "project": "pc-proj-id"}
+ Returns:
+ dict 形如 {
+ "winning": {"source": winning_layer, "provider_type": "anthropic",
+ "model": "claude-3-5", "credential_id": "..."},
+ "chain": [
+ {"layer": "node", "value": str | None, "active": bool},
+ {"layer": "conversation", "value": str | None, "active": bool},
+ {"layer": "project", "value": str | None, "active": bool},
+ {"layer": "system", "value": str | None, "active": bool},
+ ],
+ }
+ Usage:
+ def test_api_returns_chain(resolve_chain_builder):
+ chain = resolve_chain_builder(winning_layer="project")
+ # 之后 API 响应 `resolved_provider.chain` 与 chain["chain"] 一致
+ 实现说明：
+ - Plan 尚未落地 ResolvedProviderChain dataclass；当前以 dict 代替
+ - Plan 完成后可把返回值替换为 services.provider_config.ResolvedProviderChain
+ 并升级 type hint
+ """
+ from typing import Literal
+ def _factory(
+ *,
+ winning_layer: Literal["node", "conversation", "project", "system"] = "system",
+ values: dict[str, str] | None = None,
+ provider_type: str = "anthropic",
+ model: str = "claude-3-5-sonnet-20241022",
+ ) -> dict:
+ layer_order = ["node", "conversation", "project", "system"]
+ values = values or {}
+ chain_entries =
+ for layer in layer_order:
+ chain_entries.append({
+ "layer": layer,
+ "value": values.get(layer),
+ "active": layer == winning_layer,
+ })
+ return {
+ "winning": {
+ "source": winning_layer,
+ "provider_type": provider_type,
+ "model": model,
+ "credential_id": values.get(winning_layer),
+ },
+ "chain": chain_entries,
+ }
+ return _factory
