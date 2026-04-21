@@ -236,6 +236,22 @@ class WorkflowEngine:
  node=dag_node.node,
  status=NodeExecutionStatus.PENDING,
  )
+ # Phase：Execution 启动时统一快照 AI 节点 Provider，
+ # 保证 Replay 稳定（后续项目 default_provider_credential_id 修改不影响本 Execution）。
+ try:
+ snapshots = await self._snapshot_ai_node_providers(dag, execution)
+ except Exception as snap_err: # noqa: BLE001
+ logger.exception(
+ "snapshot.ai_node_providers_helper_failed",
+ execution_id=str(execution.id),
+ error=str(snap_err),
+ )
+ snapshots = {}
+ if snapshots:
+ current_ctx = execution.context or {}
+ current_ctx["node_snapshots"] = snapshots
+ execution.context = current_ctx
+ await execution.asave(update_fields=["context"])
  # 触发开始钩子
  await self.hooks.trigger("execution_started", execution=execution)
  # 开始执行
@@ -246,6 +262,92 @@ class WorkflowEngine:
  # 异步执行（在独立线程中运行，避免事件循环退出问题）
  _run_in_thread(self._run_execution(execution, dag, input_data))
  return execution
+ # Phase：AI 节点白名单（Execution 启动时遍历 DAG 统一快照）
+ _AI_NODE_TYPES: set[str] = {
+ "ai_prompt",
+ "ai_variable_extractor",
+ "ai_plan_generation",
+ "ai_code_review",
+ "ai_coding",
+ "ai_coding_dispatcher",
+ }
+ async def _snapshot_ai_node_providers(
+ self,
+ dag: "DAG",
+ workflow_execution: WorkflowExecution,
+ ) -> dict[str, dict]:
+ """：Execution 启动时遍历 DAG AI 节点，统一快照 resolved Provider。
+ Miss 节点（ProviderMissingError）不写入——运行时节点 runner 会再次 aresolve
+ 并抛正常错误（base_agent._resolve_from_snapshot_or_runtime miss fallback）。
+ Args:
+ dag: 构建好的 DAG（从 workflow 加载）
+ workflow_execution: 当前 Execution 实例（project 需已预取）
+ Returns:
+ dict shape: {node_id: {provider_type: str, model: str,
+ source: str, credential_id: str | None}}
+ JSON 序列化安全（ProviderType enum 转 str；UUID 转 str）。
+ """
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ResolvedProviderConfig,
+ )
+ # 确保 project 可读（start_execution 主路径已预填 workflow + project 缓存）
+ project = getattr(workflow_execution, "project", None)
+ snapshots: dict[str, dict] = {}
+ for dag_node in dag.nodes.values:
+ node = getattr(dag_node, "node", None)
+ node_type = getattr(node, "node_type", None)
+ if node_type not in self._AI_NODE_TYPES:
+ continue
+ node_config = getattr(node, "config", None) or {}
+ try:
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=node_config,
+ conversation=None, # workflow 无 conversation 维度
+ project=project,
+ )
+ except Exception as exc: # noqa: BLE001
+ logger.exception(
+ "snapshot.aresolve_failed",
+ execution_id=str(workflow_execution.id),
+ node_id=str(getattr(node, "id", "")),
+ node_type=node_type,
+ error=str(exc),
+ )
+ continue
+ if isinstance(result, ProviderMissingError):
+ # 契约：miss 节点不写入，运行时 runner fallback 统一处理
+ continue
+ if isinstance(result, ResolvedProviderConfig):
+ provider_type_str = str(result.provider_type).replace(
+ "ProviderType.", ""
+ )
+ # enum 的 str/.value 可能返回 "ProviderType.ANTHROPIC" 或 "anthropic"；
+ # 统一读 .value 保持 JSON 友好字符串
+ if hasattr(result.provider_type, "value"):
+ provider_type_str = result.provider_type.value
+ # model 优先读 node_config.model；fallback 到 resolved.extra["model"]
+ snap_model = (
+ node_config.get("model")
+ or (result.extra or {}).get("model")
+ or ""
+ )
+ snap_credential_id = (
+ str(result.credential_id) if result.credential_id else None
+ )
+ snapshots[str(node.id)] = {
+ "provider_type": provider_type_str,
+ "model": snap_model,
+ "source": result.source,
+ "credential_id": snap_credential_id,
+ }
+ logger.info(
+ "snapshot.ai_node_providers_written",
+ execution_id=str(workflow_execution.id),
+ count=len(snapshots),
+ )
+ return snapshots
  async def _debug_pause_after_node(
  self,
  execution: WorkflowExecution,
@@ -585,6 +687,12 @@ class WorkflowEngine:
  if not node_class:
  raise ValueError(f"未知的节点类型: {node.node_type}")
  # 构建执行上下文
+ # Phase：从 workflow_execution.context 读出 node_snapshots
+ # 注入到 ExecutionContext.node_snapshots；base_agent runner 优先读快照
+ exec_context = execution.context or {}
+ node_snapshots: dict[str, dict] = (
+ exec_context.get("node_snapshots") or {}
+ )
  context = ExecutionContext(
  execution_id=str(execution.id),
  node_id=str(node.id),
@@ -594,6 +702,7 @@ class WorkflowEngine:
  previous_outputs=previous_outputs,
  workflow_execution=execution,
  node_execution=node_execution,
+ node_snapshots=node_snapshots,
  )
  # 执行节点
  node_instance = node_class

@@ -212,6 +212,169 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  ).aget(id=context.workflow_execution.id)
  return we.triggered_by
  return None
+ async def _resolve_from_snapshot_or_runtime(
+ self,
+ context: ExecutionContext,
+ project: Any,
+ config_model: str = "",
+ use_custom_api: bool = False,
+ api_base_url: str = "",
+ api_key: str = "",
+ provider_type: str = "",
+ provider_credential_id: str = "",
+ ) -> tuple[ResolvedProviderConfig, str]:
+ """Phase /：优先读 ExecutionContext.node_snapshots，
+ miss 时 fallback 到 _resolve_api_key_and_model 运行时解析。
+ 快照命中契约：
+ - context.node_snapshots[node_id] 存在且结构合法 → 从快照构造
+ ResolvedProviderConfig（不再调 aresolve_or_error，保证 Replay 稳定）
+ - snapshot.credential_id 非 None 时，异步加载凭证 api_key / base_url
+ （与运行时路径一致，避免 chat runner 拿不到 api_key）
+ - use_custom_api=True 时绕过快照（节点级自定义 API 始终走运行时路径）
+ Miss 契约：
+ - 无 snapshot dict / node_id 不在 dict / snapshot 字段非法 →
+ 结构化 warning log `snapshot.miss_fallback_to_runtime_resolve`
+ + 委托 _resolve_api_key_and_model 继续运行时解析
+ """
+ # 1. use_custom_api 始终绕过快照（自定义 API 不持久化到 snapshot）
+ if use_custom_api:
+ return await self._resolve_api_key_and_model(
+ project,
+ config_model=config_model,
+ use_custom_api=use_custom_api,
+ api_base_url=api_base_url,
+ api_key=api_key,
+ provider_type=provider_type,
+ provider_credential_id=provider_credential_id,
+ )
+ # 2. 读 snapshot dict（ExecutionContext 字段 OR workflow_execution.context 兜底）
+ snap_dict: dict[str, dict] = getattr(context, "node_snapshots", {}) or {}
+ if not snap_dict and getattr(context, "workflow_execution", None) is not None:
+ we_ctx = (context.workflow_execution.context or {})
+ snap_dict = we_ctx.get("node_snapshots") or {}
+ snapshot = snap_dict.get(str(context.node_id)) if snap_dict else None
+ # 3. snapshot miss → warning log + runtime fallback
+ if not snapshot or not isinstance(snapshot, dict):
+ logger.warning(
+ "snapshot.miss_fallback_to_runtime_resolve",
+ execution_id=(
+ str(context.workflow_execution.id)
+ if getattr(context, "workflow_execution", None) is not None
+ else None
+ ),
+ node_id=str(context.node_id),
+ reason="snapshot_missing" if not snapshot else "snapshot_malformed",
+ )
+ return await self._resolve_api_key_and_model(
+ project,
+ config_model=config_model,
+ use_custom_api=False,
+ api_base_url=api_base_url,
+ api_key=api_key,
+ provider_type=provider_type,
+ provider_credential_id=provider_credential_id,
+ )
+ # 4. snapshot 命中 → 构造 ResolvedProviderConfig
+ snap_provider_type = snapshot.get("provider_type", "")
+ snap_model = snapshot.get("model", "") or config_model
+ snap_source = snapshot.get("source", "system")
+ snap_credential_id_raw = snapshot.get("credential_id")
+ try:
+ pt_enum = ProviderType(snap_provider_type)
+ except ValueError:
+ logger.warning(
+ "snapshot.invalid_provider_type_fallback",
+ node_id=str(context.node_id),
+ snapshot_provider_type=snap_provider_type,
+ )
+ return await self._resolve_api_key_and_model(
+ project,
+ config_model=config_model,
+ use_custom_api=False,
+ api_base_url=api_base_url,
+ api_key=api_key,
+ provider_type=provider_type,
+ provider_credential_id=provider_credential_id,
+ )
+ # 加载凭证 api_key / base_url（ snapshot 仅存 credential_id，不存 api_key）
+ snap_api_key = ""
+ snap_base_url = ""
+ from services.provider_config import PROVIDER_REGISTRY
+ if snap_credential_id_raw:
+ from uuid import UUID
+ from system.models import ProviderCredential
+ try:
+ cred = await ProviderCredential.objects.aget(
+ id=UUID(str(snap_credential_id_raw)), is_active=True
+ )
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[pt_enum].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ snap_api_key = (
+ secret.get_secret_value
+ if hasattr(secret, "get_secret_value")
+ else str(secret)
+ )
+ snap_base_url = (
+ getattr(validated, "base_url", "") or ""
+ )
+ except Exception as load_err: # noqa: BLE001
+ logger.warning(
+ "snapshot.credential_load_failed_fallback",
+ node_id=str(context.node_id),
+ credential_id=str(snap_credential_id_raw),
+ error=str(load_err),
+ )
+ return await self._resolve_api_key_and_model(
+ project,
+ config_model=config_model,
+ use_custom_api=False,
+ api_base_url=api_base_url,
+ api_key=api_key,
+ provider_type=provider_type,
+ provider_credential_id=provider_credential_id,
+ )
+ if not snap_base_url:
+ snap_base_url = PROVIDER_REGISTRY[pt_enum].default_base_url
+ credential_uuid = None
+ if snap_credential_id_raw:
+ from uuid import UUID
+ try:
+ credential_uuid = UUID(str(snap_credential_id_raw))
+ except ValueError:
+ credential_uuid = None
+ resolved = ResolvedProviderConfig(
+ provider_type=pt_enum,
+ api_key=snap_api_key,
+ base_url=snap_base_url,
+ source=snap_source,
+ credential_id=credential_uuid,
+ extra={"from_snapshot": True},
+ )
+ if not snap_model:
+ # snapshot model 为空且 config 也无 model → 保留 fallback 到运行时
+ logger.warning(
+ "snapshot.missing_model_fallback",
+ node_id=str(context.node_id),
+ )
+ return await self._resolve_api_key_and_model(
+ project,
+ config_model=config_model,
+ use_custom_api=False,
+ api_base_url=api_base_url,
+ api_key=api_key,
+ provider_type=provider_type,
+ provider_credential_id=provider_credential_id,
+ )
+ logger.info(
+ "snapshot.hit_used_for_resolve",
+ node_id=str(context.node_id),
+ source=snap_source,
+ provider_type=snap_provider_type,
+ )
+ return resolved, snap_model
  async def _resolve_api_key_and_model(
  self,
  project: Any,
@@ -374,9 +537,16 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  )
  agent_session = await self._ensure_agent_session(session_id, project, user, chat_id)
  enhanced_prompt = self._enhance_system_prompt(system_prompt, session_id)
- # 解析 Provider 凭证 + 模型（Phase 二元组新签名）
- resolved, resolved_model = await self._resolve_api_key_and_model(
- project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
+ # 解析 Provider 凭证 + 模型
+ # Phase /：优先读 ExecutionContext.node_snapshots，
+ # miss 时 fallback 到运行时 aresolve（与 Phase 二元组签名兼容）
+ resolved, resolved_model = await self._resolve_from_snapshot_or_runtime(
+ context=context,
+ project=project,
+ config_model=model_cfg,
+ use_custom_api=use_custom_api,
+ api_base_url=api_base_url,
+ api_key=api_key_cfg,
  provider_type=provider_type_cfg,
  provider_credential_id=config.get("provider_credential_id", ""),
  )
