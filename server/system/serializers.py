@@ -123,7 +123,10 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  name = serializers.CharField(max_length=64)
  scope = serializers.ChoiceField(choices=["system", "project"])
  scope_id = serializers.UUIDField(required=False, allow_null=True)
- config = serializers.DictField
+ # write_only：`config` 只用于请求体校验与加密写库，不在 POST 201 response.data 中回显
+ # （ProviderCredential 实例无 `config` 属性，get_success_headers 读 serializer.data 会触发
+ # AttributeError；同时契约上也严禁明文回显）。
+ config = serializers.DictField(write_only=True)
  is_active = serializers.BooleanField(default=True)
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
  """scope 一致性 + Pydantic credential_schema dispatch 校验。"""
@@ -138,6 +141,17 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  raise serializers.ValidationError(
  {"scope_id": "scope='system' 时 scope_id 必须为空"}
  )
+ # / CONTEXT 硬性契约：系统级凭证的写动作仅允许 superuser
+ # （ViewSet 当前走 DRF Router 的同步路径，perform_acreate async 钩子不触发；
+ # 在 Serializer.validate 统一做 system 级 scope 写权限校验，保证 层 3 覆盖）
+ request = self.context.get("request")
+ if (
+ scope == "system"
+ and request is not None
+ and not getattr(request.user, "is_superuser", False)
+ ):
+ from rest_framework.exceptions import PermissionDenied
+ raise PermissionDenied("仅系统管理员可创建系统级凭证")
  # Pydantic credential_schema 按 provider_type dispatch 校验
  from services.provider_config import PROVIDER_REGISTRY, ProviderType
  provider_type = attrs["provider_type"]
