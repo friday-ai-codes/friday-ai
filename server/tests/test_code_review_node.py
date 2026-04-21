@@ -1,12 +1,20 @@
-"""AICodeReviewNode 单元测试。
-覆盖 happy path（diff 获取成功 -> Agent 审查 -> 结构化报告）
-和 error handling（缺少 coding_result -> failed、空 merge_requests -> failed）。
+"""AICodeReviewNode 单元测试（Phase 迁移后）。
+覆盖 happy path（diff 获取成功 -> Agent 审查 -> 结构化报告）和 error handling
+（缺少 coding_result -> failed、空 merge_requests -> failed），以及
+合并后 新增 3 项契约：
+- per-MR Runner session_id 独立性
+- resolved 循环外一次解析
+- sub_step 三子步骤 emit 序列
+mock 迁移：
+- 删除老 Runner mock.patch 调用点（见 Summary）
+- 替换为 conftest ``fake_chat_model_factory`` seam + ``mock_aresolve_ok`` +
+ ``make_minimal_context`` 4 公共 fixture（ Task 3 落地； 弥补）
 """
+from __future__ import annotations
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import pytest
-from agents.core.result import AgentResult
 from services.git_platform.models import MRDiffFile, MRDiffResult
 from workflows.nodes.ai.code_review import (
  AICodeReviewNode,
@@ -20,11 +28,13 @@ from workflows.nodes.base import ExecutionContext, NodeResult
 def _make_context(
  input_data: dict[str, Any] | None = None,
  node_config: dict[str, Any] | None = None,
+ execution_id: str = "exec-review-001",
+ node_id: str = "node-review-001",
 ) -> ExecutionContext:
  """Create a minimal ExecutionContext for testing."""
  return ExecutionContext(
- execution_id="exec-review-001",
- node_id="node-review-001",
+ execution_id=execution_id,
+ node_id=node_id,
  node_config=node_config or {
  "model": "claude-sonnet-4-20250514",
  "chat_id": "",
@@ -99,24 +109,9 @@ def _make_coding_result(
  },
  }
  }
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-class TestAICodeReviewNode:
- """AICodeReviewNode 独立执行行为测试。"""
- async def test_execute_happy_path_approved(self) -> None:
- """Agent 返回无 critical issue 的审查报告 -> approved=True。"""
- report = _make_review_report(approved=True)
- input_data = _make_coding_result
- context = _make_context(input_data=input_data)
- agent_result = AgentResult(
- output=,
- status="completed",
- final_answer=json.dumps(report),
- )
- diff_result = MRDiffResult(
+def _make_single_diff -> MRDiffResult:
+ """构造单个 MR 的 diff 结果（用于 _fetch_mr_diff 替身）。"""
+ return MRDiffResult(
  success=True,
  files=[
  MRDiffFile(
@@ -127,26 +122,50 @@ class TestAICodeReviewNode:
  ],
  truncated=False,
  )
- node = AICodeReviewNode
+def _patch_common(monkeypatch: pytest.MonkeyPatch, node: AICodeReviewNode) -> None:
+ """统一替身：_get_project / _get_user / _fetch_mr_diff / _send_review_notification。
+ ``mock_project.id`` 使用合法 UUID 字符串，避免 ``render_prompt`` 下游
+ ``Prompt.objects.filter(project_id=...)`` 的 UUID 校验失败。
+ """
  mock_project = MagicMock
- mock_project.id = 1
+ mock_project.id = "00000000-0000-0000-0000-000000000001"
  mock_user = MagicMock
  mock_user.id = 1
- with (
- patch.object(node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
- patch.object(node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
- patch.object(node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
- patch.object(node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
- ):
- mock_runner_instance = MagicMock
- async def _empty_stream(prompt):
- return
- yield # noqa: RET504
- mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
- mock_runner_instance.result = agent_result
- MockRunner.return_value = mock_runner_instance
+ monkeypatch.setattr(
+ node, "_get_project", AsyncMock(return_value=mock_project)
+ )
+ monkeypatch.setattr(node, "_get_user", AsyncMock(return_value=mock_user))
+ monkeypatch.setattr(
+ node,
+ "_fetch_mr_diff",
+ AsyncMock(return_value=_make_single_diff),
+ )
+ monkeypatch.setattr(
+ node,
+ "_send_review_notification",
+ AsyncMock(return_value=None),
+ )
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestAICodeReviewNode:
+ """AICodeReviewNode 独立执行行为测试（ 迁移后）。"""
+ async def test_execute_happy_path_approved(
+ self,
+ fake_chat_model_factory: Any,
+ mock_aresolve_ok: Any,
+ monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+ """Agent 返回无 critical issue 的审查报告 -> approved=True。"""
+ report = _make_review_report(approved=True)
+ fake_chat_model_factory(responses=[json.dumps(report)])
+ mock_aresolve_ok(source="system")
+ input_data = _make_coding_result
+ context = _make_context(input_data=input_data)
+ node = AICodeReviewNode
+ _patch_common(monkeypatch, node)
  result: NodeResult = await node.execute(context)
  assert result.status == "completed"
  assert result.next_handle == "default"
@@ -154,46 +173,20 @@ class TestAICodeReviewNode:
  assert result.output["issues_count"] >= 0
  assert "review_report" in result.output
  assert "severity_breakdown" in result.output
- async def test_execute_happy_path_rejected(self) -> None:
+ async def test_execute_happy_path_rejected(
+ self,
+ fake_chat_model_factory: Any,
+ mock_aresolve_ok: Any,
+ monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
  """Agent 返回含 critical issue 的报告 -> approved=False。"""
  report = _make_review_report(approved=False)
+ fake_chat_model_factory(responses=[json.dumps(report)])
+ mock_aresolve_ok(source="system")
  input_data = _make_coding_result
  context = _make_context(input_data=input_data)
- agent_result = AgentResult(
- output=,
- status="completed",
- final_answer=json.dumps(report),
- )
- diff_result = MRDiffResult(
- success=True,
- files=[
- MRDiffFile(
- old_path="src/db.py",
- new_path="src/db.py",
- diff="@@ -1 +1 @@\n-safe_query\n+unsafe_query(user_input)",
- )
- ],
- )
  node = AICodeReviewNode
- mock_project = MagicMock
- mock_project.id = 1
- mock_user = MagicMock
- mock_user.id = 1
- with (
- patch.object(node, "_get_project", new_callable=AsyncMock, return_value=mock_project),
- patch.object(node, "_get_user", new_callable=AsyncMock, return_value=mock_user),
- patch.object(node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514")),
- patch.object(node, "_fetch_mr_diff", new_callable=AsyncMock, return_value=diff_result),
- patch.object(node, "_send_review_notification", new_callable=AsyncMock),
- patch("workflows.nodes.ai.code_review.SDKAgentRunner") as MockRunner,
- ):
- mock_runner_instance = MagicMock
- async def _empty_stream(prompt):
- return
- yield # noqa: RET504
- mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
- mock_runner_instance.result = agent_result
- MockRunner.return_value = mock_runner_instance
+ _patch_common(monkeypatch, node)
  result: NodeResult = await node.execute(context)
  assert result.status == "completed"
  assert result.output["approved"] is False
@@ -266,3 +259,136 @@ class TestAICodeReviewNode:
  assert breakdown["warning"] == 2
  # "unknown_severity" falls back to "info" per implementation
  assert breakdown["info"] == 2
+# ---------------------------------------------------------------------------
+# 合并后新增：per-MR 独立性 / resolved 复用 / sub_step 三态序列
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_code_review_per_mr_independent_session_id(
+ fake_chat_model_factory: Any,
+ mock_aresolve_ok: Any,
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """：3 MR 场景 -> 3 个 Runner 实例，session_id 各不同且均以 ``review-`` 开头。"""
+ from agents.langchain_runner import LangChainAgentRunner, LangChainRunnerConfig
+ captured_configs: list[LangChainRunnerConfig] =
+ _orig_init = LangChainAgentRunner.__init__
+ def _capturing_init(self: LangChainAgentRunner, cfg: LangChainRunnerConfig) -> None: # type: ignore[no-redef]
+ captured_configs.append(cfg)
+ _orig_init(self, cfg)
+ monkeypatch.setattr(
+ "workflows.nodes.ai.code_review.LangChainAgentRunner.__init__",
+ _capturing_init,
+ )
+ # 3 MR 每 MR 一次 LLM 调用
+ report_json = json.dumps(_make_review_report(approved=True))
+ fake_chat_model_factory(responses=[report_json, report_json, report_json])
+ mock_aresolve_ok(source="system")
+ input_data = _make_coding_result(mr_count=3)
+ context = _make_context(
+ input_data=input_data,
+ execution_id="exec-test",
+ node_id="code-review-n1",
+ )
+ node = AICodeReviewNode
+ _patch_common(monkeypatch, node)
+ result = await node.execute(context)
+ assert result.status == "completed"
+ assert len(captured_configs) == 3, (
+ f"应创建 3 个 Runner 实例，实际 {len(captured_configs)}"
+ )
+ session_ids = [cfg.session_id for cfg in captured_configs]
+ assert len(set(session_ids)) == 3, f"3 session_id 应全不同：{session_ids}"
+ for sid in session_ids:
+ assert sid.startswith("review-"), (
+ f"session_id 应以 'review-' 开头：{sid}"
+ )
+ assert "exec-test" in sid
+ assert "code-review-n1" in sid
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_code_review_resolved_reused_across_mrs(
+ fake_chat_model_factory: Any,
+ mock_aresolve_ok: Any,
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """：resolved 在循环外一次解析 —— _resolve_api_key_and_model 调用 1 次 for 3 MR。"""
+ from workflows.nodes.ai.base_agent import AIAgentBaseNode
+ resolve_call_count = 0
+ orig_resolve = AIAgentBaseNode._resolve_api_key_and_model
+ async def _counting_resolve(self: AIAgentBaseNode, *a: Any, **kw: Any) -> Any: # type: ignore[no-redef]
+ nonlocal resolve_call_count
+ resolve_call_count += 1
+ return await orig_resolve(self, *a, **kw)
+ monkeypatch.setattr(
+ "workflows.nodes.ai.base_agent.AIAgentBaseNode._resolve_api_key_and_model",
+ _counting_resolve,
+ )
+ report_json = json.dumps(_make_review_report(approved=True))
+ fake_chat_model_factory(responses=[report_json, report_json, report_json])
+ mock_aresolve_ok(source="system")
+ input_data = _make_coding_result(mr_count=3)
+ context = _make_context(input_data=input_data)
+ node = AICodeReviewNode
+ _patch_common(monkeypatch, node)
+ result = await node.execute(context)
+ assert result.status == "completed"
+ assert resolve_call_count == 1, (
+ f"_resolve_api_key_and_model 应循环外一次解析，实际 {resolve_call_count} 次（ 违反）"
+ )
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_code_review_sub_step_emit_order(
+ fake_chat_model_factory: Any,
+ mock_aresolve_ok: Any,
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """ /：fetch_diff / ai_review / send_notification 三子步骤按序 emit。
+ 单 MR 场景覆盖 RUNNING -> COMPLETED 两态，并断言三子步骤顺序。
+ status 值使用 SubStepStatus 枚举（TextChoices，实际值为小写 'running' / 'completed'）。
+ """
+ emit_log: list[tuple[str, str]] =
+ async def _fake_emit(
+ self: Any,
+ context: ExecutionContext,
+ step_type: str,
+ status: str,
+ output_data: dict[str, Any] | None = None,
+ ) -> None:
+ # 兼容 SubStepStatus TextChoices：.value 或直接字符串
+ status_str = str(getattr(status, "value", status))
+ emit_log.append((step_type, status_str))
+ monkeypatch.setattr(
+ "workflows.nodes.ai.sub_step_mixin.SubStepMixin.emit_sub_step",
+ _fake_emit,
+ )
+ report_json = json.dumps(_make_review_report(approved=True))
+ fake_chat_model_factory(responses=[report_json])
+ mock_aresolve_ok(source="system")
+ input_data = _make_coding_result(mr_count=1)
+ context = _make_context(input_data=input_data)
+ node = AICodeReviewNode
+ _patch_common(monkeypatch, node)
+ result = await node.execute(context)
+ assert result.status == "completed"
+ step_names = [name for name, _ in emit_log]
+ assert "fetch_diff" in step_names, f"应 emit fetch_diff，实际 {emit_log}"
+ assert "ai_review" in step_names, f"应 emit ai_review，实际 {emit_log}"
+ assert "send_notification" in step_names, (
+ f"应 emit send_notification，实际 {emit_log}"
+ )
+ idx_fetch = step_names.index("fetch_diff")
+ idx_review = step_names.index("ai_review")
+ idx_notify = step_names.index("send_notification")
+ assert idx_fetch < idx_review < idx_notify, (
+ f"三子步骤顺序应为 fetch_diff -> ai_review -> send_notification，实际 {step_names}"
+ )
+ # 每子步骤应有 RUNNING + COMPLETED 两态（status 值为小写 'running' / 'completed'）
+ for name in ("fetch_diff", "ai_review", "send_notification"):
+ statuses = [s.lower for n, s in emit_log if n == name]
+ assert "running" in statuses, (
+ f"{name} 应 emit RUNNING，实际 {statuses}"
+ )
+ assert "completed" in statuses, (
+ f"{name} 应 emit COMPLETED，实际 {statuses}"
+ )
