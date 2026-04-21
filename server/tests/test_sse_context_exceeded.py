@@ -40,16 +40,25 @@ async def _run_execute_and_capture(
  model_config: str = "claude-3-5-sonnet-20241022",
 ):
  """执行 AIAgentBaseNode.execute 并返回 NodeResult（except 分支输出）。
- 使用最小化 AI 节点子类（AIPromptNode 可实例化，execute 入参齐全后触发异常）。
+ 使用最小化 AIAgentBaseNode 子类（注意：AIPromptNode 直接继承 BaseNode，
+ 不走 AIAgentBaseNode.execute 的 except 分支；本测试使用专门的 _FakeAIAgent 走 base 路径）。
  """
- from workflows.nodes.ai.prompt import AIPromptNode
- node = AIPromptNode
- # 让 _resolve_from_snapshot_or_runtime raise ContextWindowExceededError
+ from workflows.nodes.ai.base_agent import AIAgentBaseNode
+ class _FakeAIAgent(AIAgentBaseNode):
+ node_type = "fake_ai_agent"
+ def get_system_prompt(self, ctx) -> str: # type: ignore[no-untyped-def]
+ return ctx.node_config.get("system_prompt", "")
+ def get_user_prompt(self, ctx) -> str: # type: ignore[no-untyped-def]
+ return ctx.node_config.get("user_prompt", "")
+ node = _FakeAIAgent
+ # 让 _resolve_from_snapshot_or_runtime raise ContextWindowExceededError。
+ # 直接 patch 到 base class（所有 AI 节点 MRO 命中），raising=False 避免
+ # 属性已存在/未存在的严格检查失败。
  monkeypatch.setattr(
- AIPromptNode,
+ AIAgentBaseNode,
  "_resolve_from_snapshot_or_runtime",
  _RaiseContextExceeded(error_message),
- raising=True,
+ raising=False,
  )
  # 最小 ctx：system_prompt / user_prompt 走 config
  ctx = make_minimal_context(
