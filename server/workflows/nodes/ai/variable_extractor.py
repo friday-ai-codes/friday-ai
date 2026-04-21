@@ -123,6 +123,13 @@ class AIVariableExtractorNode(BaseNode):
  "minimum": 0.01,
  "maximum": 100.0,
  },
+ "provider_credential_id": {
+ "type": "string",
+ "format": "uuid",
+ "title": "Provider 凭证（节点级）",
+ "description": "指定本节点使用的凭证 ID，空则按项目/系统默认解析。",
+ "default": "",
+ },
  },
  "required": ["variables"],
  }
