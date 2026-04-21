@@ -379,10 +379,39 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  失败时返回空 list 并把脱敏错误写入 credential.last_health_check_error
  （不更新 last_health_check_status——避免污染健康检查语义）。
  本 action 统一负责持久化 available_models + last_health_check_error。
+ T- 纵深防御：在 fetch 内部 try/except 之外，view 层追加兜底脱敏，
+ 防止未来 fetch 重构成抛异常语义时，原始 exception message（可能含 api_key
+ 明文）直接冒泡到 HTTP 响应或 DB。用 redact_secrets_in_text 保证即便上游
+ error 携带 sk-ant-* / sk-* / AIza* / Bearer * 等凭证也会替换为
+ ***REDACTED*** 后再响应并入库（W4 修复核心）。
  """
- from services.provider_health import fetch_models_for_credential
+ from common.logging import redact_secrets_in_text
+ from services.provider_health import (
+ ERROR_TRUNCATE_LIMIT,
+ fetch_models_for_credential,
+ )
  credential = await self.aget_object
+ try:
  models_list = await fetch_models_for_credential(credential)
+ except Exception as exc: # noqa: BLE001 —— 纵深防御兜底
+ redacted = redact_secrets_in_text(str(exc))[:ERROR_TRUNCATE_LIMIT]
+ credential.last_health_check_error = redacted
+ await sync_to_async(credential.save)(
+ update_fields=["last_health_check_error", "updated_at"],
+ )
+ _viewset_logger.warning(
+ "provider_credential_refresh_models_failed",
+ credential_id=str(credential.id),
+ error_type=type(exc).__name__,
+ user_id=str(request.user.id),
+ )
+ return Response(
+ {
+ "available_models": credential.available_models or,
+ "error": redacted,
+ },
+ status=502,
+ )
  credential.available_models = models_list
  await sync_to_async(credential.save)(
  update_fields=[
