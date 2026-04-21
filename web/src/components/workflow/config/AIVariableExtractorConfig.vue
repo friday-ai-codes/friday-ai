@@ -8,8 +8,17 @@ import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { Textarea } from '~/components/ui/textarea'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
 import {
  aiVariableExtractorConfigSchema,
 } from '~/types/workflow'
@@ -37,6 +46,23 @@ const model = field('model', '')
 const useCustomApi = field('use_custom_api', false)
 const apiBaseUrl = field('api_base_url', '')
 const apiKey = field('api_key', '')
+// Provider 凭证(Phase) + capability 推导
+const providerStore = useProviderCredentialStore
+const providerCredentialIdField = field('provider_credential_id', null as string | null)
+const providerCredentialId = computed<string | null>({
+ get: => providerCredentialIdField.value ?? null,
+ set: (v: string | null) => { providerCredentialIdField.value = v },
+})
+const currentCredential = computed( => {
+ const id = providerCredentialId.value
+ return id ? providerStore.getCredentialById(id): null
+})
+const currentProviderType = computed( => currentCredential.value?.provider_type ?? null)
+const currentProviderMeta = computed( => {
+ const type = currentProviderType.value
+ return type ? (providerStore.providerTypes.find(p => p.provider_type === type) ?? null): null
+})
+const thinkingSupported = computed( => currentProviderMeta.value?.supports_thinking ?? false)
 // 高级设置
 const maxThinkingTokens = field('max_thinking_tokens', null)
 const maxBudgetUsd = field('max_budget_usd', null)
@@ -77,7 +103,32 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
 </script>
 <template>
  <div class="space-y-4">
- <!-- AI 模型配置 -->
+ <!-- Provider 凭证(Phase/05/06) -->
+ <div class="space-y-2">
+ <Label class="font-normal">
+ Provider 凭证
+ </Label>
+ <ProviderCredentialDropdown:model-value="providerCredentialId"
+ scope="system"
+ @update:model-value="v => providerCredentialId = v"
+ />
+ <p class="text-xs text-muted-foreground">
+ 选择一条启用中的 Provider 凭证,未选择则走系统默认
+ </p>
+ </div>
+ <!-- 模型(变量提取不需要 tool use, requires-tools=false) -->
+ <div class="space-y-2">
+ <Label class="font-normal">
+ 模型
+ </Label>
+ <ModelSelect:credential-id="providerCredentialId":requires-tools="false":model-value="model"
+ @update:model-value="v => model = v ?? ''"
+ />
+ <p class="text-xs text-muted-foreground">
+ 按当前 Provider 凭证过滤可用模型
+ </p>
+ </div>
+ <!-- AI 模型配置(保留以兼容自定义 API 场景) -->
  <AIModelConfig
  v-model:model="model"
  v-model:use-custom-api="useCustomApi"
@@ -203,18 +254,29 @@ function updateVariable(index: number, field: keyof AIVariableDefinition, value:
  高级设置
  </CollapsibleTrigger>
  <CollapsibleContent class="space-y-4 pt-2">
- <!-- 最大思考 Token 数 -->
- <div class="space-y-2">
+ <!-- 最大思考 Token 数(:非 Anthropic 禁用 + tooltip) -->
+ <TooltipProvider:delay-duration="100">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <div
+ class="space-y-2":class="{ 'opacity-60': !thinkingSupported }"
+ >
  <Label>最大思考 Token 数</Label>
  <Input
  v-model="maxThinkingTokensInput"
  type="number":min="1024":max="128000"
- placeholder="留空使用默认值"
+ placeholder="留空使用默认值":disabled="!thinkingSupported"
  />
  <p class="text-xs text-muted-foreground">
  Claude 扩展思考的 token 上限。仅 Claude 模型支持，其他模型将忽略此参数
  </p>
  </div>
+ </TooltipTrigger>
+ <TooltipContent v-if="!thinkingSupported">
+ 仅 Anthropic Provider 支持 extended thinking
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  <!-- 预算上限 -->
  <div class="space-y-2">
  <Label>预算上限 (USD)</Label>
