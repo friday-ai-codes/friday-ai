@@ -688,15 +688,17 @@ async def deep_analysis(
  f"任务：{task_description}\n\n"
  f"请深入分析代码，给出详细的技术分析结果。用中文回答。"
  )
- # 5. 从系统设置获取 API 凭据 + Git 凭据，通过 metadata 注入容器
- from chat.services import aget_setting_value
+ # 5. 从 ProviderCredential 获取 API 凭据 + Git 凭据，通过 metadata 注入容器
+ # Phase Plan：SettingKeys.ANTHROPIC_* 硬删 → 走
+ # ProviderCredential(scope=system, name=default, provider_type=anthropic)
  from common.encryption import decrypt_value
  from repositories.models import GitCredential
- from system.models import SettingKeys
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY) or ""
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL) or ""
- system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
- small_model = await aget_setting_value(SettingKeys.ANTHROPIC_SMALL_MODEL) or ""
+ from services.provider_config import aget_legacy_anthropic_config
+ legacy = await aget_legacy_anthropic_config
+ api_key = legacy["api_key"]
+ base_url = legacy["base_url"]
+ system_model = legacy["default_model"]
+ small_model = legacy["small_model"]
  env_metadata: dict[str, str] = {
  "repository_id": str(repo.id),
  "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,

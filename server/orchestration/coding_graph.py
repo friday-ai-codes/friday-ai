@@ -254,11 +254,13 @@ async def _call_llm_for_pr_draft(
  Returns:
  (title, description) 元组。
  """
- from chat.services import aget_setting_value
- from system.models import SettingKeys
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
- model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or "claude-sonnet-4-20250514"
+ # Phase Plan：SettingKeys.ANTHROPIC_* 硬删 → 走
+ # ProviderCredential(scope=system, name=default, provider_type=anthropic)
+ from services.provider_config import aget_legacy_anthropic_config
+ legacy = await aget_legacy_anthropic_config
+ api_key = legacy["api_key"]
+ base_url = legacy["base_url"]
+ model = legacy["default_model"] or "claude-sonnet-4-20250514"
  if not api_key:
  raise ValueError("Anthropic API key 未配置")
  if base_url:

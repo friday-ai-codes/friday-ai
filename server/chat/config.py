@@ -6,7 +6,11 @@ from agents.models import AgentSession
 from chat.conversation_service import _build_system_prompt
 from chat.models import Conversation
 from chat.services import aget_setting_value
-from services.provider_config import ProviderConfigError, ProviderConfigService
+from services.provider_config import (
+ ProviderConfigError,
+ ProviderConfigService,
+ aget_legacy_anthropic_config,
+)
 from system.models import SettingKeys
 async def build_sdk_config(
  conversation: Conversation,
@@ -31,7 +35,10 @@ async def build_sdk_config(
  )
  except ProviderConfigError as e:
  raise ValueError(str(e)) from e
- system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
+ # Phase Plan：SettingKeys.ANTHROPIC_MODEL 硬删后走
+ # ProviderCredential.default_model（通过 legacy helper 保证调用点最小变更）
+ legacy = await aget_legacy_anthropic_config
+ system_model = legacy["default_model"]
  model = conversation.model or system_model
  session_id = f"chat-{conversation.id}-{uuid.uuid4.hex[:8]}"
  project_name = conversation.project.name

@@ -90,15 +90,16 @@ async def dispatch_repo_summary(repository: Repository) -> str:
  return session_id
 async def _build_env_metadata(repository: Repository) -> dict[str, str]:
  """构建 dispatch 所需的 metadata（参照 coding_session_service.build_dispatch_metadata）。"""
- from chat.services import aget_setting_value
  from common.encryption import decrypt_value
  from repositories.models import GitCredential
- from system.models import SettingKeys
- # API 密钥
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY) or ""
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL) or ""
- system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
- small_model = await aget_setting_value(SettingKeys.ANTHROPIC_SMALL_MODEL) or ""
+ from services.provider_config import aget_legacy_anthropic_config
+ # Phase Plan：SettingKeys.ANTHROPIC_* 硬删 → 走
+ # ProviderCredential(scope=system, name=default, provider_type=anthropic)
+ legacy = await aget_legacy_anthropic_config
+ api_key = legacy["api_key"]
+ base_url = legacy["base_url"]
+ system_model = legacy["default_model"]
+ small_model = legacy["small_model"]
  env_metadata: dict[str, str] = {
  "repository_id": str(repository.id),
  "env_FRIDAY_TASK_MODE": "repo_summary",

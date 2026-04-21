@@ -36,13 +36,8 @@ class Conversation(models.Model):
  default="",
  help_text="LLM 模型 ID，为空时使用系统默认模型",
  )
- provider_type = models.CharField(
- max_length=50,
- null=True,
- blank=True,
- verbose_name="Provider 类型",
- help_text="LLM Provider 类型，为空时继承上层配置 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
+ # Phase Plan：v8.1 Conversation.provider_type 字段硬删；
+ # 替代：provider_credential_id FK（ pin 语义 ）
  # Phase /：对话级固定 Provider 凭证（pin 语义）
  provider_credential_id = models.ForeignKey(
  "system.ProviderCredential",

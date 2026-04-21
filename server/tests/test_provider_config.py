@@ -1,9 +1,17 @@
 """ProviderConfigService 测试 — 四层配置优先级解析和凭据验证。
 覆盖,,,,, 需求。
+Phase Plan：本文件整体 SKIP。
+ - 测试的 v8.1 SettingKeys.DEFAULT_PROVIDER_TYPE + ANTHROPIC_* 4 常量 +
+ Project.default_provider_type + Conversation.provider_type 等全部硬删；
+ - 新的 四层解析链路覆盖：tests/test_provider_resolve_chain.py（12 用例，Plan 交付）
+ + tests/test_provider_config_v2.py Result 模式套件（部分同步废弃）。
 """
 import pytest
-from services.provider_config import ProviderType
-from system.models import SettingKeys, SystemSetting
+pytestmark = pytest.mark.skip(
+ reason="Phase Plan：v8.1 SettingKeys/Project.claude_* 字段硬删 → 整文件废弃。"
+ " 新路径覆盖由 test_provider_resolve_chain.py / test_provider_config_v2.py 承担。"
+)
+from services.provider_config import ProviderType # noqa: E402
 # ============================================================================
 # Fixtures
 # ============================================================================

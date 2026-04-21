@@ -10,9 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 import structlog
-from common.encryption import decrypt_value
 from projects.models import Project
-from system.models import SettingKeys, SystemSetting
+from system.models import SystemSetting
 if TYPE_CHECKING:
  from chat.protocols.base import ProviderProtocol
 logger = structlog.get_logger(__name__)
@@ -127,6 +126,124 @@ def _create_protocol(provider_type: str, api_key: str, base_url: str) -> Provide
  raise ChatServiceError(
  f"Provider 类型 '{provider_type}' 尚未实现，" f"当前仅支持: openai_chat"
  )
+def _load_project_credential_sync(project_id: int) -> tuple[str, str]:
+ """Phase Plan：同步读项目级默认 ProviderCredential(anthropic)。
+ Returns:
+ (api_key, base_url) 元组；缺失则返回 ("", "")。
+ """
+ from system.models import ProviderCredential
+ from services.provider_config import (
+ PROVIDER_REGISTRY,
+ ProviderType,
+ )
+ try:
+ project = Project.objects.get(id=project_id)
+ except Project.DoesNotExist:
+ raise ChatServiceError(f"找不到项目: {project_id}")
+ # 优先走 project.default_provider_credential_id FK
+ cred: Any = None
+ fk_id = getattr(project, "default_provider_credential_id_id", None)
+ if fk_id:
+ try:
+ cred = ProviderCredential.objects.get(id=fk_id, is_active=True)
+ except ProviderCredential.DoesNotExist:
+ cred = None
+ # 回退到项目级 anthropic default
+ if cred is None:
+ cred = ProviderCredential.objects.filter(
+ scope="project",
+ scope_id=project.id,
+ provider_type="anthropic",
+ name="default",
+ is_active=True,
+ ).first
+ if cred is None:
+ return "", ""
+ try:
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[ProviderType.ANTHROPIC].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ except Exception: # noqa: BLE001
+ return "", ""
+ api_key_value = ""
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ api_key_value = (
+ secret.get_secret_value if hasattr(secret, "get_secret_value") else str(secret)
+ )
+ base_url = getattr(validated, "base_url", "") or cred.base_url or ""
+ return api_key_value, base_url
+async def _aload_project_credential_async(project_id: int) -> tuple[str, str]:
+ """Phase Plan：异步读项目级默认 ProviderCredential(anthropic)。"""
+ from system.models import ProviderCredential
+ from services.provider_config import (
+ PROVIDER_REGISTRY,
+ ProviderType,
+ )
+ try:
+ project = await Project.objects.aget(id=project_id)
+ except Project.DoesNotExist:
+ raise ChatServiceError(f"找不到项目: {project_id}")
+ cred: Any = None
+ fk_id = getattr(project, "default_provider_credential_id_id", None)
+ if fk_id:
+ try:
+ cred = await ProviderCredential.objects.aget(id=fk_id, is_active=True)
+ except ProviderCredential.DoesNotExist:
+ cred = None
+ if cred is None:
+ cred = await ProviderCredential.objects.filter(
+ scope="project",
+ scope_id=project.id,
+ provider_type="anthropic",
+ name="default",
+ is_active=True,
+ ).afirst
+ if cred is None:
+ return "", ""
+ try:
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[ProviderType.ANTHROPIC].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ except Exception: # noqa: BLE001
+ return "", ""
+ api_key_value = ""
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ api_key_value = (
+ secret.get_secret_value if hasattr(secret, "get_secret_value") else str(secret)
+ )
+ base_url = getattr(validated, "base_url", "") or cred.base_url or ""
+ return api_key_value, base_url
+def _load_system_credential_sync -> tuple[str, str]:
+ """Phase Plan：同步读系统级默认 ProviderCredential(anthropic)。"""
+ from system.models import ProviderCredential
+ from services.provider_config import (
+ PROVIDER_REGISTRY,
+ ProviderType,
+ )
+ cred = ProviderCredential.objects.filter(
+ scope="system",
+ provider_type="anthropic",
+ name="default",
+ is_active=True,
+ ).first
+ if cred is None:
+ return "", ""
+ try:
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[ProviderType.ANTHROPIC].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ except Exception: # noqa: BLE001
+ return "", ""
+ api_key_value = ""
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ api_key_value = (
+ secret.get_secret_value if hasattr(secret, "get_secret_value") else str(secret)
+ )
+ base_url = getattr(validated, "base_url", "") or cred.base_url or ""
+ return api_key_value, base_url
 def get_chat_service(
  source: Literal["system", "project"],
  project_id: Optional[int] = None,
@@ -134,39 +251,29 @@ def get_chat_service(
  base_url: Optional[str] = None,
 ) -> ChatService:
  """Get a ChatService instance with the appropriate configuration.
- Args:
- source: Configuration source ("system" or "project")
- project_id: Project ID (required if source is "project")
- api_key: Override API key (for testing unsaved config)
- base_url: Override base URL (for testing unsaved config)
- Returns:
- Configured ChatService instance
- Raises:
- ChatServiceError: If configuration is missing or invalid
+ Phase Plan：从 ProviderCredential 读取凭证
+ （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
  """
  final_api_key = api_key
  final_base_url = base_url
  if source == "project":
  if not project_id:
  raise ChatServiceError("使用项目配置时必须提供 project_id")
- try:
- project = Project.objects.get(id=project_id)
- except Project.DoesNotExist:
- raise ChatServiceError(f"找不到项目: {project_id}")
- # Use project config if not overridden
- if not final_api_key and project.claude_api_key_encrypted:
- final_api_key = decrypt_value(project.claude_api_key_encrypted)
- if not final_base_url and project.claude_base_url:
- final_base_url = project.claude_base_url
- # Fall back to system config if not set
+ proj_api_key, proj_base_url = _load_project_credential_sync(project_id)
+ if not final_api_key and proj_api_key:
+ final_api_key = proj_api_key
+ if not final_base_url and proj_base_url:
+ final_base_url = proj_base_url
+ if not final_api_key or not final_base_url:
+ sys_api_key, sys_base_url = _load_system_credential_sync
  if not final_api_key:
- final_api_key = get_setting_value(SettingKeys.ANTHROPIC_API_KEY)
+ final_api_key = sys_api_key
  if not final_base_url:
- final_base_url = get_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ final_base_url = sys_base_url
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- # 根据 provider_type 选择协议实现
- provider_type = get_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "openai_chat"
+ # Provider 协议默认 openai_chat（SettingKeys.DEFAULT_PROVIDER_TYPE 已硬删）
+ provider_type = "openai_chat"
  protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)
 async def aget_chat_service(
@@ -175,27 +282,29 @@ async def aget_chat_service(
  api_key: Optional[str] = None,
  base_url: Optional[str] = None,
 ) -> ChatService:
- """Get a ChatService instance — async 版本。"""
+ """Get a ChatService instance — async 版本。
+ Phase Plan：从 ProviderCredential 读取凭证
+ （替代 v8.1 Project.claude_* / SettingKeys.ANTHROPIC_* 路径）。
+ """
+ from services.provider_config import aget_legacy_anthropic_config
  final_api_key = api_key
  final_base_url = base_url
  if source == "project":
  if not project_id:
  raise ChatServiceError("使用项目配置时必须提供 project_id")
- try:
- project = await Project.objects.aget(id=project_id)
- except Project.DoesNotExist:
- raise ChatServiceError(f"找不到项目: {project_id}")
- if not final_api_key and project.claude_api_key_encrypted:
- final_api_key = decrypt_value(project.claude_api_key_encrypted)
- if not final_base_url and project.claude_base_url:
- final_base_url = project.claude_base_url
+ proj_api_key, proj_base_url = await _aload_project_credential_async(project_id)
+ if not final_api_key and proj_api_key:
+ final_api_key = proj_api_key
+ if not final_base_url and proj_base_url:
+ final_base_url = proj_base_url
+ if not final_api_key or not final_base_url:
+ legacy = await aget_legacy_anthropic_config
  if not final_api_key:
- final_api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY)
+ final_api_key = legacy["api_key"]
  if not final_base_url:
- final_base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL)
+ final_base_url = legacy["base_url"]
  if not final_api_key:
  raise ChatServiceError("未配置 API Key，请在系统设置或项目设置中配置")
- # 根据 provider_type 选择协议实现
- provider_type = await aget_setting_value(SettingKeys.DEFAULT_PROVIDER_TYPE) or "openai_chat"
+ provider_type = "openai_chat"
  protocol = _create_protocol(provider_type, final_api_key, final_base_url or DEFAULT_BASE_URL)
  return ChatService(protocol=protocol)

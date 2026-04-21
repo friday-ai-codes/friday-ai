@@ -99,17 +99,8 @@ class FeishuConfigCreateSerializer(serializers.Serializer):
  plugin_id = serializers.CharField
  plugin_secret = serializers.CharField(write_only=True)
  user_key = serializers.CharField(required=False, allow_blank=True)
-class ClaudeConfigSerializer(serializers.Serializer):
- """Serializer for Claude configuration."""
- has_api_key = serializers.BooleanField
- base_url = serializers.CharField(allow_null=True)
- default_model = serializers.CharField(allow_null=True)
- config_source = serializers.CharField(source="source")
-class ClaudeConfigCreateSerializer(serializers.Serializer):
- """Serializer for creating/updating Claude configuration."""
- api_key = serializers.CharField(required=False, allow_blank=True, allow_null=True)
- base_url = serializers.CharField(required=False, allow_blank=True, allow_null=True)
- default_model = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+# Phase Plan：ClaudeConfigSerializer / ClaudeConfigCreateSerializer 整体硬删。
+# 替代：Phase ProviderCredentialSerializer（system/serializers.py）+ 项目级 scope。
 class WebhookTokenSerializer(serializers.Serializer):
  """Serializer for webhook token."""
  webhook_token = serializers.CharField

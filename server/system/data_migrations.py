@@ -60,11 +60,17 @@ def seed_provider_credentials_impl(
  - ANTHROPIC_API_KEY 为空或缺失 → 整体 noop，warning 日志
  - dry-run 时打印 mask 后 api_key + 模式=dry-run，不写库
  - apply 时 encrypt_value(json.dumps({"api_key": ...})) 写入
+ Phase Plan：SettingKeys.ANTHROPIC_* 常量硬删后，
+ 此 seed 命令仍接受 SystemSetting 行（key 为字面量字符串 "anthropic_*"），
+ 供 Phase 历史 migration 兼容调用。
  """
- from system.models import SettingKeys # TextChoices/常量，不依赖 schema
+ # Phase Plan：直接字面量 key，不再引用 SettingKeys.ANTHROPIC_* 常量
+ _ANTHROPIC_API_KEY = "anthropic_api_key"
+ _ANTHROPIC_BASE_URL = "anthropic_base_url"
+ _ANTHROPIC_MODEL = "anthropic_model"
  SystemSetting = apps.get_model("system", "SystemSetting")
  ProviderCredential = apps.get_model("system", "ProviderCredential")
- api_key = _get_setting_value(SystemSetting, SettingKeys.ANTHROPIC_API_KEY)
+ api_key = _get_setting_value(SystemSetting, _ANTHROPIC_API_KEY)
  if not api_key or not api_key.strip:
  logger.warning(
  "provider_credential_seed_skipped",
@@ -73,9 +79,9 @@ def seed_provider_credentials_impl(
  if stdout is not None:
  stdout.write("[seed_provider_credentials] noop: anthropic_api_key empty\n")
  return {"created": 0, "skipped": 0, "failed": 0}
- base_url_value = _get_setting_value(SystemSetting, SettingKeys.ANTHROPIC_BASE_URL)
+ base_url_value = _get_setting_value(SystemSetting, _ANTHROPIC_BASE_URL)
  default_model_value = _get_setting_value(
- SystemSetting, SettingKeys.ANTHROPIC_MODEL
+ SystemSetting, _ANTHROPIC_MODEL
  )
  # CONTEXT 决策 3：禁用 update_or_create 覆盖语义，先查询再决定 skip vs create
  existing = ProviderCredential.objects.filter(
