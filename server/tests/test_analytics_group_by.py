@@ -24,9 +24,12 @@ class TestAnalyticsGroupByOverview:
  authenticated_client: "APIClient",
  analytics_token_usage_factory,
  ) -> None:
- """Behavior A：缺省 group_by=none 返回 {group_by, total} 包装。"""
+ """Behavior A：显式 ?group_by=none 返回 {group_by, total} 包装（新 shape）。
+ Note: 不带 ?group_by 参数时继续返回 legacy flat shape（Phase 兼容，
+ 由 TestAnalyticsOverview:test_returns_kpi_data 覆盖）。
+ """
  analytics_token_usage_factory(provider_type="anthropic", count=2)
- resp = authenticated_client.get("/api/analytics/overview/")
+ resp = authenticated_client.get("/api/analytics/overview/?group_by=none")
  assert resp.status_code == 200
  data = resp.json
  assert data["group_by"] == "none"
@@ -92,7 +95,17 @@ class TestAnalyticsGroupByOverview:
  from django.apps import apps
  TokenUsage = apps.get_model("subagent", "TokenUsage")
  SubAgentSession = apps.get_model("subagent", "SubAgentSession")
- session = SubAgentSession.objects.create(session_id=f"sess-{uuid4.hex}")
+ AgentSession = apps.get_model("agents", "AgentSession")
+ main = AgentSession.objects.create(
+ session_id=f"main-{uuid4.hex}",
+ status=AgentSession.Status.COMPLETED,
+ )
+ session = SubAgentSession.objects.create(
+ session_id=f"sess-{uuid4.hex}",
+ main_session=main,
+ repo_url="https://github.com/test/legacy.git",
+ task_type=SubAgentSession.TaskType.CODING,
+ )
  TokenUsage.objects.create(
  session=session,
  input_tokens=100,
