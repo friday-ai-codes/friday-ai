@@ -229,3 +229,25 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  setattr(instance, attr, value)
  instance.save
  return instance
+# ============================================================================
+# Phase：Provider 类型元信息 Serializer（schema-driven 前端数据源）
+# ============================================================================
+class ProviderTypeMetaSerializer(serializers.Serializer):
+ """GET /api/providers/types/ 单项序列化。
+ 每个 Provider 元信息 + credential_schema 的 Pydantic JSON Schema 一次性返回，
+ 前端 ProviderCredentialForm.vue 据此动态渲染字段（ schema-driven），
+ 新增 Provider 时仅需更新后端 PROVIDER_REGISTRY，前端无需改代码。
+ """
+ provider_type = serializers.CharField
+ display_name = serializers.CharField
+ langchain_prefix = serializers.CharField
+ api_format = serializers.CharField
+ credential_type = serializers.CharField
+ default_base_url = serializers.CharField(allow_blank=True)
+ supports_thinking = serializers.BooleanField
+ supports_reasoning = serializers.BooleanField
+ supports_vision = serializers.BooleanField
+ supports_function_calling = serializers.BooleanField
+ supports_streaming = serializers.BooleanField
+ # Pydantic BaseModel.model_json_schema 输出：通常含 properties / required / $defs
+ credential_schema_json_schema = serializers.DictField
