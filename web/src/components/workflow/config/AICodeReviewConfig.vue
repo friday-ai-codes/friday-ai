@@ -5,6 +5,8 @@ import { computed } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 /**
  * AICodeReviewConfig - AI 代码审查节点配置面板
@@ -24,6 +26,7 @@ interface AICodeReviewConfig {
  api_key: string
  chat_id: string
  max_iterations: number
+ provider_credential_id?: string | null
 }
 interface Props {
  config: AICodeReviewConfig
@@ -49,6 +52,14 @@ const apiBaseUrl = field('api_base_url', '') as WritableComputedRef<string>
 const apiKey = field('api_key', '') as WritableComputedRef<string>
 const chatId = field('chat_id', '') as WritableComputedRef<string>
 const maxIterations = field('max_iterations', 30) as WritableComputedRef<number>
+// Provider 凭证(Phase)
+// AICodeReviewConfig 模板当前无 thinking / reasoning_effort 控件,按 Plan 取舍
+// 仅保留字段双向绑定;未来 Phase 扩展 thinking UI 时再接入 capability computed。
+const providerCredentialIdField = field('provider_credential_id', null) as WritableComputedRef<string | null>
+const providerCredentialId = computed<string | null>({
+ get: => providerCredentialIdField.value ?? null,
+ set: (v: string | null) => { providerCredentialIdField.value = v },
+})
 // 数值字段需要 string -> number 转换
 const maxIterationsStr = computed({
  get: => String(maxIterations.value),
@@ -81,19 +92,36 @@ const maxIterationsStr = computed({
  </div>
  </div>
  </div>
- <!-- Model -->
+ <!-- Provider 凭证(Phase/05/06) -->
  <div class="space-y-2">
- <Label class="flex items-center gap-1.5">
+ <Label class="flex items-center gap-1.5 font-normal">
+ <span class="icon-[lucide--key-round] text-primary" />
+ Provider 凭证
+ </Label>
+ <ProviderCredentialDropdown:model-value="providerCredentialId"
+ scope="system"
+ @update:model-value="v => providerCredentialId = v"
+ />
+ <p class="text-xs text-muted-foreground">
+ 选择一条启用中的 Provider 凭证,未选择则走系统默认
+ </p>
+ </div>
+ <!-- Model(代码审查需要 ReadFile/Grep 工具, requires-tools=true) -->
+ <div class="space-y-2">
+ <Label class="flex items-center gap-1.5 font-normal">
  <span class="icon-[lucide--brain] text-primary" />
  模型
  </Label>
+ <ModelSelect:credential-id="providerCredentialId":requires-tools="true":model-value="model"
+ @update:model-value="v => model = v ?? ''"
+ />
  <Input
  v-model="model"
- placeholder="留空使用系统默认模型"
+ placeholder="或手动输入模型标识(留空使用系统默认)"
  class="bg-background/50"
  />
  <p class="text-xs text-muted-foreground">
- 用于代码审查的 AI 模型标识
+ 代码审查使用的 AI 模型,优先按 Provider 凭证的 available_models 列表选择
  </p>
  </div>
  <!-- Use Custom API -->
