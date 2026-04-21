@@ -7,6 +7,7 @@ from typing import Any
 import structlog
 from django.db.models import Avg, Case, Count, F, Q, Sum, When
 from django.db.models.functions import TruncDate
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -15,6 +16,8 @@ from subagent.models import TokenUsage
 from workflows.api.analytics_serializers import (
  AnalyticsOverviewSerializer,
  DurationBucketSerializer,
+ GroupedOverviewSerializer,
+ GroupedTokenCostSerializer,
  NodePerformanceSerializer,
  TokenCostDataPointSerializer,
  TrendDataPointSerializer,
@@ -26,6 +29,8 @@ from workflows.models import (
  WorkflowExecution,
 )
 logger = structlog.get_logger(__name__)
+# Phase Plan — group_by 白名单（V5 Input Validation / T- mitigation）
+VALID_GROUP_BY: set[str] = {"none", "provider_type", "project"}
 def _parse_date_range(request: Request) -> tuple[date, date]:
  """解析 date_from / date_to 查询参数，默认近 7 天。"""
  today = date.today
@@ -42,12 +47,35 @@ def _parse_date_range(request: Request) -> tuple[date, date]:
  date_to = today
  return date_from, date_to
 class AnalyticsOverviewView(APIView):
- """KPI 概览：执行总数、成功率、平均时长、总成本。"""
+ """KPI 概览：执行总数、成功率、平均时长、总成本。
+ Phase Plan —：扩展 `group_by` 查询参数：
+ - none（默认）：flat shape `{total_executions, success_rate, ...}` 兼容旧 Phase
+ - provider_type: `{group_by, groups: {"anthropic": {...}, ...}, total}`
+ - project: `{group_by, groups: {"<project_id>": {...}}, total}`
+ 不新增独立端点（Anti-pattern 锁定）；白名单 group_by 防 SQL 注入（T-）。
+ """
  permission_classes = [IsAuthenticated]
  def get(self, request: Request) -> Response:
+ # group_by 参数：未传 → legacy flat shape（Phase 兼容）；显式传值 → 新 wrapped shape
+ group_by_raw = request.query_params.get("group_by")
+ group_by = group_by_raw if group_by_raw is not None else "none"
+ if group_by not in VALID_GROUP_BY:
+ logger.warning(
+ "analytics.group_by_invalid",
+ group_by=group_by,
+ )
+ return Response(
+ {"detail": "invalid group_by"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  date_from, date_to = _parse_date_range(request)
- logger.info("analytics.overview", date_from=str(date_from), date_to=str(date_to))
- # 查询时间范围内的执行记录
+ logger.info(
+ "analytics.overview",
+ date_from=str(date_from),
+ date_to=str(date_to),
+ group_by=group_by,
+ )
+ # 查询时间范围内的执行记录（flat KPI 不变）
  executions = WorkflowExecution.objects.filter(
  created_at__date__gte=date_from,
  created_at__date__lte=date_to,
@@ -72,14 +100,76 @@ class AnalyticsOverviewView(APIView):
  session__node_execution__workflow_execution__created_at__date__lte=date_to,
  ).aggregate(total_cost=Sum("total_cost_usd"))
  total_cost: Decimal | None = cost_agg["total_cost"]
- data = {
+ total_dict = {
  "total_executions": total,
  "success_rate": round(success_rate, 2),
  "avg_duration_seconds": round(avg_duration_seconds, 2) if avg_duration_seconds is not None else None,
  "total_cost_usd": float(total_cost) if total_cost else 0.0,
  }
- serializer = AnalyticsOverviewSerializer(data)
+ # ----- group_by 分派 -----
+ if group_by == "none":
+ # 未显式传 group_by 参数（group_by_raw is None）→ legacy flat shape（Phase 兼容）
+ # 显式 ?group_by=none → 新 wrapped shape {group_by, total}（前端新版消费）
+ if group_by_raw is None:
+ logger.info("analytics.group_by_served", group_by="legacy", row_count=1)
+ serializer = AnalyticsOverviewSerializer(total_dict)
  return Response(serializer.data)
+ logger.info("analytics.group_by_served", group_by="none", row_count=1)
+ return Response({"group_by": "none", "total": total_dict})
+ groups: dict[str, dict] = {}
+ if group_by == "provider_type":
+ # + D-F null bucket coalesce："unknown"
+ rows = (
+ TokenUsage.objects.filter(
+ recorded_at__date__gte=date_from,
+ recorded_at__date__lte=date_to,
+ )
+ .values("provider_type")
+ .annotate(
+ total_cost_usd=Sum("total_cost_usd"),
+ input_tokens_sum=Sum("input_tokens"),
+ output_tokens_sum=Sum("output_tokens"),
+ count=Count("id"),
+ )
+ .order_by("provider_type")
+ )
+ for r in rows:
+ key = r["provider_type"] or "unknown"
+ groups[key] = {
+ "total_tokens": (r["input_tokens_sum"] or 0) + (r["output_tokens_sum"] or 0),
+ "total_cost_usd": float(r["total_cost_usd"] or 0),
+ "count": r["count"],
+ }
+ elif group_by == "project":
+ # 按 workflow_execution.project_id 聚合（TokenUsage.session.node_execution.workflow_execution.project）
+ rows = (
+ TokenUsage.objects.filter(
+ session__node_execution__workflow_execution__created_at__date__gte=date_from,
+ session__node_execution__workflow_execution__created_at__date__lte=date_to,
+ )
+ .values("session__node_execution__workflow_execution__project_id")
+ .annotate(
+ total_cost_usd=Sum("total_cost_usd"),
+ input_tokens_sum=Sum("input_tokens"),
+ output_tokens_sum=Sum("output_tokens"),
+ count=Count("id"),
+ )
+ .order_by("session__node_execution__workflow_execution__project_id")
+ )
+ for r in rows:
+ pid = r["session__node_execution__workflow_execution__project_id"]
+ key = str(pid) if pid else "unknown"
+ groups[key] = {
+ "total_tokens": (r["input_tokens_sum"] or 0) + (r["output_tokens_sum"] or 0),
+ "total_cost_usd": float(r["total_cost_usd"] or 0),
+ "count": r["count"],
+ }
+ logger.info(
+ "analytics.group_by_served",
+ group_by=group_by,
+ row_count=len(groups),
+ )
+ return Response({"group_by": group_by, "groups": groups, "total": total_dict})
 class TrendView(APIView):
  """成功/失败趋势：按日聚合。"""
  permission_classes = [IsAuthenticated]
@@ -154,11 +244,30 @@ class DurationDistributionView(APIView):
  serializer = DurationBucketSerializer(data, many=True)
  return Response(serializer.data)
 class TokenCostView(APIView):
- """Token 消耗和 USD 成本：按日聚合。"""
+ """Token 消耗和 USD 成本：按日聚合。
+ Phase Plan —：扩展 `group_by` 查询参数：
+ - 缺省：flat list[TokenCostDataPoint] 兼容旧 Phase
+ - provider_type: `{group_by, groups: {"anthropic": [{date, tokens, cost}], ...}}`
+ - project: `{group_by, groups: {"<project_id>": [...]}}`
+ """
  permission_classes = [IsAuthenticated]
  def get(self, request: Request) -> Response:
+ group_by = request.query_params.get("group_by", "none")
+ if group_by not in VALID_GROUP_BY:
+ logger.warning("analytics.group_by_invalid", group_by=group_by)
+ return Response(
+ {"detail": "invalid group_by"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
  date_from, date_to = _parse_date_range(request)
- logger.info("analytics.token_cost", date_from=str(date_from), date_to=str(date_to))
+ logger.info(
+ "analytics.token_cost",
+ date_from=str(date_from),
+ date_to=str(date_to),
+ group_by=group_by,
+ )
+ # ----- 兼容路径：group_by=none 返回旧 flat list shape -----
+ if group_by == "none":
  daily_tokens: Any = (
  TokenUsage.objects.filter(
  recorded_at__date__gte=date_from,
@@ -182,8 +291,75 @@ class TokenCostView(APIView):
  }
  for row in daily_tokens
  ]
+ logger.info("analytics.group_by_served", group_by="none", row_count=len(data))
  serializer = TokenCostDataPointSerializer(data, many=True)
  return Response(serializer.data)
+ # ----- 分组路径 -----
+ groups: dict[str, list[dict]] = {}
+ if group_by == "provider_type":
+ rows = (
+ TokenUsage.objects.filter(
+ recorded_at__date__gte=date_from,
+ recorded_at__date__lte=date_to,
+ )
+ .annotate(usage_date=TruncDate("recorded_at"))
+ .values("usage_date", "provider_type")
+ .annotate(
+ input_tokens=Sum("input_tokens"),
+ output_tokens=Sum("output_tokens"),
+ total_cost_usd=Sum("total_cost_usd"),
+ )
+ .order_by("provider_type", "usage_date")
+ )
+ for r in rows:
+ # D-F：provider_type=None 合并到 "unknown"
+ key = r["provider_type"] or "unknown"
+ groups.setdefault(key, ).append(
+ {
+ "date": str(r["usage_date"]),
+ "input_tokens": r["input_tokens"] or 0,
+ "output_tokens": r["output_tokens"] or 0,
+ "total_cost_usd": float(r["total_cost_usd"] or 0),
+ }
+ )
+ elif group_by == "project":
+ rows = (
+ TokenUsage.objects.filter(
+ session__node_execution__workflow_execution__created_at__date__gte=date_from,
+ session__node_execution__workflow_execution__created_at__date__lte=date_to,
+ )
+ .annotate(usage_date=TruncDate("recorded_at"))
+ .values(
+ "usage_date",
+ "session__node_execution__workflow_execution__project_id",
+ )
+ .annotate(
+ input_tokens=Sum("input_tokens"),
+ output_tokens=Sum("output_tokens"),
+ total_cost_usd=Sum("total_cost_usd"),
+ )
+ .order_by(
+ "session__node_execution__workflow_execution__project_id",
+ "usage_date",
+ )
+ )
+ for r in rows:
+ pid = r["session__node_execution__workflow_execution__project_id"]
+ key = str(pid) if pid else "unknown"
+ groups.setdefault(key, ).append(
+ {
+ "date": str(r["usage_date"]),
+ "input_tokens": r["input_tokens"] or 0,
+ "output_tokens": r["output_tokens"] or 0,
+ "total_cost_usd": float(r["total_cost_usd"] or 0),
+ }
+ )
+ logger.info(
+ "analytics.group_by_served",
+ group_by=group_by,
+ row_count=sum(len(v) for v in groups.values),
+ )
+ return Response({"group_by": group_by, "groups": groups})
 class NodePerformanceView(APIView):
  """节点类型性能排行：按 node_type 聚合。"""
  permission_classes = [IsAuthenticated]
