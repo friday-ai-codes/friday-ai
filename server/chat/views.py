@@ -251,7 +251,10 @@ class ConversationDetailView(APIView):
  tags=["Conversations"],
  )
  async def get(self, request, conversation_id):
- """获取对话详情含消息。"""
+ """获取对话详情含消息。
+ Phase：响应扩展 resolved_provider 字段 = {provider_type,
+ model, source, chain: [4 层]}。
+ """
  try:
  result = await ConversationService.get_conversation_with_messages(
  str(conversation_id),
@@ -263,6 +266,48 @@ class ConversationDetailView(APIView):
  )
  conversation = result["conversation"]
  messages = result["messages"]
+ # Phase：四层 Provider 解析 Inspector
+ # 预取 FK（async 上下文禁止触发 SynchronousOnlyOperation）
+ conversation_prefetched = await Conversation.objects.select_related(
+ "project",
+ "project__default_provider_credential_id",
+ "provider_credential_id",
+ ).aget(id=conversation.id)
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ResolvedProviderChain,
+ )
+ chain_result = await ProviderConfigService.aresolve_with_chain(
+ node_config=None,
+ conversation=conversation_prefetched,
+ project=conversation_prefetched.project,
+ )
+ resolved_provider_payload: dict | None = None
+ if isinstance(chain_result, ResolvedProviderChain):
+ resolved_provider_payload = {
+ "provider_type": str(chain_result.winning.provider_type),
+ "model": (
+ (chain_result.winning.extra or {}).get("model", "")
+ or (conversation.model or "")
+ ),
+ "source": chain_result.winning.source,
+ "chain": [
+ {
+ "layer": entry.layer,
+ "provider_type": entry.provider_type,
+ "model": entry.model,
+ "credential_id": (
+ str(entry.credential_id) if entry.credential_id else None
+ ),
+ "active": entry.active,
+ }
+ for entry in chain_result.chain
+ ],
+ }
+ elif isinstance(chain_result, ProviderMissingError):
+ # 全链路缺失 → resolved_provider=null（前端降级渲染）
+ resolved_provider_payload = None
  response_data = {
  "id": str(conversation.id),
  "project_id": str(conversation.project_id),
@@ -270,6 +315,7 @@ class ConversationDetailView(APIView):
  "created_at": conversation.created_at,
  "updated_at": conversation.updated_at,
  "messages": ConversationMessageSerializer(messages, many=True).data,
+ "resolved_provider": resolved_provider_payload,
  }
  return Response(response_data)
  @extend_schema(

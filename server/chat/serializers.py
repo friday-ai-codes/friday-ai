@@ -147,14 +147,29 @@ class ConversationMessageSerializer(serializers.Serializer):
  tool_call_id = serializers.CharField(required=False, allow_blank=True)
  metadata = serializers.JSONField(required=False)
  created_at = serializers.DateTimeField
+class ResolvedProviderChainEntrySerializer(serializers.Serializer):
+ """Phase：四层解析链单条目序列化（响应契约驱动前端 tooltip）。"""
+ layer = serializers.CharField # "node" | "conversation" | "project" | "system"
+ provider_type = serializers.CharField(allow_null=True)
+ model = serializers.CharField(allow_null=True, allow_blank=True)
+ credential_id = serializers.UUIDField(allow_null=True)
+ active = serializers.BooleanField
+class ResolvedProviderSerializer(serializers.Serializer):
+ """Phase：Conversation / Node 响应扩展 resolved_provider 对象。"""
+ provider_type = serializers.CharField
+ model = serializers.CharField(allow_blank=True)
+ source = serializers.CharField # winning layer
+ chain = ResolvedProviderChainEntrySerializer(many=True)
 class ConversationDetailSerializer(serializers.Serializer):
- """对话详情（含消息列表）。"""
+ """对话详情（含消息列表 + Phase resolved_provider）。"""
  id = serializers.UUIDField
  project_id = serializers.UUIDField
  title = serializers.CharField
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
  messages = ConversationMessageSerializer(many=True, required=False)
+ # Phase：四层 Provider 解析 Inspector（null=全链路缺失，前端降级）
+ resolved_provider = ResolvedProviderSerializer(required=False, allow_null=True)
 class RuntimeLogSerializer(serializers.Serializer):
  """运行态日志。"""
  type = serializers.CharField

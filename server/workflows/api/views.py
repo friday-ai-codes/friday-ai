@@ -1103,6 +1103,92 @@ class ExecutionContextView(APIView):
  serializer = ExecutionContextSerializer(context_snapshot)
  return Response(serializer.data)
 # =============================================================================
+# Phase：Workflow Node Resolved Provider View
+# =============================================================================
+class NodeResolvedProviderView(APIView):
+ """Phase：workflow 节点四层 Provider 解析链查询。
+ 路由：``GET /api/workflows/{workflow_id}/nodes/{node_id}/resolved-provider/``
+ 语义：
+ - 根据 workflow + node.config 调用 ProviderConfigService.aresolve_with_chain
+ 反查四层 Provider 解析链，供前端 NodeConfigPanel ResolvedSourceBadge 渲染
+ - 返回同 Conversation 详情 resolved_provider shape：
+ ``{resolved_provider: {provider_type, model, source, chain: [...]}}``
+ - 全链路缺失 → resolved_provider=null（Card 层降级展示）
+ Threat model（T- mitigate）：
+ - IsAuthenticated + has_project_access(VIEWER+) 校验（从 workflow 反查 project）
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Request, workflow_id, node_id) -> Response:
+ """返回 workflow 指定 node 的四层 Provider 解析链。"""
+ from permissions.models import ProjectRole
+ from permissions.services import PermissionService
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ResolvedProviderChain,
+ )
+ # 1. 节点存在性（隐含 workflow 匹配）
+ try:
+ node = await WorkflowNode.objects.select_related(
+ "workflow",
+ "workflow__project",
+ "workflow__project__default_provider_credential_id",
+ ).aget(id=node_id, workflow_id=workflow_id)
+ except WorkflowNode.DoesNotExist:
+ return Response(
+ {"detail": "节点不存在或已被删除"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 2. 权限校验（T-）
+ user = request.user
+ if not getattr(user, "is_superuser", False):
+ has_access = await sync_to_async(PermissionService.has_project_access)(
+ user, node.workflow.project, ProjectRole.VIEWER
+ )
+ if not has_access:
+ return Response(
+ {"detail": "无权查看该工作流节点"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ # 3. 调 aresolve_with_chain（node_config 从 node.config 取；无 conversation）
+ node_config = node.config or {}
+ chain_result = await ProviderConfigService.aresolve_with_chain(
+ node_config=node_config,
+ conversation=None,
+ project=node.workflow.project,
+ )
+ resolved_provider_payload: dict | None = None
+ if isinstance(chain_result, ResolvedProviderChain):
+ resolved_provider_payload = {
+ "provider_type": str(chain_result.winning.provider_type),
+ "model": (chain_result.winning.extra or {}).get("model", "")
+ or node_config.get("model", ""),
+ "source": chain_result.winning.source,
+ "chain": [
+ {
+ "layer": entry.layer,
+ "provider_type": entry.provider_type,
+ "model": entry.model,
+ "credential_id": (
+ str(entry.credential_id) if entry.credential_id else None
+ ),
+ "active": entry.active,
+ }
+ for entry in chain_result.chain
+ ],
+ }
+ elif isinstance(chain_result, ProviderMissingError):
+ resolved_provider_payload = None
+ logger.info(
+ "workflows.node_resolved_provider_queried",
+ workflow_id=str(workflow_id),
+ node_id=str(node_id),
+ winning_source=(
+ resolved_provider_payload["source"] if resolved_provider_payload else None
+ ),
+ )
+ return Response({"resolved_provider": resolved_provider_payload})
+# =============================================================================
 # Node Schema View
 # =============================================================================
 class NodeSchemaListView(APIView):

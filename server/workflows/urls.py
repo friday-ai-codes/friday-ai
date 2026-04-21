@@ -16,6 +16,7 @@ from workflows.api.views import (
  LLMSystemConfigView,
  NodeExecutionActionView,
  NodeExecutionViewSet,
+ NodeResolvedProviderView,
  NodeSchemaListView,
  NodeSubStepListView,
  NodeTypeViewSet,
@@ -47,6 +48,12 @@ urlpatterns = router.urls + [
  "workflow-executions/<uuid:execution_id>/context/",
  ExecutionContextView.as_view,
  name="execution-context",
+ ),
+ # Phase：workflow 节点四层 Provider 解析链
+ path(
+ "workflows/<uuid:workflow_id>/nodes/<uuid:node_id>/resolved-provider/",
+ NodeResolvedProviderView.as_view,
+ name="node-resolved-provider",
  ),
  # Node schemas endpoint
  path(
