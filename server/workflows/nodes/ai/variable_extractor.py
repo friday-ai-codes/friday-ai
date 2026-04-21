@@ -345,10 +345,16 @@ class AIVariableExtractorNode(BaseNode):
  context: ExecutionContext,
  max_thinking_tokens: int | None = None,
  ) -> tuple[str, dict]:
- """调用 LLM 服务"""
- import httpx
- from services.claude_config import aget_claude_config
- # 获取项目配置
+ """单 turn ainvoke 收敛（Phase / ）。
+ build_chat_model(resolved).bind(temperature=0.3).ainvoke([HumanMessage])；
+ aresolve_or_error 主路径，仅 model 字段走 claude_config fallback；
+ capabilities 兜底输出上限（，原硬编码 4096 删除）。
+ 方案 A：node_config=None； Task 1 扩签名加凭证字段。
+ """
+ # 分歧 D / Pitfall #5：函数体内 import（测试双 patch seam 可覆盖）
+ from langchain_core.messages import AIMessage, HumanMessage
+ from agents.llm_factory import build_chat_model
+ from services.provider_config import ProviderConfigService, ProviderMissingError
  project = None
  if context.workflow_execution:
  from workflows.models import WorkflowExecution
@@ -357,49 +363,42 @@ class AIVariableExtractorNode(BaseNode):
  ).aget(id=context.workflow_execution.id)
  if we.workflow:
  project = we.workflow.project
- config = await aget_claude_config(project)
- # 如果未指定模型，从配置中获取
- resolved_model = model or config.model
- if not resolved_model:
- raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- api_key = config.api_key
- base_url = config.base_url or "https://api.anthropic.com"
- if not api_key:
- raise ValueError("未配置 Anthropic API Key")
- base_url = base_url.rstrip("/")
- async with httpx.AsyncClient as client:
- payload: dict = {
- "model": resolved_model,
- "max_tokens": 4096,
- "messages": [{"role": "user", "content": prompt}],
- }
- # Extended thinking 支持：当 max_thinking_tokens 有值且为 Claude 模型时启用
- if max_thinking_tokens and resolved_model.startswith("claude"):
- payload["thinking"] = {
- "type": "enabled",
- "budget_tokens": max_thinking_tokens,
- }
- # Anthropic API 要求 thinking 模式下 temperature 必须为 1
- payload["temperature"] = 1
- else:
- payload["temperature"] = 0.3 # 低温度保证提取稳定性
- response = await client.post(
- f"{base_url}/v1/messages",
- headers={
- "x-api-key": api_key,
- "anthropic-version": "2023-06-01",
- "content-type": "application/json",
- },
- json=payload,
- timeout=120,
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=None, project=project
  )
- if response.status_code != 200:
- raise Exception(f"API 错误: {response.status_code} - {response.text}")
- data = response.json
- content = data.get("content", )
- text = content[0].get("text", "") if content else ""
- usage = {
- "input_tokens": data.get("usage", {}).get("input_tokens", 0),
- "output_tokens": data.get("usage", {}).get("output_tokens", 0),
+ if isinstance(result, ProviderMissingError):
+ raise ValueError(
+ f"未配置 {result.missing_provider} Provider 凭证："
+ f"{result.recommended_action}"
+ )
+ resolved = result
+ #：model 字段空值 fallback（claude_config 仅作 model 兜底）
+ if not model:
+ from services import claude_config as _cc_mod
+ model = (await _cc_mod.aget_claude_config(project)).model or ""
+ if not model:
+ raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ #：输出长度由 capabilities 兜底；：.bind(temperature=0.3)
+ chat_model = build_chat_model(
+ resolved=resolved,
+ model=model,
+ max_thinking_tokens=max_thinking_tokens,
+ streaming=False,
+ )
+ ai_msg: AIMessage = await chat_model.bind(temperature=0.3).ainvoke(
+ [HumanMessage(content=prompt)]
+ )
+ content = ai_msg.content
+ if isinstance(content, list):
+ text = "".join(
+ str(b.get("text", ""))
+ for b in content
+ if isinstance(b, dict) and b.get("type") == "text"
+ )
+ else:
+ text = str(content) if content else ""
+ meta = getattr(ai_msg, "usage_metadata", None) or {}
+ return text, {
+ "input_tokens": int(meta.get("input_tokens", 0) or 0),
+ "output_tokens": int(meta.get("output_tokens", 0) or 0),
  }
- return text, usage
