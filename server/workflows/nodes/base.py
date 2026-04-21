@@ -64,6 +64,15 @@ class ExecutionContext:
  # 服务注入
  workflow_execution: "WorkflowExecution | None" = None
  node_execution: "NodeExecution | None" = None
+ # Phase：per-node Provider 快照
+ #
+ # Shape: {node_id: {provider_type: str, model: str, source: str,
+ # credential_id: str | None}}
+ #
+ # 由 WorkflowEngine.start_execution 统一写入；AI 节点 runner 优先读。
+ # miss 时（历史 Execution 无快照 OR 节点非 AI 类型）fallback 到运行时
+ # aresolve + structlog warning log（事件名 snapshot.miss_fallback_to_runtime_resolve）。
+ node_snapshots: dict[str, dict] = field(default_factory=dict)
  def get_input(self, key: str, default: Any = None) -> Any:
  """获取输入数据
  Args:
