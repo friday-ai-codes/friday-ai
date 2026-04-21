@@ -273,6 +273,26 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  f"{result.recommended_action}"
  )
  resolved = result
+ # API tier 安全硬化（T- disposition=mitigate）：
+ # 节点级凭证 scope 校验，防跨 project 越权。仅当命中节点级 FK 时检查；
+ # resolved.scope == "project" 且 scope_id != project.id 直接拒绝。
+ # 权威路径 server/system/models.py L102（grep 已确认）。
+ if resolved.source == "node" and resolved.credential_id is not None:
+ from system.models import ProviderCredential
+ try:
+ cred = await ProviderCredential.objects.aget(id=resolved.credential_id)
+ except ProviderCredential.DoesNotExist as exc:
+ raise ValueError(
+ f"未配置 Provider 凭证：provider_credential_id="
+ f"{resolved.credential_id} 不存在"
+ ) from exc
+ project_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ raise ValueError(
+ f"未配置 {resolved.provider_type.value} Provider 凭证："
+ f"节点 provider_credential_id 指向他 project 凭证，"
+ f"已拒绝（scope 校验失败）"
+ )
  # 模型 fallback：config_model 为空时读 claude_config.model
  if config_model:
  resolved_model = config_model

@@ -195,12 +195,13 @@ class AIVariableExtractorNode(BaseNode):
  fallback=EXTRACTION_PROMPT_TEMPLATE,
  )
  try:
- # 调用 AI
+ # 调用 AI（ Task 1：传入节点级 provider_credential_id）
  response, usage = await self._call_llm(
  prompt=prompt,
  model=model,
  context=context,
  max_thinking_tokens=max_thinking_tokens,
+ provider_credential_id=config.get("provider_credential_id", ""),
  )
  # 解析响应
  extracted_data = self._parse_ai_response(response)
@@ -344,14 +345,20 @@ class AIVariableExtractorNode(BaseNode):
  model: str,
  context: ExecutionContext,
  max_thinking_tokens: int | None = None,
+ provider_credential_id: str = "",
  ) -> tuple[str, dict]:
  """单 turn ainvoke 收敛（Phase / ）。
  build_chat_model(resolved).bind(temperature=0.3).ainvoke([HumanMessage])；
  aresolve_or_error 主路径，仅 model 字段走 claude_config fallback；
  capabilities 兜底输出上限（，原硬编码 4096 删除）。
- 方案 A：node_config=None； Task 1 扩签名加凭证字段。
+ ** Task 1 启用**：`provider_credential_id` 非空时，aresolve_or_error 传
+ `node_config={"provider_credential_id": provider_credential_id}`；命中节点级
+ FK 后做 API tier scope 校验（ 安全硬化）：resolved.credential_id
+ 指向的凭证若 scope=="project" 且 scope_id != project.id → 拒绝。
+ T- disposition=mitigate 真正落地。
  """
  # 分歧 D / Pitfall #5：函数体内 import（测试双 patch seam 可覆盖）
+ from typing import Any
  from langchain_core.messages import AIMessage, HumanMessage
  from agents.llm_factory import build_chat_model
  from services.provider_config import ProviderConfigService, ProviderMissingError
@@ -363,8 +370,11 @@ class AIVariableExtractorNode(BaseNode):
  ).aget(id=context.workflow_execution.id)
  if we.workflow:
  project = we.workflow.project
+ node_config: dict[str, Any] | None = None
+ if provider_credential_id:
+ node_config = {"provider_credential_id": provider_credential_id}
  result = await ProviderConfigService.aresolve_or_error(
- node_config=None, project=project
+ node_config=node_config, project=project
  )
  if isinstance(result, ProviderMissingError):
  raise ValueError(
@@ -372,6 +382,27 @@ class AIVariableExtractorNode(BaseNode):
  f"{result.recommended_action}"
  )
  resolved = result
+ # API tier 安全硬化（T- disposition=mitigate）：
+ # 节点级凭证 scope 校验，防跨 project 越权。仅当命中节点级 FK 时检查。
+ # 权威路径 server/system/models.py L102。
+ if resolved.source == "node" and resolved.credential_id is not None:
+ from system.models import ProviderCredential
+ try:
+ cred = await ProviderCredential.objects.aget(
+ id=resolved.credential_id
+ )
+ except ProviderCredential.DoesNotExist as exc:
+ raise ValueError(
+ f"未配置 Provider 凭证：provider_credential_id="
+ f"{resolved.credential_id} 不存在"
+ ) from exc
+ project_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ raise ValueError(
+ f"未配置 {resolved.provider_type.value} Provider 凭证："
+ f"节点 provider_credential_id 指向他 project 凭证，"
+ f"已拒绝（scope 校验失败）"
+ )
  #：model 字段空值 fallback（claude_config 仅作 model 兜底）
  if not model:
  from services import claude_config as _cc_mod
