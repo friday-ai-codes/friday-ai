@@ -4,7 +4,7 @@ GitPlatformClient, runs AI review covering code quality, security, and plan
 compliance, then sends a Feishu notification card with the summary.
 Architecture decision: Inherits AIAgentBaseNode for config_schema and helper
 methods, but overrides execute entirely because:
-1. Needs per-MR independent review (loop of SDKAgentRunner calls)
+1. Needs per-MR independent review (loop of LangChainAgentRunner calls)
 2. Needs async diff fetching (get_user_prompt is sync)
 3. Needs post-review aggregation + Feishu notification
 """
@@ -13,8 +13,12 @@ import re
 import time
 from typing import Any, ClassVar, Final, Literal
 import structlog
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from agents.core.result import AgentResult
-from agents.sdk.runner import SDKAgentRunner, SdkRunnerConfig
+from agents.langchain_runner import (
+ LangChainAgentRunner,
+ LangChainRunnerConfig,
+)
 from common.encryption import decrypt_value
 from prompts.keys import PromptSlugs
 from prompts.services import render_prompt
@@ -294,10 +298,11 @@ class AICodeReviewNode(AIAgentBaseNode):
  api_key_cfg: str = config.get("api_key", "")
  provider_type_cfg: str = config.get("provider_type", "")
  max_iterations = self.get_max_iterations(context)
- # 解析 API key、模型和 base URL（通过 base 类的方法）
- api_key, resolved_model, _resolved_base_url = await self._resolve_api_key_and_model(
+ # 解析 Provider 凭证 + 模型（ 二元组签名； 循环外一次解析）
+ resolved, resolved_model = await self._resolve_api_key_and_model(
  project, model_cfg, use_custom_api, api_base_url, api_key_cfg,
  provider_type=provider_type_cfg,
+ provider_credential_id=config.get("provider_credential_id", ""),
  )
  # Phase: 循环外预渲染 system prompt（避免 per-MR 重复渲染）
  rendered_system_prompt = await render_prompt(
@@ -347,24 +352,31 @@ class AICodeReviewNode(AIAgentBaseNode):
  execution_plan=execution_plan,
  repository_id=repository_id,
  )
- # 3c. 调用 SDKAgentRunner 执行审查
+ # 3c. 调用 LangChainAgentRunner 执行审查（ / / 合并）
  session_id = f"review-{context.execution_id}-{context.node_id}-{mr_id}"
- runner_config = SdkRunnerConfig(
- system_prompt=rendered_system_prompt, # Phase: 预渲染结果
+ runner_config = LangChainRunnerConfig(
+ resolved=resolved, # 循环外一次解析，loop 内复用
  model=resolved_model,
- project_id=str(project.id) if project else "",
  session_id=session_id,
- api_key=api_key,
  max_turns=max_iterations,
+ tools=, # 审查场景无工具（get_enabled_tools 返回 ）
+ max_thinking_tokens=config.get("max_thinking_tokens"),
+ max_output_tokens=config.get("max_output_tokens"),
+ # agent_session=None：审查场景无 chat_id，不创建 AgentSession
  )
- runner = SDKAgentRunner(runner_config)
+ runner = LangChainAgentRunner(runner_config)
+ # 消息构造（ / 严禁 A：禁 ChatPromptTemplate，纯字符串双包装）
+ messages: list[BaseMessage] = [
+ SystemMessage(content=rendered_system_prompt),
+ HumanMessage(content=user_prompt),
+ ]
  try:
- async for _event in runner.stream(user_prompt):
+ async for _event in runner.stream(messages):
  pass # 只需最终结果
  result: AgentResult | None = runner.result
  if result is None:
  review_errors.append(
- f"{repository_name} MR#{mr_id}: SDKAgentRunner 无结果"
+ f"{repository_name} MR#{mr_id}: LangChainAgentRunner 无结果"
  )
  continue
  except Exception as e:
