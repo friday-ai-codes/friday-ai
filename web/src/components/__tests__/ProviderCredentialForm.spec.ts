@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
 // ==== Mock store 模块（Plan 契约） ====
 // 组件依赖 '~/stores/providerCredential' 与 '~/types/providerCredential'。
 // 本 spec 走 mock 路径，不触 Plan 实际实现，也不触网络。
