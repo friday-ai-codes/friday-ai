@@ -4,7 +4,6 @@ import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
-import ClaudeConfigSection from './components/ClaudeConfigSection.vue'
 import FeishuIMConfigSection from './components/FeishuIMConfigSection.vue'
 import FeishuTestPanel from './components/FeishuTestPanel.vue'
 import SettingsInfoCard from './components/SettingsInfoCard.vue'
@@ -44,21 +43,29 @@ watch( => claude.loading.value, (isLoading) => {
  <LoadingState v-if="claude.loading.value" variant="spinner" text="加载设置..." />
  <template v-else>
  <div class="space-y-6">
- <ClaudeConfigSection:api-key-value="claude.apiKeyValue.value":base-url-value="claude.baseUrlValue.value":default-model-value="claude.defaultModelValue.value":git-proxy-value="claude.gitProxyValue.value":show-api-key="claude.showApiKey.value":models="claude.models.value":loading-models="claude.loadingModels.value":saving="claude.saving.value":has-unsaved-changes="claude.hasUnsavedChanges.value":can-test="claude.canTest":settings-meta="claude.settingsMeta":get-setting-by-key="claude.getSettingByKey"
- @update:api-key-value="claude.apiKeyValue.value = $event"
- @update:base-url-value="claude.baseUrlValue.value = $event"
- @update:default-model-value="claude.defaultModelValue.value = $event"
- @update:git-proxy-value="claude.gitProxyValue.value = $event"
- @update:show-api-key="claude.showApiKey.value = $event"
- @api-key-input="claude.onApiKeyInput"
- @base-url-input="claude.onBaseUrlInput"
- @default-model-input="claude.onDefaultModelInput"
- @git-proxy-input="claude.onGitProxyInput"
- @save="claude.saveAllSettings"
- @remove="claude.removeSetting($event)"
- @open-test="claude.openTestDialog"
- @fetch-models="claude.fetchModels"
+ <RouterLink
+ to="/admin/providers"
+ class="block rounded-xl border bg-card hover:bg-muted/50 transition-colors"
+ >
+ <div class="flex items-center gap-3">
+ <span
+ class="icon-[lucide--key-round] w-6 text-primary"
+ aria-hidden="true"
  />
+ <div class="flex-1">
+ <h3 class="text-base font-semibold">
+ Provider 凭证管理
+ </h3>
+ <p class="text-xs text-muted-foreground mt-1">
+ 管理 5 种 LLM Provider 凭证（Anthropic / OpenAI / Gemini / Ollama）
+ </p>
+ </div>
+ <span
+ class="icon-[lucide--chevron-right] w-5 text-muted-foreground"
+ aria-hidden="true"
+ />
+ </div>
+ </RouterLink>
  <SettingsInfoCard />
  <VectorIndexSettings />
  <RAGEnhancementSettings />
