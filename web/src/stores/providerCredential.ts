@@ -20,8 +20,10 @@ import type {
  ProviderCredentialUpdatePayload,
  ProviderScope,
  ProviderTypeMetaDto,
+ ResolvedProvider,
  TestConnectionResponse,
 } from '~/types/providerCredential'
+import { get as apiGet } from '~/api/client'
 import { providerCredentialsApi } from '~/api/providerCredentials'
 const STORAGE_KEY = 'providerCredentialCache'
 const TTL_MS = 30_000
@@ -286,6 +288,35 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  return cred.available_models
  return refreshModels(id)
  }
+ /**
+ * Phase：读取指定 scope 的四层 Provider 解析链。
+ *
+ * scope 支持两种互斥组合：
+ * - conversationId → GET /api/chat/conversations/{id}/ 消费 resolved_provider 字段
+ * - workflowId + nodeId → GET /api/workflows/{wf}/nodes/{node}/resolved-provider/
+ *
+ * 返回 ResolvedProvider（包含 chain 4 层 + winning source），供 ResolvedSourceBadge 渲染。
+ * 全链路 miss 时后端返 resolved_provider=null，本 action 亦返 null 让调用方降级。
+ */
+ async function getResolvedProvider(
+ scope: { conversationId?: string; workflowId?: string; nodeId?: string },
+ ): Promise<ResolvedProvider | null> {
+ if (scope.conversationId) {
+ const resp = await apiGet<{ resolved_provider: ResolvedProvider | null }>(
+ `/chat/conversations/${scope.conversationId}/`,
+ )
+ return resp.resolved_provider ?? null
+ }
+ if (scope.workflowId && scope.nodeId) {
+ const resp = await apiGet<{ resolved_provider: ResolvedProvider | null }>(
+ `/workflows/${scope.workflowId}/nodes/${scope.nodeId}/resolved-provider/`,
+ )
+ return resp.resolved_provider ?? null
+ }
+ throw new Error(
+ 'getResolvedProvider: 必须传 conversationId 或 (workflowId + nodeId)',
+ )
+ }
  // ============================================================================
  // Mount hydration
  //
@@ -315,6 +346,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  testConnection,
  refreshModels,
  getModelsForCredential,
+ getResolvedProvider,
  // helpers（测试用）
  hydrate,
  persist,

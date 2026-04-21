@@ -10,10 +10,11 @@
  * 失败（后端 400 conversation_frozen 或 validation）→ toast 提示 + 重置选择到原值。
  */
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
-import type { ProviderCredentialDto } from '~/types/providerCredential'
+import type { ProviderCredentialDto, ResolvedProvider } from '~/types/providerCredential'
 import { computed, ref } from 'vue'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
+import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import {
  Select,
  SelectContent,
@@ -42,6 +43,8 @@ interface Props {
  conversationId?: string | null
  /** WAITING 态（SSE 驱动；ChatInterruptView 场景） */
  waitingForInput?: boolean
+ /** Phase：当前对话的四层 Provider 解析链（null=全链路 miss 或未加载） */
+ resolvedProvider?: ResolvedProvider | null
 }
 const props = withDefaults(defineProps<Props>, {
  conversationStatus: 'draft',
@@ -50,6 +53,7 @@ const props = withDefaults(defineProps<Props>, {
  messageCount: 0,
  conversationId: null,
  waitingForInput: false,
+ resolvedProvider: null,
 })
 const chatStore = useChatStore
 const projectsStore = useProjectsStore
@@ -149,6 +153,10 @@ const tooltipText = computed( => frozen.value.reason || '切换将弹出确认�
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>
+ <!-- Phase：四层 Provider 解析 Inspector（Provider 下拉旁边） -->
+ <ResolvedSourceBadge
+ v-if="props.resolvedProvider":source="props.resolvedProvider.source":chain="props.resolvedProvider.chain"
+ />
  <!-- pin 弹窗 -->
  <PinConfirmDialog
  v-model:open="pinDialogOpen":old-provider-name="oldCredential?.name ?? (props.currentCredentialId ? '当前 Provider': '未指定')":old-model="props.currentModel || '默认模型'":new-provider-name="pendingCredential?.name ?? ''":new-model="pendingCredential?.available_models?.[0]?.id ?? props.currentModel ?? '默认模型'":message-count="props.messageCount"

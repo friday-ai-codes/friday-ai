@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import type { ResolvedProvider } from '~/types/providerCredential'
 import { Trash2 } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
+import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
+import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import IssuesPanel from '../validation/IssuesPanel.vue'
 import OverrideConfirmDialog from '../validation/OverrideConfirmDialog.vue'
 import { useAutoFill } from './composables/useAutoFill'
@@ -44,6 +49,38 @@ const {
  getInputPath,
  getOutputFieldCount,
 } = useNodeSchema(selectedNode, selectedNodeId, nodes, edges)
+// ============================================================================
+// Phase：四层 Provider 解析 Inspector
+//
+// 节点选中后 / 节点变化时，调 providerCredentialStore.getResolvedProvider
+// 拉取 workflow + node 的 resolved_provider（含 4 层 chain）；用于 Provider
+// 下拉旁展示 ResolvedSourceBadge 优先级链 tooltip。
+// 失败或全链路 miss 时 resolvedProvider 为 null，Badge 不渲染（优雅降级）。
+// ============================================================================
+const workflowsStore = useWorkflowsStore
+const providerCredentialStore = useProviderCredentialStore
+const resolvedProvider = ref<ResolvedProvider | null>(null)
+async function loadResolvedProvider {
+ const workflowId = workflowsStore.currentWorkflow?.id
+ const nodeId = selectedNodeId.value
+ if (!workflowId || !nodeId) {
+ resolvedProvider.value = null
+ return
+ }
+ try {
+ resolvedProvider.value = await providerCredentialStore.getResolvedProvider({
+ workflowId,
+ nodeId,
+ })
+ }
+ catch {
+ // 失败降级：不挂 badge，不阻塞其他配置面板功能
+ resolvedProvider.value = null
+ }
+}
+watch(selectedNodeId, => {
+ void loadResolvedProvider
+}, { immediate: true })
 // 表单事件处理
 function onNameUpdate(value: string) {
  nodeName.value = value
@@ -81,6 +118,12 @@ function onJsonConfigUpdate(key: string, value: string) {
  <div class=" space-y-5">
  <!-- Issues Panel -->
  <IssuesPanel />
+ <!-- Phase：四层 Provider 解析 Inspector（Provider 区块旁） -->
+ <div v-if="resolvedProvider" class="flex items-center gap-2">
+ <span class="text-xs text-muted-foreground">Provider 解析</span>
+ <ResolvedSourceBadge:source="resolvedProvider.source":chain="resolvedProvider.chain"
+ />
+ </div>
  <!-- 配置表单 -->
  <NodeConfigForm:node-name="nodeName":node-description="nodeDescription":node-has-custom-config="nodeHasCustomConfig":config-component="ConfigComponent":node-config="nodeConfig":node-type-info="nodeTypeInfo":workflow-nodes="nodes":workflow-edges="edges":current-node-id="selectedNodeId"
  @update:name="onNameUpdate"
