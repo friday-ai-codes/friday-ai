@@ -383,6 +383,9 @@ declare global {
  export type { UseSystemHealthReturn } from './composables/useSystemHealth'
  import('./composables/useSystemHealth')
  // @ts-ignore
+ export type { CredentialMissingPayload } from './stores/chat'
+ import('./stores/chat')
+ // @ts-ignore
  export type { MergedProjectListItem } from './stores/prompts'
  import('./stores/prompts')
  // @ts-ignore

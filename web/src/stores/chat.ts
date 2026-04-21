@@ -5,6 +5,7 @@
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
 import type { ChatRole, CodingErrorData, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ProviderType } from '~/types/providerCredential'
 import {
  confirmCodingSession as apiConfirmCodingSession,
  confirmCodingSessionWithBranch as apiConfirmCodingSessionWithBranch,
@@ -16,9 +17,16 @@ import {
  interruptConversation,
  listConversations,
 } from '~/api/chat'
+import { ApiError, get as apiGet } from '~/api/client'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
 import { useProjectsStore } from '~/stores/projects'
+/** Phase：preflight missing payload 契约。 */
+export interface CredentialMissingPayload {
+ missingProvider: ProviderType
+ scopeAttempted: string
+ recommendedAction: string
+}
 export const useChatStore = defineStore('chat', => {
  const { requestAndEnableWebPush, webPushReady } = useWebPush
  // ========================================================================
@@ -86,6 +94,8 @@ export const useChatStore = defineStore('chat', => {
  total_deletions?: number
  truncated?: boolean
  } | null>(null)
+ // Phase：凭证缺失前置探测 payload（供 ChatMessageArea 渲染 Card）
+ const credentialMissingPayload = ref<CredentialMissingPayload | null>(null)
  // 已完成确认步骤记录（ 折叠摘要）
  const completedConfirmSteps = ref<Array<{
  step: string
@@ -997,6 +1007,39 @@ export const useChatStore = defineStore('chat', => {
  }
  return exportToFeishu(currentConversationId.value, data)
  }
+ /**
+ * Phase：对话凭证前置探测。
+ *
+ * 调用 GET /api/chat/conversations/{id}/preflight/：
+ * - 成功（200 status=ok）→ 清空 credentialMissingPayload，返回 true
+ * - 失败（400 code=provider_credential_missing）→ 写入 payload，返回 false
+ * - 其他错误 → 抛出，由 caller 走 ChatErrorCard（既有路径， non-provider_credential_missing 不归本 Card）
+ */
+ async function preflightConversation(conversationId: string): Promise<boolean> {
+ try {
+ await apiGet(`/chat/conversations/${conversationId}/preflight/`)
+ credentialMissingPayload.value = null
+ return true
+ }
+ catch (e) {
+ if (e instanceof ApiError && e.status === 400) {
+ const body = e.body as { code?: string, data?: Record<string, unknown> } | null
+ if (body && body.code === 'provider_credential_missing' && body.data) {
+ credentialMissingPayload.value = {
+ missingProvider: String(body.data.missing_provider ?? '') as ProviderType,
+ scopeAttempted: String(body.data.scope_attempted ?? 'system'),
+ recommendedAction: String(body.data.recommended_action ?? ''),
+ }
+ return false
+ }
+ }
+ throw e
+ }
+ }
+ /** 清空 credentialMissingPayload（用户切到其他对话 / 手动关闭 Card 时调用）。 */
+ function clearCredentialMissingPayload: void {
+ credentialMissingPayload.value = null
+ }
  return {
  // State
  conversations,
@@ -1070,5 +1113,9 @@ export const useChatStore = defineStore('chat', => {
  toggleMessageSelect,
  selectAllAssistant,
  doExportToFeishu,
+ // Phase 凭证缺失前置探测
+ credentialMissingPayload,
+ preflightConversation,
+ clearCredentialMissingPayload,
  }
 })

@@ -56,7 +56,9 @@ describe('providerCredentialMissingCard', => {
  const text = wrapper.text
  expect(text).toContain('去项目设置')
  expect(text).toContain('去系统设置')
- expect(text).toContain('需系统管理员权限')
+ // Tooltip 文案以 title / aria-label 属性承载（Tooltip 默认 closed 态不挂 DOM）
+ const html = wrapper.html
+ expect(html).toContain('需系统管理员权限')
  // 主按钮 RouterLink `to` 应为项目设置路径
  const links = wrapper.findAll('a[data-to]')
  const tos = links.map(a => a.attributes('data-to'))

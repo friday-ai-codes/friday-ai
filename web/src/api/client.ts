@@ -6,15 +6,22 @@ import type { ApiErrorResponse, RefreshResponse } from '~/types'
 // API 基础 URL，支持环境变量配置
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 /**
- * API 错误类
+ * API 错误类。
+ *
+ * Phase Plan 扩展：新增可选 `body` 字段携带后端完整 JSON 响应，
+ * 用于结构化错误分派（如 preflight 返回 `{code, data}` 时前端需要 data 分支渲染组件）。
+ * 构造器签名向后兼容：`body` 参数可选；旧调用点零改动。
  */
 export class ApiError extends Error {
+ public readonly body: unknown
  constructor(
  public status: number,
  public detail: string,
+ body?: unknown,
  ) {
  super(detail)
  this.name = 'ApiError'
+ this.body = body
  }
 }
 // ============================================================================
@@ -206,14 +213,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  // 处理其他错误响应
  if (!response.ok) {
  let detail = 'Request failed'
+ let body: unknown = null
  try {
- const error: ApiErrorResponse = await response.json
- detail = error.detail || detail
+ const parsed: ApiErrorResponse & Record<string, unknown> = await response.json
+ body = parsed
+ detail = (parsed as ApiErrorResponse).detail || detail
  }
  catch {
  // 忽略 JSON 解析错误
  }
- throw new ApiError(response.status, detail)
+ throw new ApiError(response.status, detail, body)
  }
  return response.json
 }
