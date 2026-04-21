@@ -445,19 +445,6 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  error=error_msg,
  next_handle="error",
  )
- except ProviderMissingError as e:
- # 兜底分支；_resolve_api_key_and_model 已把 ProviderMissingError 转 ValueError。
- # 此处保留用于 aresolve_or_error 直接被其他路径捕获到的场景。
- return NodeResult(
- status="failed",
- error=str(e),
- output={
- "error_code": "provider_credential_missing",
- "missing_provider": getattr(e, "missing_provider", ""),
- "recommended_action": getattr(e, "recommended_action", ""),
- },
- next_handle="error",
- )
  except ContextWindowExceededError as e:
  return NodeResult(
  status="failed",
