@@ -479,6 +479,36 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ <!-- Provider 凭证（Phase / / ） -->
+ <div class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--key-round] text-primary" />
+ <h3 class="text-sm font-semibold">
+ Provider 凭证
+ </h3>
+ </div>
+ <RouterLink:to="`/projects/${project.id}/providers`">
+ <Button variant="ghost" size="sm" class=" text-xs group">
+ 管理
+ <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
+ </Button>
+ </RouterLink>
+ </div>
+ <div class="">
+ <div class="flex items-center gap-3 text-muted-foreground">
+ <span class="icon-[lucide--key-round] text-lg opacity-40" />
+ <div class="flex-1">
+ <p class="text-sm">
+ 项目级 Provider 凭证覆盖
+ </p>
+ <p class="text-xs text-muted-foreground">
+ 仅本项目可见，覆盖系统默认
+ </p>
+ </div>
+ </div>
+ </div>
+ </div>
  <!-- Webhook Token 管理 -->
  <div class="card md:col-span-2">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
