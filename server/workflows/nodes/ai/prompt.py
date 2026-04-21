@@ -1,8 +1,13 @@
-"""AI Prompt node for general LLM interactions."""
+"""AI Prompt node for general LLM interactions.
+Phase /：三路径收敛到 build_chat_model.ainvoke 单入口
+（~05）。保留 BaseNode 继承与 OpenResponses dataclass 向后兼容。
+"""
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
 import structlog
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -13,25 +18,21 @@ from workflows.nodes.base import (
 )
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger
-# =============================================================================
-# OpenResponses-compatible unified response format
-# Based on: https://www.openresponses.org/
-# =============================================================================
+# Pitfall #11：reasoning 模型 `.bind(temperature=...)` 静默 strip（llm_factory
+# 已 pop temperature/top_p）；本节点在 _call_llm 入口处先行 warning，便于 observability。
+_REASONING_MODEL_PATTERN = re.compile(r"^(o[1-9]|o4-mini|gpt-5)")
+# ============================================================================
+# OpenResponses-compatible response dataclass 族（https://www.openresponses.org/）
+# ============================================================================
 @dataclass
 class OutputItem:
- """Base class for output items following OpenResponses spec.
- Output items are the atomic units of model output:
- - message: Text content from the model
- - reasoning: Thinking/reasoning content (for thinking models)
- - function_call: Tool calls (not used in this node yet)
- """
+ """OpenResponses output item 基类（message / reasoning / function_call）。"""
  type: Literal["message", "reasoning", "function_call"]
  def to_dict(self) -> dict[str, Any]:
- """Convert to dictionary. Subclasses should override this."""
  return {"type": self.type}
 @dataclass
 class MessageItem(OutputItem):
- """Message output item containing text content."""
+ """message 输出项（文本内容）。"""
  type: Literal["message"] = field(default="message")
  role: str = "assistant"
  content: str = ""
@@ -39,7 +40,7 @@ class MessageItem(OutputItem):
  return {"type": self.type, "role": self.role, "content": self.content}
 @dataclass
 class ReasoningItem(OutputItem):
- """Reasoning output item containing thinking content."""
+ """reasoning 输出项（thinking 模型的推理过程）。"""
  type: Literal["reasoning"] = field(default="reasoning")
  content: str = ""
  summary: str | None = None
@@ -50,7 +51,7 @@ class ReasoningItem(OutputItem):
  return result
 @dataclass
 class Usage:
- """Token usage statistics following OpenResponses spec."""
+ """OpenResponses 三字段 token 统计。"""
  input_tokens: int = 0
  output_tokens: int = 0
  total_tokens: int = 0
@@ -62,35 +63,23 @@ class Usage:
  }
 @dataclass
 class LLMResponse:
- """Unified LLM response format following OpenResponses spec.
- This provides a consistent response structure across all LLM providers
- (Anthropic, OpenAI, custom APIs, etc.)
- Attributes:
- output: List of output items (messages, reasoning, etc.)
- usage: Token usage statistics
- model: The model used for generation
- status: Response status ("completed", "failed", etc.)
- """
+ """OpenResponses 统一响应（output / usage / model / status）。"""
  output: list[OutputItem] = field(default_factory=list)
  usage: Usage = field(default_factory=Usage)
  model: str = ""
  status: str = "completed"
  @property
  def text(self) -> str:
- """Get the main text content (from message items)."""
  texts = [item.content for item in self.output if isinstance(item, MessageItem)]
  return "\n".join(texts)
  @property
  def thinking(self) -> str:
- """Get the reasoning/thinking content."""
  texts = [item.content for item in self.output if isinstance(item, ReasoningItem)]
  return "\n".join(texts)
  @property
  def has_thinking(self) -> bool:
- """Check if response contains reasoning content."""
  return any(isinstance(item, ReasoningItem) for item in self.output)
  def to_dict(self) -> dict[str, Any]:
- """Convert to dictionary for node output."""
  return {
  "output": [
  item.to_dict for item in self.output if hasattr(item, "to_dict")
@@ -246,41 +235,19 @@ class AIPromptNode(BaseNode):
  ],
  "description": "解析后的响应内容（根据 output_format 决定类型）",
  },
- "text": {
- "type": "string",
- "description": "AI 回复的主要文本内容（从 message 类型的 output 项中提取）",
- },
- "thinking": {
- "type": "string",
- "description": "AI 的思考过程（仅 Claude thinking 模型有值）",
- },
- "has_thinking": {
- "type": "boolean",
- "description": "是否包含思考内容",
- },
+ "text": {"type": "string", "description": "AI 回复主要文本"},
+ "thinking": {"type": "string", "description": "思考过程（仅 thinking 模型）"},
+ "has_thinking": {"type": "boolean", "description": "是否包含思考内容"},
  "output": {
  "type": "array",
- "description": "OpenResponses 格式的输出项列表",
+ "description": "OpenResponses 格式输出项列表",
  "items": {
  "type": "object",
  "properties": {
- "type": {
- "type": "string",
- "enum": ["message", "reasoning"],
- "description": "输出项类型",
- },
- "content": {
- "type": "string",
- "description": "输出内容",
- },
- "role": {
- "type": "string",
- "description": "角色（仅 message 类型）",
- },
- "summary": {
- "type": "string",
- "description": "摘要（仅 reasoning 类型，可选）",
- },
+ "type": {"type": "string", "enum": ["message", "reasoning"]},
+ "content": {"type": "string"},
+ "role": {"type": "string", "description": "仅 message"},
+ "summary": {"type": "string", "description": "仅 reasoning（可选）"},
  },
  },
  },
@@ -288,33 +255,17 @@ class AIPromptNode(BaseNode):
  "type": "object",
  "description": "Token 使用统计",
  "properties": {
- "input_tokens": {
- "type": "integer",
- "description": "输入 token 数",
- },
- "output_tokens": {
- "type": "integer",
- "description": "输出 token 数",
- },
- "total_tokens": {
- "type": "integer",
- "description": "总 token 数",
+ "input_tokens": {"type": "integer"},
+ "output_tokens": {"type": "integer"},
+ "total_tokens": {"type": "integer"},
  },
  },
- },
- "model": {
- "type": "string",
- "description": "使用的模型名称",
- },
+ "model": {"type": "string", "description": "使用的模型名称"},
  "output_format": {
  "type": "string",
  "enum": ["text", "json", "markdown"],
- "description": "输出格式",
  },
- "raw_response": {
- "type": "string",
- "description": "原始文本响应（向后兼容）",
- },
+ "raw_response": {"type": "string", "description": "原始文本（向后兼容）"},
  },
  },
  ),
@@ -436,6 +387,53 @@ class AIPromptNode(BaseNode):
  # 如果解析失败，返回原始文本
  return {"raw": response, "parse_error": True}
  return response
+ def _aimessage_to_llm_response(
+ self, aimsg: AIMessage, model: str
+ ) -> LLMResponse:
+ """AIMessage.content_blocks → OpenResponses LLMResponse（ 向后兼容）。
+ llm_factory.py L94 已锁 output_version='v1'；content_blocks 字段矩阵：
+ - {"type": "text", "text": "..."} → MessageItem(content=text)
+ - {"type": "reasoning"/"thinking", "reasoning"/"thinking"/"text": "..."}
+ → ReasoningItem(content=<first non-empty>)
+ usage 按 OpenResponses 三字段（Phase 明确不迁六字段 TokenUsage）：
+ input_tokens / output_tokens / total_tokens = input + output。
+ """
+ output_items: list[OutputItem] =
+ # content_blocks 迭代（对齐 langchain_runner._extract_content_blocks 策略）
+ blocks = getattr(aimsg, "content_blocks", None)
+ if isinstance(blocks, list):
+ for block in blocks:
+ if not isinstance(block, dict):
+ continue
+ btype = block.get("type")
+ if btype == "text" and block.get("text"):
+ output_items.append(MessageItem(content=str(block["text"])))
+ elif btype in {"reasoning", "thinking"}:
+ content = (
+ block.get("reasoning")
+ or block.get("thinking")
+ or block.get("text")
+ or ""
+ )
+ if content:
+ output_items.append(ReasoningItem(content=str(content)))
+ # fallback：content_blocks 为空（非 v1 schema；罕见）时按 aimsg.text 兜底
+ if not output_items:
+ text = getattr(aimsg, "text", "") or str(aimsg.content or "")
+ if text:
+ output_items.append(MessageItem(content=text))
+ meta = getattr(aimsg, "usage_metadata", None) or {}
+ input_t = int(meta.get("input_tokens", 0) or 0)
+ output_t = int(meta.get("output_tokens", 0) or 0)
+ return LLMResponse(
+ output=output_items,
+ usage=Usage(
+ input_tokens=input_t,
+ output_tokens=output_t,
+ total_tokens=input_t + output_t,
+ ),
+ model=model,
+ )
  async def _call_llm(
  self,
  system_prompt: str,
@@ -449,228 +447,90 @@ class AIPromptNode(BaseNode):
  api_key: str = "",
  max_thinking_tokens: int | None = None,
  ) -> LLMResponse:
- """调用 LLM 服务
+ """单入口收敛（ / 全系列）：走 build_chat_model.ainvoke 单 turn。
+ - use_custom_api=True 走分歧 A（临时 ResolvedProviderConfig，source="node"
+ + extra.custom_api=True）；否则走 aresolve_or_error 四层解析（Result 模式）。
+ - 本 plan 不消费 `config["provider_credential_id"]`（ Task 1 扩签名传值）；
+ aresolve_or_error 调用固定传 node_config=None。
  Returns:
- LLMResponse: Unified response object containing text, thinking, and usage info
+ LLMResponse: OpenResponses 格式统一响应（text / thinking / usage / model）。
  """
- # 如果使用自定义 API，使用 OpenAI 兼容协议
+ # 分歧 D / Pitfall #5：build_chat_model 必须函数体内 import，避免
+ # FakeChatModel seam monkeypatch `workflows.nodes.ai.prompt.build_chat_model`
+ # 命中但未被当前函数引用的脱靶问题（测试侧双 patch 同时覆盖两条路径）。
+ from agents.llm_factory import build_chat_model
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ ProviderType,
+ ResolvedProviderConfig,
+ )
+ project = await self._get_project(context)
+ # 分歧 A：use_custom_api=True 降级路径 —— 构造临时 ResolvedProviderConfig。
+ # source 仍为四态之一（"node"），不新增第 5 种枚举值（严禁 D 守护）；
+ # custom_api 事实通过 extra 标记，Phase Inspector 可识别。
  if use_custom_api and api_base_url:
  if not model:
  raise ValueError("使用自定义 API 时必须指定模型")
- return await self._call_openai_compatible(
- system_prompt, user_prompt, model, temperature, max_tokens, api_base_url, api_key
+ resolved = ResolvedProviderConfig(
+ provider_type=ProviderType.OPENAI_CHAT,
+ api_key=api_key,
+ base_url=api_base_url,
+ source="node",
+ credential_id=None,
+ extra={"custom_api": True, "source_detail": "node_custom_api"},
  )
- # 获取项目的 API 配置
- project = await self._get_project(context)
- # 如果未指定模型，从配置中获取
+ else:
+ # 四层解析 Result 模式。本 plan node_config=None；
+ # Task 1 会扩 _call_llm 签名加 provider_credential_id 参数并改为
+ # `node_config={"provider_credential_id": provider_credential_id}`。
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=None,
+ project=project,
+ )
+ if isinstance(result, ProviderMissingError):
+ raise ValueError(
+ f"未配置 {result.missing_provider} Provider 凭证："
+ f"{result.recommended_action}"
+ )
+ resolved = result
+ # model 空值 fallback（：不再按模型前缀分派；仅 model 本身空时兜底）
  if not model:
  from services.claude_config import aget_claude_config
- config = await aget_claude_config(project)
- model = config.model or ""
+ cc = await aget_claude_config(project)
+ model = cc.model or ""
  if not model:
- raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
- # 根据模型类型选择调用方式
- if model.startswith("claude"):
- return await self._call_anthropic(
- system_prompt, user_prompt, model, temperature, max_tokens, project,
+ raise ValueError(
+ "未配置默认模型，请在系统设置或项目设置中配置默认模型"
+ )
+ # Pitfall #11：reasoning 模型 .bind(temperature=...) 会被 llm_factory 静默 strip。
+ # 本节点在入口处先 warning，便于 observability（不阻断执行）。
+ if _REASONING_MODEL_PATTERN.match(model) and abs(temperature - 1.0) > 1e-6:
+ logger.warning(
+ "ai_prompt_temperature_stripped",
+ model=model,
+ temperature=temperature,
+ reason="reasoning 模型不支持 temperature；LangChain 会自动 strip",
+ )
+ # 构造 BaseChatModel（非 streaming 单 turn；max_tokens>0 时覆盖 capabilities 默认）
+ chat_model = build_chat_model(
+ resolved=resolved,
+ model=model,
  max_thinking_tokens=max_thinking_tokens,
+ max_output_tokens=max_tokens if max_tokens and max_tokens > 0 else None,
+ streaming=False,
  )
- elif model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
- return await self._call_openai(
- system_prompt, user_prompt, model, temperature, max_tokens, project
- )
- else:
- # 默认使用 OpenAI 兼容协议
- return await self._call_openai(
- system_prompt, user_prompt, model, temperature, max_tokens, project
- )
- async def _call_openai_compatible(
- self,
- system_prompt: str,
- user_prompt: str,
- model: str,
- temperature: float,
- max_tokens: int,
- base_url: str,
- api_key: str = "",
- ) -> LLMResponse:
- """调用 OpenAI 兼容 API（支持自定义 Base URL）"""
- import httpx
- # 确保 base_url 格式正确
- base_url = base_url.rstrip("/")
- if not base_url.endswith("/v1"):
- base_url = f"{base_url}/v1"
- headers = {"Content-Type": "application/json"}
- if api_key:
- headers["Authorization"] = f"Bearer {api_key}"
- # 构建 messages，只有当 system_prompt 非空时才包含 system message
- messages =
+ # 构造 messages（Anti-pattern A：不使用 prompt template；纯字符串双包装）。
+ # system_prompt 为空时不加 SystemMessage（与旧 OpenAI 兼容路径行为对齐）。
+ messages: list[BaseMessage] =
  if system_prompt:
- messages.append({"role": "system", "content": system_prompt})
- messages.append({"role": "user", "content": user_prompt})
- async with httpx.AsyncClient as client:
- response = await client.post(
- f"{base_url}/chat/completions",
- headers=headers,
- json={
- "model": model,
- "max_tokens": max_tokens,
- "temperature": temperature,
- "messages": messages,
- },
- timeout=120,
- )
- if response.status_code != 200:
- raise Exception(f"API 错误: {response.status_code} - {response.text}")
- data = response.json
- choices = data.get("choices", )
- text = choices[0].get("message", {}).get("content", "") if choices else ""
- input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
- output_tokens = data.get("usage", {}).get("completion_tokens", 0)
- return LLMResponse(
- output=[MessageItem(content=text)],
- usage=Usage(
- input_tokens=input_tokens,
- output_tokens=output_tokens,
- total_tokens=input_tokens + output_tokens,
- ),
- model=model,
- )
- async def _call_anthropic(
- self,
- system_prompt: str,
- user_prompt: str,
- model: str,
- temperature: float,
- max_tokens: int,
- project,
- max_thinking_tokens: int | None = None,
- ) -> LLMResponse:
- """调用 Anthropic Claude API"""
- import httpx
- from services.claude_config import aget_claude_config
- # 使用 claude_config 服务获取配置
- config = await aget_claude_config(project)
- api_key = config.api_key
- base_url = config.base_url or "https://api.anthropic.com"
- if not api_key:
- raise ValueError("未配置 Anthropic API Key，请在系统设置中配置")
- # 确保 base_url 格式正确
- base_url = base_url.rstrip("/")
- async with httpx.AsyncClient as client:
- payload: dict = {
- "model": model,
- "max_tokens": max_tokens,
- "system": system_prompt,
- "messages": [{"role": "user", "content": user_prompt}],
- }
- # Extended thinking 支持：Claude 模型且 max_thinking_tokens 有值时启用
- if max_thinking_tokens:
- payload["thinking"] = {
- "type": "enabled",
- "budget_tokens": max_thinking_tokens,
- }
- # Anthropic API 要求 thinking 模式下 temperature 必须为 1
- payload["temperature"] = 1
- else:
- payload["temperature"] = temperature
- response = await client.post(
- f"{base_url}/v1/messages",
- headers={
- "x-api-key": api_key,
- "anthropic-version": "2023-06-01",
- "content-type": "application/json",
- },
- json=payload,
- timeout=120,
- )
- if response.status_code != 200:
- raise Exception(f"Anthropic API 错误: {response.status_code} - {response.text}")
- data = response.json
- content = data.get("content", )
- # Parse content blocks into OpenResponses format
- # Claude API returns:
- # - {"type": "thinking", "thinking": "..."} - thinking/reasoning process
- # - {"type": "text", "text": "..."} - actual response text
- output_items: list[OutputItem] =
- for block in content:
- block_type = block.get("type", "")
- if block_type == "thinking":
- # Reasoning content
- output_items.append(ReasoningItem(content=block.get("thinking", "")))
- elif block_type == "text":
- # Message content
- output_items.append(MessageItem(content=block.get("text", "")))
- elif "text" in block:
- # Fallback for blocks with text field but no explicit type
- output_items.append(MessageItem(content=block.get("text", "")))
- # If no items parsed, try legacy format
- if not output_items and content:
- output_items.append(MessageItem(content=content[0].get("text", "")))
- input_tokens = data.get("usage", {}).get("input_tokens", 0)
- output_tokens = data.get("usage", {}).get("output_tokens", 0)
- return LLMResponse(
- output=output_items,
- usage=Usage(
- input_tokens=input_tokens,
- output_tokens=output_tokens,
- total_tokens=input_tokens + output_tokens,
- ),
- model=model,
- )
- async def _call_openai(
- self,
- system_prompt: str,
- user_prompt: str,
- model: str,
- temperature: float,
- max_tokens: int,
- project,
- ) -> LLMResponse:
- """调用 OpenAI API"""
- import httpx
- api_key = None
- if project and hasattr(project, "openai_api_key"):
- api_key = project.openai_api_key
- if not api_key:
- import os
- api_key = os.environ.get("OPENAI_API_KEY")
- if not api_key:
- raise ValueError("未配置 OpenAI API Key")
- async with httpx.AsyncClient as client:
- response = await client.post(
- "https://api.openai.com/v1/chat/completions",
- headers={
- "Authorization": f"Bearer {api_key}",
- "Content-Type": "application/json",
- },
- json={
- "model": model,
- "max_tokens": max_tokens,
- "temperature": temperature,
- "messages": [
- {"role": "system", "content": system_prompt},
- {"role": "user", "content": user_prompt},
- ],
- },
- timeout=120,
- )
- if response.status_code != 200:
- raise Exception(f"OpenAI API 错误: {response.status_code} - {response.text}")
- data = response.json
- choices = data.get("choices", )
- text = choices[0].get("message", {}).get("content", "") if choices else ""
- input_tokens = data.get("usage", {}).get("prompt_tokens", 0)
- output_tokens = data.get("usage", {}).get("completion_tokens", 0)
- return LLMResponse(
- output=[MessageItem(content=text)],
- usage=Usage(
- input_tokens=input_tokens,
- output_tokens=output_tokens,
- total_tokens=input_tokens + output_tokens,
- ),
- model=model,
- )
+ messages.append(SystemMessage(content=system_prompt))
+ messages.append(HumanMessage(content=user_prompt))
+ # /：temperature 通过 .bind 透传；reasoning 模型自动 strip。
+ ai_msg: AIMessage = await chat_model.bind(
+ temperature=temperature
+ ).ainvoke(messages)
+ return self._aimessage_to_llm_response(ai_msg, model)
  async def _get_project(self, context: ExecutionContext):
  """获取关联的项目"""
  if context.workflow_execution:
