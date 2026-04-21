@@ -207,6 +207,7 @@ declare module 'vue' {
  PromptVersionDiff: typeof import('./components/prompts/PromptVersionDiff.vue')['default']
  PromptVersionList: typeof import('./components/prompts/PromptVersionList.vue')['default']
  ProviderCostTable: typeof import('./components/execution/ProviderCostTable.vue')['default']
+ ProviderHealthBadge: typeof import('./components/providers/ProviderHealthBadge.vue')['default']
  RAGEnhancementSettings: typeof import('./components/settings/RAGEnhancementSettings.vue')['default']
  RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
  RepositoryPicker: typeof import('./components/workflow/RepositoryPicker.vue')['default']
