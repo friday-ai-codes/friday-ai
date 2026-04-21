@@ -12,7 +12,17 @@
  * F: 清理历史按钮 variant=destructive（高风险视觉警示）
  */
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+// Mock vue-router's useRouter composable (setup 阶段就被调用，必须 hoist)
+const pushSpy = vi.fn
+vi.mock('vue-router', => ({
+ useRouter: => ({ push: pushSpy }),
+ RouterLink: {
+ name: 'RouterLink',
+ props: ['to'],
+ template: '<a:data-to="to"><slot /></a>',
+ },
+}))
 import ContextExceededCard from '~/components/chat/ContextExceededCard.vue'
 /** RouterLink stub：透传 to 属性供断言；capture 点击。 */
 const RouterLinkStub = {
@@ -36,6 +46,9 @@ function makeProps(overrides: Record<string, unknown> = {}) {
  }
 }
 describe('contextExceededCard', => {
+ beforeEach( => {
+ pushSpy.mockReset
+ })
  it('A: 渲染 estimated / max / exceeded_by / model', => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
@@ -73,15 +86,9 @@ describe('contextExceededCard', => {
  expect(idxSwitch).toBeLessThan(idxCleanup)
  })
  it('C: 点击 "精简 system prompt" → router.push("/prompts/")', async => {
- const pushSpy = vi.fn
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
- global: {
- stubs: { RouterLink: RouterLinkStub },
- mocks: {
- $router: { push: pushSpy },
- },
- },
+ global: { stubs: { RouterLink: RouterLinkStub } },
  })
  // 定位 trim_prompt 按钮并点击
  const button = wrapper.findAll('button').find(b => b.text.includes('精简 system prompt'))

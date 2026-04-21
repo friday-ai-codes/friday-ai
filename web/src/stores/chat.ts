@@ -27,6 +27,14 @@ export interface CredentialMissingPayload {
  scopeAttempted: string
  recommendedAction: string
 }
+/** Phase：SSE ERROR context_window_exceeded payload 契约。 */
+export interface ContextExceededPayload {
+ estimated_tokens: number
+ max_tokens: number
+ exceeded_by: number
+ model: string
+ recommended_actions: Array<{ id: string, label: string, action_type: string, target: string }>
+}
 export const useChatStore = defineStore('chat', => {
  const { requestAndEnableWebPush, webPushReady } = useWebPush
  // ========================================================================
@@ -96,6 +104,8 @@ export const useChatStore = defineStore('chat', => {
  } | null>(null)
  // Phase：凭证缺失前置探测 payload（供 ChatMessageArea 渲染 Card）
  const credentialMissingPayload = ref<CredentialMissingPayload | null>(null)
+ // Phase：上下文超限 SSE payload（供 ChatMessageArea 渲染 ContextExceededCard）
+ const lastContextExceeded = ref<ContextExceededPayload | null>(null)
  // 已完成确认步骤记录（ 折叠摘要）
  const completedConfirmSteps = ref<Array<{
  step: string
@@ -707,9 +717,28 @@ export const useChatStore = defineStore('chat', => {
  }
  break
  }
- case 'error':
+ case 'error': {
+ // Phase：SSE ERROR 结构化 payload 分派。
+ // Pitfall 3 向后兼容：event.code 不存在时走 fallback 到既有 error.value。
+ const code = (event as unknown as { code?: string }).code
+ const data = (event as unknown as { data?: Record<string, unknown> }).data
+ if (code === 'context_window_exceeded' && data) {
+ lastContextExceeded.value = {
+ estimated_tokens: Number(data.estimated_tokens ?? 0),
+ max_tokens: Number(data.max_tokens ?? 0),
+ exceeded_by: Number(data.exceeded_by ?? 0),
+ model: String(data.model ?? ''),
+ recommended_actions: Array.isArray(data.recommended_actions)
+ ? (data.recommended_actions as ContextExceededPayload['recommended_actions']):,
+ }
+ }
+ else {
+ // provider_credential_missing 由 preflight 端点覆盖（Plan）；
+ // 其他未知 code 沿用旧行为（error toast 路径）
  error.value = event.message || '未知错误'
+ }
  break
+ }
  default:
  console.warn('[Chat] 收到未知 SSE 事件类型:', event.type, event)
  break
@@ -1040,6 +1069,10 @@ export const useChatStore = defineStore('chat', => {
  function clearCredentialMissingPayload: void {
  credentialMissingPayload.value = null
  }
+ /** Phase：清空 lastContextExceeded（对话切换 / 清理历史后调用）。 */
+ function resetContextExceeded: void {
+ lastContextExceeded.value = null
+ }
  return {
  // State
  conversations,
@@ -1117,5 +1150,8 @@ export const useChatStore = defineStore('chat', => {
  credentialMissingPayload,
  preflightConversation,
  clearCredentialMissingPayload,
+ // Phase 上下文超限引导
+ lastContextExceeded,
+ resetContextExceeded,
  }
 })
