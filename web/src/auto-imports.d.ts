@@ -263,6 +263,7 @@ declare global {
  const usePrevious: typeof import('@vueuse/core').usePrevious
  const useProjectsStore: typeof import('./stores/projects').useProjectsStore
  const usePromptsStore: typeof import('./stores/prompts').usePromptsStore
+ const useProviderCredentialStore: typeof import('./stores/providerCredential').useProviderCredentialStore
  const useRafFn: typeof import('@vueuse/core').useRafFn
  const useRefHistory: typeof import('@vueuse/core').useRefHistory
  const useRepositoriesStore: typeof import('./stores/repositories').useRepositoriesStore
@@ -654,6 +655,7 @@ declare module 'vue' {
  readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
  readonly useProjectsStore: UnwrapRef<typeof import('./stores/projects')['useProjectsStore']>
  readonly usePromptsStore: UnwrapRef<typeof import('./stores/prompts')['usePromptsStore']>
+ readonly useProviderCredentialStore: UnwrapRef<typeof import('./stores/providerCredential')['useProviderCredentialStore']>
  readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
  readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
  readonly useRepositoriesStore: UnwrapRef<typeof import('./stores/repositories')['useRepositoriesStore']>
