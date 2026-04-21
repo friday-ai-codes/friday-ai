@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ProviderCredentialDto, ProviderType } from '~/types/providerCredential'
 /**
  * Provider 凭证选择下拉（Phase + CONTEXT ）
  *
@@ -12,9 +13,6 @@
  */
 import { computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { usePermission } from '~/composables/usePermission'
-import { useProviderCredentialStore } from '~/stores/providerCredential'
-import type { ProviderCredentialDto, ProviderType } from '~/types/providerCredential'
 import {
  Select,
  SelectContent,
@@ -24,6 +22,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { usePermission } from '~/composables/usePermission'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
 interface Props {
  modelValue: string | null
  providerFilter?: ProviderType

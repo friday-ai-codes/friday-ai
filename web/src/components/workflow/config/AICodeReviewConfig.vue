@@ -2,11 +2,11 @@
 import type { WritableComputedRef } from 'vue'
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed } from 'vue'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import ModelSelect from '~/components/providers/ModelSelect.vue'
-import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 /**
  * AICodeReviewConfig - AI 代码审查节点配置面板

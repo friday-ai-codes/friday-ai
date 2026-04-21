@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
 import { computed, ref } from 'vue'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import {
  Collapsible,
  CollapsibleContent,
@@ -8,8 +10,6 @@ import {
 } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import ModelSelect from '~/components/providers/ModelSelect.vue'
-import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'

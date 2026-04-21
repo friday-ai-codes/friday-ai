@@ -9,7 +9,8 @@
 export type ProviderType = 'anthropic' | 'openai_responses' | 'openai_chat' | 'gemini' | 'ollama'
 /** 凭证作用域。 */
 export type ProviderScope = 'system' | 'project'
-/** 健康状态。
+/**
+ * 健康状态。
  *
  * 后端 Serializer 仅返回 `''` / `'ok'` / `'error'` 三态；`'testing'` 为前端乐观 UI 态，
  * 用于「立即测试」按钮点击后到后端响应前的中间态展示。
@@ -79,7 +80,8 @@ export interface ProviderCredentialCreatePayload {
  config: Record<string, unknown>
  is_active?: boolean
 }
-/** PATCH /api/providers/credentials/<id>/ body。
+/**
+ * PATCH /api/providers/credentials/<id>/ body。
  *
  * Pitfall 3 防御：`config` 留 undefined 或 null 表示保留原 config；
  * 传对象时后端会整体重加密覆盖。
