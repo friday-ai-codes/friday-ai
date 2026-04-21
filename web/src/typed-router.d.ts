@@ -41,13 +41,6 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
- '/admin/components/ClaudeConfigSection': RouteRecordInfo<
- '/admin/components/ClaudeConfigSection',
- '/admin/components/ClaudeConfigSection',
- Record<never, never>,
- Record<never, never>,
- | never
- >,
  '/admin/components/FeishuIMConfigSection': RouteRecordInfo<
  '/admin/components/FeishuIMConfigSection',
  '/admin/components/FeishuIMConfigSection',
@@ -230,13 +223,6 @@ declare module 'vue-router/auto-routes' {
  { id: ParamValue<false> },
  | never
  >,
- '/projects/[id]/claude': RouteRecordInfo<
- '/projects/[id]/claude',
- '/projects/:id/claude',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
  '/projects/[id]/edit': RouteRecordInfo<
  '/projects/[id]/edit',
  '/projects/:id/edit',
@@ -369,12 +355,6 @@ declare module 'vue-router/auto-routes' {
  'src/pages/admin/index.vue': {
  routes:
  | '/admin/'
- views:
- | never
- }
- 'src/pages/admin/components/ClaudeConfigSection.vue': {
- routes:
- | '/admin/components/ClaudeConfigSection'
  views:
  | never
  }
@@ -531,12 +511,6 @@ declare module 'vue-router/auto-routes' {
  'src/pages/projects/[id]/index.vue': {
  routes:
  | '/projects/[id]/'
- views:
- | never
- }
- 'src/pages/projects/[id]/claude.vue': {
- routes:
- | '/projects/[id]/claude'
  views:
  | never
  }

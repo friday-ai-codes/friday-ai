@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import type { ClaudeConfigRead } from '~/api/settings'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
-import { getProjectClaudeConfig } from '~/api/settings'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
@@ -34,7 +32,6 @@ useHead({
 })
 // 加载项目和相关任务
 const loading = ref(true)
-const claudeConfig = ref<ClaudeConfigRead | null>(null)
 onMounted(async => {
  try {
  const results = await Promise.allSettled([
@@ -50,13 +47,6 @@ onMounted(async => {
  handleError(result.reason, `加载${names[index]}`)
  }
  })
- // claudeConfig 单独处理，不在 allSettled 中
- try {
- claudeConfig.value = await getProjectClaudeConfig(projectId.value)
- }
- catch {
- claudeConfig.value = null
- }
  }
  finally {
  loading.value = false
@@ -394,54 +384,6 @@ async function handleCustomToken {
  </p>
  </div>
  <RouterLink:to="`/projects/${project.id}/feishu`">
- <Button size="sm" class=" text-xs">
- 配置
- </Button>
- </RouterLink>
- </div>
- </div>
- </div>
- <!-- Claude 配置 -->
- <div class="card">
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
- <div class="flex items-center gap-2">
- <span class="icon-[lucide--bot] text-primary" />
- <h3 class="text-sm font-semibold">
- Claude 配置
- </h3>
- </div>
- <RouterLink:to="`/projects/${project.id}/claude`">
- <Button variant="ghost" size="sm" class=" text-xs group">
- 管理
- <span class="icon-[lucide--arrow-right] ml-1 group-hover:translate-x-0.5 transition-transform" />
- </Button>
- </RouterLink>
- </div>
- <div class="">
- <div v-if="claudeConfig?.has_api_key" class="flex items-center gap-3">
- <div class=".5 rounded-full bg-emerald-500/10">
- <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
- </div>
- <div>
- <p class="text-sm font-medium text-foreground">
- 已配置
- </p>
- <p class="text-xs text-muted-foreground">
- 来源：{{ claudeConfig.source === 'project' ? '项目配置': claudeConfig.source === 'system' ? '系统默认': '环境变量' }}
- </p>
- <p v-if="claudeConfig.base_url" class="text-xs text-muted-foreground">
- Base URL：{{ claudeConfig.base_url }}
- </p>
- </div>
- </div>
- <div v-else class="flex items-center gap-3 text-muted-foreground">
- <span class="icon-[lucide--bot] text-lg opacity-40" />
- <div class="flex-1">
- <p class="text-sm">
- 尚未配置 Claude API 密钥
- </p>
- </div>
- <RouterLink:to="`/projects/${project.id}/claude`">
  <Button size="sm" class=" text-xs">
  配置
  </Button>
