@@ -60,7 +60,6 @@ declare module 'vue' {
  ChatToolCall: typeof import('./components/chat/ChatToolCall.vue')['default']
  ChatWelcome: typeof import('./components/chat/ChatWelcome.vue')['default']
  Checkbox: typeof import('./components/ui/checkbox/Checkbox.vue')['default']
- ClaudeConfigModal: typeof import('./components/project/ClaudeConfigModal.vue')['default']
  ClaudeTestDialog: typeof import('./components/ClaudeTestDialog.vue')['default']
  CodingErrorCard: typeof import('./components/chat/CodingErrorCard.vue')['default']
  CodingPlanCard: typeof import('./components/chat/CodingPlanCard.vue')['default']
