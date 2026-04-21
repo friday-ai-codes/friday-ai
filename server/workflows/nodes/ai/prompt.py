@@ -311,7 +311,7 @@ class AIPromptNode(BaseNode):
  formatted_user_prompt = self._format_prompt_for_output(
  user_prompt, output_format, json_schema
  )
- # 调用 LLM
+ # 调用 LLM（ Task 1：传入节点级 provider_credential_id）
  llm_response = await self._call_llm(
  system_prompt=system_prompt,
  user_prompt=formatted_user_prompt,
@@ -323,6 +323,7 @@ class AIPromptNode(BaseNode):
  api_base_url=api_base_url,
  api_key=api_key,
  max_thinking_tokens=max_thinking_tokens,
+ provider_credential_id=config.get("provider_credential_id", ""),
  )
  # 解析输出
  parsed_response = self._parse_response(llm_response.text, output_format)
@@ -446,12 +447,18 @@ class AIPromptNode(BaseNode):
  api_base_url: str = "",
  api_key: str = "",
  max_thinking_tokens: int | None = None,
+ provider_credential_id: str = "",
  ) -> LLMResponse:
  """单入口收敛（ / 全系列）：走 build_chat_model.ainvoke 单 turn。
  - use_custom_api=True 走分歧 A（临时 ResolvedProviderConfig，source="node"
  + extra.custom_api=True）；否则走 aresolve_or_error 四层解析（Result 模式）。
- - 本 plan 不消费 `config["provider_credential_id"]`（ Task 1 扩签名传值）；
- aresolve_or_error 调用固定传 node_config=None。
+ - ** Task 1 启用**：`provider_credential_id` 非空时，aresolve_or_error
+ 传 `node_config={"provider_credential_id": provider_credential_id}`；
+ 命中节点级 FK 后做 API tier scope 校验（ 安全硬化）：
+ resolved.credential_id 指向的凭证若 scope=="project" 且 scope_id != project.id
+ → 拒绝（raise ValueError）。T- disposition=mitigate 真正落地。
+ - use_custom_api=True 与 provider_credential_id 同时填 → use_custom_api 优先
+ （分歧 A）。
  Returns:
  LLMResponse: OpenResponses 格式统一响应（text / thinking / usage / model）。
  """
@@ -481,11 +488,13 @@ class AIPromptNode(BaseNode):
  extra={"custom_api": True, "source_detail": "node_custom_api"},
  )
  else:
- # 四层解析 Result 模式。本 plan node_config=None；
- # Task 1 会扩 _call_llm 签名加 provider_credential_id 参数并改为
- # `node_config={"provider_credential_id": provider_credential_id}`。
+ # 四层解析 Result 模式。 Task 1 启用 node_config 字段传值：
+ # provider_credential_id 非空时传入 aresolve_or_error（节点级 FK 解析）。
+ node_config: dict[str, Any] | None = None
+ if provider_credential_id:
+ node_config = {"provider_credential_id": provider_credential_id}
  result = await ProviderConfigService.aresolve_or_error(
- node_config=None,
+ node_config=node_config,
  project=project,
  )
  if isinstance(result, ProviderMissingError):
@@ -494,6 +503,27 @@ class AIPromptNode(BaseNode):
  f"{result.recommended_action}"
  )
  resolved = result
+ # API tier 安全硬化（T- disposition=mitigate）：
+ # 节点级凭证 scope 校验，防跨 project 越权。仅当命中节点级 FK 时检查。
+ # 权威路径 server/system/models.py L102。
+ if resolved.source == "node" and resolved.credential_id is not None:
+ from system.models import ProviderCredential
+ try:
+ cred = await ProviderCredential.objects.aget(
+ id=resolved.credential_id
+ )
+ except ProviderCredential.DoesNotExist as exc:
+ raise ValueError(
+ f"未配置 Provider 凭证：provider_credential_id="
+ f"{resolved.credential_id} 不存在"
+ ) from exc
+ project_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ raise ValueError(
+ f"未配置 {resolved.provider_type.value} Provider 凭证："
+ f"节点 provider_credential_id 指向他 project 凭证，"
+ f"已拒绝（scope 校验失败）"
+ )
  # model 空值 fallback（：不再按模型前缀分派；仅 model 本身空时兜底）
  if not model:
  from services.claude_config import aget_claude_config
