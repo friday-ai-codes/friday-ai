@@ -385,6 +385,101 @@ class ConversationDetailView(APIView):
  "messages":,
  },
  )
+class ConversationPreflightView(APIView):
+ """Phase：对话凭证前置探测（不发送 user message）。
+ 用于 ChatMessageArea 在用户进入对话 / 按 Send / 切换 Provider 时提前判定：
+ - 若凭证解析成功 → 200 `{status: "ok", resolved: {...}}`，允许正常 Send。
+ - 若四层均无凭证 → 400 `{code: "provider_credential_missing", data: {...}}`，
+ 前端渲染 ProviderCredentialMissingCard（ 按角色分流 CTA）。
+ 契约：ProviderConfigService.aresolve_or_error 返回 Result 模式；不抛异常。
+ 本 View 将 ProviderMissingError 平铺到 `data.missing_provider / scope_attempted /
+ recommended_action` 三字段（work item §Copywriting 驱动文案）。
+ """
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="对话凭证前置探测",
+ description=(
+ "解析对话的 Provider 凭证；失败时返回结构化 provider_credential_missing 错误供前端渲染 "
+ "ProviderCredentialMissingCard（Phase ）。"
+ ),
+ responses={
+ 200: {"description": "凭证可用"},
+ 400: {"description": "凭证缺失 — code=provider_credential_missing"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def get(self, request, conversation_id):
+ """前置探测凭证可用性。"""
+ try:
+ # select_related 预取 FK，避免 aresolve_or_error 在 async 上下文访问
+ # conversation.provider_credential_id / project.default_provider_credential_id
+ # 时触发 SynchronousOnlyOperation
+ conversation = await Conversation.objects.select_related(
+ "project",
+ "project__default_provider_credential_id",
+ "provider_credential_id",
+ ).aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # Lazy import 避免 ProviderConfigService 加载开销落入 views 模块导入路径
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ )
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=None,
+ conversation=conversation,
+ project=conversation.project,
+ )
+ if isinstance(result, ProviderMissingError):
+ logger.info(
+ "conversation.preflight_missing",
+ conversation_id=str(conversation.id),
+ missing_provider=result.missing_provider,
+ scope_attempted=result.source_attempted,
+ )
+ return Response(
+ {
+ "code": "provider_credential_missing",
+ "data": {
+ "missing_provider": result.missing_provider,
+ "scope_attempted": result.source_attempted or "system",
+ "recommended_action": (
+ result.recommended_action
+ or f"请在系统或项目设置添加 {result.missing_provider} 凭证"
+ ),
+ },
+ },
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # Resolved：平铺 ResolvedProviderConfig 中的公开字段（不含 api_key 明文 T-）
+ logger.info(
+ "conversation.preflight_ok",
+ conversation_id=str(conversation.id),
+ source=result.source,
+ provider_type=str(result.provider_type),
+ )
+ return Response(
+ {
+ "status": "ok",
+ "resolved": {
+ "provider_type": str(result.provider_type),
+ "model": result.extra.get("model", "") or (conversation.model or ""),
+ "source": result.source,
+ "credential_id": (
+ str(result.credential_id) if result.credential_id else None
+ ),
+ },
+ },
+ )
 class ConversationRuntimeView(APIView):
  """对话运行态查询。"""
  authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]

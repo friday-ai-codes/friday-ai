@@ -11,6 +11,7 @@ from .views import (
  ConflictCheckView,
  ConversationDetailView,
  ConversationListView,
+ ConversationPreflightView,
  ConversationRuntimeView,
  DiffSummaryView,
  ExportToFeishuView,
@@ -40,6 +41,12 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/runtime/",
  ConversationRuntimeView.as_view,
  name="conversation-runtime",
+ ),
+ # Phase：对话凭证前置探测
+ path(
+ "conversations/<uuid:conversation_id>/preflight/",
+ ConversationPreflightView.as_view,
+ name="conversation-preflight",
  ),
  path(
  "conversations/<uuid:conversation_id>/interrupt/",
