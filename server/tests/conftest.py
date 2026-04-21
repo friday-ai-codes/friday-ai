@@ -383,6 +383,176 @@ def mock_aresolve_missing(monkeypatch):
  )
  return err
  return _setup
+# ============================================================================
+# Phase Plan：Provider 凭证测试公共 fixture
+#
+# 4 用户（system_admin + project_a_admin/member/viewer + project_b_admin）
+# + 2 独立项目（project_a / project_b）+ 3 凭证（system + project_a + project_b）
+# + async_client。CONTEXT 命名锁定， 与 work-item 共享消费。
+#
+# 与既有 `project` / `admin_user` fixture 不冲突（不同命名空间）。
+# ============================================================================
+@pytest.fixture
+def system_admin_user(db):
+ """Phase：系统级 superuser 用户。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ return User.objects.create_user(
+ username=f"sysadmin_{suffix}",
+ email=f"sysadmin_{suffix}@test.local",
+ password="test-password",
+ is_superuser=True,
+ is_staff=True,
+ )
+@pytest.fixture
+def project_a(db):
+ """Phase：独立项目 A（避开既有 `project` fixture 的 repository 依赖）。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ return Project.objects.create(
+ name=f"project-a-{suffix}",
+ feishu_project_key=f"p229-pa-{suffix}",
+ )
+@pytest.fixture
+def project_b(db):
+ """Phase：独立项目 B（跨项目场景用）。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ return Project.objects.create(
+ name=f"project-b-{suffix}",
+ feishu_project_key=f"p229-pb-{suffix}",
+ )
+def _add_membership(project, user, role):
+ """内部 helper：按 ProjectRole 枚举添加成员关系。"""
+ ProjectMembership.objects.create(
+ project=project,
+ user=user,
+ role=role,
+ )
+@pytest.fixture
+def project_a_admin_user(db, project_a):
+ """Phase：项目 A 的 ADMIN 角色用户。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ u = User.objects.create_user(
+ username=f"pa_admin_{suffix}",
+ email=f"pa_admin_{suffix}@test.local",
+ password="test-password",
+ )
+ _add_membership(project_a, u, ProjectRole.ADMIN)
+ return u
+@pytest.fixture
+def project_a_member_user(db, project_a):
+ """Phase：项目 A 的 MEMBER 角色用户。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ u = User.objects.create_user(
+ username=f"pa_member_{suffix}",
+ email=f"pa_member_{suffix}@test.local",
+ password="test-password",
+ )
+ _add_membership(project_a, u, ProjectRole.MEMBER)
+ return u
+@pytest.fixture
+def project_a_viewer_user(db, project_a):
+ """Phase：项目 A 的 VIEWER 角色用户。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ u = User.objects.create_user(
+ username=f"pa_viewer_{suffix}",
+ email=f"pa_viewer_{suffix}@test.local",
+ password="test-password",
+ )
+ _add_membership(project_a, u, ProjectRole.VIEWER)
+ return u
+@pytest.fixture
+def project_b_admin_user(db, project_b):
+ """Phase：项目 B 的 ADMIN 角色用户（跨项目越权测试）。"""
+ from uuid import uuid4
+ suffix = uuid4.hex[:8]
+ u = User.objects.create_user(
+ username=f"pb_admin_{suffix}",
+ email=f"pb_admin_{suffix}@test.local",
+ password="test-password",
+ )
+ _add_membership(project_b, u, ProjectRole.ADMIN)
+ return u
+@pytest.fixture
+def system_default_anthropic_credential(db):
+ """Phase：系统级 Anthropic 凭证（scope='system'，scope_id=None）。"""
+ import json
+ from uuid import uuid4
+ from common.encryption import encrypt_value
+ from system.models import ProviderCredential
+ suffix = uuid4.hex[:8]
+ return ProviderCredential.objects.create(
+ provider_type="anthropic",
+ name=f"sys-default-{suffix}",
+ scope="system",
+ scope_id=None,
+ encrypted_config=encrypt_value(
+ json.dumps(
+ {
+ "api_key": "sk-test-placeholder",
+ "base_url": "https://api.anthropic.com",
+ }
+ )
+ ),
+ is_active=True,
+ )
+@pytest.fixture
+def project_a_anthropic_credential(db, project_a):
+ """Phase：项目 A 的 Anthropic 凭证（scope='project'，scope_id=project_a.id）。"""
+ import json
+ from uuid import uuid4
+ from common.encryption import encrypt_value
+ from system.models import ProviderCredential
+ suffix = uuid4.hex[:8]
+ return ProviderCredential.objects.create(
+ provider_type="anthropic",
+ name=f"pa-anth-{suffix}",
+ scope="project",
+ scope_id=project_a.id,
+ encrypted_config=encrypt_value(
+ json.dumps(
+ {
+ "api_key": "sk-ant-proj-a-testing",
+ "base_url": "https://api.anthropic.com",
+ }
+ )
+ ),
+ is_active=True,
+ )
+@pytest.fixture
+def project_b_openai_credential(db, project_b):
+ """Phase：项目 B 的 OpenAI 凭证（跨项目用例）。"""
+ import json
+ from uuid import uuid4
+ from common.encryption import encrypt_value
+ from system.models import ProviderCredential
+ suffix = uuid4.hex[:8]
+ return ProviderCredential.objects.create(
+ provider_type="openai_chat",
+ name=f"pb-oai-{suffix}",
+ scope="project",
+ scope_id=project_b.id,
+ encrypted_config=encrypt_value(
+ json.dumps(
+ {
+ "api_key": "sk-test-placeholder",
+ "base_url": "https://api.openai.com/v1",
+ }
+ )
+ ),
+ is_active=True,
+ )
+@pytest.fixture
+def async_client:
+ """Phase：未认证的 APIClient（供矩阵测试 force_authenticate 按角色注入）。"""
+ return APIClient
+# ============================================================================
+# Phase Wave：AI 节点测试公共 fixture（Q6 决策落地 / 弥补）
+# ============================================================================
 @pytest.fixture
 def make_minimal_context:
  """构造最小 ExecutionContext 供 AI 节点 execute 调用。
