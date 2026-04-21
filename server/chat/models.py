@@ -9,6 +9,20 @@ from django.db import models
 from projects.models import Project
 class Conversation(models.Model):
  """对话模型 — 一次完整的用户-AI 交互会话。"""
+ class Status(models.TextChoices):
+ """对话状态（Phase pin 冻结判据）。
+ status 为 三态判定的唯一真源：
+ - draft：0 user message，Provider 可自由修改
+ - running/paused/interrupted：≥1 user message 活跃态，切换 Provider 弹 pin 确认
+ - completed/stopped/error：frozen 态，后端拒绝修改 provider_credential_id / model
+ """
+ DRAFT = "draft", "草稿"
+ RUNNING = "running", "进行中"
+ PAUSED = "paused", "已暂停"
+ INTERRUPTED = "interrupted", "已中断"
+ COMPLETED = "completed", "已完成"
+ STOPPED = "stopped", "已停止"
+ ERROR = "error", "异常"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  project = models.ForeignKey(
  Project,
@@ -28,6 +42,23 @@ class Conversation(models.Model):
  blank=True,
  verbose_name="Provider 类型",
  help_text="LLM Provider 类型，为空时继承上层配置 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
+ )
+ # Phase /：对话级固定 Provider 凭证（pin 语义）
+ provider_credential_id = models.ForeignKey(
+ "system.ProviderCredential",
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="conversations",
+ help_text="对话级固定 Provider 凭证（ pin 语义 ）",
+ )
+ # Phase：对话状态（frozen 判据真源）
+ status = models.CharField(
+ max_length=20,
+ choices=Status.choices,
+ default=Status.DRAFT,
+ verbose_name="对话状态",
+ help_text=" pin 冻结判据；frozen 态（completed/stopped/error）拒绝修改 provider_credential_id",
  )
  is_deleted = models.BooleanField(default=False, db_index=True)
  created_at = models.DateTimeField(auto_now_add=True)
