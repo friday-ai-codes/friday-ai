@@ -211,6 +211,7 @@ declare module 'vue' {
  ProviderCredentialDropdown: typeof import('./components/providers/ProviderCredentialDropdown.vue')['default']
  ProviderCredentialForm: typeof import('./components/providers/ProviderCredentialForm.vue')['default']
  ProviderCredentialListTable: typeof import('./components/providers/ProviderCredentialListTable.vue')['default']
+ ProviderCredentialMissingCard: typeof import('./components/chat/ProviderCredentialMissingCard.vue')['default']
  ProviderHealthBadge: typeof import('./components/providers/ProviderHealthBadge.vue')['default']
  ProviderSettings: typeof import('./components/providers/ProviderSettings.vue')['default']
  RAGEnhancementSettings: typeof import('./components/settings/RAGEnhancementSettings.vue')['default']

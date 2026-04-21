@@ -13,7 +13,27 @@ import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 import PRConfirmCard from './PRConfirmCard.vue'
+import ProviderCredentialMissingCard from './ProviderCredentialMissingCard.vue'
+import { usePermission } from '~/composables/usePermission'
+import { useAuthStore } from '~/stores/auth'
 const chatStore = useChatStore
+const authStore = useAuthStore
+// Phase：按角色分流 CTA。system_admin 走 /admin/providers 主按钮；其他走项目设置。
+const currentProjectIdRef = computed( => {
+ const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
+ return conv?.project_id ?? ''
+})
+const { isSystemAdmin, isProjectAdmin, isViewer } = usePermission(currentProjectIdRef)
+type PermissionRole = 'system_admin' | 'project_admin' | 'member' | 'viewer'
+const userRole = computed<PermissionRole>( => {
+ if (isSystemAdmin.value)
+ return 'system_admin'
+ if (isProjectAdmin.value)
+ return 'project_admin'
+ if (isViewer.value)
+ return 'viewer'
+ return 'member'
+})
 const scrollContainer = ref<HTMLElement | null>(null)
 const { arrivedState } = useScroll(scrollContainer, { offset: { bottom: 50 } })
 const isAtBottom = computed( => arrivedState.bottom)
@@ -237,6 +257,10 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  <!-- 导出成功卡片 (per ) -->
  <ExportSuccessCard
  v-for="(result, idx) in exportResults":key="`export-${idx}`":title="result.title":url="result.url":exported-at="result.exportedAt"
+ />
+ <!-- Phase /：凭证缺失结构化降级卡片 -->
+ <ProviderCredentialMissingCard
+ v-if="chatStore.credentialMissingPayload":missing-provider="chatStore.credentialMissingPayload.missingProvider":user-role="userRole":project-id="currentProjectIdRef"
  />
  <!-- 错误提示 -->
  <div v-if="chatStore.error" class="error-card">
