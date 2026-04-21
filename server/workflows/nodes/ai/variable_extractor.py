@@ -403,10 +403,10 @@ class AIVariableExtractorNode(BaseNode):
  f"节点 provider_credential_id 指向他 project 凭证，"
  f"已拒绝（scope 校验失败）"
  )
- #：model 字段空值 fallback（claude_config 仅作 model 兜底）
+ #：model 字段空值 fallback
+ # Phase Plan：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
  if not model:
- from services import claude_config as _cc_mod
- model = (await _cc_mod.aget_claude_config(project)).model or ""
+ model = (resolved.extra or {}).get("default_model", "") or ""
  if not model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  #：输出长度由 capabilities 兜底；：.bind(temperature=0.3)

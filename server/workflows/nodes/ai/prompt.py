@@ -525,10 +525,9 @@ class AIPromptNode(BaseNode):
  f"已拒绝（scope 校验失败）"
  )
  # model 空值 fallback（：不再按模型前缀分派；仅 model 本身空时兜底）
+ # Phase Plan：从 resolved.extra.default_model 读取（替代 v8.1 aget_claude_config 路径）
  if not model:
- from services.claude_config import aget_claude_config
- cc = await aget_claude_config(project)
- model = cc.model or ""
+ model = (resolved.extra or {}).get("default_model", "") or ""
  if not model:
  raise ValueError(
  "未配置默认模型，请在系统设置或项目设置中配置默认模型"

@@ -577,6 +577,10 @@ class ProviderConfigService:
  dumped = validated.model_dump(exclude={"api_key", "base_url", "bearer_token"})
  for k, v in dumped.items:
  extra[k] = v
+ # Phase Plan：注入 credential.default_model 到 extra（供调用方
+ # 做 model fallback 使用，替代既有 aget_claude_config(project).model 路径）
+ if credential.default_model:
+ extra["default_model"] = credential.default_model
  logger.info(
  "provider_config_resolved",
  provider_type=str(provider_type),

@@ -457,13 +457,12 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  f"节点 provider_credential_id 指向他 project 凭证，"
  f"已拒绝（scope 校验失败）"
  )
- # 模型 fallback：config_model 为空时读 claude_config.model
+ # 模型 fallback：config_model 为空时从 resolved.extra.default_model
+ # 读取（Phase Plan：替代 v8.1 aget_claude_config 路径）
  if config_model:
  resolved_model = config_model
  else:
- from services.claude_config import aget_claude_config
- cc = await aget_claude_config(project)
- resolved_model = cc.model or ""
+ resolved_model = (resolved.extra or {}).get("default_model", "") or ""
  if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  return resolved, resolved_model

@@ -182,28 +182,19 @@ async def test_missing_credential_propagates_as_value_error(
  assert "凭证" in msg
  assert "anthropic" in msg
 # ============================================================================
-# Test 5: 缺模型 raise
+# Test 5: 缺模型 raise（Phase Plan 更新：fallback 改为 resolved.extra.default_model）
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_missing_model_raises(
- monkeypatch: pytest.MonkeyPatch,
  fake_chat_model_factory: Any,
  mock_aresolve_ok: Any,
  make_minimal_context: Any,
 ) -> None:
- """Test 5：config_model="" + claude_config.model="" → ValueError。"""
+ """Test 5：config_model="" + resolved.extra.default_model="" → ValueError。"""
  fake_chat_model_factory(responses=['{"variables": {}}'])
+ # mock_aresolve_ok 默认不注入 extra.default_model → fallback 失败
  mock_aresolve_ok(source="system")
- # stub aget_claude_config 返回 model=""
- async def _fake_cc(project: Any = None) -> Any:
- from services.claude_config import ClaudeConfig
- return ClaudeConfig(
- api_key=None, base_url=None, model="", source="system"
- )
- monkeypatch.setattr(
- "services.claude_config.aget_claude_config", _fake_cc
- )
  ctx = make_minimal_context(
  node_config={
  "variables": [{"key": "x", "name": "X", "desc": "X"}],
@@ -280,90 +271,14 @@ async def test_httpx_not_called(
  assert result.status in ("completed", "failed")
  assert calls ==, "httpx.AsyncClient 被调用（ 违反）"
 # ============================================================================
-# Test 8: aget_claude_config 仅用于 model fallback
+# Phase Plan：Test 8 aget_claude_config fallback 守护随
+# claude_config.py 整文件硬删一并移除。fallback 路径改为
+# resolved.extra.default_model（来自 ProviderCredential.default_model）。
+# 语义等价测试由 test_provider_config.py / test_provider_config_v2.py 覆盖。
 # ============================================================================
-@pytest.mark.django_db(transaction=True)
-@pytest.mark.asyncio
-async def test_aget_claude_config_only_for_model_fallback(
- monkeypatch: pytest.MonkeyPatch,
- fake_chat_model_factory: Any,
- mock_aresolve_ok: Any,
- make_minimal_context: Any,
-) -> None:
- """Test 8： 守护 —— aget_claude_config 仅在 config_model="" 时拿 model。
- 断言：
- - aget_claude_config 被调用（拿 model fallback）；
- - resolved.api_key 来自 aresolve_or_error（固定 "sk-ok"），而非 cc.api_key；
- - resolved.base_url 来自 aresolve_or_error。
- """
- cc_calls: list[Any] =
- async def _tracked_cc(project: Any = None) -> Any:
- cc_calls.append(project)
- from services.claude_config import ClaudeConfig
- # cc 返回"错误"的 api_key / base_url，用于验证它们不会被使用
- return ClaudeConfig(
- api_key="SHOULD_NOT_BE_USED",
- base_url="https://WRONG.example.com",
- model="claude-sonnet-4-fallback",
- source="system",
- )
- monkeypatch.setattr(
- "services.claude_config.aget_claude_config", _tracked_cc
- )
- # 记录 build_chat_model 收到的 resolved / model
- captured_calls: list[dict[str, Any]] =
- fake = FakeChatModel(responses=['{"variables": {}}'])
- def _tracking_builder(*args: Any, **kwargs: Any) -> Any:
- captured_calls.append(
- {
- "args": args,
- "kwargs": kwargs,
- "resolved": kwargs.get("resolved"),
- "model": kwargs.get("model"),
- }
- )
- return fake
- monkeypatch.setattr(
- "agents.llm_factory.build_chat_model", _tracking_builder
- )
- monkeypatch.setattr(
- "workflows.nodes.ai.variable_extractor.build_chat_model",
- _tracking_builder,
- raising=False,
- )
- mock_aresolve_ok(
- source="system",
- provider_type="anthropic",
- api_key="sk-ok",
- base_url="https://api.anthropic.com",
- )
- ctx = make_minimal_context(
- node_config={
- "variables": [{"key": "x", "name": "X", "desc": "X"}],
- # 空 model → 走 fallback
- "model": "",
- },
- )
- from workflows.nodes.ai.variable_extractor import AIVariableExtractorNode
- node = AIVariableExtractorNode
- await node._call_llm(prompt="p", model="", context=ctx)
- # aget_claude_config 被调用一次（model fallback）
- assert len(cc_calls) == 1, "aget_claude_config 应被调用一次（拿 model fallback）"
- # build_chat_model 收到的 resolved.api_key 来自 aresolve_or_error
- assert len(captured_calls) == 1
- resolved_used = captured_calls[0]["resolved"]
- assert (
- resolved_used.api_key == "sk-ok"
- ), "api_key 必须来自 aresolve_or_error，不得使用 claude_config 返回值"
- assert (
- resolved_used.base_url == "https://api.anthropic.com"
- ), "base_url 必须来自 aresolve_or_error，不得使用 claude_config 返回值"
- assert resolved_used.provider_type == ProviderType.ANTHROPIC
- # model 来自 claude_config fallback
- assert (
- captured_calls[0]["model"] == "claude-sonnet-4-fallback"
- ), "model 应走 aget_claude_config fallback"
 # ============================================================================
 # 辅助：hashlib 导入保留供未来 sha256 验证扩展
 # ============================================================================
 _ = hashlib # 避免 F401
+_ = FakeChatModel # 避免 F401（保留供未来断言扩展）
+_ = ProviderType # 避免 F401

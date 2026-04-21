@@ -278,32 +278,32 @@ def test_no_anthropic_asyncanthropic_mock_in_workflow_tests -> None:
  f"offenders: {offenders}"
  )
 # ---------------------------------------------------------------------------
-# Test 11 — Anti-pattern E 守护：aget_claude_config 只作 model fallback
+# Phase Plan：原 Test 11 Anti-pattern E 守护
+# （aget_claude_config 只作 model fallback）随 claude_config.py 整文件硬删移除。
+# 新的 fallback 路径：resolved.extra.default_model（来自 ProviderCredential）
+# ——不再是 aget_claude_config。守护已失效。
 # ---------------------------------------------------------------------------
-def test_aget_claude_config_only_for_model_fallback -> None:
- """Anti-pattern E 守护：prompt.py / variable_extractor.py 调用 aget_claude_config
- ≤ 1 次（仅 model 空值 fallback，）。
- 计数实际调用模式（带括号的调用点），不含 import 语句。
+def test_no_aget_claude_config_references_in_ai_nodes -> None:
+ """Phase Plan 新守护：AI 节点不得再出现 aget_claude_config 任何引用
+ （含 import / 调用 / 注释 docstring 外的代码）。
+ 防止未来重新引入已删除的 v8.1 legacy 路径。
  """
- call_pattern = re.compile(r"aget_claude_config\s*\(")
- for name in ("prompt.py", "variable_extractor.py"):
+ forbidden_pattern = re.compile(r"\baget_claude_config\b")
+ offenders: list[tuple[str, int, str]] =
+ for name in ("prompt.py", "variable_extractor.py", "base_agent.py", "coding.py"):
  path = AI_NODES_DIR / name
  if not path.exists:
- pytest.fail(f"必需文件缺失：{path}")
+ continue # 非必需（若文件不存在 → 其他守护会报错）
  text = _read_text(path)
- # 统计调用点（排除纯注释行）
- call_count = 0
- for line in text.splitlines:
+ for i, line in enumerate(text.splitlines, 1):
  stripped = line.lstrip
  if stripped.startswith("#"):
  continue
- # 排除 `from services.claude_config import aget_claude_config` 这类 import
- if re.search(r"^\s*(from|import)\s+", line) and "(" not in line:
- continue
- call_count += len(call_pattern.findall(line))
- assert call_count <= 1, (
- f"Anti-pattern E 违反：{path} 内 `aget_claude_config(...)` 调用 "
- f"{call_count} 次 > 1（ 仅允许 model 空值 fallback）"
+ if forbidden_pattern.search(line):
+ offenders.append((str(path), i, line.rstrip))
+ assert not offenders, (
+ f"Phase Plan 守护违反：AI 节点仍引用已删除的 aget_claude_config\n"
+ f"offenders: {offenders}"
  )
 # ---------------------------------------------------------------------------
 # Test 12 — 三节点 schema 字段守护：provider_credential_id 存在
