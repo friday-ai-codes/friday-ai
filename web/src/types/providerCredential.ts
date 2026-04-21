@@ -104,3 +104,25 @@ export interface TestConnectionResponse {
 export interface RefreshModelsResponse {
  available_models: AvailableModel
 }
+// ============================================================================
+// Phase：四层 Provider 解析 Inspector
+// ============================================================================
+/** 四层解析链中的单层 layer 标识。 */
+export type SourceLayer = 'node' | 'conversation' | 'project' | 'system'
+/** 四层解析链条目 — 对应后端 ResolutionChainEntry dataclass。 */
+export interface ChainEntry {
+ layer: SourceLayer
+ provider_type: string | null
+ model: string | null
+ credential_id: string | null
+ active: boolean
+}
+/** ResolvedProvider 响应对象 — 后端 ProviderConfigService.aresolve_with_chain 平铺结构。 */
+export interface ResolvedProvider {
+ provider_type: string
+ model: string
+ /** winning source layer */
+ source: SourceLayer
+ /** 固定 4 层（顺序：node → conversation → project → system） */
+ chain: ChainEntry
+}

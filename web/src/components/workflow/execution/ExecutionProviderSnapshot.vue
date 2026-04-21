@@ -18,7 +18,9 @@
  *
  * Analog: ProviderHealthBadge.vue（Badge + Tooltip 模板）+ PATTERNS §Pattern 2 + §S-5 Clean Card
  */
+import type { ChainEntry } from '~/types/providerCredential'
 import { computed, ref } from 'vue'
+import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
@@ -34,6 +36,8 @@ interface NodeSnapshot {
  model: string
  source: SourceLayer
  credential_id: string | null
+ /** Phase：可选的四层解析链（Plan 扩展；旧快照无此字段则空数组） */
+ chain?: ChainEntry
 }
 const props = defineProps<{
  nodeId: string
@@ -126,6 +130,14 @@ function onReplay {
  v-show="expanded && snapshot":id="`snap-detail-${nodeId}`"
  class="pt-2 border-t border-border/40"
  >
+ <!-- Phase：四层 Provider 解析 Inspector（snapshot 带 chain 时渲染） -->
+ <div
+ v-if="snapshot && snapshot.chain && snapshot.chain.length > 0"
+ class="mb-3"
+ >
+ <ResolvedSourceBadge:source="snapshot.source":chain="snapshot.chain"
+ />
+ </div>
  <dl v-if="snapshot" class="text-sm space-y-2">
  <div class="flex gap-2">
  <dt class="text-muted-foreground w-20 shrink-0">

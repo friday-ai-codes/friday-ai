@@ -221,6 +221,7 @@ declare module 'vue' {
  RAGEnhancementSettings: typeof import('./components/settings/RAGEnhancementSettings.vue')['default']
  RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
  RepositoryPicker: typeof import('./components/workflow/RepositoryPicker.vue')['default']
+ ResolvedSourceBadge: typeof import('./components/providers/ResolvedSourceBadge.vue')['default']
  RouterLink: typeof import('vue-router')['RouterLink']
  RouterView: typeof import('vue-router')['RouterView']
  RunnerLogPanel: typeof import('./components/runners/RunnerLogPanel.vue')['default']
