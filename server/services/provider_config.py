@@ -314,8 +314,12 @@ async def _resolve_credential_async(
  if cred is not None:
  return cred, "node"
  # 2. 对话级 FK（Phase/229 加字段后启用）
+ # 注意：Django ORM 对 FK 字段 `provider_credential_id` 生成实际 DB 列
+ # `provider_credential_id_id`；访问字段名会返回 ProviderCredential 实例
+ # （触发同步查询，async 上下文会 SynchronousOnlyOperation）。
+ # 这里读 `_id` 列直接拿 UUID，避免触发同步 DB 访问。
  conv_fk = (
- getattr(conversation, "provider_credential_id", None)
+ getattr(conversation, "provider_credential_id_id", None)
  if conversation is not None
  else None
  )
@@ -324,8 +328,9 @@ async def _resolve_credential_async(
  if cred is not None:
  return cred, "conversation"
  # 3. 项目级 FK（Phase/229 加字段后启用）
+ # 同 conv_fk：读 `default_provider_credential_id_id` 列拿 UUID。
  proj_fk = (
- getattr(project, "default_provider_credential_id", None)
+ getattr(project, "default_provider_credential_id_id", None)
  if project is not None
  else None
  )
