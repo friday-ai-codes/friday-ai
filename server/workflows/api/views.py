@@ -1219,15 +1219,24 @@ class LLMModelsView(APIView):
  """
  use_system = request.data.get("use_system", False)
  if use_system:
- from services.claude_config import aget_claude_config
- config = await aget_claude_config
- if not config.api_key:
+ # Phase Plan：从 ProviderConfigService.aresolve_or_error 获取系统凭证
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ )
+ resolve_result = await ProviderConfigService.aresolve_or_error
+ if isinstance(resolve_result, ProviderMissingError):
+ return Response(
+ {"detail": f"系统未配置 API Key：{resolve_result.recommended_action}"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ if not resolve_result.api_key:
  return Response(
  {"detail": "系统未配置 API Key"},
  status=status.HTTP_400_BAD_REQUEST,
  )
- base_url = config.base_url or "https://api.anthropic.com"
- api_key = config.api_key
+ base_url = resolve_result.base_url or "https://api.anthropic.com"
+ api_key = resolve_result.api_key
  else:
  base_url = request.data.get("base_url", "").strip
  api_key = request.data.get("api_key", "").strip
@@ -1280,14 +1289,28 @@ class LLMSystemConfigView(APIView):
  """View for getting system LLM configuration (for display in frontend)."""
  permission_classes = [IsAuthenticated]
  async def get(self, request: Request) -> Response:
- from services.claude_config import aget_claude_config
- config = await aget_claude_config
+ # Phase Plan：从 ProviderConfigService.aresolve_or_error 获取系统配置
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ )
+ resolve_result = await ProviderConfigService.aresolve_or_error
+ if isinstance(resolve_result, ProviderMissingError):
  return Response(
  {
- "base_url": config.base_url or "https://api.anthropic.com",
- "model": config.model,
- "has_api_key": bool(config.api_key),
- "source": config.source,
+ "base_url": "https://api.anthropic.com",
+ "model": "",
+ "has_api_key": False,
+ "source": "system",
+ }
+ )
+ default_model = (resolve_result.extra or {}).get("default_model", "") or ""
+ return Response(
+ {
+ "base_url": resolve_result.base_url or "https://api.anthropic.com",
+ "model": default_model,
+ "has_api_key": bool(resolve_result.api_key),
+ "source": resolve_result.source,
  }
  )
 # =============================================================================

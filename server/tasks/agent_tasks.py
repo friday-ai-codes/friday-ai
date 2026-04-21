@@ -64,20 +64,32 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  stored_config = session.metadata["config"]
  system_prompt = stored_config.get("system_prompt", "")
  max_turns = stored_config.get("max_iterations", 15)
- # Get API credentials from project's Claude config
- from services.claude_config import aget_claude_config
- claude_config = await aget_claude_config(session.project)
- if not claude_config.api_key:
- raise ValueError("未配置 Claude API Key，请在系统设置或项目设置中配置")
- if not claude_config.model:
+ # Phase Plan：从 ProviderConfigService.aresolve_or_error 获取凭证
+ # （替代 v8.1 aget_claude_config 路径）
+ from services.provider_config import (
+ ProviderConfigService,
+ ProviderMissingError,
+ )
+ resolve_result = await ProviderConfigService.aresolve_or_error(
+ project=session.project
+ )
+ if isinstance(resolve_result, ProviderMissingError):
+ raise ValueError(
+ f"未配置 Provider 凭证：{resolve_result.recommended_action}"
+ )
+ if not resolve_result.api_key:
+ raise ValueError("未配置 API Key，请在系统设置或项目设置中配置")
+ # model fallback：credential.default_model → 空则报错
+ resolved_model = (resolve_result.extra or {}).get("default_model", "") or ""
+ if not resolved_model:
  raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
  # Build and run SDKAgentRunner
  runner_config = SdkRunnerConfig(
  system_prompt=system_prompt,
- model=claude_config.model,
+ model=resolved_model,
  project_id=str(session.project_id) if session.project_id else "",
  session_id=session_id,
- api_key=claude_config.api_key,
+ api_key=resolve_result.api_key,
  max_turns=max_turns,
  agent_session=session,
  )

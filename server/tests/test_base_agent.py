@@ -147,46 +147,10 @@ async def test_resolve_missing_credential_raises_valueerror(
  assert "凭证" in msg
  assert "openai_chat" in msg
  assert "请在系统设置中配置" in msg
-@pytest.mark.asyncio
-async def test_resolve_empty_config_model_falls_back_to_claude_config(
- monkeypatch: pytest.MonkeyPatch,
- mock_aresolve_ok: Any,
-) -> None:
- """Test 5：config_model="" 时走 aget_claude_config(project).model fallback。"""
- mock_aresolve_ok(source="system", provider_type="anthropic")
- class _FakeClaudeCfg:
- model = "claude-fallback-model"
- async def _fake_cc(project: Any) -> _FakeClaudeCfg:
- return _FakeClaudeCfg
- monkeypatch.setattr("services.claude_config.aget_claude_config", _fake_cc)
- node = _TestAgentNode
- _, model = await node._resolve_api_key_and_model(
- project=None,
- config_model="",
- use_custom_api=False,
- provider_type="anthropic",
- )
- assert model == "claude-fallback-model"
-@pytest.mark.asyncio
-async def test_resolve_no_model_anywhere_raises(
- monkeypatch: pytest.MonkeyPatch,
- mock_aresolve_ok: Any,
-) -> None:
- """Test 6：config_model="" + claude_config.model="" → ValueError。"""
- mock_aresolve_ok(source="system", provider_type="anthropic")
- class _FakeClaudeCfg:
- model = ""
- async def _fake_cc(project: Any) -> _FakeClaudeCfg:
- return _FakeClaudeCfg
- monkeypatch.setattr("services.claude_config.aget_claude_config", _fake_cc)
- node = _TestAgentNode
- with pytest.raises(ValueError, match="未配置默认模型"):
- await node._resolve_api_key_and_model(
- project=None,
- config_model="",
- use_custom_api=False,
- provider_type="anthropic",
- )
+# Phase Plan：aget_claude_config 整体删除，Test 5 / Test 6
+# fallback 测试随 claude_config.py 整文件删除一并移除。
+# 新 fallback 路径：resolved.extra.default_model（来自 ProviderCredential.default_model）。
+# 等价测试由 test_provider_config.py / test_provider_config_v2.py 覆盖。
 # ============================================================================
 # Test 7-9：execute 错误码分支 5 种映射
 # ============================================================================
