@@ -11,6 +11,8 @@ export * from './logs'
 export { default as projectsApi } from './projects'
 // 重新导出所有具体方法，便于按需引入
 export * from './projects'
+export { default as providerCredentialsApi } from './providerCredentials'
+export * from './providerCredentials'
 export * from './repositories'
 export { default as runnersApi } from './runners'
 export * from './runners'
