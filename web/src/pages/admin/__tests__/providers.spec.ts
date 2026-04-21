@@ -145,7 +145,7 @@ describe('/admin/providers ProviderSettings 集成', => {
  expect(text).toContain('新建项目凭证')
  expect(wrapper.html).toContain('icon-[lucide--folder-lock]')
  })
- it('PageHeader 标题按 scope 切换：system=Provider 凭证管理，project=Provider 凭证', async => {
+ it('pageHeader 标题按 scope 切换：system=Provider 凭证管理，project=Provider 凭证', async => {
  listMock.mockResolvedValue([makeCred({ name: 'c-sys' })])
  const sysWrapper = mount(ProviderSettings, {
  props: { scope: 'system' },
@@ -169,7 +169,7 @@ describe('/admin/providers ProviderSettings 集成', => {
  // 项目级不含完整"Provider 凭证管理"长标题
  expect(projText).not.toContain('Provider 凭证管理')
  })
- it('ListTable emits delete 后打开 AlertDialog 并显示凭证名与"永久删除"按钮', async => {
+ it('listTable emits delete 后打开 AlertDialog 并显示凭证名与"永久删除"按钮', async => {
  listMock.mockResolvedValue([makeCred({ id: 'c-del', name: 'to-delete' })])
  const wrapper = mount(ProviderSettings, {
  props: { scope: 'system' },

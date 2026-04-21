@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AvailableModel } from '~/types/providerCredential'
 /**
  * 模型下拉组件（Phase + CONTEXT / ）
  *
@@ -9,15 +10,13 @@
  * - watch credentialId immediate:变化时清空 models 并重拉
  * - 若旧 modelValue 不在新 list 中,自动 emit('update:modelValue', null) 清空
  * - capability 过滤:
- * * requiresTools=true 且 m.supports_tools===false → 排除
- * * requiresVision=true 且 m.supports_vision!==true → 排除
+ * requiresTools=true 且 m.supports_tools===false → 排除
+ * requiresVision=true 且 m.supports_vision!==true → 排除
  * - option 标签:`${display_name} [${Math.round(ctx/1000)}K]`(work item §Placeholder)
  * - loading 态:loader-2 animate-spin + "加载模型清单中…"
  * - filteredModels 为空:"无可用模型"
  */
 import { computed, ref, watch } from 'vue'
-import { useProviderCredentialStore } from '~/stores/providerCredential'
-import type { AvailableModel } from '~/types/providerCredential'
 import {
  Select,
  SelectContent,
@@ -25,6 +24,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
 interface Props {
  credentialId: string | null
  requiresTools?: boolean

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { AIVariableDefinition, AIVariableExtractorConfig } from '~/types/workflow'
 import { computed, ref } from 'vue'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import { Button } from '~/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
@@ -14,8 +16,6 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
-import ModelSelect from '~/components/providers/ModelSelect.vue'
-import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
 import { useProviderCredentialStore } from '~/stores/providerCredential'

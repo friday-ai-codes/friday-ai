@@ -91,7 +91,8 @@ export const providerCredentialsApi = {
  remove: async (id: string): Promise<void> => {
  await del(`/providers/credentials/${id}/`)
  },
- /** PATCH /api/providers/credentials/<id>/toggle-active/
+ /**
+ * PATCH /api/providers/credentials/<id>/toggle-active/
  *
  * 后端 @action 自动切反 is_active；PATCH 需带 body(即使为空),
  * 避免部分 middleware 对空 PATCH 抛 400。

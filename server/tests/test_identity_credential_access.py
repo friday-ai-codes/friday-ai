@@ -25,16 +25,19 @@ def _make_cred(scope: str, scope_id=None) -> SimpleNamespace:
 class TestValidateCredentialScope:
  """validate_credential_scope 5 分支契约 + 日志侧信道。"""
  async def test_system_scope_any_project_returns_none(self) -> None:
- """分支 1：scope='system' 对所有 project_id 放行（含 None / 空串 / UUID）。"""
+ """分支 1：scope='system' 对所有 project_id 放行（含 None / 空串 / UUID）。
+ validate_credential_scope 声明 `-> None`，不抛异常即放行（契约只体现在
+ 是否 raise CredentialScopeViolation）。这里三次调用若任一抛异常都会失败。
+ """
  cred = _make_cred(scope="system", scope_id=None)
- assert await validate_credential_scope(cred, str(uuid4)) is None
- assert await validate_credential_scope(cred, None) is None
- assert await validate_credential_scope(cred, "") is None
+ await validate_credential_scope(cred, str(uuid4))
+ await validate_credential_scope(cred, None)
+ await validate_credential_scope(cred, "")
  async def test_project_scope_matching_project_id_returns_none(self) -> None:
- """分支 2：scope='project' + scope_id 与 project_id 字符串相等 → 放行。"""
+ """分支 2：scope='project' + scope_id 与 project_id 字符串相等 → 放行（不抛）。"""
  project_id = uuid4
  cred = _make_cred(scope="project", scope_id=project_id)
- assert await validate_credential_scope(cred, str(project_id)) is None
+ await validate_credential_scope(cred, str(project_id))
  async def test_project_scope_different_project_id_raises(self) -> None:
  """分支 3：跨项目越权 → 抛 CredentialScopeViolation，异常消息含 scope_id。"""
  cred = _make_cred(scope="project", scope_id=uuid4)

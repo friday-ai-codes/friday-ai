@@ -108,7 +108,7 @@ vi.mock('~/api/workflow', => ({
 }))
 // Dynamic import 保证 vi.mock 已就位
 const { default: AIPromptConfig } = await import(
- '~/components/workflow/config/AIPromptConfig.vue'
+ '~/components/workflow/config/AIPromptConfig.vue',
 )
 const { useProviderCredentialStore } = await import('~/stores/providerCredential')
 // ============================================================================
@@ -144,7 +144,7 @@ async function mountPromptConfig(
 // ============================================================================
 // Tests
 // ============================================================================
-describe('AIPromptConfig Provider 集成(Phase Plan)', => {
+describe('aIPromptConfig Provider 集成(Phase Plan)', => {
  beforeEach( => {
  vi.clearAllMocks
  // 清 sessionStorage,避免 store hydrate 污染后续用例
@@ -158,7 +158,7 @@ describe('AIPromptConfig Provider 集成(Phase Plan)', => {
  // ModelSelect placeholder(credentialId 为 null 时 filteredModels 为空)
  expect(html).toContain('请选择模型')
  })
- it('Dropdown 数据源读 store.activeCredentials(2 条 active)', async => {
+ it('dropdown 数据源读 store.activeCredentials(2 条 active)', async => {
  await mountPromptConfig
  const store = useProviderCredentialStore
  expect(store.activeCredentials.length).toBe(2)

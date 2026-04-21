@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type {
+ ProviderCredentialCreatePayload,
+ ProviderCredentialDto,
+ ProviderCredentialUpdatePayload,
+} from '~/types/providerCredential'
 /**
  * Provider 凭证管理容器组件（Phase）
  *
@@ -9,7 +14,7 @@
  * 职责：
  * - mount 调 store.fetchCredentials + store.fetchProviderTypes（动态表单数据源）
  * - 渲染 PageHeader（标题按 scope 切换）+ 新建 CTA + ListTable（或空态）
- * - 承接 ListTable emits：edit / delete / toggle-active / test-connection / refresh-models
+ * - 承接 ListTable emits：edit / delete / toggleActive / testConnection / refreshModels
  * - Form Dialog 新建/编辑；未保存退出二次确认
  * - AlertDialog 删除二次确认（work item §Destructive）
  *
@@ -17,24 +22,6 @@
  * 严格遵守 work item 2-weight 契约（font-normal + font-semibold）。
  */
 import { computed, onMounted, ref } from 'vue'
-import type {
- ProviderCredentialCreatePayload,
- ProviderCredentialDto,
- ProviderCredentialUpdatePayload,
-} from '~/types/providerCredential'
-import { useProviderCredentialStore } from '~/stores/providerCredential'
-import { useErrorHandler } from '~/composables/useErrorHandler'
-import { useToast } from '~/composables/useToast'
-import ProviderCredentialListTable from './ProviderCredentialListTable.vue'
-import ProviderCredentialForm from './ProviderCredentialForm.vue'
-import { Button } from '~/components/ui/button'
-import {
- Dialog,
- DialogContent,
- DialogDescription,
- DialogHeader,
- DialogTitle,
-} from '~/components/ui/dialog'
 import {
  AlertDialog,
  AlertDialogAction,
@@ -45,6 +32,19 @@ import {
  AlertDialogHeader,
  AlertDialogTitle,
 } from '~/components/ui/alert-dialog'
+import { Button } from '~/components/ui/button'
+import {
+ Dialog,
+ DialogContent,
+ DialogDescription,
+ DialogHeader,
+ DialogTitle,
+} from '~/components/ui/dialog'
+import { useErrorHandler } from '~/composables/useErrorHandler'
+import { useToast } from '~/composables/useToast'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
+import ProviderCredentialForm from './ProviderCredentialForm.vue'
+import ProviderCredentialListTable from './ProviderCredentialListTable.vue'
 interface Props {
  scope: 'system' | 'project'
  projectId?: string
@@ -219,12 +219,13 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  新建凭证
  </Button>
  </header>
- <!-- 空态（work item §Empty State ）-->
+ <!-- 空态（work item §Empty State ） -->
  <div
  v-if="!store.loading && store.credentials.length === 0"
  class="flex flex-col items-center py-16 space-y-4"
  >
- <span:class="[emptyIcon, 'w-16 text-muted-foreground']"
+ <span
+ class="w-16 text-muted-foreground":class="[emptyIcon]"
  aria-hidden="true"
  />
  <h2 class="text-base font-semibold">
@@ -242,11 +243,11 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  v-else:credentials="store.credentials"
  @edit="onEdit"
  @delete="onDelete"
- @toggle-active="onToggleActive"
- @test-connection="onTestConnection"
- @refresh-models="onRefreshModels"
+ @toggleActive="onToggleActive"
+ @testConnection="onTestConnection"
+ @refreshModels="onRefreshModels"
  />
- <!-- 表单 Dialog（新建/编辑）-->
+ <!-- 表单 Dialog（新建/编辑） -->
  <Dialog v-model:open="formOpen">
  <DialogContent class="max-w-2xl">
  <DialogHeader>
@@ -264,7 +265,7 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  />
  </DialogContent>
  </Dialog>
- <!-- 未保存退出二次确认（work item §I-5）-->
+ <!-- 未保存退出二次确认（work item §I-5） -->
  <AlertDialog v-model:open="cancelConfirmOpen">
  <AlertDialogContent>
  <AlertDialogHeader>
@@ -281,7 +282,7 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  </AlertDialogFooter>
  </AlertDialogContent>
  </AlertDialog>
- <!-- 删除凭证二次确认（work item §Destructive ）-->
+ <!-- 删除凭证二次确认（work item §Destructive ） -->
  <AlertDialog v-model:open="deleteConfirmOpen">
  <AlertDialogContent>
  <AlertDialogHeader>

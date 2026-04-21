@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import type {
+ JsonSchemaProperty,
+ ProviderCredentialCreatePayload,
+ ProviderCredentialDto,
+ ProviderCredentialUpdatePayload,
+ ProviderType,
+} from '~/types/providerCredential'
 /**
  * Provider 凭证 schema-driven 动态表单（Phase + CONTEXT ~）
  *
@@ -17,14 +24,6 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { computed, ref, watch } from 'vue'
 import * as z from 'zod'
-import { useProviderCredentialStore } from '~/stores/providerCredential'
-import type {
- JsonSchemaProperty,
- ProviderCredentialCreatePayload,
- ProviderCredentialDto,
- ProviderCredentialUpdatePayload,
- ProviderType,
-} from '~/types/providerCredential'
 import { Button } from '~/components/ui/button'
 import {
  FormControl,
@@ -41,6 +40,7 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
 interface Props {
  initial?: ProviderCredentialDto
  mode: 'create' | 'edit'
@@ -245,7 +245,7 @@ defineExpose({ selectedType })
  <FormMessage />
  </FormItem>
  </FormField>
- <!-- 动态 config 字段（schema-driven）-->
+ <!-- 动态 config 字段（schema-driven） -->
  <div
  v-for="(prop, key) in schemaProperties":key="String(key)"
  class="space-y-1"

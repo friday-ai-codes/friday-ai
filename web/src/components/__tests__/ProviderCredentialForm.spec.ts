@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ProviderCredentialForm from '~/components/providers/ProviderCredentialForm.vue'
 // ==== Mock store 模块（Plan 契约） ====
 // 组件依赖 '~/stores/providerCredential' 与 '~/types/providerCredential'。
 // 本 spec 走 mock 路径，不触 Plan 实际实现，也不触网络。
@@ -124,7 +125,6 @@ vi.mock('~/stores/providerCredential', => {
 // 由于 '~/types/providerCredential' 仅在 import type 处被使用（编译期擦除），
 // 运行时无实际导入；mock 仍然无害，也避免解析警告。
 vi.mock('~/types/providerCredential', => ({}))
-import ProviderCredentialForm from '~/components/providers/ProviderCredentialForm.vue'
 describe('providerCredentialForm', => {
  beforeEach( => {
  setActivePinia(createPinia)

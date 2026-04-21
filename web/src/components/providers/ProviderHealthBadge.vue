@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ProviderHealthStatus } from '~/types/providerCredential'
 /**
  * Provider 健康状态 badge（Phase，CONTEXT ~）
  *
@@ -15,7 +16,6 @@
  * 颜色：严禁在 Badge 上叠加:class="'bg-emerald-...'"（DESIGN.md L111）；仅通过:variant 控制。
  */
 import { computed, ref, watch } from 'vue'
-import type { ProviderHealthStatus } from '~/types/providerCredential'
 import { Badge } from '~/components/ui/badge'
 import {
  Tooltip,
@@ -103,7 +103,7 @@ function onClick {
  class="cursor-pointer inline-flex items-center gap-1 px-2 py-1 select-none":class="{ 'opacity-60 pointer-events-none': locked || props.status === 'testing' }"
  @click="onClick"
  >
- <span:class="[iconByStatus, 'w-3 ']" aria-hidden="true" />
+ <span class="w-3 ":class="[iconByStatus]" aria-hidden="true" />
  <span class="text-xs font-normal">{{ labelByStatus }}</span>
  </Badge>
  </TooltipTrigger>
