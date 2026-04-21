@@ -503,6 +503,114 @@ class ConversationRuntimeView(APIView):
  )
  runtime = await ConversationService.get_conversation_runtime(str(conversation_id))
  return Response(runtime)
+class ConversationMessagesDeleteView(APIView):
+ """Phase：对话历史消息批量清理端点。
+ 路由：``DELETE /api/chat/conversations/{conversation_id}/messages/?before_id=X``
+ 语义（Plan Behavior C-H 契约）：
+ - 硬删 conversation 内 ``created_at < target_message.created_at`` 的消息
+ （Message 模型无 ``is_deleted`` 字段 → 真删）
+ - ``before_id`` 必填；空/缺失 → 400
+ - ``conversation_id`` 不存在 → 404
+ - ``before_id`` 指向的消息不属于本 conversation → 400（防跨 conversation 篡改）
+ - Ownership 校验：非 superuser 必须有 conversation.project MEMBER+ 权限；
+ 跨项目越权 → 403 + audit log ``chat.cleanup_denied_cross_project``
+ - 成功返回 ``{"deleted_count": N}`` + audit log ``chat.messages_cleaned``
+ Threat model（T-/02/03）：
+ - Ownership 校验 via PermissionService.has_project_access(MEMBER+)
+ - before_id 归属校验通过 Django ORM filter(conversation=conv) 强制（Tampering 防御）
+ - 硬删不可恢复 → UI 层必须有二次确认（Plan Task 2 CleanupDialog 中的 AlertDialog）
+ """
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="批量删除对话历史消息",
+ description=(
+ "硬删 before_id 之前的所有消息（created_at 升序）。受 ownership 校验；"
+ "conversation.project 需 user 有 MEMBER+ 权限（superuser 豁免）。"
+ "Phase 。"
+ ),
+ responses={
+ 200: {"description": "删除成功 {deleted_count: N}"},
+ 400: {"description": "before_id 缺失或指向不属于本对话的消息"},
+ 403: {"description": "无权删除其他项目的对话消息"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def delete(self, request, conversation_id):
+ """批量删除 before_id 之前的消息。"""
+ # Lazy import 避免循环（Message 在本模块仅此处使用）
+ from chat.models import Message
+ from permissions.services import PermissionService
+ # 1. before_id query 参数必填
+ before_id = request.query_params.get("before_id")
+ if not before_id:
+ return Response(
+ {"detail": "before_id 参数必填"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 2. 对话存在性
+ try:
+ conversation = await Conversation.objects.select_related("project").aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 3. Ownership 校验（T- mitigate）：非 superuser 必须有 MEMBER+ 权限
+ user = request.user
+ if (
+ getattr(user, "is_authenticated", False)
+ and not getattr(user, "is_superuser", False)
+ and conversation.project_id is not None
+ ):
+ has_access = await sync_to_async(PermissionService.has_project_access)(
+ user, conversation.project, "member"
+ )
+ if not has_access:
+ logger.warning(
+ "chat.cleanup_denied_cross_project",
+ user_id=str(getattr(user, "id", "")),
+ conversation_id=str(conversation.id),
+ project_id=str(conversation.project_id),
+ )
+ return Response(
+ {"detail": "无权删除其他项目的对话消息"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ # 4. before_id 必须指向本 conversation 的消息（T- Tampering 防御）
+ try:
+ target = await Message.objects.aget(
+ id=before_id, conversation=conversation
+ )
+ except Message.DoesNotExist:
+ return Response(
+ {"detail": "before_id 指向的消息不存在或不属于本对话"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ except (ValueError, TypeError):
+ return Response(
+ {"detail": "before_id 参数格式无效"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 5. 硬删（created_at < target.created_at）
+ deleted_count, _ = await Message.objects.filter(
+ conversation=conversation,
+ created_at__lt=target.created_at,
+ ).adelete
+ logger.info(
+ "chat.messages_cleaned",
+ conversation_id=str(conversation.id),
+ before_id=str(before_id),
+ deleted_count=int(deleted_count),
+ )
+ return Response(
+ {"deleted_count": int(deleted_count)},
+ status=status.HTTP_200_OK,
+ )
 class WebPushPublicKeyView(APIView):
  """返回浏览器 Push 订阅所需的 VAPID 公钥。"""
  authentication_classes = [OptionalJWTAuthentication]

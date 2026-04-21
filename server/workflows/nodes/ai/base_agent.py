@@ -10,6 +10,7 @@ ResolvedProviderConfig(source="node", extra={"custom_api": True, ...})
 （分歧 A 覆盖 ）；None -> 工具映射（分歧 B 覆盖 ）。
 """
 import asyncio
+import re
 from abc import abstractmethod
 from typing import Any, ClassVar, Literal
 import structlog
@@ -636,10 +637,58 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  next_handle="error",
  )
  except ContextWindowExceededError as e:
+ # Phase：SSE ERROR 事件结构化 payload。
+ # 解析 langchain_runner.py `_check_context_window` strict_error 消息格式：
+ # context too long: {N} tokens > budget {B} (max_input={I}, max_output={O}, buffer={F})
+ # regex 不匹配时 fallback 到 0 值，保证 error_code / recommended_actions 仍写入。
+ msg = str(e)
+ m = re.match(
+ r"context too long: (\d+) tokens > budget (\d+) "
+ r"\(max_input=(\d+), max_output=(\d+), buffer=(\d+)\)",
+ msg,
+ )
+ if m is not None:
+ estimated = int(m.group(1))
+ budget = int(m.group(2))
+ # max_input / max_output / buffer 解析但暂不外暴露（：前端不做本地估算，max_tokens=budget）
+ _ = (int(m.group(3)), int(m.group(4)), int(m.group(5)))
+ exceeded = max(0, estimated - budget)
+ else:
+ estimated = 0
+ budget = 0
+ exceeded = 0
+ model_name = context.node_config.get("model", "") if isinstance(context.node_config, dict) else ""
  return NodeResult(
  status="failed",
- error=str(e),
- output={"error_code": "context_window_exceeded", "detail": str(e)},
+ error=msg,
+ output={
+ "error_code": "context_window_exceeded",
+ "detail": msg,
+ "estimated_tokens": estimated,
+ "max_tokens": budget,
+ "exceeded_by": exceeded,
+ "model": model_name,
+ "recommended_actions": [
+ {
+ "id": "trim_prompt",
+ "label": "精简 system prompt",
+ "action_type": "navigate",
+ "target": "/prompts/",
+ },
+ {
+ "id": "switch_model",
+ "label": "换大 context 模型",
+ "action_type": "navigate",
+ "target": "settings.model",
+ },
+ {
+ "id": "cleanup_history",
+ "label": "清理对话历史",
+ "action_type": "dialog",
+ "target": "CleanupDialog",
+ },
+ ],
+ },
  next_handle="error",
  )
  except ValueError as e:

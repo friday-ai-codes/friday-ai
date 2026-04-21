@@ -11,6 +11,7 @@ from .views import (
  ConflictCheckView,
  ConversationDetailView,
  ConversationListView,
+ ConversationMessagesDeleteView,
  ConversationPreflightView,
  ConversationRuntimeView,
  DiffSummaryView,
@@ -47,6 +48,12 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/preflight/",
  ConversationPreflightView.as_view,
  name="conversation-preflight",
+ ),
+ # Phase：对话历史批量清理（硬删 before_id 之前消息）
+ path(
+ "conversations/<uuid:conversation_id>/messages/",
+ ConversationMessagesDeleteView.as_view,
+ name="conversation-messages-delete",
  ),
  path(
  "conversations/<uuid:conversation_id>/interrupt/",
