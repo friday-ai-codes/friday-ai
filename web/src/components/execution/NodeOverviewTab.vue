@@ -8,12 +8,30 @@ import type { NodeExecution } from '~/stores/useExecutionsStore'
 import { computed } from 'vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import Badge from '~/components/ui/badge/Badge.vue'
+import ExecutionProviderSnapshot from '~/components/workflow/execution/ExecutionProviderSnapshot.vue'
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
+/**：AI 节点 Provider 快照（由上层 NodeDetailSheet 透传） */
+interface NodeSnapshot {
+ provider_type: 'anthropic' | 'openai_responses' | 'openai_chat' | 'gemini' | 'ollama'
+ model: string
+ source: 'node' | 'conversation' | 'project' | 'system'
+ credential_id: string | null
+}
 const props = defineProps<{
  nodeExecution: NodeExecution
  bottleneckInfo?: { level: string, rank: number, durationPercent: number } | null
+ /**：AI 节点快照；undefined 表示非 AI 节点（不渲染），null 表示历史 Execution 快照 miss */
+ providerSnapshot?: NodeSnapshot | null
+ /** Replay 可用性（execution.status ∈ completed/error/failed 等终态） */
+ canReplaySnapshot?: boolean
 }>
+const emit = defineEmits<{
+ /**：用户点击 "使用此快照重放" */
+ replaySnapshot: [nodeId: string]
+}>
+/** 仅 AI 节点 + 有快照（或 null miss）时渲染；非 AI 节点 providerSnapshot 应为 undefined */
+const showProviderSnapshot = computed( => props.providerSnapshot !== undefined)
 const visual = computed( => getNodeVisual(props.nodeExecution.node_type))
 const style = computed( => useNodeStyle(visual.value.color).value)
 function formatDuration(seconds: number | null): string {
@@ -87,6 +105,11 @@ function formatTime(isoStr: string | null): string {
  </div>
  </div>
  </div>
+ <!--：AI 节点 Provider 快照 -->
+ <ExecutionProviderSnapshot
+ v-if="showProviderSnapshot":node-id="nodeExecution.node":snapshot="providerSnapshot ?? null":can-replay="!!canReplaySnapshot"
+ @replay="emit('replaySnapshot', nodeExecution.node)"
+ />
  <!-- 错误信息 -->
  <div
  v-if="nodeExecution.error_message"

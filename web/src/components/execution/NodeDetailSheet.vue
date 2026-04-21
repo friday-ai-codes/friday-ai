@@ -28,6 +28,13 @@ import NodeDebugPanel from './NodeDebugPanel.vue'
 import NodeOverviewTab from './NodeOverviewTab.vue'
 import PlanApprovalPanel from './PlanApprovalPanel.vue'
 import SubStepDetailTab from './SubStepDetailTab.vue'
+/** — AI 节点 Provider 快照类型 */
+interface NodeSnapshot {
+ provider_type: 'anthropic' | 'openai_responses' | 'openai_chat' | 'gemini' | 'ollama'
+ model: string
+ source: 'node' | 'conversation' | 'project' | 'system'
+ credential_id: string | null
+}
 const props = defineProps<{
  open: boolean
  nodeExecution: NodeExecution | null
@@ -42,12 +49,18 @@ const props = defineProps<{
  isDebugPaused?: boolean
  /** Phase: 工作流定义（用于下游变量检查） */
  workflowDefinition?: WorkflowDefinition | null
+ /**：当前节点的 Provider 快照；undefined=非 AI 节点，null=miss */
+ providerSnapshot?: NodeSnapshot | null
+ /**：是否允许基于快照 Replay（由页面根据 execution.status 计算） */
+ canReplaySnapshot?: boolean
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]
  'actionComplete':
  /** Phase: 从此节点继续执行 */
  'resumeFromNode': [nodeId: string]
+ /**：基于快照 Replay */
+ 'replaySnapshot': [nodeId: string]
 }>
 /** 当前 Tab 状态（受控模式，切换节点时重置） */
 const activeTab = ref('overview')
@@ -148,7 +161,8 @@ function handleActionComplete {
  <TabsContent value="overview" class="flex-1 min- mt-0">
  <ScrollArea class="h-full">
  <div class="px-6 py-4 space-y-4">
- <NodeOverviewTab:node-execution="nodeExecution":bottleneck-info="bottleneckInfo"
+ <NodeOverviewTab:node-execution="nodeExecution":bottleneck-info="bottleneckInfo":provider-snapshot="providerSnapshot":can-replay-snapshot="canReplaySnapshot"
+ @replay-snapshot="(nid: string) => emit('replaySnapshot', nid)"
  />
  <!-- Phase: 从此继续执行按钮（仅失败节点） -->
  <div v-if="nodeExecution.status === 'failed'" class="space-y-2">
