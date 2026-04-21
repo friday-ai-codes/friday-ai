@@ -254,12 +254,14 @@ class FetchProjectInfoNode(BaseNode):
  "has_plugin_secret": bool(project.feishu_plugin_secret_encrypted),
  "is_configured": project.has_feishu_config,
  }
- # Claude 配置
+ # Phase Plan：Project.claude_* 字段硬删；
+ # include_claude_config flag 保留为向后兼容 stub（始终返回未配置状态）。
+ # 调用方应改用 include_provider_config（Phase+ 引入新字段读 ProviderCredential）。
  if include_claude_config:
  output["claude_config"] = {
- "has_api_key": bool(project.claude_api_key_encrypted),
- "base_url": project.claude_base_url or "",
- "is_configured": bool(project.claude_api_key_encrypted),
+ "has_api_key": False,
+ "base_url": "",
+ "is_configured": False,
  }
  # Webhook Token
  if include_webhook_token:

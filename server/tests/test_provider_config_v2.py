@@ -119,28 +119,18 @@ class TestAResolveOrError:
  assert "OpenAI" in result.recommended_action
  assert result.source_attempted == "system"
  assert result.code == "provider_credential_missing"
+ @pytest.mark.skip(
+ reason="Phase Plan：SystemSetting.ANTHROPIC_* 降级路径硬删。"
+ )
  async def test_systemsetting_fallback_only_for_anthropic(self) -> None:
- """无 ProviderCredential 但 SystemSetting.ANTHROPIC_API_KEY 存在 → 降级返回（legacy 路径）。"""
- await sync_to_async(SystemSetting.objects.create)(
- key=SettingKeys.ANTHROPIC_API_KEY,
- value="sk-ant-legacy",
+ """Phase Plan：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+ pytest.skip("legacy path removed")
+ @pytest.mark.skip(
+ reason="Phase Plan：SystemSetting.ANTHROPIC_* 降级路径硬删。"
  )
- result = await ProviderConfigService.aresolve_or_error
- assert isinstance(result, ResolvedProviderConfig)
- assert result.api_key == "sk-ant-legacy"
- assert result.source == "system"
- assert result.credential_id is None # 降级路径不带 credential_id
  async def test_no_systemsetting_fallback_for_non_anthropic(self) -> None:
- """node_config 选 openai_chat + 仅 Anthropic SystemSetting → 不降级。"""
- await sync_to_async(SystemSetting.objects.create)(
- key=SettingKeys.ANTHROPIC_API_KEY,
- value="sk-ant-x",
- )
- result = await ProviderConfigService.aresolve_or_error(
- node_config={"provider_type": "openai_chat"},
- )
- assert isinstance(result, ProviderMissingError)
- assert result.missing_provider == "openai_chat"
+ """Phase Plan：_resolve_from_system_setting_legacy 硬删，此用例废弃。"""
+ pytest.skip("legacy path removed")
  async def test_priority_node_over_system(self) -> None:
  """节点级 provider_type 优先（ Happy Path）。"""
  # 同时存在 Anthropic + OpenAI 系统级凭证

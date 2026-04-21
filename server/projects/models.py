@@ -40,39 +40,10 @@ class Project(models.Model):
  default="",
  help_text="飞书文档导出目标文件夹 token",
  )
- # Claude configuration
- claude_api_key_encrypted = models.TextField(
- blank=True,
- null=True,
- help_text="[v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
- claude_base_url = models.CharField(
- max_length=500,
- blank=True,
- null=True,
- help_text="[v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
- claude_default_model = models.CharField(
- max_length=200,
- blank=True,
- null=True,
- help_text="[v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
- # Provider 配置（v8.1 多模型支持）
- default_provider_type = models.CharField(
- max_length=50,
- null=True,
- blank=True,
- verbose_name="默认 Provider 类型",
- help_text="项目默认 Provider，为空时使用系统级配置 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
- default_model = models.CharField(
- max_length=200,
- null=True,
- blank=True,
- verbose_name="默认模型",
- help_text="项目默认模型 ID，为空时使用 Provider 默认模型 [v21.0 deprecated, will be removed after Phase UI cuts over to ProviderCredential]",
- )
+ # Phase Plan：v8.1 Claude configuration 字段硬删
+ # 删除：claude_api_key_encrypted / claude_base_url / claude_default_model
+ # default_provider_type / default_model
+ # 替代：ProviderCredential(scope="project", scope_id=project.id) + default_provider_credential_id FK
  # Phase：项目级默认 Provider 凭证（四层解析 L3）
  default_provider_credential_id = models.ForeignKey(
  "system.ProviderCredential",

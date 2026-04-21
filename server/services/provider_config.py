@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any, Literal, Union
 from uuid import UUID
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
-from system.models import SettingKeys, SystemSetting
+# Phase Plan：SettingKeys.ANTHROPIC_* 4 常量 +
+# SettingKeys.DEFAULT_PROVIDER_TYPE 常量硬删；provider_config 不再依赖 SystemSetting 行。
 if TYPE_CHECKING:
  from system.models import ProviderCredential
 # === Provider 类型定义（从 agents.llm.providers 迁移） ===
@@ -220,61 +221,82 @@ def _parse_uuid_or_none(value: Any) -> UUID | None:
  return UUID(str(value))
  except (ValueError, TypeError, AttributeError):
  return None
-# PROVIDER_REGISTRY 的 env_key（大写）→ SettingKeys 的值（小写）映射。
-ENV_KEY_TO_SETTING_KEY: dict[str, str] = {
- "ANTHROPIC_API_KEY": SettingKeys.ANTHROPIC_API_KEY,
-}
-def _get_setting_value_sync(key: str) -> str | None:
- """同步获取系统设置值（自动解密）。"""
- from common.encryption import decrypt_value
+# ============================================================================
+# Phase Plan：v8.1 SettingKeys.ANTHROPIC_* 硬删后 legacy 兼容层
+# 从 ProviderCredential(scope=system, provider_type=anthropic, name=default) 读配置。
+# ============================================================================
+async def aget_legacy_anthropic_config -> dict[str, str]:
+ """Phase Plan 替代 SettingKeys.ANTHROPIC_* 读取路径。
+ 从系统级 default anthropic ProviderCredential 读 api_key / base_url / default_model。
+ 若无凭证返回空字符串字典（keys 固定）。供既有 legacy 路径平滑过渡使用。
+ Returns:
+ {
+ "api_key": str, # 解密后的 Anthropic API key，可能为空
+ "base_url": str,
+ "default_model": str,
+ "small_model": str, # 与 SettingKeys.ANTHROPIC_SMALL_MODEL 兼容；
+ # ProviderCredential 无 small_model 列，返回空字符串。
+ }
+ """
+ from system.models import ProviderCredential
+ empty_result = {
+ "api_key": "",
+ "base_url": "",
+ "default_model": "",
+ "small_model": "",
+ }
  try:
- setting = SystemSetting.objects.get(key=key)
- if not setting.value:
- return None
- if setting.is_encrypted:
- return decrypt_value(setting.value)
- return setting.value
- except SystemSetting.DoesNotExist:
- return None
-async def _get_setting_value_async(key: str) -> str | None:
- """异步获取系统设置值（自动解密）。"""
- from common.encryption import decrypt_value
+ cred = await ProviderCredential.objects.aget(
+ scope="system",
+ provider_type="anthropic",
+ name="default",
+ is_active=True,
+ )
+ except ProviderCredential.DoesNotExist:
+ return empty_result
  try:
- setting = await SystemSetting.objects.aget(key=key)
- if not setting.value:
- return None
- if setting.is_encrypted:
- return decrypt_value(setting.value)
- return setting.value
- except SystemSetting.DoesNotExist:
- return None
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[ProviderType.ANTHROPIC].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ except (ValidationError, Exception): # noqa: BLE001
+ return empty_result
+ api_key_value = ""
+ if hasattr(validated, "api_key") and validated.api_key is not None:
+ secret = validated.api_key
+ api_key_value = (
+ secret.get_secret_value if hasattr(secret, "get_secret_value") else str(secret)
+ )
+ base_url = getattr(validated, "base_url", "") or cred.base_url or ""
+ default_model = cred.default_model or ""
+ return {
+ "api_key": api_key_value,
+ "base_url": base_url,
+ "default_model": default_model,
+ "small_model": "", # ProviderCredential 无此字段
+ }
+# Phase Plan：ENV_KEY_TO_SETTING_KEY + SettingKeys.ANTHROPIC_*
+# 全部硬删；legacy 路径走 aget_legacy_anthropic_config 读 ProviderCredential。
+# Phase Plan：_get_setting_value_sync/_get_setting_value_async 硬删。
+# provider_config 不再读 SystemSetting 行；凭证解析全部走 ProviderCredential 表。
 def _resolve_provider_type(
  node_config: dict[str, Any] | None,
  conversation: Any | None,
  project: Any | None,
- get_setting: Any,
+ get_setting: Any, # 保留签名向后兼容；Phase Plan 不再读 SettingKeys.DEFAULT_PROVIDER_TYPE
 ) -> tuple[ProviderType, str]:
  """从四层配置中解析 provider_type。
- 返回 (ProviderType, source) 元组。
- 四层都没有时默认使用 ANTHROPIC。
+ Phase Plan：v8.1 SettingKeys.DEFAULT_PROVIDER_TYPE +
+ Conversation.provider_type + Project.default_provider_type 硬删后，
+ provider_type 由 ProviderCredential 层承载；本函数仅按 node_config 层探测，
+ 其他层返回默认 ANTHROPIC（由 _resolve_credential_async 走 ProviderCredential FK 四层）。
  """
- # 1. 节点级
+ # 1. 节点级（node_config 仍可携带 provider_type 显式覆盖）
  if node_config and node_config.get("provider_type"):
  pt_str = node_config["provider_type"]
  return _parse_provider_type(pt_str), "node"
- # 2. 对话级
- if conversation is not None and getattr(conversation, "provider_type", None):
- pt_str = conversation.provider_type
- return _parse_provider_type(pt_str), "conversation"
- # 3. 项目级
- if project is not None and getattr(project, "default_provider_type", None):
- pt_str = project.default_provider_type
- return _parse_provider_type(pt_str), "project"
- # 4. 系统级
- system_pt = get_setting(SettingKeys.DEFAULT_PROVIDER_TYPE)
- if system_pt:
- return _parse_provider_type(system_pt), "system"
- # 默认使用 Anthropic
+ # 2-4 层：v8.1 legacy 字段已硬删，provider_type 由 ProviderCredential 承载
+ # 默认使用 Anthropic（最终 provider_type 由 _resolve_credential_async 查到的
+ # credential.provider_type 决定，此处仅兜底 system 层未命中场景）
  return ProviderType.ANTHROPIC, "system"
 def _parse_provider_type(value: str) -> ProviderType:
  """将字符串转换为 ProviderType 枚举。"""
@@ -282,29 +304,6 @@ def _parse_provider_type(value: str) -> ProviderType:
  return ProviderType(value)
  except ValueError:
  raise ProviderConfigError(f"不支持的 Provider 类型: {value}")
-def _resolve_credential(
- provider_type: ProviderType,
- get_setting: Any,
-) -> str:
- """根据 Provider 类型查找凭据。
- Raises:
- ProviderConfigError: 凭据未配置
- """
- metadata = PROVIDER_REGISTRY[provider_type]
- display_name = metadata.display_name
- env_key = metadata.env_key
- # API Key 类型
- setting_key = ENV_KEY_TO_SETTING_KEY.get(env_key)
- if not setting_key:
- raise ProviderConfigError(
- f"{display_name} 的凭据键 {env_key} 没有对应的系统设置映射"
- )
- credential = get_setting(setting_key)
- if not credential:
- raise ProviderConfigError(
- f"{display_name} 凭据未配置，请在系统设置中配置 {setting_key}"
- )
- return credential
 # === Phase 重构：纯函数 + IO 分层（Pitfall 28 sync/async drift 规避）===
 async def _fetch_credential_by_id(credential_id: UUID) -> "ProviderCredential | None":
  """IO 函数：异步查单行凭证（按 UUID）。"""
@@ -377,36 +376,9 @@ async def _resolve_credential_async(
  if cred is not None:
  return cred, "system"
  return None, "system"
-async def _resolve_from_system_setting_legacy(
- provider_type: ProviderType,
- source: str = "system",
-) -> ResolvedProviderConfig | None:
- """SystemSetting 兼容降级层（仅 Anthropic）。
- D3 锁定：仅 provider_type == ANTHROPIC 时尝试从
- SystemSetting.ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL 读取；
- 其他 Provider 不降级（v21.0 不在 SystemSetting 引入新 key）。
- Phase 完全清理 SystemSetting 后移除此函数。
- source 参数：沿用调用方（aresolve_or_error）解析出的节点/对话/项目/系统 source，
- 保持旧 aresolve 向后兼容契约（`node_config["provider_type"]="anthropic"` 走降级
- 时 source 仍需为 "node"）。
- """
- if provider_type != ProviderType.ANTHROPIC:
- return None
- api_key = await _get_setting_value_async(SettingKeys.ANTHROPIC_API_KEY)
- if not api_key:
- return None
- base_url = (
- await _get_setting_value_async(SettingKeys.ANTHROPIC_BASE_URL)
- or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
- )
- return ResolvedProviderConfig(
- provider_type=ProviderType.ANTHROPIC,
- api_key=api_key,
- base_url=base_url,
- source=source,
- credential_id=None,
- extra={},
- )
+# Phase Plan：_resolve_from_system_setting_legacy 函数硬删。
+# SystemSetting.ANTHROPIC_* 4 行已通过 data_migrations.seed_provider_credentials
+# 导入为 ProviderCredential（Phase 已落地）；降级路径不再需要。
 class ProviderConfigService:
  """四层配置优先级解析服务。
  解析顺序：节点级 > 对话级 > 项目级 > 系统级。
@@ -418,35 +390,15 @@ class ProviderConfigService:
  conversation: Any | None = None,
  project: Any | None = None,
  ) -> ResolvedProviderConfig:
- """同步解析 Provider 配置。
- Args:
- node_config: 节点级配置（含 provider_type 键）
- conversation: 对话实例（含 provider_type 字段）
- project: 项目实例（含 default_provider_type 字段）
- Returns:
- ResolvedProviderConfig 配置解析结果
+ """同步解析 Provider 配置（Phase Plan / 后仅保留向后兼容 stub）。
+ Phase Plan：legacy SettingKeys.ANTHROPIC_* 硬删后，同步路径不再支持
+ 从 SystemSetting 降级。调用方应迁移到 aresolve_or_error。
  Raises:
- ProviderConfigError: 配置缺失或凭据未配置
+ ProviderConfigError: 同步上下文下凭证解析不再支持
  """
- provider_type, source = _resolve_provider_type(
- node_config, conversation, project, _get_setting_value_sync
- )
- credential = _resolve_credential(provider_type, _get_setting_value_sync)
- # base_url: 系统设置优先，回退到注册表默认值
- base_url = (
- _get_setting_value_sync(SettingKeys.ANTHROPIC_BASE_URL)
- or PROVIDER_REGISTRY[provider_type].default_base_url
- )
- logger.info(
- "provider_config_resolved",
- provider_type=str(provider_type),
- source=source,
- )
- return ResolvedProviderConfig(
- provider_type=provider_type,
- api_key=credential,
- base_url=base_url,
- source=source,
+ raise ProviderConfigError(
+ "同步 resolve 已在 Phase Plan 硬删；请使用 "
+ "ProviderConfigService.aresolve_or_error(...) 异步接口"
  )
  @staticmethod
  async def aresolve_or_error(
@@ -455,65 +407,32 @@ class ProviderConfigService:
  project: Any | None = None,
  ) -> AResolveResult:
  """ Result 模式入口。不抛异常，返回 ResolvedProviderConfig | ProviderMissingError。
- 四层优先级：节点 > 对话 > 项目 > 系统。
- 系统级未命中且 provider=anthropic 时尝试 SystemSetting.ANTHROPIC_* 兼容降级。
+ Phase Plan：SettingKeys.DEFAULT_PROVIDER_TYPE +
+ Conversation.provider_type + Project.default_provider_type 硬删后，
+ provider_type 仅通过 node_config 显式覆盖；其他层由 ProviderCredential 承载。
+ 四层优先级：节点 FK > 对话 FK > 项目 FK > 系统 default ProviderCredential。
  全部未命中或 Pydantic 校验失败 → ProviderMissingError。
  """
- # 1. 复用现有 _resolve_provider_type 决定 provider_type（不重写，沿用 sync 同层算法）
- # _resolve_provider_type 的前三层（node/conversation/project）不访问 DB；
- # 第四层会调用 get_setting 读 SystemSetting —— 这里传入 sync 版本前会先兜底
- # 异步读系统级 DEFAULT_PROVIDER_TYPE。
- # 同步推导调用方 source（node/conversation/project/system），
- # 用于 SystemSetting 降级路径保持向后兼容（aresolve 旧契约）。
- caller_source = "system"
+ # 1. provider_type 探测：仅支持 node_config 显式；其他层由 ProviderCredential 承载
  try:
  if node_config and node_config.get("provider_type"):
  provider_type = _parse_provider_type(node_config["provider_type"])
- caller_source = "node"
- elif conversation is not None and getattr(
- conversation, "provider_type", None
- ):
- provider_type = _parse_provider_type(conversation.provider_type)
- caller_source = "conversation"
- elif project is not None and getattr(
- project, "default_provider_type", None
- ):
- provider_type = _parse_provider_type(project.default_provider_type)
- caller_source = "project"
  else:
- system_pt = await _get_setting_value_async(
- SettingKeys.DEFAULT_PROVIDER_TYPE
- )
- provider_type = (
- _parse_provider_type(system_pt) if system_pt else ProviderType.ANTHROPIC
- )
- caller_source = "system"
+ # 默认 Anthropic；最终 provider_type 由 _resolve_credential_async
+ # 查到的 ProviderCredential.provider_type 决定
+ provider_type = ProviderType.ANTHROPIC
  except ProviderConfigError as e:
- # provider_type 字段非法
  return ProviderMissingError(
  missing_provider="",
  recommended_action=str(e),
  source_attempted="system",
  )
- # 2. 四层优先级查 ProviderCredential
+ # 2. 四层优先级查 ProviderCredential（FK）
  credential, source = await _resolve_credential_async(
  provider_type, node_config, conversation, project
  )
- # 3. 系统级未命中 → 尝试 SystemSetting 兼容降级（仅 Anthropic）
- # 降级时 source 沿用 caller_source（向后兼容旧 aresolve 的 source 语义：
- # "provider_type 来自哪一层"；ProviderCredential 命中路径 source 描述
- # "凭证来自哪一层"）
  if credential is None:
- legacy = await _resolve_from_system_setting_legacy(
- provider_type, source=caller_source
- )
- if legacy is not None:
- logger.info(
- "provider_config_resolved_via_legacy_systemsetting",
- provider_type=str(provider_type),
- )
- return legacy
- # 4. 全部未命中 → 结构化错误
+ # 全部未命中 → 结构化错误
  metadata = PROVIDER_REGISTRY[provider_type]
  return ProviderMissingError(
  missing_provider=str(provider_type),
@@ -523,6 +442,11 @@ class ProviderConfigService:
  ),
  source_attempted=source,
  )
+ # 命中凭证后实际 provider_type 以 credential 为准（支持多 Provider 场景）
+ try:
+ provider_type = _parse_provider_type(str(credential.provider_type))
+ except ProviderConfigError:
+ pass # 保留默认 provider_type
  # 5. 解密 + Pydantic credential_schema 校验
  # T- / T- 缓解：失败时不把 ValidationError 内容写入日志
  try:

@@ -164,9 +164,8 @@ def urls:
  @staticmethod
  def project_unlink_repository(project_id, repo_id):
  return f"/api/projects/{project_id}/repositories/{repo_id}/"
- @staticmethod
- def project_claude_config(project_id):
- return f"/api/projects/{project_id}/claude-config/"
+ # Phase Plan：project_claude_config helper 已随 v8.1
+ # /api/projects/<id>/claude-config/ 端点硬删一并移除。
  # Repositories
  repository_list = reverse("repository-list")
  @staticmethod

@@ -107,36 +107,6 @@ class TestProjectRepositoryAssociation:
  )
  assert response.status_code == status.HTTP_204_NO_CONTENT
 # ============================================================================
-# 项目 Claude 配置测试
+# Phase Plan：v8.1 /api/projects/<id>/claude-config/ 端点硬删；
+# TestProjectClaudeConfig 整类删除。契约 404 由 tests/test_claude_config_endpoint_removed.py 覆盖。
 # ============================================================================
-@pytest.mark.django_db
-class TestProjectClaudeConfig:
- """项目 Claude 配置接口测试。"""
- def test_get_claude_config_default(self, authenticated_admin_client, project, urls):
- """测试获取默认 Claude 配置。"""
- response = authenticated_admin_client.get(urls.project_claude_config(project.id))
- assert response.status_code == status.HTTP_200_OK
- assert response.data["has_api_key"] is False
- assert response.data["config_source"] == "system"
- def test_set_claude_config(self, authenticated_admin_client, project, urls):
- """测试设置 Claude 配置。"""
- response = authenticated_admin_client.put(
- urls.project_claude_config(project.id),
- {"api_key": "sk-test-key-12345", "base_url": "https://api.example.com"},
- format="json",
- )
- assert response.status_code == status.HTTP_200_OK
- assert response.data["has_api_key"] is True
- assert response.data["base_url"] == "https://api.example.com"
- assert response.data["config_source"] == "project"
- def test_delete_claude_config(self, authenticated_admin_client, project, urls):
- """测试删除 Claude 配置。"""
- # 先设置
- authenticated_admin_client.put(
- urls.project_claude_config(project.id),
- {"api_key": "sk-test-key"},
- format="json",
- )
- # 再删除
- response = authenticated_admin_client.delete(urls.project_claude_config(project.id))
- assert response.status_code == status.HTTP_204_NO_CONTENT

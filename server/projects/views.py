@@ -19,8 +19,6 @@ from .models import (
  generate_webhook_token,
 )
 from .serializers import (
- ClaudeConfigCreateSerializer,
- ClaudeConfigSerializer,
  FeishuConfigCreateSerializer,
  FeishuConfigSerializer,
  FeishuIMConfigCreateSerializer,
@@ -259,65 +257,9 @@ class ProjectViewSet(ModelViewSet):
  return Response(
  WebhookTokenSerializer({"webhook_token": project.feishu_webhook_token}).data
  )
- # === Claude configuration ===
- @action(detail=True, methods=["get", "put", "delete"], url_path="claude-config")
- async def claude_config(self, request, pk=None):
- """Manage Claude configuration."""
- project = await self.aget_object
- # 写操作需要 admin+ 权限
- if request.method != "GET":
- if not request.user.is_superuser and not PermissionService.has_project_access(
- request.user, project, ProjectRole.ADMIN
- ):
- return Response(
- {"detail": "仅项目管理员可修改配置"},
- status=status.HTTP_403_FORBIDDEN,
- )
- if request.method == "GET":
- has_api_key = bool(project.claude_api_key_encrypted)
- source = "project" if has_api_key else "system"
- return Response(
- ClaudeConfigSerializer(
- {
- "has_api_key": has_api_key,
- "base_url": project.claude_base_url,
- "default_model": project.claude_default_model,
- "source": source,
- }
- ).data
- )
- if request.method == "PUT":
- serializer = ClaudeConfigCreateSerializer(data=request.data)
- serializer.is_valid(raise_exception=True)
- api_key = serializer.validated_data.get("api_key")
- if api_key is not None:
- if api_key == "":
- project.claude_api_key_encrypted = None
- else:
- project.claude_api_key_encrypted = encrypt_value(api_key)
- base_url = serializer.validated_data.get("base_url")
- if base_url is not None:
- project.claude_base_url = base_url if base_url else None
- default_model = serializer.validated_data.get("default_model")
- if default_model is not None:
- project.claude_default_model = default_model if default_model else None
- await project.asave
- return Response(
- ClaudeConfigSerializer(
- {
- "has_api_key": bool(project.claude_api_key_encrypted),
- "base_url": project.claude_base_url,
- "default_model": project.claude_default_model,
- "source": "project" if project.claude_api_key_encrypted else "system",
- }
- ).data
- )
- # DELETE
- project.claude_api_key_encrypted = None
- project.claude_base_url = None
- project.claude_default_model = None
- await project.asave
- return Response(status=status.HTTP_204_NO_CONTENT)
+ # Phase Plan：claude_config @action 整体硬删。
+ # 替代：Phase ProviderCredential viewset（/api/system/provider-credentials/）
+ # 及项目级 scope 凭证 API。调用 /api/projects/<id>/claude-config/ 应返回 404。
  # === Feishu IM App configuration ===
  @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-im-config")
  async def feishu_im_config(self, request, pk=None):

@@ -17,15 +17,14 @@ import structlog
 from langchain_core.messages import HumanMessage
 from agents.llm_factory import build_chat_model
 from chat.models import Conversation, Message
-from chat.services import aget_setting_value
 from prompts.keys import PromptSlugs
 from prompts.services import render_prompt
 from services.provider_config import (
  ProviderConfigService,
  ProviderMissingError,
  ProviderType,
+ aget_legacy_anthropic_config,
 )
-from system.models import SettingKeys
 logger = structlog.get_logger(__name__)
 # 标题生成使用系统配置的默认模型（与对话模型一致）
 TITLE_MODEL_FALLBACK: Final[str] = "claude-sonnet-4-20250514"
@@ -79,11 +78,10 @@ async def generate_title(
  provider_type=str(resolved.provider_type),
  )
  return None
- # 使用系统配置的 Anthropic 模型，回退到轻量默认值
- model = (
- await aget_setting_value(SettingKeys.ANTHROPIC_MODEL)
- or TITLE_MODEL_FALLBACK
- )
+ # Phase Plan：SettingKeys.ANTHROPIC_MODEL 硬删后走
+ # ProviderCredential.default_model，回退到轻量默认值
+ legacy = await aget_legacy_anthropic_config
+ model = legacy["default_model"] or TITLE_MODEL_FALLBACK
  # Phase: 走 Prompt Center 渲染，fallback 保留原常量（ 双轨）
  # rendered_prompt 字节级 hash 等价契约不变（ Phase 会再验一次）
  rendered_prompt = await render_prompt(

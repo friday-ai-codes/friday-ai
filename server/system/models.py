@@ -17,13 +17,12 @@ class SystemSetting(models.Model):
  def __str__(self) -> str:
  return self.key
 class SettingKeys:
- """Predefined setting keys."""
- ANTHROPIC_API_KEY = "anthropic_api_key"
- ANTHROPIC_BASE_URL = "anthropic_base_url"
- ANTHROPIC_MODEL = "anthropic_model"
- ANTHROPIC_SMALL_MODEL = "anthropic_small_model"
- # Provider 配置
- DEFAULT_PROVIDER_TYPE = "default_provider_type"
+ """Predefined setting keys.
+ Phase Plan：以下 v8.1 legacy 常量已硬删：
+ - ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL / ANTHROPIC_SMALL_MODEL
+ - DEFAULT_PROVIDER_TYPE
+ 已由 ProviderCredential 表 + ProviderConfigService 承载。
+ """
  GIT_HTTP_PROXY = "git_http_proxy"
  # Vector Index Settings
  QDRANT_URL = "qdrant_url"

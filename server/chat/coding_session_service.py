@@ -43,15 +43,16 @@ async def build_dispatch_metadata(
  Returns:
  (env_metadata, repo_url) 元组。
  """
- from chat.services import aget_setting_value
  from common.encryption import decrypt_value
  from repositories.models import GitCredential
- from system.models import SettingKeys
- # API 密钥
- api_key = await aget_setting_value(SettingKeys.ANTHROPIC_API_KEY) or ""
- base_url = await aget_setting_value(SettingKeys.ANTHROPIC_BASE_URL) or ""
- system_model = await aget_setting_value(SettingKeys.ANTHROPIC_MODEL) or ""
- small_model = await aget_setting_value(SettingKeys.ANTHROPIC_SMALL_MODEL) or ""
+ from services.provider_config import aget_legacy_anthropic_config
+ # Phase Plan：SettingKeys.ANTHROPIC_* 硬删后走
+ # ProviderCredential(scope=system, name=default, provider_type=anthropic)
+ legacy = await aget_legacy_anthropic_config
+ api_key = legacy["api_key"]
+ base_url = legacy["base_url"]
+ system_model = legacy["default_model"]
+ small_model = legacy["small_model"]
  env_metadata: dict[str, str] = {
  "repository_id": str(repository.id),
  "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
