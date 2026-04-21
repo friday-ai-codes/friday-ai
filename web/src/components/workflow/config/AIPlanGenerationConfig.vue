@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { WorkflowEdge, WorkflowNode } from '~/types/workflow/store'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
  Collapsible,
  CollapsibleContent,
@@ -8,6 +8,8 @@ import {
 } from '~/components/ui/collapsible'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import ModelSelect from '~/components/providers/ModelSelect.vue'
+import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 import { MarkdownEditorModal, SmartMarkdownEditor, SmartTextarea } from '~/components/workflow/smart-input'
 import { useConfigModel } from '~/composables/useConfigModel'
@@ -35,6 +37,7 @@ interface AIPlanGenerationConfig {
  api_base_url: string
  api_key: string
  model: string
+ provider_credential_id?: string | null
 }
 // ============================================================================
 // Props & Emits
@@ -74,6 +77,15 @@ const useCustomApi = computed({
 const apiBaseUrl = field('api_base_url', '') as import('vue').WritableComputedRef<string>
 const apiKey = field('api_key', '') as import('vue').WritableComputedRef<string>
 const model = field('model', '') as import('vue').WritableComputedRef<string>
+// Provider 凭证(Phase)
+// AIPlanGenerationConfig 当前模板未渲染 thinking / reasoning_effort 字段,
+// 故不声明对应的 capability computed(避免 noUnusedLocals);仅保留 id 字段双向绑定。
+// Phase 若在方案生成卡片内补 thinking UI,再按 Task 08-01 模式接入 providerStore + supports_thinking。
+const providerCredentialIdField = field('provider_credential_id', null) as import('vue').WritableComputedRef<string | null>
+const providerCredentialId = computed<string | null>({
+ get: => providerCredentialIdField.value ?? null,
+ set: (v: string | null) => { providerCredentialIdField.value = v },
+})
 // ============================================================================
 // Tag Input State
 // ============================================================================
@@ -295,6 +307,31 @@ const advancedOpen = ref(false)
  />
  </CollapsibleTrigger>
  <CollapsibleContent class="space-y-3 pt-1.5">
+ <!-- Provider 凭证(Phase/05/06) -->
+ <div class="space-y-1.5">
+ <Label class="text-xs font-normal">
+ Provider 凭证
+ </Label>
+ <ProviderCredentialDropdown:model-value="providerCredentialId"
+ scope="system"
+ @update:model-value="v => providerCredentialId = v"
+ />
+ <p class="text-[10px] text-muted-foreground">
+ 选择一条启用中的 Provider 凭证,未选择则走系统默认
+ </p>
+ </div>
+ <!-- 模型(方案生成需要 ReadFile/Grep 等工具, requires-tools=true) -->
+ <div class="space-y-1.5">
+ <Label class="text-xs font-normal">
+ 模型
+ </Label>
+ <ModelSelect:credential-id="providerCredentialId":requires-tools="true":model-value="model"
+ @update:model-value="v => model = v ?? ''"
+ />
+ <p class="text-[10px] text-muted-foreground">
+ 仅列出当前 Provider 支持 tool use 的模型
+ </p>
+ </div>
  <AIModelConfig
  v-model:use-custom-api="useCustomApi"
  v-model:api-base-url="apiBaseUrl"
