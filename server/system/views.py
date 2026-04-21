@@ -165,3 +165,181 @@ class ProviderCredentialTestConnectionView(APIView):
  # 仅 Ollama 路径非 None；其他 Provider 保持 null
  "available_models": result.available_models,
  })
+# ============================================================================
+# Phase / /：ProviderCredential CRUD ViewSet
+# ============================================================================
+import structlog
+from adrf.viewsets import ModelViewSet as AsyncModelViewSet
+from django.db.models import Q
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from identity.credential_access import (
+ CredentialScopeViolation,
+ validate_credential_scope,
+)
+from system.permissions import ProviderCredentialPermission
+from system.serializers import (
+ ProviderCredentialCreateSerializer,
+ ProviderCredentialSerializer,
+ ProviderCredentialUpdateSerializer,
+)
+_viewset_logger = structlog.get_logger(__name__)
+class ProviderCredentialViewSet(AsyncModelViewSet):
+ """Provider 凭证 CRUD ViewSet（Phase / / ）。
+ 三层防御：
+ - 层 1：ProviderCredentialPermission（request + object 级权限判定）
+ - 层 2：get_queryset 显式过滤（scope ∪ 用户项目 + query_params）
+ - 层 3：perform_acreate / perform_aupdate 内调 validate_credential_scope 服务
+ 端点（挂 /api/providers/credentials/）：
+ - GET /api/providers/credentials/ list（支持 scope/project_id/is_active/include_inactive 过滤）
+ - POST /api/providers/credentials/ create（Pydantic credential_schema 校验 + Fernet 加密）
+ - GET /api/providers/credentials/{id}/ retrieve（派生 api_key_last4 + has_api_key，不回显明文）
+ - PATCH /api/providers/credentials/{id}/ partial_update（config 留空 = 保持原值）
+ - PUT /api/providers/credentials/{id}/ update
+ - DELETE /api/providers/credentials/{id}/ destroy（硬删）
+ 保留 Phase 既有 ProviderCredentialTestConnectionView（test-connection 端点不动）。
+ @action 扩展（toggle-active / refresh-models / types）归 Plan。
+ """
+ queryset = ProviderCredential.objects.all
+ permission_classes = [IsAuthenticated, ProviderCredentialPermission]
+ def get_serializer_class(self) -> type:
+ """按 action 分派 Read / Create / Update Serializer。"""
+ if self.action in ("create", "acreate"):
+ return ProviderCredentialCreateSerializer
+ if self.action in ("update", "partial_update", "aupdate", "apartial_update"):
+ return ProviderCredentialUpdateSerializer
+ return ProviderCredentialSerializer
+ def get_queryset(self): # type: ignore[no-untyped-def]
+ """ 层 2 queryset 过滤 + 查询参数解析。
+ 过滤顺序：
+ 1. 非 superuser 限 scope='system' ∪ 用户成员项目的 scope='project'
+ 2. 可选 scope=system|project 精确过滤
+ 3. 可选 project_id=<uuid> 精确过滤（scope=project）
+ 4. include_inactive=true 时保留 is_active=false；默认仅 is_active=true
+ 5. 显式 is_active=true|false 覆盖 include_inactive
+ """
+ qs = super.get_queryset
+ user = self.request.user
+ if not getattr(user, "is_authenticated", False):
+ return qs.none
+ # 非 superuser：限 system ∪ 成员项目
+ if not user.is_superuser:
+ from permissions.services import PermissionService
+ user_project_ids = list(
+ PermissionService.get_user_projects(user).values_list("id", flat=True)
+ )
+ qs = qs.filter(
+ Q(scope="system")
+ | Q(scope="project", scope_id__in=user_project_ids)
+ )
+ # query_params 过滤
+ params = self.request.query_params
+ scope = params.get("scope")
+ if scope in ("system", "project"):
+ qs = qs.filter(scope=scope)
+ project_id = params.get("project_id")
+ if project_id:
+ qs = qs.filter(scope="project", scope_id=project_id)
+ #：默认过滤 is_active=True；include_inactive=true 关闭
+ include_inactive = params.get("include_inactive", "false").lower == "true"
+ is_active_param = params.get("is_active")
+ if is_active_param is not None:
+ qs = qs.filter(is_active=is_active_param.lower == "true")
+ elif not include_inactive:
+ qs = qs.filter(is_active=True)
+ return qs.order_by("-updated_at")
+ async def perform_acreate(self, serializer) -> None: # type: ignore[no-untyped-def]
+ """保存前做 scope 校验+ serializer.save async wrap。
+ 流程：
+ 1. 非 superuser 请求 scope='project' 凭证 → 校验用户对 target project 是否有 MEMBER+ 权限
+ 2. 通过后 sync_to_async(serializer.save) 入库（serializer 继承 rest_framework 不支持 asave）
+ 3. 结构化日志记录 provider_credential_created 事件
+ """
+ scope = serializer.validated_data.get("scope")
+ scope_id = serializer.validated_data.get("scope_id")
+ if (
+ scope == "project"
+ and scope_id is not None
+ and not self.request.user.is_superuser
+ ):
+ from permissions.models import ProjectRole
+ from permissions.services import PermissionService
+ from projects.models import Project
+ target_project = await sync_to_async(
+ lambda: Project.objects.filter(id=scope_id).first
+ )
+ if target_project is None:
+ raise ValidationError({"scope_id": "项目不存在"})
+ has_access = await sync_to_async(PermissionService.has_project_access)(
+ self.request.user, target_project, ProjectRole.MEMBER
+ )
+ if not has_access:
+ raise PermissionDenied(
+ "您不是该项目的 MEMBER+，无法为项目创建凭证"
+ )
+ await sync_to_async(serializer.save)
+ _viewset_logger.info(
+ "provider_credential_created",
+ provider_type=serializer.validated_data.get("provider_type"),
+ scope=scope,
+ scope_id=str(scope_id) if scope_id else None,
+ user_id=str(self.request.user.id),
+ )
+ async def perform_aupdate(self, serializer) -> None: # type: ignore[no-untyped-def]
+ """更新前 scope 校验（若 scope 被修改）+ save + 结构化日志。
+ 若 PATCH body 不含 scope/scope_id 字段，说明 scope 不变，跳过 validate_credential_scope；
+ 若含字段，按更新后值重新校验（使用 credential_access 服务保持与节点端语义一致）。
+ """
+ instance = serializer.instance
+ new_scope = serializer.validated_data.get("scope", instance.scope)
+ new_scope_id = serializer.validated_data.get("scope_id", instance.scope_id)
+ if new_scope == "project" and not self.request.user.is_superuser:
+ # 只有 scope/scope_id 发生变动时才重跑 project_access 校验
+ if (
+ "scope" in serializer.validated_data
+ or "scope_id" in serializer.validated_data
+ ):
+ from permissions.models import ProjectRole
+ from permissions.services import PermissionService
+ from projects.models import Project
+ target_project = await sync_to_async(
+ lambda: Project.objects.filter(id=new_scope_id).first
+ )
+ if target_project is None:
+ raise ValidationError({"scope_id": "项目不存在"})
+ has_access = await sync_to_async(
+ PermissionService.has_project_access
+ )(self.request.user, target_project, ProjectRole.MEMBER)
+ if not has_access:
+ raise PermissionDenied(
+ "您不是该项目的 MEMBER+，无法迁移凭证到该项目"
+ )
+ # 附加 credential_access 服务校验：确保 scope/scope_id 自洽
+ # 构造一个快照凭证实例（避免使用旧的 instance 字段组合）
+ snapshot_scope = new_scope
+ snapshot_scope_id = new_scope_id
+ if snapshot_scope == "project":
+ try:
+ # 用已存在的 instance 做模板，临时赋值 scope/scope_id 供 validate 使用
+ instance.scope = snapshot_scope
+ instance.scope_id = snapshot_scope_id
+ await validate_credential_scope(
+ instance,
+ str(snapshot_scope_id) if snapshot_scope_id else None,
+ )
+ except CredentialScopeViolation as exc:
+ raise ValidationError({"scope_id": str(exc)}) from exc
+ await sync_to_async(serializer.save)
+ _viewset_logger.info(
+ "provider_credential_updated",
+ credential_id=str(serializer.instance.id),
+ user_id=str(self.request.user.id),
+ )
+ async def perform_adestroy(self, instance) -> None: # type: ignore[no-untyped-def]
+ """硬删除凭证 + 结构化日志。"""
+ credential_id = str(instance.id)
+ await sync_to_async(instance.delete)
+ _viewset_logger.info(
+ "provider_credential_deleted",
+ credential_id=credential_id,
+ user_id=str(self.request.user.id),
+ )
