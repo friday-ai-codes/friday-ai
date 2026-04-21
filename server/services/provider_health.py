@@ -279,3 +279,188 @@ async def health_check(credential: ProviderCredential) -> HealthCheckResult:
  error_summary=result.error[:80],
  )
  return result
+# ============================================================================
+# Phase：模型清单抽取（fetch_models_for_credential）
+# ============================================================================
+#
+# 与 health_check 分离的原因：
+# - health_check 语义是"探活 + 原子写三字段"（last_health_check_*），Ollama 顺带
+# 写 available_models 是历史协同；其他 4 Provider 的 available_models
+# 需要显式拉取，不能混进 health_check（会污染"探活延迟"指标）。
+# - fetch_models_for_credential 不主动 aupdate last_health_check_status，只在失败
+# 时把脱敏错误写入 last_health_check_error（调用方 ViewSet @action 统一 save）。
+# - 返回 list[dict] 统一形状：[{id, display_name, context_length?}, ...]；
+# 前端 ModelSelect 组件消费。
+async def fetch_models_for_credential(
+ credential: ProviderCredential,
+) -> list[dict[str, Any]]:
+ """按 provider_type dispatch 拉取模型清单。
+ 返回统一结构：[{id: str, display_name: str, context_length?: int}, ...]
+ 失败时返回空 list 并将错误脱敏写入 credential.last_health_check_error（不 raise，
+ 不更新 last_health_check_status——避免污染健康检查语义）。
+ Args:
+ credential: 已从 DB 读取的 ProviderCredential 实例。
+ """
+ # 1. 解密凭证配置
+ try:
+ cfg = credential.get_decrypted_config
+ except Exception as exc:
+ logger.warning(
+ "fetch_models_decrypt_failed",
+ credential_id=str(credential.id),
+ )
+ credential.last_health_check_error = _safe_error(
+ f"decrypt_failed: {type(exc).__name__}"
+ )
+ return
+ # 2. 按 provider_type 分派
+ provider_type = credential.provider_type
+ try:
+ if provider_type == ProviderType.ANTHROPIC.value:
+ return await _fetch_models_anthropic(cfg)
+ if provider_type in (
+ ProviderType.OPENAI_RESPONSES.value,
+ ProviderType.OPENAI_CHAT.value,
+ ):
+ return await _fetch_models_openai(cfg)
+ if provider_type == ProviderType.GEMINI.value:
+ return await _fetch_models_gemini(cfg)
+ if provider_type == ProviderType.OLLAMA.value:
+ return await _fetch_models_ollama(cfg)
+ except Exception as exc:
+ logger.warning(
+ "fetch_models_failed",
+ credential_id=str(credential.id),
+ provider_type=provider_type,
+ error_summary=_safe_error(str(exc), 80),
+ )
+ credential.last_health_check_error = _safe_error(str(exc))
+ return
+ # 未知 provider_type：返回空清单并记录
+ logger.warning(
+ "fetch_models_unknown_provider",
+ credential_id=str(credential.id),
+ provider_type=provider_type,
+ )
+ credential.last_health_check_error = _safe_error(
+ f"unknown_provider_type: {provider_type}"
+ )
+ return
+_FETCH_MODELS_TIMEOUT_SECONDS = 15.0
+async def _fetch_models_anthropic(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+ """Anthropic /v1/models 端点。"""
+ api_key = cfg.get("api_key", "")
+ base_url = (
+ cfg.get("base_url")
+ or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
+ ).rstrip("/")
+ async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
+ resp = await client.get(
+ f"{base_url}/v1/models",
+ headers={
+ "x-api-key": api_key,
+ "anthropic-version": "2023-06-01",
+ },
+ )
+ resp.raise_for_status
+ payload = resp.json
+ data = payload.get("data", ) if isinstance(payload, dict) else
+ return [
+ {
+ "id": m["id"],
+ "display_name": m.get("display_name", m["id"]),
+ }
+ for m in data
+ if isinstance(m, dict) and "id" in m
+ ]
+async def _fetch_models_openai(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+ """OpenAI / Compatible /v1/models 端点（Responses + Chat 两种 API 共用）。"""
+ api_key = cfg.get("api_key", "")
+ base_url = (
+ cfg.get("base_url")
+ or PROVIDER_REGISTRY[ProviderType.OPENAI_CHAT].default_base_url
+ ).rstrip("/")
+ headers = {"Authorization": f"Bearer {api_key}"}
+ if cfg.get("organization_id"):
+ headers["OpenAI-Organization"] = str(cfg["organization_id"])
+ async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
+ resp = await client.get(f"{base_url}/models", headers=headers)
+ resp.raise_for_status
+ payload = resp.json
+ data = payload.get("data", ) if isinstance(payload, dict) else
+ return [
+ {
+ "id": m["id"],
+ "display_name": m.get("id", ""),
+ }
+ for m in data
+ if isinstance(m, dict) and "id" in m
+ ]
+async def _fetch_models_gemini(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+ """Gemini /v1beta/models 端点（api_key 在 query string；name 剥 models/ 前缀）。"""
+ api_key = cfg.get("api_key", "")
+ base_url = PROVIDER_REGISTRY[ProviderType.GEMINI].default_base_url.rstrip("/")
+ async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
+ resp = await client.get(
+ f"{base_url}/models",
+ params={"key": api_key},
+ )
+ resp.raise_for_status
+ payload = resp.json
+ models = payload.get("models", ) if isinstance(payload, dict) else
+ out: list[dict[str, Any]] =
+ for m in models:
+ if not isinstance(m, dict):
+ continue
+ raw_name = m.get("name", "")
+ model_id = raw_name.split("/")[-1] if raw_name else ""
+ if not model_id:
+ continue
+ entry: dict[str, Any] = {
+ "id": model_id,
+ "display_name": m.get("displayName", raw_name),
+ }
+ if m.get("inputTokenLimit") is not None:
+ entry["context_length"] = m["inputTokenLimit"]
+ out.append(entry)
+ return out
+async def _fetch_models_ollama(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+ """Ollama /api/tags 本地模型列表 + /api/show 合并 context_length。
+ /api/show 对未完全 pull 的模型可能返回 4xx：静默降级为仅 id/display_name。
+ """
+ base_url = (
+ cfg.get("base_url")
+ or PROVIDER_REGISTRY[ProviderType.OLLAMA].default_base_url
+ ).rstrip("/")
+ headers: dict[str, str] = {}
+ if cfg.get("bearer_token"):
+ headers["Authorization"] = f"Bearer {cfg['bearer_token']}"
+ async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
+ resp = await client.get(f"{base_url}/api/tags", headers=headers)
+ resp.raise_for_status
+ payload = resp.json
+ models = payload.get("models", ) if isinstance(payload, dict) else
+ out: list[dict[str, Any]] =
+ for m in models:
+ if not isinstance(m, dict) or "name" not in m:
+ continue
+ name = m["name"]
+ entry: dict[str, Any] = {"id": name, "display_name": name}
+ try:
+ show_resp = await client.post(
+ f"{base_url}/api/show",
+ json={"name": name},
+ headers=headers,
+ )
+ show_resp.raise_for_status
+ show_data = show_resp.json
+ model_info = show_data.get("model_info", {})
+ if isinstance(model_info, dict):
+ ctx = model_info.get("llama.context_length")
+ if ctx is not None:
+ entry["context_length"] = ctx
+ except Exception:
+ # /api/show 失败（未 pull / 网关不支持）时静默降级
+ pass
+ out.append(entry)
+ return out

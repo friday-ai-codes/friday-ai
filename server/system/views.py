@@ -171,7 +171,9 @@ class ProviderCredentialTestConnectionView(APIView):
 import structlog
 from adrf.viewsets import ModelViewSet as AsyncModelViewSet
 from django.db.models import Q
+from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.request import Request
 from identity.credential_access import (
  CredentialScopeViolation,
  validate_credential_scope,
@@ -181,6 +183,7 @@ from system.serializers import (
  ProviderCredentialCreateSerializer,
  ProviderCredentialSerializer,
  ProviderCredentialUpdateSerializer,
+ ProviderTypeMetaSerializer,
 )
 _viewset_logger = structlog.get_logger(__name__)
 class ProviderCredentialViewSet(AsyncModelViewSet):
@@ -343,3 +346,90 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  credential_id=credential_id,
  user_id=str(self.request.user.id),
  )
+ # ------------------------------------------------------------------
+ # Phase @action 扩展： toggle + refresh-models
+ # ------------------------------------------------------------------
+ @action(detail=True, methods=["patch"], url_path="toggle-active")
+ async def toggle_active( # type: ignore[no-untyped-def]
+ self, request: Request, pk=None
+ ) -> Response:
+ """ 软禁用 toggle：反转 is_active 并返回新值。
+ aresolve_or_error 在 _fetch_credential_by_id / _fetch_system_default_credential
+ 里均 filter(is_active=True)，本 action 切到 False 后下一次凭证解析自动跳过该凭证；
+ 不做硬删，保留配置 + available_models 等历史状态，便于随时恢复。
+ """
+ credential = await self.aget_object
+ credential.is_active = not credential.is_active
+ await sync_to_async(credential.save)(
+ update_fields=["is_active", "updated_at"]
+ )
+ _viewset_logger.info(
+ "provider_credential_toggle_active",
+ credential_id=str(credential.id),
+ is_active=credential.is_active,
+ user_id=str(request.user.id),
+ )
+ return Response({"is_active": credential.is_active})
+ @action(detail=True, methods=["post"], url_path="refresh-models")
+ async def refresh_models( # type: ignore[no-untyped-def]
+ self, request: Request, pk=None
+ ) -> Response:
+ """：按 provider_type 拉取模型清单 → 写回 available_models。
+ fetch_models_for_credential 内部按 5 Provider 分派 httpx 调 /models 端点；
+ 失败时返回空 list 并把脱敏错误写入 credential.last_health_check_error
+ （不更新 last_health_check_status——避免污染健康检查语义）。
+ 本 action 统一负责持久化 available_models + last_health_check_error。
+ """
+ from services.provider_health import fetch_models_for_credential
+ credential = await self.aget_object
+ models_list = await fetch_models_for_credential(credential)
+ credential.available_models = models_list
+ await sync_to_async(credential.save)(
+ update_fields=[
+ "available_models",
+ "last_health_check_error",
+ "updated_at",
+ ],
+ )
+ _viewset_logger.info(
+ "provider_credential_refresh_models",
+ credential_id=str(credential.id),
+ model_count=len(models_list),
+ user_id=str(request.user.id),
+ )
+ return Response({"available_models": models_list})
+# ============================================================================
+# Phase：ProviderTypesView —— 5 Provider 元信息 + 动态 JSON Schema
+# ============================================================================
+class ProviderTypesView(APIView):
+ """GET /api/providers/types/ —— schema-driven 前端数据源。
+ 返回 5 Provider 元信息列表，每项含 credential_schema_json_schema 字段
+ （来源：PROVIDER_REGISTRY[type].credential_schema.model_json_schema）。
+ 前端 ProviderCredentialForm.vue 据此动态渲染表单字段；新增 Provider 时仅需
+ 更新后端 PROVIDER_REGISTRY，前端无需改代码（ schema-driven）。
+ 权限：IsAuthenticated（T- accept 依据：types 端点是 public meta，
+ 不包含任何凭证数据，仅泄漏"系统支持哪些 Provider"这一非敏感事实）。
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Request) -> Response: # type: ignore[no-untyped-def]
+ from services.provider_config import PROVIDER_REGISTRY
+ data: list[dict[str, object]] =
+ for provider_type, meta in PROVIDER_REGISTRY.items:
+ data.append({
+ "provider_type": provider_type.value,
+ "display_name": meta.display_name,
+ "langchain_prefix": meta.langchain_prefix,
+ "api_format": meta.api_format.value,
+ "credential_type": meta.credential_type.value,
+ "default_base_url": meta.default_base_url,
+ "supports_thinking": meta.supports_thinking,
+ "supports_reasoning": meta.supports_reasoning,
+ "supports_vision": meta.supports_vision,
+ "supports_function_calling": meta.supports_function_calling,
+ "supports_streaming": meta.supports_streaming,
+ "credential_schema_json_schema": (
+ meta.credential_schema.model_json_schema
+ ),
+ })
+ serializer = ProviderTypeMetaSerializer(data, many=True)
+ return Response(serializer.data)
