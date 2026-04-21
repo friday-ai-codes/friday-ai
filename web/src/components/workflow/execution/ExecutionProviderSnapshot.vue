@@ -11,7 +11,7 @@
  * - replay: 用户点击 "使用此快照重放" 按钮
  *
  * 设计要点：
- * - Clean Card（`.card `）风格，禁止 backdrop-blur / 玻璃光晕（work item L33）
+ * - Clean Card（`.card `）风格，严禁玻璃拟态光晕层（work item L33 Clean Card 纠偏）
  * - 折叠态（默认）：显示 provider_type 中文名 + model；展开态：source + Replay 按钮
  * - snapshot=null：渲染 warning Badge + 说明文案 + Replay disabled + tooltip 三重承载
  * （title / aria-label / TooltipContent；happy-dom 下 Portal 不挂 DOM，沿用 Plan 模式）
