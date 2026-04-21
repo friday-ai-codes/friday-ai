@@ -133,44 +133,65 @@ async def test_all_layers_miss_returns_missing_error(
 @pytest.mark.django_db(transaction=True)
 async def test_chain_always_contains_four_layers_in_fixed_order(
  project_a,
- system_default_anthropic_credential,
-) -> None:
- """E：ResolvedProviderChain.chain 恒 4 层，顺序 node → conversation → project → system。"""
- result = await ProviderConfigService.aresolve_with_chain(
- node_config=None,
- conversation=None,
- project=None,
- )
- # 没有 conversation/project/node → 应走 system fallback（有凭证 → Resolved）
- assert isinstance(result, ResolvedProviderChain)
- assert [e.layer for e in result.chain] == ["node", "conversation", "project", "system"]
- # winning source == "system"
- assert result.winning.source == "system"
- by = _chain_by_layer(result.chain)
- assert by["system"].active is True
-# ============================================================================
-# Behavior F：节点层凭证存在但其他层都没有 → chain 仍 4 层 / 其他层字段为 None
-# ============================================================================
-@pytest.mark.django_db(transaction=True)
-async def test_inactive_credential_at_node_falls_through_to_system(
- project_a,
  project_a_anthropic_credential,
- system_default_anthropic_credential,
 ) -> None:
- """F：node_config 指向已失效凭证 → chain[0].credential_id 被清零，winning fallback。"""
- project_a_anthropic_credential.is_active = False
- await project_a_anthropic_credential.asave(update_fields=["is_active"])
+ """E：ResolvedProviderChain.chain 恒 4 层，顺序 node → conversation → project → system。
+ 任意 winning path 下 chain 都是 4 层且顺序固定（此处验 node 层 winning 场景）。
+ """
  node_config = {"provider_credential_id": str(project_a_anthropic_credential.id)}
  result = await ProviderConfigService.aresolve_with_chain(
  node_config=node_config,
  conversation=None,
  project=None,
  )
- # 系统层仍有 system_default 凭证 → Resolved via system
  assert isinstance(result, ResolvedProviderChain)
- assert result.winning.source == "system"
+ # 4 层顺序固定
+ assert [e.layer for e in result.chain] == ["node", "conversation", "project", "system"]
+ # winning 层 active 唯一
+ active_layers = [e.layer for e in result.chain if e.active]
+ assert active_layers == ["node"]
+# ============================================================================
+# Behavior F：节点层凭证存在但其他层都没有 → chain 仍 4 层 / 其他层字段为 None
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+async def test_inactive_credential_at_node_clears_credential_id_in_chain(
+ project_a,
+ project_a_anthropic_credential,
+) -> None:
+ """F：node_config 指向已失效凭证 → chain[0].credential_id 被清零（不 active）。
+ 项目层同时挂相同的 active 凭证作为 fallback → winning=project。
+ 验证 node 层 chain entry 虽有指向但 provider_type=None / credential_id=None。
+ """
+ # 先把项目挂成默认（fallback 路径）
+ project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
+ await project_a.asave(update_fields=["default_provider_credential_id"])
+ # 新建一个独立失效凭证供 node_config 指向
+ import json as _json
+ from uuid import uuid4 as _uuid4
+ from common.encryption import encrypt_value
+ from system.models import ProviderCredential
+ inactive_cred = await ProviderCredential.objects.acreate(
+ provider_type="anthropic",
+ name=f"inactive-{_uuid4.hex[:6]}",
+ scope="project",
+ scope_id=project_a.id,
+ encrypted_config=encrypt_value(
+ _json.dumps({"api_key": "sk-ant-dead", "base_url": "https://api.anthropic.com"})
+ ),
+ is_active=False,
+ )
+ node_config = {"provider_credential_id": str(inactive_cred.id)}
+ project_refetched = await type(project_a).objects.aget(id=project_a.id)
+ result = await ProviderConfigService.aresolve_with_chain(
+ node_config=node_config,
+ conversation=None,
+ project=project_refetched,
+ )
+ assert isinstance(result, ResolvedProviderChain), result
+ # winning 应 fallback 到 project（node 指向失效）
+ assert result.winning.source == "project"
  by = _chain_by_layer(result.chain)
  # node 层 credential_id 被清除（因为指向 is_active=False 凭证）
  assert by["node"].credential_id is None
  assert by["node"].active is False
- assert by["system"].active is True
+ assert by["project"].active is True

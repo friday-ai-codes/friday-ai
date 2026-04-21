@@ -186,6 +186,40 @@ class ProviderMissingError:
  source_attempted: str = "" # 四层中哪一层断流："system" / "project" / "conversation" / "node"
 # Result 模式 Union 类型（Phase / 229 调用方 isinstance 分派）
 AResolveResult = Union[ResolvedProviderConfig, ProviderMissingError]
+# ============================================================================
+# Phase：四层 Provider 解析 Inspector dataclass
+# ============================================================================
+@dataclass
+class ResolutionChainEntry:
+ """四层 Provider 解析链中的单层条目。
+ 用于前端 ResolvedSourceBadge.vue 的 tooltip 展开优先级链表；
+ 每层记录该层原始凭证的可见字段（非活跃凭证清为 None），以及本层是否为 winning source。
+ Phase 契约。
+ """
+ layer: Literal["node", "conversation", "project", "system"]
+ provider_type: str | None
+ model: str | None
+ credential_id: UUID | None
+ active: bool
+@dataclass
+class ResolvedProviderChain:
+ """ProviderConfigService.aresolve_with_chain 返回值。
+ winning 字段为最终解析的 ResolvedProviderConfig（同 aresolve_or_error）；
+ chain 字段为固定 4 层（顺序：node → conversation → project → system）的列表，
+ 前端据此渲染完整优先级链 tooltip + winning source 加粗标识。
+ """
+ winning: ResolvedProviderConfig
+ chain: list[ResolutionChainEntry]
+def _parse_uuid_or_none(value: Any) -> UUID | None:
+ """字符串 / UUID 实例 / None → UUID | None（容错）。"""
+ if value is None or value == "":
+ return None
+ if isinstance(value, UUID):
+ return value
+ try:
+ return UUID(str(value))
+ except (ValueError, TypeError, AttributeError):
+ return None
 # PROVIDER_REGISTRY 的 env_key（大写）→ SettingKeys 的值（小写）映射。
 ENV_KEY_TO_SETTING_KEY: dict[str, str] = {
  "ANTHROPIC_API_KEY": SettingKeys.ANTHROPIC_API_KEY,
@@ -575,3 +609,111 @@ class ProviderConfigService:
  if isinstance(result, ProviderMissingError):
  raise ProviderConfigError(result.recommended_action or "Provider 凭证缺失")
  return result
+ # ------------------------------------------------------------------
+ # Phase：完整四层优先级链路解析
+ # ------------------------------------------------------------------
+ @staticmethod
+ async def aresolve_with_chain(
+ node_config: dict[str, Any] | None = None,
+ conversation: Any | None = None,
+ project: Any | None = None,
+ ) -> "ResolvedProviderChain | ProviderMissingError":
+ """Phase：返回四层解析链路 + winning source。
+ 逻辑：
+ 1. 从 node_config / conversation / project 读取各层原始 credential_id
+ （读 `{field}_id` 列避免 async 下触发 SynchronousOnlyOperation）
+ 2. 对每层 credential_id 异步查 ProviderCredential（is_active=True），
+ 填充 provider_type；指向已删除 / 已禁用凭证的条目清 credential_id=None
+ 3. 委托 aresolve_or_error 拿 winning source
+ 4. 标记对应层 active=True，填补 winning 层的 provider_type / model
+ 返回：
+ - ResolvedProviderChain（winning + chain[4]）
+ - ProviderMissingError（与 aresolve_or_error 同语义）
+ """
+ # 1. 构建 chain 骨架（4 层，顺序固定）
+ node_cfg = node_config or {}
+ node_model = node_cfg.get("model") if isinstance(node_cfg, dict) else None
+ chain: list[ResolutionChainEntry] = [
+ ResolutionChainEntry(
+ layer="node",
+ provider_type=None,
+ model=node_model,
+ credential_id=_parse_uuid_or_none(
+ node_cfg.get("provider_credential_id") if isinstance(node_cfg, dict) else None
+ ),
+ active=False,
+ ),
+ ResolutionChainEntry(
+ layer="conversation",
+ provider_type=None,
+ model=getattr(conversation, "model", None) if conversation is not None else None,
+ credential_id=_parse_uuid_or_none(
+ getattr(conversation, "provider_credential_id_id", None)
+ if conversation is not None
+ else None
+ ),
+ active=False,
+ ),
+ ResolutionChainEntry(
+ layer="project",
+ provider_type=None,
+ model=None,
+ credential_id=_parse_uuid_or_none(
+ getattr(project, "default_provider_credential_id_id", None)
+ if project is not None
+ else None
+ ),
+ active=False,
+ ),
+ ResolutionChainEntry(
+ layer="system",
+ provider_type=None,
+ model=None,
+ credential_id=None, # system 层由 aresolve_or_error 定位 default 凭证，无本地 FK
+ active=False,
+ ),
+ ]
+ # 2. 对 node / conversation / project 层的 credential_id 异步读 provider_type；
+ # 指向非活跃 / 已删除凭证的条目清零（视为不可用，不阻塞继续向下层解析）
+ from system.models import ProviderCredential
+ for entry in chain[:3]:
+ if entry.credential_id:
+ try:
+ cred = await ProviderCredential.objects.aget(
+ id=entry.credential_id, is_active=True
+ )
+ entry.provider_type = str(cred.provider_type)
+ except ProviderCredential.DoesNotExist:
+ entry.credential_id = None
+ # 3. 委托 aresolve_or_error 拿 winning
+ result = await ProviderConfigService.aresolve_or_error(
+ node_config=node_config,
+ conversation=conversation,
+ project=project,
+ )
+ if isinstance(result, ProviderMissingError):
+ logger.info(
+ "provider_config.resolve_chain_missing",
+ missing_provider=result.missing_provider,
+ source_attempted=result.source_attempted,
+ )
+ return result
+ # 4. 标记 winning 层
+ for entry in chain:
+ if entry.layer == result.source:
+ entry.active = True
+ if not entry.provider_type:
+ entry.provider_type = str(result.provider_type)
+ if not entry.model:
+ entry.model = result.extra.get("model") if result.extra else None
+ # system 层 credential_id 填补（winning=system 时）
+ if entry.credential_id is None and result.credential_id is not None:
+ entry.credential_id = result.credential_id
+ break
+ logger.info(
+ "provider_config.resolve_chain_computed",
+ winning_source=result.source,
+ chain_length=len(chain),
+ provider_type=str(result.provider_type),
+ )
+ return ResolvedProviderChain(winning=result, chain=chain)
