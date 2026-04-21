@@ -87,6 +87,8 @@ export const aiPromptConfigSchema = z.object({
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
+ // Provider 凭证(Phase):指向 ProviderCredential.id;null 走系统默认
+ provider_credential_id: z.string.uuid.nullable.optional,
  // 提示词配置
  system_prompt: z.string.default(''),
  user_prompt: z.string.default(''),
@@ -150,6 +152,8 @@ export const aiVariableExtractorConfigSchema = z.object({
  use_custom_api: z.boolean.default(false),
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
+ // Provider 凭证(Phase):指向 ProviderCredential.id;null 走系统默认
+ provider_credential_id: z.string.uuid.nullable.optional,
  // 提取配置
  input_source: z.string.default(''),
  variables: z.array(aiVariableDefinitionSchema).default,
@@ -236,6 +240,8 @@ export const aiPlanGenerationConfigSchema = z.object({
  api_base_url: z.string.default(''),
  api_key: z.string.default(''),
  model: z.string.default(''),
+ // Provider 凭证(Phase):指向 ProviderCredential.id;null 走系统默认
+ provider_credential_id: z.string.uuid.nullable.optional,
 })
 /** 方案审批节点配置 */
 export const aiPlanApprovalConfigSchema = z.object({
@@ -256,6 +262,8 @@ export const aiCodeReviewConfigSchema = z.object({
  api_key: z.string.default(''),
  chat_id: z.string.default(''),
  max_iterations: z.number.min(1).max(100).default(30),
+ // Provider 凭证(Phase):指向 ProviderCredential.id;null 走系统默认
+ provider_credential_id: z.string.uuid.nullable.optional,
 })
 /** 全局变量结构 */
 export const globalVariableSchema = z.object({
