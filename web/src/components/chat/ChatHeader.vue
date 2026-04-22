@@ -84,8 +84,11 @@ watch(
 // Pitfall 5（work-item §Common Pitfalls）：store 未 load 时 watch 首次 run 返 null →
 // 模板 fallback 到 "当前 Provider"。onMounted 主动 fetch 让后续 props 变化能解析真实名。
 // fetchCredentials 内含 30s TTL（providerCredential.ts:work-item），重复调用安全。
+// fire-and-forget：失败静默降级（模板 fallback 已兜底），避免 unhandled rejection 噪声。
 onMounted( => {
- void providerStore.fetchCredentials
+ providerStore.fetchCredentials.catch( => {
+ // 网络错误 / 未登录 → store.lastError 已记录；降级链保证 UI 可用
+ })
 })
 /** 下拉 change：active 态先弹 pin；frozen 态由 disabled 拦截不会触发。 */
 function onCredentialChange(cred: ProviderCredentialDto | null) {
