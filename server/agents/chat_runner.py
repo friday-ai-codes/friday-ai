@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 import asyncio
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -14,6 +15,7 @@ import structlog
 from django.utils import timezone
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
@@ -30,10 +32,16 @@ from agents.core.events import (
  AgentEvent,
 )
 from agents.core.result import AgentResult
+from agents.langchain_runner import (
+ _CONTEXT_SAFETY_BUFFER,
+ ContextWindowExceededError,
+)
 from agents.models import AgentSession, ToolCallLog
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
 from repositories.models import Repository
+from services.model_capabilities import ModelCapabilities
+from services.provider_config import ProviderType
 logger = structlog.get_logger(__name__)
 _BASE_TOOL_NAMES = ["get_project_overview"]
 _FULL_TOOL_NAMES = _BASE_TOOL_NAMES + [
@@ -223,6 +231,32 @@ def _build_message_complete(
  session_id,
  ),
  )
+def _check_chat_context_window(
+ messages: list[Any],
+ *,
+ model: str,
+ max_output_tokens: int = 4096,
+) -> None:
+ """前 astream budget check（strict_error 策略）；超限抛 ContextWindowExceededError。
+ 消息格式与 ``langchain_runner.py`` 共用，保证 ``base_agent.py``
+ 的 regex 可复用（Phase Pitfall 1 单一事实源 / Pitfall 3 每 turn
+ check）。
+ Args:
+ messages: LangChain message 列表（含 accumulated ToolMessage）。
+ model: Anthropic model id（caller 传 ``self._config.model``）。
+ max_output_tokens: 可选覆盖；0 / None 走 ``caps.max_output_tokens``。
+ """
+ caps = ModelCapabilities.get(str(ProviderType.ANTHROPIC), model)
+ effective_max_out = max_output_tokens or caps.max_output_tokens
+ budget = caps.max_input_tokens - effective_max_out - _CONTEXT_SAFETY_BUFFER
+ current = count_tokens_approximately(messages)
+ if current > budget:
+ raise ContextWindowExceededError(
+ f"context too long: {current} tokens > budget {budget} "
+ f"(max_input={caps.max_input_tokens}, "
+ f"max_output={effective_max_out}, "
+ f"buffer={_CONTEXT_SAFETY_BUFFER})"
+ )
 def _make_agent_result(
  *,
  status: str,
@@ -367,6 +401,10 @@ class ChatAnthropicRunner:
  try:
  for _ in range(self._config.max_turns):
  full_message: AIMessageChunk | None = None
+ # Phase Plan：每 turn 进入 astream 前做前置 budget check。
+ # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
+ # （Pitfall 3）。超限抛 ContextWindowExceededError，由下方专属 except 分支捕获。
+ _check_chat_context_window(messages, model=self._config.model)
  async for chunk in model_with_tools.astream(messages):
  if not isinstance(chunk, AIMessageChunk):
  continue
@@ -505,6 +543,82 @@ class ChatAnthropicRunner:
  status="interrupted",
  )
  raise
+ except ContextWindowExceededError as exc:
+ # Phase chat 路径集成：SSE ERROR 结构化 payload。
+ # 消息格式同源 ``langchain_runner.py`` strict_error；
+ # regex / payload schema 照抄 ``base_agent.py`` （字段名差异：
+ # base_agent 走 NodeResult.output["error_code"]；chat_runner 直接
+ # yield AgentEvent data={"code": ...}，前端 stores/chat.ts:work-item
+ # 读 event.code / event.data —— Pitfall 8）。
+ # 位置：严格在 CancelledError 之后、generic Exception 之前（Pitfall 2）。
+ msg = str(exc)
+ m = re.match(
+ r"context too long: (\d+) tokens > budget (\d+) "
+ r"\(max_input=(\d+), max_output=(\d+), buffer=(\d+)\)",
+ msg,
+ )
+ if m is not None:
+ estimated = int(m.group(1))
+ budget = int(m.group(2))
+ exceeded = max(0, estimated - budget)
+ else:
+ estimated = 0
+ budget = 0
+ exceeded = 0
+ # structlog kwargs 风格 —— redact_credentials processor 兜底；
+ # 禁止 f-string 插入任何可能的凭证值（V4 ASVS Information Disclosure，
+ # T- / T- mitigation）。字段白名单：
+ # session_id / model / estimated_tokens / max_tokens / exceeded_by。
+ logger.warning(
+ "chat_runner_context_exceeded",
+ session_id=self._config.session_id,
+ model=self._config.model,
+ estimated_tokens=estimated,
+ max_tokens=budget,
+ exceeded_by=exceeded,
+ )
+ self._result = _make_agent_result(
+ status="error",
+ error=msg,
+ usage=total_usage,
+ )
+ yield AgentEvent(
+ type=ERROR,
+ data=_inject_metadata(
+ {
+ "code": "context_window_exceeded",
+ "message": msg,
+ "data": {
+ "estimated_tokens": estimated,
+ "max_tokens": budget,
+ "exceeded_by": exceeded,
+ "model": self._config.model,
+ "recommended_actions": [
+ {
+ "id": "trim_prompt",
+ "label": "精简 system prompt",
+ "action_type": "navigate",
+ "target": "/prompts/",
+ },
+ {
+ "id": "switch_model",
+ "label": "换大 context 模型",
+ "action_type": "navigate",
+ "target": "settings.model",
+ },
+ {
+ "id": "cleanup_history",
+ "label": "清理对话历史",
+ "action_type": "dialog",
+ "target": "CleanupDialog",
+ },
+ ],
+ },
+ },
+ self._config.model,
+ self._config.session_id,
+ ),
+ )
  except Exception as exc:
  logger.exception("chat_runner_error", session_id=self._config.session_id)
  self._result = _make_agent_result(
