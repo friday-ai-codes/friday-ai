@@ -5,16 +5,22 @@
  * F: useCustomApi=true + apiBaseUrl="" → 渲染 text-destructive 错误文案 + aria-invalid=true
  * G: useCustomApi=true + apiBaseUrl="https://..." → 不显示错误文案，显示说明文案
  * H: useCustomApi=false → 自定义 API 区块不展开，不可能触发 error
+ *
+ * 注：describe/it 标题首字母大写（F/G/H）遵循 Plan acceptance_criteria 锁定
+ * （grep 断言 "F: useCustomApi..."），与 Phase ChatHeader.spec.ts 一致，
+ * test/prefer-lowercase-title 规则在本文件禁用。
  */
+/* eslint-disable test/prefer-lowercase-title */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 // Mock workflow API — AIModelConfig onMounted 会调 getLLMSystemConfig
+// vitest 会 hoist vi.mock 到 import 之前（factory 是纯工厂函数，不捕获上下文）
 vi.mock('~/api/workflow', => ({
  getLLMSystemConfig: vi.fn.mockResolvedValue({ base_url: '', has_api_key: false }),
  queryLLMModels: vi.fn.mockResolvedValue({ models: }),
  querySystemLLMModels: vi.fn.mockResolvedValue({ models: }),
 }))
-import AIModelConfig from '~/components/workflow/config/AIModelConfig.vue'
 describe('AIModelConfig.apiBaseUrlError', => {
  it('F: useCustomApi=true + apiBaseUrl="" → 渲染 destructive 错误文案 + aria-invalid=true', async => {
  const wrapper = mount(AIModelConfig, {

@@ -63,6 +63,14 @@ const localModel = computed({
  get: => props.model,
  set: v => emit('update:model', v),
 })
+// Phase Plan：启用自定义 API 后 API Base URL 必填（228 前端 UX 防御）
+// 文案与 work item §Fix 4 锁定；后端 validate_config 做保底（服务端拒绝保存）
+const apiBaseUrlError = computed<string>( => {
+ if (localUseCustomApi.value && !localApiBaseUrl.value.trim) {
+ return 'API Base URL 为必填（启用自定义 API 后）'
+ }
+ return ''
+})
 // ============================================================================
 // 系统配置
 // ============================================================================
@@ -217,7 +225,7 @@ const fetchedModelsCount = computed( => {
  <Label>API Base URL</Label>
  <div class="flex gap-2">
  <Input
- v-model="localApiBaseUrl"
+ v-model="localApiBaseUrl":aria-invalid="apiBaseUrlError ? 'true': 'false'":class="apiBaseUrlError ? 'border-destructive': ''"
  placeholder="https://api.openai.com/v1"
  class="flex-1"
  />
@@ -234,7 +242,10 @@ const fetchedModelsCount = computed( => {
  查询模型
  </Button>
  </div>
- <p class="text-xs text-muted-foreground">
+ <p v-if="apiBaseUrlError" class="text-sm text-destructive">
+ {{ apiBaseUrlError }}
+ </p>
+ <p v-else class="text-xs text-muted-foreground">
  支持 OpenAI、Ollama 等兼容 API
  </p>
  </div>
