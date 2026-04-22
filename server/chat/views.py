@@ -475,6 +475,35 @@ class ConversationPreflightView(APIView):
  {"error": "对话不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ # [NEW Phase Hotfix — 230 ] Ownership 校验（T- mitigate）
+ # 模式与 ConversationMessagesDeleteView.delete 完全一致，仅：
+ # min_role: "member" → "viewer"（preflight 是只读探测）
+ # event name: "chat.cleanup_denied_cross_project" → "chat.preflight_denied_cross_project"
+ # detail: "无权删除其他项目的对话消息" → "无权访问该对话"
+ # 放置位置：select_related 预取之后、aresolve_or_error 之前 —— 避免 resolved
+ # / missing payload 的 provider_type / credential_id / missing_provider 字段
+ # 泄漏给跨项目用户（T- Information Disclosure）。
+ from permissions.services import PermissionService
+ user = request.user
+ if (
+ getattr(user, "is_authenticated", False)
+ and not getattr(user, "is_superuser", False)
+ and conversation.project_id is not None
+ ):
+ has_access = await sync_to_async(PermissionService.has_project_access)(
+ user, conversation.project, "viewer"
+ )
+ if not has_access:
+ logger.warning(
+ "chat.preflight_denied_cross_project",
+ user_id=str(getattr(user, "id", "")),
+ conversation_id=str(conversation.id),
+ project_id=str(conversation.project_id),
+ )
+ return Response(
+ {"detail": "无权访问该对话"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
  # Lazy import 避免 ProviderConfigService 加载开销落入 views 模块导入路径
  from services.provider_config import (
  ProviderConfigService,
