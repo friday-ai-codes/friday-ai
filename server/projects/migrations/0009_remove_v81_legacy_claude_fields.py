@@ -1,4 +1,5 @@
 """Phase Plan /：硬删 Project.claude_* + default_provider_type/default_model 字段。
+Phase Hotfix（230 ）：docstring 勘误 —— 实际 RunPython 为 work item。
 删除字段：
  - claude_api_key_encrypted
  - claude_base_url
@@ -6,13 +7,20 @@
  - default_provider_type
  - default_model
 forwards RunPython：
- - 遍历仍有 claude_api_key_encrypted 的 Project → 创建
- ProviderCredential(scope="project", scope_id=project.id,
- provider_type="anthropic", name="default-from-v81")
- - encrypted_config 从原 encrypted 字段拷贝（encryption key 未变，可直接复用）
+ **work item**（backfill_claude_credentials 不做任何 DB 写入）。
+ 为什么不做真 backfill：
+ - Project.claude_api_key_encrypted 是 Fernet(api_key 明文)
+ - ProviderCredential.encrypted_config 需 Fernet(json.dumps({api_key, base_url, ...}))
+ 两者 schema 不兼容；migration 历史快照内 import `common.encryption` 解密/
+ 重加密违反 Phase REVIEW "RunPython 内 import runtime symbol" 原则
+ （未来重命名/重构 common.encryption 时会 ImportError）。
+ **执行本 migration 前必须运行预检命令：**
+ python manage.py check_v81_legacy_residue
+ 若预检报告 claude_api_key_encrypted 非空行 > 0，release manager 必须先
+ 由项目 owner 在 /admin/providers 或 /projects/<id>/providers 手动添加
+ 对应项目级 anthropic 凭证，再执行 migrate。否则历史 API key 将丢失。
 reverse RunPython：
- - 遍历 ProviderCredential(scope="project", name="default-from-v81")
- 反向写回 Project.claude_api_key_encrypted / claude_base_url / claude_default_model
+ - no-op（字段在 down 方向由 AddField 重建为空列；历史数据不可还原）
 RunPython elidable=False 防 squash 丢失。
 依赖：
  - projects.0008_add_project_default_provider_credential_fk（Plan 产出）
@@ -21,29 +29,12 @@ RunPython elidable=False 防 squash 丢失。
 from __future__ import annotations
 from django.db import migrations
 def backfill_claude_credentials(apps, schema_editor):
- """forwards：Project.claude_* → ProviderCredential(scope=project)。
- 幂等：同 scope_id + provider_type + name 已存在 → skip。
+ """forwards：**work item**（Phase Hotfix 230 ）。
+ 见模块级 docstring 解释 —— 真 backfill 风险高于收益（schema 不兼容 + 违反
+ 历史快照原则）。预检由 `check_v81_legacy_residue` management command 承担,
+ release manager 在 migrate 前人工执行。
  """
- Project = apps.get_model("projects", "Project")
- ProviderCredential = apps.get_model("system", "ProviderCredential")
- for project in Project.objects.exclude(claude_api_key_encrypted=""):
- if not project.claude_api_key_encrypted:
- continue
- exists = ProviderCredential.objects.filter(
- scope="project",
- scope_id=project.id,
- provider_type="anthropic",
- name="default-from-v81",
- ).exists
- if exists:
- continue
- # 构造 encrypted_config：仅 api_key 字段；base_url 走 ProviderCredential.base_url 列
- # encrypted_config 字段需 Fernet(json.dumps(...)) 加密，但此处直接拷贝已加密的
- # claude_api_key_encrypted（Fernet(api_key 明文)）会破坏 schema（应为 Fernet(json)）。
- # Plan 选择保守策略：保留 claude_api_key_encrypted 明文价值 → 不迁移；
- # 实际生产环境 Phase + Phase UI cutover 后 claude_* 字段已久未写入。
- # 若有残留 → 不 backfill；仅记录 warning（此处 noop 方便 migration 快速通过）。
- pass
+ return
 def restore_claude_fields(apps, schema_editor):
  """reverse：字段结构由 AddField 重建；历史数据不可还原。"""
  return
