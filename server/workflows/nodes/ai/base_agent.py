@@ -142,6 +142,26 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  },
  "required":,
  }
+ @classmethod
+ def validate_config(cls, config: dict[str, Any]) -> list[str]:
+ """扩展 BaseNode.validate_config：启用自定义 API 时 api_base_url 必填（228 关闭）。
+ Pitfall 6：必须先 super 才能保留既有 jsonschema.validate（max_thinking_tokens
+ 范围、max_output_tokens 边界等规则）。
+ Pitfall 7：jsonschema validator 默认 Draft 4，不一定支持 allOf.if/then/required
+ → 走 Python 侧显式判定最稳（方案 B）。
+ Phase Plan / work item §Fix 4 后端错误锁文案。
+ Threat mitigation（见 -PLAN threat_model）：
+ - T- Spoofing / Authentication Confusion：保存前拒绝非法组合 → 运行时
+ ``if use_custom_api and api_base_url:`` fallthrough 永不命中
+ - T- Input Validation：``.strip`` 同时兼顾 None / 空字符串 / 空白符
+ - T- Bypass：DRF Serializer 链路拦截 curl 直连构造
+ """
+ errors = super.validate_config(config)
+ if config.get("use_custom_api") is True and not str(
+ config.get("api_base_url", ""),
+ ).strip:
+ errors.append("启用自定义 API 时必须填写 API Base URL")
+ return errors
  # ===== Hook methods (subclass overrides) =====
  @abstractmethod
  def get_system_prompt(self, context: ExecutionContext) -> str:
