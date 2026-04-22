@@ -124,3 +124,78 @@ def test_preflight_missing_payload_has_all_contract_fields(
  assert "recommended_action" in body["data"]
  assert "scope_attempted" in body["data"]
  assert body["data"]["missing_provider"] # 非空
+# ============================================================================
+# Test G (NEW Phase Hotfix 230-) — 跨项目 ADMIN preflight 他人项目对话 → 403
+# ============================================================================
+@pytest.mark.django_db
+def test_preflight_cross_project_member_denied(
+ project_a,
+ project_b_admin_user,
+) -> None:
+ """Behavior G：project_b_admin_user 虽是 project_b 的 ADMIN，但对 project_a
+ 的 conversation 无访问权限 → preflight 返 403 + structlog audit log。
+ Phase Hotfix（230 T-）：跨项目 ownership 校验防御信息泄露。
+ """
+ conv = Conversation.objects.create(project=project_a, title="a-only")
+ client = APIClient
+ client.force_authenticate(user=project_b_admin_user)
+ resp = client.get(_url(str(conv.id)))
+ assert resp.status_code == 403, resp.content
+ body = resp.json
+ assert "detail" in body
+ # 403 文案不泄漏 project 名或 conversation.title（T- Information Disclosure 防御）
+ assert "a-only" not in body["detail"]
+# ============================================================================
+# Test H (NEW Phase Hotfix 230-) — 非成员 outsider preflight →
+# 403 + resolved payload 字段完全不回流（provider_type / credential_id）
+# ============================================================================
+@pytest.mark.django_db
+def test_preflight_non_member_user_denied(
+ project_a,
+ project_a_anthropic_credential,
+ django_user_model,
+) -> None:
+ """Behavior H：完全非项目成员的普通用户 preflight 绑定凭证的对话 → 403
+ （哪怕 aresolve_or_error 会成功，ownership gate 必须在其之前拦截，
+ 防 resolved.provider_type / resolved.credential_id 字段泄漏）。
+ 验 T- Information Disclosure mitigation 生效。
+ """
+ outsider = django_user_model.objects.create_user(
+ username=f"outsider_{uuid4.hex[:8]}",
+ email=f"outsider_{uuid4.hex[:8]}@test.local",
+ password="test-password",
+ )
+ project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
+ project_a.save(update_fields=["default_provider_credential_id"])
+ conv = Conversation.objects.create(project=project_a, title="a-only-sensitive")
+ client = APIClient
+ client.force_authenticate(user=outsider)
+ resp = client.get(_url(str(conv.id)))
+ assert resp.status_code == 403, resp.content
+ # 关键断言：resolved payload 字段名完全不回流（防 fix 被误 revert）
+ body_text = resp.content.decode
+ assert "provider_type" not in body_text
+ assert "credential_id" not in body_text
+# ============================================================================
+# Test I (NEW Phase Hotfix 230-) — superuser 跨项目豁免 → 200
+# ============================================================================
+@pytest.mark.django_db
+def test_preflight_superuser_bypass_ownership(
+ project_a,
+ project_a_anthropic_credential,
+ system_admin_user,
+) -> None:
+ """Behavior I：system_admin_user（is_superuser=True）可 preflight 任意
+ 项目的 conversation（ownership 豁免）。与 ConversationMessagesDeleteView
+ Test H（test_chat_messages_cleanup.py ）对称，保持威胁模型一致。
+ has_project_access 内部 `if user.is_superuser: return True` + 外层
+ `not is_superuser` 短路双保险 —— superuser 不走 sync_to_async 路径。
+ """
+ project_a.default_provider_credential_id_id = project_a_anthropic_credential.id
+ project_a.save(update_fields=["default_provider_credential_id"])
+ conv = Conversation.objects.create(project=project_a, title="sys-access")
+ client = APIClient
+ client.force_authenticate(user=system_admin_user)
+ resp = client.get(_url(str(conv.id)))
+ assert resp.status_code == 200, resp.content
+ assert resp.json["status"] == "ok"
