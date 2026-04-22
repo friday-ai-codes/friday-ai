@@ -11,7 +11,7 @@
  */
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { ProviderCredentialDto, ResolvedProvider } from '~/types/providerCredential'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import ProviderCredentialDropdown from '~/components/providers/ProviderCredentialDropdown.vue'
 import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
@@ -29,6 +29,7 @@ import {
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { useConversationFrozen } from '~/composables/useConversationFrozen'
+import { useProviderCredentialStore } from '~/stores/providerCredential'
 import { ROLE_OPTIONS } from '~/types/chat'
 interface Props {
  /** 对话状态（由父组件 / chat store 提供；用于 pin 冻结判定） */
@@ -66,6 +67,26 @@ const pinDialogOpen = ref(false)
 const pendingCredential = ref<ProviderCredentialDto | null>(null)
 const oldCredential = ref<ProviderCredentialDto | null>(null)
 const selectedCredentialId = ref<string | null>(props.currentCredentialId)
+// Phase Plan（230 修复）：从 props.currentCredentialId → providerStore.getCredentialById
+// 同步赋值 oldCredential，消除 PinConfirmDialog "当前 Provider" 占位恒显示 bug。
+// watch(immediate: true) 模式参考 NodeConfigPanel.vue:89-91。
+// 降级链保留：若 store 未 load 或 id 不命中 → oldCredential=null → 模板 fallback (L189)
+// 到 "当前 Provider"（currentCredentialId 非空）或 "未指定"（null）。
+const providerStore = useProviderCredentialStore
+watch(
+ => props.currentCredentialId,
+ (newId) => {
+ oldCredential.value = newId
+ ? (providerStore.getCredentialById(newId) ?? null): null
+ },
+ { immediate: true },
+)
+// Pitfall 5（work-item §Common Pitfalls）：store 未 load 时 watch 首次 run 返 null →
+// 模板 fallback 到 "当前 Provider"。onMounted 主动 fetch 让后续 props 变化能解析真实名。
+// fetchCredentials 内含 30s TTL（providerCredential.ts:work-item），重复调用安全。
+onMounted( => {
+ void providerStore.fetchCredentials
+})
 /** 下拉 change：active 态先弹 pin；frozen 态由 disabled 拦截不会触发。 */
 function onCredentialChange(cred: ProviderCredentialDto | null) {
  if (frozen.value.isFrozen) {
