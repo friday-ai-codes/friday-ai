@@ -128,6 +128,13 @@ async function handleConfirmDelete: Promise<void> {
  errorMsg.value = '未选中任何消息'
  return
  }
+ // Phase Plan：末尾边界 — 选中 preview 列表最后一条时，拒绝提交
+ // 避免 targetMsg fallback 到选中消息本身 → DELETE ?before_id=<self.id> 导致一条都删不掉
+ // Pitfall 4：简化版（REVIEW 推荐方案）— 文案锁定自 work item §Fix 3
+ if (lastSelectedIdx + 1 >= messages.value.length) {
+ errorMsg.value = '请保留至少 1 条未选中消息作为清理边界（该消息自身不会被删）'
+ return
+ }
  // before_id = 下一条的 id（删 < 它的 created_at 即删除所有选中）；若无下一条则用当前选中
  const targetMsg = messages.value[lastSelectedIdx + 1] ?? messages.value[lastSelectedIdx]
  const beforeId = targetMsg.id
