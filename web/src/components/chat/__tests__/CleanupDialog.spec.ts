@@ -234,4 +234,52 @@ describe('cleanupDialog', => {
  const openUpdates = wrapper.emitted('update:open') ??
  expect(openUpdates.some((e: unknown) => e[0] === false)).toBe(true)
  })
+ it('F: 选中 preview 最后一条时拒绝提交，errorMsg 提示"保留至少 1 条未选中消息"', async => {
+ // Phase Plan：末尾边界 — 选中 preview 列表最后一条时 handleConfirmDelete 应拒绝提交
+ // fixture：构造 3 条消息（< PREVIEW_LIMIT=20，< DEFAULT_SELECT_COUNT=5 → 全选三条，含末尾 m3）
+ const threeMessages = [
+ { id: 'm1', role: 'user', content: 'first', created_at: '2026-04-01T10:00:00Z' },
+ { id: 'm2', role: 'assistant', content: 'second', created_at: '2026-04-01T10:01:00Z' },
+ { id: 'm3', role: 'user', content: 'third', created_at: '2026-04-01T10:02:00Z' },
+ ]
+ getMock.mockResolvedValue({ messages: threeMessages })
+ const wrapper = mount(CleanupDialog, {
+ props: { open: true, conversationId: 'conv-boundary' },
+ global: {
+ stubs: {
+ Dialog: { template: '<div><slot /></div>' },
+ DialogContent: { template: '<div><slot /></div>' },
+ DialogHeader: { template: '<div><slot /></div>' },
+ DialogTitle: { template: '<h2><slot /></h2>' },
+ DialogDescription: { template: '<p><slot /></p>' },
+ DialogFooter: { template: '<div><slot /></div>' },
+ AlertDialog: { template: '<div><slot /></div>' },
+ AlertDialogTrigger: { template: '<div><slot /></div>' },
+ AlertDialogContent: { template: '<div><slot /></div>' },
+ AlertDialogHeader: { template: '<div><slot /></div>' },
+ AlertDialogTitle: { template: '<h3><slot /></h3>' },
+ AlertDialogDescription: { template: '<p><slot /></p>' },
+ AlertDialogFooter: { template: '<div><slot /></div>' },
+ AlertDialogCancel: { template: '<button><slot /></button>' },
+ AlertDialogAction: { template: '<button class="confirm-delete" @click="$emit(\'click\')"><slot /></button>' },
+ ScrollArea: { template: '<div><slot /></div>' },
+ Checkbox: {
+ props: ['modelValue'],
+ template: '<input type="checkbox":checked="modelValue" />',
+ },
+ },
+ },
+ })
+ await flushPromises
+ // 组件默认选中最早 DEFAULT_SELECT_COUNT=5 条；因 3 < 5 → 全选三条；包含末尾 m3
+ await wrapper.find('.confirm-delete').trigger('click')
+ await flushPromises
+ // apiDel 不应被调用（边界命中后直接 return）
+ expect(delMock).not.toHaveBeenCalled
+ // errorMsg 渲染锁定的 work item 边界文案
+ expect(wrapper.html).toContain('请保留至少 1 条未选中消息')
+ // Dialog 未关闭（emit('update:open', false) 未触发）
+ const openUpdates = wrapper.emitted('update:open') ??
+ expect(openUpdates.filter((e: unknown) => e[0] === false).length).toBe(0)
+ })
 })
