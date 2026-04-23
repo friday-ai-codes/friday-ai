@@ -2,7 +2,7 @@
  * Chat API 服务 - LLM 对话能力
  */
 import type { CodingSessionResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
-import { del, get, post } from './client'
+import { del, get, patch, post } from './client'
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -174,6 +174,30 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
 export async function getConversationRuntime(id: string): Promise<ConversationRuntime> {
  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/`)
 }
+/** PATCH 请求体（与后端 ConversationPatchSerializer 对齐） */
+export interface PatchConversationParams {
+ provider_credential_id?: string | null
+ model?: string
+ title?: string
+}
+/**
+ * 部分更新对话（pin Provider 凭证 / 切模型 / 改标题）
+ *
+ * UAT 第 3 项 hotfix：原 Phase Plan 注释承诺的
+ * 「Plan/08 接 store action」从未交付 → 此次补齐。后端 endpoint 已在 Phase
+ * 完成（ConversationDetailView.patch）。
+ *
+ * 失败语义：
+ * - 400 + {code: "conversation_frozen"} → frozen 态拒绝改 provider_credential_id / model
+ * - 400 + {code/detail: ...} → FK 校验失败（凭证不存在 / 已禁用）
+ * - 客户端错误由 client.ts 抛 ApiError；调用方应 try/catch 并降级
+ */
+export async function patchConversation(
+ id: string,
+ params: PatchConversationParams,
+): Promise<Conversation> {
+ return patch<Conversation>(`/chat/conversations/${id}/`, params)
+}
 /**
  * 删除对话
  */
@@ -320,6 +344,7 @@ export default {
  createConversation,
  getConversationDetail,
  getConversationRuntime,
+ patchConversation,
  deleteConversation,
  interruptConversation,
  getPushPublicKey,

@@ -16,6 +16,7 @@ import {
  getConversationRuntime,
  interruptConversation,
  listConversations,
+ patchConversation,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
@@ -228,6 +229,39 @@ export const useChatStore = defineStore('chat', => {
  }
  catch (e) {
  error.value = e instanceof Error ? e.message: '删除对话失败'
+ }
+ }
+ /**
+ * UAT 第 3 项 hotfix：把 ChatHeader pin-confirmed 接到后端。
+ *
+ * 流程：
+ * 1. PATCH /chat/conversations/:id/ {provider_credential_id}
+ * 2. 成功 → 用响应直接覆盖 conversations 中对应条目（含新 status + provider_credential_id）
+ * → currentConversation getter 反映新值 → ChatHeader props.currentCredentialId 反向回流
+ * 3. 失败 → 写 error.value 并 rethrow，让 ChatHeader handleConfirm 既有 try/catch 接住
+ * （PinConfirmDialog 通过 defineExpose showError 弹错；store action 不能 swallow）
+ */
+ async function patchConversationCredential(credentialId: string) {
+ if (!currentConversationId.value) {
+ const msg = '当前没有活动对话，无法切换 Provider 凭证'
+ error.value = msg
+ throw new Error(msg)
+ }
+ try {
+ const updated = await patchConversation(
+ currentConversationId.value,
+ { provider_credential_id: credentialId },
+ )
+ const idx = conversations.value.findIndex(c => c.id === updated.id)
+ if (idx >= 0) {
+ conversations.value[idx] = { ...conversations.value[idx], ...updated }
+ }
+ error.value = null
+ return updated
+ }
+ catch (e) {
+ error.value = e instanceof Error ? e.message: '切换 Provider 凭证失败'
+ throw e
  }
  }
  async function stopStreaming {
@@ -1116,6 +1150,7 @@ export const useChatStore = defineStore('chat', => {
  selectConversation,
  createNewConversation,
  removeConversation,
+ patchConversationCredential,
  stopStreaming,
  toggleSidebar,
  clearCurrentConversation,
