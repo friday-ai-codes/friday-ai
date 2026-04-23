@@ -1,19 +1,22 @@
 /**
- * UAT 第 3 项 hotfix— default.vue ChatHeader 接线 vitest
+ * UX 重设计— default.vue ChatInput pin-confirmed 接线 vitest
  *
- * 背景：原 default.vue:84 裸挂载 <ChatHeader />，pin 全链路在 chat 路径下断链。
+ * 背景：
+ * -：在 ChatHeader 上接 @pin-confirmed → chatStore.patchConversationCredential
+ * -：UX 重设计折叠为 ChatInput 单下拉，listener 迁移到 ChatInput；
+ * 参数升级为 (credentialId, model) 双字段；目标 action 升级为
+ * chatStore.patchConversationProviderAndModel（单次 PATCH 双字段）
  *
  * 验证目标（接线契约）：
- * - chat 模式下 ChatHeader 接收完整 props（隐式由 mount 成功 + 模板编译通过）
- * - ChatHeader emit 'pin-confirmed' → chatStore.patchConversationCredential 被调用
- * 且参数 = emit 的 credentialId
+ * - chat 模式下 ChatInput emit 'pin-confirmed' → chatStore.patchConversationProviderAndModel
+ * 被以 (credentialId, model) 双参数调用
  *
  * Mock 策略：
  * - useAppMode：顶层 vi.mock 强制 mode='chat' 让 v-else（chat 分支）渲染
  * - useRunnerMonitor：避免真实 WebSocket 连接副作用
  * - vue-router：useRoute.path='/' 让 displayMode === 'chat'；mock useRouter 防 push 报错
- * - ChatHeader：用 emit 友好的 stub 模拟 pin-confirmed 触发
- * - 其他子组件：true stub 截掉，避免 Provider 下拉 / Tooltip 链式渲染
+ * - ChatInput：用 emit 友好的 stub 模拟 pin-confirmed 触发
+ * - 其他子组件：true stub 截掉
  */
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -36,8 +39,8 @@ vi.mock('vue-router', => ({
  useRouter: => ({ push: vi.fn }),
  RouterView: { name: 'RouterView', render: => null },
 }))
-const ChatHeaderStub = defineComponent({
- name: 'ChatHeader',
+const ChatInputStub = defineComponent({
+ name: 'ChatInput',
  emits: ['pin-confirmed'],
  setup(_, { emit }) {
  return =>
@@ -45,29 +48,29 @@ const ChatHeaderStub = defineComponent({
  'button',
  {
  'data-test': 'fire-pin',
- 'onClick': => emit('pin-confirmed', 'cred-new-uuid'),
+ 'onClick': => emit('pin-confirmed', 'cred-new-uuid', 'claude-sonnet-4'),
  },
  'fire',
  )
  },
 })
-describe('default.vue layout — UAT 第 3 项 ChatHeader 接线', => {
+describe('default.vue layout — ChatInput pin-confirmed 接线', => {
  beforeEach( => {
  setActivePinia(createPinia)
  })
  afterEach( => {
  vi.clearAllMocks
  })
- it('chat 模式下 ChatHeader emit pin-confirmed → chatStore.patchConversationCredential 被以 credentialId 调用', async => {
+ it('chat 模式下 ChatInput emit pin-confirmed → chatStore.patchConversationProviderAndModel 被以 (credentialId, model) 调用', async => {
  const chatStore = useChatStore
  const spy = vi
- .spyOn(chatStore, 'patchConversationCredential')
+ .spyOn(chatStore, 'patchConversationProviderAndModel')
  .mockResolvedValue({} as never)
  const wrapper = mount(DefaultLayout, {
  global: {
  stubs: {
- ChatHeader: ChatHeaderStub,
- ChatInput: true,
+ ChatHeader: true,
+ ChatInput: ChatInputStub,
  ChatMessageArea: true,
  AppSidebar: true,
  SystemHealthPopover: true,
@@ -83,7 +86,7 @@ describe('default.vue layout — UAT 第 3 项 ChatHeader 接线', => {
  await fireBtn.trigger('click')
  await nextTick
  expect(spy).toHaveBeenCalledTimes(1)
- expect(spy).toHaveBeenCalledWith('cred-new-uuid')
+ expect(spy).toHaveBeenCalledWith('cred-new-uuid', 'claude-sonnet-4')
  wrapper.unmount
  })
 })
