@@ -1,21 +1,15 @@
 /**
- * Phase Plan Task 02 — ChatHeader frozen / active / WAITING 态测试
+ * useConversationFrozen composable 单元测试
  *
- * 覆盖 Behaviors G / H + useConversationFrozen 单测 A/B/C：
- * - G: ChatHeader 渲染 frozen 对话 → Provider 下拉 disabled 属性为 true
- * - H: ChatHeader 渲染 active 对话 → 默认不打开 pin 弹窗
- * - useConversationFrozen 三态判定
+ * 历史背景：原 ChatHeader.spec 含 G/H/WAITING/I/J 5 个 pin-related
+ * 用例。UX 重设计后 ChatHeader 删除凭证下拉与切换确认弹窗职责（迁移到 ChatInput
+ * 接管），相应用例被裁剪。useConversationFrozen 已被 ChatInput 复用以接管原
+ * frozen 装饰职责，本套保留 6 个组合用例（A/B/C/stopped/draft/响应式）继续守护
+ * frozen 判定逻辑核心契约。
  */
-import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { computed, nextTick, ref } from 'vue'
-import ChatHeader from '~/components/chat/ChatHeader.vue'
 import { useConversationFrozen } from '~/composables/useConversationFrozen'
-import { useProviderCredentialStore } from '~/stores/providerCredential'
-function cleanupBody {
- document.body.innerHTML = ''
-}
 describe('useConversationFrozen', => {
  it('A: status=completed → isFrozen=true, reason 含 "已完成"', => {
  const status = ref<'completed'>('completed')
@@ -59,151 +53,5 @@ describe('useConversationFrozen', => {
  status.value = 'completed'
  await nextTick
  expect(tracker.value).toBe(true)
- })
-})
-describe('chatHeader (Phase)', => {
- beforeEach( => {
- setActivePinia(createPinia)
- })
- afterEach(cleanupBody)
- it('G: frozen(completed) 对话渲染后 Provider 下拉区块标记为 frozen', async => {
- const wrapper = mount(ChatHeader, {
- props: {
- conversationStatus: 'completed',
- currentCredentialId: null,
- currentModel: '',
- messageCount: 3,
- conversationId: 'conv-1',
- waitingForInput: false,
- },
- attachTo: document.body,
- global: { stubs: { ProviderCredentialDropdown: true, PinConfirmDialog: true } },
- })
- await nextTick
- const frozenWrapper = wrapper.find('[data-frozen="true"]')
- expect(frozenWrapper.exists).toBe(true)
- wrapper.unmount
- })
- it('H: active(running) 对话默认不打开 pin 弹窗', async => {
- const wrapper = mount(ChatHeader, {
- props: {
- conversationStatus: 'running',
- currentCredentialId: 'cred-old',
- currentModel: 'claude-3-5',
- messageCount: 5,
- conversationId: 'conv-1',
- waitingForInput: false,
- },
- attachTo: document.body,
- global: { stubs: { ProviderCredentialDropdown: true, PinConfirmDialog: true } },
- })
- await nextTick
- // frozen 属性应为 false
- const frozenWrapper = wrapper.find('[data-frozen="false"]')
- expect(frozenWrapper.exists).toBe(true)
- wrapper.unmount
- })
- it('WAITING 态（waitingForInput=true）即使 running 也标记 frozen', async => {
- const wrapper = mount(ChatHeader, {
- props: {
- conversationStatus: 'running',
- currentCredentialId: null,
- currentModel: '',
- messageCount: 0,
- conversationId: 'conv-1',
- waitingForInput: true,
- },
- attachTo: document.body,
- global: { stubs: { ProviderCredentialDropdown: true, PinConfirmDialog: true } },
- })
- await nextTick
- const frozenWrapper = wrapper.find('[data-frozen="true"]')
- expect(frozenWrapper.exists).toBe(true)
- wrapper.unmount
- })
- // ==========================================================================
- // Phase Plan：ChatHeader.oldCredential watch(immediate) 赋值（230 修复）
- //
- // 修复前：oldCredential ref 声明但从不赋值 → PinConfirmDialog 恒显示占位文案 "当前 Provider"。
- // 修复后：watch( => props.currentCredentialId, { immediate: true }) +
- // providerStore.getCredentialById 同步赋值 → PinConfirmDialog 收到真实 name。
- // 降级链保留（模板 L189 fallback）：store 未 load → '当前 Provider'；currentCredentialId null → '未指定'。
- // ==========================================================================
- it('I: props.currentCredentialId 命中 store 时，oldCredential 应被赋值（渲染真实 Provider 名）', async => {
- setActivePinia(createPinia)
- const store = useProviderCredentialStore
- // 直接写 store.credentials —— 跳过 fetch（fetchCredentials 含 30s TTL，且本用例不依赖 API）
- store.credentials = [
- {
- id: 'cred-42',
- provider_type: 'anthropic',
- name: 'my-anth-prod',
- scope: 'system',
- scope_id: null,
- is_active: true,
- last_health_check_at: null,
- last_health_check_status: '',
- last_health_check_error: '',
- available_models:,
- api_key_last4: '',
- has_api_key: true,
- created_at: '2026-04-22T00:00:00Z',
- updated_at: '2026-04-22T00:00:00Z',
- },
- ]
- const wrapper = mount(ChatHeader, {
- props: {
- conversationStatus: 'running',
- currentCredentialId: 'cred-42',
- currentModel: 'claude-3-5',
- messageCount: 1,
- conversationId: 'conv-1',
- waitingForInput: false,
- },
- attachTo: document.body,
- global: {
- stubs: {
- ProviderCredentialDropdown: true,
- PinConfirmDialog: {
- props: ['oldProviderName'],
- template: '<div data-test="pin-dialog":data-old-name="oldProviderName" />',
- },
- },
- },
- })
- await nextTick
- await flushPromises
- const el = wrapper.find('[data-test="pin-dialog"]')
- expect(el.exists).toBe(true)
- expect(el.attributes('data-old-name')).toBe('my-anth-prod')
- wrapper.unmount
- })
- it('J: store 未 load 时，fallback 到"当前 Provider"占位文案', async => {
- setActivePinia(createPinia)
- // credentials 保持空 → getCredentialById 返 null → 模板 fallback
- const wrapper = mount(ChatHeader, {
- props: {
- conversationStatus: 'running',
- currentCredentialId: 'cred-missing',
- currentModel: '',
- messageCount: 0,
- conversationId: 'conv-1',
- waitingForInput: false,
- },
- attachTo: document.body,
- global: {
- stubs: {
- ProviderCredentialDropdown: true,
- PinConfirmDialog: {
- props: ['oldProviderName'],
- template: '<div data-test="pin-dialog":data-old-name="oldProviderName" />',
- },
- },
- },
- })
- await nextTick
- const el = wrapper.find('[data-test="pin-dialog"]')
- expect(el.attributes('data-old-name')).toBe('当前 Provider')
- wrapper.unmount
  })
 })
