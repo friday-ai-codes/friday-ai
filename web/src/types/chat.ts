@@ -1,10 +1,22 @@
 /** 对话系统类型定义 */
+import type { ConversationStatus } from '~/composables/useConversationFrozen'
+/**
+ * 对话状态（与后端 Conversation.Status TextChoices 同步）。
+ *
+ * 真源在 useConversationFrozen.ts，本文件 re-export 让 chat 类型层保持单一入口。
+ * UAT 第 3 项 hotfix：Conversation DTO 引用此类型。
+ */
+export type { ConversationStatus } from '~/composables/useConversationFrozen'
 /** 对话 */
 export interface Conversation {
  id: string
  project_id: string
  title: string
  model: string
+ /** UAT 第 3 项 hotfix：对话 pin 状态（frozen 判据真源） */
+ status: ConversationStatus
+ /** UAT 第 3 项 hotfix：对话级 pin 的 ProviderCredential UUID（null=未 pin） */
+ provider_credential_id: string | null
  created_at: string
  updated_at: string
 }
