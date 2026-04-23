@@ -264,6 +264,43 @@ export const useChatStore = defineStore('chat', => {
  throw e
  }
  }
+ /**
+ * UX 重设计：chat 路径折叠「凭证 + 模型」为单选时，PATCH 双字段。
+ *
+ * 用户在 ChatInput model-selector 选择「凭证/模型组合」并通过 PinConfirmDialog
+ * 确认后调本 action。与 patchConversationCredential 区别：单次请求同时携带
+ * provider_credential_id + model，避免两次 PATCH 中间态出现「凭证已切但模型仍是旧
+ * Provider 的」非法组合。
+ *
+ * 失败语义同 patchConversationCredential：throw + 写 error.value，
+ * 由消费方（PinConfirmDialog defineExpose showError 或全局 toast）兜错。
+ */
+ async function patchConversationProviderAndModel(
+ credentialId: string,
+ model: string,
+ ) {
+ if (!currentConversationId.value) {
+ const msg = '当前没有活动对话，无法切换 Provider / 模型'
+ error.value = msg
+ throw new Error(msg)
+ }
+ try {
+ const updated = await patchConversation(
+ currentConversationId.value,
+ { provider_credential_id: credentialId, model },
+ )
+ const idx = conversations.value.findIndex(c => c.id === updated.id)
+ if (idx >= 0) {
+ conversations.value[idx] = { ...conversations.value[idx], ...updated }
+ }
+ error.value = null
+ return updated
+ }
+ catch (e) {
+ error.value = e instanceof Error ? e.message: '切换 Provider / 模型失败'
+ throw e
+ }
+ }
  async function stopStreaming {
  if (!currentConversationId.value)
  return
@@ -1151,6 +1188,7 @@ export const useChatStore = defineStore('chat', => {
  createNewConversation,
  removeConversation,
  patchConversationCredential,
+ patchConversationProviderAndModel,
  stopStreaming,
  toggleSidebar,
  clearCurrentConversation,
