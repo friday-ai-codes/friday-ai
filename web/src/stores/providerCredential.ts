@@ -19,6 +19,7 @@ import type {
  ProviderCredentialDto,
  ProviderCredentialUpdatePayload,
  ProviderScope,
+ ProviderScopeFilter,
  ProviderTypeMetaDto,
  ResolvedProvider,
  TestConnectionResponse,
@@ -31,6 +32,11 @@ interface PersistedSnapshot {
  credentials: ProviderCredentialDto
  providerTypes: ProviderTypeMetaDto
  lastFetchedAt: number
+ /**
+ *：cache key 的第三维 — 区分 scope=project / scope=any 同 projectId
+ * 互相污染（chat 路径需要 scope=any 全集，admin 页用 scope=system，项目页用 scope=project）。
+ */
+ lastFetchedScope: ProviderScopeFilter | null
  currentProjectId: string | null
 }
 export const useProviderCredentialStore = defineStore('providerCredential', => {
@@ -43,6 +49,8 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const lastError = ref<string | null>(null)
  const currentProjectId = ref<string | null>(null)
  const lastFetchedAt = ref<number>(0)
+ /**：上次 fetchCredentials 用的 scope（参与 cache key 命中判定）。 */
+ const lastFetchedScope = ref<ProviderScopeFilter | null>(null)
  // ============================================================================
  // Getters
  // ============================================================================
@@ -70,6 +78,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  credentials: credentials.value,
  providerTypes: providerTypes.value,
  lastFetchedAt: lastFetchedAt.value,
+ lastFetchedScope: lastFetchedScope.value,
  currentProjectId: currentProjectId.value,
  }
  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
@@ -93,6 +102,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  credentials.value = parsed.credentials as ProviderCredentialDto
  providerTypes.value = parsed.providerTypes as ProviderTypeMetaDto
  lastFetchedAt.value = typeof parsed.lastFetchedAt === 'number' ? parsed.lastFetchedAt: 0
+ lastFetchedScope.value = parsed.lastFetchedScope ?? null
  currentProjectId.value = parsed.currentProjectId ?? null
  }
  catch {
@@ -110,13 +120,17 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  // ============================================================================
  /**：按 scope / projectId 拉取凭证列表,同上下文 30s TTL 内命中缓存。 */
  async function fetchCredentials(params: {
- scope?: ProviderScope
+ scope?: ProviderScopeFilter
  projectId?: string
  includeInactive?: boolean
  force?: boolean
  } = {}): Promise<ProviderCredentialDto> {
  const now = Date.now
- const sameContext = currentProjectId.value === (params.projectId ?? null)
+ const requestedScope: ProviderScopeFilter | null = params.scope ?? null
+ //：cache key 加 scope 维度，避免 scope=project / scope=any 同 projectId 互污染
+ const sameContext
+ = currentProjectId.value === (params.projectId ?? null)
+ && lastFetchedScope.value === requestedScope
  if (
  !params.force
  && sameContext
@@ -136,6 +150,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  credentials.value = list
  lastFetchedAt.value = now
  currentProjectId.value = params.projectId ?? null
+ lastFetchedScope.value = requestedScope
  persist
  return list
  }
@@ -332,6 +347,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  lastError,
  currentProjectId,
  lastFetchedAt,
+ lastFetchedScope,
  // getters
  getCredentialById,
  getCredentialsByScope,

@@ -12,7 +12,7 @@ import type {
  ProviderCredentialCreatePayload,
  ProviderCredentialDto,
  ProviderCredentialUpdatePayload,
- ProviderScope,
+ ProviderScopeFilter,
  ProviderTypeMetaDto,
  RefreshModelsResponse,
  TestConnectionResponse,
@@ -20,7 +20,12 @@ import type {
 import { del, get, patch, post } from './client'
 /** 凭证列表查询参数。 */
 export interface ListCredentialsParams {
- scope?: ProviderScope
+ /**
+ * 'system' / 'project' 与 DB 行 scope 一一对应；'any' 透传给后端
+ * 的 `?scope=any`（system ∪ 当前 project_id 全集，UAT
+ * 第 3 项 hotfix follow-up，）。
+ */
+ scope?: ProviderScopeFilter
  projectId?: string
  includeInactive?: boolean
  isActive?: boolean
@@ -42,7 +47,7 @@ function extractList<T>(payload: T | DrfPaginated<T>): T {
  * 把 ListCredentialsParams 映射成 `client.get` 所需的 params 对象(snake_case)。
  *
  * 后端 query_params 约定:
- * - `scope` = 'system' | 'project'
+ * - `scope` = 'system' | 'project' | 'any'（'any' 与 project_id 一起返 system ∪ 当前项目）
  * - `project_id` = UUID
  * - `include_inactive` = 'true'（出现即启用）
  * - `is_active` = 'true' | 'false'
