@@ -70,7 +70,15 @@ const pageTitle = computed( => {
  </div>
  <!-- Chat 对话模式 -->
  <div v-else key="content-chat" class="flex-1 flex flex-col min-w-0">
- <ChatHeader />
+ <!--
+ UAT 第 3 项 hotfix：原裸挂载 <ChatHeader /> 不传 props
+ 也不接 emit，导致 chat 路径 Provider pin 全链路断链（PinConfirmDialog
+ 确认后没人 PATCH，下拉回退「请选择凭证」+ 发消息走 provider_credential_missing
+ → 闪一下消失）。此处补齐 props + @pin-confirmed listener。:resolved-provider 暂不接（Out of scope；ChatHeader 默认 null + v-if 兜底）。
+ -->
+ <ChatHeader:conversation-id="chatStore.currentConversationId":conversation-status="chatStore.currentConversation?.status":current-credential-id="chatStore.currentConversation?.provider_credential_id ?? null":current-model="chatStore.currentConversation?.model":message-count="chatStore.messages.length":waiting-for-input="false"
+ @pin-confirmed="chatStore.patchConversationCredential"
+ />
  <div class="flex-1 min- relative">
  <ChatMessageArea />
  <ChatInput class="chat-input-float" />
