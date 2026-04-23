@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Model } from '~/api/chat'
 import type { BranchIndexRow } from '~/api/repositories'
-import { getModels } from '~/api/chat'
+import type { ConversationStatus } from '~/composables/useConversationFrozen'
+import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
 import { repositoriesApi } from '~/api/repositories'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
+import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 const chatStore = useChatStore
@@ -78,30 +79,152 @@ watch(selectedBranchLocal, (name) => {
 })
 const inputContent = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
-const models = ref<Model>
 const showModelMenu = ref(false)
 const modelMenuRef = ref<HTMLElement | null>(null)
-onMounted(async => {
+// ============================================================================
+//：model-selector 折叠重构
+// - 数据源：providerCredentialStore.activeCredentials × 各凭证 available_models
+// - 选项变化弹 PinConfirmDialog → 确认 emit('pin-confirmed', credentialId, model)
+// - W1 + W4：空态 / 无对话 / frozen 三态 disabled + tooltip + 双重防御 guard
+// ============================================================================
+const providerStore = useProviderCredentialStore
+const { isSystemAdmin } = usePermission
+async function loadCredentialsForChat {
+ const projectId = chatStore.selectedProjectId ?? undefined
  try {
- const resp = await getModels({})
- models.value = resp.models
+ await providerStore.fetchCredentials({ scope: 'any', projectId })
  }
  catch {
- // 静默处理
+ // 静默；空态 UI 已兜
  }
-})
+}
+onMounted(loadCredentialsForChat)
+watch( => chatStore.selectedProjectId, loadCredentialsForChat)
 onClickOutside(modelMenuRef, => {
  showModelMenu.value = false
 })
-const currentModelLabel = computed( => {
- if (!chatStore.selectedModel || chatStore.selectedModel === '__default__')
- return '系统默认'
- const found = models.value.find(m => m.id === chatStore.selectedModel)
- return found?.name || found?.id || chatStore.selectedModel
+interface CredentialModelOption {
+ credential: ProviderCredentialDto
+ model: AvailableModel
+ /** 唯一 key：`${credential.id}:${model.id}` */
+ key: string
+ /** 展示文案：`${credential.name} / ${model.id}` */
+ label: string
+}
+const credentialModelOptions = computed<CredentialModelOption>( => {
+ const opts: CredentialModelOption =
+ for (const cred of providerStore.activeCredentials) {
+ for (const m of cred.available_models) {
+ opts.push({
+ credential: cred,
+ model: m,
+ key: `${cred.id}:${m.id}`,
+ label: `${cred.name} / ${m.id}`,
+ })
+ }
+ }
+ // 排序：scope=system 优先 → scope=project；同 scope 内按 credential.name asc → model.id asc
+ return opts.sort((a, b) => {
+ if (a.credential.scope !== b.credential.scope)
+ return a.credential.scope === 'system' ? -1: 1
+ if (a.credential.name !== b.credential.name)
+ return a.credential.name.localeCompare(b.credential.name)
+ return a.model.id.localeCompare(b.model.id)
+ })
 })
-function selectModel(id: string) {
- chatStore.selectedModel = id
+const currentSelectionKey = computed<string | null>( => {
+ const conv = chatStore.currentConversation
+ if (!conv?.provider_credential_id || !conv.model)
+ return null
+ return `${conv.provider_credential_id}:${conv.model}`
+})
+const currentSelectionLabel = computed<string>( => {
+ const key = currentSelectionKey.value
+ if (!key)
+ return '请选择 Provider · 模型'
+ const found = credentialModelOptions.value.find(o => o.key === key)
+ if (found)
+ return found.label
+ // 凭证已被删除或不在 active 列表 → fallback 显示原始 ID（I1 已知降级链）
+ const conv = chatStore.currentConversation
+ return `${conv?.provider_credential_id ?? '未知'} / ${conv?.model ?? '默认'}`
+})
+const isEmpty = computed( => credentialModelOptions.value.length === 0)
+const emptyCta = computed( => {
+ if (isSystemAdmin.value)
+ return { text: '去 admin 添加凭证 →', to: '/admin/providers' }
+ const pid = chatStore.selectedProjectId
+ return {
+ text: '去项目设置添加凭证 →',
+ to: pid ? `/projects/${pid}/settings#providers`: '/projects',
+ }
+})
+// PinConfirmDialog 状态
+const pinDialogOpen = ref(false)
+const pendingOption = ref<CredentialModelOption | null>(null)
+const oldProviderName = computed( => {
+ const key = currentSelectionKey.value
+ if (!key)
+ return '未指定'
+ const found = credentialModelOptions.value.find(o => o.key === key)
+ return found?.credential.name ?? '当前 Provider'
+})
+const oldModelLabel = computed(
+ => chatStore.currentConversation?.model || '默认模型',
+)
+// [Revision 1 — W1 + W4] frozen 态 + 无对话 disabled 派生
+const conversationStatusRef = computed<ConversationStatus>(
+ => chatStore.currentConversation?.status ?? 'draft',
+)
+const frozen = useConversationFrozen(conversationStatusRef, ref(false))
+const isConversationFrozen = computed( => frozen.value.isFrozen)
+const hasNoActiveConversation = computed(
+ => !chatStore.currentConversationId,
+)
+const isSelectorDisabled = computed(
+ =>
+ isEmpty.value
+ || hasNoActiveConversation.value
+ || isConversationFrozen.value,
+)
+const disabledReason = computed<string>( => {
+ if (isEmpty.value)
+ return '' // 空态用专属 tooltip（CTA 链接），见模板
+ if (hasNoActiveConversation.value)
+ return '请先开始一段对话'
+ if (isConversationFrozen.value)
+ return frozen.value.reason || '当前对话已固定，无法切换 Provider / 模型'
+ return ''
+})
+function onSelectCombination(opt: CredentialModelOption) {
+ // [Revision 1 — W1] 顶部双重防御：button:disabled 已拦，再守一道（防 a11y / 测试 emit click）
+ if (isSelectorDisabled.value) {
  showModelMenu.value = false
+ return
+ }
+ showModelMenu.value = false
+ if (opt.key === currentSelectionKey.value)
+ return // 选中相同组合 → noop
+ pendingOption.value = opt
+ pinDialogOpen.value = true
+}
+const emit = defineEmits<{
+ 'pin-confirmed': [credentialId: string, model: string]
+}>
+function handlePinConfirm {
+ if (!pendingOption.value)
+ return
+ const { credential, model } = pendingOption.value
+ emit('pin-confirmed', credential.id, model.id)
+ // 由 default.vue listener 触发 chatStore.patchConversationProviderAndModel；
+ // 成功后 currentConversation getter 自动反映新值。失败由 chatStore.error.value
+ // + 全局 toast 兜（与 ChatHeader 旧实现一致；本组件不接 expose 链路）。
+ pinDialogOpen.value = false
+ pendingOption.value = null
+}
+function handlePinCancel {
+ pendingOption.value = null
+ pinDialogOpen.value = false
 }
 async function handleSend {
  const content = inputContent.value.trim
@@ -222,11 +345,50 @@ function toggleNotifications {
  </div>
  <!-- 右侧：模型选择 + 发送 -->
  <div class="toolbar-right">
- <!-- 模型选择器 -->
+ <!-- 模型选择器（凭证/模型组合） -->
  <div ref="modelMenuRef" class="relative">
- <button class="model-selector" @click="showModelMenu = !showModelMenu">
- <span class="model-label">{{ currentModelLabel }}</span>
- <span class="icon-[lucide--chevron-down] text-[11px] transition-transform":class="{ 'rotate-180': showModelMenu }" />
+ <!-- 三态①：空态（无可用凭证）→ CTA tooltip -->
+ <TooltipProvider v-if="isEmpty":delay-duration="200">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button class="model-selector model-selector--disabled" disabled>
+ <span class="model-label">无可用 Provider</span>
+ <span class="icon-[lucide--alert-triangle] text-[11px]" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="top" class="max-w-xs text-xs font-normal">
+ <p class="mb-1">
+ 请先在 admin/providers 或项目设置创建并启用 Provider 凭证。
+ </p>
+ <RouterLink:to="emptyCta.to" class="text-primary hover:underline">
+ {{ emptyCta.text }}
+ </RouterLink>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <!-- 三态②：有凭证但 disabled（无对话 / frozen）→ 原因 tooltip -->
+ <TooltipProvider v-else-if="isSelectorDisabled":delay-duration="200">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <button
+ class="model-selector model-selector--disabled"
+ disabled:data-test-disabled-reason="disabledReason"
+ >
+ <span class="model-label">{{ currentSelectionLabel }}</span>
+ <span class="icon-[lucide--lock] text-[11px]" />
+ </button>
+ </TooltipTrigger>
+ <TooltipContent side="top" class="max-w-xs text-xs font-normal">
+ {{ disabledReason }}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <!-- 三态③：可用态 → 正常 dropdown -->
+ <button v-else class="model-selector" @click="showModelMenu = !showModelMenu">
+ <span class="model-label">{{ currentSelectionLabel }}</span>
+ <span
+ class="icon-[lucide--chevron-down] text-[11px] transition-transform":class="{ 'rotate-180': showModelMenu }"
+ />
  </button>
  <Transition
  enter-active-class="transition-all duration-150 ease-out"
@@ -236,25 +398,27 @@ function toggleNotifications {
  leave-from-class="opacity-100 translate-y-0 scale-100"
  leave-to-class="opacity-0 translate-y-1 scale-95"
  >
- <div v-if="showModelMenu" class="model-menu">
+ <div v-if="showModelMenu && !isSelectorDisabled" class="model-menu">
  <button
- class="model-menu-item":class="{ 'model-menu-item--active': chatStore.selectedModel === '__default__' }"
- @click="selectModel('__default__')"
+ v-for="opt in credentialModelOptions":key="opt.key"
+ class="model-menu-item":class="{ 'model-menu-item--active': opt.key === currentSelectionKey }"
+ @click="onSelectCombination(opt)"
  >
- <span>系统默认</span>
- <span v-if="chatStore.selectedModel === '__default__'" class="icon-[lucide--check] text-xs text-primary" />
- </button>
- <button
- v-for="model in models":key="model.id"
- class="model-menu-item":class="{ 'model-menu-item--active': chatStore.selectedModel === model.id }"
- @click="selectModel(model.id)"
- >
- <span>{{ model.name || model.id }}</span>
- <span v-if="chatStore.selectedModel === model.id" class="icon-[lucide--check] text-xs text-primary" />
+ <span class="truncate">{{ opt.label }}</span>
+ <span
+ v-if="opt.key === currentSelectionKey"
+ class="icon-[lucide--check] text-xs text-primary shrink-0"
+ />
  </button>
  </div>
  </Transition>
  </div>
+ <!-- PinConfirmDialog（chat 路径凭证+模型切换确认） -->
+ <PinConfirmDialog
+ v-model:open="pinDialogOpen":old-provider-name="oldProviderName":old-model="oldModelLabel":new-provider-name="pendingOption?.credential.name ?? ''":new-model="pendingOption?.model.id ?? ''":message-count="chatStore.messages.length"
+ @confirm="handlePinConfirm"
+ @cancel="handlePinCancel"
+ />
  <!-- 发送按钮 -->
  <button
  class="send-btn":class="{ 'send-btn--active': inputContent.trim && !chatStore.isStreaming }":disabled="!inputContent.trim || chatStore.isStreaming"
@@ -422,6 +586,14 @@ function toggleNotifications {
 .model-selector:hover {
  background: hsl(210 40% 96%);
  color: hsl(215 28% 17%);
+}
+.model-selector--disabled {
+ opacity: 0.6;
+ cursor: not-allowed;
+}
+.model-selector--disabled:hover {
+ background: transparent;
+ color: hsl(215 16% 47%);
 }
 .model-label {
  max-width: 10rem;
