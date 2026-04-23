@@ -308,10 +308,20 @@ class ConversationDetailView(APIView):
  elif isinstance(chain_result, ProviderMissingError):
  # 全链路缺失 → resolved_provider=null（前端降级渲染）
  resolved_provider_payload = None
+ # UAT 第 3 项 hotfix：detail 响应补齐 model + status +
+ # provider_credential_id，与 list 字段对齐；conversation_prefetched 已 select_related
+ # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
  response_data = {
  "id": str(conversation.id),
  "project_id": str(conversation.project_id),
  "title": conversation.title,
+ "model": conversation.model,
+ "status": conversation.status,
+ "provider_credential_id": (
+ str(conversation_prefetched.provider_credential_id_id)
+ if conversation_prefetched.provider_credential_id_id
+ else None
+ ),
  "created_at": conversation.created_at,
  "updated_at": conversation.updated_at,
  "messages": ConversationMessageSerializer(messages, many=True).data,
@@ -421,11 +431,21 @@ class ConversationDetailView(APIView):
  fields_updated=list(data.keys),
  )
  # 5. 响应（复用 ConversationDetailSerializer）
+ # UAT 第 3 项 hotfix：补齐 model + status + provider_credential_id，
+ # 让前端 patchConversationCredential 直接拿响应回填本地 conversations，
+ # 触发 currentConversation getter 反映新 pin。
  return Response(
  {
  "id": str(conversation.id),
  "project_id": str(conversation.project_id),
  "title": conversation.title,
+ "model": conversation.model,
+ "status": conversation.status,
+ "provider_credential_id": (
+ str(conversation.provider_credential_id_id)
+ if conversation.provider_credential_id_id
+ else None
+ ),
  "created_at": conversation.created_at,
  "updated_at": conversation.updated_at,
  "messages":,

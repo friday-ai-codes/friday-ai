@@ -131,13 +131,22 @@ class ConversationPatchSerializer(serializers.Serializer):
  ) from exc
  return value
 class ConversationListSerializer(serializers.Serializer):
- """对话列表项。"""
+ """对话列表项。
+ UAT 第 3 项 hotfix：暴露 status + provider_credential_id，
+ 让前端 ChatHeader 能从 list 响应直接读到 pin 状态（chat 路径下 default.vue 接线）。
+ """
  id = serializers.UUIDField
  project_id = serializers.UUIDField
  title = serializers.CharField
  model = serializers.CharField(required=False, allow_blank=True)
+ status = serializers.CharField
+ provider_credential_id = serializers.SerializerMethodField
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
+ def get_provider_credential_id(self, obj) -> str | None:
+ """读 FK 的 _id 列（避免 sync ORM 触发；list/detail 路径均 async-safe）。"""
+ cred_id = getattr(obj, "provider_credential_id_id", None)
+ return str(cred_id) if cred_id else None
 class ConversationMessageSerializer(serializers.Serializer):
  """对话消息。"""
  id = serializers.UUIDField
@@ -161,15 +170,25 @@ class ResolvedProviderSerializer(serializers.Serializer):
  source = serializers.CharField # winning layer
  chain = ResolvedProviderChainEntrySerializer(many=True)
 class ConversationDetailSerializer(serializers.Serializer):
- """对话详情（含消息列表 + Phase resolved_provider）。"""
+ """对话详情（含消息列表 + Phase resolved_provider）。
+ UAT 第 3 项 hotfix：补齐 model + status + provider_credential_id，
+ 与 list 响应字段对齐；让前端切换对话后能从 detail 直接读到 pin 状态。
+ """
  id = serializers.UUIDField
  project_id = serializers.UUIDField
  title = serializers.CharField
+ model = serializers.CharField(required=False, allow_blank=True)
+ status = serializers.CharField
+ provider_credential_id = serializers.SerializerMethodField
  created_at = serializers.DateTimeField
  updated_at = serializers.DateTimeField
  messages = ConversationMessageSerializer(many=True, required=False)
  # Phase：四层 Provider 解析 Inspector（null=全链路缺失，前端降级）
  resolved_provider = ResolvedProviderSerializer(required=False, allow_null=True)
+ def get_provider_credential_id(self, obj) -> str | None:
+ """读 FK 的 _id 列（避免 sync ORM 触发；list/detail 路径均 async-safe）。"""
+ cred_id = getattr(obj, "provider_credential_id_id", None)
+ return str(cred_id) if cred_id else None
 class RuntimeLogSerializer(serializers.Serializer):
  """运行态日志。"""
  type = serializers.CharField
