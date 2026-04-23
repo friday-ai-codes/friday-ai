@@ -267,3 +267,101 @@ def test_list_scope_filter_project(
  ids = {item["id"] for item in items}
  assert str(project_a_anthropic_credential.id) in ids
  assert str(system_default_anthropic_credential.id) not in ids
+# ======================================================================
+# UAT 第 3 项 hotfix follow-up：scope=any 联合查询
+# ======================================================================
+@pytest.mark.django_db
+def test_list_scope_filter_any(
+ system_admin_user,
+ system_default_anthropic_credential,
+ project_a_anthropic_credential,
+ project_a,
+) -> None:
+ """?scope=any&project_id=<uuid> 返回 system 凭证 ∪ 该项目 project 凭证。
+ UAT 第 3 项 hotfix follow-up：chat 路径
+ ChatInput 底部 model-selector 需要 system + 当前项目两 scope 全集。
+ """
+ client = _client_for(system_admin_user)
+ resp = client.get(
+ f"/api/providers/credentials/?scope=any&project_id={project_a.id}"
+ )
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(system_default_anthropic_credential.id) in ids
+ assert str(project_a_anthropic_credential.id) in ids
+@pytest.mark.django_db
+def test_list_scope_filter_any_without_project_id_returns_system_only(
+ system_admin_user,
+ system_default_anthropic_credential,
+ project_a_anthropic_credential,
+) -> None:
+ """?scope=any 不带 project_id 时仅返回 system 凭证（防越权 / 默认收敛语义）。"""
+ client = _client_for(system_admin_user)
+ resp = client.get("/api/providers/credentials/?scope=any")
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(system_default_anthropic_credential.id) in ids
+ assert str(project_a_anthropic_credential.id) not in ids
+@pytest.mark.django_db
+def test_list_scope_filter_system_with_project_id_ignored(
+ system_admin_user,
+ system_default_anthropic_credential,
+ project_a_anthropic_credential,
+ project_a,
+) -> None:
+ """W2 回归保护：?scope=system&project_id=<uuid> 仅返 system 凭证（project_id 被忽略）。
+ 重构前：旧代码 `if project_id: qs.filter(scope='project', scope_id=project_id)`
+ 在 scope='system' 之后执行 → 二次 filter 抹掉所有 system 行（导致空结果）。
+ 重构后：scope=system 进入 elif 分支，project_id 仅在 scope=project 子句内消费 →
+ 对 scope=system 调用方零回归，project_id 被静默忽略。
+ 本用例锁定「scope 优先 + project_id 在 scope=system 下被忽略」语义。
+ """
+ client = _client_for(system_admin_user)
+ resp = client.get(
+ f"/api/providers/credentials/?scope=system&project_id={project_a.id}"
+ )
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(system_default_anthropic_credential.id) in ids, (
+ "scope=system 应返回 system 凭证（project_id 应被忽略，不应抹掉 system 结果）"
+ )
+ assert str(project_a_anthropic_credential.id) not in ids, (
+ "scope=system 不应返回 project 凭证"
+ )
+@pytest.mark.django_db
+def test_list_scope_filter_any_non_superuser_excludes_non_member_project(
+ project_a_member_user,
+ project_b,
+ project_b_openai_credential,
+ system_default_anthropic_credential,
+) -> None:
+ """W3 安全防护：非超管用户 ?scope=any&project_id=<非成员项目> 不应返回该项目凭证。
+ 层 2 queryset 上层强制 `Q(scope='system') | Q(scope='project', scope_id__in=user_project_ids)`，
+ 新增 scope=any 分支必须与上层 `__in=user_project_ids` 串联生效（不绕过）。
+ 本用例锁定「即使前端构造越权 query param，后端 queryset 上层兜底拦截」契约。
+ Fixtures：
+ - `project_a_member_user`：项目 A MEMBER 角色（非超管）
+ - `project_b`：非成员项目
+ - `project_b_openai_credential`：非成员项目 B 的凭证（应被层 2 兜底过滤）
+ - `system_default_anthropic_credential`：system 凭证（应仍可见）
+ """
+ client = _client_for(project_a_member_user)
+ resp = client.get(
+ f"/api/providers/credentials/?scope=any&project_id={project_b.id}"
+ )
+ assert resp.status_code == 200, resp.content
+ payload = resp.json
+ items = payload if isinstance(payload, list) else payload.get("results", )
+ ids = {item["id"] for item in items}
+ assert str(project_b_openai_credential.id) not in ids, (
+ "非超管用户构造越权 ?project_id=<非成员项目> 不应返回该项目凭证"
+ )
+ assert str(system_default_anthropic_credential.id) in ids, (
+ "system 凭证应仍可见（scope=any 分支与层 2 上层过滤串联，system 部分照常返回）"
+ )
