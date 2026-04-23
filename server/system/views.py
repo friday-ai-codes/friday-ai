@@ -237,10 +237,23 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  # query_params 过滤
  params = self.request.query_params
  scope = params.get("scope")
- if scope in ("system", "project"):
- qs = qs.filter(scope=scope)
  project_id = params.get("project_id")
+ # UAT 第 3 项 hotfix follow-up：
+ # scope=any + project_id=<uuid> 返回 system ∪ 指定项目（chat 路径需要）。
+ # 旧 scope=system / scope=project / 不传三种语义保持不变。
+ if scope == "any":
  if project_id:
+ qs = qs.filter(
+ Q(scope="system") | Q(scope="project", scope_id=project_id)
+ )
+ else:
+ qs = qs.filter(scope="system")
+ elif scope in ("system", "project"):
+ qs = qs.filter(scope=scope)
+ if scope == "project" and project_id:
+ qs = qs.filter(scope_id=project_id)
+ elif project_id:
+ # 旧行为：仅传 project_id 不传 scope → 当成 scope=project（保持兼容）
  qs = qs.filter(scope="project", scope_id=project_id)
  #：默认过滤 is_active=True；include_inactive=true 关闭
  include_inactive = params.get("include_inactive", "false").lower == "true"
