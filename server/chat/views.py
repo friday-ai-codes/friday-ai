@@ -917,6 +917,9 @@ class ChatInterruptView(APIView):
  conversation_id=conv_id_str,
  status__in=[OrchestrationRun.Status.RUNNING, OrchestrationRun.Status.WAITING],
  ).aupdate(status=OrchestrationRun.Status.INTERRUPTED)
+ await Conversation.objects.filter(id=conv_id_str).aupdate(
+ status=Conversation.Status.INTERRUPTED,
+ )
  # 标记最新 assistant 消息 metadata.status = interrupted
  from chat.models import Message
  latest_msg = await Message.objects.filter(
@@ -944,6 +947,9 @@ class ChatInterruptView(APIView):
  for task_info in pending_tasks:
  await _cancel_dispatched_task(task_info)
  await barrier.cancel_all(run_id)
+ await Conversation.objects.filter(id=conv_id_str).aupdate(
+ status=Conversation.Status.STOPPED,
+ )
  return Response({"status": "cancelled"})
  return Response(
  {"error": "无活跃对话或对话已完成"},

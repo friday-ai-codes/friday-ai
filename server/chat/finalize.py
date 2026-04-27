@@ -77,8 +77,15 @@ async def finalize_conversation(
  tool_calls=tool_calls_data,
  metadata=msg_metadata,
  )
- # 4. 更新对话时间
+ # 4. 更新对话时间 + 终态
+ if status_str == "completed":
+ conv_status = Conversation.Status.COMPLETED
+ elif status_str == "interrupted":
+ conv_status = Conversation.Status.INTERRUPTED
+ else:
+ conv_status = Conversation.Status.ERROR
  await Conversation.objects.filter(id=conversation.id).aupdate(
+ status=conv_status,
  updated_at=timezone.now,
  )
  # 5. 标题生成
