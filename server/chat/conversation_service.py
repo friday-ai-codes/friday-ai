@@ -354,6 +354,9 @@ async def _handle_waiting_state(
  status=OrchestrationRun.Status.ERROR,
  phase="error",
  )
+ await Conversation.objects.filter(id=conversation.id).aupdate(
+ status=Conversation.Status.ERROR,
+ )
  async def _on_barrier_progress(completed: int, total: int) -> None:
  logger.info(
  "barrier_task_progress",
@@ -508,6 +511,9 @@ class ConversationService:
  role=Message.Role.USER,
  content=content,
  )
+ # 对话进入进行中状态
+ conversation.status = Conversation.Status.RUNNING
+ await conversation.asave(update_fields=["status"])
  # 飞书文档预处理（per: 读取成功即自动注入上下文）
  doc_context_prefix = ""
  if feishu_doc_id:
@@ -588,6 +594,8 @@ class ConversationService:
  conversation_id=conv_id_str,
  session_id=session_id,
  )
+ graph_state_holder["phase"] = "error"
+ graph_state_holder["result_metadata"] = {"status": "error"}
  try:
  event_queue.put_nowait(
  AgentEvent(type=ERROR, data={"message": str(exc)}),
@@ -645,8 +653,9 @@ class ConversationService:
  accumulated_thinking = state.get("accumulated_thinking", )
  tool_calls = state.get("tool_calls", )
  result_metadata = state.get("result_metadata", {})
+ is_error = state.get("phase") == "error"
  await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
- status=OrchestrationRun.Status.COMPLETED,
+ status=OrchestrationRun.Status.ERROR if is_error else OrchestrationRun.Status.COMPLETED,
  phase=state.get("phase", OrchestrationRun.Phase.COMPLETED),
  )
  final_events = await do_finalize(
@@ -701,8 +710,9 @@ class ConversationService:
  do_finalize=do_finalize,
  )
  else:
+ is_error = state.get("phase") == "error"
  await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
- status=OrchestrationRun.Status.COMPLETED,
+ status=OrchestrationRun.Status.ERROR if is_error else OrchestrationRun.Status.COMPLETED,
  phase=state.get("phase", OrchestrationRun.Phase.COMPLETED),
  )
  await do_finalize(
@@ -723,6 +733,9 @@ class ConversationService:
  logger.exception(
  "background_finalize_error",
  conversation_id=conv_id_str,
+ )
+ await Conversation.objects.filter(id=conversation.id).aupdate(
+ status=Conversation.Status.ERROR,
  )
  asyncio.create_task(_background_finalize)
  return
