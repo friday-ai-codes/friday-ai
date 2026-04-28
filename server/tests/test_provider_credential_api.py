@@ -58,7 +58,13 @@ def test_create_credential_pydantic_dispatch_invalid_anthropic(
 def test_create_credential_pydantic_dispatch_valid_anthropic(
  system_admin_user,
 ) -> None:
- """anthropic schema 校验通过返 201；Read Serializer 不回显 encrypted_config / config 明文。"""
+ """anthropic schema 校验通过返 201；Read Serializer 按写权限分级回显 config。
+ Pitfall 3 重新校准（admin/providers 编辑表单 API key/base_url 回显需求）：
+ - 写权限用户（此处 superuser）GET retrieve 时 config 含 base_url + api_key 明文，
+ 与 Vue 表单 `initialValues.config` 直接对接，编辑时可以查看已配置值；
+ - 非写权限用户仍只能拿 api_key_last4，明文 api_key 完全不出现（覆盖见
+ `test_retrieve_system_credential_non_superuser_hides_secret_plaintext`）。
+ """
  client = _client_for(system_admin_user)
  resp = client.post(
  "/api/providers/credentials/",
@@ -75,35 +81,122 @@ def test_create_credential_pydantic_dispatch_valid_anthropic(
  )
  assert resp.status_code == 201, f"应 201 got {resp.status_code}: {resp.content!r}"
  body = resp.json
- # Pitfall 3 防御：config / encrypted_config 不在 response 明文回显
+ # POST 201 仍走 CreateSerializer，config write_only / encrypted_config 不回显
  assert "encrypted_config" not in body, "encrypted_config 不应回显"
- assert "config" not in body, "config write_only 不应回显"
+ assert "config" not in body, "POST 201 (Create Serializer) 仍不应回显 config"
  # 基础字段（POST 201 使用 CreateSerializer 回显，Read 派生字段 has_api_key /
- # api_key_last4 仅在 GET retrieve 时由 ProviderCredentialSerializer 产生）
+ # api_key_last4 / config 仅在 GET retrieve 时由 ProviderCredentialSerializer 产生）
  assert body.get("provider_type") == "anthropic"
  assert body.get("scope") == "system"
- # 原明文不应泄漏在响应中
+ # POST 响应 body 不应直接复读输入 api_key
  assert b"sk-test-placeholder" not in resp.content, (
- "完整 api_key 明文泄漏到响应"
+ "POST 201 响应不应回显 api_key"
  )
- # GET retrieve 验证 Read Serializer 契约：has_api_key + api_key_last4 末 4 位脱敏
+ # GET retrieve 验证 Read Serializer 契约
  # Create Serializer 不回显 id，从 DB 按 name 读取刚创建的凭证
  from system.models import ProviderCredential
  cred_id = ProviderCredential.objects.get(name="good-anth").id
  retrieve_resp = client.get(f"/api/providers/credentials/{cred_id}/")
  assert retrieve_resp.status_code == 200, retrieve_resp.content
  retrieve_body = retrieve_resp.json
+ # 派生字段：has_api_key + api_key_last4 末 4 位脱敏（任意可读用户均可见）
  assert retrieve_body.get("has_api_key") is True, (
  f"retrieve 应回显 has_api_key=True: {retrieve_body!r}"
  )
  assert retrieve_body.get("api_key_last4", "").endswith("cdef"), (
  f"api_key_last4 应末 4 位匹配，实际: {retrieve_body.get('api_key_last4')!r}"
  )
- # retrieve 响应也不应泄漏完整明文
- assert b"sk-test-placeholder" not in retrieve_resp.content, (
- "完整 api_key 明文泄漏到 retrieve 响应"
- )
  assert "encrypted_config" not in retrieve_body, "retrieve 不应回显 encrypted_config"
+ # 写权限用户（superuser）retrieve 时 config 字段含 base_url + api_key 明文
+ config = retrieve_body.get("config")
+ assert isinstance(config, dict), f"retrieve 应回显 config dict: {retrieve_body!r}"
+ assert config.get("base_url") == "https://api.anthropic.com", (
+ f"非密字段 base_url 必须回显: {config!r}"
+ )
+ assert config.get("api_key") == "sk-test-placeholder", (
+ f"superuser 写权限用户 api_key 明文应回显: {config!r}"
+ )
+# ======================================================================
+# Pitfall 3 重新校准：config 按写权限分级回显矩阵
+# ======================================================================
+@pytest.mark.django_db
+def test_retrieve_system_credential_non_superuser_hides_secret_plaintext(
+ project_a_member_user,
+ system_default_anthropic_credential,
+) -> None:
+ """非 superuser 读 system 级凭证：config 含 base_url 但绝不含 api_key 明文。
+ `_user_can_reveal_secrets` 仅 superuser 满足 system 写权限分支，普通认证用户
+ （即使是某项目 MEMBER）GET system 凭证仅可拿非密字段 + api_key_last4。
+ """
+ client = _client_for(project_a_member_user)
+ resp = client.get(
+ f"/api/providers/credentials/{system_default_anthropic_credential.id}/"
+ )
+ assert resp.status_code == 200, resp.content
+ body = resp.json
+ # 非密字段对所有可读用户回显
+ config = body.get("config")
+ assert isinstance(config, dict), f"retrieve 应有 config dict: {body!r}"
+ assert config.get("base_url") == "https://api.anthropic.com", (
+ f"base_url 非密字段必须回显: {config!r}"
+ )
+ # 严格秘密字段：不在 config dict 中出现 + 不在响应原文出现
+ assert "api_key" not in config, (
+ f"非写权限用户 config 不得含 api_key key: {config!r}"
+ )
+ assert b"sk-test-placeholder" not in resp.content, (
+ f"明文 api_key 泄漏到非写权限用户的 retrieve 响应:\n{resp.content!r}"
+ )
+ # 派生字段：仍可见 has_api_key=True + last4
+ assert body.get("has_api_key") is True
+ assert body.get("api_key_last4", "").endswith("ting"), body.get("api_key_last4")
+@pytest.mark.django_db
+def test_retrieve_project_credential_member_reveals_secret_plaintext(
+ project_a_member_user,
+ project_a_anthropic_credential,
+) -> None:
+ """项目 MEMBER 读项目凭证：config 含 base_url + api_key 明文（写权限分支）。
+ `_user_can_reveal_secrets` project 分支与 ProviderCredentialPermission 写分支
+ 一致：MEMBER+ 即拥有写权限，可看到完整 config 用于编辑表单回显。
+ """
+ client = _client_for(project_a_member_user)
+ resp = client.get(
+ f"/api/providers/credentials/{project_a_anthropic_credential.id}/"
+ )
+ assert resp.status_code == 200, resp.content
+ body = resp.json
+ config = body.get("config")
+ assert isinstance(config, dict), f"retrieve 应有 config dict: {body!r}"
+ # MEMBER 看得见明文 api_key，与编辑权限对齐（能改即能看）
+ assert "api_key" in config, (
+ f"MEMBER 写权限用户 config 应含 api_key key: {config!r}"
+ )
+ assert isinstance(config.get("api_key"), str) and config["api_key"], (
+ f"api_key 应为非空字符串: {config!r}"
+ )
+@pytest.mark.django_db
+def test_retrieve_project_credential_viewer_hides_secret_plaintext(
+ project_a_viewer_user,
+ project_a_anthropic_credential,
+) -> None:
+ """项目 VIEWER 读项目凭证：config 含 base_url 但不含 api_key 明文（无写权限）。
+ `_user_can_reveal_secrets` project 分支要求 MEMBER+，VIEWER 不达标 → 仅可读
+ 非密字段 + api_key_last4，与列表卡片展示口径完全一致。
+ """
+ client = _client_for(project_a_viewer_user)
+ resp = client.get(
+ f"/api/providers/credentials/{project_a_anthropic_credential.id}/"
+ )
+ assert resp.status_code == 200, resp.content
+ body = resp.json
+ config = body.get("config")
+ assert isinstance(config, dict), f"retrieve 应有 config dict: {body!r}"
+ # 非密字段仍回显
+ assert "base_url" in config, f"VIEWER 仍可见 base_url: {config!r}"
+ # 秘密字段必须缺席
+ assert "api_key" not in config, (
+ f"VIEWER 无写权限不得看到 api_key 明文: {config!r}"
+ )
 # ======================================================================
 #：toggle-active + aresolve_or_error 跳过验证
 # ======================================================================

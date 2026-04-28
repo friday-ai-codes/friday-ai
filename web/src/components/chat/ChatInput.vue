@@ -92,7 +92,10 @@ const { isSystemAdmin } = usePermission
 async function loadCredentialsForChat {
  const projectId = chatStore.selectedProjectId ?? undefined
  try {
- await providerStore.fetchCredentials({ scope: 'any', projectId })
+ await Promise.all([
+ providerStore.fetchCredentials({ scope: 'any', projectId }),
+ providerStore.fetchProviderTypes,
+ ])
  }
  catch {
  // 静默；空态 UI 已兜
@@ -114,13 +117,31 @@ interface CredentialModelOption {
 const credentialModelOptions = computed<CredentialModelOption>( => {
  const opts: CredentialModelOption =
  for (const cred of providerStore.activeCredentials) {
- for (const m of cred.available_models) {
+ const models = cred.available_models
+ if (models.length > 0) {
+ for (const m of models) {
  opts.push({
  credential: cred,
  model: m,
  key: `${cred.id}:${m.id}`,
  label: `${cred.name} / ${m.id}`,
  })
+ }
+ }
+ else {
+ // 尚未刷新模型清单 → fallback 到该 Provider 类型的 default_model
+ const meta = providerStore.providerTypes.find(
+ p => p.provider_type === cred.provider_type,
+ )
+ const fallbackModel = meta?.default_model
+ if (fallbackModel) {
+ opts.push({
+ credential: cred,
+ model: { id: fallbackModel, display_name: fallbackModel },
+ key: `${cred.id}:${fallbackModel}`,
+ label: `${cred.name} / ${fallbackModel}`,
+ })
+ }
  }
  }
  // 排序：scope=system 优先 → scope=project；同 scope 内按 credential.name asc → model.id asc
