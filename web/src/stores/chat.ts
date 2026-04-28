@@ -498,6 +498,29 @@ export const useChatStore = defineStore('chat', => {
  const runtime = await getConversationRuntime(id)
  if (runtime.active) {
  applyRuntimeSnapshot(runtime)
+ // 检查 deep analysis 是否已失败（后端回调丢失或 resume 出错）
+ const failedStatuses = ['error', 'timeout', 'cancelled']
+ if (
+ runtime.mode === 'deep_analysis'
+ && runtime.status
+ && failedStatuses.includes(runtime.status)
+ ) {
+ error.value = runtime.progress_message || '深度分析任务失败'
+ stopRuntimePolling
+ resetStreamingState
+ await hydrateConversationMessages(id)
+ return
+ }
+ if (
+ runtime.deep_analysis_status
+ && failedStatuses.includes(runtime.deep_analysis_status)
+ ) {
+ error.value = runtime.deep_analysis_error || '深度分析任务失败'
+ stopRuntimePolling
+ resetStreamingState
+ await hydrateConversationMessages(id)
+ return
+ }
  scheduleRuntimePoll(id)
  return
  }
@@ -524,14 +547,22 @@ export const useChatStore = defineStore('chat', => {
  activeCodingSession.value.status = 'failed'
  }
  }
- const wasRestoringRuntime = restoredRuntimeConversationId.value === id
+ // 检查 deep analysis 失败（非活跃态）
+ const failedStatuses = ['error', 'timeout', 'cancelled']
+ if (
+ runtime.deep_analysis_status
+ && failedStatuses.includes(runtime.deep_analysis_status)
+ ) {
+ error.value = runtime.deep_analysis_error || '深度分析任务失败'
+ }
  stopRuntimePolling
- if (wasRestoringRuntime) {
  const completedSessionId = deepAnalysisSessionId.value
+ // 无条件刷新消息：deep_analysis 等异步任务完成后，消息已由后端落库，
+ // 但前端 SSE 断开后可能尚未同步。wasRestoringRuntime 限制会漏掉
+ // 任务极快失败（第一次轮询即终态）的场景。
  await hydrateConversationMessages(id)
  if (completedSessionId)
  _notifyDeepAnalysisComplete(completedSessionId)
- }
  resetStreamingState
  }
  catch {
@@ -927,6 +958,12 @@ export const useChatStore = defineStore('chat', => {
  finally {
  isStreaming.value = false
  abortController.value = null
+ // graph 进入 WAITING（deep_analysis/coding 进行中）后 SSE 正常结束，
+ // 需要启动 runtime 轮询来恢复并跟踪后续状态
+ if (currentPhase.value === 'waiting' && currentConversationId.value) {
+ scheduleRuntimePoll(currentConversationId.value, 1000)
+ return
+ }
  // 错误时：记录失败内容用于重试，移除乐观更新的用户消息
  if (error.value && !streamingContent.value) {
  lastFailedContent.value = content
