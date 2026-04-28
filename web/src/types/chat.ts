@@ -79,6 +79,8 @@ export interface ConversationRuntime {
  progress_message?: string
  progress_percent?: number | null
  logs?: DeepAnalysisLog
+ deep_analysis_status?: string | null
+ deep_analysis_error?: string | null
 }
 /** 对话详情（含消息列表） */
 export interface ConversationDetail extends Conversation {

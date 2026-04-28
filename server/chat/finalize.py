@@ -67,8 +67,15 @@ async def finalize_conversation(
  if accumulated_thinking:
  msg_metadata["thinking"] = "".join(accumulated_thinking)
  tool_calls_data = tool_calls or None
- # 3. 保存 assistant 消息（幂等）
- if not await Message.objects.filter(id=assistant_msg_id).aexists:
+ # 3. 保存/更新 assistant 消息（幂等 — barrier 多次 resume 时更新为终态）
+ existing = await Message.objects.filter(id=assistant_msg_id).afirst
+ if existing:
+ await Message.objects.filter(id=assistant_msg_id).aupdate(
+ content=final_content,
+ tool_calls=tool_calls_data,
+ metadata=msg_metadata,
+ )
+ else:
  await Message.objects.acreate(
  id=assistant_msg_id,
  conversation=conversation,

@@ -17,9 +17,7 @@ import CleanupDialog from './CleanupDialog.vue'
 import ContextExceededCard from './ContextExceededCard.vue'
 import ProviderCredentialMissingCard from './ProviderCredentialMissingCard.vue'
 import { usePermission } from '~/composables/usePermission'
-import { useAuthStore } from '~/stores/auth'
 const chatStore = useChatStore
-const authStore = useAuthStore
 // Phase：switch_model 按钮透传给父页面（/pages/chat/[id].vue 监听后调用
 // ChatHeader.focusModelSelect）。cleanup_history 按钮走本地 CleanupDialog（下方 ref）。
 const emit = defineEmits<{
@@ -216,9 +214,9 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  </div>
  </div>
  </div>
- <!-- 空对话欢迎页 -->
+ <!-- 空对话欢迎页：有错误时不显示，让错误卡片在消息列表分支中渲染 -->
  <ChatWelcome
- v-else-if="!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming)"
+ v-else-if="!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming && !chatStore.error)"
  />
  <!-- 消息列表 -->
  <div v-else ref="scrollContainer" class="h-full overflow-y-auto">

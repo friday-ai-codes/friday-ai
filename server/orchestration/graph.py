@@ -160,8 +160,11 @@ async def _extract_blocking_tasks(
  "params": result.get("params", {}),
  })
  fallback_tasks = await drain_blocking_tasks(conversation_id)
- if fallback_tasks:
- blocking_tasks.extend(fallback_tasks)
+ seen_ids = {t["task_id"] for t in blocking_tasks}
+ for ft in fallback_tasks:
+ if ft["task_id"] not in seen_ids:
+ blocking_tasks.append(ft)
+ seen_ids.add(ft["task_id"])
  return blocking_tasks
 def _build_result_metadata(runner: ChatAnthropicRunner) -> dict[str, Any]:
  """从 runner.result 构建 result_metadata。"""
@@ -261,6 +264,20 @@ async def _execute_with_results(
  cfg = config.get("configurable", {})
  conv_id = cfg.get("conversation_id", "")
  run_id = state.get("run_id", "")
+ loop_count = state.get("wait_execute_loops", 0)
+ # 防止 LLM 在阻塞任务失败后无限重试相同工具
+ if loop_count >= 2:
+ error_msg = "分析任务多次尝试后仍失败，请稍后重试。"
+ await _persist_run_phase(run_id, RunPhase.ERROR.value)
+ return {
+ "phase": RunPhase.ERROR.value,
+ "final_answer": error_msg,
+ "accumulated_thinking": state.get("accumulated_thinking", ),
+ "tool_calls": state.get("tool_calls", ),
+ "result_metadata": {"error": error_msg, "status": "error"},
+ "agent_session_id": agent_session_id,
+ "blocking_results":,
+ }
  await _persist_run_phase(run_id, RunPhase.EXECUTING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "executing"}})
  results_text = "\n\n".join(

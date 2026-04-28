@@ -285,8 +285,6 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  )
  await session.amark_completed
  _schedule_workflow_resume(session, log)
- source = (session.last_output or {}).get("source") if session.last_output else None
- if source != "chat_deep_analysis":
  _schedule_agent_session_resume(session, log)
  log.info("task_completed_via_ws")
  async def _handle_failed(self, payload: dict, log: structlog.stdlib.BoundLogger) -> None:
@@ -309,8 +307,6 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  await session.amark_failed(error=error_msg)
  await _send_failure_notification(session, error_msg)
  _schedule_workflow_resume(session, log)
- source = (session.last_output or {}).get("source") if session.last_output else None
- if source != "chat_deep_analysis":
  _schedule_agent_session_resume(session, log)
  log.info("task_failed_via_ws")
  async def _create_question(self, payload: dict) -> tuple | None:

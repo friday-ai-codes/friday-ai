@@ -357,6 +357,31 @@ async def _handle_waiting_state(
  await Conversation.objects.filter(id=conversation.id).aupdate(
  status=Conversation.Status.ERROR,
  )
+ # 写入兜底错误消息，避免前端只显示 placeholder 而没有任何反馈
+ try:
+ from chat.models import Message
+ error_reason = ""
+ for r in results:
+ if not r.get("success"):
+ error_reason = r.get("error", "")
+ break
+ if not await Message.objects.filter(id=assistant_msg_id).aexists:
+ await Message.objects.acreate(
+ id=assistant_msg_id,
+ conversation=conversation,
+ role=Message.Role.ASSISTANT,
+ content=error_reason or "深度分析任务执行失败，请稍后重试。",
+ metadata={
+ "session_id": session_id,
+ "model": model,
+ "status": "error",
+ },
+ )
+ except Exception:
+ logger.exception(
+ "barrier_resume_error_message_failed",
+ conversation_id=conv_id_str,
+ )
  async def _on_barrier_progress(completed: int, total: int) -> None:
  logger.info(
  "barrier_task_progress",
@@ -860,6 +885,19 @@ class ConversationService:
  output = latest_deep_session.last_output or {}
  progress = output.get("progress", {}) if isinstance(output, dict) else {}
  logs = output.get("logs", ) if isinstance(output, dict) else
+ deep_info = {
+ "session_id": latest_deep_session.session_id,
+ "task_description": output.get("task_description", "")
+ if isinstance(output, dict)
+ else "",
+ "progress_message": progress.get("message", "")
+ if isinstance(progress, dict)
+ else "",
+ "progress_percent": progress.get("progress")
+ if isinstance(progress, dict)
+ else None,
+ "logs": logs if isinstance(logs, list) else,
+ }
  if latest_deep_session.status in {
  SubAgentSession.Status.PENDING,
  SubAgentSession.Status.RUNNING,
@@ -869,35 +907,37 @@ class ConversationService:
  "active": True,
  "mode": "deep_analysis",
  "status": latest_deep_session.status,
- "session_id": latest_deep_session.session_id,
- "task_description": output.get("task_description", "")
- if isinstance(output, dict)
- else "",
- "progress_message": progress.get("message", "")
- if isinstance(progress, dict)
- else "",
- "progress_percent": progress.get("progress")
- if isinstance(progress, dict)
- else None,
- "logs": logs if isinstance(logs, list) else,
+ **deep_info,
  }
  )
- elif runtime["mode"] is None:
+ else:
+ # 终态：ERROR / TIMEOUT / CANCELLED / COMPLETED
  runtime.update(
  {
- "session_id": latest_deep_session.session_id,
- "task_description": output.get("task_description", "")
- if isinstance(output, dict)
- else "",
- "progress_message": progress.get("message", "")
- if isinstance(progress, dict)
- else "",
- "progress_percent": progress.get("progress")
- if isinstance(progress, dict)
- else None,
- "logs": logs if isinstance(logs, list) else,
+ **deep_info,
+ "deep_analysis_status": latest_deep_session.status,
+ "deep_analysis_error": latest_deep_session.failure_reason
+ or latest_deep_session.last_error
+ or "",
  }
  )
+ # 如果 deep analysis 已失败但主流程还在 waiting，
+ # 将 active 设为 False 避免前端无限轮询
+ if (
+ latest_deep_session.status
+ in {
+ SubAgentSession.Status.ERROR,
+ SubAgentSession.Status.TIMEOUT,
+ SubAgentSession.Status.CANCELLED,
+ }
+ and orch_run
+ and orch_run.status == OrchestrationRun.Status.WAITING
+ ):
+ is_active = False
+ runtime["active"] = False
+ runtime["status"] = latest_deep_session.status
+ if runtime.get("mode") is None:
+ runtime["mode"] = "deep_analysis"
  # CodingSession 运行态检测 (Phase)
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
