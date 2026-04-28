@@ -33,7 +33,7 @@ export interface AvailableModel {
  supports_tools?: boolean
  supports_vision?: boolean
 }
-/** Read Serializer 对应的 DTO（与后端 ProviderCredentialSerializer 14 字段对齐）。 */
+/** Read Serializer 对应的 DTO（与后端 ProviderCredentialSerializer 15 字段对齐）。 */
 export interface ProviderCredentialDto {
  id: string
  provider_type: ProviderType
@@ -47,6 +47,16 @@ export interface ProviderCredentialDto {
  available_models: AvailableModel
  api_key_last4: string
  has_api_key: boolean
+ /**
+ * 已解密的 config（按写权限分级回显）。
+ *
+ * - 非密字段（base_url / organization_id）：所有可读用户均能拿到。
+ * - 密字段（api_key / bearer_token）：仅对该凭证有写权限的用户可拿到明文，
+ * 否则不出现该 key（前端编辑表单据此判断是否回显 password 输入框初始值）。
+ *
+ * 后端契约见 server/system/serializers.py:ProviderCredentialSerializer.get_config。
+ */
+ config: Record<string, unknown>
  created_at: string
  updated_at: string
 }

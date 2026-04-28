@@ -62,6 +62,33 @@ def _read_decrypted_config(obj: ProviderCredential) -> dict[str, Any]:
  return parsed if isinstance(parsed, dict) else {}
  except Exception:
  return {}
+# Read 序列化器明文回显白名单（base_url / organization_id 等非密字段任意读者可见）。
+_NON_SECRET_CONFIG_KEYS = frozenset({"base_url", "organization_id"})
+# 严格秘密字段：仅写权限用户（superuser 或 project MEMBER+）才能拿到明文。
+_SECRET_CONFIG_KEYS = frozenset({"api_key", "bearer_token"})
+def _user_can_reveal_secrets(request: Any, obj: ProviderCredential) -> bool:
+ """判断 request.user 是否对 obj 拥有写权限（=可看明文 api_key/bearer_token）。
+ 与 ProviderCredentialPermission.has_object_permission 写分支保持一致：
+ - superuser → True
+ - scope='system' 非 superuser → False（系统级写仅 superuser 可达）
+ - scope='project' → 校验 PermissionService.has_project_access(MEMBER+)
+ """
+ if request is None:
+ return False
+ user = getattr(request, "user", None)
+ if user is None or not getattr(user, "is_authenticated", False):
+ return False
+ if getattr(user, "is_superuser", False):
+ return True
+ if obj.scope == "project" and obj.scope_id:
+ from permissions.models import ProjectRole
+ from permissions.services import PermissionService
+ from projects.models import Project
+ project = Project.objects.filter(id=obj.scope_id).first
+ if project is None:
+ return False
+ return PermissionService.has_project_access(user, project, ProjectRole.MEMBER)
+ return False
 def _format_pydantic_errors(exc: PydanticValidationError) -> list[str]:
  """把 Pydantic ValidationError 展开成字符串列表，便于 DRF ValidationError 承载。
  Pydantic .errors 返回 list[dict]（含 loc/msg/type），但 DRF ValidationError 嵌套
@@ -77,11 +104,17 @@ def _format_pydantic_errors(exc: PydanticValidationError) -> list[str]:
  return formatted or ["config 字段校验失败"]
 class ProviderCredentialSerializer(serializers.ModelSerializer):
  """Provider 凭证读序列化器（retrieve / list）。
- 严禁回显 encrypted_config 明文（Pitfall 3 防御）；派生字段仅暴露 api_key_last4
- 末 4 位 + has_api_key 布尔，供前端编辑弹层显示"当前已配置密钥"提示。
+ config 字段策略（Pitfall 3 重新校准）：
+ - 非密字段（base_url / organization_id）：所有可读用户均回显，编辑表单需要回显校对。
+ - 密字段（api_key / bearer_token）：仅"对该凭证有写权限"的用户才能拿到明文，
+ 与 ProviderCredentialPermission 写分支判定一致；其他读者仍只能拿到 api_key_last4。
+ 场景：admin/providers 编辑表单需要把已配置的 base_url / api_key 回显进 input，
+ 所以契约从"严禁回显明文"放宽为"按写权限分级回显"，写权限即等价于"本来就可改回该值"，
+ 不引入新的越权读取面（详见 _user_can_reveal_secrets）。
  """
  api_key_last4 = serializers.SerializerMethodField
  has_api_key = serializers.SerializerMethodField
+ config = serializers.SerializerMethodField
  class Meta:
  model = ProviderCredential
  fields = [
@@ -97,6 +130,7 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  "available_models",
  "api_key_last4",
  "has_api_key",
+ "config",
  "created_at",
  "updated_at",
  ]
@@ -112,13 +146,35 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  """是否已配置 api_key / bearer_token；Ollama 无鉴权场景可为 False。"""
  config = _read_decrypted_config(obj)
  return bool(config.get("api_key") or config.get("bearer_token"))
+ def get_config(self, obj: ProviderCredential) -> dict[str, Any]:
+ """按写权限分级回显已解密 config。
+ - 始终包含 _NON_SECRET_CONFIG_KEYS（base_url / organization_id 等）。
+ - 仅当 _user_can_reveal_secrets 判定为 True 时附加 _SECRET_CONFIG_KEYS。
+ - 解密失败、字段不存在均按"无该 key"处理，不抛异常。
+ """
+ decrypted = _read_decrypted_config(obj)
+ if not decrypted:
+ return {}
+ result: dict[str, Any] = {
+ key: decrypted[key] for key in _NON_SECRET_CONFIG_KEYS if key in decrypted
+ }
+ request = self.context.get("request")
+ if _user_can_reveal_secrets(request, obj):
+ for key in _SECRET_CONFIG_KEYS:
+ if key in decrypted:
+ result[key] = decrypted[key]
+ return result
 class ProviderCredentialCreateSerializer(serializers.Serializer):
  """Provider 凭证创建序列化器。
  schema-driven：按 provider_type dispatch PROVIDER_REGISTRY[type].credential_schema
  做 Pydantic v2 校验，统一承载 5 种 Provider 凭证字段约束 + SecretStr 脱敏。
  校验通过后，config dict 经 encrypt_value(json.dumps(...)) 写入 encrypted_config 字段，
  严禁落盘明文（Phase 加密契约）。
+ Pitfall 7：需显式声明 `id` read_only 字段。DRF 默认用本 Serializer 序列化
+ POST 201 响应；若缺少 `id`，前端 store 把响应数据插入列表后该凭证无 id，
+ 后续编辑 / toggle / 测试连接等操作均会因 id 缺失而 URL 变成 /undefined/。
  """
+ id = serializers.UUIDField(read_only=True)
  provider_type = serializers.ChoiceField(choices=_PROVIDER_TYPE_CHOICES)
  name = serializers.CharField(max_length=64)
  scope = serializers.ChoiceField(choices=["system", "project"])
@@ -194,7 +250,11 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  - config={...} 完整字段 → 按 instance.provider_type Pydantic 校验后重新加密写入
  PUT（完整替换）语义由 DRF ViewSet 根据 action 路由，本 Serializer 同时承担
  update / partial_update 两种场景，通过 required=False 的字段表达。
+ Pitfall 7：需显式声明 `id` read_only 字段。DRF 默认用本 Serializer 序列化
+ PATCH 200 响应；若缺少 `id`，前端 store 把响应数据替换列表项后 id 丢失，
+ 后续编辑操作 URL 变成 /undefined/。
  """
+ id = serializers.UUIDField(read_only=True)
  name = serializers.CharField(max_length=64, required=False)
  scope = serializers.ChoiceField(choices=["system", "project"], required=False)
  scope_id = serializers.UUIDField(required=False, allow_null=True)

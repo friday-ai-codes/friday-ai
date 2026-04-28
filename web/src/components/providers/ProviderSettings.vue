@@ -103,6 +103,8 @@ function openCreate {
  formOpen.value = true
 }
 function onEdit(c: ProviderCredentialDto) {
+ // eslint-disable-next-line no-console
+ console.log('[ProviderSettings.onEdit] credential id =', c.id, 'object keys =', Object.keys(c))
  formMode.value = 'edit'
  formInitial.value = c
  formDirty.value = false
@@ -122,8 +124,16 @@ async function onSubmit(
  else {
  if (!formInitial.value)
  throw new Error('编辑目标丢失，请重新打开对话框')
+ const id = formInitial.value.id
+ // eslint-disable-next-line no-console
+ console.log('[ProviderSettings.onSubmit] editing id =', id, 'formInitial keys =', Object.keys(formInitial.value))
+ if (!id) {
+ throw new Error(
+ `凭证 ID 缺失（formInitial.id=${id}），可能是列表数据未包含 id 字段或缓存脏数据。请刷新页面后重试，并在 Console 查看 [ProviderSettings.onEdit] 日志。`,
+ )
+ }
  await store.updateCredential(
- formInitial.value.id,
+ id,
  payload as ProviderCredentialUpdatePayload,
  )
  toast.success('凭证已更新')

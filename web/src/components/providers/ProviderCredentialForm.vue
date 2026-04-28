@@ -137,7 +137,8 @@ const { handleSubmit, meta, setValues } = useForm({
  scope: props.initial?.scope ?? props.defaultScope,
  scope_id: props.initial?.scope_id ?? props.defaultProjectId,
  is_active: props.initial?.is_active ?? true,
- config: {} as Record<string, unknown>,
+ // edit 模式下回显已配置的 base_url / api_key（后端按写权限分级返回）。
+ config: { ...(props.initial?.config ?? {}) } as Record<string, unknown>,
  },
 })
 // 切换 selectedType 时重置 config 字段集
