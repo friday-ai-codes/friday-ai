@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import AppModeSwitcher from '~/components/layout/AppModeSwitcher.vue'
-import { Button } from '~/components/ui/button'
 import {
  DropdownMenu,
  DropdownMenuContent,
@@ -15,7 +14,6 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
-import { useAppMode } from '~/composables/useAppMode'
 import { usePermission } from '~/composables/usePermission'
 import { useAuthStore } from '~/stores/auth'
 interface NavItem {
@@ -29,9 +27,8 @@ const chatStore = useChatStore
 const router = useRouter
 const route = useRoute
 const { isSystemAdmin } = usePermission
-const { mode } = useAppMode
 const appVersion = __APP_VERSION__
-const displayMode = computed( => (route.path === '/' ? mode.value: 'friday'))
+const displayMode = computed( => route.path === '/chat' ? 'chat': 'friday')
 // 收缩状态持久化到 localStorage
 const isCollapsed = useLocalStorage('sidebar-collapsed', false)
 function toggleCollapse {
@@ -195,16 +192,14 @@ async function handleLogout {
  新建对话
  </TooltipContent>
  </Tooltip>
- <Button
+ <button
  v-else
- variant="outline"
- size="sm"
- class="w-full gap-1.5"
+ class="btn btn-primary w-full"
  @click="handleNewConversation"
  >
  <span class="icon-[lucide--plus] text-sm" />
  新建对话
- </Button>
+ </button>
  </div>
  <!-- 对话列表 -->
  <ScrollArea class="flex-1":class="isCollapsed ? 'px-2': ''">
@@ -214,10 +209,17 @@ async function handleLogout {
  </div>
  <div
  v-else-if="chatStore.conversations.length === 0"
- class=" text-center text-sm text-muted-foreground"
+ class="card text-center"
  >
- <span class="icon-[lucide--message-square-plus] text-2xl block mb-2 opacity-50" />
+ <div class="mx-auto mb-3 flex w-12 items-center justify-center rounded-xl bg-primary/10">
+ <span class="icon-[lucide--message-square-plus] text-2xl text-primary" />
+ </div>
+ <p class="text-sm font-medium text-foreground">
  暂无对话
+ </p>
+ <p class="mt-1 text-xs text-muted-foreground">
+ 点击上方按钮开始新对话
+ </p>
  </div>
  <div
  v-for="conv in chatStore.conversations":key="conv.id"
@@ -232,8 +234,16 @@ async function handleLogout {
  <p class="text-sm font-medium truncate">
  {{ conv.title }}
  </p>
- <p class="text-xs opacity-60">
+ <p class="text-xs opacity-60 flex items-center gap-1">
  {{ formatTime(conv.updated_at) }}
+ <span
+ v-if="conv.status === 'running'"
+ class="icon-[lucide--loader-circle] text-[10px] animate-spin text-primary"
+ />
+ <span
+ v-else-if="conv.status === 'completed'"
+ class="icon-[lucide--check-circle-2] text-[10px] text-green-500"
+ />
  </p>
  </div>
  <button

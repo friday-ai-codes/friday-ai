@@ -4,9 +4,6 @@ function resolveInitialMode: AppMode {
  if (typeof window === 'undefined') {
  return 'friday'
  }
- if (window.location.pathname !== '/') {
- return 'friday'
- }
  const savedMode = localStorage.getItem('app-mode') as AppMode | null
  return savedMode || 'friday'
 }

@@ -208,8 +208,10 @@
 }
 /* Sub2API 风格侧边栏 */
 .sidebar-s2a {
- background: white;
- border-right: 1px solid hsl(214 32% 91%);
+ background: rgba(255, 255, 255, 0.85);
+ backdrop-filter: blur(20px);
+ -webkit-backdrop-filter: blur(20px);
+ border-right: 1px solid hsl(214 32% 91% / 0.6);
 }
 .sidebar-s2a-link {
  display: flex;
