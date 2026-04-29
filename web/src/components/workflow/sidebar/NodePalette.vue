@@ -1,19 +1,36 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { ALL_NODE_DEFINITIONS } from '~/types/workflow/node-definitions'
 import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 import NodePaletteItem from './NodePaletteItem.vue'
 /**
- * 节点分组定义 — 名称和描述在这里维护，图标和颜色从 nodeVisuals 统一读取。
+ * 节点分组定义 — 组名和节点列表在这里维护。
+ * Phase: 已迁移节点的 name/description 从 ALL_NODE_DEFINITIONS 自动读取，
+ * legacy 节点保留硬编码。后续 Phase 迁移更多节点后逐步移除硬编码。
  */
+interface PaletteItem {
+ type: string
+ name: string
+ description: string
+}
 interface PaletteGroup {
  name: string
- items: { type: string, name: string, description: string }
+ items: PaletteItem
 }
-const nodeGroups: PaletteGroup = [
+/**
+ * 从 ALL_NODE_DEFINITIONS 解析节点信息
+ * 保留 `type: 'xxx'` 格式以便 CI 正则提取节点类型列表
+ */
+function fromDef(type: string, name: string, description: string): PaletteItem {
+ const def = ALL_NODE_DEFINITIONS[type]
+ return { type, name: def?.displayName ?? name, description: def?.description ?? description }
+}
+const nodeGroups = computed<PaletteGroup>( => [
  {
  name: '触发器',
  items: [
- { type: 'manual_trigger', name: '手动触发', description: '手动启动工作流' },
- { type: 'webhook_trigger', name: 'Webhook', description: '通过 HTTP 请求触发' },
+ fromDef('manual_trigger', '手动触发', '手动启动工作流'),
+ fromDef('webhook_trigger', 'Webhook', '通过 HTTP 请求触发'),
  { type: 'feishu_event_trigger', name: '飞书事件', description: '飞书事件触发' },
  ],
  },
@@ -28,7 +45,7 @@ const nodeGroups: PaletteGroup = [
  {
  name: '操作',
  items: [
- { type: 'http_request', name: 'HTTP 请求', description: '发送 HTTP 请求' },
+ fromDef('http_request', 'HTTP 请求', '发送 HTTP 请求'),
  { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应' },
  ],
  },
@@ -37,17 +54,17 @@ const nodeGroups: PaletteGroup = [
  items: [
  { type: 'create_branch', name: '创建分支', description: '创建 Git 分支' },
  { type: 'create_pr', name: '创建 PR', description: '创建 Pull Request' },
- { type: 'merge_pr', name: '合并 PR', description: '合并 Pull Request' },
- { type: 'mcp_deploy', name: 'MCP 部署', description: 'MCP 服务部署' },
- { type: 'fetch_group_chat', name: '获取群聊', description: '从飞书工作项获取群聊 ID' },
- { type: 'join_group_chat', name: '加入群聊', description: 'Bot 加入目标群聊' },
- { type: 'group_chat_question', name: '群聊提问', description: '向群聊发送提问卡片等待回答' },
+ fromDef('merge_pr', '合并 PR', '合并 Pull Request'),
+ fromDef('mcp_deploy', 'MCP 部署', 'MCP 服务部署'),
+ fromDef('fetch_group_chat', '获取群聊', '从飞书工作项获取群聊 ID'),
+ fromDef('join_group_chat', '加入群聊', 'Bot 加入目标群聊'),
+ fromDef('group_chat_question', '群聊提问', '向群聊发送提问卡片等待回答'),
  ],
  },
  {
  name: '通知',
  items: [
- { type: 'notify_feishu', name: '飞书通知', description: '发送飞书消息通知' },
+ fromDef('notify_feishu', '飞书通知', '发送飞书消息通知'),
  ],
  },
  {
@@ -66,14 +83,14 @@ const nodeGroups: PaletteGroup = [
  {
  name: '控制流',
  items: [
- { type: 'condition', name: '条件判断', description: '根据条件分支' },
- { type: 'human_approval', name: '人工审批', description: '等待人工审批' },
- { type: 'delay', name: '延时', description: '等待指定时长后继续' },
- { type: 'parallel', name: '并行分支', description: '并行执行多个分支' },
- { type: 'join', name: '汇聚', description: '等待所有并行分支完成' },
+ fromDef('condition', '条件判断', '根据条件分支'),
+ fromDef('human_approval', '人工审批', '等待人工审批'),
+ fromDef('delay', '延时', '等待指定时长后继续'),
+ fromDef('parallel', '并行分支', '并行执行多个分支'),
+ fromDef('join', '汇聚', '等待所有并行分支完成'),
  ],
  },
-]
+])
 /** 从 nodeVisuals 获取分组的主色 — 取第一个 item 的颜色 */
 function getGroupColor(group: PaletteGroup): string {
  return getNodeVisual(group.items[0]?.type ?? '').color

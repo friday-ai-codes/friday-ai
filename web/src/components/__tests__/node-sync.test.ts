@@ -6,7 +6,7 @@ import { getDefaultPortsForNodeType } from '../workflow/editor/utils/portConfig'
 const sidebarDir = path.resolve(__dirname, '../workflow/sidebar')
 const paletteSource = fs.readFileSync(path.join(sidebarDir, 'NodePalette.vue'), 'utf-8')
 const paletteSet = new Set(
- [...paletteSource.matchAll(/type:\s*'([^']+)'/g)].map(m => m[1]),
+ [...paletteSource.matchAll(/(?:type:\s*|fromDef\'([^']+)'/g)].map(m => m[1]),
 )
 // 后端 29 个注册节点
 const EXPECTED_NODES = [
