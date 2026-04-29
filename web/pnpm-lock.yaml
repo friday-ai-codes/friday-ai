@@ -503,6 +503,9 @@ importers:
  zod:
  specifier: 'catalog:'
  version: 4.3.5
+ zod-to-json-schema:
+ specifier: ^3.25.2
+ version: 3.25.2(zod@4.3.5)
  devDependencies:
  '@antfu/eslint-config':
  specifier: 'catalog:'
@@ -3629,6 +3632,10 @@ packages:
  engines: {node: '>=10'}
  zhead@2.2.4:
  resolution: {integrity: sha512-8F0OI5dpWIA5IGG5NHUg9staDwz/ZPxZtvGVf01j7vHqSyZ0raHY+78atOVxRqb73AotX22uV1pXt3gYSstGag==}
+ zod-to-json-schema@3.25.2:
+ resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
+ peerDependencies:
+ zod: ^3.25.28 || ^4
  zod@4.3.5:
  resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
  zrender@6.0.0:
@@ -6994,6 +7001,9 @@ snapshots:
  yaml@2.8.2: {}
  yocto-queue@0.1.0: {}
  zhead@2.2.4: {}
+ zod-to-json-schema@3.25.2(zod@4.3.5):
+ dependencies:
+ zod: 4.3.5
  zod@4.3.5: {}
  zrender@6.0.0:
  dependencies:
