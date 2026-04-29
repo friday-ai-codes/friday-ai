@@ -30,7 +30,7 @@ const vfNodes = computed( => toVueFlowNodes(storeNodes.value))
 const vfEdges = computed( => toVueFlowEdges(storeEdges.value))
 const edgeTypes = { gradient: markRaw(GradientEdge) }
 const { error: showError } = useToast
-const { getSelectedNodes } = useVueFlow
+const { getSelectedNodes, fitView } = useVueFlow
 const { validateConnection } = useConnectionValidator
 const { onDragOver, onDrop } = useDragAndDrop
 useKeyboardShortcuts
@@ -85,6 +85,9 @@ function onConnect(connection: Connection) {
  condition: null,
  })
 }
+function handleFitView {
+ fitView({ duration: 300 })
+}
 function handleBatchDelete {
  const selectedIds = getSelectedNodes.value.map(n => n.id)
  selectedIds.forEach(id => store.removeNode(id))
@@ -111,7 +114,7 @@ function handleBatchCopy {
 </script>
 <template>
  <div class="h-full w-full bg-background">
- <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":max-zoom="1.5":min-zoom="0.2"
+ <VueFlow:nodes="vfNodes":edges="vfEdges":node-types="nodeTypes":edge-types="edgeTypes":is-valid-connection="validateConnection":snap-to-grid="true":snap-grid="[15, 15]":max-zoom="1.5":min-zoom="0.2"
  multi-selection-key-code="Shift":selection-mode="SelectionMode.Partial"
  @nodes-change="onNodesChange"
  @edges-change="onEdgesChange"
@@ -129,6 +132,7 @@ function handleBatchCopy {
  position="bottom-right":pannable="true":zoomable="true"
  mask-color="rgba(0, 0, 0, 0.08)"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
+ @dblclick="handleFitView"
  />
  <Controls
  position="bottom-left":show-zoom="true":show-fit-view="true":show-interactive="false"
