@@ -128,12 +128,15 @@ function handleBatchCopy {
  variant="dots":gap="35":size="1.5"
  color="#3b82f620"
  />
- <MiniMap
- position="bottom-right":pannable="true":zoomable="true"
+ <!-- Wrapper 用于捕获 dblclick — MiniMap 内部 pannable 事件会吞掉原生 dblclick -->
+ <Panel position="bottom-right">
+ <div @dblclick="handleFitView">
+ <MiniMap:pannable="true":zoomable="true"
  mask-color="rgba(0, 0, 0, 0.08)"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
- @dblclick="handleFitView"
  />
+ </div>
+ </Panel>
  <Controls
  position="bottom-left":show-zoom="true":show-fit-view="true":show-interactive="false"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
