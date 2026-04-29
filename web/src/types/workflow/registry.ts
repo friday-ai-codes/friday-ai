@@ -1,5 +1,7 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
+import type { UiSchema } from './node-definitions/types'
+import { ALL_NODE_DEFINITIONS } from './node-definitions/index'
 import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
 import {
  aiCodeReviewConfigSchema,
@@ -41,13 +43,37 @@ export interface NodeTypeDefinition<T = unknown> {
  schema: ZodSchema<T>
  /** 默认配置 */
  defaultConfig: T
+ /** 声明式 UI Schema（可选，用于自动生成配置表单） */
+ uiSchema?: UiSchema
  /** 配置组件 (懒加载) */
  configComponent?: => Promise<{ default: Component }>
 }
 // ============================================================================
 // 节点注册表
 // ============================================================================
+/**
+ * 从 ALL_NODE_DEFINITIONS 适配为 NODE_REGISTRY 格式
+ *
+ * Phase: 已迁移的 14 个节点从此处注入。
+ * 剩余 AI 节点仍在下方硬编码（legacy）。
+ */
+const MIGRATED_REGISTRY = Object.fromEntries(
+ Object.entries(ALL_NODE_DEFINITIONS).map(([key, def]) => [key, {
+ nodeType: def.nodeType,
+ displayName: def.displayName,
+ description: def.description,
+ icon: def.icon,
+ color: def.color,
+ category: def.category,
+ schema: def.schema,
+ defaultConfig: def.defaultConfig,
+ uiSchema: def.uiSchema,
+ } satisfies NodeTypeDefinition]),
+) as Record<string, NodeTypeDefinition>
 export const NODE_REGISTRY = {
+ // --- Phase 已迁移节点 (从 node-definitions 自动生成) ---
+ ...MIGRATED_REGISTRY,
+ // --- Legacy 节点 (后续 Phase 迁移) ---
  ai_prompt: {
  nodeType: 'ai_prompt',
  displayName: 'AI Prompt',
