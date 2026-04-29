@@ -1,5 +1,6 @@
 """Workflow execution engine."""
 import asyncio
+import random
 import threading
 import time
 from collections import deque
@@ -422,6 +423,7 @@ class WorkflowEngine:
  completed_nodes: set[str] = set
  failed_nodes: set[str] = set
  skipped_nodes: set[str] = set
+ tolerated_failures: set[str] = set # on_error=ignore 的失败节点
  # 待处理节点
  pending_nodes = set(dag.nodes.keys)
  # 预填充 skipped 节点的输出（从失败节点继续场景）
@@ -594,6 +596,15 @@ class WorkflowEngine:
  hook_execution = await self._load_execution_for_hooks(execution)
  await self.hooks.trigger("execution_failed", execution=hook_execution)
  return
+ elif isinstance(result, dict) and result.get("status") == "failed":
+ if result.get("tolerated"):
+ # on_error=ignore: 容错处理
+ tolerated_failures.add(dag_node.id)
+ completed_nodes.add(dag_node.id)
+ fallback = dag_node.node.fallback_values or {"status": "skipped", "output": {}}
+ node_outputs[dag_node.id] = fallback
+ else:
+ failed_nodes.add(dag_node.id)
  else:
  failed_nodes.add(dag_node.id)
  continue # 回到 while 循环找下一批就绪节点
@@ -624,6 +635,22 @@ class WorkflowEngine:
  # Also store by short_id for template variable support
  if hasattr(dag_node.node, "short_id") and dag_node.node.short_id:
  node_outputs[dag_node.node.short_id] = output
+ elif result.get("status") == "failed":
+ if result.get("tolerated"):
+ # on_error=ignore: 节点失败但不阻断工作流
+ tolerated_failures.add(dag_node.id)
+ completed_nodes.add(dag_node.id) # 允许下游继续
+ fallback = dag_node.node.fallback_values or {"status": "skipped", "output": {}}
+ node_outputs[dag_node.id] = fallback
+ if hasattr(dag_node.node, "short_id") and dag_node.node.short_id:
+ node_outputs[dag_node.node.short_id] = fallback
+ logger.info(
+ "node_failure_tolerated",
+ node_id=dag_node.id,
+ error=result.get("error"),
+ )
+ else:
+ failed_nodes.add(dag_node.id)
  elif result.get("status") == "waiting_approval":
  # 节点正在等待审批，保持在 pending
  pending_nodes.add(dag_node.id)
@@ -669,12 +696,32 @@ class WorkflowEngine:
  input_data: dict,
  previous_outputs: dict,
  ) -> dict:
- """执行单个节点"""
+ """执行单个节点，支持重试、超时和 on_error 策略。
+ on_error 策略：
+ - abort（默认）：失败后立即中止，返回 failed
+ - retry：按 retry_times 次数重试，指数退避间隔
+ - ignore：失败后标记 tolerated，返回 failed + tolerated=True
+ 超时控制：
+ - node_timeout_seconds 设置后，用 asyncio.wait_for 包装执行
+ - 超时触发 on_timeout 生命周期钩子，然后走 on_error 路径
+ """
  node = dag_node.node
+ on_error: str = getattr(node, "on_error", "abort") or "abort"
+ retry_times: int = getattr(node, "retry_times", 0) or 0
+ retry_delay: int = getattr(node, "retry_delay", 5) or 5
+ node_timeout: int | None = getattr(node, "node_timeout_seconds", None)
+ # 重试模式下最大尝试次数 = 1（初始）+ retry_times
+ max_attempts = 1 + retry_times if on_error == "retry" else 1
+ last_error: str | None = None
+ for attempt in range(1, max_attempts + 1):
  node_execution = await NodeExecution.objects.aget(
  workflow_execution=execution,
  node=node,
  )
+ # 重试时递增 attempt 字段
+ if attempt > 1:
+ node_execution.attempt = attempt
+ await node_execution.asave(update_fields=["attempt"])
  try:
  await node_execution.amark_started(input_data)
  await self.hooks.trigger(
@@ -687,8 +734,6 @@ class WorkflowEngine:
  if not node_class:
  raise ValueError(f"未知的节点类型: {node.node_type}")
  # 构建执行上下文
- # Phase：从 workflow_execution.context 读出 node_snapshots
- # 注入到 ExecutionContext.node_snapshots；base_agent runner 优先读快照
  exec_context = execution.context or {}
  node_snapshots: dict[str, dict] = (
  exec_context.get("node_snapshots") or {}
@@ -704,12 +749,17 @@ class WorkflowEngine:
  node_execution=node_execution,
  node_snapshots=node_snapshots,
  )
- # 执行节点
+ # 执行节点（带可选超时）
  node_instance = node_class
- result: NodeResult = await node_instance.execute(context)
+ if node_timeout:
+ result: NodeResult = await asyncio.wait_for(
+ node_instance.execute(context),
+ timeout=node_timeout,
+ )
+ else:
+ result = await node_instance.execute(context)
  # 处理结果
  if result.status == "completed":
- # Persist handle info in output_data for _continue_after_node routing
  output_with_handle = {**(result.output or {})}
  if result.next_handle and result.next_handle != "default":
  output_with_handle["_next_handle"] = result.next_handle
@@ -742,27 +792,58 @@ class WorkflowEngine:
  )
  return {"status": "waiting_event"}
  else:
- await node_execution.amark_failed(result.error or "未知错误")
- await self.hooks.trigger(
- "node_failed",
- execution=execution,
- node_execution=node_execution,
- )
- return {"status": "failed", "error": result.error}
+ last_error = result.error or "未知错误"
+ raise RuntimeError(last_error)
+ except asyncio.TimeoutError:
+ # 超时：调用 on_timeout 生命周期钩子
+ try:
+ await node_instance.on_timeout(context)
+ except Exception: # noqa: BLE001
+ pass # on_timeout 清理失败不应掩盖超时错误
+ last_error = f"节点执行超时 ({node_timeout}s)"
  except Exception as e:
+ if isinstance(e, RuntimeError) and last_error:
+ pass # 已设置 last_error
+ else:
+ last_error = str(e)
  logger.exception(
  "node_execution_error",
  node_id=str(node.id),
  execution_id=str(execution.id),
+ attempt=attempt,
  )
- await node_execution.amark_failed(str(e))
+ # 到达此处表示执行失败
+ if attempt < max_attempts and on_error == "retry":
+ # 指数退避 + 随机 jitter
+ delay = min(300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay)))
+ await node_execution.amark_failed(last_error)
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
  node_execution=node_execution,
- error=e,
  )
- return {"status": "failed", "error": str(e)}
+ logger.info(
+ "node_retry_scheduled",
+ node_id=str(node.id),
+ attempt=attempt,
+ max_attempts=max_attempts,
+ delay=delay,
+ error=last_error,
+ )
+ await asyncio.sleep(delay)
+ continue
+ # 最终失败 — 应用 on_error 策略
+ await node_execution.amark_failed(last_error)
+ await self.hooks.trigger(
+ "node_failed",
+ execution=execution,
+ node_execution=node_execution,
+ )
+ if on_error == "ignore":
+ return {"status": "failed", "error": last_error, "tolerated": True}
+ return {"status": "failed", "error": last_error}
+ # 安全兜底（不应到达此处）
+ return {"status": "failed", "error": last_error or "未知错误"}
  def _collect_inputs(
  self,
  dag_node,
@@ -1050,6 +1131,9 @@ class WorkflowEngine:
  ) -> None:
  """Handle node failure from callback.
  Updates workflow status and triggers failure hooks.
+ TODO: This method is used in the callback path (Docker/container nodes).
+ It currently always fails the workflow. Future work should apply on_error
+ strategy here too (retry, ignore) for callback-based nodes.
  """
  # Trigger failure hook
  await self.hooks.trigger(
