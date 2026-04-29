@@ -2,6 +2,29 @@ import { useVueFlow } from '@vue-flow/core'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { getNodeDefinition } from '~/types/workflow/registry'
 import { generateShortId } from '~/utils/shortId'
+const RECENT_NODES_KEY = 'friday-recent-nodes'
+const MAX_RECENT = 10
+/**
+ * 记录最近使用的节点类型到 localStorage
+ */
+function recordRecentNode(nodeType: string): void {
+ try {
+ const stored = JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '') as string
+ const filtered = stored.filter(t => t !== nodeType)
+ filtered.unshift(nodeType)
+ localStorage.setItem(RECENT_NODES_KEY, JSON.stringify(filtered.slice(0, MAX_RECENT)))
+ }
+ catch { /* localStorage 不可用时静默失败 */ }
+}
+/**
+ * 获取最近使用的节点类型列表
+ */
+export function getRecentNodes: string {
+ try {
+ return JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '') as string
+ }
+ catch { return }
+}
 /**
  * 侧边栏拖放到画布的 composable
  *
@@ -39,6 +62,7 @@ export function useDragAndDrop {
  runCondition: null,
  metadata: {},
  })
+ recordRecentNode(nodeType)
  }
  return { onDragOver, onDrop }
 }
