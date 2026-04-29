@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ResolvedProvider } from '~/types/providerCredential'
 import { Trash2 } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
@@ -14,6 +14,7 @@ import { useNodeConfig } from './composables/useNodeConfig'
 import { useNodeSchema } from './composables/useNodeSchema'
 import NodeConfigForm from './NodeConfigForm.vue'
 import NodeConfigHeader from './NodeConfigHeader.vue'
+import NodeErrorConfig from './NodeErrorConfig.vue'
 import NodeSchemaDisplay from './NodeSchemaDisplay.vue'
 // 组合 3 个 composables
 const {
@@ -94,6 +95,34 @@ function onConfigValueUpdate(key: string, value: any) {
 function onJsonConfigUpdate(key: string, value: string) {
  updateJsonConfig(key, value)
 }
+// 错误处理配置 — 从 selectedNode 的 store data 读取
+// selectedNode 来自 useNodeConfig，已经是 store 格式（WorkflowNodeStore）
+const nodeOnError = computed( => {
+ const node = selectedNode.value as Record<string, unknown> | undefined
+ return (node?.onError as 'abort' | 'retry' | 'ignore') ?? 'abort'
+})
+const nodeRetryTimes = computed( => {
+ const node = selectedNode.value as Record<string, unknown> | undefined
+ return (node?.retryTimes as number) ?? 0
+})
+const nodeRetryDelay = computed( => {
+ const node = selectedNode.value as Record<string, unknown> | undefined
+ return (node?.retryDelay as number) ?? 5
+})
+const nodeTimeoutSeconds = computed( => {
+ const node = selectedNode.value as Record<string, unknown> | undefined
+ return (node?.nodeTimeoutSeconds as number | null) ?? null
+})
+const nodeFallbackValues = computed( => {
+ const node = selectedNode.value as Record<string, unknown> | undefined
+ return (node?.fallbackValues as Record<string, unknown> | null) ?? null
+})
+function updateErrorField(field: string, value: unknown) {
+ if (!selectedNodeId.value) return
+ const storeNode = workflowsStore.nodes.find(n => n.id === selectedNodeId.value)
+ if (storeNode) {;(storeNode as Record<string, unknown>)[field] = value
+ }
+}
 </script>
 <template>
  <!-- 选中节点时显示 -->
@@ -131,6 +160,14 @@ function onJsonConfigUpdate(key: string, value: string) {
  @update-config="handleConfigUpdate"
  @update-config-value="onConfigValueUpdate"
  @update-json-config="onJsonConfigUpdate"
+ />
+ <!-- 错误处理配置 -->
+ <NodeErrorConfig:on-error="nodeOnError":retry-times="nodeRetryTimes":retry-delay="nodeRetryDelay":node-timeout-seconds="nodeTimeoutSeconds":fallback-values="nodeFallbackValues"
+ @update:on-error="(v: string) => updateErrorField('onError', v)"
+ @update:retry-times="(v: number) => updateErrorField('retryTimes', v)"
+ @update:retry-delay="(v: number) => updateErrorField('retryDelay', v)"
+ @update:node-timeout-seconds="(v: number | null) => updateErrorField('nodeTimeoutSeconds', v)"
+ @update:fallback-values="(v: Record<string, unknown> | null) => updateErrorField('fallbackValues', v)"
  />
  <!-- Schema 展示 -->
  <NodeSchemaDisplay:direct-predecessor-outputs="directPredecessorOutputs":has-predecessor="hasPredecessor":node-type-info="nodeTypeInfo":input-schema-open="inputSchemaOpen":output-schema-open="outputSchemaOpen":output-field-count="getOutputFieldCount(nodeTypeInfo)":get-output-path="getOutputPath":get-input-path="getInputPath"
