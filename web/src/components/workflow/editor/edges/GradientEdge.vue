@@ -40,6 +40,10 @@ const edgeStyle = computed( => ({
  strokeOpacity: props.selected ? 0.95: 0.82,
  filter: props.selected ? 'drop-shadow(0 0 6px rgba(139,92,246,0.45))': 'drop-shadow(0 1px 2px rgba(15,23,42,0.08))',
  transition: 'stroke-width 0.2s, stroke-opacity 0.2s, filter 0.2s',
+ ...(props.animated ? {
+ strokeDasharray: '5 5',
+ animation: 'dash-flow 0.5s linear infinite',
+ }: {}),
 }))
 </script>
 <script lang="ts">
@@ -57,3 +61,9 @@ export default { inheritAttrs: false }
  <BaseEdge:id="id":path="route.path":label="label":label-x="route.labelX":label-y="route.labelY":label-style="{ fill: 'hsl(var(--foreground))', fontSize: '11px', fontWeight: 600 }":label-bg-style="{ fill: 'hsl(var(--card))', fillOpacity: 0.94, stroke: 'rgba(148, 163, 184, 0.22)', strokeWidth: 1 }":label-bg-padding="[4, 9]":label-bg-border-radius="999":marker-end="markerEnd":style="edgeStyle"
  />
 </template>
+<style scoped>
+@keyframes dash-flow {
+ from { stroke-dashoffset: 0; }
+ to { stroke-dashoffset: -10; }
+}
+</style>
