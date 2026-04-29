@@ -76,6 +76,8 @@ export const useWorkflowsStore = defineStore('workflows', => {
  const edges = ref<WorkflowEdgeStore>
  // Unsaved changes tracking
  const hasUnsavedChanges = ref(false)
+ // Dirty node tracking — 记录配置已修改但未保存的节点 ID
+ const dirtyNodeIds = ref<Set<string>>(new Set)
  // Computed
  const canUndo = computed( => historyIndex.value > 0)
  const canRedo = computed( => historyIndex.value < history.value.length - 1)
@@ -325,6 +327,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  edges.value = toStoreEdges(workflow.edges ||, savedNodes)
  // Reset unsaved changes flag and clear draft
  hasUnsavedChanges.value = false
+ dirtyNodeIds.value = new Set
  clearDraft
  }
  catch (e: unknown) {
@@ -422,6 +425,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  }
  function updateNodeData(nodeId: string, data: { name?: string, description?: string, config?: Record<string, unknown> }) {
  saveToHistory
+ dirtyNodeIds.value.add(nodeId)
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
  const node = nodes.value[index]
@@ -537,6 +541,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  canUndo,
  canRedo,
  hasUnsavedChanges,
+ dirtyNodeIds,
  // API
  fetchWorkflows,
  fetchWorkflow,

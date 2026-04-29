@@ -8,6 +8,7 @@
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NodeToolbar } from '@vue-flow/node-toolbar'
 import { Copy, Trash2 } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
@@ -27,6 +28,7 @@ const props = withDefaults(defineProps<{
  hideHandles?: 'input' | 'output' | 'both' | 'none'
 }>, { hideHandles: 'none' })
 const store = useWorkflowsStore
+const { dirtyNodeIds } = storeToRefs(store)
 const { getSelectedNodes } = useVueFlow
 const visual = computed( => getNodeVisual(props.data.nodeType))
 const style = computed( => useNodeStyle(visual.value.color).value)
@@ -35,6 +37,8 @@ const inputPorts = computed( => ports.value.filter(p => p.group === 'input'))
 const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
 /** 多选时隐藏单节点工具栏，改用画布级统一工具栏 */
 const isMultiSelect = computed( => getSelectedNodes.value.length > 1)
+/** 当前节点是否有未保存的配置修改 */
+const isDirty = computed( => dirtyNodeIds.value.has(props.id))
 /** 多端口时均匀分布的 left 百分比 */
 function portLeft(index: number, total: number): string {
  if (total <= 1)
@@ -93,7 +97,7 @@ function handleCopy {
  type="target":position="Position.Top":style="{ left: portLeft(i, inputPorts.length) }"
  />
  <!-- 头部：图标 + 名称 -->
- <div class="flex items-center gap-2 mb-2">
+ <div class="relative flex items-center gap-2 mb-2">
  <div class="bg-gradient-to-br rounded-lg .5":class="[style.iconBg]">
  <slot name="icon">
  <component:is="visual.icon" class="w-4 ":class="style.iconColor" />
@@ -102,6 +106,11 @@ function handleCopy {
  <span class="text-sm font-medium text-foreground truncate">
  {{ data.name }}
  </span>
+ <span
+ v-if="isDirty"
+ class="absolute -top-1 -right-1 w-2 rounded-full bg-amber-400 shadow-sm"
+ title="配置已修改，未保存"
+ />
  </div>
  <!-- 内容 slot -->
  <slot name="content" />
