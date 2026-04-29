@@ -132,6 +132,8 @@ export const useChatStore = defineStore('chat', => {
  const selectedProjectId = useLocalStorage<string | null>('chat-project-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
+ /** 记忆上次选择的 credential+model 组合（格式：credentialId:modelId） */
+ const selectedCredentialModel = useLocalStorage<string>('chat-credential-model', '')
  const forceDeepAnalysis = useLocalStorage<boolean>('chat-force-deep-analysis', false)
  const notificationsEnabled = useLocalStorage<boolean>('chat-notifications-enabled', false)
  /** 按仓库 ID 记忆检索分支（与仓库详情 sessionStorage 协同） */
@@ -202,9 +204,27 @@ export const useChatStore = defineStore('chat', => {
  loading.value = true
  error.value = null
  try {
+ // 优先使用记忆的选择，否则系统中只要有可用模型就默认选第一个
+ const providerStore = useProviderCredentialStore
+ const allModels = providerStore.allAvailableModels
+ let modelToUse: string | undefined
+ if (selectedCredentialModel.value) {
+ const parts = selectedCredentialModel.value.split(':')
+ if (parts.length === 2) {
+ modelToUse = parts[1]
+ }
+ }
+ else if (selectedModel.value !== '__default__' && selectedModel.value) {
+ modelToUse = selectedModel.value
+ }
+ else if (allModels.length >= 1) {
+ modelToUse = allModels[0].modelId
+ selectedModel.value = modelToUse
+ selectedCredentialModel.value = `${allModels[0].credentialId}:${allModels[0].modelId}`
+ }
  const conv = await createConversation({
  project_id: selectedProjectId.value,
- model: selectedModel.value === '__default__' ? undefined: selectedModel.value || undefined,
+ model: modelToUse,
  })
  conversations.value.unshift(conv)
  currentConversationId.value = conv.id
@@ -1201,6 +1221,7 @@ export const useChatStore = defineStore('chat', => {
  selectedProjectId,
  selectedRole,
  selectedModel,
+ selectedCredentialModel,
  forceDeepAnalysis,
  notificationsEnabled,
  searchBranchByRepository,

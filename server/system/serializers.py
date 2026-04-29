@@ -184,8 +184,11 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  # AttributeError；同时契约上也严禁明文回显）。
  config = serializers.DictField(write_only=True)
  is_active = serializers.BooleanField(default=True)
+ default_model = serializers.CharField(
+ max_length=128, required=True, allow_blank=False
+ )
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
- """scope 一致性 + Pydantic credential_schema dispatch 校验。"""
+ """scope 一致性 + Pydantic credential_schema dispatch 校验 + default_model 必填。"""
  scope = attrs["scope"]
  scope_id = attrs.get("scope_id")
  # scope 与 scope_id 互斥一致性
@@ -260,8 +263,9 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  scope_id = serializers.UUIDField(required=False, allow_null=True)
  config = serializers.DictField(required=False, allow_null=True)
  is_active = serializers.BooleanField(required=False)
+ default_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
- """含 config 时按 instance.provider_type dispatch Pydantic 校验。"""
+ """含 config 时按 instance.provider_type dispatch Pydantic 校验 + default_model 非空。"""
  new_config = attrs.get("config")
  if new_config:
  from services.provider_config import PROVIDER_REGISTRY, ProviderType
@@ -285,6 +289,14 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  {"config": _format_pydantic_errors(exc)}
  ) from exc
  attrs["_validated_config"] = _pydantic_to_jsonable(validated)
+ # default_model 非空校验
+ if "default_model" in attrs:
+ default_model = attrs.get("default_model")
+ if not default_model or not default_model.strip:
+ raise serializers.ValidationError(
+ {"default_model": "每个 Provider 必须至少配置一个模型（default_model 不能为空）"}
+ )
+ attrs["default_model"] = default_model.strip
  return attrs
  def update(
  self,

@@ -65,6 +65,21 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const activeCredentials = computed<ProviderCredentialDto>( =>
  credentials.value.filter(c => c.is_active),
  )
+ /** 所有可用模型选项（用于单模型自动选择）。 */
+ const allAvailableModels = computed( => {
+ const models: Array<{ credentialId: string, modelId: string }> =
+ for (const cred of activeCredentials.value) {
+ if (cred.available_models.length > 0) {
+ for (const m of cred.available_models) {
+ models.push({ credentialId: cred.id, modelId: m.id })
+ }
+ }
+ else if (cred.default_model) {
+ models.push({ credentialId: cred.id, modelId: cred.default_model })
+ }
+ }
+ return models
+ })
  // ============================================================================
  // Persistence helpers（ 双写）
  // ============================================================================
@@ -261,9 +276,9 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  }
  }
  /** 测试连接成功后同步 credential 的 last_health_check_* 字段。 */
- async function testConnection(id: string): Promise<TestConnectionResponse> {
+ async function testConnection(id: string, model?: string): Promise<TestConnectionResponse> {
  try {
- const resp = await providerCredentialsApi.testConnection(id)
+ const resp = await providerCredentialsApi.testConnection(id, model)
  credentials.value = credentials.value.map(c =>
  c.id === id
  ? {
@@ -352,6 +367,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  getCredentialById,
  getCredentialsByScope,
  activeCredentials,
+ allAvailableModels,
  // actions
  fetchCredentials,
  fetchProviderTypes,

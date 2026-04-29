@@ -24,6 +24,7 @@ REQUEST_BODIES: dict[str, dict] = {
  "provider_type": "anthropic",
  "name": "matrix-sys-anth",
  "scope": "system",
+ "default_model": "claude-3-5-sonnet-20241022",
  "config": {
  "api_key": "sk-test-placeholder",
  "base_url": "https://api.anthropic.com",
@@ -34,6 +35,7 @@ REQUEST_BODIES: dict[str, dict] = {
  "name": "matrix-pa-gem",
  "scope": "project",
  "scope_id": "__PROJECT_A_ID__",
+ "default_model": "gemini-1.5-pro",
  "config": {
  "api_key": "GOOGLE_API_KEY_PLACEHOLDER",
  },
@@ -43,6 +45,7 @@ REQUEST_BODIES: dict[str, dict] = {
  "name": "matrix-pa-oll",
  "scope": "project",
  "scope_id": "__PROJECT_A_ID__",
+ "default_model": "llama3.2",
  "config": {
  "base_url": "http://localhost:11434",
  },

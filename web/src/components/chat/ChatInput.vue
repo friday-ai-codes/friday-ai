@@ -7,7 +7,9 @@ import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
+import { useToast } from '~/composables/useToast'
 const chatStore = useChatStore
+const toast = useToast
 const projectsStore = useProjectsStore
 const branchRows = ref<BranchIndexRow>
 const selectedBranchLocal = ref<string | null>(null)
@@ -161,8 +163,16 @@ const currentSelectionKey = computed<string | null>( => {
 })
 const currentSelectionLabel = computed<string>( => {
  const key = currentSelectionKey.value
- if (!key)
+ if (!key) {
+ // 无当前对话时，优先显示记忆的选择
+ const rememberedKey = chatStore.selectedCredentialModel
+ if (rememberedKey) {
+ const found = credentialModelOptions.value.find(o => o.key === rememberedKey)
+ if (found)
+ return found.label
+ }
  return '请选择 Provider · 模型'
+ }
  const found = credentialModelOptions.value.find(o => o.key === key)
  if (found)
  return found.label
@@ -193,31 +203,25 @@ const oldProviderName = computed( => {
 const oldModelLabel = computed(
  => chatStore.currentConversation?.model || '默认模型',
 )
-// [Revision 1 — W1 + W4] frozen 态 + 无对话 disabled 派生
+// [Revision 1 — W1 + W4] frozen 态 disabled 派生
 const conversationStatusRef = computed<ConversationStatus>(
  => chatStore.currentConversation?.status ?? 'draft',
 )
 const frozen = useConversationFrozen(conversationStatusRef, ref(false))
 const isConversationFrozen = computed( => frozen.value.isFrozen)
-const hasNoActiveConversation = computed(
- => !chatStore.currentConversationId,
-)
 const isSelectorDisabled = computed(
  =>
  isEmpty.value
- || hasNoActiveConversation.value
  || isConversationFrozen.value,
 )
 const disabledReason = computed<string>( => {
  if (isEmpty.value)
  return '' // 空态用专属 tooltip（CTA 链接），见模板
- if (hasNoActiveConversation.value)
- return '请先开始一段对话'
  if (isConversationFrozen.value)
  return frozen.value.reason || '当前对话已固定，无法切换 Provider / 模型'
  return ''
 })
-function onSelectCombination(opt: CredentialModelOption) {
+async function onSelectCombination(opt: CredentialModelOption) {
  // [Revision 1 — W1] 顶部双重防御：button:disabled 已拦，再守一道（防 a11y / 测试 emit click）
  if (isSelectorDisabled.value) {
  showModelMenu.value = false
@@ -226,6 +230,24 @@ function onSelectCombination(opt: CredentialModelOption) {
  showModelMenu.value = false
  if (opt.key === currentSelectionKey.value)
  return // 选中相同组合 → noop
+ // 记住用户选择（跨新建对话复用）
+ chatStore.selectedCredentialModel = opt.key
+ // 没有活动对话 → 自动创建对话并绑定模型
+ if (!chatStore.currentConversationId) {
+ chatStore.selectedModel = opt.model.id
+ await chatStore.createNewConversation
+ if (!chatStore.currentConversationId)
+ return
+ // 对话已创建且 model 已设置（createNewConversation 用了 selectedModel），
+ // 额外固定 provider_credential_id 避免被四层解析覆盖
+ await chatStore.patchConversationProviderAndModel(opt.credential.id, opt.model.id)
+ return
+ }
+ // 已有对话但尚未绑定 Provider / 模型 → 直接应用，不弹确认
+ if (!currentSelectionKey.value) {
+ emit('pin-confirmed', opt.credential.id, opt.model.id)
+ return
+ }
  pendingOption.value = opt
  pinDialogOpen.value = true
 }
@@ -237,9 +259,8 @@ function handlePinConfirm {
  return
  const { credential, model } = pendingOption.value
  emit('pin-confirmed', credential.id, model.id)
- // 由 default.vue listener 触发 chatStore.patchConversationProviderAndModel；
- // 成功后 currentConversation getter 自动反映新值。失败由 chatStore.error.value
- // + 全局 toast 兜（与 ChatHeader 旧实现一致；本组件不接 expose 链路）。
+ // 记住用户选择（跨新建对话复用）
+ chatStore.selectedCredentialModel = pendingOption.value.key
  pinDialogOpen.value = false
  pendingOption.value = null
 }
@@ -247,13 +268,39 @@ function handlePinCancel {
  pendingOption.value = null
  pinDialogOpen.value = false
 }
+/** 检查当前对话是否已选择模型 */
+const hasSelectedModel = computed( => {
+ const conv = chatStore.currentConversation
+ return !!conv?.model
+})
 async function handleSend {
  const content = inputContent.value.trim
  if (!content || chatStore.isStreaming)
  return
+ // 没有对话时自动创建（优先使用记忆的选择）
  if (!chatStore.currentConversationId) {
+ if (chatStore.selectedCredentialModel) {
+ const parts = chatStore.selectedCredentialModel.split(':')
+ if (parts.length === 2) {
+ const [, modelId] = parts
+ chatStore.selectedModel = modelId
+ }
+ }
  await chatStore.createNewConversation
  if (!chatStore.currentConversationId)
+ return
+ // 创建后 patch 记忆的 credential+model
+ if (chatStore.selectedCredentialModel) {
+ const parts = chatStore.selectedCredentialModel.split(':')
+ if (parts.length === 2) {
+ const [credId, modelId] = parts
+ await chatStore.patchConversationProviderAndModel(credId, modelId)
+ }
+ }
+ }
+ // 已有对话（包括刚创建的）但没有选择模型，禁止发送
+ if (!hasSelectedModel.value) {
+ toast.error('请先选择 Provider / 模型')
  return
  }
  const feishuDocId = extractFirstFeishuDocId(content)

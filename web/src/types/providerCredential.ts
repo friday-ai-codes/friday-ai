@@ -57,6 +57,8 @@ export interface ProviderCredentialDto {
  * 后端契约见 server/system/serializers.py:ProviderCredentialSerializer.get_config。
  */
  config: Record<string, unknown>
+ /** 默认模型（每个 Provider 必须至少有一个模型）。 */
+ default_model: string
  created_at: string
  updated_at: string
 }
@@ -98,6 +100,8 @@ export interface ProviderCredentialCreatePayload {
  /** 按 provider_type 具体字段（api_key / base_url / organization_id / bearer_token 等）。 */
  config: Record<string, unknown>
  is_active?: boolean
+ /** 默认模型（每个 Provider 必须至少配置一个模型）。 */
+ default_model: string
 }
 /**
  * PATCH /api/providers/credentials/<id>/ body。
@@ -111,6 +115,8 @@ export interface ProviderCredentialUpdatePayload {
  scope_id?: string | null
  config?: Record<string, unknown> | null
  is_active?: boolean
+ /** 手动设置或刷新后选择的默认模型 */
+ default_model?: string
 }
 /** POST /test-connection/ 响应（Phase 既有端点）。 */
 export interface TestConnectionResponse {
