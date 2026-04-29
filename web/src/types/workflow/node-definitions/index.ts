@@ -22,8 +22,10 @@ export type {
 } from './types'
 // 辅助函数
 export { buildUiSchema } from './ui-schema'
-// 节点定义（后续 task 会从 categories/ 导入并聚合）
-// PLACEHOLDER_FOR_CATEGORY_IMPORTS
+// Category 导入
+import { TRIGGER_DEFS } from './categories/trigger'
+import { CONTROL_DEFS } from './categories/control'
+import { INTEGRATION_DEFS } from './categories/integration'
 /**
  * 创建 NodeDefinition 的辅助函数
  *
@@ -43,12 +45,16 @@ export function createNodeDefinition<T>(def: NodeDefinition<T>): NodeDefinition<
  return def
 }
 /**
- * 所有节点定义的聚合映射
+ * 所有已迁移节点定义的聚合映射
  *
- * 后续 task 会从此导出已迁移节点的定义。
- * 当前为空，task 2 填充。
+ * Phase 首批迁移 14 个节点（trigger/control/integration 三个 category）。
+ * 剩余 AI 节点在后续 Phase 迁移，仍由 NODE_REGISTRY legacy 管理。
  */
-export const ALL_NODE_DEFINITIONS: Record<string, NodeDefinition> = {}
+export const ALL_NODE_DEFINITIONS: Record<string, NodeDefinition> = {
+ ...TRIGGER_DEFS,
+ ...CONTROL_DEFS,
+ ...INTEGRATION_DEFS,
+}
 /**
  * 获取指定节点的定义
  */
