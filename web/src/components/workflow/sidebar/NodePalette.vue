@@ -47,6 +47,7 @@ const nodeGroups = computed<PaletteGroup>( => [
  name: '操作',
  items: [
  fromDef('http_request', 'HTTP 请求', '发送 HTTP 请求'),
+ fromDef('code', '代码执行', '执行 Python 代码片段'),
  { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应' },
  ],
  },

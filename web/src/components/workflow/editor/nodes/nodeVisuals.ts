@@ -48,6 +48,7 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  // 操作 (green)
  http_request: { icon: Globe, color: 'green' },
  wait_feishu_field: { icon: Hourglass, color: 'green' },
+ code: { icon: Terminal, color: 'green' },
  // 集成 (blue)
  create_branch: { icon: GitBranch, color: 'blue' },
  create_pr: { icon: GitPullRequest, color: 'blue' },
