@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { getRecentNodes } from '../editor/composables/useDragAndDrop'
 import { ALL_NODE_DEFINITIONS } from '~/types/workflow/node-definitions'
 import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 import NodePaletteItem from './NodePaletteItem.vue'
@@ -91,6 +92,31 @@ const nodeGroups = computed<PaletteGroup>( => [
  ],
  },
 ])
+// 搜索功能
+const searchQuery = ref('')
+const filteredGroups = computed( => {
+ const q = searchQuery.value.trim.toLowerCase
+ if (!q)
+ return nodeGroups.value
+ return nodeGroups.value
+ .map(group => ({
+ ...group,
+ items: group.items.filter(item =>
+ item.name.toLowerCase.includes(q) || item.description.toLowerCase.includes(q),
+ ),
+ }))
+ .filter(group => group.items.length > 0)
+})
+// 最近使用节点
+const recentNodes = computed( => {
+ const recent = getRecentNodes
+ return recent
+ .map((type) => {
+ const item = nodeGroups.value.flatMap(g => g.items).find(i => i.type === type)
+ return item ?? null
+ })
+ .filter(Boolean) as PaletteItem
+})
 /** 从 nodeVisuals 获取分组的主色 — 取第一个 item 的颜色 */
 function getGroupColor(group: PaletteGroup): string {
  return getNodeVisual(group.items[0]?.type ?? '').color
@@ -124,9 +150,35 @@ function getCategoryGradient(color: string): string {
  </div>
  </div>
  </div>
+ <!-- Search -->
+ <div class="px-3 pt-2 pb-1">
+ <div class="relative">
+ <span class="icon-[lucide--search] absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 .5 text-muted-foreground" />
+ <input
+ v-model="searchQuery"
+ type="text"
+ placeholder="搜索节点..."
+ class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/50 border border-border/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 placeholder:text-muted-foreground/50"
+ >
+ </div>
+ </div>
  <!-- Content: Scrollable list of categories -->
  <div class="flex-1 overflow-y-auto space-y-5">
- <div v-for="group in nodeGroups":key="group.name">
+ <!-- Recent Nodes -->
+ <div v-if="recentNodes.length > 0 && !searchQuery">
+ <div class="flex items-center gap-2 mb-2.5">
+ <div class="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-muted/80 text-muted-foreground shadow-sm">
+ 最近使用
+ </div>
+ <div class="flex-1 h-px" />
+ </div>
+ <div class="space-y-1.5 mb-4">
+ <NodePaletteItem
+ v-for="item in recentNodes":key="'recent-' + item.type":node-type="item.type":name="item.name":description="item.description"
+ />
+ </div>
+ </div>
+ <div v-for="group in filteredGroups":key="group.name">
  <!-- Category Header -->
  <div class="flex items-center gap-2 mb-2.5">
  <div
