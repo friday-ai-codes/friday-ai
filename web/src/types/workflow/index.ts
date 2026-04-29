@@ -53,5 +53,18 @@ export {
  WORK_ITEM_TYPE_OPTIONS,
  WORK_ITEM_TYPE_OPTIONS_WITH_ALL,
 } from './schemas'
+// Node definitions (unified contract)
+export {
+ buildUiSchema,
+ createNodeDefinition,
+ getNodeDef,
+ ALL_NODE_DEFINITIONS,
+ type NodeDefinition,
+ type UiSchema,
+ type UiSchemaField,
+ type UiSchemaGroup,
+ type UiWidget,
+ type UiVisibleIf,
+} from './node-definitions'
 // Store types (X6-compatible)
 export type { WorkflowEdgeStore, WorkflowNodeStore } from './store'
