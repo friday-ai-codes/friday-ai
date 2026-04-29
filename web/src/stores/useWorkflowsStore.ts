@@ -226,9 +226,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  if (history.value.length > maxHistorySize) {
  history.value.shift
  }
- else {
  historyIndex.value++
- }
  // Mark as having unsaved changes
  hasUnsavedChanges.value = true
  }
