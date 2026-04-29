@@ -10,17 +10,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { zodToJsonSchema } from 'zod-to-json-schema'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 async function main: Promise<void> {
  // 动态导入 node-definitions（需要 tsx 支持）
  const { ALL_NODE_DEFINITIONS } = await import('../src/types/workflow/node-definitions/index')
  const nodes = Object.values(ALL_NODE_DEFINITIONS).map((def) => {
- // 从 Zod schema 生成 JSON Schema (draft-7)
- const jsonSchema = zodToJsonSchema(def.schema, {
- target: 'draft7',
- $refStrategy: 'none',
- })
+ // Zod 4 内置 toJSONSchema
+ const jsonSchema = (def.schema as any).toJSONSchema
  return {
  node_type: def.nodeType,
  display_name: def.displayName,

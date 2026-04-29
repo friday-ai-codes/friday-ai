@@ -548,6 +548,9 @@ class BaseNode(ABC):
  except jsonschema.ValidationError as e:
  errors.append(str(e.message))
  return errors
+ # UI Schema（Phase: 声明式配置表单描述）
+ # 后续从 node-definitions.json 注入，或由子类覆盖
+ ui_schema: ClassVar[dict | None] = None
  @classmethod
  def get_schema(cls) -> dict:
  """获取完整的节点 Schema（用于前端）"""
@@ -558,6 +561,7 @@ class BaseNode(ABC):
  "icon": cls.icon,
  "category": cls.category.value,
  "config_schema": cls.config_schema,
+ "ui_schema": cls.ui_schema,
  "inputs": [
  {
  "name": p.name,

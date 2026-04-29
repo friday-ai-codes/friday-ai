@@ -1,4 +1,7 @@
 /**
+ * DEPRECATED: Use validate-node-definitions.ts instead (pnpm run validate:node-defs).
+ * Kept for backward compatibility — only checks name list, not field-level alignment.
+ *
  * CI 验证脚本：检测前端节点列表与后端 NodeRegistry 的一致性。
  *
  * 运行方式：npm run validate:node-types

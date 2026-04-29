@@ -87,8 +87,7 @@
  "vue-i18n": "catalog:",
  "vue-router": "catalog:",
  "vue-sonner": "catalog:",
- "zod": "catalog:",
- "zod-to-json-schema": "^3.25.2"
+ "zod": "catalog:"
  },
  "optionalDependencies": {
  "@rolldown/binding-darwin-arm64": "1.0.0-beta.53"
