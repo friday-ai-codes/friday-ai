@@ -8,9 +8,11 @@ interface WorkflowNodeData {
  name: string
  description: string
  config: Record<string, unknown>
- timeout: number | null
- retryCount: number
+ onError: 'abort' | 'retry' | 'ignore'
+ retryTimes: number
  retryDelay: number
+ nodeTimeoutSeconds: number | null
+ fallbackValues: Record<string, unknown> | null
  runCondition: Record<string, unknown> | null
  metadata: Record<string, unknown>
 }
@@ -34,9 +36,11 @@ export function toVueFlowNodes(storeNodes: WorkflowNodeStore): Node<WorkflowNode
  name: storeNode.name,
  description: storeNode.description,
  config: storeNode.config,
- timeout: storeNode.timeout,
- retryCount: storeNode.retryCount,
+ onError: storeNode.onError,
+ retryTimes: storeNode.retryTimes,
  retryDelay: storeNode.retryDelay,
+ nodeTimeoutSeconds: storeNode.nodeTimeoutSeconds,
+ fallbackValues: storeNode.fallbackValues,
  runCondition: storeNode.runCondition,
  metadata: storeNode.metadata,
  },
@@ -75,9 +79,11 @@ export function fromVueFlowNodes(vfNodes: Node<WorkflowNodeData>): WorkflowNodeS
  description: d.description,
  position: vfNode.position,
  config: d.config,
- timeout: d.timeout,
- retryCount: d.retryCount,
+ onError: d.onError,
+ retryTimes: d.retryTimes,
  retryDelay: d.retryDelay,
+ nodeTimeoutSeconds: d.nodeTimeoutSeconds,
+ fallbackValues: d.fallbackValues,
  runCondition: d.runCondition,
  metadata: d.metadata,
  }
