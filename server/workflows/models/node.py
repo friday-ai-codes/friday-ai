@@ -46,20 +46,35 @@ class WorkflowNode(models.Model):
  verbose_name="节点配置",
  help_text="节点特定的配置参数",
  )
- # 执行配置
- timeout = models.PositiveIntegerField(
- null=True,
- blank=True,
- verbose_name="超时(秒)",
- help_text="覆盖工作流默认超时",
+ # 错误处理配置
+ on_error = models.CharField(
+ max_length=10,
+ choices=[("abort", "中止"), ("retry", "重试"), ("ignore", "忽略")],
+ default="abort",
+ verbose_name="错误策略",
+ help_text="节点执行失败时的处理策略",
  )
- retry_count = models.PositiveIntegerField(
+ retry_times = models.PositiveSmallIntegerField(
  default=0,
  verbose_name="重试次数",
+ help_text="on_error=retry 时的重试次数",
  )
- retry_delay = models.PositiveIntegerField(
- default=60,
+ retry_delay = models.PositiveSmallIntegerField(
+ default=5,
  verbose_name="重试间隔(秒)",
+ help_text="重试基础间隔，实际间隔按指数退避计算",
+ )
+ node_timeout_seconds = models.PositiveIntegerField(
+ null=True,
+ blank=True,
+ verbose_name="节点超时(秒)",
+ help_text="节点执行超时时间，超时后触发 on_error 策略",
+ )
+ fallback_values = models.JSONField(
+ null=True,
+ blank=True,
+ verbose_name="容错默认值",
+ help_text="on_error=ignore 时传递给下游节点的默认输出",
  )
  # 条件执行
  run_condition = models.JSONField(
@@ -97,9 +112,9 @@ class WorkflowNode(models.Model):
  errors = node_class.validate_config(self.config)
  if errors:
  raise ValidationError({"config": errors})
- def get_effective_timeout(self) -> int:
+ def get_effective_timeout(self) -> int | None:
  """获取有效超时时间"""
- return self.timeout or self.workflow.default_timeout
+ return self.node_timeout_seconds or self.workflow.default_timeout
  def to_json(self) -> dict:
  """导出为 JSON"""
  return {
@@ -111,9 +126,11 @@ class WorkflowNode(models.Model):
  "position_x": self.position_x,
  "position_y": self.position_y,
  "config": self.config,
- "timeout": self.timeout,
- "retry_count": self.retry_count,
+ "on_error": self.on_error,
+ "retry_times": self.retry_times,
  "retry_delay": self.retry_delay,
+ "node_timeout_seconds": self.node_timeout_seconds,
+ "fallback_values": self.fallback_values,
  "run_condition": self.run_condition,
  }
  def clone(self, new_workflow: "Workflow") -> "WorkflowNode":
@@ -126,9 +143,11 @@ class WorkflowNode(models.Model):
  position_x=self.position_x,
  position_y=self.position_y,
  config=self.config.copy,
- timeout=self.timeout,
- retry_count=self.retry_count,
+ on_error=self.on_error,
+ retry_times=self.retry_times,
  retry_delay=self.retry_delay,
+ node_timeout_seconds=self.node_timeout_seconds,
+ fallback_values=self.fallback_values.copy if self.fallback_values else None,
  run_condition=self.run_condition,
  metadata=self.metadata.copy,
  )
