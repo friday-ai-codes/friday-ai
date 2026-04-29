@@ -89,6 +89,7 @@ class TriggerDispatcher:
  trigger_type=context.trigger_type,
  trigger_data={"raw_payload": context.raw_payload},
  debug_mode=context.debug_mode,
+ stop_before_node_id=context.stop_before_node_id,
  )
  executions.append(execution)
  logger.info(

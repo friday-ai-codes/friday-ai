@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
+import { Download, Pencil, Play, Redo, Save, Undo } from 'lucide-vue-next'
 import { ref } from 'vue'
 import { Button } from '~/components/ui/button'
 import {
@@ -41,6 +41,7 @@ const emit = defineEmits<{
  (e: 'saveDraft'): void
  (e: 'back'): void
  (e: 'history'): void
+ (e: 'exportJSON'): void
  (e: 'update:workflowName', value: string): void
  (e: 'update:workflowDescription', value: string): void
  (e: 'update:isActive', value: boolean): void
@@ -184,6 +185,18 @@ function confirmEdit {
  </TooltipContent>
  </Tooltip>
  <div class="w-px bg-border/50 mx-1" />
+ <!-- Export JSON -->
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <Button variant="outline" size="sm" class="" @click="emit('exportJSON')">
+ <Download class="w-4 mr-1.5" />
+ 导出 JSON
+ </Button>
+ </TooltipTrigger>
+ <TooltipContent side="bottom">
+ <p>导出为 JSON</p>
+ </TooltipContent>
+ </Tooltip>
  <!-- Save Draft -->
  <Button
  v-if="hasUnsavedChanges"

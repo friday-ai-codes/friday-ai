@@ -153,6 +153,7 @@ declare module 'vue' {
  FormLabel: typeof import('./components/ui/form/FormLabel.vue')['default']
  FormMessage: typeof import('./components/ui/form/FormMessage.vue')['default']
  FormModal: typeof import('./components/modal/FormModal.vue')['default']
+ FunctionChip: typeof import('./components/workflow/smart-input/FunctionChip.vue')['default']
  GeneralSettings: typeof import('./components/settings/GeneralSettings.vue')['default']
  GlobalConfirmDialog: typeof import('./components/GlobalConfirmDialog.vue')['default']
  GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']

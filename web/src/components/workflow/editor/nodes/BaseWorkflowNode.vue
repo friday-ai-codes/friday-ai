@@ -7,10 +7,12 @@
  */
 import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NodeToolbar } from '@vue-flow/node-toolbar'
-import { Copy, Trash2 } from 'lucide-vue-next'
+import { Copy, Play, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
+import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
+import { useRouter } from 'vue-router'
 import { generateShortId } from '~/utils/shortId'
 import { getDefaultPortsForNodeType } from '../utils/portConfig'
 import { useNodeStyle } from './composables/useNodeStyle'
@@ -30,6 +32,8 @@ const props = withDefaults(defineProps<{
 const store = useWorkflowsStore
 const { dirtyNodeIds } = storeToRefs(store)
 const { getSelectedNodes } = useVueFlow
+const router = useRouter
+const { success, error: toastError } = useToast
 const visual = computed( => getNodeVisual(props.data.nodeType))
 const style = computed( => useNodeStyle(visual.value.color).value)
 const ports = computed( => getDefaultPortsForNodeType(props.data.nodeType))
@@ -64,6 +68,18 @@ function handleCopy {
  newNode.name = `${currentNode.name} (副本)`
  store.addNode(newNode)
 }
+async function handleTest {
+ try {
+ const result = await store.executeWorkflow({}, false, props.id)
+ if (result?.execution_id) {
+ success('单节点测试已启动')
+ router.push(`/executions/${result.execution_id}`)
+ }
+ }
+ catch (e: unknown) {
+ toastError((e as Error).message || '启动测试失败')
+ }
+}
 </script>
 <template>
  <div>
@@ -71,6 +87,13 @@ function handleCopy {
  <NodeToolbar:is-visible="selected && !isMultiSelect":position="Position.Top":offset="10"
  >
  <div class="flex gap-1 bg-card/90 backdrop-blur-sm border border-border/50 rounded-xl shadow-lg">
+ <button
+ class=".5 rounded-lg hover:bg-emerald-500/10 transition-colors text-muted-foreground hover:text-emerald-600"
+ title="测试到此节点"
+ @click.stop="handleTest"
+ >
+ <Play class="w-3.5 .5" />
+ </button>
  <button
  class=".5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
  title="复制节点"
