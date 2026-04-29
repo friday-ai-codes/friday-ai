@@ -157,6 +157,7 @@ function getCategoryGradient(color: string): string {
  <input
  v-model="searchQuery"
  type="text"
+ aria-label="搜索节点"
  placeholder="搜索节点..."
  class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/50 border border-border/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 placeholder:text-muted-foreground/50"
  >
