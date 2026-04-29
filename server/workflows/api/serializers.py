@@ -160,9 +160,11 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
  "position_x",
  "position_y",
  "config",
- "timeout",
- "retry_count",
+ "on_error",
+ "retry_times",
  "retry_delay",
+ "node_timeout_seconds",
+ "fallback_values",
  "run_condition",
  "metadata",
  "created_at",
@@ -176,6 +178,12 @@ class WorkflowNodeSerializer(serializers.ModelSerializer):
  raise serializers.ValidationError(
  f"Unknown node type: {value}. Available types: {available}"
  )
+ return value
+ def validate_on_error(self, value: str) -> str:
+ """Validate on_error strategy."""
+ valid = ["abort", "retry", "ignore"]
+ if value not in valid:
+ raise serializers.ValidationError(f"Invalid on_error: {value}. Must be one of {valid}")
  return value
  def validate(self, attrs: dict) -> dict:
  """Validate node configuration against schema."""
@@ -199,9 +207,11 @@ class WorkflowNodeCreateSerializer(serializers.ModelSerializer):
  "position_x",
  "position_y",
  "config",
- "timeout",
- "retry_count",
+ "on_error",
+ "retry_times",
  "retry_delay",
+ "node_timeout_seconds",
+ "fallback_values",
  "run_condition",
  "metadata",
  ]
