@@ -16,6 +16,7 @@ import NodeConfigForm from './NodeConfigForm.vue'
 import NodeConfigHeader from './NodeConfigHeader.vue'
 import NodeErrorConfig from './NodeErrorConfig.vue'
 import NodeSchemaDisplay from './NodeSchemaDisplay.vue'
+import { useNodeMeta } from '~/composables/useNodeMeta'
 // 组合 3 个 composables
 const {
  selectedNode,
@@ -50,6 +51,11 @@ const {
  getInputPath,
  getOutputFieldCount,
 } = useNodeSchema(selectedNode, selectedNodeId, nodes, edges)
+const { getDefinition } = useNodeMeta
+const nodeDefinition = computed( => {
+ const nodeType = selectedNode.value?.nodeType || ''
+ return getDefinition(nodeType)
+})
 // ============================================================================
 // Phase：四层 Provider 解析 Inspector
 //

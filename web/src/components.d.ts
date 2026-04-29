@@ -181,6 +181,7 @@ declare module 'vue' {
  NodeDataTab: typeof import('./components/execution/NodeDataTab.vue')['default']
  NodeDebugPanel: typeof import('./components/execution/NodeDebugPanel.vue')['default']
  NodeDetailSheet: typeof import('./components/execution/NodeDetailSheet.vue')['default']
+ NodeErrorConfig: typeof import('./components/workflow/node-config/NodeErrorConfig.vue')['default']
  NodeOverviewTab: typeof import('./components/execution/NodeOverviewTab.vue')['default']
  NodePalette: typeof import('./components/workflow/sidebar/NodePalette.vue')['default']
  NodePaletteItem: typeof import('./components/workflow/sidebar/NodePaletteItem.vue')['default']
