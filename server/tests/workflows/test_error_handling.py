@@ -5,6 +5,7 @@ Tests cover:
 -: Node timeout triggering on_error strategy
 -: Continue-on-fail (ignore mode) with fallback_values
 """
+import asyncio
 import pytest
 from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine
