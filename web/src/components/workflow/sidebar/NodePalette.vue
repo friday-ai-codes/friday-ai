@@ -89,6 +89,8 @@ const nodeGroups = computed<PaletteGroup>( => [
  fromDef('delay', '延时', '等待指定时长后继续'),
  fromDef('parallel', '并行分支', '并行执行多个分支'),
  fromDef('join', '汇聚', '等待所有并行分支完成'),
+ fromDef('foreach', 'ForEach 循环', '对列表中的每个元素执行操作'),
+ fromDef('aggregate', '变量聚合', '将多个上游节点输出绑定为结构化变量'),
  ],
  },
 ])
