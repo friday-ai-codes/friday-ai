@@ -1,7 +1,7 @@
 /**
  * useKeyboardShortcuts - 工作流画布键盘快捷键集中管理
  *
- * 快捷键：Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+A 全选
+ * 快捷键：Ctrl+C 复制、Ctrl+V 粘贴、Ctrl+A 全选、Ctrl+Z 撤销、Ctrl+Y/Ctrl+Shift+Z 重做、Ctrl+Shift+F fit-view
  * Delete/Backspace 删除由 VueFlow 内置处理，通过 @nodes-change 回写 store。
  * 注意：输入框聚焦时不拦截键盘事件（防止在 NodeConfigPanel 输入框中误触）
  */
@@ -12,7 +12,7 @@ import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 export function useKeyboardShortcuts {
  const store = useWorkflowsStore
- const { getSelectedNodes, addSelectedNodes, getNodes } = useVueFlow
+ const { getSelectedNodes, addSelectedNodes, getNodes, fitView } = useVueFlow
  // 剪贴板状态 -- 存储复制的节点快照
  const clipboard = ref<GraphNode>
  function isInputFocused(event: KeyboardEvent): boolean {
@@ -77,6 +77,21 @@ export function useKeyboardShortcuts {
  store.addNode(newNode)
  })
  }
+ }
+ // Ctrl+Shift+F -> fit-view 带平滑动画
+ if (isModifier && event.shiftKey && event.key === 'F') {
+ event.preventDefault
+ fitView({ duration: 300 })
+ }
+ // Ctrl+Z (无 Shift) -> 撤销
+ if (isModifier && !event.shiftKey && event.key === 'z') {
+ event.preventDefault
+ store.undo
+ }
+ // Ctrl+Shift+Z 或 Ctrl+Y -> 重做
+ if ((isModifier && event.shiftKey && event.key === 'Z') || (isModifier && event.key === 'y')) {
+ event.preventDefault
+ store.redo
  }
  }
  onMounted( => document.addEventListener('keydown', handleKeyDown))
