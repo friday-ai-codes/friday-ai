@@ -57,6 +57,7 @@ async def _ping_anthropic(
  client: httpx.AsyncClient,
  cred: ProviderCredential,
  cfg: dict[str, Any],
+ override_model: str | None = None,
 ) -> HealthCheckResult:
  """POST /v1/messages/count_tokens —— 稳定轻量端点（比 /v1/models 兼容网关更广）。"""
  start = time.monotonic
@@ -66,7 +67,7 @@ async def _ping_anthropic(
  or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
  ).rstrip("/")
  # default_model 为空时用 fallback（避免 400 unsupported_model）
- model = cred.default_model or "claude-3-5-haiku-20241022"
+ model = override_model or cred.default_model or "claude-3-5-haiku-20241022"
  resp = await client.post(
  f"{base_url}/v1/messages/count_tokens",
  headers={
@@ -91,6 +92,7 @@ async def _ping_openai(
  client: httpx.AsyncClient,
  cred: ProviderCredential,
  cfg: dict[str, Any],
+ override_model: str | None = None,
 ) -> HealthCheckResult:
  """GET /v1/models —— OpenAI Chat Completions 与 Responses API 共享。"""
  start = time.monotonic
@@ -102,10 +104,22 @@ async def _ping_openai(
  headers = {"Authorization": f"Bearer {api_key}"}
  if cfg.get("organization_id"):
  headers["OpenAI-Organization"] = str(cfg["organization_id"])
+ # 若指定了模型，改走轻量 chat.completions 探活（比 /models 更精确）
+ if override_model:
+ resp = await client.post(
+ f"{base_url}/chat/completions",
+ headers={**headers, "Content-Type": "application/json"},
+ json={"model": override_model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1},
+ )
+ else:
  resp = await client.get(f"{base_url}/models", headers=headers)
  latency = int((time.monotonic - start) * 1000)
  if resp.status_code == 200:
  body = resp.json if resp.content else {}
+ if override_model:
+ if "choices" in body:
+ return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
+ else:
  if isinstance(body.get("data"), list) and len(body["data"]) > 0:
  return HealthCheckResult(ok=True, status="ok", latency_ms=latency)
  return HealthCheckResult(
@@ -118,6 +132,7 @@ async def _ping_gemini(
  client: httpx.AsyncClient,
  cred: ProviderCredential,
  cfg: dict[str, Any],
+ override_model: str | None = None,
 ) -> HealthCheckResult:
  """GET /v1beta/models?key=... —— AI Studio 路径，key 走 query string。"""
  start = time.monotonic
@@ -139,6 +154,7 @@ async def _ping_ollama(
  client: httpx.AsyncClient,
  cred: ProviderCredential,
  cfg: dict[str, Any],
+ override_model: str | None = None,
 ) -> HealthCheckResult:
  """GET /api/tags —— 同次往返解析 models.name 填充 available_models。"""
  start = time.monotonic
@@ -182,13 +198,20 @@ _PING_DISPATCH = {
 # ============================================================================
 # 主入口：5s timeout + graceful 降级 + 原子 aupdate 三字段
 # ============================================================================
-async def health_check(credential: ProviderCredential) -> HealthCheckResult:
+async def health_check(
+ credential: ProviderCredential,
+ *,
+ override_model: str | None = None,
+) -> HealthCheckResult:
  """5 Provider 健康检查统一入口。
  - 5s httpx timeout（HEALTH_CHECK_TIMEOUT_SECONDS）
  - TimeoutException / ConnectError / 任意 Exception 全部 graceful 降级，不抛给 caller
  - 上游 error body 经 _safe_error 脱敏 + 500 字符截断
  - Ollama 路径同次往返将 /api/tags 的 models.name 写入 available_models
  - 单 SQL aupdate 原子写回 last_health_check_at / status / error（Ollama 额外 available_models）
+ Args:
+ credential: 要检查的凭证。
+ override_model: 可选，覆盖 credential.default_model 进行测试。
  返回：HealthCheckResult（值对象；同时 DB 端三字段已更新）。
  """
  result: HealthCheckResult
@@ -230,7 +253,7 @@ async def health_check(credential: ProviderCredential) -> HealthCheckResult:
  timeout=HEALTH_CHECK_TIMEOUT_SECONDS
  ) as client:
  try:
- result = await ping_fn(client, credential, cfg)
+ result = await ping_fn(client, credential, cfg, override_model)
  except httpx.TimeoutException:
  result = HealthCheckResult(
  ok=False,

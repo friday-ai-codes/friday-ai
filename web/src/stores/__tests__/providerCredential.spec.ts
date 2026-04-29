@@ -49,6 +49,8 @@ function makeCred(overrides: Partial<ProviderCredentialDto> = {}): ProviderCrede
  available_models: overrides.available_models ??,
  api_key_last4: overrides.api_key_last4 ?? '...abcd',
  has_api_key: overrides.has_api_key ?? true,
+ config: overrides.config ?? {},
+ default_model: overrides.default_model ?? 'claude-3-5-sonnet-20241022',
  created_at: overrides.created_at ?? '2026-04-20T00:00:00Z',
  updated_at: overrides.updated_at ?? '2026-04-20T00:00:00Z',
  }
@@ -110,6 +112,7 @@ describe('useProviderCredentialStore', => {
  provider_type: 'anthropic',
  name: 'new',
  scope: 'system',
+ default_model: 'claude-3-5-sonnet-20241022',
  config: { api_key: 'sk-ant-test' },
  })
  expect(store.credentials[0].id).toBe('new-1')

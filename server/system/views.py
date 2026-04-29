@@ -149,7 +149,10 @@ class ProviderCredentialTestConnectionView(APIView):
  {"detail": "Credential not found."},
  status=status.HTTP_404_NOT_FOUND,
  )
- result = await health_check(cred)
+ # 可选：按指定模型测试（不传则使用 credential.default_model）
+ body = request.data or {}
+ override_model = body.get("model") if isinstance(body, dict) else None
+ result = await health_check(cred, override_model=override_model)
  # 健康检查完成后 aupdate 已写回三字段；重新读取最新 last_health_check_at
  refreshed = await ProviderCredential.objects.aget(id=credential_id)
  return Response({
@@ -475,3 +478,195 @@ class ProviderTypesView(APIView):
  })
  serializer = ProviderTypeMetaSerializer(data, many=True)
  return Response(serializer.data)
+# ============================================================================
+# Phase 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
+# ============================================================================
+import os
+import shutil
+import sqlite3
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from django.conf import settings
+from django.http import FileResponse
+class SystemInfoView(APIView):
+ """GET /api/system/info/ — 系统元信息（版本、环境变量、镜像、数据库）。
+ 权限：仅 superuser（与 SettingsListCreateView 同级）。
+ """
+ permission_classes = [IsSuperUser]
+ async def get(self, request) -> Response: # type: ignore[no-untyped-def]
+ return Response({
+ "version": self._get_version,
+ "changelog_url": "/CHANGELOG.md",
+ "environment": self._get_safe_env,
+ "image": self._get_image_info,
+ "database": self._get_database_info,
+ "python_version": f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}",
+ "django_version": __import__('django').get_version,
+ })
+ def _get_version(self) -> dict[str, str]:
+ """优先从 git tag 读取版本号，回退到 pyproject.toml。"""
+ import subprocess
+ import tomllib
+ version = "unknown"
+ # 1) 尝试 git describe（最近 tag）
+ try:
+ result = subprocess.run(
+ ["git", "describe", "--tags", "--abbrev=0"],
+ cwd=settings.BASE_DIR,
+ capture_output=True,
+ text=True,
+ check=True,
+ )
+ version = result.stdout.strip.lstrip("v")
+ except Exception:
+ # 2) 回退到 pyproject.toml
+ try:
+ pyproject = Path(settings.BASE_DIR) / "pyproject.toml"
+ with pyproject.open("rb") as f:
+ data = tomllib.load(f)
+ version = data.get("project", {}).get("version", "unknown")
+ except Exception:
+ pass
+ return {"current": version}
+ def _get_safe_env(self) -> dict[str, str]:
+ """返回脱敏后的环境变量子集。"""
+ keys = [
+ "DEBUG",
+ "ALLOWED_HOSTS",
+ "CORS_ALLOWED_ORIGINS",
+ "LANGUAGE_CODE",
+ "TIME_ZONE",
+ "FRIDAY_RUNNER_IMAGE",
+ "DATABASE_URL",
+ ]
+ result: dict[str, str] = {}
+ for key in keys:
+ val = os.environ.get(key, "")
+ if key == "DATABASE_URL" and val:
+ # 脱敏：保留协议和主机，隐藏密码
+ try:
+ from urllib.parse import urlparse
+ parsed = urlparse(val)
+ if parsed.password:
+ val = val.replace(f":{parsed.password}@", ":***@")
+ except Exception:
+ val = "***"
+ result[key] = val or "(未设置)"
+ return result
+ def _get_image_info(self) -> dict[str, str]:
+ """返回 Task Runner 执行镜像信息。"""
+ # Runner 通过 FRIDAY_RUNNER_IMAGE 环境变量配置任务镜像
+ # 与 runner/internal/config/config.go GetDefaultImage 语义对齐
+ tag = os.environ.get("FRIDAY_RUNNER_IMAGE", "")
+ return {
+ "task_runner_image": tag or "friday-task:latest",
+ }
+ def _get_database_info(self) -> dict[str, str]:
+ """返回数据库路径和大小。"""
+ db_path = ""
+ size_str = "unknown"
+ engine = settings.DATABASES["default"].get("ENGINE", "")
+ if "sqlite" in engine:
+ db_path = str(settings.DATABASES["default"].get("NAME", ""))
+ try:
+ size = Path(db_path).stat.st_size
+ size_str = f"{size / 1024 / 1024:.2f} MB"
+ except Exception:
+ pass
+ return {"engine": engine, "path": db_path, "size": size_str}
+class SystemBackupView(APIView):
+ """GET /api/system/backup/ — 下载 SQLite 数据库备份。
+ POST /api/system/restore/ — 上传备份文件恢复数据库。
+ 仅支持 SQLite；其他数据库类型返回 400。
+ """
+ permission_classes = [IsSuperUser]
+ async def get(self, request) -> Response: # type: ignore[no-untyped-def]
+ engine = settings.DATABASES["default"].get("ENGINE", "")
+ if "sqlite" not in engine:
+ return Response(
+ {"detail": "仅 SQLite 数据库支持备份下载"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ db_path = Path(settings.DATABASES["default"].get("NAME", ""))
+ if not db_path.exists:
+ return Response(
+ {"detail": "数据库文件不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 创建临时副本（避免锁定生产数据库）
+ tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+ shutil.copy2(db_path, tmp.name)
+ tmp.close
+ timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+ filename = f"friday_backup_{timestamp}.db"
+ def _cleanup:
+ try:
+ Path(tmp.name).unlink(missing_ok=True)
+ except Exception:
+ pass
+ response = FileResponse(
+ open(tmp.name, "rb"),
+ as_attachment=True,
+ filename=filename,
+ content_type="application/octet-stream",
+ )
+ # 响应结束后清理临时文件
+ response.close = lambda: (_cleanup, None) # type: ignore[method-assign]
+ return response
+ async def post(self, request) -> Response: # type: ignore[no-untyped-def]
+ engine = settings.DATABASES["default"].get("ENGINE", "")
+ if "sqlite" not in engine:
+ return Response(
+ {"detail": "仅 SQLite 数据库支持恢复"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ file_obj = request.FILES.get("file")
+ if not file_obj:
+ return Response(
+ {"detail": "请上传备份文件"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # 验证 SQLite 格式
+ tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+ for chunk in file_obj.chunks:
+ tmp.write(chunk)
+ tmp.close
+ try:
+ conn = sqlite3.connect(tmp.name)
+ cursor = conn.cursor
+ cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+ tables = [t[0] for t in cursor.fetchall]
+ conn.close
+ # 校验关键表是否存在（至少要有 django_migrations）
+ if "django_migrations" not in tables:
+ Path(tmp.name).unlink(missing_ok=True)
+ return Response(
+ {"detail": "无效的数据库备份文件（缺少 django_migrations 表）"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ except Exception as e:
+ Path(tmp.name).unlink(missing_ok=True)
+ return Response(
+ {"detail": f"文件格式校验失败: {e!s}"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ db_path = Path(settings.DATABASES["default"].get("NAME", ""))
+ backup_old = db_path.with_suffix(f".db.bak_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+ try:
+ # 先备份当前数据库
+ shutil.copy2(db_path, backup_old)
+ # 替换为新数据库
+ shutil.copy2(tmp.name, db_path)
+ except Exception as e:
+ # 恢复失败则回滚
+ if backup_old.exists:
+ shutil.copy2(backup_old, db_path)
+ Path(tmp.name).unlink(missing_ok=True)
+ return Response(
+ {"detail": f"恢复失败: {e!s}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
+ finally:
+ Path(tmp.name).unlink(missing_ok=True)
+ return Response({"detail": "数据库恢复成功", "restored_tables": len(tables)})

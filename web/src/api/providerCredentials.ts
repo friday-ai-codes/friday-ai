@@ -109,10 +109,10 @@ export const providerCredentialsApi = {
  )
  },
  /** POST /api/providers/credentials/<id>/test-connection/（Phase 既有端点）。 */
- testConnection: async (id: string): Promise<TestConnectionResponse> => {
+ testConnection: async (id: string, model?: string): Promise<TestConnectionResponse> => {
  return post<TestConnectionResponse>(
  `/providers/credentials/${id}/test-connection/`,
- {},
+ model ? { model }: {},
  )
  },
  /** POST /api/providers/credentials/<id>/refresh-models/ */

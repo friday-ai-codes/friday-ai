@@ -40,6 +40,8 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
+import { providerCredentialsApi } from '~/api/providerCredentials'
+import { useToast } from '~/composables/useToast'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
 interface Props {
  initial?: ProviderCredentialDto
@@ -58,6 +60,17 @@ const emit = defineEmits<{
  (e: 'dirty', isDirty: boolean): void
 }>
 const store = useProviderCredentialStore
+const toast = useToast
+// 模型获取状态
+const isFetchingModels = ref(false)
+const fetchModelsError = ref<string | null>(null)
+const fetchedModels = ref<Array<{ id: string, display_name: string }>>
+const showManualModelInput = ref(false)
+const manualModelName = ref('')
+const selectedDefaultModel = ref('')
+// 模型测试状态
+const testingModelId = ref<string | null>(null)
+const modelTestResults = ref<Record<string, { status: 'ok' | 'error', latency_ms?: number, error?: string }>>({})
 // 确保 providerTypes 就位（store 内部去重，重复调用无副作用）
 if (store.providerTypes.length === 0) {
  store.fetchProviderTypes.catch( => {
@@ -99,6 +112,7 @@ const zodSchema = computed( => {
  scope: z.enum(['system', 'project']),
  scope_id: z.string.uuid('请选择有效项目').nullable.optional,
  is_active: z.boolean.optional,
+ default_model: z.string.min(1, '请输入或选择一个模型'),
  }
  const configShape: Record<string, z.ZodTypeAny> = {}
  for (const [key, prop] of Object.entries(schemaProperties.value)) {
@@ -137,6 +151,7 @@ const { handleSubmit, meta, setValues } = useForm({
  scope: props.initial?.scope ?? props.defaultScope,
  scope_id: props.initial?.scope_id ?? props.defaultProjectId,
  is_active: props.initial?.is_active ?? true,
+ default_model: props.initial?.default_model ?? '',
  // edit 模式下回显已配置的 base_url / api_key（后端按写权限分级返回）。
  config: { ...(props.initial?.config ?? {}) } as Record<string, unknown>,
  },
@@ -150,6 +165,7 @@ watch( => meta.value.dirty, (v) => {
  emit('dirty', v)
 })
 const onSubmit = handleSubmit((v) => {
+ const defaultModel = (v.default_model as string)?.trim || selectedDefaultModel.value || ''
  if (props.mode === 'create') {
  const payload: ProviderCredentialCreatePayload = {
  provider_type: v.provider_type as ProviderType,
@@ -158,6 +174,7 @@ const onSubmit = handleSubmit((v) => {
  scope_id: (v.scope_id as string | null | undefined) ?? null,
  config: (v.config as Record<string, unknown>) ?? {},
  is_active: (v.is_active as boolean | undefined) ?? true,
+ default_model: defaultModel,
  }
  emit('submit', payload)
  }
@@ -170,9 +187,84 @@ const onSubmit = handleSubmit((v) => {
  config: Object.keys(configObj).length > 0 ? configObj: null,
  is_active: v.is_active as boolean | undefined,
  }
+ if (defaultModel) {
+ payload.default_model = defaultModel
+ }
  emit('submit', payload)
  }
 })
+/** 创建凭证成功后自动获取模型列表 */
+async function fetchModelsAfterCreate(credentialId: string) {
+ isFetchingModels.value = true
+ fetchModelsError.value = null
+ try {
+ const resp = await providerCredentialsApi.refreshModels(credentialId)
+ fetchedModels.value = resp.available_models
+ if (resp.available_models.length === 0) {
+ fetchModelsError.value = '未获取到模型列表，请手动输入一个模型名称'
+ showManualModelInput.value = true
+ }
+ else {
+ // 自动选择第一个模型作为 default_model
+ selectedDefaultModel.value = resp.available_models[0].id
+ toast.success(`成功获取 ${resp.available_models.length} 个模型`)
+ }
+ }
+ catch (e) {
+ fetchModelsError.value = e instanceof Error ? e.message: '获取模型列表失败'
+ showManualModelInput.value = true
+ }
+ finally {
+ isFetchingModels.value = false
+ }
+}
+/** 手动获取模型列表（用户主动触发） */
+async function handleFetchModels {
+ if (!props.initial?.id)
+ return
+ await fetchModelsAfterCreate(props.initial.id)
+}
+/** 确认手动输入的模型 */
+function confirmManualModel {
+ if (!manualModelName.value.trim) {
+ toast.error('请输入模型名称')
+ return
+ }
+ const modelName = manualModelName.value.trim
+ selectedDefaultModel.value = modelName
+ setValues({ default_model: modelName } as Record<string, unknown>, false)
+ showManualModelInput.value = false
+ toast.success(`已设置默认模型: ${modelName}`)
+}
+/** 测试指定模型的连接 */
+async function testModel(modelId: string) {
+ if (!props.initial?.id)
+ return
+ testingModelId.value = modelId
+ try {
+ const resp = await providerCredentialsApi.testConnection(props.initial.id, modelId)
+ modelTestResults.value = {
+ ...modelTestResults.value,
+ [modelId]: { status: resp.status, latency_ms: resp.latency_ms },
+ }
+ if (resp.status === 'ok') {
+ toast.success(`模型 ${modelId} 连接成功 (${resp.latency_ms}ms)`)
+ }
+ else {
+ toast.error(`模型 ${modelId} 连接失败: ${resp.error ?? '未知错误'}`)
+ }
+ }
+ catch (e) {
+ modelTestResults.value = {
+ ...modelTestResults.value,
+ [modelId]: { status: 'error', error: e instanceof Error ? e.message: '测试失败' },
+ }
+ toast.error(`模型 ${modelId} 测试失败`)
+ }
+ finally {
+ testingModelId.value = null
+ }
+}
 function togglePassword(key: string) {
  passwordVisible.value[key] = !passwordVisible.value[key]
 }
@@ -287,6 +379,102 @@ defineExpose({ selectedType })
  <FormMessage />
  </FormItem>
  </FormField>
+ </div>
+ <!-- 模型配置区域 -->
+ <div class="space-y-3 rounded-lg border ">
+ <div class="flex items-center justify-between">
+ <h4 class="text-sm font-medium">
+ 支持的模型 <span class="text-xs text-destructive">*</span>
+ </h4>
+ <Button
+ v-if="props.mode === 'edit'"
+ type="button"
+ variant="outline"
+ size="sm":disabled="isFetchingModels"
+ @click="handleFetchModels"
+ >
+ <span
+ v-if="isFetchingModels"
+ class="icon-[lucide--loader-2] mr-1 w-3 animate-spin"
+ />
+ <span v-else class="icon-[lucide--refresh-cw] mr-1 w-3" />
+ {{ isFetchingModels ? '获取中...': '获取模型列表' }}
+ </Button>
+ </div>
+ <!-- 获取到的模型列表（edit 模式） -->
+ <div v-if="props.mode === 'edit' && fetchedModels.length > 0" class="space-y-2">
+ <p class="text-xs text-muted-foreground">选择默认模型并测试:</p>
+ <div class="flex flex-wrap gap-2">
+ <div
+ v-for="m in fetchedModels":key="m.id"
+ class="flex items-center gap-1"
+ >
+ <button
+ type="button"
+ class="rounded-md border px-2 py-1 text-xs transition-colors":class="selectedDefaultModel === m.id
+ ? 'border-primary bg-primary/10 text-primary': 'border-border hover:bg-accent'"
+ @click="selectedDefaultModel = m.id; setValues({ default_model: m.id } as Record<string, unknown>, false)"
+ >
+ {{ m.display_name || m.id }}
+ </button>
+ <button
+ type="button"
+ class="rounded-md text-xs transition-colors hover:bg-accent":title="`测试模型 ${m.id}`"
+ @click="testModel(m.id)"
+ >
+ <span
+ v-if="testingModelId === m.id"
+ class="icon-[lucide--loader-2] w-3 animate-spin text-muted-foreground"
+ />
+ <span
+ v-else-if="modelTestResults[m.id]?.status === 'ok'"
+ class="icon-[lucide--check] w-3 text-green-500"
+ />
+ <span
+ v-else-if="modelTestResults[m.id]?.status === 'error'"
+ class="icon-[lucide--x] w-3 text-destructive"
+ />
+ <span v-else class="icon-[lucide--zap] w-3 text-muted-foreground" />
+ </button>
+ </div>
+ </div>
+ </div>
+ <!-- create 模式：手动输入 default_model -->
+ <div v-if="props.mode === 'create'" class="space-y-2">
+ <FormField v-slot="{ componentField }" name="default_model">
+ <FormItem>
+ <FormControl>
+ <Input
+ v-bind="componentField"
+ placeholder="输入模型名称，例如: claude-3-5-sonnet-20241022"
+ class="text-sm"
+ />
+ </FormControl>
+ <FormMessage />
+ </FormItem>
+ </FormField>
+ <p class="text-xs text-muted-foreground">
+ 创建后可点击「获取模型列表」自动拉取该 Provider 支持的模型。
+ </p>
+ </div>
+ <!-- edit 模式：错误提示 + 手动输入 -->
+ <div v-if="props.mode === 'edit' && (fetchModelsError || showManualModelInput)" class="space-y-2">
+ <p v-if="fetchModelsError" class="text-xs text-destructive">{{ fetchModelsError }}</p>
+ <div class="flex gap-2">
+ <Input
+ v-model="manualModelName"
+ placeholder="手动输入模型名称，例如: claude-3-5-sonnet-20241022"
+ class="flex-1 text-sm"
+ />
+ <Button type="button" variant="secondary" size="sm" @click="confirmManualModel">
+ 确认
+ </Button>
+ </div>
+ </div>
+ <!-- 已选择的默认模型 -->
+ <div v-if="selectedDefaultModel" class="text-xs text-muted-foreground">
+ 默认模型: <span class="font-medium text-foreground">{{ selectedDefaultModel }}</span>
+ </div>
  </div>
  <!-- 操作按钮 -->
  <div class="flex justify-end gap-2 pt-4">

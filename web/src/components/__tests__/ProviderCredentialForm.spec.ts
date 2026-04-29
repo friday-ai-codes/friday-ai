@@ -179,6 +179,8 @@ describe('providerCredentialForm', => {
  available_models:,
  api_key_last4: '...abcd',
  has_api_key: true,
+ config: {},
+ default_model: 'claude-3-5-sonnet-20241022',
  created_at: '2026-04-20T00:00:00Z',
  updated_at: '2026-04-20T00:00:00Z',
  },

@@ -42,6 +42,7 @@ def test_create_credential_pydantic_dispatch_invalid_anthropic(
  "provider_type": "anthropic",
  "name": "bad-anth",
  "scope": "system",
+ "default_model": "claude-3-5-sonnet-20241022",
  "config": {}, # 缺 api_key → Pydantic missing
  },
  format="json",
@@ -72,6 +73,7 @@ def test_create_credential_pydantic_dispatch_valid_anthropic(
  "provider_type": "anthropic",
  "name": "good-anth",
  "scope": "system",
+ "default_model": "claude-3-5-sonnet-20241022",
  "config": {
  "api_key": "sk-test-placeholder",
  "base_url": "https://api.anthropic.com",

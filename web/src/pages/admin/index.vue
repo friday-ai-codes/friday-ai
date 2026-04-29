@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import ProviderSettings from '~/components/providers/ProviderSettings.vue'
+import GeneralSettings from '~/components/settings/GeneralSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
 import FeishuIMConfigSection from './components/FeishuIMConfigSection.vue'
 import FeishuTestPanel from './components/FeishuTestPanel.vue'
-import SettingsInfoCard from './components/SettingsInfoCard.vue'
 import { useClaudeSettings } from './composables/useClaudeSettings'
 import { useFeishuIMSettings } from './composables/useFeishuIMSettings'
 definePage({
@@ -20,6 +21,17 @@ watch( => claude.loading.value, (isLoading) => {
  feishu.initFromSettings
  }
 }, { immediate: true })
+// ============================================================================
+// Tab 导航（仿 sub2api SettingsView 风格）
+// ============================================================================
+type SettingsTab = 'general' | 'rag' | 'integration' | 'provider'
+const activeTab = ref<SettingsTab>('general')
+const settingsTabs = [
+ { key: 'general' as SettingsTab, icon: 'icon-[lucide--settings-2]', label: '通用设置' },
+ { key: 'rag' as SettingsTab, icon: 'icon-[lucide--brain]', label: 'RAG 设置' },
+ { key: 'integration' as SettingsTab, icon: 'icon-[lucide--plug]', label: '集成设置' },
+ { key: 'provider' as SettingsTab, icon: 'icon-[lucide--cpu]', label: 'Provider' },
+]
 </script>
 <template>
  <div class="min-h-[calc(100vh-8rem)] relative">
@@ -27,48 +39,53 @@ watch( => claude.loading.value, (isLoading) => {
  <div class="absolute inset-0 -z-10 overflow-hidden">
  <div class="absolute inset-x-0 top-0 bg-linear-to-b from-primary/6 to-transparent" />
  </div>
- <div class="max-w-2xl mx-auto space-y-8 relative">
+ <div class="max-w-4xl mx-auto space-y-6 relative">
  <!-- 页面标题 -->
- <section class="text-center pt-8 pb-4">
- <div class="inline-flex items-center justify-center mb-6 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
+ <section class="text-center pt-8 pb-2">
+ <div class="inline-flex items-center justify-center mb-4 rounded-2xl bg-gradient-to-br from-primary/10 via-secondary/50 to-primary/10 backdrop-blur-sm border border-primary/10">
  <span class="icon-[lucide--settings] text-4xl text-primary" />
  </div>
- <h1 class="text-3xl font-bold tracking-tight mb-3">
+ <h1 class="text-3xl font-bold tracking-tight mb-2">
  系统设置
  </h1>
- <p class="text-muted-foreground max-w-md mx-auto">
- 配置全局的 Claude Code 设置，作为所有项目的默认值
+ <p class="text-muted-foreground max-w-md mx-auto text-sm">
+ 配置全局默认设置，管理 Provider 凭证与第三方集成
  </p>
  </section>
  <LoadingState v-if="claude.loading.value" variant="spinner" text="加载设置..." />
  <template v-else>
- <div class="space-y-6">
- <RouterLink
- to="/admin/providers"
- class="block rounded-xl border bg-card hover:bg-muted/50 transition-colors"
+ <!-- Tab 导航（sticky + pill 风格） -->
+ <div class="sticky top-0 z-30 overflow-x-auto scrollbar-none py-2">
+ <nav class="inline-flex min-w-full gap-0.5 rounded-2xl border border-border/60 bg-card/80 backdrop-blur-sm shadow-sm sm:flex">
+ <button
+ v-for="tab in settingsTabs":key="tab.key"
+ type="button"
+ class="relative flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200 ease-out":class="[
+ activeTab === tab.key
+ ? 'text-primary bg-primary/8 shadow-sm': 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+ ]"
+ @click="activeTab = tab.key"
  >
- <div class="flex items-center gap-3">
  <span
- class="icon-[lucide--key-round] w-6 text-primary"
- aria-hidden="true"
- />
- <div class="flex-1">
- <h3 class="text-base font-semibold">
- Provider 凭证管理
- </h3>
- <p class="text-xs text-muted-foreground mt-1">
- 管理 5 种 LLM Provider 凭证（Anthropic / OpenAI / Gemini / Ollama）
- </p>
+ class="flex w-5 items-center justify-center rounded-md transition-all duration-200":class="activeTab === tab.key ? 'text-primary': 'text-muted-foreground'"
+ >
+ <span:class="tab.icon" />
+ </span>
+ <span>{{ tab.label }}</span>
+ </button>
+ </nav>
  </div>
- <span
- class="icon-[lucide--chevron-right] w-5 text-muted-foreground"
- aria-hidden="true"
- />
+ <!-- Tab: 通用设置 -->
+ <div v-show="activeTab === 'general'" class="space-y-6">
+ <GeneralSettings />
  </div>
- </RouterLink>
- <SettingsInfoCard />
+ <!-- Tab: RAG 设置 -->
+ <div v-show="activeTab === 'rag'" class="space-y-6">
  <VectorIndexSettings />
  <RAGEnhancementSettings />
+ </div>
+ <!-- Tab: 集成设置 -->
+ <div v-show="activeTab === 'integration'" class="space-y-6">
  <FeishuIMConfigSection:feishu-app-id-value="feishu.feishuAppIdValue.value":feishu-app-secret-value="feishu.feishuAppSecretValue.value":feishu-app-id-dirty="feishu.feishuAppIdDirty.value":feishu-app-secret-dirty="feishu.feishuAppSecretDirty.value":show-feishu-app-secret="feishu.showFeishuAppSecret.value":saving-feishu-i-m="feishu.savingFeishuIM.value":has-feishu-i-m-config="feishu.hasFeishuIMConfig":get-setting-by-key="feishu.getSettingByKey"
  @update:feishu-app-id-value="feishu.feishuAppIdValue.value = $event"
  @update:feishu-app-secret-value="feishu.feishuAppSecretValue.value = $event"
@@ -78,13 +95,35 @@ watch( => claude.loading.value, (isLoading) => {
  @save="feishu.saveFeishuIMConfig"
  @remove="feishu.removeFeishuIMConfig"
  />
- <!-- 飞书测试面板嵌入在飞书配置卡片内 -->
  <FeishuTestPanel:visible="feishu.hasFeishuIMConfig || feishu.feishuAppIdValue.value.trim !== ''":feishu-test-receive-id="feishu.feishuTestReceiveId.value":feishu-test-receive-id-type="feishu.feishuTestReceiveIdType.value":feishu-test-message="feishu.feishuTestMessage.value":testing-feishu-i-m="feishu.testingFeishuIM.value":feishu-test-result="feishu.feishuTestResult.value"
  @update:feishu-test-receive-id="feishu.feishuTestReceiveId.value = $event"
  @update:feishu-test-receive-id-type="feishu.feishuTestReceiveIdType.value = $event"
  @update:feishu-test-message="feishu.feishuTestMessage.value = $event"
  @test="feishu.testFeishuIMConfig"
  />
+ </div>
+ <!-- Tab: Provider -->
+ <div v-show="activeTab === 'provider'" class="space-y-6">
+ <div class="card overflow-hidden">
+ <!-- 卡片头部（与其他设置卡片对齐） -->
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--cpu] text-2xl text-primary" />
+ </div>
+ <div class="flex-1">
+ <h2 class="text-lg font-semibold">
+ Provider 凭证管理
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 管理系统级 LLM Provider 凭证，供全部项目共享
+ </p>
+ </div>
+ </div>
+ <!-- ProviderSettings 嵌入内容 -->
+ <div class="">
+ <ProviderSettings scope="system" embedded />
+ </div>
+ </div>
  </div>
  </template>
  <ClaudeTestDialog
@@ -94,3 +133,13 @@ watch( => claude.loading.value, (isLoading) => {
  </div>
  </div>
 </template>
+<style scoped>
+/* 隐藏 scrollbar 但保留滚动功能 */
+.scrollbar-none {
+ -ms-overflow-style: none;
+ scrollbar-width: none;
+}
+.scrollbar-none:-webkit-scrollbar {
+ display: none;
+}
+</style>

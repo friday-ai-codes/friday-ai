@@ -48,9 +48,12 @@ import ProviderCredentialListTable from './ProviderCredentialListTable.vue'
 interface Props {
  scope: 'system' | 'project'
  projectId?: string
+ /** 嵌入模式：隐藏独立 PageHeader，由外层卡片承载标题 */
+ embedded?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
  projectId: undefined,
+ embedded: false,
 })
 const store = useProviderCredentialStore
 const { handleError } = useErrorHandler
@@ -210,8 +213,8 @@ async function onRefreshModels(c: ProviderCredentialDto) {
 </script>
 <template>
  <section class="space-y-8">
- <!-- PageHeader -->
- <header class="flex items-start justify-between gap-4">
+ <!-- PageHeader（embedded 模式下由外层卡片承载） -->
+ <header v-if="!props.embedded" class="flex items-start justify-between gap-4">
  <div class="space-y-1">
  <h1 class="text-xl font-semibold">
  {{ pageTitle }}
@@ -229,6 +232,13 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  新建凭证
  </Button>
  </header>
+ <!-- embedded 模式下的新建按钮 -->
+ <div v-if="props.embedded && store.credentials.length > 0" class="flex justify-end">
+ <Button variant="default" @click="openCreate">
+ <span class="icon-[lucide--plus] w-4 mr-1" aria-hidden="true" />
+ 新建凭证
+ </Button>
+ </div>
  <!-- 空态（work item §Empty State ） -->
  <div
  v-if="!store.loading && store.credentials.length === 0"
