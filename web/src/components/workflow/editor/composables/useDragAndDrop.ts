@@ -9,8 +9,9 @@ const MAX_RECENT = 10
  */
 function recordRecentNode(nodeType: string): void {
  try {
- const stored = JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '') as string
- const filtered = stored.filter(t => t !== nodeType)
+ const parsed = JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '')
+ const stored = Array.isArray(parsed) && parsed.every(t => typeof t === 'string') ? parsed:
+ const filtered = stored.filter((t: string) => t !== nodeType)
  filtered.unshift(nodeType)
  localStorage.setItem(RECENT_NODES_KEY, JSON.stringify(filtered.slice(0, MAX_RECENT)))
  }
@@ -21,7 +22,8 @@ function recordRecentNode(nodeType: string): void {
  */
 export function getRecentNodes: string {
  try {
- return JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '') as string
+ const parsed = JSON.parse(localStorage.getItem(RECENT_NODES_KEY) ?? '')
+ return Array.isArray(parsed) && parsed.every(t => typeof t === 'string') ? parsed:
  }
  catch { return }
 }
