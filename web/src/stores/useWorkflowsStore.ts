@@ -427,7 +427,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  saveToHistory
  }
  function updateNodeData(nodeId: string, data: { name?: string, description?: string, config?: Record<string, unknown> }) {
- dirtyNodeIds.value.add(nodeId)
+ const next = new Set(dirtyNodeIds.value)
+ next.add(nodeId)
+ dirtyNodeIds.value = next
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
  const node = nodes.value[index]
