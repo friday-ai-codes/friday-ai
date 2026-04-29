@@ -89,7 +89,7 @@ export function useKeyboardShortcuts {
  store.undo
  }
  // Ctrl+Shift+Z 或 Ctrl+Y -> 重做
- if ((isModifier && event.shiftKey && event.key === 'Z') || (isModifier && event.key === 'y')) {
+ if ((isModifier && event.shiftKey && (event.key === 'Z' || event.key === 'z')) || (isModifier && event.key === 'y')) {
  event.preventDefault
  store.redo
  }
