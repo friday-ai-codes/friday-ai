@@ -88,6 +88,19 @@ function onConnect(connection: Connection) {
 function handleFitView {
  fitView({ duration: 300 })
 }
+// MiniMap 双击检测：MiniMap 内部 pannable 事件会吞掉 dblclick，
+// 因此在 capture 阶段手动检测连续两次 click 的间隔 (< 300ms)
+let lastMiniMapClick = 0
+function handleMiniMapClickCapture(event: MouseEvent) {
+ const now = Date.now
+ if (now - lastMiniMapClick < 300) {
+ handleFitView
+ lastMiniMapClick = 0
+ }
+ else {
+ lastMiniMapClick = now
+ }
+}
 function handleBatchDelete {
  const selectedIds = getSelectedNodes.value.map(n => n.id)
  selectedIds.forEach(id => store.removeNode(id))
@@ -128,14 +141,12 @@ function handleBatchCopy {
  variant="dots":gap="35":size="1.5"
  color="#3b82f620"
  />
- <!-- Wrapper 用于捕获 dblclick — MiniMap 内部 pannable 事件会吞掉原生 dblclick -->
- <Panel position="bottom-right">
- <div @dblclick="handleFitView">
+ <!-- @click.capture 在捕获阶段检测双击 — MiniMap 内部 pannable 会吞掉 dblclick -->
+ <Panel position="bottom-right" @click.capture="handleMiniMapClickCapture">
  <MiniMap:pannable="true":zoomable="true"
  mask-color="rgba(0, 0, 0, 0.08)"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
  />
- </div>
  </Panel>
  <Controls
  position="bottom-left":show-zoom="true":show-fit-view="true":show-interactive="false"
