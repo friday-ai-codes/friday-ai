@@ -549,8 +549,16 @@ class BaseNode(ABC):
  errors.append(str(e.message))
  return errors
  # UI Schema（Phase: 声明式配置表单描述）
- # 后续从 node-definitions.json 注入，或由子类覆盖
+ # 由子类覆盖，或从 node-definitions.json 注入
  ui_schema: ClassVar[dict | None] = None
+ @classmethod
+ def _get_ui_schema(cls) -> dict | None:
+ """获取 ui_schema：优先子类覆盖，其次从 NodeRegistry 注入。"""
+ if cls.ui_schema is not None:
+ return cls.ui_schema
+ # 延迟导入避免循环依赖
+ from .registry import NodeRegistry
+ return NodeRegistry.get_ui_schema(cls.node_type)
  @classmethod
  def get_schema(cls) -> dict:
  """获取完整的节点 Schema（用于前端）"""
@@ -561,7 +569,7 @@ class BaseNode(ABC):
  "icon": cls.icon,
  "category": cls.category.value,
  "config_schema": cls.config_schema,
- "ui_schema": cls.ui_schema,
+ "ui_schema": cls._get_ui_schema,
  "inputs": [
  {
  "name": p.name,
