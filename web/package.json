@@ -14,7 +14,9 @@
  "test:unit": "vitest",
  "test:e2e": "playwright test",
  "test:e2e:ui": "playwright test --ui",
- "validate:node-types": "tsx scripts/validateNodeTypes.ts"
+ "validate:node-types": "tsx scripts/validateNodeTypes.ts",
+ "generate:node-defs": "tsx scripts/generate-node-definitions.ts",
+ "validate:node-defs": "tsx scripts/validate-node-definitions.ts"
  },
  "dependencies": {
  "@codemirror/autocomplete": "catalog:",
@@ -85,7 +87,8 @@
  "vue-i18n": "catalog:",
  "vue-router": "catalog:",
  "vue-sonner": "catalog:",
- "zod": "catalog:"
+ "zod": "catalog:",
+ "zod-to-json-schema": "^3.25.2"
  },
  "optionalDependencies": {
  "@rolldown/binding-darwin-arm64": "1.0.0-beta.53"
