@@ -44,9 +44,12 @@ export interface WorkflowNodeStore {
  description: string
  position: { x: number, y: number }
  config: Record<string, unknown>
- timeout: number | null
- retryCount: number
+ // 错误处理配置
+ onError: 'abort' | 'retry' | 'ignore'
+ retryTimes: number
  retryDelay: number
+ nodeTimeoutSeconds: number | null
+ fallbackValues: Record<string, unknown> | null
  runCondition: Record<string, unknown> | null
  metadata: Record<string, unknown>
 }

@@ -14,9 +14,11 @@ export interface WorkflowNode {
  position_x: number
  position_y: number
  config: Record<string, unknown>
- timeout: number | null
- retry_count: number
+ on_error: 'abort' | 'retry' | 'ignore'
+ retry_times: number
  retry_delay: number
+ node_timeout_seconds: number | null
+ fallback_values: Record<string, unknown> | null
  run_condition: Record<string, unknown> | null
  metadata: Record<string, unknown>
  created_at: string
@@ -104,9 +106,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  description: node.description,
  position: { x: node.position_x, y: node.position_y },
  config: node.config,
- timeout: node.timeout,
- retryCount: node.retry_count,
- retryDelay: node.retry_delay,
+ onError: node.on_error ?? 'abort',
+ retryTimes: node.retry_times ?? 0,
+ retryDelay: node.retry_delay ?? 5,
+ nodeTimeoutSeconds: node.node_timeout_seconds ?? null,
+ fallbackValues: node.fallback_values ?? null,
  runCondition: node.run_condition,
  metadata: node.metadata,
  }))
@@ -161,9 +165,11 @@ export const useWorkflowsStore = defineStore('workflows', => {
  position_x: node.position.x,
  position_y: node.position.y,
  config,
- timeout: node.timeout,
- retry_count: node.retryCount,
+ on_error: node.onError,
+ retry_times: node.retryTimes,
  retry_delay: node.retryDelay,
+ node_timeout_seconds: node.nodeTimeoutSeconds,
+ fallback_values: node.fallbackValues,
  run_condition: node.runCondition,
  metadata: node.metadata,
  }
