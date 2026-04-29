@@ -17,6 +17,7 @@ import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { generateShortId } from '~/utils/shortId'
 import { getValidationError, useConnectionValidator } from './composables/useConnectionValidator'
+import { useAlignmentGuides } from './composables/useAlignmentGuides'
 import { useDragAndDrop } from './composables/useDragAndDrop'
 import { useKeyboardShortcuts } from './composables/useKeyboardShortcuts'
 import { toVueFlowEdges, toVueFlowNodes } from './composables/useWorkflowTransform'
@@ -30,10 +31,35 @@ const vfNodes = computed( => toVueFlowNodes(storeNodes.value))
 const vfEdges = computed( => toVueFlowEdges(storeEdges.value))
 const edgeTypes = { gradient: markRaw(GradientEdge) }
 const { error: showError } = useToast
-const { getSelectedNodes, fitView } = useVueFlow
+const { getSelectedNodes, fitView, viewport: vfViewport } = useVueFlow
 const { validateConnection } = useConnectionValidator
 const { onDragOver, onDrop } = useDragAndDrop
+const { alignmentGuides, checkAlignment, clearGuides } = useAlignmentGuides
 useKeyboardShortcuts
+/** 将对齐参考线的 flow 坐标转换为屏幕坐标 */
+const guideLines = computed( => {
+ const { x, y, zoom } = vfViewport.value
+ return alignmentGuides.value.map((guide) => {
+ if (guide.orientation === 'vertical') {
+ const screenX = guide.position * zoom + x
+ return {
+ x1: screenX,
+ y1: -10000,
+ x2: screenX,
+ y2: 10000,
+ }
+ }
+ else {
+ const screenY = guide.position * zoom + y
+ return {
+ x1: -10000,
+ y1: screenY,
+ x2: 10000,
+ y2: screenY,
+ }
+ }
+ })
+})
 /** 多选节点数量 */
 const multiSelectCount = computed( => getSelectedNodes.value.length)
 /**
@@ -43,8 +69,17 @@ const multiSelectCount = computed( => getSelectedNodes.value.length)
 function onNodesChange(changes: NodeChange) {
  for (const change of changes) {
  if (change.type === 'position' && change.position) {
- // 拖拽中和拖拽结束都同步位置到 store，
- // 避免其他操作触发 vfNodes 重新计算时用旧位置覆盖
+ if (change.dragging) {
+ // 拖拽中：检测对齐辅助线并吸附
+ const result = checkAlignment(change.id, change.position)
+ change.position.x = result.x
+ change.position.y = result.y
+ }
+ else {
+ // 拖拽结束：清除参考线
+ clearGuides
+ }
+ // 同步位置到 store
  store.updateNodePosition(change.id, change.position)
  }
  else if (change.type === 'remove') {
@@ -152,6 +187,19 @@ function handleBatchCopy {
  position="bottom-left":show-zoom="true":show-fit-view="true":show-interactive="false"
  class="!bg-card/80 !backdrop-blur-sm !border !border-border/50 !rounded-2xl !shadow-lg"
  />
+ <!-- 对齐辅助线 overlay -->
+ <svg
+ class="pointer-events-none absolute inset-0 z-[1000] overflow-visible"
+ style="width: 100%; height: 100%;"
+ >
+ <line
+ v-for="(line, index) in guideLines":key="index":x1="line.x1":y1="line.y1":x2="line.x2":y2="line.y2"
+ stroke="#3B82F6"
+ stroke-width="1"
+ stroke-dasharray="4 4"
+ opacity="0.6"
+ />
+ </svg>
  <!-- 多选统一工具栏 -->
  <Panel v-if="multiSelectCount > 1" position="top-center">
  <div class="flex items-center gap-2 bg-card/90 backdrop-blur-sm border border-border/50 rounded-xl px-3 py-1.5 shadow-lg">

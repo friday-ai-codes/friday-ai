@@ -387,14 +387,18 @@ export const useWorkflowsStore = defineStore('workflows', => {
  throw e
  }
  }
- async function executeWorkflow(inputData: Record<string, unknown> = {}, debugMode: boolean = false): Promise<ManualTriggerResponse | null> {
+ async function executeWorkflow(inputData: Record<string, unknown> = {}, debugMode: boolean = false, stopBeforeNodeId?: string): Promise<ManualTriggerResponse | null> {
  if (!currentWorkflow.value)
  return null
  try {
- return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, {
+ const payload: Record<string, unknown> = {
  input_data: inputData,
  debug_mode: debugMode,
- })
+ }
+ if (stopBeforeNodeId) {
+ payload.stop_before_node_id = stopBeforeNodeId
+ }
+ return await client.post<ManualTriggerResponse>(`/workflows/${currentWorkflow.value.id}/execute/`, payload)
  }
  catch (e: unknown) {
  error.value = (e as Error).message
@@ -411,6 +415,63 @@ export const useWorkflowsStore = defineStore('workflows', => {
  error.value = (e as Error).message
  throw e
  }
+ }
+ /**
+ * Export current workflow as JSON file download
+ */
+ function exportWorkflowJSON: boolean {
+ const wf = currentWorkflow.value
+ if (!wf) {
+ return false
+ }
+ const exportData = {
+ name: wf.name,
+ description: wf.description,
+ icon: wf.icon,
+ trigger_type: wf.trigger_type,
+ trigger_config: wf.trigger_config,
+ nodes: wf.nodes.map(node => ({
+ id: node.id,
+ short_id: node.short_id,
+ node_type: node.node_type,
+ name: node.name,
+ description: node.description,
+ position_x: node.position_x,
+ position_y: node.position_y,
+ config: node.config,
+ on_error: node.on_error,
+ retry_times: node.retry_times,
+ retry_delay: node.retry_delay,
+ node_timeout_seconds: node.node_timeout_seconds,
+ fallback_values: node.fallback_values,
+ run_condition: node.run_condition,
+ metadata: node.metadata,
+ })),
+ edges: wf.edges.map(edge => ({
+ id: edge.id,
+ source_node: edge.source_node,
+ target_node: edge.target_node,
+ source_handle: edge.source_handle,
+ target_handle: edge.target_handle,
+ condition: edge.condition,
+ label: edge.label,
+ style: edge.style,
+ })),
+ exported_at: new Date.toISOString,
+ friday_version: '0.1.0',
+ }
+ const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+ const url = URL.createObjectURL(blob)
+ const dateStr = new Date.toISOString.slice(0, 10).replace(/-/g, '')
+ const fileName = `${wf.name || 'workflow'}-${dateStr}.json`
+ const a = document.createElement('a')
+ a.href = url
+ a.download = fileName
+ document.body.appendChild(a)
+ a.click
+ document.body.removeChild(a)
+ URL.revokeObjectURL(url)
+ return true
  }
  // ============================================================================
  // Node Operations (with history)
@@ -557,6 +618,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  toggleWorkflowActive,
  executeWorkflow,
  duplicateWorkflow,
+ exportWorkflowJSON,
  // Node operations (with history)
  addNode,
  updateNode,
