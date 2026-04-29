@@ -154,7 +154,7 @@ function updateErrorField(field: string, value: unknown) {
  />
  </div>
  <!-- 配置表单 -->
- <NodeConfigForm:node-name="nodeName":node-description="nodeDescription":node-has-custom-config="nodeHasCustomConfig":config-component="ConfigComponent":node-config="nodeConfig":node-type-info="nodeTypeInfo":workflow-nodes="nodes":workflow-edges="edges":current-node-id="selectedNodeId"
+ <NodeConfigForm:node-name="nodeName":node-description="nodeDescription":node-has-custom-config="nodeHasCustomConfig":config-component="ConfigComponent":node-config="nodeConfig":node-type-info="nodeTypeInfo":ui-schema="nodeDefinition?.uiSchema":workflow-nodes="nodes":workflow-edges="edges":current-node-id="selectedNodeId"
  @update:name="onNameUpdate"
  @update:description="onDescriptionUpdate"
  @update-config="handleConfigUpdate"
