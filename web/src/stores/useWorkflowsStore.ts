@@ -212,12 +212,17 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // ============================================================================
  // History Management
  // ============================================================================
+ /**
+ * Save CURRENT state to history (call AFTER mutation, not before).
+ * fetchWorkflow seeds the initial state, so the first call after a
+ * mutation creates a correct redo-able snapshot.
+ */
  function saveToHistory {
  // Remove any redo history
  if (historyIndex.value < history.value.length - 1) {
  history.value = history.value.slice(0, historyIndex.value + 1)
  }
- // Add current state
+ // Add current state (post-mutation)
  history.value.push({
  nodes: JSON.parse(JSON.stringify(nodes.value)),
  edges: JSON.parse(JSON.stringify(edges.value)),
@@ -411,18 +416,17 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // Node Operations (with history)
  // ============================================================================
  function addNode(node: WorkflowNodeStore) {
- saveToHistory
  nodes.value.push(node)
+ saveToHistory
  }
  function updateNode(nodeId: string, updates: Partial<WorkflowNodeStore>) {
- saveToHistory
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
  nodes.value[index] = { ...nodes.value[index], ...updates }
  }
+ saveToHistory
  }
  function updateNodeData(nodeId: string, data: { name?: string, description?: string, config?: Record<string, unknown> }) {
- saveToHistory
  dirtyNodeIds.value.add(nodeId)
  const index = nodes.value.findIndex(n => n.id === nodeId)
  if (index !== -1) {
@@ -439,23 +443,24 @@ export const useWorkflowsStore = defineStore('workflows', => {
  node.config = { ...node.config, ...data.config }
  }
  }
+ saveToHistory
  }
  function removeNode(nodeId: string) {
- saveToHistory
  nodes.value = nodes.value.filter(n => n.id !== nodeId)
  // Also remove connected edges
  edges.value = edges.value.filter(e => e.source !== nodeId && e.target !== nodeId)
+ saveToHistory
  }
  // ============================================================================
  // Edge Operations (with history)
  // ============================================================================
  function addEdge(edge: WorkflowEdgeStore) {
- saveToHistory
  edges.value.push(edge)
+ saveToHistory
  }
  function removeEdge(edgeId: string) {
- saveToHistory
  edges.value = edges.value.filter(e => e.id !== edgeId)
+ saveToHistory
  }
  // ============================================================================
  // Selection
