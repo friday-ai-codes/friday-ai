@@ -94,6 +94,13 @@ const nodeGroups = computed<PaletteGroup>( => [
 ])
 // 搜索功能
 const searchQuery = ref('')
+function handleSearchKeydown(event: KeyboardEvent) {
+ // 阻止浏览器默认搜索行为（Ctrl+F 和 /）
+ const isModifier = event.ctrlKey || event.metaKey
+ if ((isModifier && event.key === 'f') || event.key === '/') {
+ event.preventDefault
+ }
+}
 const filteredGroups = computed( => {
  const q = searchQuery.value.trim.toLowerCase
  if (!q)
@@ -160,6 +167,7 @@ function getCategoryGradient(color: string): string {
  aria-label="搜索节点"
  placeholder="搜索节点..."
  class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/50 border border-border/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 placeholder:text-muted-foreground/50"
+ @keydown="handleSearchKeydown"
  >
  </div>
  </div>
