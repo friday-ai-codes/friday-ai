@@ -14,9 +14,11 @@ import {
  FolderSearch,
  GitBranch,
  GitFork,
+ Combine,
  GitMerge,
  GitPullRequest,
  Globe,
+ Repeat,
  Hourglass,
  MessageSquare,
  Play,
@@ -72,6 +74,8 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  delay: { icon: Clock, color: 'purple' },
  parallel: { icon: GitFork, color: 'purple' },
  join: { icon: GitMerge, color: 'purple' },
+ foreach: { icon: Repeat, color: 'purple' },
+ aggregate: { icon: Combine, color: 'purple' },
 }
 const FALLBACK: NodeVisual = { icon: Zap, color: 'blue' }
 export function getNodeVisual(nodeType: string): NodeVisual {

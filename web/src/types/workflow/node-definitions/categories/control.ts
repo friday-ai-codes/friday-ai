@@ -140,6 +140,59 @@ export const humanApprovalDef = createNodeDefinition({
  defaultConfig: humanApprovalSchema.parse({}),
 })
 // ============================================================================
+// ForEach
+// ============================================================================
+const foreachSchema = z.object({
+ list_source: z.string.default('{{input.items}}'),
+ execution_mode: z.enum(['sequential', 'parallel']).default('sequential'),
+ max_concurrency: z.number.int.min(1).max(50).default(5),
+ on_iteration_error: z.enum(['abort', 'continue']).default('abort'),
+})
+export const foreachDef = createNodeDefinition({
+ nodeType: 'foreach',
+ displayName: 'ForEach 循环',
+ description: '对列表中的每个元素执行操作',
+ icon: 'icon-[lucide--repeat]',
+ color: 'from-violet-500 to-purple-400',
+ category: 'control',
+ schema: foreachSchema,
+ defaultConfig: foreachSchema.parse({}),
+ uiSchema: {
+ fields: {
+ list_source: { widget: 'text', help: '列表来源，支持模板变量如 {{input.items}}' },
+ execution_mode: { widget: 'select', help: 'sequential=串行, parallel=并发' },
+ max_concurrency: { widget: 'number', help: '最大并发数（parallel 模式生效，1-50）' },
+ on_iteration_error: { widget: 'select', help: 'abort=任一失败终止, continue=继续执行' },
+ },
+ },
+})
+// ============================================================================
+// Variable Aggregate
+// ============================================================================
+const aggregateMappingSchema = z.object({
+ source_node: z.string.default(''),
+ output_field: z.string.default(''),
+ target_key: z.string.default(''),
+})
+const aggregateSchema = z.object({
+ mappings: z.array(aggregateMappingSchema).default,
+})
+export const aggregateDef = createNodeDefinition({
+ nodeType: 'aggregate',
+ displayName: '变量聚合',
+ description: '将多个上游节点输出绑定为结构化变量',
+ icon: 'icon-[lucide--combine]',
+ color: 'from-violet-500 to-purple-400',
+ category: 'control',
+ schema: aggregateSchema,
+ defaultConfig: aggregateSchema.parse({}),
+ uiSchema: {
+ fields: {
+ mappings: { widget: 'json-editor', help: '聚合映射数组：source_node, output_field(可选), target_key' },
+ },
+ },
+})
+// ============================================================================
 // Aggregated exports
 // ============================================================================
 export const CONTROL_DEFS: Record<string, NodeDefinition> = {
@@ -148,4 +201,6 @@ export const CONTROL_DEFS: Record<string, NodeDefinition> = {
  parallel: parallelDef,
  join: joinDef,
  human_approval: humanApprovalDef,
+ foreach: foreachDef,
+ aggregate: aggregateDef,
 }
