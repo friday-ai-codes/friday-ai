@@ -106,3 +106,15 @@ export interface SubStep {
  started_at: string | null
  completed_at: string | null
 }
+// ============================================================================
+// Phase: 结构化执行日志类型
+// ============================================================================
+/**
+ * 结构化执行日志条目
+ */
+export interface ExecutionLogEntry {
+ timestamp: string
+ level: 'INFO' | 'WARN' | 'ERROR'
+ message: string
+ context?: Record<string, any> | null
+}
