@@ -753,3 +753,94 @@ class ActionLogDetailSerializer(serializers.ModelSerializer):
  "payload",
  "created_at",
  ]
+# =============================================================================
+# AlertRule Serializers
+# =============================================================================
+class AlertRuleSerializer(serializers.ModelSerializer):
+ """告警规则序列化器。"""
+ workflow_name = serializers.CharField(source="workflow.name", read_only=True)
+ project_name = serializers.CharField(source="project.name", read_only=True)
+ condition_type_display = serializers.CharField(
+ source="get_condition_type_display", read_only=True
+ )
+ action_type_display = serializers.CharField(
+ source="get_action_type_display", read_only=True
+ )
+ class Meta:
+ from workflows.models import AlertRule
+ model = AlertRule
+ fields = [
+ "id",
+ "workflow",
+ "workflow_name",
+ "project",
+ "project_name",
+ "name",
+ "enabled",
+ "condition_type",
+ "condition_type_display",
+ "condition_config",
+ "action_type",
+ "action_type_display",
+ "action_config",
+ "cooldown_seconds",
+ "created_at",
+ "updated_at",
+ ]
+ read_only_fields = ["id", "created_at", "updated_at"]
+ def validate_condition_type(self, value: str) -> str:
+ from workflows.models import AlertRule
+ valid = [choice[0] for choice in AlertRule.CONDITION_TYPES]
+ if value not in valid:
+ raise serializers.ValidationError(
+ f"无效的条件类型: {value}. 可选: {valid}"
+ )
+ return value
+ def validate_action_type(self, value: str) -> str:
+ from workflows.models import AlertRule
+ valid = [choice[0] for choice in AlertRule.ACTION_TYPES]
+ if value not in valid:
+ raise serializers.ValidationError(
+ f"无效的动作类型: {value}. 可选: {valid}"
+ )
+ return value
+ def validate_action_config(self, value: dict) -> dict:
+ action_type = self.initial_data.get("action_type")
+ if action_type == "feishu_notification":
+ if not value.get("chat_id"):
+ raise serializers.ValidationError(
+ {"chat_id": "飞书通知动作必须提供 chat_id"}
+ )
+ elif action_type == "webhook":
+ url = value.get("url", "")
+ if not url:
+ raise serializers.ValidationError(
+ {"url": "Webhook 动作必须提供 url"}
+ )
+ if not url.startswith(("http://", "https://")):
+ raise serializers.ValidationError(
+ {"url": "Webhook URL 必须以 http:// 或 https:// 开头"}
+ )
+ return value
+class AlertRuleExecutionSerializer(serializers.ModelSerializer):
+ """告警规则执行记录序列化器（只读）。"""
+ alert_rule_name = serializers.CharField(source="alert_rule.name", read_only=True)
+ workflow_name = serializers.CharField(
+ source="workflow_execution.workflow.name", read_only=True
+ )
+ class Meta:
+ from workflows.models import AlertRuleExecution
+ model = AlertRuleExecution
+ fields = [
+ "id",
+ "alert_rule",
+ "alert_rule_name",
+ "workflow_execution",
+ "workflow_name",
+ "triggered_at",
+ "status",
+ "response_data",
+ "error_message",
+ "triggered_event",
+ ]
+ read_only_fields = fields

@@ -1,5 +1,6 @@
 """Workflows API permissions."""
 from rest_framework.permissions import BasePermission
+from typing import Any
 from rest_framework.request import Request
 from rest_framework.views import APIView
 from permissions.models import ProjectRole
@@ -96,3 +97,32 @@ class WebhookConfigPermission(BasePermission):
  if request.method in ["GET", "HEAD", "OPTIONS"]:
  return PermissionService.has_project_access(user, project, ProjectRole.VIEWER)
  return PermissionService.has_project_access(user, project, ProjectRole.ADMIN)
+class AlertRulePermission(BasePermission):
+ """告警规则权限。
+ - List/Retrieve: VIEWER+
+ - Create/Update/Delete workflow-specific rules: MEMBER+
+ - Create/Update/Delete global rules (workflow=null): ADMIN+ (or superuser)
+ """
+ def has_permission(self, request: Request, view: APIView) -> bool:
+ return request.user and request.user.is_authenticated
+ def has_object_permission(
+ self, request: Request, view: APIView, obj: Any
+ ) -> bool:
+ user = request.user
+ if user.is_superuser:
+ return True
+ project = obj.project
+ # 读操作：VIEWER+
+ if request.method in ["GET", "HEAD", "OPTIONS"]:
+ return PermissionService.has_project_access(
+ user, project, ProjectRole.VIEWER
+ )
+ # 全局规则（workflow=null）：ADMIN+
+ if obj.workflow is None:
+ return PermissionService.has_project_access(
+ user, project, ProjectRole.ADMIN
+ )
+ # 项目级规则：MEMBER+
+ return PermissionService.has_project_access(
+ user, project, ProjectRole.MEMBER
+ )

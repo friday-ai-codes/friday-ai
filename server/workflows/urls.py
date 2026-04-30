@@ -10,6 +10,8 @@ from workflows.api.analytics import (
 )
 from workflows.api.views import (
  ActionLogDetailView,
+ AlertRuleExecutionViewSet,
+ AlertRuleViewSet,
  CodingTaskViewSet,
  ExecutionContextView,
  LLMModelsView,
@@ -36,6 +38,8 @@ router.register(r"webhook-configs", WebhookConfigViewSet, basename="webhook-conf
 router.register(r"webhook-logs", WebhookLogViewSet, basename="webhook-log")
 router.register(r"workflow-triggers", WorkflowTriggerViewSet, basename="workflow-trigger")
 router.register(r"coding-tasks", CodingTaskViewSet, basename="coding-task")
+router.register(r"alert-rules", AlertRuleViewSet, basename="alert-rule")
+router.register(r"alert-rule-executions", AlertRuleExecutionViewSet, basename="alert-rule-execution")
 urlpatterns = router.urls + [
  # Webhook trigger endpoint (public, outside router)
  path(
