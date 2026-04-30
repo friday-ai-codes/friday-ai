@@ -16,6 +16,10 @@ interface Props {
  isResuming: boolean
  isCancelling: boolean
  isRetrying: boolean
+ /** Phase: 是否可进入回放模式（终态执行） */
+ canReplay?: boolean
+ /** Phase: 当前是否在回放模式 */
+ isReplayMode?: boolean
 }
 defineProps<Props>
 const emit = defineEmits<{
@@ -25,6 +29,8 @@ const emit = defineEmits<{
  retry:
  refresh:
  back:
+ /** Phase: 进入/退出回放 */
+ replay:
 }>
 </script>
 <template>
@@ -135,6 +141,27 @@ const emit = defineEmits<{
  <span v-if="isRetrying" class="icon-[lucide--loader-2] w-3.5 .5 mr-1 animate-spin" />
  <span v-else class="icon-[lucide--rotate-ccw] w-3.5 .5 mr-1" />
  重试
+ </Button>
+ <!-- Phase: 回放执行 -->
+ <Button
+ v-if="canReplay && !isReplayMode"
+ variant="outline"
+ size="sm"
+ class=" text-xs"
+ @click="emit('replay')"
+ >
+ <span class="icon-[lucide--play-circle] w-3.5 .5 mr-1" />
+ 回放执行
+ </Button>
+ <Button
+ v-if="isReplayMode"
+ variant="outline"
+ size="sm"
+ class=" text-xs"
+ @click="emit('replay')"
+ >
+ <span class="icon-[lucide--x-circle] w-3.5 .5 mr-1" />
+ 退出回放
  </Button>
  <Button variant="ghost" size="icon" class=" w-7" @click="emit('refresh')">
  <span class="icon-[lucide--refresh-cw] w-3.5 .5" />
