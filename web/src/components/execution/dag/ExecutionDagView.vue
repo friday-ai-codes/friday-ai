@@ -25,6 +25,10 @@ const props = defineProps<{
  breakpoints?: Set<string>
  /** Phase: 是否为调试执行 */
  isDebugExecution?: boolean
+ /** 回放模式：禁用 WS 实时更新，节点状态由时间轴驱动 */
+ replayMode?: boolean
+ /** 回放状态计算函数 */
+ getNodeStatus?: (nodeExecution: NodeExecution) => string
 }>
 const emit = defineEmits<{
  nodeClick: [nodeExecution: NodeExecution | null, nodeId: string]
@@ -42,7 +46,14 @@ const emit = defineEmits<{
 const executionRef = toRef(props, 'execution')
 const timelineRef = computed( => props.timelineData ?? null)
 const definitionChangedRef = computed( => props.definitionChanged ?? false)
-const { dagNodes, dagEdges } = useExecutionDag(executionRef, timelineRef, definitionChangedRef)
+// 回放模式下传入 statusOverride，由时间轴驱动节点状态
+const statusOverride = computed( => {
+ if (props.replayMode && props.getNodeStatus) {
+ return (ne: NodeExecution) => props.getNodeStatus!(ne)
+ }
+ return undefined
+})
+const { dagNodes, dagEdges } = useExecutionDag(executionRef, timelineRef, definitionChangedRef, statusOverride.value)
 // 运行中节点实时计时
 const nodeExecutionsRef = computed( => props.execution.node_executions ?? )
 const { elapsedMap } = useNodeTimer(nodeExecutionsRef)
@@ -102,7 +113,7 @@ onNodeClick(({ node }: NodeMouseEvent) => {
 </script>
 <template>
  <div class="h-full w-full bg-background">
- <VueFlow:nodes="nodesWithData":edges="dagEdges":node-types="executionNodeTypes":edge-types="executionEdgeTypes":nodes-draggable="false":nodes-connectable="false":elements-selectable="true":zoom-on-scroll="true":pan-on-scroll="true":pan-on-drag="true"
+ <VueFlow:nodes="nodesWithData":edges="dagEdges":node-types="executionNodeTypes":edge-types="executionEdgeTypes":nodes-draggable="false":nodes-connectable="false":elements-selectable="!replayMode":zoom-on-scroll="true":pan-on-scroll="true":pan-on-drag="true"
  fit-view-on-init:max-zoom="1.5":min-zoom="0.2"
  >
  <Background

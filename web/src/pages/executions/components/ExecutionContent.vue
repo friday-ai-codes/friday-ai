@@ -17,6 +17,8 @@ interface Props {
  isDebugExecution: boolean
  isPreExecutionFailure: boolean
  isTerminalStatus: boolean
+ isReplayMode?: boolean
+ getNodeStatus?: (nodeExecution: NodeExecution) => string
 }
 defineProps<Props>
 const emit = defineEmits<{
@@ -61,7 +63,7 @@ const emit = defineEmits<{
  </div>
  <!-- DAG 视图 -->
  <ExecutionDagView
- v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution"
+ v-else:execution="currentExecution":timeline-data="timelineData":cost-data="costData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution":replay-mode="isReplayMode":get-node-status="getNodeStatus"
  @node-click="(ne: NodeExecution | null, nid: string) => emit('nodeClick', ne, nid)"
  @resume-click="emit('resumeClick', $event)"
  @debug-release="emit('debugRelease', $event)"
