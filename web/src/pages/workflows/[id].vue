@@ -164,6 +164,15 @@ function onUndo {
 function onRedo {
  store.redo
 }
+function onExportJSON {
+ const ok = store.exportWorkflowJSON
+ if (ok) {
+ success('工作流已导出为 JSON')
+ }
+ else {
+ info('当前无工作流可导出')
+ }
+}
 function onBack {
  router.push('/workflows')
 }
@@ -214,6 +223,7 @@ async function onUpdateIsActive(isActive: boolean) {
  @redo="onRedo"
  @back="onBack"
  @history="historySheetOpen = true"
+ @export-j-s-o-n="onExportJSON"
  @update:workflow-name="onUpdateWorkflowName"
  @update:workflow-description="onUpdateWorkflowDescription"
  @update:is-active="onUpdateIsActive"

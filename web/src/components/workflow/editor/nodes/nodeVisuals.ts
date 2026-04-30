@@ -14,9 +14,11 @@ import {
  FolderSearch,
  GitBranch,
  GitFork,
+ Combine,
  GitMerge,
  GitPullRequest,
  Globe,
+ Repeat,
  Hourglass,
  MessageSquare,
  Play,
@@ -46,6 +48,7 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  // 操作 (green)
  http_request: { icon: Globe, color: 'green' },
  wait_feishu_field: { icon: Hourglass, color: 'green' },
+ code: { icon: Terminal, color: 'green' },
  // 集成 (blue)
  create_branch: { icon: GitBranch, color: 'blue' },
  create_pr: { icon: GitPullRequest, color: 'blue' },
@@ -72,6 +75,8 @@ const NODE_VISUALS: Record<string, NodeVisual> = {
  delay: { icon: Clock, color: 'purple' },
  parallel: { icon: GitFork, color: 'purple' },
  join: { icon: GitMerge, color: 'purple' },
+ foreach: { icon: Repeat, color: 'purple' },
+ aggregate: { icon: Combine, color: 'purple' },
 }
 const FALLBACK: NodeVisual = { icon: Zap, color: 'blue' }
 export function getNodeVisual(nodeType: string): NodeVisual {

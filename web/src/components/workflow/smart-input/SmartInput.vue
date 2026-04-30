@@ -9,7 +9,7 @@ import Text from '@tiptap/extension-text'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useDesignTimeVariables } from '~/composables/useDesignTimeVariables'
-import { createVariableSuggestion, VariableNode } from './extensions'
+import { BUILT_IN_FUNCTIONS, createVariableSuggestion, FunctionNode, VariableNode } from './extensions'
 interface Props {
  modelValue: string
  workflowNodes?: WorkflowNode
@@ -50,8 +50,10 @@ const editor = useEditor({
  placeholder: props.placeholder,
  }),
  VariableNode,
+ FunctionNode,
  createVariableSuggestion({
  items: => designTimeVariables.value,
+ functions: => BUILT_IN_FUNCTIONS,
  }),
  ],
  content: parseContent(props.modelValue),
@@ -83,10 +85,18 @@ const editor = useEditor({
  else if (child.type.name === 'variable') {
  text += `{{${child.attrs.path || ''}}}`
  }
+ else if (child.type.name === 'function') {
+ const args = (child.attrs.args || ).join(', ')
+ text += `{{${child.attrs.name || ''}(${args})}}`
+ }
  })
  }
  else if (node.type.name === 'variable') {
  text += `{{${node.attrs.path || ''}}}`
+ }
+ else if (node.type.name === 'function') {
+ const args = (node.attrs.args || ).join(', ')
+ text += `{{${node.attrs.name || ''}(${args})}}`
  }
  else if (node.type.name === 'text') {
  text += node.text || ''
@@ -117,13 +127,20 @@ function serializeContent: string {
  else if (child.type === 'variable') {
  result += `{{${(child as { attrs?: { path?: string } }).attrs?.path ?? ''}}}`
  }
+ else if (child.type === 'function') {
+ const attrs = (child as { attrs?: { name?: string, args?: string } }).attrs
+ const name = attrs?.name ?? ''
+ const args = attrs?.args ??
+ const argsStr = args.join(', ')
+ result += `{{${name}(${argsStr})}}`
+ }
  }
  }
  }
  return result
 }
 /**
- * Parse string with {{path}} syntax to editor content
+ * Parse string with {{path}} or {{func(args)}} syntax to editor content
  */
 function parseContent(value: string): object {
  const content: object =
@@ -137,8 +154,46 @@ function parseContent(value: string): object {
  text: value.slice(lastIndex, match.index),
  })
  }
- // Find variable info from design-time variables
- const path = match[1]
+ const inner = match[1].trim
+ // Check if it's a function call: name(arg1, arg2, ...)
+ const funcMatch = inner.match(/^(\w+)\((.*)\)$/s)
+ if (funcMatch) {
+ const name = funcMatch[1]
+ const argsRaw = funcMatch[2].trim
+ // Parse arguments - split by commas, but handle nested {{...}}
+ const args: string =
+ if (argsRaw) {
+ let depth = 0
+ let current = ''
+ for (const char of argsRaw) {
+ if (char === '{' || char === '}') {
+ // Simple brace tracking for nested {{var}}
+ depth += char === '{' ? 1: -1
+ current += char
+ }
+ else if (char === ',' && depth === 0) {
+ args.push(current.trim)
+ current = ''
+ }
+ else {
+ current += char
+ }
+ }
+ if (current.trim) {
+ args.push(current.trim)
+ }
+ }
+ content.push({
+ type: 'function',
+ attrs: {
+ name,
+ args,
+ },
+ })
+ }
+ else {
+ // It's a variable
+ const path = inner
  const variable = designTimeVariables.value.find(v => v.path === path)
  content.push({
  type: 'variable',
@@ -149,6 +204,7 @@ function parseContent(value: string): object {
  outputName: variable?.key ?? '',
  },
  })
+ }
  lastIndex = match.index + match[0].length
  }
  // Add remaining text
@@ -215,6 +271,10 @@ onBeforeUnmount( => {
 }
 /* Variable chip spacing - ensure chips don't touch each other */
 .tiptap .node-variable + .node-variable {
+ margin-left: 0.5rem;
+}
+/* Function chip spacing */
+.tiptap .node-function + .node-function {
  margin-left: 0.5rem;
 }
 </style>

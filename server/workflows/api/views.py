@@ -247,6 +247,7 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  triggered_by=request.user,
  metadata={"trace_id": trace_id},
  debug_mode=serializer.validated_data.get("debug_mode", False),
+ stop_before_node_id=serializer.validated_data.get("stop_before_node_id") or None,
  )
  dispatcher = TriggerDispatcher
  execution = await dispatcher.dispatch_single(context)

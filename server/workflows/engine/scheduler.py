@@ -141,6 +141,7 @@ class WorkflowEngine:
  execution: WorkflowExecution | None = None,
  run_sync: bool = False,
  debug_mode: bool = False,
+ stop_before_node_id: str | None = None,
  ) -> WorkflowExecution:
  """启动工作流执行
  Args:
@@ -152,6 +153,7 @@ class WorkflowEngine:
  execution: 可选的已创建执行实例（如果提供则复用，否则创建新的）
  run_sync: 是否同步执行（用于测试，确保在同一事务/上下文中运行）
  debug_mode: 是否以调试模式启动（逐节点暂停）
+ stop_before_node_id: 单节点测试：执行到该节点前停止
  """
  input_data = input_data or {}
  trigger_data = trigger_data or {}
@@ -258,10 +260,10 @@ class WorkflowEngine:
  # 开始执行
  if run_sync:
  # 同步执行（用于测试，保持在同一事务/上下文中）
- await self._run_execution(execution, dag, input_data)
+ await self._run_execution(execution, dag, input_data, stop_before_node_id=stop_before_node_id)
  else:
  # 异步执行（在独立线程中运行，避免事件循环退出问题）
- _run_in_thread(self._run_execution(execution, dag, input_data))
+ _run_in_thread(self._run_execution(execution, dag, input_data, stop_before_node_id=stop_before_node_id))
  return execution
  # Phase：AI 节点白名单（Execution 启动时遍历 DAG 统一快照）
  _AI_NODE_TYPES: set[str] = {
@@ -404,6 +406,7 @@ class WorkflowEngine:
  input_data: dict,
  initial_outputs: dict[str, dict] | None = None,
  is_resume: bool = False,
+ stop_before_node_id: str | None = None,
  ) -> None:
  """执行工作流主循环
  Args:
@@ -412,6 +415,7 @@ class WorkflowEngine:
  input_data: 输入数据
  initial_outputs: 预填充的节点输出（从失败节点继续时，包含 skipped 节点的输出）
  is_resume: 是否从暂停恢复（跳过 amark_started 避免覆盖 started_at）
+ stop_before_node_id: 单节点测试：执行到该节点前停止
  """
  try:
  if not is_resume:
@@ -466,6 +470,37 @@ class WorkflowEngine:
  ready_nodes.append(dag_node)
  for node_id in nodes_to_remove:
  pending_nodes.discard(node_id)
+ # 单节点测试：检查是否到达 stop_before 节点
+ if stop_before_node_id:
+ stop_node = next((n for n in ready_nodes if n.id == stop_before_node_id), None)
+ if stop_node:
+ ready_nodes.remove(stop_node)
+ # 将 stop_before 及其下游从 pending 中移除
+ downstream = self._get_downstream_nodes(dag, stop_before_node_id)
+ pending_nodes.discard(stop_before_node_id)
+ for ds_id in downstream:
+ pending_nodes.discard(ds_id)
+ ds_dag_node = dag.nodes.get(ds_id)
+ if ds_dag_node:
+ await self._skip_node(execution, ds_dag_node, "单节点测试：上游已停止")
+ skipped_nodes.add(ds_id)
+ logger.info(
+ "execution_stop_before_node",
+ execution_id=str(execution.id),
+ stop_before_node_id=stop_before_node_id,
+ downstream_removed=len(downstream),
+ )
+ # 如果移除后没有可执行节点，正常完成
+ if not ready_nodes and not pending_nodes:
+ final_output = {}
+ for nid in completed_nodes:
+ dnode = dag.nodes.get(nid)
+ if dnode and not dnode.outgoing:
+ final_output.update(node_outputs.get(nid, {}))
+ await execution.amark_completed(final_output)
+ hook_execution = await self._load_execution_for_hooks(execution)
+ await self.hooks.trigger("execution_completed", execution=hook_execution)
+ return
  if not ready_nodes:
  # 检查是否有正在等待审批或等待事件的节点
  waiting_nodes = [
