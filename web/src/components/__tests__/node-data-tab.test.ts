@@ -75,6 +75,8 @@ function createNodeExecution(overrides: Partial<NodeExecution> = {}): NodeExecut
  started_at: '2026-01-01T00:00:00Z',
  completed_at: '2026-01-01T00:00:01Z',
  sub_step_progress: null,
+ logs: null,
+ error_code: null,
  ...overrides,
  }
 }

@@ -1,4 +1,4 @@
-import type { SubStep } from '~/types/execution'
+import type { ExecutionLogEntry, SubStep } from '~/types/execution'
 import { useIntervalFn, useWebSocket } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -23,6 +23,8 @@ export interface NodeExecution {
  started_at: string | null
  completed_at: string | null
  sub_step_progress: { completed: number, total: number } | null
+ logs: ExecutionLogEntry | null
+ error_code: string | null
 }
 export interface WorkflowDefinitionNode {
  id: string
