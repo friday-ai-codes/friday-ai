@@ -869,23 +869,25 @@ class WorkflowEngine:
  else:
  last_error = result.error or "未知错误"
  raise RuntimeError(last_error)
- except asyncio.TimeoutError as e:
+ except asyncio.TimeoutError as _exc:
  # 超时：调用 on_timeout 生命周期钩子
  try:
  await node_instance.on_timeout(context)
  except Exception: # noqa: BLE001
  pass # on_timeout 清理失败不应掩盖超时错误
  last_error = f"节点执行超时 ({node_timeout}s)"
+ _error_code = self._map_error_code(_exc)
  await node_execution.aappend_log(
  level="ERROR",
  message=last_error,
  context={"node_timeout": node_timeout, "attempt": attempt},
  )
- except Exception as e:
- if isinstance(e, RuntimeError) and last_error:
+ except Exception as _exc:
+ if isinstance(_exc, RuntimeError) and last_error:
  pass # 已设置 last_error
  else:
- last_error = str(e)
+ last_error = str(_exc)
+ _error_code = self._map_error_code(_exc)
  logger.exception(
  "node_execution_error",
  node_id=str(node.id),
@@ -895,13 +897,13 @@ class WorkflowEngine:
  await node_execution.aappend_log(
  level="ERROR",
  message=f"节点执行失败: {last_error}",
- context={"attempt": attempt, "exception_type": type(e).__name__},
+ context={"attempt": attempt, "exception_type": type(_exc).__name__},
  )
  # 到达此处表示执行失败
  if attempt < max_attempts and on_error == "retry":
  # 指数退避 + 随机 jitter
  delay = min(300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay)))
- await node_execution.amark_failed(last_error, error_code=self._map_error_code(e))
+ await node_execution.amark_failed(last_error, error_code=_error_code)
  await node_execution.aappend_log(
  level="WARN",
  message=f"第 {attempt} 次尝试失败，将在 {delay}s 后重试",
@@ -923,7 +925,7 @@ class WorkflowEngine:
  await asyncio.sleep(delay)
  continue
  # 最终失败 — 应用 on_error 策略
- await node_execution.amark_failed(last_error, error_code=self._map_error_code(e))
+ await node_execution.amark_failed(last_error, error_code=_error_code)
  await self.hooks.trigger(
  "node_failed",
  execution=execution,

@@ -484,6 +484,8 @@ class NodeExecutionSerializer(serializers.ModelSerializer):
  "output_data",
  "error_message",
  "error_traceback",
+ "logs",
+ "error_code",
  "attempt",
  "approval_data",
  "container_id",
