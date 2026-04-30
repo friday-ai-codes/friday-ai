@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getRecentNodes } from '../editor/composables/useDragAndDrop'
 import { ALL_NODE_DEFINITIONS } from '~/types/workflow/node-definitions'
 import { getNodeVisual } from '../editor/nodes/nodeVisuals'
@@ -108,15 +108,19 @@ const filteredGroups = computed( => {
  .filter(group => group.items.length > 0)
 })
 // 最近使用节点
-const recentNodes = computed( => {
+const recentNodes = ref<PaletteItem>
+function updateRecentNodes {
  const recent = getRecentNodes
- return recent
+ recentNodes.value = recent
  .map((type) => {
  const item = nodeGroups.value.flatMap(g => g.items).find(i => i.type === type)
  return item ?? null
  })
  .filter(Boolean) as PaletteItem
-})
+}
+updateRecentNodes
+onMounted( => window.addEventListener('friday:recent-nodes-changed', updateRecentNodes))
+onUnmounted( => window.removeEventListener('friday:recent-nodes-changed', updateRecentNodes))
 /** 从 nodeVisuals 获取分组的主色 — 取第一个 item 的颜色 */
 function getGroupColor(group: PaletteGroup): string {
  return getNodeVisual(group.items[0]?.type ?? '').color

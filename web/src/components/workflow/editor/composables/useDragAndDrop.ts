@@ -13,6 +13,8 @@ function recordRecentNode(nodeType: string): void {
  const filtered = stored.filter(t => t !== nodeType)
  filtered.unshift(nodeType)
  localStorage.setItem(RECENT_NODES_KEY, JSON.stringify(filtered.slice(0, MAX_RECENT)))
+ // 触发自定义事件通知 NodePalette 刷新
+ window.dispatchEvent(new CustomEvent('friday:recent-nodes-changed'))
  }
  catch { /* localStorage 不可用时静默失败 */ }
 }
