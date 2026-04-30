@@ -458,7 +458,7 @@ export const useWorkflowsStore = defineStore('workflows', => {
  style: edge.style,
  })),
  exported_at: new Date.toISOString,
- friday_version: '0.1.0',
+ friday_version: (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__: '0.1.0'),
  }
  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
  const url = URL.createObjectURL(blob)

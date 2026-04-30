@@ -9,7 +9,7 @@ import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import { NodeToolbar } from '@vue-flow/node-toolbar'
 import { Copy, Play, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useToast } from '~/composables/useToast'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import { useRouter } from 'vue-router'
@@ -43,6 +43,8 @@ const outputPorts = computed( => ports.value.filter(p => p.group === 'output'))
 const isMultiSelect = computed( => getSelectedNodes.value.length > 1)
 /** 当前节点是否有未保存的配置修改 */
 const isDirty = computed( => dirtyNodeIds.value.has(props.id))
+/** 单节点测试 loading 状态 */
+const isTesting = ref(false)
 /** 多端口时均匀分布的 left 百分比 */
 function portLeft(index: number, total: number): string {
  if (total <= 1)
@@ -69,6 +71,9 @@ function handleCopy {
  store.addNode(newNode)
 }
 async function handleTest {
+ if (isTesting.value)
+ return
+ isTesting.value = true
  try {
  const result = await store.executeWorkflow({}, false, props.id)
  if (result?.execution_id) {
@@ -79,6 +84,9 @@ async function handleTest {
  catch (e: unknown) {
  toastError((e as Error).message || '启动测试失败')
  }
+ finally {
+ isTesting.value = false
+ }
 }
 </script>
 <template>
@@ -88,11 +96,12 @@ async function handleTest {
  >
  <div class="flex gap-1 bg-card/90 backdrop-blur-sm border border-border/50 rounded-xl shadow-lg">
  <button
- class=".5 rounded-lg hover:bg-emerald-500/10 transition-colors text-muted-foreground hover:text-emerald-600"
- title="测试到此节点"
+ class=".5 rounded-lg hover:bg-emerald-500/10 transition-colors text-muted-foreground hover:text-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+ title="测试到此节点":disabled="isTesting"
  @click.stop="handleTest"
  >
- <Play class="w-3.5 .5" />
+ <span v-if="isTesting" class="icon-[lucide--loader-circle] animate-spin w-3.5 .5" />
+ <Play v-else class="w-3.5 .5" />
  </button>
  <button
  class=".5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
