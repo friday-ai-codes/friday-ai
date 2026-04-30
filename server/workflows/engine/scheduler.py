@@ -80,6 +80,16 @@ class WorkflowEngine:
  "node_waiting_approval",
  ):
  self.hooks.register_hook(event, notification_hook)
+ # AlertRuleHook: 告警规则引擎
+ from workflows.hooks.builtin import AlertRuleHook
+ alert_rule_hook = AlertRuleHook
+ for event in (
+ "execution_failed",
+ "execution_timeout",
+ "execution_completed",
+ "node_failed",
+ ):
+ self.hooks.register_hook(event, alert_rule_hook)
  # FeishuSyncHook: 飞书卡片状态同步
  # execute 内部有 event_map 路由，对未处理事件是 no-op，注册所有事件安全
  from workflows.hooks.feishu_sync import FeishuSyncHook
