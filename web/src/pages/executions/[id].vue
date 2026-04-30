@@ -8,6 +8,9 @@
 import type { NodeExecution } from '~/stores/useExecutionsStore'
 import { computed, ref } from 'vue'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
+import ReplayControls from '~/components/execution/replay/ReplayControls.vue'
+import ReplayTimeline from '~/components/execution/replay/ReplayTimeline.vue'
+import { useExecutionReplay } from '~/components/execution/dag/composables/useExecutionReplay'
 import ExecutionContent from './components/ExecutionContent.vue'
 import ExecutionDialogs from './components/ExecutionDialogs.vue'
 import ExecutionHeader from './components/ExecutionHeader.vue'
@@ -148,6 +151,34 @@ const selectedBottleneckInfo = computed( => {
  durationPercent: percent,
  }
 })
+// ----- Phase: 回放模式 -----
+const isReplayMode = ref(false)
+/** 终态执行才可回放 */
+const canReplay = computed( => {
+ const status = currentExecution.value?.status
+ return status === 'completed' || status === 'failed' || status === 'error' || status === 'cancelled'
+})
+const replay = useExecutionReplay(currentExecution)
+/** 切换回放模式 */
+function handleToggleReplay {
+ if (isReplayMode.value) {
+ // 退出回放
+ isReplayMode.value = false
+ replay.reset
+ // 恢复 WebSocket
+ store.connectWebSocket(executionId.value)
+ }
+ else {
+ // 进入回放
+ isReplayMode.value = true
+ // 断开 WebSocket，避免实时更新干扰回放
+ store.disconnectWebSocket?.
+ replay.reset
+ }
+}
+/** 步进控制能力 */
+const canStepForward = computed( => replay.currentTime.value < replay.totalDuration.value)
+const canStepBackward = computed( => replay.currentTime.value > 0)
 // ----- 节点点击 -----
 function handleNodeClick(nodeExecution: NodeExecution | null, nodeId: string) {
  selectedNodeExecution.value = nodeExecution
@@ -161,11 +192,12 @@ function handleActionComplete {
 </script>
 <template>
  <div class="h-screen flex flex-col overflow-hidden">
- <ExecutionHeader:workflow-name="currentExecution?.workflow_name || ''":execution-id="executionId":status="currentExecution?.status":progress="progress":duration="duration":trigger-log-id="currentExecution?.trigger_log_id":retry-from-id="retryFromId":resumed-from-id="resumedFromId":is-pausing="isPausing":is-resuming="isResuming":is-cancelling="isCancelling":is-retrying="isRetrying"
+ <ExecutionHeader:workflow-name="currentExecution?.workflow_name || ''":execution-id="executionId":status="currentExecution?.status":progress="progress":duration="duration":trigger-log-id="currentExecution?.trigger_log_id":retry-from-id="retryFromId":resumed-from-id="resumedFromId":is-pausing="isPausing":is-resuming="isResuming":is-cancelling="isCancelling":is-retrying="isRetrying":can-replay="canReplay":is-replay-mode="isReplayMode"
  @pause="handlePause"
  @resume="handleResume"
  @cancel="handleCancel"
  @retry="handleRetry"
+ @replay="handleToggleReplay"
  @refresh="store.fetchExecution(executionId)"
  @back="router.push('/executions')"
  />
@@ -174,7 +206,7 @@ function handleActionComplete {
  @cancel-debug="handleCancelDebug"
  @update:is-breakpoint-mode="isBreakpointMode = $event"
  />
- <ExecutionContent:loading="loading":error="error":current-execution="currentExecution":cost-data="costData":cost-loading="costLoading":timeline-data="timelineData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution":is-pre-execution-failure="isPreExecutionFailure":is-terminal-status="isTerminalStatus(currentExecution?.status)"
+ <ExecutionContent:loading="loading":error="error":current-execution="currentExecution":cost-data="costData":cost-loading="costLoading":timeline-data="timelineData":definition-changed="definitionChanged":breakpoints="breakpoints":is-debug-execution="isDebugExecution":is-pre-execution-failure="isPreExecutionFailure":is-terminal-status="isTerminalStatus(currentExecution?.status)":is-replay-mode="isReplayMode":get-node-status="replay.getNodeStatus"
  @node-click="handleNodeClick"
  @resume-click="handleResumeClick"
  @debug-release="handleDebugRelease"
@@ -182,6 +214,31 @@ function handleActionComplete {
  @toggle-breakpoint="handleToggleBreakpoint"
  @retry="handleRetry"
  />
+ <!-- Phase: 回放控制面板 -->
+ <Transition
+ enter-active-class="transition ease-out duration-300"
+ enter-from-class="translate-y-full opacity-0"
+ enter-to-class="translate-y-0 opacity-100"
+ leave-active-class="transition ease-in duration-200"
+ leave-from-class="translate-y-0 opacity-100"
+ leave-to-class="translate-y-full opacity-0"
+ >
+ <div
+ v-if="isReplayMode"
+ class="shrink-0 bg-white/80 backdrop-blur-md border-t border-border/50 shadow-lg z-30"
+ >
+ <ReplayControls:is-playing="replay.isPlaying.value":speed="replay.speed.value":can-step-forward="canStepForward":can-step-backward="canStepBackward"
+ @play="replay.play"
+ @pause="replay.pause"
+ @step-forward="replay.stepForward"
+ @step-backward="replay.stepBackward"
+ @speed-change="replay.setSpeed"
+ />
+ <ReplayTimeline:current-time="replay.currentTime.value":total-duration="replay.totalDuration.value":node-executions="currentExecution?.node_executions ?? "
+ @seek="replay.seek"
+ />
+ </div>
+ </Transition>
  <!-- 节点详情抽屉 -->
  <NodeDetailSheet:open="sheetOpen":node-execution="selectedNodeExecution":node-config="selectedNodeConfig":bottleneck-info="selectedBottleneckInfo":execution-id="executionId":can-resume="!definitionChanged && (selectedNodeExecution?.status === 'failed')":is-debug-paused="isSelectedNodeDebugPaused":workflow-definition="currentExecution?.workflow_definition":provider-snapshot="selectedProviderSnapshot":can-replay-snapshot="canReplaySnapshot"
  @update:open="sheetOpen = $event"
