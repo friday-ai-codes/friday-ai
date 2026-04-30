@@ -61,7 +61,8 @@ export default { inheritAttrs: false }
  <BaseEdge:id="id":path="route.path":label="label":label-x="route.labelX":label-y="route.labelY":label-style="{ fill: 'hsl(var(--foreground))', fontSize: '11px', fontWeight: 600 }":label-bg-style="{ fill: 'hsl(var(--card))', fillOpacity: 0.94, stroke: 'rgba(148, 163, 184, 0.22)', strokeWidth: 1 }":label-bg-padding="[4, 9]":label-bg-border-radius="999":marker-end="markerEnd":style="edgeStyle"
  />
 </template>
-<style scoped>
+<style>
+/* 全局 keyframes — BaseEdge 渲染的 path 不在本组件 scoped DOM 内 */
 @keyframes dash-flow {
  from { stroke-dashoffset: 0; }
  to { stroke-dashoffset: -10; }
