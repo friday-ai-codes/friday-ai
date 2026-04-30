@@ -37,6 +37,14 @@ class SubStepStatus(models.TextChoices):
  RUNNING = "running", "执行中"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
+class WorkflowErrorCode(models.TextChoices):
+ """工作流错误分类码"""
+ TIMEOUT = "timeout", "执行超时"
+ PERMISSION = "permission", "权限不足"
+ RESOURCE = "resource", "资源不足"
+ API = "api", "外部 API 错误"
+ RUNTIME = "runtime", "运行时错误"
+ UNKNOWN = "unknown", "未知错误"
 class WorkflowExecution(models.Model):
  """工作流执行实例"""
  # 管理器类型声明
@@ -400,6 +408,22 @@ class NodeExecution(models.Model):
  # 容器执行信息（用于 Docker 节点）
  container_id = models.CharField(max_length=100, blank=True, default="")
  container_logs = models.TextField(blank=True, default="")
+ # 结构化执行日志
+ logs = models.JSONField(
+ default=list,
+ blank=True,
+ verbose_name="执行日志",
+ help_text="结构化日志数组，每个元素为 {timestamp, level, message, context}",
+ )
+ # 错误分类码
+ error_code = models.CharField(
+ max_length=20,
+ choices=WorkflowErrorCode.choices,
+ null=True,
+ blank=True,
+ verbose_name="错误码",
+ help_text="节点失败时的错误分类",
+ )
  # 子步骤进度缓存（由 emit_sub_step 同步更新）
  sub_step_completed_count = models.IntegerField(
  default=0, verbose_name="已完成子步骤数"
@@ -428,6 +452,47 @@ class NodeExecution(models.Model):
  if self.started_at and self.completed_at:
  return (self.completed_at - self.started_at).total_seconds
  return None
+ def _append_log(
+ self,
+ level: str,
+ message: str,
+ context: dict | None = None,
+ ) -> None:
+ """追加单条日志到 logs 数组（同步版本）。"""
+ entry: dict[str, Any] = {
+ "timestamp": timezone.now.isoformat,
+ "level": level,
+ "message": message,
+ }
+ if context:
+ entry["context"] = context
+ current_logs: list[dict] = list(self.logs or )
+ current_logs.append(entry)
+ # 限制最大条数 100，防止 JSONField 膨胀
+ if len(current_logs) > 100:
+ current_logs = current_logs[-100:]
+ self.logs = current_logs
+ self.save(update_fields=["logs"])
+ async def aappend_log(
+ self,
+ level: str,
+ message: str,
+ context: dict | None = None,
+ ) -> None:
+ """追加单条日志到 logs 数组（异步版本）。"""
+ entry: dict[str, Any] = {
+ "timestamp": timezone.now.isoformat,
+ "level": level,
+ "message": message,
+ }
+ if context:
+ entry["context"] = context
+ current_logs: list[dict] = list(self.logs or )
+ current_logs.append(entry)
+ if len(current_logs) > 100:
+ current_logs = current_logs[-100:]
+ self.logs = current_logs
+ await self.asave(update_fields=["logs"])
  def mark_started(self, input_data: dict | None = None) -> None:
  """标记开始执行"""
  self.status = NodeExecutionStatus.RUNNING
@@ -463,23 +528,27 @@ class NodeExecution(models.Model):
  await WorkflowExecution.objects.filter(pk=self.workflow_execution_id).aupdate(
  completed_nodes=F("completed_nodes") + 1
  )
- def mark_failed(self, error: str, traceback: str = "") -> None:
+ def mark_failed(self, error: str, traceback: str = "", error_code: str | None = None) -> None:
  """标记执行失败"""
  self.status = NodeExecutionStatus.FAILED
  self.completed_at = timezone.now
  self.error_message = error
  self.error_traceback = traceback
- self.save(update_fields=["status", "completed_at", "error_message", "error_traceback"])
+ if error_code:
+ self.error_code = error_code
+ self.save(update_fields=["status", "completed_at", "error_message", "error_traceback", "error_code"])
  # 更新父执行的统计
  self.workflow_execution.failed_nodes += 1
  self.workflow_execution.save(update_fields=["failed_nodes"])
- async def amark_failed(self, error: str, traceback: str = "") -> None:
+ async def amark_failed(self, error: str, traceback: str = "", error_code: str | None = None) -> None:
  """标记执行失败（async 版本）"""
  self.status = NodeExecutionStatus.FAILED
  self.completed_at = timezone.now
  self.error_message = error
  self.error_traceback = traceback
- await self.asave(update_fields=["status", "completed_at", "error_message", "error_traceback"])
+ if error_code:
+ self.error_code = error_code
+ await self.asave(update_fields=["status", "completed_at", "error_message", "error_traceback", "error_code"])
  # 级联更新父执行统计（避免加载 FK，直接原子更新）
  await WorkflowExecution.objects.filter(pk=self.workflow_execution_id).aupdate(
  failed_nodes=F("failed_nodes") + 1
