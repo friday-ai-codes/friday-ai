@@ -10,6 +10,7 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.utils import timezone
+from rest_framework.exceptions import PermissionDenied
 from workflows.engine.dag import DAG
 from workflows.models.execution import (
  ExecutionStatus,
@@ -91,6 +92,25 @@ class WorkflowEngine:
  "workflow__project",
  "project",
  ).aget(pk=execution.pk)
+ @staticmethod
+ def _map_error_code(exception: Exception) -> str:
+ """将异常映射为 WorkflowErrorCode 值。"""
+ import httpx
+ if isinstance(exception, asyncio.TimeoutError):
+ return "timeout"
+ if isinstance(exception, PermissionDenied):
+ return "permission"
+ # 资源相关异常（OSError 涵盖内存/磁盘不足；docker 异常在容器节点中可能抛出）
+ if isinstance(exception, OSError):
+ return "resource"
+ # 外部 API 异常
+ if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError,
+ httpx.HTTPError, httpx.HTTPStatusError)):
+ return "api"
+ # 通用 Python 异常 / 节点逻辑错误
+ if isinstance(exception, Exception):
+ return "runtime"
+ return "unknown"
  @staticmethod
  def _create_execution_with_atomic_concurrency_guard(
  *,
@@ -759,6 +779,11 @@ class WorkflowEngine:
  await node_execution.asave(update_fields=["attempt"])
  try:
  await node_execution.amark_started(input_data)
+ await node_execution.aappend_log(
+ level="INFO",
+ message=f"节点开始执行 (attempt {attempt}/{max_attempts})",
+ context={"node_type": node.node_type, "node_timeout": node_timeout},
+ )
  await self.hooks.trigger(
  "node_started",
  execution=execution,
@@ -799,6 +824,11 @@ class WorkflowEngine:
  if result.next_handle and result.next_handle != "default":
  output_with_handle["_next_handle"] = result.next_handle
  await node_execution.amark_completed(output_with_handle)
+ await node_execution.aappend_log(
+ level="INFO",
+ message="节点执行完成",
+ context={"duration_seconds": node_execution.duration},
+ )
  await self.hooks.trigger(
  "node_completed",
  execution=execution,
@@ -811,6 +841,11 @@ class WorkflowEngine:
  }
  elif result.status == "waiting_approval":
  await node_execution.amark_waiting_approval(result.output)
+ await node_execution.aappend_log(
+ level="INFO",
+ message="节点进入等待审批状态",
+ context={"approval_data": result.output},
+ )
  hook_execution = await self._load_execution_for_hooks(execution)
  await self.hooks.trigger(
  "node_waiting_approval",
@@ -820,6 +855,11 @@ class WorkflowEngine:
  return {"status": "waiting_approval"}
  elif result.status == "waiting_event":
  await node_execution.amark_waiting_event(result.output)
+ await node_execution.aappend_log(
+ level="INFO",
+ message="节点进入等待事件状态",
+ context={"subscription_data": result.output},
+ )
  await self.hooks.trigger(
  "node_waiting_event",
  execution=execution,
@@ -829,13 +869,18 @@ class WorkflowEngine:
  else:
  last_error = result.error or "未知错误"
  raise RuntimeError(last_error)
- except asyncio.TimeoutError:
+ except asyncio.TimeoutError as e:
  # 超时：调用 on_timeout 生命周期钩子
  try:
  await node_instance.on_timeout(context)
  except Exception: # noqa: BLE001
  pass # on_timeout 清理失败不应掩盖超时错误
  last_error = f"节点执行超时 ({node_timeout}s)"
+ await node_execution.aappend_log(
+ level="ERROR",
+ message=last_error,
+ context={"node_timeout": node_timeout, "attempt": attempt},
+ )
  except Exception as e:
  if isinstance(e, RuntimeError) and last_error:
  pass # 已设置 last_error
@@ -847,11 +892,21 @@ class WorkflowEngine:
  execution_id=str(execution.id),
  attempt=attempt,
  )
+ await node_execution.aappend_log(
+ level="ERROR",
+ message=f"节点执行失败: {last_error}",
+ context={"attempt": attempt, "exception_type": type(e).__name__},
+ )
  # 到达此处表示执行失败
  if attempt < max_attempts and on_error == "retry":
  # 指数退避 + 随机 jitter
  delay = min(300, max(1, retry_delay * (2 ** (attempt - 1)) + random.randint(0, retry_delay)))
- await node_execution.amark_failed(last_error)
+ await node_execution.amark_failed(last_error, error_code=self._map_error_code(e))
+ await node_execution.aappend_log(
+ level="WARN",
+ message=f"第 {attempt} 次尝试失败，将在 {delay}s 后重试",
+ context={"retry_attempt": attempt, "next_delay": delay, "error": last_error},
+ )
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
@@ -868,7 +923,7 @@ class WorkflowEngine:
  await asyncio.sleep(delay)
  continue
  # 最终失败 — 应用 on_error 策略
- await node_execution.amark_failed(last_error)
+ await node_execution.amark_failed(last_error, error_code=self._map_error_code(e))
  await self.hooks.trigger(
  "node_failed",
  execution=execution,
