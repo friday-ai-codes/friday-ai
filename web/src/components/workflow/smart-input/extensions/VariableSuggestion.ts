@@ -1,27 +1,36 @@
 import type { SuggestionKeyDownProps, SuggestionProps as TipTapSuggestionProps } from '@tiptap/suggestion'
 import type { App } from 'vue'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
-import type { VariableNodeAttrs } from '~/types/smart-input'
+import type { FunctionNodeAttrs, VariableNodeAttrs } from '~/types/smart-input'
 import { Extension } from '@tiptap/core'
 import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { createApp, h, ref } from 'vue'
 import VariableSuggestionList from '../VariableSuggestionList.vue'
+import type { BuiltInFunction } from './FunctionSuggestion'
 /**
  * Plugin key for the variable suggestion plugin
  * Used to access the plugin state from outside
  */
 export const variableSuggestionPluginKey = new PluginKey('variableSuggestion')
 /**
+ * Union type for suggestion items
+ */
+export type SuggestionItem =
+ | { type: 'variable', data: DesignTimeVariable }
+ | { type: 'function', data: BuiltInFunction }
+/**
  * Suggestion props with our specific types
  */
-export type SuggestionProps = TipTapSuggestionProps<DesignTimeVariable, VariableNodeAttrs>
+export type SuggestionProps = TipTapSuggestionProps<SuggestionItem, VariableNodeAttrs | FunctionNodeAttrs>
 /**
  * Options for creating the variable suggestion extension
  */
 export interface VariableSuggestionOptions {
  /** Function to get available variables for autocomplete */
  items: => DesignTimeVariable
+ /** Function to get available functions for autocomplete */
+ functions?: => BuiltInFunction
  /** Callback when no variables are available */
  onEmpty?: => void
  /** Custom render function for the suggestion popup */
@@ -36,7 +45,8 @@ export interface VariableSuggestionOptions {
  * Create a variable suggestion extension for TipTap
  *
  * This extension triggers autocomplete when the user types `{{` and
- * shows a list of available upstream variables from the workflow DAG.
+ * shows a list of available upstream variables from the workflow DAG
+ * and built-in expression functions.
  *
  * @example
  * ```ts
@@ -44,6 +54,7 @@ export interface VariableSuggestionOptions {
  * extensions: [
  * createVariableSuggestion({
  * items: => designTimeVariables.value,
+ * functions: => BUILT_IN_FUNCTIONS,
  * }),
  * ],
  * })
@@ -65,7 +76,7 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  addProseMirrorPlugins {
  const extensionStorage = this.storage
  return [
- Suggestion<DesignTimeVariable, VariableNodeAttrs>({
+ Suggestion<SuggestionItem, VariableNodeAttrs | FunctionNodeAttrs>({
  pluginKey: variableSuggestionPluginKey,
  editor: this.editor,
  // Trigger on `{{` - multi-character trigger
@@ -75,16 +86,20 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  // Can trigger anywhere in text, not just at start of line
  startOfLine: false,
  // Filter items based on query
- items: ({ query }): DesignTimeVariable => {
- const allItems = options.items
- // If no items available, call onEmpty callback
- if (allItems.length === 0) {
+ items: ({ query }): SuggestionItem => {
+ const allVariables = options.items
+ const allFunctions = options.functions?. ??
+ const result: SuggestionItem =
+ // If no items available and no functions, call onEmpty callback
+ if (allVariables.length === 0 && allFunctions.length === 0) {
  options.onEmpty?.
  return
  }
  // If query is empty, return all items (max 50)
  if (!query) {
- return allItems.slice(0, 50)
+ allVariables.slice(0, 50).forEach(v => result.push({ type: 'variable', data: v }))
+ allFunctions.forEach(f => result.push({ type: 'function', data: f }))
+ return result
  }
  // JSONPath mode: query starts with $
  // Strip the $ prefix for filtering, but we'll add it back when inserting
@@ -95,43 +110,57 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  }
  // If filterQuery is empty after stripping $, return all items
  if (!filterQuery) {
- return allItems.slice(0, 50)
+ allVariables.slice(0, 50).forEach(v => result.push({ type: 'variable', data: v }))
+ allFunctions.forEach(f => result.push({ type: 'function', data: f }))
+ return result
  }
- // Fuzzy filter by label and path (case-insensitive)
  const lowerQuery = filterQuery.toLowerCase
- return allItems
+ // Filter variables by label and path (case-insensitive)
+ const matchedVariables = allVariables
  .filter(
  item =>
  item.label.toLowerCase.includes(lowerQuery)
  || item.path.toLowerCase.includes(lowerQuery),
  )
  .slice(0, 50)
+ matchedVariables.forEach(v => result.push({ type: 'variable', data: v }))
+ // Filter functions by name and description
+ const matchedFunctions = allFunctions
+ .filter(
+ f =>
+ f.name.toLowerCase.includes(lowerQuery)
+ || f.description.toLowerCase.includes(lowerQuery),
+ )
+ matchedFunctions.forEach(f => result.push({ type: 'function', data: f }))
+ return result
  },
  // Command to execute when item is selected
  command: ({ editor, range, props }) => {
- // Check if user was in JSONPath mode (query started with $)
- // We detect this by checking the text before the range
- const { state } = editor
- const textBefore = state.doc.textBetween(range.from, range.to, '')
- const isJsonPathMode = textBefore.startsWith('$')
- // Build the path - add $ prefix for JSONPath mode
- const finalPath = isJsonPathMode ? `$.${props.path}`: props.path
- // Delete the trigger range (removes `{{` and any typed query)
- // Then insert the variable node with attributes from props
+ // Distinguish function vs variable by checking for 'name' attribute
+ if ('name' in props) {
+ // Function node
+ editor
+ .chain
+ .focus
+ .deleteRange(range)
+ .insertContent({
+ type: 'function',
+ attrs: props,
+ })
+ .run
+ }
+ else {
+ // Variable node
  editor
  .chain
  .focus
  .deleteRange(range)
  .insertContent({
  type: 'variable',
- attrs: {
- path: finalPath,
- label: isJsonPathMode ? `$ ${props.label}`: props.label,
- nodeId: props.nodeId,
- outputName: props.outputName,
- } satisfies VariableNodeAttrs,
+ attrs: props,
  })
  .run
+ }
  },
  // Render lifecycle - mounts Vue popup component
  render: options.render ?? ( => {
@@ -222,13 +251,28 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  document.body.appendChild(popup)
  // Create reactive props for the Vue component
  const items = ref(props.items)
- const command = (item: DesignTimeVariable) => {
+ const command = (item: SuggestionItem) => {
+ if (item.type === 'variable') {
+ const variable = item.data
+ // Check if user was in JSONPath mode (query started with $)
+ const { state } = props.editor
+ const textBefore = state.doc.textBetween(props.range.from, props.range.to, '')
+ const isJsonPathMode = textBefore.startsWith('$')
+ const finalPath = isJsonPathMode ? `$.${variable.path}`: variable.path
  props.command({
- path: item.path,
- label: item.label,
- nodeId: item.nodeId,
- outputName: item.key,
- })
+ path: finalPath,
+ label: isJsonPathMode ? `$ ${variable.label}`: variable.label,
+ nodeId: variable.nodeId,
+ outputName: variable.key,
+ } satisfies VariableNodeAttrs)
+ }
+ else if (item.type === 'function') {
+ const func = item.data
+ props.command({
+ name: func.name,
+ args: func.params.map( => ''),
+ } satisfies FunctionNodeAttrs)
+ }
  }
  // Mount Vue component
  app = createApp({
@@ -272,13 +316,27 @@ export function createVariableSuggestion(options: VariableSuggestionOptions): Ex
  if (app && popup) {
  app.unmount
  const items = ref(props.items)
- const command = (item: DesignTimeVariable) => {
+ const command = (item: SuggestionItem) => {
+ if (item.type === 'variable') {
+ const variable = item.data
+ const { state } = props.editor
+ const textBefore = state.doc.textBetween(props.range.from, props.range.to, '')
+ const isJsonPathMode = textBefore.startsWith('$')
+ const finalPath = isJsonPathMode ? `$.${variable.path}`: variable.path
  props.command({
- path: item.path,
- label: item.label,
- nodeId: item.nodeId,
- outputName: item.key,
- })
+ path: finalPath,
+ label: isJsonPathMode ? `$ ${variable.label}`: variable.label,
+ nodeId: variable.nodeId,
+ outputName: variable.key,
+ } satisfies VariableNodeAttrs)
+ }
+ else if (item.type === 'function') {
+ const func = item.data
+ props.command({
+ name: func.name,
+ args: func.params.map( => ''),
+ } satisfies FunctionNodeAttrs)
+ }
  }
  app = createApp({
  setup {

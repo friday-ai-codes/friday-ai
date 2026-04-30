@@ -1,10 +1,46 @@
 """Node type registry with auto-discovery."""
 import importlib
+import json
+import os
 import pkgutil
 from typing import Type
 import structlog
 from .base import BaseNode
 logger = structlog.get_logger
+def _load_node_definitions_json -> dict[str, dict] | None:
+ """加载前端生成的 node-definitions.json，提取 ui_schema 映射。
+ 从当前文件位置向上查找 web/src/types/workflow/node-definitions/node-definitions.json。
+ 加载失败时返回 None，不抛异常。
+ """
+ try:
+ current_dir = os.path.dirname(os.path.abspath(__file__))
+ candidates = [
+ os.path.join(current_dir, "../../..", "web", "src", "types", "workflow", "node-definitions", "node-definitions.json"),
+ os.path.join(current_dir, "../../..", "web", "dist", "node-definitions.json"),
+ ]
+ for path in candidates:
+ path = os.path.normpath(path)
+ if os.path.exists(path):
+ with open(path, "r", encoding="utf-8") as f:
+ data = json.load(f)
+ nodes = data.get("nodes", )
+ mapping = {}
+ for node in nodes:
+ nt = node.get("node_type")
+ ui = node.get("ui_schema")
+ if nt and ui is not None:
+ mapping[nt] = ui
+ logger.info(
+ "node_definitions_json_loaded",
+ path=path,
+ node_count=len(mapping),
+ )
+ return mapping
+ logger.warning("node_definitions_json_not_found", searched=candidates)
+ return None
+ except Exception as e:
+ logger.warning("node_definitions_json_load_failed", error=str(e))
+ return None
 class NodeRegistry:
  """节点类型注册表
  使用单例模式，自动发现并注册所有节点类型。
@@ -12,6 +48,7 @@ class NodeRegistry:
  _instance = None
  _nodes: dict[str, Type[BaseNode]] = {}
  _initialized = False
+ _ui_schema_map: dict[str, dict] | None = None
  def __new__(cls):
  if cls._instance is None:
  cls._instance = super.__new__(cls)
@@ -59,8 +96,16 @@ class NodeRegistry:
  """确保已初始化（自动发现节点）"""
  if cls._initialized:
  return
+ cls._ui_schema_map = _load_node_definitions_json
  cls._auto_discover
  cls._initialized = True
+ @classmethod
+ def get_ui_schema(cls, node_type: str) -> dict | None:
+ """获取节点的 ui_schema（从前端产物加载）"""
+ cls._ensure_initialized
+ if cls._ui_schema_map is None:
+ return None
+ return cls._ui_schema_map.get(node_type)
  @classmethod
  def _auto_discover(cls) -> None:
  """自动发现并注册节点类型

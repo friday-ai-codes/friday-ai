@@ -1,29 +1,37 @@
 <script setup lang="ts">
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
+import type { SuggestionItem } from './extensions/VariableSuggestion'
 import { computed, nextTick, ref, watch } from 'vue'
 interface Props {
- items: DesignTimeVariable
- command: (item: DesignTimeVariable) => void
+ items: SuggestionItem
+ command: (item: SuggestionItem) => void
 }
 const props = defineProps<Props>
 const selectedIndex = ref(0)
 const scrollContainer = ref<HTMLElement | null>(null)
-// Group items by path prefix (input vs nodes.xxx)
-const groupedItems = computed( => {
+// Separate variables and functions
+const variables = computed( =>
+ props.items.filter((item): item is { type: 'variable', data: DesignTimeVariable } => item.type === 'variable'),
+)
+const functions = computed( =>
+ props.items.filter((item) => item.type === 'function'),
+)
+// Group variables by path prefix (input vs nodes.xxx)
+const groupedVariables = computed( => {
  const inputGroup: DesignTimeVariable =
  const nodeGroups = new Map<string, { nodeLabel: string, items: DesignTimeVariable }>
- for (const item of props.items) {
- if (item.path.startsWith('input.')) {
- inputGroup.push(item)
+ for (const item of variables.value) {
+ if (item.data.path.startsWith('input.')) {
+ inputGroup.push(item.data)
  }
  else {
- if (!nodeGroups.has(item.nodeId)) {
- nodeGroups.set(item.nodeId, {
- nodeLabel: item.nodeLabel,
+ if (!nodeGroups.has(item.data.nodeId)) {
+ nodeGroups.set(item.data.nodeId, {
+ nodeLabel: item.data.nodeLabel,
  items:,
  })
  }
- nodeGroups.get(item.nodeId)!.items.push(item)
+ nodeGroups.get(item.data.nodeId)!.items.push(item.data)
  }
  }
  const result: Array<{ groupKey: string, groupLabel: string, groupIcon: string, items: DesignTimeVariable }> =
@@ -47,21 +55,30 @@ const groupedItems = computed( => {
  }
  return result
 })
-// Flatten grouped items for consistent indexing
+// Flatten all items for consistent indexing: functions first, then variables
 const flatItems = computed( => {
- return groupedItems.value.flatMap(group => group.items)
+ const result: SuggestionItem =
+ functions.value.forEach(f => result.push(f))
+ variables.value.forEach(v => result.push(v))
+ return result
 })
-// Get flat index for an item
-function getFlatIndex(groupIndex: number, itemIndex: number): number {
- let index = 0
+// Compute flat index for an item position
+function getFunctionIndex(index: number): number {
+ return index
+}
+function getVariableFlatIndex(groupIndex: number, itemIndex: number): number {
+ let index = functions.value.length
  for (let g = 0; g < groupIndex; g++) {
- index += groupedItems.value[g].items.length
+ index += groupedVariables.value[g].items.length
  }
  return index + itemIndex
 }
-// Check if item at flat index is selected
-function isSelected(groupIndex: number, itemIndex: number): boolean {
- return getFlatIndex(groupIndex, itemIndex) === selectedIndex.value
+// Check if item at position is selected
+function isFunctionSelected(index: number): boolean {
+ return selectedIndex.value === index
+}
+function isVariableSelected(groupIndex: number, itemIndex: number): boolean {
+ return selectedIndex.value === getVariableFlatIndex(groupIndex, itemIndex)
 }
 // Select item by flat index
 function selectItem(index: number) {
@@ -89,7 +106,7 @@ function onKeyDown(event: KeyboardEvent): boolean {
  return true
  }
  if (event.key === 'ArrowDown') {
- selectedIndex.value = Math.min(props.items.length - 1, selectedIndex.value + 1)
+ selectedIndex.value = Math.min(flatItems.value.length - 1, selectedIndex.value + 1)
  scrollIntoView
  return true
  }
@@ -136,10 +153,42 @@ defineExpose({ onKeyDown })
  请先连接上游节点
  </p>
  </div>
+ <!-- Function group -->
+ <div v-if="functions.length > 0" class="mb-0.5">
+ <div class="px-2 py-1 text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--function-square] text-[10px] opacity-70" />
+ <span>函数</span>
+ </div>
+ <button
+ v-for="(item, index) in functions":key="item.data.name"
+ type="button":data-selected="isFunctionSelected(index)"
+ class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[isFunctionSelected(index) ? 'bg-accent': 'hover:bg-accent/50']"
+ @click="selectItem(getFunctionIndex(index))"
+ >
+ <div class="flex items-center justify-between gap-2">
+ <div class="flex items-center gap-1.5 min-w-0">
+ <code class="font-mono text-xs font-medium shrink-0 text-blue-600">{{ item.data.name }}</code>
+ <span class="text-[10px] text-muted-foreground truncate">
+ {{ item.data.description }}
+ </span>
+ </div>
+ </div>
+ <!-- Parameter hints -->
+ <div class="mt-0.5 flex flex-wrap gap-1">
+ <span
+ v-for="param in item.data.params":key="param.name"
+ class="text-[9px] px-1 py-0.5 rounded bg-muted font-mono"
+ >
+ {{ param.name }}
+ <span v-if="param.type" class="text-muted-foreground">: {{ param.type }}</span>
+ </span>
+ </div>
+ </button>
+ </div>
  <!-- Grouped variable list -->
- <template v-else>
+ <template v-if="variables.length > 0">
  <div
- v-for="(group, groupIndex) in groupedItems":key="group.groupKey"
+ v-for="(group, groupIndex) in groupedVariables":key="group.groupKey"
  class="mb-0.5 last:mb-0"
  >
  <!-- Group header -->
@@ -150,9 +199,9 @@ defineExpose({ onKeyDown })
  <!-- Group items -->
  <button
  v-for="(item, itemIndex) in group.items":key="item.path"
- type="button":data-selected="isSelected(groupIndex, itemIndex)"
- class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[isSelected(groupIndex, itemIndex) ? 'bg-accent': 'hover:bg-accent/50']"
- @click="selectItem(getFlatIndex(groupIndex, itemIndex))"
+ type="button":data-selected="isVariableSelected(groupIndex, itemIndex)"
+ class="w-full px-2.5 py-1.5 text-left rounded-lg transition-colors":class="[isVariableSelected(groupIndex, itemIndex) ? 'bg-accent': 'hover:bg-accent/50']"
+ @click="selectItem(getVariableFlatIndex(groupIndex, itemIndex))"
  >
  <div class="flex items-center justify-between gap-2">
  <!-- Variable info: key + description -->

@@ -47,6 +47,7 @@ const nodeGroups = computed<PaletteGroup>( => [
  name: '操作',
  items: [
  fromDef('http_request', 'HTTP 请求', '发送 HTTP 请求'),
+ fromDef('code', '代码执行', '执行 Python 代码片段'),
  { type: 'wait_feishu_field', name: '等待飞书', description: '等待飞书消息响应' },
  ],
  },
@@ -89,11 +90,20 @@ const nodeGroups = computed<PaletteGroup>( => [
  fromDef('delay', '延时', '等待指定时长后继续'),
  fromDef('parallel', '并行分支', '并行执行多个分支'),
  fromDef('join', '汇聚', '等待所有并行分支完成'),
+ fromDef('foreach', 'ForEach 循环', '对列表中的每个元素执行操作'),
+ fromDef('aggregate', '变量聚合', '将多个上游节点输出绑定为结构化变量'),
  ],
  },
 ])
 // 搜索功能
 const searchQuery = ref('')
+function handleSearchKeydown(event: KeyboardEvent) {
+ // 阻止浏览器默认搜索行为（Ctrl+F 和 /）
+ const isModifier = event.ctrlKey || event.metaKey
+ if ((isModifier && event.key === 'f') || event.key === '/') {
+ event.preventDefault
+ }
+}
 const filteredGroups = computed( => {
  const q = searchQuery.value.trim.toLowerCase
  if (!q)
@@ -161,8 +171,10 @@ function getCategoryGradient(color: string): string {
  <input
  v-model="searchQuery"
  type="text"
+ aria-label="搜索节点"
  placeholder="搜索节点..."
  class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/50 border border-border/30 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 placeholder:text-muted-foreground/50"
+ @keydown="handleSearchKeydown"
  >
  </div>
  </div>

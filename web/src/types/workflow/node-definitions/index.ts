@@ -26,6 +26,7 @@ export { buildUiSchema } from './ui-schema'
 import { TRIGGER_DEFS } from './categories/trigger'
 import { CONTROL_DEFS } from './categories/control'
 import { INTEGRATION_DEFS } from './categories/integration'
+import { ACTION_DEFS } from './categories/action'
 /**
  * 创建 NodeDefinition 的辅助函数
  *
@@ -54,6 +55,7 @@ export const ALL_NODE_DEFINITIONS: Record<string, NodeDefinition> = {
  ...TRIGGER_DEFS,
  ...CONTROL_DEFS,
  ...INTEGRATION_DEFS,
+ ...ACTION_DEFS,
 }
 /**
  * 获取指定节点的定义

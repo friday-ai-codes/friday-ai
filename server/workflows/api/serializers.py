@@ -357,6 +357,7 @@ class WorkflowCreateSerializer(serializers.ModelSerializer):
  """Serializer for creating Workflow."""
  nodes = WorkflowNodeCreateSerializer(many=True, required=False)
  edges = WorkflowEdgeCreateSerializer(many=True, required=False)
+ from_import = serializers.BooleanField(required=False, default=False, write_only=True)
  class Meta:
  model = Workflow
  fields = [
@@ -373,7 +374,29 @@ class WorkflowCreateSerializer(serializers.ModelSerializer):
  "metadata",
  "nodes",
  "edges",
+ "from_import",
  ]
+ def validate(self, attrs: dict) -> dict:
+ """Validate node types when importing from JSON."""
+ nodes_data = attrs.get("nodes", )
+ is_import = attrs.pop("from_import", False)
+ if is_import and nodes_data:
+ unknown_types: set[str] = set
+ for node_data in nodes_data:
+ node_type = node_data.get("node_type")
+ if node_type and not NodeRegistry.get(node_type):
+ unknown_types.add(node_type)
+ if unknown_types:
+ available = ", ".join(NodeRegistry.list_types)
+ raise serializers.ValidationError(
+ {
+ "nodes": [
+ f"Unknown node type(s): {', '.join(sorted(unknown_types))}. "
+ f"Available types: {available}"
+ ]
+ }
+ )
+ return attrs
  def create(self, validated_data: dict) -> Workflow:
  nodes_data = validated_data.pop("nodes", )
  edges_data = validated_data.pop("edges", )
@@ -619,6 +642,7 @@ class WorkflowExecuteSerializer(serializers.Serializer):
  input_data = serializers.JSONField(required=False, default=dict)
  trigger_data = serializers.JSONField(required=False, default=dict)
  debug_mode = serializers.BooleanField(required=False, default=False)
+ stop_before_node_id = serializers.CharField(required=False, allow_blank=True, default="")
 class NodeApproveSerializer(serializers.Serializer):
  """Serializer for approving a node."""
  comment = serializers.CharField(required=False, allow_blank=True, default="")

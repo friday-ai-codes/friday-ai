@@ -14,6 +14,15 @@ export interface VariableNodeAttrs {
  outputName: string
 }
 /**
+ * Function node attributes stored in TipTap document
+ */
+export interface FunctionNodeAttrs {
+ /** Function name like `concat`, `if`, `upper` */
+ name: string
+ /** Argument values (can be literals or nested variable syntax) */
+ args: string
+}
+/**
  * Props for SmartInput and SmartTextarea components
  */
 export interface SmartInputProps {
