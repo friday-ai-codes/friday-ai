@@ -1,6 +1,8 @@
 """Workflows models package."""
 from workflows.models.coding_task import CodingTask, CodingTaskStatus
 from workflows.models.execution import (
+ AlertRule,
+ AlertRuleExecution,
  ExecutionStatus,
  NodeExecution,
  NodeExecutionStatus,
@@ -33,4 +35,6 @@ __all__ = [
  "TriggerEventType",
  "CodingTask",
  "CodingTaskStatus",
+ "AlertRule",
+ "AlertRuleExecution",
 ]
