@@ -27,6 +27,7 @@ import NodeDataTab from './NodeDataTab.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
 import NodeOverviewTab from './NodeOverviewTab.vue'
 import PlanApprovalPanel from './PlanApprovalPanel.vue'
+import ExecutionLogPanel from './ExecutionLogPanel.vue'
 import SubStepDetailTab from './SubStepDetailTab.vue'
 /** — AI 节点 Provider 快照类型 */
 interface NodeSnapshot {
@@ -82,6 +83,10 @@ const isAINode = computed( =>
 /** 是否有子步骤可查看（AI 节点 + 有进度数据） */
 const hasSubSteps = computed( =>
  isAINode.value && props.nodeExecution?.sub_step_progress != null,
+)
+/** 是否有执行日志可查看 */
+const hasLogs = computed( =>
+ (props.nodeExecution?.logs?.length ?? 0) > 0,
 )
 /** 切换节点时重置 Tab */
 watch( => props.nodeExecution, => {
@@ -143,6 +148,9 @@ function handleActionComplete {
  <TabsList class="w-full shrink-0 mx-6 mt-4" style="width: calc(100% - 3rem)">
  <TabsTrigger value="overview" class="flex-1">
  概览
+ </TabsTrigger>
+ <TabsTrigger v-if="hasLogs" value="logs" class="flex-1">
+ 日志
  </TabsTrigger>
  <TabsTrigger value="data" class="flex-1">
  数据
@@ -219,6 +227,10 @@ function handleActionComplete {
  <NodeConfigTab:config="nodeConfig" />
  </div>
  </ScrollArea>
+ </TabsContent>
+ <!-- 日志 Tab（有日志时显示） -->
+ <TabsContent v-if="hasLogs" value="logs" class="flex-1 min- mt-0">
+ <ExecutionLogPanel:logs="nodeExecution.logs!" />
  </TabsContent>
  <!-- 子步骤 Tab（AI 节点有进度时） -->
  <TabsContent v-if="hasSubSteps" value="sub-steps" class="flex-1 min- mt-0">
