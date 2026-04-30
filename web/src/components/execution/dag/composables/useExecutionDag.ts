@@ -69,6 +69,7 @@ export function useExecutionDag(
  execution: Ref<WorkflowExecution | null>,
  timelineData: Ref<TimelineData | null>,
  definitionChanged?: Ref<boolean>,
+ statusOverride?: (nodeExecution: NodeExecution) => string | undefined,
 ) {
  const dagNodes = computed<Node<ExecutionNodeData>>( => {
  const exec = execution.value
@@ -87,7 +88,7 @@ export function useExecutionDag(
  return definition.nodes?.map((defNode) => {
  const ne = execMap.get(defNode.id)
  const bn = bottleneckMap.get(defNode.id)
- const nodeStatus = ne?.status ?? 'pending'
+ const nodeStatus = (ne ? statusOverride?.(ne): undefined) ?? ne?.status ?? 'pending'
  return {
  id: defNode.id,
  type: 'execution',
