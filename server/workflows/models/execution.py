@@ -833,3 +833,100 @@ class WorkflowEventSubscription(models.Model):
  """标记订阅为非活跃（async 版本）"""
  self.is_active = False
  await self.asave(update_fields=["is_active"])
+class AlertRule(models.Model):
+ """告警规则"""
+ objects: "models.Manager[AlertRule]"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ workflow = models.ForeignKey(
+ "workflows.Workflow",
+ on_delete=models.CASCADE,
+ related_name="alert_rules",
+ null=True, blank=True,
+ verbose_name="关联工作流",
+ help_text="null 表示全局规则（所有工作流）",
+ )
+ project = models.ForeignKey(
+ "projects.Project",
+ on_delete=models.CASCADE,
+ related_name="alert_rules",
+ verbose_name="所属项目",
+ )
+ name = models.CharField(max_length=200, verbose_name="规则名称")
+ enabled = models.BooleanField(default=True, verbose_name="启用")
+ CONDITION_TYPES = [
+ ("execution_failed", "执行失败"),
+ ("execution_timeout", "执行超时"),
+ ("cost_threshold", "成本超阈值"),
+ ("node_error_code", "节点错误码"),
+ ]
+ condition_type = models.CharField(
+ max_length=30, choices=CONDITION_TYPES, verbose_name="条件类型"
+ )
+ condition_config = models.JSONField(
+ default=dict, blank=True, verbose_name="条件配置"
+ )
+ ACTION_TYPES = [
+ ("feishu_notification", "飞书通知"),
+ ("webhook", "Webhook"),
+ ]
+ action_type = models.CharField(
+ max_length=30, choices=ACTION_TYPES, verbose_name="动作类型"
+ )
+ action_config = models.JSONField(
+ default=dict, blank=True, verbose_name="动作配置"
+ )
+ cooldown_seconds = models.PositiveIntegerField(
+ default=0, verbose_name="冷却时间(秒)"
+ )
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "workflow_alert_rules"
+ indexes = [
+ models.Index(fields=["project", "enabled"]),
+ models.Index(fields=["workflow", "enabled"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.name} ({self.condition_type})"
+class AlertRuleExecution(models.Model):
+ """告警规则触发记录"""
+ objects: "models.Manager[AlertRuleExecution]"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ alert_rule = models.ForeignKey(
+ AlertRule,
+ on_delete=models.CASCADE,
+ related_name="executions",
+ verbose_name="告警规则",
+ )
+ workflow_execution = models.ForeignKey(
+ WorkflowExecution,
+ on_delete=models.CASCADE,
+ related_name="alert_rule_executions",
+ verbose_name="工作流执行",
+ )
+ triggered_at = models.DateTimeField(auto_now_add=True, verbose_name="触发时间")
+ status = models.CharField(
+ max_length=20,
+ choices=[
+ ("triggered", "已触发"),
+ ("delivered", "已送达"),
+ ("failed", "发送失败"),
+ ],
+ default="triggered",
+ verbose_name="状态",
+ )
+ response_data = models.JSONField(
+ default=dict, blank=True, verbose_name="响应数据"
+ )
+ error_message = models.TextField(blank=True, default="", verbose_name="错误消息")
+ triggered_event = models.CharField(
+ max_length=50, blank=True, default="", verbose_name="触发事件"
+ )
+ class Meta:
+ db_table = "workflow_alert_rule_executions"
+ unique_together = [["alert_rule", "workflow_execution"]]
+ ordering = ["-triggered_at"]
+ verbose_name = "告警规则执行记录"
+ verbose_name_plural = "告警规则执行记录"
+ def __str__(self) -> str:
+ return f"{self.alert_rule.name} - {self.status}"
