@@ -1,4 +1,5 @@
 """Built-in lifecycle hooks."""
+from datetime import timedelta
 from typing import Any
 import structlog
 from workflows.hooks.base import BaseHook
@@ -216,7 +217,7 @@ class AlertRuleHook(BaseHook):
  # cooldown_seconds 额外窗口（若配置）
  cooldown_seconds = rule.cooldown_seconds or 0
  if cooldown_seconds > 0:
- cutoff = timezone.now - timezone.timedelta(seconds=cooldown_seconds)
+ cutoff = timezone.now - timedelta(seconds=cooldown_seconds)
  recent_exists = await AlertRuleExecution.objects.filter(
  alert_rule=rule,
  workflow_execution=execution,
