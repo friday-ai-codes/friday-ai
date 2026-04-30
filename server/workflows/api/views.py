@@ -14,12 +14,15 @@ from rest_framework.response import Response
 from common.exceptions import TriggerValidationError
 from permissions.mixins import ProjectScopedQuerysetMixin
 from workflows.api.permissions import (
+ AlertRulePermission,
  ApprovalPermission,
  ExecutionPermission,
  WorkflowPermission,
 )
 from workflows.api.serializers import (
  ActionLogDetailSerializer,
+ AlertRuleExecutionSerializer,
+ AlertRuleSerializer,
  ActionLogSummarySerializer,
  CodingTaskListSerializer,
  CodingTaskSerializer,
@@ -1500,3 +1503,53 @@ class NodeExecutionActionView(APIView):
  "status": "success",
  "message": "已手动触发唤醒，工作流继续执行",
  })
+# =============================================================================
+# AlertRule ViewSets
+# =============================================================================
+class AlertRuleViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
+ """告警规则 CRUD ViewSet。"""
+ from workflows.models import AlertRule
+ queryset = AlertRule.objects.all
+ serializer_class = AlertRuleSerializer
+ permission_classes = [IsAuthenticated, AlertRulePermission]
+ project_field = "project"
+ def get_queryset(self):
+ queryset = super.get_queryset.select_related("workflow", "project")
+ workflow_id = self.request.query_params.get("workflow_id")
+ if workflow_id:
+ queryset = queryset.filter(workflow_id=workflow_id)
+ condition_type = self.request.query_params.get("condition_type")
+ if condition_type:
+ queryset = queryset.filter(condition_type=condition_type)
+ action_type = self.request.query_params.get("action_type")
+ if action_type:
+ queryset = queryset.filter(action_type=action_type)
+ enabled = self.request.query_params.get("enabled")
+ if enabled is not None:
+ queryset = queryset.filter(enabled=enabled.lower == "true")
+ return queryset.order_by("-created_at")
+ @action(detail=True, methods=["post"])
+ async def toggle_enabled(self, request: Request, pk=None) -> Response:
+ """切换规则启用/禁用状态。"""
+ instance = await self.aget_object
+ instance.enabled = not instance.enabled
+ await instance.asave(update_fields=["enabled"])
+ return Response({"enabled": instance.enabled})
+class AlertRuleExecutionViewSet(ProjectScopedQuerysetMixin, ReadOnlyModelViewSet):
+ """告警规则执行记录只读 ViewSet。"""
+ from workflows.models import AlertRuleExecution
+ queryset = AlertRuleExecution.objects.all
+ serializer_class = AlertRuleExecutionSerializer
+ permission_classes = [IsAuthenticated]
+ project_field = "alert_rule__project"
+ def get_queryset(self):
+ queryset = super.get_queryset.select_related(
+ "alert_rule", "workflow_execution__workflow"
+ )
+ alert_rule_id = self.request.query_params.get("alert_rule_id")
+ if alert_rule_id:
+ queryset = queryset.filter(alert_rule_id=alert_rule_id)
+ status = self.request.query_params.get("status")
+ if status:
+ queryset = queryset.filter(status=status)
+ return queryset.order_by("-triggered_at")
