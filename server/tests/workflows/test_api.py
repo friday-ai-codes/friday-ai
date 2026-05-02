@@ -235,14 +235,27 @@ class TestNodeTypeAPI:
 @pytest.mark.django_db
 class TestTemplateAPI:
  """Tests for workflow template endpoints."""
- def test_list_templates(self, authenticated_admin_client):
- """Test listing available templates."""
+ def test_list_templates_returns_4(self, authenticated_admin_client):
+ """Template list should return 4 templates with metadata."""
  url = "/api/workflows/templates/"
  response = authenticated_admin_client.get(url)
  assert response.status_code == status.HTTP_200_OK
  assert isinstance(response.data, list)
- def test_create_from_template(self, authenticated_admin_client, api_project):
- """Test creating workflow from template."""
+ assert len(response.data) == 4
+ ids = {t["template_id"] for t in response.data}
+ expected = {
+ "code_generation",
+ "feishu_full_pipeline",
+ "code_review_pipeline",
+ "daily_summary",
+ }
+ assert ids == expected
+ for t in response.data:
+ assert "name" in t
+ assert "description" in t
+ assert "version" in t
+ def test_create_from_template_code_generation(self, authenticated_admin_client, api_project):
+ """Creating workflow from code_generation template should succeed."""
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "code_generation",
@@ -250,11 +263,57 @@ class TestTemplateAPI:
  "name": "From Template",
  }
  response = authenticated_admin_client.post(url, data, format="json")
- # Template might not exist in test env
- assert response.status_code in [
- status.HTTP_201_CREATED,
- status.HTTP_400_BAD_REQUEST,
- ]
+ assert response.status_code == status.HTTP_201_CREATED
+ assert "id" in response.data
+ assert response.data["metadata"]["template_id"] == "code_generation"
+ def test_create_from_template_daily_summary(self, authenticated_admin_client, api_project):
+ """Creating workflow from daily_summary template should succeed."""
+ url = "/api/workflows/from-template/"
+ data = {
+ "template_id": "daily_summary",
+ "project_id": str(api_project.id),
+ }
+ response = authenticated_admin_client.post(url, data, format="json")
+ assert response.status_code == status.HTTP_201_CREATED
+ assert response.data["metadata"]["template_id"] == "daily_summary"
+ # Verify nodes were created
+ workflow_id = response.data["id"]
+ workflow = Workflow.objects.get(id=workflow_id)
+ nodes = list(workflow.nodes.all)
+ assert len(nodes) == 4
+ node_types = {n.node_type for n in nodes}
+ assert "webhook_trigger" in node_types
+ assert "http_request" in node_types
+ assert "ai_prompt" in node_types
+ assert "notify_feishu" in node_types
+ def test_create_from_template_code_review(self, authenticated_admin_client, api_project):
+ """Creating workflow from code_review_pipeline template should succeed."""
+ url = "/api/workflows/from-template/"
+ data = {
+ "template_id": "code_review_pipeline",
+ "project_id": str(api_project.id),
+ }
+ response = authenticated_admin_client.post(url, data, format="json")
+ assert response.status_code == status.HTTP_201_CREATED
+ assert response.data["metadata"]["template_id"] == "code_review_pipeline"
+ def test_create_from_template_missing_project_id(self, authenticated_admin_client):
+ """Missing project_id should return 400."""
+ url = "/api/workflows/from-template/"
+ data = {
+ "template_id": "code_generation",
+ }
+ response = authenticated_admin_client.post(url, data, format="json")
+ assert response.status_code == status.HTTP_400_BAD_REQUEST
+ assert "project_id" in str(response.data) or "required" in str(response.data).lower
+ def test_create_from_template_unknown_template(self, authenticated_admin_client, api_project):
+ """Unknown template_id should return 400."""
+ url = "/api/workflows/from-template/"
+ data = {
+ "template_id": "non_existent_template",
+ "project_id": str(api_project.id),
+ }
+ response = authenticated_admin_client.post(url, data, format="json")
+ assert response.status_code == status.HTTP_400_BAD_REQUEST
 # ============================================================================
 # Task Compatibility API Tests
 # ============================================================================
