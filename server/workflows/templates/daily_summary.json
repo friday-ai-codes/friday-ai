@@ -1,0 +1,62 @@
+{
+ "version": "1.0",
+ "name": "智能日报生成",
+ "description": "通过 Webhook 触发 → 拉取数据源 → AI 生成日报摘要 → 飞书推送。可配合外部 cron 服务调用 Webhook 实现定时日报。",
+ "template_id": "daily_summary",
+ "nodes": [
+ {
+ "id": "trigger",
+ "type": "webhook_trigger",
+ "name": "日报触发",
+ "position": {"x": 400, "y": 0},
+ "config": {
+ "secret": "",
+ "method": "POST"
+ }
+ },
+ {
+ "id": "fetch_data",
+ "type": "http_request",
+ "name": "拉取数据",
+ "position": {"x": 400, "y": 200},
+ "config": {
+ "url": "",
+ "method": "GET",
+ "headers": {},
+ "body_type": "none",
+ "body": {}
+ }
+ },
+ {
+ "id": "summarize",
+ "type": "ai_prompt",
+ "name": "AI 生成日报",
+ "position": {"x": 400, "y": 420},
+ "config": {
+ "system_prompt": "你是一个专业的数据分析师，擅长将原始数据转化为结构清晰、重点突出的日报。",
+ "user_prompt": "基于以下数据生成日报，包含三个部分：\n1. 今日趋势（数据变化总结）\n2. 重点事项（需要关注的内容）\n3. 风险提示（异常或需跟进的问题）\n\n数据：\n{{nodes.fetch_data.output}}",
+ "model": "",
+ "temperature": 0.3
+ }
+ },
+ {
+ "id": "notify",
+ "type": "notify_feishu",
+ "name": "推送日报",
+ "position": {"x": 400, "y": 640},
+ "config": {
+ "webhook_url": "",
+ "message_type": "text",
+ "content": "{{nodes.summarize.output}}",
+ "title": "",
+ "at_all": false,
+ "at_users":
+ }
+ }
+ ],
+ "edges": [
+ {"source": "trigger", "target": "fetch_data"},
+ {"source": "fetch_data", "target": "summarize"},
+ {"source": "summarize", "target": "notify"}
+ ]
+}
