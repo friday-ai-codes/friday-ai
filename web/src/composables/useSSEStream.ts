@@ -3,9 +3,9 @@
  *
  * 后端 ChatStreamView 是 POST 端点，EventSource 仅支持 GET，
  * 因此使用 fetch + ReadableStream + TextDecoder 手动解析 SSE。
+ * 认证通过 HTTP-only Cookie 自动处理。
  */
 import type { SSEEvent } from '~/types/chat'
-import { getAccessToken } from '~/api/client'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 let currentRunId: string | null = null
 /**
@@ -26,13 +26,6 @@ export async function connectSSE(
  options?: { forceDeepAnalysis?: boolean, feishuDocId?: string, branch?: string },
 ): Promise<void> {
  currentRunId = null
- const token = getAccessToken
- const headers: Record<string, string> = {
- 'Content-Type': 'application/json',
- }
- if (token) {
- headers.Authorization = `Bearer ${token}`
- }
  const body: Record<string, unknown> = { content, role }
  if (options?.forceDeepAnalysis)
  body.force_deep_analysis = true
@@ -44,7 +37,10 @@ export async function connectSSE(
  `${API_BASE}/chat/conversations/${conversationId}/stream/`,
  {
  method: 'POST',
- headers,
+ credentials: 'include',
+ headers: {
+ 'Content-Type': 'application/json',
+ },
  body: JSON.stringify(body),
  signal,
  },

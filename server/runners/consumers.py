@@ -578,10 +578,29 @@ async def _alog_runner_event(
  runner_id=runner_id, event_type=event_type, detail=detail or {}
  )
 class MonitorConsumer(AsyncJsonWebsocketConsumer):
- """前端监控 WebSocket，首条消息 JWT 认证，接收 runner/task 事件。"""
+ """前端监控 WebSocket，从 HTTP-only Cookie 读取 JWT 认证，接收 runner/task 事件。"""
  async def connect(self) -> None:
  self.authenticated = False
  await self.accept
+ # 优先从 cookie 读取 access token 进行认证
+ cookies = self.scope.get("cookies", {})
+ access_token = cookies.get("access_token")
+ if access_token:
+ try:
+ from rest_framework_simplejwt.tokens import AccessToken
+ token = AccessToken(access_token)
+ user_id = token["sub"]
+ from django.contrib.auth import get_user_model
+ await get_user_model.objects.aget(id=user_id)
+ self.authenticated = True
+ await self.channel_layer.group_add(MONITOR_GROUP, self.channel_name)
+ await self.send_json({"type": "auth", "status": "ok"})
+ return
+ except Exception:
+ await self.send_json({"type": "auth", "status": "error", "detail": "Invalid token"})
+ await self.close(code=4003)
+ return
+ # Cookie 无 token，等待前端发送 auth 消息（兼容旧客户端）
  self._auth_timeout = asyncio.ensure_future(self._auth_timeout_handler)
  async def _auth_timeout_handler(self) -> None:
  await asyncio.sleep(AUTH_TIMEOUT)

@@ -1,5 +1,6 @@
 """Common exceptions."""
 from rest_framework import status
+from rest_framework.exceptions import Throttled
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 def custom_exception_handler(exc, context):
@@ -11,6 +12,16 @@ def custom_exception_handler(exc, context):
  """
  response = exception_handler(exc, context)
  if response is not None:
+ # 429 限流：替换 DRF 默认机器翻译为更友好的文案
+ if isinstance(exc, Throttled):
+ wait = getattr(exc, "wait", None)
+ if wait:
+ response.data = {
+ "detail": f"操作太快了，请 {int(wait)} 秒后再试"
+ }
+ else:
+ response.data = {"detail": "操作太快了，请稍后再试"}
+ return response
  # 确保包含 detail 字段，便于前端统一展示错误
  if "detail" not in response.data and isinstance(response.data, dict):
  if len(response.data) == 1:

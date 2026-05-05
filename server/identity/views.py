@@ -231,6 +231,15 @@ class OIDCCallbackView(APIView):
  # 重定向到前端回调页面
  redirect_url = f"{frontend_base}/oidc/callback?access_token={access_token}&redirect={frontend_redirect}"
  response = HttpResponseRedirect(redirect_url)
+ # 设置 access_token cookie
+ response.set_cookie(
+ key="access_token",
+ value=access_token,
+ httponly=getattr(settings, "COOKIE_HTTPONLY", True),
+ samesite=getattr(settings, "COOKIE_SAMESITE", "Lax"),
+ secure=getattr(settings, "COOKIE_SECURE", False),
+ max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds),
+ )
  # 设置 refresh_token cookie（复用现有模式）
  response.set_cookie(
  key="refresh_token",

@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
  * OIDC 回调处理页面
- * 接收后端重定向的 access_token，存储后跳转到首页
+ * 后端已通过 HTTP-only Cookie 设置 token，前端直接获取用户信息后跳转
  */
-import { setAccessToken } from '~/api/client'
 import { useAuthStore } from '~/stores/auth'
 const router = useRouter
 const route = useRoute
@@ -11,7 +10,6 @@ const authStore = useAuthStore
 const error = ref<string | null>(null)
 const processing = ref(true)
 onMounted(async => {
- const accessToken = route.query.access_token as string
  const oidcError = route.query.error as string
  const redirectPath = (route.query.redirect as string) || '/'
  if (oidcError) {
@@ -19,15 +17,8 @@ onMounted(async => {
  processing.value = false
  return
  }
- if (!accessToken) {
- error.value = '未收到认证信息，请重新登录'
- processing.value = false
- return
- }
  try {
- // 存储 access_token
- setAccessToken(accessToken)
- // 获取用户信息
+ // Cookie 已由后端设置，直接获取用户信息
  await authStore.fetchCurrentUser
  authStore.isAuthenticated = true
  // 获取项目成员信息，确保权限系统立即可用

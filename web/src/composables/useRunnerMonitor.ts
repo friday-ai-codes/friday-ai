@@ -1,8 +1,8 @@
 /**
  * WebSocket 实时监控 composable
- * 管理与后端 MonitorConsumer 的 WS 连接生命周期：连接、JWT 认证握手、指数退避重连、断开
+ * 管理与后端 MonitorConsumer 的 WS 连接生命周期：连接、指数退避重连、断开
+ * 认证通过 HTTP-only Cookie 自动处理（WS 握手时携带）
  */
-import { getAccessToken, refreshToken } from '~/api/client'
 export type MonitorStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 export interface MonitorLog {
  id: number
@@ -32,9 +32,7 @@ export function useRunnerMonitor {
  status.value = retryCount > 0 ? 'reconnecting': 'connecting'
  ws = new WebSocket(getWsUrl)
  ws.onopen = => {
- const token = getAccessToken
- if (token)
- ws!.send(JSON.stringify({ type: 'auth', token }))
+ // 认证由后端通过 cookie 自动处理，前端无需发送 auth 消息
  }
  ws.onmessage = (e: MessageEvent) => {
  const msg = JSON.parse(e.data)
@@ -50,7 +48,7 @@ export function useRunnerMonitor {
  ws.onclose = (e: CloseEvent) => {
  ws = null
  if (e.code === 4003) {
- handleAuthFailure
+ status.value = 'disconnected'
  return
  }
  status.value = 'disconnected'
@@ -88,15 +86,6 @@ export function useRunnerMonitor {
  retryCount++
  status.value = 'reconnecting'
  retryTimer = setTimeout(connect, delay)
- }
- async function handleAuthFailure {
- try {
- await refreshToken
- connect
- }
- catch {
- status.value = 'disconnected'
- }
  }
  function disconnect {
  if (retryTimer)

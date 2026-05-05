@@ -1,10 +1,9 @@
 /**
  * Auth Store
- * 管理用户认证状态
+ * 管理用户认证状态（认证通过 HTTP-only Cookie，前端不管理 token）
  */
 import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, ProjectMembershipBrief, User } from '~/types'
 import { authApi } from '~/api'
-import { clearAccessToken, setAccessToken } from '~/api/client'
 import { getMe, updateProfile } from '~/api/users'
 export const useAuthStore = defineStore('auth', => {
  // ============================================================================
@@ -34,8 +33,6 @@ export const useAuthStore = defineStore('auth', => {
  error.value = null
  try {
  const response = await authApi.login({ username, password })
- // 存储 Access Token 到内存
- setAccessToken(response.access_token)
  user.value = response.user
  isAuthenticated.value = true
  mustChangePassword.value = response.must_change_password
@@ -67,41 +64,20 @@ export const useAuthStore = defineStore('auth', => {
  // 忽略登出错误，仍然清除本地状态
  }
  finally {
- clearAccessToken
  user.value = null
  isAuthenticated.value = false
- }
- }
- /**
- * 刷新 Token（静默刷新）
- */
- async function refreshToken {
- try {
- const response = await authApi.refresh
- setAccessToken(response.access_token)
- return response.access_token
- }
- catch (e) {
- // 刷新失败，清除状态
- clearAccessToken
- user.value = null
- isAuthenticated.value = false
- throw e
  }
  }
  /**
  * 初始化认证状态
- * 应用启动时调用，尝试通过 Refresh Token 恢复登录状态
+ * 应用启动时调用，直接请求 /me 验证登录态（cookie 自动携带）
  */
  async function initAuth {
  if (isInitialized.value)
  return
  loading.value = true
  try {
- // 尝试刷新 Token
- const response = await authApi.refresh
- setAccessToken(response.access_token)
- // 获取用户信息
+ // 直接请求当前用户信息，cookie 自动携带 access token
  const currentUser = await authApi.getCurrentUser
  user.value = currentUser
  isAuthenticated.value = true
@@ -116,8 +92,7 @@ export const useAuthStore = defineStore('auth', => {
  }
  }
  catch {
- // 刷新失败，用户未登录
- clearAccessToken
+ // 用户未登录（401）或发生其他错误
  user.value = null
  isAuthenticated.value = false
  }
@@ -270,7 +245,6 @@ export const useAuthStore = defineStore('auth', => {
  * 重置状态（用于测试或清理）
  */
  function $reset {
- clearAccessToken
  user.value = null
  isAuthenticated.value = false
  isInitialized.value = false
@@ -296,7 +270,6 @@ export const useAuthStore = defineStore('auth', => {
  // Actions
  login,
  logout,
- refreshToken,
  initAuth,
  fetchCurrentUser,
  fetchMe,
