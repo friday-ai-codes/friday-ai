@@ -18,7 +18,6 @@ vi.mock('~/api/client', => ({
  post: (url: string, body?: unknown) => postMock(url, body),
  patch: (url: string, body?: unknown) => patchMock(url, body),
  del: (url: string) => delMock(url),
- getAccessToken: => 'test-token',
  ApiError: MockApiError,
 }))
 // 必须在 vi.mock 之后 import 被测模块

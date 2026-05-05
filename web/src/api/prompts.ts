@@ -22,7 +22,7 @@ import type {
  PromptVariableMissingPayload,
  PromptVersion,
 } from '~/types/prompts'
-import { ApiError, del, get, getAccessToken, patch, post } from './client'
+import { ApiError, del, get, patch, post } from './client'
 // ============================================================================
 // PromptVariableMissingError
 // ============================================================================
@@ -106,13 +106,11 @@ async function fetchPreviewDirect(
  variables: Record<string, string>,
 ): Promise<Error> {
  const API_BASE = import.meta.env.VITE_API_BASE || '/api'
- const token = getAccessToken
  const resp = await fetch(`${API_BASE}/prompts/${id}/preview/`, {
  method: 'POST',
  credentials: 'include',
  headers: {
  'Content-Type': 'application/json',
- ...(token ? { Authorization: `Bearer ${token}` }: {}),
  },
  body: JSON.stringify({ variables }),
  })

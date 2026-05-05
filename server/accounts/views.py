@@ -59,6 +59,15 @@ class LoginView(APIView):
  secure=settings.COOKIE_SECURE,
  max_age=7 * 24 * 60 * 60, # 7 days
  )
+ # Set access token cookie (HTTP-only, same flags as refresh token)
+ response.set_cookie(
+ key="access_token",
+ value=access_token,
+ httponly=settings.COOKIE_HTTPONLY,
+ samesite=settings.COOKIE_SAMESITE,
+ secure=settings.COOKIE_SECURE,
+ max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds),
+ )
  return response
 class LogoutView(APIView):
  """User logout endpoint."""
@@ -66,6 +75,7 @@ class LogoutView(APIView):
  async def post(self, request):
  response = Response({"message": "登出成功"})
  response.delete_cookie("refresh_token")
+ response.delete_cookie("access_token")
  return response
 class RefreshTokenView(APIView):
  """Refresh access token endpoint.
@@ -109,6 +119,15 @@ class RefreshTokenView(APIView):
  secure=settings.COOKIE_SECURE,
  max_age=7 * 24 * 60 * 60,
  )
+ # 同步更新 access token cookie
+ response.set_cookie(
+ key="access_token",
+ value=access_token,
+ httponly=settings.COOKIE_HTTPONLY,
+ samesite=settings.COOKIE_SAMESITE,
+ secure=settings.COOKIE_SECURE,
+ max_age=int(settings.SIMPLE_JWT["ACCESS_TOKEN_LIFETIME"].total_seconds),
+ )
  return response
  except TokenError:
  logger.warning("refresh_token_invalid_or_blacklisted", token_prefix=refresh_token[:20])
@@ -117,6 +136,7 @@ class RefreshTokenView(APIView):
  status=status.HTTP_401_UNAUTHORIZED,
  )
  response.delete_cookie("refresh_token")
+ response.delete_cookie("access_token")
  return response
  except Exception:
  logger.exception("refresh_token_unexpected_error")
@@ -125,6 +145,7 @@ class RefreshTokenView(APIView):
  status=status.HTTP_401_UNAUTHORIZED,
  )
  response.delete_cookie("refresh_token")
+ response.delete_cookie("access_token")
  return response
 class MeView(APIView):
  """Get current user info endpoint."""

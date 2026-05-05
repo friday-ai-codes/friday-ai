@@ -1,8 +1,8 @@
 /**
  * API 客户端 - 基于原生 fetch 的类型安全封装
- * 支持 JWT 认证和自动 Token 刷新
+ * 认证通过 HTTP-only Cookie 自动处理，前端不管理 token
  */
-import type { ApiErrorResponse, RefreshResponse } from '~/types'
+import type { ApiErrorResponse } from '~/types'
 // API 基础 URL，支持环境变量配置
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 /**
@@ -25,59 +25,34 @@ export class ApiError extends Error {
  }
 }
 // ============================================================================
-// Token 管理（内存存储）
-// ============================================================================
-let accessToken: string | null = null
-/**
- * 设置 Access Token
- */
-export function setAccessToken(token: string | null): void {
- accessToken = token
-}
-/**
- * 获取 Access Token
- */
-export function getAccessToken: string | null {
- return accessToken
-}
-/**
- * 清除 Access Token
- */
-export function clearAccessToken: void {
- accessToken = null
-}
-// ============================================================================
-// Token 刷新机制
+// Token 刷新机制（前端不存储 token，仅触发后端刷新以更新 cookie）
 // ============================================================================
 let isRefreshing = false
-let refreshSubscribers: Array<(token: string) => void> =
+let refreshSubscribers: Array< => void> =
 /**
  * 订阅 Token 刷新完成事件
  */
-function subscribeTokenRefresh(callback: (token: string) => void): void {
+function subscribeTokenRefresh(callback: => void): void {
  refreshSubscribers.push(callback)
 }
 /**
  * 通知所有订阅者 Token 已刷新
  */
-function onTokenRefreshed(token: string): void {
- refreshSubscribers.forEach(callback => callback(token))
+function onTokenRefreshed: void {
+ refreshSubscribers.forEach(callback => callback)
  refreshSubscribers =
 }
 /**
- * 刷新 Token
+ * 刷新 Token（触发后端更新 HTTP-only cookie）
  */
-export async function refreshToken: Promise<string> {
+export async function refreshToken: Promise<void> {
  const response = await fetch(`${API_BASE}/auth/refresh/`, {
  method: 'POST',
- credentials: 'include', // 发送 HttpOnly Cookie
+ credentials: 'include',
  })
  if (!response.ok) {
  throw new ApiError(response.status, '刷新 Token 失败')
  }
- const data: RefreshResponse = await response.json
- setAccessToken(data.access_token)
- return data.access_token
 }
 // ============================================================================
 // 请求方法
@@ -109,7 +84,7 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | un
  return url.toString
 }
 /**
- * 基础请求方法（带 Token 刷新支持）
+ * 基础请求方法（带 401 自动刷新支持）
  */
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
  const { params, body, headers: customHeaders, skipAuth, ...init } = options
@@ -121,12 +96,9 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  if (body && !(body instanceof FormData)) {
  headers['Content-Type'] = 'application/json'
  }
- // 添加 Authorization 头（除非跳过认证）
- if (!skipAuth && accessToken) {
- headers.Authorization = `Bearer ${accessToken}`
- }
  const response = await fetch(url, {
  ...init,
+ credentials: 'include',
  headers,
  body: body instanceof FormData ? body: body ? JSON.stringify(body): undefined,
  })
@@ -147,17 +119,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  window.dispatchEvent(new CustomEvent('auth:forbidden', { detail }))
  throw new ApiError(403, detail)
  }
- // 处理 401 未授权 - 尝试刷新 Token
+ // 处理 401 未授权 - 尝试刷新 Token（非认证端点）
  if (response.status === 401 && !skipAuth && !endpoint.includes('/auth/')) {
  // 如果正在刷新，等待刷新完成后重试
  if (isRefreshing) {
  return new Promise<T>((resolve, reject) => {
- subscribeTokenRefresh(async (newToken) => {
+ subscribeTokenRefresh(async => {
  try {
- // 使用新 Token 重试请求
- headers.Authorization = `Bearer ${newToken}`
  const retryResponse = await fetch(url, {
  ...init,
+ credentials: 'include',
  headers,
  body: body instanceof FormData ? body: body ? JSON.stringify(body): undefined,
  })
@@ -181,13 +152,13 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  // 开始刷新 Token
  isRefreshing = true
  try {
- const newToken = await refreshToken
+ await refreshToken
  isRefreshing = false
- onTokenRefreshed(newToken)
- // 使用新 Token 重试请求
- headers.Authorization = `Bearer ${newToken}`
+ onTokenRefreshed
+ // 使用更新后的 cookie 重试请求
  const retryResponse = await fetch(url, {
  ...init,
+ credentials: 'include',
  headers,
  body: body instanceof FormData ? body: body ? JSON.stringify(body): undefined,
  })
@@ -203,9 +174,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  catch {
  isRefreshing = false
  refreshSubscribers =
- // 刷新失败，清除 Token 并触发登出
- clearAccessToken
- // 触发自定义事件，让应用层处理跳转登录
+ // 刷新失败，触发登出
  window.dispatchEvent(new CustomEvent('auth:logout'))
  throw new ApiError(401, '登录已过期，请重新登录')
  }
@@ -213,16 +182,16 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  // 处理其他错误响应
  if (!response.ok) {
  let detail = 'Request failed'
- let body: unknown = null
+ let body_: unknown = null
  try {
  const parsed: ApiErrorResponse & Record<string, unknown> = await response.json
- body = parsed
+ body_ = parsed
  detail = (parsed as ApiErrorResponse).detail || detail
  }
  catch {
  // 忽略 JSON 解析错误
  }
- throw new ApiError(response.status, detail, body)
+ throw new ApiError(response.status, detail, body_)
  }
  return response.json
 }
@@ -277,8 +246,5 @@ export default {
  del,
  upload,
  ApiError,
- setAccessToken,
- getAccessToken,
- clearAccessToken,
  refreshToken,
 }

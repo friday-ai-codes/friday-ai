@@ -210,7 +210,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # =============================================================================
 REST_FRAMEWORK = {
  "DEFAULT_AUTHENTICATION_CLASSES": [
- "rest_framework_simplejwt.authentication.JWTAuthentication",
+ "common.authentication.CookieJWTAuthentication",
  ],
  "DEFAULT_PERMISSION_CLASSES": [
  "rest_framework.permissions.IsAuthenticated",
@@ -219,7 +219,7 @@ REST_FRAMEWORK = {
  "EXCEPTION_HANDLER": "common.exceptions.custom_exception_handler",
  "DEFAULT_THROTTLE_RATES": {
  "auth_login": "5/min",
- "auth_refresh": "5/min",
+ "auth_refresh": "20/min",
  },
 }
 # =============================================================================

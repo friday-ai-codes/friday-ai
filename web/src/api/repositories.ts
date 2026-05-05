@@ -4,7 +4,7 @@ import type {
  RepositoryCreate,
  RepositoryUpdate,
 } from '~/types'
-import { ApiError, del, get, getAccessToken, patch, post, upload } from './client'
+import { ApiError, del, get, patch, post, upload } from './client'
 // 索引状态枚举
 export enum IndexStatus {
  NOT_INDEXED = 'not_indexed',
@@ -332,13 +332,9 @@ export const repositoriesApi = {
  */
  downloadSnapshot: async (id: string): Promise<void> => {
  const baseUrl = import.meta.env.VITE_API_BASE || '/api'
- const token = getAccessToken
- const headers: HeadersInit = {}
- if (token)
- headers.Authorization = `Bearer ${token}`
  const response = await fetch(`${baseUrl}/repositories/${id}/index/snapshot/export/`, {
  method: 'POST',
- headers,
+ credentials: 'include',
  })
  if (!response.ok) {
  const err = await response.json.catch( => ({ detail: '下载快照失败' }))
