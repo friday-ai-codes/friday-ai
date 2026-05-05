@@ -37,3 +37,5 @@ server/data/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 docs/api/.claude/worktrees/
+# Claude Code worktrees
+.claude/worktrees/
