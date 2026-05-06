@@ -401,20 +401,22 @@ function prettyJson(value: unknown): string {
  return String(value)
  }
 }
-function runtimeLogTitle(log: { type: string, content: string }, index: number): string {
+function runtimeLogTitle(log: { type: string, content: string }): string {
  if (log.type === 'tool_call') {
  const parsed = tryParseToolCall(log.content)
- return `第 ${index + 1} 步 · ${parsed?.toolLabel || '工具调用'}`
+ return parsed?.toolLabel || '工具调用'
  }
  if (log.type === 'text')
- return `第 ${index + 1} 步 · 分析输出`
+ return '分析输出'
  if (log.type === 'progress')
- return `第 ${index + 1} 步 · 进度更新`
+ return '进度更新'
  if (log.type === 'result')
- return `第 ${index + 1} 步 · 分析完成`
+ return '分析完成'
  if (log.type === 'system')
- return `第 ${index + 1} 步 · 系统状态`
- return `第 ${index + 1} 步 · 执行日志`
+ return '系统状态'
+ if (log.type === 'error')
+ return '执行异常'
+ return '执行日志'
 }
 function runtimeLogSummary(log: { type: string, content: string }): string {
  const c = log.content.trim
@@ -431,6 +433,8 @@ function runtimeLogSummary(log: { type: string, content: string }): string {
  }
  if (log.type === 'system')
  return c || '系统状态更新'
+ if (log.type === 'error')
+ return c || '任务执行失败'
  return c || '执行中'
 }
 function runtimeLogDetail(log: { type: string, content: string }): string {
@@ -446,23 +450,25 @@ function shouldShowRuntimeDetail(log: { type: string, content: string }): boolea
  return !!runtimeLogDetail(log).trim
 }
 function formatLogContent(log: { type: string, content: string }): string {
- const c = log.content
- if (log.type === 'tool_call') {
- return runtimeLogSummary(log)
+ const c = log.content.trim
+ // block/message 通常是 SDK 内部消息（ThinkingBlock、UserMessage 等），对用户无意义
+ if (log.type === 'block' || log.type === 'message') {
+ // 若内容仅为类型名（如 "ThinkingBlock"）或为空，则过滤
+ if (!c || ['ThinkingBlock', 'UserMessage', 'AssistantMessage', 'SystemMessage', 'ResultMessage'].includes(c))
+ return ''
+ return c
  }
- if (log.type === 'text') {
+ if (log.type === 'tool_call')
  return runtimeLogSummary(log)
- }
- if (log.type === 'result') {
+ if (log.type === 'text')
  return runtimeLogSummary(log)
- }
- if (log.type === 'system') {
+ if (log.type === 'result')
  return runtimeLogSummary(log)
- }
- if (log.type === 'message' || log.type === 'block') {
+ if (log.type === 'system')
  return runtimeLogSummary(log)
- }
  if (log.type === 'progress')
+ return runtimeLogSummary(log)
+ if (log.type === 'error')
  return runtimeLogSummary(log)
  return c.slice(0, 100)
 }
@@ -473,6 +479,7 @@ function logIcon(type: string): string {
  case 'result': return 'icon-[lucide--check-circle-2]'
  case 'system': return 'icon-[lucide--cpu]'
  case 'progress': return 'icon-[lucide--loader]'
+ case 'error': return 'icon-[lucide--alert-circle]'
  default: return 'icon-[lucide--info]'
  }
 }
@@ -598,7 +605,7 @@ const hideEmptyBubble = computed( =>
  <div class="deep-analysis-log-head">
  <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
  <div class="deep-analysis-log-body">
- <span class="deep-analysis-log-title">{{ runtimeLogTitle(log, i) }}</span>
+ <span class="deep-analysis-log-title">{{ runtimeLogTitle(log) }}</span>
  <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
  </div>
  </div>
@@ -661,7 +668,7 @@ const hideEmptyBubble = computed( =>
  <div class="deep-analysis-log-head">
  <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
  <div class="deep-analysis-log-body">
- <span class="deep-analysis-log-title">{{ runtimeLogTitle(log, i) }}</span>
+ <span class="deep-analysis-log-title">{{ runtimeLogTitle(log) }}</span>
  <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
  </div>
  </div>

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 import structlog
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, TextBlock, query
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, TextBlock, ToolUseBlock, query
 from .config import TaskConfig
 logger = structlog.get_logger
 # SDK 支持的权限模式
@@ -211,9 +211,18 @@ Implement the task as described. Make necessary code changes.
  tool_input = json.dumps(block.input, ensure_ascii=False)[:300]
  print(f"[task:tool] {block.name}({tool_input})", flush=True)
  else:
- print(f"[task:block] {type(block).__name__}", flush=True)
+ # ThinkingBlock 等：尝试提取 thinking 内容，否则只打印类型名
+ block_type = type(block).__name__
+ thinking = getattr(block, 'thinking', '') or getattr(block, 'signature', '')
+ if thinking:
+ print(f"[task:text] [思考] {thinking[:500]}", flush=True)
+ else:
+ print(f"[task:block] {block_type}", flush=True)
  elif isinstance(message, SystemMessage):
- print(f"[task:system] subtype={getattr(message, 'subtype', '')}", flush=True)
+ subtype = getattr(message, 'subtype', '')
+ # 过滤掉无意义的 system 子类型
+ if subtype not in ('', 'null', None):
+ print(f"[task:system] subtype={subtype}", flush=True)
  elif isinstance(message, ResultMessage):
  session_id = message.session_id
  total_cost = message.total_cost_usd
@@ -221,6 +230,8 @@ Implement the task as described. Make necessary code changes.
  result_output = message.result
  print(f"[task:result] session={session_id} cost=${total_cost}", flush=True)
  else:
+ # 跳过 UserMessage 等 SDK 内部消息，它们对用户无意义
+ if msg_type != 'UserMessage':
  print(f"[task:msg] {msg_type}", flush=True)
  # 检查是否有 SDK 执行错误
  # 如果没有收到任何 AssistantMessage，且 usage 显示 0 tokens，说明 API 调用失败

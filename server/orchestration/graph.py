@@ -290,6 +290,8 @@ async def _execute_with_results(
  f"你之前发起了以下分析任务，现在所有结果已返回：\n\n"
  f"{results_text}\n\n"
  f"请根据这些分析结果，综合回答用户的问题。"
+ f"\n\n重要提示：所有需要的分析数据已经在上方提供，请直接基于这些结果回答，"
+ f"不要再调用任何工具或发起新的分析任务。"
  )
  if conv_id:
  register_runner(conv_id, runner)
@@ -373,7 +375,12 @@ def route_after_executing(state: WorkflowState) -> str:
  if state.get("phase") == RunPhase.ERROR.value:
  return END
  if state.get("blocking_tasks"):
- if state.get("wait_execute_loops", 0) >= 2:
+ loop_count = state.get("wait_execute_loops", 0)
+ if loop_count >= 2:
+ return "finalizing"
+ # 二次运行后（loop_count >= 1）不再允许进入 waiting 循环，
+ # 避免 LLM 重复调用阻塞工具导致无限循环。
+ if loop_count >= 1:
  return "finalizing"
  return "waiting"
  return "finalizing"

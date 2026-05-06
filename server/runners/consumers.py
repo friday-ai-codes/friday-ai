@@ -1,6 +1,7 @@
 """Runner WebSocket consumer。"""
 import asyncio
 import uuid
+from typing import Any
 import structlog
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.utils import timezone
@@ -301,10 +302,33 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  "failed_session_not_found_or_terminal", status=getattr(session, "status", None)
  )
  return
- error_msg = payload.get("error", "Unknown error")
+ raw_error = payload.get("error", "Unknown error")
+ # 丰富过于简略的 runner 错误提示
+ if raw_error == "exited with code 1":
+ error_msg = (
+ "深度分析容器启动后立即退出（exit code 1）。"
+ "常见原因：Docker 镜像异常、环境变量缺失、Git 仓库无法克隆或 API 凭据无效。"
+ "建议检查 Runner 日志及容器配置。"
+ )
+ else:
+ error_msg = raw_error
  session.failure_reason = error_msg
  await session.asave(update_fields=["failure_reason"])
  await session.amark_failed(error=error_msg)
+ # 将错误信息写入 last_output.logs，供前端深度分析卡片展示
+ last_output = session.last_output or {}
+ if isinstance(last_output, dict):
+ logs: list[dict[str, Any]] = last_output.get("logs", )
+ if not isinstance(logs, list):
+ logs =
+ logs.append({
+ "type": "error",
+ "content": error_msg,
+ "ts": timezone.now.timestamp,
+ })
+ last_output["logs"] = logs
+ session.last_output = last_output
+ await session.asave(update_fields=["last_output", "updated_at"])
  await _send_failure_notification(session, error_msg)
  _schedule_workflow_resume(session, log)
  _schedule_agent_session_resume(session, log)

@@ -14,7 +14,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from qdrant_client.http import models as qdrant_models
-from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
@@ -56,7 +56,8 @@ def _scroll_file_from_collection(
  break
  offset = next_offset
  return all_points
- except UnexpectedResponse:
+ except (ResponseHandlingException, UnexpectedResponse) as e:
+ logger.warning("qdrant_scroll_failed", collection=collection_name, file_path=file_path, error=str(e))
  return
 @tool(
  name="browse_file_content",
@@ -473,7 +474,8 @@ async def get_project_overview(
  reverse=True,
  )),
  }
- except UnexpectedResponse:
+ except (ResponseHandlingException, UnexpectedResponse) as e:
+ logger.warning("qdrant_repo_stats_failed", repo_id=repo_id, error=str(e))
  return {"file_count": 0, "languages": {}}
  repo_data =
  for repo in repositories:

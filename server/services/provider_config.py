@@ -52,7 +52,7 @@ class AnthropicCredentialSchema(BaseModel):
  api_key: SecretStr = Field(..., description="Anthropic API Key（sk-ant-...）")
  base_url: str = Field(
  default="https://api.anthropic.com",
- description="覆盖默认端点（Moonshot Anthropic 兼容 / one-api 网关）",
+ description="覆盖默认端点（支持 Anthropic 协议格式的兼容端点）",
  )
 class OpenAICredentialSchema(BaseModel):
  """OpenAI 凭证字段（Responses API 与 Chat Completions 共享）。"""
@@ -60,7 +60,7 @@ class OpenAICredentialSchema(BaseModel):
  api_key: SecretStr = Field(..., description="OpenAI API Key（sk-...）")
  base_url: str = Field(
  default="https://api.openai.com/v1",
- description="覆盖默认端点（DeepSeek / Qwen / OpenRouter 走这里）",
+ description="覆盖默认端点（支持 OpenAI 协议格式的兼容端点）",
  )
  organization_id: str | None = Field(
  default=None,
