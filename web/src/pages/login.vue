@@ -203,7 +203,7 @@ const features = [
  type="text"
  placeholder="请输入用户名"
  autocomplete="username"
- class="pl-9 bg-muted/30 border-border/50 text-sm transition-all duration-200 focus:bg-background focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+ class="pl-9"
  v-bind="componentField"
  />
  </div>
@@ -223,7 +223,7 @@ const features = [
  type="password"
  placeholder="请输入密码"
  autocomplete="current-password"
- class="pl-9 bg-muted/30 border-border/50 text-sm transition-all duration-200 focus:bg-background focus:border-primary/60 focus:ring-2 focus:ring-primary/15"
+ class="pl-9"
  v-bind="componentField"
  />
  </div>
@@ -233,7 +233,7 @@ const features = [
  </FormField>
  <Button
  type="submit"
- class="w-full text-sm font-semibold mt-2 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-glow active:translate-y-0 active:shadow-none":disabled="isSubmitting"
+ class="w-full text-sm font-semibold mt-2":disabled="isSubmitting"
  >
  <template v-if="isSubmitting">
  <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
@@ -256,7 +256,7 @@ const features = [
  <Button
  v-for="provider in oidcProviders":key="provider.id"
  variant="outline"
- class="w-full text-sm font-normal bg-transparent border-border/50 hover:bg-muted/60 hover:border-border/80 hover:-translate-y-0.5 transition-all duration-200":disabled="oidcLoading"
+ class="w-full text-sm font-normal":disabled="oidcLoading"
  @click="onOIDCLogin(provider)"
  >
  <span class="icon-[lucide--shield-check] mr-2 text-muted-foreground" />
