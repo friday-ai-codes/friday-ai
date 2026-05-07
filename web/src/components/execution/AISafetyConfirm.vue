@@ -24,11 +24,12 @@ const emit = defineEmits<{
  'confirm':
  'cancel':
 }>
+// 仅同步 open 状态。不要在这里 emit('cancel'),否则 reka-ui 在
+// AlertDialogAction 点击时同步触发的 update:open=false 会先 emit cancel,
+// 再 emit confirm,父级 @cancel 处理器在 @confirm 之前就被调用,
+// 容易踩到逻辑顺序的坑。cancel 仅由用户点击取消按钮显式触发。
 function handleOpenChange(value: boolean) {
  emit('update:open', value)
- if (!value) {
- emit('cancel')
- }
 }
 </script>
 <template>
