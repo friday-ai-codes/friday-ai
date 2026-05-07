@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Workflow } from '~/stores/useWorkflowsStore'
 import { storeToRefs } from 'pinia'
-import { markRaw, onMounted, ref } from 'vue'
+import { markRaw, nextTick, onMounted, ref } from 'vue'
 import { useModal } from 'vue-final-modal'
 import { useRouter } from 'vue-router'
 import PageContainer from '~/components/layout/PageContainer.vue'
@@ -79,14 +79,20 @@ async function executeWorkflow(inputData: Record<string, any>, debugMode: boolea
 function requestDelete(workflow: Workflow) {
  workflowToDelete.value = workflow
 }
+// reka-ui 的 DialogClose 在点击 AlertDialogAction 时会同步触发 update:open=false,
+// 若此处同步清空 workflowToDelete,则随后的 @click="handleDelete" 取到的是 null。
+// 因此把清空动作推到 nextTick,等 click 同步阶段执行完毕后再重置状态。
 function cancelDelete {
+ nextTick( => {
  workflowToDelete.value = null
+ })
 }
 async function handleDelete {
- if (!workflowToDelete.value)
+ const target = workflowToDelete.value
+ if (!target)
  return
  try {
- await store.deleteWorkflow(workflowToDelete.value.id)
+ await store.deleteWorkflow(target.id)
  success('工作流已删除')
  workflowToDelete.value = null
  }

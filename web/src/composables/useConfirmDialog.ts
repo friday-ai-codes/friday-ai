@@ -23,10 +23,22 @@ export function useConfirmDialog {
  resolvePromise?.(true)
  resolvePromise = null
  }
+ // reka-ui 的 AlertDialogAction 在点击时会同步触发 update:open=false,
+ // 而模板里 @update:open 又会调到 handleCancel。如果这里同步 resolve(false),
+ // 会先于后续的 @click="handleConfirm" 把 promise 锁死,导致点"确认"也得到 false。
+ // 因此把 resolve(false) 推到 microtask:同步 click 数组里的 handleConfirm 先抢到
+ // resolvePromise 并 resolve(true)+置空,微任务再检查时看到 null 就跳过。
  function handleCancel {
  isOpen.value = false
- resolvePromise?.(false)
+ if (!resolvePromise)
+ return
+ const r = resolvePromise
+ queueMicrotask( => {
+ if (resolvePromise === r) {
  resolvePromise = null
+ r(false)
+ }
+ })
  }
  return {
  isOpen,
