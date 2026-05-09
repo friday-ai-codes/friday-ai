@@ -14,8 +14,8 @@ def extract_symbols(tree: Any, source: str, ctx: "FileContext") -> "list[SymbolD
  Returns:
  list[SymbolData]: 符号定义列表，按代码出现顺序排列
  """
- from server.codegraph.extractors.base import SymbolData
- from server.codegraph.extractors.walker import walk_tree, SYMBOL_TYPES
+ from codegraph.extractors.base import SymbolData
+ from codegraph.extractors.walker import walk_tree, SYMBOL_TYPES
  symbol_types = SYMBOL_TYPES.get(ctx.language, )
  if not symbol_types:
  return
@@ -49,7 +49,7 @@ def _extract_one_symbol(
  Returns:
  SymbolData | None: 成功提取返回 SymbolData，跳过则返回 None
  """
- from server.codegraph.extractors.base import SymbolData
+ from codegraph.extractors.base import SymbolData
  node = wn.node
  # --- 处理 decorated_definition：取出内部实际定义 ---
  actual_node = node

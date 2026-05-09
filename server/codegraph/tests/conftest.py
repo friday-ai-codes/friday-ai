@@ -31,7 +31,7 @@ def make_file_context:
  ctx = make_file_context(file_path="test.py")
  ctx = make_file_context(file_path="urls.py", repository_id="repo-1")
  """
- from server.codegraph.extractors.base import FileContext
+ from codegraph.extractors.base import FileContext
  def _make(file_path: str = "test.py", language: str = "python",
  repository_id: str = "test-repo-001", module_path: str = "") -> FileContext:
  return FileContext(

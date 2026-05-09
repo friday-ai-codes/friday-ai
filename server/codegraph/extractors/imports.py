@@ -12,8 +12,8 @@ def extract_imports(tree: Any, ctx: "FileContext") -> "list[ImportData]":
  Returns:
  list[ImportData]: import 关系列表
  """
- from server.codegraph.extractors.base import ImportData
- from server.codegraph.extractors.walker import walk_tree, IMPORT_TYPES
+ from codegraph.extractors.base import ImportData
+ from codegraph.extractors.walker import walk_tree, IMPORT_TYPES
  import_types = IMPORT_TYPES.get(ctx.language, )
  if not import_types:
  return
@@ -46,7 +46,7 @@ def _extract_one_import(
  Returns:
  list[ImportData] | None: 成功返回 ImportData 列表，失败返回 None
  """
- from server.codegraph.extractors.base import ImportData
+ from codegraph.extractors.base import ImportData
  node = wn.node
  if node.type == "import_statement":
  return _parse_import_statement(node, ctx)
@@ -60,7 +60,7 @@ def _parse_import_statement(node: Any, ctx: "FileContext") -> "list[ImportData]"
  """解析 import X, Y as Z 语句。
  每个导入的模块产生一个 ImportData。
  """
- from server.codegraph.extractors.base import ImportData
+ from codegraph.extractors.base import ImportData
  results: list[ImportData] =
  for child in node.named_children:
  if child.type == "dotted_name":
@@ -99,7 +99,7 @@ def _parse_import_from_statement(
  """解析 from X import a, b as c 语句。
  同一 from 语句的多个符号合并为一条 ImportData。
  """
- from server.codegraph.extractors.base import ImportData
+ from codegraph.extractors.base import ImportData
  # 获取模块名
  module_node = node.child_by_field_name("module_name")
  if module_node is None:
