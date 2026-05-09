@@ -3,11 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 import structlog
-from asgiref.sync import sync_to_async
 if TYPE_CHECKING:
  from repositories.models import Repository
-from services.embedding import EmbeddingService
-from services.sparse_encoder import SparseEncoderService
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -218,31 +215,10 @@ class ContextRetrievalNode(BaseNode):
  top_k=top_k,
  )
  try:
- # 生成查询向量
- query_embedding = await EmbeddingService.generate_embedding(query)
- # 生成 BM25 稀疏向量用于 hybrid search (per, )
- query_sparse: dict[str, Any] | None = None
- try:
- sparse_result = await sync_to_async(SparseEncoderService.encode)(query)
- if sparse_result.get("indices"):
- query_sparse = sparse_result
- except Exception:
- pass # 降级到 dense-only
- if not query_embedding:
- return NodeResult(
- status="failed",
- error="生成查询向量失败，请检查 Embedding 服务配置",
- next_handle="error",
- )
- # 构建过滤条件
- filters: dict[str, Any] | None = None
- if language_filter:
- filters = {"language": language_filter}
- # 并行搜索所有仓库
+ # 并行搜索所有仓库 (LayeredSearchService 内部处理 embedding/sparse)
  search_results = await self._search_all_repositories(
- valid_repos, query_embedding, top_k, filters, timeout,
+ valid_repos, query, top_k, filters, timeout,
  branch=branch,
- query_sparse=query_sparse,
  )
  # 聚合结果（按仓库分组）
  aggregated = self._aggregate_results(
@@ -421,34 +397,39 @@ class ContextRetrievalNode(BaseNode):
  async def _search_repository(
  self,
  repository: "Repository",
- query_embedding: list[float],
+ query: str, # 改为接受原始 query 而非 query_embedding (per )
  top_k: int,
  filters: dict[str, Any] | None,
  timeout: float = 30.0,
  *,
  branch: str | None = None,
- query_sparse: dict[str, Any] | None = None,
+ query_sparse: dict[str, Any] | None = None, # 保留但不再使用
  ) -> dict[str, Any]:
- """Search single repository with timeout (branch-aware).
- Returns a dict with repository_id, repository_name, status, results, and error (if any).
+ """Search single repository with timeout (branch-aware), via LayeredSearchService.
+ Returns a dict with repository_id, repository_name, status, results, context, and error (if any).
  """
- from services.branch_search import BranchAwareSearchService
+ from codegraph.services.layered_search import LayeredSearchService
  repo_id = str(repository.id)
  try:
- search_coro = BranchAwareSearchService.search(
- repo_id,
- query_embedding,
- query_sparse=query_sparse,
+ search_coro = LayeredSearchService.search(
+ query,
+ repository_ids=[repo_id],
  branch_name=branch or None,
  top_k=top_k,
- filters=filters,
  )
- results = await asyncio.wait_for(search_coro, timeout=timeout)
+ result = await asyncio.wait_for(search_coro, timeout=timeout)
+ # 提取 L3 结果保持向后兼容
+ l3_items: list[dict[str, Any]] =
+ for layer in result.layers:
+ if layer.layer == "L3" and layer.status == "ok":
+ l3_items = layer.items
+ break
  return {
  "repository_id": repo_id,
  "repository_name": repository.name,
  "status": "success",
- "results": results or,
+ "results": l3_items,
+ "context": result.final_context, # NEW
  }
  except asyncio.TimeoutError:
  return {
@@ -469,7 +450,7 @@ class ContextRetrievalNode(BaseNode):
  async def _search_all_repositories(
  self,
  repositories: list["Repository"],
- query_embedding: list[float],
+ query: str,
  top_k: int,
  filters: dict[str, Any] | None,
  timeout: float = 30.0,
@@ -477,13 +458,13 @@ class ContextRetrievalNode(BaseNode):
  branch: str | None = None,
  query_sparse: dict[str, Any] | None = None,
  ) -> list[dict[str, Any]]:
- """Search all repositories in parallel (branch-aware).
+ """Search all repositories in parallel (branch-aware), via LayeredSearchService.
  Uses asyncio.gather with return_exceptions=True to ensure all tasks complete.
  Any unexpected exceptions are converted to error dicts.
  """
  search_tasks = [
  self._search_repository(
- repo, query_embedding, top_k, filters, timeout,
+ repo, query, top_k, filters, timeout,
  branch=branch, query_sparse=query_sparse,
  )
  for repo in repositories
