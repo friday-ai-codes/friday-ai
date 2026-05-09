@@ -156,15 +156,25 @@ class TestRepoRouterRoute:
 # TestRepoRouteView — POST /api/repositories/route/ API 端点测试
 # ---------------------------------------------------------------------------
 class TestRepoRouteView:
- """POST /api/repositories/route/ API 端点测试。"""
+ """POST /api/repositories/route/ API 端点测试（per /）。
+ 使用同步 DRF APIClient（adrf async views 由 Django AsyncToSync 自动适配，
+ per test_provider_credential_api.py 模式）。
+ """
+ @pytest.fixture
+ def route_user(self, db):
+ """创建测试用户以供 API 认证。"""
+ from django.contrib.auth import get_user_model
+ User = get_user_model
+ return User.objects.create_user(
+ username="route_test_user",
+ email="route_test@example.com",
+ password="testpass123",
+ )
  @pytest.mark.django_db(transaction=True)
- @pytest.mark.asyncio
- async def test_route_api_returns_200_with_results(self):
- """验证 API 端点返回 200 + 结构化 JSON。"""
- from unittest.mock import patch
+ def test_route_api_returns_200_with_results(self, route_user):
+ """验证 API 端点返回 200 + 结构化 JSON（per ）。"""
  from codegraph.services.repo_router import RepoRouteResult
- from django.test import AsyncClient
- from rest_framework.test import APIRequestFactory
+ from rest_framework.test import APIClient
  mock_results = [
  RepoRouteResult(
  repo_id="repo-1",
@@ -177,18 +187,54 @@ class TestRepoRouteView:
  ]
  with patch("codegraph.services.repo_router.RepoRouter.route",
  new_callable=AsyncMock, return_value=mock_results):
- # 使用 Django async test client
- from django.urls import reverse
- # 注意：由于使用了 IsAuthenticated，需要先创建用户
- # 此测试在 mock route 成功后，验证 HTTP 响应结构
- pass # 需要 user fixture — 在 Task 2 GREEN 阶段完成
+ client = APIClient
+ client.force_authenticate(user=route_user)
+ response = client.post(
+ "/api/repositories/route/",
+ {"query": "Django API", "top_k": 3},
+ format="json",
+ )
+ assert response.status_code == 200
+ assert response.data["query"] == "Django API"
+ assert len(response.data["ranked_repos"]) == 1
+ assert response.data["total"] == 1
+ repo = response.data["ranked_repos"][0]
+ assert repo["repo_id"] == "repo-1"
+ assert repo["repo_name"] == "test-repo"
+ assert "score" in repo
+ assert "match_reason" in repo
  @pytest.mark.django_db(transaction=True)
- @pytest.mark.asyncio
- async def test_route_api_empty_query_returns_400(self):
- """验证空 query 返回 400 验证错误。"""
- pass # 需要 route view — 在 Task 2 GREEN 阶段完成
+ def test_route_api_unauthenticated_returns_401(self):
+ """验证无认证调用返回 401。"""
+ from rest_framework.test import APIClient
+ client = APIClient
+ response = client.post(
+ "/api/repositories/route/",
+ {"query": "Django API"},
+ format="json",
+ )
+ assert response.status_code == 401
  @pytest.mark.django_db(transaction=True)
- @pytest.mark.asyncio
- async def test_route_api_top_k_exceeds_max_returns_400(self):
- """验证 top_k > 10 返回 400 验证错误。"""
- pass # 需要 route view — 在 Task 2 GREEN 阶段完成
+ def test_route_api_empty_query_returns_400(self, route_user):
+ """验证空 query 返回 400 验证错误（T- mitigation）。"""
+ from rest_framework.test import APIClient
+ client = APIClient
+ client.force_authenticate(user=route_user)
+ response = client.post(
+ "/api/repositories/route/",
+ {"query": ""},
+ format="json",
+ )
+ assert response.status_code == 400
+ @pytest.mark.django_db(transaction=True)
+ def test_route_api_top_k_exceeds_max_returns_400(self, route_user):
+ """验证 top_k > 10 返回 400 验证错误（T- mitigation）。"""
+ from rest_framework.test import APIClient
+ client = APIClient
+ client.force_authenticate(user=route_user)
+ response = client.post(
+ "/api/repositories/route/",
+ {"query": "Django", "top_k": 20},
+ format="json",
+ )
+ assert response.status_code == 400
