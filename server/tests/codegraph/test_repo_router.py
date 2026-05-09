@@ -1,5 +1,5 @@
 """RepoRouter 两阶段路由 + Route API 端点测试 —— Phase (per //)."""
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 import pytest
 # ---------------------------------------------------------------------------
 # Mock fixtures
