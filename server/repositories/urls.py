@@ -18,6 +18,7 @@ from .index_views import (
  RepositoryWebhookView,
  RerankerHealthView,
 )
+from .route_views import RepoRouteView
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
 router.register("", RepositoryViewSet, basename="repository")
@@ -49,6 +50,12 @@ urlpatterns = [
  "health/reranker/",
  RerankerHealthView.as_view,
  name="reranker-health",
+ ),
+ # Phase (per ): 仓库路由 API —— 必须在 router 之前以避免被匹配为 repository id
+ path(
+ "route/",
+ RepoRouteView.as_view,
+ name="repository-route",
  ),
  # Router URLs
  path("", include(router.urls)),
