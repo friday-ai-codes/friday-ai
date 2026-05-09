@@ -23,7 +23,7 @@ def extract_endpoints(
  Returns:
  list[EndpointData]: 去重后的端点列表
  """
- from server.codegraph.extractors.base import EndpointData
+ from codegraph.extractors.base import EndpointData
  endpoints: list[EndpointData] =
  # Layer 1: decorator scan（所有 .py 文件）
  endpoints.extend(_scan_decorators(tree, source, ctx))
@@ -49,8 +49,8 @@ def _scan_decorators(
  """扫描 @api_view / @action / @method_decorator 装饰器函数。
  per 验证维度 1。
  """
- from server.codegraph.extractors.base import EndpointData
- from server.codegraph.extractors.walker import walk_tree
+ from codegraph.extractors.base import EndpointData
+ from codegraph.extractors.walker import walk_tree
  endpoints: list[EndpointData] =
  for wn in walk_tree(tree, ctx.language):
  node = wn.node
@@ -75,14 +75,22 @@ def _scan_decorators(
  for child in node.children:
  if child.type != "decorator":
  continue
- dec_func = child.child_by_field_name("function")
+ # 装饰器节点内含 call 子节点（如 @api_view(["GET"]) 中 api_view(["GET"]) 是 call）
+ call_node = None
+ for dec_child in child.children:
+ if dec_child.type == "call":
+ call_node = dec_child
+ break
+ if call_node is None:
+ continue
+ dec_func = call_node.child_by_field_name("function")
  if dec_func is None:
  continue
  dec_name = dec_func.text
  if isinstance(dec_name, bytes):
  dec_name = dec_name.decode("utf-8")
  if dec_name == "api_view":
- methods = _parse_decorator_methods(child)
+ methods = _parse_decorator_methods(call_node)
  view_type = "FUNCTION_VIEW"
  for method in methods:
  endpoints.append(
@@ -96,8 +104,8 @@ def _scan_decorators(
  )
  )
  elif dec_name == "action":
- methods = _parse_decorator_methods(child)
- url_path = _parse_action_url_path(child)
+ methods = _parse_decorator_methods(call_node)
+ url_path = _parse_action_url_path(call_node)
  view_type = "VIEWSET"
  for method in methods:
  endpoints.append(
@@ -187,8 +195,8 @@ def _scan_url_patterns(
  """扫描 path / re_path / url 调用，提取 URL 模式。
  仅在 file_path 以 urls.py 结尾时调用。
  """
- from server.codegraph.extractors.base import EndpointData
- from server.codegraph.extractors.walker import walk_tree
+ from codegraph.extractors.base import EndpointData
+ from codegraph.extractors.walker import walk_tree
  endpoints: list[EndpointData] =
  for wn in walk_tree(tree, ctx.language):
  node = wn.node
@@ -342,8 +350,8 @@ def _scan_viewset_routers(
  """扫描 ViewSet 类定义 + Router.register 注册。
  Layer 3: 仅在 urls.py 文件中调用。
  """
- from server.codegraph.extractors.base import EndpointData
- from server.codegraph.extractors.walker import walk_tree
+ from codegraph.extractors.base import EndpointData
+ from codegraph.extractors.walker import walk_tree
  endpoints: list[EndpointData] =
  # ---- Pass 1: 收集 ViewSet 类定义 + @action 装饰器 ----
  viewsets: dict[str, dict] = {} # class_name -> {file_path, actions}
@@ -406,10 +414,15 @@ def _scan_viewset_routers(
  # 第二个参数：ViewSet 类引用
  viewset_ref = named_args[1]
  viewset_class_name = _resolve_viewset_class_name(viewset_ref)
- if viewset_class_name is None or viewset_class_name not in viewsets:
+ if viewset_class_name is None:
  continue
+ if viewset_class_name in viewsets:
  vs_info = viewsets[viewset_class_name]
  default_actions = VIEWSET_DEFAULT_ACTIONS.get(vs_info["viewset_type"], )
+ else:
+ # 跨文件引用：ViewSet 类定义不在当前文件中
+ # 使用 ModelViewSet 的默认 actions（最常见的 ViewSet 类型）
+ default_actions = VIEWSET_DEFAULT_ACTIONS.get("ModelViewSet", )
  # 生成默认 actions
  for action_name, method, url_suffix in default_actions:
  url_path = f"/{prefix}/{url_suffix}" if url_suffix else f"/{prefix}/"

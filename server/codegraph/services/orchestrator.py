@@ -21,11 +21,11 @@ class GraphExtractor:
  Returns:
  ExtractionBundle: 包含 symbols / imports / calls / endpoints 四个列表
  """
- from server.codegraph.extractors.base import ExtractionBundle
- from server.codegraph.extractors.walker import walk_tree, SYMBOL_TYPES, IMPORT_TYPES, CALL_TYPES
- from server.codegraph.extractors.symbol import _extract_one_symbol
- from server.codegraph.extractors.imports import _extract_one_import
- from server.codegraph.extractors.calls import _extract_one_call
+ from codegraph.extractors.base import ExtractionBundle
+ from codegraph.extractors.walker import walk_tree, SYMBOL_TYPES, IMPORT_TYPES, CALL_TYPES
+ from codegraph.extractors.symbol import _extract_one_symbol
+ from codegraph.extractors.imports import _extract_one_import
+ from codegraph.extractors.calls import _extract_one_call
  bundle = ExtractionBundle(file_path=ctx.file_path, language=ctx.language)
  symbol_types = SYMBOL_TYPES.get(ctx.language, )
  import_types = IMPORT_TYPES.get(ctx.language, )
@@ -77,7 +77,7 @@ class GraphExtractor:
  # Endpoint 抽取：独立三层扫描（不与主遍历耦合）
  # =====================================================================
  try:
- from server.codegraph.extractors.endpoints import extract_endpoints
+ from codegraph.extractors.endpoints import extract_endpoints
  bundle.endpoints = extract_endpoints(tree, source, ctx)
  except Exception as e:
  logger.warning(

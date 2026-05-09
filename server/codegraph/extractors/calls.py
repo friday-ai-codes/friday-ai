@@ -16,8 +16,8 @@ def extract_calls(tree: Any, ctx: "FileContext") -> "list[CallData]":
  Returns:
  list[CallData]: 调用边列表
  """
- from server.codegraph.extractors.base import CallData
- from server.codegraph.extractors.walker import walk_tree, CALL_TYPES
+ from codegraph.extractors.base import CallData
+ from codegraph.extractors.walker import walk_tree, CALL_TYPES
  call_types = CALL_TYPES.get(ctx.language, )
  if not call_types:
  return
@@ -48,7 +48,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  Returns:
  CallData | None: 成功返回 CallData，跳过返回 None
  """
- from server.codegraph.extractors.base import CallData
+ from codegraph.extractors.base import CallData
  node = wn.node
  # --- 跳过模块级调用 ---
  if wn.ancestor_function is None:
