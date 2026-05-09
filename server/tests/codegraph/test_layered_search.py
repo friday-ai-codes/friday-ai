@@ -10,14 +10,18 @@ from codegraph.services.layered_search import (
 )
 class TestL1RepoRouting:
  """L1 仓库路由层测试 ."""
+ @pytest.mark.django_db(transaction=True)
  @pytest.mark.asyncio
  async def test_l1_routes_when_no_repo_ids_specified(self):
- """未指定 repository_ids 时，L1 调用 RepoRouter.route。"""
+ """未指定 repository_ids 时，L1 调用 RepoRouter.route。
+ socket 禁用时 RepoRouter 失败，降级到查询所有已索引仓库（此时为空）。
+ """
  result, repo_ids = await LayeredSearchService._l1_repo_routing("test query", None, 3)
- # 没有 mock 时实际调用会因无 embedding 配置而走 error 回退分支
+ # 没有 mock 且 socket disabled，RepoRouter 失败走 error 回退分支
  assert isinstance(result, LayerResult)
  assert result.layer == "L1"
- assert len(repo_ids) >= 0
+ assert result.status in ("ok", "error") # error 或 ok 取决于环境
+ assert isinstance(repo_ids, list)
  @pytest.mark.asyncio
  async def test_l1_skipped_when_repo_ids_specified(self):
  """指定 repository_ids 时，L1 跳过路由。"""
@@ -62,7 +66,7 @@ class TestL3HybridSearch:
  async def test_l3_returns_layer_result_on_embedding_failure(self):
  """embedding 生成失败时返回 error 状态不抛异常。"""
  with patch(
- "codegraph.services.layered_search.EmbeddingService.generate_embedding",
+ "services.embedding.EmbeddingService.generate_embedding",
  new_callable=AsyncMock,
  ) as mock_embed:
  mock_embed.return_value = None
