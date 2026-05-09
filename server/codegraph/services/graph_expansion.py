@@ -146,6 +146,19 @@ class GraphExpansionService:
  neighbors = await cls._truncate_by_edge_count(
  neighbors, max_symbols_per_hop, repository_id,
  )
+ # 同步截断 nodes 列表——只保留 truncate 后仍在 neighbors 中的符号
+ kept_ids = {str(n.id) for n in neighbors}
+ # 清理 visited 中已被截断的符号（回退访问标记）
+ removed_ids = [
+ nid for nid in visited if visited[nid] == 1 and nid not in kept_ids
+ ]
+ for rid in removed_ids:
+ del visited[rid]
+ # 从 nodes 中移除被截断的条目
+ for i in range(len(nodes) - 1, -1, -1):
+ nd = nodes[i]
+ if nd["depth"] == 1 and str(nd["symbol"].id) not in kept_ids:
+ nodes.pop(i)
  return neighbors
  # ------------------------------------------------------------------
  # 2-hop 扩展
