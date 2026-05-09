@@ -516,6 +516,10 @@ class QdrantService:
  logger.error("create_collection_by_name_failed", error=str(e))
  return False
  @classmethod
+ def ensure_repo_summaries_collection(cls, vector_size: int = 1024) -> bool:
+ """确保 repo_summaries collection 存在（hybrid 模式，幂等）。"""
+ return cls.create_collection_by_name("repo_summaries", vector_size=vector_size, hybrid=True)
+ @classmethod
  def delete_collection_by_name(cls, collection_name: str) -> bool:
  """按名称删除 collection（用于清理 overlay branch collection）。"""
  client = cls.get_client
