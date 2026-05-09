@@ -41,6 +41,7 @@ class CodeChunk:
  imports: str = "" # 文件级 import 语句
  module_docstring: str = "" # 模块级 docstring/注释
  sibling_signatures: str = "" # 同文件其他函数/类签名
+ parent_symbol: str | None = None # AST-aware 模式下标记 chunk 所属的父符号名
 def compute_file_hash(file_path: str) -> str:
  """Compute MD5 hash of a file."""
  hash_md5 = hashlib.md5
@@ -92,8 +93,13 @@ class CodeParser:
  except ImportError as e:
  logger.warning("tree_sitter_import_failed", language=language, error=str(e))
  return None
- def parse_file(self, file_path: str, base_path: str = "") -> list[CodeChunk]:
- """Parse a file and return code chunks."""
+ def parse_file(self, file_path: str, base_path: str = "", chunking_mode: str = "fixed") -> list[CodeChunk]:
+ """Parse a file and return code chunks.
+ Args:
+ file_path: 源文件绝对路径。
+ base_path: 基础路径（用于生成 relative_path）。
+ chunking_mode: 切分策略。"fixed"（默认，固定行数）或 "ast_aware"（AST 边界切分，）。
+ """
  language = get_language_from_extension(file_path)
  if not language:
  return
@@ -115,6 +121,17 @@ class CodeParser:
  elif language in ("sass",):
  chunks = self._parse_fallback(content, relative_path, file_hash, language)
  else:
+ # AST-aware chunking: 仅在 tree-sitter 语言中生效
+ if chunking_mode == "ast_aware" and language in TREESITTER_LANGUAGES:
+ chunks = self._ast_aware_chunk(content, relative_path, file_hash, language)
+ else:
+ if chunking_mode == "ast_aware":
+ logger.warning(
+ "ast_aware_unsupported_language",
+ file_path=relative_path,
+ language=language,
+ fallback="fixed",
+ )
  # Try Tree-sitter first, fallback to character-based
  chunks = self._parse_with_tree_sitter(content, relative_path, file_hash, language)
  if not chunks:
@@ -191,6 +208,368 @@ class CodeParser:
  # Recurse into children
  for child in node.children:
  self._extract_nodes(child, content, file_path, file_hash, language, chunks)
+ def _ast_aware_chunk(
+ self, content: str, file_path: str, file_hash: str, language: str
+ ) -> list[CodeChunk]:
+ """AST-aware chunking: 按函数/类定义边界切分，替代固定行数策略。
+ 算法四阶段：
+ 1. 符号提取 —— 收集所有顶级函数/类定义
+ 2. 小符号合并 —— 连续 < min_lines 行的小定义合并为一个 chunk
+ 3. 大符号截断 —— > max_chars 的符号在内部子块边界二次切分
+ 4. 模块级收尾 —— 未被符号覆盖的代码作为 module-level chunk
+ """
+ parser = self._get_tree_sitter_parser(language)
+ if not parser:
+ return
+ try:
+ tree = parser.parse(bytes(content, "utf-8"))
+ except Exception as e:
+ logger.warning("ast_aware_parse_failed", file_path=file_path, error=str(e))
+ return
+ root_node = tree.root_node
+ # === 阶段 1: 收集顶层符号 ===
+ # 只用 significant_types 中定义的语言节点类型
+ significant_types = {
+ "go": ["function_declaration", "method_declaration", "type_declaration"],
+ "python": ["function_definition", "class_definition"],
+ "javascript": ["function_declaration", "class_declaration", "arrow_function"],
+ "typescript": ["function_declaration", "class_declaration", "arrow_function"],
+ "css": ["rule_set", "media_statement"],
+ "html": ["element"],
+ "json": ["object", "array"],
+ }
+ target_types = significant_types.get(language, )
+ if not target_types:
+ return
+ # 收集所有匹配的顶层符号（仅 direct children of root_node，不递归到嵌套符号）
+ symbols: list[dict[str, Any]] =
+ for child in root_node.children:
+ if child.type in target_types:
+ node_content = content[child.start_byte:child.end_byte]
+ node_text = node_content.strip
+ # 跳过极小节点（空函数体等）
+ if len(node_text) < 20:
+ continue
+ symbols.append({
+ "node": child,
+ "content": node_content,
+ "start_line": child.start_point[0] + 1,
+ "end_line": child.end_point[0] + 1,
+ "node_type": child.type,
+ "name": self._extract_symbol_name(child),
+ })
+ # === 阶段 2: 小符号合并（: 连续 < 10 行的相邻定义并入同一 chunk）===
+ MIN_LINES = 10
+ merged: list[dict[str, Any]] =
+ i = 0
+ while i < len(symbols):
+ current = symbols[i]
+ group = [current]
+ j = i + 1
+ # 向前聚合：后续符号如果与当前组最后一个在行号上相邻且 < MIN_LINES 行
+ while j < len(symbols):
+ next_sym = symbols[j]
+ # 相邻：下一个符号的起始行 == 当前组最后一个符号的结束行 + 1（或更近，处理空行）
+ last_end = group[-1]["end_line"]
+ if next_sym["start_line"] <= last_end + 1:
+ group.append(next_sym)
+ j += 1
+ continue
+ # 小符号合并条件：当前组最后一个符号 < MIN_LINES 行，且与下一个符号紧邻
+ symbol_text = content[group[-1]["node"].start_byte:group[-1]["node"].end_byte]
+ symbol_line_count = group[-1]["end_line"] - group[-1]["start_line"] + 1
+ gap = next_sym["start_line"] - last_end
+ if symbol_line_count < MIN_LINES and gap <= 2:
+ group.append(next_sym)
+ j += 1
+ else:
+ break
+ if len(group) == 1:
+ # 单符号：保持独立
+ merged.append(current)
+ else:
+ # 合并组：创建一个合并的 chunk
+ first = group[0]
+ last = group[-1]
+ merged_content = content[first["node"].start_byte:last["node"].end_byte]
+ names = [g["name"] for g in group if g["name"]]
+ merged.append({
+ "content": merged_content,
+ "start_line": first["start_line"],
+ "end_line": last["end_line"],
+ "node_type": "merged_group",
+ "name": "; ".join(names) if names else None,
+ "is_merged": True,
+ "sub_names": names,
+ })
+ i = j
+ # === 阶段 3: 大符号截断（: > max_chars 在内部子块边界二次切分）===
+ SUB_BLOCK_TYPES = {"if_statement", "for_statement", "while_statement",
+ "try_statement", "with_statement", "except_clause", "elif_clause"}
+ raw_chunks: list[CodeChunk] =
+ for sym in merged:
+ sym_content = sym["content"]
+ if len(sym_content) <= self.max_chars:
+ # 无截断
+ context_header = (
+ f"File: {file_path} | Language: {language} | Type: {sym['node_type']}"
+ )
+ raw_chunks.append(CodeChunk(
+ content=sym_content,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=sym["start_line"],
+ end_line=sym["end_line"],
+ node_type=sym["node_type"],
+ context_header=context_header,
+ parent_symbol=sym.get("name"),
+ ))
+ else:
+ # 大符号需要二次切分
+ node = sym.get("node")
+ if node and not sym.get("is_merged"):
+ sub_chunks = self._split_large_symbol(
+ content, node, file_path, file_hash, language,
+ sym["name"], SUB_BLOCK_TYPES
+ )
+ raw_chunks.extend(sub_chunks)
+ else:
+ # 合并组或无法获取 node 的大符号：简单截断
+ truncated = sym_content[:self.max_chars] + "\n... (truncated)"
+ context_header = (
+ f"File: {file_path} | Language: {language} | Type: {sym['node_type']}"
+ )
+ raw_chunks.append(CodeChunk(
+ content=truncated,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=sym["start_line"],
+ end_line=sym["end_line"],
+ node_type=sym["node_type"],
+ context_header=context_header,
+ parent_symbol=sym.get("name"),
+ ))
+ # === 阶段 4: module-level chunk（ 收尾）===
+ module_chunk = self._extract_module_level_chunk(
+ content, symbols, file_path, file_hash, language
+ )
+ if module_chunk:
+ raw_chunks.append(module_chunk)
+ return raw_chunks
+ def _extract_symbol_name(self, node: Any) -> str | None:
+ """从 tree-sitter 函数/类节点提取符号名。"""
+ name_node = node.child_by_field_name("name")
+ if name_node is not None:
+ text = name_node.text
+ if isinstance(text, bytes):
+ return text.decode("utf-8")
+ return text
+ return None
+ def _split_large_symbol(
+ self,
+ content: str,
+ node: Any,
+ file_path: str,
+ file_hash: str,
+ language: str,
+ parent_name: str | None,
+ sub_block_types: set[str],
+ ) -> list[CodeChunk]:
+ """大符号二次切分：在内部子块（if/for/while/try/with）边界切分。
+ 策略：
+ 1. 收集 node 的直接子节点中的子块
+ 2. 每个子块成为一个独立 chunk（内容为子块函数）
+ 3. 子块之间的代码 + 符号开头（签名/docstring）作为 'preamble' chunk
+ 4. 如果子块之后还有尾代码，作为 'trailing' chunk
+ """
+ chunks: list[CodeChunk] =
+ # 符号的完整函数
+ full_start_line = node.start_point[0] + 1
+ full_content = content[node.start_byte:node.end_byte]
+ # 收集子块
+ sub_blocks: list[dict[str, Any]] =
+ self._collect_sub_blocks(node, content, sub_block_types, sub_blocks)
+ if not sub_blocks or len(sub_blocks) <= 1:
+ # 无足够子块可切分：返回截断的整个符号
+ truncated = full_content[:self.max_chars] + "\n... (truncated)"
+ context_header = (
+ f"File: {file_path} | Language: {language} | "
+ f"Type: {node.type} | Symbol: {parent_name or 'unknown'}"
+ )
+ chunks.append(CodeChunk(
+ content=truncated,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=full_start_line,
+ end_line=node.end_point[0] + 1,
+ node_type=node.type,
+ context_header=context_header,
+ parent_symbol=parent_name,
+ ))
+ return chunks
+ # Preamble: 从符号开头到第一个子块之前
+ first_block = sub_blocks[0]
+ preamble_end_byte = first_block["node"].start_byte
+ if preamble_end_byte > node.start_byte:
+ preamble = content[node.start_byte:preamble_end_byte].rstrip
+ if len(preamble.strip) >= 20:
+ context_header = (
+ f"File: {file_path} | Language: {language} | "
+ f"Type: {node.type} | Symbol: {parent_name or 'unknown'} | Part: preamble"
+ )
+ chunks.append(CodeChunk(
+ content=preamble,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=node.start_point[0] + 1,
+ end_line=first_block["node"].start_point[0] + 1,
+ node_type=node.type,
+ context_header=context_header,
+ parent_symbol=parent_name,
+ ))
+ # 每个子块作为一个 chunk
+ for i, block in enumerate(sub_blocks):
+ block_content = content[block["node"].start_byte:block["node"].end_byte]
+ block_start_line = block["node"].start_point[0] + 1
+ block_end_line = block["node"].end_point[0] + 1
+ block_type = block["node"].type
+ # 子块也可能很大——递归截断
+ if len(block_content) > self.max_chars:
+ block_content = block_content[:self.max_chars] + "\n... (truncated)"
+ context_header = (
+ f"File: {file_path} | Language: {language} | "
+ f"Type: {node.type} | Symbol: {parent_name or 'unknown'} | "
+ f"Sub: {block_type}"
+ )
+ chunks.append(CodeChunk(
+ content=block_content,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=block_start_line,
+ end_line=block_end_line,
+ node_type=f"{node.type}:{block_type}",
+ context_header=context_header,
+ parent_symbol=parent_name,
+ ))
+ # Trailing: 最后一个子块之后的代码
+ last_block = sub_blocks[-1]
+ trailing_start_byte = last_block["node"].end_byte
+ if trailing_start_byte < node.end_byte:
+ trailing = content[trailing_start_byte:node.end_byte].rstrip
+ if len(trailing.strip) >= 20:
+ context_header = (
+ f"File: {file_path} | Language: {language} | "
+ f"Type: {node.type} | Symbol: {parent_name or 'unknown'} | Part: trailing"
+ )
+ chunks.append(CodeChunk(
+ content=trailing,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=last_block["node"].end_point[0] + 1,
+ end_line=node.end_point[0] + 1,
+ node_type=node.type,
+ context_header=context_header,
+ parent_symbol=parent_name,
+ ))
+ return chunks
+ def _collect_sub_blocks(
+ self,
+ node: Any,
+ content: str,
+ sub_block_types: set[str],
+ result: list[dict[str, Any]],
+ ) -> None:
+ """递归收集 node 的直接子节点中的子块（if/for/while/try/with）。"""
+ for child in node.children:
+ if child.type in sub_block_types:
+ result.append({"node": child})
+ # 递归子节点（不递归到嵌套函数/类定义内——它们有独立 chunk）
+ if child.type not in {"function_definition", "class_definition",
+ "function_declaration", "method_declaration",
+ "type_declaration", "class_declaration"}:
+ self._collect_sub_blocks(child, content, sub_block_types, result)
+ def _extract_module_level_chunk(
+ self,
+ content: str,
+ symbols: list[dict[str, Any]],
+ file_path: str,
+ file_hash: str,
+ language: str,
+ ) -> CodeChunk | None:
+ """提取未被任何符号覆盖的模块级代码（imports + 常量 + module docstring）。
+ 策略：收集所有符号的字节/行号范围，取未被覆盖的行段，
+ 合并为 module-level chunk。
+ """
+ if not symbols:
+ # 无符号：整个文件作为 module-level chunk
+ truncated = content[:self.max_chars]
+ context_header = f"File: {file_path} | Language: {language} | Type: module"
+ return CodeChunk(
+ content=truncated if len(content) > self.max_chars else content,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=1,
+ end_line=content.count("\n") + 1,
+ node_type="module",
+ context_header=context_header,
+ parent_symbol=None,
+ )
+ # 计算符号覆盖的行段
+ covered_lines: set[int] = set
+ for sym in symbols:
+ for line in range(sym["start_line"], sym["end_line"] + 1):
+ covered_lines.add(line)
+ total_lines = content.count("\n") + 1
+ uncovered_ranges: list[tuple[int, int]] =
+ start = 1
+ while start <= total_lines:
+ if start not in covered_lines:
+ end = start
+ while end + 1 <= total_lines and (end + 1) not in covered_lines:
+ end += 1
+ uncovered_ranges.append((start, end))
+ start = end + 1
+ else:
+ start += 1
+ if not uncovered_ranges:
+ return None
+ # 拼接未覆盖的行
+ lines = content.split("\n")
+ module_parts: list[str] =
+ for range_start, range_end in uncovered_ranges:
+ for line_idx in range(range_start - 1, range_end):
+ if line_idx < len(lines):
+ module_parts.append(lines[line_idx])
+ module_content = "\n".join(module_parts)
+ # 跳过纯空白/注释的 module level
+ stripped = "\n".join(
+ line for line in module_content.split("\n")
+ if line.strip and not line.strip.startswith(("#", "//"))
+ ).strip
+ if not stripped or len(stripped) < 20:
+ return None
+ # 截断超大 module-level chunk
+ if len(module_content) > self.max_chars:
+ module_content = module_content[:self.max_chars] + "\n... (truncated)"
+ context_header = f"File: {file_path} | Language: {language} | Type: module"
+ return CodeChunk(
+ content=module_content,
+ file_path=file_path,
+ file_hash=file_hash,
+ language=language,
+ start_line=uncovered_ranges[0][0] if uncovered_ranges else 1,
+ end_line=uncovered_ranges[-1][1] if uncovered_ranges else total_lines,
+ node_type="module",
+ context_header=context_header,
+ parent_symbol=None,
+ )
  def _parse_vue(self, content: str, file_path: str, file_hash: str) -> list[CodeChunk]:
  """Parse Vue SFC files by separating script and template."""
  chunks =
