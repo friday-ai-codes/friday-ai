@@ -89,3 +89,78 @@ def second_hop_edge(callee_symbol, second_hop_symbol, graph_repo):
  call_type="DIRECT",
  line_number=10,
  )
+# --- RepoSummaryBuilder 测试 fixtures (Phase) ---
+@pytest.fixture
+def repo_for_summary(db):
+ """创建带 ai_summary 的 Repository，用于 RepoSummaryBuilder 测试。"""
+ from repositories.models import AISummaryStatus
+ return Repository.objects.create(
+ name="summary-test-repo",
+ git_url="https://example.com/summary-test.git",
+ default_branch="main",
+ ai_summary="Test AI summary for repo",
+ ai_summary_status=AISummaryStatus.COMPLETED,
+ )
+@pytest.fixture
+def repo_symbols(repo_for_summary):
+ """创建多层级 Symbol 用于摘要提取（超过 30 个以验证 Top-30 截断）。"""
+ symbols =
+ for i in range(35):
+ symbols.append(
+ Symbol.objects.create(
+ repository=repo_for_summary,
+ name=f"func_{i}",
+ symbol_type="FUNCTION",
+ file_path=f"src/module_{i // 5}.py",
+ start_line=i * 10,
+ end_line=i * 10 + 5,
+ )
+ )
+ return symbols
+@pytest.fixture
+def repo_endpoints(repo_for_summary):
+ """创建 Endpoint 数据用于 api_domains 提取。"""
+ from codegraph.models import Endpoint
+ endpoints_data = [
+ ("GET", "/api/users/", "get_users", "FUNCTION_VIEW", "src/views.py", 10),
+ ("POST", "/api/users/", "create_user", "FUNCTION_VIEW", "src/views.py", 25),
+ ("GET", "/api/tasks/", "get_tasks", "FUNCTION_VIEW", "src/tasks.py", 15),
+ ("GET", "/admin/health/", "health_check", "FUNCTION_VIEW", "src/admin.py", 5),
+ ]
+ endpoints =
+ for method, path, handler, vtype, fpath, line in endpoints_data:
+ endpoints.append(
+ Endpoint.objects.create(
+ repository=repo_for_summary,
+ http_method=method,
+ url_path=path,
+ handler_name=handler,
+ view_type=vtype,
+ file_path=fpath,
+ line_number=line,
+ )
+ )
+ return endpoints
+@pytest.fixture
+def repo_file_indexes(repo_for_summary):
+ """创建 FileIndex 记录用于 tech_stack 提取。"""
+ import hashlib
+ from repositories.models import FileIndex
+ files = [
+ "src/module_0.py",
+ "src/module_1.py",
+ "src/module_2.py",
+ "src/utils.js",
+ "src/types.ts",
+ "src/styles.css",
+ ]
+ indexes =
+ for fp in files:
+ indexes.append(
+ FileIndex.objects.create(
+ repository=repo_for_summary,
+ file_path=fp,
+ file_hash=hashlib.sha256(fp.encode).hexdigest,
+ )
+ )
+ return indexes
