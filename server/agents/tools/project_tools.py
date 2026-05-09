@@ -6,12 +6,9 @@ and semantic code search via Qdrant vectors.
 from datetime import datetime, timezone
 from typing import Any
 import structlog
-from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
-from services.embedding import EmbeddingService
-from services.sparse_encoder import SparseEncoderService
 logger = structlog.get_logger(__name__)
 @tool(
  name="list_project_repositories",
@@ -284,43 +281,44 @@ async def search_repository_code(
  "error": "No indexed repositories found to search",
  },
  )
- # Generate query embedding
- query_vector = await EmbeddingService.generate_embedding(query)
- # 生成 BM25 稀疏向量用于 hybrid search (per, )
- query_sparse: dict[str, Any] | None = None
- try:
- sparse_result = await sync_to_async(SparseEncoderService.encode)(query)
- if sparse_result.get("indices"):
- query_sparse = sparse_result
- except Exception:
- pass # 降级到 dense-only
- if not query_vector:
- return ToolResult(
- success=False,
- output={"data": {"results": }},
- error="Failed to generate query embedding",
- )
- # Search across all repositories
- from services.branch_search import BranchAwareSearchService
- all_results: list[dict[str, Any]] =
- for repo_id in repo_ids:
- search_results = await BranchAwareSearchService.search(
- repo_id,
- query_vector,
- query_sparse=query_sparse,
+ # 统一调用 LayeredSearchService (per )
+ from codegraph.services.layered_search import LayeredSearchService
+ result = await LayeredSearchService.search(
+ query,
+ repository_ids=repo_ids if repo_ids else None,
  branch_name=branch,
  top_k=limit,
  )
- for r in search_results:
- if r["score"] >= min_score:
- payload = r.get("payload", {})
+ all_results: list[dict[str, Any]] =
+ final_context = result.final_context
+ # 从 L3 层结果提取向量搜索结果 (保持向后兼容的返回格式)
+ for layer in result.layers:
+ if layer.layer == "L3" and layer.status == "ok":
+ for item in layer.items:
+ payload = item.get("payload", {})
+ score = item.get("score", 0.0)
+ if score >= min_score:
  all_results.append(
  {
  "file_path": payload.get("file_path", ""),
  "content": payload.get("content", ""),
  "language": payload.get("language", ""),
- "score": r["score"],
- "repository_id": repo_id,
+ "score": score,
+ "repository_id": item.get("repository_id", ""),
+ }
+ )
+ # 如果 L3 为空，回退到 L2 精确匹配
+ if not all_results:
+ for layer in result.layers:
+ if layer.layer == "L2" and layer.status == "ok":
+ for item in layer.items:
+ all_results.append(
+ {
+ "file_path": item.get("file_path", ""),
+ "content": f"Symbol: {item['name']} ({item['symbol_type']}) - {item.get('signature', '')}",
+ "language": "",
+ "score": 1.0, # 精确匹配给最高分
+ "repository_id": item.get("repository_id", ""),
  }
  )
  # Sort by score and limit
@@ -341,6 +339,7 @@ async def search_repository_code(
  "total_results": len(all_results),
  "searched_repositories": len(repo_ids),
  "min_score": min_score,
+ "context": final_context, # NEW: L5 裁剪后的结构化上下文
  "fetched_at": datetime.now(timezone.utc).isoformat,
  },
  },
