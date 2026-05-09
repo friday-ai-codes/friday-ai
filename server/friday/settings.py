@@ -74,6 +74,7 @@ INSTALLED_APPS = [
  "accounts",
  "system",
  "repositories",
+ "codegraph",
  "projects",
  "feishu",
  "chat",
@@ -320,6 +321,8 @@ FF_SYNC_WORKFLOW_TO_FEISHU = env.bool("FF_SYNC_WORKFLOW_TO_FEISHU", True)
 FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 # Default workflow template for new tasks
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
+# Phase: When True, code graph extraction runs during indexing. Set False to skip graph writes.
+ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
