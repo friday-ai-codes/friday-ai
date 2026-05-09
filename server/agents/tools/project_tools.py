@@ -6,10 +6,12 @@ and semantic code search via Qdrant vectors.
 from datetime import datetime, timezone
 from typing import Any
 import structlog
+from asgiref.sync import sync_to_async
 from agents.tools.base import ToolResult, tool
 from projects.models import Project
 from repositories.models import Repository
 from services.embedding import EmbeddingService
+from services.sparse_encoder import SparseEncoderService
 logger = structlog.get_logger(__name__)
 @tool(
  name="list_project_repositories",
@@ -284,6 +286,14 @@ async def search_repository_code(
  )
  # Generate query embedding
  query_vector = await EmbeddingService.generate_embedding(query)
+ # 生成 BM25 稀疏向量用于 hybrid search (per, )
+ query_sparse: dict[str, Any] | None = None
+ try:
+ sparse_result = await sync_to_async(SparseEncoderService.encode)(query)
+ if sparse_result.get("indices"):
+ query_sparse = sparse_result
+ except Exception:
+ pass # 降级到 dense-only
  if not query_vector:
  return ToolResult(
  success=False,
@@ -297,6 +307,7 @@ async def search_repository_code(
  search_results = await BranchAwareSearchService.search(
  repo_id,
  query_vector,
+ query_sparse=query_sparse,
  branch_name=branch,
  top_k=limit,
  )
