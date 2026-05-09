@@ -234,3 +234,117 @@ async def test_build_is_classmethod_async_service:
  obj = cls.__dict__[name]
  if not isinstance(obj, (classmethod, staticmethod)):
  pytest.fail(f"RepoSummaryBuilder 包含非 classmethod 方法: {name}")
+# --- 使用 conftest fixtures 的集成测试 (Task 2) ---
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_build_with_fixtures_primary_symbols_top30(
+ repo_for_summary, repo_symbols,
+):
+ """使用 conftest fixtures 验证 primary_symbols 提取 Top-30。"""
+ with (
+ patch.object(EmbeddingService, "generate_embedding", new_callable=AsyncMock) as mock_emb,
+ patch.object(SparseEncoderService, "encode", return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}),
+ patch.object(QdrantService, "ensure_repo_summaries_collection", return_value=True),
+ patch.object(QdrantService, "upsert_vectors_by_name", return_value=True) as mock_upsert,
+ ):
+ mock_emb.return_value = [0.1] * 1024
+ result = await RepoSummaryBuilder.build(str(repo_for_summary.id))
+ assert result is True
+ mock_upsert.assert_called_once
+ point = mock_upsert.call_args[0][1][0]
+ payload = point["payload"]
+ symbols_list = json.loads(payload["primary_symbols"])
+ assert len(symbols_list) == 30
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_build_with_fixtures_api_domains(
+ repo_for_summary, repo_endpoints,
+):
+ """使用 conftest fixtures 验证 api_domains URL 前缀聚类。"""
+ with (
+ patch.object(EmbeddingService, "generate_embedding", new_callable=AsyncMock) as mock_emb,
+ patch.object(SparseEncoderService, "encode", return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}),
+ patch.object(QdrantService, "ensure_repo_summaries_collection", return_value=True),
+ patch.object(QdrantService, "upsert_vectors_by_name", return_value=True) as mock_upsert,
+ ):
+ mock_emb.return_value = [0.1] * 1024
+ result = await RepoSummaryBuilder.build(str(repo_for_summary.id))
+ assert result is True
+ point = mock_upsert.call_args[0][1][0]
+ payload = point["payload"]
+ domains = json.loads(payload["api_domains"])
+ assert domains[0] == "api"
+ assert "admin" in domains
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_build_with_fixtures_tech_stack(
+ repo_for_summary, repo_file_indexes,
+):
+ """使用 conftest fixtures 验证 tech_stack 扩展名百分比。"""
+ with (
+ patch.object(EmbeddingService, "generate_embedding", new_callable=AsyncMock) as mock_emb,
+ patch.object(SparseEncoderService, "encode", return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}),
+ patch.object(QdrantService, "ensure_repo_summaries_collection", return_value=True),
+ patch.object(QdrantService, "upsert_vectors_by_name", return_value=True) as mock_upsert,
+ ):
+ mock_emb.return_value = [0.1] * 1024
+ result = await RepoSummaryBuilder.build(str(repo_for_summary.id))
+ assert result is True
+ point = mock_upsert.call_args[0][1][0]
+ payload = point["payload"]
+ tech_stack = json.loads(payload["tech_stack"])
+ assert tech_stack["py"] == 50.0
+ assert tech_stack["js"] == pytest.approx(16.7, abs=0.1)
+ assert tech_stack["ts"] == pytest.approx(16.7, abs=0.1)
+ assert tech_stack["css"] == pytest.approx(16.7, abs=0.1)
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_build_with_fixtures_description_reuses_ai_summary(
+ repo_for_summary,
+):
+ """使用 conftest fixture 验证 ai_summary 复用为 description。"""
+ with (
+ patch.object(EmbeddingService, "generate_embedding", new_callable=AsyncMock) as mock_emb,
+ patch.object(SparseEncoderService, "encode", return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}),
+ patch.object(QdrantService, "ensure_repo_summaries_collection", return_value=True),
+ patch.object(QdrantService, "upsert_vectors_by_name", return_value=True) as mock_upsert,
+ ):
+ mock_emb.return_value = [0.1] * 1024
+ result = await RepoSummaryBuilder.build(str(repo_for_summary.id))
+ assert result is True
+ point = mock_upsert.call_args[0][1][0]
+ payload = point["payload"]
+ assert payload["description"] == "Test AI summary for repo"
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_build_with_fixtures_e2e_upsert(
+ repo_for_summary, repo_symbols, repo_endpoints, repo_file_indexes,
+):
+ """E2E 测试：使用全部 fixtures 验证 build 流程调用了 Qdrant upsert。"""
+ with (
+ patch.object(EmbeddingService, "generate_embedding", new_callable=AsyncMock) as mock_emb,
+ patch.object(SparseEncoderService, "encode", return_value={"indices": [1, 2, 3], "values": [0.1, 0.2, 0.3]}),
+ patch.object(QdrantService, "ensure_repo_summaries_collection", return_value=True),
+ patch.object(QdrantService, "upsert_vectors_by_name", return_value=True) as mock_upsert,
+ ):
+ mock_emb.return_value = [0.1] * 1024
+ result = await RepoSummaryBuilder.build(str(repo_for_summary.id))
+ assert result is True
+ mock_upsert.assert_called_once
+ call_args = mock_upsert.call_args
+ # 验证 collection 名称
+ assert call_args[0][0] == "repo_summaries"
+ point = call_args[0][1][0]
+ # 验证 point 包含 dense + sparse vector
+ assert "dense" in point["vector"]
+ assert "sparse" in point["vector"]
+ assert len(point["vector"]["dense"]) == 1024
+ # 验证 payload 包含所有必要字段
+ payload = point["payload"]
+ assert payload["repository_id"] == str(repo_for_summary.id)
+ assert "repo_name" in payload
+ assert "description" in payload
+ assert "tech_stack" in payload
+ assert "api_domains" in payload
+ assert "primary_symbols" in payload
+ assert "built_at" in payload

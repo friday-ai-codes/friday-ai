@@ -371,6 +371,16 @@ class IndexerService:
  file_paths=files,
  repository_id=self.repository_id,
  )
+ # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
+ try:
+ from codegraph.services.repo_summary_builder import RepoSummaryBuilder
+ await RepoSummaryBuilder.build(repository_id=self.repository_id)
+ except Exception:
+ logger.warning(
+ "repo_summary_build_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
+ )
  return {
  "status": "success",
  "files_processed": len(files),
@@ -844,6 +854,16 @@ class IndexerService:
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ )
+ # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
+ try:
+ from codegraph.services.repo_summary_builder import RepoSummaryBuilder
+ await RepoSummaryBuilder.build(repository_id=self.repository_id)
+ except Exception:
+ logger.warning(
+ "repo_summary_build_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
  )
  return {
  "status": "success",
