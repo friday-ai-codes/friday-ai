@@ -3,9 +3,11 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 import structlog
+from asgiref.sync import sync_to_async
 if TYPE_CHECKING:
  from repositories.models import Repository
 from services.embedding import EmbeddingService
+from services.sparse_encoder import SparseEncoderService
 from workflows.nodes.base import (
  BaseNode,
  ExecutionContext,
@@ -218,6 +220,14 @@ class ContextRetrievalNode(BaseNode):
  try:
  # 生成查询向量
  query_embedding = await EmbeddingService.generate_embedding(query)
+ # 生成 BM25 稀疏向量用于 hybrid search (per, )
+ query_sparse: dict[str, Any] | None = None
+ try:
+ sparse_result = await sync_to_async(SparseEncoderService.encode)(query)
+ if sparse_result.get("indices"):
+ query_sparse = sparse_result
+ except Exception:
+ pass # 降级到 dense-only
  if not query_embedding:
  return NodeResult(
  status="failed",
@@ -232,6 +242,7 @@ class ContextRetrievalNode(BaseNode):
  search_results = await self._search_all_repositories(
  valid_repos, query_embedding, top_k, filters, timeout,
  branch=branch,
+ query_sparse=query_sparse,
  )
  # 聚合结果（按仓库分组）
  aggregated = self._aggregate_results(
@@ -416,6 +427,7 @@ class ContextRetrievalNode(BaseNode):
  timeout: float = 30.0,
  *,
  branch: str | None = None,
+ query_sparse: dict[str, Any] | None = None,
  ) -> dict[str, Any]:
  """Search single repository with timeout (branch-aware).
  Returns a dict with repository_id, repository_name, status, results, and error (if any).
@@ -426,6 +438,7 @@ class ContextRetrievalNode(BaseNode):
  search_coro = BranchAwareSearchService.search(
  repo_id,
  query_embedding,
+ query_sparse=query_sparse,
  branch_name=branch or None,
  top_k=top_k,
  filters=filters,
@@ -462,6 +475,7 @@ class ContextRetrievalNode(BaseNode):
  timeout: float = 30.0,
  *,
  branch: str | None = None,
+ query_sparse: dict[str, Any] | None = None,
  ) -> list[dict[str, Any]]:
  """Search all repositories in parallel (branch-aware).
  Uses asyncio.gather with return_exceptions=True to ensure all tasks complete.
@@ -469,7 +483,8 @@ class ContextRetrievalNode(BaseNode):
  """
  search_tasks = [
  self._search_repository(
- repo, query_embedding, top_k, filters, timeout, branch=branch
+ repo, query_embedding, top_k, filters, timeout,
+ branch=branch, query_sparse=query_sparse,
  )
  for repo in repositories
  ]

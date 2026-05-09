@@ -169,3 +169,122 @@ class TestAINodeConfigSchema:
  """CodeReview 应有配置 schema（继承自 AIAgentBaseNode）。"""
  from workflows.nodes.ai.code_review import AICodeReviewNode
  assert hasattr(AICodeReviewNode, "config_schema")
+@pytest.mark.asyncio
+async def test_context_retrieval_hybrid_search:
+ """: ContextRetrievalNode._search_repository 调用 BranchAwareSearchService.search 时传入 query_sparse。"""
+ from unittest.mock import AsyncMock, MagicMock, patch
+ from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
+ # 构造 node 和 context
+ node = ContextRetrievalNode
+ context = MagicMock
+ context.node_config = {
+ "query": "find authentication logic",
+ "repositories": [{"id": "repo-1", "name": "test-repo"}],
+ "top_k": 5,
+ "score_threshold": 0.5,
+ "include_content": True,
+ "format_as_markdown": False,
+ "timeout": 30.0,
+ }
+ context.render_template = lambda s, **kw: s
+ mock_repo = MagicMock
+ mock_repo.id = "repo-1"
+ mock_repo.name = "test-repo"
+ search_result = [
+ {
+ "score": 0.92,
+ "payload": {
+ "file_path": "auth.py",
+ "content": "def authenticate: pass",
+ "language": "python",
+ "start_line": 10,
+ "end_line": 15,
+ },
+ }
+ ]
+ with (
+ patch(
+ "services.embedding.EmbeddingService.generate_embedding",
+ new_callable=AsyncMock,
+ ) as mock_embed,
+ patch(
+ "services.sparse_encoder.SparseEncoderService.encode",
+ return_value={"indices": [5, 10, 15], "values": [0.5, 0.3, 0.2]},
+ ) as mock_sparse,
+ patch(
+ "services.branch_search.BranchAwareSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search,
+ patch(
+ "repositories.models.Repository.objects.filter",
+ ) as mock_repo_filter,
+ ):
+ mock_embed.return_value = [0.1] * 1536
+ mock_search.return_value = search_result
+ # Mock Repository QuerySet
+ mock_repo_filter.return_value.afirst = AsyncMock(return_value=mock_repo)
+ result = await node.execute(context)
+ # 验证 sparse encode 被调用
+ mock_sparse.assert_called_once_with("find authentication logic")
+ # 验证 BranchAwareSearchService.search 被调用时传入了 query_sparse
+ call_kwargs = mock_search.call_args.kwargs
+ assert "query_sparse" in call_kwargs
+ assert call_kwargs["query_sparse"] == {"indices": [5, 10, 15], "values": [0.5, 0.3, 0.2]}
+ # 验证返回结果正常
+ assert result.status == "completed"
+@pytest.mark.asyncio
+async def test_context_retrieval_empty_query_dense_only:
+ """: 空 sparse 向量时，ContextRetrievalNode 退化为 dense-only（query_sparse=None）。"""
+ from unittest.mock import AsyncMock, MagicMock, patch
+ from workflows.nodes.ai.context_retrieval import ContextRetrievalNode
+ node = ContextRetrievalNode
+ context = MagicMock
+ context.node_config = {
+ "query": "x",
+ "repositories": [{"id": "repo-1", "name": "test-repo"}],
+ "top_k": 5,
+ "score_threshold": 0.5,
+ "include_content": True,
+ "format_as_markdown": False,
+ "timeout": 30.0,
+ }
+ context.render_template = lambda s, **kw: s
+ mock_repo = MagicMock
+ mock_repo.id = "repo-1"
+ mock_repo.name = "test-repo"
+ search_result = [
+ {
+ "score": 0.70,
+ "payload": {
+ "file_path": "main.py",
+ "content": "def main: pass",
+ "language": "python",
+ "start_line": 1,
+ "end_line": 5,
+ },
+ }
+ ]
+ with (
+ patch(
+ "services.embedding.EmbeddingService.generate_embedding",
+ new_callable=AsyncMock,
+ ) as mock_embed,
+ patch(
+ "services.sparse_encoder.SparseEncoderService.encode",
+ return_value={"indices":, "values": }, # 空 sparse 向量
+ ) as mock_sparse,
+ patch(
+ "services.branch_search.BranchAwareSearchService.search",
+ new_callable=AsyncMock,
+ ) as mock_search,
+ patch(
+ "repositories.models.Repository.objects.filter",
+ ) as mock_repo_filter,
+ ):
+ mock_embed.return_value = [0.1] * 1536
+ mock_search.return_value = search_result
+ mock_repo_filter.return_value.afirst = AsyncMock(return_value=mock_repo)
+ result = await node.execute(context)
+ # 验证 search 被调用时 query_sparse 为 None（降级到 dense-only）
+ call_kwargs = mock_search.call_args.kwargs
+ assert call_kwargs.get("query_sparse") is None
