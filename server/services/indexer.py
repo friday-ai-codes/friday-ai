@@ -245,6 +245,16 @@ class IndexerService:
  def __init__(self, repository_id: str):
  self.repository_id = repository_id
  self.parser = CodeParser
+ # Phase: 图谱抽取与写入服务（双轨架构 - per ）
+ self._graph_extractor = None # 延迟初始化
+ self._graph_writer = None
+ def _init_graph_services(self):
+ """延迟初始化图谱抽取与写入服务（避免循环导入）。"""
+ if self._graph_extractor is None:
+ from codegraph.services.orchestrator import GraphExtractor
+ from codegraph.services.graph_writer import GraphWriter
+ self._graph_extractor = GraphExtractor
+ self._graph_writer = GraphWriter
  async def run_full_index(
  self, repo_path: str, *, branch_name: str | None = None,
  ) -> dict[str, Any]:
@@ -353,6 +363,13 @@ class IndexerService:
  branch_name=branch_name,
  is_base_branch=True,
  points_count=len(points),
+ )
+ # Phase: 图谱轨写入 —— 在向量轨完成之后异步执行
+ # per: 图谱失败不阻塞，异常在 _extract_and_write_graph 内部被捕获
+ await self._extract_and_write_graph(
+ repo_path=repo_path,
+ file_paths=files,
+ repository_id=self.repository_id,
  )
  return {
  "status": "success",
@@ -544,6 +561,14 @@ class IndexerService:
  indexed_files=len(files_to_index),
  chunks=len(points),
  )
+ # Phase: 图谱轨写入
+ if files_to_index:
+ graph_files = [d.file_path for d in files_to_index]
+ await self._extract_and_write_graph(
+ repo_path=repo_path,
+ file_paths=graph_files,
+ repository_id=self.repository_id,
+ )
  return {
  "status": "indexed",
  "diff_files": len(diffs),
@@ -688,6 +713,14 @@ class IndexerService:
  is_base_branch=is_base_branch,
  points_count=total_points,
  )
+ # Phase: 图谱轨写入
+ graph_files = [d.file_path for d in files_to_index]
+ if graph_files:
+ await self._extract_and_write_graph(
+ repo_path=repo_path,
+ file_paths=graph_files,
+ repository_id=self.repository_id,
+ )
  return {"status": "success", **stats}
  async def run_incremental_index(
  self,
@@ -804,6 +837,14 @@ class IndexerService:
  file_path=diff.file_path,
  defaults={"file_hash": new_hash},
  )
+ # Phase: 图谱轨写入
+ if files_to_index:
+ graph_files = [d.file_path for d in files_to_index]
+ await self._extract_and_write_graph(
+ repo_path=repo_path,
+ file_paths=graph_files,
+ repository_id=self.repository_id,
+ )
  return {
  "status": "success",
  **stats,
@@ -856,6 +897,135 @@ class IndexerService:
  """生成 BM25 稀疏向量（同步方法，需要 sync_to_async 调用）。"""
  from services.sparse_encoder import SparseEncoderService
  return SparseEncoderService.encode_batch(texts)
+ async def _extract_and_write_graph(
+ self, repo_path: str, file_paths: list[str], repository_id: str,
+ ) -> dict[str, int]:
+ """对指定文件列表执行图谱抽取并写入 Django ORM（双轨架构图谱轨）。
+ 该方法在向量轨写入（Qdrant upsert）完成后调用，对每个 tree-sitter
+ 支持的文件进行 AST 解析 + 四维抽取 + 批量入库。
+ per: 图谱抽取失败不阻塞向量轨。单个文件失败仅记 warning。
+ per: 复用 CodeParser 的 tree-sitter parser 获取能力（同一棵 AST）。
+ Args:
+ repo_path: 克隆仓库的本地路径
+ file_paths: 需要抽取图谱的文件路径列表（相对路径）
+ repository_id: 仓库 UUID 字符串
+ Returns:
+ dict: {"files_processed": N, "files_failed": N, "symbols": N, ...}
+ """
+ import os
+ from django.conf import settings
+ from codegraph.extractors.base import FileContext
+ from services.code_parser import CodeParser as _CodeParser, TREESITTER_LANGUAGES
+ # Feature flag 门控（per NYQUIST 维度 8: 配置可控）
+ if not getattr(settings, "ENABLE_CODEGRAPH", False):
+ logger.debug("codegraph_disabled_by_feature_flag")
+ return {"files_processed": 0, "files_failed": 0, "reason": "disabled"}
+ # 延迟初始化图谱服务
+ self._init_graph_services
+ stats: dict[str, int] = {
+ "files_processed": 0,
+ "files_failed": 0,
+ "total_symbols": 0,
+ "total_imports": 0,
+ "total_calls": 0,
+ "total_endpoints": 0,
+ }
+ # 创建独立的 CodeParser 实例用于图谱抽取（复用其 tree-sitter parser）
+ # 不污染 self.parser 的状态
+ graph_parser = _CodeParser
+ for file_path in file_paths:
+ full_path = os.path.join(repo_path, file_path)
+ if not os.path.exists(full_path) or not os.path.isfile(full_path):
+ continue
+ # 确定语言
+ language = self._detect_language_from_path(file_path)
+ if not language or language not in TREESITTER_LANGUAGES:
+ # 非 tree-sitter 支持的语言，跳过图谱抽取
+ continue
+ # 文件大小过滤（per RESEARCH.md §H.2: MAX_FILE_BYTES = 5MB）
+ file_size = os.path.getsize(full_path)
+ MAX_FILE_BYTES = 5 * 1024 * 1024 # 5MB
+ if file_size > MAX_FILE_BYTES:
+ logger.warning(
+ "graph_extraction_skipped_file_too_large",
+ file_path=file_path,
+ size_bytes=file_size,
+ )
+ continue
+ # 读取源文件内容
+ try:
+ with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+ source = f.read
+ except Exception as e:
+ logger.warning(
+ "graph_extraction_read_failed",
+ file_path=file_path,
+ error=str(e),
+ )
+ stats["files_failed"] += 1
+ continue
+ # 跳过空文件和纯二进制文件（已在上层 filtered，此处兜底）
+ if not source.strip:
+ continue
+ # AST 解析 + 四维抽取 + 写入（per: 单文件失败不阻塞）
+ try:
+ # 获取 tree-sitter parser
+ parser = graph_parser._get_tree_sitter_parser(language)
+ if parser is None:
+ continue
+ tree = parser.parse(bytes(source, "utf-8"))
+ # 构建 FileContext
+ module_path = file_path.replace("/", ".").replace(".py", "")
+ ctx = FileContext(
+ file_path=file_path,
+ language=language,
+ repository_id=repository_id,
+ module_path=module_path,
+ )
+ # 四维抽取
+ bundle = self._graph_extractor.extract_all(tree, source, ctx)
+ # 批量入库
+ result = await self._graph_writer.write_bundle(repository_id, bundle)
+ stats["files_processed"] += 1
+ stats["total_symbols"] += result.get("symbols", 0)
+ stats["total_imports"] += result.get("imports", 0)
+ stats["total_calls"] += result.get("calls", 0)
+ stats["total_endpoints"] += result.get("endpoints", 0)
+ except Exception as e:
+ logger.warning(
+ "graph_extraction_failed",
+ file_path=file_path,
+ error=str(e),
+ )
+ stats["files_failed"] += 1
+ # 不重新抛出 —— 图谱失败不影响向量轨
+ if stats["files_processed"] > 0:
+ logger.info(
+ "graph_extraction_batch_complete",
+ repository_id=repository_id,
+ processed=stats["files_processed"],
+ failed=stats["files_failed"],
+ symbols=stats["total_symbols"],
+ imports=stats["total_imports"],
+ calls=stats["total_calls"],
+ endpoints=stats["total_endpoints"],
+ )
+ return stats
+ @staticmethod
+ def _detect_language_from_path(file_path: str) -> str | None:
+ """从文件扩展名检测编程语言（CodeParser 的简化版）。"""
+ ext = file_path.rsplit(".", 1)[-1].lower if "." in file_path else ""
+ _EXT_LANG_MAP = {
+ "py": "python",
+ "js": "javascript",
+ "ts": "typescript",
+ "tsx": "typescript",
+ "go": "go",
+ "css": "css",
+ "html": "html",
+ "json": "json",
+ }
+ return _EXT_LANG_MAP.get(ext)
  @staticmethod
  def _build_points(
  chunks: list[CodeChunk],
