@@ -1,4 +1,4 @@
-"""Fetch project information node."""
+"""Fetch space information node."""
 import structlog
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.ext import parse
@@ -14,24 +14,24 @@ from workflows.nodes.base import (
 from workflows.nodes.registry import register_node
 logger = structlog.get_logger(__name__)
 @register_node
-class FetchProjectInfoNode(BaseNode):
- """获取项目信息节点
- 根据项目 ID 或飞书项目 Key 查询项目信息，
+class FetchSpaceInfoNode(BaseNode):
+ """获取空间信息节点
+ 根据空间 ID 或飞书项目 Key 查询空间信息，
  可选择性获取仓库列表、飞书配置、Claude 配置等。
  """
- node_type = "fetch_project_info"
- display_name = "获取项目信息"
- description = "根据项目标识获取项目配置信息，包括仓库、飞书配置等"
+ node_type = "fetch_space_info"
+ display_name = "获取空间信息"
+ description = "根据空间标识获取空间配置信息，包括仓库、飞书配置等"
  icon = "folder-search"
  category = NodeCategory.ACTION
  execution_mode = "server_local"
  config_schema = {
  "type": "object",
  "properties": {
- "project_identifier": {
+ "space_identifier": {
  "type": "string",
- "title": "项目标识",
- "description": "项目 ID 或飞书项目 Key，支持模板变量",
+ "title": "空间标识",
+ "description": "空间 ID 或飞书项目 Key，支持模板变量",
  },
  "identifier_type": {
  "type": "string",
@@ -43,7 +43,7 @@ class FetchProjectInfoNode(BaseNode):
  "include_repositories": {
  "type": "boolean",
  "title": "获取仓库列表",
- "description": "包含项目关联的所有代码仓库",
+ "description": "包含空间关联的所有代码仓库",
  "default": True,
  },
  "include_feishu_config": {
@@ -65,20 +65,20 @@ class FetchProjectInfoNode(BaseNode):
  "default": False,
  },
  },
- "required": ["project_identifier"],
+ "required": ["space_identifier"],
  }
  inputs = [NodePort(name="default", label="输入", port_type=PortType.OBJECT, required=False)]
  outputs = [
  NodePort(
  name="default",
- label="项目信息",
+ label="空间信息",
  port_type=PortType.OBJECT,
  schema={
  "type": "object",
  "properties": {
- "project_id": {"type": "string", "description": "项目 ID"},
- "project_name": {"type": "string", "description": "项目名称"},
- "description": {"type": "string", "description": "项目描述"},
+ "space_id": {"type": "string", "description": "空间 ID"},
+ "space_name": {"type": "string", "description": "空间名称"},
+ "description": {"type": "string", "description": "空间描述"},
  "feishu_project_key": {"type": "string", "description": "飞书项目 Key"},
  "created_at": {"type": "string", "description": "创建时间"},
  "updated_at": {"type": "string", "description": "更新时间"},
@@ -128,37 +128,37 @@ class FetchProjectInfoNode(BaseNode):
  async def execute(self, context: ExecutionContext) -> NodeResult:
  config = context.node_config
  # 获取原始配置值
- raw_identifier = config.get("project_identifier", "")
+ raw_identifier = config.get("space_identifier", "")
  identifier_type = config.get("identifier_type", "auto")
  include_repositories = config.get("include_repositories", True)
  include_feishu_config = config.get("include_feishu_config", False)
  include_claude_config = config.get("include_claude_config", False)
  include_webhook_token = config.get("include_webhook_token", False)
- # 解析项目标识：支持模板变量 {{}} 和 JSONPath $
- project_identifier = self._resolve_value(raw_identifier, context)
- if not project_identifier:
+ # 解析空间标识：支持模板变量 {{}} 和 JSONPath $
+ space_identifier = self._resolve_value(raw_identifier, context)
+ if not space_identifier:
  return NodeResult(
  status="failed",
- error="项目标识不能为空",
+ error="空间标识不能为空",
  next_handle="error",
  )
  logger.info(
- "fetch_project_info_start",
- project_identifier=project_identifier,
+ "fetch_space_info_start",
+ space_identifier=space_identifier,
  identifier_type=identifier_type,
  )
  try:
- # 查找项目
- project = await self._find_project(project_identifier, identifier_type)
- if not project:
+ # 查找空间
+ space = await self._find_space(space_identifier, identifier_type)
+ if not space:
  return NodeResult(
  status="failed",
- error=f"未找到项目: {project_identifier}",
+ error=f"未找到空间: {space_identifier}",
  next_handle="error",
  )
  # 构建输出
  output = await self._build_output(
- project,
+ space,
  include_repositories=include_repositories,
  include_feishu_config=include_feishu_config,
  include_claude_config=include_claude_config,
@@ -168,15 +168,15 @@ class FetchProjectInfoNode(BaseNode):
  if include_repositories and "repositories" in output:
  await context.aset_global_variable(
  key="repositories",
- name="项目仓库列表",
+ name="空间仓库列表",
  value=output["repositories"],
- desc="项目关联的代码仓库对象列表",
+ desc="空间关联的代码仓库对象列表",
  required=False,
  )
  logger.info(
- "fetch_project_info_completed",
- project_id=str(project.id),
- project_name=project.name,
+ "fetch_space_info_completed",
+ space_id=str(space.id),
+ space_name=space.name,
  )
  return NodeResult(
  status="completed",
@@ -184,22 +184,22 @@ class FetchProjectInfoNode(BaseNode):
  next_handle="default",
  )
  except Exception as e:
- logger.error("fetch_project_info_failed", error=str(e))
+ logger.error("fetch_space_info_failed", error=str(e))
  return NodeResult(
  status="failed",
- error=f"获取项目信息失败: {e!s}",
+ error=f"获取空间信息失败: {e!s}",
  next_handle="error",
  )
- async def _find_project(self, identifier: str, identifier_type: str) -> Project | None:
- """查找项目"""
+ async def _find_space(self, identifier: str, identifier_type: str) -> Project | None:
+ """查找空间"""
  import uuid as uuid_mod
  if identifier_type == "auto":
  # 先尝试 UUID
  try:
  uuid_mod.UUID(identifier)
- project = await Project.objects.filter(id=identifier).afirst
- if project:
- return project
+ space = await Project.objects.filter(id=identifier).afirst
+ if space:
+ return space
  except ValueError:
  pass
  # 再尝试飞书项目 Key
@@ -211,7 +211,7 @@ class FetchProjectInfoNode(BaseNode):
  return None
  async def _build_output(
  self,
- project: Project,
+ space: Project,
  include_repositories: bool,
  include_feishu_config: bool,
  include_claude_config: bool,
@@ -219,17 +219,17 @@ class FetchProjectInfoNode(BaseNode):
  ) -> dict:
  """构建输出数据"""
  output: dict = {
- "project_id": str(project.id),
- "project_name": project.name,
- "description": project.description or "",
- "feishu_project_key": project.feishu_project_key or "",
- "created_at": project.created_at.isoformat if project.created_at else None,
- "updated_at": project.updated_at.isoformat if project.updated_at else None,
+ "space_id": str(space.id),
+ "space_name": space.name,
+ "description": space.description or "",
+ "feishu_project_key": space.feishu_project_key or "",
+ "created_at": space.created_at.isoformat if space.created_at else None,
+ "updated_at": space.updated_at.isoformat if space.updated_at else None,
  }
  # 仓库列表
  if include_repositories:
  repositories =
- async for repo in project.repositories.filter(is_deleted=False):
+ async for repo in space.repositories.filter(is_deleted=False):
  repo_info = {
  "id": str(repo.id),
  "name": repo.name,
@@ -248,11 +248,11 @@ class FetchProjectInfoNode(BaseNode):
  # 飞书配置
  if include_feishu_config:
  output["feishu_config"] = {
- "project_key": project.feishu_project_key or "",
- "plugin_id": project.feishu_plugin_id or "",
- "user_key": project.feishu_user_key or "",
- "has_plugin_secret": bool(project.feishu_plugin_secret_encrypted),
- "is_configured": project.has_feishu_config,
+ "project_key": space.feishu_project_key or "",
+ "plugin_id": space.feishu_plugin_id or "",
+ "user_key": space.feishu_user_key or "",
+ "has_plugin_secret": bool(space.feishu_plugin_secret_encrypted),
+ "is_configured": space.has_feishu_config,
  }
  # Phase Plan：Project.claude_* 字段硬删；
  # include_claude_config flag 保留为向后兼容 stub（始终返回未配置状态）。
@@ -265,7 +265,7 @@ class FetchProjectInfoNode(BaseNode):
  }
  # Webhook Token
  if include_webhook_token:
- output["webhook_token"] = project.feishu_webhook_token or ""
+ output["webhook_token"] = space.feishu_webhook_token or ""
  return output
  def _resolve_value(self, raw_value: str, context: ExecutionContext) -> str:
  """解析值：支持模板变量 {{}} 和 JSONPath $
