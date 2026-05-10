@@ -64,7 +64,7 @@ class ModelsView(APIView):
  "schema": {"type": "string", "enum": ["system", "project"], "default": "system"},
  },
  {
- "name": "project_id",
+ "name": "space_id",
  "in": "query",
  "description": "项目 ID（当 source=project 时）",
  "required": False,
@@ -99,13 +99,13 @@ class ModelsView(APIView):
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  data = serializer.validated_data
  source = data.get("source", "system")
- project_id = data.get("project_id")
+ space_id = data.get("space_id")
  api_key = data.get("api_key")
  base_url = data.get("base_url")
  try:
  service = await aget_chat_service(
  source=source,
- project_id=project_id,
+ space_id=space_id,
  api_key=api_key or None,
  base_url=base_url or None,
  )
@@ -147,7 +147,7 @@ class ChatCompletionsView(APIView):
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  data = serializer.validated_data
  source = data.get("source", "system")
- project_id = data.get("project_id")
+ space_id = data.get("space_id")
  api_key = data.get("api_key")
  base_url = data.get("base_url")
  model = data["model"]
@@ -156,7 +156,7 @@ class ChatCompletionsView(APIView):
  try:
  service = await aget_chat_service(
  source=source,
- project_id=project_id,
+ space_id=space_id,
  api_key=api_key or None,
  base_url=base_url or None,
  )
@@ -219,19 +219,19 @@ class ConversationListView(APIView):
  if not serializer.is_valid:
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  data = serializer.validated_data
- project_id = str(data["project_id"])
+ space_id = str(data["space_id"])
  title = data.get("title", "新对话")
  model = data.get("model", "")
  # 验证 project 存在
  try:
- await Project.objects.aget(id=project_id)
+ await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
  return Response(
- {"error": f"项目不存在: {project_id}"},
+ {"error": f"空间不存在: {space_id}"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  conversation = await ConversationService.create_conversation(
- project_id=project_id,
+ space_id=space_id,
  title=title,
  model=model,
  )
@@ -313,7 +313,7 @@ class ConversationDetailView(APIView):
  # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
  response_data = {
  "id": str(conversation.id),
- "project_id": str(conversation.project_id),
+ "space_id": str(conversation.project_id),
  "title": conversation.title,
  "model": conversation.model,
  "status": conversation.status,
@@ -437,7 +437,7 @@ class ConversationDetailView(APIView):
  return Response(
  {
  "id": str(conversation.id),
- "project_id": str(conversation.project_id),
+ "space_id": str(conversation.project_id),
  "title": conversation.title,
  "model": conversation.model,
  "status": conversation.status,
@@ -518,7 +518,7 @@ class ConversationPreflightView(APIView):
  "chat.preflight_denied_cross_project",
  user_id=str(getattr(user, "id", "")),
  conversation_id=str(conversation.id),
- project_id=str(conversation.project_id),
+ space_id=str(conversation.project_id),
  )
  return Response(
  {"detail": "无权访问该对话"},
@@ -670,7 +670,7 @@ class ConversationMessagesDeleteView(APIView):
  "chat.cleanup_denied_cross_project",
  user_id=str(getattr(user, "id", "")),
  conversation_id=str(conversation.id),
- project_id=str(conversation.project_id),
+ space_id=str(conversation.project_id),
  )
  return Response(
  {"detail": "无权删除其他项目的对话消息"},
