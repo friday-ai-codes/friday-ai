@@ -23,7 +23,7 @@ def _make_config -> ChatRunnerConfig:
  return ChatRunnerConfig(
  system_prompt="你是测试助手",
  model="claude-sonnet-4-5",
- project_id="proj-1",
+ space_id="proj-1",
  session_id="sess-1",
  # conversation fixture omitted
  api_key="sk-test",

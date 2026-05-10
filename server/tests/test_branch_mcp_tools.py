@@ -133,6 +133,7 @@ def test_get_overview_branch_stats -> None:
 # ===================================================================
 # deep_analysis 测试
 # ===================================================================
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_deep_analysis_passes_branch -> None:
  """deep_analysis 应将 branch 传递到 DispatchTask。"""

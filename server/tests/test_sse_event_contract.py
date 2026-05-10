@@ -90,7 +90,7 @@ class TestSSEEventTypeContract:
  config = SdkRunnerConfig(
  system_prompt="test",
  model="test",
- project_id="test",
+ space_id="test",
  session_id="test",
  )
  assert config.heartbeat_timeout == 15.0, (
