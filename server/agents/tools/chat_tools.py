@@ -1,8 +1,8 @@
 """Chat 对话工具 — 项目知识检索 + 深度分析。
 检索工具（数据来自 Qdrant 已索引内容）：
 - browse_file_content: 浏览已索引文件内容（按 chunk 返回）
-- list_project_structure: 查看项目文件树结构
-- get_project_overview: 获取项目概览信息
+- list_space_structure: 查看空间文件树结构
+- get_space_overview: 获取空间概览信息
 深度分析工具：
 - deep_analysis: 将复杂分析任务 dispatch 到 Runner 上的 Claude Code 执行
 """
@@ -205,7 +205,7 @@ async def browse_file_content(
  },
  )
 @tool(
- name="list_project_structure",
+ name="list_space_structure",
  description=(
  "List the file tree structure of a project's indexed repositories. "
  "Returns an indented tree view with file names and language types."
@@ -214,7 +214,7 @@ async def browse_file_content(
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
  "description": "UUID of the project to query",
  },
@@ -223,23 +223,23 @@ async def browse_file_content(
  "description": "Branch name for branch-aware file tree (optional)",
  },
  },
- "required": ["project_id"],
+ "required": ["space_id"],
  },
 )
-async def list_project_structure(
- project_id: str,
+async def list_space_structure(
+ space_id: str,
  branch: str | None = None,
 ) -> ToolResult:
- """查看项目文件树结构。
+ """查看空间文件树结构。
  查询项目关联的所有已索引仓库，从 Qdrant 获取文件路径列表，
  构建缩进格式的树状结构。
  """
- logger.info("list_project_structure", project_id=project_id)
+ logger.info("list_space_structure", space_id=space_id)
  # 获取已索引仓库
  indexed_repos = [
  repo
  async for repo in Repository.objects.filter(
- projects__id=project_id,
+ projects__id=space_id,
  index_status="indexed",
  is_deleted=False,
  )
@@ -249,7 +249,7 @@ async def list_project_structure(
  success=True,
  output={
  "data": {
- "project_id": project_id,
+ "space_id": space_id,
  "structure": "",
  "total_files": 0,
  },
@@ -343,15 +343,15 @@ async def list_project_structure(
  structure = "\n".join(tree_lines)
  total_files = len(all_files)
  logger.info(
- "list_project_structure_success",
- project_id=project_id,
+ "list_space_structure_success",
+ space_id=space_id,
  total_files=total_files,
  )
  return ToolResult(
  success=True,
  output={
  "data": {
- "project_id": project_id,
+ "space_id": space_id,
  "structure": structure,
  "total_files": total_files,
  },
@@ -388,7 +388,7 @@ def _build_tree(files: list[dict[str, str]]) -> list[str]:
  lines.append(f"{file_indent}{filename}{lang_tag}")
  return lines
 @tool(
- name="get_project_overview",
+ name="get_space_overview",
  description=(
  "Get an overview of a project including name, description, "
  "linked repositories with their index status, file counts, "
@@ -398,7 +398,7 @@ def _build_tree(files: list[dict[str, str]]) -> list[str]:
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
  "description": "UUID of the project to query",
  },
@@ -407,25 +407,25 @@ def _build_tree(files: list[dict[str, str]]) -> list[str]:
  "description": "Branch name for branch-aware overview (optional)",
  },
  },
- "required": ["project_id"],
+ "required": ["space_id"],
  },
 )
-async def get_project_overview(
- project_id: str,
+async def get_space_overview(
+ space_id: str,
  branch: str | None = None,
 ) -> ToolResult:
- """获取项目概览信息。
+ """获取空间概览信息。
  返回项目基本信息、关联仓库列表（含索引状态、文件数、语言分布）。
  """
- logger.info("get_project_overview", project_id=project_id)
+ logger.info("get_space_overview", space_id=space_id)
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
  return ToolResult(
  success=True,
  output={
  "data": None,
- "error": f"Project not found: {project_id}",
+ "error": f"Space not found: {space_id}",
  },
  )
  # 获取关联仓库
@@ -520,8 +520,8 @@ async def get_project_overview(
  repo_info["languages"] = {}
  repo_data.append(repo_info)
  logger.info(
- "get_project_overview_success",
- project_id=project_id,
+ "get_space_overview_success",
+ space_id=space_id,
  repo_count=len(repo_data),
  )
  return ToolResult(
@@ -530,7 +530,7 @@ async def get_project_overview(
  "data": {
  "project_name": project.name,
  "description": project.description or "",
- "project_id": str(project.id),
+ "space_id": str(project.id),
  "repositories": repo_data,
  "total_repositories": len(repo_data),
  },
@@ -553,7 +553,7 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
  "description": "UUID of the project (auto-injected)",
  },
@@ -574,11 +574,11 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
  "description": "Branch name for analysis context (optional)",
  },
  },
- "required": ["project_id", "task_description"],
+ "required": ["space_id", "task_description"],
  },
 )
 async def deep_analysis(
- project_id: str,
+ space_id: str,
  task_description: str,
  repository_id: str | None = None,
  conversation_id: str = "",
@@ -592,15 +592,15 @@ async def deep_analysis(
  from subagent.models import SubAgentSession
  logger.info(
  "deep_analysis_requested",
- project_id=project_id,
+ space_id=space_id,
  task_description=task_description[:100],
  repository_id=repository_id,
  )
  # 1. 查找目标仓库
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
- return ToolResult(success=False, error=f"Project not found: {project_id}")
+ return ToolResult(success=False, error=f"Space not found: {space_id}")
  if repository_id:
  repos = [
  repo async for repo in Repository.objects.filter(
@@ -677,7 +677,7 @@ async def deep_analysis(
  last_output={
  "task_type": "explore",
  "source": "chat_deep_analysis",
- "project_id": project_id,
+ "space_id": space_id,
  "conversation_id": conversation_id,
  "repository_id": str(repo.id),
  "task_description": task_description,
@@ -758,7 +758,7 @@ async def deep_analysis(
  "task_type": "deep_analysis",
  "params": {
  "task_description": task_description,
- "project_id": project_id,
+ "space_id": space_id,
  "repository_id": str(repo.id),
  },
  }
@@ -771,7 +771,7 @@ async def deep_analysis(
  "task_type": "deep_analysis",
  "params": {
  "task_description": task_description,
- "project_id": project_id,
+ "space_id": space_id,
  "repository_id": str(repo.id),
  },
  "placeholder": f"已启动深度分析任务 ({session_id})，分析完成后将自动返回结果。",
