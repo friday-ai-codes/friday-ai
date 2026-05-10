@@ -37,30 +37,6 @@ async function openCreateProject {
  })
  await open
 }
-// 删除项目
-const deleteDialogOpen = ref(false)
-const projectToDelete = ref<string | null>(null)
-const deleting = ref(false)
-function confirmDelete(projectId: string) {
- projectToDelete.value = projectId
- deleteDialogOpen.value = true
-}
-async function handleDelete {
- if (!projectToDelete.value)
- return
- deleting.value = true
- try {
- await projectsStore.deleteProject(projectToDelete.value)
- success('删除成功', '项目已删除')
- deleteDialogOpen.value = false
- }
- catch (e: unknown) {
- handleError(e, '删除项目')
- }
- finally {
- deleting.value = false
- }
-}
 </script>
 <template>
  <PageContainer>
@@ -135,30 +111,13 @@ async function handleDelete {
  </div>
  </div>
  <!-- 底部操作栏 -->
- <div class="flex items-center justify-between px-4 py-2.5 border-t border-border/50 bg-muted/20">
+ <div class="flex items-center px-4 py-2.5 border-t border-border/50 bg-muted/20">
  <span class="text-xs text-muted-foreground group-hover:text-primary transition-colors flex items-center gap-1">
  查看详情
  <span class="icon-[lucide--arrow-right]" />
  </span>
- <Button
- variant="ghost"
- size="icon-sm"
- class="hover:bg-red-50! hover:text-red-500!"
- @click.prevent="confirmDelete(project.id)"
- >
- <span class="icon-[lucide--trash-2]" />
- </Button>
  </div>
  </RouterLink>
  </div>
- <!-- 删除确认对话框 -->
- <ConfirmDialog
- v-model:open="deleteDialogOpen"
- title="删除项目"
- description="确定要删除此项目吗？此操作不可撤销，相关的凭证配置也将被删除。"
- confirm-text="删除"
- variant="destructive":loading="deleting"
- @confirm="handleDelete"
- />
  </PageContainer>
 </template>
