@@ -94,7 +94,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "provider_type": {
  "type": "string",
  "title": "Provider 类型",
- "description": "LLM Provider 类型，为空时继承项目级或系统级配置",
+ "description": "LLM Provider 类型，为空时继承空间级或系统级配置",
  "default": "",
  },
  "timeout_hours": {
@@ -136,7 +136,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "type": "string",
  "format": "uuid",
  "title": "Provider 凭证（节点级）",
- "description": "指定本节点使用的凭证 ID，空则按项目/系统默认解析。",
+ "description": "指定本节点使用的凭证 ID，空则按空间/系统默认解析。",
  "default": "",
  },
  },
@@ -414,7 +414,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  "source_detail": "node_custom_api"})；source 仍为四态 ("node")，
  不新增第 5 种枚举值（严禁 D）。
  Args:
- project: 关联的项目对象（可能为 None）。
+ project: 关联的空间对象（可能为 None）。
  config_model: 节点 config.model 字段值。
  use_custom_api: 节点是否启用自定义 API 分支。
  api_base_url: 自定义 API 地址（仅 use_custom_api=True 生效）。
@@ -470,11 +470,11 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  f"未配置 Provider 凭证：provider_credential_id="
  f"{resolved.credential_id} 不存在"
  ) from exc
- project_id_str = str(project.id) if project is not None else ""
- if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ space_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != space_id_str:
  raise ValueError(
  f"未配置 {resolved.provider_type.value} Provider 凭证："
- f"节点 provider_credential_id 指向他 project 凭证，"
+ f"节点 provider_credential_id 指向他 space 凭证，"
  f"已拒绝（scope 校验失败）"
  )
  # 模型 fallback：config_model 为空时从 resolved.extra.default_model
@@ -484,7 +484,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  else:
  resolved_model = (resolved.extra or {}).get("default_model", "") or ""
  if not resolved_model:
- raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ raise ValueError("未配置默认模型，请在系统设置或空间设置中配置默认模型")
  return resolved, resolved_model
  def _build_session_id(self, context: ExecutionContext) -> str:
  """Generate unique session ID: wf-{execution_id}-{node_id}."""
@@ -505,7 +505,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  session, _created = await AgentSession.objects.aupdate_or_create(
  session_id=session_id,
  defaults={
- "project_id": project.id,
+ "space_id": project.id,
  "user_id": user.id if user else None,
  "status": AgentSession.Status.RUNNING,
  "temp_data": {"chat_id": chat_id},
@@ -549,7 +549,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  logger.info(
  "agent_node_start",
  session_id=session_id,
- project_id=project.id if project else None,
+ space_id=project.id if project else None,
  user_id=user.id if user else None,
  max_iterations=max_iterations,
  chat_id=chat_id,
@@ -578,7 +578,7 @@ class AIAgentBaseNode(SubStepMixin, BaseNode):
  tools = build_langchain_tools(
  tool_names,
  injected_values={
- "project_id": str(project.id) if project else "",
+ "space_id": str(project.id) if project else "",
  "session_id": session_id,
  },
  )
