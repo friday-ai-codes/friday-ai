@@ -21,7 +21,6 @@ useHead({
 const router = useRouter
 const repositoriesStore = useRepositoriesStore
 const { handleError } = useErrorHandler
-const { success } = useToast
 // 加载仓库列表
 const loading = ref(true)
 onMounted(async => {
@@ -44,30 +43,6 @@ async function openCreateRepository {
  },
  })
  await open
-}
-// 删除仓库
-const deleteDialogOpen = ref(false)
-const repositoryToDelete = ref<string | null>(null)
-const deleting = ref(false)
-function confirmDelete(id: string) {
- repositoryToDelete.value = id
- deleteDialogOpen.value = true
-}
-async function handleDelete {
- if (!repositoryToDelete.value)
- return
- deleting.value = true
- try {
- await repositoriesStore.deleteRepository(repositoryToDelete.value)
- success('删除成功', '仓库已删除')
- deleteDialogOpen.value = false
- }
- catch (e: unknown) {
- handleError(e, '删除仓库')
- }
- finally {
- deleting.value = false
- }
 }
 // 平台图标映射
 const platformIcons: Record<string, string> = {
@@ -178,32 +153,10 @@ const platformIcons: Record<string, string> = {
  <TooltipContent>凭证管理</TooltipContent>
  </Tooltip>
  </RouterLink>
- <Tooltip>
- <TooltipTrigger as-child>
- <Button
- variant="ghost"
- size="icon-sm"
- class="hover:bg-red-50! hover:text-red-500!"
- @click.prevent="confirmDelete(repository.id)"
- >
- <span class="icon-[lucide--trash-2]" />
- </Button>
- </TooltipTrigger>
- <TooltipContent>删除仓库</TooltipContent>
- </Tooltip>
  </TooltipProvider>
  </div>
  </div>
  </RouterLink>
  </div>
- <!-- 删除确认对话框 -->
- <ConfirmDialog
- v-model:open="deleteDialogOpen"
- title="删除仓库"
- description="确定要删除此仓库吗？此操作不可撤销，相关的凭证配置也将被删除。"
- confirm-text="删除"
- variant="destructive":loading="deleting"
- @confirm="handleDelete"
- />
  </PageContainer>
 </template>
