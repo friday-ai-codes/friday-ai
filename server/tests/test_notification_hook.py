@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from projects.models import Project
 from workflows.engine.scheduler import WorkflowEngine
+from core.feature_flags import FeatureFlags
 from workflows.hooks.builtin import NotificationHook
 from workflows.models import ExecutionStatus, Workflow, WorkflowNode
 @pytest.fixture
@@ -197,11 +198,19 @@ async def test_engine_execution_path_persists_message_id(
  engine = WorkflowEngine
  mock_service = AsyncMock
  mock_service.send_card = AsyncMock(return_value="msg_engine_123")
- with patch(
+ with (
+ patch(
  "services.feishu_im.FeishuIMService.create",
  new_callable=AsyncMock,
  return_value=mock_service,
- ) as mock_create:
+ ) as mock_create,
+ patch.object(
+ FeatureFlags,
+ "sync_workflow_to_feishu",
+ new_callable=property,
+ fget=lambda self: False,
+ ),
+ ):
  execution = await engine.start_execution(
  workflow=notification_integration_workflow,
  input_data={"chat_id": "oc_integration_chat"},

@@ -156,8 +156,8 @@ const toolCalls = computed( => {
 // 工具名称映射
 const TOOL_LABELS: Record<string, string> = {
  browse_file_content: '浏览文件',
- list_project_structure: '项目结构',
- get_project_overview: '项目概览',
+ list_project_structure: '空间结构',
+ get_project_overview: '空间概览',
  search_repository_code: '搜索代码',
  list_project_repositories: '仓库列表',
  get_repository_info: '仓库信息',
@@ -181,7 +181,7 @@ function toolAction(name: string, input: Record<string, unknown>, result?: strin
  return p ? `查看 ${p}`: '浏览文件内容'
  }
  case 'get_project_overview':
- return '获取项目概览'
+ return '获取空间概览'
  case 'list_project_repositories':
  return '列出所有仓库'
  case 'list_project_structure':

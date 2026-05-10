@@ -30,17 +30,17 @@ function handleCleanupConfirmed(_beforeId: string) {
  if (chatStore.currentConversationId)
  chatStore.selectConversation(chatStore.currentConversationId)
 }
-// Phase：按角色分流 CTA。system_admin 走 /admin/providers 主按钮；其他走项目设置。
-const currentProjectIdRef = computed( => {
+// Phase：按角色分流 CTA。system_admin 走 /admin/providers 主按钮；其他走空间设置。
+const currentSpaceIdRef = computed( => {
  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
- return conv?.project_id ?? ''
+ return conv?.space_id ?? ''
 })
-const { isSystemAdmin, isProjectAdmin, isViewer } = usePermission(currentProjectIdRef)
+const { isSystemAdmin, isSpaceAdmin, isViewer } = usePermission(currentSpaceIdRef)
 type PermissionRole = 'system_admin' | 'project_admin' | 'member' | 'viewer'
 const userRole = computed<PermissionRole>( => {
  if (isSystemAdmin.value)
  return 'system_admin'
- if (isProjectAdmin.value)
+ if (isSpaceAdmin.value)
  return 'project_admin'
  if (isViewer.value)
  return 'viewer'
@@ -272,7 +272,7 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  />
  <!-- Phase /：凭证缺失结构化降级卡片 -->
  <ProviderCredentialMissingCard
- v-if="chatStore.credentialMissingPayload":missing-provider="chatStore.credentialMissingPayload.missingProvider":user-role="userRole":project-id="currentProjectIdRef"
+ v-if="chatStore.credentialMissingPayload":missing-provider="chatStore.credentialMissingPayload.missingProvider":user-role="userRole":space-id="currentSpaceIdRef"
  />
  <!-- Phase /：上下文超限结构化引导卡片 + CleanupDialog -->
  <ContextExceededCard

@@ -7,7 +7,7 @@ import type { ProviderCredentialDto, ProviderType } from '~/types/providerCreden
  * 展现:按 provider_type 分组(SelectGroup) + 名称 + scope 标注
  * 空态:根据 usePermission.isSystemAdmin 分流 CTA
  * - 系统管理员 → /admin/providers
- * - 普通用户 → /projects/:id/settings#providers 或 /projects
+ * - 普通用户 → /spaces/:id/settings#providers 或 /spaces
  *
  * Typography: SelectLabel 显式 font-normal 覆盖默认字重(work item §Typography)。
  */
@@ -28,13 +28,13 @@ interface Props {
  modelValue: string | null
  providerFilter?: ProviderType
  scope: 'system' | 'project'
- projectId?: string
+ spaceId?: string
  /** Phase：frozen 态对话 Provider 下拉禁用。 */
  disabled?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
  providerFilter: undefined,
- projectId: undefined,
+ spaceId: undefined,
  disabled: false,
 })
 const emit = defineEmits<{
@@ -44,15 +44,15 @@ const emit = defineEmits<{
 const store = useProviderCredentialStore
 const { isSystemAdmin } = usePermission
 onMounted( => {
- void store.fetchCredentials({ scope: props.scope, projectId: props.projectId })
+ void store.fetchCredentials({ scope: props.scope, spaceId: props.spaceId })
 })
 // scope / projectId 变化 → 强制刷新(跨上下文不能命中 30s TTL 缓存)
 watch(
- => [props.scope, props.projectId],
+ => [props.scope, props.spaceId],
  => {
  void store.fetchCredentials({
  scope: props.scope,
- projectId: props.projectId,
+ spaceId: props.spaceId,
  force: true,
  })
  },
@@ -77,8 +77,8 @@ const emptyCta = computed( => {
  if (isSystemAdmin.value)
  return { text: '去添加凭证 →', to: '/admin/providers' }
  return {
- text: '去项目设置添加凭证 →',
- to: props.projectId ? `/projects/${props.projectId}/settings#providers`: '/projects',
+ text: '去空间设置添加凭证 →',
+ to: props.spaceId ? `/spaces/${props.spaceId}/settings#providers`: '/spaces',
  }
 })
 // reka-ui Select `@update:model-value` 的签名是 AcceptableValue(含 bigint / Record),
@@ -124,7 +124,7 @@ function onChange(id: unknown) {
  >
  <span>{{ c.name }}</span>
  <span class="ml-2 text-xs text-muted-foreground">
- {{ c.scope === 'system' ? '系统默认': '仅本项目' }}
+ {{ c.scope === 'system' ? '系统默认': '仅本空间' }}
  </span>
  </SelectItem>
  </SelectGroup>

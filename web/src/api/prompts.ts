@@ -54,7 +54,7 @@ export class PromptVariableMissingError extends Error {
 interface ListParams {
  scope: PromptScope
  category?: PromptCategory
- project_id?: string
+ space_id?: string
 }
 // ============================================================================
 // 9 个端点函数（命名与 server/prompts/urls.py 路由一一对应）
@@ -64,7 +64,7 @@ async function list(params: ListParams): Promise<PromptListItem> {
  const query: Record<string, string | undefined> = {
  scope: params.scope,
  category: params.category,
- project_id: params.project_id,
+ space_id: params.space_id,
  }
  return get<PromptListItem>('/prompts/', query)
 }

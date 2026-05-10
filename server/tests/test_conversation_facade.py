@@ -25,7 +25,7 @@ class _SdkConfigStub:
  """SdkRunnerConfig 的最小化替身。"""
  system_prompt: str = "test prompt"
  model: str = "claude-sonnet-4-5"
- project_id: str = ""
+ space_id: str = ""
  session_id: str = "chat-test-session-001"
  conversation_id: str = ""
  api_key: str = "sk-test-key"
@@ -96,7 +96,7 @@ def _facade_patches(
  finalize_mock = AsyncMock(return_value=finalize_return or )
  config_stub = _SdkConfigStub(
  conversation_id=str(conversation.id),
- project_id=str(conversation.project_id),
+ space_id=str(conversation.project_id),
  )
  session_stub = _SessionStub
  patches = (

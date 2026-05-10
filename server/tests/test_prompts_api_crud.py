@@ -147,7 +147,7 @@ class TestPromptCRUDAPI:
  title="t2",
  created_by=admin_user,
  )
- url = reverse("prompt-list") + f"?scope=project&project_id={project.id}"
+ url = reverse("prompt-list") + f"?scope=project&space_id={project.id}"
  resp = authenticated_admin_client.get(url)
  assert resp.status_code == 200, resp.content
  slugs = {item["slug"] for item in resp.json}
@@ -210,6 +210,7 @@ class TestPromptCRUDAPI:
  "description": "",
  "body": "Hi {{who}}",
  "change_note": "initial",
+ "space": None,
  }
  resp = authenticated_admin_client.post(
  url,

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * 飞书配置表单组件
- * 用于配置项目的飞书集成凭证
+ * 用于配置空间的飞书集成凭证
  * 飞书项目使用「插件」凭证而非「应用」凭证来获取工作项详情
  */
 import type { FeishuConfig, FeishuConfigCreate } from '~/types'
 import { computed, ref } from 'vue'
-import { deleteFeishuConfig, setFeishuConfig, testFeishuConfig } from '~/api/projects'
+import { deleteFeishuConfig, setFeishuConfig, testFeishuConfig } from '~/api/spaces'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
@@ -14,7 +14,7 @@ import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
- projectId: string
+ spaceId: string
  config: FeishuConfig | null
 }>
 const emit = defineEmits<{
@@ -47,7 +47,7 @@ async function handleSubmit {
  }
  isLoading.value = true
  try {
- await setFeishuConfig(props.projectId, formData.value)
+ await setFeishuConfig(props.spaceId, formData.value)
  success('飞书配置保存成功')
  // 清空敏感信息
  formData.value.plugin_secret = ''
@@ -70,7 +70,7 @@ async function handleTest {
  plugin_secret: formData.value.plugin_secret || undefined,
  user_key: formData.value.user_key || undefined,
  }
- const result = await testFeishuConfig(props.projectId, testConfig)
+ const result = await testFeishuConfig(props.spaceId, testConfig)
  if (result.success) {
  success(result.message)
  }
@@ -89,7 +89,7 @@ async function handleTest {
 async function handleDelete {
  isDeleting.value = true
  try {
- await deleteFeishuConfig(props.projectId)
+ await deleteFeishuConfig(props.spaceId)
  success('飞书配置已删除')
  formData.value = { plugin_id: '', plugin_secret: '', user_key: '' }
  emit('updated')

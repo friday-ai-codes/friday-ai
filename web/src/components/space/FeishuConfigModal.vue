@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { FeishuConfig } from '~/types'
 import { VueFinalModal } from 'vue-final-modal'
-import { getFeishuConfig, setFeishuConfig } from '~/api/projects'
+import { getFeishuConfig, setFeishuConfig } from '~/api/spaces'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = defineProps<{
- projectId: string
+ spaceId: string
 }>
 const emit = defineEmits<{
  confirm:
@@ -29,7 +29,7 @@ const loading = ref(false)
 async function loadConfig {
  loading.value = true
  try {
- const data = await getFeishuConfig(props.projectId)
+ const data = await getFeishuConfig(props.spaceId)
  config.value = data
  form.plugin_id = data.plugin_id || ''
  form.user_key = data.user_key || ''
@@ -83,7 +83,7 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- await setFeishuConfig(props.projectId, {
+ await setFeishuConfig(props.spaceId, {
  plugin_id: form.plugin_id,
  plugin_secret: form.plugin_secret,
  user_key: form.user_key,

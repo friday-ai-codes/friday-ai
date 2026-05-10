@@ -145,14 +145,14 @@ class TestMeApi:
  assert resp.data["gravatar_url"] is not None
  assert "gravatar.com/avatar/" in resp.data["gravatar_url"]
  def test_me_returns_project_memberships(self, authenticated_client, user, project_memberships):
- """GET /me 返回用户所属项目列表。"""
+ """GET /me 返回用户所属空间列表。"""
  resp = authenticated_client.get("/api/auth/me/")
  assert resp.status_code == status.HTTP_200_OK
- assert "project_memberships" in resp.data
- assert len(resp.data["project_memberships"]) >= 1
- membership = resp.data["project_memberships"][0]
- assert "project_id" in membership
- assert "project_name" in membership
+ assert "space_memberships" in resp.data
+ assert len(resp.data["space_memberships"]) >= 1
+ membership = resp.data["space_memberships"][0]
+ assert "space_id" in membership
+ assert "space_name" in membership
  assert "role" in membership
  def test_me_profile_update(self, authenticated_client, user):
  """PATCH /me/profile 更新用户显示名。"""
@@ -208,24 +208,24 @@ class TestProjectMembers:
  """项目成员 CRUD API 测试。"""
  def test_project_admin_can_list_members(self, authenticated_client, project, project_memberships):
  """项目 admin 可查看成员列表。"""
- resp = authenticated_client.get(f"/api/projects/{project.pk}/members/")
+ resp = authenticated_client.get(f"/api/spaces/{project.pk}/members/")
  assert resp.status_code == status.HTTP_200_OK
  assert isinstance(resp.data, list)
  assert len(resp.data) >= 1
  def test_member_can_list_members(self, authenticated_member_client, project, project_memberships):
  """项目 member 可查看成员列表。"""
- resp = authenticated_member_client.get(f"/api/projects/{project.pk}/members/")
+ resp = authenticated_member_client.get(f"/api/spaces/{project.pk}/members/")
  assert resp.status_code == status.HTTP_200_OK
  def test_non_member_cannot_list_members(self, api_client, other_user, project, project_memberships):
  """非成员无法查看成员列表。"""
  client = APIClient
  client.force_authenticate(user=other_user)
- resp = client.get(f"/api/projects/{project.pk}/members/")
+ resp = client.get(f"/api/spaces/{project.pk}/members/")
  assert resp.status_code == status.HTTP_403_FORBIDDEN
  def test_project_admin_can_add_member(self, authenticated_client, project, other_user, project_memberships):
  """项目 admin 可添加新成员。"""
  resp = authenticated_client.post(
- f"/api/projects/{project.pk}/members/",
+ f"/api/spaces/{project.pk}/members/",
  {"user_id": str(other_user.pk), "role": "member"},
  format="json",
  )
@@ -235,7 +235,7 @@ class TestProjectMembers:
  def test_non_admin_cannot_add_member(self, authenticated_member_client, project, other_user, project_memberships):
  """非 admin 成员无法添加新成员。"""
  resp = authenticated_member_client.post(
- f"/api/projects/{project.pk}/members/",
+ f"/api/spaces/{project.pk}/members/",
  {"user_id": str(other_user.pk), "role": "member"},
  format="json",
  )
@@ -243,7 +243,7 @@ class TestProjectMembers:
  def test_add_duplicate_member_returns_409(self, authenticated_client, project, member_user, project_memberships):
  """重复添加成员返回 409。"""
  resp = authenticated_client.post(
- f"/api/projects/{project.pk}/members/",
+ f"/api/spaces/{project.pk}/members/",
  {"user_id": str(member_user.pk), "role": "viewer"},
  format="json",
  )
@@ -251,7 +251,7 @@ class TestProjectMembers:
  def test_project_admin_can_update_member_role(self, authenticated_client, project, member_user, project_memberships):
  """项目 admin 可变更成员角色。"""
  resp = authenticated_client.patch(
- f"/api/projects/{project.pk}/members/{member_user.pk}/",
+ f"/api/spaces/{project.pk}/members/{member_user.pk}/",
  {"role": "viewer"},
  format="json",
  )
@@ -261,14 +261,14 @@ class TestProjectMembers:
  assert membership.role == "viewer"
  def test_project_admin_can_remove_member(self, authenticated_client, project, member_user, project_memberships):
  """项目 admin 可移除成员。"""
- resp = authenticated_client.delete(f"/api/projects/{project.pk}/members/{member_user.pk}/")
+ resp = authenticated_client.delete(f"/api/spaces/{project.pk}/members/{member_user.pk}/")
  assert resp.status_code == status.HTTP_204_NO_CONTENT
  assert not ProjectMembership.objects.filter(user=member_user, project=project).exists
  def test_non_admin_cannot_remove_member(self, authenticated_member_client, project, viewer_user, project_memberships):
  """非 admin 成员无法移除其他成员。"""
- resp = authenticated_member_client.delete(f"/api/projects/{project.pk}/members/{viewer_user.pk}/")
+ resp = authenticated_member_client.delete(f"/api/spaces/{project.pk}/members/{viewer_user.pk}/")
  assert resp.status_code == status.HTTP_403_FORBIDDEN
  def test_remove_nonexistent_member_returns_404(self, authenticated_client, project, other_user, project_memberships):
  """移除不存在的成员关系返回 404。"""
- resp = authenticated_client.delete(f"/api/projects/{project.pk}/members/{other_user.pk}/")
+ resp = authenticated_client.delete(f"/api/spaces/{project.pk}/members/{other_user.pk}/")
  assert resp.status_code == status.HTTP_404_NOT_FOUND

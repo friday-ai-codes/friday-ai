@@ -9,7 +9,7 @@ import type {
  *
  * scope-aware 设计：
  * - scope='system' → 挂 /admin/providers（由 Plan）
- * - scope='project' → 挂 /projects/:id/settings#providers（由 Plan 复用）
+ * - scope='project' → 挂 /spaces/:id/settings#providers（由 Plan 复用）
  *
  * 职责：
  * - mount 调 store.fetchCredentials + store.fetchProviderTypes（动态表单数据源）
@@ -47,12 +47,12 @@ import ProviderCredentialForm from './ProviderCredentialForm.vue'
 import ProviderCredentialListTable from './ProviderCredentialListTable.vue'
 interface Props {
  scope: 'system' | 'project'
- projectId?: string
+ spaceId?: string
  /** 嵌入模式：隐藏独立 PageHeader，由外层卡片承载标题 */
  embedded?: boolean
 }
 const props = withDefaults(defineProps<Props>, {
- projectId: undefined,
+ spaceId: undefined,
  embedded: false,
 })
 const store = useProviderCredentialStore
@@ -64,18 +64,18 @@ const pageTitle = computed( =>
 )
 const pageDesc = computed( =>
  props.scope === 'system'
- ? '管理系统级 LLM Provider 凭证，供全部项目共享；项目级覆盖请前往项目设置页': '仅本项目可见的 Provider 凭证，覆盖系统默认',
+ ? '管理系统级 LLM Provider 凭证，供全部空间共享；空间级覆盖请前往空间设置页': '仅本空间可见的 Provider 凭证，覆盖系统默认',
 )
 const emptyTitle = computed( =>
  props.scope === 'system'
- ? '尚未配置任何 Provider 凭证': '本项目暂未配置覆盖凭证',
+ ? '尚未配置任何 Provider 凭证': '本空间暂未配置覆盖凭证',
 )
 const emptyDesc = computed( =>
  props.scope === 'system'
- ? '至少添加一条凭证后，工作流与对话才能调用 LLM。建议先添加默认 Anthropic 凭证。': '未配置时将沿用系统默认 Provider 凭证。如需本项目独享某个 Provider，点击新建。',
+ ? '至少添加一条凭证后，工作流与对话才能调用 LLM。建议先添加默认 Anthropic 凭证。': '未配置时将沿用系统默认 Provider 凭证。如需本空间独享某个 Provider，点击新建。',
 )
 const emptyCta = computed( =>
- props.scope === 'system' ? '新建凭证': '新建项目凭证',
+ props.scope === 'system' ? '新建凭证': '新建空间凭证',
 )
 const emptyIcon = computed( =>
  props.scope === 'system' ? 'icon-[lucide--key-round]': 'icon-[lucide--folder-lock]',
@@ -95,7 +95,7 @@ onMounted( => {
  .fetchProviderTypes
  .catch(e => handleError(e, '加载 Provider 类型'))
  void store
- .fetchCredentials({ scope: props.scope, projectId: props.projectId })
+ .fetchCredentials({ scope: props.scope, spaceId: props.spaceId })
  .catch(e => handleError(e, '加载凭证列表'))
 })
 // ==== Handlers ====
@@ -118,8 +118,8 @@ async function onSubmit(
 ) {
  try {
  if (formMode.value === 'create') {
- // 项目级容器补 scope / scope_id 兜底（避免表单未设时跨 scope 创建）
- if (props.scope === 'project' && props.projectId) {;(payload as ProviderCredentialCreatePayload).scope = 'project';(payload as ProviderCredentialCreatePayload).scope_id = props.projectId
+ // 空间级容器补 scope / scope_id 兜底（避免表单未设时跨 scope 创建）
+ if (props.scope === 'project' && props.spaceId) {;(payload as ProviderCredentialCreatePayload).scope = 'project';(payload as ProviderCredentialCreatePayload).scope_id = props.spaceId
  }
  await store.createCredential(payload as ProviderCredentialCreatePayload)
  toast.success('凭证已保存')
@@ -278,7 +278,7 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  按所选 Provider 类型填写凭证字段，保存后将加密存储。
  </DialogDescription>
  </DialogHeader>
- <ProviderCredentialForm:mode="formMode":initial="formInitial":default-scope="props.scope":default-project-id="props.projectId ?? null"
+ <ProviderCredentialForm:mode="formMode":initial="formInitial":default-scope="props.scope":default-space-id="props.spaceId ?? null"
  @submit="onSubmit"
  @cancel="onCancel"
  @dirty="formDirty = $event"
@@ -310,7 +310,7 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  <AlertDialogDescription>
  删除后
  <strong>{{ deleteTarget?.name }}</strong>
- （{{ deleteTarget?.provider_type }}）将立即对全部项目不可用，已运行的对话 /
+ （{{ deleteTarget?.provider_type }}）将立即对全部空间不可用，已运行的对话 /
  工作流不受影响。此操作不可撤销。
  </AlertDialogDescription>
  </AlertDialogHeader>

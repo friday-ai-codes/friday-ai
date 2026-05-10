@@ -296,11 +296,10 @@ class TestFallbackLogicRemoved:
 # --- Provider Type Configuration Tests (Plan, updated Phase) ---
 class TestSettingKeysProviderConfig:
  """验证 SettingKeys 包含新的 Provider 配置键（Phase）。"""
- def test_default_provider_type_key_exists(self) -> None:
- """SettingKeys.DEFAULT_PROVIDER_TYPE 存在且值正确。"""
+ def test_default_provider_type_key_removed(self) -> None:
+ """SettingKeys.DEFAULT_PROVIDER_TYPE 已硬删（Phase Plan）。"""
  from system.models import SettingKeys as SK
- assert hasattr(SK, "DEFAULT_PROVIDER_TYPE")
- assert SK.DEFAULT_PROVIDER_TYPE == "default_provider_type"
+ assert not hasattr(SK, "DEFAULT_PROVIDER_TYPE")
  def test_old_keys_removed(self) -> None:
  """旧的 PROVIDER_TYPE 和 LLM_PROVIDER_TYPE 已删除。"""
  from system.models import SettingKeys as SK
@@ -353,34 +352,17 @@ class TestCreateProtocol:
  _create_protocol("gemini", "key", "url")
 class TestFactoryProviderTypeRouting:
  """验证工厂函数的 provider_type 路由。"""
- @patch("chat.services.get_setting_value")
- def test_factory_default_provider_type(self, mock_get_setting: MagicMock) -> None:
+ @patch("chat.services._load_system_credential_sync")
+ def test_factory_default_provider_type(self, mock_load_cred: MagicMock) -> None:
  """无 DEFAULT_PROVIDER_TYPE 设置时默认使用 openai_chat。"""
- # 模拟: API key 存在，provider_type 不存在
- def setting_side_effect(key: str) -> str | None:
- if key == "anthropic_api_key":
- return "test-api-key"
- if key == "anthropic_base_url":
- return "https://api.test.com"
- if key == "default_provider_type":
- return None # 不存在
- return None
- mock_get_setting.side_effect = setting_side_effect
+ mock_load_cred.return_value = ("test-api-key", "https://api.test.com")
  service = get_chat_service(source="system")
  assert isinstance(service, ChatService)
  # 验证内部协议是 OpenAIChatProtocol
  assert isinstance(service._protocol, OpenAIChatProtocol)
- @patch("chat.services.get_setting_value")
- def test_factory_reads_provider_type(self, mock_get_setting: MagicMock) -> None:
- """工厂函数读取 default_provider_type 设置。"""
- def setting_side_effect(key: str) -> str | None:
- if key == "anthropic_api_key":
- return "test-api-key"
- if key == "anthropic_base_url":
- return "https://api.test.com"
- if key == "default_provider_type":
- return "openai_chat"
- return None
- mock_get_setting.side_effect = setting_side_effect
+ @patch("chat.services._load_system_credential_sync")
+ def test_factory_reads_provider_type(self, mock_load_cred: MagicMock) -> None:
+ """工厂函数使用系统凭证创建服务。"""
+ mock_load_cred.return_value = ("test-api-key", "https://api.test.com")
  service = get_chat_service(source="system")
  assert isinstance(service._protocol, OpenAIChatProtocol)

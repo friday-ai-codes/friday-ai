@@ -25,8 +25,8 @@ const props = defineProps<{
  open: boolean
  /** 配置来源 */
  source: ConfigSource
- /** 项目 ID（当 source=project 时） */
- projectId?: number
+ /** 空间 ID（当 source=project 时） */
+ spaceId?: number
  /** 临时 API Key（用于测试未保存的配置） */
  apiKey?: string
  /** 临时 Base URL（用于测试未保存的配置） */
@@ -80,7 +80,7 @@ async function fetchModels {
  try {
  const response = await getModels({
  source: props.source,
- project_id: props.projectId,
+ space_id: props.spaceId,
  api_key: props.apiKey,
  base_url: props.baseUrl,
  })
@@ -115,7 +115,7 @@ async function sendTest {
  model: selectedModel.value,
  messages: [{ role: 'user', content: testPrompt.value.trim }],
  source: props.source,
- project_id: props.projectId,
+ space_id: props.spaceId,
  api_key: props.apiKey,
  base_url: props.baseUrl,
  })

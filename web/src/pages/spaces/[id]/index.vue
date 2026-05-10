@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
+import { computed } from 'vue'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/spaces'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import AnchorNavLayout, { type NavSection } from '~/components/layout/AnchorNavLayout.vue'
@@ -9,7 +10,6 @@ import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
-import { Separator } from '~/components/ui/separator'
 import {
  Tooltip,
  TooltipContent,
@@ -41,7 +41,6 @@ onMounted(async => {
  executionsStore.fetchExecutions(undefined, spaceId.value),
  repositoriesStore.fetchRepositories,
  ])
- // 逐个检查结果，失败的部分通过 toast 提示
  const names = ['空间信息', '飞书配置', '执行记录', '仓库列表']
  results.forEach((result, index) => {
  if (result.status === 'rejected') {
@@ -71,22 +70,49 @@ async function handleDelete {
  deleteDialogOpen.value = false
  }
 }
-// 格式化日期
 function formatDate(dateStr: string) {
  return new Date(dateStr).toLocaleString('zh-CN')
 }
-// 计算属性
 const space = computed( => spacesStore.currentSpace)
 const feishuConfig = computed( => spacesStore.currentFeishuConfig)
 const spaceExecutions = computed( => executionsStore.executions)
-const sections = ref<NavSection>([
+const repoCount = computed( => space.value?.repositories?.length ?? 0)
+const executionTotal = computed( => space.value?.execution_count ?? spaceExecutions.value.length ?? 0)
+const feishuConfigured = computed( => Boolean(feishuConfig.value?.is_configured))
+const hasToken = computed( => Boolean(space.value?.webhook_token))
+const hasFullConfig = computed( => feishuConfigured.value && repoCount.value > 0)
+const sections = computed<NavSection>( => [
  { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
- { id: 'repositories', label: '关联仓库', icon: 'icon-[lucide--git-branch]' },
- { id: 'feishu', label: '飞书配置', icon: 'icon-[lucide--message-square]' },
+ {
+ id: 'repositories',
+ label: '关联仓库',
+ icon: 'icon-[lucide--git-branch]',
+ badge: repoCount.value || undefined,
+ badgeTone: repoCount.value > 0 ? 'primary': 'muted',
+ },
+ {
+ id: 'feishu',
+ label: '飞书配置',
+ icon: 'icon-[lucide--message-square]',
+ badge: feishuConfigured.value ? '✓': '!',
+ badgeTone: feishuConfigured.value ? 'success': 'warning',
+ },
  { id: 'prompts', label: 'Prompt 覆盖', icon: 'icon-[lucide--file-text]' },
  { id: 'providers', label: 'Provider 凭证', icon: 'icon-[lucide--key-round]' },
- { id: 'webhook-token', label: 'Webhook Token', icon: 'icon-[lucide--key]' },
- { id: 'executions', label: '相关执行', icon: 'icon-[lucide--layers]' },
+ {
+ id: 'webhook-token',
+ label: 'Webhook Token',
+ icon: 'icon-[lucide--key]',
+ badge: hasToken.value ? '✓': undefined,
+ badgeTone: 'success',
+ },
+ {
+ id: 'executions',
+ label: '相关执行',
+ icon: 'icon-[lucide--layers]',
+ badge: spaceExecutions.value.length || undefined,
+ badgeTone: 'primary',
+ },
  { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
 ])
 // 关联仓库 - 穿梭框模式
@@ -181,6 +207,20 @@ async function copyWebhookToken {
  await copy(space.value.webhook_token)
  success('已复制', 'Webhook Token 已复制到剪贴板')
 }
+async function copySpaceId {
+ if (!space.value)
+ return
+ await copy(space.value.id)
+ success('已复制', '空间 ID 已复制到剪贴板')
+}
+function scrollToSection(id: string) {
+ const el = document.getElementById(id)
+ if (!el)
+ return
+ const offset = 88
+ const top = el.getBoundingClientRect.top + window.scrollY - offset
+ window.scrollTo({ top, behavior: 'smooth' })
+}
 const refreshTokenDialogOpen = ref(false)
 const refreshingToken = ref(false)
 async function handleRefreshToken {
@@ -230,41 +270,165 @@ async function handleCustomToken {
 }
 </script>
 <template>
- <div class="space-y-8">
- <!-- 返回按钮 -->
- <RouterLink to="/spaces" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
- <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
- 返回空间列表
- </RouterLink>
+ <div>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="4" />
+ <!-- 空间不存在 -->
+ <EmptyState
+ v-else-if="!space"
+ icon="lucide--help-circle"
+ title="空间不存在"
+ description="未找到该空间，可能已被删除"
+ action-label="返回列表"
+ gradient="from-primary/20 to-primary/20"
+ @action="router.push('/spaces')"
+ />
  <!-- 空间详情 -->
- <template v-else-if="space">
- <!-- 头部 -->
- <div class="flex items-start justify-between">
- <div class="space-y-2">
- <div class="flex items-center gap-3">
- <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
- <span class="icon-[lucide--folder-open] text-2xl text-primary" />
+ <div v-else class="space-y-6">
+ <!-- 面包屑 -->
+ <RouterLink
+ to="/spaces"
+ class="group inline-flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+ >
+ <span class="icon-[lucide--arrow-left] mr-1.5 group-hover:-translate-x-0.5 transition-transform" />
+ 空间列表
+ </RouterLink>
+ <!-- Hero 区 -->
+ <div class="card overflow-hidden">
+ <div class="relative px-6 py-5 sm:px-7 sm:py-6">
+ <!-- 装饰背景（极淡 primary tint） -->
+ <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-primary/5 to-transparent pointer-events-none" />
+ <div class="absolute -top-20 -right-12 w-60 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+ <div class="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+ <div class="flex items-start gap-4 min-w-0 flex-1">
+ <div class="shrink-0 rounded-2xl bg-primary/10 ring-1 ring-primary/15">
+ <span class="icon-[lucide--folder-open] text-3xl text-primary" />
  </div>
- <div>
- <h1 class="text-2xl font-bold">
+ <div class="min-w-0 flex-1">
+ <div class="flex items-center gap-2 flex-wrap">
+ <h1 class="text-2xl font-bold text-foreground truncate">
  {{ space.name }}
  </h1>
- <p class="text-sm text-muted-foreground">
+ <Badge:variant="hasFullConfig ? 'success': 'warning'" class="shrink-0 gap-1">
+ <span:class="hasFullConfig ? 'icon-[lucide--circle-check] text-[12px]': 'icon-[lucide--loader-circle] text-[12px]'" />
+ {{ hasFullConfig ? '已就绪': '配置中' }}
+ </Badge>
+ </div>
+ <p class="text-sm text-muted-foreground mt-1.5">
  {{ space.description || '暂无描述' }}
  </p>
+ <!-- 元数据行 -->
+ <div class="flex items-center gap-x-5 gap-y-1.5 mt-3 text-xs text-muted-foreground flex-wrap">
+ <button
+ class="group/copy flex items-center gap-1.5 hover:text-primary transition-colors"
+ @click="copySpaceId"
+ >
+ <span class="icon-[lucide--fingerprint] opacity-60 group-hover/copy:opacity-100" />
+ <code class="font-mono">{{ space.id.slice(0, 8) }}</code>
+ <span class="icon-[lucide--copy] text-[11px] opacity-0 group-hover/copy:opacity-100 transition-opacity" />
+ </button>
+ <span class="flex items-center gap-1.5">
+ <span class="icon-[lucide--calendar-plus] opacity-60" />
+ 创建于 {{ formatDate(space.created_at) }}
+ </span>
+ <span class="flex items-center gap-1.5">
+ <span class="icon-[lucide--calendar-clock] opacity-60" />
+ 更新于 {{ formatDate(space.updated_at) }}
+ </span>
  </div>
  </div>
  </div>
- <div class="flex items-center gap-2">
+ <div class="flex items-center gap-2 shrink-0 sm:self-start">
  <RouterLink:to="`/spaces/${space.id}/edit`">
- <Button variant="outline" class="group">
- <span class="icon-[lucide--pencil] mr-2 group-hover:scale-110 transition-transform" />
+ <Button variant="outline" size="sm" class="group">
+ <span class="icon-[lucide--pencil] mr-1.5 group-hover:scale-110 transition-transform" />
  编辑
  </Button>
  </RouterLink>
  </div>
+ </div>
+ </div>
+ </div>
+ <!-- KPI 概览 -->
+ <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+ <button
+ type="button"
+ class="card text-left hover:shadow-card-hover hover:-translate-y-0.5 transition-all group"
+ @click="scrollToSection('repositories')"
+ >
+ <div class="flex items-start justify-between">
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--git-branch] text-base text-primary" />
+ </div>
+ <span class="icon-[lucide--arrow-up-right] text-muted-foreground/40 group-hover:text-primary group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all" />
+ </div>
+ <div class="mt-3">
+ <div class="text-2xl font-bold text-foreground tabular-nums leading-none">
+ {{ repoCount }}
+ </div>
+ <div class="text-xs text-muted-foreground mt-1.5">关联仓库</div>
+ </div>
+ </button>
+ <button
+ type="button"
+ class="card text-left hover:shadow-card-hover hover:-translate-y-0.5 transition-all group"
+ @click="scrollToSection('executions')"
+ >
+ <div class="flex items-start justify-between">
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--layers] text-base text-primary" />
+ </div>
+ <span class="icon-[lucide--arrow-up-right] text-muted-foreground/40 group-hover:text-primary group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-all" />
+ </div>
+ <div class="mt-3">
+ <div class="text-2xl font-bold text-foreground tabular-nums leading-none">
+ {{ executionTotal }}
+ </div>
+ <div class="text-xs text-muted-foreground mt-1.5">累计执行</div>
+ </div>
+ </button>
+ <button
+ type="button"
+ class="card text-left hover:shadow-card-hover hover:-translate-y-0.5 transition-all group"
+ @click="scrollToSection('feishu')"
+ >
+ <div class="flex items-start justify-between">
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--message-square] text-base text-primary" />
+ </div>
+ <span
+ class=" w-2 rounded-full":class="feishuConfigured
+ ? 'bg-emerald-500 ring-4 ring-emerald-500/15': 'bg-amber-500 ring-4 ring-amber-500/15'"
+ />
+ </div>
+ <div class="mt-3">
+ <div class="text-base font-semibold text-foreground">
+ {{ feishuConfigured ? '已配置': '未配置' }}
+ </div>
+ <div class="text-xs text-muted-foreground mt-1">飞书集成</div>
+ </div>
+ </button>
+ <button
+ type="button"
+ class="card text-left hover:shadow-card-hover hover:-translate-y-0.5 transition-all group"
+ @click="scrollToSection('webhook-token')"
+ >
+ <div class="flex items-start justify-between">
+ <div class=" rounded-lg bg-primary/10">
+ <span class="icon-[lucide--key] text-base text-primary" />
+ </div>
+ <span
+ class=" w-2 rounded-full":class="hasToken
+ ? 'bg-emerald-500 ring-4 ring-emerald-500/15': 'bg-muted-foreground/30 ring-4 ring-muted-foreground/10'"
+ />
+ </div>
+ <div class="mt-3">
+ <div class="text-base font-semibold text-foreground">
+ {{ hasToken ? '已生成': '未配置' }}
+ </div>
+ <div class="text-xs text-muted-foreground mt-1">Webhook Token</div>
+ </div>
+ </button>
  </div>
  <AnchorNavLayout:sections="sections">
  <!-- 基本信息 -->
@@ -276,28 +440,48 @@ async function handleCustomToken {
  基本信息
  </h3>
  </div>
- <div class=" space-y-4">
- <div>
- <label class="text-xs text-muted-foreground">飞书项目 Key</label>
- <p class="font-mono text-sm mt-1 text-foreground">
- {{ space.feishu_project_key || '未配置' }}
- </p>
+ <div class="">
+ <dl class="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+ <div class="space-y-1">
+ <dt class="text-xs text-muted-foreground">
+ 飞书项目 Key
+ </dt>
+ <dd class="font-mono text-sm">
+ <span v-if="space.feishu_project_key" class="text-foreground">{{ space.feishu_project_key }}</span>
+ <span v-else class="text-muted-foreground italic">未配置</span>
+ </dd>
  </div>
- <Separator class="bg-border/50" />
- <div class="flex gap-8">
- <div>
- <label class="text-xs text-muted-foreground">创建时间</label>
- <p class="text-sm mt-1 text-foreground">
+ <div class="space-y-1">
+ <dt class="text-xs text-muted-foreground">
+ 空间 ID
+ </dt>
+ <dd class="group flex items-center gap-2 font-mono text-xs text-foreground">
+ <span class="truncate">{{ space.id }}</span>
+ <button
+ class="shrink-0 opacity-50 hover:opacity-100 hover:text-primary transition-all"
+ @click="copySpaceId"
+ >
+ <span class="icon-[lucide--copy]" />
+ </button>
+ </dd>
+ </div>
+ <div class="space-y-1">
+ <dt class="text-xs text-muted-foreground">
+ 创建时间
+ </dt>
+ <dd class="text-sm text-foreground">
  {{ formatDate(space.created_at) }}
- </p>
+ </dd>
  </div>
- <div>
- <label class="text-xs text-muted-foreground">更新时间</label>
- <p class="text-sm mt-1 text-foreground">
+ <div class="space-y-1">
+ <dt class="text-xs text-muted-foreground">
+ 更新时间
+ </dt>
+ <dd class="text-sm text-foreground">
  {{ formatDate(space.updated_at) }}
- </p>
+ </dd>
  </div>
- </div>
+ </dl>
  </div>
  </div>
  </section>
@@ -310,29 +494,47 @@ async function handleCustomToken {
  <h3 class="text-sm font-semibold">
  关联仓库
  </h3>
- <span class="text-xs text-muted-foreground">({{ space.repositories?.length || 0 }})</span>
+ <Badge variant="secondary" class=" px-1.5 text-[10px]">
+ {{ repoCount }}
+ </Badge>
  </div>
- <Button variant="outline" size="sm" class=" text-xs" @click="openLinkDialog">
+ <Button variant="outline" size="sm" class="" @click="openLinkDialog">
  <span class="icon-[lucide--settings-2] mr-1.5" />
  管理
  </Button>
  </div>
  <div class="">
- <div v-if="space.repositories?.length === 0" class="text-center py-6 text-muted-foreground">
- <span class="icon-[lucide--git-branch] text-2xl mb-2 block opacity-40" />
- <p class="text-sm">
- 暂无关联仓库
+ <div v-if="repoCount === 0" class="text-center py-8 space-y-3">
+ <div class="inline-flex rounded-2xl bg-muted/50">
+ <span class="icon-[lucide--git-branch] text-2xl text-muted-foreground/60" />
+ </div>
+ <div>
+ <p class="text-sm font-medium text-foreground">
+ 还没有关联仓库
+ </p>
+ <p class="text-xs text-muted-foreground mt-1">
+ 关联仓库后才能在此空间内运行 Git 工作流
  </p>
  </div>
- <div v-else class="space-y-2">
+ <div>
+ <Button variant="outline" size="sm" @click="openLinkDialog">
+ <span class="icon-[lucide--plus] mr-1.5" />
+ 关联仓库
+ </Button>
+ </div>
+ </div>
+ <div v-else class="grid gap-2 sm:grid-cols-2">
  <div
  v-for="repo in space.repositories":key="repo.id"
- class="flex items-center justify-between .5 rounded-lg border border-border/50 hover:bg-muted/40 transition-colors"
+ class="group flex items-center gap-3 rounded-xl border border-border/50 hover:border-primary/30 hover:bg-primary/[0.03] transition-all"
  >
+ <div class="shrink-0 rounded-lg bg-primary/10">
+ <span class="icon-[lucide--git-branch] text-sm text-primary" />
+ </div>
  <div class="min-w-0 flex-1">
  <div class="flex items-center gap-2">
- <span class="text-sm font-medium text-foreground">{{ repo.name }}</span>
- <Badge variant="outline" class="text-xs">
+ <span class="text-sm font-medium text-foreground truncate">{{ repo.name }}</span>
+ <Badge variant="outline" class=" px-1.5 text-[10px] shrink-0">
  {{ PLATFORM_LABELS[repo.git_platform] }}
  </Badge>
  </div>
@@ -340,15 +542,19 @@ async function handleCustomToken {
  {{ repo.git_url }}
  </p>
  </div>
- <RouterLink:to="`/repositories/${repo.id}`">
+ <RouterLink:to="`/repositories/${repo.id}`" class="shrink-0">
  <TooltipProvider:delay-duration="300">
  <Tooltip>
  <TooltipTrigger as-child>
- <Button variant="ghost" size="icon" class=" w-7">
- <span class="icon-[lucide--eye] text-sm" />
+ <Button
+ variant="ghost"
+ size="icon"
+ class=" w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+ >
+ <span class="icon-[lucide--external-link] text-sm" />
  </Button>
  </TooltipTrigger>
- <TooltipContent>查看详情</TooltipContent>
+ <TooltipContent>查看仓库</TooltipContent>
  </Tooltip>
  </TooltipProvider>
  </RouterLink>
@@ -375,29 +581,42 @@ async function handleCustomToken {
  </RouterLink>
  </div>
  <div class="">
- <div v-if="feishuConfig?.is_configured" class="flex items-center gap-3">
- <div class=".5 rounded-full bg-emerald-500/10">
- <span class="icon-[lucide--check-circle] text-lg text-emerald-500" />
+ <div v-if="feishuConfigured" class="flex items-center justify-between gap-4">
+ <div class="flex items-center gap-3 min-w-0 flex-1">
+ <div class="shrink-0 rounded-xl bg-emerald-500/10">
+ <span class="icon-[lucide--check] text-lg text-emerald-500" />
  </div>
- <div>
+ <div class="min-w-0">
  <p class="text-sm font-medium text-foreground">
- 已配置
+ 已连接到飞书
  </p>
- <p class="text-xs text-muted-foreground">
- 插件 ID：{{ feishuConfig.plugin_id }}
+ <p class="text-xs text-muted-foreground mt-0.5 truncate">
+ 插件 ID：<code class="font-mono">{{ feishuConfig?.plugin_id }}</code>
  </p>
  </div>
  </div>
- <div v-else class="flex items-center gap-3 text-muted-foreground">
- <span class="icon-[lucide--link] text-lg opacity-40" />
- <div class="flex-1">
- <p class="text-sm">
+ <Badge variant="success" class="shrink-0">
+ 运行中
+ </Badge>
+ </div>
+ <div v-else class="flex items-center justify-between gap-4">
+ <div class="flex items-center gap-3 min-w-0 flex-1">
+ <div class="shrink-0 rounded-xl bg-amber-500/10">
+ <span class="icon-[lucide--link] text-lg text-amber-500" />
+ </div>
+ <div class="min-w-0">
+ <p class="text-sm font-medium text-foreground">
  尚未配置飞书集成
  </p>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 配置后空间可接收并响应飞书事件
+ </p>
  </div>
- <RouterLink:to="`/spaces/${space.id}/feishu`">
- <Button size="sm" class=" text-xs">
- 配置
+ </div>
+ <RouterLink:to="`/spaces/${space.id}/feishu`" class="shrink-0">
+ <Button size="sm">
+ <span class="icon-[lucide--plug] mr-1.5" />
+ 立即配置
  </Button>
  </RouterLink>
  </div>
@@ -422,14 +641,16 @@ async function handleCustomToken {
  </RouterLink>
  </div>
  <div class="">
- <div class="flex items-center gap-3 text-muted-foreground">
- <span class="icon-[lucide--file-text] text-lg opacity-40" />
- <div class="flex-1">
- <p class="text-sm">
- 查看与编辑空间级提示词覆盖
+ <div class="flex items-center gap-3">
+ <div class="shrink-0 rounded-xl bg-primary/10">
+ <span class="icon-[lucide--file-text] text-lg text-primary" />
+ </div>
+ <div class="min-w-0 flex-1">
+ <p class="text-sm font-medium text-foreground">
+ 空间级提示词覆盖
  </p>
- <p class="text-xs text-muted-foreground">
- 未覆盖的提示词会 fallback 到系统级
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 未覆盖的提示词将 fallback 至系统级
  </p>
  </div>
  </div>
@@ -454,21 +675,23 @@ async function handleCustomToken {
  </RouterLink>
  </div>
  <div class="">
- <div class="flex items-center gap-3 text-muted-foreground">
- <span class="icon-[lucide--key-round] text-lg opacity-40" />
- <div class="flex-1">
- <p class="text-sm">
- 空间级 Provider 凭证覆盖
+ <div class="flex items-center gap-3">
+ <div class="shrink-0 rounded-xl bg-primary/10">
+ <span class="icon-[lucide--key-round] text-lg text-primary" />
+ </div>
+ <div class="min-w-0 flex-1">
+ <p class="text-sm font-medium text-foreground">
+ 空间级 Provider 凭证
  </p>
- <p class="text-xs text-muted-foreground">
- 仅本空间可见，覆盖系统默认
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 仅本空间可见，覆盖系统默认凭证
  </p>
  </div>
  </div>
  </div>
  </div>
  </section>
- <!-- Webhook Token 管理 -->
+ <!-- Webhook Token -->
  <section id="webhook-token" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
@@ -476,22 +699,21 @@ async function handleCustomToken {
  <h3 class="text-sm font-semibold">
  Webhook Token
  </h3>
- <span class="text-xs text-muted-foreground ml-1">用于验证飞书 Webhook 请求的来源</span>
+ <span class="text-xs text-muted-foreground">用于验证飞书 Webhook 请求来源</span>
  </div>
  <div class=" space-y-4">
  <div class="space-y-2">
  <Label class="text-xs text-muted-foreground">当前 Token</Label>
- <div class="flex items-center gap-2">
- <code class="flex-1 px-3 py-2 bg-muted/40 rounded-lg font-mono text-sm overflow-hidden text-ellipsis border border-border/50 text-foreground">
- {{ space.webhook_token }}
- </code>
+ <div class="flex items-center gap-2 .5 pl-3 rounded-xl border border-border/50 bg-muted/30 hover:border-primary/30 transition-colors">
+ <span class="icon-[lucide--key] text-primary/60 shrink-0" />
+ <code class="flex-1 font-mono text-sm text-foreground truncate">{{ space.webhook_token }}</code>
  <TooltipProvider:delay-duration="300">
  <Tooltip>
  <TooltipTrigger as-child>
  <Button
- variant="outline"
+ variant="ghost"
  size="icon"
- class=" w-9"
+ class=" w-7 shrink-0"
  @click="copyWebhookToken"
  >
  <span class="icon-[lucide--copy]" />
@@ -502,19 +724,24 @@ async function handleCustomToken {
  </TooltipProvider>
  </div>
  </div>
- <div class="flex items-start gap-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
- <span class="icon-[lucide--alert-triangle] text-amber-500 shrink-0 mt-0.5" />
- <p class="text-xs text-amber-700 dark:text-amber-300">
- 请勿泄露此 Token。如果 Token 泄露，请立即刷新。
+ <div class="flex items-start gap-2.5 rounded-xl bg-amber-500/[0.08] border border-amber-500/20">
+ <span class="icon-[lucide--shield-alert] text-amber-500 shrink-0 mt-0.5" />
+ <div class="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+ <p class="font-medium">
+ 请勿泄露此 Token
+ </p>
+ <p class="opacity-80 mt-0.5">
+ 如果 Token 已泄露，请立即点击"刷新 Token"重新生成。
  </p>
  </div>
- <div class="flex gap-2">
+ </div>
+ <div class="flex flex-wrap gap-2">
  <Button variant="outline" size="sm" @click="refreshTokenDialogOpen = true">
  <span class="icon-[lucide--refresh-cw] mr-1.5" />
  刷新 Token
  </Button>
  <Button variant="outline" size="sm" @click="openCustomTokenDialog">
- <span class="icon-[lucide--pencil] mr-1.5" />
+ <span class="icon-[lucide--pencil-line] mr-1.5" />
  自定义 Token
  </Button>
  </div>
@@ -530,6 +757,9 @@ async function handleCustomToken {
  <h3 class="text-sm font-semibold">
  相关执行
  </h3>
+ <Badge variant="secondary" class=" px-1.5 text-[10px]">
+ {{ spaceExecutions.length }}
+ </Badge>
  </div>
  <RouterLink:to="`/executions?space_id=${space.id}`">
  <Button variant="ghost" size="sm" class=" text-xs group">
@@ -539,32 +769,41 @@ async function handleCustomToken {
  </RouterLink>
  </div>
  <div class="">
- <div v-if="spaceExecutions.length === 0" class="text-center py-6 text-muted-foreground">
- <span class="icon-[lucide--inbox] text-2xl mb-2 block opacity-40" />
- <p class="text-sm">
- 暂无执行记录
- </p>
- </div>
- <div v-else class="space-y-1.5">
- <RouterLink
- v-for="(execution, index) in spaceExecutions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
- class="flex items-center justify-between rounded-lg hover:bg-muted/40 transition-colors group"
- >
- <div class="flex items-center gap-3">
- <div class="w-6 rounded bg-muted/60 flex items-center justify-center text-xs font-medium text-muted-foreground">
- {{ index + 1 }}
+ <div v-if="spaceExecutions.length === 0" class="text-center py-8 space-y-3">
+ <div class="inline-flex rounded-2xl bg-muted/50">
+ <span class="icon-[lucide--inbox] text-2xl text-muted-foreground/60" />
  </div>
  <div>
- <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ execution.workflow_name }}</span>
- <StatusBadge type="execution":status="execution.status" size="sm" class="ml-2" />
+ <p class="text-sm font-medium text-foreground">
+ 暂无执行记录
+ </p>
+ <p class="text-xs text-muted-foreground mt-1">
+ 在飞书或工作流中触发后会显示在这里
+ </p>
  </div>
  </div>
+ <div v-else class="space-y-1">
+ <RouterLink
+ v-for="(execution, index) in spaceExecutions.slice(0, 5)":key="execution.id":to="`/executions/${execution.id}`"
+ class="group flex items-center justify-between gap-3 rounded-lg hover:bg-muted/40 transition-colors"
+ >
+ <div class="flex items-center gap-3 min-w-0 flex-1">
+ <div class="w-7 shrink-0 rounded-md bg-muted/60 flex items-center justify-center text-xs font-medium text-muted-foreground tabular-nums">
+ {{ index + 1 }}
+ </div>
+ <div class="min-w-0 flex-1">
  <div class="flex items-center gap-2">
- <span class="text-xs text-muted-foreground">
- {{ formatDate(execution.created_at) }}
+ <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+ {{ execution.workflow_name }}
  </span>
- <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+ <StatusBadge type="execution":status="execution.status" size="sm" class="shrink-0" />
  </div>
+ <div class="text-xs text-muted-foreground mt-0.5">
+ {{ formatDate(execution.created_at) }}
+ </div>
+ </div>
+ </div>
+ <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
  </RouterLink>
  </div>
  </div>
@@ -572,16 +811,22 @@ async function handleCustomToken {
  </section>
  <!-- 危险操作 -->
  <section id="danger-zone" class="scroll-mt-22">
- <div class="card border-destructive/30 bg-destructive/5">
- <div class="px-5 py-3.5 border-b border-destructive/20 flex items-center gap-2">
+ <div class="card border-destructive/30">
+ <div class="px-5 py-3.5 border-b border-destructive/20 bg-destructive/[0.03] flex items-center gap-2">
  <span class="icon-[lucide--alert-triangle] text-destructive" />
- <h3 class="text-sm font-semibold text-destructive">危险操作</h3>
+ <h3 class="text-sm font-semibold text-destructive">
+ 危险操作
+ </h3>
  </div>
- <div class=" space-y-4">
+ <div class="">
  <div class="flex items-start justify-between gap-4">
- <div>
- <p class="text-sm font-medium text-foreground">删除空间</p>
- <p class="text-xs text-muted-foreground mt-1">删除后无法恢复，空间内所有配置将被清除。</p>
+ <div class="min-w-0 flex-1">
+ <p class="text-sm font-medium text-foreground">
+ 删除空间
+ </p>
+ <p class="text-xs text-muted-foreground mt-1">
+ 此操作不可撤销，空间内所有配置将被永久清除。
+ </p>
  </div>
  <Button variant="destructive" size="sm" class="shrink-0" @click="deleteDialogOpen = true">
  <span class="icon-[lucide--trash-2] mr-1.5" />
@@ -592,17 +837,7 @@ async function handleCustomToken {
  </div>
  </section>
  </AnchorNavLayout>
- </template>
- <!-- 空间不存在 -->
- <EmptyState
- v-else
- icon="lucide--help-circle"
- title="空间不存在"
- description="未找到该空间，可能已被删除"
- action-label="返回列表"
- gradient="from-primary/20 to-primary/20"
- @action="router.push('/spaces')"
- />
+ </div>
  <!-- 删除确认对话框 -->
  <ConfirmDialog
  v-model:open="deleteDialogOpen"
@@ -626,7 +861,6 @@ async function handleCustomToken {
  <div class="grid grid-cols-2 gap-6">
  <!-- 左侧：可用仓库 -->
  <div class="flex flex-col">
- <!-- 标题栏 - 固定高度 -->
  <div class="flex items-center justify-between mb-3">
  <h4 class="text-sm font-medium flex items-center gap-2">
  <span class="icon-[lucide--inbox] text-muted-foreground" />
@@ -654,7 +888,6 @@ async function handleCustomToken {
  </Button>
  </div>
  </div>
- <!-- 列表区域 - 固定高度 -->
  <div class="border border-border/50 rounded-xl bg-muted/20 overflow-y-auto mb-3">
  <div v-if="availableRepositories.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground">
  <span class="icon-[lucide--package] text-2xl mb-2 opacity-50" />
@@ -682,7 +915,6 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
- <!-- 操作按钮 - 固定高度 -->
  <Button
  class="w-full group":disabled="selectedToLink.size === 0 || linking"
  @click="handleLinkSelected"
@@ -694,7 +926,6 @@ async function handleCustomToken {
  </div>
  <!-- 右侧：已关联仓库 -->
  <div class="flex flex-col">
- <!-- 标题栏 - 固定高度 -->
  <div class="flex items-center justify-between mb-3">
  <h4 class="text-sm font-medium flex items-center gap-2">
  <span class="icon-[lucide--link] text-primary" />
@@ -722,7 +953,6 @@ async function handleCustomToken {
  </Button>
  </div>
  </div>
- <!-- 列表区域 - 固定高度 -->
  <div class="border border-border/50 rounded-xl bg-muted/20 overflow-y-auto mb-3">
  <div v-if="linkedRepositories.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground">
  <span class="icon-[lucide--unlink] text-2xl mb-2 opacity-50" />
@@ -750,7 +980,6 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
- <!-- 操作按钮 - 固定高度 -->
  <Button
  variant="outline"
  class="w-full group text-destructive hover:bg-destructive/10":disabled="selectedToUnlink.size === 0 || linking"

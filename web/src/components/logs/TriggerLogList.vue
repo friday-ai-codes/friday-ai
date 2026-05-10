@@ -17,7 +17,7 @@ import TriggerLogDetailModal from './TriggerLogDetailModal.vue'
 defineProps<{
  logs: TriggerLog
  loading?: boolean
- getProjectName?: (projectId: string | null) => string
+ getSpaceName?: (spaceId: string | null) => string
 }>
 const emit = defineEmits<{
  retry: [logId: string]
@@ -99,7 +99,7 @@ async function openDetail(logId: string) {
  工作项
  </div>
  <div class="col-span-2">
- 项目
+ 空间
  </div>
  <div class="col-span-2">
  状态
@@ -130,10 +130,10 @@ async function openDetail(logId: string) {
  </p>
  </div>
  </div>
- <!-- 项目 -->
+ <!-- 空间 -->
  <div class="lg:col-span-2 flex items-center">
  <span class="text-sm text-muted-foreground truncate">
- {{ getProjectName?.(log.project_id) || '-' }}
+ {{ getSpaceName?.(log.space_id) || '-' }}
  </span>
  </div>
  <!-- 状态 -->

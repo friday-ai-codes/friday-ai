@@ -94,7 +94,7 @@ function iconFor(providerType: string): string {
  aria-hidden="true"
  />
  <span class="text-xs font-normal">
- {{ c.scope === 'system' ? '系统默认': '仅本项目' }}
+ {{ c.scope === 'system' ? '系统默认': '仅本空间' }}
  </span>
  </Badge>
  </td>

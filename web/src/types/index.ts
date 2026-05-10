@@ -29,15 +29,15 @@ export interface User {
  updated_at: string
 }
 /**
- * 项目成员关系摘要（嵌入 /me 响应）
+ * 空间成员关系摘要（嵌入 /me 响应）
  */
-export interface ProjectMembershipBrief {
- project_id: string
- project_name: string
+export interface SpaceMembershipBrief {
+ space_id: string
+ space_name: string
  role: 'admin' | 'member' | 'viewer'
 }
 /**
- * 当前用户完整信息（含 gravatar 和项目列表）
+ * 当前用户完整信息（含 gravatar 和空间列表）
  */
 export interface MeUser {
  id: string
@@ -47,7 +47,7 @@ export interface MeUser {
  gravatar_url: string | null
  is_superuser: boolean
  is_active: boolean
- project_memberships: ProjectMembershipBrief
+ space_memberships: SpaceMembershipBrief
  created_at: string
 }
 /**
@@ -72,9 +72,9 @@ export interface Invitation {
  created_at: string
 }
 /**
- * 项目成员关系（项目成员管理 API）
+ * 空间成员关系（空间成员管理 API）
  */
-export interface ProjectMembership {
+export interface SpaceMembership {
  id: string
  user: {
  id: string
@@ -144,9 +144,9 @@ export interface AdminProfileUpdate {
 // 仓库相关类型
 // ============================================================================
 /**
- * 项目摘要信息（用于仓库关联展示）
+ * 空间摘要信息（用于仓库关联展示）
  */
-export interface ProjectSummary {
+export interface SpaceSummary {
  id: string
  name: string
 }
@@ -169,11 +169,11 @@ export interface Repository extends RepositoryBase {
  created_at: string
  updated_at: string
  has_credential: boolean
- projects: ProjectSummary
+ spaces: SpaceSummary
  proxy_url?: string
  auto_index_enabled: boolean
  webhook_secret?: string | null
- linked_projects_count?: number
+ linked_spaces_count?: number
  index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed'
  last_indexed_at: string | null
 }
@@ -205,9 +205,9 @@ export interface RepositoryUpdate {
  */
 export type RepositoryPermissionLevel = 'read_write' | 'read_only'
 /**
- * 项目仓库关联（API 响应）
+ * 空间仓库关联（API 响应）
  */
-export interface ProjectRepositoryLink {
+export interface SpaceRepositoryLink {
  id: string
  repository_id: string
  repository_name: string
@@ -217,30 +217,30 @@ export interface ProjectRepositoryLink {
 /**
  * 批量关联仓库请求
  */
-export interface ProjectRepositoryLinkCreate {
+export interface SpaceRepositoryLinkCreate {
  repository_ids: string
 }
 /**
  * 修改关联权限请求
  */
-export interface ProjectRepositoryLinkUpdate {
+export interface SpaceRepositoryLinkUpdate {
  permission_level: RepositoryPermissionLevel
 }
 // ============================================================================
-// 项目相关类型
+// 空间相关类型
 // ============================================================================
 /**
- * 项目基础字段
+ * 空间基础字段
  */
-export interface ProjectBase {
+export interface SpaceBase {
  name: string
  description?: string
  feishu_project_key: string | null
 }
 /**
- * 项目完整类型（来自 API）
+ * 空间完整类型（来自 API）
  */
-export interface Project extends ProjectBase {
+export interface Space extends SpaceBase {
  id: string
  created_at: string
  updated_at: string
@@ -251,13 +251,13 @@ export interface Project extends ProjectBase {
  recent_work_items?: Array<{ id: string, name: string }>
 }
 /**
- * 创建项目请求
+ * 创建空间请求
  */
-export interface ProjectCreate extends ProjectBase {}
+export interface SpaceCreate extends SpaceBase {}
 /**
- * 更新项目请求
+ * 更新空间请求
  */
-export interface ProjectUpdate {
+export interface SpaceUpdate {
  name?: string
  description?: string
  feishu_project_key?: string | null
@@ -282,7 +282,7 @@ export interface GitCredential {
 /**
  * 飞书配置创建请求
  * 飞书项目使用「插件」凭证而非「应用」凭证来获取工作项详情
- * 注意：webhook_token 不再在此处配置，它在项目级别独立管理
+ * 注意：webhook_token 不再在此处配置，它在空间级别独立管理
  */
 export interface FeishuConfigCreate {
  plugin_id: string
@@ -290,7 +290,7 @@ export interface FeishuConfigCreate {
  user_key: string
 }
 /**
- * 飞书配置读取响应（不含敏感信息，webhook_token 由 Project 接口返回）
+ * 飞书配置读取响应（不含敏感信息，webhook_token 由 Space 接口返回）
  */
 export interface FeishuConfig {
  project_key: string | null
@@ -364,7 +364,7 @@ export interface FetchWorkItemNodeData {
  work_item_type: 'story' | 'task' | 'bug'
  extract_fields: string
  set_global_params: boolean
- include_project_info: boolean
+ include_space_info: boolean
  include_repositories: boolean
 }
 /**
@@ -569,7 +569,7 @@ export interface RegistrationToken {
  id: string
  description: string
  scope: 'global' | 'project'
- project_id: string | null
+ space_id: string | null
  tags: string
  run_untagged: boolean
  is_paused: boolean
@@ -587,7 +587,7 @@ export interface RegistrationToken {
 export interface RegistrationTokenCreate {
  description?: string
  scope: 'global' | 'project'
- project_id?: string
+ space_id?: string
  expires_in: number
  tags?: string
  run_untagged?: boolean

@@ -54,7 +54,7 @@ const hueIconMap: Record<SourceLayer, string> = {
 const labelMap: Record<SourceLayer, string> = {
  node: '节点配置',
  conversation: '对话固定',
- project: '项目覆盖',
+ project: '空间覆盖',
  system: '系统默认',
 }
 /** 链表每行的 value 文本：provider_type [+ / model]（work item §Copywriting + Typography mono）。 */

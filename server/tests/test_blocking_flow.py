@@ -42,7 +42,7 @@ async def _create_waiting_orch_run -> tuple[str, Any]:
 # test_interrupt_during_waiting_cancels_tasks_via_dispatcher
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
  mock_barrier: MagicMock,
 ) -> None:
@@ -228,7 +228,7 @@ async def test_barrier_complete_triggers_finalize -> None:
 # test_cancel_dispatched_task_failure_does_not_block_cancel_all
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 async def test_cancel_dispatched_task_failure_does_not_block_cancel_all(
  mock_barrier: MagicMock,
 ) -> None:

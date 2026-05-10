@@ -34,10 +34,10 @@ interface PersistedSnapshot {
  lastFetchedAt: number
  /**
  *：cache key 的第三维 — 区分 scope=project / scope=any 同 projectId
- * 互相污染（chat 路径需要 scope=any 全集，admin 页用 scope=system，项目页用 scope=project）。
+ * 互相污染（chat 路径需要 scope=any 全集，admin 页用 scope=system，空间页用 scope=project）。
  */
  lastFetchedScope: ProviderScopeFilter | null
- currentProjectId: string | null
+ currentSpaceId: string | null
 }
 export const useProviderCredentialStore = defineStore('providerCredential', => {
  // ============================================================================
@@ -47,7 +47,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const providerTypes = ref<ProviderTypeMetaDto>
  const loading = ref(false)
  const lastError = ref<string | null>(null)
- const currentProjectId = ref<string | null>(null)
+ const currentSpaceId = ref<string | null>(null)
  const lastFetchedAt = ref<number>(0)
  /**：上次 fetchCredentials 用的 scope（参与 cache key 命中判定）。 */
  const lastFetchedScope = ref<ProviderScopeFilter | null>(null)
@@ -94,7 +94,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  providerTypes: providerTypes.value,
  lastFetchedAt: lastFetchedAt.value,
  lastFetchedScope: lastFetchedScope.value,
- currentProjectId: currentProjectId.value,
+ currentSpaceId: currentSpaceId.value,
  }
  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
  }
@@ -118,7 +118,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  providerTypes.value = parsed.providerTypes as ProviderTypeMetaDto
  lastFetchedAt.value = typeof parsed.lastFetchedAt === 'number' ? parsed.lastFetchedAt: 0
  lastFetchedScope.value = parsed.lastFetchedScope ?? null
- currentProjectId.value = parsed.currentProjectId ?? null
+ currentSpaceId.value = parsed.currentSpaceId ?? null
  }
  catch {
  // JSON 解析失败：清掉脏缓存
@@ -136,7 +136,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  /**：按 scope / projectId 拉取凭证列表,同上下文 30s TTL 内命中缓存。 */
  async function fetchCredentials(params: {
  scope?: ProviderScopeFilter
- projectId?: string
+ spaceId?: string
  includeInactive?: boolean
  force?: boolean
  } = {}): Promise<ProviderCredentialDto> {
@@ -144,7 +144,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const requestedScope: ProviderScopeFilter | null = params.scope ?? null
  //：cache key 加 scope 维度，避免 scope=project / scope=any 同 projectId 互污染
  const sameContext
- = currentProjectId.value === (params.projectId ?? null)
+ = currentSpaceId.value === (params.spaceId ?? null)
  && lastFetchedScope.value === requestedScope
  if (
  !params.force
@@ -159,12 +159,12 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  try {
  const list = await providerCredentialsApi.list({
  scope: params.scope,
- projectId: params.projectId,
+ spaceId: params.spaceId,
  includeInactive: params.includeInactive,
  })
  credentials.value = list
  lastFetchedAt.value = now
- currentProjectId.value = params.projectId ?? null
+ currentSpaceId.value = params.spaceId ?? null
  lastFetchedScope.value = requestedScope
  persist
  return list
@@ -360,7 +360,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  providerTypes,
  loading,
  lastError,
- currentProjectId,
+ currentSpaceId,
  lastFetchedAt,
  lastFetchedScope,
  // getters

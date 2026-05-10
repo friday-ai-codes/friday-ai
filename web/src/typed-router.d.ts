@@ -209,62 +209,6 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
- '/projects/': RouteRecordInfo<
- '/projects/',
- '/projects',
- Record<never, never>,
- Record<never, never>,
- | never
- >,
- '/projects/[id]/': RouteRecordInfo<
- '/projects/[id]/',
- '/projects/:id',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/edit': RouteRecordInfo<
- '/projects/[id]/edit',
- '/projects/:id/edit',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/feishu': RouteRecordInfo<
- '/projects/[id]/feishu',
- '/projects/:id/feishu',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/members': RouteRecordInfo<
- '/projects/[id]/members',
- '/projects/:id/members',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/prompts': RouteRecordInfo<
- '/projects/[id]/prompts',
- '/projects/:id/prompts',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/providers': RouteRecordInfo<
- '/projects/[id]/providers',
- '/projects/:id/providers',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
- '/projects/[id]/repositories': RouteRecordInfo<
- '/projects/[id]/repositories',
- '/projects/:id/repositories',
- { id: ParamValue<true> },
- { id: ParamValue<false> },
- | never
- >,
  '/repositories/': RouteRecordInfo<
  '/repositories/',
  '/repositories',
@@ -305,6 +249,69 @@ declare module 'vue-router/auto-routes' {
  '/runners/new',
  Record<never, never>,
  Record<never, never>,
+ | never
+ >,
+ '/setup': RouteRecordInfo<
+ '/setup',
+ '/setup',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/spaces/': RouteRecordInfo<
+ '/spaces/',
+ '/spaces',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
+ '/spaces/[id]/': RouteRecordInfo<
+ '/spaces/[id]/',
+ '/spaces/:id',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/edit': RouteRecordInfo<
+ '/spaces/[id]/edit',
+ '/spaces/:id/edit',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/feishu': RouteRecordInfo<
+ '/spaces/[id]/feishu',
+ '/spaces/:id/feishu',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/members': RouteRecordInfo<
+ '/spaces/[id]/members',
+ '/spaces/:id/members',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/prompts': RouteRecordInfo<
+ '/spaces/[id]/prompts',
+ '/spaces/:id/prompts',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/providers': RouteRecordInfo<
+ '/spaces/[id]/providers',
+ '/spaces/:id/providers',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
+ | never
+ >,
+ '/spaces/[id]/repositories': RouteRecordInfo<
+ '/spaces/[id]/repositories',
+ '/spaces/:id/repositories',
+ { id: ParamValue<true> },
+ { id: ParamValue<false> },
  | never
  >,
  '/workflows/': RouteRecordInfo<
@@ -502,54 +509,6 @@ declare module 'vue-router/auto-routes' {
  views:
  | never
  }
- 'src/pages/projects/index.vue': {
- routes:
- | '/projects/'
- views:
- | never
- }
- 'src/pages/projects/[id]/index.vue': {
- routes:
- | '/projects/[id]/'
- views:
- | never
- }
- 'src/pages/projects/[id]/edit.vue': {
- routes:
- | '/projects/[id]/edit'
- views:
- | never
- }
- 'src/pages/projects/[id]/feishu.vue': {
- routes:
- | '/projects/[id]/feishu'
- views:
- | never
- }
- 'src/pages/projects/[id]/members.vue': {
- routes:
- | '/projects/[id]/members'
- views:
- | never
- }
- 'src/pages/projects/[id]/prompts.vue': {
- routes:
- | '/projects/[id]/prompts'
- views:
- | never
- }
- 'src/pages/projects/[id]/providers.vue': {
- routes:
- | '/projects/[id]/providers'
- views:
- | never
- }
- 'src/pages/projects/[id]/repositories.vue': {
- routes:
- | '/projects/[id]/repositories'
- views:
- | never
- }
  'src/pages/repositories/index.vue': {
  routes:
  | '/repositories/'
@@ -583,6 +542,60 @@ declare module 'vue-router/auto-routes' {
  'src/pages/runners/new.vue': {
  routes:
  | '/runners/new'
+ views:
+ | never
+ }
+ 'src/pages/setup.vue': {
+ routes:
+ | '/setup'
+ views:
+ | never
+ }
+ 'src/pages/spaces/index.vue': {
+ routes:
+ | '/spaces/'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/index.vue': {
+ routes:
+ | '/spaces/[id]/'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/edit.vue': {
+ routes:
+ | '/spaces/[id]/edit'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/feishu.vue': {
+ routes:
+ | '/spaces/[id]/feishu'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/members.vue': {
+ routes:
+ | '/spaces/[id]/members'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/prompts.vue': {
+ routes:
+ | '/spaces/[id]/prompts'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/providers.vue': {
+ routes:
+ | '/spaces/[id]/providers'
+ views:
+ | never
+ }
+ 'src/pages/spaces/[id]/repositories.vue': {
+ routes:
+ | '/spaces/[id]/repositories'
  views:
  | never
  }

@@ -73,7 +73,7 @@ function makeMerged(overrides: Partial<MergedSpaceListItem>): MergedSpaceListIte
  slug: 'chat.system.developer',
  category: 'chat_agent',
  scope: 'system',
- space: null,
+ project: null,
  title: '开发者',
  description: '',
  is_builtin: true,
@@ -92,8 +92,7 @@ const overriddenRow: MergedSpaceListItem = makeMerged({
  space_prompt: makeMerged({
  id: 'proj-override-1',
  slug: 'chat.system.developer',
- scope: 'space',
- space: 'test-space-id',
+ scope: 'project',
  is_builtin: false,
  }),
 })
@@ -106,10 +105,9 @@ const fallbackRow: MergedSpaceListItem = makeMerged({
 const spaceOnlyRow: MergedSpaceListItem = makeMerged({
  id: 'proj-only',
  slug: 'space.custom.greeting',
- scope: 'space',
- space: 'test-space-id',
+ scope: 'project',
  is_builtin: false,
- status: 'project_only',
+ status: 'space_only',
  space_prompt: null,
 })
 // ============================================================================

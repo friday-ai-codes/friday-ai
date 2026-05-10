@@ -15,7 +15,7 @@ const { handleError } = useErrorHandler
 const log = ref<TriggerLogDetail | null>(null)
 const loading = ref(true)
 // 空间 store
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 // 获取日志 ID
 const logId = computed( => route.params.id)
 // 加载日志详情
@@ -24,7 +24,7 @@ async function fetchLog {
  return
  loading.value = true
  try {
- await projectsStore.fetchProjects
+ await spacesStore.fetchSpaces
  log.value = await getTriggerLog(logId.value)
  }
  catch (e: unknown) {
@@ -36,11 +36,11 @@ async function fetchLog {
  }
 }
 // 获取空间名称
-function getProjectName(projectId: string | null): string {
- if (!projectId)
+function getSpaceName(spaceId: string | null): string {
+ if (!spaceId)
  return '-'
- const project = projectsStore.projectById(projectId)
- return project?.name || projectId.slice(0, 8)
+ const project = spacesStore.spaceById(spaceId)
+ return project?.name || spaceId.slice(0, 8)
 }
 onMounted( => {
  fetchLog
@@ -66,7 +66,7 @@ onMounted( => {
  <LoadingState v-if="loading" variant="skeleton":count="3" />
  <!-- 日志详情 -->
  <TriggerLogDetailComponent
- v-else-if="log":log="log":get-project-name="getProjectName"
+ v-else-if="log":log="log":get-project-name="getSpaceName"
  />
  <!-- 空状态 -->
  <EmptyState

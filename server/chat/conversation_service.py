@@ -818,8 +818,13 @@ class ConversationService:
  OrchestrationRun.Status.ERROR,
  OrchestrationRun.Status.INTERRUPTED,
  }
+ from uuid import UUID
+ try:
+ conv_uuid = UUID(conversation_id)
+ except ValueError:
+ conv_uuid = conversation_id
  orch_run = await OrchestrationRun.objects.filter(
- conversation_id=conversation_id,
+ conversation_id=conv_uuid,
  ).order_by("-created_at").afirst
  is_active = False
  orch_phase: str | None = None

@@ -340,7 +340,7 @@ class PromptRenderPreviewView(APIView):
  try:
  rendered = await render_prompt(
  slug=prompt.slug,
- space_id=(
+ project_id=(
  str(prompt.project_id) if prompt.project_id else None
  ),
  variables=variables,

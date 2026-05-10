@@ -28,6 +28,6 @@ const spaceId = computed<string>( => {
 </script>
 <template>
  <main class="container mx-auto max-w-screen-2xl px-6 py-12">
- <ProviderSettings scope="space":space-id="spaceId" />
+ <ProviderSettings scope="project":space-id="spaceId" />
  </main>
 </template>
