@@ -45,7 +45,7 @@ class TestProjectListPermissions:
  self, authenticated_admin_client, project, second_project, urls
  ):
  """superuser 看到所有项目。"""
- response = authenticated_admin_client.get(urls.project_list)
+ response = authenticated_admin_client.get(urls.space_list)
  assert response.status_code == 200
  project_ids = {str(p["id"]) for p in response.data}
  assert str(project.id) in project_ids
@@ -59,7 +59,7 @@ class TestProjectListPermissions:
  urls,
  ):
  """member 只看到自己所属的项目。"""
- response = authenticated_member_client.get(urls.project_list)
+ response = authenticated_member_client.get(urls.space_list)
  assert response.status_code == 200
  project_ids = {str(p["id"]) for p in response.data}
  assert str(project.id) in project_ids
@@ -69,7 +69,7 @@ class TestProjectListPermissions:
  ):
  """非成员看不到任何项目。"""
  api_client.force_authenticate(user=other_user)
- response = api_client.get(urls.project_list)
+ response = api_client.get(urls.space_list)
  assert response.status_code == 200
  assert len(response.data) == 0
 @pytest.mark.django_db
@@ -80,7 +80,7 @@ class TestProjectCreationPermissions:
  ):
  """创建项目后创建者自动成为 admin。"""
  response = authenticated_client.post(
- urls.project_list,
+ urls.space_list,
  {
  "name": "New Project",
  "feishu_project_key": "new-project-key",

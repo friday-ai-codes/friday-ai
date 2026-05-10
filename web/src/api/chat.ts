@@ -26,7 +26,7 @@ export type ConfigSource = 'system' | 'project'
 /** 获取模型列表参数 */
 export interface GetModelsParams {
  source?: ConfigSource
- project_id?: number
+ space_id?: number
  api_key?: string
  base_url?: string
 }
@@ -35,7 +35,7 @@ export interface ChatCompletionRequest {
  model: string
  messages: ChatMessage
  source?: ConfigSource
- project_id?: number
+ space_id?: number
  api_key?: string
  base_url?: string
  max_tokens?: number
@@ -130,7 +130,7 @@ function sortModels(models: Model): Model {
 export async function getModels(params: GetModelsParams = {}): Promise<ModelsResponse> {
  const queryParams: Record<string, string | number | undefined> = {
  source: params.source,
- project_id: params.project_id,
+ space_id: params.space_id,
  api_key: params.api_key,
  base_url: params.base_url,
  }

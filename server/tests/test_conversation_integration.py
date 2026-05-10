@@ -38,7 +38,7 @@ class TestCreateConversationWithModel:
  """创建对话时指定 model 参数，返回中包含 model 字段。"""
  client = AsyncClient
  payload = {
- "project_id": str(project.id),
+ "space_id": str(project.id),
  "title": "测试对话",
  "model": "claude-sonnet-4-20250514",
  }
@@ -55,7 +55,7 @@ class TestCreateConversationWithModel:
  """创建对话不指定 model，默认为空字符串。"""
  client = AsyncClient
  payload = {
- "project_id": str(project.id),
+ "space_id": str(project.id),
  }
  resp = await client.post(
  "/api/chat/conversations/",

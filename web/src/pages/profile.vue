@@ -181,24 +181,24 @@ onMounted( => {
  我的空间
  </h2>
  <p class="text-sm text-muted-foreground">
- 您所属的 {{ meData.project_memberships.length }} 个空间
+ 您所属的 {{ meData.space_memberships.length }} 个空间
  </p>
  </div>
  </div>
  <div class="">
- <div v-if="meData.project_memberships.length === 0" class="text-center py-6 text-muted-foreground">
+ <div v-if="meData.space_memberships.length === 0" class="text-center py-6 text-muted-foreground">
  暂未加入任何空间
  </div>
  <div v-else class="space-y-3">
  <div
- v-for="membership in meData.project_memberships":key="membership.project_id"
+ v-for="membership in meData.space_memberships":key="membership.space_id"
  class="flex items-center justify-between rounded-xl bg-background/50 border border-border/30 hover:border-primary/20 transition-colors"
  >
  <div class="flex items-center gap-3">
  <div class="w-8 rounded-lg bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder] text-sm text-primary" />
  </div>
- <span class="font-medium text-sm">{{ membership.project_name }}</span>
+ <span class="font-medium text-sm">{{ membership.space_name }}</span>
  </div>
  <span
  class="text-xs px-2 py-1 rounded-full font-medium":class="roleColors[membership.role] ?? 'bg-muted text-muted-foreground'"

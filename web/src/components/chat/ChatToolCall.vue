@@ -36,11 +36,11 @@ const actionDescription = computed( => {
  case 'get_repository_info':
  return '获取仓库详情'
  case 'list_project_repositories':
- return '列出项目下所有仓库'
+ return '列出空间下所有仓库'
  case 'list_project_structure':
- return '浏览项目文件结构'
+ return '浏览空间文件结构'
  case 'get_project_overview':
- return '获取项目概览信息'
+ return '获取空间概览信息'
  default: {
  const entries = Object.entries(inp).slice(0, 2)
  return entries.map(([k, v]) => {

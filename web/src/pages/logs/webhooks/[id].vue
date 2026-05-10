@@ -113,7 +113,7 @@ async function copyJson {
  <div>
  <label class="text-sm text-muted-foreground">空间 ID</label>
  <p class="font-mono text-sm">
- {{ log.project_id || '-' }}
+ {{ log.space_id || '-' }}
  </p>
  </div>
  <div>

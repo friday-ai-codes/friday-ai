@@ -10,7 +10,7 @@ export type { ConversationStatus } from '~/composables/useConversationFrozen'
 /** 对话 */
 export interface Conversation {
  id: string
- project_id: string
+ space_id: string
  title: string
  model: string
  /** UAT 第 3 项 hotfix：对话 pin 状态（frozen 判据真源） */
@@ -88,7 +88,7 @@ export interface ConversationDetail extends Conversation {
 }
 /** 创建对话参数 */
 export interface CreateConversationParams {
- project_id: string
+ space_id: string
  title?: string
  model?: string
 }

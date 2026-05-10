@@ -301,7 +301,7 @@ function copyUrl {
  </div>
  <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted/60 text-muted-foreground border border-border/50">
  <span class="icon-[lucide--folder]" />
- {{ repository.projects?.length || 0 }} 个关联空间
+ {{ repository.spaces?.length || 0 }} 个关联空间
  </div>
  <div v-if="repository.proxy_url" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 border border-amber-500/20">
  <span class="icon-[lucide--globe]" />
@@ -382,10 +382,10 @@ function copyUrl {
  <h3 class="text-sm font-semibold">
  关联空间
  </h3>
- <span class="text-xs text-muted-foreground">({{ repository.projects?.length || 0 }})</span>
+ <span class="text-xs text-muted-foreground">({{ repository.spaces?.length || 0 }})</span>
  </div>
  <div class="">
- <div v-if="!repository.projects || repository.projects.length === 0" class="text-center py-6">
+ <div v-if="!repository.spaces || repository.spaces.length === 0" class="text-center py-6">
  <span class="icon-[lucide--folder] text-2xl text-muted-foreground/40 block mb-2" />
  <p class="text-sm text-muted-foreground">
  暂无关联空间
@@ -393,14 +393,14 @@ function copyUrl {
  </div>
  <div v-else class="space-y-1.5">
  <RouterLink
- v-for="project in repository.projects":key="project.id":to="`/projects/${project.id}`"
+ v-for="space in repository.spaces":key="space.id":to="`/spaces/${space.id}`"
  class="flex items-center justify-between .5 rounded-lg hover:bg-muted/40 transition-colors group"
  >
  <div class="flex items-center gap-2.5">
  <div class="w-7 rounded-lg bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--folder-open] text-xs text-primary" />
  </div>
- <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ project.name }}</span>
+ <span class="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{{ space.name }}</span>
  </div>
  <span class="icon-[lucide--chevron-right] text-sm text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
  </RouterLink>

@@ -2,7 +2,7 @@
 Scope:
  验证 ClaudeConfigView / ClaudeConfigSerializer / claude_config @action 全部清零：
  - 请求 GET/PUT/DELETE /api/projects/<id>/claude-config/ → 404
- - ProjectViewSet 无 claude_config 方法
+ - SpaceViewSet 无 claude_config 方法
  - projects/serializers.py 无 ClaudeConfigSerializer / ClaudeConfigCreateSerializer
 """
 from __future__ import annotations
@@ -12,9 +12,9 @@ from rest_framework import status
 from rest_framework.test import APIClient
 @pytest.mark.django_db
 def test_no_claude_config_viewset_action_on_project_viewset -> None:
- """ProjectViewSet 不再有 claude_config 方法。"""
- from projects.views import ProjectViewSet
- assert not hasattr(ProjectViewSet, "claude_config")
+ """SpaceViewSet 不再有 claude_config 方法。"""
+ from projects.views import SpaceViewSet
+ assert not hasattr(SpaceViewSet, "claude_config")
 def test_no_claude_config_serializer_symbol_in_module -> None:
  """projects/serializers.py 不再有 ClaudeConfigSerializer / ClaudeConfigCreateSerializer。"""
  import projects.serializers as psr

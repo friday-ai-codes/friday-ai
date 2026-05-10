@@ -26,7 +26,7 @@ export interface ListCredentialsParams {
  * 第 3 项 hotfix follow-up，）。
  */
  scope?: ProviderScopeFilter
- projectId?: string
+ spaceId?: string
  includeInactive?: boolean
  isActive?: boolean
 }
@@ -47,8 +47,8 @@ function extractList<T>(payload: T | DrfPaginated<T>): T {
  * 把 ListCredentialsParams 映射成 `client.get` 所需的 params 对象(snake_case)。
  *
  * 后端 query_params 约定:
- * - `scope` = 'system' | 'project' | 'any'（'any' 与 project_id 一起返 system ∪ 当前项目）
- * - `project_id` = UUID
+ * - `scope` = 'system' | 'project' | 'any'（'any' 与 space_id 一起返 system ∪ 当前空间）
+ * - `space_id` = UUID
  * - `include_inactive` = 'true'（出现即启用）
  * - `is_active` = 'true' | 'false'
  */
@@ -58,8 +58,8 @@ function toQueryParams(
  const qp: Record<string, string | number | undefined> = {}
  if (params.scope)
  qp.scope = params.scope
- if (params.projectId)
- qp.project_id = params.projectId
+ if (params.spaceId)
+ qp.space_id = params.spaceId
  if (params.includeInactive)
  qp.include_inactive = 'true'
  if (typeof params.isActive === 'boolean')

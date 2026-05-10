@@ -48,13 +48,17 @@ def mock_langchain(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
  "chat.title_service.ProviderConfigService.aresolve_or_error",
  _make_resolve_stub,
  )
- from chat import title_service as ts_module
- async def _fake_setting(key: Any) -> str | None:
- key_str = str(key).lower
- if "model" in key_str:
- return "claude-3-haiku"
- return None
- monkeypatch.setattr(ts_module, "aget_setting_value", _fake_setting)
+ async def _fake_legacy_config -> dict[str, str]:
+ return {
+ "api_key": "sk-fake",
+ "base_url": "https://api.anthropic.com",
+ "default_model": "claude-3-haiku",
+ "small_model": "",
+ }
+ monkeypatch.setattr(
+ "chat.title_service.aget_legacy_anthropic_config",
+ _fake_legacy_config,
+ )
  return captured
 def _make_resolve_stub -> Any:
  """构造 aresolve_or_error 的 async stub。"""

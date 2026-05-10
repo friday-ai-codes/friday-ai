@@ -25,7 +25,7 @@
  *
  * 下游（Plan）：
  * - 系统级页面 `pages/admin/prompts/index.vue`
- * - 项目级页面 `pages/projects/[id]/prompts.vue`
+ * - 空间级页面 `pages/spaces/[id]/prompts.vue`
  * 两个页面将 import 本组件并通过 v-model:open 控制抽屉开合。
  */
 import type { PromptDetail, PromptVersion, VariableSpec } from '~/types/prompts'
@@ -57,8 +57,8 @@ import VariableSchemaEditor from './VariableSchemaEditor.vue'
 const props = defineProps<{
  open: boolean
  mode: 'edit' | 'create'
- /** 项目级页面传入；系统级页面不传。当前组件仅透传给 store，不主动切换 project */
- projectId?: string
+ /** 空间级页面传入；系统级页面不传。当前组件仅透传给 store，不主动切换 project */
+ spaceId?: string
 }>
 const emit = defineEmits<{
  'update:open': [value: boolean]

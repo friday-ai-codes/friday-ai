@@ -88,8 +88,6 @@ describe('checkAlignment', => {
  makeGraphNode({ id: 'dragged', position: { x: 100, y: 100 } }),
  makeGraphNode({ id: 'target', position: { x: 100, y: 300 } }),
  ]
- const { checkAlignment } = useAlignmentGuides
- const result = checkAlignment('dragged', { x: 100, y: 100 })
  // left 差值 = |100 - 100| = 0 < 5，但 centerX 先匹配且 !hasSnapX，所以 centerX 优先
  // 这里需要让 dragged 的 centerX 不接近 target centerX
  // dragged at (0,100): centerX=100, target centerX=200 → diff=100 > 5

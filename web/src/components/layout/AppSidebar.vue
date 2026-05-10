@@ -37,7 +37,7 @@ function toggleCollapse {
 // ==================== 工作台导航 ====================
 const mainNavItems: NavItem = [
  { to: '/', label: '首页', icon: 'lucide--home', exact: true },
- { to: '/projects', label: '项目', icon: 'lucide--folder-git-2' },
+ { to: '/spaces', label: '空间', icon: 'lucide--folder-git-2' },
  { to: '/repositories', label: '仓库', icon: 'lucide--git-branch' },
  { to: '/workflows', label: '工作流', icon: 'lucide--workflow' },
  { to: '/executions', label: '执行', icon: 'lucide--play-circle' },

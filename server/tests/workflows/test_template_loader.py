@@ -89,7 +89,7 @@ class TestCreateWorkflowFromTemplate:
  from projects.models import Project
  project = Project.objects.create(name="Template Test Project")
  workflow = create_workflow_from_template(
- project_id=str(project.id),
+ space_id=str(project.id),
  template_id="code_generation",
  created_by=user,
  )
@@ -102,7 +102,7 @@ class TestCreateWorkflowFromTemplate:
  from projects.models import Project
  project = Project.objects.create(name="Template Test Project")
  workflow = create_workflow_from_template(
- project_id=str(project.id),
+ space_id=str(project.id),
  template_id="daily_summary",
  created_by=user,
  )
@@ -122,7 +122,7 @@ class TestCreateWorkflowFromTemplate:
  from projects.models import Project
  project = await Project.objects.acreate(name="Async Template Test")
  workflow = await acreate_workflow_from_template(
- project_id=str(project.id),
+ space_id=str(project.id),
  template_id="code_review_pipeline",
  created_by=user,
  )

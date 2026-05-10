@@ -9,7 +9,7 @@ from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers, status
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from repositories.models import (
@@ -117,6 +117,7 @@ class BranchIndexListView(APIView):
 class IndexTriggerView(APIView):
  """Trigger indexing for a repository."""
  permission_classes = [IsAuthenticated]
+ parser_classes = [JSONParser]
  async def post(self, request: Any, repository_id: str) -> Response:
  """触发仓库索引（手动），支持可选 branch 参数触发分支索引。"""
  # 快速状态检查（无锁开销，快速路径）

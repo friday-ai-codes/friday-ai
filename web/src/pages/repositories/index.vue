@@ -110,9 +110,9 @@ const platformIcons: Record<string, string> = {
  <span class="icon-[lucide--git-branch]" />
  {{ repository.default_branch }}
  </span>
- <span v-if="repository.linked_projects_count" class="text-xs text-muted-foreground flex items-center gap-1">
+ <span v-if="repository.linked_spaces_count" class="text-xs text-muted-foreground flex items-center gap-1">
  <span class="icon-[lucide--folder]" />
- {{ repository.linked_projects_count }} 个空间
+ {{ repository.linked_spaces_count }} 个空间
  </span>
  </div>
  <!-- 仓库 URL -->

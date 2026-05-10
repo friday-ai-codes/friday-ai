@@ -10,14 +10,14 @@ import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 import { useToast } from '~/composables/useToast'
 const chatStore = useChatStore
 const toast = useToast
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const branchRows = ref<BranchIndexRow>
 const selectedBranchLocal = ref<string | null>(null)
 const primaryRepoId = computed( => {
- const pid = chatStore.selectedProjectId
+ const pid = chatStore.selectedSpaceId
  if (!pid)
  return null
- const p = projectsStore.currentProject?.id === pid ? projectsStore.currentProject: null
+ const p = spacesStore.currentSpace?.id === pid ? spacesStore.currentSpace: null
  return p?.repositories?.[0]?.id ?? null
 })
 const branchNames = computed( => branchRows.value.map(r => r.branch_name))
@@ -25,18 +25,18 @@ const recommendedBaseBranch = computed( => {
  const row = branchRows.value.find(r => r.is_base_branch)
  if (row)
  return row.branch_name
- const repo = projectsStore.currentProject?.repositories?.[0]
+ const repo = spacesStore.currentSpace?.repositories?.[0]
  return repo?.base_branch ?? repo?.default_branch ?? null
 })
 async function syncChatBranchPicker {
  branchRows.value =
  selectedBranchLocal.value = null
- const pid = chatStore.selectedProjectId
+ const pid = chatStore.selectedSpaceId
  if (!pid)
  return
  try {
- if (projectsStore.currentProject?.id !== pid)
- await projectsStore.fetchProject(pid)
+ if (spacesStore.currentSpace?.id !== pid)
+ await spacesStore.fetchSpace(pid)
  }
  catch {
  return
@@ -68,7 +68,7 @@ async function syncChatBranchPicker {
  chatStore.setSearchBranchForRepository(rid, selectedBranchLocal.value)
 }
 watch(
- => chatStore.selectedProjectId,
+ => chatStore.selectedSpaceId,
  => {
  void syncChatBranchPicker
  },
@@ -92,10 +92,10 @@ const modelMenuRef = ref<HTMLElement | null>(null)
 const providerStore = useProviderCredentialStore
 const { isSystemAdmin } = usePermission
 async function loadCredentialsForChat {
- const projectId = chatStore.selectedProjectId ?? undefined
+ const sid = chatStore.selectedSpaceId ?? undefined
  try {
  await Promise.all([
- providerStore.fetchCredentials({ scope: 'any', projectId }),
+ providerStore.fetchCredentials({ scope: 'any', spaceId: sid }),
  providerStore.fetchProviderTypes,
  ])
  }
@@ -104,7 +104,7 @@ async function loadCredentialsForChat {
  }
 }
 onMounted(loadCredentialsForChat)
-watch( => chatStore.selectedProjectId, loadCredentialsForChat)
+watch( => chatStore.selectedSpaceId, loadCredentialsForChat)
 onClickOutside(modelMenuRef, => {
  showModelMenu.value = false
 })
@@ -184,10 +184,10 @@ const isEmpty = computed( => credentialModelOptions.value.length === 0)
 const emptyCta = computed( => {
  if (isSystemAdmin.value)
  return { text: '去 admin 添加凭证 →', to: '/admin/providers' }
- const pid = chatStore.selectedProjectId
+ const pid = chatStore.selectedSpaceId
  return {
- text: '去项目设置添加凭证 →',
- to: pid ? `/projects/${pid}/settings#providers`: '/projects',
+ text: '去空间设置添加凭证 →',
+ to: pid ? `/spaces/${pid}/settings#providers`: '/spaces',
  }
 })
 // PinConfirmDialog 状态
@@ -345,7 +345,7 @@ function toggleNotifications {
  本次对话已使用 {{ chatStore.budgetWarning }}% 预算
  </div>
  </Transition>
- <!-- Phase: 检索分支（项目关联仓库的首个仓库） -->
+ <!-- Phase: 检索分支（空间关联仓库的首个仓库） -->
  <div
  v-if="branchNames.length > 0 && primaryRepoId"
  class="flex flex-col gap-1.5 px-1 pb-2 sm:flex-row sm:items-center sm:gap-3"
@@ -426,7 +426,7 @@ function toggleNotifications {
  </TooltipTrigger>
  <TooltipContent side="top" class="max-w-xs text-xs font-normal">
  <p class="mb-1">
- 请先在 admin/providers 或项目设置创建并启用 Provider 凭证。
+ 请先在 admin/providers 或空间设置创建并启用 Provider 凭证。
  </p>
  <RouterLink:to="emptyCta.to" class="text-primary hover:underline">
  {{ emptyCta.text }}

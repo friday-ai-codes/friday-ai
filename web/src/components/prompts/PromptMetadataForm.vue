@@ -86,7 +86,7 @@ const CATEGORY_LABEL: Record<string, CategoryLabelEntry> = {
 }
 const SCOPE_LABEL: Record<string, string> = {
  system: '系统级',
- project: '项目级',
+ project: '空间级',
 }
 </script>
 <template>

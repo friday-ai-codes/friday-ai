@@ -2,7 +2,7 @@
 /**
  * Analytics 页面分组维度切换器（Phase Plan — ）
  *
- * 3 选一：不分组 / 按 Provider / 按项目
+ * 3 选一：不分组 / 按 Provider / 按空间
  * v-model 支持；与 TimeRangeSelector 并列在 Analytics 页面顶部工具栏。
  */
 import type { AnalyticsGrouping } from '~/stores/analyticsFilters'
@@ -22,7 +22,7 @@ const emit = defineEmits<{
 const labels: Record<AnalyticsGrouping, string> = {
  none: '不分组',
  provider_type: '按 Provider',
- project: '按项目',
+ project: '按空间',
 }
 function onChange(value: string | number | bigint | Record<string, unknown> | null): void {
  if (typeof value !== 'string')
@@ -46,7 +46,7 @@ function onChange(value: string | number | bigint | Record<string, unknown> | nu
  按 Provider
  </SelectItem>
  <SelectItem value="project">
- 按项目
+ 按空间
  </SelectItem>
  </SelectContent>
  </Select>

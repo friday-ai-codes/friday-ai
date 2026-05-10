@@ -2,7 +2,7 @@
  * Prompts Store
  *
  * Phase Plan 数据层基石。覆盖 Phase Prompt CRUD / Preview / Versions API，
- * 并通过 `mergedProjectList` computed 实现 的三态合并（overridden/fallback/project_only）。
+ * 并通过 `mergedSpaceList` computed 实现 的三态合并（overridden/fallback/project_only）。
  *
  * Pinia setup-syntax。`defineStore`、`ref`、`computed` 通过 `unplugin-auto-import` 全局注入
  * （见 web/vite.config.ts + web/src/auto-imports.d.ts），无需显式 import。
@@ -17,18 +17,18 @@ import type {
 } from '~/types/prompts'
 import { promptsApi } from '~/api/prompts'
 /**
- * 项目级合并后的列表项（ mergedProjectList 派生结构）
+ * 空间级合并后的列表项（ mergedSpaceList 派生结构）
  */
-export interface MergedProjectListItem extends PromptListItem {
- status: 'overridden' | 'fallback' | 'project_only'
- project_prompt: PromptListItem | null
+export interface MergedSpaceListItem extends PromptListItem {
+ status: 'overridden' | 'fallback' | 'space_only'
+ space_prompt: PromptListItem | null
 }
 export const usePromptsStore = defineStore('prompts', => {
  // ============================================================================
  // State
  // ============================================================================
  const systemList = ref<PromptListItem>
- const projectList = ref<PromptListItem>
+ const spaceList = ref<PromptListItem>
  const currentPrompt = ref<PromptDetail | null>(null)
  const versions = ref<PromptVersion>
  const loading = ref(false)
@@ -41,26 +41,26 @@ export const usePromptsStore = defineStore('prompts', => {
  /**
  * 三态合并 computed：
  * 1. 遍历 systemList 作为基线，每条检查在 projectList 中是否有 slug 同名覆盖
- * 2. overridden = 系统级 + 项目级覆盖存在
- * 3. fallback = 系统级 + 无项目级覆盖
- * 4. project_only = 项目级存在但系统级无同 slug（极端情况）
+ * 2. overridden = 系统级 + 空间级覆盖存在
+ * 3. fallback = 系统级 + 无空间级覆盖
+ * 4. project_only = 空间级存在但系统级无同 slug（极端情况）
  */
- const mergedProjectList = computed<MergedProjectListItem>( => {
- const merged: MergedProjectListItem =
- const projectBySlug = new Map(projectList.value.map(p => [p.slug, p] as const))
+ const mergedSpaceList = computed<MergedSpaceListItem>( => {
+ const merged: MergedSpaceListItem =
+ const spaceBySlug = new Map(spaceList.value.map(p => [p.slug, p] as const))
  for (const sys of systemList.value) {
- const override = projectBySlug.get(sys.slug) ?? null
+ const override = spaceBySlug.get(sys.slug) ?? null
  merged.push({
  ...sys,
- project_prompt: override,
+ space_prompt: override,
  status: override ? 'overridden': 'fallback',
  })
  if (override) {
- projectBySlug.delete(sys.slug)
+ spaceBySlug.delete(sys.slug)
  }
  }
- for (const proj of projectBySlug.values) {
- merged.push({ ...proj, project_prompt: null, status: 'project_only' })
+ for (const proj of spaceBySlug.values) {
+ merged.push({ ...proj, space_prompt: null, status: 'space_only' })
  }
  return merged
  })
@@ -81,19 +81,19 @@ export const usePromptsStore = defineStore('prompts', => {
  loading.value = false
  }
  }
- async function loadProjectList(projectId: string): Promise<void> {
+ async function loadSpaceList(spaceId: string): Promise<void> {
  loading.value = true
  error.value = null
  try {
  const [sys, proj] = await Promise.all([
  promptsApi.list({ scope: 'system' }),
- promptsApi.list({ scope: 'project', project_id: projectId }),
+ promptsApi.list({ scope: 'project', space_id: spaceId }),
  ])
  systemList.value = sys
- projectList.value = proj
+ spaceList.value = proj
  }
  catch (e) {
- error.value = e instanceof Error ? e.message: '加载项目级 Prompt 列表失败'
+ error.value = e instanceof Error ? e.message: '加载空间级 Prompt 列表失败'
  throw e
  }
  finally {
@@ -169,7 +169,7 @@ export const usePromptsStore = defineStore('prompts', => {
  currentPrompt.value = null
  }
  systemList.value = systemList.value.filter(p => p.id !== id)
- projectList.value = projectList.value.filter(p => p.id !== id)
+ spaceList.value = spaceList.value.filter(p => p.id !== id)
  }
  catch (e) {
  error.value = e instanceof Error ? e.message: '删除 Prompt 失败'
@@ -222,7 +222,7 @@ export const usePromptsStore = defineStore('prompts', => {
  return {
  // State
  systemList,
- projectList,
+ spaceList,
  currentPrompt,
  versions,
  loading,
@@ -230,10 +230,10 @@ export const usePromptsStore = defineStore('prompts', => {
  previewing,
  error,
  // Getters
- mergedProjectList,
+ mergedSpaceList,
  // Actions
  loadSystemList,
- loadProjectList,
+ loadSpaceList,
  loadDetail,
  loadVersions,
  createPrompt,

@@ -1,4 +1,4 @@
-"""Project members views: 项目成员 CRUD 端点。"""
+"""Space members views: 空间成员 CRUD 端点。"""
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
@@ -13,39 +13,39 @@ from .members_serializers import (
  ProjectMembershipSerializer,
 )
 User = get_user_model
-async def _get_project_or_404(project_id: str) -> Project | None:
- """获取项目对象，不存在时返回 404 响应数据（内部辅助）。"""
+async def _get_space_or_404(space_id: str) -> Project | None:
+ """获取空间对象，不存在时返回 404 响应数据（内部辅助）。"""
  try:
- return await sync_to_async(Project.objects.get)(pk=project_id)
+ return await sync_to_async(Project.objects.get)(pk=space_id)
  except Project.DoesNotExist:
  return None
-class ProjectMemberListView(APIView):
- """项目成员列表：GET 查看 / POST 添加。"""
- async def get(self, request, project_id: str):
- """获取项目成员列表。项目成员（任何角色）可查看。"""
- project = await _get_project_or_404(project_id)
+class SpaceMemberListView(APIView):
+ """空间成员列表：GET 查看 / POST 添加。"""
+ async def get(self, request, space_id: str):
+ """获取空间成员列表。空间成员（任何角色）可查看。"""
+ project = await _get_space_or_404(space_id)
  if project is None:
- return Response({"detail": "项目不存在"}, status=status.HTTP_404_NOT_FOUND)
- # 权限校验：必须是项目成员或超级管理员
+ return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
+ # 权限校验：必须是空间成员或超级管理员
  has_access = await sync_to_async(PermissionService.has_project_access)(
  request.user, project
  )
  if not has_access:
- return Response({"detail": "无权访问此项目"}, status=status.HTTP_403_FORBIDDEN)
+ return Response({"detail": "无权访问此空间"}, status=status.HTTP_403_FORBIDDEN)
  qs = ProjectMembership.objects.filter(project=project).select_related("user").order_by("joined_at")
  memberships = await sync_to_async(lambda: list(qs))
  return Response(ProjectMembershipSerializer(memberships, many=True).data)
- async def post(self, request, project_id: str):
- """添加项目成员。仅项目 Admin 或超级管理员可操作。"""
- project = await _get_project_or_404(project_id)
+ async def post(self, request, space_id: str):
+ """添加空间成员。仅空间 Admin 或超级管理员可操作。"""
+ project = await _get_space_or_404(space_id)
  if project is None:
- return Response({"detail": "项目不存在"}, status=status.HTTP_404_NOT_FOUND)
+ return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
  # 权限校验：需要 Admin 角色
  has_admin = await sync_to_async(PermissionService.has_project_access)(
  request.user, project, min_role=ProjectRole.ADMIN
  )
  if not has_admin:
- return Response({"detail": "仅项目管理员可添加成员"}, status=status.HTTP_403_FORBIDDEN)
+ return Response({"detail": "仅空间管理员可添加成员"}, status=status.HTTP_403_FORBIDDEN)
  serializer = MemberAddSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  user_id = serializer.validated_data["user_id"]
@@ -60,7 +60,7 @@ class ProjectMemberListView(APIView):
  ProjectMembership.objects.filter(user=target_user, project=project).exists
  )
  if already_member:
- return Response({"detail": "该用户已是项目成员"}, status=status.HTTP_409_CONFLICT)
+ return Response({"detail": "该用户已是空间成员"}, status=status.HTTP_409_CONFLICT)
  membership = await sync_to_async(ProjectMembership.objects.create)(
  user=target_user,
  project=project,
@@ -75,27 +75,27 @@ class ProjectMemberListView(APIView):
  ProjectMembershipSerializer(membership).data,
  status=status.HTTP_201_CREATED,
  )
-class ProjectMemberDetailView(APIView):
- """项目成员详情：PATCH 变更角色 / DELETE 移除成员。"""
- async def _get_membership(self, project_id: str, user_id: str):
- """获取项目成员关系，不存在返回 None。"""
+class SpaceMemberDetailView(APIView):
+ """空间成员详情：PATCH 变更角色 / DELETE 移除成员。"""
+ async def _get_membership(self, space_id: str, user_id: str):
+ """获取空间成员关系，不存在返回 None。"""
  try:
  return await sync_to_async(
  ProjectMembership.objects.select_related("user", "project").get
- )(project__pk=project_id, user__pk=user_id)
+ )(project__pk=space_id, user__pk=user_id)
  except ProjectMembership.DoesNotExist:
  return None
- async def patch(self, request, project_id: str, user_id: str):
- """变更项目成员角色。仅项目 Admin 或超级管理员可操作。"""
- project = await _get_project_or_404(project_id)
+ async def patch(self, request, space_id: str, user_id: str):
+ """变更空间成员角色。仅空间 Admin 或超级管理员可操作。"""
+ project = await _get_space_or_404(space_id)
  if project is None:
- return Response({"detail": "项目不存在"}, status=status.HTTP_404_NOT_FOUND)
+ return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
  has_admin = await sync_to_async(PermissionService.has_project_access)(
  request.user, project, min_role=ProjectRole.ADMIN
  )
  if not has_admin:
- return Response({"detail": "仅项目管理员可修改成员角色"}, status=status.HTTP_403_FORBIDDEN)
- membership = await self._get_membership(project_id, user_id)
+ return Response({"detail": "仅空间管理员可修改成员角色"}, status=status.HTTP_403_FORBIDDEN)
+ membership = await self._get_membership(space_id, user_id)
  if membership is None:
  return Response({"detail": "成员关系不存在"}, status=status.HTTP_404_NOT_FOUND)
  serializer = MemberUpdateSerializer(data=request.data)
@@ -103,17 +103,17 @@ class ProjectMemberDetailView(APIView):
  membership.role = serializer.validated_data["role"]
  await sync_to_async(membership.save)(update_fields=["role"])
  return Response(ProjectMembershipSerializer(membership).data)
- async def delete(self, request, project_id: str, user_id: str):
- """移除项目成员。仅项目 Admin 或超级管理员可操作。"""
- project = await _get_project_or_404(project_id)
+ async def delete(self, request, space_id: str, user_id: str):
+ """移除空间成员。仅空间 Admin 或超级管理员可操作。"""
+ project = await _get_space_or_404(space_id)
  if project is None:
- return Response({"detail": "项目不存在"}, status=status.HTTP_404_NOT_FOUND)
+ return Response({"detail": "空间不存在"}, status=status.HTTP_404_NOT_FOUND)
  has_admin = await sync_to_async(PermissionService.has_project_access)(
  request.user, project, min_role=ProjectRole.ADMIN
  )
  if not has_admin:
- return Response({"detail": "仅项目管理员可移除成员"}, status=status.HTTP_403_FORBIDDEN)
- membership = await self._get_membership(project_id, user_id)
+ return Response({"detail": "仅空间管理员可移除成员"}, status=status.HTTP_403_FORBIDDEN)
+ membership = await self._get_membership(space_id, user_id)
  if membership is None:
  return Response({"detail": "成员关系不存在"}, status=status.HTTP_404_NOT_FOUND)
  await sync_to_async(membership.delete)

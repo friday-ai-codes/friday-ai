@@ -34,7 +34,7 @@ def _make_credential(provider_type: str, config: dict[str, Any], **overrides: An
 # Anthropic
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckAnthropic:
  @respx.mock
  async def test_ok(self) -> None:
@@ -98,7 +98,7 @@ class TestHealthCheckAnthropic:
 # OpenAI（Responses + Chat 两个 ProviderType 共享 _ping_openai）
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckOpenAI:
  @respx.mock
  async def test_openai_chat_ok(self) -> None:
@@ -131,7 +131,7 @@ class TestHealthCheckOpenAI:
 # Gemini
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckGemini:
  @respx.mock
  async def test_gemini_ok(self) -> None:
@@ -153,7 +153,7 @@ class TestHealthCheckGemini:
 # Ollama（ 协同：available_models 写入）
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckOllama:
  @respx.mock
  async def test_ollama_writes_available_models_PROV_06(self) -> None:
@@ -184,7 +184,7 @@ class TestHealthCheckOllama:
 # 错误路径：graceful 降级
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckErrorPaths:
  @respx.mock
  async def test_timeout_graceful(self) -> None:
@@ -216,7 +216,7 @@ class TestHealthCheckErrorPaths:
 # Dispatch matrix：5 ProviderType 分别分发到对应 _ping_* 函数
 # ============================================================================
 @pytest.mark.asyncio
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestHealthCheckDispatchMatrix:
  """契约：_PING_DISPATCH 5 ProviderType -> 4 helper（openai_chat / openai_responses 共享 _ping_openai）。
  patch `_PING_DISPATCH` dict 中的项而非模块级 name —— 字典已在 import 时持有原始函数引用，
@@ -290,7 +290,7 @@ class TestHealthCheckDispatchMatrix:
 # ============================================================================
 # DRF 端点：ProviderCredentialTestConnectionView
 # ============================================================================
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestTestConnectionEndpoint:
  """POST /api/providers/credentials/{id}/test-connection/ 契约。
  本 phase 权限：IsAuthenticated（Phase 升级 IsSuperUserOrProjectAdmin）；

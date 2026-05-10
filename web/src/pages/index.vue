@@ -6,14 +6,14 @@ import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActiv
 useHead({
  title: '首页 - Friday AI',
 })
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const executionsStore = useExecutionsStore
 // 加载数据
 const loading = ref(true)
 onMounted(async => {
  try {
  await Promise.all([
- projectsStore.fetchProjects,
+ spacesStore.fetchSpaces,
  executionsStore.fetchExecutions,
  ])
  }
@@ -25,7 +25,7 @@ onMounted(async => {
 const stats = computed( => [
  {
  title: '空间总数',
- value: projectsStore.projectCount,
+ value: spacesStore.spaceCount,
  icon: 'lucide--folder-git-2',
  statIconClass: 'stat-icon-primary',
  link: '/spaces',

@@ -34,18 +34,6 @@ class MockClaudeConfig:
  model: str = "claude-3-5-sonnet-20241022"
  source: str = "system"
 @pytest.fixture
-def mock_claude_config:
- """Mock get_claude_config to provide API credentials for tests.
- This is required because AIPlanGenerationNode calls get_claude_config
- which tries to access the database for system settings.
- """
- mock_config = MockClaudeConfig
- with patch(
- "services.claude_config.get_claude_config",
- return_value=mock_config,
- ):
- yield mock_config
-@pytest.fixture
 def mock_feishu_trigger_validation:
  """Mock Feishu trigger handler validation to always pass.
  The production code has a bug where the webhook token is not passed
@@ -80,7 +68,7 @@ def _configure_llm_mock(mock_llm_api: Any, plan: dict[str, Any]) -> None:
 class TestCompleteWorkflowFlow:
  """Test complete workflow execution from Feishu trigger to CodingTask creation."""
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_feishu_trigger_starts_workflow(
  self,
  e2e_workflow: Workflow,
@@ -135,7 +123,7 @@ class TestCompleteWorkflowFlow:
  assert trigger_node_exec is not None
  assert trigger_node_exec.status == NodeExecutionStatus.COMPLETED
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_technical_plan_generation_and_feishu_writeback(
  self,
  e2e_workflow: Workflow,
@@ -203,7 +191,7 @@ class TestCompleteWorkflowFlow:
  mock_client = mock_feishu_client.mock_client
  assert mock_client.update_field.called or mock_client.update_field.call_count >= 0
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_approval_webhook_resumes_workflow(
  self,
  e2e_workflow: Workflow,
@@ -265,7 +253,7 @@ class TestCompleteWorkflowFlow:
  assert subscription.is_active is False
  assert subscription.matched_at is not None
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_coding_tasks_created_by_dispatcher(
  self,
  e2e_workflow: Workflow,
@@ -348,7 +336,7 @@ class TestCompleteWorkflowFlow:
  # Dispatcher may or may not exist depending on how far execution got
  # The key assertion is that execution happened synchronously
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_complete_workflow_end_to_end(
  self,
  e2e_workflow: Workflow,
@@ -437,7 +425,7 @@ class TestCompleteWorkflowFlow:
 class TestWorkflowStateVerification:
  """Tests for detailed workflow state verification."""
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_node_execution_outputs_propagate(
  self,
  e2e_workflow: Workflow,
@@ -492,7 +480,7 @@ class TestWorkflowStateVerification:
  assert "plan" in plan_node.output_data
  assert "execution_plan" in plan_node.output_data["plan"]
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_global_params_set_by_trigger(
  self,
  e2e_workflow: Workflow,
@@ -540,7 +528,7 @@ class TestWorkflowStateVerification:
  assert trigger_node.output_data.get("work_item_id") == work_item_id
  assert trigger_node.output_data.get("project_key") == e2e_project.feishu_project_key
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_workflow_subscription_lifecycle(
  self,
  e2e_workflow: Workflow,
@@ -598,7 +586,7 @@ class TestWorkflowStateVerification:
  if subscription.matched_at is not None:
  assert subscription.is_active is False
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_coding_task_metadata(
  self,
  e2e_workflow: Workflow,
@@ -671,7 +659,7 @@ class TestHookNotifications:
  覆盖: 飞书卡片状态同步更新需求。
  """
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_feishu_sync_hook_called_on_node_events(
  self,
  e2e_workflow: Workflow,
@@ -751,7 +739,7 @@ class TestHookNotifications:
  args = call.args
  assert len(args) >= 1, "调用参数应包含 execution 对象"
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_notification_hook_called_on_execution_events(
  self,
  e2e_workflow: Workflow,
@@ -830,7 +818,7 @@ class TestHookNotifications:
  for e in events_received
  ), f"收到非预期事件: {events_received}"
  @pytest.mark.asyncio
- @pytest.mark.usefixtures("mock_feishu_trigger_validation", "mock_claude_config")
+ @pytest.mark.usefixtures("mock_feishu_trigger_validation")
  async def test_hook_receives_correct_execution_context(
  self,
  e2e_workflow: Workflow,

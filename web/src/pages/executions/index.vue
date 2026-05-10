@@ -17,15 +17,15 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import { useProjectsStore } from '~/stores/projects'
+import { useSpacesStore } from '~/stores/spaces'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 const route = useRoute
 const router = useRouter
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const workflowsStore = useWorkflowsStore
 // Filters
 const statusFilter = ref<string>(route.query.status as string || 'all')
-const projectFilter = ref<string>(route.query.project_id as string || 'all')
+const spaceFilter = ref<string>(route.query.space_id as string || 'all')
 const workflowFilter = ref<string>(route.query.workflow_id as string || 'all')
 const timeRangeFilter = ref<string>(route.query.days as string || '7')
 // 时间范围选项
@@ -51,8 +51,8 @@ const queryParams = computed( => {
  const params: Record<string, string> = {}
  if (workflowFilter.value !== 'all')
  params.workflow_id = workflowFilter.value
- if (projectFilter.value !== 'all')
- params.project_id = projectFilter.value
+ if (spaceFilter.value !== 'all')
+ params.space_id = spaceFilter.value
  if (timeRangeFilter.value !== 'all') {
  const days = Number.parseInt(timeRangeFilter.value)
  const date = new Date
@@ -85,7 +85,7 @@ const { data: executions, isLoading, isFetching } = useQuery({
 // 加载空间和工作流列表（用于筛选下拉框）
 useQuery({
  queryKey: ['projects'],
- queryFn: => projectsStore.fetchProjects,
+ queryFn: => spacesStore.fetchSpaces,
  staleTime: 60000,
 })
 useQuery({
@@ -114,12 +114,12 @@ const filteredExecutions = computed( => {
  return execs
 })
 // Watch filters and update URL
-watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
+watch([statusFilter, spaceFilter, workflowFilter, timeRangeFilter], => {
  const query: Record<string, string> = {}
  if (statusFilter.value && statusFilter.value !== 'all')
  query.status = statusFilter.value
- if (projectFilter.value && projectFilter.value !== 'all')
- query.project_id = projectFilter.value
+ if (spaceFilter.value && spaceFilter.value !== 'all')
+ query.space_id = spaceFilter.value
  if (workflowFilter.value && workflowFilter.value !== 'all')
  query.workflow_id = workflowFilter.value
  if (timeRangeFilter.value && timeRangeFilter.value !== '7')
@@ -128,7 +128,7 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
 })
 // --- 辅助函数 ---
 /** 通过 workflowsStore 反查空间名称 */
-function getProjectName(workflowId: string): string {
+function getSpaceName(workflowId: string): string {
  const wf = workflowsStore.workflows.find(w => w.id === workflowId)
  return wf?.project_name || '-'
 }
@@ -167,7 +167,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  {
  id: 'project',
  header: '空间',
- cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.workflow)),
+ cell: ({ row }) => h('span', { class: 'text-sm' }, getSpaceName(row.original.workflow)),
  enableSorting: false,
  },
  {
@@ -265,7 +265,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  </SelectItem>
  </SelectContent>
  </Select>
- <Select v-model="projectFilter">
+ <Select v-model="spaceFilter">
  <SelectTrigger class="w-[160px]">
  <SelectValue placeholder="全部空间" />
  </SelectTrigger>
@@ -273,7 +273,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  <SelectItem value="all">
  全部空间
  </SelectItem>
- <SelectItem v-for="project in projectsStore.projects":key="project.id":value="project.id">
+ <SelectItem v-for="project in spacesStore.spaces":key="project.id":value="project.id">
  {{ project.name }}
  </SelectItem>
  </SelectContent>
@@ -302,10 +302,10 @@ const columns: ColumnDef<WorkflowExecution> = [
  </SelectContent>
  </Select>
  <Button
- v-if="statusFilter !== 'all' || projectFilter !== 'all' || workflowFilter !== 'all' || timeRangeFilter !== '7'"
+ v-if="statusFilter !== 'all' || spaceFilter !== 'all' || workflowFilter !== 'all' || timeRangeFilter !== '7'"
  variant="ghost"
  size="sm"
- @click="statusFilter = 'all'; projectFilter = 'all'; workflowFilter = 'all'; timeRangeFilter = '7'"
+ @click="statusFilter = 'all'; spaceFilter = 'all'; workflowFilter = 'all'; timeRangeFilter = '7'"
  >
  <span class="icon-[lucide--x] mr-1" />
  清除筛选

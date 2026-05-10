@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * UX 重设计：chat 路径 Provider 与模型选择已折叠到 ChatInput
- * 底部 model-selector。本组件仅保留项目下拉、角色下拉、ResolvedSourceBadge。
+ * 底部 model-selector。本组件仅保留空间下拉、角色下拉、ResolvedSourceBadge。
  *
  * 历史背景：删除原顶部凭证下拉与凭证切换确认弹窗、所有相关状态与事件，
  * 全部迁移到 ChatInput。详见 project-docs/quick/-* PLAN/SUMMARY。
@@ -24,20 +24,20 @@ withDefaults(defineProps<Props>, {
  resolvedProvider: null,
 })
 const chatStore = useChatStore
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 </script>
 <template>
  <div class="chat-header">
- <!-- 项目选择 -->
- <Select v-model="chatStore.selectedProjectId">
+ <!-- 空间选择 -->
+ <Select v-model="chatStore.selectedSpaceId">
  <SelectTrigger class="w-44 text-xs border-border/40 bg-transparent shadow-none">
- <SelectValue placeholder="选择项目" />
+ <SelectValue placeholder="选择空间" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem
- v-for="project in projectsStore.projects":key="project.id":value="project.id"
+ v-for="space in spacesStore.spaces":key="space.id":value="space.id"
  >
- {{ project.name }}
+ {{ space.name }}
  </SelectItem>
  </SelectContent>
  </Select>

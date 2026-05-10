@@ -12,19 +12,19 @@ class TestProjectListCreate:
  """项目列表和创建接口测试。"""
  def test_list_projects_empty(self, authenticated_admin_client, urls):
  """测试空项目列表。"""
- response = authenticated_admin_client.get(urls.project_list)
+ response = authenticated_admin_client.get(urls.space_list)
  assert response.status_code == status.HTTP_200_OK
  assert response.data ==
  def test_list_projects_with_data(self, authenticated_admin_client, project, urls):
  """测试有数据的项目列表。"""
- response = authenticated_admin_client.get(urls.project_list)
+ response = authenticated_admin_client.get(urls.space_list)
  assert response.status_code == status.HTTP_200_OK
  assert len(response.data) == 1
  assert response.data[0]["name"] == "Test Project"
  def test_create_project(self, authenticated_admin_client, urls):
  """测试创建项目。"""
  response = authenticated_admin_client.post(
- urls.project_list,
+ urls.space_list,
  {
  "name": "New Project",
  "description": "A new project",
@@ -39,7 +39,7 @@ class TestProjectListCreate:
  def test_create_project_unauthenticated(self, api_client, urls):
  """测试未认证用户无法创建项目。"""
  response = api_client.post(
- urls.project_list,
+ urls.space_list,
  {"name": "New Project"},
  format="json",
  )
@@ -52,18 +52,18 @@ class TestProjectDetail:
  """项目详情接口测试。"""
  def test_get_project(self, authenticated_admin_client, project, urls):
  """测试获取单个项目。"""
- response = authenticated_admin_client.get(urls.project_detail(project.id))
+ response = authenticated_admin_client.get(urls.space_detail(project.id))
  assert response.status_code == status.HTTP_200_OK
  assert response.data["name"] == "Test Project"
  assert response.data["feishu_project_key"] == "test-project-key"
  def test_get_project_not_found(self, authenticated_admin_client, urls):
  """测试获取不存在的项目。"""
- response = authenticated_admin_client.get(urls.project_detail(uuid.uuid4))
+ response = authenticated_admin_client.get(urls.space_detail(uuid.uuid4))
  assert response.status_code == status.HTTP_404_NOT_FOUND
  def test_update_project(self, authenticated_admin_client, project, urls):
  """测试更新项目。"""
  response = authenticated_admin_client.patch(
- urls.project_detail(project.id),
+ urls.space_detail(project.id),
  {"name": "Updated Project"},
  format="json",
  )
@@ -71,10 +71,10 @@ class TestProjectDetail:
  assert response.data["name"] == "Updated Project"
  def test_delete_project(self, authenticated_admin_client, project, urls):
  """测试删除项目。"""
- response = authenticated_admin_client.delete(urls.project_detail(project.id))
+ response = authenticated_admin_client.delete(urls.space_detail(project.id))
  assert response.status_code == status.HTTP_204_NO_CONTENT
  # 验证已删除
- response = authenticated_admin_client.get(urls.project_detail(project.id))
+ response = authenticated_admin_client.get(urls.space_detail(project.id))
  assert response.status_code == status.HTTP_404_NOT_FOUND
 # ============================================================================
 # 项目-仓库关联测试
@@ -85,7 +85,7 @@ class TestProjectRepositoryAssociation:
  @pytest.mark.xfail(reason="Project-Repository 关联 API 重构，端点和字段已变更", strict=False)
  def test_list_project_repositories(self, authenticated_admin_client, project, urls):
  """测试列出项目仓库。"""
- response = authenticated_admin_client.get(urls.project_repositories(project.id))
+ response = authenticated_admin_client.get(urls.space_repositories(project.id))
  assert response.status_code == status.HTTP_200_OK
  # project fixture 已关联一个仓库
  assert len(response.data) == 1
@@ -94,7 +94,7 @@ class TestProjectRepositoryAssociation:
  def test_link_repository(self, authenticated_admin_client, project_without_repo, repository, urls):
  """测试关联仓库到项目。"""
  response = authenticated_admin_client.post(
- urls.project_link_repository(project_without_repo.id, repository.id)
+ urls.space_link_repository(project_without_repo.id, repository.id)
  )
  assert response.status_code in [status.HTTP_200_OK, status.HTTP_201_CREATED]
  # 验证已关联
@@ -103,7 +103,7 @@ class TestProjectRepositoryAssociation:
  def test_unlink_repository(self, authenticated_admin_client, project, repository, urls):
  """测试取消关联仓库。"""
  response = authenticated_admin_client.delete(
- urls.project_unlink_repository(project.id, repository.id)
+ urls.space_unlink_repository(project.id, repository.id)
  )
  assert response.status_code == status.HTTP_204_NO_CONTENT
 # ============================================================================

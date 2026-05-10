@@ -21,7 +21,7 @@ import { useToast } from '~/composables/useToast'
 import { PLATFORM_LABELS } from '~/types'
 const route = useRoute('/spaces/[id]/repositories')
 const spaceId = computed( => route.params.id)
-const { isProjectAdmin, isViewer } = usePermission(spaceId)
+const { isSpaceAdmin, isViewer } = usePermission(spaceId)
 const { handleError } = useErrorHandler
 const { success } = useToast
 useHead({ title: '仓库管理 - Friday AI' })
@@ -155,7 +155,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  </div>
  </div>
  </div>
- <TooltipProvider v-if="isProjectAdmin || isViewer">
+ <TooltipProvider v-if="isSpaceAdmin || isViewer">
  <Tooltip>
  <TooltipTrigger as-child>
  <div>
@@ -182,7 +182,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  v-else-if="links.length === 0"
  icon="lucide--git-branch"
  title="暂无关联仓库"
- description="将仓库关联到此空间以开始使用":action-label="isProjectAdmin ? '关联仓库': undefined"
+ description="将仓库关联到此空间以开始使用":action-label="isSpaceAdmin ? '关联仓库': undefined"
  gradient="from-primary/20 to-primary/10"
  @action="openLinkDialog"
  />
@@ -201,7 +201,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <th class="text-left px-6 py-4 text-sm font-medium text-muted-foreground">
  关联时间
  </th>
- <th v-if="isProjectAdmin || isViewer" class="text-right px-6 py-4 text-sm font-medium text-muted-foreground">
+ <th v-if="isSpaceAdmin || isViewer" class="text-right px-6 py-4 text-sm font-medium text-muted-foreground">
  操作
  </th>
  </tr>
@@ -217,7 +217,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  </div>
  </td>
  <td class="px-6 py-4">
- <TooltipProvider v-if="isProjectAdmin">
+ <TooltipProvider v-if="isSpaceAdmin">
  <Tooltip>
  <TooltipTrigger as-child>
  <button @click="togglePermission(link)">
@@ -242,7 +242,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <td class="px-6 py-4 text-sm text-muted-foreground">
  {{ new Date(link.created_at).toLocaleString('zh-CN') }}
  </td>
- <td v-if="isProjectAdmin || isViewer" class="px-6 py-4 text-right">
+ <td v-if="isSpaceAdmin || isViewer" class="px-6 py-4 text-right">
  <TooltipProvider>
  <Tooltip>
  <TooltipTrigger as-child>

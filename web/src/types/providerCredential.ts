@@ -13,7 +13,7 @@ export type ProviderScope = 'system' | 'project'
  * 凭证列表查询入参 scope 类型（仅 query 用，不映射到 DTO.scope）。
  *
  * 'system' / 'project' 与 DB 行 scope 一一对应；'any' 为前端聚合需求
- * （chat 路径 model-selector 需要 system + 当前项目两 scope 全集）。
+ * （chat 路径 model-selector 需要 system + 当前空间两 scope 全集）。
  *
  * UAT 第 3 项 hotfix follow-up。
  */

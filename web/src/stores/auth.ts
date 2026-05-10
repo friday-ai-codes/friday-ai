@@ -2,7 +2,7 @@
  * Auth Store
  * 管理用户认证状态（认证通过 HTTP-only Cookie，前端不管理 token）
  */
-import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, ProjectMembershipBrief, User } from '~/types'
+import type { AdminProfileUpdate, ChangePasswordRequest, ForceChangePasswordRequest, SpaceMembershipBrief, User } from '~/types'
 import { authApi } from '~/api'
 import { getMe, updateProfile } from '~/api/users'
 export const useAuthStore = defineStore('auth', => {
@@ -15,7 +15,7 @@ export const useAuthStore = defineStore('auth', => {
  const loading = ref(false)
  const error = ref<string | null>(null)
  const mustChangePassword = ref(false)
- const projectMemberships = ref<ProjectMembershipBrief>
+ const spaceMemberships = ref<SpaceMembershipBrief>
  const gravatarUrl = ref<string | null>(null)
  // ============================================================================
  // Getters
@@ -36,7 +36,7 @@ export const useAuthStore = defineStore('auth', => {
  user.value = response.user
  isAuthenticated.value = true
  mustChangePassword.value = response.must_change_password
- // 登录成功后立即获取完整用户信息（含 projectMemberships）
+ // 登录成功后立即获取完整用户信息（含 spaceMemberships）
  try {
  await fetchMe
  }
@@ -81,10 +81,10 @@ export const useAuthStore = defineStore('auth', => {
  const currentUser = await authApi.getCurrentUser
  user.value = currentUser
  isAuthenticated.value = true
- // 获取扩展用户信息（含项目成员列表）
+ // 获取扩展用户信息（含空间成员列表）
  try {
  const meData = await getMe
- projectMemberships.value = meData.project_memberships
+ spaceMemberships.value = meData.space_memberships
  gravatarUrl.value = meData.gravatar_url
  }
  catch {
@@ -102,12 +102,12 @@ export const useAuthStore = defineStore('auth', => {
  }
  }
  /**
- * 获取当前用户完整信息（含项目成员列表和 gravatar）
+ * 获取当前用户完整信息（含空间成员列表和 gravatar）
  */
  async function fetchMe {
  try {
  const meData = await getMe
- projectMemberships.value = meData.project_memberships
+ spaceMemberships.value = meData.space_memberships
  gravatarUrl.value = meData.gravatar_url
  if (user.value) {
  user.value.display_name = meData.display_name
@@ -251,7 +251,7 @@ export const useAuthStore = defineStore('auth', => {
  loading.value = false
  error.value = null
  mustChangePassword.value = false
- projectMemberships.value =
+ spaceMemberships.value =
  gravatarUrl.value = null
  }
  return {
@@ -262,7 +262,7 @@ export const useAuthStore = defineStore('auth', => {
  loading,
  error,
  mustChangePassword,
- projectMemberships,
+ spaceMemberships,
  gravatarUrl,
  // Getters
  isAdmin,

@@ -69,7 +69,7 @@ class TestTaskReferenceManagement:
  async def test_task_added_to_index_tasks_set(self):
  """_schedule_index 创建的任务被添加到 _index_tasks 集合"""
  from repositories.index_views import _index_tasks, _schedule_index
- async def fake_index(repo_id, *, history_id=None):
+ async def fake_index(repo_id, *, history_id=None, branch=None):
  return {"status": "success"}
  with patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index):
  initial_count = len(_index_tasks)
@@ -80,7 +80,7 @@ class TestTaskReferenceManagement:
  async def test_task_removed_from_set_after_completion(self):
  """任务完成后 _index_tasks 自动移除（add_done_callback discard）"""
  from repositories.index_views import _index_tasks, _schedule_index
- async def fake_index(repo_id, *, history_id=None):
+ async def fake_index(repo_id, *, history_id=None, branch=None):
  return {"status": "success"}
  with patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index):
  task = _schedule_index("fake-repo-id", "fake-history-id")
@@ -113,10 +113,14 @@ class TestConcurrencyLock:
  patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index),
  patch("repositories.index_views._acquire_index_lock_async", return_value=repository),
  ):
- factory = RequestFactory
- request = factory.post(f"/api/repositories/{repository.id}/index/")
- request.user = MagicMock
- request.auth = None
+ from rest_framework.test import APIRequestFactory
+ from rest_framework.request import Request
+ from rest_framework.parsers import JSONParser
+ factory = APIRequestFactory
+ wsgi_request = factory.post(f"/api/repositories/{repository.id}/index/", format="json")
+ wsgi_request.user = MagicMock
+ wsgi_request.auth = None
+ request = Request(wsgi_request, parsers=[JSONParser])
  view = IndexTriggerView
  response = await view.post(request, repository.id)
  assert response.status_code == 202
