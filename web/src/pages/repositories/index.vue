@@ -75,7 +75,7 @@ const platformIcons: Record<string, string> = {
  v-else-if="repositoriesStore.repositories.length === 0"
  icon="lucide--git-branch"
  title="暂无仓库"
- description="创建您的第一个仓库，关联到项目以开始使用"
+ description="创建您的第一个仓库，关联到空间以开始使用"
  action-label="新建仓库"
  gradient="from-primary/20 to-primary/10"
  @action="openCreateRepository"
@@ -112,7 +112,7 @@ const platformIcons: Record<string, string> = {
  </span>
  <span v-if="repository.linked_projects_count" class="text-xs text-muted-foreground flex items-center gap-1">
  <span class="icon-[lucide--folder]" />
- {{ repository.linked_projects_count }} 个项目
+ {{ repository.linked_projects_count }} 个空间
  </span>
  </div>
  <!-- 仓库 URL -->
