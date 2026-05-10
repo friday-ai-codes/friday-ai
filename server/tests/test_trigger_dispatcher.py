@@ -165,6 +165,7 @@ class TestDispatchSuccess:
  trigger_type="test",
  trigger_data={"raw_payload": {"event": "test"}},
  debug_mode=False,
+ stop_before_node_id=None,
  )
  async def test_dispatch_multiple_workflows(self, mock_engine):
  """多个工作流应分别启动执行。"""

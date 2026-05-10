@@ -54,7 +54,7 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
  mock_dispatcher = MagicMock
  mock_dispatcher.cancel = AsyncMock(return_value=True)
  with (
- patch("chat.conversation_service.get_active_runner", return_value=None),
+ patch("orchestration.runner_registry.get_active_runner", return_value=None),
  patch("orchestration.barrier.get_barrier_manager", return_value=mock_barrier),
  patch("chat.views._cancel_dispatched_task", new_callable=AsyncMock) as mock_cancel,
  ):
@@ -76,19 +76,20 @@ async def test_interrupt_during_waiting_cancels_tasks_via_dispatcher(
 # ---------------------------------------------------------------------------
 # test_interrupt_during_executing_uses_runner
 # ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_interrupt_during_executing_uses_runner -> None:
  """SDK 运行中中断：使用 runner.interrupt。"""
  mock_runner = MagicMock
  mock_runner.interrupt = AsyncMock
- with patch("chat.conversation_service.get_active_runner", return_value=mock_runner):
+ with patch("orchestration.runner_registry.get_active_runner", return_value=mock_runner):
  from adrf.test import AsyncAPIRequestFactory
  from chat.views import ChatInterruptView
  factory = AsyncAPIRequestFactory
  request = factory.post("/api/conversations/fake-id/interrupt/")
  request.user = MagicMock(is_authenticated=True)
  view = ChatInterruptView
- response = await view.post(request, "fake-id")
+ response = await view.post(request, "a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert response.status_code == 200
  assert response.data["status"] == "interrupted"
  mock_runner.interrupt.assert_awaited_once
@@ -102,7 +103,7 @@ async def test_interrupt_no_active_session_returns_404(
  """无 active runner 也无 barrier → 404。"""
  mock_barrier.has_barrier_for_thread.return_value = False
  with (
- patch("chat.conversation_service.get_active_runner", return_value=None),
+ patch("orchestration.runner_registry.get_active_runner", return_value=None),
  patch("orchestration.barrier.get_barrier_manager", return_value=mock_barrier),
  ):
  from adrf.test import AsyncAPIRequestFactory
@@ -246,7 +247,7 @@ async def test_cancel_dispatched_task_failure_does_not_block_cancel_all(
  # _cancel_dispatched_task 内部 try/except 保证不外泄异常
  cancel_mock = AsyncMock
  with (
- patch("chat.conversation_service.get_active_runner", return_value=None),
+ patch("orchestration.runner_registry.get_active_runner", return_value=None),
  patch("orchestration.barrier.get_barrier_manager", return_value=mock_barrier),
  patch("chat.views._cancel_dispatched_task", cancel_mock),
  ):

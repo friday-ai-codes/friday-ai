@@ -246,7 +246,7 @@ class TestChatInterruptView:
  async def test_interrupt_returns_200_with_active_runner(self, conversation):
  """有活跃 runner 时返回 200。"""
  from unittest.mock import AsyncMock, MagicMock
- from chat.conversation_service import _active_runners
+ from orchestration.runner_registry import _active_runners
  mock_runner = MagicMock
  mock_runner.interrupt = AsyncMock
  conv_id_str = str(conversation.id)
