@@ -37,7 +37,7 @@ class HumanApprovalNode(BaseNode):
  "approvers": {
  "type": "array",
  "title": "审批人",
- "description": "指定审批人的用户 ID 列表，为空则项目成员均可审批",
+ "description": "指定审批人的用户 ID 列表，为空则空间成员均可审批",
  "items": {"type": "string"},
  "default":,
  },
