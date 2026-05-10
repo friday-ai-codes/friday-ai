@@ -3,7 +3,7 @@ from rest_framework import serializers
 from .models import TriggerLog
 class TriggerLogSerializer(serializers.ModelSerializer):
  """Serializer for TriggerLog list view."""
- project_name = serializers.SerializerMethodField
+ space_name = serializers.SerializerMethodField
  execution_status = serializers.SerializerMethodField
  first_execution_id = serializers.SerializerMethodField
  class Meta:
@@ -11,9 +11,9 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  fields = [
  "id",
  "created_at",
- "project_id",
- "project_name",
- "project_key",
+ "space_id",
+ "space_name",
+ "space_key",
  "event_type",
  "work_item_id",
  "work_item_name",
@@ -24,7 +24,7 @@ class TriggerLogSerializer(serializers.ModelSerializer):
  "execution_status",
  "first_execution_id",
  ]
- def get_project_name(self, obj):
+ def get_space_name(self, obj):
  return obj.project.name if obj.project else None
  def get_execution_status(self, obj):
  """Get the latest workflow execution status."""
@@ -85,7 +85,7 @@ class TriggerLogRawSerializer(serializers.Serializer):
  work_item_response = serializers.JSONField
 class FeishuConfigSerializer(serializers.Serializer):
  """Serializer for Feishu configuration."""
- project_key = serializers.CharField(source="feishu_project_key", read_only=True)
+ space_key = serializers.CharField(source="feishu_project_key", read_only=True)
  plugin_id = serializers.CharField(source="feishu_plugin_id", read_only=True)
  user_key = serializers.CharField(source="feishu_user_key", read_only=True)
  has_plugin_secret = serializers.SerializerMethodField
