@@ -39,13 +39,13 @@ class TestPromptSerializers:
  "slug": "x.sys.with.project",
  "category": "aux_model",
  "scope": "system",
- "project": str(project.id),
+ "space": str(project.id),
  "title": "t",
  "body": "hi",
  }
  )
  assert not serializer.is_valid
- assert "project" in serializer.errors
+ assert "space" in serializer.errors
  def test_create_serializer_rejects_project_without_project(
  self,
  admin_user,
@@ -56,12 +56,13 @@ class TestPromptSerializers:
  "slug": "x.proj.no.project",
  "category": "aux_model",
  "scope": "project",
+ "space": None,
  "title": "t",
  "body": "hi",
  }
  )
  assert not serializer.is_valid
- assert "project" in serializer.errors
+ assert "space" in serializer.errors
  def test_detail_serializer_exposes_declared_variables(
  self,
  admin_user,
@@ -232,6 +233,7 @@ class TestPromptCRUDAPI:
  "scope": "system",
  "title": "t",
  "body": "body1",
+ "space": None,
  }
  resp = authenticated_admin_client.post(
  url,
