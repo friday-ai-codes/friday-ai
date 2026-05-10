@@ -310,7 +310,7 @@ class AIPlanGenerationNode(AIAgentBaseNode):
  else:
  version = await get_active_prompt(
  PromptSlugs.AI_NODE_PLAN_GENERATION,
- project_id=str(project.id) if project else None,
+ space_id=str(project.id) if project else None,
  )
  body_template = version.body if version is not None else _PLAN_GENERATION_BASE_PROMPT
  self._precomputed_base_prompt = body_template.replace(
