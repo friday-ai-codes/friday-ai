@@ -4,6 +4,7 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
+import AnchorNavLayout, { type NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
@@ -188,6 +189,15 @@ async function confirmRebuildBranchIndex {
 }
 // 描述折叠
 const descExpanded = ref(false)
+const sections = ref<NavSection>([
+ { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
+ { id: 'branch-index', label: '分支索引', icon: 'icon-[lucide--git-branch]' },
+ { id: 'index-stats', label: '索引统计', icon: 'icon-[lucide--bar-chart-3]' },
+ { id: 'linked-projects', label: '关联项目', icon: 'icon-[lucide--folder]' },
+ { id: 'credential', label: '凭证配置', icon: 'icon-[lucide--key]' },
+ { id: 'webhook', label: 'Webhook 自动化', icon: 'icon-[lucide--webhook]' },
+ { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
+])
 // 编辑仓库
 const editDialogOpen = ref(false)
 async function handleEditSuccess {
@@ -270,10 +280,6 @@ function copyUrl {
  <span class="icon-[lucide--pencil] mr-1.5" />
  编辑
  </Button>
- <Button variant="outline" size="sm" class=" text-xs hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-1.5" />
- 删除
- </Button>
  </div>
  </div>
  <!-- 快速状态指示器 -->
@@ -323,54 +329,9 @@ function copyUrl {
  </div>
  </div>
  </div>
- <!-- ==================== AI 智能描述 ==================== -->
- <AISummarySection:repository-id="repository.id" />
- <!-- ==================== 代码索引（第一优先级） ==================== -->
- <div class="space-y-4">
- <div v-if="branchNames.length > 0" class="card">
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
- <span class="icon-[lucide--git-branch] text-primary" />
- <h3 class="text-sm font-semibold">
- 分支索引
- </h3>
- <span class="text-xs text-muted-foreground">选择检索分支与健康状态</span>
- </div>
- <div class=" space-y-4">
- <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
- <div class="space-y-2">
- <label class="text-xs text-muted-foreground">当前分支</label>
- <BranchCombobox
- v-model="selectedBranch":branches="branchNames":index-rows="branchIndexRows":recommended-branch="recommendedBaseBranch":disabled="indexGlobalBusy"
- />
- </div>
- <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
- <Button
- v-if="selectedBranchRow?.is_stale":disabled="indexGlobalBusy || rebuildingBranch"
- class="w-full sm:w-auto"
- @click="rebuildDialogOpen = true"
- >
- <span
- v-if="rebuildingBranch"
- class="icon-[lucide--loader-circle] animate-spin mr-2"
- />
- <span v-else class="icon-[lucide--refresh-cw] mr-2" />
- 重建索引
- </Button>
- </div>
- </div>
- <BranchIndexHealthSection:row="selectedBranchRow" />
- </div>
- </div>
- <div class="grid gap-4 lg:grid-cols-2">
- <RepositoryIndexCard:repository-id="repository.id" />
- <IndexStatsPanel:repository-id="repository.id" />
- </div>
- <IndexHistoryList:repository-id="repository.id" />
- </div>
- <!-- ==================== 仓库信息 & 凭证 ==================== -->
- <div class="grid gap-4 lg:grid-cols-3">
- <div class="lg:col-span-2 space-y-4">
- <!-- 仓库信息卡片 -->
+ <AnchorNavLayout:sections="sections">
+ <!-- ==================== 基本信息 ==================== -->
+ <section id="basic-info" class="scroll-mt-22 space-y-4">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--info] text-primary" />
@@ -413,6 +374,7 @@ function copyUrl {
  </div>
  </div>
  </div>
+ <AISummarySection:repository-id="repository.id" />
  <!-- 关联项目 -->
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
@@ -445,9 +407,55 @@ function copyUrl {
  </div>
  </div>
  </div>
+ </section>
+ <!-- ==================== 分支索引 ==================== -->
+ <section id="branch-index" class="scroll-mt-22">
+ <div v-if="branchNames.length > 0" class="card">
+ <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
+ <span class="icon-[lucide--git-branch] text-primary" />
+ <h3 class="text-sm font-semibold">
+ 分支索引
+ </h3>
+ <span class="text-xs text-muted-foreground">选择检索分支与健康状态</span>
  </div>
- <!-- 右侧：凭证 -->
- <div class="card h-fit">
+ <div class=" space-y-4">
+ <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
+ <div class="space-y-2">
+ <label class="text-xs text-muted-foreground">当前分支</label>
+ <BranchCombobox
+ v-model="selectedBranch":branches="branchNames":index-rows="branchIndexRows":recommended-branch="recommendedBaseBranch":disabled="indexGlobalBusy"
+ />
+ </div>
+ <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+ <Button
+ v-if="selectedBranchRow?.is_stale":disabled="indexGlobalBusy || rebuildingBranch"
+ class="w-full sm:w-auto"
+ @click="rebuildDialogOpen = true"
+ >
+ <span
+ v-if="rebuildingBranch"
+ class="icon-[lucide--loader-circle] animate-spin mr-2"
+ />
+ <span v-else class="icon-[lucide--refresh-cw] mr-2" />
+ 重建索引
+ </Button>
+ </div>
+ </div>
+ <BranchIndexHealthSection:row="selectedBranchRow" />
+ </div>
+ </div>
+ </section>
+ <!-- ==================== 索引统计 ==================== -->
+ <section id="index-stats" class="scroll-mt-22 space-y-4">
+ <div class="grid gap-4 lg:grid-cols-2">
+ <RepositoryIndexCard:repository-id="repository.id" />
+ <IndexStatsPanel:repository-id="repository.id" />
+ </div>
+ <IndexHistoryList:repository-id="repository.id" />
+ </section>
+ <!-- ==================== 凭证配置 ==================== -->
+ <section id="credential" class="scroll-mt-22">
+ <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--key] text-primary" />
@@ -506,11 +514,33 @@ function copyUrl {
  </div>
  </div>
  </div>
- </div>
- <!-- ==================== 自动化 ==================== -->
- <div class="max-w-3xl">
+ </section>
+ <!-- ==================== Webhook 自动化 ==================== -->
+ <section id="webhook" class="scroll-mt-22">
  <WebhookConfigPanel:repository="repository" @updated="repositoriesStore.fetchRepository(repositoryId)" />
+ </section>
+ <!-- ==================== 危险操作 ==================== -->
+ <section id="danger-zone" class="scroll-mt-22">
+ <div class="card border-destructive/30 bg-destructive/5">
+ <div class="px-5 py-3.5 border-b border-destructive/20 flex items-center gap-2">
+ <span class="icon-[lucide--alert-triangle] text-destructive" />
+ <h3 class="text-sm font-semibold text-destructive">危险操作</h3>
  </div>
+ <div class=" space-y-4">
+ <div class="flex items-start justify-between gap-4">
+ <div>
+ <p class="text-sm font-medium text-foreground">删除仓库</p>
+ <p class="text-xs text-muted-foreground mt-1">删除后无法恢复，相关的凭证配置也将被清除。</p>
+ </div>
+ <Button variant="destructive" size="sm" class="shrink-0" @click="deleteDialogOpen = true">
+ <span class="icon-[lucide--trash-2] mr-1.5" />
+ 删除仓库
+ </Button>
+ </div>
+ </div>
+ </div>
+ </section>
+ </AnchorNavLayout>
  </template>
  <!-- 仓库不存在 -->
  <EmptyState
