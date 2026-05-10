@@ -178,7 +178,7 @@ const columns: ColumnDef<TriggerLog> = [
  },
  {
  id: 'project',
- header: '项目',
+ header: '空间',
  cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.project_id)),
  enableSorting: false,
  },
