@@ -27,20 +27,20 @@ urlpatterns = [
  path("card/callback/", CardCallbackView.as_view, name="card-callback"),
  # IM message webhook (user messages to bot)
  path("im/message/", IMMessageWebhookView.as_view, name="im-message-webhook"),
- # Config management (per project)
- path("projects/<uuid:project_id>/config/", FeishuConfigView.as_view, name="feishu-config"),
+ # Config management (per space)
+ path("spaces/<uuid:space_id>/config/", FeishuConfigView.as_view, name="feishu-config"),
  path(
- "projects/<uuid:project_id>/config/test/",
+ "spaces/<uuid:space_id>/config/test/",
  FeishuConfigTestView.as_view,
  name="feishu-config-test",
  ),
  path(
- "projects/<uuid:project_id>/refresh-token/",
+ "spaces/<uuid:space_id>/refresh-token/",
  RefreshWebhookTokenView.as_view,
  name="feishu-refresh-token",
  ),
  path(
- "projects/<uuid:project_id>/token/",
+ "spaces/<uuid:space_id>/token/",
  UpdateWebhookTokenView.as_view,
  name="feishu-update-token",
  ),
