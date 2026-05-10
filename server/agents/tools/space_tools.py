@@ -1,6 +1,6 @@
 """
 Project and repository query tools for the Agent.
-Provides tools for querying project data, repository information,
+Provides tools for querying space data, repository information,
 and semantic code search via Qdrant vectors.
 """
 from datetime import datetime, timezone
@@ -12,42 +12,42 @@ from repositories.models import Repository
 from services.embedding import EmbeddingService
 logger = structlog.get_logger(__name__)
 @tool(
- name="list_project_repositories",
+ name="list_space_repositories",
  description=(
- "List all repositories linked to a project. "
+ "List all repositories linked to a space. "
  "Use this to discover available code repositories before searching code."
  ),
  category="PROJECT",
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "UUID of the project to query",
+ "description": "UUID of the space to query",
  },
  },
- "required": ["project_id"],
+ "required": ["space_id"],
  },
 )
-async def list_project_repositories(project_id: str) -> ToolResult:
+async def list_space_repositories(space_id: str) -> ToolResult:
  """
- List all repositories associated with a project.
+ List all repositories associated with a space.
  Args:
- project_id: UUID of the project
+ space_id: UUID of the space
  Returns:
  ToolResult with list of repositories and their metadata
  """
- logger.info("list_project_repositories", project_id=project_id)
+ logger.info("list_space_repositories", space_id=space_id)
  try:
- # Async query for project
- project = await Project.objects.aget(id=project_id)
+ # Async query for space
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
- logger.warning("project_not_found", project_id=project_id)
+ logger.warning("project_not_found", space_id=space_id)
  return ToolResult(
  success=True,
  output={
  "data": {"repositories": },
- "error": f"Project not found: {project_id}",
+ "error": f"Space not found: {space_id}",
  },
  )
  # Use async for M2M query
@@ -67,16 +67,16 @@ async def list_project_repositories(project_id: str) -> ToolResult:
  ).select_related
  ]
  logger.info(
- "list_project_repositories_success",
- project_id=project_id,
+ "list_space_repositories_success",
+ space_id=space_id,
  count=len(repositories),
  )
  return ToolResult(
  success=True,
  output={
  "data": {
- "project_id": str(project_id),
- "project_name": project.name,
+ "space_id": str(space_id),
+ "space_name": project.name,
  "repositories": repositories,
  },
  "metadata": {
@@ -89,7 +89,7 @@ async def list_project_repositories(project_id: str) -> ToolResult:
  name="get_repository_info",
  description=(
  "Get detailed information about a specific repository. "
- "Includes index status, project associations, and metadata."
+ "Includes index status, space associations, and metadata."
  ),
  category="PROJECT",
  parameters={
@@ -109,7 +109,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  Args:
  repository_id: UUID of the repository
  Returns:
- ToolResult with repository details and project associations
+ ToolResult with repository details and space associations
  """
  logger.info("get_repository_info", repository_id=repository_id)
  try:
@@ -124,12 +124,12 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  "error": f"Repository not found: {repository_id}",
  },
  )
- # Use async for M2M project query
+ # Use async for M2M space query
  projects = [{"id": str(p.id), "name": p.name} async for p in repo.projects.all]
  logger.info(
  "get_repository_info_success",
  repository_id=repository_id,
- project_count=len(projects),
+ space_count=len(projects),
  )
  return ToolResult(
  success=True,
@@ -159,7 +159,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  description=(
  "Semantic search for code across indexed repositories. "
  "Returns full code blocks matching the query. "
- "Requires at least one of repository_id or project_id."
+ "Requires at least one of repository_id or space_id."
  ),
  category="PROJECT",
  parameters={
@@ -173,9 +173,9 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  "type": "string",
  "description": "UUID of a specific repository to search (optional)",
  },
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "UUID of project to search all repositories (optional)",
+ "description": "UUID of space to search all repositories (optional)",
  },
  "limit": {
  "type": "integer",
@@ -198,7 +198,7 @@ async def get_repository_info(repository_id: str) -> ToolResult:
 async def search_repository_code(
  query: str,
  repository_id: str | None = None,
- project_id: str | None = None,
+ space_id: str | None = None,
  limit: int = 20,
  min_score: float = 0.5,
  branch: str | None = None,
@@ -208,7 +208,7 @@ async def search_repository_code(
  Args:
  query: Semantic search query
  repository_id: Optional specific repository to search
- project_id: Optional project to search all its repositories
+ space_id: Optional space to search all its repositories
  limit: Maximum results to return
  min_score: Minimum similarity score threshold
  Returns:
@@ -218,16 +218,16 @@ async def search_repository_code(
  "search_repository_code",
  query=query[:100],
  repository_id=repository_id,
- project_id=project_id,
+ space_id=space_id,
  limit=limit,
  min_score=min_score,
  )
  # Validate: at least one scope must be provided
- if not repository_id and not project_id:
+ if not repository_id and not space_id:
  return ToolResult(
  success=False,
  output={"data": {"results": }, "error": None},
- error="At least one of repository_id or project_id is required",
+ error="At least one of repository_id or space_id is required",
  )
  # Collect repository IDs to search
  repo_ids: list[str] =
@@ -244,16 +244,16 @@ async def search_repository_code(
  "error": f"Repository not found: {repository_id}",
  },
  )
- if project_id:
- # Get all repositories for the project
+ if space_id:
+ # Get all repositories for the space
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
  return ToolResult(
  success=True,
  output={
  "data": {"results": },
- "error": f"Project not found: {project_id}",
+ "error": f"Space not found: {space_id}",
  },
  )
  project_repo_ids = [

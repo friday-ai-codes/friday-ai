@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
 import agents.tools.chat_tools # noqa: F401
 import agents.tools.coding_tools # noqa: F401
-import agents.tools.project_tools # noqa: F401
+import agents.tools.space_tools # noqa: F401
 from agents.core.events import (
  ERROR,
  MESSAGE_COMPLETE,
@@ -43,12 +43,12 @@ from repositories.models import Repository
 from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
 logger = structlog.get_logger(__name__)
-_BASE_TOOL_NAMES = ["get_project_overview"]
+_BASE_TOOL_NAMES = ["get_space_overview"]
 _FULL_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "browse_file_content",
- "list_project_structure",
+ "list_space_structure",
  "search_repository_code",
- "list_project_repositories",
+ "list_space_repositories",
  "get_repository_info",
  "deep_analysis",
  "create_coding_plan",
@@ -59,7 +59,7 @@ class ChatRunnerConfig:
  """Chat 场景运行配置。"""
  system_prompt: str
  model: str
- project_id: str
+ space_id: str
  session_id: str
  conversation_id: str = ""
  api_key: str = ""
@@ -109,9 +109,9 @@ def _build_args_schema(tool_def: ToolDefinition, hidden_fields: set[str]) -> typ
  fields[name] = (annotation, default)
  model_name = "".join(part.capitalize for part in tool_def.name.split("_")) + "Args"
  return create_model(model_name, **cast(dict[str, Any], fields))
-async def _get_tool_names(project_id: str) -> list[str]:
+async def _get_tool_names(space_id: str) -> list[str]:
  has_indexed = await Repository.objects.filter(
- projects__id=project_id,
+ projects__id=space_id,
  index_status="indexed",
  is_deleted=False,
  ).aexists
@@ -273,24 +273,24 @@ def _make_agent_result(
  error,
  )
 async def _build_tool_specs(
- project_id: str,
+ space_id: str,
  conversation_id: str,
  *,
  default_search_branch: str | None = None,
 ) -> dict[str, _ChatToolSpec]:
  """装配 chat 场景可用的工具清单。
  内部通过 `build_langchain_tools` (Phase) 统一产出 StructuredTool：
- project_id / conversation_id 由 adapter 从 args_schema 剔除 + 闭包注入。
+ space_id / conversation_id 由 adapter 从 args_schema 剔除 + 闭包注入。
  `default_search_branch` "LLM 未提供 branch 时回填"语义属于 chat 场景特有
  （非强制覆盖；Pitfall #12 / Q2 选项 B），保留在本二次闭包中，不下沉到
  adapter。二次闭包 `execute(arguments: dict) -> ToolResult` 的签名保持
  不变，下游 `_execute_tool_call` 契约零破坏。
  """
- tool_names = await _get_tool_names(project_id)
+ tool_names = await _get_tool_names(space_id)
  langchain_tools = build_langchain_tools(
  tool_names,
  injected_values={
- "project_id": project_id,
+ "space_id": space_id,
  "conversation_id": conversation_id,
  },
  )
@@ -299,8 +299,8 @@ async def _build_tool_specs(
  tool_def = _tool_registry[lc_tool.name]
  properties = tool_def.parameters.get("properties", {})
  injected_values: dict[str, Any] = {}
- if "project_id" in properties:
- injected_values["project_id"] = project_id
+ if "space_id" in properties:
+ injected_values["space_id"] = space_id
  if "conversation_id" in properties:
  injected_values["conversation_id"] = conversation_id
  async def _execute(
@@ -386,7 +386,7 @@ class ChatAnthropicRunner:
  raise ValueError("ChatRunnerConfig.api_key 不能为空")
  model = self._build_model
  tool_specs = await _build_tool_specs(
- self._config.project_id,
+ self._config.space_id,
  self._config.conversation_id,
  default_search_branch=self._config.default_search_branch,
  )

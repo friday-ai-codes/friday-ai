@@ -78,9 +78,9 @@ def _truncate_content(content: str, max_length: int = MAX_CONTENT_LENGTH) -> str
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "项目 UUID，用于获取飞书配置",
+ "description": "空间 UUID，用于获取飞书配置",
  },
  "chat_id": {
  "type": "string",
@@ -117,11 +117,11 @@ def _truncate_content(content: str, max_length: int = MAX_CONTENT_LENGTH) -> str
  "description": "卡片主题色，默认 blue",
  },
  },
- "required": ["project_id", "chat_id", "title", "content"],
+ "required": ["space_id", "chat_id", "title", "content"],
  },
 )
 async def send_card_message(
- project_id: str,
+ space_id: str,
  chat_id: str,
  title: str,
  content: str,
@@ -130,7 +130,7 @@ async def send_card_message(
 ) -> ToolResult:
  """发送卡片消息到飞书群聊或私聊。
  Args:
- project_id: Friday 项目 ID
+ space_id: Friday 空间 ID
  chat_id: 群聊 ID 或用户 open_id
  title: 卡片标题
  content: 卡片内容（Markdown 格式）
@@ -140,19 +140,19 @@ async def send_card_message(
  ToolResult with message_id on success
  """
  log = logger.bind(
- project_id=project_id,
+ space_id=space_id,
  chat_id=chat_id,
  title=title,
  content_length=len(content),
  )
  # Get project
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
- log.warning("project_not_found")
+ log.warning("space_not_found")
  return ToolResult(
  success=False,
- error=f"项目不存在: {project_id}",
+ error=f"空间不存在: {space_id}",
  )
  # Create IM client
  try:

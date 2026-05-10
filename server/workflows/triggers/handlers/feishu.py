@@ -1,4 +1,4 @@
-"""FeishuEventHandler for Feishu project event triggering."""
+"""FeishuEventHandler for Feishu space event triggering."""
 from typing import TYPE_CHECKING, ClassVar
 import structlog
 from workflows.triggers.context import TriggerContext
@@ -14,7 +14,7 @@ class FeishuEventHandler(TriggerHandler):
  TriggerContext 需要:
  - raw_payload: 飞书 Webhook 原始 payload
  - event_type: 飞书事件类型 (如 "WorkitemCreateEvent")
- - project: 关联的 Project 实例
+ - project: 关联的 Space 实例
  - metadata["token"]: 飞书 Webhook token (可选，用于验证)
  """
  trigger_type: ClassVar[str] = "feishu"
@@ -24,14 +24,14 @@ class FeishuEventHandler(TriggerHandler):
  """验证飞书事件触发上下文
  检查:
  1. 必须有 event_type
- 2. 必须有 project
+ 2. 必须有 space
  3. 验证 webhook token (如果项目配置了)
  """
  errors =
  if not context.event_type:
  errors.append("缺少必需字段: event_type")
  if not context.project:
- errors.append("缺少必需字段: project")
+ errors.append("缺少必需字段: space")
  return errors
  # 验证 webhook token
  received_token = context.metadata.get("token", "")
@@ -42,7 +42,7 @@ class FeishuEventHandler(TriggerHandler):
  errors.append("飞书 Webhook Token 验证失败")
  logger.warning(
  "feishu_token_invalid",
- project_id=str(context.project.id),
+ space_id=str(context.project.id),
  )
  return errors
  async def find_workflows(self, context: TriggerContext) -> list["Workflow"]:
@@ -77,7 +77,7 @@ class FeishuEventHandler(TriggerHandler):
  logger.debug(
  "no_triggers_matched",
  event_type=context.event_type,
- project_id=str(context.project.id),
+ space_id=str(context.project.id),
  trigger_count=len(triggers),
  )
  return workflows
@@ -91,5 +91,5 @@ class FeishuEventHandler(TriggerHandler):
  "trigger_type": context.trigger_type,
  "raw_payload": context.raw_payload,
  "event_type": context.event_type,
- "project_id": str(context.project.id) if context.project else None,
+ "space_id": str(context.project.id) if context.project else None,
  }
