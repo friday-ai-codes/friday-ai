@@ -12,7 +12,6 @@ useHead({
 const router = useRouter
 const projectsStore = useProjectsStore
 const { handleError } = useErrorHandler
-const { success } = useToast
 // 加载项目列表
 const loading = ref(true)
 onMounted(async => {

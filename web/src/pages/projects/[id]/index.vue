@@ -3,6 +3,7 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/projects'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import AnchorNavLayout, { type NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -78,6 +79,16 @@ function formatDate(dateStr: string) {
 const project = computed( => projectsStore.currentProject)
 const feishuConfig = computed( => projectsStore.currentFeishuConfig)
 const projectExecutions = computed( => executionsStore.executions)
+const sections = ref<NavSection>([
+ { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
+ { id: 'repositories', label: '关联仓库', icon: 'icon-[lucide--git-branch]' },
+ { id: 'feishu', label: '飞书配置', icon: 'icon-[lucide--message-square]' },
+ { id: 'prompts', label: 'Prompt 覆盖', icon: 'icon-[lucide--file-text]' },
+ { id: 'providers', label: 'Provider 凭证', icon: 'icon-[lucide--key-round]' },
+ { id: 'webhook-token', label: 'Webhook Token', icon: 'icon-[lucide--key]' },
+ { id: 'executions', label: '相关执行', icon: 'icon-[lucide--layers]' },
+ { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
+])
 // 关联仓库 - 穿梭框模式
 const linkDialogOpen = ref(false)
 const selectedToLink = ref<Set<string>>(new Set)
@@ -253,14 +264,11 @@ async function handleCustomToken {
  编辑
  </Button>
  </RouterLink>
- <Button variant="destructive" class="group" @click="deleteDialogOpen = true">
- <span class="icon-[lucide--trash-2] mr-2 group-hover:scale-110 transition-transform" />
- 删除
- </Button>
  </div>
  </div>
- <div class="grid gap-4 md:grid-cols-2">
+ <AnchorNavLayout:sections="sections">
  <!-- 基本信息 -->
+ <section id="basic-info" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--info] text-primary" />
@@ -292,7 +300,9 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ </section>
  <!-- 关联仓库 -->
+ <section id="repositories" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -346,7 +356,9 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ </section>
  <!-- 飞书配置 -->
+ <section id="feishu" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -391,7 +403,9 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ </section>
  <!-- Prompt 覆盖 -->
+ <section id="prompts" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -421,7 +435,9 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
- <!-- Provider 凭证（Phase / / ） -->
+ </section>
+ <!-- Provider 凭证 -->
+ <section id="providers" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -451,8 +467,10 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
+ </section>
  <!-- Webhook Token 管理 -->
- <div class="card md:col-span-2">
+ <section id="webhook-token" class="scroll-mt-22">
+ <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--key] text-primary" />
  <h3 class="text-sm font-semibold">
@@ -502,8 +520,8 @@ async function handleCustomToken {
  </div>
  </div>
  </div>
- </div>
  <!-- 相关执行 -->
+ <section id="executions" class="scroll-mt-22">
  <div class="card">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
  <div class="flex items-center gap-2">
@@ -549,7 +567,29 @@ async function handleCustomToken {
  </RouterLink>
  </div>
  </div>
+ </section>
+ <!-- 危险操作 -->
+ <section id="danger-zone" class="scroll-mt-22">
+ <div class="card border-destructive/30 bg-destructive/5">
+ <div class="px-5 py-3.5 border-b border-destructive/20 flex items-center gap-2">
+ <span class="icon-[lucide--alert-triangle] text-destructive" />
+ <h3 class="text-sm font-semibold text-destructive">危险操作</h3>
  </div>
+ <div class=" space-y-4">
+ <div class="flex items-start justify-between gap-4">
+ <div>
+ <p class="text-sm font-medium text-foreground">删除项目</p>
+ <p class="text-xs text-muted-foreground mt-1">删除后无法恢复，项目内所有配置将被清除。</p>
+ </div>
+ <Button variant="destructive" size="sm" class="shrink-0" @click="deleteDialogOpen = true">
+ <span class="icon-[lucide--trash-2] mr-1.5" />
+ 删除项目
+ </Button>
+ </div>
+ </div>
+ </div>
+ </section>
+ </AnchorNavLayout>
  </template>
  <!-- 项目不存在 -->
  <EmptyState
