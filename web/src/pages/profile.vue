@@ -169,7 +169,7 @@ onMounted( => {
  </div>
  </div>
  </div>
- <!-- 项目成员关系 -->
+ <!-- 空间成员关系 -->
  <div class="group relative">
  <div class="card overflow-hidden">
  <div class="flex items-center gap-3 border-b border-border/50">
@@ -178,16 +178,16 @@ onMounted( => {
  </div>
  <div>
  <h2 class="text-lg font-semibold">
- 我的项目
+ 我的空间
  </h2>
  <p class="text-sm text-muted-foreground">
- 您所属的 {{ meData.project_memberships.length }} 个项目
+ 您所属的 {{ meData.project_memberships.length }} 个空间
  </p>
  </div>
  </div>
  <div class="">
  <div v-if="meData.project_memberships.length === 0" class="text-center py-6 text-muted-foreground">
- 暂未加入任何项目
+ 暂未加入任何空间
  </div>
  <div v-else class="space-y-3">
  <div

@@ -111,7 +111,7 @@ async function copyJson {
  <Separator />
  <div class="grid gap-4 md:grid-cols-2">
  <div>
- <label class="text-sm text-muted-foreground">项目 ID</label>
+ <label class="text-sm text-muted-foreground">空间 ID</label>
  <p class="font-mono text-sm">
  {{ log.project_id || '-' }}
  </p>
