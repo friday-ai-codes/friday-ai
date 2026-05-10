@@ -14,7 +14,7 @@ const { handleError } = useErrorHandler
 // 日志数据
 const log = ref<TriggerLogDetail | null>(null)
 const loading = ref(true)
-// 项目 store
+// 空间 store
 const projectsStore = useProjectsStore
 // 获取日志 ID
 const logId = computed( => route.params.id)
@@ -35,7 +35,7 @@ async function fetchLog {
  loading.value = false
  }
 }
-// 获取项目名称
+// 获取空间名称
 function getProjectName(projectId: string | null): string {
  if (!projectId)
  return '-'

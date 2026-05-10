@@ -82,7 +82,7 @@ const { data: executions, isLoading, isFetching } = useQuery({
  },
  staleTime: 3000, // 3秒内不重新请求
 })
-// 加载项目和工作流列表（用于筛选下拉框）
+// 加载空间和工作流列表（用于筛选下拉框）
 useQuery({
  queryKey: ['projects'],
  queryFn: => projectsStore.fetchProjects,
@@ -127,7 +127,7 @@ watch([statusFilter, projectFilter, workflowFilter, timeRangeFilter], => {
  router.replace({ query })
 })
 // --- 辅助函数 ---
-/** 通过 workflowsStore 反查项目名称 */
+/** 通过 workflowsStore 反查空间名称 */
 function getProjectName(workflowId: string): string {
  const wf = workflowsStore.workflows.find(w => w.id === workflowId)
  return wf?.project_name || '-'

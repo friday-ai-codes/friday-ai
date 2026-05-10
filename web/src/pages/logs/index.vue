@@ -41,7 +41,7 @@ const timeRangeOptions = [
 const loading = ref(true)
 const triggerLogs = ref<TriggerLog>
 const total = ref(0)
-// 加载项目列表
+// 加载空间列表
 const projectsStore = useProjectsStore
 onMounted(async => {
  try {
@@ -94,7 +94,7 @@ const statusOptions: { value: string, label: string, color: string } = [
  { value: 'error', label: '错误', color: 'bg-red-500' },
  { value: 'duplicate', label: '重复', color: 'bg-amber-500' },
 ]
-// 获取项目名称
+// 获取空间名称
 function getProjectName(projectId: string | null) {
  if (!projectId)
  return '-'
@@ -279,14 +279,14 @@ const columns: ColumnDef<TriggerLog> = [
  </SelectItem>
  </SelectContent>
  </Select>
- <!-- 项目过滤 -->
+ <!-- 空间过滤 -->
  <Select v-model="projectFilter">
  <SelectTrigger class="w-[160px]">
- <SelectValue placeholder="全部项目" />
+ <SelectValue placeholder="全部空间" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem value="__all__">
- 全部项目
+ 全部空间
  </SelectItem>
  <SelectItem
  v-for="project in projectsStore.projects":key="project.id":value="project.id"
