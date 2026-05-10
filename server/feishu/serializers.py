@@ -3,7 +3,9 @@ from rest_framework import serializers
 from .models import TriggerLog
 class TriggerLogSerializer(serializers.ModelSerializer):
  """Serializer for TriggerLog list view."""
+ space_id = serializers.UUIDField(source="project_id", read_only=True)
  space_name = serializers.SerializerMethodField
+ space_key = serializers.CharField(source="project_key", read_only=True)
  execution_status = serializers.SerializerMethodField
  first_execution_id = serializers.SerializerMethodField
  class Meta:

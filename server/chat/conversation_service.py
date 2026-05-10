@@ -429,27 +429,27 @@ class ConversationService:
  """对话系统业务逻辑服务。"""
  @staticmethod
  async def create_conversation(
- project_id: str,
+ space_id: str,
  title: str = "新对话",
  model: str = "",
  ) -> Conversation:
  """创建新对话。
  Args:
- project_id: 空间 UUID
+ space_id: 空间 UUID
  title: 对话标题
  model: LLM 模型 ID（为空时运行时使用系统默认）
  Returns:
  新创建的 Conversation 实例
  """
  conversation = await Conversation.objects.acreate(
- project_id=project_id,
+ project_id=space_id,
  title=title,
  model=model,
  )
  logger.info(
  "conversation_created",
  conversation_id=str(conversation.id),
- project_id=project_id,
+ space_id=space_id,
  title=title,
  )
  return conversation
