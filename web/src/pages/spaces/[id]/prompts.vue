@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 项目级 Prompt 覆盖页 —— Phase Plan 交付。
+ * 空间级 Prompt 覆盖页 —— Phase Plan 交付。
  *
  * 路由：/spaces/:id/prompts （由 unplugin-vue-router 文件系统扫描自动注册）
  *

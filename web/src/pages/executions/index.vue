@@ -166,7 +166,7 @@ const columns: ColumnDef<WorkflowExecution> = [
  },
  {
  id: 'project',
- header: '项目',
+ header: '空间',
  cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.workflow)),
  enableSorting: false,
  },
@@ -267,11 +267,11 @@ const columns: ColumnDef<WorkflowExecution> = [
  </Select>
  <Select v-model="projectFilter">
  <SelectTrigger class="w-[160px]">
- <SelectValue placeholder="全部项目" />
+ <SelectValue placeholder="全部空间" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem value="all">
- 全部项目
+ 全部空间
  </SelectItem>
  <SelectItem v-for="project in projectsStore.projects":key="project.id":value="project.id">
  {{ project.name }}
