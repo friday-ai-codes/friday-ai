@@ -194,7 +194,7 @@ async def test_deep_analysis_passes_branch -> None:
  from repositories.models import GitCredential
  mock_git_objs.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
  result = await deep_analysis(
- project_id="proj-1",
+ space_id="proj-1",
  task_description="分析模块架构",
  branch="feat/new-feature",
  )
