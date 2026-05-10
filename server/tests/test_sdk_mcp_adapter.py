@@ -105,7 +105,7 @@ class TestCreateMcpServer:
  """验证注册了正确数量的 PROJECT 类别工具。"""
  # 确保工具已注册
  import agents.tools.chat_tools # noqa: F401
- import agents.tools.project_tools # noqa: F401
+ import agents.tools.space_tools # noqa: F401
  from agents.tools.base import ToolCategory, _tool_registry
  expected_count = sum(
  1
@@ -133,16 +133,17 @@ class TestCreateMcpServer:
  assert actual_call.kwargs["name"] == "chat-tools"
  passed_tools = actual_call.kwargs["tools"]
  assert len(passed_tools) == expected_count
- assert expected_count == 6
+ assert expected_count == 7
  # 验证工具名
  tool_names = {t.name for t in passed_tools}
  expected_names = {
  "browse_file_content",
- "list_project_structure",
- "get_project_overview",
+ "list_space_structure",
+ "get_space_overview",
  "search_repository_code",
- "list_project_repositories",
+ "list_space_repositories",
  "get_repository_info",
+ "deep_analysis",
  }
  assert tool_names == expected_names
 class TestBuildAllowedTools:
@@ -183,4 +184,4 @@ class TestBuildAllowedTools:
  for name in tools:
  assert pattern.match(name), f"工具名格式不匹配: {name}"
  # 验证数量等于 PROJECT 类别工具数
- assert len(tools) == 6
+ assert len(tools) == 7

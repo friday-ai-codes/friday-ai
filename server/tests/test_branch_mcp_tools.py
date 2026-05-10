@@ -109,7 +109,7 @@ async def test_browse_file_no_branch_unchanged -> None:
  assert result.output["data"]["total_chunks"] == 1
  assert result.output["data"]["chunks"][0]["content"] == "base content"
 # ===================================================================
-# list_project_structure 测试（集合运算验证）
+# list_space_structure 测试（集合运算验证）
 # ===================================================================
 def test_list_structure_branch_view -> None:
  """分支视图文件树集合运算：final = (base - deleted) | added。"""
@@ -121,7 +121,7 @@ def test_list_structure_branch_view -> None:
  assert "b.py" not in final_paths
  assert "d.py" in final_paths
 # ===================================================================
-# get_project_overview 测试（统计验证）
+# get_space_overview 测试（统计验证）
 # ===================================================================
 def test_get_overview_branch_stats -> None:
  """分支视图统计：file_count = base - deleted + added。"""

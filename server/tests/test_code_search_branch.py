@@ -103,7 +103,7 @@ class TestSearchRepositoryCodeBranch:
  @pytest.mark.asyncio
  async def test_passes_branch_to_service(self) -> None:
  """MCP 工具将 branch 传递到 BranchAwareSearchService。"""
- from agents.tools.project_tools import search_repository_code
+ from agents.tools.space_tools import search_repository_code
  mock_embedding = [0.1] * 768
  mock_search_results = [
  {
@@ -119,11 +119,11 @@ class TestSearchRepositoryCodeBranch:
  ]
  with (
  patch(
- "agents.tools.project_tools.Repository.objects.aget",
+ "agents.tools.space_tools.Repository.objects.aget",
  new_callable=AsyncMock,
  ),
  patch(
- "agents.tools.project_tools.EmbeddingService.generate_embedding",
+ "agents.tools.space_tools.EmbeddingService.generate_embedding",
  new_callable=AsyncMock,
  return_value=mock_embedding,
  ),
@@ -145,7 +145,7 @@ class TestSearchRepositoryCodeBranch:
  @pytest.mark.asyncio
  async def test_no_branch_compatible(self) -> None:
  """不传 branch 时正常搜索（兼容旧行为）。"""
- from agents.tools.project_tools import search_repository_code
+ from agents.tools.space_tools import search_repository_code
  mock_embedding = [0.1] * 768
  mock_search_results = [
  {
@@ -161,11 +161,11 @@ class TestSearchRepositoryCodeBranch:
  ]
  with (
  patch(
- "agents.tools.project_tools.Repository.objects.aget",
+ "agents.tools.space_tools.Repository.objects.aget",
  new_callable=AsyncMock,
  ),
  patch(
- "agents.tools.project_tools.EmbeddingService.generate_embedding",
+ "agents.tools.space_tools.EmbeddingService.generate_embedding",
  new_callable=AsyncMock,
  return_value=mock_embedding,
  ),
