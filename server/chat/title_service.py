@@ -86,7 +86,7 @@ async def generate_title(
  # rendered_prompt 字节级 hash 等价契约不变（ Phase 会再验一次）
  rendered_prompt = await render_prompt(
  PromptSlugs.AUX_TITLE_GENERATION,
- project_id=None, # title_service 无项目上下文
+ project_id=None, # title_service 无空间上下文
  variables={"user_message": user_message[:500]},
  fallback=TITLE_PROMPT,
  )

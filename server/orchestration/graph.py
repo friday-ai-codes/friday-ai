@@ -72,7 +72,7 @@ async def _build_chat_runner(
  runner_config = ChatRunnerConfig(
  system_prompt=cfg.get("system_prompt", ""),
  model=cfg.get("model", ""),
- project_id=cfg.get("project_id", ""),
+ space_id=cfg.get("space_id", ""),
  session_id=cfg.get("session_id", ""),
  conversation_id=cfg.get("conversation_id", ""),
  api_key=api_key,
