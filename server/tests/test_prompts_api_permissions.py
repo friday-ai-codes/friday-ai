@@ -45,6 +45,7 @@ class TestPromptAPIPermissions:
  "scope": "system",
  "title": "坏人",
  "body": "恶意",
+ "space": None,
  }
  resp = authenticated_client.post(
  url,
@@ -64,6 +65,7 @@ class TestPromptAPIPermissions:
  "scope": "system",
  "title": "合法",
  "body": "正常",
+ "space": None,
  }
  resp = authenticated_admin_client.post(
  url,

@@ -497,7 +497,7 @@ async def create_feishu_im_client_for_project(project: Project | None = None) ->
  app_id=fallback_project.feishu_app_id or "",
  app_secret=decrypt_value(fallback_project.feishu_app_secret_encrypted or ""),
  )
- raise ValueError("未配置飞书 IM 集成。请先配置项目级或系统级飞书 App ID / App Secret。")
+ raise ValueError("未配置飞书 IM 集成。请先配置空间级或系统级飞书 App ID / App Secret。")
 class FeishuIMService:
  """Convenience wrapper around `FeishuIMClient` for bot workflows.
  可选组合 FeishuClient（项目 API）以支持工作项关联群聊 ID 查询。

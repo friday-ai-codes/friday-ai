@@ -148,8 +148,9 @@ async def test_node_level_overrides_project(
  fake = fake_chat_model_factory(responses=["done"])
  captured = _capture_resolved(monkeypatch, fake)
  project_a = cred_layers["project_a"]
- # 模拟 Phase/229 将要加的字段（provider_config.py L416 getattr 读取）
- setattr(project_a, "default_provider_credential_id", cred_layers["proj_a_cred"].id)
+ # 设置项目级默认 ProviderCredential FK（需传实例而非 UUID）
+ project_a.default_provider_credential_id = cred_layers["proj_a_cred"]
+ await sync_to_async(project_a.save)(update_fields=["default_provider_credential_id"])
  we = await sync_to_async(_build_workflow_execution)(project_a)
  # execute 内部 re-select_related 读 project；重新赋值 default_provider_credential_id
  # 需要通过 monkeypatch 拦截或让 Project.objects.aget 返回 patched 实例。
@@ -205,8 +206,9 @@ async def test_project_level_overrides_system(
  captured = _capture_resolved(monkeypatch, fake)
  project_a = cred_layers["project_a"]
  proj_a_cred_id = cred_layers["proj_a_cred"].id
- # 给 project_a 实例注入 default_provider_credential_id（内存属性）
- setattr(project_a, "default_provider_credential_id", proj_a_cred_id)
+ # 设置项目级默认 ProviderCredential FK（需传实例而非 UUID）
+ project_a.default_provider_credential_id = cred_layers["proj_a_cred"]
+ await sync_to_async(project_a.save)(update_fields=["default_provider_credential_id"])
  # patch _get_project：绕过 select_related 刷新丢失内存字段的问题
  from workflows.nodes.ai import prompt as prompt_mod
  async def _fake_get_project(self: Any, context: Any) -> Any:

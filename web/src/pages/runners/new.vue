@@ -130,7 +130,7 @@ async function copyToken {
  <Label class="text-sm font-medium">最大作业超时</Label>
  <Input v-model="form.max_timeout" type="number" min="600" placeholder="请以秒为单位输入作业超时时间。必须至少 600 秒。" />
  <p class="text-xs text-muted-foreground">
- Runner 在结束前可以运行的最大时间。如果一个项目的任务超时时间较短，则使用实例 Runner 的任务超时时间。
+ Runner 在结束前可以运行的最大时间。如果一个空间的任务超时时间较短，则使用实例 Runner 的任务超时时间。
  </p>
  </div>
  </div>

@@ -213,7 +213,7 @@ function formatTimeAgo(dateStr: string | null) {
  作用域
  </div>
  <Badge variant="outline" class="mt-1">
- {{ runner.scope === 'global' ? '全局': '项目' }}
+ {{ runner.scope === 'global' ? '全局': '空间' }}
  </Badge>
  </div>
  <div>

@@ -1,43 +1,43 @@
 /**
- * Project Members API 服务
- * 封装项目成员管理相关的 API 调用
+ * Space Members API 服务
+ * 封装空间成员管理相关的 API 调用
  */
-import type { ProjectMembership } from '~/types'
+import type { SpaceMembership } from '~/types'
 import { del, get, patch, post } from './client'
 /**
- * 获取项目成员列表
+ * 获取空间成员列表
  */
-export async function listProjectMembers(projectId: string): Promise<ProjectMembership> {
- return get<ProjectMembership>(`/projects/${projectId}/members/`)
+export async function listSpaceMembers(spaceId: string): Promise<SpaceMembership> {
+ return get<SpaceMembership>(`/spaces/${spaceId}/members/`)
 }
 /**
- * 添加项目成员
+ * 添加空间成员
  */
-export async function addProjectMember(
- projectId: string,
+export async function addSpaceMember(
+ spaceId: string,
  data: { user_id: string, role: 'admin' | 'member' | 'viewer' },
-): Promise<ProjectMembership> {
- return post<ProjectMembership>(`/projects/${projectId}/members/`, data)
+): Promise<SpaceMembership> {
+ return post<SpaceMembership>(`/spaces/${spaceId}/members/`, data)
 }
 /**
- * 更新项目成员角色
+ * 更新空间成员角色
  */
-export async function updateProjectMember(
- projectId: string,
+export async function updateSpaceMember(
+ spaceId: string,
  userId: string,
  data: { role: 'admin' | 'member' | 'viewer' },
-): Promise<ProjectMembership> {
- return patch<ProjectMembership>(`/projects/${projectId}/members/${userId}/`, data)
+): Promise<SpaceMembership> {
+ return patch<SpaceMembership>(`/spaces/${spaceId}/members/${userId}/`, data)
 }
 /**
- * 移除项目成员
+ * 移除空间成员
  */
-export async function removeProjectMember(projectId: string, userId: string): Promise<void> {
- return del(`/projects/${projectId}/members/${userId}/`)
+export async function removeSpaceMember(spaceId: string, userId: string): Promise<void> {
+ return del(`/spaces/${spaceId}/members/${userId}/`)
 }
 export default {
- listProjectMembers,
- addProjectMember,
- updateProjectMember,
- removeProjectMember,
+ listSpaceMembers,
+ addSpaceMember,
+ updateSpaceMember,
+ removeSpaceMember,
 }

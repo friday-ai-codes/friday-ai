@@ -30,7 +30,7 @@ export {
  type FeishuEventTriggerConfig,
  feishuEventTriggerConfigSchema,
  type FetchProjectInfoConfig,
- fetchProjectInfoConfigSchema,
+ fetchSpaceInfoConfigSchema,
  type FetchWorkItemConfig,
  fetchWorkItemConfigSchema,
  type GlobalVariable,

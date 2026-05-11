@@ -19,13 +19,13 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 import { getNodeDefinition } from '~/types/workflow/registry'
 const emit = defineEmits<{
  close:
- confirm: [data: { name: string, description?: string, project_id: string }]
+ confirm: [data: { name: string, description?: string, space_id: string }]
  cancel:
  closed:
 }>
 const router = useRouter
 const workflowsStore = useWorkflowsStore
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 // ============================================================================
@@ -39,7 +39,7 @@ const activeTab = vueRef<TabType>('blank')
 const form = reactive({
  name: '',
  description: '',
- project_id: '',
+ space_id: '',
 })
 // ============================================================================
 // Template
@@ -76,18 +76,18 @@ function selectTemplate(id: string | null) {
 }
 const errors = reactive({
  name: '',
- project_id: '',
+ space_id: '',
 })
 function validate: boolean {
  errors.name = ''
- errors.project_id = ''
+ errors.space_id = ''
  if (!form.name.trim) {
  errors.name = '请输入工作流名称'
  }
- if (!form.project_id) {
- errors.project_id = '请选择所属项目'
+ if (!form.space_id) {
+ errors.space_id = '请选择所属空间'
  }
- return !errors.name && !errors.project_id
+ return !errors.name && !errors.space_id
 }
 // ============================================================================
 // JSON Import
@@ -213,7 +213,7 @@ async function handleBlankSubmit {
  if (selectedTemplateId.value) {
  workflow = await client.post<{ id: string }>('/workflows/from-template/', {
  template_id: selectedTemplateId.value,
- project_id: form.project_id,
+ space_id: form.space_id,
  name: form.name,
  description: form.description || undefined,
  })
@@ -222,14 +222,14 @@ async function handleBlankSubmit {
  workflow = await workflowsStore.createWorkflow({
  name: form.name,
  description: form.description || undefined,
- project: form.project_id,
+ project: form.space_id,
  trigger_type: 'manual',
  is_active: true,
  })
  }
  success('创建成功', '工作流已创建')
  emit('close')
- emit('confirm', { name: form.name, description: form.description, project_id: form.project_id })
+ emit('confirm', { name: form.name, description: form.description, space_id: form.space_id })
  if (workflow?.id) {
  router.push(`/workflows/${workflow.id}`)
  }
@@ -250,9 +250,9 @@ async function handleImportSubmit {
  showError('文件验证失败', importErrors.value[0])
  return
  }
- if (!form.project_id) {
- errors.project_id = '请选择所属项目'
- showError('请选择所属项目')
+ if (!form.space_id) {
+ errors.space_id = '请选择所属空间'
+ showError('请选择所属空间')
  return
  }
  submitting.value = true
@@ -286,7 +286,7 @@ async function handleImportSubmit {
  const workflow = await client.post<{ id: string }>('/workflows/', {
  name: form.name || importPreview.value.name,
  description: form.description || importPreview.value.description || undefined,
- project: form.project_id,
+ project: form.space_id,
  trigger_type: importPreview.value.trigger_type || 'manual',
  trigger_config: importPreview.value.trigger_config || {},
  nodes: transformedNodes,
@@ -295,7 +295,7 @@ async function handleImportSubmit {
  })
  success('导入成功', '工作流已创建')
  emit('close')
- emit('confirm', { name: form.name, description: form.description, project_id: form.project_id })
+ emit('confirm', { name: form.name, description: form.description, space_id: form.space_id })
  if (workflow?.id) {
  router.push(`/workflows/${workflow.id}/edit`)
  }
@@ -315,7 +315,7 @@ function handleCancel {
 // Lifecycle
 // ============================================================================
 onMounted( => {
- projectsStore.fetchProjects
+ spacesStore.fetchSpaces
  fetchTemplates
 })
 </script>
@@ -524,33 +524,33 @@ onMounted( => {
  {{ errors.name }}
  </p>
  </div>
- <!-- 所属项目 -->
+ <!-- 所属空间 -->
  <div class="space-y-2">
  <Label class="flex items-center gap-1 text-foreground">
- 所属项目
+ 所属空间
  <span class="text-destructive">*</span>
  </Label>
- <Select v-model="form.project_id">
- <SelectTrigger:class="{ 'border-destructive': errors.project_id }">
- <SelectValue placeholder="选择所属项目" />
+ <Select v-model="form.space_id">
+ <SelectTrigger:class="{ 'border-destructive': errors.space_id }">
+ <SelectValue placeholder="选择所属空间" />
  </SelectTrigger>
  <SelectContent>
  <SelectGroup>
  <SelectItem
- v-for="project in projectsStore.projects":key="project.id":value="project.id"
+ v-for="project in spacesStore.spaces":key="project.id":value="project.id"
  >
  {{ project.name }}
  </SelectItem>
  </SelectGroup>
  </SelectContent>
  </Select>
- <p v-if="errors.project_id" class="text-sm text-destructive flex items-center gap-1">
+ <p v-if="errors.space_id" class="text-sm text-destructive flex items-center gap-1">
  <span class="icon-[lucide--alert-circle]" />
- {{ errors.project_id }}
+ {{ errors.space_id }}
  </p>
- <p v-if="projectsStore.projects.length === 0 && !projectsStore.loading" class="text-sm text-yellow-600 flex items-center gap-1">
+ <p v-if="spacesStore.spaces.length === 0 && !spacesStore.loading" class="text-sm text-yellow-600 flex items-center gap-1">
  <span class="icon-[lucide--alert-triangle]" />
- 暂无可用项目，请先创建项目
+ 暂无可用空间，请先创建空间
  </p>
  </div>
  <!-- 工作流描述 -->
@@ -569,7 +569,7 @@ onMounted( => {
  <Button type="button" variant="outline":disabled="submitting" @click="handleCancel">
  取消
  </Button>
- <Button type="submit":disabled="submitting || (projectsStore.projects.length === 0)">
+ <Button type="submit":disabled="submitting || (spacesStore.spaces.length === 0)">
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  <span v-else class="icon-[lucide--plus] mr-2" />
  {{ activeTab === 'import' ? '导入': '创建' }}

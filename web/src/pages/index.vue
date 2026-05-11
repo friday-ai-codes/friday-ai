@@ -6,14 +6,14 @@ import DashboardRecentActivity from '~/components/dashboard/DashboardRecentActiv
 useHead({
  title: '首页 - Friday AI',
 })
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const executionsStore = useExecutionsStore
 // 加载数据
 const loading = ref(true)
 onMounted(async => {
  try {
  await Promise.all([
- projectsStore.fetchProjects,
+ spacesStore.fetchSpaces,
  executionsStore.fetchExecutions,
  ])
  }
@@ -24,11 +24,11 @@ onMounted(async => {
 // 统计卡片数据
 const stats = computed( => [
  {
- title: '项目总数',
- value: projectsStore.projectCount,
+ title: '空间总数',
+ value: spacesStore.spaceCount,
  icon: 'lucide--folder-git-2',
  statIconClass: 'stat-icon-primary',
- link: '/projects',
+ link: '/spaces',
  },
  {
  title: '执行总数',
@@ -56,9 +56,9 @@ const stats = computed( => [
 const quickActions = [
  {
  icon: 'lucide--plus',
- title: '新建项目',
- description: '创建新的开发项目',
- link: '/projects/new',
+ title: '新建空间',
+ description: '创建新的开发空间',
+ link: '/spaces/new',
  iconBg: 'stat-icon-primary',
  },
  {

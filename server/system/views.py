@@ -196,7 +196,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  - 层 2：get_queryset 显式过滤（scope ∪ 用户项目 + query_params）
  - 层 3：perform_acreate / perform_aupdate 内调 validate_credential_scope 服务
  端点（挂 /api/providers/credentials/）：
- - GET /api/providers/credentials/ list（支持 scope/project_id/is_active/include_inactive 过滤）
+ - GET /api/providers/credentials/ list（支持 scope/space_id/is_active/include_inactive 过滤）
  - POST /api/providers/credentials/ create（Pydantic credential_schema 校验 + Fernet 加密）
  - GET /api/providers/credentials/{id}/ retrieve（派生 api_key_last4 + has_api_key，不回显明文）
  - PATCH /api/providers/credentials/{id}/ partial_update（config 留空 = 保持原值）
@@ -219,7 +219,7 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  过滤顺序：
  1. 非 superuser 限 scope='system' ∪ 用户成员项目的 scope='project'
  2. 可选 scope=system|project 精确过滤
- 3. 可选 project_id=<uuid> 精确过滤（scope=project）
+ 3. 可选 space_id=<uuid> 精确过滤（scope=project）
  4. include_inactive=true 时保留 is_active=false；默认仅 is_active=true
  5. 显式 is_active=true|false 覆盖 include_inactive
  """
@@ -240,24 +240,24 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  # query_params 过滤
  params = self.request.query_params
  scope = params.get("scope")
- project_id = params.get("project_id")
+ space_id = params.get("space_id")
  # UAT 第 3 项 hotfix follow-up：
- # scope=any + project_id=<uuid> 返回 system ∪ 指定项目（chat 路径需要）。
+ # scope=any + space_id=<uuid> 返回 system ∪ 指定空间（chat 路径需要）。
  # 旧 scope=system / scope=project / 不传三种语义保持不变。
  if scope == "any":
- if project_id:
+ if space_id:
  qs = qs.filter(
- Q(scope="system") | Q(scope="project", scope_id=project_id)
+ Q(scope="system") | Q(scope="project", scope_id=space_id)
  )
  else:
  qs = qs.filter(scope="system")
  elif scope in ("system", "project"):
  qs = qs.filter(scope=scope)
- if scope == "project" and project_id:
- qs = qs.filter(scope_id=project_id)
- elif project_id:
- # 旧行为：仅传 project_id 不传 scope → 当成 scope=project（保持兼容）
- qs = qs.filter(scope="project", scope_id=project_id)
+ if scope == "project" and space_id:
+ qs = qs.filter(scope_id=space_id)
+ elif space_id:
+ # 旧行为：仅传 space_id 不传 scope → 当成 scope=project（保持兼容）
+ qs = qs.filter(scope="project", scope_id=space_id)
  #：默认过滤 is_active=True；include_inactive=true 关闭
  include_inactive = params.get("include_inactive", "false").lower == "true"
  is_active_param = params.get("is_active")

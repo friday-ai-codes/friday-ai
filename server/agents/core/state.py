@@ -58,7 +58,7 @@ class AgentStateManager:
  Creates or updates the AgentSession record with current state.
  Args:
  state: Current agent state to persist
- context: Agent context with project/user info
+ context: Agent context with space/user info
  """
  # Prepare metadata
  metadata = {
@@ -87,8 +87,8 @@ class AgentStateManager:
  ),
  "temp_data": state.temp_data,
  }
- if context.project_id is not None:
- defaults["project_id"] = context.project_id
+ if context.space_id is not None:
+ defaults["project_id"] = context.space_id
  if context.user_id is not None:
  defaults["user_id"] = context.user_id
  await AgentSession.objects.aupdate_or_create(

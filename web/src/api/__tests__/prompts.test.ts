@@ -41,11 +41,11 @@ describe('promptsApi.list', => {
  getMock.mockResolvedValueOnce
  await promptsApi.list({
  scope: 'project',
- project_id: '11111111-1111-1111-1111-111111111111',
+ space_id: '11111111-1111-1111-1111-111111111111',
  })
  expect(getMock).toHaveBeenCalledWith('/prompts/', {
  scope: 'project',
- project_id: '11111111-1111-1111-1111-111111111111',
+ space_id: '11111111-1111-1111-1111-111111111111',
  })
  })
  it('测试 3: 携带 category 时合并进 query', async => {

@@ -16,9 +16,9 @@ logger = structlog.get_logger(__name__)
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "项目 UUID (auto-injected)",
+ "description": "空间 UUID (auto-injected)",
  },
  "conversation_id": {
  "type": "string",
@@ -49,7 +49,7 @@ logger = structlog.get_logger(__name__)
  },
  },
  "required": [
- "project_id",
+ "space_id",
  "conversation_id",
  "repository_id",
  "tech_plan",
@@ -58,7 +58,7 @@ logger = structlog.get_logger(__name__)
  },
 )
 async def create_coding_plan(
- project_id: str,
+ space_id: str,
  conversation_id: str,
  repository_id: str,
  tech_plan: str,
@@ -70,17 +70,17 @@ async def create_coding_plan(
  from repositories.models import Repository
  logger.info(
  "create_coding_plan_requested",
- project_id=project_id,
+ space_id=space_id,
  repository_id=repository_id,
  affected_files_count=len(affected_files),
  )
  # 验证 Project 存在
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
  return ToolResult(
  success=False,
- error=f"Project not found: {project_id}",
+ error=f"Space not found: {space_id}",
  )
  # 验证 Repository 存在且属于该 Project
  try:
@@ -94,7 +94,7 @@ async def create_coding_plan(
  if not repo_in_project:
  return ToolResult(
  success=False,
- error=f"Repository {repository_id} does not belong to project {project_id}",
+ error=f"Repository {repository_id} does not belong to space {space_id}",
  )
  # 获取 Conversation
  try:

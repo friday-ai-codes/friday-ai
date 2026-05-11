@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import type { FeishuDocConfig } from '~/api/projects'
+import type { FeishuDocConfig } from '~/api/spaces'
 /**
  * 飞书配置页面
- * 用于配置项目的飞书集成
+ * 用于配置空间的飞书集成
  */
 import type { FeishuConfig } from '~/types'
 import { useHead } from '@vueuse/head'
-import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/projects'
+import { getFeishuConfig, getFeishuDocConfig, updateFeishuDocConfig } from '~/api/spaces'
 import { FeishuConfigForm } from '~/components/feishu'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { useErrorHandler } from '~/composables/useErrorHandler'
-const route = useRoute('/projects/[id]/feishu')
+const route = useRoute('/spaces/[id]/feishu')
 const router = useRouter
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const { handleError } = useErrorHandler
 const { success } = useToast
-const projectId = computed( => route.params.id)
+const spaceId = computed( => route.params.id)
 useHead({
  title: '飞书配置 - Friday AI',
 })
@@ -30,16 +30,16 @@ const savingDocConfig = ref(false)
 async function loadData {
  loading.value = true
  try {
- await projectsStore.fetchProject(projectId.value)
+ await spacesStore.fetchSpace(spaceId.value)
  try {
- feishuConfig.value = await getFeishuConfig(projectId.value)
+ feishuConfig.value = await getFeishuConfig(spaceId.value)
  }
  catch {
  feishuConfig.value = null
  }
  // 加载飞书文档导出配置
  try {
- docConfig.value = await getFeishuDocConfig(projectId.value)
+ docConfig.value = await getFeishuDocConfig(spaceId.value)
  folderToken.value = docConfig.value.feishu_doc_folder_token
  }
  catch {
@@ -56,7 +56,7 @@ async function loadData {
 async function saveDocConfig {
  savingDocConfig.value = true
  try {
- await updateFeishuDocConfig(projectId.value, {
+ await updateFeishuDocConfig(spaceId.value, {
  feishu_doc_folder_token: folderToken.value,
  })
  success('保存成功', '飞书文档导出配置已更新')
@@ -69,7 +69,7 @@ async function saveDocConfig {
  }
 }
 onMounted(loadData)
-const project = computed( => projectsStore.currentProject)
+const space = computed( => spacesStore.currentSpace)
 // Webhook URL（在客户端计算）
 const webhookUrl = computed( => {
  if (typeof window !== 'undefined') {
@@ -80,8 +80,8 @@ const webhookUrl = computed( => {
 // 刷新配置
 async function handleUpdated {
  try {
- feishuConfig.value = await getFeishuConfig(projectId.value)
- await projectsStore.fetchProject(projectId.value)
+ feishuConfig.value = await getFeishuConfig(spaceId.value)
+ await spacesStore.fetchSpace(spaceId.value)
  }
  catch {
  feishuConfig.value = null
@@ -91,15 +91,15 @@ async function handleUpdated {
 <template>
  <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
- <RouterLink:to="`/projects/${projectId}`"
+ <RouterLink:to="`/spaces/${spaceId}`"
  class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
  >
  <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
- 返回项目详情
+ 返回空间详情
  </RouterLink>
  <!-- 加载状态 -->
  <LoadingState v-if="loading" variant="skeleton":count="2" />
- <template v-else-if="project">
+ <template v-else-if="space">
  <!-- 页面标题 -->
  <div class="space-y-1">
  <div class="flex items-center gap-3">
@@ -111,13 +111,13 @@ async function handleUpdated {
  飞书配置
  </h1>
  <p class="text-sm text-muted-foreground">
- 配置 {{ project.name }} 的飞书项目集成
+ 配置 {{ space.name }} 的飞书空间集成
  </p>
  </div>
  </div>
  </div>
  <!-- 飞书配置表单 -->
- <FeishuConfigForm:project-id="projectId":config="feishuConfig"
+ <FeishuConfigForm:space-id="spaceId":config="feishuConfig"
  @updated="handleUpdated"
  />
  <!-- 飞书文档导出配置 (Phase, ) -->
@@ -167,22 +167,22 @@ async function handleUpdated {
  <span>Webhook URL 填写：</span>
  <code class="px-2 py-1 bg-muted/50 rounded-lg text-xs font-mono border border-border/50">{{ webhookUrl }}</code>
  </li>
- <li>Webhook Token 在项目详情页管理，请在飞书自动化规则中填写相同的 Token</li>
+ <li>Webhook Token 在空间详情页管理，请在飞书自动化规则中填写相同的 Token</li>
  </ol>
  </div>
  </div>
  </div>
  </div>
  </template>
- <!-- 项目不存在 -->
+ <!-- 空间不存在 -->
  <EmptyState
  v-else
  icon="lucide--help-circle"
- title="项目不存在"
- description="未找到该项目"
+ title="空间不存在"
+ description="未找到该空间"
  action-label="返回列表"
  gradient="from-primary/20 to-primary/10"
- @action="router.push('/projects')"
+ @action="router.push('/spaces')"
  />
  </div>
 </template>

@@ -178,7 +178,7 @@ const ButtonStub = {
  props: ['disabled', 'variant', 'title'],
  template: '<button type="button":disabled="disabled":title="title":data-variant="variant"><slot /></button>',
 }
-function mountEditor(props: { open: boolean, mode: 'edit' | 'create', projectId?: string }) {
+function mountEditor(props: { open: boolean, mode: 'edit' | 'create', spaceId?: string }) {
  return mount(PromptEditor, {
  props,
  global: {

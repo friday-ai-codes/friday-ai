@@ -84,7 +84,7 @@ class ApprovalPermission(BasePermission):
 class WebhookConfigPermission(BasePermission):
  """Permission for WebhookConfig operations.
  - Read: viewer+
- - Write: admin+ (webhook 配置属于项目配置)
+ - Write: admin+ (webhook 配置属于空间配置)
  """
  def has_permission(self, request: Request, view: APIView) -> bool:
  return request.user and request.user.is_authenticated
@@ -122,7 +122,7 @@ class AlertRulePermission(BasePermission):
  return PermissionService.has_project_access(
  user, project, ProjectRole.ADMIN
  )
- # 项目级规则：MEMBER+
+ # 空间级规则：MEMBER+
  return PermissionService.has_project_access(
  user, project, ProjectRole.MEMBER
  )

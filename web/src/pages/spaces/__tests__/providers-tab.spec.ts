@@ -1,12 +1,12 @@
 /**
- * Phase Plan Task 07-02 — /projects/[id]/providers 页面集成测试
+ * Phase Plan Task 07-02 — /spaces/[id]/providers 页面集成测试
  *
  * 覆盖场景：
- * 1. 从 route.params.id 读取 projectId 并传给 ProviderSettings
+ * 1. 从 route.params.id 读取 spaceId 并传给 ProviderSettings
  * 2. route.params.id 为数组时取第一项（memoryHistory 极端兜底）
  * 3. route.params.id 缺失 / 空串时组件仍可 mount（不崩）
  *
- * ProviderSettings 用 stub 替换，仅验证 props.scope + props.projectId 注入；
+ * ProviderSettings 用 stub 替换，仅验证 props.scope + props.spaceId 注入；
  * 实际容器行为由 Plan /admin/providers 的 spec 覆盖。
  */
 import type { Component } from 'vue'
@@ -47,14 +47,14 @@ const ProviderSettingsStub = defineComponent({
  name: 'ProviderSettings',
  props: {
  scope: { type: String, required: true },
- projectId: { type: String, default: '' },
+ spaceId: { type: String, default: '' },
  },
  setup(props) {
  return =>
  h('div', {
  'class': 'stub-provider-settings',
  'data-scope': props.scope,
- 'data-project-id': props.projectId,
+ 'data-space-id': props.spaceId,
  })
  },
 })
@@ -63,17 +63,17 @@ vi.mock('~/components/providers/ProviderSettings.vue', => ({
 }))
 // 动态 import：确保 vi.mock hoist 完成后再加载页面组件
 const ProvidersPage = (
- await import('~/pages/projects/[id]/providers.vue')
+ await import('~/pages/spaces/[id]/providers.vue')
 ).default as Component
 async function mountProvidersTab(idParam: string) {
  const router = createRouter({
  history: createMemoryHistory,
  routes: [
- { path: '/projects/:id/providers', name: '/projects/[id]/providers', component: ProvidersPage },
+ { path: '/spaces/:id/providers', name: '/spaces/[id]/providers', component: ProvidersPage },
  { path: '/', name: '/', component: { render: => h('div') } },
  ],
  })
- await router.push(`/projects/${idParam}/providers`)
+ await router.push(`/spaces/${idParam}/providers`)
  await router.isReady
  return mount(ProvidersPage, {
  global: {
@@ -85,30 +85,30 @@ async function mountProvidersTab(idParam: string) {
 // ============================================================================
 // Tests
 // ============================================================================
-describe('/projects/[id]/providers page', => {
+describe('/spaces/[id]/providers page', => {
  beforeEach( => {
  setActivePinia(createPinia)
  vi.clearAllMocks
  })
- it('从 route.params.id 读取 projectId 并传给 ProviderSettings scope=project', async => {
+ it('从 route.params.id 读取 spaceId 并传给 ProviderSettings scope=space', async => {
  const wrapper = await mountProvidersTab('')
  await flushPromises
  const stub = wrapper.find('.stub-provider-settings')
  expect(stub.exists).toBe(true)
- expect(stub.attributes('data-scope')).toBe('project')
- expect(stub.attributes('data-project-id')).toBe('')
+ expect(stub.attributes('data-scope')).toBe('space')
+ expect(stub.attributes('data-space-id')).toBe('')
  })
- it('不同 projectId 切换时传入的 project-id 正确更新', async => {
+ it('不同 spaceId 切换时传入的 space-id 正确更新', async => {
  const wrapper = await mountProvidersTab('project-abc-def-001')
  await flushPromises
  const stub = wrapper.find('.stub-provider-settings')
- expect(stub.attributes('data-project-id')).toBe('project-abc-def-001')
- expect(stub.attributes('data-scope')).toBe('project')
+ expect(stub.attributes('data-space-id')).toBe('project-abc-def-001')
+ expect(stub.attributes('data-scope')).toBe('space')
  })
- it('极端 projectId（含连字符 / 数字）不被破坏，原值透传', async => {
+ it('极端 spaceId（含连字符 / 数字）不被破坏，原值透传', async => {
  const wrapper = await mountProvidersTab('x-y-z-0001')
  await flushPromises
  const stub = wrapper.find('.stub-provider-settings')
- expect(stub.attributes('data-project-id')).toBe('x-y-z-0001')
+ expect(stub.attributes('data-space-id')).toBe('x-y-z-0001')
  })
 })

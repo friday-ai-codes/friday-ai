@@ -23,7 +23,7 @@ def _make_config(**overrides: Any) -> SdkRunnerConfig:
  defaults = {
  "system_prompt": "你是测试助手",
  "model": "test-model",
- "project_id": "test-project-id",
+ "space_id": "test-project-id",
  "session_id": "test-session-id",
  "api_key": "test-api-key",
  "max_turns": 5,

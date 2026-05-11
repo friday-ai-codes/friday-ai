@@ -110,7 +110,7 @@ const zodSchema = computed( => {
  provider_type: z.enum(['anthropic', 'openai_responses', 'openai_chat', 'gemini', 'ollama']),
  name: z.string.min(1, '请输入凭证名称').max(100, '名称最长 100 字符'),
  scope: z.enum(['system', 'project']),
- scope_id: z.string.uuid('请选择有效项目').nullable.optional,
+ scope_id: z.string.uuid('请选择有效空间').nullable.optional,
  is_active: z.boolean.optional,
  default_model: z.string.min(1, '请输入或选择一个模型'),
  }

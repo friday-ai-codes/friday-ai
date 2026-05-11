@@ -39,6 +39,10 @@ class PromptListSerializer(serializers.ModelSerializer):
  read_only=True,
  default=None,
  )
+ space = serializers.PrimaryKeyRelatedField(
+ source="project",
+ read_only=True,
+ )
  class Meta:
  model = Prompt
  fields = [
@@ -46,7 +50,7 @@ class PromptListSerializer(serializers.ModelSerializer):
  "slug",
  "category",
  "scope",
- "project",
+ "space",
  "title",
  "description",
  "is_builtin",
@@ -59,6 +63,10 @@ class PromptDetailSerializer(serializers.ModelSerializer):
  """detail 端点：嵌套 active_version 完整 body + 运行时 declared_variables。"""
  active_version = PromptVersionSerializer(read_only=True)
  declared_variables = serializers.SerializerMethodField
+ space = serializers.PrimaryKeyRelatedField(
+ source="project",
+ read_only=True,
+ )
  class Meta:
  model = Prompt
  fields = [
@@ -66,7 +74,7 @@ class PromptDetailSerializer(serializers.ModelSerializer):
  "slug",
  "category",
  "scope",
- "project",
+ "space",
  "title",
  "description",
  "is_builtin",
@@ -90,7 +98,7 @@ class PromptDetailSerializer(serializers.ModelSerializer):
  return
  return get_declared_variables(obj.active_version.body)
 class PromptCreateSerializer(serializers.ModelSerializer):
- """POST 端点：含首版 body 字段。scope + project 互斥校验在 validate。"""
+ """POST 端点：含首版 body 字段。scope + space 互斥校验在 validate。"""
  body = serializers.CharField(required=True, max_length=_BODY_MAX_LENGTH)
  variables_schema = serializers.JSONField(required=False, default=dict)
  change_note = serializers.CharField(
@@ -98,13 +106,19 @@ class PromptCreateSerializer(serializers.ModelSerializer):
  allow_blank=True,
  default="",
  )
+ space = serializers.PrimaryKeyRelatedField(
+ source="project",
+ queryset=Prompt.objects.none, # queryset 在运行时由 view 注入
+ required=False,
+ allow_null=True,
+ )
  class Meta:
  model = Prompt
  fields = [
  "slug",
  "category",
  "scope",
- "project",
+ "space",
  "title",
  "description",
  "body",
@@ -113,14 +127,14 @@ class PromptCreateSerializer(serializers.ModelSerializer):
  ]
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
  scope = attrs.get("scope")
- project = attrs.get("project")
- if scope == PromptScope.SYSTEM and project is not None:
+ space = attrs.get("space")
+ if scope == PromptScope.SYSTEM and space is not None:
  raise serializers.ValidationError(
- {"project": "系统级 prompt 不能绑定 project"}
+ {"space": "系统级 prompt 不能绑定 space"}
  )
- if scope == PromptScope.PROJECT and project is None:
+ if scope == PromptScope.PROJECT and space is None:
  raise serializers.ValidationError(
- {"project": "项目级 prompt 必须指定 project"}
+ {"space": "空间级 prompt 必须指定 space"}
  )
  return attrs
 class PromptUpdateSerializer(serializers.Serializer):

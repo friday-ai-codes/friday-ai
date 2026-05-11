@@ -19,8 +19,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 api_patterns = [
  # Authentication (accounts app)
  path("auth/", include("accounts.urls")),
- # Projects
- path("projects/", include("projects.urls")),
+ # Spaces
+ path("spaces/", include("projects.urls")),
  # Repositories
  path("repositories/", include("repositories.urls")),
  # Feishu integration (webhook + logs)

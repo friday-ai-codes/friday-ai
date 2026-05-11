@@ -1,4 +1,4 @@
-"""Projects app serializers."""
+"""Spaces app serializers."""
 from __future__ import annotations
 from rest_framework import serializers
 from repositories.models import GitCredential, Repository
@@ -39,8 +39,8 @@ class RepositoryCreateSerializer(serializers.ModelSerializer):
  "git_user_name",
  "git_user_email",
  ]
-class ProjectSerializer(serializers.ModelSerializer):
- """Serializer for Project model."""
+class SpaceSerializer(serializers.ModelSerializer):
+ """Serializer for Space (Project) model."""
  has_feishu_config = serializers.SerializerMethodField
  webhook_token = serializers.CharField(source="feishu_webhook_token", read_only=True)
  repositories = serializers.SerializerMethodField
@@ -72,13 +72,13 @@ class ProjectSerializer(serializers.ModelSerializer):
  def get_recent_work_items(self, obj):
  logs = obj.trigger_logs.exclude(work_item_name="").order_by("-created_at")[:3]
  return [{"id": log.work_item_id, "name": log.work_item_name} for log in logs]
-class ProjectCreateSerializer(serializers.ModelSerializer):
- """Serializer for creating Project."""
+class SpaceCreateSerializer(serializers.ModelSerializer):
+ """Serializer for creating Space."""
  class Meta:
  model = Project
  fields = ["name", "description", "feishu_project_key"]
-class ProjectUpdateSerializer(serializers.ModelSerializer):
- """Serializer for updating Project."""
+class SpaceUpdateSerializer(serializers.ModelSerializer):
+ """Serializer for updating Space."""
  class Meta:
  model = Project
  fields = ["name", "description", "feishu_project_key"]
@@ -100,7 +100,7 @@ class FeishuConfigCreateSerializer(serializers.Serializer):
  plugin_secret = serializers.CharField(write_only=True)
  user_key = serializers.CharField(required=False, allow_blank=True)
 # Phase Plan：ClaudeConfigSerializer / ClaudeConfigCreateSerializer 整体硬删。
-# 替代：Phase ProviderCredentialSerializer（system/serializers.py）+ 项目级 scope。
+# 替代：Phase ProviderCredentialSerializer（system/serializers.py）+ 空间级 scope。
 class WebhookTokenSerializer(serializers.Serializer):
  """Serializer for webhook token."""
  webhook_token = serializers.CharField
@@ -155,15 +155,15 @@ class GitCredentialSerializer(serializers.ModelSerializer):
  return bool(obj.ssh_key_encrypted)
  def get_has_access_token(self, obj):
  return bool(obj.encrypted_token)
-class RepositoryWithProjectsSerializer(RepositorySerializer):
- """Serializer for Repository with associated projects."""
- projects = serializers.SerializerMethodField
+class RepositoryWithSpacesSerializer(RepositorySerializer):
+ """Serializer for Repository with associated spaces."""
+ spaces = serializers.SerializerMethodField
  class Meta(RepositorySerializer.Meta):
- fields = RepositorySerializer.Meta.fields + ["projects"]
- def get_projects(self, obj):
+ fields = RepositorySerializer.Meta.fields + ["spaces"]
+ def get_spaces(self, obj):
  return [{"id": str(p.id), "name": p.name} for p in obj.projects.all]
-class ProjectRepositorySerializer(serializers.ModelSerializer):
- """序列化项目仓库关联记录。"""
+class SpaceRepositorySerializer(serializers.ModelSerializer):
+ """序列化空间仓库关联记录。"""
  repository_id = serializers.UUIDField(source="repository.id", read_only=True)
  repository_name = serializers.CharField(source="repository.name", read_only=True)
  class Meta:
@@ -176,14 +176,14 @@ class ProjectRepositorySerializer(serializers.ModelSerializer):
  "created_at",
  ]
  read_only_fields = ["id", "created_at"]
-class ProjectRepositoryCreateSerializer(serializers.Serializer):
+class SpaceRepositoryCreateSerializer(serializers.Serializer):
  """批量关联仓库请求。"""
  repository_ids = serializers.ListField(
  child=serializers.UUIDField,
  min_length=1,
  help_text="仓库 ID 列表",
  )
-class ProjectRepositoryUpdateSerializer(serializers.Serializer):
+class SpaceRepositoryUpdateSerializer(serializers.Serializer):
  """更新关联权限级别。"""
  permission_level = serializers.ChoiceField(
  choices=RepositoryPermission.choices,

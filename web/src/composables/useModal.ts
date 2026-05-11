@@ -33,7 +33,7 @@ export interface ModalInstance<T = unknown> {
  * const { open, result } = useModal({
  * component: markRaw(EditFormModal),
  * attrs: {
- * title: '编辑项目',
+ * title: '编辑空间',
  * data: projectData,
  * },
  * onConfirm: (result) => {

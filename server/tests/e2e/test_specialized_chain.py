@@ -200,7 +200,6 @@ class TestSpecializedChainE2E:
  with (
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
- patch("services.claude_config.get_claude_config") as mock_config,
  patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
  patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
@@ -213,10 +212,6 @@ class TestSpecializedChainE2E:
  mock_runner_instance.stream = MagicMock(side_effect=_empty_stream)
  mock_runner_instance.result = agent_result
  mock_runner_cls.return_value = mock_runner_instance
- mock_config_obj = MagicMock
- mock_config_obj.api_key = "sk-test"
- mock_config_obj.base_url = "https://api.anthropic.com"
- mock_config.return_value = mock_config_obj
  plan_gen_result: NodeResult = await plan_gen_node.execute(plan_gen_ctx)
  assert plan_gen_result.status == "completed"
  assert plan_gen_result.output["plan"] is not None
@@ -410,7 +405,6 @@ class TestSpecializedChainE2E:
  with (
  patch("workflows.nodes.ai.base_agent.AgentSession.objects") as mock_session,
  patch("workflows.nodes.ai.base_agent.SDKAgentRunner") as mock_runner_cls,
- patch("services.claude_config.get_claude_config") as mock_config,
  patch.object(plan_gen_node, "_get_project", new_callable=AsyncMock, return_value=MagicMock(id="00000000-0000-0000-0000-000000000001", feishu_doc_folder_token="folder_token_123")),
  patch.object(plan_gen_node, "_get_user", new_callable=AsyncMock, return_value=MagicMock(id=1)),
  patch.object(plan_gen_node, "_resolve_api_key_and_model", new_callable=AsyncMock, return_value=("sk-test", "claude-sonnet-4-20250514", "")),
@@ -423,10 +417,6 @@ class TestSpecializedChainE2E:
  mock_runner_instance.stream = MagicMock(side_effect=_empty_stream_1)
  mock_runner_instance.result = gen_agent_result
  mock_runner_cls.return_value = mock_runner_instance
- mock_config_obj = MagicMock
- mock_config_obj.api_key = "sk-test"
- mock_config_obj.base_url = "https://api.anthropic.com"
- mock_config.return_value = mock_config_obj
  plan_gen_result = await plan_gen_node.execute(plan_gen_ctx)
  assert plan_gen_result.status == "completed"
  plan_output = plan_gen_result.output

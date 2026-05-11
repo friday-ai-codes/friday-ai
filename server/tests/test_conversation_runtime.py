@@ -48,6 +48,7 @@ def _setup_session_mock(mock_sess_cls: MagicMock, sessions: list[Any] | None = N
  qs = MagicMock
  qs.order_by.return_value = _AsyncIterator(sessions or )
  mock_sess_cls.objects.filter.return_value = qs
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_runtime_from_orchestration_run -> None:
  """OrchestrationRun running → active=True, 返回 phase/status/orchestration_run_id。"""
@@ -63,12 +64,13 @@ async def test_runtime_from_orchestration_run -> None:
  )
  _setup_session_mock(mock_sess_cls)
  from chat.conversation_service import ConversationService
- runtime = await ConversationService.get_conversation_runtime("cid")
+ runtime = await ConversationService.get_conversation_runtime("a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert runtime["active"] is True
  assert runtime["status"] == "running"
  assert runtime["phase"] == "executing"
  assert runtime["orchestration_run_id"] == "run-123"
  assert runtime["mode"] == "chat"
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_runtime_inactive_when_completed -> None:
  """OrchestrationRun status=completed → active=False。"""
@@ -84,9 +86,10 @@ async def test_runtime_inactive_when_completed -> None:
  )
  _setup_session_mock(mock_sess_cls)
  from chat.conversation_service import ConversationService
- runtime = await ConversationService.get_conversation_runtime("cid")
+ runtime = await ConversationService.get_conversation_runtime("a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert runtime["active"] is False
  assert runtime["status"] == "completed"
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_runtime_with_task_progress -> None:
  """metadata 含 progress → runtime 返回 task_progress。"""
@@ -106,9 +109,10 @@ async def test_runtime_with_task_progress -> None:
  )
  _setup_session_mock(mock_sess_cls)
  from chat.conversation_service import ConversationService
- runtime = await ConversationService.get_conversation_runtime("cid")
+ runtime = await ConversationService.get_conversation_runtime("a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert runtime["task_progress"] == {"completed": 2, "total": 3}
  assert runtime["active"] is True
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_runtime_timeout_window -> None:
  """超过 1 小时的 running run 视为 error，auto-close。"""
@@ -129,6 +133,6 @@ async def test_runtime_timeout_window -> None:
  mock_orch_cls.objects.filter.return_value.aupdate = AsyncMock(return_value=1)
  _setup_session_mock(mock_sess_cls)
  from chat.conversation_service import ConversationService
- runtime = await ConversationService.get_conversation_runtime("cid")
+ runtime = await ConversationService.get_conversation_runtime("a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert runtime["active"] is False
  assert runtime["status"] == "error"

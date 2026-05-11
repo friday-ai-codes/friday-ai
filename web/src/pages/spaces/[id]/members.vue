@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * 项目成员管理页面
+ * 空间成员管理页面
  */
-import type { ProjectMembership, SystemUser } from '~/types'
+import type { SpaceMembership, SystemUser } from '~/types'
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ApiError } from '~/api/client'
-import { addProjectMember, listProjectMembers, removeProjectMember, updateProjectMember } from '~/api/members'
+import { addSpaceMember, listSpaceMembers, removeSpaceMember, updateSpaceMember } from '~/api/members'
 import { listUsers } from '~/api/users'
 import EmptyState from '~/components/common/EmptyState.vue'
 import { Button } from '~/components/ui/button'
@@ -21,11 +21,11 @@ import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 const route = useRoute
-const projectId = (route.params as { id: string }).id
+const spaceId = (route.params as { id: string }).id
 const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
-const members = ref<ProjectMembership>
+const members = ref<SpaceMembership>
 const loading = ref(true)
 const saving = ref(false)
 // 添加成员
@@ -42,7 +42,7 @@ const roleLabels: Record<string, string> = {
 async function loadMembers {
  loading.value = true
  try {
- members.value = await listProjectMembers(projectId)
+ members.value = await listSpaceMembers(spaceId)
  }
  catch (e: unknown) {
  handleError(e, '加载成员列表')
@@ -76,7 +76,7 @@ async function handleAddMember {
  }
  saving.value = true
  try {
- const membership = await addProjectMember(projectId, {
+ const membership = await addSpaceMember(spaceId, {
  user_id: selectedUserId.value,
  role: selectedRole.value,
  })
@@ -98,10 +98,10 @@ async function handleAddMember {
  saving.value = false
  }
 }
-async function handleRoleChange(member: ProjectMembership, newRole: 'admin' | 'member' | 'viewer') {
+async function handleRoleChange(member: SpaceMembership, newRole: 'admin' | 'member' | 'viewer') {
  saving.value = true
  try {
- const updated = await updateProjectMember(projectId, member.user.id, { role: newRole })
+ const updated = await updateSpaceMember(spaceId, member.user.id, { role: newRole })
  const idx = members.value.findIndex(m => m.id === member.id)
  if (idx !== -1)
  members.value[idx] = updated
@@ -114,7 +114,7 @@ async function handleRoleChange(member: ProjectMembership, newRole: 'admin' | 'm
  saving.value = false
  }
 }
-async function handleRemoveMember(member: ProjectMembership) {
+async function handleRemoveMember(member: SpaceMembership) {
  const confirmed = await confirm({
  title: '移除成员',
  description: `确定要移除 ${member.user.display_name || member.user.username} 吗？`,
@@ -125,7 +125,7 @@ async function handleRemoveMember(member: ProjectMembership) {
  return
  saving.value = true
  try {
- await removeProjectMember(projectId, member.user.id)
+ await removeSpaceMember(spaceId, member.user.id)
  members.value = members.value.filter(m => m.id !== member.id)
  success('成员已移除')
  }
@@ -150,10 +150,10 @@ onMounted( => {
  <section class="flex items-center justify-between">
  <div>
  <h1 class="text-2xl font-bold tracking-tight">
- 项目成员管理
+ 空间成员管理
  </h1>
  <p class="text-sm text-muted-foreground mt-1">
- 管理项目成员的访问权限和角色
+ 管理空间成员的访问权限和角色
  </p>
  </div>
  <Button
@@ -251,7 +251,7 @@ onMounted( => {
  v-else-if="members.length === 0"
  icon="lucide--users"
  title="暂无成员"
- description="当前项目还没有成员，点击右上角「添加成员」开始添加。"
+ description="当前空间还没有成员，点击右上角「添加成员」开始添加。"
  />
  <div v-else class="space-y-3">
  <div

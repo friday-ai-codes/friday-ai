@@ -23,7 +23,7 @@ vi.mock('~/composables/usePermission', => ({
  isMember: { value: false },
  isViewer: { value: false },
  isAuthenticated: { value: true },
- projectRole: { value: null },
+ spaceRole: { value: null },
  }),
 }))
 function makeCredential(
@@ -142,7 +142,7 @@ describe('chatInput model-selector 折叠重构', => {
  })
  const conv = {
  id: 'conv-1',
- project_id: 'proj-1',
+ space_id: 'proj-1',
  title: 't',
  model: 'claude-sonnet-4',
  status: 'running',
@@ -166,7 +166,7 @@ describe('chatInput model-selector 折叠重构', => {
  const cred = makeCredential({ id: 'c1', name: 'anthropic-prod' })
  const conv = {
  id: 'conv-1',
- project_id: 'proj-1',
+ space_id: 'proj-1',
  title: 't',
  model: 'claude-old',
  status: 'running',
@@ -191,7 +191,7 @@ describe('chatInput model-selector 折叠重构', => {
  const cred = makeCredential({ id: 'c1' })
  const conv = {
  id: 'conv-1',
- project_id: 'proj-1',
+ space_id: 'proj-1',
  title: 't',
  model: 'claude-old',
  status: 'running',

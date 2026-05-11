@@ -80,10 +80,10 @@ class FetchWorkItemNode(BaseNode):
  "raw_fields": {"type": "object", "description": "原始字段数据"},
  "project": {
  "type": "object",
- "description": "项目信息",
+ "description": "空间信息",
  "properties": {
- "id": {"type": "string", "description": "项目 ID"},
- "name": {"type": "string", "description": "项目名称"},
+ "id": {"type": "string", "description": "空间 ID"},
+ "name": {"type": "string", "description": "空间名称"},
  },
  },
  "repositories": {
@@ -134,12 +134,12 @@ class FetchWorkItemNode(BaseNode):
  if not work_item_type or work_item_type == "__auto__":
  # 从触发器数据获取
  work_item_type = context.get_trigger_data("work_item_type", "story")
- # 获取项目信息
+ # 获取空间信息
  project = await self._get_project(context)
  if not project:
  return NodeResult(
  status="failed",
- error="无法获取项目信息，请确保工作流关联了项目",
+ error="无法获取空间信息，请确保工作流关联了空间",
  next_handle="error",
  )
  # 获取 project_key
@@ -177,7 +177,7 @@ class FetchWorkItemNode(BaseNode):
  "fields": self._normalize_fields(work_item.fields),
  # 保留原始 fields dict 供高级用户使用
  "raw_fields": work_item.fields,
- # 项目信息
+ # 空间信息
  "project": {
  "id": str(project.id),
  "name": project.name,
@@ -210,7 +210,7 @@ class FetchWorkItemNode(BaseNode):
  next_handle="error",
  )
  async def _get_project(self, context: ExecutionContext):
- """获取关联的项目"""
+ """获取关联的空间"""
  if context.workflow_execution:
  from workflows.models import Workflow
  workflow = await Workflow.objects.filter(
@@ -221,7 +221,7 @@ class FetchWorkItemNode(BaseNode):
  return await Project.objects.filter(pk=workflow.project_id).afirst
  return None
  async def _get_repositories(self, project) -> list[dict]:
- """获取项目关联的仓库列表"""
+ """获取空间关联的仓库列表"""
  try:
  repos = [r async for r in project.repositories.filter(is_active=True)]
  repositories =

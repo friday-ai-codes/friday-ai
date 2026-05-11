@@ -150,22 +150,22 @@ def urls:
  @staticmethod
  def settings_detail(key):
  return reverse("settings-detail", args=[key])
- # Projects
- project_list = reverse("project-list")
+ # Spaces
+ space_list = reverse("space-list")
  @staticmethod
- def project_detail(project_id):
- return reverse("project-detail", args=[project_id])
+ def space_detail(space_id):
+ return reverse("space-detail", args=[space_id])
  @staticmethod
- def project_repositories(project_id):
- return f"/api/projects/{project_id}/repositories/"
+ def space_repositories(space_id):
+ return f"/api/spaces/{space_id}/repositories/"
  @staticmethod
- def project_link_repository(project_id, repo_id):
- return f"/api/projects/{project_id}/repositories/{repo_id}/"
+ def space_link_repository(space_id, repo_id):
+ return f"/api/spaces/{space_id}/repositories/{repo_id}/"
  @staticmethod
- def project_unlink_repository(project_id, repo_id):
- return f"/api/projects/{project_id}/repositories/{repo_id}/"
+ def space_unlink_repository(space_id, repo_id):
+ return f"/api/spaces/{space_id}/repositories/{repo_id}/"
  # Phase Plan：project_claude_config helper 已随 v8.1
- # /api/projects/<id>/claude-config/ 端点硬删一并移除。
+ # /api/spaces/<id>/claude-config/ 端点硬删一并移除。
  # Repositories
  repository_list = reverse("repository-list")
  @staticmethod

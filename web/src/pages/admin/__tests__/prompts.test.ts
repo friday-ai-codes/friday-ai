@@ -102,9 +102,9 @@ const DataTableStub = {
 }
 const PromptEditorStub = {
  name: 'PromptEditor',
- props: ['open', 'mode', 'projectId'],
+ props: ['open', 'mode', 'spaceId'],
  emits: ['update:open'],
- template: '<div data-testid="prompt-editor":data-open="open":data-mode="mode":data-project-id="projectId"></div>',
+ template: '<div data-testid="prompt-editor":data-open="open":data-mode="mode":data-space-id="spaceId"></div>',
 }
 const ButtonStub = {
  name: 'Button',

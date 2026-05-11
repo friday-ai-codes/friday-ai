@@ -27,7 +27,7 @@ class TestCreateCodingPlan:
  """传入有效参数，返回 success=True 且 output 包含 session_id。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 技术方案\n- 修改 main.py",
@@ -44,7 +44,7 @@ class TestCreateCodingPlan:
  """验证数据库中创建了 CodingSession，字段正确。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 方案内容",
@@ -68,7 +68,7 @@ class TestCreateCodingPlan:
  from agents.tools.coding_tools import create_coding_plan
  fake_id = str(uuid.uuid4)
  result = await create_coding_plan(
- project_id=fake_id,
+ space_id=fake_id,
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 方案",
@@ -83,7 +83,7 @@ class TestCreateCodingPlan:
  """传入不属于该 project 的 repository_id，返回 success=False。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(other_repository.id),
  tech_plan="## 方案",
@@ -155,7 +155,7 @@ class TestUpdateCodingPlan:
  import re
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 技术方案\n- 实现 user authentication 模块",
@@ -172,7 +172,7 @@ class TestUpdateCodingPlan:
  """tech_plan 包含 fix 关键词时分支类型应为 fix。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 修复方案\n- 修复 null pointer bug in user module",
@@ -186,7 +186,7 @@ class TestUpdateCodingPlan:
  """tech_plan 包含 refactor 关键词时分支类型应为 chore。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
- project_id=str(project.id),
+ space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
  tech_plan="## 重构方案\n- refactor database connection module",

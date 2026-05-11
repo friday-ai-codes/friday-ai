@@ -6,11 +6,11 @@ import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 const emit = defineEmits<{
- confirm: [projectId: string]
+ confirm: [spaceId: string]
  cancel:
  closed:
 }>
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const { handleError } = useErrorHandler
 const { success } = useToast
 // 表单数据
@@ -26,7 +26,7 @@ const errors = reactive({
 function validate: boolean {
  errors.name = ''
  if (!form.name.trim) {
- errors.name = '请输入项目名称'
+ errors.name = '请输入空间名称'
  }
  return !errors.name
 }
@@ -37,16 +37,16 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const project = await projectsStore.createProject({
+ const space = await spacesStore.createSpace({
  name: form.name,
  description: form.description || undefined,
  feishu_project_key: form.feishu_project_key || null,
  })
- success('创建成功', '项目已创建')
- emit('confirm', project.id)
+ success('创建成功，空间已创建')
+ emit('confirm', space.id)
  }
  catch (e: unknown) {
- handleError(e, '创建项目')
+ handleError(e, '创建空间')
  }
  finally {
  submitting.value = false
@@ -72,10 +72,10 @@ function handleCancel {
  </div>
  <div>
  <h3 class="text-lg font-semibold text-foreground">
- 新建项目
+ 新建空间
  </h3>
  <p class="text-sm text-muted-foreground">
- 创建一个新项目来管理飞书工作项和 Git 仓库
+ 创建一个新空间来管理飞书工作项和 Git 仓库
  </p>
  </div>
  </div>
@@ -89,16 +89,16 @@ function handleCancel {
  </div>
  <!-- Body -->
  <form class="px-6 py-5 space-y-5" @submit.prevent="handleSubmit">
- <!-- 项目名称 -->
+ <!-- 空间名称 -->
  <div class="space-y-2">
  <Label for="name" class="flex items-center gap-1 text-foreground">
- 项目名称
+ 空间名称
  <span class="text-destructive">*</span>
  </Label>
  <Input
  id="name"
  v-model="form.name"
- placeholder="例如：智课项目"
+ placeholder="例如：智课空间"
  class="":class="{ 'border-destructive': errors.name }"
  />
  <p v-if="errors.name" class="text-sm text-destructive flex items-center gap-1">
@@ -106,13 +106,13 @@ function handleCancel {
  {{ errors.name }}
  </p>
  </div>
- <!-- 项目描述 -->
+ <!-- 空间描述 -->
  <div class="space-y-2">
- <Label for="description" class="text-foreground">项目描述</Label>
+ <Label for="description" class="text-foreground">空间描述</Label>
  <Textarea
  id="description"
  v-model="form.description"
- placeholder="项目的简要描述..."
+ placeholder="空间的简要描述..."
  rows="3"
  class="resize-none"
  />
@@ -141,7 +141,7 @@ function handleCancel {
  <Button type="submit":disabled="submitting">
  <span v-if="submitting" class="icon-[lucide--loader-circle] mr-2 animate-spin" />
  <span v-else class="icon-[lucide--plus] mr-2" />
- 创建项目
+ 创建空间
  </Button>
  </div>
  </form>

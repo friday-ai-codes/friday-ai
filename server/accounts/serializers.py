@@ -10,15 +10,15 @@ class UserSerializer(serializers.ModelSerializer):
  fields = ["id", "username", "display_name", "is_active", "is_superuser", "created_at"]
  read_only_fields = ["id", "created_at"]
 class MeSerializer(serializers.ModelSerializer):
- """当前用户信息序列化器（包含项目关系和 gravatar）。"""
+ """当前用户信息序列化器（包含空间关系和 gravatar）。"""
  gravatar_url = serializers.SerializerMethodField
- project_memberships = serializers.SerializerMethodField
+ space_memberships = serializers.SerializerMethodField
  class Meta:
  model = User
  fields = [
  "id", "username", "email", "display_name",
  "gravatar_url", "is_superuser", "is_active",
- "project_memberships", "created_at",
+ "space_memberships", "created_at",
  ]
  read_only_fields = list(fields)
  def get_gravatar_url(self, obj: User) -> str | None:
@@ -26,14 +26,14 @@ class MeSerializer(serializers.ModelSerializer):
  return None
  email_hash = hashlib.md5(obj.email.lower.strip.encode).hexdigest
  return f"https://www.gravatar.com/avatar/{email_hash}?d=identicon&s=80"
- def get_project_memberships(self, obj: User) -> list[dict[str, str]]:
+ def get_space_memberships(self, obj: User) -> list[dict[str, str]]:
  # 注意：此方法在同步上下文中调用（由调用方 sync_to_async 包装）
  from permissions.models import ProjectMembership
  memberships = ProjectMembership.objects.filter(user=obj).select_related("project")
  return [
  {
- "project_id": str(m.project.id),
- "project_name": m.project.name,
+ "space_id": str(m.project.id),
+ "space_name": m.project.name,
  "role": m.role,
  }
  for m in memberships

@@ -68,25 +68,25 @@ async def create_feishu_doc_client_for_project(project: Project) -> FeishuDocCli
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "项目 UUID",
+ "description": "空间 UUID",
  },
  "document_id": {
  "type": "string",
  "description": "文档 ID（从 URL 提取，如 doxcnXXXX 或完整 URL）",
  },
  },
- "required": ["project_id", "document_id"],
+ "required": ["space_id", "document_id"],
  },
 )
 async def fetch_feishu_document(
- project_id: str,
+ space_id: str,
  document_id: str,
 ) -> ToolResult:
  """Read a Feishu cloud document and convert to Markdown.
  Args:
- project_id: Friday project UUID
+ space_id: Friday space UUID
  document_id: Feishu document ID (extracted from URL)
  Returns:
  ToolResult with:
@@ -96,18 +96,18 @@ async def fetch_feishu_document(
  - output.metadata.block_count: Number of blocks
  """
  log = logger.bind(
- project_id=project_id,
+ space_id=space_id,
  document_id=document_id,
  )
  # Extract document ID from URL if full URL provided
  doc_id = _extract_document_id(document_id)
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
- log.warning("project_not_found")
+ log.warning("space_not_found")
  return ToolResult(
  success=False,
- error=f"项目不存在: {project_id}",
+ error=f"空间不存在: {space_id}",
  )
  try:
  client = await create_feishu_doc_client_for_project(project)
@@ -162,9 +162,9 @@ async def fetch_feishu_document(
  parameters={
  "type": "object",
  "properties": {
- "project_id": {
+ "space_id": {
  "type": "string",
- "description": "项目 UUID",
+ "description": "空间 UUID",
  },
  "title": {
  "type": "string",
@@ -179,18 +179,18 @@ async def fetch_feishu_document(
  "description": "目标文件夹 token（可选，默认使用项目配置的文档空间）",
  },
  },
- "required": ["project_id", "title", "content"],
+ "required": ["space_id", "title", "content"],
  },
 )
 async def create_feishu_document(
- project_id: str,
+ space_id: str,
  title: str,
  content: str,
  folder_token: str | None = None,
 ) -> ToolResult:
  """Create a Feishu cloud document with Markdown content.
  Args:
- project_id: Friday project UUID
+ space_id: Friday space UUID
  title: Document title
  content: Document content in Markdown format
  folder_token: Target folder token (optional, uses project default)
@@ -201,18 +201,18 @@ async def create_feishu_document(
  - output.data.title: Document title
  """
  log = logger.bind(
- project_id=project_id,
+ space_id=space_id,
  title=title,
  content_length=len(content),
  folder_token=folder_token,
  )
  try:
- project = await Project.objects.aget(id=project_id)
+ project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
- log.warning("project_not_found")
+ log.warning("space_not_found")
  return ToolResult(
  success=False,
- error=f"项目不存在: {project_id}",
+ error=f"空间不存在: {space_id}",
  )
  try:
  client = await create_feishu_doc_client_for_project(project)
@@ -230,7 +230,7 @@ async def create_feishu_document(
  log.warning("no_folder_token")
  return ToolResult(
  success=False,
- error="未指定文档文件夹，且项目未配置默认文档空间",
+ error="未指定文档文件夹，且空间未配置默认文档空间",
  )
  try:
  result = await client.create_document(

@@ -12,7 +12,7 @@ import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import SmartInput from '~/components/workflow/smart-input/SmartInput.vue'
 import { useConfigModel } from '~/composables/useConfigModel'
-import { fetchProjectInfoConfigSchema } from '~/types/workflow'
+import { fetchSpaceInfoConfigSchema } from '~/types/workflow'
 // ============================================================================
 // Props & Emits
 // ============================================================================
@@ -36,7 +36,7 @@ const emit = defineEmits<{
 const { field } = useConfigModel({
  config: => props.config,
  emit: v => emit('update:config', v),
- schema: fetchProjectInfoConfigSchema,
+ schema: fetchSpaceInfoConfigSchema,
 })
 const projectIdentifier = field('project_identifier', '')
 const identifierType = field('identifier_type', 'auto')

@@ -39,7 +39,7 @@ export interface TriggerLog {
  id: string
  event_uuid: string | null
  event_type: string
- project_id: string | null
+ space_id: string | null
  work_item_id: string | null
  work_item_name: string
  work_item_type: string
@@ -86,7 +86,7 @@ export interface LogListResponse<T> {
  * 触发日志查询参数
  */
 export interface TriggerLogQuery {
- project_id?: string
+ space_id?: string
  event_type?: string
  status?: TriggerLogStatus
  start_date?: string

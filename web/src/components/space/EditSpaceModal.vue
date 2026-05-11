@@ -13,14 +13,14 @@ import { Separator } from '~/components/ui/separator'
 import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 const props = defineProps<{
- projectId: string
+ spaceId: string
 }>
 const emit = defineEmits<{
- confirm: [project: any]
+ confirm: [space: any]
  cancel:
  closed:
 }>
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
 // 表单数据
@@ -48,7 +48,7 @@ const errors = reactive({
 function validate: boolean {
  errors.name = ''
  if (!form.name.trim) {
- errors.name = '请输入项目名称'
+ errors.name = '请输入空间名称'
  }
  return !errors.name
 }
@@ -60,20 +60,20 @@ const savingFeishuIM = ref(false)
 const testingFeishuIM = ref(false)
 const testResult = ref<{ success: boolean, message: string } | null>(null)
 // 获取项目详情
-async function fetchProjectData {
+async function fetchSpaceData {
  loading.value = true
  try {
- const project = await projectsStore.fetchProject(props.projectId)
- if (project) {
- form.name = project.name
- form.description = project.description || ''
- form.feishu_project_key = project.feishu_project_key || ''
+ const space = await spacesStore.fetchSpace(props.spaceId)
+ if (space) {
+ form.name = space.name
+ form.description = space.description || ''
+ form.feishu_project_key = space.feishu_project_key || ''
  }
  // 获取飞书 IM 配置
  await fetchFeishuIMConfig
  }
  catch (e: unknown) {
- handleError(e, '加载项目详情')
+ handleError(e, '加载空间详情')
  emit('cancel')
  }
  finally {
@@ -86,7 +86,7 @@ async function fetchFeishuIMConfig {
  app_id: string | null
  has_app_secret: boolean
  is_configured: boolean
- }>(`/projects/${props.projectId}/feishu-im-config/`)
+ }>(`/spaces/${props.spaceId}/feishu-im-config/`)
  feishuIMConfig.app_id = config.app_id || ''
  feishuIMConfig.has_app_secret = config.has_app_secret
  feishuIMConfig.is_configured = config.is_configured
@@ -96,7 +96,7 @@ async function fetchFeishuIMConfig {
  }
 }
 onMounted( => {
- fetchProjectData
+ fetchSpaceData
 })
 // 提交表单
 async function handleSubmit {
@@ -104,16 +104,16 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- const project = await projectsStore.updateProject(props.projectId, {
+ const space = await spacesStore.updateSpace(props.spaceId, {
  name: form.name,
  description: form.description || undefined,
  feishu_project_key: form.feishu_project_key || null,
  })
- success('更新成功', '项目已更新')
- emit('confirm', project)
+ success('更新成功', '空间已更新')
+ emit('confirm', space)
  }
  catch (e: unknown) {
- handleError(e, '更新项目')
+ handleError(e, '更新空间')
  }
  finally {
  submitting.value = false
@@ -138,7 +138,7 @@ async function saveFeishuIMConfig {
  if (feishuIMConfig.app_secret.trim) {
  payload.app_secret = feishuIMConfig.app_secret
  }
- await put(`/projects/${props.projectId}/feishu-im-config/`, payload)
+ await put(`/spaces/${props.spaceId}/feishu-im-config/`, payload)
  success('保存成功', '飞书 IM 配置已更新')
  feishuIMConfig.has_app_secret = true
  feishuIMConfig.is_configured = true
@@ -172,7 +172,7 @@ async function testFeishuIMConfig {
  payload.app_secret = feishuIMConfig.app_secret
  }
  const result = await post<{ success: boolean, message: string }>(
- `/projects/${props.projectId}/feishu-im-config/test/`,
+ `/spaces/${props.spaceId}/feishu-im-config/test/`,
  payload,
  )
  testResult.value = result
@@ -211,10 +211,10 @@ function handleCancel {
  </div>
  <div>
  <h3 class="text-lg font-semibold text-foreground">
- 编辑项目
+ 编辑空间
  </h3>
  <p class="text-sm text-muted-foreground">
- 修改项目基本信息和配置
+ 修改空间基本信息和配置
  </p>
  </div>
  </div>
@@ -231,16 +231,16 @@ function handleCancel {
  <span class="icon-[lucide--loader-circle] text-3xl animate-spin text-muted-foreground" />
  </div>
  <form v-else class="px-6 py-5 space-y-5 overflow-y-auto" @submit.prevent="handleSubmit">
- <!-- 项目名称 -->
+ <!-- 空间名称 -->
  <div class="space-y-2">
  <Label for="name" class="flex items-center gap-1 text-foreground">
- 项目名称
+ 空间名称
  <span class="text-destructive">*</span>
  </Label>
  <Input
  id="name"
  v-model="form.name"
- placeholder="例如：智课项目"
+ placeholder="例如：智课空间"
  class="":class="{ 'border-destructive': errors.name }"
  />
  <p v-if="errors.name" class="text-sm text-destructive flex items-center gap-1">
@@ -248,13 +248,13 @@ function handleCancel {
  {{ errors.name }}
  </p>
  </div>
- <!-- 项目描述 -->
+ <!-- 空间描述 -->
  <div class="space-y-2">
- <Label for="description" class="text-foreground">项目描述</Label>
+ <Label for="description" class="text-foreground">空间描述</Label>
  <Textarea
  id="description"
  v-model="form.description"
- placeholder="项目的简要描述..."
+ placeholder="空间的简要描述..."
  rows="3"
  class="resize-none"
  />

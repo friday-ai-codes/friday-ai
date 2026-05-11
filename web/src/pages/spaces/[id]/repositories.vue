@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /**
- * 项目仓库管理标签页
- * 管理项目关联的代码仓库，支持批量关联、权限级别管理
+ * 空间仓库管理标签页
+ * 管理空间关联的代码仓库，支持批量关联、权限级别管理
  */
-import type { ProjectRepositoryLink, Repository, RepositoryPermissionLevel } from '~/types'
+import type { SpaceRepositoryLink, Repository, RepositoryPermissionLevel } from '~/types'
 import { useHead } from '@vueuse/head'
 import {
- getProjectRepositories,
+ getSpaceRepositories,
  linkRepositories,
  unlinkRepository,
  updateRepositoryLink,
-} from '~/api/projects'
+} from '~/api/spaces'
 import { repositoriesApi } from '~/api/repositories'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -19,14 +19,14 @@ import { Input } from '~/components/ui/input'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 import { PLATFORM_LABELS } from '~/types'
-const route = useRoute('/projects/[id]/repositories')
-const projectId = computed( => route.params.id)
-const { isProjectAdmin, isViewer } = usePermission(projectId)
+const route = useRoute('/spaces/[id]/repositories')
+const spaceId = computed( => route.params.id)
+const { isSpaceAdmin, isViewer } = usePermission(spaceId)
 const { handleError } = useErrorHandler
 const { success } = useToast
 useHead({ title: '仓库管理 - Friday AI' })
 // 数据状态
-const links = ref<ProjectRepositoryLink>
+const links = ref<SpaceRepositoryLink>
 const allRepositories = ref<Repository>
 const loading = ref(true)
 // 对话框状态
@@ -46,7 +46,7 @@ const filteredAvailableRepos = computed( => {
 // 加载数据
 async function loadLinks {
  try {
- links.value = await getProjectRepositories(projectId.value)
+ links.value = await getSpaceRepositories(spaceId.value)
  }
  catch (e: unknown) {
  handleError(e, '加载仓库关联')
@@ -87,7 +87,7 @@ async function handleLink {
  return
  linking.value = true
  try {
- const result = await linkRepositories(projectId.value, {
+ const result = await linkRepositories(spaceId.value, {
  repository_ids: Array.from(selectedRepoIds.value),
  })
  success(`已关联 ${result.created.length} 个仓库`)
@@ -102,10 +102,10 @@ async function handleLink {
  }
 }
 // 切换权限级别
-async function togglePermission(link: ProjectRepositoryLink) {
+async function togglePermission(link: SpaceRepositoryLink) {
  const newLevel: RepositoryPermissionLevel = link.permission_level === 'read_write' ? 'read_only': 'read_write'
  try {
- const updated = await updateRepositoryLink(projectId.value, link.id, { permission_level: newLevel })
+ const updated = await updateRepositoryLink(spaceId.value, link.id, { permission_level: newLevel })
  const idx = links.value.findIndex(l => l.id === link.id)
  if (idx >= 0)
  links.value[idx] = updated
@@ -116,9 +116,9 @@ async function togglePermission(link: ProjectRepositoryLink) {
  }
 }
 // 移除关联
-async function handleUnlink(link: ProjectRepositoryLink) {
+async function handleUnlink(link: SpaceRepositoryLink) {
  try {
- await unlinkRepository(projectId.value, link.id)
+ await unlinkRepository(spaceId.value, link.id)
  links.value = links.value.filter(l => l.id !== link.id)
  success(`已移除 ${link.repository_name}`)
  }
@@ -134,9 +134,9 @@ function permissionLabel(level: RepositoryPermissionLevel) {
 <template>
  <div class="space-y-8">
  <!-- 返回按钮 -->
- <RouterLink:to="`/projects/${projectId}`" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <RouterLink:to="`/spaces/${spaceId}`" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
  <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
- 返回项目详情
+ 返回空间详情
  </RouterLink>
  <!-- 页面标题 -->
  <div class="flex items-center justify-between">
@@ -150,12 +150,12 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  仓库管理
  </h1>
  <p class="text-muted-foreground">
- 管理项目关联的代码仓库
+ 管理空间关联的代码仓库
  </p>
  </div>
  </div>
  </div>
- <TooltipProvider v-if="isProjectAdmin || isViewer">
+ <TooltipProvider v-if="isSpaceAdmin || isViewer">
  <Tooltip>
  <TooltipTrigger as-child>
  <div>
@@ -182,7 +182,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  v-else-if="links.length === 0"
  icon="lucide--git-branch"
  title="暂无关联仓库"
- description="将仓库关联到此项目以开始使用":action-label="isProjectAdmin ? '关联仓库': undefined"
+ description="将仓库关联到此空间以开始使用":action-label="isSpaceAdmin ? '关联仓库': undefined"
  gradient="from-primary/20 to-primary/10"
  @action="openLinkDialog"
  />
@@ -201,7 +201,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <th class="text-left px-6 py-4 text-sm font-medium text-muted-foreground">
  关联时间
  </th>
- <th v-if="isProjectAdmin || isViewer" class="text-right px-6 py-4 text-sm font-medium text-muted-foreground">
+ <th v-if="isSpaceAdmin || isViewer" class="text-right px-6 py-4 text-sm font-medium text-muted-foreground">
  操作
  </th>
  </tr>
@@ -217,7 +217,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  </div>
  </td>
  <td class="px-6 py-4">
- <TooltipProvider v-if="isProjectAdmin">
+ <TooltipProvider v-if="isSpaceAdmin">
  <Tooltip>
  <TooltipTrigger as-child>
  <button @click="togglePermission(link)">
@@ -242,7 +242,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <td class="px-6 py-4 text-sm text-muted-foreground">
  {{ new Date(link.created_at).toLocaleString('zh-CN') }}
  </td>
- <td v-if="isProjectAdmin || isViewer" class="px-6 py-4 text-right">
+ <td v-if="isSpaceAdmin || isViewer" class="px-6 py-4 text-right">
  <TooltipProvider>
  <Tooltip>
  <TooltipTrigger as-child>
@@ -275,7 +275,7 @@ function permissionLabel(level: RepositoryPermissionLevel) {
  <DialogHeader>
  <DialogTitle>关联仓库</DialogTitle>
  <DialogDescription>
- 选择要关联到此项目的仓库
+ 选择要关联到此空间的仓库
  </DialogDescription>
  </DialogHeader>
  <div class="space-y-4">

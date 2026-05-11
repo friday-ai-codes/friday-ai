@@ -21,7 +21,7 @@ import {
 import { ApiError, get as apiGet } from '~/api/client'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
-import { useProjectsStore } from '~/stores/projects'
+import { useSpacesStore } from '~/stores/spaces'
 /** Phase：preflight missing payload 契约。 */
 export interface CredentialMissingPayload {
  missingProvider: ProviderType
@@ -129,7 +129,7 @@ export const useChatStore = defineStore('chat', => {
  // 侧边栏状态
  const sidebarCollapsed = ref(false)
  // 用户偏好（localStorage 持久化）
- const selectedProjectId = useLocalStorage<string | null>('chat-project-id', null)
+ const selectedSpaceId = useLocalStorage<string | null>('chat-space-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
  /** 记忆上次选择的 credential+model 组合（格式：credentialId:modelId） */
@@ -197,8 +197,8 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function createNewConversation {
- if (!selectedProjectId.value) {
- error.value = '请先选择项目'
+ if (!selectedSpaceId.value) {
+ error.value = '请先选择空间'
  return
  }
  loading.value = true
@@ -223,7 +223,7 @@ export const useChatStore = defineStore('chat', => {
  selectedCredentialModel.value = `${allModels[0].credentialId}:${allModels[0].modelId}`
  }
  const conv = await createConversation({
- project_id: selectedProjectId.value,
+ space_id: selectedSpaceId.value,
  model: modelToUse,
  })
  conversations.value.unshift(conv)
@@ -933,14 +933,14 @@ export const useChatStore = defineStore('chat', => {
  const controller = new AbortController
  abortController.value = controller
  try {
- const projectsStore = useProjectsStore
+ const spacesStore = useSpacesStore
  let streamBranch: string | undefined
- const pid = selectedProjectId.value
+ const pid = selectedSpaceId.value
  if (pid) {
  try {
- if (projectsStore.currentProject?.id !== pid)
- await projectsStore.fetchProject(pid)
- const repoId = projectsStore.currentProject?.repositories?.[0]?.id
+ if (spacesStore.currentSpace?.id !== pid)
+ await spacesStore.fetchSpace(pid)
+ const repoId = spacesStore.currentSpace?.repositories?.[0]?.id
  if (repoId) {
  const remembered = searchBranchByRepository.value[repoId]
  if (remembered)
@@ -948,7 +948,7 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  catch {
- // 项目/仓库不可用时仍允许发消息（不带 branch）
+ // 空间/仓库不可用时仍允许发消息（不带 branch）
  }
  }
  await connectSSE(
@@ -1218,7 +1218,7 @@ export const useChatStore = defineStore('chat', => {
  streamingMetadata,
  abortController,
  sidebarCollapsed,
- selectedProjectId,
+ selectedSpaceId,
  selectedRole,
  selectedModel,
  selectedCredentialModel,

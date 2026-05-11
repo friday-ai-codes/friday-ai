@@ -7,12 +7,12 @@ import ChatHeader from '~/components/chat/ChatHeader.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
 const chatStore = useChatStore
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 // Chat 数据懒加载：首次进入 /chat 时初始化
 onMounted(async => {
  await Promise.all([
  chatStore.fetchConversations,
- projectsStore.fetchProjects,
+ spacesStore.fetchSpaces,
  ])
  await chatStore.restoreFromURL
  if (chatStore.notificationsEnabled)

@@ -30,7 +30,7 @@ from workflows.models import (
 )
 logger = structlog.get_logger(__name__)
 # Phase Plan — group_by 白名单（V5 Input Validation / T- mitigation）
-VALID_GROUP_BY: set[str] = {"none", "provider_type", "project"}
+VALID_GROUP_BY: set[str] = {"none", "provider_type", "space"}
 def _parse_date_range(request: Request) -> tuple[date, date]:
  """解析 date_from / date_to 查询参数，默认近 7 天。"""
  today = date.today
@@ -51,7 +51,7 @@ class AnalyticsOverviewView(APIView):
  Phase Plan —：扩展 `group_by` 查询参数：
  - none（默认）：flat shape `{total_executions, success_rate, ...}` 兼容旧 Phase
  - provider_type: `{group_by, groups: {"anthropic": {...}, ...}, total}`
- - project: `{group_by, groups: {"<project_id>": {...}}, total}`
+ - space: `{group_by, groups: {"<space_id>": {...}}, total}`
  不新增独立端点（Anti-pattern 锁定）；白名单 group_by 防 SQL 注入（T-）。
  """
  permission_classes = [IsAuthenticated]
@@ -140,7 +140,7 @@ class AnalyticsOverviewView(APIView):
  "total_cost_usd": float(r["total_cost_usd"] or 0),
  "count": r["count"],
  }
- elif group_by == "project":
+ elif group_by == "space":
  # 按 workflow_execution.project_id 聚合（TokenUsage.session.node_execution.workflow_execution.project）
  rows = (
  TokenUsage.objects.filter(
@@ -248,7 +248,7 @@ class TokenCostView(APIView):
  Phase Plan —：扩展 `group_by` 查询参数：
  - 缺省：flat list[TokenCostDataPoint] 兼容旧 Phase
  - provider_type: `{group_by, groups: {"anthropic": [{date, tokens, cost}], ...}}`
- - project: `{group_by, groups: {"<project_id>": [...]}}`
+ - space: `{group_by, groups: {"<space_id>": [...]}}`
  """
  permission_classes = [IsAuthenticated]
  def get(self, request: Request) -> Response:
@@ -322,7 +322,7 @@ class TokenCostView(APIView):
  "total_cost_usd": float(r["total_cost_usd"] or 0),
  }
  )
- elif group_by == "project":
+ elif group_by == "space":
  rows = (
  TokenUsage.objects.filter(
  session__node_execution__workflow_execution__created_at__date__gte=date_from,

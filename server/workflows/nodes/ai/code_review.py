@@ -307,7 +307,7 @@ class AICodeReviewNode(AIAgentBaseNode):
  # Phase: 循环外预渲染 system prompt（避免 per-MR 重复渲染）
  rendered_system_prompt = await render_prompt(
  PromptSlugs.AI_NODE_CODE_REVIEW,
- project_id=str(project.id) if project else None,
+ space_id=str(project.id) if project else None,
  variables={}, # REVIEW_SYSTEM_PROMPT 当前无占位符
  fallback=REVIEW_SYSTEM_PROMPT,
  )
