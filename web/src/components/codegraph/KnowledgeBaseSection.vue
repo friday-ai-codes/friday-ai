@@ -12,6 +12,7 @@ import {
  TabsList,
  TabsTrigger,
 } from '~/components/ui/tabs'
+import CallsDagTab from './CallsDagTab.vue'
 import ImportsTab from './ImportsTab.vue'
 import SymbolsTab from './SymbolsTab.vue'
 const props = defineProps<{
@@ -69,14 +70,9 @@ function handleSelectSymbol(id: string) {
  />
  </TabsContent>
  <TabsContent value="calls">
- <!-- CallsDagTab 占位（Plan 实现） -->
- <div class="flex flex-col items-center justify-center h-[480px] text-center">
- <span class="icon-[lucide--mouse-pointer-click] text-3xl text-muted-foreground mb-3" />
- <p class="text-sm text-muted-foreground">
- {{ selectedSymbolId
- ? '调用关系图谱加载中（Plan 实现）': '在 Symbols 列表中选择一个符号以查看调用关系' }}
- </p>
- </div>
+ <CallsDagTab:repository-id="repositoryId":selected-symbol-id="selectedSymbolId"
+ @select-symbol="handleSelectSymbol"
+ />
  </TabsContent>
  <TabsContent value="imports">
  <ImportsTab:repository-id="repositoryId" />

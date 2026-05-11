@@ -4,7 +4,7 @@
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, ref } from 'vue'
+import { defineComponent } from 'vue'
 import CallsDagTab from '../CallsDagTab.vue'
 vi.mock('~/api/codegraph', => ({
  getCallsForSymbol: vi.fn.mockResolvedValue({
@@ -60,7 +60,7 @@ describe('CallsDagTab', => {
  })
  it('B: 有 selectedSymbolId 时调用 getCallsForSymbol', async => {
  const { getCallsForSymbol } = await import('~/api/codegraph')
- const wrapper = mount(CallsDagTab, {
+ mount(CallsDagTab, {
  props: {
  repositoryId: 'repo-1',
  selectedSymbolId: 'uuid-1',
@@ -71,7 +71,7 @@ describe('CallsDagTab', => {
  })
  it('C: selectedSymbolId 变化时重新调用 API', async => {
  const { getCallsForSymbol } = await import('~/api/codegraph')
- const wrapper = mount(CallsDagTab, {
+ const w = mount(CallsDagTab, {
  props: {
  repositoryId: 'repo-1',
  selectedSymbolId: null,
@@ -79,7 +79,7 @@ describe('CallsDagTab', => {
  })
  await flushPromises
  expect(getCallsForSymbol).not.toHaveBeenCalled
- await wrapper.setProps({ selectedSymbolId: 'uuid-2' })
+ await w.setProps({ selectedSymbolId: 'uuid-2' })
  await flushPromises
  expect(getCallsForSymbol).toHaveBeenCalledWith('repo-1', 'uuid-2', 1, 5)
  })
