@@ -149,6 +149,14 @@ class IndexHistory(models.Model):
  files_deleted = models.IntegerField(default=0)
  error_message = models.TextField(blank=True, null=True)
  summary_text = models.TextField(blank=True, null=True, help_text="人可读的差异摘要文本")
+ # （修订 2026-05-11）： 变更文件列表持久化
+ # 结构：{"added": ["path/to/file.py", ...], "modified": [...], "deleted": [...]}
+ # 增量索引完成后由 indexer.py 写入；全量索引时为空 dict {}
+ changed_files = models.JSONField(
+ default=dict,
+ blank=True,
+ help_text="增量索引涉及的变更文件路径列表，全量索引时为空",
+ )
  started_at = models.DateTimeField(blank=True, null=True)
  finished_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
