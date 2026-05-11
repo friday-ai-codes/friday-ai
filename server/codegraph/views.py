@@ -21,6 +21,12 @@ logger = structlog.get_logger(__name__)
 UUID_RE = re.compile(
  r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+# 模型短形式 → 前端期望长形式（callEdgeColors.ts key 对齐）
+CALL_TYPE_API_MAP: dict[str, str] = {
+ "DIRECT": "DIRECT_CALL",
+ "METHOD": "METHOD_CALL",
+ "ATTRIBUTE": "ATTRIBUTE_ACCESS",
+}
 class SymbolListView(APIView):
  """GET /api/repositories/{repository_id}/codegraph/symbols/
  返回分页过滤后的 Symbol 列表。
@@ -92,7 +98,10 @@ class CallsForSymbolView(APIView):
  # 关键差异 3：过滤 graph_expansion L274 bug —— callee_name 字符串混入 target 位置
  raw_edges: list[dict[str, Any]] = result.get("edges", )
  edges = [
- e
+ {
+ **e,
+ "call_type": CALL_TYPE_API_MAP.get(e.get("call_type", ""), e.get("call_type", "")),
+ }
  for e in raw_edges
  if UUID_RE.match(str(e.get("source", "")))
  and UUID_RE.match(str(e.get("target", "")))
