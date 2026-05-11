@@ -49,7 +49,6 @@ describe('SymbolNode', => {
  const wrapper = mount(SymbolNode, {
  props: { data: defaultData },
  })
- const container = wrapper.find('[class*="w-\\[240px\\]"]')
- expect(container.exists).toBe(true)
+ expect(wrapper.html).toContain('w-[240px]')
  })
 })
