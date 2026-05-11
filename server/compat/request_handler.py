@@ -35,6 +35,9 @@ async def prepare_messages(
  if not last_user:
  return lc_messages
  try:
+ # TODO(T-/): repository_ids 存在 IDOR 风险——未验证每个 UUID 是否属于调用方
+ # 可访问范围（PermissionService.has_repository_access）。 暂不鉴权，启用
+ # OPENAI_COMPAT_API_KEYS 后须在此加权限过滤，否则攻击者可读取任意仓库代码片段。
  result = await LayeredSearchService.search(
  query=str(last_user.get("content", "")),
  repository_ids=repository_ids or None,
