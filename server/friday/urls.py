@@ -55,6 +55,8 @@ api_patterns = [
 urlpatterns = [
  # All API endpoints under /api
  path("api/", include(api_patterns)),
+ # codegraph Playground（Phase）：与 /api/ 并列，裸前缀让 admin 直接访问
+ path("api/codegraph/", include("codegraph.playground_urls")),
  # OpenAI 协议兼容层：与 /api/ 并列，裸前缀让 OpenAI SDK 直接接入
  path("v1/", include("compat.urls")),
  # Health check (outside /api prefix)
