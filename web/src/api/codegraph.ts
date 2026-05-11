@@ -18,12 +18,12 @@ export interface ImportEdgeRow {
 }
 export interface EndpointRow {
  id: string
- path: string
- method: string
+ http_method: string
+ url_path: string
  handler_name: string
+ view_type: 'FUNCTION_VIEW' | 'CLASS_VIEW' | 'VIEWSET'
  file_path: string
- line_start: number
- line_end: number
+ line_number: number
 }
 export interface PaginatedResponse<T> {
  count: number
