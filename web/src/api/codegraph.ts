@@ -51,17 +51,17 @@ export interface GetEndpointsParams {
  offset?: number
 }
 export interface DagNode {
- id: string
- data: SymbolRow
+ symbol: SymbolRow & { id: string }
+ depth: number
+ relationship: string
 }
 export interface DagEdge {
- id: string
  source: string
  target: string
- call_type: 'DIRECT_CALL' | 'METHOD_CALL' | 'ATTRIBUTE_ACCESS' | 'INHERITANCE'
- label?: string
+ call_type: string
 }
 export interface DagData {
+ seed_symbol_id: string
  nodes: DagNode
  edges: DagEdge
 }

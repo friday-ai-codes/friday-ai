@@ -32,11 +32,11 @@ const { applyLayout } = useDagreLayout
 const { fitView } = useVueFlow
 function toFlowNodes(dagNodes: DagNode): Node {
  return dagNodes.map(n => ({
- id: n.id,
+ id: n.symbol.id,
  type: 'symbol',
  position: { x: 0, y: 0 },
- data: n.data,
- ariaLabel: `${n.data.symbol_type}: ${n.data.name}`,
+ data: n.symbol,
+ ariaLabel: `${n.symbol.symbol_type}: ${n.symbol.name}`,
  }))
 }
 function toFlowEdges(dagEdges: DagEdge): Edge {
