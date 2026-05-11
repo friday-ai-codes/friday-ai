@@ -13,10 +13,10 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
  default="system",
  help_text="配置来源",
  )
- project_id = serializers.IntegerField(
+ space_id = serializers.IntegerField(
  required=False,
  allow_null=True,
- help_text="项目 ID（当 source=project 时必填）",
+ help_text="空间 ID（当 source=project 时必填）",
  )
  api_key = serializers.CharField(
  required=False,
@@ -38,11 +38,11 @@ class ChatCompletionRequestSerializer(serializers.Serializer):
  )
  def validate(self, attrs):
  """Validate the request."""
- if attrs.get("source") == "project" and not attrs.get("project_id"):
+ if attrs.get("source") == "project" and not attrs.get("space_id"):
  # Check if temporary credentials are provided
  if not attrs.get("api_key"):
  raise serializers.ValidationError(
- {"project_id": "使用项目配置时必须提供 project_id 或临时 api_key"}
+ {"space_id": "使用空间配置时必须提供 space_id 或临时 api_key"}
  )
  return attrs
 class ModelsRequestSerializer(serializers.Serializer):
@@ -52,10 +52,10 @@ class ModelsRequestSerializer(serializers.Serializer):
  default="system",
  help_text="配置来源",
  )
- project_id = serializers.IntegerField(
+ space_id = serializers.IntegerField(
  required=False,
  allow_null=True,
- help_text="项目 ID（当 source=project 时必填）",
+ help_text="空间 ID（当 source=project 时必填）",
  )
  api_key = serializers.CharField(
  required=False,
@@ -71,10 +71,10 @@ class ModelsRequestSerializer(serializers.Serializer):
  )
  def validate(self, attrs):
  """Validate the request."""
- if attrs.get("source") == "project" and not attrs.get("project_id"):
+ if attrs.get("source") == "project" and not attrs.get("space_id"):
  if not attrs.get("api_key"):
  raise serializers.ValidationError(
- {"project_id": "使用项目配置时必须提供 project_id 或临时 api_key"}
+ {"space_id": "使用空间配置时必须提供 space_id 或临时 api_key"}
  )
  return attrs
 class ModelSerializer(serializers.Serializer):
@@ -95,7 +95,7 @@ class ChatCompletionResponseSerializer(serializers.Serializer):
 # ============================================================================
 class CreateConversationSerializer(serializers.Serializer):
  """创建对话请求。"""
- project_id = serializers.UUIDField(help_text="项目 ID")
+ space_id = serializers.UUIDField(help_text="空间 ID")
  title = serializers.CharField(max_length=200, default="新对话", required=False)
  model = serializers.CharField(
  max_length=100,
@@ -136,7 +136,7 @@ class ConversationListSerializer(serializers.Serializer):
  让前端 ChatHeader 能从 list 响应直接读到 pin 状态（chat 路径下 default.vue 接线）。
  """
  id = serializers.UUIDField
- project_id = serializers.UUIDField
+ space_id = serializers.UUIDField(source="project_id")
  title = serializers.CharField
  model = serializers.CharField(required=False, allow_blank=True)
  status = serializers.CharField
@@ -175,7 +175,7 @@ class ConversationDetailSerializer(serializers.Serializer):
  与 list 响应字段对齐；让前端切换对话后能从 detail 直接读到 pin 状态。
  """
  id = serializers.UUIDField
- project_id = serializers.UUIDField
+ space_id = serializers.UUIDField(source="project_id")
  title = serializers.CharField
  model = serializers.CharField(required=False, allow_blank=True)
  status = serializers.CharField

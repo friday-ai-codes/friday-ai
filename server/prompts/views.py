@@ -103,7 +103,7 @@ class PromptListView(APIView):
  summary="列出 Prompt（按 scope 过滤）",
  description=(
  "`?scope=system` 返回所有系统级 prompt（任何登录用户可读）；"
- "`?scope=project&project_id=<uuid>` 返回指定项目的项目级 prompt "
+ "`?scope=project&space_id=<uuid>` 返回指定空间的空间级 prompt "
  "（需 VIEWER+ 成员角色）。可选 `?category=<chat_agent|aux_model|...>` 过滤。"
  ),
  tags=["Prompts"],
@@ -120,21 +120,21 @@ class PromptListView(APIView):
  if scope == PromptScope.SYSTEM:
  qs = qs.filter(scope=PromptScope.SYSTEM)
  else:
- project_id = request.query_params.get("project_id")
- if not project_id:
+ space_id = request.query_params.get("space_id")
+ if not space_id:
  return Response(
  {
- "error": "missing_project_id",
- "detail": "scope=project 必须指定 project_id",
+ "error": "missing_space_id",
+ "detail": "scope=project 必须指定 space_id",
  },
  status=status.HTTP_400_BAD_REQUEST,
  )
- # 项目成员资格检查（T- mitigate）
- project = await aget_object_or_404(Project, pk=project_id)
+ # 空间成员资格检查（T- mitigate）
+ project = await aget_object_or_404(Project, pk=space_id)
  denied = await _require_project_read_permission(request, project)
  if denied is not None:
  return denied
- qs = qs.filter(scope=PromptScope.PROJECT, project_id=project_id)
+ qs = qs.filter(scope=PromptScope.PROJECT, project_id=space_id)
  if category:
  qs = qs.filter(category=category)
  items = [p async for p in qs.order_by("slug")]
@@ -156,7 +156,7 @@ class PromptListView(APIView):
  return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  data = serializer.validated_data
  scope = data["scope"]
- # 权限：system → superuser，project → project ADMIN
+ # 权限：system → superuser，project → space ADMIN
  if scope == PromptScope.SYSTEM:
  if not request.user.is_superuser:
  return Response(
@@ -197,7 +197,7 @@ class PromptListView(APIView):
  "prompt_created",
  slug=prompt.slug,
  scope=scope,
- project_id=str(prompt.project_id) if prompt.project_id else None,
+ space_id=str(prompt.project_id) if prompt.project_id else None,
  )
  return Response(response_data, status=status.HTTP_201_CREATED)
 # ============================================================================

@@ -16,7 +16,7 @@ ROLE_PRIORITY: dict[str, int] = {
 }
 class PermissionService:
  """集中式权限查询服务。
- 提供统一的项目级权限判断方法，所有权限类和 Mixin 调用此服务。
+ 提供统一的空间级权限判断方法，所有权限类和 Mixin 调用此服务。
  所有方法保持同步 —— DRF/adrf 会自动用 sync_to_async 包装。
  """
  @classmethod
@@ -26,10 +26,10 @@ class PermissionService:
  project: Project,
  min_role: str = ProjectRole.VIEWER,
  ) -> bool:
- """检查用户是否有指定最低角色的项目访问权限。
+ """检查用户是否有指定最低角色的空间访问权限。
  Args:
  user: 请求用户
- project: 目标项目
+ project: 目标空间
  min_role: 最低要求角色（默认 viewer）
  Returns:
  True 如果用户满足权限要求
@@ -77,7 +77,7 @@ class PermissionService:
  return None
  @classmethod
  def get_user_projects(cls, user: User) -> QuerySet[Project]:
- """获取用户所属的所有项目。
+ """获取用户所属的所有空间。
  superuser 返回所有项目，普通用户按 membership 过滤。
  """
  from projects.models import Project

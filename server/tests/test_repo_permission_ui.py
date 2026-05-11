@@ -51,7 +51,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """管理员可以批量关联仓库。"""
  response = project_admin_client.post(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  {"repository_ids": [str(second_repository.id), str(third_repository.id)]},
  format="json",
  )
@@ -64,7 +64,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """重复关联自动跳过（project fixture 已关联 repository）。"""
  response = project_admin_client.post(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  {"repository_ids": [str(repository.id), str(second_repository.id)]},
  format="json",
  )
@@ -79,7 +79,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """默认权限为 read_write。"""
  project_admin_client.post(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  {"repository_ids": [str(second_repository.id)]},
  format="json",
  )
@@ -96,7 +96,7 @@ class TestProjectRepositoryLink:
  project=project, repository=repository,
  )
  response = project_admin_client.patch(
- f"/api/projects/{project.id}/repositories/{link.pk}/",
+ f"/api/spaces/{project.id}/repositories/{link.pk}/",
  {"permission_level": "read_only"},
  format="json",
  )
@@ -112,7 +112,7 @@ class TestProjectRepositoryLink:
  project=project, repository=repository,
  )
  response = project_admin_client.delete(
- f"/api/projects/{project.id}/repositories/{link.pk}/",
+ f"/api/spaces/{project.id}/repositories/{link.pk}/",
  )
  assert response.status_code == 204
  assert not ProjectRepository.objects.filter(
@@ -124,7 +124,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """viewer 可查看项目关联的仓库列表。"""
  response = project_viewer_client.get(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  )
  assert response.status_code == 200
  data = response.json
@@ -135,7 +135,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """member 无法创建关联。"""
  response = project_member_client.post(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  {"repository_ids": [str(second_repository.id)]},
  format="json",
  )
@@ -146,7 +146,7 @@ class TestProjectRepositoryLink:
  ) -> None:
  """viewer 无法创建关联。"""
  response = project_viewer_client.post(
- f"/api/projects/{project.id}/repositories/",
+ f"/api/spaces/{project.id}/repositories/",
  {"repository_ids": [str(second_repository.id)]},
  format="json",
  )

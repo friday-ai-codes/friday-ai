@@ -37,7 +37,7 @@ class WaitForFeishuFieldNode(BaseNode):
  },
  "project_key": {
  "type": "string",
- "title": "项目标识",
+ "title": "空间标识",
  "description": "飞书项目 Key，支持变量引用",
  },
  "condition": {
@@ -153,7 +153,7 @@ class WaitForFeishuFieldNode(BaseNode):
  try:
  from feishu.client import create_feishu_client_for_project
  from projects.models import Project
- # 获取项目
+ # 获取空间
  project = await Project.objects.filter(feishu_project_key=project_key).afirst
  if not project:
  return None

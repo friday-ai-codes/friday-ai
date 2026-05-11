@@ -116,7 +116,7 @@ async def create_sub_session(
  last_output={
  "task_type": task_type,
  "source": "coding_session_confirm",
- "project_id": str(project.id),
+ "space_id": str(project.id),
  "conversation_id": str(coding_session.conversation_id),
  "coding_session_id": str(coding_session.id),
  },

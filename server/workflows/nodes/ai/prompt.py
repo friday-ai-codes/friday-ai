@@ -204,7 +204,7 @@ class AIPromptNode(BaseNode):
  "type": "string",
  "format": "uuid",
  "title": "Provider 凭证（节点级）",
- "description": "指定本节点使用的凭证 ID，空则按项目/系统默认解析。",
+ "description": "指定本节点使用的凭证 ID，空则按空间/系统默认解析。",
  "default": "",
  },
  },
@@ -517,8 +517,8 @@ class AIPromptNode(BaseNode):
  f"未配置 Provider 凭证：provider_credential_id="
  f"{resolved.credential_id} 不存在"
  ) from exc
- project_id_str = str(project.id) if project is not None else ""
- if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ space_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != space_id_str:
  raise ValueError(
  f"未配置 {resolved.provider_type.value} Provider 凭证："
  f"节点 provider_credential_id 指向他 project 凭证，"
@@ -530,7 +530,7 @@ class AIPromptNode(BaseNode):
  model = (resolved.extra or {}).get("default_model", "") or ""
  if not model:
  raise ValueError(
- "未配置默认模型，请在系统设置或项目设置中配置默认模型"
+ "未配置默认模型，请在系统设置或空间设置中配置默认模型"
  )
  # Pitfall #11：reasoning 模型 .bind(temperature=...) 会被 llm_factory 静默 strip。
  # 本节点在入口处先 warning，便于 observability（不阻断执行）。
@@ -561,7 +561,7 @@ class AIPromptNode(BaseNode):
  ).ainvoke(messages)
  return self._aimessage_to_llm_response(ai_msg, model)
  async def _get_project(self, context: ExecutionContext):
- """获取关联的项目"""
+ """获取关联的空间"""
  if context.workflow_execution:
  from workflows.models import WorkflowExecution
  we = await WorkflowExecution.objects.select_related(

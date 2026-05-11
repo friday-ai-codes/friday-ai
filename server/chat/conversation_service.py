@@ -135,8 +135,8 @@ async def _build_system_prompt(
  条件拼接逻辑保留在 Python 层（不进 Jinja2 控制流 DSL）。
  结尾规则 _ENDING_RULES 保留 Python 字面量(非可运营 Prompt)，不占用 slug。
  Args:
- project_name: 项目名称
- project_id: 项目 UUID（供工具调用时使用）
+ project_name: 空间名称
+ project_id: 空间 UUID（供工具调用时使用）
  role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
  force_deep_analysis: 用户开启了深度分析开关，强制走策略二
  Returns:
@@ -172,7 +172,7 @@ async def _build_system_prompt(
  fallback=_CODING_GUIDANCE,
  )
  # 4. 组装（结尾规则 _ENDING_RULES 保持 Python 字面量，非可运营 Prompt）
- project_line = project_context_line or f"当前项目：{project_name}"
+ project_line = project_context_line or f"当前空间：{project_name}"
  return (
  f"{role_fragment}\n\n"
  f"{project_line}\n\n"
@@ -180,23 +180,23 @@ async def _build_system_prompt(
  f"{coding_guidance_fragment}\n"
  f"{_ENDING_RULES}"
  )
-async def _get_tool_names(project_id: str) -> list[str]:
+async def _get_tool_names(space_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
  有已索引仓库：注入全部工具（检索工具 + 项目工具 + 编码工具）
- 无仓库或未索引：仅注入 get_project_overview（基础信息）
+ 无仓库或未索引：仅注入 get_space_overview（基础信息）
  """
- base_tools = ["get_project_overview"]
+ base_tools = ["get_space_overview"]
  full_tools = base_tools + [
  "browse_file_content",
- "list_project_structure",
+ "list_space_structure",
  "search_repository_code",
- "list_project_repositories",
+ "list_space_repositories",
  "get_repository_info",
  "create_coding_plan",
  "update_coding_plan",
  ]
  has_indexed = await Repository.objects.filter(
- projects__id=project_id,
+ projects__id=space_id,
  index_status="indexed",
  is_deleted=False,
  ).aexists
@@ -429,27 +429,27 @@ class ConversationService:
  """对话系统业务逻辑服务。"""
  @staticmethod
  async def create_conversation(
- project_id: str,
+ space_id: str,
  title: str = "新对话",
  model: str = "",
  ) -> Conversation:
  """创建新对话。
  Args:
- project_id: 项目 UUID
+ space_id: 空间 UUID
  title: 对话标题
  model: LLM 模型 ID（为空时运行时使用系统默认）
  Returns:
  新创建的 Conversation 实例
  """
  conversation = await Conversation.objects.acreate(
- project_id=project_id,
+ project_id=space_id,
  title=title,
  model=model,
  )
  logger.info(
  "conversation_created",
  conversation_id=str(conversation.id),
- project_id=project_id,
+ space_id=space_id,
  title=title,
  )
  return conversation
@@ -579,7 +579,7 @@ class ConversationService:
  "model": model,
  "session_id": session_id,
  "system_prompt": sdk_config.system_prompt,
- "project_id": sdk_config.project_id,
+ "space_id": sdk_config.space_id,
  "role": role,
  "agent_session_id": str(agent_session.id),
  "notification_user_id": notification_user_id or "",
@@ -818,8 +818,13 @@ class ConversationService:
  OrchestrationRun.Status.ERROR,
  OrchestrationRun.Status.INTERRUPTED,
  }
+ from uuid import UUID
+ try:
+ conv_uuid = UUID(conversation_id)
+ except ValueError:
+ conv_uuid = conversation_id
  orch_run = await OrchestrationRun.objects.filter(
- conversation_id=conversation_id,
+ conversation_id=conv_uuid,
  ).order_by("-created_at").afirst
  is_active = False
  orch_phase: str | None = None

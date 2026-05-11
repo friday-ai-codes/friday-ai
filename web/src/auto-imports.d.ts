@@ -172,7 +172,6 @@ declare global {
  const useConversationFrozen: typeof import('./composables/useConversationFrozen').useConversationFrozen
  const useCountdown: typeof import('@vueuse/core').useCountdown
  const useCounter: typeof import('@vueuse/core').useCounter
- const useCounterStore: typeof import('./stores/counter').useCounterStore
  const useCssModule: typeof import('vue').useCssModule
  const useCssVar: typeof import('@vueuse/core').useCssVar
  const useCssVars: typeof import('vue').useCssVars
@@ -263,7 +262,6 @@ declare global {
  const usePreferredReducedMotion: typeof import('@vueuse/core').usePreferredReducedMotion
  const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
  const usePrevious: typeof import('@vueuse/core').usePrevious
- const useProjectsStore: typeof import('./stores/projects').useProjectsStore
  const usePromptsStore: typeof import('./stores/prompts').usePromptsStore
  const useProviderCredentialStore: typeof import('./stores/providerCredential').useProviderCredentialStore
  const useRafFn: typeof import('@vueuse/core').useRafFn
@@ -285,6 +283,7 @@ declare global {
  const useShare: typeof import('@vueuse/core').useShare
  const useSlots: typeof import('vue').useSlots
  const useSorted: typeof import('@vueuse/core').useSorted
+ const useSpacesStore: typeof import('./stores/spaces').useSpacesStore
  const useSpeechRecognition: typeof import('@vueuse/core').useSpeechRecognition
  const useSpeechSynthesis: typeof import('@vueuse/core').useSpeechSynthesis
  const useStepper: typeof import('@vueuse/core').useStepper
@@ -390,7 +389,7 @@ declare global {
  export type { CredentialMissingPayload, ContextExceededPayload } from './stores/chat'
  import('./stores/chat')
  // @ts-ignore
- export type { MergedProjectListItem } from './stores/prompts'
+ export type { MergedSpaceListItem } from './stores/prompts'
  import('./stores/prompts')
  // @ts-ignore
  export type { NodeExecution, WorkflowDefinitionNode, WorkflowDefinitionEdge, WorkflowDefinition, TimelineNode, TimelineData, WorkflowExecution } from './stores/useExecutionsStore'
@@ -666,7 +665,6 @@ declare module 'vue' {
  readonly usePreferredReducedMotion: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedMotion']>
  readonly usePreferredReducedTransparency: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedTransparency']>
  readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
- readonly useProjectsStore: UnwrapRef<typeof import('./stores/projects')['useProjectsStore']>
  readonly usePromptsStore: UnwrapRef<typeof import('./stores/prompts')['usePromptsStore']>
  readonly useProviderCredentialStore: UnwrapRef<typeof import('./stores/providerCredential')['useProviderCredentialStore']>
  readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
@@ -688,6 +686,7 @@ declare module 'vue' {
  readonly useShare: UnwrapRef<typeof import('@vueuse/core')['useShare']>
  readonly useSlots: UnwrapRef<typeof import('vue')['useSlots']>
  readonly useSorted: UnwrapRef<typeof import('@vueuse/core')['useSorted']>
+ readonly useSpacesStore: UnwrapRef<typeof import('./stores/spaces')['useSpacesStore']>
  readonly useSpeechRecognition: UnwrapRef<typeof import('@vueuse/core')['useSpeechRecognition']>
  readonly useSpeechSynthesis: UnwrapRef<typeof import('@vueuse/core')['useSpeechSynthesis']>
  readonly useStepper: UnwrapRef<typeof import('@vueuse/core')['useStepper']>

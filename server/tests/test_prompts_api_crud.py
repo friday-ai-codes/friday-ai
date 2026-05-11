@@ -39,13 +39,13 @@ class TestPromptSerializers:
  "slug": "x.sys.with.project",
  "category": "aux_model",
  "scope": "system",
- "project": str(project.id),
+ "space": str(project.id),
  "title": "t",
  "body": "hi",
  }
  )
  assert not serializer.is_valid
- assert "project" in serializer.errors
+ assert "space" in serializer.errors
  def test_create_serializer_rejects_project_without_project(
  self,
  admin_user,
@@ -56,12 +56,13 @@ class TestPromptSerializers:
  "slug": "x.proj.no.project",
  "category": "aux_model",
  "scope": "project",
+ "space": None,
  "title": "t",
  "body": "hi",
  }
  )
  assert not serializer.is_valid
- assert "project" in serializer.errors
+ assert "space" in serializer.errors
  def test_detail_serializer_exposes_declared_variables(
  self,
  admin_user,
@@ -146,7 +147,7 @@ class TestPromptCRUDAPI:
  title="t2",
  created_by=admin_user,
  )
- url = reverse("prompt-list") + f"?scope=project&project_id={project.id}"
+ url = reverse("prompt-list") + f"?scope=project&space_id={project.id}"
  resp = authenticated_admin_client.get(url)
  assert resp.status_code == 200, resp.content
  slugs = {item["slug"] for item in resp.json}
@@ -209,6 +210,7 @@ class TestPromptCRUDAPI:
  "description": "",
  "body": "Hi {{who}}",
  "change_note": "initial",
+ "space": None,
  }
  resp = authenticated_admin_client.post(
  url,
@@ -232,6 +234,7 @@ class TestPromptCRUDAPI:
  "scope": "system",
  "title": "t",
  "body": "body1",
+ "space": None,
  }
  resp = authenticated_admin_client.post(
  url,

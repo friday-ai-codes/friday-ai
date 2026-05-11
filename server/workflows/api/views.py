@@ -208,10 +208,10 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  return WorkflowSerializer
  def get_queryset(self):
  queryset = super.get_queryset.select_related("project", "created_by")
- # Filter by project
- project_id = self.request.query_params.get("project_id")
- if project_id:
- queryset = queryset.filter(project_id=project_id)
+ # Filter by space
+ space_id = self.request.query_params.get("space_id")
+ if space_id:
+ queryset = queryset.filter(project_id=space_id)
  # Filter by active status
  is_active = self.request.query_params.get("is_active")
  if is_active is not None:
@@ -272,11 +272,11 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """Duplicate workflow."""
  workflow = await self.aget_object
  new_name = request.data.get("name", f"{workflow.name} (副本)")
- new_project_id = request.data.get("project_id")
+ new_space_id = request.data.get("space_id")
  new_project = None
- if new_project_id:
+ if new_space_id:
  from projects.models import Project
- new_project = await aget_object_or_404(Project, id=new_project_id)
+ new_project = await aget_object_or_404(Project, id=new_space_id)
  new_workflow = await workflow.aclone(new_project=new_project, new_name=new_name)
  new_workflow.created_by = request.user
  await new_workflow.asave
@@ -297,14 +297,14 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """Import workflow from JSON."""
  serializer = WorkflowImportSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
- project_id = request.data.get("project_id")
- if not project_id:
+ space_id = request.data.get("space_id")
+ if not space_id:
  return Response(
- {"detail": "必须指定 project_id"},
+ {"detail": "必须指定 space_id"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  from projects.models import Project
- project = await aget_object_or_404(Project, id=project_id)
+ project = await aget_object_or_404(Project, id=space_id)
  try:
  workflow = await Workflow.afrom_json(
  data=serializer.validated_data["data"],
@@ -446,17 +446,17 @@ class WorkflowViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  """Create a workflow from a template."""
  from workflows.templates.loader import acreate_workflow_from_template
  template_id = request.data.get("template_id")
- project_id = request.data.get("project_id")
+ space_id = request.data.get("space_id")
  name = request.data.get("name")
  description = request.data.get("description")
- if not template_id or not project_id:
+ if not template_id or not space_id:
  return Response(
- {"detail": "template_id and project_id are required"},
+ {"detail": "template_id and space_id are required"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  try:
  workflow = await acreate_workflow_from_template(
- project_id=project_id,
+ space_id=space_id,
  template_id=template_id,
  name=name,
  description=description,
@@ -498,10 +498,10 @@ class WorkflowExecutionViewSet(ProjectScopedQuerysetMixin, ModelViewSet):
  workflow_id = self.request.query_params.get("workflow_id")
  if workflow_id:
  queryset = queryset.filter(workflow_id=workflow_id)
- # Filter by project
- project_id = self.request.query_params.get("project_id")
- if project_id:
- queryset = queryset.filter(workflow__project_id=project_id)
+ # Filter by space
+ space_id = self.request.query_params.get("space_id")
+ if space_id:
+ queryset = queryset.filter(workflow__project_id=space_id)
  # Filter by status
  exec_status = self.request.query_params.get("status")
  if exec_status:

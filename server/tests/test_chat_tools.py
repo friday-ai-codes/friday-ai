@@ -1,5 +1,5 @@
 """Chat 对话工具单元测试。
-测试 browse_file_content、list_project_structure、get_project_overview 三个工具，
+测试 browse_file_content、list_space_structure、get_space_overview 三个工具，
 以及动态工具注入逻辑 _get_tool_names。全部 mock QdrantService 和 DB 查询。
 """
 from __future__ import annotations
@@ -10,8 +10,8 @@ import pytest
 import agents.tools.chat_tools # noqa: F401
 from agents.tools.chat_tools import (
  browse_file_content,
- get_project_overview,
- list_project_structure,
+ get_space_overview,
+ list_space_structure,
 )
 # ============================================================================
 # Mock 数据结构
@@ -142,12 +142,12 @@ class TestBrowseFileContent:
  assert data["chunks"] ==
  assert "error" in result.output
 # ============================================================================
-# list_project_structure 测试
+# list_space_structure 测试
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-class TestListProjectStructure:
- """list_project_structure 工具测试。"""
+class TestListSpaceStructure:
+ """list_space_structure 工具测试。"""
  async def test_returns_file_tree(self, project):
  """已索引仓库的项目返回文件树。"""
  # 设置仓库为已索引
@@ -170,8 +170,8 @@ class TestListProjectStructure:
  "get_collection_name",
  return_value=f"code_index_{repo.id}",
  ):
- result = await list_project_structure(
- project_id=str(project.id),
+ result = await list_space_structure(
+ space_id=str(project.id),
  )
  assert result.success is True
  data = result.output["data"]
@@ -181,20 +181,20 @@ class TestListProjectStructure:
  assert "main.py" in data["structure"]
  async def test_no_indexed_repos_returns_empty(self, project):
  """无已索引仓库时返回空结构 + 提示。"""
- result = await list_project_structure(
- project_id=str(project.id),
+ result = await list_space_structure(
+ space_id=str(project.id),
  )
  assert result.success is True
  data = result.output["data"]
  assert data["total_files"] == 0
  assert "error" in result.output
 # ============================================================================
-# get_project_overview 测试
+# get_space_overview 测试
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-class TestGetProjectOverview:
- """get_project_overview 工具测试。"""
+class TestGetSpaceOverview:
+ """get_space_overview 工具测试。"""
  async def test_returns_overview_with_repos(self, project):
  """返回项目概览含仓库信息。"""
  # 设置仓库为已索引
@@ -217,8 +217,8 @@ class TestGetProjectOverview:
  "get_collection_name",
  return_value=f"code_index_{repo.id}",
  ):
- result = await get_project_overview(
- project_id=str(project.id),
+ result = await get_space_overview(
+ space_id=str(project.id),
  )
  assert result.success is True
  data = result.output["data"]
@@ -230,8 +230,8 @@ class TestGetProjectOverview:
  async def test_nonexistent_project(self):
  """不存在的项目返回错误信息。"""
  import uuid
- result = await get_project_overview(
- project_id=str(uuid.uuid4),
+ result = await get_space_overview(
+ space_id=str(uuid.uuid4),
  )
  assert result.success is True
  assert result.output["data"] is None
@@ -250,16 +250,18 @@ class TestGetToolNames:
  repo.index_status = "indexed"
  await repo.asave
  tool_names = await _get_tool_names(str(project.id))
- assert len(tool_names) == 6
+ assert len(tool_names) == 8
  assert "browse_file_content" in tool_names
- assert "list_project_structure" in tool_names
- assert "get_project_overview" in tool_names
+ assert "list_space_structure" in tool_names
+ assert "get_space_overview" in tool_names
  assert "search_repository_code" in tool_names
- assert "list_project_repositories" in tool_names
+ assert "list_space_repositories" in tool_names
  assert "get_repository_info" in tool_names
+ assert "create_coding_plan" in tool_names
+ assert "update_coding_plan" in tool_names
  async def test_without_indexed_repo_returns_1_tool(self, project):
  """无已索引仓库的项目仅返回 1 个工具。"""
  from chat.conversation_service import _get_tool_names
  tool_names = await _get_tool_names(str(project.id))
  assert len(tool_names) == 1
- assert "get_project_overview" in tool_names
+ assert "get_space_overview" in tool_names

@@ -254,13 +254,13 @@ export const useWorkflowsStore = defineStore('workflows', => {
  // ============================================================================
  // API Calls
  // ============================================================================
- async function fetchWorkflows(projectId?: string) {
+ async function fetchWorkflows(spaceId?: string) {
  loading.value = true
  error.value = null
  try {
  const params: Record<string, string> = {}
- if (projectId)
- params.project_id = projectId
+ if (spaceId)
+ params.space_id = spaceId
  const data = await client.get<{ results?: Workflow }>('/workflows/', params)
  workflows.value = (data.results || data) as Workflow
  return workflows.value
@@ -405,9 +405,9 @@ export const useWorkflowsStore = defineStore('workflows', => {
  throw e
  }
  }
- async function duplicateWorkflow(id: string, name?: string, projectId?: string) {
+ async function duplicateWorkflow(id: string, name?: string, spaceId?: string) {
  try {
- const workflow = await client.post<Workflow>(`/workflows/${id}/duplicate/`, { name, project_id: projectId })
+ const workflow = await client.post<Workflow>(`/workflows/${id}/duplicate/`, { name, space_id: spaceId })
  workflows.value.unshift(workflow)
  return workflow
  }

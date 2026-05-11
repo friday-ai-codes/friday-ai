@@ -100,7 +100,7 @@ class TestGenerateTitle:
  AsyncMock(return_value=_resolved_anthropic_stub),
  )
  monkeypatch.setattr(
- "chat.title_service.aget_setting_value",
+ "chat.services.aget_setting_value",
  AsyncMock(return_value=None), # ANTHROPIC_MODEL 走 fallback
  )
  result = await generate_title(str(conversation.id), "帮我分析一下项目架构")
@@ -129,7 +129,7 @@ class TestGenerateTitle:
  AsyncMock(return_value=_resolved_anthropic_stub),
  )
  monkeypatch.setattr(
- "chat.title_service.aget_setting_value",
+ "chat.services.aget_setting_value",
  AsyncMock(return_value=None),
  )
  result = await generate_title(str(conversation.id), "test")
@@ -175,7 +175,7 @@ class TestGenerateTitle:
  AsyncMock(return_value=_resolved_anthropic_stub),
  )
  monkeypatch.setattr(
- "chat.title_service.aget_setting_value",
+ "chat.services.aget_setting_value",
  AsyncMock(return_value=None),
  )
  result = await generate_title(str(conversation.id), "test")

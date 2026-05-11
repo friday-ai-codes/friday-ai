@@ -176,7 +176,7 @@ export const contextRetrievalConfigSchema = z.object({
  format_as_markdown: z.boolean.default(true),
 })
 /** 获取项目信息节点配置 */
-export const fetchProjectInfoConfigSchema = z.object({
+export const fetchSpaceInfoConfigSchema = z.object({
  project_identifier: z.string.default(''),
  identifier_type: z.enum(['auto', 'id', 'feishu_project_key']).default('auto'),
  include_repositories: z.boolean.default(true),
@@ -286,7 +286,7 @@ export type VariableExtractorConfig = z.infer<typeof variableExtractorConfigSche
 export type AIVariableDefinition = z.infer<typeof aiVariableDefinitionSchema>
 export type AIVariableExtractorConfig = z.infer<typeof aiVariableExtractorConfigSchema>
 export type ContextRetrievalConfig = z.infer<typeof contextRetrievalConfigSchema>
-export type FetchProjectInfoConfig = z.infer<typeof fetchProjectInfoConfigSchema>
+export type FetchProjectInfoConfig = z.infer<typeof fetchSpaceInfoConfigSchema>
 export type WaitCondition = z.infer<typeof waitConditionSchema>
 export type WaitConditionGroup = z.infer<typeof waitConditionGroupSchema>
 export type WaitFeishuFieldConfig = z.infer<typeof waitFeishuFieldConfigSchema>
@@ -326,7 +326,7 @@ export const NODE_CONFIG_SCHEMAS = {
  variable_extractor: variableExtractorConfigSchema,
  ai_variable_extractor: aiVariableExtractorConfigSchema,
  context_retrieval: contextRetrievalConfigSchema,
- fetch_project_info: fetchProjectInfoConfigSchema,
+ fetch_project_info: fetchSpaceInfoConfigSchema,
  wait_feishu_field: waitFeishuFieldConfigSchema,
  create_branch: createBranchConfigSchema,
  create_pr: createPRConfigSchema,

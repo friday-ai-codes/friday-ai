@@ -5,7 +5,7 @@ import type { VariableSpec } from '~/types/prompts'
  *
  * 职责:
  * 在 Sheet「基础信息」Tab 底部子区承载 variables_schema 原始 JSON 编辑,
- * 内嵌 JsonEditor.vue(复用项目已有的 CodeMirror 6 + JSON 语法高亮/校验栈),
+ * 内嵌 JsonEditor.vue(复用空间已有的 CodeMirror 6 + JSON 语法高亮/校验栈),
  * 不自造 CodeMirror 封装。
  *
  * 数据流:

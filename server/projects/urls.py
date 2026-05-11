@@ -1,28 +1,28 @@
-"""Projects URL configuration."""
+"""Spaces URL configuration."""
 from adrf.routers import DefaultRouter
 from django.urls import include, path
-from .members_views import ProjectMemberDetailView, ProjectMemberListView
+from .members_views import SpaceMemberDetailView, SpaceMemberListView
 from .views import (
- ProjectRepositoryDetailView,
- ProjectRepositoryListCreateView,
- ProjectViewSet,
+ SpaceRepositoryDetailView,
+ SpaceRepositoryListCreateView,
+ SpaceViewSet,
 )
 router = DefaultRouter # trailing_slash=True by default
-router.register("", ProjectViewSet, basename="project")
+router.register("", SpaceViewSet, basename="space")
 urlpatterns = [
- # 项目仓库关联管理（新 API，需在 router 之前注册以优先匹配）
+ # 空间仓库关联管理（新 API，需在 router 之前注册以优先匹配）
  path(
- "<str:project_id>/repositories/",
- ProjectRepositoryListCreateView.as_view,
- name="project-repository-list",
+ "<str:space_id>/repositories/",
+ SpaceRepositoryListCreateView.as_view,
+ name="space-repository-list",
  ),
  path(
- "<str:project_id>/repositories/<str:pk>/",
- ProjectRepositoryDetailView.as_view,
- name="project-repository-detail",
+ "<str:space_id>/repositories/<str:pk>/",
+ SpaceRepositoryDetailView.as_view,
+ name="space-repository-detail",
  ),
- # 项目成员管理
- path("<str:project_id>/members/", ProjectMemberListView.as_view, name="project-member-list"),
- path("<str:project_id>/members/<str:user_id>/", ProjectMemberDetailView.as_view, name="project-member-detail"),
+ # 空间成员管理
+ path("<str:space_id>/members/", SpaceMemberListView.as_view, name="space-member-list"),
+ path("<str:space_id>/members/<str:user_id>/", SpaceMemberDetailView.as_view, name="space-member-detail"),
  path("", include(router.urls)),
 ]

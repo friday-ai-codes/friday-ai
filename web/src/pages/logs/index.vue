@@ -41,11 +41,11 @@ const timeRangeOptions = [
 const loading = ref(true)
 const triggerLogs = ref<TriggerLog>
 const total = ref(0)
-// 加载项目列表
-const projectsStore = useProjectsStore
+// 加载空间列表
+const spacesStore = useSpacesStore
 onMounted(async => {
  try {
- await projectsStore.fetchProjects
+ await spacesStore.fetchSpaces
  await fetchLogs
  }
  catch (e: unknown) {
@@ -59,7 +59,7 @@ onMounted(async => {
 async function fetchLogs {
  loading.value = true
  try {
- const projectId = projectFilter.value === '__all__' ? undefined: projectFilter.value
+ const spaceId = projectFilter.value === '__all__' ? undefined: projectFilter.value
  const status = statusFilter.value === '__all__' ? undefined: statusFilter.value as TriggerLogStatus
  // 计算时间范围
  let createdAfter: string | undefined
@@ -70,7 +70,7 @@ async function fetchLogs {
  createdAfter = date.toISOString
  }
  const result = await listTriggerLogs({
- project_id: projectId,
+ space_id: spaceId,
  status,
  start_date: createdAfter,
  limit: 50,
@@ -94,12 +94,12 @@ const statusOptions: { value: string, label: string, color: string } = [
  { value: 'error', label: '错误', color: 'bg-red-500' },
  { value: 'duplicate', label: '重复', color: 'bg-amber-500' },
 ]
-// 获取项目名称
-function getProjectName(projectId: string | null) {
- if (!projectId)
+// 获取空间名称
+function getSpaceName(spaceId: string | null) {
+ if (!spaceId)
  return '-'
- const project = projectsStore.projectById(projectId)
- return project?.name || projectId.slice(0, 8)
+ const project = spacesStore.spaceById(spaceId)
+ return project?.name || spaceId.slice(0, 8)
 }
 // 删除确认状态
 const deleteDialogOpen = ref(false)
@@ -178,8 +178,8 @@ const columns: ColumnDef<TriggerLog> = [
  },
  {
  id: 'project',
- header: '项目',
- cell: ({ row }) => h('span', { class: 'text-sm' }, getProjectName(row.original.project_id)),
+ header: '空间',
+ cell: ({ row }) => h('span', { class: 'text-sm' }, getSpaceName(row.original.space_id)),
  enableSorting: false,
  },
  {
@@ -279,17 +279,17 @@ const columns: ColumnDef<TriggerLog> = [
  </SelectItem>
  </SelectContent>
  </Select>
- <!-- 项目过滤 -->
+ <!-- 空间过滤 -->
  <Select v-model="projectFilter">
  <SelectTrigger class="w-[160px]">
- <SelectValue placeholder="全部项目" />
+ <SelectValue placeholder="全部空间" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem value="__all__">
- 全部项目
+ 全部空间
  </SelectItem>
  <SelectItem
- v-for="project in projectsStore.projects":key="project.id":value="project.id"
+ v-for="project in spacesStore.spaces":key="project.id":value="project.id"
  >
  {{ project.name }}
  </SelectItem>

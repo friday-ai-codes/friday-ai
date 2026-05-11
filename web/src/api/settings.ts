@@ -26,6 +26,14 @@ export enum SettingKey {
  // Feishu IM Settings
  FEISHU_APP_ID = 'feishu_app_id',
  FEISHU_APP_SECRET = 'feishu_app_secret',
+ FEISHU_ENCRYPT_KEY = 'feishu_encrypt_key',
+ FEISHU_SIGNATURE_REQUIRED = 'feishu_signature_required',
+ // Infrastructure Settings
+ REDIS_URL = 'redis_url',
+ SUBAGENT_API_URL = 'subagent_api_url',
+ FRIDAY_BASE_URL = 'friday_base_url',
+ FRIDAY_FRONTEND_URL = 'friday_frontend_url',
+ CONTAINER_CALLBACK_TOKEN = 'container_callback_token',
 }
 // 设置值读取响应
 export interface SettingRead {

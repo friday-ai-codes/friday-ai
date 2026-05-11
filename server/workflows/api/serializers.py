@@ -257,7 +257,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
  """Serializer for Workflow with nested nodes and edges."""
  nodes = WorkflowNodeSerializer(many=True, read_only=True)
  edges = WorkflowEdgeSerializer(many=True, read_only=True)
- project_name = serializers.CharField(source="project.name", read_only=True)
+ space_name = serializers.CharField(source="project.name", read_only=True)
  created_by_name = serializers.CharField(
  source="created_by.username", read_only=True, allow_null=True
  )
@@ -271,7 +271,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
  "description",
  "icon",
  "project",
- "project_name",
+ "space_name",
  "created_by",
  "created_by_name",
  "trigger_type",
@@ -302,7 +302,7 @@ class WorkflowSerializer(serializers.ModelSerializer):
  return None
 class WorkflowListSerializer(serializers.ModelSerializer):
  """Lightweight serializer for workflow list."""
- project_name = serializers.CharField(source="project.name", read_only=True)
+ space_name = serializers.CharField(source="project.name", read_only=True)
  node_count = serializers.SerializerMethodField
  execution_count = serializers.SerializerMethodField
  last_execution = serializers.SerializerMethodField
@@ -316,7 +316,7 @@ class WorkflowListSerializer(serializers.ModelSerializer):
  "description",
  "icon",
  "project",
- "project_name",
+ "space_name",
  "trigger_type",
  "is_active",
  "is_template",
@@ -759,7 +759,7 @@ class ActionLogDetailSerializer(serializers.ModelSerializer):
 class AlertRuleSerializer(serializers.ModelSerializer):
  """告警规则序列化器。"""
  workflow_name = serializers.CharField(source="workflow.name", read_only=True)
- project_name = serializers.CharField(source="project.name", read_only=True)
+ space_name = serializers.CharField(source="project.name", read_only=True)
  condition_type_display = serializers.CharField(
  source="get_condition_type_display", read_only=True
  )
@@ -774,7 +774,7 @@ class AlertRuleSerializer(serializers.ModelSerializer):
  "workflow",
  "workflow_name",
  "project",
- "project_name",
+ "space_name",
  "name",
  "enabled",
  "condition_type",

@@ -139,7 +139,7 @@ def _load_project_credential_sync(project_id: int) -> tuple[str, str]:
  try:
  project = Project.objects.get(id=project_id)
  except Project.DoesNotExist:
- raise ChatServiceError(f"找不到项目: {project_id}")
+ raise ChatServiceError(f"找不到空间: {project_id}")
  # 优先走 project.default_provider_credential_id FK
  cred: Any = None
  fk_id = getattr(project, "default_provider_credential_id_id", None)
@@ -183,7 +183,7 @@ async def _aload_project_credential_async(project_id: int) -> tuple[str, str]:
  try:
  project = await Project.objects.aget(id=project_id)
  except Project.DoesNotExist:
- raise ChatServiceError(f"找不到项目: {project_id}")
+ raise ChatServiceError(f"找不到空间: {project_id}")
  cred: Any = None
  fk_id = getattr(project, "default_provider_credential_id_id", None)
  if fk_id:
@@ -258,7 +258,7 @@ def get_chat_service(
  final_base_url = base_url
  if source == "project":
  if not project_id:
- raise ChatServiceError("使用项目配置时必须提供 project_id")
+ raise ChatServiceError("使用空间配置时必须提供 space_id")
  proj_api_key, proj_base_url = _load_project_credential_sync(project_id)
  if not final_api_key and proj_api_key:
  final_api_key = proj_api_key
@@ -291,7 +291,7 @@ async def aget_chat_service(
  final_base_url = base_url
  if source == "project":
  if not project_id:
- raise ChatServiceError("使用项目配置时必须提供 project_id")
+ raise ChatServiceError("使用空间配置时必须提供 space_id")
  proj_api_key, proj_base_url = await _aload_project_credential_async(project_id)
  if not final_api_key and proj_api_key:
  final_api_key = proj_api_key

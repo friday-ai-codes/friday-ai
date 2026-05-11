@@ -29,7 +29,7 @@ def _make_config(**overrides: Any) -> Any:
  defaults = {
  "system_prompt": "test",
  "model": "sonnet",
- "project_id": "proj-123",
+ "space_id": "proj-123",
  "session_id": "sess-001",
  "api_key": "sk-test-key",
  }
@@ -52,7 +52,7 @@ async def test_runner_constructs_options -> None:
  assert runner._config.system_prompt == "测试 prompt"
  assert runner._config.model == "sonnet"
  assert runner._config.max_turns == 15
- assert runner._config.timeout_seconds == 300.0
+ assert runner._config.timeout_seconds == 600.0
  assert runner._config.permission_mode == "bypassPermissions"
 async def test_api_key_injection -> None:
  """API key 通过 SdkRunnerConfig.api_key 注入 ClaudeAgentOptions.env。"""

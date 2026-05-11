@@ -48,32 +48,32 @@ class TestCreateConversation:
  """创建对话成功，返回 201。"""
  response = api_client.post(
  "/api/chat/conversations/",
- {"project_id": str(test_project.id)},
+ {"space_id": str(test_project.id)},
  format="json",
  )
  assert response.status_code == status.HTTP_201_CREATED
- assert response.data["project_id"] == str(test_project.id)
+ assert response.data["space_id"] == str(test_project.id)
  assert response.data["title"] == "新对话"
  assert "id" in response.data
  def test_create_conversation_with_title(self, api_client, test_project):
  """创建对话时指定标题。"""
  response = api_client.post(
  "/api/chat/conversations/",
- {"project_id": str(test_project.id), "title": "我的对话"},
+ {"space_id": str(test_project.id), "title": "我的对话"},
  format="json",
  )
  assert response.status_code == status.HTTP_201_CREATED
  assert response.data["title"] == "我的对话"
  def test_create_conversation_invalid_project(self, api_client):
- """project_id 不存在时返回 400。"""
+ """space_id 不存在时返回 400。"""
  response = api_client.post(
  "/api/chat/conversations/",
- {"project_id": "00000000-0000-0000-0000-000000000000"},
+ {"space_id": "00000000-0000-0000-0000-000000000000"},
  format="json",
  )
  assert response.status_code == status.HTTP_400_BAD_REQUEST
  def test_create_conversation_missing_project_id(self, api_client):
- """缺少 project_id 时返回 400。"""
+ """缺少 space_id 时返回 400。"""
  response = api_client.post(
  "/api/chat/conversations/",
  {},

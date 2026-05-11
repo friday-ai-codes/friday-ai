@@ -87,7 +87,7 @@ async def resume_agent_session(session_id: str, user_response: str) -> dict[str,
  runner_config = SdkRunnerConfig(
  system_prompt=system_prompt,
  model=resolved_model,
- project_id=str(session.project_id) if session.project_id else "",
+ space_id=str(session.project_id) if session.project_id else "",
  session_id=session_id,
  api_key=resolve_result.api_key,
  max_turns=max_turns,

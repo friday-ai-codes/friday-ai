@@ -432,7 +432,13 @@ class TestPRPhase:
  """generate_pr_draft 调用 LLM 并持久化 suggested_pr_title/description 到 DB。"""
  settings_patch, anthropic_patch = _patch_llm_and_settings
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- settings_patch, anthropic_patch as mock_anthropic:
+ settings_patch, anthropic_patch as mock_anthropic, \
+ patch("services.provider_config.aget_legacy_anthropic_config", new_callable=AsyncMock, return_value={
+ "api_key": "sk-test",
+ "base_url": "",
+ "default_model": "claude-sonnet-4-20250514",
+ "small_model": "",
+ }):
  _setup_llm_mock(mock_anthropic, title="feat: awesome PR", description="Awesome changes")
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  _ = await _drive_to_phase2_complete(graph, graph_config)

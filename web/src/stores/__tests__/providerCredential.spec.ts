@@ -72,7 +72,7 @@ describe('useProviderCredentialStore', => {
  credentials: [makeCred({ id: 'hyd-1' })],
  providerTypes:,
  lastFetchedAt: 123,
- currentProjectId: null,
+ currentSpaceId: null,
  }
  sessionStorage.setItem('providerCredentialCache', JSON.stringify(snapshot))
  const store = useProviderCredentialStore

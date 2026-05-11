@@ -153,7 +153,7 @@ export const useExecutionsStore = defineStore('executions', => {
  5000,
  { immediate: false },
  )
- async function fetchExecutions(workflowId?: string, projectId?: string, createdAfter?: string, silent = false) {
+ async function fetchExecutions(workflowId?: string, spaceId?: string, createdAfter?: string, silent = false) {
  // silent 模式下不显示 loading 状态，避免页面抖动
  if (!silent) {
  loading.value = true
@@ -164,8 +164,8 @@ export const useExecutionsStore = defineStore('executions', => {
  const params: Record<string, string> = {}
  if (workflowId)
  params.workflow_id = workflowId
- if (projectId)
- params.project_id = projectId
+ if (spaceId)
+ params.space_id = spaceId
  if (createdAfter)
  params.created_after = createdAfter
  const data = await api.get<any>('/workflow-executions/', params)

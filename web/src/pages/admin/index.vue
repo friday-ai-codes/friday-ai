@@ -115,7 +115,7 @@ const settingsTabs = [
  Provider 凭证管理
  </h2>
  <p class="text-sm text-muted-foreground">
- 管理系统级 LLM Provider 凭证，供全部项目共享
+ 管理系统级 LLM Provider 凭证，供全部空间共享
  </p>
  </div>
  </div>

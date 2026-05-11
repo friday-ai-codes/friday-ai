@@ -12,7 +12,7 @@ import {
 } from '~/components/ui/popover'
 import { Separator } from '~/components/ui/separator'
 import { useConfigModel } from '~/composables/useConfigModel'
-import { useProjectsStore } from '~/stores/projects'
+import { useSpacesStore } from '~/stores/spaces'
 import {
  FEISHU_EVENT_TYPE_OPTIONS,
  feishuEventTriggerConfigSchema,
@@ -43,16 +43,16 @@ interface Props {
 // ============================================================================
 // Projects Store
 // ============================================================================
-const projectsStore = useProjectsStore
-const { projects, loading: projectsLoading } = storeToRefs(projectsStore)
+const spacesStore = useSpacesStore
+const { spaces, loading: spacesLoading } = storeToRefs(spacesStore)
 onMounted(async => {
- if (projects.value.length === 0) {
- await projectsStore.fetchProjects
+ if (spaces.value.length === 0) {
+ await spacesStore.fetchSpaces
  }
 })
-// 过滤有飞书配置的项目
+// 过滤有飞书配置的空间
 const feishuProjects = computed( => {
- return projects.value.filter(p => p.feishu_project_key || p.has_feishu_config)
+ return spaces.value.filter(p => p.feishu_project_key || p.has_feishu_config)
 })
 // ============================================================================
 // Config Model
@@ -66,7 +66,7 @@ const { field, arrayField } = useConfigModel({
 const eventType = field('event_type', '')
 // 工作项类型 - 必选（目前只支持需求）
 const workItemType = field('filter_work_item_type', 'story')
-// 项目来源 - 多选
+// 空间来源 - 多选
 const projectIds = arrayField('project_ids', )
 // 过滤条件
 const filterStatus = arrayField('filter_status', )
@@ -101,13 +101,13 @@ function getStatusLabel(value: string): string {
 const excludeProjectIds = arrayField('exclude_project_ids', )
 const excludeWorkItemPattern = field('exclude_work_item_pattern', '')
 // ============================================================================
-// 项目选择器
+// 空间选择器
 // ============================================================================
 const projectSearchQuery = ref('')
 const projectPopoverOpen = ref(false)
 const excludeProjectSearchQuery = ref('')
 const excludeProjectPopoverOpen = ref(false)
-// 过滤后的项目列表
+// 过滤后的空间列表
 const filteredProjects = computed( => {
  const query = projectSearchQuery.value.toLowerCase.trim
  if (!query)
@@ -126,18 +126,18 @@ const filteredExcludeProjects = computed( => {
  || p.feishu_project_key?.toLowerCase.includes(query),
  )
 })
-// 获取选中项目的信息
+// 获取选中空间的信息
 const selectedProjects = computed( => {
  const ids = projectIds.value.value as string ||
  return ids
- .map(id => projects.value.find(p => p.id === id))
- .filter(Boolean) as typeof projects.value
+ .map(id => feishuProjects.value.find(p => p.id === id))
+ .filter(Boolean) as typeof feishuProjects.value
 })
 const excludedProjects = computed( => {
  const ids = excludeProjectIds.value.value as string ||
  return ids
- .map(id => projects.value.find(p => p.id === id))
- .filter(Boolean) as typeof projects.value
+ .map(id => feishuProjects.value.find(p => p.id === id))
+ .filter(Boolean) as typeof feishuProjects.value
 })
 function toggleProject(projectId: string) {
  const isSelected = projectIds.includes(projectId)
@@ -340,19 +340,19 @@ const regexValidation = computed( => {
  </Popover>
  </div>
  <Separator class="bg-border/50" />
- <!-- 项目监听与排除 -->
+ <!-- 空间监听与排除 -->
  <div class="space-y-4">
- <!-- 监听项目 -->
+ <!-- 监听空间 -->
  <div class="space-y-2">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--folder] text-primary" />
- <Label class="text-sm font-medium">监听项目</Label>
+ <Label class="text-sm font-medium">监听空间</Label>
  <Badge variant="outline" class="text-xs">
  可选
  </Badge>
  </div>
  <p class="text-xs text-muted-foreground">
- 留空则监听所有已配置飞书的项目
+ 留空则监听所有已配置飞书的空间
  </p>
  <Popover v-model:open="projectPopoverOpen">
  <PopoverTrigger as-child>
@@ -361,7 +361,7 @@ const regexValidation = computed( => {
  class="w-full min-h-[38px] px-3 py-2 rounded-xl border border-border/50 bg-background/50 text-left text-sm flex items-center gap-2 flex-wrap hover:border-primary/50 transition-colors"
  >
  <template v-if="selectedProjects.length === 0">
- <span class="text-muted-foreground">点击选择项目...</span>
+ <span class="text-muted-foreground">点击选择空间...</span>
  </template>
  <template v-else>
  <!-- 显示前2个标签 -->
@@ -391,18 +391,18 @@ const regexValidation = computed( => {
  <div class="space-y-2">
  <Input
  v-model="projectSearchQuery"
- placeholder="搜索项目名称或 Key..."
+ placeholder="搜索空间名称或 Key..."
  class=" text-sm"
  />
  <div class="max- overflow-y-auto space-y-0.5">
- <template v-if="projectsLoading">
+ <template v-if="spacesLoading">
  <div class=" text-sm text-muted-foreground text-center">
  加载中...
  </div>
  </template>
  <template v-else-if="filteredProjects.length === 0">
  <div class=" text-sm text-muted-foreground text-center">
- {{ projectSearchQuery ? '未找到匹配项目': '暂无配置飞书的项目' }}
+ {{ projectSearchQuery ? '未找到匹配空间': '暂无配置飞书的空间' }}
  </div>
  </template>
  <template v-else>
@@ -428,11 +428,11 @@ const regexValidation = computed( => {
  </PopoverContent>
  </Popover>
  </div>
- <!-- 排除项目 -->
+ <!-- 排除空间 -->
  <div class="space-y-2">
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--folder-minus] text-red-500" />
- <Label class="text-sm font-medium">排除项目</Label>
+ <Label class="text-sm font-medium">排除空间</Label>
  <Badge variant="outline" class="text-xs">
  可选
  </Badge>
@@ -444,7 +444,7 @@ const regexValidation = computed( => {
  class="w-full min-h-[38px] px-3 py-2 rounded-xl border border-border/50 bg-background/50 text-left text-sm flex items-center gap-2 flex-wrap hover:border-red-500/50 transition-colors"
  >
  <template v-if="excludedProjects.length === 0">
- <span class="text-muted-foreground">点击选择要排除的项目...</span>
+ <span class="text-muted-foreground">点击选择要排除的空间...</span>
  </template>
  <template v-else>
  <Badge
@@ -472,13 +472,13 @@ const regexValidation = computed( => {
  <div class="space-y-2">
  <Input
  v-model="excludeProjectSearchQuery"
- placeholder="搜索项目名称或 Key..."
+ placeholder="搜索空间名称或 Key..."
  class=" text-sm"
  />
  <div class="max- overflow-y-auto space-y-0.5">
  <template v-if="filteredExcludeProjects.length === 0">
  <div class=" text-sm text-muted-foreground text-center">
- {{ excludeProjectSearchQuery ? '未找到匹配项目': '暂无可排除的项目' }}
+ {{ excludeProjectSearchQuery ? '未找到匹配空间': '暂无可排除的空间' }}
  </div>
  </template>
  <template v-else>

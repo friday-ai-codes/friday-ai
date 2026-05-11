@@ -4,6 +4,8 @@ export interface NavSection {
  id: string
  label: string
  icon?: string
+ badge?: string | number
+ badgeTone?: 'primary' | 'success' | 'warning' | 'danger' | 'muted'
 }
 const props = defineProps<{
  sections: NavSection
@@ -40,20 +42,46 @@ function scrollTo(id: string) {
  const top = el.getBoundingClientRect.top + window.scrollY - offset
  window.scrollTo({ top, behavior: 'smooth' })
 }
+function badgeClass(section: NavSection, isActive: boolean) {
+ if (isActive) {
+ return 'bg-primary/15 text-primary'
+ }
+ const tone = section.badgeTone ?? 'muted'
+ const map: Record<string, string> = {
+ primary: 'bg-primary/10 text-primary',
+ success: 'bg-emerald-500/10 text-emerald-600',
+ warning: 'bg-amber-500/10 text-amber-600',
+ danger: 'bg-destructive/10 text-destructive',
+ muted: 'bg-muted text-muted-foreground',
+ }
+ return map[tone]
+}
 </script>
 <template>
  <div class="flex gap-8">
  <!-- 左侧导航 -->
- <aside class="hidden md:block w-44 shrink-0">
+ <aside class="hidden md:block w-48 shrink-0">
  <nav class="sticky top-22 space-y-0.5">
  <button
  v-for="section in sections":key="section.id"
- class="w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors":class="activeSection === section.id
- ? 'bg-primary/10 text-primary font-medium': 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
+ class="group relative w-full text-left pl-4 pr-2.5 py-2 rounded-md text-sm transition-colors flex items-center gap-2":class="activeSection === section.id
+ ? 'bg-primary/8 text-primary font-medium': 'text-muted-foreground hover:text-foreground hover:bg-muted/40'"
  @click="scrollTo(section.id)"
  >
- <span v-if="section.icon" class="mr-2":class="section.icon" />
- {{ section.label }}
+ <span
+ v-if="activeSection === section.id"
+ class="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 rounded-r-full bg-primary"
+ />
+ <span
+ v-if="section.icon":class="[section.icon, activeSection === section.id ? 'opacity-100': 'opacity-70 group-hover:opacity-100']"
+ />
+ <span class="flex-1 truncate">{{ section.label }}</span>
+ <span
+ v-if="section.badge !== undefined && section.badge !== null && section.badge !== ''"
+ class="ml-auto inline-flex items-center justify-center min-w-[1.25rem] px-1.5 rounded-full text-[11px] font-medium leading-none transition-colors":class="badgeClass(section, activeSection === section.id)"
+ >
+ {{ section.badge }}
+ </span>
  </button>
  </nav>
  </aside>

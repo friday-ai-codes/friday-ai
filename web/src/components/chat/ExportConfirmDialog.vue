@@ -61,7 +61,7 @@ async function handleExport {
  exporting.value = false
  }
 }
-const projectId = computed( => chatStore.selectedProjectId)
+const spaceId = computed( => chatStore.selectedSpaceId)
 </script>
 <template>
  <Dialog:open="open" @update:open="emit('update:open', $event)">
@@ -90,11 +90,11 @@ const projectId = computed( => chatStore.selectedProjectId)
  <p class="text-sm text-foreground">
  尚未配置导出目标文件夹
  </p>
- <RouterLink:to="`/projects/${projectId}/feishu`"
+ <RouterLink:to="`/spaces/${spaceId}/feishu`"
  class="text-sm text-primary hover:underline"
  @click="emit('update:open', false)"
  >
- 前往项目设置
+ 前往空间设置
  </RouterLink>
  </div>
  </div>

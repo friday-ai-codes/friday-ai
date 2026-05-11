@@ -45,7 +45,7 @@ async def build_sdk_config(
  project_id = str(conversation.project_id)
  effective_project_context_line = project_context_line
  if effective_project_context_line is None:
- effective_project_context_line = f"当前项目：{project_name}"
+ effective_project_context_line = f"当前空间：{project_name}"
  agent_session = await AgentSession.objects.acreate(
  session_id=session_id,
  project=conversation.project,

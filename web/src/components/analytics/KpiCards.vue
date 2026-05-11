@@ -227,7 +227,7 @@ const totalSummary = computed( => {
  </div>
  </div>
  </div>
- <!-- 按项目：暂用汇总 fallback（后续 Plan 可扩展 project-level cards） -->
+ <!-- 按空间：暂用汇总 fallback（后续 Plan 可扩展 space-level cards） -->
  <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
  <div
  v-for="kpi in flatKpis":key="kpi.label"
@@ -243,7 +243,7 @@ const totalSummary = computed( => {
  </div>
  <div class="flex-1 min-w-0">
  <p class="text-sm text-muted-foreground">
- {{ kpi.label }}（按项目）
+ {{ kpi.label }}（按空间）
  </p>
  <template v-if="!isLoading">
  <p class="text-2xl font-bold font-mono">

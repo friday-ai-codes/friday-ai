@@ -3,7 +3,7 @@
  *
  * 覆盖 按角色分流 CTA：
  * A: system_admin → 主按钮 "去系统设置"（primary）
- * B: member → 主按钮 "去项目设置"（primary） + 次按钮 "去系统设置" disabled + tooltip
+ * B: member → 主按钮 "去空间设置"（primary） + 次按钮 "去系统设置" disabled + tooltip
  * C: viewer → 同 B
  * D: 主 RouterLink `to` 指向正确路径（system_admin → /admin/providers；其他 → /projects/{id}/settings#providers）
  *
@@ -23,12 +23,12 @@ function makeProps(overrides: Record<string, unknown> = {}) {
  return {
  missingProvider: 'anthropic' as const,
  userRole: 'system_admin' as const,
- projectId: 'proj-abc-123',
+ spaceId: 'proj-abc-123',
  ...overrides,
  }
 }
 describe('providerCredentialMissingCard', => {
- it('A: system_admin 角色渲染 "去系统设置" primary + "去项目设置" secondary（均可点击）', => {
+ it('A: system_admin 角色渲染 "去系统设置" primary + "去空间设置" secondary（均可点击）', => {
  const wrapper = mount(ProviderCredentialMissingCard, {
  props: makeProps({ userRole: 'system_admin' }),
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -37,7 +37,7 @@ describe('providerCredentialMissingCard', => {
  expect(text).toContain('未配置')
  expect(text).toContain('Anthropic')
  expect(text).toContain('去系统设置')
- expect(text).toContain('去项目设置')
+ expect(text).toContain('去空间设置')
  // 两个 RouterLink：主按钮指向 /admin/providers，次按钮指向 /projects/.../settings#providers
  const links = wrapper.findAll('a[data-to]')
  expect(links.length).toBeGreaterThanOrEqual(2)
@@ -48,13 +48,13 @@ describe('providerCredentialMissingCard', => {
  const disabledButtons = wrapper.findAll('button[disabled]')
  expect(disabledButtons.length).toBe(0)
  })
- it('B: member 角色主按钮为 "去项目设置" + 次按钮 "去系统设置" disabled + tooltip 文案', => {
+ it('B: member 角色主按钮为 "去空间设置" + 次按钮 "去系统设置" disabled + tooltip 文案', => {
  const wrapper = mount(ProviderCredentialMissingCard, {
  props: makeProps({ userRole: 'member' }),
  global: { stubs: { RouterLink: RouterLinkStub } },
  })
  const text = wrapper.text
- expect(text).toContain('去项目设置')
+ expect(text).toContain('去空间设置')
  expect(text).toContain('去系统设置')
  // Tooltip 文案以 title / aria-label 属性承载（Tooltip 默认 closed 态不挂 DOM）
  const html = wrapper.html
@@ -78,7 +78,7 @@ describe('providerCredentialMissingCard', => {
  global: { stubs: { RouterLink: RouterLinkStub } },
  })
  const text = wrapper.text
- expect(text).toContain('去项目设置')
+ expect(text).toContain('去空间设置')
  expect(text).toContain('去系统设置')
  const links = wrapper.findAll('a[data-to]')
  const tos = links.map(a => a.attributes('data-to'))

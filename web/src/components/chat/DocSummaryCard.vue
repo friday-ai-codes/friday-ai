@@ -83,7 +83,7 @@ const showAuthGuide = ref(false)
  <span class="text-sm font-medium">飞书应用未配置</span>
  </div>
  <div class="px-4 pb-3 text-xs text-muted-foreground">
- 当前项目尚未配置飞书应用凭证，请在项目设置中添加飞书 App ID 和 App Secret。
+ 当前空间尚未配置飞书应用凭证，请在空间设置中添加飞书 App ID 和 App Secret。
  </div>
  </div>
  <!-- 其他错误 -->

@@ -11,7 +11,7 @@ import JsonHighlighter from './JsonHighlighter.vue'
 import KeyFieldsCard from './KeyFieldsCard.vue'
 defineProps<{
  log: TriggerLogDetail
- getProjectName?: (projectId: string | null) => string
+ getSpaceName?: (spaceId: string | null) => string
 }>
 // 折叠状态
 const webhookExpanded = ref(false)
@@ -67,10 +67,10 @@ function formatDate(dateStr: string) {
  </div>
  <div>
  <dt class="text-sm font-medium text-muted-foreground">
- 项目
+ 空间
  </dt>
  <dd class="mt-1">
- {{ getProjectName?.(log.project_id) || log.project_id || '-' }}
+ {{ getSpaceName?.(log.space_id) || log.space_id || '-' }}
  </dd>
  </div>
  <div>

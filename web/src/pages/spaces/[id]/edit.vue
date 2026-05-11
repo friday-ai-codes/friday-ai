@@ -5,14 +5,14 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Textarea } from '~/components/ui/textarea'
 import { useErrorHandler } from '~/composables/useErrorHandler'
-const route = useRoute('/projects/[id]/edit')
+const route = useRoute('/spaces/[id]/edit')
 const router = useRouter
-const projectsStore = useProjectsStore
+const spacesStore = useSpacesStore
 const { handleError } = useErrorHandler
 const { success } = useToast
-const projectId = route.params.id
+const spaceId = route.params.id
 useHead({
- title: '编辑项目 - Friday AI',
+ title: '编辑空间 - Friday AI',
 })
 // 表单数据
 const form = reactive({
@@ -20,20 +20,20 @@ const form = reactive({
  description: '',
  feishu_project_key: '',
 })
-// 加载项目数据
+// 加载空间数据
 const loading = ref(true)
 onMounted(async => {
  try {
- const project = await projectsStore.fetchProject(projectId)
- if (project) {
- form.name = project.name
- form.description = project.description || ''
- form.feishu_project_key = project.feishu_project_key || ''
+ const spaceData = await spacesStore.fetchSpace(spaceId)
+ if (spaceData) {
+ form.name = spaceData.name
+ form.description = spaceData.description || ''
+ form.feishu_project_key = spaceData.feishu_project_key || ''
  }
  }
  catch (e: unknown) {
- handleError(e, '加载项目')
- router.push('/projects')
+ handleError(e, '加载空间')
+ router.push('/spaces')
  }
  finally {
  loading.value = false
@@ -46,7 +46,7 @@ const errors = reactive({
 function validate: boolean {
  errors.name = ''
  if (!form.name.trim) {
- errors.name = '请输入项目名称'
+ errors.name = '请输入空间名称'
  }
  return !errors.name
 }
@@ -57,16 +57,16 @@ async function handleSubmit {
  return
  submitting.value = true
  try {
- await projectsStore.updateProject(projectId, {
+ await spacesStore.updateSpace(spaceId, {
  name: form.name,
  description: form.description || undefined,
  feishu_project_key: form.feishu_project_key || null,
  })
- success('更新成功', '项目信息已更新')
- router.push(`/projects/${projectId}`)
+ success('更新成功', '空间信息已更新')
+ router.push(`/spaces/${spaceId}`)
  }
  catch (e: unknown) {
- handleError(e, '更新项目')
+ handleError(e, '更新空间')
  }
  finally {
  submitting.value = false
@@ -76,12 +76,12 @@ async function handleSubmit {
 <template>
  <div class="max-w-2xl mx-auto space-y-8">
  <!-- 返回按钮 -->
- <RouterLink:to="`/projects/${projectId}`" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
+ <RouterLink:to="`/spaces/${spaceId}`" class="group inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors">
  <span class="icon-[lucide--arrow-left] mr-2 group-hover:-translate-x-1 transition-transform" />
- 返回项目详情
+ 返回空间详情
  </RouterLink>
  <!-- 加载状态 -->
- <LoadingState v-if="loading" variant="spinner" text="加载项目信息..." />
+ <LoadingState v-if="loading" variant="spinner" text="加载空间信息..." />
  <!-- 表单卡片 -->
  <div v-else class="relative">
  <!-- 卡片光晕 -->
@@ -95,26 +95,26 @@ async function handleSubmit {
  </div>
  <div>
  <h1 class="text-xl font-bold">
- 编辑项目
+ 编辑空间
  </h1>
  <p class="text-sm text-muted-foreground">
- 修改项目基本信息
+ 修改空间基本信息
  </p>
  </div>
  </div>
  </div>
  <!-- 表单内容 -->
  <form class=" space-y-6" @submit.prevent="handleSubmit">
- <!-- 项目名称 -->
+ <!-- 空间名称 -->
  <div class="space-y-2">
  <Label for="name" class="flex items-center gap-1">
- 项目名称
+ 空间名称
  <span class="text-destructive">*</span>
  </Label>
  <Input
  id="name"
  v-model="form.name"
- placeholder="例如：智课项目"
+ placeholder="例如：智课空间"
  class=" bg-muted/30 border-border/50 focus:border-primary/50":class="{ 'border-destructive': errors.name }"
  />
  <p v-if="errors.name" class="text-sm text-destructive flex items-center gap-1">
@@ -122,13 +122,13 @@ async function handleSubmit {
  {{ errors.name }}
  </p>
  </div>
- <!-- 项目描述 -->
+ <!-- 空间描述 -->
  <div class="space-y-2">
- <Label for="description">项目描述</Label>
+ <Label for="description">空间描述</Label>
  <Textarea
  id="description"
  v-model="form.description"
- placeholder="项目的简要描述..."
+ placeholder="空间的简要描述..."
  rows="3"
  class="bg-muted/30 border-border/50 focus:border-primary/50 resize-none"
  />
@@ -165,7 +165,7 @@ async function handleSubmit {
  保存更改
  </template>
  </Button>
- <RouterLink:to="`/projects/${projectId}`">
+ <RouterLink:to="`/spaces/${spaceId}`">
  <Button type="button" variant="outline">
  取消
  </Button>

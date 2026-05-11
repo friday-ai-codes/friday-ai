@@ -36,7 +36,7 @@ class FetchGroupChatNode(BaseNode):
  },
  "project_key": {
  "type": "string",
- "title": "项目 Key",
+ "title": "空间 Key",
  "description": "飞书项目空间 Key（自动获取时需要）",
  "default": "",
  },

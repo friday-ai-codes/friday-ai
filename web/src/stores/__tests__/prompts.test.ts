@@ -72,16 +72,16 @@ describe('usePromptsStore — actions', => {
  await store.loadSystemList('chat_agent')
  expect(listMock).toHaveBeenCalledWith({ scope: 'system', category: 'chat_agent' })
  })
- it('测试 3: loadProjectList 并发 fetch 系统级 + 项目级', async => {
+ it('测试 3: loadSpaceList 并发 fetch 系统级 + 空间级', async => {
  const sys = [makeListItem({ slug: 's.a' })]
  const proj = [makeListItem({ slug: 's.b', scope: 'project', project: 'proj-1' })]
  listMock.mockResolvedValueOnce(sys).mockResolvedValueOnce(proj)
  const store = usePromptsStore
- await store.loadProjectList('proj-1')
+ await store.loadSpaceList('proj-1')
  expect(listMock).toHaveBeenNthCalledWith(1, { scope: 'system' })
  expect(listMock).toHaveBeenNthCalledWith(2, { scope: 'project', project_id: 'proj-1' })
  expect(store.systemList).toEqual(sys)
- expect(store.projectList).toEqual(proj)
+ expect(store.spaceList).toEqual(proj)
  })
  it('测试 4: loadDetail 写入 currentPrompt', async => {
  const detail = { id: 'abc', slug: 's.a' } as PromptDetail
@@ -108,7 +108,7 @@ describe('usePromptsStore — actions', => {
  expect(store.loading).toBe(false)
  })
 })
-describe('usePromptsStore — mergedProjectList', => {
+describe('usePromptsStore — mergedSpaceList', => {
  it('测试 7: 三态合并 overridden/fallback/project_only', => {
  const store = usePromptsStore
  store.systemList = [
@@ -116,20 +116,20 @@ describe('usePromptsStore — mergedProjectList', => {
  makeListItem({ id: 'sys-B', slug: 'slug.b' }),
  makeListItem({ id: 'sys-C', slug: 'slug.c' }),
  ]
- store.projectList = [
+ store.spaceList = [
  makeListItem({ id: 'proj-B', slug: 'slug.b', scope: 'project', project: 'p1' }),
  makeListItem({ id: 'proj-D', slug: 'slug.d', scope: 'project', project: 'p1' }),
  ]
- const merged = store.mergedProjectList
+ const merged = store.mergedSpaceList
  // 应有 4 条（A fallback, B overridden, C fallback, D project_only）
  expect(merged).toHaveLength(4)
- const bySlug = new Map(merged.map(m => [m.slug, m]))
+ const bySlug = new Map(merged.map((m): [string, typeof m] => [m.slug, m]))
  expect(bySlug.get('slug.a')?.status).toBe('fallback')
  expect(bySlug.get('slug.b')?.status).toBe('overridden')
  expect(bySlug.get('slug.c')?.status).toBe('fallback')
  expect(bySlug.get('slug.d')?.status).toBe('project_only')
  })
- it('测试 8: overridden 项保留 project_prompt 字段指向项目级副本', => {
+ it('测试 8: overridden 项保留 space_prompt 字段指向空间级副本', => {
  const store = usePromptsStore
  const sysB = makeListItem({ id: 'sys-B', slug: 'slug.b' })
  const projB = makeListItem({
@@ -137,19 +137,19 @@ describe('usePromptsStore — mergedProjectList', => {
  slug: 'slug.b',
  scope: 'project',
  project: 'p1',
- title: '项目级覆盖',
+ title: '空间级覆盖',
  })
  store.systemList = [sysB]
- store.projectList = [projB]
- const merged = store.mergedProjectList
+ store.spaceList = [projB]
+ const merged = store.mergedSpaceList
  expect(merged).toHaveLength(1)
  expect(merged[0].status).toBe('overridden')
- expect(merged[0].project_prompt?.id).toBe('proj-B')
- expect(merged[0].project_prompt?.title).toBe('项目级覆盖')
- // fallback 态下 project_prompt 应为 null
- store.projectList =
- const merged2 = store.mergedProjectList
+ expect(merged[0].space_prompt?.id).toBe('proj-B')
+ expect(merged[0].space_prompt?.title).toBe('空间级覆盖')
+ // fallback 态下 space_prompt 应为 null
+ store.spaceList =
+ const merged2 = store.mergedSpaceList
  expect(merged2[0].status).toBe('fallback')
- expect(merged2[0].project_prompt).toBeNull
+ expect(merged2[0].space_prompt).toBeNull
  })
 })

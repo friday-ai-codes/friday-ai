@@ -60,7 +60,7 @@ const PROVIDER_LABEL: Record<ProviderType, string> = {
 const SOURCE_LABEL: Record<SourceLayer, string> = {
  node: '节点配置',
  conversation: '对话固定',
- project: '项目覆盖',
+ project: '空间覆盖',
  system: '系统默认',
 }
 const providerLabel = computed( => {
@@ -79,7 +79,7 @@ const replayEnabled = computed( => props.snapshot !== null && props.canReplay)
 const replayTooltipText = computed( => {
  if (props.snapshot === null)
  return '历史 Execution 未记录快照，无法稳定 Replay'
- return '使用快照的 Provider / 模型重放此节点（不受当前项目默认修改影响）'
+ return '使用快照的 Provider / 模型重放此节点（不受当前空间默认修改影响）'
 })
 function toggle {
  expanded.value = !expanded.value
@@ -122,7 +122,7 @@ function onReplay {
  未快照
  </Badge>
  <p class="text-sm text-muted-foreground flex-1">
- 本节点未记录 Provider 快照，Replay 将实时解析当前项目默认 Provider，结果可能与历史执行不同
+ 本节点未记录 Provider 快照，Replay 将实时解析当前空间默认 Provider，结果可能与历史执行不同
  </p>
  </div>
  <!-- 展开态详情（仅字段 dl 受折叠控制；Replay 按钮永远可见以保持 A11y + 降级提示） -->

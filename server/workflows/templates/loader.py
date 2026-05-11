@@ -72,7 +72,7 @@ def _rewrite_template_refs(config: dict, id_map: dict[str, str]) -> dict:
  return value
  return _rewrite_value(config)
 def create_workflow_from_template(
- project_id: str,
+ space_id: str,
  template_id: str,
  name: str | None = None,
  description: str | None = None,
@@ -80,7 +80,7 @@ def create_workflow_from_template(
 ) -> Any:
  """Create a Workflow instance from a template.
  Args:
- project_id: The project to create the workflow in
+ space_id: The space to create the workflow in
  template_id: The template to use
  name: Optional custom name (defaults to template name)
  description: Optional custom description
@@ -94,7 +94,7 @@ def create_workflow_from_template(
  workflow = Workflow.objects.create(
  name=name or template.get("name", template_id),
  description=description or template.get("description", ""),
- project_id=project_id,
+ project_id=space_id,
  created_by=created_by,
  trigger_type="manual",
  metadata={
@@ -154,7 +154,7 @@ def create_workflow_from_template(
  )
  return workflow
 async def acreate_workflow_from_template(
- project_id: str,
+ space_id: str,
  template_id: str,
  name: str | None = None,
  description: str | None = None,
@@ -169,7 +169,7 @@ async def acreate_workflow_from_template(
  workflow = await Workflow.objects.acreate(
  name=name or template.get("name", template_id),
  description=description or template.get("description", ""),
- project_id=project_id,
+ project_id=space_id,
  created_by=created_by,
  trigger_type="manual",
  metadata={

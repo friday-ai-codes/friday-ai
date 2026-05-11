@@ -1,4 +1,4 @@
-"""Projects app views."""
+"""Spaces app views."""
 from __future__ import annotations
 import structlog
 from adrf.views import APIView
@@ -25,22 +25,22 @@ from .serializers import (
  FeishuIMConfigSerializer,
  FeishuIMTestSerializer,
  GitCredentialSerializer,
- ProjectCreateSerializer,
- ProjectRepositoryCreateSerializer,
- ProjectRepositorySerializer,
- ProjectRepositoryUpdateSerializer,
- ProjectSerializer,
- ProjectUpdateSerializer,
+ SpaceCreateSerializer,
+ SpaceRepositoryCreateSerializer,
+ SpaceRepositorySerializer,
+ SpaceRepositoryUpdateSerializer,
+ SpaceSerializer,
+ SpaceUpdateSerializer,
  RepositoryCreateSerializer,
  RepositorySerializer,
- RepositoryWithProjectsSerializer,
+ RepositoryWithSpacesSerializer,
  WebhookTokenSerializer,
  WebhookTokenUpdateSerializer,
 )
 logger = structlog.get_logger(__name__)
 from django.db.models import Prefetch, Count, Count
-class ProjectViewSet(ModelViewSet):
- """ViewSet for Project CRUD operations."""
+class SpaceViewSet(ModelViewSet):
+ """ViewSet for Space CRUD operations."""
  queryset = Project.objects.prefetch_related(
  Prefetch(
  "repositories",
@@ -49,9 +49,9 @@ class ProjectViewSet(ModelViewSet):
  ).annotate(
  execution_count=Count("workflow_executions", distinct=True)
  ).all
- serializer_class = ProjectSerializer
+ serializer_class = SpaceSerializer
  def get_queryset(self):
- """按用户 membership 过滤项目列表。superuser 看所有。"""
+ """按用户 membership 过滤空间列表。superuser 看所有。"""
  qs = super.get_queryset
  user = self.request.user
  if not user.is_authenticated:
@@ -63,38 +63,38 @@ class ProjectViewSet(ModelViewSet):
  return qs.filter(memberships__user=user).distinct
  def get_serializer_class(self):
  if self.action == "create":
- return ProjectCreateSerializer
+ return SpaceCreateSerializer
  if self.action in ["update", "partial_update"]:
- return ProjectUpdateSerializer
- return ProjectSerializer
+ return SpaceUpdateSerializer
+ return SpaceSerializer
  async def acreate(self, request, *args, **kwargs):
  serializer = self.get_serializer(data=request.data)
- # KEEP: ProjectCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
+ # KEEP: SpaceCreateSerializer 含 UniqueValidator (feishu_project_key unique=True)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  project = await Project.objects.acreate(**serializer.validated_data)
- # 创建项目后自动为创建者添加 admin membership
+ # 创建空间后自动为创建者添加 admin membership
  await ProjectMembership.objects.acreate(
  user=request.user,
  project=project,
  role=ProjectRole.ADMIN,
  )
- # KEEP: ProjectSerializer.get_repositories 触发 repositories.filter DB 查询
- data = await sync_to_async(lambda: ProjectSerializer(project).data)
+ # KEEP: SpaceSerializer.get_repositories 触发 repositories.filter DB 查询
+ data = await sync_to_async(lambda: SpaceSerializer(project).data)
  return Response(data, status=status.HTTP_201_CREATED)
  async def perform_aupdate(self, serializer):
- # KEEP: ProjectSerializer 继承自 rest_framework.serializers，不支持 asave
+ # KEEP: SpaceSerializer 继承自 rest_framework.serializers，不支持 asave
  await sync_to_async(serializer.save)
  # === Repository association ===
  @action(detail=True, methods=["get"], url_path="repositories")
  async def list_repositories(self, request, pk=None):
- """List repositories associated with the project."""
+ """List repositories associated with the space."""
  project = await self.aget_object
  repositories = project.repositories.filter(is_deleted=False).select_related("credential")
  serializer = RepositorySerializer([r async for r in repositories], many=True)
  return Response(serializer.data)
  @action(detail=True, methods=["post"], url_path=r"repositories/(?P<repository_id>[^/.]+)")
  async def link_repository(self, request, pk=None, repository_id=None):
- """Link a repository to the project."""
+ """Link a repository to the space."""
  project = await self.aget_object
  repository = await aget_object_or_404(Repository, id=repository_id, is_deleted=False)
  _, created = await ProjectRepository.objects.aget_or_create(
@@ -106,7 +106,7 @@ class ProjectViewSet(ModelViewSet):
  return Response({"message": "Linked successfully"}, status=status.HTTP_201_CREATED)
  @link_repository.mapping.delete
  async def unlink_repository(self, request, pk=None, repository_id=None):
- """Unlink a repository from the project."""
+ """Unlink a repository from the space."""
  project = await self.aget_object
  link = await aget_object_or_404(
  ProjectRepository,
@@ -126,7 +126,7 @@ class ProjectViewSet(ModelViewSet):
  request.user, project, ProjectRole.ADMIN
  ):
  return Response(
- {"detail": "仅项目管理员可修改配置"},
+ {"detail": "仅空间管理员可修改配置"},
  status=status.HTTP_403_FORBIDDEN,
  )
  if request.method == "GET":
@@ -219,7 +219,7 @@ class ProjectViewSet(ModelViewSet):
  request.user, project, ProjectRole.ADMIN
  ):
  return Response(
- {"detail": "仅项目管理员可刷新 webhook token"},
+ {"detail": "仅空间管理员可刷新 webhook token"},
  status=status.HTTP_403_FORBIDDEN,
  )
  project.feishu_webhook_token = generate_webhook_token
@@ -236,7 +236,7 @@ class ProjectViewSet(ModelViewSet):
  request.user, project, ProjectRole.ADMIN
  ):
  return Response(
- {"detail": "仅项目管理员可修改 webhook token"},
+ {"detail": "仅空间管理员可修改 webhook token"},
  status=status.HTTP_403_FORBIDDEN,
  )
  serializer = WebhookTokenUpdateSerializer(data=request.data)
@@ -259,7 +259,7 @@ class ProjectViewSet(ModelViewSet):
  )
  # Phase Plan：claude_config @action 整体硬删。
  # 替代：Phase ProviderCredential viewset（/api/system/provider-credentials/）
- # 及项目级 scope 凭证 API。调用 /api/projects/<id>/claude-config/ 应返回 404。
+ # 及空间级 scope 凭证 API。调用 /api/spaces/<id>/claude-config/ 应返回 404。
  # === Feishu IM App configuration ===
  @action(detail=True, methods=["get", "put", "delete"], url_path="feishu-im-config")
  async def feishu_im_config(self, request, pk=None):
@@ -271,7 +271,7 @@ class ProjectViewSet(ModelViewSet):
  request.user, project, ProjectRole.ADMIN
  ):
  return Response(
- {"detail": "仅项目管理员可修改配置"},
+ {"detail": "仅空间管理员可修改配置"},
  status=status.HTTP_403_FORBIDDEN,
  )
  if request.method == "GET":
@@ -348,7 +348,7 @@ class ProjectViewSet(ModelViewSet):
  request.user, project, ProjectRole.ADMIN
  ):
  return Response(
- {"detail": "仅项目管理员可修改配置"},
+ {"detail": "仅空间管理员可修改配置"},
  status=status.HTTP_403_FORBIDDEN,
  )
  if request.method == "GET":
@@ -379,7 +379,7 @@ class RepositoryViewSet(ModelViewSet):
  if self.action == "create":
  return RepositoryCreateSerializer
  if self.action == "retrieve":
- return RepositoryWithProjectsSerializer
+ return RepositoryWithSpacesSerializer
  return RepositorySerializer
  async def acreate(self, request, *args, **kwargs):
  serializer = RepositoryCreateSerializer(data=request.data)
@@ -459,14 +459,14 @@ class SetAccessTokenView(APIView):
  return Response(
  GitCredentialSerializer(credential).data, status=status.HTTP_201_CREATED
  )
-class ProjectRepositoryListCreateView(APIView):
- """项目仓库关联：列表（GET）和批量关联（POST）。
- GET /api/projects/{project_id}/repositories/ — viewer+ 可查看
- POST /api/projects/{project_id}/repositories/ — admin+ 可创建
+class SpaceRepositoryListCreateView(APIView):
+ """空间仓库关联：列表（GET）和批量关联（POST）。
+ GET /api/spaces/{space_id}/repositories/ — viewer+ 可查看
+ POST /api/spaces/{space_id}/repositories/ — admin+ 可创建
  """
- async def get(self, request: object, project_id: str) -> Response:
- """返回项目关联的仓库列表。"""
- project = await aget_object_or_404(Project, id=project_id)
+ async def get(self, request: object, space_id: str) -> Response:
+ """返回空间关联的仓库列表。"""
+ project = await aget_object_or_404(Project, id=space_id)
  # 权限：viewer+ 可查看
  has_access = await sync_to_async(PermissionService.has_project_access)(
  request.user,
@@ -475,19 +475,19 @@ class ProjectRepositoryListCreateView(APIView):
  )
  if not has_access:
  return Response(
- {"detail": "无权访问此项目"},
+ {"detail": "无权访问此空间"},
  status=status.HTTP_403_FORBIDDEN,
  )
  links = ProjectRepository.objects.filter(
  project=project,
  ).select_related("repository")
  data = await sync_to_async(
- lambda: ProjectRepositorySerializer([link for link in links], many=True).data
+ lambda: SpaceRepositorySerializer([link for link in links], many=True).data
  )
  return Response(data)
- async def post(self, request: object, project_id: str) -> Response:
- """批量关联仓库到项目。"""
- project = await aget_object_or_404(Project, id=project_id)
+ async def post(self, request: object, space_id: str) -> Response:
+ """批量关联仓库到空间。"""
+ project = await aget_object_or_404(Project, id=space_id)
  # 权限：admin+ 可创建
  has_access = await sync_to_async(PermissionService.has_project_access)(
  request.user,
@@ -496,10 +496,10 @@ class ProjectRepositoryListCreateView(APIView):
  )
  if not has_access:
  return Response(
- {"detail": "仅项目管理员可管理仓库关联"},
+ {"detail": "仅空间管理员可管理仓库关联"},
  status=status.HTTP_403_FORBIDDEN,
  )
- serializer = ProjectRepositoryCreateSerializer(data=request.data)
+ serializer = SpaceRepositoryCreateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  repository_ids: list[str] = serializer.validated_data["repository_ids"]
  created: list[dict[str, object]] =
@@ -518,14 +518,14 @@ class ProjectRepositoryListCreateView(APIView):
  )
  if was_created:
  data = await sync_to_async(
- lambda l=link: ProjectRepositorySerializer(l).data # noqa: E741
+ lambda l=link: SpaceRepositorySerializer(l).data # noqa: E741
  )
  created.append(data)
  else:
  skipped.append(str(repo_id))
  logger.info(
- "project_repos_linked",
- project_id=str(project_id),
+ "space_repos_linked",
+ space_id=str(space_id),
  created=len(created),
  skipped=len(skipped),
  )
@@ -533,10 +533,10 @@ class ProjectRepositoryListCreateView(APIView):
  {"created": created, "skipped": skipped},
  status=status.HTTP_201_CREATED,
  )
-class ProjectRepositoryDetailView(APIView):
- """项目仓库关联：更新权限（PATCH）和移除关联（DELETE）。
- PATCH /api/projects/{project_id}/repositories/{pk}/ — admin+ 可修改
- DELETE /api/projects/{project_id}/repositories/{pk}/ — admin+ 可删除
+class SpaceRepositoryDetailView(APIView):
+ """空间仓库关联：更新权限（PATCH）和移除关联（DELETE）。
+ PATCH /api/spaces/{space_id}/repositories/{pk}/ — admin+ 可修改
+ DELETE /api/spaces/{space_id}/repositories/{pk}/ — admin+ 可删除
  """
  async def _check_admin(self, request: object, project: Project) -> Response | None:
  """检查 admin 权限，无权返回 403 Response，有权返回 None。"""
@@ -547,34 +547,34 @@ class ProjectRepositoryDetailView(APIView):
  )
  if not has_access:
  return Response(
- {"detail": "仅项目管理员可管理仓库关联"},
+ {"detail": "仅空间管理员可管理仓库关联"},
  status=status.HTTP_403_FORBIDDEN,
  )
  return None
- async def patch(self, request: object, project_id: str, pk: str) -> Response:
+ async def patch(self, request: object, space_id: str, pk: str) -> Response:
  """更新关联的权限级别。"""
- project = await aget_object_or_404(Project, id=project_id)
+ project = await aget_object_or_404(Project, id=space_id)
  denied = await self._check_admin(request, project)
  if denied:
  return denied
  link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
- serializer = ProjectRepositoryUpdateSerializer(data=request.data)
+ serializer = SpaceRepositoryUpdateSerializer(data=request.data)
  await sync_to_async(serializer.is_valid)(raise_exception=True)
  link.permission_level = serializer.validated_data["permission_level"]
  await link.asave(update_fields=["permission_level"])
- data = await sync_to_async(lambda: ProjectRepositorySerializer(link).data)
+ data = await sync_to_async(lambda: SpaceRepositorySerializer(link).data)
  return Response(data)
- async def delete(self, request: object, project_id: str, pk: str) -> Response:
+ async def delete(self, request: object, space_id: str, pk: str) -> Response:
  """移除仓库关联。"""
- project = await aget_object_or_404(Project, id=project_id)
+ project = await aget_object_or_404(Project, id=space_id)
  denied = await self._check_admin(request, project)
  if denied:
  return denied
  link = await aget_object_or_404(ProjectRepository, pk=pk, project=project)
  await link.adelete
  logger.info(
- "project_repo_unlinked",
- project_id=str(project_id),
+ "space_repo_unlinked",
+ space_id=str(space_id),
  link_id=str(pk),
  )
  return Response(status=status.HTTP_204_NO_CONTENT)

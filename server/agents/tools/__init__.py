@@ -5,7 +5,7 @@ Provides:
 - ToolResult for standardized tool output
 - ToolDefinition for tool metadata
 - ToolRegistry for tool discovery and schema generation
-- Project and repository query tools
+- Space and repository query tools
 """
 from agents.tools.base import (
  ToolCategory,
@@ -19,9 +19,9 @@ from agents.tools.feishu_doc_tools import (
 )
 from agents.tools.feishu_im_tools import send_card_message
 from agents.tools.langchain_adapter import build_langchain_tools
-from agents.tools.project_tools import (
+from agents.tools.space_tools import (
  get_repository_info,
- list_project_repositories,
+ list_space_repositories,
  search_repository_code,
 )
 from agents.tools.registry import ToolRegistry
@@ -41,8 +41,8 @@ __all__ = [
  "ToolRegistry",
  # LangChain bridge (Phase)
  "build_langchain_tools",
- # Project tools
- "list_project_repositories",
+ # Space tools
+ "list_space_repositories",
  "get_repository_info",
  "search_repository_code",
  # Work item tools

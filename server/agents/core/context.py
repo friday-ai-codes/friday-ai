@@ -1,7 +1,7 @@
 """
-AgentContext dataclass for session and project information.
+AgentContext dataclass for session and space information.
 Provides runtime context for agent execution including session identification,
-project association, and user information.
+space association, and user information.
 """
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,8 +14,8 @@ class AgentContext:
  """
  session_id: str
  """Unique identifier for this agent session."""
- project_id: Any = None
- """ID of the associated project (UUID or int)."""
+ space_id: Any = None
+ """ID of the associated space (UUID or int)."""
  user_id: Any = None
  """ID of the user who initiated the session (UUID or int)."""
  work_item_id: str | None = None

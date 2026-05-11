@@ -74,16 +74,16 @@ class TestAuthE2EFlow:
  api_client.force_authenticate(user=user)
  response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
- memberships = response.data.get("project_memberships", )
- admin_m = next((m for m in memberships if m["project_id"] == str(project.id)), None)
+ memberships = response.data.get("space_memberships", )
+ admin_m = next((m for m in memberships if m["space_id"] == str(project.id)), None)
  assert admin_m is not None
  assert admin_m["role"] == "admin"
  # viewer 角色
  api_client.force_authenticate(user=viewer_user)
  response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
- memberships = response.data.get("project_memberships", )
- viewer_m = next((m for m in memberships if m["project_id"] == str(project.id)), None)
+ memberships = response.data.get("space_memberships", )
+ viewer_m = next((m for m in memberships if m["space_id"] == str(project.id)), None)
  assert viewer_m is not None
  assert viewer_m["role"] == "viewer"
  def test_refreshed_token_retains_identity(self, api_client, user, urls):
@@ -225,7 +225,7 @@ class TestOIDCE2EFlow:
  # 初始无 membership
  response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
- assert len(response.data.get("project_memberships", )) == 0
+ assert len(response.data.get("space_memberships", )) == 0
  # 添加 membership
  ProjectMembership.objects.create(
  user=user, project=project, role=ProjectRole.ADMIN
@@ -233,6 +233,6 @@ class TestOIDCE2EFlow:
  # /me 应该反映新角色
  response = api_client.get("/api/auth/me/")
  assert response.status_code == status.HTTP_200_OK
- memberships = response.data.get("project_memberships", )
+ memberships = response.data.get("space_memberships", )
  assert len(memberships) == 1
  assert memberships[0]["role"] == "admin"

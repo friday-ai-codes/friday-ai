@@ -11,6 +11,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 CONV_UUID = uuid.uuid4
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_interrupt_via_active_runner -> None:
  """ChatInterruptView：有活跃 runner 时通过 runner.interrupt 中断。"""
@@ -39,6 +40,7 @@ async def test_interrupt_via_active_runner -> None:
  assert response.status_code == 200
  assert response.data["status"] == "interrupted"
  mock_runner.interrupt.assert_awaited_once
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_interrupt_updates_orchestration_run_status -> None:
  """中断后 OrchestrationRun.status 更新为 interrupted。"""
@@ -67,6 +69,7 @@ async def test_interrupt_updates_orchestration_run_status -> None:
  await view.post(request, CONV_UUID)
  mock_orch_cls.objects.filter.assert_called
  mock_update.assert_awaited_once
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_interrupt_updates_message_metadata -> None:
  """中断后最新 assistant 消息 metadata 含 status: interrupted。"""
@@ -97,6 +100,7 @@ async def test_interrupt_updates_message_metadata -> None:
  await view.post(request, CONV_UUID)
  assert mock_msg.metadata["status"] == "interrupted"
  mock_msg.asave.assert_awaited_once
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_interrupt_no_active_runner_fallback -> None:
  """ChatInterruptView：无活跃 runner 且无 barrier 时返回 404。"""

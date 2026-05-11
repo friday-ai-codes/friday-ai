@@ -25,10 +25,10 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  "enum": [choice.value for choice in TriggerEventType],
  "default": "",
  },
- "project_ids": {
+ "space_ids": {
  "type": "array",
- "title": "监听项目",
- "description": "要监听的 Friday 项目 ID 列表，留空监听所有项目",
+ "title": "监听空间",
+ "description": "要监听的 Friday 空间 ID 列表，留空监听所有空间",
  "items": {"type": "string"},
  "default":,
  },
@@ -58,10 +58,10 @@ class FeishuEventTriggerNode(BaseTriggerNode):
  "description": "可选，输入自定义状态 key，多个用逗号分隔",
  "default": "",
  },
- "exclude_project_ids": {
+ "exclude_space_ids": {
  "type": "array",
- "title": "排除项目",
- "description": "要排除的项目 ID 列表",
+ "title": "排除空间",
+ "description": "要排除的空间 ID 列表",
  "items": {"type": "string"},
  "default":,
  },

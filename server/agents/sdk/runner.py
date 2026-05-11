@@ -56,7 +56,7 @@ class SdkRunnerConfig:
  Attributes:
  system_prompt: 系统提示词
  model: 模型标识（如 "sonnet"、"claude-sonnet-4-5"）
- project_id: 项目 UUID，用于 MCP 工具过滤和 AgentSession 关联
+ space_id: 空间 UUID，用于 MCP 工具过滤和 AgentSession 关联
  session_id: 会话 ID，用于日志和事件元数据
  max_turns: 最大对话轮数
  timeout_seconds: 全局超时（秒），超时后强制终止 SDK Task
@@ -69,7 +69,7 @@ class SdkRunnerConfig:
  """
  system_prompt: str
  model: str
- project_id: str
+ space_id: str
  session_id: str
  conversation_id: str = ""
  api_key: str = ""
@@ -163,13 +163,13 @@ class SDKAgentRunner:
  event_queue.put_nowait(event)
  except asyncio.QueueFull:
  pass
- # 3. 构建 MCP server 和 allowed_tools（project_id/conversation_id/event_callback 自动注入）
+ # 3. 构建 MCP server 和 allowed_tools（space_id/conversation_id/event_callback 自动注入）
  mcp_server = create_chat_tools_mcp_server(
- project_id=self._config.project_id,
+ space_id=self._config.space_id,
  conversation_id=self._config.conversation_id,
  event_callback=event_callback,
  )
- allowed_tools = await build_allowed_tools(self._config.project_id)
+ allowed_tools = await build_allowed_tools(self._config.space_id)
  # 4. 构建 hooks（仅在有 session 时启用）
  hooks_config: dict[str, list[HookMatcher]] | None = None
  session = self._config.agent_session

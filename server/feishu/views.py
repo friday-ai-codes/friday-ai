@@ -467,9 +467,9 @@ class FeishuWebhookView(APIView):
  event_uuid=None, # 事件未被处理，不占用 unique 约束位
  event_type=event_type,
  status=TriggerLogStatus.IGNORED,
- error_message="缺少 project_key",
+ error_message="缺少 space_key",
  )
- return Response({"status": "ignored", "reason": "缺少 project_key"})
+ return Response({"status": "ignored", "reason": "缺少 space_key"})
  try:
  project = await Project.objects.prefetch_related("repositories").aget(
  feishu_project_key=project_key
@@ -481,9 +481,9 @@ class FeishuWebhookView(APIView):
  event_type=event_type,
  project_key=project_key,
  status=TriggerLogStatus.IGNORED,
- error_message=f"项目未配置: {project_key}",
+ error_message=f"空间未配置: {project_key}",
  )
- return Response({"status": "ignored", "reason": f"项目未配置: {project_key}"})
+ return Response({"status": "ignored", "reason": f"空间未配置: {project_key}"})
  # Verify webhook token
  token = header.get("token", "")
  if project.feishu_webhook_token and not verify_webhook_token(
@@ -508,7 +508,7 @@ class FeishuWebhookView(APIView):
  logger.info(
  "webhook_event_processing",
  event_type=event_type,
- project_key=project_key,
+ space_key=project_key,
  event_uuid=event_uuid,
  )
  # Handle event and create trigger log
@@ -806,22 +806,22 @@ class FeishuWebhookView(APIView):
  )
 # ============ Config Views ============
 class FeishuConfigView(APIView):
- """Manage Feishu configuration for a project."""
- async def get(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ """Manage Feishu configuration for a space."""
+ async def get(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  data = FeishuConfigSerializer(project).data
  logger.info(
  "feishu_config_view_get",
- project_id=str(project.id),
- project_name=project.name,
- project_key=data.get("project_key") or "",
+ space_id=str(project.id),
+ space_name=project.name,
+ space_key=data.get("space_key") or "",
  plugin_id_prefix=_mask_identifier(data.get("plugin_id")),
  has_plugin_secret=bool(data.get("has_plugin_secret")),
  user_key_prefix=_mask_identifier(data.get("user_key")),
  )
  return Response(data)
- async def put(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ async def put(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  serializer = FeishuConfigCreateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  project.feishu_plugin_id = serializer.validated_data["plugin_id"]
@@ -831,8 +831,8 @@ class FeishuConfigView(APIView):
  project.feishu_user_key = serializer.validated_data.get("user_key", "")
  await project.asave
  return Response(FeishuConfigSerializer(project).data)
- async def delete(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ async def delete(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  project.feishu_plugin_id = None
  project.feishu_plugin_secret_encrypted = None
  project.feishu_user_key = None
@@ -840,15 +840,15 @@ class FeishuConfigView(APIView):
  return Response(status=status.HTTP_204_NO_CONTENT)
 class FeishuConfigTestView(APIView):
  """Test Feishu configuration."""
- async def post(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ async def post(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  if not project.has_feishu_config:
  return Response(
  {
  "success": False,
  "message": "飞书配置不完整，请填写插件 ID 和插件 Secret",
  "plugin_token_valid": False,
- "project_accessible": False,
+ "space_accessible": False,
  }
  )
  # Get test config if provided
@@ -868,14 +868,14 @@ class FeishuConfigTestView(APIView):
  "success": False,
  "message": "飞书配置不完整，请填写插件 ID 和插件 Secret",
  "plugin_token_valid": False,
- "project_accessible": False,
+ "space_accessible": False,
  }
  )
  logger.info(
  "feishu_config_test_started",
- project_id=str(project.id),
- project_name=project.name,
- project_key=project.feishu_project_key or "",
+ space_id=str(project.id),
+ space_name=project.name,
+ space_key=project.feishu_project_key or "",
  using_temp_plugin_id=bool(test_plugin_id),
  using_temp_plugin_secret=bool(test_plugin_secret),
  using_temp_user_key=bool(test_user_key),
@@ -892,17 +892,17 @@ class FeishuConfigTestView(APIView):
  test_result = await client.test_connection(project.feishu_project_key)
  logger.info(
  "feishu_config_test_finished",
- project_id=str(project.id),
+ space_id=str(project.id),
  success=bool(test_result.get("success")),
  plugin_token_valid=bool(test_result.get("plugin_token_valid")),
- project_accessible=bool(test_result.get("project_accessible")),
+ space_accessible=bool(test_result.get("space_accessible")),
  message=test_result.get("message", ""),
  )
  return Response(test_result)
  except Exception as e:
  logger.error(
  "feishu_config_test_failed",
- project_id=str(project.id),
+ space_id=str(project.id),
  error=str(e),
  )
  return Response(
@@ -910,13 +910,13 @@ class FeishuConfigTestView(APIView):
  "success": False,
  "message": f"测试失败: {str(e)}",
  "plugin_token_valid": False,
- "project_accessible": False,
+ "space_accessible": False,
  }
  )
 class RefreshWebhookTokenView(APIView):
- """Refresh webhook token for a project."""
- async def post(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ """Refresh webhook token for a space."""
+ async def post(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  project.feishu_webhook_token = generate_webhook_token
  await project.asave
  return Response(
@@ -924,8 +924,8 @@ class RefreshWebhookTokenView(APIView):
  )
 class UpdateWebhookTokenView(APIView):
  """Update webhook token with custom value."""
- async def put(self, request, project_id):
- project = await aget_object_or_404(Project, id=project_id)
+ async def put(self, request, space_id):
+ project = await aget_object_or_404(Project, id=space_id)
  serializer = WebhookTokenUpdateSerializer(data=request.data)
  serializer.is_valid(raise_exception=True)
  token = serializer.validated_data["token"]
@@ -949,10 +949,10 @@ class TriggerLogListView(APIView):
  """List trigger logs."""
  async def get(self, request):
  queryset = TriggerLog.objects.select_related("project").all
- # Filter by project
- project_id = request.query_params.get("project_id")
- if project_id:
- queryset = queryset.filter(project_id=project_id)
+ # Filter by space
+ space_id = request.query_params.get("space_id")
+ if space_id:
+ queryset = queryset.filter(project_id=space_id)
  # Filter by event type
  event_type = request.query_params.get("event_type")
  if event_type:

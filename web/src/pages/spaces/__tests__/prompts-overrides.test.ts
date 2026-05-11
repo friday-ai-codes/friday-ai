@@ -1,13 +1,13 @@
 /**
- * pages/projects/[id]/prompts.vue 集成测试 —— Phase Plan Task 2
+ * pages/spaces/[id]/prompts.vue 集成测试 —— Phase Plan Task 2
  *
  * 覆盖路径（Plan Task 2 behavior §1-§10）：
- * 1. 组件挂载后调用 store.loadProjectList(projectId)
+ * 1. 组件挂载后调用 store.loadProjectList(spaceId)
  * 2. 渲染 PageHeader 文案 "Prompt 覆盖" / "项目级提示词覆盖与系统级 fallback"
  * 3. DataTable 绑定 mergedProjectList 作为 data
  * 4. status='overridden' 行渲染 "项目级已覆盖" Badge variant default
  * 5. status='fallback' 行渲染 "使用系统级 fallback" Badge variant outline
- * 6. status='project_only' 行渲染 "仅项目级" Badge variant secondary
+ * 6. status='space_only' 行渲染 "仅项目级" Badge variant secondary
  * 7. canEdit=false 时所有操作按钮 disabled + tooltip "仅项目管理员可操作"
  * 8. canEdit=true 时 fallback 行操作按钮文案 "创建项目级副本"
  * 9. canEdit=true 时 overridden 行操作按钮文案 "编辑"
@@ -15,10 +15,10 @@
  *
  * Mock 策略：vi.hoisted 提升 closure，全 stub 化 PageContainer/PageHeader/DataTable/
  * PromptEditor/Badge/Button，绕开 reka-ui Teleport。
- * vue-router 整体 mock 为 useRoute returning { params: { id: 'test-project-id' } }。
+ * vue-router 整体 mock 为 useRoute returning { params: { id: 'test-space-id' } }。
  */
 import type { ColumnDef } from '@tanstack/vue-table'
-import type { MergedProjectListItem } from '~/stores/prompts'
+import type { MergedSpaceListItem } from '~/stores/prompts'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, h, nextTick, ref } from 'vue'
@@ -32,18 +32,18 @@ const mocks = vi.hoisted( => ({
  loadVersionsMock: vi.fn,
  clearCurrentMock: vi.fn,
  handleErrorMock: vi.fn,
- mergedProjectListRef: null as unknown as ReturnType<typeof import('vue').ref<MergedProjectListItem>>,
+ mergedSpaceListRef: null as unknown as ReturnType<typeof import('vue').ref<MergedSpaceListItem>>,
  loadingRef: null as unknown as ReturnType<typeof import('vue').ref<boolean>>,
  // canEditRef 是 readonly ComputedRef<boolean>。用 import('vue').ComputedRef 类型
  canEditRef: null as unknown as import('vue').ComputedRef<boolean>,
  canEditValue: { current: true },
 }))
 vi.mock('vue-router', => ({
- useRoute: => ({ params: { id: 'test-project-id' } }),
+ useRoute: => ({ params: { id: 'test-space-id' } }),
 }))
 vi.mock('~/stores/prompts', => ({
  usePromptsStore: => ({
- mergedProjectList: mocks.mergedProjectListRef,
+ mergedProjectList: mocks.mergedSpaceListRef,
  loading: mocks.loadingRef,
  loadProjectList: mocks.loadProjectListMock,
  loadDetail: mocks.loadDetailMock,
@@ -67,7 +67,7 @@ vi.mock('pinia', async => {
 // ============================================================================
 // Fixtures
 // ============================================================================
-function makeMerged(overrides: Partial<MergedProjectListItem>): MergedProjectListItem {
+function makeMerged(overrides: Partial<MergedSpaceListItem>): MergedSpaceListItem {
  return {
  id: '',
  slug: 'chat.system.developer',
@@ -81,36 +81,34 @@ function makeMerged(overrides: Partial<MergedProjectListItem>): MergedProjectLis
  created_at: '2026-04-01T00:00:00Z',
  updated_at: '2026-04-10T12:00:00Z',
  status: 'fallback',
- project_prompt: null,
+ space_prompt: null,
  ...overrides,
  }
 }
-const overriddenRow: MergedProjectListItem = makeMerged({
+const overriddenRow: MergedSpaceListItem = makeMerged({
  id: 'sys-overridden',
  slug: 'chat.system.developer',
  status: 'overridden',
- project_prompt: makeMerged({
+ space_prompt: makeMerged({
  id: 'proj-override-1',
  slug: 'chat.system.developer',
  scope: 'project',
- project: 'test-project-id',
  is_builtin: false,
  }),
 })
-const fallbackRow: MergedProjectListItem = makeMerged({
+const fallbackRow: MergedSpaceListItem = makeMerged({
  id: 'sys-fallback',
  slug: 'chat.system.code_review',
  status: 'fallback',
- project_prompt: null,
+ space_prompt: null,
 })
-const projectOnlyRow: MergedProjectListItem = makeMerged({
+const spaceOnlyRow: MergedSpaceListItem = makeMerged({
  id: 'proj-only',
- slug: 'project.custom.greeting',
+ slug: 'space.custom.greeting',
  scope: 'project',
- project: 'test-project-id',
  is_builtin: false,
- status: 'project_only',
- project_prompt: null,
+ status: 'space_only',
+ space_prompt: null,
 })
 // ============================================================================
 // Stubs
@@ -134,9 +132,9 @@ const DataTableStub = {
 }
 const PromptEditorStub = {
  name: 'PromptEditor',
- props: ['open', 'mode', 'projectId'],
+ props: ['open', 'mode', 'spaceId'],
  emits: ['update:open'],
- template: '<div data-testid="prompt-editor":data-open="open":data-mode="mode":data-project-id="projectId"></div>',
+ template: '<div data-testid="prompt-editor":data-open="open":data-mode="mode":data-space-id="spaceId"></div>',
 }
 const ButtonStub = {
  name: 'Button',
@@ -167,9 +165,9 @@ function mountPage {
 // 帮助函数：通过 columns 配置直接调用 cell renderer 取得 VNode 并断言
 // ============================================================================
 function findColumn(
- cols: ColumnDef<MergedProjectListItem>,
+ cols: ColumnDef<MergedSpaceListItem>,
  key: string,
-): ColumnDef<MergedProjectListItem> {
+): ColumnDef<MergedSpaceListItem> {
  const col = cols.find(
  c =>
  ('accessorKey' in c && c.accessorKey === key)
@@ -180,8 +178,8 @@ function findColumn(
  return col
 }
 function callCell(
- col: ColumnDef<MergedProjectListItem>,
- row: MergedProjectListItem,
+ col: ColumnDef<MergedSpaceListItem>,
+ row: MergedSpaceListItem,
 ): unknown {
  // tanstack column.cell 通常接收 { row: { original } } 上下文
  const cell = col.cell as ((ctx: unknown) => unknown) | undefined
@@ -215,23 +213,23 @@ function callDefaultSlot(vnode: { children?: unknown }): string {
 // ============================================================================
 // Tests
 // ============================================================================
-describe('pages/projects/[id]/prompts.vue ', => {
+describe('pages/spaces/[id]/prompts.vue ', => {
  beforeEach( => {
  mocks.loadProjectListMock.mockReset.mockResolvedValue(undefined)
  mocks.loadDetailMock.mockReset.mockResolvedValue(undefined)
  mocks.loadVersionsMock.mockReset.mockResolvedValue(undefined)
  mocks.clearCurrentMock.mockReset
  mocks.handleErrorMock.mockReset
- mocks.mergedProjectListRef = ref<MergedProjectListItem>
+ mocks.mergedSpaceListRef = ref<MergedSpaceListItem>
  mocks.loadingRef = ref<boolean>(false)
  mocks.canEditValue.current = true
  mocks.canEditRef = computed( => mocks.canEditValue.current)
  })
- it('1. 组件挂载后调用 store.loadProjectList(projectId)', async => {
+ it('1. 组件挂载后调用 store.loadProjectList(spaceId)', async => {
  mountPage
  await nextTick
  await new Promise(r => setTimeout(r, 0))
- expect(mocks.loadProjectListMock).toHaveBeenCalledWith('test-project-id')
+ expect(mocks.loadProjectListMock).toHaveBeenCalledWith('test-space-id')
  })
  it('2. PageHeader 渲染中文标题 "Prompt 覆盖"', async => {
  const wrapper = mountPage
@@ -240,19 +238,19 @@ describe('pages/projects/[id]/prompts.vue ', => {
  expect(wrapper.text).toContain('项目级提示词覆盖与系统级 fallback')
  })
  it('3. DataTable 绑定 mergedProjectList 作为 data', async => {
- mocks.mergedProjectListRef.value = [overriddenRow, fallbackRow]
+ mocks.mergedSpaceListRef.value = [overriddenRow, fallbackRow]
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
  expect(dt.exists).toBe(true)
  expect(dt.props('data')).toHaveLength(2)
- expect(dt.props('tableId')).toBe('project-prompts-list')
+ expect(dt.props('tableId')).toBe('space-prompts-list')
  })
  it('4. status="overridden" 渲染 Badge variant=default 文案 "项目级已覆盖"', async => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, overriddenRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode).toBeTruthy
@@ -263,7 +261,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, fallbackRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode.props?.variant).toBe('outline')
@@ -273,9 +271,9 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const statusCol = findColumn(cols, 'status')
- const vnode = callCell(statusCol, projectOnlyRow) as { props?: Record<string, unknown>, children?: unknown }
+ const vnode = callCell(statusCol, spaceOnlyRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode.props?.variant).toBe('secondary')
  expect(callDefaultSlot(vnode)).toBe('仅项目级')
  })
@@ -284,7 +282,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as { props?: Record<string, unknown> }
  expect(vnode.props?.disabled).toBe(true)
@@ -295,7 +293,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as { children?: unknown }
  expect(callDefaultSlot(vnode)).toBe('创建项目级副本')
@@ -304,7 +302,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, overriddenRow) as { children?: unknown }
  expect(callDefaultSlot(vnode)).toBe('编辑')
@@ -313,7 +311,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as {
  props?: { onClick?: => void }
@@ -324,14 +322,14 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const editor = wrapper.findComponent(PromptEditorStub)
  expect(editor.props('open')).toBe(true)
  expect(editor.props('mode')).toBe('create')
- expect(editor.props('projectId')).toBe('test-project-id')
+ expect(editor.props('spaceId')).toBe('test-space-id')
  expect(mocks.clearCurrentMock).toHaveBeenCalled
  })
- it('11. 点击 overridden 行按钮 → editor 切到 edit + 用 project_prompt.id 调 loadDetail', async => {
+ it('11. 点击 overridden 行按钮 → editor 切到 edit + 用 space_prompt.id 调 loadDetail', async => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, overriddenRow) as { props?: { onClick?: => void } }
  vnode.props!.onClick!
@@ -340,7 +338,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const editor = wrapper.findComponent(PromptEditorStub)
  expect(editor.props('open')).toBe(true)
  expect(editor.props('mode')).toBe('edit')
- // overridden 行应使用 project_prompt.id 而非系统级 row.id
+ // overridden 行应使用 space_prompt.id 而非系统级 row.id
  expect(mocks.loadDetailMock).toHaveBeenCalledWith('proj-override-1')
  expect(mocks.loadVersionsMock).toHaveBeenCalledWith('proj-override-1')
  })
@@ -349,7 +347,7 @@ describe('pages/projects/[id]/prompts.vue ', => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
- const cols = dt.props('columns') as ColumnDef<MergedProjectListItem>
+ const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, overriddenRow) as { props?: { onClick?: => void } }
  vnode.props!.onClick!

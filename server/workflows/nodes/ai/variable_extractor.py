@@ -127,7 +127,7 @@ class AIVariableExtractorNode(BaseNode):
  "type": "string",
  "format": "uuid",
  "title": "Provider 凭证（节点级）",
- "description": "指定本节点使用的凭证 ID，空则按项目/系统默认解析。",
+ "description": "指定本节点使用的凭证 ID，空则按空间/系统默认解析。",
  "default": "",
  },
  },
@@ -174,19 +174,19 @@ class AIVariableExtractorNode(BaseNode):
  variable_definitions = "\n".join(
  f"- {v['key']} ({v['name']}): {v['desc']}" for v in variables_config
  )
- # Phase: 提取 project_id 传给 Prompt Center（允许项目级覆盖）
- project_id: str | None = None
+ # Phase: 提取 space_id 传给 Prompt Center（允许空间级覆盖）
+ space_id: str | None = None
  if context.workflow_execution:
  from workflows.models import WorkflowExecution
  we = await WorkflowExecution.objects.select_related(
  "workflow__project"
  ).aget(id=context.workflow_execution.id)
  if we.workflow and we.workflow.project:
- project_id = str(we.workflow.project.id)
+ space_id = str(we.workflow.project.id)
  # Phase: 构建完整提示词（走 Prompt Center + fallback 双轨）
  prompt = await render_prompt(
  PromptSlugs.AI_NODE_VARIABLE_EXTRACTOR,
- project_id=project_id,
+ project_id=space_id,
  variables={
  "variable_definitions": variable_definitions,
  "input_text": input_text,
@@ -396,8 +396,8 @@ class AIVariableExtractorNode(BaseNode):
  f"未配置 Provider 凭证：provider_credential_id="
  f"{resolved.credential_id} 不存在"
  ) from exc
- project_id_str = str(project.id) if project is not None else ""
- if cred.scope == "project" and str(cred.scope_id) != project_id_str:
+ space_id_str = str(project.id) if project is not None else ""
+ if cred.scope == "project" and str(cred.scope_id) != space_id_str:
  raise ValueError(
  f"未配置 {resolved.provider_type.value} Provider 凭证："
  f"节点 provider_credential_id 指向他 project 凭证，"
@@ -408,7 +408,7 @@ class AIVariableExtractorNode(BaseNode):
  if not model:
  model = (resolved.extra or {}).get("default_model", "") or ""
  if not model:
- raise ValueError("未配置默认模型，请在系统设置或项目设置中配置默认模型")
+ raise ValueError("未配置默认模型，请在系统设置或空间设置中配置默认模型")
  #：输出长度由 capabilities 兜底；：.bind(temperature=0.3)
  chat_model = build_chat_model(
  resolved=resolved,
