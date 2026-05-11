@@ -173,7 +173,7 @@ catalogs:
  specifier: ^0.8.1
  version: 0.8.1
  '@vueuse/core':
- specifier: ^13.5.0
+ specifier: 'catalog:'
  version: 14.1.0
  '@vueuse/head':
  specifier: ^2.0.0
@@ -221,7 +221,7 @@ catalogs:
  specifier: ^3.0.4
  version: 3.0.4
  reka-ui:
- specifier: ^2.4.0
+ specifier: 'catalog:'
  version: 2.7.0
  shiki:
  specifier: ^3.21.0
@@ -410,6 +410,9 @@ importers:
  '@tiptap/vue-3':
  specifier: 'catalog:'
  version: 3.19.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.19.0(@tiptap/pm@3.19.0))(@tiptap/pm@3.19.0)(vue@3.5.26(typescript@5.9.3))
+ '@types/dagre':
+ specifier: ^0.7.54
+ version: 0.7.54
  '@vee-validate/zod':
  specifier: 'catalog:'
  version: 4.15.1(vue@3.5.26(typescript@5.9.3))(zod@4.3.5)
@@ -443,6 +446,9 @@ importers:
  codemirror:
  specifier: 'catalog:'
  version: 6.0.2
+ dagre:
+ specifier: ^0.8.5
+ version: 0.8.5
  diff:
  specifier: 'catalog:'
  version: 8.0.4
@@ -1606,6 +1612,8 @@ packages:
  resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
  '@types/chai@5.2.3':
  resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
+ '@types/dagre@0.7.54':
+ resolution: {integrity: sha512-QjcRY+adGbYvBFS7cwv5txhVIwX1XXIUswWl+kSQTbI6NjgZydrZkEKX/etzVd7i+bCsCb40Z/xlBY5eoFuvWQ==}
  '@types/debug@4.1.12':
  resolution: {integrity: sha512-vIChWdVG3LG1SMxEvI/AK+FWJthlrqlTu7fbrlywTkkaONwk/UAGaULXRlf8vkzFBLVm0zkMdCquhL5aOjhXPQ==}
  '@types/deep-eql@4.0.2':
@@ -2234,6 +2242,8 @@ packages:
  d3-zoom@3.0.0:
  resolution: {integrity: sha512-b8AmV3kfQaqWAuacbPuNbL6vahnOJflOhexLzMMNLga62+/nh0JzvJ0aO/5a5MVgUFGS7Hu1P9P03o3fJkDCyw==}
  engines: {node: '>=12'}
+ dagre@0.8.5:
+ resolution: {integrity: sha512-/aTqmnRta7x7MCCpExk7HQL2O4owCT2h8NT//9I1OQ9vt29Pa0BzSAkR5lwFUcQ7491yVi/3CXU9jQ5o0Mn2Sw==}
  de-indent@1.0.2:
  resolution: {integrity: sha512-e/1zu3xH5MQryN2zdVaF0OrdNLUbvWxzMbi+iNA6Bky7l1RoP8a2fIbRocyHclXt/arDrrR6lL3TqFD9pMQTsg==}
  debug@4.4.3:
@@ -2588,6 +2598,8 @@ packages:
  resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
  graphemer@1.4.0:
  resolution: {integrity: sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag==}
+ graphlib@2.1.8:
+ resolution: {integrity: sha512-jcLLfkpoVGmH7/InMC/1hIvOPSUh38oJtGhvrOFGzioE1DZ+0YW16RgmOJhHiuWTvGiJQ9Z1Ik43JvkRPRvE+A==}
  happy-dom@20.3.0:
  resolution: {integrity: sha512-5qJbkqcvR8j/a4av5IWqqIWmEGf9dt6OhGMS6qxCgjSOBGzGa5XLoqg40OyD8XNzQ+g1g2zsXi10kjfpzYH55Q==}
  engines: {node: '>=20.0.0'}
@@ -2770,6 +2782,8 @@ packages:
  engines: {node: '>=10'}
  lodash.merge@4.6.2:
  resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
+ lodash@4.18.1:
+ resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
  longest-streak@3.1.0:
  resolution: {integrity: sha512-9Ri+o0JYgehTaVBBDoMqIl8GXtbWg711O3srftcHhZ0dqnETqLaoIK0x17fUw9rFSlK/0NlsKe0Ahhyl5pXE2g==}
  lowlight@3.3.0:
@@ -4507,6 +4521,7 @@ snapshots:
  dependencies:
  '@types/deep-eql': 4.0.2
  assertion-error: 2.0.1
+ '@types/dagre@0.7.54': {}
  '@types/debug@4.1.12':
  dependencies:
  '@types/ms': 2.1.0
@@ -5259,6 +5274,10 @@ snapshots:
  d3-interpolate: 3.0.1
  d3-selection: 3.0.0
  d3-transition: 3.0.1(d3-selection@3.0.0)
+ dagre@0.8.5:
+ dependencies:
+ graphlib: 2.1.8
+ lodash: 4.18.1
  de-indent@1.0.2: {}
  debug@4.4.3:
  dependencies:
@@ -5687,6 +5706,9 @@ snapshots:
  globrex@0.1.2: {}
  graceful-fs@4.2.11: {}
  graphemer@1.4.0: {}
+ graphlib@2.1.8:
+ dependencies:
+ lodash: 4.18.1
  happy-dom@20.3.0:
  dependencies:
  '@types/node': 20.19.29
@@ -5829,6 +5851,7 @@ snapshots:
  dependencies:
  p-locate: 5.0.0
  lodash.merge@4.6.2: {}
+ lodash@4.18.1: {}
  longest-streak@3.1.0: {}
  lowlight@3.3.0:
  dependencies:
