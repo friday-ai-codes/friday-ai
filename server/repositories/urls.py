@@ -149,4 +149,6 @@ urlpatterns = [
  RefreshRemoteHeadView.as_view,
  name="repository-refresh-remote-head",
  ),
+ # codegraph API（Phase）：必须在末尾，UUID 通配符顺序安全
+ path("<uuid:repository_id>/codegraph/", include("codegraph.urls")),
 ]
