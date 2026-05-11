@@ -35,6 +35,11 @@ class RepositorySerializer(serializers.ModelSerializer):
  "ai_summary_status",
  "ai_summary_generated_at",
  "ai_summary_error",
+ # Phase: freshness 字段
+ "remote_head_sha",
+ "remote_head_checked_at",
+ "behind_commits",
+ "last_indexed_commit_sha",
  ]
  read_only_fields = [
  "id",
@@ -47,6 +52,10 @@ class RepositorySerializer(serializers.ModelSerializer):
  "ai_summary_status",
  "ai_summary_generated_at",
  "ai_summary_error",
+ "remote_head_sha",
+ "remote_head_checked_at",
+ "behind_commits",
+ "last_indexed_commit_sha",
  ]
  def get_has_credential(self, obj: Repository) -> bool:
  return hasattr(obj, "credential") and obj.credential is not None
