@@ -65,6 +65,6 @@ describe('KnowledgeBaseSection', => {
  it('C: 初始状态下折叠内容不可见（isOpen=false）', async => {
  const wrapper = mountSection
  await flushPromises
- expect((wrapper.vm as { isOpen: boolean }).isOpen).toBe(false)
+ expect((wrapper.vm as unknown as { isOpen: boolean }).isOpen).toBe(false)
  })
 })

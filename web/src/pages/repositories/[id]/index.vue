@@ -13,6 +13,7 @@ import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import RepoHashFreshnessCard from '~/components/repository/RepoHashFreshnessCard.vue'
+import KnowledgeBaseSection from '~/components/codegraph/KnowledgeBaseSection.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -333,6 +334,8 @@ function copyUrl {
  </div>
  <!--: RepoHashFreshnessCard — PageHeader 后 / AnchorNavLayout 前（ 第一优先级指标）-->
  <RepoHashFreshnessCard:repository-id="repositoryId" class="mb-0" />
+ <!--: KnowledgeBaseSection — RepoHashFreshnessCard 之后 / AnchorNavLayout 之前 -->
+ <KnowledgeBaseSection:repository-id="repository.id" />
  <AnchorNavLayout:sections="sections">
  <!-- ==================== 基本信息 ==================== -->
  <section id="basic-info" class="scroll-mt-22 space-y-4">
