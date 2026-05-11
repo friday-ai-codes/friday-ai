@@ -865,9 +865,16 @@ class IndexerService:
  repository_id=self.repository_id,
  exc_info=True,
  )
+ # （方案 A）： — 返回变更文件路径列表，供调用方持久化到 IndexHistory
+ added_file_paths = [d.file_path for d in diffs if d.action == DiffAction.ADD]
+ modified_file_paths = [d.file_path for d in diffs if d.action == DiffAction.UPDATE]
+ deleted_file_paths = [d.file_path for d in diffs if d.action == DiffAction.DELETE]
  return {
  "status": "success",
  **stats,
+ "added_files": added_file_paths,
+ "modified_files": modified_file_paths,
+ "deleted_files": deleted_file_paths,
  }
  except Exception as e:
  logger.error(
@@ -919,7 +926,7 @@ class IndexerService:
  return SparseEncoderService.encode_batch(texts)
  async def _extract_and_write_graph(
  self, repo_path: str, file_paths: list[str], repository_id: str,
- ) -> dict[str, int]:
+ ) -> dict[str, Any]:
  """对指定文件列表执行图谱抽取并写入 Django ORM（双轨架构图谱轨）。
  该方法在向量轨写入（Qdrant upsert）完成后调用，对每个 tree-sitter
  支持的文件进行 AST 解析 + 四维抽取 + 批量入库。
@@ -942,7 +949,7 @@ class IndexerService:
  return {"files_processed": 0, "files_failed": 0, "reason": "disabled"}
  # 延迟初始化图谱服务
  self._init_graph_services
- stats: dict[str, int] = {
+ stats: dict[str, Any] = {
  "files_processed": 0,
  "files_failed": 0,
  "total_symbols": 0,
@@ -1274,6 +1281,12 @@ async def clone_and_index_repository(
  history_update["summary_text"] = _build_summary_text(
  files_added, files_modified, files_deleted,
  )
+ # （方案 A）： — 持久化变更文件路径列表到 IndexHistory.changed_files
+ history_update["changed_files"] = {
+ "added": index_result.get("added_files", ),
+ "modified": index_result.get("modified_files", ),
+ "deleted": index_result.get("deleted_files", ),
+ }
  if last_sha:
  history_update["from_sha"] = last_sha
  if fallback_reason:
