@@ -61,7 +61,7 @@ describe('ImportsTab', => {
  is_relative: false,
  }],
  })
- const wrapper = mountImportsTab
+ mountImportsTab
  await flushPromises
  expect(getImports).toHaveBeenCalledWith('repo-1', expect.any(Object))
  })
@@ -122,9 +122,9 @@ describe('ImportsTab', => {
  },
  ],
  })
- const wrapper = mountImportsTab
+ const w = mountImportsTab
  await flushPromises
- expect(wrapper.text).toContain('os')
- expect(wrapper.text).toContain('sys')
+ expect(w.text).toContain('os')
+ expect(w.text).toContain('sys')
  })
 })
