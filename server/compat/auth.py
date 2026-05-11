@@ -3,8 +3,8 @@
 """
 from __future__ import annotations
 import hmac
-import os
 import structlog
+from django.conf import settings
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.views import APIView
@@ -14,11 +14,7 @@ class OptionalBearerTokenAuth(BasePermission):
  使用 hmac.compare_digest 防 timing attack（ASVS V2.1，T-）。
  """
  def has_permission(self, request: Request, view: APIView) -> bool: # type: ignore[override]
- whitelist = [
- k.strip
- for k in os.environ.get("OPENAI_COMPAT_API_KEYS", "").split(",")
- if k.strip
- ]
+ whitelist: list[str] = settings.OPENAI_COMPAT_API_KEYS
  if not whitelist:
  logger.debug("compat_auth", auth_result="allowed", reason="whitelist_empty")
  return True

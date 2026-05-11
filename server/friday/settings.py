@@ -336,6 +336,16 @@ APSCHEDULER_RUN_NOW_TIMEOUT = 25
 # Enable scheduler (can be disabled in tests)
 FF_ENABLE_SCHEDULER = env.bool("FF_ENABLE_SCHEDULER", True)
 # =============================================================================
+# OpenAI 兼容层配置
+# =============================================================================
+# API Keys 白名单（逗号分隔），空字符串时 AllowAny
+# 启用后自动触发 Bearer token 校验；启用时务须修复 T- IDOR（参见 compat/request_handler.py）
+OPENAI_COMPAT_API_KEYS: list[str] = [
+ k.strip
+ for k in os.environ.get("OPENAI_COMPAT_API_KEYS", "").split(",")
+ if k.strip
+]
+# =============================================================================
 # MCP 工具安全
 # =============================================================================
 # MCP 工具执行白名单：仅允许以下 server_command 值
