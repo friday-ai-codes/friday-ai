@@ -118,3 +118,36 @@ export async function getEndpoints(
 export async function triggerCodegraphIndex(repositoryId: string): Promise<{ message: string }> {
  return post<{ message: string }>(`/repositories/${repositoryId}/codegraph/index/`)
 }
+// ============================================================================
+// Playground Search
+// ============================================================================
+export interface PlaygroundSearchParams {
+ query: string
+ repositoryIds?: string
+ maxTokens?: number
+}
+export interface LayerResult {
+ layer: string
+ status: string
+ result_count: number
+ items: unknown
+ error: string | null
+ extra: unknown | null
+}
+export interface PlaygroundSearchResponse {
+ query: string
+ repository_ids: string
+ layers: LayerResult
+ final_context: string
+ total_tokens: number
+}
+export async function playgroundSearch(
+ params: PlaygroundSearchParams,
+): Promise<PlaygroundSearchResponse> {
+ const body: Record<string, unknown> = { query: params.query }
+ if (params.repositoryIds && params.repositoryIds.length > 0)
+ body.repository_ids = params.repositoryIds
+ if (params.maxTokens !== undefined)
+ body.max_tokens = params.maxTokens
+ return post<PlaygroundSearchResponse>('/codegraph/playground/search/', body)
+}
