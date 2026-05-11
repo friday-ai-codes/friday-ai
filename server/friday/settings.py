@@ -19,6 +19,8 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "repos").mkdir(exist_ok=True)
 (DATA_DIR / "sessions").mkdir(exist_ok=True)
 (DATA_DIR / "credentials").mkdir(exist_ok=True)
+# 本地 Git clone 根目录（：_calculate_commit_distance 使用此路径 / {repo.id}/）
+REPO_CLONE_DIR = DATA_DIR / "repos"
 # Initialize django-environ
 INSECURE_SECRET_KEY = "django-insecure-change-me-in-production"
 LOCALHOST_HOSTS = ["localhost", "127.0.0.1", "[:1]"]

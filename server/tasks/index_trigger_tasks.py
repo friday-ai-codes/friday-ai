@@ -367,10 +367,19 @@ async def poll_repository_updates -> dict[str, int]:
  triggered = 0
  for repo in repositories:
  checked += 1
- if not repo.git_url or not repo.last_indexed_commit_sha:
+ if not repo.git_url:
  continue
  try:
  remote_sha = await _get_remote_head_sha(repo.git_url)
+ #：顺手缓存 remote_head_sha + checked_at（即使仓库还没首次索引也写）
+ if remote_sha:
+ from django.utils import timezone
+ await Repository.objects.filter(id=repo.id).aupdate(
+ remote_head_sha=remote_sha,
+ remote_head_checked_at=timezone.now,
+ )
+ if not repo.last_indexed_commit_sha:
+ continue # 还没首次索引，跳过 auto-trigger（Pitfall 7）
  if remote_sha and remote_sha != repo.last_indexed_commit_sha:
  result = await trigger_auto_index(repo, "scheduled", remote_sha)
  if result["status"] == "triggered":
