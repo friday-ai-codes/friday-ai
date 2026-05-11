@@ -50,11 +50,13 @@ async def update_behind_commits_for_stale_repos -> None:
  behind_commits=count,
  behind_commits_calculated_at=timezone.now,
  )
- except Exception:
+ except Exception as exc:
  logger.warning(
  "behind_commits_calculation_failed",
  repo_id=str(repo.id),
  git_url=repo.git_url,
+ error=str(exc),
+ exc_info=True,
  )
 async def _calculate_commit_distance(repo: Repository) -> int | None:
  """计算 local..remote 之间的 commit 数（，Q-03 用户裁决本 phase 实现）。
