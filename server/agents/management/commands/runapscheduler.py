@@ -87,6 +87,16 @@ def poll_repository_updates_job:
  log.info("job_complete", result=result)
  except Exception as e:
  log.exception("job_error", error=str(e))
+def calculate_behind_commits_job -> None:
+ """：计算 STALE 仓库的 behind_commits 差值并缓存。"""
+ from repositories.freshness_service import update_behind_commits_for_stale_repos
+ log = logger.bind(job="calculate_behind_commits")
+ log.info("job_start")
+ try:
+ run_async_task(update_behind_commits_for_stale_repos)
+ log.info("job_complete")
+ except Exception as e:
+ log.exception("job_error", error=str(e))
 def cleanup_stale_branch_indexes_job:
  """Job wrapper for cleanup_stale_branch_indexes (Phase)."""
  from tasks.index_trigger_tasks import cleanup_stale_branch_indexes
@@ -194,6 +204,20 @@ class Command(BaseCommand):
  # DELETE FROM django_apscheduler_djangojob WHERE id='poll_repository_updates';
  # 启动新代码后 scheduler 会自动重建，避免旧 job_state 残留旧 trigger。
  logger.info("job_registered", job="poll_repository_updates", schedule="every 2 hours")
+ # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates 每 2 小时（Phase）
+ scheduler.add_job(
+ calculate_behind_commits_job,
+ trigger=IntervalTrigger(hours=2),
+ id="calculate_behind_commits",
+ name="Calculate behind commits for stale repositories",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info(
+ "job_registered",
+ job="calculate_behind_commits",
+ schedule="every 2 hours",
+ )
  scheduler.add_job(
  cleanup_stale_branch_indexes_job,
  trigger=IntervalTrigger(hours=1),

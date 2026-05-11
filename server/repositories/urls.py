@@ -18,6 +18,7 @@ from .index_views import (
  RepositoryWebhookView,
  RerankerHealthView,
 )
+from .refresh_remote_head_views import RefreshRemoteHeadView
 from .route_views import RepoRouteView
 from .sync_status_views import SyncStatusView
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
@@ -141,5 +142,11 @@ urlpatterns = [
  "<uuid:repository_id>/sync-status/",
  SyncStatusView.as_view,
  name="repository-sync-status",
+ ),
+ # Hash 新鲜度立即刷新（Phase）
+ path(
+ "<uuid:repository_id>/refresh-remote-head/",
+ RefreshRemoteHeadView.as_view,
+ name="repository-refresh-remote-head",
  ),
 ]
