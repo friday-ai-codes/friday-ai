@@ -329,6 +329,8 @@ ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
+# 仓库轮询间隔秒数，与 IntervalTrigger(hours=2) 及 SyncStatusView.interval_seconds 保持同步
+SYNC_INTERVAL_SECONDS: int = 7200
 # Format for django-apscheduler scheduler
 APSCHEDULER_DATETIME_FORMAT = "N j, Y, f:s a"
 # Seconds the scheduler checks for jobs to run

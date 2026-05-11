@@ -7,14 +7,13 @@ import uuid
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from repositories.models import IndexHistory, IndexHistoryStatus, Repository
 logger = structlog.get_logger(__name__)
-# 与 IntervalTrigger(hours=2) 保持同步
-SYNC_INTERVAL_SECONDS: int = 7200
 class SyncStatusView(APIView):
  """GET /api/repositories/{id}/sync-status/ — 同步状态查询。"""
  permission_classes = [IsAuthenticated]
@@ -66,7 +65,7 @@ class SyncStatusView(APIView):
  "last_synced_at": repo.last_indexed_at,
  "last_sync_result": _last_sync_result(latest_history),
  "next_sync_at": next_sync_at,
- "interval_seconds": SYNC_INTERVAL_SECONDS,
+ "interval_seconds": settings.SYNC_INTERVAL_SECONDS,
  "recent_history": recent_history,
  }
  )
