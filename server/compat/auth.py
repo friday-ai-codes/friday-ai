@@ -27,8 +27,9 @@ class OptionalBearerTokenAuth(BasePermission):
  logger.warning("compat_auth", auth_result="denied", reason="missing_bearer_header")
  return False
  token = auth_header[7:].strip
- # hmac.compare_digest 防止 timing attack（ASVS V2.1）
- is_valid = any(hmac.compare_digest(token, key) for key in whitelist)
+ # 强制与所有 key 完整比较，避免 any 短路破坏常量时间保证（/T-）
+ matches = [hmac.compare_digest(token, key) for key in whitelist]
+ is_valid = any(matches)
  if is_valid:
  logger.info("compat_auth", auth_result="allowed", reason="token_matched")
  else:
