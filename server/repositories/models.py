@@ -101,6 +101,29 @@ class Repository(models.Model):
  deleted_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
+ # Hash 新鲜度字段（Phase）
+ remote_head_sha = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ help_text="远端仓库 HEAD commit SHA，由 poll_repository_updates 顺手缓存",
+ )
+ remote_head_checked_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ help_text="最近一次 git ls-remote 执行时间",
+ )
+ # STALE commit 差值（Phase）
+ behind_commits = models.IntegerField(
+ null=True,
+ blank=True,
+ help_text="本地索引落后远端的 commit 数，null 表示尚未计算",
+ )
+ behind_commits_calculated_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ help_text="behind_commits 最近一次计算时间",
+ )
  # AI 描述生成字段（Phase）
  ai_summary = models.TextField(null=True, blank=True)
  ai_summary_status = models.CharField(
