@@ -88,9 +88,9 @@ export async function getCallsForSymbol(
  hop = 1,
  limit = 50,
 ): Promise<DagData> {
- const qs = new URLSearchParams({ hop: String(hop), limit: String(limit) })
+ const qs = new URLSearchParams({ max_per_hop: String(limit), max_total: String(hop === 2 ? 50: limit * 2) })
  return get<DagData>(
- `/repositories/${repositoryId}/codegraph/calls/${symbolId}/?${qs.toString}`,
+ `/repositories/${repositoryId}/codegraph/symbols/${symbolId}/calls/?${qs.toString}`,
  )
 }
 export async function getImports(
