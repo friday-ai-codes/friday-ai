@@ -15,7 +15,7 @@ from codegraph.serializers import (
  SymbolSerializer,
 )
 from codegraph.services.graph_expansion import GraphExpansionService
-from repositories.models import Repository
+from repositories.permissions import RepositoryPermission
 logger = structlog.get_logger(__name__)
 # UUID 合法性校验正则（关键差异 3：过滤 graph_expansion L274 bug 产生的非 UUID target）
 UUID_RE = re.compile(
@@ -31,12 +31,8 @@ class SymbolListView(APIView):
  - limit: 默认 50，最大 200（T- DoS 防护）
  - offset: 默认 0
  """
- permission_classes = [IsAuthenticated]
+ permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- try:
- await Repository.objects.aget(id=repository_id, is_deleted=False)
- except Repository.DoesNotExist:
- return Response({"detail": "仓库不存在或无权访问。"}, status=404)
  limit = min(int(request.query_params.get("limit", 50)), 200)
  offset = int(request.query_params.get("offset", 0))
  qs = Symbol.objects.filter(repository_id=repository_id)
@@ -67,17 +63,13 @@ class CallsForSymbolView(APIView):
  返回以 symbol_id 为种子的 2-hop 调用图 DAG。
  调用 GraphExpansionService.expand 并用 UUID_RE 过滤非法 edge target（关键差异 3）。
  """
- permission_classes = [IsAuthenticated]
+ permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(
  self,
  request: Any,
  repository_id: uuid.UUID,
  symbol_id: uuid.UUID,
  ) -> Response:
- try:
- await Repository.objects.aget(id=repository_id, is_deleted=False)
- except Repository.DoesNotExist:
- return Response({"detail": "仓库不存在或无权访问。"}, status=404)
  try:
  seed = await Symbol.objects.aget(id=symbol_id, repository_id=repository_id)
  except Symbol.DoesNotExist:
@@ -128,12 +120,8 @@ class ImportEdgeListView(APIView):
  - target_module: target_module__icontains
  - limit / offset
  """
- permission_classes = [IsAuthenticated]
+ permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- try:
- await Repository.objects.aget(id=repository_id, is_deleted=False)
- except Repository.DoesNotExist:
- return Response({"detail": "仓库不存在或无权访问。"}, status=404)
  limit = min(int(request.query_params.get("limit", 50)), 200)
  offset = int(request.query_params.get("offset", 0))
  qs = ImportEdge.objects.filter(repository_id=repository_id)
@@ -162,12 +150,8 @@ class EndpointListView(APIView):
  - url_path: url_path__contains
  - limit / offset
  """
- permission_classes = [IsAuthenticated]
+ permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- try:
- await Repository.objects.aget(id=repository_id, is_deleted=False)
- except Repository.DoesNotExist:
- return Response({"detail": "仓库不存在或无权访问。"}, status=404)
  limit = min(int(request.query_params.get("limit", 50)), 200)
  offset = int(request.query_params.get("offset", 0))
  qs = Endpoint.objects.filter(repository_id=repository_id)
