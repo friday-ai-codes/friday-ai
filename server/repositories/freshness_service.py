@@ -86,6 +86,13 @@ async def _calculate_commit_distance(repo: Repository) -> int | None:
  stderr=asyncio.subprocess.DEVNULL,
  )
  await asyncio.wait_for(fetch_proc.communicate, timeout=30.0)
+ if fetch_proc.returncode != 0:
+ logger.warning(
+ "behind_commits_fetch_failed",
+ repo_id=str(repo.id),
+ returncode=fetch_proc.returncode,
+ )
+ return None
  # git -C <path> rev-list --count <local_sha>..<remote_sha>
  count_proc = await asyncio.create_subprocess_exec(
  "git",

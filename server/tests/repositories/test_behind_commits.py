@@ -29,6 +29,7 @@ async def test_calculates_commit_distance(repo, tmp_path):
  from repositories.freshness_service import _calculate_commit_distance
  mock_fetch_proc = MagicMock
  mock_fetch_proc.communicate = AsyncMock(return_value=(b"", b""))
+ mock_fetch_proc.returncode = 0
  mock_count_proc = MagicMock
  mock_count_proc.communicate = AsyncMock(return_value=(b"7\n", b""))
  call_args_list =
