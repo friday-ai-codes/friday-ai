@@ -21,6 +21,12 @@ logger = structlog.get_logger(__name__)
 UUID_RE = re.compile(
  r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
+def _safe_int(value: str | None, default: int) -> int:
+ """将 query param 字符串安全转换为 int，无效输入返回 default。"""
+ try:
+ return int(value) if value is not None else default
+ except (ValueError, TypeError):
+ return default
 # 模型短形式 → 前端期望长形式（callEdgeColors.ts key 对齐）
 CALL_TYPE_API_MAP: dict[str, str] = {
  "DIRECT": "DIRECT_CALL",
@@ -39,8 +45,8 @@ class SymbolListView(APIView):
  """
  permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- limit = min(int(request.query_params.get("limit", 50)), 200)
- offset = int(request.query_params.get("offset", 0))
+ limit = min(_safe_int(request.query_params.get("limit"), 50), 200)
+ offset = max(_safe_int(request.query_params.get("offset"), 0), 0)
  qs = Symbol.objects.filter(repository_id=repository_id)
  symbol_types = request.query_params.getlist("symbol_type")
  if symbol_types:
@@ -80,8 +86,8 @@ class CallsForSymbolView(APIView):
  seed = await Symbol.objects.aget(id=symbol_id, repository_id=repository_id)
  except Symbol.DoesNotExist:
  return Response({"detail": "Symbol 不存在。"}, status=404)
- max_symbols_per_hop = int(request.query_params.get("max_per_hop", 20))
- max_total = int(request.query_params.get("max_total", 50))
+ max_symbols_per_hop = _safe_int(request.query_params.get("max_per_hop"), 20)
+ max_total = _safe_int(request.query_params.get("max_total"), 50)
  result = await GraphExpansionService.expand(
  seed,
  max_symbols_per_hop=max_symbols_per_hop,
@@ -131,8 +137,8 @@ class ImportEdgeListView(APIView):
  """
  permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- limit = min(int(request.query_params.get("limit", 50)), 200)
- offset = int(request.query_params.get("offset", 0))
+ limit = min(_safe_int(request.query_params.get("limit"), 50), 200)
+ offset = max(_safe_int(request.query_params.get("offset"), 0), 0)
  qs = ImportEdge.objects.filter(repository_id=repository_id)
  source_file = request.query_params.get("source_file")
  if source_file:
@@ -161,8 +167,8 @@ class EndpointListView(APIView):
  """
  permission_classes = [IsAuthenticated, RepositoryPermission]
  async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
- limit = min(int(request.query_params.get("limit", 50)), 200)
- offset = int(request.query_params.get("offset", 0))
+ limit = min(_safe_int(request.query_params.get("limit"), 50), 200)
+ offset = max(_safe_int(request.query_params.get("offset"), 0), 0)
  qs = Endpoint.objects.filter(repository_id=repository_id)
  http_method = request.query_params.get("http_method")
  if http_method:
