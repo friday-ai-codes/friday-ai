@@ -69,6 +69,49 @@ async def test_chat_completions_stream_format -> None:
  assert chunk_found, "应至少有一个带 choices 的 OpenAI chunk"
 @pytest.mark.asyncio
 @pytest.mark.django_db
+async def test_non_streaming_response -> None:
+ """stream=False（默认）返回完整 OpenAI ChatCompletion 对象，choices 非空（ 修复验证）。"""
+ mock_runner = _make_mock_runner(
+ AgentEvent(type=TEXT_DELTA, data={"text": "Hello, "}),
+ AgentEvent(type=TEXT_DELTA, data={"text": "world!"}),
+ AgentEvent(type=MESSAGE_COMPLETE, data={"usage": {"input": 5, "output": 3}, "status": "completed"}),
+ )
+ with patch("compat.views._build_runner", new_callable=AsyncMock, return_value=mock_runner), \
+ patch("compat.views.prepare_messages", new_callable=AsyncMock) as mock_prepare:
+ from langchain_core.messages import HumanMessage
+ mock_prepare.return_value = [HumanMessage(content="Say hello")]
+ client = AsyncClient
+ response = await client.post(
+ "/v1/chat/completions",
+ data=json.dumps({
+ "model": "friday-default",
+ "messages": [{"role": "user", "content": "Say hello"}],
+ "stream": False,
+ }),
+ content_type="application/json",
+ )
+ assert response.status_code == 200
+ data = json.loads(response.content)
+ # 验证顶层 OpenAI ChatCompletion 字段
+ assert data["object"] == "chat.completion"
+ assert "id" in data and data["id"].startswith("chatcmpl-")
+ assert "created" in data
+ assert data["model"] == "friday-default"
+ # 验证 choices 非空且内容正确（ 核心验证）
+ assert isinstance(data["choices"], list)
+ assert len(data["choices"]) == 1
+ choice = data["choices"][0]
+ assert choice["index"] == 0
+ assert choice["message"]["role"] == "assistant"
+ assert choice["message"]["content"] == "Hello, world!"
+ assert choice["finish_reason"] == "stop"
+ # 验证 usage 字段存在
+ assert "usage" in data
+ assert "prompt_tokens" in data["usage"]
+ assert "completion_tokens" in data["usage"]
+ assert "total_tokens" in data["usage"]
+@pytest.mark.asyncio
+@pytest.mark.django_db
 async def test_invalid_request_returns_400 -> None:
  """缺少 messages 字段 → 返回 400 + OpenAI error envelope。"""
  client = AsyncClient
