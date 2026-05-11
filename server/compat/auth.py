@@ -1,0 +1,36 @@
+"""OptionalBearerTokenAuth — 可选 Bearer Token 鉴权桩。
+默认 AllowAny；配置 OPENAI_COMPAT_API_KEYS 为非空列表后启用 Bearer token 白名单匹配。
+"""
+from __future__ import annotations
+import hmac
+import os
+import structlog
+from rest_framework.permissions import BasePermission
+from rest_framework.request import Request
+from rest_framework.views import APIView
+logger = structlog.get_logger(__name__)
+class OptionalBearerTokenAuth(BasePermission):
+ """白名单为空时 AllowAny；非空时校验 Authorization: Bearer <token>。
+ 使用 hmac.compare_digest 防 timing attack（ASVS V2.1，T-）。
+ """
+ def has_permission(self, request: Request, view: APIView) -> bool: # type: ignore[override]
+ whitelist = [
+ k.strip
+ for k in os.environ.get("OPENAI_COMPAT_API_KEYS", "").split(",")
+ if k.strip
+ ]
+ if not whitelist:
+ logger.debug("compat_auth", auth_result="allowed", reason="whitelist_empty")
+ return True
+ auth_header: str = request.META.get("HTTP_AUTHORIZATION", "")
+ if not auth_header.startswith("Bearer "):
+ logger.warning("compat_auth", auth_result="denied", reason="missing_bearer_header")
+ return False
+ token = auth_header[7:].strip
+ # hmac.compare_digest 防止 timing attack（ASVS V2.1）
+ is_valid = any(hmac.compare_digest(token, key) for key in whitelist)
+ if is_valid:
+ logger.info("compat_auth", auth_result="allowed", reason="token_matched")
+ else:
+ logger.warning("compat_auth", auth_result="denied", reason="token_not_in_whitelist")
+ return is_valid
