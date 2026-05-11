@@ -19,6 +19,7 @@ from .index_views import (
  RerankerHealthView,
 )
 from .route_views import RepoRouteView
+from .sync_status_views import SyncStatusView
 from .views import CacheManagementView, RepositoryViewSet, SetAccessTokenView, TestConnectionView
 router = DefaultRouter # trailing_slash=True by default
 router.register("", RepositoryViewSet, basename="repository")
@@ -134,5 +135,11 @@ urlpatterns = [
  "<uuid:repository_id>/webhooks/push/",
  RepositoryWebhookView.as_view,
  name="repository-webhook-push",
+ ),
+ # 同步状态查询（Phase / ）
+ path(
+ "<uuid:repository_id>/sync-status/",
+ SyncStatusView.as_view,
+ name="repository-sync-status",
  ),
 ]
