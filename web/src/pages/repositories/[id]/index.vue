@@ -10,7 +10,9 @@ import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
+import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
+import RepoHashFreshnessCard from '~/components/repository/RepoHashFreshnessCard.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -329,6 +331,8 @@ function copyUrl {
  </div>
  </div>
  </div>
+ <!--: RepoHashFreshnessCard — PageHeader 后 / AnchorNavLayout 前（ 第一优先级指标）-->
+ <RepoHashFreshnessCard:repository-id="repositoryId" class="mb-0" />
  <AnchorNavLayout:sections="sections">
  <!-- ==================== 基本信息 ==================== -->
  <section id="basic-info" class="scroll-mt-22 space-y-4">
@@ -451,7 +455,11 @@ function copyUrl {
  <RepositoryIndexCard:repository-id="repository.id" />
  <IndexStatsPanel:repository-id="repository.id" />
  </div>
- <IndexHistoryList:repository-id="repository.id" />
+ <!--: 仅 INDEXING 状态渲染，展示本次变更文件（work item §6.2） -->
+ <IndexProgressTimeline
+ v-if="indexStatus?.index_status === IndexStatus.INDEXING":repository-id="repository.id":index-history-id="null":changed-files="{}":is-indexing="true"
+ />
+ <IndexHistoryList:repository-id="repository.id":git-url="repository.git_url" />
  </section>
  <!-- ==================== 凭证配置 ==================== -->
  <section id="credential" class="scroll-mt-22">

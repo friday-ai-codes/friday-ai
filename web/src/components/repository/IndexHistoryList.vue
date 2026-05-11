@@ -5,8 +5,15 @@ import { repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
 const props = defineProps<{
  repositoryId: string
+ gitUrl?: string
 }>
 const loading = ref(true)
 const history = ref<IndexHistoryResponse | null>(null)
@@ -137,13 +144,48 @@ onMounted(loadHistory)
  </div>
  <!-- SHA 范围 + 耗时 -->
  <div class="flex items-center justify-between text-xs text-muted-foreground">
- <span v-if="item.from_sha || item.to_sha" class="font-mono">
- {{ item.from_sha?.slice(0, 7) || '---' }} → {{ item.to_sha?.slice(0, 7) || '---' }}
+ <span v-if="item.from_sha || item.to_sha" class="font-mono flex items-center gap-1">
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <span>{{ item.from_sha?.slice(0, 7) || '---' }}</span>
+ </TooltipTrigger>
+ <TooltipContent v-if="item.from_sha">
+ {{ item.from_sha }}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ <span>→</span>
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <span>{{ item.to_sha?.slice(0, 7) || '---' }}</span>
+ </TooltipTrigger>
+ <TooltipContent v-if="item.to_sha">
+ {{ item.to_sha }}
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </span>
  <span v-else />
+ <div class="flex items-center gap-1">
  <span v-if="item.started_at && item.finished_at">
  <span class="icon-[lucide--clock] mr-1" />{{ formatDuration(item) }}
  </span>
+ <!--：在远端查看此 commit（aria-label work item §7 锁定文案） -->
+ <Button
+ v-if="item.to_sha && gitUrl"
+ variant="ghost"
+ size="sm"
+ class=" w-7 "
+ as="a":href="`${gitUrl.replace(/\.git$/, '')}/commit/${item.to_sha}`"
+ target="_blank"
+ rel="noopener noreferrer"
+ aria-label="在远端查看此 commit"
+ >
+ <span class="icon-[lucide--external-link] text-xs" />
+ </Button>
+ </div>
  </div>
  <!-- 摘要/错误 -->
  <p v-if="item.summary_text" class="text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">

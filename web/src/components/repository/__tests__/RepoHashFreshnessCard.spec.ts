@@ -7,7 +7,7 @@
 import type { Repository } from '~/types'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { defineComponent } from 'vue'
 import RepoHashFreshnessCard from '../RepoHashFreshnessCard.vue'
 // Mock API
 vi.mock('~/api/repositories', => ({
@@ -126,7 +126,7 @@ describe('RepoHashFreshnessCard', => {
  expect(wrapper.text).toContain('本地与远端 HEAD 不一致')
  })
  it('F: 点击"立即检查"后按钮显示"检查中..."且禁用', async => {
- let resolveRefresh!: (v: unknown) => void
+ let resolveRefresh!: (v: import('~/api/repositories').RefreshRemoteHeadResponse) => void
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo)
  vi.mocked(repositoriesApi.refreshRemoteHead).mockImplementation(
  => new Promise(resolve => { resolveRefresh = resolve }),
