@@ -176,6 +176,11 @@ export interface Repository extends RepositoryBase {
  linked_spaces_count?: number
  index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed'
  last_indexed_at: string | null
+ // Phase freshness 字段（/，后端 Plan 新增）
+ remote_head_sha?: string | null
+ remote_head_checked_at?: string | null
+ behind_commits?: number | null
+ last_indexed_commit_sha?: string | null
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）

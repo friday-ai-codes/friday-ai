@@ -79,6 +79,12 @@ export interface IndexHistoryItem {
  started_at: string | null
  finished_at: string | null
  created_at: string
+ // Phase: 变更文件路径（，Plan 新增）
+ changed_files?: {
+ added?: string
+ modified?: string
+ deleted?: string
+ }
 }
 export interface IndexHistoryResponse {
  items: IndexHistoryItem
@@ -137,6 +143,33 @@ export interface AISummaryStatusResponse {
 export interface GenerateSummaryResponse {
  dispatch_task_id: string
  status: 'pending'
+}
+// Phase: sync-status 响应（Plan 后端 API）
+export interface SyncStatusResponse {
+ repository_id: string
+ last_synced_sha: string
+ last_synced_at: string | null
+ last_sync_result: 'success' | 'failed' | 'running' | 'pending' | 'never'
+ next_sync_at: string | null
+ interval_seconds: number
+ recent_history: Array<{
+ id: string
+ trigger_type: string
+ status: string
+ from_sha: string
+ to_sha: string
+ files_added: number
+ files_modified: number
+ files_deleted: number
+ started_at: string | null
+ finished_at: string | null
+ created_at: string
+ }>
+}
+// Phase: refresh-remote-head 响应（Plan 后端 API）
+export interface RefreshRemoteHeadResponse {
+ remote_head_sha: string
+ freshness: 'fresh' | 'stale' | 'unknown'
 }
 export const repositoriesApi = {
  /**
@@ -369,5 +402,18 @@ export const repositoriesApi = {
  */
  getSummaryStatus: async (id: string): Promise<AISummaryStatusResponse> => {
  return get<AISummaryStatusResponse>(`/repositories/${id}/summary-status/`)
+ },
+ // ==================== Phase: freshness API ====================
+ /**
+ * 获取仓库同步状态
+ */
+ getSyncStatus: async (id: string): Promise<SyncStatusResponse> => {
+ return get<SyncStatusResponse>(`/repositories/${id}/sync-status/`)
+ },
+ /**
+ * 触发即时 ls-remote，获取最新远端 HEAD + freshness
+ */
+ refreshRemoteHead: async (id: string): Promise<RefreshRemoteHeadResponse> => {
+ return post<RefreshRemoteHeadResponse>(`/repositories/${id}/refresh-remote-head/`)
  },
 }
