@@ -6,6 +6,7 @@
 from __future__ import annotations
 import json
 import time
+import uuid
 from typing import Any
 import structlog
 from adrf.views import APIView
@@ -70,13 +71,46 @@ class ChatCompletionsView(APIView):
  content_type="text/event-stream",
  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
  )
- # 非流式：累积所有 chunk 后一次返回（简化实现）
- chunks: list[bytes] =
+ # 非流式：解析 SSE chunk 聚合为完整 ChatCompletion 响应（ 修复）
+ text_parts: list[str] =
+ reasoning_parts: list[str] =
+ finish_reason: str = "stop"
+ usage: dict | None = None
  async for chunk_bytes in OpenAICompatAdapter.translate_stream(
  runner, lc_messages, model=model_name, include_usage=True
  ):
- chunks.append(chunk_bytes)
- return Response({"object": "chat.completion", "model": model_name, "choices": })
+ line = chunk_bytes.decode.removeprefix("data: ").strip
+ if not line or line == "[DONE]":
+ continue
+ try:
+ obj = json.loads(line)
+ except ValueError:
+ continue
+ for choice in obj.get("choices") or:
+ delta = choice.get("delta", {})
+ if delta.get("content"):
+ text_parts.append(delta["content"])
+ if delta.get("reasoning_content"):
+ reasoning_parts.append(delta["reasoning_content"])
+ if choice.get("finish_reason"):
+ finish_reason = choice["finish_reason"]
+ if obj.get("usage"):
+ usage = obj["usage"]
+ message: dict = {"role": "assistant", "content": "".join(text_parts)}
+ if reasoning_parts:
+ message["reasoning_content"] = "".join(reasoning_parts)
+ return Response({
+ "id": f"chatcmpl-{uuid.uuid4.hex[:24]}",
+ "object": "chat.completion",
+ "created": int(time.time),
+ "model": model_name,
+ "choices": [{
+ "index": 0,
+ "message": message,
+ "finish_reason": finish_reason,
+ }],
+ "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+ })
  async def _stream_chunks(
  self,
  runner: LangChainAgentRunner,
