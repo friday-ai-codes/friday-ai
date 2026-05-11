@@ -82,6 +82,25 @@ watch(selectedBranchLocal, (name) => {
 const inputContent = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const showModelMenu = ref(false)
+// ============================================================================
+// prefilled_query 自动填充（ Playground → Chat 联动）
+// XSS 防御（T-）：仅填充到 inputContent（v-model textarea），不使用 innerHTML 或 v-html
+// ============================================================================
+const route = useRoute
+watch(
+ => route.query.prefilled_query,
+ (prefilled) => {
+ if (prefilled && typeof prefilled === 'string') {
+ try {
+ inputContent.value = decodeURIComponent(prefilled)
+ }
+ catch {
+ // URL 解码失败静默忽略（异常格式 URL，如 %zz）
+ }
+ }
+ },
+ { immediate: true },
+)
 const modelMenuRef = ref<HTMLElement | null>(null)
 // ============================================================================
 //：model-selector 折叠重构
