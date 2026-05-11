@@ -181,16 +181,19 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="prune_cache_volumes", schedule="daily at 05:00")
- # Poll repository updates every 30 minutes (Phase)
+ # Poll repository updates every 2 hours (Phase)
  scheduler.add_job(
  poll_repository_updates_job,
- trigger=IntervalTrigger(minutes=30),
+ trigger=IntervalTrigger(hours=2),
  id="poll_repository_updates",
  name="Poll for repository updates via git ls-remote",
  max_instances=1,
  replace_existing=True,
  )
- logger.info("job_registered", job="poll_repository_updates", schedule="every 30 minutes")
+ # Deploy 注意（ Pitfall 4）：首次部署新代码前，在生产 SQLite 上执行：
+ # DELETE FROM django_apscheduler_djangojob WHERE id='poll_repository_updates';
+ # 启动新代码后 scheduler 会自动重建，避免旧 job_state 残留旧 trigger。
+ logger.info("job_registered", job="poll_repository_updates", schedule="every 2 hours")
  scheduler.add_job(
  cleanup_stale_branch_indexes_job,
  trigger=IntervalTrigger(hours=1),
