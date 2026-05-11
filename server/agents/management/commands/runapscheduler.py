@@ -191,10 +191,10 @@ class Command(BaseCommand):
  replace_existing=True,
  )
  logger.info("job_registered", job="prune_cache_volumes", schedule="daily at 05:00")
- # Poll repository updates every 2 hours (Phase)
+ # Poll repository updates every N seconds (Phase，间隔由 settings.SYNC_INTERVAL_SECONDS 统一管理)
  scheduler.add_job(
  poll_repository_updates_job,
- trigger=IntervalTrigger(hours=2),
+ trigger=IntervalTrigger(seconds=settings.SYNC_INTERVAL_SECONDS),
  id="poll_repository_updates",
  name="Poll for repository updates via git ls-remote",
  max_instances=1,
@@ -203,11 +203,11 @@ class Command(BaseCommand):
  # Deploy 注意（ Pitfall 4）：首次部署新代码前，在生产 SQLite 上执行：
  # DELETE FROM django_apscheduler_djangojob WHERE id='poll_repository_updates';
  # 启动新代码后 scheduler 会自动重建，避免旧 job_state 残留旧 trigger。
- logger.info("job_registered", job="poll_repository_updates", schedule="every 2 hours")
- # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates 每 2 小时（Phase）
+ logger.info("job_registered", job="poll_repository_updates", schedule=f"every {settings.SYNC_INTERVAL_SECONDS}s")
+ # 计算 STALE 仓库 behind_commits 差值，串联 poll_repository_updates（Phase）
  scheduler.add_job(
  calculate_behind_commits_job,
- trigger=IntervalTrigger(hours=2),
+ trigger=IntervalTrigger(seconds=settings.SYNC_INTERVAL_SECONDS),
  id="calculate_behind_commits",
  name="Calculate behind commits for stale repositories",
  max_instances=1,
