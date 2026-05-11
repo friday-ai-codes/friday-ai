@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import type { ImportEdgeRow } from '~/api/codegraph'
 import { getImports } from '~/api/codegraph'
 import { Badge } from '~/components/ui/badge'

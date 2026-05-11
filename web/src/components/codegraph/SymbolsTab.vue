@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ColumnDef } from '@tanstack/vue-table'
 import { useDebounceFn } from '@vueuse/core'
-import { h, ref, watch } from 'vue'
+import { computed, h, onMounted, ref, watch } from 'vue'
 import { type SymbolRow, getSymbols } from '~/api/codegraph'
 import DataTable from '~/components/common/DataTable.vue'
 import { Badge } from '~/components/ui/badge'
