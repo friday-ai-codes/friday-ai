@@ -6,8 +6,11 @@
 per: 系统能从 Django/DRF 项目中提取 API 端点映射。
 per: 仅处理 Django/DRF，不处理 FastAPI/Flask。
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
+if TYPE_CHECKING:
+ from codegraph.extractors.base import EndpointData, FileContext
 logger = structlog.get_logger(__name__)
 def extract_endpoints(
  tree: Any, source: str, ctx: "FileContext"
@@ -152,14 +155,14 @@ def _parse_decorator_methods(decorator_node: Any) -> list[str]:
  if kw_name == "methods":
  kw_value = child.child_by_field_name("value")
  if kw_value is not None and kw_value.type in ("list", "tuple"):
- methods: list[str] =
+ kw_methods: list[str] =
  for item in kw_value.named_children:
  if item.type == "string":
  text = _extract_string_value(item)
  if text:
- methods.append(text.upper)
- if methods:
- return methods
+ kw_methods.append(text.upper)
+ if kw_methods:
+ return kw_methods
  # 全部失败 → 默认 "*"
  logger.warning(
  "decorator_methods_parse_failed",

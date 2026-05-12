@@ -3,8 +3,11 @@ per: 系统能从代码文件中提取函数调用关系。
 per: 仅文件内解析，caller 通过 WalkerNode.ancestor_function 判定。
 per: call_type 支持 DIRECT / METHOD / ATTRIBUTE。
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
+if TYPE_CHECKING:
+ from codegraph.extractors.base import CallData, FileContext
 logger = structlog.get_logger(__name__)
 def extract_calls(tree: Any, ctx: "FileContext") -> "list[CallData]":
  """从 tree-sitter AST 提取所有函数调用关系。

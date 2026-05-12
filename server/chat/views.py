@@ -128,6 +128,9 @@ class ModelsView(APIView):
  )
 class ChatCompletionsView(APIView):
  """API view for chat completions."""
+ # Phase OpenAI compat 兼容性：除默认 Cookie JWT 外，再接受 Bearer JWT 与
+ # X-Chat-Key（OpenAI SDK / 外部脚本通常通过 Authorization: Bearer 访问）。
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
  permission_classes = [IsAuthenticated]
  @extend_schema(
  summary="发送对话请求",

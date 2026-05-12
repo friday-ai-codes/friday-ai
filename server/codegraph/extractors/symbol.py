@@ -2,8 +2,11 @@
 per: Symbol 包含 name / symbol_type / file_path / start_line / end_line / signature / is_async
 per: 系统能从代码文件中提取函数/类/接口等符号定义
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
+if TYPE_CHECKING:
+ from codegraph.extractors.base import FileContext, SymbolData
 logger = structlog.get_logger(__name__)
 def extract_symbols(tree: Any, source: str, ctx: "FileContext") -> "list[SymbolData]":
  """从 tree-sitter AST 提取所有函数/类/方法定义。

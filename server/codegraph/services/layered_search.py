@@ -190,8 +190,8 @@ class LayeredSearchService:
  query_dense = await EmbeddingService.generate_embedding(query)
  if not query_dense:
  return LayerResult(layer="L3", status="error", error="embedding generation failed")
- query_sparse = await sync_to_async(SparseEncoderService.encode)(query)
- if not query_sparse.get("indices"):
+ query_sparse: dict[str, Any] | None = await sync_to_async(SparseEncoderService.encode)(query)
+ if not query_sparse or not query_sparse.get("indices"):
  query_sparse = None
  all_results: list[dict[str, Any]] =
  seen_keys: set[tuple[str, str, int]] = set # (repo_id, file_path, chunk_index)

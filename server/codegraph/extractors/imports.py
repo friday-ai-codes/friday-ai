@@ -1,8 +1,11 @@
 """Import 抽取器 —— 从 AST 中提取 import 依赖关系。
 per: 系统能从代码文件中提取 import 关系，分析模块间依赖。
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
+if TYPE_CHECKING:
+ from codegraph.extractors.base import FileContext, ImportData
 logger = structlog.get_logger(__name__)
 def extract_imports(tree: Any, ctx: "FileContext") -> "list[ImportData]":
  """从 tree-sitter AST 提取所有 import 语句。

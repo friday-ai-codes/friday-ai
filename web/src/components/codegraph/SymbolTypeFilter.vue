@@ -29,7 +29,7 @@ const SYMBOL_TYPES = [
  v-for="type in SYMBOL_TYPES":key="type.value":value="type.value"
  class="min-h-[36px] text-xs gap-1.5 px-2.5"
  >
- <span:class="[type.icon, 'w-3.5 .5']" />
+ <span class="w-3.5 .5":class="[type.icon]" />
  {{ type.label }}
  </ToggleGroupItem>
  </ToggleGroup>
