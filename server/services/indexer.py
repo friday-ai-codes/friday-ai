@@ -1,6 +1,7 @@
 """Incremental indexer service for code repositories."""
 import asyncio
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -65,6 +66,42 @@ async def update_write_progress(repository_id: str, total: int, processed: int) 
  index_write_total=total,
  index_write_processed=processed,
  )
+# 索引子阶段常量（前端用作 overall_stage 显示文案）
+class IndexStage:
+ CLONING = "克隆仓库中..."
+ COMPARING_HEAD = "对比远端 commit..."
+ LOADING_HASHES = "加载本地文件 hash..."
+ COMPUTING_DIFF = "计算变更文件..."
+ SCANNING_FILES = "扫描仓库文件..."
+ PARSING_FILES = "解析文件中..."
+ EMBEDDING = "生成向量中..."
+ WRITING_VECTORS = "写入向量库..."
+ BUILDING_GRAPH = "构建代码图谱..."
+ FINALIZING = "收尾中..."
+ COMPLETED = "完成"
+# 解析 git clone --progress 的 stderr 行，例如：
+# "Receiving objects: 50% (617/1234), 1.23 MiB | 500 KiB/s"
+_CLONE_RECEIVING_RE = re.compile(r"Receiving objects:\s+(\d{1,3})%")
+async def update_index_stage(repository_id: str, stage: str) -> None:
+ """更新当前索引阶段（用于前端实时展示）。
+ Stage 仅用于 UI 文案，写入失败（如非法 repository_id、DB 临时不可用）不应
+ 中断索引主流程，仅记录 warning。
+ """
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(index_stage=stage)
+ except Exception as exc:
+ logger.warning(
+ "update_index_stage_failed",
+ repository_id=repository_id,
+ stage=stage,
+ error=str(exc),
+ )
+# 文件级断点续传：累积约 64 个 chunks 触发一次 embed → upsert → flush FileIndex
+# 阈值的取舍：
+# - 偏小（如 16）：失败重试更"细"，丢失工作量更少；但 embed API 调用次数变多
+# - 偏大（如 256）：减少 API 调用 / 提升吞吐；但失败重试时丢失更多文件
+# 当前选 64：单次 embed 调用控制在 ~64 chunks，约 1-2 秒一批；失败重试丢失通常 ≤ 64 chunks 的工作量
+FILE_BATCH_CHUNK_THRESHOLD = 64
 logger = structlog.get_logger(__name__)
 def _build_embedding_text(chunk: CodeChunk) -> str:
  """构建用于 embedding 的增强文本，包含上下文信息。"""
@@ -285,9 +322,11 @@ class IndexerService:
  QdrantService.get_collection_name(self.repository_id)
  )
  # Scan files
+ await update_index_stage(self.repository_id, IndexStage.SCANNING_FILES)
  files = scan_directory(repo_path)
  logger.info("files_scanned", count=len(files))
  # Parse all files
+ await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
  all_chunks: list[CodeChunk] =
  for file_path in files:
  chunks = self.parser.parse_file(file_path, base_path=repo_path)
@@ -308,6 +347,7 @@ class IndexerService:
  async def on_embedding_progress(processed: int, total: int) -> None:
  await update_index_progress(self.repository_id, total, processed)
  # Generate embeddings
+ await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
  texts_to_embed = [_build_embedding_text(chunk) for chunk in all_chunks]
  embeddings = await EmbeddingService.generate_embeddings_batch(
  texts_to_embed, on_progress=on_embedding_progress
@@ -322,6 +362,7 @@ class IndexerService:
  branch_name=branch_name, is_base_branch=branch_name is not None,
  )
  # Upsert to Qdrant in batches
+ await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
  batch_size = 100
  total_points = len(points)
  await update_write_progress(self.repository_id, total_points, 0)
@@ -366,12 +407,14 @@ class IndexerService:
  )
  # Phase: 图谱轨写入 —— 在向量轨完成之后异步执行
  # per: 图谱失败不阻塞，异常在 _extract_and_write_graph 内部被捕获
+ await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=files,
  repository_id=self.repository_id,
  )
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
+ await update_index_stage(self.repository_id, IndexStage.FINALIZING)
  try:
  from codegraph.services.repo_summary_builder import RepoSummaryBuilder
  await RepoSummaryBuilder.build(repository_id=self.repository_id)
@@ -601,6 +644,7 @@ class IndexerService:
  *,
  branch_name: str | None = None,
  is_base_branch: bool = False,
+ history_id: str | None = None,
  ) -> dict[str, Any]:
  """基于 git diff 的增量索引。
  Args:
@@ -609,6 +653,10 @@ class IndexerService:
  to_sha: 当前 HEAD SHA
  branch_name: 分支名称，非空时在 payload 中注入分支元数据
  is_base_branch: 是否为 base 分支
+ history_id: 可选的 IndexHistory 记录 ID。给定时会在拿到 git diff 后
+ 立刻把 from_sha / to_sha / files_added / files_modified /
+ files_deleted / changed_files / summary_text 写回该记录，
+ 让"索引历史"列表中的 RUNNING 行可以实时显示文件增删改统计。
  Returns:
  Result dict with status and statistics
  Raises:
@@ -622,6 +670,7 @@ class IndexerService:
  )
  await self._ensure_collection
  # 执行 git diff
+ await update_index_stage(self.repository_id, IndexStage.COMPUTING_DIFF)
  proc = await asyncio.create_subprocess_exec(
  "git", "diff", "--name-status", "--find-renames", from_sha, to_sha,
  cwd=repo_path,
@@ -632,9 +681,47 @@ class IndexerService:
  if proc.returncode != 0:
  raise GitDiffError(f"git diff failed: {stderr.decode}")
  diffs = _parse_git_diff_output(stdout.decode)
+ # 提早把 stats / changed_files 写入 IndexHistory：让前端在索引仍在 RUNNING
+ # 时就能看到本次增量的"X 新增 / Y 修改 / Z 删除"和具体文件列表，
+ # 而不必等到 indexing 整体完成。
+ added_file_paths = [d.file_path for d in diffs if d.action == DiffAction.ADD]
+ modified_file_paths = [
+ d.file_path for d in diffs if d.action == DiffAction.UPDATE
+ ]
+ deleted_file_paths = [
+ d.file_path for d in diffs if d.action == DiffAction.DELETE
+ ]
+ if history_id:
+ from repositories.models import IndexHistory
+ await IndexHistory.objects.filter(id=history_id).aupdate(
+ from_sha=from_sha,
+ to_sha=to_sha,
+ files_added=len(added_file_paths),
+ files_modified=len(modified_file_paths),
+ files_deleted=len(deleted_file_paths),
+ changed_files={
+ "added": added_file_paths,
+ "modified": modified_file_paths,
+ "deleted": deleted_file_paths,
+ },
+ summary_text=_build_summary_text(
+ len(added_file_paths),
+ len(modified_file_paths),
+ len(deleted_file_paths),
+ ),
+ )
  if not diffs:
  logger.info("no_changes_detected", repository_id=self.repository_id)
- return {"status": "success", "added": 0, "updated": 0, "deleted": 0, "renamed": 0}
+ return {
+ "status": "success",
+ "added": 0,
+ "updated": 0,
+ "deleted": 0,
+ "renamed": 0,
+ "added_files":,
+ "modified_files":,
+ "deleted_files":,
+ }
  stats: dict[str, int] = {"added": 0, "updated": 0, "deleted": 0, "renamed": 0}
  # 处理删除
  for diff in diffs:
@@ -656,64 +743,128 @@ class IndexerService:
  d for d in diffs if d.action in (DiffAction.ADD, DiffAction.UPDATE)
  ]
  if files_to_index:
+ # === 文件级断点续传：用 FileIndex hash 过滤已成功完成的文件 ===
+ # 上次中断时已成功 upsert 完成的文件会在 FileIndex 中留下 hash 记录，
+ # 重试时如果 working dir 中文件 hash 与之相同 → 跳过 embedding，避免浪费。
+ await update_index_stage(self.repository_id, IndexStage.LOADING_HASHES)
+ stored_hashes: dict[str, str] = {
+ fp: fh
+ async for fp, fh in FileIndex.objects.filter(
+ repository_id=self.repository_id
+ ).values_list("file_path", "file_hash")
+ }
+ # 一次性 parse 所有未跳过的文件，便于事先得到准确的 total_chunks 给 UI 进度条
+ await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
+ file_payloads: list[tuple[Any, str, list[CodeChunk]]] = # (diff, hash, chunks)
+ skipped_resume_count = 0
  for diff in files_to_index:
+ full_path = os.path.join(repo_path, diff.file_path)
+ if not os.path.exists(full_path):
+ continue
+ current_hash = compute_file_hash(full_path)
+ if stored_hashes.get(diff.file_path) == current_hash:
+ # 上次已成功 upsert，且文件没再变 → 跳过
+ skipped_resume_count += 1
+ if diff.action == DiffAction.UPDATE:
+ stats["updated"] += 1
+ else:
+ stats["added"] += 1
+ continue
+ chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ file_payloads.append((diff, current_hash, chunks))
+ if skipped_resume_count > 0:
+ logger.info(
+ "files_skipped_by_file_index_resume",
+ repository_id=self.repository_id,
+ count=skipped_resume_count,
+ )
+ total_chunks = sum(len(c) for _, _, c in file_payloads)
+ if total_chunks > 0:
+ await update_index_progress(self.repository_id, total_chunks, 0)
+ await update_write_progress(self.repository_id, total_chunks, 0)
+ # 文件级 batch：累积到 FILE_BATCH_CHUNK_THRESHOLD 触发一次
+ # embed → upsert → flush FileIndex（保证文件级原子性）
+ pending_chunks: list[CodeChunk] =
+ pending_files: list[tuple[str, str]] = # (file_path, file_hash)
+ processed_chunks_total = 0
+ hybrid_enabled_cache: bool | None = None
+ async def _flush_batch -> None:
+ nonlocal processed_chunks_total, hybrid_enabled_cache
+ if not pending_chunks:
+ # 仍可能有"空文件"待 flush（无 chunks 但需要记 FileIndex）
+ for fp, fh in pending_files:
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults={"file_hash": fh},
+ )
+ pending_files.clear
+ return
+ if hybrid_enabled_cache is None:
+ hybrid_enabled_cache = await self._is_hybrid_enabled
+ hybrid_enabled = hybrid_enabled_cache
+ await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
+ texts = [_build_embedding_text(c) for c in pending_chunks]
+ embeddings = await EmbeddingService.generate_embeddings_batch(texts)
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
+ points = self._build_points(
+ pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=is_base_branch,
+ )
+ # upsert 失败抛异常 → FileIndex 不会更新 → 重试时这批文件会被重做
+ await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
+ upsert_batch_size = 100
+ for i in range(0, len(points), upsert_batch_size):
+ await qdrant_upsert_vectors(
+ self.repository_id, points[i: i + upsert_batch_size]
+ )
+ # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
+ for fp, fh in pending_files:
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults={"file_hash": fh},
+ )
+ processed_chunks_total += len(pending_chunks)
+ await update_index_progress(
+ self.repository_id, total_chunks, processed_chunks_total
+ )
+ await update_write_progress(
+ self.repository_id, total_chunks, processed_chunks_total
+ )
+ pending_chunks.clear
+ pending_files.clear
+ for diff, file_hash, chunks in file_payloads:
+ # UPDATE 路径需要先删除该文件的旧向量再写入新的（文件级幂等）
  if diff.action == DiffAction.UPDATE:
  await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
  stats["updated"] += 1
  else:
  stats["added"] += 1
- all_chunks: list[CodeChunk] =
- for diff in files_to_index:
- full_path = os.path.join(repo_path, diff.file_path)
- if os.path.exists(full_path):
- chunks = self.parser.parse_file(full_path, base_path=repo_path)
- all_chunks.extend(chunks)
- if all_chunks:
- total_chunks = len(all_chunks)
- await update_index_progress(self.repository_id, total_chunks, 0)
- async def on_embedding_progress(processed: int, total: int) -> None:
- await update_index_progress(self.repository_id, total, processed)
- texts_to_embed = [
- _build_embedding_text(chunk) for chunk in all_chunks
- ]
- embeddings = await EmbeddingService.generate_embeddings_batch(
- texts_to_embed, on_progress=on_embedding_progress
- )
- # 生成 sparse vectors（如果启用 hybrid）
- hybrid_enabled = await self._is_hybrid_enabled
- sparse_vectors: list[dict] | None = None
- if hybrid_enabled:
- sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
- points = self._build_points(
- all_chunks, embeddings, sparse_vectors, hybrid_enabled,
- branch_name=branch_name, is_base_branch=is_base_branch,
- )
- batch_size = 100
- total_points = len(points)
- await update_write_progress(self.repository_id, total_points, 0)
- for i in range(0, total_points, batch_size):
- batch = points[i: i + batch_size]
- await qdrant_upsert_vectors(self.repository_id, batch)
- await update_write_progress(
- self.repository_id,
- total_points,
- min(i + batch_size, total_points),
- )
+ pending_chunks.extend(chunks)
+ pending_files.append((diff.file_path, file_hash))
+ if len(pending_chunks) >= FILE_BATCH_CHUNK_THRESHOLD:
+ await _flush_batch
+ # flush 最后一批
+ if pending_chunks or pending_files:
+ await _flush_batch
  logger.info(
  "git_diff_indexing_complete",
  repository_id=self.repository_id,
  stats=stats,
  )
- # 同步 FileIndex 记录：新增/修改的文件更新 hash
- for diff in files_to_index:
- full_path = os.path.join(repo_path, diff.file_path)
- if os.path.exists(full_path):
- new_hash = compute_file_hash(full_path)
- await FileIndex.objects.aupdate_or_create(
- repository_id=self.repository_id,
- file_path=diff.file_path,
- defaults={"file_hash": new_hash},
- )
+ # 让 return value 也带上变更文件列表，与 run_incremental_index 保持一致
+ # （便于 clone_and_index_repository 末尾持久化 changed_files）
+ stats_with_files = {
+ **stats,
+ "added_files": added_file_paths,
+ "modified_files": modified_file_paths,
+ "deleted_files": deleted_file_paths,
+ }
+ # 注：FileIndex 已在 _flush_batch 内按文件批增量写入（断点续传锚点），
+ # 此处不再做循环末统一更新，避免重复 IO。
  # 更新 RepositoryBranchIndex 记录
  if branch_name:
  total_points = sum(stats.get(k, 0) for k in ("added", "updated"))
@@ -726,24 +877,29 @@ class IndexerService:
  # Phase: 图谱轨写入
  graph_files = [d.file_path for d in files_to_index]
  if graph_files:
+ await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
  )
- return {"status": "success", **stats}
+ return {"status": "success", **stats_with_files}
  async def run_incremental_index(
  self,
  repo_path: str,
  *,
  branch_name: str | None = None,
  is_base_branch: bool = False,
+ history_id: str | None = None,
  ) -> dict[str, Any]:
  """Run incremental indexing for a repository.
  Args:
  repo_path: Path to the cloned repository
  branch_name: 分支名称，非空时在 payload 中注入分支元数据
  is_base_branch: 是否为基础分支
+ history_id: 可选的 IndexHistory 记录 ID，给定时会在 hash 比较出
+ 差异后立刻把 stats / changed_files 写回该记录，让"索引历史"
+ 列表中的 RUNNING 行可实时显示文件增删改统计。
  Returns:
  Result dict with status and statistics
  """
@@ -754,6 +910,7 @@ class IndexerService:
  try:
  await self._ensure_collection
  # DB 级文件去重——从 FileIndex 查询已索引文件的 hash，替代 Qdrant hash 比较
+ await update_index_stage(self.repository_id, IndexStage.LOADING_HASHES)
  stored_records = {
  fp: fh
  async for fp, fh in FileIndex.objects.filter(
@@ -762,13 +919,38 @@ class IndexerService:
  }
  stored_hashes: dict[str, str] = stored_records
  # Scan local files and compute hashes
+ await update_index_stage(self.repository_id, IndexStage.SCANNING_FILES)
  files = scan_directory(repo_path)
  local_hashes: dict[str, str] = {}
  for file_path in files:
  relative_path = os.path.relpath(file_path, repo_path)
  local_hashes[relative_path] = compute_file_hash(file_path)
  # Compute diff
+ await update_index_stage(self.repository_id, IndexStage.COMPUTING_DIFF)
  diffs = self._compute_diff(stored_hashes, local_hashes)
+ # 提早把 stats / changed_files 写入 IndexHistory（与 git_diff 路径一致）
+ if history_id:
+ from repositories.models import IndexHistory
+ pre_added = [d.file_path for d in diffs if d.action == DiffAction.ADD]
+ pre_modified = [
+ d.file_path for d in diffs if d.action == DiffAction.UPDATE
+ ]
+ pre_deleted = [
+ d.file_path for d in diffs if d.action == DiffAction.DELETE
+ ]
+ await IndexHistory.objects.filter(id=history_id).aupdate(
+ files_added=len(pre_added),
+ files_modified=len(pre_modified),
+ files_deleted=len(pre_deleted),
+ changed_files={
+ "added": pre_added,
+ "modified": pre_modified,
+ "deleted": pre_deleted,
+ },
+ summary_text=_build_summary_text(
+ len(pre_added), len(pre_modified), len(pre_deleted)
+ ),
+ )
  stats = {"added": 0, "updated": 0, "deleted": 0, "skipped": 0}
  # Process deletions
  for diff in diffs:
@@ -782,62 +964,96 @@ class IndexerService:
  diff for diff in diffs if diff.action in (DiffAction.ADD, DiffAction.UPDATE)
  ]
  if files_to_index:
- # For updates, delete old vectors first
+ # 文件级断点续传：解析每个文件并按 FILE_BATCH_CHUNK_THRESHOLD 分批
+ # embed → upsert → flush FileIndex（与 run_git_diff_index 同节奏）。
+ # 注：本路径已用 hash 比较过 stored_hashes，因此自然跳过未变文件，
+ # 不再需要额外的 FileIndex 过滤。
+ await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
+ file_payloads: list[tuple[Any, str, list[CodeChunk]]] =
  for diff in files_to_index:
+ full_path = os.path.join(repo_path, diff.file_path)
+ if not os.path.exists(full_path):
+ continue
+ file_hash = local_hashes.get(diff.file_path) or compute_file_hash(full_path)
+ chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ file_payloads.append((diff, file_hash, chunks))
+ total_chunks = sum(len(c) for _, _, c in file_payloads)
+ if total_chunks > 0:
+ await update_index_progress(self.repository_id, total_chunks, 0)
+ await update_write_progress(self.repository_id, total_chunks, 0)
+ pending_chunks: list[CodeChunk] =
+ pending_files: list[tuple[str, str]] =
+ processed_chunks_total = 0
+ hybrid_enabled_cache: bool | None = None
+ async def _flush_batch_inc -> None:
+ nonlocal processed_chunks_total, hybrid_enabled_cache
+ if not pending_chunks:
+ for fp, fh in pending_files:
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults={"file_hash": fh},
+ )
+ pending_files.clear
+ return
+ if hybrid_enabled_cache is None:
+ hybrid_enabled_cache = await self._is_hybrid_enabled
+ hybrid_enabled = hybrid_enabled_cache
+ await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
+ texts = [_build_embedding_text(c) for c in pending_chunks]
+ embeddings = await EmbeddingService.generate_embeddings_batch(texts)
+ sparse_vectors: list[dict] | None = None
+ if hybrid_enabled:
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
+ points = self._build_points(
+ pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name, is_base_branch=is_base_branch,
+ )
+ await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
+ upsert_batch_size = 100
+ for i in range(0, len(points), upsert_batch_size):
+ await qdrant_upsert_vectors(
+ self.repository_id, points[i: i + upsert_batch_size]
+ )
+ for fp, fh in pending_files:
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults={"file_hash": fh},
+ )
+ processed_chunks_total += len(pending_chunks)
+ await update_index_progress(
+ self.repository_id, total_chunks, processed_chunks_total
+ )
+ await update_write_progress(
+ self.repository_id, total_chunks, processed_chunks_total
+ )
+ pending_chunks.clear
+ pending_files.clear
+ for diff, file_hash, chunks in file_payloads:
  if diff.action == DiffAction.UPDATE:
  await qdrant_delete_by_file_path(self.repository_id, diff.file_path)
  stats["updated"] += 1
  else:
  stats["added"] += 1
- # Parse and index new/updated files
- all_chunks: list[CodeChunk] =
- for diff in files_to_index:
- full_path = os.path.join(repo_path, diff.file_path)
- chunks = self.parser.parse_file(full_path, base_path=repo_path)
- all_chunks.extend(chunks)
- if all_chunks:
- # Set total chunks count
- total_chunks = len(all_chunks)
- await update_index_progress(self.repository_id, total_chunks, 0)
- # Progress callback for embedding generation
- async def on_embedding_progress(processed: int, total: int) -> None:
- await update_index_progress(self.repository_id, total, processed)
- # Generate embeddings
- texts_to_embed = [
- _build_embedding_text(chunk) for chunk in all_chunks
- ]
- embeddings = await EmbeddingService.generate_embeddings_batch(
- texts_to_embed, on_progress=on_embedding_progress
- )
- # 生成 sparse vectors（如果启用 hybrid）
- hybrid_enabled = await self._is_hybrid_enabled
- sparse_vectors: list[dict] | None = None
- if hybrid_enabled:
- sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
- points = self._build_points(
- all_chunks, embeddings, sparse_vectors, hybrid_enabled,
- branch_name=branch_name, is_base_branch=is_base_branch,
- )
- batch_size = 100
- total_points = len(points)
- await update_write_progress(self.repository_id, total_points, 0)
- for i in range(0, total_points, batch_size):
- batch = points[i: i + batch_size]
- await qdrant_upsert_vectors(self.repository_id, batch)
- await update_write_progress(self.repository_id, total_points, min(i + batch_size, total_points))
+ pending_chunks.extend(chunks)
+ pending_files.append((diff.file_path, file_hash))
+ if len(pending_chunks) >= FILE_BATCH_CHUNK_THRESHOLD:
+ await _flush_batch_inc
+ if pending_chunks or pending_files:
+ await _flush_batch_inc
  logger.info(
  "incremental_indexing_complete",
  repository_id=self.repository_id,
  stats=stats,
  )
- # 同步 FileIndex 记录
- # 删除已移除的文件记录
+ # 删除已移除文件的 FileIndex 记录（add/update 已在 _flush_batch_inc 内写入）
  for diff in diffs:
  if diff.action == DiffAction.DELETE:
  await FileIndex.objects.filter(
  repository_id=self.repository_id, file_path=diff.file_path
  ).adelete
- # 新增/修改文件更新记录
+ # 兜底：理论上不会进入（_flush_batch_inc 已 flush），但保留以防遗漏（noop）
  for diff in diffs:
  if diff.action in (DiffAction.ADD, DiffAction.UPDATE):
  new_hash = local_hashes.get(diff.file_path, "")
@@ -849,6 +1065,7 @@ class IndexerService:
  )
  # Phase: 图谱轨写入
  if files_to_index:
+ await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  graph_files = [d.file_path for d in files_to_index]
  await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -856,6 +1073,7 @@ class IndexerService:
  repository_id=self.repository_id,
  )
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
+ await update_index_stage(self.repository_id, IndexStage.FINALIZING)
  try:
  from codegraph.services.repo_summary_builder import RepoSummaryBuilder
  await RepoSummaryBuilder.build(repository_id=self.repository_id)
@@ -1146,6 +1364,7 @@ async def clone_and_index_repository(
  token = repo_data["token"]
  # Update status to indexing
  await update_repository_status(repository, IndexStatus.INDEXING)
+ await update_index_stage(repository_id, IndexStage.CLONING)
  temp_dir = None
  try:
  # Create temp directory
@@ -1156,7 +1375,10 @@ async def clone_and_index_repository(
  # https://github.com/user/repo.git -> https://token@github.com/user/repo.git
  git_url = git_url.replace("https://", f"https://{token}@")
  # Clone using git
- clone_cmd = ["git", "clone", "--depth", "1"]
+ # --progress 启用 stderr 进度输出（即使没有 tty）；我们后台读 stderr 解析
+ # "Receiving objects: NN%" 实时把 stage 更新为"克隆仓库中... NN%"，
+ # 让前端长时间 clone 也能看到进度数字而不是死板的"克隆仓库中..."。
+ clone_cmd = ["git", "clone", "--depth", "1", "--progress"]
  if not branch:
  clone_cmd.append("--single-branch")
  # Add proxy if configured
@@ -1168,14 +1390,55 @@ async def clone_and_index_repository(
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
  )
+ async def _stream_clone_progress -> bytes:
+ """读 stderr，解析 'Receiving objects: NN%' 并 update stage。
+ 返回完整 stderr bytes（用于失败时报错），同时把进度记录到 DB。
+ """
+ assert proc.stderr is not None
+ collected = bytearray
+ last_pct = -1
+ buffer = b""
+ while True:
+ chunk = await proc.stderr.read(256)
+ if not chunk:
+ break
+ collected.extend(chunk)
+ buffer += chunk
+ # git --progress 用 \r 分隔进度刷新，按 \r/\n 切片即可
+ while True:
+ idx_r = buffer.find(b"\r")
+ idx_n = buffer.find(b"\n")
+ candidates = [i for i in (idx_r, idx_n) if i != -1]
+ if not candidates:
+ break
+ cut = min(candidates)
+ line = buffer[:cut].decode("utf-8", errors="ignore")
+ buffer = buffer[cut + 1:]
+ # 形如 "Receiving objects: 50% (617/1234), 1.23 MiB | 500 KiB/s"
+ m = _CLONE_RECEIVING_RE.search(line)
+ if m:
+ pct = int(m.group(1))
+ # 只在百分比真实变化时写 DB（≤101 次写入，可控）
+ if pct != last_pct:
+ last_pct = pct
+ await update_index_stage(
+ repository_id, f"克隆仓库中... {pct}%"
+ )
+ return bytes(collected)
  try:
- _stdout, stderr = await asyncio.wait_for(proc.communicate, timeout=300.0)
+ stderr_bytes = await asyncio.wait_for(
+ _stream_clone_progress, timeout=300.0
+ )
+ await proc.wait
  except asyncio.TimeoutError:
  proc.kill
- await proc.communicate
+ try:
+ await asyncio.wait_for(proc.wait, timeout=5.0)
+ except asyncio.TimeoutError:
+ pass
  raise Exception("Git clone timed out after 300s")
  if proc.returncode != 0:
- raise Exception(f"Git clone failed: {stderr.decode}")
+ raise Exception(f"Git clone failed: {stderr_bytes.decode(errors='ignore')}")
  # Run indexing - pass repository_id instead of repository object
  indexer = IndexerService(repository_id)
  head_sha: str | None = None
@@ -1188,12 +1451,20 @@ async def clone_and_index_repository(
  # 现有 base branch 索引路径
  base_branch = repository.base_branch or repository.default_branch
  # 获取当前 HEAD SHA
+ await update_index_stage(repository_id, IndexStage.COMPARING_HEAD)
  head_sha = await _get_head_sha(temp_dir)
  # 决定索引路径：git diff > 文件哈希比较 > 全量
  last_sha = repository.last_indexed_commit_sha
  # 先检查 collection 是否有数据；如果为空则必须走全量索引
+ await update_index_stage(repository_id, IndexStage.LOADING_HASHES)
  stored_hashes = await qdrant_get_stored_file_hashes(repository_id)
  collection_has_data = bool(stored_hashes)
+ # 全量索引路径在拿到 head_sha 之后立刻把 to_sha 写入 IndexHistory，
+ # 让"索引历史"列表的 RUNNING 行能展示当前目标 commit
+ # （增删改 stats 在全量路径无意义，保持 0）
+ if history_id and head_sha:
+ from repositories.models import IndexHistory as _IH
+ await _IH.objects.filter(id=history_id).aupdate(to_sha=head_sha)
  if last_sha and collection_has_data:
  # 尝试 git diff 增量路径
  fetch_ok = await _fetch_commit(temp_dir, last_sha, proxy_url)
@@ -1202,6 +1473,7 @@ async def clone_and_index_repository(
  index_result = await indexer.run_git_diff_index(
  temp_dir, last_sha, head_sha,
  branch_name=base_branch, is_base_branch=True,
+ history_id=history_id,
  )
  except GitDiffError as e:
  logger.warning("git_diff_failed_fallback", error=str(e))
@@ -1215,6 +1487,7 @@ async def clone_and_index_repository(
  else:
  index_result = await indexer.run_incremental_index(
  temp_dir, branch_name=base_branch, is_base_branch=True,
+ history_id=history_id,
  )
  else:
  logger.warning("fetch_commit_failed_fallback", sha=last_sha)
@@ -1228,10 +1501,12 @@ async def clone_and_index_repository(
  else:
  index_result = await indexer.run_incremental_index(
  temp_dir, branch_name=base_branch, is_base_branch=True,
+ history_id=history_id,
  )
  elif collection_has_data:
  index_result = await indexer.run_incremental_index(
  temp_dir, branch_name=base_branch, is_base_branch=True,
+ history_id=history_id,
  )
  else:
  if last_sha:
@@ -1256,6 +1531,7 @@ async def clone_and_index_repository(
  IndexStatus.INDEXED,
  last_indexed_at=timezone.now,
  )
+ await update_index_stage(repository_id, IndexStage.COMPLETED)
  # 更新 IndexHistory 状态为完成
  if history_id:
  from repositories.models import IndexHistory, IndexHistoryStatus
@@ -1303,6 +1579,7 @@ async def clone_and_index_repository(
  )
  # Update repository status to failed
  await update_repository_status(repository, IndexStatus.FAILED, error=str(e))
+ await update_index_stage(repository_id, "")
  # 更新 IndexHistory 状态为失败
  if history_id:
  from django.utils import timezone

@@ -331,15 +331,7 @@ export const repositoriesApi = {
  * 获取索引历史列表（分页 + 状态筛选）
  */
  getIndexHistory: async (id: string, params?: { limit?: number, offset?: number, status?: string }): Promise<IndexHistoryResponse> => {
- const searchParams = new URLSearchParams
- if (params?.limit)
- searchParams.set('limit', String(params.limit))
- if (params?.offset)
- searchParams.set('offset', String(params.offset))
- if (params?.status)
- searchParams.set('status', params.status)
- const qs = searchParams.toString
- return get<IndexHistoryResponse>(`/repositories/${id}/index/history/${qs ? `?${qs}`: ''}`)
+ return get<IndexHistoryResponse>(`/repositories/${id}/index/history/`, params)
  },
  /**
  * 获取索引统计

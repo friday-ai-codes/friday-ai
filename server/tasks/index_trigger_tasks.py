@@ -20,6 +20,7 @@ from repositories.models import (
  RepositoryBranchIndex,
  TriggerType,
 )
+from services.background_runner import run_in_background
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
@@ -85,8 +86,8 @@ def parse_push_event(platform: str, payload: dict) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 触发索引（共用逻辑）
 # ---------------------------------------------------------------------------
-# 模块级强引用集合：防止 asyncio.create_task 被 GC 回收
-_auto_index_tasks: set[asyncio.Task[Any]] = set
+# 历史上这里用 asyncio.create_task + set 防 GC，但任务跑在请求 event loop 里
+# 会随 ASGI CurrentThreadExecutor 一起死。改走 background_runner 后无需手动管理强引用。
 async def trigger_auto_index(
  repository: Repository,
  trigger_type: str,
@@ -108,6 +109,14 @@ async def trigger_auto_index(
  #: 防抖去重
  if commit_sha and _is_duplicate(commit_sha, dedup_branch_name):
  return {"status": "duplicate", "sha": commit_sha}
+ # 重置上一轮索引的进度残留，避免 UI 在 INDEXING 初期读到旧的 N/N → 误显示 100%
+ await Repository.objects.filter(id=repo_id).aupdate(
+ index_total_chunks=0,
+ index_processed_chunks=0,
+ index_write_total=0,
+ index_write_processed=0,
+ index_error=None,
+ )
  # 创建 IndexHistory 记录
  tt = TriggerType.WEBHOOK if trigger_type == "webhook" else TriggerType.SCHEDULED
  from django.utils import timezone
@@ -117,13 +126,11 @@ async def trigger_auto_index(
  status=IndexHistoryStatus.RUNNING,
  started_at=timezone.now,
  )
- # 启动后台任务
- task: asyncio.Task[Any] = asyncio.create_task(
- clone_and_index_repository(repo_id, history_id=str(history.id)),
+ history_id_str = str(history.id)
+ run_in_background(
+ lambda: clone_and_index_repository(repo_id, history_id=history_id_str),
  name=f"auto-index-{repo_id}",
  )
- _auto_index_tasks.add(task)
- task.add_done_callback(_auto_index_tasks.discard)
  logger.info(
  "auto_index_triggered",
  repository_id=repo_id,
@@ -139,7 +146,7 @@ async def trigger_auto_index(
 # ---------------------------------------------------------------------------
 # 分支 overlay 重建 / 回收（Phase）
 # ---------------------------------------------------------------------------
-_branch_tasks: set[asyncio.Task[Any]] = set
+# overlay 重建后台任务也走 background_runner，避免随请求 loop 一起死。
 OVERLAY_UPGRADE_THRESHOLD = 0.5
 async def trigger_branch_rebuild(
  repository: Repository, branch_name: str, commit_sha: str = "",
@@ -173,12 +180,10 @@ async def trigger_branch_rebuild(
  is_base_branch=False,
  status=BranchIndexStatus.INDEXING,
  )
- task = asyncio.create_task(
- _rebuild_branch_overlay(repository, branch_name, commit_sha),
+ run_in_background(
+ lambda: _rebuild_branch_overlay(repository, branch_name, commit_sha),
  name=f"branch-rebuild-{repo_id}-{branch_name}",
  )
- _branch_tasks.add(task)
- task.add_done_callback(_branch_tasks.discard)
  logger.info("branch_rebuild_triggered", repository_id=repo_id, branch=branch_name)
  return {"status": "triggered", "branch": branch_name}
 async def _check_and_upgrade_overlay(repository: Repository, branch_name: str) -> bool:

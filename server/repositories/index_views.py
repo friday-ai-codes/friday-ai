@@ -1,17 +1,32 @@
 """Index management views for repositories."""
 import asyncio
+import json
 from typing import Any
 import httpx
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.conf import settings
 from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import BaseRenderer
 from rest_framework.response import Response
+class ServerSentEventRenderer(BaseRenderer):
+ """绕过 DRF content negotiation 的 SSE renderer。
+ DRF APIView 默认 renderer 只接受 application/json 之类，浏览器 fetch SSE 时
+ 送的是 Accept: text/event-stream → 协商失败直接 406。给 SSE 端点显式声明这个
+ renderer 后 DRF 不再校验 Accept，View 自己用 StreamingHttpResponse 直出。
+ """
+ media_type = "text/event-stream"
+ format = "txt"
+ charset = "utf-8"
+ def render(self, data, accepted_media_type=None, renderer_context=None):
+ # 实际响应由 StreamingHttpResponse 直出，render 不会被调用
+ return data
 from repositories.models import (
  IndexHistory,
  IndexHistoryStatus,
@@ -20,14 +35,47 @@ from repositories.models import (
  RepositoryBranchIndex,
  TriggerType,
 )
+from services.background_runner import run_in_background
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
-# 模块级强引用集合：防止 asyncio.create_task 任务被 GC 静默回收
-# 参考：https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
-# 注意：Django dev server 热重载时集合会重置，生产环境不受影响
-_index_tasks: set[asyncio.Task[dict[str, Any]]] = set
+def _compute_index_progress(repository: Repository) -> dict[str, Any]:
+ """根据 Repository 的 4 个进度计数字段 + index_stage 计算 overall_progress / overall_stage。
+ 优先采用 indexer 显式上报的 `index_stage` 文案；只有当 stage 为空（旧记录或未上报）
+ 时才回退到旧的"按计数器推断"逻辑，便于前端两个端点的 UI 不出现跳变。
+ """
+ total_chunks = repository.index_total_chunks
+ processed_chunks = repository.index_processed_chunks
+ write_total = repository.index_write_total
+ write_processed = repository.index_write_processed
+ explicit_stage = (repository.index_stage or "").strip
+ embedding_pct = (
+ (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
+ )
+ write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
+ overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
+ if explicit_stage:
+ overall_stage = explicit_stage
+ elif total_chunks == 0:
+ overall_stage = "解析文件中..."
+ elif write_total == 0:
+ overall_stage = "生成向量中..."
+ elif write_processed < write_total:
+ overall_stage = "写入向量库..."
+ else:
+ overall_stage = "完成"
+ return {
+ "overall_progress": overall_progress,
+ "overall_stage": overall_stage,
+ "index_total_chunks": total_chunks,
+ "index_processed_chunks": processed_chunks,
+ "index_write_total": write_total,
+ "index_write_processed": write_processed,
+ }
+# NOTE: 历史上这里维护一个 _index_tasks set 配合 asyncio.create_task
+# 防 GC，但这种做法把后台 task 绑死在请求生命周期 → asgiref CurrentThreadExecutor
+# 关闭后 ORM 全炸。改走 services.background_runner 的常驻 worker loop。
 def _acquire_index_lock(repository_id: str) -> Repository | None:
  """尝试获取仓库索引 DB 锁。返回 None 表示已被其他进程持有（skip_locked）。"""
  with transaction.atomic:
@@ -40,15 +88,18 @@ def _acquire_index_lock(repository_id: str) -> Repository | None:
 _acquire_index_lock_async = sync_to_async(_acquire_index_lock)
 def _schedule_index(
  repository_id: str, history_id: str, *, branch: str | None = None,
-) -> asyncio.Task[dict[str, Any]]:
- """创建索引任务并用强引用保护，防止 GC 回收。"""
- task: asyncio.Task[dict[str, Any]] = asyncio.create_task(
- clone_and_index_repository(repository_id, history_id=history_id, branch=branch),
+) -> Any:
+ """把索引任务调度到独立 worker loop。
+ 返回 concurrent.futures.Future（调用方一般不用 await，仅作可观测性）。
+ 必须传 factory 而不是 coroutine：coroutine 只能在创建它的 loop 上 await，
+ 跨线程提交需要由 worker loop 在自己上下文里实例化 coroutine。
+ """
+ return run_in_background(
+ lambda: clone_and_index_repository(
+ repository_id, history_id=history_id, branch=branch,
+ ),
  name=f"index-{repository_id}",
  )
- _index_tasks.add(task)
- task.add_done_callback(_index_tasks.discard)
- return task
 class IndexStatusSerializer(serializers.Serializer):
  """Serializer for index status response."""
  index_status = serializers.CharField
@@ -141,6 +192,14 @@ class IndexTriggerView(APIView):
  {"detail": "索引正在进行中"},
  status=status.HTTP_409_CONFLICT,
  )
+ # 重置上一轮索引的进度残留，避免 UI 在 INDEXING 初期读到旧的 N/N → 误显示 100%
+ await Repository.objects.filter(id=repository_id).aupdate(
+ index_total_chunks=0,
+ index_processed_chunks=0,
+ index_write_total=0,
+ index_write_processed=0,
+ index_error=None,
+ )
  # 创建 IndexHistory 记录（获锁之后，任务启动之前）
  history = await IndexHistory.objects.acreate(
  repository_id=repository_id,
@@ -172,41 +231,44 @@ class IndexStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # 索引进行中 → 进度信息从 DB 读取（indexer 实时更新这些字段）
+ # 索引进行中 → 进度信息从 DB 读取（indexer 实时更新这些字段 + index_stage）
  if repository.index_status == IndexStatus.INDEXING:
- total_chunks = repository.index_total_chunks
- processed_chunks = repository.index_processed_chunks
- write_total = repository.index_write_total
- write_processed = repository.index_write_processed
- embedding_pct = (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
- write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
- overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
- if total_chunks == 0:
- overall_stage = "解析文件中..."
- elif write_total == 0:
- overall_stage = "生成向量中..."
- elif write_processed < write_total:
- overall_stage = "写入向量库..."
- else:
- overall_stage = "完成"
+ progress = _compute_index_progress(repository)
  serializer = IndexStatusSerializer(
  {
  "index_status": IndexStatus.INDEXING,
  "last_indexed_at": repository.last_indexed_at,
  "index_error": None,
- "index_total_chunks": total_chunks,
- "index_processed_chunks": processed_chunks,
- "index_write_total": write_total,
- "index_write_processed": write_processed,
- "overall_progress": overall_progress,
- "overall_stage": overall_stage,
+ **progress,
  }
  )
  return Response(serializer.data)
- # 非索引中 → Qdrant 是唯一事实来源
+ # 非索引中 → Qdrant 是唯一事实来源（Qdrant 不可用时安全降级，避免 500）
+ try:
  health = await sync_to_async(QdrantService.check_collection_health)(
  str(repository_id)
  )
+ except Exception as exc:
+ logger.warning(
+ "index_status_qdrant_unavailable",
+ repository_id=str(repository_id),
+ error=str(exc),
+ )
+ # 降级到 DB 自身记录状态，不抛 500
+ serializer = IndexStatusSerializer(
+ {
+ "index_status": repository.index_status,
+ "last_indexed_at": repository.last_indexed_at,
+ "index_error": repository.index_error,
+ "index_total_chunks": repository.index_total_chunks,
+ "index_processed_chunks": repository.index_processed_chunks,
+ "index_write_total": repository.index_write_total,
+ "index_write_processed": repository.index_write_processed,
+ "overall_progress": 0,
+ "overall_stage": "",
+ }
+ )
+ return Response(serializer.data)
  qdrant_has_data = (
  health.get("collection_exists") and health.get("points_count", 0) > 0
  )
@@ -471,6 +533,9 @@ class IndexHistorySerializer(serializers.Serializer):
  files_added = serializers.IntegerField
  files_modified = serializers.IntegerField
  files_deleted = serializers.IntegerField
+ # 变更文件路径列表 — 增量索引完成或 RUNNING partial-update 后由 indexer 写入
+ # 形如 {"added": [...], "modified": [...], "deleted": [...]}；全量索引时为空 dict
+ changed_files = serializers.JSONField
  summary_text = serializers.CharField(allow_null=True)
  error_message = serializers.CharField(allow_null=True)
  started_at = serializers.DateTimeField(allow_null=True)
@@ -495,15 +560,126 @@ class IndexHistoryListView(APIView):
  serializer = IndexHistorySerializer(items, many=True)
  data = await sync_to_async(lambda: serializer.data)
  return Response({"items": data, "total": total})
+class IndexProgressStreamView(APIView):
+ """SSE 端点：实时推送索引进度 + 当前 RUNNING IndexHistory。
+ GET /api/repositories/{id}/index/stream/ (text/event-stream)
+ 每帧形如：
+ data: {"type": "progress",
+ "ts": "...",
+ "repository": {index_status, overall_progress, overall_stage,
+ index_total_chunks, ...},
+ "running_history": null | {id, status, from_sha, to_sha,
+ files_added, files_modified,
+ files_deleted, changed_files,
+ summary_text, ...}}
+ 终止条件：
+ 1. 仓库不在 INDEXING 状态且无 RUNNING IndexHistory → 推 done 关闭
+ 2. 达到 max_ticks 上限（防止后端长连接泄漏）→ 推 done 关闭
+ 3. 客户端断开 → ASGI 自动取消 generator
+ """
+ permission_classes = [IsAuthenticated]
+ # 显式声明 SSE renderer，避免 DRF 因 Accept: text/event-stream 而 406
+ renderer_classes = [ServerSentEventRenderer]
+ async def get(self, request: Any, repository_id: str) -> Any:
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ tick_interval = float(getattr(settings, "INDEX_STREAM_TICK_INTERVAL", 1.0))
+ max_ticks = int(getattr(settings, "INDEX_STREAM_MAX_TICKS", 300))
+ async def event_stream:
+ ticks = 0
+ while ticks < max_ticks:
+ try:
+ repo = await Repository.objects.aget(id=repository_id)
+ except Repository.DoesNotExist:
+ yield _format_sse({"type": "done", "reason": "repo_deleted"})
+ return
+ running_history = (
+ await IndexHistory.objects.filter(
+ repository_id=repository_id,
+ status=IndexHistoryStatus.RUNNING,
+ )
+ .order_by("-created_at")
+ .afirst
+ )
+ progress = _compute_index_progress(repo)
+ repo_payload = {
+ "index_status": repo.index_status,
+ "last_indexed_at": (
+ repo.last_indexed_at.isoformat
+ if repo.last_indexed_at
+ else None
+ ),
+ "index_error": repo.index_error,
+ **progress,
+ }
+ running_payload = None
+ if running_history is not None:
+ running_payload = await sync_to_async(
+ lambda: IndexHistorySerializer(running_history).data
+ )
+ yield _format_sse(
+ {
+ "type": "progress",
+ "ts": timezone.now.isoformat,
+ "repository": repo_payload,
+ "running_history": running_payload,
+ }
+ )
+ # 终止条件：仓库非 INDEXING 且没有 RUNNING IndexHistory
+ if (
+ repo.index_status != IndexStatus.INDEXING
+ and running_history is None
+ ):
+ yield _format_sse({"type": "done", "reason": "idle"})
+ return
+ ticks += 1
+ if ticks >= max_ticks:
+ break
+ if tick_interval > 0:
+ await asyncio.sleep(tick_interval)
+ yield _format_sse({"type": "done", "reason": "max_ticks"})
+ response = StreamingHttpResponse(
+ event_stream,
+ content_type="text/event-stream",
+ )
+ response["Cache-Control"] = "no-cache"
+ response["X-Accel-Buffering"] = "no"
+ return response
+def _format_sse(payload: dict[str, Any]) -> str:
+ """格式化为 SSE data 行。"""
+ return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 class IndexStatsView(APIView):
- """: 统计 API（chunk 数、语言分布、覆盖率）。"""
+ """: 统计 API（chunk 数、语言分布、覆盖率）。
+ Qdrant 偶发慢 / 超时 / 不可用时返回 200 + 降级数据（避免前端轮询持续报 500）。
+ """
  permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ try:
  stats = await sync_to_async(QdrantService.get_collection_stats)(str(repository_id))
+ except Exception as exc:
+ logger.warning(
+ "index_stats_qdrant_unavailable",
+ repository_id=repository_id,
+ error=str(exc),
+ )
+ # 降级：用 Repository 自身的 chunks 计数器作为近似值，
+ # language_distribution 直接置空，coverage 为 None
+ return Response(
+ {
+ "chunks_total": repository.index_total_chunks,
+ "language_distribution": {},
+ "indexed_files_count": 0,
+ "coverage_percent": None,
+ "qdrant_unavailable": True,
+ "warning": "Qdrant 暂时不可用，已返回缓存计数；请稍后重试以获取最新统计",
+ }
+ )
  # 覆盖率：已索引文件数 / 总可索引文件数
  indexed_files = stats.get("indexed_files_count", 0)
  total_chunks = repository.index_total_chunks
@@ -519,14 +695,33 @@ class IndexStatsView(APIView):
  }
  )
 class RepositoryCollectionHealthView(APIView):
- """: 仓库 Qdrant 集合健康校验 API。"""
+ """: 仓库 Qdrant 集合健康校验 API。
+ Qdrant 不可用时返回 200 + status=unhealthy，便于前端 UI 提示而非整页报错。
+ """
  permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ try:
  health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
+ except Exception as exc:
+ logger.warning(
+ "index_health_qdrant_unavailable",
+ repository_id=repository_id,
+ error=str(exc),
+ )
+ return Response(
+ {
+ "status": "unhealthy",
+ "collection_exists": False,
+ "points_count": 0,
+ "expected_points": repository.index_total_chunks,
+ "points_match": None,
+ "error": f"Qdrant 暂时不可用：{exc}",
+ }
+ )
  # 对比 Repository 记录的预期 chunk 数
  expected = repository.index_total_chunks
  actual = health.get("points_count", 0)

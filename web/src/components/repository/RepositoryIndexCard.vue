@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { IndexStatusResponse, SearchResultItem } from '~/api/repositories'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import type { IndexStreamRepositoryPayload } from '~/composables/useIndexProgressStream'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
+import { connectIndexProgressStream } from '~/composables/useIndexProgressStream'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
@@ -19,6 +21,11 @@ const importing = ref(false)
 const fileInput = ref<HTMLInputElement>
 const { handleError } = useErrorHandler
 const { success, error: showError } = useToast
+// SSE 实时进度（INDEXING 期间替代 setInterval polling — 这样无论页面进入时
+// status 是 NOT_INDEXED / PENDING 还是 INDEXING，stage 都能跟随后端实时刷新）
+let streamController: AbortController | null = null
+// SSE 失败兜底：dev 环境 vite proxy 偶发 ECONNREFUSED 把长连接中断，
+// 此时降级为 polling /index/status/，确保 stage 仍然能刷新
 let pollInterval: ReturnType<typeof setInterval> | null = null
 // 加载索引状态
 async function loadIndexStatus {
@@ -32,6 +39,17 @@ async function loadIndexStatus {
  loading.value = false
  }
 }
+// 把 SSE 推来的 repository 进度合并进 indexStatus（保持其它字段不变）
+function applyStreamRepoProgress(repo: IndexStreamRepositoryPayload) {
+ if (!indexStatus.value) {
+ indexStatus.value = { ...repo } as unknown as IndexStatusResponse
+ return
+ }
+ indexStatus.value = {
+ ...indexStatus.value,
+ ...repo,
+ } as IndexStatusResponse
+}
 // 触发索引
 async function triggerIndex {
  triggering.value = true
@@ -39,7 +57,7 @@ async function triggerIndex {
  await repositoriesApi.triggerIndex(props.repositoryId)
  success('索引任务已启动')
  await loadIndexStatus
- startPolling
+ startStream
  }
  catch (e: unknown) {
  handleError(e, '启动索引')
@@ -129,14 +147,48 @@ async function testSearch {
  searching.value = false
  }
 }
-// 开始轮询（索引进行中时）
-function startPolling {
+// 启动 SSE 流（替代 setInterval — 用后端推 stage 解决"克隆中..."卡住问题）
+function startStream {
+ if (streamController)
+ return
+ streamController = connectIndexProgressStream(props.repositoryId, {
+ onEvent: (event) => {
+ if (event.type === 'progress') {
+ applyStreamRepoProgress(event.repository)
+ }
+ else if (event.type === 'done') {
+ // 索引结束：停流 + 拉一次最终状态做权威同步（同时拿到 last_indexed_at 等非 SSE 字段）
+ stopAllProgressWatchers
+ loadIndexStatus.then( => {
+ if (indexStatus.value?.index_status === IndexStatus.INDEXED) {
+ success('索引构建完成')
+ }
+ else if (indexStatus.value?.index_status === IndexStatus.FAILED) {
+ showError('索引构建失败')
+ }
+ })
+ }
+ },
+ onError: => {
+ // SSE 断开（dev 环境 vite proxy ECONNREFUSED、网络抖动等）→ 降级为 polling
+ // /index/status/，让 stage 仍然能刷新；status 切到非 INDEXING 时再全部停止
+ stopStream
+ startPollingFallback
+ },
+ })
+}
+function stopStream {
+ streamController?.abort
+ streamController = null
+}
+// SSE 兜底 polling：3 秒一次拉 /index/status/，等价于 SSE 推 progress 帧
+function startPollingFallback {
  if (pollInterval)
  return
  pollInterval = setInterval(async => {
  await loadIndexStatus
  if (indexStatus.value?.index_status !== IndexStatus.INDEXING) {
- stopPolling
+ stopAllProgressWatchers
  if (indexStatus.value?.index_status === IndexStatus.INDEXED) {
  success('索引构建完成')
  }
@@ -146,11 +198,15 @@ function startPolling {
  }
  }, 3000)
 }
-function stopPolling {
+function stopPollingFallback {
  if (pollInterval) {
  clearInterval(pollInterval)
  pollInterval = null
  }
+}
+function stopAllProgressWatchers {
+ stopStream
+ stopPollingFallback
 }
 // 格式化日期
 function formatDate(dateStr: string | null) {
@@ -165,14 +221,26 @@ const overallProgress = computed( => {
 const overallStage = computed( => {
  return indexStatus.value?.overall_stage ?? '准备中...'
 })
+// 当 status 切到 INDEXING（页面挂载或他处触发）→ 自动开 SSE 拿实时 stage
+watch(
+ => indexStatus.value?.index_status,
+ (next) => {
+ if (next === IndexStatus.INDEXING) {
+ startStream
+ }
+ else {
+ stopAllProgressWatchers
+ }
+ },
+)
 onMounted(async => {
  await loadIndexStatus
  if (indexStatus.value?.index_status === IndexStatus.INDEXING) {
- startPolling
+ startStream
  }
 })
 onUnmounted( => {
- stopPolling
+ stopAllProgressWatchers
 })
 </script>
 <template>
@@ -217,7 +285,7 @@ onUnmounted( => {
  >
  <span v-if="triggering" class="icon-[lucide--loader-circle] animate-spin mr-2" />
  <span v-else class="icon-[lucide--refresh-cw] mr-2" />
- 重新索引
+ 更新索引
  </Button>
  <Button
  variant="outline":disabled="exporting"

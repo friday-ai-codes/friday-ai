@@ -58,35 +58,61 @@ class TestAsyncSubprocess:
  assert result["status"] == "error"
  assert "timed out" in result["message"].lower or "timeout" in result["message"].lower
 # ============================================================================
-#: 模块级强引用集合防止 GC 回收
+#: 后台 indexing 任务必须脱离请求 event loop
 # ============================================================================
-class TestTaskReferenceManagement:
- """验证 asyncio.create_task 后任务被强引用保护。"""
- async def test_module_level_index_tasks_set_exists(self):
- """index_views.py 模块级 _index_tasks 集合存在且为 set 类型"""
- from repositories.index_views import _index_tasks
- assert isinstance(_index_tasks, set)
- async def test_task_added_to_index_tasks_set(self):
- """_schedule_index 创建的任务被添加到 _index_tasks 集合"""
- from repositories.index_views import _index_tasks, _schedule_index
+class TestBackgroundRunnerIntegration:
+ """验证 _schedule_index 把任务调度到独立 worker loop 而非请求 loop。
+ 历史问题（2026-05-12）：原实现 `asyncio.create_task(...)` 把任务绑死在 ASGI
+ 请求 event loop。HTTP 响应一返回，asgiref CurrentThreadExecutor 关闭 →
+ 后台 task 后续 ORM `sync_to_async` 全部抛 `CurrentThreadExecutor already
+ quit or is broken`。
+ """
+ async def test_schedule_index_returns_concurrent_future(self):
+ """_schedule_index 返回 concurrent.futures.Future（来自 worker loop）。"""
+ from concurrent.futures import Future
+ from repositories.index_views import _schedule_index
  async def fake_index(repo_id, *, history_id=None, branch=None):
  return {"status": "success"}
- with patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index):
- initial_count = len(_index_tasks)
- task = _schedule_index("fake-repo-id", "fake-history-id")
- assert len(_index_tasks) == initial_count + 1
- assert task in _index_tasks
- await task
- async def test_task_removed_from_set_after_completion(self):
- """任务完成后 _index_tasks 自动移除（add_done_callback discard）"""
- from repositories.index_views import _index_tasks, _schedule_index
+ with patch(
+ "repositories.index_views.clone_and_index_repository",
+ side_effect=fake_index,
+ ):
+ future = _schedule_index("fake-repo-id", "fake-history-id")
+ try:
+ assert isinstance(future, Future)
+ # .result 会阻塞直到 worker loop 完成 task —
+ # 之所以能成功跑完，正说明 task 在 worker loop 上运行。
+ result = await asyncio.get_event_loop.run_in_executor(
+ None, future.result, 5.0,
+ )
+ assert result == {"status": "success"}
+ finally:
+ if not future.done:
+ future.cancel
+ async def test_task_runs_on_worker_thread_not_request_thread(self):
+ """worker loop 跑在独立线程：task 看到的 thread ident 与请求线程不同。"""
+ import threading
+ from repositories.index_views import _schedule_index
+ request_thread_id = threading.get_ident
+ observed: dict[str, int] = {}
  async def fake_index(repo_id, *, history_id=None, branch=None):
+ observed["task_thread_id"] = threading.get_ident
  return {"status": "success"}
- with patch("repositories.index_views.clone_and_index_repository", side_effect=fake_index):
- task = _schedule_index("fake-repo-id", "fake-history-id")
- await task
- await asyncio.sleep(0.01)
- assert task not in _index_tasks
+ with patch(
+ "repositories.index_views.clone_and_index_repository",
+ side_effect=fake_index,
+ ):
+ future = _schedule_index("fake-repo-id", "fake-history-id")
+ try:
+ await asyncio.get_event_loop.run_in_executor(
+ None, future.result, 5.0,
+ )
+ finally:
+ if not future.done:
+ future.cancel
+ assert observed.get("task_thread_id") not in (None, request_thread_id), (
+ "后台 task 必须运行在 worker 线程，不能复用请求线程"
+ )
 # ============================================================================
 #: select_for_update(skip_locked=True) 并发保护
 # ============================================================================

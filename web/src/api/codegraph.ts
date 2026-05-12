@@ -67,19 +67,16 @@ export interface DagData {
 }
 export async function getSymbols(params: GetSymbolsParams): Promise<PaginatedResponse<SymbolRow>> {
  const { repositoryId, symbolTypes, name, filePath, limit = 50, offset = 0 } = params
- const qs = new URLSearchParams
- qs.set('limit', String(limit))
- qs.set('offset', String(offset))
- if (name)
- qs.set('name', name)
- if (filePath)
- qs.set('file_path', filePath)
- if (symbolTypes && symbolTypes.length > 0) {
- for (const t of symbolTypes)
- qs.append('symbol_type', t)
+ const query: Record<string, string | number | string | undefined> = {
+ limit,
+ offset,
+ name: name || undefined,
+ file_path: filePath || undefined,
+ symbol_type: symbolTypes && symbolTypes.length > 0 ? symbolTypes: undefined,
  }
  return get<PaginatedResponse<SymbolRow>>(
- `/repositories/${repositoryId}/codegraph/symbols/?${qs.toString}`,
+ `/repositories/${repositoryId}/codegraph/symbols/`,
+ query,
  )
 }
 export async function getCallsForSymbol(
@@ -88,9 +85,9 @@ export async function getCallsForSymbol(
  hop = 1,
  limit = 50,
 ): Promise<DagData> {
- const qs = new URLSearchParams({ max_per_hop: String(limit), max_total: String(hop === 2 ? 50: limit * 2) })
  return get<DagData>(
- `/repositories/${repositoryId}/codegraph/symbols/${symbolId}/calls/?${qs.toString}`,
+ `/repositories/${repositoryId}/codegraph/symbols/${symbolId}/calls/`,
+ { max_per_hop: limit, max_total: hop === 2 ? 50: limit * 2 },
  )
 }
 export async function getImports(
@@ -98,11 +95,9 @@ export async function getImports(
  params: Omit<GetImportsParams, 'repositoryId'> = {},
 ): Promise<PaginatedResponse<ImportEdgeRow>> {
  const { sourceFile, limit = 50, offset = 0 } = params
- const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
- if (sourceFile)
- qs.set('source_file', sourceFile)
  return get<PaginatedResponse<ImportEdgeRow>>(
- `/repositories/${repositoryId}/codegraph/imports/?${qs.toString}`,
+ `/repositories/${repositoryId}/codegraph/imports/`,
+ { limit, offset, source_file: sourceFile || undefined },
  )
 }
 export async function getEndpoints(
@@ -110,9 +105,9 @@ export async function getEndpoints(
  params: Omit<GetEndpointsParams, 'repositoryId'> = {},
 ): Promise<PaginatedResponse<EndpointRow>> {
  const { limit = 50, offset = 0 } = params
- const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
  return get<PaginatedResponse<EndpointRow>>(
- `/repositories/${repositoryId}/codegraph/endpoints/?${qs.toString}`,
+ `/repositories/${repositoryId}/codegraph/endpoints/`,
+ { limit, offset },
  )
 }
 export async function triggerCodegraphIndex(repositoryId: string): Promise<{ message: string }> {

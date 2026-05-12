@@ -17,6 +17,7 @@ declare global {
  const computedEager: typeof import('@vueuse/core').computedEager
  const computedInject: typeof import('@vueuse/core').computedInject
  const computedWithControl: typeof import('@vueuse/core').computedWithControl
+ const connectIndexProgressStream: typeof import('./composables/useIndexProgressStream').connectIndexProgressStream
  const connectSSE: typeof import('./composables/useSSEStream').connectSSE
  const controlledComputed: typeof import('@vueuse/core').controlledComputed
  const controlledRef: typeof import('@vueuse/core').controlledRef
@@ -372,6 +373,9 @@ declare global {
  export type { DesignTimeVariable, VariableCategory } from './composables/useDesignTimeVariables'
  import('./composables/useDesignTimeVariables')
  // @ts-ignore
+ export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
+ import('./composables/useIndexProgressStream')
+ // @ts-ignore
  export type { ModalOptions, ModalInstance } from './composables/useModal'
  import('./composables/useModal')
  // @ts-ignore
@@ -424,6 +428,7 @@ declare module 'vue' {
  readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
  readonly computedInject: UnwrapRef<typeof import('@vueuse/core')['computedInject']>
  readonly computedWithControl: UnwrapRef<typeof import('@vueuse/core')['computedWithControl']>
+ readonly connectIndexProgressStream: UnwrapRef<typeof import('./composables/useIndexProgressStream')['connectIndexProgressStream']>
  readonly connectSSE: UnwrapRef<typeof import('./composables/useSSEStream')['connectSSE']>
  readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
  readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>

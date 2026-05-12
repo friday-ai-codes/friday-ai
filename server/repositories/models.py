@@ -92,6 +92,14 @@ class Repository(models.Model):
  # Progress tracking - Qdrant write
  index_write_total = models.IntegerField(default=0)
  index_write_processed = models.IntegerField(default=0)
+ # 当前正在执行的索引子阶段（克隆 / 对比 / 解析 / embedding / 写入向量库 / 图谱 / 完成）
+ # 为空时由 _compute_index_progress 用进度计数器推断 fallback 阶段
+ index_stage = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ help_text="索引当前阶段，由 indexer 各阶段开始时 update",
+ )
  # 增量索引与自动触发字段
  last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
  auto_index_enabled = models.BooleanField(default=False)

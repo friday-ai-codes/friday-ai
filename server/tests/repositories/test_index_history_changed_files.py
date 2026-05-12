@@ -53,6 +53,7 @@ async def test_changed_files_populated_after_incremental_index -> None:
  patch.object(indexer, "_extract_and_write_graph", new_callable=AsyncMock),
  patch("services.indexer.update_index_progress", new_callable=AsyncMock),
  patch("services.indexer.update_write_progress", new_callable=AsyncMock),
+ patch("services.indexer.update_index_stage", new_callable=AsyncMock),
  ):
  mock_fi.objects.filter.return_value = mock_qs
  mock_fi.objects.filter.return_value.adelete = AsyncMock

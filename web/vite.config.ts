@@ -81,6 +81,12 @@ export default defineConfig({
  '/api': {
  target: 'http://localhost:10241',
  changeOrigin: false,
+ // SSE 长连接需要禁用任何缓冲 / 超时，否则 vite dev proxy 会 hold 住
+ // text/event-stream 响应直到完整结束 — 进度帧永远到不了浏览器。
+ // 设 timeout/proxyTimeout = 0 表示不限制。
+ timeout: 0,
+ proxyTimeout: 0,
+ // ws: false 默认；selfHandleResponse: false 是默认值 = 走 streaming pass-through
  },
  '/ws': {
  target: 'http://localhost:10241',

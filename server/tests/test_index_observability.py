@@ -83,7 +83,7 @@ class TestIndexHistoryListView:
  item = data["items"][0]
  expected_fields = {
  "id", "trigger_type", "status", "from_sha", "to_sha",
- "files_added", "files_modified", "files_deleted",
+ "files_added", "files_modified", "files_deleted", "changed_files",
  "summary_text", "error_message", "started_at", "finished_at", "created_at",
  }
  assert expected_fields == set(item.keys)
@@ -140,6 +140,26 @@ class TestIndexStatsView:
  "/api/repositories/00000000-0000-0000-0000-000000000001/index/stats/"
  )
  assert response.status_code == 404
+ @patch("repositories.index_views.QdrantService.get_collection_stats")
+ def test_stats_qdrant_timeout_falls_back_to_200(
+ self, mock_stats: MagicMock, authenticated_client, repository: Repository
+ ) -> None:
+ """Qdrant 超时 / 异常 → 接口应返回 200 + qdrant_unavailable=True，
+ 避免前端轮询持续报 500 让监控/UI 抓狂。
+ """
+ repository.index_total_chunks = 42
+ repository.save
+ mock_stats.side_effect = TimeoutError("scroll timed out")
+ response = authenticated_client.get(
+ f"/api/repositories/{repository.id}/index/stats/"
+ )
+ assert response.status_code == 200
+ data = response.json
+ assert data["qdrant_unavailable"] is True
+ assert data["chunks_total"] == 42 # 降级用 Repository 自身的计数器
+ assert data["language_distribution"] == {}
+ assert data["coverage_percent"] is None
+ assert "warning" in data
 # ============================================================================
 #: Qdrant 健康校验 API
 # ============================================================================
@@ -200,6 +220,21 @@ class TestRepositoryCollectionHealthView:
  assert data["points_match"] is False
  assert data["expected_points"] == 100
  assert data["points_count"] == 80
+ @patch("repositories.index_views.QdrantService.check_collection_health")
+ def test_health_qdrant_timeout_falls_back_to_200(
+ self, mock_health: MagicMock, authenticated_client, repository: Repository
+ ) -> None:
+ """Qdrant 超时 → 接口返回 200 + status=unhealthy，让前端 UI 提示而非整页 500。"""
+ mock_health.side_effect = TimeoutError("health timed out")
+ response = authenticated_client.get(
+ f"/api/repositories/{repository.id}/index/health/"
+ )
+ assert response.status_code == 200
+ data = response.json
+ assert data["status"] == "unhealthy"
+ assert data["collection_exists"] is False
+ assert data["points_count"] == 0
+ assert "error" in data
 # ============================================================================
 #: 索引新鲜度指示 API
 # ============================================================================

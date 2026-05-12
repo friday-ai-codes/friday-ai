@@ -18,8 +18,8 @@ import SymbolsTab from './SymbolsTab.vue'
 const props = defineProps<{
  repositoryId: string
 }>
-// 持久化折叠状态（默认收起）
-const isOpen = useLocalStorage(`kbs-open-${props.repositoryId}`, false)
+// 持久化折叠状态（默认展开，便于直接看到代码图谱内容）
+const isOpen = useLocalStorage(`kbs-open-${props.repositoryId}`, true)
 // 跨 Tab 共享状态
 const selectedSymbolId = ref<string | null>(null)
 const activeTab = ref<'symbols' | 'calls' | 'imports'>('symbols')

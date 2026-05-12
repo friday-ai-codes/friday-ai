@@ -8,6 +8,7 @@ from .index_views import (
  IndexDeleteView,
  IndexFreshnessView,
  IndexHistoryListView,
+ IndexProgressStreamView,
  IndexSnapshotExportView,
  IndexSnapshotImportView,
  IndexStatsView,
@@ -104,6 +105,12 @@ urlpatterns = [
  "<uuid:repository_id>/index/history/",
  IndexHistoryListView.as_view,
  name="repository-index-history",
+ ),
+ # SSE 实时进度流（ — 让"索引历史"列表 RUNNING 行可显示实时进度）
+ path(
+ "<uuid:repository_id>/index/stream/",
+ IndexProgressStreamView.as_view,
+ name="repository-index-stream",
  ),
  path(
  "<uuid:repository_id>/index/stats/",

@@ -337,11 +337,12 @@ async def test_base_push_marks_overlays_stale(
  dedup_branch_name="main",
  )
  assert result["status"] == "triggered"
- from tasks import index_trigger_tasks as itt
- for _ in range(100):
- if not itt._auto_index_tasks:
- break
- await asyncio.sleep(0.05)
+ # 后台 task 现在跑在 services.background_runner 的独立 worker loop —
+ # 改用 wait_for_pending 等所有 in-flight Future 落地。
+ from services import background_runner
+ await asyncio.get_event_loop.run_in_executor(
+ None, background_runner.wait_for_pending, 5.0,
+ )
  await o1.arefresh_from_db
  await o2.arefresh_from_db
  assert o1.is_stale is True

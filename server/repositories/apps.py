@@ -18,7 +18,13 @@ class RepositoriesConfig(AppConfig):
  @staticmethod
  def _reset_stuck_indexing -> None:
  try:
- from repositories.models import IndexStatus, Repository
+ from django.utils import timezone
+ from repositories.models import (
+ IndexHistory,
+ IndexHistoryStatus,
+ IndexStatus,
+ Repository,
+ )
  stuck_count = Repository.objects.filter(index_status=IndexStatus.INDEXING).update(
  index_status=IndexStatus.FAILED,
  index_error="索引任务因服务重启而中断，请重新开始索引",
@@ -28,6 +34,24 @@ class RepositoriesConfig(AppConfig):
  "reset_stuck_indexing_status",
  count=stuck_count,
  message=f"Reset {stuck_count} repositories from INDEXING to FAILED state",
+ )
+ # 同步把孤儿 IndexHistory.RUNNING 标为 FAILED，避免"索引历史"列表里
+ # 永远在转圈的僵尸记录（容器更新 / 异常崩溃 / embedding 服务挂等场景）
+ stuck_history_count = IndexHistory.objects.filter(
+ status=IndexHistoryStatus.RUNNING
+ ).update(
+ status=IndexHistoryStatus.FAILED,
+ finished_at=timezone.now,
+ error_message="索引任务因服务重启而中断，请重新开始索引",
+ )
+ if stuck_history_count > 0:
+ logger.info(
+ "reset_stuck_index_history",
+ count=stuck_history_count,
+ message=(
+ f"Reset {stuck_history_count} IndexHistory rows "
+ f"from RUNNING to FAILED state"
+ ),
  )
  except Exception as e:
  logger.debug("skip_reset_indexing_status", reason=str(e))
