@@ -163,6 +163,7 @@ declare module 'vue' {
  GlobalConfirmDialog: typeof import('./components/GlobalConfirmDialog.vue')['default']
  GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']
  ImportsTab: typeof import('./components/codegraph/ImportsTab.vue')['default']
+ IndexedFilesPanel: typeof import('./components/repository/IndexedFilesPanel.vue')['default']
  IndexHistoryList: typeof import('./components/repository/IndexHistoryList.vue')['default']
  IndexProgressTimeline: typeof import('./components/repository/IndexProgressTimeline.vue')['default']
  IndexStatsPanel: typeof import('./components/repository/IndexStatsPanel.vue')['default']

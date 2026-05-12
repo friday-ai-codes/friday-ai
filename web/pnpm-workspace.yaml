@@ -9,6 +9,7 @@ overrides:
 catalogs:
  default:
  '@antfu/eslint-config': ^7.0.1
+ '@babel/parser': ^7.29.3
  '@codemirror/autocomplete': ^6.20.1
  '@codemirror/lang-json': ^6.0.2
  '@codemirror/lint': ^6.9.5
@@ -24,6 +25,7 @@ catalogs:
  '@iconify/json': ^2.2.428
  '@iconify/tailwind4': ^1.2.1
  '@playwright/test': ^1.57.0
+ '@rolldown/binding-darwin-arm64': 1.0.0-beta.53
  '@shikijs/markdown-it': ^4.0.1
  '@tailwindcss/typography': ^0.5.19
  '@tailwindcss/vite': ^4.1.18
@@ -54,6 +56,7 @@ catalogs:
  '@tiptap/starter-kit': 3.19.0
  '@tiptap/suggestion': 3.19.0
  '@tiptap/vue-3': 3.19.0
+ '@types/dagre': ^0.7.54
  '@types/diff': ^8.0.0
  '@types/markdown-it': ^14.1.2
  '@types/node': ^24.10.8
@@ -66,11 +69,12 @@ catalogs:
  '@vue-flow/node-toolbar': ^1.1.1
  '@vue/test-utils': ^2.4.6
  '@vue/tsconfig': ^0.8.1
- '@vueuse/core': 'catalog:'
+ '@vueuse/core': ^14.3.0
  '@vueuse/head': ^2.0.0
  class-variance-authority: ^0.7.1
  clsx: ^2.1.1
  codemirror: ^6.0.2
+ dagre: ^0.8.5
  diff: ^8.0.4
  echarts: ^6.0.0
  esbuild: ^0.27.2
@@ -82,7 +86,7 @@ catalogs:
  markdown-it: ^14.1.1
  nanoid: ^5.1.6
  pinia: ^3.0.4
- reka-ui: 'catalog:'
+ reka-ui: ^2.9.7
  shiki: ^3.21.0
  tailwind-merge: ^3.4.0
  tailwindcss: ^4.1.18

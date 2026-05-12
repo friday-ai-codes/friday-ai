@@ -11,6 +11,7 @@ export enum IndexStatus {
  INDEXING = 'indexing',
  INDEXED = 'indexed',
  FAILED = 'failed',
+ CANCELLED = 'cancelled',
 }
 // 索引状态响应
 export interface IndexStatusResponse {
@@ -24,6 +25,24 @@ export interface IndexStatusResponse {
  //: 统一进度字段
  overall_progress: number
  overall_stage: string
+ //: 文件级实时进度
+ current_indexing_file: string
+ indexed_files_processed: number
+ indexed_files_total: number
+}
+//: 已索引文件清单
+export interface IndexedFileItem {
+ file_path: string
+ file_hash: string
+ last_commit_sha: string
+ last_commit_authored_at: string | null
+ indexed_at: string
+}
+export interface IndexedFilesResponse {
+ items: IndexedFileItem
+ total: number
+ page: number
+ page_size: number
 }
 // 索引触发响应
 export interface IndexTriggerResponse {
@@ -68,7 +87,7 @@ export interface HealthCheckResponse {
 export interface IndexHistoryItem {
  id: string
  trigger_type: 'manual' | 'webhook' | 'scheduled'
- status: 'pending' | 'running' | 'completed' | 'failed'
+ status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
  from_sha: string | null
  to_sha: string | null
  files_added: number
@@ -254,6 +273,12 @@ export const repositoriesApi = {
  await del(`/repositories/${id}/index/delete/`)
  },
  /**
+ * 停止正在运行的索引任务
+ */
+ cancelIndex: async (id: string): Promise<IndexTriggerResponse> => {
+ return post<IndexTriggerResponse>(`/repositories/${id}/index/cancel/`)
+ },
+ /**
  * 搜索代码
  */
  searchCode: async (id: string, request: SearchRequest): Promise<SearchResponse> => {
@@ -332,6 +357,15 @@ export const repositoriesApi = {
  */
  getIndexHistory: async (id: string, params?: { limit?: number, offset?: number, status?: string }): Promise<IndexHistoryResponse> => {
  return get<IndexHistoryResponse>(`/repositories/${id}/index/history/`, params)
+ },
+ /**
+ *: 已索引文件清单查询（支持子串搜索 + 分页）
+ */
+ getIndexedFiles: async (
+ id: string,
+ params?: { search?: string, page?: number, page_size?: number },
+ ): Promise<IndexedFilesResponse> => {
+ return get<IndexedFilesResponse>(`/repositories/${id}/indexed-files/`, params)
  },
  /**
  * 获取索引统计

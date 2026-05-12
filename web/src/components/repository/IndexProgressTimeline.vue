@@ -6,6 +6,9 @@ interface ChangedFiles {
  modified?: string
  deleted?: string
 }
+// 注：文件级实时进度（当前正在索引的文件 + N/M 计数）已迁移到
+// RepositoryIndexCard 内部展示，避免与本卡片在视觉上重复。
+// 此组件专注于本次索引涉及的变更文件分组（增量索引时有意义）。
 const props = defineProps<{
  repositoryId: string
  indexHistoryId: string | null

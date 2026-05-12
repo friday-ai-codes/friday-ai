@@ -23,7 +23,6 @@ const props = defineProps<{
  git_url: string
  git_platform: GitPlatform
  default_branch: string
- base_branch?: string | null
  description?: string
  proxy_url?: string
  has_credential: boolean
@@ -36,14 +35,13 @@ const emit = defineEmits<{
 }>
 const repositoriesStore = useRepositoriesStore
 const { handleError } = useErrorHandler
-const { success, error: showError } = useToast
+const { success } = useToast
 // 表单数据
 const form = reactive({
  name: props.repository.name,
  git_url: props.repository.git_url,
  git_platform: props.repository.git_platform,
  default_branch: props.repository.default_branch,
- base_branch: props.repository.base_branch || '',
  description: props.repository.description || '',
  proxy_url: props.repository.proxy_url || '',
 })
@@ -59,6 +57,8 @@ async function fetchBranches {
  if (result.success) {
  branches.value = result.branches ||
  recommendedBranch.value = result.recommended_branch ?? null
+ if (result.recommended_branch && !form.default_branch)
+ form.default_branch = result.recommended_branch
  }
  }
  catch {
@@ -93,10 +93,16 @@ const submitting = ref(false)
 async function handleSubmit {
  if (!validate)
  return
+ const defaultBranchChanged = form.default_branch !== props.repository.default_branch
  submitting.value = true
  try {
  await repositoriesStore.updateRepository(props.repository.id, form)
+ if (defaultBranchChanged) {
+ success('更新成功', '默认分支已变更，正在滚动更新索引')
+ }
+ else {
  success('更新成功', '仓库信息已更新')
+ }
  emit('confirm')
  }
  catch (e: unknown) {
@@ -118,7 +124,6 @@ watch( => props.repository, (newRepo) => {
  form.git_url = newRepo.git_url
  form.git_platform = newRepo.git_platform
  form.default_branch = newRepo.default_branch
- form.base_branch = newRepo.base_branch || ''
  form.description = newRepo.description || ''
  form.proxy_url = newRepo.proxy_url || ''
  errors.name = ''
@@ -137,13 +142,10 @@ async function handleTestConnection {
  if (result.success) {
  success('连接成功', '仓库可访问')
  }
- else {
- showError('连接失败', result.error || '无法连接到仓库')
- }
+ // 失败时不弹 toast，错误已在状态条内联显示
  }
  catch (e: unknown) {
  testResult.value = { success: false, error: e instanceof Error ? e.message: '测试连接失败' }
- handleError(e, '测试连接')
  }
  finally {
  testing.value = false
@@ -268,29 +270,19 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  </Select>
  </div>
  <div class="space-y-2">
- <Label for="default_branch" class="text-foreground">默认分支</Label>
- <Input
- id="default_branch"
- v-model="form.default_branch"
- placeholder="main"
- class=""
- />
- </div>
- </div>
- <!-- 基础分支（索引用） -->
- <div class="space-y-2">
- <Label class="text-foreground">基础分支（索引用）</Label>
+ <Label for="default_branch" class="text-foreground">默认分支（索引用）</Label>
  <div v-if="loadingBranches" class="flex items-center gap-2 px-3 text-sm text-muted-foreground">
  <span class="icon-[lucide--loader-circle] animate-spin" />
  加载分支列表...
  </div>
  <BranchCombobox
  v-else
- v-model="form.base_branch":branches="branches":recommended-branch="recommendedBranch"
+ v-model="form.default_branch":branches="branches":recommended-branch="recommendedBranch"
  />
  <p class="text-xs text-muted-foreground">
- 用于代码索引的基准分支，通常与默认分支相同
+ 代码索引会使用这个默认分支
  </p>
+ </div>
  </div>
  <!-- 描述 -->
  <div class="space-y-2">
@@ -307,11 +299,9 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  />
  </div>
  <!-- 测试连接 -->
- <div class="flex items-center justify-between rounded-xl bg-muted/30 border border-border/50">
- <div class="flex items-center gap-3">
- <div
- class=" rounded-lg transition-colors":class="testResult?.success ? 'bg-primary/10': testResult && !testResult.success ? 'bg-primary/10': 'bg-primary/10'"
- >
+ <div class="flex items-start justify-between gap-3 rounded-xl bg-muted/30 border border-border/50">
+ <div class="flex items-start gap-3 flex-1 min-w-0">
+ <div class=" rounded-lg bg-primary/10 shrink-0">
  <span
  v-if="testing"
  class="icon-[lucide--loader-circle] text-lg text-muted-foreground animate-spin"
@@ -329,11 +319,11 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  class="icon-[lucide--plug] text-lg text-muted-foreground"
  />
  </div>
- <div>
+ <div class="min-w-0 flex-1">
  <h4 class="font-medium text-sm text-foreground">
  {{ testing ? '正在测试连接...': testResult?.success ? '连接成功': testResult && !testResult.success ? '连接失败': '连接测试' }}
  </h4>
- <p class="text-xs text-muted-foreground">
+ <p class="text-xs leading-relaxed wrap-break-word":class="testResult && !testResult.success ? 'text-red-600': 'text-muted-foreground'">
  <template v-if="testing">
  验证仓库凭证中
  </template>
@@ -341,7 +331,7 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  仓库可访问
  </template>
  <template v-else-if="testResult && !testResult.success">
- {{ testResult.error }}
+ {{ testResult.error || '无法连接到仓库' }}
  </template>
  <template v-else>
  验证仓库凭证是否有效
@@ -352,7 +342,8 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  <Button
  type="button"
  variant="outline"
- size="sm":disabled="testing"
+ size="sm"
+ class="shrink-0":disabled="testing"
  @click="handleTestConnection"
  >
  <span v-if="testing" class="icon-[lucide--loader-circle] mr-2 animate-spin" />

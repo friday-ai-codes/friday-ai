@@ -18,14 +18,19 @@ const repo = ref<Repository | null>(null)
 const loading = ref(true)
 const checking = ref(false)
 const errorMessage = ref<string | null>(null)
-// 三态：fresh / stale / unknown
-const freshnessState = ref<'fresh' | 'stale' | 'unknown'>('unknown')
+// 四态：fresh / stale / not_indexed / unknown
+// - not_indexed：本地从未建立索引（last_indexed_commit_sha 为空），新鲜度概念不适用
+// - unknown：已索引但未拉取过远端 HEAD（缺 remote_head_sha 或 remote_head_checked_at）
+type FreshnessState = 'fresh' | 'stale' | 'not_indexed' | 'unknown'
+const freshnessState = ref<FreshnessState>('unknown')
 // refresh 后更新的远端 SHA（覆盖 repo.remote_head_sha）
 const latestRemoteHeadSha = ref<string>('')
 const { copy } = useClipboard
 const { success } = useToast
-function computeFreshness(r: Repository): 'fresh' | 'stale' | 'unknown' {
- if (!r.remote_head_sha || !r.remote_head_checked_at || !r.last_indexed_commit_sha)
+function computeFreshness(r: Repository): FreshnessState {
+ if (!r.last_indexed_commit_sha)
+ return 'not_indexed'
+ if (!r.remote_head_sha || !r.remote_head_checked_at)
  return 'unknown'
  return r.remote_head_sha === r.last_indexed_commit_sha ? 'fresh': 'stale'
 }
@@ -52,10 +57,11 @@ async function refresh {
  errorMessage.value = null
  try {
  const res = await repositoriesApi.refreshRemoteHead(props.repositoryId)
- freshnessState.value = res.freshness
  latestRemoteHeadSha.value = res.remote_head_sha
- // 重新加载仓库数据以更新 behind_commits
+ // 重新加载仓库数据以更新 behind_commits，并基于最新数据本地重算 freshness
+ // （后端只返回三态，会把 not_indexed 折叠成 unknown，因此不能直接用 res.freshness）
  repo.value = await repositoriesApi.get(props.repositoryId)
+ freshnessState.value = computeFreshness(repo.value)
  }
  catch (e: unknown) {
  const msg = e instanceof Error ? e.message: '未知错误'
@@ -113,6 +119,10 @@ onMounted(loadRepo)
  class="icon-[lucide--alert-triangle] text-2xl text-amber-500 shrink-0 mt-0.5"
  />
  <span
+ v-else-if="freshnessState === 'not_indexed'"
+ class="icon-[lucide--circle-dashed] text-2xl text-muted-foreground shrink-0 mt-0.5"
+ />
+ <span
  v-else
  class="icon-[lucide--help-circle] text-2xl text-muted-foreground shrink-0 mt-0.5"
  />
@@ -124,6 +134,9 @@ onMounted(loadRepo)
  </template>
  <template v-else-if="freshnessState === 'stale'">
  索引已过期
+ </template>
+ <template v-else-if="freshnessState === 'not_indexed'">
+ 尚未索引
  </template>
  <template v-else>
  远端状态未知
@@ -141,6 +154,9 @@ onMounted(loadRepo)
  本地与远端 HEAD 不一致
  </template>
  </template>
+ <template v-else-if="freshnessState === 'not_indexed'">
+ 仓库还未建立本地索引，完成首次索引后即可比较新鲜度
+ </template>
  <template v-else>
  请点击「立即检查」获取最新提交
  </template>
@@ -149,7 +165,19 @@ onMounted(loadRepo)
  </div>
  <!-- SHA 对比区 -->
  <div class="mt-4 space-y-1.5">
- <div class="flex items-center gap-2 text-xs text-muted-foreground">
+ <!-- not_indexed：不展示"本地 → 远端"对比，只展示远端 HEAD 信息（若已知）-->
+ <div v-if="freshnessState === 'not_indexed'" class="flex items-center gap-2 text-xs text-muted-foreground">
+ <template v-if="remoteSha !== '—'">
+ <span>远端 HEAD</span>
+ <Badge variant="secondary" class="font-mono">
+ {{ remoteSha }}
+ </Badge>
+ </template>
+ <template v-else>
+ <span>暂无远端 HEAD 信息</span>
+ </template>
+ </div>
+ <div v-else class="flex items-center gap-2 text-xs text-muted-foreground">
  <span>本地</span>
  <TooltipProvider:delay-duration="300">
  <Tooltip>

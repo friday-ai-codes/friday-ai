@@ -11,6 +11,7 @@ import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
+import IndexedFilesPanel from '~/components/repository/IndexedFilesPanel.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
@@ -70,13 +71,9 @@ async function loadBranchIndexes {
  }
  if (selectedBranch.value && names.includes(selectedBranch.value))
  return
- const baseRow = branchIndexRows.value.find(r => r.is_base_branch)
- const baseName = repo?.base_branch ?? null
  const defName = repo?.default_branch ?? null
  selectedBranch.value
- = baseRow?.branch_name
- ?? (baseName && names.includes(baseName) ? baseName: null)
- ?? (defName && names.includes(defName) ? defName: null)
+ = (defName && names.includes(defName) ? defName: null)
  ?? names[0]
  ?? null
  }
@@ -157,9 +154,6 @@ const recommendedBaseBranch = computed( => {
  const base = branchIndexRows.value.find(r => r.is_base_branch)
  if (base)
  return base.branch_name
- const b = repository.value?.base_branch
- if (b && branchNames.value.includes(b))
- return b
  return repository.value?.default_branch ?? null
 })
 const selectedBranchRow = computed(
@@ -206,7 +200,13 @@ const sections = ref<NavSection>([
 const editDialogOpen = ref(false)
 async function handleEditSuccess {
  editDialogOpen.value = false
- await repositoriesStore.fetchRepository(repositoryId.value)
+ await Promise.all([
+ repositoriesStore.fetchRepository(repositoryId.value),
+ loadIndexStatus,
+ loadBranchIndexes,
+ ])
+ if (indexStatus.value?.index_status === IndexStatus.INDEXING)
+ startBranchIndexPolling
 }
 // 平台图标映射
 const platformIcons: Record<string, string> = {
@@ -289,12 +289,12 @@ function copyUrl {
  <!-- 快速状态指示器 -->
  <div class="flex items-center gap-2 pl-[52px] flex-wrap">
  <div
- class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED, 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING, 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED, 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED, 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING, 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED, 'bg-muted/60 text-muted-foreground border border-border/50': indexStatus?.index_status === IndexStatus.CANCELLED, 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  >
- <span:class="{ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED, 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING, 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED, 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
+ <span:class="{ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED, 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING, 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED, 'icon-[lucide--circle-stop]': indexStatus?.index_status === IndexStatus.CANCELLED, 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  />
  {{
- indexStatus?.index_status === IndexStatus.INDEXED ? '索引就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '索引构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': '未建索引'
+ indexStatus?.index_status === IndexStatus.INDEXED ? '索引就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '索引构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': indexStatus?.index_status === IndexStatus.CANCELLED ? '已停止': '未建索引'
  }}
  </div>
  <div
@@ -460,9 +460,13 @@ function copyUrl {
  <IndexStatsPanel:repository-id="repository.id" />
  </div>
  <!--: 仅 INDEXING 状态渲染，展示本次变更文件（work item §6.2） -->
+ <!-- 文件级实时进度（当前文件 + N/M）已在 RepositoryIndexCard 顶部展示，本组件专注变更文件分组 -->
  <IndexProgressTimeline
  v-if="indexStatus?.index_status === IndexStatus.INDEXING":repository-id="repository.id":index-history-id="null":changed-files="{}":is-indexing="true"
  />
+ <!--: 已索引文件清单（紧贴代码索引卡之后，搜索 + 分页 + git commit） -->
+ <IndexedFilesPanel:repository-id="repository.id":git-url="repository.git_url" />
+ <!-- 索引历史 — 阅读顺序：当前状态 → 文件清单 → 历次记录 -->
  <IndexHistoryList:repository-id="repository.id":git-url="repository.git_url" />
  </section>
  <!-- ==================== 凭证配置 ==================== -->

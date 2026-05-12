@@ -23,14 +23,13 @@ const emit = defineEmits<{
 }>
 const repositoriesStore = useRepositoriesStore
 const { handleError } = useErrorHandler
-const { success, error: showError } = useToast
+const { success } = useToast
 // 表单数据
 const form = reactive({
  name: '',
  git_url: '',
  git_platform: 'gitlab' as GitPlatform,
  default_branch: 'main',
- base_branch: '' as string,
  description: '',
  proxy_url: '',
  // 凭证信息（必填）
@@ -91,18 +90,15 @@ async function handleTestConnection {
  })
  testResult.value = result
  if (result.success) {
- if (result.recommended_branch && !form.base_branch) {
- form.base_branch = result.recommended_branch
+ if (result.recommended_branch) {
+ form.default_branch = result.recommended_branch
  }
  success('连接成功', result.branches?.length ? `发现 ${result.branches.length} 个分支`: '仓库可访问')
  }
- else {
- showError('连接失败', result.error || '无法连接到仓库')
- }
+ // 失败时不再弹 toast，避免与下方 inline 提示重复
  }
  catch (e: unknown) {
  testResult.value = { success: false, error: e instanceof Error ? e.message: '测试连接失败' }
- handleError(e, '测试连接')
  }
  finally {
  testing.value = false
@@ -260,13 +256,21 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  </Select>
  </div>
  <div class="space-y-2">
- <Label for="default_branch" class="text-foreground">默认分支</Label>
+ <Label for="default_branch" class="text-foreground">默认分支（索引用）</Label>
+ <BranchCombobox
+ v-if="testResult?.success"
+ v-model="form.default_branch":branches="testResult?.branches || ":recommended-branch="testResult?.recommended_branch"
+ />
  <Input
+ v-else
  id="default_branch"
  v-model="form.default_branch"
  placeholder="main"
  class=""
  />
+ <p class="text-xs text-muted-foreground">
+ 代码索引会使用这个默认分支
+ </p>
  </div>
  </div>
  <!-- 凭证配置区域 -->
@@ -342,24 +346,20 @@ const selectedPlatform = computed( => platforms.find(p => p.value === form.git_p
  {{ testing ? '测试中...': '测试连接' }}
  </Button>
  <!-- 测试结果 -->
- <div v-if="testResult" class="mt-2 rounded-lg text-sm":class="testResult.success ? 'bg-emerald-50 text-emerald-700': 'bg-red-50 text-red-700'">
- <div class="flex items-center gap-1.5">
- <span:class="testResult.success ? 'icon-[lucide--check-circle]': 'icon-[lucide--x-circle]'" />
- {{ testResult.success ? '连接成功': testResult.error }}
- </div>
- </div>
- </div>
- </div>
- </div>
- <!-- 基础分支选择（测试连接成功后展示） -->
- <div v-if="testResult?.success" class="space-y-2">
- <Label class="text-foreground">基础分支（索引用）</Label>
- <BranchCombobox
- v-model="form.base_branch":branches="testResult?.branches || ":recommended-branch="testResult?.recommended_branch"
+ <div
+ v-if="testResult"
+ class="mt-3 px-3 py-2.5 rounded-xl text-sm border flex items-start gap-2":class="testResult.success
+ ? 'bg-emerald-50/80 text-emerald-700 border-emerald-200/60': 'bg-red-50/80 text-red-700 border-red-200/60'"
+ >
+ <span
+ class="text-base shrink-0 mt-0.5":class="testResult.success ? 'icon-[lucide--check-circle]': 'icon-[lucide--x-circle]'"
  />
- <p class="text-xs text-muted-foreground">
- 用于代码索引的基准分支，通常与默认分支相同
- </p>
+ <span class="leading-relaxed wrap-break-word min-w-0">
+ {{ testResult.success ? '连接成功': (testResult.error || '连接失败') }}
+ </span>
+ </div>
+ </div>
+ </div>
  </div>
  <!-- Footer -->
  <div class="flex justify-end gap-3 pt-4 border-t border-border/50">

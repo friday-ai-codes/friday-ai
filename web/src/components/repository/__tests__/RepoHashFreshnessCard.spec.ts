@@ -153,6 +153,40 @@ describe('repoHashFreshnessCard', => {
  // FRESH 态不含箭头分隔符（远端 SHA 对比区不显示）
  expect(wrapper.find('.icon-\\[lucide--arrow-right\\]').exists).toBe(false)
  })
+ it('i: NOT_INDEXED 态 — last_indexed_commit_sha 为空时显示"尚未索引"，circle-dashed 图标', async => {
+ vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
+ remote_head_sha: 'e7bf8e6abc1234',
+ remote_head_checked_at: '2024-01-01T10:00:00Z',
+ last_indexed_commit_sha: '',
+ }))
+ const wrapper = mountCard
+ await flushPromises
+ const text = wrapper.text
+ // 即便远端 SHA 已知，也不应再显示"远端状态未知"
+ expect(text).toContain('尚未索引')
+ expect(text).not.toContain('远端状态未知')
+ expect(text).toContain('仓库还未建立本地索引')
+ // 使用 circle-dashed 图标，不再使用 help-circle
+ expect(wrapper.html).toContain('icon-[lucide--circle-dashed]')
+ expect(wrapper.html).not.toContain('icon-[lucide--help-circle]')
+ // 不再展示"本地 → 远端"对比箭头
+ expect(wrapper.find('.icon-\\[lucide--arrow-right\\]').exists).toBe(false)
+ // 但远端 HEAD 信息仍可见
+ expect(text).toContain('远端 HEAD')
+ expect(text).toContain('e7bf8e6')
+ })
+ it('j: NOT_INDEXED 态 — 远端 SHA 也为空时提示"暂无远端 HEAD 信息"', async => {
+ vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
+ remote_head_sha: '',
+ remote_head_checked_at: null,
+ last_indexed_commit_sha: '',
+ }))
+ const wrapper = mountCard
+ await flushPromises
+ const text = wrapper.text
+ expect(text).toContain('尚未索引')
+ expect(text).toContain('暂无远端 HEAD 信息')
+ })
  it('h: "尚未检查过"文案 — remote_head_checked_at 为 null 时显示', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: '',
