@@ -50,21 +50,18 @@ describe('knowledgeBaseSection', => {
  await flushPromises
  expect(wrapper.text).toContain('代码图谱')
  })
- it('b: 展开后包含 3 个 Tab trigger：Symbols / 调用关系 DAG / 导入', async => {
+ it('b: 默认展开后包含 3 个 Tab trigger：Symbols / 调用关系 DAG / 导入', async => {
  const wrapper = mountSection
  await flushPromises
- // 点击展开按钮
- const toggleBtn = wrapper.find('button')
- await toggleBtn.trigger('click')
  await wrapper.vm.$nextTick
  const text = wrapper.text
  expect(text).toContain('Symbols')
  expect(text).toContain('调用关系 DAG')
  expect(text).toContain('导入')
  })
- it('c: 初始状态下折叠内容不可见（isOpen=false）', async => {
+ it('c: 默认展开（isOpen=true，方便用户直接看到代码图谱内容）', async => {
  const wrapper = mountSection
  await flushPromises
- expect((wrapper.vm as unknown as { isOpen: boolean }).isOpen).toBe(false)
+ expect((wrapper.vm as unknown as { isOpen: boolean }).isOpen).toBe(true)
  })
 })

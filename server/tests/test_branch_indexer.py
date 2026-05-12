@@ -358,6 +358,12 @@ class TestCloneAndIndexBranch:
  mock_proc = AsyncMock
  mock_proc.communicate = AsyncMock(return_value=(b"", b""))
  mock_proc.returncode = 0
+ # _stream_clone_progress 现在直接读 stderr 而不是 communicate。
+ # 必须显式给 mock 一个 stderr stream 让 read 立刻返回 EOF (b"")。
+ mock_stderr = AsyncMock
+ mock_stderr.read = AsyncMock(return_value=b"")
+ mock_proc.stderr = mock_stderr
+ mock_proc.wait = AsyncMock(return_value=0)
  mock_subprocess.return_value = mock_proc
  mock_run_branch.return_value = {
  "status": "indexed", "diff_files": 3, "indexed_files": 2, "chunks_indexed": 10,

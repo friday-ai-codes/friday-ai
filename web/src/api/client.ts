@@ -59,16 +59,21 @@ export async function refreshToken: Promise<void> {
 // ============================================================================
 /**
  * 请求配置选项
+ *
+ * `params` 支持基本类型与数组：数组会被多次 append 到 query string，
+ * 用于 `symbol_type=FUNCTION&symbol_type=CLASS` 这类 DRF 多值过滤场景。
  */
+type QueryParamValue = string | number | boolean | Array<string | number | boolean> | undefined
+type QueryParams = Record<string, QueryParamValue>
 interface RequestOptions extends Omit<RequestInit, 'body'> {
- params?: Record<string, string | number | undefined>
+ params?: QueryParams
  body?: unknown
  skipAuth?: boolean // 跳过认证（用于登录等接口）
 }
 /**
  * 构建带查询参数的 URL
  */
-function buildUrl(endpoint: string, params?: Record<string, string | number | undefined>): string {
+function buildUrl(endpoint: string, params?: QueryParams): string {
  // 确保路径以 / 结尾（防止 Django 301 重定向）
  const normalizedEndpoint = endpoint.endsWith('/') || endpoint.includes('?')
  ? endpoint: `${endpoint}/`
@@ -76,7 +81,12 @@ function buildUrl(endpoint: string, params?: Record<string, string | number | un
  url.pathname = `${API_BASE}${normalizedEndpoint}`
  if (params) {
  Object.entries(params).forEach(([key, value]) => {
- if (value !== undefined) {
+ if (value === undefined)
+ return
+ if (Array.isArray(value)) {
+ value.forEach(v => url.searchParams.append(key, String(v)))
+ }
+ else {
  url.searchParams.set(key, String(value))
  }
  })
@@ -200,7 +210,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  */
 export async function get<T>(
  endpoint: string,
- params?: Record<string, string | number | undefined>,
+ params?: QueryParams,
 ): Promise<T> {
  return request<T>(endpoint, { method: 'GET', params })
 }

@@ -70,10 +70,16 @@ async def test_calculates_commit_distance_no_local_clone(repo, tmp_path):
  # tmp_path/{repo.id} 不创建，模拟不存在
  result = await _calculate_commit_distance(repo)
  assert result is None
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_calculates_commit_distance_same_sha(db, tmp_path):
- """local SHA == remote SHA → 直接返回 0，不调用 git。"""
+ """local SHA == remote SHA → 直接返回 0，不调用 git。
+ NOTE: 必须 transaction=True。否则 `sync_to_async(Repository.objects.create)`
+ 会把 ORM 写入派发到 asgiref 的 sync thread → 跨连接，无法被 pytest-django
+ 默认 transaction rollback 清理，导致这条 "相同 SHA 仓库" 行残留下来污染
+ 后续按字典序运行的 `test_repositories.py:test_list_repositories_*`
+ （结果就是 list 应该返 0/1 条结果，但实际多了一条）。
+ """
  from asgiref.sync import sync_to_async
  from repositories.freshness_service import _calculate_commit_distance
  repo = await sync_to_async(Repository.objects.create)(

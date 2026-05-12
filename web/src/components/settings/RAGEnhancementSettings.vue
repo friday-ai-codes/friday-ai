@@ -351,7 +351,7 @@ onMounted( => {
  </div>
  </div>
  <p class="text-xs text-muted-foreground italic">
- 此功能已自动启用，重新索引后生效。上下文信息仅用于提升 embedding 质量，不增加存储开销。
+ 此功能已自动启用，更新索引后生效。上下文信息仅用于提升 embedding 质量，不增加存储开销。
  </p>
  </div>
  </div>

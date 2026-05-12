@@ -20,6 +20,26 @@ User = get_user_model
 # Cache Cleanup — 防止 throttle 等缓存在测试间泄漏
 # ============================================================================
 @pytest.fixture(autouse=True)
+def _reset_background_runner:
+ """每个测试结束后等 background_runner in-flight 任务落地并拆掉 worker 线程。
+ 背景：services.background_runner 用独立 daemon 线程跑后台索引任务（修复
+ `CurrentThreadExecutor already quit or is broken`）。worker 线程持有自己的
+ 数据库连接，写入不在 pytest-django 的 transaction 里 → 不会被 rollback
+ 清掉，会污染后续测试（典型表现：`test_list_repositories_empty` 莫名拿到
+ 上一个测试 worker 线程留下的 Repository 行）。
+ autouse 保证每个测试结束都把 in-flight 任务等完 + 重启 worker，下个测试
+ 起步就是干净的。
+ """
+ yield
+ try:
+ from services import background_runner
+ background_runner.wait_for_pending(timeout=5.0)
+ background_runner._reset_for_tests
+ except Exception:
+ # 测试 teardown 不应吞主测试结果——失败原因记日志即可
+ import logging
+ logging.getLogger(__name__).exception("background_runner teardown failed")
+@pytest.fixture(autouse=True)
 def _disable_scheduler_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
  """Phase：pytest 下关闭 APScheduler，避免 BackgroundScheduler
  起后台线程污染测试（T- Availability mitigation）。
