@@ -43,6 +43,7 @@ export const indexStatusConfig: Record<string, StatusConfig> = {
  completed: { label: '已完成', icon: 'lucide--check-circle', variant: 'success' },
  indexed: { label: '已索引', icon: 'lucide--check-circle', variant: 'success' },
  failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
+ cancelled: { label: '已停止', icon: 'lucide--circle-stop', variant: 'muted' },
 }
 // 触发日志状态
 export const triggerLogStatusConfig: Record<string, StatusConfig> = {

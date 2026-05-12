@@ -7,7 +7,6 @@ import type {
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
-import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import {
  Tooltip,
@@ -61,17 +60,39 @@ async function retryFailed(item: IndexHistoryItem) {
  retryingItemId.value = null
  }
 }
-// 筛选按钮配置
+// 筛选按钮配置 — iconClass 写成完整字面量，unocss 才能在静态分析阶段扫到
 const filterButtons = [
- { status: 'pending', label: '等待中' },
- { status: 'running', label: '运行中' },
- { status: 'completed', label: '已完成' },
- { status: 'failed', label: '失败' },
+ { status: '', label: '全部', iconClass: 'icon-[lucide--layers]' },
+ { status: 'pending', label: '等待中', iconClass: 'icon-[lucide--clock]' },
+ { status: 'running', label: '运行中', iconClass: 'icon-[lucide--loader-2]' },
+ { status: 'completed', label: '已完成', iconClass: 'icon-[lucide--check-circle]' },
+ { status: 'failed', label: '失败', iconClass: 'icon-[lucide--x-circle]' },
 ]
 const triggerLabels: Record<string, string> = {
  manual: '手动',
  webhook: 'Webhook',
  scheduled: '定时',
+}
+// item 状态对应 timeline 圆点颜色（与 StatusBadge variant 同源 — 仅做视觉锚点，
+// 不替代 Badge 的语义。圆点比色条更克制、更"设计师"，避免每行一根红条的告警感）
+function statusDotClass(status: string): string {
+ switch (status) {
+ case 'completed':
+ case 'indexed':
+ return 'bg-emerald-500'
+ case 'running':
+ case 'indexing':
+ return 'bg-blue-500'
+ case 'failed':
+ return 'bg-destructive'
+ case 'pending':
+ case 'not_indexed':
+ return 'bg-amber-400'
+ case 'cancelled':
+ return 'bg-muted-foreground/40'
+ default:
+ return 'bg-muted-foreground/30'
+ }
 }
 async function loadHistory {
  loading.value = true
@@ -238,16 +259,20 @@ onBeforeUnmount( => {
  </p>
  </div>
  <div class="">
- <!-- 状态筛选 -->
- <div class="flex gap-2 mb-4">
- <Button
- v-for="btn in filterButtons":key="btn.status":variant="statusFilter === btn.status ? 'default': 'outline'"
- size="sm"
- class=" text-xs"
+ <!-- 状态筛选 — segmented 风格紧凑筛选条 -->
+ <div class="inline-flex items-center gap-0.5 .5 mb-4 rounded-lg bg-muted/40 border border-border/40">
+ <button
+ v-for="btn in filterButtons":key="btn.status || 'all'"
+ type="button":class="[
+ 'inline-flex items-center gap-1.5 px-2.5 rounded-md text-xs font-medium transition-all',
+ statusFilter === btn.status
+ ? 'bg-card text-foreground shadow-sm': 'text-muted-foreground hover:text-foreground',
+ ]"
  @click="setFilter(btn.status)"
  >
+ <span:class="[btn.iconClass, 'text-[13px]']" />
  {{ btn.label }}
- </Button>
+ </button>
  </div>
  <!-- 加载状态 -->
  <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
@@ -255,141 +280,69 @@ onBeforeUnmount( => {
  <span class="text-muted-foreground">加载历史记录...</span>
  </div>
  <!-- 无记录 -->
- <div v-else-if="!history || history.items.length === 0" class="text-center py-6">
+ <div v-else-if="!history || history.items.length === 0" class="text-center py-10">
  <div class="inline-flex rounded-full bg-muted/50 mb-3">
  <span class="icon-[lucide--history] text-3xl text-muted-foreground" />
  </div>
- <p class="text-muted-foreground">
+ <p class="text-sm text-muted-foreground">
  {{ statusFilter ? '该状态下暂无记录': '暂无索引历史' }}
  </p>
  </div>
- <!-- 历史列表 -->
- <div v-else class="space-y-3">
- <div
- v-for="item in displayItems":key="item.id"
- class=" rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/40 transition-colors space-y-3"
+ <!-- 历史列表 — 真·timeline：贯穿轨道线 + 状态点，告别"每行红条" -->
+ <ol v-else class="timeline relative">
+ <li
+ v-for="(item, idx) in displayItems":key="item.id"
+ class="timeline-item group relative pl-9 pr-1":class="idx === displayItems.length - 1 ? 'pb-1': 'pb-4'"
  >
- <!-- 头部：状态 + 触发方式 + 时间 -->
- <div class="flex items-center justify-between">
- <div class="flex items-center gap-2">
- <StatusBadge type="index":status="item.status" />
- <Badge variant="outline" class="bg-muted/50">
- {{ triggerLabels[item.trigger_type] || item.trigger_type }}
- </Badge>
- </div>
- <span class="text-xs text-muted-foreground">{{ formatDate(item.created_at) }}</span>
- </div>
- <!-- RUNNING 行：实时进度条 + stage 文案 -->
- <div v-if="item.status === 'running' && progressForRunning(item)" class="space-y-1.5">
- <div class="flex items-center justify-between text-xs">
- <span class="text-muted-foreground inline-flex items-center gap-1.5">
- <span class="icon-[lucide--loader-circle] animate-spin text-primary" />
- {{ progressForRunning(item)?.overall_stage || '索引中...' }}
- </span>
+ <!-- 轨道线（除最后一项外向下延伸） -->
  <span
- v-if="!isIndeterminateProgress(item)"
- class="font-mono tabular-nums text-primary"
- >
- {{ progressForRunning(item)?.overall_progress ?? 0 }}%
- </span>
- </div>
- <div class=".5 w-full overflow-hidden rounded-full bg-muted relative">
- <!-- 确定进度（embedding / write 阶段）：按比例填充 -->
- <div
- v-if="!isIndeterminateProgress(item)"
- class="h-full bg-primary transition-[width] duration-300 ease-out":style="{ width: `${progressForRunning(item)?.overall_progress ?? 0}%` }"
+ v-if="idx !== displayItems.length - 1"
+ class="absolute left-3 top-5 bottom-0 w-px bg-border/70"
+ aria-hidden="true"
  />
- <!-- 不确定进度（克隆 / 对比 hash / 解析 / 图谱）：滑块动画 -->
- <div
- v-else
- class="absolute inset-y-0 w-1/3 bg-primary rounded-full"
- style="animation: index-indeterminate 1.6s ease-in-out infinite;"
- />
- </div>
- </div>
- <!-- 文件变更统计 -->
- <div
- v-if="item.files_added || item.files_modified || item.files_deleted"
- class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs"
- >
- <span v-if="item.files_added" class="text-emerald-600">
- <span class="icon-[lucide--plus] mr-0.5" />{{ item.files_added }} 新增
- </span>
- <span v-if="item.files_modified" class="text-amber-600">
- <span class="icon-[lucide--pencil] mr-0.5" />{{ item.files_modified }} 修改
- </span>
- <span v-if="item.files_deleted" class="text-destructive">
- <span class="icon-[lucide--minus] mr-0.5" />{{ item.files_deleted }} 删除
- </span>
- <Button
- v-if="totalChangedCount(item) > 0 && item.changed_files"
- variant="ghost"
- size="sm"
- class=" px-2 text-xs text-muted-foreground"
- @click="toggleExpanded(item.id)"
+ <!-- 状态圆点（ring-card 把轨道线"打断"，形成节点视觉） -->
+ <span
+ class="absolute left-3 top-2 -translate-x-1/2 z-10 flex items-center justify-center"
+ aria-hidden="true"
  >
  <span:class="[
- 'icon-[lucide--chevron-right] mr-0.5 transition-transform',
- expandedItems.has(item.id) ? 'rotate-90': '',
+ 'block w-2.5 .5 rounded-full ring-4 ring-card',
+ statusDotClass(item.status),
+ item.status === 'running' || item.status === 'indexing'
+ ? 'shadow-[0_0_0_4px_rgba(59,130,246,0.18)] animate-pulse': '',
  ]"
  />
- {{ expandedItems.has(item.id) ? '收起': '查看变更文件' }}
- </Button>
- </div>
- <!-- 变更文件列表（按状态分组） -->
- <div
- v-if="expandedItems.has(item.id) && item.changed_files"
- class="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs space-y-2 font-mono"
- >
- <div v-if="item.changed_files.added?.length">
- <p class="text-emerald-600 mb-1 font-sans">
- 新增 {{ item.changed_files.added.length }} 个文件
- </p>
- <ul class="space-y-0.5 text-muted-foreground">
- <li v-for="path in item.changed_files.added":key="`a-${path}`" class="truncate">
- + {{ path }}
- </li>
- </ul>
- </div>
- <div v-if="item.changed_files.modified?.length">
- <p class="text-amber-600 mb-1 font-sans">
- 修改 {{ item.changed_files.modified.length }} 个文件
- </p>
- <ul class="space-y-0.5 text-muted-foreground">
- <li v-for="path in item.changed_files.modified":key="`m-${path}`" class="truncate">
- ~ {{ path }}
- </li>
- </ul>
- </div>
- <div v-if="item.changed_files.deleted?.length">
- <p class="text-destructive mb-1 font-sans">
- 删除 {{ item.changed_files.deleted.length }} 个文件
- </p>
- <ul class="space-y-0.5 text-muted-foreground">
- <li v-for="path in item.changed_files.deleted":key="`d-${path}`" class="truncate">
- - {{ path }}
- </li>
- </ul>
- </div>
- </div>
- <!-- SHA 范围 + 耗时 -->
- <div class="flex items-center justify-between text-xs text-muted-foreground">
- <span v-if="item.from_sha || item.to_sha" class="font-mono flex items-center gap-1">
+ </span>
+ <!-- 内容容器（hover 仅做轻微底色变化，不抢戏） -->
+ <div class="-mx-2 px-2 py-1.5 rounded-lg group-hover:bg-muted/30 transition-colors space-y-1.5">
+ <!-- 顶部 meta row：状态 / 触发 / SHA vs 耗时 / 时间 / 外链 -->
+ <div class="flex items-start justify-between gap-3 flex-wrap">
+ <div class="flex items-center gap-2 min-w-0 flex-wrap text-xs">
+ <StatusBadge type="index":status="item.status" size="sm" />
+ <span class="text-muted-foreground/50">·</span>
+ <span class="inline-flex items-center gap-1 text-muted-foreground">
+ <span class="icon-[lucide--zap] text-[10px]" />
+ {{ triggerLabels[item.trigger_type] || item.trigger_type }}
+ </span>
+ <!-- SHA 范围 — 只展示 to，from 用 → 隐喻起点（更克制） -->
+ <template v-if="item.from_sha || item.to_sha">
+ <span class="text-muted-foreground/50">·</span>
+ <span class="hidden sm:inline-flex items-center gap-1 font-mono text-muted-foreground">
  <TooltipProvider:delay-duration="300">
  <Tooltip>
  <TooltipTrigger as-child>
- <span>{{ item.from_sha?.slice(0, 7) || '---' }}</span>
+ <span>{{ item.from_sha?.slice(0, 7) || '———' }}</span>
  </TooltipTrigger>
  <TooltipContent v-if="item.from_sha">
  {{ item.from_sha }}
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>
- <span>→</span>
+ <span class="icon-[lucide--arrow-right] text-[10px] opacity-50" />
  <TooltipProvider:delay-duration="300">
  <Tooltip>
  <TooltipTrigger as-child>
- <span>{{ item.to_sha?.slice(0, 7) || '---' }}</span>
+ <span class="text-foreground/80">{{ item.to_sha?.slice(0, 7) || '———' }}</span>
  </TooltipTrigger>
  <TooltipContent v-if="item.to_sha">
  {{ item.to_sha }}
@@ -397,17 +350,19 @@ onBeforeUnmount( => {
  </Tooltip>
  </TooltipProvider>
  </span>
- <span v-else />
- <div class="flex items-center gap-1">
- <span v-if="item.started_at && item.finished_at">
- <span class="icon-[lucide--clock] mr-1" />{{ formatDuration(item) }}
+ </template>
+ </div>
+ <div class="flex items-center gap-2 text-xs text-muted-foreground/80 shrink-0 tabular-nums">
+ <span v-if="item.started_at && item.finished_at" class="font-mono">
+ {{ formatDuration(item) }}
  </span>
- <!--：在远端查看此 commit（aria-label work item §7 锁定文案） -->
+ <span class="opacity-30">·</span>
+ <time>{{ formatDate(item.created_at) }}</time>
  <Button
  v-if="item.to_sha && gitUrl"
  variant="ghost"
  size="sm"
- class=" w-7 "
+ class=" w-6 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
  as="a":href="`${gitUrl.replace(/\.git$/, '')}/commit/${item.to_sha}`"
  target="_blank"
  rel="noopener noreferrer"
@@ -417,35 +372,131 @@ onBeforeUnmount( => {
  </Button>
  </div>
  </div>
- <!-- 摘要/错误 -->
- <p v-if="item.summary_text" class="text-xs text-muted-foreground bg-muted/30 rounded-lg px-3 py-2">
+ <!-- RUNNING 行：进度条贴在 meta 下方，极细一根，不抢戏 -->
+ <div v-if="item.status === 'running' && progressForRunning(item)" class="space-y-1 pt-0.5">
+ <div class="flex items-center justify-between text-xs">
+ <span class="text-muted-foreground inline-flex items-center gap-1.5">
+ <span class="icon-[lucide--loader-circle] animate-spin text-blue-500 text-[11px]" />
+ {{ progressForRunning(item)?.overall_stage || '索引中...' }}
+ </span>
+ <span
+ v-if="!isIndeterminateProgress(item)"
+ class="font-mono tabular-nums text-blue-600/90 font-medium"
+ >
+ {{ progressForRunning(item)?.overall_progress ?? 0 }}%
+ </span>
+ </div>
+ <div class=".5 w-full overflow-hidden rounded-full bg-border/60 relative">
+ <div
+ v-if="!isIndeterminateProgress(item)"
+ class="h-full bg-blue-500 transition-[width] duration-300 ease-out":style="{ width: `${progressForRunning(item)?.overall_progress ?? 0}%` }"
+ />
+ <div
+ v-else
+ class="absolute inset-y-0 w-1/3 bg-blue-500 rounded-full"
+ style="animation: index-indeterminate 1.6s ease-in-out infinite;"
+ />
+ </div>
+ </div>
+ <!-- 文件变更统计（紧凑 inline，符号代替图标，更轻） -->
+ <div
+ v-if="item.files_added || item.files_modified || item.files_deleted"
+ class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+ >
+ <span v-if="item.files_added" class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">+{{ item.files_added }}</span>
+ <span>新增</span>
+ </span>
+ <span v-if="item.files_modified" class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-amber-600 font-medium">~{{ item.files_modified }}</span>
+ <span>修改</span>
+ </span>
+ <span v-if="item.files_deleted" class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-destructive font-medium">−{{ item.files_deleted }}</span>
+ <span>删除</span>
+ </span>
+ <button
+ v-if="totalChangedCount(item) > 0 && item.changed_files"
+ type="button"
+ class="inline-flex items-center gap-1 px-1 -mx-0.5 rounded text-muted-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors"
+ @click="toggleExpanded(item.id)"
+ >
+ <span:class="[
+ 'icon-[lucide--chevron-right] text-[10px] transition-transform',
+ expandedItems.has(item.id) ? 'rotate-90': '',
+ ]"
+ />
+ {{ expandedItems.has(item.id) ? '收起': '查看变更文件' }}
+ </button>
+ </div>
+ <!-- 变更文件列表（按状态分组，无边框、靠左缩进，像 git status 输出） -->
+ <div
+ v-if="expandedItems.has(item.id) && item.changed_files"
+ class="pl-2 border-l border-border/60 ml-0.5 text-xs space-y-2"
+ >
+ <div v-if="item.changed_files.added?.length">
+ <p class="text-emerald-600/90 mb-1 text-[11px] font-medium uppercase tracking-wide">
+ 新增 {{ item.changed_files.added.length }} 个文件
+ </p>
+ <ul class="space-y-0.5 text-muted-foreground font-mono">
+ <li v-for="path in item.changed_files.added":key="`a-${path}`" class="truncate">
+ <span class="text-emerald-600/70">+</span> {{ path }}
+ </li>
+ </ul>
+ </div>
+ <div v-if="item.changed_files.modified?.length">
+ <p class="text-amber-600/90 mb-1 text-[11px] font-medium uppercase tracking-wide">
+ 修改 {{ item.changed_files.modified.length }} 个文件
+ </p>
+ <ul class="space-y-0.5 text-muted-foreground font-mono">
+ <li v-for="path in item.changed_files.modified":key="`m-${path}`" class="truncate">
+ <span class="text-amber-600/70">~</span> {{ path }}
+ </li>
+ </ul>
+ </div>
+ <div v-if="item.changed_files.deleted?.length">
+ <p class="text-destructive/90 mb-1 text-[11px] font-medium uppercase tracking-wide">
+ 删除 {{ item.changed_files.deleted.length }} 个文件
+ </p>
+ <ul class="space-y-0.5 text-muted-foreground font-mono">
+ <li v-for="path in item.changed_files.deleted":key="`d-${path}`" class="truncate">
+ <span class="text-destructive/70">−</span> {{ path }}
+ </li>
+ </ul>
+ </div>
+ </div>
+ <!-- 摘要 -->
+ <p v-if="item.summary_text" class="text-xs text-muted-foreground leading-relaxed">
  {{ item.summary_text }}
  </p>
+ <!-- 错误信息（无色块、无边框；纯 inline "批注"风格 + 文字按钮） -->
  <div
  v-if="item.error_message && item.status === 'failed'"
- class="rounded-lg bg-destructive/5 px-3 py-2 space-y-2"
+ class="flex items-start justify-between gap-3"
  >
- <p class="text-xs text-destructive">
- {{ item.error_message }}
+ <p class="text-xs text-destructive/85 flex-1 min-w-0 leading-relaxed wrap-break-word inline-flex items-start gap-1.5">
+ <span class="icon-[lucide--circle-alert] text-destructive/70 shrink-0 text-[12px] mt-px" />
+ <span>{{ item.error_message }}</span>
  </p>
- <Button
- variant="outline"
- size="sm"
- class=" text-xs":disabled="retryingItemId === item.id"
+ <button
+ type="button"
+ class="inline-flex items-center gap-1 px-1.5 -mx-0.5 rounded text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/8 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed":disabled="retryingItemId === item.id"
  @click="retryFailed(item)"
  >
  <span:class="[
- 'mr-1',
+ 'text-[11px]',
  retryingItemId === item.id
  ? 'icon-[lucide--loader-circle] animate-spin': 'icon-[lucide--rotate-ccw]',
  ]"
  />
- {{ retryingItemId === item.id ? '正在触发...': '重试' }}
- </Button>
+ {{ retryingItemId === item.id ? '触发中': '重试' }}
+ </button>
  </div>
  </div>
+ </li>
+ </ol>
  <!-- 分页 -->
- <div v-if="totalPages > 1" class="flex items-center justify-between pt-2">
+ <div v-if="history && totalPages > 1" class="flex items-center justify-between pt-3 mt-3 border-t border-border/40">
  <span class="text-xs text-muted-foreground">共 {{ history.total }} 条记录</span>
  <div class="flex items-center gap-1">
  <Button
@@ -456,7 +507,7 @@ onBeforeUnmount( => {
  >
  <span class="icon-[lucide--chevron-left]" />
  </Button>
- <span class="text-xs text-muted-foreground px-2">{{ currentPage }} / {{ totalPages }}</span>
+ <span class="text-xs text-muted-foreground px-2 tabular-nums">{{ currentPage }} / {{ totalPages }}</span>
  <Button
  variant="outline"
  size="sm"
@@ -465,7 +516,6 @@ onBeforeUnmount( => {
  >
  <span class="icon-[lucide--chevron-right]" />
  </Button>
- </div>
  </div>
  </div>
  </div>

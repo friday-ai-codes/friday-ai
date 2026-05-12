@@ -81,7 +81,7 @@ function selectBranch(branch: string) {
  <!-- 无分支时降级为文本输入 -->
  <Input
  v-if="branches.length === 0":model-value="modelValue ?? ''"
- placeholder="输入基础分支名称，如 main"
+ placeholder="输入默认分支名称，如 main"
  class="":disabled="disabled"
  @update:model-value="emit('update:modelValue', ($event as string) || null)"
  />
@@ -94,12 +94,12 @@ function selectBranch(branch: string) {
  class="w-full justify-between font-normal"
  >
  <span:class="selectedValue ? 'text-foreground': 'text-muted-foreground'">
- {{ selectedValue || '选择基础分支...' }}
+ {{ selectedValue || '选择默认分支...' }}
  </span>
  <span class="icon-[lucide--chevrons-up-down] ml-2 w-4 shrink-0 opacity-50" />
  </Button>
  </PopoverTrigger>
- <PopoverContent class="w-[--reka-popover-trigger-width] " align="start">
+ <PopoverContent class="z-[10000] w-[--reka-popover-trigger-width] " align="start">
  <Command>
  <CommandInput placeholder="搜索分支..." />
  <CommandList class="max-">

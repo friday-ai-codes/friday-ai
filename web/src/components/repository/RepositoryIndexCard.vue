@@ -6,8 +6,8 @@ import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
-import { connectIndexProgressStream } from '~/composables/useIndexProgressStream'
 import { useErrorHandler } from '~/composables/useErrorHandler'
+import { connectIndexProgressStream } from '~/composables/useIndexProgressStream'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  repositoryId: string
@@ -16,6 +16,7 @@ const loading = ref(true)
 const indexStatus = ref<IndexStatusResponse | null>(null)
 const triggering = ref(false)
 const deleting = ref(false)
+const cancelling = ref(false)
 const exporting = ref(false)
 const importing = ref(false)
 const fileInput = ref<HTMLInputElement>
@@ -64,6 +65,22 @@ async function triggerIndex {
  }
  finally {
  triggering.value = false
+ }
+}
+// 停止索引
+async function cancelIndex {
+ cancelling.value = true
+ try {
+ await repositoriesApi.cancelIndex(props.repositoryId)
+ stopAllProgressWatchers
+ success('索引已停止')
+ await loadIndexStatus
+ }
+ catch (e: unknown) {
+ handleError(e, '停止索引')
+ }
+ finally {
+ cancelling.value = false
  }
 }
 // 删除索引
@@ -163,6 +180,9 @@ function startStream {
  if (indexStatus.value?.index_status === IndexStatus.INDEXED) {
  success('索引构建完成')
  }
+ else if (indexStatus.value?.index_status === IndexStatus.CANCELLED) {
+ success('索引已停止')
+ }
  else if (indexStatus.value?.index_status === IndexStatus.FAILED) {
  showError('索引构建失败')
  }
@@ -192,6 +212,9 @@ function startPollingFallback {
  if (indexStatus.value?.index_status === IndexStatus.INDEXED) {
  success('索引构建完成')
  }
+ else if (indexStatus.value?.index_status === IndexStatus.CANCELLED) {
+ success('索引已停止')
+ }
  else if (indexStatus.value?.index_status === IndexStatus.FAILED) {
  showError('索引构建失败')
  }
@@ -220,6 +243,17 @@ const overallProgress = computed( => {
 })
 const overallStage = computed( => {
  return indexStatus.value?.overall_stage ?? '准备中...'
+})
+//：文件级实时进度（来自 SSE / polling）
+const currentFile = computed( => indexStatus.value?.current_indexing_file ?? '')
+const filesProcessed = computed( => indexStatus.value?.indexed_files_processed ?? 0)
+const filesTotal = computed( => indexStatus.value?.indexed_files_total ?? 0)
+const hasCurrentFile = computed( => currentFile.value.length > 0)
+const hasFilesCounter = computed( => filesTotal.value > 0)
+const filesPercent = computed( => {
+ if (filesTotal.value <= 0)
+ return null
+ return Math.min(100, Math.round((filesProcessed.value / filesTotal.value) * 100))
 })
 // 当 status 切到 INDEXING（页面挂载或他处触发）→ 自动开 SSE 拿实时 stage
 watch(
@@ -371,31 +405,96 @@ onUnmounted( => {
  </div>
  </div>
  <!-- 索引中状态 -->
+ <!-- 视觉减负：去掉大圆 spinner + "正在构建索引"标题（与右上角 badge 重复），
+ 只保留 1 个 stage 前的小 spinner，避免页面上多个 loading icon 同时旋转 -->
  <div v-else-if="indexStatus.index_status === IndexStatus.INDEXING" class="space-y-4">
- <div class="flex items-center gap-3">
- <div class=" rounded-full bg-primary/10">
- <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
+ <!--：当前正在索引的文件 + 文件级 N/M 计数（最显眼位置） -->
+ <div
+ v-if="hasCurrentFile || hasFilesCounter"
+ class="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 space-y-1.5"
+ >
+ <div class="flex items-center justify-between gap-3">
+ <span class="text-[11px] uppercase tracking-wider text-muted-foreground">
+ 当前文件
+ </span>
+ <span
+ v-if="hasFilesCounter"
+ class="font-mono tabular-nums text-xs text-primary"
+ >
+ {{ filesProcessed }} / {{ filesTotal }}
+ <span v-if="filesPercent !== null" class="text-muted-foreground ml-1">
+ ({{ filesPercent }}%)
+ </span>
+ </span>
  </div>
- <div class="flex-1">
- <p class="font-medium">
- 正在构建索引
+ <p
+ v-if="hasCurrentFile"
+ class="font-mono text-sm text-foreground truncate":title="currentFile"
+ >
+ {{ currentFile }}
+ </p>
+ <p v-else class="text-sm text-muted-foreground">
+ 准备中…
  </p>
  </div>
- </div>
- <!-- 统一索引进度 -->
+ <!-- 统一索引进度：stage 文案 + 整体百分比 + 进度条 -->
  <div class="space-y-1.5">
  <div class="flex items-center justify-between text-sm">
- <span class="text-muted-foreground">
- <span class="icon-[lucide--loader-circle] mr-1.5 animate-spin" />
+ <span class="text-muted-foreground inline-flex items-center gap-1.5">
+ <span class="icon-[lucide--loader-circle] animate-spin text-primary" />
  {{ overallStage }}
  </span>
- <span class="font-medium text-primary">{{ overallProgress }}%</span>
+ <span class="font-medium text-primary tabular-nums">{{ overallProgress }}%</span>
  </div>
- <div class=".5 bg-muted rounded-full overflow-hidden">
+ <div class=" bg-muted rounded-full overflow-hidden">
  <div
  class="h-full bg-primary transition-all duration-500":style="{ width: `${overallProgress}%` }"
  />
  </div>
+ </div>
+ <div class="flex flex-wrap gap-2">
+ <Button
+ variant="outline"
+ class="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50":disabled="cancelling"
+ @click="cancelIndex"
+ >
+ <span v-if="cancelling" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--circle-stop] mr-2" />
+ 停止索引
+ </Button>
+ </div>
+ </div>
+ <!-- 已停止状态 -->
+ <div v-else-if="indexStatus.index_status === IndexStatus.CANCELLED" class="space-y-4">
+ <div class="flex items-center gap-3">
+ <div class=" rounded-full bg-muted">
+ <span class="icon-[lucide--circle-stop] text-2xl text-muted-foreground" />
+ </div>
+ <div>
+ <p class="font-medium">
+ 索引已停止
+ </p>
+ <p class="text-sm text-muted-foreground">
+ {{ indexStatus.index_error || '用户已停止索引' }}
+ </p>
+ </div>
+ </div>
+ <div class="flex flex-wrap gap-2">
+ <Button:disabled="triggering"
+ @click="triggerIndex"
+ >
+ <span v-if="triggering" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--refresh-cw] mr-2" />
+ 重新索引
+ </Button>
+ <Button
+ variant="outline":disabled="importing"
+ @click="triggerImport"
+ >
+ <span v-if="importing" class="icon-[lucide--loader-circle] animate-spin mr-2" />
+ <span v-else class="icon-[lucide--upload] mr-2" />
+ 导入索引
+ </Button>
  </div>
  </div>
  <!-- 失败状态 -->

@@ -29,7 +29,7 @@ const recommendedBaseBranch = computed( => {
  if (row)
  return row.branch_name
  const repo = spacesStore.currentSpace?.repositories?.[0]
- return repo?.base_branch ?? repo?.default_branch ?? null
+ return repo?.default_branch ?? null
 })
 async function syncChatBranchPicker {
  branchRows.value =

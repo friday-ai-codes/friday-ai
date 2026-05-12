@@ -174,7 +174,7 @@ export interface Repository extends RepositoryBase {
  auto_index_enabled: boolean
  webhook_secret?: string | null
  linked_spaces_count?: number
- index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed'
+ index_status: 'not_indexed' | 'indexing' | 'indexed' | 'failed' | 'cancelled'
  last_indexed_at: string | null
  // Phase freshness 字段（/，后端 Plan 新增）
  remote_head_sha?: string | null

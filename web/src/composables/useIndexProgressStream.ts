@@ -30,6 +30,10 @@ export interface IndexStreamRepositoryPayload {
  index_write_processed: number
  overall_progress: number
  overall_stage: string
+ //: 文件级实时进度
+ current_indexing_file?: string
+ indexed_files_processed?: number
+ indexed_files_total?: number
 }
 export type IndexStreamEvent =
  | {
