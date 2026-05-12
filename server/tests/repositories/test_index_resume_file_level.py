@@ -193,3 +193,153 @@ class TestFileLevelResume:
  # 整体仍然 success；返回值 added 应反映实际新增计数（3 — 来自 git diff 解析）
  # 但 embedding 跳过了 2 个 = 节省 token
  assert result["status"] == "success"
+class TestFullIndexResume:
+ """：run_full_index 重构为按文件批 _flush_batch 后的续传契约。
+ 关键不变量：
+ - 中断后 FileIndex 保留已 flush 的文件锚点。
+ - 再次进入 run_full_index 时，hash 命中的文件直接 skip，
+ ``indexed_files_processed`` 从 skip 数起步（百分比续接而非归零）。
+ - embedding 不被重复触发，避免重复消耗 token。
+ """
+ async def test_partial_failure_persists_completed_files_to_file_index(
+ self, repository: Repository
+ ) -> None:
+ """run_full_index 第 3 个文件 upsert 失败 → 前 2 个的 hash 已在 FileIndex。"""
+ with tempfile.TemporaryDirectory as tmpdir:
+ for fname in ["file_a.py", "file_b.py", "file_c.py"]:
+ with open(os.path.join(tmpdir, fname), "w") as f:
+ f.write(f"# {fname}\n")
+ indexer = IndexerService(str(repository.id))
+ scanned = [os.path.join(tmpdir, n) for n in ["file_a.py", "file_b.py", "file_c.py"]]
+ upsert_calls: list[int] =
+ async def fake_upsert(repo_id: str, points: list[dict]) -> bool:
+ upsert_calls.append(len(points))
+ if len(upsert_calls) == 3:
+ raise RuntimeError("qdrant 502")
+ return True
+ def fake_compute_hash(full_path: str) -> str:
+ return f"hash-{os.path.basename(full_path)}"
+ with (
+ patch("services.indexer.scan_directory", return_value=scanned),
+ patch("services.indexer.compute_file_hash", side_effect=fake_compute_hash),
+ patch(
+ "services.indexer.get_files_last_commit",
+ new_callable=AsyncMock,
+ return_value={},
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors", side_effect=fake_upsert,
+ ),
+ patch.object(
+ indexer.parser,
+ "parse_file",
+ side_effect=lambda full, base_path: _mk_chunks_for_file(
+ os.path.relpath(full, base_path), 1
+ ),
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ new_callable=AsyncMock,
+ return_value=[[0.1, 0.2, 0.3]],
+ ),
+ ):
+ with pytest.raises(RuntimeError):
+ await indexer.run_full_index(tmpdir)
+ completed_paths = sorted(
+ [
+ fp
+ async for fp in FileIndex.objects.filter(
+ repository_id=repository.id
+ ).values_list("file_path", flat=True)
+ ]
+ )
+ assert completed_paths == ["file_a.py", "file_b.py"], (
+ f"前 2 个文件应已 flush 到 FileIndex（续传锚点），实际：{completed_paths}"
+ )
+ async def test_retry_skips_already_completed_files_and_resumes_progress(
+ self, repository: Repository
+ ) -> None:
+ """重试 run_full_index 时：FileIndex 命中的文件被跳过、进度从 skip 数起步。"""
+ # 模拟上次已 flush 的两个文件
+ await FileIndex.objects.acreate(
+ repository_id=repository.id,
+ file_path="file_a.py",
+ file_hash="hash-file_a.py",
+ )
+ await FileIndex.objects.acreate(
+ repository_id=repository.id,
+ file_path="file_b.py",
+ file_hash="hash-file_b.py",
+ )
+ with tempfile.TemporaryDirectory as tmpdir:
+ for fname in ["file_a.py", "file_b.py", "file_c.py"]:
+ with open(os.path.join(tmpdir, fname), "w") as f:
+ f.write(f"# {fname}\n")
+ indexer = IndexerService(str(repository.id))
+ scanned = [os.path.join(tmpdir, n) for n in ["file_a.py", "file_b.py", "file_c.py"]]
+ embed_calls: list[list[str]] =
+ async def fake_embed(texts: list[str], **kw: Any) -> list[list[float]]:
+ embed_calls.append(texts)
+ return [[0.1, 0.2, 0.3]] * len(texts)
+ def fake_compute_hash(full_path: str) -> str:
+ return f"hash-{os.path.basename(full_path)}"
+ # 捕获 update_current_indexing_file 调用，验证 processed 从 skip 数起步
+ file_progress_calls: list[dict[str, Any]] =
+ async def fake_update_current(
+ repo_id: str,
+ *,
+ file_path: str | None = None,
+ processed: int | None = None,
+ total: int | None = None,
+ ) -> None:
+ file_progress_calls.append(
+ {"file_path": file_path, "processed": processed, "total": total}
+ )
+ with (
+ patch("services.indexer.scan_directory", return_value=scanned),
+ patch("services.indexer.compute_file_hash", side_effect=fake_compute_hash),
+ patch(
+ "services.indexer.get_files_last_commit",
+ new_callable=AsyncMock,
+ return_value={},
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "services.indexer.update_current_indexing_file",
+ side_effect=fake_update_current,
+ ),
+ patch.object(
+ indexer.parser,
+ "parse_file",
+ side_effect=lambda full, base_path: _mk_chunks_for_file(
+ os.path.relpath(full, base_path), 1
+ ),
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ side_effect=fake_embed,
+ ),
+ ):
+ result = await indexer.run_full_index(tmpdir)
+ # 仅 file_c 被 embed（file_a/b 因 hash 命中跳过）
+ embedded_count = sum(len(call) for call in embed_calls)
+ assert embedded_count == 1, (
+ f"仅未索引的 file_c 应被 embed，实际 chunks={embedded_count}: {embed_calls}"
+ )
+ # 进度回放：必须有一次 processed=2 (skip baseline) 的调用，
+ # 表示百分比从 2/3 起步而非 0/3
+ baseline_calls = [
+ c for c in file_progress_calls if c.get("processed") == 2 and c.get("total") == 3
+ ]
+ assert baseline_calls, (
+ f"应从已 skip 的 2 个文件作为 baseline 上报进度，实际调用序列：{file_progress_calls}"
+ )
+ assert result["status"] == "success"
+ # files_processed 是本次扫描的总数（向后兼容契约）
+ assert result["files_processed"] == 3
+ # 实际 upsert 的 chunk 数仅来自 file_c
+ assert result["chunks_indexed"] == 1

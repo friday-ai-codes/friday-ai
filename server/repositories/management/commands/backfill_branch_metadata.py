@@ -86,7 +86,7 @@ class Command(BaseCommand):
  if not health.get("collection_exists"):
  self.stdout.write(f" 跳过 {repository.name}: collection 不存在")
  return 0
- branch_name = repository.base_branch or repository.default_branch
+ branch_name = repository.default_branch
  updated = 0
  offset = None
  while True:
