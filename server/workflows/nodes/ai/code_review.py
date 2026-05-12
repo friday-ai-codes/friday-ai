@@ -305,9 +305,11 @@ class AICodeReviewNode(AIAgentBaseNode):
  provider_credential_id=config.get("provider_credential_id", ""),
  )
  # Phase: 循环外预渲染 system prompt（避免 per-MR 重复渲染）
+ # render_prompt 参数名仍为 project_id（prompts/services.py:177）；
+ # rename branch 将业务上下文统一改称为 space_id，但 prompts 模块的参数名未一并迁移。
  rendered_system_prompt = await render_prompt(
  PromptSlugs.AI_NODE_CODE_REVIEW,
- space_id=str(project.id) if project else None,
+ project_id=str(project.id) if project else None,
  variables={}, # REVIEW_SYSTEM_PROMPT 当前无占位符
  fallback=REVIEW_SYSTEM_PROMPT,
  )

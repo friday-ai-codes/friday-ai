@@ -158,7 +158,7 @@ class FeishuBotService:
  )
  if thread.conversation_id is None:
  conversation = await ConversationService.create_conversation(
- project_id=str(thread.project_id),
+ space_id=str(thread.project_id),
  title=self._build_conversation_title(message.normalized_text),
  )
  thread.conversation = conversation

@@ -66,7 +66,7 @@ async def build_sdk_config(
  config = ChatRunnerConfig(
  system_prompt=system_prompt,
  model=model,
- project_id=project_id,
+ space_id=project_id,
  session_id=session_id,
  conversation_id=str(conversation.id),
  api_key=resolved.api_key,
