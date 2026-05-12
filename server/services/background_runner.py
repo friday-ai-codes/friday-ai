@@ -14,12 +14,13 @@ loop 上。该 loop 不绑定任何 HTTP 请求，asgiref 给它分配的 Thread
 随线程一直存活，ORM 通过 `sync_to_async` 调用始终可用。
 线程安全
 ========
-`run_in_background` 内部用 `asyncio.run_coroutine_threadsafe` 做跨线程调度，
-返回标准 `concurrent.futures.Future`。worker 线程懒启动 + 加锁，单元测试可以
-在每个测试间用 `_reset_for_tests` 拆掉重建。
+`run_in_background` 内部跨线程调度到 worker loop，并在干净 context 中创建
+coroutine/task。返回标准 `concurrent.futures.Future`。worker 线程懒启动 + 加锁，
+单元测试可以在每个测试间用 `_reset_for_tests` 拆掉重建。
 """
 from __future__ import annotations
 import asyncio
+import contextvars
 import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Future
@@ -33,6 +34,8 @@ _thread: threading.Thread | None = None
 _lock = threading.Lock
 # 防 GC：保留所有 in-flight Future（done 后自动 discard）
 _pending: set[Future[Any]] = set
+# 按名称索引后台任务，用于取消运行中的索引。
+_named_futures: dict[str, Future[Any]] = {}
 def _ensure_worker_loop -> asyncio.AbstractEventLoop:
  """懒启动 worker 线程，并返回它的事件循环。线程安全。"""
  global _loop, _thread
@@ -100,10 +103,60 @@ def run_in_background(
  # 显式记录后再抛，确保即使调用方没消费 Future 也能在日志看到原因
  logger.exception("background_task_failed", task_name=name or "<unnamed>")
  raise
- future = asyncio.run_coroutine_threadsafe(_wrapper, loop)
+ future: Future[T] = Future
+ task_holder: list[asyncio.Task[T]] =
+ def _copy_task_result(task: asyncio.Task[T]) -> None:
+ if future.cancelled:
+ return
+ try:
+ future.set_result(task.result)
+ except asyncio.CancelledError:
+ future.cancel
+ except BaseException as exc:
+ future.set_exception(exc)
+ def _schedule_on_worker_loop -> None:
+ if future.cancelled:
+ return
+ try:
+ # 关键点：coroutine/task 必须在 worker loop 的干净 context 中创建。
+ # 否则 request thread 的 asgiref CurrentThreadExecutor 会随 contextvars
+ # 泄漏到后台任务，HTTP 响应结束后再 sync_to_async 就会使用已关闭 executor。
+ task = loop.create_task(
+ _wrapper,
+ name=name,
+ context=contextvars.Context,
+ )
+ task_holder.append(task)
+ task.add_done_callback(_copy_task_result)
+ except BaseException as exc:
+ future.set_exception(exc)
+ def _cancel_worker_task(done_future: Future[T]) -> None:
+ if not done_future.cancelled or not task_holder:
+ return
+ loop.call_soon_threadsafe(task_holder[0].cancel)
+ if name:
+ with _lock:
+ _named_futures[name] = future
+ def _remove_named_future(done_future: Future[T]) -> None:
+ with _lock:
+ if _named_futures.get(name) is done_future:
+ del _named_futures[name]
+ future.add_done_callback(_remove_named_future)
+ future.add_done_callback(_cancel_worker_task)
+ loop.call_soon_threadsafe(
+ _schedule_on_worker_loop,
+ context=contextvars.Context,
+ )
  _pending.add(future)
  future.add_done_callback(lambda f: _pending.discard(f))
  return future
+def cancel_background_task(name: str) -> bool:
+ """按名称取消一个仍在运行的后台任务。"""
+ with _lock:
+ future = _named_futures.get(name)
+ if future is None or future.done:
+ return False
+ return future.cancel
 def wait_for_pending(timeout: float = 30.0) -> None:
  """阻塞等待所有 in-flight 后台 Future 完成。仅用于测试 / shutdown。
  生产代码不应依赖它 — 后台任务故意脱离请求生命周期，调用方等结果用
@@ -128,6 +181,7 @@ def _reset_for_tests -> None:
  _loop = None
  _thread = None
  _pending.clear
+ _named_futures.clear
  if loop is not None and not loop.is_closed:
  loop.call_soon_threadsafe(loop.stop)
  if thread is not None:

@@ -28,6 +28,7 @@ class ServerSentEventRenderer(BaseRenderer):
  # 实际响应由 StreamingHttpResponse 直出，render 不会被调用
  return data
 from repositories.models import (
+ FileIndex,
  IndexHistory,
  IndexHistoryStatus,
  IndexStatus,
@@ -35,21 +36,33 @@ from repositories.models import (
  RepositoryBranchIndex,
  TriggerType,
 )
-from services.background_runner import run_in_background
+from services.background_runner import cancel_background_task, run_in_background
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
+INDEX_CANCEL_MESSAGE = "用户已停止索引"
 def _compute_index_progress(repository: Repository) -> dict[str, Any]:
- """根据 Repository 的 4 个进度计数字段 + index_stage 计算 overall_progress / overall_stage。
- 优先采用 indexer 显式上报的 `index_stage` 文案；只有当 stage 为空（旧记录或未上报）
- 时才回退到旧的"按计数器推断"逻辑，便于前端两个端点的 UI 不出现跳变。
+ """根据 Repository 字段计算 overall_progress / overall_stage。
+ 进度口径（ 续传重构后）：
+ 1. **文件级优先**：若 ``indexed_files_total > 0``，使用
+ ``indexed_files_processed / indexed_files_total`` 作为百分比。
+ 这一口径在按文件批 _flush_batch 模式下严格单调递增，且中断续传时
+ processed 从已 skip 数起步，百分比天然不归零。
+ 2. **chunks 级兜底**：仅当文件级字段未设置（老记录或未走重构路径）时，
+ 回退到旧的"embed × 0.7 + write × 0.3"加权口径。
+ stage 文案：优先采用 indexer 显式上报的 ``index_stage``，缺省时按 chunks 计数推断。
  """
  total_chunks = repository.index_total_chunks
  processed_chunks = repository.index_processed_chunks
  write_total = repository.index_write_total
  write_processed = repository.index_write_processed
  explicit_stage = (repository.index_stage or "").strip
+ files_total = repository.indexed_files_total or 0
+ files_processed = repository.indexed_files_processed or 0
+ if files_total > 0:
+ overall_progress = min(int(files_processed / files_total * 100), 100)
+ else:
  embedding_pct = (
  (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
  )
@@ -72,6 +85,10 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
  "index_processed_chunks": processed_chunks,
  "index_write_total": write_total,
  "index_write_processed": write_processed,
+ #：文件级实时进度（同时承担 overall_progress 计算口径）
+ "current_indexing_file": repository.current_indexing_file or "",
+ "indexed_files_processed": files_processed,
+ "indexed_files_total": files_total,
  }
 # NOTE: 历史上这里维护一个 _index_tasks set 配合 asyncio.create_task
 # 防 GC，但这种做法把后台 task 绑死在请求生命周期 → asgiref CurrentThreadExecutor
@@ -112,6 +129,10 @@ class IndexStatusSerializer(serializers.Serializer):
  #: 统一进度字段
  overall_progress = serializers.IntegerField
  overall_stage = serializers.CharField
+ #：文件级实时进度
+ current_indexing_file = serializers.CharField(allow_blank=True, default="")
+ indexed_files_processed = serializers.IntegerField(default=0)
+ indexed_files_total = serializers.IntegerField(default=0)
 class RepositoryBranchIndexRowSerializer(serializers.ModelSerializer):
  """只读：分支索引行（与 RepositoryBranchIndex 字段对齐）。"""
  class Meta:
@@ -199,6 +220,9 @@ class IndexTriggerView(APIView):
  index_write_total=0,
  index_write_processed=0,
  index_error=None,
+ current_indexing_file="",
+ indexed_files_processed=0,
+ indexed_files_total=0,
  )
  # 创建 IndexHistory 记录（获锁之后，任务启动之前）
  history = await IndexHistory.objects.acreate(
@@ -218,6 +242,52 @@ class IndexTriggerView(APIView):
  "branch": branch,
  },
  status=status.HTTP_202_ACCEPTED,
+ )
+class IndexCancelView(APIView):
+ """停止正在运行的仓库索引任务。"""
+ permission_classes = [IsAuthenticated]
+ async def post(self, request: Any, repository_id: str) -> Response:
+ try:
+ repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response(
+ {"detail": "仓库不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ if repository.index_status != IndexStatus.INDEXING:
+ return Response(
+ {"detail": "当前没有正在运行的索引任务"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ repo_id = str(repository_id)
+ cancelled = cancel_background_task(f"index-{repo_id}")
+ cancelled = cancel_background_task(f"auto-index-{repo_id}") or cancelled
+ await Repository.objects.filter(id=repository_id).aupdate(
+ index_status=IndexStatus.CANCELLED,
+ index_error=INDEX_CANCEL_MESSAGE,
+ index_stage="",
+ current_indexing_file="",
+ )
+ await IndexHistory.objects.filter(
+ repository_id=repository_id,
+ status=IndexHistoryStatus.RUNNING,
+ ).aupdate(
+ status=IndexHistoryStatus.CANCELLED,
+ finished_at=timezone.now,
+ error_message=INDEX_CANCEL_MESSAGE,
+ )
+ logger.info(
+ "index_cancelled",
+ repository_id=repo_id,
+ background_task_cancelled=cancelled,
+ )
+ return Response(
+ {
+ "message": INDEX_CANCEL_MESSAGE,
+ "repository_id": repo_id,
+ "status": IndexStatus.CANCELLED,
+ "cancelled": cancelled,
+ }
  )
 class IndexStatusView(APIView):
  """Get index status for a repository."""
@@ -240,6 +310,24 @@ class IndexStatusView(APIView):
  "last_indexed_at": repository.last_indexed_at,
  "index_error": None,
  **progress,
+ }
+ )
+ return Response(serializer.data)
+ if repository.index_status in (IndexStatus.FAILED, IndexStatus.CANCELLED):
+ serializer = IndexStatusSerializer(
+ {
+ "index_status": repository.index_status,
+ "last_indexed_at": repository.last_indexed_at,
+ "index_error": repository.index_error,
+ "index_total_chunks": repository.index_total_chunks,
+ "index_processed_chunks": repository.index_processed_chunks,
+ "index_write_total": repository.index_write_total,
+ "index_write_processed": repository.index_write_processed,
+ "overall_progress": 0,
+ "overall_stage": "",
+ "current_indexing_file": repository.current_indexing_file or "",
+ "indexed_files_processed": repository.indexed_files_processed or 0,
+ "indexed_files_total": repository.indexed_files_total or 0,
  }
  )
  return Response(serializer.data)
@@ -266,6 +354,9 @@ class IndexStatusView(APIView):
  "index_write_processed": repository.index_write_processed,
  "overall_progress": 0,
  "overall_stage": "",
+ "current_indexing_file": "",
+ "indexed_files_processed": repository.indexed_files_processed or 0,
+ "indexed_files_total": repository.indexed_files_total or 0,
  }
  )
  return Response(serializer.data)
@@ -305,6 +396,9 @@ class IndexStatusView(APIView):
  "index_write_processed": points_count,
  "overall_progress": 100 if qdrant_has_data else 0,
  "overall_stage": "完成" if qdrant_has_data else "",
+ "current_indexing_file": "",
+ "indexed_files_processed": repository.indexed_files_processed or 0,
+ "indexed_files_total": repository.indexed_files_total or 0,
  }
  )
  return Response(serializer.data)
@@ -541,6 +635,51 @@ class IndexHistorySerializer(serializers.Serializer):
  started_at = serializers.DateTimeField(allow_null=True)
  finished_at = serializers.DateTimeField(allow_null=True)
  created_at = serializers.DateTimeField
+class IndexedFileSerializer(serializers.Serializer):
+ """：已索引文件清单单行序列化。"""
+ file_path = serializers.CharField
+ file_hash = serializers.CharField
+ last_commit_sha = serializers.CharField(allow_blank=True)
+ last_commit_authored_at = serializers.DateTimeField(allow_null=True)
+ indexed_at = serializers.DateTimeField
+class IndexedFilesListView(APIView):
+ """：已索引文件清单查询 API（搜索 + 分页）。
+ GET /api/repositories/{id}/indexed-files/?search=&page=&page_size=
+ 返回 base 分支 FileIndex 记录，按 indexed_at 倒序。search 走
+ `file_path__icontains`；page_size 默认 30，硬上限 200。
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Any, repository_id: str) -> Response:
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ search = (request.query_params.get("search") or "").strip
+ try:
+ page = max(int(request.query_params.get("page", 1)), 1)
+ page_size = min(max(int(request.query_params.get("page_size", 30)), 1), 200)
+ except (TypeError, ValueError):
+ return Response(
+ {"detail": "page / page_size 必须为正整数"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ qs = FileIndex.objects.filter(repository_id=repository_id)
+ if search:
+ qs = qs.filter(file_path__icontains=search)
+ qs = qs.order_by("-indexed_at", "file_path")
+ total = await qs.acount
+ offset = (page - 1) * page_size
+ items = [item async for item in qs[offset: offset + page_size]]
+ serializer = IndexedFileSerializer(items, many=True)
+ data = await sync_to_async(lambda: serializer.data)
+ return Response(
+ {
+ "items": data,
+ "total": total,
+ "page": page,
+ "page_size": page_size,
+ }
+ )
 class IndexHistoryListView(APIView):
  """: IndexHistory 操作记录查询 API（分页）。"""
  permission_classes = [IsAuthenticated]
@@ -932,7 +1071,7 @@ class RepositoryWebhookView(APIView):
  commit_sha = event_data.get("after", "")
  branch_name = str(event_data.get("branch_name", "") or "")
  is_delete = bool(event_data.get("is_delete", False))
- base_branch = repository.base_branch or repository.default_branch
+ base_branch = repository.default_branch
  if is_delete and branch_name and branch_name != base_branch:
  result = await cleanup_branch_index(repository, branch_name)
  elif branch_name == base_branch:

@@ -22,6 +22,7 @@ class IndexStatus(models.TextChoices):
  INDEXING = "indexing", "索引中"
  INDEXED = "indexed", "已索引"
  FAILED = "failed", "索引失败"
+ CANCELLED = "cancelled", "已停止"
 class BranchIndexStatus(models.TextChoices):
  """分支索引状态。"""
  NOT_INDEXED = "not_indexed", "未索引"
@@ -41,6 +42,7 @@ class IndexHistoryStatus(models.TextChoices):
  RUNNING = "running", "运行中"
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
+ CANCELLED = "cancelled", "已停止"
 class AISummaryStatus(models.TextChoices):
  """AI 描述生成状态。"""
  NOT_STARTED = "not_started", "未生成"
@@ -99,6 +101,22 @@ class Repository(models.Model):
  blank=True,
  default="",
  help_text="索引当前阶段，由 indexer 各阶段开始时 update",
+ )
+ # 文件级实时进度：indexer 解析/写入每个文件前都会刷新这几个字段，
+ # 供前端"当前正在索引哪个文件 / 已处理 N 个"展示
+ current_indexing_file = models.CharField(
+ max_length=1000,
+ blank=True,
+ default="",
+ help_text="当前正在索引的文件相对路径，空字符串表示无活动文件",
+ )
+ indexed_files_processed = models.IntegerField(
+ default=0,
+ help_text="本次索引已处理的文件数（accumulated counter）",
+ )
+ indexed_files_total = models.IntegerField(
+ default=0,
+ help_text="本次索引预计要处理的文件总数（解析阶段确定后写入）",
  )
  # 增量索引与自动触发字段
  last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
@@ -212,6 +230,11 @@ class FileIndex(models.Model):
  file_path = models.CharField(max_length=1000)
  file_hash = models.CharField(max_length=64)
  indexed_at = models.DateTimeField(auto_now=True)
+ # 该文件自身最近一次 git commit 的 SHA 与时间，由 indexer 在写入时通过
+ # `git log -1 --format=%H|%ct -- <file>` 查询并填入。
+ # 用于"已索引文件清单"展示文件级新鲜度，独立于整次索引的 to_sha。
+ last_commit_sha = models.CharField(max_length=40, blank=True, default="")
+ last_commit_authored_at = models.DateTimeField(null=True, blank=True)
  class Meta:
  db_table = "file_indexes"
  verbose_name = "文件索引记录"
@@ -220,6 +243,12 @@ class FileIndex(models.Model):
  models.UniqueConstraint(
  fields=["repository", "file_path"],
  name="uq_repo_file_path",
+ ),
+ ]
+ indexes = [
+ models.Index(
+ fields=["repository", "file_path"],
+ name="idx_repo_file_path",
  ),
  ]
  def __str__(self) -> str:

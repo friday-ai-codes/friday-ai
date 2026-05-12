@@ -5,7 +5,9 @@ from .index_views import (
  BranchIndexListView,
  CodeSearchView,
  EmbeddingHealthView,
+ IndexCancelView,
  IndexDeleteView,
+ IndexedFilesListView,
  IndexFreshnessView,
  IndexHistoryListView,
  IndexProgressStreamView,
@@ -90,6 +92,11 @@ urlpatterns = [
  name="repository-index-status",
  ),
  path(
+ "<uuid:repository_id>/index/cancel/",
+ IndexCancelView.as_view,
+ name="repository-index-cancel",
+ ),
+ path(
  "<uuid:repository_id>/index/delete/",
  IndexDeleteView.as_view,
  name="repository-index-delete",
@@ -105,6 +112,12 @@ urlpatterns = [
  "<uuid:repository_id>/index/history/",
  IndexHistoryListView.as_view,
  name="repository-index-history",
+ ),
+ #：已索引文件清单查询（搜索 + 分页）
+ path(
+ "<uuid:repository_id>/indexed-files/",
+ IndexedFilesListView.as_view,
+ name="repository-indexed-files",
  ),
  # SSE 实时进度流（ — 让"索引历史"列表 RUNNING 行可显示实时进度）
  path(

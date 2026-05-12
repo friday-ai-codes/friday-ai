@@ -77,7 +77,10 @@ class TestFullIndexStats:
  assert "删除 1 文件" in result
  @pytest.mark.asyncio
  async def test_run_full_index_returns_added(self) -> None:
- """run_full_index 返回值应包含 added 字段。"""
+ """run_full_index 返回值应包含 added 字段。
+ 续传重构后：run_full_index 在 PARSING 循环内会真实读取文件 hash
+ + 调用图谱抽取等下游服务，单测需要 mock 这些外部依赖。
+ """
  from services.indexer import IndexerService
  repo = await Repository.objects.acreate(
  name="Stats Test Repo",
@@ -86,12 +89,21 @@ class TestFullIndexStats:
  default_branch="main",
  )
  indexer = IndexerService(str(repo.id))
- # Mock 外部依赖
  with (
  patch("services.indexer.qdrant_create_collection", new_callable=AsyncMock),
  patch("services.indexer.scan_directory", return_value=["/tmp/a.py", "/tmp/b.py"]),
+ patch("services.indexer.compute_file_hash", side_effect=["hash-a", "hash-b"]),
+ patch("services.indexer.get_files_last_commit", new_callable=AsyncMock, return_value={}),
  patch.object(indexer.parser, "parse_file", return_value=),
  patch("services.indexer.update_index_progress", new_callable=AsyncMock),
+ patch("services.indexer.update_current_indexing_file", new_callable=AsyncMock),
+ patch.object(
+ IndexerService, "_extract_and_write_graph", new_callable=AsyncMock,
+ ),
+ patch(
+ "codegraph.services.repo_summary_builder.RepoSummaryBuilder.build",
+ new_callable=AsyncMock,
+ ),
  ):
  result = await indexer.run_full_index("/tmp/fake-repo")
  assert result["status"] == "success"

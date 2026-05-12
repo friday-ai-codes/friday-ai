@@ -1,5 +1,6 @@
 """Qdrant vector database client service."""
 from typing import Any
+import httpx
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -50,6 +51,12 @@ class QdrantService:
  trust_env=False,
  # 关闭启动时的版本兼容探测，避免走系统代理失败时产生噪音警告。
  check_compatibility=False,
+ # qdrant-client SDK 默认 timeout=5s，对大 batch upsert 太短：
+ # 100 个点 + hybrid sparse + dense 512+ 维 → 单次写入轻易超 5s，
+ # 触发 httpx.ReadTimeout / socket.timeout → indexer 顶层 catch
+ # → index_status=FAILED & error="timed out"，灾难性后果。
+ # 设 60s 给冷启动 & 偶发抖动留余量。
+ timeout=60,
  )
  return cls._client
  @classmethod
@@ -415,6 +422,12 @@ class QdrantService:
  except UnexpectedResponse as e:
  logger.error("upsert_vectors_failed", error=str(e))
  return False
+ except httpx.HTTPError as e:
+ # 网络层异常（timeout / connect refused / read error）：
+ # 不让单次 batch 抖动炸掉整次索引（这是 indexer 'timed out' 失败的元凶）。
+ # 调用方需要感知失败并跳过 FileIndex 锚点写入，避免数据丢失被静默吞掉。
+ logger.error("upsert_vectors_network_failed", error=str(e), error_type=type(e).__name__)
+ return False
  @classmethod
  def search(
  cls,
@@ -554,6 +567,13 @@ class QdrantService:
  return True
  except UnexpectedResponse as e:
  logger.error("upsert_vectors_by_name_failed", error=str(e))
+ return False
+ except httpx.HTTPError as e:
+ logger.error(
+ "upsert_vectors_by_name_network_failed",
+ error=str(e), error_type=type(e).__name__,
+ collection_name=collection_name,
+ )
  return False
  @classmethod
  def _build_filter(cls, filters: dict[str, Any] | None) -> models.Filter | None:

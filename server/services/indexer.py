@@ -19,6 +19,7 @@ from repositories.models import (
  Repository,
  RepositoryBranchIndex,
 )
+from repositories.views import build_authenticated_git_url
 from services.branch_utils import (
  MAX_OVERLAY_COLLECTIONS_PER_REPO,
  BranchOverlayLimitExceeded,
@@ -60,6 +61,140 @@ async def update_index_progress(repository_id: str, total: int, processed: int) 
  index_total_chunks=total,
  index_processed_chunks=processed,
  )
+async def persist_vector_track_complete(repository_id: str, repo_path: str) -> str | None:
+ """主向量轨完成时立即把仓库标记为"已索引"——含 last_indexed_commit_sha 与 status。
+ 设计动机：BUILDING_GRAPH（图谱抽取）和 FINALIZING（repo summary）会调 LLM，
+ 可能很慢且容易在开发环境被服务重启 / autoreload 打断。这两步失败不应让
+ 用户看到"索引失败"——主索引向量数据已经完整入库，搜索完全可用。
+ 这里同时写入：
+ - last_indexed_commit_sha / remote_head_sha / remote_head_checked_at
+ → 让 Hash 新鲜度卡片立刻显示 fresh
+ - index_status = INDEXED + last_indexed_at = now
+ → 让"代码索引"卡片立刻显示"已就绪"
+ - index_error = None
+ → 清掉之前 run 留下的错误信息
+ Graph / Summary 失败后续可单独重跑（或下次索引自动重做），不影响 INDEXED 状态。
+ 幂等：clone_and_index_repository 末尾还会再写一次（同样的值），aupdate 重复
+ 执行无副作用。
+ Reliability：本函数任何异常都不应让索引 fail（主向量轨已成功才进来的）。
+ 所以外层 catch-all：拿不到 HEAD、Repository 不存在、非 UUID 测试场景等
+ 都只 log warning 后 return None。
+ """
+ from django.utils import timezone as _tz
+ try:
+ head_sha = await _get_head_sha(repo_path)
+ if not head_sha:
+ return None
+ now = _tz.now
+ await Repository.objects.filter(id=repository_id).aupdate(
+ # Hash 新鲜度元数据
+ last_indexed_commit_sha=head_sha,
+ remote_head_sha=head_sha,
+ remote_head_checked_at=now,
+ behind_commits=0,
+ behind_commits_calculated_at=now,
+ # 关键：主向量轨完成即视为"已索引"，让 UI 立刻可用
+ index_status=IndexStatus.INDEXED,
+ last_indexed_at=now,
+ index_error=None,
+ )
+ logger.info(
+ "vector_track_complete_persisted",
+ repository_id=repository_id,
+ head_sha=head_sha[:10],
+ )
+ return head_sha
+ except Exception as e:
+ logger.warning(
+ "persist_vector_track_complete_failed",
+ repository_id=repository_id, error=str(e),
+ )
+ return None
+async def update_current_indexing_file(
+ repository_id: str,
+ *,
+ file_path: str | None = None,
+ processed: int | None = None,
+ total: int | None = None,
+) -> None:
+ """更新文件级索引进度字段（ — 文件级实时进度）。
+ 任一非 None 参数都会写入；为减少 DB 写入压力，调用方应仅在数值真实变化时调用。
+ 写入失败仅 warning，不打断索引主流程（与 update_index_stage 同等级）。
+ """
+ update_fields: dict[str, Any] = {}
+ if file_path is not None:
+ # 防御截断：CharField max_length=1000，超长路径直接落到末尾
+ update_fields["current_indexing_file"] = file_path[-1000:]
+ if processed is not None:
+ update_fields["indexed_files_processed"] = processed
+ if total is not None:
+ update_fields["indexed_files_total"] = total
+ if not update_fields:
+ return
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(**update_fields)
+ except Exception as exc:
+ logger.warning(
+ "update_current_indexing_file_failed",
+ repository_id=repository_id,
+ error=str(exc),
+ )
+async def get_files_last_commit(
+ repo_path: str, file_paths: list[str],
+) -> dict[str, tuple[str, int]]:
+ """批量获取一组文件各自最近一次 commit 的 (sha, author_timestamp_unix)。
+ 实现方式：用一次 `git log --name-only --format=%H|%ct` 走整个仓库历史，
+ 逐 commit 取出 changed paths 与该 commit 信息，对每个目标 path 记录第一次
+ (即最新一次) 出现的 commit。比对 N 次 `git log -1 -- <file>` 快若干个数量级。
+ Args:
+ repo_path: 克隆仓库路径
+ file_paths: 关心的相对路径集合（剩余 path 会被忽略）
+ Returns:
+ dict {file_path: (commit_sha, author_unix_ts)}；查无记录的文件不会出现在结果里。
+ """
+ if not file_paths:
+ return {}
+ targets = set(file_paths)
+ result: dict[str, tuple[str, int]] = {}
+ try:
+ proc = await asyncio.create_subprocess_exec(
+ "git", "log", "--name-only", "--format=%H|%ct", "--no-renames", "HEAD",
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ stdout, _ = await asyncio.wait_for(proc.communicate, timeout=120.0)
+ except (asyncio.TimeoutError, FileNotFoundError) as exc:
+ logger.warning("get_files_last_commit_failed", error=str(exc))
+ return {}
+ if proc.returncode != 0:
+ return {}
+ current_sha: str | None = None
+ current_ts: int = 0
+ for raw_line in stdout.decode("utf-8", errors="ignore").splitlines:
+ line = raw_line.strip
+ if not line:
+ continue
+ if "|" in line and len(line.split("|", 1)[0]) >= 7 and " " not in line:
+ sha_part, _, ts_part = line.partition("|")
+ try:
+ current_ts = int(ts_part)
+ current_sha = sha_part
+ except ValueError:
+ current_sha = None
+ current_ts = 0
+ continue
+ if current_sha is None:
+ continue
+ if line in targets and line not in result:
+ result[line] = (current_sha, current_ts)
+ if len(result) == len(targets):
+ break
+ return result
+def _ts_to_dt(unix_ts: int) -> Any:
+ """Unix 时间戳 → tz-aware datetime（UTC）。"""
+ from datetime import datetime, timezone as dt_timezone
+ return datetime.fromtimestamp(unix_ts, tz=dt_timezone.utc)
 async def update_write_progress(repository_id: str, total: int, processed: int) -> None:
  """Update Qdrant write progress in database."""
  await Repository.objects.filter(id=repository_id).aupdate(
@@ -76,6 +211,11 @@ class IndexStage:
  PARSING_FILES = "解析文件中..."
  EMBEDDING = "生成向量中..."
  WRITING_VECTORS = "写入向量库..."
+ #：按文件批 _flush_batch 模式下，PARSING / EMBEDDING / WRITING 在每个
+ # batch 内会快速来回切换（一个 1000 文件的仓库可能产生 100+ 次切换），UI 上
+ # 会显得"stage 文案在乱跳"。INDEXING_FILES 是一个稳定的复合文案，覆盖整个
+ # 按文件批的索引主循环，把内部 embed/upsert 细节藏在统一节奏背后。
+ INDEXING_FILES = "索引文件中..."
  BUILDING_GRAPH = "构建代码图谱..."
  FINALIZING = "收尾中..."
  COMPLETED = "完成"
@@ -296,6 +436,15 @@ class IndexerService:
  self, repo_path: str, *, branch_name: str | None = None,
  ) -> dict[str, Any]:
  """Run full indexing for a repository.
+ 重构（2026-05）：从"一次性 parse-all → embed-all → upsert-all"模式
+ 改造为"按文件批 _flush_batch"模式，与 run_git_diff_index 保持节奏一致。
+ - 每攒满 ``FILE_BATCH_CHUNK_THRESHOLD`` chunks 即触发一次 embed → upsert →
+ 写 FileIndex 锚点 → 清缓冲区。
+ - 启动时优先查 FileIndex 已写的 (file_path, file_hash)，本次扫描命中且
+ hash 不变的文件视为"已索引"，**直接 skip parse 与 embed**。
+ - 进度计数走文件级口径：``indexed_files_processed / indexed_files_total``。
+ 中断后再次进入此函数时 processed 从已 skip 数起步，百分比自然续接，
+ 不归零（详见 ``_compute_index_progress``）。
  Args:
  repo_path: Path to the cloned repository
  branch_name: 分支名称，非空时在 payload 中注入分支元数据
@@ -308,94 +457,187 @@ class IndexerService:
  repo_path=repo_path,
  )
  try:
- # Get embedding dimension from settings
  dimension_setting = await SystemSetting.objects.filter(
  key=SettingKeys.EMBEDDING_DIMENSION
  ).afirst
  vector_size = int(dimension_setting.value) if dimension_setting else 1024
- # 检查是否启用 hybrid search
  hybrid_enabled = await self._is_hybrid_enabled
- # Create collection
  await qdrant_create_collection(self.repository_id, vector_size, hybrid=hybrid_enabled)
  if branch_name:
  await qdrant_create_branch_payload_index(
  QdrantService.get_collection_name(self.repository_id)
  )
- # Scan files
  await update_index_stage(self.repository_id, IndexStage.SCANNING_FILES)
  files = scan_directory(repo_path)
  logger.info("files_scanned", count=len(files))
- # Parse all files
- await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
- all_chunks: list[CodeChunk] =
- for file_path in files:
- chunks = self.parser.parse_file(file_path, base_path=repo_path)
- all_chunks.extend(chunks)
- logger.info("chunks_parsed", count=len(all_chunks))
- if not all_chunks:
+ # 续传锚点：上次中断时 _flush_batch 已写入的 (file_path → file_hash)
+ await update_index_stage(self.repository_id, IndexStage.LOADING_HASHES)
+ stored_records: dict[str, str] = {
+ fp: fh
+ async for fp, fh in FileIndex.objects.filter(
+ repository_id=self.repository_id,
+ ).values_list("file_path", "file_hash")
+ }
+ total_files = len(files)
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path="",
+ processed=0,
+ total=total_files,
+ )
+ # 预扫文件 hash + 决定 skip 名单（hash 命中 stored_records 视作已索引）
+ # 注：scan_directory 已应用 .gitignore 规则，可信任其结果即"应被索引集"
+ file_hashes_local: dict[str, str] = {}
+ files_to_process: list[tuple[str, str, str]] = # (abs_path, rel_path, hash)
+ skipped_resume = 0
+ for abs_path in files:
+ rel_path = os.path.relpath(abs_path, repo_path)
+ fh = compute_file_hash(abs_path)
+ file_hashes_local[rel_path] = fh
+ if stored_records.get(rel_path) == fh:
+ skipped_resume += 1
+ continue
+ files_to_process.append((abs_path, rel_path, fh))
+ if skipped_resume > 0:
+ logger.info(
+ "full_index_resume_skipped",
+ repository_id=self.repository_id,
+ skipped=skipped_resume,
+ remaining=len(files_to_process),
+ total=total_files,
+ )
+ # 文件级进度从"已 skip 数"起步 — 中断续传时百分比不归零
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path="",
+ processed=skipped_resume,
+ total=total_files,
+ )
+ # 没有需要处理的文件（要么仓库为空，要么所有文件已索引完成）
+ if not files_to_process:
  await update_index_progress(self.repository_id, 0, 0)
+ # 即便没有新文件，仍需走 graph + summary 兜底；但若总文件数也是 0
+ # 则按"空仓库"短路
+ if total_files == 0:
  return {
  "status": "success",
- "files_processed": len(files),
+ "files_processed": 0,
  "chunks_indexed": 0,
- "added": len(files), # 全量索引所有文件视为新增
+ "added": 0,
  }
- # Set total chunks count
- total_chunks = len(all_chunks)
- await update_index_progress(self.repository_id, total_chunks, 0)
- # Progress callback for embedding generation
- async def on_embedding_progress(processed: int, total: int) -> None:
- await update_index_progress(self.repository_id, total, processed)
- # Generate embeddings
- await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
- texts_to_embed = [_build_embedding_text(chunk) for chunk in all_chunks]
- embeddings = await EmbeddingService.generate_embeddings_batch(
- texts_to_embed, on_progress=on_embedding_progress
+ # 一次性批量查 commit 信息（避免每次 flush 都 spawn git log）
+ last_commit_map = await get_files_last_commit(
+ repo_path, [rel for _, rel, _ in files_to_process],
  )
- # 生成 sparse vectors（如果启用 hybrid）
+ #：主循环全程用稳定的"索引文件中..."文案，避免 _flush_batch 内部
+ # PARSING / EMBEDDING / WRITING 三阶段快速切换造成 UI 文案抖动
+ await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
+ # 文件级 batch：累积到 FILE_BATCH_CHUNK_THRESHOLD 即触发一次 flush
+ pending_chunks: list[CodeChunk] =
+ pending_files: list[tuple[str, str]] = # (rel_path, hash)
+ processed_chunks_total = 0
+ processed_files_total = skipped_resume # 已 skip 也计入完成数
+ chunks_indexed_total = 0 # 实际 upsert 到 qdrant 的 chunk 数
+ async def _flush_batch -> None:
+ """把 pending_chunks 一次性 embed + upsert + 写 FileIndex 锚点。
+ 注：``processed_files_total`` 在主循环 parse 时已递增过，本函数
+ 不再二次累加；FileIndex 的写入才是续传锚点的真正落地动作。
+ """
+ nonlocal processed_chunks_total, chunks_indexed_total
+ if not pending_files:
+ return
+ # 空 chunks batch（仅空文件）也要落 FileIndex，避免下次再 parse
+ if not pending_chunks:
+ for fp, fh in pending_files:
+ commit_info = last_commit_map.get(fp)
+ defaults: dict[str, Any] = {"file_hash": fh}
+ if commit_info:
+ defaults["last_commit_sha"] = commit_info[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(commit_info[1])
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults=defaults,
+ )
+ pending_files.clear
+ return
+ #：embed 阶段用 batch 末尾文件作为"代表文件"持续推进 UI；
+ # 不切 stage，让外层"索引文件中..."文案保持稳定
+ rep_file = pending_files[-1][0]
+ await update_current_indexing_file(
+ self.repository_id, file_path=rep_file,
+ )
+ texts = [_build_embedding_text(c) for c in pending_chunks]
+ embeddings = await EmbeddingService.generate_embeddings_batch(texts)
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
- sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
- # Prepare points for Qdrant
+ sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
  points = self._build_points(
- all_chunks, embeddings, sparse_vectors, hybrid_enabled,
- branch_name=branch_name, is_base_branch=branch_name is not None,
+ pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ branch_name=branch_name,
+ is_base_branch=branch_name is not None,
  )
- # Upsert to Qdrant in batches
- await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
- batch_size = 100
- total_points = len(points)
- await update_write_progress(self.repository_id, total_points, 0)
- for i in range(0, total_points, batch_size):
- batch = points[i: i + batch_size]
- await qdrant_upsert_vectors(self.repository_id, batch)
- await update_write_progress(self.repository_id, total_points, min(i + batch_size, total_points))
+ # upsert 失败必须 raise，否则 FileIndex 锚点错误地标"已完成"
+ # 导致下次续传跳过这批文件 → 数据永久丢失。upsert_vectors 返回 False 含义：
+ # Qdrant 业务异常 / 网络异常（含 timeout）已被记录但未恢复。
+ upsert_batch_size = 100
+ for i in range(0, len(points), upsert_batch_size):
+ ok = await qdrant_upsert_vectors(
+ self.repository_id, points[i: i + upsert_batch_size]
+ )
+ if not ok:
+ raise RuntimeError(
+ f"qdrant upsert failed at batch offset {i}/{len(points)}; "
+ f"see prior 'upsert_vectors_*_failed' log for details"
+ )
+ # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
+ for fp, fh in pending_files:
+ commit_info = last_commit_map.get(fp)
+ defaults = {"file_hash": fh}
+ if commit_info:
+ defaults["last_commit_sha"] = commit_info[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(commit_info[1])
+ await FileIndex.objects.aupdate_or_create(
+ repository_id=self.repository_id,
+ file_path=fp,
+ defaults=defaults,
+ )
+ processed_chunks_total += len(pending_chunks)
+ chunks_indexed_total += len(points)
+ # 兼容性：保持 chunks 计数同步更新，方便老 UI / 监控读
+ await update_index_progress(
+ self.repository_id, processed_chunks_total, processed_chunks_total
+ )
+ await update_write_progress(
+ self.repository_id, processed_chunks_total, processed_chunks_total
+ )
+ pending_chunks.clear
+ pending_files.clear
+ # 主循环：逐文件 parse → 攒 chunk → 满阈值 flush
+ # processed_files_total 在 parse 时递增（UI 流畅）；中断时已 parse 但
+ # 未 flush 的文件下次仍会被重新处理（FileIndex 未写入 → hash 不命中）
+ for abs_path, rel_path, file_hash in files_to_process:
+ processed_files_total += 1
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path=rel_path,
+ processed=processed_files_total,
+ )
+ chunks = self.parser.parse_file(abs_path, base_path=repo_path)
+ pending_chunks.extend(chunks)
+ pending_files.append((rel_path, file_hash))
+ if len(pending_chunks) >= FILE_BATCH_CHUNK_THRESHOLD:
+ await _flush_batch
+ # 末批 flush（哪怕只有空文件 / chunk 数不足阈值）
+ if pending_files:
+ await _flush_batch
  logger.info(
  "indexing_complete",
  repository_id=self.repository_id,
- chunks_indexed=len(points),
+ chunks_indexed=chunks_indexed_total,
+ files_processed=processed_files_total,
+ skipped_resume=skipped_resume,
  hybrid=hybrid_enabled,
- )
- # 全量索引后同步 FileIndex 记录：先清空旧记录，再批量创建
- await FileIndex.objects.filter(repository_id=self.repository_id).adelete
- file_hashes: dict[str, str] = {}
- for chunk in all_chunks:
- if chunk.file_path not in file_hashes:
- file_hashes[chunk.file_path] = chunk.file_hash
- file_index_objects = [
- FileIndex(
- repository_id=self.repository_id,
- file_path=fp,
- file_hash=fh,
- )
- for fp, fh in file_hashes.items
- ]
- if file_index_objects:
- await FileIndex.objects.abulk_create(
- file_index_objects,
- update_conflicts=True,
- update_fields=["file_hash"],
- unique_fields=["repository", "file_path"],
  )
  # 创建/更新 RepositoryBranchIndex 记录并传播 stale
  if branch_name:
@@ -403,15 +645,26 @@ class IndexerService:
  repo_path=repo_path,
  branch_name=branch_name,
  is_base_branch=True,
- points_count=len(points),
+ points_count=chunks_indexed_total,
  )
- # Phase: 图谱轨写入 —— 在向量轨完成之后异步执行
- # per: 图谱失败不阻塞，异常在 _extract_and_write_graph 内部被捕获
+ #：主向量轨完成 → 立刻持久化"已索引"元数据。
+ # 这步关键：后续 graph + summary 阶段调 LLM 可能很慢或中断（autoreload
+ # / 服务重启 / OOM），但仓库的"新鲜度"元数据已经落地，
+ # 用户能立刻看到 Hash 新鲜度卡片显示 fresh。
+ await persist_vector_track_complete(self.repository_id, repo_path)
+ # Phase: 图谱轨写入（失败不影响"已索引"状态）
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
+ try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=files,
  repository_id=self.repository_id,
+ )
+ except Exception:
+ logger.warning(
+ "extract_and_write_graph_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
  )
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
  await update_index_stage(self.repository_id, IndexStage.FINALIZING)
@@ -426,9 +679,9 @@ class IndexerService:
  )
  return {
  "status": "success",
- "files_processed": len(files),
- "chunks_indexed": len(points),
- "added": len(files), # 全量索引所有文件视为新增
+ "files_processed": total_files,
+ "chunks_indexed": chunks_indexed_total,
+ "added": total_files, # 全量索引所有文件视为新增（向后兼容契约）
  }
  except Exception as e:
  logger.error(
@@ -487,7 +740,7 @@ class IndexerService:
  BranchOverlayLimitExceeded: overlay 数量超过硬上限
  GitDiffError: git 操作失败
  """
- base_branch = repository.base_branch or repository.default_branch
+ base_branch = repository.default_branch
  # overlay 硬上限检查
  overlay_count = await RepositoryBranchIndex.objects.filter(
  repository=repository, is_base_branch=False,
@@ -754,10 +1007,19 @@ class IndexerService:
  ).values_list("file_path", "file_hash")
  }
  # 一次性 parse 所有未跳过的文件，便于事先得到准确的 total_chunks 给 UI 进度条
- await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
+ #：用 INDEXING_FILES 统一文案，避免 _flush_batch 内部 stage 切换抖动
+ await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
+ await update_current_indexing_file(
+ self.repository_id, file_path="", processed=0, total=len(files_to_index),
+ )
  file_payloads: list[tuple[Any, str, list[CodeChunk]]] = # (diff, hash, chunks)
  skipped_resume_count = 0
- for diff in files_to_index:
+ for parse_idx, diff in enumerate(files_to_index, start=1):
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path=diff.file_path,
+ processed=parse_idx,
+ )
  full_path = os.path.join(repo_path, diff.file_path)
  if not os.path.exists(full_path):
  continue
@@ -772,6 +1034,11 @@ class IndexerService:
  continue
  chunks = self.parser.parse_file(full_path, base_path=repo_path)
  file_payloads.append((diff, current_hash, chunks))
+ # 批量查询变更文件各自的最近 commit（一次 git log 调用），供 FileIndex 写入
+ last_commit_map = await get_files_last_commit(
+ repo_path,
+ [diff.file_path for diff, _, _ in file_payloads],
+ )
  if skipped_resume_count > 0:
  logger.info(
  "files_skipped_by_file_index_resume",
@@ -793,17 +1060,22 @@ class IndexerService:
  if not pending_chunks:
  # 仍可能有"空文件"待 flush（无 chunks 但需要记 FileIndex）
  for fp, fh in pending_files:
+ commit_info = last_commit_map.get(fp)
+ defaults = {"file_hash": fh}
+ if commit_info:
+ defaults["last_commit_sha"] = commit_info[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(commit_info[1])
  await FileIndex.objects.aupdate_or_create(
  repository_id=self.repository_id,
  file_path=fp,
- defaults={"file_hash": fh},
+ defaults=defaults,
  )
  pending_files.clear
  return
  if hybrid_enabled_cache is None:
  hybrid_enabled_cache = await self._is_hybrid_enabled
  hybrid_enabled = hybrid_enabled_cache
- await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
+ #：不切 stage，让外层稳定文案保持不变
  texts = [_build_embedding_text(c) for c in pending_chunks]
  embeddings = await EmbeddingService.generate_embeddings_batch(texts)
  sparse_vectors: list[dict] | None = None
@@ -813,19 +1085,28 @@ class IndexerService:
  pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
  branch_name=branch_name, is_base_branch=is_base_branch,
  )
- # upsert 失败抛异常 → FileIndex 不会更新 → 重试时这批文件会被重做
- await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
+ # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
  upsert_batch_size = 100
  for i in range(0, len(points), upsert_batch_size):
- await qdrant_upsert_vectors(
+ ok = await qdrant_upsert_vectors(
  self.repository_id, points[i: i + upsert_batch_size]
+ )
+ if not ok:
+ raise RuntimeError(
+ f"qdrant upsert failed at batch offset {i}/{len(points)}; "
+ f"see prior 'upsert_vectors_*_failed' log for details"
  )
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
+ commit_info = last_commit_map.get(fp)
+ defaults = {"file_hash": fh}
+ if commit_info:
+ defaults["last_commit_sha"] = commit_info[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(commit_info[1])
  await FileIndex.objects.aupdate_or_create(
  repository_id=self.repository_id,
  file_path=fp,
- defaults={"file_hash": fh},
+ defaults=defaults,
  )
  processed_chunks_total += len(pending_chunks)
  await update_index_progress(
@@ -874,14 +1155,23 @@ class IndexerService:
  is_base_branch=is_base_branch,
  points_count=total_points,
  )
- # Phase: 图谱轨写入
+ #：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
+ await persist_vector_track_complete(self.repository_id, repo_path)
+ # Phase: 图谱轨写入（失败不影响"已索引"状态）
  graph_files = [d.file_path for d in files_to_index]
  if graph_files:
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
+ try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ )
+ except Exception:
+ logger.warning(
+ "extract_and_write_graph_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
  )
  return {"status": "success", **stats_with_files}
  async def run_incremental_index(
@@ -968,15 +1258,32 @@ class IndexerService:
  # embed → upsert → flush FileIndex（与 run_git_diff_index 同节奏）。
  # 注：本路径已用 hash 比较过 stored_hashes，因此自然跳过未变文件，
  # 不再需要额外的 FileIndex 过滤。
- await update_index_stage(self.repository_id, IndexStage.PARSING_FILES)
+ #：用 INDEXING_FILES 统一文案，避免内部 stage 切换抖动
+ await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path="",
+ processed=0,
+ total=len(files_to_index),
+ )
  file_payloads: list[tuple[Any, str, list[CodeChunk]]] =
- for diff in files_to_index:
+ for parse_idx, diff in enumerate(files_to_index, start=1):
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path=diff.file_path,
+ processed=parse_idx,
+ )
  full_path = os.path.join(repo_path, diff.file_path)
  if not os.path.exists(full_path):
  continue
  file_hash = local_hashes.get(diff.file_path) or compute_file_hash(full_path)
  chunks = self.parser.parse_file(full_path, base_path=repo_path)
  file_payloads.append((diff, file_hash, chunks))
+ # 批量查最近 commit
+ last_commit_map_inc = await get_files_last_commit(
+ repo_path,
+ [diff.file_path for diff, _, _ in file_payloads],
+ )
  total_chunks = sum(len(c) for _, _, c in file_payloads)
  if total_chunks > 0:
  await update_index_progress(self.repository_id, total_chunks, 0)
@@ -989,17 +1296,22 @@ class IndexerService:
  nonlocal processed_chunks_total, hybrid_enabled_cache
  if not pending_chunks:
  for fp, fh in pending_files:
+ ci = last_commit_map_inc.get(fp)
+ defaults = {"file_hash": fh}
+ if ci:
+ defaults["last_commit_sha"] = ci[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(ci[1])
  await FileIndex.objects.aupdate_or_create(
  repository_id=self.repository_id,
  file_path=fp,
- defaults={"file_hash": fh},
+ defaults=defaults,
  )
  pending_files.clear
  return
  if hybrid_enabled_cache is None:
  hybrid_enabled_cache = await self._is_hybrid_enabled
  hybrid_enabled = hybrid_enabled_cache
- await update_index_stage(self.repository_id, IndexStage.EMBEDDING)
+ #：不切 stage，保持外层 INDEXING_FILES 稳定文案
  texts = [_build_embedding_text(c) for c in pending_chunks]
  embeddings = await EmbeddingService.generate_embeddings_batch(texts)
  sparse_vectors: list[dict] | None = None
@@ -1009,17 +1321,27 @@ class IndexerService:
  pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
  branch_name=branch_name, is_base_branch=is_base_branch,
  )
- await update_index_stage(self.repository_id, IndexStage.WRITING_VECTORS)
+ # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
  upsert_batch_size = 100
  for i in range(0, len(points), upsert_batch_size):
- await qdrant_upsert_vectors(
+ ok = await qdrant_upsert_vectors(
  self.repository_id, points[i: i + upsert_batch_size]
  )
+ if not ok:
+ raise RuntimeError(
+ f"qdrant upsert failed at batch offset {i}/{len(points)}; "
+ f"see prior 'upsert_vectors_*_failed' log for details"
+ )
  for fp, fh in pending_files:
+ ci = last_commit_map_inc.get(fp)
+ defaults = {"file_hash": fh}
+ if ci:
+ defaults["last_commit_sha"] = ci[0]
+ defaults["last_commit_authored_at"] = _ts_to_dt(ci[1])
  await FileIndex.objects.aupdate_or_create(
  repository_id=self.repository_id,
  file_path=fp,
- defaults={"file_hash": fh},
+ defaults=defaults,
  )
  processed_chunks_total += len(pending_chunks)
  await update_index_progress(
@@ -1063,14 +1385,23 @@ class IndexerService:
  file_path=diff.file_path,
  defaults={"file_hash": new_hash},
  )
- # Phase: 图谱轨写入
+ #：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
+ await persist_vector_track_complete(self.repository_id, repo_path)
+ # Phase: 图谱轨写入（失败不影响"已索引"状态）
  if files_to_index:
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  graph_files = [d.file_path for d in files_to_index]
+ try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ )
+ except Exception:
+ logger.warning(
+ "extract_and_write_graph_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
  )
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
  await update_index_stage(self.repository_id, IndexStage.FINALIZING)
@@ -1370,17 +1701,16 @@ async def clone_and_index_repository(
  # Create temp directory
  temp_dir = tempfile.mkdtemp(prefix="friday_index_")
  # Build authenticated URL if needed
- if token:
- if git_url.startswith("https://"):
- # https://github.com/user/repo.git -> https://token@github.com/user/repo.git
- git_url = git_url.replace("https://", f"https://{token}@")
+ # 使用 oauth2:<token>@host 形式：GitLab project token 必须放在密码位置，
+ # GitHub/Gitea 也都接受任意用户名 + token 作为密码。
+ git_url = build_authenticated_git_url(git_url, token)
  # Clone using git
  # --progress 启用 stderr 进度输出（即使没有 tty）；我们后台读 stderr 解析
  # "Receiving objects: NN%" 实时把 stage 更新为"克隆仓库中... NN%"，
  # 让前端长时间 clone 也能看到进度数字而不是死板的"克隆仓库中..."。
  clone_cmd = ["git", "clone", "--depth", "1", "--progress"]
  if not branch:
- clone_cmd.append("--single-branch")
+ clone_cmd.extend(["--single-branch", "--branch", repository.default_branch])
  # Add proxy if configured
  if proxy_url:
  clone_cmd.extend(["-c", f"http.proxy={proxy_url}"])
@@ -1437,6 +1767,13 @@ async def clone_and_index_repository(
  except asyncio.TimeoutError:
  pass
  raise Exception("Git clone timed out after 300s")
+ except asyncio.CancelledError:
+ proc.kill
+ try:
+ await asyncio.wait_for(proc.wait, timeout=5.0)
+ except asyncio.TimeoutError:
+ pass
+ raise
  if proc.returncode != 0:
  raise Exception(f"Git clone failed: {stderr_bytes.decode(errors='ignore')}")
  # Run indexing - pass repository_id instead of repository object
@@ -1449,7 +1786,7 @@ async def clone_and_index_repository(
  index_result = await indexer.run_branch_index(temp_dir, branch, repository)
  else:
  # 现有 base branch 索引路径
- base_branch = repository.base_branch or repository.default_branch
+ base_branch = repository.default_branch
  # 获取当前 HEAD SHA
  await update_index_stage(repository_id, IndexStage.COMPARING_HEAD)
  head_sha = await _get_head_sha(temp_dir)
@@ -1520,11 +1857,15 @@ async def clone_and_index_repository(
  temp_dir, branch_name=base_branch,
  )
  # base 路径：更新 last_indexed_commit_sha
+ now = timezone.now
  await Repository.objects.filter(id=repository_id).aupdate(
  last_indexed_commit_sha=head_sha,
+ remote_head_sha=head_sha or "",
+ remote_head_checked_at=now,
+ behind_commits=0,
+ behind_commits_calculated_at=now,
  )
  # Update repository status
- from django.utils import timezone
  if not branch:
  await update_repository_status(
  repository,
@@ -1532,6 +1873,8 @@ async def clone_and_index_repository(
  last_indexed_at=timezone.now,
  )
  await update_index_stage(repository_id, IndexStage.COMPLETED)
+ #：清空文件级实时进度（保留 total/processed 计数用于结束态展示）
+ await update_current_indexing_file(repository_id, file_path="")
  # 更新 IndexHistory 状态为完成
  if history_id:
  from repositories.models import IndexHistory, IndexHistoryStatus
@@ -1577,12 +1920,30 @@ async def clone_and_index_repository(
  repository_id=repository_id,
  error=str(e),
  )
- # Update repository status to failed
+ #：检查主向量轨是否已完成。若已完成（persist_vector_track_complete
+ # 写过 status=INDEXED），说明失败发生在 graph/summary 后置阶段——
+ # 仓库的核心索引数据已就绪，搜索完全可用。这种情况下：
+ # - Repository.index_status 保持 INDEXED（不覆盖回 FAILED）
+ # - 只把本次 IndexHistory 标 FAILED，方便用户在历史中看到后置阶段失败
+ # 反之主向量轨未完成，按原逻辑标 FAILED。
+ try:
+ current_repo = await Repository.objects.aget(id=repository_id)
+ main_track_done = current_repo.index_status == IndexStatus.INDEXED
+ except Exception:
+ main_track_done = False
+ if main_track_done:
+ logger.warning(
+ "post_main_track_failure_treated_as_indexed",
+ repository_id=repository_id, error=str(e),
+ )
+ await update_index_stage(repository_id, "")
+ await update_current_indexing_file(repository_id, file_path="")
+ else:
  await update_repository_status(repository, IndexStatus.FAILED, error=str(e))
  await update_index_stage(repository_id, "")
- # 更新 IndexHistory 状态为失败
+ await update_current_indexing_file(repository_id, file_path="")
+ # 更新 IndexHistory 状态为失败（无论主向量轨是否完成，本次 run 都没正常收尾）
  if history_id:
- from django.utils import timezone
  from repositories.models import IndexHistory, IndexHistoryStatus
  await IndexHistory.objects.filter(id=history_id).aupdate(
  status=IndexHistoryStatus.FAILED,
