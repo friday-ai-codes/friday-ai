@@ -214,6 +214,10 @@ class ContextRetrievalNode(BaseNode):
  repository_count=len(valid_repos),
  top_k=top_k,
  )
+ # 由 language_filter 构造下游 filters；其它过滤维度后续按需扩展
+ filters: dict[str, Any] | None = (
+ {"language": language_filter} if language_filter else None
+ )
  try:
  # 并行搜索所有仓库 (LayeredSearchService 内部处理 embedding/sparse)
  search_results = await self._search_all_repositories(

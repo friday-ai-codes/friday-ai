@@ -8,8 +8,9 @@ Serializer Async Pattern:
 """
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 import structlog
+from common.encryption import decrypt_value
 from projects.models import Project
 from system.models import SystemSetting
 if TYPE_CHECKING:

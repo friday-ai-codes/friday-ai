@@ -2,8 +2,11 @@
 GraphExtractor.extract_all(tree, source, ctx) 在一次 walk_tree 遍历中
 完成 Symbol/Import/Call 三维抽取。Endpoint 抽取单独分层扫描。
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
+if TYPE_CHECKING:
+ from codegraph.extractors.base import ExtractionBundle, FileContext
 logger = structlog.get_logger(__name__)
 class GraphExtractor:
  """代码图谱四维抽取编排器。
