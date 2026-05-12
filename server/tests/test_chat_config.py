@@ -37,7 +37,7 @@ class TestBuildSdkConfig:
  assert config.api_key == "sk-test-key"
  assert config.api_base_url == "https://api.example.com"
  assert config.model == "claude-sonnet-4-5"
- assert config.project_id == str(project.id)
+ assert config.space_id == str(project.id)
  assert config.conversation_id == str(conversation.id)
  assert config.max_turns == 30
  assert config.timeout_seconds == 0
@@ -71,6 +71,10 @@ class TestBuildSdkConfig:
  config, _ = await build_sdk_config(conversation)
  assert config.model == "claude-opus-5"
  async def test_uses_system_model_fallback(self, project):
+ """对话未指定 model 时 fallback 到系统级 ProviderCredential.default_model。
+ v8.1 之后：legacy 路径走 aget_legacy_anthropic_config 读 ProviderCredential，
+ 不再走 SettingKeys.ANTHROPIC_MODEL（已被硬删，见 services/provider_config.py:359）。
+ """
  from chat.config import build_sdk_config
  from chat.models import Conversation
  conversation = await Conversation.objects.acreate(
@@ -81,18 +85,20 @@ class TestBuildSdkConfig:
  conversation = await Conversation.objects.select_related("project").aget(
  id=conversation.id,
  )
- async def mock_setting(key: str) -> str | None:
- if key == "anthropic_model":
- return "claude-sonnet-4-5"
- return None
  with (
  patch(
  "chat.config.ProviderConfigService.aresolve",
  new=AsyncMock(return_value=_ResolvedStub),
  ),
  patch(
- "chat.config.aget_setting_value",
- new=AsyncMock(side_effect=mock_setting),
+ "chat.config.aget_legacy_anthropic_config",
+ new=AsyncMock(
+ return_value={
+ "api_key": "sk-test",
+ "base_url": "",
+ "default_model": "claude-sonnet-4-5",
+ },
+ ),
  ),
  ):
  config, _ = await build_sdk_config(conversation)

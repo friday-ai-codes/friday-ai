@@ -28,7 +28,7 @@ function makeProps(overrides: Record<string, unknown> = {}) {
  }
 }
 describe('providerCredentialMissingCard', => {
- it('A: system_admin 角色渲染 "去系统设置" primary + "去空间设置" secondary（均可点击）', => {
+ it('a: system_admin 角色渲染 "去系统设置" primary + "去空间设置" secondary（均可点击）', => {
  const wrapper = mount(ProviderCredentialMissingCard, {
  props: makeProps({ userRole: 'system_admin' }),
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -38,17 +38,17 @@ describe('providerCredentialMissingCard', => {
  expect(text).toContain('Anthropic')
  expect(text).toContain('去系统设置')
  expect(text).toContain('去空间设置')
- // 两个 RouterLink：主按钮指向 /admin/providers，次按钮指向 /projects/.../settings#providers
+ // 两个 RouterLink：主按钮指向 /admin/providers，次按钮指向 /spaces/.../settings#providers
  const links = wrapper.findAll('a[data-to]')
  expect(links.length).toBeGreaterThanOrEqual(2)
  const tos = links.map(a => a.attributes('data-to'))
  expect(tos).toContain('/admin/providers')
- expect(tos).toContain('/projects/proj-abc-123/settings#providers')
+ expect(tos).toContain('/spaces/proj-abc-123/settings#providers')
  // system_admin 角色不应出现 disabled 按钮
  const disabledButtons = wrapper.findAll('button[disabled]')
  expect(disabledButtons.length).toBe(0)
  })
- it('B: member 角色主按钮为 "去空间设置" + 次按钮 "去系统设置" disabled + tooltip 文案', => {
+ it('b: member 角色主按钮为 "去空间设置" + 次按钮 "去系统设置" disabled + tooltip 文案', => {
  const wrapper = mount(ProviderCredentialMissingCard, {
  props: makeProps({ userRole: 'member' }),
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -62,7 +62,7 @@ describe('providerCredentialMissingCard', => {
  // 主按钮 RouterLink `to` 应为项目设置路径
  const links = wrapper.findAll('a[data-to]')
  const tos = links.map(a => a.attributes('data-to'))
- expect(tos).toContain('/projects/proj-abc-123/settings#providers')
+ expect(tos).toContain('/spaces/proj-abc-123/settings#providers')
  // 非 system_admin 不应出现指向 /admin/providers 的 RouterLink
  expect(tos).not.toContain('/admin/providers')
  // 次按钮应 disabled（去系统设置）
@@ -72,7 +72,7 @@ describe('providerCredentialMissingCard', => {
  const disabledText = disabledButtons.map(b => b.text).join('|')
  expect(disabledText).toContain('去系统设置')
  })
- it('C: viewer 角色与 member 共享分流规则（次按钮 disabled）', => {
+ it('c: viewer 角色与 member 共享分流规则（次按钮 disabled）', => {
  const wrapper = mount(ProviderCredentialMissingCard, {
  props: makeProps({ userRole: 'viewer' }),
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -82,12 +82,12 @@ describe('providerCredentialMissingCard', => {
  expect(text).toContain('去系统设置')
  const links = wrapper.findAll('a[data-to]')
  const tos = links.map(a => a.attributes('data-to'))
- expect(tos).toContain('/projects/proj-abc-123/settings#providers')
+ expect(tos).toContain('/spaces/proj-abc-123/settings#providers')
  expect(tos).not.toContain('/admin/providers')
  const disabledButtons = wrapper.findAll('button[disabled]')
  expect(disabledButtons.length).toBeGreaterThanOrEqual(1)
  })
- it('D: 不同 Provider 映射到正确的中文品牌名（OpenAI / Gemini / Ollama）', => {
+ it('d: 不同 Provider 映射到正确的中文品牌名（OpenAI / Gemini / Ollama）', => {
  for (const [provider, label] of [
  ['openai_chat', 'OpenAI'],
  ['openai_responses', 'OpenAI'],

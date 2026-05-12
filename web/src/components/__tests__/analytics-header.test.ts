@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AnalyticsPage from '~/pages/analytics/index.vue'
-// Mock PageHeader and TimeRangeSelector
 vi.mock('~/components/common/PageHeader.vue', => ({
  default: {
  name: 'PageHeader',
@@ -13,10 +13,20 @@ vi.mock('~/components/analytics/TimeRangeSelector.vue', => ({
  default: {
  name: 'TimeRangeSelector',
  props: ['modelValue'],
- template: '<div class="time-range-selector" />',
+ template: '<div class="time-range-selector"><slot name="right" /></div>',
+ },
+}))
+vi.mock('~/components/analytics/AnalyticsGroupingSelector.vue', => ({
+ default: {
+ name: 'AnalyticsGroupingSelector',
+ props: ['modelValue'],
+ template: '<div class="analytics-grouping-selector" />',
  },
 }))
 describe('analytics Page Header', => {
+ beforeEach( => {
+ setActivePinia(createPinia)
+ })
  const globalConfig = {
  stubs: {
  PageContainer: { template: '<div><slot /></div>' },

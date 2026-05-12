@@ -11,7 +11,8 @@
  * E: 关闭按钮 emit('update:open', false)
  */
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import CleanupDialog from '~/components/chat/CleanupDialog.vue'
 // Mock api client（必须在 import 组件前）
 const delMock = vi.fn
 const getMock = vi.fn
@@ -27,7 +28,6 @@ vi.mock('vue-sonner', => ({
  error: vi.fn,
  },
 }))
-import CleanupDialog from '~/components/chat/CleanupDialog.vue'
 const mockMessages = [
  { id: 'm1', role: 'user', content: '第一条用户消息', created_at: '2026-04-01T10:00:00Z' },
  { id: 'm2', role: 'assistant', content: '第一条助手回复', created_at: '2026-04-01T10:01:00Z' },
@@ -42,7 +42,7 @@ describe('cleanupDialog', => {
  getMock.mockReset
  getMock.mockResolvedValue({ messages: mockMessages })
  })
- it('A: open=true → 拉取 messages + 默认选中最早 5 条（最多）', async => {
+ it('a: open=true → 拉取 messages + 默认选中最早 5 条（最多）', async => {
  const wrapper = mount(CleanupDialog, {
  props: { open: true, conversationId: 'conv-abc' },
  global: {
@@ -82,7 +82,7 @@ describe('cleanupDialog', => {
  // 选中计数应为 5
  expect(wrapper.text).toContain('5 条')
  })
- it('B: 删除按钮在选中为 0 时 disabled', async => {
+ it('b: 删除按钮在选中为 0 时 disabled', async => {
  const wrapper = mount(CleanupDialog, {
  props: { open: true, conversationId: 'conv-abc' },
  global: {
@@ -118,7 +118,7 @@ describe('cleanupDialog', => {
  // 存在一个删除按钮（非 disabled 默认 5 选中）
  expect(deleteBtn!.attributes('disabled')).toBeUndefined
  })
- it('C: 确认删除 → 调用 api.del(?before_id=X) + emit("confirm")', async => {
+ it('c: 确认删除 → 调用 api.del(?before_id=X) + emit("confirm")', async => {
  delMock.mockResolvedValue({ deleted_count: 5 })
  const wrapper = mount(CleanupDialog, {
  props: { open: true, conversationId: 'conv-abc' },
@@ -160,7 +160,7 @@ describe('cleanupDialog', => {
  // emit('confirm', beforeId)
  expect(wrapper.emitted('confirm')).toBeTruthy
  })
- it('D: DELETE 失败保留 Dialog 开，errorMsg 写入组件', async => {
+ it('d: DELETE 失败保留 Dialog 开，errorMsg 写入组件', async => {
  delMock.mockRejectedValue(new Error('Network error'))
  const wrapper = mount(CleanupDialog, {
  props: { open: true, conversationId: 'conv-abc' },
@@ -199,7 +199,7 @@ describe('cleanupDialog', => {
  // 组件 text 含错误提示（或 destructive 样式）
  expect(wrapper.html).toMatch(/失败|Network error/i)
  })
- it('E: 点击取消按钮 emit("update:open", false)', async => {
+ it('e: 点击取消按钮 emit("update:open", false)', async => {
  const wrapper = mount(CleanupDialog, {
  props: { open: true, conversationId: 'conv-abc' },
  global: {
@@ -234,7 +234,7 @@ describe('cleanupDialog', => {
  const openUpdates = wrapper.emitted('update:open') ??
  expect(openUpdates.some((e: unknown) => e[0] === false)).toBe(true)
  })
- it('F: 选中 preview 最后一条时拒绝提交，errorMsg 提示"保留至少 1 条未选中消息"', async => {
+ it('f: 选中 preview 最后一条时拒绝提交，errorMsg 提示"保留至少 1 条未选中消息"', async => {
  // Phase Plan：末尾边界 — 选中 preview 列表最后一条时 handleConfirmDelete 应拒绝提交
  // fixture：构造 3 条消息（< PREVIEW_LIMIT=20，< DEFAULT_SELECT_COUNT=5 → 全选三条，含末尾 m3）
  const threeMessages = [

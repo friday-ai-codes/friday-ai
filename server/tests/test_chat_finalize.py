@@ -54,6 +54,11 @@ class TestFinalizeConversation:
  assert msg.tool_calls is not None
  assert len(msg.tool_calls) == 1
  async def test_is_idempotent(self, setup_data):
+ """barrier 多次 resume 时 finalize_conversation 同一 assistant_msg_id 必须能多次安全调用，
+ 且最后一次 final_content 落库（chat/finalize.py:88-92 显式 update 终态）。
+ 历史变更：早期实现"内容相同则跳过"的幂等语义已废弃；现在按"barrier 终态覆写"语义，
+ 因为只有 barrier 完成的最后一次调用才掌握权威 final_content。
+ """
  from chat.finalize import finalize_conversation
  conversation, agent_session, session_id = setup_data
  msg_id = uuid.uuid4
@@ -67,6 +72,8 @@ class TestFinalizeConversation:
  patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
  patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
  ):
+ # 多次调用不应抛异常（幂等：同一 msg_id 反复 finalize 不会创建重复消息）
+ for _ in range(3):
  await finalize_conversation(
  conversation=conversation,
  assistant_msg_id=msg_id,
@@ -79,8 +86,11 @@ class TestFinalizeConversation:
  model="claude-sonnet-4-5",
  user_message="Hi",
  )
+ # 同一 msg_id 在 DB 中始终只有一行（无重复 INSERT）
+ count = await Message.objects.filter(id=msg_id).acount
+ assert count == 1
  msg = await Message.objects.aget(id=msg_id)
- assert msg.content == "Already saved"
+ assert msg.content == "Different content"
  async def test_updates_agent_session_status(self, setup_data):
  from chat.finalize import finalize_conversation
  conversation, agent_session, session_id = setup_data

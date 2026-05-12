@@ -72,11 +72,11 @@ function mountSymbolsTab {
  global: { stubs: stubComponents },
  })
 }
-describe('SymbolsTab', => {
+describe('symbolsTab', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: 挂载后调用 getSymbols API 并渲染数据行', async => {
+ it('a: 挂载后调用 getSymbols API 并渲染数据行', async => {
  const { getSymbols } = await import('~/api/codegraph')
  vi.mocked(getSymbols).mockResolvedValue({
  count: 1,
@@ -98,7 +98,7 @@ describe('SymbolsTab', => {
  expect(getSymbols).toHaveBeenCalledWith(expect.objectContaining({ repositoryId: 'repo-1' }))
  expect(wrapper.text).toContain('myFn')
  })
- it('B: line_range 列显示格式为 "L10–20"（使用 line_start/line_end serializer 别名）', async => {
+ it('b: line_range 列显示格式为 "L10–20"（使用 line_start/line_end serializer 别名）', async => {
  const { getSymbols } = await import('~/api/codegraph')
  vi.mocked(getSymbols).mockResolvedValue({
  count: 1,
@@ -119,7 +119,7 @@ describe('SymbolsTab', => {
  await flushPromises
  expect(wrapper.text).toContain('L10–20')
  })
- it('C: 点击数据行 → emitted select-symbol[0][0] === "uuid-1"', async => {
+ it('c: 点击数据行 → emitted select-symbol[0][0] === "uuid-1"', async => {
  const { getSymbols } = await import('~/api/codegraph')
  vi.mocked(getSymbols).mockResolvedValue({
  count: 1,

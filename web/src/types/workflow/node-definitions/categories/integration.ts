@@ -1,9 +1,9 @@
+import type { NodeDefinition } from '../types'
 /**
  * Integration 节点定义
  */
 import { z } from 'zod'
 import { createNodeDefinition } from '../index'
-import type { NodeDefinition } from '../types'
 // ============================================================================
 // Notify Feishu
 // ============================================================================

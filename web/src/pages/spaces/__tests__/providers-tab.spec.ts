@@ -90,12 +90,12 @@ describe('/spaces/[id]/providers page', => {
  setActivePinia(createPinia)
  vi.clearAllMocks
  })
- it('从 route.params.id 读取 spaceId 并传给 ProviderSettings scope=space', async => {
+ it('从 route.params.id 读取 spaceId 并传给 ProviderSettings scope=project（后端 ProviderCredential.scope enum 仍是 project）', async => {
  const wrapper = await mountProvidersTab('')
  await flushPromises
  const stub = wrapper.find('.stub-provider-settings')
  expect(stub.exists).toBe(true)
- expect(stub.attributes('data-scope')).toBe('space')
+ expect(stub.attributes('data-scope')).toBe('project')
  expect(stub.attributes('data-space-id')).toBe('')
  })
  it('不同 spaceId 切换时传入的 space-id 正确更新', async => {
@@ -103,7 +103,7 @@ describe('/spaces/[id]/providers page', => {
  await flushPromises
  const stub = wrapper.find('.stub-provider-settings')
  expect(stub.attributes('data-space-id')).toBe('project-abc-def-001')
- expect(stub.attributes('data-scope')).toBe('space')
+ expect(stub.attributes('data-scope')).toBe('project')
  })
  it('极端 spaceId（含连字符 / 数字）不被破坏，原值透传', async => {
  const wrapper = await mountProvidersTab('x-y-z-0001')

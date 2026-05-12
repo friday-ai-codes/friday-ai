@@ -1,5 +1,6 @@
 import type { SuggestionKeyDownProps, SuggestionProps as TipTapSuggestionProps } from '@tiptap/suggestion'
 import type { App } from 'vue'
+import type { BuiltInFunction } from './FunctionSuggestion'
 import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { FunctionNodeAttrs, VariableNodeAttrs } from '~/types/smart-input'
 import { Extension } from '@tiptap/core'
@@ -7,7 +8,6 @@ import { PluginKey } from '@tiptap/pm/state'
 import Suggestion from '@tiptap/suggestion'
 import { createApp, h, ref } from 'vue'
 import VariableSuggestionList from '../VariableSuggestionList.vue'
-import type { BuiltInFunction } from './FunctionSuggestion'
 /**
  * Plugin key for the variable suggestion plugin
  * Used to access the plugin state from outside
@@ -16,8 +16,8 @@ export const variableSuggestionPluginKey = new PluginKey('variableSuggestion')
 /**
  * Union type for suggestion items
  */
-export type SuggestionItem =
- | { type: 'variable', data: DesignTimeVariable }
+export type SuggestionItem
+ = | { type: 'variable', data: DesignTimeVariable }
  | { type: 'function', data: BuiltInFunction }
 /**
  * Suggestion props with our specific types

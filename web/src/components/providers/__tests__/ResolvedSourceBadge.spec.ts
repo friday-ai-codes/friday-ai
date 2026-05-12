@@ -48,7 +48,7 @@ function makeChain(winning: SourceLayer): ChainEntry {
  ]
 }
 describe('resolvedSourceBadge', => {
- it('A: source="node" → 渲染 "节点配置" 标签 + violet hue icon', => {
+ it('a: source="node" → 渲染 "节点配置" 标签 + violet hue icon', => {
  const wrapper = mount(ResolvedSourceBadge, {
  props: { source: 'node', chain: makeChain('node') },
  })
@@ -57,7 +57,7 @@ describe('resolvedSourceBadge', => {
  expect(html).toContain('icon-[lucide--layers]')
  expect(html).toContain('text-violet-600')
  })
- it('B: source="conversation" → 渲染 "对话固定" + blue hue icon', => {
+ it('b: source="conversation" → 渲染 "对话固定" + blue hue icon', => {
  const wrapper = mount(ResolvedSourceBadge, {
  props: { source: 'conversation', chain: makeChain('conversation') },
  })
@@ -66,16 +66,16 @@ describe('resolvedSourceBadge', => {
  expect(html).toContain('icon-[lucide--message-circle]')
  expect(html).toContain('text-blue-600')
  })
- it('C: source="project" → 渲染 "项目覆盖" + teal hue icon', => {
+ it('c: source="project" → 渲染 "空间覆盖" + teal hue icon', => {
  const wrapper = mount(ResolvedSourceBadge, {
  props: { source: 'project', chain: makeChain('project') },
  })
  const html = wrapper.html
- expect(html).toContain('项目覆盖')
+ expect(html).toContain('空间覆盖')
  expect(html).toContain('icon-[lucide--folder-lock]')
  expect(html).toContain('text-teal-600')
  })
- it('D: source="system" → 渲染 "系统默认" + slate hue icon', => {
+ it('d: source="system" → 渲染 "系统默认" + slate hue icon', => {
  const wrapper = mount(ResolvedSourceBadge, {
  props: { source: 'system', chain: makeChain('system') },
  })
@@ -84,7 +84,7 @@ describe('resolvedSourceBadge', => {
  expect(html).toContain('icon-[lucide--globe]')
  expect(html).toContain('text-slate-500')
  })
- it('E: chain 展开含 4 层中文标签；winning 层含 ✓；被覆盖层 line-through（html 断言）', => {
+ it('e: chain 展开含 4 层中文标签；winning 层含 ✓；被覆盖层 line-through（html 断言）', => {
  // 造一个 conversation 赢 + project 有值但被覆盖的 chain
  const chain: ChainEntry = [
  { layer: 'node', provider_type: null, model: null, credential_id: null, active: false },
@@ -111,14 +111,14 @@ describe('resolvedSourceBadge', => {
  // 四个中文 label 均出现（tooltip + main 共享 labelMap）
  expect(html).toContain('节点配置')
  expect(html).toContain('对话固定')
- expect(html).toContain('项目覆盖')
+ expect(html).toContain('空间覆盖')
  expect(html).toContain('系统默认')
  // winning 层 ✓（lucide--check）存在
  expect(html).toContain('icon-[lucide--check]')
  // project 层虽存在值但未赢 → line-through
  expect(html).toContain('line-through')
  })
- it('F: Badge 本身使用 variant="outline"（work item §Dimension 3 锁定 hue 仅 icon）', => {
+ it('f: Badge 本身使用 variant="outline"（work item §Dimension 3 锁定 hue 仅 icon）', => {
  const wrapper = mount(ResolvedSourceBadge, {
  props: { source: 'node', chain: makeChain('node') },
  })

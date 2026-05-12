@@ -15,9 +15,9 @@
  * project → lucide--folder-lock + text-teal-600
  * system → lucide--globe + text-slate-500
  * - hover/focus 打开 tooltip：展开完整优先级链表（4 行）
- * * winning 层：text-primary font-semibold + 末尾 ✓（lucide--check）
- * * 被覆盖层（value 存在但 active=false）：line-through text-muted-foreground
- * * value 不存在：灰色 —
+ * winning 层：text-primary font-semibold + 末尾 ✓（lucide--check）
+ * 被覆盖层（value 存在但 active=false）：line-through text-muted-foreground
+ * value 不存在：灰色 —
  * - 禁用 backdrop-blur（Clean Card 纠偏 work item L33）
  *
  * Analog: ProviderHealthBadge.vue（同目录，Phase 四态模板）+ PATTERNS §Pattern 2
@@ -106,7 +106,8 @@ function formatEntryValue(entry: ChainEntry): string {
  <span
  v-if="entry.active"
  class="icon-[lucide--check] w-3 text-primary shrink-0"
- aria-hidden="true":title="'当前生效层'"
+ aria-hidden="true"
+ title="当前生效层"
  />
  </div>
  </TooltipContent>

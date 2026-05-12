@@ -13,7 +13,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ExecutionProviderSnapshot from '~/components/workflow/execution/ExecutionProviderSnapshot.vue'
-type NodeSnapshot = {
+interface NodeSnapshot {
  provider_type: 'anthropic' | 'openai_responses' | 'openai_chat' | 'gemini' | 'ollama'
  model: string
  source: 'node' | 'conversation' | 'project' | 'system'
@@ -29,7 +29,7 @@ function makeSnap(overrides: Partial<NodeSnapshot> = {}): NodeSnapshot {
  }
 }
 describe('executionProviderSnapshot', => {
- it('A: snapshot 有值 → 折叠态显示 "Provider 快照" 标题 + provider 中文名 + model', => {
+ it('a: snapshot 有值 → 折叠态显示 "Provider 快照" 标题 + provider 中文名 + model', => {
  const wrapper = mount(ExecutionProviderSnapshot, {
  props: {
  nodeId: 'node-a1',
@@ -44,7 +44,7 @@ describe('executionProviderSnapshot', => {
  // 折叠态不应提前渲染 "未快照" Badge
  expect(text).not.toContain('未快照')
  })
- it('B: snapshot = null → 渲染 "未快照" Badge + 说明文案', => {
+ it('b: snapshot = null → 渲染 "未快照" Badge + 说明文案', => {
  const wrapper = mount(ExecutionProviderSnapshot, {
  props: {
  nodeId: 'node-b1',
@@ -59,7 +59,7 @@ describe('executionProviderSnapshot', => {
  const disabledButtons = wrapper.findAll('button[disabled]')
  expect(disabledButtons.length).toBeGreaterThanOrEqual(1)
  })
- it('C: snapshot + canReplay=true → Replay 按钮可点击且点击触发 replay emit', async => {
+ it('c: snapshot + canReplay=true → Replay 按钮可点击且点击触发 replay emit', async => {
  const wrapper = mount(ExecutionProviderSnapshot, {
  props: {
  nodeId: 'node-c1',
@@ -78,7 +78,7 @@ describe('executionProviderSnapshot', => {
  expect(wrapper.emitted).toHaveProperty('replay')
  expect(wrapper.emitted.replay).toHaveLength(1)
  })
- it('D: snapshot = null → Replay disabled + tooltip 文案 "历史 Execution 未记录快照"（title/aria-label 承载）', => {
+ it('d: snapshot = null → Replay disabled + tooltip 文案 "历史 Execution 未记录快照"（title/aria-label 承载）', => {
  const wrapper = mount(ExecutionProviderSnapshot, {
  props: {
  nodeId: 'node-d1',
@@ -96,7 +96,7 @@ describe('executionProviderSnapshot', => {
  const disabledTexts = disabledButtons.map(b => b.text).join('|')
  expect(disabledTexts).toContain('使用此快照重放')
  })
- it('E: 不同 Provider 映射到正确的中文品牌名', => {
+ it('e: 不同 Provider 映射到正确的中文品牌名', => {
  for (const [provider, label] of [
  ['anthropic', 'Anthropic'],
  ['openai_responses', 'OpenAI'],

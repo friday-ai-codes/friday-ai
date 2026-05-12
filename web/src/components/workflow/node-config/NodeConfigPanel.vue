@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import ResolvedSourceBadge from '~/components/providers/ResolvedSourceBadge.vue'
 import { Button } from '~/components/ui/button'
 import { ScrollArea } from '~/components/ui/scroll-area'
+import { useNodeMeta } from '~/composables/useNodeMeta'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
 import { useWorkflowsStore } from '~/stores/useWorkflowsStore'
 import IssuesPanel from '../validation/IssuesPanel.vue'
@@ -16,7 +17,6 @@ import NodeConfigForm from './NodeConfigForm.vue'
 import NodeConfigHeader from './NodeConfigHeader.vue'
 import NodeErrorConfig from './NodeErrorConfig.vue'
 import NodeSchemaDisplay from './NodeSchemaDisplay.vue'
-import { useNodeMeta } from '~/composables/useNodeMeta'
 // 组合 3 个 composables
 const {
  selectedNode,
@@ -124,7 +124,8 @@ const nodeFallbackValues = computed( => {
  return (node?.fallbackValues as Record<string, unknown> | null) ?? null
 })
 function updateErrorField(field: string, value: unknown) {
- if (!selectedNodeId.value) return
+ if (!selectedNodeId.value)
+ return
  const storeNode = workflowsStore.nodes.find(n => n.id === selectedNodeId.value)
  if (storeNode) {;(storeNode as Record<string, unknown>)[field] = value
  }

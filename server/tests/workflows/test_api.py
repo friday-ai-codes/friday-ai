@@ -259,7 +259,7 @@ class TestTemplateAPI:
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "code_generation",
- "project_id": str(api_project.id),
+ "space_id": str(api_project.id),
  "name": "From Template",
  }
  response = authenticated_admin_client.post(url, data, format="json")
@@ -271,7 +271,7 @@ class TestTemplateAPI:
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "daily_summary",
- "project_id": str(api_project.id),
+ "space_id": str(api_project.id),
  }
  response = authenticated_admin_client.post(url, data, format="json")
  assert response.status_code == status.HTTP_201_CREATED
@@ -291,26 +291,26 @@ class TestTemplateAPI:
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "code_review_pipeline",
- "project_id": str(api_project.id),
+ "space_id": str(api_project.id),
  }
  response = authenticated_admin_client.post(url, data, format="json")
  assert response.status_code == status.HTTP_201_CREATED
  assert response.data["metadata"]["template_id"] == "code_review_pipeline"
  def test_create_from_template_missing_project_id(self, authenticated_admin_client):
- """Missing project_id should return 400."""
+ """Missing space_id should return 400."""
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "code_generation",
  }
  response = authenticated_admin_client.post(url, data, format="json")
  assert response.status_code == status.HTTP_400_BAD_REQUEST
- assert "project_id" in str(response.data) or "required" in str(response.data).lower
+ assert "space_id" in str(response.data) or "required" in str(response.data).lower
  def test_create_from_template_unknown_template(self, authenticated_admin_client, api_project):
  """Unknown template_id should return 400."""
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "non_existent_template",
- "project_id": str(api_project.id),
+ "space_id": str(api_project.id),
  }
  response = authenticated_admin_client.post(url, data, format="json")
  assert response.status_code == status.HTTP_400_BAD_REQUEST

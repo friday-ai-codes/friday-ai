@@ -4,8 +4,8 @@ meta:
 </route>
 <script setup lang="ts">
 import ChatHeader from '~/components/chat/ChatHeader.vue'
-import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 import ChatInput from '~/components/chat/ChatInput.vue'
+import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 const chatStore = useChatStore
 const spacesStore = useSpacesStore
 // Chat 数据懒加载：首次进入 /chat 时初始化

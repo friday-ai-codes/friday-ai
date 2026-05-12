@@ -7,10 +7,10 @@
  */
 import type { NodeExecution } from '~/stores/useExecutionsStore'
 import { computed, ref } from 'vue'
+import { useExecutionReplay } from '~/components/execution/dag/composables/useExecutionReplay'
 import NodeDetailSheet from '~/components/execution/NodeDetailSheet.vue'
 import ReplayControls from '~/components/execution/replay/ReplayControls.vue'
 import ReplayTimeline from '~/components/execution/replay/ReplayTimeline.vue'
-import { useExecutionReplay } from '~/components/execution/dag/composables/useExecutionReplay'
 import ExecutionContent from './components/ExecutionContent.vue'
 import ExecutionDialogs from './components/ExecutionDialogs.vue'
 import ExecutionHeader from './components/ExecutionHeader.vue'
@@ -99,7 +99,8 @@ const selectedNodeConfig = computed<Record<string, unknown>>( => {
  )
  return defNode?.config ?? {}
 })
-/**：选中节点的 Provider 快照
+/**
+ *：选中节点的 Provider 快照
  * - undefined: 非 AI 节点（不渲染 ExecutionProviderSnapshot）
  * - null: AI 节点但历史 Execution miss（渲染 "未快照" 降级态）
  * - NodeSnapshot: AI 节点命中快照

@@ -2,27 +2,27 @@
 import type { ConversationMessage, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
+import { usePermission } from '~/composables/usePermission'
 import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
+import CleanupDialog from './CleanupDialog.vue'
 import CodingErrorCard from './CodingErrorCard.vue'
 import CodingProgressCard from './CodingProgressCard.vue'
 import CodingResultCard from './CodingResultCard.vue'
 import CommitConfirmCard from './CommitConfirmCard.vue'
+import ContextExceededCard from './ContextExceededCard.vue'
 import ExportConfirmDialog from './ExportConfirmDialog.vue'
 import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 import PRConfirmCard from './PRConfirmCard.vue'
-import CleanupDialog from './CleanupDialog.vue'
-import ContextExceededCard from './ContextExceededCard.vue'
 import ProviderCredentialMissingCard from './ProviderCredentialMissingCard.vue'
-import { usePermission } from '~/composables/usePermission'
-const chatStore = useChatStore
 // Phase：switch_model 按钮透传给父页面（/pages/chat/[id].vue 监听后调用
 // ChatHeader.focusModelSelect）。cleanup_history 按钮走本地 CleanupDialog（下方 ref）。
 const emit = defineEmits<{
  'open-model-select':
 }>
+const chatStore = useChatStore
 const cleanupDialogOpen = ref(false)
 function handleCleanupConfirmed(_beforeId: string) {
  // 清理成功后重置 lastContextExceeded + 重新 fetch conversation 详情刷新消息列表

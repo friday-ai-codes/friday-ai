@@ -8,7 +8,7 @@ const props = defineProps<{
  loading: boolean
 }>
 const emit = defineEmits<{
- search: [params: PlaygroundSearchParams]
+ 'search': [params: PlaygroundSearchParams]
  'chat-prefill': [params: { query: string, repositoryIds: string }]
 }>
 const query = ref('')

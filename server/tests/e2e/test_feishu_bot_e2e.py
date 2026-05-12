@@ -78,16 +78,19 @@ class TestBotDispatcher:
  assert result.reason == "mention_required"
  @patch("feishu.bot.dispatcher.schedule_process_feishu_bot_message")
  @patch("feishu.bot.dispatcher._try_resume_suspended_agent", return_value=False)
- async def test_bot_dispatch_ignores_p2p(
+ async def test_bot_dispatch_accepts_p2p(
  self,
  _mock_resume: AsyncMock,
  _mock_schedule: AsyncMock,
  ) -> None:
- """私聊消息应被忽略。"""
+ """私聊消息走 bot 流程（feishu Bot 私聊增强后 p2p 不再 unsupported）。
+ 历史：早期实现把 p2p 直接 ignored / unsupported_chat_type；
+ 现在 dispatcher 仅排除非 p2p/group 类型，p2p 进入正常流程，
+ 见 feishu/bot/dispatcher.py:69-73。
+ """
  msg = create_p2p_message
  result = await dispatch_inbound_message(msg)
- assert result.status == "ignored"
- assert result.reason == "unsupported_chat_type"
+ assert result.status == "bot_message_accepted"
  @patch("feishu.bot.dispatcher.schedule_process_feishu_bot_message")
  @patch("feishu.bot.dispatcher._try_resume_suspended_agent", return_value=False)
  async def test_bot_dispatch_ignores_empty_body(
@@ -208,6 +211,11 @@ class TestBotServiceProcessing:
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  yield AgentEvent(
  type=MESSAGE_COMPLETE,

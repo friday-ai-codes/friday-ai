@@ -1,6 +1,10 @@
+import type { GraphEdge, GraphNode } from '@vue-flow/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { GraphEdge, GraphNode } from '@vue-flow/core'
+// ---------------------------------------------------------------------------
+// C. 被测模块（在 mock 之后导入）
+// ---------------------------------------------------------------------------
+import { getRecentNodes, useDragAndDrop } from '../useDragAndDrop'
 // ---------------------------------------------------------------------------
 // A. 对照实现：pointToLineDistance（纯数学函数，零外部依赖）
 // ---------------------------------------------------------------------------
@@ -55,7 +59,7 @@ vi.mock('~/utils/shortId', => ({
  generateShortId: => 'abc',
 }))
 // crypto.randomUUID
-type CryptoMock = { randomUUID: => string }
+interface CryptoMock { randomUUID: => string }
 Object.defineProperty(globalThis, 'crypto', {
  value: { randomUUID: => 'test-uuid-1234' } as CryptoMock,
  writable: true,
@@ -77,10 +81,6 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 // window.dispatchEvent spy
 const dispatchEventSpy = vi.spyOn(window, 'dispatchEvent')
-// ---------------------------------------------------------------------------
-// C. 被测模块（在 mock 之后导入）
-// ---------------------------------------------------------------------------
-import { useDragAndDrop, getRecentNodes } from '../useDragAndDrop'
 // ---------------------------------------------------------------------------
 // D. Fixture 工厂
 // ---------------------------------------------------------------------------
@@ -124,8 +124,10 @@ function makeGraphEdge(overrides: Partial<GraphEdge> = {}): GraphEdge {
 function makeDropEvent(data: { nodeType: string, clientX: number, clientY: number, name?: string }): DragEvent {
  const dt = {
  getData: (format: string) => {
- if (format === 'application/vueflow') return data.nodeType
- if (format === 'application/vueflow-name') return data.name ?? ''
+ if (format === 'application/vueflow')
+ return data.nodeType
+ if (format === 'application/vueflow-name')
+ return data.name ?? ''
  return ''
  },
  dropEffect: '',

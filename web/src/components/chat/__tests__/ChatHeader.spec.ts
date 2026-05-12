@@ -11,21 +11,21 @@ import { describe, expect, it } from 'vitest'
 import { computed, nextTick, ref } from 'vue'
 import { useConversationFrozen } from '~/composables/useConversationFrozen'
 describe('useConversationFrozen', => {
- it('A: status=completed → isFrozen=true, reason 含 "已完成"', => {
+ it('a: status=completed → isFrozen=true, reason 含 "已完成"', => {
  const status = ref<'completed'>('completed')
  const waiting = ref(false)
  const frozen = useConversationFrozen(status, waiting)
  expect(frozen.value.isFrozen).toBe(true)
  expect(frozen.value.reason).toContain('已完成')
  })
- it('B: status=running + waitingForInput=true → isFrozen=true, reason 含 "等待输入"', => {
+ it('b: status=running + waitingForInput=true → isFrozen=true, reason 含 "等待输入"', => {
  const status = ref<'running'>('running')
  const waiting = ref(true)
  const frozen = useConversationFrozen(status, waiting)
  expect(frozen.value.isFrozen).toBe(true)
  expect(frozen.value.reason).toContain('等待输入')
  })
- it('C: status=running + waitingForInput=false → isFrozen=false, reason=""', => {
+ it('c: status=running + waitingForInput=false → isFrozen=false, reason=""', => {
  const status = ref<'running'>('running')
  const waiting = ref(false)
  const frozen = useConversationFrozen(status, waiting)

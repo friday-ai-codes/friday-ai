@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getRecentNodes } from '../editor/composables/useDragAndDrop'
 import { ALL_NODE_DEFINITIONS } from '~/types/workflow/node-definitions'
+import { getRecentNodes } from '../editor/composables/useDragAndDrop'
 import { getNodeVisual } from '../editor/nodes/nodeVisuals'
 import NodePaletteItem from './NodePaletteItem.vue'
 /**
@@ -190,7 +190,7 @@ function getCategoryGradient(color: string): string {
  </div>
  <div class="space-y-1.5 mb-4">
  <NodePaletteItem
- v-for="item in recentNodes":key="'recent-' + item.type":node-type="item.type":name="item.name":description="item.description"
+ v-for="item in recentNodes":key="`recent-${item.type}`":node-type="item.type":name="item.name":description="item.description"
  />
  </div>
  </div>

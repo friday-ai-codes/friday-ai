@@ -6,7 +6,7 @@ import { BUILT_IN_FUNCTIONS } from '../smart-input/extensions/FunctionSuggestion
  * 不 mock 任何依赖，纯数据校验：函数数量、字段完整性、参数数量与类型签名。
  * 每条用例针对一个函数或一个属性维度，定位失败时更精确。
  */
-describe('BUILT_IN_FUNCTIONS', => {
+describe('bUILT_IN_FUNCTIONS', => {
  it('包含 7 个内置函数', => {
  expect(BUILT_IN_FUNCTIONS).toHaveLength(7)
  })

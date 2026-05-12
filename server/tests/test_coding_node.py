@@ -1,13 +1,34 @@
 """AICodingNode 单元测试。
 覆盖 callback-driven 模式（TaskDispatcher 分发 -> waiting_event）
 和 error handling（缺少方案 -> failed、分发失败 -> failed）。
+Phase 引入 ProviderConfigService.aresolve_or_error 之后，AICodingNode
+执行路径会先解析 Anthropic 凭证再走 _run_repo_coding。本文件用 autouse fixture
+统一 stub aresolve_or_error 返回静态 ResolvedProviderConfig，避免单测落入凭证
+缺失分支（不破坏 missing-plan / empty-plan 等不依赖凭证的负向用例）。
 """
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from services.provider_config import ProviderType, ResolvedProviderConfig
 from workflows.nodes.ai.coding import AICodingNode
 from workflows.nodes.base import ExecutionContext, NodeResult
+@pytest.fixture(autouse=True)
+def _stub_provider_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+ """统一 stub Anthropic 凭证解析，使测试无需真实 ProviderCredential 行存在。"""
+ async def _resolve(*args: object, **kwargs: object) -> ResolvedProviderConfig:
+ return ResolvedProviderConfig(
+ provider_type=ProviderType.ANTHROPIC,
+ api_key="sk-ant-test",
+ base_url="https://api.anthropic.com",
+ source="system",
+ )
+ from services.provider_config import ProviderConfigService
+ monkeypatch.setattr(
+ ProviderConfigService,
+ "aresolve_or_error",
+ _resolve,
+ )
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

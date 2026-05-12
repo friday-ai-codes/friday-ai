@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { computed } from 'vue'
 import { refreshWebhookToken, updateWebhookToken } from '~/api/spaces'
 import StatusBadge from '~/components/common/StatusBadge.vue'
-import AnchorNavLayout, { type NavSection } from '~/components/layout/AnchorNavLayout.vue'
+import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import BaseModal from '~/components/modal/BaseModal.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -366,7 +367,9 @@ async function handleCustomToken {
  <div class="text-2xl font-bold text-foreground tabular-nums leading-none">
  {{ repoCount }}
  </div>
- <div class="text-xs text-muted-foreground mt-1.5">关联仓库</div>
+ <div class="text-xs text-muted-foreground mt-1.5">
+ 关联仓库
+ </div>
  </div>
  </button>
  <button
@@ -384,7 +387,9 @@ async function handleCustomToken {
  <div class="text-2xl font-bold text-foreground tabular-nums leading-none">
  {{ executionTotal }}
  </div>
- <div class="text-xs text-muted-foreground mt-1.5">累计执行</div>
+ <div class="text-xs text-muted-foreground mt-1.5">
+ 累计执行
+ </div>
  </div>
  </button>
  <button
@@ -405,7 +410,9 @@ async function handleCustomToken {
  <div class="text-base font-semibold text-foreground">
  {{ feishuConfigured ? '已配置': '未配置' }}
  </div>
- <div class="text-xs text-muted-foreground mt-1">飞书集成</div>
+ <div class="text-xs text-muted-foreground mt-1">
+ 飞书集成
+ </div>
  </div>
  </button>
  <button
@@ -426,7 +433,9 @@ async function handleCustomToken {
  <div class="text-base font-semibold text-foreground">
  {{ hasToken ? '已生成': '未配置' }}
  </div>
- <div class="text-xs text-muted-foreground mt-1">Webhook Token</div>
+ <div class="text-xs text-muted-foreground mt-1">
+ Webhook Token
+ </div>
  </div>
  </button>
  </div>

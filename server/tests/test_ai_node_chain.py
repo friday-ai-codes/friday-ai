@@ -169,6 +169,13 @@ class TestAINodeConfigSchema:
  """CodeReview 应有配置 schema（继承自 AIAgentBaseNode）。"""
  from workflows.nodes.ai.code_review import AICodeReviewNode
  assert hasattr(AICodeReviewNode, "config_schema")
+@pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase LayeredSearchService 重构后 ContextRetrievalNode 不再直接"
+ " 调 EmbeddingService + BranchAwareSearchService；BM25 注入语义已迁移到 RepoRouter / "
+ "LayeredSearchService 测试。"
+ )
+)
 @pytest.mark.asyncio
 async def test_context_retrieval_hybrid_search:
  """: ContextRetrievalNode._search_repository 调用 BranchAwareSearchService.search 时传入 query_sparse。"""
@@ -232,6 +239,12 @@ async def test_context_retrieval_hybrid_search:
  assert call_kwargs["query_sparse"] == {"indices": [5, 10, 15], "values": [0.5, 0.3, 0.2]}
  # 验证返回结果正常
  assert result.status == "completed"
+@pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase LayeredSearchService 重构后 ContextRetrievalNode 不再"
+ "直接调 EmbeddingService + BranchAwareSearchService。"
+ )
+)
 @pytest.mark.asyncio
 async def test_context_retrieval_empty_query_dense_only:
  """: 空 sparse 向量时，ContextRetrievalNode 退化为 dense-only（query_sparse=None）。"""

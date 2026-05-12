@@ -73,7 +73,7 @@ class TestSmokeChain:
  url = "/api/workflows/from-template/"
  data = {
  "template_id": "daily_summary",
- "project_id": str(project.id),
+ "space_id": str(project.id),
  }
  response = authenticated_admin_client.post(url, data, format="json")
  assert response.status_code == status.HTTP_201_CREATED

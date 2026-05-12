@@ -8,6 +8,7 @@ import type { Repository } from '~/types'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
+import { repositoriesApi } from '~/api/repositories'
 import RepoHashFreshnessCard from '../RepoHashFreshnessCard.vue'
 // Mock API
 vi.mock('~/api/repositories', => ({
@@ -31,7 +32,6 @@ const stubComponents = {
  TooltipTrigger: defineComponent({ template: '<div><slot /></div>' }),
  TooltipContent: defineComponent({ template: '<div><slot /></div>' }),
 }
-import { repositoriesApi } from '~/api/repositories'
 function makeRepo(overrides: Partial<Repository> = {}): Repository {
  return {
  id: 'repo-1',
@@ -59,11 +59,11 @@ function mountCard {
  global: { stubs: stubComponents },
  })
 }
-describe('RepoHashFreshnessCard', => {
+describe('repoHashFreshnessCard', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: FRESH 态 — 显示"索引最新"文案，check-circle 图标，不显示 alert-triangle', async => {
+ it('a: FRESH 态 — 显示"索引最新"文案，check-circle 图标，不显示 alert-triangle', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: 'abc1234abc1234',
  last_indexed_commit_sha: 'abc1234abc1234',
@@ -77,7 +77,7 @@ describe('RepoHashFreshnessCard', => {
  expect(wrapper.html).toContain('icon-[lucide--check-circle-2]')
  expect(wrapper.html).not.toContain('icon-[lucide--alert-triangle]')
  })
- it('B: STALE 态 — 显示"索引已过期"，alert-triangle 图标存在（work item §11 border- 由 grep 验证）', async => {
+ it('b: STALE 态 — 显示"索引已过期"，alert-triangle 图标存在（work item §11 border- 由 grep 验证）', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: 'def5678def5678',
  last_indexed_commit_sha: 'abc1234abc1234',
@@ -91,7 +91,7 @@ describe('RepoHashFreshnessCard', => {
  expect(wrapper.html).toContain('icon-[lucide--alert-triangle]')
  expect(wrapper.html).toContain('text-amber-500')
  })
- it('C: UNKNOWN 态 — remote_head_sha 为空时显示"远端状态未知"，help-circle 图标', async => {
+ it('c: UNKNOWN 态 — remote_head_sha 为空时显示"远端状态未知"，help-circle 图标', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: '',
  remote_head_checked_at: null,
@@ -104,7 +104,7 @@ describe('RepoHashFreshnessCard', => {
  expect(wrapper.html).toContain('icon-[lucide--help-circle]')
  expect(wrapper.html).not.toContain('icon-[lucide--alert-triangle]')
  })
- it('D: STALE + behind_commits=5 — 副文案包含"5 个 commit"', async => {
+ it('d: STALE + behind_commits=5 — 副文案包含"5 个 commit"', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: 'def5678def5678',
  last_indexed_commit_sha: 'abc1234abc1234',
@@ -115,7 +115,7 @@ describe('RepoHashFreshnessCard', => {
  expect(wrapper.text).toContain('5')
  expect(wrapper.text).toContain('个 commit')
  })
- it('E: STALE + behind_commits=null — 副文案为"本地与远端 HEAD 不一致"（ 降级）', async => {
+ it('e: STALE + behind_commits=null — 副文案为"本地与远端 HEAD 不一致"（ 降级）', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: 'def5678def5678',
  last_indexed_commit_sha: 'abc1234abc1234',
@@ -125,11 +125,11 @@ describe('RepoHashFreshnessCard', => {
  await flushPromises
  expect(wrapper.text).toContain('本地与远端 HEAD 不一致')
  })
- it('F: 点击"立即检查"后按钮显示"检查中..."且禁用', async => {
+ it('f: 点击"立即检查"后按钮显示"检查中..."且禁用', async => {
  let resolveRefresh!: (v: import('~/api/repositories').RefreshRemoteHeadResponse) => void
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo)
  vi.mocked(repositoriesApi.refreshRemoteHead).mockImplementation(
- => new Promise(resolve => { resolveRefresh = resolve }),
+ => new Promise((resolve) => { resolveRefresh = resolve }),
  )
  const wrapper = mountCard
  await flushPromises
@@ -143,7 +143,7 @@ describe('RepoHashFreshnessCard', => {
  resolveRefresh({ remote_head_sha: 'abc1234', freshness: 'fresh' })
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo)
  })
- it('G: FRESH 态 SHA 显示 — 不显示远端 SHA 对比行', async => {
+ it('g: FRESH 态 SHA 显示 — 不显示远端 SHA 对比行', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: 'abc1234abc1234',
  last_indexed_commit_sha: 'abc1234abc1234',
@@ -153,7 +153,7 @@ describe('RepoHashFreshnessCard', => {
  // FRESH 态不含箭头分隔符（远端 SHA 对比区不显示）
  expect(wrapper.find('.icon-\\[lucide--arrow-right\\]').exists).toBe(false)
  })
- it('H: "尚未检查过"文案 — remote_head_checked_at 为 null 时显示', async => {
+ it('h: "尚未检查过"文案 — remote_head_checked_at 为 null 时显示', async => {
  vi.mocked(repositoriesApi.get).mockResolvedValue(makeRepo({
  remote_head_sha: '',
  remote_head_checked_at: null,

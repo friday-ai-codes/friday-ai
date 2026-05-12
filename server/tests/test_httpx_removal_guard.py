@@ -33,7 +33,9 @@ import yaml
 AI_NODES_DIR = pathlib.Path("workflows/nodes/ai")
 LANGCHAIN_RUNNER = pathlib.Path("agents/langchain_runner.py")
 SERVER_TESTS_DIR = pathlib.Path("tests")
-VALIDATION_MD = pathlib.Path("../project-docs/phases/work-item/work-item.md")
+VALIDATION_MD = pathlib.Path(
+ "../project-docs/checkpoint/v21.0-phases/work-item/work-item.md"
+)
 REPO_ROOT = pathlib.Path("..")
 # ---------------------------------------------------------------------------
 # Helpers
@@ -189,6 +191,17 @@ def test_no_chat_prompt_template_in_langchain_runner -> None:
 # ---------------------------------------------------------------------------
 # Test 5 — 守护（ 改写：base_ref 从 VALIDATION frontmatter 读取）
 # ---------------------------------------------------------------------------
+# work item（rename-project-to-space merge c2b352bb，2026-05-11）：
+# Phase / 锁定的 3 个 frozen file 在 v22.0 后期被 rename branch
+# 改了纯参数名（project_id → space_id），不引入 httpx 残留也不破坏 LangChain
+# Runner 行为契约。下面允许「rename-only」白名单 SHA：当被改动文件 vs base_ref
+# 的 diff 仅命中这些 token 替换，则视为合规。
+_RENAME_ALLOWED_SUBSTRING_PAIRS = (
+ ("project_id", "space_id"),
+ ("project ID", "space ID"),
+ ("项目 UUID", "空间 UUID"),
+ ("项目 ID", "空间 ID"),
+)
 @pytest.mark.parametrize(
  "path",
  [
@@ -198,17 +211,51 @@ def test_no_chat_prompt_template_in_langchain_runner -> None:
  ],
 )
 def test_node_04_frozen_files_unchanged(path: str) -> None:
- """ /：禁区文件在 Phase 期间零改动。
+ """ /：禁区文件在 Phase 期间零改动（含 rename 白名单豁免）。
  ** 决策**：base_ref 从 VALIDATION.md frontmatter.phase_start_sha
- 读取，**不使用 HEAD~10 硬编码**（HEAD~10 是非确定性 —— 取决于运行时
- commit 数）。 首 task 写入 phase_start_sha；本测试读取后做 git diff。
+ 读取，**不使用 HEAD~10 硬编码**。 首 task 写入 phase_start_sha；
+ 本测试读取后做 git diff。
+ **rename-relaxation**：若 diff 行仅命中 _RENAME_ALLOWED_SUBSTRING_PAIRS
+ 定义的语义重命名（不引入新调用、不改控制流），则放行。详见
+ `_diff_only_contains_rename`。
  """
  base_ref = _get_phase_start_sha
  diff_lines = _git_diff_line_count(path, base_ref=base_ref)
- assert diff_lines == 0, (
+ if diff_lines == 0:
+ return
+ if _diff_only_contains_rename(path, base_ref=base_ref):
+ return
+ raise AssertionError(
  f"{path} 在 Phase 期间被改动（ / 违反）；"
  f"diff {diff_lines} 行 vs base_ref {base_ref}"
  )
+def _diff_only_contains_rename(path: str, *, base_ref: str) -> bool:
+ """diff 的所有 +/- 行剥掉 _RENAME_ALLOWED_SUBSTRING_PAIRS 后必须等价。"""
+ proc = subprocess.run(
+ ["git", "diff", "-U0", base_ref, "--", path],
+ capture_output=True,
+ text=True,
+ check=False,
+ cwd=str(REPO_ROOT),
+ )
+ if proc.returncode != 0:
+ return False
+ removed: list[str] =
+ added: list[str] =
+ for raw in proc.stdout.splitlines:
+ if raw.startswith(("---", "+++", "@@")) or not raw:
+ continue
+ if raw.startswith("-"):
+ removed.append(raw[1:])
+ elif raw.startswith("+"):
+ added.append(raw[1:])
+ if len(removed) != len(added):
+ return False
+ def _normalize(line: str) -> str:
+ for old, new in _RENAME_ALLOWED_SUBSTRING_PAIRS:
+ line = line.replace(old, new)
+ return line
+ return [_normalize(r) for r in removed] == added
 # ---------------------------------------------------------------------------
 # Test 8 — Anti-pattern D 守护：禁 source="node_custom_api" 第 5 种值
 # ---------------------------------------------------------------------------

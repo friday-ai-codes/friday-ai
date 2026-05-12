@@ -44,11 +44,11 @@ vi.mock('~/composables/useDagreLayout', => ({
  applyLayout: (nodes: unknown) => nodes,
  }),
 }))
-describe('CallsDagTab', => {
+describe('callsDagTab', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: selectedSymbolId=null 时显示空状态文本', async => {
+ it('a: selectedSymbolId=null 时显示空状态文本', async => {
  const wrapper = mount(CallsDagTab, {
  props: {
  repositoryId: 'repo-1',
@@ -58,7 +58,7 @@ describe('CallsDagTab', => {
  await flushPromises
  expect(wrapper.text).toContain('在 Symbols 列表中选择一个符号以查看调用关系')
  })
- it('B: 有 selectedSymbolId 时调用 getCallsForSymbol', async => {
+ it('b: 有 selectedSymbolId 时调用 getCallsForSymbol', async => {
  const { getCallsForSymbol } = await import('~/api/codegraph')
  mount(CallsDagTab, {
  props: {
@@ -69,7 +69,7 @@ describe('CallsDagTab', => {
  await flushPromises
  expect(getCallsForSymbol).toHaveBeenCalledWith('repo-1', 'uuid-1', 1, 5)
  })
- it('C: selectedSymbolId 变化时重新调用 API', async => {
+ it('c: selectedSymbolId 变化时重新调用 API', async => {
  const { getCallsForSymbol } = await import('~/api/codegraph')
  const w = mount(CallsDagTab, {
  props: {

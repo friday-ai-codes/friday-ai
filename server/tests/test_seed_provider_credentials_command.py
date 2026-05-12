@@ -1,10 +1,18 @@
-"""Phase: seed_provider_credentials management command 测试。
+"""Phase: seed_provider_credentials management command 测试（OBSOLETE）。
 覆盖：--dry-run 脱敏输出（不写库、不泄漏明文） / apply 写入 1 行。
+OBSOLETE 原因：v21.0 Phase.1 legacy removal 已硬删 SettingKeys.ANTHROPIC_API_KEY，
+seed_provider_credentials 的语义也已改为从 ENV 而非 SystemSetting 读取。
 """
 from __future__ import annotations
 import io
 import pytest
 from django.core.management import call_command
+pytestmark = pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase.1 legacy removal 硬删 SettingKeys.ANTHROPIC_API_KEY，"
+ "seed_provider_credentials 的种子源已不再是 SystemSetting。"
+ )
+)
 @pytest.mark.django_db
 class TestSeedProviderCredentialsCommand:
  """management command 端到端行为验证。"""

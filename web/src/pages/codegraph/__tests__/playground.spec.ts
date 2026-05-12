@@ -40,12 +40,12 @@ const stubComponents = {
  }),
 }
 describe('playground.vue', => {
- it('A: 页面包含 requiresAdmin route meta', async => {
+ it('a: 页面包含 requiresAdmin route meta', async => {
  // 检查路由 meta 文件内容（静态分析）
  const src = await import('../../../pages/codegraph/playground.vue?raw').then(m => m.default).catch( => '')
  expect(src).toContain('requiresAdmin')
  })
- it('B: 页面标题"检索测试面板"可见', async => {
+ it('b: 页面标题"检索测试面板"可见', async => {
  const { default: PlaygroundPage } = await import('../../../pages/codegraph/playground.vue')
  const wrapper = mount(PlaygroundPage, {
  global: { stubs: stubComponents },
@@ -53,7 +53,7 @@ describe('playground.vue', => {
  await flushPromises
  expect(wrapper.text).toContain('检索测试面板')
  })
- it('C: 页面描述文案存在', async => {
+ it('c: 页面描述文案存在', async => {
  const { default: PlaygroundPage } = await import('../../../pages/codegraph/playground.vue')
  const wrapper = mount(PlaygroundPage, {
  global: { stubs: stubComponents },
@@ -61,7 +61,7 @@ describe('playground.vue', => {
  await flushPromises
  expect(wrapper.text).toContain('测试分层检索各阶段召回效果')
  })
- it('D: PlaygroundQueryInput 组件已挂载', async => {
+ it('d: PlaygroundQueryInput 组件已挂载', async => {
  const { default: PlaygroundPage } = await import('../../../pages/codegraph/playground.vue')
  const wrapper = mount(PlaygroundPage, {
  global: { stubs: stubComponents },

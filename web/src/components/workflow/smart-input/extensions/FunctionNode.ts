@@ -49,7 +49,8 @@ export const FunctionNode = Node.create({
  default:,
  parseHTML: (element: HTMLElement) => {
  const raw = element.getAttribute('data-args')
- if (!raw) return
+ if (!raw)
+ return
  try {
  return JSON.parse(raw)
  }

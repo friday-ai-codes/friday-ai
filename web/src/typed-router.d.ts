@@ -104,6 +104,13 @@ declare module 'vue-router/auto-routes' {
  Record<never, never>,
  | never
  >,
+ '/codegraph/playground': RouteRecordInfo<
+ '/codegraph/playground',
+ '/codegraph/playground',
+ Record<never, never>,
+ Record<never, never>,
+ | never
+ >,
  '/executions/': RouteRecordInfo<
  '/executions/',
  '/executions',
@@ -416,6 +423,12 @@ declare module 'vue-router/auto-routes' {
  'src/pages/chat.vue': {
  routes:
  | '/chat'
+ views:
+ | never
+ }
+ 'src/pages/codegraph/playground.vue': {
+ routes:
+ | '/codegraph/playground'
  views:
  | never
  }

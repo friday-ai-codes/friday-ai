@@ -22,12 +22,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 import AICodeReviewPanel from './AICodeReviewPanel.vue'
 import AICodingPanel from './AICodingPanel.vue'
 import AIInsightTab from './AIInsightTab.vue'
+import ExecutionLogPanel from './ExecutionLogPanel.vue'
 import NodeConfigTab from './NodeConfigTab.vue'
 import NodeDataTab from './NodeDataTab.vue'
 import NodeDebugPanel from './NodeDebugPanel.vue'
 import NodeOverviewTab from './NodeOverviewTab.vue'
 import PlanApprovalPanel from './PlanApprovalPanel.vue'
-import ExecutionLogPanel from './ExecutionLogPanel.vue'
 import SubStepDetailTab from './SubStepDetailTab.vue'
 /** — AI 节点 Provider 快照类型 */
 interface NodeSnapshot {

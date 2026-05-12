@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { SystemInfoResponse } from '~/api/system'
 import { onMounted, ref } from 'vue'
+import { getAllSettings, updateSetting } from '~/api/settings'
 import {
  downloadSystemBackup,
  getSystemInfo,
  restoreSystemBackup,
 } from '~/api/system'
-import { getAllSettings, updateSetting } from '~/api/settings'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -270,7 +270,9 @@ onMounted( => {
  </div>
  <div v-else-if="systemInfo" class="space-y-3">
  <div class="space-y-1">
- <p class="text-xs text-muted-foreground">任务执行镜像</p>
+ <p class="text-xs text-muted-foreground">
+ 任务执行镜像
+ </p>
  <code class="text-sm bg-muted/50 px-2 py-1 rounded">{{ systemInfo.image.task_runner_image }}</code>
  </div>
  <p class="text-xs text-muted-foreground">
@@ -348,7 +350,9 @@ onMounted( => {
  <div class="space-y-3">
  <div class="flex items-center justify-between">
  <div>
- <p class="text-sm font-medium">下载备份</p>
+ <p class="text-sm font-medium">
+ 下载备份
+ </p>
  <p class="text-xs text-muted-foreground">
  导出当前数据库完整副本，包含所有数据与配置
  </p>
@@ -368,7 +372,9 @@ onMounted( => {
  <div class="space-y-3">
  <div class="flex items-center justify-between">
  <div>
- <p class="text-sm font-medium">恢复备份</p>
+ <p class="text-sm font-medium">
+ 恢复备份
+ </p>
  <p class="text-xs text-muted-foreground">
  上传 .db 备份文件恢复数据库。恢复前会自动备份当前数据库。
  </p>

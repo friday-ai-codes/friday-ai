@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import type { SuggestionItem } from './extensions/VariableSuggestion'
+import type { DesignTimeVariable } from '~/composables/useDesignTimeVariables'
 import { computed, nextTick, ref, watch } from 'vue'
 interface Props {
  items: SuggestionItem
@@ -14,7 +14,7 @@ const variables = computed( =>
  props.items.filter((item): item is { type: 'variable', data: DesignTimeVariable } => item.type === 'variable'),
 )
 const functions = computed( =>
- props.items.filter((item) => item.type === 'function'),
+ props.items.filter(item => item.type === 'function'),
 )
 // Group variables by path prefix (input vs nodes.xxx)
 const groupedVariables = computed( => {

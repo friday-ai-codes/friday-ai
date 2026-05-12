@@ -1,5 +1,11 @@
+shellEmulator: true
+trustPolicy: no-downgrade
 packages:
  - web
+overrides:
+ chokidar: ^5.0.0
+ undici-types: 7.18.2
+ vite: npm:rolldown-vite@7.3.1
 catalogs:
  default:
  '@antfu/eslint-config': ^7.0.1
@@ -101,9 +107,3 @@ catalogs:
  vue-sonner: ^2.0.9
  vue-tsc: ^3.2.2
  zod: ^4.3.5
-overrides:
- chokidar: ^5.0.0
- undici-types: 7.18.2
- vite: npm:rolldown-vite@7.3.1
-shellEmulator: true
-trustPolicy: no-downgrade

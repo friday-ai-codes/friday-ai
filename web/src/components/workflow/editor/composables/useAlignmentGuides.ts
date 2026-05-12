@@ -104,8 +104,10 @@ export function useAlignmentGuides {
  const canvasWidth = canvasEl?.clientWidth ?? window.innerWidth
  const canvasHeight = canvasEl?.clientHeight ?? window.innerHeight
  for (const node of allNodes) {
- if (node.id === draggedNodeId) continue
- if (!isNodeInViewport(node, viewport.value, canvasWidth, canvasHeight)) continue
+ if (node.id === draggedNodeId)
+ continue
+ if (!isNodeInViewport(node, viewport.value, canvasWidth, canvasHeight))
+ continue
  const bounds = getNodeBounds(node)
  const targetRight = bounds.x + bounds.width
  const targetBottom = bounds.y + bounds.height

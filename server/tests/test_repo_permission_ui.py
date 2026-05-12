@@ -154,12 +154,12 @@ class TestProjectRepositoryLink:
  def test_me_api_returns_memberships(
  self, project_admin_client: APIClient, project: Project,
  ) -> None:
- """/me 返回 project_memberships 含 role。"""
+ """/me 返回 space_memberships 含 role（rename: project_memberships → space_memberships）。"""
  response = project_admin_client.get("/api/auth/me/")
  assert response.status_code == 200
  data = response.json
- assert "project_memberships" in data
- memberships = data["project_memberships"]
+ assert "space_memberships" in data
+ memberships = data["space_memberships"]
  assert len(memberships) >= 1
  assert "role" in memberships[0]
  def test_repository_list_linked_count(

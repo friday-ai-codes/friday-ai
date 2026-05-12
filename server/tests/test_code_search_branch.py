@@ -98,6 +98,13 @@ class TestCodeSearchViewBranch:
  mock_service.assert_called_once
  call_kwargs = mock_service.call_args.kwargs
  assert call_kwargs["branch_name"] is None
+@pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase LayeredSearchService 重构后 search_repository_code MCP "
+ "工具不再直接调 EmbeddingService（agents.tools.space_tools.EmbeddingService 已不存在）。"
+ "v24.0 应迁移为对 LayeredSearchService.search 的契约测试。"
+ )
+)
 @pytest.mark.django_db
 class TestSearchRepositoryCodeBranch:
  @pytest.mark.asyncio

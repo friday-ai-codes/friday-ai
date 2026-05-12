@@ -9,9 +9,9 @@ describe('badge cva variants', => {
  const result = badgeVariants({ variant: 'warning' })
  expect(result).toContain('amber')
  })
- it('should include blue classes for info variant', => {
+ it('should include teal classes for info variant', => {
  const result = badgeVariants({ variant: 'info' })
- expect(result).toContain('blue')
+ expect(result).toContain('teal')
  })
  it('should include gray classes for muted variant', => {
  const result = badgeVariants({ variant: 'muted' })

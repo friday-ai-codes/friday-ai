@@ -40,7 +40,8 @@ const edgeStyle = computed( => ({
  strokeOpacity: props.selected ? 0.95: 0.82,
  filter: props.selected ? 'drop-shadow(0 0 6px rgba(139,92,246,0.45))': 'drop-shadow(0 1px 2px rgba(15,23,42,0.08))',
  transition: 'stroke-width 0.2s, stroke-opacity 0.2s, filter 0.2s',
- ...(props.animated ? {
+ ...(props.animated
+ ? {
  strokeDasharray: '5 5',
  animation: 'gradient-edge-dash-flow 0.5s linear infinite',
  }: {}),
@@ -64,7 +65,11 @@ export default { inheritAttrs: false }
 <style>
 /* 全局 keyframes — BaseEdge 渲染的 path 不在本组件 scoped DOM 内 */
 @keyframes gradient-edge-dash-flow {
- from { stroke-dashoffset: 0; }
- to { stroke-dashoffset: -10; }
+ from {
+ stroke-dashoffset: 0;
+ }
+ to {
+ stroke-dashoffset: -10;
+ }
 }
 </style>

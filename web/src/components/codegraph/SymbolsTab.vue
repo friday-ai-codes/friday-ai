@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { ColumnDef } from '@tanstack/vue-table'
+import type { SymbolRow } from '~/api/codegraph'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, h, onMounted, ref, watch } from 'vue'
-import { type SymbolRow, getSymbols } from '~/api/codegraph'
+import { getSymbols } from '~/api/codegraph'
 import DataTable from '~/components/common/DataTable.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -86,12 +87,10 @@ const columns: ColumnDef<SymbolRow> = [
  'span',
  { class: 'font-mono text-xs truncate max-w-[200px] block', title: row.original.file_path },
  row.original.file_path,
- ),
- ),
+ )),
  h(TooltipContent, null, => row.original.file_path),
  ],
- }),
- ),
+ })),
  },
  {
  id: 'line_range',
@@ -181,7 +180,7 @@ onMounted(fetchSymbols)
  <DataTable:data="symbols":columns="columns"
  table-id="symbols-tab":page-size="200":page-size-options="[50, 100, 200]":loading="loading":on-row-click="handleRowClick"
  />
- <!-- 空状态（无数据 + 无过滤条件）-->
+ <!-- 空状态（无数据 + 无过滤条件） -->
  <div
  v-if="!loading && symbols.length === 0 && !hasFilters"
  class="flex flex-col items-center justify-center py-8 text-center"
@@ -197,7 +196,7 @@ onMounted(fetchSymbols)
  前往索引设置
  </Button>
  </div>
- <!-- 空状态（有过滤条件但无结果）-->
+ <!-- 空状态（有过滤条件但无结果） -->
  <div
  v-if="!loading && symbols.length === 0 && hasFilters"
  class="flex flex-col items-center justify-center py-6 text-center"

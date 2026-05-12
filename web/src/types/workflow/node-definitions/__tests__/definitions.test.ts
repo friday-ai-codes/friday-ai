@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { ALL_NODE_DEFINITIONS, getNodeDef } from '../index'
-describe('ALL_NODE_DEFINITIONS', => {
+describe('aLL_NODE_DEFINITIONS', => {
  const migratedNodes = [
  // triggers
- 'manual_trigger', 'webhook_trigger',
+ 'manual_trigger',
+ 'webhook_trigger',
  // control
- 'delay', 'condition', 'parallel', 'join', 'human_approval',
+ 'delay',
+ 'condition',
+ 'parallel',
+ 'join',
+ 'human_approval',
+ 'foreach',
+ 'aggregate',
+ // action
+ 'code',
  // integration
- 'notify_feishu', 'http_request', 'merge_pr', 'mcp_deploy',
- 'fetch_group_chat', 'join_group_chat', 'group_chat_question',
+ 'notify_feishu',
+ 'http_request',
+ 'merge_pr',
+ 'mcp_deploy',
+ 'fetch_group_chat',
+ 'join_group_chat',
+ 'group_chat_question',
  ]
  it('包含所有已迁移节点', => {
  for (const nodeType of migratedNodes) {
@@ -61,7 +75,7 @@ describe('ALL_NODE_DEFINITIONS', => {
  })
  })
  })
- describe('Zod schema 验证', => {
+ describe('zod schema 验证', => {
  it('delay defaultConfig 通过 schema 验证', => {
  const def = getNodeDef('delay')!
  const result = def.schema.safeParse(def.defaultConfig)

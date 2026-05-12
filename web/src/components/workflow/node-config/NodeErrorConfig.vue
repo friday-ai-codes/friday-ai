@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ChevronDown, AlertTriangle, RotateCcw, SkipForward } from 'lucide-vue-next'
+import { AlertTriangle, ChevronDown, RotateCcw, SkipForward } from 'lucide-vue-next'
 import { ref, watch } from 'vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible'
-import { Label } from '~/components/ui/label'
 import { Input } from '~/components/ui/input'
+import { Label } from '~/components/ui/label'
 import {
  Select,
  SelectContent,
@@ -46,13 +46,13 @@ function onFallbackChange(e: Event) {
  }
 }
 function onRetryTimesChange(e: Event) {
- const val = parseInt((e.target as HTMLInputElement).value, 10)
+ const val = Number.parseInt((e.target as HTMLInputElement).value, 10)
  if (!Number.isNaN(val) && val >= 0) {
  emit('update:retryTimes', val)
  }
 }
 function onRetryDelayChange(e: Event) {
- const val = parseInt((e.target as HTMLInputElement).value, 10)
+ const val = Number.parseInt((e.target as HTMLInputElement).value, 10)
  if (!Number.isNaN(val) && val >= 1) {
  emit('update:retryDelay', val)
  }
@@ -63,7 +63,7 @@ function onTimeoutChange(e: Event) {
  emit('update:nodeTimeoutSeconds', null)
  return
  }
- const val = parseInt(raw, 10)
+ const val = Number.parseInt(raw, 10)
  if (!Number.isNaN(val) && val > 0) {
  emit('update:nodeTimeoutSeconds', val)
  }
@@ -124,7 +124,9 @@ const strategyOptions: Array<{ value: OnErrorStrategy, label: string, descriptio
  class=""
  @input="onRetryTimesChange"
  />
- <p class="text-xs text-muted-foreground">失败后最多重试的次数（0 = 不重试）</p>
+ <p class="text-xs text-muted-foreground">
+ 失败后最多重试的次数（0 = 不重试）
+ </p>
  </div>
  <!-- retry_delay (only when on_error=retry) -->
  <div v-if="onError === 'retry'" class="space-y-1.5">
@@ -137,7 +139,9 @@ const strategyOptions: Array<{ value: OnErrorStrategy, label: string, descriptio
  class=""
  @input="onRetryDelayChange"
  />
- <p class="text-xs text-muted-foreground">基础间隔，实际按指数退避计算（最大 300 秒）</p>
+ <p class="text-xs text-muted-foreground">
+ 基础间隔，实际按指数退避计算（最大 300 秒）
+ </p>
  </div>
  <!-- node_timeout_seconds (always visible) -->
  <div class="space-y-1.5">
@@ -149,7 +153,9 @@ const strategyOptions: Array<{ value: OnErrorStrategy, label: string, descriptio
  class=""
  @input="onTimeoutChange"
  />
- <p class="text-xs text-muted-foreground">超时后自动触发上方配置的错误策略</p>
+ <p class="text-xs text-muted-foreground">
+ 超时后自动触发上方配置的错误策略
+ </p>
  </div>
  <!-- fallback_values (only when on_error=ignore) -->
  <div v-if="onError === 'ignore'" class="space-y-1.5">
@@ -157,7 +163,7 @@ const strategyOptions: Array<{ value: OnErrorStrategy, label: string, descriptio
  <textarea:value="fallbackJson"
  rows="4"
  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
- placeholder='{"result": "default_value"}'
+ placeholder="{&quot;result&quot;: &quot;default_value&quot;}"
  @input="onFallbackChange"
  />
  <p v-if="fallbackError" class="text-xs text-destructive">

@@ -254,7 +254,7 @@ describe('promptEditor.vue', => {
  await nextTick
  const sheetContent = wrapper.find('[data-testid="sheet-content"]')
  const cls = sheetContent.attributes('class') ?? ''
- expect(cls).toContain('sm:!max-w-3xl')
+ expect(cls).toContain('sm:max-w-3xl!')
  expect(cls).toContain('w-full')
  expect(cls).toContain('flex')
  expect(cls).toContain('flex-col')

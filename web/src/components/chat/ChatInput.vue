@@ -3,11 +3,14 @@ import type { BranchIndexRow } from '~/api/repositories'
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
 import { repositoriesApi } from '~/api/repositories'
-import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 import { useToast } from '~/composables/useToast'
+const emit = defineEmits<{
+ 'pin-confirmed': [credentialId: string, model: string]
+}>
 const chatStore = useChatStore
 const toast = useToast
 const spacesStore = useSpacesStore
@@ -270,9 +273,6 @@ async function onSelectCombination(opt: CredentialModelOption) {
  pendingOption.value = opt
  pinDialogOpen.value = true
 }
-const emit = defineEmits<{
- 'pin-confirmed': [credentialId: string, model: string]
-}>
 function handlePinConfirm {
  if (!pendingOption.value)
  return
