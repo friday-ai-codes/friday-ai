@@ -61,7 +61,11 @@ describe('default.vue layout — ChatInput pin-confirmed 接线', => {
  afterEach( => {
  vi.clearAllMocks
  })
- it('chat 模式下 ChatInput emit pin-confirmed → chatStore.patchConversationProviderAndModel 被以 (credentialId, model) 调用', async => {
+ // OBSOLETE: pin-confirmed listener 已从 layouts/default.vue 迁移到 pages/chat.vue
+ // （`@pin-confirmed="chatStore.patchConversationProviderAndModel"` 模板直绑，
+ // 见 web/src/pages/chat.vue:41）。default.vue 改为 chat 路由直渲染 RouterView，
+ // 不再挂载 ChatInput。本测试保留为接线变迁记录，跳过执行。
+ it.skip('chat 模式下 ChatInput emit pin-confirmed → chatStore.patchConversationProviderAndModel 被以 (credentialId, model) 调用', async => {
  const chatStore = useChatStore
  const spy = vi
  .spyOn(chatStore, 'patchConversationProviderAndModel')

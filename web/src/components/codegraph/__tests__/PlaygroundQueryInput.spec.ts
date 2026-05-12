@@ -36,11 +36,11 @@ function mountInput(loading = false) {
  global: { stubs: stubComponents },
  })
 }
-describe('PlaygroundQueryInput', => {
+describe('playgroundQueryInput', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: 点击"执行检索"按钮 emit search 事件（含 query/repositoryIds/maxTokens）', async => {
+ it('a: 点击"执行检索"按钮 emit search 事件（含 query/repositoryIds/maxTokens）', async => {
  const wrapper = mountInput
  await flushPromises
  // 填写查询
@@ -59,7 +59,7 @@ describe('PlaygroundQueryInput', => {
  expect(Array.isArray(params.repositoryIds)).toBe(true)
  expect(typeof params.maxTokens).toBe('number')
  })
- it('B: 点击"在 Chat 中提问"按钮 emit chat-prefill 事件（含 query）', async => {
+ it('b: 点击"在 Chat 中提问"按钮 emit chat-prefill 事件（含 query）', async => {
  const wrapper = mountInput
  await flushPromises
  const textarea = wrapper.find('textarea')
@@ -73,14 +73,14 @@ describe('PlaygroundQueryInput', => {
  const [params] = emitted![0] as [{ query: string, repositoryIds: string }]
  expect(params.query).toBe('分层检索如何工作？')
  })
- it('C: query 为空时执行按钮被 disabled', async => {
+ it('c: query 为空时执行按钮被 disabled', async => {
  const wrapper = mountInput
  await flushPromises
  const buttons = wrapper.findAll('button')
  const searchBtn = buttons.find(b => b.text.includes('执行检索'))
  expect(searchBtn?.attributes('disabled')).toBeDefined
  })
- it('D: loading=true 时执行按钮被 disabled', async => {
+ it('d: loading=true 时执行按钮被 disabled', async => {
  const wrapper = mountInput(true)
  await flushPromises
  const buttons = wrapper.findAll('button')

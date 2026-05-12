@@ -354,7 +354,7 @@ def test_list_scope_filter_project(
  """?scope=project&project_id=<uuid> 只返回该项目凭证，不含 system 凭证。"""
  client = _client_for(system_admin_user)
  resp = client.get(
- f"/api/providers/credentials/?scope=project&project_id={project_a.id}"
+ f"/api/providers/credentials/?scope=project&space_id={project_a.id}"
  )
  assert resp.status_code == 200, resp.content
  payload = resp.json
@@ -378,7 +378,7 @@ def test_list_scope_filter_any(
  """
  client = _client_for(system_admin_user)
  resp = client.get(
- f"/api/providers/credentials/?scope=any&project_id={project_a.id}"
+ f"/api/providers/credentials/?scope=any&space_id={project_a.id}"
  )
  assert resp.status_code == 200, resp.content
  payload = resp.json
@@ -417,7 +417,7 @@ def test_list_scope_filter_system_with_project_id_ignored(
  """
  client = _client_for(system_admin_user)
  resp = client.get(
- f"/api/providers/credentials/?scope=system&project_id={project_a.id}"
+ f"/api/providers/credentials/?scope=system&space_id={project_a.id}"
  )
  assert resp.status_code == 200, resp.content
  payload = resp.json
@@ -448,7 +448,7 @@ def test_list_scope_filter_any_non_superuser_excludes_non_member_project(
  """
  client = _client_for(project_a_member_user)
  resp = client.get(
- f"/api/providers/credentials/?scope=any&project_id={project_b.id}"
+ f"/api/providers/credentials/?scope=any&space_id={project_b.id}"
  )
  assert resp.status_code == 200, resp.content
  payload = resp.json

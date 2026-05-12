@@ -1,10 +1,10 @@
+import type { PlaygroundSearchResponse } from '~/api/codegraph'
 /**
  * Phase Plan — LayerResultsAccordion 单测
  * 验证：result=null 时无 result_count；result 有 5 层时标题命中数正确
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import type { PlaygroundSearchResponse } from '~/api/codegraph'
 import LayerResultsAccordion from '../LayerResultsAccordion.vue'
 vi.mock('~/components/ui/tooltip', => ({
  Tooltip: { template: '<div><slot /></div>' },
@@ -31,15 +31,15 @@ const mockResult: PlaygroundSearchResponse = {
  final_context: '# Context\n这是 L5 最终上下文',
  total_tokens: 2048,
 }
-describe('LayerResultsAccordion', => {
- it('A: result=null 时显示"执行检索后显示结果"提示', async => {
+describe('layerResultsAccordion', => {
+ it('a: result=null 时显示"执行检索后显示结果"提示', async => {
  const wrapper = mount(LayerResultsAccordion, {
  props: { result: null, loading: false },
  })
  await flushPromises
  expect(wrapper.text).toContain('执行检索后显示结果')
  })
- it('B: result=null 时不显示命中数数字（无"2 条"等文案）', async => {
+ it('b: result=null 时不显示命中数数字（无"2 条"等文案）', async => {
  const wrapper = mount(LayerResultsAccordion, {
  props: { result: null, loading: false },
  })
@@ -47,7 +47,7 @@ describe('LayerResultsAccordion', => {
  // 命中数 badge 显示 "–" 而非数字
  expect(wrapper.text).not.toMatch(/\d+ 条/)
  })
- it('C: result 有 5 层时各层标题包含正确命中数（如"2 条"/"3 条"）', async => {
+ it('c: result 有 5 层时各层标题包含正确命中数（如"2 条"/"3 条"）', async => {
  const wrapper = mount(LayerResultsAccordion, {
  props: { result: mockResult, loading: false },
  })
@@ -59,7 +59,7 @@ describe('LayerResultsAccordion', => {
  expect(text).toContain('1 条')
  expect(text).toContain('8 条')
  })
- it('D: 5 个 Accordion 层标题全部渲染（L1~L5）', async => {
+ it('d: 5 个 Accordion 层标题全部渲染（L1~L5）', async => {
  const wrapper = mount(LayerResultsAccordion, {
  props: { result: mockResult, loading: false },
  })
@@ -71,7 +71,7 @@ describe('LayerResultsAccordion', => {
  expect(text).toContain('L4 图谱扩展')
  expect(text).toContain('L5 上下文重组')
  })
- it('E: 组件无 v-html（XSS 防御 T-）', async => {
+ it('e: 组件无 v-html（XSS 防御 T-）', async => {
  // final_context 内容经文本插值 {{ }} 不应出现在原始 HTML 之外
  const wrapper = mount(LayerResultsAccordion, {
  props: { result: mockResult, loading: false },

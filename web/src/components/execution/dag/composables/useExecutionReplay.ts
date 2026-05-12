@@ -1,6 +1,7 @@
+import type { Ref } from 'vue'
 import type { NodeExecution, WorkflowExecution } from '~/stores/useExecutionsStore'
 import { useIntervalFn } from '@vueuse/core'
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref } from 'vue'
 export type ReplaySpeed = 0 | 0.5 | 1 | 2 | 4
 export interface ReplayState {
  isPlaying: Ref<boolean>

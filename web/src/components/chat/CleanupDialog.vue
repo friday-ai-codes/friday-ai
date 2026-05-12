@@ -16,16 +16,6 @@
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { del as apiDel, get as apiGet } from '~/api/client'
-import { Button } from '~/components/ui/button'
-import { Checkbox } from '~/components/ui/checkbox'
-import {
- Dialog,
- DialogContent,
- DialogDescription,
- DialogFooter,
- DialogHeader,
- DialogTitle,
-} from '~/components/ui/dialog'
 import {
  AlertDialog,
  AlertDialogAction,
@@ -37,6 +27,16 @@ import {
  AlertDialogTitle,
  AlertDialogTrigger,
 } from '~/components/ui/alert-dialog'
+import { Button } from '~/components/ui/button'
+import { Checkbox } from '~/components/ui/checkbox'
+import {
+ Dialog,
+ DialogContent,
+ DialogDescription,
+ DialogFooter,
+ DialogHeader,
+ DialogTitle,
+} from '~/components/ui/dialog'
 import { ScrollArea } from '~/components/ui/scroll-area'
 interface MessagePreview {
  id: string

@@ -75,7 +75,7 @@ const sourceLabel = computed( => {
 })
 /** Replay 可用性：必须同时有 snapshot + 外部 canReplay=true */
 const replayEnabled = computed( => props.snapshot !== null && props.canReplay)
-/** Tooltip / disabled 文案（三重承载）*/
+/** Tooltip / disabled 文案（三重承载） */
 const replayTooltipText = computed( => {
  if (props.snapshot === null)
  return '历史 Execution 未记录快照，无法稳定 Replay'

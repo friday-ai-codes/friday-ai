@@ -1,9 +1,9 @@
+import type { UiSchema } from '../types'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { buildUiSchema } from '../ui-schema'
 import { createNodeDefinition } from '../index'
-import type { UiSchema } from '../types'
-describe('NodeDefinition 类型系统', => {
+import { buildUiSchema } from '../ui-schema'
+describe('nodeDefinition 类型系统', => {
  it('createNodeDefinition 返回正确结构', => {
  const schema = z.object({
  delay_seconds: z.number.default(60),

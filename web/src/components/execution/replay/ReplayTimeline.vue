@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { NodeExecution } from '~/stores/useExecutionsStore'
-import { Slider } from '~/components/ui/slider'
 import { computed } from 'vue'
+import { Slider } from '~/components/ui/slider'
 const props = defineProps<{
  currentTime: number
  totalDuration: number

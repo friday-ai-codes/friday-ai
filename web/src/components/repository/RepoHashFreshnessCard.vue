@@ -103,7 +103,7 @@ onMounted(loadRepo)
  <template v-else>
  <!-- 三态主内容区（work item §5） -->
  <div class="flex items-start gap-3">
- <!-- 状态图标（语义色，不使用 teal）-->
+ <!-- 状态图标（语义色，不使用 teal） -->
  <span
  v-if="freshnessState === 'fresh'"
  class="icon-[lucide--check-circle-2] text-2xl text-emerald-500 shrink-0 mt-0.5"

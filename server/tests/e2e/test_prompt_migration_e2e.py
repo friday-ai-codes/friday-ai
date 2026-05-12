@@ -50,13 +50,19 @@ def _patch_title_service(
  "chat.title_service.ProviderConfigService.aresolve_or_error",
  _stub_resolve,
  )
- from chat import title_service as ts
- async def _fake_setting(key: Any) -> str | None:
- key_str = str(key).lower
- if "model" in key_str:
- return "claude-3-haiku"
- return None
- monkeypatch.setattr(ts, "aget_setting_value", _fake_setting)
+ # Phase Plan 后 title_service.model 取值改走
+ # ``aget_legacy_anthropic_config["default_model"]``，原 ``aget_setting_value`` 已不再被
+ # title_service 引用。统一在此 mock 新的入口。
+ async def _fake_legacy_anthropic -> dict[str, str]:
+ return {
+ "api_key": "sk-fake-e2e",
+ "base_url": "https://api.anthropic.com",
+ "default_model": "claude-3-haiku",
+ }
+ monkeypatch.setattr(
+ "chat.title_service.aget_legacy_anthropic_config",
+ _fake_legacy_anthropic,
+ )
 @pytest.mark.django_db(transaction=True)
 class TestPromptMigrationE2E:
  """title_service 端到端最简链路：generate_title → render_prompt → build_chat_model seam."""

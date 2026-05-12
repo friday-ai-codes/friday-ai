@@ -8,9 +8,9 @@ import type { NodeExecution } from '~/stores/useExecutionsStore'
 import { computed } from 'vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
 import Badge from '~/components/ui/badge/Badge.vue'
-import ExecutionProviderSnapshot from '~/components/workflow/execution/ExecutionProviderSnapshot.vue'
 import { useNodeStyle } from '~/components/workflow/editor/nodes/composables/useNodeStyle'
 import { getNodeVisual } from '~/components/workflow/editor/nodes/nodeVisuals'
+import ExecutionProviderSnapshot from '~/components/workflow/execution/ExecutionProviderSnapshot.vue'
 /**：AI 节点 Provider 快照（由上层 NodeDetailSheet 透传） */
 interface NodeSnapshot {
  provider_type: 'anthropic' | 'openai_responses' | 'openai_chat' | 'gemini' | 'ollama'

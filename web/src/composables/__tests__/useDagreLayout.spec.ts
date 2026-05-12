@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { useDagreLayout } from '../useDagreLayout'
 const { applyLayout } = useDagreLayout
 describe('useDagreLayout', => {
- it('A: 3 节点线性链布局后所有 position 均为有效数字', => {
+ it('a: 3 节点线性链布局后所有 position 均为有效数字', => {
  const nodes: Node = [
  { id: 'A', position: { x: 0, y: 0 }, data: {} },
  { id: 'B', position: { x: 0, y: 0 }, data: {} },
@@ -26,7 +26,7 @@ describe('useDagreLayout', => {
  expect(Number.isFinite(n.position.y)).toBe(true)
  }
  })
- it('B: TB 方向布局下 A→B→C 节点 y 坐标递增', => {
+ it('b: TB 方向布局下 A→B→C 节点 y 坐标递增', => {
  const nodes: Node = [
  { id: 'A', position: { x: 0, y: 0 }, data: {} },
  { id: 'B', position: { x: 0, y: 0 }, data: {} },
@@ -43,7 +43,7 @@ describe('useDagreLayout', => {
  expect(nodeB.position.y).toBeGreaterThan(nodeA.position.y)
  expect(nodeC.position.y).toBeGreaterThan(nodeB.position.y)
  })
- it('C: 单节点也能正常布局', => {
+ it('c: 单节点也能正常布局', => {
  const nodes: Node = [{ id: 'solo', position: { x: 0, y: 0 }, data: {} }]
  const edges: Edge =
  const result = applyLayout(nodes, edges)

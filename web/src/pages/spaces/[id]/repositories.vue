@@ -3,15 +3,15 @@
  * 空间仓库管理标签页
  * 管理空间关联的代码仓库，支持批量关联、权限级别管理
  */
-import type { SpaceRepositoryLink, Repository, RepositoryPermissionLevel } from '~/types'
+import type { Repository, RepositoryPermissionLevel, SpaceRepositoryLink } from '~/types'
 import { useHead } from '@vueuse/head'
+import { repositoriesApi } from '~/api/repositories'
 import {
  getSpaceRepositories,
  linkRepositories,
  unlinkRepository,
  updateRepositoryLink,
 } from '~/api/spaces'
-import { repositoriesApi } from '~/api/repositories'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
 import { Checkbox } from '~/components/ui/checkbox'

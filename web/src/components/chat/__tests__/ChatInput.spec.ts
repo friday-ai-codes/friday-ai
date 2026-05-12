@@ -26,6 +26,12 @@ vi.mock('~/composables/usePermission', => ({
  spaceRole: { value: null },
  }),
 }))
+// Phase 引入了 watch( => route.query.prefilled_query, ...) 自动填充逻辑，
+// 旧测试默认走 happy-dom 没有 vue-router 上下文，需在此 mock 出 route。
+vi.mock('vue-router', => ({
+ useRoute: => ({ query: {}, path: '/', meta: {} }),
+ useRouter: => ({ push: vi.fn, replace: vi.fn }),
+}))
 function makeCredential(
  overrides: Partial<ProviderCredentialDto> = {},
 ): ProviderCredentialDto {

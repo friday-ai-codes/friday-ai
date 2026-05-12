@@ -1,7 +1,21 @@
-"""Phase: 数据模型扩展测试。
-覆盖 至 需求：验证模型字段定义、SettingKeys 更新、迁移兼容性。
+"""Phase: 数据模型扩展测试（OBSOLETE — 整个文件 Phase.1 legacy removal 后过时）。
+覆盖 至 需求：验证 v8.1 多 Provider 数据模型字段（Conversation.provider_type、
+Project.default_provider_type、SettingKeys.ANTHROPIC_API_KEY 等）。
+OBSOLETE 原因：v21.0 Phase Plan v8.1 legacy removal 已硬删：
+ - Conversation.provider_type 字段 → 改走 ProviderCredential.provider_type 透传
+ - Project.default_provider_type / default_model / claude_* 系列字段 → 改走 ProviderCredential
+ - SettingKeys.ANTHROPIC_API_KEY/BASE_URL/MODEL → 走 aget_legacy_anthropic_config
+后续 v24.0 应直接删除本文件并将相关需求验证迁移到 ProviderCredential 测试链路。
 """
+import pytest
 from system.models import SettingKeys
+pytestmark = pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase Plan v8.1 legacy removal 硬删了 Conversation.provider_type / "
+ "Project.default_provider_type / SettingKeys.ANTHROPIC_API_KEY 等所有被本文件断言的 schema。"
+ " 整个文件应在 v24.0 删除。"
+ )
+)
 class TestConversationProviderType:
  """: Conversation 模型有 provider_type 字段。"""
  def test_field_exists_and_nullable(self):

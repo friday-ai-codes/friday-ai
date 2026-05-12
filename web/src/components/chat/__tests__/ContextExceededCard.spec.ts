@@ -13,6 +13,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ContextExceededCard from '~/components/chat/ContextExceededCard.vue'
 // Mock vue-router's useRouter composable (setup 阶段就被调用，必须 hoist)
 const pushSpy = vi.fn
 vi.mock('vue-router', => ({
@@ -23,7 +24,6 @@ vi.mock('vue-router', => ({
  template: '<a:data-to="to"><slot /></a>',
  },
 }))
-import ContextExceededCard from '~/components/chat/ContextExceededCard.vue'
 /** RouterLink stub：透传 to 属性供断言；capture 点击。 */
 const RouterLinkStub = {
  name: 'RouterLink',
@@ -49,7 +49,7 @@ describe('contextExceededCard', => {
  beforeEach( => {
  pushSpy.mockReset
  })
- it('A: 渲染 estimated / max / exceeded_by / model', => {
+ it('a: 渲染 estimated / max / exceeded_by / model', => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: {
@@ -67,7 +67,7 @@ describe('contextExceededCard', => {
  expect(text).toContain('50,000')
  expect(text).toContain('claude-3-5-sonnet-20241022')
  })
- it('B: 3 按钮按 recommended_actions 顺序渲染', => {
+ it('b: 3 按钮按 recommended_actions 顺序渲染', => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -85,7 +85,7 @@ describe('contextExceededCard', => {
  expect(idxTrim).toBeLessThan(idxSwitch)
  expect(idxSwitch).toBeLessThan(idxCleanup)
  })
- it('C: 点击 "精简 system prompt" → router.push("/prompts/")', async => {
+ it('c: 点击 "精简 system prompt" → router.push("/prompts/")', async => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -96,7 +96,7 @@ describe('contextExceededCard', => {
  await button!.trigger('click')
  expect(pushSpy).toHaveBeenCalledWith('/prompts/')
  })
- it('D: 点击 "换大 context 模型" → emit("switch-model-click")', async => {
+ it('d: 点击 "换大 context 模型" → emit("switch-model-click")', async => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -107,7 +107,7 @@ describe('contextExceededCard', => {
  expect(wrapper.emitted('switch-model-click')).toBeTruthy
  expect(wrapper.emitted('switch-model-click')!.length).toBe(1)
  })
- it('E: 点击 "清理对话历史" → emit("cleanup-click")', async => {
+ it('e: 点击 "清理对话历史" → emit("cleanup-click")', async => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: { stubs: { RouterLink: RouterLinkStub } },
@@ -118,7 +118,7 @@ describe('contextExceededCard', => {
  expect(wrapper.emitted('cleanup-click')).toBeTruthy
  expect(wrapper.emitted('cleanup-click')!.length).toBe(1)
  })
- it('F: 清理历史按钮 variant=destructive（视觉高风险警示）', => {
+ it('f: 清理历史按钮 variant=destructive（视觉高风险警示）', => {
  const wrapper = mount(ContextExceededCard, {
  props: makeProps,
  global: { stubs: { RouterLink: RouterLinkStub } },

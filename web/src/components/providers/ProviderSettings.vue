@@ -263,9 +263,9 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  v-else:credentials="store.credentials"
  @edit="onEdit"
  @delete="onDelete"
- @toggleActive="onToggleActive"
- @testConnection="onTestConnection"
- @refreshModels="onRefreshModels"
+ @toggle-active="onToggleActive"
+ @test-connection="onTestConnection"
+ @refresh-models="onRefreshModels"
  />
  <!-- 表单 Dialog（新建/编辑） -->
  <Dialog v-model:open="formOpen">

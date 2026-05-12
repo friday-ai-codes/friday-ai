@@ -1,11 +1,19 @@
-"""Phase: SystemSetting → ProviderCredential 数据迁移测试。
+"""Phase: SystemSetting → ProviderCredential 数据迁移测试（OBSOLETE）。
 覆盖：首次 seed / 幂等跳过 / 空值 noop / dry-run 不写库 / reverse 精确删行。
+OBSOLETE 原因：v21.0 Phase.1 legacy removal 已硬删 SettingKeys.ANTHROPIC_API_KEY 等，
+SystemSetting → ProviderCredential 的迁移源数据已不复存在。
 """
 from __future__ import annotations
 import io
 import json
 import pytest
 from django.apps import apps as django_apps
+pytestmark = pytest.mark.skip(
+ reason=(
+ "OBSOLETE — Phase.1 legacy removal 硬删了 SystemSetting 中的 anthropic_* 键，"
+ "本迁移测试断言的数据源已不复存在。"
+ )
+)
 @pytest.mark.django_db
 class TestSeedProviderCredentialsMigration:
  """seed_provider_credentials_impl 与 reverse_seed_provider_credentials_impl 行为验证。"""

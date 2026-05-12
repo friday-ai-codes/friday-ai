@@ -1,8 +1,8 @@
 import type { Component } from 'vue'
 import type { ZodSchema } from 'zod'
 import type { UiSchema } from './node-definitions/types'
-import { ALL_NODE_DEFINITIONS } from './node-definitions/index'
 import type { AICodeReviewConfig, AICodingConfig, AICodingDispatcherConfig, AIPlanApprovalConfig, AIPlanGenerationConfig, AIPromptConfig, AIVariableExtractorConfig, ContextRetrievalConfig, CreateBranchConfig, CreatePRConfig, FeishuEventTriggerConfig, FetchProjectInfoConfig, FetchWorkItemConfig, VariableExtractorConfig, WaitFeishuFieldConfig } from './schemas'
+import { ALL_NODE_DEFINITIONS } from './node-definitions/index'
 import {
  aiCodeReviewConfigSchema,
  aiCodingConfigSchema,

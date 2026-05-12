@@ -134,7 +134,7 @@ describe('/admin/providers ProviderSettings 集成', => {
  expect(text).toContain('新建凭证')
  expect(wrapper.html).toContain('icon-[lucide--key-round]')
  })
- it('scope=project 空态切换为 folder-lock + "本项目暂未配置覆盖凭证" + "新建项目凭证"', async => {
+ it('scope=project 空态切换为 folder-lock + "本空间暂未配置覆盖凭证" + "新建空间凭证"', async => {
  listMock.mockResolvedValue
  const wrapper = mount(ProviderSettings, {
  props: { scope: 'project', projectId: '' },
@@ -143,8 +143,8 @@ describe('/admin/providers ProviderSettings 集成', => {
  })
  await flushPromises
  const text = wrapper.text
- expect(text).toContain('本项目暂未配置覆盖凭证')
- expect(text).toContain('新建项目凭证')
+ expect(text).toContain('本空间暂未配置覆盖凭证')
+ expect(text).toContain('新建空间凭证')
  expect(wrapper.html).toContain('icon-[lucide--folder-lock]')
  })
  it('pageHeader 标题按 scope 切换：system=Provider 凭证管理，project=Provider 凭证', async => {

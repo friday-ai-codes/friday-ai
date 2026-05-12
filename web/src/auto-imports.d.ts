@@ -177,6 +177,7 @@ declare global {
  const useCssVars: typeof import('vue').useCssVars
  const useCurrentElement: typeof import('@vueuse/core').useCurrentElement
  const useCycleList: typeof import('@vueuse/core').useCycleList
+ const useDagreLayout: typeof import('./composables/useDagreLayout').useDagreLayout
  const useDark: typeof import('@vueuse/core').useDark
  const useDateFormat: typeof import('@vueuse/core').useDateFormat
  const useDebounce: typeof import('@vueuse/core').useDebounce
@@ -364,6 +365,9 @@ declare global {
  // @ts-ignore
  export type { ConversationStatus, FrozenState } from './composables/useConversationFrozen'
  import('./composables/useConversationFrozen')
+ // @ts-ignore
+ export type { DagreLayoutOptions } from './composables/useDagreLayout'
+ import('./composables/useDagreLayout')
  // @ts-ignore
  export type { DesignTimeVariable, VariableCategory } from './composables/useDesignTimeVariables'
  import('./composables/useDesignTimeVariables')
@@ -580,6 +584,7 @@ declare module 'vue' {
  readonly useCssVars: UnwrapRef<typeof import('vue')['useCssVars']>
  readonly useCurrentElement: UnwrapRef<typeof import('@vueuse/core')['useCurrentElement']>
  readonly useCycleList: UnwrapRef<typeof import('@vueuse/core')['useCycleList']>
+ readonly useDagreLayout: UnwrapRef<typeof import('./composables/useDagreLayout')['useDagreLayout']>
  readonly useDark: UnwrapRef<typeof import('@vueuse/core')['useDark']>
  readonly useDateFormat: UnwrapRef<typeof import('@vueuse/core')['useDateFormat']>
  readonly useDebounce: UnwrapRef<typeof import('@vueuse/core')['useDebounce']>

@@ -14,7 +14,7 @@ const emit = defineEmits<{
  stepBackward:
  speedChange: [speed: ReplaySpeed]
 }>
-const speedOptions: { label: string; value: ReplaySpeed } = [
+const speedOptions: { label: string, value: ReplaySpeed } = [
  { label: '0.5x', value: 0.5 },
  { label: '1x', value: 1 },
  { label: '2x', value: 2 },

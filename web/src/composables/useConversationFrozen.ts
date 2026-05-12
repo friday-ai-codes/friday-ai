@@ -17,8 +17,8 @@
  */
 import type { ComputedRef, Ref } from 'vue'
 import { computed } from 'vue'
-export type ConversationStatus =
- | 'draft'
+export type ConversationStatus
+ = | 'draft'
  | 'running'
  | 'paused'
  | 'interrupted'

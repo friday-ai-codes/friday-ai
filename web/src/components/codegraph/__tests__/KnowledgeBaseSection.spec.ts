@@ -41,16 +41,16 @@ function mountSection {
  attachTo: document.body,
  })
 }
-describe('KnowledgeBaseSection', => {
+describe('knowledgeBaseSection', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: 包含卡片标题"代码图谱"', async => {
+ it('a: 包含卡片标题"代码图谱"', async => {
  const wrapper = mountSection
  await flushPromises
  expect(wrapper.text).toContain('代码图谱')
  })
- it('B: 展开后包含 3 个 Tab trigger：Symbols / 调用关系 DAG / 导入', async => {
+ it('b: 展开后包含 3 个 Tab trigger：Symbols / 调用关系 DAG / 导入', async => {
  const wrapper = mountSection
  await flushPromises
  // 点击展开按钮
@@ -62,7 +62,7 @@ describe('KnowledgeBaseSection', => {
  expect(text).toContain('调用关系 DAG')
  expect(text).toContain('导入')
  })
- it('C: 初始状态下折叠内容不可见（isOpen=false）', async => {
+ it('c: 初始状态下折叠内容不可见（isOpen=false）', async => {
  const wrapper = mountSection
  await flushPromises
  expect((wrapper.vm as unknown as { isOpen: boolean }).isOpen).toBe(false)

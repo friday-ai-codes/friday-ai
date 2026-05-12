@@ -108,7 +108,9 @@ defineExpose({ showError })
  class="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 flex items-start gap-2 animate-fade-in"
  >
  <span class="icon-[lucide--alert-circle] text-destructive text-base shrink-0 mt-0.5" />
- <p class="text-sm text-foreground">{{ errorMsg }}</p>
+ <p class="text-sm text-foreground">
+ {{ errorMsg }}
+ </p>
  </div>
  <DialogFooter class="gap-2">
  <Button

@@ -27,7 +27,7 @@ import PromptsOverridesPage from '../[id]/prompts.vue'
 // Mock —— closure 通过 vi.hoisted 提升
 // ============================================================================
 const mocks = vi.hoisted( => ({
- loadProjectListMock: vi.fn,
+ loadSpaceListMock: vi.fn,
  loadDetailMock: vi.fn,
  loadVersionsMock: vi.fn,
  clearCurrentMock: vi.fn,
@@ -43,9 +43,9 @@ vi.mock('vue-router', => ({
 }))
 vi.mock('~/stores/prompts', => ({
  usePromptsStore: => ({
- mergedProjectList: mocks.mergedSpaceListRef,
+ mergedSpaceList: mocks.mergedSpaceListRef,
  loading: mocks.loadingRef,
- loadProjectList: mocks.loadProjectListMock,
+ loadSpaceList: mocks.loadSpaceListMock,
  loadDetail: mocks.loadDetailMock,
  loadVersions: mocks.loadVersionsMock,
  clearCurrent: mocks.clearCurrentMock,
@@ -215,7 +215,7 @@ function callDefaultSlot(vnode: { children?: unknown }): string {
 // ============================================================================
 describe('pages/spaces/[id]/prompts.vue ', => {
  beforeEach( => {
- mocks.loadProjectListMock.mockReset.mockResolvedValue(undefined)
+ mocks.loadSpaceListMock.mockReset.mockResolvedValue(undefined)
  mocks.loadDetailMock.mockReset.mockResolvedValue(undefined)
  mocks.loadVersionsMock.mockReset.mockResolvedValue(undefined)
  mocks.clearCurrentMock.mockReset
@@ -225,17 +225,17 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  mocks.canEditValue.current = true
  mocks.canEditRef = computed( => mocks.canEditValue.current)
  })
- it('1. 组件挂载后调用 store.loadProjectList(spaceId)', async => {
+ it('1. 组件挂载后调用 store.loadSpaceList(spaceId)', async => {
  mountPage
  await nextTick
  await new Promise(r => setTimeout(r, 0))
- expect(mocks.loadProjectListMock).toHaveBeenCalledWith('test-space-id')
+ expect(mocks.loadSpaceListMock).toHaveBeenCalledWith('test-space-id')
  })
  it('2. PageHeader 渲染中文标题 "Prompt 覆盖"', async => {
  const wrapper = mountPage
  await nextTick
  expect(wrapper.text).toContain('Prompt 覆盖')
- expect(wrapper.text).toContain('项目级提示词覆盖与系统级 fallback')
+ expect(wrapper.text).toContain('空间级提示词覆盖与系统级 fallback')
  })
  it('3. DataTable 绑定 mergedProjectList 作为 data', async => {
  mocks.mergedSpaceListRef.value = [overriddenRow, fallbackRow]
@@ -246,7 +246,7 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  expect(dt.props('data')).toHaveLength(2)
  expect(dt.props('tableId')).toBe('space-prompts-list')
  })
- it('4. status="overridden" 渲染 Badge variant=default 文案 "项目级已覆盖"', async => {
+ it('4. status="overridden" 渲染 Badge variant=default 文案 "空间级已覆盖"', async => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
@@ -255,7 +255,7 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  const vnode = callCell(statusCol, overriddenRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode).toBeTruthy
  expect(vnode.props?.variant).toBe('default')
- expect(callDefaultSlot(vnode)).toBe('项目级已覆盖')
+ expect(callDefaultSlot(vnode)).toBe('空间级已覆盖')
  })
  it('5. status="fallback" 渲染 Badge variant=outline 文案 "使用系统级 fallback"', async => {
  const wrapper = mountPage
@@ -267,7 +267,7 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  expect(vnode.props?.variant).toBe('outline')
  expect(callDefaultSlot(vnode)).toBe('使用系统级 fallback')
  })
- it('6. status="project_only" 渲染 Badge variant=secondary 文案 "仅项目级"', async => {
+ it('6. status="project_only" 渲染 Badge variant=secondary 文案 "仅空间级"', async => {
  const wrapper = mountPage
  await nextTick
  const dt = wrapper.findComponent(DataTableStub)
@@ -275,9 +275,9 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  const statusCol = findColumn(cols, 'status')
  const vnode = callCell(statusCol, spaceOnlyRow) as { props?: Record<string, unknown>, children?: unknown }
  expect(vnode.props?.variant).toBe('secondary')
- expect(callDefaultSlot(vnode)).toBe('仅项目级')
+ expect(callDefaultSlot(vnode)).toBe('仅空间级')
  })
- it('7. canEdit=false 时所有操作按钮 disabled + tooltip "仅项目管理员可操作"', async => {
+ it('7. canEdit=false 时所有操作按钮 disabled + tooltip "仅空间管理员可操作"', async => {
  mocks.canEditValue.current = false
  const wrapper = mountPage
  await nextTick
@@ -286,9 +286,9 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as { props?: Record<string, unknown> }
  expect(vnode.props?.disabled).toBe(true)
- expect(vnode.props?.title).toBe('仅项目管理员可操作')
+ expect(vnode.props?.title).toBe('仅空间管理员可操作')
  })
- it('8. canEdit=true 时 fallback 行操作按钮文案 "创建项目级副本"', async => {
+ it('8. canEdit=true 时 fallback 行操作按钮文案 "创建空间级副本"', async => {
  mocks.canEditValue.current = true
  const wrapper = mountPage
  await nextTick
@@ -296,7 +296,7 @@ describe('pages/spaces/[id]/prompts.vue ', => {
  const cols = dt.props('columns') as ColumnDef<MergedSpaceListItem>
  const actionsCol = findColumn(cols, 'actions')
  const vnode = callCell(actionsCol, fallbackRow) as { children?: unknown }
- expect(callDefaultSlot(vnode)).toBe('创建项目级副本')
+ expect(callDefaultSlot(vnode)).toBe('创建空间级副本')
  })
  it('9. canEdit=true 时 overridden 行操作按钮文案 "编辑"', async => {
  const wrapper = mountPage

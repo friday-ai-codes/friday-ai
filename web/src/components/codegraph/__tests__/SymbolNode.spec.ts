@@ -18,7 +18,7 @@ vi.mock('~/components/ui/tooltip', => ({
  TooltipContent: { template: '<div><slot /></div>' },
  TooltipProvider: { template: '<div><slot /></div>' },
 }))
-describe('SymbolNode', => {
+describe('symbolNode', => {
  const defaultData = {
  name: 'myFunc',
  symbol_type: 'FUNCTION',
@@ -27,25 +27,25 @@ describe('SymbolNode', => {
  line_end: 10,
  signature: 'def myFunc',
  }
- it('A: 渲染 data.name 文本', => {
+ it('a: 渲染 data.name 文本', => {
  const wrapper = mount(SymbolNode, {
  props: { data: defaultData },
  })
  expect(wrapper.text).toContain('myFunc')
  })
- it('B: 渲染 data.symbol_type 徽章文本', => {
+ it('b: 渲染 data.symbol_type 徽章文本', => {
  const wrapper = mount(SymbolNode, {
  props: { data: defaultData },
  })
  expect(wrapper.text).toContain('FUNCTION')
  })
- it('C: 渲染签名文本', => {
+ it('c: 渲染签名文本', => {
  const wrapper = mount(SymbolNode, {
  props: { data: defaultData },
  })
  expect(wrapper.text).toContain('def myFunc')
  })
- it('D: 外壳包含 w-[240px] 宽度类', => {
+ it('d: 外壳包含 w-[240px] 宽度类', => {
  const wrapper = mount(SymbolNode, {
  props: { data: defaultData },
  })

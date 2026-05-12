@@ -329,7 +329,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  * 全链路 miss 时后端返 resolved_provider=null，本 action 亦返 null 让调用方降级。
  */
  async function getResolvedProvider(
- scope: { conversationId?: string; workflowId?: string; nodeId?: string },
+ scope: { conversationId?: string, workflowId?: string, nodeId?: string },
  ): Promise<ResolvedProvider | null> {
  if (scope.conversationId) {
  const resp = await apiGet<{ resolved_provider: ResolvedProvider | null }>(

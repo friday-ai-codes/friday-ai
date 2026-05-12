@@ -29,7 +29,8 @@ onMounted( => {
  )
  props.sections.forEach((section) => {
  const el = document.getElementById(section.id)
- if (el) observer?.observe(el)
+ if (el)
+ observer?.observe(el)
  })
 })
 onUnmounted( => {
@@ -37,7 +38,8 @@ onUnmounted( => {
 })
 function scrollTo(id: string) {
  const el = document.getElementById(id)
- if (!el) return
+ if (!el)
+ return
  const offset = 88
  const top = el.getBoundingClientRect.top + window.scrollY - offset
  window.scrollTo({ top, behavior: 'smooth' })

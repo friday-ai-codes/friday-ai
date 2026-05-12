@@ -1,9 +1,9 @@
+import type { NodeDefinition } from '../types'
 /**
  * Control 节点定义
  */
 import { z } from 'zod'
 import { createNodeDefinition } from '../index'
-import type { NodeDefinition } from '../types'
 // ============================================================================
 // Delay
 // ============================================================================
@@ -34,9 +34,20 @@ export const delayDef = createNodeDefinition({
 const conditionExpressionSchema = z.object({
  field: z.string.default(''),
  operator: z.enum([
- 'eq', 'ne', 'gt', 'gte', 'lt', 'lte',
- 'contains', 'not_contains', 'starts_with', 'ends_with',
- 'is_empty', 'is_not_empty', 'is_true', 'is_false',
+ 'eq',
+ 'ne',
+ 'gt',
+ 'gte',
+ 'lt',
+ 'lte',
+ 'contains',
+ 'not_contains',
+ 'starts_with',
+ 'ends_with',
+ 'is_empty',
+ 'is_not_empty',
+ 'is_true',
+ 'is_false',
  ]).default('eq'),
  value: z.unknown.default(''),
 })

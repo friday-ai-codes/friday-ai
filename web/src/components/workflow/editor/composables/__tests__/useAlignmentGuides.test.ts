@@ -1,6 +1,10 @@
+import type { GraphNode, ViewportTransform } from '@vue-flow/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { GraphNode, ViewportTransform } from '@vue-flow/core'
+// ---------------------------------------------------------------------------
+// C. 被测模块（mock 之后导入）
+// ---------------------------------------------------------------------------
+import { useAlignmentGuides } from '../useAlignmentGuides'
 // ---------------------------------------------------------------------------
 // A. Mock @vue-flow/core
 // ---------------------------------------------------------------------------
@@ -26,10 +30,6 @@ vi.spyOn(document, 'querySelector').mockImplementation((selector: string) => {
  }
  return null
 })
-// ---------------------------------------------------------------------------
-// C. 被测模块（mock 之后导入）
-// ---------------------------------------------------------------------------
-import { useAlignmentGuides } from '../useAlignmentGuides'
 // ---------------------------------------------------------------------------
 // D. Fixture 工厂
 // ---------------------------------------------------------------------------

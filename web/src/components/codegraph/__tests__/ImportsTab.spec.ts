@@ -43,11 +43,11 @@ function mountImportsTab {
  global: { stubs: stubComponents },
  })
 }
-describe('ImportsTab', => {
+describe('importsTab', => {
  beforeEach( => {
  vi.clearAllMocks
  })
- it('A: 挂载后调用 getImports API', async => {
+ it('a: 挂载后调用 getImports API', async => {
  const { getImports } = await import('~/api/codegraph')
  vi.mocked(getImports).mockResolvedValue({
  count: 1,
@@ -65,7 +65,7 @@ describe('ImportsTab', => {
  await flushPromises
  expect(getImports).toHaveBeenCalledWith('repo-1', expect.any(Object))
  })
- it('B: 2 条同一 source_file 的 import 仅渲染 1 个分组标题', async => {
+ it('b: 2 条同一 source_file 的 import 仅渲染 1 个分组标题', async => {
  const { getImports } = await import('~/api/codegraph')
  vi.mocked(getImports).mockResolvedValue({
  count: 2,
@@ -99,7 +99,7 @@ describe('ImportsTab', => {
  expect(text).toContain('os')
  expect(text).toContain('sys')
  })
- it('C: target_module 全部渲染', async => {
+ it('c: target_module 全部渲染', async => {
  const { getImports } = await import('~/api/codegraph')
  vi.mocked(getImports).mockResolvedValue({
  count: 2,

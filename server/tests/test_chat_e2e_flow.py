@@ -52,6 +52,11 @@ def _make_mock_stream(events: list[AgentEvent]):
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  for event in events:
  yield event
@@ -84,24 +89,24 @@ async def conversation(db, test_project):
 class TestConversationCreation:
  """对话创建端到端测试。"""
  async def test_create_conversation_success(self, test_project):
- """POST /api/chat/conversations/ 携带 project_id 返回 201。"""
+ """POST /api/chat/conversations/ 携带 space_id 返回 201。"""
  client = AsyncClient
  resp = await client.post(
  "/api/chat/conversations/",
- data={"project_id": str(test_project.id)},
+ data={"space_id": str(test_project.id)},
  content_type="application/json",
  )
  assert resp.status_code == 201
  data = resp.json
  assert "id" in data
- assert data["project_id"] == str(test_project.id)
+ assert data["space_id"] == str(test_project.id)
  assert "title" in data
  async def test_create_conversation_invalid_project(self):
- """无效 project_id 返回 400。"""
+ """无效 space_id 返回 400。"""
  client = AsyncClient
  resp = await client.post(
  "/api/chat/conversations/",
- data={"project_id": "00000000-0000-0000-0000-000000000000"},
+ data={"space_id": "00000000-0000-0000-0000-000000000000"},
  content_type="application/json",
  )
  assert resp.status_code == 400
@@ -234,9 +239,17 @@ class TestSSEStreamFlow:
 @pytest.mark.django_db(transaction=True)
 class TestInterruptFlow:
  """中断流程端到端测试。"""
+ @pytest.mark.skip(
+ reason=(
+ "OBSOLETE: chat.conversation_service._active_runners 已在 v17.0 LangGraph "
+ "编排迁移后移除。中断机制改走 OrchestrationRun + interrupt，"
+ "本测试基于旧 SDKAgentRunner 直接管理 runner 字典的契约。"
+ "后续随 chat 中断流程的重构补一组新的 graph-driven 用例。"
+ )
+ )
  async def test_interrupt_active_conversation(self, conversation):
  """注册 mock runner 后 POST interrupt API 返回 200 并调用 interrupt。"""
- from chat.conversation_service import _active_runners
+ from chat.conversation_service import _active_runners # type: ignore[attr-defined]
  mock_runner = AsyncMock
  mock_runner.interrupt = AsyncMock
  conv_id_str = str(conversation.id)
@@ -259,9 +272,15 @@ class TestInterruptFlow:
  f"/api/chat/conversations/{conversation.id}/interrupt/",
  )
  assert resp.status_code == 404
+ @pytest.mark.skip(
+ reason=(
+ "OBSOLETE: 同 test_interrupt_active_conversation —— _active_runners 全局字典"
+ "已被 OrchestrationRun + LangGraph interrupt 替代。"
+ )
+ )
  async def test_resume_after_interrupt(self, conversation):
  """中断对话后重新发送消息，新 SSE 流正常启动。"""
- from chat.conversation_service import _active_runners
+ from chat.conversation_service import _active_runners # type: ignore[attr-defined]
  # Phase: 中断
  mock_runner = AsyncMock
  mock_runner.interrupt = AsyncMock
@@ -304,6 +323,11 @@ class TestInterruptFlow:
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  await Message.objects.acreate(
  conversation_id=conversation_id,
@@ -334,6 +358,11 @@ class TestInterruptFlow:
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  await Message.objects.acreate(
  conversation_id=conversation_id,
@@ -372,9 +401,15 @@ class TestInterruptFlow:
  assert messages[0].content == "部分回复"
  assert messages[1].metadata["status"] == "completed"
  assert messages[1].content == "完整回复"
+ @pytest.mark.skip(
+ reason=(
+ "OBSOLETE: 同 test_interrupt_active_conversation —— _active_runners 全局字典"
+ "已被 OrchestrationRun + LangGraph interrupt 替代。"
+ )
+ )
  async def test_duplicate_interrupt_idempotent(self, conversation):
  """重复中断请求不导致异常（幂等性）。"""
- from chat.conversation_service import _active_runners
+ from chat.conversation_service import _active_runners # type: ignore[attr-defined]
  mock_runner = AsyncMock
  mock_runner.interrupt = AsyncMock
  conv_id_str = str(conversation.id)
@@ -441,6 +476,11 @@ class TestMessagePersistence:
  conversation_id: str,
  content: str,
  role: str = "developer",
+ notification_user_id: str | None = None,
+ force_deep_analysis: bool = False,
+ feishu_doc_id: str = "",
+ project_context_line: str | None = None,
+ search_branch: str | None = None,
  ) -> AsyncGenerator[AgentEvent, None]:
  # 保存 user message（模拟真实 service 行为）
  await Message.objects.acreate(

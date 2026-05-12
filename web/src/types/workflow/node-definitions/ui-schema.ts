@@ -5,7 +5,7 @@
  */
 import type { UiSchema, UiSchemaField, UiSchemaGroup } from './types'
 // 重新导出类型
-export type { UiSchema, UiSchemaField, UiSchemaGroup, UiVisibleIf, UiWidget, UiConditionOperator } from './types'
+export type { UiConditionOperator, UiSchema, UiSchemaField, UiSchemaGroup, UiVisibleIf, UiWidget } from './types'
 /**
  * 构建 UiSchema 的辅助函数
  *

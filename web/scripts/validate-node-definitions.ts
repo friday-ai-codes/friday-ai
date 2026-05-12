@@ -28,7 +28,8 @@ async function main: Promise<void> {
  // ===== 1. ui_schema 合法性检查 =====
  console.log('\n--- ui_schema field validation ---')
  for (const [nodeType, def] of Object.entries(ALL_NODE_DEFINITIONS)) {
- if (!def.uiSchema?.fields) continue
+ if (!def.uiSchema?.fields)
+ continue
  // Zod 4 内置 toJSONSchema
  const jsonSchema = (def.schema as any).toJSONSchema as Record<string, unknown>
  const properties = (jsonSchema.properties ?? {}) as Record<string, unknown>
@@ -100,8 +101,10 @@ async function main: Promise<void> {
  const extraInBackend = [...backendProps].filter(k => !tsProps.has(k))
  if (missingInBackend.length || extraInBackend.length) {
  console.error(`✗ Node '${nodeType}': field mismatch`)
- if (missingInBackend.length) console.error(` - Missing in backend: ${missingInBackend.join(', ')}`)
- if (extraInBackend.length) console.error(` - Extra in backend: ${extraInBackend.join(', ')}`)
+ if (missingInBackend.length)
+ console.error(` - Missing in backend: ${missingInBackend.join(', ')}`)
+ if (extraInBackend.length)
+ console.error(` - Extra in backend: ${extraInBackend.join(', ')}`)
  hasError = true
  }
  }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { computed, ref } from 'vue'
 import type { UiSchema, UiSchemaGroup, UiVisibleIf } from '~/types/workflow/node-definitions/types'
+import { computed, ref } from 'vue'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { Separator } from '~/components/ui/separator'

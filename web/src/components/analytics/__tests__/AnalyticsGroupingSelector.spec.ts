@@ -12,7 +12,7 @@ function cleanupBody {
 }
 describe('analyticsGroupingSelector', => {
  afterEach(cleanupBody)
- it('D: 渲染 3 个选项 "不分组 / 按 Provider / 按项目"', async => {
+ it('d: 渲染 3 个选项 "不分组 / 按 Provider / 按项目"', async => {
  mount(AnalyticsGroupingSelector, {
  props: { modelValue: 'none' },
  attachTo: document.body,
@@ -22,7 +22,7 @@ describe('analyticsGroupingSelector', => {
  // trigger 区域显示当前选项
  expect(document.body.textContent).toContain('不分组')
  })
- it('D2: modelValue="provider_type" 时 trigger 显示 "按 Provider"', async => {
+ it('d2: modelValue="provider_type" 时 trigger 显示 "按 Provider"', async => {
  mount(AnalyticsGroupingSelector, {
  props: { modelValue: 'provider_type' },
  attachTo: document.body,
@@ -31,16 +31,16 @@ describe('analyticsGroupingSelector', => {
  await flushPromises
  expect(document.body.textContent).toContain('按 Provider')
  })
- it('D3: modelValue="project" 时 trigger 显示 "按项目"', async => {
+ it('d3: modelValue="project" 时 trigger 显示 "按空间"', async => {
  mount(AnalyticsGroupingSelector, {
  props: { modelValue: 'project' },
  attachTo: document.body,
  })
  await nextTick
  await flushPromises
- expect(document.body.textContent).toContain('按项目')
+ expect(document.body.textContent).toContain('按空间')
  })
- it('E: trigger 带 aria-label "数据分组维度" 满足 A11y', async => {
+ it('e: trigger 带 aria-label "数据分组维度" 满足 A11y', async => {
  const wrapper = mount(AnalyticsGroupingSelector, {
  props: { modelValue: 'none' },
  attachTo: document.body,
@@ -50,7 +50,7 @@ describe('analyticsGroupingSelector', => {
  const trigger = wrapper.find('[aria-label="数据分组维度"]')
  expect(trigger.exists).toBe(true)
  })
- it('C: 3 个 value 定义在 template 中（contentful SelectItem for none/provider_type/project）', => {
+ it('c: 3 个 value 定义在 template 中（contentful SelectItem for none/provider_type/project）', => {
  // 通过源文件内容静态验证 3 value 存在
  // shadcn-vue <Select> content 在 reka-ui teleport 后需要 trigger 打开，用更稳定的 source inspection
  const wrapper = mount(AnalyticsGroupingSelector, {

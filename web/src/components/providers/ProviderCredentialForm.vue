@@ -24,6 +24,7 @@ import { toTypedSchema } from '@vee-validate/zod'
 import { useForm } from 'vee-validate'
 import { computed, ref, watch } from 'vue'
 import * as z from 'zod'
+import { providerCredentialsApi } from '~/api/providerCredentials'
 import { Button } from '~/components/ui/button'
 import {
  FormControl,
@@ -40,7 +41,6 @@ import {
  SelectTrigger,
  SelectValue,
 } from '~/components/ui/select'
-import { providerCredentialsApi } from '~/api/providerCredentials'
 import { useToast } from '~/composables/useToast'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
 interface Props {
@@ -403,7 +403,9 @@ defineExpose({ selectedType })
  </div>
  <!-- 获取到的模型列表（edit 模式） -->
  <div v-if="props.mode === 'edit' && fetchedModels.length > 0" class="space-y-2">
- <p class="text-xs text-muted-foreground">选择默认模型并测试:</p>
+ <p class="text-xs text-muted-foreground">
+ 选择默认模型并测试:
+ </p>
  <div class="flex flex-wrap gap-2">
  <div
  v-for="m in fetchedModels":key="m.id"
@@ -459,7 +461,9 @@ defineExpose({ selectedType })
  </div>
  <!-- edit 模式：错误提示 + 手动输入 -->
  <div v-if="props.mode === 'edit' && (fetchModelsError || showManualModelInput)" class="space-y-2">
- <p v-if="fetchModelsError" class="text-xs text-destructive">{{ fetchModelsError }}</p>
+ <p v-if="fetchModelsError" class="text-xs text-destructive">
+ {{ fetchModelsError }}
+ </p>
  <div class="flex gap-2">
  <Input
  v-model="manualModelName"

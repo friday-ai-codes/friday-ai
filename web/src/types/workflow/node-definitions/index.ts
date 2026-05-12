@@ -9,24 +9,6 @@
  * - 定义: import { ALL_NODE_DEFINITIONS, getNodeDef } from './node-definitions'
  * - 构建: import { buildUiSchema } from './node-definitions'
  */
-// 类型导出
-export type {
- NodeCategory,
- NodeDefinition,
- UiConditionOperator,
- UiSchema,
- UiSchemaField,
- UiSchemaGroup,
- UiVisibleIf,
- UiWidget,
-} from './types'
-// 辅助函数
-export { buildUiSchema } from './ui-schema'
-// Category 导入
-import { TRIGGER_DEFS } from './categories/trigger'
-import { CONTROL_DEFS } from './categories/control'
-import { INTEGRATION_DEFS } from './categories/integration'
-import { ACTION_DEFS } from './categories/action'
 /**
  * 创建 NodeDefinition 的辅助函数
  *
@@ -42,6 +24,24 @@ import { ACTION_DEFS } from './categories/action'
  * ```
  */
 import type { NodeDefinition } from './types'
+import { ACTION_DEFS } from './categories/action'
+import { CONTROL_DEFS } from './categories/control'
+import { INTEGRATION_DEFS } from './categories/integration'
+// 类型导出
+// Category 导入
+import { TRIGGER_DEFS } from './categories/trigger'
+export type {
+ NodeCategory,
+ NodeDefinition,
+ UiConditionOperator,
+ UiSchema,
+ UiSchemaField,
+ UiSchemaGroup,
+ UiVisibleIf,
+ UiWidget,
+} from './types'
+// 辅助函数
+export { buildUiSchema } from './ui-schema'
 export function createNodeDefinition<T>(def: NodeDefinition<T>): NodeDefinition<T> {
  return def
 }

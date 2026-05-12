@@ -144,7 +144,7 @@ async def _call_deep_analysis(mocks: dict[str, MagicMock | AsyncMock]) -> ToolRe
  mock_git_objects.aget = mocks["git_cred_aget"]
  from agents.tools.chat_tools import deep_analysis
  return await deep_analysis(
- project_id="proj-1",
+ space_id="proj-1",
  task_description="analyze auth module",
  # conversation fixture omitted
  )
@@ -167,7 +167,7 @@ async def test_deep_analysis_output_contains_params(da_mocks: dict[str, MagicMoc
  assert "task_id" in result.output
  params = result.output["params"]
  assert params["task_description"] == "analyze auth module"
- assert params["project_id"] == "proj-1"
+ assert params["space_id"] == "proj-1"
  assert "repository_id" in params
 @pytest.mark.django_db
 @pytest.mark.asyncio

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { BranchIndexRow, IndexStatusResponse } from '~/api/repositories'
+import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
+import KnowledgeBaseSection from '~/components/codegraph/KnowledgeBaseSection.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
-import AnchorNavLayout, { type NavSection } from '~/components/layout/AnchorNavLayout.vue'
+import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
@@ -13,7 +15,6 @@ import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import RepoHashFreshnessCard from '~/components/repository/RepoHashFreshnessCard.vue'
-import KnowledgeBaseSection from '~/components/codegraph/KnowledgeBaseSection.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -332,7 +333,7 @@ function copyUrl {
  </div>
  </div>
  </div>
- <!--: RepoHashFreshnessCard — PageHeader 后 / AnchorNavLayout 前（ 第一优先级指标）-->
+ <!--: RepoHashFreshnessCard — PageHeader 后 / AnchorNavLayout 前（ 第一优先级指标） -->
  <RepoHashFreshnessCard:repository-id="repositoryId" class="mb-0" />
  <!--: KnowledgeBaseSection — RepoHashFreshnessCard 之后 / AnchorNavLayout 之前 -->
  <KnowledgeBaseSection:repository-id="repository.id" />
@@ -535,13 +536,19 @@ function copyUrl {
  <div class="card border-destructive/30 bg-destructive/5">
  <div class="px-5 py-3.5 border-b border-destructive/20 flex items-center gap-2">
  <span class="icon-[lucide--alert-triangle] text-destructive" />
- <h3 class="text-sm font-semibold text-destructive">危险操作</h3>
+ <h3 class="text-sm font-semibold text-destructive">
+ 危险操作
+ </h3>
  </div>
  <div class=" space-y-4">
  <div class="flex items-start justify-between gap-4">
  <div>
- <p class="text-sm font-medium text-foreground">删除仓库</p>
- <p class="text-xs text-muted-foreground mt-1">删除后无法恢复，相关的凭证配置也将被清除。</p>
+ <p class="text-sm font-medium text-foreground">
+ 删除仓库
+ </p>
+ <p class="text-xs text-muted-foreground mt-1">
+ 删除后无法恢复，相关的凭证配置也将被清除。
+ </p>
  </div>
  <Button variant="destructive" size="sm" class="shrink-0" @click="deleteDialogOpen = true">
  <span class="icon-[lucide--trash-2] mr-1.5" />
