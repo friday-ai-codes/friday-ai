@@ -409,13 +409,14 @@ class ContextRetrievalNode(BaseNode):
  branch: str | None = None,
  query_sparse: dict[str, Any] | None = None, # 保留但不再使用
  ) -> dict[str, Any]:
- """Search single repository with timeout (branch-aware), via LayeredSearchService.
+ """Search single repository with timeout (branch-aware), via HybridSearchService.
  Returns a dict with repository_id, repository_name, status, results, context, and error (if any).
  """
- from codegraph.services.layered_search import LayeredSearchService
+ from services.code_intel import get_provider
+ from services.retrieval import HybridSearchService
  repo_id = str(repository.id)
  try:
- search_coro = LayeredSearchService.search(
+ search_coro = HybridSearchService(get_provider).search(
  query,
  repository_ids=[repo_id],
  branch_name=branch or None,
