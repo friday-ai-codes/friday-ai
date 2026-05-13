@@ -693,6 +693,11 @@ export const useChatStore = defineStore('chat', => {
  output_tokens: event.usage?.output_tokens,
  cost_usd: event.cost_usd,
  status: event.status,
+ // Phase：max_turns 用尽时后端走 graceful degrade
+ // (status=completed + degraded=true)，把 flag 透传到 metadata
+ // 供 UI 差异化展示「已尽力但不完整」，不再当 error 处理。
+ degraded: (event as { degraded?: boolean }).degraded,
+ degraded_reason: (event as { degraded_reason?: string }).degraded_reason,
  }
  if (event.status === 'interrupted')
  streamingStatus.value = 'interrupted'

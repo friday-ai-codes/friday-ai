@@ -216,7 +216,7 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  </div>
  <!-- 空对话欢迎页：有错误时不显示，让错误卡片在消息列表分支中渲染 -->
  <ChatWelcome
- v-else-if="!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming && !chatStore.error)"
+ v-else-if="!chatStore.error && (!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming))"
  />
  <!-- 消息列表 -->
  <div v-else ref="scrollContainer" class="h-full overflow-y-auto">

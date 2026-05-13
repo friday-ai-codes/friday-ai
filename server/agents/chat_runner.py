@@ -16,6 +16,7 @@ from django.utils import timezone
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.messages.utils import count_tokens_approximately
+from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
@@ -37,6 +38,7 @@ from agents.langchain_runner import (
  ContextWindowExceededError,
 )
 from agents.models import AgentSession, ToolCallLog
+from agents.tool_budget import _ToolBudget
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
 from repositories.models import Repository
@@ -44,16 +46,21 @@ from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
 logger = structlog.get_logger(__name__)
 _BASE_TOOL_NAMES = ["get_space_overview"]
-_FULL_TOOL_NAMES = _BASE_TOOL_NAMES + [
+# 普通模式：检索 + 代码浏览 + coding plan，但 **不含 deep_analysis**。
+# 只有用户在前端显式开启「深度分析」开关时，deep_analysis 才会进入工具列表
+# （由 _get_tool_names(force_deep_analysis=True) 控制）。
+# 该闸门避免 LLM 在普通问答中被系统 prompt 诱导自主调用 deep_analysis ——
+# 历史上这会导致一次普通追问消耗一次远程 Runner 容器，体验差且成本高。
+_INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "browse_file_content",
  "list_space_structure",
  "search_repository_code",
  "list_space_repositories",
  "get_repository_info",
- "deep_analysis",
  "create_coding_plan",
  "update_coding_plan",
 ]
+_DEEP_ANALYSIS_TOOL_NAMES = _INDEXED_TOOL_NAMES + ["deep_analysis"]
 @dataclass
 class ChatRunnerConfig:
  """Chat 场景运行配置。"""
@@ -69,6 +76,9 @@ class ChatRunnerConfig:
  agent_session: Any = field(default=None)
  max_budget_usd: float | None = None
  default_search_branch: str | None = None
+ # 用户是否显式开启「深度分析」开关。仅当 True 时 deep_analysis 工具会被
+ # 暴露给 LLM 并下发"策略二"system prompt。
+ force_deep_analysis: bool = False
 @dataclass
 class _ChatToolSpec:
  """LangChain tool 与本地执行器的桥接定义。"""
@@ -109,13 +119,22 @@ def _build_args_schema(tool_def: ToolDefinition, hidden_fields: set[str]) -> typ
  fields[name] = (annotation, default)
  model_name = "".join(part.capitalize for part in tool_def.name.split("_")) + "Args"
  return create_model(model_name, **cast(dict[str, Any], fields))
-async def _get_tool_names(space_id: str) -> list[str]:
+async def _get_tool_names(
+ space_id: str, *, force_deep_analysis: bool = False,
+) -> list[str]:
+ """返回 LLM 可用工具名列表。
+ - 无已索引仓库：仅 `_BASE_TOOL_NAMES`（避免误调检索工具拿空结果）。
+ - 有已索引仓库 + 普通模式：`_INDEXED_TOOL_NAMES`，**不含** `deep_analysis`。
+ - 有已索引仓库 + 用户开启「深度分析」开关：`_DEEP_ANALYSIS_TOOL_NAMES`。
+ """
  has_indexed = await Repository.objects.filter(
  projects__id=space_id,
  index_status="indexed",
  is_deleted=False,
  ).aexists
- return _FULL_TOOL_NAMES if has_indexed else _BASE_TOOL_NAMES
+ if not has_indexed:
+ return _BASE_TOOL_NAMES
+ return _DEEP_ANALYSIS_TOOL_NAMES if force_deep_analysis else _INDEXED_TOOL_NAMES
 def _extract_content_blocks(message: Any) -> list[dict[str, Any]]:
  blocks = getattr(message, "content_blocks", None)
  if isinstance(blocks, list):
@@ -277,6 +296,7 @@ async def _build_tool_specs(
  conversation_id: str,
  *,
  default_search_branch: str | None = None,
+ force_deep_analysis: bool = False,
 ) -> dict[str, _ChatToolSpec]:
  """装配 chat 场景可用的工具清单。
  内部通过 `build_langchain_tools` (Phase) 统一产出 StructuredTool：
@@ -286,7 +306,9 @@ async def _build_tool_specs(
  adapter。二次闭包 `execute(arguments: dict) -> ToolResult` 的签名保持
  不变，下游 `_execute_tool_call` 契约零破坏。
  """
- tool_names = await _get_tool_names(space_id)
+ tool_names = await _get_tool_names(
+ space_id, force_deep_analysis=force_deep_analysis,
+ )
  langchain_tools = build_langchain_tools(
  tool_names,
  injected_values={
@@ -311,6 +333,23 @@ async def _build_tool_specs(
  _props: dict[str, Any] = properties,
  _dsb: str | None = default_search_branch,
  ) -> ToolResult:
+ # Phase：按 schema properties 过滤 LLM 自创的未知字段。
+ # 背景：LLM 偶尔会在 tool_call.args 里塞 schema 不存在的字段（比如
+ # 对只接受 space_id 的 list_space_structure 传了 repository_id）。
+ # LangChain 的 bind_tools 不强校验 schema，这些未知字段会被原样
+ # 透传，unpack 到工具函数时直接抛 TypeError 让整轮失败。
+ # 静默 drop 这些字段比硬抛 TypeError 友好：保留 LLM 真实想做的事
+ # （调这个工具），下一轮 LLM 看到 ToolMessage 会自己修正参数。
+ allowed = set(_props.keys)
+ unknown = set(arguments.keys) - allowed
+ if unknown:
+ logger.warning(
+ "chat_runner_dropped_unknown_tool_args",
+ tool_name=_tool_def.name,
+ dropped_args=sorted(unknown),
+ allowed_args=sorted(allowed),
+ )
+ arguments = {k: v for k, v in arguments.items if k in allowed}
  merged = {**_injected, **arguments}
  # Pitfall #12：LLM 未提供 branch 时用 default，非无条件覆盖
  if "branch" in _props and _dsb:
@@ -363,7 +402,26 @@ class ChatAnthropicRunner:
  tool_name: str,
  tool_call_id: str,
  arguments: dict[str, Any],
- ) -> tuple[ToolResult, ToolMessage]:
+ budget: _ToolBudget,
+ ) -> tuple[ToolResult, ToolMessage, bool]:
+ """执行一次工具调用，受 ``_ToolBudget`` 拦截。
+ Returns:
+ ``(result, tool_message, intercepted)``：``intercepted=True`` 表示
+ 该调用被去重 / 文件硬上限拦截，未真实执行（也不会写 ToolCallLog，
+ 避免污染观测）。``tool_message`` 的 content 已附加预算提示。
+ """
+ decision = budget.precheck(tool_name, arguments)
+ if decision.intercepted and decision.intercepted_result is not None:
+ result = decision.intercepted_result
+ logger.info(
+ "chat_runner_tool_intercepted",
+ session_id=self._config.session_id,
+ tool_name=tool_name,
+ tool_call_id=tool_call_id,
+ reason=decision.reason,
+ remaining=budget.remaining,
+ )
+ else:
  spec = tool_specs[tool_name]
  result = await spec.execute(arguments)
  await _log_tool_call(
@@ -373,14 +431,15 @@ class ChatAnthropicRunner:
  arguments=arguments,
  result=result,
  )
+ budget.record(tool_name, arguments, result)
  tool_message = ToolMessage(
- content=result.to_content,
+ content=budget.annotate(result.to_content),
  tool_call_id=tool_call_id,
  name=tool_name,
  status="success" if result.success else "error",
  artifact=result.output,
  )
- return result, tool_message
+ return result, tool_message, decision.intercepted
  async def stream(self, prompt: str): # type: ignore[override]
  if not self._config.api_key:
  raise ValueError("ChatRunnerConfig.api_key 不能为空")
@@ -389,6 +448,7 @@ class ChatAnthropicRunner:
  self._config.space_id,
  self._config.conversation_id,
  default_search_branch=self._config.default_search_branch,
+ force_deep_analysis=self._config.force_deep_analysis,
  )
  model_with_tools = model.bind_tools([spec.tool for spec in tool_specs.values])
  messages: list[Any] = [
@@ -398,6 +458,9 @@ class ChatAnthropicRunner:
  total_usage = {"input_tokens": 0, "output_tokens": 0}
  accumulated_text: list[str] =
  self._run_task = asyncio.current_task
+ # Phase：单 stream 工具预算控制（去重 + 单文件硬上限 + 剩余
+ # 预算注入 + 强制 final-turn）。详见 agents/tool_budget.py。
+ budget = _ToolBudget(max_turns=self._config.max_turns)
  try:
  for _ in range(self._config.max_turns):
  full_message: AIMessageChunk | None = None
@@ -405,7 +468,23 @@ class ChatAnthropicRunner:
  # messages 会随 ToolMessage 累积增长，必须每轮 check，不能只 turn 0 check
  # （Pitfall 3）。超限抛 ContextWindowExceededError，由下方专属 except 分支捕获。
  _check_chat_context_window(messages, model=self._config.model)
- async for chunk in model_with_tools.astream(messages):
+ # Phase：剩余 ≤ BUDGET_FORCE_FINAL_AT 时切到原始 model
+ # （未 bind_tools），强制 LLM 基于已收集信息出最终回答，避免硬抛
+ # MaxTurnsExceeded 丢弃中间产出（OpenAI Agents SDK 反模式）。
+ # active_model 是 ChatAnthropic | Runnable 联合，astream 接口
+ # 一致 —— 显式注解防 mypy 推断成更窄的 ChatAnthropic。
+ active_model: ChatAnthropic | Runnable[Any, Any]
+ if budget.should_force_final:
+ active_model = model
+ logger.info(
+ "chat_runner_force_final_turn",
+ session_id=self._config.session_id,
+ remaining=budget.remaining,
+ max_turns=self._config.max_turns,
+ )
+ else:
+ active_model = model_with_tools
+ async for chunk in active_model.astream(messages):
  if not isinstance(chunk, AIMessageChunk):
  continue
  full_message = chunk if full_message is None else full_message + chunk
@@ -467,23 +546,28 @@ class ChatAnthropicRunner:
  self._config.session_id,
  ),
  )
- result, tool_message = await self._execute_tool_call(
+ result, tool_message, intercepted = await self._execute_tool_call(
  tool_specs,
  tool_name=tool_name,
  tool_call_id=tool_call_id,
  arguments=arguments,
+ budget=budget,
  )
  raw_result = _normalize_tool_result(result)
- yield AgentEvent(
- type=TOOL_USE_RESULT,
- data=_inject_metadata(
- {
+ tool_event_data = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
  "success": result.success,
  "input": arguments,
  "result": raw_result,
- },
+ }
+ # 前端可据此 flag 提示「该次调用被自动去重/拒绝，未真实执行」
+ if intercepted:
+ tool_event_data["budget_intercepted"] = True
+ yield AgentEvent(
+ type=TOOL_USE_RESULT,
+ data=_inject_metadata(
+ tool_event_data,
  self._config.model,
  self._config.session_id,
  ),
@@ -499,6 +583,7 @@ class ChatAnthropicRunner:
  metadata={"cost_usd": 0},
  )
  return
+ budget.on_turn_complete
  continue
  final_answer = _extract_message_text(full_message)
  self._result = _make_agent_result(
@@ -514,15 +599,46 @@ class ChatAnthropicRunner:
  session_id=self._config.session_id,
  )
  return
+ # Phase：max_turns 真用尽（含 force-final 那一轮）才会到这里。
+ # 之前的实现直接返 status="error"，丢失已累积的 accumulated_text（reference
+ # cards 也无法挂载）。改为 graceful degrade：status="completed" + metadata
+ # 标记 degraded=True；若模型在 force-final turn 已经吐了 partial text，
+ # 直接交付，否则给一个明确的"未完成"占位，让前端展示「已尽力」状态而非 error。
+ partial_text = "".join(accumulated_text)
+ degraded_answer = partial_text or (
+ "（工具调用预算已耗尽，未能在 "
+ f"{self._config.max_turns} 轮内完成检索。建议换更精确的提问，"
+ "或在前端启用「深度分析」开关将任务转交远程 Claude Code 容器。）"
+ )
+ logger.warning(
+ "chat_runner_max_turns_exhausted",
+ session_id=self._config.session_id,
+ max_turns=self._config.max_turns,
+ produced_partial=bool(partial_text),
+ )
  self._result = _make_agent_result(
- status="error",
- error="达到最大 tool 调用轮次限制",
+ status="completed",
+ final_answer=degraded_answer,
  usage=total_usage,
+ metadata={
+ "cost_usd": 0,
+ "degraded": True,
+ "degraded_reason": "max_turns_exhausted",
+ "max_turns": self._config.max_turns,
+ },
  )
  yield AgentEvent(
- type=ERROR,
+ type=MESSAGE_COMPLETE,
  data=_inject_metadata(
- {"message": "达到最大 tool 调用轮次限制"},
+ {
+ "final_answer": degraded_answer,
+ "result": degraded_answer,
+ "status": "completed",
+ "degraded": True,
+ "degraded_reason": "max_turns_exhausted",
+ "usage": total_usage,
+ "cost_usd": 0,
+ },
  self._config.model,
  self._config.session_id,
  ),
@@ -557,13 +673,16 @@ class ChatAnthropicRunner:
  r"\(max_input=(\d+), max_output=(\d+), buffer=(\d+)\)",
  msg,
  )
+ # Phase：原局部变量名为 budget，与方法顶部 _ToolBudget
+ # 实例同名冲突（mypy 类型不兼容报错）。改名为 ctx_budget 区分语义
+ # ——这里是 context window token budget，不是 tool 调用预算。
  if m is not None:
  estimated = int(m.group(1))
- budget = int(m.group(2))
- exceeded = max(0, estimated - budget)
+ ctx_budget = int(m.group(2))
+ exceeded = max(0, estimated - ctx_budget)
  else:
  estimated = 0
- budget = 0
+ ctx_budget = 0
  exceeded = 0
  # structlog kwargs 风格 —— redact_credentials processor 兜底；
  # 禁止 f-string 插入任何可能的凭证值（V4 ASVS Information Disclosure，
@@ -574,7 +693,7 @@ class ChatAnthropicRunner:
  session_id=self._config.session_id,
  model=self._config.model,
  estimated_tokens=estimated,
- max_tokens=budget,
+ max_tokens=ctx_budget,
  exceeded_by=exceeded,
  )
  self._result = _make_agent_result(
@@ -590,7 +709,7 @@ class ChatAnthropicRunner:
  "message": msg,
  "data": {
  "estimated_tokens": estimated,
- "max_tokens": budget,
+ "max_tokens": ctx_budget,
  "exceeded_by": exceeded,
  "model": self._config.model,
  "recommended_actions": [

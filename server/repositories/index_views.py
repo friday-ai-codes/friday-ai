@@ -27,6 +27,7 @@ class ServerSentEventRenderer(BaseRenderer):
  def render(self, data, accepted_media_type=None, renderer_context=None):
  # 实际响应由 StreamingHttpResponse 直出，render 不会被调用
  return data
+from codegraph.models import Endpoint, ImportEdge, Symbol
 from repositories.models import (
  FileIndex,
  IndexHistory,
@@ -60,14 +61,19 @@ def _compute_index_progress(repository: Repository) -> dict[str, Any]:
  explicit_stage = (repository.index_stage or "").strip
  files_total = repository.indexed_files_total or 0
  files_processed = repository.indexed_files_processed or 0
- if files_total > 0:
- overall_progress = min(int(files_processed / files_total * 100), 100)
- else:
+ if total_chunks > 0:
  embedding_pct = (
  (processed_chunks / total_chunks * 100) if total_chunks > 0 else 0
  )
  write_pct = (write_processed / write_total * 100) if write_total > 0 else 0
  overall_progress = min(int(embedding_pct * 0.7 + write_pct * 0.3), 100)
+ elif files_total > 0:
+ # 文件计数只代表 scan/parse/checkpoint 判断完成，不代表 embedding/upsert 完成。
+ # 因此在 chunk 总量尚未建立前最多显示到 90%，避免"100% 索引文件中..."
+ # 这种误导性状态。
+ overall_progress = min(int(files_processed / files_total * 100), 90)
+ else:
+ overall_progress = 0
  if explicit_stage:
  overall_stage = explicit_stage
  elif total_chunks == 0:
@@ -416,11 +422,49 @@ class IndexDeleteView(APIView):
  )
  # KEEP: Qdrant SDK 同步限制
  await sync_to_async(QdrantService.delete_collection)(str(repository.id))
+ # 删除索引不只意味着删向量库：FileIndex 是全量索引的断点续传锚点。
+ # 如果保留这些 hash，下一次"新建索引"会把未变更文件全部 skip。
+ await FileIndex.objects.filter(repository_id=repository_id).adelete
+ await ImportEdge.objects.filter(repository_id=repository_id).adelete
+ await Endpoint.objects.filter(repository_id=repository_id).adelete
+ await Symbol.objects.filter(repository_id=repository_id).adelete
  # Reset repository status
  repository.index_status = IndexStatus.NOT_INDEXED
  repository.last_indexed_at = None
  repository.index_error = None
- await repository.asave(update_fields=["index_status", "last_indexed_at", "index_error"])
+ repository.index_total_chunks = 0
+ repository.index_processed_chunks = 0
+ repository.index_write_total = 0
+ repository.index_write_processed = 0
+ repository.index_stage = ""
+ repository.current_indexing_file = ""
+ repository.indexed_files_processed = 0
+ repository.indexed_files_total = 0
+ repository.last_indexed_commit_sha = ""
+ repository.remote_head_sha = ""
+ repository.remote_head_checked_at = None
+ repository.behind_commits = None
+ repository.behind_commits_calculated_at = None
+ await repository.asave(
+ update_fields=[
+ "index_status",
+ "last_indexed_at",
+ "index_error",
+ "index_total_chunks",
+ "index_processed_chunks",
+ "index_write_total",
+ "index_write_processed",
+ "index_stage",
+ "current_indexing_file",
+ "indexed_files_processed",
+ "indexed_files_total",
+ "last_indexed_commit_sha",
+ "remote_head_sha",
+ "remote_head_checked_at",
+ "behind_commits",
+ "behind_commits_calculated_at",
+ ],
+ )
  return Response(status=status.HTTP_204_NO_CONTENT)
 class CodeSearchView(APIView):
  """Search code in repository index."""
@@ -799,6 +843,13 @@ class IndexStatsView(APIView):
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ # 文件计数统一以 FileIndex 为唯一事实源（与 IndexedFilesListView 同源），
+ # 不再依赖 Qdrant scroll 出来的 distinct file_path：那个会在多次重建后
+ # 与 FileIndex 漂移（Qdrant 不删旧 + 累积写新），导致"索引统计"和
+ # "已索引文件清单"两个面板的数字对不上。
+ indexed_files = await FileIndex.objects.filter(
+ repository_id=repository_id,
+ ).acount
  try:
  stats = await sync_to_async(QdrantService.get_collection_stats)(str(repository_id))
  except Exception as exc:
@@ -813,14 +864,14 @@ class IndexStatsView(APIView):
  {
  "chunks_total": repository.index_total_chunks,
  "language_distribution": {},
- "indexed_files_count": 0,
+ "indexed_files_count": indexed_files,
  "coverage_percent": None,
  "qdrant_unavailable": True,
  "warning": "Qdrant 暂时不可用，已返回缓存计数；请稍后重试以获取最新统计",
  }
  )
- # 覆盖率：已索引文件数 / 总可索引文件数
- indexed_files = stats.get("indexed_files_count", 0)
+ # 覆盖率：已写入 chunks / 本次 run 预期 chunks（不强对比文件，避免
+ # Qdrant 累积 vs Repository 单次预期的口径混淆）
  total_chunks = repository.index_total_chunks
  coverage = 0.0
  if total_chunks > 0:
@@ -843,6 +894,10 @@ class RepositoryCollectionHealthView(APIView):
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
  return Response({"detail": "仓库不存在"}, status=status.HTTP_404_NOT_FOUND)
+ # FileIndex 是文件级唯一事实源；与 IndexedFilesListView 对齐
+ indexed_files = await FileIndex.objects.filter(
+ repository_id=repository_id,
+ ).acount
  try:
  health = await sync_to_async(QdrantService.check_collection_health)(str(repository_id))
  except Exception as exc:
@@ -856,16 +911,19 @@ class RepositoryCollectionHealthView(APIView):
  "status": "unhealthy",
  "collection_exists": False,
  "points_count": 0,
- "expected_points": repository.index_total_chunks,
- "points_match": None,
+ "indexed_files_count": indexed_files,
  "error": f"Qdrant 暂时不可用：{exc}",
  }
  )
- # 对比 Repository 记录的预期 chunk 数
- expected = repository.index_total_chunks
- actual = health.get("points_count", 0)
- health["expected_points"] = expected
- health["points_match"] = actual == expected if expected > 0 else None
+ # 注意：曾经在这里把 ``Repository.index_total_chunks`` 当 expected_points
+ # 与 Qdrant points_count 强对比 → 前端永远显示"数量不匹配（预期 N）"。
+ # 实际上：
+ # - ``index_total_chunks`` 是"本次 run 的预期 chunks"（增量/续传时也只
+ # 反映本批，不是 collection 累积）。
+ # - Qdrant points_count 是历史累积（per-file delete 只在 git_diff 路径
+ # 做，全量重建时不会清旧 points），两者天然会漂移。
+ # 改为只展示绝对值 + 文件计数，让 UI 不再做错误对比。
+ health["indexed_files_count"] = indexed_files
  return Response(health)
 class IndexFreshnessView(APIView):
  """: 索引新鲜度指示 API。"""

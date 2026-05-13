@@ -63,7 +63,10 @@ class TestFragmentRendering:
  prompt = await _build_system_prompt(
  "P1", "proj-1", role="developer", force_deep_analysis=False
  )
- assert "策略一 - 快速检索" in prompt
+ # 默认策略只保留"快速检索"，并明确禁止主动调 deep_analysis（仅 prompt 闸门，
+ # 真正的工具列表闸门见 server/agents/chat_runner.py _get_tool_names）。
+ assert "回答策略 - 快速检索" in prompt
+ assert "不要主动调用 deep_analysis" in prompt
  assert "用户已开启「深度分析」" not in prompt
  async def test_strategy_deep_analysis_selected_when_force(
  self,
@@ -73,7 +76,8 @@ class TestFragmentRendering:
  "P1", "proj-1", role="developer", force_deep_analysis=True
  )
  assert "用户已开启「深度分析」" in prompt
- assert "策略一 - 快速检索" not in prompt
+ # 强制深度分析模式不再下发"快速检索"策略段。
+ assert "回答策略 - 快速检索" not in prompt
  async def test_coding_guidance_always_included(
  self,
  disable_all_chat_slugs: None,

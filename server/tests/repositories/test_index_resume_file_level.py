@@ -256,6 +256,120 @@ class TestFullIndexResume:
  assert completed_paths == ["file_a.py", "file_b.py"], (
  f"前 2 个文件应已 flush 到 FileIndex（续传锚点），实际：{completed_paths}"
  )
+ async def test_full_index_progress_advances_in_lockstep_with_flushes(
+ self, repository: Repository, monkeypatch: pytest.MonkeyPatch
+ ) -> None:
+ """run_full_index 进度必须随 batch flush 同步推进，
+ 不能"先 parse 完所有文件 → processed=total → UI 立刻 100% 然后僵死"。
+ """
+ from services import indexer as ix
+ # threshold=2 让 5 文件至少触发 3 次 flush
+ monkeypatch.setattr(ix, "FILE_BATCH_CHUNK_THRESHOLD", 2)
+ with tempfile.TemporaryDirectory as tmpdir:
+ names = ["a.py", "b.py", "c.py", "d.py", "e.py"]
+ for fname in names:
+ with open(os.path.join(tmpdir, fname), "w") as f:
+ f.write(f"# {fname}\n")
+ indexer = IndexerService(str(repository.id))
+ scanned = [os.path.join(tmpdir, n) for n in names]
+ def fake_compute_hash(full_path: str) -> str:
+ return f"hash-{os.path.basename(full_path)}"
+ progress_calls: list[dict[str, Any]] =
+ async def fake_update_current(
+ repo_id: str,
+ *,
+ file_path: str | None = None,
+ processed: int | None = None,
+ total: int | None = None,
+ ) -> None:
+ progress_calls.append(
+ {"file_path": file_path, "processed": processed, "total": total}
+ )
+ with (
+ patch("services.indexer.scan_directory", return_value=scanned),
+ patch("services.indexer.compute_file_hash", side_effect=fake_compute_hash),
+ patch(
+ "services.indexer.get_files_last_commit",
+ new_callable=AsyncMock,
+ return_value={},
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "services.indexer.update_current_indexing_file",
+ side_effect=fake_update_current,
+ ),
+ patch.object(
+ indexer.parser,
+ "parse_file",
+ side_effect=lambda full, base_path: _mk_chunks_for_file(
+ os.path.relpath(full, base_path), 1
+ ),
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ new_callable=AsyncMock,
+ return_value=[[0.1, 0.2, 0.3]] * 2,
+ ),
+ ):
+ result = await indexer.run_full_index(tmpdir)
+ assert result["status"] == "success"
+ processed_seq = [
+ c["processed"] for c in progress_calls if c["processed"] is not None
+ ]
+ # 关键不变量：进度必须出现 0 < p < total 的中间值（即 flush 推进），
+ # 而不是 [0, 5, 5, 5, 5, 5]（直接跳满）
+ intermediate = sorted({p for p in processed_seq if 0 < p < 5})
+ assert intermediate, (
+ f"flush 阶段必须推进 processed 中间值，实际进度序列={processed_seq}"
+ )
+ async def test_qdrant_upsert_failure_reports_stage_and_batch_context(
+ self, repository: Repository
+ ) -> None:
+ """Qdrant 写入失败时，错误必须说明具体阶段、文件和 batch 位置。"""
+ with tempfile.TemporaryDirectory as tmpdir:
+ fname = "file_a.py"
+ with open(os.path.join(tmpdir, fname), "w") as f:
+ f.write(f"# {fname}\n")
+ indexer = IndexerService(str(repository.id))
+ scanned = [os.path.join(tmpdir, fname)]
+ def fake_compute_hash(full_path: str) -> str:
+ return f"hash-{os.path.basename(full_path)}"
+ with (
+ patch("services.indexer.scan_directory", return_value=scanned),
+ patch("services.indexer.compute_file_hash", side_effect=fake_compute_hash),
+ patch(
+ "services.indexer.get_files_last_commit",
+ new_callable=AsyncMock,
+ return_value={},
+ ),
+ patch(
+ "services.indexer.qdrant_upsert_vectors",
+ new_callable=AsyncMock,
+ return_value=False,
+ ),
+ patch.object(
+ indexer.parser,
+ "parse_file",
+ side_effect=lambda full, base_path: _mk_chunks_for_file(
+ os.path.relpath(full, base_path), 1
+ ),
+ ),
+ patch(
+ "services.indexer.EmbeddingService.generate_embeddings_batch",
+ new_callable=AsyncMock,
+ return_value=[[0.1, 0.2, 0.3]],
+ ),
+ ):
+ with pytest.raises(RuntimeError) as exc_info:
+ await indexer.run_full_index(tmpdir)
+ message = str(exc_info.value)
+ assert "写入向量库" in message
+ assert "file_a.py" in message
+ assert "batch 1/1" in message
  async def test_retry_skips_already_completed_files_and_resumes_progress(
  self, repository: Repository
  ) -> None:

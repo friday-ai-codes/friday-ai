@@ -172,6 +172,35 @@ class TestConfigureStructlogIntegration:
  import structlog
  logger = structlog.get_logger("test_idempotent")
  logger.info("test_event", normal_field="ok") # 不抛即可
+ def test_default_filter_drops_debug_keeps_warning(
+ self, capfd: Any, monkeypatch: Any,
+ ) -> None:
+ """默认过滤级别 = INFO：debug 不应进入 stdout（避免 graph 阶段 debug 刷屏），
+ warning 必须正常输出。
+ """
+ import structlog
+ monkeypatch.delenv("FRIDAY_STRUCTLOG_LEVEL", raising=False)
+ monkeypatch.delenv("DJANGO_LOG_LEVEL", raising=False)
+ configure_structlog
+ logger = structlog.get_logger("test_default_filter")
+ logger.debug("noisy_debug_event", normal_field="ok")
+ logger.warning("loud_warning_event", normal_field="ok")
+ captured = capfd.readouterr
+ output = captured.out + captured.err
+ assert "noisy_debug_event" not in output
+ assert "loud_warning_event" in output
+ def test_env_override_enables_debug(
+ self, capfd: Any, monkeypatch: Any,
+ ) -> None:
+ """FRIDAY_STRUCTLOG_LEVEL=DEBUG 时放开 debug 输出。"""
+ import structlog
+ monkeypatch.setenv("FRIDAY_STRUCTLOG_LEVEL", "DEBUG")
+ configure_structlog
+ logger = structlog.get_logger("test_env_override")
+ logger.debug("opt_in_debug_event", normal_field="ok")
+ captured = capfd.readouterr
+ output = captured.out + captured.err
+ assert "opt_in_debug_event" in output
  def test_pydantic_validation_error_post_redact(self, capfd: Any) -> None:
  """模拟 Plan aresolve_or_error 中 ValidationError 场景的脱敏链路。"""
  import structlog

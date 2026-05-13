@@ -13,6 +13,7 @@ Phase 引入。在全局 settings.py 末尾调用 configure_structlog，全仓�
 """
 from __future__ import annotations
 import logging
+import os
 import re
 from typing import Any, MutableMapping
 import structlog
@@ -70,6 +71,27 @@ def redact_secrets_in_text(text: str) -> str:
  return text
  return SENSITIVE_VALUE_PATTERN.sub(REDACTED, text)
 # === 全局 structlog 配置（settings.py 末尾调用）===
+_STRUCTLOG_LEVEL_NAMES: dict[str, int] = {
+ "DEBUG": logging.DEBUG,
+ "INFO": logging.INFO,
+ "WARNING": logging.WARNING,
+ "WARN": logging.WARNING,
+ "ERROR": logging.ERROR,
+ "CRITICAL": logging.CRITICAL,
+ "FATAL": logging.CRITICAL,
+}
+def _resolve_structlog_level -> int:
+ """根据 ``FRIDAY_STRUCTLOG_LEVEL`` / ``DJANGO_LOG_LEVEL`` 解析 structlog 过滤级别。
+ 默认 INFO：避免大批量 ``debug`` 事件刷屏 stdout（曾经把 4000+ 文件的
+ ``graph_bundle_written`` / ``import_statement_no_modules`` 一起灌出来导致
+ UI 卡顿）。生产排错时可以临时设 ``FRIDAY_STRUCTLOG_LEVEL=DEBUG``。
+ """
+ raw = (
+ os.environ.get("FRIDAY_STRUCTLOG_LEVEL")
+ or os.environ.get("DJANGO_LOG_LEVEL")
+ or ""
+ ).strip.upper
+ return _STRUCTLOG_LEVEL_NAMES.get(raw, logging.INFO)
 def configure_structlog -> None:
  """全局 structlog 配置。挂载到 settings.py 末尾。
  Processor 顺序关键：
@@ -93,7 +115,7 @@ def configure_structlog -> None:
  else structlog.processors.JSONRenderer
  ),
  ],
- wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+ wrapper_class=structlog.make_filtering_bound_logger(_resolve_structlog_level),
  cache_logger_on_first_use=True,
  )
 # === Sentry before_send pure function（本 phase 仅预留 + 单测；Phase+ 接入时使用）===

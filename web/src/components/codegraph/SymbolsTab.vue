@@ -13,6 +13,13 @@ import {
  TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 import SymbolTypeFilter from './SymbolTypeFilter.vue'
 const props = defineProps<{
  repositoryId: string
@@ -21,10 +28,11 @@ const emit = defineEmits<{
  'select-symbol': [id: string]
 }>
 // 服务端分页状态
+const PAGE_SIZE_OPTIONS = [50, 100, 200] as const
 const symbols = ref<SymbolRow>
 const total = ref(0)
 const offset = ref(0)
-const limit = 50
+const limit = ref<number>(50)
 const loading = ref(false)
 const error = ref<string | null>(null)
 // 过滤状态
@@ -113,7 +121,7 @@ async function fetchSymbols {
  symbolTypes: selectedTypes.value.length > 0 ? selectedTypes.value: undefined,
  name: nameQuery.value || undefined,
  filePath: filePathQuery.value || undefined,
- limit,
+ limit: limit.value,
  offset: offset.value,
  })
  symbols.value = res.results
@@ -139,16 +147,24 @@ function handleRowClick(row: SymbolRow) {
  emit('select-symbol', row.id)
 }
 function prevPage {
- if (offset.value >= limit) {
- offset.value -= limit
+ if (offset.value >= limit.value) {
+ offset.value -= limit.value
  fetchSymbols
  }
 }
 function nextPage {
- if (offset.value + limit < total.value) {
- offset.value += limit
+ if (offset.value + limit.value < total.value) {
+ offset.value += limit.value
  fetchSymbols
  }
+}
+function handlePageSizeChange(value: unknown) {
+ const next = Number(value)
+ if (!Number.isFinite(next) || next <= 0)
+ return
+ limit.value = next
+ offset.value = 0
+ fetchSymbols
 }
 function clearFilters {
  selectedTypes.value =
@@ -160,8 +176,10 @@ function clearFilters {
 const hasFilters = computed( =>
  selectedTypes.value.length > 0 || !!nameQuery.value || !!filePathQuery.value,
 )
-const currentPage = computed( => Math.floor(offset.value / limit) + 1)
-const totalPages = computed( => Math.ceil(total.value / limit))
+const currentPage = computed( => Math.floor(offset.value / limit.value) + 1)
+const totalPages = computed( => Math.ceil(total.value / limit.value))
+const rangeStart = computed( => total.value === 0 ? 0: offset.value + 1)
+const rangeEnd = computed( => Math.min(offset.value + symbols.value.length, total.value))
 onMounted(fetchSymbols)
 </script>
 <template>
@@ -176,9 +194,10 @@ onMounted(fetchSymbols)
  <p v-if="error" class="text-xs text-destructive">
  加载失败：{{ error }}。请稍后重试。
  </p>
- <!-- DataTable -->
+ <!-- DataTable：服务端分页模式，禁用其内置分页 footer，避免与下方分页器冲突 -->
  <DataTable:data="symbols":columns="columns"
- table-id="symbols-tab":page-size="200":page-size-options="[50, 100, 200]":loading="loading":on-row-click="handleRowClick"
+ table-id="symbols-tab"
+ server-side:loading="loading":on-row-click="handleRowClick"
  />
  <!-- 空状态（无数据 + 无过滤条件） -->
  <div
@@ -212,11 +231,32 @@ onMounted(fetchSymbols)
  清除过滤
  </Button>
  </div>
- <!-- 服务端分页控制 -->
- <div v-if="totalPages > 1" class="flex items-center justify-between px-1">
- <span class="text-xs text-muted-foreground">
- 第 {{ currentPage }} / {{ totalPages }} 页，共 {{ total }} 条
- </span>
+ <!-- 服务端分页控制（与列表区域唯一可信进度源） -->
+ <div
+ v-if="total > 0"
+ class="flex items-center justify-between px-1 gap-3 flex-wrap"
+ >
+ <div class="flex items-center gap-3 text-xs text-muted-foreground">
+ <span>显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ total }} 个 Symbol</span>
+ <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+ <div class="flex items-center gap-2">
+ <span>每页:</span>
+ <Select:model-value="String(limit)"
+ @update:model-value="handlePageSizeChange"
+ >
+ <SelectTrigger class=" w-[70px] text-xs">
+ <SelectValue />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="size in PAGE_SIZE_OPTIONS":key="size":value="String(size)"
+ >
+ {{ size }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
+ </div>
  <div class="flex gap-2">
  <Button
  variant="outline"

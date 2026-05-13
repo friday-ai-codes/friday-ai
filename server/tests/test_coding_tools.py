@@ -204,11 +204,38 @@ def test_coding_tools_registered_in_registry:
  from agents.tools.base import _tool_registry
  assert "create_coding_plan" in _tool_registry
  assert "update_coding_plan" in _tool_registry
-def test_coding_tools_in_full_tool_names:
- """验证 chat_runner._FULL_TOOL_NAMES 包含 coding tools。"""
- from agents.chat_runner import _FULL_TOOL_NAMES
- assert "create_coding_plan" in _FULL_TOOL_NAMES
- assert "update_coding_plan" in _FULL_TOOL_NAMES
+@pytest.mark.asyncio
+async def test_chat_runner_get_tool_names_gates_deep_analysis:
+ """`chat_runner._get_tool_names(force_deep_analysis=False)` 必不返回 deep_analysis。
+ 防止后续代码改动重新把 deep_analysis 加回默认列表（这正是历史 bug：
+ LLM 在普通模式被 prompt 诱导自主调 deep_analysis）。
+ """
+ from unittest.mock import AsyncMock, MagicMock, patch
+ from agents.chat_runner import _get_tool_names
+ fake_qs = MagicMock
+ fake_qs.aexists = AsyncMock(return_value=True) # has_indexed=True
+ with patch("agents.chat_runner.Repository.objects.filter", return_value=fake_qs):
+ normal = await _get_tool_names("space-1", force_deep_analysis=False)
+ forced = await _get_tool_names("space-1", force_deep_analysis=True)
+ assert "deep_analysis" not in normal, (
+ "默认模式必须闸住 deep_analysis；当前列表："
+ f"{sorted(normal)}"
+ )
+ assert "deep_analysis" in forced
+ assert "search_repository_code" in normal # 普通检索工具仍需暴露
+def test_coding_tools_in_indexed_tool_names:
+ """验证 chat_runner._INDEXED_TOOL_NAMES 含 coding tools 但**不含** deep_analysis。
+ `_FULL_TOOL_NAMES` 已拆为 `_INDEXED_TOOL_NAMES`（默认）+ `_DEEP_ANALYSIS_TOOL_NAMES`
+ （用户开「深度分析」开关时），避免 LLM 在普通模式自主调 deep_analysis。
+ """
+ from agents.chat_runner import _DEEP_ANALYSIS_TOOL_NAMES, _INDEXED_TOOL_NAMES
+ assert "create_coding_plan" in _INDEXED_TOOL_NAMES
+ assert "update_coding_plan" in _INDEXED_TOOL_NAMES
+ # 默认列表绝不能含 deep_analysis（核心闸门契约）
+ assert "deep_analysis" not in _INDEXED_TOOL_NAMES
+ # 开启深度分析时才追加 deep_analysis
+ assert "deep_analysis" in _DEEP_ANALYSIS_TOOL_NAMES
+ assert set(_INDEXED_TOOL_NAMES).issubset(set(_DEEP_ANALYSIS_TOOL_NAMES))
 # ============================================================================
 # system prompt + _get_tool_names 测试
 # ============================================================================

@@ -292,10 +292,41 @@ const hasSelectedModel = computed( => {
  const conv = chatStore.currentConversation
  return !!conv?.model
 })
+// ============================================================================
+// 发送按钮可用性派生（避免「亮色但点了没反应」的误导）
+// ============================================================================
+const sendDisabledReason = computed<string>( => {
+ if (chatStore.isStreaming)
+ return '正在生成中，请稍候或先点「停止生成」'
+ if (!inputContent.value.trim)
+ return ''
+ if (!chatStore.selectedSpaceId)
+ return '请先在顶部选择一个空间'
+ if (isEmpty.value)
+ return '当前没有可用的 Provider 凭证，请先在 admin/providers 或空间设置中添加'
+ return ''
+})
+const canSend = computed(
+ => !!inputContent.value.trim && !chatStore.isStreaming && !sendDisabledReason.value,
+)
 async function handleSend {
  const content = inputContent.value.trim
- if (!content || chatStore.isStreaming)
+ if (!content)
  return
+ if (chatStore.isStreaming) {
+ toast.warning('上一条消息正在生成中', '请等待完成或点「停止生成」后再发送')
+ return
+ }
+ // 前置硬校验：没有空间根本无法创建对话
+ if (!chatStore.selectedSpaceId) {
+ toast.error('请先在顶部选择一个空间')
+ return
+ }
+ // 前置硬校验：没有任何可用 Provider 凭证 → 引导用户去配置
+ if (isEmpty.value) {
+ toast.error('当前没有可用的 Provider 凭证', '请先在 admin/providers 或空间设置中创建并启用凭证')
+ return
+ }
  // 没有对话时自动创建（优先使用记忆的选择）
  if (!chatStore.currentConversationId) {
  if (chatStore.selectedCredentialModel) {
@@ -306,14 +337,22 @@ async function handleSend {
  }
  }
  await chatStore.createNewConversation
- if (!chatStore.currentConversationId)
+ if (!chatStore.currentConversationId) {
+ toast.error('创建对话失败', chatStore.error || '请稍后重试，或检查网络与登录状态')
  return
+ }
  // 创建后 patch 记忆的 credential+model
  if (chatStore.selectedCredentialModel) {
  const parts = chatStore.selectedCredentialModel.split(':')
  if (parts.length === 2) {
  const [credId, modelId] = parts
+ try {
  await chatStore.patchConversationProviderAndModel(credId, modelId)
+ }
+ catch {
+ toast.error('绑定 Provider / 模型失败', chatStore.error || '请重新选择 Provider / 模型')
+ return
+ }
  }
  }
  }
@@ -323,9 +362,19 @@ async function handleSend {
  return
  }
  const feishuDocId = extractFirstFeishuDocId(content)
+ const draft = inputContent.value
  inputContent.value = ''
  nextTick(autoResize)
+ try {
  await chatStore.sendMessage(content, feishuDocId ?? undefined)
+ }
+ finally {
+ // sendMessage 内部失败会写 chatStore.error；这里只在草稿丢失但又有错误时回填
+ if (chatStore.error && !chatStore.streamingContent && inputContent.value === '') {
+ inputContent.value = draft
+ nextTick(autoResize)
+ }
+ }
 }
 function handleKeydown(e: KeyboardEvent) {
  if (e.key === 'Enter' && !e.shiftKey) {
@@ -508,7 +557,7 @@ function toggleNotifications {
  />
  <!-- 发送按钮 -->
  <button
- class="send-btn":class="{ 'send-btn--active': inputContent.trim && !chatStore.isStreaming }":disabled="!inputContent.trim || chatStore.isStreaming"
+ class="send-btn":class="{ 'send-btn--active': canSend }":disabled="!canSend":title="sendDisabledReason || '发送'"
  @click="handleSend"
  >
  <span class="icon-[lucide--arrow-up] text-sm" />

@@ -81,6 +81,21 @@ describe('dataTable', => {
  })
  expect(wrapper.exists).toBe(true)
  })
+ // server-side 模式：禁用内置分页 footer，由外层组件接管
+ it('serverSide=true 时不渲染 DataTable 自带的分页文案与每页选择器', => {
+ const wrapper = mount(DataTable, {
+ props: {
+ data: testData,
+ columns,
+ tableId: 'test-server-side',
+ serverSide: true,
+ } as any,
+ })
+ const text = wrapper.text
+ expect(text).not.toContain('显示 1')
+ expect(text).not.toContain('每页')
+ expect(wrapper.findAll('tbody tr').length).toBe(testData.length)
+ })
  // 行点击
  it('传入 onRowClick 时行有 cursor-pointer 样式', => {
  const wrapper = mount(DataTable, {

@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 import asyncio
+import time
 import uuid
 from collections import defaultdict
 from typing import Any
@@ -20,6 +21,11 @@ from projects.models import Project
 from repositories.models import Repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
+# (collection_name) -> (expires_at_unix_ts, sorted_file_paths)
+# 60s TTL 足够覆盖一次 LLM 的连续 N 次失败重试；过期后再 scroll 一次。
+# 索引完成 / 文件新增不会立刻反映到 chat，可接受。
+_PATH_CACHE_TTL_SECONDS: float = 60.0
+_indexed_paths_cache: dict[str, tuple[float, list[str]]] = {}
 # ---------------------------------------------------------------------------
 # 共享 scroll 辅助 — 按 collection 名 + file_path 拉取全部 chunk
 # ---------------------------------------------------------------------------
@@ -59,6 +65,80 @@ def _scroll_file_from_collection(
  except (ResponseHandlingException, UnexpectedResponse) as e:
  logger.warning("qdrant_scroll_failed", collection=collection_name, file_path=file_path, error=str(e))
  return
+@sync_to_async # KEEP: Qdrant SDK 同步限制
+def _list_indexed_paths(collection_name: str) -> list[str]:
+ """列出 collection 内所有去重的 file_path，带 TTL 缓存。
+ 使用场景：browse_file_content 严格 file_path 匹配失败时做 endswith 兜底。
+ LLM 在 monorepo 场景常把仓库名误拼成目录前缀（如把 'apps/foo.vue' 写成
+ 'apps/<repo-name>/src/apps/foo.vue'），用真实文件清单做后缀匹配可纠正。
+ 实现：scroll 全部 points 只取 file_path payload。每次 scroll batch=1000，
+ 19913 points ≈ 20 次 scroll < 1s；命中缓存时 ~0ms。
+ """
+ cached = _indexed_paths_cache.get(collection_name)
+ now = time.monotonic
+ if cached and cached[0] > now:
+ return cached[1]
+ try:
+ client = QdrantService.get_client
+ seen: set[str] = set
+ offset = None
+ while True:
+ result = client.scroll(
+ collection_name=collection_name,
+ limit=1000,
+ offset=offset,
+ with_payload=["file_path"],
+ with_vectors=False,
+ )
+ points, next_offset = result
+ for p in points:
+ if p.payload:
+ fp = p.payload.get("file_path")
+ if isinstance(fp, str) and fp:
+ seen.add(fp)
+ if next_offset is None:
+ break
+ offset = next_offset
+ paths = sorted(seen)
+ _indexed_paths_cache[collection_name] = (now + _PATH_CACHE_TTL_SECONDS, paths)
+ return paths
+ except (ResponseHandlingException, UnexpectedResponse) as e:
+ logger.warning("qdrant_list_paths_failed", collection=collection_name, error=str(e))
+ return
+def _resolve_fuzzy_path(
+ requested: str, indexed_paths: list[str], *, max_candidates: int = 5,
+) -> list[str]:
+ """从 indexed_paths 里找与 requested 路径"尾部对齐"的真实路径候选。
+ 匹配优先级（由严到松）:
+ 1. 完整路径 endswith requested —— LLM 路径就是真实路径的尾段，最理想。
+ 2. 真实路径 endswith requested 的尾 N 段（N 从全部段数递减到 2 段，
+ 一旦命中即停止下探，保证返回最长尾匹配）。
+ 3. 都没命中返回 basename（文件名）相同的候选，作为提示。
+ 举例：requested='apps/study-app/src/apps/foo/index.vue'，indexed 含
+ 'apps/foo/index.vue'。step 1 失败，step 2 用尾段 'apps/foo/index.vue'
+ 匹配命中。
+ Args:
+ requested: LLM 提供的 file_path（可能多了仓库名前缀等噪声）
+ indexed_paths: 真实索引的 file_path 全集
+ max_candidates: 至多返回多少个候选（截断防止前端噪声）
+ """
+ if not indexed_paths:
+ return
+ # Step 1: 完整 endswith
+ direct = [p for p in indexed_paths if p.endswith(requested)]
+ if direct:
+ return direct[:max_candidates]
+ # Step 2: 用 requested 的尾 N 段反向匹配
+ segments = [s for s in requested.split("/") if s]
+ for n in range(len(segments), 1, -1):
+ suffix = "/".join(segments[-n:])
+ hits = [p for p in indexed_paths if p.endswith(suffix)]
+ if hits:
+ return hits[:max_candidates]
+ # Step 3: basename 同名（最后的 hint，可能噪声大，仅作建议）
+ basename = segments[-1] if segments else requested
+ basename_hits = [p for p in indexed_paths if p.endswith("/" + basename) or p == basename]
+ return basename_hits[:max_candidates]
 @tool(
  name="browse_file_content",
  description=(
@@ -154,10 +234,55 @@ async def browse_file_content(
  branch_index.collection_name, file_path
  )
  # 默认：从 base collection 获取（未命中分支路由或无 branch 参数）
- if not chunks_raw:
  base_collection = QdrantService.get_collection_name(repository_id)
- chunks_raw = await _scroll_file_from_collection(base_collection, file_path)
  if not chunks_raw:
+ chunks_raw = await _scroll_file_from_collection(base_collection, file_path)
+ # 严格匹配失败兜底：用 endswith 模糊查真实路径，纠正 LLM 路径 hallucination。
+ # 常见场景：monorepo 仓库里 LLM 把仓库名当作目录前缀拼进路径。
+ resolved_path = file_path
+ if not chunks_raw:
+ indexed_paths = await _list_indexed_paths(base_collection)
+ candidates = _resolve_fuzzy_path(file_path, indexed_paths)
+ if len(candidates) == 1:
+ # 唯一匹配：直接用真实路径重 scroll，对 LLM 透明
+ resolved_path = candidates[0]
+ logger.info(
+ "browse_file_content_fuzzy_resolved",
+ requested=file_path,
+ resolved=resolved_path,
+ repository_id=repository_id,
+ )
+ chunks_raw = await _scroll_file_from_collection(base_collection, resolved_path)
+ elif len(candidates) > 1:
+ # 多候选：让 LLM 选，避免猜错
+ logger.info(
+ "browse_file_content_fuzzy_ambiguous",
+ requested=file_path,
+ candidate_count=len(candidates),
+ repository_id=repository_id,
+ )
+ return ToolResult(
+ success=True,
+ output={
+ "data": {
+ "file_path": file_path,
+ "repository_id": repository_id,
+ "chunks":,
+ "total_chunks": 0,
+ "candidates": candidates,
+ },
+ "error": (
+ f"File not found at exact path '{file_path}'. "
+ f"Found {len(candidates)} similar indexed files; "
+ f"retry with one of: {candidates}"
+ ),
+ },
+ )
+ if not chunks_raw:
+ # 仍未命中：在 error 里附 basename-level 提示，帮 LLM 修正
+ indexed_paths = await _list_indexed_paths(base_collection)
+ hints = _resolve_fuzzy_path(file_path, indexed_paths, max_candidates=3)
+ hint_str = f" Did you mean any of: {hints}?" if hints else ""
  return ToolResult(
  success=True,
  output={
@@ -167,7 +292,7 @@ async def browse_file_content(
  "chunks":,
  "total_chunks": 0,
  },
- "error": f"File not found in index: {file_path}",
+ "error": f"File not found in index: {file_path}.{hint_str}",
  },
  )
  # 按 chunk_index 排序
@@ -190,25 +315,34 @@ async def browse_file_content(
  })
  logger.info(
  "browse_file_content_success",
- file_path=file_path,
+ requested_file_path=file_path,
+ resolved_file_path=resolved_path,
  total_chunks=len(chunks),
  )
- return ToolResult(
- success=True,
- output={
- "data": {
- "file_path": file_path,
+ output_data: dict[str, Any] = {
+ "file_path": resolved_path,
  "repository_id": repository_id,
  "chunks": chunks,
  "total_chunks": len(chunks),
- },
- },
+ }
+ # 仅当真做了路径纠正时附 requested_file_path 字段，避免噪声
+ if resolved_path != file_path:
+ output_data["requested_file_path"] = file_path
+ output_data["resolved_note"] = (
+ f"Requested path '{file_path}' was not indexed; auto-resolved to "
+ f"'{resolved_path}' via suffix match."
+ )
+ return ToolResult(
+ success=True,
+ output={"data": output_data},
  )
 @tool(
  name="list_space_structure",
  description=(
- "List the file tree structure of a project's indexed repositories. "
- "Returns an indented tree view with file names and language types."
+ "列出项目下已索引仓库的文件树结构（缩进格式 + 语言标注）。\n"
+ "- 不传 repository_id：列出空间下所有已索引仓库的文件树（每个仓库一棵树）\n"
+ "- 传 repository_id：只列该单个仓库（深度分析模式下常用 ——"
+ " 先 list_space_repositories 选中相关仓库，再单仓库列文件树定位入口）"
  ),
  category="PROJECT",
  parameters={
@@ -217,6 +351,12 @@ async def browse_file_content(
  "space_id": {
  "type": "string",
  "description": "UUID of the project to query",
+ },
+ "repository_id": {
+ "type": "string",
+ "description": (
+ "可选：限定到单个仓库的 UUID。不传则列出空间下所有已索引仓库。"
+ ),
  },
  "branch": {
  "type": "string",
@@ -228,32 +368,45 @@ async def browse_file_content(
 )
 async def list_space_structure(
  space_id: str,
+ repository_id: str | None = None,
  branch: str | None = None,
 ) -> ToolResult:
  """查看空间文件树结构。
- 查询项目关联的所有已索引仓库，从 Qdrant 获取文件路径列表，
- 构建缩进格式的树状结构。
+ 查询项目关联的所有已索引仓库（或单个指定仓库），从 Qdrant 获取
+ 文件路径列表，构建缩进格式的树状结构。
  """
- logger.info("list_space_structure", space_id=space_id)
- # 获取已索引仓库
- indexed_repos = [
- repo
- async for repo in Repository.objects.filter(
+ logger.info(
+ "list_space_structure",
+ space_id=space_id,
+ repository_id=repository_id,
+ )
+ # 获取已索引仓库（可选按 repository_id 过滤为单仓库）
+ repo_filter = Repository.objects.filter(
  projects__id=space_id,
  index_status="indexed",
  is_deleted=False,
  )
- ]
+ if repository_id:
+ repo_filter = repo_filter.filter(id=repository_id)
+ indexed_repos = [repo async for repo in repo_filter]
  if not indexed_repos:
+ if repository_id:
+ err_msg = (
+ f"Repository {repository_id} not found in space {space_id} "
+ f"(either not indexed, deleted, or not associated with this space)"
+ )
+ else:
+ err_msg = "No indexed repositories found for this project"
  return ToolResult(
  success=True,
  output={
  "data": {
  "space_id": space_id,
+ "repository_id": repository_id,
  "structure": "",
  "total_files": 0,
  },
- "error": "No indexed repositories found for this project",
+ "error": err_msg,
  },
  )
  @sync_to_async # KEEP: Qdrant SDK 同步限制
@@ -345,6 +498,7 @@ async def list_space_structure(
  logger.info(
  "list_space_structure_success",
  space_id=space_id,
+ repository_id=repository_id,
  total_files=total_files,
  )
  return ToolResult(
@@ -352,6 +506,7 @@ async def list_space_structure(
  output={
  "data": {
  "space_id": space_id,
+ "repository_id": repository_id,
  "structure": structure,
  "total_files": total_files,
  },
@@ -543,11 +698,17 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
 @tool(
  name="deep_analysis",
  description=(
- "Dispatch a deep code analysis task to Claude Code running on a remote Runner. "
- "Use for complex tasks: architecture analysis, cross-module tracing, "
- "understanding complex business logic. Claude Code has full repository access. "
- "This tool dispatches the task and returns immediately. Results will be provided "
- "when the analysis completes."
+ "对指定仓库启动一个 Claude Code 容器做深度代码分析（远程 Runner 执行，"
+ "Claude Code 拥有完整仓库 fs 访问 + 多文件交叉阅读 + 代码执行能力）。\n"
+ "适合：架构梳理、跨模块追踪、复杂业务逻辑理解、需要多文件综合的问答。\n\n"
+ "**并行 dispatch 强烈推荐**：\n"
+ " 在同一轮 tool_calls 里可以对**不同 repository_id** emit 多个 deep_analysis 调用，"
+ "系统会并行 dispatch 多个 Claude Code 容器同时工作。\n"
+ " 跨仓库问题（如「书房入口→错题本跳转」涉及 2 个仓库）必须同时 emit "
+ "两个 deep_analysis（每个仓库一个），不要串行等待。\n"
+ " 同一 repository_id 同一 conversation 内只允许一个 in-flight 容器（重复调用会复用），\n"
+ " 所以「同仓库不同角度」的问题请合并到一个 task_description 里。\n\n"
+ "Dispatch 后立即返回 blocking marker，系统会等所有并行任务完成后统一回灌结果。"
  ),
  category="PROJECT",
  parameters={
@@ -555,23 +716,33 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
  "properties": {
  "space_id": {
  "type": "string",
- "description": "UUID of the project (auto-injected)",
+ "description": "项目 UUID（自动注入，无需 LLM 提供）",
  },
  "task_description": {
  "type": "string",
- "description": "Analysis task description, e.g. 'Analyze the authentication module architecture'",
+ "description": (
+ "聚焦的分析任务描述，应明确「分析什么 + 用户最终想知道的结论」，"
+ "例如：'梳理 studyRoom 入口跳转到错题本的路由配置 + 参数传递链路，"
+ "重点说明 entrance 字段是怎么被解析到 wrongBook 的'。"
+ "避免泛泛的 'analyze this repo'。"
+ ),
  },
  "repository_id": {
  "type": "string",
- "description": "Target repository UUID (optional, analyzes first indexed repo if omitted)",
+ "description": (
+ "**必填**：目标仓库 UUID（虽然 schema 标 optional，但深度分析模式"
+ "必须明确指定 —— 不指定会落到「第一个 indexed 仓库」，多仓库场景下"
+ "几乎肯定不是你想分析的那个）。先用 list_space_repositories 拿到所有"
+ "可用 repository_id，再按相关性选择。"
+ ),
  },
  "conversation_id": {
  "type": "string",
- "description": "Conversation UUID (auto-injected)",
+ "description": "会话 UUID（自动注入，无需 LLM 提供）",
  },
  "branch": {
  "type": "string",
- "description": "Branch name for analysis context (optional)",
+ "description": "分支名（可选，未指定时分析默认分支）",
  },
  },
  "required": ["space_id", "task_description"],
@@ -619,8 +790,14 @@ async def deep_analysis(
  error="No indexed repositories found. Deep analysis requires at least one indexed repository.",
  )
  repo = repos[0]
- # 2.1 同一会话内若已有未结束的深度分析，直接复用等待，避免重复开容器
+ # 2.1 同一会话 + 同一仓库内若已有未结束的深度分析，直接复用等待，避免重复开容器。
+ # Phase：复用键由 (conversation_id, source) 升级为
+ # (conversation_id, repository_id, source) —— 让 LLM 在同一 conversation 内
+ # 可以对**不同仓库**并行 dispatch 多个 Claude Code 容器（跨仓库追踪场景）。
+ # 同一 (conv, repo) 仍然单实例：避免重复浪费容器；不同角度的问题应该合并到
+ # 一个 task_description（已在 deep_analysis 工具 description 里告知 LLM）。
  existing_session = None
+ target_repo_id = str(repo.id)
  async for candidate in SubAgentSession.objects.filter(
  task_type=SubAgentSession.TaskType.EXPLORE,
  status__in=[SubAgentSession.Status.PENDING, SubAgentSession.Status.RUNNING],
@@ -630,6 +807,7 @@ async def deep_analysis(
  isinstance(output, dict)
  and output.get("source") == "chat_deep_analysis"
  and output.get("conversation_id") == conversation_id
+ and output.get("repository_id") == target_repo_id
  ):
  existing_session = candidate
  break

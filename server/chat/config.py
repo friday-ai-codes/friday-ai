@@ -71,9 +71,16 @@ async def build_sdk_config(
  conversation_id=str(conversation.id),
  api_key=resolved.api_key,
  api_base_url=resolved.base_url,
- max_turns=30,
+ # Phase：30 偏低，跨仓库追踪 / 大型 monorepo 场景容易撞顶。
+ # 配合 ChatAnthropicRunner._ToolBudget 的去重 + 单文件硬上限 + 强制
+ # final-turn fallback，50 轮足够覆盖绝大多数 chat 流，且单 LLM call
+ # 成本可控。详见 agents/tool_budget.py 模块 docstring。
+ max_turns=50,
  timeout_seconds=0,
  agent_session=agent_session,
  max_budget_usd=max_budget_usd,
+ # 同时透传给 ChatAnthropicRunner，使 _get_tool_names 能据此闸门 deep_analysis 工具。
+ # 历史上该开关只影响 system prompt，导致 LLM 即使在普通模式也能看到 deep_analysis。
+ force_deep_analysis=force_deep_analysis,
  )
  return config, agent_session

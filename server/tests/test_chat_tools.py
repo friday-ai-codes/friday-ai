@@ -50,14 +50,17 @@ class TestBrowseFileContent:
  ]
  mock_client = MagicMock
  mock_client.scroll.return_value = _make_scroll_response(payloads)
- with patch.object(
+ with (
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_client",
  return_value=mock_client,
- ), patch.object(
+ ),
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_collection_name",
  return_value="code_index_repo1",
+ ),
  ):
  result = await browse_file_content(
  repository_id="repo1",
@@ -98,14 +101,17 @@ class TestBrowseFileContent:
  ]
  mock_client = MagicMock
  mock_client.scroll.return_value = _make_scroll_response(payloads)
- with patch.object(
+ with (
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_client",
  return_value=mock_client,
- ), patch.object(
+ ),
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_collection_name",
  return_value="code_index_repo1",
+ ),
  ):
  result = await browse_file_content(
  repository_id="repo1",
@@ -123,14 +129,17 @@ class TestBrowseFileContent:
  """file_path 不存在时返回空 chunks + error 信息。"""
  mock_client = MagicMock
  mock_client.scroll.return_value = _make_scroll_response
- with patch.object(
+ with (
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_client",
  return_value=mock_client,
- ), patch.object(
+ ),
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_collection_name",
  return_value="code_index_repo1",
+ ),
  ):
  result = await browse_file_content(
  repository_id="repo1",
@@ -161,14 +170,17 @@ class TestListSpaceStructure:
  ]
  mock_client = MagicMock
  mock_client.scroll.return_value = _make_scroll_response(payloads)
- with patch.object(
+ with (
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_client",
  return_value=mock_client,
- ), patch.object(
+ ),
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_collection_name",
  return_value=f"code_index_{repo.id}",
+ ),
  ):
  result = await list_space_structure(
  space_id=str(project.id),
@@ -188,6 +200,51 @@ class TestListSpaceStructure:
  data = result.output["data"]
  assert data["total_files"] == 0
  assert "error" in result.output
+ async def test_repository_id_filters_to_single_repo(self, project):
+ """Phase: 传 repository_id 时只列该单仓库的文件树。"""
+ repo = await project.repositories.afirst
+ repo.index_status = "indexed"
+ await repo.asave
+ payloads = [
+ {"file_path": "src/main.py", "language": "python"},
+ {"file_path": "src/utils.py", "language": "python"},
+ ]
+ mock_client = MagicMock
+ mock_client.scroll.return_value = _make_scroll_response(payloads)
+ with (
+ patch.object(
+ agents.tools.chat_tools.QdrantService,
+ "get_client",
+ return_value=mock_client,
+ ),
+ patch.object(
+ agents.tools.chat_tools.QdrantService,
+ "get_collection_name",
+ return_value=f"code_index_{repo.id}",
+ ),
+ ):
+ result = await list_space_structure(
+ space_id=str(project.id),
+ repository_id=str(repo.id),
+ )
+ assert result.success is True
+ data = result.output["data"]
+ # repository_id 应反映在返回里供 LLM 后续 chained 调用使用
+ assert data["repository_id"] == str(repo.id)
+ assert data["total_files"] == 2
+ assert "main.py" in data["structure"]
+ async def test_repository_id_not_in_space_returns_error_hint(self, project):
+ """Phase: repository_id 不属于该 space → 友好提示而非崩溃。"""
+ import uuid
+ result = await list_space_structure(
+ space_id=str(project.id),
+ repository_id=str(uuid.uuid4),
+ )
+ assert result.success is True
+ data = result.output["data"]
+ assert data["total_files"] == 0
+ err = result.output.get("error", "")
+ assert "not found" in err.lower or "not indexed" in err.lower
 # ============================================================================
 # get_space_overview 测试
 # ============================================================================
@@ -208,14 +265,17 @@ class TestGetSpaceOverview:
  ]
  mock_client = MagicMock
  mock_client.scroll.return_value = _make_scroll_response(payloads)
- with patch.object(
+ with (
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_client",
  return_value=mock_client,
- ), patch.object(
+ ),
+ patch.object(
  agents.tools.chat_tools.QdrantService,
  "get_collection_name",
  return_value=f"code_index_{repo.id}",
+ ),
  ):
  result = await get_space_overview(
  space_id=str(project.id),

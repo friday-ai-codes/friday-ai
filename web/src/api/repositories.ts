@@ -79,6 +79,8 @@ export interface SearchResponse {
 export interface HealthCheckResponse {
  status: 'healthy' | 'unhealthy' | 'error' | 'not_configured' | 'warning'
  message?: string
+ error?: string
+ reason?: string
  collections_count?: number
  dimension?: number
  model?: string
@@ -117,12 +119,16 @@ export interface IndexStatsResponse {
  coverage_percent: number
 }
 // Phase: 集合健康
+//
+// expected_points / points_match 已废弃：曾经用 Repository.index_total_chunks（仅
+// 反映"本次 run 的预期 chunks"）与 Qdrant points_count（历史累积）对比，多次
+// 重建后必然不匹配 → UI 永远显示"数量不匹配（预期 X）"。新口径只展示绝对值
+// + 文件计数（与"已索引文件"面板同源）。
 export interface CollectionHealthResponse {
  status: 'healthy' | 'unhealthy'
  collection_exists: boolean
  points_count: number
- expected_points: number
- points_match: boolean | null
+ indexed_files_count?: number
  error?: string
 }
 // Phase: 索引新鲜度
