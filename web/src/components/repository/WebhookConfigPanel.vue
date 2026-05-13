@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { CollectionHealthResponse, IndexFreshnessResponse } from '~/api/repositories'
+// 合并：原有的"集合健康"+"索引新鲜度"两个区块已迁移到 RepoHashFreshnessCard
+// （详情页顶部的"索引状态"卡片），本组件聚焦"自动化与 Webhook 配置"主题，
+// 避免同一份索引状态信息在两处重复展示。
 import type { Repository } from '~/types'
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
-import { Badge } from '~/components/ui/badge'
 import { Separator } from '~/components/ui/separator'
 import { Switch } from '~/components/ui/switch'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
@@ -18,40 +19,12 @@ const emit = defineEmits<{
 const { confirm } = useConfirmDialog
 const { handleError } = useErrorHandler
 const { success } = useToast
-const health = ref<CollectionHealthResponse | null>(null)
-const freshness = ref<IndexFreshnessResponse | null>(null)
-const loadingHealth = ref(true)
-const loadingFreshness = ref(true)
 const togglingAutoIndex = ref(false)
 const generatingSecret = ref(false)
 const webhookUrl = computed( => {
  const base = window.location.origin
  return `${base}/api/repositories/${props.repository.id}/webhooks/push/`
 })
-async function loadHealth {
- loadingHealth.value = true
- try {
- health.value = await repositoriesApi.getCollectionHealth(props.repository.id)
- }
- catch {
- // intentionally ignored
- }
- finally {
- loadingHealth.value = false
- }
-}
-async function loadFreshness {
- loadingFreshness.value = true
- try {
- freshness.value = await repositoriesApi.getIndexFreshness(props.repository.id)
- }
- catch {
- // intentionally ignored
- }
- finally {
- loadingFreshness.value = false
- }
-}
 async function toggleAutoIndex(enabled: boolean) {
  togglingAutoIndex.value = true
  try {
@@ -94,10 +67,6 @@ async function generateSecret {
  generatingSecret.value = false
  }
 }
-onMounted( => {
- loadHealth
- loadFreshness
-})
 </script>
 <template>
  <div class="card">
@@ -105,98 +74,14 @@ onMounted( => {
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--shield-check] text-primary" />
  <h3 class="text-sm font-semibold">
- 索引健康与配置
+ 自动化与 Webhook
  </h3>
  </div>
  <p class="text-xs text-muted-foreground mt-0.5">
- 健康状态、新鲜度与自动索引配置
+ 通过 Webhook 推送或定时轮询自动更新索引
  </p>
  </div>
  <div class=" space-y-5">
- <!-- 健康状态 -->
- <div class="space-y-2">
- <p class="text-sm font-medium text-muted-foreground">
- 集合健康
- </p>
- <div v-if="loadingHealth" class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--loader-circle] animate-spin" />
- 检测中...
- </div>
- <div v-else-if="health" class="flex items-center gap-3">
- <div class=".5 rounded-full":class="health.status === 'healthy' ? 'bg-emerald-500/10': 'bg-destructive/10'">
- <span
- class="text-lg":class="health.status === 'healthy' ? 'icon-[lucide--check-circle] text-emerald-500': 'icon-[lucide--alert-circle] text-destructive'"
- />
- </div>
- <div class="flex-1 min-w-0">
- <p class="text-sm font-medium">
- {{ health.status === 'healthy' ? '健康': '异常' }}
- </p>
- <p class="text-xs text-muted-foreground">
- {{ health.points_count.toLocaleString }} 个向量点
- <template v-if="health.points_match === false">
- · <span class="text-amber-600">数量不匹配（预期 {{ health.expected_points }}）</span>
- </template>
- </p>
- </div>
- </div>
- <p v-else class="text-xs text-muted-foreground">
- 无法获取健康状态
- </p>
- </div>
- <Separator class="bg-border/50" />
- <!-- 新鲜度 -->
- <div class="space-y-2">
- <p class="text-sm font-medium text-muted-foreground">
- 索引新鲜度
- </p>
- <div v-if="loadingFreshness" class="flex items-center gap-2 text-sm text-muted-foreground">
- <span class="icon-[lucide--loader-circle] animate-spin" />
- 检测中...
- </div>
- <div v-else-if="freshness" class="space-y-2">
- <div class="flex items-center gap-2">
- <Badge
- v-if="freshness.is_fresh === true"
- variant="outline"
- class="bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
- >
- <span class="icon-[lucide--check] mr-1" />
- 最新
- </Badge>
- <Badge
- v-else-if="freshness.is_fresh === false"
- variant="outline"
- class="bg-amber-500/10 text-amber-600 border-amber-500/20"
- >
- <span class="icon-[lucide--alert-triangle] mr-1" />
- 有更新可用
- </Badge>
- <Badge
- v-else
- variant="outline"
- class="bg-muted text-muted-foreground border-border"
- >
- 未知
- </Badge>
- </div>
- <div v-if="freshness.local_sha || freshness.remote_sha" class="text-xs text-muted-foreground font-mono space-y-0.5">
- <p v-if="freshness.local_sha">
- 本地: {{ freshness.local_sha.slice(0, 10) }}
- </p>
- <p v-if="freshness.remote_sha">
- 远端: {{ freshness.remote_sha.slice(0, 10) }}
- </p>
- </div>
- <p v-if="freshness.last_indexed_at" class="text-xs text-muted-foreground">
- 最后索引: {{ new Date(freshness.last_indexed_at).toLocaleString('zh-CN') }}
- </p>
- </div>
- <p v-else class="text-xs text-muted-foreground">
- 无法获取新鲜度信息
- </p>
- </div>
- <Separator class="bg-border/50" />
  <!-- 自动索引开关 -->
  <div class="flex items-center justify-between">
  <div>
