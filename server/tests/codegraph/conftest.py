@@ -602,19 +602,12 @@ class GoldenMockEnv(NamedTuple):
  embedding_calls: list[str]
  sparse_calls: list[str]
  expand_calls: list[str]
-@pytest.fixture
-def golden_mock_environment:
- """注入确定性 mock 五件套，让 LayeredSearchService.search 输出字节稳定。
- per / Plan Task 1。同一 query 多次跑 final_context 一致。
- Patches:
- 1. codegraph.services.repo_router.RepoRouter.route
- 2. codegraph.models.Symbol.objects.filter / .get
- 3. services.branch_search.BranchAwareSearchService.search
- 4. services.embedding.EmbeddingService.generate_embedding
- 5. services.sparse_encoder.SparseEncoderService.encode
- 6. codegraph.services.graph_expansion.GraphExpansionService.expand
- Yields:
- GoldenMockEnv —— mock 调用日志，供测试断言（路由次数 / 命中 repo 等）。
+@contextlib.contextmanager
+def golden_mock_environment_context:
+ """`golden_mock_environment` fixture 的底层上下文管理器实现。
+ 抽出来是为了让 `_generate_golden_fixtures.py` 一次性脚本可以直接复用同一套
+ 确定性 mock，而无需走 pytest fixture 调用链。
+ yields: GoldenMockEnv —— 与 fixture 同结构的 mock 句柄记录。
  """
  route_calls: list[tuple[str, int]] =
  symbol_filter_calls: list[dict[str, Any]] =
@@ -722,3 +715,19 @@ def golden_mock_environment:
  sparse_calls=sparse_calls,
  expand_calls=expand_calls,
  )
+@pytest.fixture
+def golden_mock_environment:
+ """注入确定性 mock 五件套，让 LayeredSearchService.search 输出字节稳定。
+ per / Plan Task 1。同一 query 多次跑 final_context 一致。
+ Patches:
+ 1. codegraph.services.repo_router.RepoRouter.route
+ 2. codegraph.models.Symbol.objects.filter / .get
+ 3. services.branch_search.BranchAwareSearchService.search
+ 4. services.embedding.EmbeddingService.generate_embedding
+ 5. services.sparse_encoder.SparseEncoderService.encode
+ 6. codegraph.services.graph_expansion.GraphExpansionService.expand
+ Yields:
+ GoldenMockEnv —— mock 调用日志，供测试断言（路由次数 / 命中 repo 等）。
+ """
+ with golden_mock_environment_context as env:
+ yield env

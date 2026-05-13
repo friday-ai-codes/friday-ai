@@ -1,0 +1,8 @@
+## L2 Exact Matches
+- `OrderManager` (CLASS) in src/orders/manager.py:20-120 [alpha-repo]
+## L4 Graph Context (1-hop)
+- `create_order` (METHOD) depth=1 relation=method
+- `cancel_order` (METHOD) depth=1 relation=method
+## L3 Related Code
+(no hybrid search results)
+# tokens=79 source_layer=L2 final_chunks=4
