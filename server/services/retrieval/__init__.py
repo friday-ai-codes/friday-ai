@@ -7,6 +7,7 @@ Plan 将在此包内追加 `hybrid_search.HybridSearchService` 编排器，
 合并 RAG 主线 + 图谱 enrichment 两条路径。
 """
 from __future__ import annotations
+from services.retrieval.hybrid_search import HybridSearchService
 from services.retrieval.rag_search import search_rag
 from services.retrieval.token_budget import (
  DEFAULT_ENCODING,
@@ -18,6 +19,7 @@ from services.retrieval.token_budget import (
 from services.retrieval.types import LayerSnapshot, RagSearchResult
 __all__ = [
  "DEFAULT_ENCODING",
+ "HybridSearchService",
  "LayerSnapshot",
  "RagSearchResult",
  "TOKEN_BUFFER_RATIO",
