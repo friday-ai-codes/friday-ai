@@ -1,0 +1,280 @@
+## L2 Exact Matches
+- `GiantSeed` (FUNCTION) in src/giant/seed.py:1-5 [alpha-repo]
+## L4 Graph Context (1-hop)
+- `giant_callee_00` (FUNCTION) depth=1 relation=callee
+- `giant_callee_01` (FUNCTION) depth=1 relation=callee
+- `giant_callee_02` (FUNCTION) depth=1 relation=callee
+- `giant_callee_03` (FUNCTION) depth=1 relation=callee
+- `giant_callee_04` (FUNCTION) depth=1 relation=callee
+- `giant_callee_05` (FUNCTION) depth=1 relation=callee
+- `giant_callee_06` (FUNCTION) depth=1 relation=callee
+- `giant_callee_07` (FUNCTION) depth=1 relation=callee
+- `giant_callee_08` (FUNCTION) depth=1 relation=callee
+- `giant_callee_09` (FUNCTION) depth=1 relation=callee
+- `giant_callee_10` (FUNCTION) depth=1 relation=callee
+- `giant_callee_11` (FUNCTION) depth=1 relation=callee
+- `giant_callee_12` (FUNCTION) depth=1 relation=callee
+- `giant_callee_13` (FUNCTION) depth=1 relation=callee
+- `giant_callee_14` (FUNCTION) depth=1 relation=callee
+- `giant_callee_15` (FUNCTION) depth=1 relation=callee
+- `giant_callee_16` (FUNCTION) depth=1 relation=callee
+- `giant_callee_17` (FUNCTION) depth=1 relation=callee
+- `giant_callee_18` (FUNCTION) depth=1 relation=callee
+- `giant_callee_19` (FUNCTION) depth=1 relation=callee
+- `giant_callee_20` (FUNCTION) depth=1 relation=callee
+- `giant_callee_21` (FUNCTION) depth=1 relation=callee
+- `giant_callee_22` (FUNCTION) depth=1 relation=callee
+- `giant_callee_23` (FUNCTION) depth=1 relation=callee
+- `giant_callee_24` (FUNCTION) depth=1 relation=callee
+- `giant_callee_25` (FUNCTION) depth=1 relation=callee
+- `giant_callee_26` (FUNCTION) depth=1 relation=callee
+- `giant_callee_27` (FUNCTION) depth=1 relation=callee
+- `giant_callee_28` (FUNCTION) depth=1 relation=callee
+- `giant_callee_29` (FUNCTION) depth=1 relation=callee
+- `giant_callee_30` (FUNCTION) depth=1 relation=callee
+- `giant_callee_31` (FUNCTION) depth=1 relation=callee
+- `giant_callee_32` (FUNCTION) depth=1 relation=callee
+- `giant_callee_33` (FUNCTION) depth=1 relation=callee
+- `giant_callee_34` (FUNCTION) depth=1 relation=callee
+- `giant_callee_35` (FUNCTION) depth=1 relation=callee
+- `giant_callee_36` (FUNCTION) depth=1 relation=callee
+- `giant_callee_37` (FUNCTION) depth=1 relation=callee
+- `giant_callee_38` (FUNCTION) depth=1 relation=callee
+- `giant_callee_39` (FUNCTION) depth=1 relation=callee
+## L3 Related Code
+### src/giant/chunk_00.py (score: 0.950)
+```
+line 000: synthetic chunk content for token budget exhaustion testing
+line 001: synthetic chunk content for token budget exhaustion testing
+line 002: synthetic chunk content for token budget exhaustion testing
+line 003: synthetic chunk content for token budget exhaustion testing
+line 004: synthetic chunk content for token budget exhaustion testing
+line 005: synthetic chunk content for token budget exhaustion testing
+line 006: synthetic chunk content for token budget exhaustion testing
+line 007: synthetic chunk content for token budget exhaustion testing
+line 008: synthetic chunk content for token budget exhaustion testing
+line 009: synthetic chunk content for token budget exhaustion testing
+line 010: synthetic chunk content for token budget exhaustion testing
+line 011: synthetic chunk content for token budget exhaustion testing
+line 012: synthetic chunk content for token budget exhaustion testing
+line 013: synthetic chunk content for token budget exhaustion testing
+line 014: synthetic chunk content for token budget exhaustion testing
+line 015: synthetic chunk content for token budget exhaustion testing
+line 016: synthetic chunk content for token budget exhaustion testing
+line 017: synthetic chunk content for token budget exhaustion testing
+line 018: synthetic chunk content for token budget exhaustion testing
+line 019: synthetic chunk content for token budget exhaustion testing
+line 020: synthetic chunk content for token budget exhaustion testing
+line 021: synthetic chunk content for token budget exhaustion testing
+line 022: synthetic chunk content for token budget exhaustion testing
+line 023: synthetic chunk content for token budget exhaustion testing
+line 024: synthetic chunk content for token budget exhaustion testing
+line 025: synthetic chunk content for token budget exhaustion testing
+line 026: synthetic chunk content for token budget exhaustion testing
+line 027: synthetic chunk content for token budget exhaustion testing
+line 028: synthetic chunk content for token budget exhaustion testing
+line 029: synthetic chunk content for token budget exhaustion testing
+line 030: synthetic chunk content for token budget exhaustion testing
+line 031: synthetic chunk content for token budget exhaustion testing
+line 032: synthetic chunk content for token budget exhaustion testing
+line 033: synthetic chunk content for token budget exhaustion testing
+line 034: synthetic chunk content for token budget exhaustion testing
+line 035: synthetic chunk content for token budget exhaustion testing
+line 036: synthetic chunk content for token budget exhaustion testing
+line 037: synthetic chunk content for token budget exhaustion testing
+line 038: synthetic chunk content for token budget exhaustion testing
+line 039: synthetic chunk content for token budget exhaustion testing
+line 040: synthetic chunk content for token budget exhaustion testing
+line 041: synthetic chunk content for token budget exhaustion testing
+line 042: synthetic chunk content for token budget exhaustion testing
+line 043: synthetic chunk content for token budget exhaustion testing
+line 044: synthetic chunk content for token budget exhaustion testing
+line 045: synthetic chunk content for token budget exhaustion testing
+line 046: synthetic chunk content for token budget exhaustion testing
+line 047: synthetic chunk content for token budget exhaustion testing
+line 048: synthetic chunk content for token budget exhaustion testing
+line 049: synthetic chunk content for token budget exhaustion testing
+line 050: synthetic chunk content for token budget exhaustion testing
+line 051: synthetic chunk content for token budget exhaustion testing
+line 052: synthetic chunk content for token budget exhaustion testing
+line 053: synthetic chunk content for token budget exhaustion testing
+line 054: synthetic chunk content for token budget exhaustion testing
+line 055: synthetic chunk content for token budget exhaustion testing
+line 056: synthetic chunk content for token budget exhaustion testing
+line 057: synthetic chunk content for token budget exhaustion testing
+line 058: synthetic chunk content for token budget exhaustion testing
+line 059: synthetic chunk content for token budget exhaustion testing
+```
+### src/giant/chunk_01.py (score: 0.940)
+```
+line 000: synthetic chunk content for token budget exhaustion testing
+line 001: synthetic chunk content for token budget exhaustion testing
+line 002: synthetic chunk content for token budget exhaustion testing
+line 003: synthetic chunk content for token budget exhaustion testing
+line 004: synthetic chunk content for token budget exhaustion testing
+line 005: synthetic chunk content for token budget exhaustion testing
+line 006: synthetic chunk content for token budget exhaustion testing
+line 007: synthetic chunk content for token budget exhaustion testing
+line 008: synthetic chunk content for token budget exhaustion testing
+line 009: synthetic chunk content for token budget exhaustion testing
+line 010: synthetic chunk content for token budget exhaustion testing
+line 011: synthetic chunk content for token budget exhaustion testing
+line 012: synthetic chunk content for token budget exhaustion testing
+line 013: synthetic chunk content for token budget exhaustion testing
+line 014: synthetic chunk content for token budget exhaustion testing
+line 015: synthetic chunk content for token budget exhaustion testing
+line 016: synthetic chunk content for token budget exhaustion testing
+line 017: synthetic chunk content for token budget exhaustion testing
+line 018: synthetic chunk content for token budget exhaustion testing
+line 019: synthetic chunk content for token budget exhaustion testing
+line 020: synthetic chunk content for token budget exhaustion testing
+line 021: synthetic chunk content for token budget exhaustion testing
+line 022: synthetic chunk content for token budget exhaustion testing
+line 023: synthetic chunk content for token budget exhaustion testing
+line 024: synthetic chunk content for token budget exhaustion testing
+line 025: synthetic chunk content for token budget exhaustion testing
+line 026: synthetic chunk content for token budget exhaustion testing
+line 027: synthetic chunk content for token budget exhaustion testing
+line 028: synthetic chunk content for token budget exhaustion testing
+line 029: synthetic chunk content for token budget exhaustion testing
+line 030: synthetic chunk content for token budget exhaustion testing
+line 031: synthetic chunk content for token budget exhaustion testing
+line 032: synthetic chunk content for token budget exhaustion testing
+line 033: synthetic chunk content for token budget exhaustion testing
+line 034: synthetic chunk content for token budget exhaustion testing
+line 035: synthetic chunk content for token budget exhaustion testing
+line 036: synthetic chunk content for token budget exhaustion testing
+line 037: synthetic chunk content for token budget exhaustion testing
+line 038: synthetic chunk content for token budget exhaustion testing
+line 039: synthetic chunk content for token budget exhaustion testing
+line 040: synthetic chunk content for token budget exhaustion testing
+line 041: synthetic chunk content for token budget exhaustion testing
+line 042: synthetic chunk content for token budget exhaustion testing
+line 043: synthetic chunk content for token budget exhaustion testing
+line 044: synthetic chunk content for token budget exhaustion testing
+line 045: synthetic chunk content for token budget exhaustion testing
+line 046: synthetic chunk content for token budget exhaustion testing
+line 047: synthetic chunk content for token budget exhaustion testing
+line 048: synthetic chunk content for token budget exhaustion testing
+line 049: synthetic chunk content for token budget exhaustion testing
+line 050: synthetic chunk content for token budget exhaustion testing
+line 051: synthetic chunk content for token budget exhaustion testing
+line 052: synthetic chunk content for token budget exhaustion testing
+line 053: synthetic chunk content for token budget exhaustion testing
+line 054: synthetic chunk content for token budget exhaustion testing
+line 055: synthetic chunk content for token budget exhaustion testing
+line 056: synthetic chunk content for token budget exhaustion testing
+line 057: synthetic chunk content for token budget exhaustion testing
+line 058: synthetic chunk content for token budget exhaustion testing
+line 059: synthetic chunk content for token budget exhaustion testing
+```
+### src/giant/chunk_02.py (score: 0.930)
+```
+line 000: synthetic chunk content for token budget exhaustion testing
+line 001: synthetic chunk content for token budget exhaustion testing
+line 002: synthetic chunk content for token budget exhaustion testing
+line 003: synthetic chunk content for token budget exhaustion testing
+line 004: synthetic chunk content for token budget exhaustion testing
+line 005: synthetic chunk content for token budget exhaustion testing
+line 006: synthetic chunk content for token budget exhaustion testing
+line 007: synthetic chunk content for token budget exhaustion testing
+line 008: synthetic chunk content for token budget exhaustion testing
+line 009: synthetic chunk content for token budget exhaustion testing
+line 010: synthetic chunk content for token budget exhaustion testing
+line 011: synthetic chunk content for token budget exhaustion testing
+line 012: synthetic chunk content for token budget exhaustion testing
+line 013: synthetic chunk content for token budget exhaustion testing
+line 014: synthetic chunk content for token budget exhaustion testing
+line 015: synthetic chunk content for token budget exhaustion testing
+line 016: synthetic chunk content for token budget exhaustion testing
+line 017: synthetic chunk content for token budget exhaustion testing
+line 018: synthetic chunk content for token budget exhaustion testing
+line 019: synthetic chunk content for token budget exhaustion testing
+line 020: synthetic chunk content for token budget exhaustion testing
+line 021: synthetic chunk content for token budget exhaustion testing
+line 022: synthetic chunk content for token budget exhaustion testing
+line 023: synthetic chunk content for token budget exhaustion testing
+line 024: synthetic chunk content for token budget exhaustion testing
+line 025: synthetic chunk content for token budget exhaustion testing
+line 026: synthetic chunk content for token budget exhaustion testing
+line 027: synthetic chunk content for token budget exhaustion testing
+line 028: synthetic chunk content for token budget exhaustion testing
+line 029: synthetic chunk content for token budget exhaustion testing
+line 030: synthetic chunk content for token budget exhaustion testing
+line 031: synthetic chunk content for token budget exhaustion testing
+line 032: synthetic chunk content for token budget exhaustion testing
+line 033: synthetic chunk content for token budget exhaustion testing
+line 034: synthetic chunk content for token budget exhaustion testing
+line 035: synthetic chunk content for token budget exhaustion testing
+line 036: synthetic chunk content for token budget exhaustion testing
+line 037: synthetic chunk content for token budget exhaustion testing
+line 038: synthetic chunk content for token budget exhaustion testing
+line 039: synthetic chunk content for token budget exhaustion testing
+line 040: synthetic chunk content for token budget exhaustion testing
+line 041: synthetic chunk content for token budget exhaustion testing
+line 042: synthetic chunk content for token budget exhaustion testing
+line 043: synthetic chunk content for token budget exhaustion testing
+line 044: synthetic chunk content for token budget exhaustion testing
+line 045: synthetic chunk content for token budget exhaustion testing
+line 046: synthetic chunk content for token budget exhaustion testing
+line 047: synthetic chunk content for token budget exhaustion testing
+line 048: synthetic chunk content for token budget exhaustion testing
+line 049: synthetic chunk content for token budget exhaustion testing
+line 050: synthetic chunk content for token budget exhaustion testing
+line 051: synthetic chunk content for token budget exhaustion testing
+line 052: synthetic chunk content for token budget exhaustion testing
+line 053: synthetic chunk content for token budget exhaustion testing
+line 054: synthetic chunk content for token budget exhaustion testing
+line 055: synthetic chunk content for token budget exhaustion testing
+line 056: synthetic chunk content for token budget exhaustion testing
+line 057: synthetic chunk content for token budget exhaustion testing
+line 058: synthetic chunk content for token budget exhaustion testing
+line 059: synthetic chunk content for token budget exhaustion testing
+```
+### src/giant/chunk_03.py (score: 0.920)
+```
+line 000: synthetic chunk content for token budget exhaustion testing
+line 001: synthetic chunk content for token budget exhaustion testing
+line 002: synthetic chunk content for token budget exhaustion testing
+line 003: synthetic chunk content for token budget exhaustion testing
+line 004: synthetic chunk content for token budget exhaustion testing
+line 005: synthetic chunk content for token budget exhaustion testing
+line 006: synthetic chunk content for token budget exhaustion testing
+line 007: synthetic chunk content for token budget exhaustion testing
+line 008: synthetic chunk content for token budget exhaustion testing
+line 009: synthetic chunk content for token budget exhaustion testing
+line 010: synthetic chunk content for token budget exhaustion testing
+line 011: synthetic chunk content for token budget exhaustion testing
+line 012: synthetic chunk content for token budget exhaustion testing
+line 013: synthetic chunk content for token budget exhaustion testing
+line 014: synthetic chunk content for token budget exhaustion testing
+line 015: synthetic chunk content for token budget exhaustion testing
+line 016: synthetic chunk content for token budget exhaustion testing
+line 017: synthetic chunk content for token budget exhaustion testing
+line 018: synthetic chunk content for token budget exhaustion testing
+line 019: synthetic chunk content for token budget exhaustion testing
+line 020: synthetic chunk content for token budget exhaustion testing
+line 021: synthetic chunk content for token budget exhaustion testing
+line 022: synthetic chunk content for token budget exhaustion testing
+line 023: synthetic chunk content for token budget exhaustion testing
+line 024: synthetic chunk content for token budget exhaustion testing
+line 025: synthetic chunk content for token budget exhaustion testing
+line 026: synthetic chunk content for token budget exhaustion testing
+line 027: synthetic chunk content for token budget exhaustion testing
+line 028: synthetic chunk content for token budget exhaustion testing
+line 029: synthetic chunk content for token budget exhaustion testing
+line 030: synthetic chunk content for token budget exhaustion testing
+line 031: synthetic chunk content for token budget exhaustion testing
+line 032: synthetic chunk content for token budget exhaustion testing
+line 033: synthetic chunk content for token budget exhaustion testing
+line 034: synthetic chunk content for token budget exhaustion testing
+line 035: synthetic chunk content for token budget exhaustion testing
+line 036: synthetic chunk content for token budget exhaustion testing
+line 037: synthetic chunk content for token budget exhaustion testing
+line 038: synthetic chunk content for token budget exhaustion testing
+line 039: synthetic chunk content for token budget exhaustion testing
+line 040: synthetic chunk content for token budget exhaustion testing
+line 041: synthetic chunk content for token budget exhaustion testing
+line 042: synthetic chunk content for token budget exhaustion testing
+(truncated: 1683 lines omitted)
+# tokens=3796 source_layer=L2 final_chunks=71

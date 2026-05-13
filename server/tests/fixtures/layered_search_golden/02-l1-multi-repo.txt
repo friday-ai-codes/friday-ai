@@ -1,0 +1,16 @@
+## L2 Exact Matches
+(no exact symbol matches found)
+## L4 Graph Context (1-hop)
+(no graph expansion results)
+## L3 Related Code
+### src/users/models.py (score: 0.780)
+```
+class User(BaseModel):
+ name = ...
+```
+### lib/user.py (score: 0.740)
+```
+class User:
+ pass
+```
+# tokens=80 source_layer=L3 final_chunks=2

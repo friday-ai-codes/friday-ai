@@ -1,0 +1,17 @@
+## L2 Exact Matches
+(no exact symbol matches found)
+## L4 Graph Context (1-hop)
+(no graph expansion results)
+## L3 Related Code
+### src/auth/login.py (score: 0.820)
+```
+def login(req):
+ return authenticate(req.user)
+```
+### src/auth/handlers.py (score: 0.710)
+```
+class LoginHandler:
+ def post(self):
+ ...
+```
+# tokens=89 source_layer=L3 final_chunks=2
