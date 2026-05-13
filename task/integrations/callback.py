@@ -48,38 +48,67 @@ class CallbackClient:
  message: str | None = None,
  details: dict[str, Any] | None = None,
  ) -> bool:
- """Report task status to the main API."""
+ """Report task status to Friday Server's unified container callback endpoint.
+ 历史路径 ``{base_url}/tasks/{task_id}/status`` 不存在于任何后端（既不在
+ Runner ``POST /callback`` 也不在 Friday Server）。每次任务（含 deep_analysis）
+ 启动时调 ``report_started`` 都会得到 404，更糟的是 ``report_error`` 调用本
+ 函数后 Friday 永远收不到失败通知，导致 SubAgentSession 状态卡在 RUNNING。
+ 统一改走 Friday Server ``/api/containers/callback/``（与 ``report_completed``
+ / ``report_failed`` 同 endpoint）：
+ - 终态 ``status == 'error'`` 直接代理:meth:`report_failed`（统一失败协议）
+ - 其它所有 status（started/git_ready/push_complete/execution_complete/
+ plan_ready/no_changes/progress 等）映射为 ``type=progress``，原 status
+ 编码进 ``payload.phase``，consumer 端 ``parse_progress_payload`` 会把
+ 它落到 ``session.last_output.progress.phase``，前端可读。
+ """
  log = logger.bind(task_id=self.config.task_id, status=status)
- payload = {
+ # 1. 错误终态走 failed 协议，与 report_failed 一致
+ if status == "error":
+ return await self.report_failed(message or "Unknown error")
+ # 2. 文件兜底（关键状态写 result.json，供网络隔离场景使用）
+ file_payload = {
  "task_id": self.config.task_id,
  "status": status,
  "message": message,
  "details": details or {},
  "timestamp": datetime.utcnow.isoformat,
  }
- # [新增] 1. 优先写入文件（这是最可靠的通道）
  if self.output_dir:
  try:
- # 只有关键状态才写入 result.json，避免 IO 频繁
- # 但这里为了调试方便，我们可以记录所有状态到 events.jsonl
- # 关键结果写入 result.json
- if status in ("plan_ready", "execution_complete", "push_complete", "error"):
+ if status in ("plan_ready", "execution_complete", "push_complete"):
  result_path = os.path.join(self.output_dir, "result.json")
  with open(result_path, "w") as f:
- json.dump(payload, f, indent=2, ensure_ascii=False)
+ json.dump(file_payload, f, indent=2, ensure_ascii=False)
  log.info("Status written to file", path=result_path)
  except Exception as e:
  log.error("Failed to write status to file", error=str(e))
- # 2. 如果没启用 HTTP 回调，就结束
+ # 3. 未启用 HTTP 回调：standalone 模式
  if not self.enabled:
  log.info("Status update (standalone mode)", message=message, details=details)
  return True
- # 3. 尝试 HTTP 回调
+ # 4. 走 Friday Server progress callback 协议
+ details_dict = details or {}
+ progress_payload: dict[str, Any] = {
+ "phase": status,
+ "progress": float(details_dict.get("progress", 0.0)),
+ "message": message or "",
+ "details": details_dict,
+ }
+ # coding_progress 是 progress serializer 的一等字段，单独透传
+ coding_progress = details_dict.get("coding_progress")
+ if isinstance(coding_progress, dict):
+ progress_payload["coding_progress"] = coding_progress
+ body = {
+ "type": "progress",
+ "session_id": self.config.task_id,
+ "token": self.config.callback_token,
+ "payload": progress_payload,
+ }
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(
- f"{self.base_url}/tasks/{self.config.task_id}/status",
- json=payload,
+ f"{self.base_url}/api/containers/callback/",
+ json=body,
  headers=self.headers,
  timeout=30.0,
  )
@@ -87,7 +116,6 @@ class CallbackClient:
  log.info("Status reported successfully")
  return True
  except httpx.HTTPError as e:
- # 如果配置了文件输出，HTTP 失败是可以接受的，只是个警告
  if self.output_dir:
  log.warning("Failed to report status via HTTP (backed up to file)", error=str(e))
  else:

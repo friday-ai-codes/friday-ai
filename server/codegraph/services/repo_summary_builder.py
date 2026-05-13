@@ -7,6 +7,7 @@ import json
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
+from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db.models import Count
@@ -37,45 +38,62 @@ class RepoSummaryBuilder:
  """
  try:
  # 确保 repo_summaries collection 存在（幂等）
- await sync_to_async(QdrantService.ensure_repo_summaries_collection)
- # 1. 提取 primary_symbols (Top-30 高频符号，按 outgoing_calls count 降序)
- symbols = await sync_to_async(list)(
+ await sync_to_async(
+ QdrantService.ensure_repo_summaries_collection,
+ thread_sensitive=False,
+ )
+ # 把仓库元数据汇聚收口到一个 sync 函数里，跑在独立线程池上
+ # （thread_sensitive=False）—— 否则 4 次 ORM 查询全部抢占 ASGI 进程的
+ # thread_sensitive 单线程，索引收尾阶段所有 HTTP 接口"待处理"。
+ def _aggregate_metadata -> dict[str, Any]:
+ symbols_list = list(
  Symbol.objects.filter(repository_id=repository_id)
  .annotate(outgoing_count=Count("outgoing_calls"))
  .order_by("-outgoing_count")[:30]
  )
- primary_symbols: list[str] = [s.name for s in symbols]
- # 2. 提取 api_domains (URL 前缀聚类，取 '/' 分割的第一段有效路径)
- endpoints = await sync_to_async(list)(
- Endpoint.objects.filter(repository_id=repository_id).values_list(
- "url_path", flat=True
+ primary_symbols_local = [s.name for s in symbols_list]
+ endpoints_list = list(
+ Endpoint.objects.filter(
+ repository_id=repository_id,
+ ).values_list("url_path", flat=True)
  )
- )
- domains: Counter[str] = Counter
- for path in endpoints:
+ domains_local: Counter[str] = Counter
+ for path in endpoints_list:
  parts = path.strip("/").split("/")
  if parts and parts[0]:
- domains[parts[0]] += 1
- api_domains: list[str] = [d for d, _ in domains.most_common(10)]
- # 3. 提取 tech_stack (文件扩展名百分比分布)
- file_indexes = await sync_to_async(list)(
- FileIndex.objects.filter(repository_id=repository_id).values_list(
- "file_path", flat=True
+ domains_local[parts[0]] += 1
+ api_domains_local = [d for d, _ in domains_local.most_common(10)]
+ file_indexes_list = list(
+ FileIndex.objects.filter(
+ repository_id=repository_id,
+ ).values_list("file_path", flat=True)
  )
- )
- ext_counter: Counter[str] = Counter
- for fp in file_indexes:
- ext = fp.rsplit(".", 1)[-1].lower if "." in fp else "unknown"
- ext_counter[ext] += 1
- total = sum(ext_counter.values) or 1
- tech_stack: dict[str, float] = {
- ext: round(count / total * 100, 1)
- for ext, count in ext_counter.most_common(10)
+ ext_counter_local: Counter[str] = Counter
+ for fp in file_indexes_list:
+ ext_local = fp.rsplit(".", 1)[-1].lower if "." in fp else "unknown"
+ ext_counter_local[ext_local] += 1
+ total_local = sum(ext_counter_local.values) or 1
+ tech_stack_local = {
+ ext_name: round(count / total_local * 100, 1)
+ for ext_name, count in ext_counter_local.most_common(10)
  }
- # 4. 复用 description (per )
- repo = await sync_to_async(Repository.objects.get)(id=repository_id)
- description = repo.ai_summary or f"{repo.name} - {repo.git_url}"
- repo_name = repo.name
+ repo_obj = Repository.objects.get(id=repository_id)
+ return {
+ "primary_symbols": primary_symbols_local,
+ "api_domains": api_domains_local,
+ "tech_stack": tech_stack_local,
+ "description": repo_obj.ai_summary
+ or f"{repo_obj.name} - {repo_obj.git_url}",
+ "repo_name": repo_obj.name,
+ }
+ metadata = await sync_to_async(
+ _aggregate_metadata, thread_sensitive=False,
+ )
+ primary_symbols = metadata["primary_symbols"]
+ api_domains = metadata["api_domains"]
+ tech_stack = metadata["tech_stack"]
+ description = metadata["description"]
+ repo_name = metadata["repo_name"]
  # 5. 构建 summary text —— 拼接为单条文本用于 embedding + sparse 编码
  summary_text = (
  f"Repository: {repo_name}\n"
@@ -92,7 +110,9 @@ class RepoSummaryBuilder:
  repository_id=repository_id,
  )
  return False
- sparse_vector = await sync_to_async(SparseEncoderService.encode)(summary_text)
+ sparse_vector = await sync_to_async(
+ SparseEncoderService.encode, thread_sensitive=False,
+ )(summary_text)
  if not sparse_vector or not sparse_vector.get("indices"):
  logger.warning(
  "repo_summary_sparse_encoding_failed",
@@ -119,9 +139,9 @@ class RepoSummaryBuilder:
  "built_at": datetime.now(UTC).isoformat,
  },
  }
- success = await sync_to_async(QdrantService.upsert_vectors_by_name)(
- "repo_summaries", [point]
- )
+ success = await sync_to_async(
+ QdrantService.upsert_vectors_by_name, thread_sensitive=False,
+ )("repo_summaries", [point])
  if success:
  logger.info(
  "repo_summary_built",

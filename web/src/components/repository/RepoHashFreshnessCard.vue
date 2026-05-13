@@ -250,8 +250,8 @@ onMounted( => {
  <span>
  {{ isHealthy ? '集合健康': '集合异常' }} ·
  <span class="font-mono tabular-nums">{{ health!.points_count.toLocaleString }}</span> 个向量点
- <template v-if="health!.points_match === false">
- · <span class="text-amber-600">数量不匹配（预期 {{ health!.expected_points }}）</span>
+ <template v-if="health!.indexed_files_count !== undefined && health!.indexed_files_count !== null">
+ · <span class="font-mono tabular-nums">{{ health!.indexed_files_count.toLocaleString }}</span> 个已索引文件
  </template>
  </span>
  </div>

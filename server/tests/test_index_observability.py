@@ -101,13 +101,23 @@ class TestIndexStatsView:
  def test_stats_response(
  self, mock_stats: MagicMock, authenticated_client, repository: Repository
  ) -> None:
+ from repositories.models import FileIndex
  repository.index_total_chunks = 100
  repository.save
+ # IndexStatsView 的 indexed_files_count 必须来自 FileIndex（与
+ # IndexedFilesListView 同源），不能用 Qdrant scroll 的 distinct
+ # 文件数（多次重建后会与 FileIndex 漂移）。
+ for i in range(7):
+ FileIndex.objects.create(
+ repository=repository,
+ file_path=f"src/file_{i}.py",
+ file_hash=f"hash-{i}",
+ )
  mock_stats.return_value = {
  "exists": True,
  "points_count": 80,
  "language_distribution": {"python": 50, "javascript": 30},
- "indexed_files_count": 15,
+ "indexed_files_count": 15, # Qdrant scroll 的旧口径，不应再被采用
  }
  response = authenticated_client.get(
  f"/api/repositories/{repository.id}/index/stats/"
@@ -116,7 +126,7 @@ class TestIndexStatsView:
  data = response.json
  assert data["chunks_total"] == 80
  assert data["language_distribution"]["python"] == 50
- assert data["indexed_files_count"] == 15
+ assert data["indexed_files_count"] == 7
  assert data["coverage_percent"] == 80.0
  @patch("repositories.index_views.QdrantService.get_collection_stats")
  def test_stats_zero_chunks(
@@ -169,8 +179,15 @@ class TestRepositoryCollectionHealthView:
  def test_healthy_collection(
  self, mock_health: MagicMock, authenticated_client, repository: Repository
  ) -> None:
+ from repositories.models import FileIndex
  repository.index_total_chunks = 50
  repository.save
+ for i in range(3):
+ FileIndex.objects.create(
+ repository=repository,
+ file_path=f"src/h_{i}.py",
+ file_hash=f"hash-h{i}",
+ )
  mock_health.return_value = {
  "status": "healthy",
  "collection_exists": True,
@@ -184,8 +201,7 @@ class TestRepositoryCollectionHealthView:
  assert data["status"] == "healthy"
  assert data["collection_exists"] is True
  assert data["points_count"] == 50
- assert data["expected_points"] == 50
- assert data["points_match"] is True
+ assert data["indexed_files_count"] == 3
  @patch("repositories.index_views.QdrantService.check_collection_health")
  def test_unhealthy_collection(
  self, mock_health: MagicMock, authenticated_client, repository: Repository
@@ -203,23 +219,30 @@ class TestRepositoryCollectionHealthView:
  assert data["status"] == "unhealthy"
  assert data["collection_exists"] is False
  @patch("repositories.index_views.QdrantService.check_collection_health")
- def test_points_mismatch(
+ def test_points_no_longer_compared_against_index_total_chunks(
  self, mock_health: MagicMock, authenticated_client, repository: Repository
  ) -> None:
+ """index_total_chunks 是"本次 run 的预期"，Qdrant points 是历史累积，
+ 两者本就会随多次重建而漂移。响应不能再用 expected_points/points_match
+ 诱导前端显示"数量不匹配"误报。
+ """
  repository.index_total_chunks = 100
  repository.save
  mock_health.return_value = {
  "status": "healthy",
  "collection_exists": True,
- "points_count": 80,
+ "points_count": 11900, # 历史累积
  }
  response = authenticated_client.get(
  f"/api/repositories/{repository.id}/index/health/"
  )
  data = response.json
- assert data["points_match"] is False
- assert data["expected_points"] == 100
- assert data["points_count"] == 80
+ assert data["points_count"] == 11900
+ assert "expected_points" not in data, (
+ "expected_points 误对比已废弃，参见 RepositoryCollectionHealthView 注释"
+ )
+ assert "points_match" not in data
+ assert "indexed_files_count" in data
  @patch("repositories.index_views.QdrantService.check_collection_health")
  def test_health_qdrant_timeout_falls_back_to_200(
  self, mock_health: MagicMock, authenticated_client, repository: Repository

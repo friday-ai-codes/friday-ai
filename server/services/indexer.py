@@ -6,6 +6,8 @@ import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from enum import Enum
 from typing import Any
 import structlog
@@ -193,7 +195,6 @@ async def get_files_last_commit(
  return result
 def _ts_to_dt(unix_ts: int) -> Any:
  """Unix 时间戳 → tz-aware datetime（UTC）。"""
- from datetime import datetime, timezone as dt_timezone
  return datetime.fromtimestamp(unix_ts, tz=dt_timezone.utc)
 async def update_write_progress(repository_id: str, total: int, processed: int) -> None:
  """Update Qdrant write progress in database."""
@@ -243,6 +244,22 @@ async def update_index_stage(repository_id: str, stage: str) -> None:
 # 当前选 64：单次 embed 调用控制在 ~64 chunks，约 1-2 秒一批；失败重试丢失通常 ≤ 64 chunks 的工作量
 FILE_BATCH_CHUNK_THRESHOLD = 64
 logger = structlog.get_logger(__name__)
+def _build_upsert_failure_message(
+ *,
+ representative_file: str,
+ batch_no: int,
+ total_batches: int,
+ batch_size: int,
+ total_points: int,
+) -> str:
+ return (
+ "写入向量库失败或超时: "
+ f"file={representative_file}, "
+ f"batch {batch_no}/{total_batches}, "
+ f"batch_size={batch_size}, "
+ f"total_points={total_points}; "
+ "see prior 'upsert_vectors_*_failed' log for low-level Qdrant error"
+ )
 def _build_embedding_text(chunk: CodeChunk) -> str:
  """构建用于 embedding 的增强文本，包含上下文信息。"""
  parts = [chunk.context_header]
@@ -428,8 +445,8 @@ class IndexerService:
  def _init_graph_services(self):
  """延迟初始化图谱抽取与写入服务（避免循环导入）。"""
  if self._graph_extractor is None:
- from codegraph.services.orchestrator import GraphExtractor
  from codegraph.services.graph_writer import GraphWriter
+ from codegraph.services.orchestrator import GraphExtractor
  self._graph_extractor = GraphExtractor
  self._graph_writer = GraphWriter
  async def run_full_index(
@@ -525,18 +542,33 @@ class IndexerService:
  "chunks_indexed": 0,
  "added": 0,
  }
+ #：解析阶段也用稳定的"索引文件中..."文案；整体百分比不再由
+ # 文件 parse 计数直接驱动到 100%，而是在得到 chunk 总量后切到
+ # embedding/upsert 的真实进度。
+ await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
+ file_payloads: list[tuple[str, str, list[CodeChunk]]] =
+ processed_files_total = skipped_resume # 已 skip 也计入文件处理数
+ for abs_path, rel_path, file_hash in files_to_process:
+ processed_files_total += 1
+ await update_current_indexing_file(
+ self.repository_id,
+ file_path=rel_path,
+ processed=processed_files_total,
+ )
+ chunks = self.parser.parse_file(abs_path, base_path=repo_path)
+ file_payloads.append((rel_path, file_hash, chunks))
  # 一次性批量查 commit 信息（避免每次 flush 都 spawn git log）
  last_commit_map = await get_files_last_commit(
- repo_path, [rel for _, rel, _ in files_to_process],
+ repo_path, [rel for rel, _, _ in file_payloads],
  )
- #：主循环全程用稳定的"索引文件中..."文案，避免 _flush_batch 内部
- # PARSING / EMBEDDING / WRITING 三阶段快速切换造成 UI 文案抖动
- await update_index_stage(self.repository_id, IndexStage.INDEXING_FILES)
+ total_chunks = sum(len(chunks) for _, _, chunks in file_payloads)
+ if total_chunks > 0:
+ await update_index_progress(self.repository_id, total_chunks, 0)
+ await update_write_progress(self.repository_id, total_chunks, 0)
  # 文件级 batch：累积到 FILE_BATCH_CHUNK_THRESHOLD 即触发一次 flush
  pending_chunks: list[CodeChunk] =
  pending_files: list[tuple[str, str]] = # (rel_path, hash)
  processed_chunks_total = 0
- processed_files_total = skipped_resume # 已 skip 也计入完成数
  chunks_indexed_total = 0 # 实际 upsert 到 qdrant 的 chunk 数
  async def _flush_batch -> None:
  """把 pending_chunks 一次性 embed + upsert + 写 FileIndex 锚点。
@@ -581,14 +613,56 @@ class IndexerService:
  # 导致下次续传跳过这批文件 → 数据永久丢失。upsert_vectors 返回 False 含义：
  # Qdrant 业务异常 / 网络异常（含 timeout）已被记录但未恢复。
  upsert_batch_size = 100
+ total_batches = (len(points) + upsert_batch_size - 1) // upsert_batch_size
  for i in range(0, len(points), upsert_batch_size):
- ok = await qdrant_upsert_vectors(
- self.repository_id, points[i: i + upsert_batch_size]
+ batch_no = i // upsert_batch_size + 1
+ batch = points[i: i + upsert_batch_size]
+ #：stage 文案以"全局 chunk 进度"为口径（processed_chunks_total
+ # 累加发生在 upsert 成功之后，这里预报"本批写入完后"的累计值，
+ # 避免文案显示落后一拍 / 永远卡在 1/1 的误导）。
+ chunks_after_this_batch = processed_chunks_total + min(
+ i + upsert_batch_size, len(points),
  )
+ await update_index_stage(
+ self.repository_id,
+ f"写入向量库... ({chunks_after_this_batch}/{total_chunks} chunks)",
+ )
+ logger.debug(
+ "qdrant_upsert_batch_start",
+ repository_id=self.repository_id,
+ representative_file=rep_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ ok = await qdrant_upsert_vectors(self.repository_id, batch)
  if not ok:
- raise RuntimeError(
- f"qdrant upsert failed at batch offset {i}/{len(points)}; "
- f"see prior 'upsert_vectors_*_failed' log for details"
+ message = _build_upsert_failure_message(
+ representative_file=rep_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ logger.error(
+ "qdrant_upsert_batch_failed",
+ repository_id=self.repository_id,
+ representative_file=rep_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ raise RuntimeError(message)
+ logger.debug(
+ "qdrant_upsert_batch_complete",
+ repository_id=self.repository_id,
+ representative_file=rep_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
  )
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
@@ -606,24 +680,16 @@ class IndexerService:
  chunks_indexed_total += len(points)
  # 兼容性：保持 chunks 计数同步更新，方便老 UI / 监控读
  await update_index_progress(
- self.repository_id, processed_chunks_total, processed_chunks_total
+ self.repository_id, total_chunks, processed_chunks_total
  )
  await update_write_progress(
- self.repository_id, processed_chunks_total, processed_chunks_total
+ self.repository_id, total_chunks, processed_chunks_total
  )
  pending_chunks.clear
  pending_files.clear
- # 主循环：逐文件 parse → 攒 chunk → 满阈值 flush
- # processed_files_total 在 parse 时递增（UI 流畅）；中断时已 parse 但
- # 未 flush 的文件下次仍会被重新处理（FileIndex 未写入 → hash 不命中）
- for abs_path, rel_path, file_hash in files_to_process:
- processed_files_total += 1
- await update_current_indexing_file(
- self.repository_id,
- file_path=rel_path,
- processed=processed_files_total,
- )
- chunks = self.parser.parse_file(abs_path, base_path=repo_path)
+ # 主循环：已完成 parse → 按 chunk batch embed/upsert → flush FileIndex。
+ # FileIndex 的写入仍是续传锚点；parse 完但未 flush 的文件下次会重做。
+ for rel_path, file_hash, chunks in file_payloads:
  pending_chunks.extend(chunks)
  pending_files.append((rel_path, file_hash))
  if len(pending_chunks) >= FILE_BATCH_CHUNK_THRESHOLD:
@@ -654,10 +720,14 @@ class IndexerService:
  await persist_vector_track_complete(self.repository_id, repo_path)
  # Phase: 图谱轨写入（失败不影响"已索引"状态）
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
+ # files 来自 scan_directory(repo_path) 是绝对路径；图谱要求相对路径，
+ # 否则 DB 里 file_path 会变成 /var/folders/.../friday_index_xxx/...
+ # 这种 tmp 前缀，导致前端代码图谱定位/调用关系全部对不上。
+ graph_file_paths = [os.path.relpath(p, repo_path) for p in files]
  try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
- file_paths=files,
+ file_paths=graph_file_paths,
  repository_id=self.repository_id,
  )
  except Exception:
@@ -1087,14 +1157,56 @@ class IndexerService:
  )
  # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
  upsert_batch_size = 100
+ total_batches = (len(points) + upsert_batch_size - 1) // upsert_batch_size
+ representative_file = pending_files[-1][0] if pending_files else "<unknown>"
  for i in range(0, len(points), upsert_batch_size):
- ok = await qdrant_upsert_vectors(
- self.repository_id, points[i: i + upsert_batch_size]
+ batch_no = i // upsert_batch_size + 1
+ batch = points[i: i + upsert_batch_size]
+ #：以全局 chunk 进度为 stage 口径（见 run_full_index._flush_batch
+ # 同款注释）。预报"本批写入完后"的累计值，避免文案永远 1/1。
+ chunks_after_this_batch = processed_chunks_total + min(
+ i + upsert_batch_size, len(points),
  )
+ await update_index_stage(
+ self.repository_id,
+ f"写入向量库... ({chunks_after_this_batch}/{total_chunks} chunks)",
+ )
+ logger.debug(
+ "qdrant_upsert_batch_start",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ ok = await qdrant_upsert_vectors(self.repository_id, batch)
  if not ok:
- raise RuntimeError(
- f"qdrant upsert failed at batch offset {i}/{len(points)}; "
- f"see prior 'upsert_vectors_*_failed' log for details"
+ message = _build_upsert_failure_message(
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ logger.error(
+ "qdrant_upsert_batch_failed",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ raise RuntimeError(message)
+ logger.debug(
+ "qdrant_upsert_batch_complete",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
  )
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
@@ -1323,14 +1435,56 @@ class IndexerService:
  )
  # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
  upsert_batch_size = 100
+ total_batches = (len(points) + upsert_batch_size - 1) // upsert_batch_size
+ representative_file = pending_files[-1][0] if pending_files else "<unknown>"
  for i in range(0, len(points), upsert_batch_size):
- ok = await qdrant_upsert_vectors(
- self.repository_id, points[i: i + upsert_batch_size]
+ batch_no = i // upsert_batch_size + 1
+ batch = points[i: i + upsert_batch_size]
+ #：以全局 chunk 进度为 stage 口径（见 run_full_index._flush_batch
+ # 同款注释）。预报"本批写入完后"的累计值，避免文案永远 1/1。
+ chunks_after_this_batch = processed_chunks_total + min(
+ i + upsert_batch_size, len(points),
  )
+ await update_index_stage(
+ self.repository_id,
+ f"写入向量库... ({chunks_after_this_batch}/{total_chunks} chunks)",
+ )
+ logger.debug(
+ "qdrant_upsert_batch_start",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ ok = await qdrant_upsert_vectors(self.repository_id, batch)
  if not ok:
- raise RuntimeError(
- f"qdrant upsert failed at batch offset {i}/{len(points)}; "
- f"see prior 'upsert_vectors_*_failed' log for details"
+ message = _build_upsert_failure_message(
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ logger.error(
+ "qdrant_upsert_batch_failed",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
+ )
+ raise RuntimeError(message)
+ logger.debug(
+ "qdrant_upsert_batch_complete",
+ repository_id=self.repository_id,
+ representative_file=representative_file,
+ batch_no=batch_no,
+ total_batches=total_batches,
+ batch_size=len(batch),
+ total_points=len(points),
  )
  for fp, fh in pending_files:
  ci = last_commit_map_inc.get(fp)
@@ -1488,16 +1642,21 @@ class IndexerService:
  Returns:
  dict: {"files_processed": N, "files_failed": N, "symbols": N, ...}
  """
- import os
  from django.conf import settings
  from codegraph.extractors.base import FileContext
- from services.code_parser import CodeParser as _CodeParser, TREESITTER_LANGUAGES
+ from services.code_parser import TREESITTER_LANGUAGES
+ from services.code_parser import CodeParser as _CodeParser
  # Feature flag 门控（per NYQUIST 维度 8: 配置可控）
  if not getattr(settings, "ENABLE_CODEGRAPH", False):
  logger.debug("codegraph_disabled_by_feature_flag")
  return {"files_processed": 0, "files_failed": 0, "reason": "disabled"}
  # 延迟初始化图谱服务
  self._init_graph_services
+ graph_extractor = self._graph_extractor
+ graph_writer = self._graph_writer
+ if graph_extractor is None or graph_writer is None:
+ logger.warning("graph_services_unavailable", repository_id=repository_id)
+ return {"files_processed": 0, "files_failed": 0, "reason": "unavailable"}
  stats: dict[str, Any] = {
  "files_processed": 0,
  "files_failed": 0,
@@ -1509,7 +1668,39 @@ class IndexerService:
  # 创建独立的 CodeParser 实例用于图谱抽取（复用其 tree-sitter parser）
  # 不污染 self.parser 的状态
  graph_parser = _CodeParser
- for file_path in file_paths:
+ # 防御性 normalize：调用方可能传入绝对路径（如全量索引早期版本直接传
+ # scan_directory 结果），统一转为相对 repo_path 的相对路径再入库，
+ # 避免 DB 里 file_path 出现 /var/folders/.../friday_index_xxx/... 这种 tmp 前缀。
+ normalized_file_paths: list[str] =
+ repo_path_abs = os.path.abspath(repo_path)
+ for fp in file_paths:
+ if os.path.isabs(fp):
+ try:
+ rel = os.path.relpath(fp, repo_path_abs)
+ except ValueError:
+ # 不在 repo_path 下（跨盘符），保留原值，让 _detect_language_from_path
+ # 等下游逻辑自然处理；通常不会发生。
+ rel = fp
+ normalized_file_paths.append(rel)
+ else:
+ normalized_file_paths.append(fp)
+ file_paths = normalized_file_paths
+ total_graph_files = len(file_paths)
+ # 每处理 GRAPH_YIELD_EVERY 个文件主动让出事件循环 + 上报 stage，
+ # 避免 background_runner 长时间独占 loop / SQLite 写锁导致 ASGI
+ # 接口集体 "待处理"。
+ GRAPH_YIELD_EVERY = 25
+ for index, file_path in enumerate(file_paths, start=1):
+ if index % GRAPH_YIELD_EVERY == 0 or index == total_graph_files:
+ await update_index_stage(
+ self.repository_id,
+ f"构建代码图谱... {index}/{total_graph_files}",
+ )
+ await update_current_indexing_file(
+ self.repository_id, file_path=file_path,
+ )
+ # 让 ASGI 线程池有机会处理 HTTP 请求 / SQLite 写锁释放窗口
+ await asyncio.sleep(0)
  full_path = os.path.join(repo_path, file_path)
  if not os.path.exists(full_path) or not os.path.isfile(full_path):
  continue
@@ -1559,9 +1750,9 @@ class IndexerService:
  module_path=module_path,
  )
  # 四维抽取
- bundle = self._graph_extractor.extract_all(tree, source, ctx)
+ bundle = graph_extractor.extract_all(tree, source, ctx)
  # 批量入库
- result = await self._graph_writer.write_bundle(repository_id, bundle)
+ result = await graph_writer.write_bundle(repository_id, bundle)
  stats["files_processed"] += 1
  stats["total_symbols"] += result.get("symbols", 0)
  stats["total_imports"] += result.get("imports", 0)
@@ -1841,9 +2032,28 @@ async def clone_and_index_repository(
  history_id=history_id,
  )
  elif collection_has_data:
- index_result = await indexer.run_incremental_index(
- temp_dir, branch_name=base_branch, is_base_branch=True,
- history_id=history_id,
+ checkpoint_count = await FileIndex.objects.filter(
+ repository_id=repository_id,
+ ).acount
+ if checkpoint_count > 0:
+ logger.info(
+ "partial_index_checkpoint_resume_to_full_index",
+ repository_id=repository_id,
+ checkpoint_files=checkpoint_count,
+ )
+ fallback_reason = "检测到未完成索引 checkpoint，按断点续传继续全量索引"
+ index_result = await indexer.run_full_index(
+ temp_dir, branch_name=base_branch,
+ )
+ else:
+ logger.warning(
+ "orphan_collection_without_checkpoint_rebuild",
+ repository_id=repository_id,
+ )
+ await sync_to_async(QdrantService.delete_collection)(repository_id)
+ fallback_reason = "collection 存在但无 FileIndex checkpoint，清理后全量重建"
+ index_result = await indexer.run_full_index(
+ temp_dir, branch_name=base_branch,
  )
  else:
  if last_sha:

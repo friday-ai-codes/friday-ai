@@ -8,8 +8,8 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "friday.settings")
 @pytest_asyncio.fixture
 async def test_repository:
  """创建测试用 Repository 实例。"""
- from repositories.models import Repository
  import uuid
+ from repositories.models import Repository
  repo = await Repository.objects.acreate(
  id=uuid.uuid4,
  name="test-graph-writer-repo",
@@ -27,7 +27,11 @@ async def graph_writer:
 def make_test_bundle(file_path="test.py"):
  """构造一个包含所有 4 维数据的 ExtractionBundle。"""
  from codegraph.extractors.base import (
- CallData, EndpointData, ExtractionBundle, ImportData, SymbolData,
+ CallData,
+ EndpointData,
+ ExtractionBundle,
+ ImportData,
+ SymbolData,
  )
  return ExtractionBundle(
  file_path=file_path,
@@ -63,6 +67,133 @@ def make_test_bundle(file_path="test.py"):
  )
 class TestGraphWriterWriteBundle:
  """write_bundle 正常路径测试。"""
+ @pytest.mark.django_db(transaction=True)
+ async def test_extract_and_write_graph_writes_in_isolated_thread_pool(
+ self, test_repository, tmp_path
+ ):
+ """graph 写库必须跑在 thread_sensitive=False 的独立线程上：
+ Django ORM async (aget/abulk_create/adelete) 默认 thread_sensitive=True，
+ 整个 ASGI 进程的所有 sync_to_async 调用共享一根线程串行执行。
+ graph 阶段 4000+ 文件 × 多次 ORM 写入会把这根线程占满，HTTP 接口
+ 的 ORM 调用排队到 graph 完成才能拿到结果 → 用户体验"接口都待处理"。
+ 修复后 graph 阶段的实际写入由 GraphWriter.write_bundle_sync 承担，
+ 并通过独立线程池（thread_sensitive=False）调度，不抢 ASGI 请求线程。
+ """
+ import threading
+ from codegraph.services.graph_writer import GraphWriter
+ # repo 里放一个真实文件让抽取链跑通
+ repo_root = tmp_path / "repo_root"
+ rel_path = "pkg/sample.py"
+ sample = repo_root / rel_path
+ sample.parent.mkdir(parents=True, exist_ok=True)
+ sample.write_text("def fn:\n return 1\n")
+ outer_thread = threading.get_ident
+ graph_writer_threads: list[int] =
+ original_sync = GraphWriter.write_bundle_sync
+ def _spy_sync(self, repository_id, bundle):
+ graph_writer_threads.append(threading.get_ident)
+ return original_sync(self, repository_id, bundle)
+ from services.indexer import IndexerService
+ # 用 monkeypatch 替代：直接 setattr 到类
+ GraphWriter.write_bundle_sync = _spy_sync # type: ignore[assignment]
+ try:
+ indexer = IndexerService(str(test_repository.id))
+ await indexer._extract_and_write_graph(
+ repo_path=str(repo_root),
+ file_paths=[rel_path],
+ repository_id=str(test_repository.id),
+ )
+ finally:
+ GraphWriter.write_bundle_sync = original_sync # type: ignore[assignment]
+ assert graph_writer_threads, "write_bundle_sync 必须被调用"
+ for tid in graph_writer_threads:
+ assert tid != outer_thread, (
+ f"graph 写入必须跑在独立线程，实际 tid={tid} 与 ASGI 主线程"
+ f" {outer_thread} 相同 → 仍会卡住 HTTP 接口"
+ )
+ @pytest.mark.django_db(transaction=True)
+ async def test_extract_and_write_graph_normalizes_absolute_paths(
+ self, test_repository, tmp_path
+ ):
+ """_extract_and_write_graph 收到绝对路径（位于 repo_path 之下）时
+ 必须 normalize 为相对路径再入库，避免 DB 里出现
+ /var/folders/.../friday_index_xxx/packages/... 这种 tmp 路径泄漏。
+ """
+ from codegraph.models import Symbol
+ from services.indexer import IndexerService
+ # 准备一个临时 "repo" 目录，里面放一个 python 文件
+ repo_root = tmp_path / "repo_root"
+ rel_path = "packages/foo/bar.py"
+ sample = repo_root / rel_path
+ sample.parent.mkdir(parents=True, exist_ok=True)
+ sample.write_text("def hello:\n return 1\n")
+ indexer = IndexerService(str(test_repository.id))
+ # 故意传入绝对路径，模拟 run_full_index 直接把 scan_directory 结果传过来的 bug
+ await indexer._extract_and_write_graph(
+ repo_path=str(repo_root),
+ file_paths=[str(sample)],
+ repository_id=str(test_repository.id),
+ )
+ symbols = [
+ s
+ async for s in Symbol.objects.filter(repository=test_repository)
+ ]
+ assert symbols, "至少要写入 1 个 Symbol（hello 函数）"
+ for sym in symbols:
+ assert not sym.file_path.startswith("/"), (
+ f"file_path 必须是相对路径，实际：{sym.file_path}"
+ )
+ assert sym.file_path == rel_path, (
+ f"file_path 期望 {rel_path}，实际 {sym.file_path}"
+ )
+ @pytest.mark.django_db(transaction=True)
+ async def test_write_bundle_resolves_caller_when_start_line_is_zero(
+ self, test_repository, graph_writer
+ ):
+ """calls extractor 写 caller_key=(file, name, 0) 表示 'unknown line'，
+ writer 必须 fallback 到 (file_path, name) 匹配 caller，不能因 start_line
+ 不一致就把所有 call 当模块级调用 skip 掉（线上实测：4911 文件 → calls=0）。
+ """
+ from codegraph.extractors.base import (
+ CallData,
+ ExtractionBundle,
+ SymbolData,
+ )
+ from codegraph.models import CallEdge
+ file_path = "src/sample.py"
+ bundle = ExtractionBundle(
+ file_path=file_path,
+ language="python",
+ symbols=[
+ SymbolData(
+ name="real_caller",
+ symbol_type="FUNCTION",
+ file_path=file_path,
+ start_line=12,
+ end_line=20,
+ signature="def real_caller:",
+ ),
+ ],
+ calls=[
+ CallData(
+ caller_key=(file_path, "real_caller", 0),
+ callee_name="print",
+ call_type="DIRECT",
+ line_number=15,
+ ),
+ ],
+ )
+ stats = await graph_writer.write_bundle(str(test_repository.id), bundle)
+ assert stats["calls"] == 1, (
+ "caller_key start_line=0 必须能通过 (file_path, name) 兜底匹配到"
+ f" Symbol，实际 stats={stats}"
+ )
+ edges = [
+ e
+ async for e in CallEdge.objects.filter(repository=test_repository)
+ ]
+ assert len(edges) == 1
+ assert edges[0].callee_name == "print"
  @pytest.mark.django_db(transaction=True)
  async def test_write_bundle_creates_all_entities(self, test_repository, graph_writer):
  """验证 write_bundle 写入后，四个模型均有记录。"""

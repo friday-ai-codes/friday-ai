@@ -1,12 +1,14 @@
 """Qdrant vector database client service."""
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 import httpx
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from qdrant_client.http.exceptions import UnexpectedResponse
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
+T = TypeVar("T")
 class QdrantService:
  """Service for interacting with Qdrant vector database."""
  _client: QdrantClient | None = None
@@ -42,7 +44,7 @@ class QdrantService:
  config = cls._get_config_sync
  url = config.get("url", "http://localhost:6333")
  proxy_vars = {k: v for k, v in os.environ.items if "proxy" in k.lower}
- logger.info("qdrant_client_init", url=url, proxy_env=proxy_vars)
+ logger.debug("qdrant_client_init", url=url, proxy_env=proxy_vars)
  cls._client = QdrantClient(
  url=url,
  api_key=config.get("api_key"),
@@ -63,22 +65,113 @@ class QdrantService:
  def reset_client(cls) -> None:
  """Reset client (useful when config changes)."""
  if cls._client is not None:
+ try:
  cls._client.close
+ except Exception as exc:
+ logger.warning("qdrant_client_close_failed", error=str(exc))
+ finally:
  cls._client = None
+ @staticmethod
+ def _is_bad_file_descriptor(exc: OSError) -> bool:
+ return getattr(exc, "errno", None) == 9 or "Bad file descriptor" in str(exc)
+ @classmethod
+ def _classify_failure(cls, exc: BaseException) -> str:
+ text = str(exc).lower
+ if isinstance(exc, OSError) and cls._is_bad_file_descriptor(exc):
+ return "bad_file_descriptor"
+ if "timed out" in text or "timeout" in text:
+ return "timeout"
+ if isinstance(exc, ConnectionError):
+ return "connection_error"
+ if isinstance(exc, OSError) and getattr(exc, "errno", None) in {
+ 54, # ECONNRESET
+ 32, # EPIPE
+ 104, # ECONNRESET on Linux
+ 61, # ECONNREFUSED
+ 111, # ECONNREFUSED on Linux
+ }:
+ return "connection_error"
+ if isinstance(exc, httpx.HTTPError):
+ return "http_error"
+ if isinstance(exc, UnexpectedResponse):
+ return "unexpected_response"
+ if isinstance(exc, ResponseHandlingException):
+ return "response_handling_error"
+ return "unknown"
+ @classmethod
+ def _call_with_bad_fd_retry(
+ cls,
+ operation: str,
+ fn: Callable[[QdrantClient], T],
+ ) -> T:
+ """执行一次 Qdrant 操作；坏 fd 时重建 client 并重试一次。"""
+ try:
+ return fn(cls.get_client)
+ except OSError as exc:
+ if not cls._is_bad_file_descriptor(exc):
+ raise
+ logger.warning(
+ "qdrant_bad_fd_retry",
+ operation=operation,
+ reason="bad_file_descriptor",
+ error=str(exc),
+ )
+ cls.reset_client
+ return fn(cls.get_client)
  @classmethod
  def health_check(cls) -> dict[str, Any]:
- """Check Qdrant service health."""
+ """Check Qdrant service health.
+ 关键不变量：**绝不能在 health 路径上 reset 已缓存的 client**。
+ 历史事故：定期健康检查触发 reset_client → 关掉了正在 upsert 的
+ httpx 连接池 → 在飞中的 PUT /points 已被 Qdrant 200 返回，但 Python
+ 端连接已死 → httpx 等满 60s 抛 ResponseHandlingException("timed out")，
+ 最终在 indexer 顶层显示成"写入向量库失败或超时"。
+ 正确做法：复用缓存 client；只有在 get_collections 抛连接级错误时
+ 才尝试 reset + 重建一次。配置变更通过 SystemSetting post_save
+ signal 显式调用 reset_client，而不是靠 health_check 兜底。
+ """
  try:
- # Reset client to use latest config
- cls.reset_client
  client = cls.get_client
- # Get cluster info to verify connection
  info = client.get_collections
  return {
  "status": "healthy",
  "collections_count": len(info.collections),
  }
  except Exception as e:
+ reason = cls._classify_failure(e)
+ logger.warning(
+ "qdrant_health_check_first_attempt_failed",
+ reason=reason,
+ error=str(e),
+ error_type=type(e).__name__,
+ )
+ # 仅在连接级错误时 reset+重试，避免对正在 upsert 的 client 误伤
+ if reason in {
+ "bad_file_descriptor",
+ "connection_error",
+ "timeout",
+ "http_error",
+ "response_handling_error",
+ }:
+ cls.reset_client
+ try:
+ client = cls.get_client
+ info = client.get_collections
+ return {
+ "status": "healthy",
+ "collections_count": len(info.collections),
+ }
+ except Exception as retry_exc:
+ logger.error(
+ "qdrant_health_check_failed",
+ reason=cls._classify_failure(retry_exc),
+ error=str(retry_exc),
+ error_type=type(retry_exc).__name__,
+ )
+ return {
+ "status": "unhealthy",
+ "error": str(retry_exc),
+ }
  logger.error("qdrant_health_check_failed", error=str(e))
  return {
  "status": "unhealthy",
@@ -89,19 +182,36 @@ class QdrantService:
  url: str | None = None, api_key: str | None = None
  ) -> dict[str, Any]:
  """Check Qdrant health with provided config (before saving)."""
+ target_url = url or "http://localhost:6333"
  try:
  client = QdrantClient(
- url=url or "http://localhost:6333",
+ url=target_url,
  api_key=api_key or None,
  trust_env=False,
  check_compatibility=False,
  )
  info = client.get_collections
  client.close
- return {"status": "healthy", "collections_count": len(info.collections)}
+ return {
+ "status": "healthy",
+ "message": "Qdrant 连接成功",
+ "collections_count": len(info.collections),
+ }
  except Exception as e:
- logger.error("qdrant_health_check_with_config_failed", error=str(e))
- return {"status": "unhealthy", "error": str(e)}
+ reason = QdrantService._classify_failure(e)
+ logger.error(
+ "qdrant_health_check_with_config_failed",
+ url=target_url,
+ reason=reason,
+ error=str(e),
+ error_type=type(e).__name__,
+ )
+ return {
+ "status": "unhealthy",
+ "message": f"{type(e).__name__}: {e}",
+ "error": str(e),
+ "reason": reason,
+ }
  @classmethod
  def get_collection_name(cls, repository_id: str) -> str:
  """Generate collection name for a repository."""
@@ -142,7 +252,7 @@ class QdrantService:
  existing_size = vectors_config.size # type: ignore[union-attr]
  need_recreate = existing_size != vector_size or existing_hybrid != hybrid
  if need_recreate:
- logger.info(
+ logger.debug(
  "collection_config_mismatch",
  collection_name=collection_name,
  existing_size=existing_size,
@@ -151,9 +261,9 @@ class QdrantService:
  new_hybrid=hybrid,
  )
  client.delete_collection(collection_name=collection_name)
- logger.info("collection_deleted_for_recreate", collection_name=collection_name)
+ logger.debug("collection_deleted_for_recreate", collection_name=collection_name)
  else:
- logger.info("collection_already_exists", collection_name=collection_name)
+ logger.debug("collection_already_exists", collection_name=collection_name)
  return True
  # Create collection
  if hybrid:
@@ -169,7 +279,7 @@ class QdrantService:
  "sparse": models.SparseVectorParams,
  },
  )
- logger.info("collection_created_hybrid", collection_name=collection_name)
+ logger.debug("collection_created_hybrid", collection_name=collection_name)
  else:
  client.create_collection(
  collection_name=collection_name,
@@ -178,7 +288,7 @@ class QdrantService:
  distance=models.Distance.COSINE,
  ),
  )
- logger.info("collection_created", collection_name=collection_name)
+ logger.debug("collection_created", collection_name=collection_name)
  # Create payload index for filtering
  client.create_payload_index(
  collection_name=collection_name,
@@ -234,7 +344,7 @@ class QdrantService:
  collection_name = cls.get_collection_name(repository_id)
  try:
  client.delete_collection(collection_name=collection_name)
- logger.info("collection_deleted", collection_name=collection_name)
+ logger.debug("collection_deleted", collection_name=collection_name)
  return True
  except UnexpectedResponse as e:
  logger.error("delete_collection_failed", error=str(e))
@@ -242,10 +352,10 @@ class QdrantService:
  @classmethod
  def get_stored_file_hashes(cls, repository_id: str) -> dict[str, str]:
  """Get all stored file paths and their hashes from collection."""
- client = cls.get_client
  collection_name = cls.get_collection_name(repository_id)
- file_hashes: dict[str, str] = {}
  try:
+ def _read_hashes(client: QdrantClient) -> dict[str, str]:
+ file_hashes: dict[str, str] = {}
  # Scroll through all points to get file_path and file_hash
  offset = None
  while True:
@@ -268,8 +378,12 @@ class QdrantService:
  break
  offset = next_offset
  return file_hashes
+ return cls._call_with_bad_fd_retry("get_stored_file_hashes", _read_hashes)
  except UnexpectedResponse:
  # Collection might not exist
+ return {}
+ except OSError as e:
+ logger.error("get_stored_file_hashes_os_failed", error=str(e))
  return {}
  @classmethod
  def update_file_path(cls, repository_id: str, old_path: str, new_path: str) -> bool:
@@ -298,9 +412,9 @@ class QdrantService:
  @classmethod
  def get_collection_stats(cls, repository_id: str) -> dict[str, Any]:
  """获取仓库索引集合的统计信息（chunk 数、语言分布）。"""
- client = cls.get_client
  collection_name = cls.get_collection_name(repository_id)
  try:
+ def _collect(client: QdrantClient) -> dict[str, Any]:
  # 检查 collection 是否存在
  collections = client.get_collections
  existing_names = [c.name for c in collections.collections]
@@ -338,15 +452,19 @@ class QdrantService:
  "language_distribution": language_counts,
  "indexed_files_count": len(indexed_files),
  }
+ return cls._call_with_bad_fd_retry("get_collection_stats", _collect)
  except UnexpectedResponse as e:
  logger.error("get_collection_stats_failed", error=str(e))
+ return {"exists": False, "points_count": 0, "language_distribution": {}}
+ except OSError as e:
+ logger.error("get_collection_stats_os_failed", error=str(e))
  return {"exists": False, "points_count": 0, "language_distribution": {}}
  @classmethod
  def check_collection_health(cls, repository_id: str) -> dict[str, Any]:
  """校验仓库索引集合的健康状态。"""
- client = cls.get_client
  collection_name = cls.get_collection_name(repository_id)
  try:
+ def _check(client: QdrantClient) -> dict[str, Any]:
  collections = client.get_collections
  existing_names = [c.name for c in collections.collections]
  if collection_name not in existing_names:
@@ -361,8 +479,17 @@ class QdrantService:
  "collection_exists": True,
  "points_count": count_result.count,
  }
+ return cls._call_with_bad_fd_retry("check_collection_health", _check)
  except UnexpectedResponse as e:
  logger.error("check_collection_health_failed", error=str(e))
+ return {
+ "status": "unhealthy",
+ "collection_exists": False,
+ "points_count": 0,
+ "error": str(e),
+ }
+ except OSError as e:
+ logger.error("check_collection_health_os_failed", error=str(e))
  return {
  "status": "unhealthy",
  "collection_exists": False,
@@ -403,7 +530,6 @@ class QdrantService:
  repository_id: Repository ID
  points: List of points with id, vector, and payload
  """
- client = cls.get_client
  collection_name = cls.get_collection_name(repository_id)
  try:
  qdrant_points = [
@@ -414,19 +540,65 @@ class QdrantService:
  )
  for p in points
  ]
+ def _upsert(client: QdrantClient) -> bool:
+ logger.debug(
+ "upsert_vectors_start",
+ collection_name=collection_name,
+ points_count=len(qdrant_points),
+ )
  client.upsert(
  collection_name=collection_name,
  points=qdrant_points,
  )
+ logger.debug(
+ "upsert_vectors_complete",
+ collection_name=collection_name,
+ points_count=len(qdrant_points),
+ )
  return True
+ return cls._call_with_bad_fd_retry(
+ "upsert_vectors",
+ _upsert,
+ )
  except UnexpectedResponse as e:
- logger.error("upsert_vectors_failed", error=str(e))
+ logger.error(
+ "upsert_vectors_failed",
+ collection_name=collection_name,
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e),
+ error_type=type(e).__name__,
+ )
+ return False
+ except ResponseHandlingException as e:
+ logger.error(
+ "upsert_vectors_response_handling_failed",
+ collection_name=collection_name,
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e), error_type=type(e).__name__,
+ )
  return False
  except httpx.HTTPError as e:
  # 网络层异常（timeout / connect refused / read error）：
  # 不让单次 batch 抖动炸掉整次索引（这是 indexer 'timed out' 失败的元凶）。
  # 调用方需要感知失败并跳过 FileIndex 锚点写入，避免数据丢失被静默吞掉。
- logger.error("upsert_vectors_network_failed", error=str(e), error_type=type(e).__name__)
+ logger.error(
+ "upsert_vectors_network_failed",
+ collection_name=collection_name,
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e), error_type=type(e).__name__,
+ )
+ return False
+ except OSError as e:
+ logger.error(
+ "upsert_vectors_os_failed",
+ collection_name=collection_name,
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e), error_type=type(e).__name__,
+ )
  return False
  @classmethod
  def search(
@@ -523,7 +695,7 @@ class QdrantService:
  field_name=field,
  field_schema=models.PayloadSchemaType.KEYWORD,
  )
- logger.info("overlay_collection_created", collection_name=collection_name)
+ logger.debug("overlay_collection_created", collection_name=collection_name)
  return True
  except UnexpectedResponse as e:
  logger.error("create_collection_by_name_failed", error=str(e))
@@ -538,7 +710,7 @@ class QdrantService:
  client = cls.get_client
  try:
  client.delete_collection(collection_name=collection_name)
- logger.info("overlay_collection_deleted", collection_name=collection_name)
+ logger.debug("overlay_collection_deleted", collection_name=collection_name)
  return True
  except UnexpectedResponse as e:
  logger.error("delete_collection_by_name_failed", error=str(e))
@@ -550,7 +722,6 @@ class QdrantService:
  points: list[dict[str, Any]],
  ) -> bool:
  """向指定名称的 collection upsert points。"""
- client = cls.get_client
  try:
  qdrant_points = [
  models.PointStruct(
@@ -560,17 +731,59 @@ class QdrantService:
  )
  for p in points
  ]
+ def _upsert(client: QdrantClient) -> bool:
+ logger.debug(
+ "upsert_vectors_by_name_start",
+ collection_name=collection_name,
+ points_count=len(qdrant_points),
+ )
  client.upsert(
  collection_name=collection_name,
  points=qdrant_points,
  )
+ logger.debug(
+ "upsert_vectors_by_name_complete",
+ collection_name=collection_name,
+ points_count=len(qdrant_points),
+ )
  return True
+ return cls._call_with_bad_fd_retry(
+ "upsert_vectors_by_name",
+ _upsert,
+ )
  except UnexpectedResponse as e:
- logger.error("upsert_vectors_by_name_failed", error=str(e))
+ logger.error(
+ "upsert_vectors_by_name_failed",
+ collection_name=collection_name,
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e),
+ error_type=type(e).__name__,
+ )
+ return False
+ except ResponseHandlingException as e:
+ logger.error(
+ "upsert_vectors_by_name_response_handling_failed",
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e), error_type=type(e).__name__,
+ collection_name=collection_name,
+ )
  return False
  except httpx.HTTPError as e:
  logger.error(
  "upsert_vectors_by_name_network_failed",
+ points_count=len(points),
+ reason=cls._classify_failure(e),
+ error=str(e), error_type=type(e).__name__,
+ collection_name=collection_name,
+ )
+ return False
+ except OSError as e:
+ logger.error(
+ "upsert_vectors_by_name_os_failed",
+ points_count=len(points),
+ reason=cls._classify_failure(e),
  error=str(e), error_type=type(e).__name__,
  collection_name=collection_name,
  )

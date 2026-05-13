@@ -83,28 +83,57 @@ ROLE_SLUG_MAP: Final[dict[str, str]] = {
 # 字节级无损从原函数局部变量复制而来，供 0002 data migration 跨 app import 作为 seed。
 # 重构后 _build_system_prompt 的拼接结果与迁移前字节级一致（由 test_role_prompt.py 10 用例保证）。
 _STRATEGY_DEEP_ANALYSIS: Final[str] = (
- "用户已开启「深度分析」模式，你必须使用深度分析策略：\n"
- " 1. 用 1-2 次 RAG 快速获取入口上下文\n"
- " 2. 立即调用 deep_analysis(task_description=...) 启动 Claude Code 分析\n"
- " 3. deep_analysis 结果返回后直接回答，不要再调用任何工具\n"
- " 4. 每轮回答只能调用一次 deep_analysis\n"
- " 禁止仅用 RAG 工具拼凑回答。必须调用 deep_analysis。\n"
+ "用户已开启「深度分析」模式 —— 真正的代码分析由远程 Claude Code 容器完成，\n"
+ "你的角色是「路由器 / 派单员」：定位相关仓库 → 一次性并行下发分析任务。\n\n"
+ "工作流（严格按顺序）：\n"
+ " 1. 调用 list_space_repositories 拿到所有可用仓库的清单与简介；\n"
+ " 如果问题关键词指向不明，可用 1-2 次 search_repository_code 缩小到候选仓库\n"
+ " （仅用于「这些仓库里哪些跟问题相关」的判断，不用来拼凑答案）\n"
+ " 2. 识别出与问题相关的 N 个仓库（N ≥ 1，常见 1-3）\n"
+ " 3. 在同一轮回复里**并行**emit N 个 deep_analysis 调用 ——\n"
+ " 每个调用绑定一个相关仓库的 repository_id 与一段聚焦的 task_description。\n"
+ " 系统会**并行 dispatch N 个 Claude Code 容器**同时分析，效率最高。\n"
+ " 4. 所有 deep_analysis 结果回灌后，基于结果汇总作答；除非用户继续追问，否则不再调任何工具。\n\n"
+ "硬约束：\n"
+ " - RAG 工具（search_repository_code / browse_file_content / list_space_structure）\n"
+ " **只能用来「定位哪些仓库相关」**，绝不允许用它们拼凑代码细节作为最终答案。\n"
+ " - **必须并行 dispatch**：识别出 N 个相关仓库后，同一轮一次性 emit N 个 deep_analysis；\n"
+ " 严禁串行（emit 1 个 → 等结果 → 再 emit 1 个）。\n"
+ " - **宁可多开**：拿不准某个仓库是否相关时，多开一个 deep_analysis 也不要漏 ——\n"
+ " Claude Code 容器是并行的，多开一个的成本远小于错过相关代码。\n"
+ " - **找到就 dispatch**：识别出相关仓库后**立刻** dispatch，不要再做 RAG 验证。\n"
+ " - 跨仓库的「为什么 A 跳到 B」类问题，必须同时对 A 和 B 都开 deep_analysis。\n"
 )
 _STRATEGY_DEFAULT: Final[str] = (
- "你有两种策略应对用户问题：\n\n"
- "策略一 - 快速检索（定位代码、查看文件、简单问答）：\n"
- " 调用 search_repository_code / browse_file_content 等工具搜索向量库\n"
- " 根据需要灵活调用，但要有目的性，避免无方向地反复搜索同一内容\n"
+ "回答策略 - 快速检索（定位代码、查看文件、问答、分析、架构梳理）：\n"
+ " 调用 search_repository_code / browse_file_content / list_space_structure 等工具搜索向量库与代码\n"
+ " 根据需要灵活组合调用，但要有目的性，避免无方向地反复搜索同一内容\n"
  " 信息足够时立即回答，不要为了全面而过度检索\n\n"
- "策略二 - 深度分析（梳理架构、跨模块分析、复杂代码追踪）：\n"
- " 先用 1-2 次 RAG 快速获取入口上下文，然后立即调用 deep_analysis(task_description=...)\n"
- " deep_analysis 会启动 Claude Code 对完整仓库做深入分析，结果返回后直接回答\n"
- " 每轮回答只能调用一次 deep_analysis，不要在其执行期间或之后再调用任何工具\n\n"
- "策略选择规则：\n"
- " - 用户明确要求「深度分析」「详细分析」「分析一下架构」等，必须使用策略二\n"
- " - 问题涉及跨模块追踪、架构梳理、实现原理分析，优先使用策略二\n"
- " - 简单的代码定位、查看文件、事实性问答，使用策略一\n"
- " - 拿不准时倾向策略二，deep_analysis 的分析质量远优于多次 RAG 拼凑\n"
+ "约束：\n"
+ " 本模式下不要主动调用 deep_analysis —— 只有用户在前端显式开启「深度分析」开关\n"
+ " 时，系统才会暴露并启用该工具；当前未开启，请用上面的检索工具完成回答。\n"
+)
+_SEARCH_USAGE_RULES: Final[str] = (
+ "\nsearch_repository_code 使用规范（重要 - 用错会一直拿不到结果）：\n"
+ " 向量 + BM25 混合搜索对**单一概念的精准 query** 效果最好，对**多概念关键词堆**效果灾难性差。\n\n"
+ " ✅ 正确用法（一次搜一个概念，分多次调用）：\n"
+ " - search_repository_code(query='studyRoom') # 找入口模块\n"
+ " - search_repository_code(query='wrongBook') # 找目标模块\n"
+ " - search_repository_code(query='entrance') # 找跳转参数\n"
+ " - search_repository_code(query='UserService') # 找类\n"
+ " - search_repository_code(query='POST /api/login') # 找接口\n\n"
+ " ❌ 错误用法（被系统观察到的真实失败 case）：\n"
+ " - search_repository_code(query='studyRoom views classroom report floor friends shareRoom')\n"
+ " ↑ 9 个关键词混搜：embedding 信号被稀释、BM25 没有文件能同时高分匹配这么多词 → 0 结果\n"
+ " - search_repository_code(query='书房 入口 跳转 错题本')\n"
+ " ↑ 多个中文概念混搜：同样会 0 结果\n"
+ " - search_repository_code(query='页面跳转')\n"
+ " ↑ 太泛的描述词、没有具体符号名 → 召回质量差\n\n"
+ " 调优建议：\n"
+ " - 优先用**代码层符号**（驼峰命名、文件路径片段、API 路径、类名）做 query\n"
+ " - 中文需求先拆成 1-3 个英文 / 拼音关键词分别搜，再合并理解\n"
+ " - 0 结果时**不要原样重试**，按返回的 ⚠️ 诊断提示调整\n"
+ " - 想要更宽召回时把 min_score 降到 0.3 或更低\n"
 )
 _CODING_GUIDANCE: Final[str] = (
  "\n编码任务识别：\n"
@@ -116,6 +145,19 @@ _CODING_GUIDANCE: Final[str] = (
  " 不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
  " - deep_analysis：分析理解代码（只读）\n"
  " - create_coding_plan：执行代码变更（写入）\n"
+)
+_TOOL_BUDGET_RULES: Final[str] = (
+ "\n工具调用预算（重要 - 系统层硬约束）：\n"
+ " - 你最多有约 50 次工具调用机会（每完成一轮 LLM↔工具来回扣 1）。\n"
+ " - 每个工具结果末尾会附 `[预算: X/Y 轮 | ...]`，请把它当作"
+ "「还能调几次」的决策信号。\n"
+ " - 同一个文件最多被 browse_file_content 调用 3 次，第 4 次起系统会直接拒绝。\n"
+ " - 完全相同参数的同一工具第 2 次起会被去重命中（返回上次结果 + 警告），\n"
+ " 出现去重命中说明你正在原地打转，必须立刻换思路而非再调一次。\n"
+ " - 剩余 ≤ 5 轮时收束作答；剩余 ≤ 1 轮时系统会强制不提供工具，\n"
+ " 所以请在还有余量时主动给答案，不要等到被强制收束。\n"
+ " - 如果当前信息不足以完整作答，直接说「基于已检索内容，可以确认 X、Y；\n"
+ " Z 部分需要进一步访问 ABC 文件」也比无脑循环检索强。\n"
 )
 _ENDING_RULES: Final[str] = (
  "不要在回复中描述工具操作（禁止「让我搜索一下」等叙述），直接调用工具然后回答。\n"
@@ -171,13 +213,21 @@ async def _build_system_prompt(
  variables={},
  fallback=_CODING_GUIDANCE,
  )
- # 4. 组装（结尾规则 _ENDING_RULES 保持 Python 字面量，非可运营 Prompt）
+ # 4. 组装（结尾规则 _ENDING_RULES、预算约束 _TOOL_BUDGET_RULES、检索工具
+ # 使用规范 _SEARCH_USAGE_RULES 都保持 Python 字面量 — 与代码硬约束语义
+ # 强耦合（如 _ChatToolBudget 的 max_turns、search_repository_code 的
+ # min_score 默认值），不适合外置成可运营 Prompt（一旦在 Prompt Center
+ # 里被改坏，模型会"以为"配置是另一套）。
+ # 装配顺序：角色 → 策略 → 编码 → 检索用法 → 预算 → 结尾。
+ # 检索用法放在策略之后是因为它和"如何调用 RAG"强相关。
  project_line = project_context_line or f"当前空间：{project_name}"
  return (
  f"{role_fragment}\n\n"
  f"{project_line}\n\n"
  f"{strategy_fragment}\n"
  f"{coding_guidance_fragment}\n"
+ f"{_SEARCH_USAGE_RULES}\n"
+ f"{_TOOL_BUDGET_RULES}\n"
  f"{_ENDING_RULES}"
  )
 async def _get_tool_names(space_id: str) -> list[str]:

@@ -213,13 +213,24 @@ async def test_registry_key_consistency -> None:
 @pytest.mark.django_db
 @pytest.mark.asyncio
 async def test_deep_analysis_reuse_existing_session -> None:
- """: 复用已有 session 时不重新 dispatch。"""
+ """: 同 conversation_id + 同 repository_id 时复用已有 session、不重新 dispatch。
+ Phase：复用键由 (conv_id, source) 升级为 (conv_id, repo_id, source)。
+ 本测试覆盖"同 conv + 同 repo"复用路径；并行场景（同 conv + 不同 repo）由
+ tests/test_deep_analysis_parallel.py 覆盖。
+ """
+ mocks = _build_deep_analysis_mocks
  existing = _make_mock_session("deep-existing")
  existing.last_output = {
  "source": "chat_deep_analysis",
  "conversation_id": "cid",
+ # 必须匹配 mocks["repo"].id，否则 P15 新复用键判定为「不同仓库」
+ # 会真实开新容器（这是正确行为，但不是本测试要验证的）。
+ "repository_id": str(mocks["repo"].id),
  }
- mocks = _build_deep_analysis_mocks(existing_session=existing)
+ # 重建 sub_filter 让它 yield 这个 existing
+ async def _sub_iter_with_existing(*_a: object, **_kw: object) -> MagicMock:
+ yield existing
+ mocks["sub_filter"].__aiter__ = _sub_iter_with_existing
  result = await _call_deep_analysis(mocks)
  assert result.success is True
  mocks["dispatcher"].dispatch.assert_not_awaited

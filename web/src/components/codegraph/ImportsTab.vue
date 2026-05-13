@@ -4,13 +4,21 @@ import { computed, onMounted, ref } from 'vue'
 import { getImports } from '~/api/codegraph'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 const props = defineProps<{
  repositoryId: string
 }>
+const PAGE_SIZE_OPTIONS = [50, 100, 200] as const
 const imports = ref<ImportEdgeRow>
 const total = ref(0)
 const offset = ref(0)
-const limit = 50
+const limit = ref<number>(50)
 const loading = ref(false)
 const error = ref<string | null>(null)
 interface ImportGroup {
@@ -30,7 +38,10 @@ async function fetchImports {
  loading.value = true
  error.value = null
  try {
- const res = await getImports(props.repositoryId, { limit, offset: offset.value })
+ const res = await getImports(props.repositoryId, {
+ limit: limit.value,
+ offset: offset.value,
+ })
  imports.value = res.results
  total.value = res.count
  }
@@ -42,19 +53,29 @@ async function fetchImports {
  }
 }
 function prevPage {
- if (offset.value >= limit) {
- offset.value -= limit
+ if (offset.value >= limit.value) {
+ offset.value -= limit.value
  fetchImports
  }
 }
 function nextPage {
- if (offset.value + limit < total.value) {
- offset.value += limit
+ if (offset.value + limit.value < total.value) {
+ offset.value += limit.value
  fetchImports
  }
 }
-const currentPage = computed( => Math.floor(offset.value / limit) + 1)
-const totalPages = computed( => Math.ceil(total.value / limit))
+function handlePageSizeChange(value: unknown) {
+ const next = Number(value)
+ if (!Number.isFinite(next) || next <= 0)
+ return
+ limit.value = next
+ offset.value = 0
+ fetchImports
+}
+const currentPage = computed( => Math.floor(offset.value / limit.value) + 1)
+const totalPages = computed( => Math.ceil(total.value / limit.value))
+const rangeStart = computed( => total.value === 0 ? 0: offset.value + 1)
+const rangeEnd = computed( => Math.min(offset.value + imports.value.length, total.value))
 onMounted(fetchImports)
 </script>
 <template>
@@ -117,10 +138,31 @@ onMounted(fetchImports)
  </div>
  </div>
  <!-- 服务端分页 -->
- <div v-if="totalPages > 1" class="flex items-center justify-between px-1 pt-2">
- <span class="text-xs text-muted-foreground">
- 第 {{ currentPage }} / {{ totalPages }} 页，共 {{ total }} 条
- </span>
+ <div
+ v-if="total > 0"
+ class="flex items-center justify-between px-1 pt-2 gap-3 flex-wrap"
+ >
+ <div class="flex items-center gap-3 text-xs text-muted-foreground">
+ <span>显示 {{ rangeStart }} 至 {{ rangeEnd }} 共 {{ total }} 条</span>
+ <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+ <div class="flex items-center gap-2">
+ <span>每页:</span>
+ <Select:model-value="String(limit)"
+ @update:model-value="handlePageSizeChange"
+ >
+ <SelectTrigger class=" w-[70px] text-xs">
+ <SelectValue />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="size in PAGE_SIZE_OPTIONS":key="size":value="String(size)"
+ >
+ {{ size }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
+ </div>
  <div class="flex gap-2">
  <Button
  variant="outline"

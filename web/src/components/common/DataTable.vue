@@ -43,6 +43,12 @@ const props = defineProps<{
  pageSizeOptions?: number
  loading?: boolean
  onRowClick?: (row: T) => void
+ /**
+ * 服务端分页模式：data 视为当前页（已分页好），DataTable 不再做客户端分页，
+ * 也不渲染自带的"显示 X 至 Y 共 N 条"+"每页"选择器+页码按钮，由外层组件
+ * 提供独立的分页控件，避免双套分页相互冲突。
+ */
+ serverSide?: boolean
 }>
 defineSlots<{
  filters: => unknown
@@ -65,7 +71,8 @@ const table = useVueTable({
  getCoreRowModel: getCoreRowModel,
  getSortedRowModel: getSortedRowModel,
  getFilteredRowModel: getFilteredRowModel,
- getPaginationRowModel: getPaginationRowModel,
+ // server-side 模式不挂客户端分页 row model：data 即为当前页全部行
+ ...(props.serverSide ? {}: { getPaginationRowModel: getPaginationRowModel }),
  state: {
  get sorting { return sorting.value },
  get globalFilter { return globalFilter.value },
@@ -227,8 +234,8 @@ function getColumnLabel(column: ReturnType<typeof table.getAllLeafColumns>[numbe
  </template>
  </TableBody>
  </Table>
- <!-- 分页区域 -->
- <div class="flex items-center justify-between px-4 py-3 border-t border-border/30">
+ <!-- 分页区域：server-side 模式由外层接管，DataTable 自身不渲染 -->
+ <div v-if="!props.serverSide" class="flex items-center justify-between px-4 py-3 border-t border-border/30">
  <!-- 左侧：显示范围 + 每页条数 -->
  <div class="flex items-center gap-4">
  <span class="text-sm text-muted-foreground">

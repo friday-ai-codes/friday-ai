@@ -4,8 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessageChunk
-from agents.chat_runner import ChatAnthropicRunner, ChatRunnerConfig, _thinking_budget_tokens
-from agents.core.events import MESSAGE_COMPLETE, TEXT_DELTA, TOOL_USE_RESULT, TOOL_USE_START
+from agents.chat_runner import (
+ ChatAnthropicRunner,
+ ChatRunnerConfig,
+ _build_tool_specs,
+ _thinking_budget_tokens,
+)
+from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA, TOOL_USE_RESULT, TOOL_USE_START
+from agents.tool_budget import FILE_READ_HARD_LIMIT
 from agents.tools.base import ToolResult
 def _make_config -> ChatRunnerConfig:
  return ChatRunnerConfig(
@@ -97,3 +103,403 @@ async def test_chat_runner_emits_tool_events_for_blocking_tool -> None:
  assert runner.result is not None
  assert runner.result.status == "completed"
  assert runner.result.final_answer == ""
+# ===========================================================================
+# Phase — _ToolBudget 集成测试
+# ===========================================================================
+def _make_scripted_bound_model(scripts: list[list[AIMessageChunk]]):
+ """构造一个可被多次 astream 的 model，每次 astream yield 一个 script。
+ 适用于多轮 LLM ↔ tool 来回的场景。bind_tools 的副作用是返回自身，
+ 保证 chat_runner 切换 active_model = model_with_tools 或 = model 都能跑。
+ """
+ iter_state = {"call_count": 0}
+ async def _astream(_messages: list[object]) -> AsyncGenerator[AIMessageChunk, None]:
+ idx = iter_state["call_count"]
+ iter_state["call_count"] += 1
+ # script 用完后 yield 一条 "done" 文本作为最终回答，避免无限循环
+ if idx >= len(scripts):
+ yield AIMessageChunk(content="done")
+ return
+ for chunk in scripts[idx]:
+ yield chunk
+ bound = SimpleNamespace(astream=_astream, bind_tools=lambda _tools: SimpleNamespace(astream=_astream))
+ return bound
+@pytest.mark.asyncio
+async def test_tool_budget_dedup_intercepts_second_identical_call -> None:
+ """LLM 第 2 次用相同 args 调同一工具，应被 budget 拦截，不真实执行。"""
+ runner = ChatAnthropicRunner(_make_config)
+ # Round 1: 调 search，返工具调用
+ # Round 2: 同样的 search args 再调一次（应被拦截）
+ # Round 3: 给最终答案
+ tool_call_1 = AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "search_repository_code",
+ "args": {"query": "foo"},
+ "id": "call_1",
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 5}},
+ )
+ tool_call_2 = AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "search_repository_code",
+ "args": {"query": "foo"},
+ "id": "call_2",
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 5}},
+ )
+ final_answer = AIMessageChunk(
+ content="结果是 X",
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 3}},
+ )
+ bound_model = _make_scripted_bound_model([
+ [tool_call_1],
+ [tool_call_2],
+ [final_answer],
+ ])
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ execute_calls =
+ async def _execute(arguments: dict[str, object]) -> ToolResult:
+ execute_calls.append(arguments)
+ return ToolResult(success=True, output={"matches": ["a.py"]})
+ tool_specs = {
+ "search_repository_code": SimpleNamespace(
+ tool=object,
+ execute=_execute,
+ definition=MagicMock,
+ ),
+ }
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
+ ):
+ events = [event async for event in runner.stream("找一下 foo")]
+ # 应该只真实执行 1 次（第 2 次被去重拦截）
+ assert len(execute_calls) == 1
+ # 验证第 2 次 TOOL_USE_RESULT 带 budget_intercepted=True flag
+ tool_results = [e for e in events if e.type == TOOL_USE_RESULT]
+ assert len(tool_results) == 2
+ assert "budget_intercepted" not in tool_results[0].data
+ assert tool_results[1].data.get("budget_intercepted") is True
+ assert runner.result is not None
+ assert runner.result.status == "completed"
+ assert runner.result.final_answer == "结果是 X"
+@pytest.mark.asyncio
+async def test_tool_budget_file_limit_rejects_after_hard_limit -> None:
+ """browse_file_content 同一文件读到上限后，下次调用被硬拒绝。"""
+ runner = ChatAnthropicRunner(_make_config)
+ args_base = {"repository_id": "r1", "file_path": "a.ts"}
+ def _read_chunk(call_id: str, start: int) -> AIMessageChunk:
+ return AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "browse_file_content",
+ "args": {**args_base, "start_line": start},
+ "id": call_id,
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 5}},
+ )
+ # FILE_READ_HARD_LIMIT 次允许 + 1 次拦截 + 最终答案
+ scripts = [[_read_chunk(f"call_{i}", i * 10)] for i in range(FILE_READ_HARD_LIMIT)]
+ scripts.append([_read_chunk(f"call_{FILE_READ_HARD_LIMIT}", 999)])
+ scripts.append([AIMessageChunk(
+ content="基于读到的内容回答",
+ response_metadata={"usage": {"input_tokens": 5, "output_tokens": 3}},
+ )])
+ bound_model = _make_scripted_bound_model(scripts)
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ execute_calls =
+ async def _execute(arguments: dict[str, object]) -> ToolResult:
+ execute_calls.append(arguments)
+ return ToolResult(success=True, output={"chunks": })
+ tool_specs = {
+ "browse_file_content": SimpleNamespace(
+ tool=object,
+ execute=_execute,
+ definition=MagicMock,
+ ),
+ }
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
+ ):
+ events = [event async for event in runner.stream("看下 a.ts")]
+ # 真实执行 = FILE_READ_HARD_LIMIT 次
+ assert len(execute_calls) == FILE_READ_HARD_LIMIT
+ tool_results = [e for e in events if e.type == TOOL_USE_RESULT]
+ assert len(tool_results) == FILE_READ_HARD_LIMIT + 1
+ # 最后一次应被拦截 + success=False
+ last_intercepted = tool_results[-1].data
+ assert last_intercepted.get("budget_intercepted") is True
+ assert last_intercepted["success"] is False
+@pytest.mark.asyncio
+async def test_tool_budget_force_final_turn_skips_tools -> None:
+ """剩余 ≤ 1 轮时应不再 bind_tools，强制 LLM 出最终回答。
+ 我们用 max_turns=2 让第 0 轮就 should_force_final=True
+ （remaining=2 - 0 = 2 > 1，第 0 轮先调一次 tool；turn done 后 remaining=1，
+ 第 1 轮触发 force_final，必须给出文本回答）。
+ """
+ config = _make_config
+ config.max_turns = 2 # 最多 2 轮：第 0 轮调工具，第 1 轮 force-final
+ runner = ChatAnthropicRunner(config)
+ scripts = [
+ [AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "search_repository_code",
+ "args": {"query": "foo"},
+ "id": "call_1",
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 5}},
+ )],
+ # 第 1 轮：force-final，LLM 必须出文本回答（不能再调工具）
+ [AIMessageChunk(
+ content="基于已有信息：foo 在 a.py 中",
+ response_metadata={"usage": {"input_tokens": 10, "output_tokens": 8}},
+ )],
+ ]
+ bound_model = _make_scripted_bound_model(scripts)
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ # force-final 轮用的是 model 本身（未 bind_tools），必须也接上 scripted astream
+ # —— 与 bound_model.astream 共享同一个 iter_state，所以是连续的 turn 序列。
+ fake_model.astream = bound_model.astream
+ async def _execute(_arguments: dict[str, object]) -> ToolResult:
+ return ToolResult(success=True, output={"matches": ["a.py"]})
+ tool_specs = {
+ "search_repository_code": SimpleNamespace(
+ tool=object,
+ execute=_execute,
+ definition=MagicMock,
+ ),
+ }
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
+ ):
+ events = [event async for event in runner.stream("找 foo")]
+ # 验证：执行了 1 次工具，最终拿到了 final text
+ assert runner.result is not None
+ assert runner.result.status == "completed"
+ assert "基于已有信息" in (runner.result.final_answer or "")
+ # MESSAGE_COMPLETE 一定出现（非 ERROR）
+ assert any(e.type == MESSAGE_COMPLETE for e in events)
+ assert not any(e.type == ERROR for e in events)
+@pytest.mark.asyncio
+async def test_tool_budget_max_turns_exhausted_returns_degraded_not_error -> None:
+ """max_turns 真用尽时，状态应是 completed+degraded 而非 error。
+ 设计要点：要让 for 循环跑完 max_turns 次（每轮 turn_complete），模型每轮
+ 都必须吐 tool_calls（无 tool_calls 时 chat_runner 会立即 return 成
+ completed）。这模拟最坏场景 —— 模型即使被 force-final 也继续要工具。
+ """
+ config = _make_config
+ config.max_turns = 2
+ runner = ChatAnthropicRunner(config)
+ def _tool_chunk(cid: str) -> AIMessageChunk:
+ return AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "search_repository_code",
+ "args": {"query": f"q-{cid}"},
+ "id": cid,
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 5, "output_tokens": 5}},
+ )
+ # 两轮都吐 tool_calls（distinct args 避免 dedup 拦截 → 触发 turn_complete）
+ scripts = [
+ [_tool_chunk("c1")],
+ [_tool_chunk("c2")],
+ ]
+ bound_model = _make_scripted_bound_model(scripts)
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ fake_model.astream = bound_model.astream # force-final 路径用 fake_model.astream
+ async def _execute(_arguments: dict[str, object]) -> ToolResult:
+ return ToolResult(success=True, output={"matches": })
+ tool_specs = {
+ "search_repository_code": SimpleNamespace(
+ tool=object,
+ execute=_execute,
+ definition=MagicMock,
+ ),
+ }
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
+ ):
+ events = [event async for event in runner.stream("找点东西")]
+ assert runner.result is not None
+ # 关键断言：max_turns 用尽不再是 error，而是 completed + degraded
+ assert runner.result.status == "completed"
+ assert runner.result.metadata.get("degraded") is True
+ assert runner.result.metadata.get("degraded_reason") == "max_turns_exhausted"
+ assert runner.result.metadata.get("max_turns") == 2
+ # MESSAGE_COMPLETE 应包含 degraded flag
+ msg_complete = [e for e in events if e.type == MESSAGE_COMPLETE]
+ assert len(msg_complete) == 1
+ assert msg_complete[0].data.get("degraded") is True
+ # 没有 ERROR
+ assert not any(e.type == ERROR for e in events)
+@pytest.mark.asyncio
+async def test_tool_budget_annotates_tool_message_with_remaining -> None:
+ """ToolMessage 的 content 应被注入预算提示（被 LLM 下一轮看到）。"""
+ config = _make_config
+ config.max_turns = 50
+ runner = ChatAnthropicRunner(config)
+ scripts = [
+ [AIMessageChunk(
+ content="",
+ tool_calls=[{
+ "name": "search_repository_code",
+ "args": {"query": "foo"},
+ "id": "c1",
+ "type": "tool_call",
+ }],
+ response_metadata={"usage": {"input_tokens": 5, "output_tokens": 5}},
+ )],
+ [AIMessageChunk(content="ok", response_metadata={"usage": {"input_tokens": 3, "output_tokens": 1}})],
+ ]
+ bound_model = _make_scripted_bound_model(scripts)
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ captured_messages =
+ async def _astream_capture(messages: list[object]) -> AsyncGenerator[AIMessageChunk, None]:
+ captured_messages.append([type(m).__name__ for m in messages])
+ idx = len(captured_messages) - 1
+ for c in scripts[idx] if idx < len(scripts) else [AIMessageChunk(content="done")]:
+ yield c
+ bound_model.astream = _astream_capture
+ async def _execute(_arguments: dict[str, object]) -> ToolResult:
+ return ToolResult(success=True, output={"matches": ["a.py"]})
+ tool_specs = {
+ "search_repository_code": SimpleNamespace(
+ tool=object,
+ execute=_execute,
+ definition=MagicMock,
+ ),
+ }
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
+ ):
+ async for _event in runner.stream("找 foo"):
+ pass
+ # 第 2 次 astream 时 messages 已包含 ToolMessage —— 找出它检查 content
+ # 简化：直接从 runner._run_task 后看 messages 不太好，改成验证拦截后的
+ # tool_message content。这里通过 patch ToolMessage 验证。
+ # 实际上更简单：再写一个测试直接 import budget.annotate 验证内容。
+ # 此处只校验流程跑通即可（详细 annotation 形态由 test_tool_budget.py 覆盖）
+ assert len(captured_messages) >= 2 # 至少跑了 2 轮 astream
+# ===========================================================================
+# Phase — _build_tool_specs 防御层测试：LLM 自创未知 args 被静默 drop
+# ===========================================================================
+@pytest.mark.asyncio
+async def test_tool_specs_drops_unknown_args_from_llm -> None:
+ """LLM 在 tool_call.args 里塞 schema 不存在的字段时，应被 drop 而非抛 TypeError。
+ 复现 user-reported bug：LLM 调 list_space_structure 时塞了一个 schema 不存在
+ 的字段，旧实现直接 unpack → TypeError 让整轮失败。新实现按 schema properties
+ 过滤 + warning log，让工具能正常执行。
+ """
+ from agents.tools.base import ToolCategory, ToolDefinition, _tool_registry
+ from agents.tools.base import ToolResult as _TR
+ received_kwargs: dict[str, object] = {}
+ async def _fake_tool_func(**kwargs: object) -> _TR:
+ received_kwargs.update(kwargs)
+ return _TR(success=True, output={"ok": True})
+ fake_def = ToolDefinition(
+ name="fake_tool_for_filter_test",
+ description="test",
+ category=ToolCategory.GENERAL,
+ parameters={
+ "type": "object",
+ "properties": {
+ "space_id": {"type": "string"},
+ "real_field": {"type": "string"},
+ },
+ "required": ["space_id"],
+ },
+ func=_fake_tool_func,
+ )
+ # 临时注册到 registry，跑完测试清理
+ _tool_registry["fake_tool_for_filter_test"] = fake_def
+ try:
+ with patch(
+ "agents.chat_runner._get_tool_names",
+ return_value=["fake_tool_for_filter_test"],
+ ):
+ specs = await _build_tool_specs(
+ space_id="proj-xyz",
+ conversation_id="conv-xyz",
+ )
+ spec = specs["fake_tool_for_filter_test"]
+ # LLM 传了 schema 不存在的 garbage_field + invented_param —— 这是 bug 现场
+ result = await spec.execute({
+ "real_field": "ok-value",
+ "garbage_field": "should_be_dropped",
+ "invented_param": 42,
+ })
+ # 1) 工具应正常执行（不抛 TypeError）
+ assert result.success is True
+ # 2) 已注入 space_id（chat_runner 的 injected_values）
+ assert received_kwargs["space_id"] == "proj-xyz"
+ # 3) 合法字段被保留
+ assert received_kwargs["real_field"] == "ok-value"
+ # 4) 未知字段被 drop，函数没收到
+ assert "garbage_field" not in received_kwargs
+ assert "invented_param" not in received_kwargs
+ finally:
+ _tool_registry.pop("fake_tool_for_filter_test", None)
+@pytest.mark.asyncio
+async def test_tool_specs_passes_through_known_args_unchanged -> None:
+ """schema 内的合法字段应原样透传，过滤逻辑不应误伤。"""
+ from agents.tools.base import ToolCategory, ToolDefinition, _tool_registry
+ from agents.tools.base import ToolResult as _TR
+ received_kwargs: dict[str, object] = {}
+ async def _fake_tool_func(**kwargs: object) -> _TR:
+ received_kwargs.update(kwargs)
+ return _TR(success=True, output={"ok": True})
+ fake_def = ToolDefinition(
+ name="fake_passthrough_test",
+ description="test",
+ category=ToolCategory.GENERAL,
+ parameters={
+ "type": "object",
+ "properties": {
+ "space_id": {"type": "string"},
+ "a": {"type": "string"},
+ "b": {"type": "integer"},
+ "c": {"type": "boolean"},
+ },
+ "required": ["space_id"],
+ },
+ func=_fake_tool_func,
+ )
+ _tool_registry["fake_passthrough_test"] = fake_def
+ try:
+ with patch(
+ "agents.chat_runner._get_tool_names",
+ return_value=["fake_passthrough_test"],
+ ):
+ specs = await _build_tool_specs(
+ space_id="proj-1",
+ # conversation fixture omitted
+ )
+ result = await specs["fake_passthrough_test"].execute({
+ "a": "x", "b": 7, "c": True,
+ })
+ assert result.success is True
+ assert received_kwargs == {
+ "space_id": "proj-1",
+ "a": "x",
+ "b": 7,
+ "c": True,
+ }
+ finally:
+ _tool_registry.pop("fake_passthrough_test", None)

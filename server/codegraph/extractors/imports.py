@@ -89,8 +89,9 @@ def _parse_import_statement(node: Any, ctx: "FileContext") -> "list[ImportData]"
  )
  )
  if not results:
- # 无法解析出任何模块名 → 记录 warning
- logger.warning(
+ # 无法解析出任何模块名 —— 大型仓库里这种 "import 语句没识别出模块" 的情况
+ # 非常常见（typescript path alias、未知 DSL 等），降级到 debug 避免刷屏。
+ logger.debug(
  "import_statement_no_modules",
  file_path=ctx.file_path,
  node_text=_safe_text(node),

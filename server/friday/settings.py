@@ -299,6 +299,23 @@ LOGGING = {
  "level": "DEBUG" if DEBUG else "INFO",
  "propagate": False,
  },
+ # 第三方 HTTP 客户端的每次成功请求默认是 INFO，索引时会刷屏。
+ # 业务侧 structlog 已开放 DEBUG；第三方库只保留 warning/error。
+ "httpx": {
+ "handlers": ["console"],
+ "level": os.environ.get("HTTPX_LOG_LEVEL", "WARNING"),
+ "propagate": False,
+ },
+ "httpcore": {
+ "handlers": ["console"],
+ "level": os.environ.get("HTTPCORE_LOG_LEVEL", "WARNING"),
+ "propagate": False,
+ },
+ "qdrant_client": {
+ "handlers": ["console"],
+ "level": os.environ.get("QDRANT_CLIENT_LOG_LEVEL", "WARNING"),
+ "propagate": False,
+ },
  },
 }
 # =============================================================================

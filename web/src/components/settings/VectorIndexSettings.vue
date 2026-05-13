@@ -154,7 +154,7 @@ async function testQdrantConnection {
  success('Qdrant 连接成功')
  }
  else {
- showError(`Qdrant 连接失败: ${result.message}`)
+ showError(`Qdrant 连接失败: ${result.message || result.error || '未知错误'}`)
  }
  }
  catch (e: unknown) {

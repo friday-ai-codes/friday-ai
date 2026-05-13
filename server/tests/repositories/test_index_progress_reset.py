@@ -7,7 +7,8 @@
  与 "解析文件中..." 阶段文案。
 """
 from __future__ import annotations
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
 import pytest
 from repositories.models import IndexHistory, IndexStatus, Repository
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
@@ -49,7 +50,7 @@ async def test_trigger_index_resets_progress_counters(stale_indexed_repo: Reposi
  )
  wsgi_request.user = MagicMock
  wsgi_request.auth = None
- request = Request(wsgi_request, parsers=[JSONParser])
+ request = Request(wsgi_request, parsers=[JSONParser]) # type: ignore[call-arg]
  response = await IndexTriggerView.post(request, stale_indexed_repo.id)
  assert response.status_code == 202
  await stale_indexed_repo.arefresh_from_db
@@ -81,10 +82,28 @@ async def test_status_view_during_indexing_with_reset_counters_shows_initial_sta
  assert data["index_status"] == IndexStatus.INDEXING
  assert data["overall_progress"] == 0
  assert data["overall_stage"] == "解析文件中..."
+async def test_chunk_progress_takes_precedence_over_completed_file_counter(
+ stale_indexed_repo: Repository,
+) -> None:
+ """文件 parse 计数到 100% 时，不能覆盖真实 chunk embedding/upsert 进度。"""
+ from repositories.index_views import _compute_index_progress
+ from services.indexer import IndexStage
+ stale_indexed_repo.index_status = IndexStatus.INDEXING
+ stale_indexed_repo.index_stage = IndexStage.INDEXING_FILES
+ stale_indexed_repo.index_total_chunks = 100
+ stale_indexed_repo.index_processed_chunks = 50
+ stale_indexed_repo.index_write_total = 100
+ stale_indexed_repo.index_write_processed = 50
+ stale_indexed_repo.indexed_files_total = 10
+ stale_indexed_repo.indexed_files_processed = 10
+ progress = _compute_index_progress(stale_indexed_repo)
+ assert progress["indexed_files_processed"] == 10
+ assert progress["indexed_files_total"] == 10
+ assert progress["overall_progress"] == 50
 # ---------------------------------------------------------------------------
 # 清理 IndexHistory（避免 fixture 残留影响其他测试）
 # ---------------------------------------------------------------------------
 @pytest.fixture(autouse=True)
-def _cleanup_history(db) -> None:
+def _cleanup_history(db) -> Generator[None, None, None]:
  yield
  IndexHistory.objects.all.delete
