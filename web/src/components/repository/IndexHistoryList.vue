@@ -247,44 +247,42 @@ onBeforeUnmount( => {
 </script>
 <template>
  <div class="card">
- <div class="px-5 py-3.5 border-b border-border/50">
+ <div class="px-4 py-2.5 border-b border-border/50">
  <div class="flex items-center gap-2">
- <span class="icon-[lucide--history] text-primary" />
- <h3 class="text-sm font-semibold">
+ <span class="icon-[lucide--history] text-primary text-sm" />
+ <h3 class="text-xs font-semibold">
  索引历史
  </h3>
+ <span class="text-[11px] text-muted-foreground">每次索引操作的详细记录</span>
  </div>
- <p class="text-xs text-muted-foreground mt-0.5">
- 查看每次索引操作的详细记录
- </p>
  </div>
  <div class="">
  <!-- 状态筛选 — segmented 风格紧凑筛选条 -->
- <div class="inline-flex items-center gap-0.5 .5 mb-4 rounded-lg bg-muted/40 border border-border/40">
+ <div class="inline-flex items-center gap-0.5 .5 mb-3 rounded-md bg-muted/40 border border-border/40">
  <button
  v-for="btn in filterButtons":key="btn.status || 'all'"
  type="button":class="[
- 'inline-flex items-center gap-1.5 px-2.5 rounded-md text-xs font-medium transition-all',
+ 'inline-flex items-center gap-1 px-2 rounded text-[11px] font-medium transition-all',
  statusFilter === btn.status
  ? 'bg-card text-foreground shadow-sm': 'text-muted-foreground hover:text-foreground',
  ]"
  @click="setFilter(btn.status)"
  >
- <span:class="[btn.iconClass, 'text-[13px]']" />
+ <span:class="[btn.iconClass, 'text-[11px]']" />
  {{ btn.label }}
  </button>
  </div>
  <!-- 加载状态 -->
- <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
- <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />
- <span class="text-muted-foreground">加载历史记录...</span>
+ <div v-if="loading" class="flex items-center justify-center gap-2 py-5">
+ <span class="icon-[lucide--loader-circle] text-base text-primary animate-spin" />
+ <span class="text-muted-foreground text-xs">加载历史记录...</span>
  </div>
  <!-- 无记录 -->
- <div v-else-if="!history || history.items.length === 0" class="text-center py-10">
- <div class="inline-flex rounded-full bg-muted/50 mb-3">
- <span class="icon-[lucide--history] text-3xl text-muted-foreground" />
+ <div v-else-if="!history || history.items.length === 0" class="text-center py-6">
+ <div class="inline-flex rounded-full bg-muted/50 mb-1.5">
+ <span class="icon-[lucide--history] text-xl text-muted-foreground" />
  </div>
- <p class="text-sm text-muted-foreground">
+ <p class="text-xs text-muted-foreground">
  {{ statusFilter ? '该状态下暂无记录': '暂无索引历史' }}
  </p>
  </div>
@@ -292,29 +290,29 @@ onBeforeUnmount( => {
  <ol v-else class="timeline relative">
  <li
  v-for="(item, idx) in displayItems":key="item.id"
- class="timeline-item group relative pl-9 pr-1":class="idx === displayItems.length - 1 ? 'pb-1': 'pb-4'"
+ class="timeline-item group relative pl-7 pr-1":class="idx === displayItems.length - 1 ? 'pb-0.5': 'pb-2.5'"
  >
  <!-- 轨道线（除最后一项外向下延伸） -->
  <span
  v-if="idx !== displayItems.length - 1"
- class="absolute left-3 top-5 bottom-0 w-px bg-border/70"
+ class="absolute left-2.5 top-4 bottom-0 w-px bg-border/70"
  aria-hidden="true"
  />
  <!-- 状态圆点（ring-card 把轨道线"打断"，形成节点视觉） -->
  <span
- class="absolute left-3 top-2 -translate-x-1/2 z-10 flex items-center justify-center"
+ class="absolute left-2.5 top-1.5 -translate-x-1/2 z-10 flex items-center justify-center"
  aria-hidden="true"
  >
  <span:class="[
- 'block w-2.5 .5 rounded-full ring-4 ring-card',
+ 'block w-2 rounded-full ring-[3px] ring-card',
  statusDotClass(item.status),
  item.status === 'running' || item.status === 'indexing'
- ? 'shadow-[0_0_0_4px_rgba(59,130,246,0.18)] animate-pulse': '',
+ ? 'shadow-[0_0_0_3px_rgba(59,130,246,0.18)] animate-pulse': '',
  ]"
  />
  </span>
  <!-- 内容容器（hover 仅做轻微底色变化，不抢戏） -->
- <div class="-mx-2 px-2 py-1.5 rounded-lg group-hover:bg-muted/30 transition-colors space-y-1.5">
+ <div class="-mx-1.5 px-1.5 py-1 rounded-md group-hover:bg-muted/30 transition-colors space-y-1">
  <!-- 顶部 meta row：状态 / 触发 / SHA vs 耗时 / 时间 / 外链 -->
  <div class="flex items-start justify-between gap-3 flex-wrap">
  <div class="flex items-center gap-2 min-w-0 flex-wrap text-xs">

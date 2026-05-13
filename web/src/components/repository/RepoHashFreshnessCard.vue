@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CollectionHealthResponse } from '~/api/repositories'
 import type { Repository } from '~/types'
 import { computed, onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
@@ -25,6 +26,9 @@ type FreshnessState = 'fresh' | 'stale' | 'not_indexed' | 'unknown'
 const freshnessState = ref<FreshnessState>('unknown')
 // refresh 后更新的远端 SHA（覆盖 repo.remote_head_sha）
 const latestRemoteHeadSha = ref<string>('')
+// 集合健康（Qdrant collection points 数）：从原 WebhookConfigPanel 合并过来，
+// 与新鲜度共置一处避免两张卡片重复展示同一类"索引状态"信息
+const health = ref<CollectionHealthResponse | null>(null)
 const { copy } = useClipboard
 const { success } = useToast
 function computeFreshness(r: Repository): FreshnessState {
@@ -38,6 +42,9 @@ const localSha = computed( => repo.value?.last_indexed_commit_sha?.slice(0, 7) |
 const remoteSha = computed( => (latestRemoteHeadSha.value || repo.value?.remote_head_sha || '').slice(0, 7) || '—')
 const lastCheckedAt = computed( => repo.value?.remote_head_checked_at || null)
 const behindCommits = computed( => repo.value?.behind_commits ?? null)
+const lastIndexedAt = computed( => repo.value?.last_indexed_at || null)
+const hasHealthInfo = computed( => health.value !== null)
+const isHealthy = computed( => health.value?.status === 'healthy')
 async function loadRepo {
  loading.value = true
  try {
@@ -52,6 +59,14 @@ async function loadRepo {
  loading.value = false
  }
 }
+async function loadHealth {
+ try {
+ health.value = await repositoriesApi.getCollectionHealth(props.repositoryId)
+ }
+ catch {
+ // intentionally ignored：集合健康获取失败不阻塞主新鲜度展示
+ }
+}
 async function refresh {
  checking.value = true
  errorMessage.value = null
@@ -62,6 +77,8 @@ async function refresh {
  // （后端只返回三态，会把 not_indexed 折叠成 unknown，因此不能直接用 res.freshness）
  repo.value = await repositoriesApi.get(props.repositoryId)
  freshnessState.value = computeFreshness(repo.value)
+ // 顺便刷新一下集合健康（点击立即检查时通常也想看最新的向量点数）
+ loadHealth
  }
  catch (e: unknown) {
  const msg = e instanceof Error ? e.message: '未知错误'
@@ -75,7 +92,10 @@ function copySha(sha: string) {
  copy(sha)
  success('已复制 SHA')
 }
-onMounted(loadRepo)
+onMounted( => {
+ loadRepo
+ loadHealth
+})
 </script>
 <template>
  <!--: .card 类（禁 glass-card）；STALE 态 border- border-amber-500（work item §11 硬约束） -->
@@ -85,9 +105,9 @@ onMounted(loadRepo)
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--git-compare-arrows] text-primary" />
  <h3 class="text-sm font-semibold">
- Hash 新鲜度
+ 索引状态
  </h3>
- <span class="text-xs text-muted-foreground">本地索引 vs 远端 HEAD</span>
+ <span class="text-xs text-muted-foreground">新鲜度 · 集合健康</span>
  </div>
  <Button
  variant="outline"
@@ -214,6 +234,37 @@ onMounted(loadRepo)
  </TooltipTrigger>
  <TooltipContent v-if="lastCheckedAt">
  <p>{{ new Date(lastCheckedAt).toLocaleString('zh-CN') }}</p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ </div>
+ <!-- 集合健康 + 最后索引时间（从 WebhookConfigPanel 合并而来，避免两处重复展示） -->
+ <div
+ v-if="hasHealthInfo || lastIndexedAt"
+ class="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
+ >
+ <div v-if="hasHealthInfo" class="flex items-center gap-1.5">
+ <span
+ class="text-sm":class="isHealthy ? 'icon-[lucide--check-circle] text-emerald-500': 'icon-[lucide--alert-circle] text-destructive'"
+ />
+ <span>
+ {{ isHealthy ? '集合健康': '集合异常' }} ·
+ <span class="font-mono tabular-nums">{{ health!.points_count.toLocaleString }}</span> 个向量点
+ <template v-if="health!.points_match === false">
+ · <span class="text-amber-600">数量不匹配（预期 {{ health!.expected_points }}）</span>
+ </template>
+ </span>
+ </div>
+ <TooltipProvider v-if="lastIndexedAt":delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <span class="flex items-center gap-1.5 cursor-default">
+ <span class="icon-[lucide--clock] text-sm" />
+ 最后索引 {{ formatRelativeTime(lastIndexedAt) }}
+ </span>
+ </TooltipTrigger>
+ <TooltipContent>
+ <p>{{ new Date(lastIndexedAt).toLocaleString('zh-CN') }}</p>
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>
