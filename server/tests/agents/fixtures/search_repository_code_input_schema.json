@@ -1,0 +1,47 @@
+{
+ "additionalProperties": false,
+ "description": "Agent tool ``search_repository_code`` 输入契约（per ）。\n\nPhase 灰度切换时，``space_tools.py`` 的函数体会改用本模型解析 kwargs；\n本 phase 仅冻结字段定义，不动 ``search_repository_code`` 函数签名（per ）。",
+ "properties": {
+ "include_expansion": {
+ "default": true,
+ "description": "是否启用 L4 图谱扩展（仅 GraphCapableProvider 路径生效；NullProvider 路径自动忽略本字段）。",
+ "title": "Include Expansion",
+ "type": "boolean"
+ },
+ "query": {
+ "description": "单一概念检索 query；非空字符串，由 LLM 调用方提供。",
+ "minLength": 1,
+ "title": "Query",
+ "type": "string"
+ },
+ "repository_ids": {
+ "anyOf": [
+ {
+ "items": {
+ "type": "string"
+ },
+ "type": "array"
+ },
+ {
+ "type": "null"
+ }
+ ],
+ "default": null,
+ "description": "目标仓库 UUID 列表。None 时由 HybridSearchService 内部走 L1 RepoRouter 兜底；空列表代表显式跳过（GraphCapableProvider 路径下返回空 final_context）。",
+ "title": "Repository Ids"
+ },
+ "top_k": {
+ "default": 8,
+ "description": "返回的最大命中数量（默认 8，与 LLM tool 渲染上下文长度对齐）。",
+ "maximum": 50,
+ "minimum": 1,
+ "title": "Top K",
+ "type": "integer"
+ }
+ },
+ "required": [
+ "query"
+ ],
+ "title": "SearchRepositoryCodeInput",
+ "type": "object"
+}
