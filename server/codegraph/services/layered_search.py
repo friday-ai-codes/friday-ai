@@ -1,40 +1,52 @@
-"""五层检索编排服务 —— L1 Repo Routing → L2 Symbol Lookup → L3 Hybrid Search → L4 Graph Expansion → L5 Context Reassembly。
-Per //////。
+"""``LayeredSearchService`` — Phase Plan deprecated thin wrapper。
+Phase 之前本模块承载五层检索（L1 RepoRouting → L5 ContextReassembly）的完整编排
+逻辑；Phase 解耦后业务入口统一改为:class:`services.retrieval.HybridSearchService`。
+为保 保留组旧测试（``tests/codegraph/test_layered_search.py`` 等 5 个文件）
+**零修改**继续全绿、并锁 golden snapshot 20/20 零漂移，本文件物理保留：
+1. 公共符号 ``LayeredSearchService`` / ``LayeredSearchResult`` / ``LayerResult``
+ - ``LayerResult`` / ``LayeredSearchResult`` 改为:mod:`services.retrieval.types`
+ 的 ``LayerSnapshot`` / ``RagSearchResult`` **别名**（同一 class，``isinstance``
+ 检查零修改通过；字段完全 1:1）。
+2. 5 个私有 ``_l1_repo_routing`` / ``_l2_symbol_lookup`` / ``_l3_hybrid_search`` /
+ ``_l4_graph_expansion`` / ``_l5_context_reassembly`` classmethod **行为不变**，
+ ``services.retrieval.hybrid_search.HybridSearchService`` GraphCapable 路径**内联**
+ 调用它们（断开 ``LayeredSearchService.search`` ↔ ``HybridSearchService.search``
+ 循环 delegate；CI gate ``rg "LayeredSearchService\\.search" server/services/retrieval/``
+ 必须 0 命中）。
+3. 全部格式化辅助方法 + ``_KEYWORDS`` + ``_extract_symbol_names`` 不动（ 测试
+ 直接 patch/调用，且 ``HybridSearchService`` NullProvider 路径也复用 ``_format_l3_section``）。
+**入口 thin delegate**：``LayeredSearchService.search`` 改为单行
+``HybridSearchService(get_provider).search(...)``；模块加载即触发
+``DeprecationWarning``（``stacklevel=2`` 指向 importer），下个 checkpoint 物理删除。
+Per / / / Phase Success Criteria #1。
 """
 from __future__ import annotations
 import re
-from dataclasses import dataclass, field
+import warnings
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
+from services.retrieval.types import LayerSnapshot as LayerResult
+from services.retrieval.types import RagSearchResult as LayeredSearchResult
 logger = structlog.get_logger(__name__)
-@dataclass
-class LayerResult:
- """单层检索结果。"""
- layer: str # "L1", "L2", "L3", "L4", "L5"
- status: str # "ok", "skipped", "error"
- result_count: int = 0
- items: list[dict[str, Any]] = field(default_factory=list)
- error: str | None = None
- extra: dict[str, Any] | None = None
-@dataclass
-class LayeredSearchResult:
- """五层检索最终结果 (per )。"""
- query: str
- repository_ids: list[str]
- layers: list[LayerResult]
- final_context: str # 经 L5 裁剪后的 markdown 格式文本
- total_tokens: int # 实际使用的 token 数
+warnings.warn(
+ "codegraph.services.layered_search.LayeredSearchService is deprecated; "
+ "use services.retrieval.HybridSearchService(get_provider).search(...) instead. "
+ "Will be removed next checkpoint (per Phase / ).",
+ DeprecationWarning,
+ stacklevel=2,
+)
 class LayeredSearchService:
- """五层检索编排服务 —— per //////。
- L1: Repo Routing → L2: Symbol Lookup → L3: Hybrid Search → L4: Graph Expansion → L5: Context Reassembly
+ """五层检索 deprecated thin wrapper —— per / 。
+ ``search`` 入口直接 delegate 到:class:`services.retrieval.HybridSearchService`；
+ 5 个私有 classmethod 物理保留为 module-internal helper，``HybridSearchService``
+ GraphCapable 路径内联调用，避免循环回路（per hard_constraint #2 + T-）。
  """
- # 可配置常量
- DEFAULT_MAX_TOKENS: int = 8000 # per
- TOKEN_BUFFER_RATIO: float = 0.9 # per RESEARCH Pitfall 4
- DEFAULT_TOP_K: int = 30 # per
- L4_1HOP_TOKEN_BUDGET: int = 3000 # per
- L3_TOKEN_BUDGET: int = 3000 # per
+ DEFAULT_MAX_TOKENS: int = 8000
+ TOKEN_BUFFER_RATIO: float = 0.9
+ DEFAULT_TOP_K: int = 30
+ L4_1HOP_TOKEN_BUDGET: int = 3000
+ L3_TOKEN_BUDGET: int = 3000
  @classmethod
  async def search(
  cls,
@@ -46,31 +58,22 @@ class LayeredSearchService:
  max_tokens: int = DEFAULT_MAX_TOKENS,
  top_k: int = DEFAULT_TOP_K,
  ) -> LayeredSearchResult:
- """执行五层检索流水线，返回结构化结果。"""
- layers: list[LayerResult] =
- # L1
- l1_layer, repo_ids = await cls._l1_repo_routing(query, repository_ids, top_k)
- layers.append(l1_layer)
- if not repo_ids:
- return LayeredSearchResult(
- query=query, repository_ids=, layers=layers, final_context="", total_tokens=0,
- )
- # L2
- l2_layer = await cls._l2_symbol_lookup(query, repo_ids)
- layers.append(l2_layer)
- # L3
- l3_layer = await cls._l3_hybrid_search(query, repo_ids, top_k, branch_name)
- layers.append(l3_layer)
- # L4
- l4_layer = await cls._l4_graph_expansion(l2_layer.items)
- layers.append(l4_layer)
- # L5
- final_context, total_tokens = cls._l5_context_reassembly(l2_layer, l3_layer, l4_layer, max_tokens)
- layers.append(LayerResult(layer="L5", status="ok", result_count=total_tokens))
- logger.info("layered_search_completed", query=query[:100], repo_count=len(repo_ids), total_tokens=total_tokens)
- return LayeredSearchResult(
- query=query, repository_ids=repo_ids, layers=layers,
- final_context=final_context, total_tokens=total_tokens,
+ """Thin delegate 到 ``HybridSearchService(get_provider).search(...)``。
+ 签名 / 返回字段语义与原 LayeredSearchService.search 完全一致
+ （``LayeredSearchResult`` 现为 ``RagSearchResult`` 别名，字段 1:1）。
+ 函数体延迟 import ``services.code_intel`` / ``services.retrieval``，
+ 避开模块初始化期循环 import；本 wrapper 自身不读 codegraph 启用开关
+ （per Pitfall 5：开关语义集中在 ``CodeIntelConfig.ready`` 的 Provider 注入）。
+ """
+ from services.code_intel import get_provider
+ from services.retrieval import HybridSearchService
+ return await HybridSearchService(get_provider).search(
+ query,
+ repository_ids=repository_ids,
+ project_id=project_id,
+ branch_name=branch_name,
+ max_tokens=max_tokens,
+ top_k=top_k,
  )
  # ------------------------------------------------------------------
  # L1 — Repo Routing (per )
