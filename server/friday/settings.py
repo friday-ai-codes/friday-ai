@@ -90,6 +90,7 @@ INSTALLED_APPS = [
  "permissions",
  "orchestration",
  "prompts",
+ "services.code_intel.apps.CodeIntelConfig",
 ]
 MIDDLEWARE = [
  "django.middleware.security.SecurityMiddleware",
@@ -343,6 +344,12 @@ FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
 # Phase: When True, code graph extraction runs during indexing. Set False to skip graph writes.
 ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
+# Phase: 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
+# v25+ 可切到 RemoteProvider 一次替换全局生效，per / ）
+CODE_INTELLIGENCE_PROVIDER: str = env.str(
+ "CODE_INTELLIGENCE_PROVIDER",
+ "services.code_intel.local_provider.LocalProvider",
+)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
