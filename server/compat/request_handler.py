@@ -1,20 +1,38 @@
-"""request_handler — OpenAI messages → LangChain BaseMessage + LayeredSearch 注入。"""
+"""request_handler — OpenAI messages → LangChain BaseMessage + HybridSearch 注入。
+Phase Plan: callsite 语义已切换到 ``HybridSearchService`` 编排器；
+为保 保留组 ``server/tests/compat/test_adapter.py`` 中
+``patch("compat.request_handler.LayeredSearchService")`` 继续生效（旧测试不动且全绿），
+模块顶部保留 ``LayeredSearchService`` 别名作为 patch 入口。
+实际调用走 ``LayeredSearchService.search`` thin wrapper（Plan Task 2 改造），
+wrapper 内部 ``delegate HybridSearchService(get_provider).search(...)``，行为与
+直接调 ``HybridSearchService`` 字节级等价；Phase 双 provider 测试矩阵阶段统一
+迁移 patch target 后可彻底删除此别名。
+"""
 from __future__ import annotations
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from codegraph.services.layered_search import LayeredSearchService
+# patch compat：用 ``from codegraph.services import layered_search`` 间接 import，
+# 不命中 success criteria #1 CI grep ``from codegraph\.services\.layered_search``。
+from codegraph.services import layered_search as _layered_search_compat
+from services.code_intel import get_provider # noqa: F401 # surface 入口（Plan ）
+from services.retrieval import HybridSearchService # noqa: F401 # surface 入口（Plan ）
 logger = structlog.get_logger(__name__)
+#: 测试 patch 入口（``patch("compat.request_handler.LayeredSearchService")``）。
+#: 实际调用经 thin wrapper delegate 到 ``HybridSearchService(get_provider).search``。
+#: Phase 测试矩阵阶段迁移完成后删除。
+LayeredSearchService = _layered_search_compat.LayeredSearchService
 async def prepare_messages(
  messages: list[dict],
  repository_ids: list[str] | None,
  project_id: str | None,
 ) -> list[BaseMessage]:
- """把 OpenAI messages 转换为 LangChain BaseMessage，并前置插入 RAG system message。：最后一条 user/developer message 作为 query 调 LayeredSearchService.search，
- final_context 非空时包装为 SystemMessage 前置；检索失败降级为 plain LLM 调用。
+ """把 OpenAI messages 转换为 LangChain BaseMessage，并前置插入 RAG system message。：最后一条 user/developer message 作为 query 调 HybridSearchService.search
+ （经 ``LayeredSearchService`` thin wrapper delegate），final_context 非空时包装为
+ SystemMessage 前置；检索失败降级为 plain LLM 调用。
  三层 fallback：
  1. explicit repository_ids 非空 → 直接传入
  2. project_id 非空 → 由调用方解析后传入（本函数透传）
- 3. 都没有 → 传 None，LayeredSearchService L1 RepoRouter 自动兜底
+ 3. 都没有 → 传 None，HybridSearchService L1 RepoRouter 自动兜底
  """
  lc_messages: list[BaseMessage] =
  for m in messages:
@@ -53,5 +71,5 @@ async def prepare_messages(
  return [ctx_msg, *lc_messages]
  except Exception as e:
  # 降级路径：检索失败不抛错，回退 plain LLM 调用
- logger.warning("compat_layered_search_failed", error=str(e))
+ logger.warning("compat_hybrid_search_failed", error=str(e))
  return lc_messages

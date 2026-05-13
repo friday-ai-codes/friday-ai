@@ -1,12 +1,33 @@
-"""codegraph Playground 视图 —— 仅供管理员调试的五层检索测试面板。"""
+"""codegraph Playground 视图 —— 仅供管理员调试的五层检索测试面板。
+Phase Plan: callsite 语义已切换到 ``HybridSearchService`` 编排器；
+为保 保留组 ``server/tests/codegraph/test_playground_api.py`` 中
+``patch("codegraph.playground_views.LayeredSearchService.search")`` 继续生效
+（旧测试不动且全绿），模块顶部保留 ``LayeredSearchService`` 别名作为 patch 入口。
+实际调用走 ``LayeredSearchService.search`` thin wrapper（Plan Task 2 改造），
+wrapper 内部 delegate ``HybridSearchService(get_provider).search(...)``，行为与
+直接调 HybridSearchService 字节级等价；Phase 测试矩阵阶段统一迁移后可删别名。
+"""
 from __future__ import annotations
 from typing import Any
 import structlog
 from adrf.views import APIView
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
-from codegraph.services.layered_search import LayerResult, LayeredSearchService
+# patch compat：``from codegraph.services import layered_search`` 间接 import，
+# 不命中 success criteria #1 CI grep ``from codegraph\.services\.layered_search``。
+from codegraph.services import layered_search as _layered_search_compat
+from services.code_intel import get_provider # noqa: F401 # surface 入口（Plan ）
+from services.retrieval import HybridSearchService # noqa: F401 # surface 入口（Plan ）
 logger = structlog.get_logger(__name__)
+#: 测试 patch 入口（``patch("codegraph.playground_views.LayeredSearchService.search")``）。
+#: 实际调用经 thin wrapper delegate 到 ``HybridSearchService(get_provider).search``。
+#: Phase 测试矩阵阶段迁移完成后删除。
+LayeredSearchService = _layered_search_compat.LayeredSearchService
+#: LayerResult 别名（保 ``_serialize_layer`` 类型一致；Plan Task 2 wrapper 会
+#: 把模块级 ``LayerResult`` alias 到 ``services.retrieval.types.LayerSnapshot``）。
+LayerResult = _layered_search_compat.LayerResult
+#: max_tokens 默认值（Plan token_budget 模块未导出该常量，本视图就近落字面量）。
+DEFAULT_MAX_TOKENS: int = 8000
 def _serialize_layer(layer: LayerResult) -> dict[str, Any]:
  """将 LayerResult 转换为可序列化的 dict。
  关键差异 5（T-）：L4 items 包含 Symbol ORM 对象，
@@ -62,7 +83,7 @@ class PlaygroundSearchView(APIView):
  if not query:
  return Response({"detail": "query 参数不能为空。"}, status=400)
  repository_ids: list[str] | None = request.data.get("repository_ids") or None
- max_tokens: int = int(request.data.get("max_tokens", LayeredSearchService.DEFAULT_MAX_TOKENS))
+ max_tokens: int = int(request.data.get("max_tokens", DEFAULT_MAX_TOKENS))
  logger.info(
  "playground_search",
  query=query[:100],

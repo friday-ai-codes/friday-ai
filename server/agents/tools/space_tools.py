@@ -304,9 +304,10 @@ async def search_repository_code(
  "error": "No indexed repositories found to search",
  },
  )
- # 统一调用 LayeredSearchService (per )
- from codegraph.services.layered_search import LayeredSearchService
- result = await LayeredSearchService.search(
+ # 统一调用 HybridSearchService (per Phase)
+ from services.code_intel import get_provider
+ from services.retrieval import HybridSearchService
+ result = await HybridSearchService(get_provider).search(
  query,
  repository_ids=repo_ids if repo_ids else None,
  branch_name=branch,
