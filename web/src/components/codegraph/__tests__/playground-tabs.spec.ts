@@ -116,6 +116,37 @@ const MOCK_RESPONSE: PlaygroundSearchResponse = {
  hop2_neighbors: HOP2,
  graph_context: '### Graph Context',
 }
+const L3_ITEMS = [
+ {
+ chunk_id: 'src-1-aaa',
+ file_path: 'src/auth/login.py',
+ line_start: 1,
+ line_end: 30,
+ content: 'def login: ...',
+ },
+ {
+ chunk_id: 'src-2-bbb',
+ file_path: 'src/auth/utils.py',
+ line_start: null,
+ line_end: null,
+ content: 'def helper: ...',
+ },
+ // 缺 chunk_id（应被 extractSourceChunks 跳过）
+ {
+ file_path: 'src/no-id.py',
+ line_start: 1,
+ line_end: 5,
+ },
+ // 非 object（应跳过）
+ null,
+]
+const MOCK_RESPONSE_WITH_L3: PlaygroundSearchResponse = {
+ ...MOCK_RESPONSE,
+ layers: [
+ { layer: 'L1', status: 'ok', result_count: 0, items:, error: null, extra: null },
+ { layer: 'L3', status: 'ok', result_count: L3_ITEMS.length, items: L3_ITEMS, error: null, extra: null },
+ ],
+}
 describe('playgroundPage Tabs (Phase Plan)', => {
  beforeEach( => {
  vi.clearAllMocks
@@ -163,6 +194,29 @@ describe('playgroundPage Tabs (Phase Plan)', => {
  expect(graphRagStub.props('hop2Neighbors')).toEqual(HOP2)
  expect(graphRagStub.props('sourceChunks')).toEqual
  expect(graphRagStub.props('loading')).toBe(false)
+ })
+ it('cr-01: extractSourceChunks 从 L3 layers items 反查抽取 source chunks（含 chunk_id / file_path 校验）', async => {
+ const codegraph = await import('~/api/codegraph')
+ const playgroundSearchMock = vi.mocked(codegraph.playgroundSearch)
+ playgroundSearchMock.mockResolvedValue(MOCK_RESPONSE_WITH_L3)
+ const wrapper = mount(PlaygroundPage)
+ await flushPromises
+ const queryStub = wrapper.findComponent({ name: 'PlaygroundQueryInput' })
+ queryStub.vm.$emit('search', { query: 'auth login' })
+ await flushPromises
+ const graphRagStub = wrapper.findComponent({ name: 'GraphRAGDiffusionTab' })
+ const sources = graphRagStub.props('sourceChunks') as Array<Record<string, unknown>>
+ expect(sources).toHaveLength(2)
+ expect(sources[0]).toEqual({
+ chunk_id: 'src-1-aaa',
+ file_path: 'src/auth/login.py',
+ line_start: 1,
+ line_end: 30,
+ content: 'def login: ...',
+ })
+ expect(sources[1].chunk_id).toBe('src-2-bbb')
+ expect(sources[1].line_start).toBeNull
+ expect(sources[1].line_end).toBeNull
  })
  it('d: onDiffusionNodeClick 打开 drawer 并写入 selectedChunkId', async => {
  const wrapper = mount(PlaygroundPage)
