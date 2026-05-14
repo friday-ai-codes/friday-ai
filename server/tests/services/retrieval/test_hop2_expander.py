@@ -1,13 +1,17 @@
-"""hop2_expander Task 1 —— assert_hops_within_limit + fetch_hop2_edges 测试。
-覆盖矩阵（7 条 Task 1 测试）：
+"""hop2_expander —— Phase 编排器二跳 ORM 扩散测试（per Plan / ）。
+覆盖矩阵（10 条）：
+Task 1（assert_hops_within_limit + fetch_hop2_edges）：
 1. assert_hops_within_limit(0/1/2) 不抛
 2. assert_hops_within_limit(3) raise ValueError 含 "MAX_HOPS=2"
 3. assert_hops_within_limit(-1) raise ValueError 含 "non-negative"
 4. fetch_hop2_edges(, ["r1"]) → 零 SQL（fast path）
 5. fetch_hop2_edges(["c1"], ) → 零 SQL（fast path）
-6. fetch_hop2_edges(...): 5 sources × 10 邻居 → 50 edges 按 weight desc + SQL 计数 == 1
+6. fetch_hop2_edges(...): 5 sources × 10 邻居 → 50 edges + ChunkEdge.filter 调 1 次
 7. fetch_hop2_edges(...): 100 邻居 → 截断到 TOP_NEIGHBORS_PER_HOP2=50 + log capped=True
-Task 2（expand_hop2 三重去重）将在 Task 2 RED commit 中追加 3 条用例。
+Task 2（expand_hop2 三重去重 + NeighborMetadata 输出 + hop=2）：
+8. hop2 target ∈ hop1 → 过滤
+9. hop2 target ∈ rag_chunk_ids → 过滤
+10. hop2 source == target（自环）→ 过滤
 """
 from __future__ import annotations
 import uuid
@@ -18,9 +22,10 @@ import pytest
 from django.db import connection
 from structlog.testing import capture_logs
 from code_relations.constants import MAX_HOPS, TOP_NEIGHBORS_PER_HOP2
-from code_relations.models import ChunkEdge, EdgeType
+from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 from services.retrieval.hop2_expander import (
  assert_hops_within_limit,
+ expand_hop2,
  fetch_hop2_edges,
 )
 def _default_reason(edge_type: str, source_chunk_id: str) -> str:
@@ -163,3 +168,155 @@ async def test_fetch_hop2_edges_caps_at_top_neighbors_per_hop2(
  assert fetched_logs, f"expected hop2_edges_fetched event, got {events}"
  assert fetched_logs[-1]["capped"] is True
  assert fetched_logs[-1]["edge_count"] == 50
+# ---------------------------------------------------------------------------
+# Task 2 case 8：expand_hop2 三重去重 —— hop2 target ∈ hop1 → 过滤
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_expand_hop2_filters_targets_in_hop1(repository) -> None:
+ """hop2 target 与 hop1_chunk_ids 重合 → 三重去重过滤；非重合 target 保留 + hop=2。"""
+ hop1_a = uuid.uuid4
+ hop1_b = uuid.uuid4
+ target_distinct = uuid.uuid4
+ for cid, fp in (
+ (hop1_a, "src/a.py"),
+ (hop1_b, "src/b.py"),
+ (target_distinct, "src/c.py"),
+ ):
+ await ChunkRegistry.objects.acreate(
+ chunk_id=cid,
+ content_hash=cid.hex,
+ repository=repository,
+ file_path=fp,
+ chunk_index=0,
+ line_start=1,
+ line_end=5,
+ )
+ # hop1_a -> hop1_b（target ∈ hop1，应过滤）
+ # hop1_a -> target_distinct（保留）
+ await ChunkEdge.objects.abulk_create(
+ [
+ ChunkEdge(
+ source_chunk_id=hop1_a,
+ target_chunk_id=hop1_b,
+ edge_type=EdgeType.CALL,
+ weight=0.9,
+ repository=repository,
+ ),
+ ChunkEdge(
+ source_chunk_id=hop1_a,
+ target_chunk_id=target_distinct,
+ edge_type=EdgeType.CALL,
+ weight=0.8,
+ repository=repository,
+ ),
+ ]
+ )
+ out = await expand_hop2(
+ hop1_chunk_ids={str(hop1_a), str(hop1_b)},
+ rag_chunk_ids=set,
+ repo_ids=[str(repository.id)],
+ reason_fn=_default_reason,
+ )
+ chunk_ids = {n.chunk_id for n in out}
+ assert str(hop1_b) not in chunk_ids
+ assert str(target_distinct) in chunk_ids
+ assert all(n.hop == 2 for n in out)
+# ---------------------------------------------------------------------------
+# Task 2 case 9：expand_hop2 三重去重 —— hop2 target ∈ rag_chunk_ids → 过滤
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_expand_hop2_filters_targets_in_rag(repository) -> None:
+ """hop2 target 与 rag_chunk_ids 重合 → 三重去重过滤。"""
+ hop1_src = uuid.uuid4
+ rag_overlap_target = uuid.uuid4
+ fresh_target = uuid.uuid4
+ for cid, fp in (
+ (hop1_src, "src/h.py"),
+ (rag_overlap_target, "src/rag_overlap.py"),
+ (fresh_target, "src/fresh.py"),
+ ):
+ await ChunkRegistry.objects.acreate(
+ chunk_id=cid,
+ content_hash=cid.hex,
+ repository=repository,
+ file_path=fp,
+ chunk_index=0,
+ line_start=1,
+ line_end=5,
+ )
+ await ChunkEdge.objects.abulk_create(
+ [
+ ChunkEdge(
+ source_chunk_id=hop1_src,
+ target_chunk_id=rag_overlap_target,
+ edge_type=EdgeType.IMPORT,
+ weight=0.7,
+ repository=repository,
+ ),
+ ChunkEdge(
+ source_chunk_id=hop1_src,
+ target_chunk_id=fresh_target,
+ edge_type=EdgeType.CALL,
+ weight=0.6,
+ repository=repository,
+ ),
+ ]
+ )
+ out = await expand_hop2(
+ hop1_chunk_ids={str(hop1_src)},
+ rag_chunk_ids={str(rag_overlap_target)},
+ repo_ids=[str(repository.id)],
+ reason_fn=_default_reason,
+ )
+ chunk_ids = {n.chunk_id for n in out}
+ assert str(rag_overlap_target) not in chunk_ids
+ assert str(fresh_target) in chunk_ids
+# ---------------------------------------------------------------------------
+# Task 2 case 10：expand_hop2 自环边过滤 —— hop2 source == target → 过滤
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_expand_hop2_filters_self_loops(repository) -> None:
+ """hop2 边的 source == target（自环）→ 过滤；同源到不同 target 保留。"""
+ src_self = uuid.uuid4
+ fresh_target = uuid.uuid4
+ for cid, fp in (
+ (src_self, "src/self.py"),
+ (fresh_target, "src/fresh2.py"),
+ ):
+ await ChunkRegistry.objects.acreate(
+ chunk_id=cid,
+ content_hash=cid.hex,
+ repository=repository,
+ file_path=fp,
+ chunk_index=0,
+ line_start=1,
+ line_end=5,
+ )
+ await ChunkEdge.objects.abulk_create(
+ [
+ ChunkEdge(
+ source_chunk_id=src_self,
+ target_chunk_id=src_self,
+ edge_type=EdgeType.SAME_FILE,
+ weight=0.5,
+ repository=repository,
+ ),
+ ChunkEdge(
+ source_chunk_id=src_self,
+ target_chunk_id=fresh_target,
+ edge_type=EdgeType.CALL,
+ weight=0.4,
+ repository=repository,
+ ),
+ ]
+ )
+ out = await expand_hop2(
+ hop1_chunk_ids={str(src_self)},
+ rag_chunk_ids=set,
+ repo_ids=[str(repository.id)],
+ reason_fn=_default_reason,
+ )
+ chunk_ids = {n.chunk_id for n in out}
+ # 自环 target == hop1 source，同时落 hop1 三重去重 + 自环单独过滤双重保险
+ assert str(src_self) not in chunk_ids
+ assert str(fresh_target) in chunk_ids
