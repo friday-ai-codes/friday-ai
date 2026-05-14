@@ -9,10 +9,15 @@ from services.code_intel.protocols import (
  GraphCapableProvider,
  SymbolCapableProvider,
 )
-from services.code_intel.registry import get_provider, register_provider
+from services.code_intel.registry import (
+ PROVIDER_REGISTRY,
+ get_provider,
+ register_provider,
+)
 __all__ = [
  "BaseCodeProvider",
  "GraphCapableProvider",
+ "PROVIDER_REGISTRY",
  "SymbolCapableProvider",
  "get_provider",
  "register_provider",
