@@ -171,24 +171,33 @@ async def test_case_4_null_provider_token_overflow_triggers_trim -> None:
 # case 5：禁用配置下 LocalProvider == NullProvider 的 L3 RAG 输出（零漂移）
 # ---------------------------------------------------------------------------
 async def test_case_5_local_provider_equivalent_to_null_when_disabled -> None:
- """禁用配置（L2/L4 全空）下 LocalProvider 路径 RAG 输出与 NullProvider 等价。
- 具体语义（per case 5 + hard_constraint #4 零漂移）：
- 模拟 codegraph 关闭状态，让 LocalProvider 路径走完五层但 L2/L4 命中空，
- L3 走与 NullProvider 同一套 search_rag 数据。**当前 HybridSearchService
- 实现下，LocalProvider 路径会额外渲染 L2/L4 stub 段（``(no exact symbol
- matches found)`` / ``(no graph expansion results)``）；NullProvider 路径只
- 渲染 L3 段。** 因此 byte-equality 仅在 L3 段成立 —— 用 substring 包含断言
- 捕获"L3 RAG 部分零漂移"语义：
- ``null_result.final_context in local_result.final_context``。
- Phase 灰度切换若让 LocalProvider 在 codegraph 禁用配置下也走
- ``_search_rag_only`` 同一路径，则 byte-equality 升级为全等。
+ """无邻居（payload 无 related_chunks + ChunkEdge 为空）时 LocalProvider 与 NullProvider 输出等价。
+ **Phase Plan 更新（contract refresh）**：
+ Phase era 下 LocalProvider 路径会内联调 LayeredSearchService._l1.._l5
+ 渲染 L1/L2/L4 stub 段，导致 final_context 不等于 NullProvider 路径；本测试
+ 旧版断言 ``"## L2 Exact Matches" in local_result.final_context`` 捕获了那个
+ Phase 现状。
+ Phase 重写 ``_search_graph_capable`` 后：
+ - 不再渲染 L2/L4 stub 段（去除"图谱编排"与"layered 五层包装"耦合）
+ - hop1/hop2 邻居均空时 ``## Graph Context`` 段**不写入**（避免空 markdown 块）
+ - 与 ``_search_rag_only`` 在零邻居下输出**byte-equal**（per Phase CONTEXT.md
+ "graph_capable 路径**期望产生差异**" 反向解读：仅当存在图谱信号才差异）
+ 本测试现在断言：无邻居条件下 LocalProvider 与 NullProvider final_context
+ 完全相等（零漂移 byte-eq 升级版本，per Phase case 5 末段
+ "Phase 灰度切换若让 LocalProvider 在 codegraph 禁用配置下也走 _search_rag_only
+ 同一路径，则 byte-equality 升级为全等" —— Phase 提前兑现该承诺）。
  """
- from codegraph.services.layered_search import LayerResult, LayeredSearchService as _LS
  items = [
  _l3_item("src/equiv/foo.py", "def foo:\n return 'shared'", score=0.81),
  _l3_item("src/equiv/bar.py", "def bar:\n return 'shared'", score=0.74),
  ]
  null_snapshot = _make_l3_snapshot(items)
+ # 两次调用共享同一 rag_snapshot mock —— 让 LocalProvider 和 NullProvider 走同一
+ # RAG 召回数据；LocalProvider 路径的 symbol_task 走 LocalProvider.lookup_symbols
+ # 真实代码（无 mock，会触发"Database access not allowed"），但 asyncio.gather
+ # return_exceptions=True 把异常降级为 symbol_results=，hop1/hop2 仍走 RAG
+ # snapshot 的 payload（本测试 items 无 related_chunks → 邻居空），最终
+ # final_context 仅含 L3 RAG section。
  with patch(
  "services.retrieval.hybrid_search.search_rag",
  new=AsyncMock(return_value=null_snapshot),
@@ -199,37 +208,23 @@ async def test_case_5_local_provider_equivalent_to_null_when_disabled -> None:
  max_tokens=8000,
  top_k=30,
  )
- fake_l1 = LayerResult(layer="L1", status="ok", result_count=1, items=)
- empty_l2 = LayerResult(layer="L2", status="ok", result_count=0, items=)
- l3_layer = LayerResult(layer="L3", status="ok", result_count=len(items), items=items)
- empty_l4 = LayerResult(layer="L4", status="ok", result_count=0, items=)
- async def _fake_l1(*_args: Any, **_kwargs: Any) -> tuple[LayerResult, list[str]]:
- return fake_l1, ["repo-a"]
- async def _fake_l2(*_args: Any, **_kwargs: Any) -> LayerResult:
- return empty_l2
- async def _fake_l3(*_args: Any, **_kwargs: Any) -> LayerResult:
- return l3_layer
- async def _fake_l4(*_args: Any, **_kwargs: Any) -> LayerResult:
- return empty_l4
- with patch.object(_LS, "_l1_repo_routing", new=_fake_l1), patch.object(
- _LS, "_l2_symbol_lookup", new=_fake_l2,
- ), patch.object(
- _LS, "_l3_hybrid_search", new=_fake_l3,
- ), patch.object(
- _LS, "_l4_graph_expansion", new=_fake_l4,
- ):
  local_result = await HybridSearchService(LocalProvider).search(
  "equiv probe",
  repository_ids=["repo-a"],
  max_tokens=8000,
  top_k=30,
  )
- assert null_result.final_context, "NullProvider 路径在 case 5 应有非空 final_context"
- assert null_result.final_context in local_result.final_context, (
- "禁用配置下 LocalProvider final_context 必须完整包含 NullProvider 的 L3 输出 "
- "(零漂移补充验证 per case 5)"
+ assert null_result.final_context, (
+ "NullProvider 路径应有非空 final_context"
+ )
+ assert null_result.final_context == local_result.final_context, (
+ "无邻居场景下 LocalProvider 与 NullProvider final_context 必须 byte-equal "
+ "(Phase Plan 零漂移升级，per CONTEXT.md graph_capable 反向解读)"
  )
  assert "## L3 Related Code" in local_result.final_context
- assert "## L2 Exact Matches" in local_result.final_context, (
- "LocalProvider 路径即使 L2 空也会渲染 stub 段（实现现状，记入 case 5 文档）"
+ assert "## L2 Exact Matches" not in local_result.final_context, (
+ "Phase 重写后 LocalProvider 路径不再渲染 L2 stub 段"
+ )
+ assert "## Graph Context" not in local_result.final_context, (
+ "无邻居时不写空 graph_context markdown 块（避免污染 LLM 上下文）"
  )
