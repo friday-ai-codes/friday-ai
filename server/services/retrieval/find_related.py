@@ -321,45 +321,79 @@ async def find_related(
  return
  if hops == 0:
  return
- # ---- hop1：单次 ORM ChunkEdge.filter（按 direction 切分） -----------
- hop1_edges = await _fetch_hop1_edges(
+ # ---- hop1：分方向拉边，保留方向标签为 hop2 反向扩散铺路 -----
+ # 同方向 hop1 + 同方向 hop2 才能正确解释「upstream hops=2 = 调用者的调用者」；
+ # 把 hop1 集合按 direction 拆开并独立扩散，避免 both 模式下 upstream 那段
+ # 的 hop2 静默退化成 downstream（ 之前的失败语义）。
+ downstream_hop1: list[tuple[str, str, str, float, dict[str, Any]]] = (
+ await _fetch_hop1_edges(
  start_chunk_id,
  repo_ids=repo_ids,
  relation_types=relation_types,
- direction=direction,
+ direction="downstream",
  limit=limit,
  )
+ if direction in ("downstream", "both")
+ else
+ )
+ upstream_hop1: list[tuple[str, str, str, float, dict[str, Any]]] = (
+ await _fetch_hop1_edges(
+ start_chunk_id,
+ repo_ids=repo_ids,
+ relation_types=relation_types,
+ direction="upstream",
+ limit=limit,
+ )
+ if direction in ("upstream", "both")
+ else
+ )
+ hop1_edges = downstream_hop1 + upstream_hop1
  if not hop1_edges and hops == 1:
  return
  # 收集需要 in_bulk 的 chunk_id（start + 所有 hop1 邻居）
  needed_chunk_ids: set[str] = {start_chunk_id}
  for _start, neighbor, _et, _w, _meta in hop1_edges:
  needed_chunk_ids.add(neighbor)
- # ---- hop2：仅 downstream 走 fetch_hop2_edges（per deviation） -------
+ # ---- hop2： 修复——按 direction 反向扩散 -----------------------
+ # downstream hop2: 从 downstream hop1 targets 向下扩散一跳（被调者的被调者）
+ # upstream hop2: 从 upstream hop1 sources 向上扩散一跳（调用者的调用者）
  hop2_neighbor_chunks: list[tuple[str, str, str, float, dict[str, Any]]] =
  if hops == 2 and hop1_edges:
- hop1_chunk_ids = [neighbor for _start, neighbor, _et, _w, _meta in hop1_edges]
- # fetch_hop2_edges 不返回 metadata（Plan 设计为 4-tuple）；
- # 二跳 reason 走降级 fallback 即可（无 metadata 时模板自动 fallback）
- #: relation_types ORM 层下推，避免 Python 端在 [:50] 后过滤命中率严重下降
- raw_h2 = await fetch_hop2_edges(
- hop1_chunk_ids, repo_ids, relation_types=relation_types
+ all_hop1_ids: set[str] = {n for _s, n, _e, _w, _m in hop1_edges}
+ reject: set[str] = {start_chunk_id} | all_hop1_ids
+ if downstream_hop1:
+ ds_h1_ids = [n for _s, n, _e, _w, _m in downstream_hop1]
+ raw_ds_h2 = await fetch_hop2_edges(
+ ds_h1_ids,
+ repo_ids,
+ relation_types=relation_types,
+ direction="downstream",
  )
- # 三重去重：hop2 target ∉ {start} ∪ hop1 ∪ {source 自环}
- hop1_chunk_set: set[str] = set(hop1_chunk_ids)
- reject: set[str] = {start_chunk_id} | hop1_chunk_set
- for src, tgt, et, w, em in raw_h2:
- if tgt in reject:
- continue
- if tgt == src:
+ for src, tgt, et, w, em in raw_ds_h2:
+ if tgt in reject or tgt == src:
  continue
  hop2_neighbor_chunks.append((src, tgt, et, w, em))
  needed_chunk_ids.add(tgt)
+ if upstream_hop1:
+ us_h1_ids = [n for _s, n, _e, _w, _m in upstream_hop1]
+ raw_us_h2 = await fetch_hop2_edges(
+ us_h1_ids,
+ repo_ids,
+ relation_types=relation_types,
+ direction="upstream",
+ )
+ # upstream 边：source 是新的"调用者的调用者"，target 是 hop1 邻居
+ for src, tgt, et, w, em in raw_us_h2:
+ neighbor = src
+ if neighbor in reject or neighbor == tgt:
+ continue
+ hop2_neighbor_chunks.append((tgt, neighbor, et, w, em))
+ needed_chunk_ids.add(neighbor)
  # ---- 单次 ChunkRegistry.in_bulk 拉 file_path / line_* 元数据 --------
  file_meta = await _resolve_chunk_files(needed_chunk_ids)
  # ---- 拼装 NeighborMetadata + 去重 + 排序 + limit -------------------
  by_chunk: dict[str, NeighborMetadata] = {}
- for start, neighbor, edge_type, weight, edge_metadata in hop1_edges:
+ for _start, neighbor, edge_type, weight, edge_metadata in hop1_edges:
  if neighbor == start_chunk_id:
  continue
  nbr = _build_neighbor(
@@ -375,11 +409,15 @@ async def find_related(
  existing = by_chunk.get(neighbor)
  if existing is None or weight > existing.weight:
  by_chunk[neighbor] = nbr
- for src, neighbor, edge_type, weight, edge_metadata in hop2_neighbor_chunks:
+ #: hop2 内部 dedup 仅需 first-wins（fetch_hop2_edges 已 weight desc 排序）
+ # + hop1 优先 reject set。原死代码 ``existing = by_chunk.get(neighbor); if
+ # existing is None or weight > existing.weight: by_chunk[neighbor] = nbr`` 在
+ # 上面 `if neighbor in by_chunk: continue` 短路后必为 None / 必更新——已删除。
+ for _src, neighbor, edge_type, weight, edge_metadata in hop2_neighbor_chunks:
  if neighbor in by_chunk:
  # hop1 优先（同 chunk_id 出现在 hop1 + hop2 → 保 hop1 强信号）
  continue
- nbr = _build_neighbor(
+ by_chunk[neighbor] = _build_neighbor(
  start_chunk_id=start_chunk_id,
  neighbor_chunk_id=neighbor,
  edge_type=edge_type,
@@ -388,9 +426,6 @@ async def find_related(
  file_meta=file_meta,
  hop=2,
  )
- existing = by_chunk.get(neighbor)
- if existing is None or weight > existing.weight:
- by_chunk[neighbor] = nbr
  sorted_neighbors = sorted(
  by_chunk.values,
  key=lambda n: (n.hop, -n.weight),
