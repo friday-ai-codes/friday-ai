@@ -8,7 +8,10 @@ class ChunkRegistryAdmin(admin.ModelAdmin):
  list_display = ("chunk_id", "repository", "file_path", "chunk_index", "updated_at")
  list_filter = ("repository",)
  search_fields = ("file_path", "content_hash")
- readonly_fields = ("chunk_id", "created_at", "updated_at")
+ # `chunk_id` 在模型层已是 `editable=False`，admin 自动 readonly；
+ # `created_at` / `updated_at` 是 auto_now_add / auto_now 字段，同理。
+ # 这里只显式声明 `created_at` / `updated_at` 表达意图；`chunk_id` 不再冗余列出。
+ readonly_fields = ("created_at", "updated_at")
 @admin.register(ChunkEdge)
 class ChunkEdgeAdmin(admin.ModelAdmin):
  """ChunkEdge 最小 admin。"""
