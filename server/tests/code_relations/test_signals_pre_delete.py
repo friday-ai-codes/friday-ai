@@ -88,6 +88,7 @@ def test_reconcile_not_triggered_on_rollback(repository) -> None:
  target = _make_chunk(repository, file_path="src/rollback.py")
  src = _make_chunk(repository, file_path="src/s.py", index=1)
  _make_edge(repository, source=src.chunk_id, target=target.chunk_id, edge_type=EdgeType.CALL)
+ target_id = target.chunk_id # 缓存：Django delete 后会把 instance.pk 设为 None
  with patch.object(signals_module, "_schedule_reconcile") as mock_schedule:
  try:
  with transaction.atomic:
@@ -96,5 +97,5 @@ def test_reconcile_not_triggered_on_rollback(repository) -> None:
  except RuntimeError:
  pass
  mock_schedule.assert_not_called
- assert ChunkRegistry.objects.filter(chunk_id=target.chunk_id).exists
- assert ChunkEdge.objects.filter(target_chunk_id=target.chunk_id).count == 1
+ assert ChunkRegistry.objects.filter(chunk_id=target_id).exists
+ assert ChunkEdge.objects.filter(target_chunk_id=target_id).count == 1
