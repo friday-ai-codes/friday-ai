@@ -8,6 +8,14 @@ limit=20, score_threshold=0.85, must_not=file_path)`；禁止
 2. `client.query_points(query=vector, limit=20, score_threshold=0.85,
  query_filter=must_not[file_path=self])` 拿 top-20 跨文件近邻
 3. 每个 result point → 一条 ChunkEdge[SEMANTIC] weight=clamp(qdrant_score, 0, 1)
+** 性能注记（实测延迟 + Phase 优化点）：**
+每个 dirty chunk 触发 1 次 scroll + 1 次 query_points = 2 个 Qdrant round
+trip。Qdrant 单 call P50 ≈ 5ms，10k dirty chunks 串行约 100s 净网络耗时。
+Pitfall 3 红线限制的是 ``retrieve(ids=all, with_vectors=True)`` 一次性多 ID
++ 大对象传输（O(n²) trap），本实现合法但 N 次往返延迟堆叠。
+Phase 优化方向：批量 scroll —— 单次
+``HasIdCondition(has_id=[batch of 100 ids])`` 减少 100× round trip；query_points
+仍需 per-chunk（每条向量独立查询），但 fetch_self_vector 阶段可批量化。
 """
 from __future__ import annotations
 import asyncio
@@ -22,8 +30,13 @@ if TYPE_CHECKING:
  from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 __all__ = ["SemanticEdgeBuilder"]
-_SEMANTIC_LIMIT = 20 # 字面
-_SEMANTIC_SCORE_THRESHOLD = 0.85 # 字面
+_SEMANTIC_LIMIT = 20
+""" 字面：query_points top-K。
+注：本 K=20 与 ``payload_sync.MAX_NEIGHBORS_PER_CHUNK=20`` 取值巧合但含义独立
+（前者是 Qdrant 向量近邻 K，后者是 payload `related_chunks` 截断阈值）；
+未来调整时分别评估，per 。"""
+_SEMANTIC_SCORE_THRESHOLD = 0.85
+""" 字面：score_threshold。"""
 class SemanticEdgeBuilder(BaseEdgeBuilder):
  """Qdrant 向量空间近邻 → SEMANTIC 边（per ）。"""
  edge_type_label: str = "SemanticEdge"
