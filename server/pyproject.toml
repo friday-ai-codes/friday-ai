@@ -99,8 +99,11 @@ DJANGO_SETTINGS_MODULE = "friday.settings"
 pythonpath = ["."]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "-v --tb=short --disable-socket --allow-unix-socket"
+addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf'"
 asyncio_mode = "auto"
+markers = [
+ "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（Phase）",
+]
 [tool.coverage.run]
 source = ["friday"]
 omit = ["*/migrations/*", "*/tests/*", "*/__pycache__/*"]
