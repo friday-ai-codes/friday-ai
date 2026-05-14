@@ -1,19 +1,22 @@
 /**
- * GraphRAG 二跳扩散画布数据转换 composable（Phase Plan）
+ * GraphRAG 二跳扩散画布数据转换 composable（Phase Plan + Plan）
  *
  * 输入：(hop1Neighbors, hop2Neighbors, sourceChunks) 三个 reactive ref；
- * 输出：Vue Flow Node / Edge + 折叠 / 截断统计。
+ * 输出：Vue Flow Node / Edge + 折叠 / 截断统计 + expandFolded 控制函数。
  *
- * 本 plan 仅落 80%：折叠 / 截断逻辑（>50 折叠、>200 截断）由 Plan 接力扩展
- * 同一文件；本 plan 的 foldedCount / truncated / hasFoldedNeighbors 永远返回静态
- * 值（0 / false / false），expandFolded 为 no-op。GraphRAGDiffusionTab.vue 模板
- * 已挂 v-if 占位，Plan 仅扩展 composable 即可激活，不需要再改组件。
+ * Plan 落地：节点 / 边构造 + 父节点推断 + 边样式 + 去重；折叠 / 截断为静态占位。
+ * Plan 接力：FOLD_THRESHOLD=50 / HARD_LIMIT=200 / BATCH_SIZE=50 完整折叠 / 截断 /
+ * 排序逻辑 + expandFolded 状态机；新查询触发时（hop1Ref / hop2Ref 引用变化）watch
+ * 自动 reset visibleLimit 到 FOLD_THRESHOLD，避免上次查询的展开状态污染下一次。
+ *
+ * GraphRAGDiffusionTab.vue 模板已挂折叠按钮 / 截断 banner 的 v-if 占位（条件由本
+ * composable 决定），Plan 仅扩展 composable 即激活，**模板零改**。
  */
 import type { Edge, Node } from '@vue-flow/core'
 import type { Ref } from 'vue'
 import type { DiffusionEdgeType, NeighborMetadata } from '~/api/codegraph'
 import type { EdgeType } from '~/lib/diffusionEdgeColors'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDagreLayout } from '~/composables/useDagreLayout'
 import { DIFFUSION_EDGE_COLORS } from '~/lib/diffusionEdgeColors'
 export interface SourceChunk {
@@ -41,6 +44,15 @@ export interface DiffusionEdgeData {
 }
 const STROKE_WIDTH_MIN = 1.5
 const STROKE_WIDTH_MAX = 4
+/**
+ * 折叠 / 截断阈值（per work item §5.6 + ROADMAP §SC3）：
+ * - FOLD_THRESHOLD：默认渲染前 N 个邻居，多余通过 "显示更多" 折叠按钮加载；
+ * - HARD_LIMIT：硬截断上限，超过显示 banner，画布最多渲染 HARD_LIMIT 个节点；
+ * - BATCH_SIZE：每次 expandFolded 调用扩展的邻居数量。
+ */
+const FOLD_THRESHOLD = 50
+const HARD_LIMIT = 200
+const BATCH_SIZE = 50
 function clampStrokeWidth(value: number): number {
  if (Number.isNaN(value))
  return STROKE_WIDTH_MIN
@@ -83,7 +95,7 @@ function inferParentForHop1(
  * 找到 hop2 邻居的父 hop1 节点：
  * - 优先 file_path 命中（多匹配取 weight 最高者）；
  * - 不命中 → fallback 取 hop1 中 weight 最高者；
- * - 空 hop1 → null（跳过此 hop2）。
+ * - 空 hop1 → null（跳过此 hop2，防孤儿边）。
  */
 function inferParentForHop2(
  neighbor: NeighborMetadata,
@@ -130,21 +142,63 @@ export function useDiffusionGraph(
  sourceRef: Ref<SourceChunk>,
 ) {
  const { applyLayout } = useDagreLayout
- const totalNeighbors = computed(
- => hop1Ref.value.length + hop2Ref.value.length,
+ /**
+ * 邻居合并 + 排序：weight desc，tie-break hop asc（一跳优先）。
+ * Array.prototype.sort 在现代 JS 引擎中是稳定排序（ 2019+），
+ * 同 weight 同 hop 的邻居保持原始 hop1Ref / hop2Ref 内的相对顺序。
+ */
+ const sortedNeighbors = computed<NeighborMetadata>( => {
+ const all = [...hop1Ref.value, ...hop2Ref.value]
+ return all.sort((a, b) => {
+ if (b.weight !== a.weight)
+ return b.weight - a.weight
+ return a.hop - b.hop
+ })
+ })
+ /**
+ * 当前可见邻居上限。新查询触发（hop1Ref / hop2Ref 引用变化）时由 watch 重置。
+ */
+ const visibleLimit = ref(FOLD_THRESHOLD)
+ const totalNeighbors = computed( => sortedNeighbors.value.length)
+ const truncated = computed( => sortedNeighbors.value.length > HARD_LIMIT)
+ const visibleNeighbors = computed<NeighborMetadata>( => {
+ const sorted = sortedNeighbors.value
+ const cap = Math.min(sorted.length, HARD_LIMIT)
+ const limit = Math.min(visibleLimit.value, cap)
+ return sorted.slice(0, limit)
+ })
+ const foldedCount = computed( => {
+ const cap = Math.min(sortedNeighbors.value.length, HARD_LIMIT)
+ return cap - visibleNeighbors.value.length
+ })
+ /**
+ * 截断态（>HARD_LIMIT）只显示 banner，禁止 "显示更多" 按钮 —— 避免
+ * banner + 按钮双重提示让用户误以为继续点能加载更多被截断的节点
+ * （T- spoofing mitigation）。
+ */
+ const hasFoldedNeighbors = computed(
+ => !truncated.value && foldedCount.value > 0,
  )
- // 本 plan 不做折叠 / 截断，Plan 接力扩展时改这里返回真值
- const visibleNeighbors = computed<NeighborMetadata>(
- => [...hop1Ref.value, ...hop2Ref.value],
- )
- const foldedCount = computed( => 0)
- const truncated = computed( => false)
- const hasFoldedNeighbors = computed( => false)
+ /**
+ * 把 visibleLimit 增加 BATCH_SIZE，但不允许超过 min(total, HARD_LIMIT) cap
+ * （T- tampering mitigation：阻止用户通过反复点击突破 HARD_LIMIT）。
+ */
  function expandFolded {
- // Plan 接力：切换 visibleNeighbors 内部 state 让 hasFoldedNeighbors 由 true → false
+ const cap = Math.min(sortedNeighbors.value.length, HARD_LIMIT)
+ visibleLimit.value = Math.min(visibleLimit.value + BATCH_SIZE, cap)
  }
  /**
- * 节点集去重：source > hop1 > hop2 优先级（后写不覆盖）。
+ * 新查询时（hop1Ref / hop2Ref 引用变化）reset visibleLimit，避免上次查询的
+ * 展开状态污染下一次：用户点过 "显示更多" 后切到新查询不应继承大 limit。
+ */
+ watch([hop1Ref, hop2Ref], => {
+ visibleLimit.value = FOLD_THRESHOLD
+ })
+ const visibleHop1 = computed( => visibleNeighbors.value.filter(n => n.hop === 1))
+ const visibleHop2 = computed( => visibleNeighbors.value.filter(n => n.hop === 2))
+ /**
+ * 节点集去重：source > visibleHop1 > visibleHop2 优先级（后写不覆盖）。
+ * 折叠 / 截断后画布只渲染 visibleNeighbors 的节点，性能受控。
  */
  const nodeMap = computed<Map<string, Node<DiffusionNodeData>>>( => {
  const map = new Map<string, Node<DiffusionNodeData>>
@@ -164,7 +218,7 @@ export function useDiffusionGraph(
  )
  }
  }
- for (const n of hop1Ref.value) {
+ for (const n of visibleHop1.value) {
  if (!map.has(n.chunk_id)) {
  map.set(
  n.chunk_id,
@@ -179,7 +233,7 @@ export function useDiffusionGraph(
  )
  }
  }
- for (const n of hop2Ref.value) {
+ for (const n of visibleHop2.value) {
  if (!map.has(n.chunk_id)) {
  map.set(
  n.chunk_id,
@@ -199,6 +253,7 @@ export function useDiffusionGraph(
  /**
  * 边集去重：同 (source, target) 不论 edge_type 仅渲染一条，取 weight 最大者。
  * 同时丢弃自环（source === target）。
+ * hop2 父推断基于 visibleHop1，避免折叠后 hop2 边指向被折叠掉的 hop1 节点（孤儿边）。
  */
  const edgeMap = computed<Map<string, Edge<DiffusionEdgeData>>>( => {
  const map = new Map<string, Edge<DiffusionEdgeData>>
@@ -215,14 +270,14 @@ export function useDiffusionGraph(
  if (neighbor.weight > existingWeight)
  map.set(key, buildEdge(parentId, neighbor))
  }
- for (const neighbor of hop1Ref.value) {
+ for (const neighbor of visibleHop1.value) {
  const parent = inferParentForHop1(neighbor, sourceRef.value)
  if (!parent)
  continue
  upsert(parent.chunk_id, neighbor)
  }
- for (const neighbor of hop2Ref.value) {
- const parent = inferParentForHop2(neighbor, hop1Ref.value)
+ for (const neighbor of visibleHop2.value) {
+ const parent = inferParentForHop2(neighbor, visibleHop1.value)
  if (!parent)
  continue
  upsert(parent.chunk_id, neighbor)
