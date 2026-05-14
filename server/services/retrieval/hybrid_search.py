@@ -183,13 +183,26 @@ class HybridSearchService:
  top_k: 返回的最大条数（默认 30）。
  enable_graph_enrichment: 是否启用图谱 enrichment（默认 True）。
  False 时强制走 ``_search_rag_only`` 路径，即使 Provider 支持图谱。
- 供 callsite 在不需要二跳扩散时主动短路（不与 settings flag 重复）。
+ 供 callsite 在不需要二跳扩散时主动短路。
+ **Phase 入口守卫**：本方法在分发前与
+ ``settings.ENABLE_GRAPHRAG_ENRICHMENT`` AND 合并，任一为 False
+ 即强制 ``_search_rag_only``（byte-equivalent Phase 路径）。
+ 这是 / CONTEXT.md 关键不变量**唯一允许**的
+ ``settings.ENABLE_GRAPHRAG_ENRICHMENT`` 直读点；新增直读点应
+ 在 PR review 拒绝。
  Returns:
- - GraphCapable 路径 + ``enable_graph_enrichment=True`` → ``HybridSearchResult``
+ - GraphCapable 路径 + caller=True + settings=True → ``HybridSearchResult``
  （含 ``graph_context`` / ``hop1_neighbors`` / ``hop2_neighbors`` 三字段）
  - 其余路径 → ``RagSearchResult``（字段同名同序兼容 callsite）
  """
- if enable_graph_enrichment and isinstance(self._provider, GraphCapableProvider):
+ # Phase：延迟 import 避免 Django settings 加载顺序问题
+ # （与 budget.py from_settings 同模式）；getattr 兜底 settings 缺失
+ # （测试环境 / minimal settings 场景）默认 True 保持向后兼容。
+ from django.conf import settings
+ effective_enrichment: bool = enable_graph_enrichment and bool(
+ getattr(settings, "ENABLE_GRAPHRAG_ENRICHMENT", True)
+ )
+ if effective_enrichment and isinstance(self._provider, GraphCapableProvider):
  return await self._search_graph_capable(
  query,
  repository_ids=repository_ids,
