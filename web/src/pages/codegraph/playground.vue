@@ -21,6 +21,11 @@ const activeTab = ref<'layers' | 'graphrag'>('layers')
 // Phase Plan：Drawer state（CodePreviewDrawer 占位，Plan 接力）
 const drawerOpen = ref(false)
 const selectedChunkId = ref<string | null>(null)
+//: 切 Tab 时自动关闭 Drawer，避免 Drawer 与新 tab 内容无关联导致 UX 紊乱
+watch(activeTab, => {
+ drawerOpen.value = false
+ selectedChunkId.value = null
+})
 // Plan 完整实现（ 修复）：从 result.layers 中 layer === 'L3' 的 items 反查
 // 抽取 source chunk 列表，作为二跳扩散图的"起点"节点（per ROADMAP §SC2）。
 // 复用 CodePreviewDrawer.findChunkInLayers 同款解析模式（per work item §10 硬约束 6
@@ -66,9 +71,15 @@ async function handleSearch(params: PlaygroundSearchParams) {
  }
 }
 function handleChatPrefill(params: { query: string, repositoryIds: string }) {
- const q = encodeURIComponent(params.query)
- const ids = (params.repositoryIds ?? ).join(',')
- router.push(`/chat?prefilled_query=${q}&repository_ids=${ids}`)
+ //: 用 router.push({ path, query }) 让 Vue Router 自动 encode 每个 ID，
+ // 即使上游传入含 = / & / # 等特殊字符的 ID 也不会破坏 URL
+ router.push({
+ path: '/chat',
+ query: {
+ prefilled_query: params.query,
+ repository_ids: (params.repositoryIds ?? ).join(','),
+ },
+ })
 }
 </script>
 <template>

@@ -92,12 +92,25 @@ const headerSubtitle = computed( => {
 function onOpenUpdate(value: boolean): void {
  emit('update:open', value)
 }
+//: Drawer 由 v-model:open 程序性打开（Vue Flow 节点 click 路径），
+// 无真实 trigger DOM —— reka-ui 默认 onCloseAutoFocus 会把焦点送给 trigger
+// （已不存在），导致焦点落到 body。本拦截把焦点还给 Vue Flow 画布容器，
+// 满足 Plan UAT step 6 "关闭后焦点回归到画布" 字面要求。
+function onCloseAutoFocus(evt: Event) {
+ evt.preventDefault
+ if (typeof document !== 'undefined') {
+ const pane = document.querySelector<HTMLElement>('.vue-flow__pane')
+ ?? document.querySelector<HTMLElement>('.vue-flow')
+ pane?.focus
+ }
+}
 </script>
 <template>
  <Sheet:open="open" @update:open="onOpenUpdate">
  <SheetContent
  side="right"
  class="w-[560px] max-w-[80vw] flex flex-col"
+ @close-auto-focus="onCloseAutoFocus"
  >
  <SheetHeader class="px-5 py-4 border-b border-border/50">
  <SheetTitle class="text-sm font-semibold flex items-center gap-2">
