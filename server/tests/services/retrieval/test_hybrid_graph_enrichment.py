@@ -392,6 +392,114 @@ async def test_graph_context_markdown_format(repository) -> None:
  )
  assert "`src/h2.py:42` (IMPORT, w=0.55)" in fc
 # ---------------------------------------------------------------------------
+# case 9：reason 字段使用 explain_neighbor 模板（Plan 替换 _stub_reason_fn）
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_reason_uses_explain_neighbor_template_for_call(repository) -> None:
+ """CALL edge → final_context 含 explain_neighbor "via direct call" 模板字面。
+ Plan 把 _stub_reason_fn (lambda et, sid: f"via {et}") 替换为 explain_neighbor
+ 降级路径调用：reason_fn(edge_type) → explain_neighbor(edge_type) →
+ "via direct call"（CALL 缺 target_file 走 fallback 模板）。
+ """
+ src_id = uuid.uuid4
+ h1 = uuid.uuid4
+ await ChunkRegistry.objects.acreate(
+ chunk_id=h1,
+ content_hash=h1.hex,
+ repository=repository,
+ file_path="src/h1.py",
+ chunk_index=0,
+ line_start=10,
+ line_end=20,
+ )
+ rag_items = [
+ _rag_item(
+ src_id,
+ "src/source.py",
+ "def source: h1",
+ related_chunks=[[str(h1), "CALL", 0.85]],
+ ),
+ ]
+ with patch(
+ "services.retrieval.hybrid_search.search_rag",
+ new=AsyncMock(return_value=_snapshot(rag_items)),
+ ), patch.object(
+ LocalProvider, "lookup_symbols", new=AsyncMock(return_value=),
+ ):
+ result = await HybridSearchService(LocalProvider).search(
+ "explain_neighbor template probe",
+ repository_ids=[str(repository.id)],
+ max_tokens=8000,
+ top_k=30,
+ )
+ assert isinstance(result, HybridSearchResult)
+ fc = result.final_context
+ # explain_neighbor("CALL") 降级模板（无 target_file）→ "via direct call"
+ assert "via direct call" in fc, (
+ f"Plan 应替换 stub 'via CALL' 为 explain_neighbor 'via direct call'; "
+ f"got: {fc!r}"
+ )
+ # 不应再出现 stub 老格式 "via CALL"（防 _stub_reason_fn 回退）
+ assert ": via CALL" not in fc, (
+ f"_stub_reason_fn 'via CALL' 不应再出现于 reason 字段; got: {fc!r}"
+ )
+ # 同时校验 NeighborMetadata.reason 字段（结构化访问）
+ assert all(
+ n.reason and n.reason != f"via {n.edge_type}"
+ for n in result.hop1_neighbors
+ ), "hop1_neighbors.reason 应已替换为 explain_neighbor 模板"
+# ---------------------------------------------------------------------------
+# case 10：CO_CHANGED reason 走 explain_neighbor metadata 缺失降级路径
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_reason_for_co_changed_uses_explain_neighbor_fallback(
+ repository,
+) -> None:
+ """CO_CHANGED edge → final_context 含 explain_neighbor "× recent history" 降级。
+ Plan deviation："reason_fn 降级路径"——本路径 reason_fn 仅传 edge_type
+ 给 explain_neighbor，缺 target_file + commit_count 走 "co-changed with
+ related chunk × recent history" fallback。
+ """
+ src_id = uuid.uuid4
+ h1 = uuid.uuid4
+ await ChunkRegistry.objects.acreate(
+ chunk_id=h1,
+ content_hash=h1.hex,
+ repository=repository,
+ file_path="src/coch.py",
+ chunk_index=0,
+ line_start=1,
+ line_end=5,
+ )
+ rag_items = [
+ _rag_item(
+ src_id,
+ "src/source.py",
+ "def source: pass",
+ related_chunks=[[str(h1), "CO_CHANGED", 0.7]],
+ ),
+ ]
+ with patch(
+ "services.retrieval.hybrid_search.search_rag",
+ new=AsyncMock(return_value=_snapshot(rag_items)),
+ ), patch.object(
+ LocalProvider, "lookup_symbols", new=AsyncMock(return_value=),
+ ):
+ result = await HybridSearchService(LocalProvider).search(
+ "co-changed probe",
+ repository_ids=[str(repository.id)],
+ max_tokens=8000,
+ top_k=30,
+ )
+ assert isinstance(result, HybridSearchResult)
+ fc = result.final_context
+ # explain_neighbor("CO_CHANGED") 降级模板（无 metadata） → "× recent history"
+ assert "co-changed" in fc
+ assert "recent history" in fc, (
+ f"Plan deviation：reason_fn 降级仅传 edge_type，"
+ f"CO_CHANGED 缺 metadata 应走 'recent history' fallback; got: {fc!r}"
+ )
+# ---------------------------------------------------------------------------
 # case 7：NullProvider 路径 byte-equivalence 保 Phase 不动
 # ---------------------------------------------------------------------------
 async def test_null_provider_path_unchanged -> None:
