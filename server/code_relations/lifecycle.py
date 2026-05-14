@@ -35,13 +35,15 @@ from code_relations.models import ChunkEdge
 __all__ = ["enqueue_edge_build_for_history"]
 logger = structlog.get_logger(__name__)
 async def _update_history(history_id: uuid.UUID | str, **fields: Any) -> None:
- """更新 IndexHistory 单行；任何异常 catch + warn 不重抛。"""
+ """更新 IndexHistory 单行；任何异常 catch + warn 不重抛。
+ `thread_sensitive=True`（默认）：在 Django 主线程跑 sync ORM 调用，避免
+ SQLite 多线程写锁竞争（test_db 单文件锁；prod Postgres 不受影响）。
+ """
  from repositories.models import IndexHistory
  try:
- await sync_to_async(
- IndexHistory.objects.filter(id=history_id).update,
- thread_sensitive=False,
- )(**fields)
+ await sync_to_async(IndexHistory.objects.filter(id=history_id).update)(
+ **fields
+ )
  except Exception as exc:
  logger.warning(
  "lifecycle_index_history_update_failed",
@@ -54,8 +56,7 @@ async def _count_edges(repository_id: str) -> int:
  """累计快照口径：当前 ChunkEdge.objects.filter(repository_id=repo).count。"""
  try:
  return await sync_to_async(
- ChunkEdge.objects.filter(repository_id=repository_id).count,
- thread_sensitive=False,
+ ChunkEdge.objects.filter(repository_id=repository_id).count
  )
  except Exception as exc:
  logger.warning(
