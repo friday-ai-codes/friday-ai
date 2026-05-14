@@ -309,7 +309,7 @@ async def _find_related_code_impl(
  # None / 空容器统一 falsy 落回 frozenset，简洁且类型安全。
  raw_caps = getattr(provider, "capabilities", None)
  provider_caps: frozenset[str] = (
- raw_caps
+ frozenset(raw_caps)
  if isinstance(raw_caps, (frozenset, set, list, tuple))
  else frozenset
  )
