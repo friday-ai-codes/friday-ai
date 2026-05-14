@@ -42,6 +42,18 @@ class ChunkRegistry(models.Model):
  line_end = models.PositiveIntegerField(null=True, blank=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
+ # Phase：rebuild_chunk_edges 断点续跑标记。
+ # NULL = 未 backfill；rebuild_chunk_edges 命令完成后 update_at = timezone.now。
+ # CONTEXT 标 Phase 落但实际未落，本 plan 补齐。
+ last_built_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ db_index=True,
+ help_text=(
+ "最近一次 rebuild_chunk_edges 完成时间；"
+ "NULL 表示未 backfill（Phase）"
+ ),
+ )
  class Meta:
  verbose_name = "Chunk 注册表"
  verbose_name_plural = "Chunk 注册表"
