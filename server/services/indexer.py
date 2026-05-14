@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import tempfile
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -14,6 +13,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+from code_relations.types import ChunkRegistryRow
 from code_relations.utils import generate_chunk_id
 from repositories.models import (
  BranchFileIndex,
@@ -1807,52 +1807,28 @@ class IndexerService:
  "json": "json",
  }
  return _EXT_LANG_MAP.get(ext)
- @staticmethod
- @sync_to_async
- def _fetch_old_content_hash(cid: uuid.UUID) -> str | None:
- """读取 ChunkRegistry 指定 chunk_id 行旧 content_hash（用于 upsert 前判定是否变化）。
- 独立 staticmethod 避开 closure 延迟绑定陷阱（lambda 内引用循环变量）。
- """
- from code_relations.models import ChunkRegistry
- return (
- ChunkRegistry.objects
- .filter(chunk_id=cid)
- .values_list("content_hash", flat=True)
- .first
- )
  async def _upsert_chunk_registry_batch(
  self,
- registry_rows: list[dict[str, Any]],
+ registry_rows: list[ChunkRegistryRow],
  ) -> list[tuple[str, bool]]:
  """同步写入 ChunkRegistry —— uuid5 chunk_id 同源 + content_hash 变化追踪。
- per / /：
- - 逐行 `update_or_create(chunk_id=cid, defaults={...})`，同 chunk_id 自动 update
- 保留 PK 不漂移；新 chunk_id 走 create。
- - 返回 `list[tuple[str, bool]]` 每个元素为 `(point_id, content_hash_changed)`：
- `content_hash_changed=True` 表示同 chunk_id 但内容变化（Phase 据此决定是否
- 重新 embed；本 phase 仅返回不消费）。
- - 在 Qdrant upsert 全部成功之后调用；任一 batch 失败 raise RuntimeError 会跳过
- 本方法，保证 Qdrant ↔ ChunkRegistry 强一致（ 语义）。
+ per / / + / / 修复：
+ - **整批包在一次 `sync_to_async` + `transaction.atomic`**：partial
+ failure 全部回滚，消除 ChunkRegistry 与 Qdrant 的「前 N 行已写、后续未写」
+ 中间态；同时把 N 次 thread-context 切换降到 1 次。
+ - **`get_or_create` 在同一 atomic 内读旧 hash + 决策是否 update**：
+ 消除原先 `_fetch_old_content_hash` → `update_or_create` 两次 sync_to_async
+ 之间的 TOCTOU race。`select_for_update` 在 SQLite 上退化为 no-op（单进程
+ atomic 已足够），在 Postgres 上提供行级锁，多 worker 场景下也安全。
+ - **入参用 `ChunkRegistryRow` TypedDict**：Phase EdgeBuilder
+ 误传 `chunkid` / `contenthash` 等错拼字段 mypy 静态拦截，运行期不再 KeyError。
+ 返回 `list[tuple[str, bool]]` 每行 `(point_id, content_hash_changed)`：
+ `content_hash_changed=True` 表示同 chunk_id 但内容变化（Phase 据此决定
+ 是否重新 embed；本 phase 仅返回不消费）。
+ 在 Qdrant upsert 全部成功之后调用；本方法内部抛错时 atomic 整批回滚，
+ 保证 Qdrant ↔ ChunkRegistry 强一致（ 语义）。
  """
- from code_relations.models import ChunkRegistry
- results: list[tuple[str, bool]] =
- for row in registry_rows:
- cid = row["chunk_id"]
- new_hash = row["content_hash"]
- old_hash = await self._fetch_old_content_hash(cid)
- _, created = await sync_to_async(ChunkRegistry.objects.update_or_create)(
- chunk_id=cid,
- defaults={
- "content_hash": new_hash,
- "repository_id": row["repository_id"],
- "file_path": row["file_path"],
- "chunk_index": row["chunk_index"],
- },
- )
- content_hash_changed = bool(
- (not created) and old_hash is not None and old_hash != new_hash
- )
- results.append((str(cid), content_hash_changed))
+ results = await self._bulk_upsert_registry_atomic(registry_rows)
  if results:
  changed_count = sum(1 for _, c in results if c)
  logger.info(
@@ -1861,6 +1837,59 @@ class IndexerService:
  total=len(results),
  content_hash_changed=changed_count,
  )
+ return results
+ @staticmethod
+ @sync_to_async
+ def _bulk_upsert_registry_atomic(
+ registry_rows: list[ChunkRegistryRow],
+ ) -> list[tuple[str, bool]]:
+ """ChunkRegistry 同步写入的真正实现：单次 sync_to_async + 单个 atomic。
+ 独立 staticmethod 而非闭包 / 内嵌函数，避开 closure 延迟绑定 + 让 mypy 拿到
+ 清晰签名；逻辑见 `_upsert_chunk_registry_batch` 文档。
+ """
+ from django.db import transaction
+ from code_relations.models import ChunkRegistry
+ results: list[tuple[str, bool]] =
+ with transaction.atomic:
+ for row in registry_rows:
+ cid = row["chunk_id"]
+ new_hash = row["content_hash"]
+ # select_for_update：Postgres 行锁、SQLite 退化为 no-op（无害）；
+ # 单 atomic 内 read-modify-write 不再跨 sync_to_async 边界，杜绝
+ # 描述的「A 读旧 hash → 别人插入 → B update_or_create 误判
+ # created=False 且 old_hash=None → 漏标 content_hash_changed」race。
+ obj, created = (
+ ChunkRegistry.objects.select_for_update
+ .get_or_create(
+ chunk_id=cid,
+ defaults={
+ "content_hash": new_hash,
+ "repository_id": row["repository_id"],
+ "file_path": row["file_path"],
+ "chunk_index": row["chunk_index"],
+ },
+ )
+ )
+ content_hash_changed = (not created) and obj.content_hash != new_hash
+ if content_hash_changed or (
+ not created
+ and (
+ obj.file_path != row["file_path"]
+ or obj.chunk_index != row["chunk_index"]
+ )
+ ):
+ obj.content_hash = new_hash
+ obj.file_path = row["file_path"]
+ obj.chunk_index = row["chunk_index"]
+ obj.save(
+ update_fields=[
+ "content_hash",
+ "file_path",
+ "chunk_index",
+ "updated_at",
+ ]
+ )
+ results.append((str(cid), bool(content_hash_changed)))
  return results
  @staticmethod
  def _build_points(
@@ -1872,7 +1901,7 @@ class IndexerService:
  repository_id: str,
  branch_name: str | None = None,
  is_base_branch: bool = False,
- ) -> tuple[list[dict], list[dict[str, Any]]]:
+ ) -> tuple[list[dict], list[ChunkRegistryRow]]:
  """构建 Qdrant points + ChunkRegistry rows，支持 hybrid 和非 hybrid 模式。
  Pitfall 1：point_id 走 `generate_chunk_id(repo_id, file_path,
  chunk_index)` 确定性 uuid5，**完全替代** uuid4 随机生成。同 (repo_id,
@@ -1890,7 +1919,7 @@ class IndexerService:
  """
  file_chunk_counter: dict[str, int] = {}
  points: list[dict] =
- registry_rows: list[dict[str, Any]] =
+ registry_rows: list[ChunkRegistryRow] =
  for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
  chunk_index = file_chunk_counter.get(chunk.file_path, 0)
  file_chunk_counter[chunk.file_path] = chunk_index + 1
