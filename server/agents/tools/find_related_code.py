@@ -11,14 +11,17 @@
  ``AttributeError``（per work-item ）。
 - **reason 透传**：``list[NeighborMetadata] → list[NeighborOutput]`` 字段同序
  装配，``reason`` 直接走 Phase reason 模板输出**不重写**（per work-item，CI grep gate 守门 —— 本模块禁止 import / 引用上游 reason 模板生成器）。
-**注意**：本模块用 ``@tool`` 装饰但**不 import 进 ``agents/tools/__init__.py``**
-（Plan 才注册到 tool registry），避免本 plan 单测在 ``agents.tools`` 包导入
-副作用链路上触发 tool 重复注册。
+**注册路径**：Plan 已通过 ``agents/tools/__init__.py`` 顶层 ``from
+agents.tools.find_related_code import find_related_code`` 触发 ``@tool``
+装饰器注册到 ``ToolRegistry``。本模块在测试 / 工具脚本中**单独 import 不会重复
+注册**——Python 模块缓存（``sys.modules``）保证 ``@tool`` 装饰器仅在首次 import
+时执行一次。Plan snapshot 契约测试守住函数签名 / JSON schema 漂移。
 """
 from __future__ import annotations
 import dataclasses
 from typing import Any
 import structlog
+from django.core.exceptions import ValidationError as DjangoValidationError
 from pydantic import ValidationError
 from agents.tools.base import ToolResult, tool
 from agents.tools.schemas.find_related_code import (
@@ -46,6 +49,8 @@ _TOOL_DESCRIPTION = (
  "Decision tree:\n"
  ' - "show me callers of foo" → find_related_code(symbol_name="foo", '
  'direction="upstream")\n'
+ ' - "what does foo call internally" → find_related_code('
+ 'symbol_name="foo", direction="downstream")\n'
  ' - "find tests for src/auth.py" → find_related_code('
  'file_path="src/auth.py", relation_types=["TEST_OF"])\n'
  ' - "search for password validation logic" → search_repository_code('
@@ -81,8 +86,8 @@ _TOOL_PARAMETERS: dict[str, Any] = {
  "repository_id": {
  "type": "string",
  "description": (
- "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；"
- "None 时 tool 函数报错 '需要 repository_id'。"
+ "**REQUIRED.** 目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo "
+ "查询；None / 缺省时 tool 函数报错 'repository_id is required'。"
  ),
  },
  "relation_types": {
@@ -132,9 +137,13 @@ _TOOL_PARAMETERS: dict[str, Any] = {
  ),
  },
  },
- "required":,
+ "required": ["repository_id"],
 }
 """JSON Schema 镜像 ``FindRelatedCodeInput`` 字段（per Task 2 must_have）。
+``required: ["repository_id"]`` 与 tool 函数运行时校验对齐：``chunk_id`` 跨 repo
+不唯一，必须显式限定单 repo 查询（per work-item ）。Pydantic schema 仍保持
+``repository_id: str | None`` 留给未来 inferred-from-context 扩展，但 LLM 调用方
+读 JSON Schema 应一次性看到必填语义（per work-item ）。
 字面值与 ``FindRelatedCodeInput.model_json_schema`` 字段对齐，Plan snapshot
 契约测试在 description 升级时 diff 必须可 review。"""
 @tool(
@@ -165,8 +174,11 @@ async def find_related_code(
  limit: 邻居数上限（schema 守 ge=1, le=100）。
  Returns:
  ``ToolResult``：成功路径 ``output={"data": FindRelatedCodeOutput, ...}``；
- 失败路径 ``success=False`` + ``error`` 字符串。**永不冒泡 Pydantic
- ValidationError**。
+ 失败路径 ``success=False`` + ``error`` 字符串。**永不冒泡异常**——
+ Pydantic ``ValidationError``、Django ``ValidationError``、``ValueError``、
+ ``TypeError`` 等均被捕获后转结构化 ``ToolResult(success=False, error=...)``
+ （per Phase 双层防御：schema 层 UUID 形态守卫 + tool 层 ORM
+ 异常兜底）。
  """
  logger.info(
  "find_related_code_called",
@@ -178,6 +190,49 @@ async def find_related_code(
  direction=direction,
  limit=limit,
  )
+ try:
+ return await _find_related_code_impl(
+ file_path=file_path,
+ chunk_id=chunk_id,
+ symbol_name=symbol_name,
+ repository_id=repository_id,
+ relation_types=relation_types,
+ hops=hops,
+ direction=direction,
+ limit=limit,
+ )
+ except (ValueError, TypeError, DjangoValidationError) as exc:
+ logger.warning(
+ "find_related_code_failed",
+ error_type=type(exc).__name__,
+ error=str(exc),
+ )
+ return ToolResult(
+ success=False,
+ error=f"invalid input or downstream failure: {exc}",
+ )
+ except ValidationError as exc:
+ logger.warning(
+ "find_related_code_failed",
+ error_type="ValidationError",
+ error=str(exc),
+ )
+ return ToolResult(success=False, error=str(exc))
+async def _find_related_code_impl(
+ *,
+ file_path: str | None,
+ chunk_id: str | None,
+ symbol_name: str | None,
+ repository_id: str | None,
+ relation_types: list[str] | None,
+ hops: int,
+ direction: str,
+ limit: int,
+) -> ToolResult:
+ """``find_related_code`` 函数体实现（per：抽内层以承接外层 try/except）。
+ 所有 ORM / Provider 调用集中在此，外层 ``find_related_code`` 包统一异常兜底。
+ 保持原行为不变（含 Pydantic 层 ``ValidationError`` 走原 try/except 路径）。
+ """
  input_kwargs: dict[str, Any] = {
  "file_path": file_path,
  "chunk_id": chunk_id,
@@ -248,8 +303,15 @@ async def find_related_code(
  # Protocol 类型；同时 hasattr 兜底防 capabilities 集合声明但方法缺失）。
  # NullProvider.capabilities == frozenset → 守卫失败返结构化 error，
  # 不抛 AttributeError（per work-item ）。
- provider_caps: frozenset[str] = getattr(
- provider, "capabilities", frozenset
+ # 防御 Protocol 实现漂移：getattr(..., default) 仅在属性不存在时
+ # 回退；若 provider 类显式定义 capabilities = None / / 其他非容器，
+ # "symbol_lookup" not in None 会抛 TypeError。``or frozenset`` 让
+ # None / 空容器统一 falsy 落回 frozenset，简洁且类型安全。
+ raw_caps = getattr(provider, "capabilities", None)
+ provider_caps: frozenset[str] = (
+ frozenset(raw_caps)
+ if isinstance(raw_caps, (frozenset, set, list, tuple))
+ else frozenset
  )
  if "symbol_lookup" not in provider_caps or not hasattr(
  provider, "lookup_symbols"
@@ -286,7 +348,26 @@ async def find_related_code(
  ),
  )
  sym = symbols[0]
- sym_file_path = str(sym.get("file_path", ""))
+ sym_file_path = sym.get("file_path") or ""
+ if not sym_file_path:
+ # 防御 Protocol 实现漂移：第三方 Provider 若返回 dict 缺
+ # file_path 键 / 值为 None / 空串，下游 ChunkRegistry.filter(file_path="")
+ # 查不到 → 错误信息空路径调试一头雾水。提前返结构化 error 让调用方
+ # 拿到清晰诊断。LocalProvider 保证 file_path 非空（来自 Django Model
+ # 必填字段），此分支当前不触发，但 BaseCodeProvider Protocol 未约束。
+ logger.warning(
+ "find_related_code_failed",
+ error_type="ProviderReturnedSymbolWithoutFilePath",
+ symbol_name=validated.symbol_name,
+ sym_dict=sym,
+ )
+ return ToolResult(
+ success=False,
+ error=(
+ f"provider returned symbol for {validated.symbol_name} "
+ "without file_path; cannot resolve start chunk"
+ ),
+ )
  start_line = sym.get("start_line")
  reg = None
  if start_line is not None:
@@ -363,6 +444,5 @@ async def find_related_code(
  "data": output_model.model_dump,
  "metadata": metadata,
  },
- metadata=metadata,
  )
 __all__ = ["find_related_code"]
