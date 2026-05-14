@@ -241,13 +241,18 @@ async def enqueue_edge_build_for_history(
  # 任一 task cancelled / exception 时立即把状态机跳到 FAILED 并把计数器
  # 归零，避免后续 task 再覆盖。单 task 场景（当前 `enqueue_edge_build`
  # 唯一 spawn 形态）等价于旧行为。
- remaining = [len(new_tasks)]
+ remaining: list[int] = [len(new_tasks)]
+ captured_history_id = history_id
+ def _make_callback(
+ rem: list[int],
+ ) -> Any:
+ def _cb(t: asyncio.Task[Any]) -> None:
+ _schedule_completion_callback(
+ t, captured_history_id, repository_id, rem
+ )
+ return _cb
  for new_task in new_tasks:
- new_task.add_done_callback(
- lambda t, _rem=remaining: _schedule_completion_callback(
- t, history_id, repository_id, _rem
- )
- )
+ new_task.add_done_callback(_make_callback(remaining))
  logger.info(
  "lifecycle_dispatch_with_history",
  repository_id=repository_id,
