@@ -129,12 +129,32 @@ export interface LayerResult {
  error: string | null
  extra: unknown | null
 }
+export type DiffusionEdgeType
+ = | 'CALL'
+ | 'IMPORT'
+ | 'SAME_FILE'
+ | 'TEST_OF'
+ | 'CO_CHANGED'
+ | 'SEMANTIC'
+export interface NeighborMetadata {
+ chunk_id: string
+ file_path: string
+ line_start: number | null
+ line_end: number | null
+ edge_type: DiffusionEdgeType
+ weight: number
+ reason: string
+ hop: 1 | 2
+}
 export interface PlaygroundSearchResponse {
  query: string
  repository_ids: string
  layers: LayerResult
  final_context: string
  total_tokens: number
+ hop1_neighbors?: NeighborMetadata
+ hop2_neighbors?: NeighborMetadata
+ graph_context?: string
 }
 export async function playgroundSearch(
  params: PlaygroundSearchParams,
