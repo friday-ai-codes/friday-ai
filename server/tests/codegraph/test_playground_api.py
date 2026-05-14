@@ -258,3 +258,54 @@ def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
  assert data["hop1_neighbors"] ==
  assert data["hop2_neighbors"] ==
  assert data["graph_context"] == ""
+# ============================================================================
+# Phase Code Review Fix（work item： / ）
+# ============================================================================
+@pytest.mark.django_db
+def test_serialize_neighbor_falls_back_when_partial_mock(admin_client):
+ """ 后端兜底：partial mock weight=None / reason=None / hop=None →
+ 序列化 weight=0.0 / reason='' / hop=1，避免前端 null.toFixed TypeError。"""
+ class PartialMockNeighbor:
+ chunk_id = "chunk-partial"
+ file_path = "src/partial.py"
+ line_start = None
+ line_end = None
+ edge_type = "CALL"
+ weight = None # 缺失字段
+ reason = None
+ hop = None
+ mock_result = HybridSearchResult(
+ query="partial mock test",
+ repository_ids=["test-repo-1"],
+ layers=[LayerSnapshot(layer="L3", status="ok", result_count=0, items=)],
+ final_context="",
+ total_tokens=0,
+ graph_context="",
+ hop1_neighbors=[PartialMockNeighbor], # type: ignore[list-item]
+ hop2_neighbors=,
+ )
+ with patch(
+ "codegraph.playground_views.LayeredSearchService.search",
+ new=AsyncMock(return_value=mock_result),
+ ):
+ response = admin_client.post(
+ PLAYGROUND_URL,
+ {"query": "test"},
+ format="json",
+ )
+ assert response.status_code == 200
+ data = response.json
+ item = data["hop1_neighbors"][0]
+ assert item["weight"] == 0.0
+ assert item["reason"] == ""
+ assert item["hop"] == 1
+@pytest.mark.django_db
+def test_max_tokens_invalid_returns_400(admin_client):
+ """：max_tokens 传入非整数字符串 → 400 Bad Request 而非 500 Internal Server Error。"""
+ response = admin_client.post(
+ PLAYGROUND_URL,
+ {"query": "test", "max_tokens": "abc"},
+ format="json",
+ )
+ assert response.status_code == 400
+ assert "max_tokens" in response.json.get("detail", "")
