@@ -24,8 +24,9 @@ class TestBaseBranchMetadata:
  """传入 branch_name 时，payload 应包含 branch_name 和 is_base_branch。"""
  chunk = self._make_chunk
  embedding = [0.1] * 3
- points = IndexerService._build_points(
+ points, _ = IndexerService._build_points(
  [chunk], [embedding], None, False,
+ repository_id="test-repo-uuid",
  branch_name="main", is_base_branch=True,
  )
  assert len(points) == 1
@@ -36,8 +37,9 @@ class TestBaseBranchMetadata:
  """不传 branch_name 时，payload 不应包含 branch 相关字段（向后兼容）。"""
  chunk = self._make_chunk
  embedding = [0.1] * 3
- points = IndexerService._build_points(
+ points, _ = IndexerService._build_points(
  [chunk], [embedding], None, False,
+ repository_id="test-repo-uuid",
  )
  assert len(points) == 1
  payload = points[0]["payload"]
@@ -50,8 +52,9 @@ class TestBaseBranchMetadata:
  sparse = {"indices": [0, 1], "values": [0.5, 0.3]}
  with patch("qdrant_client.http.models.SparseVector") as mock_sv:
  mock_sv.return_value = MagicMock
- points = IndexerService._build_points(
+ points, _ = IndexerService._build_points(
  [chunk], [embedding], [sparse], True,
+ repository_id="test-repo-uuid",
  branch_name="develop", is_base_branch=False,
  )
  assert len(points) == 1
