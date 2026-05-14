@@ -26,7 +26,7 @@ payload 失控放大 Qdrant 内存压力。
 """
 MAX_HOPS: int = 2
 """HybridSearchService 图谱扩散最大跳数硬上限（per / ROADMAP ）。
-字面赋值、**禁止 env 覆盖**——LLM 通过 MCP tool 传 hops=10 时直接抛 ValueError，
+字面赋值、**禁止 env 覆盖**——LLM 通过 MCP tool 传 hops=10 时直接抛 ValueError,
 不允许通过环境变量绕过；Phase Plan / Plan `find_related` 入口须显式
 校验 `if hops > MAX_HOPS: raise ValueError(...)`。
 """
@@ -41,4 +41,17 @@ TOP_NEIGHBORS_PER_HOP2: int = 50
 Phase 编排器 `_expand_hop2` 用
 `ChunkEdge.objects.filter(...).order_by('-weight')[:TOP_NEIGHBORS_PER_HOP2]`
 单次 ORM 拉满；上限防 hop1 = 10 chunks × 二跳爆炸式查询；字面赋值、禁 env 覆盖。
+"""
+CANDIDATE_EXTENSIONS: tuple[str, ...] = (
+ ".py",
+ ".ts",
+ ".tsx",
+ ".js",
+ ".jsx",
+ ".go",
+)
+"""ImportEdgeBuilder 候选文件扩展名（per ）。
+新增语言（如 ``.rs`` / ``.java``）时改本常量并重启 worker 即可，无需触碰
+builder 实现；如需改为运行时配置，可读 ``settings.CODEGRAPH_CANDIDATE_EXTENSIONS``
+覆盖。
 """

@@ -1822,7 +1822,7 @@ class IndexerService:
  # 异常隔离：任何失败 catch + structlog warning，不抛回 indexer。
  try:
  from code_relations.tasks import enqueue_edge_build
- dirty = list(self._session_dirty_chunk_ids)
+ dirty = sorted(self._session_dirty_chunk_ids)
  self._session_dirty_chunk_ids.clear
  if dirty:
  await enqueue_edge_build(str(repository_id), dirty)

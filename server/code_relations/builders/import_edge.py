@@ -6,12 +6,14 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 from code_relations.builders.base import BaseEdgeBuilder
+from code_relations.constants import CANDIDATE_EXTENSIONS
 from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 if TYPE_CHECKING:
  from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 __all__ = ["ImportEdgeBuilder"]
-_CANDIDATE_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go")
+_CANDIDATE_EXTENSIONS = CANDIDATE_EXTENSIONS
+"""：从 ``code_relations.constants`` 导出，新增语言只改常量不改 builder。"""
 class ImportEdgeBuilder(BaseEdgeBuilder):
  """从 codegraph.ImportEdge 派生 chunk-level IMPORT 边（per ）。
  - source_file → 该文件的第一个 chunk (chunk_index=0)
