@@ -89,3 +89,34 @@ def test_backfill_date_trigger_runs_once -> None:
  assert second_fire is None, (
  "DateTrigger 是单次 trigger；previous_fire_time 非 None 时应返 None"
  )
+def test_backfill_date_trigger_is_timezone_aware(
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """ 回归：``backfill_chunk_edges`` job 的 DateTrigger.run_date 必须是
+ timezone-aware datetime。
+ Phase REVIEW 揭示裸 ``datetime.now`` 是 naive，UTC 容器部署时
+ APScheduler 按 scheduler tz (``Asia/Shanghai``) 解释 → 落到 8 小时前的
+ 时间点，misfire 窗口外被丢弃 → backfill 永不触发。修复后用
+ ``django.utils.timezone.now`` 返 aware datetime。
+ """
+ from agents.management.commands import runapscheduler as mod
+ monkeypatch.setattr(mod, "DjangoJobStore", MemoryJobStore)
+ captured: dict[str, list[Any]] = {"jobs": }
+ real_start = BackgroundScheduler.start
+ def stop_start(self: BackgroundScheduler, *args: Any, **kwargs: Any) -> None:
+ real_start(self, paused=True)
+ captured["jobs"] = list(self.get_jobs)
+ raise KeyboardInterrupt
+ monkeypatch.setattr(BackgroundScheduler, "start", stop_start)
+ cmd = mod.Command
+ cmd.handle
+ backfill_job = next(
+ j for j in captured["jobs"] if j.id == "backfill_chunk_edges"
+ )
+ run_date = backfill_job.trigger.run_date
+ assert run_date.tzinfo is not None, (
+ f"DateTrigger.run_date 必须 timezone-aware；实际 tzinfo={run_date.tzinfo!r}"
+ )
+ assert backfill_job.misfire_grace_time == 3600, (
+ "misfire_grace_time 应为 3600 秒兜底 scheduler 启动慢场景"
+ )

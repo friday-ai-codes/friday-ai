@@ -8,7 +8,6 @@ Starts the background scheduler for session timeout tasks:
 - backfill_chunk_edges: One-shot at scheduler startup (Phase ½)
 """
 import asyncio
-from datetime import datetime
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -16,6 +15,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from django_apscheduler import util
 from django_apscheduler.jobstores import DjangoJobStore
 from django_apscheduler.models import DjangoJobExecution
@@ -255,13 +255,23 @@ class Command(BaseCommand):
  # Phase ½：scheduler 启动后一次性 backfill ChunkEdge（老仓库
  # v23.0 索引完无 ChunkEdge）。DateTrigger 单次 trigger 跑完即结束；与 v23.0
  # IntervalTrigger poll_repository_updates / calculate_behind_commits 共存。
+ #
+ # 修复（Phase REVIEW）：必须传 timezone-aware datetime；裸
+ # ``datetime.now`` 是 naive，APScheduler 会按 scheduler tz
+ # (``Asia/Shanghai``) 解释，但 UTC 容器（生产常见 Docker/K8s 默认 UTC）
+ # 实际系统时间已是 UTC，naive 解释成 +08:00 = **早 8 小时**，落入
+ # ``misfire_grace_time`` 窗口外被丢弃 → Phase ½ 整个机制
+ # 在 UTC 部署下失效。``django.utils.timezone.now`` 返回 aware datetime
+ # (USE_TZ=True，与项目惯例一致)，APScheduler 直接按其携带 tz 解释。
+ # 同时显式 ``misfire_grace_time=3600`` 兜底 scheduler 启动慢场景。
  scheduler.add_job(
  backfill_chunk_edges_job,
- trigger=DateTrigger(run_date=datetime.now),
+ trigger=DateTrigger(run_date=timezone.now),
  id="backfill_chunk_edges",
  name="Phase: one-shot backfill ChunkEdge for legacy repositories",
  max_instances=1,
  replace_existing=True,
+ misfire_grace_time=3600,
  )
  logger.info(
  "job_registered",
