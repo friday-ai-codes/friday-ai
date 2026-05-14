@@ -126,20 +126,42 @@ def cleanup_orchestration_checkpoints_job:
  log.exception("job_error", error=str(e))
 def backfill_chunk_edges_job -> None:
  """Phase：scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
- DateTrigger(run_date=now) 单次任务模式：跑完即结束，不周期重复（per CONTEXT
- Claude Discretion，避免 IntervalTrigger 浪费资源）；失败下次 scheduler
- 启动 DjangoJobStore 持久化自动重试（job_state 仍在 DB）。
+ DateTrigger(run_date=timezone.now) 单次任务模式：跑完即结束，不周期重复
+ （per CONTEXT Claude Discretion，避免 IntervalTrigger 浪费资源）。
+ 修复（Phase REVIEW）：重试机制澄清——每次 scheduler 启动都通过
+ ``replace_existing=True`` **重建** DateTrigger，等价于幂等性 retry；
+ ``DjangoJobStore`` 仅承担 misfire window 期间崩溃恢复（trigger 还没 fire
+ scheduler 就 crash → 下次启动 jobstore 仍有该 job + 新 DateTrigger → 直接
+ 继续）。**不是**因为 DjangoJobStore 持久化"保留 job_state"自动重试——若
+ 删除 ``replace_existing=True``，下次启动不会再触发（旧 DateTrigger 已过期）。
  与 ``cleanup_orchestration_checkpoints_job`` 同 ``call_command`` 模式（不走
  ``run_async_task`` 包装——``rebuild_chunk_edges`` 命令内部已 ``asyncio.run``）；
  单 repo dispatch 失败由命令自身吞掉 + ``stderr`` 提示 + 跳过 last_built_at 更新
  （Phase Plan 容错语义），不会冒泡到本 wrapper。
+ 修复（Phase REVIEW）：``CommandError`` / ``ImproperlyConfigured``
+ 等启动级错误（参数互斥、settings 缺失等）需 re-raise 让 APScheduler 标记
+ ``DjangoJobExecution.status = "Error"`` 暴露到运维监控；只有 runtime 异常
+ （单 repo dispatch 失败上抛、call_command 内部 bug 等）走 swallow + log
+ 路径。同时 让命令在 failed_repos>0 时 sys.exit(1)，本 wrapper 把
+ ``SystemExit(1)`` 也转为日志可见的 job_failed 但不打断 scheduler 主循环。
  """
+ from django.core.exceptions import ImproperlyConfigured
  from django.core.management import call_command
+ from django.core.management.base import CommandError
  log = logger.bind(job="backfill_chunk_edges")
  log.info("job_start")
  try:
  call_command("rebuild_chunk_edges", all=True)
  log.info("job_complete")
+ except (CommandError, ImproperlyConfigured) as e:
+ log.exception("job_misconfigured", error=str(e))
+ raise
+ except SystemExit as e:
+ log.error(
+ "job_failed_exit_code",
+ error=str(e),
+ exit_code=getattr(e, "code", None),
+ )
  except Exception as e:
  log.exception("job_error", error=str(e))
 class Command(BaseCommand):

@@ -53,6 +53,53 @@ def test_backfill_chunk_edges_job_exception_isolated(
  assert error_events, f"未捕获 job_error 事件；captured={captured}"
  assert error_events[0].get("job") == "backfill_chunk_edges"
  assert "boom" in error_events[0].get("error", "")
+def test_backfill_chunk_edges_job_command_error_reraises(
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """ 回归：``CommandError`` / ``ImproperlyConfigured`` re-raise 给 APScheduler。
+ 启动级错误（参数互斥 / settings 缺失等）需暴露到 ``DjangoJobExecution`` 让
+ 运维监控可见；单 repo 运行时失败保持 swallow + log 路径不动。
+ """
+ from django.core.management.base import CommandError
+ from agents.management.commands.runapscheduler import backfill_chunk_edges_job
+ monkeypatch.setattr(
+ "django.core.management.call_command",
+ MagicMock(side_effect=CommandError("--repo 与 --all 互斥")),
+ )
+ with structlog.testing.capture_logs as captured:
+ with pytest.raises(CommandError):
+ backfill_chunk_edges_job
+ misconfigured_events = [
+ e
+ for e in captured
+ if e.get("event") == "job_misconfigured"
+ and e.get("log_level") == "error"
+ ]
+ assert misconfigured_events, (
+ f"CommandError 应走 job_misconfigured 路径；captured={captured}"
+ )
+def test_backfill_chunk_edges_job_systemexit_swallowed(
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """ +：命令 sys.exit(1) → wrapper 捕获 + log job_failed_exit_code，
+ 不打断 scheduler 主循环。"""
+ from agents.management.commands.runapscheduler import backfill_chunk_edges_job
+ monkeypatch.setattr(
+ "django.core.management.call_command",
+ MagicMock(side_effect=SystemExit(1)),
+ )
+ with structlog.testing.capture_logs as captured:
+ backfill_chunk_edges_job
+ failed_events = [
+ e
+ for e in captured
+ if e.get("event") == "job_failed_exit_code"
+ and e.get("log_level") == "error"
+ ]
+ assert failed_events, (
+ f"SystemExit(1) 应走 job_failed_exit_code 路径；captured={captured}"
+ )
+ assert failed_events[0].get("exit_code") == 1
 def test_scheduler_registers_backfill_job(monkeypatch: pytest.MonkeyPatch) -> None:
  """``Command.handle`` 启动后 ``backfill_chunk_edges`` 注册为 DateTrigger。"""
  from agents.management.commands import runapscheduler as mod
