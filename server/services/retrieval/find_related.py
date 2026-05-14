@@ -25,7 +25,6 @@
 ``rg "settings\\.ENABLE_CODEGRAP[H]" services/retrieval/`` 必须 0 命中。
 """
 from __future__ import annotations
-from collections.abc import Callable
 from typing import Any, Literal, Protocol
 import structlog
 from asgiref.sync import sync_to_async
