@@ -8,6 +8,7 @@ wrapper 内部 delegate ``HybridSearchService(get_provider).search(...)``，行�
 直接调 HybridSearchService 字节级等价；Phase 测试矩阵阶段统一迁移后可删别名。
 """
 from __future__ import annotations
+from dataclasses import asdict, is_dataclass
 from typing import Any
 import structlog
 from adrf.views import APIView
@@ -28,6 +29,29 @@ LayeredSearchService = _layered_search_compat.LayeredSearchService
 LayerResult = _layered_search_compat.LayerResult
 #: max_tokens 默认值（Plan token_budget 模块未导出该常量，本视图就近落字面量）。
 DEFAULT_MAX_TOKENS: int = 8000
+#: NeighborMetadata dataclass 字段集合（Phase Plan graph 透传）。
+#: 与 ``services.retrieval.types.NeighborMetadata`` 字段同名同序，duck-typed mock
+#: 只要属性齐全即可（保 patch 风格兼容 — 不强制 ``isinstance``）。
+_NEIGHBOR_FIELDS: tuple[str, ...] = (
+ "chunk_id",
+ "file_path",
+ "line_start",
+ "line_end",
+ "edge_type",
+ "weight",
+ "reason",
+ "hop",
+)
+def _serialize_neighbor(neighbor: Any) -> dict[str, Any]:
+ """将 NeighborMetadata（或 dict-shaped mock）转 dict。
+ 优先 ``dataclasses.asdict``（命中 frozen dataclass 路径），否则按
+ ``_NEIGHBOR_FIELDS`` 逐字段 ``getattr`` 兜底（兼容 dict / Mock / 测试 stub）。
+ """
+ if is_dataclass(neighbor) and not isinstance(neighbor, type):
+ return asdict(neighbor)
+ if isinstance(neighbor, dict):
+ return {k: neighbor.get(k) for k in _NEIGHBOR_FIELDS}
+ return {k: getattr(neighbor, k, None) for k in _NEIGHBOR_FIELDS}
 def _serialize_layer(layer: LayerResult) -> dict[str, Any]:
  """将 LayerResult 转换为可序列化的 dict。
  关键差异 5（T-）：L4 items 包含 Symbol ORM 对象，
@@ -96,6 +120,19 @@ class PlaygroundSearchView(APIView):
  max_tokens=max_tokens,
  )
  layers_data = [_serialize_layer(layer) for layer in result.layers]
+ # Phase Plan：graph enrichment 透传（per work item §10 硬约束 1）。
+ # 用 ``getattr(..., default)`` 兜底，兼容 既有 LayeredSearchResult patch
+ # 路径（无 graph 字段 → 降级为空 list / 空字符串）。
+ # 禁止 ``isinstance(result, HybridSearchResult)`` 分支：会被 测试 mock 打穿。
+ hop1_neighbors = [
+ _serialize_neighbor(n)
+ for n in getattr(result, "hop1_neighbors", ) or
+ ]
+ hop2_neighbors = [
+ _serialize_neighbor(n)
+ for n in getattr(result, "hop2_neighbors", ) or
+ ]
+ graph_context: str = getattr(result, "graph_context", "") or ""
  return Response(
  {
  "query": result.query,
@@ -103,6 +140,9 @@ class PlaygroundSearchView(APIView):
  "layers": layers_data,
  "final_context": result.final_context,
  "total_tokens": result.total_tokens,
+ "hop1_neighbors": hop1_neighbors,
+ "hop2_neighbors": hop2_neighbors,
+ "graph_context": graph_context,
  }
  )
 __all__ = ["PlaygroundSearchView"]

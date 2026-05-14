@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
-from codegraph.services.layered_search import LayerResult, LayeredSearchResult
+from codegraph.services.layered_search import LayeredSearchResult, LayerResult
+from services.retrieval.types import (
+ HybridSearchResult,
+ LayerSnapshot,
+ NeighborMetadata,
+)
 User = get_user_model
 def _make_mock_search_result(with_l4_orm: bool = False) -> LayeredSearchResult:
  """构造 LayeredSearchService.search 的模拟返回值。"""
@@ -152,3 +157,104 @@ def test_playground_response_structure(admin_client):
  assert required_fields.issubset(data.keys), f"响应缺少字段: {required_fields - data.keys}"
  assert isinstance(data["repository_ids"], list)
  assert data["total_tokens"] == 500
+# ============================================================================
+# Phase Plan：graph enrichment 字段透传（hop1/hop2/graph_context）
+# ============================================================================
+@pytest.mark.django_db
+def test_search_passes_through_hop_neighbors_when_hybrid_result(admin_client):
+ """Phase: HybridSearchResult 路径透传 hop1/hop2/graph_context 三字段。"""
+ hop1 = NeighborMetadata(
+ chunk_id="chunk-hop1-aaa",
+ file_path="src/auth/login.py",
+ line_start=10,
+ line_end=42,
+ edge_type="CALL",
+ weight=0.85,
+ reason="L3 命中 chunk 调用 verify_password",
+ hop=1,
+ )
+ hop2 = NeighborMetadata(
+ chunk_id="chunk-hop2-bbb",
+ file_path="src/auth/utils.py",
+ line_start=None,
+ line_end=None,
+ edge_type="IMPORT",
+ weight=0.42,
+ reason="二跳：通过 verify_password 间接 import bcrypt 工具",
+ hop=2,
+ )
+ mock_result = HybridSearchResult(
+ query="auth login",
+ repository_ids=["test-repo-1"],
+ layers=[
+ LayerSnapshot(layer="L1", status="ok", result_count=1, items=),
+ LayerSnapshot(layer="L2", status="ok", result_count=0, items=),
+ LayerSnapshot(layer="L3", status="ok", result_count=2, items=),
+ LayerSnapshot(layer="L4", status="skipped", result_count=0, items=),
+ LayerSnapshot(layer="L5", status="ok", result_count=300),
+ ],
+ final_context="# context",
+ total_tokens=300,
+ graph_context="### Graph Context\nverify_password -> bcrypt",
+ hop1_neighbors=[hop1],
+ hop2_neighbors=[hop2],
+ )
+ with patch(
+ "codegraph.playground_views.LayeredSearchService.search",
+ new=AsyncMock(return_value=mock_result),
+ ):
+ response = admin_client.post(
+ PLAYGROUND_URL,
+ {"query": "auth login"},
+ format="json",
+ )
+ assert response.status_code == 200
+ data = response.json
+ assert "hop1_neighbors" in data
+ assert "hop2_neighbors" in data
+ assert "graph_context" in data
+ assert data["graph_context"] == "### Graph Context\nverify_password -> bcrypt"
+ assert isinstance(data["hop1_neighbors"], list)
+ assert len(data["hop1_neighbors"]) == 1
+ item1: dict[str, Any] = data["hop1_neighbors"][0]
+ assert item1["chunk_id"] == "chunk-hop1-aaa"
+ assert item1["edge_type"] == "CALL"
+ assert item1["weight"] == 0.85
+ assert item1["hop"] == 1
+ assert item1["file_path"] == "src/auth/login.py"
+ assert item1["line_start"] == 10
+ assert item1["line_end"] == 42
+ assert item1["reason"].startswith("L3 命中")
+ assert len(data["hop2_neighbors"]) == 1
+ item2: dict[str, Any] = data["hop2_neighbors"][0]
+ assert item2["chunk_id"] == "chunk-hop2-bbb"
+ assert item2["edge_type"] == "IMPORT"
+ assert item2["hop"] == 2
+ assert item2["line_start"] is None
+ assert item2["line_end"] is None
+@pytest.mark.django_db
+def test_search_falls_back_to_empty_when_legacy_layered_result(admin_client):
+ """Phase: LayeredSearchResult 路径无 graph 字段 → 降级空 list / 空字符串。"""
+ mock_result = _make_mock_search_result
+ with patch(
+ "codegraph.playground_views.LayeredSearchService.search",
+ new=AsyncMock(return_value=mock_result),
+ ):
+ response = admin_client.post(
+ PLAYGROUND_URL,
+ {"query": "legacy"},
+ format="json",
+ )
+ assert response.status_code == 200
+ data = response.json
+ # 旧 4 字段不变
+ assert data["query"] == "test query"
+ assert data["repository_ids"] == ["test-repo-1"]
+ assert isinstance(data["layers"], list)
+ assert len(data["layers"]) == 5
+ assert data["final_context"] == "# Test Context\n\nThis is a test context."
+ assert data["total_tokens"] == 500
+ # 新 3 字段降级为空
+ assert data["hop1_neighbors"] ==
+ assert data["hop2_neighbors"] ==
+ assert data["graph_context"] == ""
