@@ -34,10 +34,16 @@ class CodeIntelConfig(AppConfig):
  f"Cannot import CODE_INTELLIGENCE_PROVIDER={provider_path!r}: {exc}"
  ) from exc
  provider = provider_cls
+ # 修复（Phase REVIEW）：原注释 "T- prevents arbitrary
+ # class-path code execution" 措辞不准——CODE_INTELLIGENCE_PROVIDER 来自
+ # env，能控制 env 的 attacker 已能任意 import，本检查不是安全边界。
+ # 实际作用：保证 Provider **结构化契约**（capabilities / health_check
+ # attribute 不可少），防止配错 class path / 拼错方法名 / settings 指错
+ # class 等类型卫生问题。
  if not isinstance(provider, BaseCodeProvider):
  raise ImproperlyConfigured(
  f"{provider_path} must implement BaseCodeProvider Protocol "
- "(per T- — prevents arbitrary class-path code execution)"
+ "(structured contract: capabilities + health_check; not a security boundary)"
  )
  register_provider("default", provider)
  freeze
