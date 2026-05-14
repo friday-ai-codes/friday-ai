@@ -26,6 +26,13 @@ from typing import Any
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 _SIGNATURE_FIXTURE = FIXTURE_DIR / "search_repository_code_signature.json"
 _INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "search_repository_code_input_schema.json"
+_FIND_RELATED_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_related_code_signature.json"
+_FIND_RELATED_INPUT_SCHEMA_FIXTURE = (
+ FIXTURE_DIR / "find_related_code_input_schema.json"
+)
+_FIND_RELATED_OUTPUT_SCHEMA_FIXTURE = (
+ FIXTURE_DIR / "find_related_code_output_schema.json"
+)
 _REGENERATE_HINT = (
  "若变更属预期，请运行 "
  "`cd server && DJANGO_SETTINGS_MODULE=friday.settings uv run python -m "
@@ -73,5 +80,51 @@ def test_search_repository_code_input_schema_snapshot -> None:
  expected = json.loads(_INPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
  assert actual == expected, (
  "SearchRepositoryCodeInput.model_json_schema drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_related_code_signature_snapshot -> None:
+ """``find_related_code`` 函数签名 vs fixture 字节级 diff —— per Phase Plan。
+ 与 ``test_search_repository_code_signature_snapshot`` 同模式：``inspect.unwrap``
+ 剥 @tool wrapper 后比对原始函数 ``async def find_related_code(...)`` 的参数表。
+ @tool decorator 的 ``description`` 参数**不在 inspect.signature 范围**——本快照
+ 与 description 字面演化解耦。
+ """
+ from agents.tools.find_related_code import find_related_code
+ actual = _normalize_signature(find_related_code)
+ expected = json.loads(
+ _FIND_RELATED_SIGNATURE_FIXTURE.read_text(encoding="utf-8")
+ )
+ assert actual == expected, (
+ "find_related_code signature drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_related_code_input_schema_snapshot -> None:
+ """``FindRelatedCodeInput.model_json_schema`` vs fixture 字节级 diff。
+ 锁三选一互斥起点 + relation_types Literal 6 类 + hops/limit 范围约束 +
+ direction Literal 三值；任何字段命名 / 类型 / 默认值 / description 漂移立即抓出。
+ """
+ from agents.tools.schemas import FindRelatedCodeInput
+ actual = FindRelatedCodeInput.model_json_schema
+ expected = json.loads(
+ _FIND_RELATED_INPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8")
+ )
+ assert actual == expected, (
+ "FindRelatedCodeInput.model_json_schema drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_related_code_output_schema_snapshot -> None:
+ """``FindRelatedCodeOutput.model_json_schema`` vs fixture 字节级 diff。
+ 锁 ``neighbors: list[NeighborOutput]`` + ``message: str``；NeighborOutput 字段
+ 顺序与 ``services.retrieval.types.NeighborMetadata`` dataclass 一致 + ``reason``
+ ``min_length=1`` 守门——任何字段名漂移会破坏 Plan ``NeighborOutput(**asdict(n))``
+ 单步装配。
+ """
+ from agents.tools.schemas import FindRelatedCodeOutput
+ actual = FindRelatedCodeOutput.model_json_schema
+ expected = json.loads(
+ _FIND_RELATED_OUTPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8")
+ )
+ assert actual == expected, (
+ "FindRelatedCodeOutput.model_json_schema drifted from fixture baseline. "
  f"{_REGENERATE_HINT}"
  )
