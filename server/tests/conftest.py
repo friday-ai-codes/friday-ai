@@ -897,3 +897,61 @@ def resolve_chain_builder:
  "chain": chain_entries,
  }
  return _factory
+# ============================================================================
+# Phase Plan：pytest matrix Provider 双 fixture
+#
+# 把 ``CODE_INTELLIGENCE_PROVIDER ∈ {local, null}`` 双值参数化成 pytest fixture，
+# 让 chat / agent / workflow / retrieval / find_related 关键 path 测试一次 import
+# 即可同时覆盖两 Provider 路径，无需各自重复 ``HybridSearchService(NullProvider)
+# / HybridSearchService(LocalProvider)`` 样板。
+#
+# 设计要点：
+# - **非 autouse**：仅显式 inject ``provider_type`` / ``hybrid_service`` 的测试
+# 才会触发 parametrize 双轨——既有不消费 fixture 的测试零影响（per plan
+# "CONFTEST fixture 兼容：不破坏既有测试"）。
+# - **延迟 import**：``HybridSearchService`` / Provider 实现在 fixture 体内
+# lazy import，避免 conftest 顶层引入服务模块加重 Django app loading 顺序。
+# - **测试 ID 兜底**：``params=["local", "null"]`` 让 pytest 自动生成
+# ``[local]`` / ``[null]`` 后缀，配合函数名中显式 ``_null_provider`` 子串
+# 双重保证 ``pytest -k null_provider --co`` 收集（per ROADMAP 字面要求）。
+# - **CI 双 job 桥接**：Phase CI 启用 ``CODE_INTELLIGENCE_PROVIDER=null``
+# env 时，可在 fixture 内读 env 限定单 provider 跑——本 phase 仅落参数化骨架，
+# env-driven filter 留 Phase 一起接（per / docs/work item-MATRIX.md）。
+# ============================================================================
+@pytest.fixture(params=["local", "null"])
+def provider_type(request) -> str:
+ """Phase /：Provider 双轨参数化 fixture。
+ Returns:
+ ``"local"`` 或 ``"null"``——下游 fixture / 测试用此字符串实例化
+ ``LocalProvider`` / ``NullProvider`` 注入 ``HybridSearchService``。
+ Usage:
+ async def test_xxx_for_null_provider(provider_type):
+ from services.code_intel.local_provider import LocalProvider
+ from services.code_intel.null_provider import NullProvider
+ provider = LocalProvider if provider_type == "local" else NullProvider
+ ...
+ 与 ``hybrid_service`` 工厂 fixture 等价（hybrid_service 一步到位返
+ ``HybridSearchService`` 实例，本 fixture 暴露原始字符串供更细粒度控制）。
+ """
+ return request.param # type: ignore[no-any-return]
+@pytest.fixture
+def hybrid_service(provider_type):
+ """Phase /：HybridSearchService(Provider) 工厂 fixture。
+ 根据 ``provider_type`` parametrize 值实例化对应 Provider 并注入
+ ``HybridSearchService``，让测试 body 完全聚焦在调用与断言。
+ Returns:
+ ``HybridSearchService`` 实例（NullProvider 或 LocalProvider 注入）。
+ Usage:
+ async def test_search_xxx_for_null_provider(hybrid_service):
+ result = await hybrid_service.search("query", repository_ids=["r1"])
+ ...
+ 注意：消费方 mock ``services.retrieval.hybrid_search.search_rag`` 等外部依赖
+ 保持 socket-disabled + DB-free；LocalProvider 路径的 ``lookup_symbols`` ORM
+ 调用会被 ``asyncio.gather(return_exceptions=True)`` 捕获降级为
+ ``symbol_results=``（与 ``test_null_provider_paths.py`` case 5 同模式）。
+ """
+ from services.code_intel.local_provider import LocalProvider
+ from services.code_intel.null_provider import NullProvider
+ from services.retrieval import HybridSearchService
+ provider = LocalProvider if provider_type == "local" else NullProvider
+ return HybridSearchService(provider)
