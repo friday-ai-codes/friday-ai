@@ -284,6 +284,31 @@ class HybridSearchService:
  else:
  symbol_results = list(symbol_result) if symbol_result else
  rag_snapshot: LayerSnapshot = rag_result
+ #: rag_snapshot.status != "ok" 短路——与 _search_rag_only 行为对齐
+ # （embedding 失败 / collection 不可达 / Qdrant 异常时 search_rag 返回
+ # status="error" 不抛异常）。 之前 graph_capable 路径完全失守，会
+ # 带着 status="error" snapshot 走完整 enrichment 链路返回 final_context=
+ # "## L3 Related Code\n\n" 与 _search_rag_only 字节不一致；同时 logger
+ # 不输出 l3_status 字段运维零感知。
+ if rag_snapshot.status != "ok" or not rag_snapshot.items:
+ logger.info(
+ "hybrid_search_completed",
+ path="graph_capable",
+ repo_count=len(repo_ids),
+ l3_status=rag_snapshot.status,
+ l3_error=rag_snapshot.error,
+ total_tokens=0,
+ symbol_failed=symbol_failed,
+ wave_0_elapsed_ms=elapsed_ms,
+ )
+ _ = project_id # 保签名兼容
+ return HybridSearchResult(
+ query=query,
+ repository_ids=repo_ids,
+ layers=[rag_snapshot],
+ final_context="",
+ total_tokens=0,
+ )
  rag_chunk_ids: set[str] = {
  str(item.get("id"))
  for item in rag_snapshot.items
