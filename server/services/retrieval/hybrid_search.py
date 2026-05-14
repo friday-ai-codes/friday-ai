@@ -28,13 +28,14 @@ Phase 落地骨架（``HybridSearchService.__init__`` + ``search`` 分发入口 
 from __future__ import annotations
 import asyncio
 import time
-from typing import Any
+from typing import Any, Literal
 import structlog
 from services.code_intel.protocols import (
  BaseCodeProvider,
  GraphCapableProvider,
 )
 from services.retrieval.budget import HybridBudget
+from services.retrieval.find_related import find_related as _find_related_impl
 from services.retrieval.hop1_reader import (
  extract_hop1_neighbors_raw,
  resolve_neighbor_metadata,
@@ -385,5 +386,42 @@ class HybridSearchService:
  ],
  final_context=final_context,
  total_tokens=total_tokens,
+ )
+ async def find_related(
+ self,
+ start_chunk_id: str,
+ *,
+ repo_ids: list[str],
+ relation_types: list[str] | None = None,
+ hops: int = 1,
+ direction: Literal["downstream", "upstream", "both"] = "both",
+ limit: int = 20,
+ ) -> list[NeighborMetadata]:
+ """Phase MCP tool 直接调用入口（per Plan success_criteria）。
+ Thin wrapper：delegate 到 ``services.retrieval.find_related.find_related``
+ 模块级函数。**不做** ``isinstance(provider, GraphCapableProvider)`` 守卫——
+ find_related 直接查 ChunkEdge ORM，不依赖 Provider；NullProvider 实例
+ 调本方法依然可拿到 ChunkEdge 数据（per Plan deviation："任何 provider
+ 调 find_related 都能拿到 ChunkEdge 数据"）。如需限制，Phase MCP tool
+ 在外层加 Pydantic schema + capability 守卫。
+ Args:
+ start_chunk_id: 起点 chunk_id（UUID 字符串）。
+ repo_ids: 候选仓库 ID 列表；空 → ````。
+ relation_types: 限定 ``EdgeType`` 列表；``None`` 或 ```` → 不过滤。
+ hops: 跳数 0..MAX_HOPS=2；越界 → ``ValueError``。
+ direction: ``"downstream"`` / ``"upstream"`` / ``"both"``。
+ limit: 输出邻居数上限。
+ Returns:
+ ``list[NeighborMetadata]`` 按 ``(hop ASC, weight DESC)`` 排序。
+ Raises:
+ ValueError: ``hops`` 越界或 ``direction`` 非三选一。
+ """
+ return await _find_related_impl(
+ start_chunk_id,
+ repo_ids=repo_ids,
+ relation_types=relation_types,
+ hops=hops,
+ direction=direction,
+ limit=limit,
  )
 __all__ = ["HybridSearchService"]
