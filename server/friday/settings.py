@@ -354,6 +354,8 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
 # Phase：HybridSearchService 编排器 RAG/图谱 token 预算比例（per ）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings` clamp 到边界 + structlog warning。
+# NOTE: 默认值与 services/retrieval/budget.py:GRAPHRAG_BUDGET_RATIO_DEFAULT 同值，
+# 调整需双改（settings.py 加载顺序敏感，无法直接 import budget 常量避免循环）。
 GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
 # =============================================================================
 # APScheduler Settings
