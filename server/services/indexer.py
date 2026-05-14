@@ -1816,16 +1816,34 @@ class IndexerService:
  calls=stats["total_calls"],
  endpoints=stats["total_endpoints"],
  )
- # Phase hook（per / ）：图谱写完后触发 6 EdgeBuilder + payload
- # 一跳快照同步。asyncio.create_task fire-and-forget（详见
- # `code_relations/tasks.py` 决策注释），不阻塞 indexer 主流程。
+ # Phase hook（per / ）+ Phase Plan lifecycle 切换：
+ # 图谱写完后触发 6 EdgeBuilder + payload 一跳快照同步；改走
+ # `code_relations.lifecycle.enqueue_edge_build_for_history` 外部 wrapper
+ # 把 IndexHistory.graph_build_status 状态机接入（running → completed/failed/skipped）。
+ # tasks.py 公共 API `enqueue_edge_build` 不被修改（per Plan frozen 约束）。
  # 异常隔离：任何失败 catch + structlog warning，不抛回 indexer。
  try:
- from code_relations.tasks import enqueue_edge_build
+ from asgiref.sync import sync_to_async
+ from code_relations.lifecycle import enqueue_edge_build_for_history
+ from repositories.models import IndexHistory, IndexHistoryStatus
  dirty = sorted(self._session_dirty_chunk_ids)
  self._session_dirty_chunk_ids.clear
+ # history_id fallback：当前 _extract_and_write_graph 调用栈未透传
+ # history_id（v22.0 设计），取该 repo 最近 RUNNING 的 IndexHistory
+ # 行作为 lifecycle 写入目标；找不到则降级为透传 enqueue_edge_build。
+ running_history = await sync_to_async(
+ lambda: IndexHistory.objects.filter(
+ repository_id=repository_id,
+ status=IndexHistoryStatus.RUNNING,
+ )
+ .order_by("-created_at")
+ .values_list("id", flat=True)
+ .first
+ )
  if dirty:
- await enqueue_edge_build(str(repository_id), dirty)
+ await enqueue_edge_build_for_history(
+ str(repository_id), dirty, running_history
+ )
  stats["edge_build_enqueued"] = True
  stats["dirty_chunk_count"] = len(dirty)
  else:
