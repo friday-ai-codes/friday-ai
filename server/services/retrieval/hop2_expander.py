@@ -129,7 +129,8 @@ async def expand_hop2(
  if not edges:
  return
  # 三重去重 reject set：合并 hop1 + rag，per source 自环单独判断
- reject: frozenset[str] = frozenset(hop1_chunk_ids) | frozenset(rag_chunk_ids)
+ # hop1_chunk_ids / rag_chunk_ids 已是 set，直接 union 后 frozenset 一次拷贝即可
+ reject: frozenset[str] = frozenset(hop1_chunk_ids | rag_chunk_ids)
  # 按 source 分组（resolve_neighbor_metadata 签名要求
  # ``dict[source_chunk_id, list[(target, edge_type, weight)]]``）
  by_source: dict[str, list[tuple[str, str, float]]] = {}
