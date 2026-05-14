@@ -61,20 +61,31 @@ from services.retrieval.types import (
 logger = structlog.get_logger(__name__)
 DEFAULT_MAX_TOKENS: int = 8000
 DEFAULT_TOP_K: int = 30
-def _enrichment_reason_fn(edge_type: str, source_chunk_id: str) -> str:
+def _enrichment_reason_fn(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict[str, Any],
+) -> str:
  """``hop1_reader.resolve_neighbor_metadata`` / ``hop2_expander.expand_hop2``
- 注入式 reason 生成器（Phase graph enrichment 路径）。
- **降级路径**（per Plan deviation "reason_fn 降级路径"）：完整模板需要
- ``source_file`` / ``target_file`` / ``ChunkEdge.metadata``，但 Plan/03 的
- ``resolve_neighbor_metadata`` / ``expand_hop2`` 签名只透传 ``edge_type`` +
- ``source_chunk_id``——本 plan 不修改其签名（避免逆向依赖），故仅传 ``edge_type``
- 走 ``explain_neighbor`` 降级模板（CALL → ``"via direct call"``，CO_CHANGED →
- ``"co-changed with related chunk × recent history"`` 等）。
- 完整 metadata reason（含 commit_count / similarity 等）通过 ``find_related``
- Python API 直接调用获取，由 Phase MCP tool 透出给 LLM。
+ 注入式 reason 生成器（Phase graph enrichment 路径， 升级）。
+ 完整调用 ``explain_neighbor(edge_type, source_file=..., target_file=...,
+ metadata=...)`` 走完整模板路径——CALL/IMPORT 拼 target 文件，CO_CHANGED 拼
+ commit_count，SEMANTIC 拼 similarity 等核心信号——与 ``find_related`` Python
+ API 路径产物质量一致（ 之前两条调用路径产物分裂）。
+ Note:
+ hop1 路径 ``edge_metadata`` 由 payload `related_chunks` 解析得来，当前
+ payload 写入仅 3-tuple（不带 metadata），实际值为空 dict——CO_CHANGED /
+ SEMANTIC 仍走"recent history" / 缺 score 的降级模板。Phase 增量同步
+ 若扩 payload 为 4-tuple 则自动透出。hop2 路径 ``edge_metadata`` 来自
+ ``ChunkEdge.metadata``（fetch_hop2_edges 已扩 5-tuple），完整可用。
  """
- _ = source_chunk_id # 保签名兼容；降级路径不使用
- return explain_neighbor(edge_type)
+ return explain_neighbor(
+ edge_type,
+ source_file=source_file,
+ target_file=target_file,
+ metadata=metadata,
+ )
 def _render_neighbor_line(neighbor: NeighborMetadata) -> str:
  """单个 NeighborMetadata → markdown 一行（per ）。
  格式：``- `{file_path}:{line_start}` ({edge_type}, w={weight:.2f}): {reason}``

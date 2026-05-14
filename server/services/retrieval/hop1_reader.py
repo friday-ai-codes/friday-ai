@@ -21,6 +21,7 @@ metadata 拉取，启停决策由 Plan 的 ``HybridSearchService`` 通过 Provid
 """
 from __future__ import annotations
 import math
+import uuid
 from collections.abc import Callable
 from typing import Any
 import structlog
@@ -28,10 +29,23 @@ from asgiref.sync import sync_to_async
 from code_relations.constants import TOP_NEIGHBORS_PER_HOP1
 from services.retrieval.types import NeighborMetadata
 __all__ = [
+ "ReasonFn",
  "extract_hop1_neighbors_raw",
  "resolve_neighbor_metadata",
 ]
 logger = structlog.get_logger(__name__)
+def _is_uuid_str(value: str) -> bool:
+ """``ChunkRegistry.in_bulk(field_name='chunk_id')`` 防御非 UUID 字符串。
+ ``ChunkRegistry.chunk_id`` 是 UUIDField；in_bulk 传入非 UUID 会触发
+ ``ValidationError``。生产路径 source_chunk_id / target_chunk_id 均为 UUID
+ （payload 来自 rag_item.id），本守卫为测试环境占位符 + 增量同步异常数据
+ 的 last-mile guard。
+ """
+ try:
+ uuid.UUID(value)
+ return True
+ except (ValueError, AttributeError, TypeError):
+ return False
 _UNKNOWN_FILE_PATH: str = "<unknown>"
 """ChunkRegistry 缺失时的 fallback file_path（per D-Deviation 1）。
 Plan 编排器在 graph_context markdown 渲染时按 ``file_path == "<unknown>"``
@@ -150,54 +164,84 @@ def extract_hop1_neighbors_raw(
  sorted_neighbors = sorted(merged_pool.values, key=lambda t: -t[2])
  out[source_chunk_id] = sorted_neighbors[:TOP_NEIGHBORS_PER_HOP1]
  return out
+ReasonFn = Callable[
+ [str, str | None, str | None, dict[str, Any]],
+ str,
+]
+"""``resolve_neighbor_metadata`` / ``expand_hop2`` 注入式 reason 生成器签名。
+参数顺序：``(edge_type, source_file, target_file, metadata)``。Phase
+升级——原 ``(edge_type, source_chunk_id)`` 签名让 ``hybrid_search`` 路径无法
+传完整 metadata 给 ``explain_neighbor``，导致 reason 全部走 fallback；新签名让
+``_enrichment_reason_fn`` 与 ``find_related._build_neighbor`` 拿到等价的
+template 上下文（commit_count / similarity / target_file 等核心信号不再丢失）。
+"""
 async def resolve_neighbor_metadata(
- neighbor_tuples: dict[str, list[tuple[str, str, float]]],
+ neighbor_tuples: (
+ dict[str, list[tuple[str, str, float]]]
+ | dict[str, list[tuple[str, str, float, dict[str, Any]]]]
+ ),
  *,
  hop: int,
- reason_fn: Callable[[str, str], str],
+ reason_fn: ReasonFn,
 ) -> list[NeighborMetadata]:
  """单次 ``ChunkRegistry.in_bulk`` 拉满邻居 metadata，扁平到 NeighborMetadata 列表。
  Args:
- neighbor_tuples: ``extract_hop1_neighbors_raw`` 输出，
- ``dict[source_chunk_id, list[(target_chunk_id, edge_type, weight)]]``。
- hop: 跳数标记（一跳=1，Plan 二跳调用同函数复用传 2）。
- reason_fn: 注入的 reason 生成函数 ``(edge_type, source_chunk_id) -> str``。
- Plan 阶段调用方传 stub ``lambda et, sid: f"{et} from {sid}"``，
- Plan ``_explain_neighbor`` 落地后替换为真正解释器。
+ neighbor_tuples: ``extract_hop1_neighbors_raw`` 输出
+ ``dict[source_chunk_id, list[(target_chunk_id, edge_type, weight)]]``，
+ 或 ``hop2_expander.expand_hop2`` 扩展后的 4-tuple 形式
+ ``dict[source_chunk_id, list[(target, edge_type, weight, edge_metadata)]]``
+ （edge_metadata 让 hop2 reason 透出 ChunkEdge.metadata 信号）。
+ hop: 跳数标记（一跳=1，二跳=2）。
+ reason_fn: 注入的 reason 生成函数，签名见 ``ReasonFn``。
  Returns:
  ``list[NeighborMetadata]``：
  - 跨 source 同 (target_chunk_id, edge_type) 合并保 ``max(weight)``
  - ``ChunkRegistry`` 缺失 → ``file_path='<unknown>'`` + ``line_*=None``
  - ``ChunkRegistry.line_start/line_end`` NULL → ``NeighborMetadata.line_*=None``
- **零 N+1**：仅一次 ``ChunkRegistry.objects.in_bulk(field_name='chunk_id')``。
+ **零 N+1**：仅一次 ``ChunkRegistry.objects.in_bulk(field_name='chunk_id')``——
+ 一次拉满 source + target 双侧 chunk_id 让 reason_fn 可拿到 source_file。
  """
  from code_relations.models import ChunkRegistry
+ source_chunk_ids: set[str] = set(neighbor_tuples.keys)
  target_chunk_ids: set[str] = set
  for tuples in neighbor_tuples.values:
- for tgt, _et, _w in tuples:
- target_chunk_ids.add(tgt)
+ for t in tuples:
+ target_chunk_ids.add(t[0])
  if not target_chunk_ids:
  return
+ # 同一次 in_bulk 拉满 source + target 双侧 chunk_id，让 reason_fn 可拿到
+ # source_file（ 升级前 source 侧不查 ORM，reason 模板缺 source_file）。
+ # 过滤非 UUID 字符串：source_chunk_ids 在 prod 都是 UUID（payload 写入时为
+ # rag_item.id），但 test fixtures 可能用 ``"source-1"`` 等占位符；ChunkRegistry
+ # PK 是 UUIDField，传非 UUID 会触发 ValidationError。
+ all_chunk_ids: set[str] = {
+ cid for cid in (source_chunk_ids | target_chunk_ids) if _is_uuid_str(cid)
+ }
  registry_map: dict[Any, ChunkRegistry] = await sync_to_async(
  ChunkRegistry.objects.in_bulk
- )(list(target_chunk_ids), field_name="chunk_id")
+ )(list(all_chunk_ids), field_name="chunk_id")
  # in_bulk 用 UUIDField PK 时 key 类型为 ``uuid.UUID``；本函数对外契约用 str，
  # 统一转 str key 便于与 neighbor_tuples 中的 str chunk_id 对齐
  by_str_id: dict[str, ChunkRegistry] = {
  str(k): v for k, v in registry_map.items
  }
- # 合并 key=(target_chunk_id, edge_type)，保 max(weight) + 记录 source 用于 reason_fn
- merged: dict[tuple[str, str], tuple[float, str]] = {}
+ # 合并 key=(target_chunk_id, edge_type)，保 max(weight) + 记录 source +
+ # edge_metadata（hop2 4-tuple 携带；hop1 3-tuple 缺省 {}）
+ merged: dict[tuple[str, str], tuple[float, str, dict[str, Any]]] = {}
  for source_chunk_id, tuples in neighbor_tuples.items:
- for tgt, edge_type, weight in tuples:
+ for t in tuples:
+ tgt = t[0]
+ edge_type = t[1]
+ weight = t[2]
+ edge_metadata: dict[str, Any] = t[3] if len(t) > 3 else {}
  key = (tgt, edge_type)
  existing = merged.get(key)
  if existing is None or weight > existing[0]:
- merged[key] = (weight, source_chunk_id)
+ merged[key] = (weight, source_chunk_id, edge_metadata)
  out: list[NeighborMetadata] =
- for (tgt, edge_type), (weight, source_chunk_id) in merged.items:
- registry = by_str_id.get(tgt)
- if registry is None:
+ for (tgt, edge_type), (weight, source_chunk_id, edge_metadata) in merged.items:
+ target_registry = by_str_id.get(tgt)
+ if target_registry is None:
  # info（非 debug）：ChunkRegistry 缺失意味着 payload 与 ORM 间存在
  # 数据不一致（Phase reconcile 兜底场景），prod 默认 INFO 级别下
  # 必须可见以便 ops 关注；debug 级别在 prod 不输出会丢失信号
@@ -208,10 +252,14 @@ async def resolve_neighbor_metadata(
  file_path = _UNKNOWN_FILE_PATH
  line_start: int | None = None
  line_end: int | None = None
+ target_file: str | None = None
  else:
- file_path = registry.file_path
- line_start = registry.line_start
- line_end = registry.line_end
+ file_path = target_registry.file_path
+ line_start = target_registry.line_start
+ line_end = target_registry.line_end
+ target_file = target_registry.file_path
+ source_registry = by_str_id.get(source_chunk_id)
+ source_file = source_registry.file_path if source_registry else None
  out.append(
  NeighborMetadata(
  chunk_id=tgt,
@@ -220,7 +268,7 @@ async def resolve_neighbor_metadata(
  line_end=line_end,
  edge_type=edge_type,
  weight=weight,
- reason=reason_fn(edge_type, source_chunk_id),
+ reason=reason_fn(edge_type, source_file, target_file, edge_metadata),
  hop=hop,
  )
  )

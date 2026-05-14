@@ -341,19 +341,19 @@ async def find_related(
  hop1_chunk_ids = [neighbor for _start, neighbor, _et, _w, _meta in hop1_edges]
  # fetch_hop2_edges 不返回 metadata（Plan 设计为 4-tuple）；
  # 二跳 reason 走降级 fallback 即可（无 metadata 时模板自动 fallback）
- raw_h2 = await fetch_hop2_edges(hop1_chunk_ids, repo_ids)
+ #: relation_types ORM 层下推，避免 Python 端在 [:50] 后过滤命中率严重下降
+ raw_h2 = await fetch_hop2_edges(
+ hop1_chunk_ids, repo_ids, relation_types=relation_types
+ )
  # 三重去重：hop2 target ∉ {start} ∪ hop1 ∪ {source 自环}
  hop1_chunk_set: set[str] = set(hop1_chunk_ids)
  reject: set[str] = {start_chunk_id} | hop1_chunk_set
- for src, tgt, et, w in raw_h2:
+ for src, tgt, et, w, em in raw_h2:
  if tgt in reject:
  continue
  if tgt == src:
  continue
- # relation_types 过滤（fetch_hop2_edges 本身不带 filter）
- if relation_types and et not in relation_types:
- continue
- hop2_neighbor_chunks.append((src, tgt, et, w, {}))
+ hop2_neighbor_chunks.append((src, tgt, et, w, em))
  needed_chunk_ids.add(tgt)
  # ---- 单次 ChunkRegistry.in_bulk 拉 file_path / line_* 元数据 --------
  file_meta = await _resolve_chunk_files(needed_chunk_ids)
