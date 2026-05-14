@@ -11,9 +11,11 @@
  ``AttributeError``（per work-item ）。
 - **reason 透传**：``list[NeighborMetadata] → list[NeighborOutput]`` 字段同序
  装配，``reason`` 直接走 Phase reason 模板输出**不重写**（per work-item，CI grep gate 守门 —— 本模块禁止 import / 引用上游 reason 模板生成器）。
-**注意**：本模块用 ``@tool`` 装饰但**不 import 进 ``agents/tools/__init__.py``**
-（Plan 才注册到 tool registry），避免本 plan 单测在 ``agents.tools`` 包导入
-副作用链路上触发 tool 重复注册。
+**注册路径**：Plan 已通过 ``agents/tools/__init__.py`` 顶层 ``from
+agents.tools.find_related_code import find_related_code`` 触发 ``@tool``
+装饰器注册到 ``ToolRegistry``。本模块在测试 / 工具脚本中**单独 import 不会重复
+注册**——Python 模块缓存（``sys.modules``）保证 ``@tool`` 装饰器仅在首次 import
+时执行一次。Plan snapshot 契约测试守住函数签名 / JSON schema 漂移。
 """
 from __future__ import annotations
 import dataclasses
@@ -299,8 +301,15 @@ async def _find_related_code_impl(
  # Protocol 类型；同时 hasattr 兜底防 capabilities 集合声明但方法缺失）。
  # NullProvider.capabilities == frozenset → 守卫失败返结构化 error，
  # 不抛 AttributeError（per work-item ）。
- provider_caps: frozenset[str] = getattr(
- provider, "capabilities", frozenset
+ # 防御 Protocol 实现漂移：getattr(..., default) 仅在属性不存在时
+ # 回退；若 provider 类显式定义 capabilities = None / / 其他非容器，
+ # "symbol_lookup" not in None 会抛 TypeError。``or frozenset`` 让
+ # None / 空容器统一 falsy 落回 frozenset，简洁且类型安全。
+ raw_caps = getattr(provider, "capabilities", None)
+ provider_caps: frozenset[str] = (
+ raw_caps
+ if isinstance(raw_caps, (frozenset, set, list, tuple))
+ else frozenset
  )
  if "symbol_lookup" not in provider_caps or not hasattr(
  provider, "lookup_symbols"
@@ -337,7 +346,26 @@ async def _find_related_code_impl(
  ),
  )
  sym = symbols[0]
- sym_file_path = str(sym.get("file_path", ""))
+ sym_file_path = sym.get("file_path") or ""
+ if not sym_file_path:
+ # 防御 Protocol 实现漂移：第三方 Provider 若返回 dict 缺
+ # file_path 键 / 值为 None / 空串，下游 ChunkRegistry.filter(file_path="")
+ # 查不到 → 错误信息空路径调试一头雾水。提前返结构化 error 让调用方
+ # 拿到清晰诊断。LocalProvider 保证 file_path 非空（来自 Django Model
+ # 必填字段），此分支当前不触发，但 BaseCodeProvider Protocol 未约束。
+ logger.warning(
+ "find_related_code_failed",
+ error_type="ProviderReturnedSymbolWithoutFilePath",
+ symbol_name=validated.symbol_name,
+ sym_dict=sym,
+ )
+ return ToolResult(
+ success=False,
+ error=(
+ f"provider returned symbol for {validated.symbol_name} "
+ "without file_path; cannot resolve start chunk"
+ ),
+ )
  start_line = sym.get("start_line")
  reg = None
  if start_line is not None:
