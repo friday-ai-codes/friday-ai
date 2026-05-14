@@ -1,10 +1,10 @@
 """Incremental indexer service for code repositories."""
 import asyncio
+import hashlib
 import os
 import re
 import shutil
 import tempfile
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -13,6 +13,7 @@ from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+from code_relations.utils import generate_chunk_id
 from repositories.models import (
  BranchFileIndex,
  BranchIndexStatus,
@@ -604,8 +605,9 @@ class IndexerService:
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
- points = self._build_points(
+ points, registry_rows = self._build_points(
  pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ repository_id=self.repository_id,
  branch_name=branch_name,
  is_base_branch=branch_name is not None,
  )
@@ -894,8 +896,9 @@ class IndexerService:
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts_to_embed)
- points = self._build_points(
+ points, registry_rows = self._build_points(
  all_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ repository_id=self.repository_id,
  branch_name=branch_name, is_base_branch=False,
  )
  # upsert to overlay collection
@@ -1151,8 +1154,9 @@ class IndexerService:
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
- points = self._build_points(
+ points, registry_rows = self._build_points(
  pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ repository_id=self.repository_id,
  branch_name=branch_name, is_base_branch=is_base_branch,
  )
  # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
@@ -1429,8 +1433,9 @@ class IndexerService:
  sparse_vectors: list[dict] | None = None
  if hybrid_enabled:
  sparse_vectors = await sync_to_async(self._generate_sparse_vectors)(texts)
- points = self._build_points(
+ points, registry_rows = self._build_points(
  pending_chunks, embeddings, sparse_vectors, hybrid_enabled,
+ repository_id=self.repository_id,
  branch_name=branch_name, is_base_branch=is_base_branch,
  )
  # upsert 失败必须 raise（详见 run_full_index._flush_batch 的同款注释）
@@ -1800,14 +1805,35 @@ class IndexerService:
  sparse_vectors: list[dict] | None,
  hybrid: bool,
  *,
+ repository_id: str,
  branch_name: str | None = None,
  is_base_branch: bool = False,
- ) -> list[dict]:
- """构建 Qdrant points，支持 hybrid 和非 hybrid 模式。"""
+ ) -> tuple[list[dict], list[dict[str, Any]]]:
+ """构建 Qdrant points + ChunkRegistry rows，支持 hybrid 和非 hybrid 模式。
+ Pitfall 1：point_id 走 `generate_chunk_id(repo_id, file_path,
+ chunk_index)` 确定性 uuid5，**完全替代** uuid4 随机生成。同 (repo_id,
+ file_path, chunk_index) 三元组的 chunk 重切分仍命中同 chunk_id（同源稳定）。
+ chunk_index 规则：每个 file_path 内独立计数器，从 0 起按 chunks 列表出现
+ 次序递增；**即使 embedding=None**（跳过 point 写入）chunk_index 仍递增，
+ 保证「同 chunk 在重切分中始终拿到同一 chunk_id」。
+ Returns:
+ (points, registry_rows) 元组：
+ - points: 与原行为兼容，含 dict[id/vector/payload]
+ - registry_rows: 仅 embedding 非 None 的 chunk 入列，每行含
+ {chunk_id: UUID, content_hash: str, repository_id: str,
+ file_path: str, chunk_index: int}，调用方在 Qdrant upsert 成功后
+ 送进 `_upsert_chunk_registry_batch` 同步写入 ChunkRegistry。
+ """
+ file_chunk_counter: dict[str, int] = {}
  points: list[dict] =
+ registry_rows: list[dict[str, Any]] =
  for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+ chunk_index = file_chunk_counter.get(chunk.file_path, 0)
+ file_chunk_counter[chunk.file_path] = chunk_index + 1
  if embedding is None:
  continue
+ chunk_id = generate_chunk_id(repository_id, chunk.file_path, chunk_index)
+ content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest
  payload: dict[str, Any] = {
  "file_path": chunk.file_path,
  "file_hash": chunk.file_hash,
@@ -1834,11 +1860,18 @@ class IndexerService:
  else:
  vector = embedding
  points.append({
- "id": str(uuid.uuid4),
+ "id": str(chunk_id),
  "vector": vector,
  "payload": payload,
  })
- return points
+ registry_rows.append({
+ "chunk_id": chunk_id,
+ "content_hash": content_hash,
+ "repository_id": repository_id,
+ "file_path": chunk.file_path,
+ "chunk_index": chunk_index,
+ })
+ return points, registry_rows
 async def clone_and_index_repository(
  repository_id: str,
  *,
