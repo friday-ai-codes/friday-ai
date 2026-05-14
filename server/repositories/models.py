@@ -43,6 +43,16 @@ class IndexHistoryStatus(models.TextChoices):
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
  CANCELLED = "cancelled", "已停止"
+class GraphBuildStatus(models.TextChoices):
+ """GraphRAG 增量构建状态（Phase）。
+ 与 IndexHistoryStatus 互相独立——前者描述本次索引对应的 graph
+ enrichment 阶段（ChunkEdge 构建 + payload 同步），后者描述整体索引流程。
+ """
+ PENDING = "pending", "等待中"
+ RUNNING = "running", "运行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
+ SKIPPED = "skipped", "已跳过"
 class AISummaryStatus(models.TextChoices):
  """AI 描述生成状态。"""
  NOT_STARTED = "not_started", "未生成"
@@ -205,6 +215,22 @@ class IndexHistory(models.Model):
  default=dict,
  blank=True,
  help_text="增量索引涉及的变更文件路径列表，全量索引时为空",
+ )
+ # Phase：GraphRAG 增量构建可观测字段（lifecycle 写入逻辑见 Plan）
+ graph_build_status = models.CharField(
+ max_length=20,
+ choices=GraphBuildStatus.choices,
+ default=GraphBuildStatus.PENDING,
+ help_text="GraphRAG 增量构建状态（pending/running/completed/failed/skipped）",
+ )
+ edge_count = models.PositiveIntegerField(
+ default=0,
+ help_text="累计快照：当前 ChunkEdge.objects.filter(repository=repo).count",
+ )
+ payload_synced_at = models.DateTimeField(
+ blank=True,
+ null=True,
+ help_text="最近一次 payload.related_chunks 同步完成时间",
  )
  started_at = models.DateTimeField(blank=True, null=True)
  finished_at = models.DateTimeField(blank=True, null=True)
