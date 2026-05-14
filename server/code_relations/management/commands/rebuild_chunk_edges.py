@@ -174,9 +174,23 @@ class Command(BaseCommand):
  复用 verify_payload_consistency.py:_dispatch_and_drain 的 before/after
  snapshot 模式（ lesson）：只 drain 本次 dispatch 真正 spawn 的 task，
  避免误 await 跨 loop / 跨仓库的无关 task（多仓批量 backfill 时尤其重要）。
+ 修复（Phase REVIEW）：``asyncio.gather(..., return_exceptions=True)``
+ 把 builder 异常吞成返回值，外层 ``try/except`` 永远进不了 except 分支 ——
+ 失败 build 的 chunk 会被错误标 ``last_built_at != NULL``，下次 backfill
+ 过滤掉它们 → chunk 永久丢边。修复：检查 gather 返回值，发现任何
+ ``BaseException`` 实例时显式 ``raise RuntimeError(...)``，让上游
+ ``_process_repo`` 的 ``try/except`` 走 except 分支跳过 ``last_built_at``
+ 更新（断点续跑：下次 backfill 重试这些 chunk）。
  """
  before = set(tasks_module._BACKGROUND_TASKS)
  await enqueue_edge_build(repository_id, dirty_chunk_ids)
  new_tasks = tasks_module._BACKGROUND_TASKS - before
- if new_tasks:
- await asyncio.gather(*new_tasks, return_exceptions=True)
+ if not new_tasks:
+ return
+ results = await asyncio.gather(*new_tasks, return_exceptions=True)
+ failures = [r for r in results if isinstance(r, BaseException)]
+ if failures:
+ raise RuntimeError(
+ f"{len(failures)}/{len(results)} builder tasks failed; "
+ f"first error: {failures[0]!r}"
+ )
