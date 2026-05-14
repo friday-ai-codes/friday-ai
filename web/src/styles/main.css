@@ -434,6 +434,10 @@ a {
  transition-duration: 0.01ms !important;
  scroll-behavior: auto !important;
  }
+ /*: GraphRAG 二跳扩散画布 — Vue Flow edge dasharray 持续动画兜底 */
+ .vue-flow__edge-path {
+ animation: none !important;
+ }
 }
 /* Vue Flow Handle 样式 — 节点连接点（小圆点） */
 .vue-flow__handle {

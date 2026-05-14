@@ -15,7 +15,7 @@
  * 折叠 / 截断模板已挂 v-if 占位，但本 plan composable 永远返回 false（Plan 接力
  * 扩展 useDiffusionGraph 即可激活，**不再改本组件**，保证 Wave 真并行）。
  */
-import type { Edge, EdgeComponent, EdgeTypesObject, Node, NodeComponent, NodeTypesObject, NodeMouseEvent } from '@vue-flow/core'
+import type { Edge, EdgeTypesObject, Node, NodeMouseEvent, NodeTypesObject } from '@vue-flow/core'
 import type { NeighborMetadata } from '~/api/codegraph'
 import type { SourceChunk } from '~/composables/useDiffusionGraph'
 import type { EdgeType } from '~/lib/diffusionEdgeColors'
@@ -41,8 +41,10 @@ const props = defineProps<{
 const emit = defineEmits<{
  (e: 'node-click', chunkId: string): void
 }>
-const nodeTypes: NodeTypesObject = { diffusion: markRaw(DiffusionNode) as NodeComponent }
-const edgeTypes: EdgeTypesObject = { diffusion: markRaw(DiffusionEdge) as EdgeComponent }
+//: Vue Flow 内部已 markRaw —— 改用 inline 注册，删 `as NodeComponent` /
+// `as EdgeComponent` 不安全断言，让 props 契约日后变化时 TS 编译期可见。
+const nodeTypes: NodeTypesObject = { diffusion: markRaw(DiffusionNode) }
+const edgeTypes: EdgeTypesObject = { diffusion: markRaw(DiffusionEdge) }
 const {
  flowNodes,
  flowEdges,
