@@ -19,6 +19,7 @@ verify_payload_consistency --reset 子命令）复用。
  阻塞"删干净本地状态"。
 """
 from __future__ import annotations
+import asyncio
 from dataclasses import asdict, dataclass
 from typing import Any
 from uuid import UUID
@@ -30,6 +31,9 @@ from repositories.models import FileIndex
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
 __all__ = ["CleanupReport", "cleanup_index"]
+# Qdrant collection 删除单步上限（per ）：collection delete 一般 < 5s，
+# 30s 给足重试空间但避免网络分区下永久挂起阻塞整个 DELETE 请求。
+_QDRANT_DELETE_TIMEOUT_SECONDS = 30.0
 @dataclass(frozen=True)
 class CleanupReport:
  """一仓索引清理结果。
@@ -70,9 +74,13 @@ async def cleanup_index(repository_id: str | UUID) -> CleanupReport:
  chunk_edges_deleted = await _delete_count(
  ChunkEdge, repo_id, label="chunk_edges"
  )
- chunk_registries_deleted = await _delete_count(
- ChunkRegistry, repo_id, label="chunk_registries"
- )
+ #：ChunkRegistry 走 `_raw_delete` 绕过 pre_delete signal —— 整仓
+ # cleanup 场景下 ChunkEdge 已先全删，handler 内 `filter(target=).values_list`
+ # + `filter(target=).delete` 对每行 ChunkRegistry 都是空查 + 空删（100k
+ # chunks 仓库 → 200k 条多余 SQL，cleanup 时长翻倍）。`_raw_delete` 直接
+ # 单条 DELETE WHERE repository_id=...，跳过 signal/cascade 但本表无 FK
+ # 入边、且 cleanup 场景下不需要 reconcile 调度。
+ chunk_registries_deleted = await _delete_chunk_registries_raw(repo_id)
  report = CleanupReport(
  qdrant_collection_deleted=qdrant_collection_deleted,
  file_indexes_deleted=file_indexes_deleted,
@@ -87,10 +95,23 @@ async def cleanup_index(repository_id: str | UUID) -> CleanupReport:
  )
  return report
 async def _delete_qdrant_collection(repo_id: str) -> bool:
- """sync_to_async 包 Qdrant SDK 同步 API；任何异常降级为 False。"""
+ """sync_to_async 包 Qdrant SDK 同步 API；任何异常降级为 False。：加 `asyncio.wait_for` timeout 保护 —— Qdrant 网络分区时
+ `delete_collection` 可能永久 hang，整个 DELETE 请求会被挂死；超时后
+ 降级为 False，本地 ORM 状态仍可继续 cleanup。
+ """
  try:
- ok = await sync_to_async(QdrantService.delete_collection)(repo_id)
+ ok = await asyncio.wait_for(
+ sync_to_async(QdrantService.delete_collection)(repo_id),
+ timeout=_QDRANT_DELETE_TIMEOUT_SECONDS,
+ )
  return bool(ok)
+ except asyncio.TimeoutError:
+ logger.warning(
+ "index_cleanup_qdrant_timeout",
+ repository_id=repo_id,
+ timeout=_QDRANT_DELETE_TIMEOUT_SECONDS,
+ )
+ return False
  except Exception as exc:
  logger.warning(
  "index_cleanup_qdrant_failed",
@@ -98,6 +119,25 @@ async def _delete_qdrant_collection(repo_id: str) -> bool:
  error=str(exc),
  )
  return False
+async def _delete_chunk_registries_raw(repo_id: str) -> int:
+ """整仓 cleanup：用 `_raw_delete` 跳过 pre_delete signal 噪音。
+ `_raw_delete` 单条 SQL `DELETE WHERE repository_id=...` 直接落盘，
+ 返回受影响行数；不触发任何 signal、不走 Django cascade。前置约束：
+ 调用前 ChunkEdge 已先删，本表无 FK 入边，cleanup 场景下无需 reconcile。
+ """
+ try:
+ def _do_delete -> int:
+ qs = ChunkRegistry.objects.filter(repository_id=repo_id)
+ return int(qs._raw_delete(qs.db))
+ return await sync_to_async(_do_delete)
+ except Exception as exc:
+ logger.warning(
+ "index_cleanup_table_failed",
+ repository_id=repo_id,
+ table="chunk_registries",
+ error=str(exc),
+ )
+ return 0
 async def _delete_count(model: Any, repo_id: str, *, label: str) -> int:
  """通用：``Model.objects.filter(repository_id=...).adelete`` 拿计数。
  `adelete` 返回 ``(deleted_count: int, per_model: dict[str, int])`` 元组。
