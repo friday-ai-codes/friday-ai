@@ -173,7 +173,11 @@ async def get_repository_info(repository_id: str) -> ToolResult:
  " - 优先用代码符号（驼峰命名、文件路径片段、API 路径、类名）做 query\n"
  " - 中文需求先拆成 1-3 个英文 / 拼音关键词分别搜\n"
  " - 0 结果时**不要原样重试** —— 阅读返回的 ⚠️ 诊断提示按建议调整\n"
- " - 想要更宽召回时把 min_score 降到 0.3（默认 0.5 对低分相关结果会一刀切）"
+ " - 想要更宽召回时把 min_score 降到 0.3（默认 0.5 对低分相关结果会一刀切）\n\n"
+ "Counterpart: if you have a CONCRETE starting point "
+ "(file / chunk_id / symbol_name), use `find_related_code` instead — "
+ "that tool walks the chunk-level graph (CALL/IMPORT/TEST_OF...) and "
+ "avoids RAG fuzzy ranking entirely."
  ),
  category="PROJECT",
  parameters={

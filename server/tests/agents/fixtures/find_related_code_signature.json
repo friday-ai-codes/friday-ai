@@ -1,0 +1,42 @@
+{
+ "chunk_id": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "direction": {
+ "annotation": "str",
+ "default": "'both'",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "file_path": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "hops": {
+ "annotation": "int",
+ "default": "1",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "limit": {
+ "annotation": "int",
+ "default": "20",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "relation_types": {
+ "annotation": "list[str] | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "repository_id": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "symbol_name": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ }
+}

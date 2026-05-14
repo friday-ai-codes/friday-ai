@@ -1,0 +1,98 @@
+{
+ "$defs": {
+ "NeighborOutput": {
+ "additionalProperties": false,
+ "description": "单个图谱邻居（per ROADMAP + work-item ）。\n\n字段名顺序与 ``services.retrieval.types.NeighborMetadata`` dataclass 完全一致，\n方便 Plan 通过 ``NeighborOutput(**asdict(neighbor_metadata))`` 单步装配。\n``reason`` ``min_length=1`` 静态保证非空（Plan 透传 ``_explain_neighbor`` 输出\n不重写空字符串）。",
+ "properties": {
+ "chunk_id": {
+ "description": "邻居 chunk UUID。",
+ "title": "Chunk Id",
+ "type": "string"
+ },
+ "edge_type": {
+ "description": "图谱边类型；运行时值来自 code_relations.models.EdgeType.values，字符串而非 Literal 是因为输出层不做枚举强约束（Phase API 已守过一遍）。",
+ "title": "Edge Type",
+ "type": "string"
+ },
+ "file_path": {
+ "description": "邻居 chunk 所在文件路径（相对 repository 根）。",
+ "title": "File Path",
+ "type": "string"
+ },
+ "hop": {
+ "description": "距离起点的跳数（1 或 2，与 FindRelatedCodeInput.hops 上限对齐）。",
+ "minimum": 1,
+ "title": "Hop",
+ "type": "integer"
+ },
+ "line_end": {
+ "anyOf": [
+ {
+ "type": "integer"
+ },
+ {
+ "type": "null"
+ }
+ ],
+ "default": null,
+ "description": "邻居 chunk 终止行号（1-indexed）；nullable 同 line_start。",
+ "title": "Line End"
+ },
+ "line_start": {
+ "anyOf": [
+ {
+ "type": "integer"
+ },
+ {
+ "type": "null"
+ }
+ ],
+ "default": null,
+ "description": "邻居 chunk 起始行号（1-indexed）；Phase NeighborMetadata 允许 None （某些 chunk 无精确行号信息）。",
+ "title": "Line Start"
+ },
+ "reason": {
+ "description": "Phase ``_explain_neighbor(edge_type, source_payload)`` 输出的自然语言解释，例如 'caller of login_user' / 'test of src/auth.py'。min_length=1 静态保证非空（per ROADMAP ）。",
+ "minLength": 1,
+ "title": "Reason",
+ "type": "string"
+ },
+ "weight": {
+ "description": "边权重（Phase ChunkEdge.weight）；用于 hop 内 weight 降序排序。",
+ "title": "Weight",
+ "type": "number"
+ }
+ },
+ "required": [
+ "chunk_id",
+ "file_path",
+ "edge_type",
+ "weight",
+ "reason",
+ "hop"
+ ],
+ "title": "NeighborOutput",
+ "type": "object"
+ }
+ },
+ "additionalProperties": false,
+ "description": "Agent tool ``find_related_code`` 输出契约。\n\n``neighbors`` 空时由 ``message`` 解释（\"无关联代码\" / \"tool unavailable\"），\n让 Agent 区分\"查到了但无邻居\"与\"工具失败\"两种空结果（per work-item ）。",
+ "properties": {
+ "message": {
+ "default": "",
+ "description": "空 neighbors 时的解释文本（例如 '无关联代码' / 'tool unavailable'）；neighbors 非空时通常为空串。",
+ "title": "Message",
+ "type": "string"
+ },
+ "neighbors": {
+ "description": "图谱邻居列表，按 hop 升序 + weight 降序排（hop=1 强信号优先填充 limit）。",
+ "items": {
+ "$ref": "#/$defs/NeighborOutput"
+ },
+ "title": "Neighbors",
+ "type": "array"
+ }
+ },
+ "title": "FindRelatedCodeOutput",
+ "type": "object"
+}

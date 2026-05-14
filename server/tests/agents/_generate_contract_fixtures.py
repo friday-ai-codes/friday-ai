@@ -37,7 +37,12 @@ def _dump(path: Path, payload: object) -> None:
  print(f"[fixture] wrote {path.relative_to(Path.cwd)} ({len(text)} bytes)")
 def main -> None:
  django.setup
- from agents.tools.schemas import SearchRepositoryCodeInput
+ from agents.tools.find_related_code import find_related_code
+ from agents.tools.schemas import (
+ FindRelatedCodeInput,
+ FindRelatedCodeOutput,
+ SearchRepositoryCodeInput,
+ )
  from agents.tools.space_tools import search_repository_code
  FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
  _dump(
@@ -47,6 +52,18 @@ def main -> None:
  _dump(
  FIXTURE_DIR / "search_repository_code_input_schema.json",
  SearchRepositoryCodeInput.model_json_schema,
+ )
+ _dump(
+ FIXTURE_DIR / "find_related_code_signature.json",
+ _normalize_signature(find_related_code),
+ )
+ _dump(
+ FIXTURE_DIR / "find_related_code_input_schema.json",
+ FindRelatedCodeInput.model_json_schema,
+ )
+ _dump(
+ FIXTURE_DIR / "find_related_code_output_schema.json",
+ FindRelatedCodeOutput.model_json_schema,
  )
 if __name__ == "__main__":
  main
