@@ -19,7 +19,6 @@
  `manage.py help rebuild_chunk_edges` 输出含三参数（--repo / --all / --dry-run）。
 """
 from __future__ import annotations
-import uuid
 from io import StringIO
 from unittest.mock import AsyncMock, patch
 import pytest
@@ -199,12 +198,15 @@ def test_invalid_repo_uuid_raises(db) -> None:
  stdout=out,
  )
  assert "UUID" in str(exc_info.value)
-def test_help_lists_three_arguments -> None:
- """`manage.py help rebuild_chunk_edges` 输出含三参数（smoke）。"""
- out = StringIO
+def test_help_lists_three_arguments(capsys: pytest.CaptureFixture[str]) -> None:
+ """`manage.py help rebuild_chunk_edges` 输出含三参数（smoke）。
+ argparse `--help` 走 sys.stdout 而非 call_command 的 stdout 参数，
+ 所以用 capsys 捕获。
+ """
  with pytest.raises(SystemExit):
- call_command("rebuild_chunk_edges", "--help", stdout=out)
- output = out.getvalue
+ call_command("rebuild_chunk_edges", "--help")
+ captured = capsys.readouterr
+ output = captured.out
  assert "--repo" in output
  assert "--all" in output
  assert "--dry-run" in output
