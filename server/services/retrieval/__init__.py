@@ -11,6 +11,10 @@ from services.retrieval.budget import (
  GRAPHRAG_BUDGET_RATIO_DEFAULT,
  HybridBudget,
 )
+from services.retrieval.hop1_reader import (
+ extract_hop1_neighbors_raw,
+ resolve_neighbor_metadata,
+)
 from services.retrieval.hybrid_search import HybridSearchService
 from services.retrieval.rag_search import search_rag
 from services.retrieval.token_budget import (
@@ -37,6 +41,8 @@ __all__ = [
  "RagSearchResult",
  "TOKEN_BUFFER_RATIO",
  "estimate_tokens",
+ "extract_hop1_neighbors_raw",
+ "resolve_neighbor_metadata",
  "search_rag",
  "split_budget",
  "trim_to_budget",
