@@ -8,14 +8,17 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, ref } from 'vue'
 import GraphRAGDiffusionTab from '../GraphRAGDiffusionTab.vue'
+//：fitView 模块级共享 spy，watch hop1/hop2 props 变化时被 watch 调用
+const fitViewSpy = vi.fn
 vi.mock('@vue-flow/core', => ({
  VueFlow: {
+ name: 'VueFlow',
  template: '<div class="vue-flow-stub"><slot /></div>',
  props: ['nodes', 'edges', 'nodeTypes', 'edgeTypes', 'minZoom', 'maxZoom', 'fitViewOnInit', 'panOnScroll', 'preventScrolling', 'nodesDraggable', 'nodesConnectable'],
  emits: ['node-click'],
  },
  Panel: { template: '<div class="panel-stub":data-position="position"><slot /></div>', props: ['position'] },
- useVueFlow: => ({ fitView: vi.fn }),
+ useVueFlow: => ({ fitView: fitViewSpy }),
  BaseEdge: { template: '<div />' },
  EdgeLabelRenderer: { template: '<div><slot /></div>' },
  getSmoothStepPath: => ({ path: '', labelX: 0, labelY: 0 }),
@@ -30,6 +33,12 @@ vi.mock('@vue-flow/controls', => ({
 }))
 vi.mock('@vue-flow/minimap', => ({
  MiniMap: { template: '<div class="minimap-stub" />' },
+}))
+vi.mock('~/components/ui/tooltip', => ({
+ TooltipProvider: { template: '<div class="tooltip-provider-stub"><slot /></div>', props: ['delayDuration'] },
+ Tooltip: { template: '<div><slot /></div>' },
+ TooltipTrigger: { template: '<div><slot /></div>' },
+ TooltipContent: { template: '<div><slot /></div>' },
 }))
 vi.mock('~/components/codegraph/DiffusionNode.vue', => ({
  default: defineComponent({ template: '<div class="diffusion-node-stub" />' }),
@@ -123,7 +132,7 @@ describe('graphRAGDiffusionTab', => {
  })
  expect(wrapper.text).not.toContain('扩散图节点过多')
  })
- it('f: onVueFlowNodeClick 触发 emit node-click(chunkId)', => {
+ it('f: VueFlow @node-click → emit node-click(chunkId)（：通过事件触发非内部方法）', async => {
  const wrapper = mount(GraphRAGDiffusionTab, {
  props: {
  hop1Neighbors: [makeNeighbor({ chunk_id: 'chunk-x' })],
@@ -132,11 +141,33 @@ describe('graphRAGDiffusionTab', => {
  loading: false,
  },
  })
- const vm = wrapper.vm as unknown as { onVueFlowNodeClick: (evt: { node: { id: string } }) => void }
- vm.onVueFlowNodeClick({ node: { id: 'chunk-x' } })
+ const vueFlow = wrapper.findComponent({ name: 'VueFlow' })
+ vueFlow.vm.$emit('node-click', { node: { id: 'chunk-x' } })
+ await wrapper.vm.$nextTick
  const emitted = wrapper.emitted('node-click')
  expect(emitted).toBeDefined
  expect(emitted?.[0]).toEqual(['chunk-x'])
+ })
+ it('hi-03: hop1Neighbors props 变化 → 主动调 fitView({ padding: 0.15, duration: 300 })', async => {
+ fitViewSpy.mockClear
+ const wrapper = mount(GraphRAGDiffusionTab, {
+ props: {
+ hop1Neighbors: [makeNeighbor({ chunk_id: 'q1' })],
+ hop2Neighbors:,
+ sourceChunks: [{ chunk_id: 'src-1', file_path: 'src/a.ts', line_start: 1, line_end: 5 }],
+ loading: false,
+ },
+ })
+ await wrapper.vm.$nextTick
+ fitViewSpy.mockClear
+ // 模拟新查询：替换 hop1Neighbors 引用
+ await wrapper.setProps({
+ hop1Neighbors: [makeNeighbor({ chunk_id: 'q2' }), makeNeighbor({ chunk_id: 'q3' })],
+ })
+ await wrapper.vm.$nextTick
+ await wrapper.vm.$nextTick
+ expect(fitViewSpy).toHaveBeenCalled
+ expect(fitViewSpy).toHaveBeenCalledWith({ padding: 0.15, duration: 300 })
  })
  it('g: sourceChunks 通过 props 流入 composable，nodes 含 source + hop1', => {
  // 间接验证 composable 已接入：通过观察 vue-flow-stub 已渲染（=非空状态）

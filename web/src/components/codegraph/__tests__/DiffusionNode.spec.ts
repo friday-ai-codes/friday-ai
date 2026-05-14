@@ -72,9 +72,11 @@ describe('diffusionNode', => {
  expect(text).toContain('x'.repeat(200))
  expect(text).not.toContain('x'.repeat(201))
  })
- it('h: 缺 content 时 TooltipContent 第 3 行渲染 fallback 文案', => {
+ it('h: 缺 content 时 TooltipContent 第 3 行渲染 fallback 文案（：移除"悬停"误导词）', => {
  const wrapper = mount(DiffusionNode, { props: { data: baseData } })
- expect(wrapper.text).toContain('悬停查看代码 / 点击查看完整片段')
+ expect(wrapper.text).toContain('点击查看完整代码片段')
+ //：旧文案"悬停查看代码"在 hover 状态下展示具有误导性，已删除
+ expect(wrapper.text).not.toContain('悬停查看代码')
  })
  it('i: line_start && line_end 全 null 时仅渲染 file_path + "行号信息缺失" 注释', => {
  const wrapper = mount(DiffusionNode, {
@@ -94,5 +96,30 @@ describe('diffusionNode', => {
  })
  expect(wrapper.text).toContain('chunk_id: 01234567')
  expect(wrapper.text).not.toContain('chunk_id: 012345678')
+ })
+ it('k: keydown.enter → emit activate(chunk_id)（键盘激活路径，WCAG button widget）', async => {
+ const wrapper = mount(DiffusionNode, { props: { data: baseData } })
+ const root = wrapper.find('[role="button"]')
+ await root.trigger('keydown.enter')
+ const emitted = wrapper.emitted('activate')
+ expect(emitted).toBeDefined
+ expect(emitted?.[0]).toEqual([baseData.chunk_id])
+ })
+ it('l: keydown.space → emit activate(chunk_id)', async => {
+ const wrapper = mount(DiffusionNode, { props: { data: baseData } })
+ const root = wrapper.find('[role="button"]')
+ await root.trigger('keydown.space')
+ const emitted = wrapper.emitted('activate')
+ expect(emitted).toBeDefined
+ expect(emitted?.[0]).toEqual([baseData.chunk_id])
+ })
+ it('m: chunk_id null 守卫 → 不抛 TypeError，slice 退化为空', => {
+ const wrapper = mount(DiffusionNode, {
+ // @ts-expect-error: 模拟后端 partial mock chunk_id=null
+ props: { data: { ...baseData, chunk_id: null } },
+ })
+ expect(wrapper.text).toContain('chunk_id:')
+ // null 守卫退化为空字符串 → 不会出现 "null"
+ expect(wrapper.text).not.toContain('chunk_id: null')
  })
 })

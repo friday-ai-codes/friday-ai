@@ -12,18 +12,32 @@
  */
 import type { DiffusionNodeData } from '~/composables/useDiffusionGraph'
 import { Handle, Position } from '@vue-flow/core'
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import {
  Tooltip,
  TooltipContent,
- TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 const props = defineProps<{
  data: DiffusionNodeData
  selected?: boolean
 }>
+const emit = defineEmits<{
+ (e: 'activate', chunkId: string): void
+}>
+//：键盘激活路径（WCAG button widget contract）。
+// Vue Flow `@node-click` 仅由鼠标点击触发；role="button" + tabindex="0" 必须
+// 配合 keydown.enter / keydown.space 才能让键盘用户开 Drawer。
+// Vue Flow 不冒泡自定义节点 emit，需要 inject 父组件提供的回调（GraphRAGDiffusionTab 注入）。
+const onActivateInjected = inject<((chunkId: string) => void) | null>(
+ 'onDiffusionNodeActivate',
+ null,
+)
+function onKeyboardActivate {
+ emit('activate', props.data.chunk_id)
+ onActivateInjected?.(props.data.chunk_id)
+}
 type BadgeVariant = 'default' | 'secondary' | 'outline'
 const hopLabel = computed( => {
  if (props.data.hop === 'source')
@@ -49,7 +63,8 @@ const shellClass = computed( => {
  return 'border-dashed border-border/40'
  return 'border-border/50'
 })
-const chunkIdShort = computed( => props.data.chunk_id.slice(0, 8))
+//：null/undefined 守卫，与 CodePreviewDrawer.chunkIdShort 一致防御
+const chunkIdShort = computed( => (props.data.chunk_id ?? '').slice(0, 8))
 // 行号双 null 时回退到仅显示 file_path（per work item §6 + Plan spec）
 const hasLineRange = computed(
  => props.data.line_start !== null || props.data.line_end !== null,
@@ -63,17 +78,21 @@ const contentPreview = computed( => {
 })
 </script>
 <template>
- <TooltipProvider>
+ <!--：TooltipProvider 上提到 GraphRAGDiffusionTab 单实例，节点仅 Tooltip 三件套 -->
  <Tooltip>
  <TooltipTrigger as-child>
+ <!--：Handle 移进卡片 div 内（仍为 TooltipTrigger 子元素），保证锚点贴齐卡片视觉边缘 -->
  <div
- class="w-[240px] bg-card/80 backdrop-blur-sm border rounded-2xl transition-all duration-200 relative":class="[
+ class="w-[240px] bg-card/80 backdrop-blur-sm border rounded-2xl transition-all duration-200 relative motion-reduce:transition-none":class="[
  shellClass,
  props.selected ? 'ring-2 ring-primary/50 shadow-lg border-primary/30': 'hover:shadow-md',
  ]"
  role="button"
  tabindex="0":aria-label="`代码块 ${data.fileBasename}, ${hopLabel}`"
+ @keydown.enter.prevent="onKeyboardActivate"
+ @keydown.space.prevent="onKeyboardActivate"
  >
+ <Handle type="target":position="Position.Top" />
  <Badge:variant="hopBadgeVariant"
  class="absolute top-2 right-2 text-xs px-1.5 leading-none":class="hopBadgeClass"
  >
@@ -93,6 +112,7 @@ const contentPreview = computed( => {
  <p class="font-mono text-xs text-muted-foreground truncate">
  {{ data.file_path }}
  </p>
+ <Handle type="source":position="Position.Bottom" />
  </div>
  </TooltipTrigger>
  <TooltipContent class="max-w-[360px]">
@@ -116,11 +136,8 @@ const contentPreview = computed( => {
  v-else
  class="text-xs text-muted-foreground italic mt-1.5"
  >
- 悬停查看代码 / 点击查看完整片段
+ 点击查看完整代码片段
  </p>
  </TooltipContent>
  </Tooltip>
- </TooltipProvider>
- <Handle type="target":position="Position.Top" />
- <Handle type="source":position="Position.Bottom" />
 </template>

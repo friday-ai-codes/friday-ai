@@ -15,17 +15,18 @@
  * 折叠 / 截断模板已挂 v-if 占位，但本 plan composable 永远返回 false（Plan 接力
  * 扩展 useDiffusionGraph 即可激活，**不再改本组件**，保证 Wave 真并行）。
  */
-import type { Edge, EdgeComponent, EdgeTypesObject, Node, NodeComponent, NodeTypesObject } from '@vue-flow/core'
+import type { Edge, EdgeComponent, EdgeTypesObject, Node, NodeComponent, NodeTypesObject, NodeMouseEvent } from '@vue-flow/core'
 import type { NeighborMetadata } from '~/api/codegraph'
 import type { SourceChunk } from '~/composables/useDiffusionGraph'
 import type { EdgeType } from '~/lib/diffusionEdgeColors'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { Panel, VueFlow } from '@vue-flow/core'
+import { Panel, useVueFlow, VueFlow } from '@vue-flow/core'
 import { MiniMap } from '@vue-flow/minimap'
-import { markRaw, toRef } from 'vue'
+import { markRaw, nextTick, provide, toRef, watch } from 'vue'
 import { useDiffusionGraph } from '~/composables/useDiffusionGraph'
 import { DIFFUSION_EDGE_COLORS } from '~/lib/diffusionEdgeColors'
+import { TooltipProvider } from '~/components/ui/tooltip'
 import DiffusionEdge from './DiffusionEdge.vue'
 import DiffusionNode from './DiffusionNode.vue'
 import '@vue-flow/core/dist/style.css'
@@ -63,13 +64,33 @@ const EDGE_TYPES_LEGEND: EdgeType = [
  'CO_CHANGED',
  'SEMANTIC',
 ]
-function onVueFlowNodeClick(evt: { node: Pick<Node, 'id'> }) {
+//：使用 Vue Flow 原生 NodeMouseEvent 替代 Pick 自造类型
+function onVueFlowNodeClick(evt: NodeMouseEvent) {
  // eslint-disable-next-line vue/custom-event-name-casing -- Plan freeze 的契约 (@node-click) 使用 kebab-case
  emit('node-click', evt.node.id)
 }
-defineExpose({ onVueFlowNodeClick })
+//：键盘激活路径 —— DiffusionNode keydown.enter/space 会 emit('activate', chunk_id)，
+// 通过 provide/inject 桥接到本组件 emit('node-click')，保持与鼠标点击同语义。
+function onNodeKeyboardActivate(chunkId: string) {
+ // eslint-disable-next-line vue/custom-event-name-casing -- Plan freeze 的契约 (@node-click) 使用 kebab-case
+ emit('node-click', chunkId)
+}
+provide('onDiffusionNodeActivate', onNodeKeyboardActivate)
+//：新查询返回不同图尺寸时主动 fitView 复位视口；
+// `:fit-view-on-init="true"` 字面只在初次挂载生效，父组件 Tabs 复用同实例时
+// 必须 watch hop 数据变化主动复位，避免画布残留旧 zoom/pan。
+const { fitView } = useVueFlow
+watch(
+ => [props.hop1Neighbors, props.hop2Neighbors],
+ async => {
+ await nextTick
+ fitView({ padding: 0.15, duration: 300 })
+ },
+)
 </script>
 <template>
+ <!--：TooltipProvider 上提到画布根，节点 / 边共享单实例（避免 200×2 provider 状态机） -->
+ <TooltipProvider:delay-duration="200">
  <div class="h-[520px] relative">
  <!-- 截断警告 banner（>200 节点；work item §5.6）—— Plan 激活 -->
  <div
@@ -133,12 +154,13 @@ defineExpose({ onVueFlowNodeClick })
  </button>
  </Panel>
  </VueFlow>
- <!-- 加载遮罩 -->
+ <!-- 加载遮罩 (：尊重 prefers-reduced-motion) -->
  <div
  v-if="loading"
  class="absolute inset-0 flex items-center justify-center bg-background/50 z-10"
  >
- <span class="icon-[lucide--loader-circle] animate-spin w-8 text-primary" />
+ <span class="icon-[lucide--loader-circle] animate-spin motion-reduce:animate-none w-8 text-primary" />
  </div>
  </div>
+ </TooltipProvider>
 </template>
