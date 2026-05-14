@@ -77,6 +77,7 @@ async def test_chunk_id_path_passes_through_directly -> None:
  result = await find_related_code(chunk_id=chunk_id, repository_id="repo-1")
  assert result.success is True
  fake_find_related.assert_awaited_once
+ assert fake_find_related.await_args is not None
  call_kwargs = fake_find_related.await_args.kwargs
  call_args = fake_find_related.await_args.args
  # 第一个位置参数应为 start_chunk_id
@@ -104,6 +105,7 @@ async def test_file_path_resolves_to_first_chunk(monkeypatch: pytest.MonkeyPatch
  result = await find_related_code(file_path="src/auth.py", repository_id="repo-1")
  assert result.success is True
  afirst_mock.assert_awaited_once
+ assert fake_find_related.await_args is not None
  assert fake_find_related.await_args.args[0] == resolved_chunk_id
  assert result.metadata.get("resolved_via") == "file_path"
 @pytest.mark.asyncio
@@ -161,6 +163,7 @@ async def test_symbol_name_resolves_via_provider(monkeypatch: pytest.MonkeyPatch
  assert result.success is True
  provider.lookup_symbols.assert_awaited_once
  afirst_mock.assert_awaited
+ assert fake_find_related.await_args is not None
  assert fake_find_related.await_args.args[0] == fake_reg.chunk_id
  assert result.metadata.get("resolved_via") == "symbol_name"
 @pytest.mark.asyncio
@@ -305,6 +308,7 @@ async def test_hybrid_search_call_args_passthrough -> None:
  limit=5,
  )
  fake_find_related.assert_awaited_once
+ assert fake_find_related.await_args is not None
  kwargs = fake_find_related.await_args.kwargs
  assert kwargs["hops"] == 2
  assert kwargs["direction"] == "upstream"
