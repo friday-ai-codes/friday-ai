@@ -50,6 +50,10 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
  ) -> list[ChunkEdge]:
+ # 全扫策略（per CONTEXT ）：本 phase 接受全仓 ChunkRegistry
+ # 扫描所有 file_path 重建 TEST_OF 边集；dirty_chunk_ids 暂未用于过滤。
+ # Phase 应改造为仅处理 dirty 涉及的 test 文件。
+ del dirty_chunk_ids # noqa: F841 — Phase 全扫策略，Phase 增量化
  from codegraph.models import ImportEdge as CodegraphImportEdge
  @sync_to_async
  def _list_test_files -> list[str]:

@@ -27,6 +27,11 @@ class SameFileEdgeBuilder(BaseEdgeBuilder):
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
  ) -> list[ChunkEdge]:
+ # 全扫策略（per CONTEXT ）：本 phase 接受全仓 ChunkRegistry
+ # 重建全文件 SAME_FILE 边集；dirty_chunk_ids 暂未用于过滤，仅靠
+ # bulk_insert_edges 的 ignore_conflicts 兜底去重。Phase 应改造为
+ # 「dirty file_path 反查 → file_path__in 过滤」增量化。
+ del dirty_chunk_ids # noqa: F841 — Phase 全扫策略，Phase 增量化
  @sync_to_async
  def _load_rows -> list[tuple[str, int, uuid.UUID]]:
  return list(
