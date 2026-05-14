@@ -20,6 +20,7 @@ metadata 拉取，启停决策由 Plan 的 ``HybridSearchService`` 通过 Provid
 必须 0 命中。
 """
 from __future__ import annotations
+import math
 from collections.abc import Callable
 from typing import Any
 import structlog
@@ -40,7 +41,11 @@ def _is_valid_neighbor_tuple(item: Any) -> bool:
  """校验单个 payload neighbor 是否为 ``[str, str, float|int]`` 三元组。
  payload_sync 写入格式固定 ``[chunk_id_str, edge_type_str, weight_float]``；
  任一字段类型错误或长度不为 3 → False。weight 接受 ``int``（JSON 数字常被
- 解码为 int），后续显式 ``float`` 转换。
+ 解码为 int），后续显式 ``float`` 转换。: 拒绝 ``NaN`` / ``±Inf`` / 越界（[0.0, 1.0] 之外）weight——
+ ``isinstance(float('nan'), float) is True``，但 NaN 进 ``sorted`` 不可排序
+ （比较全部 False），会让 budget 估算异常 + graph_context markdown 出现
+ ``w=nan`` / ``w=inf`` 污染 LLM 上下文。与 ChunkEdge.weight ``MinValueValidator(0.0)``
+ / ``MaxValueValidator(1.0)`` 对齐。
  """
  if not isinstance(item, (list, tuple)):
  return False
@@ -50,6 +55,11 @@ def _is_valid_neighbor_tuple(item: Any) -> bool:
  if not isinstance(cid, str) or not isinstance(edge_type, str):
  return False
  if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+ return False
+ weight_f = float(weight)
+ if not math.isfinite(weight_f):
+ return False
+ if weight_f < 0.0 or weight_f > 1.0:
  return False
  return True
 def extract_hop1_neighbors_raw(
@@ -111,17 +121,33 @@ def extract_hop1_neighbors_raw(
  reason="neighbor_element_shape_invalid",
  )
  continue
- # source 内 target chunk_id 去重：dict.setdefault 保留先到（防御性，
- # payload_sync 写入时已 dedup，本函数仅作为 last-mile guard）
+ # source 内 target chunk_id 去重 (per )：max-wins，避免依赖隐式
+ # "payload 已按 weight desc 排序" 契约。若 EdgeBuilder 将来 bug 写出
+ # 重复 + 不按 weight desc，setdefault 会丢高 weight 边。
  seen: dict[str, tuple[str, str, float]] = {}
  for cid, edge_type, weight in raw:
- seen.setdefault(cid, (cid, edge_type, float(weight)))
+ w = float(weight)
+ existing = seen.get(cid)
+ if existing is None or w > existing[2]:
+ seen[cid] = (cid, edge_type, w)
+ sorted_neighbors = sorted(seen.values, key=lambda t: -t[2])
+ # 同 source 重复出现：merge 而非覆盖（per ），保留双方邻居 +
+ # max-wins 去重 + 重新裁剪到 TOP_NEIGHBORS_PER_HOP1；warning 级别让
+ # 运维可见 RAG 上游可能违反「不返回重复 chunk_id」契约。
  if source_chunk_id in out:
- logger.debug(
- "hop1_duplicate_source_overwrite",
+ logger.warning(
+ "hop1_duplicate_source_merged",
  chunk_id=source_chunk_id,
  )
- sorted_neighbors = sorted(seen.values, key=lambda t: -t[2])
+ existing_neighbors = out[source_chunk_id]
+ merged_pool: dict[str, tuple[str, str, float]] = {
+ t[0]: t for t in existing_neighbors
+ }
+ for cid, edge_type, w in sorted_neighbors:
+ prev = merged_pool.get(cid)
+ if prev is None or w > prev[2]:
+ merged_pool[cid] = (cid, edge_type, w)
+ sorted_neighbors = sorted(merged_pool.values, key=lambda t: -t[2])
  out[source_chunk_id] = sorted_neighbors[:TOP_NEIGHBORS_PER_HOP1]
  return out
 async def resolve_neighbor_metadata(
