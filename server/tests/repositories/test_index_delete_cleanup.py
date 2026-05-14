@@ -54,10 +54,36 @@ async def test_delete_index_clears_file_resume_anchors_and_graph_state -> None:
  file_path="src/main.ts",
  line_number=1,
  )
+ # Phase Plan：扩展为同时验证 ChunkEdge / ChunkRegistry 被级联清理。
+ cr_a = await ChunkRegistry.objects.acreate(
+ chunk_id=uuid.uuid4,
+ content_hash="hash-a",
+ repository=repo,
+ file_path="src/main.ts",
+ chunk_index=0,
+ )
+ cr_b = await ChunkRegistry.objects.acreate(
+ chunk_id=uuid.uuid4,
+ content_hash="hash-b",
+ repository=repo,
+ file_path="src/main.ts",
+ chunk_index=1,
+ )
+ await ChunkEdge.objects.acreate(
+ source_chunk_id=cr_a.chunk_id,
+ target_chunk_id=cr_b.chunk_id,
+ edge_type=EdgeType.SAME_FILE,
+ weight=0.42,
+ repository=repo,
+ )
  factory = APIRequestFactory
  request = factory.delete(f"/api/repositories/{repo.id}/index/")
  request.user = MagicMock
- with patch("repositories.index_views.QdrantService.delete_collection", return_value=True):
+ # cleanup_index 模块持有 QdrantService 引用 → patch 该模块路径
+ with patch(
+ "repositories.services.index_cleanup.QdrantService.delete_collection",
+ return_value=True,
+ ):
  response = await IndexDeleteView.delete(request, repo.id)
  assert response.status_code == 204
  await repo.arefresh_from_db
@@ -73,6 +99,9 @@ async def test_delete_index_clears_file_resume_anchors_and_graph_state -> None:
  assert await Symbol.objects.filter(repository=repo).acount == 0
  assert await ImportEdge.objects.filter(repository=repo).acount == 0
  assert await Endpoint.objects.filter(repository=repo).acount == 0
+ # Phase Plan：新增断言 — ChunkEdge / ChunkRegistry 也被级联清理
+ assert await ChunkEdge.objects.filter(repository=repo).acount == 0
+ assert await ChunkRegistry.objects.filter(repository=repo).acount == 0
 async def _make_chunk_registry(
  repo: Repository, file_path: str, chunk_index: int
 ) -> ChunkRegistry:
