@@ -1,6 +1,8 @@
 /**
- * Phase Plan — DiffusionNode 单测
- * 验证：file_basename 显示 / hop Badge 文案 / 外壳 class / aria-label。
+ * Phase Plan — DiffusionNode 单测（Plan 扩展 tooltip 内容覆盖）
+ * 验证：file_basename 显示 / hop Badge 文案 / 外壳 class / aria-label /
+ * TooltipContent 三行（file_path:line / chunk_id:first8 / content preview 或 fallback）/
+ * line_start && line_end 全 null 时的 file_path 单行 + "行号信息缺失" 注释降级。
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
@@ -60,5 +62,37 @@ describe('diffusionNode', => {
  it('f: TooltipContent 含 chunk_id 前 8 字符（mono muted）', => {
  const wrapper = mount(DiffusionNode, { props: { data: baseData } })
  expect(wrapper.text).toContain('chunk_id: abcdef01')
+ })
+ it('g: TooltipContent 第 3 行渲染 content preview 前 200 字符', => {
+ const longContent = 'x'.repeat(300)
+ const wrapper = mount(DiffusionNode, {
+ props: { data: { ...baseData, content: longContent } },
+ })
+ const text = wrapper.text
+ expect(text).toContain('x'.repeat(200))
+ expect(text).not.toContain('x'.repeat(201))
+ })
+ it('h: 缺 content 时 TooltipContent 第 3 行渲染 fallback 文案', => {
+ const wrapper = mount(DiffusionNode, { props: { data: baseData } })
+ expect(wrapper.text).toContain('悬停查看代码 / 点击查看完整片段')
+ })
+ it('i: line_start && line_end 全 null 时仅渲染 file_path + "行号信息缺失" 注释', => {
+ const wrapper = mount(DiffusionNode, {
+ props: {
+ data: { ...baseData, line_start: null, line_end: null },
+ },
+ })
+ const html = wrapper.html
+ expect(html).toContain('src/services/auth/handler.ts')
+ expect(html).toContain('行号信息缺失')
+ expect(wrapper.text).not.toContain('src/services/auth/handler.ts:?-?')
+ })
+ it('j: chunk_id 前 8 字符严格 slice(0, 8) 即使更长', => {
+ const longChunkId = '0123456789abcdef0123456789abcdef'
+ const wrapper = mount(DiffusionNode, {
+ props: { data: { ...baseData, chunk_id: longChunkId } },
+ })
+ expect(wrapper.text).toContain('chunk_id: 01234567')
+ expect(wrapper.text).not.toContain('chunk_id: 012345678')
  })
 })
