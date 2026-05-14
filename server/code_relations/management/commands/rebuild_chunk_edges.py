@@ -18,12 +18,16 @@ helper 复用 `verify_payload_consistency.py` 的 before/after snapshot 模式�
 """
 from __future__ import annotations
 import asyncio
+import sys
 import uuid
-from typing import Any
+from typing import Any, Literal
 import structlog
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.models import QuerySet
 from django.utils import timezone
+# 修复（Phase REVIEW）：``_process_repo`` 三态状态机，让 summary
+# 区分 "无 pending chunk 跳过" 与 "dispatch 失败"，运维不再误判全成功。
+RepoStatus = Literal["processed", "skipped_no_work", "failed"]
 from code_relations import tasks as tasks_module
 from code_relations.constants import MAX_NEIGHBORS_PER_CHUNK
 from code_relations.models import ChunkRegistry
@@ -91,33 +95,50 @@ class Command(BaseCommand):
  mode="all" if all_mode else "single",
  )
  processed_repos = 0
- skipped_repos = 0
+ skipped_no_work_repos = 0
+ failed_repos = 0
  total_chunks_dispatched = 0
  for repo in repos:
- dispatched = self._process_repo(repo, dry_run=dry_run)
- if dispatched > 0:
+ status, dispatched = self._process_repo(repo, dry_run=dry_run)
+ if status == "processed":
  processed_repos += 1
  total_chunks_dispatched += dispatched
+ elif status == "skipped_no_work":
+ skipped_no_work_repos += 1
  else:
- skipped_repos += 1
+ failed_repos += 1
  self.stdout.write("")
  self.stdout.write(
  f"Summary: processed_repos={processed_repos} "
- f"skipped_repos={skipped_repos} "
+ f"skipped_no_work_repos={skipped_no_work_repos} "
+ f"failed_repos={failed_repos} "
  f"total_chunks_dispatched={total_chunks_dispatched} "
  f"dry_run={dry_run}"
  )
  logger.info(
  "rebuild_chunk_edges_finished",
  processed_repos=processed_repos,
- skipped_repos=skipped_repos,
+ skipped_no_work_repos=skipped_no_work_repos,
+ failed_repos=failed_repos,
  total_chunks_dispatched=total_chunks_dispatched,
  dry_run=dry_run,
  )
- def _process_repo(self, repository: Repository, *, dry_run: bool) -> int:
+ # 修复（Phase REVIEW）：任一 repo dispatch 失败 → 退出码非 0，
+ # 让 CI / APScheduler wrapper ( 也依赖此契约) 能感知。dry-run 不参
+ # 与失败计算（dry-run 内部不真 dispatch，无法 fail）。
+ if failed_repos > 0 and not dry_run:
+ sys.exit(1)
+ def _process_repo(
+ self, repository: Repository, *, dry_run: bool
+ ) -> tuple[RepoStatus, int]:
  """处理单个 repo：选 pending chunks → dispatch（或 dry-run 预估）→ 更新 last_built_at。
  Returns:
- 实际 dispatch（或 dry-run 预估）的 chunk 数；0 表示跳过（无 pending）。
+ ``(status, count)`` 元组：
+ - ``("processed", N)``：dispatch 成功（或 dry-run 预估），N=chunk 数；
+ - ``("skipped_no_work", 0)``：无 pending chunk（已 backfill 或空仓）；
+ - ``("failed", 0)``：dispatch 异常（ 修复后真正 fail 才走这里）。
+ 修复（Phase REVIEW）：dispatch 失败被错误归类为 ``skipped`` →
+ 三态分类避免运维误判全成功。
  """
  repo_id = str(repository.id)
  chunk_ids: list[uuid.UUID] = list(
@@ -130,7 +151,7 @@ class Command(BaseCommand):
  f"[SKIP] repo={repository.name} ({repo_id}) "
  f"pending_chunks=0（已 backfill 或无 chunk）"
  )
- return 0
+ return ("skipped_no_work", 0)
  estimated_edges = len(chunk_ids) * MAX_NEIGHBORS_PER_CHUNK
  if dry_run:
  self.stdout.write(
@@ -138,7 +159,7 @@ class Command(BaseCommand):
  f"pending_chunks={len(chunk_ids)} "
  f"estimated_edges≈{estimated_edges}"
  )
- return len(chunk_ids)
+ return ("processed", len(chunk_ids))
  self.stdout.write(
  f"[BUILD] repo={repository.name} ({repo_id}) "
  f"pending_chunks={len(chunk_ids)} "
@@ -157,7 +178,7 @@ class Command(BaseCommand):
  self.stderr.write(
  f"[FAIL] repo={repo_id} dispatch 失败: {exc}（last_built_at 不更新）"
  )
- return 0
+ return ("failed", 0)
  ChunkRegistry.objects.filter(
  repository_id=repo_id, chunk_id__in=chunk_ids
  ).update(last_built_at=timezone.now)
@@ -165,7 +186,7 @@ class Command(BaseCommand):
  f"[DONE] repo={repo_id} dispatched={len(chunk_ids)} "
  f"last_built_at 已更新"
  )
- return len(chunk_ids)
+ return ("processed", len(chunk_ids))
  @staticmethod
  async def _dispatch_and_drain(
  repository_id: str, dirty_chunk_ids: list[uuid.UUID]
