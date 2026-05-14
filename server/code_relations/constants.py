@@ -13,3 +13,14 @@ NAMESPACE_REPO: uuid.UUID = uuid.UUID("00000000-0000-5000-a000-000000000001")
 不要据此误以为 namespace 必须是 v5。
 与 `uuid.NAMESPACE_DNS` / `uuid.NAMESPACE_URL` 同等级；定义详见 。
 """
+MAX_NEIGHBORS_PER_CHUNK: int = 20
+"""payload `related_chunks` 一跳快照的 top-K 上限（per Phase）。
+Phase payload aggregator 按 weight desc 取前 N 条邻居写入 Qdrant
+payload；Phase HybridSearchService 一跳扩散直读此快照。
+"""
+MAX_PAYLOAD_SIZE_BYTES: int = 5 * 1024
+"""单 point payload 字节上限（per Phase，5 KB）。
+Phase payload aggregator 在写 Qdrant 前用 `len(json.dumps(...).encode)`
+测长，超限则继续把 related_chunks 截到 15 / 10 / 5 直至达标，避免单 point
+payload 失控放大 Qdrant 内存压力。
+"""
