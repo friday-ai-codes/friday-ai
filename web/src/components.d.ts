@@ -113,6 +113,8 @@ declare module 'vue' {
  DialogScrollContent: typeof import('./components/ui/dialog/DialogScrollContent.vue')['default']
  DialogTitle: typeof import('./components/ui/dialog/DialogTitle.vue')['default']
  DialogTrigger: typeof import('./components/ui/dialog/DialogTrigger.vue')['default']
+ DiffusionEdge: typeof import('./components/codegraph/DiffusionEdge.vue')['default']
+ DiffusionNode: typeof import('./components/codegraph/DiffusionNode.vue')['default']
  DocSummaryCard: typeof import('./components/chat/DocSummaryCard.vue')['default']
  DownstreamVarWarning: typeof import('./components/execution/DownstreamVarWarning.vue')['default']
  DropdownMenu: typeof import('./components/ui/dropdown-menu/DropdownMenu.vue')['default']
