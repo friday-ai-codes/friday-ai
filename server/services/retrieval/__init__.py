@@ -11,6 +11,10 @@ from services.retrieval.budget import (
  GRAPHRAG_BUDGET_RATIO_DEFAULT,
  HybridBudget,
 )
+from services.retrieval.find_related import (
+ explain_neighbor,
+ find_related,
+)
 from services.retrieval.hop1_reader import (
  extract_hop1_neighbors_raw,
  resolve_neighbor_metadata,
@@ -48,8 +52,10 @@ __all__ = [
  "assert_hops_within_limit",
  "estimate_tokens",
  "expand_hop2",
+ "explain_neighbor",
  "extract_hop1_neighbors_raw",
  "fetch_hop2_edges",
+ "find_related",
  "resolve_neighbor_metadata",
  "search_rag",
  "split_budget",
