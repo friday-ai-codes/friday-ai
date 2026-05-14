@@ -344,7 +344,16 @@ FF_ENABLE_WORKFLOW_WEBSOCKET = env.bool("FF_ENABLE_WORKFLOW_WEBSOCKET", True)
 # Default workflow template for new tasks
 FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_generation")
 # Phase: When True, code graph extraction runs during indexing. Set False to skip graph writes.
+# **写入侧** 语义（per Phase）：控制 indexer 是否构建 ChunkEdge / 写
+# Qdrant payload `related_chunks`；与读出侧 ENABLE_GRAPHRAG_ENRICHMENT 独立解耦。
 ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
+# Phase：**读出侧** GraphRAG enrichment 开关（与 ENABLE_CODEGRAPH 写入侧解耦）。
+# False 时 HybridSearchService.search 入口强制 ``_search_rag_only`` 路径，即使
+# Provider 实现 GraphCapableProvider Protocol，输出 byte-equivalent Phase 路径。
+# 默认 True 保持向后兼容（与 v23.0 / Phase 行为一致）。
+# **唯一允许的直读点**：``services/retrieval/hybrid_search.py:HybridSearchService.search``
+# 入口（per CONTEXT.md 关键不变量；新增直读点应 PR review 拒绝）。
+ENABLE_GRAPHRAG_ENRICHMENT: bool = env.bool("ENABLE_GRAPHRAG_ENRICHMENT", default=True)
 # Phase: 代码智能 Provider class path（默认 LocalProvider 包装 codegraph 现有服务，
 # v25+ 可切到 RemoteProvider 一次替换全局生效，per / ）
 CODE_INTELLIGENCE_PROVIDER: str = env.str(
