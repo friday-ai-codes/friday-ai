@@ -35,6 +35,11 @@ class ChunkRegistry(models.Model):
  )
  file_path = models.CharField(max_length=512)
  chunk_index = models.PositiveIntegerField
+ # Phase：邻居元数据 enrichment 字段——indexer 后续 plan 同步回填，
+ # 本 phase 仅声明字段。NULL 表示历史数据未回填，graph_context 渲染时
+ # fallback 到无行号格式（Plan `_resolve_neighbor_metadata` graceful 处理）。
+ line_start = models.PositiveIntegerField(null=True, blank=True)
+ line_end = models.PositiveIntegerField(null=True, blank=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:
