@@ -6,12 +6,36 @@ meta:
 <script setup lang="ts">
 import type { PlaygroundSearchParams, PlaygroundSearchResponse } from '~/api/codegraph'
 import { playgroundSearch } from '~/api/codegraph'
+import CodePreviewDrawer from '~/components/codegraph/CodePreviewDrawer.vue'
+import GraphRAGDiffusionTab from '~/components/codegraph/GraphRAGDiffusionTab.vue'
 import LayerResultsAccordion from '~/components/codegraph/LayerResultsAccordion.vue'
 import PlaygroundQueryInput from '~/components/codegraph/PlaygroundQueryInput.vue'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
 const router = useRouter
 const isLoading = ref(false)
 const searchResult = ref<PlaygroundSearchResponse | null>(null)
 const searchError = ref<string | null>(null)
+// Phase Plan：Tabs 容器（per work item §10 硬约束 16，默认 layers）
+const activeTab = ref<'layers' | 'graphrag'>('layers')
+// Phase Plan：Drawer state（CodePreviewDrawer 占位，Plan 接力）
+const drawerOpen = ref(false)
+const selectedChunkId = ref<string | null>(null)
+interface SourceChunk {
+ chunk_id: string
+ file_path: string
+ line_start: number | null
+ line_end: number | null
+ content?: string
+}
+// Plan 完整实现：从 result.layers 中 layer === 'L3' 的 items 抽取 source chunk 列表。
+// 当前 Plan 返回空数组兜底，确保占位组件 props 类型契约满足。
+function extractSourceChunks(_result: PlaygroundSearchResponse | null): SourceChunk {
+ return
+}
+function onDiffusionNodeClick(chunkId: string) {
+ selectedChunkId.value = chunkId
+ drawerOpen.value = true
+}
 async function handleSearch(params: PlaygroundSearchParams) {
  isLoading.value = true
  searchError.value = null
@@ -59,10 +83,35 @@ function handleChatPrefill(params: { query: string, repositoryIds: string }) {
  @search="handleSearch"
  @chat-prefill="handleChatPrefill"
  />
- <!-- 右侧 LayerResultsAccordion -->
+ <!-- 右侧 Tabs 容器（Phase Plan：layers + graphrag 双 tab） -->
+ <div class="card flex-1 min-w-0">
+ <Tabs v-model="activeTab" class="w-full">
+ <TabsList class="grid grid-cols-2 ">
+ <TabsTrigger value="layers" class="flex items-center gap-1.5">
+ <span class="icon-[lucide--layers]" />
+ 分层检索结果
+ </TabsTrigger>
+ <TabsTrigger value="graphrag" class="flex items-center gap-1.5">
+ <span class="icon-[lucide--share-2]" />
+ GraphRAG 二跳扩散
+ </TabsTrigger>
+ </TabsList>
+ <TabsContent value="layers" class="mt-0">
  <LayerResultsAccordion:result="searchResult":loading="isLoading"
- class="flex-1 min-w-0"
+ class="border-none shadow-none"
  />
+ </TabsContent>
+ <TabsContent value="graphrag" class="mt-0">
+ <GraphRAGDiffusionTab:hop1-neighbors="searchResult?.hop1_neighbors ?? ":hop2-neighbors="searchResult?.hop2_neighbors ?? ":source-chunks="extractSourceChunks(searchResult)":loading="isLoading"
+ @node-click="onDiffusionNodeClick"
+ />
+ </TabsContent>
+ </Tabs>
  </div>
+ </div>
+ <!-- 代码预览 Drawer（Plan 占位，Plan 实装） -->
+ <CodePreviewDrawer
+ v-model:open="drawerOpen":chunk-id="selectedChunkId":search-result="searchResult"
+ />
  </div>
 </template>
