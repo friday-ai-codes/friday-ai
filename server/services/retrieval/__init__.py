@@ -15,6 +15,11 @@ from services.retrieval.hop1_reader import (
  extract_hop1_neighbors_raw,
  resolve_neighbor_metadata,
 )
+from services.retrieval.hop2_expander import (
+ assert_hops_within_limit,
+ expand_hop2,
+ fetch_hop2_edges,
+)
 from services.retrieval.hybrid_search import HybridSearchService
 from services.retrieval.rag_search import search_rag
 from services.retrieval.token_budget import (
@@ -40,8 +45,11 @@ __all__ = [
  "NeighborMetadata",
  "RagSearchResult",
  "TOKEN_BUFFER_RATIO",
+ "assert_hops_within_limit",
  "estimate_tokens",
+ "expand_hop2",
  "extract_hop1_neighbors_raw",
+ "fetch_hop2_edges",
  "resolve_neighbor_metadata",
  "search_rag",
  "split_budget",
