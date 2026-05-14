@@ -24,7 +24,7 @@ import uuid
 from typing import Any
 import structlog
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from code_relations import tasks as tasks_module
+from code_relations.tasks import snapshot_background_tasks
 from code_relations.models import ChunkRegistry
 from code_relations.tasks import enqueue_edge_build
 from repositories.models import Repository
@@ -252,8 +252,8 @@ class Command(BaseCommand):
  无关 task（多仓批量校验时尤其重要：repo_A 的 fix 启动后，repo_B
  的 dispatch_and_drain snapshot 仍含 repo_A 未完成 task → 串行阻塞）。
  """
- before = set(tasks_module._BACKGROUND_TASKS)
+ before = snapshot_background_tasks
  await enqueue_edge_build(repo_id, dirty_source_ids)
- new_tasks = tasks_module._BACKGROUND_TASKS - before
+ new_tasks = snapshot_background_tasks - before
  if new_tasks:
  await asyncio.gather(*new_tasks, return_exceptions=True)

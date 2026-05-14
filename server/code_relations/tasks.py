@@ -34,11 +34,23 @@ from services.qdrant_service import QdrantService
 if TYPE_CHECKING:
  from code_relations.models import ChunkEdge
 logger = structlog.get_logger(__name__)
-__all__ = ["enqueue_edge_build"]
+__all__ = ["enqueue_edge_build", "snapshot_background_tasks"]
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set
 """ 修复：保存 `asyncio.create_task` 强引用避免 GC 中途回收（CPython event
 loop 对 task 仅持弱引用，IO-wait 期间触发 GC 理论上可 collect）。task 完成后由
-`add_done_callback(_BACKGROUND_TASKS.discard)` 自动回收。"""
+`add_done_callback(_BACKGROUND_TASKS.discard)` 自动回收。
+外部模块不应直接读 `_BACKGROUND_TASKS`，应通过 `snapshot_background_tasks`
+取浅拷贝快照（per Phase REVIEW ）。"""
+def snapshot_background_tasks -> set[asyncio.Task[None]]:
+ """返回当前 ``_BACKGROUND_TASKS`` 的浅拷贝快照（per Phase REVIEW ）。
+ 替代跨模块直读私有 ``_BACKGROUND_TASKS``。``verify_payload_consistency`` 与
+ ``rebuild_chunk_edges`` 命令的 ``_dispatch_and_drain`` before/after diff 模式
+ （ lesson）专用：在 enqueue 前后各取一次快照、计算差集 = 本次
+ dispatch 真正 spawn 的 task。
+ 返回 ``set`` 拷贝而非视图，调用方 mutate 不影响内部状态；内部模块（``tasks``
+ 本身、``lifecycle``）仍直读 ``_BACKGROUND_TASKS`` 以保 add/discard 原子性。
+ """
+ return set(_BACKGROUND_TASKS)
 async def enqueue_edge_build(
  repository_id: str,
  dirty_chunk_ids: list[uuid.UUID],
