@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CollectionHealthResponse } from '~/api/repositories'
+import type { CollectionHealthResponse, IndexHistoryItem } from '~/api/repositories'
 import type { Repository } from '~/types'
 import { computed, onMounted, ref } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
@@ -29,6 +29,9 @@ const latestRemoteHeadSha = ref<string>('')
 // 集合健康（Qdrant collection points 数）：从原 WebhookConfigPanel 合并过来，
 // 与新鲜度共置一处避免两张卡片重复展示同一类"索引状态"信息
 const health = ref<CollectionHealthResponse | null>(null)
+// Phase Plan：GraphRAG 状态（消费 Phase 后端 IndexHistory 三字段）
+// 仅取最新一条 IndexHistory（limit=1）；graph_build_status 缺失时整段不渲染
+const latestGraphHistory = ref<IndexHistoryItem | null>(null)
 const { copy } = useClipboard
 const { success } = useToast
 function computeFreshness(r: Repository): FreshnessState {
@@ -45,6 +48,42 @@ const behindCommits = computed( => repo.value?.behind_commits ?? null)
 const lastIndexedAt = computed( => repo.value?.last_indexed_at || null)
 const hasHealthInfo = computed( => health.value !== null)
 const isHealthy = computed( => health.value?.status === 'healthy')
+// Phase Plan：GraphRAG 状态 Badge 派生
+// Deviation D-B（per planner）：work item §5.7 状态映射表中 completed 用 success Badge variant，
+// shadcn-vue 项目虽然已配置 success variant，但 plan 显式选择 default + 绿色 check-circle 图标
+// 双重信号补足语义（保持文字 + icon 不仅靠颜色，符合 a11y），与既有"集合健康"区段视觉一致。
+const graphBuildStatusVariant = computed<'secondary' | 'destructive' | 'outline' | 'default'>( => {
+ const status = latestGraphHistory.value?.graph_build_status
+ if (status === 'completed')
+ return 'default'
+ if (status === 'failed')
+ return 'destructive'
+ if (status === 'skipped')
+ return 'outline'
+ return 'secondary' // pending / running / unknown
+})
+const graphBuildStatusLabel = computed<string>( => {
+ const status = latestGraphHistory.value?.graph_build_status
+ switch (status) {
+ case 'pending': return '等待构建'
+ case 'running': return '构建中...'
+ case 'completed': return '已构建'
+ case 'failed': return '构建失败'
+ case 'skipped': return '已跳过'
+ default: return '未知'
+ }
+})
+const graphBuildStatusIcon = computed<string>( => {
+ const status = latestGraphHistory.value?.graph_build_status
+ switch (status) {
+ case 'pending': return 'icon-[lucide--clock]'
+ case 'running': return 'icon-[lucide--loader-circle] animate-spin'
+ case 'completed': return 'icon-[lucide--check-circle] text-emerald-500'
+ case 'failed': return 'icon-[lucide--alert-circle]'
+ case 'skipped': return 'icon-[lucide--minus-circle]'
+ default: return 'icon-[lucide--help-circle]'
+ }
+})
 async function loadRepo {
  loading.value = true
  try {
@@ -67,6 +106,20 @@ async function loadHealth {
  // intentionally ignored：集合健康获取失败不阻塞主新鲜度展示
  }
 }
+async function loadGraphHistory {
+ try {
+ const res = await repositoriesApi.getIndexHistory(props.repositoryId, { limit: 1 })
+ const first = res.items[0]
+ // 仅当最新行回填了 graph_build_status 才挂上 ref；老行 / 字段缺失 → 整段不渲染
+ if (first && first.graph_build_status)
+ latestGraphHistory.value = first
+ else
+ latestGraphHistory.value = null
+ }
+ catch {
+ // intentionally ignored：GraphRAG 状态获取失败不阻塞主新鲜度展示
+ }
+}
 async function refresh {
  checking.value = true
  errorMessage.value = null
@@ -79,6 +132,8 @@ async function refresh {
  freshnessState.value = computeFreshness(repo.value)
  // 顺便刷新一下集合健康（点击立即检查时通常也想看最新的向量点数）
  loadHealth
+ // Phase Plan：用户点"立即检查"时同步刷新 GraphRAG 索引历史
+ loadGraphHistory
  }
  catch (e: unknown) {
  const msg = e instanceof Error ? e.message: '未知错误'
@@ -95,6 +150,7 @@ function copySha(sha: string) {
 onMounted( => {
  loadRepo
  loadHealth
+ loadGraphHistory
 })
 </script>
 <template>
@@ -185,7 +241,7 @@ onMounted( => {
  </div>
  <!-- SHA 对比区 -->
  <div class="mt-4 space-y-1.5">
- <!-- not_indexed：不展示"本地 → 远端"对比，只展示远端 HEAD 信息（若已知）-->
+ <!-- not_indexed：不展示"本地 → 远端"对比，只展示远端 HEAD 信息（若已知） -->
  <div v-if="freshnessState === 'not_indexed'" class="flex items-center gap-2 text-xs text-muted-foreground">
  <template v-if="remoteSha !== '—'">
  <span>远端 HEAD</span>
@@ -265,6 +321,47 @@ onMounted( => {
  </TooltipTrigger>
  <TooltipContent>
  <p>{{ new Date(lastIndexedAt).toLocaleString('zh-CN') }}</p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ </div>
+ <!-- Phase Plan：GraphRAG 状态（消费 Phase 字段；work item §5.7） -->
+ <!-- v-if 守卫：无最新 IndexHistory / graph_build_status 缺失 → 整段不渲染（零回归 4 态 freshness） -->
+ <div
+ v-if="latestGraphHistory"
+ class="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
+ >
+ <div class="flex items-center gap-1.5">
+ <span class="icon-[lucide--share-2] text-sm text-muted-foreground" aria-hidden="true" />
+ <span>GraphRAG 状态</span>
+ </div>
+ <Badge:variant="graphBuildStatusVariant"
+ class="text-xs px-1.5 flex items-center gap-1"
+ role="status":aria-label="`GraphRAG 构建状态：${graphBuildStatusLabel}`"
+ >
+ <span:class="graphBuildStatusIcon" class="text-xs" aria-hidden="true" />
+ <span>{{ graphBuildStatusLabel }}</span>
+ <!-- a11y：running 态屏幕阅读器额外语义 -->
+ <span v-if="latestGraphHistory.graph_build_status === 'running'" class="sr-only">
+ GraphRAG 索引正在构建中
+ </span>
+ </Badge>
+ <span
+ v-if="typeof latestGraphHistory.edge_count === 'number'"
+ class="font-mono tabular-nums":aria-label="`图谱边数 ${latestGraphHistory.edge_count}`"
+ >
+ {{ latestGraphHistory.edge_count.toLocaleString }} 条边
+ </span>
+ <TooltipProvider v-if="latestGraphHistory.payload_synced_at":delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <span class="flex items-center gap-1.5 cursor-default">
+ <span class="icon-[lucide--refresh-cw] text-sm" aria-hidden="true" />
+ <span>{{ formatRelativeTime(latestGraphHistory.payload_synced_at) }} 同步</span>
+ </span>
+ </TooltipTrigger>
+ <TooltipContent>
+ <p>{{ new Date(latestGraphHistory.payload_synced_at).toLocaleString('zh-CN') }}</p>
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>

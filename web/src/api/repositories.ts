@@ -85,6 +85,9 @@ export interface HealthCheckResponse {
  dimension?: number
  model?: string
 }
+// Phase Plan: GraphRAG 增量构建状态（与后端 IndexHistorySerializer 对齐）
+// Phase 落地后端字段：models.GraphBuildStatus TextChoices 五态。
+export type GraphBuildStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
 // Phase: 索引历史记录
 export interface IndexHistoryItem {
  id: string
@@ -106,6 +109,11 @@ export interface IndexHistoryItem {
  modified?: string
  deleted?: string
  }
+ // Phase: GraphRAG 增量构建可观测字段（Phase Plan 前端消费）
+ // optional 兼容老 IndexHistory 行未回填
+ graph_build_status?: GraphBuildStatus
+ edge_count?: number
+ payload_synced_at?: string | null
 }
 export interface IndexHistoryResponse {
  items: IndexHistoryItem
