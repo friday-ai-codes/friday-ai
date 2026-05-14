@@ -16,7 +16,9 @@ def test_zero_anchors_raises -> None:
  """0 个起点（全 None）→ ValidationError 含 'exactly one'。"""
  from agents.tools.schemas.find_related_code import FindRelatedCodeInput
  with pytest.raises(ValidationError, match=re.compile(r"exactly one", re.IGNORECASE)):
- FindRelatedCodeInput(repository_id="repo-1")
+ FindRelatedCodeInput(
+ repository_id="22222222-2222-2222-2222-222222222222"
+ )
 def test_two_anchors_raises_file_chunk -> None:
  """file_path + chunk_id 同时给值 → ValidationError 含 'exactly one'。"""
  from agents.tools.schemas.find_related_code import FindRelatedCodeInput
@@ -114,6 +116,27 @@ def test_defaults_combined -> None:
  assert obj.repository_id is None
  assert obj.file_path is None
  assert obj.symbol_name is None
+def test_chunk_id_invalid_uuid_raises -> None:
+ """chunk_id 非 UUID 字符串 → ValidationError（per Phase schema 层守卫）。"""
+ from agents.tools.schemas.find_related_code import FindRelatedCodeInput
+ with pytest.raises(ValidationError, match=re.compile(r"valid uuid", re.IGNORECASE)):
+ FindRelatedCodeInput(chunk_id="login_handler")
+def test_repository_id_invalid_uuid_raises -> None:
+ """repository_id 非 UUID 字符串 → ValidationError（per Phase schema 层守卫）。"""
+ from agents.tools.schemas.find_related_code import FindRelatedCodeInput
+ with pytest.raises(ValidationError, match=re.compile(r"valid uuid", re.IGNORECASE)):
+ FindRelatedCodeInput(
+ file_path="src/auth.py",
+ repository_id="repo-1",
+ )
+def test_chunk_id_valid_uuid_ok -> None:
+ """chunk_id 合法 UUID（带连字符）→ 通过。"""
+ from agents.tools.schemas.find_related_code import FindRelatedCodeInput
+ obj = FindRelatedCodeInput(
+ chunk_id="abcdef00-0000-0000-0000-000000000000",
+ repository_id="22222222-2222-2222-2222-222222222222",
+ )
+ assert obj.chunk_id == "abcdef00-0000-0000-0000-000000000000"
 def test_extra_fields_forbidden -> None:
  """extra='forbid' → 未声明字段 → ValidationError（防 LLM 调用方塞脏字段）。"""
  from agents.tools.schemas.find_related_code import FindRelatedCodeInput
