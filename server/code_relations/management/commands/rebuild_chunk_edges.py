@@ -179,12 +179,27 @@ class Command(BaseCommand):
  f"[FAIL] repo={repo_id} dispatch 失败: {exc}（last_built_at 不更新）"
  )
  return ("failed", 0)
- ChunkRegistry.objects.filter(
- repository_id=repo_id, chunk_id__in=chunk_ids
+ # 修复（Phase REVIEW）：原 ``chunk_id__in=chunk_ids`` 把整个
+ # list 展开成 SQL ``IN (?, ?, ...)``，SQLite ``SQLITE_MAX_VARIABLE_NUMBER``
+ # 3.32 之前 999、3.32+ 32766；老仓库 backfill 几万 chunk 直接抛
+ # ``OperationalError: too many SQL variables``。
+ #
+ # 简化：dispatch 来源 = 该 repo 全部 ``last_built_at IS NULL`` 行（line 165
+ # qs），且本命令是短时窗 backfill 命令； 修复后 dispatch 失败已走
+ # except 分支跳过此 update → 安全用 ``last_built_at__isnull=True`` 替代
+ # ``chunk_id__in``，避开 IN 参数限制 + 一条 UPDATE 完成。
+ #
+ # 仅有的并发风险：dispatch 期间 indexer 在同 repo 写入新 ``ChunkRegistry``
+ # 行（last_built_at=NULL）会被一并 mark，但这些行**未** dispatch 给
+ # builder → 下次 backfill 不再重试 → 边可能缺失。在线 backfill 命令一般
+ # 离线短跑（运维手动 / scheduler 启动一次），可接受该窗口；若担心可在
+ # docstring 标注，或 indexer 自身的 enqueue_edge_build 链路兜底。
+ updated = ChunkRegistry.objects.filter(
+ repository_id=repo_id, last_built_at__isnull=True
  ).update(last_built_at=timezone.now)
  self.stdout.write(
  f"[DONE] repo={repo_id} dispatched={len(chunk_ids)} "
- f"last_built_at 已更新"
+ f"last_built_at 已更新 (updated_rows={updated})"
  )
  return ("processed", len(chunk_ids))
  @staticmethod
