@@ -26,7 +26,7 @@
 """
 from __future__ import annotations
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 import structlog
 from asgiref.sync import sync_to_async
 from services.retrieval.hop2_expander import (
@@ -75,7 +75,13 @@ def _tpl_co_changed(
  """
  descriptor = target_file if target_file else "related chunk"
  commit_count = metadata.get("commit_count")
- if isinstance(commit_count, int) and commit_count > 0:
+ # bool 是 int 的子类（True/False）；isinstance(True, int) → True，
+ # 输出会变成 "× True commits"，与 _tpl_semantic 的 bool 排除模式对齐
+ if (
+ isinstance(commit_count, int)
+ and not isinstance(commit_count, bool)
+ and commit_count > 0
+ ):
  return f"co-changed with {descriptor} × {commit_count} commits"
  return f"co-changed with {descriptor} × recent history"
 def _tpl_semantic(
@@ -88,10 +94,19 @@ def _tpl_semantic(
  if isinstance(similarity, (int, float)) and not isinstance(similarity, bool):
  return f"semantically similar (score={float(similarity):.2f})"
  return "semantically similar"
-_TEMPLATE_REGISTRY: dict[
- str,
- Callable[..., str],
-] = {
+class _TemplateFn(Protocol):
+ """``_TEMPLATE_REGISTRY`` value 类型——明确 keyword-only 三参数签名。
+ 所有 ``_tpl_*`` 函数必须接受 ``source_file`` / ``target_file`` / ``metadata``
+ keyword-only 参数；mypy 借此校验调用 ``template_fn(...)`` 时参数完整。
+ """
+ def __call__(
+ self,
+ *,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict[str, Any],
+ ) -> str: ...
+_TEMPLATE_REGISTRY: dict[str, _TemplateFn] = {
  "CALL": _tpl_call,
  "IMPORT": _tpl_import,
  "SAME_FILE": _tpl_same_file,

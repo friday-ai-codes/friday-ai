@@ -11,8 +11,8 @@ Phase 落地骨架（``HybridSearchService.__init__`` + ``search`` 分发入口 
  ``related_chunks`` + ``resolve_neighbor_metadata`` 单次 ORM ``in_bulk`` 拉
  metadata（Plan 落）。
 - **二跳 enrichment**：``expand_hop2`` 走 ChunkEdge ORM aiter + 三重去重
- （Plan 落）；``enable_graph_enrichment=False`` 时跳过二跳（即使 Provider
- 支持图谱）。
+ （Plan 落）；``enable_graph_enrichment=False`` 时强制走 ``_search_rag_only``
+ 路径（即使 Provider 支持图谱），完全跳过 wave/1/2 并发 + 图谱 enrichment 链路。
 - **HybridBudget 60/40**：``HybridBudget.from_settings.allocate(max_tokens)``
  返回 ``{rag, graph}`` 子预算，``trim_to_budget`` 对 RAG / graph 段分别二次裁剪。
 - **graph_context markdown**：``## Graph Context`` 两段（Direct/Indirect Neighbors）
