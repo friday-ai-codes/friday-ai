@@ -679,6 +679,10 @@ class IndexHistorySerializer(serializers.Serializer):
  started_at = serializers.DateTimeField(allow_null=True)
  finished_at = serializers.DateTimeField(allow_null=True)
  created_at = serializers.DateTimeField
+ # Phase：GraphRAG 增量构建可观测字段
+ graph_build_status = serializers.CharField
+ edge_count = serializers.IntegerField
+ payload_synced_at = serializers.DateTimeField(allow_null=True)
 class IndexedFileSerializer(serializers.Serializer):
  """：已索引文件清单单行序列化。"""
  file_path = serializers.CharField
