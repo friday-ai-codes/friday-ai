@@ -52,8 +52,12 @@ async def _update_history(history_id: uuid.UUID | str, **fields: Any) -> None:
  error=str(exc),
  error_type=type(exc).__name__,
  )
-async def _count_edges(repository_id: str) -> int:
- """累计快照口径：当前 ChunkEdge.objects.filter(repository_id=repo).count。"""
+async def _count_edges_or_none(repository_id: str) -> int | None:
+ """累计快照口径，统计失败时返回 None（与"真实为 0"区分，per ）。
+ 返回 None 时 `_handle_completion` 不写 edge_count（保留模型 default 0），
+ 并在 log 中 surface "edge_count unavailable"，避免静默把 reconcile 失败
+ 展示成"真无边"。
+ """
  try:
  return await sync_to_async(
  ChunkEdge.objects.filter(repository_id=repository_id).count
@@ -65,13 +69,19 @@ async def _count_edges(repository_id: str) -> int:
  error=str(exc),
  error_type=type(exc).__name__,
  )
- return 0
+ return None
 async def _handle_completion(
  task: asyncio.Task[Any],
  history_id: uuid.UUID | str,
  repository_id: str,
+ remaining: list[int] | None = None,
 ) -> None:
- """task 完成 → 根据 cancelled/exception 决定 COMPLETED 或 FAILED。"""
+ """task 完成 → 根据 cancelled/exception 决定 COMPLETED 或 FAILED。
+ `remaining` 是共享计数器（list 包 int 模拟可变 ref，per fix）：
+ 多 task spawn 时只有最后一个 done_callback 才写 COMPLETED；任一 task
+ cancelled / exception 时立即写 FAILED 并把计数器归零（避免后续 task
+ 再覆盖）。单 task 场景（remaining 长度 1）等价于旧行为。
+ """
  from repositories.models import GraphBuildStatus
  try:
  if task.cancelled:
@@ -80,6 +90,8 @@ async def _handle_completion(
  history_id=str(history_id),
  repository_id=repository_id,
  )
+ if remaining is not None:
+ remaining[0] = 0
  await _update_history(
  history_id, graph_build_status=GraphBuildStatus.FAILED
  )
@@ -93,17 +105,30 @@ async def _handle_completion(
  error=str(exc),
  error_type=type(exc).__name__,
  )
+ if remaining is not None:
+ remaining[0] = 0
  await _update_history(
  history_id, graph_build_status=GraphBuildStatus.FAILED
  )
  return
- edge_count = await _count_edges(repository_id)
- await _update_history(
- history_id,
- graph_build_status=GraphBuildStatus.COMPLETED,
- edge_count=edge_count,
- payload_synced_at=timezone.now,
+ if remaining is not None:
+ remaining[0] -= 1
+ if remaining[0] > 0:
+ logger.debug(
+ "lifecycle_task_completed_pending_others",
+ history_id=str(history_id),
+ repository_id=repository_id,
+ remaining=remaining[0],
  )
+ return
+ edge_count = await _count_edges_or_none(repository_id)
+ update_fields: dict[str, Any] = {
+ "graph_build_status": GraphBuildStatus.COMPLETED,
+ "payload_synced_at": timezone.now,
+ }
+ if edge_count is not None:
+ update_fields["edge_count"] = edge_count
+ await _update_history(history_id, **update_fields)
  logger.info(
  "lifecycle_task_completed",
  history_id=str(history_id),
@@ -122,16 +147,31 @@ def _schedule_completion_callback(
  task: asyncio.Task[Any],
  history_id: uuid.UUID | str,
  repository_id: str,
+ remaining: list[int] | None = None,
 ) -> None:
  """task done_callback：同步上下文 + 创建新协程跑 ORM 回写。
  done_callback 本身在 task 所在 event loop 调用；用 `asyncio.create_task`
- 把 `_handle_completion` 投递到同一 loop 异步执行。新 task 不再纳入
- `_BACKGROUND_TASKS`（lifecycle 侧自行 await `_handle_completion` 失败已
- log warning，主路径不依赖其结果）。
+ 把 `_handle_completion` 投递到同一 loop 异步执行。
+ ** race-fix**：把新建的 completion task 也注册到 `_BACKGROUND_TASKS`，
+ 便于测试侧 `_drain_background_tasks` 循环 await 至空 —— 否则 builder task
+ 完成后 done_callback 派生的 ORM 回写 task 没法被 deterministic 等待，
+ 造成 `test_completion_marks_completed_with_edge_count` 套件运行时 race fail。
+ 生产路径同样受益：mgmt 命令 / verify 等显式 drain 时不再漏掉 completion task。
  """
  try:
- loop = asyncio.get_event_loop
- loop.create_task(_handle_completion(task, history_id, repository_id))
+ loop = asyncio.get_running_loop
+ completion_task = loop.create_task(
+ _handle_completion(task, history_id, repository_id, remaining)
+ )
+ _tasks_module._BACKGROUND_TASKS.add(completion_task)
+ completion_task.add_done_callback(_tasks_module._BACKGROUND_TASKS.discard)
+ except RuntimeError as exc:
+ logger.warning(
+ "lifecycle_callback_no_running_loop",
+ history_id=str(history_id),
+ repository_id=repository_id,
+ error=str(exc),
+ )
  except Exception as exc:
  logger.warning(
  "lifecycle_schedule_completion_failed",
@@ -171,31 +211,49 @@ async def enqueue_edge_build_for_history(
  await _update_history(
  history_id, graph_build_status=GraphBuildStatus.RUNNING
  )
+ # `_BACKGROUND_TASKS` before/after diff（per Plan frontmatter T-）：
+ # 依赖 `enqueue_edge_build` 函数体内**无任何 `await`** 的隐式契约
+ # （ / `tasks.py` line 86 同步 `asyncio.create_task`）。一旦
+ # `enqueue_edge_build` 被改为先 await DB 查询再 spawn task，单线程 asyncio
+ # 在该 await 点会让出控制权，并发 lifecycle 调用会把别人 spawn 的 task
+ # 误归到自己 `new_tasks`。`test_enqueue_edge_build_no_await_in_body`
+ # 单测固化此契约（inspect.getsource regex 检查），改动会立刻测试失败。
  before_tasks = set(_tasks_module._BACKGROUND_TASKS)
  await _tasks_module.enqueue_edge_build(repository_id, dirty_chunk_ids)
  if history_id is None:
  return
  new_tasks = _tasks_module._BACKGROUND_TASKS - before_tasks
  if not new_tasks:
+ #：`enqueue_edge_build` 因合法分支（dedup / circuit breaker / 空
+ # dirty）未 spawn task —— 不应误判为 FAILED。lifecycle 上层已在
+ # line ~189 处理空 dirty_chunk_ids 走 SKIPPED，此处 fallthrough 仅
+ # warn + 保 RUNNING，等 verify_payload_consistency 兜底校验。
  logger.warning(
  "lifecycle_no_background_task_spawned",
  repository_id=repository_id,
  history_id=str(history_id),
  dirty_chunks=len(dirty_chunk_ids),
  )
- await _update_history(
- history_id, graph_build_status=GraphBuildStatus.FAILED
- )
  return
- target_task = max(new_tasks, key=id)
- target_task.add_done_callback(
- lambda t: _schedule_completion_callback(t, history_id, repository_id)
+ # fix：`max(new_tasks, key=id)` 用 CPython 内存地址判"最新"是错的
+ # —— `id` 与 task 创建顺序无关。改成给所有 new_tasks 都注册 done_callback，
+ # 用共享 `remaining` 计数器让"最后一个完成的 task"才写 COMPLETED；
+ # 任一 task cancelled / exception 时立即把状态机跳到 FAILED 并把计数器
+ # 归零，避免后续 task 再覆盖。单 task 场景（当前 `enqueue_edge_build`
+ # 唯一 spawn 形态）等价于旧行为。
+ remaining = [len(new_tasks)]
+ for new_task in new_tasks:
+ new_task.add_done_callback(
+ lambda t, _rem=remaining: _schedule_completion_callback(
+ t, history_id, repository_id, _rem
+ )
  )
  logger.info(
  "lifecycle_dispatch_with_history",
  repository_id=repository_id,
  history_id=str(history_id),
  dirty_chunks=len(dirty_chunk_ids),
+ spawned_tasks=len(new_tasks),
  )
  except Exception as exc:
  logger.exception(
