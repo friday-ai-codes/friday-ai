@@ -1,10 +1,14 @@
 <script setup lang="ts">
 /**
- * GraphRAG 二跳扩散自定义节点（Phase Plan，work item §5.3）
+ * GraphRAG 二跳扩散自定义节点（Phase Plan 骨架 + Plan tooltip 内容实装，work item §5.3 / §6）
  *
  * 视觉风格沿用 SymbolNode 卡片骨架（240px / bg-card/80 / rounded-2xl）但
- * **不 import SymbolNode**（work item §10 硬约束 5）。本 plan 仅落基础壳；
- * TooltipContent 第 3 行 content preview / 选中环交互留 Plan 接力。
+ * **不 import SymbolNode**（work item §10 硬约束 5）。
+ *
+ * TooltipContent 三行内容（Plan 完整落地）：
+ * 1. file_path[:line_start-line_end]（line_start/end 全 null 时仅 file_path + HTML 注释 "行号信息缺失"）
+ * 2. chunk_id: first8（slice(0, 8) mono muted）
+ * 3. content preview 前 200 字符（whitespace-pre-wrap line-clamp-6），undefined 时降级 fallback 文案
  */
 import type { DiffusionNodeData } from '~/composables/useDiffusionGraph'
 import { Handle, Position } from '@vue-flow/core'
@@ -46,6 +50,17 @@ const shellClass = computed( => {
  return 'border-border/50'
 })
 const chunkIdShort = computed( => props.data.chunk_id.slice(0, 8))
+// 行号双 null 时回退到仅显示 file_path（per work item §6 + Plan spec）
+const hasLineRange = computed(
+ => props.data.line_start !== null || props.data.line_end !== null,
+)
+// content preview：截前 200 字符，避免超长 chunk 撑爆 tooltip（line-clamp-6 兜底）
+const contentPreview = computed( => {
+ const c = props.data.content
+ if (typeof c !== 'string' || c.length === 0)
+ return null
+ return c.slice(0, 200)
+})
 </script>
 <template>
  <TooltipProvider>
@@ -81,13 +96,28 @@ const chunkIdShort = computed( => props.data.chunk_id.slice(0, 8))
  </div>
  </TooltipTrigger>
  <TooltipContent class="max-w-[360px]">
- <p class="font-mono text-xs">
+ <p v-if="hasLineRange" class="font-mono text-xs">
  {{ data.file_path }}:{{ data.line_start ?? '?' }}-{{ data.line_end ?? '?' }}
+ </p>
+ <p v-else class="font-mono text-xs">
+ {{ data.file_path }}
+ <!-- 行号信息缺失 -->
  </p>
  <p class="font-mono text-xs text-muted-foreground mt-1">
  chunk_id: {{ chunkIdShort }}
  </p>
- <!-- Plan 落 content preview 第 3 行（前 200 字 whitespace-pre-wrap line-clamp-6） -->
+ <p
+ v-if="contentPreview"
+ class="text-xs whitespace-pre-wrap line-clamp-6 mt-1.5"
+ >
+ {{ contentPreview }}
+ </p>
+ <p
+ v-else
+ class="text-xs text-muted-foreground italic mt-1.5"
+ >
+ 悬停查看代码 / 点击查看完整片段
+ </p>
  </TooltipContent>
  </Tooltip>
  </TooltipProvider>

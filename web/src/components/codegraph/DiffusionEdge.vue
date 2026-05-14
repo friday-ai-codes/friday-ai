@@ -1,15 +1,28 @@
 <script setup lang="ts">
 /**
- * GraphRAG 二跳扩散自定义边（Phase Plan，work item §5.4）
+ * GraphRAG 二跳扩散自定义边（Phase Plan 骨架 + Plan tooltip 实装，work item §5.4 / §6）
  *
  * 接收 Vue Flow EdgeProps；stroke / strokeWidth / strokeDasharray / opacity
  * 全部从:style 注入（来自 useDiffusionGraph composable），模板零硬编码颜色
- * （work item §10 硬约束 3）。本 plan 留 EdgeLabelRenderer hit-area 占位锚点，
- * 边 hover tooltip 内容由 Plan 接力扩展。
+ * （work item §10 硬约束 3）。
+ *
+ * 边 hover tooltip（Plan 完整落地）：EdgeLabelRenderer 内 hit-area 包 TooltipProvider →
+ * TooltipContent 显示 edge_type chip（inline hex+alpha 15%）+ weight 2 位小数 + reason 文本。
+ * Deviation D-A：work item §10 硬约束 12 字面要求 `bg-{color}-500/15 text-{color}-700` Tailwind
+ * 模式，本 plan 选 inline style hex+alpha 等价实现，保持颜色单一真值源
+ * （DIFFUSION_EDGE_COLORS）与 BaseEdge stroke 一致。
  */
 import type { Position } from '@vue-flow/core'
+import type { EdgeType } from '~/lib/diffusionEdgeColors'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath } from '@vue-flow/core'
 import { computed } from 'vue'
+import {
+ Tooltip,
+ TooltipContent,
+ TooltipProvider,
+ TooltipTrigger,
+} from '~/components/ui/tooltip'
+import { DIFFUSION_EDGE_COLORS } from '~/lib/diffusionEdgeColors'
 const props = defineProps<{
  id: string
  sourceX: number
@@ -36,6 +49,28 @@ const labelY = computed( => pathInfo.value[2])
 const labelTransform = computed(
  => `translate(-50%, -50%) translate(${labelX.value}px, ${labelY.value}px)`,
 )
+// chip 颜色：从 DIFFUSION_EDGE_COLORS 取，未知 edgeType 用灰色兜底，
+// 等价于 work item §10 硬约束 12 的 bg-{color}-500/15 视觉对比度
+const chipColor = computed<string>( => {
+ const t = props.data?.edgeType
+ if (typeof t !== 'string')
+ return '#6b7280'
+ return DIFFUSION_EDGE_COLORS[t as EdgeType] ?? '#6b7280'
+})
+// hex + alpha (0x26 ≈ 15%) — 与 work item 的 bg-…/15 视觉同等
+const chipBg = computed( => `${chipColor.value}26`)
+const reasonText = computed( => {
+ const r = props.data?.reason
+ if (typeof r !== 'string' || r.length === 0)
+ return '（无说明）'
+ return r
+})
+const weightText = computed( => {
+ const w = props.data?.weight
+ if (typeof w !== 'number' || Number.isNaN(w))
+ return 'weight ?'
+ return `weight ${w.toFixed(2)}`
+})
 </script>
 <template>
  <BaseEdge:id="id":path="pathD":marker-end="markerEnd":style="style" />
@@ -43,9 +78,28 @@ const labelTransform = computed(
  <div
  class="absolute pointer-events-auto":style="{ transform: labelTransform }"
  >
- <!-- Plan 落 edge hover tooltip：包 TooltipProvider + TooltipContent
- 显示 edge_type chip + weight + reason；本 plan 仅留隐形 hit-area 锚点 -->
- <div class="w-3 rounded-full opacity-0":aria-hidden="true" />
+ <TooltipProvider:delay-duration="200">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <div
+ class="w-3 rounded-full opacity-0 cursor-help":aria-label="`${data?.edgeType ?? 'edge'} ${weightText}`"
+ />
+ </TooltipTrigger>
+ <TooltipContent class="max-w-[320px]">
+ <div class="flex items-center gap-2 mb-1.5">
+ <span
+ class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold":style="{ backgroundColor: chipBg, color: chipColor }"
+ >{{ data?.edgeType }}</span>
+ <span class="text-xs font-mono tabular-nums text-muted-foreground">
+ {{ weightText }}
+ </span>
+ </div>
+ <p class="text-sm">
+ {{ reasonText }}
+ </p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
  </div>
  </EdgeLabelRenderer>
 </template>
