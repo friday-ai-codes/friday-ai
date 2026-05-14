@@ -15,8 +15,9 @@
 测试会在 EdgeType 扩第 7 类边时立刻 fail 抓出漂移。
 """
 from __future__ import annotations
+import uuid
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 RelationType = Literal[
  "CALL",
  "IMPORT",
@@ -95,6 +96,27 @@ class FindRelatedCodeInput(BaseModel):
  "（per work-item 跨 hops 行为）。"
  ),
  )
+ @field_validator("chunk_id", "repository_id", mode="before")
+ @classmethod
+ def _validate_uuid_shape(cls, value: object) -> object:
+ """守住 ``chunk_id`` / ``repository_id`` UUID 形态（per Phase）。
+ Pydantic ``mode="before"`` 在类型转换前拦截非 UUID 字符串（典型 LLM 错觉：
+ ``chunk_id="login_handler"`` / ``repository_id="repo-1"``），避免下游
+ Django ORM ``UUIDField`` 在 query 执行时抛 ``ValueError: badly formed
+ hexadecimal UUID string`` 冒泡到 agent runtime。
+ ``None`` 直接放行（字段本身可空，互斥校验由 ``exactly_one_anchor`` 负责）。
+ 非字符串类型同样放行让默认类型校验报标准错误。
+ """
+ if value is None or not isinstance(value, str):
+ return value
+ try:
+ uuid.UUID(value)
+ except (ValueError, TypeError) as exc:
+ raise ValueError(
+ f"must be a valid UUID string (e.g. "
+ f"'11111111-1111-1111-1111-111111111111'); got {value!r}"
+ ) from exc
+ return value
  @model_validator(mode="after")
  def exactly_one_anchor(self) -> FindRelatedCodeInput:
  """守住 ``file_path`` / ``chunk_id`` / ``symbol_name`` 恰好一个非 ``None``。

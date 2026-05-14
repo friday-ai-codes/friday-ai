@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 import structlog
+from django.core.exceptions import ValidationError as DjangoValidationError
 from pydantic import ValidationError
 from agents.tools.base import ToolResult, tool
 from agents.tools.schemas.find_related_code import (
@@ -165,8 +166,11 @@ async def find_related_code(
  limit: 邻居数上限（schema 守 ge=1, le=100）。
  Returns:
  ``ToolResult``：成功路径 ``output={"data": FindRelatedCodeOutput, ...}``；
- 失败路径 ``success=False`` + ``error`` 字符串。**永不冒泡 Pydantic
- ValidationError**。
+ 失败路径 ``success=False`` + ``error`` 字符串。**永不冒泡异常**——
+ Pydantic ``ValidationError``、Django ``ValidationError``、``ValueError``、
+ ``TypeError`` 等均被捕获后转结构化 ``ToolResult(success=False, error=...)``
+ （per Phase 双层防御：schema 层 UUID 形态守卫 + tool 层 ORM
+ 异常兜底）。
  """
  logger.info(
  "find_related_code_called",
@@ -178,6 +182,49 @@ async def find_related_code(
  direction=direction,
  limit=limit,
  )
+ try:
+ return await _find_related_code_impl(
+ file_path=file_path,
+ chunk_id=chunk_id,
+ symbol_name=symbol_name,
+ repository_id=repository_id,
+ relation_types=relation_types,
+ hops=hops,
+ direction=direction,
+ limit=limit,
+ )
+ except (ValueError, TypeError, DjangoValidationError) as exc:
+ logger.warning(
+ "find_related_code_failed",
+ error_type=type(exc).__name__,
+ error=str(exc),
+ )
+ return ToolResult(
+ success=False,
+ error=f"invalid input or downstream failure: {exc}",
+ )
+ except ValidationError as exc:
+ logger.warning(
+ "find_related_code_failed",
+ error_type="ValidationError",
+ error=str(exc),
+ )
+ return ToolResult(success=False, error=str(exc))
+async def _find_related_code_impl(
+ *,
+ file_path: str | None,
+ chunk_id: str | None,
+ symbol_name: str | None,
+ repository_id: str | None,
+ relation_types: list[str] | None,
+ hops: int,
+ direction: str,
+ limit: int,
+) -> ToolResult:
+ """``find_related_code`` 函数体实现（per：抽内层以承接外层 try/except）。
+ 所有 ORM / Provider 调用集中在此，外层 ``find_related_code`` 包统一异常兜底。
+ 保持原行为不变（含 Pydantic 层 ``ValidationError`` 走原 try/except 路径）。
+ """
  input_kwargs: dict[str, Any] = {
  "file_path": file_path,
  "chunk_id": chunk_id,

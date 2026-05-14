@@ -1,4 +1,7 @@
 """``find_related_code`` agent tool 函数体行为单测 —— per Phase Plan Task 1。
+Phase 修复后：``repository_id`` / ``chunk_id`` 在 Pydantic schema 层校验
+UUID 形态，本测试统一使用合法 UUID（``_VALID_REPO_ID``）做 repository_id，避免
+schema 层守卫早于 tool 业务逻辑短路 case。
 测试目标（plan must_haves ≥ 9 条）：
 1. ``test_chunk_id_path_passes_through_directly`` —— chunk_id 路径 start_chunk_id 直传
 2. ``test_file_path_resolves_to_first_chunk`` —— file_path 路径走 ChunkRegistry.afirst
@@ -21,6 +24,11 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from services.retrieval.types import NeighborMetadata
+# ---------------------------------------------------------------------------
+# 常量
+# ---------------------------------------------------------------------------
+_VALID_REPO_ID = "22222222-2222-2222-2222-222222222222"
+"""合法 UUID 形式 repository_id，per Phase schema 层 UUID 守卫。"""
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -74,7 +82,7 @@ async def test_chunk_id_path_passes_through_directly -> None:
  ):
  mock_hss_cls.return_value.find_related = fake_find_related
  mock_get_provider.return_value = MagicMock
- result = await find_related_code(chunk_id=chunk_id, repository_id="repo-1")
+ result = await find_related_code(chunk_id=chunk_id, repository_id=_VALID_REPO_ID)
  assert result.success is True
  fake_find_related.assert_awaited_once
  assert fake_find_related.await_args is not None
@@ -82,7 +90,7 @@ async def test_chunk_id_path_passes_through_directly -> None:
  call_args = fake_find_related.await_args.args
  # 第一个位置参数应为 start_chunk_id
  assert call_args[0] == chunk_id
- assert call_kwargs["repo_ids"] == ["repo-1"]
+ assert call_kwargs["repo_ids"] == [_VALID_REPO_ID]
  assert result.metadata.get("resolved_via") == "chunk_id"
 # ---------------------------------------------------------------------------
 # Section 2: file_path 起点路径
@@ -102,7 +110,7 @@ async def test_file_path_resolves_to_first_chunk(monkeypatch: pytest.MonkeyPatch
  ):
  mock_hss_cls.return_value.find_related = fake_find_related
  mock_get_provider.return_value = MagicMock
- result = await find_related_code(file_path="src/auth.py", repository_id="repo-1")
+ result = await find_related_code(file_path="src/auth.py", repository_id=_VALID_REPO_ID)
  assert result.success is True
  afirst_mock.assert_awaited_once
  assert fake_find_related.await_args is not None
@@ -121,7 +129,7 @@ async def test_file_path_not_found_returns_error(monkeypatch: pytest.MonkeyPatch
  mock_hss_cls.return_value.find_related = fake_find_related
  mock_get_provider.return_value = MagicMock
  result = await find_related_code(
- file_path="src/missing.py", repository_id="repo-1"
+ file_path="src/missing.py", repository_id=_VALID_REPO_ID
  )
  assert result.success is False
  assert result.error is not None
@@ -159,7 +167,7 @@ async def test_symbol_name_resolves_via_provider(monkeypatch: pytest.MonkeyPatch
  ),
  ):
  mock_hss_cls.return_value.find_related = fake_find_related
- result = await find_related_code(symbol_name="MyClass", repository_id="repo-1")
+ result = await find_related_code(symbol_name="MyClass", repository_id=_VALID_REPO_ID)
  assert result.success is True
  provider.lookup_symbols.assert_awaited_once
  afirst_mock.assert_awaited
@@ -180,7 +188,7 @@ async def test_symbol_name_no_match_returns_error -> None:
  ):
  mock_hss_cls.return_value.find_related = fake_find_related
  result = await find_related_code(
- symbol_name="DoesNotExist", repository_id="repo-1"
+ symbol_name="DoesNotExist", repository_id=_VALID_REPO_ID
  )
  assert result.success is False
  assert result.error is not None
@@ -200,7 +208,7 @@ async def test_symbol_name_null_provider_returns_error -> None:
  ):
  mock_hss_cls.return_value.find_related = fake_find_related
  result = await find_related_code(
- symbol_name="MyClass", repository_id="repo-1"
+ symbol_name="MyClass", repository_id=_VALID_REPO_ID
  )
  assert result.success is False
  assert result.error is not None
@@ -225,7 +233,7 @@ async def test_pydantic_validation_error_returns_toolresult -> None:
  """0 起点（全 None）→ Pydantic ValidationError 走 ToolResult.error 不冒泡。"""
  from agents.tools.find_related_code import find_related_code
  result = await find_related_code(
- file_path=None, chunk_id=None, symbol_name=None, repository_id="repo-1"
+ file_path=None, chunk_id=None, symbol_name=None, repository_id=_VALID_REPO_ID
  )
  assert result.success is False
  assert result.error is not None
@@ -246,7 +254,7 @@ async def test_empty_neighbors_returns_message -> None:
  mock_get_provider.return_value = MagicMock
  result = await find_related_code(
  chunk_id="abcdef00-0000-0000-0000-000000000000",
- repository_id="repo-1",
+ repository_id=_VALID_REPO_ID,
  )
  assert result.success is True
  data = result.output["data"]
@@ -269,7 +277,7 @@ async def test_reason_field_passes_through_non_empty -> None:
  mock_get_provider.return_value = MagicMock
  result = await find_related_code(
  chunk_id="abcdef00-0000-0000-0000-000000000000",
- repository_id="repo-1",
+ repository_id=_VALID_REPO_ID,
  )
  assert result.success is True
  neighbors_out = result.output["data"]["neighbors"]
@@ -301,7 +309,7 @@ async def test_hybrid_search_call_args_passthrough -> None:
  mock_get_provider.return_value = MagicMock
  await find_related_code(
  chunk_id="abcdef00-0000-0000-0000-000000000000",
- repository_id="repo-1",
+ repository_id=_VALID_REPO_ID,
  hops=2,
  direction="upstream",
  relation_types=["CALL"],
@@ -314,4 +322,81 @@ async def test_hybrid_search_call_args_passthrough -> None:
  assert kwargs["direction"] == "upstream"
  assert kwargs["relation_types"] == ["CALL"]
  assert kwargs["limit"] == 5
- assert kwargs["repo_ids"] == ["repo-1"]
+ assert kwargs["repo_ids"] == [_VALID_REPO_ID]
+# ---------------------------------------------------------------------------
+# Section 7: 异常兜底 —— Phase tool 层 try/except 双层防御
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_invalid_chunk_id_uuid_returns_toolresult -> None:
+ """LLM 传非 UUID chunk_id（典型错觉 ``chunk_id="login_handler"``）→ ToolResult.error 不冒泡。
+ Per schema 层 ``@field_validator`` UUID 形态守卫。
+ """
+ from agents.tools.find_related_code import find_related_code
+ result = await find_related_code(
+ chunk_id="login_handler",
+ repository_id=_VALID_REPO_ID,
+ )
+ assert result.success is False
+ assert result.error is not None
+ assert "uuid" in result.error.lower
+@pytest.mark.asyncio
+async def test_invalid_repository_id_uuid_returns_toolresult -> None:
+ """LLM 传非 UUID repository_id（如 ``repo-1``）→ ToolResult.error 不冒泡。
+ Per schema 层 ``@field_validator`` UUID 形态守卫。
+ """
+ from agents.tools.find_related_code import find_related_code
+ result = await find_related_code(
+ chunk_id="abcdef00-0000-0000-0000-000000000000",
+ repository_id="repo-1",
+ )
+ assert result.success is False
+ assert result.error is not None
+ assert "uuid" in result.error.lower
+@pytest.mark.asyncio
+async def test_orm_value_error_returns_toolresult(monkeypatch: pytest.MonkeyPatch) -> None:
+ """ORM 抛 ``ValueError``（极端边界，如 UUIDField 转换失败）→ tool 层兜底返结构化 error。
+ Per tool 层 ``try/except (ValueError, TypeError, DjangoValidationError)``
+ 兜底——即使 schema 层守卫漏掉某条路径，下游 ORM ``ValueError`` 也不会冒泡。
+ """
+ from agents.tools.find_related_code import find_related_code
+ def _raise_value_error(*_a: object, **_kw: object) -> None:
+ raise ValueError("badly formed hexadecimal UUID string")
+ objects_mock = MagicMock
+ objects_mock.filter = MagicMock(side_effect=_raise_value_error)
+ from code_relations import models as cr_models
+ monkeypatch.setattr(cr_models.ChunkRegistry, "objects", objects_mock)
+ fake_find_related = AsyncMock
+ with (
+ patch("agents.tools.find_related_code.HybridSearchService") as mock_hss_cls,
+ patch("agents.tools.find_related_code.get_provider") as mock_get_provider,
+ ):
+ mock_hss_cls.return_value.find_related = fake_find_related
+ mock_get_provider.return_value = MagicMock
+ result = await find_related_code(
+ file_path="src/auth.py", repository_id=_VALID_REPO_ID
+ )
+ assert result.success is False
+ assert result.error is not None
+ assert "invalid input or downstream failure" in result.error
+ fake_find_related.assert_not_awaited
+@pytest.mark.asyncio
+async def test_hybrid_search_value_error_returns_toolresult -> None:
+ """HybridSearchService.find_related 抛 ``ValueError``（如 hops>2 校验）→ tool 层兜底。
+ Per tool 层 ``try/except`` 包裹整个函数体。
+ """
+ from agents.tools.find_related_code import find_related_code
+ fake_find_related = AsyncMock(side_effect=ValueError("hops=3 > MAX_HOPS"))
+ with (
+ patch("agents.tools.find_related_code.HybridSearchService") as mock_hss_cls,
+ patch("agents.tools.find_related_code.get_provider") as mock_get_provider,
+ ):
+ mock_hss_cls.return_value.find_related = fake_find_related
+ mock_get_provider.return_value = MagicMock
+ result = await find_related_code(
+ chunk_id="abcdef00-0000-0000-0000-000000000000",
+ repository_id=_VALID_REPO_ID,
+ )
+ assert result.success is False
+ assert result.error is not None
+ assert "invalid input or downstream failure" in result.error
+ assert "hops=3" in result.error
