@@ -5,6 +5,7 @@ meta:
 </route>
 <script setup lang="ts">
 import type { PlaygroundSearchParams, PlaygroundSearchResponse } from '~/api/codegraph'
+import type { SourceChunk } from '~/composables/useDiffusionGraph'
 import { playgroundSearch } from '~/api/codegraph'
 import CodePreviewDrawer from '~/components/codegraph/CodePreviewDrawer.vue'
 import GraphRAGDiffusionTab from '~/components/codegraph/GraphRAGDiffusionTab.vue'
@@ -20,17 +21,32 @@ const activeTab = ref<'layers' | 'graphrag'>('layers')
 // Phase Plan：Drawer state（CodePreviewDrawer 占位，Plan 接力）
 const drawerOpen = ref(false)
 const selectedChunkId = ref<string | null>(null)
-interface SourceChunk {
- chunk_id: string
- file_path: string
- line_start: number | null
- line_end: number | null
- content?: string
-}
-// Plan 完整实现：从 result.layers 中 layer === 'L3' 的 items 抽取 source chunk 列表。
-// 当前 Plan 返回空数组兜底，确保占位组件 props 类型契约满足。
-function extractSourceChunks(_result: PlaygroundSearchResponse | null): SourceChunk {
+// Plan 完整实现（ 修复）：从 result.layers 中 layer === 'L3' 的 items 反查
+// 抽取 source chunk 列表，作为二跳扩散图的"起点"节点（per ROADMAP §SC2）。
+// 复用 CodePreviewDrawer.findChunkInLayers 同款解析模式（per work item §10 硬约束 6
+// — 仅消费 L3 layers items，不引入新 chunk 详情 API），保持单一真值源。
+function extractSourceChunks(result: PlaygroundSearchResponse | null): SourceChunk {
+ if (!result?.layers)
  return
+ const l3 = result.layers.find(l => l.layer === 'L3')
+ if (!l3)
+ return
+ const out: SourceChunk =
+ for (const raw of l3.items) {
+ if (typeof raw !== 'object' || raw === null)
+ continue
+ const item = raw as Record<string, unknown>
+ if (typeof item.chunk_id !== 'string' || typeof item.file_path !== 'string')
+ continue
+ out.push({
+ chunk_id: item.chunk_id,
+ file_path: item.file_path,
+ line_start: typeof item.line_start === 'number' ? item.line_start: null,
+ line_end: typeof item.line_end === 'number' ? item.line_end: null,
+ content: typeof item.content === 'string' ? item.content: undefined,
+ })
+ }
+ return out
 }
 function onDiffusionNodeClick(chunkId: string) {
  selectedChunkId.value = chunkId
