@@ -8,9 +8,11 @@
  分组，避免 N+1。
 - `.only(4 字段)` 限定列宽（100k×20=200万行 × 64 byte ≈ 13 MB 可接受）。
 - 排序键 `(-weight, chunk_id_str)`：weight desc 主键 + chunk_id 字典序稳定
- 破平局，保证多次运行 payload 一致（diff-friendly）。
+ 破平局，保证多次运行 payload 一致（diff-friendly）。仅依赖 Python 端 sort，
+ 无 DB ORDER BY（避免 SQL 与内存重复排序，per ）。
 - 5KB 截断阶梯 20→15→10→5→1：理论 20 邻居 ≈ 1.6 KB 通常不触顶，超长 metadata
- 下保证 payload 不爆破 Qdrant 内存。
+ 下保证 payload 不爆破 Qdrant 内存。最后一档（limit=1）仍超限 → skip + warning
+ （per，避免超限 payload 流到 Qdrant 触发 batch reject）。
 """
 from __future__ import annotations
 import json
@@ -41,14 +43,13 @@ async def aggregate_top_neighbors(
  if not dirty_chunk_ids:
  return
  from code_relations.models import ChunkEdge
- qs = (
- ChunkEdge.objects.filter(
+ qs = ChunkEdge.objects.filter(
  repository_id=repository_id,
  source_chunk_id__in=dirty_chunk_ids,
- )
- .only("source_chunk_id", "target_chunk_id", "edge_type", "weight")
- .order_by("source_chunk_id", "-weight")
- )
+ ).only("source_chunk_id", "target_chunk_id", "edge_type", "weight")
+ #：删除 DB 端 ``.order_by("source_chunk_id", "-weight")`` —— 仅依赖
+ # Python 端 sort（确定性破平局靠 chunk_id 字典序）。100k 行 SQL ORDER BY
+ # 与内存二次 sort 同时存在是冗余 IO/CPU。
  groups: dict[uuid.UUID, list[tuple[uuid.UUID, str, float]]] = defaultdict(list)
  async for edge in qs:
  groups[edge.source_chunk_id].append(
@@ -56,19 +57,36 @@ async def aggregate_top_neighbors(
  )
  updates: list[tuple[str, dict[str, Any]]] =
  truncated_count = 0
+ skipped_oversize = 0
  for src, neighbors in groups.items:
  neighbors.sort(key=lambda t: (-t[2], str(t[0])))
  top = neighbors[:MAX_NEIGHBORS_PER_CHUNK]
  payload = _build_payload(top)
- if len(json.dumps(payload).encode) > MAX_PAYLOAD_SIZE_BYTES:
+ size = len(json.dumps(payload).encode)
+ if size > MAX_PAYLOAD_SIZE_BYTES:
+ truncated_this = False
  for limit in _TRUNCATE_STEPS:
  if limit >= len(top):
  continue
  top = top[:limit]
  payload = _build_payload(top)
- if len(json.dumps(payload).encode) <= MAX_PAYLOAD_SIZE_BYTES:
+ size = len(json.dumps(payload).encode)
+ if size <= MAX_PAYLOAD_SIZE_BYTES:
  truncated_count += 1
+ truncated_this = True
  break
+ #：阶梯走到 limit=1 仍超限（极端 metadata：超长 file path /
+ # callee_name / commit_hashes 列表）→ skip 这条 update + log warning，
+ # 不让超限 payload 流到 batch_set_payload 触发 Qdrant 端 reject。
+ if not truncated_this and size > MAX_PAYLOAD_SIZE_BYTES:
+ logger.warning(
+ "payload_truncate_exceeds_after_all_steps",
+ chunk_id=str(src),
+ final_size_bytes=size,
+ final_neighbor_count=len(top),
+ )
+ skipped_oversize += 1
+ continue
  updates.append((str(src), payload))
  logger.info(
  "payload_aggregate_complete",
@@ -77,6 +95,7 @@ async def aggregate_top_neighbors(
  chunks_with_edges=len(groups),
  updates=len(updates),
  truncated=truncated_count,
+ skipped_oversize=skipped_oversize,
  )
  return updates
 def _build_payload(
