@@ -46,12 +46,23 @@ def _serialize_neighbor(neighbor: Any) -> dict[str, Any]:
  """将 NeighborMetadata（或 dict-shaped mock）转 dict。
  优先 ``dataclasses.asdict``（命中 frozen dataclass 路径），否则按
  ``_NEIGHBOR_FIELDS`` 逐字段 ``getattr`` 兜底（兼容 dict / Mock / 测试 stub）。
+ 兜底（防 partial mock weight=None 让前端 ``null.toFixed`` 抛 TypeError）：
+ weight / reason / hop 三个数值 / 字符串 / 整数字段，缺失时分别降级为
+ ``0.0`` / ``""`` / ``1``，保前端 TS 类型契约不被运行时打破。
  """
  if is_dataclass(neighbor) and not isinstance(neighbor, type):
- return asdict(neighbor)
- if isinstance(neighbor, dict):
- return {k: neighbor.get(k) for k in _NEIGHBOR_FIELDS}
- return {k: getattr(neighbor, k, None) for k in _NEIGHBOR_FIELDS}
+ raw = asdict(neighbor)
+ elif isinstance(neighbor, dict):
+ raw = {k: neighbor.get(k) for k in _NEIGHBOR_FIELDS}
+ else:
+ raw = {k: getattr(neighbor, k, None) for k in _NEIGHBOR_FIELDS}
+ weight_raw = raw.get("weight")
+ reason_raw = raw.get("reason")
+ hop_raw = raw.get("hop")
+ raw["weight"] = float(weight_raw) if isinstance(weight_raw, (int, float)) else 0.0
+ raw["reason"] = str(reason_raw) if isinstance(reason_raw, str) else ""
+ raw["hop"] = int(hop_raw) if isinstance(hop_raw, int) and hop_raw in (1, 2) else 1
+ return raw
 def _serialize_layer(layer: LayerResult) -> dict[str, Any]:
  """将 LayerResult 转换为可序列化的 dict。
  关键差异 5（T-）：L4 items 包含 Symbol ORM 对象，
@@ -107,7 +118,11 @@ class PlaygroundSearchView(APIView):
  if not query:
  return Response({"detail": "query 参数不能为空。"}, status=400)
  repository_ids: list[str] | None = request.data.get("repository_ids") or None
+ #: int(...) 失败时返回 400 Bad Request 而非 500（用户传入非整数字符串）
+ try:
  max_tokens: int = int(request.data.get("max_tokens", DEFAULT_MAX_TOKENS))
+ except (TypeError, ValueError):
+ return Response({"detail": "max_tokens 必须是整数。"}, status=400)
  logger.info(
  "playground_search",
  query=query[:100],
