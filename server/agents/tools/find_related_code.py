@@ -30,12 +30,31 @@ from code_relations.models import ChunkRegistry
 from services.code_intel import get_provider
 from services.retrieval import HybridSearchService
 logger = structlog.get_logger(__name__)
-_TOOL_DESCRIPTION_PLACEHOLDER = (
- "Plan placeholder description; replaced by Plan decision-tree text "
- "that distinguishes find_related_code (concrete start point) from "
- "search_repository_code (natural language query)."
+_TOOL_DESCRIPTION = (
+ "Find code chunks related to a known starting point "
+ "(file / chunk_id / symbol_name) by graph relations.\n"
+ "\n"
+ "USE WHEN you have a CONCRETE starting point and want to discover related "
+ "code via:\n"
+ " - CALL: who calls this / what does this call\n"
+ " - IMPORT: who imports this module / what does this import\n"
+ " - TEST_OF: where are the tests for this code\n"
+ "\n"
+ "DO NOT USE FOR natural language queries — use `search_repository_code` "
+ "instead.\n"
+ "\n"
+ "Decision tree:\n"
+ ' - "show me callers of foo" → find_related_code(symbol_name="foo", '
+ 'direction="upstream")\n'
+ ' - "find tests for src/auth.py" → find_related_code('
+ 'file_path="src/auth.py", relation_types=["TEST_OF"])\n'
+ ' - "search for password validation logic" → search_repository_code('
+ 'query="password validation")'
 )
-"""Plan 接管 tool description 决策树文案（per work-item decision tree）。"""
+"""Tool description 决策树文本（per work-item / Plan）。
+LLM 读 description 即应能判别：CONCRETE 起点（file / chunk_id / symbol_name）走
+本工具图遍历，自然语言 query 走 ``search_repository_code`` hybrid 检索。
+"""
 _TOOL_PARAMETERS: dict[str, Any] = {
  "type": "object",
  "properties": {
@@ -120,7 +139,7 @@ _TOOL_PARAMETERS: dict[str, Any] = {
 契约测试在 description 升级时 diff 必须可 review。"""
 @tool(
  name="find_related_code",
- description=_TOOL_DESCRIPTION_PLACEHOLDER,
+ description=_TOOL_DESCRIPTION,
  category="PROJECT",
  parameters=_TOOL_PARAMETERS,
 )
