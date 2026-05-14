@@ -49,6 +49,8 @@ _TOOL_DESCRIPTION = (
  "Decision tree:\n"
  ' - "show me callers of foo" → find_related_code(symbol_name="foo", '
  'direction="upstream")\n'
+ ' - "what does foo call internally" → find_related_code('
+ 'symbol_name="foo", direction="downstream")\n'
  ' - "find tests for src/auth.py" → find_related_code('
  'file_path="src/auth.py", relation_types=["TEST_OF"])\n'
  ' - "search for password validation logic" → search_repository_code('
@@ -442,6 +444,5 @@ async def _find_related_code_impl(
  "data": output_model.model_dump,
  "metadata": metadata,
  },
- metadata=metadata,
  )
 __all__ = ["find_related_code"]

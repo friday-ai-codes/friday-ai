@@ -91,7 +91,7 @@ async def test_chunk_id_path_passes_through_directly -> None:
  # 第一个位置参数应为 start_chunk_id
  assert call_args[0] == chunk_id
  assert call_kwargs["repo_ids"] == [_VALID_REPO_ID]
- assert result.metadata.get("resolved_via") == "chunk_id"
+ assert result.output["metadata"]["resolved_via"] == "chunk_id"
 # ---------------------------------------------------------------------------
 # Section 2: file_path 起点路径
 # ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ async def test_file_path_resolves_to_first_chunk(monkeypatch: pytest.MonkeyPatch
  afirst_mock.assert_awaited_once
  assert fake_find_related.await_args is not None
  assert fake_find_related.await_args.args[0] == resolved_chunk_id
- assert result.metadata.get("resolved_via") == "file_path"
+ assert result.output["metadata"]["resolved_via"] == "file_path"
 @pytest.mark.asyncio
 async def test_file_path_not_found_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
  """file_path 提供但 ChunkRegistry.afirst 返回 None → 结构化 error。"""
@@ -173,7 +173,7 @@ async def test_symbol_name_resolves_via_provider(monkeypatch: pytest.MonkeyPatch
  afirst_mock.assert_awaited
  assert fake_find_related.await_args is not None
  assert fake_find_related.await_args.args[0] == fake_reg.chunk_id
- assert result.metadata.get("resolved_via") == "symbol_name"
+ assert result.output["metadata"]["resolved_via"] == "symbol_name"
 @pytest.mark.asyncio
 async def test_symbol_name_no_match_returns_error -> None:
  """symbol_name 提供但 lookup_symbols 返回空列表 → 结构化 error。"""
@@ -260,7 +260,7 @@ async def test_empty_neighbors_returns_message -> None:
  data = result.output["data"]
  assert data["neighbors"] ==
  assert data["message"] == "无关联代码"
- assert result.metadata["total_neighbors"] == 0
+ assert result.output["metadata"]["total_neighbors"] == 0
 @pytest.mark.asyncio
 async def test_reason_field_passes_through_non_empty -> None:
  """Phase _explain_neighbor 模板输出的 reason 必须原样透传，**禁止重写**。"""
