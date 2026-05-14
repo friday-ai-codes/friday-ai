@@ -1,21 +1,43 @@
-"""Phase Plan — Pitfall 4 golden snapshot baseline 测试。
-本文件锁定 `LayeredSearchService.search` 在确定性 mock 下的 `final_context`
-字节级行为，作为后续每个 plan（Provider 抽象 / RAG 解耦 / 4 callsite 切换）的
-**唯一 acceptance gate**：
- pytest server/tests/codegraph/test_layered_search_golden.py -v
-只要 20/20 全绿，就证明本 phase 的拆分阶段没有引入任何语义漂移。
-每次 mock 数据或 LayeredSearchService 内部格式变化导致 fixture 需要更新时，
-重新跑（项目根）：
- cd server && uv run python -m tests.codegraph._generate_golden_fixtures
-然后人工 review `git diff server/tests/fixtures/layered_search_golden/` 确认所有
-变化是预期的，再 commit。
-per / / 。
+"""Phase Plan — Pitfall 4 golden snapshot baseline 测试（v23.0 legacy baseline）。
+**Phase Plan 状态变更（per work-item.md "graph_capable 路径**期望产生
+差异**" + Plan byte-eq 升级）**：
+Phase era 下 ``LayeredSearchService.search`` 输出 ``final_context`` 含
+``## L2 Exact Matches`` / ``## L4 Graph Context`` 等五层 stub 段（空 layer 也
+渲染 ``"(no exact symbol matches found)"`` 占位行）；Phase Plan 重写
+``HybridSearchService._search_graph_capable`` + ``_search_rag_only`` 后两路径
+都**只**渲染 ``## L3 Related Code``（+ 非空时追加 ``## Graph Context``），不再
+渲染 L2/L4 stub 段。``LayeredSearchService.search`` 改为 thin delegate 到
+``HybridSearchService``，故本文件 20 条 fixture 全部漂移到新格式。
+**Plan 决策（per -PLAN.md deviations 段）**：本文件 20 条 fixture 作为
+v23.0 历史基线**物理保留**（无字面信息丢失），但 parametrize 整体
+``pytest.mark.skip``——格式漂移是 Phase 设计预期，不应触发 CI 红灯。新格式
+byte-eq 屏障在：
+ server/tests/services/retrieval/test_hybrid_graph_capable_golden.py
+ server/tests/fixtures/hybrid_graph_capable_golden/*.txt (10 条 fixture)
+NullProvider 路径 byte-eq 屏障在：
+ server/tests/services/retrieval/test_hybrid_skeleton.py
+ server/tests/services/retrieval/test_null_provider_paths.py
+若未来需要把 v23.0 baseline 升级为 v24+ baseline，按 ``_generate_golden_fixtures.py``
+重生成 + 移除本文件 ``pytestmark`` skip 即可（参考 hybrid_graph_capable_golden 同 idiom）。
+per / / （原 Phase Plan 设计）+ -PLAN.md deviations。
 """
 from __future__ import annotations
 from pathlib import Path
 import pytest
 from codegraph.services.layered_search import LayeredSearchService
 from tests.codegraph.conftest import GOLDEN_QUERIES_REGISTRY, GoldenQueryEntry
+# Phase Plan: 本文件 20 条 v23.0 baseline 整体 skip——格式漂移是 Phase
+# 253 设计预期（graph_capable + rag_only 路径都不再渲染 L2/L4 stub 段）。新
+# 格式 byte-eq 由 tests/services/retrieval/test_hybrid_graph_capable_golden.py
+# 锁定（10 条 fixture）。Fixtures retained as historical baseline.
+pytestmark = pytest.mark.skip(
+ reason=(
+ "Phase Plan: v23.0 LayeredSearchService L1..L5 stub-segment "
+ "output deprecated; replaced by hybrid_graph_capable_golden (10 fixtures) "
+ "+ rag_only NullProvider path byte-eq in test_hybrid_skeleton.py / "
+ "test_null_provider_paths.py. Fixtures retained as historical baseline."
+ ),
+)
 FIXTURE_DIR: Path = (
  Path(__file__).resolve.parent.parent / "fixtures" / "layered_search_golden"
 )
