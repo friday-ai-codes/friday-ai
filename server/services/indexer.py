@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -444,6 +445,11 @@ class IndexerService:
  # Phase: 图谱抽取与写入服务（双轨架构 - per ）
  self._graph_extractor = None # 延迟初始化
  self._graph_writer = None
+ # Phase（per / ）：累积本次索引会话每次 _upsert_chunk_registry_batch
+ # 返回的 point_id 列表；_extract_and_write_graph 末尾一次性传给
+ # `code_relations.tasks.enqueue_edge_build(...)` 触发 6 EdgeBuilder + payload sync，
+ # 并在调用后清空。set 去重避免同一 chunk 多次 flush 重复进 builder 输入。
+ self._session_dirty_chunk_ids: set[uuid.UUID] = set
  def _init_graph_services(self):
  """延迟初始化图谱抽取与写入服务（避免循环导入）。"""
  if self._graph_extractor is None:
@@ -668,7 +674,12 @@ class IndexerService:
  total_points=len(points),
  )
  # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
- await self._upsert_chunk_registry_batch(registry_rows)
+ _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
+ # Phase（per ）：累积 dirty chunk_id，
+ # _extract_and_write_graph 末尾一次性 enqueue_edge_build
+ self._session_dirty_chunk_ids.update(
+ uuid.UUID(point_id) for point_id, _changed in _registry_results
+ )
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
  commit_info = last_commit_map.get(fp)
@@ -910,7 +921,12 @@ class IndexerService:
  batch = points[i: i + batch_size]
  await qdrant_upsert_vectors_by_name(collection_name, batch)
  # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
- await self._upsert_chunk_registry_batch(registry_rows)
+ _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
+ # Phase（per ）：累积 dirty chunk_id，
+ # _extract_and_write_graph 末尾一次性 enqueue_edge_build
+ self._session_dirty_chunk_ids.update(
+ uuid.UUID(point_id) for point_id, _changed in _registry_results
+ )
  # 记录 BranchFileIndex
  branch_index, _ = await RepositoryBranchIndex.objects.aupdate_or_create(
  repository=repository, branch_name=branch_name,
@@ -1218,7 +1234,12 @@ class IndexerService:
  total_points=len(points),
  )
  # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
- await self._upsert_chunk_registry_batch(registry_rows)
+ _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
+ # Phase（per ）：累积 dirty chunk_id，
+ # _extract_and_write_graph 末尾一次性 enqueue_edge_build
+ self._session_dirty_chunk_ids.update(
+ uuid.UUID(point_id) for point_id, _changed in _registry_results
+ )
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
  commit_info = last_commit_map.get(fp)
@@ -1499,7 +1520,11 @@ class IndexerService:
  total_points=len(points),
  )
  # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
- await self._upsert_chunk_registry_batch(registry_rows)
+ _registry_results = await self._upsert_chunk_registry_batch(registry_rows)
+ # Phase（per ）：累积 dirty chunk_id
+ self._session_dirty_chunk_ids.update(
+ uuid.UUID(point_id) for point_id, _changed in _registry_results
+ )
  for fp, fh in pending_files:
  ci = last_commit_map_inc.get(fp)
  defaults = {"file_hash": fh}
@@ -1791,6 +1816,28 @@ class IndexerService:
  calls=stats["total_calls"],
  endpoints=stats["total_endpoints"],
  )
+ # Phase hook（per / ）：图谱写完后触发 6 EdgeBuilder + payload
+ # 一跳快照同步。asyncio.create_task fire-and-forget（详见
+ # `code_relations/tasks.py` 决策注释），不阻塞 indexer 主流程。
+ # 异常隔离：任何失败 catch + structlog warning，不抛回 indexer。
+ try:
+ from code_relations.tasks import enqueue_edge_build
+ dirty = list(self._session_dirty_chunk_ids)
+ self._session_dirty_chunk_ids.clear
+ if dirty:
+ await enqueue_edge_build(str(repository_id), dirty)
+ stats["edge_build_enqueued"] = True
+ stats["dirty_chunk_count"] = len(dirty)
+ else:
+ stats["edge_build_enqueued"] = False
+ except Exception as exc:
+ logger.warning(
+ "code_relations_hook_failed",
+ repository_id=str(repository_id),
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
+ stats["edge_build_enqueued"] = False
  return stats
  @staticmethod
  def _detect_language_from_path(file_path: str) -> str | None:
