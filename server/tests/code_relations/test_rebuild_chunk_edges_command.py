@@ -198,6 +198,49 @@ def test_invalid_repo_uuid_raises(db) -> None:
  stdout=out,
  )
  assert "UUID" in str(exc_info.value)
+def test_builder_failure_keeps_last_built_at_null(
+ indexed_repo: Repository,
+) -> None:
+ """ 回归：builder spawn 的背景 task 抛异常 → ``last_built_at`` 不应被更新。
+ Phase REVIEW 揭示 ``asyncio.gather(..., return_exceptions=True)``
+ 把异常吞成返回值，外层 ``try/except`` 永远捕不到 → 失败 chunk 被错误标完成。
+ 修复后 ``_dispatch_and_drain`` 检测 ``BaseException`` 返回值 → 显式
+ ``raise RuntimeError`` 让 ``_process_repo`` ``except`` 分支跳过 update。
+ """
+ import asyncio
+ from code_relations import tasks as tasks_module
+ _make_chunk(indexed_repo, file_path="src/a.py", index=0)
+ _make_chunk(indexed_repo, file_path="src/b.py", index=0)
+ async def _spawn_failing_task(
+ repository_id: str, dirty_chunk_ids: list
+ ) -> None:
+ async def _boom -> None:
+ raise RuntimeError("simulated builder failure")
+ task = asyncio.create_task(_boom)
+ tasks_module._BACKGROUND_TASKS.add(task)
+ task.add_done_callback(tasks_module._BACKGROUND_TASKS.discard)
+ out = StringIO
+ err = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ new=_spawn_failing_task,
+ ):
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ stdout=out,
+ stderr=err,
+ )
+ assert "[FAIL]" in err.getvalue, (
+ f"应输出 [FAIL] 提示；stderr={err.getvalue!r}"
+ )
+ assert (
+ ChunkRegistry.objects.filter(
+ repository=indexed_repo, last_built_at__isnull=True
+ ).count
+ == 2
+ ), "builder 失败时 last_built_at 仍应为 NULL（断点续跑下次重试）"
 def test_help_lists_three_arguments(capsys: pytest.CaptureFixture[str]) -> None:
  """`manage.py help rebuild_chunk_edges` 输出含三参数（smoke）。
  argparse `--help` 走 sys.stdout 而非 call_command 的 stdout 参数，
