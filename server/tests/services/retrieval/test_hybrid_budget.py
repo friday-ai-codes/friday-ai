@@ -50,56 +50,61 @@ def test_from_settings_override_70_30(settings) -> None:
  assert bud.rag == pytest.approx(0.7)
  assert bud.graph == pytest.approx(0.3)
  assert bud.allocate(8000)["rag"] == int(8000 * 0.9 * 0.7)
-def test_from_settings_clamp_lower_bound_and_warns(
- settings, caplog: pytest.LogCaptureFixture
-) -> None:
+def _capture_structlog_events -> tuple[list[dict], object]:
+ """安装 structlog 捕获 processor，返回 (events_list, restore_callable)。
+ 用 ``structlog.DropEvent`` 兜底，避免事件穿透到 PrintLogger / JSONRenderer 引发
+ `unexpected keyword argument` TypeError。
+ """
+ events: list[dict] =
+ def _capture(logger, method_name, event_dict): # type: ignore[no-untyped-def]
+ events.append(dict(event_dict))
+ raise structlog.DropEvent
+ old = structlog.get_config
+ structlog.configure(
+ processors=[_capture],
+ wrapper_class=old["wrapper_class"],
+ logger_factory=old["logger_factory"],
+ cache_logger_on_first_use=False,
+ )
+ def _restore -> None:
+ structlog.configure(**old)
+ return events, _restore
+def test_from_settings_clamp_lower_bound_and_warns(settings) -> None:
  """ratio < 0.1 → clamp 到 0.1 + structlog warning hybrid_budget_ratio_clamped。"""
  settings.GRAPHRAG_BUDGET_RATIO = 0.05
- # structlog → stdlib logging passthrough（configure_structlog 末尾兜底 logger）
- cap_logs: list[dict] =
- def _capture(logger, method_name, event_dict):
- cap_logs.append(dict(event_dict))
- return event_dict
- old_processors = structlog.get_config["processors"]
- structlog.configure(processors=[_capture])
+ events, restore = _capture_structlog_events
  try:
  bud = HybridBudget.from_settings
  finally:
- structlog.configure(processors=old_processors)
+ restore # type: ignore[operator]
  assert bud.rag == pytest.approx(0.1)
  assert bud.graph == pytest.approx(0.9)
- clamp_events = [e for e in cap_logs if e.get("event") == "hybrid_budget_ratio_clamped"]
- assert clamp_events, f"expected hybrid_budget_ratio_clamped event, got {cap_logs}"
+ clamp_events = [e for e in events if e.get("event") == "hybrid_budget_ratio_clamped"]
+ assert clamp_events, f"expected hybrid_budget_ratio_clamped event, got {events}"
  evt = clamp_events[-1]
  assert evt["requested"] == pytest.approx(0.05)
  assert evt["clamped"] == pytest.approx(0.1)
 def test_from_settings_clamp_upper_bound_and_warns(settings) -> None:
  settings.GRAPHRAG_BUDGET_RATIO = 0.95
- cap_logs: list[dict] =
- def _capture(logger, method_name, event_dict):
- cap_logs.append(dict(event_dict))
- return event_dict
- old_processors = structlog.get_config["processors"]
- structlog.configure(processors=[_capture])
+ events, restore = _capture_structlog_events
  try:
  bud = HybridBudget.from_settings
  finally:
- structlog.configure(processors=old_processors)
+ restore # type: ignore[operator]
  assert bud.rag == pytest.approx(0.9)
  assert bud.graph == pytest.approx(0.1)
- clamp_events = [e for e in cap_logs if e.get("event") == "hybrid_budget_ratio_clamped"]
+ clamp_events = [e for e in events if e.get("event") == "hybrid_budget_ratio_clamped"]
  assert clamp_events
  assert clamp_events[-1]["clamped"] == pytest.approx(0.9)
 def test_budget_module_does_not_read_enable_codegraph -> None:
- """grep gate：services/retrieval/budget.py 不允许出现 settings.ENABLE_CODEGRAPH
- （per Pitfall 5——图谱开关只走 isinstance(provider, GraphCapableProvider) 守卫）。
+ """grep gate：services/retrieval/budget.py 不允许执行
+ ``settings.ENABLE_CODEGRAPH`` 表达式（per Pitfall 5——图谱开关只走
+ isinstance(provider, GraphCapableProvider) 守卫）。
+ 检查 `settings.ENABLE_CODEGRAPH` 完整 token；docstring / 注释里可以出现该
+ 词，但不允许写成 attribute 访问的实际代码表达式。等价于 CI 的
+ `rg "settings\\.ENABLE_CODEGRAP[H]" server/services/retrieval/` 必须 0 命中。
  """
  source = Path(budget_module.__file__).read_text(encoding="utf-8")
- # 允许 comment 注释；逐行扫描非注释代码行
- for line in source.splitlines:
- stripped = line.strip
- if stripped.startswith("#"):
- continue
- assert "ENABLE_CODEGRAPH" not in stripped, (
- f"budget.py 源代码出现 ENABLE_CODEGRAPH（grep gate 失败）：{line}"
+ assert "settings.ENABLE_CODEGRAPH" not in source, (
+ "budget.py 源代码出现 settings.ENABLE_CODEGRAPH 表达式（grep gate 失败）"
  )
