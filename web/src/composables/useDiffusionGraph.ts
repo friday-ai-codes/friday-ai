@@ -15,7 +15,6 @@
 import type { Edge, Node } from '@vue-flow/core'
 import type { Ref } from 'vue'
 import type { DiffusionEdgeType, NeighborMetadata } from '~/api/codegraph'
-import type { EdgeType } from '~/lib/diffusionEdgeColors'
 import { computed, ref, watch } from 'vue'
 import { useDagreLayout } from '~/composables/useDagreLayout'
 import { DIFFUSION_EDGE_COLORS } from '~/lib/diffusionEdgeColors'
@@ -44,6 +43,15 @@ export interface DiffusionEdgeData {
 }
 const STROKE_WIDTH_MIN = 1.5
 const STROKE_WIDTH_MAX = 4
+/**
+ *：边样式 magic number 提到顶部命名常量，避免 1.5 / 2 / 0.9 / 0.5
+ * 散落在 buildEdge 内（同名 1.5 但语义不同）。
+ */
+const HOP1_BASE_WIDTH = 2
+const HOP2_BASE_WIDTH = 1.5
+const HOP1_OPACITY = 0.9
+const HOP2_OPACITY = 0.5
+const WEIGHT_STROKE_MULTIPLIER = 1.5
 /**
  * 折叠 / 截断阈值（per work item §5.6 + ROADMAP §SC3）：
  * - FOLD_THRESHOLD：默认渲染前 N 个邻居，多余通过 "显示更多" 折叠按钮加载；
@@ -112,10 +120,14 @@ function buildEdge(
  sourceId: string,
  neighbor: NeighborMetadata,
 ): Edge<DiffusionEdgeData> {
- const stroke = DIFFUSION_EDGE_COLORS[neighbor.edge_type as EdgeType] ?? '#6b7280'
- const baseWidth = neighbor.hop === 1 ? 2: 1.5
- const baseOpacity = neighbor.hop === 1 ? 0.9: 0.5
- const strokeWidth = clampStrokeWidth(baseWidth + neighbor.weight * 1.5)
+ //: neighbor.edge_type 已是 DiffusionEdgeType（=EdgeType 同义），删冗余 as 断言
+ const stroke = DIFFUSION_EDGE_COLORS[neighbor.edge_type] ?? '#6b7280'
+ const baseWidth = neighbor.hop === 1 ? HOP1_BASE_WIDTH: HOP2_BASE_WIDTH
+ const baseOpacity = neighbor.hop === 1 ? HOP1_OPACITY: HOP2_OPACITY
+ //: weight 防御 —— 后端 partial mock 路径下 weight 可能为 null/undefined/NaN，
+ // 防 null.toFixed / NaN 计算污染 strokeWidth
+ const safeWeight = Number.isFinite(neighbor.weight) ? neighbor.weight: 0
+ const strokeWidth = clampStrokeWidth(baseWidth + safeWeight * WEIGHT_STROKE_MULTIPLIER)
  return {
  id: `${sourceId}-${neighbor.chunk_id}-${neighbor.edge_type}`,
  source: sourceId,
@@ -129,11 +141,11 @@ function buildEdge(
  },
  data: {
  edgeType: neighbor.edge_type,
- weight: neighbor.weight,
+ weight: safeWeight,
  reason: neighbor.reason,
  hop: neighbor.hop,
  },
- ariaLabel: `${neighbor.edge_type} 边 weight ${neighbor.weight.toFixed(2)} hop ${neighbor.hop}`,
+ ariaLabel: `${neighbor.edge_type} 边 weight ${safeWeight.toFixed(2)} hop ${neighbor.hop}`,
  }
 }
 export function useDiffusionGraph(

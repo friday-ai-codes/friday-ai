@@ -19,7 +19,6 @@ import { computed } from 'vue'
 import {
  Tooltip,
  TooltipContent,
- TooltipProvider,
  TooltipTrigger,
 } from '~/components/ui/tooltip'
 import { DIFFUSION_EDGE_COLORS } from '~/lib/diffusionEdgeColors'
@@ -78,17 +77,21 @@ const weightText = computed( => {
  <div
  class="absolute pointer-events-auto":style="{ transform: labelTransform }"
  >
- <TooltipProvider:delay-duration="200">
+ <!--：TooltipProvider 提到 GraphRAGDiffusionTab 单实例 -->
  <Tooltip>
  <TooltipTrigger as-child>
+ <!--: 增大热区（w-5 ）+ tabindex + focus-visible 视觉提示 -->
  <div
- class="w-3 rounded-full opacity-0 cursor-help":aria-label="`${data?.edgeType ?? 'edge'} ${weightText}`"
+ class="w-5 rounded-full bg-transparent focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-help"
+ tabindex="0":aria-label="`${data?.edgeType ?? 'edge'} ${weightText}`"
  />
  </TooltipTrigger>
  <TooltipContent class="max-w-[320px]">
  <div class="flex items-center gap-2 mb-1.5">
+ <!--: chip 颜色经 CSS 变量 + Tailwind arbitrary value，
+ className 表达样式意图，仅:style 注入变量值（D-A 备案视觉等价） -->
  <span
- class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold":style="{ backgroundColor: chipBg, color: chipColor }"
+ class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-[var(--chip-bg)] text-[var(--chip-color)]":style="({ '--chip-bg': chipBg, '--chip-color': chipColor }) as Record<string, string>"
  >{{ data?.edgeType }}</span>
  <span class="text-xs font-mono tabular-nums text-muted-foreground">
  {{ weightText }}
@@ -99,7 +102,6 @@ const weightText = computed( => {
  </p>
  </TooltipContent>
  </Tooltip>
- </TooltipProvider>
  </div>
  </EdgeLabelRenderer>
 </template>

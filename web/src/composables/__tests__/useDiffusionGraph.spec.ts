@@ -1,4 +1,4 @@
-import type { SourceChunk } from '../useDiffusionGraph'
+import type { DiffusionEdgeData, SourceChunk } from '../useDiffusionGraph'
 /**
  * Phase Plan + Plan — useDiffusionGraph 单测
  * 验证：
@@ -343,6 +343,28 @@ describe('useDiffusionGraph', => {
  await nextTick
  // 新数据 70 + 30 = 100，visibleLimit reset 到 50 → 仅显示 50
  expect(visibleNeighbors.value).toHaveLength(50)
+ })
+ it('hi-04: weight=null/NaN/undefined → buildEdge 防御 → safeWeight=0，ariaLabel 含 "weight 0.00"，不抛 TypeError', => {
+ const source = makeSource({ chunk_id: 'src-1', file_path: 'src/a.ts' })
+ const hop1 = [
+ makeNeighbor({
+ chunk_id: 'h-null-weight',
+ file_path: 'src/a.ts',
+ // 模拟后端 partial mock 路径下 weight 字段缺失
+ weight: null as unknown as number,
+ }),
+ ]
+ const { flowEdges } = useDiffusionGraph(
+ ref(hop1),
+ ref<NeighborMetadata>,
+ ref([source]),
+ )
+ expect(flowEdges.value).toHaveLength(1)
+ const edge = flowEdges.value[0]
+ expect(edge.ariaLabel).toContain('weight 0.00')
+ // strokeWidth 计算用 safeWeight=0 → HOP1_BASE_WIDTH(2) + 0 * 1.5 = 2
+ expect((edge.style as Record<string, unknown>).strokeWidth).toBe(2)
+ expect((edge.data as DiffusionEdgeData).weight).toBe(0)
  })
  it('q: truncated=true 场景 expandFolded 受 HARD_LIMIT cap 严格限制（多次调用后 visibleLimit 不超过 200）', => {
  const hop1 = makeManyNeighbors(120, { idPrefix: 'h1', hop: 1 })
