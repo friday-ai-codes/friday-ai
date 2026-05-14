@@ -11,37 +11,37 @@ Task 2（expand_hop2 三重去重）将在 Task 2 RED commit 中追加 3 条用�
 """
 from __future__ import annotations
 import uuid
-from typing import Any
+from collections.abc import Iterator
+from contextlib import contextmanager
+from unittest.mock import patch
 import pytest
-import structlog
-from django.test.utils import CaptureQueriesContext
 from django.db import connection
+from structlog.testing import capture_logs
 from code_relations.constants import MAX_HOPS, TOP_NEIGHBORS_PER_HOP2
 from code_relations.models import ChunkEdge, EdgeType
 from services.retrieval.hop2_expander import (
  assert_hops_within_limit,
  fetch_hop2_edges,
 )
-# ---------------------------------------------------------------------------
-# structlog 捕获助手（与 test_hop1_reader.py 同模式）
-# ---------------------------------------------------------------------------
-def _capture_structlog_events -> tuple[list[dict[str, Any]], object]:
- events: list[dict[str, Any]] =
- def _capture(logger, method_name, event_dict): # type: ignore[no-untyped-def]
- events.append(dict(event_dict))
- raise structlog.DropEvent
- old = structlog.get_config
- structlog.configure(
- processors=[_capture],
- wrapper_class=old["wrapper_class"],
- logger_factory=old["logger_factory"],
- cache_logger_on_first_use=False,
- )
- def _restore -> None:
- structlog.configure(**old)
- return events, _restore
 def _default_reason(edge_type: str, source_chunk_id: str) -> str:
  return f"{edge_type} from {source_chunk_id}"
+@contextmanager
+def _capture_async_queries -> Iterator[list[dict]]:
+ """async-safe 等价于 ``CaptureQueriesContext``。
+ ``CaptureQueriesContext.__enter__`` 调 ``ensure_connection``，后者带
+ ``@async_unsafe`` 装饰器在 async 测试体内直接抛 ``SynchronousOnlyOperation``；
+ 本 helper 通过 ``force_debug_cursor=True`` + ``queries_log`` 切片实现等价
+ （连接已由 pytest-django ``transaction=True`` 提前建立）。
+ """
+ prev = connection.force_debug_cursor
+ connection.force_debug_cursor = True
+ initial = len(connection.queries_log)
+ captured: list[dict] =
+ try:
+ yield captured
+ finally:
+ captured.extend(list(connection.queries_log)[initial:])
+ connection.force_debug_cursor = prev
 # ---------------------------------------------------------------------------
 # Task 1 case 1-3：assert_hops_within_limit
 # ---------------------------------------------------------------------------
@@ -73,11 +73,11 @@ async def test_fetch_hop2_edges_empty_hop1_returns_empty_zero_sql(
  repository,
 ) -> None:
  """hop1_chunk_ids= → 立即 零 SQL（fast path 早返）。"""
- with CaptureQueriesContext(connection) as ctx:
+ with _capture_async_queries as captured:
  result = await fetch_hop2_edges(, [str(repository.id)])
  assert result ==
- assert len(ctx.captured_queries) == 0, (
- f"empty hop1 path must not query DB; got {len(ctx.captured_queries)} queries"
+ assert len(captured) == 0, (
+ f"empty hop1 path must not query DB; got {len(captured)} queries"
  )
 @pytest.mark.django_db(transaction=True)
 async def test_fetch_hop2_edges_empty_repo_ids_returns_empty_zero_sql(
@@ -85,10 +85,10 @@ async def test_fetch_hop2_edges_empty_repo_ids_returns_empty_zero_sql(
 ) -> None:
  """repo_ids= → 立即 零 SQL。"""
  fake_chunk_id = str(uuid.uuid4)
- with CaptureQueriesContext(connection) as ctx:
+ with _capture_async_queries as captured:
  result = await fetch_hop2_edges([fake_chunk_id], )
  assert result ==
- assert len(ctx.captured_queries) == 0
+ assert len(captured) == 0
 # ---------------------------------------------------------------------------
 # Task 1 case 6：正常路径 5 sources × 10 邻居 → 50 edges 按 weight desc + 1 ORM
 # ---------------------------------------------------------------------------
@@ -96,7 +96,14 @@ async def test_fetch_hop2_edges_empty_repo_ids_returns_empty_zero_sql(
 async def test_fetch_hop2_edges_returns_sorted_within_single_query(
  repository,
 ) -> None:
- """5 hop1 sources × 10 outgoing edges → 50 edges + SQL 计数 == 1。"""
+ """5 hop1 sources × 10 outgoing edges → 50 edges 按 weight desc + ChunkEdge.filter
+ 仅被调用 1 次（无 N+1）。
+ Note:
+ ``CaptureQueriesContext`` 在 async 测试体内会触发 SynchronousOnlyOperation
+ 且 Django 5+ async ORM 走 sync_to_async 线程导致 ``queries_log`` 跨线程不可见；
+ 改走 patch spy on manager —— 单次 ``.filter(...)`` 调用即可证明无 N+1
+ （与 hop1_reader test_resolve_metadata_calls_in_bulk_exactly_once 同模式）。
+ """
  sources = [uuid.uuid4 for _ in range(5)]
  edges: list[ChunkEdge] =
  for s_idx, src in enumerate(sources):
@@ -111,16 +118,19 @@ async def test_fetch_hop2_edges_returns_sorted_within_single_query(
  )
  )
  await ChunkEdge.objects.abulk_create(edges)
- with CaptureQueriesContext(connection) as ctx:
+ real_filter = ChunkEdge.objects.filter
+ with patch.object(
+ ChunkEdge.objects, "filter", side_effect=real_filter
+ ) as spy:
  result = await fetch_hop2_edges(
  [str(s) for s in sources], [str(repository.id)]
+ )
+ assert spy.call_count == 1, (
+ f"expected exactly 1 ChunkEdge.objects.filter call (no N+1), got {spy.call_count}"
  )
  assert len(result) == 50
  weights = [w for _src, _tgt, _et, w in result]
  assert weights == sorted(weights, reverse=True), "must be weight desc"
- assert len(ctx.captured_queries) == 1, (
- f"expected single ORM call, got {len(ctx.captured_queries)}"
- )
  for src_str, tgt_str, et, w in result:
  assert isinstance(src_str, str)
  assert isinstance(tgt_str, str)
@@ -146,11 +156,8 @@ async def test_fetch_hop2_edges_caps_at_top_neighbors_per_hop2(
  for j in range(100)
  ]
  await ChunkEdge.objects.abulk_create(edges)
- events, restore = _capture_structlog_events
- try:
+ with capture_logs as events:
  result = await fetch_hop2_edges([str(src)], [str(repository.id)])
- finally:
- restore # type: ignore[operator]
  assert len(result) == TOP_NEIGHBORS_PER_HOP2 == 50
  fetched_logs = [e for e in events if e.get("event") == "hop2_edges_fetched"]
  assert fetched_logs, f"expected hop2_edges_fetched event, got {events}"
