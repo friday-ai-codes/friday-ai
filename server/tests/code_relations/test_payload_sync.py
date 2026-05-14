@@ -165,3 +165,28 @@ async def test_single_sql_call_no_n_plus_one(repository) -> None:
  with patch.object(ChunkEdge.objects, "filter", side_effect=_spy_filter):
  await aggregate_top_neighbors(str(repository.id), sources)
  assert call_count == 1, f"expected 1 SQL filter call, got {call_count}"
+@pytest.mark.django_db(transaction=True)
+async def test_oversize_after_all_truncate_steps_skipped(
+ repository, monkeypatch
+) -> None:
+ """ 回归：阶梯走到 limit=1 后单条邻居仍超 MAX_PAYLOAD_SIZE_BYTES →
+ update 被 skip + log warning，不流到 batch_set_payload。"""
+ src = uuid.uuid4
+ await ChunkEdge.objects.abulk_create(
+ [
+ ChunkEdge(
+ source_chunk_id=src,
+ target_chunk_id=uuid.uuid4,
+ edge_type=EdgeType.CALL,
+ weight=0.5,
+ metadata={},
+ repository=repository,
+ )
+ ]
+ )
+ # 临时把 MAX_PAYLOAD_SIZE_BYTES 调到 1（任何 payload 必超），强制最后一档仍超限
+ monkeypatch.setattr(
+ "code_relations.payload_sync.MAX_PAYLOAD_SIZE_BYTES", 1
+ )
+ updates = await aggregate_top_neighbors(str(repository.id), [src])
+ assert updates ==
