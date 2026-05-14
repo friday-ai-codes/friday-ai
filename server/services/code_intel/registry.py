@@ -1,16 +1,32 @@
-"""代码智能 Provider 单例 registry (per Phase / ).
-设计要点（per ）：
+"""代码智能 Provider 单例 registry (per Phase / + Phase / ).
+设计要点：
 - 由 ``CodeIntelConfig.ready`` 一次性 ``register_provider("default", instance)``
  后立刻 ``freeze``；之后任何 ``register_provider`` 调用都会 raise RuntimeError，
- 防止 web 请求生命周期内被恶意/误用代码重新注册（T-）。
+ 防止 web 请求生命周期内被恶意/误用代码重新注册（T-，Phase）。
 - ``get_provider`` 是 module-level 单例入口；上游统一通过本函数取实例，
  禁止跨包直接 ``import LocalProvider``，确保 settings 切换 RemoteProvider 时
  一处替换全局生效。
+- ``PROVIDER_REGISTRY`` 是 ``types.MappingProxyType`` 包装的**只读视图**
+ （per Phase / / T-）：试图
+ ``PROVIDER_REGISTRY["x"] = ...`` / ``del PROVIDER_REGISTRY["x"]``
+ 抛 ``TypeError``，与 ``register_provider`` freeze 后 ``RuntimeError`` 形成
+ 双层防御；视图与底层 ``_REGISTRY`` 同生命周期，``register_provider`` /
+ ``_reset_for_tests`` 写入对视图立即可见。
 """
 from __future__ import annotations
+from types import MappingProxyType
+from typing import Mapping
 from services.code_intel.protocols import BaseCodeProvider
 _REGISTRY: dict[str, BaseCodeProvider] = {}
 _FROZEN: bool = False
+PROVIDER_REGISTRY: Mapping[str, BaseCodeProvider] = MappingProxyType(_REGISTRY)
+"""Provider 注册表只读视图（per Phase / ）。
+外部模块通过本视图读 provider 实例（``PROVIDER_REGISTRY["default"]``）。
+mappingproxy 不支持 ``__setitem__`` / ``__delitem__`` / ``.update`` 等
+任何写操作——runtime 注入恶意 Provider 的所有路径都会抛 ``TypeError``
+（T- mitigation）。底层 ``_REGISTRY`` dict 通过 ``register_provider``
++ ``freeze`` 双重生命周期守卫（T- / ）独占写入。
+"""
 def register_provider(key: str, provider: BaseCodeProvider) -> None:
  """注册 Provider 单例。仅 AppConfig.ready 期可调，之后 frozen。"""
  global _FROZEN
@@ -51,8 +67,9 @@ def _reset_for_tests -> None:
  _REGISTRY.clear
  _FROZEN = False
 __all__ = [
- "register_provider",
+ "PROVIDER_REGISTRY",
  "freeze",
- "is_frozen",
  "get_provider",
+ "is_frozen",
+ "register_provider",
 ]

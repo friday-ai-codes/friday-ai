@@ -20,6 +20,7 @@ from services.code_intel import PROVIDER_REGISTRY
 from services.code_intel.null_provider import NullProvider
 from services.code_intel.protocols import BaseCodeProvider
 from services.code_intel.registry import (
+ _REGISTRY,
  _reset_for_tests,
  freeze,
  get_provider,
@@ -27,11 +28,25 @@ from services.code_intel.registry import (
  register_provider,
 )
 @pytest.fixture(autouse=True)
-def _registry_isolation -> None:
- """每条测试前后 reset registry，防 module-level _FROZEN 污染其他套件。"""
+def _registry_isolation:
+ """snapshot + restore module-level _REGISTRY，防 reset 抹掉 AppConfig.ready
+ 注册的 LocalProvider 致后续依赖 get_provider 的套件全部失败（Rule 1 bug
+ 回归保护）。
+ teardown 步骤：
+ 1. ``_reset_for_tests`` 清空 _REGISTRY 与 _FROZEN
+ 2. ``_REGISTRY.update(snapshot)`` 还原 ready 注册的 default provider
+ 3. ``freeze`` 还原 module-level frozen 状态（与 AppConfig.ready 末尾一致）
+ """
+ snapshot: dict[str, BaseCodeProvider] = dict(_REGISTRY)
+ snapshot_frozen: bool = is_frozen
  _reset_for_tests
+ try:
  yield
+ finally:
  _reset_for_tests
+ _REGISTRY.update(snapshot)
+ if snapshot_frozen:
+ freeze
 def _setup_default_provider -> NullProvider:
  """注册 default + freeze，返回注册的实例供断言对照。"""
  provider = NullProvider
