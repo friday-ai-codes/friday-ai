@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
-from django.db.models import CheckConstraint, Q, UniqueConstraint
+from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 __all__ = ["ChunkRegistry", "ChunkEdge", "EdgeType"]
 class EdgeType(models.TextChoices):
  """ChunkEdge 6 类关系边枚举（per 字面 value 大写下划线）。"""
@@ -45,6 +45,20 @@ class ChunkRegistry(models.Model):
  class Meta:
  verbose_name = "Chunk 注册表"
  verbose_name_plural = "Chunk 注册表"
+ #: line_end >= line_start DB 层兜底——与 ChunkEdge.weight 双保险
+ # 模式（model validator + CheckConstraint）对齐；indexer 后续回填若 bug
+ # 写入 line_end < line_start 静默落库，graph_context 渲染时会显示错乱
+ # 行号区间。允许任一为 NULL（per 历史数据未回填）。
+ constraints = [
+ CheckConstraint(
+ condition=(
+ Q(line_start__isnull=True)
+ | Q(line_end__isnull=True)
+ | Q(line_end__gte=F("line_start"))
+ ),
+ name="chunkreg_line_range_valid",
+ ),
+ ]
  indexes = [
  models.Index(
  fields=["repository", "file_path"],
