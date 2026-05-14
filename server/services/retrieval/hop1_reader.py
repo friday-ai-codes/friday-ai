@@ -1,0 +1,201 @@
+"""一跳邻居 payload 直读器（per Phase Plan / / ）。
+兑现 ROADMAP 第一条 —— "payload `related_chunks` 一跳扩散直读召回 chunk
+自带快照（不走 Qdrant 二次查询，不走 ORM）"：
+- ``extract_hop1_neighbors_raw``：纯函数，从 ``rag_items[*].payload['related_chunks']``
+ 解析 ``(target_chunk_id, edge_type, weight)`` 三元组，按 weight desc 二次裁剪
+ 到 ``TOP_NEIGHBORS_PER_HOP1=10``。malformed payload 走 graceful 降级（log
+ warning + 跳过 source），**不退到 ORM**——D-Discretion 决策："payload 缺失走
+ 0 邻居比退 ORM 更稳"。
+- ``resolve_neighbor_metadata``：async 函数，单次
+ ``ChunkRegistry.objects.in_bulk(chunk_ids, field_name='chunk_id')`` 拉满
+ 邻居 ``file_path`` / ``line_start`` / ``line_end`` metadata，扁平到
+ ``list[NeighborMetadata]``。无 N+1（用 mock 计数器在测试中守护）。
+ ``ChunkRegistry`` 中缺失（payload 写时 chunk 在，读时已删——增量删除一致性
+ Phase reconcile 兜底）→ ``file_path='<unknown>'`` + ``line_*=None`` +
+ log debug。``line_start`` / ``line_end`` 为 NULL（per 历史数据未回填）→
+ graceful pass-through 到 ``NeighborMetadata``。
+**不读** codegraph 启用开关（Pitfall 5）：本模块只做 payload 解析与 ORM
+metadata 拉取，启停决策由 Plan 的 ``HybridSearchService`` 通过 Provider
+注入处理；CI 守护 ``rg "settings\\.ENABLE_CODEGRAP[H]" services/retrieval/``
+必须 0 命中。
+"""
+from __future__ import annotations
+from collections.abc import Callable
+from typing import Any
+import structlog
+from asgiref.sync import sync_to_async
+from code_relations.constants import TOP_NEIGHBORS_PER_HOP1
+from services.retrieval.types import NeighborMetadata
+__all__ = [
+ "extract_hop1_neighbors_raw",
+ "resolve_neighbor_metadata",
+]
+logger = structlog.get_logger(__name__)
+_UNKNOWN_FILE_PATH: str = "<unknown>"
+"""ChunkRegistry 缺失时的 fallback file_path（per D-Deviation 1）。
+Plan 编排器在 graph_context markdown 渲染时按 ``file_path == "<unknown>"``
+跳过该邻居，避免渲染出无效行。
+"""
+def _is_valid_neighbor_tuple(item: Any) -> bool:
+ """校验单个 payload neighbor 是否为 ``[str, str, float|int]`` 三元组。
+ payload_sync 写入格式固定 ``[chunk_id_str, edge_type_str, weight_float]``；
+ 任一字段类型错误或长度不为 3 → False。weight 接受 ``int``（JSON 数字常被
+ 解码为 int），后续显式 ``float`` 转换。
+ """
+ if not isinstance(item, (list, tuple)):
+ return False
+ if len(item) != 3:
+ return False
+ cid, edge_type, weight = item
+ if not isinstance(cid, str) or not isinstance(edge_type, str):
+ return False
+ if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+ return False
+ return True
+def extract_hop1_neighbors_raw(
+ rag_items: list[dict[str, Any]],
+) -> dict[str, list[tuple[str, str, float]]]:
+ """从 rag_items 解析 payload `related_chunks` 一跳邻居快照（纯函数，无 ORM）。
+ Args:
+ rag_items: ``rag_search.search_rag`` 返回的 items 列表，每个 dict 含
+ ``id``（source chunk_id）+ ``payload['related_chunks']``。
+ Returns:
+ ``dict[source_chunk_id, list[(target_chunk_id, edge_type, weight)]]``：
+ - 每个 source 最多 ``TOP_NEIGHBORS_PER_HOP1=10`` 个邻居
+ - 列表内按 weight desc 排序
+ - 同一 source 内重复 target_chunk_id 防御性 setdefault 保留先到
+ - payload 缺失 / malformed → 该 source 不入 dict（log warning）
+ - empty list → 该 source 不入 dict（静默，无 warning）
+ **不会** 触发 ORM 查询；纯字典操作。
+ """
+ out: dict[str, list[tuple[str, str, float]]] = {}
+ for item in rag_items:
+ source_chunk_id = item.get("id")
+ if not isinstance(source_chunk_id, str):
+ logger.warning(
+ "hop1_payload_malformed",
+ chunk_id=source_chunk_id,
+ reason="source_id_not_str",
+ )
+ continue
+ payload = item.get("payload") or {}
+ if "related_chunks" not in payload:
+ logger.warning(
+ "hop1_payload_malformed",
+ chunk_id=source_chunk_id,
+ reason="related_chunks_key_missing",
+ )
+ continue
+ raw = payload["related_chunks"]
+ if raw is None:
+ logger.warning(
+ "hop1_payload_malformed",
+ chunk_id=source_chunk_id,
+ reason="related_chunks_is_none",
+ )
+ continue
+ if not isinstance(raw, list):
+ logger.warning(
+ "hop1_payload_malformed",
+ chunk_id=source_chunk_id,
+ reason="related_chunks_not_list",
+ actual_type=type(raw).__name__,
+ )
+ continue
+ if len(raw) == 0:
+ continue
+ if not all(_is_valid_neighbor_tuple(n) for n in raw):
+ logger.warning(
+ "hop1_payload_malformed",
+ chunk_id=source_chunk_id,
+ reason="neighbor_element_shape_invalid",
+ )
+ continue
+ # source 内 target chunk_id 去重：dict.setdefault 保留先到（防御性，
+ # payload_sync 写入时已 dedup，本函数仅作为 last-mile guard）
+ seen: dict[str, tuple[str, str, float]] = {}
+ for cid, edge_type, weight in raw:
+ seen.setdefault(cid, (cid, edge_type, float(weight)))
+ if source_chunk_id in out:
+ logger.debug(
+ "hop1_duplicate_source_overwrite",
+ chunk_id=source_chunk_id,
+ )
+ sorted_neighbors = sorted(seen.values, key=lambda t: -t[2])
+ out[source_chunk_id] = sorted_neighbors[:TOP_NEIGHBORS_PER_HOP1]
+ return out
+async def resolve_neighbor_metadata(
+ neighbor_tuples: dict[str, list[tuple[str, str, float]]],
+ *,
+ hop: int,
+ reason_fn: Callable[[str, str], str],
+) -> list[NeighborMetadata]:
+ """单次 ``ChunkRegistry.in_bulk`` 拉满邻居 metadata，扁平到 NeighborMetadata 列表。
+ Args:
+ neighbor_tuples: ``extract_hop1_neighbors_raw`` 输出，
+ ``dict[source_chunk_id, list[(target_chunk_id, edge_type, weight)]]``。
+ hop: 跳数标记（一跳=1，Plan 二跳调用同函数复用传 2）。
+ reason_fn: 注入的 reason 生成函数 ``(edge_type, source_chunk_id) -> str``。
+ Plan 阶段调用方传 stub ``lambda et, sid: f"{et} from {sid}"``，
+ Plan ``_explain_neighbor`` 落地后替换为真正解释器。
+ Returns:
+ ``list[NeighborMetadata]``：
+ - 跨 source 同 (target_chunk_id, edge_type) 合并保 ``max(weight)``
+ - ``ChunkRegistry`` 缺失 → ``file_path='<unknown>'`` + ``line_*=None``
+ - ``ChunkRegistry.line_start/line_end`` NULL → ``NeighborMetadata.line_*=None``
+ **零 N+1**：仅一次 ``ChunkRegistry.objects.in_bulk(field_name='chunk_id')``。
+ """
+ from code_relations.models import ChunkRegistry
+ target_chunk_ids: set[str] = set
+ for tuples in neighbor_tuples.values:
+ for tgt, _et, _w in tuples:
+ target_chunk_ids.add(tgt)
+ if not target_chunk_ids:
+ return
+ registry_map: dict[Any, ChunkRegistry] = await sync_to_async(
+ ChunkRegistry.objects.in_bulk
+ )(list(target_chunk_ids), field_name="chunk_id")
+ # in_bulk 用 UUIDField PK 时 key 类型为 ``uuid.UUID``；本函数对外契约用 str，
+ # 统一转 str key 便于与 neighbor_tuples 中的 str chunk_id 对齐
+ by_str_id: dict[str, ChunkRegistry] = {
+ str(k): v for k, v in registry_map.items
+ }
+ # 合并 key=(target_chunk_id, edge_type)，保 max(weight) + 记录 source 用于 reason_fn
+ merged: dict[tuple[str, str], tuple[float, str]] = {}
+ for source_chunk_id, tuples in neighbor_tuples.items:
+ for tgt, edge_type, weight in tuples:
+ key = (tgt, edge_type)
+ existing = merged.get(key)
+ if existing is None or weight > existing[0]:
+ merged[key] = (weight, source_chunk_id)
+ out: list[NeighborMetadata] =
+ for (tgt, edge_type), (weight, source_chunk_id) in merged.items:
+ registry = by_str_id.get(tgt)
+ if registry is None:
+ # info（非 debug）：ChunkRegistry 缺失意味着 payload 与 ORM 间存在
+ # 数据不一致（Phase reconcile 兜底场景），prod 默认 INFO 级别下
+ # 必须可见以便 ops 关注；debug 级别在 prod 不输出会丢失信号
+ logger.info(
+ "hop1_chunk_registry_miss",
+ chunk_id=tgt,
+ )
+ file_path = _UNKNOWN_FILE_PATH
+ line_start: int | None = None
+ line_end: int | None = None
+ else:
+ file_path = registry.file_path
+ line_start = registry.line_start
+ line_end = registry.line_end
+ out.append(
+ NeighborMetadata(
+ chunk_id=tgt,
+ file_path=file_path,
+ line_start=line_start,
+ line_end=line_end,
+ edge_type=edge_type,
+ weight=weight,
+ reason=reason_fn(edge_type, source_chunk_id),
+ hop=hop,
+ )
+ )
+ return out
