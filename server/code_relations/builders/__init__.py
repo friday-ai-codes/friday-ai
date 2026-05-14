@@ -1,10 +1,36 @@
 """Phase EdgeBuilder 包：6 类 ChunkEdge 构建器（per ）。
-BUILDERS 注册表是 Plan 末尾由 orchestrator 统一填入的实例列表，
-本 plan 仅提供空骨架与 BaseEdgeBuilder re-export，避免 Plan..06
-并行落地各自 builder 时同时改 __init__.py 引发 wave 内文件冲突。
+`BUILDERS` 注册表由 Plan 末尾填入（Plan..06 各自落地 builder 类，Plan
+在此统一注册），含全部 6 个 builder 类，orchestrator 用此 list 并发跑
+（per：`asyncio.gather(*[cls.build(...) for cls in BUILDERS], ...)`）。
+新增 builder 时只需在此 list 追加即可。
 """
 from __future__ import annotations
 from .base import BaseEdgeBuilder
-__all__ = ["BUILDERS", "BaseEdgeBuilder"]
-BUILDERS: list[type[BaseEdgeBuilder]] =
-"""6 类 EdgeBuilder 类列表（Plan 末尾注册，per orchestrator 用此 list 并发跑）。"""
+from .call_edge import CallEdgeBuilder
+from .co_changed_edge import CoChangedEdgeBuilder
+from .import_edge import ImportEdgeBuilder
+from .same_file_edge import SameFileEdgeBuilder
+from .semantic_edge import SemanticEdgeBuilder
+from .test_of_edge import TestOfEdgeBuilder
+__all__ = [
+ "BUILDERS",
+ "BaseEdgeBuilder",
+ "CallEdgeBuilder",
+ "CoChangedEdgeBuilder",
+ "ImportEdgeBuilder",
+ "SameFileEdgeBuilder",
+ "SemanticEdgeBuilder",
+ "TestOfEdgeBuilder",
+]
+BUILDERS: list[type[BaseEdgeBuilder]] = [
+ CallEdgeBuilder,
+ ImportEdgeBuilder,
+ SameFileEdgeBuilder,
+ TestOfEdgeBuilder,
+ CoChangedEdgeBuilder,
+ SemanticEdgeBuilder,
+]
+"""6 类 EdgeBuilder 注册表（per orchestrator 用此 list 并发跑）。
+顺序遵循 CONTEXT .. 章节顺序（CALL → IMPORT → SAME_FILE → TEST_OF →
+CO_CHANGED → SEMANTIC），与 ROADMAP 锁定的 6 类边语义对齐。
+"""
