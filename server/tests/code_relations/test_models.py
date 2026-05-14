@@ -168,6 +168,27 @@ def test_chunkedge_weight_check_constraint_db_level(repository) -> None:
  repository=repository,
  )
 # ---------------------------------------------------------------------------
+# 用例 7b：edge_type DB 层 CheckConstraint 兜底（绕过 full_clean）
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("bad_type", ["call", "Co_Changed", "COCHANGED", ""])
+def test_chunkedge_edge_type_check_constraint_db_level(
+ repository, bad_type: str
+) -> None:
+ """绕过 full_clean 直接 .create(edge_type="call") → DB CheckConstraint 拒绝（IntegrityError）。
+ 保证 Phase EdgeBuilder 即便走 bulk_create / .create 不调 full_clean，
+ typo edge_type 仍被 DB 层挡下（满足 ROADMAP 成功条件 #4 双保险）。
+ """
+ with pytest.raises(IntegrityError):
+ with transaction.atomic:
+ ChunkEdge.objects.create(
+ source_chunk_id=uuid.uuid4,
+ target_chunk_id=uuid.uuid4,
+ edge_type=bad_type,
+ weight=0.5,
+ metadata={},
+ repository=repository,
+ )
+# ---------------------------------------------------------------------------
 # 用例 8：unique 三元组冲突 → IntegrityError
 # ---------------------------------------------------------------------------
 def test_chunkedge_unique_triple_collision(repository) -> None:

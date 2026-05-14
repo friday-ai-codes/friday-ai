@@ -85,6 +85,13 @@ class ChunkEdge(models.Model):
  condition=Q(weight__gte=0.0) & Q(weight__lte=1.0),
  name="chunkedge_weight_range",
  ),
+ #：DB 层兜底 edge_type 枚举，避免 Phase EdgeBuilder 绕过
+ # full_clean 时（如 bulk_create / 直接 Manager.create）typo 静默落库；
+ # 与 chunkedge_weight_range 同模式（双保险），满足 ROADMAP 成功条件 #4。
+ CheckConstraint(
+ condition=Q(edge_type__in=EdgeType.values),
+ name="chunkedge_edge_type_valid",
+ ),
  ]
  indexes = [
  models.Index(fields=["target_chunk_id"], name="idx_chunkedge_target"),
