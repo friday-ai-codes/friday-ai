@@ -84,3 +84,13 @@ async def test_regex_id_metadata(repository) -> None:
  edges = await TestOfEdgeBuilder.build(repository, )
  rid_set = {e.metadata["regex_id"] for e in edges}
  assert rid_set == {"py_test_prefix", "py_test_suffix", "jsts_test_infix", "jsts_tests_dir"}
+@pytest.mark.django_db(transaction=True)
+async def test_endswith_no_false_match(repository) -> None:
+ """ 回归：candidate ``auth.py`` 不得匹配 ``xauth.py`` / ``oauth.py``。"""
+ await _make_chunk(repository, "tests/test_auth.py")
+ await _make_chunk(repository, "pkg/auth.py")
+ await _make_chunk(repository, "lib/xauth.py")
+ await _make_chunk(repository, "lib/oauth.py")
+ edges = await TestOfEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].metadata["src_file"] == "pkg/auth.py"

@@ -4,6 +4,7 @@ import uuid
 from typing import TYPE_CHECKING
 import structlog
 from asgiref.sync import sync_to_async
+from django.db.models import Q
 from code_relations.builders.base import BaseEdgeBuilder
 from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 if TYPE_CHECKING:
@@ -40,19 +41,51 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  cid = obj.chunk_id if obj is not None else None
  first_chunk_cache[file_path] = cid
  return cid
- async def _resolve_target_file(target_module: str, is_relative: bool) -> str | None:
- base = (
- target_module.replace(".", "/")
- if not is_relative
- else target_module.lstrip("./")
- )
+ async def _resolve_target_file(
+ target_module: str, is_relative: bool, source_file: str
+ ) -> str | None:
+ """target_module → 候选 file_path（ + 修复）。：原 ``lstrip("./")`` 是字符集剥离会把 ``..`` 一并剥掉，破坏
+ PEP 328 父级相对导入语义。改为按前导点数量决定向上回溯层级（n
+ dots → 1 dots = 同包，2 dots = 父包...），从 ``source_file`` 目录
+ 出发计算 base path。：``file_path__endswith=candidate`` 无锚定时 ``auth.py`` 会
+ 匹配 ``xauth.py`` / ``oauth.py``。改为 ``Q(file_path=candidate) |
+ Q(file_path__endswith="/" + candidate)`` 加 ``/`` 锚定避免误匹配。
+ """
+ if is_relative and target_module.startswith("."):
+ n_leading_dots = 0
+ for ch in target_module:
+ if ch == ".":
+ n_leading_dots += 1
+ else:
+ break
+ suffix = target_module[n_leading_dots:]
+ suffix_path = suffix.replace(".", "/")
+ src_dir = source_file.rsplit("/", 1)[0] if "/" in source_file else ""
+ up_levels = max(0, n_leading_dots - 1)
+ parts = src_dir.split("/") if src_dir else
+ if up_levels > 0:
+ if up_levels >= len(parts):
+ parts =
+ else:
+ parts = parts[:-up_levels]
+ base_dir = "/".join(p for p in parts if p)
+ if base_dir and suffix_path:
+ base = f"{base_dir}/{suffix_path}"
+ elif base_dir:
+ base = base_dir
+ else:
+ base = suffix_path
+ else:
+ base = target_module.replace(".", "/")
  for ext in _CANDIDATE_EXTENSIONS:
  candidate = f"{base}{ext}"
+ anchored = f"/{candidate}"
  obj = await sync_to_async(
- ChunkRegistry.objects.filter(
- repository_id=repository.id,
- file_path__endswith=candidate,
- ).first
+ ChunkRegistry.objects.filter(repository_id=repository.id)
+ .filter(
+ Q(file_path=candidate) | Q(file_path__endswith=anchored)
+ )
+ .first
  )
  if obj is not None:
  return obj.file_path
@@ -67,7 +100,7 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  skipped_source += 1
  continue
  target_file = await _resolve_target_file(
- iedge.target_module, iedge.is_relative
+ iedge.target_module, iedge.is_relative, iedge.source_file
  )
  if target_file is None:
  skipped_target += 1

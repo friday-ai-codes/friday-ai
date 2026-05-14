@@ -75,3 +75,52 @@ async def test_self_loop_allowed(repository) -> None:
  edges = await ImportEdgeBuilder.build(repository, )
  assert len(edges) == 1
  assert edges[0].source_chunk_id == edges[0].target_chunk_id == only.chunk_id
+@pytest.mark.django_db(transaction=True)
+async def test_resolve_dot_dot_parent_import(repository) -> None:
+ """ 回归：``from ..utils import X`` (target_module=``..utils``) 应解析
+ 到 source_file 父目录下的 utils.py，而非根 utils.py。"""
+ src_a = await _make_chunk(repository, "pkg/sub/a.py")
+ target_parent = await _make_chunk(repository, "pkg/utils.py")
+ await _make_chunk(repository, "utils.py") # 根 utils.py 不应被选中
+ await _make_import(
+ repository,
+ "pkg/sub/a.py",
+ "..utils",
+ is_relative=True,
+ imported_names=["X"],
+ )
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src_a.chunk_id
+ assert edges[0].target_chunk_id == target_parent.chunk_id
+ assert edges[0].metadata["target_file"] == "pkg/utils.py"
+@pytest.mark.django_db(transaction=True)
+async def test_resolve_single_dot_same_package(repository) -> None:
+ """ 回归：``from .helper import Y`` (target_module=``.helper``) 应解析
+ 到 source_file 同目录下的 helper.py。"""
+ src_a = await _make_chunk(repository, "pkg/sub/a.py")
+ target_same = await _make_chunk(repository, "pkg/sub/helper.py")
+ await _make_import(
+ repository,
+ "pkg/sub/a.py",
+ ".helper",
+ is_relative=True,
+ imported_names=["Y"],
+ )
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src_a.chunk_id
+ assert edges[0].target_chunk_id == target_same.chunk_id
+@pytest.mark.django_db(transaction=True)
+async def test_endswith_no_false_match(repository) -> None:
+ """ 回归：candidate ``auth.py`` 不得匹配 ``xauth.py`` / ``oauth.py``。"""
+ real_target = await _make_chunk(repository, "pkg/auth.py")
+ await _make_chunk(repository, "lib/xauth.py") # 不应被匹配
+ await _make_chunk(repository, "lib/oauth.py") # 不应被匹配
+ src = await _make_chunk(repository, "pkg/main.py")
+ await _make_import(repository, "pkg/main.py", "pkg.auth")
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src.chunk_id
+ assert edges[0].target_chunk_id == real_target.chunk_id
+ assert edges[0].metadata["target_file"] == "pkg/auth.py"

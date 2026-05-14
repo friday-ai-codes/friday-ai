@@ -5,6 +5,7 @@ import uuid
 from typing import TYPE_CHECKING
 import structlog
 from asgiref.sync import sync_to_async
+from django.db.models import Q
 from code_relations.builders.base import BaseEdgeBuilder
 from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 if TYPE_CHECKING:
@@ -95,6 +96,25 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  stem = candidate_src.rsplit(".", 1)[0]
  module_form = stem.replace("/", ".")
  return module_form in modules
+ @sync_to_async
+ def _find_candidate(
+ candidate: str, exclude_file: str
+ ) -> "ChunkRegistry | None":
+ """ +：endswith 加 ``/`` 锚定避免 ``auth.py`` 误匹配
+ ``xauth.py``；helper 提到 build 顶层只装饰一次（替代每次循环
+ ``@sync_to_async`` 重新构造 ThreadSensitive 调度器引用）。
+ 排除 test_file 自身：避免 endswith 把 tests/test_x.py 自匹配为
+ candidate ``x.py`` 的伪 self-loop TestOf 边。
+ """
+ anchored = f"/{candidate}"
+ return (
+ ChunkRegistry.objects.filter(repository_id=repository.id)
+ .filter(
+ Q(file_path=candidate) | Q(file_path__endswith=anchored)
+ )
+ .exclude(file_path=exclude_file)
+ .first
+ )
  for test_file in test_files:
  if not test_file.endswith(_SUPPORTED_EXTENSIONS):
  unsupported_skipped += 1
@@ -112,19 +132,7 @@ class TestOfEdgeBuilder(BaseEdgeBuilder):
  continue
  matched_src: tuple[str, str] | None = None
  for candidate, regex_id in candidates:
- @sync_to_async
- def _find(_cand: str = candidate) -> "ChunkRegistry | None":
- # 排除 test_file 自身（避免 endswith 把 tests/test_x.py
- # 自匹配为 candidate "x.py" 的伪 self-loop TestOf 边）
- return (
- ChunkRegistry.objects.filter(
- repository_id=repository.id,
- file_path__endswith=_cand,
- )
- .exclude(file_path=test_file)
- .first
- )
- obj = await _find
+ obj = await _find_candidate(candidate, test_file)
  if obj is not None:
  matched_src = (obj.file_path, regex_id)
  break
