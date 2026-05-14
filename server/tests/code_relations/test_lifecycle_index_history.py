@@ -30,15 +30,15 @@ from repositories.models import (
  TriggerType,
 )
 pytestmark = pytest.mark.django_db(transaction=True)
-def _make_history(repository: Any) -> IndexHistory:
- return IndexHistory.objects.create(
+async def _make_history(repository: Any) -> IndexHistory:
+ return await IndexHistory.objects.acreate(
  repository=repository,
  trigger_type=TriggerType.MANUAL,
  status=IndexHistoryStatus.RUNNING,
  graph_build_status=GraphBuildStatus.PENDING,
  )
-def _make_chunk(repository: Any, *, index: int = 0) -> ChunkRegistry:
- return ChunkRegistry.objects.create(
+async def _make_chunk(repository: Any, *, index: int = 0) -> ChunkRegistry:
+ return await ChunkRegistry.objects.acreate(
  chunk_id=uuid.uuid4,
  content_hash="0" * 64,
  repository=repository,
@@ -56,7 +56,7 @@ async def _drain_background_tasks -> None:
  await asyncio.sleep(0)
 async def test_marks_running_before_dispatch(repository) -> None:
  """wrapper 在调 enqueue_edge_build 之前已把 IndexHistory 标 RUNNING。"""
- history = _make_history(repository)
+ history = await _make_history(repository)
  dirty = [uuid.uuid4 for _ in range(2)]
  seen_status: dict[str, str] = {}
  async def _spy(*args: Any, **kwargs: Any) -> None:
@@ -67,12 +67,10 @@ async def test_marks_running_before_dispatch(repository) -> None:
  assert seen_status["status"] == GraphBuildStatus.RUNNING
 async def test_completion_marks_completed_with_edge_count(repository) -> None:
  """builder 跑完 → IndexHistory graph_build_status=completed + edge_count 同步 + payload_synced_at 非 None。"""
- history = _make_history(repository)
- # 预置一条 ChunkEdge：触发 enqueue 后 builder 列表清空，但 edge_count 取累计快照
- # = ChunkEdge.objects.filter(repository=repo).count，应当读到这 1 条。
- src = _make_chunk(repository, index=0)
- tgt = _make_chunk(repository, index=1)
- ChunkEdge.objects.create(
+ history = await _make_history(repository)
+ src = await _make_chunk(repository, index=0)
+ tgt = await _make_chunk(repository, index=1)
+ await ChunkEdge.objects.acreate(
  source_chunk_id=src.chunk_id,
  target_chunk_id=tgt.chunk_id,
  edge_type=EdgeType.CALL,
@@ -100,7 +98,7 @@ async def test_completion_marks_completed_with_edge_count(repository) -> None:
  assert refreshed.payload_synced_at is not None
 async def test_completion_marks_failed_on_exception(repository) -> None:
  """builder 协调器抛错 → done_callback 把 IndexHistory 标 FAILED，payload_synced_at 保 None。"""
- history = _make_history(repository)
+ history = await _make_history(repository)
  dirty = [uuid.uuid4]
  async def _boom(*args: Any, **kwargs: Any) -> None:
  raise RuntimeError("simulated builder crash")
@@ -118,7 +116,7 @@ async def test_completion_marks_failed_on_exception(repository) -> None:
  assert refreshed.payload_synced_at is None
 async def test_empty_dirty_marks_skipped(repository) -> None:
  """dirty_ids= → mark SKIPPED + 不调 enqueue_edge_build。"""
- history = _make_history(repository)
+ history = await _make_history(repository)
  with patch.object(tasks_module, "enqueue_edge_build") as mock_enqueue:
  await enqueue_edge_build_for_history(str(repository.id),, history.id)
  mock_enqueue.assert_not_called
