@@ -1,6 +1,7 @@
 """Index management views for repositories."""
 import asyncio
 import json
+from dataclasses import asdict
 from typing import Any
 import httpx
 import structlog
@@ -27,7 +28,6 @@ class ServerSentEventRenderer(BaseRenderer):
  def render(self, data, accepted_media_type=None, renderer_context=None):
  # 实际响应由 StreamingHttpResponse 直出，render 不会被调用
  return data
-from codegraph.models import Endpoint, ImportEdge, Symbol
 from repositories.models import (
  FileIndex,
  IndexHistory,
@@ -37,6 +37,7 @@ from repositories.models import (
  RepositoryBranchIndex,
  TriggerType,
 )
+from repositories.services.index_cleanup import cleanup_index
 from services.background_runner import cancel_background_task, run_in_background
 from services.embedding import EmbeddingService
 from services.indexer import clone_and_index_repository
@@ -420,14 +421,15 @@ class IndexDeleteView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
- # KEEP: Qdrant SDK 同步限制
- await sync_to_async(QdrantService.delete_collection)(str(repository.id))
- # 删除索引不只意味着删向量库：FileIndex 是全量索引的断点续传锚点。
- # 如果保留这些 hash，下一次"新建索引"会把未变更文件全部 skip。
- await FileIndex.objects.filter(repository_id=repository_id).adelete
- await ImportEdge.objects.filter(repository_id=repository_id).adelete
- await Endpoint.objects.filter(repository_id=repository_id).adelete
- await Symbol.objects.filter(repository_id=repository_id).adelete
+ # 级联清理：Qdrant collection + FileIndex + Symbol/ImportEdge/Endpoint
+ # + ChunkEdge/ChunkRegistry。模块内每步独立 try/except + 字段降级
+ # （per Phase CONTEXT 异常隔离），不向上抛 → 删除请求始终 204。
+ report = await cleanup_index(str(repository.id))
+ logger.info(
+ "index_delete_cleanup_complete",
+ repository_id=str(repository.id),
+ report=asdict(report),
+ )
  # Reset repository status
  repository.index_status = IndexStatus.NOT_INDEXED
  repository.last_indexed_at = None
