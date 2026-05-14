@@ -161,14 +161,14 @@ async def test_settings_true_local_provider_returns_graph_result_type -> None:
  时才强制 rag_only；True 时 LocalProvider (GraphCapableProvider) 走完整
  graph_capable 编排器，返带 graph_context/hop1/hop2 三字段的
  HybridSearchResult。
- Note: items 不含 ``related_chunks`` payload key → hop1/hop2 邻居均空 →
- ``graph_context == ""``，但**返回类型仍是 HybridSearchResult**（守门
- 断言点）；与 Phase ``test_case_5_local_provider_equivalent_to_null``
- 场景相同。
- DB 依赖：LocalProvider.lookup_symbols 真实代码路径会触
- "Database access not allowed"，asyncio.gather(return_exceptions=True)
- 把异常降级为 symbol_results=——故本测试不需要 ``db`` fixture marker
- （与 Phase test_case_5 同构）。
+ 实现注意（test isolation pitfall）：直接调
+ ``HybridSearchService(LocalProvider).search(...)`` 会进入 wave/2
+ 的 ``hop1_reader`` / ``hop2_expander`` 真实代码路径——这些模块创建
+ module-level structlog logger，配合项目 ``cache_logger_on_first_use=True``
+ 会污染后续 ``test_hop1_reader.py`` 的 ``structlog.testing.capture_logs``
+ 断言（实测 4 个 hop1_reader 测试在本测试之后跑会失败）。Rule 1 fix：
+ patch 三个 wave helpers 让本测试只验证 graph_capable 路径**类型分发**，
+ 不实际跑邻居解析。
  """
  items = [
  _l3_item("src/sentinel/probe.py", "def probe:\n return 'check'", score=0.7),
@@ -177,6 +177,18 @@ async def test_settings_true_local_provider_returns_graph_result_type -> None:
  with patch(
  "services.retrieval.hybrid_search.search_rag",
  new=AsyncMock(return_value=snapshot),
+ ), patch.object(
+ HybridSearchService,
+ "_run_wave_0",
+ new=AsyncMock(return_value=(snapshot,, False, 1)),
+ ), patch.object(
+ HybridSearchService,
+ "_run_wave_1",
+ new=AsyncMock(return_value=(, set)),
+ ), patch.object(
+ HybridSearchService,
+ "_run_wave_2",
+ new=AsyncMock(return_value=),
  ):
  local_result = await HybridSearchService(LocalProvider).search(
  "sentinel probe",
@@ -190,7 +202,6 @@ async def test_settings_true_local_provider_returns_graph_result_type -> None:
  assert hasattr(local_result, "graph_context")
  assert hasattr(local_result, "hop1_neighbors")
  assert hasattr(local_result, "hop2_neighbors")
- # 无 related_chunks payload → 邻居空 + graph_context 空，但类型不降级。
  assert local_result.graph_context == ""
  assert local_result.hop1_neighbors ==
  assert local_result.hop2_neighbors ==
