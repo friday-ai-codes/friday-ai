@@ -28,8 +28,15 @@ from services.retrieval.hop2_expander import (
  expand_hop2,
  fetch_hop2_edges,
 )
-def _default_reason(edge_type: str, source_chunk_id: str) -> str:
- return f"{edge_type} from {source_chunk_id}"
+def _default_reason(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict,
+) -> str:
+ """ 后 ReasonFn 新签名 ``(edge_type, source_file, target_file, metadata)``。"""
+ descriptor = target_file if target_file else "<missing>"
+ return f"{edge_type} from {descriptor}"
 @contextmanager
 def _capture_async_queries -> Iterator[list[dict]]:
  """async-safe 等价于 ``CaptureQueriesContext``。
@@ -134,13 +141,14 @@ async def test_fetch_hop2_edges_returns_sorted_within_single_query(
  f"expected exactly 1 ChunkEdge.objects.filter call (no N+1), got {spy.call_count}"
  )
  assert len(result) == 50
- weights = [w for _src, _tgt, _et, w in result]
+ weights = [w for _src, _tgt, _et, w, _meta in result]
  assert weights == sorted(weights, reverse=True), "must be weight desc"
- for src_str, tgt_str, et, w in result:
+ for src_str, tgt_str, et, w, meta in result:
  assert isinstance(src_str, str)
  assert isinstance(tgt_str, str)
  assert isinstance(et, str)
  assert isinstance(w, float)
+ assert isinstance(meta, dict) #: 5-tuple 含 metadata
 # ---------------------------------------------------------------------------
 # Task 1 case 7：100 邻居 → 截断到 50 + log capped=True
 # ---------------------------------------------------------------------------

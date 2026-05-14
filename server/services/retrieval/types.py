@@ -5,6 +5,7 @@
 import（types 仅为纯 dataclass）。
 """
 from __future__ import annotations
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 @dataclass(slots=True)
@@ -68,7 +69,19 @@ class HybridSearchResult:
  """显式 downcast 到 RagSearchResult，丢弃 graph 字段。
  用途：Plan / 既有 callsite 已 `result: RagSearchResult` 类型注解，
  需要把 HybridSearchResult 实例转为 RagSearchResult 满足类型签名。
+ Deprecated (Phase):
+ grep 验证生产代码无 callsite——该方法疑似 YAGNI。`HybridSearchResult`
+ 字段同名同序兼容 `RagSearchResult`，下游若真需要静默丢弃 graph 字段
+ 应在 callsite 显式构造 `RagSearchResult`，避免隐式信息丢失。
  """
+ warnings.warn(
+ "HybridSearchResult.to_rag_result is deprecated and will be "
+ "removed in Phase cleanup; explicitly construct RagSearchResult "
+ "at the callsite if you need to drop graph_context / hop1/hop2 "
+ "neighbors fields.",
+ DeprecationWarning,
+ stacklevel=2,
+ )
  return RagSearchResult(
  query=self.query,
  repository_ids=self.repository_ids,

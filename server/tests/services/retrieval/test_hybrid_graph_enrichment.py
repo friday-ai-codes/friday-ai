@@ -552,3 +552,39 @@ def test_no_settings_enable_codegraph_in_module -> None:
  "Pitfall 5 violation: hybrid_search.py 不应读 settings.ENABLE_CODEGRAPH; "
  "图谱启停通过 Provider 注入 + enable_graph_enrichment 参数控制"
  )
+# ---------------------------------------------------------------------------
+# case 11：rag_snapshot.status='error' 短路与 _search_rag_only 行为对齐
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db(transaction=True)
+async def test_graph_capable_short_circuits_on_rag_error_status -> None:
+ """search_rag 返回 status='error' LayerSnapshot → graph_capable 路径短路：
+ final_context='' / total_tokens=0 / 不进 hop1/hop2 enrichment。
+ 修复前：graph_capable 路径完全失守，会带着 status='error' snapshot
+ 继续 enrichment 链路，最后产出 final_context='## L3 Related Code\\n\\n'
+ 与 _search_rag_only 字节不一致；同时 logger 不输出 l3_status 字段。
+ """
+ error_snapshot = LayerSnapshot(
+ layer="L3",
+ status="error",
+ result_count=0,
+ items=,
+ error="qdrant_unreachable",
+ )
+ with patch(
+ "services.retrieval.hybrid_search.search_rag",
+ new=AsyncMock(return_value=error_snapshot),
+ ), patch.object(
+ LocalProvider, "lookup_symbols", new=AsyncMock(return_value=),
+ ):
+ result = await HybridSearchService(LocalProvider).search(
+ "rag-error probe",
+ repository_ids=["repo-a"],
+ max_tokens=8000,
+ top_k=30,
+ )
+ assert isinstance(result, HybridSearchResult)
+ assert result.final_context == ""
+ assert result.total_tokens == 0
+ assert result.hop1_neighbors ==
+ assert result.hop2_neighbors ==
+ assert result.layers == [error_snapshot]

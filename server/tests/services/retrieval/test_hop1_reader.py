@@ -138,6 +138,25 @@ def test_extract_skips_source_when_neighbor_is_dict -> None:
  restore # type: ignore[operator]
  assert "src-dict" not in out
  assert any(e.get("event") == "hop1_payload_malformed" for e in events)
+def test_extract_skips_source_when_weight_is_nan_or_inf -> None:
+ """: weight 为 NaN / ±Inf / [0,1] 越界 → _is_valid_neighbor_tuple 拒绝整个 source。
+ NaN 进 sorted 不可排序 + budget 估算异常；Inf 进 markdown 渲染会污染
+ LLM 上下文（``w=inf``）。与 ChunkEdge.weight DB 约束 [0.0, 1.0] 对齐。
+ """
+ events, restore = _capture_structlog_events
+ try:
+ for bad_weight in (float("nan"), float("inf"), float("-inf"), -0.1, 1.5):
+ item = _make_item(
+ f"src-bad-{bad_weight}",
+ [["target-1", "CALL", bad_weight]],
+ )
+ out = extract_hop1_neighbors_raw([item])
+ assert f"src-bad-{bad_weight}" not in out, (
+ f"weight={bad_weight!r} 应被 _is_valid_neighbor_tuple 拒绝"
+ )
+ finally:
+ restore # type: ignore[operator]
+ _ = events # 不强校验 warning 内容，仅校验 dict 不入
 def test_extract_skips_source_when_tuple_short -> None:
  """邻居元素少字段（[chunk_id, edge_type]，缺 weight）→ 跳过 source + warning。"""
  item = _make_item("src-short", [["target-1", "CALL"]])
@@ -187,8 +206,18 @@ def test_extract_dedups_duplicate_target_within_source -> None:
 # ---------------------------------------------------------------------------
 # Task 2：resolve_neighbor_metadata async + ChunkRegistry.in_bulk
 # ---------------------------------------------------------------------------
-def _default_reason(edge_type: str, source_chunk_id: str) -> str:
- return f"{edge_type} from {source_chunk_id}"
+def _default_reason(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict,
+) -> str:
+ """ 后 ReasonFn 新签名 ``(edge_type, source_file, target_file, metadata)``。
+ 用 target_file 当 descriptor，因为本文件 fixtures 仅注册 target chunk_id
+ （source 用 ``"source-1"`` / ``"src-x"`` 等占位字符串非 UUID）。
+ """
+ descriptor = target_file if target_file else "<missing>"
+ return f"{edge_type} from {descriptor}"
 @pytest.mark.django_db(transaction=True)
 async def test_resolve_metadata_full_lookup(repository) -> None:
  """正常路径：所有 chunk_id 在 ChunkRegistry 中找到，metadata 完整。"""
@@ -226,7 +255,7 @@ async def test_resolve_metadata_full_lookup(repository) -> None:
  assert by_chunk[str(cid_a)].edge_type == "CALL"
  assert by_chunk[str(cid_a)].weight == pytest.approx(0.9)
  assert by_chunk[str(cid_a)].hop == 1
- assert by_chunk[str(cid_a)].reason == "CALL from source-1"
+ assert by_chunk[str(cid_a)].reason == "CALL from src/a.py"
  assert by_chunk[str(cid_b)].file_path == "src/b.py"
 @pytest.mark.django_db(transaction=True)
 async def test_resolve_metadata_missing_chunk_uses_unknown_fallback(repository) -> None:
@@ -316,14 +345,19 @@ async def test_resolve_metadata_uses_injected_reason_fn(repository) -> None:
  line_start=1,
  line_end=2,
  )
- def custom_reason(edge_type: str, source_chunk_id: str) -> str:
- return f"custom:{edge_type}:{source_chunk_id}"
+ def custom_reason(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict,
+ ) -> str:
+ return f"custom:{edge_type}:{target_file}"
  neighbor_tuples = {"my-src": [(str(cid), "TEST_OF", 0.4)]}
  out = await resolve_neighbor_metadata(
  neighbor_tuples, hop=2, reason_fn=custom_reason
  )
  assert len(out) == 1
- assert out[0].reason == "custom:TEST_OF:my-src"
+ assert out[0].reason == "custom:TEST_OF:src/r.py"
  assert out[0].hop == 2
 @pytest.mark.django_db(transaction=True)
 async def test_resolve_metadata_calls_in_bulk_exactly_once(repository) -> None:
