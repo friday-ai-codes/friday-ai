@@ -30,10 +30,9 @@ from django.utils.dateparse import parse_datetime
 # 修复（Phase REVIEW）：``_process_repo`` 三态状态机，让 summary
 # 区分 "无 pending chunk 跳过" 与 "dispatch 失败"，运维不再误判全成功。
 RepoStatus = Literal["processed", "skipped_no_work", "failed"]
-from code_relations import tasks as tasks_module
 from code_relations.constants import MAX_NEIGHBORS_PER_CHUNK
 from code_relations.models import ChunkRegistry
-from code_relations.tasks import enqueue_edge_build
+from code_relations.tasks import enqueue_edge_build, snapshot_background_tasks
 from repositories.models import IndexStatus, Repository
 logger = structlog.get_logger(__name__)
 class Command(BaseCommand):
@@ -273,9 +272,9 @@ class Command(BaseCommand):
  ``_process_repo`` 的 ``try/except`` 走 except 分支跳过 ``last_built_at``
  更新（断点续跑：下次 backfill 重试这些 chunk）。
  """
- before = set(tasks_module._BACKGROUND_TASKS)
+ before = snapshot_background_tasks
  await enqueue_edge_build(repository_id, dirty_chunk_ids)
- new_tasks = tasks_module._BACKGROUND_TASKS - before
+ new_tasks = snapshot_background_tasks - before
  if not new_tasks:
  return
  results = await asyncio.gather(*new_tasks, return_exceptions=True)
