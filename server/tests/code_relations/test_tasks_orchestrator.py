@@ -137,3 +137,56 @@ async def test_repository_not_found_logs_and_returns(caplog) -> None:
  ) as mock_batch:
  await _run_all_builders_and_sync_payload(bogus_id, [uuid.uuid4])
  mock_batch.assert_not_called
+@pytest.mark.django_db(transaction=True)
+async def test_top_level_exception_logged_not_silent(repository) -> None:
+ """ 回归：bulk_insert_edges 抛 RuntimeError → 顶层 try/except 捕获 +
+ structlog logger.exception 调用，不向上抛回 indexer。"""
+ src = uuid.uuid4
+ class _GoodBuilder:
+ edge_type_label = "Good"
+ async def build(self, repo, dirty): # type: ignore[no-untyped-def]
+ return [
+ ChunkEdge(
+ source_chunk_id=src,
+ target_chunk_id=uuid.uuid4,
+ edge_type=EdgeType.CALL,
+ weight=0.5,
+ metadata={},
+ repository=repo,
+ )
+ ]
+ fake_builders = [_GoodBuilder] * 6
+ with patch.object(tasks_module, "BUILDERS", fake_builders):
+ with patch.object(
+ tasks_module,
+ "bulk_insert_edges",
+ new_callable=AsyncMock,
+ side_effect=RuntimeError("simulated DB failure"),
+ ):
+ with patch.object(
+ tasks_module.logger, "exception"
+ ) as mock_exception:
+ await _run_all_builders_and_sync_payload(
+ str(repository.id), [src]
+ )
+ assert mock_exception.call_count == 1
+ args, kwargs = mock_exception.call_args
+ assert args[0] == "edge_build_orchestrator_unhandled"
+ assert kwargs.get("error_type") == "RuntimeError"
+@pytest.mark.django_db(transaction=True)
+async def test_create_task_strong_reference_held(repository) -> None:
+ """ 回归：enqueue_edge_build spawn 的 task 被 _BACKGROUND_TASKS 强持有，
+ 完成后由 done_callback 自动 discard。"""
+ started_event = asyncio.Event
+ async def _slow_runner(repo_id: str, dirty: list[uuid.UUID]) -> None:
+ started_event.set
+ await asyncio.sleep(0.05)
+ with patch.object(
+ tasks_module, "_run_all_builders_and_sync_payload", _slow_runner
+ ):
+ before = len(tasks_module._BACKGROUND_TASKS)
+ await enqueue_edge_build(str(repository.id), [uuid.uuid4])
+ await started_event.wait
+ assert len(tasks_module._BACKGROUND_TASKS) == before + 1
+ await asyncio.sleep(0.1)
+ assert len(tasks_module._BACKGROUND_TASKS) == before
