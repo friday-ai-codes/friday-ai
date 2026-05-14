@@ -1,4 +1,5 @@
 """Qdrant vector database client service."""
+import asyncio
 from collections.abc import Callable
 from typing import Any, TypeVar
 import httpx
@@ -961,3 +962,101 @@ class QdrantService:
  except UnexpectedResponse as e:
  logger.error("hybrid_search_failed", error=str(e))
  return
+ @classmethod
+ async def batch_set_payload(
+ cls,
+ repository_id: str,
+ updates: list[tuple[str, dict[str, Any]]],
+ *,
+ batch_size: int = 500,
+ timeout: float = 30.0,
+ ) -> None:
+ """批量为 Qdrant points 设置 payload（per Phase / ）。
+ Pitfall 2 防御核心 API：禁止循环单 set_payload；唯一写入路径是
+ client.batch_update_points + SetPayloadOperation。
+ Args:
+ repository_id: 推导 collection_name（QdrantService.get_collection_name）
+ updates: list of (point_id, payload_dict)。SetPayloadOperation 仅 set
+ 自身 key，既有 payload 其他字段保留（不是 overwrite 语义）
+ batch_size: 单次 batch_update_points 提交的 SetPayloadOperation 数量上限
+ timeout: 单次 batch wall-clock 上限（秒）；asyncio.wait_for 超时 catch
+ + structlog error 不重抛（与 upsert_vectors 同语义，让 indexer 主路
+ 径继续）
+ 异常对称 upsert_vectors：UnexpectedResponse / ResponseHandlingException /
+ httpx.HTTPError / OSError / TimeoutError 全 catch 并 structlog error 不重抛。
+ """
+ if not updates:
+ return
+ collection_name = cls.get_collection_name(repository_id)
+ total = len(updates)
+ batches = [updates[i: i + batch_size] for i in range(0, total, batch_size)]
+ for batch_idx, batch in enumerate(batches):
+ ops = [
+ models.SetPayloadOperation(
+ set_payload=models.SetPayload(
+ payload=payload,
+ points=[point_id],
+ ),
+ )
+ for point_id, payload in batch
+ ]
+ def _do_batch(client: QdrantClient, _ops: list[Any] = ops) -> None:
+ client.batch_update_points(
+ collection_name=collection_name,
+ update_operations=_ops,
+ wait=False,
+ )
+ try:
+ await asyncio.wait_for(
+ asyncio.to_thread(
+ cls._call_with_bad_fd_retry, "batch_set_payload", _do_batch
+ ),
+ timeout=timeout,
+ )
+ except TimeoutError:
+ logger.error(
+ "batch_set_payload_timeout",
+ collection_name=collection_name,
+ batch_index=batch_idx,
+ batch_size=len(batch),
+ timeout_seconds=timeout,
+ )
+ except UnexpectedResponse as e:
+ logger.error(
+ "batch_set_payload_failed",
+ collection_name=collection_name,
+ batch_index=batch_idx,
+ batch_size=len(batch),
+ reason=cls._classify_failure(e),
+ error=str(e),
+ )
+ except ResponseHandlingException as e:
+ logger.error(
+ "batch_set_payload_response_handling_failed",
+ collection_name=collection_name,
+ batch_index=batch_idx,
+ reason=cls._classify_failure(e),
+ error=str(e),
+ )
+ except httpx.HTTPError as e:
+ logger.error(
+ "batch_set_payload_network_failed",
+ collection_name=collection_name,
+ batch_index=batch_idx,
+ reason=cls._classify_failure(e),
+ error=str(e),
+ )
+ except OSError as e:
+ logger.error(
+ "batch_set_payload_os_failed",
+ collection_name=collection_name,
+ batch_index=batch_idx,
+ reason=cls._classify_failure(e),
+ error=str(e),
+ )
+ logger.info(
+ "batch_set_payload_complete",
+ collection_name=collection_name,
+ total_updates=total,
+ batches=len(batches),
+ )
