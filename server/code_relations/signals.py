@@ -21,7 +21,7 @@ run_in_background` 投递到常驻 worker loop —— 与 `IndexTriggerView._sch
 同模式。
 """
 from __future__ import annotations
-import functools
+import threading
 import uuid
 from typing import Any
 import structlog
@@ -31,8 +31,46 @@ from django.dispatch import receiver
 from code_relations.models import ChunkEdge, ChunkRegistry
 from code_relations.tasks import enqueue_edge_build
 from services.background_runner import run_in_background
-__all__ = ["on_chunk_registry_pre_delete"]
+# `__all__` 仅声明 module 级显式 public 接口；handler 由 @receiver 副作用注册，
+# `apps.py:ready` 仅 `import` 模块即生效，无消费方需要直接调用。保留空 list
+# 是显式说明"本模块无 public 导出"，避免 `__all__ = ["on_chunk_registry_pre_delete"]`
+# 给读者"这是 public API"的误导（per ）。
+__all__: list[str] =
 logger = structlog.get_logger(__name__)
+# 事务局部累积器（per / CONTEXT ）：批量删 N 个 ChunkRegistry 行时，
+# 每条 pre_delete 不再单独 schedule reconcile —— 累积到 thread-local dict，commit
+# 时一次性 flush 调一次 `_schedule_reconcile(repo_id, dirty_set)`，避免 N 个并发
+# `enqueue_edge_build` task 把 builders / payload_sync 重复跑 N 遍。
+#
+# 设计决策（rollback 边界）：每次 `_accumulate_dirty` 都 `transaction.on_commit`
+# 注册 flush；多次注册的 flush 是 idempotent —— 首个 flush 走 snapshot + clear，
+# 后续 flush 看到空 dict 直接 no-op。rollback 时所有 on_commit 被丢弃 →
+# `_schedule_reconcile` 不会被调（满足 `test_reconcile_not_triggered_on_rollback`
+# 契约）；遗留的 thread-local 数据会被下一次 commit 顺带 flush（产生少量无害的
+# 多余 reconcile，但不会数据损坏）。
+_local = threading.local
+def _get_pending -> dict[str, set[uuid.UUID]]:
+ """thread-local pending dict： `{repository_id: {source_chunk_id, ...}}`。"""
+ pending = getattr(_local, "pending", None)
+ if pending is None:
+ pending = {}
+ _local.pending = pending
+ return pending
+def _flush_pending -> None:
+ """on_commit 回调：snapshot + clear pending → 调一次 `_schedule_reconcile`。
+ 多次注册的 flush 都指向本函数；首次 flush 拿走全部 pending 数据并清空，
+ 后续 flush 看到空 dict 直接 no-op。
+ """
+ pending = _get_pending
+ snapshot = {repo_id: sorted(sources) for repo_id, sources in pending.items}
+ pending.clear
+ for repo_id, source_ids in snapshot.items:
+ _schedule_reconcile(repo_id, source_ids)
+def _accumulate_dirty(repository_id: str, source_ids: list[uuid.UUID]) -> None:
+ """累积 dirty source_chunk_ids 到 thread-local，注册 commit 后批量 flush。"""
+ pending = _get_pending
+ pending.setdefault(repository_id, set).update(source_ids)
+ transaction.on_commit(_flush_pending)
 def _schedule_reconcile(repository_id: str, source_ids: list[uuid.UUID]) -> None:
  """transaction commit 后通过 background_runner 投递 enqueue_edge_build。
  必须传 factory 而不是 coroutine（per `run_in_background` docstring）：
@@ -71,6 +109,8 @@ def on_chunk_registry_pre_delete(
  向上传播 —— 用户的 ChunkRegistry.delete 应该成功（per ）。
  """
  try:
+ if instance.repository_id is None:
+ return
  chunk_id = instance.chunk_id
  repository_id = str(instance.repository_id)
  source_ids: list[uuid.UUID] = list(
@@ -80,9 +120,7 @@ def on_chunk_registry_pre_delete(
  )
  ChunkEdge.objects.filter(target_chunk_id=chunk_id).delete
  if source_ids:
- transaction.on_commit(
- functools.partial(_schedule_reconcile, repository_id, source_ids)
- )
+ _accumulate_dirty(repository_id, source_ids)
  logger.debug(
  "chunk_registry_pre_delete_reconcile_queued",
  repository_id=repository_id,
@@ -99,6 +137,7 @@ def on_chunk_registry_pre_delete(
  logger.warning(
  "chunk_registry_pre_delete_handler_failed",
  chunk_id=str(getattr(instance, "chunk_id", "")),
+ repository_id=str(getattr(instance, "repository_id", "")),
  error=str(exc),
  error_type=type(exc).__name__,
  )

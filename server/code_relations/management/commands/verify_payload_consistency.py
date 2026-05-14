@@ -30,6 +30,10 @@ from code_relations.tasks import enqueue_edge_build
 from repositories.models import Repository
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
+# `--sample` 上限（per ）：避免运维误传 `--sample 1000000` 在大仓上触发
+# Postgres `ORDER BY RANDOM` 全表扫描 + 排序 → 30s+ 不返回。10k 已远超
+# 一致性抽检需求；超过此上限抛 CommandError 提醒走分批。
+_SAMPLE_UPPER_BOUND = 10_000
 class Command(BaseCommand):
  """校验 Qdrant payload.related_chunks 与 ChunkRegistry 一致性。"""
  help = (
@@ -60,6 +64,11 @@ class Command(BaseCommand):
  fix_mode: bool = options["fix"]
  if sample_size <= 0:
  raise CommandError("--sample 必须为正整数")
+ if sample_size > _SAMPLE_UPPER_BOUND:
+ raise CommandError(
+ f"--sample 超过上限 {_SAMPLE_UPPER_BOUND}（避免大仓 ORDER BY RANDOM "
+ f"全表扫描）；如需更大覆盖请分批或新增 --offset 子命令"
+ )
  repos_qs = Repository.objects.filter(is_deleted=False)
  if repo_filter:
  try:
@@ -104,31 +113,48 @@ class Command(BaseCommand):
  f"{'chunk_id':<38} | {'orphan':>6} | {'total':>5} | orphan_pct"
  )
  self.stdout.write("-" * 78)
- for chunk_id in sample_chunk_ids:
+ #：单次批量 retrieve 替代循环 N 次单点查询；--sample 100 时
+ # HTTP roundtrip 从 100 次降到 1 次，节省 ~98% 网络开销。
+ records_by_id: dict[str, Any] = {}
  try:
  records = client.retrieve(
  collection_name=collection_name,
- ids=[str(chunk_id)],
+ ids=[str(cid) for cid in sample_chunk_ids],
  with_payload=["related_chunks"],
  )
+ for r in records:
+ records_by_id[str(r.id)] = r
  except Exception as exc:
  logger.warning(
- "verify_payload_retrieve_failed",
+ "verify_payload_batch_retrieve_failed",
  repo_id=repo_id,
- chunk_id=str(chunk_id),
+ sample_size=len(sample_chunk_ids),
  error=str(exc),
  error_type=type(exc).__name__,
  )
- total_skipped += 1
- continue
- if not records:
+ # 批量 retrieve 失败：标全部 skipped，不再 fallback per-chunk
+ # （per-chunk fallback 在 Qdrant down 时只会 N 次重复失败）
+ self.stdout.write(
+ f" ⚠️ 批量 retrieve 失败：跳过 {len(sample_chunk_ids)} 个 chunk"
+ )
+ self.stdout.write("-" * 78)
+ self.stdout.write(
+ f"Summary: total_chunks_checked=0 "
+ f"total_orphans=0 total_skipped={len(sample_chunk_ids)}"
+ )
+ return
+ for chunk_id in sample_chunk_ids:
+ record = records_by_id.get(str(chunk_id))
+ if record is None:
+ # 该 chunk_id 在 Qdrant 中不存在 —— ChunkRegistry 有但 vector 没
+ # 上传成功；上层已 log debug 即可，不算 orphan
  logger.debug(
  "verify_payload_no_qdrant_point",
  repo_id=repo_id,
  chunk_id=str(chunk_id),
  )
  continue
- payload: dict[str, Any] = records[0].payload or {}
+ payload: dict[str, Any] = record.payload or {}
  related = payload.get("related_chunks") or
  if not related:
  continue
@@ -172,14 +198,22 @@ class Command(BaseCommand):
  self.stdout.write("--fix: 无 dirty source chunks，跳过 reconcile")
  @staticmethod
  def _extract_neighbor_ids(related: list[Any]) -> list[uuid.UUID]:
- """解析 payload.related_chunks 为 neighbor UUID 列表，跳过非法行。"""
+ """解析 payload.related_chunks 为 neighbor UUID 列表，跳过非法行。
+ 非法 entry 走 `logger.debug` surface（per ）：payload 格式漂移
+ （Phase 新增字段 / 字典化）时静默跳过会让校验"全绿"误导，debug
+ log 让排查时能看见。
+ """
  neighbor_ids: list[uuid.UUID] =
  for entry in related:
  if not isinstance(entry, list | tuple) or len(entry) < 1:
+ logger.debug("verify_payload_malformed_entry", entry=repr(entry))
  continue
  try:
  neighbor_ids.append(uuid.UUID(str(entry[0])))
  except (ValueError, TypeError):
+ logger.debug(
+ "verify_payload_invalid_neighbor_uuid", entry=repr(entry)
+ )
  continue
  return neighbor_ids
  def _trigger_fix(
@@ -212,8 +246,14 @@ class Command(BaseCommand):
  async def _dispatch_and_drain(
  repo_id: str, dirty_source_ids: list[uuid.UUID]
  ) -> None:
- """触发 enqueue_edge_build 并 drain 背景 task，避免 loop 关闭时取消。"""
+ """触发 enqueue_edge_build 并 drain 本次新 spawn 的背景 task。
+ fix：照 lifecycle.py 的 before/after diff 模式，只 drain 本次
+ dispatch 真正 spawn 出来的 task —— 避免误 await 跨 loop / 跨仓库的
+ 无关 task（多仓批量校验时尤其重要：repo_A 的 fix 启动后，repo_B
+ 的 dispatch_and_drain snapshot 仍含 repo_A 未完成 task → 串行阻塞）。
+ """
+ before = set(tasks_module._BACKGROUND_TASKS)
  await enqueue_edge_build(repo_id, dirty_source_ids)
- pending = list(tasks_module._BACKGROUND_TASKS)
- if pending:
- await asyncio.gather(*pending, return_exceptions=True)
+ new_tasks = tasks_module._BACKGROUND_TASKS - before
+ if new_tasks:
+ await asyncio.gather(*new_tasks, return_exceptions=True)
