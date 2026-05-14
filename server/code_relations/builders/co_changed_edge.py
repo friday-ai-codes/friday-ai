@@ -131,6 +131,13 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  """流式跑 git log，返回 (pair → count, pair → 最近 N 个 commit hash deque)。
  per /：必须用 ``asyncio.create_subprocess_exec`` + readline
  流式处理；禁止 ``subprocess.check_output`` 一次性缓冲全部 stdout。
+ 修复：并发 task 同步消费 stderr，避免 OS pipe buffer（默认 64KB）
+ 被 git stderr（LFS warning / gc advice / replace ref 等）写满后阻塞子
+ 进程 → 主循环只读 stdout 永远等不到 EOF → ``proc.wait`` 永久挂起。
+ 修复：returncode != 0 但已采集 partial counter 时，log warning
+ 但**保留** partial 数据（区分「致命：spawn failed / 无 stdout」与「轻
+ 度：尾部 SIGPIPE / 浅克隆补 ref 失败」），避免一次轻微 git 异常清空整
+ builder 输出。
  """
  try:
  proc = await asyncio.create_subprocess_exec(
@@ -150,6 +157,25 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  if proc.stdout is None:
  logger.warning("co_changed_git_no_stdout")
  return {}, {}
+ async def _drain_stderr -> bytes:
+ """并发消费 stderr，避免 pipe buffer 满阻塞子进程。
+ 上限读取 64KB（够 log 用于诊断），超出部分静默丢弃；继续 read 直到
+ EOF 让 git 不会在 stderr 写入时阻塞。"""
+ if proc.stderr is None:
+ return b""
+ chunks: list[bytes] =
+ collected = 0
+ cap = 65536
+ while True:
+ buf = await proc.stderr.read(4096)
+ if not buf:
+ break
+ if collected < cap:
+ take = min(len(buf), cap - collected)
+ chunks.append(buf[:take])
+ collected += take
+ return b"".join(chunks)
+ stderr_task = asyncio.create_task(_drain_stderr)
  counter: dict[tuple[str, str], int] = defaultdict(int)
  samples: dict[tuple[str, str], deque[str]] = defaultdict(
  lambda: deque(maxlen=_SAMPLE_COMMITS_PER_PAIR)
@@ -164,11 +190,14 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  samples[(a, b)].append(current_commit)
  current_commit = None
  current_files = set
+ try:
  while True:
  raw = await proc.stdout.readline
  if not raw:
  break
- line = raw.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+ line = (
+ raw.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
+ )
  if line.startswith("COMMIT "):
  _flush_commit
  current_commit = line[len("COMMIT "):].strip
@@ -176,16 +205,17 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  current_files.add(line)
  _flush_commit
  await proc.wait
+ finally:
+ stderr_bytes = await stderr_task
  if proc.returncode != 0:
- stderr_bytes = b""
- if proc.stderr is not None:
- stderr_bytes = await proc.stderr.read
  logger.warning(
  "co_changed_git_log_nonzero_exit",
  returncode=proc.returncode,
  stderr=stderr_bytes.decode("utf-8", errors="replace")[:512],
+ partial_pairs=len(counter),
  )
- return {}, {}
+ #：returncode != 0 但已采集 counter 时，保留 partial 数据；
+ # 仅当 counter 完全为空时才 fallback 返回空（正常致命错误信号）。
  return dict(counter), dict(samples)
  @staticmethod
  async def _load_file_chunks(
