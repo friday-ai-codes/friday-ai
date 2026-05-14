@@ -1,0 +1,210 @@
+"""Phase Plan Task 2：`rebuild_chunk_edges` 管理命令单测。
+覆盖 6 条用例（per Plan must_haves + 互斥校验 / 幂等 / 断点续跑语义）：
+1. test_repo_and_all_mutually_exclusive
+ `--repo` 与 `--all` 同传 → CommandError（错误信息含 "互斥"）。
+2. test_no_args_raises_command_error
+ 两参数都不传 → CommandError（错误信息含 "必须指定"）。
+3. test_dry_run_no_writes
+ `--repo --dry-run` → 输出预估行，不调 enqueue_edge_build，last_built_at 仍 NULL。
+4. test_single_repo_backfill
+ `--repo <uuid>` → enqueue_edge_build 被调一次（args 含 repo_id + chunk_ids），
+ 命令结束后 ChunkRegistry.last_built_at IS NOT NULL。
+5. test_all_iterates_indexed_repos_only
+ 3 仓库（2 INDEXED + 1 NOT_INDEXED）→ enqueue 调用次数 = 2。
+6. test_idempotent_skips_built_chunks
+ 全部 chunk last_built_at NOT NULL → enqueue 调 0 次（断点续跑：dry_count == 0）。
+7. test_invalid_repo_uuid_raises
+ `--repo "not-a-uuid"` → CommandError。
+8. test_help_lists_three_arguments
+ `manage.py help rebuild_chunk_edges` 输出含三参数（--repo / --all / --dry-run）。
+"""
+from __future__ import annotations
+import uuid
+from io import StringIO
+from unittest.mock import AsyncMock, patch
+import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from code_relations.models import ChunkRegistry
+from code_relations.utils import generate_chunk_id
+from repositories.models import IndexStatus, Repository
+pytestmark = pytest.mark.django_db(transaction=True)
+def _make_chunk(
+ repository: Repository,
+ *,
+ file_path: str,
+ index: int = 0,
+ last_built_at: object = None,
+) -> ChunkRegistry:
+ cid = generate_chunk_id(str(repository.id), file_path, index)
+ kwargs: dict[str, object] = {
+ "chunk_id": cid,
+ "content_hash": "a" * 64,
+ "repository": repository,
+ "file_path": file_path,
+ "chunk_index": index,
+ }
+ if last_built_at is not None:
+ kwargs["last_built_at"] = last_built_at
+ return ChunkRegistry.objects.create(**kwargs)
+@pytest.fixture
+def indexed_repo(db) -> Repository:
+ """单 INDEXED 仓库 fixture（区别于 tests/conftest.py 默认 NOT_INDEXED）。"""
+ return Repository.objects.create(
+ name="Indexed Repo",
+ git_url="https://github.com/test/indexed.git",
+ git_platform="github",
+ default_branch="main",
+ index_status=IndexStatus.INDEXED,
+ )
+def test_repo_and_all_mutually_exclusive(indexed_repo: Repository) -> None:
+ out = StringIO
+ with pytest.raises(CommandError) as exc_info:
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ "--all",
+ stdout=out,
+ )
+ assert "互斥" in str(exc_info.value)
+def test_no_args_raises_command_error -> None:
+ out = StringIO
+ with pytest.raises(CommandError) as exc_info:
+ call_command("rebuild_chunk_edges", stdout=out)
+ assert "必须指定" in str(exc_info.value)
+def test_dry_run_no_writes(indexed_repo: Repository) -> None:
+ _make_chunk(indexed_repo, file_path="src/a.py", index=0)
+ _make_chunk(indexed_repo, file_path="src/b.py", index=0)
+ mock_enqueue = AsyncMock(return_value=None)
+ out = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ mock_enqueue,
+ ):
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ "--dry-run",
+ stdout=out,
+ )
+ output = out.getvalue
+ assert "work item" in output
+ assert "pending_chunks=2" in output
+ mock_enqueue.assert_not_called
+ # last_built_at 仍是 NULL（dry-run 不更新）
+ assert (
+ ChunkRegistry.objects.filter(
+ repository=indexed_repo, last_built_at__isnull=True
+ ).count
+ == 2
+ )
+def test_single_repo_backfill(indexed_repo: Repository) -> None:
+ c1 = _make_chunk(indexed_repo, file_path="src/a.py", index=0)
+ c2 = _make_chunk(indexed_repo, file_path="src/b.py", index=0)
+ mock_enqueue = AsyncMock(return_value=None)
+ out = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ mock_enqueue,
+ ):
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ stdout=out,
+ )
+ assert mock_enqueue.await_count == 1, "enqueue_edge_build 应被调一次"
+ call_args = mock_enqueue.await_args
+ assert call_args is not None
+ repo_arg, chunk_ids_arg = call_args.args
+ assert repo_arg == str(indexed_repo.id)
+ assert set(chunk_ids_arg) == {c1.chunk_id, c2.chunk_id}
+ # 命令完成后该仓库所有 ChunkRegistry.last_built_at IS NOT NULL
+ assert (
+ ChunkRegistry.objects.filter(
+ repository=indexed_repo, last_built_at__isnull=False
+ ).count
+ == 2
+ )
+def test_all_iterates_indexed_repos_only(db) -> None:
+ indexed_a = Repository.objects.create(
+ name="Indexed A",
+ git_url="https://github.com/test/a.git",
+ git_platform="github",
+ default_branch="main",
+ index_status=IndexStatus.INDEXED,
+ )
+ indexed_b = Repository.objects.create(
+ name="Indexed B",
+ git_url="https://github.com/test/b.git",
+ git_platform="github",
+ default_branch="main",
+ index_status=IndexStatus.INDEXED,
+ )
+ not_indexed = Repository.objects.create(
+ name="Not Indexed",
+ git_url="https://github.com/test/c.git",
+ git_platform="github",
+ default_branch="main",
+ index_status=IndexStatus.NOT_INDEXED,
+ )
+ _make_chunk(indexed_a, file_path="src/a.py", index=0)
+ _make_chunk(indexed_b, file_path="src/b.py", index=0)
+ _make_chunk(not_indexed, file_path="src/c.py", index=0)
+ mock_enqueue = AsyncMock(return_value=None)
+ out = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ mock_enqueue,
+ ):
+ call_command("rebuild_chunk_edges", "--all", stdout=out)
+ assert mock_enqueue.await_count == 2, "仅 2 个 INDEXED 仓库被处理"
+ repo_ids_called = {call.args[0] for call in mock_enqueue.await_args_list}
+ assert repo_ids_called == {str(indexed_a.id), str(indexed_b.id)}
+ assert str(not_indexed.id) not in repo_ids_called
+def test_idempotent_skips_built_chunks(indexed_repo: Repository) -> None:
+ """断点续跑：last_built_at NOT NULL 的 chunk 不再 dispatch。"""
+ from django.utils import timezone
+ now = timezone.now
+ _make_chunk(
+ indexed_repo, file_path="src/a.py", index=0, last_built_at=now
+ )
+ _make_chunk(
+ indexed_repo, file_path="src/b.py", index=0, last_built_at=now
+ )
+ mock_enqueue = AsyncMock(return_value=None)
+ out = StringIO
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ mock_enqueue,
+ ):
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ stdout=out,
+ )
+ assert mock_enqueue.await_count == 0, (
+ "所有 chunk 已 backfill，断点续跑应跳过 enqueue"
+ )
+def test_invalid_repo_uuid_raises(db) -> None:
+ out = StringIO
+ with pytest.raises(CommandError) as exc_info:
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ "not-a-uuid",
+ stdout=out,
+ )
+ assert "UUID" in str(exc_info.value)
+def test_help_lists_three_arguments -> None:
+ """`manage.py help rebuild_chunk_edges` 输出含三参数（smoke）。"""
+ out = StringIO
+ with pytest.raises(SystemExit):
+ call_command("rebuild_chunk_edges", "--help", stdout=out)
+ output = out.getvalue
+ assert "--repo" in output
+ assert "--all" in output
+ assert "--dry-run" in output
