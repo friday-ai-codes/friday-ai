@@ -30,6 +30,7 @@ import asyncio
 import time
 from typing import Any, Literal
 import structlog
+from django.conf import settings
 from services.code_intel.protocols import (
  BaseCodeProvider,
  GraphCapableProvider,
@@ -195,10 +196,12 @@ class HybridSearchService:
  （含 ``graph_context`` / ``hop1_neighbors`` / ``hop2_neighbors`` 三字段）
  - 其余路径 → ``RagSearchResult``（字段同名同序兼容 callsite）
  """
- # Phase：延迟 import 避免 Django settings 加载顺序问题
- # （与 budget.py from_settings 同模式）；getattr 兜底 settings 缺失
- # （测试环境 / minimal settings 场景）默认 True 保持向后兼容。
- from django.conf import settings
+ # Phase 守卫：``settings.ENABLE_GRAPHRAG_ENRICHMENT`` 的**唯一**
+ # 直读点。 修复（Phase REVIEW）：原本方法体内 lazy import 是冗余
+ # 防御——``services.retrieval.budget`` 已在 module-level ``from django.conf
+ # import settings``（且 hybrid_search 顶层 import budget），加载顺序在
+ # module load 时已确定。``getattr`` 兜底保留覆盖 minimal test settings
+ # 缺该 attr 的场景。
  effective_enrichment: bool = enable_graph_enrichment and bool(
  getattr(settings, "ENABLE_GRAPHRAG_ENRICHMENT", True)
  )
