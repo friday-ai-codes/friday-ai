@@ -191,6 +191,58 @@ async def test_both_directions_union(repository) -> None:
 # case 4：hops=2 含一跳 + 二跳
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db(transaction=True)
+async def test_find_related_upstream_hops2_correctness(repository) -> None:
+ """: direction='upstream' + hops=2 应返回「调用者的调用者」。
+ 构造调用链 A -> B -> C；find_related(start=C, direction='upstream', hops=2)
+ 应返回 [B (hop=1), A (hop=2)] 而非 [B (hop=1), B 的下游] —— 这是
+ 修复前 fetch_hop2_edges 固定走 source_chunk_id__in 导致 upstream 二跳静默
+ 退化成「调用者的下游」的核心反例。
+ """
+ a = uuid.uuid4
+ b = uuid.uuid4
+ c = uuid.uuid4
+ b_downstream_red_herring = uuid.uuid4
+ for cid, fp in (
+ (a, "src/a.py"),
+ (b, "src/b.py"),
+ (c, "src/c.py"),
+ (b_downstream_red_herring, "src/red_herring.py"),
+ ):
+ await _create_registry(repository, cid, fp)
+ await ChunkEdge.objects.abulk_create([
+ ChunkEdge(
+ source_chunk_id=a, target_chunk_id=b,
+ edge_type=EdgeType.CALL, weight=0.9, repository=repository,
+ ),
+ ChunkEdge(
+ source_chunk_id=b, target_chunk_id=c,
+ edge_type=EdgeType.CALL, weight=0.85, repository=repository,
+ ),
+ # red_herring：B 的下游， 修复前会被错误地当作 C 的 upstream hop2
+ ChunkEdge(
+ source_chunk_id=b, target_chunk_id=b_downstream_red_herring,
+ edge_type=EdgeType.CALL, weight=0.7, repository=repository,
+ ),
+ ])
+ out = await find_related(
+ str(c),
+ repo_ids=[str(repository.id)],
+ hops=2,
+ direction="upstream",
+ )
+ by_chunk = {n.chunk_id: n for n in out}
+ assert str(b) in by_chunk, "upstream hop1 应含 B（直接调用 C 者）"
+ assert by_chunk[str(b)].hop == 1
+ assert str(a) in by_chunk, (
+ "upstream hop2 应含 A（B 的调用者，即 C 的两层调用者）；"
+ " 修复前 fetch_hop2_edges 固定走 source__in 拿到的是 B 的下游，"
+ "A 不会出现"
+ )
+ assert by_chunk[str(a)].hop == 2
+ assert str(b_downstream_red_herring) not in by_chunk, (
+ "upstream hops=2 不应包含 B 的下游（这是 反例）"
+ )
+@pytest.mark.django_db(transaction=True)
 async def test_hops_2_includes_hop1_and_hop2(repository) -> None:
  """hops=2 + downstream → hop1=直接邻居，hop2=邻居的下一跳；hop 字段标记正确。"""
  start = uuid.uuid4

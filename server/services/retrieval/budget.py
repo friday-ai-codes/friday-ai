@@ -13,6 +13,7 @@
 必须 0 命中（**故意不在源码中写出该 setting 的完整 attribute 形式**以满足 grep gate）。
 """
 from __future__ import annotations
+import math
 from dataclasses import dataclass
 import structlog
 from services.retrieval.token_budget import TOKEN_BUFFER_RATIO
@@ -36,12 +37,35 @@ class HybridBudget:
  """
  rag: float = 0.6
  graph: float = 0.4
+ def __post_init__(self) -> None:
+ """: 强制 ``rag + graph == 1.0`` + 非负——避免静默超 budget。
+ ``from_settings`` 构造路径在 clamp 之后保证 ``rag + (1 - rag)``，但其他
+ callsite（test、CLI、experimental）可能直接 ``HybridBudget(rag=0.7,
+ graph=0.5)``，allocate 会返回总和超 effective 的子预算。
+ """
+ if self.rag < 0 or self.graph < 0:
+ raise ValueError(
+ f"HybridBudget(rag={self.rag}, graph={self.graph}) "
+ "components must be non-negative"
+ )
+ if not math.isclose(self.rag + self.graph, 1.0, abs_tol=1e-6):
+ raise ValueError(
+ f"HybridBudget(rag={self.rag}, graph={self.graph}) sum != 1.0; "
+ "rag + graph must total 1.0"
+ )
  def allocate(self, max_tokens: int) -> dict[str, int]:
  """按 buffer_ratio 折算后再按 rag/graph 切分子预算。
  例：``HybridBudget.allocate(8000)`` →
  effective = int(8000 * 0.9) = 7200 →
  {"rag": int(7200 * 0.6) = 4320, "graph": int(7200 * 0.4) = 2880}
+ Raises:
+ ValueError: ``max_tokens`` 为负——避免 ``trim_to_budget`` 全空 final_context
+ 难以排查根因（per ）。
  """
+ if max_tokens < 0:
+ raise ValueError(
+ f"max_tokens must be non-negative, got {max_tokens}"
+ )
  effective = int(max_tokens * TOKEN_BUFFER_RATIO)
  return {
  "rag": int(effective * self.rag),
@@ -60,6 +84,15 @@ class HybridBudget:
  except (TypeError, ValueError):
  logger.warning(
  "hybrid_budget_ratio_invalid",
+ raw=repr(raw),
+ fallback=GRAPHRAG_BUDGET_RATIO_DEFAULT,
+ )
+ requested = GRAPHRAG_BUDGET_RATIO_DEFAULT
+ #: 显式拒绝 NaN / ±Inf——不依赖 CPython min/max 参数顺序的 NaN 行为，
+ # PyPy / 不同 CPython 版本可能不同。
+ if not math.isfinite(requested):
+ logger.warning(
+ "hybrid_budget_ratio_non_finite",
  raw=repr(raw),
  fallback=GRAPHRAG_BUDGET_RATIO_DEFAULT,
  )

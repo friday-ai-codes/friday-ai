@@ -14,8 +14,15 @@ from services.retrieval.hop1_reader import (
  extract_hop1_neighbors_raw,
  resolve_neighbor_metadata,
 )
-def _stub_reason(edge_type: str, source_chunk_id: str) -> str:
- return f"{edge_type} from {source_chunk_id}"
+def _stub_reason(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict,
+) -> str:
+ """ 后 ReasonFn 新签名（4 参数）。perf 测试不关心 reason 内容质量，
+ 仅验证 in_bulk 单次拉满 + 时延上限。"""
+ return f"{edge_type} from {target_file}"
 @pytest.mark.perf
 @pytest.mark.django_db(transaction=True)
 async def test_hop1_extract_plus_resolve_under_100ms_for_1000_chunks(

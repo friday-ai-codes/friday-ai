@@ -11,8 +11,8 @@ Phase 落地骨架（``HybridSearchService.__init__`` + ``search`` 分发入口 
  ``related_chunks`` + ``resolve_neighbor_metadata`` 单次 ORM ``in_bulk`` 拉
  metadata（Plan 落）。
 - **二跳 enrichment**：``expand_hop2`` 走 ChunkEdge ORM aiter + 三重去重
- （Plan 落）；``enable_graph_enrichment=False`` 时跳过二跳（即使 Provider
- 支持图谱）。
+ （Plan 落）；``enable_graph_enrichment=False`` 时强制走 ``_search_rag_only``
+ 路径（即使 Provider 支持图谱），完全跳过 wave/1/2 并发 + 图谱 enrichment 链路。
 - **HybridBudget 60/40**：``HybridBudget.from_settings.allocate(max_tokens)``
  返回 ``{rag, graph}`` 子预算，``trim_to_budget`` 对 RAG / graph 段分别二次裁剪。
 - **graph_context markdown**：``## Graph Context`` 两段（Direct/Indirect Neighbors）
@@ -33,6 +33,10 @@ import structlog
 from services.code_intel.protocols import (
  BaseCodeProvider,
  GraphCapableProvider,
+)
+from services.retrieval._query_helpers import (
+ extract_symbol_keywords,
+ format_l3_section,
 )
 from services.retrieval.budget import HybridBudget
 from services.retrieval.find_related import (
@@ -61,20 +65,31 @@ from services.retrieval.types import (
 logger = structlog.get_logger(__name__)
 DEFAULT_MAX_TOKENS: int = 8000
 DEFAULT_TOP_K: int = 30
-def _enrichment_reason_fn(edge_type: str, source_chunk_id: str) -> str:
+def _enrichment_reason_fn(
+ edge_type: str,
+ source_file: str | None,
+ target_file: str | None,
+ metadata: dict[str, Any],
+) -> str:
  """``hop1_reader.resolve_neighbor_metadata`` / ``hop2_expander.expand_hop2``
- 注入式 reason 生成器（Phase graph enrichment 路径）。
- **降级路径**（per Plan deviation "reason_fn 降级路径"）：完整模板需要
- ``source_file`` / ``target_file`` / ``ChunkEdge.metadata``，但 Plan/03 的
- ``resolve_neighbor_metadata`` / ``expand_hop2`` 签名只透传 ``edge_type`` +
- ``source_chunk_id``——本 plan 不修改其签名（避免逆向依赖），故仅传 ``edge_type``
- 走 ``explain_neighbor`` 降级模板（CALL → ``"via direct call"``，CO_CHANGED →
- ``"co-changed with related chunk × recent history"`` 等）。
- 完整 metadata reason（含 commit_count / similarity 等）通过 ``find_related``
- Python API 直接调用获取，由 Phase MCP tool 透出给 LLM。
+ 注入式 reason 生成器（Phase graph enrichment 路径， 升级）。
+ 完整调用 ``explain_neighbor(edge_type, source_file=..., target_file=...,
+ metadata=...)`` 走完整模板路径——CALL/IMPORT 拼 target 文件，CO_CHANGED 拼
+ commit_count，SEMANTIC 拼 similarity 等核心信号——与 ``find_related`` Python
+ API 路径产物质量一致（ 之前两条调用路径产物分裂）。
+ Note:
+ hop1 路径 ``edge_metadata`` 由 payload `related_chunks` 解析得来，当前
+ payload 写入仅 3-tuple（不带 metadata），实际值为空 dict——CO_CHANGED /
+ SEMANTIC 仍走"recent history" / 缺 score 的降级模板。Phase 增量同步
+ 若扩 payload 为 4-tuple 则自动透出。hop2 路径 ``edge_metadata`` 来自
+ ``ChunkEdge.metadata``（fetch_hop2_edges 已扩 5-tuple），完整可用。
  """
- _ = source_chunk_id # 保签名兼容；降级路径不使用
- return explain_neighbor(edge_type)
+ return explain_neighbor(
+ edge_type,
+ source_file=source_file,
+ target_file=target_file,
+ metadata=metadata,
+ )
 def _render_neighbor_line(neighbor: NeighborMetadata) -> str:
  """单个 NeighborMetadata → markdown 一行（per ）。
  格式：``- `{file_path}:{line_start}` ({edge_type}, w={weight:.2f}): {reason}``
@@ -190,34 +205,21 @@ class HybridSearchService:
  max_tokens=max_tokens,
  top_k=top_k,
  )
- async def _search_graph_capable(
+ async def _run_wave_0(
  self,
  query: str,
  *,
- repository_ids: list[str] | None,
- project_id: str | None,
+ repo_ids: list[str],
  branch_name: str | None,
- max_tokens: int,
  top_k: int,
- ) -> HybridSearchResult:
- """GraphCapableProvider 路径：asyncio.gather 并发 + 图谱 enrichment。
- wave：``rag_task = search_rag(...)`` ‖ ``symbol_task = provider.lookup_symbols(...)``。
- wave：``hop1_neighbors = resolve_neighbor_metadata(extract_hop1_neighbors_raw(...))``。
- wave：``hop2_neighbors = expand_hop2(...)``。
- rag_task 失败 → 直接 raise（RAG 主线必选项）；symbol_task 失败 → log
- warning + symbol_results= + 仍走 rag 路径（图谱 enrichment 降级）。
+ ) -> tuple[LayerSnapshot, list[dict[str, Any]], bool, int]:
+ """ 提取：wave 并发 RAG 召回 + 符号查找 + 异常分发。
+ Returns:
+ ``(rag_snapshot, symbol_results, symbol_failed, wave_0_elapsed_ms)``。
+ Raises:
+ BaseException: rag_task 失败时直接传播（RAG 主线必选项）。
  """
- # lazy import：保模块加载顺序 + 复用 Phase 既有 idiom，不重复造关键词抽取
- from codegraph.services.layered_search import LayeredSearchService as _LS
- logger.info(
- "hybrid_search_started",
- path="graph_capable",
- query=query[:100],
- )
- repo_ids: list[str] = list(repository_ids or )
- budgets: dict[str, int] = HybridBudget.from_settings.allocate(max_tokens)
- keywords: list[str] = _LS._extract_symbol_names(query)
- # ---- wave：rag_task ‖ symbol_task --------------------------------
+ keywords: list[str] = extract_symbol_keywords(query)
  logger.info(
  "hybrid_search_wave_started",
  wave_id=0,
@@ -249,7 +251,6 @@ class HybridSearchService:
  wave_id=0,
  elapsed_ms=elapsed_ms,
  )
- # rag 失败 → 直接传播（RAG 主线必选项，per Discretion）
  rag_result = results[0]
  if isinstance(rag_result, BaseException):
  logger.warning(
@@ -258,7 +259,6 @@ class HybridSearchService:
  error_type=type(rag_result).__name__,
  )
  raise rag_result
- # symbol 失败 → log warning + 降级 symbol_results=（图谱 enrichment 可降级）
  symbol_result = results[1]
  symbol_failed: bool = False
  symbol_results: list[dict[str, Any]]
@@ -272,13 +272,12 @@ class HybridSearchService:
  symbol_failed = True
  else:
  symbol_results = list(symbol_result) if symbol_result else
- rag_snapshot: LayerSnapshot = rag_result
- rag_chunk_ids: set[str] = {
- str(item.get("id"))
- for item in rag_snapshot.items
- if item.get("id")
- }
- # ---- wave：一跳 enrichment（payload 直读 + 单次 ORM in_bulk）------
+ return rag_result, symbol_results, symbol_failed, elapsed_ms
+ @staticmethod
+ async def _run_wave_1(
+ rag_snapshot: LayerSnapshot,
+ ) -> tuple[list[NeighborMetadata], set[str]]:
+ """ 提取：wave 一跳 enrichment（payload 直读 + 单次 ORM in_bulk）。"""
  raw_h1 = extract_hop1_neighbors_raw(rag_snapshot.items)
  hop1_neighbors: list[NeighborMetadata] = await resolve_neighbor_metadata(
  raw_h1,
@@ -286,17 +285,86 @@ class HybridSearchService:
  reason_fn=_enrichment_reason_fn,
  )
  hop1_chunk_ids: set[str] = {n.chunk_id for n in hop1_neighbors}
- # ---- wave：二跳 enrichment（ChunkEdge ORM aiter + 三重去重）------
- hop2_neighbors: list[NeighborMetadata] = await expand_hop2(
+ return hop1_neighbors, hop1_chunk_ids
+ @staticmethod
+ async def _run_wave_2(
+ *,
+ hop1_chunk_ids: set[str],
+ rag_chunk_ids: set[str],
+ repo_ids: list[str],
+ ) -> list[NeighborMetadata]:
+ """ 提取：wave 二跳 enrichment（ChunkEdge ORM aiter + 三重去重）。"""
+ return await expand_hop2(
  hop1_chunk_ids=hop1_chunk_ids,
  rag_chunk_ids=rag_chunk_ids,
  repo_ids=repo_ids,
  reason_fn=_enrichment_reason_fn,
  )
- # ---- graph_context markdown 拼装 + 双段 trim_to_budget --------------
+ async def _search_graph_capable(
+ self,
+ query: str,
+ *,
+ repository_ids: list[str] | None,
+ project_id: str | None,
+ branch_name: str | None,
+ max_tokens: int,
+ top_k: int,
+ ) -> HybridSearchResult:
+ """GraphCapableProvider 路径：asyncio.gather 并发 + 图谱 enrichment。
+ wave：``rag_task = search_rag(...)`` ‖ ``symbol_task = provider.lookup_symbols(...)``。
+ wave：``hop1_neighbors = resolve_neighbor_metadata(extract_hop1_neighbors_raw(...))``。
+ wave：``hop2_neighbors = expand_hop2(...)``。
+ rag_task 失败 → 直接 raise（RAG 主线必选项）；symbol_task 失败 → log
+ warning + symbol_results= + 仍走 rag 路径（图谱 enrichment 降级）；
+ rag_snapshot.status != "ok" → 短路返回空 HybridSearchResult（ 与
+ ``_search_rag_only`` 行为对齐）。: 拆分为 ``_run_wave_0`` / ``_run_wave_1`` / ``_run_wave_2`` 三个
+ helper，让单方法关注顶层编排（短路决策 + budget 切分 + markdown 拼装）。
+ """
+ _ = project_id # 保签名兼容 Plan callsite
+ logger.info(
+ "hybrid_search_started",
+ path="graph_capable",
+ query=query[:100],
+ )
+ repo_ids: list[str] = list(repository_ids or )
+ budgets: dict[str, int] = HybridBudget.from_settings.allocate(max_tokens)
+ rag_snapshot, symbol_results, symbol_failed, wave_0_ms = await self._run_wave_0(
+ query, repo_ids=repo_ids, branch_name=branch_name, top_k=top_k,
+ )
+ if rag_snapshot.status != "ok" or not rag_snapshot.items:
+ logger.info(
+ "hybrid_search_completed",
+ path="graph_capable",
+ repo_count=len(repo_ids),
+ l3_status=rag_snapshot.status,
+ l3_error=rag_snapshot.error,
+ total_tokens=0,
+ hop1_count=0,
+ hop2_count=0,
+ symbol_count=len(symbol_results),
+ symbol_failed=symbol_failed,
+ wave_0_elapsed_ms=wave_0_ms,
+ )
+ return HybridSearchResult(
+ query=query,
+ repository_ids=repo_ids,
+ layers=[rag_snapshot],
+ final_context="",
+ total_tokens=0,
+ )
+ rag_chunk_ids: set[str] = {
+ str(item.get("id"))
+ for item in rag_snapshot.items
+ if item.get("id")
+ }
+ hop1_neighbors, hop1_chunk_ids = await self._run_wave_1(rag_snapshot)
+ hop2_neighbors = await self._run_wave_2(
+ hop1_chunk_ids=hop1_chunk_ids,
+ rag_chunk_ids=rag_chunk_ids,
+ repo_ids=repo_ids,
+ )
  graph_context_raw: str = _render_graph_context(hop1_neighbors, hop2_neighbors)
- # RAG section 复用 LayeredSearchService._format_l3_section 保格式 idiom 一致
- l3_markdown: str = _LS._format_l3_section(rag_snapshot.items)
+ l3_markdown: str = format_l3_section(rag_snapshot.items)
  rag_section: str = trim_to_budget(l3_markdown, budgets["rag"])
  graph_section: str = (
  trim_to_budget(graph_context_raw, budgets["graph"])
@@ -319,10 +387,8 @@ class HybridSearchService:
  hop2_count=len(hop2_neighbors),
  symbol_count=len(symbol_results),
  symbol_failed=symbol_failed,
- wave_0_elapsed_ms=elapsed_ms,
+ wave_0_elapsed_ms=wave_0_ms,
  )
- # project_id 暂未参与编排（保签名兼容 Plan callsite）
- _ = project_id
  return HybridSearchResult(
  query=query,
  repository_ids=repo_ids,
@@ -347,10 +413,9 @@ class HybridSearchService:
  capability 守卫（``isinstance(provider, GraphCapableProvider)`` False）
  已在 search 入口完成。
  **Phase zero-drift 守门**：本方法 byte-for-byte 等价 Phase
- 实现，既有 NullProvider 路径测试（test_hybrid_skeleton + test_null_provider_paths）
+ 实现，既有 NullProvider 路径测试（test_hybrid_skeleton + test_null_provider_paths)
  必须全绿。
  """
- from codegraph.services.layered_search import LayeredSearchService as _LS
  logger.info(
  "hybrid_search_started",
  path="rag_only",
@@ -378,9 +443,9 @@ class HybridSearchService:
  final_context="",
  total_tokens=0,
  )
- # 复用 LayeredSearchService._format_l3_section 保格式 idiom 一致：
+ # 复用 services.retrieval._query_helpers.format_l3_section 保格式 idiom 一致：
  # `## L3 Related Code\n\n### {file_path} (score: {score:.3f})\n```\n{content}\n```\n`
- l3_markdown: str = _LS._format_l3_section(l3.items)
+ l3_markdown: str = format_l3_section(l3.items)
  budgets: dict[str, int] = split_budget(max_tokens, ratios={"rag": 1.0})
  final_context: str = trim_to_budget(l3_markdown, budgets["rag"])
  total_tokens: int = estimate_tokens(final_context)
