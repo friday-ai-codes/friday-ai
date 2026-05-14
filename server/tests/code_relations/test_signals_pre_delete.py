@@ -23,6 +23,15 @@ from django.db import transaction
 from code_relations import signals as signals_module
 from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 pytestmark = pytest.mark.django_db(transaction=True)
+@pytest.fixture(autouse=True)
+def _reset_pending_state -> None:
+ """每条用例前后清空 thread-local pending dict（ burst accumulator）。
+ rollback 测试不会触发 on_commit flush，可能在 thread-local 留下脏数据；
+ autouse 清理避免污染下条用例的 schedule 计数断言。
+ """
+ signals_module._get_pending.clear
+ yield
+ signals_module._get_pending.clear
 def _make_chunk(repository, *, file_path: str = "src/foo.py", index: int = 0) -> ChunkRegistry:
  """创建一个 ChunkRegistry 行（chunk_id 随机 UUID）。"""
  return ChunkRegistry.objects.create(
@@ -70,6 +79,32 @@ def test_handler_schedules_reconcile_with_distinct_sources(repository) -> None:
  repo_id_arg, source_ids_arg = mock_schedule.call_args.args
  assert repo_id_arg == str(repository.id)
  assert set(source_ids_arg) == {src1.chunk_id, src2.chunk_id}
+def test_burst_delete_collapses_to_single_schedule(repository) -> None:
+ """ regression：QuerySet.delete 删 N 个 chunk → 仅 1 次 schedule_reconcile。
+ 背景：旧实现每条 pre_delete 单独 transaction.on_commit(_schedule_reconcile)，
+ 20-chunk 文件批删 → 20 次 enqueue_edge_build → builders / payload_sync 重复跑 20 遍。
+ 新实现累积到 thread-local + commit 时一次性 flush，schedule 仅被调一次（含全部
+ 去重后的 dirty source_ids）。
+ """
+ targets = [
+ _make_chunk(repository, file_path=f"src/t_{i}.py", index=i) for i in range(5)
+ ]
+ src1 = _make_chunk(repository, file_path="src/src1.py", index=100)
+ src2 = _make_chunk(repository, file_path="src/src2.py", index=101)
+ for tgt in targets[:3]:
+ _make_edge(repository, source=src1.chunk_id, target=tgt.chunk_id)
+ for tgt in targets[2:]:
+ _make_edge(repository, source=src2.chunk_id, target=tgt.chunk_id)
+ target_ids = [t.chunk_id for t in targets]
+ with patch.object(signals_module, "_schedule_reconcile") as mock_schedule:
+ with transaction.atomic:
+ ChunkRegistry.objects.filter(chunk_id__in=target_ids).delete
+ assert mock_schedule.call_count == 1, (
+ f"expected single batched schedule, got {mock_schedule.call_count}"
+ )
+ repo_arg, sources_arg = mock_schedule.call_args.args
+ assert repo_arg == str(repository.id)
+ assert set(sources_arg) == {src1.chunk_id, src2.chunk_id}
 def test_handler_skips_reconcile_when_no_inbound_edges(repository) -> None:
  """孤立 ChunkRegistry（无 inbound edge）→ `_schedule_reconcile` 不被调用（空 dirty_set 不触发 enqueue）。"""
  isolated = _make_chunk(repository, file_path="src/isolated.py")
