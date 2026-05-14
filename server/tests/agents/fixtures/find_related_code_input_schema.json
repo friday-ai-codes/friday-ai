@@ -86,7 +86,7 @@
  }
  ],
  "default": null,
- "description": "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；None 时由 Plan tool 函数报错 '需要 repository_id'（per work-item ）。",
+ "description": "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；None / 缺省时 tool 函数报错 'repository_id is required'（per work-item ）。",
  "title": "Repository Id"
  },
  "symbol_name": {

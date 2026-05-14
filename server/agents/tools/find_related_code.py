@@ -82,8 +82,8 @@ _TOOL_PARAMETERS: dict[str, Any] = {
  "repository_id": {
  "type": "string",
  "description": (
- "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；"
- "None 时 tool 函数报错 '需要 repository_id'。"
+ "**REQUIRED.** 目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo "
+ "查询；None / 缺省时 tool 函数报错 'repository_id is required'。"
  ),
  },
  "relation_types": {
@@ -133,9 +133,13 @@ _TOOL_PARAMETERS: dict[str, Any] = {
  ),
  },
  },
- "required":,
+ "required": ["repository_id"],
 }
 """JSON Schema 镜像 ``FindRelatedCodeInput`` 字段（per Task 2 must_have）。
+``required: ["repository_id"]`` 与 tool 函数运行时校验对齐：``chunk_id`` 跨 repo
+不唯一，必须显式限定单 repo 查询（per work-item ）。Pydantic schema 仍保持
+``repository_id: str | None`` 留给未来 inferred-from-context 扩展，但 LLM 调用方
+读 JSON Schema 应一次性看到必填语义（per work-item ）。
 字面值与 ``FindRelatedCodeInput.model_json_schema`` 字段对齐，Plan snapshot
 契约测试在 description 升级时 diff 必须可 review。"""
 @tool(

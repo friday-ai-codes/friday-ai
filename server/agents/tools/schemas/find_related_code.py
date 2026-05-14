@@ -59,8 +59,8 @@ class FindRelatedCodeInput(BaseModel):
  repository_id: str | None = Field(
  default=None,
  description=(
- "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；None 时由 Plan "
- "tool 函数报错 '需要 repository_id'（per work-item ）。"
+ "目标仓库 UUID。chunk_id 跨 repo 语义上需限定单 repo 查询；None / 缺省时 "
+ "tool 函数报错 'repository_id is required'（per work-item ）。"
  ),
  )
  relation_types: list[RelationType] = Field(
