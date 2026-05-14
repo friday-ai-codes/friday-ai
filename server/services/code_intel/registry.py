@@ -35,9 +35,16 @@ def register_provider(key: str, provider: BaseCodeProvider) -> None:
  "code_intel registry is frozen; "
  "web request lifecycle cannot register new providers (per, T-)"
  )
+ # 修复（Phase REVIEW）：``@runtime_checkable Protocol + isinstance``
+ # 检查的就是**结构化兼容**（有 capabilities attribute + health_check
+ # method），任何带这两个属性的类都会通过——所以这层**不是安全边界**，纯
+ # 类型卫生：防 register_provider("default", 42)、拼错方法名、传入完全无关
+ # 类等类型错误。控制 env / 进程内代码的 attacker 已绕过本检查。
  if not isinstance(provider, BaseCodeProvider):
  raise TypeError(
- f"provider must implement BaseCodeProvider Protocol, got {type(provider).__name__}"
+ f"provider must implement BaseCodeProvider Protocol "
+ f"(structured contract: capabilities + health_check), "
+ f"got {type(provider).__name__}"
  )
  _REGISTRY[key] = provider
 def freeze -> None:
