@@ -143,8 +143,49 @@ def backfill_chunk_edges_job -> None:
  except Exception as e:
  log.exception("job_error", error=str(e))
 class Command(BaseCommand):
- help = "Runs APScheduler for session timeout tasks."
+ """APScheduler 长驻进程。
+ **部署契约（ / Phase REVIEW）：scheduler 必须单实例运行。**
+ DjangoJobStore 跨进程共享 job 状态，但 ``max_instances=1`` 仅在单 scheduler
+ 内生效；若多 ``runapscheduler`` 进程并存（容器编排误启两份、灰度滚动重启
+ 重叠等），所有进程启动时都会 ``add_job(..., replace_existing=True)``，且各
+ 自从 DjangoJobStore 拉到同一个未跑的 ``backfill_chunk_edges`` job 并独立
+ 执行 → ``rebuild_chunk_edges --all`` 可能并发跑两次。下游 ``bulk_insert_edges``
+ ``ignore_conflicts=True`` 兜底正确性，但 6 builder × N repo × 2 进程的 RAM/CPU
+ 双倍消耗对老仓库 backfill 有 OOM 风险（CONTEXT 明确"避免多 repo × 6
+ builder 同时跑爆 RAM"）。
+ **强制：** ``handle`` 开头用 ``fcntl.flock`` 占据 ``/tmp/friday-scheduler.lock``
+ advisory lock；第二份 scheduler 启动时立即报错退出。lock fd 故意泄漏到进程
+ 生命周期结束（OS 自动释放），不显式 close。SIGKILL / 容器 OOM 时 OS 也会
+ 释放 → 下次启动立即可获取。
+ """
+ help = "Runs APScheduler for session timeout tasks (single-instance enforced via flock)."
  def handle(self, *args, **options):
+ # 修复：advisory flock 拒绝并发 scheduler 启动（per Phase REVIEW）
+ import fcntl
+ lock_path = getattr(
+ settings, "APSCHEDULER_LOCK_PATH", "/tmp/friday-scheduler.lock"
+ )
+ try:
+ lock_fd = open(lock_path, "w")
+ fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+ except OSError as exc:
+ logger.error(
+ "scheduler_already_running",
+ lock_path=lock_path,
+ error=str(exc),
+ hint=(
+ "另一份 runapscheduler 进程已占据该 lock；"
+ "scheduler 必须单实例运行（ / Phase REVIEW）。"
+ "停掉重复进程或更换 settings.APSCHEDULER_LOCK_PATH。"
+ ),
+ )
+ self.stderr.write(
+ f"Scheduler already running (lock held: {lock_path})。"
+ f"单实例契约（Phase），拒绝重复启动。"
+ )
+ raise SystemExit(1) from exc
+ # lock_fd 故意泄漏到进程生命周期结束（OS 在进程退出时自动释放 flock）
+ logger.info("scheduler_lock_acquired", lock_path=lock_path)
  scheduler = BackgroundScheduler(timezone=settings.TIME_ZONE)
  scheduler.add_jobstore(DjangoJobStore, "default")
  # Check timeout reminders every hour

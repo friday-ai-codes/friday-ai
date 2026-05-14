@@ -89,6 +89,34 @@ def test_backfill_date_trigger_runs_once -> None:
  assert second_fire is None, (
  "DateTrigger 是单次 trigger；previous_fire_time 非 None 时应返 None"
  )
+def test_scheduler_single_instance_lock(
+ monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+ """ 回归：第二份 scheduler 启动时 flock 拒绝。
+ Phase REVIEW 指出多 scheduler 进程会从 DjangoJobStore 拉到同一个
+ backfill job 并独立执行 → RAM 双倍 + CONTEXT OOM 风险。修复后
+ handle 开头 fcntl.flock advisory lock，重复进程立即 SystemExit(1)。
+ """
+ import fcntl
+ from agents.management.commands import runapscheduler as mod
+ monkeypatch.setattr(mod, "DjangoJobStore", MemoryJobStore)
+ monkeypatch.setattr(
+ mod.settings, "APSCHEDULER_LOCK_PATH", str(tmp_path / "scheduler.lock"),
+ raising=False,
+ )
+ # 模拟另一进程已占锁：在测试中先占住 lock。
+ holder_fd = open(tmp_path / "scheduler.lock", "w")
+ fcntl.flock(holder_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+ try:
+ cmd = mod.Command
+ with pytest.raises(SystemExit) as exit_info:
+ cmd.handle
+ assert exit_info.value.code == 1, (
+ "：lock 被占时 scheduler 应以 SystemExit(1) 退出"
+ )
+ finally:
+ fcntl.flock(holder_fd, fcntl.LOCK_UN)
+ holder_fd.close
 def test_backfill_date_trigger_is_timezone_aware(
  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
