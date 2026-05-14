@@ -5,11 +5,14 @@ Starts the background scheduler for session timeout tasks:
 - refresh_repo_caches: Daily at 2:00 AM (Phase)
 - prune_cache_volumes: Daily at 5:00 AM (Phase)
 - cleanup_orchestration_checkpoints: Daily at 3:30 UTC (Phase)
+- backfill_chunk_edges: One-shot at scheduler startup (Phase ½)
 """
 import asyncio
+from datetime import datetime
 import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -118,6 +121,24 @@ def cleanup_orchestration_checkpoints_job:
  log.info("job_start")
  try:
  call_command("cleanup_orchestration_checkpoints")
+ log.info("job_complete")
+ except Exception as e:
+ log.exception("job_error", error=str(e))
+def backfill_chunk_edges_job -> None:
+ """Phase：scheduler 启动时一次性扫所有 INDEXED 仓库 backfill ChunkEdge.
+ DateTrigger(run_date=now) 单次任务模式：跑完即结束，不周期重复（per CONTEXT
+ Claude Discretion，避免 IntervalTrigger 浪费资源）；失败下次 scheduler
+ 启动 DjangoJobStore 持久化自动重试（job_state 仍在 DB）。
+ 与 ``cleanup_orchestration_checkpoints_job`` 同 ``call_command`` 模式（不走
+ ``run_async_task`` 包装——``rebuild_chunk_edges`` 命令内部已 ``asyncio.run``）；
+ 单 repo dispatch 失败由命令自身吞掉 + ``stderr`` 提示 + 跳过 last_built_at 更新
+ （Phase Plan 容错语义），不会冒泡到本 wrapper。
+ """
+ from django.core.management import call_command
+ log = logger.bind(job="backfill_chunk_edges")
+ log.info("job_start")
+ try:
+ call_command("rebuild_chunk_edges", all=True)
  log.info("job_complete")
  except Exception as e:
  log.exception("job_error", error=str(e))
@@ -230,6 +251,22 @@ class Command(BaseCommand):
  "job_registered",
  job="cleanup_stale_branch_indexes",
  schedule="every 1 hour",
+ )
+ # Phase ½：scheduler 启动后一次性 backfill ChunkEdge（老仓库
+ # v23.0 索引完无 ChunkEdge）。DateTrigger 单次 trigger 跑完即结束；与 v23.0
+ # IntervalTrigger poll_repository_updates / calculate_behind_commits 共存。
+ scheduler.add_job(
+ backfill_chunk_edges_job,
+ trigger=DateTrigger(run_date=datetime.now),
+ id="backfill_chunk_edges",
+ name="Phase: one-shot backfill ChunkEdge for legacy repositories",
+ max_instances=1,
+ replace_existing=True,
+ )
+ logger.info(
+ "job_registered",
+ job="backfill_chunk_edges",
+ schedule="one-shot at scheduler startup (DateTrigger)",
  )
  try:
  logger.info("scheduler_starting")
