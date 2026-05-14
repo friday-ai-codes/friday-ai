@@ -35,6 +35,10 @@ if TYPE_CHECKING:
  from code_relations.models import ChunkEdge
 logger = structlog.get_logger(__name__)
 __all__ = ["enqueue_edge_build"]
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set
+""" 修复：保存 `asyncio.create_task` 强引用避免 GC 中途回收（CPython event
+loop 对 task 仅持弱引用，IO-wait 期间触发 GC 理论上可 collect）。task 完成后由
+`add_done_callback(_BACKGROUND_TASKS.discard)` 自动回收。"""
 async def enqueue_edge_build(
  repository_id: str,
  dirty_chunk_ids: list[uuid.UUID],
@@ -58,9 +62,11 @@ async def enqueue_edge_build(
  repository_id=repository_id,
  )
  return
- asyncio.create_task(
+ task = asyncio.create_task(
  _run_all_builders_and_sync_payload(repository_id, dirty_chunk_ids)
  )
+ _BACKGROUND_TASKS.add(task)
+ task.add_done_callback(_BACKGROUND_TASKS.discard)
  logger.info(
  "enqueue_edge_build_dispatched",
  repository_id=repository_id,
@@ -77,8 +83,12 @@ async def _run_all_builders_and_sync_payload(
  per：`asyncio.gather(..., return_exceptions=True)` 单 builder fail
  不中断其余；fail builder log error 不抛。
  per：`bulk_insert_edges` ignore_conflicts 静默重复边。
+ 修复：函数顶层包 try/except，兜住 `bulk_insert_edges` /
+ `aggregate_top_neighbors` / `batch_set_payload` 的所有未捕获异常（fire-and-
+ forget task 不会被 await，未 catch 异常会被静默吞噬）。
  """
  from repositories.models import Repository
+ try:
  try:
  repo = await sync_to_async(Repository.objects.get)(id=repository_id)
  except Repository.DoesNotExist:
@@ -133,4 +143,11 @@ async def _run_all_builders_and_sync_payload(
  dirty_chunks=len(dirty_chunk_ids),
  edges_inserted=inserted,
  payload_updates=len(updates),
+ )
+ except Exception as exc:
+ logger.exception(
+ "edge_build_orchestrator_unhandled",
+ repository_id=repository_id,
+ error=str(exc),
+ error_type=type(exc).__name__,
  )
