@@ -138,6 +138,25 @@ def test_extract_skips_source_when_neighbor_is_dict -> None:
  restore # type: ignore[operator]
  assert "src-dict" not in out
  assert any(e.get("event") == "hop1_payload_malformed" for e in events)
+def test_extract_skips_source_when_weight_is_nan_or_inf -> None:
+ """: weight 为 NaN / ±Inf / [0,1] 越界 → _is_valid_neighbor_tuple 拒绝整个 source。
+ NaN 进 sorted 不可排序 + budget 估算异常；Inf 进 markdown 渲染会污染
+ LLM 上下文（``w=inf``）。与 ChunkEdge.weight DB 约束 [0.0, 1.0] 对齐。
+ """
+ events, restore = _capture_structlog_events
+ try:
+ for bad_weight in (float("nan"), float("inf"), float("-inf"), -0.1, 1.5):
+ item = _make_item(
+ f"src-bad-{bad_weight}",
+ [["target-1", "CALL", bad_weight]],
+ )
+ out = extract_hop1_neighbors_raw([item])
+ assert f"src-bad-{bad_weight}" not in out, (
+ f"weight={bad_weight!r} 应被 _is_valid_neighbor_tuple 拒绝"
+ )
+ finally:
+ restore # type: ignore[operator]
+ _ = events # 不强校验 warning 内容，仅校验 dict 不入
 def test_extract_skips_source_when_tuple_short -> None:
  """邻居元素少字段（[chunk_id, edge_type]，缺 weight）→ 跳过 source + warning。"""
  item = _make_item("src-short", [["target-1", "CALL"]])
