@@ -24,6 +24,21 @@ Phase payload aggregator 在写 Qdrant 前用 `len(json.dumps(...).encode)`
 测长，超限则继续把 related_chunks 截到 15 / 10 / 5 直至达标，避免单 point
 payload 失控放大 Qdrant 内存压力。
 """
+CO_CHANGED_WINDOW_COMMITS: int = 2000
+"""CoChangedEdgeBuilder commit 滑窗大小（per Phase）。
+CoChangedEdgeBuilder 取最近 N 个 commit 内的 co-change 信号构造 CO_CHANGED 边。
+字面赋值、**禁止 env 覆盖**——窗口大小关系到 builder 复杂度上限与边密度，
+runtime 不允许通过环境变量绕过；如需调大需走 ROADMAP 评估 + Phase 滑窗
+重新基准测试。
+"""
+SEMANTIC_SCORE_THRESHOLD: float = 0.85
+"""SemanticEdgeBuilder Qdrant ``query_points`` score_threshold（per Phase ）。
+Phase 定义 0.85 作为 SEMANTIC 边的最低相似度门槛，避免低质邻居漫灌；
+``semantic_edge.py:_SEMANTIC_SCORE_THRESHOLD`` 持局部副本（Phase 落地时
+未集中），Phase Plan 在本模块新增 canonical 字面值——后续清理 PR 可
+逐步收敛到本常量。**禁止 env 覆盖**：阈值漂移会让历史 ChunkEdge 与新边混入
+不同质量层。
+"""
 MAX_HOPS: int = 2
 """HybridSearchService 图谱扩散最大跳数硬上限（per / ROADMAP ）。
 字面赋值、**禁止 env 覆盖**——LLM 通过 MCP tool 传 hops=10 时直接抛 ValueError,
