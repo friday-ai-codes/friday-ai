@@ -248,6 +248,66 @@ def test_builder_failure_keeps_last_built_at_null(
  ).count
  == 2
  ), "builder 失败时 last_built_at 仍应为 NULL（断点续跑下次重试）"
+def test_since_includes_older_built_chunks(indexed_repo: Repository) -> None:
+ """ 回归：传 ``--since`` 时 ``last_built_at < since`` 的旧行被重建。"""
+ from datetime import timedelta
+ from django.utils import timezone
+ now = timezone.now
+ old = now - timedelta(days=30)
+ _make_chunk(indexed_repo, file_path="src/null.py", index=0)
+ _make_chunk(
+ indexed_repo, file_path="src/old.py", index=0, last_built_at=old
+ )
+ _make_chunk(
+ indexed_repo, file_path="src/fresh.py", index=0, last_built_at=now
+ )
+ mock_enqueue = AsyncMock(return_value=None)
+ out = StringIO
+ since_iso = (now - timedelta(days=1)).isoformat
+ with patch(
+ "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
+ mock_enqueue,
+ ):
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ "--since",
+ since_iso,
+ stdout=out,
+ )
+ assert mock_enqueue.await_count == 1
+ repo_arg, chunk_ids_arg = mock_enqueue.await_args.args
+ chunk_ids_set = set(chunk_ids_arg)
+ assert len(chunk_ids_set) == 2, (
+ f"--since 应覆盖 NULL + 30 天前的两行；实际 {len(chunk_ids_set)} 行"
+ )
+def test_since_naive_datetime_raises(indexed_repo: Repository) -> None:
+ """：``--since`` 不带 timezone 时拒绝（USE_TZ=True 项目惯例）。"""
+ out = StringIO
+ with pytest.raises(CommandError) as exc_info:
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ "--since",
+ "2026-01-01T00:00:00",
+ stdout=out,
+ )
+ assert "naive" in str(exc_info.value).lower or "timezone" in str(exc_info.value)
+def test_since_invalid_format_raises(indexed_repo: Repository) -> None:
+ """：``--since`` 非 ISO8601 → CommandError。"""
+ out = StringIO
+ with pytest.raises(CommandError) as exc_info:
+ call_command(
+ "rebuild_chunk_edges",
+ "--repo",
+ str(indexed_repo.id),
+ "--since",
+ "not-a-date",
+ stdout=out,
+ )
+ assert "ISO8601" in str(exc_info.value) or "since" in str(exc_info.value).lower
 def test_help_lists_three_arguments(capsys: pytest.CaptureFixture[str]) -> None:
  """`manage.py help rebuild_chunk_edges` 输出含三参数（smoke）。
  argparse `--help` 走 sys.stdout 而非 call_command 的 stdout 参数，

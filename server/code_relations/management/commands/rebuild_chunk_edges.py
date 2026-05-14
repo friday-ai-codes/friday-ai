@@ -20,11 +20,13 @@ from __future__ import annotations
 import asyncio
 import sys
 import uuid
+from datetime import datetime
 from typing import Any, Literal
 import structlog
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 # 修复（Phase REVIEW）：``_process_repo`` 三态状态机，让 summary
 # 区分 "无 pending chunk 跳过" 与 "dispatch 失败"，运维不再误判全成功。
 RepoStatus = Literal["processed", "skipped_no_work", "failed"]
@@ -60,10 +62,34 @@ class Command(BaseCommand):
  "不更新 last_built_at"
  ),
  )
+ parser.add_argument(
+ "--since",
+ type=str,
+ default=None,
+ help=(
+ "：重建 last_built_at 早于该时间戳（ISO8601）的 chunk；"
+ "默认仅重建 last_built_at IS NULL（断点续跑），传值后 "
+ "Q(isnull=True) | Q(__lt=since)，覆盖 schema 升级后全量重建场景"
+ ),
+ )
  def handle(self, *args: Any, **options: Any) -> None:
  repo_filter: str | None = options["repo"]
  all_mode: bool = options["all"]
  dry_run: bool = options["dry_run"]
+ since_raw: str | None = options.get("since")
+ since: datetime | None = None
+ if since_raw is not None:
+ since = parse_datetime(since_raw)
+ if since is None:
+ raise CommandError(
+ f"--since 不是合法 ISO8601 时间戳: {since_raw!r} "
+ "（示例：2026-05-01T00:00:00+08:00）"
+ )
+ if timezone.is_naive(since):
+ raise CommandError(
+ "--since 必须带 timezone（USE_TZ=True 项目惯例），"
+ f"got naive datetime: {since_raw!r}"
+ )
  if repo_filter and all_mode:
  raise CommandError("--repo 与 --all 互斥，请只传其一")
  if not repo_filter and not all_mode:
@@ -99,7 +125,9 @@ class Command(BaseCommand):
  failed_repos = 0
  total_chunks_dispatched = 0
  for repo in repos:
- status, dispatched = self._process_repo(repo, dry_run=dry_run)
+ status, dispatched = self._process_repo(
+ repo, dry_run=dry_run, since=since
+ )
  if status == "processed":
  processed_repos += 1
  total_chunks_dispatched += dispatched
@@ -129,9 +157,18 @@ class Command(BaseCommand):
  if failed_repos > 0 and not dry_run:
  sys.exit(1)
  def _process_repo(
- self, repository: Repository, *, dry_run: bool
+ self,
+ repository: Repository,
+ *,
+ dry_run: bool,
+ since: datetime | None = None,
  ) -> tuple[RepoStatus, int]:
  """处理单个 repo：选 pending chunks → dispatch（或 dry-run 预估）→ 更新 last_built_at。
+ Args:
+ repository: 待处理 Repository
+ dry_run: 仅预估，不实际 dispatch / 不更新 last_built_at
+ since: ``--since`` 过滤时间戳；非 None 时除 ``isnull=True`` 外，
+ 也包含 ``last_built_at < since`` 的旧行（schema 升级后全量重建）
  Returns:
  ``(status, count)`` 元组：
  - ``("processed", N)``：dispatch 成功（或 dry-run 预估），N=chunk 数；
@@ -141,10 +178,20 @@ class Command(BaseCommand):
  三态分类避免运维误判全成功。
  """
  repo_id = str(repository.id)
+ base_qs = ChunkRegistry.objects.filter(repository_id=repo_id)
+ # 修复（Phase REVIEW）：CONTEXT.md 第 27 行写
+ # "last_built_at IS NULL OR last_built_at < migration_time 才需要 backfill"；
+ # 默认仍仅过滤 NULL（断点续跑语义不变），传 ``--since`` 时 OR ``< since``
+ # 覆盖 EdgeBuilder schema 升级 / weight 算法变更后的全量重建场景，运维
+ # 不再需要手动 UPDATE chunk_registry SET last_built_at=NULL。
+ if since is None:
+ pending_qs = base_qs.filter(last_built_at__isnull=True)
+ else:
+ pending_qs = base_qs.filter(
+ Q(last_built_at__isnull=True) | Q(last_built_at__lt=since)
+ )
  chunk_ids: list[uuid.UUID] = list(
- ChunkRegistry.objects.filter(
- repository_id=repo_id, last_built_at__isnull=True
- ).values_list("chunk_id", flat=True)
+ pending_qs.values_list("chunk_id", flat=True)
  )
  if not chunk_ids:
  self.stdout.write(
@@ -184,19 +231,27 @@ class Command(BaseCommand):
  # 3.32 之前 999、3.32+ 32766；老仓库 backfill 几万 chunk 直接抛
  # ``OperationalError: too many SQL variables``。
  #
- # 简化：dispatch 来源 = 该 repo 全部 ``last_built_at IS NULL`` 行（line 165
- # qs），且本命令是短时窗 backfill 命令； 修复后 dispatch 失败已走
- # except 分支跳过此 update → 安全用 ``last_built_at__isnull=True`` 替代
- # ``chunk_id__in``，避开 IN 参数限制 + 一条 UPDATE 完成。
+ # 简化：dispatch 来源 = 上面 ``pending_qs``（NULL 或 < since），且本命令
+ # 是短时窗 backfill； 修复后 dispatch 失败已走 except 分支跳过此
+ # update → 安全用 pending_qs 的 filter 复用替代 ``chunk_id__in``，避开
+ # IN 参数限制 + 一条 UPDATE 完成。
  #
  # 仅有的并发风险：dispatch 期间 indexer 在同 repo 写入新 ``ChunkRegistry``
  # 行（last_built_at=NULL）会被一并 mark，但这些行**未** dispatch 给
  # builder → 下次 backfill 不再重试 → 边可能缺失。在线 backfill 命令一般
  # 离线短跑（运维手动 / scheduler 启动一次），可接受该窗口；若担心可在
  # docstring 标注，或 indexer 自身的 enqueue_edge_build 链路兜底。
- updated = ChunkRegistry.objects.filter(
+ if since is None:
+ update_filter = ChunkRegistry.objects.filter(
  repository_id=repo_id, last_built_at__isnull=True
- ).update(last_built_at=timezone.now)
+ )
+ else:
+ update_filter = ChunkRegistry.objects.filter(
+ repository_id=repo_id
+ ).filter(
+ Q(last_built_at__isnull=True) | Q(last_built_at__lt=since)
+ )
+ updated = update_filter.update(last_built_at=timezone.now)
  self.stdout.write(
  f"[DONE] repo={repo_id} dispatched={len(chunk_ids)} "
  f"last_built_at 已更新 (updated_rows={updated})"
