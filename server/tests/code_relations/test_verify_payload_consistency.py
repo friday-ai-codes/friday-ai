@@ -48,8 +48,14 @@ def test_no_errors_when_payload_intact(repository) -> None:
  c3.chunk_id: {"related_chunks": [[str(c1.chunk_id), "SAME_FILE", 0.5]]},
  }
  def fake_retrieve(*, collection_name: str, ids: list[str], with_payload: list[str]) -> list[MagicMock]:
- cid = uuid.UUID(ids[0])
- return [_record(payload_for[cid])]
+ #：verify 命令现在批量传 ids；按 ids list 全部返回对应 record
+ records =
+ for id_str in ids:
+ cid = uuid.UUID(id_str)
+ rec = _record(payload_for[cid])
+ rec.id = id_str
+ records.append(rec)
+ return records
  fake_client = MagicMock
  fake_client.retrieve.side_effect = fake_retrieve
  out = StringIO
@@ -70,12 +76,12 @@ def test_no_errors_when_payload_intact(repository) -> None:
  assert "total_chunks_checked=3" in output, output
 def test_detects_orphan_neighbors(repository) -> None:
  """neighbor.chunk_id 不在 registry → total_orphans>=1，dry-run 不触发 enqueue。"""
- _make_chunk(repository, file_path="src/a.py", index=0)
+ src = _make_chunk(repository, file_path="src/a.py", index=0)
  orphan_id = uuid.uuid4 # 不在 ChunkRegistry
  fake_client = MagicMock
- fake_client.retrieve.return_value = [
- _record({"related_chunks": [[str(orphan_id), "CALL", 0.9]]})
- ]
+ rec = _record({"related_chunks": [[str(orphan_id), "CALL", 0.9]]})
+ rec.id = str(src.chunk_id)
+ fake_client.retrieve.return_value = [rec]
  out = StringIO
  with (
  patch(
@@ -103,9 +109,9 @@ def test_fix_triggers_enqueue_for_dirty_sources(repository) -> None:
  src = _make_chunk(repository, file_path="src/a.py")
  orphan_id = uuid.uuid4
  fake_client = MagicMock
- fake_client.retrieve.return_value = [
- _record({"related_chunks": [[str(orphan_id), "CALL", 0.9]]})
- ]
+ rec = _record({"related_chunks": [[str(orphan_id), "CALL", 0.9]]})
+ rec.id = str(src.chunk_id)
+ fake_client.retrieve.return_value = [rec]
  out = StringIO
  with (
  patch(
@@ -169,3 +175,50 @@ def test_invalid_sample_raises_command_error(repository) -> None:
  "--sample",
  "0",
  )
+def test_sample_above_upper_bound_raises_command_error(repository) -> None:
+ """ regression：--sample 超过上限 → CommandError；防大仓 ORDER BY RANDOM 塌方。"""
+ with pytest.raises(CommandError, match="超过上限"):
+ call_command(
+ "verify_payload_consistency",
+ "--repo",
+ str(repository.id),
+ "--sample",
+ "1000000",
+ )
+def test_dispatch_and_drain_only_awaits_new_tasks(repository) -> None:
+ """ regression：_dispatch_and_drain 只 await 本次新 spawn 的 task。
+ 背景：旧实现 `pending = list(_BACKGROUND_TASKS)` 全量 snapshot → 多仓
+ 校验时会跨 dispatch 串行 await 别人的 task；甚至跨 loop 报
+ "Task attached to a different loop"。新实现照 lifecycle.py before/after
+ diff 模式。
+ """
+ import asyncio
+ from code_relations import tasks as tasks_module
+ from code_relations.management.commands import verify_payload_consistency as cmd
+ src = _make_chunk(repository, file_path="src/a.py")
+ async def _run -> None:
+ # 注入一个"别人的"长 await task，模拟跨 dispatch 残留
+ async def _other_task -> None:
+ await asyncio.sleep(60)
+ other = asyncio.create_task(_other_task)
+ tasks_module._BACKGROUND_TASKS.add(other)
+ other.add_done_callback(tasks_module._BACKGROUND_TASKS.discard)
+ try:
+ with patch(
+ "code_relations.management.commands.verify_payload_consistency.enqueue_edge_build",
+ new_callable=AsyncMock,
+ ) as mock_enq:
+ # mock 不 spawn 任何新 task，drain 应立即返回（不去 await `other`）
+ await cmd.Command._dispatch_and_drain(
+ str(repository.id), [src.chunk_id]
+ )
+ mock_enq.assert_called_once
+ finally:
+ other.cancel
+ try:
+ await other
+ except (asyncio.CancelledError, BaseException):
+ pass
+ # 用 wait_for 给 _run 一个紧凑超时；如果 drain 错误地 await `other`
+ # （sleep 60s），会触发 TimeoutError → 测试失败
+ asyncio.run(asyncio.wait_for(_run, timeout=2.0))
