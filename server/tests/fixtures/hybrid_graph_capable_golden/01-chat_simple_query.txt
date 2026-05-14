@@ -1,0 +1,11 @@
+## L3 Related Code
+### src/auth/login.py (score: 0.860)
+```
+def login(req):
+ return authenticate(req.user)
+```
+## Graph Context
+### Direct Neighbors (1-hop)
+- `src/auth/authenticate.py:10` (CALL, w=0.92): via direct call
+- `src/auth/session.py:10` (IMPORT, w=0.78): imports module
+# tokens=88 source_layer=hybrid final_chunks=2

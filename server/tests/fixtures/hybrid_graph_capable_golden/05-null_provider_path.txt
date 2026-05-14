@@ -1,0 +1,7 @@
+## L3 Related Code
+### src/auth/login.py (score: 0.860)
+```
+def login(req):
+ return authenticate(req.user)
+```
+# tokens=33 source_layer=hybrid final_chunks=0
