@@ -225,6 +225,7 @@ def test_builder_failure_keeps_last_built_at_null(
  "code_relations.management.commands.rebuild_chunk_edges.enqueue_edge_build",
  new=_spawn_failing_task,
  ):
+ with pytest.raises(SystemExit) as exit_info:
  call_command(
  "rebuild_chunk_edges",
  "--repo",
@@ -232,8 +233,14 @@ def test_builder_failure_keeps_last_built_at_null(
  stdout=out,
  stderr=err,
  )
+ assert exit_info.value.code == 1, (
+ "：dispatch 失败应让命令以退出码 1 退出"
+ )
  assert "[FAIL]" in err.getvalue, (
  f"应输出 [FAIL] 提示；stderr={err.getvalue!r}"
+ )
+ assert "failed_repos=1" in out.getvalue, (
+ f"summary 应区分 failed_repos；stdout={out.getvalue!r}"
  )
  assert (
  ChunkRegistry.objects.filter(
