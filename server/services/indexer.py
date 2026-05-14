@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -666,6 +667,8 @@ class IndexerService:
  batch_size=len(batch),
  total_points=len(points),
  )
+ # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
+ await self._upsert_chunk_registry_batch(registry_rows)
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
  commit_info = last_commit_map.get(fp)
@@ -906,6 +909,8 @@ class IndexerService:
  for i in range(0, len(points), batch_size):
  batch = points[i: i + batch_size]
  await qdrant_upsert_vectors_by_name(collection_name, batch)
+ # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
+ await self._upsert_chunk_registry_batch(registry_rows)
  # 记录 BranchFileIndex
  branch_index, _ = await RepositoryBranchIndex.objects.aupdate_or_create(
  repository=repository, branch_name=branch_name,
@@ -1212,6 +1217,8 @@ class IndexerService:
  batch_size=len(batch),
  total_points=len(points),
  )
+ # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
+ await self._upsert_chunk_registry_batch(registry_rows)
  # upsert 成功 → 立即 flush FileIndex（文件级断点续传锚点）
  for fp, fh in pending_files:
  commit_info = last_commit_map.get(fp)
@@ -1491,6 +1498,8 @@ class IndexerService:
  batch_size=len(batch),
  total_points=len(points),
  )
+ # Qdrant upsert 全部成功 → 同步写 ChunkRegistry（ / 强一致）
+ await self._upsert_chunk_registry_batch(registry_rows)
  for fp, fh in pending_files:
  ci = last_commit_map_inc.get(fp)
  defaults = {"file_hash": fh}
@@ -1798,6 +1807,61 @@ class IndexerService:
  "json": "json",
  }
  return _EXT_LANG_MAP.get(ext)
+ @staticmethod
+ @sync_to_async
+ def _fetch_old_content_hash(cid: uuid.UUID) -> str | None:
+ """读取 ChunkRegistry 指定 chunk_id 行旧 content_hash（用于 upsert 前判定是否变化）。
+ 独立 staticmethod 避开 closure 延迟绑定陷阱（lambda 内引用循环变量）。
+ """
+ from code_relations.models import ChunkRegistry
+ return (
+ ChunkRegistry.objects
+ .filter(chunk_id=cid)
+ .values_list("content_hash", flat=True)
+ .first
+ )
+ async def _upsert_chunk_registry_batch(
+ self,
+ registry_rows: list[dict[str, Any]],
+ ) -> list[tuple[str, bool]]:
+ """同步写入 ChunkRegistry —— uuid5 chunk_id 同源 + content_hash 变化追踪。
+ per / /：
+ - 逐行 `update_or_create(chunk_id=cid, defaults={...})`，同 chunk_id 自动 update
+ 保留 PK 不漂移；新 chunk_id 走 create。
+ - 返回 `list[tuple[str, bool]]` 每个元素为 `(point_id, content_hash_changed)`：
+ `content_hash_changed=True` 表示同 chunk_id 但内容变化（Phase 据此决定是否
+ 重新 embed；本 phase 仅返回不消费）。
+ - 在 Qdrant upsert 全部成功之后调用；任一 batch 失败 raise RuntimeError 会跳过
+ 本方法，保证 Qdrant ↔ ChunkRegistry 强一致（ 语义）。
+ """
+ from code_relations.models import ChunkRegistry
+ results: list[tuple[str, bool]] =
+ for row in registry_rows:
+ cid = row["chunk_id"]
+ new_hash = row["content_hash"]
+ old_hash = await self._fetch_old_content_hash(cid)
+ _, created = await sync_to_async(ChunkRegistry.objects.update_or_create)(
+ chunk_id=cid,
+ defaults={
+ "content_hash": new_hash,
+ "repository_id": row["repository_id"],
+ "file_path": row["file_path"],
+ "chunk_index": row["chunk_index"],
+ },
+ )
+ content_hash_changed = bool(
+ (not created) and old_hash is not None and old_hash != new_hash
+ )
+ results.append((str(cid), content_hash_changed))
+ if results:
+ changed_count = sum(1 for _, c in results if c)
+ logger.info(
+ "chunk_registry_upsert_batch",
+ repository_id=self.repository_id,
+ total=len(results),
+ content_hash_changed=changed_count,
+ )
+ return results
  @staticmethod
  def _build_points(
  chunks: list[CodeChunk],
