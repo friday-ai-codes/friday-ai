@@ -113,7 +113,8 @@ async def test_large_file_protection(repo_with_clone) -> None:
  assert len(edges) == 15
 @pytest.mark.django_db(transaction=True)
 async def test_git_returncode_nonzero_returns_empty(repo_with_clone) -> None:
- """git proc.returncode != 0 → log warning + 返回 （不抛错）。"""
+ """git proc.returncode != 0 + counter 不足 min_support → log warning +
+ 返回 （partial 保留但下游 filter 仍空）。"""
  await _create_chunks_for_file(repo_with_clone, "a.py", 1)
  await _create_chunks_for_file(repo_with_clone, "b.py", 1)
  proc = _make_mock_proc([b"COMMIT c1\n", b"a.py\n", b"b.py\n"], returncode=128)
@@ -123,6 +124,60 @@ async def test_git_returncode_nonzero_returns_empty(repo_with_clone) -> None:
  ):
  edges = await CoChangedEdgeBuilder.build(repo_with_clone, )
  assert edges ==
+@pytest.mark.django_db(transaction=True)
+async def test_git_returncode_nonzero_preserves_partial_data(repo_with_clone) -> None:
+ """ 回归：returncode != 0 但已采集 ≥ min_support 的 partial counter →
+ 保留 partial 数据生成 edges（不丢弃 N-1 commit 的真实贡献）。"""
+ lines = [
+ b"COMMIT c1\n", b"a.py\n", b"b.py\n",
+ b"COMMIT c2\n", b"a.py\n", b"b.py\n",
+ b"COMMIT c3\n", b"a.py\n", b"b.py\n",
+ ]
+ await _create_chunks_for_file(repo_with_clone, "a.py", 1)
+ await _create_chunks_for_file(repo_with_clone, "b.py", 1)
+ proc = _make_mock_proc(lines, returncode=128)
+ with patch(
+ "asyncio.create_subprocess_exec",
+ AsyncMock(return_value=proc),
+ ):
+ edges = await CoChangedEdgeBuilder.build(repo_with_clone, )
+ assert len(edges) == 1
+ assert edges[0].metadata["co_change_count"] == 3
+@pytest.mark.django_db(transaction=True)
+async def test_stderr_drained_concurrently_does_not_deadlock(
+ repo_with_clone,
+) -> None:
+ """ 回归：mock 子进程 stderr 喷 100KB（超 64KB pipe buffer），并发 drain
+ 正常退出 → 不卡死（asyncio.wait_for 5s 超时即视为死锁）。"""
+ import asyncio as _asyncio
+ stdout_lines = [
+ b"COMMIT c1\n", b"a.py\n", b"b.py\n",
+ b"COMMIT c2\n", b"a.py\n", b"b.py\n",
+ b"COMMIT c3\n", b"a.py\n", b"b.py\n",
+ ]
+ iter_stdout: Iterator[bytes] = iter([*stdout_lines, b""])
+ mock_stdout = MagicMock
+ mock_stdout.readline = AsyncMock(side_effect=lambda: next(iter_stdout))
+ big_chunk = b"X" * 4096
+ stderr_total = 100 * 1024 # 100KB > pipe buffer 64KB
+ stderr_chunks = [big_chunk] * (stderr_total // len(big_chunk)) + [b""]
+ iter_stderr: Iterator[bytes] = iter(stderr_chunks)
+ mock_stderr = MagicMock
+ mock_stderr.read = AsyncMock(side_effect=lambda *_a, **_kw: next(iter_stderr))
+ proc = MagicMock
+ proc.stdout = mock_stdout
+ proc.stderr = mock_stderr
+ proc.wait = AsyncMock(return_value=0)
+ proc.returncode = 0
+ await _create_chunks_for_file(repo_with_clone, "a.py", 1)
+ await _create_chunks_for_file(repo_with_clone, "b.py", 1)
+ with patch(
+ "asyncio.create_subprocess_exec", AsyncMock(return_value=proc)
+ ):
+ edges = await _asyncio.wait_for(
+ CoChangedEdgeBuilder.build(repo_with_clone, ), timeout=5.0
+ )
+ assert len(edges) == 1
 @pytest.mark.django_db(transaction=True)
 async def test_no_clone_path_returns_empty(repository, tmp_path) -> None:
  """clone_path 不存在 → 直接返回 （不抛 FileNotFoundError）。"""
