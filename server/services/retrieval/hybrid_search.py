@@ -35,7 +35,12 @@ from services.code_intel.protocols import (
  GraphCapableProvider,
 )
 from services.retrieval.budget import HybridBudget
-from services.retrieval.find_related import find_related as _find_related_impl
+from services.retrieval.find_related import (
+ explain_neighbor,
+)
+from services.retrieval.find_related import (
+ find_related as _find_related_impl,
+)
 from services.retrieval.hop1_reader import (
  extract_hop1_neighbors_raw,
  resolve_neighbor_metadata,
@@ -56,12 +61,20 @@ from services.retrieval.types import (
 logger = structlog.get_logger(__name__)
 DEFAULT_MAX_TOKENS: int = 8000
 DEFAULT_TOP_K: int = 30
-def _stub_reason_fn(edge_type: str, source_chunk_id: str) -> str:
- """reason 字段 stub —— 仅返回 "via {edge_type}" 简单形式。
- Plan ``_explain_neighbor`` 落地后替换为完整模板（含 metadata 解析、
- co-change 次数、test 关系等）；本 plan 用 stub 占位保 markdown 渲染非空。
+def _enrichment_reason_fn(edge_type: str, source_chunk_id: str) -> str:
+ """``hop1_reader.resolve_neighbor_metadata`` / ``hop2_expander.expand_hop2``
+ 注入式 reason 生成器（Phase graph enrichment 路径）。
+ **降级路径**（per Plan deviation "reason_fn 降级路径"）：完整模板需要
+ ``source_file`` / ``target_file`` / ``ChunkEdge.metadata``，但 Plan/03 的
+ ``resolve_neighbor_metadata`` / ``expand_hop2`` 签名只透传 ``edge_type`` +
+ ``source_chunk_id``——本 plan 不修改其签名（避免逆向依赖），故仅传 ``edge_type``
+ 走 ``explain_neighbor`` 降级模板（CALL → ``"via direct call"``，CO_CHANGED →
+ ``"co-changed with related chunk × recent history"`` 等）。
+ 完整 metadata reason（含 commit_count / similarity 等）通过 ``find_related``
+ Python API 直接调用获取，由 Phase MCP tool 透出给 LLM。
  """
- return f"via {edge_type}"
+ _ = source_chunk_id # 保签名兼容；降级路径不使用
+ return explain_neighbor(edge_type)
 def _render_neighbor_line(neighbor: NeighborMetadata) -> str:
  """单个 NeighborMetadata → markdown 一行（per ）。
  格式：``- `{file_path}:{line_start}` ({edge_type}, w={weight:.2f}): {reason}``
@@ -270,7 +283,7 @@ class HybridSearchService:
  hop1_neighbors: list[NeighborMetadata] = await resolve_neighbor_metadata(
  raw_h1,
  hop=1,
- reason_fn=_stub_reason_fn,
+ reason_fn=_enrichment_reason_fn,
  )
  hop1_chunk_ids: set[str] = {n.chunk_id for n in hop1_neighbors}
  # ---- wave：二跳 enrichment（ChunkEdge ORM aiter + 三重去重）------
@@ -278,7 +291,7 @@ class HybridSearchService:
  hop1_chunk_ids=hop1_chunk_ids,
  rag_chunk_ids=rag_chunk_ids,
  repo_ids=repo_ids,
- reason_fn=_stub_reason_fn,
+ reason_fn=_enrichment_reason_fn,
  )
  # ---- graph_context markdown 拼装 + 双段 trim_to_budget --------------
  graph_context_raw: str = _render_graph_context(hop1_neighbors, hop2_neighbors)
