@@ -12,6 +12,14 @@ def go_source:
  with open(os.path.join(fixtures_dir, "go_module.go"), "r", encoding="utf-8") as f:
  return f.read
 @pytest.fixture
+def go_gin_handler_source:
+ """加载 Go gin handler fixture 源码。"""
+ fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+ with open(
+ os.path.join(fixtures_dir, "go_gin_handler.go"), "r", encoding="utf-8"
+ ) as f:
+ return f.read
+@pytest.fixture
 def go_parser:
  """返回预配置的 tree-sitter Go Parser。"""
  import tree_sitter_go
@@ -63,3 +71,44 @@ class TestGoExtractor:
  """Go backend 在 BACKEND_REGISTRY 中注册。"""
  from codegraph.extractors.registry import BACKEND_REGISTRY
  assert "go" in BACKEND_REGISTRY
+class TestGoGinHandler:
+ """Go gin handler fixture 端到端测试 —— 覆盖 。"""
+ def test_handler_symbols(self, go_parser, go_gin_handler_source):
+ """gin handler 函数 + struct 抽取。"""
+ tree = go_parser.parse(go_gin_handler_source.encode("utf-8"))
+ ctx = FileContext(file_path="handler.go", language="go", repository_id="r1")
+ backend = TreeSitterBackend("go")
+ symbols = backend.extract_symbols(tree, go_gin_handler_source, ctx)
+ names = [s.name for s in symbols]
+ assert "GetUser" in names
+ assert "CreateUser" in names
+ assert "RegisterRoutes" in names
+ assert "User" in names
+ def test_gin_imports(self, go_parser, go_gin_handler_source):
+ """gin import path + grouping 解析。"""
+ tree = go_parser.parse(go_gin_handler_source.encode("utf-8"))
+ ctx = FileContext(file_path="handler.go", language="go", repository_id="r1")
+ backend = TreeSitterBackend("go")
+ imports = backend.extract_imports(tree, ctx)
+ modules = [imp.target_module for imp in imports]
+ assert "github.com/gin-gonic/gin" in modules
+ assert "net/http" in modules
+ def test_gin_method_calls(self, go_parser, go_gin_handler_source):
+ """selector_expression call：c.JSON / c.BindJSON / r.GET / r.POST。"""
+ tree = go_parser.parse(go_gin_handler_source.encode("utf-8"))
+ ctx = FileContext(file_path="handler.go", language="go", repository_id="r1")
+ backend = TreeSitterBackend("go")
+ calls = backend.extract_calls(tree, ctx)
+ callee_names = [c.callee_name for c in calls]
+ assert "JSON" in callee_names
+ method_call_types = {
+ c.call_type for c in calls if c.callee_name == "JSON"
+ }
+ assert "METHOD" in method_call_types
+ def test_endpoints_empty_for_go(self, go_parser, go_gin_handler_source):
+ """Go AST 不触发 Python endpoint decorator → 返空 list（per CONTEXT Deferred）。"""
+ tree = go_parser.parse(go_gin_handler_source.encode("utf-8"))
+ ctx = FileContext(file_path="handler.go", language="go", repository_id="r1")
+ extractor = GraphExtractor
+ bundle = extractor.extract_all(tree, go_gin_handler_source, ctx)
+ assert bundle.endpoints ==
