@@ -86,9 +86,11 @@ def walk_tree(tree: Any, language: str) -> Generator[WalkerNode, None, None]:
  def _walk(node: Any) -> Generator[WalkerNode, None, None]:
  # 判断当前节点是否为符号定义，获取符号名
  #：method_definition 加入函数判定（TS class 内方法）
+ #：lexical_declaration（命名 arrow_function 容器）当函数容器，
+ # 取 variable_declarator.name 作 ancestor_function（用于内层 call 归属）
  node_is_function = node.type in ("function_definition", "function_declaration",
  "method_declaration", "arrow_function",
- "method_definition")
+ "method_definition", "lexical_declaration")
  #：interface_declaration / type_alias_declaration 当作类（CLASS 符号）
  node_is_class = node.type in ("class_definition", "class_declaration", "type_declaration",
  "interface_declaration", "type_alias_declaration")
@@ -96,6 +98,15 @@ def walk_tree(tree: Any, language: str) -> Generator[WalkerNode, None, None]:
  if node_is_function or node_is_class:
  # 提取符号名：取 name 子节点（tree-sitter 约定）
  name_node = node.child_by_field_name("name")
+ #：lexical_declaration 没有 name 字段，下钻 variable_declarator
+ # 当且仅当 value 是 arrow_function 时取 variable_declarator.name
+ if name_node is None and node.type == "lexical_declaration":
+ for child in node.children:
+ if child.type == "variable_declarator":
+ value_node = child.child_by_field_name("value")
+ if value_node is not None and value_node.type == "arrow_function":
+ name_node = child.child_by_field_name("name")
+ break
  if name_node is not None:
  node_name = name_node.text
  if isinstance(node_name, bytes):
