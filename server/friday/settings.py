@@ -386,16 +386,27 @@ GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
 # =============================================================================
 # Phase LSP Client + Supervisor Settings
 # =============================================================================
-# Phase: LSP servers 配置占位 —— Phase / 267 追加真实 volar / gopls 配置
-# 仅 stub 用于测试 echo server；本 phase 不引入真实 LSP binary 依赖（per / ）。
-# 本 phase 严格不 uncomment volar / gopls placeholder；那是 Phase / 267 的工作。
+# Phase：volar 真实命令落地（vue-language-server --stdio）
+# initialization_options.typescript.tsdk 由 VolarPool._build_supervisor 在每实例化时
+# 用 node_check.discover_tsdk 动态注入；占位 None 仅给 mypy 用。
+# advisory（per Pitfall P-）：study-app 大插件链场景启动 60-90s，
+# 运维 env 调 LSP_STARTUP_TIMEOUT_SECONDS=60 缓解。
 LSP_SERVERS: dict[str, dict[str, Any]] = {
- # "volar": { # Phase 实装 —— 不要在 Phase 内 uncomment
- # "command": ["vue-language-server", "--stdio"],
- # "language_ids": ["vue", "typescript", "typescriptreact", "javascript", "javascriptreact"],
- # "initialization_options": {},
- # "enabled": True,
- # },
+ "volar": {
+ "command": ["vue-language-server", "--stdio"],
+ "language_ids": [
+ "vue",
+ "typescript",
+ "typescriptreact",
+ "javascript",
+ "javascriptreact",
+ ],
+ "initialization_options": {
+ "typescript": {"tsdk": None},
+ "vue": {"hybridMode": False},
+ },
+ "enabled": True,
+ },
  # "gopls": { # Phase 实装 —— 不要在 Phase 内 uncomment
  # "command": ["gopls", "serve"],
  # "language_ids": ["go"],
@@ -419,6 +430,14 @@ LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int(
 LSP_MAX_RESTART_ATTEMPTS: int = env.int("LSP_MAX_RESTART_ATTEMPTS", default=3)
 # Phase：idle timeout 回收（默认 30 分钟无使用即 stop）
 LSP_IDLE_TIMEOUT_SECONDS: int = env.int("LSP_IDLE_TIMEOUT_SECONDS", default=1800)
+# =============================================================================
+# Phase Volar Backend Settings
+# =============================================================================
+# Phase：VolarPool 并发上限（per v25.0 spike 锁定 4GB 内存预算）
+VOLAR_POOL_MAX_CONCURRENT: int = env.int("VOLAR_POOL_MAX_CONCURRENT", default=4)
+# Phase：volar backend 运维 kill-switch；False 时 apps.ready 跳过
+# register_backend，BACKEND_REGISTRY 5 项保留 tree-sitter 默认。
+VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
