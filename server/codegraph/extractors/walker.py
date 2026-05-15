@@ -16,19 +16,41 @@ logger = structlog.get_logger(__name__)
 SYMBOL_TYPES: dict[str, list[str]] = {
  "python": ["function_definition", "class_definition"],
  "javascript": ["function_declaration", "class_declaration", "arrow_function"],
- "typescript": ["function_declaration", "class_declaration", "arrow_function"],
+ # interface/type → CLASS / 命名 arrow / method
+ "typescript": [
+ "function_declaration",
+ "class_declaration",
+ "interface_declaration",
+ "type_alias_declaration",
+ "method_definition",
+ "lexical_declaration",
+ ],
+ #：tsx 与 typescript 字段级一致（显式 dict literal，避免间接引用）
+ "tsx": [
+ "function_declaration",
+ "class_declaration",
+ "interface_declaration",
+ "type_alias_declaration",
+ "method_definition",
+ "lexical_declaration",
+ ],
  "go": ["function_declaration", "method_declaration", "type_declaration"],
 }
 IMPORT_TYPES: dict[str, list[str]] = {
  "python": ["import_statement", "import_from_statement"],
  "javascript": ["import_statement"],
- "typescript": ["import_statement"],
+ # export_statement 重导出
+ "typescript": ["import_statement", "export_statement"],
+ "tsx": ["import_statement", "export_statement"],
  "go": ["import_declaration"],
 }
 CALL_TYPES: dict[str, list[str]] = {
  "python": ["call"],
  "javascript": ["call_expression"],
+ #：TS 不含 JSX
  "typescript": ["call_expression"],
+ # /：TSX 额外含 jsx_element / jsx_self_closing_element
+ "tsx": ["call_expression", "jsx_element", "jsx_self_closing_element"],
  "go": ["call_expression"],
 }
 @dataclass
@@ -63,9 +85,13 @@ def walk_tree(tree: Any, language: str) -> Generator[WalkerNode, None, None]:
  # 内联递归函数 —— 保持闭包访问栈变量
  def _walk(node: Any) -> Generator[WalkerNode, None, None]:
  # 判断当前节点是否为符号定义，获取符号名
+ #：method_definition 加入函数判定（TS class 内方法）
  node_is_function = node.type in ("function_definition", "function_declaration",
- "method_declaration", "arrow_function")
- node_is_class = node.type in ("class_definition", "class_declaration", "type_declaration")
+ "method_declaration", "arrow_function",
+ "method_definition")
+ #：interface_declaration / type_alias_declaration 当作类（CLASS 符号）
+ node_is_class = node.type in ("class_definition", "class_declaration", "type_declaration",
+ "interface_declaration", "type_alias_declaration")
  node_name: str | None = None
  if node_is_function or node_is_class:
  # 提取符号名：取 name 子节点（tree-sitter 约定）
