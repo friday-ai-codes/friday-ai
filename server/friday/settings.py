@@ -368,10 +368,14 @@ EXTRACTOR_BACKENDS: dict[str, str] = {
  "typescript": "tree_sitter", # Phase 切 volar 时改 "volar"
  "tsx": "tree_sitter", # Phase 切 volar 时改 "volar"
  "vue": "tree_sitter", # Phase 切 volar 时改 "volar"
- # 预留后续 phase 覆盖
- # "html": "tree_sitter",
- # "css": "tree_sitter",
+ "html": "tree_sitter", # Phase
+ # "css": "tree_sitter", # Plan 落地
 }
+# Phase B3：CoChangedEdgeBuilder min_support 阈值（per 0 条根因修复）。
+# 默认 2 让小仓库默认能建至少 2 commit 触发的边；env 可覆盖（ops 调试需要）。
+CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
+ "CODEGRAPH_COCHANGE_MIN_SUPPORT", default=2
+)
 # Phase：HybridSearchService 编排器 RAG/图谱 token 预算比例（per ）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings` clamp 到边界 + structlog warning。
