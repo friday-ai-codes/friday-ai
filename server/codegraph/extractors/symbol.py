@@ -71,6 +71,17 @@ def _extract_one_symbol(
  if child.type == "type_spec":
  name_node = child.child_by_field_name("name")
  break
+ #：TS / TSX lexical_declaration 仅抽取 value 为 arrow_function 的命名 const，
+ # 从 variable_declarator.name 取符号名；非 arrow value（如 const x = 5）不抽
+ if name_node is None and node.type == "lexical_declaration":
+ for child in node.children:
+ if child.type == "variable_declarator":
+ value_node = child.child_by_field_name("value")
+ if value_node is not None and value_node.type == "arrow_function":
+ name_node = child.child_by_field_name("name")
+ break
+ if name_node is None:
+ return None
  if name_node is None:
  return None
  name = name_node.text
@@ -81,6 +92,16 @@ def _extract_one_symbol(
  symbol_type = "CLASS"
  elif node.type == "type_declaration":
  symbol_type = "CLASS" # Go struct/interface
+ elif node.type == "class_declaration":
+ symbol_type = "CLASS" # TS / TSX class
+ elif node.type == "interface_declaration":
+ symbol_type = "CLASS" #
+ elif node.type == "type_alias_declaration":
+ symbol_type = "CLASS" #
+ elif node.type == "method_definition":
+ symbol_type = "METHOD" # TS / TSX class 内方法
+ elif node.type == "lexical_declaration":
+ symbol_type = "FUNCTION" # 命名 arrow_function
  elif wn.ancestor_class is not None:
  symbol_type = "METHOD"
  elif node.type == "method_declaration":
