@@ -1,0 +1,6 @@
+{
+ "name": "@app-learn/onion-utils",
+ "devDependencies": {
+ "vue": "2.7.14"
+ }
+}
