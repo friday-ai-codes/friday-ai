@@ -105,6 +105,7 @@ addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf'"
 asyncio_mode = "auto"
 markers = [
  "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（Phase）",
+ "integration: integration tests requiring external binaries (e.g. vue-language-server)（Phase）",
 ]
 [tool.coverage.run]
 source = ["friday"]
