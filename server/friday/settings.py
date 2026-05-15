@@ -364,11 +364,11 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
 # 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
 EXTRACTOR_BACKENDS: dict[str, str] = {
  "python": "tree_sitter",
+ "go": "tree_sitter", # Phase 切 gopls 时改 "gopls"
  # 预留后续 phase 覆盖
  # "typescript": "tree_sitter",
  # "tsx": "tree_sitter",
  # "vue": "volar",
- # "go": "gopls",
  # "html": "tree_sitter",
  # "css": "tree_sitter",
 }
