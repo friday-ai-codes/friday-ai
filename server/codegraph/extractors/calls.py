@@ -56,6 +56,31 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  # --- 跳过模块级调用 ---
  if wn.ancestor_function is None:
  return None
+ # ★ JSX 元素分支：仅大写组件抽为 call_type=JSX
+ if node.type in ("jsx_element", "jsx_self_closing_element"):
+ opening = node if node.type == "jsx_self_closing_element" else None
+ if opening is None:
+ for child in node.children:
+ if child.type == "jsx_opening_element":
+ opening = child
+ break
+ if opening is None:
+ return None
+ name_node = opening.child_by_field_name("name")
+ if name_node is None:
+ return None
+ jsx_callee = name_node.text
+ if isinstance(jsx_callee, bytes):
+ jsx_callee = jsx_callee.decode("utf-8")
+ if not jsx_callee or not jsx_callee[0].isupper:
+ #：HTML 原生小写标签（div / span / button 等）不抽
+ return None
+ return CallData(
+ caller_key=(ctx.file_path, wn.ancestor_function, 0),
+ callee_name=jsx_callee,
+ call_type="JSX",
+ line_number=node.start_point[0] + 1,
+ )
  # --- 获取被调用者（function 子字段）---
  function_node = node.child_by_field_name("function")
  if function_node is None:
@@ -85,6 +110,16 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  field_node = function_node.child_by_field_name("field")
  if field_node is not None:
  callee_name = field_node.text
+ if isinstance(callee_name, bytes):
+ callee_name = callee_name.decode("utf-8")
+ call_type = "METHOD"
+ else:
+ return None
+ elif function_node.type == "member_expression":
+ # TS / TSX：obj.method 在 tree-sitter-typescript 用 member_expression
+ property_node = function_node.child_by_field_name("property")
+ if property_node is not None:
+ callee_name = property_node.text
  if isinstance(callee_name, bytes):
  callee_name = callee_name.decode("utf-8")
  call_type = "METHOD"
