@@ -8,6 +8,7 @@ from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.vue_extractor import VueExtractor
 from codegraph.extractors.html_extractor import HtmlExtractor # Phase
+from codegraph.extractors.css_extractor import CssExtractor # Phase
 from codegraph.extractors.registry import (
  BACKEND_REGISTRY,
  EXTRACTOR_REGISTRY,
@@ -142,3 +143,18 @@ class TestExtractorRegistry:
  assert backend is not None
  assert type(backend).__name__ == "TreeSitterBackend"
  assert backend.language == "html"
+ def test_get_extractor_css_returns_css_extractor(self):
+ """Phase：get_extractor('css') 返 CssExtractor 实例。"""
+ extractor = get_extractor("css")
+ assert extractor is not None
+ assert type(extractor).__name__ == "CssExtractor"
+ def test_extractor_registry_has_css(self):
+ """Phase：EXTRACTOR_REGISTRY 含 css 项指向 CssExtractor 类。"""
+ assert "css" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["css"] is CssExtractor
+ def test_get_backend_css_returns_tree_sitter(self):
+ """Phase：get_backend('css') 返 TreeSitterBackend，language=css。"""
+ backend = get_backend("css")
+ assert backend is not None
+ assert type(backend).__name__ == "TreeSitterBackend"
+ assert backend.language == "css"
