@@ -369,7 +369,7 @@ EXTRACTOR_BACKENDS: dict[str, str] = {
  "tsx": "tree_sitter", # Phase 切 volar 时改 "volar"
  "vue": "tree_sitter", # Phase 切 volar 时改 "volar"
  "html": "tree_sitter", # Phase
- # "css": "tree_sitter", # Plan 落地
+ "css": "tree_sitter", # Phase
 }
 # Phase B3：CoChangedEdgeBuilder min_support 阈值（per 0 条根因修复）。
 # 默认 2 让小仓库默认能建至少 2 commit 触发的边；env 可覆盖（ops 调试需要）。
