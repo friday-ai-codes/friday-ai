@@ -124,3 +124,21 @@ async def test_endswith_no_false_match(repository) -> None:
  assert edges[0].source_chunk_id == src.chunk_id
  assert edges[0].target_chunk_id == real_target.chunk_id
  assert edges[0].metadata["target_file"] == "pkg/auth.py"
+@pytest.mark.django_db(transaction=True)
+async def test_vue_target_module_resolution(repository) -> None:
+ """Phase work item：CANDIDATE_EXTENSIONS 含 .vue 后，target_module=components.Button
+ 能解析到 components/Button.vue（候选枚举枚到 .vue 扩展即命中）。"""
+ src = await _make_chunk(repository, "App.vue")
+ target = await _make_chunk(repository, "components/Button.vue")
+ await _make_import(
+ repository,
+ "App.vue",
+ "components.Button",
+ is_relative=False,
+ imported_names=["Button"],
+ )
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src.chunk_id
+ assert edges[0].target_chunk_id == target.chunk_id
+ assert edges[0].metadata["target_file"] == "components/Button.vue"
