@@ -44,27 +44,32 @@ class ExtractorBackend(Protocol):
 # =============================================================================
 # TreeSitterBackend —— 封装现有 tree-sitter extractor
 # =============================================================================
-# 语言到 tree-sitter 语言模块的映射
-# 后续 phase 添加 Go / TS / Vue 时扩展此字典
-_TREE_SITTER_LANGUAGE_MODULES: dict[str, str] = {
- "python": "tree_sitter_python",
- "go": "tree_sitter_go",
+# 语言到 (tree-sitter 模块, grammar 函数名) 的映射（per Phase）
+# 升级为元组以支持单模块多 grammar 函数场景（如 tree-sitter-typescript 同时提供
+# language_typescript / language_tsx 两个 grammar）。
+_TREE_SITTER_LANGUAGE_MODULES: dict[str, tuple[str, str]] = {
+ "python": ("tree_sitter_python", "language"),
+ "go": ("tree_sitter_go", "language"),
+ "typescript": ("tree_sitter_typescript", "language_typescript"),
+ "tsx": ("tree_sitter_typescript", "language_tsx"),
 }
 def _get_tree_sitter_language(language: str) -> Any:
  """动态导入并创建 tree-sitter Language 对象。"""
- module_name = _TREE_SITTER_LANGUAGE_MODULES.get(language)
- if module_name is None:
+ entry = _TREE_SITTER_LANGUAGE_MODULES.get(language)
+ if entry is None:
  raise ValueError(
  f"Language '{language}' not supported by TreeSitterBackend. "
  f"Supported: {list(_TREE_SITTER_LANGUAGE_MODULES.keys)}"
  )
+ module_name, attr_name = entry
  try:
  lang_module = __import__(module_name)
  from tree_sitter import Language
- return Language(lang_module.language)
- except ImportError as e:
+ grammar_fn = getattr(lang_module, attr_name)
+ return Language(grammar_fn)
+ except (ImportError, AttributeError) as e:
  raise ImportError(
- f"Failed to import {module_name} for language '{language}'. "
+ f"Failed to import {module_name}.{attr_name} for language '{language}'. "
  f"Install with: pip install {module_name.replace('_', '-')}"
  ) from e
 class TreeSitterBackend:
