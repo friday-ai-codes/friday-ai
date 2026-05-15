@@ -1,0 +1,7 @@
+{
+ "name": "volar-smoke",
+ "private": true,
+ "dependencies": {
+ "vue": "2.7.14"
+ }
+}

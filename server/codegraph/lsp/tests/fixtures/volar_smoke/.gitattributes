@@ -1,0 +1,3 @@
+*.json -text
+*.vue -text
+*.ts -text
