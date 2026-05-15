@@ -7,6 +7,7 @@ import structlog
 from codegraph.backends.protocols import ExtractorBackend, TreeSitterBackend
 from codegraph.extractors.base import ExtractionBundle, FileContext
 from codegraph.extractors.python_extractor import PythonExtractor
+from codegraph.extractors.go_extractor import GoExtractor
 logger = structlog.get_logger(__name__)
 @runtime_checkable
 class LanguageExtractor(Protocol):
@@ -92,6 +93,7 @@ def register_backend(language: str, backend_cls: Callable[[str], ExtractorBacken
 # =============================================================================
 EXTRACTOR_REGISTRY: dict[str, type[LanguageExtractor]] = {
  "python": PythonExtractor,
+ "go": GoExtractor,
 }
 class UnsupportedLanguageError(ValueError):
  """请求的语言无注册抽取器。"""

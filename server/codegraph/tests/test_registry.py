@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from codegraph.backends.protocols import TreeSitterBackend
 from codegraph.extractors.base import FileContext
+from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.registry import (
  BACKEND_REGISTRY,
@@ -88,3 +89,14 @@ class TestExtractorRegistry:
  assert "fake" in EXTRACTOR_REGISTRY
  extractor = get_extractor("fake")
  assert isinstance(extractor, FakeExtractor)
+ def test_get_extractor_go_returns_go_extractor(self):
+ """get_extractor('go') 返回 GoExtractor 实例（Phase 注册）。"""
+ extractor = get_extractor("go")
+ assert isinstance(extractor, GoExtractor)
+ def test_extractor_registry_has_go(self):
+ """EXTRACTOR_REGISTRY 含 go 注册且类引用为 GoExtractor。"""
+ assert "go" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["go"] is GoExtractor
+ def test_get_extractor_unknown_language_returns_none(self):
+ """未知语言名仍走 warn-and-skip 路径返 None（零回归守护）。"""
+ assert get_extractor("nonexistent_lang_xyz") is None
