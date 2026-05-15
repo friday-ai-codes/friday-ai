@@ -64,6 +64,9 @@ def _extract_one_symbol(
  # Phase /：HTML 分支（element / script_element / style_element）
  if ctx.language == "html" and node.type in ("element", "script_element", "style_element"):
  return _extract_html_symbol(node, source, ctx)
+ # Phase /：CSS 分支（rule_set）
+ if ctx.language == "css" and node.type == "rule_set":
+ return _extract_css_symbol(node, source, ctx)
  # --- 处理 decorated_definition：取出内部实际定义 ---
  actual_node = node
  is_decorated = False
@@ -267,4 +270,89 @@ def _extract_html_symbol(
  )
  )
  return results
-__all__ = ["extract_symbols", "_extract_one_symbol", "_extract_html_symbol"]
+def _extract_css_symbol(
+ rule_set: Any, source: str, ctx: "FileContext"
+) -> "list[SymbolData]":
+ """从 CSS rule_set 节点提取 SymbolData 列表。
+ per Phase / / Pitfall 5：
+ - .foo / .button-primary → SymbolData(CLASS)
+ - #app / #footer → SymbolData(VARIABLE)
+ - tag selector (body / *) / pseudo (:hover) / CSS variable (--var) 不抽
+ - 复合选择器 .complex.modifier:hover 递归拆解 → complex + modifier
+ （跳过:hover 内 class_name='hover'，因其挂在 pseudo_class_selector 而非 class_selector 下）
+ - 同 rule_set 内同名去重（seen set by (name, symbol_type)）
+ """
+ from codegraph.extractors.base import SymbolData
+ results: list[SymbolData] =
+ seen: set[tuple[str, str]] = set
+ # 找 selectors 子节点
+ selectors_node = None
+ for child in rule_set.children:
+ if child.type == "selectors":
+ selectors_node = child
+ break
+ if selectors_node is None:
+ return results
+ def _walk_selector(sel_node: Any) -> None:
+ if sel_node.type == "class_selector":
+ # 处理本层 class_selector：直接子节点中查 class_name 与嵌套 class_selector
+ for child in sel_node.children:
+ if child.type == "class_name":
+ raw = child.text
+ name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ name = name.strip
+ if not name:
+ continue
+ key = (name, "CLASS")
+ if key in seen:
+ continue
+ seen.add(key)
+ results.append(
+ SymbolData(
+ name=name,
+ symbol_type="CLASS",
+ file_path=ctx.file_path,
+ start_line=sel_node.start_point[0] + 1,
+ end_line=sel_node.end_point[0] + 1,
+ signature=f".{name}",
+ is_async=False,
+ )
+ )
+ elif child.type == "class_selector":
+ _walk_selector(child)
+ return
+ if sel_node.type == "id_selector":
+ for child in sel_node.children:
+ if child.type == "id_name":
+ raw = child.text
+ name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ name = name.strip
+ if not name:
+ continue
+ key = (name, "VARIABLE")
+ if key in seen:
+ continue
+ seen.add(key)
+ results.append(
+ SymbolData(
+ name=name,
+ symbol_type="VARIABLE",
+ file_path=ctx.file_path,
+ start_line=sel_node.start_point[0] + 1,
+ end_line=sel_node.end_point[0] + 1,
+ signature=f"#{name}",
+ is_async=False,
+ )
+ )
+ return
+ # 其他类型（selectors / pseudo_class_selector / universal_selector / tag_name）→ 递归
+ for child in sel_node.children:
+ _walk_selector(child)
+ _walk_selector(selectors_node)
+ return results
+__all__ = [
+ "extract_symbols",
+ "_extract_one_symbol",
+ "_extract_html_symbol",
+ "_extract_css_symbol",
+]
