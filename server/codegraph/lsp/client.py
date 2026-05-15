@@ -162,4 +162,80 @@ class FridayLanguageClient(BaseLanguageClient):
  raise LspTimeoutError(
  f"workspace/symbol(query={query!r}) 超时 {timeout}s"
  ) from exc
+ # =========================================================================
+ # Phase: VolarBackend 消费的 3 个 capability 方法（per / ）
+ # =========================================================================
+ async def request_document_symbol(
+ self,
+ uri: str,
+ timeout: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
+ ) -> Any:
+ """发起 ``textDocument/documentSymbol`` 请求；超时归一为 ``LspTimeoutError``。
+ Returns:
+ ``list[DocumentSymbol] | list[SymbolInformation] | None``——
+ volar 通常返 nested ``DocumentSymbol``；上层 backend 递归展平转 SymbolData。
+ """
+ params = lsp.DocumentSymbolParams(
+ text_document=lsp.TextDocumentIdentifier(uri=uri),
+ )
+ try:
+ return await asyncio.wait_for(
+ self.text_document_document_symbol_async(params),
+ timeout=timeout,
+ )
+ except asyncio.TimeoutError as exc:
+ raise LspTimeoutError(
+ f"textDocument/documentSymbol({uri!r}) 超时 {timeout}s"
+ ) from exc
+ async def request_references(
+ self,
+ uri: str,
+ position: lsp.Position,
+ *,
+ include_declaration: bool = False,
+ timeout: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
+ ) -> Any:
+ """发起 ``textDocument/references`` 请求；超时归一为 ``LspTimeoutError``。
+ ``include_declaration=False`` 默认与 跨文件 references 需求对齐
+ （不返自身定义；上层只关心 caller 调用点）。
+ """
+ params = lsp.ReferenceParams(
+ text_document=lsp.TextDocumentIdentifier(uri=uri),
+ position=position,
+ context=lsp.ReferenceContext(include_declaration=include_declaration),
+ )
+ try:
+ return await asyncio.wait_for(
+ self.text_document_references_async(params),
+ timeout=timeout,
+ )
+ except asyncio.TimeoutError as exc:
+ raise LspTimeoutError(
+ f"textDocument/references({uri!r}, line={position.line}) 超时 {timeout}s"
+ ) from exc
+ async def request_definition(
+ self,
+ uri: str,
+ position: lsp.Position,
+ *,
+ timeout: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
+ ) -> Any:
+ """发起 ``textDocument/definition`` 请求；超时归一为 ``LspTimeoutError``。
+ Returns:
+ ``Location | list[Location] | list[LocationLink] | None``——
+ 上层 helper ``_extract_first_location_path`` 处理三种返回形态。
+ """
+ params = lsp.DefinitionParams(
+ text_document=lsp.TextDocumentIdentifier(uri=uri),
+ position=position,
+ )
+ try:
+ return await asyncio.wait_for(
+ self.text_document_definition_async(params),
+ timeout=timeout,
+ )
+ except asyncio.TimeoutError as exc:
+ raise LspTimeoutError(
+ f"textDocument/definition({uri!r}, line={position.line}) 超时 {timeout}s"
+ ) from exc
 __all__ = ["FridayLanguageClient"]
