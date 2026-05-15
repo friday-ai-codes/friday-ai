@@ -34,6 +34,8 @@ class ImportData:
  target_module: str # 导入的模块名，如 "os.path"、"django.http"
  imported_names: list[str] = field(default_factory=list) # ["foo", "bar as baz"]
  is_relative: bool = False # 是否为相对导入（from .module import x）
+ line: int = 0 # Phase: 1-indexed import 语句所在行（0 = 未知；tree-sitter / volar 填充）
+ target_path: str | None = None # Phase: volar 解析后的目标文件绝对路径
 @dataclass
 class CallData:
  """调用边抽取结果 —— 函数 A 在文件内调用了函数/方法 B。
