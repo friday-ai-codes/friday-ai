@@ -9,6 +9,15 @@
 payload，方案 B「仅文件首 chunk 建边」语义不一致；笛卡尔积折扣 + 大文件
 保护（单文件 chunks > 50 时仅取前 5 个）防止边数爆炸 & 与 SameFileEdge
 weight=0.3 双计数）。
+**Phase 三重 bug 修复（ "0 条" 根因）**：
+- B1：``_resolve_clone_path`` log 增 attr_clone_path / settings_repo_clone_dir /
+ decision 三诊断字段，让 prod 0 条根因可定位
+- B2：移除 ``_SINCE_WINDOW = "6 months ago"`` 时间窗，改 git log 参数
+ ``--max-count={CO_CHANGED_WINDOW_COMMITS}`` —— 让 ``code_relations.constants``
+ 里 ``CO_CHANGED_WINDOW_COMMITS = 2000`` 字面承诺真生效（之前 drift）
+- B3：``_MIN_SUPPORT = 3`` 默认改 ``_MIN_SUPPORT_DEFAULT = 2`` + 通过
+ ``settings.CODEGRAPH_COCHANGE_MIN_SUPPORT`` env 覆盖（Plan 已加）。
+ 既有 3 测试用 @override_settings(...=3) 锁旧契约。
 """
 from __future__ import annotations
 import asyncio
@@ -21,13 +30,23 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from code_relations.builders.base import BaseEdgeBuilder
+from code_relations.constants import CO_CHANGED_WINDOW_COMMITS
 from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
 if TYPE_CHECKING:
  from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 __all__ = ["CoChangedEdgeBuilder"]
-_MIN_SUPPORT = 3
-"""最小共变更次数（per ）；filtered pair count >= 此值才生成边。"""
+_MIN_SUPPORT_DEFAULT = 2
+"""默认最小共变更次数（per Phase B3）。
+previous _MIN_SUPPORT = 3 改为默认 2，让小仓库默认能建至少 2 commit 触发的边；
+既有 3 测试用 @override_settings(CODEGRAPH_COCHANGE_MIN_SUPPORT=3) 锁旧契约。
+"""
+def _get_min_support -> int:
+ """读 settings.CODEGRAPH_COCHANGE_MIN_SUPPORT，默认 _MIN_SUPPORT_DEFAULT。
+ per Phase B3：函数化让每次 build 调用都重新读 settings，
+ 支持 @override_settings 在测试内动态切换。
+ """
+ return int(getattr(settings, "CODEGRAPH_COCHANGE_MIN_SUPPORT", _MIN_SUPPORT_DEFAULT))
 _SAMPLE_COMMITS_PER_PAIR = 5
 """metadata.commit_hashes 长度上限（per ）；deque(maxlen=5) 保留最近 5 个 commit。"""
 _LARGE_FILE_THRESHOLD = 50
@@ -36,8 +55,8 @@ _LARGE_FILE_CHUNK_LIMIT = 5
 """超阈值时单文件仅取前 N 个 chunk 参与笛卡尔积；避免 10k×10k=1亿 边爆炸。"""
 _CO_CHANGE_DISCOUNT = 0.5
 """ chunk 级权重折扣；防止与 SameFileEdge weight=0.3 双计数。"""
-_SINCE_WINDOW = "6 months ago"
-"""git log 时间窗（per ）。"""
+# Phase B2：移除 _SINCE_WINDOW = "6 months ago"，改 --max-count={CO_CHANGED_WINDOW_COMMITS}
+# 让 code_relations.constants 字面承诺（commit 数滑窗）真正生效。
 class CoChangedEdgeBuilder(BaseEdgeBuilder):
  """git log 流式 → 文件 co-change pair → chunk 笛卡尔积 CO_CHANGED 边。"""
  edge_type_label: str = "CoChangedEdge"
@@ -50,7 +69,8 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  if clone_path is None:
  return
  counter, samples = await self._stream_git_log(clone_path)
- filtered = {pair: cnt for pair, cnt in counter.items if cnt >= _MIN_SUPPORT}
+ min_support = _get_min_support
+ filtered = {pair: cnt for pair, cnt in counter.items if cnt >= min_support}
  if not filtered:
  logger.info(
  "co_changed_no_pair_above_min_support",
@@ -121,6 +141,12 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  "co_changed_skip_no_clone_path",
  repository_id=str(repository.id),
  clone_path=str(path),
+ # Phase B1：3 诊断字段，让 prod 0 条根因可定位
+ attr_clone_path=str(attr) if attr is not None else None,
+ settings_repo_clone_dir=str(
+ getattr(settings, "REPO_CLONE_DIR", "<unset>")
+ ),
+ decision="skip_builder",
  )
  return None
  return str(path)
@@ -144,7 +170,9 @@ class CoChangedEdgeBuilder(BaseEdgeBuilder):
  "git",
  "log",
  "--name-only",
- f"--since={_SINCE_WINDOW}",
+ # Phase B2：从 --since={_SINCE_WINDOW} 改为 commit 数滑窗，
+ # 让 code_relations.constants.CO_CHANGED_WINDOW_COMMITS 字面承诺真生效
+ f"--max-count={CO_CHANGED_WINDOW_COMMITS}",
  "--pretty=format:COMMIT %H",
  "--no-merges",
  cwd=clone_path,
