@@ -6,6 +6,7 @@ from codegraph.extractors.base import FileContext
 from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
+from codegraph.extractors.vue_extractor import VueExtractor
 from codegraph.extractors.registry import (
  BACKEND_REGISTRY,
  EXTRACTOR_REGISTRY,
@@ -117,3 +118,11 @@ class TestExtractorRegistry:
  """EXTRACTOR_REGISTRY 含 tsx 注册且类引用为 TSXExtractor。"""
  assert "tsx" in EXTRACTOR_REGISTRY
  assert EXTRACTOR_REGISTRY["tsx"] is TSXExtractor
+ def test_get_extractor_vue_returns_vue_extractor(self):
+ """get_extractor("vue") 返回 VueExtractor 实例。"""
+ extractor = get_extractor("vue")
+ assert isinstance(extractor, VueExtractor)
+ def test_extractor_registry_has_vue(self):
+ """EXTRACTOR_REGISTRY["vue"] is VueExtractor。"""
+ assert "vue" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["vue"] is VueExtractor
