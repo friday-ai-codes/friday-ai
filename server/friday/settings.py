@@ -6,6 +6,7 @@ import os
 import secrets
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 import environ
 from django.core.exceptions import ImproperlyConfigured
 # adrf 0.1.12 兼容性补丁：替换已弃用的 asyncio.iscoroutinefunction
@@ -382,6 +383,42 @@ CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
 # NOTE: 默认值与 services/retrieval/budget.py:GRAPHRAG_BUDGET_RATIO_DEFAULT 同值，
 # 调整需双改（settings.py 加载顺序敏感，无法直接 import budget 常量避免循环）。
 GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
+# =============================================================================
+# Phase LSP Client + Supervisor Settings
+# =============================================================================
+# Phase: LSP servers 配置占位 —— Phase / 267 追加真实 volar / gopls 配置
+# 仅 stub 用于测试 echo server；本 phase 不引入真实 LSP binary 依赖（per / ）。
+# 本 phase 严格不 uncomment volar / gopls placeholder；那是 Phase / 267 的工作。
+LSP_SERVERS: dict[str, dict[str, Any]] = {
+ # "volar": { # Phase 实装 —— 不要在 Phase 内 uncomment
+ # "command": ["vue-language-server", "--stdio"],
+ # "language_ids": ["vue", "typescript", "typescriptreact", "javascript", "javascriptreact"],
+ # "initialization_options": {},
+ # "enabled": True,
+ # },
+ # "gopls": { # Phase 实装 —— 不要在 Phase 内 uncomment
+ # "command": ["gopls", "serve"],
+ # "language_ids": ["go"],
+ # "enabled": True,
+ # },
+}
+# Phase：LSP 三层超时（env 可覆盖）
+# - STARTUP_TIMEOUT 默认 30s（volar 首次启动 30-60s spike 实测）
+# - REQUEST_TIMEOUT 默认 10s（普通 capability 请求）
+# - HEALTH_CHECK_TIMEOUT 默认 5s（workspace/symbol("") ping）
+LSP_STARTUP_TIMEOUT_SECONDS: int = env.int("LSP_STARTUP_TIMEOUT_SECONDS", default=30)
+LSP_REQUEST_TIMEOUT_SECONDS: int = env.int("LSP_REQUEST_TIMEOUT_SECONDS", default=10)
+LSP_HEALTH_CHECK_TIMEOUT_SECONDS: int = env.int(
+ "LSP_HEALTH_CHECK_TIMEOUT_SECONDS", default=5
+)
+# Phase：健康检查间隔（每 30s 一次 workspace/symbol("") ping）
+LSP_HEALTH_CHECK_INTERVAL_SECONDS: int = env.int(
+ "LSP_HEALTH_CHECK_INTERVAL_SECONDS", default=30
+)
+# Phase：crash-loop 防护硬阈值（连续 N 次重启失败后转 DISABLED）
+LSP_MAX_RESTART_ATTEMPTS: int = env.int("LSP_MAX_RESTART_ATTEMPTS", default=3)
+# Phase：idle timeout 回收（默认 30 分钟无使用即 stop）
+LSP_IDLE_TIMEOUT_SECONDS: int = env.int("LSP_IDLE_TIMEOUT_SECONDS", default=1800)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
