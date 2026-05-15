@@ -5,6 +5,7 @@ from codegraph.backends.protocols import TreeSitterBackend
 from codegraph.extractors.base import FileContext
 from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.python_extractor import PythonExtractor
+from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.registry import (
  BACKEND_REGISTRY,
  EXTRACTOR_REGISTRY,
@@ -100,3 +101,19 @@ class TestExtractorRegistry:
  def test_get_extractor_unknown_language_returns_none(self):
  """未知语言名仍走 warn-and-skip 路径返 None（零回归守护）。"""
  assert get_extractor("nonexistent_lang_xyz") is None
+ def test_get_extractor_typescript_returns_ts_extractor(self):
+ """get_extractor('typescript') 返回 TSExtractor 实例（Phase 注册）。"""
+ extractor = get_extractor("typescript")
+ assert isinstance(extractor, TSExtractor)
+ def test_get_extractor_tsx_returns_tsx_extractor(self):
+ """get_extractor('tsx') 返回 TSXExtractor 实例（Phase 注册）。"""
+ extractor = get_extractor("tsx")
+ assert isinstance(extractor, TSXExtractor)
+ def test_extractor_registry_has_typescript(self):
+ """EXTRACTOR_REGISTRY 含 typescript 注册且类引用为 TSExtractor。"""
+ assert "typescript" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["typescript"] is TSExtractor
+ def test_extractor_registry_has_tsx(self):
+ """EXTRACTOR_REGISTRY 含 tsx 注册且类引用为 TSXExtractor。"""
+ assert "tsx" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["tsx"] is TSXExtractor
