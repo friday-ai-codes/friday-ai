@@ -16,7 +16,9 @@ class GraphExtractor:
  def extract_all(
  self, tree: Any, source: str, ctx: "FileContext"
  ) -> "ExtractionBundle":
- """单趟 AST 遍历完成四维抽取，返回汇总 bundle。
+ """四维抽取，返回汇总 bundle。
+ 通过 registry 获取 language 对应的 backend，委托 4 个 extract_* 方法。
+ 后续 Stage B/C 引入 volar/gopls 时，registry 自动路由到新 backend。
  Args:
  tree: tree-sitter Tree 对象
  source: 源文件完整文本（用于签名提取和参数解析）
@@ -25,67 +27,53 @@ class GraphExtractor:
  ExtractionBundle: 包含 symbols / imports / calls / endpoints 四个列表
  """
  from codegraph.extractors.base import ExtractionBundle
- from codegraph.extractors.walker import walk_tree, SYMBOL_TYPES, IMPORT_TYPES, CALL_TYPES
- from codegraph.extractors.symbol import _extract_one_symbol
- from codegraph.extractors.imports import _extract_one_import
- from codegraph.extractors.calls import _extract_one_call
+ from codegraph.extractors.registry import get_backend
  bundle = ExtractionBundle(file_path=ctx.file_path, language=ctx.language)
- symbol_types = SYMBOL_TYPES.get(ctx.language, )
- import_types = IMPORT_TYPES.get(ctx.language, )
- call_types = CALL_TYPES.get(ctx.language, )
+ backend = get_backend(ctx.language)
+ if backend is None:
+ logger.warning(
+ "no_backend_for_language",
+ language=ctx.language,
+ file_path=ctx.file_path,
+ )
+ return bundle
  # =====================================================================
- # 单趟 DFS 遍历：Symbol + Import + Call 三维抽取
+ # 四维抽取：通过 backend Protocol 委托
  # =====================================================================
- for wn in walk_tree(tree, ctx.language):
- node_type = wn.node.type
- # --- Symbol 抽取 ---
- if node_type in symbol_types:
  try:
- sym = _extract_one_symbol(wn, source, ctx)
- if sym is not None:
- bundle.symbols.append(sym)
+ bundle.symbols = backend.extract_symbols(tree, source, ctx)
  except Exception as e:
  logger.warning(
  "symbol_extraction_failed",
  file_path=ctx.file_path,
- node_type=node_type,
+ language=ctx.language,
  error=str(e),
  )
- # --- Import 抽取 ---
- if node_type in import_types:
  try:
- imps = _extract_one_import(wn, ctx)
- if imps:
- bundle.imports.extend(imps)
+ bundle.imports = backend.extract_imports(tree, ctx)
  except Exception as e:
  logger.warning(
  "import_extraction_failed",
  file_path=ctx.file_path,
- node_type=node_type,
+ language=ctx.language,
  error=str(e),
  )
- # --- Call 抽取 ---
- if node_type in call_types:
  try:
- call = _extract_one_call(wn, ctx)
- if call is not None:
- bundle.calls.append(call)
+ bundle.calls = backend.extract_calls(tree, ctx)
  except Exception as e:
  logger.warning(
  "call_extraction_failed",
  file_path=ctx.file_path,
+ language=ctx.language,
  error=str(e),
  )
- # =====================================================================
- # Endpoint 抽取：独立三层扫描（不与主遍历耦合）
- # =====================================================================
  try:
- from codegraph.extractors.endpoints import extract_endpoints
- bundle.endpoints = extract_endpoints(tree, source, ctx)
+ bundle.endpoints = backend.extract_endpoints(tree, source, ctx)
  except Exception as e:
  logger.warning(
  "endpoint_extraction_failed",
  file_path=ctx.file_path,
+ language=ctx.language,
  error=str(e),
  )
  return bundle
