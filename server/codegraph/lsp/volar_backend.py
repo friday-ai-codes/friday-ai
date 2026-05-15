@@ -377,30 +377,42 @@ def make_volar_backend(language: str) -> Callable[[str], ExtractorBackend]:
  def _factory(actual_language: str) -> ExtractorBackend:
  from codegraph.lsp.exceptions import LspUnhealthyError as _LspUE
  class _VolarLazyBackend(VolarBackend):
- """无 supervisor 占位实例：4 hook 入口立即 raise → fallback tree-sitter。
+ """无 supervisor 占位实例：调用方传 ``_LspParseHandle`` 时 raise →
+ Phase LspBackend 基类 fallback；调用方传**真实 tree-sitter Tree** 时
+ （per orchestrator 既有调用风格）直接委托 fallback 不 raise，避免
+ ``_extract_source_from_handle`` 在非 handle 入参下返空源回归。
  真实 per-sub-project supervisor 注入由 indexer / orchestrator 在
- 后续迭代实装；本 plan 落地框架 + 注册路径 + fallback 安全网。
+ 后续迭代实装；本 plan 落地框架 + 注册路径 + 双兼容 fallback 安全网。
  """
  def __init__(self, language: str) -> None:
  # 不调 super.__init__；避免必填 supervisor 参数
  self.language = language
  self._supervisor: LspSupervisor = None # type: ignore[assignment]
  self._fallback: ExtractorBackend = TreeSitterBackend(language)
+ @staticmethod
+ def _is_lsp_handle(tree: Any) -> bool:
+ return isinstance(tree, _LspParseHandle)
  def _lsp_extract_symbols(
- self, tree: Any, source: str, ctx: FileContext # noqa: ARG002
+ self, tree: Any, source: str, ctx: FileContext
  ) -> list[SymbolData]:
+ if not self._is_lsp_handle(tree):
+ return self._fallback.extract_symbols(tree, source, ctx)
  raise _LspUE(
  "volar lazy backend：indexer per-sub-project supervisor 注入未实装"
  )
  def _lsp_extract_imports(
- self, tree: Any, ctx: FileContext # noqa: ARG002
+ self, tree: Any, ctx: FileContext
  ) -> list[ImportData]:
+ if not self._is_lsp_handle(tree):
+ return self._fallback.extract_imports(tree, ctx)
  raise _LspUE(
  "volar lazy backend：indexer per-sub-project supervisor 注入未实装"
  )
  def _lsp_extract_calls(
- self, tree: Any, ctx: FileContext # noqa: ARG002
+ self, tree: Any, ctx: FileContext
  ) -> list[CallData]:
+ if not self._is_lsp_handle(tree):
+ return self._fallback.extract_calls(tree, ctx)
  raise _LspUE(
  "volar lazy backend：indexer per-sub-project supervisor 注入未实装"
  )

@@ -53,6 +53,8 @@ _TREE_SITTER_LANGUAGE_MODULES: dict[str, tuple[str, str]] = {
  "typescript": ("tree_sitter_typescript", "language_typescript"),
  "tsx": ("tree_sitter_typescript", "language_tsx"),
  "vue": ("tree_sitter_typescript", "language_typescript"), # 占位（per Phase）；实际不被 VueExtractor 路径消费
+ "javascript": ("tree_sitter_javascript", "language"), # Phase fallback（ 新增 js）
+ "jsx": ("tree_sitter_javascript", "language"), # Phase fallback（tree-sitter-javascript 同时覆盖 jsx 语法）
  "html": ("tree_sitter_html", "language"), # Phase
  "css": ("tree_sitter_css", "language"), # Phase
 }
