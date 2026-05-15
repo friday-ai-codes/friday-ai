@@ -106,6 +106,41 @@ async def test_self_loop_allowed(repository) -> None:
  edges = await CallEdgeBuilder.build(repository, )
  assert len(edges) == 1
  assert edges[0].source_chunk_id == edges[0].target_chunk_id == cid
+# =============================================================================
+# Phase /：跨语言守门 parametrize 测试
+# 静态审计：CallEdgeBuilder 基于 codegraph.CallEdge.callee_name 字符串名匹配 Symbol.name，
+# 无 file extension / language 假设 → 天然语言无关 git diff = 0。
+# =============================================================================
+@pytest.mark.parametrize(
+ "caller_file,callee_file,callee_name",
+ [
+ ("handlers/user.go", "handlers/user.go", "GetUser"), # Go
+ ("src/api.ts", "src/utils.ts", "fetchData"), # TypeScript
+ ("components/App.vue", "components/Button.vue", "onClick"), # Vue
+ ],
+)
+@pytest.mark.django_db(transaction=True)
+async def test_call_edge_cross_language_resolution(
+ repository, caller_file: str, callee_file: str, callee_name: str
+) -> None:
+ """Phase / 守门：CallEdge 对 Go / TS / Vue 命名解析均能建 edge。
+ 构造 caller Symbol + callee Symbol + CodegraphCallEdge + mock SymbolChunkResolver.resolve
+ → 断言生成 ≥ 1 ChunkEdge[CALL]。
+ """
+ caller = await _create_symbol(repository, "caller_x", caller_file, 10)
+ await _create_symbol(repository, callee_name, callee_file, 100)
+ await _create_call_edge(repository, caller, callee_name, 11)
+ cid_caller = uuid.uuid4
+ cid_callee = uuid.uuid4
+ async def _resolve(file_path: str, line: int):
+ return {(caller_file, 10): cid_caller, (callee_file, 100): cid_callee}.get(
+ (file_path, line)
+ )
+ with _patch_resolver(_resolve):
+ edges = await CallEdgeBuilder.build(repository, )
+ assert len(edges) >= 1
+ assert edges[0].edge_type == EdgeType.CALL
+ assert edges[0].metadata["callee_name"] == callee_name
 @pytest.mark.django_db(transaction=True)
 async def test_log10_weight_at_count_1000(repository) -> None:
  """call_count=1000 → weight clamp 到 1.0。"""
