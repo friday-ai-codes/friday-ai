@@ -1,23 +1,19 @@
-"""codegraph extractors 包 —— 符号/import/call/endpoint 四维抽取。"""
-from codegraph.extractors.registry import (
- BACKEND_REGISTRY,
- EXTRACTOR_REGISTRY,
- LanguageExtractor,
- TreeSitterExtractor,
- UnsupportedLanguageError,
- get_backend,
- get_extractor,
- register_backend,
- register_extractor,
+"""codegraph extractors 包 —— 符号/import/call/endpoint 四维抽取。
+Registry API 请直接从 codegraph.extractors.registry 导入，避免循环依赖。
+"""
+from codegraph.extractors.base import (
+ CallData,
+ EndpointData,
+ ExtractionBundle,
+ FileContext,
+ ImportData,
+ SymbolData,
 )
 __all__ = [
- "BACKEND_REGISTRY",
- "EXTRACTOR_REGISTRY",
- "LanguageExtractor",
- "TreeSitterExtractor",
- "UnsupportedLanguageError",
- "get_backend",
- "get_extractor",
- "register_backend",
- "register_extractor",
+ "CallData",
+ "EndpointData",
+ "ExtractionBundle",
+ "FileContext",
+ "ImportData",
+ "SymbolData",
 ]

@@ -72,6 +72,11 @@ class TreeSitterBackend:
  后续 Phase 将扩展：go / typescript / tsx / vue / html / css
  """
  def __init__(self, language: str) -> None:
+ if language not in _TREE_SITTER_LANGUAGE_MODULES:
+ raise ValueError(
+ f"Unsupported language: '{language}'. "
+ f"Supported: {list(_TREE_SITTER_LANGUAGE_MODULES.keys)}"
+ )
  self.language = language
  self._parser: Any | None = None
  def _ensure_parser(self) -> Any:
