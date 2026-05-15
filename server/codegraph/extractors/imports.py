@@ -71,6 +71,9 @@ def _extract_one_import(
  # Phase /：HTML 分支
  if ctx.language == "html" and node.type in ("element", "script_element"):
  return _extract_html_imports(node, ctx)
+ # Phase /：CSS 分支
+ if ctx.language == "css" and node.type == "import_statement":
+ return _extract_css_imports(node, ctx)
  if node.type == "import_statement":
  if ctx.language in ("typescript", "tsx"):
  return _parse_import_statement_ts(node, ctx)
@@ -425,10 +428,77 @@ def _extract_html_imports(
  )
  ]
  return None
+def _extract_css_imports(
+ node: Any, ctx: "FileContext"
+) -> "list[ImportData] | None":
+ """从 CSS import_statement 节点提取 ImportData 列表。
+ per Phase /：
+ - @import url("./base.css"); → call_expression → arguments → string_value
+ - @import "./reset.css"; → 直接 string_value
+ is_relative：value 不以 http:// / https:// / // / / 开头时 True
+ imported_names = （CSS @import 是整文件引入，无 named import 概念）
+ """
+ from codegraph.extractors.base import ImportData
+ def _strip_string(node_in: Any) -> str:
+ """从 string_value 节点取 string_content 子节点 text 或 fallback 剥引号。"""
+ for child in node_in.children:
+ if child.type == "string_content":
+ raw = child.text
+ return raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ # fallback: 从节点 text 整体剥引号
+ raw = node_in.text
+ text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ text = text.strip
+ if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
+ return text[1:-1]
+ return text
+ url_value: str | None = None
+ for child in node.children:
+ if child.type == "call_expression":
+ # url(...) 形态：找 arguments → string_value
+ for sub in child.children:
+ if sub.type == "arguments":
+ for arg in sub.children:
+ if arg.type == "string_value":
+ url_value = _strip_string(arg)
+ break
+ if arg.type == "plain_value":
+ raw = arg.text
+ url_value = (
+ raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ )
+ break
+ break
+ if url_value is not None:
+ break
+ elif child.type == "string_value":
+ # @import "..." 形态
+ url_value = _strip_string(child)
+ break
+ if url_value is None:
+ return None
+ url_value = url_value.strip
+ if not url_value:
+ return None
+ is_relative = not (
+ url_value.startswith("http://")
+ or url_value.startswith("https://")
+ or url_value.startswith("//")
+ or url_value.startswith("/")
+ )
+ return [
+ ImportData(
+ source_file=ctx.file_path,
+ target_module=url_value,
+ imported_names=,
+ is_relative=is_relative,
+ )
+ ]
 __all__ = [
  "extract_imports",
  "_extract_one_import",
  "_parse_import_statement_ts",
  "_parse_export_statement_ts",
  "_extract_html_imports",
+ "_extract_css_imports",
 ]
