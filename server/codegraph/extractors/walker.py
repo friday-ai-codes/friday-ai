@@ -35,6 +35,11 @@ SYMBOL_TYPES: dict[str, list[str]] = {
  "lexical_declaration",
  ],
  "go": ["function_declaration", "method_declaration", "type_declaration"],
+ # Phase：HTML element 节点统一入口；script_element / style_element
+ # 是 tree-sitter-html 对 <script>/<style> 的特殊节点（不归 element），
+ # 显式列出让 walker yield 这些节点，便于在 helper 内做 PascalCase / id 属性判别。
+ "html": ["element", "script_element", "style_element"],
+ "css": ["rule_set"],
 }
 IMPORT_TYPES: dict[str, list[str]] = {
  "python": ["import_statement", "import_from_statement"],
@@ -43,6 +48,10 @@ IMPORT_TYPES: dict[str, list[str]] = {
  "typescript": ["import_statement", "export_statement"],
  "tsx": ["import_statement", "export_statement"],
  "go": ["import_declaration"],
+ # Phase：HTML <link href> / <img src> 走普通 element；
+ # <script src> 走 script_element，需要双节点 yield 路径。
+ "html": ["element", "script_element"],
+ "css": ["import_statement"],
 }
 CALL_TYPES: dict[str, list[str]] = {
  "python": ["call"],
@@ -52,6 +61,9 @@ CALL_TYPES: dict[str, list[str]] = {
  # /：TSX 额外含 jsx_element / jsx_self_closing_element
  "tsx": ["call_expression", "jsx_element", "jsx_self_closing_element"],
  "go": ["call_expression"],
+ # Phase：HTML / CSS 无 callable 语义，显式 让 walker 跳过 call 维度
+ "html":,
+ "css":,
 }
 @dataclass
 class WalkerNode:
