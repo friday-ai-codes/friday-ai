@@ -63,17 +63,27 @@ def _extract_one_symbol(
  if child.type in ("function_definition", "class_definition"):
  actual_node = child
  break
- # --- 提取名称 ---
+ # --- 提取名称（语言适配） ---
  name_node = actual_node.child_by_field_name("name")
+ # Go type_declaration 没有直接 name 字段，需找内部的 type_spec
+ if name_node is None and node.type == "type_declaration":
+ for child in node.children:
+ if child.type == "type_spec":
+ name_node = child.child_by_field_name("name")
+ break
  if name_node is None:
  return None
  name = name_node.text
  if isinstance(name, bytes):
  name = name.decode("utf-8")
- # --- 确定 symbol_type ---
+ # --- 确定 symbol_type（语言适配） ---
  if actual_node.type == "class_definition":
  symbol_type = "CLASS"
+ elif node.type == "type_declaration":
+ symbol_type = "CLASS" # Go struct/interface
  elif wn.ancestor_class is not None:
+ symbol_type = "METHOD"
+ elif node.type == "method_declaration":
  symbol_type = "METHOD"
  else:
  symbol_type = "FUNCTION"

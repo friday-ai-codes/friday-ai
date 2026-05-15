@@ -80,6 +80,16 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  else:
  # attribute 无 attribute 子字段（异常情况）
  return None
+ elif function_node.type == "selector_expression":
+ # Go: pkg.Method
+ field_node = function_node.child_by_field_name("field")
+ if field_node is not None:
+ callee_name = field_node.text
+ if isinstance(callee_name, bytes):
+ callee_name = callee_name.decode("utf-8")
+ call_type = "METHOD"
+ else:
+ return None
  else:
  # 其他调用形式（如 call 嵌套）→ 暂不处理
  return None

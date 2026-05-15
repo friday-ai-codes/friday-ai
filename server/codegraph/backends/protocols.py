@@ -48,6 +48,7 @@ class ExtractorBackend(Protocol):
 # 后续 phase 添加 Go / TS / Vue 时扩展此字典
 _TREE_SITTER_LANGUAGE_MODULES: dict[str, str] = {
  "python": "tree_sitter_python",
+ "go": "tree_sitter_go",
 }
 def _get_tree_sitter_language(language: str) -> Any:
  """动态导入并创建 tree-sitter Language 对象。"""
