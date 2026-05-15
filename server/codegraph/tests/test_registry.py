@@ -7,6 +7,7 @@ from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.vue_extractor import VueExtractor
+from codegraph.extractors.html_extractor import HtmlExtractor # Phase
 from codegraph.extractors.registry import (
  BACKEND_REGISTRY,
  EXTRACTOR_REGISTRY,
@@ -126,3 +127,18 @@ class TestExtractorRegistry:
  """EXTRACTOR_REGISTRY["vue"] is VueExtractor。"""
  assert "vue" in EXTRACTOR_REGISTRY
  assert EXTRACTOR_REGISTRY["vue"] is VueExtractor
+ def test_get_extractor_html_returns_html_extractor(self):
+ """Phase：get_extractor('html') 返 HtmlExtractor 实例。"""
+ extractor = get_extractor("html")
+ assert extractor is not None
+ assert type(extractor).__name__ == "HtmlExtractor"
+ def test_extractor_registry_has_html(self):
+ """Phase：EXTRACTOR_REGISTRY 含 html 项指向 HtmlExtractor 类。"""
+ assert "html" in EXTRACTOR_REGISTRY
+ assert EXTRACTOR_REGISTRY["html"] is HtmlExtractor
+ def test_get_backend_html_returns_tree_sitter(self):
+ """Phase：get_backend('html') 返 TreeSitterBackend，language=html。"""
+ backend = get_backend("html")
+ assert backend is not None
+ assert type(backend).__name__ == "TreeSitterBackend"
+ assert backend.language == "html"
