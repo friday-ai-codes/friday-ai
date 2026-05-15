@@ -11,6 +11,7 @@ from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
 from codegraph.extractors.vue_extractor import VueExtractor
 from codegraph.extractors.html_extractor import HtmlExtractor # Phase
+from codegraph.extractors.css_extractor import CssExtractor # Phase
 logger = structlog.get_logger(__name__)
 @runtime_checkable
 class LanguageExtractor(Protocol):
@@ -58,6 +59,7 @@ BACKEND_REGISTRY: dict[str, Callable[[str], ExtractorBackend]] = {
  "tsx": TreeSitterBackend,
  "vue": TreeSitterBackend,
  "html": TreeSitterBackend, # Phase
+ "css": TreeSitterBackend, # Phase
 }
 def get_backend(language: str) -> ExtractorBackend | None:
  """根据语言名获取对应的 Backend 实例。
@@ -105,6 +107,7 @@ EXTRACTOR_REGISTRY: dict[str, type[LanguageExtractor]] = {
  "tsx": TSXExtractor,
  "vue": VueExtractor,
  "html": HtmlExtractor, # Phase
+ "css": CssExtractor, # Phase
 }
 class UnsupportedLanguageError(ValueError):
  """请求的语言无注册抽取器。"""
