@@ -366,9 +366,11 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
 EXTRACTOR_BACKENDS: dict[str, str] = {
  "python": "tree_sitter",
  "go": "tree_sitter", # Phase 切 gopls 时改 "gopls"
- "typescript": "tree_sitter", # Phase 切 volar 时改 "volar"
- "tsx": "tree_sitter", # Phase 切 volar 时改 "volar"
- "vue": "tree_sitter", # Phase 切 volar 时改 "volar"
+ "typescript": "volar", # Phase 切（原 tree_sitter）
+ "tsx": "volar", # Phase 切
+ "vue": "volar", # Phase 切
+ "javascript": "volar", # Phase 新增（之前未有）
+ "jsx": "volar", # Phase 新增
  "html": "tree_sitter", # Phase
  "css": "tree_sitter", # Phase
 }
