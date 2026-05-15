@@ -360,6 +360,18 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
  "CODE_INTELLIGENCE_PROVIDER",
  "services.code_intel.local_provider.LocalProvider",
 )
+# Phase: 各语言使用的 extractor backend（tree_sitter / volar / gopls）
+# 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
+EXTRACTOR_BACKENDS: dict[str, str] = {
+ "python": "tree_sitter",
+ # 预留后续 phase 覆盖
+ # "typescript": "tree_sitter",
+ # "tsx": "tree_sitter",
+ # "vue": "volar",
+ # "go": "gopls",
+ # "html": "tree_sitter",
+ # "css": "tree_sitter",
+}
 # Phase：HybridSearchService 编排器 RAG/图谱 token 预算比例（per ）。
 # 默认 0.6 表示 RAG 占 60%、图谱 enrichment 占 40%。
 # 越界 [<0.1 | >0.9] 由 `HybridBudget.from_settings` clamp 到边界 + structlog warning。
