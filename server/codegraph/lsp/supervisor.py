@@ -175,7 +175,14 @@ class LspSupervisor:
  self._health_check_task = asyncio.create_task(self._health_check_loop)
  @staticmethod
  def _get_subprocess(client: FridayLanguageClient) -> Any | None:
- """读 pygls 内部 transport 的 subprocess（per Pattern E）。"""
+ """读 pygls client 的 subprocess（per Pattern E）。
+ pygls v2.x ``BaseLanguageClient`` 把 ``asyncio.subprocess.Process``
+ 实例存在 ``_server`` 私有属性；transport 路径仅在 mock 场景使用。
+ """
+ server = getattr(client, "_server", None)
+ if server is not None:
+ return server
+ # 兼容 mock 测试场景：协议 transport 拿到 subprocess
  protocol = getattr(client, "protocol", None)
  if protocol is None:
  return None

@@ -187,6 +187,7 @@ async def test_health_check_returns_false_when_proc_dead(
 ) -> None:
  """proc.returncode 非 None → False + 转 CRASHED + _EVENT_CRASHED 触发。"""
  client = MagicMock
+ client._server = None # 强制走 transport 分支
  fake_proc = MagicMock
  fake_proc.returncode = 1
  transport = MagicMock
@@ -207,6 +208,7 @@ async def test_health_check_returns_true_on_successful_ping(
 ) -> None:
  """proc 活 + ping 成功 → True + _EVENT_HEALTH_PASSED 触发含 elapsed_ms。"""
  client = MagicMock
+ client._server = None # 强制走 transport 分支
  fake_proc = MagicMock
  fake_proc.returncode = None
  transport = MagicMock
@@ -231,6 +233,7 @@ async def test_health_check_returns_true_on_successful_ping(
 async def test_health_check_failure_logged(supervisor: LspSupervisor) -> None:
  """ping 失败 → False + _EVENT_HEALTH_FAILED 触发含 error_class。"""
  client = MagicMock
+ client._server = None # 强制走 transport 分支
  fake_proc = MagicMock
  fake_proc.returncode = None
  transport = MagicMock
@@ -329,6 +332,7 @@ async def test_spawn_client_emits_supervisor_started_on_success(
 ) -> None:
  """_spawn_client 成功路径触发 _EVENT_SUPERVISOR_STARTED 含 command / workspace_root。"""
  fake_client = MagicMock
+ fake_client._server = None # 强制走 transport 分支
  fake_proc = MagicMock
  fake_proc.returncode = None
  fake_proc.pid = 12345

@@ -84,6 +84,12 @@ class FridayLanguageClient(BaseLanguageClient):
  raise LspStartupError(
  f"start_io 启动 subprocess 失败（command={command}）: {exc}"
  ) from exc
+ except RuntimeError as exc:
+ # pygls 在 server 启动后立即退出时 raise RuntimeError
+ # （"Server process X exited with return code Y"）
+ raise LspStartupError(
+ f"subprocess 启动后立即退出（command={command}）: {exc}"
+ ) from exc
  root_uri = path_to_uri(workspace_root)
  init_params = lsp.InitializeParams(
  process_id=None,
@@ -102,6 +108,11 @@ class FridayLanguageClient(BaseLanguageClient):
  except asyncio.TimeoutError as exc:
  raise LspStartupError(
  f"initialize 请求超时（command={command}, timeout={startup_timeout}s）"
+ ) from exc
+ except RuntimeError as exc:
+ # pygls 在 initialize 期间 server 退出时 raise RuntimeError
+ raise LspStartupError(
+ f"initialize 期间 subprocess 退出（command={command}）: {exc}"
  ) from exc
  self.initialized(lsp.InitializedParams)
  logger.info(
