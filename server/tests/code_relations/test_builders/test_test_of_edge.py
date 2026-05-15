@@ -94,3 +94,68 @@ async def test_endswith_no_false_match(repository) -> None:
  edges = await TestOfEdgeBuilder.build(repository, )
  assert len(edges) == 1
  assert edges[0].metadata["src_file"] == "pkg/auth.py"
+# =============================================================================
+# Phase /：Go / Vue 多语言 regex 扩展
+# =============================================================================
+@pytest.mark.django_db(transaction=True)
+async def test_go_test_suffix_regex(repository) -> None:
+ """Phase：handlers/user_test.go → handlers/user.go 命中 go_test_suffix。"""
+ await _make_chunk(repository, "handlers/user_test.go")
+ await _make_chunk(repository, "handlers/user.go")
+ edges = await TestOfEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].metadata["regex_id"] == "go_test_suffix"
+ assert edges[0].metadata["test_file"] == "handlers/user_test.go"
+ assert edges[0].metadata["src_file"] == "handlers/user.go"
+@pytest.mark.django_db(transaction=True)
+async def test_vue_spec_infix_regex(repository) -> None:
+ """Phase：components/Button.spec.vue → components/Button.vue 命中 vue_test_infix。"""
+ await _make_chunk(repository, "components/Button.spec.vue")
+ await _make_chunk(repository, "components/Button.vue")
+ edges = await TestOfEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].metadata["regex_id"] == "vue_test_infix"
+ assert edges[0].metadata["src_file"] == "components/Button.vue"
+@pytest.mark.django_db(transaction=True)
+async def test_vue_test_infix_regex(repository) -> None:
+ """Phase：components/Card.test.vue → components/Card.vue 命中 vue_test_infix。"""
+ await _make_chunk(repository, "components/Card.test.vue")
+ await _make_chunk(repository, "components/Card.vue")
+ edges = await TestOfEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].metadata["regex_id"] == "vue_test_infix"
+@pytest.mark.django_db(transaction=True)
+async def test_cross_language_no_false_match(repository) -> None:
+ """Phase 守门：foo_test.go 仅命中 foo.go，不会误匹配 foo.vue / foo.py。"""
+ await _make_chunk(repository, "foo_test.go")
+ await _make_chunk(repository, "foo.vue")
+ await _make_chunk(repository, "foo.py")
+ edges = await TestOfEdgeBuilder.build(repository, )
+ # foo.go 不在 registry → 0 边（go_test_suffix 仅生成 foo.go 候选）
+ assert edges ==
+# =============================================================================
+# Phase MATRIX-：6 regex_id 的 parametrize 矩阵守门
+# =============================================================================
+@pytest.mark.parametrize(
+ "test_file,src_file,expected_regex_id",
+ [
+ ("tests/test_foo.py", "foo.py", "py_test_prefix"),
+ ("tests/bar_test.py", "bar.py", "py_test_suffix"),
+ ("src/utils.test.ts", "src/utils.ts", "jsts_test_infix"),
+ ("__tests__/Button.tsx", "Button.tsx", "jsts_tests_dir"),
+ ("handlers/user_test.go", "handlers/user.go", "go_test_suffix"),
+ ("components/Button.spec.vue", "components/Button.vue", "vue_test_infix"),
+ ],
+)
+@pytest.mark.django_db(transaction=True)
+async def test_test_of_edge_multi_language_regex(
+ repository, test_file: str, src_file: str, expected_regex_id: str
+) -> None:
+ """MATRIX-：6 个 regex_id（4 既有 + 2 新增）单一 parametrize 矩阵守门。"""
+ await _make_chunk(repository, test_file)
+ await _make_chunk(repository, src_file)
+ edges = await TestOfEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].metadata["regex_id"] == expected_regex_id
+ assert edges[0].metadata["test_file"] == test_file
+ assert edges[0].metadata["src_file"] == src_file
