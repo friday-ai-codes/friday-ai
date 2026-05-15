@@ -245,8 +245,8 @@ onMounted( => {
  </div>
  </div>
  <div class="flex items-center gap-2 ml-4">
- <Switch:checked="provider.is_active"
- @update:checked="onToggleActive(provider)"
+ <Switch:model-value="provider.is_active"
+ @update:model-value="onToggleActive(provider)"
  />
  <Button variant="ghost" size="icon" class=" w-8" @click="openEditDialog(provider)">
  <span class="icon-[lucide--pencil] text-sm" />
@@ -366,7 +366,7 @@ onMounted( => {
  <!-- 启用状态 -->
  <div class="flex items-center justify-between">
  <Label>启用此 Provider</Label>
- <Switch v-model:checked="form.is_active" />
+ <Switch v-model="form.is_active" />
  </div>
  </div>
  <DialogFooter>

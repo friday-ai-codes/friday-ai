@@ -31,6 +31,9 @@ const { handleSubmit, isSubmitting } = useForm({
 const loginError = ref<string | null>(null)
 const oidcProviders = ref<OIDCProviderPublic>
 const oidcLoading = ref(false)
+const showAdminLogin = ref(false)
+const hasOIDC = computed( => oidcProviders.value.length > 0)
+const showAdminForm = computed( => !hasOIDC.value || showAdminLogin.value)
 const onSubmit = handleSubmit(async (values) => {
  loginError.value = null
  try {
@@ -114,12 +117,14 @@ const features = [
  <div class="absolute -bottom-1/4 -left-1/4 w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-3xl" />
  </div>
  <!-- 顶部 Logo -->
- <div class="relative z-10 flex items-center gap-3">
- <div class="w-10 rounded-xl bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-lg shadow-teal-500/20">
- <span class="icon-[lucide--bot] text-xl text-white" />
- </div>
- <span class="text-xl font-bold text-white tracking-tight">Friday AI</span>
- </div>
+ <RouterLink to="/" class="relative z-10 flex items-center gap-3 group">
+ <img
+ src="/logo-mark-dark.svg"
+ alt="Friday"
+ class="w-10 drop-shadow-[0_4px_16px_rgba(20,184,166,0.35)] transition-transform duration-200 group-hover:scale-105"
+ >
+ <img src="/logo-wordmark-dark.svg" alt="friday" class=" w-auto">
+ </RouterLink>
  <!-- 中间内容 -->
  <div class="relative z-10 max-w-md">
  <h2 class="text-4xl font-bold text-white leading-tight mb-4 animate-fade-in">
@@ -154,12 +159,14 @@ const features = [
  <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
  <div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/4" />
  <!-- 移动端顶部 Logo -->
- <div class="lg:hidden absolute top-6 left-6 flex items-center gap-2 z-10">
- <div class="w-8 rounded-lg bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center shadow-lg shadow-teal-500/20">
- <span class="icon-[lucide--bot] text-base text-white" />
- </div>
- <span class="text-lg font-bold text-foreground">Friday AI</span>
- </div>
+ <RouterLink to="/" class="lg:hidden absolute top-6 left-6 flex items-center gap-2 z-10 group">
+ <img
+ src="/logo-mark.svg"
+ alt="Friday"
+ class="w-8 transition-transform duration-200 group-hover:scale-105"
+ >
+ <img src="/logo-wordmark.svg" alt="friday" class=" w-auto">
+ </RouterLink>
  <!-- 登录卡片 -->
  <div class="relative z-10 w-full max-w-sm mx-4">
  <div class="bg-card/70 backdrop-blur-xl rounded-2xl border border-border/50 shadow-glass animate-scale-in">
@@ -169,7 +176,7 @@ const features = [
  欢迎回来
  </h1>
  <p class="text-sm text-muted-foreground">
- 登录您的 Friday AI 账户
+ {{ hasOIDC && !showAdminLogin ? '使用企业账号登录 Friday AI': '登录您的 Friday AI 账户' }}
  </p>
  </div>
  <!-- 错误提示 -->
@@ -189,8 +196,25 @@ const features = [
  <span class="text-sm">{{ loginError }}</span>
  </div>
  </Transition>
- <!-- 表单 -->
- <form class="space-y-4" @submit="onSubmit">
+ <!-- OIDC 登录（主要入口，仅在配置了 Provider 且未切换到管理员登录时显示） -->
+ <div v-if="hasOIDC && !showAdminLogin" class="space-y-2.5">
+ <Button
+ v-for="provider in oidcProviders":key="provider.id"
+ class="w-full text-sm font-semibold":disabled="oidcLoading"
+ @click="onOIDCLogin(provider)"
+ >
+ <template v-if="oidcLoading">
+ <span class="icon-[lucide--loader-circle] mr-2 animate-spin" />
+ 跳转中...
+ </template>
+ <template v-else>
+ <span class="icon-[lucide--shield-check] mr-2" />
+ 使用 {{ provider.name }} 登录
+ </template>
+ </Button>
+ </div>
+ <!-- 管理员账号密码登录表单 -->
+ <form v-if="showAdminForm" class="space-y-4" @submit="onSubmit">
  <FormField v-slot="{ componentField }" name="username">
  <FormItem>
  <FormLabel class="text-foreground/80 text-sm font-medium">
@@ -245,24 +269,27 @@ const features = [
  </template>
  </Button>
  </form>
- <!-- OIDC 登录 -->
- <div v-if="oidcProviders.length > 0" class="mt-6">
- <div class="flex items-center gap-3 mb-4">
+ <!-- 切换登录方式（仅在配了 OIDC 时显示） -->
+ <div v-if="hasOIDC" class="mt-6">
+ <div class="flex items-center gap-3 mb-3">
  <div class="flex-1 h-px bg-border/40" />
- <span class="text-xs text-muted-foreground">其他方式登录</span>
+ <span class="text-xs text-muted-foreground">其他方式</span>
  <div class="flex-1 h-px bg-border/40" />
  </div>
- <div class="space-y-2.5">
- <Button
- v-for="provider in oidcProviders":key="provider.id"
- variant="outline"
- class="w-full text-sm font-normal":disabled="oidcLoading"
- @click="onOIDCLogin(provider)"
+ <button
+ type="button"
+ class="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+ @click="showAdminLogin = !showAdminLogin"
  >
- <span class="icon-[lucide--shield-check] mr-2 text-muted-foreground" />
- {{ provider.name }} 登录
- </Button>
- </div>
+ <template v-if="showAdminLogin">
+ <span class="icon-[lucide--arrow-left] mr-1 align-[-2px]" />
+ 返回企业账号登录
+ </template>
+ <template v-else>
+ <span class="icon-[lucide--key] mr-1 align-[-2px]" />
+ 管理员账号登录
+ </template>
+ </button>
  </div>
  </div>
  </div>

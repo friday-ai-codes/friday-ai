@@ -110,6 +110,14 @@ onMounted(loadStats)
  </div>
  <!-- 统计内容 -->
  <div v-else class="space-y-6">
+ <!-- Qdrant 降级提示（coverage_percent / language_distribution 此时不可用） -->
+ <div
+ v-if="stats.qdrant_unavailable"
+ class="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300"
+ >
+ <span class="icon-[lucide--alert-triangle] text-base shrink-0 mt-0.5" />
+ <span>{{ stats.warning || 'Qdrant 暂时不可用，已返回缓存计数；请稍后重试以获取最新统计' }}</span>
+ </div>
  <!-- 数字指标 -->
  <div class="grid grid-cols-2 gap-3">
  <div class=" rounded-lg bg-muted/40 border border-border/50">
@@ -129,8 +137,8 @@ onMounted(loadStats)
  </p>
  </div>
  </div>
- <!-- 覆盖率进度条 -->
- <div class="space-y-2">
+ <!-- 覆盖率进度条（Qdrant 不可用时 coverage_percent 为 null，跳过渲染） -->
+ <div v-if="stats.coverage_percent !== null" class="space-y-2">
  <div class="flex items-center justify-between text-sm">
  <span class="text-muted-foreground">索引覆盖率</span>
  <span class="font-medium":class="stats.coverage_percent >= 80 ? 'text-emerald-600': stats.coverage_percent >= 50 ? 'text-amber-600': 'text-destructive'">
