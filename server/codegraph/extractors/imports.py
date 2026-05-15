@@ -57,7 +57,7 @@ def _extract_one_import(
  return _parse_import_from_statement(node, ctx)
  elif node.type == "import_declaration":
  # Go 等语言的 import declaration
- return _parse_import_statement(node, ctx)
+ return _parse_import_declaration(node, ctx)
  return None
 def _parse_import_statement(node: Any, ctx: "FileContext") -> "list[ImportData]":
  """解析 import X, Y as Z 语句。
@@ -96,6 +96,67 @@ def _parse_import_statement(node: Any, ctx: "FileContext") -> "list[ImportData]"
  file_path=ctx.file_path,
  node_text=_safe_text(node),
  )
+ return results
+def _parse_import_declaration(
+ node: Any, ctx: "FileContext"
+) -> "list[ImportData]":
+ """解析 Go 等语言的 import_declaration 节点。
+ 支持 import_spec_list（多 import 括号块）和单个 import_spec。
+ """
+ from codegraph.extractors.base import ImportData
+ results: list[ImportData] =
+ def _extract_string(node: Any) -> str | None:
+ """从 interpreted_string_literal 提取模块名。"""
+ text = node.text
+ if isinstance(text, bytes):
+ text = text.decode("utf-8")
+ text = text.strip
+ if text.startswith('"') and text.endswith('"'):
+ return text[1:-1]
+ return text
+ def _parse_spec(spec: Any) -> None:
+ """解析单个 import_spec。"""
+ # import_spec 直接包含 interpreted_string_literal（如 "fmt"）
+ if spec.type == "interpreted_string_literal":
+ module = _extract_string(spec)
+ if module:
+ results.append(
+ ImportData(
+ source_file=ctx.file_path,
+ target_module=module,
+ imported_names=[module],
+ is_relative=False,
+ )
+ )
+ # import_spec 包含 alias + path（如 utils "fmt"）
+ elif spec.type == "import_spec":
+ literal = None
+ alias = None
+ for child in spec.children:
+ if child.type == "interpreted_string_literal":
+ literal = _extract_string(child)
+ elif child.type == "identifier" or child.type == "package_identifier":
+ alias = child.text
+ if isinstance(alias, bytes):
+ alias = alias.decode("utf-8")
+ if literal:
+ name = f"{alias} as {literal}" if alias else literal
+ results.append(
+ ImportData(
+ source_file=ctx.file_path,
+ target_module=literal,
+ imported_names=[name],
+ is_relative=False,
+ )
+ )
+ # 遍历所有子节点找 import_spec 或 interpreted_string_literal
+ def _walk(n: Any) -> None:
+ if n.type in ("import_spec", "interpreted_string_literal"):
+ _parse_spec(n)
+ else:
+ for child in n.children:
+ _walk(child)
+ _walk(node)
  return results
 def _parse_import_from_statement(
  node: Any, ctx: "FileContext",

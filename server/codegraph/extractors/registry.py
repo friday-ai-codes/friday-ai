@@ -49,6 +49,7 @@ class TreeSitterExtractor:
 # =============================================================================
 BACKEND_REGISTRY: dict[str, Callable[[str], ExtractorBackend]] = {
  "python": TreeSitterBackend,
+ "go": TreeSitterBackend,
 }
 def get_backend(language: str) -> ExtractorBackend | None:
  """根据语言名获取对应的 Backend 实例。
