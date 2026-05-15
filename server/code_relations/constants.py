@@ -64,6 +64,7 @@ CANDIDATE_EXTENSIONS: tuple[str, ...] = (
  ".js",
  ".jsx",
  ".go",
+ ".vue", # Phase work item：让 Vue 文件的 ImportEdge target_module 候选解析覆盖 Button.vue 等
 )
 """ImportEdgeBuilder 候选文件扩展名（per ）。
 新增语言（如 ``.rs`` / ``.java``）时改本常量并重启 worker 即可，无需触碰
