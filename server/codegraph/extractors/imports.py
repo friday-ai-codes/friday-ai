@@ -1,5 +1,7 @@
 """Import 抽取器 —— 从 AST 中提取 import 依赖关系。
 per: 系统能从代码文件中提取 import 关系，分析模块间依赖。
+per Phase /：HTML 分支抽 <link href> / <script src> / <img src>，
+带 scheme 守卫（data: / javascript: / blob: / about: / mailto: / tel:）；CSS 分支由 Plan 加。
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING, Any
@@ -7,6 +9,21 @@ import structlog
 if TYPE_CHECKING:
  from codegraph.extractors.base import FileContext, ImportData
 logger = structlog.get_logger(__name__)
+# Phase：HTML 抽 ImportData 的标签 + 对应 attribute 名
+_HTML_IMPORT_TAGS = {"link", "script", "img"}
+_HTML_IMPORT_ATTRS: dict[str, str] = {
+ "link": "href",
+ "script": "src",
+ "img": "src",
+}
+_FORBIDDEN_SCHEMES: tuple[str, ...] = (
+ "data:",
+ "javascript:",
+ "blob:",
+ "about:",
+ "mailto:",
+ "tel:",
+)
 def extract_imports(tree: Any, ctx: "FileContext") -> "list[ImportData]":
  """从 tree-sitter AST 提取所有 import 语句。
  Args:
@@ -51,6 +68,9 @@ def _extract_one_import(
  """
  from codegraph.extractors.base import ImportData
  node = wn.node
+ # Phase /：HTML 分支
+ if ctx.language == "html" and node.type in ("element", "script_element"):
+ return _extract_html_imports(node, ctx)
  if node.type == "import_statement":
  if ctx.language in ("typescript", "tsx"):
  return _parse_import_statement_ts(node, ctx)
@@ -331,9 +351,84 @@ def _safe_text(node: Any) -> str:
  return text[:100] # 截断防过长
  except Exception:
  return "<unable to decode>"
+def _extract_html_imports(
+ node: Any, ctx: "FileContext"
+) -> "list[ImportData] | None":
+ """从 HTML element / script_element 节点提取 ImportData 列表。
+ per Phase /：仅抽 <link href> / <script src> / <img src>；
+ <a href> / <iframe src> / <form action> 不抽（HTTP 外链与图谱无业务关联）。
+ scheme 守卫：data: / javascript: / blob: / about: / mailto: / tel: 全跳过；
+ 空值 / 单 # 也跳过。is_relative：value 不以 http:// / https:// / // / / 开头时为 True。
+ """
+ from codegraph.extractors.base import ImportData
+ # 找 start_tag / self_closing_tag
+ head_tag = None
+ for child in node.children:
+ if child.type in ("start_tag", "self_closing_tag"):
+ head_tag = child
+ break
+ if head_tag is None:
+ return None
+ # 取 tag_name + attributes
+ tag_name: str | None = None
+ attributes: list[Any] =
+ for child in head_tag.children:
+ if child.type == "tag_name" and tag_name is None:
+ raw = child.text
+ tag_name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ elif child.type == "attribute":
+ attributes.append(child)
+ if tag_name is None:
+ return None
+ tag_lower = tag_name.lower
+ if tag_lower not in _HTML_IMPORT_TAGS:
+ return None
+ target_attr = _HTML_IMPORT_ATTRS[tag_lower]
+ for attr in attributes:
+ attr_name: str | None = None
+ attr_value: str | None = None
+ for child in attr.children:
+ if child.type == "attribute_name":
+ raw = child.text
+ attr_name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ elif child.type == "quoted_attribute_value":
+ for inner in child.children:
+ if inner.type == "attribute_value":
+ raw = inner.text
+ attr_value = (
+ raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ )
+ break
+ elif child.type == "attribute_value":
+ raw = child.text
+ attr_value = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ if attr_name != target_attr or attr_value is None:
+ continue
+ value = attr_value.strip
+ if not value or value == "#":
+ continue
+ lowered = value.lower
+ if any(lowered.startswith(s) for s in _FORBIDDEN_SCHEMES):
+ continue
+ is_relative = not (
+ value.startswith("http://")
+ or value.startswith("https://")
+ or value.startswith("//")
+ or value.startswith("/")
+ )
+ return [
+ ImportData(
+ source_file=ctx.file_path,
+ target_module=value,
+ imported_names=,
+ is_relative=is_relative,
+ )
+ ]
+ return None
 __all__ = [
  "extract_imports",
  "_extract_one_import",
  "_parse_import_statement_ts",
  "_parse_export_statement_ts",
+ "_extract_html_imports",
 ]
