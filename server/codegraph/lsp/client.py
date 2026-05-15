@@ -62,7 +62,8 @@ class FridayLanguageClient(BaseLanguageClient):
  - subprocess spawn 失败（pygls 内部包装的 OSError 等）
  - initialize 超时（``asyncio.wait_for`` TimeoutError）
  Args:
- command: subprocess 启动命令，如 ``["vue-language-server", "--stdio"]``。
+ command: subprocess 启动命令，由 ``settings.LSP_SERVERS[name].command``
+ 提供（Phase / 267 子类填具体值）。
  workspace_root: LSP workspace 根目录（用于 root_uri / workspace_folders）。
  language_ids: 客户端声明的语言 id 列表（如 ``["vue", "typescript"]``）。
  initialization_options: server-specific initialization 参数。
