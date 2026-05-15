@@ -344,7 +344,7 @@ class LspSupervisor:
  )
  return False
  elapsed = int((time.monotonic - start) * 1000)
- logger.debug(_EVENT_HEALTH_PASSED, name=self.name, elapsed_ms=elapsed)
+ logger.info(_EVENT_HEALTH_PASSED, name=self.name, elapsed_ms=elapsed)
  return True
  async def _health_check_loop(self) -> None:
  """周期 health check 后台 task；累计 3 次失败触发 restart。"""
