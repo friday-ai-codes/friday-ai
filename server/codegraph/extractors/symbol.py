@@ -1,13 +1,19 @@
 """Symbol 抽取器 —— 从 AST 中提取函数/类/方法定义。
 per: Symbol 包含 name / symbol_type / file_path / start_line / end_line / signature / is_async
 per: 系统能从代码文件中提取函数/类/接口等符号定义
+per Phase / Pitfall 8：_extract_one_symbol 返回类型从 SymbolData | None 升级为
+list[SymbolData]，HTML element 一节点可能同时含 PascalCase tag + id 属性，需返多个；
+CSS rule_set 同理（多 selector 拆解）。既有 python / go / ts 路径机械改 [sym] / 。
 """
 from __future__ import annotations
+import re
 from typing import TYPE_CHECKING, Any
 import structlog
 if TYPE_CHECKING:
  from codegraph.extractors.base import FileContext, SymbolData
 logger = structlog.get_logger(__name__)
+# Phase：HTML id 属性值合法 identifier 守卫
+_HTML_ID_IDENTIFIER_RE = re.compile(r"^[\w\-]+$")
 def extract_symbols(tree: Any, source: str, ctx: "FileContext") -> "list[SymbolData]":
  """从 tree-sitter AST 提取所有函数/类/方法定义。
  Args:
@@ -28,9 +34,9 @@ def extract_symbols(tree: Any, source: str, ctx: "FileContext") -> "list[SymbolD
  if node.type not in symbol_types:
  continue
  try:
- sym = _extract_one_symbol(wn, source, ctx)
- if sym is not None:
- symbols.append(sym)
+ syms = _extract_one_symbol(wn, source, ctx)
+ if syms:
+ symbols.extend(syms)
  except Exception as e:
  logger.warning(
  "symbol_extraction_failed",
@@ -41,19 +47,23 @@ def extract_symbols(tree: Any, source: str, ctx: "FileContext") -> "list[SymbolD
  return symbols
 def _extract_one_symbol(
  wn: Any, source: str, ctx: "FileContext"
-) -> "SymbolData | None":
- """从单个 WalkerNode 提取 SymbolData。
- 处理 function_definition / class_definition / decorated_definition 三种节点类型。
- 内部函数供 GraphExtractor（orchestrator.py）复用，避免重复实现。
+) -> "list[SymbolData]":
+ """从单个 WalkerNode 提取 SymbolData 列表。
+ 处理 function_definition / class_definition / decorated_definition 等节点；
+ Phase：HTML element / script_element / style_element 走 _extract_html_symbol
+ 分支；CSS rule_set 由 Plan 加分支。返回类型 list 让 HTML 一节点可输出多个 SymbolData。
  Args:
  wn: WalkerNode（携带 node + ancestor_function + ancestor_class）
  source: 源文件完整文本
  ctx: FileContext
  Returns:
- SymbolData | None: 成功提取返回 SymbolData，跳过则返回 None
+ list[SymbolData]: 0 / 1 / N 个 SymbolData
  """
  from codegraph.extractors.base import SymbolData
  node = wn.node
+ # Phase /：HTML 分支（element / script_element / style_element）
+ if ctx.language == "html" and node.type in ("element", "script_element", "style_element"):
+ return _extract_html_symbol(node, source, ctx)
  # --- 处理 decorated_definition：取出内部实际定义 ---
  actual_node = node
  is_decorated = False
@@ -81,9 +91,9 @@ def _extract_one_symbol(
  name_node = child.child_by_field_name("name")
  break
  if name_node is None:
- return None
+ return
  if name_node is None:
- return None
+ return
  name = name_node.text
  if isinstance(name, bytes):
  name = name.decode("utf-8")
@@ -130,7 +140,8 @@ def _extract_one_symbol(
  # 空函数/方法体（如 def foo: pass）→ 仍保留但标记
  # 不跳过，因为 GraphWriter 后续可能需要这些符号
  pass
- return SymbolData(
+ return [
+ SymbolData(
  name=name,
  symbol_type=symbol_type,
  file_path=ctx.file_path,
@@ -139,6 +150,7 @@ def _extract_one_symbol(
  signature=signature,
  is_async=is_async,
  )
+ ]
 def _extract_signature(node: Any, actual_node: Any, is_decorated: bool) -> str:
  """从节点文本中提取签名。
  对于普通函数/类：取定义行
@@ -167,4 +179,92 @@ def _extract_signature(node: Any, actual_node: Any, is_decorated: bool) -> str:
  # 取第一行作为签名
  first_line = lines[0].strip if lines else ""
  return first_line
-__all__ = ["extract_symbols", "_extract_one_symbol"]
+def _extract_html_symbol(
+ node: Any, source: str, ctx: "FileContext"
+) -> "list[SymbolData]":
+ """从 HTML element / script_element / style_element 节点提取 SymbolData 列表。
+ per Phase /：
+ - PascalCase tag (len ≥ 3 + 首字母大写) → CLASS
+ - 含连字符的 custom element (len ≥ 2) → CLASS
+ - id 属性（合法 identifier）→ VARIABLE
+ - 小写 HTML 原生 tag / class 属性 / 其他 attribute 不抽
+ """
+ from codegraph.extractors.base import SymbolData
+ results: list[SymbolData] =
+ # 找 start_tag 或 self_closing_tag（Pitfall 1：双兜底）
+ head_tag = None
+ for child in node.children:
+ if child.type in ("start_tag", "self_closing_tag"):
+ head_tag = child
+ break
+ if head_tag is None:
+ return results
+ # 取 tag_name
+ tag_name: str | None = None
+ attributes: list[Any] =
+ for child in head_tag.children:
+ if child.type == "tag_name" and tag_name is None:
+ raw = child.text
+ tag_name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ elif child.type == "attribute":
+ attributes.append(child)
+ if tag_name is None:
+ return results
+ start_line = node.start_point[0] + 1
+ end_line = node.end_point[0] + 1
+ # PascalCase tag：首字母大写 + 长度 >= 3（守 work item 不命中 per ）
+ is_pascal = (
+ len(tag_name) >= 3 and tag_name[0].isalpha and tag_name[0].isupper
+ )
+ # custom element: kebab-case (含 -) + 长度 >= 2
+ is_custom = "-" in tag_name and len(tag_name) >= 2
+ if is_pascal or is_custom:
+ results.append(
+ SymbolData(
+ name=tag_name,
+ symbol_type="CLASS",
+ file_path=ctx.file_path,
+ start_line=start_line,
+ end_line=end_line,
+ signature=f"<{tag_name}>",
+ is_async=False,
+ )
+ )
+ # id 属性扫描
+ for attr in attributes:
+ attr_name: str | None = None
+ attr_value: str | None = None
+ for child in attr.children:
+ if child.type == "attribute_name":
+ raw = child.text
+ attr_name = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ elif child.type == "quoted_attribute_value":
+ # 双层结构：quoted_attribute_value -> attribute_value
+ for inner in child.children:
+ if inner.type == "attribute_value":
+ raw = inner.text
+ attr_value = (
+ raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ )
+ break
+ elif child.type == "attribute_value":
+ raw = child.text
+ attr_value = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+ if (
+ attr_name == "id"
+ and attr_value
+ and _HTML_ID_IDENTIFIER_RE.match(attr_value)
+ ):
+ results.append(
+ SymbolData(
+ name=attr_value,
+ symbol_type="VARIABLE",
+ file_path=ctx.file_path,
+ start_line=start_line,
+ end_line=end_line,
+ signature=f'id="{attr_value}"',
+ is_async=False,
+ )
+ )
+ return results
+__all__ = ["extract_symbols", "_extract_one_symbol", "_extract_html_symbol"]
