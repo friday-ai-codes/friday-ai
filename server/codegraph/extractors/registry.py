@@ -9,6 +9,7 @@ from codegraph.extractors.base import ExtractionBundle, FileContext
 from codegraph.extractors.python_extractor import PythonExtractor
 from codegraph.extractors.go_extractor import GoExtractor
 from codegraph.extractors.ts_extractor import TSExtractor, TSXExtractor
+from codegraph.extractors.vue_extractor import VueExtractor
 logger = structlog.get_logger(__name__)
 @runtime_checkable
 class LanguageExtractor(Protocol):
@@ -54,6 +55,7 @@ BACKEND_REGISTRY: dict[str, Callable[[str], ExtractorBackend]] = {
  "go": TreeSitterBackend,
  "typescript": TreeSitterBackend,
  "tsx": TreeSitterBackend,
+ "vue": TreeSitterBackend,
 }
 def get_backend(language: str) -> ExtractorBackend | None:
  """根据语言名获取对应的 Backend 实例。
@@ -99,6 +101,7 @@ EXTRACTOR_REGISTRY: dict[str, type[LanguageExtractor]] = {
  "go": GoExtractor,
  "typescript": TSExtractor,
  "tsx": TSXExtractor,
+ "vue": VueExtractor,
 }
 class UnsupportedLanguageError(ValueError):
  """请求的语言无注册抽取器。"""

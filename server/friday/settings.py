@@ -367,8 +367,8 @@ EXTRACTOR_BACKENDS: dict[str, str] = {
  "go": "tree_sitter", # Phase 切 gopls 时改 "gopls"
  "typescript": "tree_sitter", # Phase 切 volar 时改 "volar"
  "tsx": "tree_sitter", # Phase 切 volar 时改 "volar"
+ "vue": "tree_sitter", # Phase 切 volar 时改 "volar"
  # 预留后续 phase 覆盖
- # "vue": "volar",
  # "html": "tree_sitter",
  # "css": "tree_sitter",
 }
