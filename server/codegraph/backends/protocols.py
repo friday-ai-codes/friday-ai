@@ -53,6 +53,8 @@ _TREE_SITTER_LANGUAGE_MODULES: dict[str, tuple[str, str]] = {
  "typescript": ("tree_sitter_typescript", "language_typescript"),
  "tsx": ("tree_sitter_typescript", "language_tsx"),
  "vue": ("tree_sitter_typescript", "language_typescript"), # 占位（per Phase）；实际不被 VueExtractor 路径消费
+ "html": ("tree_sitter_html", "language"), # Phase
+ "css": ("tree_sitter_css", "language"), # Phase
 }
 def _get_tree_sitter_language(language: str) -> Any:
  """动态导入并创建 tree-sitter Language 对象。"""
