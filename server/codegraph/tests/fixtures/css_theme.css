@@ -1,0 +1,28 @@
+/* Phase CSS Fixture (per + / ) */
+@import url("./base.css");
+@import "./reset.css";:root {
+ --vp-c-brand: #646cff;
+ --vp-c-text: #213547;
+}
+.foo {
+ color: red;
+}
+.button-primary,
+.button-secondary {
+ background: var(--vp-c-brand);
+}
+#app {
+ width: 100%;
+}
+#footer {
+ height: 60px;
+}
+body {
+ margin: 0;
+}
+* {
+ box-sizing: border-box;
+}
+.complex.modifier:hover {
+ opacity: 0.5;
+}
