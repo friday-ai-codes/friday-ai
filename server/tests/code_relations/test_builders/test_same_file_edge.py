@@ -69,3 +69,29 @@ async def test_chunk_index_diff_metadata(repository) -> None:
  diffs = {e.metadata["chunk_index_diff"] for e in edges}
  assert 4 in diffs
  assert 1 in diffs
+# =============================================================================
+# Phase /：跨语言守门 parametrize 测试
+# 静态审计：SameFileEdgeBuilder 实现完全基于 ChunkRegistry.file_path + chunk_index，
+# 无 file extension / language 假设 → 天然语言无关 git diff = 0。
+# =============================================================================
+@pytest.mark.parametrize(
+ "file_path",
+ [
+ "handlers/user.go",
+ "src/utils.ts",
+ "components/Button.vue",
+ "pages/index.html",
+ ".vitepress/theme/style.css",
+ ],
+)
+@pytest.mark.django_db(transaction=True)
+async def test_same_file_edge_cross_language_guard(repository, file_path: str) -> None:
+ """Phase / 守门：SameFileEdge 对所有 5 语言 file_path 均能建 ≥ 1 条 edge。
+ 建 2 chunks 同文件 → 1 edge（n*(n-1)/2）。验证 builder 实现天然语言无关。
+ """
+ await _create_chunks(repository, file_path, 2)
+ edges = await SameFileEdgeBuilder.build(repository, )
+ file_edges = [e for e in edges if e.metadata.get("file_path") == file_path]
+ assert len(file_edges) >= 1, (
+ f"expected ≥ 1 SAME_FILE edge for {file_path}, got {file_edges}"
+ )

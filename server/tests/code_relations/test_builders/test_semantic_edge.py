@@ -168,6 +168,38 @@ async def test_metadata_qdrant_score(repository) -> None:
  ):
  edges = await SemanticEdgeBuilder.build(repository, [dirty_cid])
  assert edges[0].metadata == {"qdrant_score": 0.9123}
+# =============================================================================
+# Phase /：跨语言守门 parametrize 测试
+# 静态审计：SemanticEdgeBuilder 基于 Qdrant 向量近邻 + payload.file_path 过滤，
+# 无语言假设 → 天然语言无关 git diff = 0。
+# =============================================================================
+@pytest.mark.parametrize(
+ "file_path",
+ [
+ "handlers/user.go", # Go
+ "src/utils.ts", # TypeScript
+ "components/Button.vue", # Vue
+ ],
+)
+@pytest.mark.django_db(transaction=True)
+async def test_semantic_edge_cross_language_guard(repository, file_path: str) -> None:
+ """Phase / 守门：SemanticEdge 对所有语言 file_path 均能建 ≥ 1 edge。
+ mock Qdrant return 1 candidate → ≥ 1 SEMANTIC edge。验证 builder 文件路径无关。
+ """
+ dirty_cid = uuid.UUID("aaaaaaaa-0000-0000-0000-000000000001")
+ candidate_cid = "bbbbbbbb-0000-0000-0000-000000000001"
+ mock_client = MagicMock
+ mock_client.scroll.return_value = _make_scroll_result(
+ str(dirty_cid), file_path, [0.1] * 1024
+ )
+ mock_client.query_points.return_value = _make_query_result([(candidate_cid, 0.92)])
+ with patch(
+ "services.qdrant_service.QdrantService.get_client", return_value=mock_client
+ ):
+ edges = await SemanticEdgeBuilder.build(repository, [dirty_cid])
+ assert len(edges) >= 1
+ assert edges[0].edge_type == EdgeType.SEMANTIC
+ assert edges[0].source_chunk_id == dirty_cid
 @pytest.mark.django_db(transaction=True)
 async def test_self_target_skipped(repository) -> None:
  """query_points 万一回返自身 chunk_id（理论 must_not 已防）→ skip 自环。"""
