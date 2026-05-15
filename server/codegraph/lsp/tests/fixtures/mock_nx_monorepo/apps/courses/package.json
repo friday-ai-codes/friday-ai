@@ -1,0 +1,6 @@
+{
+ "name": "@app-learn/courses",
+ "dependencies": {
+ "vue": "2.7.14"
+ }
+}
