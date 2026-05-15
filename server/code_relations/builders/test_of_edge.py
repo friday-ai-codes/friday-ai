@@ -12,12 +12,15 @@ if TYPE_CHECKING:
  from repositories.models import Repository
 logger = structlog.get_logger(__name__)
 __all__ = ["TestOfEdgeBuilder"]
-_SUPPORTED_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx") #
+_SUPPORTED_EXTENSIONS = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".vue") # + Phase
 # regex（编译一次，模块级常量）
 _PY_TEST_PREFIX = re.compile(r"(?:.+/)?tests?/.*test_(\w+)\.py$")
 _PY_TEST_SUFFIX = re.compile(r"(?:.+/)?tests?/(.*?)_test\.py$")
 _JSTS_TEST_INFIX = re.compile(r"(.+)\.(test|spec)\.(t|j)sx?$")
 _JSTS_TESTS_DIR = re.compile(r"__tests__/(\w+)\.(t|j)sx?$")
+# Phase 新增 Go / Vue test 命名 regex
+_GO_TEST_SUFFIX = re.compile(r"(?:.+/)?(.+?)_test\.go$")
+_VUE_TEST_INFIX = re.compile(r"(?:.+/)?(.+?)\.(test|spec)\.vue$")
 def _candidate_src_files(test_file: str) -> list[tuple[str, str]]:
  """返回 [(候选 src 文件名, regex_id)]；命中则非空。"""
  candidates: list[tuple[str, str]] =
@@ -41,6 +44,15 @@ def _candidate_src_files(test_file: str) -> list[tuple[str, str]]:
  base, lang = m.group(1), m.group(2)
  for ext_suffix in ("s", "sx"):
  candidates.append((f"{base}.{lang}{ext_suffix}", "jsts_tests_dir"))
+ # Phase 新增 dispatch
+ m = _GO_TEST_SUFFIX.search(test_file)
+ if m:
+ stem = m.group(1)
+ candidates.append((f"{stem}.go", "go_test_suffix"))
+ m = _VUE_TEST_INFIX.search(test_file)
+ if m:
+ stem = m.group(1)
+ candidates.append((f"{stem}.vue", "vue_test_infix"))
  return candidates
 class TestOfEdgeBuilder(BaseEdgeBuilder):
  """test → src TEST_OF 边（命名 + ImportEdge 双启发式 per ）。"""
