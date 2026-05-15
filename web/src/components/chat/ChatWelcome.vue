@@ -21,12 +21,20 @@ async function handleQuickPrompt(prompt: string) {
  <div class="text-center max-w-lg px-4">
  <!-- Logo + 标题 -->
  <div class="mb-8">
- <div class="inline-flex rounded-2xl bg-primary/10 mb-4">
- <span class="icon-[lucide--bot] text-5xl text-primary" />
- </div>
- <h1 class="text-2xl font-bold mb-2">
+ <img
+ src="/logo-mark.svg"
+ alt="Friday"
+ class="mx-auto w-16 mb-4"
+ >
+ <h1 class="sr-only">
  Friday AI
  </h1>
+ <img
+ src="/logo-wordmark.svg"
+ alt="friday"
+ aria-hidden="true"
+ class="mx-auto w-auto mb-2"
+ >
  <p class="text-sm text-muted-foreground">
  空间全知的 AI 对话助手，帮你快速了解空间知识
  </p>

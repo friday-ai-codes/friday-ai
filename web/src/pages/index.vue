@@ -95,12 +95,20 @@ const quickActions = [
  <div class="max-w-[1200px] mx-auto space-y-8">
  <!-- Hero 区域 — sub2api 风格简洁 -->
  <section class="text-center pt-6 pb-2">
- <div class="inline-flex items-center justify-center w-20 rounded-2xl gradient-primary mb-5 shadow-glow">
- <span class="icon-[lucide--bot] text-4xl text-white" />
- </div>
- <h1 class="text-3xl md:text-4xl font-bold text-foreground mb-3">
+ <img
+ src="/logo-mark.svg"
+ alt="Friday"
+ class="mx-auto w-20 mb-5 drop-shadow-[0_4px_20px_rgba(20,184,166,0.2)]"
+ >
+ <h1 class="sr-only">
  Friday AI
  </h1>
+ <img
+ src="/logo-wordmark.svg"
+ alt="friday"
+ aria-hidden="true"
+ class="mx-auto md: w-auto mb-3"
+ >
  <p class="text-muted-foreground text-base max-w-lg mx-auto">
  AI 驱动的敏捷开发自动化系统
  </p>

@@ -120,11 +120,17 @@ export interface IndexHistoryResponse {
  total: number
 }
 // Phase: 索引统计
+//
+// Qdrant 不可用时后端走降级路径返回 `coverage_percent: null` + 可选 `qdrant_unavailable` / `warning`
+// （见 server/repositories/index_views.py RepositoryIndexStatsView.get 降级分支）。前端必须做 null 防御，
+// 否则 `.toFixed` 之类调用会让组件白屏。
 export interface IndexStatsResponse {
  chunks_total: number
  language_distribution: Record<string, number>
  indexed_files_count: number
- coverage_percent: number
+ coverage_percent: number | null
+ qdrant_unavailable?: boolean
+ warning?: string
 }
 // Phase: 集合健康
 //

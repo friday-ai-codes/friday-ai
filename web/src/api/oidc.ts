@@ -56,8 +56,10 @@ export async function getPublicProviders: Promise<OIDCProviderPublic> {
  * 获取 OIDC 授权 URL（无需认证）
  */
 export async function getAuthorizeUrl(providerId: string, redirectUri?: string): Promise<OIDCAuthorizeResponse> {
- const params = redirectUri ? `?redirect_uri=${encodeURIComponent(redirectUri)}`: ''
- return get<OIDCAuthorizeResponse>(`/oidc/authorize/${providerId}/${params}`)
+ return get<OIDCAuthorizeResponse>(
+ `/oidc/authorize/${providerId}/`,
+ redirectUri ? { redirect_uri: redirectUri }: undefined,
+ )
 }
 export default {
  getProviders,
