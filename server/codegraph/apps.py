@@ -11,8 +11,7 @@ class CodegraphConfig(AppConfig):
  from django.conf import settings
  if getattr(settings, "VOLAR_BACKEND_ENABLED", True):
  self._register_volar_backends
- from django.conf import settings as _settings
- if getattr(_settings, "GOPLS_BACKEND_ENABLED", False):
+ if getattr(settings, "GOPLS_BACKEND_ENABLED", False):
  self._register_gopls_backend
  def _register_volar_backends(self) -> None:
  """Phase：5 项 BACKEND_REGISTRY 替换为 make_volar_backend(lang)。
