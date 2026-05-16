@@ -101,11 +101,12 @@ DJANGO_SETTINGS_MODULE = "friday.settings"
 pythonpath = ["."]
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration'"
+addopts = "-v --tb=short --disable-socket --allow-unix-socket -m 'not perf and not integration and not slow'"
 asyncio_mode = "auto"
 markers = [
  "perf: 性能基准测试，CI 默认 skip；本地 `pytest -m perf` 主动运行（Phase）",
  "integration: integration tests requiring external binaries (e.g. vue-language-server)（Phase）",
+ "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（Phase）",
 ]
 [tool.coverage.run]
 source = ["friday"]
