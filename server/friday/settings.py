@@ -409,11 +409,19 @@ LSP_SERVERS: dict[str, dict[str, Any]] = {
  },
  "enabled": True,
  },
- # "gopls": { # Phase 实装 —— 不要在 Phase 内 uncomment
- # "command": ["gopls", "serve"],
- # "language_ids": ["go"],
- # "enabled": True,
- # },
+ # Phase /：gopls 真实命令落地（gopls serve）
+ # initialization_options 平铺 key（gopls 点号格式，非嵌套 dict）
+ # advisory（per Pitfall P-）：大仓库启动 20-60s；运维 env 调：
+ # LSP_STARTUP_TIMEOUT_SECONDS=60
+ "gopls": {
+ "command": ["gopls", "serve"],
+ "language_ids": ["go"],
+ "initialization_options": {
+ "build.directoryFilters": ["-vendor", "-node_modules"],
+ "ui.diagnostic.diagnosticsDelay": "1s",
+ },
+ "enabled": True,
+ },
 }
 # Phase：LSP 三层超时（env 可覆盖）
 # - STARTUP_TIMEOUT 默认 30s（volar 首次启动 30-60s spike 实测）
@@ -440,6 +448,13 @@ VOLAR_POOL_MAX_CONCURRENT: int = env.int("VOLAR_POOL_MAX_CONCURRENT", default=4)
 # Phase：volar backend 运维 kill-switch；False 时 apps.ready 跳过
 # register_backend，BACKEND_REGISTRY 5 项保留 tree-sitter 默认。
 VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
+# =============================================================================
+# Phase Gopls Backend Settings
+# =============================================================================
+# Phase：gopls backend 运维 kill-switch
+# 默认 False —— Phase 仅落基础设施，不切 BACKEND_REGISTRY["go"]
+# Phase 切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=True
+GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=False)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================
