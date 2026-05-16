@@ -109,14 +109,14 @@ class ChunkEdge(models.Model):
  on_delete=models.CASCADE,
  related_name="chunk_edges",
  )
- target_repository_id = models.IntegerField(
+ target_repository_id = models.UUIDField(
  null=True,
  blank=True,
  db_index=True,
  help_text=(
  "跨仓边的 target chunk 所在仓库 ID（Phase）。"
  "单仓边（v24 既有 6 类边）为 NULL——backward compatible。"
- "不做 ForeignKey（per 柔性引用原则）。"
+ "不做 ForeignKey（per 柔性引用原则）；与 Repository.id UUID 类型对齐。"
  ),
  )
  created_at = models.DateTimeField(auto_now_add=True)

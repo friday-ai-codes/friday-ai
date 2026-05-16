@@ -13,13 +13,13 @@ class Migration(migrations.Migration):
  migrations.AddField(
  model_name="chunkedge",
  name="target_repository_id",
- field=models.IntegerField(
+ field=models.UUIDField(
  blank=True,
  null=True,
  db_index=True,
  help_text=(
  "跨仓边的 target chunk 所在仓库 ID（Phase）。"
- "单仓边（v24 既有 6 类边）为 NULL。"
+ "单仓边（v24 既有 6 类边）为 NULL；UUID 类型与 Repository.id 对齐。"
  ),
  ),
  ),
