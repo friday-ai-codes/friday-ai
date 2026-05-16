@@ -55,6 +55,8 @@ api_patterns = [
 urlpatterns = [
  # All API endpoints under /api
  path("api/", include(api_patterns)),
+ # Galaxy API（Phase/04/05）：与 playground 并列
+ path("api/codegraph/galaxy/", include("codegraph.galaxy.urls")),
  # codegraph Playground（Phase）：与 /api/ 并列，裸前缀让 admin 直接访问
  path("api/codegraph/", include("codegraph.playground_urls")),
  # OpenAI 协议兼容层：与 /api/ 并列，裸前缀让 OpenAI SDK 直接接入
