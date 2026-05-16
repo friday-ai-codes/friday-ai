@@ -46,15 +46,13 @@ export function useGalaxySearch {
  const extras = localMatches.filter(r => !seen.has(r.id))
  return [...apiResults, ...extras]
  }
- async function search(q: string): Promise<void> {
+ function search(q: string): void {
  if (debounceTimer) clearTimeout(debounceTimer)
  if (!q.trim) {
  results.value =
  return
  }
- await new Promise<void>((resolve) => {
- debounceTimer = setTimeout(resolve, 300)
- })
+ debounceTimer = setTimeout(async => {
  loading.value = true
  error.value = null
  try {
@@ -63,7 +61,6 @@ export function useGalaxySearch {
  }
  catch (e: unknown) {
  error.value = e instanceof Error ? e.message: '搜索失败'
- // 降级到本地搜索
  if (fuseInstance) {
  results.value = fuseInstance.search(q).map(r => r.item)
  }
@@ -71,6 +68,7 @@ export function useGalaxySearch {
  finally {
  loading.value = false
  }
+ }, 300)
  }
  return {
  query,

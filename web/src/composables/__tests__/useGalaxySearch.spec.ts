@@ -44,18 +44,21 @@ describe('useGalaxySearch', => {
  expect(loading.value).toBe(false)
  expect(error.value).toBeNull
  })
- it('search 空查询不调用 API', async => {
+ it('search 空查询不调用 API', => {
  const { search } = useGalaxySearch
- await search('')
+ search('')
+ vi.runAllTimers
  expect(searchGalaxyNodes).not.toHaveBeenCalled
  })
- it('search 调用 searchGalaxyNodes API', async => {
+ it('search debounce 后调用 searchGalaxyNodes API', async => {
  const mockResults = [makeResult]
  vi.mocked(searchGalaxyNodes).mockResolvedValue(mockResults)
  const { results, search } = useGalaxySearch
- const searchPromise = search('MyFunction')
+ search('MyFunction')
  vi.runAllTimers
- await searchPromise
+ // 等待 async 回调
+ await Promise.resolve
+ await Promise.resolve
  expect(searchGalaxyNodes).toHaveBeenCalledWith('MyFunction', 20)
  expect(results.value).toEqual(mockResults)
  })
@@ -65,21 +68,23 @@ describe('useGalaxySearch', => {
  => new Promise(r => (resolveSearch = r)),
  )
  const { loading, search } = useGalaxySearch
- const promise = search('test')
+ search('test')
  vi.runAllTimers
- // loading 应为 true（异步期间）
+ // 等待 debounce callback 开始执行
  await Promise.resolve
  expect(loading.value).toBe(true)
  resolveSearch
- await promise
+ await Promise.resolve
+ await Promise.resolve
  expect(loading.value).toBe(false)
  })
  it('API 错误时降级并设置 error', async => {
  vi.mocked(searchGalaxyNodes).mockRejectedValue(new Error('网络错误'))
  const { error, search } = useGalaxySearch
- const promise = search('test')
+ search('test')
  vi.runAllTimers
- await promise
+ await Promise.resolve
+ await Promise.resolve
  expect(error.value).toBe('网络错误')
  })
  it('searchLocal 通过 Fuse.js 过滤节点', => {
@@ -97,9 +102,8 @@ describe('useGalaxySearch', => {
  const nodes = [makeNode]
  expect(searchLocal(nodes, '')).toEqual
  })
- it('setCorpus + search 去重合并本地结果', async => {
+ it('setCorpus + search 后端结果先呈现，本地 Fuse 补充不重复', async => {
  const apiResult = makeResult({ id: 'symbol:api', label: 'ApiFunc' })
- const localOnlyResult = makeResult({ id: 'symbol:local', label: 'LocalHelper' })
  vi.mocked(searchGalaxyNodes).mockResolvedValue([apiResult])
  const nodes = [
  makeNode({ id: 'symbol:api', label: 'ApiFunc' }),
@@ -107,14 +111,26 @@ describe('useGalaxySearch', => {
  ]
  const { results, search, setCorpus } = useGalaxySearch
  setCorpus(nodes)
- const promise = search('func')
+ search('func')
  vi.runAllTimers
- await promise
- // apiResult 来自后端，localOnlyResult 由 Fuse 补充（若匹配）
+ await Promise.resolve
+ await Promise.resolve
  const ids = results.value.map(r => r.id)
  expect(ids).toContain('symbol:api')
  // 不重复
  expect(ids.filter(id => id === 'symbol:api').length).toBe(1)
- void localOnlyResult // 仅在 Fuse 匹配时出现，不强制断言
+ })
+ it('多次快速调用 search 只执行最后一次（debounce）', async => {
+ vi.mocked(searchGalaxyNodes).mockResolvedValue
+ const { search } = useGalaxySearch
+ search('a')
+ search('ab')
+ search('abc')
+ vi.runAllTimers
+ await Promise.resolve
+ await Promise.resolve
+ // 只调用一次 API（最后一次搜索）
+ expect(searchGalaxyNodes).toHaveBeenCalledTimes(1)
+ expect(searchGalaxyNodes).toHaveBeenCalledWith('abc', 20)
  })
 })
