@@ -22,10 +22,11 @@ from services.retrieval.budget import (
 from services.retrieval.token_budget import TOKEN_BUFFER_RATIO
 def test_default_ratio_allocates_60_40 -> None:
  result = HybridBudget.allocate(8000)
- assert result == {"rag": 4320, "graph": 2880}
+ # Phase: cross_repo=0.0 默认 → cross_repo key 存在但值为 0
+ assert result == {"rag": 4320, "graph": 2880, "cross_repo": 0}
 def test_zero_max_tokens_allocates_zero -> None:
  result = HybridBudget.allocate(0)
- assert result == {"rag": 0, "graph": 0}
+ assert result == {"rag": 0, "graph": 0, "cross_repo": 0}
 def test_hybrid_budget_is_frozen_dataclass -> None:
  assert dataclasses.is_dataclass(HybridBudget)
  assert HybridBudget.__dataclass_params__.frozen is True
