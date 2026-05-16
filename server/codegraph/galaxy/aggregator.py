@@ -393,18 +393,18 @@ class GalaxyAggregator:
  ).annotate(degree=Count("outgoing_calls"))
  if repo_ids is not None:
  qs_sym = qs_sym.filter(repository_id__in=repo_ids)
- for obj in qs_sym.order_by("-degree")[:limit]:
+ for sym_obj in qs_sym.order_by("-degree")[:limit]:
  symbol_nodes.append(
  GalaxyNode(
- id=_node_id("symbol", obj.id),
+ id=_node_id("symbol", sym_obj.id),
  type="symbol",
- label=obj.name,
- repository_id=str(obj.repository_id),
- file_path=obj.file_path,
- line_start=obj.start_line,
- line_end=obj.end_line,
+ label=sym_obj.name,
+ repository_id=str(sym_obj.repository_id),
+ file_path=sym_obj.file_path,
+ line_start=sym_obj.start_line,
+ line_end=sym_obj.end_line,
  metadata=None,
- degree=obj.degree,
+ degree=sym_obj.degree,
  )
  )
  # Endpoint 搜索
@@ -415,18 +415,18 @@ class GalaxyAggregator:
  ).annotate(degree=Count("cross_repo_callers"))
  if repo_ids is not None:
  qs_ep = qs_ep.filter(repository_id__in=repo_ids)
- for obj in qs_ep.order_by("-degree")[:limit]:
+ for ep_obj in qs_ep.order_by("-degree")[:limit]:
  endpoint_nodes.append(
  GalaxyNode(
- id=_node_id("endpoint", obj.id),
+ id=_node_id("endpoint", ep_obj.id),
  type="endpoint",
- label=f"{obj.http_method} {obj.url_path}",
- repository_id=str(obj.repository_id),
- file_path=obj.file_path,
- line_start=obj.line_number,
+ label=f"{ep_obj.http_method} {ep_obj.url_path}",
+ repository_id=str(ep_obj.repository_id),
+ file_path=ep_obj.file_path,
+ line_start=ep_obj.line_number,
  line_end=None,
- metadata=obj.metadata,
- degree=obj.degree,
+ metadata=ep_obj.metadata,
+ degree=ep_obj.degree,
  )
  )
  # ApiWrapper 搜索
@@ -437,18 +437,18 @@ class GalaxyAggregator:
  ).annotate(degree=Count("call_sites"))
  if repo_ids is not None:
  qs_aw = qs_aw.filter(repository_id__in=repo_ids)
- for obj in qs_aw.order_by("-degree")[:limit]:
+ for aw_obj in qs_aw.order_by("-degree")[:limit]:
  wrapper_nodes.append(
  GalaxyNode(
- id=_node_id("wrapper", obj.id),
+ id=_node_id("wrapper", aw_obj.id),
  type="api_wrapper",
- label=obj.function_symbol,
- repository_id=str(obj.repository_id),
- file_path=obj.file_path,
- line_start=obj.line_number,
+ label=aw_obj.function_symbol,
+ repository_id=str(aw_obj.repository_id),
+ file_path=aw_obj.file_path,
+ line_start=aw_obj.line_number,
  line_end=None,
- metadata=obj.metadata,
- degree=obj.degree,
+ metadata=aw_obj.metadata,
+ degree=aw_obj.degree,
  )
  )
  # ApiCallSite 搜索
@@ -459,18 +459,18 @@ class GalaxyAggregator:
  ).annotate(degree=Count("cross_repo_calls"))
  if repo_ids is not None:
  qs_cs = qs_cs.filter(repository_id__in=repo_ids)
- for obj in qs_cs.order_by("-degree")[:limit]:
+ for cs_obj in qs_cs.order_by("-degree")[:limit]:
  callsite_nodes.append(
  GalaxyNode(
- id=_node_id("callsite", obj.id),
+ id=_node_id("callsite", cs_obj.id),
  type="api_call_site",
- label=f"{obj.caller_function} in {obj.caller_file}:{obj.line_number}",
- repository_id=str(obj.repository_id),
- file_path=obj.caller_file,
- line_start=obj.line_number,
+ label=f"{cs_obj.caller_function} in {cs_obj.caller_file}:{cs_obj.line_number}",
+ repository_id=str(cs_obj.repository_id),
+ file_path=cs_obj.caller_file,
+ line_start=cs_obj.line_number,
  line_end=None,
  metadata=None,
- degree=obj.degree,
+ degree=cs_obj.degree,
  )
  )
  # 合并并按 degree 降序排列
