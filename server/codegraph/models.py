@@ -108,6 +108,7 @@ class Endpoint(models.Model):
  view_type = models.CharField(max_length=32, choices=ViewType.choices)
  file_path = models.CharField(max_length=512)
  line_number = models.IntegerField
+ metadata = models.JSONField(null=True, blank=True, default=None) #: ogin.G* 参数验证元数据
  created_at = models.DateTimeField(auto_now_add=True)
  class Meta:
  verbose_name = "端点"
