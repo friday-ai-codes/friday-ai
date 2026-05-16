@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 import pytest
 from lsprotocol import types as lsp
@@ -32,10 +33,10 @@ def _make_gopls_backend_with_mock_supervisor -> tuple:
  backend._supervisor = mock_sup
  backend._fallback = TreeSitterBackend("go")
  return backend, mock_sup
-def _make_ctx(file_path: str = "/test/main.go") -> MagicMock:
+def _make_ctx(file_path: str = "/test/main.go") -> Any:
  from codegraph.extractors.base import FileContext
- return FileContext(file_path=file_path, language="go", repository_id=1)
-def _make_lsp_handle(file_path: str = "/test/main.go", source: str = "") -> MagicMock:
+ return FileContext(file_path=file_path, language="go", repository_id="1")
+def _make_lsp_handle(file_path: str = "/test/main.go", source: str = "") -> Any:
  from codegraph.lsp.backend import _LspParseHandle
  return _LspParseHandle(file_path=file_path, source=source)
 def _make_workspace_symbol(
@@ -245,7 +246,7 @@ class TestFallbackPaths:
  patch.object(backend._fallback, "extract_symbols", mock_extract),
  ):
  from codegraph.extractors.base import FileContext
- ctx = FileContext(file_path="/test/main.go", language="go", repository_id=1)
+ ctx = FileContext(file_path="/test/main.go", language="go", repository_id="1")
  tree = _make_lsp_handle
  result = backend.extract_symbols(tree, "", ctx)
  assert result == mock_symbols
@@ -265,7 +266,7 @@ class TestFallbackPaths:
  patch.object(backend._fallback, "extract_imports", return_value=mock_imports),
  ):
  from codegraph.extractors.base import FileContext
- ctx = FileContext(file_path="/test/main.go", language="go", repository_id=1)
+ ctx = FileContext(file_path="/test/main.go", language="go", repository_id="1")
  tree = _make_lsp_handle
  result = backend.extract_imports(tree, ctx)
  assert result == mock_imports
@@ -327,15 +328,17 @@ class TestMakeGoplsBackend:
  assert isinstance(backend, LspBackend)
  def test_factory_instance_language_matches(self) -> None:
  """factory('go') 返实例 .language == 'go'。"""
- from codegraph.lsp.gopls_backend import make_gopls_backend
+ from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
  factory = make_gopls_backend("go")
  backend = factory("go")
+ assert isinstance(backend, _GoplsLazyBackend)
  assert backend.language == "go"
  def test_factory_instance_fallback_to_tree_sitter_for_real_tree(self) -> None:
  """factory('go') 实例传真实 tree-sitter Tree → 委托 fallback（per Pitfall P-）。"""
- from codegraph.lsp.gopls_backend import make_gopls_backend
+ from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
  factory = make_gopls_backend("go")
  backend = factory("go")
+ assert isinstance(backend, _GoplsLazyBackend)
  # 传一个 non-_LspParseHandle 对象 → _lsp_extract_endpoints 直接返
  result = backend._lsp_extract_endpoints(MagicMock, "", _make_ctx)
  assert result ==
