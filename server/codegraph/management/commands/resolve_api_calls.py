@@ -43,7 +43,8 @@ class Command(BaseCommand):
  repo_id_or_path: str = str(options["repo"])
  no_volar: bool = bool(options["no_volar"])
  dry_run: bool = bool(options["dry_run"])
- max_files: int = int(options.get("max_files", 0) or 0)
+ max_files_raw = options.get("max_files", 0)
+ max_files: int = int(max_files_raw) if isinstance(max_files_raw, (int, float, str)) else 0
  # -------------------------------------------------------------------------
  # 获取仓库对象
  # -------------------------------------------------------------------------
@@ -52,11 +53,16 @@ class Command(BaseCommand):
  try:
  repo = Repository.objects.get(pk=_uuid.UUID(repo_id_or_path))
  except (ValueError, Repository.DoesNotExist):
- try:
- repo = Repository.objects.get(local_path=repo_id_or_path)
- except Repository.DoesNotExist:
- raise CommandError(f"找不到仓库：{repo_id_or_path}")
- repo_root: str = str(getattr(repo, "local_path", "") or repo_id_or_path)
+ # 按 git_url 或 name 查找
+ qs = Repository.objects.filter(git_url=repo_id_or_path)
+ if not qs.exists:
+ qs = Repository.objects.filter(name=repo_id_or_path)
+ if qs.exists:
+ repo = qs.first # type: ignore[assignment]
+ else:
+ raise CommandError(f"找不到仓库：{repo_id_or_path}（支持 UUID / git_url / name）")
+ # 仓库根路径：优先从 git_url 的本地镜像路径推断（或使用传入的路径参数）
+ repo_root: str = repo_id_or_path if Path(repo_id_or_path).exists else str(repo.git_url)
  self.stdout.write(
  self.style.SUCCESS(f"\n▶ API Resolver — {repo.name} ({repo_root})\n")
  )

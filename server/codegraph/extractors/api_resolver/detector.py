@@ -351,13 +351,20 @@ def _parse_ts_file(file_path: str) -> tuple[Any, str] | None:
  )
  return None
 def _parse_vue_file(file_path: str) -> tuple[Any, str] | None:
- """解析 Vue SFC：拆 script block → TS parser。"""
+ """解析 Vue SFC：拆 script block → TS parser。
+ split_sfc 返回 list[SfcBlock]，遍历找 kind="script" 的块提取 content。
+ """
  try:
  from codegraph.extractors.vue_sfc_splitter import split_sfc
  with open(file_path, encoding="utf-8", errors="ignore") as f:
  sfc_source = f.read
  blocks = split_sfc(sfc_source)
- script_src = blocks.get("script") or blocks.get("script_setup") or ""
+ # list[SfcBlock]：找 kind="script" 的块（普通 script 或 setup）
+ script_src = ""
+ for block in blocks:
+ if block.kind == "script" and block.content.strip:
+ script_src = block.content
+ break
  if not script_src.strip:
  return None
  import tree_sitter_typescript as ts_ts
@@ -527,7 +534,7 @@ def resolve_call_sites_for_wrapper(
  )
  return
  line_0idx, col_0idx = pos
- uri = path_to_uri(wrapper.file_path)
+ uri = path_to_uri(Path(wrapper.file_path).resolve)
  # 2. 发 textDocument/references 请求
  async def _get_refs -> list:
  client = supervisor._client
@@ -554,7 +561,8 @@ def resolve_call_sites_for_wrapper(
  sites: list[ApiCallSiteData] =
  for ref in refs:
  try:
- ref_file = uri_to_path(ref.uri)
+ ref_path = uri_to_path(ref.uri)
+ ref_file = str(ref_path)
  # 找包含该行的函数（caller_function）
  caller_func = "<module>"
  ref_parsed = parse_ts_or_vue_for_api(ref_file)
