@@ -5,22 +5,17 @@ Step 2: volar textDocument/references 反向追踪 ApiWrapper → ApiCallSite
 Vue SFC 支持：通过 vue_sfc_splitter 拆 script block 后用 TS parser 解析
 """
 from __future__ import annotations
-import re
 from collections.abc import Generator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 import structlog
 from codegraph.extractors.api_resolver.base import ApiCallSiteData, ApiWrapperData
 from codegraph.extractors.api_resolver.config import get_api_detector_config, strip_base_url
-if TYPE_CHECKING:
- pass
 logger = structlog.get_logger(__name__)
 # axios 方法名集合（识别 LowLevelHelper 的锚点）
 _AXIOS_METHODS: frozenset[str] = frozenset(
  ["get", "post", "put", "delete", "del", "patch", "request"]
 )
-# tree-sitter 节点类型：函数声明体
-_FUNC_BODY_TYPES: frozenset[str] = frozenset(["statement_block", "expression_statement"])
 # =============================================================================
 # 工具函数：tree-sitter AST 遍历
 # =============================================================================
