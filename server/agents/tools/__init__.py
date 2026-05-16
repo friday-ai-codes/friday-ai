@@ -18,7 +18,10 @@ from agents.tools.feishu_doc_tools import (
  fetch_feishu_document,
 )
 from agents.tools.feishu_im_tools import send_card_message
+from agents.tools.find_api_callers import find_api_callers
+from agents.tools.find_api_handler import find_api_handler
 from agents.tools.find_related_code import find_related_code
+from agents.tools.list_endpoints import list_endpoints
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.registry import ToolRegistry
 from agents.tools.space_tools import (
@@ -48,6 +51,10 @@ __all__ = [
  "search_repository_code",
  # Code graph tools (Phase)
  "find_related_code",
+ # API graph tools (Phase)
+ "find_api_handler",
+ "find_api_callers",
+ "list_endpoints",
  # Work item tools
  "get_work_item_detail",
  "list_related_work_items",
