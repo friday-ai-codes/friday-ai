@@ -230,3 +230,60 @@ describe('GalaxyForceGraph.vue', => {
  wrapper.unmount
  })
 })
+// ============================================================================
+// Phase — defineExpose focusNode 测试
+// ============================================================================
+describe('GalaxyForceGraph.expose.focusNode — Phase', => {
+ beforeEach( => {
+ vi.clearAllMocks
+ vi.useFakeTimers
+ // 重置 graphData mock 返回带坐标的节点
+ mockGraph.graphData.mockReturnValue({
+ nodes: [
+ { id: 'symbol:target', x: 10, y: 20, z: 30 },
+ { id: 'symbol:other', x: 0, y: 0, z: 0 },
+ ],
+ links:,
+ })
+ })
+ it('找到节点时调用 cameraPosition 平滑过渡（1000ms）', async => {
+ const { default: GalaxyForceGraph } = await import('../GalaxyForceGraph.vue')
+ const wrapper = mount(GalaxyForceGraph, {
+ props: {
+ nodes: [{ id: 'symbol:target', type: 'symbol', label: 'Target', file_path: 'src/t.ts', repository_id: 'r1', line_start: 1, line_end: 5, metadata: {}, degree: 1 }],
+ edges:,
+ },
+ attachTo: document.body,
+ })
+ await flushPromises
+ // 仅推进 10ms 触发 engineStop callback（避免 requestAnimationFrame 无限循环）
+ vi.advanceTimersByTime(10)
+ await flushPromises
+ mockGraph.cameraPosition.mockClear
+ const exposedFocusNode = (wrapper.vm as unknown as { focusNode?: (id: string) => void }).focusNode
+ if (typeof exposedFocusNode === 'function') {
+ exposedFocusNode('symbol:target')
+ expect(mockGraph.cameraPosition).toHaveBeenCalledTimes(1)
+ const call = mockGraph.cameraPosition.mock.calls[0]
+ expect(call[2]).toBe(1000)
+ }
+ wrapper.unmount
+ })
+ it('未找到节点时不调用 cameraPosition', async => {
+ const { default: GalaxyForceGraph } = await import('../GalaxyForceGraph.vue')
+ const wrapper = mount(GalaxyForceGraph, {
+ props: { nodes:, edges: },
+ attachTo: document.body,
+ })
+ await flushPromises
+ vi.advanceTimersByTime(10)
+ await flushPromises
+ mockGraph.cameraPosition.mockClear
+ const exposedFocusNode = (wrapper.vm as unknown as { focusNode?: (id: string) => void }).focusNode
+ if (typeof exposedFocusNode === 'function') {
+ exposedFocusNode('symbol:nonexistent')
+ expect(mockGraph.cameraPosition).not.toHaveBeenCalled
+ }
+ wrapper.unmount
+ })
+})

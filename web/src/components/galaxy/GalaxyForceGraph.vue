@@ -310,6 +310,21 @@ watch(
  => { updateGraphData },
  { deep: false },
 )
+// ============================================================================
+// defineExpose — 供父组件（galaxy.vue）调用中心化定位
+// ============================================================================
+defineExpose({
+ focusNode(nodeId: string) {
+ if (!graph) return
+ const data = graph.graphData as { nodes: Array<GalaxyNodeObject & { x?: number, y?: number, z?: number }> }
+ const target = data.nodes.find(n => n.id === nodeId)
+ if (!target) return
+ const x = target.x ?? 0
+ const y = target.y ?? 0
+ const z = (target.z ?? 0) + 150
+ graph.cameraPosition({ x, y, z }, { x, y, z: z - 150 }, 1000)
+ },
+})
 </script>
 <template>
  <div class="relative w-full h-full">
