@@ -323,14 +323,26 @@ def parse_ts_or_vue_for_api(file_path: str) -> tuple[Any, str] | None:
  return _parse_ts_file(file_path)
  return None
 def _parse_ts_file(file_path: str) -> tuple[Any, str] | None:
- """解析 TS/TSX/JS/JSX 文件。"""
+ """解析 TS/TSX/JS/JSX 文件。
+ tree-sitter-typescript 暴露 language_typescript（TS）和 language_tsx（TSX）两个函数。
+ 对 .js/.jsx 文件使用 tree_sitter_javascript.language。
+ """
  try:
- import tree_sitter_typescript as ts_ts
  from tree_sitter import Language, Parser
  with open(file_path, encoding="utf-8", errors="ignore") as f:
  source = f.read
- TS_LANGUAGE = Language(ts_ts.language)
- parser = Parser(TS_LANGUAGE)
+ fp = Path(file_path)
+ if fp.suffix in (".ts",):
+ import tree_sitter_typescript as ts_ts
+ lang_obj = Language(ts_ts.language_typescript)
+ elif fp.suffix in (".tsx",):
+ import tree_sitter_typescript as ts_ts
+ lang_obj = Language(ts_ts.language_tsx)
+ else:
+ # .js / .jsx
+ import tree_sitter_javascript as ts_js # type: ignore[import-untyped]
+ lang_obj = Language(ts_js.language)
+ parser = Parser(lang_obj)
  tree = parser.parse(source.encode("utf-8"))
  return tree, source
  except Exception as e:
@@ -350,7 +362,7 @@ def _parse_vue_file(file_path: str) -> tuple[Any, str] | None:
  return None
  import tree_sitter_typescript as ts_ts
  from tree_sitter import Language, Parser
- TS_LANGUAGE = Language(ts_ts.language)
+ TS_LANGUAGE = Language(ts_ts.language_typescript)
  parser = Parser(TS_LANGUAGE)
  tree = parser.parse(script_src.encode("utf-8"))
  return tree, script_src
