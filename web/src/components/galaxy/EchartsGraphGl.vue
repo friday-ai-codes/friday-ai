@@ -62,9 +62,12 @@ const EDGE_COLORS: Record<string, string> = {
 const chartOption = computed( => ({
  backgroundColor: '#0a0a1f',
  tooltip: {
- formatter: (params: { dataType: string, data: { id: string } }) => {
+ formatter: (params: Record<string, unknown>) => {
  if (params.dataType === 'node') {
- const node = props.nodes.find(n => n.id === params.data.id)
+ const data = params.data as { id?: string } | undefined
+ if (!data?.id)
+ return ''
+ const node = props.nodes.find(n => n.id === data.id)
  if (!node)
  return ''
  return `<div style="color:#fff"><b>${node.label}</b><br/>${node.type}<br/>${node.file_path}</div>`
@@ -158,17 +161,23 @@ async function initChart {
  echartsInstance = instance
  instance.setOption(chartOption.value)
  // 事件绑定
- instance.on('click', (params: { dataType: string, data: { id: string } }) => {
+ instance.on('click', (params: Record<string, unknown>) => {
  if (params.dataType === 'node') {
- const node = props.nodes.find(n => n.id === params.data.id)
+ const data = params.data as { id?: string } | undefined
+ if (data?.id) {
+ const node = props.nodes.find(n => n.id === data.id)
  if (node)
  emit('node-click', node)
  }
+ }
  })
- instance.on('mouseover', (params: { dataType: string, data: { id: string } }) => {
+ instance.on('mouseover', (params: Record<string, unknown>) => {
  if (params.dataType === 'node') {
- const node = props.nodes.find(n => n.id === params.data.id)
+ const data = params.data as { id?: string } | undefined
+ if (data?.id) {
+ const node = props.nodes.find(n => n.id === data.id)
  emit('node-hover', node ?? null)
+ }
  }
  })
  instance.on('mouseout', => {

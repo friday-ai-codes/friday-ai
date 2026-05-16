@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NodeObject } from '3d-force-graph'
+import type { ForceGraph3DInstance, NodeObject } from '3d-force-graph'
 import type { GalaxyEdge, GalaxyNode } from '~/api/galaxy'
 import ForceGraph3D from '3d-force-graph'
 import * as THREE from 'three'
@@ -19,19 +19,27 @@ const emit = defineEmits<{
  (e: 'ready'): void
 }>
 // ============================================================================
+// 内部扩展类型（与 3d-force-graph 的 NodeObject 兼容）
+// ============================================================================
+interface GalaxyNodeObject extends NodeObject {
+ id: string
+ type?: string
+ // 3d-force-graph 内部注入的 Three.js 对象引用
+ __threeObj?: THREE.Object3D
+}
+// ============================================================================
 // State
 // ============================================================================
 const containerRef = ref<HTMLDivElement | null>(null)
-type GraphInstance = ReturnType<ReturnType<typeof ForceGraph3D>>
-let graph: GraphInstance | null = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GraphType = ForceGraph3DInstance<any, any>
+let graph: GraphType | null = null
 let resizeObserver: ResizeObserver | null = null
 let animFrameId = 0
 let fpsFrameCount = 0
 let fpsLastTime = performance.now
 let fpsStarted = false
-// 邻居 map：nodeId → Set<neighborId>（hover 高亮用）
 const neighborMap = new Map<string, Set<string>>
-// 节点 opacity 原始值（hover 恢复用）
 const NODE_DEFAULT_OPACITY = 1.0
 const NODE_DIM_OPACITY = 0.15
 const HOVER_DEBOUNCE_MS = 100
@@ -73,73 +81,39 @@ const EDGE_WIDTHS: Record<string, number> = {
  API_CALLS: 2.0,
  IMPLEMENTS: 1.2,
 }
-const EDGE_OPACITIES: Record<string, number> = {
- CALL: 0.8,
- IMPORT: 0.7,
- SAME_FILE: 0.3,
- TEST_OF: 0.8,
- CO_CHANGED: 0.6,
- SEMANTIC: 0.5,
- API_CALLS: 1.0,
- IMPLEMENTS: 0.7,
-}
 // ============================================================================
 // 节点 Three.js 对象工厂
 // ============================================================================
-interface GalaxyNodeObject extends NodeObject {
- id: string
- type: string
- __galaxy_node?: GalaxyNode
-}
-interface GalaxyLinkObject {
- id: string
- source: string | GalaxyNodeObject
- target: string | GalaxyNodeObject
- edge_type: string
-}
-function createNodeObject(node: GalaxyNodeObject): THREE.Object3D {
- const type = node.type ?? 'chunk_registry'
+function createNodeObject(node: NodeObject): THREE.Object3D {
+ const n = node as GalaxyNodeObject
+ const type = n.type ?? 'chunk_registry'
  const color = new THREE.Color(NODE_COLORS[type] ?? '#c0c0c0')
  const size = NODE_SIZES[type] ?? 4
  const group = new THREE.Group
  const sphere = new THREE.Mesh(
  new THREE.SphereGeometry(size, 16, 16),
- new THREE.MeshBasicMaterial({
- color,
- transparent: true,
- opacity: NODE_DEFAULT_OPACITY,
- }),
+ new THREE.MeshBasicMaterial({ color, transparent: true, opacity: NODE_DEFAULT_OPACITY }),
  )
  group.add(sphere)
- // endpoint: 单发光环
  if (type === 'endpoint') {
- const ring = createRing(size + 1.5, size + 2.5, color)
- group.add(ring)
+ group.add(createRing(size + 1.5, size + 2.5, color))
  }
- // api_wrapper: 双发光环
- if (type === 'api_wrapper') {
- const ring1 = createRing(size + 1.5, size + 2.5, color)
- const ring2 = createRing(size + 3, size + 4, color, 0.5)
- group.add(ring1, ring2)
+ else if (type === 'api_wrapper') {
+ group.add(createRing(size + 1.5, size + 2.5, color))
+ group.add(createRing(size + 3, size + 4, color, 0.5))
  }
  return group
 }
 function createRing(innerR: number, outerR: number, color: THREE.Color, opacity = 0.8): THREE.Mesh {
  return new THREE.Mesh(
  new THREE.RingGeometry(innerR, outerR, 32),
- new THREE.MeshBasicMaterial({
- color,
- side: THREE.DoubleSide,
- transparent: true,
- opacity,
- }),
+ new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity }),
  )
 }
 // ============================================================================
 // 太空背景
 // ============================================================================
 function setupSpaceBackground(scene: THREE.Scene): void {
- // 渐变背景纹理
  const canvas = document.createElement('canvas')
  canvas.width = 2
  canvas.height = 512
@@ -153,24 +127,20 @@ function setupSpaceBackground(scene: THREE.Scene): void {
  ctx.fillRect(0, 0, 2, 512)
  scene.background = new THREE.CanvasTexture(canvas)
  }
- // 星点粒子
  const starsGeometry = new THREE.BufferGeometry
  const starPositions = new Float32Array(1000 * 3)
  for (let i = 0; i < 1000 * 3; i++) {
  starPositions[i] = (Math.random - 0.5) * 2000
  }
  starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
- const starsMaterial = new THREE.PointsMaterial({
- color: 0xFFFFFF,
- size: 0.5,
- transparent: true,
- opacity: 0.6,
- })
- const stars = new THREE.Points(starsGeometry, starsMaterial)
+ const stars = new THREE.Points(
+ starsGeometry,
+ new THREE.PointsMaterial({ color: 0xFFFFFF, size: 0.5, transparent: true, opacity: 0.6 }),
+ )
  scene.add(stars)
 }
 // ============================================================================
-// 邻居 Lookup 构建
+// 邻居 Lookup + hover 高亮
 // ============================================================================
 function buildNeighborLookup: void {
  neighborMap.clear
@@ -183,23 +153,6 @@ function buildNeighborLookup: void {
  neighborMap.get(edge.target)!.add(edge.source)
  })
 }
-// ============================================================================
-// 全部节点 opacity 更新
-// ============================================================================
-function setAllNodesOpacity(opacity: number): void {
- if (!graph)
- return
- graph.graphData.nodes.forEach((n: GalaxyNodeObject) => {
- const obj = graph!.nodeThreeObject(n) as THREE.Group | null
- if (!obj)
- return
- obj.traverse((child) => {
- if (child instanceof THREE.Mesh && child.material instanceof THREE.Material) {
- child.material.opacity = opacity
- }
- })
- })
-}
 function updateHoverHighlight(hoveredId: string | null): void {
  if (!graph)
  return
@@ -209,12 +162,12 @@ function updateHoverHighlight(hoveredId: string | null): void {
  || n.id === hoveredId
  || neighborMap.get(hoveredId)?.has(n.id)
  const targetOpacity = isNeighbor ? NODE_DEFAULT_OPACITY: NODE_DIM_OPACITY
- const obj = n.__threeObj as THREE.Group | undefined
+ const obj = n.__threeObj
  if (!obj)
  return
  obj.traverse((child) => {
  if (child instanceof THREE.Mesh && child.material instanceof THREE.Material) {
- child.material.opacity = targetOpacity
+ (child.material as THREE.MeshBasicMaterial).opacity = targetOpacity
  }
  })
  })
@@ -244,19 +197,12 @@ function startFpsMonitor: void {
  }, 3000)
 }
 // ============================================================================
-// 图数据更新
+// 图数据
 // ============================================================================
 function buildGraphData {
  return {
- nodes: props.nodes.map(n => ({
- ...n,
- id: n.id,
- })),
- links: props.edges.map(e => ({
- ...e,
- source: e.source,
- target: e.target,
- })),
+ nodes: props.nodes.map(n => ({ ...n })),
+ links: props.edges.map(e => ({ ...e, source: e.source, target: e.target })),
  }
 }
 function updateGraphData: void {
@@ -266,23 +212,26 @@ function updateGraphData: void {
  graph.graphData(buildGraphData)
 }
 // ============================================================================
-// 图初始化
+// 初始化
 // ============================================================================
+function getEdgeType(link: Record<string, unknown>): string {
+ return (link.edge_type as string) ?? ''
+}
 function initGraph: void {
  if (!containerRef.value)
  return
  const el = containerRef.value
- graph = ForceGraph3D({ controlType: 'orbit' })(el)
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+ const g = new (ForceGraph3D as any)(el, { controlType: 'orbit' }) as GraphType
+ graph = g
  .width(el.clientWidth)
  .height(el.clientHeight)
  .showNavInfo(false)
  .backgroundColor('transparent')
- // 节点自定义 Three.js 对象
- .nodeThreeObject((node: NodeObject) => createNodeObject(node as GalaxyNodeObject))
+ .nodeThreeObject(createNodeObject)
  .nodeThreeObjectExtend(false)
- // 节点 label（tooltip）
  .nodeLabel((node: NodeObject) => {
- const n = node as GalaxyNodeObject & { __galaxy_node?: GalaxyNode }
+ const n = node as GalaxyNodeObject
  const gn = props.nodes.find(x => x.id === n.id)
  if (!gn)
  return ''
@@ -293,28 +242,13 @@ function initGraph: void {
  degree: ${gn.degree}
  </div>`
  })
- // 边颜色
- .linkColor((link) => {
- const l = link as GalaxyLinkObject
- return EDGE_COLORS[l.edge_type] ?? '#ffffff'
- })
- .linkWidth((link) => {
- const l = link as GalaxyLinkObject
- return EDGE_WIDTHS[l.edge_type] ?? 1
- })
+ .linkColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ffffff')
+ .linkWidth((link: Record<string, unknown>) => EDGE_WIDTHS[getEdgeType(link)] ?? 1)
  .linkOpacity(0.7)
- // API_CALLS 粒子流动动画
- .linkParticles((link) => {
- const l = link as GalaxyLinkObject
- return l.edge_type === 'API_CALLS' ? 5: 0
- })
+ .linkParticles((link: Record<string, unknown>) => getEdgeType(link) === 'API_CALLS' ? 5: 0)
  .linkParticleSpeed(0.006)
- .linkParticleColor((link) => {
- const l = link as GalaxyLinkObject
- return EDGE_COLORS[l.edge_type] ?? '#ff4444'
- })
- // hover 回调（带防抖）
- .onNodeHover((node) => {
+ .linkParticleColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ff4444')
+ .onNodeHover((node: NodeObject | null) => {
  if (hoverTimer)
  clearTimeout(hoverTimer)
  hoverTimer = setTimeout( => {
@@ -324,39 +258,33 @@ function initGraph: void {
  updateHoverHighlight(n?.id ?? null)
  }, HOVER_DEBOUNCE_MS)
  })
- // click 回调
- .onNodeClick((node) => {
+ .onNodeClick((node: NodeObject) => {
  const n = node as GalaxyNodeObject
  const gNode = props.nodes.find(x => x.id === n.id)
  if (gNode)
  emit('node-click', gNode)
  })
- // 力参数调优
  .d3Force('charge', null)
  .cooldownTicks(200)
  .onEngineStop( => {
- // 布局稳定后设置太空背景 + camera
  const scene = graph!.scene
  setupSpaceBackground(scene)
  graph!.cameraPosition({ x: 0, y: 100, z: 300 }, { x: 0, y: 0, z: 0 }, 0)
  emit('ready')
  startFpsMonitor
  })
- // 重新添加 charge 力（默认配置）
- graph.d3Force('charge', (graph as unknown as { d3Force: (name: string, force?: unknown) => unknown }).d3Force('charge'))
- // 设置初始数据
  buildNeighborLookup
  graph.graphData(buildGraphData)
- // ResizeObserver
  resizeObserver = new ResizeObserver( => {
- if (graph && el) {
- graph.width(el.clientWidth).height(el.clientHeight)
+ const g = graph
+ if (g && el) {
+ g.width(el.clientWidth).height(el.clientHeight)
  }
  })
  resizeObserver.observe(el)
 }
 // ============================================================================
-// cleanup
+// Cleanup
 // ============================================================================
 function cleanup: void {
  if (hoverTimer)
@@ -374,7 +302,6 @@ function cleanup: void {
 // ============================================================================
 onMounted( => { initGraph })
 onUnmounted( => { cleanup })
-// shallow watch — 节点/边数组引用变化时更新（节点内容变化交由父组件传新数组）
 watch(
  [ => props.nodes, => props.edges],
  => { updateGraphData },
@@ -383,14 +310,12 @@ watch(
 </script>
 <template>
  <div class="relative w-full h-full">
- <!-- 3d-force-graph canvas 容器 -->
  <div
  ref="containerRef"
  class="w-full h-full"
  role="img"
  aria-label="代码依赖关系 3D 银河图"
  />
- <!-- Loading overlay -->
  <Transition name="fade">
  <div
  v-if="loading"
