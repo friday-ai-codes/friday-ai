@@ -15,7 +15,7 @@ logger = structlog.get_logger(__name__)
 def extract_endpoints(
  tree: Any, source: str, ctx: "FileContext"
 ) -> "list[EndpointData]":
- """三层扫描提取 Django/DRF API 端点。
+ """三层扫描提取 Django/DRF API 端点；Go 语言委托 go_endpoints.py。
  Layer 1: 装饰器函数视图（@api_view / @action / @method_decorator）
  Layer 2: URL patterns（path / re_path / url）
  Layer 3: ViewSet + Router 注册
@@ -26,6 +26,10 @@ def extract_endpoints(
  Returns:
  list[EndpointData]: 去重后的端点列表
  """
+ # Go gin 路由：委托给专用抽取器
+ if ctx.language == "go":
+ from codegraph.extractors.go_endpoints import extract_go_endpoints
+ return extract_go_endpoints(tree, source, ctx)
  from codegraph.extractors.base import EndpointData
  endpoints: list[EndpointData] =
  # Layer 1: decorator scan（所有 .py 文件）
