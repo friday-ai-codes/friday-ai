@@ -39,6 +39,8 @@ from codegraph.extractors.base import (
 )
 from codegraph.lsp.backend import LspBackend, _LspParseHandle
 from codegraph.lsp.exceptions import LspError, LspTimeoutError, LspUnhealthyError
+from codegraph.lsp.go_check import check_go_runtime
+from codegraph.lsp.go_workspace import discover_go_workspace
 from codegraph.lsp.protocol import path_to_uri, uri_to_path
 from codegraph.lsp.supervisor import LspSupervisor
 logger = structlog.get_logger(__name__)
@@ -87,8 +89,6 @@ class _GoplsLazyBackend(LspBackend):
  LspUnhealthyError: gopls/go 不可用，或无 go.mod。
  """
  from codegraph.lsp import get_or_create_supervisor
- from codegraph.lsp.go_check import check_go_runtime
- from codegraph.lsp.go_workspace import discover_go_workspace
  check_result = check_go_runtime
  if not check_result.available:
  raise LspUnhealthyError(
