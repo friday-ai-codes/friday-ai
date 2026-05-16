@@ -1799,10 +1799,9 @@ class IndexerService:
  stats["total_endpoints"] += result.get("endpoints", 0)
  # Phase: 条件追加 Go interface implementation 抽取
  # 仅当 gopls backend 已启用 + 当前文件为 Go + 有 symbol 时触发
- from django.conf import settings as _dj_settings # noqa: PLC0415
  if (
  language == "go"
- and getattr(_dj_settings, "GOPLS_BACKEND_ENABLED", False)
+ and getattr(settings, "GOPLS_BACKEND_ENABLED", False)
  and bundle.symbols
  ):
  try:

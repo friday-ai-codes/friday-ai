@@ -22,7 +22,6 @@ class Migration(migrations.Migration):
  ("IMPLEMENTS", "Implements"),
  ],
  max_length=20,
- verbose_name="边类型",
  ),
  ),
  ]
