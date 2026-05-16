@@ -133,8 +133,9 @@ class TestCreateMcpServer:
  assert actual_call.kwargs["name"] == "chat-tools"
  passed_tools = actual_call.kwargs["tools"]
  assert len(passed_tools) == expected_count
- assert expected_count == 9
- # 验证工具名
+ # Phase 收尾：更新工具数量（Phase 加 find_related_code，Phase 加 3 个 API tools）
+ assert expected_count == 13
+ # 验证工具名（Phase 更新：补 find_related_code + 3 个 API tools）
  tool_names = {t.name for t in passed_tools}
  expected_names = {
  "browse_file_content",
@@ -146,6 +147,10 @@ class TestCreateMcpServer:
  "deep_analysis",
  "create_coding_plan",
  "update_coding_plan",
+ "find_related_code", # Phase
+ "find_api_handler", # Phase
+ "find_api_callers", # Phase
+ "list_endpoints", # Phase
  }
  assert tool_names == expected_names
 class TestBuildAllowedTools:
@@ -185,5 +190,5 @@ class TestBuildAllowedTools:
  pattern = re.compile(r"^mcp__chat-tools__[a-z_]+$")
  for name in tools:
  assert pattern.match(name), f"工具名格式不匹配: {name}"
- # 验证数量等于 PROJECT 类别工具数
- assert len(tools) == 9
+ # 验证数量等于 PROJECT 类别工具数（Phase 更新：9 → 13）
+ assert len(tools) == 13

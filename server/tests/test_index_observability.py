@@ -85,6 +85,10 @@ class TestIndexHistoryListView:
  "id", "trigger_type", "status", "from_sha", "to_sha",
  "files_added", "files_modified", "files_deleted", "changed_files",
  "summary_text", "error_message", "started_at", "finished_at", "created_at",
+ # Phase: GraphRAG 增量构建可观测字段
+ "graph_build_status", "edge_count", "payload_synced_at",
+ # Phase: 跨仓 API 匹配状态
+ "cross_repo_match_count", "cross_repo_built_at",
  }
  assert expected_fields == set(item.keys)
  def test_404_for_nonexistent_repo(self, authenticated_client) -> None:
