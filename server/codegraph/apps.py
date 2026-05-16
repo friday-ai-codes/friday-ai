@@ -7,10 +7,13 @@ class CodegraphConfig(AppConfig):
  name = "codegraph"
  verbose_name = "代码图谱"
  def ready(self) -> None:
- """启动时注册 Phase volar backend（per / ）。"""
+ """启动时注册 Phase volar backend + Phase gopls backend。"""
  from django.conf import settings
  if getattr(settings, "VOLAR_BACKEND_ENABLED", True):
  self._register_volar_backends
+ from django.conf import settings as _settings
+ if getattr(_settings, "GOPLS_BACKEND_ENABLED", False):
+ self._register_gopls_backend
  def _register_volar_backends(self) -> None:
  """Phase：5 项 BACKEND_REGISTRY 替换为 make_volar_backend(lang)。
  kill-switch ``settings.VOLAR_BACKEND_ENABLED=False`` 时跳过整段，
@@ -23,3 +26,11 @@ class CodegraphConfig(AppConfig):
  from codegraph.lsp.volar_backend import make_volar_backend
  for language in ("vue", "typescript", "tsx", "javascript", "jsx"):
  register_backend(language, make_volar_backend(language))
+ def _register_gopls_backend(self) -> None:
+ """Phase：gopls backend 注册；GOPLS_BACKEND_ENABLED=True 时触发。
+ 默认 False —— Phase 仅落基础设施不切 BACKEND_REGISTRY["go"]。
+ Phase 切 True 完成 Stage C 切换。
+ """
+ from codegraph.extractors.registry import register_backend
+ from codegraph.lsp.gopls_backend import make_gopls_backend
+ register_backend("go", make_gopls_backend("go"))
