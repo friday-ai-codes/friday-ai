@@ -33,6 +33,8 @@ class TestGoplsRealExtract:
  self, request: pytest.FixtureRequest
  ) -> None:
  """真实 gopls 抽 study-course 1 个 .go 文件的 SymbolData（≥ 1 symbol）。"""
+ import services.background_runner as _bg
+ _bg._ensure_worker_loop
  from codegraph.extractors.base import FileContext
  from codegraph.lsp.go_workspace import discover_go_workspace
  from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
@@ -73,6 +75,8 @@ class TestGoplsRealExtract:
  self, request: pytest.FixtureRequest
  ) -> None:
  """真实 gopls 抽 study-course 1 个文件的 ImportData（advisory：imports ≥ 1）。"""
+ import services.background_runner as _bg
+ _bg._ensure_worker_loop
  from codegraph.extractors.base import FileContext
  from codegraph.lsp.go_workspace import discover_go_workspace
  from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
