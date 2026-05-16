@@ -6,6 +6,7 @@ import { ScrollArea } from '~/components/ui/scroll-area'
 import {
  Sheet,
  SheetContent,
+ SheetDescription,
  SheetHeader,
  SheetTitle,
 } from '~/components/ui/sheet'
@@ -138,12 +139,18 @@ function handleNodeSelect(nodeId: string) {
  <SheetTitle class="text-white text-base font-semibold leading-snug truncate">
  {{ nodeDetail?.node.label ?? (loading ? '加载中...': '节点详情') }}
  </SheetTitle>
- <p
+ <SheetDescription
  v-if="nodeDetail"
- class="text-white/40 text-xs mt-1 truncate"
+ class="text-white/40 text-xs mt-1 truncate font-mono"
  >
  {{ nodeDetail.node.file_path }}
- </p>
+ </SheetDescription>
+ <SheetDescription
+ v-else
+ class="sr-only"
+ >
+ Galaxy 节点详情面板
+ </SheetDescription>
  </div>
  </div>
  </SheetHeader>
