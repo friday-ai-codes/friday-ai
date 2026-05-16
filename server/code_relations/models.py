@@ -13,8 +13,9 @@ from django.db import models
 from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 __all__ = ["ChunkRegistry", "ChunkEdge", "EdgeType"]
 class EdgeType(models.TextChoices):
- """ChunkEdge 7 类关系边枚举（per 字面 value 大写下划线）。
+ """ChunkEdge 8 类关系边枚举（per 字面 value 大写下划线）。
  Phase 新增 IMPLEMENTS（Go interface 实现关系，per ）。
+ Phase 新增 API_CALLS（跨仓 API 调用关系，per ）。
  """
  CALL = "CALL", "Call"
  IMPORT = "IMPORT", "Import"
@@ -23,6 +24,7 @@ class EdgeType(models.TextChoices):
  CO_CHANGED = "CO_CHANGED", "Co-Changed"
  SEMANTIC = "SEMANTIC", "Semantic"
  IMPLEMENTS = "IMPLEMENTS", "Implements"
+ API_CALLS = "API_CALLS", "API Calls"
 class ChunkRegistry(models.Model):
  """chunk_id 同源映射注册表（Qdrant point_id ↔ ChunkRegistry.chunk_id 1:1）。
  PK 直接使用 `chunk_id`（UUIDField），与 Qdrant point ID 完全对齐，省一次 join；
@@ -83,11 +85,12 @@ class ChunkRegistry(models.Model):
  def __str__(self) -> str:
  return f"ChunkRegistry({self.chunk_id} @ {self.file_path}:{self.chunk_index})"
 class ChunkEdge(models.Model):
- """chunk 间关系边（6 类语义 + weight + metadata）。
+ """chunk 间关系边（8 类语义 + weight + metadata）。
  - `source_chunk_id` / `target_chunk_id` 不做 FK（per ）：允许跨仓 / chunk
  未写入 ChunkRegistry 时柔性引用，孤儿引用由 Phase reconcile 命令兜底。
- - `repository` 语义为「源 chunk 所在仓库」，跨仓 CO_CHANGED 边的目标仓库 ID
- 存 `metadata.target_repository_id`（per ）。
+ - `repository` 语义为「源 chunk 所在仓库」（per / ）。
+ - `target_repository_id` 跨仓边的 target chunk 所在仓库 ID（Phase）；单仓边（v24 既有 6 类）为 NULL——backward compatible。
+ 不做 FK（per 柔性引用原则）。
  - weight 双重校验：模型层 `MinValueValidator/MaxValueValidator` + DB 层
  `CheckConstraint`（per ）。
  - 唯一约束 `(source_chunk_id, target_chunk_id, edge_type)` —— edge_type 必须
@@ -105,6 +108,16 @@ class ChunkEdge(models.Model):
  "repositories.Repository",
  on_delete=models.CASCADE,
  related_name="chunk_edges",
+ )
+ target_repository_id = models.IntegerField(
+ null=True,
+ blank=True,
+ db_index=True,
+ help_text=(
+ "跨仓边的 target chunk 所在仓库 ID（Phase）。"
+ "单仓边（v24 既有 6 类边）为 NULL——backward compatible。"
+ "不做 ForeignKey（per 柔性引用原则）。"
+ ),
  )
  created_at = models.DateTimeField(auto_now_add=True)
  class Meta:
