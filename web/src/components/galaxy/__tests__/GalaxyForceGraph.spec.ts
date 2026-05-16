@@ -50,8 +50,12 @@ const mockGraph = {
  cameraPosition: vi.fn.mockReturnThis,
  _destructor: vi.fn,
 }
+// 组件使用 new (ForceGraph3D as any)(el, config)，mock 需要是可 new 的函数
+function MockForceGraph3D {
+ return mockGraph
+}
 vi.mock('3d-force-graph', => ({
- default: vi.fn( => => mockGraph),
+ default: MockForceGraph3D,
 }))
 // Mock THREE.js（使用 class 语法确保 new 操作符正确工作）
 vi.mock('three', => {
@@ -150,8 +154,7 @@ describe('GalaxyForceGraph.vue', => {
  vi.clearAllMocks
  vi.useFakeTimers
  })
- it('挂载时初始化 3d-force-graph 实例', async => {
- const ForceGraph3D = (await import('3d-force-graph')).default
+ it('挂载时初始化 3d-force-graph 实例（graphData 被调用）', async => {
  const { default: GalaxyForceGraph } = await import('../GalaxyForceGraph.vue')
  const wrapper = mount(GalaxyForceGraph, {
  props: {
@@ -161,7 +164,8 @@ describe('GalaxyForceGraph.vue', => {
  attachTo: document.body,
  })
  await flushPromises
- expect(ForceGraph3D).toHaveBeenCalled
+ // 验证 graphData 被调用（说明 graph 实例初始化成功）
+ expect(mockGraph.graphData).toHaveBeenCalled
  wrapper.unmount
  })
  it('props.nodes 变化时更新 graphData', async => {
