@@ -18,6 +18,7 @@
  "validate:node-defs": "tsx scripts/validate-node-definitions.ts"
  },
  "dependencies": {
+ "3d-force-graph": "^1.80.0",
  "@codemirror/autocomplete": "catalog:",
  "@codemirror/lang-json": "catalog:",
  "@codemirror/lint": "catalog:",
@@ -77,6 +78,7 @@
  "pinia": "catalog:",
  "shiki": "catalog:",
  "tailwind-merge": "catalog:",
+ "three": "^0.184.0",
  "tw-animate-css": "catalog:",
  "vee-validate": "catalog:",
  "vue": "catalog:",
@@ -104,6 +106,7 @@
  "@types/diff": "catalog:",
  "@types/markdown-it": "catalog:",
  "@types/node": "catalog:",
+ "@types/three": "^0.184.1",
  "@vitejs/plugin-vue": "catalog:",
  "@vue/test-utils": "catalog:",
  "@vue/tsconfig": "catalog:",
