@@ -155,6 +155,7 @@ class Command(BaseCommand):
  elapsed_ms = int((time.monotonic - start) * 1000)
  # workspace/symbol("") ping 计 symbol 数
  workspace_symbol_count = 0
+ ping_error: str | None = None
  try:
  async def _ws_coro -> Any:
  client = supervisor._client
@@ -163,8 +164,9 @@ class Command(BaseCommand):
  return await client.request_workspace_symbol("", timeout=30.0)
  symbol_resp = supervisor.call_async_in_loop(_ws_coro, timeout=35.0)
  workspace_symbol_count = len(symbol_resp) if isinstance(symbol_resp, list) else 0
- except Exception:
- pass
+ except Exception as exc:
+ ping_error = str(exc)
+ logger.warning("gopls_workspace_symbol_ping_failed", error=str(exc))
  # 测量完毕后 stop（不保留 _SUPERVISORS 正式缓存）
  try:
  supervisor.call_async_in_loop(supervisor.stop, timeout=5.0)
@@ -173,6 +175,7 @@ class Command(BaseCommand):
  return {
  "init_time_ms": elapsed_ms,
  "workspace_symbol_count": workspace_symbol_count,
+ "ping_error": ping_error,
  "gopls_version": check_result.gopls_version,
  "go_version": check_result.go_version,
  "sample_repo": str(repo_root),
