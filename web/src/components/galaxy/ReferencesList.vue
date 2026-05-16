@@ -61,7 +61,7 @@ function edgeColor(type: GalaxyEdgeType): string {
  >
  {{ ref.edge_type }}
  </span>
- <span class="flex-1 text-white/70 text-sm font-mono truncate text-xs">
+ <span class="flex-1 text-white/70 text-xs font-mono truncate">
  {{ ref.caller_node_id }}
  </span>
  <span class="icon-[lucide--arrow-right] text-white/20 text-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
@@ -85,7 +85,7 @@ function edgeColor(type: GalaxyEdgeType): string {
  >
  {{ ref.edge_type }}
  </span>
- <span class="flex-1 text-white/70 text-sm font-mono truncate text-xs">
+ <span class="flex-1 text-white/70 text-xs font-mono truncate">
  {{ ref.source_node_id }}
  </span>
  <span class="icon-[lucide--arrow-right] text-white/20 text-sm opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
