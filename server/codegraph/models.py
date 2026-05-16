@@ -119,9 +119,70 @@ class Endpoint(models.Model):
  ]
  def __str__(self) -> str:
  return f"{self.http_method} {self.url_path} -> {self.handler_name}"
+class ApiWrapper(models.Model):
+ """前端 ApiWrapper —— 封装 LowLevelHelper 调用的 export function。
+ 通过三步推断算法（Phase）自动识别：
+ Step 0: axios 锚点定位 LowLevelHelper；Step 1: 反向找调用者为 ApiWrapper。
+ metadata 存 JSDoc 元数据：@description/@author/@date/yapi URL。
+ """
+ if TYPE_CHECKING:
+ call_sites: "QuerySet[ApiCallSite]"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ "repositories.Repository",
+ on_delete=models.CASCADE,
+ related_name="api_wrappers",
+ )
+ file_path = models.CharField(max_length=512, db_index=True)
+ function_symbol = models.CharField(max_length=255)
+ http_method = models.CharField(max_length=16)
+ url_path_raw = models.CharField(max_length=512)
+ url_path_pattern = models.CharField(max_length=512, db_index=True)
+ detected_via = models.CharField(max_length=64, default="axios_anchor")
+ line_number = models.IntegerField(default=0)
+ metadata = models.JSONField(null=True, blank=True, default=None) #: JSDoc 元数据
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ verbose_name = "API Wrapper"
+ verbose_name_plural = "API Wrappers"
+ indexes = [
+ models.Index(fields=["repository", "url_path_pattern"]),
+ models.Index(fields=["repository", "function_symbol"]),
+ ]
+ unique_together = [("repository", "file_path", "function_symbol")]
+ def __str__(self) -> str:
+ return f"{self.http_method} {self.url_path_pattern} ({self.function_symbol})"
+class ApiCallSite(models.Model):
+ """ApiWrapper 调用点 —— 通过 volar textDocument/references 反向追踪。"""
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ "repositories.Repository",
+ on_delete=models.CASCADE,
+ related_name="api_call_sites",
+ )
+ api_wrapper = models.ForeignKey(
+ ApiWrapper,
+ on_delete=models.CASCADE,
+ related_name="call_sites",
+ )
+ caller_file = models.CharField(max_length=512, db_index=True)
+ caller_function = models.CharField(max_length=255)
+ line_number = models.IntegerField
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ verbose_name = "API Call Site"
+ verbose_name_plural = "API Call Sites"
+ indexes = [
+ models.Index(fields=["repository", "caller_file"]),
+ models.Index(fields=["api_wrapper"]),
+ ]
+ def __str__(self) -> str:
+ return f"{self.caller_function} @ {self.caller_file}:{self.line_number} → {self.api_wrapper.function_symbol}"
 __all__ = [
  "Symbol",
  "ImportEdge",
  "CallEdge",
  "Endpoint",
+ "ApiWrapper",
+ "ApiCallSite",
 ]
