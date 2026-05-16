@@ -385,6 +385,13 @@ CODEGRAPH_COCHANGE_MIN_SUPPORT: int = env.int(
 # NOTE: 默认值与 services/retrieval/budget.py:GRAPHRAG_BUDGET_RATIO_DEFAULT 同值，
 # 调整需双改（settings.py 加载顺序敏感，无法直接 import budget 常量避免循环）。
 GRAPHRAG_BUDGET_RATIO: float = env.float("GRAPHRAG_BUDGET_RATIO", default=0.6)
+# Phase/08：跨仓 API 扩散 token 预算 + 启停开关。
+# CROSS_REPO_BUDGET_RATIO：cross_repo 预算比例（默认 0.0 = 不分配跨仓预算）。
+# 设置为 0.20 + GRAPHRAG_BUDGET_RATIO=0.50 → HybridBudget 50/30/20 预算（per ）。
+# ENABLE_CROSS_REPO_ENRICHMENT：False 时 wave 跨仓扩散完全短路，输出 byte-equivalent v24。
+# 默认 True（per ）；生产环境可设 ENABLE_CROSS_REPO_ENRICHMENT=False 回 v24 行为。
+CROSS_REPO_BUDGET_RATIO: float = env.float("CROSS_REPO_BUDGET_RATIO", default=0.0)
+ENABLE_CROSS_REPO_ENRICHMENT: bool = env.bool("ENABLE_CROSS_REPO_ENRICHMENT", default=True)
 # =============================================================================
 # Phase LSP Client + Supervisor Settings
 # =============================================================================
