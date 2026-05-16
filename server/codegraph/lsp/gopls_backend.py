@@ -412,6 +412,9 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
  本闭包仅提供 BACKEND_REGISTRY 注册路径 + 双兼容 fallback 安全网。
  """
  def __init__(self, lang: str) -> None:
+ # 故意不调 super.__init__：LspBackend.__init__ 要求 supervisor 立即注入，
+ # 但此 lazy 实例通过 _get_supervisor 在首次 extract_* 时延迟决定 supervisor。
+ # per Pitfall P-：与 Phase _VolarLazyBackend 同模式。
  self.language = lang
  self._supervisor: LspSupervisor = None # type: ignore[assignment]
  self._fallback: ExtractorBackend = TreeSitterBackend(lang)
