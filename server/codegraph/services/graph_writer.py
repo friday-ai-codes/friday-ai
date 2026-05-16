@@ -21,11 +21,14 @@ per RESEARCH.md §H.4: 重新索引幂等性 —— per-file delete 再 bulk_cre
 - atomic 还顺带保证幂等：单文件失败回滚整批，不会留下"Symbol 删了但
  ImportEdge 残留"的中间态。
 """
-from typing import Any
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async
 from django.db import transaction
-from codegraph.models import CallEdge, Endpoint, ImportEdge, Symbol
+from codegraph.models import ApiCallSite, ApiWrapper, CallEdge, Endpoint, ImportEdge, Symbol
+if TYPE_CHECKING:
+ from codegraph.extractors.api_resolver.base import ApiCallSiteData, ApiWrapperData
 logger = structlog.get_logger(__name__)
 class GraphWriter:
  """将 ExtractionBundle 的四维图谱数据批量写入 Django ORM。
@@ -194,3 +197,82 @@ class GraphWriter:
  skipped_calls=skipped_calls,
  )
  return stats
+ # =========================================================================
+ # Phase: ApiWrapper + ApiCallSite 写入
+ # =========================================================================
+ def write_api_wrappers_for_file(
+ self,
+ repository_id: str,
+ file_path: str,
+ wrappers: "list[ApiWrapperData]",
+ ) -> int:
+ """Per-file 幂等写入 ApiWrapper（先 delete 再 bulk_create）。
+ 与 write_bundle_sync 的 per-file 幂等策略一致：先删除该文件旧记录，
+ 再 bulk_create 新记录，保证重复运行不重复插入。
+ Args:
+ repository_id: 仓库 UUID 字符串
+ file_path: 源文件路径（ApiWrapper 所在文件）
+ wrappers: ApiWrapperData 列表
+ Returns:
+ 写入的 ApiWrapper 数量
+ """
+ with transaction.atomic:
+ ApiWrapper.objects.filter(
+ repository_id=repository_id, file_path=file_path
+ ).delete
+ objs = [
+ ApiWrapper(
+ repository_id=repository_id,
+ file_path=w.file_path,
+ function_symbol=w.function_symbol,
+ http_method=w.http_method,
+ url_path_raw=w.url_path_raw,
+ url_path_pattern=w.url_path_pattern,
+ detected_via=w.detected_via,
+ line_number=w.line_number,
+ metadata=w.metadata,
+ )
+ for w in wrappers
+ ]
+ if objs:
+ ApiWrapper.objects.bulk_create(objs, ignore_conflicts=True)
+ logger.debug(
+ "api_wrapper_written",
+ file_path=file_path,
+ count=len(objs),
+ )
+ return len(objs)
+ def write_api_call_sites_for_wrapper(
+ self,
+ repository_id: str,
+ api_wrapper_id: str,
+ sites: "list[ApiCallSiteData]",
+ ) -> int:
+ """Per-wrapper 幂等写入 ApiCallSite（先 delete 再 bulk_create）。
+ Args:
+ repository_id: 仓库 UUID 字符串
+ api_wrapper_id: ApiWrapper.id（UUID 字符串）
+ sites: ApiCallSiteData 列表
+ Returns:
+ 写入的 ApiCallSite 数量
+ """
+ with transaction.atomic:
+ ApiCallSite.objects.filter(api_wrapper_id=api_wrapper_id).delete
+ objs = [
+ ApiCallSite(
+ repository_id=repository_id,
+ api_wrapper_id=api_wrapper_id,
+ caller_file=s.caller_file,
+ caller_function=s.caller_function,
+ line_number=s.line_number,
+ )
+ for s in sites
+ ]
+ if objs:
+ ApiCallSite.objects.bulk_create(objs)
+ logger.debug(
+ "api_call_site_written",
+ api_wrapper_id=api_wrapper_id,
+ count=len(objs),
+ )
+ return len(objs)
