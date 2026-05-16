@@ -13,6 +13,17 @@ from services.embedding import EmbeddingService
 if TYPE_CHECKING:
  from codegraph.extractors.base import EndpointData
 logger = structlog.get_logger(__name__)
+_EXT_TO_LANG: dict[str, str] = {
+ "go": "go",
+ "py": "python",
+ "ts": "typescript",
+ "tsx": "typescript",
+ "js": "javascript",
+}
+def _infer_language(file_path: str) -> str:
+ """从文件路径推断语言（用于 Qdrant payload language 字段）。"""
+ ext = file_path.rsplit(".", 1)[-1].lower if "." in file_path else ""
+ return _EXT_TO_LANG.get(ext, "unknown")
 _MD_TEMPLATE = """\
 # API Endpoint: {method} {path}
 **Repository**: {repo_name}
@@ -141,7 +152,7 @@ async def write_endpoint_rag_docs(
  "content_type": "api_endpoint",
  "file_path": ep.file_path,
  "file_hash": "",
- "language": "go",
+ "language": _infer_language(ep.file_path),
  "node_type": "api_endpoint",
  "content": text,
  "context_header": f"API Endpoint: {ep.http_method} {ep.url_path}",
