@@ -71,6 +71,7 @@
  "dagre": "catalog:",
  "diff": "catalog:",
  "echarts": "catalog:",
+ "fuse.js": "^7.3.0",
  "lowlight": "catalog:",
  "lucide-vue-next": "catalog:",
  "markdown-it": "catalog:",

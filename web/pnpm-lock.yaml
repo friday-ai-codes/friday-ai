@@ -476,6 +476,9 @@ importers:
  echarts:
  specifier: 'catalog:'
  version: 6.0.0
+ fuse.js:
+ specifier: ^7.3.0
+ version: 7.3.0
  lowlight:
  specifier: 'catalog:'
  version: 3.3.0
@@ -517,7 +520,7 @@ importers:
  version: 8.0.1(echarts@6.0.0)(vue@3.5.26(typescript@5.9.3))
  vue-final-modal:
  specifier: 'catalog:'
- version: 4.5.5(@vueuse/core@14.3.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))
+ version: 4.5.5(@vueuse/core@14.3.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.3.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))
  vue-i18n:
  specifier: 'catalog:'
  version: 11.2.8(vue@3.5.26(typescript@5.9.3))
@@ -2664,6 +2667,9 @@ packages:
  resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
  engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
  os: [darwin]
+ fuse.js@7.3.0:
+ resolution: {integrity: sha512-plz8RVjfcDedTGfVngWH1jmJvBvAwi1v2jecfDerbEnMcmOYUEEwKFTHbNoCiYyzaK2Ws8lABkTCcRSqCY1q4w==}
+ engines: {node: '>=10'}
  get-tsconfig@4.13.0:
  resolution: {integrity: sha512-1VKTZJCwBrvbd+Wn3AOgQP/2Av+TfTCOlE4AcRJE72W1ksZXbAx8PPBR9RzgTeSPzlPMHrbANMH3LbltH73wxQ==}
  github-slugger@2.0.0:
@@ -5242,7 +5248,7 @@ snapshots:
  '@unhead/ssr': 1.11.20
  '@unhead/vue': 1.11.20(vue@3.5.26(typescript@5.9.3))
  vue: 3.5.26(typescript@5.9.3)
- '@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))':
+ '@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.3.0)(vue@3.5.26(typescript@5.9.3))':
  dependencies:
  '@vueuse/core': 14.1.0(vue@3.5.26(typescript@5.9.3))
  '@vueuse/shared': 14.1.0(vue@3.5.26(typescript@5.9.3))
@@ -5250,6 +5256,7 @@ snapshots:
  optionalDependencies:
  change-case: 5.4.4
  focus-trap: 7.8.0
+ fuse.js: 7.3.0
  '@vueuse/metadata@10.11.1': {}
  '@vueuse/metadata@14.1.0': {}
  '@vueuse/metadata@14.3.0': {}
@@ -5879,6 +5886,7 @@ snapshots:
  optional: true
  fsevents@2.3.3:
  optional: true
+ fuse.js@7.3.0: {}
  get-tsconfig@4.13.0:
  dependencies:
  resolve-pkg-maps: 1.0.0
@@ -7152,10 +7160,10 @@ snapshots:
  semver: 7.7.3
  transitivePeerDependencies:
  - supports-color
- vue-final-modal@4.5.5(@vueuse/core@14.3.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)):
+ vue-final-modal@4.5.5(@vueuse/core@14.3.0(vue@3.5.26(typescript@5.9.3)))(@vueuse/integrations@14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.3.0)(vue@3.5.26(typescript@5.9.3)))(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3)):
  dependencies:
  '@vueuse/core': 14.3.0(vue@3.5.26(typescript@5.9.3))
- '@vueuse/integrations': 14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(vue@3.5.26(typescript@5.9.3))
+ '@vueuse/integrations': 14.1.0(change-case@5.4.4)(focus-trap@7.8.0)(fuse.js@7.3.0)(vue@3.5.26(typescript@5.9.3))
  focus-trap: 7.8.0
  vue: 3.5.26(typescript@5.9.3)
  vue-i18n@11.2.8(vue@3.5.26(typescript@5.9.3)):
