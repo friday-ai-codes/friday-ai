@@ -13,13 +13,16 @@ from django.db import models
 from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 __all__ = ["ChunkRegistry", "ChunkEdge", "EdgeType"]
 class EdgeType(models.TextChoices):
- """ChunkEdge 6 类关系边枚举（per 字面 value 大写下划线）。"""
+ """ChunkEdge 7 类关系边枚举（per 字面 value 大写下划线）。
+ Phase 新增 IMPLEMENTS（Go interface 实现关系，per ）。
+ """
  CALL = "CALL", "Call"
  IMPORT = "IMPORT", "Import"
  SAME_FILE = "SAME_FILE", "Same File"
  TEST_OF = "TEST_OF", "Test Of"
  CO_CHANGED = "CO_CHANGED", "Co-Changed"
  SEMANTIC = "SEMANTIC", "Semantic"
+ IMPLEMENTS = "IMPLEMENTS", "Implements"
 class ChunkRegistry(models.Model):
  """chunk_id 同源映射注册表（Qdrant point_id ↔ ChunkRegistry.chunk_id 1:1）。
  PK 直接使用 `chunk_id`（UUIDField），与 Qdrant point ID 完全对齐，省一次 join；
