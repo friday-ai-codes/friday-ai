@@ -1732,8 +1732,7 @@ class IndexerService:
  #: 预查询 endpoint RAG 写入所需参数（循环后批量处理）
  _all_endpoints_with_sigs: list[tuple[Any, str]] =
  try:
- from repositories.models import Repository as _Repo
- _repo_obj = await _Repo.objects.filter(id=repository_id).afirst
+ _repo_obj = await Repository.objects.filter(id=repository_id).afirst
  _endpoint_rag_repo_name: str = _repo_obj.name if _repo_obj else ""
  _endpoint_rag_hybrid: bool = await self._is_hybrid_enabled
  except Exception:
