@@ -366,6 +366,35 @@ onMounted( => {
  </Tooltip>
  </TooltipProvider>
  </div>
+ <!-- Phase：跨仓 API 匹配状态（Phase cross_repo_match_count + cross_repo_built_at） -->
+ <!-- v-if 守卫：cross_repo_built_at 非 null 才渲染（未运行 offline join 时不展示） -->
+ <div
+ v-if="latestGraphHistory && latestGraphHistory.cross_repo_built_at"
+ class="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
+ >
+ <div class="flex items-center gap-1.5">
+ <span class="icon-[lucide--git-compare] text-sm text-muted-foreground" aria-hidden="true" />
+ <span>跨仓 API 匹配</span>
+ </div>
+ <span
+ class="font-mono tabular-nums":aria-label="`跨仓 API 匹配数 ${latestGraphHistory.cross_repo_match_count ?? 0}`"
+ >
+ {{ (latestGraphHistory.cross_repo_match_count ?? 0).toLocaleString }} 个匹配
+ </span>
+ <TooltipProvider:delay-duration="300">
+ <Tooltip>
+ <TooltipTrigger as-child>
+ <span class="flex items-center gap-1.5 cursor-default">
+ <span class="icon-[lucide--clock] text-sm" aria-hidden="true" />
+ <span>{{ formatRelativeTime(latestGraphHistory.cross_repo_built_at) }} 构建</span>
+ </span>
+ </TooltipTrigger>
+ <TooltipContent>
+ <p>{{ new Date(latestGraphHistory.cross_repo_built_at).toLocaleString('zh-CN') }}</p>
+ </TooltipContent>
+ </Tooltip>
+ </TooltipProvider>
+ </div>
  <!-- 错误提示（work item §5.4 / §7） -->
  <p v-if="errorMessage" class="mt-2 text-xs text-destructive">
  {{ errorMessage }}

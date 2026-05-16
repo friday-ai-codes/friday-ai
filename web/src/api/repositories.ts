@@ -114,6 +114,9 @@ export interface IndexHistoryItem {
  graph_build_status?: GraphBuildStatus
  edge_count?: number
  payload_synced_at?: string | null
+ // Phase: 跨仓 API 匹配状态（Phase migration 0023 后端已落字段）
+ cross_repo_match_count?: number
+ cross_repo_built_at?: string | null
 }
 export interface IndexHistoryResponse {
  items: IndexHistoryItem

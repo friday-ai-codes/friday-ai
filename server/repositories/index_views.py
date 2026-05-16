@@ -685,6 +685,9 @@ class IndexHistorySerializer(serializers.Serializer):
  graph_build_status = serializers.CharField
  edge_count = serializers.IntegerField
  payload_synced_at = serializers.DateTimeField(allow_null=True)
+ # Phase：跨仓 API 匹配状态（Phase migration 0023 已落字段）
+ cross_repo_match_count = serializers.IntegerField
+ cross_repo_built_at = serializers.DateTimeField(allow_null=True)
 class IndexedFileSerializer(serializers.Serializer):
  """：已索引文件清单单行序列化。"""
  file_path = serializers.CharField
