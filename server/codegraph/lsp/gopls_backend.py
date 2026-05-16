@@ -404,12 +404,11 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
  def _factory(actual_language: str) -> ExtractorBackend:
  from codegraph.lsp.exceptions import LspUnhealthyError as _LspUE
  class _GoplsLazyInstance(_GoplsLazyBackend):
- """无 supervisor 占位实例：调用方传 ``_LspParseHandle`` 时 raise →
- Phase LspBackend 基类 fallback；调用方传**真实 tree-sitter Tree** 时
- 直接委托 fallback，避免非 handle 入参下返空源回归。
- per Pitfall P-：沿用 Phase _VolarLazyBackend 同模式。
- 真实 per-file go_mod_root supervisor 注入由 _get_supervisor 实装；
- 本闭包仅提供 BACKEND_REGISTRY 注册路径 + 双兼容 fallback 安全网。
+ """工厂路径 gopls lazy backend：首次 LSP 调用时延迟注入 supervisor。
+ per Phase：4 hook 真实调用（去占位 raise）；
+ per Pitfall P-：非 LSP handle 入参时直接委托 fallback。
+ 策略：_ensure_supervisor(ctx) 在首次 LSP 调用时延迟调 _get_supervisor，
+ 注入后父类 _lsp_extract_* 可直接使用 self._supervisor。
  """
  def __init__(self, lang: str) -> None:
  # 故意不调 super.__init__：LspBackend.__init__ 要求 supervisor 立即注入，
@@ -421,30 +420,40 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
  @staticmethod
  def _is_lsp_handle(tree: Any) -> bool:
  return isinstance(tree, _LspParseHandle)
+ def _ensure_supervisor(self, ctx: FileContext) -> None:
+ """首次 LSP 调用时延迟注入 supervisor（Phase 真填策略）。
+ 若 _supervisor 已注入则跳过；否则调 _get_supervisor(file_path)。
+ 失败时 raise LspUnhealthyError → 上层基类 fallback。
+ """
+ if self._supervisor is not None:
+ return
+ self._supervisor = self._get_supervisor(Path(ctx.file_path))
+ logger.debug(
+ "go_backend_supervisor_injected",
+ file_path=ctx.file_path,
+ supervisor_name=getattr(self._supervisor, "name", "unknown"),
+ )
  def _lsp_extract_symbols(
  self, tree: Any, source: str, ctx: FileContext
  ) -> list[SymbolData]:
  if not self._is_lsp_handle(tree):
  return self._fallback.extract_symbols(tree, source, ctx)
- raise _LspUE(
- "gopls lazy backend：indexer per-file supervisor 注入未实装（Phase）"
- )
+ self._ensure_supervisor(ctx)
+ return super._lsp_extract_symbols(tree, source, ctx)
  def _lsp_extract_imports(
  self, tree: Any, ctx: FileContext
  ) -> list[ImportData]:
  if not self._is_lsp_handle(tree):
  return self._fallback.extract_imports(tree, ctx)
- raise _LspUE(
- "gopls lazy backend：indexer per-file supervisor 注入未实装（Phase）"
- )
+ self._ensure_supervisor(ctx)
+ return super._lsp_extract_imports(tree, ctx)
  def _lsp_extract_calls(
  self, tree: Any, ctx: FileContext
  ) -> list[CallData]:
  if not self._is_lsp_handle(tree):
  return self._fallback.extract_calls(tree, ctx)
- raise _LspUE(
- "gopls lazy backend：indexer per-file supervisor 注入未实装（Phase）"
- )
+ self._ensure_supervisor(ctx)
+ return super._lsp_extract_calls(tree, ctx)
  def _lsp_extract_endpoints(
  self, tree: Any, source: str, ctx: FileContext # noqa: ARG002
  ) -> list[EndpointData]:

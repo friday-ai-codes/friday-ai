@@ -342,3 +342,300 @@ class TestMakeGoplsBackend:
  # 传一个 non-_LspParseHandle 对象 → _lsp_extract_endpoints 直接返
  result = backend._lsp_extract_endpoints(MagicMock, "", _make_ctx)
  assert result ==
+ def test_factory_qualname_contains_make_gopls_backend(self) -> None:
+ """工厂 _factory __qualname__ 含 make_gopls_backend。"""
+ from codegraph.lsp.gopls_backend import make_gopls_backend
+ factory = make_gopls_backend("go")
+ assert "make_gopls_backend" in factory.__qualname__
+ def test_factory_instance_has_ensure_supervisor(self) -> None:
+ """_GoplsLazyInstance 有 _ensure_supervisor 方法（Phase 新增）。"""
+ from codegraph.lsp.gopls_backend import make_gopls_backend
+ factory = make_gopls_backend("go")
+ backend = factory("go")
+ assert hasattr(backend, "_ensure_supervisor")
+ assert callable(backend._ensure_supervisor)
+class TestGoplsLazyInstancePhase:
+ """Phase 新增：_GoplsLazyInstance 真填行为验证。"""
+ def _make_lazy_instance(self) -> tuple:
+ """创建 _GoplsLazyInstance 并 mock _get_supervisor。"""
+ from codegraph.lsp.gopls_backend import make_gopls_backend
+ factory = make_gopls_backend("go")
+ backend = factory("go")
+ mock_sup = _make_mock_supervisor
+ return backend, mock_sup
+ def test_non_lsp_handle_symbols_uses_fallback(self) -> None:
+ """非 _LspParseHandle tree → _lsp_extract_symbols 委托 fallback（不调 _ensure_supervisor）。"""
+ backend, _ = self._make_lazy_instance
+ mock_result = [MagicMock]
+ with patch.object(backend._fallback, "extract_symbols", return_value=mock_result):
+ result = backend._lsp_extract_symbols(MagicMock, "", _make_ctx)
+ assert result == mock_result
+ def test_non_lsp_handle_imports_uses_fallback(self) -> None:
+ """非 _LspParseHandle tree → _lsp_extract_imports 委托 fallback。"""
+ backend, _ = self._make_lazy_instance
+ mock_result = [MagicMock]
+ with patch.object(backend._fallback, "extract_imports", return_value=mock_result):
+ result = backend._lsp_extract_imports(MagicMock, _make_ctx)
+ assert result == mock_result
+ def test_non_lsp_handle_calls_uses_fallback(self) -> None:
+ """非 _LspParseHandle tree → _lsp_extract_calls 委托 fallback。"""
+ backend, _ = self._make_lazy_instance
+ mock_result = [MagicMock]
+ with patch.object(backend._fallback, "extract_calls", return_value=mock_result):
+ result = backend._lsp_extract_calls(MagicMock, _make_ctx)
+ assert result == mock_result
+ def test_lsp_handle_symbols_injects_supervisor_and_calls_parent(self) -> None:
+ """_LspParseHandle tree → _ensure_supervisor 注入 + 父类 _lsp_extract_symbols 调用。"""
+ backend, mock_sup = self._make_lazy_instance
+ with patch.object(backend, "_get_supervisor", return_value=mock_sup):
+ ws_item = _make_workspace_symbol(
+ "MyFunc", lsp.SymbolKind.Function, line=0, file_uri="file:///test/main.go"
+ )
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert backend._supervisor is mock_sup
+ assert len(result) >= 1
+ def test_ensure_supervisor_not_reinject_when_already_set(self) -> None:
+ """_supervisor 已注入时 _ensure_supervisor 不重复调 _get_supervisor。"""
+ backend, mock_sup = self._make_lazy_instance
+ existing_sup = _make_mock_supervisor
+ backend._supervisor = existing_sup
+ with patch.object(backend, "_get_supervisor") as mock_get:
+ backend._ensure_supervisor(_make_ctx)
+ mock_get.assert_not_called
+ assert backend._supervisor is existing_sup
+ def test_lsp_handle_no_raise_for_symbols(self) -> None:
+ """_GoplsLazyInstance _lsp_extract_symbols(lsp_handle) 不再 raise（Phase 修复）。"""
+ backend, mock_sup = self._make_lazy_instance
+ mock_sup.call_async_in_loop.return_value =
+ with patch.object(backend, "_get_supervisor", return_value=mock_sup):
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert isinstance(result, list)
+class TestLspExtractSymbolsExtended:
+ """Phase 新增：扩展 SymbolKind 映射 + documentSymbol 展平验证。"""
+ def test_method_kind_maps_to_function(self) -> None:
+ """SymbolKind.Method → symbol_type == 'FUNCTION'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("MyMethod", lsp.SymbolKind.Method)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "FUNCTION" for s in result)
+ def test_constructor_kind_maps_to_function(self) -> None:
+ """SymbolKind.Constructor → symbol_type == 'FUNCTION'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("NewMyStruct", lsp.SymbolKind.Constructor)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "FUNCTION" for s in result)
+ def test_interface_kind_maps_to_class(self) -> None:
+ """SymbolKind.Interface → symbol_type == 'CLASS'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("MyInterface", lsp.SymbolKind.Interface)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "CLASS" for s in result)
+ def test_namespace_kind_maps_to_class(self) -> None:
+ """SymbolKind.Namespace → symbol_type == 'CLASS'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("mypackage", lsp.SymbolKind.Namespace)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "CLASS" for s in result)
+ def test_constant_kind_maps_to_variable(self) -> None:
+ """SymbolKind.Constant → symbol_type == 'VARIABLE'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("MaxRetry", lsp.SymbolKind.Constant)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "VARIABLE" for s in result)
+ def test_field_kind_maps_to_variable(self) -> None:
+ """SymbolKind.Field → symbol_type == 'VARIABLE'。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("Name", lsp.SymbolKind.Field)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "VARIABLE" for s in result)
+ def test_type_parameter_kind_maps_to_variable(self) -> None:
+ """SymbolKind.TypeParameter → symbol_type == 'VARIABLE'（Go 泛型）。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("T", lsp.SymbolKind.TypeParameter)
+ mock_sup.call_async_in_loop.return_value = ([ws_item], )
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert any(s.symbol_type == "VARIABLE" for s in result)
+ def test_same_name_and_line_dedup(self) -> None:
+ """ws_resp + doc_resp 含同名同行 symbol → 去重后 result len == 1。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ ws_item = _make_workspace_symbol("Hello", lsp.SymbolKind.Function, line=0)
+ doc_item = MagicMock
+ doc_item.name = "Hello"
+ doc_item.kind = lsp.SymbolKind.Function
+ doc_range = MagicMock
+ doc_range.start = MagicMock
+ doc_range.start.line = 0
+ doc_range.end = MagicMock
+ doc_range.end.line = 0
+ doc_item.range = doc_range
+ doc_item.children = None
+ doc_item.location = None
+ mock_sup.call_async_in_loop.return_value = ([ws_item], [doc_item])
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert len(result) == 1, f"预期去重后 1 个，实际 {len(result)} 个"
+ def test_doc_symbol_nested_children_flattened(self) -> None:
+ """DocumentSymbol 含 children → 父子都出现在 result（_flatten_document_symbol 递归）。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ child = MagicMock
+ child.name = "ChildMethod"
+ child.kind = lsp.SymbolKind.Method
+ child_range = MagicMock
+ child_range.start = MagicMock
+ child_range.start.line = 5
+ child_range.end = MagicMock
+ child_range.end.line = 6
+ child.range = child_range
+ child.children = None
+ child.location = None
+ parent = MagicMock
+ parent.name = "ParentStruct"
+ parent.kind = lsp.SymbolKind.Struct
+ parent_range = MagicMock
+ parent_range.start = MagicMock
+ parent_range.start.line = 2
+ parent_range.end = MagicMock
+ parent_range.end.line = 10
+ parent.range = parent_range
+ parent.children = [child]
+ parent.location = None
+ mock_sup.call_async_in_loop.return_value = (, [parent])
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ names = [s.name for s in result]
+ assert "ParentStruct" in names
+ assert "ChildMethod" in names
+ def test_doc_symbol_name_none_skipped(self) -> None:
+ """DocumentSymbol.name=None → 不 crash，跳过该项。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ bad_item = MagicMock
+ bad_item.name = None
+ bad_item.children = None
+ bad_item.location = None
+ bad_item.range = None
+ mock_sup.call_async_in_loop.return_value = (, [bad_item])
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert result ==
+ def test_doc_resp_empty_list_no_crash(self) -> None:
+ """doc_resp= → result=，不 crash。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ mock_sup.call_async_in_loop.return_value =
+ result = backend._lsp_extract_symbols(_make_lsp_handle, "", _make_ctx)
+ assert result ==
+class TestLspExtractImportsExtended:
+ """Phase 新增：imports 扩展 case。"""
+ def test_multiple_imports_all_resolved(self) -> None:
+ """多个 import → 各自 resolve（mock resolve 返不同路径）。"""
+ backend, _ = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import ImportData
+ imp1 = ImportData(source_file="/test/main.go", target_module="fmt", line=3, target_path=None)
+ imp2 = ImportData(source_file="/test/main.go", target_module="os", line=4, target_path=None)
+ resolve_results = ["/usr/local/go/src/fmt/print.go", "/usr/local/go/src/os/file.go"]
+ call_count = 0
+ def mock_resolve(*args: object, **kwargs: object) -> str | None:
+ nonlocal call_count
+ result = resolve_results[call_count] if call_count < len(resolve_results) else None
+ call_count += 1
+ return result
+ with (
+ patch.object(backend._fallback, "extract_imports", return_value=[imp1, imp2]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ patch("codegraph.lsp.gopls_backend._resolve_import_target_path", side_effect=mock_resolve),
+ ):
+ result = backend._lsp_extract_imports(_make_lsp_handle, _make_ctx)
+ assert len(result) == 2
+ assert result[0].target_path == "/usr/local/go/src/fmt/print.go"
+ assert result[1].target_path == "/usr/local/go/src/os/file.go"
+ def test_empty_ts_imports_returns_empty(self) -> None:
+ """tree-sitter fallback 返空 → result 为空（不 crash）。"""
+ backend, _ = _make_gopls_backend_with_mock_supervisor
+ with (
+ patch.object(backend._fallback, "extract_imports", return_value=),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ ):
+ result = backend._lsp_extract_imports(_make_lsp_handle, _make_ctx)
+ assert result ==
+ def test_import_line_zero_target_path_stays_none(self) -> None:
+ """import.line=0 → _resolve_import_target_path 以 line_1_indexed=None 调用 → 返 None → target_path=None。"""
+ backend, _ = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import ImportData
+ imp = ImportData(source_file="/test/main.go", target_module="pkg", line=0, target_path=None)
+ with (
+ patch.object(backend._fallback, "extract_imports", return_value=[imp]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ patch(
+ "codegraph.lsp.gopls_backend._resolve_import_target_path",
+ return_value=None, # line_1_indexed=None 时内部直接返 None
+ ) as mock_resolve,
+ ):
+ result = backend._lsp_extract_imports(_make_lsp_handle, _make_ctx)
+ assert result[0].target_path is None
+ # _resolve_import_target_path 被调用，但 line_1_indexed=None（因 line=0 < 1）
+ mock_resolve.assert_called_once
+ call_kwargs = mock_resolve.call_args
+ assert call_kwargs.kwargs.get("line_1_indexed") is None
+class TestLspExtractCallsExtended:
+ """Phase 新增：calls 扩展 case。"""
+ def test_references_returns_none_no_crash(self) -> None:
+ """call_async_in_loop 返 None → 跳过，不 crash，result 为空。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import SymbolData
+ mock_sym = SymbolData(name="Foo", symbol_type="FUNCTION", file_path="/test/main.go", start_line=5, end_line=7)
+ mock_sup.call_async_in_loop.return_value = None # 非 list
+ with (
+ patch.object(backend._fallback, "extract_symbols", return_value=[mock_sym]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ ):
+ result = backend._lsp_extract_calls(_make_lsp_handle, _make_ctx)
+ assert result ==
+ def test_ref_uri_not_str_skipped(self) -> None:
+ """ref.uri 非 str → 跳过，不 crash。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import SymbolData
+ mock_sym = SymbolData(name="Bar", symbol_type="FUNCTION", file_path="/test/main.go", start_line=3, end_line=5)
+ bad_ref = MagicMock
+ bad_ref.uri = 12345 # 非 str
+ bad_ref.range = MagicMock
+ mock_sup.call_async_in_loop.return_value = [bad_ref]
+ with (
+ patch.object(backend._fallback, "extract_symbols", return_value=[mock_sym]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ ):
+ result = backend._lsp_extract_calls(_make_lsp_handle, _make_ctx)
+ assert result ==
+ def test_callee_name_matches_symbol_name(self) -> None:
+ """CallData.callee_name == sym.name。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import SymbolData
+ mock_sym = SymbolData(name="ProcessOrder", symbol_type="FUNCTION", file_path="/test/main.go", start_line=10, end_line=15)
+ ref = MagicMock
+ ref.uri = "file:///caller.go"
+ ref_range = MagicMock
+ ref_range.start = MagicMock
+ ref_range.start.line = 42
+ ref.range = ref_range
+ mock_sup.call_async_in_loop.return_value = [ref]
+ with (
+ patch.object(backend._fallback, "extract_symbols", return_value=[mock_sym]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ ):
+ result = backend._lsp_extract_calls(_make_lsp_handle, _make_ctx)
+ assert len(result) >= 1
+ assert result[0].callee_name == "ProcessOrder"
+ def test_sym_start_line_zero_skipped(self) -> None:
+ """sym.start_line=0（< 1）→ 跳过该 symbol，不调 call_async_in_loop。"""
+ backend, mock_sup = _make_gopls_backend_with_mock_supervisor
+ from codegraph.extractors.base import SymbolData
+ mock_sym = SymbolData(name="Init", symbol_type="FUNCTION", file_path="/test/main.go", start_line=0, end_line=0)
+ with (
+ patch.object(backend._fallback, "extract_symbols", return_value=[mock_sym]),
+ patch.object(backend._fallback, "parse_file", return_value=MagicMock),
+ ):
+ result = backend._lsp_extract_calls(_make_lsp_handle, _make_ctx)
+ assert result ==
+ mock_sup.call_async_in_loop.assert_not_called

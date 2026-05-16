@@ -24,8 +24,8 @@ _DEFAULT_STARTUP_TIMEOUT_SECONDS = 30.0
 _DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
 _DEFAULT_STOP_TIMEOUT_SECONDS = 5.0
 def _build_client_capabilities -> lsp.ClientCapabilities:
- """构造本 phase 关注的 4 项 LSP client capability（per ）。
- 仅声明 document_symbol / workspace symbol / references / definition；
+ """构造 LSP client capability（per + Phase 补 implementation）。
+ 声明 document_symbol / workspace symbol / references / definition / implementation；
  其他全部不申请，避免 LSP server 主动 push。
  """
  return lsp.ClientCapabilities(
@@ -33,6 +33,7 @@ def _build_client_capabilities -> lsp.ClientCapabilities:
  document_symbol=lsp.DocumentSymbolClientCapabilities,
  references=lsp.ReferenceClientCapabilities,
  definition=lsp.DefinitionClientCapabilities,
+ implementation=lsp.ImplementationClientCapabilities,
  ),
  workspace=lsp.WorkspaceClientCapabilities(
  symbol=lsp.WorkspaceSymbolClientCapabilities,
@@ -237,5 +238,32 @@ class FridayLanguageClient(BaseLanguageClient):
  except asyncio.TimeoutError as exc:
  raise LspTimeoutError(
  f"textDocument/definition({uri!r}, line={position.line}) 超时 {timeout}s"
+ ) from exc
+ async def request_implementation(
+ self,
+ uri: str,
+ position: lsp.Position,
+ *,
+ timeout: float = _DEFAULT_REQUEST_TIMEOUT_SECONDS,
+ ) -> Any:
+ """发起 ``textDocument/implementation`` 请求；超时归一为 ``LspTimeoutError``。
+ gopls 使用此 capability 返回 Go interface 的所有实现类型位置。
+ Phase 新增（per / ）。
+ Returns:
+ ``Location | list[Location] | list[LocationLink] | None``——
+ 上层 GoplsInterfaceExtractor 处理多种返回形态。
+ """
+ params = lsp.ImplementationParams(
+ text_document=lsp.TextDocumentIdentifier(uri=uri),
+ position=position,
+ )
+ try:
+ return await asyncio.wait_for(
+ self.text_document_implementation_async(params),
+ timeout=timeout,
+ )
+ except asyncio.TimeoutError as exc:
+ raise LspTimeoutError(
+ f"textDocument/implementation({uri!r}, line={position.line}) 超时 {timeout}s"
  ) from exc
 __all__ = ["FridayLanguageClient"]
