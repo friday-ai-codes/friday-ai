@@ -37,7 +37,7 @@ class TestGoplsRealLifecycle:
  测试用独立实例绕开全局缓存）。
  """
  import services.background_runner as _bg
- _bg._ensure_worker_loop # 确保 background loop 已启动
+ _bg._ensure_worker_loop # 内部私有 API；Phase 切换时需关注是否有公开替代
  from codegraph.lsp.gopls_backend import _GoplsLazyBackend
  from codegraph.lsp.supervisor import LspSupervisor, LspSupervisorStatus
  supervisor = LspSupervisor(
@@ -63,7 +63,7 @@ class TestGoplsRealLifecycle:
  def test_gopls_supervisor_shutdown_cleans_up(self, request: pytest.FixtureRequest) -> None:
  """shutdown 后 status == STOPPED。"""
  import services.background_runner as _bg
- _bg._ensure_worker_loop # 确保 background loop 已启动
+ _bg._ensure_worker_loop # 内部私有 API；Phase 切换时需关注是否有公开替代
  from codegraph.lsp.gopls_backend import _GoplsLazyBackend
  from codegraph.lsp.supervisor import LspSupervisor, LspSupervisorStatus
  supervisor = LspSupervisor(
