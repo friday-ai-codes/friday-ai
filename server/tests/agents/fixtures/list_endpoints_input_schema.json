@@ -1,0 +1,24 @@
+{
+ "additionalProperties": false,
+ "description": "``list_endpoints`` tool 输入契约。\n\n列出指定仓库的所有 API 端点，按 HTTP 方法 + URL 路径排序。",
+ "properties": {
+ "limit": {
+ "default": 200,
+ "description": "返回端点数量上限（默认 200，最大 1000）。超大仓库建议分批按前缀筛选。",
+ "maximum": 1000,
+ "minimum": 1,
+ "title": "Limit",
+ "type": "integer"
+ },
+ "repository_id": {
+ "description": "**REQUIRED.** 后端仓库的 UUID（存储 API Endpoint 的仓库）。",
+ "title": "Repository Id",
+ "type": "string"
+ }
+ },
+ "required": [
+ "repository_id"
+ ],
+ "title": "ListEndpointsInput",
+ "type": "object"
+}

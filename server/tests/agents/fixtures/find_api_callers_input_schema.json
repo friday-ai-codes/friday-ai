@@ -1,0 +1,22 @@
+{
+ "additionalProperties": false,
+ "description": "``find_api_callers`` tool 输入契约。\n\n给定后端 handler 函数名，通过 CrossRepoApiCall 表追溯到所有前端业务调用方。",
+ "properties": {
+ "handler_name": {
+ "description": "后端 handler 函数名（如 'GetUserHandler'），需与 Endpoint.handler_name 字段精确匹配。大小写敏感。",
+ "title": "Handler Name",
+ "type": "string"
+ },
+ "repository_id": {
+ "description": "**REQUIRED.** 后端仓库的 UUID（handler 所在仓库，通常是 Go/Python 后端仓库）。",
+ "title": "Repository Id",
+ "type": "string"
+ }
+ },
+ "required": [
+ "handler_name",
+ "repository_id"
+ ],
+ "title": "FindApiCallersInput",
+ "type": "object"
+}

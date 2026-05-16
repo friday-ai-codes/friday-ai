@@ -1,0 +1,17 @@
+{
+ "method": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "repository_id": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ },
+ "url": {
+ "annotation": "str | None",
+ "default": "None",
+ "kind": "POSITIONAL_OR_KEYWORD"
+ }
+}

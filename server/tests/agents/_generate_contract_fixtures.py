@@ -37,11 +37,19 @@ def _dump(path: Path, payload: object) -> None:
  print(f"[fixture] wrote {path.relative_to(Path.cwd)} ({len(text)} bytes)")
 def main -> None:
  django.setup
+ from agents.tools.find_api_callers import find_api_callers
+ from agents.tools.find_api_handler import find_api_handler
  from agents.tools.find_related_code import find_related_code
+ from agents.tools.list_endpoints import list_endpoints
  from agents.tools.schemas import (
  FindRelatedCodeInput,
  FindRelatedCodeOutput,
  SearchRepositoryCodeInput,
+ )
+ from agents.tools.schemas.api_tools import (
+ FindApiCallersInput,
+ FindApiHandlerInput,
+ ListEndpointsInput,
  )
  from agents.tools.space_tools import search_repository_code
  FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,6 +72,31 @@ def main -> None:
  _dump(
  FIXTURE_DIR / "find_related_code_output_schema.json",
  FindRelatedCodeOutput.model_json_schema,
+ )
+ # Phase: API MCP tools
+ _dump(
+ FIXTURE_DIR / "find_api_handler_signature.json",
+ _normalize_signature(find_api_handler),
+ )
+ _dump(
+ FIXTURE_DIR / "find_api_handler_input_schema.json",
+ FindApiHandlerInput.model_json_schema,
+ )
+ _dump(
+ FIXTURE_DIR / "find_api_callers_signature.json",
+ _normalize_signature(find_api_callers),
+ )
+ _dump(
+ FIXTURE_DIR / "find_api_callers_input_schema.json",
+ FindApiCallersInput.model_json_schema,
+ )
+ _dump(
+ FIXTURE_DIR / "list_endpoints_signature.json",
+ _normalize_signature(list_endpoints),
+ )
+ _dump(
+ FIXTURE_DIR / "list_endpoints_input_schema.json",
+ ListEndpointsInput.model_json_schema,
  )
 if __name__ == "__main__":
  main
