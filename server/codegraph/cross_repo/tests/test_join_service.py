@@ -69,60 +69,69 @@ class TestMatchEndpoint:
  result = _match_endpoint(normalize_url_path("/users/detail"), "POST", ep_map)
  assert result ==
 class TestBuildCrossRepoMatches:
- """build_cross_repo_matches 单测（mock ORM）。"""
+ """build_cross_repo_matches 单测（mock ORM）。
+ 两阶段实现：先预建 call_site_map，再遍历 wrapper。
+ """
+ @patch("codegraph.cross_repo.join_service.ApiCallSite")
  @patch("codegraph.cross_repo.join_service.ApiWrapper")
- def test_returns_records_for_matching_wrapper(self, mock_apiw_cls: MagicMock) -> None:
- # ep_map 已经归一化
+ def test_returns_records_for_matching_wrapper(
+ self, mock_apiw_cls: MagicMock, mock_cs_cls: MagicMock
+ ) -> None:
  ep_map: dict[tuple[str, str], list[str]] = {("GET", "/users/:param"): ["ep-1"]}
- mock_call_site = MagicMock
- mock_call_site.id = "cs-1"
  mock_wrapper = MagicMock
  mock_wrapper.id = "w-1"
  mock_wrapper.http_method = "GET"
- # url_path_pattern 传给 build_cross_repo_matches，内部会归一化
  mock_wrapper.url_path_pattern = "/users/:id"
- mock_wrapper.call_sites.only.return_value.all.return_value = [mock_call_site]
- (
- mock_apiw_cls.objects.all.return_value
- .prefetch_related.return_value
- .only.return_value
- .iterator.return_value
- ) = iter([mock_wrapper])
+ mock_apiw_cls.objects.all.return_value.values_list.return_value = ["w-1"]
+ mock_apiw_cls.objects.all.return_value.only.return_value.iterator.return_value = iter(
+ [mock_wrapper]
+ )
+ # 模拟 ApiCallSite 查询返回一条 call_site
+ mock_cs_cls.objects.filter.return_value.values.return_value.iterator.return_value = iter(
+ [{"id": "cs-1", "api_wrapper_id": "w-1"}]
+ )
  records = build_cross_repo_matches(ep_map)
  assert len(records) == 1
  assert records[0].match_confidence == 1.0
+ @patch("codegraph.cross_repo.join_service.ApiCallSite")
  @patch("codegraph.cross_repo.join_service.ApiWrapper")
- def test_no_records_for_non_matching_wrapper(self, mock_apiw_cls: MagicMock) -> None:
+ def test_no_records_for_non_matching_wrapper(
+ self, mock_apiw_cls: MagicMock, mock_cs_cls: MagicMock
+ ) -> None:
  ep_map: dict[tuple[str, str], list[str]] = {("GET", "/orders/:param"): ["ep-2"]}
  mock_wrapper = MagicMock
  mock_wrapper.id = "w-1"
  mock_wrapper.http_method = "GET"
  mock_wrapper.url_path_pattern = "/completely/different"
- mock_wrapper.call_sites.only.return_value.all.return_value =
- (
- mock_apiw_cls.objects.all.return_value
- .prefetch_related.return_value
- .only.return_value
- .iterator.return_value
- ) = iter([mock_wrapper])
+ mock_apiw_cls.objects.all.return_value.values_list.return_value = ["w-1"]
+ mock_apiw_cls.objects.all.return_value.only.return_value.iterator.return_value = iter(
+ [mock_wrapper]
+ )
+ mock_cs_cls.objects.filter.return_value.values.return_value.iterator.return_value = iter(
+ [{"id": "cs-1", "api_wrapper_id": "w-1"}]
+ )
  records = build_cross_repo_matches(ep_map)
  assert records ==
+ @patch("codegraph.cross_repo.join_service.ApiCallSite")
  @patch("codegraph.cross_repo.join_service.ApiWrapper")
- def test_multiple_call_sites_produce_multiple_records(self, mock_apiw_cls: MagicMock) -> None:
+ def test_multiple_call_sites_produce_multiple_records(
+ self, mock_apiw_cls: MagicMock, mock_cs_cls: MagicMock
+ ) -> None:
  ep_map: dict[tuple[str, str], list[str]] = {("GET", "/users/:param"): ["ep-1"]}
- cs1, cs2 = MagicMock, MagicMock
- cs1.id, cs2.id = "cs-1", "cs-2"
  mock_wrapper = MagicMock
  mock_wrapper.id = "w-1"
  mock_wrapper.http_method = "GET"
  mock_wrapper.url_path_pattern = "/users/:id"
- mock_wrapper.call_sites.only.return_value.all.return_value = [cs1, cs2]
- (
- mock_apiw_cls.objects.all.return_value
- .prefetch_related.return_value
- .only.return_value
- .iterator.return_value
- ) = iter([mock_wrapper])
+ mock_apiw_cls.objects.all.return_value.values_list.return_value = ["w-1"]
+ mock_apiw_cls.objects.all.return_value.only.return_value.iterator.return_value = iter(
+ [mock_wrapper]
+ )
+ mock_cs_cls.objects.filter.return_value.values.return_value.iterator.return_value = iter(
+ [
+ {"id": "cs-1", "api_wrapper_id": "w-1"},
+ {"id": "cs-2", "api_wrapper_id": "w-1"},
+ ]
+ )
  records = build_cross_repo_matches(ep_map)
  assert len(records) == 2
 class TestWriteCrossRepoMatches:
