@@ -31,6 +31,7 @@ import time
 from typing import Any, Literal
 import structlog
 from django.conf import settings
+from code_relations.cross_repo_expander import expand_cross_repo
 from services.code_intel.protocols import (
  BaseCodeProvider,
  GraphCapableProvider,
@@ -109,20 +110,23 @@ def _render_neighbor_line(neighbor: NeighborMetadata) -> str:
 def _render_graph_context(
  hop1: list[NeighborMetadata],
  hop2: list[NeighborMetadata],
+ cross_repo: list[NeighborMetadata] | None = None,
 ) -> str:
- """拼装 ``## Graph Context`` markdown（per ）。
- - 两段：``### Direct Neighbors (1-hop)`` / ``### Indirect Neighbors (2-hop)``
+ """拼装 ``## Graph Context`` markdown（per + Phase cross-repo 段）。
+ - 三段：``### Direct Neighbors (1-hop)`` / ``### Indirect Neighbors (2-hop)``
+ / ``### Cross-Repo Neighbors (API-Calls)``（Phase 新增，per ）
  - 邻居按 weight desc 排序
  - 过滤 ``file_path == "<unknown>"`` 的占位行（ChunkRegistry 缺失 fallback）
- - 两段均空 → 返回 ``""``（**不写空 markdown 块**，避免污染 LLM 上下文）
- - 仅一段空 → 仅渲染非空段
+ - 全部空 → 返回 ``""``（**不写空 markdown 块**，避免污染 LLM 上下文）
+ - 仅渲染非空段
  """
  def _filtered_sorted(items: list[NeighborMetadata]) -> list[NeighborMetadata]:
  valid = [n for n in items if n.file_path != "<unknown>"]
  return sorted(valid, key=lambda n: -n.weight)
  h1 = _filtered_sorted(hop1)
  h2 = _filtered_sorted(hop2)
- if not h1 and not h2:
+ cr = _filtered_sorted(cross_repo or )
+ if not h1 and not h2 and not cr:
  return ""
  sections: list[str] = ["## Graph Context", ""]
  if h1:
@@ -134,6 +138,11 @@ def _render_graph_context(
  sections.append("### Indirect Neighbors (2-hop)")
  sections.append("")
  sections.extend(_render_neighbor_line(n) for n in h2)
+ sections.append("")
+ if cr:
+ sections.append("### Cross-Repo Neighbors (API-Calls)")
+ sections.append("")
+ sections.extend(_render_neighbor_line(n) for n in cr)
  sections.append("")
  return "\n".join(sections).rstrip
 class HybridSearchService:
@@ -316,6 +325,23 @@ class HybridSearchService:
  repo_ids=repo_ids,
  reason_fn=_enrichment_reason_fn,
  )
+ @staticmethod
+ async def _run_wave_3(
+ *,
+ rag_snapshot: LayerSnapshot,
+ repo_ids: list[str],
+ exclude_chunk_ids: frozenset[str],
+ ) -> list[NeighborMetadata]:
+ """ 提取：wave 跨仓 API 扩散（ApiCallSite ↔ Endpoint via CrossRepoApiCall）。
+ Phase 新增 wave。调用方负责 ENABLE_CROSS_REPO_ENRICHMENT 守卫——
+ 本方法不读 settings（per Pitfall 5 原则）。
+ """
+ return await expand_cross_repo(
+ rag_items=rag_snapshot.items,
+ repo_ids=repo_ids,
+ reason_fn=_enrichment_reason_fn,
+ exclude_chunk_ids=exclude_chunk_ids,
+ )
  async def _search_graph_capable(
  self,
  query: str,
@@ -379,7 +405,31 @@ class HybridSearchService:
  rag_chunk_ids=rag_chunk_ids,
  repo_ids=repo_ids,
  )
- graph_context_raw: str = _render_graph_context(hop1_neighbors, hop2_neighbors)
+ # --- wave: 跨仓 API 扩散（Phase/08）---
+ # ENABLE_CROSS_REPO_ENRICHMENT 唯一直读点（hybrid_search 模块）。
+ enable_cross: bool = bool(
+ getattr(settings, "ENABLE_CROSS_REPO_ENRICHMENT", True)
+ )
+ if enable_cross:
+ logger.info("hybrid_search_wave_started", wave_id=3)
+ t3 = time.perf_counter
+ cross_repo_neighbors: list[NeighborMetadata] = await self._run_wave_3(
+ rag_snapshot=rag_snapshot,
+ repo_ids=repo_ids,
+ exclude_chunk_ids=frozenset(hop1_chunk_ids | rag_chunk_ids),
+ )
+ elapsed_3ms = int((time.perf_counter - t3) * 1000)
+ logger.info(
+ "hybrid_search_wave_done",
+ wave_id=3,
+ elapsed_ms=elapsed_3ms,
+ count=len(cross_repo_neighbors),
+ )
+ else:
+ cross_repo_neighbors =
+ graph_context_raw: str = _render_graph_context(
+ hop1_neighbors, hop2_neighbors, cross_repo_neighbors
+ )
  l3_markdown: str = format_l3_section(rag_snapshot.items)
  rag_section: str = trim_to_budget(l3_markdown, budgets["rag"])
  graph_section: str = (
@@ -401,6 +451,7 @@ class HybridSearchService:
  total_tokens=total_tokens,
  hop1_count=len(hop1_neighbors),
  hop2_count=len(hop2_neighbors),
+ cross_repo_count=len(cross_repo_neighbors),
  symbol_count=len(symbol_results),
  symbol_failed=symbol_failed,
  wave_0_elapsed_ms=wave_0_ms,
@@ -414,6 +465,7 @@ class HybridSearchService:
  graph_context=graph_section,
  hop1_neighbors=hop1_neighbors,
  hop2_neighbors=hop2_neighbors,
+ cross_repo_neighbors=cross_repo_neighbors,
  )
  async def _search_rag_only(
  self,
