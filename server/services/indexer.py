@@ -1729,6 +1729,16 @@ class IndexerService:
  # 避免 background_runner 长时间独占 loop / SQLite 写锁导致 ASGI
  # 接口集体 "待处理"。
  GRAPH_YIELD_EVERY = 25
+ #: 预查询 endpoint RAG 写入所需参数（循环后批量处理）
+ _all_endpoints_with_sigs: list[tuple[Any, str]] =
+ try:
+ from repositories.models import Repository as _Repo
+ _repo_obj = await _Repo.objects.filter(id=repository_id).afirst
+ _endpoint_rag_repo_name: str = _repo_obj.name if _repo_obj else ""
+ _endpoint_rag_hybrid: bool = await self._is_hybrid_enabled
+ except Exception:
+ _endpoint_rag_repo_name = ""
+ _endpoint_rag_hybrid = False
  for index, file_path in enumerate(file_paths, start=1):
  if index % GRAPH_YIELD_EVERY == 0 or index == total_graph_files:
  await update_index_stage(
@@ -1797,6 +1807,14 @@ class IndexerService:
  stats["total_imports"] += result.get("imports", 0)
  stats["total_calls"] += result.get("calls", 0)
  stats["total_endpoints"] += result.get("endpoints", 0)
+ #: 收集当前文件 endpoint（含 best-effort symbol signature）
+ for _ep in bundle.endpoints:
+ _handler_func = _ep.handler_name.rsplit(".", 1)[-1]
+ _sym = next(
+ (s for s in bundle.symbols if s.name == _handler_func),
+ None,
+ )
+ _all_endpoints_with_sigs.append((_ep, _sym.signature if _sym else ""))
  # Phase: 条件追加 Go interface implementation 抽取
  # 仅当 gopls backend 已启用 + 当前文件为 Go + 有 symbol 时触发
  if (
@@ -1847,6 +1865,13 @@ class IndexerService:
  calls=stats["total_calls"],
  endpoints=stats["total_endpoints"],
  )
+ #: 图谱轨完成后批量写 endpoint RAG 文档（失败不阻塞）
+ if _all_endpoints_with_sigs and _endpoint_rag_repo_name:
+ await self._write_endpoint_rag_docs(
+ endpoints_with_sigs=_all_endpoints_with_sigs,
+ repo_name=_endpoint_rag_repo_name,
+ hybrid_enabled=_endpoint_rag_hybrid,
+ )
  # Phase hook（per / ）+ Phase Plan lifecycle 切换：
  # 图谱写完后触发 6 EdgeBuilder + payload 一跳快照同步；改走
  # `code_relations.lifecycle.enqueue_edge_build_for_history` 外部 wrapper
@@ -1888,6 +1913,35 @@ class IndexerService:
  )
  stats["edge_build_enqueued"] = False
  return stats
+ async def _write_endpoint_rag_docs(
+ self,
+ *,
+ endpoints_with_sigs: list[tuple[Any, str]],
+ repo_name: str,
+ hybrid_enabled: bool,
+ ) -> None:
+ """: 为已抽取的 endpoints 生成 api_endpoint.md 并写入 Qdrant。
+ 失败只记 warning，不阻塞图谱轨（per 容错原则）。
+ """
+ try:
+ from services.endpoint_rag_writer import write_endpoint_rag_docs
+ count = await write_endpoint_rag_docs(
+ endpoints_with_sigs=endpoints_with_sigs,
+ repository_id=self.repository_id,
+ repo_name=repo_name,
+ hybrid_enabled=hybrid_enabled,
+ )
+ logger.debug(
+ "endpoint_rag_docs_written",
+ repository_id=self.repository_id,
+ count=count,
+ )
+ except Exception:
+ logger.warning(
+ "endpoint_rag_docs_write_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
+ )
  @staticmethod
  def _detect_language_from_path(file_path: str) -> str | None:
  """从文件扩展名检测编程语言（CodeParser 的简化版）。"""
