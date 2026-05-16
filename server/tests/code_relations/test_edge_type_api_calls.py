@@ -26,7 +26,8 @@ def test_chunkedge_has_target_repository_id_field -> None:
  assert field.blank is True
 @pytest.mark.django_db
 def test_chunkedge_api_calls_with_target_repository_id(repository) -> None:
- """API_CALLS 边可以写入 target_repository_id（跨仓场景）。"""
+ """API_CALLS 边可以写入 target_repository_id（跨仓场景；UUID 类型）。"""
+ target_repo_id = uuid.uuid4
  edge = ChunkEdge.objects.create(
  source_chunk_id=uuid.uuid4,
  target_chunk_id=uuid.uuid4,
@@ -34,10 +35,10 @@ def test_chunkedge_api_calls_with_target_repository_id(repository) -> None:
  weight=1.0,
  metadata={"direction": "calls"},
  repository=repository,
- target_repository_id=99,
+ target_repository_id=target_repo_id,
  )
  edge.refresh_from_db
- assert edge.target_repository_id == 99
+ assert edge.target_repository_id == target_repo_id
  assert edge.edge_type == "API_CALLS"
 @pytest.mark.django_db
 def test_chunkedge_v24_edge_target_repository_id_null(repository) -> None:

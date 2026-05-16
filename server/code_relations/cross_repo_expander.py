@@ -69,7 +69,7 @@ async def expand_cross_repo(
  total=len(results),
  )
  return results
-@sync_to_async
+@sync_to_async # type: ignore[misc]
 def _fetch_call_site_to_endpoint(
  file_paths: list[str],
  exclude: frozenset[str],
@@ -118,7 +118,7 @@ def _fetch_call_site_to_endpoint(
  }
  out.append((tgt_chunk_id, cc.call_site.caller_file, meta))
  return out
-@sync_to_async
+@sync_to_async # type: ignore[misc]
 def _fetch_endpoint_to_call_site(
  file_paths: list[str],
  exclude: frozenset[str],

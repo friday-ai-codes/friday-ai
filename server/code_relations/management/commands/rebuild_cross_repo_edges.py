@@ -44,7 +44,7 @@ class Command(BaseCommand):
  do_all: bool = bool(options["all"])
  repo_id_str: str | None = str(options["repo"]) if options.get("repo") else None
  dry_run: bool = bool(options["dry_run"])
- batch_size: int = int(options["batch_size"]) # type: ignore[arg-type]
+ batch_size: int = int(options["batch_size"]) # type: ignore[call-overload]
  from code_relations.models import ChunkEdge, ChunkRegistry, EdgeType
  from codegraph.models import CrossRepoApiCall
  t0 = time.perf_counter
@@ -77,12 +77,13 @@ class Command(BaseCommand):
  if not cross_calls:
  self.stdout.write("无 CrossRepoApiCall 记录，跳过。")
  return
- # 3. 批量查 ChunkRegistry：file_path → (chunk_id_str, repo_id)
+ # 3. 批量查 ChunkRegistry：file_path → (chunk_id_str, repo_id_uuid)
+ import uuid as _uuid_mod
  all_files: set[str] = set
  for cc in cross_calls:
  all_files.add(cc.call_site.caller_file)
  all_files.add(cc.endpoint.file_path)
- file_to_chunk: dict[str, tuple[str, int]] = {}
+ file_to_chunk: dict[str, tuple[str, _uuid_mod.UUID]] = {}
  for reg in ChunkRegistry.objects.filter(file_path__in=all_files).only(
  "chunk_id", "file_path", "repository_id"
  ):
@@ -98,8 +99,8 @@ class Command(BaseCommand):
  if not src_info or not tgt_info:
  skipped += 1
  continue
- src_chunk_id_str, src_repo_id = src_info
- tgt_chunk_id_str, tgt_repo_id = tgt_info
+ src_chunk_id_str, src_repo_id = src_info # type: ignore[assignment]
+ tgt_chunk_id_str, tgt_repo_id = tgt_info # type: ignore[assignment]
  fn_sym = ""
  if cc.call_site.api_wrapper_id:
  fn_sym = cc.call_site.api_wrapper.function_symbol
