@@ -256,12 +256,14 @@ class GraphWriter:
  Returns:
  写入的 ApiCallSite 数量
  """
+ import uuid as _uuid
+ wrapper_uuid = _uuid.UUID(api_wrapper_id) if isinstance(api_wrapper_id, str) else api_wrapper_id
  with transaction.atomic:
- ApiCallSite.objects.filter(api_wrapper_id=api_wrapper_id).delete
+ ApiCallSite.objects.filter(api_wrapper_id=wrapper_uuid).delete
  objs = [
  ApiCallSite(
  repository_id=repository_id,
- api_wrapper_id=api_wrapper_id,
+ api_wrapper_id=wrapper_uuid,
  caller_file=s.caller_file,
  caller_function=s.caller_function,
  line_number=s.line_number,
@@ -272,7 +274,7 @@ class GraphWriter:
  ApiCallSite.objects.bulk_create(objs)
  logger.debug(
  "api_call_site_written",
- api_wrapper_id=api_wrapper_id,
+ api_wrapper_id=str(wrapper_uuid),
  count=len(objs),
  )
  return len(objs)
