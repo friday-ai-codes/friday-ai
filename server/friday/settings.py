@@ -487,6 +487,35 @@ MCP_ALLOWED_COMMANDS: list[str] = [
  "python",
 ]
 # =============================================================================
+# Phase: Frontend API Call Resolver 配置
+# =============================================================================
+API_DETECTOR_CONFIG: dict = {
+ # base URL 模板 patterns（Python regex），用于从 URL 字符串剥除前缀
+ "base_url_patterns": [
+ r"\$\{configGlobal\.api\}",
+ r"\$\{import\.meta\.env\.VITE_API_URL\}",
+ r"\$\{import\.meta\.env\.VUE_APP_API_URL\}",
+ r"\$\{process\.env\.VUE_APP_API\}",
+ r"\$\{process\.env\.BASE_URL\}",
+ ],
+ # 强制追加 LowLevelHelper（格式：{"file_path": "...", "func_name": "..."}）
+ "force_helpers":,
+ # 排除特定 LowLevelHelper（字符串匹配 func_name 或 "file_path:func_name"）
+ "exclude_helpers":,
+ # axios 方法名（识别 LowLevelHelper 的锚点）
+ "axios_method_names": ["get", "post", "put", "delete", "del", "patch", "request"],
+ # helper func name → HTTP method 映射
+ "helper_method_map": {
+ "get": "GET",
+ "post": "POST",
+ "put": "PUT",
+ "del": "DELETE",
+ "delete": "DELETE",
+ "patch": "PATCH",
+ "request": "GET",
+ },
+}
+# =============================================================================
 # Logging — Structlog 配置（Phase 凭证泄漏防护）
 # =============================================================================
 # configure_structlog 必须在 LOGGING dictConfig 之后、任何业务 logger 实例化之前调用。
