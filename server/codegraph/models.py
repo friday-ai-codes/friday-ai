@@ -92,6 +92,8 @@ class CallEdge(models.Model):
  return f"{self.caller_symbol.name} -> {self.callee_name} [{self.call_type}]"
 class Endpoint(models.Model):
  """API 端点 —— HTTP 方法 + URL 路径 + 处理函数的映射。"""
+ if TYPE_CHECKING:
+ cross_repo_callers: "QuerySet[CrossRepoApiCall]"
  class ViewType(models.TextChoices):
  FUNCTION_VIEW = "FUNCTION_VIEW", "函数视图"
  CLASS_VIEW = "CLASS_VIEW", "类视图"
@@ -154,6 +156,8 @@ class ApiWrapper(models.Model):
  return f"{self.http_method} {self.url_path_pattern} ({self.function_symbol})"
 class ApiCallSite(models.Model):
  """ApiWrapper 调用点 —— 通过 volar textDocument/references 反向追踪。"""
+ if TYPE_CHECKING:
+ cross_repo_calls: "QuerySet[CrossRepoApiCall]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  repository = models.ForeignKey(
  "repositories.Repository",
@@ -178,6 +182,43 @@ class ApiCallSite(models.Model):
  ]
  def __str__(self) -> str:
  return f"{self.caller_function} @ {self.caller_file}:{self.line_number} → {self.api_wrapper.function_symbol}"
+class CrossRepoApiCall(models.Model):
+ """跨仓 API 调用匹配记录 —— ApiCallSite × Endpoint offline join 结果。
+ 通过 offline join（Phase）按 (http_method, url_path_pattern) 精确匹配。
+ match_confidence: 1.0 完全匹配 / 0.7 path-only / 0.4 部分匹配。
+ per
+ """
+ if TYPE_CHECKING:
+ pass
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ call_site = models.ForeignKey(
+ ApiCallSite,
+ on_delete=models.CASCADE,
+ related_name="cross_repo_calls",
+ )
+ endpoint = models.ForeignKey(
+ Endpoint,
+ on_delete=models.CASCADE,
+ related_name="cross_repo_callers",
+ )
+ match_confidence = models.FloatField(
+ help_text="1.0=完全匹配 / 0.7=path-only / 0.4=部分匹配",
+ )
+ matched_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ verbose_name = "跨仓 API 调用"
+ verbose_name_plural = "跨仓 API 调用"
+ unique_together = [("call_site", "endpoint")]
+ indexes = [
+ models.Index(fields=["call_site"], name="crossrepo_call_site_idx"),
+ models.Index(fields=["endpoint"], name="crossrepo_endpoint_idx"),
+ models.Index(fields=["match_confidence"], name="crossrepo_confidence_idx"),
+ ]
+ def __str__(self) -> str:
+ return (
+ f"{self.call_site} → {self.endpoint} "
+ f"[confidence={self.match_confidence}]"
+ )
 __all__ = [
  "Symbol",
  "ImportEdge",
@@ -185,4 +226,5 @@ __all__ = [
  "Endpoint",
  "ApiWrapper",
  "ApiCallSite",
+ "CrossRepoApiCall",
 ]
