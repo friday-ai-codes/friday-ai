@@ -33,6 +33,13 @@ _FIND_RELATED_INPUT_SCHEMA_FIXTURE = (
 _FIND_RELATED_OUTPUT_SCHEMA_FIXTURE = (
  FIXTURE_DIR / "find_related_code_output_schema.json"
 )
+# Phase: API MCP tools snapshot fixtures
+_FIND_API_HANDLER_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_handler_signature.json"
+_FIND_API_HANDLER_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "find_api_handler_input_schema.json"
+_FIND_API_CALLERS_SIGNATURE_FIXTURE = FIXTURE_DIR / "find_api_callers_signature.json"
+_FIND_API_CALLERS_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "find_api_callers_input_schema.json"
+_LIST_ENDPOINTS_SIGNATURE_FIXTURE = FIXTURE_DIR / "list_endpoints_signature.json"
+_LIST_ENDPOINTS_INPUT_SCHEMA_FIXTURE = FIXTURE_DIR / "list_endpoints_input_schema.json"
 _REGENERATE_HINT = (
  "若变更属预期，请运行 "
  "`cd server && DJANGO_SETTINGS_MODULE=friday.settings uv run python -m "
@@ -126,5 +133,62 @@ def test_find_related_code_output_schema_snapshot -> None:
  )
  assert actual == expected, (
  "FindRelatedCodeOutput.model_json_schema drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+# ---------------------------------------------------------------------------
+# Phase: API MCP tool snapshot tests
+# ---------------------------------------------------------------------------
+def test_find_api_handler_signature_snapshot -> None:
+ """``find_api_handler`` 函数签名 vs fixture 字节级 diff —— per Phase。"""
+ from agents.tools.find_api_handler import find_api_handler
+ actual = _normalize_signature(find_api_handler)
+ expected = json.loads(_FIND_API_HANDLER_SIGNATURE_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "find_api_handler signature drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_api_handler_input_schema_snapshot -> None:
+ """``FindApiHandlerInput.model_json_schema`` vs fixture 字节级 diff。"""
+ from agents.tools.schemas.api_tools import FindApiHandlerInput
+ actual = FindApiHandlerInput.model_json_schema
+ expected = json.loads(_FIND_API_HANDLER_INPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "FindApiHandlerInput.model_json_schema drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_api_callers_signature_snapshot -> None:
+ """``find_api_callers`` 函数签名 vs fixture 字节级 diff —— per Phase。"""
+ from agents.tools.find_api_callers import find_api_callers
+ actual = _normalize_signature(find_api_callers)
+ expected = json.loads(_FIND_API_CALLERS_SIGNATURE_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "find_api_callers signature drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_find_api_callers_input_schema_snapshot -> None:
+ """``FindApiCallersInput.model_json_schema`` vs fixture 字节级 diff。"""
+ from agents.tools.schemas.api_tools import FindApiCallersInput
+ actual = FindApiCallersInput.model_json_schema
+ expected = json.loads(_FIND_API_CALLERS_INPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "FindApiCallersInput.model_json_schema drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_list_endpoints_signature_snapshot -> None:
+ """``list_endpoints`` 函数签名 vs fixture 字节级 diff —— per Phase。"""
+ from agents.tools.list_endpoints import list_endpoints
+ actual = _normalize_signature(list_endpoints)
+ expected = json.loads(_LIST_ENDPOINTS_SIGNATURE_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "list_endpoints signature drifted from fixture baseline. "
+ f"{_REGENERATE_HINT}"
+ )
+def test_list_endpoints_input_schema_snapshot -> None:
+ """``ListEndpointsInput.model_json_schema`` vs fixture 字节级 diff。"""
+ from agents.tools.schemas.api_tools import ListEndpointsInput
+ actual = ListEndpointsInput.model_json_schema
+ expected = json.loads(_LIST_ENDPOINTS_INPUT_SCHEMA_FIXTURE.read_text(encoding="utf-8"))
+ assert actual == expected, (
+ "ListEndpointsInput.model_json_schema drifted from fixture baseline. "
  f"{_REGENERATE_HINT}"
  )
