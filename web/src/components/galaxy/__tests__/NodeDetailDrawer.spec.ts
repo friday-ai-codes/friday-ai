@@ -135,7 +135,9 @@ describe('NodeDetailDrawer', => {
  })
  await flushPromises
  expect(getGalaxyNodeDetail).toHaveBeenCalledTimes(1)
- await wrapper.setProps({ nodeId: null })
+ // setProps 类型推断在 Sheet stub 透传后会丢失 NodeDetailDrawer 自身 props（pre-existing idiom）
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+ await (wrapper.setProps as any)({ nodeId: null })
  await flushPromises
  // nodeId=null 不再调用 API
  expect(getGalaxyNodeDetail).toHaveBeenCalledTimes(1)
