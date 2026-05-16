@@ -23,6 +23,7 @@ per：``make_gopls_backend(language)`` 工厂闭包替换 Phase 占位
 """
 from __future__ import annotations
 import dataclasses
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar, Final
@@ -417,16 +418,20 @@ def make_gopls_backend(language: str = "go") -> Callable[[str], ExtractorBackend
  self.language = lang
  self._supervisor: LspSupervisor = None # type: ignore[assignment]
  self._fallback: ExtractorBackend = TreeSitterBackend(lang)
+ self._supervisor_lock = threading.Lock # W-01 线程安全
  @staticmethod
  def _is_lsp_handle(tree: Any) -> bool:
  return isinstance(tree, _LspParseHandle)
  def _ensure_supervisor(self, ctx: FileContext) -> None:
  """首次 LSP 调用时延迟注入 supervisor（Phase 真填策略）。
  若 _supervisor 已注入则跳过；否则调 _get_supervisor(file_path)。
+ 使用 _supervisor_lock 确保多线程安全（per Review W-01）。
  失败时 raise LspUnhealthyError → 上层基类 fallback。
  """
  if self._supervisor is not None:
  return
+ with self._supervisor_lock:
+ if self._supervisor is None:
  self._supervisor = self._get_supervisor(Path(ctx.file_path))
  logger.debug(
  "go_backend_supervisor_injected",

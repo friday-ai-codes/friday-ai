@@ -90,11 +90,12 @@ def _measure_completeness_for_backend(
  calls = backend.extract_calls(tree, ctx)
  for call in calls:
  total_calls += 1
- # caller_key = (file_path, module_path, line)
- # callee_file 等价于 caller_key[0]（该 call 的 callee 文件路径）
- # 注：CallData.caller_key[0] 是 caller 文件路径，不是 callee
- # 完整度衡量：callee_name 非空（能解析出 callee）
- if getattr(call, "callee_name", None):
+ # 完整度指标：caller_key[0] 与当前文件不同（跨文件 call resolution）
+ # per CONTEXT.md：callee_file 字段非空率 = 跨文件 call 被正确解析的比例
+ # caller_key = (caller_file_path, caller_module, line)
+ # gopls references 返回 caller 位置；caller 在不同文件即为跨文件 call
+ caller_file = getattr(call, "caller_key", (None,))[0]
+ if caller_file and str(caller_file) != str(abs_path):
  calls_with_callee_file += 1
  except Exception: # noqa: BLE001
  continue
