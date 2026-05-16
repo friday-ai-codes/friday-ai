@@ -3,6 +3,7 @@
 便于单独测试和组合。最终由 graph_writer.py 转为 ORM 批量入库。
 """
 from dataclasses import dataclass, field
+from typing import Any
 @dataclass
 class FileContext:
  """解析上下文 —— 文件路径、语言、仓库 ID 等元信息。
@@ -53,6 +54,7 @@ class EndpointData:
  """API 端点抽取结果 —— HTTP 方法 + URL 路径 + 处理函数映射。
  字段与 Endpoint 模型对齐。url_path 由 Layer 2 URL patterns 填充，
  Layer 1 装饰器扫描时为 None（由 Orchestrator 事后关联）。
+ metadata 由 Go gin 抽取时填充 ogin.G* middleware 参数验证元数据。
  """
  http_method: str # "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "*"
  url_path: str | None # Layer 1 扫描时暂为 None
@@ -60,6 +62,7 @@ class EndpointData:
  view_type: str # "FUNCTION_VIEW" | "CLASS_VIEW" | "VIEWSET"
  file_path: str
  line_number: int
+ metadata: dict[str, Any] | None = field(default=None) #: ogin.G* metadata
 @dataclass
 class ExtractionBundle:
  """单文件四维抽取结果汇总（ 单趟遍历产出物）。
