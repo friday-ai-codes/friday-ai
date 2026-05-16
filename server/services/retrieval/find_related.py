@@ -105,6 +105,34 @@ class _TemplateFn(Protocol):
  target_file: str | None,
  metadata: dict[str, Any],
  ) -> str: ...
+def _tpl_api_calls(
+ *, source_file: str | None, target_file: str | None, metadata: dict[str, Any]
+) -> str:
+ """API_CALLS → 跨仓 API 调用关系 reason 模板（Phase）。
+ metadata 字段（由 cross_repo_expander / rebuild_cross_repo_edges 写入）：
+ - function_symbol: str —— ApiWrapper 函数名（如 fetchTopicFinished）
+ - caller_file: str —— ApiCallSite 文件路径（如 api/topic.ts）
+ - line_number: int —— ApiCallSite 行号
+ - http_method: str —— HTTP method（GET/POST/...）
+ - url_path: str —— URL 路径（如 /study-flow/topic/finished）
+ - direction: "calls" | "called_by" —— 边方向
+ """
+ direction = metadata.get("direction", "calls")
+ fn = metadata.get("function_symbol", "")
+ caller_file = metadata.get("caller_file") or source_file or ""
+ line = metadata.get("line_number")
+ method = metadata.get("http_method", "")
+ url = metadata.get("url_path", "")
+ loc = f"{caller_file}:{line}" if line else caller_file
+ api_sig = f"via {method} {url}".strip if (method or url) else ""
+ if direction == "calls":
+ subject = f"calls {fn} ({loc})" if fn else (loc or "cross-repo API")
+ parts = [p for p in [subject, api_sig] if p]
+ return ", ".join(parts) if parts else "calls cross-repo API"
+ else:
+ subject = f"called by {fn} ({loc})" if fn else f"called by ({loc})"
+ parts = [p for p in [subject, api_sig] if p]
+ return ", ".join(parts) if parts else "called by cross-repo client"
 _TEMPLATE_REGISTRY: dict[str, _TemplateFn] = {
  "CALL": _tpl_call,
  "IMPORT": _tpl_import,
@@ -112,6 +140,7 @@ _TEMPLATE_REGISTRY: dict[str, _TemplateFn] = {
  "TEST_OF": _tpl_test_of,
  "CO_CHANGED": _tpl_co_changed,
  "SEMANTIC": _tpl_semantic,
+ "API_CALLS": _tpl_api_calls, # Phase
 }
 """模板分发表（dict[edge_type, template_fn]）—— 比 if-else 链便于扩展（per Plan
 "模板用 dict[str, Callable] 驱动，方便扩展"）。"""
@@ -122,10 +151,11 @@ def explain_neighbor(
  target_file: str | None = None,
  metadata: dict[str, Any] | None = None,
 ) -> str:
- """生成 NeighborMetadata.reason 字段：6 类模板 + graceful fallback。
+ """生成 NeighborMetadata.reason 字段：8 类模板 + graceful fallback（Phase）。
  Args:
  edge_type: ``EdgeType`` 字面值（``CALL`` / ``IMPORT`` / ``SAME_FILE`` /
- ``TEST_OF`` / ``CO_CHANGED`` / ``SEMANTIC``）；未知 → fallback。
+ ``TEST_OF`` / ``CO_CHANGED`` / ``SEMANTIC`` / ``IMPLEMENTS`` /
+ ``API_CALLS``）；未知 → fallback。
  source_file: source chunk 文件路径，可选；缺失走模板 fallback 分支。
  target_file: target chunk 文件路径，可选；缺失走模板 fallback 分支。
  metadata: ChunkEdge.metadata JSON 字典，可选；``None`` / 空 dict / 缺
