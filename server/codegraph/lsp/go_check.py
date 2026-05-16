@@ -137,6 +137,8 @@ def _probe_gopls -> tuple[str | None, bool, str]:
  # 提取完整版本字符串
  vm = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", output)
  version_str = vm.group(0) if vm else f"{major}.{minor}"
+ # gopls 目前保持 v0.x 版本号（截至 2026 年）；
+ # major > 0 视为向前兼容（v1.0 必然 ≥ v0.14），无条件通过。
  if major == 0 and minor < _MIN_GOPLS_MINOR:
  return (
  version_str,
