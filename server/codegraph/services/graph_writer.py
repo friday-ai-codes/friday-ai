@@ -141,6 +141,7 @@ class GraphWriter:
  view_type=ep.view_type,
  file_path=ep.file_path,
  line_number=ep.line_number,
+ metadata=ep.metadata,
  ))
  if endpoint_objs:
  Endpoint.objects.bulk_create(endpoint_objs)
