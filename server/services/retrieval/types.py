@@ -65,6 +65,8 @@ class HybridSearchResult:
  graph_context: str = ""
  hop1_neighbors: list[NeighborMetadata] = field(default_factory=list)
  hop2_neighbors: list[NeighborMetadata] = field(default_factory=list)
+ # Phase 新增（默认；wave 跨仓扩散结果，）
+ cross_repo_neighbors: list[NeighborMetadata] = field(default_factory=list)
  def to_rag_result(self) -> RagSearchResult:
  """显式 downcast 到 RagSearchResult，丢弃 graph 字段。
  用途：Plan / 既有 callsite 已 `result: RagSearchResult` 类型注解，
