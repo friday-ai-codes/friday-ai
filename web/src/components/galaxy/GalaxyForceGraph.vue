@@ -221,10 +221,12 @@ function initGraph: void {
  if (!containerRef.value)
  return
  const el = containerRef.value
+ // ForceGraph3D 的 TS 类型为 new(el, config)，实际 API 等价；any 断言绕过类型限制
  // eslint-disable-next-line @typescript-eslint/no-explicit-any
- const g = new (ForceGraph3D as any)(el, { controlType: 'orbit' }) as GraphType
- graph = g
- .width(el.clientWidth)
+ const instance = new (ForceGraph3D as any)(el, { controlType: 'orbit' }) as GraphType
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+ const gi = instance as any
+ gi.width(el.clientWidth)
  .height(el.clientHeight)
  .showNavInfo(false)
  .backgroundColor('transparent')
@@ -267,12 +269,13 @@ function initGraph: void {
  .d3Force('charge', null)
  .cooldownTicks(200)
  .onEngineStop( => {
- const scene = graph!.scene
+ const scene = instance.scene
  setupSpaceBackground(scene)
- graph!.cameraPosition({ x: 0, y: 100, z: 300 }, { x: 0, y: 0, z: 0 }, 0)
+ instance.cameraPosition({ x: 0, y: 100, z: 300 }, { x: 0, y: 0, z: 0 }, 0)
  emit('ready')
  startFpsMonitor
  })
+ graph = instance
  buildNeighborLookup
  graph.graphData(buildGraphData)
  resizeObserver = new ResizeObserver( => {

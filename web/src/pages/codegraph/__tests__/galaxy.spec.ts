@@ -41,8 +41,11 @@ const mockGraph = {
  cameraPosition: vi.fn.mockReturnThis,
  _destructor: vi.fn,
 }
+function MockForceGraph3D {
+ return mockGraph
+}
 vi.mock('3d-force-graph', => ({
- default: vi.fn( => => mockGraph),
+ default: MockForceGraph3D,
 }))
 vi.mock('three', => {
  class ColorMock { constructor(_c?: string) {} }
@@ -68,11 +71,17 @@ class MockResizeObserver {
  constructor(_cb: ResizeObserverCallback) {}
 }
 global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
-vi.mock('vue-sonner', => ({
- toast: {
- success: vi.fn, error: vi.fn, warning: vi.fn, info: vi.fn,
- promise: vi.fn, dismiss: vi.fn,
- },
+vi.mock('~/composables/useToast', => ({
+ useToast: vi.fn( => ({
+ warning: vi.fn,
+ error: vi.fn,
+ success: vi.fn,
+ info: vi.fn,
+ loading: vi.fn,
+ promise: vi.fn,
+ dismissAll: vi.fn,
+ toast: { success: vi.fn, error: vi.fn, warning: vi.fn, info: vi.fn, dismiss: vi.fn },
+ })),
 }))
 const mockRepositories: Repository = [
  {
