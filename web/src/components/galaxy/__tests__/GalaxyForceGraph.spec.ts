@@ -176,8 +176,8 @@ describe('GalaxyForceGraph.vue', => {
  })
  await flushPromises
  const initialCallCount = mockGraph.graphData.mock.calls.length
- // 更新 props
- await wrapper.setProps({ nodes: [...mockNodes, { ...mockNodes[0], id: 'new-node' }] })
+ // 更新 props（vue-test-utils 类型推断对 generic prop 不友好，用 cast 绕过）
+ await wrapper.setProps({ nodes: [...mockNodes, { ...mockNodes[0], id: 'new-node' }] } as unknown as Record<string, unknown>)
  await flushPromises
  expect(mockGraph.graphData.mock.calls.length).toBeGreaterThan(initialCallCount)
  wrapper.unmount
