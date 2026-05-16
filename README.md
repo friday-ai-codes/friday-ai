@@ -2,6 +2,19 @@
 [简体中文](README.zh-CN.md) | English
 🤖 **AI-Powered Agile Development Automation System**
 Friday is an AI-driven agile development automation system that seamlessly integrates with Feishu/Lark Project Management, utilizing Claude Code to automate development tasks.
+## ✨ v25.0 新功能：统一代码智能层
+v25.0 构建了跨语言、跨仓库的代码智能层，主要特性：
+- **多语言 extractor 矩阵**：Go（gopls LSP）/ TS/TSX / Vue 2.7+/3（volar LSP）/ HTML/CSS 全语言精确解析
+- **Go gin 端点识别**：自动抽取 gin 路由 → `codegraph_endpoint` 表，含 middleware 元数据
+- **跨仓库前后端 API 关联**：前端 axios call site 三步推断 → `CrossRepoApiCall` offline join → 精确连边
+- **3D Galaxy 可视化**：`/codegraph/galaxy` — 银河感 3d-force-graph，5000+ 节点 30 FPS，Cmd+K 搜索 + NodeDetailDrawer
+- **3 个新 MCP Tool**（Phase）：
+ - `find_api_handler(url, method)` — URL → 后端 handler symbol
+ - `find_api_callers(handler_name)` — handler → 前端业务调用点
+ - `list_endpoints(repo_id)` — 列仓库所有 API 端点
+- **HybridSearch wave**：跨仓 API_CALLS 扩散，budget 50/30/20
+> 详细文档：[docs/v25.0-codegraph.md](docs/v25.0-codegraph.md)
+---
 ## 🏗️ Architecture
 This project follows a Monorepo structure, containing independent frontend and backend services:
 - **Frontend (`web/`)**: Vue 3 + TypeScript + Vite
