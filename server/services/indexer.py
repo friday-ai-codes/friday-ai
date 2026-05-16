@@ -1797,6 +1797,38 @@ class IndexerService:
  stats["total_imports"] += result.get("imports", 0)
  stats["total_calls"] += result.get("calls", 0)
  stats["total_endpoints"] += result.get("endpoints", 0)
+ # Phase: 条件追加 Go interface implementation 抽取
+ # 仅当 gopls backend 已启用 + 当前文件为 Go + 有 symbol 时触发
+ from django.conf import settings as _dj_settings # noqa: PLC0415
+ if (
+ language == "go"
+ and getattr(_dj_settings, "GOPLS_BACKEND_ENABLED", False)
+ and bundle.symbols
+ ):
+ try:
+ from pathlib import Path as _Path # noqa: PLC0415
+ from codegraph.lsp.gopls_interface import ( # noqa: PLC0415
+ extract_interface_implementations,
+ )
+ workspace_root_path = _Path(repo_path)
+ impl_data = extract_interface_implementations(
+ workspace_root=workspace_root_path,
+ interface_symbols=bundle.symbols,
+ )
+ if impl_data:
+ logger.info(
+ "gopls_interface_extracted",
+ file_path=file_path,
+ impl_count=len(impl_data),
+ )
+ stats.setdefault("total_interface_impls", 0)
+ stats["total_interface_impls"] += len(impl_data)
+ except Exception as _impl_exc: # noqa: BLE001
+ logger.warning(
+ "gopls_interface_extract_failed",
+ file_path=file_path,
+ error=str(_impl_exc),
+ )
  except Exception as e:
  logger.warning(
  "graph_extraction_failed",
