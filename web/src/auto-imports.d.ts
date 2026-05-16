@@ -217,6 +217,7 @@ declare global {
  const useFps: typeof import('@vueuse/core').useFps
  const useFullscreen: typeof import('@vueuse/core').useFullscreen
  const useGalaxyGraph: typeof import('./composables/useGalaxyGraph').useGalaxyGraph
+ const useGalaxySearch: typeof import('./composables/useGalaxySearch').useGalaxySearch
  const useGamepad: typeof import('@vueuse/core').useGamepad
  const useGeolocation: typeof import('@vueuse/core').useGeolocation
  const useI18n: typeof import('vue-i18n').useI18n
@@ -637,6 +638,7 @@ declare module 'vue' {
  readonly useFps: UnwrapRef<typeof import('@vueuse/core')['useFps']>
  readonly useFullscreen: UnwrapRef<typeof import('@vueuse/core')['useFullscreen']>
  readonly useGalaxyGraph: UnwrapRef<typeof import('./composables/useGalaxyGraph')['useGalaxyGraph']>
+ readonly useGalaxySearch: UnwrapRef<typeof import('./composables/useGalaxySearch')['useGalaxySearch']>
  readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
  readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
  readonly useI18n: UnwrapRef<typeof import('vue-i18n')['useI18n']>

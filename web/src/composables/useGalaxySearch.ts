@@ -1,8 +1,9 @@
+import type { IFuseOptions } from 'fuse.js'
 import type { GalaxyNode, GalaxySearchResult } from '~/api/galaxy'
 import Fuse from 'fuse.js'
 import { ref } from 'vue'
 import { searchGalaxyNodes } from '~/api/galaxy'
-const FUSE_OPTIONS: Fuse.IFuseOptions<GalaxySearchResult> = {
+const FUSE_OPTIONS: IFuseOptions<GalaxySearchResult> = {
  keys: ['label', 'file_path'],
  threshold: 0.4,
  includeScore: true,

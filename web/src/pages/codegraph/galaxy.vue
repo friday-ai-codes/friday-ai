@@ -4,19 +4,24 @@ meta:
  title: Galaxy 代码图谱
 </route>
 <script setup lang="ts">
-import type { GalaxyNode } from '~/api/galaxy'
+import type { GalaxyNode, GalaxySearchResult } from '~/api/galaxy'
 import type { Repository } from '~/types'
 import { repositoriesApi } from '~/api/repositories'
+import GalaxyCommandPalette from '~/components/galaxy/GalaxyCommandPalette.vue'
 import GalaxyControls from '~/components/galaxy/GalaxyControls.vue'
 import GalaxyForceGraph from '~/components/galaxy/GalaxyForceGraph.vue'
 import GalaxyLegend from '~/components/galaxy/GalaxyLegend.vue'
+import NodeDetailDrawer from '~/components/galaxy/NodeDetailDrawer.vue'
 import { useGalaxyGraph } from '~/composables/useGalaxyGraph'
 import { useToast } from '~/composables/useToast'
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 // 备选引擎：lazy import（不增 main bundle）
 const EchartsGraphGl = defineAsyncComponent( =>
  import('~/components/galaxy/EchartsGraphGl.vue'),
 )
+const route = useRoute
+const router = useRouter
 const { warning: toastWarning, error: toastError } = useToast
 const {
  meta,
@@ -52,11 +57,58 @@ watch(lowFpsDetected, (val) => {
  toastWarning('帧率较低', '检测到帧率持续 < 30 FPS，建议切换到 ECharts 高性能模式 ⚡')
  }
 })
-// node-click：占位（Phase NodeDetailDrawer 接力）
-function handleNodeClick(node: GalaxyNode) {
- // TODO Phase: open NodeDetailDrawer with node details
- console.info('[Galaxy] node-click', node.id, node.type)
+// ============================================================================
+// Phase: NodeDetailDrawer + CommandPalette 状态
+// ============================================================================
+const graphRef = ref<InstanceType<typeof GalaxyForceGraph> | null>(null)
+const selectedNodeId = ref<string | null>(null)
+const drawerOpen = ref(false)
+const commandPaletteOpen = ref(false)
+function openNode(nodeId: string) {
+ selectedNodeId.value = nodeId
+ drawerOpen.value = true
+ router.replace({ query: { ...route.query, node: nodeId } })
+ // 中心化定位（需等 tick 后 graphRef 可能已就绪）
+ nextTick( => {
+ graphRef.value?.focusNode(nodeId)
+ })
 }
+function handleNodeClick(node: GalaxyNode) {
+ openNode(node.id)
+}
+function handleCommandPaletteSelect(result: GalaxySearchResult) {
+ openNode(result.id)
+}
+function handleDrawerClose(open: boolean) {
+ if (!open) {
+ drawerOpen.value = false
+ router.replace({ query: { ...route.query, node: undefined } })
+ }
+}
+function handleDrawerNodeSelect(nodeId: string) {
+ openNode(nodeId)
+}
+// 页面加载时读取 ?node= 参数，数据就绪后自动打开 Drawer
+const urlNodeHandled = ref(false)
+watch(filteredNodes, (nodes) => {
+ if (urlNodeHandled.value || nodes.length === 0) return
+ const urlNode = route.query.node as string | undefined
+ if (urlNode) {
+ urlNodeHandled.value = true
+ openNode(urlNode)
+ }
+})
+// Phase 测试钩子：暴露关键函数以便集成测试通过 vm 直接调用
+defineExpose({
+ openNode,
+ handleNodeClick,
+ handleCommandPaletteSelect,
+ handleDrawerClose,
+ handleDrawerNodeSelect,
+ drawerOpen,
+ selectedNodeId,
+ commandPaletteOpen,
+})
 async function loadRepositories {
  repositoriesLoading.value = true
  try {
@@ -156,7 +208,8 @@ onMounted( => {
  >
  <!-- 渲染引擎 -->
  <GalaxyForceGraph
- v-if="renderMode === 'force3d'":nodes="filteredNodes":edges="filteredEdges":loading="loading"
+ v-if="renderMode === 'force3d'"
+ ref="graphRef":nodes="filteredNodes":edges="filteredEdges":loading="loading"
  class="w-full h-full"
  @node-click="handleNodeClick"
  @fps-update="onFpsUpdate"
@@ -201,8 +254,25 @@ onMounted( => {
  <div class="absolute bottom-4 left-4 z-10">
  <GalaxyLegend />
  </div>
+ <!-- Cmd+K 快捷键提示（左上角，半透明） -->
+ <div class="absolute top-4 left-4 z-10">
+ <div class="glass-card rounded-lg px-3 py-1.5 text-white/30 text-xs flex items-center gap-1.5">
+ <kbd class="font-mono text-[10px]">⌘K</kbd>
+ <span>搜索节点</span>
+ </div>
+ </div>
  </div>
  </template>
+ <!-- Phase: Cmd+K 全局搜索面板 -->
+ <GalaxyCommandPalette
+ v-model="commandPaletteOpen":nodes="filteredNodes"
+ @node-select="handleCommandPaletteSelect"
+ />
+ <!-- Phase: 节点详情 Drawer -->
+ <NodeDetailDrawer:node-id="selectedNodeId":model-value="drawerOpen"
+ @update:model-value="handleDrawerClose"
+ @node-select="handleDrawerNodeSelect"
+ />
  </div>
 </template>
 <style scoped>
