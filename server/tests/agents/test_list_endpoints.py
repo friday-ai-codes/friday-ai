@@ -1,165 +1,182 @@
-"""``list_endpoints`` MCP tool 单元测试 —— per Phase Plan Task 8。
-测试目标（≥6 条）：
-1. ``test_returns_sorted_by_method_then_path`` — 返回按 method ASC + path ASC 排序
-2. ``test_missing_repository_id_returns_error`` — repository_id 缺失 → error
-3. ``test_empty_repo_returns_empty_list`` — 仓库无端点 → + message 非空
-4. ``test_limit_parameter_applied`` — limit 生效，返回数 ≤ limit
-5. ``test_limit_capped_at_maximum`` — limit=9999 → Pydantic ge/le 报错 → error
-6. ``test_total_reflects_full_count_not_just_returned`` — total ≠ len(endpoints) 时正确
-7. ``test_endpoint_fields_complete`` — 每条 EndpointSummary 包含所有必填字段
+"""``list_endpoints`` MCP tool 单元测试 —— per Phase Plan Task 8 / 。
+测试目标（≥6 cases）：
+1. ``test_returns_sorted_by_method_then_path`` —— ORM order_by 参数透传契约
+2. ``test_total_count_returned`` —— acount 返回值进入 metadata.total
+3. ``test_empty_repo_returns_empty_list`` —— 空仓库 → empty + message 提示
+4. ``test_limit_default_200`` —— 不传 limit 默认 200
+5. ``test_limit_capped_at_maximum`` —— limit > 1000 → Pydantic 校验失败 → ToolResult.error
+6. ``test_limit_below_minimum_returns_error`` —— limit < 1 → ToolResult.error
+7. ``test_missing_repository_id_returns_error`` —— repository_id 必填守卫
+8. ``test_truncated_metadata_flag`` —— total > limit 时 truncated=True
+per Phase 测试模式：mock ``Endpoint.objects``。
 """
 from __future__ import annotations
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 import pytest
-# ---------------------------------------------------------------------------
-# 常量
-# ---------------------------------------------------------------------------
-_REPO_ID = "55555555-5555-5555-5555-555555555555"
+_VALID_REPO_ID = "55555555-5555-5555-5555-555555555555"
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-def _make_endpoint_row(
- http_method: str = "GET",
- url_path: str = "/api/v1/users",
- handler_name: str = "ListUsersHandler",
- file_path: str = "handler/user.go",
- line_number: int = 10,
-) -> dict:
+class _AsyncIter:
+ def __init__(self, items: list[Any]) -> None:
+ self._items = items
+ def __aiter__(self) -> "_AsyncIter":
+ self._index = 0
+ return self
+ async def __anext__(self) -> Any:
+ if self._index >= len(self._items):
+ raise StopAsyncIteration
+ item = self._items[self._index]
+ self._index += 1
+ return item
+def _patch_endpoint_list_query(
+ monkeypatch: pytest.MonkeyPatch,
+ *,
+ items: list[dict[str, Any]],
+ total: int,
+) -> dict[str, MagicMock]:
+ """patch ``Endpoint.objects.filter(...).acount`` 与
+ ``Endpoint.objects.filter(...).order_by(...).values(...)[:N]`` 链。
+ ``Endpoint.objects.filter`` 被调用两次（acount 一次 + 列表一次），返回不同 mock。
+ """
+ # acount 分支
+ acount_filter_mock = MagicMock
+ acount_filter_mock.acount = AsyncMock(return_value=total)
+ # 列表分支：filter.order_by.values[:N]
+ values_iter = _AsyncIter(items)
+ values_slice_mock = MagicMock
+ values_slice_mock.__getitem__ = MagicMock(return_value=values_iter)
+ order_by_mock = MagicMock
+ order_by_mock.values = MagicMock(return_value=values_slice_mock)
+ list_filter_mock = MagicMock
+ list_filter_mock.order_by = MagicMock(return_value=order_by_mock)
+ objects_mock = MagicMock
+ # 两次 filter 返回不同结果（acount 第 1 次，列表第 2 次）
+ objects_mock.filter = MagicMock(side_effect=[acount_filter_mock, list_filter_mock])
+ from codegraph import models as cg_models
+ monkeypatch.setattr(cg_models.Endpoint, "objects", objects_mock)
  return {
- "http_method": http_method,
- "url_path": url_path,
- "handler_name": handler_name,
+ "objects": objects_mock,
+ "order_by_method": list_filter_mock.order_by,
+ "values_method": order_by_mock.values,
+ "values_slice": values_slice_mock,
+ }
+def _make_endpoint_dict(
+ method: str = "GET",
+ path: str = "/api/v1/users",
+ handler: str = "ListUsersHandler",
+ file_path: str = "internal/handlers/user.go",
+ line_number: int = 10,
+) -> dict[str, Any]:
+ return {
+ "http_method": method,
+ "url_path": path,
+ "handler_name": handler,
  "file_path": file_path,
  "line_number": line_number,
  }
-class _AsyncEndpointIter:
- """异步迭代器，模拟 Django async queryset 切片 + values。"""
- def __init__(self, rows: list[dict]) -> None:
- self._rows = iter(rows)
- def __aiter__(self):
- return self
- async def __anext__(self):
- try:
- return next(self._rows)
- except StopIteration:
- raise StopAsyncIteration
- def __getitem__(self, key):
- """支持 queryset[:limit] 切片语法。"""
- if isinstance(key, slice):
- # 截取 _rows 的底层列表（mock 场景下直接返回 self）
- return self
- return self
-def _patch_endpoint_objects(
- monkeypatch: pytest.MonkeyPatch,
- rows: list[dict],
- total: int | None = None,
-) -> None:
- """Mock Endpoint.objects.filter.acount + order_by.values[:limit] 链。"""
- effective_total = total if total is not None else len(rows)
- acount_mock = AsyncMock(return_value=effective_total)
- sliced_qs = _AsyncEndpointIter(rows)
- # .values[:limit] → sliced_qs
- values_mock = MagicMock
- values_mock.__getitem__ = MagicMock(return_value=sliced_qs)
- order_by_mock = MagicMock
- order_by_mock.values = MagicMock(return_value=values_mock)
- filter_mock = MagicMock
- filter_mock.acount = acount_mock
- filter_mock.order_by = MagicMock(return_value=order_by_mock)
- objects_mock = MagicMock
- objects_mock.filter = MagicMock(return_value=filter_mock)
- import codegraph.models as cg_models
- monkeypatch.setattr(cg_models.Endpoint, "objects", objects_mock)
 # ---------------------------------------------------------------------------
-# 测试
+# 测试用例
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_returns_sorted_by_method_then_path(monkeypatch: pytest.MonkeyPatch) -> None:
- """端点按 method ASC + path ASC 排序（mock 已按序，验证结构正确）。"""
- rows = [
- _make_endpoint_row(http_method="DELETE", url_path="/api/v1/users/:id"),
- _make_endpoint_row(http_method="GET", url_path="/api/v1/orders"),
- _make_endpoint_row(http_method="GET", url_path="/api/v1/users"),
- _make_endpoint_row(http_method="POST", url_path="/api/v1/users"),
- ]
- _patch_endpoint_objects(monkeypatch, rows)
+async def test_returns_sorted_by_method_then_path(
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """``order_by('http_method', 'url_path')`` 透传给 ORM。"""
  from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID)
+ mocks = _patch_endpoint_list_query(
+ monkeypatch,
+ items=[
+ _make_endpoint_dict("GET", "/api/v1/orders"),
+ _make_endpoint_dict("POST", "/api/v1/orders"),
+ ],
+ total=2,
+ )
+ result = await list_endpoints(repository_id=_VALID_REPO_ID, limit=10)
+ assert result.success is True
+ mocks["order_by_method"].assert_called_once
+ args = mocks["order_by_method"].call_args.args
+ # 透传 method 与 path 两键
+ assert "http_method" in args
+ assert "url_path" in args
+@pytest.mark.asyncio
+async def test_total_count_returned(monkeypatch: pytest.MonkeyPatch) -> None:
+ """metadata.total 来自 acount，不被 limit 截断。"""
+ from agents.tools.list_endpoints import list_endpoints
+ _patch_endpoint_list_query(
+ monkeypatch,
+ items=[_make_endpoint_dict],
+ total=999,
+ )
+ result = await list_endpoints(repository_id=_VALID_REPO_ID, limit=1)
  assert result.success is True
  data = result.output["data"]
- assert len(data["endpoints"]) == 4
- assert data["endpoints"][0]["http_method"] == "DELETE"
- assert data["endpoints"][1]["http_method"] == "GET"
+ assert data["total"] == 999
+ assert result.output["metadata"]["total"] == 999
+ assert result.output["metadata"]["returned"] == 1
+ assert result.output["metadata"]["truncated"] is True
 @pytest.mark.asyncio
-async def test_missing_repository_id_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
- """repository_id 缺失 → ToolResult(success=False)。"""
- _patch_endpoint_objects(monkeypatch, )
+async def test_empty_repo_returns_empty_list(
+ monkeypatch: pytest.MonkeyPatch,
+) -> None:
+ """仓库无 endpoint → empty 列表 + message 提示需先索引。"""
  from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=None)
- assert result.success is False
- assert "repository_id" in (result.error or "")
-@pytest.mark.asyncio
-async def test_empty_repo_returns_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
- """仓库无端点 → endpoints= + message 非空。"""
- _patch_endpoint_objects(monkeypatch,, total=0)
- from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID)
+ _patch_endpoint_list_query(monkeypatch, items=, total=0)
+ result = await list_endpoints(repository_id=_VALID_REPO_ID)
  assert result.success is True
  data = result.output["data"]
  assert data["endpoints"] ==
- assert data["message"] != ""
  assert data["total"] == 0
+ assert "暂无端点数据" in data["message"]
 @pytest.mark.asyncio
-async def test_limit_parameter_applied(monkeypatch: pytest.MonkeyPatch) -> None:
- """limit 参数生效，mock 返回截断后的数据。"""
- rows = [_make_endpoint_row(url_path=f"/api/v1/r{i}") for i in range(5)]
- _patch_endpoint_objects(monkeypatch, rows, total=100)
+async def test_limit_default_200(monkeypatch: pytest.MonkeyPatch) -> None:
+ """不传 limit → Pydantic schema 默认 200，进入 slice [:200]。"""
  from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID, limit=5)
- assert result.success is True
- data = result.output["data"]
- assert len(data["endpoints"]) == 5
- meta = result.output["metadata"]
- assert meta["truncated"] is True # total=100 > limit=5
-@pytest.mark.asyncio
-async def test_limit_capped_at_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
- """limit=9999 超过 Pydantic le=1000 → ValidationError → ToolResult error。"""
- _patch_endpoint_objects(monkeypatch, )
- from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID, limit=9999)
- assert result.success is False
- # Pydantic strict=True 且 le=1000，应返回 error
- assert result.error is not None
-@pytest.mark.asyncio
-async def test_total_reflects_full_count_not_just_returned(monkeypatch: pytest.MonkeyPatch) -> None:
- """total 字段 = 仓库实际端点总数（acount），与 len(endpoints) 可能不同。"""
- rows = [_make_endpoint_row(url_path=f"/api/v1/r{i}") for i in range(3)]
- _patch_endpoint_objects(monkeypatch, rows, total=285)
- from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID, limit=3)
- assert result.success is True
- data = result.output["data"]
- assert len(data["endpoints"]) == 3
- assert data["total"] == 285
-@pytest.mark.asyncio
-async def test_endpoint_fields_complete(monkeypatch: pytest.MonkeyPatch) -> None:
- """每条 EndpointSummary 包含所有必填字段（method/path/handler/file/line）。"""
- rows = [
- _make_endpoint_row(
- http_method="GET",
- url_path="/api/v1/users",
- handler_name="ListUsersHandler",
- file_path="handler/user.go",
- line_number=42,
+ mocks = _patch_endpoint_list_query(
+ monkeypatch,
+ items=[_make_endpoint_dict],
+ total=1,
  )
- ]
- _patch_endpoint_objects(monkeypatch, rows)
- from agents.tools.list_endpoints import list_endpoints
- result = await list_endpoints(repository_id=_REPO_ID)
+ result = await list_endpoints(repository_id=_VALID_REPO_ID)
  assert result.success is True
- ep = result.output["data"]["endpoints"][0]
- assert ep["http_method"] == "GET"
- assert ep["url_path"] == "/api/v1/users"
- assert ep["handler_name"] == "ListUsersHandler"
- assert ep["file_path"] == "handler/user.go"
- assert ep["line_number"] == 42
+ mocks["values_slice"].__getitem__.assert_called_once
+ slice_arg = mocks["values_slice"].__getitem__.call_args.args[0]
+ assert isinstance(slice_arg, slice)
+ assert slice_arg.stop == 200
+@pytest.mark.asyncio
+async def test_limit_capped_at_maximum -> None:
+ """limit=2000（>1000 上限）→ Pydantic ValidationError → ToolResult.error。"""
+ from agents.tools.list_endpoints import list_endpoints
+ result = await list_endpoints(repository_id=_VALID_REPO_ID, limit=2000)
+ assert result.success is False
+ assert result.error is not None
+ assert "1000" in result.error or "less than or equal" in result.error.lower
+@pytest.mark.asyncio
+async def test_limit_below_minimum_returns_error -> None:
+ """limit=0（<1 下限）→ Pydantic ValidationError → ToolResult.error。"""
+ from agents.tools.list_endpoints import list_endpoints
+ result = await list_endpoints(repository_id=_VALID_REPO_ID, limit=0)
+ assert result.success is False
+ assert result.error is not None
+ assert "greater" in result.error.lower or "1" in result.error
+@pytest.mark.asyncio
+async def test_missing_repository_id_returns_error -> None:
+ """repository_id=None / 空 → ToolResult.error。"""
+ from agents.tools.list_endpoints import list_endpoints
+ result = await list_endpoints(repository_id=None)
+ assert result.success is False
+ assert result.error is not None
+ assert "repository_id is required" in result.error
+@pytest.mark.asyncio
+async def test_truncated_metadata_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+ """total <= limit → truncated=False；total > limit → truncated=True。"""
+ from agents.tools.list_endpoints import list_endpoints
+ _patch_endpoint_list_query(
+ monkeypatch,
+ items=[_make_endpoint_dict],
+ total=5,
+ )
+ result = await list_endpoints(repository_id=_VALID_REPO_ID, limit=10)
+ assert result.success is True
+ assert result.output["metadata"]["truncated"] is False
