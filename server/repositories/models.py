@@ -232,6 +232,16 @@ class IndexHistory(models.Model):
  null=True,
  help_text="最近一次 payload.related_chunks 同步完成时间",
  )
+ # Phase：跨仓 API join 可观测字段
+ cross_repo_match_count = models.PositiveIntegerField(
+ default=0,
+ help_text="最近一次 cross_repo offline join 产生的匹配记录总数",
+ )
+ cross_repo_built_at = models.DateTimeField(
+ blank=True,
+ null=True,
+ help_text="最近一次 cross_repo offline join 完成时间",
+ )
  started_at = models.DateTimeField(blank=True, null=True)
  finished_at = models.DateTimeField(blank=True, null=True)
  created_at = models.DateTimeField(auto_now_add=True)
