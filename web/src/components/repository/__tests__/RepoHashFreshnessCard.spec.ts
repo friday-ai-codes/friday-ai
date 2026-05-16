@@ -411,4 +411,52 @@ describe('repoHashFreshnessCard', => {
  }
  })
  })
+ // ---------------------------------------------------------------------------
+ // Phase: 跨仓 API 匹配段测试
+ // ---------------------------------------------------------------------------
+ describe('Phase: 跨仓 API 匹配段', => {
+ it('14: cross_repo_built_at=null → 跨仓段不渲染', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue(
+ makeGraphHistoryResponse(makeGraphHistoryItem({
+ graph_build_status: 'completed',
+ cross_repo_built_at: null,
+ cross_repo_match_count: 0,
+ })),
+ )
+ const wrapper = mountCard
+ await flushPromises
+ // GraphRAG 段存在，但跨仓段不显示
+ expect(wrapper.text).toContain('GraphRAG 状态')
+ expect(wrapper.text).not.toContain('跨仓 API 匹配')
+ })
+ it('15: cross_repo_built_at 非 null → 跨仓段渲染含匹配数', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue(
+ makeGraphHistoryResponse(makeGraphHistoryItem({
+ graph_build_status: 'completed',
+ cross_repo_built_at: '2026-05-16T10:00:00Z',
+ cross_repo_match_count: 42,
+ })),
+ )
+ const wrapper = mountCard
+ await flushPromises
+ expect(wrapper.text).toContain('跨仓 API 匹配')
+ expect(wrapper.text).toContain('42')
+ expect(wrapper.text).toContain('个匹配')
+ })
+ it('16: cross_repo_match_count=0 + built_at 非 null → 显示 0 个匹配', async => {
+ vi.mocked(repositoriesApi.getIndexHistory).mockResolvedValue(
+ makeGraphHistoryResponse(makeGraphHistoryItem({
+ graph_build_status: 'completed',
+ cross_repo_built_at: '2026-05-16T10:00:00Z',
+ cross_repo_match_count: 0,
+ })),
+ )
+ const wrapper = mountCard
+ await flushPromises
+ expect(wrapper.text).toContain('跨仓 API 匹配')
+ // 0 匹配时不省略，仍显示 "0 个匹配"
+ expect(wrapper.text).toContain('0')
+ expect(wrapper.text).toContain('个匹配')
+ })
+ })
 })
