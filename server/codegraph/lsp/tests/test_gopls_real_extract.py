@@ -125,3 +125,38 @@ class TestGoplsRealExtract:
  request.addfinalizer(
  lambda: supervisor.call_async_in_loop(supervisor.stop, timeout=5.0)
  )
+class TestGoplsPhaseSettings:
+ """Phase: settings 切换验证（不需 gopls binary，非 integration）。"""
+ def test_extractor_backends_go_is_gopls(self) -> None:
+ """EXTRACTOR_BACKENDS["go"] 已切为 "gopls"（Phase）。"""
+ from django.conf import settings
+ assert settings.EXTRACTOR_BACKENDS.get("go") == "gopls", (
+ f"期望 'gopls'，实际 '{settings.EXTRACTOR_BACKENDS.get('go')}'"
+ )
+ def test_gopls_backend_enabled_is_true(self) -> None:
+ """GOPLS_BACKEND_ENABLED == True（Phase 已切换）。"""
+ from django.conf import settings
+ assert getattr(settings, "GOPLS_BACKEND_ENABLED", False) is True, (
+ "GOPLS_BACKEND_ENABLED 应为 True，请检查 settings.py"
+ )
+@pytest.mark.skipif(
+ _GOPLS_BIN is None,
+ reason="gopls 未在 PATH（measure_go_call_completeness 需真实 gopls）",
+)
+class TestMeasureGoCallCompletenessCommand:
+ """Phase: measure_go_call_completeness command 可调用验证（@integration）。"""
+ def test_command_importable(self) -> None:
+ """measure_go_call_completeness.py 可 import，Command 类存在。"""
+ from codegraph.management.commands.measure_go_call_completeness import Command
+ cmd = Command
+ assert hasattr(cmd, "handle")
+ assert hasattr(cmd, "add_arguments")
+ def test_ground_truth_csv_exists(self) -> None:
+ """go_call_ground_truth.csv fixture 存在且有数据行。"""
+ import csv
+ from pathlib import Path
+ csv_path = Path(__file__).parent.parent.parent / "management" / "fixtures" / "go_call_ground_truth.csv"
+ assert csv_path.exists, f"CSV 不存在：{csv_path}"
+ with open(csv_path, newline="", encoding="utf-8") as f:
+ rows = [r for r in csv.reader(filter(lambda row: not row.startswith("#"), f))]
+ assert len(rows) >= 2, "CSV 应有 ≥ 1 数据行（不含 header）"

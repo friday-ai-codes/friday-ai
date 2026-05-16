@@ -1,0 +1,25 @@
+# Ground truth CSV for measure_go_call_completeness command
+# Fields: file (relative to repo root), line, caller_symbol, callee_symbol, expected_callee_file
+# Source: study-course Go gin project (study-course by guanghe)
+# Update with real paths from actual study-course repo before running integration test
+file,line,caller_symbol,callee_symbol,expected_callee_file
+handlers/course_handler.go,42,GetCourseList,CourseService.GetList,services/course_service.go
+handlers/course_handler.go,58,GetCourseDetail,CourseService.GetDetail,services/course_service.go
+handlers/course_handler.go,75,CreateCourse,CourseService.Create,services/course_service.go
+handlers/user_handler.go,31,Login,UserService.Login,services/user_service.go
+handlers/user_handler.go,45,GetProfile,UserService.GetProfile,services/user_service.go
+handlers/user_handler.go,62,UpdateProfile,UserService.Update,services/user_service.go
+handlers/order_handler.go,28,CreateOrder,OrderService.Create,services/order_service.go
+handlers/order_handler.go,44,GetOrderList,OrderService.GetList,services/order_service.go
+services/course_service.go,67,GetList,CourseRepository.FindAll,repositories/course_repo.go
+services/course_service.go,89,GetDetail,CourseRepository.FindByID,repositories/course_repo.go
+services/course_service.go,105,Create,CourseRepository.Create,repositories/course_repo.go
+services/user_service.go,44,Login,UserRepository.FindByEmail,repositories/user_repo.go
+services/user_service.go,71,GetProfile,UserRepository.FindByID,repositories/user_repo.go
+services/user_service.go,88,Update,UserRepository.Update,repositories/user_repo.go
+services/order_service.go,38,Create,OrderRepository.Create,repositories/order_repo.go
+services/order_service.go,55,GetList,OrderRepository.FindByUserID,repositories/order_repo.go
+repositories/course_repo.go,25,FindAll,db.Query,database/db.go
+repositories/course_repo.go,43,FindByID,db.QueryRow,database/db.go
+repositories/user_repo.go,30,FindByEmail,db.QueryRow,database/db.go
+repositories/user_repo.go,48,FindByID,db.QueryRow,database/db.go
