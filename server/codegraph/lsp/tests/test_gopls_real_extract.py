@@ -4,12 +4,14 @@
  pytest -m integration codegraph/lsp/tests/test_gopls_real_extract.py
 """
 from __future__ import annotations
+import os
 import shutil
 from pathlib import Path
 import pytest
 pytestmark = pytest.mark.integration
 _GOPLS_BIN: str | None = shutil.which("gopls")
-_STUDY_COURSE: Path = Path("/Users/zaneliu/Projects/guanghe/study-course")
+_STUDY_COURSE_DEFAULT = "/Users/zaneliu/Projects/guanghe/study-course"
+_STUDY_COURSE: Path = Path(os.environ.get("GOPLS_TEST_REPO", _STUDY_COURSE_DEFAULT))
 _STUDY_COURSE_GOMOD: Path = _STUDY_COURSE / "go.mod"
 @pytest.mark.skipif(
  _GOPLS_BIN is None,
@@ -32,7 +34,12 @@ class TestGoplsRealExtract:
  def test_gopls_extract_symbols_from_real_go_file(
  self, request: pytest.FixtureRequest
  ) -> None:
- """真实 gopls 抽 study-course 1 个 .go 文件的 SymbolData（≥ 1 symbol）。"""
+ """验证 _GoplsLazyInstance fallback 链完整性：supervisor 注入后 parse_file
+ 返 handle → _lsp_extract_symbols raise → tree-sitter fallback → ≥ 1 symbol。
+ NOTE: 此测试实际执行的是 tree-sitter fallback，并非 gopls 直接抽取。
+ Phase 切真实 per-file supervisor 注入后，此测试需重写为
+ 直接调 _GoplsLazyBackend._lsp_extract_symbols 验证 gopls 抽取路径。
+ """
  import services.background_runner as _bg
  _bg._ensure_worker_loop
  from codegraph.extractors.base import FileContext
@@ -74,7 +81,13 @@ class TestGoplsRealExtract:
  def test_gopls_extract_imports_resolves_paths(
  self, request: pytest.FixtureRequest
  ) -> None:
- """真实 gopls 抽 study-course 1 个文件的 ImportData（advisory：imports ≥ 1）。"""
+ """验证 _GoplsLazyInstance fallback 链完整性（imports 路径）：
+ supervisor 注入后 parse_file 返 handle → _lsp_extract_imports raise
+ → tree-sitter fallback → ≥ 1 ImportData。
+ NOTE: 此测试实际执行的是 tree-sitter fallback，并非 gopls 直接抽取。
+ Phase 切真实 per-file supervisor 注入后，此测试需重写为
+ 直接调 _GoplsLazyBackend._lsp_extract_imports 验证 gopls 抽取路径。
+ """
  import services.background_runner as _bg
  _bg._ensure_worker_loop
  from codegraph.extractors.base import FileContext
