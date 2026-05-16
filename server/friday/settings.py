@@ -365,7 +365,7 @@ CODE_INTELLIGENCE_PROVIDER: str = env.str(
 # 默认全 tree_sitter；Stage B/C 完成后可覆盖为 "vue": "volar", "go": "gopls"
 EXTRACTOR_BACKENDS: dict[str, str] = {
  "python": "tree_sitter",
- "go": "tree_sitter", # Phase 切 gopls 时改 "gopls"
+ "go": "gopls", # Phase 已切换（原 tree_sitter）
  "typescript": "volar", # Phase 切（原 tree_sitter）
  "tsx": "volar", # Phase 切
  "vue": "volar", # Phase 切
@@ -453,8 +453,8 @@ VOLAR_BACKEND_ENABLED: bool = env.bool("VOLAR_BACKEND_ENABLED", default=True)
 # =============================================================================
 # Phase：gopls backend 运维 kill-switch
 # 默认 False —— Phase 仅落基础设施，不切 BACKEND_REGISTRY["go"]
-# Phase 切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=True
-GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=False)
+# Phase 已切 True 完成 Stage C 切换；可 env 覆盖：GOPLS_BACKEND_ENABLED=False
+GOPLS_BACKEND_ENABLED: bool = env.bool("GOPLS_BACKEND_ENABLED", default=True)
 # =============================================================================
 # APScheduler Settings
 # =============================================================================

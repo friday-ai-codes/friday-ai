@@ -30,6 +30,12 @@ class CodegraphConfig(AppConfig):
  默认 False —— Phase 仅落基础设施不切 BACKEND_REGISTRY["go"]。
  Phase 切 True 完成 Stage C 切换。
  """
+ import structlog as _structlog
  from codegraph.extractors.registry import register_backend
  from codegraph.lsp.gopls_backend import make_gopls_backend
  register_backend("go", make_gopls_backend("go"))
+ _structlog.get_logger(__name__).info(
+ "go_backend_switched",
+ backend="gopls",
+ phase=268,
+ )
