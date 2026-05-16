@@ -216,6 +216,7 @@ declare global {
  const useFocusWithin: typeof import('@vueuse/core').useFocusWithin
  const useFps: typeof import('@vueuse/core').useFps
  const useFullscreen: typeof import('@vueuse/core').useFullscreen
+ const useGalaxyGraph: typeof import('./composables/useGalaxyGraph').useGalaxyGraph
  const useGamepad: typeof import('@vueuse/core').useGamepad
  const useGeolocation: typeof import('@vueuse/core').useGeolocation
  const useI18n: typeof import('vue-i18n').useI18n
@@ -379,6 +380,9 @@ declare global {
  export type { SourceChunk, DiffusionHop, DiffusionNodeData, DiffusionEdgeData } from './composables/useDiffusionGraph'
  import('./composables/useDiffusionGraph')
  // @ts-ignore
+ export type { GalaxyRenderMode } from './composables/useGalaxyGraph'
+ import('./composables/useGalaxyGraph')
+ // @ts-ignore
  export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
  import('./composables/useIndexProgressStream')
  // @ts-ignore
@@ -439,6 +443,7 @@ declare module 'vue' {
  readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
  readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
  readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
+ readonly createDisposableDirective: UnwrapRef<typeof import('@vueuse/core')['createDisposableDirective']>
  readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
  readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
  readonly createInjectionState: UnwrapRef<typeof import('@vueuse/core')['createInjectionState']>
@@ -526,7 +531,6 @@ declare module 'vue' {
  readonly refThrottled: UnwrapRef<typeof import('@vueuse/core')['refThrottled']>
  readonly refWithControl: UnwrapRef<typeof import('@vueuse/core')['refWithControl']>
  readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
- readonly resolveRef: UnwrapRef<typeof import('@vueuse/core')['resolveRef']>
  readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
  readonly setMapStoreSuffix: UnwrapRef<typeof import('pinia')['setMapStoreSuffix']>
  readonly shallowReactive: UnwrapRef<typeof import('vue')['shallowReactive']>
@@ -591,6 +595,7 @@ declare module 'vue' {
  readonly useCountdown: UnwrapRef<typeof import('@vueuse/core')['useCountdown']>
  readonly useCounter: UnwrapRef<typeof import('@vueuse/core')['useCounter']>
  readonly useCssModule: UnwrapRef<typeof import('vue')['useCssModule']>
+ readonly useCssSupports: UnwrapRef<typeof import('@vueuse/core')['useCssSupports']>
  readonly useCssVar: UnwrapRef<typeof import('@vueuse/core')['useCssVar']>
  readonly useCssVars: UnwrapRef<typeof import('vue')['useCssVars']>
  readonly useCurrentElement: UnwrapRef<typeof import('@vueuse/core')['useCurrentElement']>
@@ -631,6 +636,7 @@ declare module 'vue' {
  readonly useFocusWithin: UnwrapRef<typeof import('@vueuse/core')['useFocusWithin']>
  readonly useFps: UnwrapRef<typeof import('@vueuse/core')['useFps']>
  readonly useFullscreen: UnwrapRef<typeof import('@vueuse/core')['useFullscreen']>
+ readonly useGalaxyGraph: UnwrapRef<typeof import('./composables/useGalaxyGraph')['useGalaxyGraph']>
  readonly useGamepad: UnwrapRef<typeof import('@vueuse/core')['useGamepad']>
  readonly useGeolocation: UnwrapRef<typeof import('@vueuse/core')['useGeolocation']>
  readonly useI18n: UnwrapRef<typeof import('vue-i18n')['useI18n']>
