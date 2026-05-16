@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 from django.db import transaction
 from codegraph.cross_repo.path_normalizer import normalize_url_path
-from codegraph.models import ApiWrapper, CrossRepoApiCall, Endpoint
+from codegraph.models import ApiCallSite, ApiWrapper, CrossRepoApiCall, Endpoint
 if TYPE_CHECKING:
  from django.db.models import QuerySet
 logger = structlog.get_logger(__name__)
@@ -77,6 +77,9 @@ def build_cross_repo_matches(
  wrappers: "QuerySet[ApiWrapper] | None" = None,
 ) -> list[CrossRepoApiCall]:
  """构建 CrossRepoApiCall 记录列表（未写入 DB）。
+ 分两阶段，避免 Django 4.1+ 中 prefetch_related + iterator 冲突（ValueError）：
+ 1. 预先构建 wrapper_id → [call_site_id] dict（单次 DB 查询）
+ 2. 遍历 ApiWrapper（iterator，无 prefetch），用 dict 查 call_sites
  Args:
  ep_map: build_endpoint_map 返回的 dict
  wrappers: 可选的 ApiWrapper queryset，默认全量
@@ -85,22 +88,32 @@ def build_cross_repo_matches(
  """
  if wrappers is None:
  wrappers = ApiWrapper.objects.all
+ # 阶段1：预建 wrapper_id → [call_site_id] dict（一次 DB 查询）
+ wrapper_ids = list(wrappers.values_list("id", flat=True))
+ call_site_map: dict[str, list[str]] = defaultdict(list)
+ for row in (
+ ApiCallSite.objects.filter(api_wrapper_id__in=wrapper_ids)
+ .values("id", "api_wrapper_id")
+ .iterator(chunk_size=1000)
+ ):
+ call_site_map[str(row["api_wrapper_id"])].append(str(row["id"]))
+ # 阶段2：遍历 ApiWrapper，查 ep_map + call_site_map 构建 CrossRepoApiCall
  records: list[CrossRepoApiCall] =
  wrapper_count = 0
  for wrapper in (
  wrappers
- .prefetch_related("call_sites")
  .only("id", "http_method", "url_path_pattern")
  .iterator(chunk_size=500)
  ):
  wrapper_count += 1
  norm_path = normalize_url_path(wrapper.url_path_pattern)
  matches = _match_endpoint(norm_path, wrapper.http_method, ep_map)
- for call_site in wrapper.call_sites.only("id").all:
+ cs_ids = call_site_map.get(str(wrapper.id), )
+ for cs_id in cs_ids:
  for ep_id, confidence in matches:
  records.append(
  CrossRepoApiCall(
- call_site_id=call_site.id,
+ call_site_id=cs_id,
  endpoint_id=ep_id,
  match_confidence=confidence,
  )
