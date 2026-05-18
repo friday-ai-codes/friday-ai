@@ -1035,6 +1035,25 @@ class IndexerService:
  # _should_build_graph 走 fallback 查 RUNNING）。
  if files_to_index and await self._should_build_graph(None):
  graph_files = [d.file_path for d in files_to_index]
+ # Phase GRAPH-：先按 deleted_file_paths 清图谱孤儿数据
+ # （Symbol / ImportEdge / Endpoint 三件套），再写新图谱避免孤儿过渡态。
+ deleted_file_paths = [
+ d.file_path for d in diffs if d.action == DiffAction.DELETE
+ ]
+ if deleted_file_paths:
+ self._init_graph_services
+ if self._graph_writer is not None:
+ try:
+ await self._graph_writer.adelete_for_files(
+ str(self.repository_id), deleted_file_paths
+ )
+ except Exception:
+ logger.warning(
+ "graph_orphan_cleanup_failed",
+ repository_id=str(self.repository_id),
+ deleted_count=len(deleted_file_paths),
+ exc_info=True,
+ )
  await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
@@ -1377,6 +1396,22 @@ class IndexerService:
  graph_files = [d.file_path for d in files_to_index]
  if graph_files and await self._should_build_graph(history_id):
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
+ # Phase GRAPH-：先按 deleted_file_paths 清孤儿（git_diff 路径
+ # 的 deleted_file_paths 已在 line ~1210 提早计算好）。
+ if deleted_file_paths:
+ self._init_graph_services
+ if self._graph_writer is not None:
+ try:
+ await self._graph_writer.adelete_for_files(
+ str(self.repository_id), deleted_file_paths
+ )
+ except Exception:
+ logger.warning(
+ "graph_orphan_cleanup_failed",
+ repository_id=str(self.repository_id),
+ deleted_count=len(deleted_file_paths),
+ exc_info=True,
+ )
  try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -1657,6 +1692,24 @@ class IndexerService:
  if files_to_index and await self._should_build_graph(history_id):
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  graph_files = [d.file_path for d in files_to_index]
+ # Phase GRAPH-：先按 deleted_file_paths 清孤儿
+ deleted_file_paths = [
+ d.file_path for d in diffs if d.action == DiffAction.DELETE
+ ]
+ if deleted_file_paths:
+ self._init_graph_services
+ if self._graph_writer is not None:
+ try:
+ await self._graph_writer.adelete_for_files(
+ str(self.repository_id), deleted_file_paths
+ )
+ except Exception:
+ logger.warning(
+ "graph_orphan_cleanup_failed",
+ repository_id=str(self.repository_id),
+ deleted_count=len(deleted_file_paths),
+ exc_info=True,
+ )
  try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
