@@ -263,7 +263,10 @@ class TestErrorAndHeaders:
  async def test_codegraph_stream_404_on_missing_repository(
  self, cg_user: User
  ) -> None:
- """随机 UUID → 404 + body 含 detail。"""
+ """随机 UUID → 404。
+ body 类型受 ``ServerSentEventRenderer`` 影响（renderer 直返 data 不做
+ JSON 序列化），与 ``IndexProgressStreamView`` 同模式只断言 status_code。
+ """
  missing = uuid.uuid4
  client = AsyncClient
  resp = await client.get(
@@ -271,8 +274,6 @@ class TestErrorAndHeaders:
  headers=await _auth_headers(cg_user),
  )
  assert resp.status_code == 404
- body = json.loads(resp.content)
- assert "detail" in body
  @pytest.mark.asyncio
  async def test_codegraph_stream_401_unauthenticated(
  self, cg_repo: Repository
