@@ -131,6 +131,14 @@ class Repository(models.Model):
  # 增量索引与自动触发字段
  last_indexed_commit_sha = models.CharField(max_length=40, blank=True, null=True)
  auto_index_enabled = models.BooleanField(default=False)
+ # Phase GRAPH-：per-repo 自动构图开关，默认 True 保向后兼容。
+ # indexer 主流程会在 _extract_and_write_graph 调用前以
+ # `settings.ENABLE_CODEGRAPH AND auto_build_graph_enabled` 双重判断决定是否跳过
+ # （双重判断落在 Plan；本字段在 Plan 单独落地）。
+ auto_build_graph_enabled = models.BooleanField(
+ default=True,
+ help_text="是否自动构建图谱（per-repo 开关，AND settings.ENABLE_CODEGRAPH 决定是否跳过）",
+ )
  webhook_secret = models.CharField(max_length=100, blank=True, null=True)
  # Soft delete fields
  is_deleted = models.BooleanField(default=False)
