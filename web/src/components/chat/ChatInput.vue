@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import type { BranchIndexRow } from '~/api/repositories'
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 import type { AvailableModel, ProviderCredentialDto } from '~/types/providerCredential'
-import { repositoriesApi } from '~/api/repositories'
 import PinConfirmDialog from '~/components/chat/PinConfirmDialog.vue'
-import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip'
 import { extractFirstFeishuDocId } from '~/composables/useFeishuDocDetect'
 import { useToast } from '~/composables/useToast'
@@ -13,75 +10,6 @@ const emit = defineEmits<{
 }>
 const chatStore = useChatStore
 const toast = useToast
-const spacesStore = useSpacesStore
-const branchRows = ref<BranchIndexRow>
-const selectedBranchLocal = ref<string | null>(null)
-const primaryRepoId = computed( => {
- const pid = chatStore.selectedSpaceId
- if (!pid)
- return null
- const p = spacesStore.currentSpace?.id === pid ? spacesStore.currentSpace: null
- return p?.repositories?.[0]?.id ?? null
-})
-const branchNames = computed( => branchRows.value.map(r => r.branch_name))
-const recommendedBaseBranch = computed( => {
- const row = branchRows.value.find(r => r.is_base_branch)
- if (row)
- return row.branch_name
- const repo = spacesStore.currentSpace?.repositories?.[0]
- return repo?.default_branch ?? null
-})
-async function syncChatBranchPicker {
- branchRows.value =
- selectedBranchLocal.value = null
- const pid = chatStore.selectedSpaceId
- if (!pid)
- return
- try {
- if (spacesStore.currentSpace?.id !== pid)
- await spacesStore.fetchSpace(pid)
- }
- catch {
- return
- }
- const rid = primaryRepoId.value
- if (!rid)
- return
- try {
- branchRows.value = await repositoriesApi.getBranchIndexes(rid)
- }
- catch {
- return
- }
- const names = branchRows.value.map(r => r.branch_name)
- const fromStore = chatStore.searchBranchByRepository[rid]
- const fromSession = sessionStorage.getItem(`friday:repo-branch:${rid}`)
- const pick
- = (fromStore && names.includes(fromStore))
- ? fromStore: (fromSession && names.includes(fromSession))
- ? fromSession: null
- if (pick) {
- selectedBranchLocal.value = pick
- }
- else {
- const base = branchRows.value.find(r => r.is_base_branch)
- selectedBranchLocal.value = base?.branch_name ?? names[0] ?? null
- }
- if (selectedBranchLocal.value)
- chatStore.setSearchBranchForRepository(rid, selectedBranchLocal.value)
-}
-watch(
- => chatStore.selectedSpaceId,
- => {
- void syncChatBranchPicker
- },
- { immediate: true },
-)
-watch(selectedBranchLocal, (name) => {
- const rid = primaryRepoId.value
- if (rid && name)
- chatStore.setSearchBranchForRepository(rid, name)
-})
 const inputContent = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const showModelMenu = ref(false)
@@ -414,18 +342,6 @@ function toggleNotifications {
  本次对话已使用 {{ chatStore.budgetWarning }}% 预算
  </div>
  </Transition>
- <!-- Phase: 检索分支（空间关联仓库的首个仓库） -->
- <div
- v-if="branchNames.length > 0 && primaryRepoId"
- class="flex flex-col gap-1.5 px-1 pb-2 sm:flex-row sm:items-center sm:gap-3"
- >
- <span class="text-[11px] text-muted-foreground shrink-0">检索分支</span>
- <div class="w-full min-w-0 sm:max-w-xs">
- <BranchCombobox
- v-model="selectedBranchLocal":branches="branchNames":index-rows="branchRows":recommended-branch="recommendedBaseBranch":disabled="chatStore.isStreaming"
- />
- </div>
- </div>
  <!-- 停止按钮 -->
  <div v-if="chatStore.isStreaming" class="flex justify-center pb-2">
  <button class="stop-btn" @click="chatStore.stopStreaming">

@@ -136,17 +136,6 @@ export const useChatStore = defineStore('chat', => {
  const selectedCredentialModel = useLocalStorage<string>('chat-credential-model', '')
  const forceDeepAnalysis = useLocalStorage<boolean>('chat-force-deep-analysis', false)
  const notificationsEnabled = useLocalStorage<boolean>('chat-notifications-enabled', false)
- /** 按仓库 ID 记忆检索分支（与仓库详情 sessionStorage 协同） */
- const searchBranchByRepository = useLocalStorage<Record<string, string>>(
- 'friday:chat-search-branch',
- => ({}),
- )
- function setSearchBranchForRepository(repositoryId: string, branch: string) {
- searchBranchByRepository.value = {
- ...searchBranchByRepository.value,
- [repositoryId]: branch,
- }
- }
  // ========================================================================
  // Getters
  // ========================================================================
@@ -938,24 +927,9 @@ export const useChatStore = defineStore('chat', => {
  const controller = new AbortController
  abortController.value = controller
  try {
- const spacesStore = useSpacesStore
- let streamBranch: string | undefined
- const pid = selectedSpaceId.value
- if (pid) {
- try {
- if (spacesStore.currentSpace?.id !== pid)
- await spacesStore.fetchSpace(pid)
- const repoId = spacesStore.currentSpace?.repositories?.[0]?.id
- if (repoId) {
- const remembered = searchBranchByRepository.value[repoId]
- if (remembered)
- streamBranch = remembered
- }
- }
- catch {
- // 空间/仓库不可用时仍允许发消息（不带 branch）
- }
- }
+ // 检索分支由 backend 自动按 base branch 选取，前端不再传 branch 字段
+ // （历史 Phase 的检索分支 picker 已下线——用户从未感知多分支语义，
+ // 选择面板反而误导成"每条消息可换分支"）。
  await connectSSE(
  currentConversationId.value,
  content,
@@ -965,7 +939,6 @@ export const useChatStore = defineStore('chat', => {
  {
  forceDeepAnalysis: forceDeepAnalysis.value,
  feishuDocId,
- branch: streamBranch,
  },
  )
  }
@@ -1229,7 +1202,6 @@ export const useChatStore = defineStore('chat', => {
  selectedCredentialModel,
  forceDeepAnalysis,
  notificationsEnabled,
- searchBranchByRepository,
  streamingStatus,
  budgetWarning,
  lastFailedContent,
@@ -1256,7 +1228,6 @@ export const useChatStore = defineStore('chat', => {
  toggleSidebar,
  clearCurrentConversation,
  sendMessage,
- setSearchBranchForRepository,
  retryLastMessage,
  restoreFromURL,
  restoreConversationRuntime,
