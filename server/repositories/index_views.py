@@ -30,11 +30,14 @@ class ServerSentEventRenderer(BaseRenderer):
  return data
 from repositories.models import (
  FileIndex,
+ GraphBuildHistory,
+ GraphBuildHistoryStatus,
  IndexHistory,
  IndexHistoryStatus,
  IndexStatus,
  Repository,
  RepositoryBranchIndex,
+ RepositoryGraphStatus,
  TriggerType,
 )
 from repositories.services.index_cleanup import cleanup_index
@@ -821,18 +824,28 @@ class IndexProgressStreamView(APIView):
  running_payload = await sync_to_async(
  lambda: IndexHistorySerializer(running_history).data
  )
+ # GRAPH-：在帧 payload 顶层追加 graph 字段
+ # 与 ``repository`` / ``running_history`` 平级，老消费者忽略未知字段
+ # 不破坏 Phase 既有 schema。
+ graph_payload = await _build_graph_payload(repo)
  yield _format_sse(
  {
  "type": "progress",
  "ts": timezone.now.isoformat,
  "repository": repo_payload,
  "running_history": running_payload,
+ "graph": graph_payload,
  }
  )
- # 终止条件：仓库非 INDEXING 且没有 RUNNING IndexHistory
+ # 终止条件：仓库非 INDEXING + 无 RUNNING IndexHistory + graph 非 RUNNING
+ # 三条件均满足才推 done idle 关闭流；任一活跃路径仍在跑（向量轨或
+ # 图谱轨）都继续推 progress 帧——避免手动触发的纯 graph 构建场景
+ # 原终止判定立刻关闭流让前端拿不到进度（Phase CONTEXT Grey Area 2
+ # 终止条件决议）。
  if (
  repo.index_status != IndexStatus.INDEXING
  and running_history is None
+ and repo.graph_build_status != RepositoryGraphStatus.RUNNING
  ):
  yield _format_sse({"type": "done", "reason": "idle"})
  return
@@ -852,6 +865,85 @@ class IndexProgressStreamView(APIView):
 def _format_sse(payload: dict[str, Any]) -> str:
  """格式化为 SSE data 行。"""
  return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+async def _build_graph_payload(repo: Repository) -> dict[str, Any]:
+ """构造 SSE 帧的 graph 段 payload（9 字段，Phase GRAPH-）。
+ 字段口径（CONTEXT Grey Area 2 锁定）：
+ - ``status`` / ``stage`` / ``files_processed`` / ``files_total`` /
+ ``current_file``：直接取 ``Repository`` 4 字段快照
+ - ``percent``：``min(100, int(files_processed / files_total * 100))``
+ ``files_total <= 0`` 兜底 0（避免除零）
+ - ``started_at``：优先 RUNNING ``GraphBuildHistory.started_at``，无 RUNNING
+ 时取 ``Repository.graph_last_built_at`` 兜底，便于 completed/failed/cancelled
+ 态前端展示"上次构建于 ..."
+ - ``edge_count_so_far``：最新一条 ``GraphBuildHistory`` 的
+ ``symbols_count + imports_count + calls_count + endpoints_count`` 求和；
+ 运行态可能为 0 或上次构建残值——前端在 running 态可隐藏该字段
+ - ``error_message``：最新 FAILED ``GraphBuildHistory.error_message``，
+ 无则空串，便于失败态前端展示
+ 本 helper 由 ``IndexProgressStreamView`` 与 ``CodegraphProgressStreamView``
+ 共享（避免双写）；3 个 ``GraphBuildHistory`` 查询合计 ≤ 3 次 ORM IO，命中
+ ``idx_gbh_repo_started`` 索引。
+ """
+ repository_id = str(repo.id)
+ latest_running_graph = (
+ await GraphBuildHistory.objects.filter(
+ repository_id=repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ )
+ .order_by("-started_at")
+ .afirst
+ )
+ latest_any_graph = (
+ await GraphBuildHistory.objects.filter(repository_id=repository_id)
+ .order_by("-started_at")
+ .afirst
+ )
+ latest_failed_graph = (
+ await GraphBuildHistory.objects.filter(
+ repository_id=repository_id,
+ status=GraphBuildHistoryStatus.FAILED,
+ )
+ .order_by("-started_at")
+ .afirst
+ )
+ files_processed = int(repo.graph_files_processed or 0)
+ files_total = int(repo.graph_files_total or 0)
+ percent = (
+ min(100, int(files_processed / files_total * 100))
+ if files_total > 0
+ else 0
+ )
+ edge_count_so_far = 0
+ if latest_any_graph is not None:
+ edge_count_so_far = (
+ (latest_any_graph.symbols_count or 0)
+ + (latest_any_graph.imports_count or 0)
+ + (latest_any_graph.calls_count or 0)
+ + (latest_any_graph.endpoints_count or 0)
+ )
+ started_at: str | None
+ if latest_running_graph is not None and latest_running_graph.started_at:
+ started_at = latest_running_graph.started_at.isoformat
+ elif repo.graph_last_built_at:
+ started_at = repo.graph_last_built_at.isoformat
+ else:
+ started_at = None
+ error_message = (
+ latest_failed_graph.error_message
+ if latest_failed_graph is not None
+ else ""
+ )
+ return {
+ "status": repo.graph_build_status,
+ "stage": repo.graph_stage,
+ "files_processed": files_processed,
+ "files_total": files_total,
+ "percent": percent,
+ "current_file": repo.current_graph_file,
+ "started_at": started_at,
+ "edge_count_so_far": edge_count_so_far,
+ "error_message": error_message,
+ }
 class IndexStatsView(APIView):
  """: 统计 API（chunk 数、语言分布、覆盖率）。
  Qdrant 偶发慢 / 超时 / 不可用时返回 200 + 降级数据（避免前端轮询持续报 500）。
