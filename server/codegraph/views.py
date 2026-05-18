@@ -1,4 +1,5 @@
-"""codegraph REST API 视图 —— 仓库嵌套路由下的 Symbol/CallEdge/ImportEdge/Endpoint 接口。"""
+"""codegraph REST API 视图 —— 仓库嵌套路由下的 Symbol/CallEdge/ImportEdge/Endpoint 接口
++ Phase 三件套（rebuild / cancel / history list）。"""
 from __future__ import annotations
 import re
 import uuid
@@ -6,18 +7,33 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import status
+from rest_framework.generics import ListAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from codegraph.models import Endpoint, ImportEdge, Symbol
 from codegraph.serializers import (
  EndpointSerializer,
+ GraphBuildHistorySerializer,
  ImportEdgeSerializer,
  SymbolSerializer,
 )
 from codegraph.services.graph_expansion import GraphExpansionService
-from repositories.models import GraphBuildStatus, IndexHistory, Repository
+from repositories.models import (
+ GraphBuildHistory,
+ GraphBuildHistoryStatus,
+ GraphBuildHistoryTrigger,
+ GraphBuildStatus,
+ IndexHistory,
+ IndexHistoryStatus,
+ Repository,
+)
 from repositories.permissions import RepositoryPermission
+from services.background_runner import cancel_background_task, run_in_background
 logger = structlog.get_logger(__name__)
 # UUID 合法性校验正则（关键差异 3：过滤 graph_expansion L274 bug 产生的非 UUID target）
 UUID_RE = re.compile(
@@ -253,9 +269,225 @@ class CodegraphDeleteView(APIView):
  endpoints_deleted=deleted["endpoints_deleted"],
  )
  return Response(status=status.HTTP_204_NO_CONTENT)
+# ---------------------------------------------------------------------------
+# Phase GRAPH- / GRAPH-：REST 三件套
+# ---------------------------------------------------------------------------
+#
+# - POST /api/repositories/<id>/codegraph/rebuild/ 手动触发 graph 构建
+# - POST /api/repositories/<id>/codegraph/cancel/ 取消进行中 manual 构建
+# - GET /api/repositories/<id>/codegraph/history/ 分页历史列表
+#
+# 锁策略：rebuild 在 ``transaction.atomic`` 内 ``select_for_update(skip_locked=True)``
+# 锁 Repository 行（与 ``IndexCreateView``/``IndexTriggerView`` 同模式），锁内做双子
+# 查询（IndexHistory.RUNNING / GraphBuildHistory.RUNNING）；cancel 不抢锁，单查最新
+# RUNNING history。错误体统一 ``{"detail": "..."}`` 含关键字便于前端 grep 与 i18n
+# 替换（与 ``CodegraphDeleteView`` 一致）。
+_REBUILD_INDEX_RUNNING_DETAIL = "index running, cannot rebuild graph"
+_REBUILD_GRAPH_RUNNING_DETAIL = "graph already running"
+_REBUILD_FEATURE_DISABLED_DETAIL = "graph feature disabled"
+_CANCEL_NO_RUNNING_DETAIL = "no graph build running"
+def _acquire_lock_and_create_history(
+ repository_id: str,
+) -> tuple[GraphBuildHistory | None, str | None]:
+ """同步辅助：锁仓库行 + 子查询互斥 + 创建 RUNNING history。
+ 返回 ``(history_or_None, error_detail_or_None)``：
+ - ``(history, None)``：成功创建 RUNNING manual history。
+ - ``(None, _REBUILD_INDEX_RUNNING_DETAIL)``：向量轨 IndexHistory RUNNING。
+ - ``(None, _REBUILD_GRAPH_RUNNING_DETAIL)``：图谱轨 GraphBuildHistory RUNNING
+ 或 ``select_for_update(skip_locked=True)`` 被并发持锁。
+ 与 ``repositories/index_views.py:_acquire_index_lock`` 同模式 —— sync ORM 走
+ ``transaction.atomic`` 串行，async view 通过 ``sync_to_async`` 包装调用。
+ """
+ with transaction.atomic:
+ try:
+ Repository.objects.select_for_update(skip_locked=True).get(
+ id=repository_id, is_deleted=False,
+ )
+ except Repository.DoesNotExist:
+ return None, _REBUILD_GRAPH_RUNNING_DETAIL
+ if IndexHistory.objects.filter(
+ repository_id=repository_id,
+ status=IndexHistoryStatus.RUNNING,
+ ).exists:
+ return None, _REBUILD_INDEX_RUNNING_DETAIL
+ if GraphBuildHistory.objects.filter(
+ repository_id=repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ ).exists:
+ return None, _REBUILD_GRAPH_RUNNING_DETAIL
+ history = GraphBuildHistory.objects.create(
+ repository_id=repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ trigger_type=GraphBuildHistoryTrigger.MANUAL,
+ )
+ return history, None
+_acquire_lock_and_create_history_async = sync_to_async(
+ _acquire_lock_and_create_history,
+)
+class CodegraphRebuildView(APIView):
+ """POST /api/repositories/{repository_id}/codegraph/rebuild/
+ 手动触发图谱构建（GRAPH-）。空请求 body，view 内 trigger 固定
+ ``manual``。流程：
+ 1. ``settings.ENABLE_CODEGRAPH=False`` → 403（全局硬开关，per CONTEXT Area 3 Q4）。
+ 2. 仓库不存在 / 已软删 → 404。
+ 3. ``select_for_update(skip_locked=True)`` 锁仓库行后双子查询互斥：
+ - IndexHistory.status=RUNNING → 409 ``"index running, cannot rebuild graph"``
+ - GraphBuildHistory.status=RUNNING → 409 ``"graph already running"``
+ 4. 通过则锁内创建 ``GraphBuildHistory(status=RUNNING, trigger_type=MANUAL)``，
+ 事务 commit 后调 ``run_in_background(..., name=f"graph-build-{repo_id}")``。
+ 5. 返回 ``202 {"history_id": "<uuid>"}``。
+ **不读 per-repo 自动构建开关**（per CONTEXT Area 3 Q4：该字段仅控 indexer
+ 自动衔接路径，手动 REST 是用户 explicit intent，view 层不应读取）。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(
+ self, request: Any, repository_id: uuid.UUID
+ ) -> Response:
+ if not getattr(settings, "ENABLE_CODEGRAPH", False):
+ return Response(
+ {"detail": _REBUILD_FEATURE_DISABLED_DETAIL},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ repo_exists = await Repository.objects.filter(
+ id=repository_id, is_deleted=False,
+ ).aexists
+ if not repo_exists:
+ return Response(
+ {"detail": "仓库不存在或已删除。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ history, error_detail = await _acquire_lock_and_create_history_async(
+ str(repository_id),
+ )
+ if error_detail is not None:
+ logger.info(
+ "codegraph_rebuild_conflict",
+ repository_id=str(repository_id),
+ reason=error_detail,
+ )
+ return Response(
+ {"detail": error_detail},
+ status=status.HTTP_409_CONFLICT,
+ )
+ assert history is not None # error_detail None ⇒ history 必非空
+ # 事务已 commit（sync helper 退出 ``transaction.atomic`` block），现在
+ # 安全地调度后台 task。延迟 import service 入口以规避 module-level
+ # 循环依赖（views ↔ services）。
+ from services.graph_builder import build_graph_for_repository
+ repo_id_str = str(repository_id)
+ history_id_str = str(history.id)
+ run_in_background(
+ lambda: build_graph_for_repository(
+ repo_id_str,
+ trigger=GraphBuildHistoryTrigger.MANUAL,
+ history_id=history_id_str,
+ ),
+ name=f"graph-build-{repo_id_str}",
+ )
+ logger.info(
+ "codegraph_rebuild_submitted",
+ repository_id=repo_id_str,
+ history_id=history_id_str,
+ trigger=GraphBuildHistoryTrigger.MANUAL.value,
+ )
+ return Response(
+ {"history_id": history_id_str},
+ status=status.HTTP_202_ACCEPTED,
+ )
+class CodegraphCancelView(APIView):
+ """POST /api/repositories/{repository_id}/codegraph/cancel/
+ 取消最新 RUNNING GraphBuildHistory（GRAPH-）。流程：
+ 1. 仓库不存在 / 已软删 → 404。
+ 2. 查最新 ``GraphBuildHistory(status=RUNNING).order_by("-started_at").afirst``：
+ - ``None`` → 409 ``"no graph build running"``
+ - 命中 → 调 ``cancel_background_task(f"graph-build-{repo_id}")``（不依赖返回值），
+ 转 history.status=CANCELLED + finished_at=now → 204 No Content。
+ **已知限制（CONTEXT 已明示）**：``auto_after_index`` 触发的 history 实际
+ background task 名 ``index-{repo_id}`` 而非 ``graph-build-{repo_id}``，
+ ``cancel_background_task`` 调用对其 no-op；本端点仍把 DB 行转 CANCELLED 保
+ DB 一致性，但 indexer 主任务不会停止 —— 前端应禁用对
+ ``trigger_type=auto_after_index`` history 的 cancel 按钮，或等 Phase
+ SSE 提供准确状态。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(
+ self, request: Any, repository_id: uuid.UUID
+ ) -> Response:
+ repo_exists = await Repository.objects.filter(
+ id=repository_id, is_deleted=False,
+ ).aexists
+ if not repo_exists:
+ return Response(
+ {"detail": "仓库不存在或已删除。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ history = (
+ await GraphBuildHistory.objects.filter(
+ repository_id=repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ )
+ .order_by("-started_at")
+ .afirst
+ )
+ if history is None:
+ logger.info(
+ "codegraph_cancel_conflict",
+ repository_id=str(repository_id),
+ reason="no_running_history",
+ )
+ return Response(
+ {"detail": _CANCEL_NO_RUNNING_DETAIL},
+ status=status.HTTP_409_CONFLICT,
+ )
+ cancelled = cancel_background_task(f"graph-build-{repository_id}")
+ history.status = GraphBuildHistoryStatus.CANCELLED
+ history.finished_at = timezone.now
+ await history.asave(update_fields=["status", "finished_at"])
+ logger.info(
+ "codegraph_cancel_submitted",
+ repository_id=str(repository_id),
+ history_id=str(history.id),
+ trigger_type=history.trigger_type,
+ background_task_cancelled=cancelled,
+ )
+ return Response(status=status.HTTP_204_NO_CONTENT)
+class _GraphBuildHistoryPagination(PageNumberPagination):
+ """GraphBuildHistory list 分页（page_size=20 与 IndexHistory list 同款）。"""
+ page_size = 20
+class CodegraphHistoryListView(ListAPIView):
+ """GET /api/repositories/{repository_id}/codegraph/history/
+ GraphBuildHistory 分页列表（GRAPH- list endpoint 部分）。
+ - 默认排序：``-started_at`` —— 命中 Plan 落地的索引 ``idx_gbh_repo_started``
+ （Meta.indexes ``fields=["repository", "-started_at"]``）。
+ - 分页：DRF ``PageNumberPagination(page_size=20)``。
+ - 过滤：可选 ``?status=<value>``（合法值之一时生效）。
+ """
+ permission_classes = [IsAuthenticated]
+ serializer_class = GraphBuildHistorySerializer
+ pagination_class = _GraphBuildHistoryPagination
+ def get_queryset(self) -> Any:
+ repository_id = self.kwargs.get("repository_id")
+ qs = GraphBuildHistory.objects.filter(repository_id=repository_id)
+ status_filter = self.request.query_params.get("status")
+ if status_filter in GraphBuildHistoryStatus.values:
+ qs = qs.filter(status=status_filter)
+ return qs.order_by("-started_at")
+ def list(self, request: Any, *args: Any, **kwargs: Any) -> Response:
+ repository_id: uuid.UUID | str | None = kwargs.get("repository_id")
+ if repository_id is None or not Repository.objects.filter(
+ id=repository_id, is_deleted=False,
+ ).exists:
+ return Response(
+ {"detail": "仓库不存在或已删除。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ return super.list(request, *args, **kwargs)
 __all__ = [
  "CallsForSymbolView",
+ "CodegraphCancelView",
  "CodegraphDeleteView",
+ "CodegraphHistoryListView",
+ "CodegraphRebuildView",
  "EndpointListView",
  "ImportEdgeListView",
  "SymbolListView",
