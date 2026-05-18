@@ -12,12 +12,16 @@
 设计动机详见 ``project-docs/phases/work-item/work-item.md`` 与 Plan。
 """
 from __future__ import annotations
+import asyncio
+import contextlib
+import shutil
+import tempfile
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from repositories.models import (
@@ -33,6 +37,7 @@ __all__ = [
  "build_graph_for_repository",
  "reset_repository_graph_progress",
  "mark_repository_graph_terminal",
+ "prepare_repo_workdir_async",
 ]
 logger = structlog.get_logger(__name__)
 # trigger 字符串到枚举的合法集合：未知 trigger 兜底为 MANUAL，避免
@@ -83,6 +88,91 @@ async def _collect_file_paths(repository_id: str) -> list[str]:
  repository_id=repository_id,
  ).only("file_path")
  ]
+# 手动 rebuild 路径没有 indexer 主流程那个还活着的 temp_dir（indexer.py:2933
+# 的 mkdtemp 在 finally 已 rmtree），所以必须自己 clone。否则
+# `_extract_and_write_graph` 拿到的 repo_path（默认 `REPO_CLONE_DIR/<repo_id>/`，
+# 一个从来不会被任何流程写入的目录）下不存在任何文件，1716 次 `os.path.exists`
+# 全部 False，循环空转，counts=0 但状态被误标 COMPLETED。
+@contextlib.asynccontextmanager
+async def prepare_repo_workdir_async(
+ repository_id: str,
+) -> AsyncIterator[str]:
+ """Clone repo 的 default branch 到临时目录供 graph 抽取使用；退出时清理。
+ Args:
+ repository_id: 仓库 UUID。
+ Yields:
+ 临时目录的绝对路径，作为 `repo_path` 传给 `_extract_and_write_graph`。
+ Raises:
+ Repository.DoesNotExist: 仓库不存在或已软删除。
+ RuntimeError: ``git clone`` 失败或超时（被 graph_builder 主 try/except
+ 转为 ``GraphBuildHistory.status=FAILED + error_message``）。
+ """
+ from common.encryption import decrypt_value
+ from repositories.views import build_authenticated_git_url
+ @sync_to_async
+ def _fetch_repo_clone_params -> tuple[str, str | None, str | None, str]:
+ repo = (
+ Repository.objects.select_related("credential")
+ .filter(id=repository_id, is_deleted=False)
+ .first
+ )
+ if repo is None:
+ raise Repository.DoesNotExist(
+ f"Repository {repository_id} not found or deleted"
+ )
+ credential = getattr(repo, "credential", None)
+ token: str | None = None
+ if credential and credential.encrypted_token:
+ token = decrypt_value(credential.encrypted_token)
+ return repo.git_url, repo.proxy_url, token, repo.default_branch
+ git_url, proxy_url, token, default_branch = await _fetch_repo_clone_params
+ if not git_url:
+ raise RuntimeError(
+ f"repository {repository_id} 缺少 git_url，无法 clone 构建图谱"
+ )
+ auth_url = build_authenticated_git_url(git_url, token)
+ temp_dir = tempfile.mkdtemp(prefix="friday_graph_")
+ try:
+ clone_cmd: list[str] = [
+ "git",
+ "clone",
+ "--depth",
+ "1",
+ "--single-branch",
+ "--branch",
+ default_branch,
+ ]
+ if proxy_url:
+ clone_cmd.extend(["-c", f"http.proxy={proxy_url}"])
+ clone_cmd.extend([auth_url, temp_dir])
+ proc = await asyncio.create_subprocess_exec(
+ *clone_cmd,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ try:
+ _, stderr_bytes = await asyncio.wait_for(
+ proc.communicate, timeout=300.0
+ )
+ except asyncio.TimeoutError as exc:
+ proc.kill
+ with contextlib.suppress(asyncio.TimeoutError):
+ await asyncio.wait_for(proc.wait, timeout=5.0)
+ raise RuntimeError("graph build clone 超时 (300s)") from exc
+ if proc.returncode != 0:
+ stderr_text = stderr_bytes.decode(errors="ignore").strip
+ raise RuntimeError(
+ f"graph build clone 失败: {stderr_text[:500] or '(no stderr)'}"
+ )
+ logger.info(
+ "graph_build_clone_completed",
+ repository_id=repository_id,
+ branch=default_branch,
+ temp_dir=temp_dir,
+ )
+ yield temp_dir
+ finally:
+ shutil.rmtree(temp_dir, ignore_errors=True)
 async def reset_repository_graph_progress(repository_id: str) -> None:
  """Phase GRAPH-：build_graph 入口 reset Repository 5 字段。
  与 ``update_graph_progress`` 共享 try/except 容错模板——写失败仅 warning，
@@ -194,7 +284,10 @@ async def build_graph_for_repository(
  await reset_repository_graph_progress(repository_id)
  try:
  try:
- repo = await _acquire_repo_lock_async(repository_id)
+ # 行级锁防并发触发（select_for_update 在 Postgres 提供硬保证，SQLite no-op）；
+ # 锁定的 Repository 实例字段已被 prepare_repo_workdir_async 内部独立查询替代，
+ # 此处仅借助锁副作用，故不再绑定到变量。
+ await _acquire_repo_lock_async(repository_id)
  except Repository.DoesNotExist:
  raise
  file_paths = await _collect_file_paths(repository_id)
@@ -213,13 +306,12 @@ async def build_graph_for_repository(
  error=str(exc),
  )
  indexer = IndexerService(repository_id=repository_id)
- repo_clone_dir = getattr(settings, "REPO_CLONE_DIR", None)
- if repo_clone_dir is None:
- # settings 未配置时回落到 repo.local_path（若存在）或空串，避免 KeyError；
- # 真实运行时 settings 必有值（friday/settings.py:32 已定义）。
- repo_path = str(getattr(repo, "local_path", "") or "")
- else:
- repo_path = str(repo_clone_dir / str(repo.id))
+ # GRAPH-：手动 / webhook rebuild 路径自带 clone（indexer 主流程
+ # 的 temp_dir 在 indexer 出口已 rmtree，graph_builder 重启时拿不到磁盘
+ # 上的源文件）。auto_after_index 路径不走 build_graph_for_repository，
+ # 不会重复 clone。clone 失败抛 RuntimeError，由外层 except 写
+ # GraphBuildHistory.status=FAILED + error_message。
+ async with prepare_repo_workdir_async(repository_id) as repo_path:
  stats: dict[str, Any] = await indexer._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=file_paths,

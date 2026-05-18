@@ -27,6 +27,8 @@
  不清空（CONTEXT 失败路径决议）
 """
 from __future__ import annotations
+import contextlib
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -34,6 +36,19 @@ import structlog
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 from repositories.models import Repository, RepositoryGraphStatus
+# Phase GRAPH- 起 build_graph_for_repository 会 git clone 仓库到临时目录。
+# 本模块全部 mock 了 `_extract_and_write_graph`，clone 步骤必须 stub 以避免
+# 走真实 git clone 拉 fake URL 超时。
+@pytest.fixture(autouse=True)
+def _stub_prepare_repo_workdir -> Any:
+ @contextlib.asynccontextmanager
+ async def _fake_workdir(_repository_id: str) -> AsyncIterator[str]:
+ yield "/tmp/fake-graph-build-workdir"
+ with patch(
+ "services.graph_builder.prepare_repo_workdir_async",
+ new=_fake_workdir,
+ ):
+ yield
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

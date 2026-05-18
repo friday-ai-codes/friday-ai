@@ -13,8 +13,10 @@
 入参；structlog 用 `capture_logs` 上下文捕获事件。
 """
 from __future__ import annotations
+import contextlib
 import dataclasses
 import inspect
+from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import AsyncMock, patch
 import pytest
@@ -27,6 +29,21 @@ from repositories.models import (
  GraphBuildHistoryTrigger,
  Repository,
 )
+# Phase GRAPH- 起 `build_graph_for_repository` 在 `_extract_and_write_graph`
+# 之前会 `git clone --depth 1` 到一个临时目录。本测试模块全部 mock 掉
+# `_extract_and_write_graph`，不需要真实源文件——但默认实现会去 `git clone`
+# `https://example.com/...`（fixture 的 fake URL），导致超时。下方 autouse 把
+# clone 替换成一个直接 yield 假路径的 async context manager。
+@pytest.fixture(autouse=True)
+def _stub_prepare_repo_workdir -> Any:
+ @contextlib.asynccontextmanager
+ async def _fake_workdir(_repository_id: str) -> AsyncIterator[str]:
+ yield "/tmp/fake-graph-build-workdir"
+ with patch(
+ "services.graph_builder.prepare_repo_workdir_async",
+ new=_fake_workdir,
+ ):
+ yield
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
