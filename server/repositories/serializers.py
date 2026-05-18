@@ -24,6 +24,7 @@ class RepositorySerializer(serializers.ModelSerializer):
  "description",
  "proxy_url",
  "auto_index_enabled",
+ "auto_build_graph_enabled",
  "webhook_secret",
  "index_status",
  "last_indexed_at",
