@@ -26,8 +26,14 @@ from repositories.models import (
  GraphBuildHistoryStatus,
  GraphBuildHistoryTrigger,
  Repository,
+ RepositoryGraphStatus,
 )
-__all__ = ["GraphBuildResult", "build_graph_for_repository"]
+__all__ = [
+ "GraphBuildResult",
+ "build_graph_for_repository",
+ "reset_repository_graph_progress",
+ "mark_repository_graph_terminal",
+]
 logger = structlog.get_logger(__name__)
 # trigger 字符串到枚举的合法集合：未知 trigger 兜底为 MANUAL，避免
 # 调用方笔误导致 history 写入失败（CONTEXT decisions：三态 manual / auto_after_index /
@@ -77,6 +83,73 @@ async def _collect_file_paths(repository_id: str) -> list[str]:
  repository_id=repository_id,
  ).only("file_path")
  ]
+async def reset_repository_graph_progress(repository_id: str) -> None:
+ """Phase GRAPH-：build_graph 入口 reset Repository 5 字段。
+ 与 ``update_graph_progress`` 共享 try/except 容错模板——写失败仅 warning，
+ 不阻塞 build_graph 主流程（CONTEXT 决议：进度字段属"显示用"非"业务核心"）。
+ 5 字段归位：
+ - ``graph_build_status`` → ``RUNNING``
+ - ``graph_stage`` → ``"前置清理..."``（首阶段文案，后续 helper 会覆盖）
+ - ``current_graph_file`` → ``""``
+ - ``graph_files_processed`` / ``graph_files_total`` → ``0``
+ （``graph_last_built_at`` 不在 reset 时刷新，保留上次终态时间戳直到本次
+ 构建终止；终态 helper 负责更新。）
+ """
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(
+ graph_build_status=RepositoryGraphStatus.RUNNING,
+ graph_stage="前置清理...",
+ current_graph_file="",
+ graph_files_processed=0,
+ graph_files_total=0,
+ )
+ except Exception as exc:
+ logger.warning(
+ "reset_repository_graph_progress_failed",
+ repository_id=repository_id,
+ error=str(exc),
+ )
+async def mark_repository_graph_terminal(
+ repository_id: str,
+ *,
+ status: str,
+ stage: str = "",
+ current_file: str | None = None,
+ files_processed: int | None = None,
+ files_total: int | None = None,
+) -> None:
+ """Phase GRAPH-：build_graph 终态 + ``graph_last_built_at=now``。
+ ``current_file`` / ``files_processed`` / ``files_total`` 显式传 ``None``
+ 时**不动**对应字段——CONTEXT Grey Area 1 失败路径决议：失败时保留最后
+ 写入的 ``current_graph_file`` 便于排查"卡在哪个文件"。
+ Args:
+ repository_id: 仓库 UUID。
+ status: 终态 ``RepositoryGraphStatus`` 之一（``COMPLETED`` /
+ ``FAILED`` / ``CANCELLED``）。
+ stage: 阶段文案；成功传 ``"完成"``，失败传 ``""`` 或具体错误简述。
+ current_file: ``None`` 时不动该字段；传 ``""`` 时显式清空。
+ files_processed / files_total: ``None`` 时不动；显式传值则覆盖。
+ """
+ update_kwargs: dict[str, Any] = {
+ "graph_build_status": status,
+ "graph_stage": stage,
+ "graph_last_built_at": timezone.now,
+ }
+ if current_file is not None:
+ update_kwargs["current_graph_file"] = current_file
+ if files_processed is not None:
+ update_kwargs["graph_files_processed"] = files_processed
+ if files_total is not None:
+ update_kwargs["graph_files_total"] = files_total
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(**update_kwargs)
+ except Exception as exc:
+ logger.warning(
+ "mark_repository_graph_terminal_failed",
+ repository_id=repository_id,
+ status=status,
+ error=str(exc),
+ )
 async def build_graph_for_repository(
  repository_id: str,
  *,
@@ -116,6 +189,9 @@ async def build_graph_for_repository(
  trigger=trigger,
  history_id=str(history.id),
  )
+ # Phase GRAPH-：入口 reset Repository 5 字段
+ # （graph_build_status=RUNNING / 计数归零 / current_file 清空）。
+ await reset_repository_graph_progress(repository_id)
  try:
  try:
  repo = await _acquire_repo_lock_async(repository_id)
@@ -180,6 +256,17 @@ async def build_graph_for_repository(
  "error_message",
  ],
  )
+ # Phase GRAPH-：成功出口写 Repository 终态
+ # （status=COMPLETED / stage="完成" / current_file="" / counts /
+ # graph_last_built_at=now）。
+ await mark_repository_graph_terminal(
+ repository_id,
+ status=RepositoryGraphStatus.COMPLETED,
+ stage="完成",
+ current_file="",
+ files_processed=files_processed,
+ files_total=files_total,
+ )
  duration = time.perf_counter - start
  logger.info(
  "graph_build_completed",
@@ -226,6 +313,16 @@ async def build_graph_for_repository(
  repository_id=repository_id,
  history_id=str(history.id),
  error=str(save_exc),
+ )
+ # Phase GRAPH-：异常出口写 Repository 终态
+ # （status=FAILED / stage="" / graph_last_built_at=now）。
+ # current_file / files_processed / files_total 传 None **不动**——
+ # CONTEXT Grey Area 1 失败路径决议：保留最后写入的 current_graph_file
+ # 便于排查"卡在哪个文件"。
+ await mark_repository_graph_terminal(
+ repository_id,
+ status=RepositoryGraphStatus.FAILED,
+ stage="",
  )
  logger.error(
  "graph_build_failed",
