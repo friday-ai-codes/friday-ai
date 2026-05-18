@@ -31,7 +31,7 @@ from __future__ import annotations
 import inspect
 import uuid
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 import pytest
 from asgiref.sync import sync_to_async
 from django.utils import timezone
