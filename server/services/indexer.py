@@ -26,6 +26,7 @@ from repositories.models import (
  IndexStatus,
  Repository,
  RepositoryBranchIndex,
+ RepositoryGraphStatus,
 )
 from repositories.views import build_authenticated_git_url
 from services.branch_utils import (
@@ -35,6 +36,10 @@ from services.branch_utils import (
 )
 from services.code_parser import CodeChunk, CodeParser, compute_file_hash, scan_directory
 from services.embedding import EmbeddingService
+from services.graph_builder import (
+ mark_repository_graph_terminal,
+ reset_repository_graph_progress,
+)
 from services.qdrant_service import QdrantService
 from system.models import SettingKeys, SystemSetting
 # KEEP: Qdrant SDK 使用同步 httpx 客户端，async 化属于独立重构项（Out of Scope）
@@ -871,6 +876,10 @@ class IndexerService:
  status=GraphBuildHistoryStatus.RUNNING,
  trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
  )
+ # Phase GRAPH-：auto_after_index 路径入口 reset
+ # Repository 5 字段（与 manual 路径 build_graph_for_repository
+ # 入口对齐——保 view 层读 Repository.graph_* 字段统一）。
+ await reset_repository_graph_progress(self.repository_id)
  # T-：示范切换 Plan update_graph_progress stub helper
  # （Phase 才落字段写入，本 phase 仅 structlog 通路验证）。
  await update_graph_progress(
@@ -907,12 +916,28 @@ class IndexerService:
  "finished_at",
  ]
  )
+ # Phase GRAPH-：成功终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.COMPLETED,
+ stage="完成",
+ current_file="",
+ files_processed=stats.get("files_processed", 0),
+ files_total=len(graph_file_paths),
+ )
  except Exception as exc:
  gbh.status = GraphBuildHistoryStatus.FAILED
  gbh.error_message = str(exc)[:1000]
  gbh.finished_at = timezone.now
  await gbh.asave(
  update_fields=["status", "error_message", "finished_at"]
+ )
+ # Phase GRAPH-：失败终态写 Repository（保留
+ # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.FAILED,
+ stage="",
  )
  logger.warning(
  "extract_and_write_graph_failed",
@@ -1160,6 +1185,8 @@ class IndexerService:
  status=GraphBuildHistoryStatus.RUNNING,
  trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
  )
+ # Phase GRAPH-：入口 reset Repository 5 字段。
+ await reset_repository_graph_progress(self.repository_id)
  try:
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -1188,12 +1215,28 @@ class IndexerService:
  "finished_at",
  ]
  )
+ # Phase GRAPH-：成功终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.COMPLETED,
+ stage="完成",
+ current_file="",
+ files_processed=stats.get("files_processed", 0),
+ files_total=len(graph_files),
+ )
  except Exception as exc:
  gbh.status = GraphBuildHistoryStatus.FAILED
  gbh.error_message = str(exc)[:1000]
  gbh.finished_at = timezone.now
  await gbh.asave(
  update_fields=["status", "error_message", "finished_at"]
+ )
+ # Phase GRAPH-：失败终态写 Repository（保留
+ # 最后写入的 current_graph_file，CONTEXT 失败路径决议）。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.FAILED,
+ stage="",
  )
  logger.warning(
  "extract_and_write_graph_failed",
@@ -1561,6 +1604,8 @@ class IndexerService:
  status=GraphBuildHistoryStatus.RUNNING,
  trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
  )
+ # Phase GRAPH-：入口 reset Repository 5 字段。
+ await reset_repository_graph_progress(self.repository_id)
  try:
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -1589,12 +1634,27 @@ class IndexerService:
  "finished_at",
  ]
  )
+ # Phase GRAPH-：成功终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.COMPLETED,
+ stage="完成",
+ current_file="",
+ files_processed=stats.get("files_processed", 0),
+ files_total=len(graph_files),
+ )
  except Exception as exc:
  gbh.status = GraphBuildHistoryStatus.FAILED
  gbh.error_message = str(exc)[:1000]
  gbh.finished_at = timezone.now
  await gbh.asave(
  update_fields=["status", "error_message", "finished_at"]
+ )
+ # Phase GRAPH-：失败终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.FAILED,
+ stage="",
  )
  logger.warning(
  "extract_and_write_graph_failed",
@@ -1895,6 +1955,10 @@ class IndexerService:
  status=GraphBuildHistoryStatus.RUNNING,
  trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
  )
+ # Phase GRAPH-：入口 reset Repository 5 字段
+ # （置于 update_graph_progress 之前——后者会覆盖 graph_stage
+ # 为 "building_graph"，最终生效）。
+ await reset_repository_graph_progress(self.repository_id)
  # T-：示范切换 Plan update_graph_progress stub helper
  # （Phase 才落字段写入，本 phase 仅 structlog 通路验证）。
  await update_graph_progress(
@@ -1931,12 +1995,27 @@ class IndexerService:
  "finished_at",
  ]
  )
+ # Phase GRAPH-：成功终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.COMPLETED,
+ stage="完成",
+ current_file="",
+ files_processed=stats.get("files_processed", 0),
+ files_total=len(graph_files),
+ )
  except Exception as exc:
  gbh.status = GraphBuildHistoryStatus.FAILED
  gbh.error_message = str(exc)[:1000]
  gbh.finished_at = timezone.now
  await gbh.asave(
  update_fields=["status", "error_message", "finished_at"]
+ )
+ # Phase GRAPH-：失败终态写 Repository。
+ await mark_repository_graph_terminal(
+ self.repository_id,
+ status=RepositoryGraphStatus.FAILED,
+ stage="",
  )
  logger.warning(
  "extract_and_write_graph_failed",
