@@ -240,6 +240,37 @@ async def update_index_stage(repository_id: str, stage: str) -> None:
  stage=stage,
  error=str(exc),
  )
+async def update_graph_progress(
+ repository_id: str,
+ *,
+ stage: str = "",
+ current_file: str = "",
+ processed: int = 0,
+ total: int = 0,
+) -> None:
+ """图谱构建进度上报 helper（与 update_index_stage / update_current_indexing_file 解耦）。
+ Phase：no-op stub —— 仅 structlog 事件，**不写库**。Phase
+ GRAPH- 才落 ``Repository.graph_stage`` / ``current_graph_file`` /
+ ``graph_files_processed`` / ``graph_files_total`` 4 字段写入逻辑。
+ 签名预留 Phase 全部字段位，调用方可提前切换到本 helper 而不影响 Phase
+ 上层契约（即本 phase 落 stub 后 callsite 一次性切换，Phase 仅在函数体内
+ 追加 aupdate，零侵入演进）。
+ """
+ try:
+ logger.info(
+ "graph_progress_update",
+ repository_id=repository_id,
+ stage=stage,
+ current_file=current_file,
+ processed=processed,
+ total=total,
+ )
+ except Exception as exc:
+ logger.warning(
+ "update_graph_progress_failed",
+ repository_id=repository_id,
+ error=str(exc),
+ )
 # 文件级断点续传：累积约 64 个 chunks 触发一次 embed → upsert → flush FileIndex
 # 阈值的取舍：
 # - 偏小（如 16）：失败重试更"细"，丢失工作量更少；但 embed API 调用次数变多
