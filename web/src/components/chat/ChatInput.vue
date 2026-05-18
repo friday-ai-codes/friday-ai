@@ -141,7 +141,8 @@ interface CredentialModelOption {
 const credentialModelOptions = computed<CredentialModelOption>( => {
  const opts: CredentialModelOption =
  for (const cred of providerStore.activeCredentials) {
- const models = cred.available_models
+ // 兼容历史 sessionStorage 中无 available_models 字段的旧 credential 快照
+ const models = cred.available_models ??
  if (models.length > 0) {
  for (const m of models) {
  opts.push({

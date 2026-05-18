@@ -69,8 +69,9 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const allAvailableModels = computed( => {
  const models: Array<{ credentialId: string, modelId: string }> =
  for (const cred of activeCredentials.value) {
- if (cred.available_models.length > 0) {
- for (const m of cred.available_models) {
+ const available = cred.available_models ??
+ if (available.length > 0) {
+ for (const m of available) {
  models.push({ credentialId: cred.id, modelId: m.id })
  }
  }
@@ -114,7 +115,12 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  // Pitfall 4：shape 校验,防脏缓存污染内存
  if (!parsed || !Array.isArray(parsed.credentials) || !Array.isArray(parsed.providerTypes))
  return
- credentials.value = parsed.credentials as ProviderCredentialDto
+ // 兼容历史快照：早期 backend 版本 / 旧 sessionStorage 中可能没有
+ // available_models 字段。统一补 兜底，避免下游 `.length` 访问 undefined。
+ credentials.value = (parsed.credentials as ProviderCredentialDto).map(c => ({
+ ...c,
+ available_models: Array.isArray(c.available_models) ? c.available_models:,
+ }))
  providerTypes.value = parsed.providerTypes as ProviderTypeMetaDto
  lastFetchedAt.value = typeof parsed.lastFetchedAt === 'number' ? parsed.lastFetchedAt: 0
  lastFetchedScope.value = parsed.lastFetchedScope ?? null
@@ -314,8 +320,9 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  /** 核心路径：cache hit 直接返回；miss 触发 refreshModels。 */
  async function getModelsForCredential(id: string): Promise<AvailableModel> {
  const cred = credentials.value.find(c => c.id === id)
- if (cred && cred.available_models.length > 0)
- return cred.available_models
+ const available = cred?.available_models ??
+ if (available.length > 0)
+ return available
  return refreshModels(id)
  }
  /**
