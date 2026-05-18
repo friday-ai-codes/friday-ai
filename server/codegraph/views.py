@@ -6,6 +6,7 @@ from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from codegraph.models import Endpoint, ImportEdge, Symbol
@@ -15,6 +16,7 @@ from codegraph.serializers import (
  SymbolSerializer,
 )
 from codegraph.services.graph_expansion import GraphExpansionService
+from repositories.models import GraphBuildStatus, IndexHistory, Repository
 from repositories.permissions import RepositoryPermission
 logger = structlog.get_logger(__name__)
 # UUID 合法性校验正则（关键差异 3：过滤 graph_expansion L274 bug 产生的非 UUID target）
@@ -187,8 +189,73 @@ class EndpointListView(APIView):
  total=total,
  )
  return Response({"count": total, "offset": offset, "limit": limit, "results": data})
+class CodegraphDeleteView(APIView):
+ """DELETE /api/repositories/{repository_id}/codegraph/
+ Phase GRAPH-：仅清图谱三件套（Symbol / ImportEdge / Endpoint），
+ 向量轨（FileIndex / ChunkEdge / ChunkRegistry / Qdrant collection）保持不变。
+ 并发保护：若该仓库存在 ``IndexHistory.graph_build_status=RUNNING`` 的活跃索
+ 引，返 409 + detail 含 ``running`` 关键字（per Plan must_haves）。本端点
+ 不引入 ``select_for_update`` lock —— per CONTEXT decisions Phase
+ GRAPH- 才会落 lock，本 phase 单查 ``aexists`` 即可。
+ 返回值矩阵：
+ - 204：成功（含图谱原本为空的幂等场景）。
+ - 401/403：未认证。
+ - 404：仓库不存在或已软删。
+ - 409：图谱构建并发运行中。
+ 与 ``IndexDeleteView`` 的边界：``IndexDeleteView`` 默认级联清向量 + 图谱；
+ 带 ``?keep_graph=true`` 时仅清向量。本 ``CodegraphDeleteView`` 是其互补端
+ 点 —— 仅清图谱保留向量，便于"重建图谱不动 embedding"的运维场景。
+ """
+ # NOTE：不挂 RepositoryPermission —— 该 permission 通过 ``Repository.objects
+ # .filter(...).exists`` 同步查询返 403/404，但消耗 DB IO 且把 ASGI loop
+ # 内的查询提前到 permission 阶段；此处显式 ``aget`` + 404 fallback 更直接，
+ # 且能区分"仓库不存在"（404）与"图谱并发运行"（409）两类返回码。
+ permission_classes = [IsAuthenticated]
+ async def delete(
+ self, request: Any, repository_id: uuid.UUID
+ ) -> Response:
+ """级联清空图谱三件套；并发 RUNNING 时 409。"""
+ try:
+ repo = await Repository.objects.aget(
+ id=repository_id, is_deleted=False
+ )
+ except Repository.DoesNotExist:
+ return Response(
+ {"detail": "仓库不存在或已删除。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # Phase must_have：单查 aexists 短路并发保护，不依赖 select_for_update。
+ graph_running = await IndexHistory.objects.filter(
+ repository_id=str(repo.id),
+ graph_build_status=GraphBuildStatus.RUNNING,
+ ).aexists
+ if graph_running:
+ logger.info(
+ "codegraph_delete_conflict",
+ repository_id=str(repo.id),
+ reason="graph_build_running",
+ )
+ return Response(
+ {"detail": "图谱构建正在 running，无法清理；请先取消或等待完成。"},
+ status=status.HTTP_409_CONFLICT,
+ )
+ # 复用 cleanup_index 的私有 helper —— 单一权威入口避免重复实现 Symbol /
+ # ImportEdge / Endpoint 删除顺序。helper 返回三表删除计数 dict。
+ from repositories.services.index_cleanup import (
+ _cleanup_graph_artifacts,
+ )
+ deleted = await _cleanup_graph_artifacts(str(repo.id))
+ logger.info(
+ "codegraph_delete_complete",
+ repository_id=str(repo.id),
+ symbols_deleted=deleted["symbols_deleted"],
+ import_edges_deleted=deleted["import_edges_deleted"],
+ endpoints_deleted=deleted["endpoints_deleted"],
+ )
+ return Response(status=status.HTTP_204_NO_CONTENT)
 __all__ = [
  "CallsForSymbolView",
+ "CodegraphDeleteView",
  "EndpointListView",
  "ImportEdgeListView",
  "SymbolListView",

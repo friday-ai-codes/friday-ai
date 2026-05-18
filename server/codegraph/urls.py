@@ -6,6 +6,7 @@
 from django.urls import path
 from codegraph.views import (
  CallsForSymbolView,
+ CodegraphDeleteView,
  EndpointListView,
  ImportEdgeListView,
  SymbolListView,
@@ -19,4 +20,7 @@ urlpatterns = [
  ),
  path("imports/", ImportEdgeListView.as_view, name="codegraph-import-list"),
  path("endpoints/", EndpointListView.as_view, name="codegraph-endpoint-list"),
+ # Phase GRAPH-：DELETE /api/repositories/{id}/codegraph/
+ # 挂在根路径，仅清图谱三件套保留向量轨；并发 RUNNING 时返 409。
+ path("", CodegraphDeleteView.as_view, name="codegraph-delete"),
 ]
