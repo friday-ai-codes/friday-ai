@@ -41,6 +41,15 @@ class RepositorySerializer(serializers.ModelSerializer):
  "remote_head_checked_at",
  "behind_commits",
  "last_indexed_commit_sha",
+ # Phase GRAPH-：图谱进度 6 字段（全 read-only，由
+ # 后端 indexer / graph_builder 控写；auto_build_graph_enabled
+ # Phase 已暴露为 read-write，不在此列）。
+ "graph_build_status",
+ "graph_stage",
+ "current_graph_file",
+ "graph_files_processed",
+ "graph_files_total",
+ "graph_last_built_at",
  ]
  read_only_fields = [
  "id",
@@ -57,6 +66,12 @@ class RepositorySerializer(serializers.ModelSerializer):
  "remote_head_checked_at",
  "behind_commits",
  "last_indexed_commit_sha",
+ "graph_build_status",
+ "graph_stage",
+ "current_graph_file",
+ "graph_files_processed",
+ "graph_files_total",
+ "graph_last_built_at",
  ]
  def get_has_credential(self, obj: Repository) -> bool:
  return hasattr(obj, "credential") and obj.credential is not None
