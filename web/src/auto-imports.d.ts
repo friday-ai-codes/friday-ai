@@ -17,6 +17,7 @@ declare global {
  const computedEager: typeof import('@vueuse/core').computedEager
  const computedInject: typeof import('@vueuse/core').computedInject
  const computedWithControl: typeof import('@vueuse/core').computedWithControl
+ const connectGraphProgressStream: typeof import('./composables/useGraphBuildStream').connectGraphProgressStream
  const connectIndexProgressStream: typeof import('./composables/useIndexProgressStream').connectIndexProgressStream
  const connectSSE: typeof import('./composables/useSSEStream').connectSSE
  const controlledComputed: typeof import('@vueuse/core').controlledComputed
@@ -384,6 +385,9 @@ declare global {
  export type { GalaxyRenderMode } from './composables/useGalaxyGraph'
  import('./composables/useGalaxyGraph')
  // @ts-ignore
+ export type { GraphBuildStreamEvent, ConnectGraphStreamOptions } from './composables/useGraphBuildStream'
+ import('./composables/useGraphBuildStream')
+ // @ts-ignore
  export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
  import('./composables/useIndexProgressStream')
  // @ts-ignore
@@ -439,6 +443,7 @@ declare module 'vue' {
  readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
  readonly computedInject: UnwrapRef<typeof import('@vueuse/core')['computedInject']>
  readonly computedWithControl: UnwrapRef<typeof import('@vueuse/core')['computedWithControl']>
+ readonly connectGraphProgressStream: UnwrapRef<typeof import('./composables/useGraphBuildStream')['connectGraphProgressStream']>
  readonly connectIndexProgressStream: UnwrapRef<typeof import('./composables/useIndexProgressStream')['connectIndexProgressStream']>
  readonly connectSSE: UnwrapRef<typeof import('./composables/useSSEStream')['connectSSE']>
  readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>

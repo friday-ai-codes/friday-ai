@@ -170,6 +170,7 @@ declare module 'vue' {
  GeneralSettings: typeof import('./components/settings/GeneralSettings.vue')['default']
  GlobalConfirmDialog: typeof import('./components/GlobalConfirmDialog.vue')['default']
  GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']
+ GraphAutoBuildToggle: typeof import('./components/repository/GraphAutoBuildToggle.vue')['default']
  GraphRAGDiffusionTab: typeof import('./components/codegraph/GraphRAGDiffusionTab.vue')['default']
  ImportsTab: typeof import('./components/codegraph/ImportsTab.vue')['default']
  IndexedFilesPanel: typeof import('./components/repository/IndexedFilesPanel.vue')['default']
