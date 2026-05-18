@@ -1,4 +1,4 @@
-import { get, post } from './client'
+import { del, get, post } from './client'
 export interface SymbolRow {
  id: string
  name: string
@@ -165,4 +165,104 @@ export async function playgroundSearch(
  if (params.maxTokens !== undefined)
  body.max_tokens = params.maxTokens
  return post<PlaygroundSearchResponse>('/codegraph/playground/search/', body)
+}
+// ============================================================================
+// Phase work item 三件套 + history list + status types
+// ============================================================================
+/**
+ * 图谱构建 5 态（与后端 Plan RepositoryGraphStatus 对齐）
+ */
+export type GraphBuildStatus
+ = | 'idle'
+ | 'running'
+ | 'completed'
+ | 'failed'
+ | 'cancelled'
+/**
+ * 图谱构建触发来源
+ */
+export type GraphBuildTriggerType
+ = | 'manual'
+ | 'auto_after_index'
+ | 'webhook'
+/**
+ * 图谱构建历史条目（与后端 RepositoryGraphBuildHistorySerializer 字段对齐）
+ */
+export interface GraphBuildHistoryItem {
+ id: string
+ trigger_type: GraphBuildTriggerType
+ status: GraphBuildStatus
+ files_total: number
+ files_processed: number
+ files_failed: number
+ symbols_count: number
+ imports_count: number
+ calls_count: number
+ endpoints_count: number
+ started_at: string | null
+ finished_at: string | null
+ error_message: string
+ created_at: string
+}
+/**
+ * SSE 帧内的 graph payload（与 Plan 后端 9 字段精确对齐）
+ *
+ * 字段命名沿用后端 snake_case，避免在 composable 入口处做 camelCase 转换增加噪音。
+ */
+export interface GraphPayload {
+ status: GraphBuildStatus
+ stage: string
+ files_processed: number
+ files_total: number
+ percent: number
+ current_file: string
+ started_at: string | null
+ edge_count_so_far: number
+ error_message: string
+}
+export interface ListGraphHistoryParams {
+ limit?: number
+ offset?: number
+ status?: GraphBuildStatus
+}
+export interface PaginatedHistoryResponse {
+ count: number
+ next: string | null
+ previous: string | null
+ results: GraphBuildHistoryItem
+}
+/**
+ * 触发一次图谱重建（POST /codegraph/rebuild/）
+ */
+export async function rebuildGraph(repositoryId: string): Promise<{ history_id: string }> {
+ return post<{ history_id: string }>(`/repositories/${repositoryId}/codegraph/rebuild/`)
+}
+/**
+ * 取消进行中的图谱构建（POST /codegraph/cancel/，204）
+ */
+export async function cancelGraphBuild(repositoryId: string): Promise<void> {
+ await post<void>(`/repositories/${repositoryId}/codegraph/cancel/`)
+}
+/**
+ * 清空图谱数据（DELETE /codegraph/，204）
+ */
+export async function deleteGraph(repositoryId: string): Promise<void> {
+ await del(`/repositories/${repositoryId}/codegraph/`)
+}
+/**
+ * 拉取历史列表（GET /codegraph/history/，DRF 分页）
+ */
+export async function listGraphHistory(
+ repositoryId: string,
+ params: ListGraphHistoryParams = {},
+): Promise<PaginatedHistoryResponse> {
+ const { limit, offset, status } = params
+ return get<PaginatedHistoryResponse>(
+ `/repositories/${repositoryId}/codegraph/history/`,
+ {
+ limit,
+ offset,
+ status,
+ },
+ )
 }
