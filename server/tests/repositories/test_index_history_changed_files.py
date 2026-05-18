@@ -52,9 +52,11 @@ async def test_changed_files_populated_after_incremental_index -> None:
  patch("services.indexer.qdrant_delete_by_file_path", new_callable=AsyncMock),
  patch.object(indexer, "_extract_and_write_graph", new_callable=AsyncMock),
  # Phase Plan：_should_build_graph 在 _extract_and_write_graph 之前
- # 加双重判断 gating，本测试不进 DB 故直接 patch 为 True 返回。
+ # 加双重判断 gating，本测试不进 DB 故直接 patch 为 False 跳过整段
+ # graph 写入逻辑（包括 Phase Plan 引入的 GraphBuildHistory
+ # acreate 调用——本测试不挂 django_db mark，无法做真实 DB 写）。
  patch.object(
- indexer, "_should_build_graph", new_callable=AsyncMock, return_value=True
+ indexer, "_should_build_graph", new_callable=AsyncMock, return_value=False
  ),
  patch("services.indexer.update_index_progress", new_callable=AsyncMock),
  patch("services.indexer.update_write_progress", new_callable=AsyncMock),
