@@ -1,6 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" shape-rendering="geometricPrecision">
- <rect width="256" height="256" rx="56" fill="#14b8a6" />
- <path d="M64 32H192V96H128Z" fill="#ffffff" />
- <path d="M64 96H128L192 160H64Z" fill="#0f172a" />
- <path d="M64 160H128V224Z" fill="#0f172a" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-36 0 216 216" fill="none" shape-rendering="geometricPrecision">
+ <style>
+ .fg { fill: #0f172a; }
+ @media (prefers-color-scheme: dark) {
+ .fg { fill: #ffffff; }
+ }
+ </style>
+ <path d="M0 0H144V72H72Z" fill="#14b8a6" />
+ <path d="M0 72H72L144 144H0Z" class="fg" />
+ <path d="M0 144H72V216Z" class="fg" />
 </svg>
