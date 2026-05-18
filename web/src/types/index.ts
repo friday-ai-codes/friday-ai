@@ -1,6 +1,7 @@
 // ============================================================================
 // X6-Compatible Store Types
 // ============================================================================
+import type { GraphBuildStatus } from '~/api/codegraph'
 export type { WorkflowEdgeStore, WorkflowNodeStore } from './workflow/store'
 // ============================================================================
 // 枚举类型
@@ -193,6 +194,15 @@ export interface Repository extends RepositoryBase {
  remote_head_checked_at?: string | null
  behind_commits?: number | null
  last_indexed_commit_sha?: string | null
+ // Phase GRAPH-：per-repo 自动构图开关（PATCH-able）
+ auto_build_graph_enabled: boolean
+ // Phase GRAPH-：6 个图谱进度只读字段
+ graph_build_status: GraphBuildStatus
+ graph_stage: string
+ current_graph_file: string
+ graph_files_processed: number
+ graph_files_total: number
+ graph_last_built_at: string | null
 }
 /**
  * 创建仓库请求（包含必填的 Access Token）
@@ -213,6 +223,7 @@ export interface RepositoryUpdate {
  base_branch?: string | null
  description?: string
  auto_index_enabled?: boolean
+ auto_build_graph_enabled?: boolean
 }
 // ============================================================================
 // 仓库关联权限相关类型
