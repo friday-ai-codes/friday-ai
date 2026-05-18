@@ -198,6 +198,72 @@ class GraphWriter:
  )
  return stats
  # =========================================================================
+ # Phase Plan（GRAPH-）：批量按文件删除图谱孤儿数据
+ #
+ # 增量索引检测到文件被删除时，indexer 在 _extract_and_write_graph 之前
+ # 调用 delete_for_files(deleted_file_paths) 把对应的 Symbol / ImportEdge /
+ # Endpoint 三件套清理掉，避免 file_path 已不存在但图谱里还残留行（孤儿数据 bug）。
+ #
+ # 设计要点：
+ # - 整体 transaction.atomic 包装：单步失败回滚整批，不留中间态。
+ # - 三表字段差异显式处理：Symbol.file_path / Endpoint.file_path /
+ # ImportEdge.source_file（注意 ImportEdge 字段名不同）。
+ # - file_paths == 短路返回 0，不进 transaction、不写 log——避免空调用
+ # 产生无意义的事务开销 + 日志噪音。
+ # - 异步版通过 sync_to_async(thread_sensitive=False) 调度到独立线程池，
+ # 与 write_bundle 同模式，避免与 ASGI 请求线程争用。
+ # - 异常不在内部 catch——按调用方（indexer）决定降级策略，配合
+ # transaction.atomic 自动 rollback。
+ # =========================================================================
+ def delete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
+ """按文件批量删除 Symbol / ImportEdge / Endpoint 三件套（同步版）。
+ Args:
+ repository_id: 仓库 UUID 字符串
+ file_paths: 要清理的文件路径列表
+ Returns:
+ 三表删除行数总和（int）。空 file_paths 直接返回 0。
+ Raises:
+ 原样向上抛任何 ORM 异常；transaction.atomic 自动回滚已删除行。
+ """
+ if not file_paths:
+ return 0
+ with transaction.atomic:
+ symbols_deleted, _ = Symbol.objects.filter(
+ repository_id=repository_id, file_path__in=file_paths,
+ ).delete
+ imports_deleted, _ = ImportEdge.objects.filter(
+ repository_id=repository_id, source_file__in=file_paths,
+ ).delete
+ endpoints_deleted, _ = Endpoint.objects.filter(
+ repository_id=repository_id, file_path__in=file_paths,
+ ).delete
+ total = int(symbols_deleted) + int(imports_deleted) + int(endpoints_deleted)
+ logger.info(
+ "graph_orphan_cleanup",
+ repository_id=repository_id,
+ file_count=len(file_paths),
+ symbols_deleted=int(symbols_deleted),
+ import_edges_deleted=int(imports_deleted),
+ endpoints_deleted=int(endpoints_deleted),
+ total_deleted=total,
+ )
+ return total
+ async def adelete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
+ """delete_for_files 的 async 包装器（GRAPH-）。
+ 通过 sync_to_async(thread_sensitive=False) 调度到独立线程池，与
+ write_bundle 同模式，避免与 ASGI 请求线程共享 SingleThreadExecutor。
+ Args:
+ repository_id: 仓库 UUID 字符串
+ file_paths: 要清理的文件路径列表
+ Returns:
+ 三表删除行数总和（int）。空 file_paths 直接返回 0，不调度到线程池。
+ """
+ if not file_paths:
+ return 0
+ return await sync_to_async(
+ self.delete_for_files, thread_sensitive=False,
+ )(repository_id, file_paths)
+ # =========================================================================
  # Phase: ApiWrapper + ApiCallSite 写入
  # =========================================================================
  def write_api_wrappers_for_file(
