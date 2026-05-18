@@ -243,6 +243,11 @@ async def update_index_stage(repository_id: str, stage: str) -> None:
  stage=stage,
  error=str(exc),
  )
+# Phase GRAPH-：图谱进度节流常量。
+# 与 ``_extract_and_write_graph`` 既有循环节奏对齐（line 2347
+# ``if index % GRAPH_YIELD_EVERY == 0``）；helper 函数体内**不二次节流**，
+# 节流责任在 callsite——保 helper 语义简单可单测。
+GRAPH_YIELD_EVERY = 25
 async def update_graph_progress(
  repository_id: str,
  *,
@@ -252,14 +257,17 @@ async def update_graph_progress(
  total: int = 0,
 ) -> None:
  """图谱构建进度上报 helper（与 update_index_stage / update_current_indexing_file 解耦）。
- Phase：no-op stub —— 仅 structlog 事件，**不写库**。Phase
- GRAPH- 才落 ``Repository.graph_stage`` / ``current_graph_file`` /
- ``graph_files_processed`` / ``graph_files_total`` 4 字段写入逻辑。
- 签名预留 Phase 全部字段位，调用方可提前切换到本 helper 而不影响 Phase
- 上层契约（即本 phase 落 stub 后 callsite 一次性切换，Phase 仅在函数体内
- 追加 aupdate，零侵入演进）。
+ Phase GRAPH-：按 callsite 节流（``GRAPH_YIELD_EVERY=25``）
+ 写 4 字段——``graph_stage`` / ``current_graph_file`` /
+ ``graph_files_processed`` / ``graph_files_total``。**helper 函数体内不
+ 二次节流**，每次调用即写库；与 ``update_index_stage`` 同 try/except
+ 模板，写失败仅记录 warning。
+ CONTEXT 决议（Grey Area 1 strong-consistency 口径）：4 入参一律全写 4
+ 字段——避免"上次的 stage 残留"bug。若 caller 仅传 ``stage``，则
+ ``current_graph_file`` / ``graph_files_processed`` / ``graph_files_total``
+ 也会被默认值（``""`` / ``0`` / ``0``）覆盖。reset/terminal 写入由
+ ``services/graph_builder.py`` 的 helper 单独负责，与本函数职责分离。
  """
- try:
  logger.info(
  "graph_progress_update",
  repository_id=repository_id,
@@ -268,10 +276,21 @@ async def update_graph_progress(
  processed=processed,
  total=total,
  )
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(
+ graph_stage=stage,
+ current_graph_file=current_file,
+ graph_files_processed=processed,
+ graph_files_total=total,
+ )
  except Exception as exc:
  logger.warning(
  "update_graph_progress_failed",
  repository_id=repository_id,
+ stage=stage,
+ current_file=current_file,
+ processed=processed,
+ total=total,
  error=str(exc),
  )
 # 文件级断点续传：累积约 64 个 chunks 触发一次 embed → upsert → flush FileIndex
