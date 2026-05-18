@@ -6,7 +6,8 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.core import signing
 from rest_framework.test import APIClient
-from identity.models import OIDCIdentity, OIDCProvider
+from accounts.models import UserSource
+from identity.models import OIDCIdentity, OIDCProvider, OIDCProviderKind
 from identity.services import (
  build_authorize_url,
  create_signed_state,
@@ -20,6 +21,7 @@ def oidc_provider(db):
  """创建测试用 OIDC Provider。"""
  return OIDCProvider.objects.create(
  name="Test Provider",
+ kind=OIDCProviderKind.OTHER,
  issuer_url="https://accounts.example.com",
  client_id="test-client-id",
  client_secret_encrypted="test-client-secret",
@@ -27,6 +29,18 @@ def oidc_provider(db):
  token_endpoint="https://accounts.example.com/token",
  userinfo_endpoint="https://accounts.example.com/userinfo",
  scopes="openid profile email",
+ is_active=True,
+ )
+@pytest.fixture
+def feishu_provider(db):
+ """创建 kind=feishu 的 OIDC Provider，用于来源映射测试。"""
+ return OIDCProvider.objects.create(
+ name="Feishu",
+ kind=OIDCProviderKind.FEISHU,
+ issuer_url="https://passport.feishu.cn",
+ client_id="feishu-client-id",
+ authorization_endpoint="https://passport.feishu.cn/authorize",
+ token_endpoint="https://passport.feishu.cn/token",
  is_active=True,
  )
 @pytest.fixture
@@ -203,6 +217,25 @@ class TestAuthorize:
  fake_id = uuid.uuid4
  response = anon_api.get(f"/api/oidc/authorize/{fake_id}/")
  assert response.status_code == 404
+ def test_authorize_with_prompt_login(self, anon_api, oidc_provider):
+ """传 prompt=login 时授权 URL 应包含 prompt 参数（用于退出后强制重认证）。"""
+ response = anon_api.get(
+ f"/api/oidc/authorize/{oidc_provider.id}/?prompt=login"
+ )
+ assert response.status_code == 200
+ assert "prompt=login" in response.json["authorize_url"]
+ def test_authorize_without_prompt(self, anon_api, oidc_provider):
+ """不传 prompt 时授权 URL 不应包含 prompt 参数（默认 SSO 行为）。"""
+ response = anon_api.get(f"/api/oidc/authorize/{oidc_provider.id}/")
+ assert response.status_code == 200
+ assert "prompt=" not in response.json["authorize_url"]
+ def test_authorize_rejects_unknown_prompt(self, anon_api, oidc_provider):
+ """非白名单 prompt 值应被静默忽略，避免任意值透传到 IdP。"""
+ response = anon_api.get(
+ f"/api/oidc/authorize/{oidc_provider.id}/?prompt=evil-value"
+ )
+ assert response.status_code == 200
+ assert "prompt=" not in response.json["authorize_url"]
 # =============================================================================
 # State 校验测试
 # =============================================================================
@@ -357,6 +390,27 @@ class TestJITProvisioning:
  assert is_new is True
  assert user.username.startswith("normaluser")
  assert user.username != "normaluser"
+ def test_new_user_source_matches_provider_kind(self, feishu_provider):
+ """通过 kind=feishu 的 Provider 创建的用户 source 应为 feishu。"""
+ userinfo = {
+ "sub": "feishu-sub-001",
+ "email": "fs-user@example.com",
+ "preferred_username": "fsuser",
+ "name": "Feishu User",
+ }
+ user, is_new = async_to_sync(jit_provision_user)(feishu_provider, userinfo)
+ assert is_new is True
+ assert user.source == UserSource.FEISHU.value
+ def test_other_provider_maps_to_oidc_other(self, oidc_provider):
+ """kind=other 的 Provider 创建的用户 source 为 oidc_other。"""
+ userinfo = {
+ "sub": "other-sub-001",
+ "email": "other-user@example.com",
+ "preferred_username": "otheruser",
+ "name": "Other User",
+ }
+ user, _ = async_to_sync(jit_provision_user)(oidc_provider, userinfo)
+ assert user.source == UserSource.OIDC_OTHER.value
 # =============================================================================
 # 公开端点测试
 # =============================================================================
@@ -389,3 +443,10 @@ class TestHelperFunctions:
  assert "response_type=code" in url
  assert "state=my-state" in url
  assert "redirect_uri=" in url
+ assert "prompt=" not in url
+ def test_build_authorize_url_with_prompt(self, oidc_provider):
+ """传入 prompt 时应附加到授权 URL（用于退出后强制重认证）。"""
+ url = build_authorize_url(
+ oidc_provider, "my-state", "http://localhost/callback", prompt="login"
+ )
+ assert "prompt=login" in url

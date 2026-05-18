@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ColumnDef } from '@tanstack/vue-table'
-import type { Invitation, SystemUser } from '~/types'
+import type { Invitation, SystemUser, UserSource } from '~/types'
 import { h } from 'vue'
 import { createInvitation, listUsers, updateUser } from '~/api/users'
 import DataTable from '~/components/common/DataTable.vue'
@@ -90,6 +90,19 @@ function formatDate(dateStr: string) {
  day: 'numeric',
  })
 }
+// 用户来源 → 中文标签 + 图标 + 强调色
+const SOURCE_META: Record<UserSource, { label: string, icon: string, tone: string }> = {
+ feishu: { label: '飞书', icon: 'icon-[lucide--message-circle]', tone: 'text-sky-600 bg-sky-500/10 border-sky-500/20' },
+ google: { label: 'Google', icon: 'icon-[lucide--chrome]', tone: 'text-amber-600 bg-amber-500/10 border-amber-500/20' },
+ github: { label: 'GitHub', icon: 'icon-[lucide--github]', tone: 'text-foreground bg-muted border-border/60' },
+ oidc_other: { label: 'SSO', icon: 'icon-[lucide--shield-check]', tone: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' },
+ invitation: { label: '邀请', icon: 'icon-[lucide--mail]', tone: 'text-violet-600 bg-violet-500/10 border-violet-500/20' },
+ admin: { label: '管理员', icon: 'icon-[lucide--user-cog]', tone: 'text-primary bg-primary/10 border-primary/20' },
+ system: { label: '系统', icon: 'icon-[lucide--settings]', tone: 'text-muted-foreground bg-muted border-border/60' },
+}
+function getSourceMeta(source: UserSource | undefined) {
+ return SOURCE_META[source ?? 'admin'] ?? SOURCE_META.admin
+}
 onMounted( => {
  loadUsers
 })
@@ -119,6 +132,20 @@ const columns: ColumnDef<SystemUser> = [
  header: '角色',
  cell: ({ row }) => row.original.is_superuser
  ? h(Badge, { variant: 'outline', class: 'text-xs' }, => '超级管理员'): h('span', { class: 'text-sm text-muted-foreground' }, '普通用户'),
+ enableSorting: false,
+ },
+ {
+ id: 'source',
+ header: '来源',
+ cell: ({ row }) => {
+ const meta = getSourceMeta(row.original.source)
+ return h('span', {
+ class: `inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${meta.tone}`,
+ }, [
+ h('span', { class: `${meta.icon} text-[0.85rem]` }),
+ meta.label,
+ ])
+ },
  enableSorting: false,
  },
  {

@@ -2,10 +2,26 @@
 import uuid
 from django.conf import settings
 from django.db import models
+class OIDCProviderKind(models.TextChoices):
+ """OIDC Provider 类型。
+ 用于在 JIT provision 时为用户打上对应的 source 标签，便于在用户管理
+ 页面直接区分用户来自哪个第三方平台。
+ """
+ FEISHU = "feishu", "飞书"
+ GOOGLE = "google", "Google"
+ GITHUB = "github", "GitHub"
+ OTHER = "other", "其他 OIDC"
 class OIDCProvider(models.Model):
  """系统级 OIDC 提供商配置。"""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=100, verbose_name="名称")
+ kind = models.CharField(
+ max_length=20,
+ choices=OIDCProviderKind.choices,
+ default=OIDCProviderKind.OTHER,
+ verbose_name="Provider 类型",
+ help_text="用于标记用户来源，便于在用户管理页面区分飞书/Google/GitHub 等",
+ )
  issuer_url = models.URLField(max_length=500, verbose_name="Issuer URL")
  client_id = models.CharField(max_length=255, verbose_name="Client ID")
  client_secret_encrypted = models.TextField(

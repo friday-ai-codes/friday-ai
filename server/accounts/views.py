@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Invitation
+from .models import Invitation, UserSource
 from .serializers import (
  ChangePasswordSerializer,
  InvitationAcceptSerializer,
@@ -224,6 +224,7 @@ class InvitationAcceptView(APIView):
  password=data["password"],
  email=invitation.email,
  display_name=data.get("display_name", ""),
+ source=UserSource.INVITATION.value,
  )
  # 标记邀请已使用
  invitation.accepted_at = timezone.now

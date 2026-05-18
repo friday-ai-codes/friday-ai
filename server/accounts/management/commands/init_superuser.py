@@ -4,7 +4,7 @@ import secrets
 import string
 import structlog
 from django.core.management.base import BaseCommand
-from accounts.models import User
+from accounts.models import User, UserSource
 logger = structlog.get_logger(__name__)
 def generate_random_password(length: int = 16) -> str:
  """Generate a secure random password."""
@@ -44,6 +44,7 @@ class Command(BaseCommand):
  username=username,
  password=password,
  display_name="系统管理员",
+ source=UserSource.SYSTEM.value,
  )
  # Set must_change_password flag if password was auto-generated
  if password_generated:

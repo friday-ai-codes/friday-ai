@@ -13,6 +13,7 @@ class OIDCProviderSerializer(serializers.ModelSerializer):
  fields = [
  "id",
  "name",
+ "kind",
  "issuer_url",
  "client_id",
  "client_secret",
