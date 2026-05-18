@@ -1,4 +1,5 @@
-"""codegraph REST API 序列化器 —— 4 个 ModelSerializer 映射 codegraph 模型字段。"""
+"""codegraph REST API 序列化器 —— 4 个 ModelSerializer 映射 codegraph 模型字段
++ 1 个 GraphBuildHistorySerializer（Phase GRAPH- list endpoint）。"""
 from rest_framework import serializers
 from codegraph.models import CallEdge, Endpoint, ImportEdge, Symbol
 class SymbolSerializer(serializers.ModelSerializer):
@@ -54,9 +55,33 @@ class EndpointSerializer(serializers.ModelSerializer):
  "file_path",
  "line_number",
  ]
+class GraphBuildHistorySerializer(serializers.Serializer):
+ """GraphBuildHistory 记录序列化器（Phase GRAPH- list endpoint）。
+ 字段口径与 ``IndexHistorySerializer``（``repositories/index_views.py:807``）同构 ——
+ 平铺 14 字段：id / trigger_type / status / 7 个 counts(files_* + symbols_count +
+ imports_count + calls_count + endpoints_count) / started_at / finished_at /
+ error_message / created_at。
+ ``error_message`` 用 ``allow_blank=True``（与 model 的 ``default=""``
+ 语义对齐，区别于 ``IndexHistory.error_message`` 的 ``null=True`` 风格）。
+ """
+ id = serializers.UUIDField
+ trigger_type = serializers.CharField
+ status = serializers.CharField
+ files_total = serializers.IntegerField
+ files_processed = serializers.IntegerField
+ files_failed = serializers.IntegerField
+ symbols_count = serializers.IntegerField
+ imports_count = serializers.IntegerField
+ calls_count = serializers.IntegerField
+ endpoints_count = serializers.IntegerField
+ started_at = serializers.DateTimeField(allow_null=True)
+ finished_at = serializers.DateTimeField(allow_null=True)
+ error_message = serializers.CharField(allow_blank=True)
+ created_at = serializers.DateTimeField
 __all__ = [
  "CallEdgeSerializer",
  "EndpointSerializer",
+ "GraphBuildHistorySerializer",
  "ImportEdgeSerializer",
  "SymbolSerializer",
 ]
