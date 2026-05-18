@@ -102,6 +102,7 @@ def test_repository_create_sets_graph_defaults -> None:
 # ---------------------------------------------------------------------------
 # 4. migration 完整性
 # ---------------------------------------------------------------------------
+@pytest.mark.django_db
 def test_migration_makemigrations_clean -> None:
  """repositories app 无未生成 migration 漂移（仅检测 repositories app）。
  全局 ``--check --dry-run`` 因 code_relations/codegraph 既有预存 drift（Plan
@@ -109,7 +110,8 @@ def test_migration_makemigrations_clean -> None:
  plan 落地完整。
  """
  # ``call_command`` 在 exit code 非 0 时抛 SystemExit；本 plan 仅关心
- # repositories app 自身无新增 drift。
+ # repositories app 自身无新增 drift。``makemigrations --check`` 需要 DB
+ # 访问读 migration recorder，故加 django_db 标记。
  try:
  call_command(
  "makemigrations",
