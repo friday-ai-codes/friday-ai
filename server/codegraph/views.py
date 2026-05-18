@@ -451,6 +451,26 @@ class CodegraphCancelView(APIView):
  history.status = GraphBuildHistoryStatus.CANCELLED
  history.finished_at = timezone.now
  await history.asave(update_fields=["status", "finished_at"])
+ # Phase GRAPH- 取消出口一致性（CONTEXT Grey Area 1
+ # 决议）：除 history 行转 CANCELLED 外，同步把 Repository 进度字段
+ # 转 CANCELLED + 清空易失字段，让前端状态徽章 / 进度条立即归零。
+ # auto_after_index 触发的 history 主任务 indexer 不会停止——本端点
+ # 仍写 Repository 字段保 DB 一致性（best-effort），UI 在下一次
+ # SSE 帧或 polling 拿到 cancelled 态即可。
+ try:
+ await Repository.objects.filter(id=repository_id).aupdate(
+ graph_build_status=RepositoryGraphStatus.CANCELLED,
+ graph_stage="",
+ current_graph_file="",
+ graph_files_processed=0,
+ graph_last_built_at=timezone.now,
+ )
+ except Exception as exc:
+ logger.warning(
+ "cancel_repository_graph_status_update_failed",
+ repository_id=str(repository_id),
+ error=str(exc),
+ )
  logger.info(
  "codegraph_cancel_submitted",
  repository_id=str(repository_id),
