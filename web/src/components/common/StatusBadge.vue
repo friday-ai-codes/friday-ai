@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { Badge } from '~/components/ui/badge'
 import { getStatusConfig } from '~/config/status'
 const props = withDefaults(defineProps<{
- type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog'
+ type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog' | 'graph'
  status: string
  showLabel?: boolean
  showIcon?: boolean

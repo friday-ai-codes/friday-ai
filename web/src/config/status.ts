@@ -52,9 +52,17 @@ export const triggerLogStatusConfig: Record<string, StatusConfig> = {
  error: { label: '错误', icon: 'lucide--alert-circle', variant: 'destructive' },
  duplicate: { label: '重复', icon: 'lucide--copy', variant: 'outline' },
 }
+// 图谱构建状态（Phase GRAPH-）
+export const graphStatusConfig: Record<string, StatusConfig> = {
+ idle: { label: '未构建', icon: 'lucide--circle', variant: 'muted' },
+ running: { label: '构建中', icon: 'lucide--loader-2', variant: 'info', animate: true },
+ completed: { label: '已构建', icon: 'lucide--check-circle', variant: 'success' },
+ failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
+ cancelled: { label: '已停止', icon: 'lucide--circle-stop', variant: 'muted' },
+}
 // 根据状态类型获取配置
 export function getStatusConfig(
- type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog',
+ type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog' | 'graph',
  status: string,
 ): StatusConfig {
  const configMap = {
@@ -63,6 +71,7 @@ export function getStatusConfig(
  codingTask: codingTaskStatusConfig,
  index: indexStatusConfig,
  triggerLog: triggerLogStatusConfig,
+ graph: graphStatusConfig,
  }
  return configMap[type][status] ?? { label: status, icon: 'lucide--help-circle', variant: 'muted' as const }
 }
