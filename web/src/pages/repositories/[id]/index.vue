@@ -16,6 +16,7 @@ import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import RepoHashFreshnessCard from '~/components/repository/RepoHashFreshnessCard.vue'
+import RepositoryGraphCard from '~/components/repository/RepositoryGraphCard.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
@@ -455,10 +456,13 @@ function copyUrl {
  </section>
  <!-- ==================== 索引统计 ==================== -->
  <section id="index-stats" class="scroll-mt-22 space-y-4">
+ <!-- Phase GRAPH-：RepositoryGraphCard 与 RepositoryIndexCard 同行并列 -->
  <div class="grid gap-4 lg:grid-cols-2">
  <RepositoryIndexCard:repository-id="repository.id" />
- <IndexStatsPanel:repository-id="repository.id" />
+ <RepositoryGraphCard:repository-id="repository.id" />
  </div>
+ <!-- IndexStatsPanel 下移独占一行（work item §2.2：3 卡片同 grid 挤大屏） -->
+ <IndexStatsPanel:repository-id="repository.id" />
  <!--: 仅 INDEXING 状态渲染，展示本次变更文件（work item §6.2） -->
  <!-- 文件级实时进度（当前文件 + N/M）已在 RepositoryIndexCard 顶部展示，本组件专注变更文件分组 -->
  <IndexProgressTimeline
