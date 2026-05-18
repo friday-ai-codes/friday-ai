@@ -369,14 +369,13 @@ async def test_update_graph_progress_called_during_auto_after_index(
  callsite #4 incremental，PLAN 推荐二选其一切换）。
  """
  settings.ENABLE_CODEGRAPH = True
- # 直接以 ``await update_graph_progress(...)`` callsite 形态调一次，
- # 模拟 plan 切换后 indexer 包裹模板内部上报进度行为。
- from services.indexer import update_graph_progress
+ # 通过模块属性调用，触发 patch（直接 from-import 会绑定原函数）
+ import services.indexer as indexer_module
  with patch(
  "services.indexer.update_graph_progress",
  new_callable=AsyncMock,
  ) as spy:
- await update_graph_progress(
+ await indexer_module.update_graph_progress(
  str(repo.id),
  stage="building_graph",
  processed=0,

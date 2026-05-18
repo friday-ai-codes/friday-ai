@@ -20,6 +20,9 @@ from repositories.models import (
  BranchFileIndex,
  BranchIndexStatus,
  FileIndex,
+ GraphBuildHistory,
+ GraphBuildHistoryStatus,
+ GraphBuildHistoryTrigger,
  IndexStatus,
  Repository,
  RepositoryBranchIndex,
@@ -840,18 +843,64 @@ class IndexerService:
  # 这种 tmp 前缀，导致前端代码图谱定位/调用关系全部对不上。
  graph_file_paths = [os.path.relpath(p, repo_path) for p in files]
  if await self._should_build_graph(None):
+ # Phase GRAPH-..05：auto_after_index 路径写
+ # GraphBuildHistory 行；薄壳 `_extract_and_write_graph` 不感知
+ # history（保 byte-equivalent），由 callsite 外层 wrap。
+ # 仍在 indexer 主任务（index-{repo_id}）内运行——不切新 task。
+ gbh = await GraphBuildHistory.objects.acreate(
+ repository_id=self.repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+ )
+ # T-：示范切换 Plan update_graph_progress stub helper
+ # （Phase 才落字段写入，本 phase 仅 structlog 通路验证）。
+ await update_graph_progress(
+ self.repository_id,
+ stage="building_graph",
+ processed=0,
+ total=len(graph_file_paths),
+ )
  try:
- await self._extract_and_write_graph(
+ stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_file_paths,
  repository_id=self.repository_id,
  )
- except Exception:
+ gbh.status = GraphBuildHistoryStatus.COMPLETED
+ gbh.files_total = len(graph_file_paths)
+ gbh.files_processed = stats.get("files_processed", 0)
+ gbh.files_failed = stats.get("files_failed", 0)
+ gbh.symbols_count = stats.get("total_symbols", 0)
+ gbh.imports_count = stats.get("total_imports", 0)
+ gbh.calls_count = stats.get("total_calls", 0)
+ gbh.endpoints_count = stats.get("total_endpoints", 0)
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=[
+ "status",
+ "files_total",
+ "files_processed",
+ "files_failed",
+ "symbols_count",
+ "imports_count",
+ "calls_count",
+ "endpoints_count",
+ "finished_at",
+ ]
+ )
+ except Exception as exc:
+ gbh.status = GraphBuildHistoryStatus.FAILED
+ gbh.error_message = str(exc)[:1000]
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=["status", "error_message", "finished_at"]
+ )
  logger.warning(
  "extract_and_write_graph_failed",
  repository_id=self.repository_id,
  exc_info=True,
  )
+ # 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
  await update_index_stage(self.repository_id, IndexStage.FINALIZING)
  try:
@@ -1085,11 +1134,54 @@ class IndexerService:
  deleted_count=len(deleted_file_paths),
  exc_info=True,
  )
- await self._extract_and_write_graph(
+ # Phase GRAPH-..05：auto_after_index 路径写
+ # GraphBuildHistory（与 callsite #1 共用模板）。
+ gbh = await GraphBuildHistory.objects.acreate(
+ repository_id=self.repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+ )
+ try:
+ stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
  )
+ gbh.status = GraphBuildHistoryStatus.COMPLETED
+ gbh.files_total = len(graph_files)
+ gbh.files_processed = stats.get("files_processed", 0)
+ gbh.files_failed = stats.get("files_failed", 0)
+ gbh.symbols_count = stats.get("total_symbols", 0)
+ gbh.imports_count = stats.get("total_imports", 0)
+ gbh.calls_count = stats.get("total_calls", 0)
+ gbh.endpoints_count = stats.get("total_endpoints", 0)
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=[
+ "status",
+ "files_total",
+ "files_processed",
+ "files_failed",
+ "symbols_count",
+ "imports_count",
+ "calls_count",
+ "endpoints_count",
+ "finished_at",
+ ]
+ )
+ except Exception as exc:
+ gbh.status = GraphBuildHistoryStatus.FAILED
+ gbh.error_message = str(exc)[:1000]
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=["status", "error_message", "finished_at"]
+ )
+ logger.warning(
+ "extract_and_write_graph_failed",
+ repository_id=self.repository_id,
+ exc_info=True,
+ )
+ # 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
  return {
  "status": "indexed",
  "diff_files": len(diffs),
@@ -1443,18 +1535,54 @@ class IndexerService:
  deleted_count=len(deleted_file_paths),
  exc_info=True,
  )
+ # Phase GRAPH-..05：auto_after_index 路径写
+ # GraphBuildHistory（与 callsite #1 / #2 共用模板）。
+ gbh = await GraphBuildHistory.objects.acreate(
+ repository_id=self.repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+ )
  try:
- await self._extract_and_write_graph(
+ stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
  )
- except Exception:
+ gbh.status = GraphBuildHistoryStatus.COMPLETED
+ gbh.files_total = len(graph_files)
+ gbh.files_processed = stats.get("files_processed", 0)
+ gbh.files_failed = stats.get("files_failed", 0)
+ gbh.symbols_count = stats.get("total_symbols", 0)
+ gbh.imports_count = stats.get("total_imports", 0)
+ gbh.calls_count = stats.get("total_calls", 0)
+ gbh.endpoints_count = stats.get("total_endpoints", 0)
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=[
+ "status",
+ "files_total",
+ "files_processed",
+ "files_failed",
+ "symbols_count",
+ "imports_count",
+ "calls_count",
+ "endpoints_count",
+ "finished_at",
+ ]
+ )
+ except Exception as exc:
+ gbh.status = GraphBuildHistoryStatus.FAILED
+ gbh.error_message = str(exc)[:1000]
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=["status", "error_message", "finished_at"]
+ )
  logger.warning(
  "extract_and_write_graph_failed",
  repository_id=self.repository_id,
  exc_info=True,
  )
+ # 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
  return {"status": "success", **stats_with_files}
  async def run_incremental_index(
  self,
@@ -1741,18 +1869,62 @@ class IndexerService:
  deleted_count=len(deleted_file_paths),
  exc_info=True,
  )
+ # Phase GRAPH-..05：auto_after_index 路径写
+ # GraphBuildHistory（与 callsite #1 / #2 / #3 共用模板）。
+ gbh = await GraphBuildHistory.objects.acreate(
+ repository_id=self.repository_id,
+ status=GraphBuildHistoryStatus.RUNNING,
+ trigger_type=GraphBuildHistoryTrigger.AUTO_AFTER_INDEX,
+ )
+ # T-：示范切换 Plan update_graph_progress stub helper
+ # （Phase 才落字段写入，本 phase 仅 structlog 通路验证）。
+ await update_graph_progress(
+ self.repository_id,
+ stage="building_graph",
+ processed=0,
+ total=len(graph_files),
+ )
  try:
- await self._extract_and_write_graph(
+ stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
  )
- except Exception:
+ gbh.status = GraphBuildHistoryStatus.COMPLETED
+ gbh.files_total = len(graph_files)
+ gbh.files_processed = stats.get("files_processed", 0)
+ gbh.files_failed = stats.get("files_failed", 0)
+ gbh.symbols_count = stats.get("total_symbols", 0)
+ gbh.imports_count = stats.get("total_imports", 0)
+ gbh.calls_count = stats.get("total_calls", 0)
+ gbh.endpoints_count = stats.get("total_endpoints", 0)
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=[
+ "status",
+ "files_total",
+ "files_processed",
+ "files_failed",
+ "symbols_count",
+ "imports_count",
+ "calls_count",
+ "endpoints_count",
+ "finished_at",
+ ]
+ )
+ except Exception as exc:
+ gbh.status = GraphBuildHistoryStatus.FAILED
+ gbh.error_message = str(exc)[:1000]
+ gbh.finished_at = timezone.now
+ await gbh.asave(
+ update_fields=["status", "error_message", "finished_at"]
+ )
  logger.warning(
  "extract_and_write_graph_failed",
  repository_id=self.repository_id,
  exc_info=True,
  )
+ # 不变量：图谱失败不阻塞向量轨 INDEXED；不 raise
  # Phase (per ): 异步构建仓库摘要索引，失败不回滚索引
  await update_index_stage(self.repository_id, IndexStage.FINALIZING)
  try:
