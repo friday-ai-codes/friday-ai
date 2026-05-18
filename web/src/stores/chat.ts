@@ -21,7 +21,6 @@ import {
 import { ApiError, get as apiGet } from '~/api/client'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
-import { useSpacesStore } from '~/stores/spaces'
 /** Phase：preflight missing payload 契约。 */
 export interface CredentialMissingPayload {
  missingProvider: ProviderType
