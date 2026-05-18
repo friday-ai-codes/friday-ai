@@ -251,6 +251,105 @@ function toggleTool(id: string) {
  else
  expandedTools.value.add(id)
 }
+// 工具分组展开状态（连续同类工具默认收起为一组，参考 Cursor 风格）
+const expandedGroups = ref<Set<string>>(new Set)
+function toggleGroup(id: string) {
+ if (expandedGroups.value.has(id))
+ expandedGroups.value.delete(id)
+ else
+ expandedGroups.value.add(id)
+}
+// 拥有专属卡片渲染的工具不参与分组（CodingPlanCard / deep-analysis-panel）
+const UNGROUPABLE_TOOLS = new Set(['deep_analysis', 'create_coding_plan', 'update_coding_plan'])
+function isGroupableTool(name: string): boolean {
+ return !UNGROUPABLE_TOOLS.has(name.replace(/^mcp__[^_]+__/, ''))
+}
+interface ToolItemShape {
+ id: string
+ name: string
+ input: Record<string, unknown>
+ result?: string
+ status: 'running' | 'done'
+}
+interface ToolGroupNode {
+ id: string
+ kind: 'tool-group'
+ toolName: string
+ items: ToolItemShape
+}
+type DisplayItem = StreamTimelineItem | ToolGroupNode | (ToolItemShape & { kind: 'tool' })
+// 把连续同名 tool 压成 ToolGroupNode；其它 kind / 不可分组工具 / 单例直接透传
+function packGroups<T extends ToolItemShape>(
+ flat: Array<T | StreamTimelineItem>,
+ toToolShape: (t: T) => ToolItemShape,
+): DisplayItem {
+ const out: DisplayItem =
+ let i = 0
+ while (i < flat.length) {
+ const cur = flat[i] as T | StreamTimelineItem
+ const isTool = 'name' in cur && (('kind' in cur && (cur as StreamTimelineItem).kind === 'tool') || !('kind' in cur))
+ if (!isTool) {
+ out.push(cur as StreamTimelineItem)
+ i++
+ continue
+ }
+ const curTool = cur as T
+ if (!isGroupableTool(curTool.name)) {
+ out.push({ ...toToolShape(curTool), kind: 'tool' } as DisplayItem)
+ i++
+ continue
+ }
+ const bare = curTool.name.replace(/^mcp__[^_]+__/, '')
+ let j = i + 1
+ while (j < flat.length) {
+ const next = flat[j] as T | StreamTimelineItem
+ const nextIsTool = 'name' in next && (('kind' in next && (next as StreamTimelineItem).kind === 'tool') || !('kind' in next))
+ if (!nextIsTool)
+ break
+ const nextTool = next as T
+ if (!isGroupableTool(nextTool.name))
+ break
+ if (nextTool.name.replace(/^mcp__[^_]+__/, '') !== bare)
+ break
+ j++
+ }
+ if (j - i >= 2) {
+ const run = (flat.slice(i, j) as T).map(toToolShape)
+ out.push({
+ id: `group-${curTool.id}`,
+ kind: 'tool-group',
+ toolName: curTool.name,
+ items: run,
+ })
+ }
+ else {
+ out.push({ ...toToolShape(curTool), kind: 'tool' } as DisplayItem)
+ }
+ i = j
+ }
+ return out
+}
+const groupedTimelineItems = computed<DisplayItem>( =>
+ packGroups<Extract<StreamTimelineItem, { kind: 'tool' }>>(
+ timelineItems.value,
+ t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status }),
+ ),
+)
+const groupedToolCalls = computed<DisplayItem>( =>
+ packGroups<ToolItemShape>(
+ toolCalls.value as ToolItemShape,
+ t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status }),
+ ),
+)
+function groupStatus(items: ToolItemShape): 'running' | 'done' {
+ return items.some(it => it.status === 'running') ? 'running': 'done'
+}
+function lastItemDescription(items: ToolItemShape): string {
+ if (items.length === 0)
+ return ''
+ const last = items[items.length - 1]
+ return toolAction(last.name, last.input || {}, last.result)
+}
 // 深度分析实时日志
 const deepAnalysisExpanded = ref(true)
 const resolvedDeepAnalysisLogs = computed( => {
@@ -549,9 +648,10 @@ const hideEmptyBubble = computed( =>
  </p>
  </div>
  </div>
- <!-- 工具调用 — 行内 pill 流 -->
+ <!-- 工具调用 — 行内 pill 流（按"连续同类工具"自动折叠成组） -->
  <div v-if="hasTimeline" class="timeline-flow">
- <template v-for="item in timelineItems":key="item.id">
+ <template v-for="item in groupedTimelineItems":key="item.id">
+ <!-- thinking step -->
  <div v-if="item.kind === 'thinking'" class="timeline-step timeline-step--thinking">
  <div class="timeline-step-label">
  <span class="icon-[lucide--sparkles] text-[10px]" />
@@ -561,6 +661,7 @@ const hideEmptyBubble = computed( =>
  {{ item.text.trim }}
  </div>
  </div>
+ <!-- narration step -->
  <div v-else-if="item.kind === 'narration'" class="timeline-step timeline-step--narration">
  <div class="timeline-step-label">
  <span class="icon-[lucide--bot] text-[10px]" />
@@ -570,8 +671,46 @@ const hideEmptyBubble = computed( =>
  {{ item.text.trim }}
  </div>
  </div>
- <div v-else class="tool-flow">
- <div class="tool-inline">
+ <!-- tool group：连续 ≥2 个同类工具合并成可展开组（Cursor 风格） -->
+ <div v-else-if="item.kind === 'tool-group'" class="tool-group">
+ <button class="tool-pill tool-pill--group" @click="toggleGroup(item.id)">
+ <span v-if="groupStatus(item.items) === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-name">{{ toolLabel(item.toolName) }}</span>
+ <span class="tool-pill-count">{{ item.items.length }}</span>
+ <span class="tool-pill-desc">最近：{{ lastItemDescription(item.items) }}</span>
+ <span
+ class="icon-[lucide--chevron-right] text-[10px] text-muted-foreground/50 transition-transform duration-200 ease-out":class="expandedGroups.has(item.id) ? 'rotate-90': ''"
+ />
+ </button>
+ <Transition name="expand">
+ <div v-if="expandedGroups.has(item.id)" class="tool-group-list">
+ <div v-for="child in item.items":key="child.id" class="tool-inline tool-inline--child">
+ <div class="tool-pill tool-pill--child" @click="toggleTool(child.id)">
+ <span v-if="child.status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-desc tool-pill-desc--child">{{ toolAction(child.name, child.input || {}, child.result) }}</span>
+ <span
+ v-if="child.input && Object.keys(child.input).length > 0"
+ class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(child.id) ? 'rotate-90': ''"
+ />
+ </div>
+ <div v-if="expandedTools.has(child.id)" class="tool-detail">
+ <div class="tool-detail-section">
+ <span class="tool-detail-label">输入</span>
+ <pre class="tool-detail-json">{{ JSON.stringify(child.input, null, 2) }}</pre>
+ </div>
+ <div v-if="child.result" class="tool-detail-section">
+ <span class="tool-detail-label">输出</span>
+ <pre class="tool-detail-json">{{ typeof child.result === 'string' && child.result.length > 600 ? `${child.result.slice(0, 600)}…`: child.result }}</pre>
+ </div>
+ </div>
+ </div>
+ </div>
+ </Transition>
+ </div>
+ <!-- 单例 tool（含特殊工具：deep_analysis / coding_plan） -->
+ <div v-else-if="item.kind === 'tool'" class="tool-inline">
  <div class="tool-pill" @click="toggleTool(item.id)">
  <span v-if="item.status === 'running'" class="tool-dot tool-dot--running" />
  <span v-else class="tool-dot tool-dot--done" />
@@ -582,7 +721,6 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
  />
  </div>
- <!-- 编码方案卡片（替代默认 tool-detail） -->
  <CodingPlanCard
  v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
  @confirm="chatStore.handleConfirmCodingSession"
@@ -628,35 +766,70 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  </div>
- </div>
  </template>
  </div>
+ <!-- 非 timeline 路径：同样按分组渲染 -->
  <div v-else-if="toolCalls.length > 0" class="tool-flow">
- <div v-for="tc in toolCalls":key="tc.id" class="tool-inline">
- <!-- 主行：状态 + 名称 + 描述 -->
- <div class="tool-pill" @click="toggleTool(tc.id)">
- <span v-if="tc.status === 'running'" class="tool-dot tool-dot--running" />
+ <template v-for="item in groupedToolCalls":key="item.id">
+ <div v-if="item.kind === 'tool-group'" class="tool-group">
+ <button class="tool-pill tool-pill--group" @click="toggleGroup(item.id)">
+ <span v-if="groupStatus(item.items) === 'running'" class="tool-dot tool-dot--running" />
  <span v-else class="tool-dot tool-dot--done" />
- <span class="tool-pill-name">{{ toolLabel(tc.name) }}</span>
- <span class="tool-pill-desc">{{ toolAction(tc.name, tc.input || {}, tc.result) }}</span>
+ <span class="tool-pill-name">{{ toolLabel(item.toolName) }}</span>
+ <span class="tool-pill-count">{{ item.items.length }}</span>
+ <span class="tool-pill-desc">最近：{{ lastItemDescription(item.items) }}</span>
  <span
- v-if="tc.input && Object.keys(tc.input).length > 0"
- class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(tc.id) ? 'rotate-90': ''"
+ class="icon-[lucide--chevron-right] text-[10px] text-muted-foreground/50 transition-transform duration-200 ease-out":class="expandedGroups.has(item.id) ? 'rotate-90': ''"
+ />
+ </button>
+ <Transition name="expand">
+ <div v-if="expandedGroups.has(item.id)" class="tool-group-list">
+ <div v-for="child in item.items":key="child.id" class="tool-inline tool-inline--child">
+ <div class="tool-pill tool-pill--child" @click="toggleTool(child.id)">
+ <span v-if="child.status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-desc tool-pill-desc--child">{{ toolAction(child.name, child.input || {}, child.result) }}</span>
+ <span
+ v-if="child.input && Object.keys(child.input).length > 0"
+ class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(child.id) ? 'rotate-90': ''"
  />
  </div>
- <!-- 编码方案卡片（替代默认 tool-detail） -->
+ <div v-if="expandedTools.has(child.id)" class="tool-detail">
+ <div class="tool-detail-section">
+ <span class="tool-detail-label">输入</span>
+ <pre class="tool-detail-json">{{ JSON.stringify(child.input, null, 2) }}</pre>
+ </div>
+ <div v-if="child.result" class="tool-detail-section">
+ <span class="tool-detail-label">输出</span>
+ <pre class="tool-detail-json">{{ typeof child.result === 'string' && child.result.length > 600 ? `${child.result.slice(0, 600)}…`: child.result }}</pre>
+ </div>
+ </div>
+ </div>
+ </div>
+ </Transition>
+ </div>
+ <div v-else-if="item.kind === 'tool'" class="tool-inline">
+ <div class="tool-pill" @click="toggleTool(item.id)">
+ <span v-if="item.status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-name">{{ toolLabel(item.name) }}</span>
+ <span class="tool-pill-desc">{{ toolAction(item.name, item.input || {}, item.result) }}</span>
+ <span
+ v-if="item.input && Object.keys(item.input).length > 0"
+ class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
+ />
+ </div>
  <CodingPlanCard
- v-if="isCodingPlanTool(tc.name) && tc.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
  @confirm="chatStore.handleConfirmCodingSession"
  />
- <!-- 深度分析实时日志面板（同一消息只渲染一次） -->
  <div
- v-if="isDeepAnalysisTool(tc.name) && hasDeepAnalysisLogs && tc.id === primaryDeepAnalysisId"
+ v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
  class="deep-analysis-panel"
  >
  <button class="deep-analysis-toggle" @click="deepAnalysisExpanded = !deepAnalysisExpanded">
  <span class="icon-[lucide--activity] text-[10px] text-primary" />
- <span>{{ tc.status === 'running' ? '执行日志': '执行记录' }}</span>
+ <span>{{ item.status === 'running' ? '执行日志': '执行记录' }}</span>
  <span class="deep-analysis-count">{{ resolvedDeepAnalysisLogs.length }} 条</span>
  <span
  class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="deepAnalysisExpanded ? 'rotate-90': ''"
@@ -680,18 +853,18 @@ const hideEmptyBubble = computed( =>
  </template>
  </div>
  </div>
- <!-- 展开详情（排除 coding plan tool） -->
- <div v-if="expandedTools.has(tc.id) && !isCodingPlanTool(tc.name)" class="tool-detail">
+ <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
  <div class="tool-detail-section">
  <span class="tool-detail-label">输入</span>
- <pre class="tool-detail-json">{{ JSON.stringify(tc.input, null, 2) }}</pre>
+ <pre class="tool-detail-json">{{ JSON.stringify(item.input, null, 2) }}</pre>
  </div>
- <div v-if="tc.result" class="tool-detail-section">
+ <div v-if="item.result" class="tool-detail-section">
  <span class="tool-detail-label">输出</span>
- <pre class="tool-detail-json">{{ typeof tc.result === 'string' && tc.result.length > 600 ? `${tc.result.slice(0, 600)}…`: tc.result }}</pre>
+ <pre class="tool-detail-json">{{ typeof item.result === 'string' && item.result.length > 600 ? `${item.result.slice(0, 600)}…`: item.result }}</pre>
  </div>
  </div>
  </div>
+ </template>
  </div>
  <!-- 正文（工具调用全部完成后的最终回答） -->
  <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0 && !hasNarrations && !hasTimeline" class="flex items-center py-2">
@@ -761,12 +934,14 @@ const hideEmptyBubble = computed( =>
 .ai-message {
  display: flex;
  flex-direction: column;
- gap: 0.625rem;
+ /* §5 spacing-scale: 主区块之间 16px 节奏（thinking / narration / tools / 正文） */
+ gap: 1rem;
 }
 /* ============ Timeline ============ */
 .timeline-flow {
  display: flex;
  flex-direction: column;
+ /* 同一时间线内部紧凑，让 tool group / 单 pill 自然成块 */
  gap: 0.375rem;
 }
 .timeline-step {
@@ -839,7 +1014,7 @@ const hideEmptyBubble = computed( =>
 .tool-flow {
  display: flex;
  flex-direction: column;
- gap: 0.25rem;
+ gap: 0.375rem;
 }
 .tool-inline {
  display: flex;
@@ -848,17 +1023,100 @@ const hideEmptyBubble = computed( =>
 .tool-pill {
  display: inline-flex;
  align-items: center;
- gap: 0.375rem;
- padding: 0.25rem 0.625rem;
+ gap: 0.5rem;
+ padding: 0.3125rem 0.75rem;
  border-radius: 0.5rem;
  font-size: 0.75rem;
  cursor: pointer;
- transition: background 0.1s;
+ transition: background-color 0.15s ease, border-color 0.15s ease;
  width: fit-content;
  max-width: 100%;
+ /* button reset：用作 <button> 时 */
+ border: 0;
+ background: transparent;
+ text-align: left;
+ font-family: inherit;
 }
 .tool-pill:hover {
  background: hsl(210 40% 96%);
+}
+.tool-pill:focus-visible {
+ outline: 2px solid hsl(168 76% 42% / 0.4);
+ outline-offset: 1px;
+}
+/* ============ Tool Group — Cursor 风格的"批量折叠" ============ */
+.tool-group {
+ display: flex;
+ flex-direction: column;
+}
+.tool-pill--group {
+ /* 组的头部稍微强调，建立"这是一组操作的入口" */
+ background: hsl(210 40% 97% / 0.6);
+ border: 1px solid hsl(214 32% 91% / 0.6);
+ padding-right: 0.625rem;
+}
+.tool-pill--group:hover {
+ background: hsl(210 40% 95%);
+ border-color: hsl(214 32% 85%);
+}
+.tool-pill-count {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ min-width: 1.125rem;
+ height: 1rem;
+ padding: 0 0.3125rem;
+ border-radius: 9999px;
+ background: hsl(215 16% 47% / 0.12);
+ color: hsl(215 28% 30%);
+ font-size: 0.625rem;
+ font-weight: 600;
+ font-variant-numeric: tabular-nums;
+ flex-shrink: 0;
+}
+.tool-group-list {
+ margin-top: 0.25rem;
+ margin-left: 0.875rem;
+ padding-left: 0.625rem;
+ border-left: 1px dashed hsl(214 32% 91%);
+ display: flex;
+ flex-direction: column;
+ gap: 0.125rem;
+ overflow: hidden;
+}
+.tool-inline--child {
+ /* 组内子项视觉降级 */
+ font-size: 0.6875rem;
+}
+.tool-pill--child {
+ padding: 0.1875rem 0.5rem;
+ border-radius: 0.375rem;
+ width: 100%;
+}
+.tool-pill--child:hover {
+ background: hsl(210 40% 96% / 0.7);
+}
+.tool-pill-desc--child {
+ /* §6 contrast-readability: 提高描述可读性 */
+ color: hsl(215 16% 40%);
+ font-size: 0.6875rem;
+ flex: 1;
+}
+/* expand 过渡 */
+.expand-enter-active,
+.expand-leave-active {
+ transition: max-height 0.22s ease-out, opacity 0.18s ease-out;
+ overflow: hidden;
+}
+.expand-enter-from,
+.expand-leave-to {
+ max-height: 0;
+ opacity: 0;
+}
+.expand-enter-to,
+.expand-leave-from {
+ max-height: 36rem;
+ opacity: 1;
 }
 .tool-dot {
  width: 5px;
@@ -879,7 +1137,8 @@ const hideEmptyBubble = computed( =>
  white-space: nowrap;
 }
 .tool-pill-desc {
- color: hsl(215 16% 47% / 0.7);
+ /* §6 color-accessible-pairs：提高对比度 0.7 → 0.85 */
+ color: hsl(215 16% 42%);
  font-size: 0.6875rem;
  overflow: hidden;
  text-overflow: ellipsis;
