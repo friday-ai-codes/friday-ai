@@ -249,6 +249,7 @@ declare module 'vue' {
  ReplayControls: typeof import('./components/execution/replay/ReplayControls.vue')['default']
  ReplayTimeline: typeof import('./components/execution/replay/ReplayTimeline.vue')['default']
  RepoHashFreshnessCard: typeof import('./components/repository/RepoHashFreshnessCard.vue')['default']
+ RepositoryGraphCard: typeof import('./components/repository/RepositoryGraphCard.vue')['default']
  RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
  RepositoryPicker: typeof import('./components/workflow/RepositoryPicker.vue')['default']
  ResolvedSourceBadge: typeof import('./components/providers/ResolvedSourceBadge.vue')['default']
