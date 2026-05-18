@@ -2110,6 +2110,7 @@ class IndexerService:
  """
  from django.conf import settings
  from codegraph.extractors.base import FileContext
+ from codegraph.extractors.registry import BACKEND_REGISTRY
  from services.code_parser import TREESITTER_LANGUAGES
  from services.code_parser import CodeParser as _CodeParser
  # Feature flag 门控（per NYQUIST 维度 8: 配置可控）
@@ -2183,6 +2184,12 @@ class IndexerService:
  language = self._detect_language_from_path(file_path)
  if not language or language not in TREESITTER_LANGUAGES:
  # 非 tree-sitter 支持的语言，跳过图谱抽取
+ continue
+ # 部分 tree-sitter 语言（如 json）参与向量轨 AST chunking，但
+ # 不参与图谱抽取（无 symbol/import/call/endpoint 概念，未注册
+ # BACKEND_REGISTRY）。提前过滤避免 `get_backend` 每文件刷
+ # `backend_not_found` / `no_backend_for_language` 噪声 warning。
+ if language not in BACKEND_REGISTRY:
  continue
  # 文件大小过滤（per RESEARCH.md §H.2: MAX_FILE_BYTES = 5MB）
  file_size = os.path.getsize(full_path)
