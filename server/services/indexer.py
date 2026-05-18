@@ -457,6 +457,71 @@ class IndexerService:
  from codegraph.services.orchestrator import GraphExtractor
  self._graph_extractor = GraphExtractor
  self._graph_writer = GraphWriter
+ async def _should_build_graph(self, history_id: str | None) -> bool:
+ """Phase GRAPH- / GRAPH-：图谱构建双重判断 + SKIPPED 写入。
+ 在 4 处 `_extract_and_write_graph` callsite 之前调用，
+ 以 `settings.ENABLE_CODEGRAPH AND Repository.auto_build_graph_enabled` 双重判断
+ 决定是否跳过图谱构建。跳过时：
+ 1. 发 structlog 事件 `graph_build_skipped`，
+ `reason ∈ {feature_flag_disabled, auto_build_graph_disabled}`。
+ 2. 若 `history_id` 可解析（显式传入或 fallback 命中 RUNNING IndexHistory）→
+ 写 `IndexHistory.graph_build_status = SKIPPED`（复用
+ `code_relations.lifecycle._update_history` helper，异常自动隔离）。
+ 3. 返回 `False`，调用方应跳过 `_extract_and_write_graph`。
+ `history_id` 为 None 时 fallback：查该 repo 最近 RUNNING 的 IndexHistory.id
+ （与 `_extract_and_write_graph` 末尾 hook line 2165 同模式）。
+ Args:
+ history_id: 显式 IndexHistory 行 ID；None 时走 fallback 查 RUNNING。
+ Returns:
+ True 表示双重判断通过，调用方继续构建图谱；False 表示已跳过 + 已记录状态。
+ """
+ from django.conf import settings
+ from code_relations.lifecycle import _update_history
+ from repositories.models import (
+ GraphBuildStatus,
+ IndexHistory,
+ IndexHistoryStatus,
+ )
+ repo = await Repository.objects.filter(id=self.repository_id).afirst
+ if repo is None:
+ logger.warning(
+ "graph_build_skipped",
+ repository_id=str(self.repository_id),
+ reason="repository_not_found",
+ history_id=history_id,
+ )
+ return False
+ global_enabled = bool(getattr(settings, "ENABLE_CODEGRAPH", False))
+ repo_enabled = bool(repo.auto_build_graph_enabled)
+ if global_enabled and repo_enabled:
+ return True
+ # 全局 flag 优先（更高 severity；先 disable 全局再看 per-repo 才合逻辑）
+ reason = (
+ "feature_flag_disabled" if not global_enabled else "auto_build_graph_disabled"
+ )
+ # history_id fallback：未显式透传时取最近 RUNNING（与 line 2165 同模式）
+ resolved_history_id = history_id
+ if resolved_history_id is None:
+ resolved_history_id = await sync_to_async(
+ lambda: IndexHistory.objects.filter(
+ repository_id=self.repository_id,
+ status=IndexHistoryStatus.RUNNING,
+ )
+ .order_by("-created_at")
+ .values_list("id", flat=True)
+ .first
+ )
+ logger.info(
+ "graph_build_skipped",
+ repository_id=str(self.repository_id),
+ reason=reason,
+ history_id=str(resolved_history_id) if resolved_history_id else None,
+ )
+ if resolved_history_id is not None:
+ await _update_history(
+ resolved_history_id, graph_build_status=GraphBuildStatus.SKIPPED
+ )
+ return False
  async def run_full_index(
  self, repo_path: str, *, branch_name: str | None = None,
  ) -> dict[str, Any]:
@@ -735,11 +800,15 @@ class IndexerService:
  # 用户能立刻看到 Hash 新鲜度卡片显示 fresh。
  await persist_vector_track_complete(self.repository_id, repo_path)
  # Phase: 图谱轨写入（失败不影响"已索引"状态）
+ # Phase GRAPH-：双重判断后再决定是否构图（CONTEXT 决议留 Phase
+ # 薄壳形态——判断在调用方层而非 _extract_and_write_graph 函数体内部）。
+ # run_full_index 无 history_id 形参，_should_build_graph 走 fallback 查 RUNNING。
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  # files 来自 scan_directory(repo_path) 是绝对路径；图谱要求相对路径，
  # 否则 DB 里 file_path 会变成 /var/folders/.../friday_index_xxx/...
  # 这种 tmp 前缀，导致前端代码图谱定位/调用关系全部对不上。
  graph_file_paths = [os.path.relpath(p, repo_path) for p in files]
+ if await self._should_build_graph(None):
  try:
  await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -962,7 +1031,9 @@ class IndexerService:
  chunks=len(points),
  )
  # Phase: 图谱轨写入
- if files_to_index:
+ # Phase GRAPH-：双重判断 gating（run_branch_index 无 history_id 形参，
+ # _should_build_graph 走 fallback 查 RUNNING）。
+ if files_to_index and await self._should_build_graph(None):
  graph_files = [d.file_path for d in files_to_index]
  await self._extract_and_write_graph(
  repo_path=repo_path,
@@ -1302,8 +1373,9 @@ class IndexerService:
  #：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
  await persist_vector_track_complete(self.repository_id, repo_path)
  # Phase: 图谱轨写入（失败不影响"已索引"状态）
+ # Phase GRAPH-：双重判断 gating（git_diff 路径已有 history_id 形参）
  graph_files = [d.file_path for d in files_to_index]
- if graph_files:
+ if graph_files and await self._should_build_graph(history_id):
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  try:
  await self._extract_and_write_graph(
@@ -1581,7 +1653,8 @@ class IndexerService:
  #：主向量轨完成 → 立刻持久化"已索引"元数据（详见 run_full_index 同款注释）
  await persist_vector_track_complete(self.repository_id, repo_path)
  # Phase: 图谱轨写入（失败不影响"已索引"状态）
- if files_to_index:
+ # Phase GRAPH-：双重判断 gating（incremental 路径已有 history_id 形参）
+ if files_to_index and await self._should_build_graph(history_id):
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  graph_files = [d.file_path for d in files_to_index]
  try:
