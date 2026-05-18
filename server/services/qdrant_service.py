@@ -1,5 +1,9 @@
 """Qdrant vector database client service."""
 import asyncio
+import json
+import threading
+import time
+import uuid
 from collections.abc import Callable
 from typing import Any, TypeVar
 import httpx
@@ -10,9 +14,41 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
 T = TypeVar("T")
+# Qdrant httpx client 超时（秒）。改这里同时更新 get_client 与可观测性日志字段。
+_QDRANT_CLIENT_TIMEOUT_S: float = 60.0
+# upsert 可观测性：跨调用统计在飞 upsert 数与累计字节数。
+# 仅用于日志，不参与限流，所以用最轻的 threading.Lock 即可。
+_upsert_obs_lock = threading.Lock
+_upsert_inflight_count: int = 0
+_upsert_total_calls: int = 0
+def _estimate_payload_bytes(points: list[dict[str, Any]]) -> int:
+ """估算 points payload JSON 序列化后的字节数；失败返回 -1。
+ 仅供日志，使用 default=str 兜底任意不可序列化对象，避免抛错影响主路径。
+ """
+ try:
+ return sum(
+ len(json.dumps(p.get("payload", {}), default=str, ensure_ascii=False).encode("utf-8"))
+ for p in points
+ )
+ except Exception:
+ return -1
+def _estimate_vector_bytes(points: list[dict[str, Any]]) -> tuple[int, int]:
+ """返回 (vector_bytes_total, vector_dim)。假设 float32。
+ 第一个点的维度作为代表维度（同一批 upsert 维度必然一致）。
+ """
+ if not points:
+ return 0, 0
+ first_vec = points[0].get("vector") or
+ dim = len(first_vec) if isinstance(first_vec, list) else 0
+ total = sum(
+ (len(p.get("vector") or ) if isinstance(p.get("vector"), list) else 0) * 4
+ for p in points
+ )
+ return total, dim
 class QdrantService:
  """Service for interacting with Qdrant vector database."""
  _client: QdrantClient | None = None
+ _client_url: str | None = None
  @classmethod
  def _get_config_sync(cls) -> dict[str, Any]:
  """Get Qdrant configuration from system settings (sync, for client init)."""
@@ -58,10 +94,40 @@ class QdrantService:
  # 100 个点 + hybrid sparse + dense 512+ 维 → 单次写入轻易超 5s，
  # 触发 httpx.ReadTimeout / socket.timeout → indexer 顶层 catch
  # → index_status=FAILED & error="timed out"，灾难性后果。
- # 设 60s 给冷启动 & 偶发抖动留余量。
- timeout=60,
+ # 设 _QDRANT_CLIENT_TIMEOUT_S 给冷启动 & 偶发抖动留余量。
+ timeout=_QDRANT_CLIENT_TIMEOUT_S,
  )
+ cls._client_url = url
+ cls._disable_keepalive_reuse(cls._client)
  return cls._client
+ @staticmethod
+ def _disable_keepalive_reuse(client: QdrantClient) -> None:
+ """关闭 httpx 连接池的 keepalive 复用。
+ 历史事故：httpx ConnectionPool 默认 ``keepalive_expiry=5s``、
+ ``max_keepalive_connections=20``。Qdrant 服务端（actix）keepalive
+ 也约 5s。两端齐平 → 存在时间窗：连接已被服务端 FIN（socket 进入
+ CLOSE_WAIT），客户端连接池仍判定可用 → 下次拿出来 write 半关闭
+ socket 成功、read response 永远收不到 → 等满 60s 抛
+ ``ResponseHandlingException("timed out")`` → indexer 大型仓库索引
+ 几乎必现的 "写入向量库失败或超时"。
+ 修复：把 keepalive 上限拍到 0 ——每次 HTTP 请求新建 TCP 连接、用完
+ 立刻关。代价是每次 upsert 多一次 TCP 握手（本地 docker ~µs，远端
+ Tailscale ~45ms），相对于动辄数秒的 upsert 耗时可以忽略。
+ 失败容忍：拿到不熟悉的 qdrant-client / httpx 版本时（结构变了）
+ 不应让 ``get_client`` 崩，只记录 warning。
+ """
+ try:
+ httpx_client = client.http.client._client # type: ignore[attr-defined]
+ pool = httpx_client._transport._pool # type: ignore[attr-defined]
+ pool._max_keepalive_connections = 0 # type: ignore[attr-defined]
+ pool._keepalive_expiry = 0.0 # type: ignore[attr-defined]
+ logger.info("qdrant_client_keepalive_disabled")
+ except AttributeError as exc:
+ logger.warning(
+ "qdrant_client_keepalive_disable_failed",
+ error=str(exc),
+ hint="qdrant-client / httpx internals changed; investigate",
+ )
  @classmethod
  def reset_client(cls) -> None:
  """Reset client (useful when config changes)."""
@@ -72,6 +138,7 @@ class QdrantService:
  logger.warning("qdrant_client_close_failed", error=str(exc))
  finally:
  cls._client = None
+ cls._client_url = None
  @staticmethod
  def _is_bad_file_descriptor(exc: OSError) -> bool:
  return getattr(exc, "errno", None) == 9 or "Bad file descriptor" in str(exc)
@@ -99,6 +166,49 @@ class QdrantService:
  if isinstance(exc, ResponseHandlingException):
  return "response_handling_error"
  return "unknown"
+ # upsert 软错误重试白名单。bad_file_descriptor / timeout / connection_error /
+ # response_handling_error / http_error 这五类都对应"客户端连接已坏 / 半关闭 /
+ # idle 期被对端 FIN" 的死连接症状，统一靠 reset_client + 重试一次 兜底。
+ # unexpected_response 是 Qdrant 业务错误（维度不匹配、collection 不存在等），
+ # 重试无意义，必须立刻失败让上层感知。
+ _UPSERT_RETRYABLE_REASONS = frozenset({
+ "bad_file_descriptor",
+ "timeout",
+ "connection_error",
+ "response_handling_error",
+ "http_error",
+ })
+ @classmethod
+ def _call_with_upsert_retry(
+ cls,
+ operation: str,
+ fn: Callable[[QdrantClient], T],
+ on_retry: Callable[[str, BaseException], None] | None = None,
+ ) -> T:
+ """upsert 路径专用：软错误时 reset client + 重试一次。
+ 触发重试的错误（见 ``_UPSERT_RETRYABLE_REASONS``）都对应"连接已死但
+ 客户端不知道"的症状（idle 期对端 FIN、bad fd、半关闭 socket 等）。
+ 关键修复点：必须 ``reset_client`` 让下次 ``get_client`` 重建
+ TCP 连接池，否则重试仍命中同一条死连接。
+ """
+ client = cls.get_client
+ try:
+ return fn(client)
+ except (OSError, httpx.HTTPError, ResponseHandlingException) as exc:
+ reason = cls._classify_failure(exc)
+ if reason not in cls._UPSERT_RETRYABLE_REASONS:
+ raise
+ if on_retry is not None:
+ on_retry(reason, exc)
+ logger.warning(
+ "qdrant_upsert_soft_retry",
+ operation=operation,
+ reason=reason,
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
+ cls.reset_client
+ return fn(cls.get_client)
  @classmethod
  def _call_with_bad_fd_retry(
  cls,
@@ -530,8 +640,81 @@ class QdrantService:
  Args:
  repository_id: Repository ID
  points: List of points with id, vector, and payload
+ 可观测性：
+ 每次调用都打 ``upsert_vectors_call_start`` / ``_success`` / ``_*_failed``，
+ 共享同一个 ``call_id``，便于把单次 upsert 的发起、耗时、字节数、
+ 在飞并发数串起来做统计。失败日志一定带 ``elapsed_ms``，方便区分
+ "立刻失败"（连接问题）vs "等到 timeout"（写入阻塞）。
  """
+ global _upsert_inflight_count, _upsert_total_calls
  collection_name = cls.get_collection_name(repository_id)
+ call_id = uuid.uuid4.hex[:8]
+ points_count = len(points)
+ vector_bytes, vector_dim = _estimate_vector_bytes(points)
+ payload_bytes = _estimate_payload_bytes(points)
+ total_bytes = vector_bytes + max(payload_bytes, 0)
+ with _upsert_obs_lock:
+ _upsert_inflight_count += 1
+ _upsert_total_calls += 1
+ in_flight_at_start = _upsert_inflight_count
+ call_seq = _upsert_total_calls
+ # 兜底用 "unknown"，避免为了日志去查 DB（也避免在单测里强引 SystemSetting）。
+ qdrant_url = cls._client_url or "unknown"
+ start_monotonic = time.monotonic
+ logger.info(
+ "upsert_vectors_call_start",
+ call_id=call_id,
+ call_seq=call_seq,
+ repository_id=repository_id,
+ collection_name=collection_name,
+ points_count=points_count,
+ vector_dim=vector_dim,
+ vector_bytes=vector_bytes,
+ payload_bytes=payload_bytes,
+ total_bytes=total_bytes,
+ in_flight=in_flight_at_start,
+ qdrant_url=qdrant_url,
+ client_timeout_s=_QDRANT_CLIENT_TIMEOUT_S,
+ )
+ def _elapsed_ms -> float:
+ return round((time.monotonic - start_monotonic) * 1000, 2)
+ def _log_fail(event: str, exc: BaseException) -> None:
+ logger.error(
+ event,
+ call_id=call_id,
+ call_seq=call_seq,
+ repository_id=repository_id,
+ collection_name=collection_name,
+ points_count=points_count,
+ vector_dim=vector_dim,
+ vector_bytes=vector_bytes,
+ payload_bytes=payload_bytes,
+ total_bytes=total_bytes,
+ in_flight=in_flight_at_start,
+ qdrant_url=qdrant_url,
+ client_timeout_s=_QDRANT_CLIENT_TIMEOUT_S,
+ elapsed_ms=_elapsed_ms,
+ reason=cls._classify_failure(exc),
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
+ retry_state: dict[str, Any] = {"attempted": False, "first_reason": None}
+ def _on_retry(reason: str, exc: BaseException) -> None:
+ retry_state["attempted"] = True
+ retry_state["first_reason"] = reason
+ logger.warning(
+ "upsert_vectors_first_attempt_failed",
+ call_id=call_id,
+ call_seq=call_seq,
+ repository_id=repository_id,
+ collection_name=collection_name,
+ points_count=points_count,
+ total_bytes=total_bytes,
+ elapsed_ms=_elapsed_ms,
+ reason=reason,
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
  try:
  qdrant_points = [
  models.PointStruct(
@@ -542,65 +725,46 @@ class QdrantService:
  for p in points
  ]
  def _upsert(client: QdrantClient) -> bool:
- logger.debug(
- "upsert_vectors_start",
- collection_name=collection_name,
- points_count=len(qdrant_points),
- )
  client.upsert(
  collection_name=collection_name,
  points=qdrant_points,
  )
- logger.debug(
- "upsert_vectors_complete",
- collection_name=collection_name,
- points_count=len(qdrant_points),
- )
  return True
- return cls._call_with_bad_fd_retry(
- "upsert_vectors",
- _upsert,
+ result = cls._call_with_upsert_retry(
+ "upsert_vectors", _upsert, on_retry=_on_retry,
  )
- except UnexpectedResponse as e:
- logger.error(
- "upsert_vectors_failed",
+ logger.info(
+ "upsert_vectors_call_success",
+ call_id=call_id,
+ call_seq=call_seq,
+ repository_id=repository_id,
  collection_name=collection_name,
- points_count=len(points),
- reason=cls._classify_failure(e),
- error=str(e),
- error_type=type(e).__name__,
+ points_count=points_count,
+ total_bytes=total_bytes,
+ elapsed_ms=_elapsed_ms,
+ in_flight_at_start=in_flight_at_start,
+ retry_attempted=retry_state["attempted"],
+ first_attempt_reason=retry_state["first_reason"],
  )
+ return result
+ except UnexpectedResponse as e:
+ _log_fail("upsert_vectors_failed", e)
  return False
  except ResponseHandlingException as e:
- logger.error(
- "upsert_vectors_response_handling_failed",
- collection_name=collection_name,
- points_count=len(points),
- reason=cls._classify_failure(e),
- error=str(e), error_type=type(e).__name__,
- )
+ _log_fail("upsert_vectors_response_handling_failed", e)
  return False
  except httpx.HTTPError as e:
  # 网络层异常（timeout / connect refused / read error）：
  # 不让单次 batch 抖动炸掉整次索引（这是 indexer 'timed out' 失败的元凶）。
  # 调用方需要感知失败并跳过 FileIndex 锚点写入，避免数据丢失被静默吞掉。
- logger.error(
- "upsert_vectors_network_failed",
- collection_name=collection_name,
- points_count=len(points),
- reason=cls._classify_failure(e),
- error=str(e), error_type=type(e).__name__,
- )
+ _log_fail("upsert_vectors_network_failed", e)
  return False
  except OSError as e:
- logger.error(
- "upsert_vectors_os_failed",
- collection_name=collection_name,
- points_count=len(points),
- reason=cls._classify_failure(e),
- error=str(e), error_type=type(e).__name__,
- )
+ _log_fail("upsert_vectors_os_failed", e)
  return False
+ finally:
+ with _upsert_obs_lock:
+ _upsert_inflight_count -= 1
  @classmethod
  def search(
  cls,
