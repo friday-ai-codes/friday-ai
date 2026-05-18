@@ -424,10 +424,20 @@ class IndexDeleteView(APIView):
  # 级联清理：Qdrant collection + FileIndex + Symbol/ImportEdge/Endpoint
  # + ChunkEdge/ChunkRegistry。模块内每步独立 try/except + 字段降级
  # （per Phase CONTEXT 异常隔离），不向上抛 → 删除请求始终 204。
- report = await cleanup_index(str(repository.id))
+ # Phase GRAPH-：可通过 ?keep_graph=true|1|yes 跳过图谱三件套
+ # 清理（仅清向量轨），用于"清向量但保图谱"的运维场景。兼容 DRF Request
+ # （生产经 dispatch 走入）与 WSGIRequest（旧测试用 APIRequestFactory 直
+ # 调 view）：前者读 ``query_params``，后者回退 ``GET``。
+ query_params = getattr(request, "query_params", None) or request.GET
+ keep_graph = (
+ query_params.get("keep_graph", "").strip.lower
+ in ("true", "1", "yes")
+ )
+ report = await cleanup_index(str(repository.id), keep_graph=keep_graph)
  logger.info(
  "index_delete_cleanup_complete",
  repository_id=str(repository.id),
+ keep_graph=keep_graph,
  report=asdict(report),
  )
  # Reset repository status
