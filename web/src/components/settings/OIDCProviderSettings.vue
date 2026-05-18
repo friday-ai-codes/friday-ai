@@ -3,7 +3,7 @@
  * OIDC Provider 管理设置组件
  * 系统管理员用于配置 OIDC Provider 的 UI
  */
-import type { OIDCProvider, OIDCProviderCreate } from '~/types'
+import type { OIDCProvider, OIDCProviderCreate, OIDCProviderKind } from '~/types'
 import { ref } from 'vue'
 import {
  createProvider,
@@ -23,6 +23,13 @@ import {
 } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 import { Switch } from '~/components/ui/switch'
 import { useConfirmDialog } from '~/composables/useConfirmDialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
@@ -37,9 +44,23 @@ const dialogOpen = ref(false)
 const saving = ref(false)
 const discovering = ref(false)
 const editingId = ref<string | null>(null)
+// Provider 类型选项（影响用户来源标记）
+const KIND_OPTIONS: Array<{ value: OIDCProviderKind, label: string }> = [
+ { value: 'feishu', label: '飞书' },
+ { value: 'google', label: 'Google' },
+ { value: 'github', label: 'GitHub' },
+ { value: 'other', label: '其他 OIDC' },
+]
+const KIND_LABELS: Record<OIDCProviderKind, string> = {
+ feishu: '飞书',
+ google: 'Google',
+ github: 'GitHub',
+ other: '其他 OIDC',
+}
 // 表单
 const form = ref<OIDCProviderCreate>({
  name: '',
+ kind: 'other',
  issuer_url: '',
  client_id: '',
  client_secret: '',
@@ -67,6 +88,7 @@ function openCreateDialog {
  editingId.value = null
  form.value = {
  name: '',
+ kind: 'other',
  issuer_url: '',
  client_id: '',
  client_secret: '',
@@ -83,6 +105,7 @@ function openEditDialog(provider: OIDCProvider) {
  editingId.value = provider.id
  form.value = {
  name: provider.name,
+ kind: provider.kind,
  issuer_url: provider.issuer_url,
  client_id: provider.client_id,
  client_secret: '',
@@ -236,8 +259,11 @@ onMounted( => {
  />
  </div>
  <div class="min-w-0">
- <div class="font-medium truncate">
- {{ provider.name }}
+ <div class="flex items-center gap-2">
+ <span class="font-medium truncate">{{ provider.name }}</span>
+ <span class="shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-medium bg-primary/10 text-primary border border-primary/15">
+ {{ KIND_LABELS[provider.kind] ?? provider.kind }}
+ </span>
  </div>
  <div class="text-xs text-muted-foreground truncate">
  {{ provider.issuer_url }}
@@ -281,6 +307,23 @@ onMounted( => {
  <span class="absolute left-3 top-1/2 -translate-y-1/2 icon-[lucide--tag] text-muted-foreground" />
  <Input v-model="form.name" placeholder="如：Okta、Azure AD" class="pl-10 bg-muted/30 border-border/50 focus:border-primary/50" />
  </div>
+ </div>
+ <!-- 类型 -->
+ <div class="space-y-2">
+ <Label>类型 *</Label>
+ <Select v-model="form.kind">
+ <SelectTrigger class=" bg-muted/30 border-border/50 focus:border-primary/50">
+ <SelectValue placeholder="选择 Provider 类型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem v-for="opt in KIND_OPTIONS":key="opt.value":value="opt.value">
+ {{ opt.label }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <p class="text-xs text-muted-foreground">
+ 影响通过该 Provider 登录创建的用户「来源」标记
+ </p>
  </div>
  <!-- Issuer URL + Discovery -->
  <div class="space-y-2">

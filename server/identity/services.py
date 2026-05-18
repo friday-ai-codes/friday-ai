@@ -7,8 +7,9 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import signing
+from accounts.models import UserSource
 from common.encryption import decrypt_value
-from identity.models import OIDCIdentity, OIDCProvider
+from identity.models import OIDCIdentity, OIDCProvider, OIDCProviderKind
 logger = structlog.get_logger(__name__)
 User = get_user_model
 async def fetch_oidc_discovery(issuer_url: str) -> dict[str, str]:
@@ -60,15 +61,32 @@ def verify_signed_state(signed_value: str, max_age: int = 600) -> dict[str, str]
  signing.SignatureExpired: 签名已过期
  """
  return signing.loads(signed_value, max_age=max_age)
-def build_authorize_url(provider: OIDCProvider, state: str, callback_url: str) -> str:
- """构造 OIDC Provider 授权 URL。"""
- params = {
+def build_authorize_url(
+ provider: OIDCProvider,
+ state: str,
+ callback_url: str,
+ prompt: str | None = None,
+) -> str:
+ """构造 OIDC Provider 授权 URL。
+ Args:
+ provider: OIDC Provider 实例
+ state: CSRF state 值
+ callback_url: 回调 URL
+ prompt: OIDC `prompt` 参数（如 `login` / `consent` / `select_account`）。
+ 用于强制 IdP 重新交互，典型场景是用户主动退出后下一次登录，
+ 避免 SSO 静默放行带来的"点退出无效"观感。
+ Returns:
+ 完整的授权 URL
+ """
+ params: dict[str, str] = {
  "client_id": provider.client_id,
  "response_type": "code",
  "scope": provider.scopes,
  "redirect_uri": callback_url,
  "state": state,
  }
+ if prompt:
+ params["prompt"] = prompt
  return f"{provider.authorization_endpoint}?{urlencode(params)}"
 def build_callback_url(request: object) -> str:
  """根据请求构建 OIDC 回调 URL。
@@ -156,6 +174,15 @@ async def fetch_userinfo(
  except httpx.RequestError as e:
  logger.error("oidc_userinfo_error", error=str(e), provider=provider.name)
  raise ValueError(f"UserInfo 请求错误: {e}") from e
+_PROVIDER_KIND_TO_USER_SOURCE: dict[str, str] = {
+ OIDCProviderKind.FEISHU.value: UserSource.FEISHU.value,
+ OIDCProviderKind.GOOGLE.value: UserSource.GOOGLE.value,
+ OIDCProviderKind.GITHUB.value: UserSource.GITHUB.value,
+ OIDCProviderKind.OTHER.value: UserSource.OIDC_OTHER.value,
+}
+def _provider_kind_to_user_source(kind: str) -> str:
+ """OIDC Provider 类型 → 用户来源 source。"""
+ return _PROVIDER_KIND_TO_USER_SOURCE.get(kind, UserSource.OIDC_OTHER.value)
 async def _find_unique_username(base_username: str) -> str:
  """查找不冲突的用户名，必要时加数字后缀。"""
  username = base_username
@@ -207,6 +234,7 @@ async def jit_provision_user(
  username=username,
  email=email,
  display_name=display_name,
+ source=_provider_kind_to_user_source(provider.kind),
  )
  # OIDC 用户无密码
  user.set_unusable_password

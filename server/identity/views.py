@@ -124,6 +124,12 @@ class OIDCAuthorizeView(APIView):
  # 生成 state
  state_value = secrets.token_urlsafe(32)
  redirect_uri = request.query_params.get("redirect_uri", "/")
+ # OIDC `prompt` 参数（白名单校验，防止任意值透传到 IdP）
+ # 典型用途：前端在用户主动退出后传 prompt=login，强制 IdP 重新认证，
+ # 避免点了退出但 IdP 会话仍在导致的"秒回登录"观感
+ prompt_raw = request.query_params.get("prompt", "")
+ allowed_prompts = {"login", "consent", "select_account", "none"}
+ prompt = prompt_raw if prompt_raw in allowed_prompts else None
  # 签名 state 数据
  signed_state = signing.dumps(
  {
@@ -134,7 +140,7 @@ class OIDCAuthorizeView(APIView):
  )
  # 构造授权 URL
  callback_url = build_callback_url(request)
- authorize_url = build_authorize_url(provider, state_value, callback_url)
+ authorize_url = build_authorize_url(provider, state_value, callback_url, prompt=prompt)
  response = Response({"authorize_url": authorize_url})
  # 设置 state cookie（SameSite=Lax 允许跨站顶级导航）
  response.set_cookie(
@@ -149,6 +155,7 @@ class OIDCAuthorizeView(APIView):
  "oidc_authorize_initiated",
  provider=provider.name,
  provider_id=str(provider.id),
+ prompt=prompt,
  )
  return response
 class OIDCCallbackView(APIView):

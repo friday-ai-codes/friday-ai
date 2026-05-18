@@ -54,11 +54,24 @@ export async function getPublicProviders: Promise<OIDCProviderPublic> {
 }
 /**
  * 获取 OIDC 授权 URL（无需认证）
+ *
+ * @param prompt OIDC `prompt` 参数（如 `login` / `consent` / `select_account`）。
+ * 主要用于"用户主动退出后下一次登录"传 `login`，强制 IdP 重新认证，
+ * 避免 SSO 静默放行导致"点退出无效"的观感。
  */
-export async function getAuthorizeUrl(providerId: string, redirectUri?: string): Promise<OIDCAuthorizeResponse> {
+export async function getAuthorizeUrl(
+ providerId: string,
+ redirectUri?: string,
+ prompt?: 'login' | 'consent' | 'select_account' | 'none',
+): Promise<OIDCAuthorizeResponse> {
+ const params: Record<string, string> = {}
+ if (redirectUri)
+ params.redirect_uri = redirectUri
+ if (prompt)
+ params.prompt = prompt
  return get<OIDCAuthorizeResponse>(
  `/oidc/authorize/${providerId}/`,
- redirectUri ? { redirect_uri: redirectUri }: undefined,
+ Object.keys(params).length ? params: undefined,
  )
 }
 export default {

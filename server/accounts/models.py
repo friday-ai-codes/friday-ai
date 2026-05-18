@@ -10,10 +10,30 @@ from django.utils import timezone
 def _generate_invitation_token -> str:
  """生成 URL 安全的邀请令牌（Django migration 可序列化）。"""
  return secrets.token_urlsafe(32)
+class UserSource(models.TextChoices):
+ """用户来源（用户从哪个渠道进入系统）。
+ 与 OIDC Provider 的 kind 一一对应（feishu/google/github/oidc_other），
+ 再加上邀请注册、管理员创建、系统初始化等本地渠道，便于在用户管理
+ 页面快速识别每个账号的归属。
+ """
+ FEISHU = "feishu", "飞书"
+ GOOGLE = "google", "Google"
+ GITHUB = "github", "GitHub"
+ OIDC_OTHER = "oidc_other", "SSO"
+ INVITATION = "invitation", "邀请"
+ ADMIN = "admin", "管理员"
+ SYSTEM = "system", "系统"
 class User(AbstractUser):
  """Custom user model for Friday."""
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  display_name = models.CharField(max_length=100, blank=True, default="")
+ source = models.CharField(
+ max_length=20,
+ choices=UserSource.choices,
+ default=UserSource.ADMIN,
+ verbose_name="用户来源",
+ help_text="标记账号从哪个渠道进入系统（飞书/Google/GitHub/SSO/邀请/管理员/系统）",
+ )
  must_change_password = models.BooleanField(
  default=False,
  verbose_name="必须修改密码",

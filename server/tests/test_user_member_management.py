@@ -111,7 +111,9 @@ class TestInvitationAPI:
  }, format="json")
  assert resp.status_code == status.HTTP_201_CREATED
  assert resp.data["username"] == "newuser"
- assert User.objects.filter(username="newuser").exists
+ assert resp.data["source"] == "invitation"
+ created = User.objects.get(username="newuser")
+ assert created.source == "invitation"
  def test_accept_invitation_marks_it_used(self, api_client, invitation):
  """接受邀请令牌后令牌被标记为已使用。"""
  api_client.post("/api/auth/invite/accept/", {

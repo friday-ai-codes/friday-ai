@@ -51,6 +51,17 @@ export interface MeUser {
  created_at: string
 }
 /**
+ * 用户来源（与后端 UserSource 枚举一致）
+ */
+export type UserSource =
+ | 'feishu'
+ | 'google'
+ | 'github'
+ | 'oidc_other'
+ | 'invitation'
+ | 'admin'
+ | 'system'
+/**
  * 系统用户（管理员视角）
  */
 export interface SystemUser {
@@ -59,6 +70,7 @@ export interface SystemUser {
  display_name: string
  is_active: boolean
  is_superuser: boolean
+ source: UserSource
  created_at: string
 }
 /**
@@ -622,11 +634,16 @@ export const PLATFORM_LABELS: Record<GitPlatform, string> = {
 // OIDC 相关类型
 // ============================================================================
 /**
+ * OIDC Provider 类型（与后端 OIDCProviderKind 一致）
+ */
+export type OIDCProviderKind = 'feishu' | 'google' | 'github' | 'other'
+/**
  * OIDC Provider（管理员视角）
  */
 export interface OIDCProvider {
  id: string
  name: string
+ kind: OIDCProviderKind
  issuer_url: string
  client_id: string
  authorization_endpoint: string
@@ -643,6 +660,7 @@ export interface OIDCProvider {
  */
 export interface OIDCProviderCreate {
  name: string
+ kind: OIDCProviderKind
  issuer_url: string
  client_id: string
  client_secret?: string

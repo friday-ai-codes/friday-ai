@@ -53,10 +53,25 @@ async function onOIDCLogin(provider: OIDCProviderPublic) {
  oidcLoading.value = true
  try {
  const redirectUri = (route.query.redirect as string) || '/'
+ // 用户主动退出后下一次登录强制 IdP 重新认证
+ // 见 stores/auth.ts logout 注释
+ let forceReauth = false
+ try {
+ forceReauth = sessionStorage.getItem('oidc_force_reauth') === '1'
+ if (forceReauth)
+ sessionStorage.removeItem('oidc_force_reauth')
+ }
+ catch {
+ // 隐私模式下 sessionStorage 可能不可用，静默忽略
+ }
  const controller = new AbortController
  const timeout = setTimeout( => controller.abort, 10_000)
  try {
- const result = await getAuthorizeUrl(provider.id, redirectUri)
+ const result = await getAuthorizeUrl(
+ provider.id,
+ redirectUri,
+ forceReauth ? 'login': undefined,
+ )
  clearTimeout(timeout)
  window.location.href = result.authorize_url
  }

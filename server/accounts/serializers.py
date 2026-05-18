@@ -7,8 +7,16 @@ class UserSerializer(serializers.ModelSerializer):
  """Serializer for User model."""
  class Meta:
  model = User
- fields = ["id", "username", "display_name", "is_active", "is_superuser", "created_at"]
- read_only_fields = ["id", "created_at"]
+ fields = [
+ "id",
+ "username",
+ "display_name",
+ "is_active",
+ "is_superuser",
+ "source",
+ "created_at",
+ ]
+ read_only_fields = ["id", "source", "created_at"]
 class MeSerializer(serializers.ModelSerializer):
  """当前用户信息序列化器（包含空间关系和 gravatar）。"""
  gravatar_url = serializers.SerializerMethodField

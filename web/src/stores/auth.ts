@@ -55,6 +55,14 @@ export const useAuthStore = defineStore('auth', => {
  }
  /**
  * 用户登出
+ *
+ * 注：Friday 只能清自己域下的 cookie，无法清 OIDC IdP（如飞书）域下的会话。
+ * 为避免"点退出后再点 OIDC 登录被 IdP 静默放行、用户感觉没退出"的问题，
+ * 这里在 sessionStorage 设置一个一次性标志，登录页发起 OIDC 授权时会读取
+ * 该标志并附带 `prompt=login`，强制 IdP 重新交互一次。
+ *
+ * sessionStorage 而非 localStorage：标志只在当前浏览器标签页有效，不跨标签
+ * 误伤其他登录态。
  */
  async function logout {
  try {
@@ -66,6 +74,12 @@ export const useAuthStore = defineStore('auth', => {
  finally {
  user.value = null
  isAuthenticated.value = false
+ try {
+ sessionStorage.setItem('oidc_force_reauth', '1')
+ }
+ catch {
+ // 隐私模式下 sessionStorage 可能不可用，静默忽略
+ }
  }
  }
  /**
