@@ -74,6 +74,19 @@ class GraphBuildHistoryTrigger(models.TextChoices):
  MANUAL = "manual", "手动触发"
  AUTO_AFTER_INDEX = "auto_after_index", "索引完成自动触发"
  WEBHOOK = "webhook", "Webhook 触发"
+class RepositoryGraphStatus(models.TextChoices):
+ """Repository 上的图谱当前态 5 态（Phase GRAPH-）。
+ 与 ``GraphBuildHistoryStatus`` 4 态独立——后者描述 history 行（创建即 RUNNING，
+ 不引入 pending/idle），前者描述仓库聚合态：必须有 ``IDLE`` 默认值表示"从未
+ 构建过"或"两次构建之间空闲"。4 个运行态字符串（running/completed/failed/
+ cancelled）与 ``GraphBuildHistoryStatus`` 完全对齐，便于 view 层 1:1 映射。
+ CONTEXT 决议（Phase Grey Area 1）：不引入 pending / skipped。
+ """
+ IDLE = "idle", "未构建"
+ RUNNING = "running", "运行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
+ CANCELLED = "cancelled", "已停止"
 class AISummaryStatus(models.TextChoices):
  """AI 描述生成状态。"""
  NOT_STARTED = "not_started", "未生成"
@@ -160,6 +173,42 @@ class Repository(models.Model):
  auto_build_graph_enabled = models.BooleanField(
  default=True,
  help_text="是否自动构建图谱（per-repo 开关，AND settings.ENABLE_CODEGRAPH 决定是否跳过）",
+ )
+ # Phase GRAPH-：图谱进度 6 字段（与 index_* 字段并行，彻底解耦
+ # 索引文案与图谱文案）。由 `services.indexer.update_graph_progress` helper 按
+ # `GRAPH_YIELD_EVERY=25` callsite 节流写入；reset/terminal 由
+ # `services.graph_builder.build_graph_for_repository` 主入口 + indexer 4 处
+ # callsite 外层（auto_after_index 路径）写。
+ graph_build_status = models.CharField(
+ max_length=20,
+ choices=RepositoryGraphStatus.choices,
+ default=RepositoryGraphStatus.IDLE,
+ help_text="图谱当前态（Phase GRAPH-）",
+ )
+ graph_stage = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ help_text="图谱构建当前阶段，由 update_graph_progress 实时刷新",
+ )
+ current_graph_file = models.CharField(
+ max_length=1000,
+ blank=True,
+ default="",
+ help_text="当前正在抽取的文件相对路径，空字符串表示无活动文件",
+ )
+ graph_files_processed = models.IntegerField(
+ default=0,
+ help_text="本次图谱构建已处理的文件数",
+ )
+ graph_files_total = models.IntegerField(
+ default=0,
+ help_text="本次图谱构建预计处理的文件总数",
+ )
+ graph_last_built_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ help_text="最近一次终态（COMPLETED/FAILED/CANCELLED）时间戳",
  )
  webhook_secret = models.CharField(max_length=100, blank=True, null=True)
  # Soft delete fields
