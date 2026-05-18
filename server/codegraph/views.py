@@ -1,6 +1,7 @@
 """codegraph REST API 视图 —— 仓库嵌套路由下的 Symbol/CallEdge/ImportEdge/Endpoint 接口
 + Phase 三件套（rebuild / cancel / history list）。"""
 from __future__ import annotations
+import asyncio
 import re
 import uuid
 from typing import Any
@@ -9,6 +10,7 @@ from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.db import transaction
+from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.generics import ListAPIView
@@ -23,6 +25,11 @@ from codegraph.serializers import (
  SymbolSerializer,
 )
 from codegraph.services.graph_expansion import GraphExpansionService
+from repositories.index_views import (
+ ServerSentEventRenderer,
+ _build_graph_payload,
+ _format_sse,
+)
 from repositories.models import (
  GraphBuildHistory,
  GraphBuildHistoryStatus,
@@ -31,6 +38,7 @@ from repositories.models import (
  IndexHistory,
  IndexHistoryStatus,
  Repository,
+ RepositoryGraphStatus,
 )
 from repositories.permissions import RepositoryPermission
 from services.background_runner import cancel_background_task, run_in_background
@@ -482,11 +490,83 @@ class CodegraphHistoryListView(ListAPIView):
  status=status.HTTP_404_NOT_FOUND,
  )
  return super.list(request, *args, **kwargs)
+class CodegraphProgressStreamView(APIView):
+ """SSE 端点：仅推图谱构建进度（Phase GRAPH-）。
+ ``GET /api/repositories/{repository_id}/codegraph/stream/`` (text/event-stream)
+ 每帧形如:
+ data: {"type": "progress",
+ "ts": "...",
+ "graph": {status, stage, files_processed, files_total,
+ percent, current_file, started_at,
+ edge_count_so_far, error_message}}
+ 与 ``IndexProgressStreamView`` 区别：
+ - 帧 payload **只含 graph 段**——不带 ``repository`` / ``running_history``
+ 顶层字段（前端 ``useGraphBuildStream`` 已索引仓库单跑图谱场景不需要索引进度）
+ - 终止条件**只看 graph**：``graph_build_status != RUNNING`` 即推 done idle
+ （不依赖 ``index_status``）
+ 复用 ``IndexProgressStreamView`` 同源资产：
+ - ``ServerSentEventRenderer``（绕过 DRF Accept 协商 406）
+ - ``_format_sse(payload)`` data 行 helper
+ - ``_build_graph_payload(repo)`` 9 字段 graph 段构造（保两端点 schema 同步）
+ - ``INDEX_STREAM_TICK_INTERVAL`` / ``INDEX_STREAM_MAX_TICKS`` settings 同源
+ （work item- 字面"不引入新 settings"）
+ """
+ permission_classes = [IsAuthenticated]
+ renderer_classes = [ServerSentEventRenderer]
+ async def get(self, request: Any, repository_id: uuid.UUID) -> Any:
+ try:
+ await Repository.objects.aget(
+ id=repository_id, is_deleted=False
+ )
+ except Repository.DoesNotExist:
+ return Response(
+ {"detail": "仓库不存在或已删除。"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ tick_interval = float(
+ getattr(settings, "INDEX_STREAM_TICK_INTERVAL", 1.0)
+ )
+ max_ticks = int(getattr(settings, "INDEX_STREAM_MAX_TICKS", 300))
+ async def event_stream: # type: ignore[no-untyped-def]
+ ticks = 0
+ while ticks < max_ticks:
+ try:
+ repo = await Repository.objects.aget(id=repository_id)
+ except Repository.DoesNotExist:
+ yield _format_sse(
+ {"type": "done", "reason": "repo_deleted"}
+ )
+ return
+ graph_payload = await _build_graph_payload(repo)
+ yield _format_sse(
+ {
+ "type": "progress",
+ "ts": timezone.now.isoformat,
+ "graph": graph_payload,
+ }
+ )
+ if repo.graph_build_status != RepositoryGraphStatus.RUNNING:
+ yield _format_sse({"type": "done", "reason": "idle"})
+ return
+ ticks += 1
+ if ticks >= max_ticks:
+ break
+ if tick_interval > 0:
+ await asyncio.sleep(tick_interval)
+ yield _format_sse({"type": "done", "reason": "max_ticks"})
+ response = StreamingHttpResponse(
+ event_stream,
+ content_type="text/event-stream",
+ )
+ response["Cache-Control"] = "no-cache"
+ response["X-Accel-Buffering"] = "no"
+ return response
 __all__ = [
  "CallsForSymbolView",
  "CodegraphCancelView",
  "CodegraphDeleteView",
  "CodegraphHistoryListView",
+ "CodegraphProgressStreamView",
  "CodegraphRebuildView",
  "EndpointListView",
  "ImportEdgeListView",

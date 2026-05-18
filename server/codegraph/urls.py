@@ -9,6 +9,7 @@ from codegraph.views import (
  CodegraphCancelView,
  CodegraphDeleteView,
  CodegraphHistoryListView,
+ CodegraphProgressStreamView,
  CodegraphRebuildView,
  EndpointListView,
  ImportEdgeListView,
@@ -39,6 +40,14 @@ urlpatterns = [
  "history/",
  CodegraphHistoryListView.as_view,
  name="codegraph-history-list",
+ ),
+ # Phase GRAPH-：SSE 端点仅推图谱构建进度，与扩展后的
+ # IndexProgressStreamView 共享 _build_graph_payload helper。必须放在
+ # 末尾空字符串 path 之前（与 rebuild/cancel/history 同顺序敏感约束）。
+ path(
+ "stream/",
+ CodegraphProgressStreamView.as_view,
+ name="codegraph-progress-stream",
  ),
  # Phase GRAPH-：DELETE /api/repositories/{id}/codegraph/
  # 挂在根路径，仅清图谱三件套保留向量轨；并发 RUNNING 时返 409。
