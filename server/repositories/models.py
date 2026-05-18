@@ -2,6 +2,7 @@
 import uuid
 from typing import TYPE_CHECKING
 from django.db import models
+from django.utils import timezone
 if TYPE_CHECKING:
  from django.db.models import QuerySet
  from workflows.models.coding_task import CodingTask
@@ -53,6 +54,26 @@ class GraphBuildStatus(models.TextChoices):
  COMPLETED = "completed", "已完成"
  FAILED = "failed", "失败"
  SKIPPED = "skipped", "已跳过"
+class GraphBuildHistoryStatus(models.TextChoices):
+ """独立 graph 构建生命周期 4 态（Phase GRAPH-）。
+ 与 IndexHistoryStatus / GraphBuildStatus 均独立——本枚举描述顶层
+ `services/graph_builder.py` 的构建生命周期；**不引入 pending 态**：
+ 创建即 RUNNING（per Phase CONTEXT 决议），省一态简化测试与未来
+ SSE 终止判定，与 ROADMAP / 的 4 态对齐。
+ """
+ RUNNING = "running", "运行中"
+ COMPLETED = "completed", "已完成"
+ FAILED = "failed", "失败"
+ CANCELLED = "cancelled", "已停止"
+class GraphBuildHistoryTrigger(models.TextChoices):
+ """独立 graph 构建触发来源 3 态（Phase GRAPH-）。
+ - MANUAL：REST `POST /codegraph/rebuild/` 用户显式触发
+ - AUTO_AFTER_INDEX：indexer 主流程在 `_extract_and_write_graph` 前后包裹
+ - WEBHOOK：仅占位，Phase 范围内无 view 路径产生该值（webhook 接入留 v25.2+）
+ """
+ MANUAL = "manual", "手动触发"
+ AUTO_AFTER_INDEX = "auto_after_index", "索引完成自动触发"
+ WEBHOOK = "webhook", "Webhook 触发"
 class AISummaryStatus(models.TextChoices):
  """AI 描述生成状态。"""
  NOT_STARTED = "not_started", "未生成"
@@ -68,6 +89,7 @@ class Repository(models.Model):
  index_history: "QuerySet[IndexHistory]"
  file_indexes: "QuerySet[FileIndex]"
  branch_indexes: "QuerySet[RepositoryBranchIndex]"
+ graph_build_histories: "QuerySet[GraphBuildHistory]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  name = models.CharField(max_length=200)
  git_url = models.CharField(max_length=500)
@@ -258,6 +280,58 @@ class IndexHistory(models.Model):
  ordering = ["-created_at"]
  verbose_name = "索引历史"
  verbose_name_plural = "索引历史"
+ def __str__(self) -> str:
+ return f"{self.repository.name} - {self.trigger_type} ({self.status})"
+class GraphBuildHistory(models.Model):
+ """独立图谱构建历史（Phase GRAPH-）。
+ 与 `IndexHistory` 同居 repositories app，但描述的是顶层
+ `services/graph_builder.py` 的图谱构建生命周期——三种 trigger 一视同仁
+ （manual / auto_after_index / webhook），全量持久化以供 list endpoint
+ 审计与未来排障使用。
+ 字段口径全部对齐 `IndexHistory`（PK UUIDField、ForeignKey CASCADE、
+ started_at/finished_at 双时间字段）。Meta.indexes 提前为 Plan 的
+ GET `/codegraph/history/?ordering=-started_at` 命中索引。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ repository = models.ForeignKey(
+ Repository,
+ on_delete=models.CASCADE,
+ related_name="graph_build_histories",
+ )
+ trigger_type = models.CharField(
+ max_length=20,
+ choices=GraphBuildHistoryTrigger.choices,
+ )
+ status = models.CharField(
+ max_length=20,
+ choices=GraphBuildHistoryStatus.choices,
+ default=GraphBuildHistoryStatus.RUNNING,
+ help_text="创建即 RUNNING——CONTEXT 决议不引入 pending 态",
+ )
+ # 文件处理进度计数
+ files_total = models.IntegerField(default=0)
+ files_processed = models.IntegerField(default=0)
+ files_failed = models.IntegerField(default=0)
+ # 产物计数（GraphBuildResult 完成时一次性回写）
+ symbols_count = models.IntegerField(default=0)
+ imports_count = models.IntegerField(default=0)
+ calls_count = models.IntegerField(default=0)
+ endpoints_count = models.IntegerField(default=0)
+ started_at = models.DateTimeField(default=timezone.now)
+ finished_at = models.DateTimeField(null=True, blank=True)
+ error_message = models.TextField(blank=True, default="")
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "graph_build_history"
+ ordering = ["-started_at"]
+ verbose_name = "图谱构建历史"
+ verbose_name_plural = "图谱构建历史"
+ indexes = [
+ models.Index(
+ fields=["repository", "-started_at"],
+ name="idx_gbh_repo_started",
+ ),
+ ]
  def __str__(self) -> str:
  return f"{self.repository.name} - {self.trigger_type} ({self.status})"
 class FileIndex(models.Model):
