@@ -5,12 +5,14 @@
 - Test 3: CallbackClient.report_completed 构建正确 payload
 - Test 4: CallbackClient.report_failed 构建正确 payload
 """
-import asyncio
 import subprocess
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from core.config import TaskConfig
 from core.exceptions import ExploreModeForbiddenError
+from core.executor import ClaudeRunner
 from git_ops.operations import GitOperations
 from integrations.callback import CallbackClient
 class TestExploreGuardRepoSummary:
@@ -70,12 +72,13 @@ class TestGitWrapperRepoSummary:
  def test_git_wrapper_aliases_repo_summary_to_explore(self):
  """git-wrapper.sh 在 FRIDAY_TASK_MODE=repo_summary 时将 mode 设置为 explore。"""
  # 用 bash 脚本片段测试：读取 git-wrapper.sh 前几行的别名逻辑
- script_path = "/workspace/Desktop/friday-ai/.claude/worktrees/agent-a1174274/task/git_ops/git-wrapper.sh"
+ script_path = Path(__file__).resolve.parents[1] / "git_ops" / "git-wrapper.sh"
+ alias_snippet = "\n".join(script_path.read_text.splitlines[13:17])
  result = subprocess.run(
  [
  "bash",
  "-c",
- f'FRIDAY_TASK_MODE=repo_summary; source <(head -20 "{script_path}" | grep -v "^exec" | grep -v "^REAL_GIT"); echo "$FRIDAY_TASK_MODE"',
+ f'FRIDAY_TASK_MODE=repo_summary; {alias_snippet}; echo "$FRIDAY_TASK_MODE"',
  ],
  capture_output=True,
  text=True,
@@ -84,8 +87,45 @@ class TestGitWrapperRepoSummary:
  assert result.stdout.strip == "explore", (
  f"Expected FRIDAY_TASK_MODE to be 'explore' after sourcing, got: '{result.stdout.strip}'"
  )
+class TestGitTokenAuth:
+ """Token 认证 URL 构造与服务端索引路径保持一致。"""
+ @pytest.mark.asyncio
+ async def test_gitlab_token_is_url_encoded_in_password_position(self):
+ config = TaskConfig(
+ task_id="test-rs-token",
+ task_description="test",
+ git_repo_url="git@gitlab.yc345.tv:frontend/onion-practice.git",
+ git_auth_type="token",
+ git_access_token="glpat-a/b+c@d:e",
+ )
+ ops = GitOperations(config)
+ await ops._setup_token_auth
+ assert config.git_repo_url == (
+ "https://oauth2:glpat-a%2Fb%2Bc%40d%3Ae"
+ "@gitlab.yc345.tv/frontend/onion-practice.git"
+ )
 class TestCallbackReportCompleted:
  """Test 3: CallbackClient.report_completed 构建正确的 payload。"""
+ def test_callback_endpoint_uses_runner_callback_path_as_is(self):
+ config = TaskConfig(
+ task_id="test-session-123",
+ task_description="test",
+ git_repo_url="https://test.com/repo.git",
+ callback_url="http://host.docker.internal:8976/callback",
+ callback_token="tok-secret-456",
+ )
+ client = CallbackClient(config)
+ assert client._callback_endpoint == "http://host.docker.internal:8976/callback"
+ def test_callback_endpoint_appends_server_api_path_for_base_url(self):
+ config = TaskConfig(
+ task_id="test-session-123",
+ task_description="test",
+ git_repo_url="https://test.com/repo.git",
+ callback_url="http://localhost:10241",
+ callback_token="tok-secret-456",
+ )
+ client = CallbackClient(config)
+ assert client._callback_endpoint == "http://localhost:10241/api/containers/callback/"
  @pytest.mark.asyncio
  async def test_report_completed_payload_format(self):
  """report_completed 发送 {type: 'completed', session_id, token, payload: {result_type, output}}。"""
@@ -226,3 +266,52 @@ class TestCallbackReportFailed:
  mock_client_cls.return_value = mock_client
  result = await client.report_failed(error="test")
  assert result is False
+class TestRepoSummaryClaudeRetry:
+ """repo_summary 调 Claude SDK 时的瞬时错误重试。"""
+ @pytest.mark.asyncio
+ async def test_execute_claude_retries_transient_server_error(self, tmp_path):
+ """Claude SDK stream 中途 server_error 时重试并返回后续成功输出。"""
+ config = TaskConfig(
+ task_id="test-rs-retry",
+ task_description="test",
+ git_repo_url="https://test.com/repo.git",
+ task_mode="repo_summary",
+ claude_api_key="test-key",
+ session_dir=str(tmp_path / "sessions"),
+ )
+ runner = ClaudeRunner(config, tmp_path)
+ attempts = 0
+ async def failing_stream:
+ raise Exception("The server had an error while processing your request")
+ yield
+ async def successful_stream:
+ yield AssistantMessage(
+ content=[TextBlock(text='{"overview": "ok"}')],
+ model="claude-test",
+ )
+ yield ResultMessage(
+ subtype="success",
+ duration_ms=1,
+ duration_api_ms=1,
+ is_error=False,
+ num_turns=1,
+ session_id="session-ok",
+ total_cost_usd=0.01,
+ usage={"input_tokens": 10, "output_tokens": 5},
+ result='{"overview": "ok"}',
+ )
+ def fake_query(*args, **kwargs):
+ nonlocal attempts
+ attempts += 1
+ if attempts == 1:
+ return failing_stream
+ return successful_stream
+ with patch("core.executor.query", side_effect=fake_query):
+ result = await runner._execute_claude(
+ prompt="生成仓库描述 JSON",
+ permission_mode="plan",
+ max_turns=2,
+ )
+ assert attempts == 2
+ assert result["success"] is True
+ assert result["output"] == '{"overview": "ok"}'

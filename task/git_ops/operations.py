@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from urllib.parse import quote
 import structlog
 from git import Actor, Repo
 from git.exc import GitCommandError
@@ -106,12 +107,13 @@ class GitOperations:
  logger.info("Converted SSH URL to HTTPS for token auth")
  if url.startswith("https://"):
  host_part = url[8:]
+ encoded_token = quote(self.config.git_access_token, safe="")
  if "gitlab" in host_part.lower:
  self.config.git_repo_url = (
- f"https://oauth2:{self.config.git_access_token}@{host_part}"
+ f"https://oauth2:{encoded_token}@{host_part}"
  )
  else:
- self.config.git_repo_url = f"https://{self.config.git_access_token}@{host_part}"
+ self.config.git_repo_url = f"https://{encoded_token}@{host_part}"
  else:
  raise ValueError(f"无法使用访问令牌认证：URL '{url}' 不是有效的 HTTPS 或 SSH 格式")
  logger.info("Token authentication configured")

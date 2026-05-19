@@ -5,16 +5,39 @@
 - Execute 模式：使用 permission_mode="bypassPermissions"（跳过所有权限检查，包括 Bash 命令确认）
 bypassPermissions 在 Docker 容器隔离环境中是安全的，可以支持无人值守执行。
 """
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 import structlog
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, TextBlock, ToolUseBlock, query
+from claude_agent_sdk import (
+ AssistantMessage,
+ ClaudeAgentOptions,
+ ResultMessage,
+ SystemMessage,
+ TextBlock,
+ ToolUseBlock,
+ query,
+)
 from .config import TaskConfig
 logger = structlog.get_logger
 # SDK 支持的权限模式
 PermissionModeType = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
+_CLAUDE_TRANSIENT_ERROR_MARKERS = (
+ "server had an error while processing your request",
+ "overloaded",
+ "temporarily unavailable",
+ "timeout",
+ "timed out",
+ "econnreset",
+ "connection reset",
+ "stream disconnected",
+)
+def _is_transient_claude_error(error: Exception) -> bool:
+ """判断 Claude SDK/API 错误是否适合立即重试。"""
+ message = str(error).lower
+ return any(marker in message for marker in _CLAUDE_TRANSIENT_ERROR_MARKERS)
 class ClaudeRunner:
  """Run Claude Agent SDK for AI-powered development."""
  def __init__(self, config: TaskConfig, workspace: Path):
@@ -192,12 +215,20 @@ Implement the task as described. Make necessary code changes.
  has_api_key=bool(self.config.claude_api_key),
  has_base_url=bool(self.config.claude_base_url),
  )
- # 收集所有消息
+ # 收集所有消息。只读/分析类任务遇到 Claude API 偶发 5xx/stream 中断时
+ # 可重试整次请求；execute 模式可能已产生文件变更，不能自动重放。
+ retryable_mode = permission_mode == "plan" or self.config.task_mode in (
+ "explore",
+ "repo_summary",
+ )
+ max_attempts = 3 if retryable_mode else 1
+ for attempt in range(1, max_attempts + 1):
  messages =
  text_outputs = # 收集所有 AssistantMessage 的文本
  session_id = None
  total_cost = None
  result_output = None # ResultMessage 的 result 字段
+ try:
  async for message in query(prompt=prompt, options=options):
  messages.append(message)
  msg_type = type(message).__name__
@@ -233,6 +264,28 @@ Implement the task as described. Make necessary code changes.
  # 跳过 UserMessage 等 SDK 内部消息，它们对用户无意义
  if msg_type != 'UserMessage':
  print(f"[task:msg] {msg_type}", flush=True)
+ break
+ except Exception as e:
+ if not _is_transient_claude_error(e):
+ raise
+ if attempt >= max_attempts:
+ raise RuntimeError(
+ f"Claude SDK transient API error after {max_attempts} attempts: {e}"
+ ) from e
+ delay_seconds = min(2 ** (attempt - 1), 4)
+ log.warning(
+ "Claude SDK transient error, retrying",
+ attempt=attempt,
+ max_attempts=max_attempts,
+ delay_seconds=delay_seconds,
+ error=str(e),
+ )
+ print(
+ f"[task:text] Claude SDK transient error, retrying "
+ f"({attempt}/{max_attempts}): {e}",
+ flush=True,
+ )
+ await asyncio.sleep(delay_seconds)
  # 检查是否有 SDK 执行错误
  # 如果没有收到任何 AssistantMessage，且 usage 显示 0 tokens，说明 API 调用失败
  result_message = next((m for m in messages if isinstance(m, ResultMessage)), None)
