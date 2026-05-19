@@ -51,9 +51,13 @@ import { useErrorHandler } from '~/composables/useErrorHandler'
 import { connectGraphProgressStream } from '~/composables/useGraphBuildStream'
 import { useToast } from '~/composables/useToast'
 import { formatRelativeTime } from '~/lib/relativeTime'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  repositoryId: string
-}>
+ /** 嵌入知识库 Hub 时隐藏外层 card 壳 */
+ embedded?: boolean
+}>, {
+ embedded: false,
+})
 const loading = ref(true)
 const repository = ref<Repository | null>(null)
 // SSE 实时进度帧（覆盖 Repository 快照同名字段）
@@ -257,9 +261,12 @@ onUnmounted( => {
 })
 </script>
 <template>
- <div class="card">
+ <div:class="embedded ? '': 'card'">
  <!-- ===== Header ===== -->
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div
+ v-if="!embedded"
+ class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between"
+ >
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--git-graph] text-primary" />
  <h3 class="text-sm font-semibold">
@@ -274,8 +281,24 @@ onUnmounted( => {
  <StatusBadge type="graph":status="graphStatus" />
  </div>
  </div>
+ <!-- embedded 模式：保留自动构建开关与状态 -->
+ <div
+ v-else
+ class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2"
+ >
+ <div class="flex items-center gap-2 text-xs text-muted-foreground">
+ <span class="icon-[lucide--git-graph] text-primary" />
+ 结构化关系图构建
+ </div>
+ <div class="flex items-center gap-2">
+ <GraphAutoBuildToggle
+ v-if="repository":repository-id="props.repositoryId":initial="repository.auto_build_graph_enabled"
+ />
+ <StatusBadge type="graph":status="graphStatus" size="sm" />
+ </div>
+ </div>
  <!-- ===== Content ===== -->
- <div class="">
+ <div:class="embedded ? '': ''">
  <!-- 加载态 -->
  <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
  <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />

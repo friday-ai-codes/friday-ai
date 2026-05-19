@@ -9,9 +9,13 @@ import { Input } from '~/components/ui/input'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { connectIndexProgressStream } from '~/composables/useIndexProgressStream'
 import { useToast } from '~/composables/useToast'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  repositoryId: string
-}>
+ /** 嵌入知识库 Hub 时隐藏外层 card 壳 */
+ embedded?: boolean
+}>, {
+ embedded: false,
+})
 const loading = ref(true)
 const indexStatus = ref<IndexStatusResponse | null>(null)
 const triggering = ref(false)
@@ -278,8 +282,11 @@ onUnmounted( => {
 })
 </script>
 <template>
- <div class="card">
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div:class="embedded ? '': 'card'">
+ <div
+ v-if="!embedded"
+ class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between"
+ >
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--database] text-primary" />
  <h3 class="text-sm font-semibold">
@@ -289,7 +296,7 @@ onUnmounted( => {
  </div>
  <StatusBadge v-if="indexStatus" type="index":status="indexStatus.index_status" />
  </div>
- <div class="">
+ <div:class="embedded ? '': ''">
  <!-- 加载状态 -->
  <div v-if="loading" class="flex items-center justify-center gap-3 py-8">
  <span class="icon-[lucide--loader-circle] text-2xl text-primary animate-spin" />

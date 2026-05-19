@@ -4,24 +4,16 @@ import type { NavSection } from '~/components/layout/AnchorNavLayout.vue'
 import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
-import KnowledgeBaseSection from '~/components/codegraph/KnowledgeBaseSection.vue'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import BranchCombobox from '~/components/repository/BranchCombobox.vue'
 import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
-import IndexedFilesPanel from '~/components/repository/IndexedFilesPanel.vue'
-import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
-import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
-import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
-import RepoHashFreshnessCard from '~/components/repository/RepoHashFreshnessCard.vue'
-import RepositoryGraphCard from '~/components/repository/RepositoryGraphCard.vue'
-import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
+import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
 import WebhookConfigPanel from '~/components/repository/WebhookConfigPanel.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
-import { MarkdownPreview } from '~/components/ui/markdown-editor'
 import {
  Tooltip,
  TooltipContent,
@@ -186,19 +178,17 @@ async function confirmRebuildBranchIndex {
  rebuildingBranch.value = false
  }
 }
-// 描述折叠
-const descExpanded = ref(false)
+// 编辑仓库
+const editDialogOpen = ref(false)
 const sections = ref<NavSection>([
  { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
  { id: 'branch-index', label: '分支索引', icon: 'icon-[lucide--git-branch]' },
- { id: 'index-stats', label: '索引统计', icon: 'icon-[lucide--bar-chart-3]' },
+ { id: 'knowledge-base', label: '知识库', icon: 'icon-[lucide--layers]' },
  { id: 'linked-projects', label: '关联空间', icon: 'icon-[lucide--folder]' },
  { id: 'credential', label: '凭证配置', icon: 'icon-[lucide--key]' },
  { id: 'webhook', label: 'Webhook 自动化', icon: 'icon-[lucide--webhook]' },
  { id: 'danger-zone', label: '危险操作', icon: 'icon-[lucide--alert-triangle]' },
 ])
-// 编辑仓库
-const editDialogOpen = ref(false)
 async function handleEditSuccess {
  editDialogOpen.value = false
  await Promise.all([
@@ -287,17 +277,18 @@ function copyUrl {
  </Button>
  </div>
  </div>
- <!-- 快速状态指示器 -->
+ <!-- 快速状态指示器（精简：凭证与空间；索引状态见知识库 Hub） -->
  <div class="flex items-center gap-2 pl-[52px] flex-wrap">
- <div
- class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="{ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': indexStatus?.index_status === IndexStatus.INDEXED, 'bg-blue-500/10 text-blue-600 border border-blue-500/20': indexStatus?.index_status === IndexStatus.INDEXING, 'bg-red-500/10 text-red-600 border border-red-500/20': indexStatus?.index_status === IndexStatus.FAILED, 'bg-muted/60 text-muted-foreground border border-border/50': indexStatus?.index_status === IndexStatus.CANCELLED, 'bg-amber-500/10 text-amber-600 border border-amber-500/20': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
+ <RouterLink
+ to="#knowledge-base"
+ class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer":class="{ 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 hover:bg-emerald-500/15': indexStatus?.index_status === IndexStatus.INDEXED, 'bg-blue-500/10 text-blue-600 border border-blue-500/20 hover:bg-blue-500/15': indexStatus?.index_status === IndexStatus.INDEXING, 'bg-red-500/10 text-red-600 border border-red-500/20 hover:bg-red-500/15': indexStatus?.index_status === IndexStatus.FAILED, 'bg-muted/60 text-muted-foreground border border-border/50 hover:bg-muted/80': indexStatus?.index_status === IndexStatus.CANCELLED, 'bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/15': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  >
- <span:class="{ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED, 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING, 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED, 'icon-[lucide--circle-stop]': indexStatus?.index_status === IndexStatus.CANCELLED, 'icon-[lucide--database]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
+ <span:class="{ 'icon-[lucide--check-circle]': indexStatus?.index_status === IndexStatus.INDEXED, 'icon-[lucide--loader-circle] animate-spin': indexStatus?.index_status === IndexStatus.INDEXING, 'icon-[lucide--x-circle]': indexStatus?.index_status === IndexStatus.FAILED, 'icon-[lucide--circle-stop]': indexStatus?.index_status === IndexStatus.CANCELLED, 'icon-[lucide--layers]': !indexStatus || indexStatus.index_status === IndexStatus.NOT_INDEXED }"
  />
  {{
- indexStatus?.index_status === IndexStatus.INDEXED ? '索引就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '索引构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': indexStatus?.index_status === IndexStatus.CANCELLED ? '已停止': '未建索引'
+ indexStatus?.index_status === IndexStatus.INDEXED ? '知识库就绪': indexStatus?.index_status === IndexStatus.INDEXING ? '知识库构建中': indexStatus?.index_status === IndexStatus.FAILED ? '索引失败': indexStatus?.index_status === IndexStatus.CANCELLED ? '已停止': '未建知识库'
  }}
- </div>
+ </RouterLink>
  <div
  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium":class="credential ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20': 'bg-muted/60 text-muted-foreground border border-border/50'"
  >
@@ -313,31 +304,8 @@ function copyUrl {
  已配置代理
  </div>
  </div>
- <!-- 描述（可折叠，默认收起） -->
- <div v-if="repository.description" class="pl-[52px]">
- <button
- class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
- @click="descExpanded = !descExpanded"
- >
- <span
- class="icon-[lucide--chevron-right] transition-transform duration-200":class="{ 'rotate-90': descExpanded }"
- />
- <span class="icon-[lucide--file-text]" />
- AI 描述
- </button>
- <div
- v-if="descExpanded"
- class="mt-2 text-sm text-muted-foreground max-h-[200px] overflow-y-auto rounded-lg bg-muted/30 border border-border/40 "
- >
- <MarkdownPreview:content="repository.description" />
  </div>
  </div>
- </div>
- </div>
- <!--: RepoHashFreshnessCard — PageHeader 后 / AnchorNavLayout 前（ 第一优先级指标） -->
- <RepoHashFreshnessCard:repository-id="repositoryId" class="mb-0" />
- <!--: KnowledgeBaseSection — RepoHashFreshnessCard 之后 / AnchorNavLayout 之前 -->
- <KnowledgeBaseSection:repository-id="repository.id" />
  <AnchorNavLayout:sections="sections">
  <!-- ==================== 基本信息 ==================== -->
  <section id="basic-info" class="scroll-mt-22 space-y-4">
@@ -383,9 +351,10 @@ function copyUrl {
  </div>
  </div>
  </div>
- <AISummarySection:repository-id="repository.id" />
+ <AISummarySection:repository-id="repository.id":legacy-description="repository.description"
+ />
  <!-- 关联空间 -->
- <div class="card">
+ <div id="linked-projects" class="card scroll-mt-22">
  <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
  <span class="icon-[lucide--folder] text-primary" />
  <h3 class="text-sm font-semibold">
@@ -454,24 +423,10 @@ function copyUrl {
  </div>
  </div>
  </section>
- <!-- ==================== 索引统计 ==================== -->
- <section id="index-stats" class="scroll-mt-22 space-y-4">
- <!-- Phase GRAPH-：RepositoryGraphCard 与 RepositoryIndexCard 同行并列 -->
- <div class="grid gap-4 lg:grid-cols-2">
- <RepositoryIndexCard:repository-id="repository.id" />
- <RepositoryGraphCard:repository-id="repository.id" />
- </div>
- <!-- IndexStatsPanel 下移独占一行（work item §2.2：3 卡片同 grid 挤大屏） -->
- <IndexStatsPanel:repository-id="repository.id" />
- <!--: 仅 INDEXING 状态渲染，展示本次变更文件（work item §6.2） -->
- <!-- 文件级实时进度（当前文件 + N/M）已在 RepositoryIndexCard 顶部展示，本组件专注变更文件分组 -->
- <IndexProgressTimeline
- v-if="indexStatus?.index_status === IndexStatus.INDEXING":repository-id="repository.id":index-history-id="null":changed-files="{}":is-indexing="true"
+ <!-- ==================== 知识库 ==================== -->
+ <section id="knowledge-base" class="scroll-mt-22">
+ <RepositoryKnowledgeHub:repository-id="repository.id":git-url="repository.git_url"
  />
- <!--: 已索引文件清单（紧贴代码索引卡之后，搜索 + 分页 + git commit） -->
- <IndexedFilesPanel:repository-id="repository.id":git-url="repository.git_url" />
- <!-- 索引历史 — 阅读顺序：当前状态 → 文件清单 → 历次记录 -->
- <IndexHistoryList:repository-id="repository.id":git-url="repository.git_url" />
  </section>
  <!-- ==================== 凭证配置 ==================== -->
  <section id="credential" class="scroll-mt-22">
