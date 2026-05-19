@@ -10,15 +10,24 @@ import structlog
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from common.authentication import CookieJWTAuthentication
 from common.encryption import decrypt_value
 from system.models import SettingKeys, SystemSetting
 logger = structlog.get_logger(__name__)
-class OptionalJWTAuthentication(JWTAuthentication):
- """宽容模式的 JWT 认证。
- 与标准 JWTAuthentication 的区别：
+class OptionalJWTAuthentication(CookieJWTAuthentication):
+ """宽容模式的 JWT 认证（cookie 优先 + Authorization header 兜底）。
+ 与基类 ``CookieJWTAuthentication`` 的区别：
  - token 无效/过期时返回 None（交给下一个 authenticator），而非抛 AuthenticationFailed
- - 没有 Authorization header 时同样返回 None
+ - 没有 token 时同样返回 None
+ 历史坑（v18.1 Phase 之后暴露）：早期版本继承的是 SimpleJWT 默认
+ ``JWTAuthentication``，**只看 Authorization header**。而项目全局默认认证（设置
+ 在 ``REST_FRAMEWORK.DEFAULT_AUTHENTICATION_CLASSES`` 里）是 cookie 优先的
+ ``CookieJWTAuthentication`` —— 前端只通过 HttpOnly cookie 携带 access_token。
+ 当 chat view 显式声明 ``authentication_classes = [OptionalJWTAuthentication, ...]``
+ 时就覆盖了全局默认，cookie 路径被丢弃，前端永远拿到 401，触发 ``auth:logout``
+ 跳首页（典型现象：``/api/chat/coding-sessions/<id>/confirm/`` 永远报"身份认证
+ 信息未提供"）。改继承 ``CookieJWTAuthentication`` 后两条路径都吃，行为与全局
+ 默认一致，宽容性仅叠在最外层。
  这样 ChatAuthPermission 才能正常根据鉴权开关决定是否放行，
  避免「开关关闭但过期 token 仍导致 401」的问题。
  """
