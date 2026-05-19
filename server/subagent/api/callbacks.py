@@ -365,11 +365,27 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  checkpointer = await get_checkpointer
  graph = build_coding_graph.compile(checkpointer=checkpointer)
  config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ # 与 _update_coding_session_on_fail 对称的防御：graph 不存在（v18.1
+ # Phase 实施缺口期间 view 未启动 graph）或 ainvoke 异常时降级为
+ # 直接 amark_completed + 错误日志，避免 WS / HTTP completed callback
+ # 父流程被吞掉无关异常。
+ try:
  await graph.ainvoke(
  Command(resume={"success": True, "suggested_commit_message": suggested_msg}),
  config=config,
  )
- logger.info("coding_session_phase1_complete", coding_session_id=str(coding_session.id))
+ logger.info(
+ "coding_session_phase1_complete",
+ coding_session_id=str(coding_session.id),
+ )
+ except Exception:
+ logger.exception(
+ "coding_graph_resume_complete_fail",
+ coding_session_id=str(coding_session.id),
+ phase="phase1",
+ )
+ await coding_session.amark_completed
+ await store_coding_complete_to_message(coding_session)
  elif session.task_type == "coding_commit":
  # Phase 完成: resume graph，三阶段流程中 graph 继续执行到 PR 创建/跳过，
  # store_coding_complete_to_message 已在 create_pr_or_skip_node 中调用
@@ -379,11 +395,25 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  checkpointer = await get_checkpointer
  graph = build_coding_graph.compile(checkpointer=checkpointer)
  config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
+ try:
  await graph.ainvoke(
  Command(resume={"success": True}),
  config=config,
  )
- logger.info("coding_session_phase2_complete", coding_session_id=str(coding_session.id))
+ logger.info(
+ "coding_session_phase2_complete",
+ coding_session_id=str(coding_session.id),
+ )
+ except Exception:
+ logger.exception(
+ "coding_graph_resume_complete_fail",
+ coding_session_id=str(coding_session.id),
+ phase="phase2",
+ )
+ task_result_fallback = await TaskResult.objects.filter(session=session).afirst
+ pr_url_fallback = task_result_fallback.pr_url if task_result_fallback else ""
+ await coding_session.amark_completed(pr_url=pr_url_fallback)
+ await store_coding_complete_to_message(coding_session)
  else:
  # 兼容旧流程（非 graph 管理的 session）
  task_result = await TaskResult.objects.filter(session=session).afirst

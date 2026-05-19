@@ -264,7 +264,11 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  session.last_output = output
  await session.asave(update_fields=["last_output", "updated_at"])
  async def _handle_completed(self, payload: dict, log: structlog.stdlib.BoundLogger) -> None:
- from subagent.api.callbacks import _schedule_agent_session_resume, _schedule_workflow_resume
+ from subagent.api.callbacks import (
+ _schedule_agent_session_resume,
+ _schedule_workflow_resume,
+ _update_coding_session_on_complete,
+ )
  from subagent.models import SubAgentSession, TaskResult
  task_id = payload.get("task_id", "")
  session = await SubAgentSession.objects.filter(session_id=task_id).afirst
@@ -294,6 +298,12 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  "output": payload.get("output", {"text": payload.get("text_output", "")}),
  },
  )
+ # 与 HTTP callback handler 对齐 — 推进关联 CodingSession 的 graph 状态。
+ # 历史上 WS 路径漏了这一步，导致 task_type=coding 的 session 容器退出后
+ # CodingSession.status 永远停在 running（ RESEARCH 根因 2b）。
+ # 非 CodingSession (deep_analysis / workflow / repo_summary) 在
+ # _update_coding_session_on_complete 内部走 `coding_session is None` 短路。
+ await _update_coding_session_on_complete(session)
  _schedule_workflow_resume(session, log)
  _schedule_agent_session_resume(session, log)
  log.info("task_completed_via_ws")
@@ -302,6 +312,7 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  _schedule_agent_session_resume,
  _schedule_workflow_resume,
  _send_failure_notification,
+ _update_coding_session_on_fail,
  )
  from subagent.models import SubAgentSession
  task_id = payload.get("task_id", "")
@@ -342,6 +353,10 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
  from subagent.api.callbacks import _update_repository_on_summary_fail
  await _update_repository_on_summary_fail(session, error_msg)
+ # 与 HTTP callback handler 对齐 — 推进关联 CodingSession 的 graph 失败处理。
+ # _update_coding_session_on_fail 内部 try/except graph resume 异常会降级
+ # 为 amark_failed，所以即便 graph 不存在也安全。
+ await _update_coding_session_on_fail(session, error_msg)
  _schedule_workflow_resume(session, log)
  _schedule_agent_session_resume(session, log)
  log.info("task_failed_via_ws")
