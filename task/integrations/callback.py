@@ -42,6 +42,16 @@ class CallbackClient:
  logger.info("Callback disabled, running in standalone mode", task_id=config.task_id)
  if self.output_dir:
  logger.info("File output enabled", path=self.output_dir)
+ def _callback_endpoint(self) -> str:
+ """返回实际 callback endpoint，兼容 Runner 本地中转与直连 Server。
+ Go Runner 传入的是本地中转端点 ``.../callback``；直连 Server 时传入的是
+ 服务根地址，需要追加 ``/api/containers/callback/``。
+ """
+ assert self.base_url is not None
+ base = self.base_url.rstrip("/")
+ if base.endswith("/callback"):
+ return base
+ return f"{base}/api/containers/callback/"
  async def report_status(
  self,
  status: str,
@@ -107,7 +117,7 @@ class CallbackClient:
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(
- f"{self.base_url}/api/containers/callback/",
+ self._callback_endpoint,
  json=body,
  headers=self.headers,
  timeout=30.0,
@@ -200,7 +210,7 @@ class CallbackClient:
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(
- f"{self.base_url}/api/containers/callback/",
+ self._callback_endpoint,
  json=payload,
  headers=self.headers,
  timeout=30.0,
@@ -228,7 +238,7 @@ class CallbackClient:
  try:
  async with httpx.AsyncClient as client:
  response = await client.post(
- f"{self.base_url}/api/containers/callback/",
+ self._callback_endpoint,
  json=payload,
  headers=self.headers,
  timeout=30.0,
