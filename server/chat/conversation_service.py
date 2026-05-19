@@ -635,6 +635,10 @@ class ConversationService:
  "notification_user_id": notification_user_id or "",
  "max_budget_usd": sdk_config.max_budget_usd,
  "default_search_branch": branch_for_tools,
+ # 必须把开关透到 graph_config —— executing_node 会用 cfg 重新构造
+ # ChatRunnerConfig，少传这个字段会让 _get_tool_names 拿不到
+ # deep_analysis 工具，前端开了「深度分析」却始终走不到远程 runner。
+ "force_deep_analysis": sdk_config.force_deep_analysis,
  }
  }
  graph = await get_compiled_graph
@@ -911,6 +915,16 @@ class ConversationService:
  mode: str | None = None
  if is_active:
  mode = "chat"
+ # SSE 单向无状态，浏览器刷新会让前端流式渲染全部丢失。executing_node 把
+ # 实时累积态写到 orch_run.metadata['streaming_snapshot']（详见
+ # orchestration.graph._StreamingSnapshot）。仅在 is_active=True 时透传 —
+ # 完成态由前端走 hydrateMessages 路径渲染 final assistant message，再读
+ # snapshot 会导致 bubble 重影。
+ streaming_snapshot: dict[str, Any] | None = None
+ if is_active and orch_run is not None and isinstance(orch_run.metadata, dict):
+ snap = orch_run.metadata.get("streaming_snapshot")
+ if isinstance(snap, dict):
+ streaming_snapshot = snap
  runtime: dict[str, Any] = {
  "conversation_id": conversation_id,
  "active": is_active,
@@ -925,6 +939,7 @@ class ConversationService:
  "progress_percent": None,
  "logs":,
  "coding_session": None,
+ "streaming_snapshot": streaming_snapshot,
  }
  # deep_analysis 会话信息（向后兼容）
  latest_deep_session = None

@@ -467,6 +467,37 @@ export const useChatStore = defineStore('chat', => {
  if (runtime.progress_message)
  streamingPendingText.value = runtime.progress_message
  }
+ // 后端 _StreamingSnapshot 把 SSE 流期间的累积态写到了 OrchestrationRun.metadata，
+ // runtime API 透传 streaming_snapshot 字段。刷新场景：SSE 已断、SSE 内存状态全
+ // 丢；用 snapshot 把 streaming UI 恢复到刷新前的样子，避免「空气泡 + 正在整理
+ // 回答」窒息体验。
+ //
+ // 放在 mode 分支之后：snapshot 比 deep_analysis / coding 模式的「占位 tool」
+ // 更准确（snapshot 里通常已经包含同名 tool 的真实进度），有 snapshot 时覆盖
+ // 占位；老对话 / 老 runtime 没 snapshot 时退回到占位逻辑，保持向后兼容。
+ const snap = runtime.streaming_snapshot
+ const snapNonEmpty = !!snap && (
+ !!snap.pending_text
+ || !!snap.thinking
+ || (Array.isArray(snap.tool_calls) && snap.tool_calls.length > 0)
+ || (Array.isArray(snap.timeline) && snap.timeline.length > 0)
+ || (Array.isArray(snap.narrations) && snap.narrations.length > 0)
+ )
+ if (snap && snapNonEmpty) {
+ streamingPendingText.value = snap.pending_text || ''
+ streamingThinking.value = snap.thinking || ''
+ streamingNarrations.value = Array.isArray(snap.narrations) ? [...snap.narrations]:
+ streamingToolCalls.value = Array.isArray(snap.tool_calls)
+ ? snap.tool_calls.map(tc => ({
+ id: tc.id,
+ name: tc.name,
+ input: tc.input || {},
+ result: tc.result == null ? undefined: tc.result,
+ status: tc.status === 'done' ? 'done': 'running',
+ batch_id: tc.batch_id == null ? undefined: tc.batch_id,
+ })):
+ streamingTimeline.value = Array.isArray(snap.timeline) ? [...snap.timeline]:
+ }
  }
  function appendTimelineText(kind: 'thinking' | 'narration', text: string) {
  if (!text)

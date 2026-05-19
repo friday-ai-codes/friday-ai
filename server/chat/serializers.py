@@ -212,6 +212,11 @@ class ConversationRuntimeSerializer(serializers.Serializer):
  progress_message = serializers.CharField(allow_blank=True, required=False)
  progress_percent = serializers.FloatField(allow_null=True, required=False)
  logs = RuntimeLogSerializer(many=True, required=False)
+ # 流式快照（仅 active=true 时返回）—— 详见 orchestration.graph._StreamingSnapshot
+ # 与前端 store streamingPendingText / streamingThinking / streamingToolCalls /
+ # streamingNarrations / streamingTimeline 一一对应；用 JSONField pass-through
+ # 而不展开嵌套 serializer，避免后续 timeline kind / batch_id 等字段扩展破坏契约。
+ streaming_snapshot = serializers.JSONField(allow_null=True, required=False)
 class WebPushPublicKeySerializer(serializers.Serializer):
  """Web Push 公钥响应。"""
  public_key = serializers.CharField

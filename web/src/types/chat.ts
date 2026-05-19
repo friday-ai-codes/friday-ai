@@ -67,6 +67,30 @@ export type StreamTimelineItem
  = | StreamTimelineThinkingItem
  | StreamTimelineNarrationItem
  | StreamTimelineToolItem
+/**
+ * 流式快照——后端 `_StreamingSnapshot` 节流写入 OrchestrationRun.metadata 的镜像。
+ *
+ * SSE 单向无状态，刷新页面时前端内存里的流式渲染（text / thinking / tools / timeline）
+ * 全部丢失。runtime polling 拉到这份快照后 `applyRuntimeSnapshot` 把它还原成
+ * streaming state，前端无需重建——结构跟前端 store 的字段一一对应。
+ *
+ * 仅在 `active=true` 时返回；完成态前端走 `hydrateMessages` 拉 final assistant
+ * message，再读 snapshot 会导致 bubble 重影。
+ */
+export interface ConversationRuntimeStreamingSnapshot {
+ pending_text: string
+ thinking: string
+ tool_calls: Array<{
+ id: string
+ name: string
+ input: Record<string, unknown>
+ result?: string | null
+ status: 'running' | 'done'
+ batch_id?: string | null
+ }>
+ narrations: string
+ timeline: StreamTimelineItem
+}
 export interface ConversationRuntime {
  conversation_id: string
  active: boolean
@@ -83,6 +107,7 @@ export interface ConversationRuntime {
  logs?: DeepAnalysisLog
  deep_analysis_status?: string | null
  deep_analysis_error?: string | null
+ streaming_snapshot?: ConversationRuntimeStreamingSnapshot | null
 }
 /** 对话详情（含消息列表） */
 export interface ConversationDetail extends Conversation {

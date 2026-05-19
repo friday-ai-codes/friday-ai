@@ -1,5 +1,7 @@
 from __future__ import annotations
 import asyncio
+import time
+import uuid
 from typing import Any
 import structlog
 from langchain_core.runnables import RunnableConfig
@@ -26,6 +28,242 @@ async def _persist_run_phase(run_id: str, phase: str) -> None:
  await OrchestrationRun.objects.filter(run_id=run_id).aupdate(phase=phase)
  except Exception:
  logger.warning("persist_run_phase_failed", run_id=run_id, phase=phase, exc_info=True)
+# SSE 是单向无状态流，浏览器刷新会让 fetch reader 断开，前端内存里的流式渲染
+# （text / thinking / tool_calls / timeline）全部丢失。`_StreamingSnapshot` 镜像
+# 前端 `handleSSEEvent` 的状态机，把累积态节流写入 `OrchestrationRun.metadata
+# ['streaming_snapshot']`，让 polling 拿到 runtime 时可以从快照 restore 前端
+# streaming state——避免「刷新后只剩一个空气泡 + 正在整理回答」的窒息体验。
+class _StreamingSnapshot:
+ """累积 SSE 流期间产生的内容，节流写入 OrchestrationRun.metadata。
+ 数据结构与前端 store 的 streaming state / `StreamTimelineItem` 一一对应，
+ 前端拿到后可直接覆盖 `streamingPendingText / streamingThinking /
+ streamingToolCalls / streamingNarrations / streamingTimeline`，无需重建。
+ flush 触发条件（取或）：
+ - 关键里程碑事件：tool_use_start / tool_use_result / message_complete /
+ phase_transition —— 立即 flush，让用户在刷新瞬间能看到最新进度。
+ - 距上次 flush ≥ ``FLUSH_INTERVAL_SECONDS`` —— 节流，避免每个 text_delta
+ 都写 DB（典型 LLM 流 50-200 chunks/秒）。
+ """
+ FLUSH_INTERVAL_SECONDS = 0.5
+ _FORCE_FLUSH_TYPES = frozenset({
+ TOOL_USE_START,
+ TOOL_USE_RESULT,
+ MESSAGE_COMPLETE,
+ PHASE_TRANSITION,
+ })
+ def __init__(self, run_id: str) -> None:
+ self._run_id = run_id
+ self._pending_text = ""
+ self._thinking = ""
+ self._tool_calls: dict[str, dict[str, Any]] = {}
+ self._tool_order: list[str] =
+ self._narrations: list[str] =
+ self._timeline: list[dict[str, Any]] =
+ self._last_flush_ts = 0.0
+ self._dirty = False
+ @staticmethod
+ def _new_id -> str:
+ # timeline thinking/narration 节点没有自然 id；用短 uuid，仅作前端 v-for key
+ return uuid.uuid4.hex[:12]
+ def _append_timeline_text(self, kind: str, text: str) -> None:
+ if not text:
+ return
+ if self._timeline and self._timeline[-1].get("kind") == kind:
+ self._timeline[-1]["text"] = self._timeline[-1].get("text", "") + text
+ return
+ self._timeline.append({
+ "id": self._new_id,
+ "kind": kind,
+ "text": text,
+ })
+ def _flush_pending_narration_to_timeline(self) -> None:
+ text = self._pending_text
+ if not text.strip:
+ return
+ self._append_timeline_text("narration", text)
+ self._narrations.append(text)
+ self._pending_text = ""
+ def ingest(self, event_type: str, data: dict[str, Any]) -> None:
+ """根据事件类型更新累积态——镜像前端 handleSSEEvent 状态机。"""
+ if event_type == TEXT_DELTA:
+ text = data.get("text", "") or ""
+ if text:
+ self._pending_text += text
+ self._dirty = True
+ return
+ if event_type == THINKING:
+ thinking = data.get("thinking", "") or ""
+ if thinking:
+ self._thinking += thinking
+ self._append_timeline_text("thinking", thinking)
+ self._dirty = True
+ return
+ if event_type == TOOL_USE_START:
+ self._flush_pending_narration_to_timeline
+ tool_id = str(data.get("tool_call_id", "") or self._new_id)
+ tool_name = data.get("tool_name", "") or ""
+ tool_input = data.get("input") or {}
+ batch_id = data.get("batch_id") or None
+ existing = self._tool_calls.get(tool_id)
+ if existing is None:
+ entry = {
+ "id": tool_id,
+ "name": tool_name,
+ "input": tool_input if isinstance(tool_input, dict) else {},
+ "result": None,
+ "status": "running",
+ "batch_id": batch_id,
+ }
+ self._tool_calls[tool_id] = entry
+ self._tool_order.append(tool_id)
+ else:
+ if tool_name:
+ existing["name"] = tool_name
+ if isinstance(tool_input, dict) and tool_input:
+ existing["input"] = tool_input
+ if batch_id and not existing.get("batch_id"):
+ existing["batch_id"] = batch_id
+ self._upsert_timeline_tool(tool_id, tool_name, tool_input, batch_id, status="running")
+ self._dirty = True
+ return
+ if event_type == TOOL_USE_RESULT:
+ tool_id = str(data.get("tool_call_id", "") or "")
+ if not tool_id:
+ return
+ tool_name = data.get("tool_name", "") or ""
+ tool_input = data.get("input") or {}
+ raw_result = data.get("result")
+ result_str = _coerce_snapshot_result(raw_result)
+ batch_id = data.get("batch_id") or None
+ entry = self._tool_calls.get(tool_id)
+ if entry is None:
+ entry = {
+ "id": tool_id,
+ "name": tool_name,
+ "input": tool_input if isinstance(tool_input, dict) else {},
+ "result": result_str,
+ "status": "done",
+ "batch_id": batch_id,
+ }
+ self._tool_calls[tool_id] = entry
+ self._tool_order.append(tool_id)
+ else:
+ if tool_name and not entry.get("name"):
+ entry["name"] = tool_name
+ if isinstance(tool_input, dict) and tool_input:
+ entry["input"] = tool_input
+ if result_str is not None:
+ entry["result"] = result_str
+ entry["status"] = "done"
+ if batch_id and not entry.get("batch_id"):
+ entry["batch_id"] = batch_id
+ self._upsert_timeline_tool(
+ tool_id,
+ entry.get("name", "") or tool_name,
+ entry.get("input", {}),
+ entry.get("batch_id"),
+ status="done",
+ result=entry.get("result"),
+ )
+ self._dirty = True
+ return
+ # MESSAGE_COMPLETE / PHASE_TRANSITION / others：不动累积态，只触发 force flush。
+ def _upsert_timeline_tool(
+ self,
+ tool_id: str,
+ tool_name: str,
+ tool_input: Any,
+ batch_id: str | None,
+ *,
+ status: str,
+ result: str | None = None,
+ ) -> None:
+ for item in self._timeline:
+ if item.get("kind") == "tool" and item.get("id") == tool_id:
+ if tool_name:
+ item["name"] = tool_name
+ if isinstance(tool_input, dict) and tool_input:
+ item["input"] = tool_input
+ if batch_id and not item.get("batch_id"):
+ item["batch_id"] = batch_id
+ if result is not None:
+ item["result"] = result
+ item["status"] = status
+ return
+ self._timeline.append({
+ "id": tool_id,
+ "kind": "tool",
+ "name": tool_name,
+ "input": tool_input if isinstance(tool_input, dict) else {},
+ "result": result,
+ "status": status,
+ "batch_id": batch_id,
+ })
+ def snapshot_payload(self) -> dict[str, Any]:
+ return {
+ "pending_text": self._pending_text,
+ "thinking": self._thinking,
+ "tool_calls": [self._tool_calls[tid] for tid in self._tool_order],
+ "narrations": list(self._narrations),
+ "timeline": list(self._timeline),
+ }
+ def should_flush(self, event_type: str) -> bool:
+ if not self._dirty:
+ return False
+ if event_type in self._FORCE_FLUSH_TYPES:
+ return True
+ return (time.monotonic - self._last_flush_ts) >= self.FLUSH_INTERVAL_SECONDS
+ async def flush(self) -> None:
+ if not self._dirty:
+ return
+ payload = self.snapshot_payload
+ try:
+ from orchestration.models import OrchestrationRun
+ run = await OrchestrationRun.objects.filter(run_id=self._run_id).afirst
+ if run is None:
+ return
+ metadata = dict(run.metadata or {})
+ metadata["streaming_snapshot"] = payload
+ await OrchestrationRun.objects.filter(run_id=self._run_id).aupdate(metadata=metadata)
+ self._last_flush_ts = time.monotonic
+ self._dirty = False
+ except Exception:
+ logger.warning(
+ "streaming_snapshot_flush_failed",
+ run_id=self._run_id,
+ exc_info=True,
+ )
+def _coerce_snapshot_result(raw: Any) -> str | None:
+ """把 tool_use_result.data['result'] 还原成 str（与前端 ToolItem.result 类型对齐）。"""
+ if raw is None:
+ return None
+ if isinstance(raw, str):
+ return raw
+ try:
+ import json
+ return json.dumps(raw, ensure_ascii=False)
+ except (TypeError, ValueError):
+ return str(raw)
+async def _clear_streaming_snapshot(run_id: str) -> None:
+ """workflow 收尾 / 出错时清掉 snapshot，避免下次拉到陈旧数据。"""
+ if not run_id:
+ return
+ try:
+ from orchestration.models import OrchestrationRun
+ run = await OrchestrationRun.objects.filter(run_id=run_id).afirst
+ if run is None:
+ return
+ metadata = dict(run.metadata or {})
+ if "streaming_snapshot" not in metadata:
+ return
+ metadata.pop("streaming_snapshot", None)
+ await OrchestrationRun.objects.filter(run_id=run_id).aupdate(metadata=metadata)
+ except Exception:
+ logger.warning(
+ "streaming_snapshot_clear_failed",
+ run_id=run_id,
+ exc_info=True,
+ )
 async def planning_node(state: WorkflowState, writer: StreamWriter) -> dict[str, Any]:
  """接收用户消息，决定执行策略。发射 PHASE_TRANSITION executing。"""
  await _persist_run_phase(state.get("run_id", ""), RunPhase.EXECUTING.value)
@@ -82,6 +320,9 @@ async def _build_chat_runner(
  agent_session=agent_session,
  max_budget_usd=cfg.get("max_budget_usd"),
  default_search_branch=default_search_branch,
+ # 透传前端「深度分析」开关 —— 否则 _build_tool_specs 拿不到 deep_analysis
+ # 工具，LLM 看不见就不会调用，开关形同虚设。
+ force_deep_analysis=bool(cfg.get("force_deep_analysis", False)),
  )
  return ChatAnthropicRunner(runner_config), agent_session_id
 async def _run_chat_stream(
@@ -92,10 +333,13 @@ async def _run_chat_stream(
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
  """运行 Chat runner stream，返回 (accumulated_thinking, tool_calls_by_id)。
  中断时通过 writer 推送 phase_transition interrupted 确认事件后重新抛出。
+ 同步维护 ``_StreamingSnapshot`` 写入 OrchestrationRun.metadata，供前端
+ 刷新后从 runtime polling restore 流式内容（详见类 docstring）。
  """
  accumulated_thinking: list[str] =
  tool_calls_by_id: dict[str, dict[str, Any]] = {}
  blocking_marker_seen = False
+ snapshot = _StreamingSnapshot(run_id) if run_id else None
  try:
  async for event in runner.stream(prompt):
  if event.type == THINKING:
@@ -136,13 +380,29 @@ async def _run_chat_stream(
  should_forward = False
  if should_forward:
  writer({"type": event.type, "data": event.data})
+ if snapshot is not None:
+ snapshot.ingest(event.type, event.data)
+ if snapshot.should_flush(event.type):
+ await snapshot.flush
  except asyncio.CancelledError:
  try:
  await _persist_run_phase(run_id, "interrupted")
  writer({"type": PHASE_TRANSITION, "data": {"phase": "interrupted"}})
  except Exception:
  pass
+ # 中断时也尽力把最后状态 flush 出去，让 polling 能拿到中断前的进度
+ if snapshot is not None:
+ try:
+ await snapshot.flush
+ except Exception:
+ pass
  raise
+ if snapshot is not None:
+ # 流正常结束最后再 flush 一次，保证 polling 能看到最完整的快照
+ try:
+ await snapshot.flush
+ except Exception:
+ pass
  return accumulated_thinking, tool_calls_by_id
 async def _extract_blocking_tasks(
  tool_calls_by_id: dict[str, dict[str, Any]],
@@ -206,6 +466,9 @@ async def _execute_first_run(
  "executing_node_chat_runner_error",
  session_id=cfg.get("session_id", ""),
  )
+ # error 路径直接 END，不经过 finalizing_node —— 必须自行清掉 snapshot，
+ # 否则前端 polling 会一直看到陈旧的 streaming_snapshot。
+ await _clear_streaming_snapshot(run_id)
  result = runner.result
  return {
  "phase": RunPhase.ERROR.value,
@@ -304,6 +567,7 @@ async def _execute_with_results(
  "executing_node_chat_runner_error_second_run",
  session_id=cfg.get("session_id", ""),
  )
+ await _clear_streaming_snapshot(run_id)
  result = runner.result
  return {
  "phase": RunPhase.ERROR.value,
@@ -369,6 +633,9 @@ async def waiting_node(state: WorkflowState) -> dict[str, Any]:
  }
 async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
  """收尾节点，标记 workflow 完成。"""
+ # workflow 完成后清掉 streaming_snapshot —— message 已落库，下次拉 runtime
+ # 应直接走 hydrateMessages 路径，不能再 restore 老快照导致 bubble 重影。
+ await _clear_streaming_snapshot(state.get("run_id", ""))
  return {"phase": RunPhase.COMPLETED.value}
 def route_after_executing(state: WorkflowState) -> str:
  """条件路由：error 直接结束，有 blocking_tasks 走 waiting（含循环计数保护），否则走 finalizing。"""
