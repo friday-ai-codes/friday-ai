@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web install install-server install-web
+.PHONY: dev dev-server dev-web install install-server install-web build-runner
 SESSION:= friday-ai
 DEV_WEB_PORT ?= 10240
 DEV_SERVER_PORT ?= 10241
@@ -31,3 +31,6 @@ install-server:
 	cd server && uv sync
 install-web:
 	cd web && pnpm install
+# 构建 Go Runner（二进制输出到 runner/friday-runner）
+build-runner:
+	$(MAKE) -C runner build
