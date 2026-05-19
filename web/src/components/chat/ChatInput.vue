@@ -317,13 +317,6 @@ function toggleNotifications {
  本次对话已使用 {{ chatStore.budgetWarning }}% 预算
  </div>
  </Transition>
- <!-- 停止按钮 -->
- <div v-if="chatStore.isStreaming" class="flex justify-center pb-2">
- <button class="stop-btn" @click="chatStore.stopStreaming">
- <span class="stop-icon" />
- 停止生成
- </button>
- </div>
  <!-- 输入卡片 -->
  <div class="input-card":class="{ 'input-card--disabled': chatStore.isStreaming }">
  <!-- 上层：文本输入 -->
@@ -447,8 +440,19 @@ function toggleNotifications {
  @confirm="handlePinConfirm"
  @cancel="handlePinCancel"
  />
- <!-- 发送按钮 -->
+ <!-- 发送 / 停止按钮（同位切换：流式中显示停止，否则显示发送） -->
  <button
+ v-if="chatStore.isStreaming"
+ type="button"
+ class="send-btn send-btn--stop":disabled="chatStore.isInterrupting":title="chatStore.isInterrupting ? '正在停止...': '停止生成'"
+ @click="chatStore.stopStreaming"
+ >
+ <span v-if="chatStore.isInterrupting" class="icon-[lucide--loader-circle] text-sm animate-spin" />
+ <span v-else class="send-btn__stop-square" aria-hidden="true" />
+ </button>
+ <button
+ v-else
+ type="button"
  class="send-btn":class="{ 'send-btn--active': canSend }":disabled="!canSend":title="sendDisabledReason || '发送'"
  @click="handleSend"
  >
@@ -489,32 +493,6 @@ function toggleNotifications {
  border: 1px solid hsl(38 92% 50% / 0.2);
  color: hsl(38 80% 40%);
  font-size: 0.6875rem;
-}
-.stop-btn {
- display: inline-flex;
- align-items: center;
- gap: 0.375rem;
- padding: 0.375rem 0.875rem;
- border-radius: 9999px;
- font-size: 0.75rem;
- font-weight: 500;
- color: hsl(215 16% 47%);
- background: white;
- border: 1px solid hsl(214 32% 91%);
- cursor: pointer;
- transition: all 0.15s;
- box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-.stop-btn:hover {
- border-color: hsl(0 72% 51% / 0.3);
- color: hsl(0 72% 51%);
- background: hsl(0 72% 51% / 0.04);
-}
-.stop-icon {
- width: 10px;
- height: 10px;
- border-radius: 2px;
- background: currentColor;
 }
 /* ======== 输入卡片 ======== */
 .input-card {
@@ -695,5 +673,25 @@ function toggleNotifications {
 }
 .send-btn--active:hover {
  background: hsl(167 76% 36%);
+}
+/* 流式期间同位切换：保持 send-btn 几何，换成红色「停止」 */
+.send-btn--stop {
+ background: hsl(0 72% 51%);
+ color: white;
+ cursor: pointer;
+ box-shadow: 0 1px 3px hsl(0 72% 51% / 0.3);
+}
+.send-btn--stop:hover {
+ background: hsl(0 72% 45%);
+}
+.send-btn--stop:disabled {
+ opacity: 0.7;
+ cursor: not-allowed;
+}
+.send-btn__stop-square {
+ width: 10px;
+ height: 10px;
+ border-radius: 2px;
+ background: currentColor;
 }
 </style>

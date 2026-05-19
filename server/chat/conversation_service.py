@@ -577,6 +577,37 @@ class ConversationService:
  # lazy import 避免循环依赖（config.py 导入本模块的 _build_system_prompt）
  from chat.config import build_sdk_config
  from chat.finalize import finalize_conversation as do_finalize
+ async def _hydrate_finalize_from_snapshot(
+ orch: OrchestrationRun,
+ state: dict[str, Any],
+ ) -> tuple[str, list[str], list[dict[str, Any]], dict[str, Any]]:
+ """中断/异常路径：graph 没走到 finalizing_node 时，从 OrchestrationRun.metadata
+ ['streaming_snapshot'] 拼回 final_content / thinking / tool_calls，避免落库空消息。
+ 背景：用户点「停止生成」→ runner.interrupt → _run_chat_stream 抛 CancelledError
+ → executing_node re-raise → graph 异常退出，永远到不了 finalizing_node，state
+ 的 final_answer 是空字符串。_StreamingSnapshot 已经在 CancelledError 分支里把
+ 最后累积态 flush 到 metadata；这里读出来还原，保证「中断了一半的回答」落库到
+ messages 表，刷新后从 hydrateMessages 路径也能看到这段被中断的内容。
+ """
+ final_content = state.get("final_answer", "") or ""
+ accumulated_thinking = list(state.get("accumulated_thinking") or )
+ tool_calls_state = list(state.get("tool_calls") or )
+ if final_content and tool_calls_state:
+ return final_content, accumulated_thinking, tool_calls_state, {}
+ refreshed = await OrchestrationRun.objects.filter(id=orch.id).afirst
+ if refreshed is None or not isinstance(refreshed.metadata, dict):
+ return final_content, accumulated_thinking, tool_calls_state, {}
+ snap = refreshed.metadata.get("streaming_snapshot")
+ if not isinstance(snap, dict):
+ return final_content, accumulated_thinking, tool_calls_state, {}
+ if not final_content:
+ final_content = snap.get("pending_text", "") or ""
+ if not accumulated_thinking and snap.get("thinking"):
+ accumulated_thinking = [snap["thinking"]]
+ snap_tools = snap.get("tool_calls")
+ if not tool_calls_state and isinstance(snap_tools, list):
+ tool_calls_state = [tc for tc in snap_tools if isinstance(tc, dict)]
+ return final_content, accumulated_thinking, tool_calls_state, snap
  conversation = await Conversation.objects.select_related("project").aget(
  id=conversation_id,
  is_deleted=False,
@@ -727,13 +758,17 @@ class ConversationService:
  do_finalize=do_finalize,
  )
  else:
- # 正常完成 / 错误
- final_content = state.get("final_answer", "")
- accumulated_thinking = state.get("accumulated_thinking", )
- tool_calls = state.get("tool_calls", )
+ # 正常完成 / 错误 / 中断
+ final_content, accumulated_thinking, tool_calls, _snap = (
+ await _hydrate_finalize_from_snapshot(orch_run, state)
+ )
  result_metadata = state.get("result_metadata", {})
  is_error = state.get("phase") == "error"
- await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ # exclude(INTERRUPTED)：用户在 interrupt API 已把 OrchestrationRun
+ # 写成 INTERRUPTED；graph 后到的完成态不能覆盖用户意图。
+ await OrchestrationRun.objects.filter(
+ id=orch_run.id,
+ ).exclude(status=OrchestrationRun.Status.INTERRUPTED).aupdate(
  status=OrchestrationRun.Status.ERROR if is_error else OrchestrationRun.Status.COMPLETED,
  phase=state.get("phase", OrchestrationRun.Phase.COMPLETED),
  )
@@ -751,6 +786,9 @@ class ConversationService:
  notification_user_id=notification_user_id,
  publish_title_event=True,
  )
+ # finalize 已经落库，清掉 streaming_snapshot 避免 runtime API 又拉到陈旧快照
+ from orchestration.graph import _clear_streaming_snapshot
+ await _clear_streaming_snapshot(str(orch_run.run_id))
  if not message_complete_seen:
  yield _build_message_complete_event(
  final_content=final_content,
@@ -790,16 +828,28 @@ class ConversationService:
  )
  else:
  is_error = state.get("phase") == "error"
- await OrchestrationRun.objects.filter(id=orch_run.id).aupdate(
+ # 同 SSE 在线分支：guard 用户主动中断的终态不被 graph 完成
+ # 路径覆盖（_background_finalize 是 GeneratorExit 后才跑的，
+ # 用户按停止键 → SSE 断 → 此路径几乎必然进入）。
+ await OrchestrationRun.objects.filter(
+ id=orch_run.id,
+ ).exclude(status=OrchestrationRun.Status.INTERRUPTED).aupdate(
  status=OrchestrationRun.Status.ERROR if is_error else OrchestrationRun.Status.COMPLETED,
  phase=state.get("phase", OrchestrationRun.Phase.COMPLETED),
+ )
+ # 用户中断路径（GeneratorExit 几乎必然走这）：graph 抛
+ # CancelledError 时 state.final_answer 是空，必须从
+ # streaming snapshot 还原已经流出来的内容，否则 messages
+ # 表里只剩一条空 assistant 消息，刷新页面什么都没有。
+ final_content, accumulated_thinking, tool_calls_bg, _snap = (
+ await _hydrate_finalize_from_snapshot(orch_run, state)
  )
  await do_finalize(
  conversation=conversation,
  assistant_msg_id=assistant_msg_id,
- final_content=state.get("final_answer", ""),
- accumulated_thinking=state.get("accumulated_thinking", ),
- tool_calls=state.get("tool_calls", ),
+ final_content=final_content,
+ accumulated_thinking=accumulated_thinking,
+ tool_calls=tool_calls_bg,
  result_metadata=state.get("result_metadata", {}),
  agent_session=agent_session,
  session_id=session_id,
@@ -808,6 +858,9 @@ class ConversationService:
  notification_user_id=notification_user_id,
  publish_title_event=False,
  )
+ # 已落库，清掉 streaming_snapshot 避免 runtime polling 拉到陈旧快照
+ from orchestration.graph import _clear_streaming_snapshot
+ await _clear_streaming_snapshot(str(orch_run.run_id))
  except Exception:
  logger.exception(
  "background_finalize_error",
