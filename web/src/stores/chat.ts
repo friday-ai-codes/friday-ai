@@ -915,6 +915,12 @@ export const useChatStore = defineStore('chat', => {
  })
  pendingConversation.value = materializedConversation
  currentConversationId.value = materializedConversation.id
+ // 立刻把会话 id 同步到 URL —— 必须发生在 SSE 流启动之前。
+ // 否则用户在流式期间刷新页面，URL 退回到草稿空页（restoreFromURL 拿不到 id），
+ // 被迫从侧栏点「运行中」对话回去；而此时 SSE 已经断、后端任务可能还没结束，
+ // restoreConversationRuntime 看到 active=true 直接进 polling 等待，UI 一直
+ // 是空 bubble + "正在整理回答..."。先 syncURL 才能让刷新无损 resume。
+ syncConversationToURL(materializedConversation.id)
  createdForDraft = true
  if (selectedCredentialModel.value) {
  const parts = selectedCredentialModel.value.split(':')
@@ -958,6 +964,14 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisSessionId.value = null
  error.value = null
  lastFailedContent.value = null
+ // 重置 phase / restored runtime 痕迹 —— 否则刷新场景下 restoreConversationRuntime
+ // 残留的 currentPhase=waiting / restoredRuntimeConversationId 会让本次发消息的
+ // finally 走 waiting 早退分支（误以为是后台异步任务），导致流式内容永远不会
+ // 合并到 messages，UI 永久 stuck 在空 bubble + "正在整理回答..." 状态条。
+ currentPhase.value = null
+ taskProgress.value = null
+ restoredRuntimeConversationId.value = null
+ streamingStatus.value = null
  // 添加用户消息到列表（乐观更新）
  const userMessage: ConversationMessage = {
  id: crypto.randomUUID,
