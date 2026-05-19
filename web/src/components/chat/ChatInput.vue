@@ -183,15 +183,9 @@ async function onSelectCombination(opt: CredentialModelOption) {
  return // 选中相同组合 → noop
  // 记住用户选择（跨新建对话复用）
  chatStore.selectedCredentialModel = opt.key
- // 没有活动对话 → 自动创建对话并绑定模型
+ // 没有活动对话时只记住选择，真正创建会话交给首次发送。
  if (!chatStore.currentConversationId) {
  chatStore.selectedModel = opt.model.id
- await chatStore.createNewConversation
- if (!chatStore.currentConversationId)
- return
- // 对话已创建且 model 已设置（createNewConversation 用了 selectedModel），
- // 额外固定 provider_credential_id 避免被四层解析覆盖
- await chatStore.patchConversationProviderAndModel(opt.credential.id, opt.model.id)
  return
  }
  // 已有对话但尚未绑定 Provider / 模型 → 直接应用，不弹确认
@@ -219,7 +213,7 @@ function handlePinCancel {
 /** 检查当前对话是否已选择模型 */
 const hasSelectedModel = computed( => {
  const conv = chatStore.currentConversation
- return !!conv?.model
+ return !!conv?.model || !!chatStore.selectedCredentialModel || (chatStore.selectedModel !== '__default__' && !!chatStore.selectedModel)
 })
 // ============================================================================
 // 发送按钮可用性派生（避免「亮色但点了没反应」的误导）
@@ -256,8 +250,8 @@ async function handleSend {
  toast.error('当前没有可用的 Provider 凭证', '请先在 admin/providers 或空间设置中创建并启用凭证')
  return
  }
- // 没有对话时自动创建（优先使用记忆的选择）
- if (!chatStore.currentConversationId) {
+ // 没有对话时只准备模型选择；sendMessage 会在首次发送时创建真实会话。
+ if (!chatStore.currentConversationId && chatStore.selectedCredentialModel) {
  if (chatStore.selectedCredentialModel) {
  const parts = chatStore.selectedCredentialModel.split(':')
  if (parts.length === 2) {
@@ -265,27 +259,8 @@ async function handleSend {
  chatStore.selectedModel = modelId
  }
  }
- await chatStore.createNewConversation
- if (!chatStore.currentConversationId) {
- toast.error('创建对话失败', chatStore.error || '请稍后重试，或检查网络与登录状态')
- return
  }
- // 创建后 patch 记忆的 credential+model
- if (chatStore.selectedCredentialModel) {
- const parts = chatStore.selectedCredentialModel.split(':')
- if (parts.length === 2) {
- const [credId, modelId] = parts
- try {
- await chatStore.patchConversationProviderAndModel(credId, modelId)
- }
- catch {
- toast.error('绑定 Provider / 模型失败', chatStore.error || '请重新选择 Provider / 模型')
- return
- }
- }
- }
- }
- // 已有对话（包括刚创建的）但没有选择模型，禁止发送
+ // 没有可用模型时禁止发送；本地草稿允许依赖记忆的模型选择。
  if (!hasSelectedModel.value) {
  toast.error('请先选择 Provider / 模型')
  return
@@ -488,7 +463,12 @@ function toggleNotifications {
 <style scoped>
 .chat-input-dock {
  padding: 0 1rem 1.25rem;
- background: linear-gradient(to top, hsl(210 40% 98%) 60%, hsl(210 40% 98% / 0.95) 75%, hsl(210 40% 98% / 0) 100%);
+ background: linear-gradient(
+ to top,
+ hsl(210 40% 96.5%) 58%,
+ hsl(210 40% 96.5% / 0.88) 76%,
+ hsl(210 40% 96.5% / 0) 100%
+ );
  pointer-events: none;
 }
 .chat-input-dock > * {
@@ -539,12 +519,14 @@ function toggleNotifications {
 /* ======== 输入卡片 ======== */
 .input-card {
  border: 1px solid hsl(214 32% 88%);
- border-radius: 1.25rem;
- background: white;
+ border-radius: 1.375rem;
+ background: hsl(0 0% 100% / 0.94);
+ backdrop-filter: blur(18px);
+ -webkit-backdrop-filter: blur(18px);
  box-shadow:
- 0 1px 3px rgba(0, 0, 0, 0.06),
- 0 4px 16px rgba(0, 0, 0, 0.04),
- 0 8px 32px rgba(0, 0, 0, 0.02);
+ 0 10px 24px hsl(215 28% 17% / 0.08),
+ 0 1px 2px hsl(215 28% 17% / 0.05),
+ inset 0 1px 0 hsl(0 0% 100% / 0.86);
  transition:
  border-color 0.2s,
  box-shadow 0.2s;
@@ -553,9 +535,9 @@ function toggleNotifications {
 .input-card:focus-within {
  border-color: hsl(168 76% 42% / 0.5);
  box-shadow:
- 0 0 0 3px hsl(168 76% 42% / 0.06),
- 0 1px 3px rgba(0, 0, 0, 0.06),
- 0 4px 16px rgba(0, 0, 0, 0.04);
+ 0 0 0 3px hsl(168 76% 42% / 0.08),
+ 0 12px 28px hsl(215 28% 17% / 0.09),
+ 0 1px 2px hsl(215 28% 17% / 0.05);
 }
 .input-card--disabled {
  opacity: 0.6;

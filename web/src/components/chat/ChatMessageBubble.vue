@@ -270,15 +270,31 @@ interface ToolItemShape {
  input: Record<string, unknown>
  result?: string
  status: 'running' | 'done'
+ batch_id?: string
 }
 interface ToolGroupNode {
  id: string
  kind: 'tool-group'
- toolName: string
+ /** 同 batch 但工具名可能不同时为 undefined，仅在单一同名时填值（用于显示组标签） */
+ toolName?: string
  items: ToolItemShape
+ /** 区分分组来源：batch_id（后端语义批） / consecutive-same（兼容历史） */
+ source: 'batch' | 'consecutive-same'
 }
 type DisplayItem = StreamTimelineItem | ToolGroupNode | (ToolItemShape & { kind: 'tool' })
-// 把连续同名 tool 压成 ToolGroupNode；其它 kind / 不可分组工具 / 单例直接透传
+/**
+ * 时间线分组策略（per v25.0 chat-timeline-batch 设计）：
+ *
+ * 1. 优先按 `batch_id` 分组：后端 chat_runner 给同一 LLM turn 的所有 tool_call
+ * 打同一个 batch_id，这是语义上"同批并行决定"的边界。即使工具名不同
+ * （比如同时搜 collection + favorite + 笔记），也归到一组横向 chip 流。
+ *
+ * 2. 没有 batch_id（历史消息 / 老后端 / 单工具调用）退化到"连续同名"分组，
+ * 保持旧契约不破坏 (per `web/src/components/chat/__tests__/chat-visual-contract.spec.ts`)。
+ *
+ * 3. UNGROUPABLE_TOOLS（deep_analysis / coding_plan）始终单独成块，
+ * 它们有专属卡片渲染，不参与任何分组。
+ */
 function packGroups<T extends ToolItemShape>(
  flat: Array<T | StreamTimelineItem>,
  toToolShape: (t: T) => ToolItemShape,
@@ -299,6 +315,7 @@ function packGroups<T extends ToolItemShape>(
  i++
  continue
  }
+ const curBatch = curTool.batch_id
  const bare = curTool.name.replace(/^mcp__[^_]+__/, '')
  let j = i + 1
  while (j < flat.length) {
@@ -309,17 +326,29 @@ function packGroups<T extends ToolItemShape>(
  const nextTool = next as T
  if (!isGroupableTool(nextTool.name))
  break
+ if (curBatch) {
+ // batch 模式：只要 batch_id 一致就归入（工具名可以不同）
+ if (nextTool.batch_id !== curBatch)
+ break
+ }
+ else {
+ // 兼容模式：要求工具名一致
+ if (nextTool.batch_id)
+ break
  if (nextTool.name.replace(/^mcp__[^_]+__/, '') !== bare)
  break
+ }
  j++
  }
  if (j - i >= 2) {
  const run = (flat.slice(i, j) as T).map(toToolShape)
+ const uniqueNames = new Set(run.map(it => it.name.replace(/^mcp__[^_]+__/, '')))
  out.push({
  id: `group-${curTool.id}`,
  kind: 'tool-group',
- toolName: curTool.name,
+ toolName: uniqueNames.size === 1 ? curTool.name: undefined,
  items: run,
+ source: curBatch ? 'batch': 'consecutive-same',
  })
  }
  else {
@@ -332,13 +361,13 @@ function packGroups<T extends ToolItemShape>(
 const groupedTimelineItems = computed<DisplayItem>( =>
  packGroups<Extract<StreamTimelineItem, { kind: 'tool' }>>(
  timelineItems.value,
- t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status }),
+ t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status, batch_id: t.batch_id }),
  ),
 )
 const groupedToolCalls = computed<DisplayItem>( =>
  packGroups<ToolItemShape>(
  toolCalls.value as ToolItemShape,
- t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status }),
+ t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status, batch_id: t.batch_id }),
  ),
 )
 function groupStatus(items: ToolItemShape): 'running' | 'done' {
@@ -349,6 +378,58 @@ function lastItemDescription(items: ToolItemShape): string {
  return ''
  const last = items[items.length - 1]
  return toolAction(last.name, last.input || {}, last.result)
+}
+/**
+ * 同 batch 多工具时的简略标签：合并工具名 + 总数。
+ * 例如 [search ×3, browse ×1] -> "搜索代码 ×3 · 浏览文件 ×1"
+ */
+function groupLabel(group: ToolGroupNode): string {
+ if (group.toolName)
+ return toolLabel(group.toolName)
+ const counts = new Map<string, number>
+ for (const it of group.items) {
+ const bare = it.name.replace(/^mcp__[^_]+__/, '')
+ counts.set(bare, (counts.get(bare) || 0) + 1)
+ }
+ return Array.from(counts.entries)
+ .map(([n, c]) => `${toolLabel(n)}${c > 1 ? ` ×${c}`: ''}`)
+ .join(' · ')
+}
+/** 同 batch 多工具的 chip 简短文案（去掉"搜索代码"前缀，只留关键词） */
+function chipSummary(item: ToolItemShape): string {
+ const bare = item.name.replace(/^mcp__[^_]+__/, '')
+ if (bare === 'search_repository_code') {
+ const q = (item.input?.query as string) || ''
+ return q.length > 24 ? `${q.slice(0, 24)}…`: q || '搜索'
+ }
+ if (bare === 'browse_file_content') {
+ const p = (item.input?.file_path as string) || (item.input?.path as string) || ''
+ const seg = p.split('/').pop || p
+ return seg.length > 24 ? `${seg.slice(0, 24)}…`: seg || '文件'
+ }
+ // 默认退化到 toolAction 完整描述
+ return toolAction(item.name, item.input || {}, item.result)
+}
+// 是否使用 chip 横排模式：batch 来源的组使用 chip 模式，纵向列表保留给"连续同名"
+function shouldUseChipLayout(group: ToolGroupNode): boolean {
+ return group.source === 'batch'
+}
+// 单条 thinking item 的展开状态（默认收起，仅显示首行预览）
+const expandedThinking = ref<Set<string>>(new Set)
+function toggleThinking(id: string) {
+ if (expandedThinking.value.has(id))
+ expandedThinking.value.delete(id)
+ else
+ expandedThinking.value.add(id)
+}
+function thinkingPreview(text: string): string {
+ const trimmed = text.trim
+ const firstLine = trimmed.split('\n')[0] || ''
+ return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…`: firstLine
+}
+function thinkingIsMultiline(text: string): boolean {
+ const trimmed = text.trim
+ return trimmed.includes('\n') || trimmed.length > 80
 }
 // 深度分析实时日志
 const deepAnalysisExpanded = ref(true)
@@ -596,23 +677,39 @@ const hideEmptyBubble = computed( =>
 </script>
 <template>
  <!-- ======================== 用户消息 ======================== -->
- <div v-if="message.role === 'user'" class="flex justify-end pl-12">
+ <div v-if="message.role === 'user'" class="user-message-row">
  <div class="user-bubble">
  {{ message.content }}
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
- <div v-else-if="!hideEmptyBubble" class="ai-message group pr-8 flex">
+ <div v-else-if="!hideEmptyBubble" class="ai-message group">
  <!-- 多选模式 Checkbox (per, ) -->
  <div v-if="chatStore.isExportSelectMode && props.message.role === 'assistant'" class="mr-2 flex items-center shrink-0">
  <Checkbox:checked="isSelected" @update:checked="chatStore.toggleMessageSelect(props.message.id)" />
  </div>
- <div class="flex-1 min-w-0">
+ <div class="assistant-avatar">
+ <img src="/logo-mark.svg" alt="" aria-hidden="true" class="assistant-avatar-logo">
+ </div>
+ <div class="assistant-message-shell">
+ <div class="assistant-message-header">
+ <div class="assistant-title">
+ <span>Friday AI</span>
+ <span v-if="metadata?.model" class="assistant-model">{{ metadata.model }}</span>
+ </div>
+ <span class="assistant-time">{{ formatTime(message.created_at) }}</span>
+ </div>
  <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
  <DocSummaryCard
  v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
  />
- <!-- Thinking：流式默认展开，历史默认收起 -->
+ <!--
+ Thinking 折叠块（兼容路径）：
+ - 仅当 timeline 为空但有 thinking 文本时显示（老消息 / 老后端不带
+ thinking 时间线节点的情况）。
+ - 有 timeline 时，thinking 会作为 timeline-step 节点直接交错渲染
+ 在工具批次之间，不走此块。
+ -->
  <div v-if="!hasTimeline && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
  <span class="thinking-icon":class="isStreaming ? 'animate-pulse': ''">
@@ -648,17 +745,28 @@ const hideEmptyBubble = computed( =>
  </p>
  </div>
  </div>
- <!-- 工具调用 — 行内 pill 流（按"连续同类工具"自动折叠成组） -->
+ <!-- 工具调用 — 行内 pill 流（同 batch 横排 chip，其余按连续同名折叠） -->
  <div v-if="hasTimeline" class="timeline-flow">
  <template v-for="item in groupedTimelineItems":key="item.id">
- <!-- thinking step -->
- <div v-if="item.kind === 'thinking'" class="timeline-step timeline-step--thinking">
+ <!-- thinking step：默认显示首行预览，多行/超长时点开看全文 -->
+ <div
+ v-if="item.kind === 'thinking'"
+ class="timeline-step timeline-step--thinking":class="{ 'is-expandable': thinkingIsMultiline(item.text), 'is-expanded': expandedThinking.has(item.id) }"
+ @click="thinkingIsMultiline(item.text) && toggleThinking(item.id)"
+ >
  <div class="timeline-step-label">
  <span class="icon-[lucide--sparkles] text-[10px]" />
  思考
+ <span
+ v-if="thinkingIsMultiline(item.text)"
+ class="icon-[lucide--chevron-right] ml-auto text-[10px] text-muted-foreground/50 transition-transform duration-150":class="expandedThinking.has(item.id) ? 'rotate-90': ''"
+ />
  </div>
- <div class="timeline-step-text">
+ <div v-if="expandedThinking.has(item.id) || !thinkingIsMultiline(item.text)" class="timeline-step-text">
  {{ item.text.trim }}
+ </div>
+ <div v-else class="timeline-step-text timeline-step-text--preview">
+ {{ thinkingPreview(item.text) }}
  </div>
  </div>
  <!-- narration step -->
@@ -671,12 +779,53 @@ const hideEmptyBubble = computed( =>
  {{ item.text.trim }}
  </div>
  </div>
- <!-- tool group：连续 ≥2 个同类工具合并成可展开组（Cursor 风格） -->
+ <!-- tool group：batch 来源 → 横向 chip 流；连续同名 → 纵向折叠 -->
  <div v-else-if="item.kind === 'tool-group'" class="tool-group">
+ <!-- batch 模式：扁平横向 chip 排列（不需要二次点击展开列表） -->
+ <div v-if="shouldUseChipLayout(item)" class="tool-batch">
+ <div class="tool-batch-header">
+ <span v-if="groupStatus(item.items) === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-pill-name">{{ groupLabel(item) }}</span>
+ <span class="tool-pill-count">{{ item.items.length }}</span>
+ </div>
+ <div class="tool-batch-chips">
+ <button
+ v-for="child in item.items":key="child.id"
+ class="tool-chip":class="{ 'tool-chip--running': child.status === 'running', 'tool-chip--expanded': expandedTools.has(child.id) }":title="toolAction(child.name, child.input || {}, child.result)"
+ @click="toggleTool(child.id)"
+ >
+ <span v-if="child.status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-else class="tool-dot tool-dot--done" />
+ <span class="tool-chip-text">{{ chipSummary(child) }}</span>
+ </button>
+ </div>
+ <!-- chip 展开后的详情列表（点谁展开谁） -->
+ <div v-if="item.items.some((c: ToolItemShape) => expandedTools.has(c.id))" class="tool-batch-details">
+ <template v-for="child in item.items":key="`detail-${child.id}`">
+ <div v-if="expandedTools.has(child.id)" class="tool-detail tool-detail--batch">
+ <div class="tool-detail-head">
+ <span class="tool-pill-name">{{ toolLabel(child.name) }}</span>
+ <span class="tool-pill-desc">{{ toolAction(child.name, child.input || {}, child.result) }}</span>
+ </div>
+ <div class="tool-detail-section">
+ <span class="tool-detail-label">输入</span>
+ <pre class="tool-detail-json">{{ JSON.stringify(child.input, null, 2) }}</pre>
+ </div>
+ <div v-if="child.result" class="tool-detail-section">
+ <span class="tool-detail-label">输出</span>
+ <pre class="tool-detail-json">{{ typeof child.result === 'string' && child.result.length > 600 ? `${child.result.slice(0, 600)}…`: child.result }}</pre>
+ </div>
+ </div>
+ </template>
+ </div>
+ </div>
+ <!-- 兼容模式：连续同名 → 旧的"折叠成组"样式，保持历史会话契约 -->
+ <template v-else>
  <button class="tool-pill tool-pill--group" @click="toggleGroup(item.id)">
  <span v-if="groupStatus(item.items) === 'running'" class="tool-dot tool-dot--running" />
  <span v-else class="tool-dot tool-dot--done" />
- <span class="tool-pill-name">{{ toolLabel(item.toolName) }}</span>
+ <span class="tool-pill-name">{{ groupLabel(item) }}</span>
  <span class="tool-pill-count">{{ item.items.length }}</span>
  <span class="tool-pill-desc">最近：{{ lastItemDescription(item.items) }}</span>
  <span
@@ -708,6 +857,7 @@ const hideEmptyBubble = computed( =>
  </div>
  </div>
  </Transition>
+ </template>
  </div>
  <!-- 单例 tool（含特殊工具：deep_analysis / coding_plan） -->
  <div v-else-if="item.kind === 'tool'" class="tool-inline">
@@ -894,14 +1044,21 @@ const hideEmptyBubble = computed( =>
  <button class="action-btn" @click="copyContent">
  <span v-if="copied" class="icon-[lucide--check] text-primary" />
  <span v-else class="icon-[lucide--copy]" />
+ <span class="action-label">{{ copied ? '已复制': '复制' }}</span>
  </button>
  <button
  v-if="props.message.role === 'assistant'"
- class="action-btn"
+ class="action-btn action-btn--feishu"
  title="导出到飞书"
  @click="emit('exportSingle', props.message.id)"
  >
- <span class="icon-[lucide--file-up]" />
+ <span class="feishu-logo" aria-hidden="true">
+ <span class="feishu-logo__dot feishu-logo__dot--cyan" />
+ <span class="feishu-logo__dot feishu-logo__dot--blue" />
+ <span class="feishu-logo__dot feishu-logo__dot--green" />
+ <span class="feishu-logo__dot feishu-logo__dot--red" />
+ </span>
+ <span class="action-label">导出到飞书</span>
  </button>
  <span class="action-divider" />
  <span class="action-meta">{{ formatTime(message.created_at) }}</span>
@@ -919,23 +1076,102 @@ const hideEmptyBubble = computed( =>
 </template>
 <style scoped>
 /* ============ User Bubble ============ */
+.user-message-row {
+ display: flex;
+ justify-content: flex-end;
+ padding-left: 3.5rem;
+}
 .user-bubble {
- max-width: 80%;
- padding: 0.625rem 1rem;
- border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
- background: hsl(var(--primary));
- color: hsl(var(--primary-foreground));
- font-size: 0.875rem;
- line-height: 1.625;
+ max-width: min(100%, 38rem);
+ padding: 0.8125rem 1rem;
+ border-radius: 1rem 1rem 0.375rem 1rem;
+ border: 1px solid hsl(168 76% 42% / 0.18);
+ background: hsl(0 0% 100% / 0.9);
+ color: hsl(215 28% 18%);
+ font-size: 0.925rem;
+ font-weight: 600;
+ line-height: 1.65;
+ letter-spacing: -0.01em;
  white-space: pre-wrap;
  word-break: break-word;
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
 }
 /* ============ AI Message ============ */
 .ai-message {
  display: flex;
- flex-direction: column;
- /* §5 spacing-scale: 主区块之间 16px 节奏（thinking / narration / tools / 正文） */
+ align-items: flex-start;
+ gap: 0.875rem;
+}
+.assistant-avatar {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ width: 2.375rem;
+ height: 2.375rem;
+ margin-top: 0.125rem;
+ border-radius: 0.875rem;
+ background: hsl(0 0% 100% / 0.84);
+ border: 1px solid hsl(168 76% 42% / 0.18);
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.06);
+ flex-shrink: 0;
+}
+.assistant-avatar-logo {
+ width: 1.45rem;
+ height: 1.45rem;
+ object-fit: contain;
+}
+.assistant-message-shell {
+ flex: 1;
+ min-width: 0;
+ max-width: 100%;
+ padding: 0.95rem 1rem 0.7rem;
+ border-radius: 1.125rem 1.125rem 1.125rem 0.4rem;
+ border: 1px solid hsl(214 32% 86% / 0.9);
+ background: hsl(0 0% 100% / 0.96);
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.assistant-message-header {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
  gap: 1rem;
+ margin-bottom: 0.75rem;
+}
+.assistant-title {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ min-width: 0;
+ color: hsl(215 28% 18%);
+ font-size: 0.75rem;
+ font-weight: 800;
+ letter-spacing: 0.01em;
+}
+.assistant-model {
+ overflow: hidden;
+ max-width: 14rem;
+ padding: 0.125rem 0.4375rem;
+ border-radius: 9999px;
+ background: hsl(215 16% 47% / 0.08);
+ color: hsl(215 16% 45%);
+ font-size: 0.625rem;
+ font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+ font-weight: 600;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+.assistant-time {
+ color: hsl(215 16% 60% / 0.82);
+ font-size: 0.6875rem;
+ font-weight: 600;
+ font-variant-numeric: tabular-nums;
+ flex-shrink: 0;
+}
+.timeline-flow + .ai-prose,
+.tool-flow + .ai-prose {
+ margin-top: 0.95rem;
+ padding-top: 0.95rem;
+ border-top: 1px solid hsl(214 32% 90% / 0.9);
 }
 /* ============ Timeline ============ */
 .timeline-flow {
@@ -953,11 +1189,18 @@ const hideEmptyBubble = computed( =>
 .timeline-step--thinking {
  background: hsl(168 76% 96% / 0.55);
 }
+.timeline-step--thinking.is-expandable {
+ cursor: pointer;
+ transition: background-color 0.15s ease;
+}
+.timeline-step--thinking.is-expandable:hover {
+ background: hsl(168 76% 94% / 0.7);
+}
 .timeline-step--narration {
  background: hsl(210 40% 98% / 0.7);
 }
 .timeline-step-label {
- display: inline-flex;
+ display: flex;
  align-items: center;
  gap: 0.375rem;
  font-size: 0.6875rem;
@@ -971,6 +1214,91 @@ const hideEmptyBubble = computed( =>
  color: hsl(215 16% 35%);
  white-space: pre-wrap;
  word-break: break-word;
+}
+.timeline-step-text--preview {
+ /* 收起态首行预览：单行省略 + 颜色弱化 */
+ color: hsl(215 16% 50% / 0.85);
+ white-space: nowrap;
+ overflow: hidden;
+ text-overflow: ellipsis;
+}
+/* ============ Tool Batch — 同 LLM turn 多工具横向 chip 流 ============ */
+.tool-batch {
+ display: flex;
+ flex-direction: column;
+ gap: 0.375rem;
+ padding: 0.5rem 0.625rem;
+ border-radius: 0.625rem;
+ border: 1px solid hsl(214 32% 91% / 0.6);
+ background: hsl(210 40% 98% / 0.5);
+}
+.tool-batch-header {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.5rem;
+ font-size: 0.6875rem;
+ color: hsl(215 16% 42%);
+}
+.tool-batch-chips {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 0.25rem 0.375rem;
+}
+.tool-chip {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.3125rem;
+ padding: 0.1875rem 0.5rem;
+ border-radius: 9999px;
+ border: 1px solid hsl(214 32% 88% / 0.9);
+ background: hsl(0 0% 100% / 0.9);
+ font-size: 0.6875rem;
+ color: hsl(215 16% 30%);
+ cursor: pointer;
+ max-width: 100%;
+ transition:
+ background-color 0.15s ease,
+ border-color 0.15s ease;
+ font-family: inherit;
+}
+.tool-chip:hover {
+ border-color: hsl(168 76% 42% / 0.4);
+ background: hsl(168 76% 96% / 0.5);
+}
+.tool-chip--running {
+ border-color: hsl(168 76% 42% / 0.3);
+ background: hsl(168 76% 97% / 0.7);
+}
+.tool-chip--expanded {
+ border-color: hsl(168 76% 42% / 0.5);
+ background: hsl(168 76% 95%);
+}
+.tool-chip-text {
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ max-width: 14rem;
+ font-variant-numeric: tabular-nums;
+}
+.tool-batch-details {
+ display: flex;
+ flex-direction: column;
+ gap: 0.5rem;
+ margin-top: 0.25rem;
+ padding-top: 0.5rem;
+ border-top: 1px dashed hsl(214 32% 91%);
+}
+.tool-detail--batch {
+ margin-left: 0;
+ padding: 0;
+ border-left: 0;
+}
+.tool-detail-head {
+ display: flex;
+ align-items: baseline;
+ gap: 0.5rem;
+ flex-wrap: wrap;
+ padding: 0 0.125rem;
 }
 /* ============ Narration — 叙述折叠块 ============ */
 .narration-block {
@@ -1028,7 +1356,9 @@ const hideEmptyBubble = computed( =>
  border-radius: 0.5rem;
  font-size: 0.75rem;
  cursor: pointer;
- transition: background-color 0.15s ease, border-color 0.15s ease;
+ transition:
+ background-color 0.15s ease,
+ border-color 0.15s ease;
  width: fit-content;
  max-width: 100%;
  /* button reset：用作 <button> 时 */
@@ -1105,7 +1435,9 @@ const hideEmptyBubble = computed( =>
 /* expand 过渡 */
 .expand-enter-active,
 .expand-leave-active {
- transition: max-height 0.22s ease-out, opacity 0.18s ease-out;
+ transition:
+ max-height 0.22s ease-out,
+ opacity 0.18s ease-out;
  overflow: hidden;
 }
 .expand-enter-from,
@@ -1438,20 +1770,34 @@ const hideEmptyBubble = computed( =>
  margin: 1.5rem 0;
 }
 .ai-prose:deep(table) {
- width: 100%;
+ display: block;
+ width: max-content;
+ min-width: 100%;
+ max-width: 100%;
+ overflow-x: auto;
  border-collapse: collapse;
  font-size: 0.8125rem;
  margin: 0.875rem 0;
+ border: 1px solid hsl(214 32% 91% / 0.8);
+ border-radius: 0.875rem;
+ scrollbar-width: thin;
 }
 .ai-prose:deep(th) {
  text-align: left;
  font-weight: 600;
- padding: 0.5rem 0.75rem;
+ padding: 0.625rem 0.875rem;
  border-bottom: 2px solid hsl(214 32% 91%);
+ white-space: nowrap;
 }
 .ai-prose:deep(td) {
- padding: 0.5rem 0.75rem;
+ padding: 0.625rem 0.875rem;
  border-bottom: 1px solid hsl(214 32% 91% / 0.6);
+ vertical-align: top;
+ white-space: nowrap;
+}
+.ai-prose:deep(td code),
+.ai-prose:deep(th code) {
+ white-space: nowrap;
 }
 .ai-prose:deep(tr:last-child td) {
  border-bottom: none;
@@ -1496,33 +1842,82 @@ const hideEmptyBubble = computed( =>
 .action-bar {
  display: flex;
  align-items: center;
- gap: 0.375rem;
- padding-top: 0.125rem;
- opacity: 0;
- transition: opacity 0.15s;
-}
-.group:hover .action-bar {
- opacity: 1;
+ flex-wrap: wrap;
+ gap: 0.5rem;
+ padding-top: 0.75rem;
 }
 .action-btn {
- display: flex;
+ display: inline-flex;
  align-items: center;
  justify-content: center;
- width: 1.5rem;
- height: 1.5rem;
- border-radius: 0.375rem;
+ gap: 0.375rem;
+ min-height: 1.875rem;
+ padding: 0.3125rem 0.625rem;
+ border-radius: 9999px;
+ border: 1px solid hsl(214 32% 88% / 0.9);
+ background: hsl(0 0% 100% / 0.72);
  font-size: 0.75rem;
- color: hsl(215 16% 60%);
+ font-weight: 600;
+ color: hsl(215 16% 42%);
  cursor: pointer;
- transition: all 0.15s;
+ transition:
+ background-color 0.15s ease,
+ border-color 0.15s ease,
+ color 0.15s ease;
 }
 .action-btn:hover {
- background: hsl(210 40% 96%);
+ border-color: hsl(214 32% 82%);
+ background: hsl(210 40% 98%);
  color: hsl(215 28% 17%);
+}
+.action-btn--feishu {
+ border-color: hsl(168 76% 42% / 0.22);
+ color: hsl(168 70% 28%);
+}
+.action-btn--feishu:hover {
+ border-color: hsl(168 76% 42% / 0.34);
+ background: hsl(168 76% 42% / 0.06);
+}
+.action-label {
+ line-height: 1rem;
+ white-space: nowrap;
+}
+.feishu-logo {
+ position: relative;
+ display: inline-grid;
+ width: 1rem;
+ height: 1rem;
+ flex-shrink: 0;
+}
+.feishu-logo__dot {
+ position: absolute;
+ width: 0.5rem;
+ height: 0.5rem;
+ border-radius: 9999px;
+}
+.feishu-logo__dot--cyan {
+ top: 0;
+ left: 0.25rem;
+ background: #00c7be;
+}
+.feishu-logo__dot--blue {
+ top: 0.25rem;
+ right: 0;
+ background: #3370ff;
+}
+.feishu-logo__dot--green {
+ bottom: 0;
+ left: 0.25rem;
+ background: #00b578;
+}
+.feishu-logo__dot--red {
+ top: 0.25rem;
+ left: 0;
+ background: #f54a45;
 }
 .action-divider {
  width: 1px;
- height: 0.75rem;
+ height: 1rem;
  background: hsl(214 32% 91%);
  margin: 0 0.125rem;
 }

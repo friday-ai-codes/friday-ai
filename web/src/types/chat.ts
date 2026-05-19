@@ -60,6 +60,8 @@ export interface StreamTimelineToolItem {
  input: Record<string, unknown>
  result?: string
  status: 'running' | 'done'
+ /** 后端 chat_runner 发的 batch_id；同一 LLM turn 的多个 tool 同值 */
+ batch_id?: string
 }
 export type StreamTimelineItem
  = | StreamTimelineThinkingItem
@@ -108,6 +110,13 @@ export interface SSEEvent {
  tool_name?: string
  tool_call_id?: string
  input?: Record<string, unknown>
+ /**
+ * 同一个 LLM response 内的多个 tool_call 共享 batch_id（后端 chat_runner
+ * 在 tool_calls 循环开始时生成 UUID），用于前端将"语义同批"的工具调用
+ * 渲染为横向 chip 流。单工具调用时为空字符串 / undefined，前端退化到
+ * 旧的"连续同名"分组规则。
+ */
+ batch_id?: string
  // tool_use_result
  result?: string
  // thinking

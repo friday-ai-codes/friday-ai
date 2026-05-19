@@ -198,16 +198,16 @@ async function handleLogout {
  </Tooltip>
  <button
  v-else
- class="btn btn-primary w-full"
+ class="chat-new-button"
  @click="handleNewConversation"
  >
- <span class="icon-[lucide--plus] text-sm" />
- 新建对话
+ <span class="chat-new-button__icon icon-[lucide--plus] text-sm" />
+ <span>新建对话</span>
  </button>
  </div>
  <!-- 对话列表 -->
  <ScrollArea class="flex-1":class="isCollapsed ? 'px-2': ''">
- <div v-if="!isCollapsed" class="px-2 pb-2 space-y-0.5">
+ <div v-if="!isCollapsed" class="chat-conversation-list px-2 pb-2">
  <div v-if="chatStore.loading" class=" text-center text-sm text-muted-foreground">
  加载中...
  </div>
@@ -229,32 +229,30 @@ async function handleLogout {
  v-for="conv in chatStore.conversations":key="conv.id"
  role="button"
  tabindex="0"
- class="group w-full text-left px-3 py-2.5 rounded-xl transition-all duration-200 flex items-center gap-2 cursor-pointer":class="chatStore.currentConversationId === conv.id ? 'sidebar-s2a-link-active': 'sidebar-s2a-link'"
+ class="chat-conversation-item group":class="{ 'chat-conversation-item--active': chatStore.currentConversationId === conv.id }"
  @click="handleSelectConversation(conv.id)"
  @keydown.enter="handleSelectConversation(conv.id)"
  >
- <span class="icon-[lucide--message-square] text-base shrink-0" />
+ <span class="chat-conversation-icon">
+ <span class="icon-[lucide--message-square] text-[15px]" />
+ </span>
  <div class="flex-1 min-w-0">
- <p class="text-sm font-medium truncate">
+ <p class="chat-conversation-title">
  {{ conv.title }}
  </p>
- <p class="text-xs opacity-60 flex items-center gap-1">
- {{ formatTime(conv.updated_at) }}
- <span
- v-if="conv.status === 'running'"
- class="icon-[lucide--loader-circle] text-[10px] animate-spin text-primary"
- />
- <span
- v-else-if="conv.status === 'completed'"
- class="icon-[lucide--check-circle-2] text-[10px] text-green-500"
- />
+ <p class="chat-conversation-meta">
+ <span>{{ formatTime(conv.updated_at) }}</span>
+ <span v-if="conv.status === 'running'" class="chat-conversation-state chat-conversation-state--running">运行中</span>
+ <span v-else-if="conv.status === 'completed'" class="chat-conversation-state chat-conversation-state--done">已完成</span>
+ <span v-else class="chat-conversation-state">草稿</span>
  </p>
  </div>
  <button
- class=" w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 shrink-0 transition-opacity"
+ class="chat-conversation-delete"
+ aria-label="删除对话"
  @click.stop="handleDeleteConversation(conv.id)"
  >
- <span class="icon-[lucide--trash-2] text-xs text-destructive" />
+ <span class="icon-[lucide--trash-2] text-xs" />
  </button>
  </div>
  </div>
@@ -347,3 +345,155 @@ async function handleLogout {
  </aside>
  </TooltipProvider>
 </template>
+<style scoped>
+.chat-new-button {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ gap: 0.5rem;
+ width: 100%;
+ min-height: 2.75rem;
+ border-radius: 1rem;
+ border: 1px solid hsl(168 76% 42% / 0.28);
+ background: linear-gradient(135deg, hsl(168 72% 48%), hsl(174 68% 36%)), hsl(168 76% 42%);
+ color: white;
+ font-size: 0.9375rem;
+ font-weight: 700;
+ letter-spacing: 0.01em;
+ cursor: pointer;
+ box-shadow:
+ 0 8px 18px hsl(168 76% 42% / 0.16),
+ inset 0 1px 0 hsl(0 0% 100% / 0.22);
+ transition:
+ transform 0.18s ease,
+ box-shadow 0.18s ease,
+ filter 0.18s ease;
+}
+.chat-new-button:hover {
+ transform: translateY(-1px);
+ filter: saturate(1.08);
+ box-shadow:
+ 0 10px 22px hsl(168 76% 42% / 0.2),
+ inset 0 1px 0 hsl(0 0% 100% / 0.25);
+}
+.chat-new-button:focus-visible,
+.chat-conversation-item:focus-visible,
+.chat-conversation-delete:focus-visible {
+ outline: 2px solid hsl(168 76% 42% / 0.5);
+ outline-offset: 2px;
+}
+.chat-new-button__icon {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ width: 1.25rem;
+ height: 1.25rem;
+ border-radius: 9999px;
+ background: hsl(0 0% 100% / 0.16);
+}
+.chat-conversation-list {
+ display: flex;
+ flex-direction: column;
+ gap: 0.25rem;
+}
+.chat-conversation-item {
+ display: flex;
+ align-items: center;
+ gap: 0.75rem;
+ width: 100%;
+ min-height: 3.5rem;
+ padding: 0.5rem 0.625rem;
+ border: 1px solid transparent;
+ border-radius: 0.875rem;
+ color: hsl(215 20% 43%);
+ cursor: pointer;
+ transition:
+ background-color 0.18s ease,
+ border-color 0.18s ease,
+ box-shadow 0.18s ease,
+ transform 0.18s ease,
+ color 0.18s ease;
+}
+.chat-conversation-item:hover {
+ border-color: hsl(214 32% 88% / 0.8);
+ background: hsl(0 0% 100% / 0.58);
+ color: hsl(215 28% 22%);
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.chat-conversation-item--active {
+ border-color: hsl(168 76% 42% / 0.18);
+ background: hsl(168 76% 42% / 0.08);
+ color: hsl(168 64% 28%);
+ box-shadow: none;
+}
+.chat-conversation-icon {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ width: 2.125rem;
+ height: 2.125rem;
+ border-radius: 0.75rem;
+ background: hsl(210 40% 96% / 0.72);
+ color: hsl(215 16% 47%);
+ flex-shrink: 0;
+ box-shadow: inset 0 0 0 1px hsl(214 32% 91% / 0.75);
+}
+.chat-conversation-item--active .chat-conversation-icon {
+ background: hsl(168 76% 42% / 0.12);
+ color: hsl(168 76% 34%);
+ box-shadow: inset 0 0 0 1px hsl(168 76% 42% / 0.2);
+}
+.chat-conversation-title {
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ font-size: 0.875rem;
+ font-weight: 650;
+ line-height: 1.25rem;
+ letter-spacing: -0.01em;
+}
+.chat-conversation-meta {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ min-width: 0;
+ margin-top: 0.125rem;
+ font-size: 0.6875rem;
+ font-weight: 600;
+ color: hsl(215 16% 52% / 0.72);
+}
+.chat-conversation-state {
+ color: hsl(215 16% 52% / 0.74);
+ white-space: nowrap;
+}
+.chat-conversation-state--running {
+ color: hsl(38 82% 34%);
+}
+.chat-conversation-state--done {
+ color: hsl(142 66% 30%);
+}
+.chat-conversation-delete {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ width: 1.75rem;
+ height: 1.75rem;
+ border-radius: 0.625rem;
+ color: hsl(215 16% 47% / 0.45);
+ opacity: 0;
+ flex-shrink: 0;
+ cursor: pointer;
+ transition:
+ opacity 0.18s ease,
+ background-color 0.18s ease,
+ color 0.18s ease;
+}
+.chat-conversation-item:hover .chat-conversation-delete,
+.chat-conversation-delete:focus-visible {
+ opacity: 1;
+}
+.chat-conversation-delete:hover {
+ color: hsl(0 72% 51%);
+ background: hsl(0 72% 51% / 0.08);
+}
+</style>
