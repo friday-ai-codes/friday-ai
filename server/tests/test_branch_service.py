@@ -323,3 +323,47 @@ class TestBranchUniqueness:
  "feat20260409.no-client", repo_id, git_client=None
  )
  assert result.valid is True
+ @pytest.mark.asyncio
+ async def test_exclude_session_id_skips_self(
+ self, repo_id, _create_session
+ ) -> None:
+ """exclude_session_id 应把指定 session 从 DB 唯一性比对里剔除。
+ 回归 v18.2 bug：confirm 流程在 dispatch_coding_task 里二次校验
+ coding_session.branch_name，此时 session 自己已经是 draft/confirmed
+ active 状态 —— 不传 exclude_session_id 会撞自己报"已被活跃的编码会话使用"。
+ """
+ from asgiref.sync import sync_to_async
+ session = await sync_to_async(_create_session)(
+ "feat20260409.self-branch", "draft"
+ )
+ # 不传 exclude_session_id → 撞自己
+ result_without = await validate_branch_name(
+ "feat20260409.self-branch", repo_id
+ )
+ assert result_without.valid is False
+ # 传 exclude_session_id → 通过
+ result_with = await validate_branch_name(
+ "feat20260409.self-branch",
+ repo_id,
+ exclude_session_id=session.id,
+ )
+ assert result_with.valid is True
+ @pytest.mark.asyncio
+ async def test_exclude_session_id_still_catches_others(
+ self, repo_id, _create_session
+ ) -> None:
+ """exclude_session_id 仅剔除指定 session，其它同名 active session 仍要拦截。"""
+ from asgiref.sync import sync_to_async
+ self_session = await sync_to_async(_create_session)(
+ "feat20260409.other-conflict", "draft"
+ )
+ await sync_to_async(_create_session)(
+ "feat20260409.other-conflict", "running"
+ )
+ result = await validate_branch_name(
+ "feat20260409.other-conflict",
+ repo_id,
+ exclude_session_id=self_session.id,
+ )
+ assert result.valid is False
+ assert any("已被" in e or "使用" in e for e in result.errors)

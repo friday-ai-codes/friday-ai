@@ -171,10 +171,14 @@ async def dispatch_coding_task(
  git_client = get_git_platform_client(repo, token)
  except GitCredential.DoesNotExist:
  pass
+ # 排除自己：当前 coding_session 已经是 active 状态（confirm 阶段已切到
+ # CONFIRMED；未来 dispatch_coding_task 在 DRAFT 期被调时也会撞自己），
+ # 不剔除就会被识别成"分支名已被活跃的编码会话使用"。
  validation = await validate_branch_name(
  branch_name=coding_session.branch_name,
  repository_id=repo.id,
  git_client=git_client,
+ exclude_session_id=coding_session.id,
  )
  if not validation.valid:
  raise ValueError(f"分支名校验失败: {validation.errors}")
