@@ -255,10 +255,14 @@ async def search_repository_code(
  output={"data": {"results": }, "error": None},
  error="At least one of repository_id or space_id is required",
  )
- # Collect repository IDs to search
+ # Collect repository IDs to search.
+ #
+ # Contract per tool description: repository_id 与 space_id 二选一。当 LLM
+ # 显式指定 repository_id 时（意图就是"锁这一个仓库"），必须忽略 chat_runner
+ # 自动注入的 space_id —— 否则用户/agent 的"聚焦检索"诉求会被无声扩展成
+ # "搜整个空间所有仓库"，命中噪声暴增甚至 0 结果（历史 bug）。
  repo_ids: list[str] =
  if repository_id:
- # Verify repository exists
  try:
  await Repository.objects.aget(id=repository_id, is_deleted=False)
  repo_ids.append(repository_id)
@@ -270,8 +274,7 @@ async def search_repository_code(
  "error": f"Repository not found: {repository_id}",
  },
  )
- if space_id:
- # Get all repositories for the space
+ elif space_id:
  try:
  project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
@@ -290,7 +293,6 @@ async def search_repository_code(
  index_status="indexed",
  ).values_list("id", flat=True)
  ]
- # Add to list (avoid duplicates)
  for rid in project_repo_ids:
  rid_str = str(rid)
  if rid_str not in repo_ids:
