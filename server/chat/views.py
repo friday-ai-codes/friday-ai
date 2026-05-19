@@ -1087,8 +1087,13 @@ class CodingSessionConfirmView(APIView):
  branch_name = request.data.get("branch_name") if request.data else None
  if branch_name:
  from chat.branch_service import validate_branch_name
+ # 排除自己：用户保留默认 branch_name 直接提交时，前端传上来的值跟
+ # 当前 draft session 已经入库的 branch_name 完全一致 —— 不剔除就会
+ # 被识别成"分支名已被活跃的编码会话使用"。
  validation = await validate_branch_name(
- branch_name, coding_session.repository_id,
+ branch_name,
+ coding_session.repository_id,
+ exclude_session_id=coding_session.id,
  )
  if not validation.valid:
  return Response(

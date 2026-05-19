@@ -111,6 +111,7 @@ async def validate_branch_name(
  repository_id: UUID,
  *,
  git_client: GitPlatformClient | None = None,
+ exclude_session_id: UUID | str | None = None,
 ) -> BranchValidationResult:
  """多层校验分支名合法性。
  校验顺序：
@@ -127,8 +128,12 @@ async def validate_branch_name(
  branch_name: 待校验的分支名。
  repository_id: 仓库 UUID（唯一性校验使用）。
  git_client: Git 平台客户端（可选，用于 remote 唯一性校验）。
- Returns:
- BranchValidationResult 包含校验结果和错误列表。
+ exclude_session_id: 排除指定 CodingSession 不参与 DB 唯一性比对。
+ **典型场景**：confirm 流程在 ``dispatch_coding_task`` 里又调一次
+ ``validate_branch_name`` 校验当前 ``coding_session.branch_name``。
+ 此时**自己**就是一条 active (draft/confirmed) 的 CodingSession，
+ 会被错误地识别为冲突 —— 报 "分支名 'xxx' 已被活跃的编码会话使用"，
+ 实际上撞的是自己。caller 传入当前会话 id 把自己从冲突候选里剔除。
  """
  errors: list[str] =
  # 1. 空值检查
@@ -170,10 +175,13 @@ async def validate_branch_name(
  CodingSession.Status.CONFIRMED,
  CodingSession.Status.RUNNING,
  ]
- db_conflict = await CodingSession.objects.filter(
+ conflict_qs = CodingSession.objects.filter(
  branch_name=branch_name,
  status__in=active_statuses,
- ).aexists
+ )
+ if exclude_session_id is not None:
+ conflict_qs = conflict_qs.exclude(id=exclude_session_id)
+ db_conflict = await conflict_qs.aexists
  if db_conflict:
  errors.append(f"分支名 '{branch_name}' 已被活跃的编码会话使用")
  # 9. Remote refs 唯一性校验
