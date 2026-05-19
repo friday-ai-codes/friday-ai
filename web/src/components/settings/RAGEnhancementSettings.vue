@@ -50,7 +50,8 @@ async function loadSettings {
  const setting = settings.value.find(s => s.key === key)
  return setting?.has_value ? setting.value || '': ''
  }
- hybridEnabled.value = getValue(SettingKey.HYBRID_SEARCH_ENABLED) === 'true'
+ // 默认 true：未配置时按后端 _is_hybrid_enabled 默认开启行为对齐
+ hybridEnabled.value = (settings.value.find(s => s.key === SettingKey.HYBRID_SEARCH_ENABLED)?.value ?? 'true') === 'true'
  hybridAlpha.value = getValue(SettingKey.HYBRID_SEARCH_ALPHA) || '0.7'
  rerankerEnabled.value = getValue(SettingKey.RERANKER_ENABLED) === 'true'
  rerankerApiUrl.value = getValue(SettingKey.RERANKER_API_URL)

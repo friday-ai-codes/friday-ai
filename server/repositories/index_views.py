@@ -536,7 +536,9 @@ class CodeSearchView(APIView):
  hybrid_setting = await SystemSetting.objects.filter(
  key=SettingKeys.HYBRID_SEARCH_ENABLED
  ).afirst
- hybrid_enabled = bool(hybrid_setting and hybrid_setting.value == "true")
+ hybrid_enabled = (
+ hybrid_setting.value == "true" if hybrid_setting else True
+ )
  query_sparse = None
  if hybrid_enabled:
  from services.sparse_encoder import SparseEncoderService

@@ -2083,11 +2083,16 @@ class IndexerService:
  return diffs
  @staticmethod
  async def _is_hybrid_enabled -> bool:
- """检查是否启用 hybrid search。"""
+ """检查是否启用 hybrid search。
+ 默认 True：未配置 setting 时即视为启用，避免索引侧建出"单匿名 dense
+ 向量"老格式 collection 与检索侧"默认带 sparse"行为脱节（历史 bug：
+ 老 collection 上 hybrid_search 走到 Qdrant 会 400 "Not existing
+ vector name: sparse"，被 except 静默吞掉返回 0 结果）。
+ """
  setting = await SystemSetting.objects.filter(
  key=SettingKeys.HYBRID_SEARCH_ENABLED
  ).afirst
- return bool(setting and setting.value == "true")
+ return setting.value == "true" if setting else True
  @staticmethod
  def _generate_sparse_vectors(texts: list[str]) -> list[dict]:
  """生成 BM25 稀疏向量（同步方法，需要 sync_to_async 调用）。"""

@@ -1050,12 +1050,36 @@ class QdrantService:
  for r in results.points
  ]
  except UnexpectedResponse as e:
+ # 老 collection 缺 named "dense"/"sparse" 向量配置（早期单匿名向量
+ # 索引格式遗留）→ Qdrant 返回 400 "Not existing vector name"。
+ # 静默返回 会让上游看到"0 结果"误判为索引为空，因此自动降级到
+ # 纯 dense search 并响亮 warning，提示该 collection 需要重建。
+ if cls._is_missing_named_vector_error(e):
+ logger.warning(
+ "hybrid_search_by_name_fallback_to_dense",
+ collection_name=collection_name,
+ reason="collection_missing_named_vectors",
+ hint="rebuild index to enable hybrid search",
+ )
+ return cls.search_by_name(
+ collection_name, query_dense, top_k=top_k, filters=filters,
+ )
  logger.warning(
  "hybrid_search_by_name_failed",
  collection_name=collection_name,
  error=str(e),
  )
  return
+ @staticmethod
+ def _is_missing_named_vector_error(error: UnexpectedResponse) -> bool:
+ """识别 Qdrant "Not existing vector name" 类错误。
+ 触发场景：collection 是旧的"单匿名 dense 向量"格式，但 hybrid_search
+ 以 ``using="dense"`` / ``using="sparse"`` 命名向量方式查询。错误文案
+ 来自 Qdrant 源码 (见 `qdrant/qdrant` 仓库 `lib/collection/src/operations/types.rs`)，
+ 形如 ``"Wrong input: Not existing vector name error: sparse"``。
+ """
+ msg = str(error)
+ return "Not existing vector name" in msg
  @classmethod
  def hybrid_search(
  cls,
@@ -1124,6 +1148,17 @@ class QdrantService:
  for r in results.points
  ]
  except UnexpectedResponse as e:
+ if cls._is_missing_named_vector_error(e):
+ logger.warning(
+ "hybrid_search_fallback_to_dense",
+ repository_id=repository_id,
+ collection_name=collection_name,
+ reason="collection_missing_named_vectors",
+ hint="rebuild index to enable hybrid search",
+ )
+ return cls.search(
+ repository_id, query_dense, top_k=top_k, filters=filters,
+ )
  logger.error("hybrid_search_failed", error=str(e))
  return
  @classmethod
