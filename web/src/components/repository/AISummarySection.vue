@@ -11,7 +11,10 @@ import { Skeleton } from '~/components/ui/skeleton'
 import { useToast } from '~/composables/useToast'
 const props = defineProps<{
  repositoryId: string
+ /** 仓库手动填写的 Markdown 描述（编辑仓库时可维护）；AI 未生成时作为降级展示 */
+ legacyDescription?: string | null
 }>
+const hasLegacyDescription = computed( => Boolean(props.legacyDescription?.trim))
 const { success: toastSuccess, warning: toastWarning } = useToast
 // 状态
 const status = ref<AISummaryStatus>('not_started')
@@ -134,12 +137,19 @@ onUnmounted( => {
 <template>
  <div class="card overflow-hidden">
  <!-- 卡片头 -->
- <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/50">
- <div class="flex items-center gap-2">
+ <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/50 gap-3">
+ <div class="flex items-center gap-2 min-w-0">
+ <div class=".5 rounded-lg bg-primary/10 shrink-0">
  <span class="icon-[lucide--sparkles] text-primary" />
- <h3 class="text-base font-semibold text-foreground">
- AI 智能描述
+ </div>
+ <div class="min-w-0">
+ <h3 class="text-sm font-semibold text-foreground">
+ AI 描述
  </h3>
+ <p class="text-xs text-muted-foreground truncate">
+ 自动分析仓库结构，生成项目概览与技术栈
+ </p>
+ </div>
  </div>
  <div class="flex items-center gap-2">
  <!-- pending / running Badge -->
@@ -180,14 +190,28 @@ onUnmounted( => {
  </div>
  <!-- 卡片内容 -->
  <div class="">
- <!-- 状态 A: not_started 空状态 -->
- <div v-if="status === 'not_started'" class="flex flex-col items-center justify-center py-8 space-y-3">
+ <!-- 状态 A: not_started 空状态 / 手动描述降级 -->
+ <div v-if="status === 'not_started'" class="space-y-4">
+ <div
+ v-if="hasLegacyDescription"
+ class="rounded-lg border border-border/50 bg-muted/20 space-y-2"
+ >
+ <div class="flex items-center gap-2 text-xs text-muted-foreground">
+ <span class="icon-[lucide--file-text]" />
+ 当前为手动填写的仓库描述
+ </div>
+ <div class="max-h-[240px] overflow-y-auto rounded-lg bg-muted/30 border border-border/40 ">
+ <MarkdownPreview:content="legacyDescription ?? ''" />
+ </div>
+ </div>
+ <div class="flex flex-col items-center justify-center py-6 space-y-3">
  <span class="icon-[lucide--sparkles] text-2xl text-muted-foreground/40" />
  <p class="text-sm font-semibold text-foreground">
- 尚未生成 AI 描述
+ {{ hasLegacyDescription ? '可生成更完整的 AI 描述': '尚未生成 AI 描述' }}
  </p>
- <p class="text-xs text-muted-foreground text-center">
- 点击下方按钮，AI 将自动分析仓库结构并生成智能描述
+ <p class="text-xs text-muted-foreground text-center max-w-sm">
+ {{ hasLegacyDescription
+ ? 'AI 将分析代码结构，生成项目概览、技术栈、模块结构等结构化描述': '点击下方按钮，AI 将自动分析仓库结构并生成智能描述' }}
  </p>
  <Button
  variant="default"
@@ -197,6 +221,7 @@ onUnmounted( => {
  <span class="icon-[lucide--sparkles] mr-1.5" />
  生成 AI 描述
  </Button>
+ </div>
  </div>
  <!-- 状态 B: pending / running 加载骨架屏 -->
  <div v-else-if="status === 'pending' || status === 'running'" class="space-y-4">
@@ -292,8 +317,11 @@ onUnmounted( => {
  <p class="text-sm font-semibold text-foreground">
  描述生成失败
  </p>
- <p v-if="errorMsg" class="text-sm text-destructive text-center max-w-md">
+ <p v-if="errorMsg" class="text-sm text-destructive text-center max-w-md leading-relaxed">
  {{ errorMsg }}
+ </p>
+ <p v-else class="text-xs text-muted-foreground text-center max-w-md">
+ 任务未成功完成。请确认 Runner 在线、Docker 可用，且仓库 Git 凭据与 AI API 配置正确。
  </p>
  <Button
  variant="outline"

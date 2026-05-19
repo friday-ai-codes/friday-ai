@@ -12,6 +12,7 @@ declare global {
  const asyncComputed: typeof import('@vueuse/core').asyncComputed
  const autoResetRef: typeof import('@vueuse/core').autoResetRef
  const checkMissingKeys: typeof import('./composables/useDownstreamVarCheck').checkMissingKeys
+ const computeFreshness: typeof import('./composables/useKnowledgeOverview').computeFreshness
  const computed: typeof import('vue').computed
  const computedAsync: typeof import('@vueuse/core').computedAsync
  const computedEager: typeof import('@vueuse/core').computedEager
@@ -230,6 +231,7 @@ declare global {
  const useInterval: typeof import('@vueuse/core').useInterval
  const useIntervalFn: typeof import('@vueuse/core').useIntervalFn
  const useKeyModifier: typeof import('@vueuse/core').useKeyModifier
+ const useKnowledgeOverview: typeof import('./composables/useKnowledgeOverview').useKnowledgeOverview
  const useLastChanged: typeof import('@vueuse/core').useLastChanged
  const useLocalStorage: typeof import('@vueuse/core').useLocalStorage
  const useMagicKeys: typeof import('@vueuse/core').useMagicKeys
@@ -391,6 +393,9 @@ declare global {
  export type { IndexStreamRepositoryPayload, IndexStreamEvent, ConnectIndexStreamOptions } from './composables/useIndexProgressStream'
  import('./composables/useIndexProgressStream')
  // @ts-ignore
+ export type { FreshnessState } from './composables/useKnowledgeOverview'
+ import('./composables/useKnowledgeOverview')
+ // @ts-ignore
  export type { ModalOptions, ModalInstance } from './composables/useModal'
  import('./composables/useModal')
  // @ts-ignore
@@ -438,6 +443,7 @@ declare module 'vue' {
  readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
  readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
  readonly checkMissingKeys: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['checkMissingKeys']>
+ readonly computeFreshness: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['computeFreshness']>
  readonly computed: UnwrapRef<typeof import('vue')['computed']>
  readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
  readonly computedEager: UnwrapRef<typeof import('@vueuse/core')['computedEager']>
@@ -655,6 +661,7 @@ declare module 'vue' {
  readonly useInterval: UnwrapRef<typeof import('@vueuse/core')['useInterval']>
  readonly useIntervalFn: UnwrapRef<typeof import('@vueuse/core')['useIntervalFn']>
  readonly useKeyModifier: UnwrapRef<typeof import('@vueuse/core')['useKeyModifier']>
+ readonly useKnowledgeOverview: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['useKnowledgeOverview']>
  readonly useLastChanged: UnwrapRef<typeof import('@vueuse/core')['useLastChanged']>
  readonly useLocalStorage: UnwrapRef<typeof import('@vueuse/core')['useLocalStorage']>
  readonly useMagicKeys: UnwrapRef<typeof import('@vueuse/core')['useMagicKeys']>

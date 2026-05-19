@@ -251,6 +251,7 @@ declare module 'vue' {
  RepoHashFreshnessCard: typeof import('./components/repository/RepoHashFreshnessCard.vue')['default']
  RepositoryGraphCard: typeof import('./components/repository/RepositoryGraphCard.vue')['default']
  RepositoryIndexCard: typeof import('./components/repository/RepositoryIndexCard.vue')['default']
+ RepositoryKnowledgeHub: typeof import('./components/repository/RepositoryKnowledgeHub.vue')['default']
  RepositoryPicker: typeof import('./components/workflow/RepositoryPicker.vue')['default']
  ResolvedSourceBadge: typeof import('./components/providers/ResolvedSourceBadge.vue')['default']
  RouterLink: typeof import('vue-router')['RouterLink']

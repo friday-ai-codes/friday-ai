@@ -15,10 +15,14 @@ import {
 import CallsDagTab from './CallsDagTab.vue'
 import ImportsTab from './ImportsTab.vue'
 import SymbolsTab from './SymbolsTab.vue'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  repositoryId: string
-}>
-// 持久化折叠状态（默认展开，便于直接看到代码图谱内容）
+ /** 嵌入知识库 Hub 时隐藏外层 card 壳与折叠按钮 */
+ embedded?: boolean
+}>, {
+ embedded: false,
+})
+// 持久化折叠状态（embedded 默认展开；独立使用时也默认展开）
 const isOpen = useLocalStorage(`kbs-open-${props.repositoryId}`, true)
 // 跨 Tab 共享状态
 const selectedSymbolId = ref<string | null>(null)
@@ -32,9 +36,12 @@ function handleSelectSymbol(id: string) {
 }
 </script>
 <template>
- <div class="card">
+ <div:class="embedded ? '': 'card'">
  <!-- Header：图标 + 标题 + 折叠按钮 -->
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
+ <div
+ v-if="!embedded"
+ class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between"
+ >
  <div class="flex items-center gap-2">
  <span class="icon-[lucide--git-graph] text-primary" />
  <h3 class="text-sm font-semibold">
@@ -48,10 +55,18 @@ function handleSelectSymbol(id: string) {
  />
  </Button>
  </div>
+ <!-- embedded 模式：轻量标题条 -->
+ <div
+ v-else
+ class="mb-4 flex items-center gap-2 text-xs text-muted-foreground"
+ >
+ <span class="icon-[lucide--git-graph] text-primary" />
+ 浏览 Symbols · 调用关系 DAG · 导入
+ </div>
  <!-- 折叠区 + Tabs -->
  <Collapsible v-model:open="isOpen">
  <CollapsibleContent>
- <div class="">
+ <div:class="embedded ? '': ''">
  <Tabs v-model="activeTab">
  <TabsList class="mb-4">
  <TabsTrigger value="symbols">
