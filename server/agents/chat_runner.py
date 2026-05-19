@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 import asyncio
+import json
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -14,7 +15,14 @@ from typing import Any, cast
 import structlog
 from django.utils import timezone
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+ AIMessage,
+ AIMessageChunk,
+ BaseMessage,
+ HumanMessage,
+ SystemMessage,
+ ToolMessage,
+)
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
@@ -276,6 +284,93 @@ def _check_chat_context_window(
  f"max_output={effective_max_out}, "
  f"buffer={_CONTEXT_SAFETY_BUFFER})"
  )
+def _tool_result_to_content(result: Any) -> str:
+ """把 messages 表里存的 tool_call.result（dict/str/None）还原成 ToolMessage.content。
+ Anthropic API 要求 ToolMessage.content 是字符串；dict / list 直接 json.dumps
+ （ensure_ascii=False 保留中文可读性）。None → 空串。
+ """
+ if result is None:
+ return ""
+ if isinstance(result, str):
+ return result
+ try:
+ return json.dumps(result, ensure_ascii=False)
+ except (TypeError, ValueError):
+ return str(result)
+async def _load_history_messages(conversation_id: str) -> list[BaseMessage]:
+ """从 ``messages`` 表加载历史并还原成 LangChain 消息序列。
+ **为什么需要**：原先 ``ChatAnthropicRunner.stream`` 每次只塞 ``SystemMessage`` +
+ 当前 ``HumanMessage``，LLM 完全看不到前几轮对话 —— 同一会话里反复调用同一个工具
+ （典型现象：conv ``6f5d47bd...`` 三轮都调 ``list_space_repositories``）。
+ **末尾 user 消息丢弃**：``send_message_stream`` 在启动 graph **前**已把本轮 user
+ content 落库（``conversation_service.py`` ），而 ``stream(prompt)`` 又会
+ 把同样的内容作为新的 ``HumanMessage`` 追加 —— 不剔除会导致末尾出现两条相同 user
+ 消息，触发 Anthropic API 的 "messages must alternate" 校验。
+ **异常一律退化**：DB 不可访问（pytest-django 默认隔离）、Message schema 损坏等
+ 任何异常都吞掉返回 ````，让 LLM 退化到"无历史"模式而不是让整轮对话 hard fail。
+ 生产环境 DB 真坏时，落库环节自然会暴露错误，这里 degrade 反而让用户能看到答案。
+ """
+ if not conversation_id:
+ return
+ try:
+ # lazy import 避免 agents → chat 反向依赖链
+ from chat.models import Message
+ rows = [
+ m
+ async for m in Message.objects.filter(
+ conversation_id=conversation_id,
+ ).order_by("created_at")
+ ]
+ except Exception:
+ logger.warning(
+ "chat_runner_history_load_failed",
+ conversation_id=conversation_id,
+ exc_info=True,
+ )
+ return
+ from chat.models import Message # 同一进程内已 import，零成本
+ # 丢弃末尾连续 user 消息（当前轮 prompt 由 caller 单独追加）
+ while rows and rows[-1].role == Message.Role.USER:
+ rows.pop
+ history: list[BaseMessage] =
+ for row in rows:
+ if row.role == Message.Role.USER:
+ history.append(HumanMessage(content=row.content or ""))
+ elif row.role == Message.Role.ASSISTANT:
+ tc_data = row.tool_calls or
+ lc_tool_calls: list[dict[str, Any]] =
+ for tc in tc_data:
+ tc_id = str(tc.get("id", "") or "")
+ if not tc_id:
+ continue
+ lc_tool_calls.append({
+ "name": str(tc.get("name", "") or ""),
+ "args": tc.get("input") or {},
+ "id": tc_id,
+ "type": "tool_call",
+ })
+ history.append(
+ AIMessage(
+ content=row.content or "",
+ tool_calls=lc_tool_calls,
+ )
+ )
+ # ToolMessage 必须紧跟带 tool_calls 的 AIMessage 且 tool_call_id 一一对应，
+ # 否则 Anthropic API 直接 400。tc_id 为空的项已在上面 skip，这里同步过滤
+ # 保证两侧条目数严格对齐。
+ for tc in tc_data:
+ tc_id = str(tc.get("id", "") or "")
+ if not tc_id:
+ continue
+ history.append(
+ ToolMessage(
+ content=_tool_result_to_content(tc.get("result")),
+ tool_call_id=tc_id,
+ name=str(tc.get("name", "") or ""),
+ )
+ )
+ # role=system / tool 在 chat 场景不会单独落库，忽略
+ return history
 def _make_agent_result(
  *,
  status: str,
@@ -369,10 +464,18 @@ class ChatAnthropicRunner:
  self._config = config
  self._result: AgentResult | None = None
  self._run_task: asyncio.Task[Any] | None = None
+ # interrupt 在 stream 设置 _run_task 之前到达的窗口期：
+ # register_runner(runner) 在 _execute_first_run 进入时就完成，但 stream
+ # 体内的 self._run_task = current_task 要等用户的第一个 yield 才执行。
+ # 这中间几十毫秒到几百毫秒，如果用户在这窗口里点了"停止"，老逻辑只检查
+ # _run_task is None 就 silently no-op → graph 继续跑完 → finalize 覆盖
+ # interrupted 状态。这里把请求 latch 住，stream 启动时自检自取消。
+ self._interrupt_requested: bool = False
  @property
  def result(self) -> AgentResult | None:
  return self._result
  async def interrupt(self) -> None:
+ self._interrupt_requested = True
  if self._run_task and not self._run_task.done:
  self._run_task.cancel
  logger.info("chat_runner_interrupted", session_id=self._config.session_id)
@@ -451,8 +554,12 @@ class ChatAnthropicRunner:
  force_deep_analysis=self._config.force_deep_analysis,
  )
  model_with_tools = model.bind_tools([spec.tool for spec in tool_specs.values])
+ # 把 messages 表里的历史回灌给 LLM —— 否则同会话里 LLM 每轮都从零开始，
+ # 会反复调同一个工具拿同一份数据。详见 _load_history_messages docstring。
+ history_messages = await _load_history_messages(self._config.conversation_id)
  messages: list[Any] = [
  SystemMessage(content=self._config.system_prompt),
+ *history_messages,
  HumanMessage(content=prompt),
  ]
  total_usage = {"input_tokens": 0, "output_tokens": 0}
@@ -462,6 +569,13 @@ class ChatAnthropicRunner:
  # 预算注入 + 强制 final-turn）。详见 agents/tool_budget.py。
  budget = _ToolBudget(max_turns=self._config.max_turns)
  try:
+ # 窗口期补救：interrupt 可能早于 stream 第一次被驱动就到达
+ # （register_runner 比 _run_task 赋值早；用户在用户消息刚发出去就立刻
+ # 点"停止"会撞这个窗口）。这里在主循环前显式自检，让 except 分支接管，
+ # 产出与运行中 cancel 完全一致的 message_complete(status=interrupted)
+ # 事件序列，下游 graph / finalize 路径无需区分两种 cancel 时机。
+ if self._interrupt_requested:
+ raise asyncio.CancelledError("interrupt requested before stream start")
  for _ in range(self._config.max_turns):
  full_message: AIMessageChunk | None = None
  # Phase Plan：每 turn 进入 astream 前做前置 budget check。
@@ -562,12 +676,19 @@ class ChatAnthropicRunner:
  budget=budget,
  )
  raw_result = _normalize_tool_result(result)
+ # 序列化 result 为 string —— 与 langchain_runner.py L608
+ # (tool_msg.content) 和 graph.py:_coerce_snapshot_result 对齐。
+ # 否则前端收到 dict 后用 JSON.parse 会因为隐式 toString 成
+ # "[object Object]" 而失败，导致 create_coding_plan 的
+ # session_id 在 ChatMessageBubble 里解析为空字符串，进而
+ # confirm 请求 URL 变成 /coding-sessions//confirm/ → 404。
+ result_for_event = _tool_result_to_content(raw_result)
  tool_event_data: dict[str, Any] = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
  "success": result.success,
  "input": arguments,
- "result": raw_result,
+ "result": result_for_event,
  }
  if batch_id:
  tool_event_data["batch_id"] = batch_id

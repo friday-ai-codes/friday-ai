@@ -669,12 +669,30 @@ export const useChatStore = defineStore('chat', => {
  break
  }
  case 'tool_use_result': {
+ // 防御性序列化：后端历史路径里 chat_runner 曾经把 dict 直接塞进 result，
+ // 前端直接 `as string` 会得到 object，后续 JSON.parse 会因为隐式 toString
+ // 成 "[object Object]" 而失败（典型现象：CodingPlanCard 的 sessionId 解析
+ // 为空 → confirm URL 变成 /coding-sessions//confirm/ → 404）。
+ // 这里统一把任何非 string 的 result 序列化为 JSON 字符串。
+ const normalizeResult = (raw: unknown): string | undefined => {
+ if (raw === null || raw === undefined)
+ return undefined
+ if (typeof raw === 'string')
+ return raw
+ try {
+ return JSON.stringify(raw)
+ }
+ catch {
+ return String(raw)
+ }
+ }
+ const normalizedResult = normalizeResult(event.result)
  const tc = streamingToolCalls.value.find(t => t.id === event.tool_call_id)
  if (tc) {
  if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
  tc.input = event.input as Record<string, unknown>
- if (event.result)
- tc.result = event.result as string
+ if (normalizedResult !== undefined)
+ tc.result = normalizedResult
  tc.status = 'done'
  }
  const timelineTool = streamingTimeline.value.find((item): item is Extract<StreamTimelineItem, { kind: 'tool' }> =>
@@ -683,8 +701,8 @@ export const useChatStore = defineStore('chat', => {
  if (timelineTool) {
  if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
  timelineTool.input = event.input as Record<string, unknown>
- if (event.result)
- timelineTool.result = event.result as string
+ if (normalizedResult !== undefined)
+ timelineTool.result = normalizedResult
  timelineTool.status = 'done'
  if (event.batch_id && !timelineTool.batch_id)
  timelineTool.batch_id = event.batch_id
