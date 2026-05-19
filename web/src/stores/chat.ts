@@ -1000,31 +1000,47 @@ export const useChatStore = defineStore('chat', => {
  finally {
  isStreaming.value = false
  abortController.value = null
- const hasServerResponse = !error.value || !!streamingContent.value || streamingToolCalls.value.length > 0 || currentPhase.value === 'waiting'
- if (createdForDraft && hasServerResponse) {
- const committed = pendingConversation.value ?? materializedConversation
- if (committed && !conversations.value.some(c => c.id === committed.id))
- conversations.value.unshift(committed)
- syncConversationToURL(conversationId)
- pendingConversation.value = null
- }
- else if (createdForDraft && !hasServerResponse) {
+ // —— 草稿会话收尾（最先处理，且必须早于「waiting → scheduleRuntimePoll + return」
+ // 的早退逻辑；否则下面的 return 会跳过 pendingConversation 提升，
+ // deep_analysis 等 waiting 路径首次发送时侧栏看不到新对话）。
+ //
+ // * 成功（有任何流响应 / waiting 后台接管）→ 把 pendingConversation
+ // 提升到 conversations 列表，不再清 pending 之外的状态。
+ // * 彻底失败（有 error 且没收到任何流内容、也未进入 waiting）→ 清掉
+ // 刚创建的后端空会话，并 return 短路，避免下面合并逻辑误把空内容
+ // 当成消息塞进 messages。
+ const hadStreamingResponse
+ = !!streamingContent.value
+ || streamingToolCalls.value.length > 0
+ || currentPhase.value === 'waiting'
+ if (createdForDraft && error.value && !hadStreamingResponse) {
  pendingConversation.value = null
  currentConversationId.value = null
  syncConversationToURL(null)
+ if (materializedConversation) {
  try {
- await deleteConversation(conversationId)
+ await deleteConversation(materializedConversation.id)
  }
  catch {
- // 创建后发送失败时尽力清理后端空会话，失败不覆盖原始错误。
+ // 清理后端空会话失败不覆盖原始错误。
  }
  }
+ // 失败短路：跳过下面 waiting / merge 路径，避免误把空 streaming 合并为消息。
+ return
+ }
+ if (createdForDraft) {
+ const committed = pendingConversation.value ?? materializedConversation
+ if (committed && !conversations.value.some(c => c.id === committed.id))
+ conversations.value.unshift(committed)
+ pendingConversation.value = null
+ }
+ // ↓↓↓ 以下保持 v25.0 之前的 finally 结构不变（流式合并 / waiting 早退）↓↓↓
  // graph 进入 WAITING（deep_analysis/coding 进行中）后 SSE 正常结束，
  // 需要启动 runtime 轮询来恢复并跟踪后续状态
  if (currentPhase.value === 'waiting' && currentConversationId.value) {
- scheduleRuntimePoll(conversationId, 1000)
+ scheduleRuntimePoll(currentConversationId.value, 1000)
+ return
  }
- else {
  // 错误时：记录失败内容用于重试，移除乐观更新的用户消息
  if (error.value && !streamingContent.value) {
  lastFailedContent.value = content
@@ -1079,7 +1095,6 @@ export const useChatStore = defineStore('chat', => {
  }
  else {
  resetStreamingState
- }
  }
  }
  }
