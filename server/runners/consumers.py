@@ -285,6 +285,15 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  duration_ms=payload.get("duration_ms"),
  )
  await session.amark_completed
+ if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+ from subagent.api.callbacks import _update_repository_on_summary_complete
+ await _update_repository_on_summary_complete(
+ session,
+ {
+ "result_type": payload.get("result_type", "text"),
+ "output": payload.get("output", {"text": payload.get("text_output", "")}),
+ },
+ )
  _schedule_workflow_resume(session, log)
  _schedule_agent_session_resume(session, log)
  log.info("task_completed_via_ws")
@@ -330,6 +339,9 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  session.last_output = last_output
  await session.asave(update_fields=["last_output", "updated_at"])
  await _send_failure_notification(session, error_msg)
+ if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
+ from subagent.api.callbacks import _update_repository_on_summary_fail
+ await _update_repository_on_summary_fail(session, error_msg)
  _schedule_workflow_resume(session, log)
  _schedule_agent_session_resume(session, log)
  log.info("task_failed_via_ws")

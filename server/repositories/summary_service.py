@@ -88,6 +88,61 @@ async def dispatch_repo_summary(repository: Repository) -> str:
  session_id=session_id,
  )
  return session_id
+_TERMINAL_FAIL_STATUSES = frozenset({
+ SubAgentSession.Status.ERROR,
+ SubAgentSession.Status.TIMEOUT,
+ SubAgentSession.Status.CANCELLED,
+})
+async def reconcile_ai_summary_status(repository: Repository) -> Repository:
+ """将 Repository.ai_summary_status 与最新 REPO_SUMMARY SubAgentSession 对齐。
+ Runner WebSocket 失败路径历史上未写回 Repository，会导致 ai_summary_status
+ 长期停留在 pending。summary-status / generate-summary 调用前先 reconcile。
+ """
+ if repository.ai_summary_status not in (
+ AISummaryStatus.PENDING,
+ AISummaryStatus.RUNNING,
+ ):
+ return repository
+ from subagent.api.callbacks import (
+ _update_repository_on_summary_complete,
+ _update_repository_on_summary_fail,
+ )
+ from subagent.models import SubAgentSession, TaskResult
+ session = await (
+ SubAgentSession.objects.filter(
+ task_type=SubAgentSession.TaskType.REPO_SUMMARY,
+ last_output__repository_id=str(repository.id),
+ )
+ .order_by("-created_at")
+ .afirst
+ )
+ if session is None:
+ return repository
+ if session.status == SubAgentSession.Status.COMPLETED:
+ task_result = await TaskResult.objects.filter(session=session).afirst
+ if task_result is not None:
+ await _update_repository_on_summary_complete(
+ session,
+ {
+ "result_type": task_result.result_type,
+ "output": task_result.raw_output
+ or {"text": task_result.text_output},
+ },
+ )
+ await repository.arefresh_from_db
+ return repository
+ if session.status in _TERMINAL_FAIL_STATUSES:
+ error_msg = session.failure_reason or "AI 描述生成失败"
+ await _update_repository_on_summary_fail(session, error_msg)
+ await repository.arefresh_from_db
+ return repository
+ if (
+ session.status == SubAgentSession.Status.RUNNING
+ and repository.ai_summary_status == AISummaryStatus.PENDING
+ ):
+ repository.ai_summary_status = AISummaryStatus.RUNNING
+ await repository.asave(update_fields=["ai_summary_status", "updated_at"])
+ return repository
 async def _build_env_metadata(repository: Repository) -> dict[str, str]:
  """构建 dispatch 所需的 metadata（参照 coding_session_service.build_dispatch_metadata）。"""
  from common.encryption import decrypt_value

@@ -379,6 +379,8 @@ class RepositoryViewSet(ModelViewSet):
  触发仓库 AI 描述生成。幂等检查：status=running/pending 时返回 409。
  """
  repository = await self.aget_object
+ from .summary_service import dispatch_repo_summary, reconcile_ai_summary_status
+ repository = await reconcile_ai_summary_status(repository)
  if repository.ai_summary_status in (
  AISummaryStatus.RUNNING,
  AISummaryStatus.PENDING,
@@ -390,7 +392,6 @@ class RepositoryViewSet(ModelViewSet):
  },
  status=status.HTTP_409_CONFLICT,
  )
- from .summary_service import dispatch_repo_summary
  session_id = await dispatch_repo_summary(repository)
  return Response({"dispatch_task_id": session_id, "status": "pending"})
  @action(detail=True, methods=["get"], url_path="summary-status")
@@ -399,6 +400,8 @@ class RepositoryViewSet(ModelViewSet):
  返回仓库 AI 描述生成状态。
  """
  repository = await self.aget_object
+ from .summary_service import reconcile_ai_summary_status
+ repository = await reconcile_ai_summary_status(repository)
  return Response({
  "status": repository.ai_summary_status,
  "progress": None,
