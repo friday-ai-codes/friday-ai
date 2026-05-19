@@ -459,17 +459,28 @@ const codingPlanData = computed( => {
  const input = planTool.input || {}
  const techPlan = (input.tech_plan as string) || ''
  const affectedFiles = (input.affected_files as Array<{ path: string, change_type: string }>) ||
- // session_id 和 status 来自 tool result (JSON 字符串)
+ // session_id / status 来自 tool result。
+ // 防御性双轨：result 在快照(snapshot) / langchain_runner 路径里是 JSON string，
+ // 但历史上 chat_runner 曾直接发 dict（未序列化）—— 这里两种形态都吃。
  let sessionId = ''
  let sessionStatus: string = 'draft'
  if (planTool.result) {
+ const raw: unknown = planTool.result
+ let parsed: { session_id?: string, status?: string } | null = null
+ if (typeof raw === 'string') {
  try {
- const parsed = JSON.parse(planTool.result)
- sessionId = parsed.session_id || ''
- sessionStatus = parsed.status || 'draft'
+ parsed = JSON.parse(raw)
  }
  catch {
- // result 可能不是 JSON
+ parsed = null
+ }
+ }
+ else if (typeof raw === 'object') {
+ parsed = raw as { session_id?: string, status?: string }
+ }
+ if (parsed) {
+ sessionId = parsed.session_id || ''
+ sessionStatus = parsed.status || 'draft'
  }
  }
  return { sessionId, techPlan, affectedFiles, status: sessionStatus }
@@ -499,13 +510,24 @@ const codingPlanBranchName = computed( => {
  return undefined
  const active = chatStore.activeCodingSession
  if (active && active.sessionId === data.sessionId && active.status === 'draft') {
+ // 同 codingPlanData：result 可能是 JSON string（snapshot 路径）也可能是 object
+ // （chat_runner 历史路径），两种都吃。
+ const raw: unknown = toolCalls.value.find(tc => isCodingPlanTool(tc.name))?.result
+ if (!raw)
+ return undefined
+ let parsed: { branch_name?: string } | null = null
+ if (typeof raw === 'string') {
  try {
- const parsed = JSON.parse(toolCalls.value.find(tc => isCodingPlanTool(tc.name))?.result || '{}')
- return parsed.branch_name || undefined
+ parsed = JSON.parse(raw)
  }
  catch {
- return undefined
+ parsed = null
  }
+ }
+ else if (typeof raw === 'object') {
+ parsed = raw as { branch_name?: string }
+ }
+ return parsed?.branch_name || undefined
  }
  return undefined
 })
@@ -528,7 +550,7 @@ const TOOL_LABELS_CN: Record<string, string> = {
  TodoWrite: '写入待办',
 }
 function tryParseToolCall(content: string): { toolName: string, toolLabel: string, argsText: string, parsedArgs: Record<string, unknown> | null } | null {
- const matched = content.match(/^(\w+)\((.*)\)$/)
+ const matched = content.match(/^(\w+)\((.*)\)$/s)
  if (!matched)
  return null
  const toolName = matched[1]
@@ -547,124 +569,107 @@ function tryParseToolCall(content: string): { toolName: string, toolLabel: strin
  parsedArgs,
  }
 }
-function humanizeToolSummary(parsed: ReturnType<typeof tryParseToolCall>): string {
- if (!parsed)
- return '开始执行'
- const { toolName, parsedArgs, argsText } = parsed
- if (toolName === 'Read') {
- const filePath = (parsedArgs?.file_path as string) || ''
- return filePath ? `读取文件 ${filePath}`: '读取文件内容'
- }
- if (toolName === 'Glob') {
- const pattern = (parsedArgs?.pattern as string) || (parsedArgs?.path as string) || argsText
- return pattern ? `查找 ${pattern}`: '查找文件'
- }
- if (toolName === 'Grep') {
- const pattern = (parsedArgs?.pattern as string) || argsText
- return pattern ? `搜索 ${pattern}`: '搜索代码'
- }
- if (toolName === 'Bash') {
- const command = (parsedArgs?.command as string) || argsText
- return command ? `执行命令 ${command}`: '执行命令'
- }
- return argsText ? `参数：${argsText}`: '开始执行'
+/**
+ * 把 deep_analysis 容器原始日志解析为一条 UI 友好的展示项。
+ *
+ * 设计要点：
+ * - 单一行结构（icon + label + text），不再"标题 + 摘要 + detail"三层重复展示。
+ * 原本 text 类型 title/summary/detail 全是 log.content，UI 上同一段话出现两遍。
+ * - 后端 `[task:text] [思考] xxx` 走的是 text 类型，这里识别 `[思考]` 前缀提
+ * 升为 thinking 类，沿用 timeline-step--thinking 的视觉语言。
+ * - tool_call：直接把关键参数（文件路径 / 查询词 / 命令）打到行上，避免「读取
+ * 文件」三个字独占一行毫无信息量；完整 args JSON 留到点开 detail 才显示。
+ */
+type DeepLogKind = 'thinking' | 'text' | 'tool' | 'result' | 'system' | 'progress' | 'error'
+interface DeepLogView {
+ kind: DeepLogKind
+ icon: string
+ label: string
+ text: string
+ detail: string
+ expandable: boolean
 }
-function prettyJson(value: unknown): string {
- if (!value)
- return ''
- if (typeof value === 'string')
- return value
- try {
- return JSON.stringify(value, null, 2)
- }
- catch {
- return String(value)
- }
-}
-function runtimeLogTitle(log: { type: string, content: string }): string {
- if (log.type === 'tool_call') {
- const parsed = tryParseToolCall(log.content)
- return parsed?.toolLabel || '工具调用'
- }
- if (log.type === 'text')
- return '分析输出'
- if (log.type === 'progress')
- return '进度更新'
- if (log.type === 'result')
- return '分析完成'
- if (log.type === 'system')
- return '系统状态'
- if (log.type === 'error')
- return '执行异常'
- return '执行日志'
-}
-function runtimeLogSummary(log: { type: string, content: string }): string {
- const c = log.content.trim
- if (log.type === 'tool_call') {
- return humanizeToolSummary(tryParseToolCall(c))
- }
- if (log.type === 'text')
- return c || 'AI 正在整理分析内容'
- if (log.type === 'progress')
- return c || '任务仍在执行中'
- if (log.type === 'result') {
- const costMatch = c.match(/cost=\$([\d.]+)/)
- return costMatch ? `任务已完成，费用 $${costMatch[1]}`: '任务已完成'
- }
- if (log.type === 'system')
- return c || '系统状态更新'
- if (log.type === 'error')
- return c || '任务执行失败'
- return c || '执行中'
-}
-function runtimeLogDetail(log: { type: string, content: string }): string {
- if (log.type === 'tool_call') {
- const parsed = tryParseToolCall(log.content)
- if (!parsed)
- return log.content
- return prettyJson(parsed.parsedArgs || parsed.argsText)
- }
- return log.content
-}
-function shouldShowRuntimeDetail(log: { type: string, content: string }): boolean {
- return !!runtimeLogDetail(log).trim
-}
-function formatLogContent(log: { type: string, content: string }): string {
- const c = log.content.trim
- // block/message 通常是 SDK 内部消息（ThinkingBlock、UserMessage 等），对用户无意义
+function decorateDeepLog(log: { type: string, content: string }): DeepLogView | null {
+ const raw = (log.content || '').trim
+ // block / message 类型多为 SDK 内部噪音，过滤；保留有真实内容的极少数情况
  if (log.type === 'block' || log.type === 'message') {
- // 若内容仅为类型名（如 "ThinkingBlock"）或为空，则过滤
- if (!c || ['ThinkingBlock', 'UserMessage', 'AssistantMessage', 'SystemMessage', 'ResultMessage'].includes(c))
- return ''
- return c
+ if (!raw || ['ThinkingBlock', 'UserMessage', 'AssistantMessage', 'SystemMessage', 'ResultMessage'].includes(raw))
+ return null
+ return { kind: 'system', icon: 'icon-[lucide--info]', label: '', text: raw, detail: '', expandable: false }
  }
- if (log.type === 'tool_call')
- return runtimeLogSummary(log)
- if (log.type === 'text')
- return runtimeLogSummary(log)
- if (log.type === 'result')
- return runtimeLogSummary(log)
- if (log.type === 'system')
- return runtimeLogSummary(log)
+ if (log.type === 'tool_call') {
+ const parsed = tryParseToolCall(raw)
+ if (!parsed)
+ return { kind: 'tool', icon: 'icon-[lucide--terminal]', label: '工具调用', text: raw, detail: '', expandable: false }
+ const { toolName, toolLabel, argsText, parsedArgs } = parsed
+ let text = ''
+ if (toolName === 'Read')
+ text = (parsedArgs?.file_path as string) || (parsedArgs?.path as string) || argsText
+ else if (toolName === 'Glob')
+ text = (parsedArgs?.pattern as string) || (parsedArgs?.path as string) || argsText
+ else if (toolName === 'Grep')
+ text = (parsedArgs?.pattern as string) || argsText
+ else if (toolName === 'Bash')
+ text = (parsedArgs?.command as string) || argsText
+ else
+ text = argsText
+ const detail = parsedArgs ? JSON.stringify(parsedArgs, null, 2): argsText
+ return {
+ kind: 'tool',
+ icon: 'icon-[lucide--terminal]',
+ label: toolLabel,
+ text: text || '执行',
+ detail: detail && detail !== text ? detail: '',
+ expandable: !!(detail && detail !== text),
+ }
+ }
+ if (log.type === 'text') {
+ // [思考] 前缀来自 task/core/executor.py，归一为 thinking
+ if (raw.startsWith('[思考]')) {
+ const body = raw.slice('[思考]'.length).trim
+ return {
+ kind: 'thinking',
+ icon: 'icon-[lucide--sparkles]',
+ label: '思考',
+ text: body,
+ detail: '',
+ expandable: false,
+ }
+ }
+ return { kind: 'text', icon: 'icon-[lucide--file-text]', label: '', text: raw, detail: '', expandable: false }
+ }
+ if (log.type === 'result') {
+ const costMatch = raw.match(/cost=\$([\d.]+)/)
+ const text = costMatch ? `任务已完成 · 费用 $${costMatch[1]}`: (raw || '任务已完成')
+ return { kind: 'result', icon: 'icon-[lucide--check-circle-2]', label: '', text, detail: '', expandable: false }
+ }
  if (log.type === 'progress')
- return runtimeLogSummary(log)
+ return { kind: 'progress', icon: 'icon-[lucide--loader]', label: '', text: raw || '任务仍在执行中', detail: '', expandable: false }
  if (log.type === 'error')
- return runtimeLogSummary(log)
- return c.slice(0, 100)
+ return { kind: 'error', icon: 'icon-[lucide--alert-circle]', label: '', text: raw || '任务执行失败', detail: '', expandable: false }
+ if (log.type === 'system')
+ return { kind: 'system', icon: 'icon-[lucide--cpu]', label: '', text: raw || '系统状态更新', detail: '', expandable: false }
+ if (!raw)
+ return null
+ return { kind: 'text', icon: 'icon-[lucide--info]', label: '', text: raw, detail: '', expandable: false }
 }
-function logIcon(type: string): string {
- switch (type) {
- case 'tool_call': return 'icon-[lucide--terminal]'
- case 'text': return 'icon-[lucide--file-text]'
- case 'result': return 'icon-[lucide--check-circle-2]'
- case 'system': return 'icon-[lucide--cpu]'
- case 'progress': return 'icon-[lucide--loader]'
- case 'error': return 'icon-[lucide--alert-circle]'
- default: return 'icon-[lucide--info]'
- }
+const expandedDeepLogs = ref<Set<number>>(new Set)
+function toggleDeepLog(i: number) {
+ if (expandedDeepLogs.value.has(i))
+ expandedDeepLogs.value.delete(i)
+ else
+ expandedDeepLogs.value.add(i)
 }
-function shouldShowLog(log: { type: string, content: string }): boolean {
- return !!formatLogContent(log)
+/**
+ * 判定文本是否值得"点击展开看全文"。短单行直接全量展示，不需要展开按钮。
+ * 阈值经验值 120 字符 / 2 行，与 timeline-step--thinking 的判定保持一致。
+ */
+function isLongText(text: string): boolean {
+ return text.length > 120 || text.includes('\n')
+}
+function previewText(text: string): string {
+ const firstLine = text.split('\n')[0] || ''
+ return firstLine.length > 120 ? `${firstLine.slice(0, 120)}…`: firstLine
 }
 // waiting phase 空内容时隐藏空 bubble，让 ChatStatusBar 单独呈现
 const hideEmptyBubble = computed( =>
@@ -889,19 +894,34 @@ const hideEmptyBubble = computed( =>
  </button>
  <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
  <template v-for="(log, i) in resolvedDeepAnalysisLogs":key="i">
- <div v-if="shouldShowLog(log)" class="deep-analysis-log-card">
- <div class="deep-analysis-log-head">
- <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
- <div class="deep-analysis-log-body">
- <span class="deep-analysis-log-title">{{ runtimeLogTitle(log) }}</span>
- <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
- </div>
+ <component:is="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': 'div'"
+ v-if="decorateDeepLog(log)"
+ class="deep-log-row":class="[
+ `deep-log-row--${decorateDeepLog(log)!.kind}`,
+ { 'is-expandable': decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text), 'is-expanded': expandedDeepLogs.has(i) },
+ ]":type="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': undefined"
+ @click="(decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)) && toggleDeepLog(i)"
+ >
+ <span:class="decorateDeepLog(log)!.icon" class="deep-log-icon" />
+ <div class="deep-log-main">
+ <div class="deep-log-head">
+ <span v-if="decorateDeepLog(log)!.label" class="deep-log-label">{{ decorateDeepLog(log)!.label }}</span>
+ <span
+ class="deep-log-text":class="{ 'deep-log-text--clamp': isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) }"
+ >
+ {{ isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) ? previewText(decorateDeepLog(log)!.text): decorateDeepLog(log)!.text }}
+ </span>
+ <span
+ v-if="decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)"
+ class="icon-[lucide--chevron-right] deep-log-chevron":class="expandedDeepLogs.has(i) ? 'rotate-90': ''"
+ />
  </div>
  <pre
- v-if="shouldShowRuntimeDetail(log)"
- class="deep-analysis-log-detail"
- >{{ runtimeLogDetail(log) }}</pre>
+ v-if="decorateDeepLog(log)!.expandable && expandedDeepLogs.has(i)"
+ class="deep-log-detail"
+ >{{ decorateDeepLog(log)!.detail }}</pre>
  </div>
+ </component>
  </template>
  </div>
  </div>
@@ -987,19 +1007,34 @@ const hideEmptyBubble = computed( =>
  </button>
  <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
  <template v-for="(log, i) in resolvedDeepAnalysisLogs":key="i">
- <div v-if="shouldShowLog(log)" class="deep-analysis-log-card">
- <div class="deep-analysis-log-head">
- <span:class="logIcon(log.type)" class="deep-analysis-log-icon" />
- <div class="deep-analysis-log-body">
- <span class="deep-analysis-log-title">{{ runtimeLogTitle(log) }}</span>
- <span class="deep-analysis-log-summary">{{ formatLogContent(log) }}</span>
- </div>
+ <component:is="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': 'div'"
+ v-if="decorateDeepLog(log)"
+ class="deep-log-row":class="[
+ `deep-log-row--${decorateDeepLog(log)!.kind}`,
+ { 'is-expandable': decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text), 'is-expanded': expandedDeepLogs.has(i) },
+ ]":type="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': undefined"
+ @click="(decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)) && toggleDeepLog(i)"
+ >
+ <span:class="decorateDeepLog(log)!.icon" class="deep-log-icon" />
+ <div class="deep-log-main">
+ <div class="deep-log-head">
+ <span v-if="decorateDeepLog(log)!.label" class="deep-log-label">{{ decorateDeepLog(log)!.label }}</span>
+ <span
+ class="deep-log-text":class="{ 'deep-log-text--clamp': isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) }"
+ >
+ {{ isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) ? previewText(decorateDeepLog(log)!.text): decorateDeepLog(log)!.text }}
+ </span>
+ <span
+ v-if="decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)"
+ class="icon-[lucide--chevron-right] deep-log-chevron":class="expandedDeepLogs.has(i) ? 'rotate-90': ''"
+ />
  </div>
  <pre
- v-if="shouldShowRuntimeDetail(log)"
- class="deep-analysis-log-detail"
- >{{ runtimeLogDetail(log) }}</pre>
+ v-if="decorateDeepLog(log)!.expandable && expandedDeepLogs.has(i)"
+ class="deep-log-detail"
+ >{{ decorateDeepLog(log)!.detail }}</pre>
  </div>
+ </component>
  </template>
  </div>
  </div>
@@ -1052,12 +1087,17 @@ const hideEmptyBubble = computed( =>
  title="导出到飞书"
  @click="emit('exportSingle', props.message.id)"
  >
- <span class="feishu-logo" aria-hidden="true">
- <span class="feishu-logo__dot feishu-logo__dot--cyan" />
- <span class="feishu-logo__dot feishu-logo__dot--blue" />
- <span class="feishu-logo__dot feishu-logo__dot--green" />
- <span class="feishu-logo__dot feishu-logo__dot--red" />
- </span>
+ <svg
+ class="feishu-logo"
+ viewBox="0 0 48 48"
+ fill="none"
+ xmlns="http://www.w3.org/2000/svg"
+ aria-hidden="true"
+ >
+ <path d="M10 8c0 1 7 3.5 14.745 16.744 0 0 4.work-item.363 6.work-item.744 1.5-1 2.work-item.332 2.work-item.332C33.712 15.156 29.5 8 28 8z" fill="#00d6b9" />
+ <path d="M43.5 18.5c-1-.work-item.65-1.work-item.5-1.5a15 15 0 0 0-3.288.668S32.5 18 31 19c-2.07 1.38-6.255 5.work-item.255 5.work-item.428 1.work-item.05 2.work-item.245 3.756 0 0 7 3 11.5 3 5.063 0 7-3.5 7-3.5 1.5-3.305 3.5-7 5.5-9.5" fill="#163c9a" />
+ <path d="M4 17.5v17c0 1 6 5.5 15 5.5 10 0 17.05-7.705 19-12 0 0-1.937 3.5-7 3.5-4.5 0-11.5-3-11.5-3-5.work-item..03-6..work-item.117C4.974 17.953 4 17.093 4 17.5" fill="#3370ff" />
+ </svg>
  <span class="action-label">导出到飞书</span>
  </button>
  <span class="action-divider" />
@@ -1512,69 +1552,146 @@ const hideEmptyBubble = computed( =>
 }
 .deep-analysis-logs {
  overflow: visible;
- padding: 0.5rem;
+ padding: 0.25rem 0.375rem 0.375rem;
  display: flex;
  flex-direction: column;
- gap: 0.625rem;
+ /* 紧凑行间距，避免每条都自带卡片阴影导致页面笨重 */
+ gap: 1px;
 }
-.deep-analysis-log-card {
- border-radius: 0.5rem;
- border: 1px solid hsl(214 32% 88% / 0.9);
- background: hsl(0 0% 100% / 0.92);
- overflow: hidden;
- box-shadow: 0 1px 2px hsl(215 28% 17% / 0.04);
-}
-.deep-analysis-log-head {
+/* ---- 单行日志（替代旧的 deep-analysis-log-card 卡片堆叠） ----
+ * 设计目标（per 用户反馈）：
+ * 1. 去掉"标题 + 摘要 + detail" 三层堆叠，避免同一段内容被显示两次
+ * 2. 思考独立样式（与 timeline-step--thinking 配色一致），不再混入"分析输出"
+ * 3. 工具调用直接把关键参数（文件路径/查询词）打到行上，鼠标进入提示"点击看完整参数"
+ */
+.deep-log-row {
  display: flex;
  align-items: flex-start;
- gap: 0.625rem;
+ gap: 0.5rem;
  width: 100%;
- padding: 0.625rem 0.75rem;
+ padding: 0.3125rem 0.5rem;
+ border-radius: 0.375rem;
+ border: 0;
+ background: transparent;
  text-align: left;
+ font-family: inherit;
+ color: hsl(215 16% 35%);
+ transition: background-color 0.12s ease;
 }
-.deep-analysis-log-icon {
- display: flex;
+.deep-log-row.is-expandable {
+ cursor: pointer;
+}
+.deep-log-row.is-expandable:hover {
+ background: hsl(210 40% 96% / 0.7);
+}
+.deep-log-row.is-expanded {
+ background: hsl(210 40% 96% / 0.5);
+}
+.deep-log-icon {
+ display: inline-flex;
  align-items: center;
  justify-content: center;
- width: 1.25rem;
- height: 1.25rem;
- margin-top: 1px;
- border-radius: 9999px;
- background: hsl(168 76% 42% / 0.08);
- font-size: 10px;
- color: hsl(168 76% 36%);
+ width: 0.875rem;
+ height: 1.05rem;
+ font-size: 11px;
+ color: hsl(215 16% 50% / 0.7);
  flex-shrink: 0;
 }
-.deep-analysis-log-body {
+.deep-log-main {
+ flex: 1;
+ min-width: 0;
  display: flex;
  flex-direction: column;
  gap: 0.25rem;
+}
+.deep-log-head {
+ display: flex;
+ align-items: center;
+ gap: 0.375rem;
+ min-width: 0;
+}
+.deep-log-label {
+ font-size: 0.6875rem;
+ font-weight: 600;
+ color: hsl(215 28% 30%);
+ flex-shrink: 0;
+}
+.deep-log-text {
+ font-size: 0.75rem;
+ line-height: 1.55;
+ color: hsl(215 16% 38%);
+ white-space: pre-wrap;
+ word-break: break-word;
  min-width: 0;
  flex: 1;
 }
-.deep-analysis-log-title {
- font-size: 0.75rem;
- font-weight: 600;
- color: hsl(215 28% 17%);
- line-height: 1.4;
+.deep-log-text--clamp {
+ white-space: nowrap;
+ overflow: hidden;
+ text-overflow: ellipsis;
 }
-.deep-analysis-log-summary {
- font-size: 0.6875rem;
- line-height: 1.55;
- color: hsl(215 16% 42%);
- white-space: pre-wrap;
- word-break: break-word;
+.deep-log-chevron {
+ font-size: 10px;
+ color: hsl(215 16% 60% / 0.7);
+ flex-shrink: 0;
+ transition: transform 0.15s ease;
 }
-.deep-analysis-log-detail {
+.deep-log-detail {
  margin: 0;
- padding: 0.5rem 0.75rem 0.75rem 2.625rem;
- border-top: 1px solid hsl(214 32% 91% / 0.7);
- font-size: 0.6875rem;
- line-height: 1.55;
+ padding: 0.4375rem 0.625rem;
+ border-radius: 0.375rem;
+ background: hsl(210 40% 96% / 0.7);
  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
- color: hsl(215 20% 42%);
+ font-size: 0.625rem;
+ line-height: 1.55;
+ color: hsl(215 20% 35%);
  white-space: pre-wrap;
  word-break: break-all;
+ max-height: 14rem;
+ overflow-y: auto;
+}
+/* ---- 按 kind 微调配色 ---- */
+.deep-log-row--thinking .deep-log-icon {
+ color: hsl(168 76% 42%);
+}
+.deep-log-row--thinking .deep-log-label {
+ color: hsl(168 70% 32%);
+}
+.deep-log-row--thinking .deep-log-text {
+ color: hsl(215 16% 35%);
+ font-style: italic;
+}
+.deep-log-row--tool .deep-log-icon {
+ color: hsl(217 91% 60%);
+}
+.deep-log-row--tool .deep-log-label {
+ color: hsl(217 70% 40%);
+}
+.deep-log-row--tool .deep-log-text {
+ font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+ font-size: 0.6875rem;
+ color: hsl(215 28% 28%);
+}
+.deep-log-row--result .deep-log-icon {
+ color: hsl(142 71% 45%);
+}
+.deep-log-row--result .deep-log-text {
+ color: hsl(142 50% 30%);
+ font-weight: 500;
+}
+.deep-log-row--error .deep-log-icon {
+ color: hsl(0 72% 51%);
+}
+.deep-log-row--error .deep-log-text {
+ color: hsl(0 60% 40%);
+}
+.deep-log-row--progress .deep-log-icon {
+ color: hsl(38 92% 50%);
+ animation: pulse-dot 1.6s infinite;
+}
+.deep-log-row--system .deep-log-text,
+.deep-log-row--text .deep-log-text {
+ color: hsl(215 16% 42%);
 }
 /* Tool detail (展开) */
 .tool-detail {
@@ -1883,37 +2000,10 @@ const hideEmptyBubble = computed( =>
  white-space: nowrap;
 }
 .feishu-logo {
- position: relative;
- display: inline-grid;
+ display: inline-block;
  width: 1rem;
  height: 1rem;
  flex-shrink: 0;
-}
-.feishu-logo__dot {
- position: absolute;
- width: 0.5rem;
- height: 0.5rem;
- border-radius: 9999px;
-}
-.feishu-logo__dot--cyan {
- top: 0;
- left: 0.25rem;
- background: #00c7be;
-}
-.feishu-logo__dot--blue {
- top: 0.25rem;
- right: 0;
- background: #3370ff;
-}
-.feishu-logo__dot--green {
- bottom: 0;
- left: 0.25rem;
- background: #00b578;
-}
-.feishu-logo__dot--red {
- top: 0.25rem;
- left: 0;
- background: #f54a45;
 }
 .action-divider {
  width: 1px;

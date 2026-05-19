@@ -32,9 +32,28 @@ async def finalize_conversation(
  """
  from chat.title_service import generate_title, should_generate_title
  final_events: list[AgentEvent] =
+ # 0. 用户主动中断已经把 DB 写成 INTERRUPTED：runner 在 cancel 之前如果已经
+ # 跑完了 stream（race 窗口），graph 仍会正常走到 finalize；这里如果无条件用
+ # result_metadata.status 覆盖，就把 ChatInterruptView 写的 INTERRUPTED 抹掉
+ # 了 —— 前端刷新看到 status=completed，与"已停止"的 UI 心智不符。
+ # 真源是 DB 已落库的 INTERRUPTED，不是后到的 graph 终态。
+ interrupted_by_user = False
+ try:
+ latest_status = await Conversation.objects.filter(
+ id=conversation.id,
+ ).values_list("status", flat=True).afirst
+ interrupted_by_user = latest_status == Conversation.Status.INTERRUPTED
+ except Exception:
+ logger.warning(
+ "finalize_status_reload_failed",
+ conversation_id=str(conversation.id),
+ exc_info=True,
+ )
  # 1. 更新 AgentSession 最终状态
  try:
  status_str = result_metadata.get("status", "unknown")
+ if interrupted_by_user:
+ status_str = "interrupted"
  if status_str == "completed":
  session_status = AgentSession.Status.COMPLETED
  elif status_str == "interrupted":
@@ -91,7 +110,11 @@ async def finalize_conversation(
  conv_status = Conversation.Status.INTERRUPTED
  else:
  conv_status = Conversation.Status.ERROR
- await Conversation.objects.filter(id=conversation.id).aupdate(
+ # exclude(INTERRUPTED) 双保险：即使第 0 步 reload 撞 race 没拿到最新值，
+ # 也不会把后到的 graph 完成态写回去抹掉用户的「停止」操作。
+ await Conversation.objects.filter(
+ id=conversation.id,
+ ).exclude(status=Conversation.Status.INTERRUPTED).aupdate(
  status=conv_status,
  updated_at=timezone.now,
  )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections.abc import AsyncGenerator
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessageChunk
 from agents.chat_runner import (
@@ -22,6 +22,20 @@ def _make_config -> ChatRunnerConfig:
  # conversation fixture omitted
  api_key="sk-test",
  )
+@pytest.fixture(autouse=True)
+def _disable_history_load(request):
+ """默认 mock 历史加载为空 — chat_runner 大部分单测不关心历史。
+ 专测历史回灌的用例需用 ``@pytest.mark.real_history_load`` 关闭这个 mock，
+ 避免每个 stream 测试都触发 Message ORM 查询（pytest-django 默认隔离 DB）。
+ """
+ if request.node.get_closest_marker("real_history_load"):
+ yield
+ return
+ with patch(
+ "agents.chat_runner._load_history_messages",
+ new=AsyncMock(return_value=),
+ ):
+ yield
 def _make_bound_model(chunks: list[AIMessageChunk]):
  async def _astream(_messages: list[object]) -> AsyncGenerator[AIMessageChunk, None]:
  for chunk in chunks:
@@ -99,7 +113,11 @@ async def test_chat_runner_emits_tool_events_for_blocking_tool -> None:
  ):
  events = [event async for event in runner.stream("分析一下")]
  assert [event.type for event in events] == [TOOL_USE_START, TOOL_USE_RESULT]
- assert events[-1].data["result"]["__blocking_task__"] is True
+ # tool_use_result.data["result"] 已统一序列化为 JSON 字符串（与 langchain_runner /
+ # graph snapshot 对齐），blocking marker 校验需先 json.loads。
+ import json as _json
+ parsed_result = _json.loads(events[-1].data["result"])
+ assert parsed_result["__blocking_task__"] is True
  assert runner.result is not None
  assert runner.result.status == "completed"
  assert runner.result.final_answer == ""
@@ -503,3 +521,144 @@ async def test_tool_specs_passes_through_known_args_unchanged -> None:
  }
  finally:
  _tool_registry.pop("fake_passthrough_test", None)
+# ---------------------------------------------------------------------------
+# 历史回灌测试：覆盖 _load_history_messages 还原逻辑 + stream 注入
+#
+# 背景：原先 chat_runner 每次 stream 都新建 messages 列表，LLM 看不到前几轮对话，
+# 会反复调同一个工具。详见 _load_history_messages docstring。
+# ---------------------------------------------------------------------------
+@pytest.mark.real_history_load
+@pytest.mark.asyncio
+async def test_load_history_messages_empty_conversation_id -> None:
+ """空 conversation_id 短路返回，不应触发 ORM 访问。"""
+ from agents.chat_runner import _load_history_messages
+ assert await _load_history_messages("") ==
+@pytest.mark.real_history_load
+@pytest.mark.asyncio
+async def test_load_history_messages_swallows_db_error -> None:
+ """DB 访问异常（pytest-django 默认隔离、生产 DB 故障）应退化为空 list 而非 raise。"""
+ from agents.chat_runner import _load_history_messages
+ # 真实路径：Message.objects.filter 在没标记 django_db 时会抛
+ # SynchronousOnlyOperation / 数据库未初始化等错误，应被吞掉。
+ history = await _load_history_messages("conv-not-exist")
+ assert history ==
+@pytest.mark.real_history_load
+@pytest.mark.asyncio
+async def test_load_history_messages_reconstructs_user_assistant_tool_sequence -> None:
+ """user → assistant(+tool_calls) → user 的会话应还原为 LangChain 5 元消息序列：
+ HumanMessage / AIMessage(tool_calls) / ToolMessage（剔除末尾当前轮 user）。
+ """
+ from agents.chat_runner import _load_history_messages
+ fake_user_row = SimpleNamespace(
+ role="user",
+ content="第一轮问题",
+ tool_calls=None,
+ )
+ fake_assistant_row = SimpleNamespace(
+ role="assistant",
+ content="第一轮回答",
+ tool_calls=[
+ {
+ "id": "tool_abc",
+ "name": "list_space_repositories",
+ "input": {},
+ "result": {"data": {"repositories": [{"id": "r1"}]}},
+ },
+ ],
+ )
+ fake_current_user_row = SimpleNamespace(
+ role="user",
+ content="本轮新问题（应被丢弃）",
+ tool_calls=None,
+ )
+ class _FakeRoleEnum:
+ USER = "user"
+ ASSISTANT = "assistant"
+ class _FakeMessage:
+ Role = _FakeRoleEnum
+ class objects: # noqa: N801
+ @staticmethod
+ def filter(**_kwargs: object) -> object:
+ class _QS:
+ def order_by(self, *_a: str) -> object:
+ rows = [fake_user_row, fake_assistant_row, fake_current_user_row]
+ class _Aiter:
+ def __aiter__(self_inner) -> object: # noqa: N805
+ self_inner._iter = iter(rows)
+ return self_inner
+ async def __anext__(self_inner) -> object: # noqa: N805
+ try:
+ return next(self_inner._iter)
+ except StopIteration:
+ raise StopAsyncIteration
+ return _Aiter
+ return _QS
+ import sys
+ fake_chat_models = SimpleNamespace(Message=_FakeMessage)
+ real_chat_models = sys.modules.get("chat.models")
+ sys.modules["chat.models"] = fake_chat_models # type: ignore[assignment]
+ try:
+ history = await _load_history_messages("conv-test")
+ finally:
+ if real_chat_models is not None:
+ sys.modules["chat.models"] = real_chat_models
+ else:
+ sys.modules.pop("chat.models", None)
+ # 末尾当前轮 user 应被丢弃 → 剩 3 条 LangChain 消息
+ assert len(history) == 3
+ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+ assert isinstance(history[0], HumanMessage)
+ assert history[0].content == "第一轮问题"
+ assert isinstance(history[1], AIMessage)
+ assert history[1].content == "第一轮回答"
+ assert history[1].tool_calls == [
+ {
+ "name": "list_space_repositories",
+ "args": {},
+ "id": "tool_abc",
+ "type": "tool_call",
+ },
+ ]
+ assert isinstance(history[2], ToolMessage)
+ assert history[2].tool_call_id == "tool_abc"
+ # dict result 应被 json.dumps（ensure_ascii=False 保留中文）
+ assert '"repositories"' in history[2].content
+@pytest.mark.asyncio
+async def test_stream_injects_history_into_llm_messages -> None:
+ """端到端：runner.stream 应把 _load_history_messages 返回的消息插到
+ SystemMessage 和当前 HumanMessage 之间，传给 LLM 的 messages 列表完整。
+ """
+ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+ captured: list[list[object]] =
+ async def _astream(messages: list[object]):
+ captured.append(list(messages))
+ yield AIMessageChunk(
+ content="新答案",
+ response_metadata={"usage": {"input_tokens": 5, "output_tokens": 2}},
+ )
+ fake_history = [
+ HumanMessage(content="历史问题"),
+ AIMessage(content="历史回答"),
+ ]
+ bound_model = SimpleNamespace(astream=_astream)
+ fake_model = MagicMock
+ fake_model.bind_tools.return_value = bound_model
+ runner = ChatAnthropicRunner(_make_config)
+ with (
+ patch.object(ChatAnthropicRunner, "_build_model", return_value=fake_model),
+ patch("agents.chat_runner._build_tool_specs", return_value={}),
+ patch(
+ "agents.chat_runner._load_history_messages",
+ new=AsyncMock(return_value=fake_history),
+ ),
+ ):
+ events = [event async for event in runner.stream("新问题")]
+ assert any(event.type == MESSAGE_COMPLETE for event in events)
+ assert len(captured) == 1
+ sent = captured[0]
+ # 顺序必须严格：SystemMessage → 历史 → 当前 HumanMessage
+ assert isinstance(sent[0], SystemMessage)
+ assert sent[1] is fake_history[0]
+ assert sent[2] is fake_history[1]
+ assert isinstance(sent[3], HumanMessage)
+ assert sent[3].content == "新问题"
