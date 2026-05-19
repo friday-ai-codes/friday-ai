@@ -42,6 +42,7 @@ export const useChatStore = defineStore('chat', => {
  // ========================================================================
  const conversations = ref<Conversation>
  const currentConversationId = ref<string | null>(null)
+ const pendingConversation = ref<Conversation | null>(null)
  const messages = ref<ConversationMessage>
  const loading = ref(false)
  const messagesLoading = ref(false)
@@ -139,7 +140,8 @@ export const useChatStore = defineStore('chat', => {
  // Getters
  // ========================================================================
  const currentConversation = computed( =>
- conversations.value.find(c => c.id === currentConversationId.value) ?? null,
+ conversations.value.find(c => c.id === currentConversationId.value)
+ ?? (pendingConversation.value?.id === currentConversationId.value ? pendingConversation.value: null),
  )
  const hasConversation = computed( => currentConversationId.value !== null)
  // ========================================================================
@@ -160,6 +162,7 @@ export const useChatStore = defineStore('chat', => {
  }
  async function selectConversation(id: string) {
  stopRuntimePolling
+ pendingConversation.value = null
  currentConversationId.value = id
  syncConversationToURL(id)
  messagesLoading.value = true
@@ -185,46 +188,13 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function createNewConversation {
- if (!selectedSpaceId.value) {
- error.value = '请先选择空间'
- return
- }
- loading.value = true
- error.value = null
- try {
- // 优先使用记忆的选择，否则系统中只要有可用模型就默认选第一个
- const providerStore = useProviderCredentialStore
- const allModels = providerStore.allAvailableModels
- let modelToUse: string | undefined
- if (selectedCredentialModel.value) {
- const parts = selectedCredentialModel.value.split(':')
- if (parts.length === 2) {
- modelToUse = parts[1]
- }
- }
- else if (selectedModel.value !== '__default__' && selectedModel.value) {
- modelToUse = selectedModel.value
- }
- else if (allModels.length >= 1) {
- modelToUse = allModels[0].modelId
- selectedModel.value = modelToUse
- selectedCredentialModel.value = `${allModels[0].credentialId}:${allModels[0].modelId}`
- }
- const conv = await createConversation({
- space_id: selectedSpaceId.value,
- model: modelToUse,
- })
- conversations.value.unshift(conv)
- currentConversationId.value = conv.id
- syncConversationToURL(conv.id)
+ stopRuntimePolling
+ pendingConversation.value = null
+ currentConversationId.value = null
+ syncConversationToURL(null)
  messages.value =
- }
- catch (e) {
- error.value = e instanceof Error ? e.message: '创建对话失败'
- }
- finally {
- loading.value = false
- }
+ error.value = null
+ resetStreamingState
  }
  async function removeConversation(id: string) {
  try {
@@ -264,6 +234,9 @@ export const useChatStore = defineStore('chat', => {
  if (idx >= 0) {
  conversations.value[idx] = { ...conversations.value[idx], ...updated }
  }
+ else if (pendingConversation.value?.id === updated.id) {
+ pendingConversation.value = { ...pendingConversation.value, ...updated }
+ }
  error.value = null
  return updated
  }
@@ -300,6 +273,9 @@ export const useChatStore = defineStore('chat', => {
  const idx = conversations.value.findIndex(c => c.id === updated.id)
  if (idx >= 0) {
  conversations.value[idx] = { ...conversations.value[idx], ...updated }
+ }
+ else if (pendingConversation.value?.id === updated.id) {
+ pendingConversation.value = { ...pendingConversation.value, ...updated }
  }
  error.value = null
  return updated
@@ -346,8 +322,26 @@ export const useChatStore = defineStore('chat', => {
  function toggleSidebar {
  sidebarCollapsed.value = !sidebarCollapsed.value
  }
+ function resolveModelForNewConversation: string | undefined {
+ const providerStore = useProviderCredentialStore
+ const allModels = providerStore.allAvailableModels
+ if (selectedCredentialModel.value) {
+ const parts = selectedCredentialModel.value.split(':')
+ if (parts.length === 2)
+ return parts[1]
+ }
+ if (selectedModel.value !== '__default__' && selectedModel.value)
+ return selectedModel.value
+ if (allModels.length >= 1) {
+ selectedModel.value = allModels[0].modelId
+ selectedCredentialModel.value = `${allModels[0].credentialId}:${allModels[0].modelId}`
+ return allModels[0].modelId
+ }
+ return undefined
+ }
  function clearCurrentConversation {
  stopRuntimePolling
+ pendingConversation.value = null
  currentConversationId.value = null
  syncConversationToURL(null)
  messages.value =
@@ -631,12 +625,15 @@ export const useChatStore = defineStore('chat', => {
  name: event.tool_name || '',
  input: (event.input as Record<string, unknown>) || {},
  status: 'running',
+ batch_id: event.batch_id || undefined,
  })
  }
  else {
  timelineTool.name = event.tool_name || timelineTool.name
  if (event.input && Object.keys(event.input as Record<string, unknown>).length > 0)
  timelineTool.input = event.input as Record<string, unknown>
+ if (event.batch_id && !timelineTool.batch_id)
+ timelineTool.batch_id = event.batch_id
  }
  break
  }
@@ -658,6 +655,8 @@ export const useChatStore = defineStore('chat', => {
  if (event.result)
  timelineTool.result = event.result as string
  timelineTool.status = 'done'
+ if (event.batch_id && !timelineTool.batch_id)
+ timelineTool.batch_id = event.batch_id
  }
  break
  }
@@ -731,6 +730,8 @@ export const useChatStore = defineStore('chat', => {
  const conv = conversations.value.find(c => c.id === currentConversationId.value)
  if (conv)
  conv.title = event.title
+ else if (pendingConversation.value?.id === currentConversationId.value)
+ pendingConversation.value = { ...pendingConversation.value, title: event.title }
  }
  break
  case 'doc_summary':
@@ -897,7 +898,51 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function sendMessage(content: string, feishuDocId?: string) {
- if (!currentConversationId.value || isStreaming.value)
+ if (isStreaming.value)
+ return
+ let materializedConversation: Conversation | null = null
+ let createdForDraft = false
+ if (!currentConversationId.value) {
+ if (!selectedSpaceId.value) {
+ error.value = '请先选择空间'
+ return
+ }
+ loading.value = true
+ try {
+ materializedConversation = await createConversation({
+ space_id: selectedSpaceId.value,
+ model: resolveModelForNewConversation,
+ })
+ pendingConversation.value = materializedConversation
+ currentConversationId.value = materializedConversation.id
+ createdForDraft = true
+ if (selectedCredentialModel.value) {
+ const parts = selectedCredentialModel.value.split(':')
+ if (parts.length === 2)
+ await patchConversationProviderAndModel(parts[0], parts[1])
+ }
+ }
+ catch (e) {
+ error.value = e instanceof Error ? e.message: '创建对话失败'
+ if (materializedConversation) {
+ try {
+ await deleteConversation(materializedConversation.id)
+ }
+ catch {
+ // 创建后的模型绑定失败时尽力清理后端空会话。
+ }
+ }
+ pendingConversation.value = null
+ currentConversationId.value = null
+ syncConversationToURL(null)
+ return
+ }
+ finally {
+ loading.value = false
+ }
+ }
+ const conversationId = currentConversationId.value
+ if (!conversationId)
  return
  stopRuntimePolling
  // 清除之前的流式状态
@@ -930,7 +975,7 @@ export const useChatStore = defineStore('chat', => {
  // （历史 Phase 的检索分支 picker 已下线——用户从未感知多分支语义，
  // 选择面板反而误导成"每条消息可换分支"）。
  await connectSSE(
- currentConversationId.value,
+ conversationId,
  content,
  selectedRole.value,
  (event: SSEEvent) => handleSSEEvent(event),
@@ -945,8 +990,8 @@ export const useChatStore = defineStore('chat', => {
  if ((e as Error).name !== 'AbortError') {
  // SSE 断线恢复：连接异常但流仍在后端执行时，切换到 runtime 轮询
  const runId = getCurrentRunId
- if (runId && currentConversationId.value && !streamingContent.value) {
- scheduleRuntimePoll(currentConversationId.value, 1000)
+ if (runId && !streamingContent.value) {
+ scheduleRuntimePoll(conversationId, 1000)
  return
  }
  error.value = e instanceof Error ? e.message: '发送消息失败'
@@ -955,12 +1000,31 @@ export const useChatStore = defineStore('chat', => {
  finally {
  isStreaming.value = false
  abortController.value = null
+ const hasServerResponse = !error.value || !!streamingContent.value || streamingToolCalls.value.length > 0 || currentPhase.value === 'waiting'
+ if (createdForDraft && hasServerResponse) {
+ const committed = pendingConversation.value ?? materializedConversation
+ if (committed && !conversations.value.some(c => c.id === committed.id))
+ conversations.value.unshift(committed)
+ syncConversationToURL(conversationId)
+ pendingConversation.value = null
+ }
+ else if (createdForDraft && !hasServerResponse) {
+ pendingConversation.value = null
+ currentConversationId.value = null
+ syncConversationToURL(null)
+ try {
+ await deleteConversation(conversationId)
+ }
+ catch {
+ // 创建后发送失败时尽力清理后端空会话，失败不覆盖原始错误。
+ }
+ }
  // graph 进入 WAITING（deep_analysis/coding 进行中）后 SSE 正常结束，
  // 需要启动 runtime 轮询来恢复并跟踪后续状态
  if (currentPhase.value === 'waiting' && currentConversationId.value) {
- scheduleRuntimePoll(currentConversationId.value, 1000)
- return
+ scheduleRuntimePoll(conversationId, 1000)
  }
+ else {
  // 错误时：记录失败内容用于重试，移除乐观更新的用户消息
  if (error.value && !streamingContent.value) {
  lastFailedContent.value = content
@@ -1015,6 +1079,7 @@ export const useChatStore = defineStore('chat', => {
  }
  else {
  resetStreamingState
+ }
  }
  }
  }

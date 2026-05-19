@@ -200,7 +200,7 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
 }
 </script>
 <template>
- <div class="absolute inset-0 overflow-hidden">
+ <div class="chat-message-stage absolute inset-0 overflow-hidden">
  <!-- Loading 骨架屏 -->
  <div v-if="chatStore.messagesLoading" class="max-w-3xl mx-auto px-6 py-8 space-y-6">
  <div v-for="i in 3":key="i">
@@ -219,13 +219,13 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  v-else-if="!chatStore.error && (!chatStore.hasConversation || (chatStore.messages.length === 0 && !chatStore.isStreaming))"
  />
  <!-- 消息列表 -->
- <div v-else ref="scrollContainer" class="h-full overflow-y-auto">
+ <div v-else ref="scrollContainer" class="chat-message-scroll h-full overflow-y-auto">
  <!-- 多选操作条 -->
  <MessageSelectBar
  v-if="chatStore.isExportSelectMode"
  @export="handleMultiExport"
  />
- <div class="max-w-3xl mx-auto px-6 pt-8 pb-40 space-y-7">
+ <div class="chat-message-stack mx-auto pt-8 pb-40 space-y-7">
  <ChatMessageBubble
  v-for="msg in chatStore.messages":key="msg.id":message="msg"
  @export-single="handleExportSingle"
@@ -357,6 +357,20 @@ function handleExportSuccess(result: ExportToFeishuResponse) {
  </div>
 </template>
 <style scoped>
+.chat-message-stage {
+ background:
+ radial-gradient(circle at 22% 8%, hsl(168 76% 42% / 0.055), transparent 24rem),
+ radial-gradient(circle at 76% 4%, hsl(199 89% 48% / 0.04), transparent 22rem),
+ linear-gradient(180deg, hsl(210 40% 98.5%), hsl(210 40% 96.5%));
+}
+.chat-message-scroll {
+ scrollbar-gutter: stable;
+}
+.chat-message-stack {
+ position: relative;
+ width: min(48rem, calc(100% - 2rem));
+ max-width: 48rem;
+}
 .error-card {
  display: flex;
  align-items: flex-start;

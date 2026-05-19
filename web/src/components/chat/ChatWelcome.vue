@@ -8,11 +8,6 @@ const quickPrompts = [
  { icon: 'icon-[lucide--file-text]', label: '空间概览', prompt: '请给我一个当前空间的整体概览' },
 ]
 async function handleQuickPrompt(prompt: string) {
- if (!chatStore.currentConversationId) {
- await chatStore.createNewConversation
- if (!chatStore.currentConversationId)
- return
- }
  await chatStore.sendMessage(prompt)
 }
 </script>

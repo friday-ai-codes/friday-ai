@@ -19,13 +19,13 @@ const formattedTime = computed( => {
 })
 </script>
 <template>
- <div class="card mt-2 animate-fade-in">
- <div class="px-4 py-3 border-b border-border/50 flex items-center gap-2">
- <span class="icon-[lucide--file-check] text-primary" />
+ <div class="export-success-card animate-fade-in">
+ <div class="export-success-card__header">
+ <span class="export-success-card__icon icon-[lucide--file-check]" />
  <span class="text-sm font-semibold">已导出到飞书文档</span>
  <Badge
  variant="outline"
- class="ml-auto text-emerald-500 border-emerald-500/30 bg-emerald-500/5"
+ class="ml-auto border-emerald-500/30 bg-emerald-500/5 text-emerald-600"
  >
  导出成功
  </Badge>
@@ -48,3 +48,23 @@ const formattedTime = computed( => {
  </div>
  </div>
 </template>
+<style scoped>
+.export-success-card {
+ width: 100%;
+ overflow: hidden;
+ border: 1px solid hsl(214 32% 88% / 0.9);
+ border-radius: 1rem;
+ background: hsl(0 0% 100% / 0.94);
+ box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.export-success-card__header {
+ display: flex;
+ align-items: center;
+ gap: 0.5rem;
+ padding: 0.75rem 1rem;
+ border-bottom: 1px solid hsl(214 32% 91% / 0.75);
+}
+.export-success-card__icon {
+ color: hsl(168 76% 36%);
+}
+</style>

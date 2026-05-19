@@ -518,6 +518,11 @@ class ChatAnthropicRunner:
  tool_calls = getattr(full_message, "tool_calls", )
  if tool_calls:
  blocking_marker_seen = False
+ # 同一个 LLM response 内多个 tool_call 共享 batch_id，前端据此
+ # 渲染为"同批并行"的横向 chip 流。语义对齐：LLM 一次决定要调
+ # 哪几个工具就是一批，即使执行上是串行的（执行串行是当前实现
+ # 细节，未来若改并发也不影响 batch 语义）。
+ batch_id = f"batch_{uuid.uuid4.hex[:8]}" if len(tool_calls) > 1 else ""
  for tool_call in tool_calls:
  tool_name = str(tool_call.get("name", ""))
  tool_call_id = str(tool_call.get("id", "") or f"tool_{uuid.uuid4.hex[:8]}")
@@ -534,14 +539,17 @@ class ChatAnthropicRunner:
  usage=total_usage,
  )
  return
- yield AgentEvent(
- type=TOOL_USE_START,
- data=_inject_metadata(
- {
+ start_payload: dict[str, Any] = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
  "input": arguments,
- },
+ }
+ if batch_id:
+ start_payload["batch_id"] = batch_id
+ yield AgentEvent(
+ type=TOOL_USE_START,
+ data=_inject_metadata(
+ start_payload,
  self._config.model,
  self._config.session_id,
  ),
@@ -554,13 +562,15 @@ class ChatAnthropicRunner:
  budget=budget,
  )
  raw_result = _normalize_tool_result(result)
- tool_event_data = {
+ tool_event_data: dict[str, Any] = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
  "success": result.success,
  "input": arguments,
  "result": raw_result,
  }
+ if batch_id:
+ tool_event_data["batch_id"] = batch_id
  # 前端可据此 flag 提示「该次调用被自动去重/拒绝，未真实执行」
  if intercepted:
  tool_event_data["budget_intercepted"] = True
