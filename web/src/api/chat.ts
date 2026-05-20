@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { CodingSessionResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
 import { del, get, patch, post } from './client'
 // ============================================================================
 // 类型定义
@@ -334,6 +334,19 @@ export async function getDiffSummary(sessionId: string) {
  truncated?: boolean
  }>(`/chat/coding-sessions/${sessionId}/diff-summary/`)
 }
+/**
+ * Phase：在已存在的 CodingPlan 上批量创建 N 个 CodingSession（DRAFT 态）。
+ * POST /api/chat/coding-plans/{plan_id}/sessions/
+ */
+export async function createSessionsForPlan(
+ planId: string,
+ payload: { repository_ids: string, branch_template?: string },
+): Promise<CodingSessionsBatchCreateResponse> {
+ return post<CodingSessionsBatchCreateResponse>(
+ `/chat/coding-plans/${planId}/sessions/`,
+ payload,
+ )
+}
 // ============================================================================
 // 默认导出
 // ============================================================================
@@ -354,6 +367,7 @@ export default {
  confirmCodingSession,
  getCodingSession,
  confirmCodingSessionWithBranch,
+ createSessionsForPlan,
  confirmCommit,
  getCommitConfirmData,
  confirmPR,

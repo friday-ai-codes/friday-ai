@@ -99,6 +99,8 @@ export interface ConversationRuntime {
  task_progress?: { completed: number, total: number } | null
  mode?: 'chat' | 'deep_analysis' | 'coding' | null
  coding_session?: CodingSessionRuntime | null
+ /** Phase：最近 CodingPlan + 每仓 session 状态 */
+ coding_plan?: CodingPlanRuntime | null
  status?: string | null
  session_id?: string
  task_description?: string
@@ -326,4 +328,53 @@ export interface CodingResultData {
 export interface CodingErrorData {
  sessionId: string
  errorMessage: string
+}
+// ============================================================================
+// Phase / / /：多仓 fan-out 类型
+// ============================================================================
+/** RepoMultiSelector 可选项 */
+export interface RepoSelectableItem {
+ id: string
+ name: string
+ description?: string
+ /** Phase RELEV 推荐预填用 —— 0..1，越高越推荐 */
+ relevance_score?: number
+}
+/** 批量创建 endpoint 响应（镜像后端 schema） */
+export interface CodingSessionsBatchCreateResponse {
+ created: Array<{
+ session_id: string
+ repository_id: string
+ branch_name: string
+ }>
+ failed: Array<{
+ repository_id: string
+ error: string
+ }>
+}
+/** Phase：CodingSession 6 态枚举（与后端 CodingSession.Status 同步） */
+export type CodingSessionStatus
+ = | 'draft'
+ | 'confirmed'
+ | 'running'
+ | 'awaiting_confirmation'
+ | 'completed'
+ | 'failed'
+/** Phase：单条 CodingSession 实时状态（镜像后端
+ * ConversationRuntimeCodingPlanSessionSerializer） */
+export interface CodingPlanSessionRuntime {
+ session_id: string
+ repository_id: string
+ repository_name: string
+ branch_name: string
+ status: CodingSessionStatus
+ pr_url: string
+ commit_sha: string
+ error_message: string
+}
+/** Phase：对话内最近 CodingPlan + 每仓 session 状态 */
+export interface CodingPlanRuntime {
+ plan_id: string
+ title: string
+ sessions: CodingPlanSessionRuntime
 }

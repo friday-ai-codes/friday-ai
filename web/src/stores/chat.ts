@@ -4,12 +4,13 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import type { ProviderType } from '~/types/providerCredential'
 import {
  confirmCodingSession as apiConfirmCodingSession,
  confirmCodingSessionWithBranch as apiConfirmCodingSessionWithBranch,
  createConversation,
+ createSessionsForPlan,
  deleteConversation,
  exportToFeishu,
  getConversationDetail,
@@ -81,6 +82,20 @@ export const useChatStore = defineStore('chat', => {
  const codingProgress = ref<CodingProgressData | null>(null)
  const codingResult = ref<CodingResultData | null>(null)
  const codingError = ref<CodingErrorData | null>(null)
+ // Phase：当前对话最近 CodingPlan + 每仓 session 快照
+ const activeCodingPlan = ref<CodingPlanRuntime | null>(null)
+ // Phase /：仓库多选 modal 状态机
+ const repoMultiSelectorState = ref<{
+ open: boolean
+ planId: string | null
+ preselectedIds: string
+ submitting: boolean
+ }>({
+ open: false,
+ planId: null,
+ preselectedIds:,
+ submitting: false,
+ })
  // 编码确认数据 (Phase)
  const commitConfirmData = ref<{
  suggestedCommitMessage: string
@@ -498,6 +513,8 @@ export const useChatStore = defineStore('chat', => {
  })):
  streamingTimeline.value = Array.isArray(snap.timeline) ? [...snap.timeline]:
  }
+ // Phase：写入最新 coding_plan 快照（TechPlanCard 通过 store 订阅）
+ activeCodingPlan.value = runtime.coding_plan ?? null
  }
  function appendTimelineText(kind: 'thinking' | 'narration', text: string) {
  if (!text)
@@ -1321,6 +1338,70 @@ export const useChatStore = defineStore('chat', => {
  function resetContextExceeded: void {
  lastContextExceeded.value = null
  }
+ // ==========================================================================
+ // Phase /：仓库多选 modal 状态机 + 批量创建 actions
+ // ==========================================================================
+ function openRepoMultiSelector(planId: string, preselectedIds: string = ): void {
+ repoMultiSelectorState.value = {
+ open: true,
+ planId,
+ preselectedIds: [...preselectedIds],
+ submitting: false,
+ }
+ }
+ function closeRepoMultiSelector: void {
+ repoMultiSelectorState.value = {
+ open: false,
+ planId: null,
+ preselectedIds:,
+ submitting: false,
+ }
+ }
+ /**
+ *：提交多选 → 调 createSessionsForPlan endpoint。不主动更新
+ * activeCodingPlan，等下一次 pollConversationRuntime 自然刷新。
+ */
+ async function submitRepoMultiSelector(
+ repositoryIds: string,
+ branchTemplate?: string,
+ ): Promise<{ createdCount: number, failedCount: number }> {
+ const planId = repoMultiSelectorState.value.planId
+ if (!planId)
+ throw new Error('planId 缺失')
+ repoMultiSelectorState.value.submitting = true
+ try {
+ const resp = await createSessionsForPlan(planId, {
+ repository_ids: repositoryIds,
+ branch_template: branchTemplate,
+ })
+ return { createdCount: resp.created.length, failedCount: resp.failed.length }
+ }
+ finally {
+ repoMultiSelectorState.value.submitting = false
+ }
+ }
+ /**
+ *：对单个 repository 重新发起编码（复用 endpoint）。
+ * unique 约束允许（旧 failed session 是非 active 状态保留作历史）。
+ */
+ async function retrySingleRepository(
+ planId: string,
+ repositoryId: string,
+ ): Promise<{ createdCount: number, failedCount: number }> {
+ const prevState = repoMultiSelectorState.value
+ repoMultiSelectorState.value = {
+ open: false,
+ planId,
+ preselectedIds: [repositoryId],
+ submitting: true,
+ }
+ try {
+ return await submitRepoMultiSelector([repositoryId])
+ }
+ finally {
+ repoMultiSelectorState.value = prevState
+ }
+ }
  return {
  // State
  conversations,
@@ -1402,5 +1483,12 @@ export const useChatStore = defineStore('chat', => {
  // Phase 上下文超限引导
  lastContextExceeded,
  resetContextExceeded,
+ // Phase / /
+ activeCodingPlan,
+ repoMultiSelectorState,
+ openRepoMultiSelector,
+ closeRepoMultiSelector,
+ submitRepoMultiSelector,
+ retrySingleRepository,
  }
 })
