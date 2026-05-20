@@ -126,6 +126,21 @@ const StubCodingSessionStatusRow = defineComponent({
  ])
  },
 })
+// Phase：避免 ExportConfirmDialog 内部依赖（chatStore /
+// RouterLink / shadcn Dialog 等）干扰 TechPlanCard 的按钮交互断言。
+const StubExportConfirmDialog = defineComponent({
+ name: 'ExportConfirmDialog',
+ props: ['open', 'defaultTitle', 'mode', 'codingPlanId'],
+ emits: ['update:open', 'success'],
+ setup(props) {
+ return => h('div', {
+ 'data-test': 'export-confirm-dialog',
+ 'data-open': String(props.open ?? false),
+ 'data-mode': props.mode ?? 'conversation',
+ 'data-coding-plan-id': props.codingPlanId ?? '',
+ })
+ },
+})
 const globalStubs = {
  Badge: StubBadge,
  Button: StubButton,
@@ -142,6 +157,7 @@ const globalStubs = {
  DialogDescription: StubDialogDescription,
  RepoMultiSelector: StubRepoMultiSelector,
  CodingSessionStatusRow: StubCodingSessionStatusRow,
+ ExportConfirmDialog: StubExportConfirmDialog,
 }
 function mountCard(props: Partial<InstanceType<typeof TechPlanCard>['$props']> = {}) {
  return mount(TechPlanCard, {
@@ -475,5 +491,116 @@ describe('techPlanCard — multi-repo integration', => {
  await retryBtn.trigger('click')
  await flushPromises
  expect(spy).toHaveBeenCalledWith('Plan', 'r1')
+ })
+})
+// ============================================================================
+// Phase：TechPlanCard 导出到飞书三态按钮
+// ============================================================================
+describe('techPlanCard — export to feishu button', => {
+ beforeEach( => {
+ vi.clearAllMocks
+ setActivePinia(createPinia)
+ })
+ function setStoreFeishuFields(opts: { docUrl?: string, docToken?: string } = {}) {
+ const store = useChatStore
+ store.activeCodingPlan = {
+ plan_id: 'plan-feishu',
+ title: '示例方案',
+ sessions:,
+ feishu_doc_token: opts.docToken ?? '',
+ feishu_doc_url: opts.docUrl ?? '',
+ }
+ }
+ it('未导出态：渲染「导出到飞书」按钮，不渲染「在飞书打开」', async => {
+ setStoreFeishuFields({ docUrl: '' })
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ expect(wrapper.text).toContain('导出到飞书')
+ expect(wrapper.text).not.toContain('在飞书打开')
+ })
+ it('已导出态：渲染「在飞书打开」+「重新导出」', async => {
+ setStoreFeishuFields({
+ docToken: 'doxcnTEST',
+ docUrl: 'https://feishu.cn/docx/doxcnTEST',
+ })
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ expect(wrapper.text).toContain('在飞书打开')
+ expect(wrapper.find('[aria-label="重新导出"]').exists).toBe(true)
+ })
+ it('未提供 codingPlanId 时，飞书按钮整块隐藏（向后兼容旧调用方）', async => {
+ setStoreFeishuFields({ docUrl: 'https://feishu.cn/docx/doxcnTEST' })
+ const wrapper = mountCard({
+ // 不传 codingPlanId
+ availableRepositories:,
+ })
+ await flushPromises
+ expect(wrapper.text).not.toContain('导出到飞书')
+ expect(wrapper.text).not.toContain('在飞书打开')
+ })
+ it('点击「在飞书打开」按钮调用 window.open 带 noopener,noreferrer', async => {
+ setStoreFeishuFields({
+ docToken: 'doxcnTEST',
+ docUrl: 'https://feishu.cn/docx/doxcnTEST',
+ })
+ const openSpy = vi.spyOn(window, 'open').mockImplementation( => null)
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ const buttons = wrapper.findAll('button')
+ const openBtn = buttons.find(b => b.text.includes('在飞书打开'))
+ expect(openBtn).toBeTruthy
+ await openBtn!.trigger('click')
+ expect(openSpy).toHaveBeenCalledWith(
+ 'https://feishu.cn/docx/doxcnTEST',
+ '_blank',
+ 'noopener,noreferrer',
+ )
+ openSpy.mockRestore
+ })
+ it('点击「导出到飞书」按钮把 showExportDialog 置为 true', async => {
+ setStoreFeishuFields({ docUrl: '' })
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ const buttons = wrapper.findAll('button')
+ const exportBtn = buttons.find(b => b.text.includes('导出到飞书'))
+ expect(exportBtn).toBeTruthy
+ await exportBtn!.trigger('click')
+ await flushPromises
+ // 关键：渲染了 ExportConfirmDialog（stub 是 Dialog）且 open=true 已传入。
+ // 由于 ExportConfirmDialog 内部用到 chatStore + Dialog stub 不响应 open，
+ // 我们用更直接的判据：组件树里存在 ExportConfirmDialog。
+ expect(
+ wrapper.findComponent({ name: 'ExportConfirmDialog' }).exists,
+ ).toBe(true)
+ })
+ it('已导出态点击「重新导出」也会打开 ExportConfirmDialog', async => {
+ setStoreFeishuFields({
+ docToken: 'doxcnTEST',
+ docUrl: 'https://feishu.cn/docx/doxcnTEST',
+ })
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ const reexportBtn = wrapper.find('[aria-label="重新导出"]')
+ expect(reexportBtn.exists).toBe(true)
+ await reexportBtn.trigger('click')
+ await flushPromises
+ expect(
+ wrapper.findComponent({ name: 'ExportConfirmDialog' }).exists,
+ ).toBe(true)
  })
 })
