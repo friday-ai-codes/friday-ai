@@ -242,6 +242,21 @@ export interface ExportToFeishuError {
  error_type: 'permission_denied' | 'not_configured' | 'api_error'
 }
 // ============================================================================
+// Phase：CodingPlan 导出到飞书文档
+// ============================================================================
+/** 导出 CodingPlan 到飞书文档请求 */
+export interface ExportCodingPlanToFeishuRequest {
+ folder_token?: string
+ title?: string
+}
+/** 导出 CodingPlan 到飞书文档成功响应 */
+export interface ExportCodingPlanToFeishuResponse {
+ doc_token: string
+ doc_url: string
+ title: string
+ exported_at?: string
+}
+// ============================================================================
 // 编码会话 (Phase)
 // ============================================================================
 /** CodingSession API 响应 */
@@ -372,9 +387,15 @@ export interface CodingPlanSessionRuntime {
  commit_sha: string
  error_message: string
 }
-/** Phase：对话内最近 CodingPlan + 每仓 session 状态 */
+/** Phase：对话内最近 CodingPlan + 每仓 session 状态。
+ *
+ * Phase 扩展：可选 `feishu_doc_token` / `feishu_doc_url`，
+ * 来自 backend runtime serializer 或本地 store patch（导出成功后立即可见）。
+ */
 export interface CodingPlanRuntime {
  plan_id: string
  title: string
  sessions: CodingPlanSessionRuntime
+ feishu_doc_token?: string
+ feishu_doc_url?: string
 }
