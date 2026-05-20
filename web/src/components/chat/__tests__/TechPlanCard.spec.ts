@@ -5,9 +5,14 @@
  * draft 「开始编码」按钮 emit、非 draft 状态 fallback 文案。
  */
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick } from 'vue'
 import TechPlanCard from '~/components/chat/TechPlanCard.vue'
+import { useChatStore } from '~/stores/chat'
+vi.mock('~/composables/useToast', => ({
+ useToast: => ({ success: vi.fn, error: vi.fn }),
+}))
 // -- mock markdown-it 单例：直接返回 echo HTML（避免引入 shiki 的重依赖）---
 vi.mock('~/composables/useMarkdownRenderer', => ({
  getMarkdownRenderer: vi.fn(async => ({
@@ -56,6 +61,71 @@ const StubSelectItem = defineComponent({
  return => h('div', { 'data-test': 'select-item' }, slots.default?.)
  },
 })
+const StubDialog = defineComponent({
+ name: 'Dialog',
+ props: ['open'],
+ emits: ['update:open'],
+ setup(_, { slots }) {
+ return => h('div', { 'data-test': 'dialog' }, slots.default?.)
+ },
+})
+const StubDialogContent = defineComponent({
+ name: 'DialogContent',
+ setup(_, { slots }) {
+ return => h('div', { 'data-test': 'dialog-content' }, slots.default?.)
+ },
+})
+const StubDialogHeader = defineComponent({
+ name: 'DialogHeader',
+ setup(_, { slots }) {
+ return => h('div', { 'data-test': 'dialog-header' }, slots.default?.)
+ },
+})
+const StubDialogTitle = defineComponent({
+ name: 'DialogTitle',
+ setup(_, { slots }) {
+ return => h('div', { 'data-test': 'dialog-title' }, slots.default?.)
+ },
+})
+const StubDialogDescription = defineComponent({
+ name: 'DialogDescription',
+ setup(_, { slots }) {
+ return => h('div', { 'data-test': 'dialog-desc' }, slots.default?.)
+ },
+})
+const StubRepoMultiSelector = defineComponent({
+ name: 'RepoMultiSelector',
+ props: ['repositories', 'modelValue', 'disabledIds', 'recommendedIds', 'submitting'],
+ emits: ['update:modelValue', 'confirm'],
+ setup(props, { emit }) {
+ return => h('div', {
+ 'data-test': 'multi-selector',
+ 'data-repos-count': props.repositories?.length || 0,
+ 'data-disabled-count': props.disabledIds?.length || 0,
+ }, [
+ h('button', {
+ 'data-test': 'multi-confirm',
+ 'onClick': => emit('confirm', props.modelValue?.length ? props.modelValue: ['r1', 'r2']),
+ }, '确认编码'),
+ ])
+ },
+})
+const StubCodingSessionStatusRow = defineComponent({
+ name: 'CodingSessionStatusRow',
+ props: ['session', 'repoGitUrl'],
+ emits: ['retry'],
+ setup(props, { emit }) {
+ return => h('div', {
+ 'data-test': 'status-row',
+ 'data-session-id': props.session?.session_id,
+ }, [
+ h('button', {
+ 'data-test': 'row-retry',
+ 'onClick': => emit('retry', props.session?.session_id),
+ }, '重试'),
+ ])
+ },
+})
 const globalStubs = {
  Badge: StubBadge,
  Button: StubButton,
@@ -65,6 +135,13 @@ const globalStubs = {
  SelectContent: PassthroughSelect,
  SelectItem: StubSelectItem,
  SelectValue: PassthroughSelect,
+ Dialog: StubDialog,
+ DialogContent: StubDialogContent,
+ DialogHeader: StubDialogHeader,
+ DialogTitle: StubDialogTitle,
+ DialogDescription: StubDialogDescription,
+ RepoMultiSelector: StubRepoMultiSelector,
+ CodingSessionStatusRow: StubCodingSessionStatusRow,
 }
 function mountCard(props: Partial<InstanceType<typeof TechPlanCard>['$props']> = {}) {
  return mount(TechPlanCard, {
@@ -84,6 +161,7 @@ function mountCard(props: Partial<InstanceType<typeof TechPlanCard>['$props']> =
 }
 beforeEach( => {
  vi.clearAllMocks
+ setActivePinia(createPinia)
 })
 describe('techPlanCard', => {
  it('renders markdown of tech plan', async => {
@@ -236,5 +314,166 @@ describe('techPlanCard', => {
  })
  await flushPromises
  expect(wrapper.text).toContain('编码失败，未提供错误信息')
+ })
+})
+// ============================================================================
+// Phase：TechPlanCard 集成 RepoMultiSelector + sessions 列表 + retry
+// ============================================================================
+describe('techPlanCard — multi-repo integration', => {
+ beforeEach( => {
+ vi.clearAllMocks
+ setActivePinia(createPinia)
+ })
+ const REPOS = [
+ { id: 'r1', name: 'repo-1' },
+ { id: 'r2', name: 'repo-2' },
+ { id: 'r3', name: 'repo-3' },
+ ]
+ const REPO_GIT_URLS = {
+ r1: 'https://gitlab.com/ns/repo-1.git',
+ r2: 'https://gitlab.com/ns/repo-2.git',
+ r3: 'https://gitlab.com/ns/repo-3.git',
+ }
+ function setStorePlan(sessions: any): void {
+ const store = useChatStore
+ store.activeCodingPlan = sessions.length > 0
+ ? { plan_id: 'Plan', title: 't', sessions }: null
+ }
+ it('shows inline RepoMultiSelector when no sessions exist (创建态)', async => {
+ setStorePlan
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ expect(wrapper.findComponent({ name: 'RepoMultiSelector' }).exists).toBe(true)
+ expect(wrapper.text).toContain('选择目标仓库')
+ expect(wrapper.text).not.toContain('目标仓库（')
+ // 旧 draft「开始编码」按钮不出现（被替代）
+ expect(wrapper.text).not.toContain('开始编码')
+ })
+ it('shows sessions list and 对新仓库编码 button when sessions exist (追加态)', async => {
+ setStorePlan([
+ {
+ session_id: 'cs1',
+ repository_id: 'r1',
+ repository_name: 'repo-1',
+ branch_name: 'feat/x',
+ status: 'running',
+ pr_url: '',
+ commit_sha: '',
+ error_message: '',
+ },
+ ])
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ expect(wrapper.text).toContain('目标仓库（1）')
+ expect(wrapper.text).toContain('对新仓库编码')
+ expect(wrapper.findAll('[data-test="status-row"]').length).toBe(1)
+ })
+ it('opens Dialog when 对新仓库编码 clicked', async => {
+ setStorePlan([
+ {
+ session_id: 'cs1',
+ repository_id: 'r1',
+ repository_name: 'repo-1',
+ branch_name: 'feat/x',
+ status: 'running',
+ pr_url: '',
+ commit_sha: '',
+ error_message: '',
+ },
+ ])
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ const appendBtn = wrapper.findAll('button').find(b => b.text.includes('对新仓库编码'))
+ expect(appendBtn).toBeTruthy
+ await appendBtn!.trigger('click')
+ await nextTick
+ // dialogOpen ref → Dialog stub 接收 open prop。这里通过查找 Dialog stub 验证。
+ // 我们的 stub 不响应 open，但点击后内部 store 应记录 planId。
+ const store = useChatStore
+ expect(store.repoMultiSelectorState.planId).toBe('Plan')
+ })
+ it('passes existingActiveRepoIds as disabledIds to RepoMultiSelector (追加态)', async => {
+ setStorePlan([
+ {
+ session_id: 'cs1',
+ repository_id: 'r1',
+ repository_name: 'repo-1',
+ branch_name: 'feat/x',
+ status: 'running',
+ pr_url: '',
+ commit_sha: '',
+ error_message: '',
+ },
+ ])
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ const selectorEls = wrapper.findAll('[data-test="multi-selector"]')
+ // Dialog 内的 selector 也会渲染（stub Dialog 不隐藏内容），所以可能有 ≥1 个
+ expect(selectorEls.length).toBeGreaterThanOrEqual(1)
+ // 至少 1 个 disabled-count=1（含 r1）
+ expect(
+ selectorEls.some(el => el.attributes('data-disabled-count') === '1'),
+ ).toBe(true)
+ })
+ it('calls store.submitRepoMultiSelector when RepoMultiSelector emits confirm (创建态)', async => {
+ setStorePlan
+ const store = useChatStore
+ const spy = vi.spyOn(store, 'submitRepoMultiSelector')
+ .mockResolvedValue({ createdCount: 2, failedCount: 0 })
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ const confirmBtn = wrapper.find('[data-test="multi-confirm"]')
+ expect(confirmBtn.exists).toBe(true)
+ await confirmBtn.trigger('click')
+ await flushPromises
+ expect(spy).toHaveBeenCalled
+ })
+ it('calls store.retrySingleRepository when status row emits retry', async => {
+ setStorePlan([
+ {
+ session_id: 'cs1',
+ repository_id: 'r1',
+ repository_name: 'repo-1',
+ branch_name: 'feat/x',
+ status: 'failed',
+ pr_url: '',
+ commit_sha: '',
+ error_message: 'Runner 离线',
+ },
+ ])
+ const store = useChatStore
+ const spy = vi.spyOn(store, 'retrySingleRepository')
+ .mockResolvedValue({ createdCount: 1, failedCount: 0 })
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ const retryBtn = wrapper.find('[data-test="row-retry"]')
+ expect(retryBtn.exists).toBe(true)
+ await retryBtn.trigger('click')
+ await flushPromises
+ expect(spy).toHaveBeenCalledWith('Plan', 'r1')
  })
 })
