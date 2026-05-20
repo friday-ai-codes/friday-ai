@@ -66,3 +66,68 @@ class TestCallbackClient:
  client = CallbackClient(mock_config)
  result = await client.report_git_ready("friday/task-001")
  assert result is True
+class TestRunExecuteModeReportsCompleted:
+ """Phase：_run_execute_mode 末尾发 completed 帧携带 git 元数据。"""
+ @pytest.mark.asyncio
+ async def test_run_execute_mode_reports_completed_with_git_metadata(self):
+ """_run_execute_mode 成功路径应调 report_completed 一次，output 含 6 个字段。"""
+ from unittest.mock import AsyncMock, MagicMock
+ from core.runner import TaskRunner
+ config = MagicMock
+ config.task_type = "coding"
+ config.task_mode = "execute"
+ config.task_id = "exec-001"
+ config.task_title = "用户认证"
+ config.task_description = "加 JWT 认证"
+ config.callback_url = ""
+ config.callback_token = ""
+ runner = TaskRunner(config)
+ runner.git_ops = AsyncMock
+ runner.git_ops.commit_changes = AsyncMock(return_value="deadbeef")
+ runner.git_ops.push_branch_with_retry = AsyncMock
+ runner.git_ops.get_modified_files = AsyncMock(return_value=["auth.py", "models.py"])
+ runner.git_ops.get_diff_summary = AsyncMock(return_value="2 files changed, 100 insertions(+)")
+ runner.callback = AsyncMock
+ runner.claude = MagicMock
+ runner.claude.get_session_summary = AsyncMock(return_value="plan summary")
+ runner.claude.run_execute_mode = AsyncMock(return_value={"success": True})
+ log = MagicMock
+ result = await runner._run_execute_mode(log, "friday/exec-test")
+ assert result == 0
+ # 调用序列断言：progress 帧（execution_complete / push_complete /
+ # suggested_commit_message）保留 + 末尾新增 completed 帧
+ runner.callback.report_execution_complete.assert_called_once
+ runner.callback.report_push_complete.assert_called_once
+ runner.callback.report_suggested_commit_message.assert_called_once
+ runner.callback.report_completed.assert_called_once
+ completed_call = runner.callback.report_completed.call_args
+ output = completed_call.kwargs["output"]
+ assert output["branch_name"] == "friday/exec-test"
+ assert output["commit_sha"] == "deadbeef"
+ assert output["suggested_commit_message"] != ""
+ assert "modified_files" in output and isinstance(output["modified_files"], list)
+ assert output["modified_files"] == ["auth.py", "models.py"]
+ assert output["task_type"] == "coding"
+ @pytest.mark.asyncio
+ async def test_run_execute_mode_no_changes_skips_completed(self):
+ """无改动场景（commit_sha 为 falsy）应走 no_changes 分支，不发 completed 帧。"""
+ from unittest.mock import AsyncMock, MagicMock
+ from core.runner import TaskRunner
+ config = MagicMock
+ config.task_type = "coding"
+ config.task_mode = "execute"
+ config.task_id = "nochange-001"
+ config.callback_url = ""
+ config.callback_token = ""
+ runner = TaskRunner(config)
+ runner.git_ops = AsyncMock
+ runner.git_ops.commit_changes = AsyncMock(return_value="") # falsy => no changes
+ runner.callback = AsyncMock
+ runner.claude = MagicMock
+ runner.claude.get_session_summary = AsyncMock(return_value="plan")
+ runner.claude.run_execute_mode = AsyncMock(return_value={"success": True})
+ log = MagicMock
+ result = await runner._run_execute_mode(log, "friday/no-change")
+ assert result == 0
+ runner.callback.report_completed.assert_not_called
+ runner.callback.report_status.assert_called
