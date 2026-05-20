@@ -529,3 +529,95 @@ class RepositoryRoutingTrace(models.Model):
  f"RoutingTrace({self.id}, triggered_by={self.triggered_by}, "
  f"candidates={len(self.candidates) if isinstance(self.candidates, list) else 0})"
  )
+class ConversationIntentTrace(models.Model):
+ """意图协商时间线（Phase）。
+ 记录每次 ``ask_clarification`` 触发的协商：问题、选项、用户答复、
+ inferred 状态、是否最终落到 CodingPlan。这是 v26.0「准确性优先于速度」
+ 哲学的可观测底座 —— 没有 trace，evaluation 阶段无法回答「澄清是否真的
+ 提升了准确率」。
+ 字段语义：
+ - ``triggering_message_id``：触发本次协商的 user message id 字符串。
+ 故意不做 FK 是为了避免删除消息时级联删 trace（trace 是审计记录，
+ 应当独立存在）。
+ - ``clarification_id``：``ask_clarification`` 工具调用产生的 uuid hex；
+ 唯一索引保证「同一 conversation 同时只允许 1 个 pending」（Plan
+ 硬约束）。
+ - ``options``：完整 ClarificationOption 列表（schema 见
+ ``work-item.md``）。用户改选后，原 options 不变，仅
+ ``selected_option_id`` / ``inferred_state`` 更新。
+ - ``inferred_state``：用户选项的 ``implies`` merge 后最终注入对话
+ 上下文的状态字典（如 ``selected_repository_ids`` /
+ ``task_category``）。
+ - ``resolved_to_plan``：是否最终产出 CodingPlan，用于 evaluation
+ 路径（澄清 → 方案 → 转化率）。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ conversation = models.ForeignKey(
+ "chat.Conversation",
+ on_delete=models.CASCADE,
+ related_name="intent_traces",
+ )
+ triggering_message_id = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ help_text="触发本次协商的 user message id（字符串化的 UUID）",
+ )
+ clarification_id = models.CharField(
+ max_length=64,
+ unique=True,
+ db_index=True,
+ help_text="ask_clarification 工具调用产生的 uuid hex",
+ )
+ question = models.TextField(help_text="协商问题原文")
+ options = models.JSONField(
+ default=list,
+ help_text="ClarificationOption 列表（id/label/hint/implies）",
+ )
+ selected_option_id = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ help_text="用户选中的 option.id；若仅自由输入则为空",
+ )
+ freeform_answer = models.TextField(
+ blank=True,
+ default="",
+ help_text="用户自由输入的答复（与 selected_option_id 至少一个非空）",
+ )
+ inferred_state = models.JSONField(
+ default=dict,
+ help_text="implies merge 后注入对话上下文的状态字典",
+ )
+ resolved_to_plan = models.ForeignKey(
+ "chat.CodingPlan",
+ on_delete=models.SET_NULL,
+ null=True,
+ blank=True,
+ related_name="intent_traces",
+ help_text="本次协商是否最终落到 CodingPlan（evaluation 用）",
+ )
+ created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+ answered_at = models.DateTimeField(
+ null=True,
+ blank=True,
+ help_text="用户提交答复的时间；None 表示尚未回复",
+ )
+ class Meta:
+ db_table = "conversation_intent_traces"
+ ordering = ["-created_at"]
+ indexes = [
+ models.Index(
+ fields=["conversation", "-created_at"],
+ name="intent_trace_conv_idx",
+ ),
+ models.Index(
+ fields=["clarification_id"],
+ name="intent_trace_clar_id_idx",
+ ),
+ ]
+ verbose_name = "意图协商 trace"
+ verbose_name_plural = "意图协商 traces"
+ def __str__(self) -> str:
+ short = self.clarification_id[:8] if self.clarification_id else "?"
+ return f"IntentTrace<{short}>"
