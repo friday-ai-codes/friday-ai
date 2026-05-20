@@ -426,6 +426,45 @@ async def _extract_blocking_tasks(
  blocking_tasks.append(ft)
  seen_ids.add(ft["task_id"])
  return blocking_tasks
+def _extract_pending_clarification(
+ tool_calls_by_id: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+ """从 tool_calls 提取 ``ask_clarification`` 调用产生的 pending payload。
+ Phase：``ask_clarification`` 工具的 ToolResult.output 形如
+ ``{"clarification_id": ..., "pending": True, "marker": "ask_clarification",
+ "question": ..., "options": [...], "allow_freeform": ...}``。
+ chat_runner 会把 dict 序列化成 JSON 字符串再放到 tc["result"]，因此
+ 本 helper 同时尝试 dict 与 str(JSON) 两种形态——同 deep_analysis blocking
+ marker 的处理方式（见上方 ``_run_chat_stream`` blocking_marker 分支）。
+ """
+ for tc in tool_calls_by_id.values:
+ if tc.get("name") != "ask_clarification":
+ continue
+ raw = tc.get("result")
+ payload: dict[str, Any] | None = None
+ if isinstance(raw, dict):
+ payload = raw
+ elif isinstance(raw, str) and raw:
+ try:
+ import json
+ parsed = json.loads(raw)
+ except (ValueError, TypeError):
+ continue
+ if isinstance(parsed, dict):
+ payload = parsed
+ if not isinstance(payload, dict):
+ continue
+ if not payload.get("pending"):
+ continue
+ if payload.get("marker") != "ask_clarification":
+ continue
+ return {
+ "clarification_id": payload.get("clarification_id", ""),
+ "question": payload.get("question", ""),
+ "options": payload.get("options", ),
+ "allow_freeform": bool(payload.get("allow_freeform", True)),
+ }
+ return None
 def _build_result_metadata(runner: ChatAnthropicRunner) -> dict[str, Any]:
  """从 runner.result 构建 result_metadata。"""
  result = runner.result
@@ -481,6 +520,30 @@ async def _execute_first_run(
  finally:
  if conv_id:
  unregister_runner(conv_id)
+ # Phase：优先检测 ask_clarification —— 如果 LLM 要求澄清，
+ # 直接进 wait_clarification interrupt，不再处理 blocking_tasks 与 finalize。
+ pending_clarification = _extract_pending_clarification(tool_calls_by_id)
+ if pending_clarification is not None:
+ logger.info(
+ "executing_node_pending_clarification_detected",
+ clarification_id=pending_clarification.get("clarification_id"),
+ options_count=len(pending_clarification.get("options", )),
+ )
+ await _persist_run_phase(run_id, RunPhase.WAITING_CLARIFICATION.value)
+ writer({
+ "type": PHASE_TRANSITION,
+ "data": {
+ "phase": "waiting_clarification",
+ "clarification_id": pending_clarification.get("clarification_id"),
+ },
+ })
+ return {
+ "phase": RunPhase.WAITING_CLARIFICATION.value,
+ "accumulated_thinking": accumulated_thinking,
+ "tool_calls": list(tool_calls_by_id.values),
+ "pending_clarification": pending_clarification,
+ "agent_session_id": agent_session_id,
+ }
  blocking_tasks = await _extract_blocking_tasks(
  tool_calls_by_id, cfg.get("conversation_id", ""),
  )
@@ -631,6 +694,50 @@ async def waiting_node(state: WorkflowState) -> dict[str, Any]:
  "blocking_tasks":,
  "wait_execute_loops": loop_count + 1,
  }
+async def wait_clarification_node(state: WorkflowState) -> dict[str, Any]:
+ """等待用户对 ``ask_clarification`` 的回复（Phase）。
+ interrupt 暂停 graph，payload 是 ``pending_clarification`` 内容；
+ resume 值由 ``ClarificationAnswerView`` 触发，结构:
+ {
+ "clarification_id": str,
+ "selected_option_id": str | None,
+ "selected_option_label": str | None,
+ "freeform_text": str | None,
+ "implies": dict, # endpoint 已 merge 后的 inferred state
+ }
+ **关键约束**：interrupt 前后不做任何 DB 写副作用——trace 写入在 endpoint
+ 一次性完成，避免 resume 时重放。``user_message`` 在 resume 后被改写成
+ 用户答复（freeform 优先、否则用 selected_option_label），让下一轮 LLM
+ 自然看到「用户的选择」作为 user turn。
+ """
+ pending = state.get("pending_clarification") or {}
+ result = interrupt({
+ "waiting_for": "clarification",
+ "clarification_id": pending.get("clarification_id"),
+ "question": pending.get("question", ""),
+ "options": pending.get("options", ),
+ "allow_freeform": pending.get("allow_freeform", True),
+ })
+ if not isinstance(result, dict):
+ result = {}
+ inferred = result.get("implies") or {}
+ if not isinstance(inferred, dict):
+ inferred = {}
+ freeform = result.get("freeform_text") or ""
+ selected_label = result.get("selected_option_label") or ""
+ reply_text = freeform or selected_label or ""
+ existing_metadata = state.get("result_metadata") or {}
+ new_metadata = {
+ **existing_metadata,
+ "inferred_intent": inferred,
+ "last_clarification_id": result.get("clarification_id", ""),
+ }
+ return {
+ "phase": RunPhase.EXECUTING.value,
+ "user_message": reply_text,
+ "pending_clarification": {},
+ "result_metadata": new_metadata,
+ }
 async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
  """收尾节点，标记 workflow 完成。"""
  # workflow 完成后清掉 streaming_snapshot —— message 已落库，下次拉 runtime
@@ -638,9 +745,16 @@ async def finalizing_node(state: WorkflowState) -> dict[str, Any]:
  await _clear_streaming_snapshot(state.get("run_id", ""))
  return {"phase": RunPhase.COMPLETED.value}
 def route_after_executing(state: WorkflowState) -> str:
- """条件路由：error 直接结束，有 blocking_tasks 走 waiting（含循环计数保护），否则走 finalizing。"""
+ """条件路由：error 直接结束，有 blocking_tasks 走 waiting（含循环计数保护），否则走 finalizing。
+ Phase 新增：``phase=waiting_clarification`` 走专属
+ ``wait_clarification`` 节点 ``interrupt`` 等用户答复。
+ """
  if state.get("phase") == RunPhase.ERROR.value:
  return END
+ # Phase：协商分支放在 blocking_tasks 之前判定；ask_clarification 工具调用
+ # 通过 pending_clarification 字段非空 + phase=waiting_clarification 双标记驱动。
+ if state.get("phase") == RunPhase.WAITING_CLARIFICATION.value:
+ return "wait_clarification"
  if state.get("blocking_tasks"):
  loop_count = state.get("wait_execute_loops", 0)
  if loop_count >= 2:
@@ -655,16 +769,21 @@ def build_graph -> StateGraph:
  """构建编排 StateGraph builder。
  拓扑: START → planning → executing → (conditional) → finalizing → END
  ↘ waiting → executing（循环）↗
+ ↘ wait_clarification → executing↗
  """
  builder: StateGraph = StateGraph(WorkflowState)
  builder.add_node("planning", planning_node)
  builder.add_node("executing", executing_node)
  builder.add_node("waiting", waiting_node)
+ # Phase：协商暂停节点
+ builder.add_node("wait_clarification", wait_clarification_node)
  builder.add_node("finalizing", finalizing_node)
  builder.add_edge(START, "planning")
  builder.add_edge("planning", "executing")
  builder.add_conditional_edges("executing", route_after_executing)
  builder.add_edge("waiting", "executing")
+ # resume 后 wait_clarification → executing 让 LLM 看到新 user_message 继续推理
+ builder.add_edge("wait_clarification", "executing")
  builder.add_edge("finalizing", END)
  return builder
 async def get_compiled_graph -> Any:
