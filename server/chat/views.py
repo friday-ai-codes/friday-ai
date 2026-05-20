@@ -1,4 +1,6 @@
 """Chat API views."""
+import asyncio
+from typing import Any
 import structlog
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
@@ -9,6 +11,9 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
+from chat.coding_session_service import check_runner_online
+from orchestration.checkpointer import get_checkpointer
+from orchestration.coding_graph import build_coding_graph
 from projects.models import Project
 from .authentication import ChatKeyAuthentication, OptionalJWTAuthentication
 from .conversation_service import ConversationService
@@ -1070,8 +1075,12 @@ class CodingSessionConfirmView(APIView):
  authentication_classes = [OptionalJWTAuthentication]
  permission_classes = [IsAuthenticated]
  async def post(self, request, session_id): # type: ignore[override]
- """确认 draft CodingSession，创建 SubAgentSession 并 dispatch 到 Runner。"""
- from chat.coding_session_service import dispatch_coding_task
+ """确认 draft CodingSession，启动 coding_graph 后台任务。
+ Phase：本 view 不再直接调用 `dispatch_coding_task`，改为
+ 构建 `coding_graph` 并以 `asyncio.create_task` 异步驱动；同步前置仅做
+ branch_name 校验、`aconfirm` 与 Runner 在线探测。状态推进（confirmed
+ -> running）由 graph 的 `dispatch_coding_node` 负责。
+ """
  from .models import CodingSession
  # 1. 获取 CodingSession
  try:
@@ -1110,44 +1119,47 @@ class CodingSessionConfirmView(APIView):
  {"detail": str(exc)},
  status=status.HTTP_400_BAD_REQUEST,
  )
- repo = coding_session.repository
- project = coding_session.conversation.project
- # 3. 构建编码 prompt
- prompt = (
- f"你正在对项目「{project.name}」的代码仓库「{repo.name}」执行编码任务。\n\n"
- f"技术方案：\n{coding_session.tech_plan}\n\n"
- f"请根据以上技术方案进行编码实现，完成后创建 PR。"
- )
- # 4. dispatch 到 Runner（Runner 检查 + session 创建 + metadata + 分支校验 + dispatch）
- try:
- session_id_str = await dispatch_coding_task(
- coding_session,
- task_type="coding",
- prompt=prompt,
- )
- except RuntimeError:
- # Runner 不在线 — 回滚状态到 draft
+ # 3. Runner 在线前置探测 — 不在线则回滚到 draft 并返回 503，
+ # graph 后台任务不能被创建（避免误启 graph 后 dispatch 节点抛 RuntimeError）。
+ if not await check_runner_online:
  coding_session.status = CodingSession.Status.DRAFT
  await coding_session.asave(update_fields=["status", "updated_at"])
  return Response(
  {"detail": "没有可用的 Runner"},
  status=status.HTTP_503_SERVICE_UNAVAILABLE,
  )
- except ValueError as exc:
- # 分支名校验失败 — 回滚状态到 draft
- coding_session.status = CodingSession.Status.DRAFT
- await coding_session.asave(update_fields=["status", "updated_at"])
- return Response(
- {"detail": "分支名校验失败", "errors": str(exc)},
- status=status.HTTP_400_BAD_REQUEST,
+ # 4. 启动 coding_graph 后台任务（与 commit/pr confirm 路径一致的 thread_id 格式）
+ checkpointer = await get_checkpointer
+ graph = build_coding_graph.compile(checkpointer=checkpointer)
+ thread_id = f"coding-{coding_session.id}"
+ config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+ initial_state: dict[str, Any] = {
+ "coding_session_id": str(coding_session.id),
+ }
+ async def _run_graph_in_background -> None:
+ try:
+ await graph.ainvoke(initial_state, config=config)
+ except Exception as exc:
+ logger.exception(
+ "coding_graph_background_failed",
+ coding_session_id=str(coding_session.id),
+ thread_id=thread_id,
+ error=str(exc),
  )
- # 5. 标记为 running
+ try:
  await coding_session.arefresh_from_db
- await coding_session.amark_running(subagent_session_id=coding_session.subagent_session_id)
+ if coding_session.status not in (
+ CodingSession.Status.FAILED,
+ CodingSession.Status.COMPLETED,
+ ):
+ await coding_session.amark_failed(error=str(exc)[:500])
+ except Exception:
+ logger.exception("coding_graph_background_mark_failed_error")
+ asyncio.create_task(_run_graph_in_background)
  logger.info(
  "coding_session_confirmed",
  coding_session_id=str(coding_session.id),
- session_id=session_id_str,
+ thread_id=thread_id,
  )
  serializer = CodingSessionSerializer(coding_session)
  return Response(serializer.data)
