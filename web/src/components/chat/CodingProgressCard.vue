@@ -13,10 +13,14 @@ defineProps<{
  steps: Array<{ name: string, status: 'pending' | 'running' | 'done' }>
  modifiedFilesCount: number
  isComplete: boolean
- modifiedFiles?: Array<{ path: string, change_type: string }>
+ // Phase：file_path / path 两种 schema 兼容
+ modifiedFiles?: Array<{ file_path?: string, path?: string, change_type: string }>
  recentToolCalls?: Array<{ tool: string, summary: string }>
 }>
 const filesExpanded = ref(false)
+function filePath(file: { file_path?: string, path?: string }): string {
+ return file.file_path ?? file.path ?? ''
+}
 </script>
 <template>
  <div class="card mt-2 animate-fade-in">
@@ -68,10 +72,10 @@ const filesExpanded = ref(false)
  </CollapsibleTrigger>
  <CollapsibleContent class="mt-1.5 space-y-0.5">
  <div
- v-for="file in modifiedFiles":key="file.path"
+ v-for="file in modifiedFiles":key="filePath(file)"
  class="text-xs text-muted-foreground flex items-center gap-1.5 py-0.5"
  >
- <code class="truncate">{{ file.path }}</code>
+ <code class="truncate">{{ filePath(file) }}</code>
  <Badge
  variant="outline"
  class="text-[10px] px-1 py-0":class="[file.change_type === 'added' ? 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5': file.change_type === 'deleted' ? 'text-destructive border-destructive/30 bg-destructive/5': 'text-blue-500 border-blue-500/30 bg-blue-500/5']"

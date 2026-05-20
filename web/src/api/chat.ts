@@ -286,7 +286,7 @@ export async function confirmCommit(
 export async function getCommitConfirmData(sessionId: string) {
  return get<{
  suggested_commit_message: string
- affected_files: Array<{ path: string, change_type: string }>
+ affected_files: Array<{ file_path?: string, path?: string, change_type: string }>
  }>(`/chat/coding-sessions/${sessionId}/commit-confirm/`)
 }
 /**
