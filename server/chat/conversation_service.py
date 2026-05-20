@@ -199,16 +199,24 @@ async def _build_system_prompt(
  *,
  force_deep_analysis: bool = False,
  project_context_line: str = "",
+ intent_classification: Any = None,
 ) -> str:
  """构建角色化 system prompt（异步版，Phase Task 7 fragment 化）。
  Phase: 每个 fragment 独立从 Prompt Center 渲染 + fallback 双轨，
  条件拼接逻辑保留在 Python 层（不进 Jinja2 控制流 DSL）。
  结尾规则 _ENDING_RULES 保留 Python 字面量(非可运营 Prompt)，不占用 slug。
+ Phase：可选参数 ``intent_classification``（``IntentClassification``）；
+ 传入且 ``is_coding_request=True`` 时在末尾追加「本轮专用 hint」，与
+ always-on 段不重复。**默认 None 时返回与历史版本字节级一致**，
+ 保证 ``test_role_prompt`` / ``test_conversation_service_prompt_fragments``
+ 既有测试 0 回归。
  Args:
  project_name: 空间名称
  project_id: 空间 UUID（供工具调用时使用）
  role: 用户角色（developer/pm/designer/qa/general），无效值回退 general
  force_deep_analysis: 用户开启了深度分析开关，强制走策略二
+ intent_classification: 可选 ``IntentClassification`` —— 传入且命中
+ 编码动词时追加 per-turn hint。``None`` 走默认路径（向后兼容）。
  Returns:
  完整的 system prompt 字符串
  """
@@ -249,7 +257,7 @@ async def _build_system_prompt(
  # 装配顺序：角色 → 策略 → 编码 → 检索用法 → 预算 → 结尾。
  # 检索用法放在策略之后是因为它和"如何调用 RAG"强相关。
  project_line = project_context_line or f"当前空间：{project_name}"
- return (
+ base_prompt = (
  f"{role_fragment}\n\n"
  f"{project_line}\n\n"
  f"{strategy_fragment}\n"
@@ -258,6 +266,22 @@ async def _build_system_prompt(
  f"{_TOOL_BUDGET_RULES}\n"
  f"{_ENDING_RULES}"
  )
+ # Phase：可选 per-turn hint，仅在编码请求时追加。
+ # is_coding_request=False 或 intent_classification=None → 字节级与历史一致。
+ if intent_classification is None:
+ return base_prompt
+ is_coding = bool(getattr(intent_classification, "is_coding_request", False))
+ if not is_coding:
+ return base_prompt
+ matched_verbs = getattr(intent_classification, "matched_verbs", )
+ verbs_text = "、".join(matched_verbs) if matched_verbs else "（未匹配）"
+ hint = (
+ "\n\n本轮检测到编码请求（命中动词：" + verbs_text + "）。硬约束：\n"
+ " - 必须先调用 analyze_repository_relevance 拿到候选仓库 + 置信度；\n"
+ " - 命中分布不明确（confidence=ambiguous）时优先调 ask_clarification；\n"
+ " - 上述步骤完成前不允许调 create_coding_plan。\n"
+ )
+ return base_prompt + hint
 async def _get_tool_names(space_id: str) -> list[str]:
  """根据项目仓库索引状态返回可用工具列表。
  有已索引仓库：注入全部工具（检索工具 + 项目工具 + 编码工具）

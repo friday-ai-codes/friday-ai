@@ -277,11 +277,31 @@ async def executing_node(
  """驱动 ChatAnthropicRunner — 支持首次运行和 blocking_results 注入两种模式。
  模式 A（首次）：正常运行 SDK，提取 __blocking_task__ 标记。
  模式 B（二次）：注入 blocking_results 作为上下文再运行 SDK 生成最终回答。
+ Phase：首次进入时把 ``classify_intent`` 结果写入
+ ``result_metadata.intent_classification``，下游 finalize / evaluation 路径可
+ 读取该字段做后续分析。
  """
  blocking_results = state.get("blocking_results")
  if blocking_results:
  return await _execute_with_results(state, config, writer, blocking_results)
  return await _execute_first_run(state, config, writer)
+def _annotate_intent_classification(
+ state: WorkflowState,
+ result_metadata: dict[str, Any],
+) -> dict[str, Any]:
+ """Phase：把 ``classify_intent`` 结果写入 result_metadata。
+ 纯函数，不写 DB / 不发 SSE；executing_node 收尾时调用一次即可（首次进入）。
+ 返回新的 result_metadata dict（含 intent_classification 字段）。
+ """
+ from agents.intent_router import classify_intent
+ classification = classify_intent(state.get("user_message", ""))
+ annotated = dict(result_metadata) if result_metadata else {}
+ annotated["intent_classification"] = {
+ "is_coding_request": classification.is_coding_request,
+ "matched_verbs": list(classification.matched_verbs),
+ "confidence": classification.confidence,
+ }
+ return annotated
 async def _build_chat_runner(
  config: RunnableConfig,
 ) -> tuple[ChatAnthropicRunner, str] | dict[str, Any]:
@@ -426,6 +446,61 @@ async def _extract_blocking_tasks(
  blocking_tasks.append(ft)
  seen_ids.add(ft["task_id"])
  return blocking_tasks
+def _extract_relev_low_confidence_pending(
+ tool_calls_by_id: dict[str, dict[str, Any]],
+ user_message: str,
+) -> dict[str, Any] | None:
+ """检测 ``analyze_repository_relevance`` 工具结果，低置信时自动构造
+ ``ask_clarification`` payload 进 wait_clarification 暂停。
+ Phase：编排层硬约束「准确优先于速度」—— 即便 LLM 拿到 RELEV
+ 结果后想直接 create_coding_plan，graph 也会在低置信时主动暂停让用户挑。
+ 与 Plan / 03 的 ask_clarification 路径共用 ``pending_clarification`` 状态。
+ 高置信 / RELEV 缺失（Phase 未上线）→ 返回 None，让 graph 走主流。
+ """
+ import json
+ import uuid
+ from agents.intent_router import (
+ build_clarification_from_relev,
+ evaluate_relev_confidence,
+ )
+ # 找最近一次成功的 analyze_repository_relevance 调用
+ relev_output: dict[str, Any] | None = None
+ for tc in tool_calls_by_id.values:
+ if tc.get("name") != "analyze_repository_relevance":
+ continue
+ raw = tc.get("result")
+ if isinstance(raw, dict):
+ relev_output = raw
+ elif isinstance(raw, str) and raw:
+ try:
+ parsed = json.loads(raw)
+ except (ValueError, TypeError):
+ continue
+ if isinstance(parsed, dict):
+ relev_output = parsed
+ if relev_output is None:
+ return None
+ # tool 错误返回 → 跳过
+ if isinstance(relev_output, dict) and relev_output.get("is_error"):
+ return None
+ # Unwrap ToolResult.output 形态：{"data": {"candidates": [...]}, "metadata": {...}}
+ # → 给 intent_router helpers 的是 {"candidates": [...]} 直接形态。
+ if isinstance(relev_output, dict) and isinstance(relev_output.get("data"), dict):
+ unwrapped = relev_output["data"]
+ else:
+ unwrapped = relev_output
+ confidence = evaluate_relev_confidence(unwrapped)
+ if confidence.level != "low_confidence":
+ return None
+ payload_dict = build_clarification_from_relev(unwrapped, user_message)
+ if not payload_dict.get("options"):
+ return None
+ return {
+ "clarification_id": uuid.uuid4.hex,
+ "question": payload_dict["question"],
+ "options": payload_dict["options"],
+ "allow_freeform": bool(payload_dict.get("allow_freeform", True)),
+ }
 def _extract_pending_clarification(
  tool_calls_by_id: dict[str, dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -523,6 +598,18 @@ async def _execute_first_run(
  # Phase：优先检测 ask_clarification —— 如果 LLM 要求澄清，
  # 直接进 wait_clarification interrupt，不再处理 blocking_tasks 与 finalize。
  pending_clarification = _extract_pending_clarification(tool_calls_by_id)
+ # Phase：LLM 没主动调 ask_clarification 但 RELEV 低置信
+ # → 编排层自动构造 pending_clarification 强制澄清（硬约束）
+ if pending_clarification is None:
+ pending_clarification = _extract_relev_low_confidence_pending(
+ tool_calls_by_id, state.get("user_message", ""),
+ )
+ if pending_clarification is not None:
+ logger.info(
+ "executing_node_relev_auto_clarification",
+ clarification_id=pending_clarification.get("clarification_id"),
+ options_count=len(pending_clarification.get("options", )),
+ )
  if pending_clarification is not None:
  logger.info(
  "executing_node_pending_clarification_detected",
@@ -564,6 +651,8 @@ async def _execute_first_run(
  "agent_session_id": agent_session_id,
  }
  result_metadata = _build_result_metadata(runner)
+ # Phase：写入 intent_classification 供下游 evaluation 用
+ result_metadata = _annotate_intent_classification(state, result_metadata)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
  await _persist_run_phase(run_id, RunPhase.FINALIZING.value)
