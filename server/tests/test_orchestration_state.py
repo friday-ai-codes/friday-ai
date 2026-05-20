@@ -3,10 +3,19 @@ from __future__ import annotations
 from typing import get_type_hints
 from orchestration.state import RunPhase, WorkflowState
 class TestRunPhase:
- def test_has_six_phases(self) -> None:
- assert len(RunPhase) == 6
+ def test_has_seven_phases(self) -> None:
+ # Phase 新增 WAITING_CLARIFICATION，从 6 个升到 7 个
+ assert len(RunPhase) == 7
  def test_values(self) -> None:
- expected = {"planning", "executing", "waiting", "finalizing", "completed", "error"}
+ expected = {
+ "planning",
+ "executing",
+ "waiting",
+ "waiting_clarification", # Phase
+ "finalizing",
+ "completed",
+ "error",
+ }
  assert {p.value for p in RunPhase} == expected
  def test_is_str_enum(self) -> None:
  assert isinstance(RunPhase.PLANNING, str)
@@ -15,6 +24,7 @@ class TestRunPhase:
  assert RunPhase.PLANNING.value == "planning"
  assert RunPhase.EXECUTING.value == "executing"
  assert RunPhase.WAITING.value == "waiting"
+ assert RunPhase.WAITING_CLARIFICATION.value == "waiting_clarification"
  assert RunPhase.FINALIZING.value == "finalizing"
  assert RunPhase.COMPLETED.value == "completed"
  assert RunPhase.ERROR.value == "error"
@@ -25,6 +35,8 @@ class TestWorkflowState:
  "run_id", "phase", "blocking_tasks", "user_message", "final_answer",
  "blocking_results", "wait_execute_loops",
  "accumulated_thinking", "tool_calls", "result_metadata", "agent_session_id",
+ # Phase：协商暂停 payload
+ "pending_clarification",
  }
  assert set(hints.keys) == expected_fields
  def test_total_false(self) -> None:
