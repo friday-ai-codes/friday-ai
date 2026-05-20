@@ -2,6 +2,7 @@
  * Chat API 服务 - LLM 对话能力
  */
 import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
+import type { ClarificationAnswerRequest, ClarificationAnswerResponse } from '~/types/clarification'
 import { del, get, patch, post } from './client'
 // ============================================================================
 // 类型定义
@@ -362,6 +363,22 @@ export async function createSessionsForPlan(
  payload,
  )
 }
+/**
+ * Phase：提交协商答复。
+ * POST /api/chat/clarifications/{clarification_id}/answer/
+ *
+ * 后端 endpoint 完成 trace + Message 双写 + 后台 graph.ainvoke(Command(resume=...))，
+ * 前端只需等 SSE 后续事件渲染 graph 输出。
+ */
+export async function postClarificationAnswer(
+ clarificationId: string,
+ payload: ClarificationAnswerRequest,
+): Promise<ClarificationAnswerResponse> {
+ return post<ClarificationAnswerResponse>(
+ `/chat/clarifications/${clarificationId}/answer/`,
+ payload,
+ )
+}
 // ============================================================================
 // 默认导出
 // ============================================================================
@@ -390,4 +407,5 @@ export default {
  getPRConfirmData,
  getConflictCheck,
  getDiffSummary,
+ postClarificationAnswer,
 }

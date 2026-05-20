@@ -5,6 +5,7 @@
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
 import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ClarificationAnswer, ClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
 import {
@@ -87,6 +88,10 @@ export const useChatStore = defineStore('chat', => {
  const codingError = ref<CodingErrorData | null>(null)
  // Phase：当前对话最近 CodingPlan + 每仓 session 快照
  const activeCodingPlan = ref<CodingPlanRuntime | null>(null)
+ // Phase：协商卡片状态机（按 clarification_id 唯一）
+ // 不进 localStorage —— 与现有 streaming state pattern 对齐；刷新页面靠后端
+ // streaming_snapshot restore 路径还原（Plan 已落 pending_clarification 进 checkpoint）。
+ const pendingClarifications = ref<Map<string, ClarificationPayload>>(new Map)
  // Phase /：仓库多选 modal 状态机
  const repoMultiSelectorState = ref<{
  open: boolean
@@ -213,6 +218,8 @@ export const useChatStore = defineStore('chat', => {
  messages.value =
  error.value = null
  resetStreamingState
+ // Phase：清空协商卡片缓存（新对话开始时）
+ clearAllClarifications
  }
  async function removeConversation(id: string) {
  try {
@@ -374,6 +381,8 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisSessionId.value = null
  streamingPendingText.value = ''
  restoredRuntimeConversationId.value = null
+ // Phase：切换 conversation 时清空协商状态防串台
+ pendingClarifications.value = new Map
  }
  function resetStreamingState {
  isStreaming.value = false
@@ -811,6 +820,37 @@ export const useChatStore = defineStore('chat', => {
  normalizedResult,
  })
  }
+ // Phase：解析 ask_clarification 工具的 pending payload，
+ // upsert 到 pendingClarifications 让 ChatMessageArea 渲染卡片。
+ if (tc && tc.name === 'ask_clarification' && normalizedResult) {
+ try {
+ const parsed = JSON.parse(normalizedResult) as {
+ clarification_id?: string
+ pending?: boolean
+ marker?: string
+ question?: string
+ options?: Array<{ id: string, label: string, hint?: string, implies?: Record<string, unknown> }>
+ allow_freeform?: boolean
+ }
+ if (
+ parsed.pending === true
+ && parsed.marker === 'ask_clarification'
+ && parsed.clarification_id
+ ) {
+ upsertClarification({
+ clarification_id: parsed.clarification_id,
+ question: parsed.question || '',
+ options: parsed.options ||,
+ allow_freeform: parsed.allow_freeform !== false,
+ status: 'pending',
+ triggering_message_id: streamingMessageId.value || undefined,
+ })
+ }
+ }
+ catch {
+ // 静默：result 不是 JSON / 不含 marker → 不阻塞主流
+ }
+ }
  break
  }
  case 'message_complete': {
@@ -868,6 +908,9 @@ export const useChatStore = defineStore('chat', => {
  currentPhase.value = event.phase || null
  if (event.blocking_task_count != null)
  taskProgress.value = { completed: 0, total: event.blocking_task_count }
+ // Phase：协商暂停事件携带 clarification_id；payload 完整
+ // 内容由 tool_use_result 事件（marker=ask_clarification）兜底提供
+ // —— 这里只是记录 phase 过渡，不直接 upsert（避免空 options）。
  break
  case 'task_progress':
  taskProgress.value = { completed: event.completed_count || 0, total: event.total_count || 0 }
@@ -1524,6 +1567,28 @@ export const useChatStore = defineStore('chat', => {
  repoMultiSelectorState.value = prevState
  }
  }
+ // ========================================================================
+ // Phase：协商卡片 actions
+ // ========================================================================
+ function getClarification(id: string): ClarificationPayload | undefined {
+ return pendingClarifications.value.get(id)
+ }
+ function upsertClarification(payload: ClarificationPayload) {
+ pendingClarifications.value.set(payload.clarification_id, payload)
+ }
+ function markClarificationAnswered(id: string, answer: ClarificationAnswer) {
+ const existing = pendingClarifications.value.get(id)
+ if (!existing)
+ return
+ pendingClarifications.value.set(id, {
+ ...existing,
+ status: 'answered',
+ answer,
+ })
+ }
+ function clearAllClarifications {
+ pendingClarifications.value = new Map
+ }
  return {
  // State
  conversations,
@@ -1614,5 +1679,11 @@ export const useChatStore = defineStore('chat', => {
  closeRepoMultiSelector,
  submitRepoMultiSelector,
  retrySingleRepository,
+ // Phase：协商卡片状态
+ pendingClarifications,
+ getClarification,
+ upsertClarification,
+ markClarificationAnswered,
+ clearAllClarifications,
  }
 })
