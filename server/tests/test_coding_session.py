@@ -601,3 +601,95 @@ class TestCodingSessionConfirmBranchValidation:
  assert draft_session_with_branch.branch_name == "feat20260409.user-auth-v2"
  # graph 启动一次
  assert len(mocks["create_task_calls"]) == 1
+# ============================================================================
+# Phase：unique_active_plan_repo 部分唯一约束测试
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestUniqueActivePlanRepoConstraint:
+ """：同 plan + 同 repo 同一时刻最多 1 个 active session。"""
+ @pytest.fixture
+ def coding_plan(self, db, project):
+ """创建 Conversation + CodingPlan（依赖 Phase 落库的 CodingPlan model）。"""
+ from chat.models import CodingPlan, Conversation
+ conversation = Conversation.objects.create(project=project, title=" 对话")
+ return CodingPlan.objects.create(
+ conversation=conversation,
+ tech_plan="## 方案",
+ affected_files=,
+ title=" 方案",
+ )
+ @pytest.fixture
+ def coding_plan_other(self, db, project):
+ """另一个 Conversation + CodingPlan，用于跨 plan 用例。"""
+ from chat.models import CodingPlan, Conversation
+ conversation = Conversation.objects.create(project=project, title="另一对话")
+ return CodingPlan.objects.create(
+ conversation=conversation,
+ tech_plan="## 另一方案",
+ affected_files=,
+ title="另一方案",
+ )
+ def test_active_session_conflict_raises_integrity_error(
+ self, coding_plan, repository
+ ) -> None:
+ """同 plan + 同 repo 二次插入 active session → IntegrityError。"""
+ from django.db import IntegrityError, transaction
+ CodingSession.objects.create(
+ conversation=coding_plan.conversation,
+ coding_plan=coding_plan,
+ repository=repository,
+ tech_plan="t",
+ status=CodingSession.Status.RUNNING,
+ )
+ with pytest.raises(IntegrityError):
+ with transaction.atomic:
+ CodingSession.objects.create(
+ conversation=coding_plan.conversation,
+ coding_plan=coding_plan,
+ repository=repository,
+ tech_plan="t2",
+ status=CodingSession.Status.DRAFT,
+ )
+ def test_multiple_completed_sessions_allowed(
+ self, coding_plan, repository
+ ) -> None:
+ """同 plan + 同 repo 多个 completed 历史允许共存（重试场景）。"""
+ for _ in range(3):
+ CodingSession.objects.create(
+ conversation=coding_plan.conversation,
+ coding_plan=coding_plan,
+ repository=repository,
+ tech_plan="t",
+ status=CodingSession.Status.COMPLETED,
+ )
+ assert (
+ CodingSession.objects.filter(
+ coding_plan=coding_plan, repository=repository
+ ).count
+ == 3
+ )
+ def test_active_session_in_different_plan_allowed(
+ self, coding_plan, coding_plan_other, repository
+ ) -> None:
+ """同 repo 跨 plan 同时 active → 允许（约束限定到 coding_plan 维度）。"""
+ CodingSession.objects.create(
+ conversation=coding_plan.conversation,
+ coding_plan=coding_plan,
+ repository=repository,
+ tech_plan="t",
+ status=CodingSession.Status.RUNNING,
+ )
+ CodingSession.objects.create(
+ conversation=coding_plan_other.conversation,
+ coding_plan=coding_plan_other,
+ repository=repository,
+ tech_plan="t2",
+ status=CodingSession.Status.RUNNING,
+ )
+ assert (
+ CodingSession.objects.filter(
+ repository=repository,
+ status=CodingSession.Status.RUNNING,
+ ).count
+ == 2
+ )

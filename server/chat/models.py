@@ -8,6 +8,7 @@ import uuid
 import structlog
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from projects.models import Project
 logger = structlog.get_logger(__name__)
 class Conversation(models.Model):
@@ -336,6 +337,30 @@ class CodingSession(models.Model):
  ordering = ["-created_at"]
  indexes = [
  models.Index(fields=["conversation", "status"]),
+ # Phase：批量按 (coding_plan, status) 查询的覆盖索引；
+ # 支撑 批量预检 + 状态行渲染。
+ models.Index(
+ fields=["coding_plan", "status"],
+ name="idx_codingsession_plan_status",
+ ),
+ ]
+ # Phase：同一 plan + 同一 repository 同一时刻仅允许 1 个活跃 session。
+ # status 字面值与 CodingSession.Status 枚举对应：
+ # draft / confirmed / running / awaiting_confirmation
+ # completed 与 failed 不计入约束（允许多个历史 / 重试副本）。
+ constraints = [
+ models.UniqueConstraint(
+ fields=["coding_plan", "repository"],
+ condition=Q(
+ status__in=[
+ "draft",
+ "confirmed",
+ "running",
+ "awaiting_confirmation",
+ ]
+ ),
+ name="unique_active_plan_repo",
+ ),
  ]
  verbose_name = "编码会话"
  verbose_name_plural = "编码会话"
