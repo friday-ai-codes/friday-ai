@@ -4,6 +4,8 @@ from .views import (
  ChatCompletionsView,
  ChatInterruptView,
  ChatStreamView,
+ CodingPlanDetailView,
+ CodingPlanListView,
  CodingSessionConfirmView,
  CodingSessionDetailView,
  CodingSessionListView,
@@ -116,5 +118,16 @@ urlpatterns = [
  "coding-sessions/<uuid:session_id>/diff-summary/",
  DiffSummaryView.as_view,
  name="coding-session-diff-summary",
+ ),
+ # Phase：CodingPlan 独立领域 REST 端点
+ path(
+ "coding-plans/",
+ CodingPlanListView.as_view,
+ name="coding-plan-list",
+ ),
+ path(
+ "coding-plans/<uuid:plan_id>/",
+ CodingPlanDetailView.as_view,
+ name="coding-plan-detail",
  ),
 ]

@@ -26,6 +26,7 @@ from .permissions import ChatAuthPermission
 from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
+ CodingPlanSerializer,
  CodingSessionSerializer,
  ConversationDetailSerializer,
  ConversationListSerializer,
@@ -1438,4 +1439,47 @@ class CodingSessionDetailView(APIView):
  status=status.HTTP_404_NOT_FOUND,
  )
  serializer = CodingSessionSerializer(session)
+ return Response(serializer.data)
+class CodingPlanListView(APIView):
+ """GET /api/chat/coding-plans/?conversation_id=<uuid>
+ Phase：按 conversation 查询 CodingPlan 列表。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request): # type: ignore[override]
+ from .models import CodingPlan
+ conversation_id = request.query_params.get("conversation_id")
+ if not conversation_id:
+ return Response(
+ {"detail": "conversation_id query parameter is required"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ await Conversation.objects.select_related("project").aget(id=conversation_id)
+ except Conversation.DoesNotExist:
+ return Response(, status=status.HTTP_200_OK)
+ plans = [
+ plan
+ async for plan in CodingPlan.objects.filter(
+ conversation_id=conversation_id
+ ).order_by("-created_at")
+ ]
+ serializer = CodingPlanSerializer(plans, many=True)
+ return Response(serializer.data)
+class CodingPlanDetailView(APIView):
+ """GET /api/chat/coding-plans/<uuid>/
+ Phase：CodingPlan 详情。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def get(self, request, plan_id): # type: ignore[override]
+ from .models import CodingPlan
+ try:
+ plan = await CodingPlan.objects.aget(id=plan_id)
+ except CodingPlan.DoesNotExist:
+ return Response(
+ {"detail": "CodingPlan not found"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ serializer = CodingPlanSerializer(plan)
  return Response(serializer.data)

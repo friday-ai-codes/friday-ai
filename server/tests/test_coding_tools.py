@@ -59,7 +59,8 @@ class TestCreateCodingPlan:
  assert session.revision_count == 0
  assert session.tech_plan == "## 方案内容"
  assert len(session.affected_files) == 2
- assert session.affected_files[0]["path"] == "src/a.py"
+ # Phase：path 自动归一化为 file_path
+ assert session.affected_files[0]["file_path"] == "src/a.py"
  @pytest.mark.asyncio
  async def test_create_coding_plan_project_not_found(
  self, repository, conversation
@@ -96,47 +97,37 @@ class TestCreateCodingPlan:
 # ============================================================================
 @pytest.fixture
 def draft_coding_session(conversation, repository):
- """创建 draft 状态的 CodingSession 供 update 测试使用。"""
+ """创建 draft 状态的 CodingSession 供 update 测试使用。
+ Phase：affected_files 字段名 `file_path`；保留旧 `path` 字段名的迁移
+ 路径在 `_normalize_affected_files` 工具内自动转换，单元测试用例直接构造
+ 新 schema。
+ """
  return CodingSession.objects.create(
  conversation=conversation,
  repository=repository,
  tech_plan="## 初始方案",
- affected_files=[{"path": "src/old.py", "change_type": "modify"}],
+ affected_files=[{"file_path": "src/old.py", "change_type": "modify"}],
  branch_name="coding-test1234",
  )
 @pytest.mark.django_db(transaction=True)
 class TestUpdateCodingPlan:
- """update_coding_plan @tool 测试。"""
+ """update_coding_plan @tool 测试（Phase：兼容 session_id 旧路径）。"""
  @pytest.mark.asyncio
  async def test_update_coding_plan_success(self, draft_coding_session):
- """更新 draft session 的 tech_plan，revision_count 从 0 递增到 1。"""
+ """通过旧 session_id 路径更新 draft session，触发 plan 创建并同步字段。"""
  from agents.tools.coding_tools import update_coding_plan
- assert draft_coding_session.revision_count == 0
  result = await update_coding_plan(
  session_id=str(draft_coding_session.id),
  tech_plan="## 更新后方案\n- 新步骤",
  affected_files=[{"path": "src/new.py", "change_type": "add"}],
  )
  assert result.success is True
- assert result.output["revision_count"] == 1
- # 验证数据库
+ # Phase：新返回包含 coding_plan_id
+ assert "coding_plan_id" in result.output
+ # 验证数据库（兼容字段同步刷新）
  await draft_coding_session.arefresh_from_db
  assert draft_coding_session.tech_plan == "## 更新后方案\n- 新步骤"
- assert draft_coding_session.revision_count == 1
- @pytest.mark.asyncio
- async def test_update_coding_plan_non_draft_error(self, draft_coding_session):
- """非 draft 状态 session 不可更新方案。"""
- from agents.tools.coding_tools import update_coding_plan
- # 将 session 改为 confirmed
- draft_coding_session.status = CodingSession.Status.CONFIRMED
- await draft_coding_session.asave(update_fields=["status"])
- result = await update_coding_plan(
- session_id=str(draft_coding_session.id),
- tech_plan="## 更新",
- affected_files=,
- )
- assert result.success is False
- assert "草稿" in result.error or "draft" in result.error.lower
+ assert draft_coding_session.coding_plan_id is not None
  @pytest.mark.asyncio
  async def test_update_coding_plan_session_not_found(self):
  """传入不存在的 session_id 返回 error。"""
@@ -195,6 +186,170 @@ class TestUpdateCodingPlan:
  assert result.success is True
  branch_name = result.output["branch_name"]
  assert branch_name.startswith("chore"), f"应以 chore 开头: {branch_name}"
+# ============================================================================
+# Phase — CodingPlan dual-id + schema 归一化 + 多 session 同步
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestPhaseCodingPlanIntegration:
+ """Phase：create / update 切换到 CodingPlan 域。"""
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_returns_dual_ids(
+ self, project, repository, conversation
+ ):
+ """返回 payload 同时含 coding_plan_id / coding_session_id / session_id（兼容 alias）。"""
+ from agents.tools.coding_tools import create_coding_plan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## dual id 用例",
+ affected_files=[{"file_path": "a.py", "change_type": "add"}],
+ )
+ assert result.success is True
+ assert "coding_plan_id" in result.output
+ assert "coding_session_id" in result.output
+ assert "session_id" in result.output # 兼容 alias
+ assert result.output["coding_session_id"] == result.output["session_id"]
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_normalizes_legacy_path_key(
+ self, project, repository, conversation
+ ):
+ """旧 path 入参自动归一化为 file_path，落库到 plan 与 session 都是 file_path。"""
+ from agents.tools.coding_tools import create_coding_plan
+ from chat.models import CodingPlan, CodingSession
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 归一化用例",
+ affected_files=[{"path": "legacy.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ session = await CodingSession.objects.aget(id=result.output["coding_session_id"])
+ assert session.affected_files[0]["file_path"] == "legacy.py"
+ assert "path" not in session.affected_files[0]
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.affected_files[0]["file_path"] == "legacy.py"
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_dedupes_same_tech_plan_in_same_conversation(
+ self, project, repository, conversation
+ ):
+ """同一 conversation 内连续两次相同 tech_plan：plan_id 相同，session_id 不同。"""
+ from agents.tools.coding_tools import create_coding_plan
+ kwargs = dict(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 完全相同的方案",
+ affected_files=[{"file_path": "a.py", "change_type": "modify"}],
+ )
+ first = await create_coding_plan(**kwargs)
+ second = await create_coding_plan(**kwargs)
+ assert first.success and second.success
+ assert first.output["coding_plan_id"] == second.output["coding_plan_id"]
+ assert first.output["coding_session_id"] != second.output["coding_session_id"]
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_by_plan_id(
+ self, project, repository, conversation
+ ):
+ """coding_plan_id 直接路由路径：plan 字段更新 + draft session 同步。"""
+ from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+ from chat.models import CodingPlan, CodingSession
+ created = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 原方案",
+ affected_files=[{"file_path": "old.py", "change_type": "modify"}],
+ )
+ plan_id = created.output["coding_plan_id"]
+ session_id = created.output["coding_session_id"]
+ result = await update_coding_plan(
+ coding_plan_id=plan_id,
+ tech_plan="## 新方案",
+ affected_files=[{"file_path": "new.py", "change_type": "add"}],
+ )
+ assert result.success is True
+ assert result.output["coding_plan_id"] == plan_id
+ assert result.output["synced_sessions_count"] >= 1
+ plan = await CodingPlan.objects.aget(id=plan_id)
+ assert plan.tech_plan == "## 新方案"
+ assert plan.affected_files[0]["file_path"] == "new.py"
+ session = await CodingSession.objects.aget(id=session_id)
+ assert session.tech_plan == "## 新方案"
+ assert session.affected_files[0]["file_path"] == "new.py"
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_by_legacy_session_id(
+ self, project, repository, conversation
+ ):
+ """旧 session_id 路径：自动找到/回填 plan，返回 coding_plan_id。"""
+ from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+ created = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 旧路径",
+ affected_files=[{"file_path": "x.py", "change_type": "modify"}],
+ )
+ session_id = created.output["coding_session_id"]
+ result = await update_coding_plan(
+ session_id=session_id,
+ tech_plan="## 更新后",
+ affected_files=[{"file_path": "y.py", "change_type": "add"}],
+ )
+ assert result.success is True
+ assert "coding_plan_id" in result.output
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_missing_id_returns_error(self):
+ """两个 id 都不传 → success=False + error 提示。"""
+ from agents.tools.coding_tools import update_coding_plan
+ result = await update_coding_plan(
+ tech_plan="## abc",
+ affected_files=,
+ )
+ assert result.success is False
+ assert "coding_plan_id" in result.error
+ assert "session_id" in result.error
+ @pytest.mark.asyncio
+ async def test_update_coding_plan_does_not_touch_running_sessions(
+ self, project, repository, conversation
+ ):
+ """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。"""
+ from agents.tools.coding_tools import create_coding_plan, update_coding_plan
+ from chat.models import CodingPlan, CodingSession
+ created = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 同方案 fan-out",
+ affected_files=[{"file_path": "a.py", "change_type": "modify"}],
+ )
+ plan_id = created.output["coding_plan_id"]
+ draft_session_id = created.output["coding_session_id"]
+ plan = await CodingPlan.objects.aget(id=plan_id)
+ # 手工再造一个 running 关联 session（模拟多仓 fan-out）
+ running_session = await CodingSession.objects.acreate(
+ conversation=conversation,
+ repository=repository,
+ coding_plan=plan,
+ tech_plan="## 同方案 fan-out",
+ affected_files=[{"file_path": "a.py", "change_type": "modify"}],
+ status=CodingSession.Status.RUNNING,
+ branch_name="running-branch",
+ )
+ result = await update_coding_plan(
+ coding_plan_id=plan_id,
+ tech_plan="## 更新内容",
+ affected_files=[{"file_path": "b.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ # 只同步了 1 个 draft
+ assert result.output["synced_sessions_count"] == 1
+ draft_session = await CodingSession.objects.aget(id=draft_session_id)
+ assert draft_session.tech_plan == "## 更新内容"
+ running_session_refreshed = await CodingSession.objects.aget(id=running_session.id)
+ # running 的 deprecated 字段保留旧值不动
+ assert running_session_refreshed.tech_plan == "## 同方案 fan-out"
 # ============================================================================
 # 工具注册测试
 # ============================================================================

@@ -260,11 +260,30 @@ class SendMessageSerializer(serializers.Serializer):
  help_text="检索默认分支（RAG/工具未显式指定 branch 时使用）",
  )
 # ============================================================================
+# CodingPlan Serializers (Phase)
+# ============================================================================
+class CodingPlanSerializer(serializers.Serializer):
+ """CodingPlan 详情序列化器（Phase）。
+ 所有字段 read-only：写路径走 LLM tool（create_coding_plan / update_coding_plan），
+ 不通过 REST 直写。
+ """
+ id = serializers.UUIDField(read_only=True)
+ conversation_id = serializers.UUIDField(read_only=True)
+ title = serializers.CharField(read_only=True, allow_blank=True)
+ tech_plan = serializers.CharField(read_only=True)
+ affected_files = serializers.JSONField(read_only=True)
+ feishu_doc_token = serializers.CharField(read_only=True, allow_blank=True)
+ feishu_doc_url = serializers.CharField(read_only=True, allow_blank=True)
+ created_at = serializers.DateTimeField(read_only=True)
+ updated_at = serializers.DateTimeField(read_only=True)
+# ============================================================================
 # CodingSession Serializers (Phase)
 # ============================================================================
 class CodingSessionSerializer(serializers.Serializer):
  """CodingSession 详情序列化器。"""
  id = serializers.UUIDField(read_only=True)
+ # Phase：新增反向 FK 暴露（null 表示历史 session 尚未迁移到 CodingPlan）
+ coding_plan_id = serializers.UUIDField(read_only=True, allow_null=True)
  status = serializers.CharField(read_only=True)
  tech_plan = serializers.CharField(read_only=True)
  affected_files = serializers.JSONField(read_only=True)

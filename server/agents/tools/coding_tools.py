@@ -1,16 +1,32 @@
 """编码会话工具 — create_coding_plan / update_coding_plan @tool。
-让 AI 在对话中创建和更新技术方案，后端创建 CodingSession 记录
-追踪从方案草稿到 PR 的全流程。
+Phase：工具落库切换到 `CodingPlan` 独立领域；返回 payload 同时携带
+`coding_plan_id` 和 `coding_session_id`（兼容期保留旧 `session_id` alias）。
 """
 from __future__ import annotations
 import structlog
 from agents.tools.base import ToolResult, tool
 logger = structlog.get_logger(__name__)
+def _normalize_affected_files(
+ raw: list[dict[str, str]],
+) -> list[dict[str, str]]:
+ """统一 affected_files schema 为 ``{file_path, change_type}``。
+ - 兼容旧 schema：``path`` 键自动迁移到 ``file_path``
+ - 未知键名透传保留（不主动 strip 避免误删元数据）
+ - 缺 ``change_type`` 时回退 ``modify``
+ """
+ normalized: list[dict[str, str]] =
+ for entry in raw:
+ item: dict[str, str] = dict(entry)
+ if "file_path" not in item and "path" in item:
+ item["file_path"] = item.pop("path")
+ item.setdefault("change_type", "modify")
+ normalized.append(item)
+ return normalized
 @tool(
  name="create_coding_plan",
  description=(
  "创建编码技术方案。当用户描述了具体的代码变更需求时调用。"
- "传入结构化技术方案（影响文件列表 + 实现步骤），后端创建 CodingSession 记录。"
+ "传入结构化技术方案（影响文件列表 + 实现步骤），后端创建 CodingPlan + CodingSession 记录。"
  ),
  category="PROJECT",
  parameters={
@@ -37,15 +53,18 @@ logger = structlog.get_logger(__name__)
  "items": {
  "type": "object",
  "properties": {
- "path": {"type": "string"},
+ "file_path": {"type": "string"},
  "change_type": {
  "type": "string",
  "enum": ["add", "modify", "delete"],
  },
  },
- "required": ["path", "change_type"],
+ "required": ["file_path", "change_type"],
  },
- "description": "影响文件列表（文件路径 + 变更类型）",
+ "description": (
+ "影响文件列表（schema: [{file_path: str, "
+ "change_type: 'add'|'modify'|'delete'}]）"
+ ),
  },
  },
  "required": [
@@ -64,8 +83,8 @@ async def create_coding_plan(
  tech_plan: str,
  affected_files: list[dict[str, str]],
 ) -> ToolResult:
- """创建编码技术方案，生成 CodingSession 记录。"""
- from chat.models import CodingSession, Conversation
+ """创建编码技术方案，生成 CodingPlan + CodingSession 记录（Phase）。"""
+ from chat.models import CodingPlan, CodingSession, Conversation
  from projects.models import Project
  from repositories.models import Repository
  logger.info(
@@ -74,7 +93,6 @@ async def create_coding_plan(
  repository_id=repository_id,
  affected_files_count=len(affected_files),
  )
- # 验证 Project 存在
  try:
  project = await Project.objects.aget(id=space_id)
  except Project.DoesNotExist:
@@ -82,7 +100,6 @@ async def create_coding_plan(
  success=False,
  error=f"Space not found: {space_id}",
  )
- # 验证 Repository 存在且属于该 Project
  try:
  repo = await Repository.objects.aget(id=repository_id)
  except Repository.DoesNotExist:
@@ -96,7 +113,6 @@ async def create_coding_plan(
  success=False,
  error=f"Repository {repository_id} does not belong to space {space_id}",
  )
- # 获取 Conversation
  try:
  conversation = await Conversation.objects.aget(id=conversation_id)
  except Conversation.DoesNotExist:
@@ -104,6 +120,8 @@ async def create_coding_plan(
  success=False,
  error=f"Conversation not found: {conversation_id}",
  )
+ # Phase： schema 归一化（兼容旧 path 入参）
+ normalized_files = _normalize_affected_files(affected_files)
  # 生成模板格式分支名 (, per /)
  from chat.branch_service import generate_default_branch_name
  branch_name, branch_type, short_desc = generate_default_branch_name(tech_plan)
@@ -113,43 +131,61 @@ async def create_coding_plan(
  branch_type=branch_type,
  short_desc=short_desc,
  )
- # 创建 CodingSession
+ # Phase：先 get/create CodingPlan，再创建 CodingSession 关联
+ plan, plan_created = await CodingPlan.aget_or_create_for_conversation(
+ conversation=conversation,
+ tech_plan=tech_plan,
+ affected_files=normalized_files,
+ title="",
+ )
  session = await CodingSession.objects.acreate(
  conversation=conversation,
+ coding_plan=plan,
  repository=repo,
- tech_plan=tech_plan,
- affected_files=affected_files,
+ tech_plan=tech_plan, # 兼容期保留同步写入（v26.1 清理）
+ affected_files=normalized_files, # 兼容期保留同步写入
  branch_name=branch_name,
  status=CodingSession.Status.DRAFT,
  )
  logger.info(
- "coding_session_created",
- session_id=str(session.id),
+ "create_coding_plan_completed",
+ coding_plan_id=str(plan.id),
+ coding_session_id=str(session.id),
+ created=plan_created,
  branch_name=branch_name,
- status="draft",
  )
  return ToolResult(
  success=True,
  output={
+ "coding_plan_id": str(plan.id),
+ "coding_session_id": str(session.id),
+ # 兼容期旧 key alias，v26.1 deprecate（外部 LLM 工具调用仍按 session_id 读）
  "session_id": str(session.id),
  "status": "draft",
  "branch_name": branch_name,
- "message": f"技术方案已创建，session_id={session.id}。用户确认后可执行编码。",
+ "message": (
+ f"技术方案已创建，plan_id={plan.id}、session_id={session.id}。"
+ "用户确认后可执行编码。"
+ ),
  },
  )
 @tool(
  name="update_coding_plan",
  description=(
  "更新编码技术方案。当用户要求调整方案时调用。"
- "传入更新后的方案内容，后端更新 CodingSession 并递增修订计数。"
+ "传入更新后的方案内容；后端更新 CodingPlan，所有关联的 draft CodingSession 同步刷新。"
  ),
  category="PROJECT",
  parameters={
  "type": "object",
  "properties": {
+ "coding_plan_id": {
+ "type": "string",
+ "description": "CodingPlan UUID（v26.0 起首选）",
+ },
  "session_id": {
  "type": "string",
- "description": "CodingSession UUID",
+ "description": "CodingSession UUID（v25.x 兼容路径，已 deprecated）",
  },
  "tech_plan": {
  "type": "string",
@@ -160,57 +196,99 @@ async def create_coding_plan(
  "items": {
  "type": "object",
  "properties": {
- "path": {"type": "string"},
+ "file_path": {"type": "string"},
  "change_type": {
  "type": "string",
  "enum": ["add", "modify", "delete"],
  },
  },
- "required": ["path", "change_type"],
+ "required": ["file_path", "change_type"],
  },
- "description": "更新后的影响文件列表",
+ "description": (
+ "更新后的影响文件列表"
+ "（schema: [{file_path: str, change_type: str}]）"
+ ),
  },
  },
- "required": ["session_id", "tech_plan", "affected_files"],
+ # coding_plan_id / session_id 二选一（在 handler 内校验）
+ "required": ["tech_plan", "affected_files"],
  },
 )
 async def update_coding_plan(
- session_id: str,
  tech_plan: str,
  affected_files: list[dict[str, str]],
+ coding_plan_id: str = "",
+ session_id: str = "",
 ) -> ToolResult:
- """更新编码技术方案，递增修订计数。"""
- from chat.models import CodingSession
+ """更新 CodingPlan + 同步 draft session 的 deprecated 字段（Phase）。"""
+ from chat.models import CodingPlan, CodingSession
  logger.info(
  "update_coding_plan_requested",
+ coding_plan_id=coding_plan_id,
  session_id=session_id,
  )
- # 查找 CodingSession
+ if not coding_plan_id and not session_id:
+ return ToolResult(
+ success=False,
+ error="必须提供 coding_plan_id 或 session_id",
+ )
+ # 路由：优先按 coding_plan_id 走新签名；旧 session_id 走兼容路径
+ plan: CodingPlan | None = None
+ if coding_plan_id:
  try:
- session = await CodingSession.objects.aget(id=session_id)
+ plan = await CodingPlan.objects.aget(id=coding_plan_id)
+ except CodingPlan.DoesNotExist:
+ return ToolResult(
+ success=False,
+ error=f"CodingPlan not found: {coding_plan_id}",
+ )
+ else:
+ try:
+ session = await CodingSession.objects.select_related(
+ "coding_plan", "conversation"
+ ).aget(id=session_id)
  except CodingSession.DoesNotExist:
  return ToolResult(
  success=False,
  error=f"CodingSession not found: {session_id}",
  )
- # 只有草稿状态可更新
- if session.status != CodingSession.Status.DRAFT:
- return ToolResult(
- success=False,
- error="只有草稿状态的方案可以更新",
+ if session.coding_plan_id is None:
+ # 旧数据未迁移：临时建/拿 plan 并把反向 FK 补回去
+ plan, _created = await CodingPlan.aget_or_create_for_conversation(
+ conversation=session.conversation,
+ tech_plan=session.tech_plan,
+ affected_files=session.affected_files or,
+ title="",
  )
- # 更新方案
- await session.aupdate_plan(tech_plan=tech_plan, affected_files=affected_files)
+ session.coding_plan = plan
+ await session.asave(update_fields=["coding_plan", "updated_at"])
+ else:
+ plan = session.coding_plan
+ assert plan is not None # 已被前面分支覆盖
+ normalized_files = _normalize_affected_files(affected_files)
+ await plan.aupdate_plan(tech_plan=tech_plan, affected_files=normalized_files)
+ # 同步关联的 draft session 的兼容字段（不污染 running/completed）
+ synced = 0
+ async for s in plan.coding_sessions.filter( # type: ignore[attr-defined]
+ status=CodingSession.Status.DRAFT
+ ).aiterator:
+ s.tech_plan = tech_plan
+ s.affected_files = normalized_files
+ await s.asave(update_fields=["tech_plan", "affected_files", "updated_at"])
+ synced += 1
  logger.info(
- "coding_plan_updated",
- session_id=str(session.id),
- revision_count=session.revision_count,
+ "update_coding_plan_completed",
+ coding_plan_id=str(plan.id),
+ synced_sessions_count=synced,
  )
  return ToolResult(
  success=True,
  output={
- "session_id": str(session.id),
- "revision_count": session.revision_count,
- "message": f"技术方案已更新（第 {session.revision_count} 次修订）。",
+ "coding_plan_id": str(plan.id),
+ "synced_sessions_count": synced,
+ "message": (
+ f"技术方案已更新（plan_id={plan.id}）；"
+ f"同步刷新了 {synced} 个 draft session 的兼容字段。"
+ ),
  },
  )
