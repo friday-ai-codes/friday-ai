@@ -27,6 +27,8 @@ from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
  CodingPlanSerializer,
+ CodingSessionsBatchCreateRequestSerializer,
+ CodingSessionsBatchCreateResponseSerializer,
  CodingSessionSerializer,
  ConversationDetailSerializer,
  ConversationListSerializer,
@@ -1483,3 +1485,77 @@ class CodingPlanDetailView(APIView):
  )
  serializer = CodingPlanSerializer(plan)
  return Response(serializer.data)
+class CodingPlanSessionsBatchCreateView(APIView):
+ """POST /api/chat/coding-plans/{plan_id}/sessions/ -- 批量创建 CodingSession。
+ Phase：在已有 CodingPlan 上为 N 个 repository 批量创建 DRAFT CodingSession。
+ 每个 repository 独立校验 + 独立事务，部分失败不阻塞其他 repository（CONTEXT
+ §批量创建 endpoint 语义）。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ @extend_schema(
+ summary="批量创建 CodingSession",
+ request=CodingSessionsBatchCreateRequestSerializer,
+ responses={
+ 200: CodingSessionsBatchCreateResponseSerializer,
+ 400: {"description": "请求体校验失败"},
+ 403: {"description": "无权访问该 CodingPlan 所属项目"},
+ 404: {"description": "CodingPlan 不存在"},
+ },
+ tags=["CodingPlan"],
+ )
+ async def post(self, request, plan_id): # type: ignore[override]
+ from chat.coding_session_service import create_sessions_for_plan
+ from permissions.models import ProjectRole
+ from permissions.services import PermissionService
+ from .models import CodingPlan
+ # 1) 反序列化请求体
+ req_ser = CodingSessionsBatchCreateRequestSerializer(data=request.data)
+ req_ser.is_valid(raise_exception=True)
+ # 2) CodingPlan 存在性
+ try:
+ plan = await CodingPlan.objects.select_related(
+ "conversation", "conversation__project"
+ ).aget(id=plan_id)
+ except CodingPlan.DoesNotExist:
+ return Response(
+ {"detail": "CodingPlan 不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 3) 项目级 ownership（MEMBER+）
+ user = request.user
+ if not getattr(user, "is_superuser", False):
+ allowed = await sync_to_async(PermissionService.has_project_access)(
+ user=user,
+ project=plan.conversation.project,
+ min_role=ProjectRole.MEMBER,
+ )
+ if not allowed:
+ return Response(
+ {"detail": "无权访问该 CodingPlan 所属项目"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ # 4) 业务调用
+ result = await create_sessions_for_plan(
+ plan=plan,
+ repository_ids=req_ser.validated_data["repository_ids"],
+ branch_template=req_ser.validated_data.get("branch_template", ""),
+ )
+ # 5) dataclass -> dict -> serializer
+ resp_payload: dict[str, Any] = {
+ "created": [
+ {
+ "session_id": str(i.session_id),
+ "repository_id": str(i.repository_id),
+ "branch_name": i.branch_name,
+ }
+ for i in result.created
+ ],
+ "failed": [
+ {"repository_id": str(i.repository_id), "error": i.error}
+ for i in result.failed
+ ],
+ }
+ resp_ser = CodingSessionsBatchCreateResponseSerializer(data=resp_payload)
+ resp_ser.is_valid(raise_exception=True)
+ return Response(resp_ser.data, status=status.HTTP_200_OK)

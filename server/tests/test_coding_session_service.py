@@ -208,3 +208,107 @@ class TestDispatchCodingTask:
  ):
  with pytest.raises(RuntimeError, match="没有可用的 Runner"):
  await dispatch_coding_task(session, prompt="test")
+# ============================================================================
+# Phase：create_sessions_for_plan service 层单元测试
+# ============================================================================
+@pytest.fixture
+def coding_plan_for_service(db, project):
+ """Conversation + CodingPlan 用于 service 层批量创建测试。"""
+ from chat.models import CodingPlan, Conversation
+ conversation = Conversation.objects.create(project=project, title="service 测试")
+ return CodingPlan.objects.create(
+ conversation=conversation,
+ tech_plan="## 多仓 fan-out 方案",
+ affected_files=[{"file_path": "src/x.py", "change_type": "modify"}],
+ title="多仓方案",
+ )
+@pytest.fixture
+def three_repos_for_service(db, project):
+ """3 个 Repository 全部 attach 到 project。"""
+ from repositories.models import Repository
+ repos =
+ for name in ["repo-svc-a", "repo-svc-b", "repo-svc-c"]:
+ r = Repository.objects.create(
+ name=name,
+ git_url=f"https://gitlab.com/test/{name}.git",
+ git_platform="gitlab",
+ default_branch="main",
+ )
+ project.repositories.add(r)
+ repos.append(r)
+ return repos
+@pytest.fixture
+def orphan_repo(db):
+ """孤儿 Repository（不属于任何 project）。"""
+ from repositories.models import Repository
+ return Repository.objects.create(
+ name="orphan-svc",
+ git_url="https://gitlab.com/test/orphan-svc.git",
+ git_platform="gitlab",
+ default_branch="main",
+ )
+@pytest.mark.django_db(transaction=True)
+class TestCreateSessionsForPlan:
+ """ service 层批量创建语义测试。"""
+ @pytest.mark.asyncio
+ async def test_branch_template_repo_substitution(
+ self, coding_plan_for_service, three_repos_for_service
+ ) -> None:
+ """branch_template 含 ${repo} → 每仓库 branch_name 都嵌入自己的 repo.name。"""
+ from chat.coding_session_service import create_sessions_for_plan
+ result = await create_sessions_for_plan(
+ plan=coding_plan_for_service,
+ repository_ids=[r.id for r in three_repos_for_service],
+ branch_template="feat20260520.${repo}.feature-x",
+ )
+ assert len(result.created) == 3
+ assert len(result.failed) == 0
+ names = {i.repository_id: i.branch_name for i in result.created}
+ for r in three_repos_for_service:
+ assert names[r.id] == f"feat20260520.{r.name}.feature-x"
+ @pytest.mark.asyncio
+ async def test_repository_not_in_project_fails(
+ self, coding_plan_for_service, orphan_repo
+ ) -> None:
+ """orphan_repo 不属于 coding_plan.conversation.project → failed。"""
+ from chat.coding_session_service import create_sessions_for_plan
+ result = await create_sessions_for_plan(
+ plan=coding_plan_for_service,
+ repository_ids=[orphan_repo.id],
+ )
+ assert len(result.created) == 0
+ assert len(result.failed) == 1
+ assert "无权访问" in result.failed[0].error
+ @pytest.mark.asyncio
+ async def test_independent_transaction_per_repo(
+ self, coding_plan_for_service, three_repos_for_service
+ ) -> None:
+ """repo_a 预置 active session → repo_a failed，repo_b/c 仍 created（事务独立）。"""
+ from asgiref.sync import sync_to_async
+ from chat.coding_session_service import create_sessions_for_plan
+ from chat.models import CodingSession
+ repo_a, repo_b, repo_c = three_repos_for_service
+ await sync_to_async(CodingSession.objects.create)(
+ conversation=coding_plan_for_service.conversation,
+ coding_plan=coding_plan_for_service,
+ repository=repo_a,
+ tech_plan="x",
+ status=CodingSession.Status.RUNNING,
+ )
+ result = await create_sessions_for_plan(
+ plan=coding_plan_for_service,
+ repository_ids=[r.id for r in three_repos_for_service],
+ branch_template="feat20260520.${repo}.task",
+ )
+ assert len(result.failed) == 1
+ assert result.failed[0].repository_id == repo_a.id
+ assert len(result.created) == 2
+ drafts = await sync_to_async(
+ lambda: set(
+ CodingSession.objects.filter(
+ coding_plan=coding_plan_for_service,
+ status=CodingSession.Status.DRAFT,
+ ).values_list("repository_id", flat=True)
+ )
+ )
+ assert {repo_b.id, repo_c.id} == drafts
