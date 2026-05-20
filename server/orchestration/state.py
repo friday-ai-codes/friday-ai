@@ -6,6 +6,8 @@ class RunPhase(str, enum.Enum):
  PLANNING = "planning"
  EXECUTING = "executing"
  WAITING = "waiting"
+ # Phase：等待用户对 ask_clarification 的回答。
+ WAITING_CLARIFICATION = "waiting_clarification"
  FINALIZING = "finalizing"
  COMPLETED = "completed"
  ERROR = "error"
@@ -13,6 +15,7 @@ class WorkflowState(TypedDict, total=False):
  """LangGraph 编排 graph state — authoritative source。
  编排语义字段（Phase）：run_id / phase / blocking_tasks / user_message / final_answer
  SDK 运行结果字段（Phase）：accumulated_thinking / tool_calls / result_metadata / agent_session_id
+ 协商字段（Phase）：pending_clarification
  所有字段为 JSON 可序列化类型，支持 checkpoint 持久化。
  DB 模型（Message, AgentSession, OrchestrationRun）是此 state 的投影。
  """
@@ -30,3 +33,8 @@ class WorkflowState(TypedDict, total=False):
  tool_calls: list[dict[str, Any]]
  result_metadata: dict[str, Any]
  agent_session_id: str
+ # Phase：协商暂停 payload
+ # 形如 {"clarification_id": str, "question": str, "options": list,
+ # "allow_freeform": bool, "triggering_message_id": str}
+ # interrupt 时由 wait_clarification_node 透传给前端 / endpoint。
+ pending_clarification: dict[str, Any]
