@@ -32,6 +32,8 @@ ACTIVE_STATUSES: frozenset[str] = frozenset(
  CodingSession.Status.AWAITING_CONFIRMATION,
  }
 )
+# 共享 error 文案常量，避免 service / view / 兼容性命令多处硬编码漂移。
+ERROR_REPO_ACTIVE_BUSY = "该仓库已有进行中的编码会话"
 async def check_runner_online -> bool:
  """检查是否有在线 Runner（重试 3 次，每次等 2 秒）。
  Returns:
@@ -284,11 +286,15 @@ async def create_sessions_for_plan(
  校验链（per repo）：
  1. repository_id 属于 ``plan.conversation.project.repositories``
  2. 不在 ``(plan, repo)`` 既有 active sessions 中（ 约束前置应用层校验）
- 3. ``validate_branch_name`` 校验通过
+ 3. ``validate_branch_name`` 本地 + DB 唯一性校验通过（``git_client=None``
+ 跳过远程 refs 检查，远程检查由后续 confirm 流程的 dispatch_coding_task
+ 补做，避免本批量 endpoint 对每个 repo 都串行调用 Git API）
  4. ``transaction.atomic`` 内 ``acreate``；捕获 IntegrityError 兜底（race）
+ **调用方约束**：``plan`` 必须预先 ``select_related("conversation",
+ "conversation__project")``，否则 ``plan.conversation.project`` 会触发同步
+ DB 访问报错（async context）。
  """
  from chat.branch_service import validate_branch_name
- from chat.models import CodingPlan as _CodingPlan # noqa: F401 (类型 hint)
  result = CodingSessionsBatchResult
  if not repository_ids:
  return result
@@ -319,9 +325,7 @@ async def create_sessions_for_plan(
  for rid in list(valid_repo_map.keys):
  if rid in active_existing_ids:
  result.failed.append(
- SessionFailedItem(
- repository_id=rid, error="该仓库已有进行中的编码会话"
- )
+ SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
  )
  valid_repo_map.pop(rid, None)
  # 3) 逐仓库创建（独立事务）
@@ -371,9 +375,7 @@ async def create_sessions_for_plan(
  except IntegrityError:
  # unique 约束兜底（理论上预检后不应到这里，但有竞态保护）
  result.failed.append(
- SessionFailedItem(
- repository_id=rid, error="该仓库已有进行中的编码会话"
- )
+ SessionFailedItem(repository_id=rid, error=ERROR_REPO_ACTIVE_BUSY)
  )
  logger.warning(
  "coding_sessions.batch_failed",
