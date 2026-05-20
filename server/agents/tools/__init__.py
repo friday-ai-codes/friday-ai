@@ -13,6 +13,7 @@ from agents.tools.base import (
  ToolResult,
  tool,
 )
+from agents.tools.clarification import ask_clarification
 from agents.tools.feishu_doc_tools import (
  create_feishu_document,
  fetch_feishu_document,
@@ -58,6 +59,8 @@ __all__ = [
  "list_endpoints",
  # Cross-repo relevance (Phase)
  "analyze_repository_relevance",
+ # Clarification (Phase)
+ "ask_clarification",
  # Work item tools
  "get_work_item_detail",
  "list_related_work_items",

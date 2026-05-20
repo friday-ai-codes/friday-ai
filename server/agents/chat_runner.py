@@ -29,6 +29,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
 import agents.tools.chat_tools # noqa: F401
+import agents.tools.clarification # noqa: F401 # Phase
 import agents.tools.coding_tools # noqa: F401
 import agents.tools.repository_relevance # noqa: F401
 import agents.tools.space_tools # noqa: F401
@@ -68,6 +69,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "get_repository_info",
  # Phase：先分析相关性，后创建方案
  "analyze_repository_relevance",
+ # Phase：不确定时主动澄清（暴露给所有有索引仓库的项目）
+ "ask_clarification",
  "create_coding_plan",
  "update_coding_plan",
 ]

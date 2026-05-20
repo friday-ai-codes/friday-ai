@@ -272,6 +272,8 @@ async def _get_tool_names(space_id: str) -> list[str]:
  "get_repository_info",
  "create_coding_plan",
  "update_coding_plan",
+ # Phase：协商工具，所有有索引仓库的项目都暴露给 LLM
+ "ask_clarification",
  ]
  has_indexed = await Repository.objects.filter(
  projects__id=space_id,

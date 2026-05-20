@@ -20,6 +20,10 @@ class ToolCategory(Enum):
  GENERAL = "GENERAL" # General utility tools
  # Phase RELEV：召回 / 相关性聚合类工具
  RETRIEVAL = "RETRIEVAL"
+ # Phase：主动与用户协商澄清类工具（ask_clarification）。
+ # 与 GENERAL 区分语义：调用此类工具会让 graph 进入 waiting_clarification
+ # 状态并 interrupt，等待用户答复后才能继续推理。
+ COMMUNICATION = "COMMUNICATION"
 @dataclass
 class ToolResult:
  """
