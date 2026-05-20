@@ -497,6 +497,14 @@ async def _handle_completed(
  # repo_summary 完成写回 Repository
  if session.task_type == SubAgentSession.TaskType.REPO_SUMMARY:
  await _update_repository_on_summary_complete(session, p)
+ # Phase：chat 的 deep_analysis 完成时自动回算 cross_repo_relevance。
+ # 仅当 EXPLORE + source=chat_deep_analysis 触发（其它 EXPLORE 用途不回算）。
+ if (
+ session.task_type == SubAgentSession.TaskType.EXPLORE
+ and isinstance(session.last_output, dict)
+ and session.last_output.get("source") == "chat_deep_analysis"
+ ):
+ await _update_agent_session_cross_repo_relevance(session, p)
  log.info("callback_completed_ok", result_type=p["result_type"])
  return Response({"status": "ok"})
 async def _handle_failed(
@@ -755,6 +763,85 @@ async def _update_repository_on_summary_fail(
  update_fields=["ai_summary_status", "ai_summary_error", "updated_at"]
  )
  logger.info("repo_summary_fail_written", repository_id=repo_id, error=error_msg[:100])
+# === Phase：deep_analysis 完成回算 cross_repo_relevance ===
+async def _update_agent_session_cross_repo_relevance(
+ session: SubAgentSession,
+ payload: dict[str, Any],
+) -> None:
+ """deep_analysis 完成时复用 helper 反算跨仓相关性。
+ 步骤：
+ 1. 从 ``session.last_output`` 拿 ``space_id`` / ``conversation_id`` /
+ ``task_description``（query）三要素。
+ 2. 调 ``_analyze_relevance_core(triggered_by=DEEP_ANALYSIS_COMPLETION,
+ agent_session_id=session.main_session.id)`` —— 复用 chat_tool 路径
+ 同一段聚合逻辑，trace 自动落库。
+ 3. 把 candidates 写入 ``AgentSession.metadata['cross_repo_relevance']`` +
+ ``cross_repo_relevance_trace_id`` 让 LLM 下一轮 resume 时能读到。
+ 4. 把候选 JSON 拼成 ``[cross_repo_relevance:<trace_id>]\n<JSON>`` 段追加
+ 到本 session 的 ``TaskResult.text_output`` 末尾 —— BarrierManager
+ 通过 TaskResult 回灌 chat 流时前端可解析为 RoutingDecisionPanel。
+ 5. 任何异常仅 ``logger.warning`` 不阻塞 ``_handle_completed`` 主流程。
+ Args:
+ session: deep_analysis 子任务的 SubAgentSession。
+ payload: completed 回调的 validated payload（暂未使用，留作未来 Runner
+ 主动附带 ``cross_repo_relevance`` 字段时的扩展点）。
+ """
+ try:
+ output = session.last_output or {}
+ space_id = output.get("space_id")
+ conversation_id = output.get("conversation_id")
+ task_description = output.get("task_description") or ""
+ main_session = session.main_session
+ if not (space_id and conversation_id and task_description and main_session):
+ logger.warning(
+ "cross_repo_relevance_skip_missing_context",
+ session_id=session.session_id,
+ has_space=bool(space_id),
+ has_conv=bool(conversation_id),
+ has_query=bool(task_description),
+ has_main_session=bool(main_session),
+ )
+ return
+ # lazy import 防止 agents.tools 与 subagent.api 启动顺序循环
+ from agents.tools.repository_relevance import _analyze_relevance_core
+ from chat.models import RepositoryRoutingTrace
+ candidates, trace_id = await _analyze_relevance_core(
+ query=task_description,
+ space_id=space_id,
+ conversation_id=conversation_id,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.DEEP_ANALYSIS_COMPLETION,
+ agent_session_id=str(main_session.id),
+ )
+ candidates_dump = [c.model_dump for c in candidates]
+ # (1) AgentSession.metadata 写入
+ metadata = dict(main_session.metadata or {})
+ metadata["cross_repo_relevance"] = candidates_dump
+ metadata["cross_repo_relevance_trace_id"] = trace_id
+ main_session.metadata = metadata
+ await main_session.asave(update_fields=["metadata", "updated_at"])
+ # (2) TaskResult.text_output 末尾拼接 → BarrierManager 回灌
+ import json as _json
+ relevance_block = (
+ f"\n\n[cross_repo_relevance:{trace_id}]\n"
+ + _json.dumps(candidates_dump, ensure_ascii=False)
+ )
+ task_result = await TaskResult.objects.filter(session=session).afirst
+ if task_result is not None:
+ task_result.text_output = (task_result.text_output or "") + relevance_block
+ await task_result.asave(update_fields=["text_output"])
+ logger.info(
+ "cross_repo_relevance_written",
+ session_id=session.session_id,
+ agent_session_id=str(main_session.id),
+ candidate_count=len(candidates_dump),
+ trace_id=trace_id,
+ )
+ except Exception as exc: # noqa: BLE001 — 永不阻塞 _handle_completed 主流程
+ logger.warning(
+ "cross_repo_relevance_failed",
+ session_id=session.session_id,
+ error=str(exc),
+ )
 # 处理器映射
 _HANDLERS = {
  CallbackType.COMPLETED: _handle_completed,

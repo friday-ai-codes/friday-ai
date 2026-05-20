@@ -709,6 +709,13 @@ DEEP_ANALYSIS_TIMEOUT = 1800 # 30 分钟
  " 同一 repository_id 同一 conversation 内只允许一个 in-flight 容器（重复调用会复用），\n"
  " 所以「同仓库不同角度」的问题请合并到一个 task_description 里。\n\n"
  "Dispatch 后立即返回 blocking marker，系统会等所有并行任务完成后统一回灌结果。"
+ "\n\n"
+ "**完成回流**（Phase）：每次容器完成时 Server 端会自动回算 "
+ "cross_repo_relevance —— 结果落 RepositoryRoutingTrace（triggered_by="
+ "deep_analysis_completion）+ 写入 AgentSession.metadata['cross_repo_relevance'] "
+ "+ 拼到本工具返回 text 末尾 `[cross_repo_relevance:<trace_id>]` 段。"
+ "你在 deep_analysis 之后调 create_coding_plan 时可直接从 metadata 引用 "
+ "recommended_repository_ids，无需再次调 analyze_repository_relevance。"
  ),
  category="PROJECT",
  parameters={

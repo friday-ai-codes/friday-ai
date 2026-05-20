@@ -33,6 +33,13 @@ class CompletedPayloadSerializer(serializers.Serializer):
  modified_files = serializers.ListField(
  child=serializers.CharField, required=False, default=list
  )
+ # Phase：容器端可选附带 cross_repo_relevance；不附带视为，
+ # Server 端 _handle_completed 内会主动回算（避免容器引入 Django ORM 访问）。
+ cross_repo_relevance = serializers.ListField(
+ required=False,
+ default=list,
+ child=serializers.DictField,
+ )
 class FailedPayloadSerializer(serializers.Serializer):
  """type=failed 时的 payload 验证。"""
  error = serializers.CharField(default="", allow_blank=True)
