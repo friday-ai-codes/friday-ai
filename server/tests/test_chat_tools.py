@@ -303,14 +303,16 @@ class TestGetSpaceOverview:
 @pytest.mark.asyncio
 class TestGetToolNames:
  """_get_tool_names 动态工具注入测试。"""
- async def test_with_indexed_repo_returns_6_tools(self, project):
- """有已索引仓库的项目返回 6 个工具。"""
+ async def test_with_indexed_repo_returns_full_tool_set(self, project):
+ """有已索引仓库的项目返回完整工具集合（Phase 起含
+ ``ask_clarification``，共 9 个工具）。
+ """
  from chat.conversation_service import _get_tool_names
  repo = await project.repositories.afirst
  repo.index_status = "indexed"
  await repo.asave
  tool_names = await _get_tool_names(str(project.id))
- assert len(tool_names) == 8
+ assert len(tool_names) == 9
  assert "browse_file_content" in tool_names
  assert "list_space_structure" in tool_names
  assert "get_space_overview" in tool_names
@@ -319,6 +321,8 @@ class TestGetToolNames:
  assert "get_repository_info" in tool_names
  assert "create_coding_plan" in tool_names
  assert "update_coding_plan" in tool_names
+ # Phase：协商工具
+ assert "ask_clarification" in tool_names
  async def test_without_indexed_repo_returns_1_tool(self, project):
  """无已索引仓库的项目仅返回 1 个工具。"""
  from chat.conversation_service import _get_tool_names
