@@ -1,23 +1,39 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
+import type { CodingPlanRuntime, RepoSelectableItem } from '~/types/chat'
 /**
- * 技术方案卡片 — Phase 落地。
+ * 技术方案卡片 — Phase 落地，Phase 扩展为多仓 fan-out 入口。
  *
- * CodingPlan 的主展示组件。承载 Markdown 渲染 + affected_files
- * 列表 + 分支名编辑 + 折叠/展开。与 CodingSession 解耦：通过 planId
- * 标识独立方案，sessionId 作为执行会话引用（可选）。
+ * CodingPlan 的主展示组件。承载 Markdown 渲染 + affected_files 列表 + 折叠/展开。
  *
- * Phase 阶段：completed / failed 状态保留最小占位（一行 fallback
- * 提示，避免空白）；详细的绿框 / PR 链接 / 红框 / 重试按钮 / Skeleton
- * 落在 Phase。
+ * Phase 新增两种交互入口：
+ * - 创建态（无 sessions）：codingPlanId 提供时，把旧的「开始编码」单仓按钮
+ * 替换为内嵌 RepoMultiSelector，让用户一次性挑多个仓库 fan-out。
+ * - 追加态（已有 sessions）：右上角「+ 对新仓库编码」按钮 + Dialog 弹层
+ * 选新仓库；已选 active sessions 的 repo 在 selector 内 disabled。
+ *
+ * codingPlanId 未提供时（旧 ChatMessageBubble 单仓路径）保留原 draft 按钮，
+ * 向后兼容不破。
  */
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import { storeToRefs } from 'pinia'
+import CodingSessionStatusRow from '~/components/chat/CodingSessionStatusRow.vue'
+import RepoMultiSelector from '~/components/chat/RepoMultiSelector.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
+import {
+ Dialog,
+ DialogContent,
+ DialogDescription,
+ DialogHeader,
+ DialogTitle,
+} from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '~/components/ui/select'
 import { useBranchValidation } from '~/composables/useBranchValidation'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import { useToast } from '~/composables/useToast'
+import { useChatStore } from '~/stores/chat'
 const props = withDefaults(defineProps<{
  planId: string
  title?: string
@@ -33,16 +49,94 @@ const props = withDefaults(defineProps<{
  branchUrl?: string
  // Phase：failed 状态可选展示错误原因
  errorMessage?: string
+ // Phase：多仓 fan-out 入口
+ //
+ // codingPlanId 提供时启用 multi-repo 流程（创建态 / 追加态 / 重试 / 状态行
+ // 列表）；不提供时保留旧的 single-session draft 流程（向后兼容
+ // ChatMessageBubble 历史调用）。
+ codingPlanId?: string | null
+ availableRepositories?: RepoSelectableItem
+ repositoryGitUrls?: Record<string, string>
+ recommendedRepositoryIds?: string
 }>, {
  // 显式保留 undefined（Vue 默认会把缺省 Boolean prop coerce 成 false，
  // 那样会破坏 initialCollapsed 的 fallback 判定）
  defaultCollapsed: undefined,
+ availableRepositories: =>,
+ repositoryGitUrls: => ({}),
+ recommendedRepositoryIds: =>,
 })
 const emit = defineEmits<{
  confirm: [planId: string, sessionId: string | undefined, branchName?: string]
- // Phase：failed 状态下用户点击重试；接通 endpoint 留 Phase/
+ // Phase：failed 状态下用户点击重试；Phase 起当 codingPlanId
+ // 存在时由 store.retrySingleRepository 接管，emit 仍保留作旧接口兜底。
  retry: [planId: string, sessionId: string | undefined]
 }>
+// ---------------------------------------------------------------------------
+// Phase：多仓 fan-out 状态机
+// ---------------------------------------------------------------------------
+const chatStore = useChatStore
+const { activeCodingPlan, repoMultiSelectorState } = storeToRefs(chatStore)
+const { success: toastSuccess, error: toastError } = useToast
+const codingPlanRuntime = computed<CodingPlanRuntime | null>(
+ => activeCodingPlan.value,
+)
+const sessions = computed( => codingPlanRuntime.value?.sessions ?? )
+const hasSessions = computed( => sessions.value.length > 0)
+const ACTIVE_STATUSES = new Set(['draft', 'confirmed', 'running', 'awaiting_confirmation'])
+const existingActiveRepoIds = computed( =>
+ sessions.value
+ .filter(s => ACTIVE_STATUSES.has(s.status))
+ .map(s => s.repository_id),
+)
+const showInlineSelector = computed(
+ => !!props.codingPlanId && !hasSessions.value,
+)
+const dialogOpen = ref(false)
+const dialogSelectedIds = ref<string>
+function openAppendDialog {
+ if (!props.codingPlanId)
+ return
+ dialogSelectedIds.value =
+ chatStore.openRepoMultiSelector(props.codingPlanId, )
+ dialogOpen.value = true
+}
+async function handleMultiConfirm(repoIds: string) {
+ if (!props.codingPlanId)
+ return
+ try {
+ chatStore.openRepoMultiSelector(props.codingPlanId, repoIds)
+ const result = await chatStore.submitRepoMultiSelector(repoIds)
+ const suffix = result.failedCount > 0 ? `；${result.failedCount} 个失败`: ''
+ toastSuccess(`${result.createdCount} 个仓库已加入编码${suffix}`)
+ dialogOpen.value = false
+ dialogSelectedIds.value =
+ }
+ catch (e: any) {
+ toastError(e?.message || '批量创建编码失败')
+ }
+ finally {
+ chatStore.closeRepoMultiSelector
+ }
+}
+async function handleSessionRowRetry(rowSessionId: string) {
+ const session = sessions.value.find(s => s.session_id === rowSessionId)
+ if (!session || !props.codingPlanId)
+ return
+ try {
+ const result = await chatStore.retrySingleRepository(
+ props.codingPlanId,
+ session.repository_id,
+ )
+ if (result.createdCount > 0)
+ toastSuccess('已重新发起编码')
+ else
+ toastError('重试失败')
+ }
+ catch (e: any) {
+ toastError(e?.message || '重试失败')
+ }
+}
 // ---------------------------------------------------------------------------
 // 折叠状态：默认 draft 展开、其它状态折叠（用户可点击切换）
 // ---------------------------------------------------------------------------
@@ -186,8 +280,42 @@ const badgeText = computed( => {
  </div>
  </div>
  </div>
- <!-- draft：分支名编辑 + 开始编码 -->
- <div v-if="status === 'draft'" class="px-4 pb-4">
+ <!-- Phase /：已加入的仓库 sessions 列表 -->
+ <div v-if="hasSessions" class="px-4 pb-3 pt-2 space-y-1">
+ <div class="flex items-center justify-between">
+ <p class="text-xs text-muted-foreground font-medium">
+ 目标仓库（{{ sessions.length }}）
+ </p>
+ <Button
+ v-if="codingPlanId"
+ variant="ghost"
+ size="sm"
+ class="text-xs"
+ @click="openAppendDialog"
+ >
+ <span class="icon-[lucide--plus] mr-1" />
+ 对新仓库编码
+ </Button>
+ </div>
+ <div class="divide-y divide-border/30">
+ <CodingSessionStatusRow
+ v-for="s in sessions":key="s.session_id":session="s":repo-git-url="repositoryGitUrls[s.repository_id] ?? ''"
+ @retry="handleSessionRowRetry"
+ />
+ </div>
+ </div>
+ <!-- Phase：创建态内嵌 selector（替代旧的「开始编码」单仓按钮） -->
+ <div v-if="showInlineSelector" class="px-4 pb-4 pt-2">
+ <p class="text-xs text-muted-foreground font-medium mb-2">
+ 选择目标仓库
+ </p>
+ <RepoMultiSelector:repositories="availableRepositories":model-value="dialogSelectedIds":disabled-ids="existingActiveRepoIds":recommended-ids="recommendedRepositoryIds":submitting="repoMultiSelectorState.submitting"
+ @update:model-value="(v: string) => dialogSelectedIds = v"
+ @confirm="handleMultiConfirm"
+ />
+ </div>
+ <!-- draft：分支名编辑 + 开始编码（codingPlanId 未提供时的向后兼容路径） -->
+ <div v-if="!codingPlanId && status === 'draft'" class="px-4 pb-4">
  <div v-if="branchName" class="space-y-3 mb-3">
  <p class="text-xs text-muted-foreground font-medium">
  功能分支
@@ -298,5 +426,20 @@ const badgeText = computed( => {
  {{ techPlan.split('\n')[0] || '（无方案文本）' }}
  </div>
  </template>
+ <!-- Phase：追加态 Dialog -->
+ <Dialog v-model:open="dialogOpen">
+ <DialogContent class="max-w-2xl">
+ <DialogHeader>
+ <DialogTitle>对新仓库追加编码</DialogTitle>
+ <DialogDescription>
+ 选择尚未加入的仓库；已有进行中编码的仓库将被禁用。
+ </DialogDescription>
+ </DialogHeader>
+ <RepoMultiSelector:repositories="availableRepositories":model-value="dialogSelectedIds":disabled-ids="existingActiveRepoIds":recommended-ids="recommendedRepositoryIds":submitting="repoMultiSelectorState.submitting"
+ @update:model-value="(v: string) => dialogSelectedIds = v"
+ @confirm="handleMultiConfirm"
+ />
+ </DialogContent>
+ </Dialog>
  </div>
 </template>
