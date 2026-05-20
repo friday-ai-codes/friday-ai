@@ -4,6 +4,7 @@ from .views import (
  ChatCompletionsView,
  ChatInterruptView,
  ChatStreamView,
+ ClarificationAnswerView,
  CodingPlanDetailView,
  CodingPlanListView,
  CodingPlanSessionsBatchCreateView,
@@ -150,5 +151,11 @@ urlpatterns = [
  "routing-traces/<uuid:trace_id>/override/",
  RoutingTraceManualOverrideView.as_view,
  name="routing-trace-manual-override",
+ ),
+ # Phase：协商答复 endpoint
+ path(
+ "clarifications/<str:clarification_id>/answer/",
+ ClarificationAnswerView.as_view,
+ name="chat-clarification-answer",
  ),
 ]

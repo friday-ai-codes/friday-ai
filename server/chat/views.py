@@ -27,6 +27,7 @@ from .permissions import ChatAuthPermission
 from .serializers import (
  ChatCompletionRequestSerializer,
  ChatCompletionResponseSerializer,
+ ClarificationAnswerSerializer,
  CodingPlanSerializer,
  CodingSessionsBatchCreateRequestSerializer,
  CodingSessionsBatchCreateResponseSerializer,
@@ -1712,4 +1713,152 @@ class RoutingTraceManualOverrideView(APIView):
  "triggered_by": new_trace.triggered_by,
  },
  status=status.HTTP_201_CREATED,
+ )
+# ============================================================================
+# Phase / /：协商答复 endpoint
+# ============================================================================
+class ClarificationAnswerView(APIView):
+ """POST /api/chat/clarifications/<str:clarification_id>/answer/
+ 用户对 ``ask_clarification`` 卡片提交答复后调用本 endpoint。endpoint 完成：
+ 1. 校验 trace 归属（跨用户访问返 404 隐藏存在性）；
+ 2. 落 ``ConversationIntentTrace``（ 写入点）—— ``answered_at`` /
+ ``selected_option_id`` / ``freeform_answer`` / ``inferred_state`` 一次性
+ update；
+ 3. 把用户答复作为新的 ``Message(role=user)`` 落库，``metadata`` 携带
+ ``clarification_id`` / ``selected_option_id`` / ``kind=clarification_answer``；
+ 4. 后台 ``graph.ainvoke(Command(resume=...))`` 唤醒 chat_graph 让 LLM 看到
+ 用户答复继续推理（前端通过现有 runtime polling / SSE 拿后续输出）。
+ 设计约束（与 ``CodingSessionConfirmView`` 一致）：
+ - 同一对话的并发 answer 通过 ``ConversationIntentTrace.clarification_id``
+ unique 索引 + ``answered_at`` 判断幂等：已答 → 409 + 返回原答复。
+ - resume 后台 task 走 ``_BACKGROUND_TASKS`` 强引用，防止 asyncio GC 中止。
+ """
+ authentication_classes = [OptionalJWTAuthentication]
+ permission_classes = [IsAuthenticated]
+ async def post(self, request, clarification_id): # type: ignore[override,no-untyped-def]
+ from chat.models import ConversationIntentTrace, Message
+ ser = ClarificationAnswerSerializer(data=request.data)
+ ser.is_valid(raise_exception=True)
+ data = ser.validated_data
+ selected_id = (data.get("selected_option_id") or "").strip
+ freeform = (data.get("freeform_text") or "").strip
+ try:
+ trace = await ConversationIntentTrace.objects.select_related(
+ "conversation", "conversation__project",
+ ).aget(clarification_id=clarification_id)
+ except ConversationIntentTrace.DoesNotExist:
+ return Response(
+ {"detail": "clarification 不存在或已过期"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 用户归属校验：跨 project 访问 → 404 隐藏存在性（与 routing-trace
+ # override 同模式）；trace.conversation.project.owner 是单 owner，
+ # 后续团队权限走 PermissionService.has_project_access 兜底。
+ user = request.user
+ if not getattr(user, "is_superuser", False):
+ from permissions.services import PermissionService
+ allowed = await sync_to_async(PermissionService.has_project_access)(
+ user, trace.conversation.project, "member",
+ )
+ if not allowed:
+ logger.warning(
+ "clarification_answer_denied_cross_project",
+ user_id=str(getattr(user, "id", "")),
+ clarification_id=clarification_id,
+ )
+ return Response(
+ {"detail": "clarification 不存在或已过期"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ # 幂等：已答 → 409 + 返回原答复（防止前端重复提交导致重复 resume）
+ if trace.answered_at is not None:
+ return Response(
+ {
+ "detail": "该 clarification 已被答复",
+ "clarification_id": clarification_id,
+ "selected_option_id": trace.selected_option_id,
+ "freeform_text": trace.freeform_answer,
+ "answered_at": trace.answered_at.isoformat,
+ },
+ status=status.HTTP_409_CONFLICT,
+ )
+ # 提取 selected_option.implies → inferred_state
+ implies: dict[str, Any] = {}
+ selected_label = ""
+ if selected_id:
+ for opt in (trace.options or ):
+ if not isinstance(opt, dict):
+ continue
+ if str(opt.get("id", "")) == selected_id:
+ raw_implies = opt.get("implies") or {}
+ if isinstance(raw_implies, dict):
+ implies = dict(raw_implies)
+ selected_label = str(opt.get("label", "") or "")
+ break
+ now = timezone.now
+ await ConversationIntentTrace.objects.filter(pk=trace.pk).aupdate(
+ selected_option_id=selected_id,
+ freeform_answer=freeform,
+ inferred_state=implies,
+ answered_at=now,
+ )
+ # 把用户答复落 Message 表 —— 这条 user message 作为下一轮 LLM 输入由
+ # wait_clarification_node 的 user_message 字段覆盖；前端在 hydrate
+ # 阶段也能看到这条「我选了 X」的对话气泡。
+ reply_content = freeform or selected_label or "（已确认）"
+ await Message.objects.acreate(
+ conversation=trace.conversation,
+ role=Message.Role.USER,
+ content=reply_content,
+ metadata={
+ "kind": "clarification_answer",
+ "clarification_id": clarification_id,
+ "selected_option_id": selected_id,
+ },
+ )
+ # 后台 resume graph：与 CodingSessionConfirmView 同模式（asyncio 后台
+ # task + _BACKGROUND_TASKS 强引用），endpoint 不阻塞 SSE 等待。
+ from langgraph.types import Command
+ from orchestration.graph import get_compiled_graph
+ thread_id = str(trace.conversation_id)
+ resume_payload = {
+ "clarification_id": clarification_id,
+ "selected_option_id": selected_id or None,
+ "selected_option_label": selected_label or None,
+ "freeform_text": freeform or None,
+ "implies": implies,
+ }
+ async def _resume_graph -> None:
+ try:
+ graph = await get_compiled_graph
+ await graph.ainvoke(
+ Command(resume=resume_payload),
+ config={"configurable": {"thread_id": thread_id}},
+ )
+ except Exception:
+ logger.exception(
+ "clarification_answer_resume_failed",
+ clarification_id=clarification_id,
+ thread_id=thread_id,
+ )
+ task = asyncio.create_task(_resume_graph)
+ _BACKGROUND_TASKS.add(task)
+ task.add_done_callback(_BACKGROUND_TASKS.discard)
+ logger.info(
+ "clarification_answer_recorded",
+ clarification_id=clarification_id,
+ conversation_id=thread_id,
+ selected_option_id=selected_id,
+ has_freeform=bool(freeform),
+ implies_keys=sorted(implies.keys),
+ )
+ return Response(
+ {
+ "clarification_id": clarification_id,
+ "selected_option_id": selected_id,
+ "freeform_text": freeform,
+ "answered_at": now.isoformat,
+ "inferred_state": implies,
+ },
+ status=status.HTTP_200_OK,
  )

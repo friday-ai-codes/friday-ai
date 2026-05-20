@@ -404,3 +404,33 @@ class RoutingTraceManualOverrideSerializer(serializers.Serializer):
  min_length=1,
  help_text="每条只需 {repository_id, selected}；其它字段被忽略",
  )
+# ============================================================================
+# Phase /：协商答复 endpoint
+# ============================================================================
+class ClarificationAnswerSerializer(serializers.Serializer):
+ """``POST /api/chat/clarifications/<id>/answer/`` 请求体。
+ 用户必须至少提供 ``selected_option_id`` 或 ``freeform_text`` 之一。
+ `selected_option_id` 必须能在 trace.options 里找到（视图层校验）。
+ """
+ selected_option_id = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ max_length=64,
+ default="",
+ help_text="用户选中的 ClarificationOption.id；可空仅用 freeform 时传 \"\"",
+ )
+ freeform_text = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ max_length=2000,
+ default="",
+ help_text="用户自由输入兜底；可空仅用 selected_option_id 时传 \"\"",
+ )
+ def validate(self, attrs: dict) -> dict:
+ selected = (attrs.get("selected_option_id") or "").strip
+ freeform = (attrs.get("freeform_text") or "").strip
+ if not selected and not freeform:
+ raise serializers.ValidationError(
+ "必须至少提供 selected_option_id 或 freeform_text 之一"
+ )
+ return attrs
