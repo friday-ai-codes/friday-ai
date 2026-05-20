@@ -63,6 +63,7 @@ declare module 'vue' {
  ChatToolCall: typeof import('./components/chat/ChatToolCall.vue')['default']
  ChatWelcome: typeof import('./components/chat/ChatWelcome.vue')['default']
  Checkbox: typeof import('./components/ui/checkbox/Checkbox.vue')['default']
+ ClarificationCard: typeof import('./components/chat/ClarificationCard.vue')['default']
  ClaudeTestDialog: typeof import('./components/ClaudeTestDialog.vue')['default']
  CleanupDialog: typeof import('./components/chat/CleanupDialog.vue')['default']
  CodePreviewDrawer: typeof import('./components/codegraph/CodePreviewDrawer.vue')['default']
