@@ -48,6 +48,15 @@ async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
  session_id = await dispatch_coding_task(
  coding_session, task_type="coding", prompt=prompt,
  )
+ # Phase: 推进 CodingSession 状态 confirmed -> running。
+ # 必须放在这里（dispatch_coding_node 内部）而非 view，因为 wait_coding_complete_node
+ # resume 时会调 amark_awaiting_confirmation，该方法要求 status == RUNNING 前置。
+ # 注意：dispatch_coding_task 返回的是 SubAgentSession.session_id（字符串），
+ # 不是 FK int；但 dispatch_coding_task 内部已经在 `coding_session` 实例上
+ # 设过 subagent_session_id 并 asave，因此这里直接读 FK 即可。
+ await coding_session.amark_running(
+ subagent_session_id=coding_session.subagent_session_id,
+ )
  logger.info(
  "coding_graph_dispatch_coding",
  coding_session_id=state["coding_session_id"],
