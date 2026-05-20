@@ -18,6 +18,7 @@ import type { CodingPlanRuntime, RepoSelectableItem } from '~/types/chat'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
 import CodingSessionStatusRow from '~/components/chat/CodingSessionStatusRow.vue'
+import ExportConfirmDialog from '~/components/chat/ExportConfirmDialog.vue'
 import RepoMultiSelector from '~/components/chat/RepoMultiSelector.vue'
 import { Badge } from '~/components/ui/badge'
 import { Button } from '~/components/ui/button'
@@ -118,6 +119,24 @@ async function handleMultiConfirm(repoIds: string) {
  finally {
  chatStore.closeRepoMultiSelector
  }
+}
+// ---------------------------------------------------------------------------
+// Phase：导出到飞书三态按钮
+// ---------------------------------------------------------------------------
+const showExportDialog = ref(false)
+/** 已导出的飞书文档 URL（来自 store CodingPlanRuntime / patch；空串视为未导出）。 */
+const feishuDocUrl = computed<string>(
+ => codingPlanRuntime.value?.feishu_doc_url || '',
+)
+function triggerExport {
+ if (!props.codingPlanId)
+ return
+ showExportDialog.value = true
+}
+function openFeishu {
+ if (!feishuDocUrl.value)
+ return
+ window.open(feishuDocUrl.value, '_blank', 'noopener,noreferrer')
 }
 async function handleSessionRowRetry(rowSessionId: string) {
  const session = sessions.value.find(s => s.session_id === rowSessionId)
@@ -280,6 +299,39 @@ const badgeText = computed( => {
  </div>
  </div>
  </div>
+ <!-- Phase：导出到飞书三态按钮 -->
+ <div v-if="codingPlanId" class="px-4 pb-3 pt-1 flex items-center gap-2">
+ <Button
+ v-if="!feishuDocUrl"
+ variant="outline"
+ size="sm"
+ class="text-xs"
+ @click="triggerExport"
+ >
+ <span class="icon-[lucide--file-up] mr-1" />
+ 导出到飞书
+ </Button>
+ <template v-else>
+ <Button
+ variant="outline"
+ size="sm"
+ class="text-xs"
+ @click="openFeishu"
+ >
+ <span class="icon-[lucide--external-link] mr-1" />
+ 在飞书打开
+ </Button>
+ <Button
+ variant="ghost"
+ size="icon"
+ aria-label="重新导出"
+ class=" w-7"
+ @click="triggerExport"
+ >
+ <span class="icon-[lucide--refresh-cw] text-sm" />
+ </Button>
+ </template>
+ </div>
  <!-- Phase /：已加入的仓库 sessions 列表 -->
  <div v-if="hasSessions" class="px-4 pb-3 pt-2 space-y-1">
  <div class="flex items-center justify-between">
@@ -441,5 +493,11 @@ const badgeText = computed( => {
  />
  </DialogContent>
  </Dialog>
+ <!-- Phase：导出技术方案到飞书 -->
+ <ExportConfirmDialog
+ v-if="codingPlanId":open="showExportDialog":default-title="title || codingPlanRuntime?.title || '编码方案'"
+ mode="coding_plan":coding-plan-id="codingPlanId"
+ @update:open="(v: boolean) => showExportDialog = v"
+ />
  </div>
 </template>
