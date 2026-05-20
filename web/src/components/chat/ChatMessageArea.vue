@@ -6,6 +6,7 @@ import { usePermission } from '~/composables/usePermission'
 import ChatMessageBubble from './ChatMessageBubble.vue'
 import ChatStatusBar from './ChatStatusBar.vue'
 import ChatWelcome from './ChatWelcome.vue'
+import ClarificationCard from './ClarificationCard.vue'
 import CleanupDialog from './CleanupDialog.vue'
 import CodingErrorCard from './CodingErrorCard.vue'
 import CodingProgressCard from './CodingProgressCard.vue'
@@ -250,6 +251,10 @@ function handleExportSuccess(
  content: '',
  created_at: new Date.toISOString,
  }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs":streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
+ />
+ <!-- Phase：协商卡片（pending + answered 两态都保留） -->
+ <ClarificationCard
+ v-for="payload in chatStore.pendingClarifications.values":key="payload.clarification_id":payload="payload"
  />
  <!-- 编码进度卡片 (per: inline 嵌入消息流) -->
  <CodingProgressCard
