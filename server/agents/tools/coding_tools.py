@@ -138,6 +138,41 @@ async def create_coding_plan(
  affected_files=normalized_files,
  title="",
  )
+ # Phase：(coding_plan, repository) 部分唯一约束限制
+ # 同时只能 1 个 active session。LLM 重复调用同 plan + 同 repo 时返回既有
+ # active session（真正幂等），避免 IntegrityError 噪声。
+ active_statuses = [
+ CodingSession.Status.DRAFT,
+ CodingSession.Status.CONFIRMED,
+ CodingSession.Status.RUNNING,
+ CodingSession.Status.AWAITING_CONFIRMATION,
+ ]
+ existing_active = await CodingSession.objects.filter(
+ coding_plan=plan,
+ repository=repo,
+ status__in=active_statuses,
+ ).afirst
+ if existing_active is not None:
+ logger.info(
+ "create_coding_plan_returning_existing_active",
+ coding_plan_id=str(plan.id),
+ coding_session_id=str(existing_active.id),
+ repository_id=repository_id,
+ )
+ return ToolResult(
+ success=True,
+ output={
+ "coding_plan_id": str(plan.id),
+ "coding_session_id": str(existing_active.id),
+ "session_id": str(existing_active.id),
+ "status": existing_active.status,
+ "branch_name": existing_active.branch_name,
+ "message": (
+ f"已存在进行中的编码会话，plan_id={plan.id}、"
+ f"session_id={existing_active.id}。"
+ ),
+ },
+ )
  session = await CodingSession.objects.acreate(
  conversation=conversation,
  coding_plan=plan,

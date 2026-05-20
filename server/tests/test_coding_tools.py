@@ -1,6 +1,7 @@
 """coding_tools 单元测试 — create_coding_plan / update_coding_plan @tool。"""
 import uuid
 import pytest
+from asgiref.sync import sync_to_async
 from chat.models import CodingSession, Conversation
 from repositories.models import Repository
 @pytest.fixture
@@ -234,7 +235,11 @@ class TestPhaseCodingPlanIntegration:
  async def test_create_coding_plan_dedupes_same_tech_plan_in_same_conversation(
  self, project, repository, conversation
  ):
- """同一 conversation 内连续两次相同 tech_plan：plan_id 相同，session_id 不同。"""
+ """同一 conversation 内连续两次相同 (plan, repo)：plan_id 相同，session_id 也相同。
+ Phase：(coding_plan, repository) 部分唯一约束限制同时只能
+ 1 个 active session。create_coding_plan 检测到既有 active session
+ 时返回同一 session（真正幂等），不再创建新的 draft。
+ """
  from agents.tools.coding_tools import create_coding_plan
  kwargs = dict(
  space_id=str(project.id),
@@ -247,7 +252,8 @@ class TestPhaseCodingPlanIntegration:
  second = await create_coding_plan(**kwargs)
  assert first.success and second.success
  assert first.output["coding_plan_id"] == second.output["coding_plan_id"]
- assert first.output["coding_session_id"] != second.output["coding_session_id"]
+ # Phase：同 (plan, repo) → 幂等返回同 session_id
+ assert first.output["coding_session_id"] == second.output["coding_session_id"]
  @pytest.mark.asyncio
  async def test_update_coding_plan_by_plan_id(
  self, project, repository, conversation
@@ -314,9 +320,22 @@ class TestPhaseCodingPlanIntegration:
  async def test_update_coding_plan_does_not_touch_running_sessions(
  self, project, repository, conversation
  ):
- """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。"""
+ """plan 关联 1 draft + 1 running 时，update 只同步 draft，不污染 running。
+ Phase：(coding_plan, repository) 部分唯一约束限制同时只能
+ 1 个 active session；本用例通过创建第二个 Repository 模拟多仓 fan-out
+ 让 draft 与 running 落在不同 repo 上，规避 unique_active_plan_repo。
+ """
  from agents.tools.coding_tools import create_coding_plan, update_coding_plan
  from chat.models import CodingPlan, CodingSession
+ from repositories.models import Repository
+ # 第二个仓库（fan-out 模拟）
+ repository_b = await sync_to_async(Repository.objects.create)(
+ name="Test Repo B",
+ git_url="https://gitlab.com/test/repo-b.git",
+ git_platform="gitlab",
+ default_branch="main",
+ )
+ await sync_to_async(project.repositories.add)(repository_b)
  created = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
@@ -327,10 +346,10 @@ class TestPhaseCodingPlanIntegration:
  plan_id = created.output["coding_plan_id"]
  draft_session_id = created.output["coding_session_id"]
  plan = await CodingPlan.objects.aget(id=plan_id)
- # 手工再造一个 running 关联 session（模拟多仓 fan-out）
+ # 在第二个仓库上手工造一个 running session（模拟多仓 fan-out）
  running_session = await CodingSession.objects.acreate(
  conversation=conversation,
- repository=repository,
+ repository=repository_b,
  coding_plan=plan,
  tech_plan="## 同方案 fan-out",
  affected_files=[{"file_path": "a.py", "change_type": "modify"}],

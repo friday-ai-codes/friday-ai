@@ -50,12 +50,25 @@ class Command(BaseCommand):
  async def _ahandle(self, *, dry_run: bool, report_path: str) -> None:
  from chat.models import CodingPlan, CodingSession
  logger.info("migrate_coding_sessions_started", dry_run=dry_run)
+ # Phase：partial unique constraint unique_active_plan_repo
+ # 限制 (coding_plan, repository) 上同时只有 1 个 active session。
+ # 历史数据中同一 conversation+repo 可能存在多个 draft session（迁移命令
+ # 之前没有 plan FK 不受限制），此处按 (plan_id_sim, repo_id) 维护一个
+ # active 占用集合，遇冲突跳过并归入新 stats key "conflicted"。
+ active_statuses = {
+ CodingSession.Status.DRAFT,
+ CodingSession.Status.CONFIRMED,
+ CodingSession.Status.RUNNING,
+ CodingSession.Status.AWAITING_CONFIRMATION,
+ }
+ active_taken: set[tuple[str, str]] = set
  stats: dict[str, int] = {
  "total": 0,
  "created": 0,
  "linked": 0,
  "skipped": 0,
  "placeholder": 0,
+ "conflicted": 0,
  }
  report: list[dict[str, str]] =
  # dry-run 与正式执行共享一套分类逻辑：
@@ -116,8 +129,32 @@ class Command(BaseCommand):
  stats["created"] += 1
  placeholder_cache[conversation_id] = plan
  plan = placeholder_cache[conversation_id]
+ # Phase：检查 (plan, repo) 是否已被 active session 占用
+ taken_key = (str(plan.id), str(session.repository_id))
+ if (
+ session.status in active_statuses
+ and taken_key in active_taken
+ ):
+ stats["conflicted"] += 1
+ report.append(
+ {
+ "session_id": session_id_str,
+ "plan_id": str(plan.id),
+ "action": "conflicted",
+ }
+ )
+ logger.warning(
+ "coding_session_conflict_skipped",
+ session_id=session_id_str,
+ plan_id=str(plan.id),
+ repository_id=str(session.repository_id),
+ reason="unique_active_plan_repo",
+ )
+ continue
  session.coding_plan = plan
  await session.asave(update_fields=["coding_plan", "updated_at"])
+ if session.status in active_statuses:
+ active_taken.add(taken_key)
  stats["placeholder"] += 1
  report.append(
  {
@@ -156,8 +193,32 @@ class Command(BaseCommand):
  )
  if created:
  stats["created"] += 1
+ # Phase：检查 (plan, repo) active 占用
+ taken_key = (str(plan.id), str(session.repository_id))
+ if (
+ session.status in active_statuses
+ and taken_key in active_taken
+ ):
+ stats["conflicted"] += 1
+ report.append(
+ {
+ "session_id": session_id_str,
+ "plan_id": str(plan.id),
+ "action": "conflicted",
+ }
+ )
+ logger.warning(
+ "coding_session_conflict_skipped",
+ session_id=session_id_str,
+ plan_id=str(plan.id),
+ repository_id=str(session.repository_id),
+ reason="unique_active_plan_repo",
+ )
+ continue
  session.coding_plan = plan
  await session.asave(update_fields=["coding_plan", "updated_at"])
+ if session.status in active_statuses:
+ active_taken.add(taken_key)
  stats["linked"] += 1
  report.append(
  {
@@ -179,6 +240,7 @@ class Command(BaseCommand):
  f"已链接 CodingSession: {stats['linked']}",
  f"占位方案 CodingSession: {stats['placeholder']}",
  f"跳过 (已 linked): {stats['skipped']}",
+ f"跳过 (unique_active_plan_repo 冲突): {stats['conflicted']}",
  ]
  if dry_run:
  summary_lines.insert(0, "[dry-run] 未写入 DB")
