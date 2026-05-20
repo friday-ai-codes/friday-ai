@@ -432,3 +432,86 @@ class CodingSession(models.Model):
  await self.asave(
  update_fields=["tech_plan", "affected_files", "revision_count", "updated_at"]
  )
+class RepositoryRoutingTrace(models.Model):
+ """跨仓相关性路由决策的可审计落地表（Phase）。
+ 三个写入来源（triggered_by 枚举）：
+ - ``chat_tool``： 工具 ``analyze_repository_relevance`` 调用即时写入。
+ - ``deep_analysis_completion``： deep_analysis 容器完成回报时写入。
+ - ``manual_override``： 用户在 RoutingDecisionPanel 改勾选时写**新行**
+ —— 不修改原 trace，保留 AI 决策 vs 用户最终决策的对照样本。
+ ``candidates`` JSON 元素 schema：
+ {
+ "repository_id": str,
+ "repository_name": str,
+ "score": float,
+ "level": "high" | "medium" | "low",
+ "evidence": str,
+ "selected_by_ai": bool,
+ "selected_by_user_final": bool,
+ }
+ 其中 ``selected_by_ai`` 在 trace 创建时按阈值固定，``selected_by_user_final``
+ 初次写入与 ``selected_by_ai`` 同值；被 manual_override trace 覆盖时单独写
+ 一行新 trace 而非改原行。
+ """
+ class TriggeredBy(models.TextChoices):
+ CHAT_TOOL = "chat_tool", "Chat 工具调用"
+ DEEP_ANALYSIS_COMPLETION = "deep_analysis_completion", "深度分析完成"
+ MANUAL_OVERRIDE = "manual_override", "用户手动微调"
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ agent_session = models.ForeignKey(
+ "agents.AgentSession",
+ on_delete=models.CASCADE,
+ null=True,
+ blank=True,
+ related_name="routing_traces",
+ help_text=(
+ "关联 deep_analysis AgentSession；chat_tool / manual_override "
+ "路径为 None"
+ ),
+ )
+ conversation = models.ForeignKey(
+ "chat.Conversation",
+ on_delete=models.CASCADE,
+ related_name="routing_traces",
+ )
+ query = models.TextField(help_text="触发本次路由的用户 query")
+ candidates = models.JSONField(
+ default=list,
+ help_text=(
+ "[{repository_id, repository_name, score, level, evidence, "
+ "selected_by_ai, selected_by_user_final}]"
+ ),
+ )
+ threshold = models.FloatField(
+ default=0.5,
+ help_text="本次决策用的截断阈值（≥ 阈值自动 selected_by_ai=True）",
+ )
+ triggered_by = models.CharField(
+ max_length=32,
+ choices=TriggeredBy.choices,
+ )
+ created_at = models.DateTimeField(auto_now_add=True)
+ class Meta:
+ db_table = "repository_routing_traces"
+ verbose_name = "跨仓路由决策 trace"
+ verbose_name_plural = "跨仓路由决策 traces"
+ ordering = ["-created_at"]
+ indexes = [
+ models.Index(
+ fields=["conversation", "-created_at"],
+ name="routing_trace_conv_idx",
+ ),
+ models.Index(
+ fields=["agent_session"],
+ name="routing_trace_session_idx",
+ ),
+ models.Index(
+ fields=["triggered_by", "created_at"],
+ name="routing_trace_trigger_idx",
+ ),
+ ]
+ def __str__(self) -> str:
+ return (
+ f"RoutingTrace({self.id}, triggered_by={self.triggered_by}, "
+ f"candidates={len(self.candidates) if isinstance(self.candidates, list) else 0})"
+ )
