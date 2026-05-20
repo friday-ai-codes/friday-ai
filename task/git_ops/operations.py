@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import quote
 import structlog
-from git import Actor, Repo
+from git import Actor, PushInfo, Repo
 from git.exc import GitCommandError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from core.config import TaskConfig
@@ -204,8 +204,29 @@ class GitOperations:
  except GitCommandError as e:
  logger.error("Failed to commit changes", error=str(e))
  raise
+ # 错误标志位掩码：GitPython 的 ``PushInfo.flags`` 是位字段，
+ # 任何一位被置位都代表 push 被远端拒绝或失败。
+ _PUSH_ERROR_MASK = (
+ PushInfo.ERROR
+ | PushInfo.REJECTED
+ | PushInfo.REMOTE_REJECTED
+ | PushInfo.REMOTE_FAILURE
+ )
  async def push_branch(self, branch_name: str) -> None:
- """Push branch to remote."""
+ """Push branch to remote.
+ 历史 bug（v18.1 Phase 多次容器跑完后代码丢失的真凶）：原实现只 try
+ ``origin.push(...)`` 加 ``except GitCommandError``。**GitPython 的
+ ``origin.push`` 不会因为 push 被远端拒绝而抛 ``GitCommandError``** —
+ 它返回 ``list[PushInfo]``，错误以位掩码形式存在 ``info.flags``（
+ ``ERROR`` / ``REJECTED`` / ``REMOTE_REJECTED`` / ``REMOTE_FAILURE``）。
+ 漏掉这一步显式检查的结果：push 实际失败（token 失效 / hook 拒绝 /
+ forbidden 推送保护分支等）也会被当成成功，``logger.info("Pushed branch")``
+ 正常输出，上层 ``push_branch_with_retry`` 也不会重试，``_run_execute_mode``
+ 继续往下走调 ``report_push_complete`` / ``report_completed`` 全链路误报
+ success；容器关闭后本地 commit 全部丢失，GitLab 上完全没有任何分支或
+ commit 的痕迹。改为读取 ``PushInfo.flags`` 把错误位翻成 ``GitCommandError``
+ 让上层 retry 机制和异常处理路径正常工作。
+ """
  self._check_explore_guard("push_branch")
  if not self.repo:
  if not self.workspace:
@@ -213,11 +234,32 @@ class GitOperations:
  self.repo = Repo(self.workspace)
  try:
  origin = self.repo.remotes.origin
- origin.push(branch_name, set_upstream=True)
- logger.info("Pushed branch", branch=branch_name)
+ push_infos = origin.push(branch_name, set_upstream=True)
  except GitCommandError as e:
  logger.error("Failed to push branch", error=str(e))
  raise
+ # 显式校验 PushInfo.flags —— GitPython 的契约要求 caller 自己检查。
+ failures = [pi for pi in push_infos if pi.flags & self._PUSH_ERROR_MASK]
+ if failures:
+ summary = "; ".join(
+ f"flags={pi.flags} summary={(pi.summary or '').strip!r}"
+ for pi in failures
+ )
+ logger.error(
+ "Branch push rejected by remote",
+ branch=branch_name,
+ failures=summary,
+ )
+ raise GitCommandError(
+ ["git", "push", "origin", branch_name],
+ 128,
+ stderr=summary.encode("utf-8"),
+ )
+ logger.info(
+ "Pushed branch",
+ branch=branch_name,
+ pushes=[(pi.summary or "").strip for pi in push_infos],
+ )
  @retry(
  stop=stop_after_attempt(3),
  wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -281,6 +323,15 @@ class GitOperations:
  task_id: Task ID for placeholder substitution
  Returns:
  The actual branch name created/checked out
+ 历史 bug（v18.1 Phase 之后暴露）：原实现末尾强制对所有分支名拼
+ ``friday/`` 前缀（"Normalize: ensure friday/ prefix if not present"），
+ 是早期 Friday 还在用 ``friday/task-{task_id}`` 唯一命名时的兜底。Phase 引入模板分支名（``feat20260519.xxx`` / ``fix20260519.xxx``）后，
+ server 端通过 ``FRIDAY_TASK_BRANCH_STRATEGY`` 把模板名传进容器，但
+ Runner 这里把 ``fix20260519.study-app-page-apps-favorites`` 静默改成
+ ``friday/fix20260519.study-app-page-apps-favorites`` —— 跟 server 端
+ 校验/记录的分支名完全不一致，GitLab 上的分支名也错位。改为严格尊重
+ 显式传入的 ``branch_strategy`` 字面值，仅在 caller 不传时落到
+ ``friday/task-{task_id}`` 默认值。
  """
  self._check_explore_guard("setup_task_branch")
  if not self.repo:
@@ -290,9 +341,6 @@ class GitOperations:
  branch_name = branch_strategy.replace("{task_id}", task_id)
  else:
  branch_name = f"friday/task-{task_id}"
- # Normalize: ensure friday/ prefix if not present
- if not branch_name.startswith("friday/"):
- branch_name = f"friday/{branch_name}"
  # Check if branch exists remotely
  try:
  self.repo.git.fetch("origin", branch_name)
