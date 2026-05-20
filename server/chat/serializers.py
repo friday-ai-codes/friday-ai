@@ -368,6 +368,25 @@ class ExportToFeishuSerializer(serializers.Serializer):
  default="",
  help_text="目标文件夹 token（可选，覆盖项目配置）",
  )
+class ExportCodingPlanToFeishuSerializer(serializers.Serializer):
+ """导出 CodingPlan 到飞书文档（Phase / ）。
+ 与 ``ExportToFeishuSerializer`` 区别：标题与 folder_token 全部可选，
+ 缺省时由 view 层回退到 ``coding_plan.title`` / ``project.feishu_doc_folder_token``。
+ """
+ folder_token = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ max_length=200,
+ help_text="目标飞书文件夹 token（可选，覆盖项目配置）",
+ )
+ title = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ max_length=200,
+ help_text="飞书文档标题（可选，默认使用 CodingPlan.title）",
+ )
 # ============================================================================
 # Phase：路由决策手动微调（manual_override）
 # ============================================================================
