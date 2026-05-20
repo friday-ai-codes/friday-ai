@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ConversationMessage, ExportToFeishuResponse } from '~/types/chat'
+import type { ConversationMessage, ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { usePermission } from '~/composables/usePermission'
@@ -175,8 +175,20 @@ const exportResults = computed<FeishuExportHistoryItem>( => {
  }
  return [...deduped.values].sort((a, b) => a.exportedAt.localeCompare(b.exportedAt))
 })
-/** 导出成功回调 (per ) */
-function handleExportSuccess(result: ExportToFeishuResponse) {
+/** 导出成功回调 (per )。
+ *
+ * Phase：ExportConfirmDialog 的 success payload 升级为联合
+ * 类型；这里只处理 conversation 模式（含 document_id / url），coding_plan
+ * 模式没有 message metadata 需要回写，直接 noop。
+ */
+function handleExportSuccess(
+ result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse,
+) {
+ if (!('document_id' in result)) {
+ // coding_plan 模式：store 内已 patch CodingPlanRuntime，无需 message metadata 副作用
+ chatStore.exitExportSelectMode
+ return
+ }
  const exportedAt = result.exported_at || new Date.toISOString
  const target = [...chatStore.messages]
  .filter(msg => exportSelectedIds.value.includes(msg.id) && msg.role === 'assistant')
