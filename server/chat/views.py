@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from agents.core.events import ERROR, KEEPALIVE, AgentEvent
 from chat.coding_session_service import check_runner_online
+from feishu.coding_plan_exporter import export_coding_plan_to_feishu
 from orchestration.checkpointer import get_checkpointer
 from orchestration.coding_graph import build_coding_graph
 from projects.models import Project
@@ -36,6 +37,7 @@ from .serializers import (
  ConversationPatchSerializer,
  ConversationRuntimeSerializer,
  CreateConversationSerializer,
+ ExportCodingPlanToFeishuSerializer,
  ExportToFeishuSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
@@ -1074,6 +1076,80 @@ class ExportToFeishuView(APIView):
  return Response(
  {"error": f"导出失败: {exc}", "error_type": "api_error"},
  status=status.HTTP_502_BAD_GATEWAY,
+ )
+# ============================================================================
+# Export CodingPlan to Feishu (Phase / )
+# ============================================================================
+class ExportCodingPlanToFeishuView(APIView):
+ """导出 CodingPlan 到飞书文档（用户从 TechPlanCard 触发）。
+ 与 ``ExportToFeishuView`` 同模式（认证 / 异常映射），数据源换成
+ ``CodingPlan`` + 关联 sessions；具体 markdown 拼接与飞书 API 调用
+ 委托给 ``feishu.coding_plan_exporter.export_coding_plan_to_feishu``。
+ """
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ async def post(self, request, coding_plan_id): # type: ignore[override]
+ from services.feishu_doc import FeishuDocAPIError, PermissionDeniedError
+ from .models import CodingPlan
+ serializer = ExportCodingPlanToFeishuSerializer(data=request.data or {})
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ try:
+ coding_plan = await CodingPlan.objects.select_related(
+ "conversation__project"
+ ).aget(id=coding_plan_id)
+ except CodingPlan.DoesNotExist:
+ return Response(
+ {"error": "方案不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ project = coding_plan.conversation.project
+ title = serializer.validated_data.get("title") or None
+ folder_token = (
+ serializer.validated_data.get("folder_token")
+ or project.feishu_doc_folder_token
+ )
+ if not folder_token:
+ return Response(
+ {"error": "未配置导出文件夹", "error_type": "not_configured"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ result = await export_coding_plan_to_feishu(
+ coding_plan=coding_plan,
+ folder_token=folder_token,
+ title=title,
+ )
+ except ValueError as exc:
+ return Response(
+ {"error": str(exc), "error_type": "not_configured"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ except PermissionDeniedError:
+ return Response(
+ {
+ "error": "飞书应用无该文件夹的写入权限",
+ "error_type": "permission_denied",
+ },
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ except FeishuDocAPIError as exc:
+ logger.warning(
+ "coding_plan_feishu_export_failed",
+ error=str(exc),
+ coding_plan_id=str(coding_plan_id),
+ )
+ return Response(
+ {"error": f"导出失败: {exc}", "error_type": "api_error"},
+ status=status.HTTP_502_BAD_GATEWAY,
+ )
+ return Response(
+ {
+ "doc_token": result["doc_token"],
+ "doc_url": result["doc_url"],
+ "title": title or coding_plan.title,
+ "exported_at": timezone.now.isoformat,
+ }
  )
 # ============================================================================
 # CodingSession Views (Phase)

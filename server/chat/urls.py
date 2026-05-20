@@ -18,6 +18,7 @@ from .views import (
  ConversationPreflightView,
  ConversationRuntimeView,
  DiffSummaryView,
+ ExportCodingPlanToFeishuView,
  ExportToFeishuView,
  ModelsView,
  PRConfirmView,
@@ -137,6 +138,12 @@ urlpatterns = [
  "coding-plans/<uuid:plan_id>/sessions/",
  CodingPlanSessionsBatchCreateView.as_view,
  name="coding-plan-sessions-batch",
+ ),
+ # Phase：导出 CodingPlan 到飞书文档
+ path(
+ "coding-plans/<uuid:coding_plan_id>/export-to-feishu/",
+ ExportCodingPlanToFeishuView.as_view,
+ name="coding-plan-export-to-feishu",
  ),
  # Phase：路由决策手动微调
  path(
