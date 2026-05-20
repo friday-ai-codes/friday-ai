@@ -310,6 +310,7 @@ declare module 'vue' {
  TabsContent: typeof import('./components/ui/tabs/TabsContent.vue')['default']
  TabsList: typeof import('./components/ui/tabs/TabsList.vue')['default']
  TabsTrigger: typeof import('./components/ui/tabs/TabsTrigger.vue')['default']
+ TechPlanCard: typeof import('./components/chat/TechPlanCard.vue')['default']
  Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
  TimeRangeSelector: typeof import('./components/analytics/TimeRangeSelector.vue')['default']
  Toggle: typeof import('./components/ui/toggle/Toggle.vue')['default']

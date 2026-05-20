@@ -3,8 +3,8 @@ import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
 import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
-import CodingPlanCard from './CodingPlanCard.vue'
 import DocSummaryCard from './DocSummaryCard.vue'
+import TechPlanCard from './TechPlanCard.vue'
 const props = defineProps<{
  message: ConversationMessage
  isStreaming?: boolean
@@ -458,15 +458,17 @@ const codingPlanData = computed( => {
  // tech_plan 和 affected_files 来自 tool input（不在 result 中）
  const input = planTool.input || {}
  const techPlan = (input.tech_plan as string) || ''
- const affectedFiles = (input.affected_files as Array<{ path: string, change_type: string }>) ||
- // session_id / status 来自 tool result。
+ // Phase：兼容 file_path / path 两种 schema 字段名
+ const affectedFiles = (input.affected_files as Array<{ file_path?: string, path?: string, change_type: string }>) ||
+ // session_id / status / coding_plan_id 来自 tool result。
  // 防御性双轨：result 在快照(snapshot) / langchain_runner 路径里是 JSON string，
  // 但历史上 chat_runner 曾直接发 dict（未序列化）—— 这里两种形态都吃。
  let sessionId = ''
+ let planId = ''
  let sessionStatus: string = 'draft'
  if (planTool.result) {
  const raw: unknown = planTool.result
- let parsed: { session_id?: string, status?: string } | null = null
+ let parsed: { session_id?: string, coding_session_id?: string, coding_plan_id?: string, status?: string } | null = null
  if (typeof raw === 'string') {
  try {
  parsed = JSON.parse(raw)
@@ -476,14 +478,16 @@ const codingPlanData = computed( => {
  }
  }
  else if (typeof raw === 'object') {
- parsed = raw as { session_id?: string, status?: string }
+ parsed = raw as { session_id?: string, coding_session_id?: string, coding_plan_id?: string, status?: string }
  }
  if (parsed) {
- sessionId = parsed.session_id || ''
+ // Phase：优先用 coding_session_id（新返回），回退到 session_id（兼容 alias）
+ sessionId = parsed.coding_session_id || parsed.session_id || ''
+ planId = parsed.coding_plan_id || ''
  sessionStatus = parsed.status || 'draft'
  }
  }
- return { sessionId, techPlan, affectedFiles, status: sessionStatus }
+ return { sessionId, planId, techPlan, affectedFiles, status: sessionStatus }
 })
 // 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
 const codingPlanStatus = computed( => {
@@ -876,9 +880,9 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
  />
  </div>
- <CodingPlanCard
- v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
- @confirm="chatStore.handleConfirmCodingSession"
+ <TechPlanCard
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":plan-id="codingPlanData.planId":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
+ @confirm="(_planId, sessionId, branchName) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName)"
  />
  <div
  v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
@@ -989,9 +993,9 @@ const hideEmptyBubble = computed( =>
  class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
  />
  </div>
- <CodingPlanCard
- v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
- @confirm="chatStore.handleConfirmCodingSession"
+ <TechPlanCard
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":plan-id="codingPlanData.planId":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
+ @confirm="(_planId, sessionId, branchName) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName)"
  />
  <div
  v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"

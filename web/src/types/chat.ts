@@ -204,7 +204,8 @@ export interface SSEEvent {
  behind_by?: number
  suggestion?: string
  // coding_progress enhanced (Phase/210)
- modified_files?: Array<{ path: string, change_type: string }>
+ // Phase：支持 file_path / path 两种 schema 兼容期共存
+ modified_files?: Array<{ file_path?: string, path?: string, change_type: string }>
  recent_tool_calls?: Array<{ tool: string, summary: string }>
 }
 /** 用户角色 */
@@ -244,9 +245,11 @@ export interface ExportToFeishuError {
 /** CodingSession API 响应 */
 export interface CodingSessionResponse {
  id: string
+ /** Phase：关联的 CodingPlan UUID（null 表示历史数据未迁移） */
+ coding_plan_id?: string | null
  status: 'draft' | 'confirmed' | 'running' | 'completed' | 'failed'
  tech_plan: string
- affected_files: Array<{ path: string, change_type: string }>
+ affected_files: Array<{ file_path: string, change_type: string, path?: string }>
  revision_count: number
  repository_id: string
  branch_name: string
@@ -273,12 +276,24 @@ export interface CodingSessionResponse {
  created_at: string
  updated_at: string
 }
+/** Phase：CodingPlan API 响应（独立领域模型） */
+export interface CodingPlanResponse {
+ id: string
+ conversation_id: string
+ title: string
+ tech_plan: string
+ affected_files: Array<{ file_path: string, change_type: string }>
+ feishu_doc_token: string
+ feishu_doc_url: string
+ created_at: string
+ updated_at: string
+}
 /** ConversationRuntime 中的 CodingSession 快照 */
 export interface CodingSessionRuntime {
  id: string
  status: string
  tech_plan?: string
- affected_files?: Array<{ path: string, change_type: string }>
+ affected_files?: Array<{ file_path: string, change_type: string, path?: string }>
  branch_name?: string
  pr_url?: string
  error_message?: string
@@ -296,7 +311,7 @@ export interface CodingProgressData {
  sessionId: string
  steps: Array<{ name: string, status: 'pending' | 'running' | 'done' }>
  modifiedFilesCount: number
- modifiedFiles?: Array<{ path: string, change_type: string }>
+ modifiedFiles?: Array<{ file_path?: string, path?: string, change_type: string }>
  recentToolCalls?: Array<{ tool: string, summary: string }>
 }
 /** Store 中的编码结果数据 */
