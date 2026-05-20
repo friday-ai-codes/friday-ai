@@ -437,3 +437,191 @@ async def test_get_tool_names_includes_coding_tools(project, repository):
  tool_names = await _get_tool_names(str(project.id))
  assert "create_coding_plan" in tool_names
  assert "update_coding_plan" in tool_names
+# ============================================================================
+# Phase：create_coding_plan recommended_repository_ids 测试
+# ============================================================================
+@pytest.mark.django_db(transaction=True)
+class TestCreateCodingPlanRecommendedRepos:
+ """create_coding_plan 自动预填 recommended_repository_ids 行为。"""
+ @pytest.mark.asyncio
+ async def test_input_schema_has_optional_recommended_repository_ids(self):
+ from agents.tools.registry import ToolRegistry
+ tool = ToolRegistry.get_tool("create_coding_plan")
+ assert tool is not None
+ props = tool.parameters["properties"]
+ assert "recommended_repository_ids" in props
+ assert props["recommended_repository_ids"]["type"] == "array"
+ # 不在 required
+ assert "recommended_repository_ids" not in tool.parameters["required"]
+ @pytest.mark.asyncio
+ async def test_explicit_ids_are_persisted_to_plan(
+ self, project, repository, conversation
+ ):
+ from agents.tools.coding_tools import create_coding_plan
+ from chat.models import CodingPlan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## explicit recs",
+ affected_files=[{"path": "a.py", "change_type": "modify"}],
+ recommended_repository_ids=[str(repository.id)],
+ )
+ assert result.success is True
+ assert result.output["recommended_source"] == "explicit"
+ assert result.output["recommended_repository_ids"] == [str(repository.id)]
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.recommended_repository_ids == [str(repository.id)]
+ @pytest.mark.asyncio
+ async def test_no_explicit_inferred_from_latest_chat_tool_trace(
+ self, project, repository, conversation, other_repository
+ ):
+ from agents.tools.coding_tools import create_coding_plan
+ from chat.models import CodingPlan, RepositoryRoutingTrace
+ # 写一条 trace：only repository selected_by_user_final=True
+ await RepositoryRoutingTrace.objects.acreate(
+ conversation=conversation,
+ query="q",
+ candidates=[
+ {
+ "repository_id": str(repository.id),
+ "repository_name": "x",
+ "score": 0.9,
+ "level": "high",
+ "evidence": "ev",
+ "selected_by_ai": True,
+ "selected_by_user_final": True,
+ },
+ {
+ "repository_id": str(other_repository.id),
+ "repository_name": "y",
+ "score": 0.3,
+ "level": "low",
+ "evidence": "ev",
+ "selected_by_ai": False,
+ "selected_by_user_final": False,
+ },
+ ],
+ threshold=0.5,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+ )
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## auto-infer",
+ affected_files=[{"path": "x.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ assert result.output["recommended_source"] == "trace_inferred"
+ assert result.output["recommended_repository_ids"] == [str(repository.id)]
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.recommended_repository_ids == [str(repository.id)]
+ @pytest.mark.asyncio
+ async def test_manual_override_trace_takes_precedence(
+ self, project, repository, conversation, other_repository
+ ):
+ from agents.tools.coding_tools import create_coding_plan
+ from chat.models import CodingPlan, RepositoryRoutingTrace
+ # 第一行：chat_tool，only repository selected
+ await RepositoryRoutingTrace.objects.acreate(
+ conversation=conversation,
+ query="q",
+ candidates=[
+ {
+ "repository_id": str(repository.id),
+ "repository_name": "x",
+ "score": 0.9,
+ "level": "high",
+ "evidence": "ev",
+ "selected_by_ai": True,
+ "selected_by_user_final": True,
+ },
+ {
+ "repository_id": str(other_repository.id),
+ "repository_name": "y",
+ "score": 0.3,
+ "level": "low",
+ "evidence": "ev",
+ "selected_by_ai": False,
+ "selected_by_user_final": False,
+ },
+ ],
+ threshold=0.5,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.CHAT_TOOL,
+ )
+ # 第二行：manual_override，user 把 other 也选上
+ await RepositoryRoutingTrace.objects.acreate(
+ conversation=conversation,
+ query="q",
+ candidates=[
+ {
+ "repository_id": str(repository.id),
+ "repository_name": "x",
+ "score": 0.9,
+ "level": "high",
+ "evidence": "ev",
+ "selected_by_ai": True,
+ "selected_by_user_final": True,
+ },
+ {
+ "repository_id": str(other_repository.id),
+ "repository_name": "y",
+ "score": 0.3,
+ "level": "low",
+ "evidence": "ev",
+ "selected_by_ai": False,
+ "selected_by_user_final": True, # user 改选
+ },
+ ],
+ threshold=0.5,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
+ )
+ # other_repository 不属于 space 校验：先加进 project（让 inferred 可校验）
+ # 我们这里只验证 trace_inferred 取到了两条；不验证它们都属于 space
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## with manual override",
+ affected_files=[{"path": "x.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ assert result.output["recommended_source"] == "trace_inferred"
+ # 最新 trace（manual_override 行）的两个 selected_by_user_final=True 仓库都拿到
+ ids = set(result.output["recommended_repository_ids"])
+ assert str(repository.id) in ids
+ assert str(other_repository.id) in ids
+ @pytest.mark.asyncio
+ async def test_no_trace_no_explicit_returns_empty_recommended(
+ self, project, repository, conversation
+ ):
+ from agents.tools.coding_tools import create_coding_plan
+ from chat.models import CodingPlan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## empty rec",
+ affected_files=[{"path": "x.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ assert result.output["recommended_source"] == "empty"
+ assert result.output["recommended_repository_ids"] ==
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.recommended_repository_ids ==
+ @pytest.mark.asyncio
+ async def test_invalid_explicit_id_not_in_space_returns_error(
+ self, project, repository, conversation, other_repository
+ ):
+ from agents.tools.coding_tools import create_coding_plan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## invalid",
+ affected_files=[{"path": "x.py", "change_type": "modify"}],
+ recommended_repository_ids=[str(other_repository.id)],
+ )
+ assert result.success is False
+ assert "not in space" in (result.error or "")

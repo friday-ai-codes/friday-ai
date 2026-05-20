@@ -21,6 +21,7 @@ from .views import (
  ExportToFeishuView,
  ModelsView,
  PRConfirmView,
+ RoutingTraceManualOverrideView,
  WebPushPublicKeyView,
  WebPushSubscriptionView,
  WebPushUnsubscribeView,
@@ -136,5 +137,11 @@ urlpatterns = [
  "coding-plans/<uuid:plan_id>/sessions/",
  CodingPlanSessionsBatchCreateView.as_view,
  name="coding-plan-sessions-batch",
+ ),
+ # Phase：路由决策手动微调
+ path(
+ "routing-traces/<uuid:trace_id>/override/",
+ RoutingTraceManualOverrideView.as_view,
+ name="routing-trace-manual-override",
  ),
 ]

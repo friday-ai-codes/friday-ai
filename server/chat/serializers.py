@@ -368,3 +368,20 @@ class ExportToFeishuSerializer(serializers.Serializer):
  default="",
  help_text="目标文件夹 token（可选，覆盖项目配置）",
  )
+# ============================================================================
+# Phase：路由决策手动微调（manual_override）
+# ============================================================================
+class RoutingTraceManualOverrideCandidateSerializer(serializers.Serializer):
+ """单条 candidate 的 manual override payload（限制仅 selected 可改）。"""
+ repository_id = serializers.UUIDField
+ selected = serializers.BooleanField
+class RoutingTraceManualOverrideSerializer(serializers.Serializer):
+ """POST /api/chat/routing-traces/<uuid>/override/ 请求体。
+ Phase：限制 frontend 只能改 selected 字段；score / level /
+ evidence / selected_by_ai 由 Server 端继承原 trace，前端无权改写。
+ """
+ candidates = serializers.ListField(
+ child=RoutingTraceManualOverrideCandidateSerializer,
+ min_length=1,
+ help_text="每条只需 {repository_id, selected}；其它字段被忽略",
+ )
