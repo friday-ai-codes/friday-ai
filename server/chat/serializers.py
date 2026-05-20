@@ -300,6 +300,38 @@ class CodingSessionSerializer(serializers.Serializer):
  diff_summary = serializers.JSONField(read_only=True)
  created_at = serializers.DateTimeField(read_only=True)
  updated_at = serializers.DateTimeField(read_only=True)
+# ============================================================================
+# Phase：批量创建 CodingSession
+# ============================================================================
+class CodingSessionsBatchCreateRequestSerializer(serializers.Serializer):
+ """POST /api/chat/coding-plans/{id}/sessions/ 请求体。"""
+ repository_ids = serializers.ListField(
+ child=serializers.UUIDField,
+ min_length=1,
+ max_length=20,
+ help_text="目标仓库 UUID 列表（1-20 个）",
+ )
+ branch_template = serializers.CharField(
+ required=False,
+ allow_blank=True,
+ default="",
+ max_length=200,
+ help_text=(
+ "可选分支模板。支持占位符 ${repo} → repository.name。"
+ "为空时按 CodingPlan title 推断。"
+ ),
+ )
+class _SessionCreatedItemSerializer(serializers.Serializer):
+ session_id = serializers.UUIDField
+ repository_id = serializers.UUIDField
+ branch_name = serializers.CharField
+class _SessionFailedItemSerializer(serializers.Serializer):
+ repository_id = serializers.UUIDField
+ error = serializers.CharField
+class CodingSessionsBatchCreateResponseSerializer(serializers.Serializer):
+ """POST /api/chat/coding-plans/{id}/sessions/ 响应体。"""
+ created = _SessionCreatedItemSerializer(many=True)
+ failed = _SessionFailedItemSerializer(many=True)
 class ExportToFeishuSerializer(serializers.Serializer):
  """导出对话消息到飞书文档。"""
  message_ids = serializers.ListField(

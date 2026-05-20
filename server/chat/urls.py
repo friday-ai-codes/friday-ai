@@ -6,6 +6,7 @@ from .views import (
  ChatStreamView,
  CodingPlanDetailView,
  CodingPlanListView,
+ CodingPlanSessionsBatchCreateView,
  CodingSessionConfirmView,
  CodingSessionDetailView,
  CodingSessionListView,
@@ -129,5 +130,11 @@ urlpatterns = [
  "coding-plans/<uuid:plan_id>/",
  CodingPlanDetailView.as_view,
  name="coding-plan-detail",
+ ),
+ # Phase：CodingPlan 批量创建 CodingSession
+ path(
+ "coding-plans/<uuid:plan_id>/sessions/",
+ CodingPlanSessionsBatchCreateView.as_view,
+ name="coding-plan-sessions-batch",
  ),
 ]
