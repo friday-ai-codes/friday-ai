@@ -2,6 +2,10 @@
 import asyncio
 from typing import Any
 import structlog
+# Phase：保留 graph 后台任务的强引用，防止 Python asyncio
+# 在某些 corner case 下中途 GC 任务（PEP 3156 / asyncio.create_task 文档警告）。
+# task 完成后 add_done_callback 自动 discard，避免常驻内存增长。
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.http import StreamingHttpResponse
@@ -1155,7 +1159,9 @@ class CodingSessionConfirmView(APIView):
  await coding_session.amark_failed(error=str(exc)[:500])
  except Exception:
  logger.exception("coding_graph_background_mark_failed_error")
- asyncio.create_task(_run_graph_in_background)
+ _graph_task = asyncio.create_task(_run_graph_in_background)
+ _BACKGROUND_TASKS.add(_graph_task)
+ _graph_task.add_done_callback(_BACKGROUND_TASKS.discard)
  logger.info(
  "coding_session_confirmed",
  coding_session_id=str(coding_session.id),
