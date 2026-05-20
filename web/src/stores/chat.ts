@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
 import {
@@ -13,6 +13,7 @@ import {
  createConversation,
  createSessionsForPlan,
  deleteConversation,
+ exportCodingPlanToFeishu,
  exportToFeishu,
  getConversationDetail,
  getConversationRuntime,
@@ -1396,6 +1397,33 @@ export const useChatStore = defineStore('chat', => {
  return exportToFeishu(currentConversationId.value, data)
  }
  /**
+ * Phase：导出 CodingPlan 到飞书，并把 doc_token / doc_url
+ * 立即 patch 到本地 store 的 activeCodingPlan，避免要等下一次 polling。
+ */
+ async function doExportCodingPlanToFeishu(
+ codingPlanId: string,
+ title?: string,
+ folderToken?: string,
+ ): Promise<ExportCodingPlanToFeishuResponse> {
+ const payload: ExportCodingPlanToFeishuRequest = {}
+ if (title)
+ payload.title = title
+ if (folderToken)
+ payload.folder_token = folderToken
+ const result = await exportCodingPlanToFeishu(codingPlanId, payload)
+ if (
+ activeCodingPlan.value
+ && activeCodingPlan.value.plan_id === codingPlanId
+ ) {
+ activeCodingPlan.value = {
+ ...activeCodingPlan.value,
+ feishu_doc_token: result.doc_token,
+ feishu_doc_url: result.doc_url,
+ }
+ }
+ return result
+ }
+ /**
  * Phase：对话凭证前置探测。
  *
  * 调用 GET /api/chat/conversations/{id}/preflight/：
@@ -1570,6 +1598,8 @@ export const useChatStore = defineStore('chat', => {
  toggleMessageSelect,
  selectAllAssistant,
  doExportToFeishu,
+ // Phase：CodingPlan 导出到飞书
+ doExportCodingPlanToFeishu,
  // Phase 凭证缺失前置探测
  credentialMissingPayload,
  preflightConversation,

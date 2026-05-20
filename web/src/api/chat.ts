@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
 import { del, get, patch, post } from './client'
 // ============================================================================
 // 类型定义
@@ -243,6 +243,21 @@ export async function exportToFeishu(
  data,
  )
 }
+/**
+ * Phase：导出 CodingPlan 到飞书文档。
+ *
+ * 与 conversation 路径独立的 endpoint，数据源换成 CodingPlan + 多仓 sessions
+ * （由后端 `coding_plan_exporter` 拼接成单篇 markdown）。
+ */
+export async function exportCodingPlanToFeishu(
+ codingPlanId: string,
+ data: ExportCodingPlanToFeishuRequest,
+): Promise<ExportCodingPlanToFeishuResponse> {
+ return post<ExportCodingPlanToFeishuResponse>(
+ `/chat/coding-plans/${codingPlanId}/export-to-feishu/`,
+ data,
+ )
+}
 // ============================================================================
 // 编码会话 (Phase)
 // ============================================================================
@@ -364,6 +379,7 @@ export default {
  savePushSubscription,
  removePushSubscription,
  exportToFeishu,
+ exportCodingPlanToFeishu,
  confirmCodingSession,
  getCodingSession,
  confirmCodingSessionWithBranch,
