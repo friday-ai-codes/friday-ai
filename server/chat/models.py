@@ -161,6 +161,20 @@ class CodingPlan(models.Model):
  default="",
  verbose_name="飞书文档 URL",
  )
+ # Phase：AI 在 chat 流中通过 analyze_repository_relevance /
+ # deep_analysis cross_repo_relevance 识别出的相关仓库 UUID 列表，自动
+ # 预填到 create_coding_plan 工具的 recommended_repository_ids 入参。
+ # 由 fan-out 流程（Phase）按本字段批量创建 CodingSession。
+ recommended_repository_ids = models.JSONField(
+ default=list,
+ blank=True,
+ verbose_name="推荐仓库 ID 列表",
+ help_text=(
+ "[str(UUID), ...] —— AI 识别的相关仓库 UUID 列表；不传则 Server "
+ "自动从 conversation 最近一条 RepositoryRoutingTrace 取 "
+ "selected_by_user_final=True 的仓库（Phase）。"
+ ),
+ )
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

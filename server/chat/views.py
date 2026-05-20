@@ -39,6 +39,7 @@ from .serializers import (
  ExportToFeishuSerializer,
  ModelsRequestSerializer,
  ModelsResponseSerializer,
+ RoutingTraceManualOverrideSerializer,
  SendMessageSerializer,
  WebPushPublicKeySerializer,
  WebPushSubscriptionSerializer,
@@ -1559,3 +1560,80 @@ class CodingPlanSessionsBatchCreateView(APIView):
  resp_ser = CodingSessionsBatchCreateResponseSerializer(data=resp_payload)
  resp_ser.is_valid(raise_exception=True)
  return Response(resp_ser.data, status=status.HTTP_200_OK)
+# ============================================================================
+# Phase：路由决策手动微调 endpoint
+# ============================================================================
+class RoutingTraceManualOverrideView(APIView):
+ """POST /api/chat/routing-traces/<uuid:trace_id>/override/
+ Phase：用户在 RoutingDecisionPanel 改勾选 → 写一行新
+ ``RepositoryRoutingTrace(triggered_by=MANUAL_OVERRIDE)`` —— 保留原 trace
+ 不变，evaluation SQL 可对比 AI 决策 vs 用户最终决策。
+ body schema: ``{"candidates": [{"repository_id": uuid, "selected": bool}, ...]}``
+ 安全约束：serializer 只接受 ``{repository_id, selected}`` 两字段，
+ ``score`` / ``evidence`` / ``level`` / ``selected_by_ai`` 由 Server 继承
+ 自原 trace —— 前端无权改写。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(self, request, trace_id): # type: ignore[override,no-untyped-def]
+ from chat.models import RepositoryRoutingTrace
+ ser = RoutingTraceManualOverrideSerializer(data=request.data)
+ ser.is_valid(raise_exception=True)
+ requested = {
+ str(c["repository_id"]): bool(c["selected"])
+ for c in ser.validated_data["candidates"]
+ }
+ try:
+ original = await RepositoryRoutingTrace.objects.select_related(
+ "conversation", "conversation__project"
+ ).aget(id=trace_id)
+ except RepositoryRoutingTrace.DoesNotExist:
+ return Response(status=status.HTTP_404_NOT_FOUND)
+ # ownership 校验：复用既有 PermissionService（与 chat/views.py 其它
+ # endpoint 同模式）；跨用户返 404 隐藏存在性。
+ from permissions.services import PermissionService
+ user = request.user
+ if not getattr(user, "is_superuser", False):
+ allowed = await sync_to_async(PermissionService.has_project_access)(
+ user, original.conversation.project, "member"
+ )
+ if not allowed:
+ logger.warning(
+ "routing_trace_manual_override_denied_cross_project",
+ user_id=str(getattr(user, "id", "")),
+ trace_id=str(original.id),
+ )
+ return Response(status=status.HTTP_404_NOT_FOUND)
+ # 继承原 candidates，仅更新 selected_by_user_final
+ new_candidates: list[dict[str, Any]] =
+ for c in (original.candidates or ):
+ c2 = dict(c)
+ rid = str(c2.get("repository_id", ""))
+ if rid in requested:
+ c2["selected_by_user_final"] = requested[rid]
+ new_candidates.append(c2)
+ new_trace = await RepositoryRoutingTrace.objects.acreate(
+ agent_session=None,
+ conversation_id=original.conversation_id,
+ query=original.query,
+ candidates=new_candidates,
+ threshold=original.threshold,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
+ )
+ logger.info(
+ "routing_trace_manual_override_created",
+ original_trace_id=str(original.id),
+ new_trace_id=str(new_trace.id),
+ conversation_id=str(original.conversation_id),
+ updated_count=sum(
+ 1 for c in new_candidates if str(c.get("repository_id", "")) in requested
+ ),
+ )
+ return Response(
+ {
+ "trace_id": str(new_trace.id),
+ "original_trace_id": str(original.id),
+ "candidates": new_candidates,
+ "triggered_by": new_trace.triggered_by,
+ },
+ status=status.HTTP_201_CREATED,
+ )
