@@ -60,9 +60,22 @@ export const graphStatusConfig: Record<string, StatusConfig> = {
  failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
  cancelled: { label: '已停止', icon: 'lucide--circle-stop', variant: 'muted' },
 }
+// Phase：CodingSession 状态徽章 6 态
+//
+// 与后端 chat.models.CodingSession.Status 同步：draft / confirmed / running /
+// awaiting_confirmation / completed / failed。 状态行 / TechPlanCard
+// 集成共用。
+export const codingSessionStatusConfig: Record<string, StatusConfig> = {
+ draft: { label: '草稿', icon: 'lucide--file-text', variant: 'muted' },
+ confirmed: { label: '已确认', icon: 'lucide--check', variant: 'info' },
+ running: { label: '执行中', icon: 'lucide--loader-2', variant: 'info', animate: true },
+ awaiting_confirmation: { label: '等待确认', icon: 'lucide--circle-pause', variant: 'warning' },
+ completed: { label: '已完成', icon: 'lucide--check-circle', variant: 'success' },
+ failed: { label: '失败', icon: 'lucide--x-circle', variant: 'destructive' },
+}
 // 根据状态类型获取配置
 export function getStatusConfig(
- type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog' | 'graph',
+ type: 'execution' | 'runner' | 'codingTask' | 'index' | 'triggerLog' | 'graph' | 'codingSession',
  status: string,
 ): StatusConfig {
  const configMap = {
@@ -72,6 +85,7 @@ export function getStatusConfig(
  index: indexStatusConfig,
  triggerLog: triggerLogStatusConfig,
  graph: graphStatusConfig,
+ codingSession: codingSessionStatusConfig,
  }
  return configMap[type][status] ?? { label: status, icon: 'lucide--help-circle', variant: 'muted' as const }
 }
