@@ -151,6 +151,18 @@ class TestTaskRunnerRouting:
  assert result == 0
  # 确保调用了 report_suggested_commit_message（Phase 回传）
  runner.callback.report_suggested_commit_message.assert_called_once
+ # Phase: 末尾发 completed 帧携带 git 元数据
+ runner.callback.report_completed.assert_called_once
+ completed_call = runner.callback.report_completed.call_args
+ output = completed_call.kwargs["output"]
+ assert output["branch_name"] == "friday/test-branch"
+ assert output["commit_sha"] == "abc123def"
+ assert output["suggested_commit_message"] != ""
+ assert "modified_files" in output and isinstance(output["modified_files"], list)
+ assert output["modified_files"] == ["file.py"]
+ assert output["task_type"] == "coding"
+ assert output["text"] == "1 file changed" # diff_summary 落到 text
+ assert completed_call.kwargs["result_type"] == "text"
 class TestRunCommitMode:
  """TaskRunner._run_commit_mode 测试。"""
  @pytest.mark.asyncio
@@ -196,6 +208,14 @@ class TestRunCommitMode:
  assert result == 0
  runner.callback.report_push_complete.assert_called_once
  runner.callback.report_execution_complete.assert_called_once
+ # Phase: Phase 末尾也发 completed 帧（task_type=coding_commit）
+ runner.callback.report_completed.assert_called_once
+ completed_call = runner.callback.report_completed.call_args
+ output = completed_call.kwargs["output"]
+ assert output["task_type"] == "coding_commit"
+ assert output["branch_name"] == "friday/test-branch"
+ assert output["commit_sha"] == "abc123" # amended sha (rev-parse 输出)
+ assert "modified_files" in output
 class TestGenerateSuggestedCommitMessage:
  """_generate_suggested_commit_message 测试。"""
  def test_generate_with_title_and_description(self):
