@@ -2,8 +2,13 @@
 /**
  * 导出确认弹窗 -- 显示可编辑标题和选中消息数，点击导出后调用 API。
  * 导出失败时弹窗不关闭，显示分类错误提示 (per,,, )。
+ *
+ * Phase 扩展：新增 `mode` prop 支持 `coding_plan` 分支。
+ * 默认 `conversation`（Phase 路径完全兼容），mode='coding_plan' 时改
+ * 走 `chatStore.doExportCodingPlanToFeishu`、隐藏"选中消息数"描述、改文案
+ * 为"将技术方案导出为飞书文档"。错误 UI 三态完全复用。
  */
-import type { ExportToFeishuResponse } from '~/types/chat'
+import type { ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import {
  Dialog,
@@ -14,15 +19,21 @@ import {
  DialogTitle,
 } from '~/components/ui/dialog'
 import { Input } from '~/components/ui/input'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  open: boolean
- selectedCount: number
  defaultTitle: string
- selectedMessageIds: string
-}>
+ selectedCount?: number
+ selectedMessageIds?: string
+ mode?: 'conversation' | 'coding_plan'
+ codingPlanId?: string
+}>, {
+ mode: 'conversation',
+ selectedCount: 0,
+ selectedMessageIds: =>,
+})
 const emit = defineEmits<{
  'update:open': [value: boolean]
- 'success': [result: ExportToFeishuResponse]
+ 'success': [result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse]
 }>
 const chatStore = useChatStore
 const docTitle = ref(props.defaultTitle)
@@ -38,11 +49,22 @@ async function handleExport {
  errorMsg.value = ''
  errorType.value = null
  try {
+ if (props.mode === 'coding_plan') {
+ if (!props.codingPlanId)
+ throw new Error('缺少 codingPlanId')
+ const result = await chatStore.doExportCodingPlanToFeishu(
+ props.codingPlanId,
+ docTitle.value,
+ )
+ emit('success', result)
+ }
+ else {
  const result = await chatStore.doExportToFeishu(
  docTitle.value,
  props.selectedMessageIds,
  )
  emit('success', result)
+ }
  emit('update:open', false)
  }
  catch (e: any) {
@@ -62,14 +84,30 @@ async function handleExport {
  }
 }
 const spaceId = computed( => chatStore.selectedSpaceId)
+// coding_plan 模式下导出按钮不需要"选中消息"才能 enable
+const exportDisabled = computed( => {
+ if (exporting.value)
+ return true
+ if (props.mode === 'coding_plan')
+ return !props.codingPlanId
+ return props.selectedCount === 0
+})
 </script>
 <template>
  <Dialog:open="open" @update:open="emit('update:open', $event)">
  <DialogContent class="card rounded-2xl max-w-md">
  <DialogHeader>
- <DialogTitle>导出到飞书文档</DialogTitle>
- <DialogDescription>
+ <DialogTitle v-if="mode === 'conversation'">
+ 导出到飞书文档
+ </DialogTitle>
+ <DialogTitle v-else>
+ 导出技术方案到飞书
+ </DialogTitle>
+ <DialogDescription v-if="mode === 'conversation'">
  将选中的 {{ selectedCount }} 条 AI 回答导出为飞书文档
+ </DialogDescription>
+ <DialogDescription v-else>
+ 将技术方案导出为飞书文档
  </DialogDescription>
  </DialogHeader>
  <!-- 文档标题输入 -->
@@ -125,7 +163,7 @@ const spaceId = computed( => chatStore.selectedSpaceId)
  <Button variant="outline" @click="emit('update:open', false)">
  取消
  </Button>
- <Button:disabled="exporting || selectedCount === 0"
+ <Button:disabled="exportDisabled"
  @click="handleExport"
  >
  <span v-if="exporting" class="icon-[lucide--loader-2] animate-spin mr-1" />
