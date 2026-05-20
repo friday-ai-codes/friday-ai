@@ -3,10 +3,13 @@
 Message 支持 user/assistant/system/tool 四种角色，
 用于存储完整的对话历史（含工具调用记录）。
 """
+import hashlib
 import uuid
+import structlog
 from django.conf import settings
 from django.db import models
 from projects.models import Project
+logger = structlog.get_logger(__name__)
 class Conversation(models.Model):
  """对话模型 — 一次完整的用户-AI 交互会话。"""
  class Status(models.TextChoices):
@@ -120,6 +123,102 @@ class ChatPushSubscription(models.Model):
  ]
  def __str__(self) -> str:
  return f"ChatPushSubscription({self.user_id}, active={self.is_active})"
+class CodingPlan(models.Model):
+ """编码方案 — Phase 拆出的独立领域实体。
+ 一份 `CodingPlan` 描述一次"技术方案"语义（tech_plan + affected_files
+ + 飞书文档元数据），由后续 CodingSession 实例引用执行。同一 conversation
+ 内 `tech_plan` 文本相同的方案通过 `aget_or_create_for_conversation` 去重，
+ 多 session（如 multi-confirm / 多仓 fan-out）共享同一份方案。
+ """
+ id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ conversation = models.ForeignKey(
+ "chat.Conversation",
+ on_delete=models.CASCADE,
+ related_name="coding_plans",
+ )
+ title = models.CharField(
+ max_length=200,
+ blank=True,
+ default="",
+ verbose_name="方案标题",
+ )
+ tech_plan = models.TextField(verbose_name="技术方案 (Markdown)")
+ affected_files = models.JSONField(
+ default=list,
+ verbose_name="影响文件列表",
+ help_text='schema: [{"file_path": str, "change_type": str}]',
+ )
+ feishu_doc_token = models.CharField(
+ max_length=64,
+ blank=True,
+ default="",
+ verbose_name="飞书文档 token",
+ )
+ feishu_doc_url = models.CharField(
+ max_length=500,
+ blank=True,
+ default="",
+ verbose_name="飞书文档 URL",
+ )
+ created_at = models.DateTimeField(auto_now_add=True)
+ updated_at = models.DateTimeField(auto_now=True)
+ class Meta:
+ db_table = "coding_plans"
+ ordering = ["-created_at"]
+ indexes = [
+ models.Index(fields=["conversation", "-created_at"]),
+ ]
+ verbose_name = "编码方案"
+ verbose_name_plural = "编码方案"
+ def __str__(self) -> str:
+ preview = self.title or self.tech_plan[:30]
+ return f"CodingPlan({self.id}, {preview})"
+ @classmethod
+ async def aget_or_create_for_conversation(
+ cls,
+ conversation: "Conversation",
+ tech_plan: str,
+ affected_files: list[dict[str, str]],
+ title: str = "",
+ ) -> tuple["CodingPlan", bool]:
+ """基于 `sha256(tech_plan)` 在 conversation 内去重。
+ 命中返回既有 plan + ``created=False``；未命中创建新 plan + ``created=True``。
+ 跨 conversation 不去重（同字符串两个 conversation 各产 1 条）。
+ """
+ content_hash = hashlib.sha256(tech_plan.encode("utf-8")).hexdigest
+ async for existing in cls.objects.filter(conversation=conversation).aiterator:
+ existing_hash = hashlib.sha256(existing.tech_plan.encode("utf-8")).hexdigest
+ if existing_hash == content_hash:
+ logger.info(
+ "coding_plan_get_or_created",
+ conversation_id=str(conversation.id),
+ plan_id=str(existing.id),
+ created=False,
+ )
+ return existing, False
+ plan = await cls.objects.acreate(
+ conversation=conversation,
+ title=title,
+ tech_plan=tech_plan,
+ affected_files=affected_files,
+ )
+ logger.info(
+ "coding_plan_get_or_created",
+ conversation_id=str(conversation.id),
+ plan_id=str(plan.id),
+ created=True,
+ )
+ return plan, True
+ async def aupdate_plan(
+ self,
+ tech_plan: str,
+ affected_files: list[dict[str, str]],
+ ) -> None:
+ """原子更新 tech_plan + affected_files。"""
+ self.tech_plan = tech_plan
+ self.affected_files = affected_files
+ await self.asave(update_fields=["tech_plan", "affected_files", "updated_at"])
+ logger.info("coding_plan_updated", plan_id=str(self.id))
 class CodingSession(models.Model):
  """编码会话 -- 追踪从技术方案到 PR 的全流程。
  状态机: draft -> confirmed -> running -> awaiting_confirmation -> running -> completed/failed
@@ -137,6 +236,17 @@ class CodingSession(models.Model):
  on_delete=models.CASCADE,
  related_name="coding_sessions",
  )
+ coding_plan = models.ForeignKey(
+ "chat.CodingPlan",
+ on_delete=models.CASCADE,
+ null=True,
+ blank=True,
+ related_name="coding_sessions",
+ help_text=(
+ "Phase：tech_plan / affected_files 拆出 CodingPlan 后的关联；"
+ "过渡期为空，由 migrate_coding_sessions_to_plans 命令回填"
+ ),
+ )
  message = models.ForeignKey(
  "chat.Message",
  on_delete=models.SET_NULL,
@@ -150,8 +260,21 @@ class CodingSession(models.Model):
  choices=Status.choices,
  default=Status.DRAFT,
  )
- tech_plan = models.TextField(verbose_name="技术方案 (Markdown)")
- affected_files = models.JSONField(default=list, verbose_name="影响文件列表")
+ tech_plan = models.TextField(
+ verbose_name="技术方案 (Markdown)",
+ help_text=(
+ "Phase 起 deprecated：优先使用 coding_plan.tech_plan；"
+ "本字段保留至 v26.1 清理"
+ ),
+ )
+ affected_files = models.JSONField(
+ default=list,
+ verbose_name="影响文件列表",
+ help_text=(
+ "Phase 起 deprecated：优先使用 coding_plan.affected_files；"
+ "本字段保留至 v26.1 清理"
+ ),
+ )
  revision_count = models.IntegerField(default=0, verbose_name="修订次数")
  repository = models.ForeignKey(
  "repositories.Repository",
@@ -218,6 +341,20 @@ class CodingSession(models.Model):
  verbose_name_plural = "编码会话"
  def __str__(self) -> str:
  return f"CodingSession({self.id}, {self.status})"
+ @property
+ def tech_plan_effective(self) -> str:
+ """优先返回关联 CodingPlan 的 tech_plan，无关联则回退本字段（兼容期）。
+ 注意：调用方必须 `select_related('coding_plan')`，否则触发额外 DB 查询。
+ """
+ if self.coding_plan_id is not None and self.coding_plan is not None:
+ return self.coding_plan.tech_plan
+ return self.tech_plan
+ @property
+ def affected_files_effective(self) -> list[dict[str, str]]:
+ """优先返回关联 CodingPlan 的 affected_files，回退本字段（兼容期）。"""
+ if self.coding_plan_id is not None and self.coding_plan is not None:
+ return list(self.coding_plan.affected_files)
+ return list(self.affected_files)
  async def aconfirm(self) -> None:
  """draft -> confirmed 状态转换。"""
  if self.status != self.Status.DRAFT:
