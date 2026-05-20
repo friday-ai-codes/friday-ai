@@ -163,4 +163,78 @@ describe('techPlanCard', => {
  await flushPromises
  expect(wrapper.text).toContain('编码完成')
  })
+ // ---------------------------------------------------------------------------
+ // Phase /：completed/failed 专属 UI + skeleton
+ // ---------------------------------------------------------------------------
+ it('shows green ring and PR link when status===completed and prUrl present', async => {
+ const prUrl = 'https://gitlab.example.com/x/y/-/merge_requests/123'
+ const wrapper = mountCard({
+ status: 'completed',
+ defaultCollapsed: false,
+ prUrl,
+ })
+ await flushPromises
+ expect(wrapper.html).toContain('ring-emerald-500/30')
+ const link = wrapper.find('a[href]')
+ expect(link.exists).toBe(true)
+ expect(link.attributes('href')).toBe(prUrl)
+ expect(wrapper.text).toContain('查看 PR')
+ })
+ it('shows placeholder when completed but prUrl empty', async => {
+ const wrapper = mountCard({
+ status: 'completed',
+ defaultCollapsed: false,
+ })
+ await flushPromises
+ expect(wrapper.text).toContain('PR 链接将由 multi-confirm 流程回填')
+ })
+ it('shows red ring and error message when status===failed', async => {
+ const wrapper = mountCard({
+ status: 'failed',
+ defaultCollapsed: false,
+ errorMessage: 'dispatch failed',
+ })
+ await flushPromises
+ expect(wrapper.html).toContain('ring-destructive/30')
+ expect(wrapper.text).toContain('dispatch failed')
+ expect(wrapper.text).toContain('重试')
+ })
+ it('emits retry event with planId and sessionId when 重试 clicked', async => {
+ const wrapper = mountCard({
+ status: 'failed',
+ defaultCollapsed: false,
+ planId: 'plan-uuid',
+ sessionId: 'session-uuid',
+ errorMessage: 'oops',
+ })
+ await flushPromises
+ // failed 状态下的「重试」按钮是 stub Button 渲染的 `data-test="btn"`
+ const buttons = wrapper.findAll('[data-test="btn"]')
+ // failed 路径下整张卡只有 1 个 Button（重试），不会有 开始编码
+ expect(buttons.length).toBe(1)
+ await buttons[0].trigger('click')
+ const emitted = wrapper.emitted('retry')
+ expect(emitted).toBeTruthy
+ expect(emitted![0][0]).toBe('plan-uuid')
+ expect(emitted![0][1]).toBe('session-uuid')
+ })
+ it('shows skeleton placeholder before markdown is ready', async => {
+ // 让 markdown renderer 永远 pending，模拟未 ready 状态
+ const { getMarkdownRenderer } = await import('~/composables/useMarkdownRenderer')
+ vi.mocked(getMarkdownRenderer).mockReturnValueOnce(new Promise( => {}))
+ const wrapper = mountCard({ status: 'draft' })
+ // 不 flushPromises（让 onMounted 的 await 持续 pending）
+ await nextTick
+ const skeleton = wrapper.find('[data-test="md-skeleton"]')
+ expect(skeleton.exists).toBe(true)
+ expect(skeleton.findAll('.animate-pulse > div').length).toBe(3)
+ })
+ it('failed status without errorMessage shows default fallback', async => {
+ const wrapper = mountCard({
+ status: 'failed',
+ defaultCollapsed: false,
+ })
+ await flushPromises
+ expect(wrapper.text).toContain('编码失败，未提供错误信息')
+ })
 })

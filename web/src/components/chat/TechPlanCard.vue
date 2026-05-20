@@ -28,6 +28,11 @@ const props = withDefaults(defineProps<{
  sessionId?: string
  branchName?: string
  defaultCollapsed?: boolean
+ // Phase：completed 状态可选展示 PR / branch 链接
+ prUrl?: string
+ branchUrl?: string
+ // Phase：failed 状态可选展示错误原因
+ errorMessage?: string
 }>, {
  // 显式保留 undefined（Vue 默认会把缺省 Boolean prop coerce 成 false，
  // 那样会破坏 initialCollapsed 的 fallback 判定）
@@ -35,6 +40,8 @@ const props = withDefaults(defineProps<{
 })
 const emit = defineEmits<{
  confirm: [planId: string, sessionId: string | undefined, branchName?: string]
+ // Phase：failed 状态下用户点击重试；接通 endpoint 留 Phase/
+ retry: [planId: string, sessionId: string | undefined]
 }>
 // ---------------------------------------------------------------------------
 // 折叠状态：默认 draft 展开、其它状态折叠（用户可点击切换）
@@ -94,6 +101,19 @@ function handleConfirm {
  const editedBranch = previewBranchName.value || undefined
  emit('confirm', props.planId, props.sessionId, editedBranch)
 }
+function handleRetry {
+ emit('retry', props.planId, props.sessionId)
+}
+// ---------------------------------------------------------------------------
+// Phase：completed/failed 状态卡片整体染色
+// ---------------------------------------------------------------------------
+const cardClass = computed( => {
+ if (props.status === 'completed')
+ return 'ring-1 ring-emerald-500/30 border-emerald-500/30'
+ if (props.status === 'failed')
+ return 'ring-1 ring-destructive/30 border-destructive/30'
+ return ''
+})
 // ---------------------------------------------------------------------------
 // 状态徽章
 // ---------------------------------------------------------------------------
@@ -119,7 +139,7 @@ const badgeText = computed( => {
 })
 </script>
 <template>
- <div class="card mt-2 animate-fade-in">
+ <div class="card mt-2 animate-fade-in":class="cardClass">
  <!-- 头部（可点击折叠） -->
  <button
  class="px-4 py-3 border-b border-border/50 flex items-center gap-2 w-full text-left"
@@ -145,7 +165,13 @@ const badgeText = computed( => {
  <template v-if="!collapsed">
  <!-- Markdown + affected_files -->
  <div class=" space-y-3">
- <div v-if="mdReady" class="prose prose-sm max-w-none" v-html="renderedPlan" />
+ <!-- Phase：markdown 异步初始化期间的 skeleton 占位 -->
+ <div v-if="!mdReady" class="space-y-2 animate-pulse" data-test="md-skeleton">
+ <div class=" rounded bg-muted/60 w-3/4" />
+ <div class=" rounded bg-muted/60 w-1/2" />
+ <div class=" rounded bg-muted/60 w-2/3" />
+ </div>
+ <div v-else class="prose prose-sm max-w-none" v-html="renderedPlan" />
  <div v-if="affectedFiles.length > 0" class="space-y-1">
  <p class="text-xs text-muted-foreground font-medium">
  影响文件
@@ -205,14 +231,65 @@ const badgeText = computed( => {
  开始编码
  </Button>
  </div>
- <!-- 非 draft：最小 fallback（详细 UI 在 Phase 落地） -->
- <div v-else class="px-4 pb-3">
+ <!-- confirmed / running：等待 / 编码中提示 -->
+ <div v-else-if="status === 'confirmed' || status === 'running'" class="px-4 pb-3">
  <div class="text-xs text-muted-foreground flex items-center gap-1">
- <span class="icon-[lucide--info] text-primary/60" />
- {{
- status === 'awaiting_confirmation' ? '等待用户确认下一步': status === 'running' ? '正在编码中…': status === 'completed' ? '编码完成': status === 'failed' ? '编码失败': '已确认'
- }}
+ <span class="icon-[lucide--loader-2] animate-spin text-primary" />
+ {{ status === 'running' ? '正在编码中…': '已确认，正在启动编码…' }}
  </div>
+ </div>
+ <!-- awaiting_confirmation：等待用户确认下一步 -->
+ <div v-else-if="status === 'awaiting_confirmation'" class="px-4 pb-3">
+ <div class="text-xs text-muted-foreground flex items-center gap-1">
+ <span class="icon-[lucide--pause-circle] text-primary" />
+ 等待用户确认下一步
+ </div>
+ </div>
+ <!-- completed：绿框 + PR/branch 链接（缺失时显示占位） -->
+ <div v-else-if="status === 'completed'" class="px-4 pb-4 space-y-2">
+ <div class="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+ <span class="icon-[lucide--check-circle-2]" />
+ 编码完成
+ </div>
+ <div v-if="prUrl" class="text-xs">
+ <a:href="prUrl"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="text-primary underline-offset-4 hover:underline inline-flex items-center gap-1"
+ >
+ <span class="icon-[lucide--git-pull-request]" />
+ 查看 PR
+ </a>
+ </div>
+ <div v-if="branchUrl" class="text-xs">
+ <a:href="branchUrl"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+ >
+ <span class="icon-[lucide--git-branch]" />
+ 查看分支
+ </a>
+ </div>
+ <div v-if="!prUrl && !branchUrl" class="text-xs text-muted-foreground/80">
+ PR 链接将由 multi-confirm 流程回填
+ </div>
+ </div>
+ <!-- failed：红框 + 错误原因 + 重试按钮 -->
+ <div v-else-if="status === 'failed'" class="px-4 pb-4 space-y-2">
+ <div class="text-xs text-destructive flex items-start gap-1">
+ <span class="icon-[lucide--alert-triangle] mt-0.5 shrink-0" />
+ <span>{{ errorMessage || '编码失败，未提供错误信息' }}</span>
+ </div>
+ <Button
+ variant="outline"
+ size="sm"
+ class=""
+ @click="handleRetry"
+ >
+ <span class="icon-[lucide--refresh-cw] mr-1.5" />
+ 重试
+ </Button>
  </div>
  </template>
  <!-- 折叠态：一行摘要 -->
