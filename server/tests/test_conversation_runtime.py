@@ -136,3 +136,152 @@ async def test_runtime_timeout_window -> None:
  runtime = await ConversationService.get_conversation_runtime("a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d")
  assert runtime["active"] is False
  assert runtime["status"] == "error"
+# ============================================================================
+# Phase：ConversationRuntime payload 携带 coding_plan
+# ============================================================================
+@pytest.fixture
+def conversation_for_runtime(db, project):
+ """Conversation 真实落库，给 ConversationService 用。"""
+ from chat.models import Conversation
+ return Conversation.objects.create(project=project, title=" 测试")
+@pytest.fixture
+def coding_plan_for_runtime(db, conversation_for_runtime):
+ """与 conversation 关联的 CodingPlan。"""
+ from chat.models import CodingPlan
+ return CodingPlan.objects.create(
+ conversation=conversation_for_runtime,
+ tech_plan="## 多仓 fan-out 方案",
+ affected_files=,
+ title=" 方案",
+ )
+@pytest.fixture
+def three_repos_for_runtime(db, project):
+ """3 个 Repository 全部挂到 conversation 所属 project。"""
+ from repositories.models import Repository
+ repos =
+ for name in ["alpha", "beta", "gamma"]:
+ r = Repository.objects.create(
+ name=name,
+ git_url=f"https://gitlab.com/test/{name}.git",
+ git_platform="gitlab",
+ default_branch="main",
+ )
+ project.repositories.add(r)
+ repos.append(r)
+ return repos
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestConversationRuntimeCodingPlanPayload:
+ """ — runtime payload 含 coding_plan 字段。"""
+ async def test_no_plan_returns_none(self, conversation_for_runtime) -> None:
+ """对话没有 CodingPlan → coding_plan=None。"""
+ from chat.conversation_service import ConversationService
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert "coding_plan" in runtime
+ assert runtime["coding_plan"] is None
+ async def test_plan_zero_sessions(
+ self, conversation_for_runtime, coding_plan_for_runtime
+ ) -> None:
+ """有 plan + 0 sessions → coding_plan.sessions=。"""
+ from chat.conversation_service import ConversationService
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert runtime["coding_plan"] is not None
+ assert runtime["coding_plan"]["plan_id"] == str(coding_plan_for_runtime.id)
+ assert runtime["coding_plan"]["title"] == coding_plan_for_runtime.title
+ assert runtime["coding_plan"]["sessions"] ==
+ async def test_plan_with_three_sessions_various_status(
+ self,
+ conversation_for_runtime,
+ coding_plan_for_runtime,
+ three_repos_for_runtime,
+ ) -> None:
+ """3 个 sessions 各种状态 → 字段齐全 + 状态枚举正确。"""
+ from asgiref.sync import sync_to_async
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingSession
+ repo_a, repo_b, repo_c = three_repos_for_runtime
+ await sync_to_async(CodingSession.objects.create)(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=repo_a,
+ tech_plan="x",
+ status=CodingSession.Status.RUNNING,
+ branch_name="feat/a",
+ )
+ await sync_to_async(CodingSession.objects.create)(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=repo_b,
+ tech_plan="x",
+ status=CodingSession.Status.COMPLETED,
+ pr_url="https://gitlab.com/test/beta/-/merge_requests/1",
+ branch_name="feat/b",
+ )
+ await sync_to_async(CodingSession.objects.create)(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=repo_c,
+ tech_plan="x",
+ status=CodingSession.Status.FAILED,
+ error_message="Runner 离线",
+ branch_name="feat/c",
+ )
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ sessions = runtime["coding_plan"]["sessions"]
+ assert len(sessions) == 3
+ # 8 字段齐全
+ required_fields = {
+ "session_id",
+ "repository_id",
+ "repository_name",
+ "branch_name",
+ "status",
+ "pr_url",
+ "commit_sha",
+ "error_message",
+ }
+ for s in sessions:
+ assert required_fields <= set(s.keys)
+ statuses = {s["status"] for s in sessions}
+ assert {"running", "completed", "failed"} == statuses
+ completed = next(s for s in sessions if s["status"] == "completed")
+ assert completed["pr_url"] == "https://gitlab.com/test/beta/-/merge_requests/1"
+ failed = next(s for s in sessions if s["status"] == "failed")
+ assert failed["error_message"] == "Runner 离线"
+@pytest.mark.django_db(transaction=True)
+def test_runtime_coding_plan_query_budget_no_n_plus_1(
+ conversation_for_runtime,
+ coding_plan_for_runtime,
+ three_repos_for_runtime,
+) -> None:
+ """ — 3 session 时 runtime 总 SQL ≤ 12（防 per-session 单独查 repository）。
+ Open Question #4 决议：`CaptureQueriesContext` 在 async 测试函数内嵌
+ ``sync_to_async`` 触发 "Single thread executor already being used, would
+ deadlock"。改用 ``async_to_sync`` 在同步 fixture 内调度 async service，
+ 捕获查询数。
+ """
+ from asgiref.sync import async_to_sync
+ from django.db import connection
+ from django.test.utils import CaptureQueriesContext
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingSession
+ for r in three_repos_for_runtime:
+ CodingSession.objects.create(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=r,
+ tech_plan="x",
+ status=CodingSession.Status.RUNNING,
+ )
+ with CaptureQueriesContext(connection) as ctx:
+ async_to_sync(ConversationService.get_conversation_runtime)(
+ str(conversation_for_runtime.id)
+ )
+ total_queries = len(ctx.captured_queries)
+ assert total_queries <= 12, f"Query budget 超限: {total_queries} 次 SQL"

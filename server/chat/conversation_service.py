@@ -1113,6 +1113,61 @@ class ConversationService:
  "error_message": recent_coding.error_message,
  "affected_files": recent_coding.affected_files,
  }
+ # Phase：附加最近 CodingPlan + 每仓 session 快照
+ #
+ # 与 coding_session 字段独立并存（向后兼容旧前端单仓路径）；新前端读
+ # runtime.coding_plan.sessions。commit_sha 来自 SubAgentSession.task_result
+ # （Phase 落库后才有真值），缺失时空字符串降级渲染。
+ from chat.models import CodingPlan
+ coding_plan_payload: dict[str, Any] | None = None
+ latest_plan = (
+ await CodingPlan.objects.filter(conversation_id=conv_uuid)
+ .order_by("-created_at")
+ .afirst
+ )
+ if latest_plan is not None:
+ sessions = [
+ s
+ async for s in CodingSession.objects.filter(
+ coding_plan=latest_plan
+ )
+ .select_related("repository", "subagent_session")
+ .order_by("created_at", "repository__name")
+ ]
+ session_items: list[dict[str, Any]] =
+ for s in sessions:
+ commit_sha = ""
+ if (
+ s.subagent_session is not None
+ and isinstance(s.subagent_session.task_result, dict)
+ ):
+ commit_sha = str(
+ s.subagent_session.task_result.get("commit_sha", "") or ""
+ )
+ session_items.append(
+ {
+ "session_id": str(s.id),
+ "repository_id": str(s.repository_id),
+ "repository_name": s.repository.name,
+ "branch_name": s.branch_name,
+ "status": s.status,
+ "pr_url": s.pr_url,
+ "commit_sha": commit_sha,
+ "error_message": s.error_message,
+ }
+ )
+ coding_plan_payload = {
+ "plan_id": str(latest_plan.id),
+ "title": latest_plan.title,
+ "sessions": session_items,
+ }
+ logger.debug(
+ "runtime.coding_plan_attached",
+ conversation_id=conversation_id,
+ plan_id=coding_plan_payload["plan_id"],
+ sessions_count=len(session_items),
+ )
+ runtime["coding_plan"] = coding_plan_payload
  return runtime
  @staticmethod
  async def delete_conversation(conversation_id: str) -> None:

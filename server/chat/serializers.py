@@ -198,6 +198,21 @@ class TaskProgressSerializer(serializers.Serializer):
  """编排任务进度。"""
  completed = serializers.IntegerField
  total = serializers.IntegerField
+class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
+ """Phase：CodingPlan.sessions 单条状态快照。"""
+ session_id = serializers.UUIDField
+ repository_id = serializers.UUIDField
+ repository_name = serializers.CharField
+ branch_name = serializers.CharField(allow_blank=True)
+ status = serializers.CharField
+ pr_url = serializers.CharField(allow_blank=True)
+ commit_sha = serializers.CharField(allow_blank=True)
+ error_message = serializers.CharField(allow_blank=True)
+class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
+ """Phase：对话内最近 CodingPlan + 每仓 session 状态。"""
+ plan_id = serializers.UUIDField
+ title = serializers.CharField(allow_blank=True)
+ sessions = ConversationRuntimeCodingPlanSessionSerializer(many=True)
 class ConversationRuntimeSerializer(serializers.Serializer):
  """对话运行态。"""
  conversation_id = serializers.UUIDField
@@ -212,6 +227,10 @@ class ConversationRuntimeSerializer(serializers.Serializer):
  progress_message = serializers.CharField(allow_blank=True, required=False)
  progress_percent = serializers.FloatField(allow_null=True, required=False)
  logs = RuntimeLogSerializer(many=True, required=False)
+ # Phase：最近 CodingPlan + 每仓 session 状态
+ coding_plan = ConversationRuntimeCodingPlanSerializer(
+ allow_null=True, required=False
+ )
  # 流式快照（仅 active=true 时返回）—— 详见 orchestration.graph._StreamingSnapshot
  # 与前端 store streamingPendingText / streamingThinking / streamingToolCalls /
  # streamingNarrations / streamingTimeline 一一对应；用 JSONField pass-through
