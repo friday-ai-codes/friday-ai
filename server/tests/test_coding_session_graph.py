@@ -40,9 +40,11 @@ def mock_coding_session -> MagicMock:
  session.diff_summary = None
  session.amark_awaiting_confirmation = AsyncMock
  session.amark_failed = AsyncMock
+ session.amark_running = AsyncMock # Phase: dispatch_coding_node 调用
  session.aresume_running = AsyncMock
  session.amark_completed = AsyncMock
  session.asave = AsyncMock
+ session.subagent_session_id = 42 # 用于 amark_running(subagent_session_id=...) 调用
  return session
 def _patch_dispatch -> Any:
  """Patch dispatch_coding_task 返回 mock session_id。"""

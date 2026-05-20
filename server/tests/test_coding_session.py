@@ -99,11 +99,51 @@ class TestCodingSessionStateMachine:
  assert draft_session.tech_plan == "## 更新后方案\n- 新步骤"
  assert draft_session.affected_files == [{"path": "src/main.py", "change_type": "modify"}]
 # ============================================================================
-# Confirm API 测试 ( Task 1)
+# Confirm API 测试 ( Task 1, Phase 改造)
 # ============================================================================
+def _make_graph_mocks:
+ """构造 build_coding_graph / get_checkpointer / asyncio.create_task 的 mock 套件。
+ Phase 改造后 view 不再直接调 dispatch_coding_task，而是启动
+ coding_graph 后台任务。此 helper 提供统一的 mock 风格：
+ - build_coding_graph.compile(checkpointer=...).ainvoke 走 AsyncMock，不真起 graph
+ - get_checkpointer 返回 MagicMock，避免触发真实 sqlite 连接
+ - asyncio.create_task 替换为吞掉协程的 lambda，避免事件循环未启动告警
+ """
+ from unittest.mock import AsyncMock, MagicMock
+ mock_graph_compiled = MagicMock
+ mock_graph_compiled.ainvoke = AsyncMock(return_value={"phase": "waiting_coding"})
+ mock_graph_builder = MagicMock
+ mock_graph_builder.compile = MagicMock(return_value=mock_graph_compiled)
+ mock_build_coding_graph = MagicMock(return_value=mock_graph_builder)
+ mock_checkpointer = MagicMock
+ mock_get_checkpointer = AsyncMock(return_value=mock_checkpointer)
+ create_task_calls: list =
+ def _capture_create_task(coro):
+ create_task_calls.append(coro)
+ # 关闭协程避免 "coroutine was never awaited" 告警
+ try:
+ coro.close
+ except Exception:
+ pass
+ # 返回一个 dummy task 占位
+ dummy = MagicMock
+ return dummy
+ return {
+ "build_coding_graph": mock_build_coding_graph,
+ "graph_builder": mock_graph_builder,
+ "graph_compiled": mock_graph_compiled,
+ "get_checkpointer": mock_get_checkpointer,
+ "checkpointer": mock_checkpointer,
+ "create_task": _capture_create_task,
+ "create_task_calls": create_task_calls,
+ }
 @pytest.mark.django_db(transaction=True)
 class TestCodingSessionConfirmAPI:
- """CodingSession confirm API 端点测试。"""
+ """CodingSession confirm API 端点测试（Phase 改造后）。
+ view 改为启动 coding_graph 后台任务，状态推进 confirmed -> running 下沉到
+ dispatch_coding_node。这里只验证 view 同步前置（aconfirm + Runner 探测 + graph 启动），
+ graph 节点的行为由 test_coding_session_graph_e2e.py 覆盖。
+ """
  @pytest.fixture
  def draft_session(self, project, repository):
  """创建 draft 状态的 CodingSession（含 Conversation + 有效分支名）。"""
@@ -117,32 +157,29 @@ class TestCodingSessionConfirmAPI:
  branch_name="feat20260409.test-coding",
  )
  def test_confirm_only_draft(self, authenticated_client, draft_session):
- """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。"""
+ """POST /api/chat/coding-sessions/{id}/confirm/ 对 draft CodingSession 返回 200。
+ Phase：view 不再同步推进到 running；graph 后台任务负责。
+ view 同步前置成功后 status=confirmed（aconfirm 已切换），200 + graph 启动。
+ """
  from unittest.mock import AsyncMock, patch
- from chat.branch_service import BranchValidationResult
- from repositories.models import GitCredential
+ mocks = _make_graph_mocks
  with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
- patch(
- "chat.branch_service.validate_branch_name",
- new_callable=AsyncMock,
- return_value=BranchValidationResult(valid=True),
- ),
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
  assert response.status_code == 200
  draft_session.refresh_from_db
- assert draft_session.status == CodingSession.Status.RUNNING
+ # view 同步前置 aconfirm 之后状态应为 confirmed；running 推进由 graph 节点完成
+ assert draft_session.status == CodingSession.Status.CONFIRMED
+ # graph 后台任务被调度一次
+ assert len(mocks["create_task_calls"]) == 1
+ # checkpointer + build_coding_graph 各调一次
+ mocks["get_checkpointer"].assert_called_once
+ mocks["build_coding_graph"].assert_called_once
  def test_confirm_non_draft_returns_400(self, authenticated_client, draft_session):
  """POST confirm 对 non-draft 状态返回 400。"""
  draft_session.status = CodingSession.Status.CONFIRMED
@@ -150,64 +187,44 @@ class TestCodingSessionConfirmAPI:
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
  assert response.status_code == 400
- def test_confirm_creates_subagent_session(self, authenticated_client, draft_session):
- """confirm 后创建了 SubAgentSession（task_type=coding）。"""
+ def test_confirm_starts_graph_with_correct_thread_id(self, authenticated_client, draft_session):
+ """confirm 成功后 graph 启动时 thread_id 格式必须是 coding-{coding_session.id}。
+ Phase 关键契约：thread_id 决定了 callback resume 时能否
+ 找到对应 graph thread。CommitConfirmView / PRConfirmView 也依赖同款格式。
+ """
  from unittest.mock import AsyncMock, patch
- from chat.branch_service import BranchValidationResult
- from repositories.models import GitCredential
- from subagent.models import SubAgentSession
+ mocks = _make_graph_mocks
  with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
- patch(
- "chat.branch_service.validate_branch_name",
- new_callable=AsyncMock,
- return_value=BranchValidationResult(valid=True),
- ),
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
  assert response.status_code == 200
+ # graph compile 被调一次（带 checkpointer 关键字参数）
+ mocks["graph_builder"].compile.assert_called_once_with(checkpointer=mocks["checkpointer"])
+ # asyncio.create_task 被调一次，且唯一参数是 graph wrapper 协程
+ assert len(mocks["create_task_calls"]) == 1
+ def test_confirm_runner_offline_returns_503(self, authenticated_client, draft_session):
+ """Runner 不在线时返回 503，CodingSession 回滚到 draft，graph 不启动。"""
+ from unittest.mock import AsyncMock, patch
+ mocks = _make_graph_mocks
+ with (
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=False),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
+ ):
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 503
  draft_session.refresh_from_db
- assert draft_session.subagent_session is not None
- sub_session = SubAgentSession.objects.get(id=draft_session.subagent_session_id)
- assert sub_session.task_type == SubAgentSession.TaskType.CODING
- def test_confirm_dispatches_task(self, authenticated_client, draft_session):
- """confirm 后 dispatch 被调用且 DispatchTask.task_type="coding"。"""
- from unittest.mock import AsyncMock, patch
- from chat.branch_service import BranchValidationResult
- from repositories.models import GitCredential
- with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
- patch(
- "chat.branch_service.validate_branch_name",
- new_callable=AsyncMock,
- return_value=BranchValidationResult(valid=True),
- ),
- ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
- url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
- response = authenticated_client.post(url)
- assert response.status_code == 200
- mock_dispatcher.dispatch.assert_called_once
- dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
- assert dispatch_task.task_type == "coding"
+ assert draft_session.status == CodingSession.Status.DRAFT
+ # graph 不应被启动
+ assert len(mocks["create_task_calls"]) == 0
+ mocks["build_coding_graph"].assert_not_called
  def test_confirm_not_found_returns_404(self, authenticated_client):
  """传入不存在 UUID 返回 404。"""
  import uuid
@@ -500,7 +517,13 @@ class TestCodingSessionSerializerNewFields:
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 class TestCodingSessionConfirmBranchValidation:
- """CodingSessionConfirmView 分支名校验与 metadata 注入测试。"""
+ """CodingSessionConfirmView 分支名校验测试。
+ Phase 改造后：
+ - view 同步路径只对 request body 传入的 branch_name 做校验（前端实际流程）
+ - 已落库的 branch_name 由 graph 的 dispatch_coding_node 在后台校验（dispatch_coding_task 内）
+ - dispatch 时的 metadata 注入（env_FRIDAY_TASK_BRANCH_STRATEGY / target_branch）
+ 归 dispatch_coding_task 单元测试覆盖，不再走 view 端到端断言
+ """
  @pytest.fixture
  def draft_session_with_branch(self, project, repository):
  """创建带有效分支名的 draft CodingSession。"""
@@ -512,139 +535,69 @@ class TestCodingSessionConfirmBranchValidation:
  tech_plan="## 实现 user auth",
  branch_name="feat20260409.user-auth",
  )
- @pytest.fixture
- def draft_session_with_bad_branch(self, project, repository):
- """创建带非法分支名（保护分支）的 draft CodingSession。"""
- from chat.models import Conversation
- conversation = Conversation.objects.create(project=project, title="测试编码")
- return CodingSession.objects.create(
- conversation=conversation,
- repository=repository,
- tech_plan="## 实现 user auth",
- branch_name="main",
- )
- def test_confirm_rejects_protected_branch(self, authenticated_client, draft_session_with_bad_branch):
- """分支名为 main 时 confirm 应返回 400。"""
- from unittest.mock import AsyncMock, patch
- from repositories.models import GitCredential
- with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ def test_confirm_rejects_protected_branch_in_body(
+ self, authenticated_client, draft_session_with_branch,
  ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
- url = f"/api/chat/coding-sessions/{draft_session_with_bad_branch.id}/confirm/"
- response = authenticated_client.post(url)
- assert response.status_code == 400
- assert "errors" in response.data
- # 确认包含保护分支错误信息
- errors_str = str(response.data["errors"])
- assert "保护分支" in errors_str or "main" in errors_str
- def test_confirm_rejects_dotdot_branch(self, authenticated_client, project, repository):
- """分支名包含 .. 时 confirm 应返回 400。"""
+ """request body 传入 main（保护分支）时 view 应返回 400。"""
  from unittest.mock import AsyncMock, patch
- from chat.models import Conversation
- from repositories.models import GitCredential
- conversation = Conversation.objects.create(project=project, title="dotdot 测试")
- bad_session = CodingSession.objects.create(
- conversation=conversation,
- repository=repository,
- tech_plan="## 测试",
- branch_name="feat/../../etc/passwd",
- )
+ mocks = _make_graph_mocks
  with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
- url = f"/api/chat/coding-sessions/{bad_session.id}/confirm/"
- response = authenticated_client.post(url)
+ url = f"/api/chat/coding-sessions/{draft_session_with_branch.id}/confirm/"
+ response = authenticated_client.post(url, data={"branch_name": "main"}, format="json")
  assert response.status_code == 400
- assert "errors" in response.data
- def test_metadata_contains_branch_strategy(self, authenticated_client, draft_session_with_branch):
- """dispatch 时 metadata 应包含 env_FRIDAY_TASK_BRANCH_STRATEGY = session.branch_name，
- 且 target_branch 应为 repo.default_branch。"""
+ # graph 不应启动
+ assert len(mocks["create_task_calls"]) == 0
+ # 错误信息应包含保护分支提示
+ detail_str = str(response.data.get("detail", ""))
+ assert "保护分支" in detail_str or "main" in detail_str
+ def test_confirm_rejects_dotdot_branch_in_body(
+ self, authenticated_client, draft_session_with_branch,
+ ):
+ """request body 传入含 .. 的非法分支名时 view 应返回 400。"""
+ from unittest.mock import AsyncMock, patch
+ mocks = _make_graph_mocks
+ with (
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
+ ):
+ url = f"/api/chat/coding-sessions/{draft_session_with_branch.id}/confirm/"
+ response = authenticated_client.post(
+ url, data={"branch_name": "feat/../../etc/passwd"}, format="json",
+ )
+ assert response.status_code == 400
+ assert len(mocks["create_task_calls"]) == 0
+ def test_confirm_accepts_valid_branch_in_body(
+ self, authenticated_client, draft_session_with_branch,
+ ):
+ """request body 传入合法分支名时 view 应返回 200 并启动 graph。"""
  from unittest.mock import AsyncMock, patch
  from chat.branch_service import BranchValidationResult
- from repositories.models import GitCredential
- session = draft_session_with_branch
+ mocks = _make_graph_mocks
  with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
- # mock validate_branch_name 返回有效结果（避免 DB 唯一性检查误判自身）
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  patch(
  "chat.branch_service.validate_branch_name",
  new_callable=AsyncMock,
  return_value=BranchValidationResult(valid=True),
  ),
  ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
- url = f"/api/chat/coding-sessions/{session.id}/confirm/"
- response = authenticated_client.post(url)
- assert response.status_code == 200, f"confirm 应返回 200，实际返回 {response.status_code}: {response.data}"
- # 从 mock_dispatcher.dispatch.call_args 提取 DispatchTask
- assert mock_dispatcher.dispatch.called, "dispatch 应被调用"
- dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
- # 验证 env_FRIDAY_TASK_BRANCH_STRATEGY
- assert "env_FRIDAY_TASK_BRANCH_STRATEGY" in dispatch_task.metadata, \
- "metadata 应包含 env_FRIDAY_TASK_BRANCH_STRATEGY"
- assert dispatch_task.metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] == session.branch_name, \
- f"branch_strategy 应为 {session.branch_name}，实际为 {dispatch_task.metadata.get('env_FRIDAY_TASK_BRANCH_STRATEGY')}"
- # 验证 target_branch 为 repo.default_branch（非功能分支名）
- repo = session.repository
- assert dispatch_task.target_branch == repo.default_branch, \
- f"target_branch 应为 {repo.default_branch}，实际为 {dispatch_task.target_branch}"
- def test_target_branch_is_default_branch_not_feature_branch(
- self, authenticated_client, draft_session_with_branch
- ):
- """target_branch 始终为 repo.default_branch，而非功能分支名。"""
- from unittest.mock import AsyncMock, patch
- from chat.branch_service import BranchValidationResult
- from repositories.models import GitCredential
- session = draft_session_with_branch
- with (
- patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
- patch("runners.models.Runner.objects") as mock_runner_objects,
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"),
- patch("repositories.models.GitCredential.objects") as mock_git_cred_objects,
- patch(
- "chat.branch_service.validate_branch_name",
- new_callable=AsyncMock,
- return_value=BranchValidationResult(valid=True),
- ),
- ):
- mock_runner_qs = AsyncMock
- mock_runner_qs.acount = AsyncMock(return_value=1)
- mock_runner_objects.filter.return_value = mock_runner_qs
- mock_dispatcher = AsyncMock
- mock_get_dispatcher.return_value = mock_dispatcher
- mock_git_cred_objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
- url = f"/api/chat/coding-sessions/{session.id}/confirm/"
- response = authenticated_client.post(url)
+ url = f"/api/chat/coding-sessions/{draft_session_with_branch.id}/confirm/"
+ response = authenticated_client.post(
+ url, data={"branch_name": "feat20260409.user-auth-v2"}, format="json",
+ )
  assert response.status_code == 200
- dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
- # target_branch 不应等于功能分支名
- assert dispatch_task.target_branch != session.branch_name, \
- "target_branch 不应等于功能分支名"
- assert dispatch_task.target_branch == "main", \
- f"target_branch 应为 main，实际为 {dispatch_task.target_branch}"
+ # branch_name 应该被持久化覆盖
+ draft_session_with_branch.refresh_from_db
+ assert draft_session_with_branch.branch_name == "feat20260409.user-auth-v2"
+ # graph 启动一次
+ assert len(mocks["create_task_calls"]) == 1
