@@ -14,11 +14,18 @@ import StatusBadge from '~/components/common/StatusBadge.vue'
 import { Button } from '~/components/ui/button'
 import { useToast } from '~/composables/useToast'
 import { buildBranchUrl, buildCommitUrl, extractGitWebBase } from '~/lib/gitUrl'
+import RelevanceBadge from './RelevanceBadge.vue'
 const props = defineProps<{
  session: CodingPlanSessionRuntime
  repoGitUrl: string
+ /**
+ * Phase：可选 conversationId 用于在仓库名旁渲染 RelevanceBadge。
+ * 不传则不渲染（向后兼容既有调用方）。
+ */
+ conversationId?: string
  onRetry?: (sessionId: string) => void | Promise<void>
 }>
+const effectiveConversationId = computed( => props.conversationId || '')
 const emit = defineEmits<{
  (e: 'retry', sessionId: string): void
 }>
@@ -62,6 +69,10 @@ function handleRetry {
  <span class="icon-[lucide--folder-git-2] text-sm" />
  <span class="font-medium">{{ session.repository_name }}</span>
  </span>
+ <!-- Phase：相关性徽章（store 无 trace 时优雅降级不渲染） -->
+ <RelevanceBadge
+ v-if="effectiveConversationId":repository-id="session.repository_id":conversation-id="effectiveConversationId"
+ />
  <!-- 状态徽章 -->
  <StatusBadge type="codingSession":status="session.status" />
  <!-- 分支链 -->
