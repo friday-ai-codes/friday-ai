@@ -24,6 +24,7 @@ from agents.tools.find_related_code import find_related_code
 from agents.tools.list_endpoints import list_endpoints
 from agents.tools.langchain_adapter import build_langchain_tools
 from agents.tools.registry import ToolRegistry
+from agents.tools.repository_relevance import analyze_repository_relevance
 from agents.tools.space_tools import (
  get_repository_info,
  list_space_repositories,
@@ -55,6 +56,8 @@ __all__ = [
  "find_api_handler",
  "find_api_callers",
  "list_endpoints",
+ # Cross-repo relevance (Phase)
+ "analyze_repository_relevance",
  # Work item tools
  "get_work_item_detail",
  "list_related_work_items",

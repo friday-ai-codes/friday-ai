@@ -1,0 +1,42 @@
+{
+ "description": "LLM 可见 input schema —— ``space_id`` / ``conversation_id`` 由 chat_runner\n自动注入（与 ``create_coding_plan`` 同模式），但仍出现在 schema 中以便对\nschema snapshot 守门。",
+ "properties": {
+ "query": {
+ "description": "用户的跨仓需求 query，单一概念优先",
+ "minLength": 1,
+ "title": "Query",
+ "type": "string"
+ },
+ "space_id": {
+ "description": "空间 UUID（auto-injected by chat_runner）",
+ "title": "Space Id",
+ "type": "string"
+ },
+ "conversation_id": {
+ "description": "会话 UUID（auto-injected by chat_runner）",
+ "title": "Conversation Id",
+ "type": "string"
+ },
+ "top_k": {
+ "default": 5,
+ "maximum": 20,
+ "minimum": 1,
+ "title": "Top K",
+ "type": "integer"
+ },
+ "threshold": {
+ "default": 0.5,
+ "maximum": 1.0,
+ "minimum": 0.0,
+ "title": "Threshold",
+ "type": "number"
+ }
+ },
+ "required": [
+ "query",
+ "space_id",
+ "conversation_id"
+ ],
+ "title": "RepositoryRelevanceInput",
+ "type": "object"
+}
