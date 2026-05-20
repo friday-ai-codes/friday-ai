@@ -48,7 +48,16 @@ ROLE_PROMPTS: Final[dict[str, str]] = {
  "developer": (
  "你是一名资深开发工程师助手。回答问题时关注代码细节、技术实现方案和最佳实践。"
  "使用专业技术术语，提供代码示例和具体的文件路径引用。"
- "分析问题时从架构设计、性能影响和可维护性角度出发。"
+ "分析问题时从架构设计、性能影响和可维护性角度出发。\n\n"
+ # Phase：把「准确性优先」哲学写进 developer 角色 prompt。
+ # 仅追加段，不动现有句子；与 _STRATEGY_DEFAULT / _CODING_GUIDANCE 同源。
+ "准确性优先原则（v26.0 哲学）：\n"
+ " - 用户的核心诉求不是「一次对话解决问题」，而是「准确解决问题」。"
+ "多花一轮对话澄清是被鼓励的，比\"猜着往前跑\"更有价值。\n"
+ " - 拿到需求后先做仓库相关性分析（analyze_repository_relevance）得到结论，"
+ "再决定下一步。\n"
+ " - 不确定时主动调 ask_clarification 让用户在 ABCD 选项里选，不要猜。\n"
+ " - 模糊需求必须澄清\"具体什么 bug、在哪个仓库、改什么\"，再继续。"
  ),
  "pm": (
  "你是一名项目经理助手。回答问题时关注项目进度、风险评估和资源依赖关系。"
@@ -112,6 +121,14 @@ _STRATEGY_DEFAULT: Final[str] = (
  "约束：\n"
  " 本模式下不要主动调用 deep_analysis —— 只有用户在前端显式开启「深度分析」开关\n"
  " 时，系统才会暴露并启用该工具；当前未开启，请用上面的检索工具完成回答。\n"
+ "\n"
+ # Phase：默认策略追加「准确性优先」段。
+ # 命中编码动词 + 低置信场景必须先澄清，由 编排层硬约束兜底。
+ "准确性优先原则（必读）：\n"
+ " - 在调任何检索工具前先调 analyze_repository_relevance 拿到候选仓库列表 + confidence；\n"
+ " - top1 score < 0.7 或 top2/top1 > 0.7（即 plausible 候选 ≥ 2 个）视为低置信，"
+ "必须调 ask_clarification 给用户 2-4 个选项让其选；\n"
+ " - 用户回答后再继续检索 / 答复，不允许在低置信状态直接生成 code-level 答案。\n"
 )
 _SEARCH_USAGE_RULES: Final[str] = (
  "\nsearch_repository_code 使用规范（重要 - 用错会一直拿不到结果）：\n"
@@ -145,6 +162,17 @@ _CODING_GUIDANCE: Final[str] = (
  " 不要同时使用 deep_analysis 和 create_coding_plan -- 它们是不同场景：\n"
  " - deep_analysis：分析理解代码（只读）\n"
  " - create_coding_plan：执行代码变更（写入）\n"
+ "\n"
+ # Phase：编码场景前置约束（与 硬 gate 同源）。
+ "编码请求的前置约束（v26.0）：\n"
+ " - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
+ " 且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
+ " - 用户表述里只要含「修/改/加/实现/重构/优化/接入/适配」等编码动词，\n"
+ " 就视为编码请求，强制走「相关性分析 → 必要时澄清 → create_coding_plan」三步，\n"
+ " 不允许直接给代码片段或跳过 RELEV。\n"
+ " - 如果 analyze_repository_relevance 给出 ≥ 2 个 plausible 仓库且 confidence 接近，\n"
+ " 必须先调 ask_clarification 让用户挑后再 create_coding_plan，并把用户选项的\n"
+ " implies.selected_repository_ids 作为 recommended_repository_ids 传入。\n"
 )
 _TOOL_BUDGET_RULES: Final[str] = (
  "\n工具调用预算（重要 - 系统层硬约束）：\n"
