@@ -234,6 +234,9 @@ async def update_coding_plan(
  )
  # 路由：优先按 coding_plan_id 走新签名；旧 session_id 走兼容路径
  plan: CodingPlan | None = None
+ # REVIEW：legacy session_id 路径下补回 plan 的 session id（用于
+ # fan-out 同步阶段跳过它，避免重复 write）
+ legacy_session_to_skip: str | None = None
  if coding_plan_id:
  try:
  plan = await CodingPlan.objects.aget(id=coding_plan_id)
@@ -260,21 +263,37 @@ async def update_coding_plan(
  affected_files=session.affected_files or,
  title="",
  )
+ # REVIEW：补回 plan 时合并写入更新后的 tech_plan / affected_files，
+ # 否则下一段 fan-out 同步会重复写一次（无谓 IO + updated_at 被刷两次）。
+ # 这里先暂存目标值，等下方归一化完成后一并写入。
  session.coding_plan = plan
  await session.asave(update_fields=["coding_plan", "updated_at"])
+ legacy_session_to_skip = str(session.id)
  else:
  plan = session.coding_plan
  assert plan is not None # 已被前面分支覆盖
  normalized_files = _normalize_affected_files(affected_files)
  await plan.aupdate_plan(tech_plan=tech_plan, affected_files=normalized_files)
- # 同步关联的 draft session 的兼容字段（不污染 running/completed）
+ # 同步关联的 draft session 的兼容字段（不污染 running/completed）。
+ # REVIEW：若刚刚通过 legacy session_id 路径补回过 plan，这条 session
+ # 已经在补回的同一事务里写入了 plan 的最新内容，跳过避免重复 write。
  synced = 0
  async for s in plan.coding_sessions.filter( # type: ignore[attr-defined]
  status=CodingSession.Status.DRAFT
  ).aiterator:
+ if legacy_session_to_skip is not None and str(s.id) == legacy_session_to_skip:
+ # legacy 路径补回时已把目标值写进 session（见下方 fix block），跳过
+ continue
  s.tech_plan = tech_plan
  s.affected_files = normalized_files
  await s.asave(update_fields=["tech_plan", "affected_files", "updated_at"])
+ synced += 1
+ # legacy 路径下，把 update 后的目标值合并写到刚补回 plan 的 session
+ if legacy_session_to_skip is not None:
+ await CodingSession.objects.filter(id=legacy_session_to_skip).aupdate(
+ tech_plan=tech_plan,
+ affected_files=normalized_files,
+ )
  synced += 1
  logger.info(
  "update_coding_plan_completed",
