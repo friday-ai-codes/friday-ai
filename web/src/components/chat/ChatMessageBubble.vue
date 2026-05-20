@@ -3,7 +3,9 @@ import type MarkdownIt from 'markdown-it'
 import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
 import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import { useRoutingStore } from '~/stores/routing'
 import DocSummaryCard from './DocSummaryCard.vue'
+import RoutingDecisionPanel from './RoutingDecisionPanel.vue'
 import TechPlanCard from './TechPlanCard.vue'
 const props = defineProps<{
  message: ConversationMessage
@@ -31,9 +33,42 @@ const emit = defineEmits<{
  exportSingle: [messageId: string]
 }>
 const chatStore = useChatStore
+const routingStore = useRoutingStore
 const isSelected = computed( =>
  chatStore.selectedMessageIds.has(props.message.id),
 )
+/**
+ * Phase：路由决策面板渲染条件。
+ *
+ * trace_id 来自 message.metadata.routing_trace_id（由 chat store 在
+ * tool_use_result / message_complete 时写入 streamingMetadata 并随
+ * message 持久化）；store 中必须能找到对应 trace 才渲染。
+ */
+const routingTraceId = computed<string | undefined>( => {
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ const id = meta?.routing_trace_id
+ return typeof id === 'string' && id ? id: undefined
+})
+const hasRoutingTrace = computed( => {
+ const id = routingTraceId.value
+ return !!id && routingStore.tracesByTraceId.has(id)
+})
+/**
+ * ConversationMessage 没有 conversation_id 字段时回退到 chatStore.currentConversationId
+ * （历史 message 通常承载本字段）。
+ */
+const conversationIdForRouting = computed<string | undefined>( => {
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ const fromMeta = meta?.conversation_id
+ if (typeof fromMeta === 'string' && fromMeta)
+ return fromMeta
+ return chatStore.currentConversationId || undefined
+})
+function onCreateCodingPlanFromTrace(_traceId: string) {
+ // 让 chat 流推动 LLM 调 create_coding_plan —— 后端 Plan 已实装：不传 ids
+ // 时自动从 conversation 最近 trace 取 selected_by_user_final=True 的仓库。
+ chatStore.sendMessage('请基于上一轮路由决策中选中的仓库创建编码方案。')
+}
 // 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
 const docSummary = computed( => {
  if (props.isStreaming && props.streamingDocSummary) {
@@ -711,6 +746,12 @@ const hideEmptyBubble = computed( =>
  <!-- 飞书文档摘要卡片 -- 在 AI 回答之前展示 -->
  <DocSummaryCard
  v-if="docSummary && message.role === 'assistant'":type="docSummary.type":title="docSummary.title":word-count="docSummary.wordCount":preview="docSummary.preview":truncated="docSummary.truncated":truncated-length="docSummary.truncatedLength":error-type="docSummary.errorType":error-message="docSummary.errorMessage"
+ />
+ <!-- Phase：路由决策卡片（chat_tool / deep_analysis 两路径触发） -->
+ <RoutingDecisionPanel
+ v-if="hasRoutingTrace && routingTraceId && conversationIdForRouting":trace-id="routingTraceId":conversation-id="conversationIdForRouting":message-id="message.id"
+ @create-coding-plan-from-trace="onCreateCodingPlanFromTrace"
+ @manual-select-requested=" => {}"
  />
  <!--
  Thinking 折叠块（兼容路径）：

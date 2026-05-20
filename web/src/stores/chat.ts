@@ -6,6 +6,7 @@
  */
 import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
 import type { ProviderType } from '~/types/providerCredential'
+import type { RoutingDecisionData } from '~/types/routing'
 import {
  confirmCodingSession as apiConfirmCodingSession,
  confirmCodingSessionWithBranch as apiConfirmCodingSessionWithBranch,
@@ -22,6 +23,7 @@ import {
 import { ApiError, get as apiGet } from '~/api/client'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
+import { useRoutingStore } from '~/stores/routing'
 /** Phase：preflight missing payload 契约。 */
 export interface CredentialMissingPayload {
  missingProvider: ProviderType
@@ -636,6 +638,80 @@ export const useChatStore = defineStore('chat', => {
  // ========================================================================
  // SSE 流式消息 (Phase, Plan)
  // ========================================================================
+ const routingStore = useRoutingStore
+ /**
+ * Phase：从 tool_use_result 提取 routing trace 并写入 store。
+ *
+ * 两路径：
+ * (a) analyze_repository_relevance → 直接读 result.output.data；
+ * (b) deep_analysis → 扫 text 末尾 `[cross_repo_relevance:<trace_id>]\n<JSON>` 段。
+ *
+ * 同时把 trace_id 写入即将持久化的 streamingMessage metadata，让 RoutingDecisionPanel
+ * 在 message 已渲染时也能反查 trace。
+ */
+ function maybeParseRoutingTraceFromToolResult(args: {
+ toolName: string
+ toolInput: Record<string, unknown>
+ normalizedResult: string
+ }): void {
+ const conversationId = currentConversationId.value
+ if (!conversationId)
+ return
+ try {
+ if (args.toolName === 'analyze_repository_relevance') {
+ const parsed = JSON.parse(args.normalizedResult) as {
+ output?: { data?: Record<string, unknown> }
+ data?: Record<string, unknown>
+ }
+ const data = (parsed?.output?.data ?? parsed?.data) as
+ | { trace_id?: string, candidates?: unknown, threshold?: number }
+ | undefined
+ const traceId = data?.trace_id
+ if (data && typeof traceId === 'string') {
+ const trace: RoutingDecisionData = {
+ trace_id: traceId,
+ query: (args.toolInput.query as string) || '',
+ candidates: (data.candidates as RoutingDecisionData['candidates']) ||,
+ threshold: typeof data.threshold === 'number' ? data.threshold: 0.5,
+ triggered_by: 'chat_tool',
+ }
+ routingStore.upsertTrace(trace, conversationId)
+ // 把 trace_id 挂到 streamingMetadata 让 message_complete 时持久化
+ streamingMetadata.value = {
+ ...(streamingMetadata.value || {}),
+ routing_trace_id: traceId,
+ }
+ }
+ return
+ }
+ if (args.toolName === 'deep_analysis') {
+ // 后端 callbacks.py 把 candidates JSON 拼到 text_output 末尾：
+ // [cross_repo_relevance:<trace_id>]\n<JSON 数组>
+ // result 可能是嵌套 ToolResult.output JSON / 或直接是裸 text；两路径都扫一遍
+ const matcher = /\[cross_repo_relevance:([0-9a-fA-F-]+)\]\s*\n(\[.*?\])/s
+ const m = args.normalizedResult.match(matcher)
+ if (m) {
+ const traceId = m[1]
+ const candidates = JSON.parse(m[2]) as RoutingDecisionData['candidates']
+ const trace: RoutingDecisionData = {
+ trace_id: traceId,
+ query: '',
+ candidates,
+ threshold: 0.5,
+ triggered_by: 'deep_analysis_completion',
+ }
+ routingStore.upsertTrace(trace, conversationId)
+ streamingMetadata.value = {
+ ...(streamingMetadata.value || {}),
+ routing_trace_id: traceId,
+ }
+ }
+ }
+ }
+ catch (err) {
+ console.warn('[routing] failed to parse trace from tool result', err)
+ }
+ }
  function handleSSEEvent(event: SSEEvent) {
  // 用户已中断，忽略后续事件（仅保留 message_complete 用于清理）
  if (streamingStatus.value === 'interrupted' && event.type !== 'message_complete')
@@ -724,6 +800,16 @@ export const useChatStore = defineStore('chat', => {
  if (event.batch_id && !timelineTool.batch_id)
  timelineTool.batch_id = event.batch_id
  }
+ // Phase：解析跨仓路由 trace 两路径
+ // (a) tool_name === 'analyze_repository_relevance' → 直接读 output.data
+ // (b) tool_name === 'deep_analysis' → 扫描 result 文本中 [cross_repo_relevance:<trace_id>] 段
+ if (tc && normalizedResult) {
+ maybeParseRoutingTraceFromToolResult({
+ toolName: tc.name,
+ toolInput: tc.input,
+ normalizedResult,
+ })
+ }
  break
  }
  case 'message_complete': {
@@ -734,6 +820,14 @@ export const useChatStore = defineStore('chat', => {
  }
  else {
  streamingContent.value = streamingPendingText.value
+ }
+ // Phase：deep_analysis 回灌 text 末尾可能含 routing trace 段
+ if (currentConversationId.value && typeof streamingContent.value === 'string') {
+ maybeParseRoutingTraceFromToolResult({
+ toolName: 'deep_analysis',
+ toolInput: {},
+ normalizedResult: streamingContent.value,
+ })
  }
  streamingPendingText.value = ''
  if (event.message_id)
