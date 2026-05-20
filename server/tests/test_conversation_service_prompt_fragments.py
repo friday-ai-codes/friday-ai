@@ -102,3 +102,92 @@ class TestFragmentRendering:
  )
  assert PromptSlugs.CHAT_STRATEGY_DEEP_ANALYSIS in calls
  assert PromptSlugs.CHAT_STRATEGY_DEFAULT not in calls
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestIntentPriorityFragments:
+ """Phase：「准确性优先原则」三 slug 渲染契约。"""
+ async def test_developer_role_includes_intent_priority(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer"
+ )
+ assert "准确性优先原则" in prompt
+ assert "analyze_repository_relevance" in prompt
+ assert "ask_clarification" in prompt
+ async def test_strategy_default_includes_low_confidence_rule(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer", force_deep_analysis=False
+ )
+ assert "top1 score < 0.7" in prompt
+ assert "必须调 ask_clarification" in prompt
+ async def test_coding_guidance_includes_relev_gate(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer"
+ )
+ assert "调 create_coding_plan 之前必须有 analyze_repository_relevance" in prompt
+ assert "编码动词" in prompt
+ assert "recommended_repository_ids" in prompt
+ async def test_force_deep_analysis_omits_default_intent_priority_block(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ """deep_analysis 模式不应携带 default 策略的「准确性优先原则（必读）」段。
+ deep_analysis 自带「路由器/派单员」语义，与本段功能正交；同时注入会让 LLM
+ 在派单流里又被催着去调 ask_clarification，干扰并行 dispatch。
+ """
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer", force_deep_analysis=True
+ )
+ assert "准确性优先原则（必读）" not in prompt
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestIntentPriorityFragments:
+ """Phase：「准确性优先」三 slug 注入语义验证。"""
+ async def test_developer_role_includes_intent_priority(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer"
+ )
+ assert "准确性优先原则" in prompt
+ assert "analyze_repository_relevance" in prompt
+ assert "ask_clarification" in prompt
+ async def test_strategy_default_includes_low_confidence_rule(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer", force_deep_analysis=False
+ )
+ assert "top1 score < 0.7" in prompt
+ assert "必须调 ask_clarification" in prompt
+ async def test_coding_guidance_includes_relev_gate(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer"
+ )
+ assert "调 create_coding_plan 之前必须有 analyze_repository_relevance" in prompt
+ assert "编码动词" in prompt
+ assert "recommended_repository_ids" in prompt
+ async def test_force_deep_analysis_does_not_include_intent_priority_block(
+ self,
+ disable_all_chat_slugs: None,
+ ) -> None:
+ """force_deep_analysis=True → 走 strategy.deep_analysis，不含
+ 「准确性优先原则（必读）」字面块（ 与 deep_analysis 模式隔离）。
+ """
+ prompt = await _build_system_prompt(
+ "P1", "proj-1", role="developer", force_deep_analysis=True
+ )
+ assert "准确性优先原则（必读）" not in prompt

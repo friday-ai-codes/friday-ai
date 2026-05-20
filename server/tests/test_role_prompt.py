@@ -68,10 +68,14 @@ class TestBuildSystemPrompt:
  prompt = await _build_system_prompt("TestProject", "proj-1", role="developer")
  assert "TestProject" in prompt
  async def test_all_roles_have_reasonable_length(self) -> None:
- """所有角色 prompt 长度在合理范围内（完整 prompt 约 1000-1100 字符）。"""
+ """所有角色 prompt 长度在合理范围内。
+ Phase 在 developer / strategy / coding_guidance 各
+ 追加「准确性优先」段后，整体长度从 ~1100 增长到 ~3000+；上限同步
+ 放宽至 5000 留足后续 INTENT/RELEV phase 增量注入空间。
+ """
  for role in ROLE_PROMPTS:
  prompt = await _build_system_prompt("P", "proj-1", role=role)
- assert 80 < len(prompt) < 1200, (
+ assert 80 < len(prompt) < 5000, (
  f"Role '{role}' prompt length {len(prompt)} out of range"
  )
  async def test_all_five_roles_defined(self) -> None:
