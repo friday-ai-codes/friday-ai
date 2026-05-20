@@ -18,6 +18,8 @@ class ToolCategory(Enum):
  FEISHU = "FEISHU" # Feishu integration (docs, messages)
  SUBAGENT = "SUBAGENT" # Claude Code subagent operations
  GENERAL = "GENERAL" # General utility tools
+ # Phase RELEV：召回 / 相关性聚合类工具
+ RETRIEVAL = "RETRIEVAL"
 @dataclass
 class ToolResult:
  """

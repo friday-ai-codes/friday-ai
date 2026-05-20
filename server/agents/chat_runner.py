@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field, create_model
 # 触发 @tool 注册
 import agents.tools.chat_tools # noqa: F401
 import agents.tools.coding_tools # noqa: F401
+import agents.tools.repository_relevance # noqa: F401
 import agents.tools.space_tools # noqa: F401
 from agents.core.events import (
  ERROR,
@@ -65,6 +66,8 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "search_repository_code",
  "list_space_repositories",
  "get_repository_info",
+ # Phase：先分析相关性，后创建方案
+ "analyze_repository_relevance",
  "create_coding_plan",
  "update_coding_plan",
 ]

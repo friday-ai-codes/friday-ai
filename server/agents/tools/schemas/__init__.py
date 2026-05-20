@@ -13,6 +13,11 @@ from agents.tools.schemas.find_related_code import (
  FindRelatedCodeOutput,
  NeighborOutput,
 )
+from agents.tools.schemas.repository_relevance import (
+ RepositoryRelevanceCandidate,
+ RepositoryRelevanceInput,
+ RepositoryRelevanceOutput,
+)
 from agents.tools.schemas.search_repository_code import (
  SearchRepositoryCodeInput,
  SearchRepositoryCodeOutput,
@@ -21,6 +26,9 @@ __all__ = [
  "FindRelatedCodeInput",
  "FindRelatedCodeOutput",
  "NeighborOutput",
+ "RepositoryRelevanceCandidate",
+ "RepositoryRelevanceInput",
+ "RepositoryRelevanceOutput",
  "SearchRepositoryCodeInput",
  "SearchRepositoryCodeOutput",
 ]
