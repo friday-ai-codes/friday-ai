@@ -212,6 +212,21 @@ class TaskRunner:
  commit_sha=commit_sha,
  diff_summary=diff_summary,
  )
+ # Phase: 显式发 completed 帧携带 git 元数据。
+ # progress 帧（push_complete / suggested_commit_message / execution_complete）
+ # 上面已经发过，server 端 progress 渲染依赖；此处补 completed 帧让 server
+ # _handle_completed 走全 TaskResult 写入 + resume coding_graph。
+ await self.callback.report_completed(
+ output={
+ "text": diff_summary,
+ "branch_name": branch_name,
+ "commit_sha": commit_sha,
+ "suggested_commit_message": suggested_commit_message,
+ "modified_files": modified_files,
+ "task_type": "coding",
+ },
+ result_type="text",
+ )
  log.info("Execute mode completed successfully", commit=commit_sha[:8])
  return 0
  def _generate_suggested_commit_message(
@@ -303,6 +318,18 @@ class TaskRunner:
  branch_name=branch_name,
  commit_sha=commit_sha,
  diff_summary=diff_summary,
+ )
+ # Phase: Phase 完成同样发 completed 帧（task_type="coding_commit"），
+ # 让 server 端 _update_coding_session_on_complete 走 Phase 分支 resume graph。
+ await self.callback.report_completed(
+ output={
+ "text": "commit message amended and pushed",
+ "branch_name": branch_name,
+ "commit_sha": commit_sha,
+ "modified_files": modified_files,
+ "task_type": "coding_commit",
+ },
+ result_type="text",
  )
  log.info("commit_mode_complete", commit_sha=commit_sha[:8] if commit_sha else "")
  return 0
