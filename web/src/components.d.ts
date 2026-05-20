@@ -247,6 +247,7 @@ declare module 'vue' {
  ProviderSettings: typeof import('./components/providers/ProviderSettings.vue')['default']
  RAGEnhancementSettings: typeof import('./components/settings/RAGEnhancementSettings.vue')['default']
  ReferencesList: typeof import('./components/galaxy/ReferencesList.vue')['default']
+ RelevanceBadge: typeof import('./components/chat/RelevanceBadge.vue')['default']
  ReplayControls: typeof import('./components/execution/replay/ReplayControls.vue')['default']
  ReplayTimeline: typeof import('./components/execution/replay/ReplayTimeline.vue')['default']
  RepoHashFreshnessCard: typeof import('./components/repository/RepoHashFreshnessCard.vue')['default']
