@@ -39,18 +39,22 @@ class TestSSEEventTypeContract:
  "coding_failed",
  "awaiting_pr_review",
  "conflict_check",
+ # Quick Task：parts 双轨期新事件（与旧事件共存）
+ "part_started",
+ "part_delta",
+ "part_completed",
  })
  def test_all_event_types_contains_expected(self) -> None:
- """ALL_EVENT_TYPES 恰好包含 16 种预期事件类型。"""
+ """ALL_EVENT_TYPES 恰好包含 21 种预期事件类型（18 legacy + 3 parts 新增）。"""
  assert ALL_EVENT_TYPES == self.EXPECTED_EVENT_TYPES, (
  f"ALL_EVENT_TYPES 与预期不符。\n"
  f" 多余: {ALL_EVENT_TYPES - self.EXPECTED_EVENT_TYPES}\n"
  f" 缺少: {self.EXPECTED_EVENT_TYPES - ALL_EVENT_TYPES}"
  )
  def test_all_event_types_count(self) -> None:
- """ALL_EVENT_TYPES 应恰好包含 18 种类型。"""
- assert len(ALL_EVENT_TYPES) == 18, (
- f"期望 18 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
+ """ALL_EVENT_TYPES 应恰好包含 21 种类型（18 legacy + 3 parts 双轨期新增）。"""
+ assert len(ALL_EVENT_TYPES) == 21, (
+ f"期望 21 种事件类型，实际 {len(ALL_EVENT_TYPES)}: {ALL_EVENT_TYPES}"
  )
  def test_budget_warning_constant(self) -> None:
  """BUDGET_WARNING 常量值为 'budget_warning'。"""
