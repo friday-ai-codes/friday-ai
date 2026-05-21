@@ -10,7 +10,21 @@ from agents.chat_runner import (
  _build_tool_specs,
  _thinking_budget_tokens,
 )
-from agents.core.events import ERROR, MESSAGE_COMPLETE, TEXT_DELTA, TOOL_USE_RESULT, TOOL_USE_START
+from agents.core.events import (
+ ERROR,
+ MESSAGE_COMPLETE,
+ PART_COMPLETED,
+ PART_DELTA,
+ PART_STARTED,
+ TEXT_DELTA,
+ TOOL_USE_RESULT,
+ TOOL_USE_START,
+)
+# Quick Task 起 SSE 双轨期：旧测试断言事件序列时需先过滤掉
+# part_started / part_delta / part_completed 新事件，验证 legacy 序列不退化。
+_NEW_PART_EVENTS = frozenset({PART_STARTED, PART_DELTA, PART_COMPLETED})
+def _legacy_event_types(events):
+ return [e.type for e in events if e.type not in _NEW_PART_EVENTS]
 from agents.tool_budget import FILE_READ_HARD_LIMIT
 from agents.tools.base import ToolResult
 def _make_config -> ChatRunnerConfig:
@@ -69,7 +83,8 @@ async def test_chat_runner_streams_text_and_message_complete -> None:
  patch("agents.chat_runner._build_tool_specs", return_value={}),
  ):
  events = [event async for event in runner.stream("你好")]
- assert [event.type for event in events] == [TEXT_DELTA, TEXT_DELTA, MESSAGE_COMPLETE]
+ # 双轨期：旧事件序列不退化（过滤新 part_* 事件后断言）
+ assert _legacy_event_types(events) == [TEXT_DELTA, TEXT_DELTA, MESSAGE_COMPLETE]
  assert events[-1].data["result"] == "你好"
  assert runner.result is not None
  assert runner.result.final_answer == "你好"
@@ -112,11 +127,13 @@ async def test_chat_runner_emits_tool_events_for_blocking_tool -> None:
  patch("agents.chat_runner._build_tool_specs", return_value=tool_specs),
  ):
  events = [event async for event in runner.stream("分析一下")]
- assert [event.type for event in events] == [TOOL_USE_START, TOOL_USE_RESULT]
+ # 双轨期：旧事件序列不退化（过滤新 part_* 事件后断言）
+ assert _legacy_event_types(events) == [TOOL_USE_START, TOOL_USE_RESULT]
  # tool_use_result.data["result"] 已统一序列化为 JSON 字符串（与 langchain_runner /
  # graph snapshot 对齐），blocking marker 校验需先 json.loads。
  import json as _json
- parsed_result = _json.loads(events[-1].data["result"])
+ legacy_events = [e for e in events if e.type not in _NEW_PART_EVENTS]
+ parsed_result = _json.loads(legacy_events[-1].data["result"])
  assert parsed_result["__blocking_task__"] is True
  assert runner.result is not None
  assert runner.result.status == "completed"

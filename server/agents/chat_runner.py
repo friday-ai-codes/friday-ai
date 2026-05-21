@@ -36,6 +36,9 @@ import agents.tools.space_tools # noqa: F401
 from agents.core.events import (
  ERROR,
  MESSAGE_COMPLETE,
+ PART_COMPLETED,
+ PART_DELTA,
+ PART_STARTED,
  TEXT_DELTA,
  THINKING,
  TOOL_USE_RESULT,
@@ -243,6 +246,28 @@ def _normalize_tool_result(result: ToolResult) -> Any:
  if result.success:
  return result.output
  return {"error": result.error or "未知错误", "is_error": True}
+def _make_part_event(
+ *,
+ type_: str,
+ index: int,
+ model: str,
+ session_id: str,
+ part: dict[str, Any] | None = None,
+ delta_type: str | None = None,
+ text: str | None = None,
+) -> AgentEvent:
+ """Quick Task：构造 part_started / part_delta / part_completed 事件。
+ payload schema 字面冻结（PLAN §3.2 / § 表格）；前端 dispatch
+ 分支直接按 index + delta_type 维护 streamingParts。
+ """
+ data: dict[str, Any] = {"index": index}
+ if part is not None:
+ data["part"] = part
+ if delta_type is not None:
+ data["delta_type"] = delta_type
+ if text is not None:
+ data["text"] = text
+ return AgentEvent(type=type_, data=_inject_metadata(data, model, session_id))
 def _build_message_complete(
  *,
  final_answer: str,
@@ -628,15 +653,40 @@ class ChatAnthropicRunner:
  if block_type == "text" and block.get("text"):
  text = str(block["text"])
  accumulated_text.append(text)
- collector.append_text(text)
+ part_id, part_idx, is_new = collector.append_text(text)
+ # 旧事件先发（双轨期前端可选 flag 消费）
  yield AgentEvent(
  type=TEXT_DELTA,
  data=_inject_metadata({"text": text}, self._config.model, self._config.session_id),
  )
+ # 新事件后发：is_new 时先 part_started 再 part_delta；
+ # 否则直接 part_delta（同一 streaming text part append）
+ if is_new:
+ yield _make_part_event(
+ type_=PART_STARTED,
+ index=part_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ part={
+ "id": part_id,
+ "type": "text",
+ "index": part_idx,
+ "text": "",
+ "state": "streaming",
+ },
+ )
+ yield _make_part_event(
+ type_=PART_DELTA,
+ index=part_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ delta_type="text_append",
+ text=text,
+ )
  elif block_type in {"reasoning", "thinking"}:
  reasoning = block.get("reasoning") or block.get("thinking") or block.get("text")
  if reasoning:
- collector.append_thinking(str(reasoning))
+ part_id, part_idx, is_new = collector.append_thinking(str(reasoning))
  yield AgentEvent(
  type=THINKING,
  data=_inject_metadata(
@@ -644,6 +694,28 @@ class ChatAnthropicRunner:
  self._config.model,
  self._config.session_id,
  ),
+ )
+ if is_new:
+ yield _make_part_event(
+ type_=PART_STARTED,
+ index=part_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ part={
+ "id": part_id,
+ "type": "thinking",
+ "index": part_idx,
+ "text": "",
+ "state": "streaming",
+ },
+ )
+ yield _make_part_event(
+ type_=PART_DELTA,
+ index=part_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ delta_type="text_append",
+ text=str(reasoning),
  )
  if full_message is None:
  continue
@@ -676,7 +748,7 @@ class ChatAnthropicRunner:
  usage=total_usage,
  )
  return
- collector.start_tool_use(
+ tool_part_id, tool_part_idx, prev_closed_idx = collector.start_tool_use(
  tool_call_id=tool_call_id,
  name=tool_name,
  input=arguments if isinstance(arguments, dict) else {},
@@ -697,6 +769,34 @@ class ChatAnthropicRunner:
  self._config.session_id,
  ),
  )
+ # 新事件：tool_use 会封口当前 streaming text/thinking。
+ # 先发被封口 part 的 part_completed，再发新 tool_use part 的 part_started。
+ if prev_closed_idx is not None:
+ yield _make_part_event(
+ type_=PART_COMPLETED,
+ index=prev_closed_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ part={"index": prev_closed_idx, "state": "done"},
+ )
+ tool_part_payload: dict[str, Any] = {
+ "id": tool_part_id,
+ "type": "tool_use",
+ "index": tool_part_idx,
+ "tool_call_id": tool_call_id,
+ "name": tool_name,
+ "input": arguments,
+ "status": "running",
+ }
+ if batch_id:
+ tool_part_payload["batch_id"] = batch_id
+ yield _make_part_event(
+ type_=PART_STARTED,
+ index=tool_part_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ part=tool_part_payload,
+ )
  result, tool_message, intercepted = await self._execute_tool_call(
  tool_specs,
  tool_name=tool_name,
@@ -712,7 +812,7 @@ class ChatAnthropicRunner:
  # session_id 在 ChatMessageBubble 里解析为空字符串，进而
  # confirm 请求 URL 变成 /coding-sessions//confirm/ → 404。
  result_for_event = _tool_result_to_content(raw_result)
- collector.complete_tool_use(
+ completed_idx = collector.complete_tool_use(
  tool_call_id=tool_call_id,
  success=result.success,
  result=result_for_event,
@@ -736,6 +836,22 @@ class ChatAnthropicRunner:
  self._config.model,
  self._config.session_id,
  ),
+ )
+ # 新事件：tool_use part 完成
+ if completed_idx is not None:
+ yield _make_part_event(
+ type_=PART_COMPLETED,
+ index=completed_idx,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ part={
+ "id": tool_part_id,
+ "type": "tool_use",
+ "index": completed_idx,
+ "tool_call_id": tool_call_id,
+ "status": "done" if result.success else "error",
+ "result": result_for_event,
+ },
  )
  messages.append(tool_message)
  if isinstance(result.output, dict) and result.output.get("__blocking_task__"):

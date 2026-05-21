@@ -19,6 +19,12 @@ PHASE_TRANSITION = "phase_transition"
 TASK_PROGRESS = "task_progress"
 DOC_SUMMARY = "doc_summary"
 DOC_ERROR = "doc_error"
+# Quick Task：Anthropic content blocks 风格的 parts 事件
+# （双轨期与旧 text_delta / thinking / tool_use_* 共存，不替代）。
+# payload schema 见 PLAN §3.2 表格，前端按 useChatPartsProtocol flag 二选一消费。
+PART_STARTED = "part_started"
+PART_DELTA = "part_delta"
+PART_COMPLETED = "part_completed"
 # ─── Phase 决策注 (v18.1-work item G3 gap closure) ───
 # 以下三个常量 (CODING_PROGRESS / AWAITING_PR_REVIEW / CONFLICT_CHECK) 在 v18.1
 # 生产代码中均无 AgentEvent(type=...) 发射点 —— 全代码 grep 零命中。
@@ -62,6 +68,10 @@ ALL_EVENT_TYPES: frozenset[str] = frozenset({
  CODING_FAILED,
  AWAITING_PR_REVIEW,
  CONFLICT_CHECK,
+ # Quick Task：parts 双轨期新事件
+ PART_STARTED,
+ PART_DELTA,
+ PART_COMPLETED,
 })
 # 连接级事件类型 — 不走 SSE data 行，通过 SSE 注释行发送
 KEEPALIVE = "keepalive"
