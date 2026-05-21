@@ -51,6 +51,7 @@ from agents.models import AgentSession, ToolCallLog
 from agents.tool_budget import _ToolBudget
 from agents.tools.base import ToolDefinition, ToolResult, _tool_registry
 from agents.tools.langchain_adapter import build_langchain_tools
+from chat.parts import PartsCollector
 from repositories.models import Repository
 from services.model_capabilities import ModelCapabilities
 from services.provider_config import ProviderType
@@ -248,21 +249,25 @@ def _build_message_complete(
  usage: dict[str, int],
  model: str,
  session_id: str,
+ parts: list[dict[str, Any]],
  status: str = "completed",
 ) -> AgentEvent:
- return AgentEvent(
- type=MESSAGE_COMPLETE,
- data=_inject_metadata(
- {
+ """构造 MESSAGE_COMPLETE 事件。
+ Quick Task：``parts`` 是必填 kwarg —— 即便 ERROR / interrupted
+ 路径也必须携带（可为空 list 或部分已收集 parts），保证前端能渲染已生成的
+ text/tool_use 给用户看，不丢失上下文（PLAN §3.2 双轨期协议）。
+ """
+ payload: dict[str, Any] = {
  "final_answer": final_answer,
  "result": final_answer,
  "status": status,
  "usage": usage,
  "cost_usd": 0,
- },
- model,
- session_id,
- ),
+ "parts": parts,
+ }
+ return AgentEvent(
+ type=MESSAGE_COMPLETE,
+ data=_inject_metadata(payload, model, session_id),
  )
 def _check_chat_context_window(
  messages: list[Any],
@@ -570,10 +575,20 @@ class ChatAnthropicRunner:
  ]
  total_usage = {"input_tokens": 0, "output_tokens": 0}
  accumulated_text: list[str] =
+ # Quick Task：parts 状态机持有者（PLAN §4 D2）。
+ # 所有 text / thinking / tool_use 真相走 collector；``accumulated_text``
+ # 仅作 ``final_answer`` 兼容副本保留（向后兼容旧消费方）。
+ collector = PartsCollector
  self._run_task = asyncio.current_task
  # Phase：单 stream 工具预算控制（去重 + 单文件硬上限 + 剩余
  # 预算注入 + 强制 final-turn）。详见 agents/tool_budget.py。
  budget = _ToolBudget(max_turns=self._config.max_turns)
+ # REGION: interrupt-latch-fix-v26.0-2026-05-21
+ # ↑ Phase DEBUG 修复保护区，不可触碰：
+ # 1) _interrupt_requested latch（构造器 + interrupt）
+ # 2) _run_task 生命周期管理（assign / cancel / finally 清零）
+ # 3) collector.flush_all 在三个 except 分支的强制调用契约（major #1）
+ # 详见 project-docs/phases/work-item/work-item item-runner-collapse.md
  try:
  # 窗口期补救：interrupt 可能早于 stream 第一次被驱动就到达
  # （register_runner 比 _run_task 赋值早；用户在用户消息刚发出去就立刻
@@ -613,6 +628,7 @@ class ChatAnthropicRunner:
  if block_type == "text" and block.get("text"):
  text = str(block["text"])
  accumulated_text.append(text)
+ collector.append_text(text)
  yield AgentEvent(
  type=TEXT_DELTA,
  data=_inject_metadata({"text": text}, self._config.model, self._config.session_id),
@@ -620,6 +636,7 @@ class ChatAnthropicRunner:
  elif block_type in {"reasoning", "thinking"}:
  reasoning = block.get("reasoning") or block.get("thinking") or block.get("text")
  if reasoning:
+ collector.append_thinking(str(reasoning))
  yield AgentEvent(
  type=THINKING,
  data=_inject_metadata(
@@ -659,6 +676,12 @@ class ChatAnthropicRunner:
  usage=total_usage,
  )
  return
+ collector.start_tool_use(
+ tool_call_id=tool_call_id,
+ name=tool_name,
+ input=arguments if isinstance(arguments, dict) else {},
+ batch_id=batch_id or None,
+ )
  start_payload: dict[str, Any] = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
@@ -689,6 +712,11 @@ class ChatAnthropicRunner:
  # session_id 在 ChatMessageBubble 里解析为空字符串，进而
  # confirm 请求 URL 变成 /coding-sessions//confirm/ → 404。
  result_for_event = _tool_result_to_content(raw_result)
+ collector.complete_tool_use(
+ tool_call_id=tool_call_id,
+ success=result.success,
+ result=result_for_event,
+ )
  tool_event_data: dict[str, Any] = {
  "tool_name": tool_name,
  "tool_call_id": tool_call_id,
@@ -713,27 +741,32 @@ class ChatAnthropicRunner:
  if isinstance(result.output, dict) and result.output.get("__blocking_task__"):
  blocking_marker_seen = True
  if blocking_marker_seen:
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="completed",
  final_answer="".join(accumulated_text),
  usage=total_usage,
- metadata={"cost_usd": 0},
+ metadata={"cost_usd": 0, "parts": payload["parts"]},
  )
  return
  budget.on_turn_complete
  continue
  final_answer = _extract_message_text(full_message)
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="completed",
  final_answer=final_answer,
  usage=total_usage,
- metadata={"cost_usd": 0},
+ metadata={"cost_usd": 0, "parts": payload["parts"]},
  )
  yield _build_message_complete(
  final_answer=final_answer,
  usage=total_usage,
  model=self._config.model,
  session_id=self._config.session_id,
+ parts=payload["parts"],
  )
  return
  # Phase：max_turns 真用尽（含 force-final 那一轮）才会到这里。
@@ -753,6 +786,8 @@ class ChatAnthropicRunner:
  max_turns=self._config.max_turns,
  produced_partial=bool(partial_text),
  )
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="completed",
  final_answer=degraded_answer,
@@ -762,6 +797,7 @@ class ChatAnthropicRunner:
  "degraded": True,
  "degraded_reason": "max_turns_exhausted",
  "max_turns": self._config.max_turns,
+ "parts": payload["parts"],
  },
  )
  yield AgentEvent(
@@ -775,18 +811,25 @@ class ChatAnthropicRunner:
  "degraded_reason": "max_turns_exhausted",
  "usage": total_usage,
  "cost_usd": 0,
+ "parts": payload["parts"],
  },
  self._config.model,
  self._config.session_id,
  ),
  )
  except asyncio.CancelledError:
+ # REGION: interrupt-latch-fix-v26.0-2026-05-21
+ # major #1 ERROR 路径 parts 携带契约：flush_all 后再发 message_complete。
+ # 不可短路：collector 把所有 streaming text 标 done、未完成 tool_use 标
+ # error+cancelled，message_complete payload 必须带 parts 给前端兜底渲染。
  partial_text = "".join(accumulated_text)
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="interrupted",
  final_answer=partial_text,
  usage=total_usage,
- metadata={"cost_usd": 0},
+ metadata={"cost_usd": 0, "parts": payload["parts"]},
  )
  yield _build_message_complete(
  final_answer=partial_text,
@@ -794,7 +837,9 @@ class ChatAnthropicRunner:
  model=self._config.model,
  session_id=self._config.session_id,
  status="interrupted",
+ parts=payload["parts"],
  )
+ # ENDREGION: interrupt-latch-fix-v26.0-2026-05-21
  raise
  except ContextWindowExceededError as exc:
  # Phase chat 路径集成：SSE ERROR 结构化 payload。
@@ -833,10 +878,16 @@ class ChatAnthropicRunner:
  max_tokens=ctx_budget,
  exceeded_by=exceeded,
  )
+ # REGION: interrupt-latch-fix-v26.0-2026-05-21
+ # major #1 ERROR 路径 parts 携带契约：context exceeded 同样需要 flush_all
+ # + 追发一条 MESSAGE_COMPLETE 让前端能渲染已收集 parts（不替代结构化 ERROR）。
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="error",
  error=msg,
  usage=total_usage,
+ metadata={"parts": payload["parts"]},
  )
  yield AgentEvent(
  type=ERROR,
@@ -875,16 +926,41 @@ class ChatAnthropicRunner:
  self._config.session_id,
  ),
  )
+ yield _build_message_complete(
+ final_answer="".join(accumulated_text),
+ usage=total_usage,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ status="error",
+ parts=payload["parts"],
+ )
+ # ENDREGION: interrupt-latch-fix-v26.0-2026-05-21
  except Exception as exc:
+ # REGION: interrupt-latch-fix-v26.0-2026-05-21
+ # major #1 ERROR 路径 parts 携带契约：generic Exception 同样发 ERROR +
+ # 追发 MESSAGE_COMPLETE，让前端能渲染中段已生成的 text/tool_use。
  logger.exception("chat_runner_error", session_id=self._config.session_id)
+ collector.flush_all
+ payload = collector.to_message_payload
  self._result = _make_agent_result(
  status="error",
  error=str(exc),
  usage=total_usage,
+ metadata={"parts": payload["parts"]},
  )
  yield AgentEvent(
  type=ERROR,
  data=_inject_metadata({"message": str(exc)}, self._config.model, self._config.session_id),
  )
+ yield _build_message_complete(
+ final_answer="".join(accumulated_text),
+ usage=total_usage,
+ model=self._config.model,
+ session_id=self._config.session_id,
+ status="error",
+ parts=payload["parts"],
+ )
+ # ENDREGION: interrupt-latch-fix-v26.0-2026-05-21
  finally:
  self._run_task = None
+ # ENDREGION: interrupt-latch-fix-v26.0-2026-05-21
