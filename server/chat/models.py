@@ -87,6 +87,12 @@ class Message(models.Model):
  tool_calls = models.JSONField(null=True, blank=True)
  tool_call_id = models.CharField(max_length=64, blank=True, default="")
  metadata = models.JSONField(default=dict, blank=True)
+ # Quick Task：Anthropic content blocks 风格的有序 parts 数组
+ # （TextPart / ToolUsePart / ThinkingPart 联合）。default=、零 data migration；
+ # v25 历史消息读出 后由前端 hydrate adapter 合成（PLAN §D5）。content /
+ # tool_calls 字段由 PartsCollector.to_message_payload 强同源派生，不允许
+ # 散落规则。schema 演化走 metadata.parts_schema_version（PLAN §D1）。
+ parts = models.JSONField(default=list, blank=True)
  created_at = models.DateTimeField(auto_now_add=True)
  class Meta:
  db_table = "messages"
