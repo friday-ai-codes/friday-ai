@@ -1,10 +1,34 @@
 <script setup lang="ts">
+import type { ToolUsePart } from '~/types/chat'
+/**
+ * Quick Task：ChatToolCall.vue 接受新 parts API。
+ *
+ * 双轨期 props 二选一：
+ * 1. 老调用方传 `name / input / result / status` 直接字段（保留向后兼容）
+ * 2. 新调用方传 `part: ToolUsePart` 整个 part 对象
+ *
+ * 优先用 `part`；都不传则字段默认空（不 crash）。
+ * 双发期 v27 删除 part-free 直接字段路径。
+ */
 const props = defineProps<{
- name: string
- input: Record<string, unknown>
+ name?: string
+ input?: Record<string, unknown>
  result?: string
- status: 'running' | 'done'
+ status?: 'running' | 'done' | 'error'
+ /** Quick Task：新 parts API 整体传入；优先级高于平铺字段。 */
+ part?: ToolUsePart
 }>
+if (process.env.NODE_ENV !== 'production' && props.part && props.name) {
+ console.warn('[ChatToolCall] part 与 name 同时传入；按 part 为准（PLAN § 双轨期约定）')
+}
+// 派生有效字段：part 优先于平铺字段
+const effectiveName = computed( => props.part?.name || props.name || '')
+const effectiveInput = computed<Record<string, unknown>>( => props.part?.input || props.input || {})
+const effectiveResult = computed( => (props.part?.result == null ? props.result: props.part.result) || undefined)
+const effectiveStatus = computed<'running' | 'done'>( => {
+ const raw = props.part?.status || props.status
+ return raw === 'running' ? 'running': 'done'
+})
 const isOpen = ref(false)
 const TOOL_LABELS: Record<string, { label: string, icon: string }> = {
  browse_file_content: { label: '浏览文件', icon: 'icon-[lucide--file-text]' },
@@ -18,12 +42,12 @@ function stripMcpPrefix(name: string): string {
  return name.replace(/^mcp__[^_]+__/, '')
 }
 const tool = computed( => {
- const bare = stripMcpPrefix(props.name)
+ const bare = stripMcpPrefix(effectiveName.value)
  return TOOL_LABELS[bare] || { label: bare, icon: 'icon-[lucide--wrench]' }
 })
 const actionDescription = computed( => {
- const bare = stripMcpPrefix(props.name)
- const inp = props.input || {}
+ const bare = stripMcpPrefix(effectiveName.value)
+ const inp = effectiveInput.value
  switch (bare) {
  case 'search_repository_code': {
  const q = (inp.query as string) || ''
@@ -55,7 +79,7 @@ const actionDescription = computed( => {
  <div class="tool-card":class="{ 'tool-card--open': isOpen }">
  <button class="tool-header" @click="isOpen = !isOpen">
  <!-- 状态指示点 -->
- <span v-if="status === 'running'" class="tool-dot tool-dot--running" />
+ <span v-if="effectiveStatus === 'running'" class="tool-dot tool-dot--running" />
  <span v-else class="tool-dot tool-dot--done" />
  <!-- 图标 + 名称 -->
  <span:class="tool.icon" class="text-[13px] text-muted-foreground" />
@@ -63,7 +87,7 @@ const actionDescription = computed( => {
  <!-- 行为描述 -->
  <span v-if="actionDescription" class="tool-summary">{{ actionDescription }}</span>
  <!-- 状态文本 -->
- <span v-if="status === 'running'" class="tool-status">
+ <span v-if="effectiveStatus === 'running'" class="tool-status">
  <span class="icon-[lucide--loader-2] text-[10px] animate-spin" />
  执行中
  </span>
@@ -83,13 +107,13 @@ const actionDescription = computed( => {
  <div v-show="isOpen" class="tool-body">
  <div class="tool-section">
  <span class="tool-section-label">输入</span>
- <pre class="tool-json">{{ JSON.stringify(input, null, 2) }}</pre>
+ <pre class="tool-json">{{ JSON.stringify(effectiveInput, null, 2) }}</pre>
  </div>
- <div v-if="result" class="tool-section">
+ <div v-if="effectiveResult" class="tool-section">
  <span class="tool-section-label">输出</span>
- <pre class="tool-json tool-json--result">{{ result.length > 800 ? `${result.slice(0, 800)}...`: result }}</pre>
+ <pre class="tool-json tool-json--result">{{ effectiveResult.length > 800 ? `${effectiveResult.slice(0, 800)}...`: effectiveResult }}</pre>
  </div>
- <div v-else-if="status === 'running'" class="tool-section">
+ <div v-else-if="effectiveStatus === 'running'" class="tool-section">
  <span class="text-[11px] text-muted-foreground/60 italic">等待返回...</span>
  </div>
  </div>
