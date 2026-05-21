@@ -5,6 +5,7 @@
 from __future__ import annotations
 import pytest
 from agents.intent_router import (
+ CONFIDENCE_ABS_GAP_MIN,
  CONFIDENCE_GAP_MAX,
  CONFIDENCE_TOP1_MIN,
  build_clarification_from_relev,
@@ -54,17 +55,6 @@ class TestEvaluateRelevConfidence:
  })
  assert result.level == "low_confidence"
  assert result.top1_score == 0.5
- def test_low_when_gap_too_close(self) -> None:
- # top1=0.9, top2=0.85 → ratio=0.944 > 0.92 → low
- # （0.92 阈值仍能识别此 case：极接近 score 视作真歧义）
- result = evaluate_relev_confidence({
- "candidates": [
- {"repository_id": "r1", "score": 0.9, "selected_by_user_final": True},
- {"repository_id": "r2", "score": 0.85, "selected_by_user_final": True},
- ],
- })
- assert result.level == "low_confidence"
- assert result.top1_score == 0.9
  def test_high_when_clear_winner(self) -> None:
  # top1=0.92, top2=0.4 → ratio=0.43 < 0.92 → high
  result = evaluate_relev_confidence({
@@ -76,7 +66,7 @@ class TestEvaluateRelevConfidence:
  assert result.level == "high_confidence"
  assert "r1" in result.selected_repository_ids
  def test_high_when_moderate_gap_no_longer_triggers_low(self) -> None:
- """v26.0 hotfix 回归保护（284 DEBUG）：
+ """v26.0 hotfix #1 回归保护（284 DEBUG）：
  在 0.7 阈值下 top2/top1 ≈ 0.85 会被误判为 low_confidence。0.92 阈值放过
  此场景 —— 这类「主仓 ~95%，次仓 ~80%」的多仓召回是日常 RELEV 输出形态，
  不应强制澄清。
@@ -90,10 +80,39 @@ class TestEvaluateRelevConfidence:
  })
  assert result.level == "high_confidence"
  assert result.top1_score == 0.95
- def test_low_when_top1_top2_nearly_identical(self) -> None:
- """v26.0 hotfix 回归保护（284 DEBUG）：真实生产数据的"极接近"场景。
- Test 2 实测 4 仓库 score = [0.7765, 0.7704, 0.7602, 0.7567]，
- top2/top1 = 0.992 —— 这才是真正需要澄清的「无法明确区分主仓」语义。
+ def test_high_when_abs_gap_decisive_despite_high_ratio(self) -> None:
+ """v26.0 hotfix #2 回归保护（UAT 复测发现）：
+ 真实生产数据：top1=0.82, top2=0.78, ratio=0.95 > 0.92，但绝对差
+ 0.04 已是清晰决策（4 个百分点）。新逻辑：绝对差 >= 0.03 时即便 ratio
+ 高也不视作歧义。
+ """
+ # top1=0.8214, top2=0.7841: ratio=0.9546, gap=0.0373 → high（gap >= 0.03）
+ result = evaluate_relev_confidence({
+ "candidates": [
+ {"repository_id": "study-app", "score": 0.8214, "selected_by_ai": True},
+ {"repository_id": "onion-learning", "score": 0.7841, "selected_by_ai": True},
+ {"repository_id": "onion-practice", "score": 0.7797, "selected_by_ai": True},
+ ],
+ })
+ assert result.level == "high_confidence"
+ assert result.top1_score == pytest.approx(0.8214)
+ def test_high_when_abs_gap_decisive_at_lower_top1_range(self) -> None:
+ """v26.0 hotfix #2：另一组实测数据。
+ top1=0.7826, top2=0.7703: ratio=0.9843, gap=0.0123 < 0.03 → 临界 case
+ 本测试用 gap=0.04 的清晰组以确保 high。
+ """
+ # top1=0.78, top2=0.74: ratio=0.949, gap=0.04 → high
+ result = evaluate_relev_confidence({
+ "candidates": [
+ {"repository_id": "r1", "score": 0.78, "selected_by_ai": True},
+ {"repository_id": "r2", "score": 0.74, "selected_by_ai": True},
+ ],
+ })
+ assert result.level == "high_confidence"
+ def test_low_when_both_ratio_high_and_abs_gap_tiny(self) -> None:
+ """v26.0 hotfix #2 真歧义判定：284 DEBUG 实测数据。
+ top1=0.7765 / top2=0.7704: ratio=0.992 > 0.92, gap=0.0061 < 0.03
+ → 真正"无法区分主仓"的歧义，必须 low_confidence
  """
  result = evaluate_relev_confidence({
  "candidates": [
@@ -105,6 +124,18 @@ class TestEvaluateRelevConfidence:
  })
  assert result.level == "low_confidence"
  assert result.top1_score == pytest.approx(0.7765)
+ def test_low_when_extreme_close_at_high_top1(self) -> None:
+ """v26.0 hotfix #2：高分区间也能识别真歧义。
+ top1=0.95, top2=0.94: ratio=0.989, gap=0.01 < 0.03 → low
+ （高分但极接近，仍是真歧义）
+ """
+ result = evaluate_relev_confidence({
+ "candidates": [
+ {"repository_id": "r1", "score": 0.95, "selected_by_ai": True},
+ {"repository_id": "r2", "score": 0.94, "selected_by_ai": True},
+ ],
+ })
+ assert result.level == "low_confidence"
  def test_low_when_empty_candidates(self) -> None:
  result = evaluate_relev_confidence({"candidates": })
  assert result.level == "low_confidence"
@@ -114,10 +145,12 @@ class TestEvaluateRelevConfidence:
  assert result.level == "low_confidence" # 空 candidates 视作 low
  assert result.top1_score is None
  def test_threshold_constants_match_design(self) -> None:
- # v26.0 hotfix (2026-05-21)：CONFIDENCE_GAP_MAX 0.7 → 0.92
+ # v26.0 hotfix #1 (2026-05-21)：CONFIDENCE_GAP_MAX 0.7 → 0.92
+ # v26.0 hotfix #2 (2026-05-21 UAT 复测)：新增 CONFIDENCE_ABS_GAP_MIN = 0.03
  # 详见 project-docs/phases/work-item/work-item item-runner-collapse.md
  assert CONFIDENCE_TOP1_MIN == 0.7
  assert CONFIDENCE_GAP_MAX == 0.92
+ assert CONFIDENCE_ABS_GAP_MIN == 0.03
  def test_high_confidence_short_form(self) -> None:
  """直接传 {"candidates": [...]}（intent_router helper 直接消费形态）。"""
  result = evaluate_relev_confidence({

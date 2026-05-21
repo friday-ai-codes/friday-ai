@@ -28,16 +28,23 @@ CODING_VERBS_EN: Final[frozenset[str]] = frozenset({
 # 低置信阈值常量 —— Phase 用固定值起步；evaluation phase（v27 候选）会
 # 基于 trace 表+ RoutingTrace 表的真实数据 A/B 调优。
 #
-# v26.0 hotfix（2026-05-21）：CONFIDENCE_GAP_MAX 从 0.7 → 0.92。
+# v26.0 hotfix #1（2026-05-21）：CONFIDENCE_GAP_MAX 从 0.7 → 0.92。
 # 原值 0.7 在跨仓 HybridSearch 输出的多仓中度相关场景（典型 0.75-0.78 区间，
 # top2/top1 ≈ 0.85-0.99）几乎必触发 low_confidence，把 graph 强制路由进
 # WAITING_CLARIFICATION，吃掉 chat_runner 已流出的正文（详见
 # project-docs/phases/work-item/work-item item-runner-collapse.md）。
-# 0.92 阈值只在 top1 / top2 极接近（>92%）时才视作真正歧义，匹配「无法明确
-# 区分主仓」的语义。配合 graph.py 中 blocking_tasks 优先于 pending_clarification
-# 的安全网，副作用不会因误判丢失。
+#
+# v26.0 hotfix #2（2026-05-21，UAT 复测发现）：单 ratio 仍不够，需引入
+# 绝对差 CONFIDENCE_ABS_GAP_MIN。
+# 真实生产数据：top1=0.82, top2=0.78, ratio=0.95 → 旧逻辑判 low_confidence，
+# 但绝对差 0.04（4 个百分点）已是清晰决策，不该强制澄清。
+# 新逻辑：判 low_confidence 需要 **ratio > 0.92** AND **(top1 - top2) < 0.03** 同时成立 —
+# 即"分数比例接近 且 绝对差距极小"才视作真正歧义。
+# 兼容旧 case：top1=0.7765 / top2=0.7704（284 DEBUG 实测）ratio=0.992，
+# 绝对差 0.0061 < 0.03 → 仍判 low_confidence ✓
 CONFIDENCE_TOP1_MIN: Final[float] = 0.7
-CONFIDENCE_GAP_MAX: Final[float] = 0.92 # top2 / top1 > 此值即视为多分支模糊
+CONFIDENCE_GAP_MAX: Final[float] = 0.92 # top2 / top1 > 此值即"比例接近"
+CONFIDENCE_ABS_GAP_MIN: Final[float] = 0.03 # top1 - top2 < 此值即"绝对差极小"
 # 英文动词词边界匹配（避免误命中 "addendum" 之类）。
 _EN_VERB_RE: Final[re.Pattern[str]] = re.compile(
  r"\b(" + "|".join(re.escape(v) for v in CODING_VERBS_EN) + r")\b",
@@ -201,7 +208,12 @@ def evaluate_relev_confidence(
  )
  if top1 < CONFIDENCE_TOP1_MIN:
  level: RelevLevel = "low_confidence"
- elif top1 > 0 and (top2 / top1) > CONFIDENCE_GAP_MAX:
+ elif (
+ top1 > 0
+ and (top2 / top1) > CONFIDENCE_GAP_MAX
+ and (top1 - top2) < CONFIDENCE_ABS_GAP_MIN
+ ):
+ # 仅当比例接近 AND 绝对差极小才算真歧义（v26.0 hotfix #2）
  level = "low_confidence"
  else:
  level = "high_confidence"
@@ -272,6 +284,7 @@ __all__ = [
  "CODING_VERBS_EN",
  "CONFIDENCE_TOP1_MIN",
  "CONFIDENCE_GAP_MAX",
+ "CONFIDENCE_ABS_GAP_MIN",
  "IntentClassification",
  "IntentConfidence",
  "RelevConfidence",
