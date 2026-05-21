@@ -1,0 +1,126 @@
+{
+ "_meta": {
+ "comment": "Quick Task：5 条真实 v25 历史 message 样本（已脱敏）。每条 message 的 parts 字段缺失（v25 era 还没引入 parts 列），hydrateLegacyMessage 必须能合成顺序正确的 parts 数组。",
+ "fixtures": [
+ "F1: 纯 content（单 text part）",
+ "F2: content + narrations（中间过渡 + 正文）",
+ "F3: content + tool_calls + narrations（含 routing trace 的复杂消息）",
+ "F4: content + timeline + tool_calls（v25 末期 timeline-based）",
+ "F5: deep_analysis 长 markdown + 单 tool_call —— 关键 case 根治分析容器吃正文"
+ ],
+ "schema_lock": "project-docs/quick/-chat-message-parts-refactor/PLAN.md §D5"
+ },
+ "F1": {
+ "id": "msg_legacy_f1",
+ "role": "assistant",
+ "content": "你好，我是 Friday AI。",
+ "tool_calls":,
+ "metadata": {
+ "model": "claude-sonnet-4-5",
+ "usage": { "input_tokens": 12, "output_tokens": 8 }
+ },
+ "created_at": "2026-04-01T10:00:00Z"
+ },
+ "F2": {
+ "id": "msg_legacy_f2",
+ "role": "assistant",
+ "content": "## 总结\n\n根据搜索结果，该函数定义在 `apps/auth/login.py` 第 42 行。",
+ "tool_calls":,
+ "metadata": {
+ "model": "claude-sonnet-4-5",
+ "usage": { "input_tokens": 150, "output_tokens": 32 },
+ "narrations": [
+ "让我先搜索一下相关代码。",
+ "找到了，让我整理一下答案。"
+ ]
+ },
+ "created_at": "2026-04-05T11:23:00Z"
+ },
+ "F3": {
+ "id": "msg_legacy_f3",
+ "role": "assistant",
+ "content": "已选中 study-app 和 problem-app 两个仓库，请确认。",
+ "tool_calls": [
+ {
+ "id": "call_relev_1",
+ "name": "analyze_repository_relevance",
+ "input": { "query": "entrance 字段处理逻辑" },
+ "result": "{\"output\":{\"data\":{\"trace_id\":\"trace-abc-123\",\"candidates\":[{\"repository_id\":\"repo-1\",\"name\":\"study-app\",\"score\":0.92},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88}],\"threshold\":0.5}}}",
+ "status": "done"
+ }
+ ],
+ "metadata": {
+ "model": "claude-sonnet-4-5",
+ "usage": { "input_tokens": 280, "output_tokens": 45 },
+ "narrations": [
+ "正在分析仓库相关性...",
+ "找到两个高相关性仓库。"
+ ],
+ "routing_trace_id": "trace-abc-123"
+ },
+ "created_at": "2026-04-10T14:30:00Z"
+ },
+ "F4": {
+ "id": "msg_legacy_f4",
+ "role": "assistant",
+ "content": "已为你列出仓库中的所有 Python 文件，并给出一份编码方案。",
+ "tool_calls": [
+ {
+ "id": "call_list_1",
+ "name": "list_project_structure",
+ "input": { "path": "/" },
+ "result": "[\"apps/\", \"server/\", \"web/\"]",
+ "status": "done"
+ },
+ {
+ "id": "call_search_1",
+ "name": "search_repository_code",
+ "input": { "query": "def main" },
+ "result": "{\"matches\": [\"apps/main.py:12\", \"server/manage.py:5\"]}",
+ "status": "done"
+ }
+ ],
+ "metadata": {
+ "model": "claude-sonnet-4-5",
+ "usage": { "input_tokens": 320, "output_tokens": 78 },
+ "timeline": [
+ { "id": "thk_1", "kind": "thinking", "text": "用户想看项目结构和 main 函数定义" },
+ { "id": "nar_1", "kind": "narration", "text": "让我先列出项目结构。" },
+ { "id": "call_list_1", "kind": "tool", "name": "list_project_structure", "input": { "path": "/" }, "result": "[\"apps/\", \"server/\", \"web/\"]", "status": "done" },
+ { "id": "nar_2", "kind": "narration", "text": "再搜索 main 函数。" },
+ { "id": "call_search_1", "kind": "tool", "name": "search_repository_code", "input": { "query": "def main" }, "result": "{\"matches\": [\"apps/main.py:12\", \"server/manage.py:5\"]}", "status": "done" }
+ ]
+ },
+ "created_at": "2026-04-15T16:45:00Z"
+ },
+ "F5": {
+ "id": "msg_legacy_f5",
+ "role": "assistant",
+ "content": "# entrance 字段处理逻辑分析\n\n## 1. study-app 仓库\n\n在 `apps/study/views.py` 第 87 行，`entrance` 字段通过 `request.GET.get('entrance', 'default')` 提取，作为 A/B 实验分流的关键参数：\n\n```python\ndef study_index(request):\n entrance = request.GET.get('entrance', 'default')\n if entrance == 'invite':\n return render(request, 'invite.html')\n return render(request, 'normal.html')\n```\n\n## 2. problem-app 仓库\n\n在 `apps/problem/middleware.py` 中作为中间件处理，统一注入到 `request.context`：\n\n| 字段 | 含义 | 默认值 |\n|---|---|---|\n| entrance | 入口来源 | 'organic' |\n| campaign | 活动 ID | None |\n\n## 3. 共同点\n\n- 都使用 GET 参数读取（不读 POST / Header）\n- 默认值不同：study 用 'default'，problem 用 'organic'\n- 都参与埋点上报（`tracking.py:log_entrance`）\n\n## 建议\n\n两个仓库应统一 entrance 字段的取值规范，建议建立 `apps/common/entrance.py` 公共模块。",
+ "tool_calls": [
+ {
+ "id": "call_deep_analysis_1",
+ "name": "deep_analysis",
+ "input": {
+ "task_description": "对比 study-app 和 problem-app 仓库中 entrance 字段的处理逻辑"
+ },
+ "result": "[task done]\n会话已完成，cost=$0.0034\n[cross_repo_relevance:trace-deep-456]\n[{\"repository_id\":\"repo-1\",\"name\":\"study-app\",\"score\":0.92,\"selected_by_user_final\":true},{\"repository_id\":\"repo-2\",\"name\":\"problem-app\",\"score\":0.88,\"selected_by_user_final\":true}]",
+ "status": "done"
+ }
+ ],
+ "metadata": {
+ "model": "claude-sonnet-4-5",
+ "usage": { "input_tokens": 1450, "output_tokens": 480 },
+ "narrations": [
+ "让我深入分析两个仓库中 entrance 字段的处理逻辑..."
+ ],
+ "routing_trace_id": "trace-deep-456",
+ "deep_analysis_logs": [
+ { "type": "tool_call", "content": "Grep(pattern=\"entrance\", path=\"apps/\")", "ts": 1715040000000 },
+ { "type": "text", "content": "[思考] 先扫描两个仓库中所有 entrance 字段引用点", "ts": 1715040001000 },
+ { "type": "result", "content": "cost=$0.0034", "ts": 1715040060000 }
+ ]
+ },
+ "created_at": "2026-04-22T18:00:00Z"
+ }
+}
