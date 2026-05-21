@@ -399,6 +399,85 @@ async def test_multiple_blocking_tasks_collected(graph_config: RunnableConfig) -
  task_ids = {t["task_id"] for t in blocking_tasks}
  assert task_ids == {"bt-a", "bt-b"}
 @pytest.mark.asyncio
+async def test_blocking_tasks_win_over_relev_low_confidence(graph_config: RunnableConfig) -> None:
+ """v26.0 hotfix 回归保护（284 DEBUG）：
+ 同一轮 SDK 运行中既有 analyze_repository_relevance（低置信结果）又有
+ deep_analysis blocking task 时，graph 必须优先走 WAITING 路径而不是
+ WAITING_CLARIFICATION —— 否则 blocking task 派发的副作用（SubAgentSession
+ + 容器）会被 clarification interrupt 孤立，BarrierManager 永远收不到
+ barrier 注册，deep_analysis_completion callback 静默丢失。
+ """
+ events: list[AgentEvent] = [
+ # LLM 第一步：调 analyze_repository_relevance，返回 4 个极接近的候选
+ # (top2/top1 = 0.992 → 在 0.92 阈值下仍是 low_confidence)
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={
+ "tool_call_id": "tc-relev-1",
+ "tool_name": "analyze_repository_relevance",
+ "input": {"query": "entrance", "space_id": "sp-1"},
+ },
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_call_id": "tc-relev-1",
+ "tool_name": "analyze_repository_relevance",
+ "result": {
+ "data": {
+ "candidates": [
+ {"repository_id": "r1", "repository_name": "repo-a", "score": 0.7765, "level": "high", "evidence": "e1", "selected_by_ai": True},
+ {"repository_id": "r2", "repository_name": "repo-b", "score": 0.7704, "level": "high", "evidence": "e2", "selected_by_ai": True},
+ {"repository_id": "r3", "repository_name": "repo-c", "score": 0.7602, "level": "high", "evidence": "e3", "selected_by_ai": True},
+ {"repository_id": "r4", "repository_name": "repo-d", "score": 0.7567, "level": "high", "evidence": "e4", "selected_by_ai": True},
+ ],
+ "threshold": 0.5,
+ "total_candidates": 4,
+ },
+ },
+ },
+ ),
+ # LLM 第二步：派发 deep_analysis blocking task（典型 Test 4 场景）
+ AgentEvent(
+ type=TOOL_USE_START,
+ data={"tool_call_id": "tc-block-1", "tool_name": "deep_analysis", "input": {}},
+ ),
+ AgentEvent(
+ type=TOOL_USE_RESULT,
+ data={
+ "tool_call_id": "tc-block-1",
+ "tool_name": "deep_analysis",
+ "result": {
+ "__blocking_task__": True,
+ "task_type": "deep_analysis",
+ "task_id": "bt-deep-1",
+ "params": {},
+ },
+ },
+ ),
+ ]
+ events.extend(_default_events)
+ mock_runner = _make_mock_runner(events, _default_result)
+ with _patch_sdk(mock_runner):
+ graph = build_graph.compile(checkpointer=MemorySaver)
+ result = await graph.ainvoke(
+ {
+ "user_message": "分析下 study-app 和 problem-app 里 entrance 字段",
+ "run_id": "run-work-item",
+ },
+ config=graph_config,
+ )
+ # 关键断言：phase 必须是 waiting（blocking 路径），不是 waiting_clarification
+ assert result["phase"] == "waiting", (
+ f"Expected blocking_tasks 优先于 pending_clarification，实际 phase={result['phase']}。"
+ f"修复回退？详见 project-docs/phases/work-item/work-item item-runner-collapse.md"
+ )
+ blocking_tasks = result.get("blocking_tasks", )
+ assert len(blocking_tasks) == 1
+ assert blocking_tasks[0]["task_id"] == "bt-deep-1"
+ # pending_clarification 不应被写入 state
+ assert not result.get("pending_clarification")
+@pytest.mark.asyncio
 async def test_blocking_marker_suppresses_premature_text_events(graph_config: RunnableConfig) -> None:
  """blocking tool 返回后，后续同轮正文不应再透传给前端。"""
  events = [
