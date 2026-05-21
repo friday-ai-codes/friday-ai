@@ -193,9 +193,25 @@ function copyContent {
  }
 }
 // 工具调用数据（流式或历史），含 id 去重
+// Quick Task：优先从 displayParts 派生（new 协议路径下 streaming
+// 期间 streamingToolCalls 不再被写入），fallback 到 props.streamingToolCalls /
+// message.tool_calls 老路径（legacy flag + v25 历史消息）。
 const toolCalls = computed( => {
  let calls: Array<{ id: string, name: string, input: Record<string, unknown>, result?: string, status: string }>
- if (props.isStreaming && props.streamingToolCalls && props.streamingToolCalls.length > 0) {
+ // 优先：从 displayParts 中抽 tool_use parts
+ const fromParts = displayParts.value
+ .filter((p): p is ToolUsePart => p.type === 'tool_use')
+ .map(p => ({
+ id: p.tool_call_id || p.id,
+ name: p.name,
+ input: p.input,
+ result: p.result == null ? undefined: p.result,
+ status: p.status === 'running' ? 'running': 'done',
+ }))
+ if (fromParts.length > 0) {
+ calls = fromParts
+ }
+ else if (props.isStreaming && props.streamingToolCalls && props.streamingToolCalls.length > 0) {
  calls = props.streamingToolCalls
  }
  else if (props.message.tool_calls && props.message.tool_calls.length > 0) {
