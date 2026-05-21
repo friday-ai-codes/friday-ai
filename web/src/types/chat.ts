@@ -28,6 +28,12 @@ export interface ConversationMessage {
  tool_calls?: ToolCallData
  tool_call_id?: string
  metadata?: Record<string, unknown>
+ /**
+ * Quick Task：Anthropic content blocks 风格的有序 parts 数组
+ * （与 `server/chat/parts.py` 的 Pydantic 同源）。后端 已暴露 read-only
+ * 字段；历史 v25 消息为空 → 前端 `hydrateLegacyMessage` 合成（D5）。
+ */
+ parts?: MessagePart
  created_at: string
 }
 /** 工具调用数据 */
@@ -37,6 +43,66 @@ export interface ToolCallData {
  input: Record<string, unknown>
  result?: string
  status?: 'running' | 'done'
+}
+// ============================================================================
+// Quick Task：MessagePart 联合类型 + 新 SSE 事件类型
+//
+// 与 `server/chat/parts.py` 的 Pydantic discriminated union 字面同源；前端
+// `streamingParts` ref + `displayParts` computed 共用，按顺序渲染：
+// text → MarkdownText / tool_use → ToolCallCard / thinking → ThinkingStep
+//
+// 设计契约见 PLAN §3.1 / §3.2 / §D1 schema versioning。
+// ============================================================================
+export interface MessagePartBase {
+ /** 客户端稳定:key（uuid 或 server 给） */
+ id: string
+ /** 0-based 渲染顺序；回放时按 index 排序兜底 */
+ index: number
+}
+export interface TextPart extends MessagePartBase {
+ type: 'text'
+ text: string
+ state: 'streaming' | 'done'
+}
+export interface ToolUsePart extends MessagePartBase {
+ type: 'tool_use'
+ tool_call_id: string
+ name: string
+ input: Record<string, unknown>
+ status: 'running' | 'done' | 'error'
+ /** 始终 string；与 SSE tool_use_result.result / chat_runner._tool_result_to_content 对齐 */
+ result?: string | null
+ /** 同 LLM response 内多 tool_call 共享，用于横向 chip 流 */
+ batch_id?: string | null
+}
+export interface ThinkingPart extends MessagePartBase {
+ type: 'thinking'
+ text: string
+ state: 'streaming' | 'done'
+}
+export type MessagePart = TextPart | ToolUsePart | ThinkingPart
+/** part_started / part_completed 事件中的 part 字段 payload（streaming 期间的 partial shape）。 */
+export interface PartStartedPayload {
+ id: string
+ index: number
+ type: 'text' | 'tool_use' | 'thinking'
+ text?: string
+ state?: 'streaming' | 'done'
+ tool_call_id?: string
+ name?: string
+ input?: Record<string, unknown>
+ status?: 'running' | 'done' | 'error'
+ result?: string | null
+ batch_id?: string | null
+}
+export interface PartCompletedPayload {
+ index: number
+ id?: string
+ type?: 'text' | 'tool_use' | 'thinking'
+ state?: 'streaming' | 'done'
+ status?: 'running' | 'done' | 'error'
+ result?: string | null
+ tool_call_id?: string
 }
 export interface DeepAnalysisLog {
  type: string
@@ -128,9 +194,19 @@ export interface CreateConversationParams {
  * 新增事件类型时，两端必须同步更新，并在 test_sse_event_contract.py 中添加验证。
  */
 export interface SSEEvent {
- type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed' | 'awaiting_commit_confirm' | 'awaiting_pr_review' | 'conflict_check'
+ type: 'text_delta' | 'tool_use_start' | 'tool_use_result' | 'message_complete' | 'title_generated' | 'error' | 'thinking' | 'budget_warning' | 'deep_analysis_progress' | 'phase_transition' | 'task_progress' | 'doc_summary' | 'doc_error' | 'coding_progress' | 'coding_complete' | 'coding_failed' | 'awaiting_commit_confirm' | 'awaiting_pr_review' | 'conflict_check' | 'part_started' | 'part_delta' | 'part_completed'
  message_id?: string
  run_id?: string
+ // Quick Task：part_* 事件 payload（双轨期与旧事件共存）
+ /** part_started / part_completed 携带的 part 内容；part_delta 不带（用 delta_type + text） */
+ part?: PartStartedPayload | PartCompletedPayload
+ /** part_*：所属 part 的 0-based index */
+ index?: number
+ /** part_delta：增量类型，目前仅 'text_append' */
+ delta_type?: 'text_append'
+ // text_delta / part_delta 共用 text 字段
+ /** message_complete：新版冗余整份 parts snapshot */
+ parts?: MessagePart
  // text_delta
  text?: string
  // tool_use_start

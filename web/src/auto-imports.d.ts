@@ -6,6 +6,7 @@
 // biome-ignore lint: disable
 export {}
 declare global {
+ const CHAT_PARTS_PROTOCOL_KEY: typeof import('./composables/useChatPartsProtocol').CHAT_PARTS_PROTOCOL_KEY
  const EffectScope: typeof import('vue').EffectScope
  const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
  const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
@@ -48,6 +49,7 @@ declare global {
  const extractFirstFeishuDocId: typeof import('./composables/useFeishuDocDetect').extractFirstFeishuDocId
  const extractNodeVarRefs: typeof import('./composables/useDownstreamVarCheck').extractNodeVarRefs
  const getActivePinia: typeof import('pinia').getActivePinia
+ const getChatPartsProtocol: typeof import('./composables/useChatPartsProtocol').getChatPartsProtocol
  const getCurrentInstance: typeof import('vue').getCurrentInstance
  const getCurrentRunId: typeof import('./composables/useSSEStream').getCurrentRunId
  const getCurrentScope: typeof import('vue').getCurrentScope
@@ -166,6 +168,7 @@ declare global {
  const useBroadcastChannel: typeof import('@vueuse/core').useBroadcastChannel
  const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
  const useCached: typeof import('@vueuse/core').useCached
+ const useChatPartsProtocol: typeof import('./composables/useChatPartsProtocol').useChatPartsProtocol
  const useChatStore: typeof import('./stores/chat').useChatStore
  const useClipboard: typeof import('@vueuse/core').useClipboard
  const useClipboardItems: typeof import('@vueuse/core').useClipboardItems
@@ -370,6 +373,9 @@ declare global {
  export type { ParsedBranchName, ValidationResult } from './composables/useBranchValidation'
  import('./composables/useBranchValidation')
  // @ts-ignore
+ export type { ChatPartsProtocol } from './composables/useChatPartsProtocol'
+ import('./composables/useChatPartsProtocol')
+ // @ts-ignore
  export type { UseConfigModelOptions, UseConfigModelReturn } from './composables/useConfigModel'
  import('./composables/useConfigModel')
  // @ts-ignore
@@ -438,6 +444,7 @@ import { UnwrapRef } from 'vue'
 declare module 'vue' {
  interface GlobalComponents {}
  interface ComponentCustomProperties {
+ readonly CHAT_PARTS_PROTOCOL_KEY: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['CHAT_PARTS_PROTOCOL_KEY']>
  readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
  readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
  readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
@@ -480,6 +487,7 @@ declare module 'vue' {
  readonly extractFirstFeishuDocId: UnwrapRef<typeof import('./composables/useFeishuDocDetect')['extractFirstFeishuDocId']>
  readonly extractNodeVarRefs: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['extractNodeVarRefs']>
  readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
+ readonly getChatPartsProtocol: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['getChatPartsProtocol']>
  readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
  readonly getCurrentRunId: UnwrapRef<typeof import('./composables/useSSEStream')['getCurrentRunId']>
  readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
@@ -597,6 +605,7 @@ declare module 'vue' {
  readonly useBroadcastChannel: UnwrapRef<typeof import('@vueuse/core')['useBroadcastChannel']>
  readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
  readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
+ readonly useChatPartsProtocol: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['useChatPartsProtocol']>
  readonly useChatStore: UnwrapRef<typeof import('./stores/chat')['useChatStore']>
  readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>
  readonly useClipboardItems: UnwrapRef<typeof import('@vueuse/core')['useClipboardItems']>
