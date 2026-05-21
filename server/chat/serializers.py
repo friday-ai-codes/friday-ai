@@ -148,13 +148,19 @@ class ConversationListSerializer(serializers.Serializer):
  cred_id = getattr(obj, "provider_credential_id_id", None)
  return str(cred_id) if cred_id else None
 class ConversationMessageSerializer(serializers.Serializer):
- """对话消息。"""
+ """对话消息。
+ Quick Task：``parts`` 字段透传 ``Message.parts`` JSONField，
+ 前端 hydrate 优先用 ``parts``；``parts == `` 时合成（v25 历史消息兼容层，
+ PLAN §D5）。``content`` / ``tool_calls`` 字段保留作向后兼容（飞书导出 /
+ 检索 fallback / openAI compat path 仍读），由 finalize 强同源派生。
+ """
  id = serializers.UUIDField
  role = serializers.CharField
  content = serializers.CharField(allow_blank=True)
  tool_calls = serializers.JSONField(required=False, allow_null=True)
  tool_call_id = serializers.CharField(required=False, allow_blank=True)
  metadata = serializers.JSONField(required=False)
+ parts = serializers.JSONField(required=False)
  created_at = serializers.DateTimeField
 class ResolvedProviderChainEntrySerializer(serializers.Serializer):
  """Phase：四层解析链单条目序列化（响应契约驱动前端 tooltip）。"""

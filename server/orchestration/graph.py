@@ -584,11 +584,15 @@ async def _execute_first_run(
  # 否则前端 polling 会一直看到陈旧的 streaming_snapshot。
  await _clear_streaming_snapshot(run_id)
  result = runner.result
+ # Quick Task：error 路径也要把 collector 已收集 parts
+ # 透出供 finalize 落库（major #1 ERROR 路径 parts 携带契约）。
+ err_parts = (result.metadata or {}).get("parts", ) if result else
  return {
  "phase": RunPhase.ERROR.value,
  "final_answer": (result.final_answer if result else None) or "",
  "accumulated_thinking": accumulated_thinking,
  "tool_calls": list(tool_calls_by_id.values),
+ "parts": err_parts,
  "result_metadata": {"error": "Chat runner 运行异常"},
  "agent_session_id": agent_session_id,
  }
@@ -665,6 +669,9 @@ async def _execute_first_run(
  result_metadata = _annotate_intent_classification(state, result_metadata)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ # Quick Task：从 runner.result.metadata 取 collector 已收集
+ # parts，注入 state 供 conversation_service → finalize 落库强同源。
+ parts_payload = (result.metadata or {}).get("parts", ) if result else
  await _persist_run_phase(run_id, RunPhase.FINALIZING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
@@ -672,6 +679,7 @@ async def _execute_first_run(
  "final_answer": final_answer,
  "accumulated_thinking": accumulated_thinking,
  "tool_calls": list(tool_calls_by_id.values),
+ "parts": parts_payload,
  "result_metadata": result_metadata,
  "agent_session_id": agent_session_id,
  }
@@ -767,6 +775,8 @@ async def _execute_with_results(
  result_metadata = _build_result_metadata(runner)
  result = runner.result
  final_answer = (result.final_answer if result else None) or ""
+ #：与 _execute_first_run 对齐，把 collector 已收集 parts 透出
+ parts_payload = (result.metadata or {}).get("parts", ) if result else
  await _persist_run_phase(run_id, RunPhase.FINALIZING.value)
  writer({"type": PHASE_TRANSITION, "data": {"phase": "finalizing"}})
  return {
@@ -774,6 +784,7 @@ async def _execute_with_results(
  "final_answer": final_answer,
  "accumulated_thinking": all_thinking,
  "tool_calls": all_tool_calls,
+ "parts": parts_payload,
  "result_metadata": result_metadata,
  "agent_session_id": agent_session_id,
  "blocking_results":,

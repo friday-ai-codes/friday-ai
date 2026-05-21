@@ -22,6 +22,7 @@ async def finalize_conversation(
  user_message: str,
  notification_user_id: str | None = None,
  publish_title_event: bool = True,
+ parts: list[dict[str, Any]] | None = None,
 ) -> list[AgentEvent]:
  """会话收尾：消息落库、AgentSession 更新、标题生成和 push 通知。
  从 graph terminal state 的数据构建 assistant 消息并持久化。
@@ -86,6 +87,28 @@ async def finalize_conversation(
  if accumulated_thinking:
  msg_metadata["thinking"] = "".join(accumulated_thinking)
  tool_calls_data = tool_calls or None
+ # Quick Task：落库强同源
+ # 来源 chat_runner 路径（parts 非空）→ 用 PartsCollector 派生的 content +
+ # tool_calls 覆盖入参（确保三者一致，无第二事实源；PLAN §3.4）。
+ # legacy 路径（parts 为空 / None）→ 沿用旧 final_content + tool_calls 入参
+ # （兼容 deep_analysis BarrierManager 回灌路径，那条路径不走 chat_runner
+ # collector，见 PLAN §D4）。
+ parts_data: list[dict[str, Any]] = list(parts or )
+ if parts_data:
+ try:
+ from chat.parts import PartsCollector
+ collector = PartsCollector
+ collector.parts = parts_data
+ derived = collector.to_message_payload
+ final_content = derived["content"]
+ tool_calls_data = derived["tool_calls"] or None
+ except Exception:
+ logger.warning(
+ "finalize_parts_derive_failed",
+ conversation_id=str(conversation.id),
+ exc_info=True,
+ )
+ msg_metadata["parts_schema_version"] = 1
  # 3. 保存/更新 assistant 消息（幂等 — barrier 多次 resume 时更新为终态）
  existing = await Message.objects.filter(id=assistant_msg_id).afirst
  if existing:
@@ -93,6 +116,7 @@ async def finalize_conversation(
  content=final_content,
  tool_calls=tool_calls_data,
  metadata=msg_metadata,
+ parts=parts_data,
  )
  else:
  await Message.objects.acreate(
@@ -102,6 +126,7 @@ async def finalize_conversation(
  content=final_content,
  tool_calls=tool_calls_data,
  metadata=msg_metadata,
+ parts=parts_data,
  )
  # 4. 更新对话时间 + 终态
  if status_str == "completed":
