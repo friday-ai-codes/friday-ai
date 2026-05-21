@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
-import type { ConversationMessage, StreamTimelineItem, ToolCallData } from '~/types/chat'
+import type { ConversationMessage, MessagePart, StreamTimelineItem, TextPart, ToolCallData, ToolUsePart } from '~/types/chat'
+import { shallowRef } from 'vue'
 import { Checkbox } from '~/components/ui/checkbox'
 import { getMarkdownRenderer } from '~/composables/useMarkdownRenderer'
+import { hydrateLegacyMessage } from '~/composables/useMessageParts'
 import { useRoutingStore } from '~/stores/routing'
 import DocSummaryCard from './DocSummaryCard.vue'
 import RoutingDecisionPanel from './RoutingDecisionPanel.vue'
@@ -77,31 +79,62 @@ const docSummary = computed( => {
  const meta = props.message.metadata as Record<string, unknown> | undefined
  return (meta?.docSummary as typeof props.streamingDocSummary) || null
 })
-const renderedHtml = ref('')
+// Quick Task：Markdown renderer 共享单例。每个 text part 独立
+// 渲染 HTML，避免老路径下 contentSource 整段重渲染时的「截断渲染」问题。
+const mdInstance = shallowRef<MarkdownIt | null>(null)
 const mdReady = ref(false)
-let mdInstance: MarkdownIt | null = null
-const contentSource = computed( => (
- props.isStreaming
- ? (props.streamingContent || ''): props.message.content
-))
-const renderContent = useDebounceFn( => {
- if (!mdInstance)
- return
- renderedHtml.value = contentSource.value
- ? mdInstance.render(contentSource.value): ''
-}, 80)
 onMounted(async => {
- mdInstance = await getMarkdownRenderer
+ mdInstance.value = await getMarkdownRenderer
  mdReady.value = true
- renderContent
 })
-watch(
- contentSource,
- => {
- if (mdReady.value)
- renderContent
+/**
+ * Quick Task：displayParts —— 渲染单一权威。
+ *
+ * - 流式（isStreaming）：优先用 `chatStore.streamingParts`；
+ * 若 legacy flag 下 streamingParts 为空，则合成 ConversationMessage 喂给
+ * hydrateLegacyMessage，保留 legacy flag 下的过渡渲染能力。
+ * - 非流式：直接对 `props.message` 走 hydrate adapter（v26.0+ 新消息走
+ * 规则 A 直接返回；v25 历史消息走规则 B/C/D 合成）。
+ */
+const displayParts = computed<MessagePart>( => {
+ if (props.isStreaming) {
+ if (chatStore.streamingParts.length > 0)
+ return chatStore.streamingParts
+ // legacy flag 下兜底：从 streaming state 合成 message-shape 给 hydrate
+ return hydrateLegacyMessage({
+ id: 'streaming',
+ role: 'assistant',
+ content: props.streamingContent || props.streamingPendingText || '',
+ tool_calls: (props.streamingToolCalls || ).map(tc => ({
+ id: tc.id,
+ name: tc.name,
+ input: tc.input,
+ result: tc.result,
+ status: tc.status,
+ })),
+ metadata: {
+ narrations: props.streamingNarrations ||,
+ timeline: props.streamingTimeline ||,
  },
-)
+ created_at: '',
+ })
+ }
+ return hydrateLegacyMessage(props.message)
+})
+/**
+ * 每个 text part 的 HTML 渲染缓存。基于 mdReady 触发首次渲染；后续 part 文本
+ * 变更（streaming text_append）通过 computed 自动重算。
+ */
+const renderedPartHtml = computed<Record<string, string>>( => {
+ if (!mdReady.value || !mdInstance.value)
+ return {}
+ const out: Record<string, string> = {}
+ for (const p of displayParts.value) {
+ if (p.type === 'text')
+ out[p.id] = p.text ? mdInstance.value.render(p.text): ''
+ }
+ return out
+})
 // Thinking：流式来自 props，历史来自 metadata
 const thinkingText = computed( => {
  if (props.isStreaming)
@@ -147,7 +180,12 @@ function formatTime(dateStr: string) {
 const metadata = computed( => props.message.metadata as { model?: string } | undefined)
 const [copied, toggleCopied] = useToggle(false)
 function copyContent {
- const content = props.isStreaming ? (props.streamingContent || ''): props.message.content
+ // Quick Task：从 parts 派生纯文本（与后端 PartsCollector.to_message_payload 同源）
+ const fromParts = displayParts.value
+ .filter((p): p is TextPart => p.type === 'text')
+ .map(p => p.text)
+ .join('')
+ const content = fromParts || (props.isStreaming ? (props.streamingContent || ''): props.message.content)
  if (content) {
  navigator.clipboard.writeText(content)
  toggleCopied(true)
@@ -249,35 +287,9 @@ function toolAction(name: string, input: Record<string, unknown>, result?: strin
  }
  }
 }
-// 叙述文本（流式或历史）
-const narrations = computed( => {
- if (props.isStreaming)
- return props.streamingNarrations ||
- const meta = props.message.metadata as Record<string, unknown> | undefined
- return (meta?.narrations as string) ||
-})
-const showNarrations = ref(false)
-const hasNarrations = computed( => narrations.value.length > 0)
-// 流式中正在输入的叙述文本（尚未归档到 narrations）
-const pendingNarration = computed( => {
- if (!props.isStreaming)
- return ''
- return props.streamingPendingText || ''
-})
-const timelineItems = computed<StreamTimelineItem>( => {
- const items = props.isStreaming
- ? [...(props.streamingTimeline || )]: Array.isArray((props.message.metadata as Record<string, unknown> | undefined)?.timeline)
- ? [...((props.message.metadata as Record<string, unknown>).timeline as StreamTimelineItem)]:
- if (props.isStreaming && pendingNarration.value.trim) {
- items.push({
- id: '__pending_narration__',
- kind: 'narration',
- text: pendingNarration.value,
- })
- }
- return items
-})
-const hasTimeline = computed( => timelineItems.value.length > 0)
+// Quick Task：删除 narration / pendingNarration / showNarrations
+// / timelineItems / hasTimeline —— 由 parts-flow 渲染替代（narration 不再是独立
+// 类型，融入 text part 主流；timeline 渲染由 groupedDisplayItems 单一权威驱动）。
 // 工具调用详情展开
 const expandedTools = ref<Set<string>>(new Set)
 function toggleTool(id: string) {
@@ -316,7 +328,17 @@ interface ToolGroupNode {
  /** 区分分组来源：batch_id（后端语义批） / consecutive-same（兼容历史） */
  source: 'batch' | 'consecutive-same'
 }
+// Quick Task：DisplayItem 扩展为 parts-flow 渲染节点类型。
+// - 'text' / 'thinking' 来自 MessagePart
+// - 'tool' 单个 tool_use part（渲染 tool-pill + 专属卡片 TechPlanCard / deep-analysis-panel）
+// - 'tool-group' 同 batch_id 连续 tool_use parts（chip 横排）
+// - 'unknown' 未知 part type 兜底（forward-compat schema versioning，PLAN §D1）
+interface DisplayTextNode { kind: 'text', _key: string, part: TextPart }
+interface DisplayThinkingNode { kind: 'thinking', _key: string, id: string, text: string, state: 'streaming' | 'done' }
+interface DisplayToolNode extends ToolItemShape { kind: 'tool', _key: string }
+interface DisplayUnknownNode { kind: 'unknown', _key: string, type: string }
 type DisplayItem = StreamTimelineItem | ToolGroupNode | (ToolItemShape & { kind: 'tool' })
+type PartsDisplayItem = DisplayTextNode | DisplayThinkingNode | DisplayToolNode | (ToolGroupNode & { _key: string }) | DisplayUnknownNode
 /**
  * 时间线分组策略（per v25.0 chat-timeline-batch 设计）：
  *
@@ -393,18 +415,104 @@ function packGroups<T extends ToolItemShape>(
  }
  return out
 }
-const groupedTimelineItems = computed<DisplayItem>( =>
- packGroups<Extract<StreamTimelineItem, { kind: 'tool' }>>(
- timelineItems.value,
- t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status, batch_id: t.batch_id }),
- ),
-)
-const groupedToolCalls = computed<DisplayItem>( =>
- packGroups<ToolItemShape>(
- toolCalls.value as ToolItemShape,
- t => ({ id: t.id, name: t.name, input: t.input, result: t.result, status: t.status, batch_id: t.batch_id }),
- ),
-)
+/**
+ * Quick Task：parts → 渲染节点。
+ *
+ * 算法：扫描 displayParts，连续 tool_use parts 共享 batch_id 时打包成 tool-group。
+ * 与旧 packGroups 算法语义对齐（D2 / D3），但驱动源从 streamingTimeline 变为
+ * displayParts，单一权威。
+ */
+const groupedDisplayItems = computed<PartsDisplayItem>( => {
+ const out: PartsDisplayItem =
+ const parts = displayParts.value
+ let i = 0
+ while (i < parts.length) {
+ const cur = parts[i]
+ if (cur.type === 'text') {
+ out.push({ kind: 'text', _key: cur.id, part: cur })
+ i++
+ continue
+ }
+ if (cur.type === 'thinking') {
+ out.push({ kind: 'thinking', _key: cur.id, id: cur.id, text: cur.text, state: cur.state })
+ i++
+ continue
+ }
+ if (cur.type === 'tool_use') {
+ const toolShape: ToolItemShape = {
+ id: cur.tool_call_id || cur.id,
+ name: cur.name,
+ input: cur.input,
+ result: cur.result == null ? undefined: cur.result,
+ status: (cur.status === 'running' ? 'running': 'done') as 'running' | 'done',
+ batch_id: cur.batch_id == null ? undefined: cur.batch_id,
+ }
+ if (!isGroupableTool(cur.name)) {
+ out.push({ ...toolShape, kind: 'tool', _key: cur.id })
+ i++
+ continue
+ }
+ const curBatch = toolShape.batch_id
+ const bare = cur.name.replace(/^mcp__[^_]+__/, '')
+ let j = i + 1
+ while (j < parts.length) {
+ const next = parts[j]
+ if (next.type !== 'tool_use')
+ break
+ if (!isGroupableTool(next.name))
+ break
+ const nextBatch = next.batch_id == null ? undefined: next.batch_id
+ if (curBatch) {
+ if (nextBatch !== curBatch)
+ break
+ }
+ else {
+ if (nextBatch)
+ break
+ if (next.name.replace(/^mcp__[^_]+__/, '') !== bare)
+ break
+ }
+ j++
+ }
+ if (j - i >= 2) {
+ const run = parts.slice(i, j).map((p): ToolItemShape => {
+ const tup = p as ToolUsePart
+ return {
+ id: tup.tool_call_id || tup.id,
+ name: tup.name,
+ input: tup.input,
+ result: tup.result == null ? undefined: tup.result,
+ status: (tup.status === 'running' ? 'running': 'done') as 'running' | 'done',
+ batch_id: tup.batch_id == null ? undefined: tup.batch_id,
+ }
+ })
+ const uniqueNames = new Set(run.map(it => it.name.replace(/^mcp__[^_]+__/, '')))
+ out.push({
+ id: `group-${(cur as ToolUsePart).id}`,
+ kind: 'tool-group',
+ toolName: uniqueNames.size === 1 ? cur.name: undefined,
+ items: run,
+ source: curBatch ? 'batch': 'consecutive-same',
+ _key: `group-${(cur as ToolUsePart).id}`,
+ } as ToolGroupNode & { _key: string })
+ }
+ else {
+ out.push({ ...toolShape, kind: 'tool', _key: cur.id })
+ }
+ i = j
+ continue
+ }
+ // 未知 part type（schema version forward-compat）
+ out.push({ kind: 'unknown', _key: (cur as { id: string }).id || `unk-${i}`, type: (cur as { type: string }).type })
+ i++
+ }
+ return out
+})
+// Quick Task：保留 DisplayItem 类型符号 + packGroups 函数，
+// 但 groupedTimelineItems / groupedToolCalls 已被 groupedDisplayItems 取代。
+// 静音 noUnusedLocals 用一行 void 引用 —— v27 清理时一并删除遗留符号。
+void ((null as unknown as DisplayItem | undefined))
+void packGroups
 function groupStatus(items: ToolItemShape): 'running' | 'done' {
  return items.some(it => it.status === 'running') ? 'running': 'done'
 }
@@ -571,8 +679,16 @@ const codingPlanBranchName = computed( => {
  return undefined
 })
 const primaryDeepAnalysisId = computed( => {
- const da = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
- return da?.id || ''
+ // Quick Task：从 displayParts 中找 deep_analysis tool_use part
+ // 优先匹配 tool_call_id（与 template item.id 字面对齐 —— groupedDisplayItems
+ // 把 cur.tool_call_id || cur.id 作为 item.id）。
+ const da = displayParts.value.find(p => p.type === 'tool_use' && isDeepAnalysisTool(p.name))
+ if (da && da.type === 'tool_use') {
+ return da.tool_call_id || da.id || ''
+ }
+ // legacy fallback：从 toolCalls 兼容路径找（v25 历史消息无 parts 但有 tool_calls）
+ const fromLegacy = toolCalls.value.find(tc => isDeepAnalysisTool(tc.name))
+ return fromLegacy?.id || ''
 })
 const TOOL_LABELS_CN: Record<string, string> = {
  Read: '读取文件',
@@ -713,9 +829,7 @@ function previewText(text: string): string {
 // waiting phase 空内容时隐藏空 bubble，让 ChatStatusBar 单独呈现
 const hideEmptyBubble = computed( =>
  props.isStreaming
- && !renderedHtml.value
- && toolCalls.value.length === 0
- && !hasNarrations.value
+ && displayParts.value.length === 0
  && chatStore.currentPhase === 'waiting',
 )
 </script>
@@ -760,7 +874,7 @@ const hideEmptyBubble = computed( =>
  - 有 timeline 时，thinking 会作为 timeline-step 节点直接交错渲染
  在工具批次之间，不走此块。
  -->
- <div v-if="!hasTimeline && hasThinking" class="thinking-block">
+ <div v-if="groupedDisplayItems.length === 0 && hasThinking" class="thinking-block">
  <button class="thinking-header" @click="showThinking = !showThinking">
  <span class="thinking-icon":class="isStreaming ? 'animate-pulse': ''">
  <span class="icon-[lucide--sparkles] text-[10px]" />
@@ -776,31 +890,22 @@ const hideEmptyBubble = computed( =>
  {{ thinkingText }}
  </div>
  </div>
- <!-- 叙述文本折叠块（工具调用间的操作描述） -->
- <div v-if="!hasTimeline && (hasNarrations || pendingNarration)" class="narration-block">
- <button class="narration-toggle" @click="showNarrations = !showNarrations">
- <span class="icon-[lucide--bot] text-[10px]" />
- <span>{{ isStreaming ? '分析中...': '分析过程' }}</span>
- <span class="narration-count">{{ narrations.length }}{{ pendingNarration ? '+1': '' }} 步</span>
- <span
- class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="showNarrations ? 'rotate-90': ''"
- />
- </button>
- <div v-if="showNarrations" class="narration-content">
- <p v-for="(n, i) in narrations":key="i">
- {{ n.trim }}
- </p>
- <p v-if="pendingNarration" class="opacity-60">
- {{ pendingNarration.trim }}
- </p>
- </div>
- </div>
- <!-- 工具调用 — 行内 pill 流（同 batch 横排 chip，其余按连续同名折叠） -->
- <div v-if="hasTimeline" class="timeline-flow">
- <template v-for="item in groupedTimelineItems":key="item.id">
- <!-- thinking step：默认显示首行预览，多行/超长时点开看全文 -->
+ <!--
+ Quick Task：parts-flow 渲染 —— 按 displayParts 顺序
+ 统一渲染 text / thinking / tool / tool-group / unknown。
+ PLAN §3.3 / § 要求删除分析过程折叠容器；text part 升为顶层渲染。
+ -->
+ <div v-if="groupedDisplayItems.length > 0" class="timeline-flow">
+ <template v-for="item in groupedDisplayItems":key="item._key">
+ <!-- text part：正文 markdown（顶层渲染，永远不被任何容器包裹） -->
  <div
- v-if="item.kind === 'thinking'"
+ v-if="item.kind === 'text'"
+ class="ai-prose"
+ v-html="renderedPartHtml[item.part.id] || ''"
+ />
+ <!-- thinking part：默认显示首行预览，多行/超长时点开看全文 -->
+ <div
+ v-else-if="item.kind === 'thinking'"
  class="timeline-step timeline-step--thinking":class="{ 'is-expandable': thinkingIsMultiline(item.text), 'is-expanded': expandedThinking.has(item.id) }"
  @click="thinkingIsMultiline(item.text) && toggleThinking(item.id)"
  >
@@ -819,15 +924,9 @@ const hideEmptyBubble = computed( =>
  {{ thinkingPreview(item.text) }}
  </div>
  </div>
- <!-- narration step -->
- <div v-else-if="item.kind === 'narration'" class="timeline-step timeline-step--narration">
- <div class="timeline-step-label">
- <span class="icon-[lucide--bot] text-[10px]" />
- 分析
- </div>
- <div class="timeline-step-text">
- {{ item.text.trim }}
- </div>
+ <!-- 未知 part type 兜底（forward-compat schema versioning，PLAN §D1） -->
+ <div v-else-if="item.kind === 'unknown'" class="unknown-part">
+ [未知 part: {{ item.type }}]
  </div>
  <!-- tool group：batch 来源 → 横向 chip 流；连续同名 → 纵向折叠 -->
  <div v-else-if="item.kind === 'tool-group'" class="tool-group">
@@ -983,133 +1082,15 @@ const hideEmptyBubble = computed( =>
  </div>
  </template>
  </div>
- <!-- 非 timeline 路径：同样按分组渲染 -->
- <div v-else-if="toolCalls.length > 0" class="tool-flow">
- <template v-for="item in groupedToolCalls":key="item.id">
- <div v-if="item.kind === 'tool-group'" class="tool-group">
- <button class="tool-pill tool-pill--group" @click="toggleGroup(item.id)">
- <span v-if="groupStatus(item.items) === 'running'" class="tool-dot tool-dot--running" />
- <span v-else class="tool-dot tool-dot--done" />
- <span class="tool-pill-name">{{ toolLabel(item.toolName) }}</span>
- <span class="tool-pill-count">{{ item.items.length }}</span>
- <span class="tool-pill-desc">最近：{{ lastItemDescription(item.items) }}</span>
- <span
- class="icon-[lucide--chevron-right] text-[10px] text-muted-foreground/50 transition-transform duration-200 ease-out":class="expandedGroups.has(item.id) ? 'rotate-90': ''"
- />
- </button>
- <Transition name="expand">
- <div v-if="expandedGroups.has(item.id)" class="tool-group-list">
- <div v-for="child in item.items":key="child.id" class="tool-inline tool-inline--child">
- <div class="tool-pill tool-pill--child" @click="toggleTool(child.id)">
- <span v-if="child.status === 'running'" class="tool-dot tool-dot--running" />
- <span v-else class="tool-dot tool-dot--done" />
- <span class="tool-pill-desc tool-pill-desc--child">{{ toolAction(child.name, child.input || {}, child.result) }}</span>
- <span
- v-if="child.input && Object.keys(child.input).length > 0"
- class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(child.id) ? 'rotate-90': ''"
- />
- </div>
- <div v-if="expandedTools.has(child.id)" class="tool-detail">
- <div class="tool-detail-section">
- <span class="tool-detail-label">输入</span>
- <pre class="tool-detail-json">{{ JSON.stringify(child.input, null, 2) }}</pre>
- </div>
- <div v-if="child.result" class="tool-detail-section">
- <span class="tool-detail-label">输出</span>
- <pre class="tool-detail-json">{{ typeof child.result === 'string' && child.result.length > 600 ? `${child.result.slice(0, 600)}…`: child.result }}</pre>
- </div>
- </div>
- </div>
- </div>
- </Transition>
- </div>
- <div v-else-if="item.kind === 'tool'" class="tool-inline">
- <div class="tool-pill" @click="toggleTool(item.id)">
- <span v-if="item.status === 'running'" class="tool-dot tool-dot--running" />
- <span v-else class="tool-dot tool-dot--done" />
- <span class="tool-pill-name">{{ toolLabel(item.name) }}</span>
- <span class="tool-pill-desc">{{ toolAction(item.name, item.input || {}, item.result) }}</span>
- <span
- v-if="item.input && Object.keys(item.input).length > 0"
- class="icon-[lucide--chevron-right] text-[9px] text-muted-foreground/40 transition-transform duration-150":class="expandedTools.has(item.id) ? 'rotate-90': ''"
- />
- </div>
- <TechPlanCard
- v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":plan-id="codingPlanData.planId":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
- @confirm="(_planId, sessionId, branchName) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName)"
- />
- <div
- v-if="isDeepAnalysisTool(item.name) && hasDeepAnalysisLogs && item.id === primaryDeepAnalysisId"
- class="deep-analysis-panel"
- >
- <button class="deep-analysis-toggle" @click="deepAnalysisExpanded = !deepAnalysisExpanded">
- <span class="icon-[lucide--activity] text-[10px] text-primary" />
- <span>{{ item.status === 'running' ? '执行日志': '执行记录' }}</span>
- <span class="deep-analysis-count">{{ resolvedDeepAnalysisLogs.length }} 条</span>
- <span
- class="icon-[lucide--chevron-right] text-[9px] transition-transform duration-150":class="deepAnalysisExpanded ? 'rotate-90': ''"
- />
- </button>
- <div v-if="deepAnalysisExpanded" class="deep-analysis-logs">
- <template v-for="(log, i) in resolvedDeepAnalysisLogs":key="i">
- <component:is="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': 'div'"
- v-if="decorateDeepLog(log)"
- class="deep-log-row":class="[
- `deep-log-row--${decorateDeepLog(log)!.kind}`,
- { 'is-expandable': decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text), 'is-expanded': expandedDeepLogs.has(i) },
- ]":type="decorateDeepLog(log)?.expandable || isLongText(decorateDeepLog(log)?.text || '') ? 'button': undefined"
- @click="(decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)) && toggleDeepLog(i)"
- >
- <span:class="decorateDeepLog(log)!.icon" class="deep-log-icon" />
- <div class="deep-log-main">
- <div class="deep-log-head">
- <span v-if="decorateDeepLog(log)!.label" class="deep-log-label">{{ decorateDeepLog(log)!.label }}</span>
- <span
- class="deep-log-text":class="{ 'deep-log-text--clamp': isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) }"
- >
- {{ isLongText(decorateDeepLog(log)!.text) && !expandedDeepLogs.has(i) ? previewText(decorateDeepLog(log)!.text): decorateDeepLog(log)!.text }}
- </span>
- <span
- v-if="decorateDeepLog(log)!.expandable || isLongText(decorateDeepLog(log)!.text)"
- class="icon-[lucide--chevron-right] deep-log-chevron":class="expandedDeepLogs.has(i) ? 'rotate-90': ''"
- />
- </div>
- <pre
- v-if="decorateDeepLog(log)!.expandable && expandedDeepLogs.has(i)"
- class="deep-log-detail"
- >{{ decorateDeepLog(log)!.detail }}</pre>
- </div>
- </component>
- </template>
- </div>
- </div>
- <div v-if="expandedTools.has(item.id) && !isCodingPlanTool(item.name)" class="tool-detail">
- <div class="tool-detail-section">
- <span class="tool-detail-label">输入</span>
- <pre class="tool-detail-json">{{ JSON.stringify(item.input, null, 2) }}</pre>
- </div>
- <div v-if="item.result" class="tool-detail-section">
- <span class="tool-detail-label">输出</span>
- <pre class="tool-detail-json">{{ typeof item.result === 'string' && item.result.length > 600 ? `${item.result.slice(0, 600)}…`: item.result }}</pre>
- </div>
- </div>
- </div>
- </template>
- </div>
- <!-- 正文（工具调用全部完成后的最终回答） -->
- <div v-if="isStreaming && !renderedHtml && toolCalls.length === 0 && !hasNarrations && !hasTimeline" class="flex items-center py-2">
+ <!--
+ Quick Task：流式但 displayParts 为空 → 显示打字光标占位。
+ 正文 markdown 已经由上方 parts-flow 中 text part 直接渲染（顶层 ai-prose），
+ 不再需要独立的 ai-prose 块。
+ -->
+ <div v-if="isStreaming && groupedDisplayItems.length === 0" class="flex items-center py-2">
  <span class="typing-cursor" />
  </div>
- <div
- v-if="renderedHtml"
- class="ai-prose"
- v-html="renderedHtml"
- />
- <span v-if="isStreaming && renderedHtml" class="typing-cursor" />
- <!-- 流式中等待工具返回的光标 -->
- <div v-if="isStreaming && !renderedHtml && (toolCalls.length > 0 || hasNarrations || hasTimeline)" class="flex items-center py-1">
- <span class="typing-cursor" />
- </div>
+ <span v-else-if="isStreaming" class="typing-cursor" />
  <!-- 状态 Badge -->
  <div v-if="messageStatus === 'interrupted'" class="status-badge status-badge--interrupted">
  <span class="icon-[lucide--octagon-x] text-[10px]" />
@@ -1281,8 +1262,15 @@ const hideEmptyBubble = computed( =>
 .timeline-step--thinking.is-expandable:hover {
  background: hsl(168 76% 94% / 0.7);
 }
-.timeline-step--narration {
- background: hsl(210 40% 98% / 0.7);
+/* Quick Task：timeline-step--narration 已删除（PLAN §） */
+.unknown-part {
+ font-size: 0.6875rem;
+ color: hsl(215 16% 47% / 0.6);
+ padding: 0.25rem 0.5rem;
+ border-radius: 0.375rem;
+ border: 1px dashed hsl(214 32% 86%);
+ background: hsl(0 0% 100% / 0.6);
+ font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
 }
 .timeline-step-label {
  display: flex;
@@ -1384,44 +1372,6 @@ const hideEmptyBubble = computed( =>
  gap: 0.5rem;
  flex-wrap: wrap;
  padding: 0 0.125rem;
-}
-/* ============ Narration — 叙述折叠块 ============ */
-.narration-block {
- border-radius: 0.5rem;
- border: 1px solid hsl(214 32% 91% / 0.5);
- background: hsl(210 40% 98% / 0.4);
- overflow: hidden;
-}
-.narration-toggle {
- display: flex;
- align-items: center;
- gap: 0.375rem;
- width: 100%;
- padding: 0.375rem 0.625rem;
- font-size: 0.6875rem;
- color: hsl(215 16% 47% / 0.7);
- cursor: pointer;
- transition: background 0.1s;
-}
-.narration-toggle:hover {
- background: hsl(210 40% 96% / 0.6);
-}
-.narration-count {
- margin-left: auto;
- font-size: 0.625rem;
- color: hsl(215 16% 47% / 0.4);
-}
-.narration-content {
- padding: 0.375rem 0.625rem;
- border-top: 1px solid hsl(214 32% 91% / 0.4);
- font-size: 0.6875rem;
- line-height: 1.6;
- color: hsl(215 16% 47% / 0.6);
- max-height: 12rem;
- overflow-y: auto;
-}
-.narration-content p {
- margin: 0.25rem 0;
 }
 /* ============ Tool Flow — 行内 pill ============ */
 .tool-flow {
