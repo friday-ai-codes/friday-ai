@@ -31,6 +31,10 @@ class WorkflowState(TypedDict, total=False):
  # SDK 运行结果（Phase）
  accumulated_thinking: list[str]
  tool_calls: list[dict[str, Any]]
+ # Quick Task：chat_runner PartsCollector 收集的有序 parts
+ # 数组（Anthropic content blocks 风格），强同源派生 content / tool_calls；
+ # 通过 conversation_service → finalize 落到 Message.parts JSONField。
+ parts: list[dict[str, Any]]
  result_metadata: dict[str, Any]
  agent_session_id: str
  # Phase：协商暂停 payload

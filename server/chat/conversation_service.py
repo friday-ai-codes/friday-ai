@@ -429,6 +429,8 @@ async def _handle_waiting_state(
  status=OrchestrationRun.Status.COMPLETED,
  phase=final_state.get("phase", "completed"),
  )
+ #：barrier resume 路径也透传 parts（_execute_with_results 已注入 state）
+ _parts_for_barrier = final_state.get("parts")
  await do_finalize(
  conversation=conversation,
  assistant_msg_id=assistant_msg_id,
@@ -442,6 +444,7 @@ async def _handle_waiting_state(
  user_message=content,
  notification_user_id=notification_user_id,
  publish_title_event=True,
+ parts=_parts_for_barrier if isinstance(_parts_for_barrier, list) else,
  )
  logger.info(
  "barrier_resume_finalized",
@@ -662,6 +665,16 @@ class ConversationService:
  if not tool_calls_state and isinstance(snap_tools, list):
  tool_calls_state = [tc for tc in snap_tools if isinstance(tc, dict)]
  return final_content, accumulated_thinking, tool_calls_state, snap
+ def _extract_state_parts(state: dict[str, Any]) -> list[dict[str, Any]]:
+ """Quick Task：从 graph state 读 collector parts。
+ chat_runner 路径会在 ``_execute_first_run`` / ``_execute_with_results``
+ 把 ``runner.result.metadata['parts']`` 注入 state['parts']。其它路径
+ （deep_analysis BarrierManager 回灌）暂不产 parts，落库走 legacy 兜底。
+ """
+ raw = state.get("parts")
+ if isinstance(raw, list):
+ return [p for p in raw if isinstance(p, dict)]
+ return
  conversation = await Conversation.objects.select_related("project").aget(
  id=conversation_id,
  is_deleted=False,
@@ -839,6 +852,7 @@ class ConversationService:
  user_message=content,
  notification_user_id=notification_user_id,
  publish_title_event=True,
+ parts=_extract_state_parts(state),
  )
  # finalize 已经落库，清掉 streaming_snapshot 避免 runtime API 又拉到陈旧快照
  from orchestration.graph import _clear_streaming_snapshot
@@ -911,6 +925,7 @@ class ConversationService:
  user_message=content,
  notification_user_id=notification_user_id,
  publish_title_event=False,
+ parts=_extract_state_parts(state),
  )
  # 已落库，清掉 streaming_snapshot 避免 runtime polling 拉到陈旧快照
  from orchestration.graph import _clear_streaming_snapshot
