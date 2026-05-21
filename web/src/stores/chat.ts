@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, SSEEvent, StreamTimelineItem } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
 import type { ClarificationAnswer, ClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
@@ -23,6 +23,7 @@ import {
  patchConversation,
 } from '~/api/chat'
 import { ApiError, get as apiGet } from '~/api/client'
+import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
 import { useRoutingStore } from '~/stores/routing'
@@ -72,6 +73,10 @@ export const useChatStore = defineStore('chat', => {
  // 叙述/正文分离：工具调用前后的文本归为叙述，最终文本为正文
  const streamingNarrations = ref<string>
  const streamingPendingText = ref('')
+ // Quick Task：parts 数组（与后端 chat_runner._PartsCollector 同源）
+ // 替代 streamingContent + streamingPendingText + streamingNarrations + streamingTimeline 四件套
+ // 作为新协议下的单一权威；双轨期 legacy flag 下仍写入老 ref（不写本 ref）。
+ const streamingParts = ref<MessagePart>
  // 深度分析实时日志
  const deepAnalysisLogs = ref<DeepAnalysisLog>
  const deepAnalysisSessionId = ref<string | null>(null)
@@ -380,6 +385,7 @@ export const useChatStore = defineStore('chat', => {
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
  streamingPendingText.value = ''
+ streamingParts.value =
  restoredRuntimeConversationId.value = null
  // Phase：切换 conversation 时清空协商状态防串台
  pendingClarifications.value = new Map
@@ -395,6 +401,7 @@ export const useChatStore = defineStore('chat', => {
  streamingStatus.value = null
  streamingNarrations.value =
  streamingPendingText.value = ''
+ streamingParts.value =
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
  budgetWarning.value = null
@@ -431,6 +438,7 @@ export const useChatStore = defineStore('chat', => {
  streamingContent.value = ''
  streamingThinking.value = ''
  streamingPendingText.value = ''
+ streamingParts.value =
  streamingMetadata.value = null
  streamingMessageId.value = ''
  deepAnalysisSessionId.value = runtime.session_id || null
@@ -722,11 +730,169 @@ export const useChatStore = defineStore('chat', => {
  console.warn('[routing] failed to parse trace from tool result', err)
  }
  }
+ /**
+ * Quick Task：part_started 分派
+ *
+ * 按 index 维护 `streamingParts` array：若已有同 index 的 part（重连 / 重放）
+ * 覆盖；否则按 index 插入。tool_use part 在此处即写完整 input / status=running，
+ * tool_use_result 等价的 `part_completed` 事件再 mark done / error + write result。
+ */
+ function handlePartStarted(event: SSEEvent): void {
+ const partPayload = event.part as PartStartedPayload | undefined
+ if (!partPayload || typeof partPayload.type !== 'string')
+ return
+ const index = typeof event.index === 'number' ? event.index: partPayload.index
+ if (typeof index !== 'number')
+ return
+ let next: MessagePart | null = null
+ if (partPayload.type === 'text') {
+ next = {
+ type: 'text',
+ id: partPayload.id || crypto.randomUUID,
+ index,
+ text: partPayload.text || '',
+ state: partPayload.state === 'done' ? 'done': 'streaming',
+ } satisfies TextPart
+ }
+ else if (partPayload.type === 'thinking') {
+ next = {
+ type: 'thinking',
+ id: partPayload.id || crypto.randomUUID,
+ index,
+ text: partPayload.text || '',
+ state: partPayload.state === 'done' ? 'done': 'streaming',
+ } satisfies ThinkingPart
+ }
+ else if (partPayload.type === 'tool_use') {
+ next = {
+ type: 'tool_use',
+ id: partPayload.id || crypto.randomUUID,
+ index,
+ tool_call_id: partPayload.tool_call_id || '',
+ name: partPayload.name || '',
+ input: partPayload.input || {},
+ status: partPayload.status || 'running',
+ result: partPayload.result ?? null,
+ batch_id: partPayload.batch_id ?? null,
+ } satisfies ToolUsePart
+ }
+ if (!next)
+ return
+ const existingIdx = streamingParts.value.findIndex(p => p.index === index)
+ if (existingIdx >= 0) {
+ streamingParts.value.splice(existingIdx, 1, next)
+ }
+ else {
+ streamingParts.value.push(next)
+ // 按 index 升序排：通常事件顺序到达，少数 OOO 通过 sort 兜底
+ streamingParts.value.sort((a, b) => a.index - b.index)
+ }
+ }
+ /**
+ * part_delta：当前仅支持 `delta_type: 'text_append'` —— text / thinking part 增量 append。
+ * tool_use part 无 delta（后端 始终在 start_tool_use 时 input 一次性发完）。
+ */
+ function handlePartDelta(event: SSEEvent): void {
+ if (typeof event.index !== 'number')
+ return
+ const target = streamingParts.value.find(p => p.index === event.index)
+ if (!target)
+ return
+ if (event.delta_type === 'text_append' && (target.type === 'text' || target.type === 'thinking')) {
+ target.text = (target.text || '') + (event.text || '')
+ }
+ }
+ /**
+ * part_completed：text / thinking 标 `state=done`；tool_use 写 result + status + 触发 routing trace 解析。
+ *
+ * Quick Task：把 `maybeParseRoutingTraceFromToolResult` 触发位置从
+ * 旧 `tool_use_result` 事件迁到 `part_completed`（part.type === 'tool_use'）—— 同时保留
+ * legacy flag 下的 `tool_use_result` 路径，确保 v25 行为零回归。
+ */
+ function handlePartCompleted(event: SSEEvent): void {
+ const partPayload = event.part as PartCompletedPayload | undefined
+ const index = typeof event.index === 'number' ? event.index: partPayload?.index
+ if (typeof index !== 'number')
+ return
+ const target = streamingParts.value.find(p => p.index === index)
+ if (!target)
+ return
+ if (target.type === 'text' || target.type === 'thinking') {
+ target.state = 'done'
+ return
+ }
+ if (target.type === 'tool_use') {
+ if (partPayload?.status)
+ target.status = partPayload.status
+ else
+ target.status = 'done'
+ if (partPayload?.result !== undefined)
+ target.result = partPayload.result
+ // routing trace 解析（：触发位置从 tool_use_result 迁来）
+ const resultStr = typeof target.result === 'string' ? target.result: ''
+ if (resultStr) {
+ maybeParseRoutingTraceFromToolResult({
+ toolName: target.name,
+ toolInput: target.input,
+ normalizedResult: resultStr,
+ })
+ // Phase：ask_clarification pending payload 解析（与旧路径同步保留）
+ if (target.name === 'ask_clarification') {
+ try {
+ const parsed = JSON.parse(resultStr) as {
+ clarification_id?: string
+ pending?: boolean
+ marker?: string
+ question?: string
+ options?: Array<{ id: string, label: string, hint?: string, implies?: Record<string, unknown> }>
+ allow_freeform?: boolean
+ }
+ if (
+ parsed.pending === true
+ && parsed.marker === 'ask_clarification'
+ && parsed.clarification_id
+ ) {
+ upsertClarification({
+ clarification_id: parsed.clarification_id,
+ question: parsed.question || '',
+ options: parsed.options ||,
+ allow_freeform: parsed.allow_freeform !== false,
+ status: 'pending',
+ triggering_message_id: streamingMessageId.value || undefined,
+ })
+ }
+ }
+ catch {
+ // 静默
+ }
+ }
+ }
+ }
+ }
  function handleSSEEvent(event: SSEEvent) {
  // 用户已中断，忽略后续事件（仅保留 message_complete 用于清理）
  if (streamingStatus.value === 'interrupted' && event.type !== 'message_complete')
  return
+ // Quick Task：双轨期协议分发
+ // - protocol === 'new'：消费 part_* 事件，旧 text_delta / thinking / tool_use_*
+ // 直接 return（避免写入 streamingPendingText 等老 state 触发 narration-block 渲染）。
+ // - protocol === 'legacy'：保留当前 v25 行为，part_* 直接 return。
+ // - message_complete 双轨都处理（同 v25），final_answer / metadata / status 共用。
+ const protocol = getChatPartsProtocol
+ if (protocol === 'new' && (event.type === 'text_delta' || event.type === 'thinking' || event.type === 'tool_use_start' || event.type === 'tool_use_result'))
+ return
+ if (protocol === 'legacy' && (event.type === 'part_started' || event.type === 'part_delta' || event.type === 'part_completed'))
+ return
  switch (event.type) {
+ case 'part_started':
+ handlePartStarted(event)
+ break
+ case 'part_delta':
+ handlePartDelta(event)
+ break
+ case 'part_completed':
+ handlePartCompleted(event)
+ break
  case 'text_delta':
  streamingPendingText.value += event.text || ''
  break
@@ -854,10 +1020,22 @@ export const useChatStore = defineStore('chat', => {
  break
  }
  case 'message_complete': {
+ // Quick Task：新协议下后端 payload 携带完整 parts snapshot
+ // —— 优先用 payload.parts 覆盖 streamingParts（兜底重连 / SSE OOO）
+ if (Array.isArray(event.parts) && event.parts.length > 0) {
+ streamingParts.value = event.parts.map((p, i) => ({ ...p, index: typeof p.index === 'number' ? p.index: i })) as MessagePart
+ }
  // deep_analysis 返回结果在 final_answer/result 中（text_delta 被过滤）
  const finalAnswer = event.final_answer || event.result || ''
  if (finalAnswer) {
  streamingContent.value = finalAnswer
+ }
+ else if (streamingParts.value.length > 0) {
+ // 新协议路径：从 parts 派生 content（与后端 PartsCollector.to_message_payload 同源）
+ streamingContent.value = streamingParts.value
+ .filter((p): p is TextPart => p.type === 'text')
+ .map(p => p.text)
+ .join('')
  }
  else {
  streamingContent.value = streamingPendingText.value
@@ -1164,6 +1342,7 @@ export const useChatStore = defineStore('chat', => {
  streamingMetadata.value = null
  streamingNarrations.value =
  streamingPendingText.value = ''
+ streamingParts.value =
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
  error.value = null
@@ -1265,7 +1444,7 @@ export const useChatStore = defineStore('chat', => {
  messages.value = messages.value.filter(m => m.id !== userMessage.id)
  }
  // 流结束后，将流式内容合并为正式消息
- if (streamingContent.value || streamingToolCalls.value.length > 0) {
+ if (streamingContent.value || streamingToolCalls.value.length > 0 || streamingParts.value.length > 0) {
  const finalMetadata: Record<string, unknown> = {
  ...(streamingMetadata.value || {}),
  ...(streamingStatus.value ? { status: streamingStatus.value }: {}),
@@ -1284,18 +1463,33 @@ export const useChatStore = defineStore('chat', => {
  .filter(tc => tc.result)
  .map(tc => ({ id: tc.id, result: tc.result }))
  }
- const assistantMessage: ConversationMessage = {
- id: streamingMessageId.value || crypto.randomUUID,
- role: 'assistant',
- content: streamingContent.value,
- tool_calls: streamingToolCalls.value.length > 0
+ // Quick Task：从 streamingParts 派生 tool_calls 兼容字段
+ // （与后端 PartsCollector.to_message_payload 同源算法）
+ const partsToolCalls = streamingParts.value
+ .filter((p): p is ToolUsePart => p.type === 'tool_use')
+ .map(p => ({
+ id: p.tool_call_id,
+ name: p.name,
+ input: p.input,
+ result: p.result ?? undefined,
+ status: (p.status === 'running' ? 'running': 'done') as 'running' | 'done',
+ }))
+ const mergedToolCalls = partsToolCalls.length > 0
+ ? partsToolCalls: (streamingToolCalls.value.length > 0
  ? streamingToolCalls.value.map(tc => ({
  id: tc.id,
  name: tc.name,
  input: tc.input,
  result: tc.result,
  status: tc.status,
- })): undefined,
+ })): undefined)
+ const assistantMessage: ConversationMessage = {
+ id: streamingMessageId.value || crypto.randomUUID,
+ role: 'assistant',
+ content: streamingContent.value,
+ tool_calls: mergedToolCalls,
+ // 持久化 parts 数组（与 content / tool_calls 三同源）
+ parts: streamingParts.value.length > 0 ? [...streamingParts.value]: undefined,
  metadata: Object.keys({
  ...finalMetadata,
  ...(deepAnalysisLogs.value.length > 0 ? { deep_analysis_logs: [...deepAnalysisLogs.value] }: {}),
@@ -1617,6 +1811,7 @@ export const useChatStore = defineStore('chat', => {
  lastFailedContent,
  streamingNarrations,
  streamingPendingText,
+ streamingParts,
  deepAnalysisLogs,
  deepAnalysisSessionId,
  restoredRuntimeConversationId,
@@ -1685,5 +1880,9 @@ export const useChatStore = defineStore('chat', => {
  upsertClarification,
  markClarificationAnswered,
  clearAllClarifications,
+ // Quick Task：单测专用 SSE dispatch 入口
+ // 生产路径走 sendMessage → connectSSE → onEvent callback；本字段把内部
+ // 闭包暴露给 vitest，避免反射 / sendMessage mock 的开销。
+ _dispatchSSE: handleSSEEvent,
  }
 })
