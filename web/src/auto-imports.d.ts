@@ -57,6 +57,7 @@ declare global {
  const getDownstreamVarDeps: typeof import('./composables/useDownstreamVarCheck').getDownstreamVarDeps
  const getMarkdownRenderer: typeof import('./composables/useMarkdownRenderer').getMarkdownRenderer
  const h: typeof import('vue').h
+ const hydrateLegacyMessage: typeof import('./composables/useMessageParts').hydrateLegacyMessage
  const ignorableWatch: typeof import('@vueuse/core').ignorableWatch
  const inject: typeof import('vue').inject
  const injectLocal: typeof import('@vueuse/core').injectLocal
@@ -243,6 +244,7 @@ declare global {
  const useMediaQuery: typeof import('@vueuse/core').useMediaQuery
  const useMemoize: typeof import('@vueuse/core').useMemoize
  const useMemory: typeof import('@vueuse/core').useMemory
+ const useMessageParts: typeof import('./composables/useMessageParts').useMessageParts
  const useModal: typeof import('./composables/useModal').useModal
  const useModel: typeof import('vue').useModel
  const useMounted: typeof import('@vueuse/core').useMounted
@@ -495,6 +497,7 @@ declare module 'vue' {
  readonly getDownstreamVarDeps: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['getDownstreamVarDeps']>
  readonly getMarkdownRenderer: UnwrapRef<typeof import('./composables/useMarkdownRenderer')['getMarkdownRenderer']>
  readonly h: UnwrapRef<typeof import('vue')['h']>
+ readonly hydrateLegacyMessage: UnwrapRef<typeof import('./composables/useMessageParts')['hydrateLegacyMessage']>
  readonly ignorableWatch: UnwrapRef<typeof import('@vueuse/core')['ignorableWatch']>
  readonly inject: UnwrapRef<typeof import('vue')['inject']>
  readonly injectLocal: UnwrapRef<typeof import('@vueuse/core')['injectLocal']>
@@ -680,6 +683,7 @@ declare module 'vue' {
  readonly useMediaQuery: UnwrapRef<typeof import('@vueuse/core')['useMediaQuery']>
  readonly useMemoize: UnwrapRef<typeof import('@vueuse/core')['useMemoize']>
  readonly useMemory: UnwrapRef<typeof import('@vueuse/core')['useMemory']>
+ readonly useMessageParts: UnwrapRef<typeof import('./composables/useMessageParts')['useMessageParts']>
  readonly useModal: UnwrapRef<typeof import('./composables/useModal')['useModal']>
  readonly useModel: UnwrapRef<typeof import('vue')['useModel']>
  readonly useMounted: UnwrapRef<typeof import('@vueuse/core')['useMounted']>
