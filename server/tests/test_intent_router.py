@@ -55,7 +55,8 @@ class TestEvaluateRelevConfidence:
  assert result.level == "low_confidence"
  assert result.top1_score == 0.5
  def test_low_when_gap_too_close(self) -> None:
- # top1=0.9, top2=0.85 → ratio=0.94 > 0.7 → low
+ # top1=0.9, top2=0.85 → ratio=0.944 > 0.92 → low
+ # （0.92 阈值仍能识别此 case：极接近 score 视作真歧义）
  result = evaluate_relev_confidence({
  "candidates": [
  {"repository_id": "r1", "score": 0.9, "selected_by_user_final": True},
@@ -65,7 +66,7 @@ class TestEvaluateRelevConfidence:
  assert result.level == "low_confidence"
  assert result.top1_score == 0.9
  def test_high_when_clear_winner(self) -> None:
- # top1=0.92, top2=0.4 → ratio=0.43 < 0.7 → high
+ # top1=0.92, top2=0.4 → ratio=0.43 < 0.92 → high
  result = evaluate_relev_confidence({
  "candidates": [
  {"repository_id": "r1", "score": 0.92, "selected_by_user_final": True},
@@ -74,6 +75,36 @@ class TestEvaluateRelevConfidence:
  })
  assert result.level == "high_confidence"
  assert "r1" in result.selected_repository_ids
+ def test_high_when_moderate_gap_no_longer_triggers_low(self) -> None:
+ """v26.0 hotfix 回归保护（284 DEBUG）：
+ 在 0.7 阈值下 top2/top1 ≈ 0.85 会被误判为 low_confidence。0.92 阈值放过
+ 此场景 —— 这类「主仓 ~95%，次仓 ~80%」的多仓召回是日常 RELEV 输出形态，
+ 不应强制澄清。
+ """
+ # top1=0.95, top2=0.80 → ratio=0.842 < 0.92 → high
+ result = evaluate_relev_confidence({
+ "candidates": [
+ {"repository_id": "r1", "score": 0.95, "selected_by_user_final": True},
+ {"repository_id": "r2", "score": 0.80, "selected_by_ai": False},
+ ],
+ })
+ assert result.level == "high_confidence"
+ assert result.top1_score == 0.95
+ def test_low_when_top1_top2_nearly_identical(self) -> None:
+ """v26.0 hotfix 回归保护（284 DEBUG）：真实生产数据的"极接近"场景。
+ Test 2 实测 4 仓库 score = [0.7765, 0.7704, 0.7602, 0.7567]，
+ top2/top1 = 0.992 —— 这才是真正需要澄清的「无法明确区分主仓」语义。
+ """
+ result = evaluate_relev_confidence({
+ "candidates": [
+ {"repository_id": "r1", "score": 0.7765, "selected_by_ai": True},
+ {"repository_id": "r2", "score": 0.7704, "selected_by_ai": True},
+ {"repository_id": "r3", "score": 0.7602, "selected_by_ai": True},
+ {"repository_id": "r4", "score": 0.7567, "selected_by_ai": True},
+ ],
+ })
+ assert result.level == "low_confidence"
+ assert result.top1_score == pytest.approx(0.7765)
  def test_low_when_empty_candidates(self) -> None:
  result = evaluate_relev_confidence({"candidates": })
  assert result.level == "low_confidence"
@@ -83,8 +114,10 @@ class TestEvaluateRelevConfidence:
  assert result.level == "low_confidence" # 空 candidates 视作 low
  assert result.top1_score is None
  def test_threshold_constants_match_design(self) -> None:
+ # v26.0 hotfix (2026-05-21)：CONFIDENCE_GAP_MAX 0.7 → 0.92
+ # 详见 project-docs/phases/work-item/work-item item-runner-collapse.md
  assert CONFIDENCE_TOP1_MIN == 0.7
- assert CONFIDENCE_GAP_MAX == 0.7
+ assert CONFIDENCE_GAP_MAX == 0.92
  def test_high_confidence_short_form(self) -> None:
  """直接传 {"candidates": [...]}（intent_router helper 直接消费形态）。"""
  result = evaluate_relev_confidence({

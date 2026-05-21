@@ -595,8 +595,37 @@ async def _execute_first_run(
  finally:
  if conv_id:
  unregister_runner(conv_id)
- # Phase：优先检测 ask_clarification —— 如果 LLM 要求澄清，
- # 直接进 wait_clarification interrupt，不再处理 blocking_tasks 与 finalize。
+ # v26.0 hotfix（2026-05-21）：blocking_tasks 检测必须优先于 pending_clarification。
+ #
+ # 原因：blocking_tasks（如 deep_analysis）派发已经产生副作用（SubAgentSession
+ # 已 acreate、容器已派发），graph 必须负责注册 barrier 等回灌结果；
+ # 否则容器即便完成 callback，BarrierManager 里找不到 barrier，task_completed
+ # 静默返回 False —— deep_analysis_completion trace 永不写入。
+ #
+ # 反例（已修）：曾经 pending_clarification（ 自动构造）写死在
+ # blocking_tasks 之前 → RELEV 低置信触发时 deep_analysis 副作用被孤立。
+ # 详见 project-docs/phases/work-item/work-item item-runner-collapse.md。
+ blocking_tasks = await _extract_blocking_tasks(
+ tool_calls_by_id, cfg.get("conversation_id", ""),
+ )
+ if blocking_tasks:
+ logger.info(
+ "executing_node_blocking_tasks_detected",
+ count=len(blocking_tasks),
+ task_ids=[t["task_id"] for t in blocking_tasks],
+ )
+ writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(blocking_tasks)}})
+ await _persist_run_phase(run_id, RunPhase.WAITING.value)
+ writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(blocking_tasks)}})
+ return {
+ "phase": RunPhase.WAITING.value,
+ "accumulated_thinking": accumulated_thinking,
+ "tool_calls": list(tool_calls_by_id.values),
+ "blocking_tasks": blocking_tasks,
+ "agent_session_id": agent_session_id,
+ }
+ # Phase：检测 ask_clarification —— 如果 LLM 要求澄清，
+ # 进 wait_clarification interrupt 等用户输入。
  pending_clarification = _extract_pending_clarification(tool_calls_by_id)
  # Phase：LLM 没主动调 ask_clarification 但 RELEV 低置信
  # → 编排层自动构造 pending_clarification 强制澄清（硬约束）
@@ -629,25 +658,6 @@ async def _execute_first_run(
  "accumulated_thinking": accumulated_thinking,
  "tool_calls": list(tool_calls_by_id.values),
  "pending_clarification": pending_clarification,
- "agent_session_id": agent_session_id,
- }
- blocking_tasks = await _extract_blocking_tasks(
- tool_calls_by_id, cfg.get("conversation_id", ""),
- )
- if blocking_tasks:
- logger.info(
- "executing_node_blocking_tasks_detected",
- count=len(blocking_tasks),
- task_ids=[t["task_id"] for t in blocking_tasks],
- )
- writer({"type": TASK_PROGRESS, "data": {"completed_count": 0, "total_count": len(blocking_tasks)}})
- await _persist_run_phase(run_id, RunPhase.WAITING.value)
- writer({"type": PHASE_TRANSITION, "data": {"phase": "waiting", "blocking_task_count": len(blocking_tasks)}})
- return {
- "phase": RunPhase.WAITING.value,
- "accumulated_thinking": accumulated_thinking,
- "tool_calls": list(tool_calls_by_id.values),
- "blocking_tasks": blocking_tasks,
  "agent_session_id": agent_session_id,
  }
  result_metadata = _build_result_metadata(runner)
