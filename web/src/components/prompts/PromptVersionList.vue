@@ -99,43 +99,70 @@ async function handleRollback: Promise<void> {
 }
 </script>
 <template>
- <div class="space-y-4">
- <h4 class="text-sm font-semibold text-foreground">
+ <div class="space-y-5">
+ <!-- 标题 + 总计 -->
+ <div class="flex items-end justify-between gap-2">
+ <div>
+ <h4 class="text-sm font-semibold text-foreground flex items-center gap-2">
+ <span class="icon-[lucide--history] text-primary text-base" />
  版本历史
  </h4>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 共 {{ sortedVersions.length }} 个版本，按时间倒序展示
+ </p>
+ </div>
+ </div>
  <!-- 版本列表：DESC 排序 -->
  <ul v-if="sortedVersions.length > 0" class="space-y-2">
  <li
  v-for="v in sortedVersions":key="v.id"
- class="flex items-center justify-between gap-2 rounded-lg border border-border/50 "
+ class="rounded-xl border transition-colors":class="isActive(v)
+ ? 'border-primary/40 bg-primary/4 shadow-sm': 'border-border/60 bg-card hover:border-border'"
  >
- <div class="flex-1 min-w-0">
- <div class="flex items-center gap-2">
- <span class="text-xs font-semibold">v{{ v.version }}</span>
+ <div class="flex items-start justify-between gap-3">
+ <div class="flex-1 min-w-0 space-y-1">
+ <div class="flex items-center gap-2 flex-wrap">
+ <span
+ class="font-mono text-xs font-semibold px-1.5 py-0.5 rounded":class="isActive(v)
+ ? 'bg-primary/15 text-primary': 'bg-muted text-foreground'"
+ >
+ v{{ v.version }}
+ </span>
  <Badge v-if="isActive(v)" variant="default">
  当前版本
  </Badge>
- </div>
- <p class="text-xs text-muted-foreground mt-1 truncate">
- {{ v.change_note || '（无说明）' }}
- </p>
- <p class="text-[10px] text-muted-foreground">
+ <span class="text-[11px] text-muted-foreground">
  {{ new Date(v.created_at).toLocaleString('zh-CN') }}
+ </span>
+ </div>
+ <p
+ class="text-xs leading-relaxed text-foreground/80":class="!v.change_note && 'italic text-muted-foreground'"
+ >
+ {{ v.change_note || '（保存时未填写变更说明）' }}
  </p>
+ </div>
  </div>
  </li>
  </ul>
  <!-- 单版本场景：inline 提示 -->
- <p v-if="sortedVersions.length === 1" class="text-xs text-muted-foreground">
+ <div
+ v-if="sortedVersions.length === 1"
+ class="rounded-lg border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+ >
  仅有一个版本，保存后会自动追加新版本供对比
- </p>
+ </div>
  <!-- 多版本：Select 选择器 + diff -->
- <div v-if="sortedVersions.length >= 2" class="space-y-3">
+ <div v-if="sortedVersions.length >= 2" class="space-y-3 pt-2 border-t border-border/50">
+ <div>
+ <h5 class="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+ <span class="icon-[lucide--git-compare] text-primary text-base" />
+ 版本对比
+ </h5>
  <div class="grid grid-cols-2 gap-3">
  <div class="space-y-1.5">
- <label class="text-xs text-muted-foreground">对比版本 A</label>
+ <label class="text-xs font-medium text-foreground">对比版本 A</label>
  <Select v-model="selectedV1">
- <SelectTrigger>
+ <SelectTrigger class="w-full">
  <SelectValue />
  </SelectTrigger>
  <SelectContent>
@@ -146,9 +173,9 @@ async function handleRollback: Promise<void> {
  </Select>
  </div>
  <div class="space-y-1.5">
- <label class="text-xs text-muted-foreground">对比版本 B</label>
+ <label class="text-xs font-medium text-foreground">对比版本 B</label>
  <Select v-model="selectedV2">
- <SelectTrigger>
+ <SelectTrigger class="w-full">
  <SelectValue />
  </SelectTrigger>
  <SelectContent>
@@ -157,6 +184,7 @@ async function handleRollback: Promise<void> {
  </SelectItem>
  </SelectContent>
  </Select>
+ </div>
  </div>
  </div>
  <PromptVersionDiff
@@ -167,6 +195,7 @@ async function handleRollback: Promise<void> {
  variant="outline":disabled="!rollbackCandidate":title="rollbackCandidate ? '': '当前正是此版本'"
  @click="handleRollback"
  >
+ <span class="icon-[lucide--undo-2] mr-1.5 text-sm" />
  恢复到此版本
  </Button>
  </div>

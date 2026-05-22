@@ -53,19 +53,50 @@ describe('promptMetadataForm', => {
  const html = wrapper.html
  expect(html).not.toContain('系统内置')
  })
- it('title input 初始值填充', => {
+ it('is_builtin=true 时 title 以只读静态文本展示并禁止编辑', => {
  const wrapper = mount(PromptMetadataForm, {
  props: { prompt: mockPrompt, mode: 'edit' },
+ })
+ // 不再渲染可编辑 input
+ expect(wrapper.find('input').exists).toBe(false)
+ // 改为以 data-testid=builtin-title 的静态文本呈现，包含原 title 内容
+ const titleBox = wrapper.find('[data-testid="builtin-title"]')
+ expect(titleBox.exists).toBe(true)
+ expect(titleBox.text).toContain('开发者助手')
+ // UI 上提示「不可修改」
+ expect(wrapper.text).toContain('不可修改')
+ })
+ it('is_builtin=true 时 description 以只读静态文本展示并禁止编辑', => {
+ const wrapper = mount(PromptMetadataForm, {
+ props: { prompt: mockPrompt, mode: 'edit' },
+ })
+ // 不再渲染可编辑 textarea
+ expect(wrapper.find('textarea').exists).toBe(false)
+ const descBox = wrapper.find('[data-testid="builtin-description"]')
+ expect(descBox.exists).toBe(true)
+ expect(descBox.text).toContain('默认对话提示')
+ })
+ it('is_builtin=false 时 title/description 仍可编辑（input + textarea 渲染）', => {
+ const wrapper = mount(PromptMetadataForm, {
+ props: { prompt: { ...mockPrompt, is_builtin: false }, mode: 'edit' },
  })
  const titleInput = wrapper.find('input')
+ expect(titleInput.exists).toBe(true)
  expect((titleInput.element as HTMLInputElement).value).toBe('开发者助手')
+ const textarea = wrapper.find('textarea')
+ expect(textarea.exists).toBe(true)
+ expect((textarea.element as HTMLTextAreaElement).value).toBe('默认对话提示')
  })
- it('description textarea 初始值填充', => {
+ it('is_builtin=true 时展示「调用位置」卡片并标注业务域', => {
+ // chat.system.developer 对应 PromptUsageEntry.domain='chat'
  const wrapper = mount(PromptMetadataForm, {
  props: { prompt: mockPrompt, mode: 'edit' },
  })
- const textarea = wrapper.find('textarea')
- expect((textarea.element as HTMLTextAreaElement).value).toBe('默认对话提示')
+ expect(wrapper.text).toContain('调用位置')
+ expect(wrapper.text).toContain('对话服务')
+ // 触发条件与调用点 callsite 均出现
+ expect(wrapper.text).toContain('开发者')
+ expect(wrapper.text).toContain('conversation_service')
  })
  it('只读 Label 文本对齐 work item 只读字段表', => {
  const wrapper = mount(PromptMetadataForm, {

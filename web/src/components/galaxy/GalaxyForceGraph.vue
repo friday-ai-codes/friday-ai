@@ -53,6 +53,7 @@ const NODE_COLORS: Record<string, string> = {
  endpoint: '#ff8c42',
  api_wrapper: '#50e3a4',
  api_call_site: '#00d4ff',
+ repository: '#ffd166',
 }
 const NODE_SIZES: Record<string, number> = {
  chunk_registry: 4,
@@ -60,6 +61,7 @@ const NODE_SIZES: Record<string, number> = {
  endpoint: 6,
  api_wrapper: 6,
  api_call_site: 3.5,
+ repository: 12,
 }
 const EDGE_COLORS: Record<string, string> = {
  CALL: '#4a90e2',
@@ -70,6 +72,7 @@ const EDGE_COLORS: Record<string, string> = {
  SEMANTIC: '#e91e63',
  API_CALLS: '#ff4444',
  IMPLEMENTS: '#7c3aed',
+ REPO_API_CALL: '#ff6b9d',
 }
 const EDGE_WIDTHS: Record<string, number> = {
  CALL: 1.5,
@@ -80,6 +83,7 @@ const EDGE_WIDTHS: Record<string, number> = {
  SEMANTIC: 1.0,
  API_CALLS: 2.0,
  IMPLEMENTS: 1.2,
+ REPO_API_CALL: 2.5,
 }
 // ============================================================================
 // 节点 Three.js 对象工厂
@@ -101,6 +105,11 @@ function createNodeObject(node: NodeObject): THREE.Object3D {
  else if (type === 'api_wrapper') {
  group.add(createRing(size + 1.5, size + 2.5, color))
  group.add(createRing(size + 3, size + 4, color, 0.5))
+ }
+ else if (type === 'repository') {
+ // 仓库节点：双环 + 微光晕，强化"星系核心"感
+ group.add(createRing(size + 2, size + 3, color, 0.9))
+ group.add(createRing(size + 5, size + 6.5, color, 0.4))
  }
  return group
 }
@@ -229,7 +238,7 @@ function initGraph: void {
  gi.width(el.clientWidth)
  .height(el.clientHeight)
  .showNavInfo(false)
- .backgroundColor('transparent')
+ .backgroundColor('rgba(0,0,0,0)')
  .nodeThreeObject(createNodeObject)
  .nodeThreeObjectExtend(false)
  .nodeLabel((node: NodeObject) => {
@@ -247,9 +256,16 @@ function initGraph: void {
  .linkColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ffffff')
  .linkWidth((link: Record<string, unknown>) => EDGE_WIDTHS[getEdgeType(link)] ?? 1)
  .linkOpacity(0.7)
- .linkParticles((link: Record<string, unknown>) => getEdgeType(link) === 'API_CALLS' ? 5: 0)
- .linkParticleSpeed(0.006)
- .linkParticleColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ff4444')
+ .linkDirectionalParticles((link: Record<string, unknown>) => {
+ const t = getEdgeType(link)
+ if (t === 'API_CALLS')
+ return 5
+ if (t === 'REPO_API_CALL')
+ return 4
+ return 0
+ })
+ .linkDirectionalParticleSpeed(0.006)
+ .linkDirectionalParticleColor((link: Record<string, unknown>) => EDGE_COLORS[getEdgeType(link)] ?? '#ff4444')
  .onNodeHover((node: NodeObject | null) => {
  if (hoverTimer)
  clearTimeout(hoverTimer)

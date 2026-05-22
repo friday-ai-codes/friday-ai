@@ -120,6 +120,10 @@ watch(
 )
 // ============================================================================
 // 脏检测（与 currentPrompt.active_version 字节级比较，对齐 契约）
+//
+// 系统内置 Prompt(is_builtin=true)的 title/description 受代码契约约束、
+// 前端只读展示，不应参与脏检测——否则即使用户没有任何输入，按钮也可能因
+// 表单 watch 触发的极早期同步差异被错误点亮。
 // ============================================================================
 const isDirty = computed<boolean>( => {
  if (props.mode === 'create') {
@@ -132,10 +136,13 @@ const isDirty = computed<boolean>( => {
  const p = currentPrompt.value
  if (!p)
  return false
+ // 仅在非内置 Prompt 上比较 title/description（内置 Prompt 这两字段锁死）
+ if (!p.is_builtin) {
  if (editedTitle.value !== p.title)
  return true
  if (editedDescription.value !== p.description)
  return true
+ }
  if (editedBody.value !== (p.active_version?.body ?? ''))
  return true
  if (
@@ -187,13 +194,20 @@ async function handleSave: Promise<void> {
  const p = currentPrompt.value
  if (!p)
  return
- await store.updatePrompt(p.id, {
+ // 内置 Prompt 的 title/description 锁死，不下发以避免后端契约值被前端覆盖。
+ const payload: Parameters<typeof store.updatePrompt>[1] = p.is_builtin
+ ? {
+ body: editedBody.value,
+ variables_schema: editedVariablesSchema.value,
+ change_note: '',
+ }: {
  title: editedTitle.value,
  description: editedDescription.value,
  body: editedBody.value,
  variables_schema: editedVariablesSchema.value,
  change_note: '',
- })
+ }
+ await store.updatePrompt(p.id, payload)
  success('保存成功')
  emit('update:open', false)
  }
@@ -230,38 +244,66 @@ async function handleOpenChange(newOpen: boolean): Promise<void> {
  <Sheet:open="open" @update:open="handleOpenChange">
  <SheetContent
  side="right"
- class="sm:max-w-3xl! w-full flex flex-col"
+ class="sm:max-w-3xl! w-full flex flex-col gap-0 bg-background"
  >
- <SheetHeader>
- <SheetTitle>
+ <!-- Header：图标 + 标题 + slug code 标签 + dirty 指示 -->
+ <SheetHeader class="border-b border-border/60 bg-card px-6 py-4 gap-1.5">
+ <div class="flex items-start gap-3">
+ <div class="shrink-0 mt-0.5 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--file-text] text-primary text-lg" />
+ </div>
+ <div class="min-w-0 flex-1 space-y-1">
+ <SheetTitle class="text-base font-semibold text-foreground leading-tight flex items-center gap-2">
+ <span class="truncate">
  {{ mode === 'create' ? '新建 Prompt': (currentPrompt?.title ?? '加载中…') }}
+ </span>
+ <span
+ v-if="isDirty"
+ class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 font-medium"
+ title="存在未保存修改"
+ >
+ 未保存
+ </span>
  </SheetTitle>
- <SheetDescription v-if="currentPrompt">
+ <SheetDescription v-if="currentPrompt" class="text-xs">
+ <code class="font-mono text-foreground/70 bg-muted px-1.5 py-0.5 rounded text-[11px]">
  {{ currentPrompt.slug }}
+ </code>
  </SheetDescription>
+ <SheetDescription v-else-if="mode === 'create'" class="text-xs text-muted-foreground">
+ 填写下方字段创建一个新的系统级 Prompt
+ </SheetDescription>
+ </div>
+ </div>
  </SheetHeader>
  <Tabs
  v-model="activeTab"
  class="flex-1 flex flex-col overflow-hidden"
  >
- <TabsList>
- <TabsTrigger value="metadata">
+ <div class="px-6 pt-3 pb-0 bg-card/60 border-b border-border/40">
+ <TabsList class=" bg-muted/60">
+ <TabsTrigger value="metadata" class="text-xs gap-1.5">
+ <span class="icon-[lucide--info] text-sm" />
  基础信息
  </TabsTrigger>
- <TabsTrigger value="body">
+ <TabsTrigger value="body" class="text-xs gap-1.5">
+ <span class="icon-[lucide--file-code] text-sm" />
  正文编辑
  </TabsTrigger>
- <TabsTrigger value="preview">
+ <TabsTrigger value="preview" class="text-xs gap-1.5">
+ <span class="icon-[lucide--eye] text-sm" />
  预览
  </TabsTrigger>
- <TabsTrigger v-if="mode === 'edit'" value="versions">
+ <TabsTrigger v-if="mode === 'edit'" value="versions" class="text-xs gap-1.5">
+ <span class="icon-[lucide--history] text-sm" />
  版本历史
  </TabsTrigger>
  </TabsList>
+ </div>
  <!-- Tab 1：基础信息 -->
  <TabsContent
  value="metadata":force-mount="true"
- class="flex-1 overflow-auto py-4 space-y-4 data-[state=inactive]:hidden"
+ class="flex-1 overflow-auto px-6 py-5 space-y-5 data-[state=inactive]:hidden"
  >
  <PromptMetadataForm:prompt="currentPrompt":mode="mode"
  @update:values="onMetadataChange"
@@ -274,8 +316,20 @@ async function handleOpenChange(newOpen: boolean): Promise<void> {
  <!-- Tab 2：正文编辑 -->
  <TabsContent
  value="body":force-mount="true"
- class="flex-1 overflow-auto py-4 data-[state=inactive]:hidden"
+ class="flex-1 overflow-auto px-6 py-5 data-[state=inactive]:hidden"
  >
+ <div class="space-y-3">
+ <div class="flex items-center justify-between gap-2">
+ <div>
+ <h4 class="text-sm font-semibold text-foreground flex items-center gap-2">
+ <span class="icon-[lucide--file-code] text-primary text-base" />
+ Prompt 正文
+ </h4>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 支持 Jinja2 模板语法，使用 <code class="font-mono text-foreground bg-muted px-1 py-0.5 rounded text-[10px]">&#123;&#123;变量名&#125;&#125;</code> 插入占位符
+ </p>
+ </div>
+ </div>
  <div class="grid grid-cols-[1fr_18rem] gap-4">
  <PromptBodyEditor:model-value="editedBody"
  @update:model-value="onBodyChange"
@@ -283,28 +337,46 @@ async function handleOpenChange(newOpen: boolean): Promise<void> {
  <PromptVariablePanel:body="editedBody":variables-schema="editedVariablesSchema"
  />
  </div>
+ </div>
  </TabsContent>
  <!-- Tab 3：预览 -->
  <TabsContent
  value="preview":force-mount="true"
- class="flex-1 overflow-auto py-4 data-[state=inactive]:hidden"
+ class="flex-1 overflow-auto px-6 py-5 data-[state=inactive]:hidden"
  >
  <PromptPreviewPanel
  v-if="currentPrompt":prompt="currentPrompt":body="editedBody"
  />
+ <div
+ v-else
+ class="rounded-xl border border-dashed border-border/60 bg-muted/30 px-4 py-8 text-center text-xs text-muted-foreground"
+ >
+ 创建模式下不支持预览，请先保存后再切换至此处
+ </div>
  </TabsContent>
  <!-- Tab 4：版本历史（仅 edit 模式渲染） -->
  <TabsContent
  v-if="mode === 'edit'"
  value="versions":force-mount="true"
- class="flex-1 overflow-auto py-4 data-[state=inactive]:hidden"
+ class="flex-1 overflow-auto px-6 py-5 data-[state=inactive]:hidden"
  >
  <PromptVersionList
  v-if="currentPrompt":prompt="currentPrompt":versions="versionsList"
  />
  </TabsContent>
  </Tabs>
- <SheetFooter class="mt-auto border-t border-border/50 pt-4">
+ <SheetFooter class="mt-auto border-t border-border/60 bg-card px-6 py-3 flex-row items-center justify-between gap-2 sm:flex-row sm:justify-between sm:space-x-0">
+ <span class="text-[11px] text-muted-foreground">
+ <template v-if="isDirty">
+ <span class="inline-block w-1.5 .5 rounded-full bg-amber-500 mr-1.5 align-middle" />
+ 存在未保存修改
+ </template>
+ <template v-else-if="mode === 'edit' && currentPrompt">
+ <span class="inline-block w-1.5 .5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+ 已与服务器同步
+ </template>
+ </span>
+ <div class="flex items-center gap-2">
  <Button variant="outline" @click="handleOpenChange(false)">
  取消
  </Button>
@@ -313,6 +385,7 @@ async function handleOpenChange(newOpen: boolean): Promise<void> {
  >
  {{ isSaving ? '保存中…': '保存' }}
  </Button>
+ </div>
  </SheetFooter>
  </SheetContent>
  </Sheet>

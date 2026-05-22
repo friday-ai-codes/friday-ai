@@ -8,6 +8,7 @@ export type GalaxyNodeType =
  | 'endpoint'
  | 'api_wrapper'
  | 'api_call_site'
+ | 'repository'
 export type GalaxyEdgeType =
  | 'CALL'
  | 'IMPORT'
@@ -17,6 +18,18 @@ export type GalaxyEdgeType =
  | 'SEMANTIC'
  | 'API_CALLS'
  | 'IMPLEMENTS'
+ | 'REPO_API_CALL'
+export type GitPlatform = 'github' | 'gitlab' | 'gitea' | 'bitbucket'
+export interface GalaxyRepoNodeMetadata {
+ git_platform: GitPlatform
+ space_ids: string
+ endpoint_count: number
+ callsite_count: number
+}
+export interface GalaxyRepoEdgeMetadata {
+ call_count: number
+ avg_confidence: number
+}
 export interface GalaxyNode {
  id: string
  type: GalaxyNodeType
@@ -109,4 +122,35 @@ export async function searchGalaxyNodes(
 export async function getGalaxyNodeDetail(nodeId: string): Promise<GalaxyNodeDetail> {
  const encoded = encodeURIComponent(nodeId)
  return get<GalaxyNodeDetail>(`/codegraph/galaxy/nodes/${encoded}/`)
+}
+// ============================================================================
+// L2: 仓库节点视图（多仓库总览）
+// ============================================================================
+export interface GalaxyRepoNode extends Omit<GalaxyNode, 'type' | 'metadata'> {
+ type: 'repository'
+ metadata: GalaxyRepoNodeMetadata
+}
+export interface GalaxyRepoEdge extends Omit<GalaxyEdge, 'edge_type' | 'metadata'> {
+ edge_type: 'REPO_API_CALL'
+ metadata: GalaxyRepoEdgeMetadata
+}
+export interface GalaxyReposResponse {
+ nodes: GalaxyRepoNode
+ edges: GalaxyRepoEdge
+ meta: GalaxyMeta
+}
+export interface GetGalaxyReposParams {
+ spaceId?: string | null
+}
+/**
+ * L2 仓库节点视图。每个节点 = Repository；每条边 = 同对仓库的 CrossRepoApiCall 聚合。
+ * spaceId 可选；不传 = 全部仓库。
+ */
+export async function getGalaxyRepoGraph(
+ params: GetGalaxyReposParams = {},
+): Promise<GalaxyReposResponse> {
+ const query: Record<string, string | undefined> = {}
+ if (params.spaceId)
+ query.space_id = params.spaceId
+ return get<GalaxyReposResponse>('/codegraph/galaxy/repos/', query)
 }

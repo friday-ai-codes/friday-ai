@@ -66,41 +66,75 @@ function onValuesChange(newValues: Record<string, string>): void {
 }
 </script>
 <template>
- <div class="space-y-4">
- <!-- 顶部：section 标题 + 预览按钮 -->
- <div class="flex items-center justify-between">
- <h4 class="text-sm font-semibold text-foreground">
- 渲染结果
+ <div class="space-y-5">
+ <!-- 顶部：标题 + 预览按钮（按钮在最前以满足 wrapper.find('button') 契约） -->
+ <div class="flex items-center justify-between gap-3">
+ <div>
+ <h4 class="text-sm font-semibold text-foreground flex items-center gap-2">
+ <span class="icon-[lucide--eye] text-primary text-base" />
+ 预览渲染
  </h4>
+ <p class="text-xs text-muted-foreground mt-0.5">
+ 填写下方变量后，点击预览查看后端渲染后的最终文本
+ </p>
+ </div>
  <Button:disabled="!canPreview || isPreviewing":title="canPreview ? '': '请先编辑 Prompt 正文'"
  @click="triggerPreview"
  >
+ <span class="icon-[lucide--play] mr-1.5 text-sm" />
  {{ isPreviewing ? '预览中…': '预览' }}
  </Button>
  </div>
  <!-- 渲染失败 Alert（非 PromptVariableMissingError） -->
  <div
  v-if="renderError"
- class="rounded-lg border border-destructive/50 bg-destructive/10 text-xs text-destructive"
+ role="alert"
+ class="rounded-lg border border-destructive/40 bg-destructive/6 text-xs text-destructive flex items-start gap-2"
  >
- 渲染失败：{{ renderError }}
+ <span class="icon-[lucide--alert-circle] text-base shrink-0 mt-px" />
+ <div class="leading-relaxed">
+ <span class="font-semibold">渲染失败：</span>{{ renderError }}
+ </div>
  </div>
  <!-- 变量输入表单（透传 missingVariables 供 inline 红框） -->
+ <div class="rounded-xl border border-border/60 bg-card shadow-sm">
  <PromptVariableForm:body="body":variables-schema="prompt.active_version?.variables_schema ?? {}":missing-variables="missingVariables"
  @update:values="onValuesChange"
  />
+ </div>
  <!-- 渲染结果展示区 -->
+ <div class="space-y-2">
+ <div class="flex items-center justify-between">
+ <span class="text-xs font-semibold text-foreground">渲染结果</span>
+ <span v-if="renderedResult !== null" class="text-[11px] text-muted-foreground">
+ {{ renderedResult.length }} 字符
+ </span>
+ </div>
  <div
  v-if="renderedResult !== null"
- class="rounded-lg border border-border/50 bg-muted "
+ class="rounded-xl border border-primary/30 bg-primary/3 shadow-sm overflow-hidden"
  >
- <pre class="font-mono text-sm leading-6 text-foreground whitespace-pre-wrap">{{ renderedResult }}</pre>
+ <div class="px-3 py-1.5 border-b border-primary/15 bg-primary/6 text-[11px] font-medium text-primary flex items-center gap-1.5">
+ <span class="icon-[lucide--check-circle] text-sm" />
+ 渲染成功
+ </div>
+ <pre class="font-mono text-sm leading-6 text-foreground whitespace-pre-wrap max-h-[400px] overflow-auto">{{ renderedResult }}</pre>
  </div>
  <div
  v-else-if="!isPreviewing && !renderError"
- class="text-xs text-muted-foreground"
+ class="rounded-xl border border-dashed border-border/60 bg-muted/30 px-4 py-6 text-center"
  >
+ <p class="text-xs text-muted-foreground">
  填写变量后点击「预览」查看渲染结果
+ </p>
+ </div>
+ <div
+ v-else-if="isPreviewing"
+ class="rounded-xl border border-border/60 bg-card px-4 py-6 text-center flex items-center justify-center gap-2"
+ >
+ <span class="icon-[lucide--loader-2] animate-spin text-primary" />
+ <span class="text-xs text-muted-foreground">正在调用后端渲染…</span>
+ </div>
  </div>
  </div>
 </template>

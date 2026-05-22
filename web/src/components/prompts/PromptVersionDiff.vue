@@ -66,50 +66,56 @@ const removedCount = computed( =>
  class="text-xs text-muted-foreground"
  aria-live="polite"
  >
- v{{ v1.version }} 对比 v{{ v2.version }}，新增 {{ addedCount }} 行，删除 {{ removedCount }} 行
+ v{{ v1.version }} 对比 v{{ v2.version }}，新增
+ <span class="text-emerald-600 font-medium">{{ addedCount }}</span> 行，删除
+ <span class="text-destructive font-medium">{{ removedCount }}</span> 行
  </p>
- <div class="grid grid-cols-2 gap-0 border border-border/50 rounded-lg overflow-hidden min-h-[320px] max-h-[560px]">
+ <div class="grid grid-cols-2 gap-0 border border-border/50 rounded-lg overflow-hidden min-h-[320px] max-h-[560px] bg-card shadow-sm">
  <!-- 左栏 v1 视角 -->
  <div data-diff-column="left" class="overflow-auto border-r border-border/50">
- <div class="px-3 py-2 text-[10px] text-muted-foreground border-b border-border/50 sticky top-0 bg-muted">
+ <div class="px-3 py-2 text-[11px] font-semibold text-foreground border-b border-border/50 sticky top-0 bg-muted/80 backdrop-blur-sm z-10 flex items-center gap-2">
+ <span class="inline-flex items-center justify-center w-5 rounded bg-destructive/10 text-destructive text-[10px] font-bold">−</span>
  v{{ v1.version }}
  </div>
  <div
  v-for="(seg, i) in leftSegments":key="`L-${i}`"
  class="diff-line":class="seg.kind === 'removed' ? 'diff-removed': 'diff-unchanged'"
  >
- <pre class="font-mono text-xs leading-6 whitespace-pre-wrap ">{{ seg.text }}</pre>
+ <pre class="font-mono text-xs leading-6 whitespace-pre-wrap px-3 py-1">{{ seg.text }}</pre>
  </div>
  </div>
  <!-- 右栏 v2 视角 -->
  <div data-diff-column="right" class="overflow-auto">
- <div class="px-3 py-2 text-[10px] text-muted-foreground border-b border-border/50 sticky top-0 bg-muted">
+ <div class="px-3 py-2 text-[11px] font-semibold text-foreground border-b border-border/50 sticky top-0 bg-muted/80 backdrop-blur-sm z-10 flex items-center gap-2">
+ <span class="inline-flex items-center justify-center w-5 rounded bg-emerald-500/10 text-emerald-600 text-[10px] font-bold">+</span>
  v{{ v2.version }}
  </div>
  <div
  v-for="(seg, i) in rightSegments":key="`R-${i}`"
  class="diff-line":class="seg.kind === 'added' ? 'diff-added': 'diff-unchanged'"
  >
- <pre class="font-mono text-xs leading-6 whitespace-pre-wrap ">{{ seg.text }}</pre>
+ <pre class="font-mono text-xs leading-6 whitespace-pre-wrap px-3 py-1">{{ seg.text }}</pre>
  </div>
  </div>
  </div>
  </div>
 </template>
 <style scoped>
-/* Phase-Local 视觉令牌，与 work-item item §Color §Phase-Local 一字一致 */
+/* Phase-Local 视觉令牌，与 work-item item §Color §Phase-Local 对齐
+ * 文字色已从 slate-500 提到 slate-800，避免在浅色卡片上对比度不足。 */
 .diff-added {
- background: hsl(142 71% 45% / 0.1);
- color: hsl(142 71% 25%);
+ background: hsl(142 71% 45% / 0.12);
+ color: hsl(142 71% 20%);
  border-left: 3px solid hsl(142 71% 45%);
 }
 .diff-removed {
  background: hsl(0 72% 51% / 0.1);
- color: hsl(0 72% 35%);
+ color: hsl(0 72% 30%);
  border-left: 3px solid hsl(0 72% 51%);
 }
 .diff-unchanged {
  background: transparent;
- color: hsl(215 16% 47%);
+ color: hsl(215 28% 17%);
+ border-left: 3px solid transparent;
 }
 </style>

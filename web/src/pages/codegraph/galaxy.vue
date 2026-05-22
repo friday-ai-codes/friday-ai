@@ -4,9 +4,9 @@ meta:
  title: Galaxy 代码图谱
 </route>
 <script setup lang="ts">
-import type { GalaxyNode, GalaxySearchResult } from '~/api/galaxy'
-import type { Repository } from '~/types'
-import { repositoriesApi } from '~/api/repositories'
+import type { GalaxyNode, GalaxyRepoEdge, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
+import { getGalaxyRepoGraph } from '~/api/galaxy'
+import GalaxyBreadcrumb from '~/components/galaxy/GalaxyBreadcrumb.vue'
 import GalaxyCommandPalette from '~/components/galaxy/GalaxyCommandPalette.vue'
 import GalaxyControls from '~/components/galaxy/GalaxyControls.vue'
 import GalaxyForceGraph from '~/components/galaxy/GalaxyForceGraph.vue'
@@ -22,7 +22,35 @@ const EchartsGraphGl = defineAsyncComponent( =>
 )
 const route = useRoute
 const router = useRouter
-const { warning: toastWarning, error: toastError } = useToast
+const { error: toastError, warning: toastWarning } = useToast
+// ============================================================================
+// URL query 驱动 viewMode（overview = L2 仓库节点 / detail = L1 细粒度）
+// ============================================================================
+const viewMode = computed<'overview' | 'detail'>( =>
+ route.query.repo_ids ? 'detail': 'overview',
+)
+// 当前 detail 模式下被选中的 repo_ids（URL 同步）
+const detailRepoIds = computed<string>( => {
+ const raw = route.query.repo_ids
+ if (!raw) return
+ return (Array.isArray(raw) ? raw.join(','): raw)
+ .split(',')
+ .map(s => s.trim)
+ .filter(Boolean)
+})
+// overview 模式下的空间过滤
+const selectedSpaceId = ref<string | null>(
+ (route.query.space_id as string) ?? null,
+)
+watch(selectedSpaceId, (val) => {
+ const query = { ...route.query }
+ if (val) query.space_id = val
+ else delete query.space_id
+ router.replace({ query })
+})
+// ============================================================================
+// L1 detail 数据（沿用 useGalaxyGraph）
+// ============================================================================
 const {
  meta,
  loading,
@@ -43,22 +71,76 @@ const {
  setAllNodeTypes,
  setAllEdgeTypes,
 } = useGalaxyGraph
-// 仓库选择
-const repositories = ref<Repository>
-const selectedRepoIds = ref<string>
-const repositoriesLoading = ref(false)
-// 移动端检测
+// ============================================================================
+// L2 overview 数据
+// ============================================================================
+const overviewNodes = ref<GalaxyRepoNode>
+const overviewEdges = ref<GalaxyRepoEdge>
+const overviewLoading = ref(false)
+const overviewError = ref<string | null>(null)
+async function loadOverview {
+ overviewLoading.value = true
+ overviewError.value = null
+ try {
+ const result = await getGalaxyRepoGraph({ spaceId: selectedSpaceId.value })
+ overviewNodes.value = result.nodes
+ overviewEdges.value = result.edges
+ }
+ catch (e: unknown) {
+ const msg = e instanceof Error ? e.message: '加载仓库总览失败'
+ overviewError.value = msg
+ toastError('加载失败', msg)
+ }
+ finally {
+ overviewLoading.value = false
+ }
+}
+async function loadDetail {
+ if (detailRepoIds.value.length === 0) return
+ await fetchGraph(detailRepoIds.value)
+}
+// 监听 viewMode + 过滤参数变化，自动加载对应数据
+watch(
+ [viewMode, selectedSpaceId],
+ async => {
+ if (viewMode.value === 'overview') {
+ await loadOverview
+ }
+ },
+ { immediate: false },
+)
+watch(
+ [viewMode, detailRepoIds],
+ async => {
+ if (viewMode.value === 'detail') {
+ await loadDetail
+ }
+ },
+ { immediate: false },
+)
+// 当前 detail 仓库 label（用于面包屑）
+const detailRepoLabel = computed<string>( => {
+ // 优先从 overview 的节点表中找
+ const id = detailRepoIds.value[0]
+ if (!id) return ''
+ const found = overviewNodes.value.find(n => n.repository_id === id)
+ if (found) return found.label
+ // 回退：从细粒度图中找任一节点的 repository_id 匹配
+ return ''
+})
+// ============================================================================
+// 移动端 / 低 FPS toast
+// ============================================================================
 const isMobile = computed( => typeof window !== 'undefined' && window.innerWidth < 1024)
-// 低帧率 Toast（只提示一次）
 const hasShownFpsWarning = ref(false)
 watch(lowFpsDetected, (val) => {
  if (val && !hasShownFpsWarning.value) {
  hasShownFpsWarning.value = true
- toastWarning('帧率较低', '检测到帧率持续 < 30 FPS，建议切换到 ECharts 高性能模式 ⚡')
+ toastWarning('帧率较低', '检测到帧率持续 < 30 FPS，建议切换到 ECharts 高性能模式')
  }
 })
 // ============================================================================
-// Phase: NodeDetailDrawer + CommandPalette 状态
+// 节点交互（overview 仓库节点 → 下钻；detail 细粒度节点 → drawer）
 // ============================================================================
 const graphRef = ref<InstanceType<typeof GalaxyForceGraph> | null>(null)
 const selectedNodeId = ref<string | null>(null)
@@ -68,12 +150,20 @@ function openNode(nodeId: string) {
  selectedNodeId.value = nodeId
  drawerOpen.value = true
  router.replace({ query: { ...route.query, node: nodeId } })
- // 中心化定位（需等 tick 后 graphRef 可能已就绪）
  nextTick( => {
  graphRef.value?.focusNode(nodeId)
  })
 }
-function handleNodeClick(node: GalaxyNode) {
+function handleOverviewNodeClick(node: GalaxyNode) {
+ // overview 模式：点击仓库节点下钻到 L1
+ if (node.type === 'repository') {
+ const repoUuid = node.repository_id || node.id.replace(/^repo:/, '')
+ const nextQuery = { ...route.query, repo_ids: repoUuid }
+ delete nextQuery.node
+ router.push({ query: nextQuery })
+ }
+}
+function handleDetailNodeClick(node: GalaxyNode) {
  openNode(node.id)
 }
 function handleCommandPaletteSelect(result: GalaxySearchResult) {
@@ -82,64 +172,67 @@ function handleCommandPaletteSelect(result: GalaxySearchResult) {
 function handleDrawerClose(open: boolean) {
  if (!open) {
  drawerOpen.value = false
- router.replace({ query: { ...route.query, node: undefined } })
+ const next = { ...route.query }
+ delete next.node
+ router.replace({ query: next })
  }
 }
 function handleDrawerNodeSelect(nodeId: string) {
  openNode(nodeId)
 }
-// 页面加载时读取 ?node= 参数，数据就绪后自动打开 Drawer
+function handleBackToOverview {
+ const next = { ...route.query }
+ delete next.repo_ids
+ delete next.node
+ router.push({ query: next })
+}
+// ============================================================================
+// URL 中带 ?node= 时数据就绪后自动打开 Drawer
+// ============================================================================
 const urlNodeHandled = ref(false)
 watch(filteredNodes, (nodes) => {
- if (urlNodeHandled.value || nodes.length === 0) return
+ if (urlNodeHandled.value || nodes.length === 0 || viewMode.value !== 'detail') return
  const urlNode = route.query.node as string | undefined
  if (urlNode) {
  urlNodeHandled.value = true
  openNode(urlNode)
  }
 })
-// Phase 测试钩子：暴露关键函数以便集成测试通过 vm 直接调用
 defineExpose({
  openNode,
- handleNodeClick,
+ handleOverviewNodeClick,
+ handleDetailNodeClick,
  handleCommandPaletteSelect,
  handleDrawerClose,
  handleDrawerNodeSelect,
+ handleBackToOverview,
  drawerOpen,
  selectedNodeId,
  commandPaletteOpen,
+ viewMode,
 })
-async function loadRepositories {
- repositoriesLoading.value = true
- try {
- repositories.value = await repositoriesApi.list
- // 默认选择全部仓库
- selectedRepoIds.value = repositories.value.map(r => r.id)
- if (selectedRepoIds.value.length > 0) {
- await fetchGraph(selectedRepoIds.value)
- }
- }
- catch (e: unknown) {
- const msg = e instanceof Error ? e.message: '加载仓库列表失败'
- toastError('加载失败', msg)
- }
- finally {
- repositoriesLoading.value = false
- }
-}
 async function handleRefresh {
- if (selectedRepoIds.value.length > 0) {
- await fetchGraph(selectedRepoIds.value)
+ if (viewMode.value === 'overview') {
+ await loadOverview
+ }
+ else {
+ await loadDetail
  }
 }
 async function handleMaxNodesUpdate(value: number) {
  maxNodes.value = value
- if (selectedRepoIds.value.length > 0) {
- await fetchGraph(selectedRepoIds.value)
+ if (viewMode.value === 'detail') {
+ await loadDetail
  }
 }
-onMounted( => {
- loadRepositories
+onMounted(async => {
+ if (viewMode.value === 'overview') {
+ await loadOverview
+ }
+ else {
+ // detail 模式首屏：先加载 overview（拿 repo label），再加载 detail
+ await Promise.all([loadOverview, loadDetail])
+ }
 })
 </script>
 <template>
@@ -159,11 +252,80 @@ onMounted( => {
  </p>
  </div>
  </div>
- <!-- 主视图（桌面端） -->
+ <!-- 桌面端主视图 -->
  <template v-else>
- <!-- 加载仓库时的全屏 loading -->
+ <!-- Overview 模式 (L2 仓库节点) -->
+ <template v-if="viewMode === 'overview'">
+ <!-- Loading -->
  <div
- v-if="repositoriesLoading"
+ v-if="overviewLoading"
+ class="flex-1 flex items-center justify-center"
+ >
+ <div class="flex flex-col items-center gap-4 text-white">
+ <span class="icon-[lucide--loader-circle] text-5xl animate-spin text-primary" />
+ <span class="text-sm text-white/60">加载仓库总览...</span>
+ </div>
+ </div>
+ <!-- 空状态 -->
+ <div
+ v-else-if="!overviewError && overviewNodes.length === 0"
+ class="flex-1 flex items-center justify-center"
+ >
+ <div class="card text-center space-y-3 max-w-sm bg-white/5 border-white/10">
+ <span class="icon-[lucide--git-branch] text-5xl text-muted-foreground block" />
+ <p class="text-sm text-white/60">
+ 当前空间下暂无仓库数据
+ </p>
+ <p class="text-xs text-white/40">
+ 换个空间试试，或先为仓库建立索引
+ </p>
+ </div>
+ </div>
+ <!-- 错误 -->
+ <div
+ v-else-if="overviewError"
+ class="flex-1 flex items-center justify-center"
+ >
+ <div class="card text-center space-y-3 max-w-sm bg-white/5 border-red-500/20">
+ <span class="icon-[lucide--alert-circle] text-5xl text-destructive block" />
+ <p class="text-sm text-destructive">
+ {{ overviewError }}
+ </p>
+ <button class="btn btn-primary text-sm" @click="handleRefresh">
+ 重试
+ </button>
+ </div>
+ </div>
+ <!-- 仓库总览图 -->
+ <div
+ v-else
+ class="flex-1 relative overflow-hidden"
+ >
+ <GalaxyForceGraph:nodes="overviewNodes":edges="overviewEdges":loading="overviewLoading"
+ class="w-full h-full"
+ @node-click="handleOverviewNodeClick"
+ @fps-update="onFpsUpdate"
+ />
+ <!-- 面包屑 + 空间下拉（顶部左） -->
+ <div class="absolute top-4 left-4 z-10">
+ <GalaxyBreadcrumb
+ mode="overview":space-id="selectedSpaceId"
+ @update:space-id="selectedSpaceId = $event"
+ />
+ </div>
+ <!-- 操作提示（右上） -->
+ <div class="absolute top-4 right-4 z-10">
+ <div class="glass-card rounded-lg px-3 py-1.5 text-white/60 text-xs flex items-center gap-2">
+ <span class="icon-[lucide--mouse-pointer-click]" />
+ <span>点击仓库节点查看内部细节</span>
+ </div>
+ </div>
+ </div>
+ </template>
+ <!-- Detail 模式 (L1 细粒度) -->
+ <template v-else>
+ <div
+ v-if="loading"
  class="flex-1 flex items-center justify-center"
  >
  <div class="flex flex-col items-center gap-4 text-white">
@@ -171,7 +333,6 @@ onMounted( => {
  <span class="text-sm text-white/60">加载 Galaxy 图谱...</span>
  </div>
  </div>
- <!-- 空状态 -->
  <div
  v-else-if="!loading && filteredNodes.length === 0 && !error"
  class="flex-1 flex items-center justify-center"
@@ -179,14 +340,16 @@ onMounted( => {
  <div class="card text-center space-y-3 max-w-sm bg-white/5 border-white/10">
  <span class="icon-[lucide--git-branch] text-5xl text-muted-foreground block" />
  <p class="text-sm text-white/60">
- 暂无图谱数据
+ 该仓库暂无图谱数据
  </p>
  <p class="text-xs text-white/40">
- 请先为仓库建立索引，或调整节点类型过滤
+ 请先建立索引，或调整节点类型过滤
  </p>
+ <button class="btn btn-sm btn-outline mt-2" @click="handleBackToOverview">
+ 返回总览
+ </button>
  </div>
  </div>
- <!-- 错误状态 -->
  <div
  v-else-if="error"
  class="flex-1 flex items-center justify-center"
@@ -201,23 +364,21 @@ onMounted( => {
  </button>
  </div>
  </div>
- <!-- 3D 图谱主体 -->
  <div
  v-else
  class="flex-1 relative overflow-hidden"
  >
- <!-- 渲染引擎 -->
  <GalaxyForceGraph
  v-if="renderMode === 'force3d'"
  ref="graphRef":nodes="filteredNodes":edges="filteredEdges":loading="loading"
  class="w-full h-full"
- @node-click="handleNodeClick"
+ @node-click="handleDetailNodeClick"
  @fps-update="onFpsUpdate"
  />
  <Suspense v-else>
  <component:is="EchartsGraphGl":nodes="filteredNodes":edges="filteredEdges":loading="loading"
  class="w-full h-full"
- @node-click="handleNodeClick"
+ @node-click="handleDetailNodeClick"
  @fps-update="onFpsUpdate"
  />
  <template #fallback>
@@ -226,11 +387,10 @@ onMounted( => {
  </div>
  </template>
  </Suspense>
- <!-- 采样提示 banner -->
  <Transition name="slide-down">
  <div
  v-if="meta?.sampled"
- class="absolute top-4 left-1/2 -translate-x-1/2 z-20"
+ class="absolute top-16 left-1/2 -translate-x-1/2 z-20"
  >
  <div class="glass-card rounded-xl px-4 py-2 text-xs text-amber-300/90 flex items-center gap-2">
  <span class="icon-[lucide--alert-triangle] text-amber-400" />
@@ -238,7 +398,14 @@ onMounted( => {
  </div>
  </div>
  </Transition>
- <!-- 控制面板（右上角） -->
+ <!-- 面包屑（顶部左） -->
+ <div class="absolute top-4 left-4 z-10">
+ <GalaxyBreadcrumb
+ mode="detail":space-id="selectedSpaceId":repo-label="detailRepoLabel"
+ @back="handleBackToOverview"
+ />
+ </div>
+ <!-- 控制面板（右上） -->
  <div class="absolute top-4 right-4 z-10">
  <GalaxyControls:max-nodes="maxNodes":fps="fps":low-fps-detected="lowFpsDetected":render-mode="renderMode":meta="meta":active-node-types="activeNodeTypes":active-edge-types="activeEdgeTypes"
  @update:max-nodes="handleMaxNodesUpdate"
@@ -250,12 +417,12 @@ onMounted( => {
  @refresh="handleRefresh"
  />
  </div>
- <!-- 图例面板（左下角） -->
+ <!-- 图例（左下） -->
  <div class="absolute bottom-4 left-4 z-10">
  <GalaxyLegend />
  </div>
- <!-- Cmd+K 快捷键提示（左上角，半透明） -->
- <div class="absolute top-4 left-4 z-10">
+ <!-- Cmd+K 提示（顶部中间） -->
+ <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10">
  <div class="glass-card rounded-lg px-3 py-1.5 text-white/30 text-xs flex items-center gap-1.5">
  <kbd class="font-mono text-[10px]">⌘K</kbd>
  <span>搜索节点</span>
@@ -263,13 +430,16 @@ onMounted( => {
  </div>
  </div>
  </template>
- <!-- Phase: Cmd+K 全局搜索面板 -->
+ </template>
+ <!-- Cmd+K 搜索（detail 模式才生效） -->
  <GalaxyCommandPalette
+ v-if="viewMode === 'detail'"
  v-model="commandPaletteOpen":nodes="filteredNodes"
  @node-select="handleCommandPaletteSelect"
  />
- <!-- Phase: 节点详情 Drawer -->
- <NodeDetailDrawer:node-id="selectedNodeId":model-value="drawerOpen"
+ <!-- 节点详情 Drawer（detail 模式） -->
+ <NodeDetailDrawer
+ v-if="viewMode === 'detail'":node-id="selectedNodeId":model-value="drawerOpen"
  @update:model-value="handleDrawerClose"
  @node-select="handleDrawerNodeSelect"
  />

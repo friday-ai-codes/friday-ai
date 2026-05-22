@@ -448,6 +448,17 @@ onUnmounted( => {
  </div>
  <!-- ===== 按钮组（work item §3.8） ===== -->
  <div class="flex flex-wrap gap-2">
+ <!-- 查看 Galaxy 图谱（仅 completed 显示） -->
+ <Button
+ v-if="graphStatus === 'completed'"
+ variant="outline"
+ as-child
+ >
+ <router-link:to="{ path: '/codegraph/galaxy', query: { repo_ids: props.repositoryId } }">
+ <span class="icon-[lucide--orbit] mr-2" />
+ 查看 Galaxy 图谱
+ </router-link>
+ </Button>
  <!-- 立即构建 / 重新构建（idle / completed / failed / cancelled） -->
  <TooltipProvider v-if="['idle', 'completed', 'failed', 'cancelled'].includes(graphStatus)">
  <Tooltip>

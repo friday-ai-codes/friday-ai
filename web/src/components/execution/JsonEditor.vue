@@ -3,17 +3,19 @@ import type { Extension } from '@codemirror/state'
 import { json, jsonParseLinter } from '@codemirror/lang-json'
 import { linter } from '@codemirror/lint'
 import { search } from '@codemirror/search'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 /**
  * JsonEditor — CodeMirror 6 JSON 编辑器组件
  *
- * 支持只读和可编辑两种模式。
- * 可编辑模式包含行号、JSON 语法高亮、实时校验、搜索替换。
- * 暗色主题适配 Glassmorphism 设计风格。
+ * 支持只读和可编辑两种模式。可编辑模式包含行号、JSON 语法高亮、实时校验、搜索替换。
+ *
+ * 主题：fridayLightTheme（teal/slate 浅色 token）。原 oneDark + rgba(0,0,0,0.3)
+ * 组合在 Friday 浅色应用背景上会形成灰底灰字（WCAG <4.5:1），已迁移到与
+ * DESIGN.md「Sub2API Clean Card」对齐的浅色 token。
  */
 import { computed } from 'vue'
 import { Codemirror } from 'vue-codemirror'
+import { fridayLightTheme } from '~/components/codemirror/fridayLightTheme'
 const props = withDefaults(defineProps<{
  modelValue: string
  readonly?: boolean
@@ -28,11 +30,10 @@ const emit = defineEmits<{
 const extensions = computed<Extension>( => {
  const exts: Extension = [
  json,
- oneDark,
+ fridayLightTheme,
  search,
  EditorView.lineWrapping,
  ]
- // 非只读时启用 JSON 语法实时校验
  if (!props.readonly) {
  exts.push(linter(jsonParseLinter))
  }
@@ -44,7 +45,7 @@ function handleUpdate(value: string) {
 </script>
 <template>
  <div
- class="rounded-lg overflow-hidden border border-white/10":style="{ height }"
+ class="rounded-lg overflow-hidden border border-border/50 bg-card shadow-sm":style="{ height }"
  >
  <Codemirror:model-value="modelValue":extensions="extensions":disabled="readonly":indent-with-tab="true":tab-size="2":style="{ height: '100%' }"
  @update:model-value="handleUpdate"
@@ -52,9 +53,12 @@ function handleUpdate(value: string) {
  </div>
 </template>
 <style scoped>:deep(.cm-editor) {
- background: rgba(0, 0, 0, 0.3);
  height: 100%;
+ background: transparent;
+}:deep(.cm-editor.cm-focused) {
+ outline: none;
 }:deep(.cm-scroller) {
  overflow: auto;
+ padding: 4px 12px;
 }
 </style>
