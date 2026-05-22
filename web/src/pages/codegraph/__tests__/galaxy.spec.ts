@@ -1,14 +1,18 @@
 /**
- * Phase Plan — galaxy.vue 集成测试（node-click + URL 同步 + Drawer 接线）
+ * galaxy.vue 集成测试
+ *
+ * 覆盖两套视图模式：
+ * - overview (默认 URL 无 repo_ids)：L2 仓库节点图，点击仓库节点下钻
+ * - detail (URL ?repo_ids=...)：L1 细粒度图，节点点击打开 Drawer
  *
  * 测试策略：
- * - mock 所有子组件（GalaxyForceGraph / GalaxyCommandPalette / NodeDetailDrawer / ECharts）
- * - mock useGalaxyGraph composable（提供 filteredNodes + 各种 ref/fn）
- * - mock vue-router（createMemoryHistory）
- * - 通过 defineExpose 的 vm 钩子直接调用 handleNodeClick / handleCommandPaletteSelect / handleDrawerClose
- * （script setup 默认不暴露内部 ref/fn；测试钩子 defineExpose 已在 galaxy.vue 中显式开放）
+ * - mock 所有子组件 (GalaxyForceGraph / CommandPalette / NodeDetailDrawer / Echarts / Breadcrumb / SpaceFilter)
+ * - mock useGalaxyGraph composable
+ * - mock getGalaxyRepoGraph API
+ * - mock useSpacesStore
+ * - 通过 defineExpose 的 vm 钩子直接调用 handler
  */
-import type { GalaxyNode, GalaxySearchResult } from '~/api/galaxy'
+import type { GalaxyNode, GalaxyRepoNode, GalaxySearchResult } from '~/api/galaxy'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -39,11 +43,27 @@ vi.mock('~/composables/useGalaxyGraph', => ({
  setAllEdgeTypes: vi.fn,
  })),
 }))
-vi.mock('~/api/repositories', => ({
- repositoriesApi: { list: vi.fn.mockResolvedValue([{ id: 'repo-1' }]) },
-}))
+const mockGetGalaxyRepoGraph = vi.fn.mockResolvedValue({
+ nodes:,
+ edges:,
+ meta: { total_nodes: 0, total_edges: 0, sampled: false, by_node_type: {}, per_repo_hint: false },
+})
+vi.mock('~/api/galaxy', async (importOriginal) => {
+ const actual = await importOriginal<typeof import('~/api/galaxy')>
+ return {
+ ...actual,
+ getGalaxyRepoGraph: mockGetGalaxyRepoGraph,
+ }
+})
 vi.mock('~/composables/useToast', => ({
- useToast: vi.fn( => ({ warning: vi.fn, error: vi.fn })),
+ useToast: vi.fn( => ({ warning: vi.fn, error: vi.fn, success: vi.fn })),
+}))
+vi.mock('~/stores/spaces', => ({
+ useSpacesStore: vi.fn( => ({
+ spaces:,
+ loading: false,
+ fetchSpaces: vi.fn.mockResolvedValue(undefined),
+ })),
 }))
 const mockFocusNode = vi.fn
 vi.mock('~/components/galaxy/GalaxyForceGraph.vue', => ({
@@ -83,6 +103,22 @@ vi.mock('~/components/galaxy/NodeDetailDrawer.vue', => ({
  template: '<div class="mock-drawer":data-open="String(modelValue)":data-node-id="nodeId ?? \'\'" />',
  },
 }))
+vi.mock('~/components/galaxy/GalaxyBreadcrumb.vue', => ({
+ default: {
+ name: 'GalaxyBreadcrumb',
+ props: ['mode', 'spaceId', 'repoLabel'],
+ emits: ['update:spaceId', 'back'],
+ template: '<div class="mock-breadcrumb":data-mode="mode" />',
+ },
+}))
+vi.mock('~/components/galaxy/SpaceFilter.vue', => ({
+ default: {
+ name: 'SpaceFilter',
+ props: ['modelValue'],
+ emits: ['update:modelValue'],
+ template: '<div class="mock-space-filter" />',
+ },
+}))
 // ============================================================================
 // 工具函数
 // ============================================================================
@@ -100,13 +136,29 @@ function makeNode(overrides: Partial<GalaxyNode> = {}): GalaxyNode {
  ...overrides,
  }
 }
+function makeRepoNode(id: string): GalaxyRepoNode {
+ return {
+ id: `repo:${id}`,
+ type: 'repository',
+ label: `repo-${id}`,
+ file_path: '',
+ repository_id: id,
+ line_start: 0,
+ line_end: 0,
+ metadata: { git_platform: 'github', space_ids:, endpoint_count: 0, callsite_count: 0 },
+ degree: 0,
+ }
+}
 interface GalaxyVm {
- handleNodeClick: (n: GalaxyNode) => void
+ handleDetailNodeClick: (n: GalaxyNode) => void
+ handleOverviewNodeClick: (n: GalaxyNode) => void
  handleCommandPaletteSelect: (r: GalaxySearchResult) => void
  handleDrawerClose: (open: boolean) => void
  handleDrawerNodeSelect: (id: string) => void
+ handleBackToOverview: => void
  drawerOpen: boolean
  selectedNodeId: string | null
+ viewMode: 'overview' | 'detail'
 }
 async function mountGalaxy(initialQuery: Record<string, string> = {}) {
  const router = createRouter({
@@ -114,7 +166,6 @@ async function mountGalaxy(initialQuery: Record<string, string> = {}) {
  routes: [{ path: '/codegraph/galaxy', component: { template: '<div/>' } }],
  })
  await router.push({ path: '/codegraph/galaxy', query: initialQuery })
- // 重置 filteredNodes（每个测试独立）
  mockFilteredNodes.value =
  const GalaxyPage = await import('~/pages/codegraph/galaxy.vue')
  const wrapper = mount(GalaxyPage.default, {
@@ -128,7 +179,7 @@ async function mountGalaxy(initialQuery: Record<string, string> = {}) {
 // ============================================================================
 // Tests
 // ============================================================================
-describe('galaxy.vue — Phase 接线', => {
+describe('galaxy.vue — viewMode 路由', => {
  beforeEach( => {
  vi.clearAllMocks
  mockFocusNode.mockClear
@@ -137,41 +188,79 @@ describe('galaxy.vue — Phase 接线', => {
  afterEach( => {
  document.body.innerHTML = ''
  })
- it('挂载后：GalaxyCommandPalette 与 NodeDetailDrawer 都在 DOM 中', async => {
- const { wrapper } = await mountGalaxy
- expect(wrapper.find('.mock-command-palette').exists).toBe(true)
- expect(wrapper.find('.mock-drawer').exists).toBe(true)
- wrapper.unmount
- })
- it('初始渲染：Drawer 关闭，CommandPalette 关闭', async => {
- const { wrapper } = await mountGalaxy
- const drawer = wrapper.find('.mock-drawer')
- const palette = wrapper.find('.mock-command-palette')
- expect(drawer.attributes('data-open')).toBe('false')
- expect(palette.attributes('data-open')).toBe('false')
- wrapper.unmount
- })
- it('handleNodeClick → drawerOpen=true，selectedNodeId 更新', async => {
+ it('无 repo_ids → viewMode=overview，加载仓库总览', async => {
  const { wrapper } = await mountGalaxy
  const vm = wrapper.vm as unknown as GalaxyVm
- vm.handleNodeClick(makeNode({ id: 'symbol:myfn' }))
+ expect(vm.viewMode).toBe('overview')
+ expect(mockGetGalaxyRepoGraph).toHaveBeenCalled
+ // overview 模式不渲染 Drawer 与 CommandPalette
+ expect(wrapper.find('.mock-drawer').exists).toBe(false)
+ expect(wrapper.find('.mock-command-palette').exists).toBe(false)
+ wrapper.unmount
+ })
+ it('?repo_ids=X → viewMode=detail，渲染 Drawer/CommandPalette', async => {
+ const { wrapper } = await mountGalaxy({ repo_ids: 'repo-1' })
+ const vm = wrapper.vm as unknown as GalaxyVm
+ expect(vm.viewMode).toBe('detail')
+ expect(wrapper.find('.mock-drawer').exists).toBe(true)
+ expect(wrapper.find('.mock-command-palette').exists).toBe(true)
+ wrapper.unmount
+ })
+ it('handleOverviewNodeClick(repository node) → router.push 带 repo_ids', async => {
+ const { wrapper, router } = await mountGalaxy
+ const vm = wrapper.vm as unknown as GalaxyVm
+ vm.handleOverviewNodeClick(makeRepoNode('abc-123'))
+ await flushPromises
+ expect(router.currentRoute.value.query.repo_ids).toBe('abc-123')
+ wrapper.unmount
+ })
+ it('handleBackToOverview → 清除 repo_ids，回到 overview', async => {
+ const { wrapper, router } = await mountGalaxy({ repo_ids: 'repo-1' })
+ const vm = wrapper.vm as unknown as GalaxyVm
+ expect(vm.viewMode).toBe('detail')
+ vm.handleBackToOverview
+ await flushPromises
+ expect(router.currentRoute.value.query.repo_ids).toBeUndefined
+ expect(vm.viewMode).toBe('overview')
+ wrapper.unmount
+ })
+})
+describe('galaxy.vue — detail 模式 Drawer 接线', => {
+ beforeEach( => {
+ vi.clearAllMocks
+ mockFocusNode.mockClear
+ Object.defineProperty(window, 'innerWidth', { value: 1440, writable: true, configurable: true })
+ })
+ afterEach( => {
+ document.body.innerHTML = ''
+ })
+ it('初始渲染：Drawer 关闭，CommandPalette 关闭', async => {
+ const { wrapper } = await mountGalaxy({ repo_ids: 'repo-1' })
+ expect(wrapper.find('.mock-drawer').attributes('data-open')).toBe('false')
+ expect(wrapper.find('.mock-command-palette').attributes('data-open')).toBe('false')
+ wrapper.unmount
+ })
+ it('handleDetailNodeClick → drawerOpen=true，selectedNodeId 更新', async => {
+ const { wrapper } = await mountGalaxy({ repo_ids: 'repo-1' })
+ const vm = wrapper.vm as unknown as GalaxyVm
+ vm.handleDetailNodeClick(makeNode({ id: 'symbol:myfn' }))
  await flushPromises
  expect(vm.drawerOpen).toBe(true)
  expect(vm.selectedNodeId).toBe('symbol:myfn')
  wrapper.unmount
  })
- it('handleNodeClick 后 URL 包含 ?node=', async => {
- const { wrapper, router } = await mountGalaxy
+ it('handleDetailNodeClick 后 URL 包含 ?node=', async => {
+ const { wrapper, router } = await mountGalaxy({ repo_ids: 'repo-1' })
  const vm = wrapper.vm as unknown as GalaxyVm
- vm.handleNodeClick(makeNode({ id: 'symbol:url-test' }))
+ vm.handleDetailNodeClick(makeNode({ id: 'symbol:url-test' }))
  await flushPromises
  expect(router.currentRoute.value.query.node).toBe('symbol:url-test')
  wrapper.unmount
  })
  it('handleDrawerClose(false) 清除 URL 中 ?node=', async => {
- const { wrapper, router } = await mountGalaxy
+ const { wrapper, router } = await mountGalaxy({ repo_ids: 'repo-1' })
  const vm = wrapper.vm as unknown as GalaxyVm
- vm.handleNodeClick(makeNode({ id: 'symbol:clear-test' }))
+ vm.handleDetailNodeClick(makeNode({ id: 'symbol:clear-test' }))
  await flushPromises
  expect(router.currentRoute.value.query.node).toBe('symbol:clear-test')
  vm.handleDrawerClose(false)
@@ -180,7 +269,7 @@ describe('galaxy.vue — Phase 接线', => {
  wrapper.unmount
  })
  it('handleCommandPaletteSelect 打开 Drawer 并设置 nodeId', async => {
- const { wrapper } = await mountGalaxy
+ const { wrapper } = await mountGalaxy({ repo_ids: 'repo-1' })
  const vm = wrapper.vm as unknown as GalaxyVm
  const result: GalaxySearchResult = {
  id: 'endpoint:api',
@@ -197,9 +286,8 @@ describe('galaxy.vue — Phase 接线', => {
  wrapper.unmount
  })
  it('初始 URL ?node=symbol:initial → filteredNodes 就绪时自动打开 Drawer', async => {
- const { wrapper } = await mountGalaxy({ node: 'symbol:initial' })
+ const { wrapper } = await mountGalaxy({ repo_ids: 'repo-1', node: 'symbol:initial' })
  const vm = wrapper.vm as unknown as GalaxyVm
- // 模拟 filteredNodes 数据就绪
  mockFilteredNodes.value = [makeNode({ id: 'symbol:initial' })]
  await flushPromises
  expect(vm.drawerOpen).toBe(true)

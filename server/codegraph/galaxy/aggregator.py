@@ -17,10 +17,11 @@ import uuid
 from typing import Any
 import structlog
 from django.conf import settings
-from django.db.models import Count, F, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models import Avg, Count, F, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from code_relations.models import ChunkEdge, ChunkRegistry
 from codegraph.models import ApiCallSite, ApiWrapper, CrossRepoApiCall, Endpoint, Symbol
+from repositories.models import Repository
 from .serializers import GalaxyEdge, GalaxyMeta, GalaxyNeighbor, GalaxyNode, GalaxyReference
 logger = structlog.get_logger(__name__)
 # 节点类型 → Node ID 前缀映射
@@ -30,9 +31,16 @@ _NODE_PREFIX: dict[str, str] = {
  "endpoint": "endpoint",
  "api_wrapper": "wrapper",
  "api_call_site": "callsite",
+ "repository": "repo",
 }
-# 全部支持的节点类型
-ALL_NODE_TYPES = list(_NODE_PREFIX.keys)
+# 全部支持的节点类型（L1 细粒度图。L2 repository 节点单独走 aggregate_repos）
+ALL_NODE_TYPES = [
+ "chunk_registry",
+ "symbol",
+ "endpoint",
+ "api_wrapper",
+ "api_call_site",
+]
 # 全部支持的边类型
 ALL_EDGE_TYPES = [
  "CALL", "IMPORT", "SAME_FILE", "TEST_OF",
@@ -330,6 +338,101 @@ class GalaxyAggregator:
  "edges": sampled_edges,
  "meta": meta,
  }
+ @staticmethod
+ def aggregate_repos(space_id: uuid.UUID | None = None) -> dict[str, Any]:
+ """聚合仓库节点视图（L2 多仓库总览）。
+ 节点 = Repository（仅含未软删的仓库；如有 space_id，则限定到该 Project 关联的仓库）。
+ 边 = CrossRepoApiCall 按 (caller_repo, callee_repo) 聚合成单条 REPO_API_CALL 边。
+ Args:
+ space_id: Project UUID，None = 全部仓库。
+ Returns:
+ {"nodes": [...], "edges": [...], "meta": {...}}，节点 type 为 "repository"，
+ 边 type 为 "REPO_API_CALL"。
+ """
+ # ---- 仓库节点 ----
+ repo_qs = Repository.objects.filter(is_deleted=False)
+ if space_id is not None:
+ repo_qs = repo_qs.filter(projects__id=space_id)
+ repo_qs = repo_qs.annotate(
+ endpoint_count=Count("endpoints", distinct=True),
+ callsite_count=Count("api_call_sites", distinct=True),
+ ).prefetch_related("projects")
+ nodes: list[GalaxyNode] =
+ repo_ids_in_view: set[uuid.UUID] = set
+ for repo in repo_qs:
+ repo_ids_in_view.add(repo.id)
+ space_ids = [str(p.id) for p in repo.projects.all]
+ degree = int(repo.endpoint_count) + int(repo.callsite_count)
+ nodes.append(
+ GalaxyNode(
+ id=_node_id("repo", repo.id),
+ type="repository",
+ label=repo.name,
+ repository_id=str(repo.id),
+ file_path="",
+ line_start=None,
+ line_end=None,
+ metadata={
+ "git_platform": repo.git_platform,
+ "space_ids": space_ids,
+ "endpoint_count": int(repo.endpoint_count),
+ "callsite_count": int(repo.callsite_count),
+ },
+ degree=degree,
+ )
+ )
+ # ---- 仓库间边 ----
+ edges: list[GalaxyEdge] =
+ if repo_ids_in_view:
+ edge_qs = (
+ CrossRepoApiCall.objects.values(
+ "call_site__repository_id",
+ "endpoint__repository_id",
+ )
+ .annotate(
+ call_count=Count("id"),
+ avg_conf=Avg("match_confidence"),
+ )
+ .filter(
+ call_site__repository_id__in=repo_ids_in_view,
+ endpoint__repository_id__in=repo_ids_in_view,
+ )
+ )
+ for row in edge_qs:
+ src_repo_id = row["call_site__repository_id"]
+ tgt_repo_id = row["endpoint__repository_id"]
+ # 自环（同仓库内的 API 调用）跳过，L2 只画跨仓边
+ if src_repo_id == tgt_repo_id:
+ continue
+ edges.append(
+ GalaxyEdge(
+ id=f"repo_call:{src_repo_id}:{tgt_repo_id}",
+ source=_node_id("repo", src_repo_id),
+ target=_node_id("repo", tgt_repo_id),
+ edge_type="REPO_API_CALL",
+ weight=float(row["call_count"]),
+ repository_id=str(src_repo_id),
+ target_repository_id=str(tgt_repo_id),
+ metadata={
+ "call_count": int(row["call_count"]),
+ "avg_confidence": float(row["avg_conf"] or 0.0),
+ },
+ )
+ )
+ meta = GalaxyMeta(
+ total_nodes=len(nodes),
+ total_edges=len(edges),
+ sampled=False,
+ by_node_type={"repository": len(nodes)},
+ per_repo_hint=False,
+ )
+ logger.info(
+ "galaxy_aggregate_repos",
+ space_id=str(space_id) if space_id else "all",
+ nodes=len(nodes),
+ edges=len(edges),
+ )
+ return {"nodes": nodes, "edges": edges, "meta": meta}
  @staticmethod
  def search(
  q: str,

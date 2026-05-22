@@ -71,9 +71,11 @@ describe('promptBodyEditor', => {
  expect(source).toContain('from \'./codemirror/variableHighlight\'')
  expect(source).toContain('variableHighlight')
  })
- it('源文件扩展栈包含 oneDark / search / lineWrapping(契约)', => {
+ it('源文件扩展栈使用 fridayLightTheme / search / lineWrapping(契约)', => {
  const source = readFileSync(sfcPath, 'utf-8')
- expect(source).toContain('@codemirror/theme-one-dark')
+ // 浅色主题取代 oneDark —— 详见 PromptBodyEditor.vue 顶部「视觉设计变更」注释。
+ expect(source).not.toContain('@codemirror/theme-one-dark')
+ expect(source).toContain('fridayLightTheme')
  expect(source).toContain('@codemirror/search')
  expect(source).toContain('EditorView.lineWrapping')
  })

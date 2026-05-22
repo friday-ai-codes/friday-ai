@@ -1,6 +1,7 @@
-"""Galaxy API REST 视图 —— 3 个 endpoint 统一聚合 5 类节点 + 7/8 类边。
+"""Galaxy API REST 视图 —— 4 个 endpoint 统一聚合 L1 细粒度 + L2 仓库视图。
 路由：
-- GET /api/codegraph/galaxy/ → GalaxyView
+- GET /api/codegraph/galaxy/ → GalaxyView (L1 细粒度)
+- GET /api/codegraph/galaxy/repos/ → GalaxyReposView (L2 仓库节点)
 - GET /api/codegraph/galaxy/search/ → GalaxySearchView
 - GET /api/codegraph/galaxy/nodes/<id>/ → GalaxyNodeDetailView
 """
@@ -77,6 +78,32 @@ class GalaxyView(APIView):
  sampled=result["meta"]["sampled"],
  )
  return Response(result)
+class GalaxyReposView(APIView):
+ """GET /api/codegraph/galaxy/repos/ — L2 仓库节点视图。
+ Query params:
+ - space_id: UUID，可选；不传 = 全部仓库。给定时按 Project.repositories 过滤。
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Any) -> Response:
+ raw_space_id = request.query_params.get("space_id")
+ space_id: uuid.UUID | None = None
+ if raw_space_id:
+ try:
+ space_id = uuid.UUID(raw_space_id)
+ except ValueError:
+ return Response(
+ {"detail": "space_id 必须是合法 UUID。"}, status=400
+ )
+ result = await sync_to_async(GalaxyAggregator.aggregate_repos)(
+ space_id=space_id,
+ )
+ logger.info(
+ "galaxy_repos_view",
+ space_id=str(space_id) if space_id else "all",
+ nodes=len(result["nodes"]),
+ edges=len(result["edges"]),
+ )
+ return Response(result)
 class GalaxySearchView(APIView):
  """GET /api/codegraph/galaxy/search/ — 跨 5 类节点全文搜索。
  Query params:
@@ -135,6 +162,7 @@ class GalaxyNodeDetailView(APIView):
  return Response(result)
 __all__ = [
  "GalaxyNodeDetailView",
+ "GalaxyReposView",
  "GalaxySearchView",
  "GalaxyView",
 ]
