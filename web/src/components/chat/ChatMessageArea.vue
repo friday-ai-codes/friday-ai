@@ -60,15 +60,48 @@ const visibleClarifications = computed( => {
  p => !p.conversation_id || p.conversation_id === currentConv,
  )
 })
+/**
+ * UAT 2026-05-27 hotfix：自动跟随用户意图状态机（替代原 `|| chatStore.isStreaming`
+ * 暴力强制下拉的逻辑）。
+ *
+ * 原 bug：watch 监听 streamingContent 等流式状态，每个 token 进来都跑回调；
+ * 回调条件是 `isAtBottom || isStreaming || error`，OR 三态导致 streaming
+ * 期间**完全忽略 isAtBottom**，用户向上滚后下一个 token 就把他拽回底部。
+ *
+ * 现行 chat UI 标准模式（ChatGPT / Cursor / Claude 同款）：
+ * - `autoFollow=true`：用户在底部 → 新内容追加时自动跟随到底
+ * - 用户主动向上滚动（wheel / touch / keydown）→ 检测距离底部超过 50px →
+ * `autoFollow=false` → 后续 streaming 不再骚扰用户
+ * - 用户主动点「↓ 回到底部」按钮 → `autoFollow=true` 重新跟随
+ * - error 信号永远强制滚到底（错误必须让用户看到）
+ *
+ * 注意：不能直接用 `isAtBottom` 做条件 — 新内容追加时 scrollHeight 增加 ε，
+ * isAtBottom 会瞬间变 false（容器距底部 > 50px 阈值），导致"在底部跟随"功能
+ * 失效。必须用「用户意图」状态机，只在用户**主动滚动**时重新评估。
+ */
+const autoFollow = ref(true)
+function reevaluateAutoFollow: void {
+ const el = scrollContainer.value
+ if (!el)
+ return
+ const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+ autoFollow.value = distFromBottom < 50
+}
+useEventListener(scrollContainer, ['wheel', 'touchmove', 'keydown'], reevaluateAutoFollow, { passive: true })
 function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  if (scrollContainer.value) {
  scrollContainer.value.scrollTo({ top: scrollContainer.value.scrollHeight, behavior })
  }
 }
+/** 用户主动点「↓ 回到底部」按钮 — 重新开启自动跟随 */
+function manualScrollToBottom {
+ autoFollow.value = true
+ scrollToBottom('smooth')
+}
 watch(
  => [chatStore.messages.length, chatStore.streamingContent, chatStore.deepAnalysisLogs.length, chatStore.error, chatStore.currentPhase, chatStore.codingProgress, chatStore.codingResult, chatStore.codingError],
  => {
- if (isAtBottom.value || chatStore.isStreaming || chatStore.error)
+ if (autoFollow.value || chatStore.error)
  nextTick( => scrollToBottom(chatStore.isStreaming ? 'instant': 'smooth'))
  },
 )
@@ -93,7 +126,11 @@ const historyCodingError = computed( => {
 })
 watch(
  => chatStore.currentConversationId,
- => nextTick( => scrollToBottom('instant')),
+ => {
+ // 切对话时重新启用自动跟随（新会话的初始位置应在最底部，符合用户直觉）
+ autoFollow.value = true
+ nextTick( => scrollToBottom('instant'))
+ },
 )
 // ============================================================================
 // 编码确认流程事件 (Phase)
@@ -365,7 +402,7 @@ function handleExportSuccess(
  <button
  v-if="showScrollToBottom"
  class="scroll-btn"
- @click="scrollToBottom"
+ @click="manualScrollToBottom"
  >
  <span class="icon-[lucide--chevron-down] text-sm" />
  </button>
