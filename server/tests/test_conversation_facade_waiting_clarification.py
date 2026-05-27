@@ -318,3 +318,46 @@ class TestCleanupManagementCommand:
  call_command("cleanup_waiting_clarification_errors", "--apply")
  conv.refresh_from_db
  assert conv.status == Conversation.Status.INTERRUPTED
+ def test_explicit_dry_run_flag_equivalent_to_omitted(self, project) -> None:
+ """显式 `--dry-run` 与省略 flag 等价 — 不写库。"""
+ from io import StringIO
+ from django.core.management import call_command
+ conv = Conversation.objects.create(
+ project=project,
+ title="dry-run flag test",
+ status=Conversation.Status.ERROR,
+ )
+ OrchestrationRun.objects.create(
+ conversation=conv,
+ thread_id=str(conv.id),
+ status=OrchestrationRun.Status.COMPLETED,
+ phase="waiting_clarification",
+ )
+ out = StringIO
+ call_command("cleanup_waiting_clarification_errors", "--dry-run", stdout=out)
+ assert str(conv.id) in out.getvalue
+ assert "Dry-run" in out.getvalue
+ conv.refresh_from_db
+ assert conv.status == Conversation.Status.ERROR
+ def test_apply_and_dry_run_mutually_exclusive(self, project) -> None:
+ """--apply 与 --dry-run 同时给 → 报错退出（不写库）。"""
+ from io import StringIO
+ from django.core.management import call_command
+ conv = Conversation.objects.create(
+ project=project,
+ title="mutex test",
+ status=Conversation.Status.ERROR,
+ )
+ OrchestrationRun.objects.create(
+ conversation=conv,
+ thread_id=str(conv.id),
+ status=OrchestrationRun.Status.COMPLETED,
+ phase="waiting_clarification",
+ )
+ err = StringIO
+ call_command(
+ "cleanup_waiting_clarification_errors", "--apply", "--dry-run", stderr=err,
+ )
+ assert "互斥" in err.getvalue
+ conv.refresh_from_db
+ assert conv.status == Conversation.Status.ERROR # 未写库
