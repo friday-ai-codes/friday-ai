@@ -650,11 +650,23 @@ async def _execute_first_run(
  options_count=len(pending_clarification.get("options", )),
  )
  await _persist_run_phase(run_id, RunPhase.WAITING_CLARIFICATION.value)
+ # review review round Fix C-1：PHASE_TRANSITION 直接携带 question / options /
+ # allow_freeform，让前端无需依赖 tool_use_result(ask_clarification) 兜底
+ # 即可渲染 ClarificationCard。原设计假设 ClarificationCard payload 仅由
+ # LLM 主动调 ask_clarification 工具的 tool_use_result 事件提供（前端
+ # chat.ts:1171-1178 注释明写），但编排层 _extract_relev_low_confidence_pending
+ # 自动构造 pending_clarification 时 LLM 并未调工具，SSE 不会出 tool_use_result
+ # 事件 → 前端永远拿不到 payload → ClarificationCard 不渲染 → 用户无法
+ # 答复 → graph 永久 hang 在 waiting_clarification interrupt。详见
+ # project-docs/phases/work-item/work-item.md review round Gap C-1。
  writer({
  "type": PHASE_TRANSITION,
  "data": {
  "phase": "waiting_clarification",
  "clarification_id": pending_clarification.get("clarification_id"),
+ "question": pending_clarification.get("question", ""),
+ "options": pending_clarification.get("options", ),
+ "allow_freeform": pending_clarification.get("allow_freeform", True),
  },
  })
  return {

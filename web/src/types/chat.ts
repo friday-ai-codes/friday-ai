@@ -249,6 +249,14 @@ export interface SSEEvent {
  // phase_transition
  phase?: string
  blocking_task_count?: number
+ /** review review round Fix C-1：waiting_clarification 阶段直接在 phase_transition 事件
+ * 携带 ClarificationCard 完整 payload，避免依赖 tool_use_result 兜底（编排层
+ * 自动构造的 clarification 不会触发 tool_use_result）。详见
+ * server/orchestration/graph.py:742 + stores/chat.ts phase_transition handler。 */
+ clarification_id?: string
+ question?: string
+ options?: Array<{ id: string, label: string, hint?: string, implies?: Record<string, unknown> }>
+ allow_freeform?: boolean
  // task_progress
  completed_count?: number
  total_count?: number

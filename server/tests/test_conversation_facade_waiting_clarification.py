@@ -245,6 +245,33 @@ class TestDispatchSourceGuard:
  f"_handle_waiting_clarification_state 必须在 SSE 在线 + 后台两处都被调用；"
  f"当前仅找到 {call_count} 处调用"
  )
+ def test_graph_phase_transition_waiting_clarification_carries_payload(self) -> None:
+ """review review round Fix C-1：编排层 PHASE_TRANSITION 事件必须带 question/options/allow_freeform。
+ 否则前端 `phase_transition` handler 拿不到 ClarificationCard payload —— 编排层
+ 自动构造的 clarification（_extract_relev_low_confidence_pending 触发的）不会
+ 产生 tool_use_result(ask_clarification) 事件兜底，前端 store 永远不写
+ pendingClarification → ClarificationCard 不渲染 → graph 永久 hang。
+ 详见 project-docs/phases/work-item/work-item.md review round Gap C-1。
+ """
+ from pathlib import Path
+ source = Path(__file__).parent.parent / "orchestration" / "graph.py"
+ text = source.read_text(encoding="utf-8")
+ # 找到 wait_clarification interrupt 触发位置的 writer 调用，断言 payload 含三键
+ wait_clar_writer_idx = text.find('"phase": "waiting_clarification",')
+ assert wait_clar_writer_idx > 0, (
+ "graph.py 未找到 PHASE_TRANSITION(waiting_clarification) writer 调用 — "
+ "C-1 fix 可能被 refactor 误删"
+ )
+ # 取该 writer 调用周围 30 行检查 payload 完整
+ snippet_start = text.rfind("writer(", 0, wait_clar_writer_idx)
+ snippet_end = text.find("})", wait_clar_writer_idx) + 2
+ snippet = text[snippet_start:snippet_end]
+ for required_key in ('"clarification_id"', '"question"', '"options"', '"allow_freeform"'):
+ assert required_key in snippet, (
+ f"graph.py wait_clarification PHASE_TRANSITION writer 缺少 {required_key} 字段 — "
+ f"前端 ClarificationCard 将无法渲染（C-1 regression）。\n\n"
+ f"writer 当前 payload:\n{snippet}"
+ )
 @pytest.mark.django_db(transaction=True)
 class TestCleanupManagementCommand:
  """Fix #3：cleanup_waiting_clarification_errors 管理命令 dry-run smoke test。"""
