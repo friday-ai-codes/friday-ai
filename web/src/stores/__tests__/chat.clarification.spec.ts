@@ -74,4 +74,51 @@ describe('chat store - clarifications', => {
  expect(store.pendingClarifications.size).toBe(1)
  expect(store.getClarification('clar-1')?.status).toBe('answered')
  })
+ /**
+ * UAT 2026-05-27 hotfix（review review round）：跨 conversation 串单回归。
+ *
+ * 复现 work-item.md review round Gap：用户在 conv 78681e45 (entrance) 视图里
+ * 看到了 conv 3673d77b (operationResource) 的 ClarificationCard。
+ */
+ describe('跨 conversation 串单防护（review review round hotfix）', => {
+ it('upsertClarification 显式传 conversationId 写入 payload', => {
+ const store = useChatStore
+ store.upsertClarification(makePayload({ clarification_id: 'c-a' }), 'conv-A')
+ const saved = store.getClarification('c-a')
+ expect(saved?.conversation_id).toBe('conv-A')
+ })
+ it('upsertClarification 不传 conversationId 时回退到当前 conv', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-fallback'
+ store.upsertClarification(makePayload({ clarification_id: 'c-b' }))
+ expect(store.getClarification('c-b')?.conversation_id).toBe('conv-fallback')
+ })
+ it('payload 已带 conversation_id 时优先用 caller 传入值（caller wins）', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-current'
+ store.upsertClarification(
+ makePayload({ clarification_id: 'c-c', conversation_id: 'conv-from-payload' }),
+ 'conv-from-caller',
+ )
+ expect(store.getClarification('c-c')?.conversation_id).toBe('conv-from-caller')
+ })
+ it('两个 conv 的 clarification 共存于 Map 时各自带 conv 维度（前端 filter 可分流）', => {
+ const store = useChatStore
+ store.upsertClarification(makePayload({ clarification_id: 'c-A' }), 'conv-A')
+ store.upsertClarification(makePayload({ clarification_id: 'c-B' }), 'conv-B')
+ expect(store.pendingClarifications.size).toBe(2)
+ const onlyA = [...store.pendingClarifications.values].filter(
+ p => p.conversation_id === 'conv-A',
+ )
+ expect(onlyA.length).toBe(1)
+ expect(onlyA[0].clarification_id).toBe('c-A')
+ })
+ it('legacy payload (无 conversation_id) + 未设 currentConversationId 时 conversation_id 为 undefined（向后兼容）', => {
+ const store = useChatStore
+ // currentConversationId 保持 null（未设）
+ store.upsertClarification(makePayload({ clarification_id: 'c-legacy' }))
+ const saved = store.getClarification('c-legacy')
+ expect(saved?.conversation_id).toBeUndefined
+ })
+ })
 })
