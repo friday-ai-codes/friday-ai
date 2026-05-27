@@ -1091,9 +1091,30 @@ export const useChatStore = defineStore('chat', => {
  currentPhase.value = event.phase || null
  if (event.blocking_task_count != null)
  taskProgress.value = { completed: 0, total: event.blocking_task_count }
- // Phase：协商暂停事件携带 clarification_id；payload 完整
- // 内容由 tool_use_result 事件（marker=ask_clarification）兜底提供
- // —— 这里只是记录 phase 过渡，不直接 upsert（避免空 options）。
+ // review review round Fix C-1：编排层自动构造的 clarification（来自
+ // _extract_relev_low_confidence_pending）只走 PHASE_TRANSITION 通道，
+ // 不会有 tool_use_result(ask_clarification) 兜底。后端已扩展事件
+ // payload 携带 question / options / allow_freeform，前端直接 upsert
+ // 即可。LLM 主动调 ask_clarification 工具的路径仍保持原 tool_use_result
+ // 兜底（双路径互补，去重靠 clarification_id 唯一）。
+ if (
+ event.phase === 'waiting_clarification'
+ && event.clarification_id
+ && typeof event.question === 'string'
+ && event.question.length > 0
+ ) {
+ upsertClarification(
+ {
+ clarification_id: event.clarification_id,
+ question: event.question,
+ options: Array.isArray(event.options) ? event.options:,
+ allow_freeform: event.allow_freeform !== false,
+ status: 'pending',
+ triggering_message_id: streamingMessageId.value || undefined,
+ },
+ currentConversationId.value ?? undefined,
+ )
+ }
  break
  case 'task_progress':
  taskProgress.value = { completed: event.completed_count || 0, total: event.total_count || 0 }

@@ -121,4 +121,85 @@ describe('chat store - clarifications', => {
  expect(saved?.conversation_id).toBeUndefined
  })
  })
+ /**
+ * review review round Fix C-1：phase_transition(waiting_clarification) event 直接 upsert。
+ *
+ * 编排层 `_extract_relev_low_confidence_pending` 自动构造的 clarification
+ * 不会产生 `tool_use_result(ask_clarification)` 事件（LLM 没主动调工具）—— 前
+ * 端必须在 `phase_transition` 事件携带 question/options 时直接 upsert，否则
+ * ClarificationCard 永远不渲染、用户答不了 → graph 永久 hang。
+ */
+ describe('phase_transition event 路径自动 upsert（review review round Fix C-1）', => {
+ it('phase=waiting_clarification + question/options 完整时调 upsertClarification', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-pt-1'
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'waiting_clarification',
+ clarification_id: 'c-from-pt-1',
+ question: '请确认要看哪个仓库？',
+ options: [
+ { id: 'opt-A', label: 'study-app' },
+ { id: 'opt-B', label: 'problem-app' },
+ ],
+ allow_freeform: true,
+ })
+ const saved = store.getClarification('c-from-pt-1')
+ expect(saved).toBeDefined
+ expect(saved?.question).toBe('请确认要看哪个仓库？')
+ expect(saved?.options.length).toBe(2)
+ expect(saved?.allow_freeform).toBe(true)
+ expect(saved?.status).toBe('pending')
+ expect(saved?.conversation_id).toBe('conv-pt-1')
+ })
+ it('phase=waiting_clarification 但 question 缺失 → 不 upsert（防空卡片）', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-pt-2'
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'waiting_clarification',
+ clarification_id: 'c-no-question',
+ })
+ expect(store.getClarification('c-no-question')).toBeUndefined
+ })
+ it('phase 是其他态（如 waiting / executing）→ 不 upsert', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-pt-3'
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'waiting',
+ blocking_task_count: 2,
+ })
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'executing',
+ })
+ expect(store.pendingClarifications.size).toBe(0)
+ })
+ it('allow_freeform 缺失时默认 true（兼容老后端 payload）', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-pt-4'
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'waiting_clarification',
+ clarification_id: 'c-no-freeform-flag',
+ question: '请选择',
+ options: [{ id: 'opt-A', label: 'A' }],
+ // allow_freeform 缺失
+ })
+ expect(store.getClarification('c-no-freeform-flag')?.allow_freeform).toBe(true)
+ })
+ it('options 缺失或非数组时 fallback 空数组（防类型异常）', => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-pt-5'
+ store._dispatchSSE({
+ type: 'phase_transition',
+ phase: 'waiting_clarification',
+ clarification_id: 'c-bad-options',
+ question: '请选择',
+ // options 缺失
+ })
+ expect(store.getClarification('c-bad-options')?.options).toEqual
+ })
+ })
 })
