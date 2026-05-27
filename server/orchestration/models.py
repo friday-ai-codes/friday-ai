@@ -17,6 +17,14 @@ class OrchestrationRun(models.Model):
  PLANNING = "planning", "规划"
  EXECUTING = "executing", "执行"
  WAITING = "waiting", "等待"
+ # UAT 2026-05-27 hotfix（review review round Fix #1）：
+ # Phase 在 graph 加了 WAITING_CLARIFICATION 状态（见
+ # orchestration/state.py:14），但 OrchestrationRun.Phase 当时未同步登记，
+ # 导致 conversation_service.py 的分发分支拿到原始字符串 "waiting_clarification"
+ # 后落到 else（被当成正常完成）。这里补登枚举值，与 graph 层 RunPhase 一致。
+ # 注：phase 字段 max_length=20，"waiting_clarification" 为 21 字符 — 在
+ # SQLite 下能存（动态类型），未来迁移 PG 需要把 max_length 扩到 30+ migration。
+ WAITING_CLARIFICATION = "waiting_clarification", "等待澄清"
  FINALIZING = "finalizing", "收尾"
  COMPLETED = "completed", "完成"
  ERROR = "error", "错误"
@@ -38,7 +46,11 @@ class OrchestrationRun(models.Model):
  db_index=True,
  )
  phase = models.CharField(
- max_length=20,
+ # review review round Fix #1：max_length 从 20 扩到 32 容纳新增 WAITING_CLARIFICATION
+ # （21 字符）+ 未来潜在的更长 phase 名称。SQLite 此前能存 21 字符（动态类型
+ # 不强制），但 Django 系统 check 已阻塞 makemigrations，迁移到 PG 也会 truncate，
+ # 必须显式扩字段宽度。
+ max_length=32,
  choices=Phase.choices,
  default=Phase.PLANNING,
  )

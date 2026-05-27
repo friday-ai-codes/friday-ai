@@ -510,6 +510,62 @@ async def _handle_waiting_state(
  conversation_id=conv_id_str,
  blocking_task_count=len(blocking_tasks),
  )
+async def _handle_waiting_clarification_state(
+ *,
+ state: dict[str, Any],
+ orch_run: OrchestrationRun,
+ conversation: Conversation,
+ triggering_message_id: str,
+ conv_id_str: str,
+) -> None:
+ """处理 graph interrupt WAITING_CLARIFICATION 状态（review review round Fix #1 + #2）。
+ 与 ``_handle_waiting_state``（blocking_tasks 路径）的对比：
+ - **无 BarrierManager**：clarification 不依赖 subagent 任务完成，依赖用户
+ 通过 ``ClarificationAnswerView`` 提交答复后由 endpoint 自己 resume graph。
+ - **不调 do_finalize**：会话维持 RUNNING 态等待用户答复；调 finalize 会把
+ conversation 写成 completed / error 终态，让 resume 时再覆盖会与
+ ``finalize.py`` 的 status_str="unknown" 分支冲突落 ERROR（work-item item-error.md 实测）。
+ - **落 ConversationIntentTrace**：Plan 设计的审计 + lookup 表。
+ ``ClarificationAnswerView`` 通过 ``aget(clarification_id=...)`` 反查，
+ 若不落库则 endpoint 必 404、整条 clarification roundtrip 跑不通。
+ 幂等：``ConversationIntentTrace.clarification_id`` 是 unique；这里走
+ ``aget_or_create`` 防 LangGraph interrupt 之后任何 resume 重放再次进入此分支
+ 时撞 unique 约束（设计上 wait_clarification_node 之后只会有 resume + new
+ user message，不会再走本函数；防御性 get_or_create 是兜底）。
+ """
+ from chat.models import ConversationIntentTrace
+ pending = state.get("pending_clarification") or {}
+ clarification_id = pending.get("clarification_id")
+ await OrchestrationRun.objects.filter(
+ id=orch_run.id,
+ ).exclude(status=OrchestrationRun.Status.INTERRUPTED).aupdate(
+ status=OrchestrationRun.Status.WAITING,
+ phase=OrchestrationRun.Phase.WAITING_CLARIFICATION,
+ )
+ if not clarification_id:
+ logger.warning(
+ "waiting_clarification_without_clarification_id",
+ conversation_id=conv_id_str,
+ run_id=str(orch_run.run_id),
+ pending_keys=list(pending.keys),
+ )
+ return
+ _trace, created = await ConversationIntentTrace.objects.aget_or_create(
+ clarification_id=clarification_id,
+ defaults={
+ "conversation": conversation,
+ "triggering_message_id": triggering_message_id,
+ "question": pending.get("question", ""),
+ "options": pending.get("options", ),
+ },
+ )
+ logger.info(
+ "waiting_clarification_handled",
+ conversation_id=conv_id_str,
+ clarification_id=clarification_id,
+ intent_trace_created=created,
+ options_count=len(pending.get("options", )),
+ )
 def _build_message_complete_event(
  *,
  final_content: str,
@@ -679,11 +735,14 @@ class ConversationService:
  id=conversation_id,
  is_deleted=False,
  )
- await Message.objects.acreate(
+ # review review round Fix #1/#2：保留 user message id 作为 ConversationIntentTrace.triggering_message_id
+ # （waiting_clarification 路径需要 — 见 _handle_waiting_clarification_state）。
+ user_msg = await Message.objects.acreate(
  conversation=conversation,
  role=Message.Role.USER,
  content=content,
  )
+ user_msg_id_str = str(user_msg.id)
  # 对话进入进行中状态
  conversation.status = Conversation.Status.RUNNING
  await conversation.asave(update_fields=["status"])
@@ -824,6 +883,18 @@ class ConversationService:
  conv_id_str=conv_id_str,
  do_finalize=do_finalize,
  )
+ elif phase == "waiting_clarification":
+ # review review round Fix #1：graph interrupt — 等待用户回答 ClarificationCard。
+ # 不调 do_finalize（保持 conversation RUNNING，由 ClarificationAnswerView
+ # 在用户答复后 resume graph 时自己 finalize）。详见
+ # _handle_waiting_clarification_state docstring + work-item item-error.md。
+ await _handle_waiting_clarification_state(
+ state=state,
+ orch_run=orch_run,
+ conversation=conversation,
+ triggering_message_id=user_msg_id_str,
+ conv_id_str=conv_id_str,
+ )
  else:
  # 正常完成 / 错误 / 中断
  final_content, accumulated_thinking, tool_calls, _snap = (
@@ -893,6 +964,17 @@ class ConversationService:
  notification_user_id=notification_user_id,
  conv_id_str=conv_id_str,
  do_finalize=do_finalize,
+ )
+ elif phase == "waiting_clarification":
+ # review review round Fix #1：后台路径同样处理 — 用户按停止键 SSE 断开后
+ # graph 在 wait_clarification_node 仍正常 interrupt，这里需要
+ # 与在线分支等价的 elif 分支，否则 GeneratorExit 路径仍会落 ERROR。
+ await _handle_waiting_clarification_state(
+ state=state,
+ orch_run=orch_run,
+ conversation=conversation,
+ triggering_message_id=user_msg_id_str,
+ conv_id_str=conv_id_str,
  )
  else:
  is_error = state.get("phase") == "error"
