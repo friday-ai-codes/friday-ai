@@ -195,6 +195,11 @@ export const useChatStore = defineStore('chat', => {
  syncConversationToURL(id)
  messagesLoading.value = true
  error.value = null
+ // UAT 2026-05-27 hotfix（review review round）：切换 conversation 时清空前一会话残留的
+ // 协商卡片，防止跨会话串单（详见 ClarificationPayload.conversation_id 文档与
+ // work-item.md review round Gap）。createNewConversation / resetStreamingState 早已
+ // 清空，selectConversation 此前漏调，导致用户切对话时旧卡片残留显示。
+ clearAllClarifications
  try {
  const detail = await getConversationDetail(id)
  messages.value = detail.messages
@@ -859,7 +864,7 @@ export const useChatStore = defineStore('chat', => {
  allow_freeform: parsed.allow_freeform !== false,
  status: 'pending',
  triggering_message_id: streamingMessageId.value || undefined,
- })
+ }, currentConversationId.value ?? undefined)
  }
  }
  catch {
@@ -1010,7 +1015,7 @@ export const useChatStore = defineStore('chat', => {
  allow_freeform: parsed.allow_freeform !== false,
  status: 'pending',
  triggering_message_id: streamingMessageId.value || undefined,
- })
+ }, currentConversationId.value ?? undefined)
  }
  }
  catch {
@@ -1767,8 +1772,21 @@ export const useChatStore = defineStore('chat', => {
  function getClarification(id: string): ClarificationPayload | undefined {
  return pendingClarifications.value.get(id)
  }
- function upsertClarification(payload: ClarificationPayload) {
- pendingClarifications.value.set(payload.clarification_id, payload)
+ /**
+ * UAT 2026-05-27 hotfix（review review round）：协商卡片写入时绑定 conversation 维度。
+ *
+ * `conversationId` 显式可选，调用方应当传当前 chat 上下文的 conversation id
+ * （SSE handler 取 `currentConversationId.value`）。当 caller 未传时，回退到
+ * 当前 conversation —— 既不破坏既有调用契约，也保证全部 upsert 都带 conv 维度。
+ *
+ * 与 `ChatMessageArea` 的 `currentConversationId` 过滤配合，防止跨会话串单。
+ */
+ function upsertClarification(payload: ClarificationPayload, conversationId?: string) {
+ const conv = conversationId ?? payload.conversation_id ?? currentConversationId.value ?? undefined
+ pendingClarifications.value.set(payload.clarification_id, {
+ ...payload,
+ conversation_id: conv,
+ })
  }
  function markClarificationAnswered(id: string, answer: ClarificationAnswer) {
  const existing = pendingClarifications.value.get(id)

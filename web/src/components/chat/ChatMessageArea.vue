@@ -51,6 +51,15 @@ const scrollContainer = ref<HTMLElement | null>(null)
 const { arrivedState } = useScroll(scrollContainer, { offset: { bottom: 50 } })
 const isAtBottom = computed( => arrivedState.bottom)
 const showScrollToBottom = computed( => !isAtBottom.value && chatStore.messages.length > 0)
+// UAT 2026-05-27 hotfix（review review round）：协商卡片按 conversation 维度过滤。
+// 没有 conversation_id 的 legacy payload 一律渲染（保持向后兼容）。
+// 详见 web/src/types/clarification.ts ClarificationPayload.conversation_id 文档。
+const visibleClarifications = computed( => {
+ const currentConv = chatStore.currentConversationId
+ return [...chatStore.pendingClarifications.values].filter(
+ p => !p.conversation_id || p.conversation_id === currentConv,
+ )
+})
 function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
  if (scrollContainer.value) {
  scrollContainer.value.scrollTo({ top: scrollContainer.value.scrollHeight, behavior })
@@ -253,8 +262,9 @@ function handleExportSuccess(
  }":is-streaming="true":streaming-content="chatStore.streamingContent":streaming-thinking="chatStore.streamingThinking":streaming-tool-calls="chatStore.streamingToolCalls":streaming-timeline="chatStore.streamingTimeline":streaming-status="chatStore.streamingStatus":streaming-narrations="chatStore.streamingNarrations":streaming-pending-text="chatStore.streamingPendingText":deep-analysis-logs="chatStore.deepAnalysisLogs":streaming-doc-summary="(chatStore.streamingMetadata?.docSummary as any) || null"
  />
  <!-- Phase：协商卡片（pending + answered 两态都保留） -->
+ <!-- UAT 2026-05-27 hotfix（review review round）：按 conversation 维度过滤防串单 -->
  <ClarificationCard
- v-for="payload in chatStore.pendingClarifications.values":key="payload.clarification_id":payload="payload"
+ v-for="payload in visibleClarifications":key="payload.clarification_id":payload="payload"
  />
  <!-- 编码进度卡片 (per: inline 嵌入消息流) -->
  <CodingProgressCard

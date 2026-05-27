@@ -33,6 +33,18 @@ export interface ClarificationPayload {
  * 紧跟在触发它的 assistant 消息之后渲染。
  */
  triggering_message_id?: string
+ /**
+ * UAT 2026-05-27 hotfix（review review round）：协商卡片归属的 conversation id。
+ *
+ * 仅在 store 内由 `upsertClarification` 写入（SSE 处理时取当前 chat 上下文）。
+ * `undefined` 兼容旧路径 — `ChatMessageArea` 过滤时遇到 undefined 一律渲染
+ * （等同于未携带 conv 维度的 legacy payload）。
+ *
+ * 根因：在不带此字段前，`pendingClarifications` 是按 clarification_id 唯一的
+ * 全局 Map，切换 conversation 时残留 + 其他 conv 的 SSE tool_use_result 异步
+ * 流入都会污染当前 conv 视图，导致跨会话串单（见 work-item.md review round Gap）。
+ */
+ conversation_id?: string
 }
 export interface ClarificationAnswerRequest {
  selected_option_id?: string
