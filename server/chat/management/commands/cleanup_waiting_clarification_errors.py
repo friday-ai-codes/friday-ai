@@ -38,8 +38,19 @@ class Command(BaseCommand):
  action="store_true",
  help="实际写库；省略则 dry-run 只打印将要变更的 conv",
  )
+ # 显式 --dry-run flag（与默认行为等价）— 让 CLI 用户直觉对齐：
+ # `--dry-run` / `--apply` 二选一明显比"省略 = dry-run"更友好。
+ parser.add_argument(
+ "--dry-run",
+ action="store_true",
+ help="显式 dry-run（与省略 --apply 等价）；与 --apply 互斥",
+ )
  def handle(self, *args: Any, **options: Any) -> None:
  apply_changes: bool = options.get("apply", False)
+ dry_run_explicit: bool = options.get("dry_run", False)
+ if apply_changes and dry_run_explicit:
+ self.stderr.write(self.style.ERROR("--apply 与 --dry-run 互斥，请二选一"))
+ return
  runs_qs = OrchestrationRun.objects.filter(
  status=OrchestrationRun.Status.COMPLETED,
  phase="waiting_clarification",
