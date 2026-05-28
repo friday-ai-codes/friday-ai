@@ -1,7 +1,7 @@
 /**
  * Chat API 服务 - LLM 对话能力
  */
-import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse } from '~/types/chat'
+import type { CodingSessionResponse, CodingSessionsBatchCreateResponse, Conversation, ConversationDetail, ConversationRuntime, CreateConversationParams, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, ForkConversationRequest } from '~/types/chat'
 import type { ClarificationAnswerRequest, ClarificationAnswerResponse } from '~/types/clarification'
 import { del, get, patch, post } from './client'
 // ============================================================================
@@ -174,6 +174,19 @@ export async function getConversationDetail(id: string): Promise<ConversationDet
  */
 export async function getConversationRuntime(id: string): Promise<ConversationRuntime> {
  return get<ConversationRuntime>(`/chat/conversations/${id}/runtime/`)
+}
+/**
+ * 编辑历史 user message 前创建新 conversation 分支。
+ */
+export async function forkConversationForMessage(
+ conversationId: string,
+ messageId: string,
+ params: ForkConversationRequest,
+): Promise<ConversationDetail> {
+ return post<ConversationDetail>(
+ `/chat/conversations/${conversationId}/messages/${messageId}/fork/`,
+ params,
+ )
 }
 /** PATCH 请求体（与后端 ConversationPatchSerializer 对齐） */
 export interface PatchConversationParams {

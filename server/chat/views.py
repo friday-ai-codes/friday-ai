@@ -1,11 +1,6 @@
 """Chat API views."""
-import asyncio
 from typing import Any
 import structlog
-# Phase：保留 graph 后台任务的强引用，防止 Python asyncio
-# 在某些 corner case 下中途 GC 任务（PEP 3156 / asyncio.create_task 文档警告）。
-# task 完成后 add_done_callback 自动 discard，避免常驻内存增长。
-_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set
 from adrf.views import APIView
 from asgiref.sync import sync_to_async
 from django.http import StreamingHttpResponse
@@ -35,6 +30,7 @@ from .serializers import (
  ConversationDetailSerializer,
  ConversationListSerializer,
  ConversationMessageSerializer,
+ ConversationForkRequestSerializer,
  ConversationPatchSerializer,
  ConversationRuntimeSerializer,
  CreateConversationSerializer,
@@ -725,6 +721,94 @@ class ConversationMessagesDeleteView(APIView):
  {"deleted_count": int(deleted_count)},
  status=status.HTTP_200_OK,
  )
+class ConversationMessageForkView(APIView):
+ """编辑历史 user message 前创建新 conversation 分支。"""
+ authentication_classes = [OptionalJWTAuthentication, ChatKeyAuthentication]
+ permission_classes = [ChatAuthPermission]
+ @extend_schema(
+ summary="编辑历史提问前创建会话分支",
+ description=(
+ "复制目标 user message 之前的历史到新 conversation；编辑后的内容由随后现有 "
+ "SSE sendMessage 路径写入，原 conversation 保持不变。"
+ ),
+ request=ConversationForkRequestSerializer,
+ responses={
+ 201: ConversationDetailSerializer,
+ 400: {"description": "请求参数错误或目标消息不可编辑"},
+ 403: {"description": "无权访问该对话"},
+ 404: {"description": "对话不存在"},
+ },
+ tags=["Conversations"],
+ )
+ async def post(self, request, conversation_id, message_id):
+ serializer = ConversationForkRequestSerializer(data=request.data)
+ if not serializer.is_valid:
+ return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ try:
+ conversation = await Conversation.objects.select_related("project").aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ from permissions.services import PermissionService
+ user = request.user
+ if (
+ getattr(user, "is_authenticated", False)
+ and not getattr(user, "is_superuser", False)
+ and conversation.project_id is not None
+ ):
+ has_access = await sync_to_async(PermissionService.has_project_access)(
+ user, conversation.project, "member"
+ )
+ if not has_access:
+ logger.warning(
+ "chat.fork_denied_cross_project",
+ user_id=str(getattr(user, "id", "")),
+ conversation_id=str(conversation.id),
+ space_id=str(conversation.project_id),
+ )
+ return Response(
+ {"detail": "无权编辑该对话"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ try:
+ result = await ConversationService.fork_conversation_before_message(
+ str(conversation_id),
+ str(message_id),
+ serializer.validated_data["content"],
+ )
+ except Conversation.DoesNotExist:
+ return Response(
+ {"error": "对话不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ except ValueError as exc:
+ return Response(
+ {"detail": str(exc)},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ forked = result["conversation"]
+ messages = result["messages"]
+ response_data = {
+ "id": str(forked.id),
+ "space_id": str(forked.project_id),
+ "title": forked.title,
+ "model": forked.model,
+ "status": forked.status,
+ "provider_credential_id": (
+ str(forked.provider_credential_id_id)
+ if forked.provider_credential_id_id
+ else None
+ ),
+ "created_at": forked.created_at,
+ "updated_at": forked.updated_at,
+ "messages": ConversationMessageSerializer(messages, many=True).data,
+ }
+ return Response(response_data, status=status.HTTP_201_CREATED)
 class WebPushPublicKeyView(APIView):
  """返回浏览器 Push 订阅所需的 VAPID 公钥。"""
  authentication_classes = [OptionalJWTAuthentication]
@@ -1196,12 +1280,25 @@ class CodingSessionConfirmView(APIView):
  )
  coding_session.branch_name = branch_name
  await coding_session.asave(update_fields=["branch_name", "updated_at"])
- # 2. 状态机校验：只有 draft 可 confirm
- try:
+ # 2. 状态机校验：draft 首次确认；confirmed 但尚未创建 subagent 的中间态
+ # 允许幂等重启 graph，修复 view 已写 confirmed、后台任务未跑到 dispatch 的卡住状态。
+ should_start_graph = False
+ if coding_session.status == CodingSession.Status.DRAFT:
  await coding_session.aconfirm
- except ValueError as exc:
+ should_start_graph = True
+ elif coding_session.status == CodingSession.Status.CONFIRMED:
+ if coding_session.subagent_session_id is None:
+ should_start_graph = True
+ logger.warning(
+ "coding_session_confirm_recovering_stuck_confirmed",
+ coding_session_id=str(coding_session.id),
+ )
+ else:
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
+ else:
  return Response(
- {"detail": str(exc)},
+ {"detail": "只有 draft 状态可确认"},
  status=status.HTTP_400_BAD_REQUEST,
  )
  # 3. Runner 在线前置探测 — 不在线则回滚到 draft 并返回 503，
@@ -1213,6 +1310,9 @@ class CodingSessionConfirmView(APIView):
  {"detail": "没有可用的 Runner"},
  status=status.HTTP_503_SERVICE_UNAVAILABLE,
  )
+ if not should_start_graph:
+ serializer = CodingSessionSerializer(coding_session)
+ return Response(serializer.data)
  # 4. 启动 coding_graph 后台任务（与 commit/pr confirm 路径一致的 thread_id 格式）
  checkpointer = await get_checkpointer
  graph = build_coding_graph.compile(checkpointer=checkpointer)
@@ -1221,28 +1321,28 @@ class CodingSessionConfirmView(APIView):
  initial_state: dict[str, Any] = {
  "coding_session_id": str(coding_session.id),
  }
- async def _run_graph_in_background -> None:
  try:
+ # 直接推进到首个 interrupt（wait_coding_complete）。这一步只负责创建
+ # SubAgentSession 并 dispatch 给 Runner，不能依赖易丢失的后台 task。
  await graph.ainvoke(initial_state, config=config)
+ await coding_session.arefresh_from_db
  except Exception as exc:
  logger.exception(
- "coding_graph_background_failed",
+ "coding_graph_initial_dispatch_failed",
  coding_session_id=str(coding_session.id),
  thread_id=thread_id,
  error=str(exc),
  )
- try:
  await coding_session.arefresh_from_db
  if coding_session.status not in (
  CodingSession.Status.FAILED,
  CodingSession.Status.COMPLETED,
  ):
  await coding_session.amark_failed(error=str(exc)[:500])
- except Exception:
- logger.exception("coding_graph_background_mark_failed_error")
- _graph_task = asyncio.create_task(_run_graph_in_background)
- _BACKGROUND_TASKS.add(_graph_task)
- _graph_task.add_done_callback(_BACKGROUND_TASKS.discard)
+ return Response(
+ {"detail": f"启动编码失败: {str(exc)}"},
+ status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+ )
  logger.info(
  "coding_session_confirmed",
  coding_session_id=str(coding_session.id),

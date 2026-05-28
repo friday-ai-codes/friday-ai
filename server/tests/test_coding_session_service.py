@@ -1,5 +1,6 @@
 """CodingSession dispatch service 单元测试 ( Task 2)。"""
 from __future__ import annotations
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat.models import CodingSession
@@ -92,6 +93,66 @@ class TestBuildDispatchMetadata:
  env_metadata, repo_url = await build_dispatch_metadata(repo, session)
  assert "env_FRIDAY_TASK_GIT_ACCESS_TOKEN" not in env_metadata
  assert "env_FRIDAY_TASK_CLAUDE_API_KEY" in env_metadata
+ @pytest.mark.asyncio
+ async def test_build_execution_spec_prefers_coding_plan_files(
+ self, coding_session_with_repo
+ ):
+ """执行规格应固定 repo/base/work/target/files，且优先读取 CodingPlan 文件列表。"""
+ from chat.coding_session_service import build_coding_execution_spec
+ from chat.models import CodingPlan
+ session = coding_session_with_repo
+ session.repository.default_branch = "master"
+ session.affected_files = [{"file_path": "legacy.py", "change_type": "modify"}]
+ plan = await CodingPlan.objects.acreate(
+ conversation=session.conversation,
+ tech_plan="## plan",
+ affected_files=[
+ {
+ "file_path": "apps/tabStudy/src/v3/plugins/Gift/Gift.vue",
+ "change_type": "modify",
+ }
+ ],
+ )
+ session.coding_plan = plan
+ session.coding_plan_id = plan.id
+ spec = await build_coding_execution_spec(session.repository, session)
+ assert spec.base_branch == "master"
+ assert spec.work_branch == "feat20260409.test"
+ assert spec.target_branch == "master"
+ assert spec.affected_files == plan.affected_files
+ @pytest.mark.asyncio
+ async def test_build_dispatch_metadata_includes_execution_spec(
+ self, coding_session_with_repo
+ ):
+ """dispatch metadata/env 应携带结构化执行规格和容器需要的目标分支。"""
+ from chat.coding_session_service import build_dispatch_metadata
+ from repositories.models import GitCredential
+ session = coding_session_with_repo
+ session.repository.default_branch = "master"
+ with (
+ patch(
+ "services.provider_config.aget_legacy_anthropic_config",
+ new_callable=AsyncMock,
+ return_value={
+ "api_key": "test-key",
+ "base_url": "https://anthropic.example.com",
+ "default_model": "claude-test",
+ "small_model": "claude-small",
+ },
+ ),
+ patch("repositories.models.GitCredential") as mock_git_cred_cls,
+ ):
+ mock_git_cred_cls.objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
+ env_metadata, _repo_url = await build_dispatch_metadata(
+ session.repository, session
+ )
+ assert env_metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] == "feat20260409.test"
+ assert env_metadata["env_FRIDAY_TASK_TARGET_BRANCH"] == "master"
+ assert env_metadata["execution_spec"]["base_branch"] == "master"
+ assert env_metadata["execution_spec"]["work_branch"] == "feat20260409.test"
+ affected_files = json.loads(env_metadata["env_FRIDAY_TASK_AFFECTED_FILES"])
+ assert affected_files ==
 @pytest.mark.django_db(transaction=True)
 class TestDispatchCodingTask:
  """dispatch_coding_task 函数集成测试。"""
@@ -194,6 +255,136 @@ class TestDispatchCodingTask:
  dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
  assert "env_FRIDAY_TASK_COMMIT_MESSAGE" in dispatch_task.metadata
  assert dispatch_task.metadata["env_FRIDAY_TASK_COMMIT_MESSAGE"] == "feat: test commit"
+ @pytest.mark.asyncio
+ async def test_dispatch_coding_task_uses_execution_spec_branches(
+ self, confirmed_session
+ ):
+ """DispatchTask 应使用执行规格里的 base/target 分支，而非硬编码默认值。"""
+ from chat.branch_service import BranchValidationResult
+ from chat.coding_session_service import dispatch_coding_task
+ from repositories.models import GitCredential
+ session = await CodingSession.objects.select_related(
+ "repository", "conversation__project"
+ ).aget(id=confirmed_session.id)
+ metadata = {
+ "env_FRIDAY_TASK_BRANCH_STRATEGY": session.branch_name,
+ "execution_spec": {
+ "base_branch": "release/2026",
+ "work_branch": session.branch_name,
+ "target_branch": "release/2026",
+ "affected_files":,
+ },
+ }
+ with (
+ patch(
+ "chat.coding_session_service.check_runner_online",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "chat.coding_session_service.build_dispatch_metadata",
+ new_callable=AsyncMock,
+ return_value=(metadata, "https://git.example.com/repo.git"),
+ ),
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("repositories.models.GitCredential") as mock_git_cred_cls,
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ),
+ ):
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_git_cred_cls.objects.aget = AsyncMock(side_effect=GitCredential.DoesNotExist)
+ mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
+ await dispatch_coding_task(session, task_type="coding", prompt="")
+ dispatch_task = mock_dispatcher.dispatch.call_args[0][0]
+ assert dispatch_task.branch == "release/2026"
+ assert dispatch_task.target_branch == "release/2026"
+ @pytest.mark.asyncio
+ async def test_coding_commit_reuses_existing_remote_branch(
+ self, confirmed_session
+ ):
+ """coding_commit 阶段应复用 Phase 已 push 的远程分支，不做远程重名拦截。"""
+ from chat.branch_service import BranchValidationResult
+ from chat.coding_session_service import dispatch_coding_task
+ from repositories.models import GitCredential
+ session = await CodingSession.objects.select_related(
+ "repository", "conversation__project"
+ ).aget(id=confirmed_session.id)
+ mock_git_client = AsyncMock
+ mock_git_client.branch_exists = AsyncMock(return_value=True)
+ with (
+ patch(
+ "chat.coding_session_service.check_runner_online",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "chat.coding_session_service.build_dispatch_metadata",
+ new_callable=AsyncMock,
+ return_value=({"env_FRIDAY_TASK_CLAUDE_API_KEY": "key"}, "https://git.example.com/repo.git"),
+ ),
+ patch("runners.dispatcher.get_dispatcher") as mock_get_dispatcher,
+ patch("repositories.models.GitCredential") as mock_git_cred_cls,
+ patch("common.encryption.decrypt_value", return_value="token"),
+ patch("services.git_platform.get_git_platform_client", return_value=mock_git_client),
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(valid=True),
+ ) as validate,
+ ):
+ mock_dispatcher = AsyncMock
+ mock_get_dispatcher.return_value = mock_dispatcher
+ mock_cred = AsyncMock
+ mock_cred.encrypted_token = "encrypted-token"
+ mock_git_cred_cls.objects.aget = AsyncMock(return_value=mock_cred)
+ mock_git_cred_cls.DoesNotExist = GitCredential.DoesNotExist
+ await dispatch_coding_task(
+ session,
+ task_type="coding_commit",
+ extra_metadata={"env_FRIDAY_TASK_COMMIT_MESSAGE": "fix: update"},
+ prompt="amend",
+ )
+ assert validate.await_args.kwargs["git_client"] is None
+ mock_dispatcher.dispatch.assert_called_once
+ @pytest.mark.asyncio
+ async def test_validation_failure_does_not_create_pending_subagent(
+ self, confirmed_session
+ ):
+ """分支校验失败应发生在创建 SubAgentSession 之前，避免 pending 空壳覆盖成功会话。"""
+ from chat.branch_service import BranchValidationResult
+ from chat.coding_session_service import dispatch_coding_task
+ from repositories.models import GitCredential
+ from subagent.models import SubAgentSession
+ session = await CodingSession.objects.select_related(
+ "repository", "conversation__project"
+ ).aget(id=confirmed_session.id)
+ before_count = await SubAgentSession.objects.acount
+ with (
+ patch(
+ "chat.coding_session_service.check_runner_online",
+ new_callable=AsyncMock,
+ return_value=True,
+ ),
+ patch(
+ "chat.branch_service.validate_branch_name",
+ new_callable=AsyncMock,
+ return_value=BranchValidationResult(
+ valid=False,
+ errors=["远程仓库已存在同名分支 'feat/x'"],
+ ),
+ ),
+ patch("repositories.models.GitCredential.objects.aget", new_callable=AsyncMock) as get_cred,
+ ):
+ get_cred.side_effect = GitCredential.DoesNotExist
+ with pytest.raises(ValueError, match="分支名校验失败"):
+ await dispatch_coding_task(session, task_type="coding", prompt="")
+ await session.arefresh_from_db
+ assert await SubAgentSession.objects.acount == before_count
+ assert session.subagent_session_id is None
  @pytest.mark.asyncio
  async def test_dispatch_coding_task_no_runner_raises(self, confirmed_session):
  """Runner 不在线时抛出 RuntimeError。"""

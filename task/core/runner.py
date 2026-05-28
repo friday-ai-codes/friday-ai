@@ -9,9 +9,10 @@ CLI 模式使用 cli 模块作为入口点。
 """
 import asyncio
 import sys
+import httpx
 import structlog
-from structlog.stdlib import BoundLogger
 from git.exc import GitCommandError
+from structlog.stdlib import BoundLogger
 from git_ops import GitOperations
 from integrations import CallbackClient
 from .config import TaskConfig
@@ -37,6 +38,7 @@ structlog.configure(
 logger = structlog.get_logger
 class TaskRunner:
  """Main task runner that orchestrates the entire task execution."""
+ _EXECUTE_MODES = {"execute", "coding", "coding_commit"}
  def __init__(self, config: TaskConfig):
  """Initialize task runner with config."""
  self.config = config
@@ -67,7 +69,7 @@ class TaskRunner:
  # Setup task-specific branch based on branch_strategy
  # CRITICAL: Branch must be created/switched BEFORE any Claude coding execution
  branch_name = self.config.git_branch
- if self.config.task_mode == "execute":
+ if self._needs_task_branch:
  # Use branch_strategy if provided, otherwise fall back to git_new_branch or default
  branch_strategy = self.config.branch_strategy or self.config.git_new_branch
  self._task_branch = await self.git_ops.setup_task_branch(
@@ -76,6 +78,18 @@ class TaskRunner:
  )
  branch_name = self._task_branch
  await self.callback.report_git_ready(branch_name)
+ if not self._is_safe_work_branch(branch_name):
+ error = (
+ f"Refusing to run coding task on protected/base branch: {branch_name}. "
+ "A dedicated work branch is required."
+ )
+ log.error(
+ "unsafe_task_branch",
+ branch=branch_name,
+ base_branch=self.config.git_branch,
+ )
+ await self.callback.report_error(error, "branch")
+ return 1
  log.info("Task branch ready for coding", branch=branch_name)
  else:
  log.info("Plan mode - staying on branch", branch=branch_name)
@@ -97,6 +111,13 @@ class TaskRunner:
  finally:
  self.git_ops.cleanup
  log.info("Task runner finished")
+ def _needs_task_branch(self) -> bool:
+ """coding 任务必须始终在独立工作分支上执行。"""
+ return self.config.task_mode in self._EXECUTE_MODES
+ def _is_safe_work_branch(self, branch_name: str) -> bool:
+ """工作分支不能为空，也不能等于基础/保护分支。"""
+ protected = {"main", "master", "develop", self.config.git_branch}
+ return bool(branch_name) and branch_name not in protected
  async def _run_plan_mode(self, log, branch_name: str) -> int:
  """Run in plan mode to generate implementation plan."""
  log.info("Running in plan mode")
@@ -163,13 +184,22 @@ class TaskRunner:
  log.error("Execution failed", error=error)
  await self.callback.report_error(error, "execution")
  return 1
+ # 防御纵深 #1：commit 前先强制 reset 回任务分支（restore_task_branch）。
+ # 防御纵深 #2：reset 仍未到达就触发 ensure_current_branch 兜底失败。
+ restored = await self.git_ops.restore_task_branch(branch_name)
+ if not restored or not await self.git_ops.ensure_current_branch(branch_name):
+ error = (
+ f"Claude execution switched away from prepared branch: {branch_name}. "
+ "Refusing to commit or push from an unexpected branch."
+ )
+ log.error("Execution branch drift detected", expected_branch=branch_name)
+ await self.callback.report_error(error, "branch")
+ return 1
  # 使用临时 commit message 执行 commit (per: Phase 必须 commit+push 以保留工作成果)
  # Open Question 2 解决方案: Phase 使用临时 msg commit+push，Phase amend msg + force push
  temp_commit_message = (
- f"feat: {self.config.task_title}\n\n"
- f"{self.config.task_description}\n\n"
- f"Task ID: {self.config.task_id}\n"
- f"Implemented by Friday AI Agent"
+ f"chore: WIP for {self.config.task_id}\n\n"
+ f"{self.config.task_title or 'Friday coding task'}"
  )
  commit_sha = await self.git_ops.commit_changes(temp_commit_message)
  if not commit_sha:
@@ -194,10 +224,10 @@ class TaskRunner:
  return 1
  diff_summary = await self.git_ops.get_diff_summary
  # === Phase 新增: 生成 AI suggested commit message 并回传 (per ) ===
- suggested_commit_message = self._generate_suggested_commit_message(
+ suggested_commit_message = await self._generate_suggested_commit_message(
  diff_summary=diff_summary,
  task_title=self.config.task_title,
- task_description=self.config.task_description,
+ modified_files=modified_files,
  )
  # 回传 suggested_commit_message 到 SubAgentSession.last_output (per )
  await self.callback.report_suggested_commit_message(suggested_commit_message)
@@ -229,23 +259,73 @@ class TaskRunner:
  )
  log.info("Execute mode completed successfully", commit=commit_sha[:8])
  return 0
- def _generate_suggested_commit_message(
+ async def _generate_suggested_commit_message(
  self,
  diff_summary: str,
  task_title: str,
- task_description: str,
+ modified_files: list[str],
  ) -> str:
- """基于 diff 和任务信息生成 AI 建议的 commit message。
- 使用简单的模板方式生成，后续可替换为 AI 模型调用生成更智能的 commit message。
+ """基于 diff 和任务标题生成 AI 建议的 commit message。
+ 失败时回退到本地模板，但绝不把完整 task_description / prompt 拼进 commit body。
  """
- title_line = f"feat: {task_title}" if task_title else "feat: implement changes"
- body_parts: list[str] =
- if task_description:
- body_parts.append(task_description)
- if diff_summary:
- body_parts.append(f"\nChanges:\n{diff_summary[:500]}")
- body = "\n".join(body_parts) if body_parts else ""
- return f"{title_line}\n\n{body}".strip if body else title_line
+ fallback = self._fallback_commit_message(task_title, diff_summary)
+ if not self.config.claude_api_key:
+ return fallback
+ base_url = (self.config.claude_base_url or "https://api.anthropic.com").rstrip("/")
+ model = self.config.claude_small_model or self.config.claude_model or "claude-haiku-4-5"
+ files_text = "\n".join(f"- {path}" for path in modified_files[:20]) or "- 未获取到文件列表"
+ prompt = (
+ "请根据以下编码任务结果生成一个 Git commit message。\n\n"
+ "要求：\n"
+ "1. 使用 Conventional Commits 格式。\n"
+ "2. 第一行格式为 `<type>: <中文摘要>`，摘要不超过 72 个字符。\n"
+ "3. 空一行后写 body，最多 5 行，概括为什么和改了什么。\n"
+ "4. 只输出 commit message 本身，不要 Markdown，不要解释。\n"
+ "5. 不要复述原始任务 prompt、执行规格、分支信息或 Task ID。\n\n"
+ f"任务标题：{task_title or '实现代码变更'}\n\n"
+ f"变更文件：\n{files_text}\n\n"
+ f"Diff stat：\n{diff_summary[:1200]}"
+ )
+ try:
+ async with httpx.AsyncClient(timeout=10.0) as client:
+ response = await client.post(
+ f"{base_url}/v1/messages",
+ headers={
+ "x-api-key": self.config.claude_api_key,
+ "anthropic-version": "2023-06-01",
+ "content-type": "application/json",
+ },
+ json={
+ "model": model,
+ "max_tokens": 400,
+ "messages": [{"role": "user", "content": prompt}],
+ },
+ )
+ response.raise_for_status
+ text = self._extract_commit_message_from_anthropic(response.json)
+ return text or fallback
+ except Exception as e:
+ logger.warning("suggested_commit_message_ai_failed", error=str(e))
+ return fallback
+ @staticmethod
+ def _extract_commit_message_from_anthropic(data: object) -> str:
+ """从 Anthropic Messages API 响应里提取文本。"""
+ if not isinstance(data, dict):
+ return ""
+ content = data.get("content")
+ if not isinstance(content, list):
+ return ""
+ parts: list[str] =
+ for block in content:
+ if isinstance(block, dict) and isinstance(block.get("text"), str):
+ parts.append(block["text"])
+ return "\n".join(parts).strip
+ @staticmethod
+ def _fallback_commit_message(task_title: str, diff_summary: str) -> str:
+ """AI 不可用时的安全 commit message 模板。"""
+ title = (task_title or "implement changes").strip
+ body = (diff_summary or "No diff summary available").strip[:300]
+ return f"feat: {title}\n\n{body}".strip
  async def _run_commit_mode(self, log: BoundLogger, branch_name: str) -> int:
  """Phase: 使用用户确认的 commit message 执行 git commit --amend + push。
  Phase 已完成 coding + commit(临时 message) + push。
@@ -261,9 +341,12 @@ class TaskRunner:
  # amend 最近一次 commit 的 message（使用 asyncio.create_subprocess_exec 直接执行 git 命令）
  # GitOperations 没有 run_command 方法，直接使用 subprocess
  workspace = self.git_ops.get_workspace_path
+ # Runner 自己的 git 写操作必须走 /usr/bin/git 绕过 PATH 中的 wrapper；
+ # wrapper 在 coding / coding_commit 模式下会拒绝 commit/push 等命令，
+ # 用 real git 才能正常 amend 和 force-push。
  try:
  proc = await asyncio.create_subprocess_exec(
- "git", "commit", "--amend", "-m", commit_message,
+ "/usr/bin/git", "commit", "--amend", "-m", commit_message,
  cwd=str(workspace),
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
@@ -277,10 +360,10 @@ class TaskRunner:
  log.error("commit_amend_failed", error=str(e))
  await self.callback.report_error(f"commit amend 失败: {e}", "commit")
  return 1
- # 获取新的 commit SHA
+ # 获取新的 commit SHA（同样走 /usr/bin/git）
  try:
  proc = await asyncio.create_subprocess_exec(
- "git", "rev-parse", "HEAD",
+ "/usr/bin/git", "rev-parse", "HEAD",
  cwd=str(workspace),
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
@@ -292,7 +375,7 @@ class TaskRunner:
  # force push (--force-with-lease 安全 force push, per T-)
  try:
  proc = await asyncio.create_subprocess_exec(
- "git", "push", "--force-with-lease", "origin", branch_name,
+ "/usr/bin/git", "push", "--force-with-lease", "origin", branch_name,
  cwd=str(workspace),
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,

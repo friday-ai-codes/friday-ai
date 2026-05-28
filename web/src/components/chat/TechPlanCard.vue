@@ -15,8 +15,8 @@ import type { CodingPlanRuntime, RepoSelectableItem } from '~/types/chat'
  * codingPlanId 未提供时（旧 ChatMessageBubble 单仓路径）保留原 draft 按钮，
  * 向后兼容不破。
  */
-import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import { storeToRefs } from 'pinia'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import CodingSessionStatusRow from '~/components/chat/CodingSessionStatusRow.vue'
 import ExportConfirmDialog from '~/components/chat/ExportConfirmDialog.vue'
 import RepoMultiSelector from '~/components/chat/RepoMultiSelector.vue'
@@ -59,6 +59,7 @@ const props = withDefaults(defineProps<{
  availableRepositories?: RepoSelectableItem
  repositoryGitUrls?: Record<string, string>
  recommendedRepositoryIds?: string
+ targetRepositories?: RepoSelectableItem
 }>, {
  // 显式保留 undefined（Vue 默认会把缺省 Boolean prop coerce 成 false，
  // 那样会破坏 initialCollapsed 的 fallback 判定）
@@ -66,6 +67,7 @@ const props = withDefaults(defineProps<{
  availableRepositories: =>,
  repositoryGitUrls: => ({}),
  recommendedRepositoryIds: =>,
+ targetRepositories: =>,
 })
 const emit = defineEmits<{
  confirm: [planId: string, sessionId: string | undefined, branchName?: string]
@@ -93,8 +95,23 @@ const existingActiveRepoIds = computed( =>
 const showInlineSelector = computed(
  => !!props.codingPlanId && !hasSessions.value,
 )
+const visibleTargetRepositories = computed( => {
+ if (props.targetRepositories.length > 0)
+ return props.targetRepositories
+ if (sessions.value.length > 0) {
+ return sessions.value.map(s => ({
+ id: s.repository_id,
+ name: s.repository_name,
+ }))
+ }
+ return props.availableRepositories.filter(repo =>
+ props.recommendedRepositoryIds.includes(repo.id),
+ )
+})
 const dialogOpen = ref(false)
 const dialogSelectedIds = ref<string>
+const branchTemplate = ref('')
+const normalizedBranchTemplate = computed( => branchTemplate.value.trim || undefined)
 function openAppendDialog {
  if (!props.codingPlanId)
  return
@@ -107,9 +124,16 @@ async function handleMultiConfirm(repoIds: string) {
  return
  try {
  chatStore.openRepoMultiSelector(props.codingPlanId, repoIds)
- const result = await chatStore.submitRepoMultiSelector(repoIds)
- const suffix = result.failedCount > 0 ? `；${result.failedCount} 个失败`: ''
- toastSuccess(`${result.createdCount} 个仓库已加入编码${suffix}`)
+ const result = await chatStore.submitRepoMultiSelector(repoIds, normalizedBranchTemplate.value)
+ // v26.0 Quick：失败时把第一条 error 文案带进 toast，避免用户得开
+ // DevTools 看 response 才知道为什么失败。
+ const failSuffix = result.failedCount > 0
+ ? (result.firstFailedError
+ ? `；${result.failedCount} 个失败：${result.firstFailedError}`: `；${result.failedCount} 个失败`): ''
+ if (result.createdCount > 0)
+ toastSuccess(`${result.createdCount} 个仓库已加入编码${failSuffix}`)
+ else if (result.failedCount > 0)
+ toastError(`未能加入编码${failSuffix}`)
  dialogOpen.value = false
  dialogSelectedIds.value =
  }
@@ -285,6 +309,20 @@ const badgeText = computed( => {
  <div class=" rounded bg-muted/60 w-2/3" />
  </div>
  <div v-else class="prose prose-sm max-w-none" v-html="renderedPlan" />
+ <div v-if="visibleTargetRepositories.length > 0" class="space-y-1">
+ <p class="text-xs text-muted-foreground font-medium">
+ 目标仓库
+ </p>
+ <div class="flex flex-wrap gap-1.5">
+ <Badge
+ v-for="repo in visibleTargetRepositories":key="repo.id"
+ variant="outline"
+ class="font-mono text-[11px]"
+ >
+ {{ repo.name }}
+ </Badge>
+ </div>
+ </div>
  <div v-if="affectedFiles.length > 0" class="space-y-1">
  <p class="text-xs text-muted-foreground font-medium">
  影响文件
@@ -358,6 +396,20 @@ const badgeText = computed( => {
  </div>
  <!-- Phase：创建态内嵌 selector（替代旧的「开始编码」单仓按钮） -->
  <div v-if="showInlineSelector" class="px-4 pb-4 pt-2">
+ <div class="space-y-2 mb-3">
+ <p class="text-xs text-muted-foreground font-medium">
+ 功能分支 / 分支模板
+ </p>
+ <Input
+ v-model="branchTemplate"
+ data-test="branch-template-input"
+ class=" font-mono text-sm"
+ placeholder="例如 fix20260528.gift-empty-list 或 fix20260528.${repo}"
+ />
+ <p class="text-xs text-muted-foreground/80">
+ 单仓时填写完整分支名；多仓时可使用 <code>${repo}</code> 作为仓库名占位符。
+ </p>
+ </div>
  <p class="text-xs text-muted-foreground font-medium mb-2">
  选择目标仓库
  </p>
@@ -487,6 +539,20 @@ const badgeText = computed( => {
  选择尚未加入的仓库；已有进行中编码的仓库将被禁用。
  </DialogDescription>
  </DialogHeader>
+ <div class="space-y-2 mb-3">
+ <p class="text-xs text-muted-foreground font-medium">
+ 功能分支 / 分支模板
+ </p>
+ <Input
+ v-model="branchTemplate"
+ data-test="branch-template-input"
+ class=" font-mono text-sm"
+ placeholder="例如 fix20260528.gift-empty-list 或 fix20260528.${repo}"
+ />
+ <p class="text-xs text-muted-foreground/80">
+ 单仓时填写完整分支名；多仓时可使用 <code>${repo}</code> 作为仓库名占位符。
+ </p>
+ </div>
  <RepoMultiSelector:repositories="availableRepositories":model-value="dialogSelectedIds":disabled-ids="existingActiveRepoIds":recommended-ids="recommendedRepositoryIds":submitting="repoMultiSelectorState.submitting"
  @update:model-value="(v: string) => dialogSelectedIds = v"
  @confirm="handleMultiConfirm"

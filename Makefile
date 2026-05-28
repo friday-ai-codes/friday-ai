@@ -1,4 +1,5 @@
-.PHONY: dev dev-server dev-web install install-server install-web build-runner
+.PHONY: dev dev-server dev-web install install-server install-web build-runner build-task
+TASK_IMAGE ?= friday-task:latest
 SESSION:= friday-ai
 DEV_WEB_PORT ?= 10240
 DEV_SERVER_PORT ?= 10241
@@ -34,3 +35,11 @@ install-web:
 # 构建 Go Runner（二进制输出到 runner/friday-runner）
 build-runner:
 	$(MAKE) -C runner build
+# 重新构建 Task 容器镜像（Runner 启动新 task 容器时自动用最新 latest，无需重启 runner）
+# 用法：
+# make build-task # 构建 friday-task:latest
+# TASK_IMAGE=friday-task:v26.1 make build-task # 自定义 tag
+build-task:
+	@echo "构建 Task 容器镜像: $(TASK_IMAGE)"
+	docker build -t $(TASK_IMAGE) ./task/
+	@echo "完成。Runner 下次启动新容器时会用到最新镜像。"

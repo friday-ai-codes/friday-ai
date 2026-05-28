@@ -71,6 +71,47 @@ function onCreateCodingPlanFromTrace(_traceId: string) {
  // 时自动从 conversation 最近 trace 取 selected_by_user_final=True 的仓库。
  chatStore.sendMessage('请基于上一轮路由决策中选中的仓库创建编码方案。')
 }
+const isEditingUserMessage = ref(false)
+const editedUserContent = ref('')
+const isSubmittingEdit = ref(false)
+const canEditUserMessage = computed( =>
+ props.message.role === 'user' && !props.isStreaming,
+)
+const editSubmitDisabled = computed( => {
+ const trimmed = editedUserContent.value.trim
+ return isSubmittingEdit.value || !trimmed || trimmed === props.message.content.trim
+})
+function startEditingUserMessage {
+ editedUserContent.value = props.message.content
+ isEditingUserMessage.value = true
+}
+function cancelEditingUserMessage {
+ isEditingUserMessage.value = false
+ editedUserContent.value = ''
+}
+async function submitUserMessageEdit {
+ if (editSubmitDisabled.value)
+ return
+ isSubmittingEdit.value = true
+ try {
+ await chatStore.editMessageAndFork(props.message.id, editedUserContent.value)
+ cancelEditingUserMessage
+ }
+ finally {
+ isSubmittingEdit.value = false
+ }
+}
+function handleUserEditKeydown(event: KeyboardEvent) {
+ if (event.key === 'Escape') {
+ event.preventDefault
+ cancelEditingUserMessage
+ return
+ }
+ if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+ event.preventDefault
+ void submitUserMessageEdit
+ }
+}
 // 飞书文档摘要数据：流式来自 prop，历史来自消息 metadata
 const docSummary = computed( => {
  if (props.isStreaming && props.streamingDocSummary) {
@@ -625,9 +666,20 @@ const codingPlanData = computed( => {
  let sessionId = ''
  let planId = ''
  let sessionStatus: string = 'draft'
+ let repositoryId = ''
+ let repositoryName = ''
+ let recommendedRepositories: Array<{ id: string, name: string }> =
  if (planTool.result) {
  const raw: unknown = planTool.result
- let parsed: { session_id?: string, coding_session_id?: string, coding_plan_id?: string, status?: string } | null = null
+ let parsed: {
+ session_id?: string
+ coding_session_id?: string
+ coding_plan_id?: string
+ repository_id?: string
+ repository_name?: string
+ recommended_repositories?: Array<{ id?: string, name?: string }>
+ status?: string
+ } | null = null
  if (typeof raw === 'string') {
  try {
  parsed = JSON.parse(raw)
@@ -643,10 +695,24 @@ const codingPlanData = computed( => {
  // Phase：优先用 coding_session_id（新返回），回退到 session_id（兼容 alias）
  sessionId = parsed.coding_session_id || parsed.session_id || ''
  planId = parsed.coding_plan_id || ''
+ repositoryId = parsed.repository_id || ''
+ repositoryName = parsed.repository_name || ''
+ recommendedRepositories = Array.isArray(parsed.recommended_repositories)
+ ? parsed.recommended_repositories.flatMap(repo =>
+ repo?.id && repo?.name ? [{ id: repo.id, name: repo.name }]:,
+ ):
  sessionStatus = parsed.status || 'draft'
+ // v26.0 Quick：工具不再产 session，新 status='plan_only' 映射回
+ // 'draft' 让 TechPlanCard 走 showInlineSelector 渲染（hasSessions=false 时
+ // 由 RepoMultiSelector 接管确认动作，session 由 fan-out endpoint 创建）。
+ if (sessionStatus === 'plan_only')
+ sessionStatus = 'draft'
  }
  }
- return { sessionId, planId, techPlan, affectedFiles, status: sessionStatus }
+ const targetRepositories = recommendedRepositories.length > 0
+ ? recommendedRepositories: repositoryId && repositoryName
+ ? [{ id: repositoryId, name: repositoryName }]:
+ return { sessionId, planId, techPlan, affectedFiles, status: sessionStatus, targetRepositories }
 })
 // 编码方案的实时状态（优先使用 store 中的 activeCodingSession）
 const codingPlanStatus = computed( => {
@@ -852,8 +918,51 @@ const hideEmptyBubble = computed( =>
 <template>
  <!-- ======================== 用户消息 ======================== -->
  <div v-if="message.role === 'user'" class="user-message-row">
+ <div class="user-message-stack">
+ <div v-if="isEditingUserMessage" class="user-edit-panel">
+ <textarea
+ v-model="editedUserContent"
+ data-test="edit-user-message-input"
+ class="user-edit-textarea"
+ rows="4"
+ aria-label="编辑用户消息"
+ @keydown="handleUserEditKeydown"
+ />
+ <div class="user-edit-actions">
+ <button
+ type="button"
+ data-test="cancel-user-message-edit"
+ class="user-edit-btn user-edit-btn--ghost"
+ @click="cancelEditingUserMessage"
+ >
+ 取消
+ </button>
+ <button
+ type="button"
+ data-test="submit-user-message-edit"
+ class="user-edit-btn user-edit-btn--primary":disabled="editSubmitDisabled"
+ @click="submitUserMessageEdit"
+ >
+ {{ isSubmittingEdit ? '发送中...': '重新发送' }}
+ </button>
+ </div>
+ </div>
+ <template v-else>
  <div class="user-bubble">
  {{ message.content }}
+ </div>
+ <button
+ v-if="canEditUserMessage"
+ type="button"
+ data-test="edit-user-message"
+ class="user-edit-trigger"
+ title="编辑并重新发送"
+ @click="startEditingUserMessage"
+ >
+ <span class="icon-[lucide--pencil] text-[11px]" />
+ <span>编辑</span>
+ </button>
+ </template>
  </div>
  </div>
  <!-- ======================== AI 消息 ======================== -->
@@ -1037,7 +1146,7 @@ const hideEmptyBubble = computed( =>
  />
  </div>
  <TechPlanCard
- v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":plan-id="codingPlanData.planId":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName"
+ v-if="isCodingPlanTool(item.name) && item.status === 'done' && codingPlanData":plan-id="codingPlanData.planId":coding-plan-id="codingPlanData.planId":session-id="codingPlanData.sessionId":tech-plan="codingPlanData.techPlan":affected-files="codingPlanData.affectedFiles":status="codingPlanStatus":is-confirming="codingPlanConfirming":branch-name="codingPlanBranchName":target-repositories="codingPlanData.targetRepositories":available-repositories="codingPlanData.targetRepositories":recommended-repository-ids="codingPlanData.targetRepositories.map(r => r.id)"
  @confirm="(_planId, sessionId, branchName) => sessionId && chatStore.handleConfirmCodingSession(sessionId, branchName)"
  />
  <div
@@ -1163,6 +1272,13 @@ const hideEmptyBubble = computed( =>
  justify-content: flex-end;
  padding-left: 3.5rem;
 }
+.user-message-stack {
+ display: flex;
+ flex-direction: column;
+ align-items: flex-end;
+ gap: 0.375rem;
+ max-width: min(100%, 38rem);
+}
 .user-bubble {
  max-width: min(100%, 38rem);
  padding: 0.8125rem 1rem;
@@ -1177,6 +1293,93 @@ const hideEmptyBubble = computed( =>
  white-space: pre-wrap;
  word-break: break-word;
  box-shadow: 0 1px 2px hsl(215 28% 17% / 0.05);
+}
+.user-edit-trigger {
+ display: inline-flex;
+ align-items: center;
+ gap: 0.25rem;
+ padding: 0.25rem 0.5rem;
+ border-radius: 9999px;
+ color: hsl(215 16% 45%);
+ font-size: 0.6875rem;
+ font-weight: 700;
+ opacity: 0;
+ transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.user-message-row:hover .user-edit-trigger,
+.user-edit-trigger:focus-visible {
+ opacity: 1;
+}
+.user-edit-trigger:hover,
+.user-edit-trigger:focus-visible {
+ background: hsl(168 76% 42% / 0.08);
+ color: hsl(168 76% 32%);
+ outline: none;
+}
+.user-edit-panel {
+ width: min(100%, 38rem);
+ padding: 0.75rem;
+ border-radius: 1rem 1rem 0.375rem 1rem;
+ border: 1px solid hsl(168 76% 42% / 0.22);
+ background: hsl(0 0% 100% / 0.92);
+ box-shadow: 0 8px 28px hsl(215 28% 17% / 0.08);
+}
+.user-edit-textarea {
+ width: 100%;
+ min-height: 7rem;
+ resize: vertical;
+ border-radius: 0.75rem;
+ border: 1px solid hsl(214 32% 86% / 0.9);
+ background: hsl(210 40% 98% / 0.78);
+ padding: 0.75rem 0.875rem;
+ color: hsl(215 28% 18%);
+ font-size: 0.9rem;
+ font-weight: 600;
+ line-height: 1.6;
+ white-space: pre-wrap;
+}
+.user-edit-textarea:focus {
+ border-color: hsl(168 76% 42% / 0.72);
+ outline: none;
+ box-shadow: 0 0 0 3px hsl(168 76% 42% / 0.12);
+}
+.user-edit-actions {
+ display: flex;
+ justify-content: flex-end;
+ gap: 0.5rem;
+ margin-top: 0.625rem;
+}
+.user-edit-btn {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ min-height: 2rem;
+ padding: 0 0.75rem;
+ border-radius: 9999px;
+ font-size: 0.75rem;
+ font-weight: 800;
+ transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.user-edit-btn--ghost {
+ color: hsl(215 16% 45%);
+}
+.user-edit-btn--ghost:hover,
+.user-edit-btn--ghost:focus-visible {
+ background: hsl(215 16% 47% / 0.08);
+ outline: none;
+}
+.user-edit-btn--primary {
+ background: hsl(168 76% 42%);
+ color: white;
+}
+.user-edit-btn--primary:hover:not(:disabled),
+.user-edit-btn--primary:focus-visible:not(:disabled) {
+ background: hsl(168 76% 36%);
+ outline: none;
+}
+.user-edit-btn:disabled {
+ cursor: not-allowed;
+ opacity: 0.45;
 }
 /* ============ AI Message ============ */
 .ai-message {

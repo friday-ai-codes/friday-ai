@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncGenerator
+from copy import deepcopy
 from typing import Any, Final
 import structlog
 # 触发 @tool 注册，确保 chat_tools 中定义的工具在 ToolRegistry 中可用
@@ -167,6 +168,7 @@ _CODING_GUIDANCE: Final[str] = (
  "编码请求的前置约束（v26.0）：\n"
  " - 调 create_coding_plan 之前必须有 analyze_repository_relevance 的输出，\n"
  " 且 selected_repository_ids 非空；否则先调 RELEV，再创建方案。\n"
+ " - 技术方案正文必须显式写出目标仓库名称和目标文件路径，避免用户确认时看不出将修改哪个仓库。\n"
  " - 用户表述里只要含「修/改/加/实现/重构/优化/接入/适配」等编码动词，\n"
  " 就视为编码请求，强制走「相关性分析 → 必要时澄清 → create_coding_plan」三步，\n"
  " 不允许直接给代码片段或跳过 RELEV。\n"
@@ -616,6 +618,69 @@ class ConversationService:
  title=title,
  )
  return conversation
+ @staticmethod
+ async def fork_conversation_before_message(
+ conversation_id: str,
+ message_id: str,
+ edited_content: str,
+ ) -> dict[str, Any]:
+ """创建一个只包含目标 user message 之前历史的新 conversation 分支。
+ edited_content 只用于校验与审计；真正的编辑后 user message 由现有
+ send_message_stream 路径写入，避免出现第二套 user message 持久化逻辑。
+ """
+ content = edited_content.strip
+ if not content:
+ raise ValueError("编辑后的内容不能为空")
+ source = await Conversation.objects.aget(
+ id=conversation_id,
+ is_deleted=False,
+ )
+ try:
+ target = await Message.objects.aget(
+ id=message_id,
+ conversation=source,
+ )
+ except (Message.DoesNotExist, ValueError, TypeError) as exc:
+ raise ValueError("目标消息不存在或不属于本对话") from exc
+ if target.role != Message.Role.USER:
+ raise ValueError("只能编辑用户消息")
+ fork_title = f"{source.title}（编辑）"
+ if len(fork_title) > 200:
+ suffix = "（编辑）"
+ fork_title = f"{source.title[:200 - len(suffix)]}{suffix}"
+ forked = await Conversation.objects.acreate(
+ project_id=source.project_id,
+ title=fork_title,
+ model=source.model,
+ provider_credential_id_id=source.provider_credential_id_id,
+ )
+ copied_count = 0
+ async for prior in Message.objects.filter(
+ conversation=source,
+ created_at__lt=target.created_at,
+ ).order_by("created_at"):
+ await Message.objects.acreate(
+ conversation=forked,
+ role=prior.role,
+ content=prior.content,
+ tool_calls=deepcopy(prior.tool_calls),
+ tool_call_id=prior.tool_call_id,
+ metadata=deepcopy(prior.metadata),
+ parts=deepcopy(prior.parts),
+ )
+ copied_count += 1
+ messages = [
+ message
+ async for message in Message.objects.filter(conversation=forked).order_by("created_at")
+ ]
+ logger.info(
+ "conversation_forked_for_edit",
+ source_conversation_id=str(source.id),
+ target_message_id=str(target.id),
+ forked_conversation_id=str(forked.id),
+ copied_count=copied_count,
+ )
+ return {"conversation": forked, "messages": messages}
  @staticmethod
  async def _fetch_doc_for_context(
  project: Any,
@@ -1216,7 +1281,11 @@ class ConversationService:
  from chat.models import CodingSession
  coding_session = await CodingSession.objects.filter(
  conversation_id=conversation_id,
- status__in=[CodingSession.Status.RUNNING, CodingSession.Status.AWAITING_CONFIRMATION],
+ status__in=[
+ CodingSession.Status.CONFIRMED,
+ CodingSession.Status.RUNNING,
+ CodingSession.Status.AWAITING_CONFIRMATION,
+ ],
  ).order_by("-created_at").afirst
  if coding_session is not None:
  runtime["active"] = True
@@ -1277,24 +1346,25 @@ class ConversationService:
  .afirst
  )
  if latest_plan is not None:
+ from django.core.exceptions import ObjectDoesNotExist
  sessions = [
  s
  async for s in CodingSession.objects.filter(
  coding_plan=latest_plan
  )
- .select_related("repository", "subagent_session")
+ .select_related("repository", "subagent_session", "subagent_session__task_result")
  .order_by("created_at", "repository__name")
  ]
  session_items: list[dict[str, Any]] =
  for s in sessions:
  commit_sha = ""
- if (
- s.subagent_session is not None
- and isinstance(s.subagent_session.task_result, dict)
- ):
- commit_sha = str(
- s.subagent_session.task_result.get("commit_sha", "") or ""
- )
+ if s.subagent_session is not None:
+ try:
+ task_result = s.subagent_session.task_result
+ except ObjectDoesNotExist:
+ task_result = None
+ if task_result is not None:
+ commit_sha = str(task_result.commit_sha or "")
  session_items.append(
  {
  "session_id": str(s.id),

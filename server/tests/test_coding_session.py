@@ -1,4 +1,5 @@
 """CodingSession 模型测试 — 状态机、辅助方法、默认值 + API 测试。"""
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from chat.models import CodingSession
 @pytest.mark.django_db
@@ -102,12 +103,9 @@ class TestCodingSessionStateMachine:
 # Confirm API 测试 ( Task 1, Phase 改造)
 # ============================================================================
 def _make_graph_mocks:
- """构造 build_coding_graph / get_checkpointer / asyncio.create_task 的 mock 套件。
- Phase 改造后 view 不再直接调 dispatch_coding_task，而是启动
- coding_graph 后台任务。此 helper 提供统一的 mock 风格：
- - build_coding_graph.compile(checkpointer=...).ainvoke 走 AsyncMock，不真起 graph
- - get_checkpointer 返回 MagicMock，避免触发真实 sqlite 连接
- - asyncio.create_task 替换为吞掉协程的 lambda，避免事件循环未启动告警
+ """构造 build_coding_graph / get_checkpointer 的 mock 套件。
+ confirm view 应直接 await graph.ainvoke 跑到首个 interrupt，确保响应返回前
+ 已创建 SubAgentSession 并 dispatch 到 Runner。
  """
  from unittest.mock import AsyncMock, MagicMock
  mock_graph_compiled = MagicMock
@@ -117,25 +115,12 @@ def _make_graph_mocks:
  mock_build_coding_graph = MagicMock(return_value=mock_graph_builder)
  mock_checkpointer = MagicMock
  mock_get_checkpointer = AsyncMock(return_value=mock_checkpointer)
- create_task_calls: list =
- def _capture_create_task(coro):
- create_task_calls.append(coro)
- # 关闭协程避免 "coroutine was never awaited" 告警
- try:
- coro.close
- except Exception:
- pass
- # 返回一个 dummy task 占位
- dummy = MagicMock
- return dummy
  return {
  "build_coding_graph": mock_build_coding_graph,
  "graph_builder": mock_graph_builder,
  "graph_compiled": mock_graph_compiled,
  "get_checkpointer": mock_get_checkpointer,
  "checkpointer": mock_checkpointer,
- "create_task": _capture_create_task,
- "create_task_calls": create_task_calls,
  }
 @pytest.mark.django_db(transaction=True)
 class TestCodingSessionConfirmAPI:
@@ -167,7 +152,6 @@ class TestCodingSessionConfirmAPI:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
@@ -175,18 +159,36 @@ class TestCodingSessionConfirmAPI:
  draft_session.refresh_from_db
  # view 同步前置 aconfirm 之后状态应为 confirmed；running 推进由 graph 节点完成
  assert draft_session.status == CodingSession.Status.CONFIRMED
- # graph 后台任务被调度一次
- assert len(mocks["create_task_calls"]) == 1
+ # graph 必须在响应返回前跑到首个 interrupt，避免 confirmed 卡住但无容器
+ mocks["graph_compiled"].ainvoke.assert_awaited_once
  # checkpointer + build_coding_graph 各调一次
  mocks["get_checkpointer"].assert_called_once
  mocks["build_coding_graph"].assert_called_once
- def test_confirm_non_draft_returns_400(self, authenticated_client, draft_session):
- """POST confirm 对 non-draft 状态返回 400。"""
- draft_session.status = CodingSession.Status.CONFIRMED
+ def test_confirm_non_confirmable_running_returns_400(self, authenticated_client, draft_session):
+ """POST confirm 对不可重新派发的 non-draft 状态返回 400。"""
+ draft_session.status = CodingSession.Status.RUNNING
  draft_session.save(update_fields=["status"])
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
  assert response.status_code == 400
+ def test_confirmed_without_subagent_restarts_graph(self, authenticated_client, draft_session):
+ """confirmed 但尚未创建 SubAgentSession 的卡住状态可幂等重启 graph。"""
+ from unittest.mock import AsyncMock, patch
+ draft_session.status = CodingSession.Status.CONFIRMED
+ draft_session.subagent_session = None
+ draft_session.save(update_fields=["status", "subagent_session"])
+ mocks = _make_graph_mocks
+ with (
+ patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
+ patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
+ patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
+ ):
+ url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
+ response = authenticated_client.post(url)
+ assert response.status_code == 200
+ draft_session.refresh_from_db
+ assert draft_session.status == CodingSession.Status.CONFIRMED
+ mocks["graph_compiled"].ainvoke.assert_awaited_once
  def test_confirm_starts_graph_with_correct_thread_id(self, authenticated_client, draft_session):
  """confirm 成功后 graph 启动时 thread_id 格式必须是 coding-{coding_session.id}。
  Phase 关键契约：thread_id 决定了 callback resume 时能否
@@ -198,15 +200,14 @@ class TestCodingSessionConfirmAPI:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
  assert response.status_code == 200
  # graph compile 被调一次（带 checkpointer 关键字参数）
  mocks["graph_builder"].compile.assert_called_once_with(checkpointer=mocks["checkpointer"])
- # asyncio.create_task 被调一次，且唯一参数是 graph wrapper 协程
- assert len(mocks["create_task_calls"]) == 1
+ # graph 在请求内直接推进到首个 interrupt，不再依赖易丢失的后台 task
+ mocks["graph_compiled"].ainvoke.assert_awaited_once
  def test_confirm_runner_offline_returns_503(self, authenticated_client, draft_session):
  """Runner 不在线时返回 503，CodingSession 回滚到 draft，graph 不启动。"""
  from unittest.mock import AsyncMock, patch
@@ -215,7 +216,6 @@ class TestCodingSessionConfirmAPI:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=False),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
  url = f"/api/chat/coding-sessions/{draft_session.id}/confirm/"
  response = authenticated_client.post(url)
@@ -223,7 +223,6 @@ class TestCodingSessionConfirmAPI:
  draft_session.refresh_from_db
  assert draft_session.status == CodingSession.Status.DRAFT
  # graph 不应被启动
- assert len(mocks["create_task_calls"]) == 0
  mocks["build_coding_graph"].assert_not_called
  def test_confirm_not_found_returns_404(self, authenticated_client):
  """传入不存在 UUID 返回 404。"""
@@ -299,6 +298,28 @@ class TestCodingSessionCallback:
  await coding_session.arefresh_from_db
  assert coding_session.status == CodingSession.Status.FAILED
  assert coding_session.error_message == "容器执行超时"
+ @pytest.mark.asyncio
+ async def test_graph_resume_failure_marks_failed_instead_of_completed(
+ self, running_session_with_subagent
+ ):
+ """graph resume 失败时不能静默 completed，否则 PR 阶段会被吞掉。"""
+ from subagent.api.callbacks import _update_coding_session_on_complete
+ coding_session, sub_session = running_session_with_subagent
+ sub_session.last_output = {"task_type": "coding_commit"}
+ await sub_session.asave(update_fields=["last_output", "updated_at"])
+ mock_compiled = MagicMock
+ mock_compiled.ainvoke = AsyncMock(side_effect=RuntimeError("checkpoint missing"))
+ mock_graph_builder = MagicMock
+ mock_graph_builder.compile.return_value = mock_compiled
+ with (
+ patch("orchestration.coding_graph.build_coding_graph", return_value=mock_graph_builder),
+ patch("orchestration.checkpointer.get_checkpointer", new_callable=AsyncMock),
+ ):
+ await _update_coding_session_on_complete(sub_session)
+ await coding_session.arefresh_from_db
+ assert coding_session.status == CodingSession.Status.FAILED
+ assert "提交后 PR 流程恢复失败" in coding_session.error_message
+ assert coding_session.pr_url == ""
  @pytest.mark.asyncio
  async def test_callback_no_coding_session_passes(self, project):
  """无关联 CodingSession 的 session 回调不报错。"""
@@ -545,13 +566,12 @@ class TestCodingSessionConfirmBranchValidation:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
  url = f"/api/chat/coding-sessions/{draft_session_with_branch.id}/confirm/"
  response = authenticated_client.post(url, data={"branch_name": "main"}, format="json")
  assert response.status_code == 400
  # graph 不应启动
- assert len(mocks["create_task_calls"]) == 0
+ mocks["build_coding_graph"].assert_not_called
  # 错误信息应包含保护分支提示
  detail_str = str(response.data.get("detail", ""))
  assert "保护分支" in detail_str or "main" in detail_str
@@ -565,14 +585,13 @@ class TestCodingSessionConfirmBranchValidation:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  ):
  url = f"/api/chat/coding-sessions/{draft_session_with_branch.id}/confirm/"
  response = authenticated_client.post(
  url, data={"branch_name": "feat/../../etc/passwd"}, format="json",
  )
  assert response.status_code == 400
- assert len(mocks["create_task_calls"]) == 0
+ mocks["build_coding_graph"].assert_not_called
  def test_confirm_accepts_valid_branch_in_body(
  self, authenticated_client, draft_session_with_branch,
  ):
@@ -584,7 +603,6 @@ class TestCodingSessionConfirmBranchValidation:
  patch("chat.views.check_runner_online", new_callable=AsyncMock, return_value=True),
  patch("chat.views.build_coding_graph", new=mocks["build_coding_graph"]),
  patch("chat.views.get_checkpointer", new=mocks["get_checkpointer"]),
- patch("chat.views.asyncio.create_task", new=mocks["create_task"]),
  patch(
  "chat.branch_service.validate_branch_name",
  new_callable=AsyncMock,
@@ -599,8 +617,8 @@ class TestCodingSessionConfirmBranchValidation:
  # branch_name 应该被持久化覆盖
  draft_session_with_branch.refresh_from_db
  assert draft_session_with_branch.branch_name == "feat20260409.user-auth-v2"
- # graph 启动一次
- assert len(mocks["create_task_calls"]) == 1
+ # graph 在请求内直接推进到首个 interrupt
+ mocks["graph_compiled"].ainvoke.assert_awaited_once
 # ============================================================================
 # Phase：unique_active_plan_repo 部分唯一约束测试
 # ============================================================================
@@ -693,3 +711,63 @@ class TestUniqueActivePlanRepoConstraint:
  ).count
  == 2
  )
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestCodingSessionCallbackBranchSync:
+ """容器 completed 回调中的真实 Git 分支必须同步回 CodingSession。"""
+ async def test_complete_callback_updates_session_branch_from_task_result(
+ self, project, repository
+ ) -> None:
+ """避免后续 PR 阶段继续使用已不存在的旧 source_branch。"""
+ from agents.models import AgentSession
+ from chat.models import CodingPlan, Conversation
+ from subagent.api.callbacks import _update_coding_session_on_complete
+ from subagent.models import SubAgentSession, TaskResult
+ conversation = await Conversation.objects.acreate(
+ project=project,
+ title="branch sync",
+ )
+ plan = await CodingPlan.objects.acreate(
+ conversation=conversation,
+ title="branch sync",
+ tech_plan="## plan",
+ affected_files=,
+ )
+ agent_session = await AgentSession.objects.acreate(
+ session_id="agent-branch-sync",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ )
+ sub_session = await SubAgentSession.objects.acreate(
+ session_id="coding-branch-sync",
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.CODING,
+ status=SubAgentSession.Status.COMPLETED,
+ repo_url=repository.git_url,
+ )
+ coding_session = await CodingSession.objects.acreate(
+ conversation=conversation,
+ coding_plan=plan,
+ repository=repository,
+ subagent_session=sub_session,
+ tech_plan="## plan",
+ status=CodingSession.Status.RUNNING,
+ branch_name="fix20260528.expected",
+ )
+ await TaskResult.objects.acreate(
+ session=sub_session,
+ result_type=TaskResult.ResultType.TEXT,
+ text_output="done",
+ branch_name="feat/actual-container-branch",
+ commit_sha="abc123",
+ )
+ with patch("orchestration.checkpointer.get_checkpointer") as checkpointer, patch(
+ "orchestration.coding_graph.build_coding_graph"
+ ) as build_graph:
+ graph = AsyncMock
+ build_graph.return_value.compile.return_value = graph
+ await _update_coding_session_on_complete(sub_session)
+ await coding_session.arefresh_from_db
+ assert coding_session.branch_name == "feat/actual-container-branch"
+ checkpointer.assert_called_once
+ graph.ainvoke.assert_awaited_once

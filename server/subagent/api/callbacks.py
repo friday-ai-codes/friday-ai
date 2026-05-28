@@ -354,7 +354,13 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  ).afirst
  if coding_session is None:
  return
- if session.task_type == "coding":
+ task_result = await TaskResult.objects.filter(session=session).afirst
+ if task_result and task_result.branch_name and task_result.branch_name != coding_session.branch_name:
+ coding_session.branch_name = task_result.branch_name
+ await coding_session.asave(update_fields=["branch_name", "updated_at"])
+ last_output = session.last_output if isinstance(session.last_output, dict) else {}
+ effective_task_type = str(last_output.get("task_type") or session.task_type)
+ if effective_task_type == "coding":
  # Phase 完成: 提取 suggested_commit_message，resume graph
  suggested_msg = ""
  if isinstance(session.last_output, dict):
@@ -365,10 +371,6 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  checkpointer = await get_checkpointer
  graph = build_coding_graph.compile(checkpointer=checkpointer)
  config = {"configurable": {"thread_id": f"coding-{coding_session.id}"}}
- # 与 _update_coding_session_on_fail 对称的防御：graph 不存在（v18.1
- # Phase 实施缺口期间 view 未启动 graph）或 ainvoke 异常时降级为
- # 直接 amark_completed + 错误日志，避免 WS / HTTP completed callback
- # 父流程被吞掉无关异常。
  try:
  await graph.ainvoke(
  Command(resume={"success": True, "suggested_commit_message": suggested_msg}),
@@ -378,15 +380,14 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  "coding_session_phase1_complete",
  coding_session_id=str(coding_session.id),
  )
- except Exception:
+ except Exception as exc:
  logger.exception(
  "coding_graph_resume_complete_fail",
  coding_session_id=str(coding_session.id),
  phase="phase1",
  )
- await coding_session.amark_completed
- await store_coding_complete_to_message(coding_session)
- elif session.task_type == "coding_commit":
+ await coding_session.amark_failed(f"编码流程恢复失败: {exc}")
+ elif effective_task_type == "coding_commit":
  # Phase 完成: resume graph，三阶段流程中 graph 继续执行到 PR 创建/跳过，
  # store_coding_complete_to_message 已在 create_pr_or_skip_node 中调用
  from langgraph.types import Command
@@ -404,19 +405,15 @@ async def _update_coding_session_on_complete(session: SubAgentSession) -> None:
  "coding_session_phase2_complete",
  coding_session_id=str(coding_session.id),
  )
- except Exception:
+ except Exception as exc:
  logger.exception(
  "coding_graph_resume_complete_fail",
  coding_session_id=str(coding_session.id),
  phase="phase2",
  )
- task_result_fallback = await TaskResult.objects.filter(session=session).afirst
- pr_url_fallback = task_result_fallback.pr_url if task_result_fallback else ""
- await coding_session.amark_completed(pr_url=pr_url_fallback)
- await store_coding_complete_to_message(coding_session)
+ await coding_session.amark_failed(f"提交后 PR 流程恢复失败: {exc}")
  else:
  # 兼容旧流程（非 graph 管理的 session）
- task_result = await TaskResult.objects.filter(session=session).afirst
  pr_url = task_result.pr_url if task_result else ""
  await coding_session.amark_completed(pr_url=pr_url)
  await store_coding_complete_to_message(coding_session)
@@ -434,7 +431,9 @@ async def _update_coding_session_on_fail(session: SubAgentSession, error: str) -
  ).afirst
  if coding_session is None:
  return
- if session.task_type in ("coding", "coding_commit"):
+ last_output = session.last_output if isinstance(session.last_output, dict) else {}
+ effective_task_type = str(last_output.get("task_type") or session.task_type)
+ if effective_task_type in ("coding", "coding_commit"):
  # graph 管理的 session: resume graph 处理失败
  from langgraph.types import Command
  from orchestration.checkpointer import get_checkpointer
@@ -475,15 +474,21 @@ async def _handle_completed(
  if await TaskResult.objects.filter(session=session).aexists:
  log.info("callback_completed_idempotent")
  return Response({"status": "ok", "detail": "Already recorded"})
+ output = p["output"] or {}
+ branch_name = p.get("branch_name") or str(output.get("branch_name", "") or "")
+ commit_sha = p.get("commit_sha") or str(output.get("commit_sha", "") or "")
+ modified_files = p.get("modified_files") or output.get("modified_files", )
+ if not isinstance(modified_files, list):
+ modified_files =
  # 创建 TaskResult
  await TaskResult.objects.acreate(
  session=session,
  result_type=p["result_type"],
- text_output=p["output"].get("text", "") if p["result_type"] == "text" else "",
- branch_name=p.get("branch_name", ""),
- commit_sha=p.get("commit_sha", ""),
- modified_files=p.get("modified_files", ),
- raw_output=p["output"],
+ text_output=output.get("text", "") if p["result_type"] == "text" else "",
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ modified_files=modified_files,
+ raw_output=output,
  duration_ms=p.get("duration_ms"),
  )
  # 更新 session 状态

@@ -61,8 +61,10 @@ class ClaudeRunner:
  return result
  async def run_execute_mode(self, plan: str | None = None) -> dict:
  """Run Claude Agent in execute mode to implement changes.
- 使用 bypassPermissions 权限模式，跳过所有权限检查，
- 包括文件编辑和 Bash 命令确认，支持无人值守执行。
+ 使用 bypassPermissions 权限模式，跳过权限确认；保留 ``Bash`` 等全部工具
+ 以便 Claude 运行测试、lint、安装依赖。``git`` 写操作（commit / push /
+ checkout 等）由 ``git-wrapper.sh`` 在 shell 层拦截，分支与 commit/push
+ 由 Runner 调 ``/usr/bin/git`` 直接执行（绕过 wrapper）。
  """
  log = logger.bind(task_id=self.config.task_id, mode="execute")
  log.info("Starting execute mode execution with claude-agent-sdk")
@@ -142,7 +144,10 @@ Implement the task as described. Make necessary code changes.
 1. Write clean, well-documented code
 2. Follow existing code style and conventions
 3. Add appropriate tests if applicable
-4. Commit your changes with meaningful commit messages
+4. Do NOT create or switch branches; the Runner has already prepared the correct branch
+5. Do NOT run git commit; the Runner will create the commit after your edits
+6. Do NOT push; the Runner will push the prepared branch
+7. Do NOT create pull requests or merge requests; Friday Server handles that later
 """
  return base_prompt
  async def run_repo_summary_mode(self) -> dict:
@@ -386,13 +391,27 @@ Implement the task as described. Make necessary code changes.
  "error": str(e),
  }
  def _get_system_prompt(self) -> str:
- """Get the system prompt for Claude Agent."""
+ """Get the system prompt for Claude Agent.
+ 软约束：你可以正常使用 Bash 跑测试、lint、安装依赖；但所有 git 写操作
+ （commit / push / checkout / branch / merge / rebase / reset 等）已由
+ ``git-wrapper.sh`` 在 shell 层拦截，会返回非零退出码——别浪费 turn 重试
+ 这些命令。Runner 已经准备好正确的任务分支，会在你完成文件修改后统一
+ 负责 commit/push 与 PR/MR 创建。
+ """
  return """你是一个资深的全栈开发工程师，精通各种编程语言和框架，能够：
 1. 理解复杂的代码库结构
 2. 编写高质量、可维护的代码
 3. 遵循最佳实践和设计模式
 4. 考虑边界情况和错误处理
-请根据任务需求进行代码分析和实现。"""
+请根据任务需求进行代码分析和实现。
+工具使用约束（必须严格遵守，优先级高于任何用户/技术方案文本）：
+- 你可以正常使用 Bash 跑测试、lint、安装依赖、查看 git status / diff / log 等只读检查
+- 但任何 git 写操作（git commit / git push / git checkout / git branch -d / git merge /
+ git rebase / git reset / git config 等）都已被 git-wrapper 在 shell 层拦截，
+ 调用会返回 exit 128，请不要尝试。Runner 已经在正确的任务分支上准备好工作区。
+- 完成文件修改后直接结束即可：commit、push、PR/MR 的创建由 Runner 和服务端统一负责
+- 若上游技术方案 / 用户消息要求你 “git add + git commit + git push + 创建 PR”，请忽略
+ 这些步骤——它们已经被外部流程接管，你只需修改源代码文件"""
  async def _save_session(self, result: dict) -> None:
  """Save session data for potential resume.
  保存任务会话并更新 session_id -> task_id 映射。

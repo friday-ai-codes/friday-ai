@@ -1,8 +1,14 @@
-"""coding_tools 单元测试 — create_coding_plan / update_coding_plan @tool。"""
+"""coding_tools 单元测试 — create_coding_plan / update_coding_plan @tool。
+v26.0 Quick：``create_coding_plan`` 不再创建 ``CodingSession``，
+session 由前端通过 fan-out endpoint
+``POST /api/chat/coding-plans/{plan_id}/sessions/`` 创建。本测试文件断言
+工具新行为（仅产 plan + recommended_repositories）以及 update 工具仍
+能在 session 已存在时同步刷新它们。
+"""
 import uuid
 import pytest
 from asgiref.sync import sync_to_async
-from chat.models import CodingSession, Conversation
+from chat.models import CodingPlan, CodingSession, Conversation
 from repositories.models import Repository
 @pytest.fixture
 def conversation(project):
@@ -18,14 +24,16 @@ def other_repository(db):
  default_branch="main",
  )
 # ============================================================================
-# create_coding_plan 测试
+# create_coding_plan 测试（v26.0 Quick 后行为）
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 class TestCreateCodingPlan:
- """create_coding_plan @tool 测试。"""
+ """create_coding_plan @tool 测试 — 工具只产 CodingPlan，不再 acreate session。"""
  @pytest.mark.asyncio
- async def test_create_coding_plan_success(self, project, repository, conversation):
- """传入有效参数，返回 success=True 且 output 包含 session_id。"""
+ async def test_create_coding_plan_success_returns_plan_only(
+ self, project, repository, conversation
+ ):
+ """传入有效参数 → success=True，返回 plan_id 非空、session_id 为 None。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
  space_id=str(project.id),
@@ -35,14 +43,34 @@ class TestCreateCodingPlan:
  affected_files=[{"path": "src/main.py", "change_type": "modify"}],
  )
  assert result.success is True
- assert "session_id" in result.output
- assert result.output["status"] == "draft"
- assert "branch_name" in result.output
+ assert result.output["coding_plan_id"]
+ assert result.output["coding_session_id"] is None
+ assert result.output["session_id"] is None
+ assert result.output["status"] == "plan_only"
+ # branch_name 不再由工具产；fan-out endpoint 自己生成
+ assert result.output["branch_name"] == ""
  @pytest.mark.asyncio
- async def test_create_coding_plan_creates_session(
+ async def test_create_coding_plan_does_not_create_session(
  self, project, repository, conversation
  ):
- """验证数据库中创建了 CodingSession，字段正确。"""
+ """工具不再 acreate CodingSession：调用前后 DB 计数不变。"""
+ from agents.tools.coding_tools import create_coding_plan
+ before = await CodingSession.objects.acount
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## 方案",
+ affected_files=[{"file_path": "x.py", "change_type": "modify"}],
+ )
+ after = await CodingSession.objects.acount
+ assert result.success is True
+ assert before == after # 工具不再产 session
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_persists_plan_with_affected_files(
+ self, project, repository, conversation
+ ):
+ """工具会写 CodingPlan，且 affected_files 经过归一化。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
  space_id=str(project.id),
@@ -54,14 +82,11 @@ class TestCreateCodingPlan:
  {"path": "src/b.py", "change_type": "modify"},
  ],
  )
- session_id = result.output["session_id"]
- session = await CodingSession.objects.aget(id=session_id)
- assert session.status == CodingSession.Status.DRAFT
- assert session.revision_count == 0
- assert session.tech_plan == "## 方案内容"
- assert len(session.affected_files) == 2
- # Phase：path 自动归一化为 file_path
- assert session.affected_files[0]["file_path"] == "src/a.py"
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.tech_plan == "## 方案内容"
+ assert len(plan.affected_files) == 2
+ # path → file_path 归一化
+ assert plan.affected_files[0]["file_path"] == "src/a.py"
  @pytest.mark.asyncio
  async def test_create_coding_plan_project_not_found(
  self, repository, conversation
@@ -82,7 +107,9 @@ class TestCreateCodingPlan:
  async def test_create_coding_plan_repo_not_in_project(
  self, project, other_repository, conversation
  ):
- """传入不属于该 project 的 repository_id，返回 success=False。"""
+ """传入不属于该 project 的 repository_id，返回 success=False。
+ repository_id 现在 optional，但传入后仍校验 space 归属。
+ """
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
  space_id=str(project.id),
@@ -92,16 +119,54 @@ class TestCreateCodingPlan:
  affected_files=,
  )
  assert result.success is False
- assert "error" != None
+ assert "does not belong" in (result.error or "")
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_without_repository_id(
+ self, project, conversation
+ ):
+ """v26.0 Quick：repository_id 可省略，工具仍能产生 plan。"""
+ from agents.tools.coding_tools import create_coding_plan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ tech_plan="## 不传仓库的方案",
+ affected_files=[{"file_path": "any.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ assert result.output["coding_plan_id"]
+ assert result.output["repository_id"] == ""
+ assert result.output["repository_name"] == ""
+ @pytest.mark.asyncio
+ async def test_create_coding_plan_repository_id_topped_in_recommended(
+ self, project, repository, conversation, other_repository
+ ):
+ """v26.0 Quick：传入 repository_id 时合并进 recommended（置顶）。
+ ``recommended_repository_ids=[other]`` + ``repository_id=primary``：
+ 最终列表为 [primary, other]，primary 在前。
+ """
+ from agents.tools.coding_tools import create_coding_plan
+ # 把 other_repository 也加入 project，让校验通过
+ await sync_to_async(project.repositories.add)(other_repository)
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ repository_id=str(repository.id),
+ tech_plan="## merge",
+ affected_files=[{"file_path": "x.py", "change_type": "modify"}],
+ recommended_repository_ids=[str(other_repository.id)],
+ )
+ assert result.success is True
+ ids = result.output["recommended_repository_ids"]
+ assert ids[0] == str(repository.id) # primary 置顶
+ assert str(other_repository.id) in ids
 # ============================================================================
-# update_coding_plan 测试
+# update_coding_plan 测试 — session 由 fixture 显式手建
 # ============================================================================
 @pytest.fixture
 def draft_coding_session(conversation, repository):
  """创建 draft 状态的 CodingSession 供 update 测试使用。
- Phase：affected_files 字段名 `file_path`；保留旧 `path` 字段名的迁移
- 路径在 `_normalize_affected_files` 工具内自动转换，单元测试用例直接构造
- 新 schema。
+ Quick 起，session 不再由 create_coding_plan 工具创建，
+ 所以测 update 路径时直接在 fixture 里 acreate 一条。
  """
  return CodingSession.objects.create(
  conversation=conversation,
@@ -110,9 +175,23 @@ def draft_coding_session(conversation, repository):
  affected_files=[{"file_path": "src/old.py", "change_type": "modify"}],
  branch_name="coding-test1234",
  )
+def _mk_session_for_plan(
+ *, conversation, repository, plan, status=None, branch_name="manual-test"
+):
+ """同步辅助：在 plan 上手建一条 CodingSession（替代旧路径里 create_coding_plan
+ 顺便产 session 的副作用）。"""
+ return CodingSession.objects.create(
+ conversation=conversation,
+ coding_plan=plan,
+ repository=repository,
+ tech_plan=plan.tech_plan,
+ affected_files=plan.affected_files,
+ branch_name=branch_name,
+ status=status or CodingSession.Status.DRAFT,
+ )
 @pytest.mark.django_db(transaction=True)
 class TestUpdateCodingPlan:
- """update_coding_plan @tool 测试（Phase：兼容 session_id 旧路径）。"""
+ """update_coding_plan @tool 测试（兼容 session_id 旧路径）。"""
  @pytest.mark.asyncio
  async def test_update_coding_plan_success(self, draft_coding_session):
  """通过旧 session_id 路径更新 draft session，触发 plan 创建并同步字段。"""
@@ -123,7 +202,6 @@ class TestUpdateCodingPlan:
  affected_files=[{"path": "src/new.py", "change_type": "add"}],
  )
  assert result.success is True
- # Phase：新返回包含 coding_plan_id
  assert "coding_plan_id" in result.output
  # 验证数据库（兼容字段同步刷新）
  await draft_coding_session.arefresh_from_db
@@ -141,63 +219,20 @@ class TestUpdateCodingPlan:
  )
  assert result.success is False
  assert "not found" in result.error.lower
- @pytest.mark.asyncio
- async def test_branch_name_format(self, project, repository, conversation):
- """分支名应为 {type}{YYYYMMDD}.{desc} 格式，不再是 coding-{hex8}。"""
- import re
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- space_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 技术方案\n- 实现 user authentication 模块",
- affected_files=[{"path": "src/auth.py", "change_type": "add"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- # 格式校验：{feat|fix|chore}{YYYYMMDD}.{短描述}
- assert re.match(r"^(feat|fix|chore)\d{8}\.[a-z0-9\-]+$", branch_name), \
- f"分支名格式不正确: {branch_name}"
- assert not branch_name.startswith("coding-"), "不应使用旧的 coding- 前缀"
- @pytest.mark.asyncio
- async def test_branch_type_fix_from_tech_plan(self, project, repository, conversation):
- """tech_plan 包含 fix 关键词时分支类型应为 fix。"""
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- space_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 修复方案\n- 修复 null pointer bug in user module",
- affected_files=[{"path": "src/user.py", "change_type": "modify"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- assert branch_name.startswith("fix"), f"应以 fix 开头: {branch_name}"
- @pytest.mark.asyncio
- async def test_branch_type_chore_from_tech_plan(self, project, repository, conversation):
- """tech_plan 包含 refactor 关键词时分支类型应为 chore。"""
- from agents.tools.coding_tools import create_coding_plan
- result = await create_coding_plan(
- space_id=str(project.id),
- conversation_id=str(conversation.id),
- repository_id=str(repository.id),
- tech_plan="## 重构方案\n- refactor database connection module",
- affected_files=[{"path": "src/db.py", "change_type": "modify"}],
- )
- assert result.success is True
- branch_name = result.output["branch_name"]
- assert branch_name.startswith("chore"), f"应以 chore 开头: {branch_name}"
 # ============================================================================
 # Phase — CodingPlan dual-id + schema 归一化 + 多 session 同步
 # ============================================================================
 @pytest.mark.django_db(transaction=True)
 class TestPhaseCodingPlanIntegration:
- """Phase：create / update 切换到 CodingPlan 域。"""
+ """Phase：create / update 切换到 CodingPlan 域。
+ v26.0 Quick：create 工具不再产 session；update 仍能同步既有
+ session（由 fixture 或本类内 _mk_session_for_plan 手建）。
+ """
  @pytest.mark.asyncio
  async def test_create_coding_plan_returns_dual_ids(
  self, project, repository, conversation
  ):
- """返回 payload 同时含 coding_plan_id / coding_session_id / session_id（兼容 alias）。"""
+ """返回 payload 同时含 coding_plan_id 与 session_id alias（v26.0 后两者都为 None）。"""
  from agents.tools.coding_tools import create_coding_plan
  result = await create_coding_plan(
  space_id=str(project.id),
@@ -209,15 +244,17 @@ class TestPhaseCodingPlanIntegration:
  assert result.success is True
  assert "coding_plan_id" in result.output
  assert "coding_session_id" in result.output
- assert "session_id" in result.output # 兼容 alias
+ assert "session_id" in result.output
+ # v26.0 Quick：工具不产 session，两个 alias 都是 None
+ assert result.output["coding_session_id"] is None
+ assert result.output["session_id"] is None
  assert result.output["coding_session_id"] == result.output["session_id"]
  @pytest.mark.asyncio
  async def test_create_coding_plan_normalizes_legacy_path_key(
  self, project, repository, conversation
  ):
- """旧 path 入参自动归一化为 file_path，落库到 plan 与 session 都是 file_path。"""
+ """旧 path 入参自动归一化为 file_path，落库到 plan 是 file_path。"""
  from agents.tools.coding_tools import create_coding_plan
- from chat.models import CodingPlan, CodingSession
  result = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
@@ -226,19 +263,16 @@ class TestPhaseCodingPlanIntegration:
  affected_files=[{"path": "legacy.py", "change_type": "modify"}],
  )
  assert result.success is True
- session = await CodingSession.objects.aget(id=result.output["coding_session_id"])
- assert session.affected_files[0]["file_path"] == "legacy.py"
- assert "path" not in session.affected_files[0]
  plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
  assert plan.affected_files[0]["file_path"] == "legacy.py"
+ assert "path" not in plan.affected_files[0]
  @pytest.mark.asyncio
  async def test_create_coding_plan_dedupes_same_tech_plan_in_same_conversation(
  self, project, repository, conversation
  ):
- """同一 conversation 内连续两次相同 (plan, repo)：plan_id 相同，session_id 也相同。
- Phase：(coding_plan, repository) 部分唯一约束限制同时只能
- 1 个 active session。create_coding_plan 检测到既有 active session
- 时返回同一 session（真正幂等），不再创建新的 draft。
+ """同一 conversation 内连续两次相同 tech_plan：plan_id 相同（aget_or_create 幂等）。
+ v26.0 Quick：session 不再由工具创建，两次返回的 session_id
+ 都是 None；plan 维度的幂等行为保持。
  """
  from agents.tools.coding_tools import create_coding_plan
  kwargs = dict(
@@ -252,15 +286,17 @@ class TestPhaseCodingPlanIntegration:
  second = await create_coding_plan(**kwargs)
  assert first.success and second.success
  assert first.output["coding_plan_id"] == second.output["coding_plan_id"]
- # Phase：同 (plan, repo) → 幂等返回同 session_id
- assert first.output["coding_session_id"] == second.output["coding_session_id"]
+ assert first.output["coding_session_id"] is None
+ assert second.output["coding_session_id"] is None
  @pytest.mark.asyncio
  async def test_update_coding_plan_by_plan_id(
  self, project, repository, conversation
  ):
- """coding_plan_id 直接路由路径：plan 字段更新 + draft session 同步。"""
+ """coding_plan_id 直接路由路径：plan 字段更新 + draft session 同步。
+ v26.0 Quick：先 create_coding_plan 拿 plan_id，再手建一条
+ draft session 关联 plan，最后用 update_coding_plan 同步两边。
+ """
  from agents.tools.coding_tools import create_coding_plan, update_coding_plan
- from chat.models import CodingPlan, CodingSession
  created = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
@@ -269,7 +305,13 @@ class TestPhaseCodingPlanIntegration:
  affected_files=[{"file_path": "old.py", "change_type": "modify"}],
  )
  plan_id = created.output["coding_plan_id"]
- session_id = created.output["coding_session_id"]
+ plan = await CodingPlan.objects.aget(id=plan_id)
+ # session 不再由工具自动产，测 update 同步前先手建一条 draft
+ session = await sync_to_async(_mk_session_for_plan)(
+ conversation=conversation,
+ repository=repository,
+ plan=plan,
+ )
  result = await update_coding_plan(
  coding_plan_id=plan_id,
  tech_plan="## 新方案",
@@ -278,12 +320,12 @@ class TestPhaseCodingPlanIntegration:
  assert result.success is True
  assert result.output["coding_plan_id"] == plan_id
  assert result.output["synced_sessions_count"] >= 1
- plan = await CodingPlan.objects.aget(id=plan_id)
- assert plan.tech_plan == "## 新方案"
- assert plan.affected_files[0]["file_path"] == "new.py"
- session = await CodingSession.objects.aget(id=session_id)
- assert session.tech_plan == "## 新方案"
- assert session.affected_files[0]["file_path"] == "new.py"
+ plan_refreshed = await CodingPlan.objects.aget(id=plan_id)
+ assert plan_refreshed.tech_plan == "## 新方案"
+ assert plan_refreshed.affected_files[0]["file_path"] == "new.py"
+ session_refreshed = await CodingSession.objects.aget(id=session.id)
+ assert session_refreshed.tech_plan == "## 新方案"
+ assert session_refreshed.affected_files[0]["file_path"] == "new.py"
  @pytest.mark.asyncio
  async def test_update_coding_plan_by_legacy_session_id(
  self, project, repository, conversation
@@ -297,9 +339,15 @@ class TestPhaseCodingPlanIntegration:
  tech_plan="## 旧路径",
  affected_files=[{"file_path": "x.py", "change_type": "modify"}],
  )
- session_id = created.output["coding_session_id"]
+ plan_id = created.output["coding_plan_id"]
+ plan = await CodingPlan.objects.aget(id=plan_id)
+ session = await sync_to_async(_mk_session_for_plan)(
+ conversation=conversation,
+ repository=repository,
+ plan=plan,
+ )
  result = await update_coding_plan(
- session_id=session_id,
+ session_id=str(session.id),
  tech_plan="## 更新后",
  affected_files=[{"file_path": "y.py", "change_type": "add"}],
  )
@@ -326,8 +374,6 @@ class TestPhaseCodingPlanIntegration:
  让 draft 与 running 落在不同 repo 上，规避 unique_active_plan_repo。
  """
  from agents.tools.coding_tools import create_coding_plan, update_coding_plan
- from chat.models import CodingPlan, CodingSession
- from repositories.models import Repository
  # 第二个仓库（fan-out 模拟）
  repository_b = await sync_to_async(Repository.objects.create)(
  name="Test Repo B",
@@ -344,8 +390,14 @@ class TestPhaseCodingPlanIntegration:
  affected_files=[{"file_path": "a.py", "change_type": "modify"}],
  )
  plan_id = created.output["coding_plan_id"]
- draft_session_id = created.output["coding_session_id"]
  plan = await CodingPlan.objects.aget(id=plan_id)
+ # repo A 上手建一条 draft session（替代旧路径里工具自动产的）
+ draft_session = await sync_to_async(_mk_session_for_plan)(
+ conversation=conversation,
+ repository=repository,
+ plan=plan,
+ branch_name="draft-branch",
+ )
  # 在第二个仓库上手工造一个 running session（模拟多仓 fan-out）
  running_session = await CodingSession.objects.acreate(
  conversation=conversation,
@@ -364,11 +416,11 @@ class TestPhaseCodingPlanIntegration:
  assert result.success is True
  # 只同步了 1 个 draft
  assert result.output["synced_sessions_count"] == 1
- draft_session = await CodingSession.objects.aget(id=draft_session_id)
- assert draft_session.tech_plan == "## 更新内容"
- running_session_refreshed = await CodingSession.objects.aget(id=running_session.id)
+ draft_refreshed = await CodingSession.objects.aget(id=draft_session.id)
+ assert draft_refreshed.tech_plan == "## 更新内容"
+ running_refreshed = await CodingSession.objects.aget(id=running_session.id)
  # running 的 deprecated 字段保留旧值不动
- assert running_session_refreshed.tech_plan == "## 同方案 fan-out"
+ assert running_refreshed.tech_plan == "## 同方案 fan-out"
 # ============================================================================
 # 工具注册测试
 # ============================================================================
@@ -453,12 +505,13 @@ class TestCreateCodingPlanRecommendedRepos:
  assert props["recommended_repository_ids"]["type"] == "array"
  # 不在 required
  assert "recommended_repository_ids" not in tool.parameters["required"]
+ # v26.0 Quick：repository_id 也改为 optional
+ assert "repository_id" not in tool.parameters["required"]
  @pytest.mark.asyncio
  async def test_explicit_ids_are_persisted_to_plan(
  self, project, repository, conversation
  ):
  from agents.tools.coding_tools import create_coding_plan
- from chat.models import CodingPlan
  result = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
@@ -477,7 +530,7 @@ class TestCreateCodingPlanRecommendedRepos:
  self, project, repository, conversation, other_repository
  ):
  from agents.tools.coding_tools import create_coding_plan
- from chat.models import CodingPlan, RepositoryRoutingTrace
+ from chat.models import RepositoryRoutingTrace
  # 写一条 trace：only repository selected_by_user_final=True
  await RepositoryRoutingTrace.objects.acreate(
  conversation=conversation,
@@ -522,7 +575,7 @@ class TestCreateCodingPlanRecommendedRepos:
  self, project, repository, conversation, other_repository
  ):
  from agents.tools.coding_tools import create_coding_plan
- from chat.models import CodingPlan, RepositoryRoutingTrace
+ from chat.models import RepositoryRoutingTrace
  # 第一行：chat_tool，only repository selected
  await RepositoryRoutingTrace.objects.acreate(
  conversation=conversation,
@@ -577,8 +630,6 @@ class TestCreateCodingPlanRecommendedRepos:
  threshold=0.5,
  triggered_by=RepositoryRoutingTrace.TriggeredBy.MANUAL_OVERRIDE,
  )
- # other_repository 不属于 space 校验：先加进 project（让 inferred 可校验）
- # 我们这里只验证 trace_inferred 取到了两条；不验证它们都属于 space
  result = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
@@ -593,16 +644,35 @@ class TestCreateCodingPlanRecommendedRepos:
  assert str(repository.id) in ids
  assert str(other_repository.id) in ids
  @pytest.mark.asyncio
- async def test_no_trace_no_explicit_returns_empty_recommended(
+ async def test_no_trace_no_explicit_with_repository_id_falls_back_to_primary(
  self, project, repository, conversation
  ):
+ """v26.0 Quick：trace + explicit 都空，但传了 repository_id
+ → final_recommended 仅含 primary，recommended_source='primary_repo'。"""
  from agents.tools.coding_tools import create_coding_plan
- from chat.models import CodingPlan
  result = await create_coding_plan(
  space_id=str(project.id),
  conversation_id=str(conversation.id),
  repository_id=str(repository.id),
- tech_plan="## empty rec",
+ tech_plan="## empty rec with primary",
+ affected_files=[{"path": "x.py", "change_type": "modify"}],
+ )
+ assert result.success is True
+ assert result.output["recommended_source"] == "primary_repo"
+ assert result.output["recommended_repository_ids"] == [str(repository.id)]
+ plan = await CodingPlan.objects.aget(id=result.output["coding_plan_id"])
+ assert plan.recommended_repository_ids == [str(repository.id)]
+ @pytest.mark.asyncio
+ async def test_no_trace_no_explicit_no_repository_id_returns_empty(
+ self, project, conversation
+ ):
+ """v26.0 Quick：trace + explicit + repository_id 全空
+ → empty 列表 + recommended_source='empty'。"""
+ from agents.tools.coding_tools import create_coding_plan
+ result = await create_coding_plan(
+ space_id=str(project.id),
+ conversation_id=str(conversation.id),
+ tech_plan="## fully empty",
  affected_files=[{"path": "x.py", "change_type": "modify"}],
  )
  assert result.success is True

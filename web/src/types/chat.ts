@@ -181,6 +181,10 @@ export interface ConversationRuntime {
 export interface ConversationDetail extends Conversation {
  messages: ConversationMessage
 }
+/** 编辑历史 user message 前创建新分支 conversation 的请求体 */
+export interface ForkConversationRequest {
+ content: string
+}
 /** 创建对话参数 */
 export interface CreateConversationParams {
  space_id: string
@@ -406,6 +410,16 @@ export interface CodingSessionRuntime {
  branch_url?: string
  conflict_check_result?: Record<string, unknown> | null
  diff_summary?: Record<string, unknown> | null
+ /** Phase polling 路径携带的编码中间产出：runner 通过 progress callback
+ * 写入 SubAgentSession.last_output['coding_progress']，conversation_service
+ * 序列化时透传到 runtime.coding_session.coding_progress。前端 store 在
+ * applyRuntimeSnapshot 里把它转成 CodingProgressData 喂 CodingProgressCard。
+ * Quick：补 v18.1 切 polling 时遗漏的前端接线。 */
+ coding_progress?: {
+ modified_files: Array<{ file_path?: string, path?: string, change_type: string }>
+ recent_tool_calls: Array<{ tool: string, summary: string }>
+ updated_at: string
+ } | null
 }
 /** Store 中的编码进度数据 */
 export interface CodingProgressData {

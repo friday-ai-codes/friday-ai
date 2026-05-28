@@ -1,14 +1,14 @@
 """CodingSession 专用 LangGraph StateGraph -- 三阶段 dispatch 编排。
 拓扑（Phase 修复后）:
  START -> dispatch_coding -> wait_coding_complete(interrupt)
- -> conflict_check -> await_commit_confirm(interrupt) -> dispatch_commit
+ -> conflict_check -> dispatch_commit
  -> wait_commit_complete(interrupt)
  -> (conditional: failed->END, success->generate_pr_draft)
- -> generate_pr_draft -> await_pr_confirm(interrupt)
+ -> generate_pr_draft -> create_pr_or_skip
  -> create_pr_or_skip -> (conditional) -> END
 Phase: 编码 dispatch + 等待完成
-Phase: conflict_check 冲突预检 + commit message 确认 + commit dispatch + 等待完成
-Phase: PR 草稿生成（LLM） + PR 确认/跳过 + PR 创建
+Phase: conflict_check 冲突预检 + 自动使用建议 commit message + commit dispatch + 等待完成
+Phase: PR 草稿生成（LLM） + 默认创建 PR
 Phase 关键修复：conflict_check_node 从 await_commit_confirm 之后前置到之前，
 让 CommitConfirmCard 在 interrupt 发生时能读到 conflict_check_result（via DB 或
 interrupt payload 冗余字段）。
@@ -16,7 +16,9 @@ interrupt payload 冗余字段）。
 interrupt 前只做幂等操作（UPDATE 同值），避免 resume 时重放副作用。
 """
 from __future__ import annotations
+import asyncio
 import json
+import re
 from typing import Any
 import anthropic
 import structlog
@@ -29,8 +31,44 @@ logger = structlog.get_logger(__name__)
 async def _get_coding_session(state: CodingSessionState) -> CodingSession:
  """从 state 中的 coding_session_id 查询 CodingSession（含 select_related）。"""
  return await CodingSession.objects.select_related(
- "repository", "conversation__project",
+ "repository", "conversation__project", "coding_plan",
  ).aget(id=state["coding_session_id"])
+def _format_execution_spec(coding_session: CodingSession) -> str:
+ """把结构化执行边界写进容器 prompt，避免依赖 Markdown 文案推断。"""
+ repo = coding_session.repository
+ affected_files = coding_session.affected_files or
+ files_text = "\n".join(
+ f"- {item.get('file_path') or item.get('path') or item}"
+ for item in affected_files
+ ) or "- 未指定，按技术方案最小范围修改"
+ return (
+ "执行规格：\n"
+ f"- 仓库：{repo.name}\n"
+ f"- 基础分支：{repo.default_branch}\n"
+ f"- 工作分支：{coding_session.branch_name}\n"
+ f"- 目标分支：{repo.default_branch}\n"
+ f"- 影响文件：\n{files_text}\n"
+ )
+def _extract_task_title(coding_session: CodingSession) -> str:
+ """从 CodingPlan.title 或 tech_plan 标题提取给 Runner 使用的短标题。"""
+ coding_plan = getattr(coding_session, "coding_plan", None)
+ plan_title = getattr(coding_plan, "title", "") if coding_plan is not None else ""
+ if isinstance(plan_title, str) and plan_title.strip:
+ return plan_title.strip[:200]
+ tech_plan = getattr(coding_session, "tech_plan_effective", "") or getattr(
+ coding_session, "tech_plan", "",
+ )
+ if isinstance(tech_plan, str):
+ for raw_line in tech_plan.splitlines:
+ line = raw_line.strip
+ if not line:
+ continue
+ heading = re.sub(r"^#{1,6}\s*", "", line).strip
+ if heading:
+ return heading[:200]
+ repo = getattr(coding_session, "repository", None)
+ repo_name = getattr(repo, "name", "") or "代码仓库"
+ return f"{repo_name} 自动编码"[:200]
 async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
  """Phase: dispatch 编码任务到 Runner。
  从 state 提取 coding_session_id，查询 CodingSession，
@@ -41,12 +79,16 @@ async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
  repo = coding_session.repository
  prompt = (
  f"你正在对项目「{project.name}」的代码仓库「{repo.name}」执行编码任务。\n\n"
+ f"{_format_execution_spec(coding_session)}\n"
  f"技术方案：\n{coding_session.tech_plan}\n\n"
- f"请根据以上技术方案进行编码实现。"
- f"完成编码后执行 git add + git commit (使用临时 commit message) + git push，但不要创建 PR。"
+ f"请根据以上技术方案进行编码实现，只修改必要的代码文件。"
+ f"不要执行任何分支、提交、推送或合并请求操作；这些由 Runner 和服务端统一处理。"
  )
  session_id = await dispatch_coding_task(
- coding_session, task_type="coding", prompt=prompt,
+ coding_session,
+ task_type="coding",
+ prompt=prompt,
+ extra_metadata={"env_FRIDAY_TASK_TASK_TITLE": _extract_task_title(coding_session)},
  )
  # Phase: 推进 CodingSession 状态 confirmed -> running。
  # 必须放在这里（dispatch_coding_node 内部）而非 view，因为 wait_coding_complete_node
@@ -66,7 +108,7 @@ async def dispatch_coding_node(state: CodingSessionState) -> dict[str, Any]:
 async def wait_coding_complete_node(state: CodingSessionState) -> dict[str, Any]:
  """Phase 等待: interrupt 暂停，等待容器完成回调 resume。
  resume 值为 {"success": True/False, "suggested_commit_message": "..."} 或 {"success": False, "error": "..."}。
- 成功时同步 CodingSession DB 状态为 awaiting_confirmation。
+ 成功时自动采用容器建议 commit message 进入 commit 阶段，不再打断用户确认。
  失败时同步 CodingSession DB 状态为 failed。
  """
  result = interrupt({
@@ -76,15 +118,19 @@ async def wait_coding_complete_node(state: CodingSessionState) -> dict[str, Any]
  coding_session = await _get_coding_session(state)
  if result.get("success"):
  suggested_msg = result.get("suggested_commit_message", "")
- await coding_session.amark_awaiting_confirmation("commit_message", suggested_msg)
+ if not suggested_msg:
+ suggested_msg = "feat: implement changes"
+ coding_session.suggested_commit_message = suggested_msg
+ await coding_session.asave(update_fields=["suggested_commit_message", "updated_at"])
  logger.info(
  "coding_graph_phase1_success",
  coding_session_id=state["coding_session_id"],
  suggested_commit_message=suggested_msg,
  )
  return {
- "phase": "awaiting_commit_confirm",
+ "phase": "committing",
  "suggested_commit_message": suggested_msg,
+ "confirmed_commit_message": suggested_msg,
  }
  error = result.get("error", "未知错误")
  await coding_session.amark_failed(error)
@@ -95,7 +141,10 @@ async def wait_coding_complete_node(state: CodingSessionState) -> dict[str, Any]
  )
  return {"phase": "failed", "error": error}
 async def await_commit_confirm_node(state: CodingSessionState) -> dict[str, Any]:
- """等待用户确认 commit message: interrupt 暂停等待用户确认。
+ """兼容旧 checkpoint 的 commit message 确认节点。
+ 新流程不再进入此节点；Phase 成功后自动使用建议 commit message 进入
+ dispatch_commit。保留本节点是为了让已经停在旧 checkpoint 的会话仍可被用户
+ 确认后继续推进。
  Phase 修复:
  - 前置节点为 conflict_check_node（由 build_coding_graph Phase 边拓扑决定）
  - interrupt 前 refresh DB 读取最新 conflict_check_result + diff_summary
@@ -209,10 +258,11 @@ async def dispatch_commit_node(state: CodingSessionState) -> dict[str, Any]:
  coding_session = await _get_coding_session(state)
  confirmed_msg = state["confirmed_commit_message"]
  prompt = (
- f"请 checkout 编码分支，执行以下操作：\n"
- f"1. git commit --amend -m \"{confirmed_msg}\"\n"
+ f"{_format_execution_spec(coding_session)}\n"
+ f"Runner 将在上述工作分支执行以下操作：\n"
+ f"1. 使用 FRIDAY_TASK_COMMIT_MESSAGE 执行 git commit --amend\n"
  f"2. git push --force-with-lease\n"
- f"3. 创建 PR\n"
+ f"合并请求由服务端后续流程处理，本阶段只负责修正 commit message 并推送分支。\n"
  )
  session_id = await dispatch_coding_task(
  coding_session,
@@ -346,7 +396,10 @@ async def generate_pr_draft_node(state: CodingSessionState) -> dict[str, Any]:
  )
  else:
  try:
- title, description = await _call_llm_for_pr_draft(coding_session, confirmed_msg)
+ title, description = await asyncio.wait_for(
+ _call_llm_for_pr_draft(coding_session, confirmed_msg),
+ timeout=20,
+ )
  if not title:
  raise ValueError("LLM 返回空标题")
  except Exception:
@@ -364,17 +417,18 @@ async def generate_pr_draft_node(state: CodingSessionState) -> dict[str, Any]:
  await coding_session.asave(update_fields=[
  "suggested_pr_title", "suggested_pr_description", "updated_at",
  ])
- # 标记等待 PR 确认
- await coding_session.amark_awaiting_confirmation("pr_review")
  logger.info(
  "coding_graph_pr_draft_generated",
  coding_session_id=state["coding_session_id"],
  title=title[:50],
  )
  return {
- "phase": "awaiting_pr_confirm",
+ "phase": "creating_pr",
+ "skip_pr": False,
  "suggested_pr_title": title,
  "suggested_pr_description": description,
+ "confirmed_pr_title": title,
+ "confirmed_pr_description": description,
  "target_branch": coding_session.repository.default_branch,
  }
 async def await_pr_confirm_node(state: CodingSessionState) -> dict[str, Any]:
@@ -467,7 +521,8 @@ def route_after_coding(state: CodingSessionState) -> str:
  """条件路由: Phase 失败 -> END, 否则 -> conflict_check (Phase 修复)。
  修复前: 成功路径返回 'await_commit_confirm'，导致 conflict_check 在 interrupt 之后才运行，
  CommitConfirmCard 的冲突警告区永远看不到数据。
- 修复后: 成功路径先经过 conflict_check，确保 interrupt 发生时 conflict_check_result 已写入 DB。
+ 当前成功路径先经过 conflict_check，再直接 dispatch_commit；commit message
+ 自动使用 Phase 的 suggested_commit_message，不再 interrupt 用户。
  """
  if state.get("phase") == "failed":
  return END
@@ -485,16 +540,14 @@ def build_coding_graph -> StateGraph:
  拓扑（三阶段，Phase 修复后）:
  START -> dispatch_coding -> wait_coding_complete
  -> (conditional: failed->END, success->conflict_check)
- -> conflict_check -> await_commit_confirm -> dispatch_commit -> wait_commit_complete
+ -> conflict_check -> dispatch_commit -> wait_commit_complete
  -> (conditional: failed->END, success->generate_pr_draft)
- -> generate_pr_draft -> await_pr_confirm -> create_pr_or_skip
+ -> generate_pr_draft -> create_pr_or_skip
  -> (conditional) -> END
- Phase 修复要点:
- - conflict_check_node 前置到 await_commit_confirm 之前（原顺序是 await 之后）
- - 这样 await_commit_confirm 发 interrupt 时 DB 已包含 conflict_check_result，
- CommitConfirmCard 的冲突警告区才有数据可渲染
- - 原 (await_commit_confirm, conflict_check) 和 (conflict_check, dispatch_commit)
- 两条边完全删除
+ Phase 后续调整：
+ - commit message 不再人工确认，Phase 的 suggested_commit_message 自动用于
+ dispatch_commit
+ - await_commit_confirm 节点保留用于旧 checkpoint 兼容，但新图不再连入
  """
  builder: StateGraph = StateGraph(CodingSessionState)
  # Phase + 2 原有节点
@@ -512,13 +565,12 @@ def build_coding_graph -> StateGraph:
  builder.add_edge(START, "dispatch_coding")
  builder.add_edge("dispatch_coding", "wait_coding_complete")
  builder.add_conditional_edges("wait_coding_complete", route_after_coding)
- # Phase 边（Phase 修复：conflict_check 前置到 await_commit_confirm 之前）
- builder.add_edge("conflict_check", "await_commit_confirm")
- builder.add_edge("await_commit_confirm", "dispatch_commit")
+ # Phase 边：冲突预检后自动 amend/push，不再弹出 commit 确认卡。
+ builder.add_edge("conflict_check", "dispatch_commit")
  builder.add_edge("dispatch_commit", "wait_commit_complete")
  builder.add_conditional_edges("wait_commit_complete", route_after_commit)
- # Phase 边
- builder.add_edge("generate_pr_draft", "await_pr_confirm")
+ # Phase 边：生成 PR 草稿后默认创建 PR；await_pr_confirm 仅保留给旧 checkpoint/API 兼容。
+ builder.add_edge("generate_pr_draft", "create_pr_or_skip")
  builder.add_edge("await_pr_confirm", "create_pr_or_skip")
  builder.add_conditional_edges("create_pr_or_skip", route_after_pr)
  return builder

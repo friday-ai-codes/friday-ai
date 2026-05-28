@@ -205,6 +205,9 @@ class CallbackClient:
  "payload": {
  "result_type": result_type,
  "output": output,
+ "branch_name": output.get("branch_name", ""),
+ "commit_sha": output.get("commit_sha", ""),
+ "modified_files": output.get("modified_files", ),
  },
  }
  try:

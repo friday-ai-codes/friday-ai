@@ -26,7 +26,11 @@ def _normalize_affected_files(
  name="create_coding_plan",
  description=(
  "创建编码技术方案。当用户描述了具体的代码变更需求时调用。"
- "传入结构化技术方案（影响文件列表 + 实现步骤），后端创建 CodingPlan + CodingSession 记录。"
+ "传入结构化技术方案（影响文件列表 + 实现步骤），后端创建 CodingPlan 记录。"
+ "\n\n"
+ "**v26.0 Quick**：本工具只产 CodingPlan 与推荐仓库列表，"
+ "不再创建 CodingSession。session 由前端在 UI 选定仓库后通过 fan-out "
+ "endpoint `POST /api/chat/coding-plans/{plan_id}/sessions/` 创建。"
  "\n\n"
  "**Phase**：可选传 `recommended_repository_ids` 预填本方案"
  "在 fan-out 时建议的相关仓库列表。不传时 Server 端自动从 conversation 最近一条"
@@ -47,7 +51,11 @@ def _normalize_affected_files(
  },
  "repository_id": {
  "type": "string",
- "description": "目标仓库 UUID",
+ "description": (
+ "可选；当 LLM 已经明确锁定主仓库时填入。"
+ "传入将被合并进 recommended_repository_ids（置顶），"
+ "不再用于创建 CodingSession（v26.0 Quick）。"
+ ),
  },
  "tech_plan": {
  "type": "string",
@@ -86,7 +94,6 @@ def _normalize_affected_files(
  "required": [
  "space_id",
  "conversation_id",
- "repository_id",
  "tech_plan",
  "affected_files",
  ],
@@ -95,12 +102,15 @@ def _normalize_affected_files(
 async def create_coding_plan(
  space_id: str,
  conversation_id: str,
- repository_id: str,
  tech_plan: str,
  affected_files: list[dict[str, str]],
+ repository_id: str = "",
  recommended_repository_ids: list[str] | None = None,
 ) -> ToolResult:
- """创建编码技术方案，生成 CodingPlan + CodingSession 记录（Phase）。
+ """创建编码技术方案，生成 CodingPlan 记录（v26.0 Quick）。
+ 本工具不再创建 CodingSession：session 由前端在 UI 选定仓库后通过
+ ``POST /api/chat/coding-plans/{plan_id}/sessions/`` (fan-out endpoint)
+ 创建，是 v26.0 fan-out 设计的唯一 session 创建源。
  Phase：``recommended_repository_ids`` 可选 ——
  - LLM 显式传：校验全部属于该 space + 未软删 → 持久化到
  CodingPlan.recommended_repository_ids。
@@ -108,14 +118,16 @@ async def create_coding_plan(
  取 ``selected_by_user_final=True`` 的 repository_id 列表（含 manual
  override 覆盖；按 created_at desc 自然拿到「用户最新意图」）。
  - 都无：写空列表，返回 metadata ``recommended_source='empty'``。
+ ``repository_id`` 可选：传入时校验属于 space，并被合并进
+ ``recommended_repository_ids`` 列表（置顶）。**不再用于创建 session。**
  """
- from chat.models import CodingPlan, CodingSession, Conversation, RepositoryRoutingTrace
+ from chat.models import CodingPlan, Conversation, RepositoryRoutingTrace
  from projects.models import Project
  from repositories.models import Repository
  logger.info(
  "create_coding_plan_requested",
  space_id=space_id,
- repository_id=repository_id,
+ repository_id=repository_id or None,
  affected_files_count=len(affected_files),
  )
  try:
@@ -125,18 +137,26 @@ async def create_coding_plan(
  success=False,
  error=f"Space not found: {space_id}",
  )
+ # repository_id 可选：传入则校验属于 space，仅作为推荐仓库 hint 合并
+ primary_repo: Repository | None = None
+ if repository_id:
  try:
- repo = await Repository.objects.aget(id=repository_id)
+ primary_repo = await Repository.objects.aget(id=repository_id)
  except Repository.DoesNotExist:
  return ToolResult(
  success=False,
  error=f"Repository not found: {repository_id}",
  )
- repo_in_project = await project.repositories.filter(id=repository_id).aexists
+ repo_in_project = await project.repositories.filter(
+ id=repository_id
+ ).aexists
  if not repo_in_project:
  return ToolResult(
  success=False,
- error=f"Repository {repository_id} does not belong to space {space_id}",
+ error=(
+ f"Repository {repository_id} does not belong to space "
+ f"{space_id}"
+ ),
  )
  try:
  conversation = await Conversation.objects.aget(id=conversation_id)
@@ -150,15 +170,17 @@ async def create_coding_plan(
  # Phase：解析 recommended_repository_ids（显式 / trace 推断 / 空）
  recommended_source: str
  final_recommended: list[str] =
+ recommended_repositories: list[dict[str, str]] =
  if recommended_repository_ids:
- valid_ids = [
- str(rid)
- async for rid in Repository.objects.filter(
+ valid_repos = [
+ r
+ async for r in Repository.objects.filter(
  id__in=recommended_repository_ids,
  projects=project,
  is_deleted=False,
- ).values_list("id", flat=True)
+ )
  ]
+ valid_ids = [str(r.id) for r in valid_repos]
  invalid = set(map(str, recommended_repository_ids)) - set(valid_ids)
  if invalid:
  return ToolResult(
@@ -169,6 +191,10 @@ async def create_coding_plan(
  ),
  )
  final_recommended = valid_ids
+ recommended_repositories = [
+ {"id": str(r.id), "name": r.name}
+ for r in valid_repos
+ ]
  recommended_source = "explicit"
  else:
  latest_trace = (
@@ -187,17 +213,27 @@ async def create_coding_plan(
  for c in (latest_trace.candidates or )
  if c.get("selected_by_user_final")
  ]
+ recommended_repositories = [
+ {
+ "id": str(c.get("repository_id", "")),
+ "name": str(c.get("repository_name", "")),
+ }
+ for c in (latest_trace.candidates or )
+ if c.get("selected_by_user_final")
+ ]
  recommended_source = "trace_inferred"
- # 生成模板格式分支名 (, per /)
- from chat.branch_service import generate_default_branch_name
- branch_name, branch_type, short_desc = generate_default_branch_name(tech_plan)
- logger.info(
- "branch_name_generated",
- branch_name=branch_name,
- branch_type=branch_type,
- short_desc=short_desc,
- )
- # Phase：先 get/create CodingPlan，再创建 CodingSession 关联
+ # Quick：repository_id 显式传入时合并到 recommended（置顶）
+ if primary_repo is not None:
+ primary_id = str(primary_repo.id)
+ if primary_id not in final_recommended:
+ final_recommended = [primary_id, *final_recommended]
+ recommended_repositories = [
+ {"id": primary_id, "name": primary_repo.name},
+ *recommended_repositories,
+ ]
+ if recommended_source == "empty":
+ recommended_source = "primary_repo"
+ # Phase：先 get/create CodingPlan
  plan, plan_created = await CodingPlan.aget_or_create_for_conversation(
  conversation=conversation,
  tech_plan=tech_plan,
@@ -211,73 +247,30 @@ async def create_coding_plan(
  await plan.asave(
  update_fields=["recommended_repository_ids", "updated_at"]
  )
- # Phase：(coding_plan, repository) 部分唯一约束限制
- # 同时只能 1 个 active session。LLM 重复调用同 plan + 同 repo 时返回既有
- # active session（真正幂等），避免 IntegrityError 噪声。
- active_statuses = [
- CodingSession.Status.DRAFT,
- CodingSession.Status.CONFIRMED,
- CodingSession.Status.RUNNING,
- CodingSession.Status.AWAITING_CONFIRMATION,
- ]
- existing_active = await CodingSession.objects.filter(
- coding_plan=plan,
- repository=repo,
- status__in=active_statuses,
- ).afirst
- if existing_active is not None:
- logger.info(
- "create_coding_plan_returning_existing_active",
- coding_plan_id=str(plan.id),
- coding_session_id=str(existing_active.id),
- repository_id=repository_id,
- )
- return ToolResult(
- success=True,
- output={
- "coding_plan_id": str(plan.id),
- "coding_session_id": str(existing_active.id),
- "session_id": str(existing_active.id),
- "status": existing_active.status,
- "branch_name": existing_active.branch_name,
- "recommended_repository_ids": final_recommended,
- "recommended_source": recommended_source,
- "message": (
- f"已存在进行中的编码会话，plan_id={plan.id}、"
- f"session_id={existing_active.id}。"
- ),
- },
- )
- session = await CodingSession.objects.acreate(
- conversation=conversation,
- coding_plan=plan,
- repository=repo,
- tech_plan=tech_plan, # 兼容期保留同步写入（v26.1 清理）
- affected_files=normalized_files, # 兼容期保留同步写入
- branch_name=branch_name,
- status=CodingSession.Status.DRAFT,
- )
  logger.info(
  "create_coding_plan_completed",
  coding_plan_id=str(plan.id),
- coding_session_id=str(session.id),
  created=plan_created,
- branch_name=branch_name,
+ recommended_count=len(final_recommended),
+ recommended_source=recommended_source,
  )
  return ToolResult(
  success=True,
  output={
  "coding_plan_id": str(plan.id),
- "coding_session_id": str(session.id),
- # 兼容期旧 key alias，v26.1 deprecate（外部 LLM 工具调用仍按 session_id 读）
- "session_id": str(session.id),
- "status": "draft",
- "branch_name": branch_name,
+ # Quick：工具不再产 session；保留 key 为 None 避免下游 KeyError
+ "coding_session_id": None,
+ "session_id": None,
+ "repository_id": str(primary_repo.id) if primary_repo else "",
+ "repository_name": primary_repo.name if primary_repo else "",
+ "status": "plan_only",
+ "branch_name": "",
  "recommended_repository_ids": final_recommended,
+ "recommended_repositories": recommended_repositories,
  "recommended_source": recommended_source,
  "message": (
- f"技术方案已创建，plan_id={plan.id}、session_id={session.id}。"
- "用户确认后可执行编码。"
+ f"技术方案已创建，plan_id={plan.id}。"
+ "请在 UI 选择目标仓库后开始编码。"
  ),
  },
  )

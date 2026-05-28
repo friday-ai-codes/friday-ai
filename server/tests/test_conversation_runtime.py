@@ -254,6 +254,73 @@ class TestConversationRuntimeCodingPlanPayload:
  assert completed["pr_url"] == "https://gitlab.com/test/beta/-/merge_requests/1"
  failed = next(s for s in sessions if s["status"] == "failed")
  assert failed["error_message"] == "Runner 离线"
+ async def test_confirmed_session_is_active_coding_runtime(
+ self,
+ conversation_for_runtime,
+ coding_plan_for_runtime,
+ three_repos_for_runtime,
+ ) -> None:
+ """confirmed 但尚未 running 的编码会话仍应作为 coding runtime 返回。"""
+ from asgiref.sync import sync_to_async
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingSession
+ repo = three_repos_for_runtime[0]
+ session = await sync_to_async(CodingSession.objects.create)(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=repo,
+ tech_plan="x",
+ status=CodingSession.Status.CONFIRMED,
+ branch_name="feat/confirmed",
+ )
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert runtime["active"] is True
+ assert runtime["mode"] == "coding"
+ assert runtime["coding_session"]["id"] == str(session.id)
+ assert runtime["coding_session"]["status"] == "confirmed"
+ async def test_plan_session_with_subagent_without_task_result_does_not_sync_query(
+ self,
+ conversation_for_runtime,
+ coding_plan_for_runtime,
+ three_repos_for_runtime,
+ project,
+ ) -> None:
+ """SubAgentSession 尚未写 TaskResult 时，runtime sessions 仍可 async-safe 渲染。"""
+ from asgiref.sync import sync_to_async
+ from agents.models import AgentSession
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingSession
+ from subagent.models import SubAgentSession
+ repo = three_repos_for_runtime[0]
+ agent_session = await sync_to_async(AgentSession.objects.create)(
+ session_id="agent-runtime-no-result",
+ project=project,
+ status=AgentSession.Status.RUNNING,
+ )
+ sub_session = await sync_to_async(SubAgentSession.objects.create)(
+ session_id="coding-runtime-no-result",
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.CODING,
+ status=SubAgentSession.Status.PENDING,
+ repo_url=repo.git_url,
+ )
+ await sync_to_async(CodingSession.objects.create)(
+ conversation=conversation_for_runtime,
+ coding_plan=coding_plan_for_runtime,
+ repository=repo,
+ subagent_session=sub_session,
+ tech_plan="x",
+ status=CodingSession.Status.RUNNING,
+ branch_name="feat/no-result",
+ )
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ session = runtime["coding_plan"]["sessions"][0]
+ assert session["commit_sha"] == ""
+ assert session["status"] == "running"
 @pytest.mark.django_db(transaction=True)
 def test_runtime_coding_plan_query_budget_no_n_plus_1(
  conversation_for_runtime,

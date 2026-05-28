@@ -6,6 +6,7 @@ Phase：追加 `create_sessions_for_plan` 批量创建业务函数，
 """
 from __future__ import annotations
 import asyncio
+import json
 import re
 import uuid as uuid_mod
 from dataclasses import dataclass, field
@@ -34,6 +35,26 @@ ACTIVE_STATUSES: frozenset[str] = frozenset(
 )
 # 共享 error 文案常量，避免 service / view / 兼容性命令多处硬编码漂移。
 ERROR_REPO_ACTIVE_BUSY = "该仓库已有进行中的编码会话"
+@dataclass(frozen=True)
+class CodingExecutionSpec:
+ """编码任务下发给 Runner/容器的结构化执行契约。"""
+ repository_id: str
+ repository_name: str
+ repo_url: str
+ base_branch: str
+ work_branch: str
+ target_branch: str
+ affected_files: list[dict[str, Any]]
+ def as_dict(self) -> dict[str, Any]:
+ return {
+ "repository_id": self.repository_id,
+ "repository_name": self.repository_name,
+ "repo_url": self.repo_url,
+ "base_branch": self.base_branch,
+ "work_branch": self.work_branch,
+ "target_branch": self.target_branch,
+ "affected_files": self.affected_files,
+ }
 async def check_runner_online -> bool:
  """检查是否有在线 Runner（重试 3 次，每次等 2 秒）。
  Returns:
@@ -54,10 +75,31 @@ async def check_runner_online -> bool:
  await asyncio.sleep(2)
  logger.warning("runner_online_check_failed", attempts=3)
  return False
+async def build_coding_execution_spec(
+ repository: Any,
+ coding_session: CodingSession,
+) -> CodingExecutionSpec:
+ """从 CodingSession 固化一次容器执行所需的 repo/branch/files 契约。"""
+ affected_files = list(coding_session.affected_files or )
+ coding_plan_id = getattr(coding_session, "coding_plan_id", None)
+ if coding_plan_id:
+ from chat.models import CodingPlan
+ plan = await CodingPlan.objects.only("affected_files").aget(id=coding_plan_id)
+ affected_files = list(plan.affected_files or )
+ default_branch = repository.default_branch
+ return CodingExecutionSpec(
+ repository_id=str(repository.id),
+ repository_name=repository.name,
+ repo_url=repository.git_url,
+ base_branch=default_branch,
+ work_branch=coding_session.branch_name,
+ target_branch=default_branch,
+ affected_files=affected_files,
+ )
 async def build_dispatch_metadata(
  repository: Any,
  coding_session: CodingSession,
-) -> tuple[dict[str, str], str]:
+) -> tuple[dict[str, Any], str]:
  """构建 dispatch 所需的 metadata 和处理后的 repo_url。
  包含: API key、Git 凭据、分支名注入。
  Args:
@@ -76,7 +118,7 @@ async def build_dispatch_metadata(
  base_url = legacy["base_url"]
  system_model = legacy["default_model"]
  small_model = legacy["small_model"]
- env_metadata: dict[str, str] = {
+ env_metadata: dict[str, Any] = {
  "repository_id": str(repository.id),
  "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
  "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
@@ -99,8 +141,15 @@ async def build_dispatch_metadata(
  repo_url = f"https://{m.group(1)}/{m.group(2)}.git"
  except GitCredential.DoesNotExist:
  pass
+ execution_spec = await build_coding_execution_spec(repository, coding_session)
  # 功能分支名通过 env_ 前缀注入容器环境变量
- env_metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] = coding_session.branch_name
+ env_metadata["execution_spec"] = execution_spec.as_dict
+ env_metadata["env_FRIDAY_TASK_BRANCH_STRATEGY"] = execution_spec.work_branch
+ env_metadata["env_FRIDAY_TASK_TARGET_BRANCH"] = execution_spec.target_branch
+ env_metadata["env_FRIDAY_TASK_AFFECTED_FILES"] = json.dumps(
+ execution_spec.affected_files,
+ ensure_ascii=False,
+ )
  return env_metadata, repo_url
 async def create_sub_session(
  coding_session: CodingSession,
@@ -173,20 +222,18 @@ async def dispatch_coding_task(
  # 1. Runner 在线检查
  if not await check_runner_online:
  raise RuntimeError("没有可用的 Runner")
- # 2. 创建 session
- _agent_session, sub_session = await create_sub_session(
- coding_session, task_type=task_type,
- )
- # 3. 关联 SubAgentSession FK（dispatch 前保存，防竞态）
- coding_session.subagent_session = sub_session
- await coding_session.asave(update_fields=["subagent_session", "updated_at"])
- # 4. 构建 metadata
+ # 2. 构建 metadata
  env_metadata, repo_url = await build_dispatch_metadata(repo, coding_session)
  # 合并 extra_metadata
  if extra_metadata:
  env_metadata.update(extra_metadata)
- # 5. 分支名校验
+ # 3. 分支名校验
+ #
+ # coding 阶段要求远程不能已有同名工作分支；coding_commit 阶段则正好相反：
+ # 它复用 Phase 已 push 的工作分支执行 amend + force-with-lease。此时如果继续
+ # 做 remote uniqueness 校验，会把正确存在的工作分支误判为冲突。
  git_client = None
+ if task_type != "coding_commit":
  try:
  cred = await GitCredential.objects.aget(repository=repo)
  if cred.encrypted_token:
@@ -205,7 +252,20 @@ async def dispatch_coding_task(
  )
  if not validation.valid:
  raise ValueError(f"分支名校验失败: {validation.errors}")
+ # 4. 创建 session
+ _agent_session, sub_session = await create_sub_session(
+ coding_session, task_type=task_type,
+ )
+ # 5. 关联 SubAgentSession FK（dispatch 前保存，防竞态）
+ coding_session.subagent_session = sub_session
+ await coding_session.asave(update_fields=["subagent_session", "updated_at"])
  # 6. 构建 DispatchTask 并 dispatch
+ execution_spec = env_metadata.get("execution_spec")
+ if isinstance(execution_spec, dict):
+ base_branch = str(execution_spec.get("base_branch") or repo.default_branch)
+ target_branch = str(execution_spec.get("target_branch") or repo.default_branch)
+ else:
+ base_branch = repo.default_branch
  target_branch = repo.default_branch
  dispatch_task = DispatchTask(
  task_id=sub_session.session_id,
@@ -213,7 +273,7 @@ async def dispatch_coding_task(
  tags=,
  image="",
  repo_url=repo_url,
- branch=repo.default_branch,
+ branch=base_branch,
  target_branch=target_branch,
  prompt=prompt,
  timeout=3600,
@@ -221,6 +281,22 @@ async def dispatch_coding_task(
  session_id=sub_session.session_id,
  metadata=env_metadata,
  )
+ last_output = sub_session.last_output if isinstance(sub_session.last_output, dict) else {}
+ sub_session.last_output = {
+ **last_output,
+ "dispatch": {
+ "task_type": dispatch_task.task_type,
+ "tags": dispatch_task.tags,
+ "repo_url": dispatch_task.repo_url,
+ "branch": dispatch_task.branch,
+ "target_branch": dispatch_task.target_branch,
+ "prompt": dispatch_task.prompt,
+ "timeout": dispatch_task.timeout,
+ "node_execution_id": dispatch_task.node_execution_id,
+ "metadata": dispatch_task.metadata,
+ },
+ }
+ await sub_session.asave(update_fields=["last_output", "updated_at"])
  await get_dispatcher.dispatch(dispatch_task)
  logger.info(
  "coding_task_dispatched",
