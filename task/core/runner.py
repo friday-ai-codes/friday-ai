@@ -8,6 +8,7 @@ CLI 模式使用 cli 模块作为入口点。
 4. 报告结果（如果配置了回调 URL）
 """
 import asyncio
+import os
 import sys
 import httpx
 import structlog
@@ -36,6 +37,12 @@ structlog.configure(
  cache_logger_on_first_use=True,
 )
 logger = structlog.get_logger
+_GIT_IDENTITY_ENV = {
+ "GIT_AUTHOR_NAME": "Friday Codes AI Agent",
+ "GIT_AUTHOR_EMAIL": "ai@friday.codes",
+ "GIT_COMMITTER_NAME": "Friday Codes AI Agent",
+ "GIT_COMMITTER_EMAIL": "ai@friday.codes",
+}
 class TaskRunner:
  """Main task runner that orchestrates the entire task execution."""
  _EXECUTE_MODES = {"execute", "coding", "coding_commit"}
@@ -195,13 +202,16 @@ class TaskRunner:
  log.error("Execution branch drift detected", expected_branch=branch_name)
  await self.callback.report_error(error, "branch")
  return 1
- # 使用临时 commit message 执行 commit (per: Phase 必须 commit+push 以保留工作成果)
- # Open Question 2 解决方案: Phase 使用临时 msg commit+push，Phase amend msg + force push
- temp_commit_message = (
- f"chore: WIP for {self.config.task_id}\n\n"
- f"{self.config.task_title or 'Friday coding task'}"
+ diff_summary = await self.git_ops.get_diff_summary
+ modified_files = await self.git_ops.get_modified_files
+ # 单阶段流程：在 commit 前生成最终 commit message，避免后续再启动
+ # coding_commit 容器执行 amend + force push。
+ suggested_commit_message = await self._generate_suggested_commit_message(
+ diff_summary=diff_summary,
+ task_title=self.config.task_title,
+ modified_files=modified_files,
  )
- commit_sha = await self.git_ops.commit_changes(temp_commit_message)
+ commit_sha = await self.git_ops.commit_changes(suggested_commit_message)
  if not commit_sha:
  log.warning("No changes to commit")
  await self.callback.report_status(
@@ -212,7 +222,6 @@ class TaskRunner:
  # Push branch with retry
  try:
  await self.git_ops.push_branch_with_retry(branch_name)
- modified_files = await self.git_ops.get_modified_files
  await self.callback.report_push_complete(
  branch_name=branch_name,
  commit_sha=commit_sha,
@@ -222,13 +231,6 @@ class TaskRunner:
  log.error("Push failed after retries", error=str(e))
  await self.callback.report_error(str(e), "push")
  return 1
- diff_summary = await self.git_ops.get_diff_summary
- # === Phase 新增: 生成 AI suggested commit message 并回传 (per ) ===
- suggested_commit_message = await self._generate_suggested_commit_message(
- diff_summary=diff_summary,
- task_title=self.config.task_title,
- modified_files=modified_files,
- )
  # 回传 suggested_commit_message 到 SubAgentSession.last_output (per )
  await self.callback.report_suggested_commit_message(suggested_commit_message)
  log.info(
@@ -344,10 +346,12 @@ class TaskRunner:
  # Runner 自己的 git 写操作必须走 /usr/bin/git 绕过 PATH 中的 wrapper；
  # wrapper 在 coding / coding_commit 模式下会拒绝 commit/push 等命令，
  # 用 real git 才能正常 amend 和 force-push。
+ git_env = {**os.environ, **_GIT_IDENTITY_ENV}
  try:
  proc = await asyncio.create_subprocess_exec(
  "/usr/bin/git", "commit", "--amend", "-m", commit_message,
  cwd=str(workspace),
+ env=git_env,
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
  )
@@ -377,6 +381,7 @@ class TaskRunner:
  proc = await asyncio.create_subprocess_exec(
  "/usr/bin/git", "push", "--force-with-lease", "origin", branch_name,
  cwd=str(workspace),
+ env=git_env,
  stdout=asyncio.subprocess.PIPE,
  stderr=asyncio.subprocess.PIPE,
  )

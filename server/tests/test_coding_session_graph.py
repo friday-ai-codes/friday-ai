@@ -16,6 +16,7 @@ from orchestration.coding_graph import (
  dispatch_coding_node,
  dispatch_commit_node,
  route_after_coding,
+ route_after_commit,
 )
 from orchestration.coding_state import CodingSessionState
 # ---------------------------------------------------------------------------
@@ -87,6 +88,8 @@ def _patch_get_coding_session(
  return_value=mock_session,
  ) as m_session, patch("repositories.models.GitCredential.objects") as m_cred_objects:
  m_cred_objects.filter.return_value.afirst = AsyncMock(return_value=git_credential)
+ if git_credential is not None:
+ m_cred_objects.aget = AsyncMock(return_value=git_credential)
  yield m_session
 # ---------------------------------------------------------------------------
 # 拓扑测试
@@ -213,8 +216,9 @@ class TestGraphInterrupt:
  async def test_resume_coding_complete_success(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase 成功后自动进入 commit dispatch，不再等待 commit 确认。"""
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session):
+ """coding 成功后直接进入冲突检查和默认 PR 创建，不再启动 Phase。"""
+ with _patch_dispatch as mock_dispatch, _patch_get_coding_session(mock_coding_session), \
+ _patch_pr_create_success("https://github.com/test/repo/pull/11"):
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},
@@ -225,14 +229,15 @@ class TestGraphInterrupt:
  Command(resume={"success": True, "suggested_commit_message": "feat: add feature"}),
  config=graph_config,
  )
+ mock_dispatch.assert_awaited_once
  mock_coding_session.asave.assert_awaited
  mock_coding_session.amark_awaiting_confirmation.assert_not_awaited
- # graph 应暂停在 wait_commit_complete
  state = await graph.aget_state(graph_config)
- assert "wait_commit_complete" in state.next
+ assert not state.next
  assert result.get("suggested_commit_message") == "feat: add feature"
  assert result.get("confirmed_commit_message") == "feat: add feature"
- assert result.get("phase") == "waiting_commit"
+ assert result.get("phase") == "completed"
+ assert result.get("pr_url") == "https://github.com/test/repo/pull/11"
  @pytest.mark.asyncio
  async def test_resume_coding_complete_failure(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
@@ -260,8 +265,9 @@ class TestGraphInterrupt:
  async def test_resume_commit_confirm(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase 成功后自动 dispatch_commit -> wait_commit_complete interrupt。"""
- with _patch_dispatch as mock_dispatch, _patch_get_coding_session(mock_coding_session):
+ """Phase 成功后不再 dispatch coding_commit。"""
+ with _patch_dispatch as mock_dispatch, _patch_get_coding_session(mock_coding_session), \
+ _patch_pr_create_success:
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  # Phase: dispatch -> wait_coding_complete
  await graph.ainvoke(
@@ -274,73 +280,22 @@ class TestGraphInterrupt:
  config=graph_config,
  )
  mock_coding_session.aresume_running.assert_not_awaited
- assert mock_dispatch.await_count == 2
- # graph 应暂停在 wait_commit_complete
+ assert mock_dispatch.await_count == 1
  state = await graph.aget_state(graph_config)
- assert "wait_commit_complete" in state.next
+ assert not state.next
  assert result.get("confirmed_commit_message") == "feat: test"
  @pytest.mark.asyncio
  async def test_resume_commit_complete_success(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase 成功后 graph 进入 generate_pr_draft（而非直接结束）。"""
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
- patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
- patch("orchestration.coding_graph.anthropic") as mock_anthropic:
- # mock LLM 返回 PR 草稿
- mock_response = MagicMock
- mock_content = MagicMock
- mock_content.text = '{"title": "feat: test PR", "description": "PR description"}'
- mock_response.content = [mock_content]
- mock_client = AsyncMock
- mock_client.messages.create = AsyncMock(return_value=mock_response)
- mock_anthropic.AsyncAnthropic.return_value = mock_client
- graph = build_coding_graph.compile(checkpointer=MemorySaver)
- # Phase: dispatch -> wait_coding_complete
- await graph.ainvoke(
- {"coding_session_id": "cs-test-123", "phase": "coding"},
- config=graph_config,
- )
- # Phase 完成 -> 自动 dispatch_commit -> wait_commit_complete
- await graph.ainvoke(
- Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
- config=graph_config,
- )
- # Phase 完成 -> generate_pr_draft -> await_pr_confirm (interrupt)
- result = await graph.ainvoke(
- Command(resume={"success": True}),
- config=graph_config,
- )
- # Phase 成功后不再直接 amark_completed，而是进入 PR 流程
- # graph 应暂停在 await_pr_confirm
- state = await graph.aget_state(graph_config)
- assert "await_pr_confirm" in state.next
- assert result.get("phase") == "awaiting_pr_confirm"
+ """旧 wait_commit_complete 节点仍可兼容历史 checkpoint。"""
+ assert route_after_commit({"phase": "pr_pending"}) == "generate_pr_draft" # type: ignore[arg-type]
  @pytest.mark.asyncio
  async def test_resume_commit_complete_failure(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase 失败后 graph 仍然直接 -> END。"""
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session):
- graph = build_coding_graph.compile(checkpointer=MemorySaver)
- await graph.ainvoke(
- {"coding_session_id": "cs-test-123", "phase": "coding"},
- config=graph_config,
- )
- await graph.ainvoke(
- Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
- config=graph_config,
- )
- # Phase 失败
- result = await graph.ainvoke(
- Command(resume={"success": False, "error": "push rejected"}),
- config=graph_config,
- )
- mock_coding_session.amark_failed.assert_awaited
- assert result["phase"] == "failed"
- assert result["error"] == "push rejected"
- state = await graph.aget_state(graph_config)
- assert not state.next
+ """route_after_commit 保留旧 checkpoint 失败兼容。"""
+ assert route_after_commit({"phase": "failed"}) == END # type: ignore[arg-type]
 # ---------------------------------------------------------------------------
 # DB 状态同步测试
 # ---------------------------------------------------------------------------
@@ -350,10 +305,11 @@ class TestDBStateSync:
  async def test_db_state_sync_full_flow(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """完整流程中各节点调用正确的 DB 方法（到 Phase 完成进入 PR 流程）。"""
+ """完整流程中各节点调用正确的 DB 方法（coding 完成后默认创建 PR）。"""
  with _patch_dispatch, _patch_get_coding_session(mock_coding_session), \
  patch("chat.services.aget_setting_value", new_callable=AsyncMock, return_value="test-key"), \
- patch("orchestration.coding_graph.anthropic") as mock_anthropic:
+ patch("orchestration.coding_graph.anthropic") as mock_anthropic, \
+ _patch_pr_create_success:
  # mock LLM
  mock_response = MagicMock
  mock_content = MagicMock
@@ -375,13 +331,7 @@ class TestDBStateSync:
  )
  mock_coding_session.amark_awaiting_confirmation.assert_not_awaited
  mock_coding_session.aresume_running.assert_not_awaited
- # resume commit complete (success) -> generate_pr_draft -> await_pr_confirm (interrupt)
- await graph.ainvoke(
- Command(resume={"success": True}),
- config=graph_config,
- )
- # Phase 成功后进入 PR 流程，只在 pr_review 等待用户确认
- mock_coding_session.amark_awaiting_confirmation.assert_awaited_once_with("pr_review")
+ mock_coding_session.amark_completed.assert_awaited
 # ---------------------------------------------------------------------------
 # CodingSessionState 字段测试
 # ---------------------------------------------------------------------------
@@ -442,22 +392,17 @@ async def _drive_to_phase2_complete(
  graph: Any,
  graph_config: dict[str, Any],
 ) -> Any:
- """驱动 graph 从 START 到 Phase 完成（wait_commit_complete resume success）。
- 返回 Phase 完成后的 result。
+ """驱动 graph 从 START 到 coding 完成后的默认 PR 流程。
+ 返回 coding completed callback 恢复后的 result。
  """
  # Phase: dispatch -> wait_coding_complete (interrupt)
  await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},
  config=graph_config,
  )
- # Phase 完成
- await graph.ainvoke(
- Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
- config=graph_config,
- )
- # Phase 完成 -> generate_pr_draft -> create_pr_or_skip（默认创建 PR）
+ # coding 完成 -> conflict_check -> generate_pr_draft -> create_pr_or_skip
  result = await graph.ainvoke(
- Command(resume={"success": True}),
+ Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
  config=graph_config,
  )
  return result
@@ -499,24 +444,8 @@ class TestPRPhase:
  async def test_phase2_failure_still_ends(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase 失败后 graph 仍然 -> END。"""
- with _patch_dispatch, _patch_get_coding_session(mock_coding_session):
- graph = build_coding_graph.compile(checkpointer=MemorySaver)
- await graph.ainvoke(
- {"coding_session_id": "cs-test-123", "phase": "coding"},
- config=graph_config,
- )
- await graph.ainvoke(
- Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
- config=graph_config,
- )
- result = await graph.ainvoke(
- Command(resume={"success": False, "error": "push rejected"}),
- config=graph_config,
- )
- assert result["phase"] == "failed"
- state = await graph.aget_state(graph_config)
- assert not state.next
+ """旧 Phase 失败路由仍保留兼容。"""
+ assert route_after_commit({"phase": "failed"}) == END # type: ignore[arg-type]
  @pytest.mark.asyncio
  async def test_generate_pr_draft_calls_llm(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
@@ -809,9 +738,9 @@ class TestConflictCheckNode:
 # Phase: LangGraph 拓扑静态断言测试
 # ---------------------------------------------------------------------------
 class TestCodingGraphTopology:
- """LangGraph 静态拓扑断言 -- conflict_check 后自动进入 commit。"""
+ """LangGraph 静态拓扑断言 -- conflict_check 后直接进入 PR。"""
  def test_conflict_check_precedes_await_commit_confirm(self) -> None:
- """build_coding_graph 编译后 conflict_check 直接连 dispatch_commit。"""
+ """build_coding_graph 编译后 conflict_check 直接连 generate_pr_draft。"""
  builder = build_coding_graph
  # 优先尝试直接属性访问 builder.edges
  raw_edges: set[tuple[str, str]] = set
@@ -829,8 +758,11 @@ class TestCodingGraphTopology:
  compiled = builder.compile(checkpointer=MemorySaver)
  g = compiled.get_graph
  raw_edges = {(e.source, e.target) for e in g.edges}
- assert ("conflict_check", "dispatch_commit") in raw_edges, (
- f"expected ('conflict_check', 'dispatch_commit') in edges, got {raw_edges}"
+ assert ("conflict_check", "generate_pr_draft") in raw_edges, (
+ f"expected ('conflict_check', 'generate_pr_draft') in edges, got {raw_edges}"
+ )
+ assert ("conflict_check", "dispatch_commit") not in raw_edges, (
+ f"coding_commit edge must be removed from new flow, got {raw_edges}"
  )
  assert ("conflict_check", "await_commit_confirm") not in raw_edges, (
  f"commit confirm edge must be removed from new flow, got {raw_edges}"
@@ -874,7 +806,7 @@ def _build_conflict_compare_mocks(
  - client_patch: services.git_platform.get_git_platform_client context manager
  （client.compare_branches 已预设返回带 has_conflicts 的 BranchCompareResult）
  """
- from services.git_platform.models import BranchCompareResult, CompareFileEntry
+ from services.git_platform.models import BranchCompareResult, CompareFileEntry, MRCreateResult
  files = conflicting_files if conflicting_files is not None else ["src/main.py"]
  compare_result = BranchCompareResult(
  success=True,
@@ -898,6 +830,13 @@ def _build_conflict_compare_mocks(
  mock_cred.encrypted_token = "encrypted-token"
  mock_platform_client = AsyncMock
  mock_platform_client.compare_branches = AsyncMock(return_value=compare_result)
+ mock_platform_client.create_merge_request = AsyncMock(
+ return_value=MRCreateResult(
+ success=True,
+ mr_url="https://github.com/test/repo/pull/conflict-check",
+ mr_id="conflict-check",
+ )
+ )
  decrypt_patch = patch("common.encryption.decrypt_value", return_value="test-token")
  client_patch = patch(
  "services.git_platform.get_git_platform_client",
@@ -910,10 +849,10 @@ class TestCodingSessionGraphResume:
  async def test_conflict_check_runs_before_commit_dispatch(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """Phase resume 成功后，graph 先跑 conflict_check 再暂停在 wait_commit_complete。
+ """Phase resume 成功后，graph 先跑 conflict_check 再默认创建 PR。
  断言:
  1. conflict_check_node 成功执行 -- mock_coding_session.conflict_check_result 被写入非 None
- 2. graph 暂停在 wait_commit_complete（commit 确认已自动跳过）
+ 2. graph 结束且不再进入 coding_commit
  """
  # 初始化 mock session 的 conflict / diff 字段（避免 MagicMock 自动属性导致 assertion 误判）
  mock_coding_session.conflict_check_result = None
@@ -923,14 +862,15 @@ class TestCodingSessionGraphResume:
  )
  with _patch_dispatch, \
  _patch_get_coding_session(mock_coding_session, git_credential=mock_cred), \
- decrypt_patch, client_patch:
+ decrypt_patch, client_patch, \
+ patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock):
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  # Phase: dispatch -> wait_coding_complete
  await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},
  config=graph_config,
  )
- # Phase 完成 -> 应先执行 conflict_check，再停在 wait_commit_complete
+ # Phase 完成 -> 应先执行 conflict_check，再默认创建 PR
  await graph.ainvoke(
  Command(resume={"success": True, "suggested_commit_message": "feat: test"}),
  config=graph_config,
@@ -945,16 +885,13 @@ class TestCodingSessionGraphResume:
  assert mock_coding_session.diff_summary is not None
  assert mock_coding_session.diff_summary["total_additions"] == 10
  assert mock_coding_session.diff_summary["total_deletions"] == 5
- # 断言 graph 停在 wait_commit_complete（等待容器 amend/push 完成）
  state = await graph.aget_state(graph_config)
- assert "wait_commit_complete" in state.next, (
- f"graph 应停在 wait_commit_complete，当前 next={state.next}"
- )
+ assert not state.next
  @pytest.mark.asyncio
  async def test_commit_complete_interrupt_replaces_commit_confirm(
  self, graph_config: dict[str, Any], mock_coding_session: MagicMock
  ) -> None:
- """新流程不再产生 commit_confirm interrupt，只等待 commit_complete。"""
+ """新流程不再产生 commit_confirm / commit_complete interrupt。"""
  mock_coding_session.conflict_check_result = None
  mock_coding_session.diff_summary = None
  mock_cred, decrypt_patch, client_patch = _build_conflict_compare_mocks(
@@ -962,7 +899,8 @@ class TestCodingSessionGraphResume:
  )
  with _patch_dispatch, \
  _patch_get_coding_session(mock_coding_session, git_credential=mock_cred), \
- decrypt_patch, client_patch:
+ decrypt_patch, client_patch, \
+ patch("chat.coding_events.store_coding_complete_to_message", new_callable=AsyncMock):
  graph = build_coding_graph.compile(checkpointer=MemorySaver)
  await graph.ainvoke(
  {"coding_session_id": "cs-test-123", "phase": "coding"},
@@ -979,7 +917,7 @@ class TestCodingSessionGraphResume:
  for itrp in task.interrupts:
  if isinstance(itrp.value, dict):
  interrupt_payloads.append(itrp.value)
- assert any(p.get("waiting_for") == "commit_complete" for p in interrupt_payloads)
+ assert not any(p.get("waiting_for") == "commit_complete" for p in interrupt_payloads)
  assert not any(p.get("waiting_for") == "commit_confirm" for p in interrupt_payloads)
  assert mock_coding_session.suggested_commit_message == "feat: test"
  @pytest.mark.asyncio
