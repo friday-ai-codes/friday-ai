@@ -169,9 +169,11 @@ class TestTaskRunnerRouting:
  runner.claude = MagicMock
  runner.claude.get_session_summary = AsyncMock(return_value="plan summary")
  runner.claude.run_execute_mode = AsyncMock(return_value={"success": True})
+ runner._generate_suggested_commit_message = AsyncMock(return_value="fix: final message")
  log = MagicMock
  result = await runner._run_execute_mode(log, "friday/test-branch")
  assert result == 0
+ runner.git_ops.commit_changes.assert_awaited_once_with("fix: final message")
  # 确保调用了 report_suggested_commit_message（Phase 回传）
  runner.callback.report_suggested_commit_message.assert_called_once
  # Phase: 末尾发 completed 帧携带 git 元数据
@@ -180,7 +182,7 @@ class TestTaskRunnerRouting:
  output = completed_call.kwargs["output"]
  assert output["branch_name"] == "friday/test-branch"
  assert output["commit_sha"] == "abc123def"
- assert output["suggested_commit_message"] != ""
+ assert output["suggested_commit_message"] == "fix: final message"
  assert "modified_files" in output and isinstance(output["modified_files"], list)
  assert output["modified_files"] == ["file.py"]
  assert output["task_type"] == "coding"
@@ -239,6 +241,35 @@ class TestRunCommitMode:
  assert output["branch_name"] == "friday/test-branch"
  assert output["commit_sha"] == "abc123" # amended sha (rev-parse 输出)
  assert "modified_files" in output
+ @pytest.mark.asyncio
+ async def test_commit_mode_sets_git_identity_env(self):
+ """commit amend 也应显式传 Git author/committer，不依赖容器 git config。"""
+ from core.runner import TaskRunner
+ config = MagicMock
+ config.task_type = "coding_commit"
+ config.commit_message = "fix: amend message"
+ config.task_id = "test-identity"
+ config.callback_url = ""
+ config.callback_token = ""
+ config.git_timeout = 300
+ runner = TaskRunner(config)
+ runner.git_ops = AsyncMock
+ runner.git_ops.get_modified_files = AsyncMock(return_value=)
+ runner.git_ops.get_diff_summary = AsyncMock(return_value="No changes")
+ runner.callback = AsyncMock
+ mock_process = AsyncMock
+ mock_process.communicate = AsyncMock(return_value=(b"abc123\n", b""))
+ mock_process.returncode = 0
+ with patch("asyncio.create_subprocess_exec", return_value=mock_process) as create_proc:
+ result = await runner._run_commit_mode(MagicMock, "friday/test-branch")
+ assert result == 0
+ commit_call = create_proc.call_args_list[0]
+ assert commit_call.args[:3] == ("/usr/bin/git", "commit", "--amend")
+ env = commit_call.kwargs["env"]
+ assert env["GIT_AUTHOR_NAME"] == "Friday Codes AI Agent"
+ assert env["GIT_AUTHOR_EMAIL"] == "ai@friday.codes"
+ assert env["GIT_COMMITTER_NAME"] == "Friday Codes AI Agent"
+ assert env["GIT_COMMITTER_EMAIL"] == "ai@friday.codes"
 class TestGenerateSuggestedCommitMessage:
  """_generate_suggested_commit_message 测试。"""
  @pytest.mark.asyncio
@@ -271,6 +302,7 @@ class TestGenerateSuggestedCommitMessage:
  )
  assert result == "fix: 隐藏空资源位\n\n接口空列表时不展示 Gift 入口。"
  post = mock_client.__aenter__.return_value.post
+ assert post.await_args is not None
  assert post.await_args.args[0] == "https://anthropic.example/v1/messages"
  payload = post.await_args.kwargs["json"]
  assert payload["model"] == "claude-test"

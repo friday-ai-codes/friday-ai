@@ -184,22 +184,42 @@ async def test_http_callback_resumes_graph_to_awaiting_commit_confirm(
  await e2e_coding_session.arefresh_from_db
  assert e2e_coding_session.subagent_session_id == sub_session.id
  # 调 HTTP callback handler，并 mock get_checkpointer 返回同一 MemorySaver
+ from services.git_platform.models import MRCreateResult
  from subagent.api.callbacks import _update_coding_session_on_complete
+ mock_platform_client = AsyncMock
+ mock_platform_client.create_merge_request = AsyncMock(
+ return_value=MRCreateResult(
+ success=True,
+ mr_url="https://github.com/test/repo/pull/e2e-http",
+ mr_id="e2e-http",
+ )
+ )
+ mock_cred = AsyncMock
+ mock_cred.encrypted_token = "encrypted-token"
  with patch(
  "orchestration.checkpointer.get_checkpointer",
  new=AsyncMock(return_value=memory_checkpointer),
+ ), patch(
+ "repositories.models.GitCredential.objects.aget",
+ new=AsyncMock(return_value=mock_cred),
+ ), patch(
+ "common.encryption.decrypt_value",
+ return_value="test-token",
+ ), patch(
+ "services.git_platform.get_git_platform_client",
+ return_value=mock_platform_client,
  ):
  await _update_coding_session_on_complete(sub_session)
  await e2e_coding_session.arefresh_from_db
- assert e2e_coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION, \
- f"HTTP callback 应推进到 awaiting_confirmation，实际 {e2e_coding_session.status}"
+ assert e2e_coding_session.status == CodingSession.Status.COMPLETED, \
+ f"HTTP callback 应直接完成 PR 创建，实际 {e2e_coding_session.status}"
+ assert e2e_coding_session.pr_url == "https://github.com/test/repo/pull/e2e-http"
  assert e2e_coding_session.suggested_commit_message == "feat: e2e 281 commit message", \
  f"suggested_commit_message 应落库，实际 {e2e_coding_session.suggested_commit_message!r}"
  # 重建 graph + checkpointer 句柄取 next nodes（与 case 1 相同 thread）
  verify_graph = build_coding_graph.compile(checkpointer=memory_checkpointer)
  state = await verify_graph.aget_state(config)
- assert "await_commit_confirm" in state.next, \
- f"graph 应暂停在 await_commit_confirm，实际 next={state.next}"
+ assert not state.next, f"graph 应完成，实际 next={state.next}"
 # ---------------------------------------------------------------------------
 # Case 3：WS callback 与 HTTP 路径对称（quick task Task 3 commit 9cf0a2d3）
 # ---------------------------------------------------------------------------
@@ -258,19 +278,39 @@ async def test_ws_callback_resumes_graph_same_as_http(
  }
  consumer = RunnerConsumer
  log = structlog.get_logger("e2e").bind(case="ws")
+ from services.git_platform.models import MRCreateResult
+ mock_platform_client = AsyncMock
+ mock_platform_client.create_merge_request = AsyncMock(
+ return_value=MRCreateResult(
+ success=True,
+ mr_url="https://github.com/test/repo/pull/e2e-ws",
+ mr_id="e2e-ws",
+ )
+ )
+ mock_cred = AsyncMock
+ mock_cred.encrypted_token = "encrypted-token"
  with patch(
  "orchestration.checkpointer.get_checkpointer",
  new=AsyncMock(return_value=memory_checkpointer),
+ ), patch(
+ "repositories.models.GitCredential.objects.aget",
+ new=AsyncMock(return_value=mock_cred),
+ ), patch(
+ "common.encryption.decrypt_value",
+ return_value="test-token",
+ ), patch(
+ "services.git_platform.get_git_platform_client",
+ return_value=mock_platform_client,
  ):
  await consumer._handle_completed(payload, log)
  await e2e_coding_session.arefresh_from_db
- assert e2e_coding_session.status == CodingSession.Status.AWAITING_CONFIRMATION, \
- f"WS callback 路径应与 HTTP 等价推进到 awaiting_confirmation，实际 {e2e_coding_session.status}"
+ assert e2e_coding_session.status == CodingSession.Status.COMPLETED, \
+ f"WS callback 路径应与 HTTP 等价直接完成 PR 创建，实际 {e2e_coding_session.status}"
+ assert e2e_coding_session.pr_url == "https://github.com/test/repo/pull/e2e-ws"
  assert e2e_coding_session.suggested_commit_message == "feat: e2e 281 ws path"
  verify_graph = build_coding_graph.compile(checkpointer=memory_checkpointer)
  state = await verify_graph.aget_state(config)
- assert "await_commit_confirm" in state.next, \
- f"WS 路径下 graph 应暂停在 await_commit_confirm，实际 next={state.next}"
+ assert not state.next, f"WS 路径下 graph 应完成，实际 next={state.next}"
 # ---------------------------------------------------------------------------
 # Case 4：Runner 不在线 → 503 + CodingSession 保持 draft + 无 graph thread
 # ---------------------------------------------------------------------------

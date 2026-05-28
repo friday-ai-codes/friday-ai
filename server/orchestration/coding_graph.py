@@ -1,17 +1,13 @@
-"""CodingSession 专用 LangGraph StateGraph -- 三阶段 dispatch 编排。
-拓扑（Phase 修复后）:
+"""CodingSession 专用 LangGraph StateGraph -- 单阶段编码 + PR 编排。
+拓扑:
  START -> dispatch_coding -> wait_coding_complete(interrupt)
- -> conflict_check -> dispatch_commit
- -> wait_commit_complete(interrupt)
- -> (conditional: failed->END, success->generate_pr_draft)
+ -> (conditional: failed->END, success->conflict_check)
+ -> conflict_check
  -> generate_pr_draft -> create_pr_or_skip
  -> create_pr_or_skip -> (conditional) -> END
-Phase: 编码 dispatch + 等待完成
-Phase: conflict_check 冲突预检 + 自动使用建议 commit message + commit dispatch + 等待完成
-Phase: PR 草稿生成（LLM） + 默认创建 PR
-Phase 关键修复：conflict_check_node 从 await_commit_confirm 之后前置到之前，
-让 CommitConfirmCard 在 interrupt 发生时能读到 conflict_check_result（via DB 或
-interrupt payload 冗余字段）。
+Runner 在 coding 阶段直接生成最终 commit message、commit 并 push；Server 收到
+completed callback 后只负责冲突预检和默认创建 PR。旧的 commit_confirm /
+coding_commit 节点保留给历史 checkpoint/API 兼容，但新图不再连入。
 每个 wait/await 节点使用 interrupt 暂停 graph，通过 Command(resume=...) 恢复。
 interrupt 前只做幂等操作（UPDATE 同值），避免 resume 时重放副作用。
 """
@@ -128,7 +124,7 @@ async def wait_coding_complete_node(state: CodingSessionState) -> dict[str, Any]
  suggested_commit_message=suggested_msg,
  )
  return {
- "phase": "committing",
+ "phase": "pr_pending",
  "suggested_commit_message": suggested_msg,
  "confirmed_commit_message": suggested_msg,
  }
@@ -518,12 +514,7 @@ async def create_pr_or_skip_node(state: CodingSessionState) -> dict[str, Any]:
 # 条件路由
 # ---------------------------------------------------------------------------
 def route_after_coding(state: CodingSessionState) -> str:
- """条件路由: Phase 失败 -> END, 否则 -> conflict_check (Phase 修复)。
- 修复前: 成功路径返回 'await_commit_confirm'，导致 conflict_check 在 interrupt 之后才运行，
- CommitConfirmCard 的冲突警告区永远看不到数据。
- 当前成功路径先经过 conflict_check，再直接 dispatch_commit；commit message
- 自动使用 Phase 的 suggested_commit_message，不再 interrupt 用户。
- """
+ """条件路由: coding 失败 -> END, 成功 -> conflict_check。"""
  if state.get("phase") == "failed":
  return END
  return "conflict_check"
@@ -537,17 +528,14 @@ def route_after_pr(state: CodingSessionState) -> str:
  return END
 def build_coding_graph -> StateGraph:
  """构建 CodingSession 编排 StateGraph builder。
- 拓扑（三阶段，Phase 修复后）:
+ 拓扑（单阶段编码 + 默认 PR）:
  START -> dispatch_coding -> wait_coding_complete
  -> (conditional: failed->END, success->conflict_check)
- -> conflict_check -> dispatch_commit -> wait_commit_complete
- -> (conditional: failed->END, success->generate_pr_draft)
+ -> conflict_check
  -> generate_pr_draft -> create_pr_or_skip
  -> (conditional) -> END
- Phase 后续调整：
- - commit message 不再人工确认，Phase 的 suggested_commit_message 自动用于
- dispatch_commit
- - await_commit_confirm 节点保留用于旧 checkpoint 兼容，但新图不再连入
+ 旧节点 await_commit_confirm / dispatch_commit / wait_commit_complete 保留给历史
+ checkpoint 兼容；新流程不再启动 coding_commit 容器。
  """
  builder: StateGraph = StateGraph(CodingSessionState)
  # Phase + 2 原有节点
@@ -565,10 +553,8 @@ def build_coding_graph -> StateGraph:
  builder.add_edge(START, "dispatch_coding")
  builder.add_edge("dispatch_coding", "wait_coding_complete")
  builder.add_conditional_edges("wait_coding_complete", route_after_coding)
- # Phase 边：冲突预检后自动 amend/push，不再弹出 commit 确认卡。
- builder.add_edge("conflict_check", "dispatch_commit")
- builder.add_edge("dispatch_commit", "wait_commit_complete")
- builder.add_conditional_edges("wait_commit_complete", route_after_commit)
+ # 编码完成后直接进入 PR 流程，不再 dispatch coding_commit amend 容器。
+ builder.add_edge("conflict_check", "generate_pr_draft")
  # Phase 边：生成 PR 草稿后默认创建 PR；await_pr_confirm 仅保留给旧 checkpoint/API 兼容。
  builder.add_edge("generate_pr_draft", "create_pr_or_skip")
  builder.add_edge("await_pr_confirm", "create_pr_or_skip")
