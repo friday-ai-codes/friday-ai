@@ -314,6 +314,50 @@ class GitOperations:
  if not self.workspace:
  raise RuntimeError("Workspace not initialized. Call setup first.")
  return self.workspace
+ async def ensure_current_branch(self, expected_branch: str) -> bool:
+ """确认 Claude 执行后仍停留在 Runner 准备好的任务分支上。"""
+ self._check_explore_guard("ensure_current_branch")
+ if not self.repo:
+ raise RuntimeError("Repository not initialized. Call setup first.")
+ current_branch = self.repo.active_branch.name
+ if current_branch == expected_branch:
+ return True
+ logger.error(
+ "task_branch_drift_detected",
+ expected_branch=expected_branch,
+ current_branch=current_branch,
+ )
+ return False
+ async def restore_task_branch(self, expected_branch: str) -> bool:
+ """在 commit 前强制回到 Runner 准备好的任务分支。
+ 防御纵深：即便 Claude 通过其它途径（hooks / setup script / 用户脚本）
+ 切走了 HEAD，commit 之前也要先 checkout 回 expected_branch；如果回不去
+ （分支不存在 / repo 状态异常）就返回 False，由 caller 决定如何报错。
+ 当前工作区里的未提交改动会随分支切换一起带过去，确保 Claude 的修改不会
+ 被丢到错误分支上提交。
+ """
+ self._check_explore_guard("restore_task_branch")
+ if not self.repo:
+ raise RuntimeError("Repository not initialized. Call setup first.")
+ current_branch = self.repo.active_branch.name
+ if current_branch == expected_branch:
+ return True
+ try:
+ self.repo.git.checkout(expected_branch)
+ logger.warning(
+ "restored_task_branch",
+ expected_branch=expected_branch,
+ previous_branch=current_branch,
+ )
+ return True
+ except GitCommandError as e:
+ logger.error(
+ "restore_task_branch_failed",
+ expected_branch=expected_branch,
+ previous_branch=current_branch,
+ error=str(e),
+ )
+ return False
  async def setup_task_branch(self, branch_strategy: str | None, task_id: str) -> str:
  """Create or checkout branch based on branch_strategy.
  Args:
@@ -344,8 +388,8 @@ class GitOperations:
  # Check if branch exists remotely
  try:
  self.repo.git.fetch("origin", branch_name)
- # Branch exists remotely, checkout
- self.repo.git.checkout(branch_name)
+ # Branch exists remotely; create/reset a local tracking branch from origin.
+ self.repo.git.checkout("-B", branch_name, f"origin/{branch_name}")
  logger.info("Checked out existing branch", branch=branch_name)
  except GitCommandError:
  # Branch doesn't exist, create new

@@ -3,7 +3,8 @@
 1. 环境变量（容器模式）- 使用 FRIDAY_TASK_ 前缀
 2. 命令行参数（CLI 模式）- 直接传入构造函数
 """
-from pydantic import Field
+from typing import Self
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 class TaskConfig(BaseSettings):
  """Configuration for the task container.
@@ -107,3 +108,12 @@ class TaskConfig(BaseSettings):
  description="依赖管理器类型 pip/npm/pnpm（FRIDAY_DEPS_MANAGER 环境变量）",
  json_schema_extra={"env": "FRIDAY_DEPS_MANAGER"},
  )
+ @model_validator(mode="after")
+ def normalize_legacy_task_mode(self) -> Self:
+ """兼容旧 Runner 把 task_type 写进 task_mode 的协议。"""
+ if self.task_mode in {"coding", "coding_commit"}:
+ legacy_task_type = self.task_mode
+ if self.task_type == "coding":
+ self.task_type = legacy_task_type
+ self.task_mode = "execute"
+ return self

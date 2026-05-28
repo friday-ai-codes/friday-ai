@@ -135,6 +135,7 @@ class TestIntentPriorityFragments:
  assert "调 create_coding_plan 之前必须有 analyze_repository_relevance" in prompt
  assert "编码动词" in prompt
  assert "recommended_repository_ids" in prompt
+ assert "目标仓库名称" in prompt
  async def test_force_deep_analysis_omits_default_intent_priority_block(
  self,
  disable_all_chat_slugs: None,
@@ -180,6 +181,7 @@ class TestIntentPriorityFragments:
  assert "调 create_coding_plan 之前必须有 analyze_repository_relevance" in prompt
  assert "编码动词" in prompt
  assert "recommended_repository_ids" in prompt
+ assert "目标仓库名称" in prompt
  async def test_force_deep_analysis_does_not_include_intent_priority_block(
  self,
  disable_all_chat_slugs: None,

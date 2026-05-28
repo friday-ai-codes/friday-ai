@@ -369,6 +369,16 @@ describe('techPlanCard — multi-repo integration', => {
  // 旧 draft「开始编码」按钮不出现（被替代）
  expect(wrapper.text).not.toContain('开始编码')
  })
+ it('shows explicit target repositories on the technical plan card', async => {
+ setStorePlan
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ targetRepositories: [{ id: 'r1', name: 'study-app' }],
+ } as any)
+ await flushPromises
+ expect(wrapper.text).toContain('目标仓库')
+ expect(wrapper.text).toContain('study-app')
+ })
  it('shows sessions list and 对新仓库编码 button when sessions exist (追加态)', async => {
  setStorePlan([
  {
@@ -463,6 +473,29 @@ describe('techPlanCard — multi-repo integration', => {
  await confirmBtn.trigger('click')
  await flushPromises
  expect(spy).toHaveBeenCalled
+ })
+ it('passes branch template to store.submitRepoMultiSelector in codingPlan flow', async => {
+ setStorePlan
+ const store = useChatStore
+ const spy = vi.spyOn(store, 'submitRepoMultiSelector')
+ .mockResolvedValue({ createdCount: 1, failedCount: 0 })
+ const wrapper = mountCard({
+ codingPlanId: 'Plan',
+ availableRepositories: REPOS,
+ repositoryGitUrls: REPO_GIT_URLS,
+ })
+ await flushPromises
+ const input = wrapper.find('[data-test="branch-template-input"]')
+ expect(input.exists).toBe(true)
+ const branchTemplate = `fix20260528.gift-empty-list.$${'{repo}'}`
+ await input.setValue(branchTemplate)
+ const confirmBtn = wrapper.find('[data-test="multi-confirm"]')
+ await confirmBtn.trigger('click')
+ await flushPromises
+ expect(spy).toHaveBeenCalledWith(
+ ['r1', 'r2'],
+ branchTemplate,
+ )
  })
  it('calls store.retrySingleRepository when status row emits retry', async => {
  setStorePlan([

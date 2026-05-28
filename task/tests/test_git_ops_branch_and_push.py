@@ -86,6 +86,23 @@ class TestSetupTaskBranchNoFridayPrefix:
  task_id="task-XYZ",
  )
  assert result == "custom-task-XYZ-branch"
+ @pytest.mark.asyncio
+ async def test_existing_remote_branch_checked_out_from_origin(
+ self, git_ops_with_mock_repo
+ ):
+ """远端分支已存在时，新 clone 应基于 origin/<branch> 建立本地工作分支。"""
+ ops = git_ops_with_mock_repo
+ ops.repo.git.fetch = MagicMock(return_value="")
+ result = await ops.setup_task_branch(
+ branch_strategy="fix20260528.existing",
+ task_id="task-001",
+ )
+ assert result == "fix20260528.existing"
+ ops.repo.git.checkout.assert_called_once_with(
+ "-B",
+ "fix20260528.existing",
+ "origin/fix20260528.existing",
+ )
 class TestPushBranchDetectsRemoteRejection:
  """Bug Y 回归：push_branch 必须把 PushInfo.flags 错误位翻成 GitCommandError。"""
  @pytest.fixture

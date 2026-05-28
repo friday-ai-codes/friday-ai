@@ -16,6 +16,7 @@ import {
  deleteConversation,
  exportCodingPlanToFeishu,
  exportToFeishu,
+ forkConversationForMessage,
  getConversationDetail,
  getConversationRuntime,
  interruptConversation,
@@ -395,6 +396,31 @@ export const useChatStore = defineStore('chat', => {
  // Phase：切换 conversation 时清空协商状态防串台
  pendingClarifications.value = new Map
  }
+ function upsertConversationAtTop(conversation: Conversation) {
+ const idx = conversations.value.findIndex(c => c.id === conversation.id)
+ if (idx >= 0)
+ conversations.value.splice(idx, 1)
+ conversations.value.unshift(conversation)
+ }
+ function resetForkRuntimeState {
+ stopRuntimePolling
+ resetStreamingState
+ activeCodingSession.value = null
+ activeCodingPlan.value = null
+ codingProgress.value = null
+ codingResult.value = null
+ codingError.value = null
+ commitConfirmData.value = null
+ prConfirmData.value = null
+ diffSummaryData.value = null
+ completedConfirmSteps.value =
+ pendingClarifications.value = new Map
+ isExportSelectMode.value = false
+ selectedMessageIds.value = new Set
+ lastFailedContent.value = null
+ credentialMissingPayload.value = null
+ lastContextExceeded.value = null
+ }
  function resetStreamingState {
  isStreaming.value = false
  streamingContent.value = ''
@@ -500,6 +526,26 @@ export const useChatStore = defineStore('chat', => {
  }
  streamingToolCalls.value =
  streamingTimeline.value =
+ // Quick：Phase 切 polling 后遗漏的前端接线 ——
+ // runtime.coding_session.coding_progress（由 conversation_service 从
+ // SubAgentSession.last_output 透传）转写到 store.codingProgress，让
+ // CodingProgressCard 渲染条件 `activeCodingSession?.status === 'running'
+ // && codingProgress` 在 polling 路径下也能成立。SSE 路径 case
+ // 'coding_progress' 保留双写不冲突。
+ const cp = cs.coding_progress
+ if (cp && (cp.modified_files?.length || cp.recent_tool_calls?.length)) {
+ codingProgress.value = {
+ sessionId: cs.id,
+ steps:, // polling 不发 steps；UI 已容忍空数组
+ modifiedFilesCount: cp.modified_files?.length ?? 0,
+ modifiedFiles: cp.modified_files ??,
+ recentToolCalls: cp.recent_tool_calls ??,
+ }
+ }
+ else if (codingProgress.value && codingProgress.value.sessionId !== cs.id) {
+ // 切到不同 session（比如 fan-out 多仓时 polling pivot 漂移）→ 清旧进度
+ codingProgress.value = null
+ }
  }
  else {
  streamingToolCalls.value =
@@ -649,6 +695,7 @@ export const useChatStore = defineStore('chat', => {
  const runtime = await getConversationRuntime(id)
  if (!runtime.active) {
  resetStreamingState
+ activeCodingPlan.value = runtime.coding_plan ?? null
  return
  }
  applyRuntimeSnapshot(runtime)
@@ -1536,6 +1583,43 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  }
+ async function editMessageAndFork(messageId: string, content: string) {
+ const trimmed = content.trim
+ if (!currentConversationId.value) {
+ error.value = '当前没有活动对话，无法编辑历史提问'
+ return
+ }
+ if (isStreaming.value) {
+ error.value = '当前正在生成回复，请稍后再编辑历史提问'
+ return
+ }
+ if (!trimmed) {
+ error.value = '编辑后的内容不能为空'
+ return
+ }
+ const sourceConversationId = currentConversationId.value
+ loading.value = true
+ error.value = null
+ try {
+ const forked = await forkConversationForMessage(sourceConversationId, messageId, {
+ content: trimmed,
+ })
+ resetForkRuntimeState
+ pendingConversation.value = null
+ currentConversationId.value = forked.id
+ syncConversationToURL(forked.id)
+ messages.value = [...forked.messages]
+ upsertConversationAtTop(forked)
+ await sendMessage(trimmed)
+ }
+ catch (e) {
+ error.value = e instanceof Error ? e.message: '编辑历史提问失败'
+ throw e
+ }
+ finally {
+ loading.value = false
+ }
+ }
  async function retryLastMessage {
  if (!lastFailedContent.value)
  return
@@ -1749,7 +1833,13 @@ export const useChatStore = defineStore('chat', => {
  async function submitRepoMultiSelector(
  repositoryIds: string,
  branchTemplate?: string,
- ): Promise<{ createdCount: number, failedCount: number }> {
+ ): Promise<{
+ createdCount: number
+ failedCount: number
+ /** v26.0 Quick：fan-out endpoint 拒绝时第一条失败原因，
+ * 给 UI toast 用，避免每次都得让用户开 DevTools 看 response。 */
+ firstFailedError?: string
+ }> {
  const planId = repoMultiSelectorState.value.planId
  if (!planId)
  throw new Error('planId 缺失')
@@ -1759,7 +1849,23 @@ export const useChatStore = defineStore('chat', => {
  repository_ids: repositoryIds,
  branch_template: branchTemplate,
  })
- return { createdCount: resp.created.length, failedCount: resp.failed.length }
+ for (const item of resp.created) {
+ const confirmed = await apiConfirmCodingSession(item.session_id)
+ activeCodingSession.value = {
+ sessionId: confirmed.id,
+ status: confirmed.status as 'draft' | 'confirmed' | 'running' | 'awaiting_confirmation' | 'completed' | 'failed',
+ isConfirming: false,
+ }
+ }
+ if (resp.created.length > 0 && currentConversationId.value) {
+ isStreaming.value = true
+ scheduleRuntimePoll(currentConversationId.value, 3000)
+ }
+ return {
+ createdCount: resp.created.length,
+ failedCount: resp.failed.length,
+ firstFailedError: resp.failed[0]?.error,
+ }
  }
  finally {
  repoMultiSelectorState.value.submitting = false
@@ -1872,6 +1978,7 @@ export const useChatStore = defineStore('chat', => {
  toggleSidebar,
  clearCurrentConversation,
  sendMessage,
+ editMessageAndFork,
  retryLastMessage,
  restoreFromURL,
  restoreConversationRuntime,

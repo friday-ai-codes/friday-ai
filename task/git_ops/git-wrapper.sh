@@ -1,18 +1,23 @@
 #!/bin/bash
-# explore 模式 git 写操作拦截脚本（双层防御第二层 - Shell 层）
+# git 写操作拦截脚本（双层防御第二层 - Shell 层）
 #
-# 在 explore 模式下，wrapper 通过白名单机制放行只读 git 子命令，
-# 拦截所有写操作并返回退出码 128。非 explore 模式下所有命令直接放行。
+# 在受限模式下（explore / repo_summary / coding / coding_commit），wrapper
+# 通过白名单机制放行只读 git 子命令，拦截所有写操作并返回退出码 128。
+# 其它模式（如 plan / 兜底）所有命令直接放行。
 #
-# 由 entrypoint.sh 在容器启动时将本脚本（以 "git" 符号链接）
-# prepend 到 PATH，使所有 git 调用先经过此 wrapper。
+# Runner 自己的 git 操作通过 ``/usr/bin/git`` + ``GIT_PYTHON_GIT_EXECUTABLE``
+# 直接调用 real git，不经过 PATH 中的 wrapper。
+#
+# 由 entrypoint.sh 在容器启动时将本脚本（以 "git" 符号链接）prepend 到 PATH，
+# 使所有 git 调用先经过此 wrapper。
 #
 #: Shell 层防御
 REAL_GIT="/usr/bin/git"
-# repo_summary 模式：等同 explore 模式的只读约束
-if [ "$FRIDAY_TASK_MODE" = "repo_summary" ]; then
- FRIDAY_TASK_MODE="explore"
-fi
+# repo_summary / coding / coding_commit 模式：等同 explore 模式的只读约束
+case "$FRIDAY_TASK_MODE" in
+ repo_summary|coding|coding_commit)
+ FRIDAY_TASK_MODE="explore";;
+esac
 # 非 explore 模式：直接放行所有命令
 if [ "$FRIDAY_TASK_MODE" != "explore" ]; then
  exec "$REAL_GIT" "$@"
@@ -56,15 +61,13 @@ if [ "$subcmd" = "branch" ]; then
  done
  exec "$REAL_GIT" "$@"
 fi
-# checkout 子命令特殊处理：-b/-B 拦截（创建新分支），其他放行（切换已有分支）
+# checkout 子命令：受限模式下整体拦截。
+# 历史 bug：只拦 -b/-B 时，``git checkout master`` 仍能切到保护分支，导致后续
+# Claude 在 master 上 commit/push 把变更挪到错的地方。Runner 已经在正确的任务
+# 分支上准备好工作区，Claude 不应再切分支——如需查看其它分支可用 git log /
+# git show。
 if [ "$subcmd" = "checkout" ]; then
- for arg in "$@"; do
- case "$arg" in
- -b|-B)
- block;;
- esac
- done
- exec "$REAL_GIT" "$@"
+ block
 fi
 # config 子命令特殊处理：--get/--get-all/--get-regexp/--list/-l 放行，其他拦截
 if [ "$subcmd" = "config" ]; then

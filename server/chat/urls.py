@@ -15,6 +15,7 @@ from .views import (
  ConflictCheckView,
  ConversationDetailView,
  ConversationListView,
+ ConversationMessageForkView,
  ConversationMessagesDeleteView,
  ConversationPreflightView,
  ConversationRuntimeView,
@@ -60,6 +61,11 @@ urlpatterns = [
  "conversations/<uuid:conversation_id>/messages/",
  ConversationMessagesDeleteView.as_view,
  name="conversation-messages-delete",
+ ),
+ path(
+ "conversations/<uuid:conversation_id>/messages/<uuid:message_id>/fork/",
+ ConversationMessageForkView.as_view,
+ name="conversation-message-fork",
  ),
  path(
  "conversations/<uuid:conversation_id>/interrupt/",

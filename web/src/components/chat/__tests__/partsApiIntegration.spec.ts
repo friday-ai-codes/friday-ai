@@ -42,9 +42,10 @@ vi.mock('~/components/chat/RoutingDecisionPanel.vue', => ({
 vi.mock('~/components/chat/TechPlanCard.vue', => ({
  default: defineComponent({
  name: 'TechPlanCard',
- props: ['planId', 'sessionId', 'techPlan', 'affectedFiles', 'status', 'isConfirming', 'branchName'],
+ props: ['planId', 'codingPlanId', 'sessionId', 'techPlan', 'affectedFiles', 'status', 'isConfirming', 'branchName'],
  setup: (props) => => h('div', {
  'data-test': 'tech-plan-card',
+ 'data-coding-plan-id': props.codingPlanId || '',
  'data-session': props.sessionId,
  'data-plan': props.planId,
  'data-techplan': props.techPlan,
@@ -133,6 +134,7 @@ describe(' 既有组件接入 parts API（Quick Task）', => {
  const wrapper = await mountBubble(msg)
  const card = wrapper.find('[data-test="tech-plan-card"]')
  expect(card.exists).toBe(true)
+ expect(card.attributes('data-coding-plan-id')).toBe('Plan')
  expect(card.attributes('data-session')).toBe('sess-1')
  expect(card.attributes('data-plan')).toBe('Plan')
  expect(card.attributes('data-techplan')).toContain('实现 foo')

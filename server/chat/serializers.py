@@ -130,6 +130,14 @@ class ConversationPatchSerializer(serializers.Serializer):
  "Provider 凭证不存在或已禁用",
  ) from exc
  return value
+class ConversationForkRequestSerializer(serializers.Serializer):
+ """编辑历史 user message 前创建新分支 conversation 的请求体。"""
+ content = serializers.CharField(required=True, trim_whitespace=True)
+ def validate_content(self, value: str) -> str:
+ stripped = value.strip
+ if not stripped:
+ raise serializers.ValidationError("编辑后的内容不能为空")
+ return stripped
 class ConversationListSerializer(serializers.Serializer):
  """对话列表项。
  UAT 第 3 项 hotfix：暴露 status + provider_credential_id，

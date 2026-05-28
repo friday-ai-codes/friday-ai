@@ -278,14 +278,22 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  )
  return
  if not await TaskResult.objects.filter(session=session).aexists:
+ output = payload.get("output", {})
+ if not isinstance(output, dict):
+ output = {}
+ branch_name = payload.get("branch_name") or output.get("branch_name", "")
+ commit_sha = payload.get("commit_sha") or output.get("commit_sha", "")
+ modified_files = payload.get("modified_files") or output.get("modified_files", )
+ if not isinstance(modified_files, list):
+ modified_files =
  await TaskResult.objects.acreate(
  session=session,
  result_type=payload.get("result_type", "text"),
  text_output=payload.get("text_output", ""),
- branch_name=payload.get("branch_name", ""),
- commit_sha=payload.get("commit_sha", ""),
- modified_files=payload.get("modified_files", ),
- raw_output=payload.get("output", {}),
+ branch_name=branch_name,
+ commit_sha=commit_sha,
+ modified_files=modified_files,
+ raw_output=output,
  duration_ms=payload.get("duration_ms"),
  )
  await session.amark_completed
@@ -440,20 +448,22 @@ class RunnerConsumer(AsyncJsonWebsocketConsumer):
  if not assignment or not assignment.session:
  return None
  session = assignment.session
+ last_output = session.last_output if isinstance(session.last_output, dict) else {}
+ dispatch_payload = last_output.get("dispatch")
+ dispatch = dispatch_payload if isinstance(dispatch_payload, dict) else {}
  return DispatchTask(
  task_id=session.session_id,
- task_type=session.last_output.get("task_type", "coding")
- if session.last_output
- else "coding",
- tags=list(self.runner.tags),
+ task_type=str(dispatch.get("task_type") or last_output.get("task_type") or "coding"),
+ tags=list(dispatch.get("tags") or self.runner.tags),
  image="",
- repo_url="",
- branch="",
- target_branch="",
- prompt="",
- timeout=600,
- node_execution_id="",
+ repo_url=str(dispatch.get("repo_url") or session.repo_url or ""),
+ branch=str(dispatch.get("branch") or ""),
+ target_branch=str(dispatch.get("target_branch") or ""),
+ prompt=str(dispatch.get("prompt") or ""),
+ timeout=int(dispatch.get("timeout") or 600),
+ node_execution_id=str(dispatch.get("node_execution_id") or ""),
  session_id=session.session_id,
+ metadata=dict(dispatch.get("metadata") or {}),
  )
  async def _update_assignment_status(self, session_id: str, status: str) -> None:
  from runners.models import RunnerTaskAssignment

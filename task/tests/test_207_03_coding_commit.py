@@ -2,7 +2,6 @@
 TDD RED 阶段：测试 TaskConfig 新增字段、TaskRunner coding_commit 路由、
 _run_commit_mode、_generate_suggested_commit_message、callback 扩展。
 """
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from core.config import TaskConfig
@@ -64,6 +63,30 @@ class TestTaskConfigNewFields:
  monkeypatch.setenv("FRIDAY_TASK_GIT_REPO_URL", "https://example.com/repo.git")
  monkeypatch.setenv("FRIDAY_TASK_SESSION_DIR", temp_session_dir)
  config = TaskConfig
+ assert config.task_type == "coding_commit"
+ def test_legacy_coding_task_mode_normalized_to_execute(
+ self, temp_session_dir, monkeypatch
+ ):
+ """旧 Go Runner 把 task_type 注入到 task_mode 时，容器仍应进入 execute 流程。"""
+ monkeypatch.setenv("FRIDAY_TASK_TASK_MODE", "coding")
+ monkeypatch.setenv("FRIDAY_TASK_TASK_ID", "legacy-coding")
+ monkeypatch.setenv("FRIDAY_TASK_TASK_DESCRIPTION", "legacy coding desc")
+ monkeypatch.setenv("FRIDAY_TASK_GIT_REPO_URL", "https://example.com/repo.git")
+ monkeypatch.setenv("FRIDAY_TASK_SESSION_DIR", temp_session_dir)
+ config = TaskConfig
+ assert config.task_mode == "execute"
+ assert config.task_type == "coding"
+ def test_legacy_coding_commit_task_mode_normalized_to_execute(
+ self, temp_session_dir, monkeypatch
+ ):
+ """旧 Go Runner 传 task_mode=coding_commit 时应执行 commit 阶段。"""
+ monkeypatch.setenv("FRIDAY_TASK_TASK_MODE", "coding_commit")
+ monkeypatch.setenv("FRIDAY_TASK_TASK_ID", "legacy-commit")
+ monkeypatch.setenv("FRIDAY_TASK_TASK_DESCRIPTION", "legacy commit desc")
+ monkeypatch.setenv("FRIDAY_TASK_GIT_REPO_URL", "https://example.com/repo.git")
+ monkeypatch.setenv("FRIDAY_TASK_SESSION_DIR", temp_session_dir)
+ config = TaskConfig
+ assert config.task_mode == "execute"
  assert config.task_type == "coding_commit"
 class TestCallbackSuggestedCommitMessage:
  """CallbackClient.report_suggested_commit_message 测试。"""
@@ -218,40 +241,79 @@ class TestRunCommitMode:
  assert "modified_files" in output
 class TestGenerateSuggestedCommitMessage:
  """_generate_suggested_commit_message 测试。"""
- def test_generate_with_title_and_description(self):
- """使用 title 和 description 生成 suggested commit message。"""
+ @pytest.mark.asyncio
+ async def test_generate_uses_claude_message_response(self):
+ """优先使用 Claude Messages API 返回的 commit message。"""
  from core.runner import TaskRunner
  config = MagicMock
+ config.claude_api_key = "sk-test"
+ config.claude_base_url = "https://anthropic.example"
+ config.claude_model = "claude-test"
+ config.claude_small_model = ""
  runner = TaskRunner(config)
- result = runner._generate_suggested_commit_message(
- diff_summary="2 files changed, 50 insertions(+)",
- task_title="Add user login",
- task_description="Implement JWT auth for user login",
+ class MockResponse:
+ def raise_for_status(self):
+ return None
+ def json(self):
+ return {
+ "content": [
+ {"type": "text", "text": "fix: 隐藏空资源位\n\n接口空列表时不展示 Gift 入口。"}
+ ]
+ }
+ mock_client = AsyncMock
+ mock_client.__aenter__.return_value.post = AsyncMock(return_value=MockResponse)
+ mock_client.__aexit__.return_value = None
+ with patch("core.runner.httpx.AsyncClient", return_value=mock_client):
+ result = await runner._generate_suggested_commit_message(
+ diff_summary="Gift.vue | 37 +++++++++++++++++++++++--------------",
+ task_title="学习首页搜索右侧资源位空列表隐藏方案",
+ modified_files=["apps/tabStudy/src/v3/plugins/Gift/Gift.vue"],
  )
- assert "Add user login" in result
- assert "feat:" in result
- def test_generate_without_title(self):
- """没有 title 时使用默认前缀。"""
+ assert result == "fix: 隐藏空资源位\n\n接口空列表时不展示 Gift 入口。"
+ post = mock_client.__aenter__.return_value.post
+ assert post.await_args.args[0] == "https://anthropic.example/v1/messages"
+ payload = post.await_args.kwargs["json"]
+ assert payload["model"] == "claude-test"
+ assert "学习首页搜索右侧资源位空列表隐藏方案" in payload["messages"][0]["content"]
+ @pytest.mark.asyncio
+ async def test_generate_fallback_does_not_include_task_prompt(self):
+ """AI 调用失败时 fallback 不得把完整任务 prompt 拼进 commit message。"""
  from core.runner import TaskRunner
  config = MagicMock
+ config.claude_api_key = "sk-test"
+ config.claude_base_url = ""
+ config.claude_model = ""
+ config.claude_small_model = ""
+ config.task_description = "你正在对项目「学习工具与平台」执行编码任务。\n\n技术方案：很长..."
  runner = TaskRunner(config)
- result = runner._generate_suggested_commit_message(
- diff_summary="1 file changed",
- task_title="",
- task_description="",
+ mock_client = AsyncMock
+ mock_client.__aenter__.return_value.post = AsyncMock(side_effect=RuntimeError("network down"))
+ mock_client.__aexit__.return_value = None
+ with patch("core.runner.httpx.AsyncClient", return_value=mock_client):
+ result = await runner._generate_suggested_commit_message(
+ diff_summary="Gift.vue | 37 +++++++++",
+ task_title="学习首页搜索右侧资源位空列表隐藏方案",
+ modified_files=["apps/tabStudy/src/v3/plugins/Gift/Gift.vue"],
  )
  assert "feat:" in result
- assert "implement changes" in result
- def test_generate_truncates_long_diff(self):
+ assert "学习首页搜索右侧资源位空列表隐藏方案" in result
+ assert "Gift.vue | 37 +++++++++" in result
+ assert "你正在对项目" not in result
+ assert "技术方案" not in result
+ @pytest.mark.asyncio
+ async def test_generate_truncates_long_diff(self):
  """超长 diff summary 应被截断。"""
  from core.runner import TaskRunner
  config = MagicMock
+ config.claude_api_key = ""
+ config.task_description = "prompt text that must not be included"
  runner = TaskRunner(config)
  long_diff = "a" * 1000
- result = runner._generate_suggested_commit_message(
+ result = await runner._generate_suggested_commit_message(
  diff_summary=long_diff,
  task_title="Test",
- task_description="Desc",
+ modified_files=,
  )
- # diff 部分应被截断到 500 字符以内
- assert len(result) < 1000
+ # fallback diff 部分应被截断到 300 字符以内
+ assert len(result) < 400
+ assert "prompt text" not in result

@@ -71,9 +71,12 @@ class TestGitWrapperRepoSummary:
  """Test 2: git-wrapper.sh 在 FRIDAY_TASK_MODE=repo_summary 时别名为 explore。"""
  def test_git_wrapper_aliases_repo_summary_to_explore(self):
  """git-wrapper.sh 在 FRIDAY_TASK_MODE=repo_summary 时将 mode 设置为 explore。"""
- # 用 bash 脚本片段测试：读取 git-wrapper.sh 前几行的别名逻辑
+ # 提取 wrapper 中的 alias case 块（``case "$FRIDAY_TASK_MODE" in`` ~ ``esac``）
  script_path = Path(__file__).resolve.parents[1] / "git_ops" / "git-wrapper.sh"
- alias_snippet = "\n".join(script_path.read_text.splitlines[13:17])
+ lines = script_path.read_text.splitlines
+ start = next(i for i, ln in enumerate(lines) if 'case "$FRIDAY_TASK_MODE"' in ln)
+ end = next(i for i, ln in enumerate(lines) if i > start and ln.strip == "esac")
+ alias_snippet = "\n".join(lines[start: end + 1])
  result = subprocess.run(
  [
  "bash",
