@@ -50,11 +50,13 @@ class GraphWriter:
  def write_bundle_sync(self, repository_id: str, bundle: Any) -> dict[str, int]:
  """同步版本的 write_bundle，使用 sync ORM 一次性完成 4 张表写入。
  写入策略（per-file 幂等性）：
- 1. 删除该文件旧记录：Symbol/ImportEdge/Endpoint 按 file_path 过滤 delete
- （CallEdge 通过 caller_symbol FK 的 CASCADE 自动删除，无需单独处理）
+ 1. 删除该文件旧记录：Symbol/ImportEdge/Endpoint 按 file_path 过滤 delete；
+ CallEdge 双删除路径——函数内边由 Symbol delete 的 caller_symbol CASCADE
+ 清理，模块级边（caller_symbol=NULL）按 caller_file 显式删除（Pitfall 2）
  2. 先 bulk_create Symbol → 构建 symbol_id_map
  3. bulk_create ImportEdge 和 Endpoint（无 FK 依赖）
- 4. bulk_create CallEdge（通过 symbol_id_map 解析 caller_symbol FK）：整个流程包在 ``transaction.atomic`` 内 —— 每文件 1 次 commit
+ 4. bulk_create CallEdge：caller 查到则填 caller_symbol FK，查不到则写
+ 模块级边（caller_symbol=NULL）；所有边恒填 caller_file：整个流程包在 ``transaction.atomic`` 内 —— 每文件 1 次 commit
  而不是 7 次（3 delete + 4 bulk_create），SQLite WAL/写锁压力下降一个
  量级；同时保证 per-file 原子性（中途失败完全回滚，无中间态）。
  Args:
@@ -65,7 +67,8 @@ class GraphWriter:
  """
  file_path = bundle.file_path
  stats: dict[str, int] = {"symbols": 0, "imports": 0, "calls": 0, "endpoints": 0}
- skipped_calls = 0
+ # 模块级边计数（caller_symbol_id=None）——仅用于可观测性日志，不影响写入。
+ module_level_calls = 0
  with transaction.atomic:
  # =================================================================
  # 第一步：删除该文件的旧图谱记录（幂等性保证）
@@ -79,8 +82,15 @@ class GraphWriter:
  Endpoint.objects.filter(
  repository_id=repository_id, file_path=file_path,
  ).delete
- # CallEdge 不单独删除 —— caller_symbol FK 的 CASCADE 已在上一步
- # Symbol delete 时自动清理关联的 CallEdge
+ # CallEdge 双删除路径（Pitfall 2）：
+ # - 函数内边（caller_symbol≠NULL）：由上一步 Symbol delete 的
+ # caller_symbol FK CASCADE 自动清理。
+ # - 模块级边（caller_symbol=NULL）：CASCADE 不级联 NULL FK，必须按
+ # caller_file 显式删除，否则重新索引同一文件时模块级边残留 → 翻倍。
+ # 两路径互补：caller_file 恒填 == 该边 caller 所在文件，per-file 幂等。
+ CallEdge.objects.filter(
+ repository_id=repository_id, caller_file=file_path,
+ ).delete
  # =================================================================
  # 第二步：批量创建 Symbol（必须先于 CallEdge）
  # =================================================================
@@ -164,13 +174,18 @@ class GraphWriter:
  # 兜底：calls extractor 默认 start_line=0，三元组查不到 →
  # 用 (file_path, name) 命中同文件同名 caller。
  caller_id = symbol_name_index.get((caller_key[0], caller_key[1]))
+ # / Pitfall 3：caller 查不到不再 skip，而是判定为模块级边——
+ # caller_symbol_id=None（caller_key[1]=="<module>" 等 sentinel 或动态
+ # 分派）。所有边恒填 caller_file=call.caller_key[0]（函数内边
+ # caller_file == caller 所在文件 == caller_key[0]，模块级边同样取
+ # caller_key[0]）。callee_symbol/callee_file/is_cross_file 留模型默认
+ # （NULL/NULL/False），跨文件解析属 288+ 回填。
  if caller_id is None:
- # 真·模块级调用 / 嵌套 lambda / 动态分派，跳过
- skipped_calls += 1
- continue
+ module_level_calls += 1
  call_objs.append(CallEdge(
  repository_id=repository_id,
  caller_symbol_id=caller_id,
+ caller_file=call.caller_key[0],
  callee_name=call.callee_name,
  call_type=call.call_type,
  line_number=call.line_number,
@@ -178,13 +193,6 @@ class GraphWriter:
  if call_objs:
  CallEdge.objects.bulk_create(call_objs)
  stats["calls"] = len(call_objs)
- if skipped_calls > 0:
- logger.debug(
- "call_edge_skipped_no_caller",
- file_path=file_path,
- skipped=skipped_calls,
- reason="caller not found in symbol_id_map (module-level call or dynamic dispatch)",
- )
  # 大型仓库 4000+ 文件每个都 info 级会刷屏 + 拖累 stdout/structlog；
  # 降到 debug，索引完成后由 _extract_and_write_graph 汇总一条 info。
  logger.debug(
@@ -194,7 +202,7 @@ class GraphWriter:
  imports=stats["imports"],
  calls=stats["calls"],
  endpoints=stats["endpoints"],
- skipped_calls=skipped_calls,
+ module_level_calls=module_level_calls,
  )
  return stats
  # =========================================================================
@@ -216,12 +224,15 @@ class GraphWriter:
  # transaction.atomic 自动 rollback。
  # =========================================================================
  def delete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
- """按文件批量删除 Symbol / ImportEdge / Endpoint 三件套（同步版）。
+ """按文件批量删除 Symbol / ImportEdge / Endpoint / 模块级 CallEdge（同步版）。
+ 模块级 CallEdge（caller_symbol=NULL）不被 Symbol delete 的 CASCADE 清理
+ （CASCADE 不级联 NULL FK，Pitfall 2），增量删文件时须按 caller_file 显式删，
+ 否则文件删除后模块级边成孤儿。函数内边随 Symbol CASCADE 删，两路径互补。
  Args:
  repository_id: 仓库 UUID 字符串
  file_paths: 要清理的文件路径列表
  Returns:
- 三表删除行数总和（int）。空 file_paths 直接返回 0。
+ 四表删除行数总和（int）。空 file_paths 直接返回 0。
  Raises:
  原样向上抛任何 ORM 异常；transaction.atomic 自动回滚已删除行。
  """
@@ -237,7 +248,13 @@ class GraphWriter:
  endpoints_deleted, _ = Endpoint.objects.filter(
  repository_id=repository_id, file_path__in=file_paths,
  ).delete
- total = int(symbols_deleted) + int(imports_deleted) + int(endpoints_deleted)
+ call_edges_deleted, _ = CallEdge.objects.filter(
+ repository_id=repository_id, caller_file__in=file_paths,
+ ).delete
+ total = (
+ int(symbols_deleted) + int(imports_deleted)
+ + int(endpoints_deleted) + int(call_edges_deleted)
+ )
  logger.info(
  "graph_orphan_cleanup",
  repository_id=repository_id,
@@ -245,6 +262,7 @@ class GraphWriter:
  symbols_deleted=int(symbols_deleted),
  import_edges_deleted=int(imports_deleted),
  endpoints_deleted=int(endpoints_deleted),
+ call_edges_deleted=int(call_edges_deleted),
  total_deleted=total,
  )
  return total

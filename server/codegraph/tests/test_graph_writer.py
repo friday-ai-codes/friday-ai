@@ -199,10 +199,13 @@ class TestGraphWriterWriteBundle:
  """验证 write_bundle 写入后，四个模型均有记录。"""
  from codegraph.models import CallEdge, Endpoint, ImportEdge, Symbol
  bundle = make_test_bundle
+ file_path = bundle.file_path
  stats = await graph_writer.write_bundle(str(test_repository.id), bundle)
  assert stats["symbols"] == 3, f"Expected 3 symbols, got {stats}"
  assert stats["imports"] == 2
- assert stats["calls"] == 2 # 模块级调用被跳过
+ #：3 条边全部落库（hello/method_a 函数内边 + 模块级 super 边），
+ # 模块级调用不再被跳过。
+ assert stats["calls"] == 3, f"Expected 3 calls (含模块级边), got {stats}"
  assert stats["endpoints"] == 1
  # 验证 DB 记录数
  sym_count = await Symbol.objects.filter(repository=test_repository).acount
@@ -210,9 +213,18 @@ class TestGraphWriterWriteBundle:
  imp_count = await ImportEdge.objects.filter(repository=test_repository).acount
  assert imp_count == 2
  call_count = await CallEdge.objects.filter(repository=test_repository).acount
- assert call_count == 2
+ assert call_count == 3
  ep_count = await Endpoint.objects.filter(repository=test_repository).acount
  assert ep_count == 1
+ # 闭合：函数内边（caller_symbol_id is not None）的 caller_file
+ # 也被同步填充为 caller 所在文件（非仅模块级边填 caller_file）。
+ internal_edge = await CallEdge.objects.filter(
+ repository=test_repository, caller_symbol_id__isnull=False
+ ).afirst
+ assert internal_edge is not None, "应存在至少一条函数内 CallEdge"
+ assert internal_edge.caller_file == file_path, (
+ f"函数内边 caller_file 期望 {file_path}，实际 {internal_edge.caller_file!r}"
+ )
  @pytest.mark.django_db(transaction=True)
  async def test_write_bundle_symbol_fields_correct(self, test_repository, graph_writer):
  """验证 Symbol 字段正确写入。"""
@@ -244,14 +256,57 @@ class TestGraphWriterWriteBundle:
  assert call.call_type == "DIRECT"
  assert call.line_number == 4
  @pytest.mark.django_db(transaction=True)
- async def test_module_level_calls_skipped(self, test_repository, graph_writer):
- """模块级调用（caller_key 不在 symbol_id_map 中）被跳过，不抛异常。"""
+ async def test_module_level_call_written(self, test_repository, graph_writer):
+ """模块级调用（caller_key 不在 symbol_id_map 中）写成 caller_symbol=NULL 的边。
+ / Pitfall 3：make_test_bundle 含一条 caller_key=(file,"__module__",1)
+ callee="super" 的模块级 CallData，改造后应落库为 caller_symbol_id is None +
+ caller_file == file_path 的边（而非被 skip）。
+ """
+ from codegraph.models import CallEdge
  bundle = make_test_bundle
+ file_path = bundle.file_path
  stats = await graph_writer.write_bundle(str(test_repository.id), bundle)
- # caller_key=("test.py", "__module__", 1) 应在 symbol_id_map 中找不到
- # calls 应为 2（hello 和 method_a 的调用），不是 3
- assert stats["calls"] == 2, \
- f"Module-level call should be skipped, got {stats['calls']} calls"
+ # 3 条边全部落库（含模块级 super 边）
+ assert stats["calls"] == 3, \
+ f"Module-level call should be written, got {stats['calls']} calls"
+ module_edge = await CallEdge.objects.filter(
+ repository=test_repository, callee_name="super"
+ ).afirst
+ assert module_edge is not None, "模块级边（callee=super）应落库"
+ assert module_edge.caller_symbol_id is None, (
+ "模块级边 caller_symbol_id 应为 None，实际"
+ f" {module_edge.caller_symbol_id}"
+ )
+ assert module_edge.caller_file == file_path, (
+ f"模块级边 caller_file 期望 {file_path}，实际 {module_edge.caller_file!r}"
+ )
+ @pytest.mark.django_db(transaction=True)
+ async def test_reindex_module_level_edge_not_duplicated(
+ self, test_repository, graph_writer
+ ):
+ """同一 file_path 连续 write_bundle 两次，模块级边不翻倍（Pitfall 2）。
+ 模块级边 caller_symbol=NULL 不被 Symbol delete 的 CASCADE 清理，依赖第一步
+ 新增的 by-caller_file 显式删除保证幂等。二次写入后 caller_symbol__isnull=True
+ 的边数量须保持不变（=1），证明 by-caller_file 删除生效。
+ """
+ from codegraph.models import CallEdge
+ bundle = make_test_bundle
+ await graph_writer.write_bundle(str(test_repository.id), bundle)
+ first_module_count = await CallEdge.objects.filter(
+ repository=test_repository, caller_symbol__isnull=True
+ ).acount
+ assert first_module_count == 1, (
+ f"首次写入应有 1 条模块级边，实际 {first_module_count}"
+ )
+ # 第二次写入同一文件（模拟重新索引）
+ await graph_writer.write_bundle(str(test_repository.id), bundle)
+ second_module_count = await CallEdge.objects.filter(
+ repository=test_repository, caller_symbol__isnull=True
+ ).acount
+ assert second_module_count == 1, (
+ "重新索引后模块级边不应翻倍（by-caller_file 删除幂等），"
+ f"实际 {second_module_count}"
+ )
 class TestGraphWriterReindex:
  """重新索引幂等性测试（per H.4）。"""
  @pytest.mark.django_db(transaction=True)
