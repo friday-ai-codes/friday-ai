@@ -99,19 +99,28 @@ _STRATEGY_DEEP_ANALYSIS: Final[str] = (
  " 1. 调用 list_space_repositories 拿到所有可用仓库的清单与简介；\n"
  " 如果问题关键词指向不明，可用 1-2 次 search_repository_code 缩小到候选仓库\n"
  " （仅用于「这些仓库里哪些跟问题相关」的判断，不用来拼凑答案）\n"
- " 2. 识别出与问题相关的 N 个仓库（N ≥ 1，常见 1-3）\n"
+ " 1.5 **派单前做好准备**：search_repository_code 搜到具体符号/文件后，用\n"
+ " find_related_code 沿 CALL / IMPORT / TEST_OF 关系图摸清跨文件 / 跨仓的关联\n"
+ " （谁调用它、它依赖谁、测试在哪），目的有二：\n"
+ " ① 捞出仅靠关键词搜不到的「间接相关」仓库，避免漏派；\n"
+ " ② 为每个仓库写出**聚焦、具体**的 task_description（带上关键符号 / 文件 / 关系线索）。\n"
+ " 这是「定位 + 准备」的一部分，不是拼凑最终答案。\n"
+ " 2. 识别出与问题相关的 N 个仓库（N ≥ 1，常见 1-3），并为每个仓库备好聚焦的 task_description\n"
  " 3. 在同一轮回复里**并行**emit N 个 deep_analysis 调用 ——\n"
  " 每个调用绑定一个相关仓库的 repository_id 与一段聚焦的 task_description。\n"
  " 系统会**并行 dispatch N 个 Claude Code 容器**同时分析，效率最高。\n"
  " 4. 所有 deep_analysis 结果回灌后，基于结果汇总作答；除非用户继续追问，否则不再调任何工具。\n\n"
  "硬约束：\n"
- " - RAG 工具（search_repository_code / browse_file_content / list_space_structure）\n"
- " **只能用来「定位哪些仓库相关」**，绝不允许用它们拼凑代码细节作为最终答案。\n"
+ " - RAG / 关系图工具（search_repository_code / find_related_code / browse_file_content /\n"
+ " list_space_structure）**只能用来「定位哪些仓库相关」**与准备 task_description，\n"
+ " 绝不允许用它们拼凑代码细节作为最终答案（真正的深入分析交给 deep_analysis 容器）。\n"
  " - **必须并行 dispatch**：识别出 N 个相关仓库后，同一轮一次性 emit N 个 deep_analysis；\n"
  " 严禁串行（emit 1 个 → 等结果 → 再 emit 1 个）。\n"
  " - **宁可多开**：拿不准某个仓库是否相关时，多开一个 deep_analysis 也不要漏 ——\n"
  " Claude Code 容器是并行的，多开一个的成本远小于错过相关代码。\n"
- " - **找到就 dispatch**：识别出相关仓库后**立刻** dispatch，不要再做 RAG 验证。\n"
+ " - **准备充分再 dispatch**：先用 search_repository_code + find_related_code 把相关仓库和\n"
+ " 关联关系摸清、把每个 task_description 写聚焦，再一次性并行 dispatch；\n"
+ " 但「准备」≠「无方向地反复检索」—— 摸清关联即止，不要原地打转。\n"
  " - 跨仓库的「为什么 A 跳到 B」类问题，必须同时对 A 和 B 都开 deep_analysis。\n"
 )
 _STRATEGY_DEFAULT: Final[str] = (
@@ -152,6 +161,18 @@ _SEARCH_USAGE_RULES: Final[str] = (
  " - 中文需求先拆成 1-3 个英文 / 拼音关键词分别搜，再合并理解\n"
  " - 0 结果时**不要原样重试**，按返回的 ⚠️ 诊断提示调整\n"
  " - 想要更宽召回时把 min_score 降到 0.3 或更低\n"
+ "\n搜到代码后用关系图深入（重要 - 别停在孤立片段）：\n"
+ " search_repository_code 命中的是**孤立片段**；一旦拿到具体起点"
+ "（文件路径 / 符号名 / chunk_id），\n"
+ " 应进一步调用 find_related_code 沿 chunk 级关系图（CALL / IMPORT / TEST_OF）遍历，\n"
+ " 把「这段代码」扩展成「这段代码的上下文网络」，再据此分析需求影响范围、制定改动方案：\n"
+ " - find_related_code(symbol_name='Foo', direction='upstream') # 谁调用了它（影响面 / 调用方）\n"
+ " - find_related_code(symbol_name='Foo', direction='downstream') # 它又调用了谁（依赖 / 内部实现）\n"
+ " - find_related_code(file_path='a/b.ts', relation_types=['TEST_OF']) # 它的测试在哪\n"
+ " 判断准则：**用自然语言/概念找位置 → search_repository_code；已有具体符号/文件找关联 → "
+ "find_related_code**。\n"
+ " 沿关系图走通常比反复换关键词 search 更准、更省预算，遇到「分析改动影响 / 梳理调用链 / "
+ "找测试」类需求应主动使用。\n"
 )
 _CODING_GUIDANCE: Final[str] = (
  "\n编码任务识别：\n"
@@ -813,11 +834,30 @@ class ConversationService:
  await conversation.asave(update_fields=["status"])
  # 飞书文档预处理（per: 读取成功即自动注入上下文）
  doc_context_prefix = ""
+ # 捕获 docSummary 给 finalize 落库（刷新回显飞书文档摘要卡）。
+ # 形态与前端 metadata.docSummary 对齐（ChatMessageBubble.docSummary）。
+ captured_doc_summary: dict[str, Any] | None = None
  if feishu_doc_id:
  doc_markdown, doc_event = await ConversationService._fetch_doc_for_context(
  conversation.project, feishu_doc_id,
  )
  yield doc_event # 推送 doc_summary 或 doc_error
+ if doc_event.type == DOC_SUMMARY:
+ _d = doc_event.data
+ captured_doc_summary = {
+ "type": "summary",
+ "title": _d.get("doc_title", ""),
+ "wordCount": _d.get("word_count"),
+ "preview": _d.get("preview", ""),
+ "truncated": _d.get("truncated", False),
+ "truncatedLength": _d.get("truncated_length"),
+ }
+ elif doc_event.type == DOC_ERROR:
+ captured_doc_summary = {
+ "type": "error",
+ "errorType": doc_event.data.get("error_type"),
+ "errorMessage": doc_event.data.get("message"),
+ }
  if doc_markdown:
  doc_title = doc_event.data.get("doc_title", "飞书文档")
  doc_context_prefix = (
@@ -989,6 +1029,7 @@ class ConversationService:
  notification_user_id=notification_user_id,
  publish_title_event=True,
  parts=_extract_state_parts(state),
+ doc_summary=captured_doc_summary,
  )
  # finalize 已经落库，清掉 streaming_snapshot 避免 runtime API 又拉到陈旧快照
  from orchestration.graph import _clear_streaming_snapshot
@@ -1073,6 +1114,7 @@ class ConversationService:
  notification_user_id=notification_user_id,
  publish_title_event=False,
  parts=_extract_state_parts(state),
+ doc_summary=captured_doc_summary,
  )
  # 已落库，清掉 streaming_snapshot 避免 runtime polling 拉到陈旧快照
  from orchestration.graph import _clear_streaming_snapshot
@@ -1209,17 +1251,60 @@ class ConversationService:
  "logs":,
  "coding_session": None,
  "streaming_snapshot": streaming_snapshot,
+ "pending_clarification": None,
  }
- # deep_analysis 会话信息（向后兼容）
- latest_deep_session = None
+ # 待回复的澄清（ask_clarification）—— 刷新 / 切回会话时恢复 ClarificationCard。
+ # waiting_clarification 期间澄清问题只存在图 checkpoint + ConversationIntentTrace，
+ # 不落 Message；前端内存 pendingClarifications 刷新即丢，故这里回灌。
+ # 仅在 run 活跃且处于 waiting_clarification 阶段时返回，避免历史会话遗留的
+ # 未回答 trace（如旧版强制澄清被用户绕过）复活成幽灵卡片。
+ if is_active and orch_phase == OrchestrationRun.Phase.WAITING_CLARIFICATION:
+ from chat.models import ConversationIntentTrace
+ trace = await ConversationIntentTrace.objects.filter(
+ conversation_id=conv_uuid,
+ answered_at__isnull=True,
+ ).order_by("-created_at").afirst
+ if trace is not None and isinstance(trace.options, list) and trace.options:
+ runtime["pending_clarification"] = {
+ "clarification_id": trace.clarification_id,
+ "question": trace.question,
+ "options": trace.options,
+ "allow_freeform": True,
+ }
+ # deep_analysis 会话信息（向后兼容 + 多子会话各自独立日志）
+ # order_by("-id") 是降序，最新的在最前。收集本对话全部 chat_deep_analysis
+ # 子会话，供前端按会话分别渲染 swiper；latest 仍取第一个做向后兼容。
+ deep_candidates: list[SubAgentSession] =
  async for candidate in SubAgentSession.objects.filter(
  task_type=SubAgentSession.TaskType.EXPLORE,
  main_session__metadata__conversation_id=conversation_id,
  ).order_by("-id"):
  output = candidate.last_output or {}
  if isinstance(output, dict) and output.get("source") == "chat_deep_analysis":
- latest_deep_session = candidate
- break
+ deep_candidates.append(candidate)
+ def _session_to_deep_info(sess: SubAgentSession) -> dict[str, Any]:
+ out = sess.last_output or {}
+ prog = out.get("progress", {}) if isinstance(out, dict) else {}
+ sess_logs = out.get("logs", ) if isinstance(out, dict) else
+ return {
+ "session_id": sess.session_id,
+ "task_description": out.get("task_description", "")
+ if isinstance(out, dict)
+ else "",
+ "status": sess.status,
+ "progress_message": prog.get("message", "")
+ if isinstance(prog, dict)
+ else "",
+ "progress_percent": prog.get("progress")
+ if isinstance(prog, dict)
+ else None,
+ "logs": sess_logs if isinstance(sess_logs, list) else,
+ }
+ # deep_sessions 用升序（与工具调用出现顺序一致），把降序结果反转即可。
+ runtime["deep_sessions"] = [
+ _session_to_deep_info(s) for s in reversed(deep_candidates)
+ ]
+ latest_deep_session = deep_candidates[0] if deep_candidates else None
  if latest_deep_session is not None:
  output = latest_deep_session.last_output or {}
  progress = output.get("progress", {}) if isinstance(output, dict) else {}

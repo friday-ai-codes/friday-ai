@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { confirmCodingSession, createSessionsForPlan, getConversationRuntime } from '~/api/chat'
+import { confirmCodingSession, createSessionsForPlan, getConversationDetail, getConversationRuntime } from '~/api/chat'
 import { useChatStore } from '~/stores/chat'
 vi.mock('~/api/chat', async => {
  const actual = await vi.importActual<typeof import('~/api/chat')>('~/api/chat')
@@ -9,6 +9,7 @@ vi.mock('~/api/chat', async => {
  confirmCodingSession: vi.fn,
  createSessionsForPlan: vi.fn,
  getConversationRuntime: vi.fn,
+ getConversationDetail: vi.fn,
  }
 })
 describe('chat store runtime restore', => {
@@ -17,6 +18,53 @@ describe('chat store runtime restore', => {
  vi.mocked(confirmCodingSession).mockReset
  vi.mocked(createSessionsForPlan).mockReset
  vi.mocked(getConversationRuntime).mockReset
+ vi.mocked(getConversationDetail).mockReset
+ window.localStorage.clear
+ })
+ it('selectConversation 回显已回复澄清 + 路由 trace + 瞬时态（localStorage）', async => {
+ window.localStorage.setItem('friday-chat-transient:conv-x', JSON.stringify({
+ error: '上次请求失败',
+ budgetWarning: 80,
+ }))
+ vi.mocked(getConversationDetail).mockResolvedValue({
+ id: 'conv-x',
+ space_id: 's',
+ title: 't',
+ status: 'completed',
+ created_at: '',
+ updated_at: '',
+ messages:,
+ clarifications: [{
+ clarification_id: 'c1',
+ question: 'Q',
+ options: [{ id: 'a', label: 'A' }],
+ allow_freeform: true,
+ status: 'answered',
+ answer: { selected_option_id: 'a', freeform_text: '', answered_at: '2026-01-01' },
+ }],
+ routing_trace: { trace_id: 'tr1', query: 'q', candidates:, threshold: 0.5, triggered_by: 'chat_tool' },
+ } as any)
+ vi.mocked(getConversationRuntime).mockResolvedValue({
+ conversation_id: 'conv-x',
+ active: false,
+ status: 'completed',
+ } as any)
+ const store = useChatStore
+ await store.selectConversation('conv-x')
+ const clar = store.pendingClarifications.get('c1')
+ expect(clar?.status).toBe('answered')
+ expect(clar?.answer?.selected_option_id).toBe('a')
+ expect(store.error).toBe('上次请求失败')
+ expect(store.budgetWarning).toBe(80)
+ })
+ it('瞬时态清空时同步移除 localStorage（不复活旧错误）', async => {
+ const store = useChatStore
+ store.currentConversationId = 'conv-y'
+ store.error = '失败了'
+ expect(window.localStorage.getItem('friday-chat-transient:conv-y')).toContain('失败了')
+ // 清空 → 同步 removeItem
+ store.error = null
+ expect(window.localStorage.getItem('friday-chat-transient:conv-y')).toBeNull
  })
  it('inactive runtime still restores coding_plan snapshot', async => {
  vi.mocked(getConversationRuntime).mockResolvedValue({
@@ -119,6 +167,48 @@ describe('chat store runtime restore', => {
  } as any)
  await store.restoreConversationRuntime('conv-1')
  expect(store.codingProgress).toBeNull
+ })
+ it('waiting_clarification 时从 runtime 恢复 pendingClarifications（刷新不丢卡片）', async => {
+ vi.mocked(getConversationRuntime).mockResolvedValue({
+ conversation_id: 'conv-1',
+ active: true,
+ status: 'waiting',
+ phase: 'waiting_clarification',
+ pending_clarification: {
+ clarification_id: 'clar-abc',
+ question: '选 A 还是 B？',
+ options: [
+ { id: 'a', label: 'A' },
+ { id: 'b', label: 'B' },
+ ],
+ allow_freeform: true,
+ },
+ } as any)
+ const store = useChatStore
+ store.currentConversationId = 'conv-1'
+ await store.restoreConversationRuntime('conv-1')
+ const restored = store.pendingClarifications.get('clar-abc')
+ expect(restored).toBeDefined
+ expect(restored?.question).toBe('选 A 还是 B？')
+ expect(restored?.options.length).toBe(2)
+ expect(restored?.status).toBe('pending')
+ expect(restored?.conversation_id).toBe('conv-1')
+ // active=true → 恢复 streaming_snapshot（助手已产出的正文/工具），
+ // waiting_clarification 的打字光标/空气泡由 ChatMessageBubble 按 phase 抑制。
+ expect(store.isStreaming).toBe(true)
+ expect(store.currentPhase).toBe('waiting_clarification')
+ })
+ it('runtime 无 pending_clarification 时不恢复任何卡片', async => {
+ vi.mocked(getConversationRuntime).mockResolvedValue({
+ conversation_id: 'conv-1',
+ active: false,
+ status: 'completed',
+ pending_clarification: null,
+ } as any)
+ const store = useChatStore
+ store.currentConversationId = 'conv-1'
+ await store.restoreConversationRuntime('conv-1')
+ expect(store.pendingClarifications.size).toBe(0)
  })
  it('creating sessions for a plan immediately confirms created draft sessions', async => {
  vi.mocked(createSessionsForPlan).mockResolvedValue({

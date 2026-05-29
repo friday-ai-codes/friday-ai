@@ -142,3 +142,48 @@ async def test_vue_target_module_resolution(repository) -> None:
  assert edges[0].source_chunk_id == src.chunk_id
  assert edges[0].target_chunk_id == target.chunk_id
  assert edges[0].metadata["target_file"] == "components/Button.vue"
+@pytest.mark.django_db(transaction=True)
+async def test_relative_vue_import_with_explicit_extension(repository) -> None:
+ """显式扩展名相对导入 ``./components/Banner/index.vue`` 应解析到对应 .vue 文件。
+ 回归：此前 ``suffix.replace(".","/")`` 把扩展名的点替换成 ``/``
+ （``index.vue`` → ``index/vue``），导致带显式 .vue 扩展名的相对导入永远
+ 解析失败、Vue→Vue import 边建不出 ChunkEdge，find_related_code 游走不到。
+ """
+ src = await _make_chunk(
+ repository, "apps/tabStudy/src/v3/views/worldview/index.vue"
+ )
+ target = await _make_chunk(
+ repository,
+ "apps/tabStudy/src/v3/views/worldview/components/Banner/index.vue",
+ )
+ await _make_import(
+ repository,
+ "apps/tabStudy/src/v3/views/worldview/index.vue",
+ "./components/Banner/index.vue",
+ is_relative=True,
+ imported_names=["Banner"],
+ )
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src.chunk_id
+ assert edges[0].target_chunk_id == target.chunk_id
+ assert (
+ edges[0].metadata["target_file"]
+ == "apps/tabStudy/src/v3/views/worldview/components/Banner/index.vue"
+ )
+@pytest.mark.django_db(transaction=True)
+async def test_relative_ts_import_explicit_extension(repository) -> None:
+ """``../services/foo.ts`` 显式扩展名相对导入正确解析到父目录文件。"""
+ src = await _make_chunk(repository, "pkg/views/a.ts")
+ target = await _make_chunk(repository, "pkg/services/foo.ts")
+ await _make_import(
+ repository,
+ "pkg/views/a.ts",
+ "../services/foo.ts",
+ is_relative=True,
+ imported_names=["foo"],
+ )
+ edges = await ImportEdgeBuilder.build(repository, )
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == src.chunk_id
+ assert edges[0].target_chunk_id == target.chunk_id

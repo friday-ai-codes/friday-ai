@@ -39,6 +39,19 @@ def test_strategy_deep_analysis_is_final_str -> None:
  assert "并行 dispatch N 个" in _STRATEGY_DEEP_ANALYSIS
  # P15 新语义：宁可多开
  assert "宁可多开" in _STRATEGY_DEEP_ANALYSIS
+def test_strategy_deep_analysis_prepares_with_graph_walk -> None:
+ """_STRATEGY_DEEP_ANALYSIS：派单前用 find_related_code 沿关系图做好准备。
+ 用户诉求：深度分析模式应「做好全部准备后再调用仓库深度分析」——
+ 搜到具体符号/文件后用 find_related_code 摸清跨文件/跨仓关联，既避免漏派
+ 间接相关仓库，又能写出聚焦的 task_description。准备充分再并行 dispatch。
+ """
+ assert "find_related_code" in _STRATEGY_DEEP_ANALYSIS
+ assert "派单前做好准备" in _STRATEGY_DEEP_ANALYSIS
+ assert "准备充分再 dispatch" in _STRATEGY_DEEP_ANALYSIS
+ assert "task_description" in _STRATEGY_DEEP_ANALYSIS
+ # 旧的并行 dispatch / 定位语义不被破坏
+ assert "只能用来「定位哪些仓库相关」" in _STRATEGY_DEEP_ANALYSIS
+ assert "必须并行 dispatch" in _STRATEGY_DEEP_ANALYSIS
 def test_coding_guidance_has_leading_newline -> None:
  """_CODING_GUIDANCE 前导换行 + "编码任务识别"开头。"""
  # 原函数内 coding_guidance 以 "\n编码任务识别" 开头（保持前导换行）
@@ -78,3 +91,14 @@ def test_search_usage_rules_fragment_present -> None:
  assert "灾难性差" in _SEARCH_USAGE_RULES
  # 调优建议
  assert "min_score" in _SEARCH_USAGE_RULES
+def test_search_usage_rules_guides_graph_walk -> None:
+ """_SEARCH_USAGE_RULES 引导「搜到代码片段后用 find_related_code 沿关系图深入」。
+ 避免 LLM 只会 RAG 模糊检索、拿到孤立片段就停手，不利用已注册的 chunk 级
+ 关系图遍历能力（CALL / IMPORT / TEST_OF）做更深入的需求分析。
+ """
+ assert "find_related_code" in _SEARCH_USAGE_RULES
+ assert "关系图" in _SEARCH_USAGE_RULES
+ # 上下游 / 测试三类典型用法都给了示例
+ assert "upstream" in _SEARCH_USAGE_RULES
+ assert "downstream" in _SEARCH_USAGE_RULES
+ assert "TEST_OF" in _SEARCH_USAGE_RULES

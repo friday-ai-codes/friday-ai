@@ -160,7 +160,7 @@ describe(' 既有组件接入 parts API（Quick Task）', => {
  expect(card.exists).toBe(true)
  expect(card.attributes('data-title')).toBe('产品文档')
  })
- it('4. RoutingDecisionPanel 在 routing_trace_id metadata + store 有 trace 时渲染', async => {
+ it('4. RoutingDecisionPanel 已下线：即便 routing_trace_id + store 有 trace 也不渲染（与底部澄清卡去重）', async => {
  const routingStore = useRoutingStore
  routingStore.upsertTrace({
  trace_id: 'trace-rendered',
@@ -186,9 +186,7 @@ describe(' 既有组件接入 parts API（Quick Task）', => {
  created_at: '2026-05-21T00:00:00Z',
  }
  const wrapper = await mountBubble(msg)
- const panel = wrapper.find('[data-test="routing-panel"]')
- expect(panel.exists).toBe(true)
- expect(panel.attributes('data-trace')).toBe('trace-rendered')
+ expect(wrapper.find('[data-test="routing-panel"]').exists).toBe(false)
  })
  it('5. ChatToolCall part prop 渲染（ 新 props 路径）', => {
  const part: ToolUsePart = {

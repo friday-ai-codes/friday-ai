@@ -23,6 +23,7 @@ async def finalize_conversation(
  notification_user_id: str | None = None,
  publish_title_event: bool = True,
  parts: list[dict[str, Any]] | None = None,
+ doc_summary: dict[str, Any] | None = None,
 ) -> list[AgentEvent]:
  """会话收尾：消息落库、AgentSession 更新、标题生成和 push 通知。
  从 graph terminal state 的数据构建 assistant 消息并持久化。
@@ -86,6 +87,15 @@ async def finalize_conversation(
  msg_metadata["output_tokens"] = result_metadata["output_tokens"]
  if accumulated_thinking:
  msg_metadata["thinking"] = "".join(accumulated_thinking)
+ # 降级回答（max_turns 耗尽但已产出 partial）：落库让刷新后仍能展示降级提示。
+ if result_metadata.get("degraded"):
+ msg_metadata["degraded"] = True
+ if result_metadata.get("degraded_reason"):
+ msg_metadata["degraded_reason"] = result_metadata["degraded_reason"]
+ # 飞书文档摘要卡：落库到 message.metadata.docSummary，让刷新后仍能回显
+ # （前端 ChatMessageBubble.docSummary 历史路径读 metadata.docSummary）。
+ if doc_summary:
+ msg_metadata["docSummary"] = doc_summary
  tool_calls_data = tool_calls or None
  # Quick Task：落库强同源
  # 来源 chat_runner 路径（parts 非空）→ 用 PartsCollector 派生的 content +
@@ -109,6 +119,50 @@ async def finalize_conversation(
  exc_info=True,
  )
  msg_metadata["parts_schema_version"] = 1
+ # 2b. 深度分析子会话日志持久化：让历史消息刷新后仍能按会话还原各自的
+ # 工具调用 / 思考过程。只挂载本条消息真正引用到的 deep-xxxx 会话（按 tool
+ # call / parts 中出现的 session_id 过滤），避免把往轮的子会话错挂到本消息。
+ try:
+ import re as _re
+ from subagent.models import SubAgentSession
+ _deep_id_pat = _re.compile(r"deep-[0-9a-f]{6,}")
+ referenced_ids: set[str] = set
+ def _scan_for_deep_ids(val: Any) -> None:
+ if isinstance(val, str):
+ referenced_ids.update(_deep_id_pat.findall(val))
+ elif isinstance(val, dict):
+ for sub in val.values:
+ _scan_for_deep_ids(sub)
+ elif isinstance(val, list):
+ for sub in val:
+ _scan_for_deep_ids(sub)
+ _scan_for_deep_ids(tool_calls_data)
+ _scan_for_deep_ids(parts_data)
+ if referenced_ids:
+ deep_sessions: list[dict[str, Any]] =
+ async for sess in SubAgentSession.objects.filter(
+ session_id__in=list(referenced_ids),
+ ).order_by("id"):
+ out = sess.last_output or {}
+ sess_logs = out.get("logs", ) if isinstance(out, dict) else
+ deep_sessions.append(
+ {
+ "session_id": sess.session_id,
+ "task_description": out.get("task_description", "")
+ if isinstance(out, dict)
+ else "",
+ "status": sess.status,
+ "logs": sess_logs if isinstance(sess_logs, list) else,
+ }
+ )
+ if deep_sessions:
+ msg_metadata["deep_analysis_sessions"] = deep_sessions
+ except Exception:
+ logger.warning(
+ "finalize_deep_sessions_failed",
+ conversation_id=str(conversation.id),
+ exc_info=True,
+ )
  # 3. 保存/更新 assistant 消息（幂等 — barrier 多次 resume 时更新为终态）
  existing = await Message.objects.filter(id=assistant_msg_id).afirst
  if existing:

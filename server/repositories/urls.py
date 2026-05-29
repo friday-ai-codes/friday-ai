@@ -5,6 +5,7 @@ from .index_views import (
  BranchIndexListView,
  CodeSearchView,
  EmbeddingHealthView,
+ GraphRagStatusView,
  IndexCancelView,
  IndexDeleteView,
  IndexedFilesListView,
@@ -90,6 +91,11 @@ urlpatterns = [
  "<uuid:repository_id>/index/status/",
  IndexStatusView.as_view,
  name="repository-index-status",
+ ),
+ path(
+ "<uuid:repository_id>/index/graphrag-status/",
+ GraphRagStatusView.as_view,
+ name="repository-graphrag-status",
  ),
  path(
  "<uuid:repository_id>/index/cancel/",

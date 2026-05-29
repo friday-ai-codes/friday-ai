@@ -355,6 +355,152 @@ class TestConversationRuntimeCodingPlanPayload:
  assert session["commit_sha"] == ""
  assert session["status"] == "running"
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestConversationRuntimeDeepSessions:
+ """每个深度分析子会话各自独立的日志（runtime.deep_sessions）。"""
+ async def test_multiple_deep_sessions_independent_logs(
+ self, conversation_for_runtime, project
+ ) -> None:
+ """两个并行深度分析 → deep_sessions 两条，logs 各自独立、按 id 升序。"""
+ from asgiref.sync import sync_to_async
+ from agents.models import AgentSession
+ from chat.conversation_service import ConversationService
+ from subagent.models import SubAgentSession
+ conv_id = str(conversation_for_runtime.id)
+ async def _make(sid: str, task: str, logs: list) -> None:
+ agent = await sync_to_async(AgentSession.objects.create)(
+ session_id=f"agent-{sid}",
+ project=project,
+ status=AgentSession.Status.COMPLETED,
+ metadata={"source": "chat_deep_analysis", "conversation_id": conv_id},
+ )
+ await sync_to_async(SubAgentSession.objects.create)(
+ session_id=sid,
+ main_session=agent,
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.COMPLETED,
+ last_output={
+ "source": "chat_deep_analysis",
+ "task_description": task,
+ "logs": logs,
+ },
+ )
+ await _make("deep-aaa111", "分析 A 仓库", [
+ {"type": "tool_call", "content": "Read({\"file_path\": \"a.py\"})", "ts": 1},
+ ])
+ await _make("deep-bbb222", "分析 B 仓库", [
+ {"type": "text", "content": "[思考] 分析 B", "ts": 2},
+ {"type": "result", "content": "cost=$0.01", "ts": 3},
+ ])
+ runtime = await ConversationService.get_conversation_runtime(conv_id)
+ deep = runtime["deep_sessions"]
+ assert len(deep) == 2
+ by_id = {d["session_id"]: d for d in deep}
+ assert by_id["deep-aaa111"]["task_description"] == "分析 A 仓库"
+ assert len(by_id["deep-aaa111"]["logs"]) == 1
+ assert len(by_id["deep-bbb222"]["logs"]) == 2
+ # 升序：先创建的（pk 更小）排在前，与工具调用出现顺序一致
+ assert deep[0]["session_id"] == "deep-aaa111"
+ # 向后兼容字段保留（= 最新一个）
+ assert runtime["session_id"] == "deep-bbb222"
+ async def test_no_deep_sessions_returns_empty_list(
+ self, conversation_for_runtime
+ ) -> None:
+ """没有任何深度分析子会话 → deep_sessions 为空列表。"""
+ from chat.conversation_service import ConversationService
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert runtime["deep_sessions"] ==
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+class TestConversationRuntimePendingClarification:
+ """waiting_clarification 时 runtime 返回 pending_clarification（刷新可恢复卡片）。"""
+ async def _make_run(self, conv, phase, status):
+ from asgiref.sync import sync_to_async
+ from orchestration.models import OrchestrationRun
+ return await sync_to_async(OrchestrationRun.objects.create)(
+ conversation=conv,
+ thread_id=str(conv.id),
+ status=status,
+ phase=phase,
+ )
+ async def _make_trace(self, conv, *, answered: bool):
+ from asgiref.sync import sync_to_async
+ from django.utils import timezone
+ from chat.models import ConversationIntentTrace
+ return await sync_to_async(ConversationIntentTrace.objects.create)(
+ conversation=conv,
+ clarification_id="clar-abc123",
+ question="选 A 还是 B？",
+ options=[{"id": "a", "label": "A"}, {"id": "b", "label": "B"}],
+ answered_at=timezone.now if answered else None,
+ )
+ async def test_waiting_clarification_returns_pending(self, conversation_for_runtime) -> None:
+ from chat.conversation_service import ConversationService
+ from orchestration.models import OrchestrationRun
+ conv = conversation_for_runtime
+ await self._make_run(
+ conv,
+ OrchestrationRun.Phase.WAITING_CLARIFICATION,
+ OrchestrationRun.Status.WAITING,
+ )
+ await self._make_trace(conv, answered=False)
+ runtime = await ConversationService.get_conversation_runtime(str(conv.id))
+ pc = runtime["pending_clarification"]
+ assert pc is not None
+ assert pc["clarification_id"] == "clar-abc123"
+ assert pc["question"] == "选 A 还是 B？"
+ assert len(pc["options"]) == 2
+ assert pc["allow_freeform"] is True
+ async def test_answered_trace_not_returned(self, conversation_for_runtime) -> None:
+ from chat.conversation_service import ConversationService
+ from orchestration.models import OrchestrationRun
+ conv = conversation_for_runtime
+ await self._make_run(
+ conv,
+ OrchestrationRun.Phase.WAITING_CLARIFICATION,
+ OrchestrationRun.Status.WAITING,
+ )
+ await self._make_trace(conv, answered=True)
+ runtime = await ConversationService.get_conversation_runtime(str(conv.id))
+ assert runtime["pending_clarification"] is None
+ async def test_completed_run_does_not_resurrect_stale_clarification(
+ self, conversation_for_runtime
+ ) -> None:
+ """历史会话：run 已完成但残留未回答 trace（旧版强制澄清被绕过）→ 不复活卡片。"""
+ from chat.conversation_service import ConversationService
+ from orchestration.models import OrchestrationRun
+ conv = conversation_for_runtime
+ await self._make_run(
+ conv,
+ OrchestrationRun.Phase.COMPLETED,
+ OrchestrationRun.Status.COMPLETED,
+ )
+ await self._make_trace(conv, answered=False)
+ runtime = await ConversationService.get_conversation_runtime(str(conv.id))
+ assert runtime["pending_clarification"] is None
+def test_runtime_serializer_includes_deep_sessions -> None:
+ """ConversationRuntimeSerializer 透传 deep_sessions 嵌套字段（含 logs）。"""
+ from chat.serializers import ConversationRuntimeSerializer
+ payload = {
+ "conversation_id": "a7c0e3b1-8d4f-4e2b-9c6d-1f3e5a7b9c0d",
+ "active": True,
+ "deep_sessions": [
+ {
+ "session_id": "deep-x",
+ "task_description": "分析入口",
+ "status": "RUNNING",
+ "progress_percent": None,
+ "logs": [{"type": "text", "content": "hi", "ts": 1}],
+ },
+ ],
+ }
+ out = ConversationRuntimeSerializer(payload).data
+ assert "deep_sessions" in out
+ assert out["deep_sessions"][0]["session_id"] == "deep-x"
+ assert out["deep_sessions"][0]["logs"][0]["content"] == "hi"
+@pytest.mark.django_db(transaction=True)
 def test_runtime_coding_plan_query_budget_no_n_plus_1(
  conversation_for_runtime,
  coding_plan_for_runtime,

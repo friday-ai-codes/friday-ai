@@ -76,7 +76,7 @@ class TestManualTriggerFullFlow(TransactionTestCase):
  return_value=[fake_embedding],
  ),
  patch("services.indexer.scan_directory", return_value=["/tmp/fake_clone/src/main.py"]),
- patch("services.indexer.CodeParser.parse_file") as mock_parse,
+ patch("services.indexer.CodeParser.parse_file_dual") as mock_parse,
  patch("services.indexer.SystemSetting") as mock_setting_cls,
  patch("tempfile.mkdtemp", return_value="/tmp/fake_clone"),
  patch("shutil.rmtree"),
@@ -104,7 +104,7 @@ class TestManualTriggerFullFlow(TransactionTestCase):
  module_docstring="",
  sibling_signatures="",
  )
- mock_parse.return_value = [mock_chunk]
+ mock_parse.return_value = ([mock_chunk], None)
  # mock git clone 成功
  process_mock = AsyncMock
  process_mock.communicate = AsyncMock(return_value=(b"", b""))
@@ -250,7 +250,7 @@ class TestIncrementalIndexFlow(TransactionTestCase):
  ),
  patch("services.indexer.update_index_progress", new_callable=AsyncMock),
  patch("services.indexer.update_write_progress", new_callable=AsyncMock),
- patch("services.indexer.CodeParser.parse_file") as mock_parse,
+ patch("services.indexer.CodeParser.parse_file_dual") as mock_parse,
  ):
  from services.code_parser import CodeChunk
  mock_chunk = CodeChunk(
@@ -266,7 +266,7 @@ class TestIncrementalIndexFlow(TransactionTestCase):
  module_docstring="",
  sibling_signatures="",
  )
- mock_parse.return_value = [mock_chunk]
+ mock_parse.return_value = ([mock_chunk], None)
  result = await indexer.run_incremental_index("/tmp/repo")
  # 验证：只有 a.py 被更新（updated=1），b.py 被跳过
  assert result["status"] == "success"

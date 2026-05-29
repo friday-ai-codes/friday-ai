@@ -46,25 +46,24 @@ describe('chat visual contract', => {
  expect(source).not.toContain('.group:hover .action-bar')
  expect(source).not.toMatch(/\.action-bar\s*\{[^}]*opacity:\s*0/)
  })
- it('groups parallel tool calls by batch_id into a horizontal chip flow', => {
+ it('collapses consecutive tool calls into a Cursor-style process group', => {
  /*
- * Phase chat-timeline-batch 契约：后端 chat_runner 为同一 LLM turn
- * 内的多个 tool_call 打同一个 batch_id；前端按 batch_id 横向展示为
- * chip 流（节省纵向空间），避免历史 bug —— 一次 LLM 决定调 N 个工具
- * 在 UI 上铺成 N 行 pill。下面三项分别确保：
- * 1. 数据通路：types/SSEEvent / TimelineToolItem 携带 batch_id
- * 2. 分组逻辑：packGroups 识别 batch_id 走 'batch' 来源
- * 3. 渲染层：DOM 模板存在 tool-batch / tool-batch-chips / tool-chip 节点
+ * 工具调用收拢重设计：连续的「思考 + 工具调用」收拢进一个默认收起的
+ * 三层折叠面板（ToolProcessGroup），节省纵向空间。下面分别确保：
+ * 1. 数据通路：types/SSEEvent 仍携带 batch_id（后端契约不变）
+ * 2. 分组逻辑：ChatMessageBubble 产出 process-group 渲染节点
+ * 3. 渲染层：使用 ToolProcessGroup 组件渲染折叠面板
  */
  const types = readSource('types/chat.ts')
  expect(types).toContain('batch_id?: string')
- const store = readSource('stores/chat.ts')
- expect(store).toContain('batch_id: event.batch_id')
  const bubble = readSource('components/chat/ChatMessageBubble.vue')
- expect(bubble).toContain('source: curBatch ? \'batch\': \'consecutive-same\'')
- expect(bubble).toContain('shouldUseChipLayout')
- expect(bubble).toContain('tool-batch-chips')
- expect(bubble).toContain('tool-chip')
+ expect(bubble).toContain('kind: \'process-group\'')
+ expect(bubble).toContain('ToolProcessGroup')
+ const group = readSource('components/chat/ToolProcessGroup.vue')
+ // 三层折叠：容器头 / 步骤行 / 单步详情
+ expect(group).toContain('tpg-head')
+ expect(group).toContain('tpg-row')
+ expect(group).toContain('tpg-detail')
  })
  it('inlines thinking nodes into the timeline with collapsible preview', => {
  /*

@@ -1,5 +1,5 @@
 import type { GraphBuildHistoryItem } from '~/api/codegraph'
-import type { CollectionHealthResponse, IndexHistoryItem, IndexStatusResponse } from '~/api/repositories'
+import type { CollectionHealthResponse, GraphRagStatusResponse, IndexStatusResponse } from '~/api/repositories'
 import type { Repository } from '~/types'
 import { listGraphHistory } from '~/api/codegraph'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
@@ -18,7 +18,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  const repo = ref<Repository | null>(null)
  const indexStatus = ref<IndexStatusResponse | null>(null)
  const health = ref<CollectionHealthResponse | null>(null)
- const graphRagHistory = ref<IndexHistoryItem | null>(null)
+ const graphRagStatus = ref<GraphRagStatusResponse | null>(null)
  const structuredGraphCounts = ref<{
  symbols: number
  imports: number
@@ -48,14 +48,14 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  health.value = null
  }
  }
- async function loadGraphRagHistory {
+ async function loadGraphRagStatus {
  try {
- const res = await repositoriesApi.getIndexHistory(repositoryId.value, { limit: 1 })
- const first = res.items[0]
- graphRagHistory.value = first?.graph_build_status ? first: null
+ // 直接读 ChunkEdge 表真实计数（不再依赖 IndexHistory.edge_count 快照，
+ // 修复时序漏写导致的"0 语义边"误显示）
+ graphRagStatus.value = await repositoriesApi.getGraphRagStatus(repositoryId.value)
  }
  catch {
- graphRagHistory.value = null
+ graphRagStatus.value = null
  }
  }
  async function loadStructuredGraphCounts {
@@ -82,7 +82,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  loadRepo,
  loadIndexStatus,
  loadHealth,
- loadGraphRagHistory,
+ loadGraphRagStatus,
  loadStructuredGraphCounts,
  ])
  }
@@ -100,7 +100,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  const res = await repositoriesApi.refreshRemoteHead(repositoryId.value)
  latestRemoteHeadSha.value = res.remote_head_sha
  await loadRepo
- await Promise.all([loadHealth, loadGraphRagHistory])
+ await Promise.all([loadHealth, loadGraphRagStatus])
  }
  catch (e: unknown) {
  const msg = e instanceof Error ? e.message: '未知错误'
@@ -128,7 +128,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  repo,
  indexStatus,
  health,
- graphRagHistory,
+ graphRagStatus,
  structuredGraphCounts,
  structuredGraphTotal,
  freshnessState,
@@ -138,7 +138,7 @@ export function useKnowledgeOverview(repositoryId: Ref<string>) {
  loadAll,
  refreshFreshness,
  loadStructuredGraphCounts,
- loadGraphRagHistory,
+ loadGraphRagStatus,
  loadIndexStatus,
  loadRepo,
  }

@@ -1,4 +1,6 @@
 /** 对话系统类型定义 */
+import type { ClarificationPayload } from '~/types/clarification'
+import type { RoutingDecisionData } from '~/types/routing'
 import type { ConversationStatus } from '~/composables/useConversationFrozen'
 /**
  * 对话状态（与后端 Conversation.Status TextChoices 同步）。
@@ -109,6 +111,20 @@ export interface DeepAnalysisLog {
  content: string
  ts: number
 }
+/**
+ * 单个深度分析子会话（subagent）的运行态快照。
+ *
+ * 一次助手回复里可能并行触发多个深度分析，每个子代理拥有自己独立的
+ * 工具调用 / 思考日志。前端据此按会话渲染横向 swiper。
+ */
+export interface DeepAnalysisSession {
+ session_id: string
+ task_description?: string
+ status?: string
+ progress_message?: string
+ progress_percent?: number | null
+ logs: DeepAnalysisLog
+}
 export interface StreamTimelineThinkingItem {
  id: string
  kind: 'thinking'
@@ -173,13 +189,26 @@ export interface ConversationRuntime {
  progress_message?: string
  progress_percent?: number | null
  logs?: DeepAnalysisLog
+ /** 多个深度分析子会话各自独立的日志（按会话渲染 swiper） */
+ deep_sessions?: DeepAnalysisSession
  deep_analysis_status?: string | null
  deep_analysis_error?: string | null
  streaming_snapshot?: ConversationRuntimeStreamingSnapshot | null
+ /** 待回复的澄清（waiting_clarification 时返回，供刷新恢复 ClarificationCard） */
+ pending_clarification?: {
+ clarification_id: string
+ question: string
+ options: Array<{ id: string, label: string, hint?: string, implies?: Record<string, unknown> }>
+ allow_freeform?: boolean
+ } | null
 }
 /** 对话详情（含消息列表） */
 export interface ConversationDetail extends Conversation {
  messages: ConversationMessage
+ /** 已回复的协商卡（刷新回显 ClarificationCard 的已回复态） */
+ clarifications?: ClarificationPayload
+ /** 最新跨仓路由决策 trace（刷新 hydrate routingStore，回显 RelevanceBadge） */
+ routing_trace?: RoutingDecisionData | null
 }
 /** 编辑历史 user message 前创建新分支 conversation 的请求体 */
 export interface ForkConversationRequest {

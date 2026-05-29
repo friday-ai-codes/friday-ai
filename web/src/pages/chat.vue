@@ -8,6 +8,7 @@ import ChatInput from '~/components/chat/ChatInput.vue'
 import ChatMessageArea from '~/components/chat/ChatMessageArea.vue'
 const chatStore = useChatStore
 const spacesStore = useSpacesStore
+const repositoriesStore = useRepositoriesStore
 // Chat 数据懒加载：首次进入 /chat 时初始化
 onMounted(async => {
  await Promise.all([
@@ -17,6 +18,10 @@ onMounted(async => {
  await chatStore.restoreFromURL
  if (chatStore.notificationsEnabled)
  chatStore.requestNotificationPermission
+ // 惰性拉取仓库列表：供 ChatMessageBubble 把工具调用里的 repository_id
+ // 渲染成仓库名称（诉求 2/3 的兜底来源，relevance 候选缺失时使用）。
+ if (repositoriesStore.repositories.length === 0)
+ repositoriesStore.fetchRepositories.catch( => {})
 })
 </script>
 <template>

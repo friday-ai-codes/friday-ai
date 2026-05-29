@@ -258,7 +258,7 @@ class TestOverlayIndex:
  chunk.imports = ""
  chunk.module_docstring = ""
  chunk.sibling_signatures = ""
- indexer.parser.parse_file.return_value = [chunk]
+ indexer.parser.parse_file_dual.return_value = ([chunk], None)
  result = await indexer.run_branch_index("/tmp/fake", "feature/x", repository)
  assert result["status"] == "indexed"
  assert result["diff_files"] == 1

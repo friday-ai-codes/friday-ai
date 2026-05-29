@@ -446,61 +446,6 @@ async def _extract_blocking_tasks(
  blocking_tasks.append(ft)
  seen_ids.add(ft["task_id"])
  return blocking_tasks
-def _extract_relev_low_confidence_pending(
- tool_calls_by_id: dict[str, dict[str, Any]],
- user_message: str,
-) -> dict[str, Any] | None:
- """检测 ``analyze_repository_relevance`` 工具结果，低置信时自动构造
- ``ask_clarification`` payload 进 wait_clarification 暂停。
- Phase：编排层硬约束「准确优先于速度」—— 即便 LLM 拿到 RELEV
- 结果后想直接 create_coding_plan，graph 也会在低置信时主动暂停让用户挑。
- 与 Plan / 03 的 ask_clarification 路径共用 ``pending_clarification`` 状态。
- 高置信 / RELEV 缺失（Phase 未上线）→ 返回 None，让 graph 走主流。
- """
- import json
- import uuid
- from agents.intent_router import (
- build_clarification_from_relev,
- evaluate_relev_confidence,
- )
- # 找最近一次成功的 analyze_repository_relevance 调用
- relev_output: dict[str, Any] | None = None
- for tc in tool_calls_by_id.values:
- if tc.get("name") != "analyze_repository_relevance":
- continue
- raw = tc.get("result")
- if isinstance(raw, dict):
- relev_output = raw
- elif isinstance(raw, str) and raw:
- try:
- parsed = json.loads(raw)
- except (ValueError, TypeError):
- continue
- if isinstance(parsed, dict):
- relev_output = parsed
- if relev_output is None:
- return None
- # tool 错误返回 → 跳过
- if isinstance(relev_output, dict) and relev_output.get("is_error"):
- return None
- # Unwrap ToolResult.output 形态：{"data": {"candidates": [...]}, "metadata": {...}}
- # → 给 intent_router helpers 的是 {"candidates": [...]} 直接形态。
- if isinstance(relev_output, dict) and isinstance(relev_output.get("data"), dict):
- unwrapped = relev_output["data"]
- else:
- unwrapped = relev_output
- confidence = evaluate_relev_confidence(unwrapped)
- if confidence.level != "low_confidence":
- return None
- payload_dict = build_clarification_from_relev(unwrapped, user_message)
- if not payload_dict.get("options"):
- return None
- return {
- "clarification_id": uuid.uuid4.hex,
- "question": payload_dict["question"],
- "options": payload_dict["options"],
- "allow_freeform": bool(payload_dict.get("allow_freeform", True)),
- }
 def _extract_pending_clarification(
  tool_calls_by_id: dict[str, dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -628,21 +573,12 @@ async def _execute_first_run(
  "blocking_tasks": blocking_tasks,
  "agent_session_id": agent_session_id,
  }
- # Phase：检测 ask_clarification —— 如果 LLM 要求澄清，
- # 进 wait_clarification interrupt 等用户输入。
+ # 是否需要向用户澄清，完全由 LLM 自行决定（调 ask_clarification 工具，
+ # 类似 Cursor —— 模型遇到歧义时主动单选/多选提问）。编排层不再基于
+ # analyze_repository_relevance 的低置信分数强制插入「选仓库」澄清：
+ # 那条硬约束会无视 LLM 的实际回复（哪怕它已给出 1/2/3 的引导）强行抢话，
+ # 造成答非所问 + 顶/底两套重复的选仓库 UI。
  pending_clarification = _extract_pending_clarification(tool_calls_by_id)
- # Phase：LLM 没主动调 ask_clarification 但 RELEV 低置信
- # → 编排层自动构造 pending_clarification 强制澄清（硬约束）
- if pending_clarification is None:
- pending_clarification = _extract_relev_low_confidence_pending(
- tool_calls_by_id, state.get("user_message", ""),
- )
- if pending_clarification is not None:
- logger.info(
- "executing_node_relev_auto_clarification",
- clarification_id=pending_clarification.get("clarification_id"),
- options_count=len(pending_clarification.get("options", )),
- )
  if pending_clarification is not None:
  logger.info(
  "executing_node_pending_clarification_detected",
@@ -650,15 +586,8 @@ async def _execute_first_run(
  options_count=len(pending_clarification.get("options", )),
  )
  await _persist_run_phase(run_id, RunPhase.WAITING_CLARIFICATION.value)
- # review review round Fix C-1：PHASE_TRANSITION 直接携带 question / options /
- # allow_freeform，让前端无需依赖 tool_use_result(ask_clarification) 兜底
- # 即可渲染 ClarificationCard。原设计假设 ClarificationCard payload 仅由
- # LLM 主动调 ask_clarification 工具的 tool_use_result 事件提供（前端
- # chat.ts:1171-1178 注释明写），但编排层 _extract_relev_low_confidence_pending
- # 自动构造 pending_clarification 时 LLM 并未调工具，SSE 不会出 tool_use_result
- # 事件 → 前端永远拿不到 payload → ClarificationCard 不渲染 → 用户无法
- # 答复 → graph 永久 hang 在 waiting_clarification interrupt。详见
- # project-docs/phases/work-item/work-item.md review round Gap C-1。
+ # PHASE_TRANSITION 直接携带 question / options / allow_freeform，让前端
+ # 无需依赖 tool_use_result(ask_clarification) 兜底即可渲染 ClarificationCard。
  writer({
  "type": PHASE_TRANSITION,
  "data": {

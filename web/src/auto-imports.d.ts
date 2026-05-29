@@ -8,11 +8,16 @@ export {}
 declare global {
  const CHAT_PARTS_PROTOCOL_KEY: typeof import('./composables/useChatPartsProtocol').CHAT_PARTS_PROTOCOL_KEY
  const EffectScope: typeof import('vue').EffectScope
+ const TOOL_ICONS: typeof import('./composables/useToolDisplay').TOOL_ICONS
+ const TOOL_LABELS: typeof import('./composables/useToolDisplay').TOOL_LABELS
+ const TOOL_LABELS_CN: typeof import('./composables/useDeepAnalysisLog').TOOL_LABELS_CN
  const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
  const areTypesCompatible: typeof import('./composables/useSchemaValidation').areTypesCompatible
  const asyncComputed: typeof import('@vueuse/core').asyncComputed
  const autoResetRef: typeof import('@vueuse/core').autoResetRef
+ const bareName: typeof import('./composables/useToolDisplay').bareName
  const checkMissingKeys: typeof import('./composables/useDownstreamVarCheck').checkMissingKeys
+ const collectRepoNames: typeof import('./composables/useToolDisplay').collectRepoNames
  const computeFreshness: typeof import('./composables/useKnowledgeOverview').computeFreshness
  const computed: typeof import('vue').computed
  const computedAsync: typeof import('@vueuse/core').computedAsync
@@ -39,6 +44,7 @@ declare global {
  const customRef: typeof import('vue').customRef
  const debouncedRef: typeof import('@vueuse/core').debouncedRef
  const debouncedWatch: typeof import('@vueuse/core').debouncedWatch
+ const decorateDeepLog: typeof import('./composables/useDeepAnalysisLog').decorateDeepLog
  const defineAsyncComponent: typeof import('vue').defineAsyncComponent
  const defineComponent: typeof import('vue').defineComponent
  const defineStore: typeof import('pinia').defineStore
@@ -57,11 +63,13 @@ declare global {
  const getDownstreamVarDeps: typeof import('./composables/useDownstreamVarCheck').getDownstreamVarDeps
  const getMarkdownRenderer: typeof import('./composables/useMarkdownRenderer').getMarkdownRenderer
  const h: typeof import('vue').h
+ const humanizeDuration: typeof import('./composables/useToolDisplay').humanizeDuration
  const hydrateLegacyMessage: typeof import('./composables/useMessageParts').hydrateLegacyMessage
  const ignorableWatch: typeof import('@vueuse/core').ignorableWatch
  const inject: typeof import('vue').inject
  const injectLocal: typeof import('@vueuse/core').injectLocal
  const isDefined: typeof import('@vueuse/core').isDefined
+ const isLongText: typeof import('./composables/useDeepAnalysisLog').isLongText
  const isProxy: typeof import('vue').isProxy
  const isReactive: typeof import('vue').isReactive
  const isReadonly: typeof import('vue').isReadonly
@@ -98,6 +106,7 @@ declare global {
  const onWatcherCleanup: typeof import('vue').onWatcherCleanup
  const openModal: typeof import('./composables/useModal').openModal
  const pausableWatch: typeof import('@vueuse/core').pausableWatch
+ const previewText: typeof import('./composables/useDeepAnalysisLog').previewText
  const provide: typeof import('vue').provide
  const provideLocal: typeof import('@vueuse/core').provideLocal
  const reactify: typeof import('@vueuse/core').reactify
@@ -114,7 +123,10 @@ declare global {
  const refManualReset: typeof import('@vueuse/core').refManualReset
  const refThrottled: typeof import('@vueuse/core').refThrottled
  const refWithControl: typeof import('@vueuse/core').refWithControl
+ const relevanceCandidates: typeof import('./composables/useToolDisplay').relevanceCandidates
+ const repoInitial: typeof import('./composables/useToolDisplay').repoInitial
  const resolveComponent: typeof import('vue').resolveComponent
+ const searchedRepoLabel: typeof import('./composables/useToolDisplay').searchedRepoLabel
  const setActivePinia: typeof import('pinia').setActivePinia
  const setMapStoreSuffix: typeof import('pinia').setMapStoreSuffix
  const shallowReactive: typeof import('vue').shallowReactive
@@ -131,12 +143,16 @@ declare global {
  const toRef: typeof import('vue').toRef
  const toRefs: typeof import('vue').toRefs
  const toValue: typeof import('vue').toValue
+ const toolAction: typeof import('./composables/useToolDisplay').toolAction
+ const toolIcon: typeof import('./composables/useToolDisplay').toolIcon
+ const toolLabel: typeof import('./composables/useToolDisplay').toolLabel
  const triggerRef: typeof import('vue').triggerRef
  const tryOnBeforeMount: typeof import('@vueuse/core').tryOnBeforeMount
  const tryOnBeforeUnmount: typeof import('@vueuse/core').tryOnBeforeUnmount
  const tryOnMounted: typeof import('@vueuse/core').tryOnMounted
  const tryOnScopeDispose: typeof import('@vueuse/core').tryOnScopeDispose
  const tryOnUnmounted: typeof import('@vueuse/core').tryOnUnmounted
+ const tryParseToolCall: typeof import('./composables/useDeepAnalysisLog').tryParseToolCall
  const unref: typeof import('vue').unref
  const unrefElement: typeof import('@vueuse/core').unrefElement
  const until: typeof import('@vueuse/core').until
@@ -386,6 +402,9 @@ declare global {
  export type { DagreLayoutOptions } from './composables/useDagreLayout'
  import('./composables/useDagreLayout')
  // @ts-ignore
+ export type { DeepLogKind, DeepLogView } from './composables/useDeepAnalysisLog'
+ import('./composables/useDeepAnalysisLog')
+ // @ts-ignore
  export type { DesignTimeVariable, VariableCategory } from './composables/useDesignTimeVariables'
  import('./composables/useDesignTimeVariables')
  // @ts-ignore
@@ -419,6 +438,9 @@ declare global {
  export type { UseSystemHealthReturn } from './composables/useSystemHealth'
  import('./composables/useSystemHealth')
  // @ts-ignore
+ export type { RelevanceCandidate } from './composables/useToolDisplay'
+ import('./composables/useToolDisplay')
+ // @ts-ignore
  export type { AnalyticsGrouping } from './stores/analyticsFilters'
  import('./stores/analyticsFilters')
  // @ts-ignore
@@ -447,11 +469,16 @@ declare module 'vue' {
  interface ComponentCustomProperties {
  readonly CHAT_PARTS_PROTOCOL_KEY: UnwrapRef<typeof import('./composables/useChatPartsProtocol')['CHAT_PARTS_PROTOCOL_KEY']>
  readonly EffectScope: UnwrapRef<typeof import('vue')['EffectScope']>
+ readonly TOOL_ICONS: UnwrapRef<typeof import('./composables/useToolDisplay')['TOOL_ICONS']>
+ readonly TOOL_LABELS: UnwrapRef<typeof import('./composables/useToolDisplay')['TOOL_LABELS']>
+ readonly TOOL_LABELS_CN: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['TOOL_LABELS_CN']>
  readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
  readonly areTypesCompatible: UnwrapRef<typeof import('./composables/useSchemaValidation')['areTypesCompatible']>
  readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
  readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
+ readonly bareName: UnwrapRef<typeof import('./composables/useToolDisplay')['bareName']>
  readonly checkMissingKeys: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['checkMissingKeys']>
+ readonly collectRepoNames: UnwrapRef<typeof import('./composables/useToolDisplay')['collectRepoNames']>
  readonly computeFreshness: UnwrapRef<typeof import('./composables/useKnowledgeOverview')['computeFreshness']>
  readonly computed: UnwrapRef<typeof import('vue')['computed']>
  readonly computedAsync: UnwrapRef<typeof import('@vueuse/core')['computedAsync']>
@@ -478,6 +505,7 @@ declare module 'vue' {
  readonly customRef: UnwrapRef<typeof import('vue')['customRef']>
  readonly debouncedRef: UnwrapRef<typeof import('@vueuse/core')['debouncedRef']>
  readonly debouncedWatch: UnwrapRef<typeof import('@vueuse/core')['debouncedWatch']>
+ readonly decorateDeepLog: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['decorateDeepLog']>
  readonly defineAsyncComponent: UnwrapRef<typeof import('vue')['defineAsyncComponent']>
  readonly defineComponent: UnwrapRef<typeof import('vue')['defineComponent']>
  readonly defineStore: UnwrapRef<typeof import('pinia')['defineStore']>
@@ -496,11 +524,13 @@ declare module 'vue' {
  readonly getDownstreamVarDeps: UnwrapRef<typeof import('./composables/useDownstreamVarCheck')['getDownstreamVarDeps']>
  readonly getMarkdownRenderer: UnwrapRef<typeof import('./composables/useMarkdownRenderer')['getMarkdownRenderer']>
  readonly h: UnwrapRef<typeof import('vue')['h']>
+ readonly humanizeDuration: UnwrapRef<typeof import('./composables/useToolDisplay')['humanizeDuration']>
  readonly hydrateLegacyMessage: UnwrapRef<typeof import('./composables/useMessageParts')['hydrateLegacyMessage']>
  readonly ignorableWatch: UnwrapRef<typeof import('@vueuse/core')['ignorableWatch']>
  readonly inject: UnwrapRef<typeof import('vue')['inject']>
  readonly injectLocal: UnwrapRef<typeof import('@vueuse/core')['injectLocal']>
  readonly isDefined: UnwrapRef<typeof import('@vueuse/core')['isDefined']>
+ readonly isLongText: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['isLongText']>
  readonly isProxy: UnwrapRef<typeof import('vue')['isProxy']>
  readonly isReactive: UnwrapRef<typeof import('vue')['isReactive']>
  readonly isReadonly: UnwrapRef<typeof import('vue')['isReadonly']>
@@ -537,6 +567,7 @@ declare module 'vue' {
  readonly onWatcherCleanup: UnwrapRef<typeof import('vue')['onWatcherCleanup']>
  readonly openModal: UnwrapRef<typeof import('./composables/useModal')['openModal']>
  readonly pausableWatch: UnwrapRef<typeof import('@vueuse/core')['pausableWatch']>
+ readonly previewText: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['previewText']>
  readonly provide: UnwrapRef<typeof import('vue')['provide']>
  readonly provideLocal: UnwrapRef<typeof import('@vueuse/core')['provideLocal']>
  readonly reactify: UnwrapRef<typeof import('@vueuse/core')['reactify']>
@@ -553,7 +584,10 @@ declare module 'vue' {
  readonly refManualReset: UnwrapRef<typeof import('@vueuse/core')['refManualReset']>
  readonly refThrottled: UnwrapRef<typeof import('@vueuse/core')['refThrottled']>
  readonly refWithControl: UnwrapRef<typeof import('@vueuse/core')['refWithControl']>
+ readonly relevanceCandidates: UnwrapRef<typeof import('./composables/useToolDisplay')['relevanceCandidates']>
+ readonly repoInitial: UnwrapRef<typeof import('./composables/useToolDisplay')['repoInitial']>
  readonly resolveComponent: UnwrapRef<typeof import('vue')['resolveComponent']>
+ readonly searchedRepoLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['searchedRepoLabel']>
  readonly setActivePinia: UnwrapRef<typeof import('pinia')['setActivePinia']>
  readonly setMapStoreSuffix: UnwrapRef<typeof import('pinia')['setMapStoreSuffix']>
  readonly shallowReactive: UnwrapRef<typeof import('vue')['shallowReactive']>
@@ -570,12 +604,16 @@ declare module 'vue' {
  readonly toRef: UnwrapRef<typeof import('vue')['toRef']>
  readonly toRefs: UnwrapRef<typeof import('vue')['toRefs']>
  readonly toValue: UnwrapRef<typeof import('vue')['toValue']>
+ readonly toolAction: UnwrapRef<typeof import('./composables/useToolDisplay')['toolAction']>
+ readonly toolIcon: UnwrapRef<typeof import('./composables/useToolDisplay')['toolIcon']>
+ readonly toolLabel: UnwrapRef<typeof import('./composables/useToolDisplay')['toolLabel']>
  readonly triggerRef: UnwrapRef<typeof import('vue')['triggerRef']>
  readonly tryOnBeforeMount: UnwrapRef<typeof import('@vueuse/core')['tryOnBeforeMount']>
  readonly tryOnBeforeUnmount: UnwrapRef<typeof import('@vueuse/core')['tryOnBeforeUnmount']>
  readonly tryOnMounted: UnwrapRef<typeof import('@vueuse/core')['tryOnMounted']>
  readonly tryOnScopeDispose: UnwrapRef<typeof import('@vueuse/core')['tryOnScopeDispose']>
  readonly tryOnUnmounted: UnwrapRef<typeof import('@vueuse/core')['tryOnUnmounted']>
+ readonly tryParseToolCall: UnwrapRef<typeof import('./composables/useDeepAnalysisLog')['tryParseToolCall']>
  readonly unref: UnwrapRef<typeof import('vue')['unref']>
  readonly unrefElement: UnwrapRef<typeof import('@vueuse/core')['unrefElement']>
  readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>

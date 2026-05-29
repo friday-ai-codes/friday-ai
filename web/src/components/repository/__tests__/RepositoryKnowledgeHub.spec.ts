@@ -19,7 +19,7 @@ vi.mock('~/api/repositories', => ({
  get: vi.fn,
  getIndexStatus: vi.fn,
  getCollectionHealth: vi.fn,
- getIndexHistory: vi.fn.mockResolvedValue({ items:, total: 0 }),
+ getGraphRagStatus: vi.fn.mockResolvedValue({ edge_count: 0, status: 'pending', last_synced_at: null }),
  refreshRemoteHead: vi.fn,
  },
 }))
@@ -114,5 +114,16 @@ describe('repositoryKnowledgeHub', => {
  expect(wrapper.text).toContain('图谱构建')
  expect(wrapper.text).toContain('图谱浏览')
  expect(wrapper.text).toContain('统计与历史')
+ })
+ it('GraphRAG 卡展示真实 ChunkEdge 计数（修复「0 语义边」误显示）', async => {
+ vi.mocked(repositoriesApi.getGraphRagStatus).mockResolvedValue({
+ edge_count: 35900,
+ status: 'completed',
+ last_synced_at: '2024-01-02T00:00:00Z',
+ })
+ const wrapper = mountHub
+ await flushPromises
+ // 真实计数应渲染（toLocaleString 千分位），而非旧快照漏写的 0/—
+ expect(wrapper.text).toContain('35,900 语义边')
  })
 })
