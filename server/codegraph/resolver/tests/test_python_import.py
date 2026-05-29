@@ -43,3 +43,27 @@ class TestThirdParty:
  def test_third_party_returns_none(self) -> None:
  resolver = _resolver_with_files("a/c.py")
  assert resolver.resolve_module("django.http", False, "a/c.py") is None
+ def test_third_party_package_both_candidates_miss(self) -> None:
+ # 两候选（a/b.py + a/b/__init__.py）全 miss → None（真第三方）。
+ resolver = _resolver_with_files("a/c.py")
+ assert resolver.resolve_module("requests.sessions", False, "a/c.py") is None
+class TestPackageInit:
+ """``__init__.py`` 包候选：``a/b`` 是包时解析到 ``a/b/__init__.py``（Pitfall 5）。"""
+ def test_package_resolves_to_init(self) -> None:
+ # 仓内只有 a/b/__init__.py（无 a/b.py）→ 命中包 __init__.py。
+ resolver = _resolver_with_files("a/b/__init__.py", "a/c.py")
+ assert resolver.resolve_module("a.b", False, "a/c.py") == "a/b/__init__.py"
+ def test_module_file_precedes_package_init(self) -> None:
+ # 同时存在 a/b.py 与 a/b/__init__.py → 候选顺序固定先模块文件命中。
+ resolver = _resolver_with_files("a/b.py", "a/b/__init__.py", "a/c.py")
+ assert resolver.resolve_module("a.b", False, "a/c.py") == "a/b.py"
+class TestAnchoredFallback:
+ """``/`` + endswith 锚定兜底：含统一前缀路径仍命中且不误匹配相似后缀。"""
+ def test_anchored_hit_with_prefix(self) -> None:
+ # _files 带统一前缀 server/，精确等值 miss → 锚定兜底命中。
+ resolver = _resolver_with_files("server/pkg/auth.py", "server/pkg/c.py")
+ assert resolver.resolve_module("pkg.auth", False, "server/pkg/c.py") == "server/pkg/auth.py"
+ def test_anchored_does_not_match_similar_suffix(self) -> None:
+ # 锚定 ``/pkg/auth.py`` 不得误匹配 ``server/pkg/oauth.py``（防 auth→oauth）。
+ resolver = _resolver_with_files("server/pkg/oauth.py", "server/pkg/c.py")
+ assert resolver.resolve_module("pkg.auth", False, "server/pkg/c.py") is None
