@@ -193,6 +193,39 @@ class TestConversationRuntimeCodingPlanPayload:
  assert runtime["coding_plan"]["plan_id"] == str(coding_plan_for_runtime.id)
  assert runtime["coding_plan"]["title"] == coding_plan_for_runtime.title
  assert runtime["coding_plan"]["sessions"] ==
+ async def test_plan_feishu_fields_empty_when_not_exported(
+ self, conversation_for_runtime, coding_plan_for_runtime
+ ) -> None:
+ """未导出 plan → coding_plan.feishu_doc_token / feishu_doc_url 为空字符串。"""
+ from chat.conversation_service import ConversationService
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert runtime["coding_plan"]["feishu_doc_token"] == ""
+ assert runtime["coding_plan"]["feishu_doc_url"] == ""
+ async def test_plan_feishu_fields_present_when_exported(
+ self, conversation_for_runtime
+ ) -> None:
+ """已导出 plan → runtime.coding_plan 携带非空 feishu_doc_token / feishu_doc_url。"""
+ from asgiref.sync import sync_to_async
+ from chat.conversation_service import ConversationService
+ from chat.models import CodingPlan
+ await sync_to_async(CodingPlan.objects.create)(
+ conversation=conversation_for_runtime,
+ tech_plan="## 已导出方案",
+ affected_files=,
+ title="已导出 ",
+ feishu_doc_token="doctoken123",
+ feishu_doc_url="https://feishu.cn/docx/doctoken123",
+ )
+ runtime = await ConversationService.get_conversation_runtime(
+ str(conversation_for_runtime.id)
+ )
+ assert runtime["coding_plan"]["feishu_doc_token"] == "doctoken123"
+ assert (
+ runtime["coding_plan"]["feishu_doc_url"]
+ == "https://feishu.cn/docx/doctoken123"
+ )
  async def test_plan_with_three_sessions_various_status(
  self,
  conversation_for_runtime,

@@ -636,4 +636,56 @@ describe('techPlanCard — export to feishu button', => {
  wrapper.findComponent({ name: 'ExportConfirmDialog' }).exists,
  ).toBe(true)
  })
+ // Phase：UAT test 3 / 6 根因回归 —— activeCodingPlan 只指向「最新」plan
+ it('不串态：activeCodingPlan.plan_id 与本卡 codingPlanId 不匹配时仍显示「导出到飞书」', async => {
+ const store = useChatStore
+ // store 指向「其它 plan」且已导出，但本卡是另一个 plan
+ store.activeCodingPlan = {
+ plan_id: 'other-plan',
+ title: '其它方案',
+ sessions:,
+ feishu_doc_token: 'doxcnOTHER',
+ feishu_doc_url: 'https://feishu.cn/docx/doxcnOTHER',
+ }
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ // 不采用其它 plan 的已导出态
+ expect(wrapper.text).toContain('导出到飞书')
+ expect(wrapper.text).not.toContain('在飞书打开')
+ })
+ // Phase：@success 即时切态 —— 不依赖全局 activeCodingPlan 是否指向本卡
+ it('@success 后即时切到已导出态（localFeishuDocUrl 兜底路径）', async => {
+ const store = useChatStore
+ // 本卡不是当前 activeCodingPlan（模拟多轮多方案旧卡片导出场景）
+ store.activeCodingPlan = {
+ plan_id: 'other-plan',
+ title: '其它方案',
+ sessions:,
+ feishu_doc_token: '',
+ feishu_doc_url: '',
+ }
+ const wrapper = mountCard({
+ codingPlanId: 'plan-feishu',
+ availableRepositories:,
+ })
+ await flushPromises
+ // 初始：未导出态
+ expect(wrapper.text).toContain('导出到飞书')
+ // 触发内嵌 ExportConfirmDialog 的 @success（coding_plan 模式返回 doc_url）
+ const dialog = wrapper.findComponent({ name: 'ExportConfirmDialog' })
+ expect(dialog.exists).toBe(true)
+ dialog.vm.$emit('success', {
+ doc_token: 'doxcnNEW',
+ doc_url: 'https://feishu.cn/docx/doxcnNEW',
+ title: '示例方案',
+ })
+ await flushPromises
+ await nextTick
+ // 即时切到「在飞书打开」+「重新导出」，无需 activeCodingPlan 指向本卡
+ expect(wrapper.text).toContain('在飞书打开')
+ expect(wrapper.find('[aria-label="重新导出"]').exists).toBe(true)
+ })
 })

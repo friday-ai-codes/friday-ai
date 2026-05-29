@@ -1381,6 +1381,8 @@ class ConversationService:
  "plan_id": str(latest_plan.id),
  "title": latest_plan.title,
  "sessions": session_items,
+ "feishu_doc_token": latest_plan.feishu_doc_token or "",
+ "feishu_doc_url": latest_plan.feishu_doc_url or "",
  }
  logger.debug(
  "runtime.coding_plan_attached",

@@ -585,7 +585,33 @@ export const useChatStore = defineStore('chat', => {
  streamingTimeline.value = Array.isArray(snap.timeline) ? [...snap.timeline]:
  }
  // Phase：写入最新 coding_plan 快照（TechPlanCard 通过 store 订阅）
- activeCodingPlan.value = runtime.coding_plan ?? null
+ // Phase：merge 保留本地已导出态，避免轮询竞态抹掉刚 patch 的 doc_url
+ assignCodingPlanPreservingFeishu(runtime.coding_plan ?? null)
+ }
+ /**
+ * 写入 activeCodingPlan，但在轮询竞态窗口内保留本地已导出态：
+ * 若 incoming 与当前 activeCodingPlan 同一 plan_id，且 incoming 侧
+ * feishu_doc_url 为空但本地已有非空值，则保留本地 feishu_doc_url/token。
+ * 后端 Phase 落地后 runtime 通常已带值，此处是双保险。
+ */
+ function assignCodingPlanPreservingFeishu(incoming: CodingPlanRuntime | null) {
+ const prev = activeCodingPlan.value
+ if (
+ incoming
+ && prev
+ && incoming.plan_id === prev.plan_id
+ && !incoming.feishu_doc_url
+ && prev.feishu_doc_url
+ ) {
+ activeCodingPlan.value = {
+ ...incoming,
+ feishu_doc_token: incoming.feishu_doc_token || prev.feishu_doc_token,
+ feishu_doc_url: prev.feishu_doc_url,
+ }
+ }
+ else {
+ activeCodingPlan.value = incoming
+ }
  }
  function appendTimelineText(kind: 'thinking' | 'narration', text: string) {
  if (!text)
