@@ -21,13 +21,21 @@ class SymbolSerializer(serializers.ModelSerializer):
  "is_async",
  ]
 class CallEdgeSerializer(serializers.ModelSerializer):
- """CallEdge 序列化器。call_type 只有 DIRECT/METHOD/ATTRIBUTE（无 INHERITANCE）。"""
+ """CallEdge 序列化器。
+ Phase 起暴露跨文件 / 模块级字段：caller_file / callee_symbol_id /
+ callee_file / is_cross_file（均 nullable，DRF 自动允许 null）。
+ call_type 取值含 DIRECT/METHOD/ATTRIBUTE/JSX/TEMPLATE_REF。
+ """
  class Meta:
  model = CallEdge
  fields = [
  "id",
  "caller_symbol_id",
+ "caller_file",
  "callee_name",
+ "callee_symbol_id",
+ "callee_file",
+ "is_cross_file",
  "call_type",
  "line_number",
  ]
