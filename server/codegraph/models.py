@@ -70,7 +70,10 @@ class CallEdge(models.Model):
  """调用边 —— A 调用 B 的关系。
  Phase 起承载跨文件 / 模块级 caller / 外键化 callee：
  - ``caller_symbol`` 可空（``SET_NULL``）：模块级调用（不在任何函数体内）写成
- ``caller_symbol=NULL`` + ``caller_file=<文件>`` 的边。
+ ``caller_symbol=NULL`` + ``caller_file=<文件>`` 的边。注意 ``caller_symbol``
+ 由 ``CASCADE`` 改 ``SET_NULL`` 后，删除 ``Symbol`` **不再**级联删除引用它的
+ 边（只置 NULL），per-file 幂等删除完全转移到 writer 按 ``caller_file`` 的
+ 显式删除（函数内边与模块级边统一清理，见 ``GraphWriter``）。
  - ``callee_symbol``（``SET_NULL`` + ``incoming_calls``）：删除 ``Symbol`` 不级联
  删除引用它的边，FK 自动置 NULL，并可经 ``incoming_calls`` 反查「谁调用我」。
  跨文件符号解析（裸名 → ``callee_symbol``/``callee_file``）属 Phase+，本表
