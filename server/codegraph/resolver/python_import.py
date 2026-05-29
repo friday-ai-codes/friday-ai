@@ -10,9 +10,18 @@
  集合（精确等值， Q1 已坐实 ``Symbol.file_path`` = 仓相对路径基准）；
 ② **同步化**：去 ``async`` / 去 ``sync_to_async`` / 去 ORM / 去 ``Q`` —— 纯同步字符串运算
  + 一次内存集合查找，无文件系统访问（无 path traversal 面）；
-③ ``a/b/__init__.py`` 包候选（``import_edge.py`` 的 ``CANDIDATE_EXTENSIONS`` 不含）——见
- Task 2 落地。
+③ ``a/b/__init__.py`` 包候选（``import_edge.py`` 的 ``CANDIDATE_EXTENSIONS`` 不含）：
+ 候选固定顺序「先模块文件 ``a/b.py`` 再包 ``a/b/__init__.py``」（Pitfall 5）。
 实现 ``base.ImportResolver`` Protocol（结构化子类型，无需显式继承）。
+## 已知可接受漏连（CONTEXT 锁定「少数动态/别名可接受漏连」，非缺陷）
+本 resolver 只解析 import 模块名 → 文件，下面两类调用形态由上层 ``SymbolResolver``
+路径②按 ``imported_names`` 匹配时天然落空，**留 NULL 即可，不报错、不乱连**：
+- **(a) ``import a.b`` 后 ``a.b.foo``（Pitfall 3）**：导入的是模块对象，调用经
+ ``a.b.`` 限定符，``callee_name="foo"`` 不在 ``imported_names=["a.b"]`` 中，路径②不命中。
+ 本 phase 优先打通 ``from a.b import foo``（``imported_names`` 含 ``foo`` 可命中）。
+- **(b) ``from a.b import c`` 中 ``c`` 是子模块 ``a/b/c.py``（Pitfall 6）**：``c`` 是
+ 子模块而非 ``a/b.py`` / ``a/b/__init__.py`` 内的符号；若调用 ``c.func`` 则
+ ``callee_name="func"`` 同样不在 ``imported_names``。子模块二次解析留待未来，本 phase 漏连。
 """
 from __future__ import annotations
 from code_relations.constants import CANDIDATE_EXTENSIONS
@@ -69,8 +78,30 @@ class PythonImportResolver:
  base = mod if explicit_ext else mod.replace(".", "/")
  # ④ 归一化：折叠重复 ``/`` 与前导 ``/``，保证 has_file 精确命中。
  base = "/".join(seg for seg in base.split("/") if seg)
- # 候选：``a/b.py`` 查内存 _files 精确等值（Task 2 补 __init__.py 包候选 + 锚定兜底）。
- candidate = f"{base}.py"
+ # ⑤ 候选枚举：显式扩展名按该扩展精确匹配；否则固定顺序「先模块文件 a/b.py
+ # 再包 a/b/__init__.py」（Pitfall 5：模块文件优先于包）。
+ if explicit_ext:
+ candidates: tuple[str, ...] = (f"{base}{explicit_ext}",)
+ else:
+ candidates = (f"{base}.py", f"{base}/__init__.py")
+ # ⑥ 命中判定双保险：先精确等值，miss 再 /+endswith 锚定兜底；两候选全 miss
+ # → 返回 None（真第三方，不误连）。
+ for candidate in candidates:
+ hit = self._lookup(candidate)
+ if hit is not None:
+ return hit
+ return None
+ def _lookup(self, candidate: str) -> str | None:
+ """单个候选的命中判定：精确等值优先，miss 后 ``/`` + endswith 锚定兜底。
+ Q1 已坐实 ``Symbol.file_path`` = 仓相对路径，正常 ``has_file`` 精确等值即
+ 命中；锚定兜底是防御性双保险——仅当仓内 ``file_path`` 含统一前缀目录（与精确口径
+ 不一致）时生效。锚定用 ``f"/{candidate}"`` 而非裸 ``candidate`` endswith，防
+ ``auth.py`` 误匹配 ``oauth.py``。
+ """
  if self._idx.has_file(candidate):
  return candidate
+ anchored = f"/{candidate}"
+ for file_path in self._idx._files:
+ if file_path.endswith(anchored):
+ return file_path
  return None
