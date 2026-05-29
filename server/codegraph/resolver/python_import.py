@@ -5,10 +5,10 @@
  ``up_levels = n_leading_dots - 1``），**不用** ``lstrip("./")``（字符集剥离会把 ``..``
  一并剥掉，破坏父级相对导入语义——已踩坑）。
 - 点→斜杠转换 + 路径分隔符归一化（折叠重复 ``/`` 与前导 ``/``）。
-相对 ``import_edge.py`` 的三处必改：
-① **目标集合**：从 ``ChunkRegistry`` ORM ``endswith`` 查询改为查内存 ``SymbolIndex._files``
- 集合（精确等值， Q1 已坐实 ``Symbol.file_path`` = 仓相对路径基准）；
-② **同步化**：去 ``async`` / 去 ``sync_to_async`` / 去 ORM / 去 ``Q`` —— 纯同步字符串运算
+相对旧 chunk 域解析逻辑的三处必改：
+① **目标集合**：从数据库后缀查询改为查内存 ``SymbolIndex._files`` 集合
+ （精确等值， 路径基准结论已坐实 ``Symbol.file_path`` = 仓相对路径基准）；
+② **同步化**：去异步桥接、数据库查询和查询表达式 —— 纯同步字符串运算
  + 一次内存集合查找，无文件系统访问（无 path traversal 面）；
 ③ ``a/b/__init__.py`` 包候选（``import_edge.py`` 的 ``CANDIDATE_EXTENSIONS`` 不含）：
  候选固定顺序「先模块文件 ``a/b.py`` 再包 ``a/b/__init__.py``」（Pitfall 5）。
@@ -93,7 +93,7 @@ class PythonImportResolver:
  return None
  def _lookup(self, candidate: str) -> str | None:
  """单个候选的命中判定：精确等值优先，miss 后 ``/`` + endswith 锚定兜底。
- Q1 已坐实 ``Symbol.file_path`` = 仓相对路径，正常 ``has_file`` 精确等值即
+ 路径基准结论已坐实 ``Symbol.file_path`` = 仓相对路径，正常 ``has_file`` 精确等值即
  命中；锚定兜底是防御性双保险——仅当仓内 ``file_path`` 含统一前缀目录（与精确口径
  不一致）时生效。锚定用 ``f"/{candidate}"`` 而非裸 ``candidate`` endswith，防
  ``auth.py`` 误匹配 ``oauth.py``。
