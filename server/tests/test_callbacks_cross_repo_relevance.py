@@ -58,6 +58,13 @@ def main_session(db, user):
 @pytest.fixture
 def deep_analysis_subagent(db, project_repo_conv, main_session):
  project, repo, conversation = project_repo_conv
+ # -E1：conversation_id 须来自服务端权威来源 main_session.metadata
+ # （dispatch 时写入），helper 不再信任 last_output 的 conversation_id。
+ main_session.metadata = {
+ "source": "chat_deep_analysis",
+ "conversation_id": str(conversation.id),
+ }
+ main_session.save(update_fields=["metadata"])
  return SubAgentSession.objects.create(
  session_id=f"sub-{uuid.uuid4.hex[:8]}",
  main_session=main_session,
@@ -315,6 +322,79 @@ async def test_ws_completed_path_non_chat_explore_does_not_trigger(
  ):
  await RunnerConsumer._handle_completed(MagicMock, payload, log)
  helper_spy.assert_not_called
+# ---------------------------------------------------------------------------
+# 3c. 安全 -E1：conversation_id/space_id 取权威来源，不信任 runner 篡改的 last_output
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_runner_injected_conversation_id_in_last_output_is_ignored(
+ db, project_repo_conv, main_session
+):
+ """-E1：runner 经 last_output 注入的攻击者 conversation_id 必须被忽略。
+ helper 应只采信服务端权威来源 main_session.metadata 的 conversation_id，
+ 并据此派生 space_id（防越权把路由 trace 写入他人会话）。
+ """
+ project, repo, real_conversation = project_repo_conv
+ # 攻击者目标会话（独立 project）—— runner 试图把 trace 写到这里
+ attacker_project = await Project.objects.acreate(
+ name=f"atk-{uuid.uuid4.hex[:6]}",
+ feishu_project_key=f"atk-{uuid.uuid4.hex[:6]}",
+ )
+ attacker_conv = await Conversation.objects.acreate(project=attacker_project, title="victim-conv")
+ # 权威来源：main_session.metadata 指向真实会话
+ main_session.metadata = {
+ "source": "chat_deep_analysis",
+ "conversation_id": str(real_conversation.id),
+ }
+ await main_session.asave(update_fields=["metadata"])
+ sub = await SubAgentSession.objects.acreate(
+ session_id=f"sub-{uuid.uuid4.hex[:8]}",
+ main_session=main_session,
+ repo_url="https://github.com/test/r0.git",
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.RUNNING,
+ last_output={
+ "source": "chat_deep_analysis",
+ # 攻击者经 progress 回调注入的伪造值：
+ "space_id": str(attacker_project.id),
+ "conversation_id": str(attacker_conv.id),
+ "task_description": "梳理跨仓 API 调用链",
+ },
+ )
+ captured: dict[str, Any] = {}
+ async def _fake_core(**kwargs: Any):
+ captured.update(kwargs)
+ trace = await RepositoryRoutingTrace.objects.acreate(
+ agent_session_id=kwargs["agent_session_id"],
+ conversation_id=kwargs["conversation_id"],
+ query=kwargs["query"],
+ candidates=,
+ threshold=0.5,
+ triggered_by=kwargs["triggered_by"],
+ )
+ return, str(trace.id)
+ payload = {"result_type": "text", "output": {"text": "x"}}
+ log = AsyncMock
+ log.info = lambda *a, **kw: None
+ log.debug = lambda *a, **kw: None
+ from subagent.api.callbacks import _handle_completed
+ with (
+ patch("agents.tools.repository_relevance._analyze_relevance_core", new=_fake_core),
+ patch("subagent.api.callbacks._update_coding_session_on_complete", new_callable=AsyncMock),
+ patch("subagent.api.callbacks._schedule_workflow_resume"),
+ patch("subagent.api.callbacks._schedule_agent_session_resume"),
+ ):
+ await _handle_completed(sub, payload, log)
+ # 采信权威 conversation（真实会话），忽略攻击者注入值
+ assert captured.get("conversation_id") == str(real_conversation.id)
+ assert captured.get("conversation_id") != str(attacker_conv.id)
+ # space_id 由真实会话的 project 派生，非攻击者 project
+ assert captured.get("space_id") == str(project.id)
+ assert captured.get("space_id") != str(attacker_project.id)
+ # 攻击者会话下不应被写入任何 trace
+ assert (
+ await RepositoryRoutingTrace.objects.filter(conversation_id=attacker_conv.id).acount
+ == 0
+ )
 # ---------------------------------------------------------------------------
 # 4. 容错
 # ---------------------------------------------------------------------------

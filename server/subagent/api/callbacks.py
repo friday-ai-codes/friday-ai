@@ -775,8 +775,9 @@ async def _update_agent_session_cross_repo_relevance(
 ) -> None:
  """deep_analysis 完成时复用 helper 反算跨仓相关性。
  步骤：
- 1. 从 ``session.last_output`` 拿 ``space_id`` / ``conversation_id`` /
- ``task_description``（query）三要素。
+ 1. ``conversation_id`` 从**服务端权威来源** ``main_session.metadata`` 取，
+ ``space_id`` 从该 conversation 的 project 派生（见安全说明）；
+ ``task_description``（query）非安全关键字段，仍取自 ``session.last_output``。
  2. 调 ``_analyze_relevance_core(triggered_by=DEEP_ANALYSIS_COMPLETION,
  agent_session_id=session.main_session.id)`` —— 复用 chat_tool 路径
  同一段聚合逻辑，trace 自动落库。
@@ -786,6 +787,11 @@ async def _update_agent_session_cross_repo_relevance(
  到本 session 的 ``TaskResult.text_output`` 末尾 —— BarrierManager
  通过 TaskResult 回灌 chat 流时前端可解析为 RoutingDecisionPanel。
  5. 任何异常仅 ``logger.warning`` 不阻塞 ``_handle_completed`` 主流程。
+ 安全（284 SECURITY -E1）：``conversation_id`` / ``space_id`` **绝不**信任
+ ``session.last_output`` —— 该字典可被 runner 经 progress 回调（透传任意
+ ``details`` scalar 键）篡改，否则半可信 runner 可把路由 trace 越权写入他人
+ 会话。改为从 dispatch 时服务端写入、runner 不可改的 ``main_session.metadata``
+ 取 ``conversation_id``，再由该 conversation 的 ``project_id`` 派生 ``space_id``。
  Args:
  session: deep_analysis 子任务的 SubAgentSession。
  payload: completed 回调的 validated payload（暂未使用，留作未来 Runner
@@ -793,8 +799,7 @@ async def _update_agent_session_cross_repo_relevance(
  """
  try:
  output = session.last_output or {}
- space_id = output.get("space_id")
- conversation_id = output.get("conversation_id")
+ # task_description 非安全关键（仅作为检索 query 文本），可取自 last_output。
  task_description = output.get("task_description") or ""
  # 用 main_session_id（标量，无需查询）+ 异步取 AgentSession —— 兼容
  # WS 完成路径（session 未 select_related('main_session')，直接访问 FK
@@ -804,16 +809,32 @@ async def _update_agent_session_cross_repo_relevance(
  if main_session_id:
  from agents.models import AgentSession
  main_session = await AgentSession.objects.filter(id=main_session_id).afirst
- if not (space_id and conversation_id and task_description and main_session):
+ # -E1：conversation_id 取自服务端权威来源 main_session.metadata（dispatch
+ # 时写入，runner 不可改），而非 runner 可篡改的 session.last_output。
+ authoritative_conv_id = None
+ if main_session and isinstance(main_session.metadata, dict):
+ authoritative_conv_id = main_session.metadata.get("conversation_id")
+ if not (authoritative_conv_id and task_description and main_session):
  logger.warning(
  "cross_repo_relevance_skip_missing_context",
  session_id=session.session_id,
- has_space=bool(space_id),
- has_conv=bool(conversation_id),
+ has_conv=bool(authoritative_conv_id),
  has_query=bool(task_description),
  has_main_session=bool(main_session),
  )
  return
+ # space_id 由 conversation 的 project 派生（权威），不取 last_output。
+ from chat.models import Conversation
+ conv = await Conversation.objects.filter(id=authoritative_conv_id).afirst
+ if conv is None or conv.project_id is None:
+ logger.warning(
+ "cross_repo_relevance_skip_conv_not_found",
+ session_id=session.session_id,
+ conversation_id=str(authoritative_conv_id),
+ )
+ return
+ conversation_id = str(conv.id)
+ space_id = str(conv.project_id)
  # lazy import 防止 agents.tools 与 subagent.api 启动顺序循环
  from agents.tools.repository_relevance import _analyze_relevance_core
  from chat.models import RepositoryRoutingTrace
