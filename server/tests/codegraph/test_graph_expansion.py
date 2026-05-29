@@ -184,6 +184,48 @@ async def test_no_call_relationships(seed_symbol):
  assert result["edges"] ==
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
+async def test_expand_ignores_module_level_incoming_edge(graph_repo, seed_symbol):
+ """Phase：caller_symbol=NULL 的模块级入边被排除，expand 不崩且不产模块级 caller 节点。
+ 构造一条模块级入边（caller_symbol=None, caller_file="m.py", callee_name=seed.name），
+ 断言 expand 不抛异常且返回 nodes 中无 caller 节点（模块级 caller 无对应 Symbol，被过滤）。
+ """
+ await sync_to_async(CallEdge.objects.create)(
+ repository=graph_repo,
+ caller_symbol=None,
+ caller_file="m.py",
+ callee_name=seed_symbol.name,
+ call_type="DIRECT",
+ line_number=1,
+ )
+ # 不抛异常（核心回归断言：NULL caller 不再 None.id 崩溃）
+ result = await GraphExpansionService.expand(seed_symbol)
+ # 模块级入边被过滤，无悬空 caller 节点
+ caller_nodes = [n for n in result["nodes"] if n["relationship"] == "caller"]
+ assert caller_nodes ==
+ assert result["seed_symbol"].id == seed_symbol.id
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
+async def test_expand_module_level_mixed_with_real_caller(
+ graph_repo, seed_symbol, caller_symbol, incoming_call_edge,
+):
+ """Phase：模块级入边与真实文件内入边并存时，仅真实 caller 进 DAG。"""
+ await sync_to_async(CallEdge.objects.create)(
+ repository=graph_repo,
+ caller_symbol=None,
+ caller_file="m.py",
+ callee_name=seed_symbol.name,
+ call_type="DIRECT",
+ line_number=1,
+ )
+ result = await GraphExpansionService.expand(seed_symbol)
+ caller_ids = [
+ str(n["symbol"].id) for n in result["nodes"]
+ if n["relationship"] == "caller"
+ ]
+ # 真实 caller 在；模块级边不产额外节点
+ assert caller_ids == [str(caller_symbol.id)]
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.asyncio
 async def test_seed_symbol_not_found(graph_repo):
  """: 种子 Symbol 不存在时优雅处理。
  使用已删除/不存在的 Symbol ID 场景——传入一个未持久化的 Symbol。

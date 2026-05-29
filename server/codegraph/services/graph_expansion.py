@@ -119,14 +119,19 @@ class GraphExpansionService:
  "call_type": edge.call_type,
  })
  # --- 入边：谁调用了 seed ---
+ # 排除 caller_symbol=NULL 的模块级边（Phase）：符号级 DAG 以
+ # Symbol 为节点，模块级 caller 无对应 Symbol，本 phase 最小过滤不展示（完整改造留 291/）。
  incoming_edges = await sync_to_async(list)(
  CallEdge.objects.filter(
  callee_name=seed.name,
  repository_id=repository_id,
- ).select_related("caller_symbol")
+ ).exclude(caller_symbol__isnull=True).select_related("caller_symbol")
  )
  for edge in incoming_edges:
  caller = edge.caller_symbol
+ # belt-and-suspenders：双保险防 select_related 缓存边界，理论上 exclude 后恒非 None
+ if caller is None:
+ continue
  caller_id = str(caller.id)
  if caller_id not in visited:
  visited[caller_id] = 1
@@ -194,7 +199,7 @@ class GraphExpansionService:
  CallEdge.objects.filter(
  Q(callee_name__in=neighbor_names),
  repository_id=repository_id,
- ).select_related("caller_symbol")
+ ).exclude(caller_symbol__isnull=True).select_related("caller_symbol")
  )
  hop2_new_nodes: list[dict[str, Any]] =
  # 处理出边：1-hop neighbor -> callee (2-hop)
@@ -225,6 +230,9 @@ class GraphExpansionService:
  # 处理入边：caller -> 1-hop neighbor (2-hop caller of neighbor)
  for edge in all_incoming:
  caller = edge.caller_symbol
+ # belt-and-suspenders：双保险防 select_related 缓存边界，exclude 后恒非 None
+ if caller is None:
+ continue
  caller_id = str(caller.id)
  if caller_id not in visited and caller_id not in neighbor_ids:
  visited[caller_id] = 2
