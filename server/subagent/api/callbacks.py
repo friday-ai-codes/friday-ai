@@ -796,7 +796,14 @@ async def _update_agent_session_cross_repo_relevance(
  space_id = output.get("space_id")
  conversation_id = output.get("conversation_id")
  task_description = output.get("task_description") or ""
- main_session = session.main_session
+ # 用 main_session_id（标量，无需查询）+ 异步取 AgentSession —— 兼容
+ # WS 完成路径（session 未 select_related('main_session')，直接访问 FK
+ # 在 async 上下文会抛 SynchronousOnlyOperation）。
+ main_session_id = session.main_session_id
+ main_session = None
+ if main_session_id:
+ from agents.models import AgentSession
+ main_session = await AgentSession.objects.filter(id=main_session_id).afirst
  if not (space_id and conversation_id and task_description and main_session):
  logger.warning(
  "cross_repo_relevance_skip_missing_context",
