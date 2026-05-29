@@ -129,8 +129,18 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
  window.dispatchEvent(new CustomEvent('auth:forbidden', { detail }))
  throw new ApiError(403, detail)
  }
- // 处理 401 未授权 - 尝试刷新 Token（非认证端点）
- if (response.status === 401 && !skipAuth && !endpoint.includes('/auth/')) {
+ // 处理 401 未授权 - 尝试刷新 Token。
+ //
+ // 仅对「认证流」端点跳过刷新（refresh / login / logout）以防死循环：
+ // - /auth/refresh/ 自身 401 再去刷新会无限递归；
+ // - /auth/login/ 401 是凭据错误，刷新无意义；
+ // - /auth/logout/ 不需要刷新。
+ //
+ // 注意：**不能**笼统排除所有 `/auth/`，否则 `/auth/me/` 这个启动期鉴权探针
+ // 在 access token 过期后拿到 401 时不会触发刷新 → 冷刷新页面直接掉登录
+ // （HttpOnly refresh cookie 7 天有效却没被用上）。/auth/me/ 必须能触发刷新。
+ const isAuthFlowEndpoint = /\/auth\/(?:refresh|login|logout)\b/.test(endpoint)
+ if (response.status === 401 && !skipAuth && !isAuthFlowEndpoint) {
  // 如果正在刷新，等待刷新完成后重试
  if (isRefreshing) {
  return new Promise<T>((resolve, reject) => {
