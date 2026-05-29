@@ -6,6 +6,7 @@ VueExtractor.extract 6 步流程（per ）：
 2. SFC 拆分（split_sfc）
 3. script 段 dispatch 到 TreeSitterBackend("typescript" / "tsx")，行号偏移还原
 4. template 反向引用（与 script_symbol_names 集合交集，per ）
+ + 模板子组件标签 <UserCard/> / <user-card/> 抽成 TEMPLATE_REF（per Phase：子组件来自 import，不在 script 符号集，故独立产出、不取交集）
 5. style 段不处理（per ）
 6. endpoints 安全返
 后续 Phase 切 volar 时只需在此覆写 backend 注入路径。
@@ -26,6 +27,12 @@ logger = structlog.get_logger(__name__)
 _TEMPLATE_EVENT = re.compile(r'@[\w-]+\s*=\s*"(\w+)"')
 _TEMPLATE_BIND = re.compile(r':[\w-]+\s*=\s*"(\w+)"')
 _TEMPLATE_MUSTACHE = re.compile(r'\{\{\s*(\w+)\s*\}\}')
+# 模板子组件标签扫描（per Phase / RESEARCH Pitfall 4）。
+# 匹配开标签 / 自闭合标签的标签名（lookahead 限定后接空白 / `/` / `>`，
+# 避免吞掉属性、且不匹配闭标签 `</X>`，线性扫描无灾难性回溯，命中 T-）。
+# 过滤口径：含连字符（kebab-case 子组件）或首字母大写（PascalCase 子组件）才视为
+# 组件引用；纯小写单段标签（div/span/button...）为 HTML 原生标签，排除。
+_TEMPLATE_COMPONENT = re.compile(r"<([A-Za-z][A-Za-z0-9.\-]*)(?=[\s/>])")
 # Vue 3 / 2.7 编译时宏（per / ）
 # 这些宏在 <script setup> 中以模块级 call_expression 形式出现，
 # 而 calls.py 仅抽文件内（有 ancestor_function）的调用，会漏识。
@@ -115,6 +122,21 @@ class VueExtractor:
  line_number=template_block.line_offset,
  )
  )
+ # 子组件标签引用：独立产出，不与 script 符号集取交集（子组件来自 import，
+ # 不在 script 符号集；per / RESEARCH Pitfall 4）。即使无 script 符号
+ # 也抽，callee_name 与 _derive_component_name 同口径（PascalCase）。
+ if template_block is not None:
+ for component in sorted(
+ _scan_template_components(template_block.content)
+ ):
+ bundle.calls.append(
+ CallData(
+ caller_key=(file_path, "<template>", 0),
+ callee_name=component,
+ call_type="TEMPLATE_REF",
+ line_number=template_block.line_offset,
+ )
+ )
  bundle.endpoints =
  return bundle
 def _derive_component_name(file_path: str) -> str:
@@ -143,6 +165,29 @@ def _scan_template_identifiers(template_content: str) -> set[str]:
  for m in pattern.finditer(template_content):
  refs.add(m.group(1))
  return refs
+def _kebab_to_pascal(name: str) -> str:
+ """kebab-case 组件标签名归一为 PascalCase（per RESEARCH A3）。
+ `user-card` → `UserCard`，与 `_derive_component_name`（文件名 PascalCase）同口径，
+ 供 289 钉到组件文件 Symbol。
+ """
+ return "".join(part[:1].upper + part[1:] for part in name.split("-") if part)
+def _scan_template_components(template_content: str) -> set[str]:
+ """扫描模板中的子组件标签名集合（per / RESEARCH Pitfall 4）。
+ 识别 `<PascalCase .../>` 自闭合标签、成对 `<PascalCase ...>...</PascalCase>` 开标签，
+ 以及 kebab-case 形式 `<user-card/>`。归一规则：含连字符 → kebab→PascalCase；
+ 首字母大写 → 原样保留。排除 HTML 原生小写单段标签（无连字符且首字母小写，
+ 如 div/span/button），它们不是子组件引用。
+ """
+ components: set[str] = set
+ for m in _TEMPLATE_COMPONENT.finditer(template_content):
+ tag = m.group(1)
+ if "-" in tag:
+ normalized = _kebab_to_pascal(tag)
+ if normalized:
+ components.add(normalized)
+ elif tag[:1].isupper:
+ components.add(tag)
+ return components
 def _extract_setup_macro_calls(
  tree: object, file_path: str, script_line_offset: int
 ) -> list[CallData]:
