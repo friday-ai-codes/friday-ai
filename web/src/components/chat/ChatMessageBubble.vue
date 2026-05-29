@@ -239,6 +239,32 @@ function formatTime(dateStr: string) {
  return new Date(dateStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 const metadata = computed( => props.message.metadata as { model?: string } | undefined)
+// Phase：消息级导出就地三态。读取 metadata.feishu_exports 最新一条
+// （handleExportSuccess 以 push 追加，末位即最新），item 形状与
+// ChatMessageArea.handleExportSuccess 写入一致：{ document_id, url, title, exported_at }。
+const exportedDoc = computed<{ url: string, title: string } | null>( => {
+ const meta = props.message.metadata as Record<string, unknown> | undefined
+ if (!meta || typeof meta !== 'object')
+ return null
+ const raw = meta.feishu_exports
+ if (!Array.isArray(raw) || raw.length === 0)
+ return null
+ const latest = raw.at(-1)
+ if (!latest || typeof latest !== 'object')
+ return null
+ const record = latest as Record<string, unknown>
+ const url = typeof record.url === 'string' ? record.url: ''
+ if (!url)
+ return null
+ const title = typeof record.title === 'string' ? record.title: ''
+ return { url, title }
+})
+// 防 tab-napping：与 TechPlanCard.openFeishu 行为一致
+function openFeishu {
+ if (!exportedDoc.value)
+ return
+ window.open(exportedDoc.value.url, '_blank', 'noopener,noreferrer')
+}
 const [copied, toggleCopied] = useToggle(false)
 function copyContent {
  // Quick Task：从 parts 派生纯文本（与后端 PartsCollector.to_message_payload 同源）
@@ -1252,8 +1278,10 @@ const hideEmptyBubble = computed( =>
  <span v-else class="icon-[lucide--copy]" />
  <span class="action-label">{{ copied ? '已复制': '复制' }}</span>
  </button>
+ <template v-if="props.message.role === 'assistant'">
+ <!-- 未导出态：单个「导出到飞书」按钮（向后兼容） -->
  <button
- v-if="props.message.role === 'assistant'"
+ v-if="!exportedDoc"
  class="action-btn action-btn--feishu"
  title="导出到飞书"
  @click="emit('exportSingle', props.message.id)"
@@ -1271,6 +1299,26 @@ const hideEmptyBubble = computed( =>
  </svg>
  <span class="action-label">导出到飞书</span>
  </button>
+ <!-- 已导出态：在飞书打开 + 重新导出（与 TechPlanCard 三态对齐） -->
+ <template v-else>
+ <button
+ class="action-btn action-btn--feishu"
+ title="在飞书打开"
+ @click="openFeishu"
+ >
+ <span class="icon-[lucide--external-link]" />
+ <span class="action-label">在飞书打开</span>
+ </button>
+ <button
+ class="action-btn"
+ aria-label="重新导出"
+ title="重新导出"
+ @click="emit('exportSingle', props.message.id)"
+ >
+ <span class="icon-[lucide--refresh-cw]" />
+ </button>
+ </template>
+ </template>
  <span class="action-divider" />
  <span class="action-meta">{{ formatTime(message.created_at) }}</span>
  <template v-if="metadata?.model">

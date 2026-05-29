@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ConversationMessage, ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
+import type { ExportCodingPlanToFeishuResponse, ExportToFeishuResponse } from '~/types/chat'
 import { Button } from '~/components/ui/button'
 import { Skeleton } from '~/components/ui/skeleton'
 import { usePermission } from '~/composables/usePermission'
@@ -14,7 +14,6 @@ import CodingResultCard from './CodingResultCard.vue'
 import CommitConfirmCard from './CommitConfirmCard.vue'
 import ContextExceededCard from './ContextExceededCard.vue'
 import ExportConfirmDialog from './ExportConfirmDialog.vue'
-import ExportSuccessCard from './ExportSuccessCard.vue'
 import MessageSelectBar from './MessageSelectBar.vue'
 import PRConfirmCard from './PRConfirmCard.vue'
 import ProviderCredentialMissingCard from './ProviderCredentialMissingCard.vue'
@@ -165,7 +164,6 @@ function handleSkipPR(sessionId: string) {
 const showExportDialog = ref(false)
 const exportDefaultTitle = ref('')
 const exportSelectedIds = ref<string>
-type FeishuExportHistoryItem = ExportToFeishuResponse & { exportedAt: string }
 const currentTitle = computed( => {
  const conv = chatStore.conversations.find(c => c.id === chatStore.currentConversationId)
  return conv?.title || '新对话'
@@ -186,42 +184,6 @@ function handleMultiExport {
  exportDefaultTitle.value = generateDefaultTitle
  showExportDialog.value = true
 }
-function readExportHistory(msg: ConversationMessage): FeishuExportHistoryItem {
- const metadata = msg.metadata
- if (!metadata || typeof metadata !== 'object')
- return
- const raw = (metadata as Record<string, unknown>).feishu_exports
- if (!Array.isArray(raw))
- return
- return raw.flatMap((item) => {
- if (!item || typeof item !== 'object')
- return
- const record = item as Record<string, unknown>
- const documentId = typeof record.document_id === 'string' ? record.document_id: ''
- const url = typeof record.url === 'string' ? record.url: ''
- const title = typeof record.title === 'string' ? record.title: ''
- const exportedAt = typeof record.exported_at === 'string'
- ? record.exported_at: new Date.toISOString
- if (!documentId || !url || !title)
- return
- return [{
- document_id: documentId,
- url,
- title,
- exportedAt,
- exported_at: exportedAt,
- }]
- })
-}
-const exportResults = computed<FeishuExportHistoryItem>( => {
- const deduped = new Map<string, FeishuExportHistoryItem>
- for (const msg of chatStore.messages) {
- for (const item of readExportHistory(msg)) {
- deduped.set(item.document_id, item)
- }
- }
- return [...deduped.values].sort((a, b) => a.exportedAt.localeCompare(b.exportedAt))
-})
 /** 导出成功回调 (per )。
  *
  * Phase：ExportConfirmDialog 的 success payload 升级为联合
@@ -329,10 +291,6 @@ function handleExportSuccess(
  <!-- 编码错误卡片 (per ) -->
  <CodingErrorCard
  v-if="chatStore.codingError || (!chatStore.codingResult && historyCodingError)":error-message="(chatStore.codingError?.errorMessage || historyCodingError?.errorMessage) ?? ''"
- />
- <!-- 导出成功卡片 (per ) -->
- <ExportSuccessCard
- v-for="(result, idx) in exportResults":key="`export-${idx}`":title="result.title":url="result.url":exported-at="result.exportedAt"
  />
  <!-- Phase /：凭证缺失结构化降级卡片 -->
  <ProviderCredentialMissingCard
