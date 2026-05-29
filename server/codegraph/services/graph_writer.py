@@ -51,8 +51,9 @@ class GraphWriter:
  """同步版本的 write_bundle，使用 sync ORM 一次性完成 4 张表写入。
  写入策略（per-file 幂等性）：
  1. 删除该文件旧记录：Symbol/ImportEdge/Endpoint 按 file_path 过滤 delete；
- CallEdge 双删除路径——函数内边由 Symbol delete 的 caller_symbol CASCADE
- 清理，模块级边（caller_symbol=NULL）按 caller_file 显式删除（Pitfall 2）
+ CallEdge 统一按 caller_file=file_path 显式删除（函数内边与模块级边的
+ caller_file 都等于本文件，是唯一清理路径）。caller_symbol 已改
+ SET_NULL，Symbol delete 仅把边的 caller_symbol 置 NULL、不负责删边
  2. 先 bulk_create Symbol → 构建 symbol_id_map
  3. bulk_create ImportEdge 和 Endpoint（无 FK 依赖）
  4. bulk_create CallEdge：caller 查到则填 caller_symbol FK，查不到则写
@@ -82,12 +83,12 @@ class GraphWriter:
  Endpoint.objects.filter(
  repository_id=repository_id, file_path=file_path,
  ).delete
- # CallEdge 双删除路径（Pitfall 2）：
- # - 函数内边（caller_symbol≠NULL）：由上一步 Symbol delete 的
- # caller_symbol FK CASCADE 自动清理。
- # - 模块级边（caller_symbol=NULL）：CASCADE 不级联 NULL FK，必须按
- # caller_file 显式删除，否则重新索引同一文件时模块级边残留 → 翻倍。
- # 两路径互补：caller_file 恒填 == 该边 caller 所在文件，per-file 幂等。
+ # CallEdge 统一删除路径（Pitfall 2 / ）：
+ # caller_symbol 现为 SET_NULL —— 删除上一步的 Symbol 只会把函数内边的
+ # caller_symbol 置 NULL，**不**级联删边（CASCADE 才级联，本字段已非
+ # CASCADE）。函数内边与模块级边的 caller_file 都恒填 == 本文件，统一由
+ # caller_file=file_path 显式删除，是**唯一**清理路径，不可移除——
+ # 移除将导致本文件全部 CallEdge 泄漏无法清理。
  CallEdge.objects.filter(
  repository_id=repository_id, caller_file=file_path,
  ).delete
@@ -225,9 +226,10 @@ class GraphWriter:
  # =========================================================================
  def delete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
  """按文件批量删除 Symbol / ImportEdge / Endpoint / 模块级 CallEdge（同步版）。
- 模块级 CallEdge（caller_symbol=NULL）不被 Symbol delete 的 CASCADE 清理
- （CASCADE 不级联 NULL FK，Pitfall 2），增量删文件时须按 caller_file 显式删，
- 否则文件删除后模块级边成孤儿。函数内边随 Symbol CASCADE 删，两路径互补。
+ CallEdge.caller_symbol 现为 SET_NULL —— 删除 Symbol 只把边的 caller_symbol
+ 置 NULL、**不**级联删边（Pitfall 2）。函数内边与模块级边的 caller_file 都
+ 等于其所在文件，统一按 caller_file__in 显式删除，是唯一清理路径，与 Symbol
+ 删除无耦合（不依赖任何 FK 级联）。
  Args:
  repository_id: 仓库 UUID 字符串
  file_paths: 要清理的文件路径列表
