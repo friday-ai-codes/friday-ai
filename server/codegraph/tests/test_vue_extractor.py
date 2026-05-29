@@ -37,6 +37,14 @@ def vue3_setup_source -> str:
  os.path.join(fixtures_dir, "vue3_setup.vue"), "r", encoding="utf-8"
  ) as f:
  return f.read
+@pytest.fixture
+def vue_with_children_source -> str:
+ """加载 vue_with_children.vue fixture 源码（含 <ChildComp/> / <user-card/>）。"""
+ fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
+ with open(
+ os.path.join(fixtures_dir, "vue_with_children.vue"), "r", encoding="utf-8"
+ ) as f:
+ return f.read
 class TestVueSfcSplitter:
  """vue_sfc_splitter.split_sfc 单元测试 —— 覆盖 。"""
  def test_split_full_sfc(self, vue2_options_source: str) -> None:
@@ -254,3 +262,57 @@ function bar {}
  "vue27_setup.vue", vue27_setup_source, ctx
  )
  assert bundle.endpoints ==
+class TestVueTemplateComponentRef:
+ """Vue <template> 子组件标签抽取 —— 覆盖 （TEMPLATE_REF）。"""
+ def test_child_component_template_ref(
+ self, vue_with_children_source: str
+ ) -> None:
+ """：<ChildComp/> / <user-card/> 抽成 TEMPLATE_REF，kebab 归一 PascalCase。"""
+ extractor = VueExtractor
+ ctx = FileContext(
+ file_path="vue_with_children.vue", language="vue", repository_id="r1"
+ )
+ bundle = extractor.extract(
+ "vue_with_children.vue", vue_with_children_source, ctx
+ )
+ template_refs = [c for c in bundle.calls if c.call_type == "TEMPLATE_REF"]
+ callee_names = {c.callee_name for c in template_refs}
+ # PascalCase 子组件原样、kebab-case <user-card/> 归一为 UserCard
+ assert "ChildComp" in callee_names, callee_names
+ assert "UserCard" in callee_names, callee_names
+ def test_native_tag_not_template_ref(
+ self, vue_with_children_source: str
+ ) -> None:
+ """ 守卫：原生标签 div / span 不抽成 TEMPLATE_REF。"""
+ extractor = VueExtractor
+ ctx = FileContext(
+ file_path="vue_with_children.vue", language="vue", repository_id="r1"
+ )
+ bundle = extractor.extract(
+ "vue_with_children.vue", vue_with_children_source, ctx
+ )
+ callee_names = {
+ c.callee_name for c in bundle.calls if c.call_type == "TEMPLATE_REF"
+ }
+ assert "div" not in callee_names, callee_names
+ assert "span" not in callee_names, callee_names
+ def test_template_ref_caller_key(
+ self, vue_with_children_source: str
+ ) -> None:
+ """子组件 TEMPLATE_REF 边的 caller 段为 <template> sentinel。"""
+ extractor = VueExtractor
+ ctx = FileContext(
+ file_path="vue_with_children.vue", language="vue", repository_id="r1"
+ )
+ bundle = extractor.extract(
+ "vue_with_children.vue", vue_with_children_source, ctx
+ )
+ component_refs = [
+ c
+ for c in bundle.calls
+ if c.call_type == "TEMPLATE_REF"
+ and c.callee_name in {"ChildComp", "UserCard"}
+ ]
+ assert component_refs, "未抽到子组件 TEMPLATE_REF 边"
+ for ref in component_refs:
+ assert ref.caller_key[1] == "<template>", ref.caller_key

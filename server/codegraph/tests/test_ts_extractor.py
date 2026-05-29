@@ -151,3 +151,20 @@ class TestTSXExtractor:
  assert "div" not in callee_names, callee_names
  assert "span" not in callee_names, callee_names
  assert "button" not in callee_names, callee_names
+ def test_jsx_component_ref_caliber(self, tsx_parser, tsx_source):
+ """ 口径：TSX 大写组件标签抽成 JSX 边、callee_name 与组件名一致、不含小写 HTML。"""
+ tree = tsx_parser.parse(tsx_source.encode("utf-8"))
+ ctx = FileContext(file_path="tsx_component.tsx", language="tsx", repository_id="r1")
+ backend = TreeSitterBackend("tsx")
+ calls = backend.extract_calls(tree, ctx)
+ jsx_calls = [c for c in calls if c.call_type == "JSX"]
+ jsx_callees = {c.callee_name for c in jsx_calls}
+ # 至少抽到大写组件 Card / UserAvatar，且每个 JSX callee 首字母大写（与组件名同口径）
+ assert jsx_callees, "未抽到任何 JSX 组件引用边"
+ assert {"Card", "UserAvatar"} & jsx_callees, jsx_callees
+ for name in jsx_callees:
+ assert name[:1].isupper, f"JSX callee 应为大写组件名: {name}"
+ # 小写 HTML 标签不应出现在 JSX 边中
+ assert "div" not in jsx_callees, jsx_callees
+ assert "span" not in jsx_callees, jsx_callees
+ assert "button" not in jsx_callees, jsx_callees
