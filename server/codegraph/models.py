@@ -13,6 +13,7 @@ class Symbol(models.Model):
  VARIABLE = "VARIABLE", "变量"
  if TYPE_CHECKING:
  outgoing_calls: "QuerySet[CallEdge]"
+ incoming_calls: "QuerySet[CallEdge]"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  repository = models.ForeignKey(
  "repositories.Repository",
@@ -66,11 +67,22 @@ class ImportEdge(models.Model):
  def __str__(self) -> str:
  return f"{self.source_file} -> {self.target_module}"
 class CallEdge(models.Model):
- """调用边 —— 函数 A 在文件内调用了函数/方法 B。Phase 仅文件内解析。"""
+ """调用边 —— A 调用 B 的关系。
+ Phase 起承载跨文件 / 模块级 caller / 外键化 callee：
+ - ``caller_symbol`` 可空（``SET_NULL``）：模块级调用（不在任何函数体内）写成
+ ``caller_symbol=NULL`` + ``caller_file=<文件>`` 的边。
+ - ``callee_symbol``（``SET_NULL`` + ``incoming_calls``）：删除 ``Symbol`` 不级联
+ 删除引用它的边，FK 自动置 NULL，并可经 ``incoming_calls`` 反查「谁调用我」。
+ 跨文件符号解析（裸名 → ``callee_symbol``/``callee_file``）属 Phase+，本表
+ 只产外键字段 + 完整 raw，留空待回填。
+ - ``callee_name`` 始终保留作向后兼容兜底。
+ """
  class CallType(models.TextChoices):
  DIRECT = "DIRECT", "直接调用"
  METHOD = "METHOD", "方法调用"
  ATTRIBUTE = "ATTRIBUTE", "属性访问"
+ JSX = "JSX", "JSX 组件引用"
+ TEMPLATE_REF = "TEMPLATE_REF", "模板组件引用"
  id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
  repository = models.ForeignKey(
  "repositories.Repository",
@@ -79,10 +91,22 @@ class CallEdge(models.Model):
  )
  caller_symbol = models.ForeignKey(
  Symbol,
- on_delete=models.CASCADE,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
  related_name="outgoing_calls",
  )
+ caller_file = models.CharField(max_length=512, db_index=True, default="")
  callee_name = models.CharField(max_length=255, db_index=True)
+ callee_symbol = models.ForeignKey(
+ Symbol,
+ null=True,
+ blank=True,
+ on_delete=models.SET_NULL,
+ related_name="incoming_calls",
+ )
+ callee_file = models.CharField(max_length=512, null=True, blank=True, db_index=True)
+ is_cross_file = models.BooleanField(default=False)
  call_type = models.CharField(max_length=16, choices=CallType.choices)
  line_number = models.IntegerField
  created_at = models.DateTimeField(auto_now_add=True)
@@ -92,9 +116,14 @@ class CallEdge(models.Model):
  indexes = [
  models.Index(fields=["repository", "caller_symbol"]),
  models.Index(fields=["repository", "callee_name"]),
+ models.Index(fields=["repository", "caller_file"]),
+ models.Index(fields=["repository", "callee_file"]),
  ]
  def __str__(self) -> str:
- return f"{self.caller_symbol.name} -> {self.callee_name} [{self.call_type}]"
+ # caller_symbol 可空：模块级边用 caller_file 兜底，避免 None.name 崩溃。
+ caller_symbol = self.caller_symbol
+ caller = caller_symbol.name if caller_symbol is not None else f"<{self.caller_file}>"
+ return f"{caller} -> {self.callee_name} [{self.call_type}]"
 class Endpoint(models.Model):
  """API 端点 —— HTTP 方法 + URL 路径 + 处理函数的映射。"""
  if TYPE_CHECKING:
