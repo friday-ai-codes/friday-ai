@@ -66,10 +66,30 @@ const conversationIdForRouting = computed<string | undefined>( => {
  return fromMeta
  return chatStore.currentConversationId || undefined
 })
-function onCreateCodingPlanFromTrace(_traceId: string) {
- // 让 chat 流推动 LLM 调 create_coding_plan —— 后端 Plan 已实装：不传 ids
- // 时自动从 conversation 最近 trace 取 selected_by_user_final=True 的仓库。
- chatStore.sendMessage('请基于上一轮路由决策中选中的仓库创建编码方案。')
+function onCreateCodingPlanFromTrace(traceId: string) {
+ // Phase（284 UAT review round 修复）：自包含、带指令的 message。
+ //
+ // 旧实现只发「请基于上一轮路由决策中选中的仓库创建编码方案。」纯文本，
+ // 当路由回合被 clarification 中断（assistant 路由分析未持久化）时，LLM 上下文
+ // 里没有路由结论 → 反向追问「没看到之前对话历史 / 不确定选了哪些仓库」，
+ // 始终不调 create_coding_plan。
+ //
+ // 现在显式把选中仓库名内联进 message（补上下文）+ 明确指示直接调
+ // create_coding_plan 工具、无需重新分析。recommended_repository_ids 仍留空，
+ // 后端 Plan 自动从最近 RepositoryRoutingTrace 取
+ // selected_by_user_final=True 的仓库（manual override 后亦然）。
+ const trace = routingStore.getTrace(traceId)
+ const selectedNames = (trace?.candidates ?? )
+ .filter(c => c.selected_by_user_final)
+ .map(c => c.repository_name)
+ .filter((n): n is string => !!n)
+ const repoList = selectedNames.length > 0
+ ? selectedNames.join('、'): '上一轮路由决策中选中的仓库'
+ chatStore.sendMessage(
+ `请直接调用 create_coding_plan 工具，基于上一轮路由决策中选中的仓库（${repoList}）创建编码方案。`
+ + `无需重新分析仓库相关性；recommended_repository_ids 留空即可，`
+ + `系统会自动从最近的路由决策记录推断选中的仓库。`,
+ )
 }
 const isEditingUserMessage = ref(false)
 const editedUserContent = ref('')
