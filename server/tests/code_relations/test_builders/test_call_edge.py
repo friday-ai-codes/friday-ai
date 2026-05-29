@@ -29,6 +29,19 @@ def _create_call_edge(repository, caller: Symbol, callee_name: str, line_number:
  call_type=CodegraphCallEdge.CallType.DIRECT,
  line_number=line_number,
  )
+@sync_to_async
+def _create_module_level_call_edge(
+ repository, caller_file: str, callee_name: str, line_number: int
+) -> None:
+ """构造 caller_symbol=NULL 的模块级调用边（Phase 产物）。"""
+ CodegraphCallEdge.objects.create(
+ repository=repository,
+ caller_symbol=None,
+ caller_file=caller_file,
+ callee_name=callee_name,
+ call_type=CodegraphCallEdge.CallType.DIRECT,
+ line_number=line_number,
+ )
 def _patch_resolver(resolve_fn):
  """patch SymbolChunkResolver.resolve 用 side_effect 注入。"""
  return patch.object(SymbolChunkResolver, "resolve", side_effect=resolve_fn, autospec=False)
@@ -85,6 +98,30 @@ async def test_caller_chunk_resolve_miss_skipped(repository) -> None:
  with _patch_resolver(_resolve):
  edges = await CallEdgeBuilder.build(repository, )
  assert edges ==
+@pytest.mark.django_db(transaction=True)
+async def test_module_level_call_edge_skipped(repository) -> None:
+ """Phase：caller_symbol=NULL 的模块级边被安全跳过，不抛 AttributeError。
+ 构造一条正常文件内边 + 一条模块级边（caller_symbol=None），断言 build 不崩、
+ 且产出的 ChunkEdge 只来自正常边（模块级边计入 skipped_caller_chunk）。
+ """
+ caller = await _create_symbol(repository, "caller", "a.py", 10)
+ await _create_symbol(repository, "foo", "a.py", 100)
+ await _create_call_edge(repository, caller, "foo", 11)
+ # 模块级边：caller_symbol=NULL，按既有抽取产物 caller_file 兜底
+ await _create_module_level_call_edge(repository, "m.py", "foo", 1)
+ cid_caller = uuid.uuid4
+ cid_callee = uuid.uuid4
+ async def _resolve(file_path: str, line: int):
+ return {("a.py", 10): cid_caller, ("a.py", 100): cid_callee}.get(
+ (file_path, line)
+ )
+ with _patch_resolver(_resolve):
+ edges = await CallEdgeBuilder.build(repository, )
+ # 仅正常文件内边产出 ChunkEdge；模块级边被跳过而非崩溃
+ assert len(edges) == 1
+ assert edges[0].source_chunk_id == cid_caller
+ assert edges[0].target_chunk_id == cid_callee
+ assert edges[0].metadata["callee_name"] == "foo"
 @pytest.mark.django_db(transaction=True)
 async def test_empty_call_edge_table(repository) -> None:
  """空 codegraph.CallEdge → 。"""

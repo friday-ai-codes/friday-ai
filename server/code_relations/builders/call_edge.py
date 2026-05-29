@@ -41,6 +41,11 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  callee_cache: dict[str, "Symbol | None"] = {}
  async for cedge in qs.aiterator(chunk_size=1000):
  caller = cedge.caller_symbol
+ # 模块级调用边 caller_symbol=NULL（Phase）：chunk 级 CALL 图以
+ # Symbol 为节点，模块级 caller 无 file_path/start_line，直接跳过（仿 callee skip 模式）。
+ if caller is None:
+ skipped_caller_chunk += 1
+ continue
  caller_cid = await resolver.resolve(caller.file_path, caller.start_line)
  if caller_cid is None:
  skipped_caller_chunk += 1
