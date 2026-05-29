@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type MarkdownIt from 'markdown-it'
-import type { CodingPlanRuntime, RepoSelectableItem } from '~/types/chat'
+import type { CodingPlanRuntime, ExportCodingPlanToFeishuResponse, ExportToFeishuResponse, RepoSelectableItem } from '~/types/chat'
 /**
  * 技术方案卡片 — Phase 落地，Phase 扩展为多仓 fan-out 入口。
  *
@@ -148,10 +148,31 @@ async function handleMultiConfirm(repoIds: string) {
 // Phase：导出到飞书三态按钮
 // ---------------------------------------------------------------------------
 const showExportDialog = ref(false)
-/** 已导出的飞书文档 URL（来自 store CodingPlanRuntime / patch；空串视为未导出）。 */
-const feishuDocUrl = computed<string>(
- => codingPlanRuntime.value?.feishu_doc_url || '',
-)
+// Phase：本卡导出成功后的就地兜底 URL。即便本卡不是当前 activeCodingPlan
+// （多轮多方案时 store 只指向「最新」plan），@success 写本地态也能立即切换。
+const localFeishuDocUrl = ref('')
+/**
+ * 已导出的飞书文档 URL。
+ *
+ * 解析优先级（Phase 修复 UAT test 3 / 6 串态/丢态）：
+ * 1. 本地 localFeishuDocUrl（本卡刚导出成功的兜底，不依赖全局 activeCodingPlan）；
+ * 2. 仅当 store 的 activeCodingPlan.plan_id === 本卡 codingPlanId 时采用其值；
+ * 3. 否则空串（不串其它 plan 的已导出态）。
+ */
+const feishuDocUrl = computed<string>( => {
+ if (localFeishuDocUrl.value)
+ return localFeishuDocUrl.value
+ const runtime = codingPlanRuntime.value
+ if (runtime && props.codingPlanId && runtime.plan_id === props.codingPlanId)
+ return runtime.feishu_doc_url || ''
+ return ''
+})
+function onExportSuccess(
+ result: ExportToFeishuResponse | ExportCodingPlanToFeishuResponse,
+) {
+ if ('doc_url' in result)
+ localFeishuDocUrl.value = result.doc_url
+}
 function triggerExport {
  if (!props.codingPlanId)
  return
@@ -563,6 +584,7 @@ const badgeText = computed( => {
  <ExportConfirmDialog
  v-if="codingPlanId":open="showExportDialog":default-title="title || codingPlanRuntime?.title || '编码方案'"
  mode="coding_plan":coding-plan-id="codingPlanId"
+ @success="onExportSuccess"
  @update:open="(v: boolean) => showExportDialog = v"
  />
  </div>

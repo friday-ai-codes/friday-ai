@@ -227,6 +227,12 @@ class ConversationRuntimeCodingPlanSerializer(serializers.Serializer):
  plan_id = serializers.UUIDField
  title = serializers.CharField(allow_blank=True)
  sessions = ConversationRuntimeCodingPlanSessionSerializer(many=True)
+ feishu_doc_token = serializers.CharField(
+ allow_blank=True, required=False, default=""
+ )
+ feishu_doc_url = serializers.CharField(
+ allow_blank=True, required=False, default=""
+ )
 class ConversationRuntimeSerializer(serializers.Serializer):
  """对话运行态。"""
  conversation_id = serializers.UUIDField
