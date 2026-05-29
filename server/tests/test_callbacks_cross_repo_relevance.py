@@ -223,6 +223,99 @@ async def test_repo_summary_does_not_trigger(project_repo_conv, main_session):
  assert resp.status_code == 200
  helper_spy.assert_not_called
 # ---------------------------------------------------------------------------
+# 3b. WS 完成路径（RunnerConsumer._handle_completed）—— 284 UAT review round 集成断点回归
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_ws_completed_path_triggers_cross_repo_relevance(
+ deep_analysis_subagent, project_repo_conv, main_session
+):
+ """deep_analysis 完成实际走 WS → RunnerConsumer._handle_completed（非 HTTP
+ _handle_completed）。该路径必须同样回算 cross_repo_relevance，否则
+ deep_analysis_completion trace 永远不写（review review round 实测断点）。
+ 本测试用 task_id 触发 consumer 内部按 session_id 重新 afirst 拉取 session
+ （不 select_related main_session）—— 同时回归 helper 的 async-safe main_session 取数。
+ """
+ from unittest.mock import MagicMock
+ project, repo, conversation = project_repo_conv
+ fake_candidate = _make_candidate(str(repo.id))
+ async def _fake_core(**kwargs: Any):
+ trace = await RepositoryRoutingTrace.objects.acreate(
+ agent_session_id=kwargs["agent_session_id"],
+ conversation_id=kwargs["conversation_id"],
+ query=kwargs["query"],
+ candidates=[fake_candidate.model_dump],
+ threshold=0.5,
+ triggered_by=kwargs["triggered_by"],
+ )
+ return [fake_candidate], str(trace.id)
+ payload = {
+ "task_id": deep_analysis_subagent.session_id,
+ "result_type": "text",
+ "output": {"text": "deep analysis done"},
+ "text_output": "deep analysis done",
+ }
+ log = MagicMock
+ from runners.consumers import RunnerConsumer
+ with (
+ patch(
+ "agents.tools.repository_relevance._analyze_relevance_core",
+ new=_fake_core,
+ ),
+ patch("subagent.api.callbacks._update_coding_session_on_complete", new_callable=AsyncMock),
+ patch("subagent.api.callbacks._schedule_workflow_resume"),
+ patch("subagent.api.callbacks._schedule_agent_session_resume"),
+ ):
+ await RunnerConsumer._handle_completed(MagicMock, payload, log)
+ # deep_analysis_completion trace 落库
+ traces = [
+ t async for t in RepositoryRoutingTrace.objects.filter(
+ conversation_id=conversation.id,
+ triggered_by=RepositoryRoutingTrace.TriggeredBy.DEEP_ANALYSIS_COMPLETION,
+ )
+ ]
+ assert len(traces) == 1
+ assert traces[0].agent_session_id == main_session.id
+ # AgentSession.metadata 双键
+ await main_session.arefresh_from_db
+ assert main_session.metadata.get("cross_repo_relevance") is not None
+ assert main_session.metadata.get("cross_repo_relevance_trace_id") is not None
+ # TaskResult.text_output 末尾含 [cross_repo_relevance:<trace_id>] 段
+ task_result = await TaskResult.objects.filter(session=deep_analysis_subagent).afirst
+ assert task_result is not None
+ assert "[cross_repo_relevance:" in task_result.text_output
+@pytest.mark.asyncio
+async def test_ws_completed_path_non_chat_explore_does_not_trigger(
+ project_repo_conv, main_session
+):
+ """WS 路径下 EXPLORE 但 source != chat_deep_analysis → 不回算。"""
+ from unittest.mock import MagicMock
+ project, repo, conversation = project_repo_conv
+ sub = await SubAgentSession.objects.acreate(
+ session_id=f"sub-{uuid.uuid4.hex[:8]}",
+ main_session=main_session,
+ repo_url="https://github.com/test/r0.git",
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.RUNNING,
+ last_output={"source": "subagent_self_dispatch"},
+ )
+ payload = {
+ "task_id": sub.session_id,
+ "result_type": "text",
+ "output": {"text": "x"},
+ }
+ log = MagicMock
+ helper_spy = AsyncMock
+ from runners.consumers import RunnerConsumer
+ from subagent.api import callbacks as cbs
+ with (
+ patch.object(cbs, "_update_agent_session_cross_repo_relevance", new=helper_spy),
+ patch("subagent.api.callbacks._update_coding_session_on_complete", new_callable=AsyncMock),
+ patch("subagent.api.callbacks._schedule_workflow_resume"),
+ patch("subagent.api.callbacks._schedule_agent_session_resume"),
+ ):
+ await RunnerConsumer._handle_completed(MagicMock, payload, log)
+ helper_spy.assert_not_called
+# ---------------------------------------------------------------------------
 # 4. 容错
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
