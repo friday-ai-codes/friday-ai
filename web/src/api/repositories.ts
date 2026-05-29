@@ -122,6 +122,14 @@ export interface IndexHistoryResponse {
  items: IndexHistoryItem
  total: number
 }
+// Phase: GraphRAG 真实状态——以 ChunkEdge 表计数为权威事实来源，
+// 修复旧前端读 IndexHistory.edge_count 快照（时序边缘场景漏写停在 0）导致的
+// "0 语义边"误显示。
+export interface GraphRagStatusResponse {
+ edge_count: number
+ status: GraphBuildStatus
+ last_synced_at: string | null
+}
 // Phase: 索引统计
 //
 // Qdrant 不可用时后端走降级路径返回 `coverage_percent: null` + 可选 `qdrant_unavailable` / `warning`
@@ -288,6 +296,12 @@ export const repositoriesApi = {
  */
  getIndexStatus: async (id: string): Promise<IndexStatusResponse> => {
  return get<IndexStatusResponse>(`/repositories/${id}/index/status/`)
+ },
+ /**
+ * Phase: 获取 GraphRAG 真实状态（直接 count ChunkEdge 表，不依赖 IndexHistory 快照）
+ */
+ getGraphRagStatus: async (id: string): Promise<GraphRagStatusResponse> => {
+ return get<GraphRagStatusResponse>(`/repositories/${id}/index/graphrag-status/`)
  },
  /**
  * 删除索引

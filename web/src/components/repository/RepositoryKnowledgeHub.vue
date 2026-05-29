@@ -36,7 +36,7 @@ const {
  repo,
  indexStatus,
  health,
- graphRagHistory,
+ graphRagStatus,
  structuredGraphCounts,
  structuredGraphTotal,
  freshnessState,
@@ -64,7 +64,7 @@ const freshnessIcon = computed( => {
  }
 })
 const graphRagStatusLabel = computed( => {
- const s = graphRagHistory.value?.graph_build_status
+ const s = graphRagStatus.value?.status
  switch (s) {
  case 'completed': return '已同步'
  case 'running': return '同步中'
@@ -111,12 +111,12 @@ const pipelineSteps = computed( => [
  title: 'GraphRAG',
  subtitle: '代码块语义关联',
  icon: 'icon-[lucide--share-2]',
- status: graphRagHistory.value?.graph_build_status ?? 'pending',
+ status: graphRagStatus.value?.status ?? 'pending',
  statusType: 'graph' as const,
- metric: typeof graphRagHistory.value?.edge_count === 'number'
- ? `${graphRagHistory.value.edge_count.toLocaleString} 语义边`: '—',
- time: graphRagHistory.value?.payload_synced_at
- ? formatRelativeTime(graphRagHistory.value.payload_synced_at): null,
+ metric: typeof graphRagStatus.value?.edge_count === 'number'
+ ? `${graphRagStatus.value.edge_count.toLocaleString} 语义边`: '—',
+ time: graphRagStatus.value?.last_synced_at
+ ? formatRelativeTime(graphRagStatus.value.last_synced_at): null,
  timeLabel: '最近同步',
  statusLabel: graphRagStatusLabel.value,
  },

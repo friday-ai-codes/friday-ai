@@ -26,6 +26,11 @@ class Symbol(models.Model):
  end_line = models.IntegerField
  signature = models.TextField(blank=True)
  is_async = models.BooleanField(default=False)
+ # Phase：该符号所属 RAG chunk_id（与 ChunkRegistry.chunk_id / Qdrant point_id
+ # 同源）。索引时由「一套 AST 双供」同源回填，建立 chunk ↔ Symbol 双向绑定，取代
+ # CallEdgeBuilder 等的 SymbolChunkResolver 行号 bisect 软对齐。NULL = 未绑定
+ # （历史数据 / 该符号未命中任何 chunk）。不做 FK（per code_relations 柔性引用）。
+ chunk_id = models.UUIDField(null=True, blank=True, db_index=True)
  created_at = models.DateTimeField(auto_now_add=True)
  updated_at = models.DateTimeField(auto_now=True)
  class Meta:

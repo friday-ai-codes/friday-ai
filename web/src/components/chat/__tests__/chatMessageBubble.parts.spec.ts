@@ -69,7 +69,7 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  beforeEach( => {
  setActivePinia(createPinia)
  })
- it('1. renders parts in order (text → tool_use → text)', async => {
+ it('1. renders parts in order (text → process-group → text)', async => {
  const msg = makeMessage({
  content: '基于结果：found',
  parts: [
@@ -90,16 +90,18 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  const wrapper = await mountBubble(msg)
  const flow = wrapper.find('.timeline-flow')
  expect(flow.exists).toBe(true)
+ // 工具调用收拢进「分析过程」折叠面板（默认收起）
+ expect(wrapper.find('.tpg').exists).toBe(true)
  const html = flow.html
  const textIdx1 = html.indexOf('先思考一下')
- // tool_pill 渲染 toolLabel 为「搜索代码」（中文 map）—— 用此作为 tool 部分的锚点
- const toolIdx = html.indexOf('搜索代码')
+ // 收起态头部预览展示 toolAction（含「搜索」）—— 用此作为过程面板锚点
+ const procIdx = html.indexOf('搜索')
  const textIdx2 = html.indexOf('基于结果')
  expect(textIdx1).toBeGreaterThan(-1)
- expect(toolIdx).toBeGreaterThan(-1)
+ expect(procIdx).toBeGreaterThan(-1)
  expect(textIdx2).toBeGreaterThan(-1)
- expect(textIdx1).toBeLessThan(toolIdx)
- expect(toolIdx).toBeLessThan(textIdx2)
+ expect(textIdx1).toBeLessThan(procIdx)
+ expect(procIdx).toBeLessThan(textIdx2)
  })
  it('2. text part renders markdown (via stub renderer)', async => {
  const msg = makeMessage({
@@ -112,7 +114,7 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  expect(prose[0].html).toContain('md-rendered')
  expect(prose[0].html).toContain('# Title')
  })
- it('3. tool_use part renders tool-pill with proper label + status', async => {
+ it('3. tool_use part renders process-group row with proper label + status', async => {
  const msg = makeMessage({
  parts: [
  {
@@ -128,9 +130,13 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  ],
  })
  const wrapper = await mountBubble(msg)
- expect(wrapper.find('.tool-pill').exists).toBe(true)
- expect(wrapper.find('.tool-dot--done').exists).toBe(true)
- expect(wrapper.html).toContain('搜索代码')
+ // 收起态：折叠面板存在，状态为已完成
+ expect(wrapper.find('.tpg').exists).toBe(true)
+ expect(wrapper.find('.tpg-dot--done').exists).toBe(true)
+ // 展开容器 → 步骤行显示中文标签
+ await wrapper.find('.tpg-head').trigger('click')
+ await wrapper.vm.$nextTick
+ expect(wrapper.find('.tpg-row-label').text).toBe('搜索代码')
  })
  it('4. thinking part renders timeline-step--thinking', async => {
  const msg = makeMessage({
@@ -143,7 +149,7 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  expect(wrapper.find('.timeline-step--thinking').exists).toBe(true)
  expect(wrapper.html).toContain('用户想要分析跨仓代码')
  })
- it('5. deep_analysis tool_use 渲染 deep-analysis-panel（hasDeepAnalysisLogs 触发）', async => {
+ it('5. deep_analysis tool_use 渲染深度分析卡片（按会话日志）', async => {
  const msg = makeMessage({
  parts: [
  {
@@ -165,8 +171,175 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  },
  })
  const wrapper = await mountBubble(msg)
- expect(wrapper.find('.deep-analysis-panel').exists).toBe(true)
- expect(wrapper.html).toContain('执行记录')
+ // 单个深度分析 → 直接渲染一张 DeepAnalysisCard（不进 swiper）
+ expect(wrapper.find('.da-card').exists).toBe(true)
+ expect(wrapper.find('.dag').exists).toBe(false)
+ expect(wrapper.html).toContain('开始分析')
+ })
+ it('5b. 多个 deep_analysis → 横向 swiper（DeepAnalysisGroup），各会话日志独立', async => {
+ const msg = makeMessage({
+ parts: [
+ {
+ type: 'tool_use',
+ id: 'p1',
+ index: 0,
+ tool_call_id: 'c1',
+ name: 'deep_analysis',
+ input: { task_description: '分析 A' },
+ status: 'done',
+ result: '{"data":{"session_id":"deep-aaa111"}}',
+ },
+ {
+ type: 'tool_use',
+ id: 'p2',
+ index: 1,
+ tool_call_id: 'c2',
+ name: 'deep_analysis',
+ input: { task_description: '分析 B' },
+ status: 'done',
+ result: '{"data":{"session_id":"deep-bbb222"}}',
+ },
+ ],
+ metadata: {
+ deep_analysis_sessions: [
+ { session_id: 'deep-aaa111', task_description: '分析 A', logs: [{ type: 'tool_call', content: 'Read({"file_path":"a.py"})', ts: 1 }] },
+ { session_id: 'deep-bbb222', task_description: '分析 B', logs: [{ type: 'result', content: 'cost=$0.02', ts: 2 }] },
+ ],
+ },
+ })
+ const wrapper = await mountBubble(msg)
+ expect(wrapper.find('.dag').exists).toBe(true)
+ expect(wrapper.findAll('.dag-tab').length).toBe(2)
+ expect(wrapper.html).toContain('2 个子任务')
+ })
+ it('5c. list_space_repositories 工具显示中文名（不漏英文）', async => {
+ const msg = makeMessage({
+ parts: [
+ {
+ type: 'tool_use',
+ id: 'p1',
+ index: 0,
+ tool_call_id: 'c1',
+ name: 'mcp__chat-tools__list_space_repositories',
+ input: {},
+ status: 'done',
+ result: 'ok',
+ },
+ ],
+ })
+ const wrapper = await mountBubble(msg)
+ await wrapper.find('.tpg-head').trigger('click')
+ await wrapper.vm.$nextTick
+ expect(wrapper.find('.tpg-row-label').text).toBe('仓库列表')
+ expect(wrapper.html).not.toContain('list_space_repositories')
+ })
+ it('5d. analyze_repository_relevance 显示中文名 + 查询副标题', async => {
+ const msg = makeMessage({
+ parts: [
+ {
+ type: 'tool_use',
+ id: 'p1',
+ index: 0,
+ tool_call_id: 'c1',
+ name: 'mcp__chat-tools__analyze_repository_relevance',
+ input: { query: 'entrance', top_k: 10 },
+ status: 'done',
+ result: 'ok',
+ },
+ ],
+ })
+ const wrapper = await mountBubble(msg)
+ // 收起态头部预览即包含查询关键字 entrance
+ expect(wrapper.html).toContain('entrance')
+ await wrapper.find('.tpg-head').trigger('click')
+ await wrapper.vm.$nextTick
+ expect(wrapper.find('.tpg-row-label').text).toBe('仓库相关性分析')
+ expect(wrapper.html).not.toContain('analyze_repository_relevance')
+ })
+ it('5e. 搜索/相关性分析显示仓库名称而非裸 UUID（诉求 2/3）', async => {
+ const relevanceResult = JSON.stringify({
+ data: {
+ candidates: [
+ { repository_id: 'repo-uuid-1', repository_name: 'study-app', score: 0.82, level: 'high', evidence: '命中 2 个文件' },
+ { repository_id: 'repo-uuid-2', repository_name: 'question-bank', score: 0.55, level: 'medium', evidence: '语义相关' },
+ ],
+ },
+ })
+ const msg = makeMessage({
+ parts: [
+ {
+ type: 'tool_use',
+ id: 'p1',
+ index: 0,
+ tool_call_id: 'c1',
+ name: 'mcp__chat-tools__analyze_repository_relevance',
+ input: { query: 'entrance' },
+ status: 'done',
+ result: relevanceResult,
+ },
+ {
+ type: 'tool_use',
+ id: 'p2',
+ index: 1,
+ tool_call_id: 'c2',
+ name: 'search_repository_code',
+ input: { query: 'entrance', repository_id: 'repo-uuid-1' },
+ status: 'done',
+ result: 'ok',
+ },
+ ],
+ })
+ const wrapper = await mountBubble(msg)
+ await wrapper.find('.tpg-head').trigger('click')
+ await wrapper.vm.$nextTick
+ const rows = wrapper.findAll('.tpg-row')
+ expect(rows.length).toBe(2)
+ // 相关性分析行：摘要里出现关联到的仓库名称
+ expect(rows[0].text).toContain('study-app')
+ // 搜索行：把 repository_id 映射成仓库名称
+ expect(rows[1].text).toContain('study-app')
+ // 展开相关性行 → 候选仓库名称 + 等级
+ await rows[0].find('.tpg-row-head').trigger('click')
+ await wrapper.vm.$nextTick
+ expect(wrapper.html).toContain('question-bank')
+ expect(wrapper.html).not.toContain('repo-uuid-1')
+ })
+ it('5f. 渲染「引用仓库」编号图例，点击触发过程面板展开（结论↔证据闭环）', async => {
+ const relevanceResult = JSON.stringify({
+ data: {
+ candidates: [
+ { repository_id: 'repo-uuid-1', repository_name: 'study-app', score: 0.82, level: 'high', evidence: 'e1' },
+ { repository_id: 'repo-uuid-2', repository_name: 'question-bank', score: 0.55, level: 'medium', evidence: 'e2' },
+ ],
+ },
+ })
+ const msg = makeMessage({
+ content: '基于检索结果给出结论',
+ parts: [
+ {
+ type: 'tool_use',
+ id: 'p1',
+ index: 0,
+ tool_call_id: 'c1',
+ name: 'mcp__chat-tools__analyze_repository_relevance',
+ input: { query: 'entrance' },
+ status: 'done',
+ result: relevanceResult,
+ },
+ { type: 'text', id: 'p2', index: 1, text: '基于检索结果给出结论', state: 'done' },
+ ],
+ })
+ const wrapper = await mountBubble(msg)
+ const legend = wrapper.find('.repo-legend')
+ expect(legend.exists).toBe(true)
+ const items = wrapper.findAll('.repo-legend-item')
+ expect(items.length).toBe(2)
+ expect(items[0].text).toContain('study-app')
+ expect(items[0].text).toContain('1')
+ // 点击图例项 → 过程面板被展开（验证联动不抛错且容器存在）
+ await items[1].trigger('click')
+ await wrapper.vm.$nextTick
+ expect(wrapper.find('[data-process-group]').exists).toBe(true)
  })
  it('6. unknown part type 渲染 fallback 不 crash（forward-compat）', async => {
  const msg = makeMessage({
@@ -201,7 +374,7 @@ describe('ChatMessageBubble parts rendering (Quick Task )', => {
  // 关键不变量 3：narration 字符串以独立 ai-prose text part 呈现
  // （顶层 markdown 块，不嵌套在「分析」折叠容器内）
  expect(proseTexts).toContain('让我深入分析两个仓库中 entrance 字段的处理逻辑...')
- // 关键不变量 4：deep_analysis tool_use part 仍能渲染 deep-analysis-panel
- expect(wrapper.find('.deep-analysis-panel').exists).toBe(true)
+ // 关键不变量 4：deep_analysis tool_use part 仍能渲染深度分析卡片
+ expect(wrapper.find('.da-card').exists).toBe(true)
  })
 })

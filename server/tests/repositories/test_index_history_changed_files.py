@@ -65,9 +65,9 @@ async def test_changed_files_populated_after_incremental_index -> None:
  mock_fi.objects.filter.return_value = mock_qs
  mock_fi.objects.filter.return_value.adelete = AsyncMock
  mock_fi.objects.aupdate_or_create = AsyncMock
- # 令 parser.parse_file 返回空列表，跳过 embedding 生成
+ # 令 parser.parse_file_dual 返回空（chunks 空 + 无 bundle），跳过 embedding 生成
  indexer.parser = MagicMock
- indexer.parser.parse_file.return_value =
+ indexer.parser.parse_file_dual.return_value = (, None)
  with patch(
  "codegraph.services.repo_summary_builder.RepoSummaryBuilder.build",
  new_callable=AsyncMock,

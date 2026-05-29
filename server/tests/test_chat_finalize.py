@@ -159,6 +159,141 @@ class TestFinalizeConversation:
  assert len(events) == 1
  assert events[0].type == TITLE_GENERATED
  assert events[0].data["title"] == "Generated Title"
+ async def test_persists_deep_analysis_sessions(self, setup_data):
+ """完成态把本消息引用到的深度分析子会话日志按会话落库（历史可还原）。"""
+ from chat.finalize import finalize_conversation
+ from subagent.models import SubAgentSession
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ deep_logs = [
+ {"type": "tool_call", "content": "Read({\"file_path\": \"x.py\"})", "ts": 1},
+ {"type": "result", "content": "cost=$0.02", "ts": 2},
+ ]
+ await SubAgentSession.objects.acreate(
+ session_id="deep-abc123def456",
+ main_session=agent_session,
+ task_type=SubAgentSession.TaskType.EXPLORE,
+ status=SubAgentSession.Status.COMPLETED,
+ last_output={
+ "source": "chat_deep_analysis",
+ "task_description": "分析入口",
+ "logs": deep_logs,
+ },
+ )
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="分析完成",
+ accumulated_thinking=,
+ tool_calls=[
+ {
+ "id": "tc1",
+ "name": "mcp__chat-tools__deep_analysis",
+ "input": {"task_description": "分析入口"},
+ "result": "{\"data\": {\"session_id\": \"deep-abc123def456\"}}",
+ "status": "done",
+ }
+ ],
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="分析一下",
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ sessions = msg.metadata.get("deep_analysis_sessions")
+ assert sessions is not None
+ assert len(sessions) == 1
+ assert sessions[0]["session_id"] == "deep-abc123def456"
+ assert sessions[0]["task_description"] == "分析入口"
+ assert len(sessions[0]["logs"]) == 2
+ async def test_persists_doc_summary(self, setup_data):
+ """飞书文档摘要落库到 metadata.docSummary（刷新回显文档摘要卡）。"""
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ doc_summary = {
+ "type": "summary",
+ "title": "产品需求文档",
+ "wordCount": 1024,
+ "preview": "本文档介绍...",
+ "truncated": False,
+ "truncatedLength": 1024,
+ }
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="已读取文档",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="读一下这个文档",
+ doc_summary=doc_summary,
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ assert msg.metadata.get("docSummary") == doc_summary
+ async def test_persists_degraded_flag(self, setup_data):
+ """降级回答标记落库到 metadata.degraded（刷新回显降级提示）。"""
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="部分回答",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={
+ "status": "completed",
+ "degraded": True,
+ "degraded_reason": "达到最大轮数",
+ },
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ assert msg.metadata.get("degraded") is True
+ assert msg.metadata.get("degraded_reason") == "达到最大轮数"
+ async def test_no_deep_sessions_when_not_referenced(self, setup_data):
+ """tool_calls / parts 中没有 deep-xxxx 引用时不挂载 deep_analysis_sessions。"""
+ from chat.finalize import finalize_conversation
+ conversation, agent_session, session_id = setup_data
+ msg_id = uuid.uuid4
+ with (
+ patch("chat.title_service.should_generate_title", new=AsyncMock(return_value=False)),
+ patch("chat.title_service.generate_title", new=AsyncMock(return_value=None)),
+ ):
+ await finalize_conversation(
+ conversation=conversation,
+ assistant_msg_id=msg_id,
+ final_content="普通回复",
+ accumulated_thinking=,
+ tool_calls=,
+ result_metadata={"status": "completed"},
+ agent_session=agent_session,
+ session_id=session_id,
+ model="claude-sonnet-4-5",
+ user_message="Hi",
+ )
+ msg = await Message.objects.aget(id=msg_id)
+ assert "deep_analysis_sessions" not in (msg.metadata or {})
  async def test_no_title_event_when_publish_disabled(self, setup_data):
  from chat.finalize import finalize_conversation
  conversation, agent_session, session_id = setup_data

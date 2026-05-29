@@ -212,6 +212,14 @@ class TaskProgressSerializer(serializers.Serializer):
  """编排任务进度。"""
  completed = serializers.IntegerField
  total = serializers.IntegerField
+class ConversationRuntimeDeepSessionSerializer(serializers.Serializer):
+ """单个深度分析子会话的运行态快照（多子代理各自独立日志）。"""
+ session_id = serializers.CharField
+ task_description = serializers.CharField(allow_blank=True, required=False)
+ status = serializers.CharField(allow_blank=True, required=False)
+ progress_message = serializers.CharField(allow_blank=True, required=False)
+ progress_percent = serializers.FloatField(allow_null=True, required=False)
+ logs = RuntimeLogSerializer(many=True, required=False)
 class ConversationRuntimeCodingPlanSessionSerializer(serializers.Serializer):
  """Phase：CodingPlan.sessions 单条状态快照。"""
  session_id = serializers.UUIDField
@@ -247,6 +255,8 @@ class ConversationRuntimeSerializer(serializers.Serializer):
  progress_message = serializers.CharField(allow_blank=True, required=False)
  progress_percent = serializers.FloatField(allow_null=True, required=False)
  logs = RuntimeLogSerializer(many=True, required=False)
+ # 多个深度分析子会话各自独立的日志（前端按会话渲染横向 swiper）
+ deep_sessions = ConversationRuntimeDeepSessionSerializer(many=True, required=False)
  # Phase：最近 CodingPlan + 每仓 session 状态
  coding_plan = ConversationRuntimeCodingPlanSerializer(
  allow_null=True, required=False
@@ -256,6 +266,9 @@ class ConversationRuntimeSerializer(serializers.Serializer):
  # streamingNarrations / streamingTimeline 一一对应；用 JSONField pass-through
  # 而不展开嵌套 serializer，避免后续 timeline kind / batch_id 等字段扩展破坏契约。
  streaming_snapshot = serializers.JSONField(allow_null=True, required=False)
+ # 待回复的澄清（刷新 / 切回会话时恢复 ClarificationCard）；JSONField pass-through
+ # 与前端 ClarificationPayload 对齐（clarification_id/question/options/allow_freeform）。
+ pending_clarification = serializers.JSONField(allow_null=True, required=False)
 class WebPushPublicKeySerializer(serializers.Serializer):
  """Web Push 公钥响应。"""
  public_key = serializers.CharField

@@ -299,6 +299,51 @@ class IndexCancelView(APIView):
  "cancelled": cancelled,
  }
  )
+class GraphRagStatusView(APIView):
+ """GraphRAG（ChunkEdge）真实状态——以 ChunkEdge 表计数为**权威事实来源**。
+ 修复前端"0 语义边"误显示：旧前端读最近一条 ``IndexHistory.edge_count`` 快照，
+ 该快照由 lifecycle 在边构建完成时回写，时序边缘场景（如完成回调时已无 RUNNING
+ 历史行可定位）下可能漏写而停在 0，但真实 ``ChunkEdge`` 表可能有数万条。本端点
+ 直接 count ``ChunkEdge`` 表，不依赖快照，从根上消除"建了边却显示 0"。
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request: Any, repository_id: str) -> Response:
+ """返回真实 ChunkEdge 计数 + 综合状态 + 最近同步时间。"""
+ from code_relations.models import ChunkEdge
+ try:
+ await Repository.objects.aget(id=repository_id, is_deleted=False)
+ except Repository.DoesNotExist:
+ return Response(
+ {"detail": "仓库不存在"},
+ status=status.HTTP_404_NOT_FOUND,
+ )
+ edge_count = await ChunkEdge.objects.filter(
+ repository_id=repository_id
+ ).acount
+ # 最近一条索引历史：取 graph_build_status（兜底状态）与 payload_synced_at（时间戳展示）
+ latest = (
+ await IndexHistory.objects.filter(repository_id=repository_id)
+ .order_by("-created_at")
+ .afirst
+ )
+ # status 权威化：真实有边即 completed（不被漏写的快照误导）；无边时回退
+ # 最近一次构建状态（running/failed/pending），无历史则 pending。
+ if edge_count > 0:
+ graph_status = "completed"
+ elif latest is not None and latest.graph_build_status:
+ graph_status = latest.graph_build_status
+ else:
+ graph_status = "pending"
+ last_synced_at = latest.payload_synced_at if latest is not None else None
+ return Response(
+ {
+ "edge_count": edge_count,
+ "status": graph_status,
+ "last_synced_at": (
+ last_synced_at.isoformat if last_synced_at else None
+ ),
+ }
+ )
 class IndexStatusView(APIView):
  """Get index status for a repository."""
  permission_classes = [IsAuthenticated]

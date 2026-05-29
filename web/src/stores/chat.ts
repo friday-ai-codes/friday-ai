@@ -4,7 +4,7 @@
  * 管理对话列表、当前对话、消息列表、流式状态、用户偏好。
  * 使用 setup function 风格（与 projects.ts 一致）。
  */
-import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
+import type { ChatRole, CodingErrorData, CodingPlanRuntime, CodingProgressData, CodingResultData, CodingSessionRuntime, Conversation, ConversationMessage, ConversationRuntime, DeepAnalysisLog, DeepAnalysisSession, ExportCodingPlanToFeishuRequest, ExportCodingPlanToFeishuResponse, ExportToFeishuRequest, ExportToFeishuResponse, MessagePart, PartCompletedPayload, PartStartedPayload, SSEEvent, StreamTimelineItem, TextPart, ThinkingPart, ToolUsePart } from '~/types/chat'
 import type { ClarificationAnswer, ClarificationPayload } from '~/types/clarification'
 import type { ProviderType } from '~/types/providerCredential'
 import type { RoutingDecisionData } from '~/types/routing'
@@ -81,6 +81,8 @@ export const useChatStore = defineStore('chat', => {
  // 深度分析实时日志
  const deepAnalysisLogs = ref<DeepAnalysisLog>
  const deepAnalysisSessionId = ref<string | null>(null)
+ // 多个深度分析子会话各自独立的日志（按会话渲染 swiper）
+ const deepAnalysisSessions = ref<DeepAnalysisSession>
  const restoredRuntimeConversationId = ref<string | null>(null)
  // 编码会话状态 (Phase)
  const activeCodingSession = ref<{
@@ -190,6 +192,9 @@ export const useChatStore = defineStore('chat', => {
  }
  }
  async function selectConversation(id: string) {
+ // 守住整个切换窗口：期间的重置 / runtime 恢复都不写 localStorage，
+ // 避免 sync watcher 把待恢复的瞬时态 localStorage 误删（详见 restoreTransientState）。
+ _restoringTransient = true
  stopRuntimePolling
  pendingConversation.value = null
  currentConversationId.value = id
@@ -204,6 +209,16 @@ export const useChatStore = defineStore('chat', => {
  try {
  const detail = await getConversationDetail(id)
  messages.value = detail.messages
+ // 回显已回复的协商卡（待回复态由 restoreConversationRuntime 从 runtime 恢复）
+ if (Array.isArray(detail.clarifications)) {
+ for (const c of detail.clarifications) {
+ if (c?.clarification_id)
+ upsertClarification({ ...c, conversation_id: id }, id)
+ }
+ }
+ // hydrate 最新路由 trace，让 RelevanceBadge 等刷新后回显
+ if (detail.routing_trace?.trace_id)
+ routingStore.upsertTrace(detail.routing_trace, id)
  activeCodingSession.value = null
  codingProgress.value = null
  codingResult.value = null
@@ -213,11 +228,16 @@ export const useChatStore = defineStore('chat', => {
  diffSummaryData.value = null
  completedConfirmSteps.value =
  await restoreConversationRuntime(id)
+ // 恢复瞬时动作态（error / 上下文超限 / 凭证缺失 / 预算警告 / 已完成步骤）。
+ // 必须在 restoreConversationRuntime 之后 —— 它内部的 resetStreamingState 会清
+ // budgetWarning 等，先恢复会被覆盖。
+ restoreTransientState(id)
  }
  catch (e) {
  error.value = e instanceof Error ? e.message: '获取对话详情失败'
  }
  finally {
+ _restoringTransient = false
  messagesLoading.value = false
  }
  }
@@ -390,6 +410,7 @@ export const useChatStore = defineStore('chat', => {
  streamingNarrations.value =
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
+ deepAnalysisSessions.value =
  streamingPendingText.value = ''
  streamingParts.value =
  restoredRuntimeConversationId.value = null
@@ -435,6 +456,7 @@ export const useChatStore = defineStore('chat', => {
  streamingParts.value =
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
+ deepAnalysisSessions.value =
  budgetWarning.value = null
  restoredRuntimeConversationId.value = null
  currentPhase.value = null
@@ -474,27 +496,34 @@ export const useChatStore = defineStore('chat', => {
  streamingMessageId.value = ''
  deepAnalysisSessionId.value = runtime.session_id || null
  deepAnalysisLogs.value = runtime.logs ||
+ deepAnalysisSessions.value = runtime.deep_sessions ||
  restoredRuntimeConversationId.value = runtime.conversation_id
  currentPhase.value = runtime.phase || null
  taskProgress.value = runtime.task_progress || null
  if (runtime.mode === 'deep_analysis') {
- streamingToolCalls.value = [
- {
- id: runtime.session_id || 'deep-analysis-runtime',
+ // 刷新恢复时按子会话逐个生成 synthetic tool call，保证多个深度分析的
+ // swiper 能显示全部子代理；无 deep_sessions 时回退到单条（向后兼容）。
+ const sessions = runtime.deep_sessions && runtime.deep_sessions.length > 0
+ ? runtime.deep_sessions: [{
+ session_id: runtime.session_id || 'deep-analysis-runtime',
+ task_description: runtime.task_description || '',
+ status: runtime.status || 'running',
+ logs: runtime.logs ||,
+ } as DeepAnalysisSession]
+ const synthetic = sessions.map(s => ({
+ id: s.session_id || 'deep-analysis-runtime',
  name: 'mcp__chat-tools__deep_analysis',
- input: runtime.task_description ? { task_description: runtime.task_description }: {},
- status: 'running',
- },
- ]
- streamingTimeline.value = [
- {
- id: runtime.session_id || 'deep-analysis-runtime',
- kind: 'tool',
- name: 'mcp__chat-tools__deep_analysis',
- input: runtime.task_description ? { task_description: runtime.task_description }: {},
- status: 'running',
- },
- ]
+ input: s.task_description ? { task_description: s.task_description }: {},
+ status: 'running' as const,
+ }))
+ streamingToolCalls.value = synthetic
+ streamingTimeline.value = synthetic.map(t => ({
+ id: t.id,
+ kind: 'tool' as const,
+ name: t.name,
+ input: t.input,
+ status: t.status,
+ }))
  }
  else if (runtime.mode === 'coding' && runtime.coding_session) {
  // 恢复编码会话状态
@@ -719,11 +748,28 @@ export const useChatStore = defineStore('chat', => {
  async function restoreConversationRuntime(id: string) {
  try {
  const runtime = await getConversationRuntime(id)
+ // 恢复待回复的澄清卡（与 streaming 解耦）：刷新 / 切回会话后仍能答复。
+ // 澄清问题不落 Message，只在 checkpoint + ConversationIntentTrace，前端内存
+ // pendingClarifications 刷新即丢 —— 这里从 runtime 回灌。
+ const pc = runtime.pending_clarification
+ if (pc && pc.clarification_id) {
+ upsertClarification({
+ clarification_id: pc.clarification_id,
+ question: pc.question || '',
+ options: Array.isArray(pc.options) ? pc.options:,
+ allow_freeform: pc.allow_freeform !== false,
+ status: 'pending',
+ }, id)
+ }
  if (!runtime.active) {
  resetStreamingState
  activeCodingPlan.value = runtime.coding_plan ?? null
  return
  }
+ // active（含 waiting_clarification）：恢复 streaming_snapshot 里助手已产出的
+ // 正文/工具，并继续轮询。waiting_clarification 阶段的「空气泡 + 打字光标」由
+ // ChatMessageBubble 按 phase 抑制（见 hideEmptyBubble / typing-cursor），
+ // 避免暂停等待时误显"正在输入"。
  applyRuntimeSnapshot(runtime)
  scheduleRuntimePoll(id)
  }
@@ -731,6 +777,73 @@ export const useChatStore = defineStore('chat', => {
  resetStreamingState
  }
  }
+ // ========================================================================
+ // 瞬时动作态跨刷新保留（B 类回显）
+ // ------------------------------------------------------------------------
+ // error / 失败内容 / 上下文超限 / 凭证缺失 / 预算警告 / 已完成确认步骤 都是
+ // 前端内存态，刷新即丢。按 conversation 维度持久化到 localStorage，切回/刷新
+ // 时恢复。自清理：状态被清空（如下一次成功发送）时同步 removeItem，避免
+ // 「旧错误卡永久复活」。用 flush:'sync' 保证 select 时的恢复不被异步 watcher 抢跑。
+ // ========================================================================
+ const TRANSIENT_KEY_PREFIX = 'friday-chat-transient:'
+ let _restoringTransient = false
+ function persistTransientState(convId: string | null) {
+ if (!convId || _restoringTransient)
+ return
+ const blob = {
+ error: error.value,
+ lastFailedContent: lastFailedContent.value,
+ lastContextExceeded: lastContextExceeded.value,
+ credentialMissingPayload: credentialMissingPayload.value,
+ budgetWarning: budgetWarning.value,
+ completedConfirmSteps: completedConfirmSteps.value,
+ }
+ const hasAny = !!(
+ blob.error
+ || blob.lastFailedContent
+ || blob.lastContextExceeded
+ || blob.credentialMissingPayload
+ || blob.budgetWarning != null
+ || (blob.completedConfirmSteps && blob.completedConfirmSteps.length > 0)
+ )
+ try {
+ if (hasAny)
+ localStorage.setItem(TRANSIENT_KEY_PREFIX + convId, JSON.stringify(blob))
+ else
+ localStorage.removeItem(TRANSIENT_KEY_PREFIX + convId)
+ }
+ catch {}
+ }
+ // 读 localStorage 恢复瞬时态。调用方（selectConversation）负责用 _restoringTransient
+ // 守住整个「重置 + runtime 恢复 + 本恢复」窗口，避免 sync watcher 在重置阶段把
+ // localStorage 误删。
+ function restoreTransientState(convId: string) {
+ try {
+ const raw = localStorage.getItem(TRANSIENT_KEY_PREFIX + convId)
+ const blob = raw ? JSON.parse(raw): null
+ error.value = blob?.error ?? null
+ lastFailedContent.value = blob?.lastFailedContent ?? null
+ lastContextExceeded.value = blob?.lastContextExceeded ?? null
+ credentialMissingPayload.value = blob?.credentialMissingPayload ?? null
+ budgetWarning.value = blob?.budgetWarning ?? null
+ completedConfirmSteps.value = Array.isArray(blob?.completedConfirmSteps)
+ ? blob.completedConfirmSteps:
+ }
+ catch {
+ // 解析失败 → 全部清空（安全降级）
+ error.value = null
+ lastFailedContent.value = null
+ lastContextExceeded.value = null
+ credentialMissingPayload.value = null
+ budgetWarning.value = null
+ completedConfirmSteps.value =
+ }
+ }
+ watch(
+ [error, lastFailedContent, lastContextExceeded, credentialMissingPayload, budgetWarning, completedConfirmSteps],
+ => persistTransientState(currentConversationId.value),
+ { deep: true, flush: 'sync' },
+ )
  // ========================================================================
  // SSE 流式消息 (Phase, Plan)
  // ========================================================================
@@ -1444,6 +1557,7 @@ export const useChatStore = defineStore('chat', => {
  streamingParts.value =
  deepAnalysisLogs.value =
  deepAnalysisSessionId.value = null
+ deepAnalysisSessions.value =
  error.value = null
  lastFailedContent.value = null
  // 重置 phase / restored runtime 痕迹 —— 否则刷新场景下 restoreConversationRuntime
@@ -1593,11 +1707,13 @@ export const useChatStore = defineStore('chat', => {
  ...finalMetadata,
  ...(deepAnalysisLogs.value.length > 0 ? { deep_analysis_logs: [...deepAnalysisLogs.value] }: {}),
  ...(deepAnalysisSessionId.value ? { deep_analysis_session_id: deepAnalysisSessionId.value }: {}),
+ ...(deepAnalysisSessions.value.length > 0 ? { deep_analysis_sessions: [...deepAnalysisSessions.value] }: {}),
  }).length > 0
  ? {
  ...finalMetadata,
  ...(deepAnalysisLogs.value.length > 0 ? { deep_analysis_logs: [...deepAnalysisLogs.value] }: {}),
  ...(deepAnalysisSessionId.value ? { deep_analysis_session_id: deepAnalysisSessionId.value }: {}),
+ ...(deepAnalysisSessions.value.length > 0 ? { deep_analysis_sessions: [...deepAnalysisSessions.value] }: {}),
  }: undefined,
  created_at: new Date.toISOString,
  }
@@ -1985,6 +2101,7 @@ export const useChatStore = defineStore('chat', => {
  streamingParts,
  deepAnalysisLogs,
  deepAnalysisSessionId,
+ deepAnalysisSessions,
  restoredRuntimeConversationId,
  currentPhase,
  taskProgress,

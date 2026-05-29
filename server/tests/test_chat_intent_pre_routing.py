@@ -1,12 +1,13 @@
 """Phase：chat_graph 编排前置 gate 集成测试（unit 层）。
 复用 ``test_chat_graph_clarification_interrupt`` 的 monkeypatch + helper 模式，
-聚焦 ``_extract_relev_low_confidence_pending`` 的判定语义与
-``_annotate_intent_classification`` 写入。
+聚焦 ``_annotate_intent_classification`` 写入与 LLM 主动 ``ask_clarification``
+路径（``_extract_pending_clarification``）。
+注：编排层基于 RELEV 低置信「强制澄清」的硬约束已下线 —— 是否澄清完全由
+LLM 自行决定（调 ask_clarification 工具），故相关测试一并移除。
 不启动真实 ChatAnthropicRunner —— 这与 Plan 单测一致，避免触碰 Anthropic
 API key + OrchestrationRun UUID 校验等集成依赖；端到端联动需走人工 UAT。
 """
 from __future__ import annotations
-import json
 from typing import Any
 import pytest
 from agents.intent_router import IntentClassification
@@ -14,7 +15,6 @@ from chat.conversation_service import _build_system_prompt
 from orchestration.graph import (
  _annotate_intent_classification,
  _extract_pending_clarification,
- _extract_relev_low_confidence_pending,
  route_after_executing,
 )
 from orchestration.state import RunPhase
@@ -25,29 +25,6 @@ def _relev_tool_call(result: Any) -> dict[str, Any]:
  "input": {"query": "test"},
  "result": result,
  "status": "done",
- }
-def _high_confidence_relev -> dict[str, Any]:
- """ToolResult.output 形态（带 data wrapper），与真实工具产出一致。"""
- return {
- "data": {
- "candidates": [
- {
- "repository_id": "r1",
- "repository_name": "friday-server",
- "score": 0.95,
- "selected_by_user_final": True,
- "evidence": "命中 5 个文件",
- },
- {
- "repository_id": "r2",
- "repository_name": "friday-web",
- "score": 0.3,
- "selected_by_user_final": False,
- "evidence": "弱相关",
- },
- ],
- },
- "metadata": {"trace_id": "trace-1"},
  }
 def _low_confidence_relev -> dict[str, Any]:
  return {
@@ -71,46 +48,6 @@ def _low_confidence_relev -> dict[str, Any]:
  },
  "metadata": {"trace_id": "trace-1"},
  }
-class TestExtractRelevLowConfidencePending:
- """``_extract_relev_low_confidence_pending`` —— 编排层硬约束自动澄清入口。"""
- def test_low_confidence_returns_pending_payload(self) -> None:
- tool_calls = {"tool-relev-1": _relev_tool_call(_low_confidence_relev)}
- payload = _extract_relev_low_confidence_pending(tool_calls, "改一下 X 模块")
- assert payload is not None
- assert payload["clarification_id"]
- # options：2 候选 + 1 兜底 = 3
- assert len(payload["options"]) == 3
- assert payload["allow_freeform"] is True
- def test_high_confidence_returns_none(self) -> None:
- tool_calls = {"tool-relev-1": _relev_tool_call(_high_confidence_relev)}
- payload = _extract_relev_low_confidence_pending(tool_calls, "改 X")
- assert payload is None
- def test_no_relev_tool_returns_none(self) -> None:
- tool_calls = {
- "tool-other": {
- "id": "tool-other",
- "name": "search_repository_code",
- "result": {"matched": 1},
- "status": "done",
- }
- }
- payload = _extract_relev_low_confidence_pending(tool_calls, "需求")
- assert payload is None
- def test_json_string_result_supported(self) -> None:
- """chat_runner 序列化 dict result 为 JSON 字符串路径兼容。"""
- tool_calls = {
- "tool-relev-1": _relev_tool_call(
- json.dumps(_low_confidence_relev, ensure_ascii=False),
- ),
- }
- payload = _extract_relev_low_confidence_pending(tool_calls, "需求")
- assert payload is not None
- def test_error_relev_returns_none(self) -> None:
- tool_calls = {
- "tool-relev-1": _relev_tool_call({"is_error": True, "error": "oops"}),
- }
- payload = _extract_relev_low_confidence_pending(tool_calls, "需求")
- assert payload is None
 class TestAnnotateIntentClassification:
  def test_writes_classification_to_metadata(self) -> None:
  state = {"user_message": "帮我修复 favorites"}
@@ -192,9 +129,9 @@ class TestSystemPromptIntentHint:
  assert prompt_with_none == prompt_explicit_none
  assert "本轮检测到编码请求" not in prompt_with_none
 class TestExtractPendingClarificationPriority:
- """``ask_clarification`` 工具调用 vs RELEV low_confidence 自动 — 两路径互斥。
- chat_graph executing_node 实际把这两个 helper 串行调用：先看 ask_clarification
- （LLM 主动），再看 RELEV 自动。这里验证两 helper 各自独立工作。
+ """LLM 主动调 ``ask_clarification`` 时 ``_extract_pending_clarification`` 命中。
+ 即便同一轮里还有 analyze_repository_relevance 的低置信结果，编排层也不再
+ 据此自动澄清 —— 是否澄清完全由 LLM 决定。
  """
  def test_explicit_ask_clarification_takes_priority(self) -> None:
  """LLM 主动调 ask_clarification 时 _extract_pending_clarification 命中。"""

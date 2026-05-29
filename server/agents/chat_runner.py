@@ -71,6 +71,15 @@ _INDEXED_TOOL_NAMES = _BASE_TOOL_NAMES + [
  "search_repository_code",
  "list_space_repositories",
  "get_repository_info",
+ # 代码关系 / GraphRAG 游走：拿到具体起点（文件 / chunk / 符号）后沿
+ # CALL / IMPORT / TEST_OF 等 chunk 级关系图遍历，补足 search_repository_code
+ # 的 RAG 模糊检索拿不到的"调用方/被调用方/测试"等结构化关联。
+ # 这些工具早已在 agents/tools/__init__.py 注册，此前漏挂进 chat 白名单导致
+ # LLM 全程只能 RAG 搜索、无法利用 graph 能力。
+ "find_related_code",
+ "list_endpoints",
+ "find_api_handler",
+ "find_api_callers",
  # Phase：先分析相关性，后创建方案
  "analyze_repository_relevance",
  # Phase：不确定时主动澄清（暴露给所有有索引仓库的项目）

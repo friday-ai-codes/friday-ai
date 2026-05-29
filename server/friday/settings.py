@@ -348,6 +348,11 @@ FF_DEFAULT_WORKFLOW_TEMPLATE = env.str("FF_DEFAULT_WORKFLOW_TEMPLATE", "code_gen
 # **写入侧** 语义（per Phase）：控制 indexer 是否构建 ChunkEdge / 写
 # Qdrant payload `related_chunks`；与读出侧 ENABLE_GRAPHRAG_ENRICHMENT 独立解耦。
 ENABLE_CODEGRAPH = env.bool("ENABLE_CODEGRAPH", True)
+# Phase：RAG 切片模式。"ast_aware" = 符号驱动精细切片（按函数/类边界切，复用
+# codegraph tree-sitter 抽取，含 TS interface/type、export 解包、大符号不丢尾）；
+# "fixed" = 旧 tree-sitter 节点直取（向后兼容回退）。默认 ast_aware；切换后需重新
+# 索引仓库方能对存量 chunk 生效。
+CHUNKING_MODE: str = env.str("CHUNKING_MODE", "ast_aware")
 # Phase：**读出侧** GraphRAG enrichment 开关（与 ENABLE_CODEGRAPH 写入侧解耦）。
 # False 时 HybridSearchService.search 入口强制 ``_search_rag_only`` 路径，即使
 # Provider 实现 GraphCapableProvider Protocol，输出 byte-equivalent Phase 路径。

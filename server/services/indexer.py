@@ -498,8 +498,13 @@ def _build_summary_text(files_added: int, files_modified: int, files_deleted: in
 class IndexerService:
  """Service for indexing repository code into vector database."""
  def __init__(self, repository_id: str):
+ from django.conf import settings
  self.repository_id = repository_id
- self.parser = CodeParser
+ # Phase：默认启用 ast_aware 精细切片（符号驱动）；可经 settings.CHUNKING_MODE
+ # 回退 "fixed"。改切片策略后需重新索引方能对存量 chunk 生效。
+ self.parser = CodeParser(
+ chunking_mode=getattr(settings, "CHUNKING_MODE", "ast_aware"),
+ )
  # Phase: 图谱抽取与写入服务（双轨架构 - per ）
  self._graph_extractor = None # 延迟初始化
  self._graph_writer = None
@@ -508,6 +513,10 @@ class IndexerService:
  # `code_relations.tasks.enqueue_edge_build(...)` 触发 6 EdgeBuilder + payload sync，
  # 并在调用后清空。set 去重避免同一 chunk 多次 flush 重复进 builder 输入。
  self._session_dirty_chunk_ids: set[uuid.UUID] = set
+ # Phase single-parse：缓存向量轨 parse_file_dual 产出的 ExtractionBundle
+ # （rel_path → bundle），供图谱轨 _extract_and_write_graph 复用，消除每文件二次解析。
+ # 缓存 miss 时图谱轨自行解析兜底；实例级（一次索引一个 IndexerService），无需跨方法清理。
+ self._session_graph_bundles: dict[str, Any] = {}
  def _init_graph_services(self):
  """延迟初始化图谱抽取与写入服务（避免循环导入）。"""
  if self._graph_extractor is None:
@@ -686,7 +695,11 @@ class IndexerService:
  file_path=rel_path,
  processed=processed_files_total,
  )
- chunks = self.parser.parse_file(abs_path, base_path=repo_path)
+ chunks, _bundle = self.parser.parse_file_dual(
+ abs_path, base_path=repo_path, repository_id=self.repository_id
+ )
+ if _bundle is not None:
+ self._session_graph_bundles[rel_path] = _bundle
  file_payloads.append((rel_path, file_hash, chunks))
  # 一次性批量查 commit 信息（避免每次 flush 都 spawn git log）
  last_commit_map = await get_files_last_commit(
@@ -1095,7 +1108,11 @@ class IndexerService:
  for diff in files_to_index:
  full_path = os.path.join(repo_path, diff.file_path)
  if os.path.exists(full_path):
- chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ chunks, _bundle = self.parser.parse_file_dual(
+ full_path, base_path=repo_path, repository_id=self.repository_id
+ )
+ if _bundle is not None:
+ self._session_graph_bundles[diff.file_path] = _bundle
  all_chunks.extend(chunks)
  if all_chunks:
  texts_to_embed = [_build_embedding_text(chunk) for chunk in all_chunks]
@@ -1401,7 +1418,11 @@ class IndexerService:
  else:
  stats["added"] += 1
  continue
- chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ chunks, _bundle = self.parser.parse_file_dual(
+ full_path, base_path=repo_path, repository_id=self.repository_id
+ )
+ if _bundle is not None:
+ self._session_graph_bundles[diff.file_path] = _bundle
  file_payloads.append((diff, current_hash, chunks))
  # 批量查询变更文件各自的最近 commit（一次 git log 调用），供 FileIndex 写入
  last_commit_map = await get_files_last_commit(
@@ -1766,7 +1787,11 @@ class IndexerService:
  if not os.path.exists(full_path):
  continue
  file_hash = local_hashes.get(diff.file_path) or compute_file_hash(full_path)
- chunks = self.parser.parse_file(full_path, base_path=repo_path)
+ chunks, _bundle = self.parser.parse_file_dual(
+ full_path, base_path=repo_path, repository_id=self.repository_id
+ )
+ if _bundle is not None:
+ self._session_graph_bundles[diff.file_path] = _bundle
  file_payloads.append((diff, file_hash, chunks))
  # 批量查最近 commit
  last_commit_map_inc = await get_files_last_commit(
@@ -2115,9 +2140,13 @@ class IndexerService:
  """
  from django.conf import settings
  from codegraph.extractors.base import FileContext
- from codegraph.extractors.registry import BACKEND_REGISTRY
+ from codegraph.extractors.registry import (
+ BACKEND_REGISTRY,
+ EXTRACTOR_REGISTRY,
+ TreeSitterExtractor,
+ get_extractor,
+ )
  from services.code_parser import TREESITTER_LANGUAGES
- from services.code_parser import CodeParser as _CodeParser
  # Feature flag 门控（per NYQUIST 维度 8: 配置可控）
  if not getattr(settings, "ENABLE_CODEGRAPH", False):
  logger.debug("codegraph_disabled_by_feature_flag")
@@ -2137,9 +2166,9 @@ class IndexerService:
  "total_calls": 0,
  "total_endpoints": 0,
  }
- # 创建独立的 CodeParser 实例用于图谱抽取（复用其 tree-sitter parser）
- # 不污染 self.parser 的状态
- graph_parser = _CodeParser
+ # Vue SFC 专用抽取器（单例，避免每文件实例化）。注册缺失则降级为 None，
+ # 循环里 is_vue 分支会安全跳过（不阻塞其它语言图谱抽取）。
+ vue_extractor = get_extractor("vue")
  # 防御性 normalize：调用方可能传入绝对路径（如全量索引早期版本直接传
  # scan_directory 结果），统一转为相对 repo_path 的相对路径再入库，
  # 避免 DB 里 file_path 出现 /var/folders/.../friday_index_xxx/... 这种 tmp 前缀。
@@ -2187,7 +2216,17 @@ class IndexerService:
  continue
  # 确定语言
  language = self._detect_language_from_path(file_path)
- if not language or language not in TREESITTER_LANGUAGES:
+ if not language:
+ continue
+ # Vue SFC 走专用 VueExtractor（SFC 预拆分 + 对 <script> 块复用 TS/TSX
+ # backend），不参与整文件 tree-sitter 解析 —— 否则 <template>/<style>
+ # 会污染 TS AST。因此 vue 不受 TREESITTER_LANGUAGES 守卫约束。
+ is_vue = language == "vue"
+ if is_vue and vue_extractor is None:
+ # VueExtractor 未注册（理论上不会发生）→ 跳过，避免 None.extract 崩溃。
+ continue
+ if not is_vue:
+ if language not in TREESITTER_LANGUAGES:
  # 非 tree-sitter 支持的语言，跳过图谱抽取
  continue
  # 部分 tree-sitter 语言（如 json）参与向量轨 AST chunking，但
@@ -2223,11 +2262,6 @@ class IndexerService:
  continue
  # AST 解析 + 四维抽取 + 写入（per: 单文件失败不阻塞）
  try:
- # 获取 tree-sitter parser
- parser = graph_parser._get_tree_sitter_parser(language)
- if parser is None:
- continue
- tree = parser.parse(bytes(source, "utf-8"))
  # 构建 FileContext
  module_path = file_path.replace("/", ".").replace(".py", "")
  ctx = FileContext(
@@ -2236,8 +2270,34 @@ class IndexerService:
  repository_id=repository_id,
  module_path=module_path,
  )
- # 四维抽取
- bundle = graph_extractor.extract_all(tree, source, ctx)
+ # Phase single-parse：向量轨 parse_file_dual 已为图谱支持的非 Vue
+ # 语言缓存同源 bundle —— 命中即复用，消除每文件二次解析；miss（Vue /
+ # 未缓存 / graph_builder 单独调用）走原解析兜底，保证功能不破坏。
+ cached_bundle = self._session_graph_bundles.get(file_path)
+ if cached_bundle is not None:
+ bundle = cached_bundle
+ elif is_vue:
+ # Vue SFC：用 VueExtractor 先拆 SFC，再对首个 <script> 块复用
+ # TS/TSX backend 抽取（行号偏移还原 + setup 宏 + template 反向引用）。
+ bundle = vue_extractor.extract(file_path, source, ctx)
+ else:
+ # 与 single-parse 缓存来源（unified_extraction 走
+ # get_extractor(language).extract）保持同一 extract(file_path,
+ # source, ctx) 入口：CodeParser 的 tree-sitter parser 对
+ # typescript 用的是 JavaScript grammar，会丢失 interface/type/
+ # enum 等 TS 专属符号。运行时 volar 经 register_backend 把
+ # javascript / jsx 注入 BACKEND_REGISTRY（故能通过上方
+ # BACKEND_REGISTRY 守卫），但二者无专用 LanguageExtractor
+ # （EXTRACTOR_REGISTRY 未注册）——退到通用 TreeSitterExtractor
+ # 直抽，避免被整体跳过丢符号 + 刷 extractor_not_found 噪声。
+ extractor: Any
+ if language in EXTRACTOR_REGISTRY:
+ extractor = get_extractor(language)
+ else:
+ extractor = TreeSitterExtractor
+ if extractor is None:
+ continue
+ bundle = extractor.extract(file_path, source, ctx)
  # 批量入库
  result = await graph_writer.write_bundle(repository_id, bundle)
  stats["files_processed"] += 1
@@ -2334,6 +2394,19 @@ class IndexerService:
  .values_list("id", flat=True)
  .first
  )
+ # Phase 时序修复：查不到 RUNNING 行（主流程可能已把本次 IndexHistory
+ # 标 completed/failed）时，退取最近一条 IndexHistory 作为 lifecycle 回写目标，
+ # 避免 history_id=None 致使边建好却不回写 edge_count/graph_build_status
+ # （旧 bug：前端 GraphRAG 卡因此误显示「0 语义边」）。
+ if running_history is None:
+ running_history = await sync_to_async(
+ lambda: IndexHistory.objects.filter(
+ repository_id=repository_id,
+ )
+ .order_by("-created_at")
+ .values_list("id", flat=True)
+ .first
+ )
  if dirty:
  await enqueue_edge_build_for_history(
  str(repository_id), dirty, running_history
@@ -2350,6 +2423,20 @@ class IndexerService:
  error_type=type(exc).__name__,
  )
  stats["edge_build_enqueued"] = False
+ # Phase：图谱 Symbol 写完 + 向量轨 Qdrant chunk 已就绪 → 回填
+ # Symbol.chunk_id 持久化绑定（「一套 AST 双供」的关联落地，取代运行时行号 bisect）。
+ # 异常隔离：绑定是优化项，失败仅 warning 不阻塞索引主流程。
+ try:
+ from code_relations.symbol_chunk_binding import backfill_symbol_chunk_ids
+ bound = await backfill_symbol_chunk_ids(str(repository_id))
+ stats["symbols_bound_to_chunks"] = bound
+ except Exception as exc:
+ logger.warning(
+ "symbol_chunk_backfill_hook_failed",
+ repository_id=str(repository_id),
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
  return stats
  async def _write_endpoint_rag_docs(
  self,
@@ -2393,6 +2480,9 @@ class IndexerService:
  "css": "css",
  "html": "html",
  "json": "json",
+ # Vue SFC：图谱轨经 VueExtractor 专用路径抽取（SFC 预拆分 + TS backend），
+ # 不走整文件 tree-sitter（见 _extract_and_write_graph 内 is_vue 分支）。
+ "vue": "vue",
  }
  return _EXT_LANG_MAP.get(ext)
  async def _upsert_chunk_registry_batch(

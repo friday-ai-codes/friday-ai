@@ -168,3 +168,50 @@ def test_dual_track_regression_hook_documented -> None:
  assert "Phase" in src.lower or "Phase" in src.lower, (
  "indexer.py 中未见 Phase/278 锚点 —— 薄壳上下文可能已大幅漂移"
  )
+# ---------------------------------------------------------------------------
+# 10. 兜底抽取分支必须与 single-parse 缓存来源共用 get_extractor（两条路径一致）
+# ---------------------------------------------------------------------------
+def test_extract_and_write_graph_uses_get_extractor_not_codeparser -> None:
+ """图谱兜底分支必须走 ``get_extractor(language).extract`` —— 与"创建索引"的
+ single-parse 缓存来源（``unified_extraction``）完全同一抽取入口。
+ 历史 bug：兜底分支曾用 ``CodeParser._get_tree_sitter_parser`` +
+ ``GraphExtractor.extract_all``，而 ``CodeParser`` 对 ``typescript`` 硬接
+ JavaScript grammar（``"typescript": tree_sitter_javascript``），无法识别
+ interface/type/enum，导致"手动重建图谱"路径抽出的符号数远低于"创建索引"
+ 路径（实测 60 个 TS 文件 400 → 98，整库 5608 → 2069）。两条路径必须共用
+ get_extractor，否则符号数永远对不齐。
+ """
+ src = inspect.getsource(IndexerService._extract_and_write_graph)
+ assert "get_extractor(" in src, (
+ "兜底分支未使用 get_extractor —— 必须与 unified_extraction 共用抽取入口，"
+ "否则创建索引与手动重建的符号数会不一致"
+ )
+ assert "_get_tree_sitter_parser" not in src, (
+ "兜底分支不得使用 CodeParser._get_tree_sitter_parser："
+ "它对 typescript 用 JavaScript grammar，会与创建索引路径符号数不一致"
+ )
+ assert "extract_all(" not in src, (
+ "兜底分支不得使用 GraphExtractor.extract_all —— "
+ "改用 get_extractor(language).extract 与创建索引路径保持一致"
+ )
+# ---------------------------------------------------------------------------
+# 11. 仅 backend 注册的语言（volar 注入的 javascript/jsx）必须有 TreeSitterExtractor 兜底
+# ---------------------------------------------------------------------------
+def test_extract_and_write_graph_has_treesitter_fallback_for_backend_only_langs -> None:
+ """EXTRACTOR_REGISTRY 未注册、但运行时经 volar ``register_backend`` 注入
+ BACKEND_REGISTRY 的语言（javascript / jsx）必须有通用 TreeSitterExtractor
+ 兜底。
+ 回归点：上轮把兜底从 ``extract_all``（走 get_backend）改成 get_extractor
+ 后，javascript 因 EXTRACTOR_REGISTRY 未注册 → get_extractor 返回 None →
+ 文件被整体跳过，符号丢失（5608 → 5422）+ 每文件刷 ``extractor_not_found``
+ warning。必须保留 TreeSitterExtractor 兜底覆盖这些语言。
+ """
+ src = inspect.getsource(IndexerService._extract_and_write_graph)
+ assert "TreeSitterExtractor" in src, (
+ "兜底分支缺少 TreeSitterExtractor fallback —— EXTRACTOR_REGISTRY 未注册的 "
+ "backend 语言（javascript/jsx）会被跳过丢符号 + 刷 extractor_not_found"
+ )
+ assert "EXTRACTOR_REGISTRY" in src, (
+ "兜底分支应判断 language 是否在 EXTRACTOR_REGISTRY，以决定走 get_extractor "
+ "还是 TreeSitterExtractor fallback"
+ )

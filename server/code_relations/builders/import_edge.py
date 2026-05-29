@@ -53,15 +53,28 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  匹配 ``xauth.py`` / ``oauth.py``。改为 ``Q(file_path=candidate) |
  Q(file_path__endswith="/" + candidate)`` 加 ``/`` 锚定避免误匹配。
  """
- if is_relative and target_module.startswith("."):
+ # 先剥离显式文件扩展名（如 ``./Foo.vue`` / ``./a.ts``）。JS/TS 相对导入
+ # 常带扩展名，若不剥离，后续 ``replace(".","/")`` 会把扩展名的点也替换
+ # 成 ``/``（``index.vue`` → ``index/vue``），导致 ``.vue`` / 任何显式扩展名
+ # 导入永远解析失败（这是 Vue 组件 import 边建不出 ChunkEdge 的根因）。
+ explicit_ext = ""
+ mod = target_module
+ for _ext in _CANDIDATE_EXTENSIONS:
+ if mod.endswith(_ext):
+ explicit_ext = _ext
+ mod = mod[: -len(_ext)]
+ break
+ if is_relative and mod.startswith("."):
  n_leading_dots = 0
- for ch in target_module:
+ for ch in mod:
  if ch == ".":
  n_leading_dots += 1
  else:
  break
- suffix = target_module[n_leading_dots:]
- suffix_path = suffix.replace(".", "/")
+ suffix = mod[n_leading_dots:]
+ # 带显式扩展名的相对路径用 ``/`` 分隔，不能再 dot→slash；只有无扩展名
+ # 的点分模块（Python ``..utils`` / 别名 ``components.Button``）才转换。
+ suffix_path = suffix if explicit_ext else suffix.replace(".", "/")
  src_dir = source_file.rsplit("/", 1)[0] if "/" in source_file else ""
  up_levels = max(0, n_leading_dots - 1)
  parts = src_dir.split("/") if src_dir else
@@ -78,7 +91,20 @@ class ImportEdgeBuilder(BaseEdgeBuilder):
  else:
  base = suffix_path
  else:
- base = target_module.replace(".", "/")
+ base = mod if explicit_ext else mod.replace(".", "/")
+ # 归一化路径分隔符：折叠重复 ``/`` 与前导 ``/``，避免 ``./Foo`` 拼出
+ # ``src//Foo`` 这类双斜杠导致 endswith 锚定匹配失败（相对导入常见）。
+ base = "/".join(seg for seg in base.split("/") if seg)
+ # 显式扩展名：只按该扩展精确匹配，不再枚举候选扩展（避免误命中）。
+ if explicit_ext:
+ candidate = f"{base}{explicit_ext}"
+ anchored = f"/{candidate}"
+ obj = await sync_to_async(
+ ChunkRegistry.objects.filter(repository_id=repository.id)
+ .filter(Q(file_path=candidate) | Q(file_path__endswith=anchored))
+ .first
+ )
+ return obj.file_path if obj is not None else None
  for ext in _CANDIDATE_EXTENSIONS:
  candidate = f"{base}{ext}"
  anchored = f"/{candidate}"

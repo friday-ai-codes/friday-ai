@@ -323,6 +323,43 @@ class ConversationDetailView(APIView):
  elif isinstance(chain_result, ProviderMissingError):
  # 全链路缺失 → resolved_provider=null（前端降级渲染）
  resolved_provider_payload = None
+ # 最新跨仓路由决策 trace —— 刷新后 hydrate routingStore，让 RelevanceBadge
+ # 等依赖 routing trace 的徽章能回显（否则 routingStore 纯内存刷新即空）。
+ from chat.models import RepositoryRoutingTrace
+ latest_trace = await RepositoryRoutingTrace.objects.filter(
+ conversation_id=conversation.id,
+ ).order_by("-created_at").afirst
+ routing_trace_payload: dict[str, Any] | None = None
+ if latest_trace is not None:
+ routing_trace_payload = {
+ "trace_id": str(latest_trace.id),
+ "query": latest_trace.query,
+ "candidates": latest_trace.candidates if isinstance(latest_trace.candidates, list) else,
+ "threshold": latest_trace.threshold,
+ "triggered_by": latest_trace.triggered_by,
+ }
+ # 已回复的协商卡（ConversationIntentTrace）—— 刷新 / 切回会话时回显
+ # ClarificationCard 的「已回复」态（待回复态由 runtime.pending_clarification
+ # 提供）。只取 answered，避免历史脏数据里未回复的 trace 复活成幽灵卡片。
+ from chat.models import ConversationIntentTrace
+ clarifications_payload: list[dict[str, Any]] =
+ async for trace in ConversationIntentTrace.objects.filter(
+ conversation_id=conversation.id,
+ answered_at__isnull=False,
+ ).order_by("created_at"):
+ clarifications_payload.append({
+ "clarification_id": trace.clarification_id,
+ "question": trace.question,
+ "options": trace.options if isinstance(trace.options, list) else,
+ "allow_freeform": True,
+ "status": "answered",
+ "answer": {
+ "selected_option_id": trace.selected_option_id or "",
+ "freeform_text": trace.freeform_answer or "",
+ "answered_at": trace.answered_at.isoformat if trace.answered_at else "",
+ },
+ "triggering_message_id": trace.triggering_message_id or "",
+ })
  # UAT 第 3 项 hotfix：detail 响应补齐 model + status +
  # provider_credential_id，与 list 字段对齐；conversation_prefetched 已 select_related
  # provider_credential_id（async-safe），直接读 FK 的 _id 列即可。
@@ -341,6 +378,8 @@ class ConversationDetailView(APIView):
  "updated_at": conversation.updated_at,
  "messages": ConversationMessageSerializer(messages, many=True).data,
  "resolved_provider": resolved_provider_payload,
+ "clarifications": clarifications_payload,
+ "routing_trace": routing_trace_payload,
  }
  return Response(response_data)
  @extend_schema(
