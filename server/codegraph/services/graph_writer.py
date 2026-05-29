@@ -74,6 +74,18 @@ class GraphWriter:
  # =================================================================
  # 第一步：删除该文件的旧图谱记录（幂等性保证）
  # =================================================================
+ # CallEdge 统一删除路径（Pitfall 2 / / ）：
+ # caller_symbol 现为 SET_NULL —— 删除 Symbol 只会把函数内边的
+ # caller_symbol 置 NULL，**不**级联删边（CASCADE 才级联，本字段已非
+ # CASCADE）。函数内边与模块级边的 caller_file 都恒填 == 本文件，统一由
+ # caller_file=file_path 显式删除，是**唯一**清理路径，不可移除——
+ # 移除将导致本文件全部 CallEdge 泄漏无法清理。
+ #：**必须在 Symbol delete 之前**先删边——否则 Symbol delete 会对
+ # 即将被删的函数内边先触发一次 SET_NULL UPDATE（写放大）；先删边后这些
+ # 行已不存在，Symbol delete 不再产生无谓 UPDATE，删除职责也单一化。
+ CallEdge.objects.filter(
+ repository_id=repository_id, caller_file=file_path,
+ ).delete
  Symbol.objects.filter(
  repository_id=repository_id, file_path=file_path,
  ).delete
@@ -82,15 +94,6 @@ class GraphWriter:
  ).delete
  Endpoint.objects.filter(
  repository_id=repository_id, file_path=file_path,
- ).delete
- # CallEdge 统一删除路径（Pitfall 2 / ）：
- # caller_symbol 现为 SET_NULL —— 删除上一步的 Symbol 只会把函数内边的
- # caller_symbol 置 NULL，**不**级联删边（CASCADE 才级联，本字段已非
- # CASCADE）。函数内边与模块级边的 caller_file 都恒填 == 本文件，统一由
- # caller_file=file_path 显式删除，是**唯一**清理路径，不可移除——
- # 移除将导致本文件全部 CallEdge 泄漏无法清理。
- CallEdge.objects.filter(
- repository_id=repository_id, caller_file=file_path,
  ).delete
  # =================================================================
  # 第二步：批量创建 Symbol（必须先于 CallEdge）
