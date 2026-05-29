@@ -46,18 +46,38 @@ class TestCallExtractorHappyPath:
  for c in calls:
  assert c.line_number > 0, \
  f"callee={c.callee_name}: line_number={c.line_number} should be > 0"
- def test_module_level_calls_skipped(self, parse_fixture, make_file_context):
- """模块级调用（如 if __name__ == "__main__": 块内）被跳过。"""
+ def test_module_level_calls_extracted(self, parse_fixture, make_file_context):
+ """模块级调用（如 if __name__ == "__main__": 块内）被抽成 caller_key[1] == "<module>"。：抽取层不再丢弃模块级调用。basic_module.py 末尾
+ `if __name__ == "__main__": main` 是无 ancestor_function 的模块级调用，
+ 改造后应抽成 caller_key[1] == "<module>" 的 CallData（不再为 0）。
+ """
  from codegraph.extractors.calls import extract_calls
  tree, _, _ = parse_fixture("basic_module.py")
  ctx = make_file_context
  calls = extract_calls(tree, ctx)
- # main 调用在 if __name__ == "__main__": 块内是无 ancestor_function 的模块级调用
- # 不应被提取
- main_calls = [c for c in calls if c.callee_name == "main"]
- # 可能为 0（完全跳过）或 1（如果 walker 处理后 ancestor_function 非 None）
- # 至少确认调用提取器对模块级代码不崩溃
- assert isinstance(calls, list), "extract_calls should return list"
+ module_calls = [c for c in calls if c.caller_key[1] == "<module>"]
+ assert len(module_calls) > 0, (
+ "模块级调用应被抽成 caller_key[1] == '<module>' 的 CallData，实际为 0"
+ )
+ # if __name__ == "__main__": main 是典型模块级调用
+ module_callees = {c.callee_name for c in module_calls}
+ assert "main" in module_callees, (
+ f"期望模块级调用包含 main，实际模块级 callee: {module_callees}"
+ )
+ def test_file_internal_calls_no_regression(self, parse_fixture, make_file_context):
+ """文件内（非模块级）函数调用抽取数量不回归（baseline 计数断言）。
+ per VALIDATION 回归基线：basic_module.py 改造前抽出 9 条文件内
+ DIRECT/METHOD 调用（process/async_main/main 三个 caller）。移除模块级
+ 早返回后这 9 条不得减少，否则说明 caller_name 归属逻辑回归。
+ """
+ from codegraph.extractors.calls import extract_calls
+ tree, _, _ = parse_fixture("basic_module.py")
+ ctx = make_file_context
+ calls = extract_calls(tree, ctx)
+ internal_calls = [c for c in calls if c.caller_key[1] != "<module>"]
+ assert len(internal_calls) >= 9, (
+ f"文件内调用抽取数量回归：期望 >= 9，实际 {len(internal_calls)}"
+ )
 class TestCallExtractorEdgeCases:
  """边界条件测试。"""
  def test_empty_file_returns_empty(self, parse_source, make_file_context):
