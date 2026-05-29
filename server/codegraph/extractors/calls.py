@@ -11,16 +11,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 def extract_calls(tree: Any, ctx: "FileContext") -> "list[CallData]":
  """从 tree-sitter AST 提取所有函数调用关系。
- 仅提取文件内调用（有 ancestor_function 的调用），
- 模块级调用（ancestor_function is None）被跳过。
+ 文件内调用归属其 ancestor_function；模块级调用（不在任何函数体内）
+ caller_key[1] 用稳定字面 sentinel "<module>"。
  Args:
  tree: tree-sitter Tree 对象
  ctx: FileContext (file_path, language, repository_id, module_path)
  Returns:
  list[CallData]: 调用边列表
  """
- from codegraph.extractors.base import CallData
- from codegraph.extractors.walker import walk_tree, CALL_TYPES
+ from codegraph.extractors.walker import CALL_TYPES, walk_tree
  call_types = CALL_TYPES.get(ctx.language, )
  if not call_types:
  return
@@ -43,19 +42,21 @@ def extract_calls(tree: Any, ctx: "FileContext") -> "list[CallData]":
 def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  """从单个 WalkerNode 提取 CallData。
  处理 call 节点，判定 call_type（DIRECT / METHOD）。
- 跳过模块级调用（无 ancestor_function）。
+ 模块级调用（无 ancestor_function）caller_key[1] 用 "<module>"，
+ 不再被丢弃；GraphWriter 据此写成 caller_symbol=NULL + caller_file 的边。
  内部函数供 GraphExtractor（orchestrator.py）复用。
  Args:
  wn: WalkerNode（携带 node + ancestor_function + ancestor_class）
  ctx: FileContext
  Returns:
- CallData | None: 成功返回 CallData，跳过返回 None
+ CallData | None: 成功返回 CallData，无法识别 callee 时返回 None
  """
  from codegraph.extractors.base import CallData
  node = wn.node
- # --- 跳过模块级调用 ---
- if wn.ancestor_function is None:
- return None
+ # caller 归属：文件内调用用 ancestor_function；模块级调用（不在任何函数体内）
+ # 用稳定字面 sentinel "<module>"（与 Vue 既有 "<template>" / "<script setup>"
+ # 口径一致）。GraphWriter 在 symbol map 查不到该 caller 时即视为模块级边。
+ caller_name = wn.ancestor_function or "<module>"
  # ★ JSX 元素分支：仅大写组件抽为 call_type=JSX
  if node.type in ("jsx_element", "jsx_self_closing_element"):
  opening = node if node.type == "jsx_self_closing_element" else None
@@ -76,7 +77,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  #：HTML 原生小写标签（div / span / button 等）不抽
  return None
  return CallData(
- caller_key=(ctx.file_path, wn.ancestor_function, 0),
+ caller_key=(ctx.file_path, caller_name, 0),
  callee_name=jsx_callee,
  call_type="JSX",
  line_number=node.start_point[0] + 1,
@@ -134,8 +135,9 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  line_number = node.start_point[0] + 1
  # --- caller_key：三元组 (file_path, name, 0)
  # start_line 填 0 表示 unknown，GraphWriter 通过 (file_path, name) 匹配 caller Symbol
- # 因同一文件内同名函数不会重复定义，(file_path, name) 足以唯一定位
- caller_key = (ctx.file_path, wn.ancestor_function, 0)
+ # 因同一文件内同名函数不会重复定义，(file_path, name) 足以唯一定位。
+ # 模块级调用 name == "<module>"，symbol map 查不到 → GraphWriter 写模块级边。
+ caller_key = (ctx.file_path, caller_name, 0)
  return CallData(
  caller_key=caller_key,
  callee_name=callee_name,
