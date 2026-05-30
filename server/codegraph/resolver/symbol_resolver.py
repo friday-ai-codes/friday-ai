@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 import structlog
 from codegraph.resolver.base import ImportResolver, ResolveResult
+from codegraph.resolver.go_import import GoImportResolver
 from codegraph.resolver.symbol_index import IndexedSymbol, SymbolIndex
 if TYPE_CHECKING:
  from codegraph.models import CallEdge, ImportEdge
@@ -21,9 +22,26 @@ def _lang_of(caller_file: str) -> str | None:
  """按 caller 文件扩展名选择语言 resolver；未知扩展走留空分支。"""
  if caller_file.endswith(".py"):
  return "python"
+ if caller_file.endswith(".go"):
+ return "go"
  if caller_file.endswith(_FRONTEND_EXTENSIONS):
  return "frontend"
  return None
+def _dir_of(file_path: str) -> str:
+ """取文件所在目录（仓根文件返回空串）。"""
+ return file_path.rsplit("/", 1)[0] if "/" in file_path else ""
+def _go_local_name(import_edge: ImportEdge) -> str:
+ """求 Go import 的本地包名：alias（`"alias as path"`）优先，否则取 path 末段。
+ Go ``imported_names`` 格式为 ``["alias as path"]``（alias 在前，与 Python 相反）
+ 或裸 ``["path"]``。无 alias 时本地名按约定取 import path 最后一段。
+ """
+ names = list(import_edge.imported_names or )
+ if names:
+ first = names[0]
+ alias, separator, _path = first.partition(" as ")
+ if separator:
+ return alias
+ return import_edge.target_module.rsplit("/", 1)[-1]
 def _match_imported_name(callee_name: str, imported_names: Sequence[str]) -> str | None:
  """用本地名匹配 ``imported_names``，返回目标文件内应查找的原始名。
  ``ImportEdge.imported_names`` 的条目格式为 ``"foo"`` 或 ``"foo as bar"``。
@@ -85,6 +103,33 @@ class SymbolResolver:
  symbol.id,
  target_file,
  is_cross_file=target_file != caller_file,
+ )
+ # Go selector 解析：`pkg.Func` 的 callee_name 是裸函数名、包限定符
+ # 在 287→ 捕获的 callee_qualifier 里。用 qualifier 匹配 import 本地名（alias 或
+ # path 末段）→ 解析包目录 → 在该目录范围内按 callee_name 取目标 Symbol。标准库/第三方
+ # （resolve_package_dir 返回 None）或 qualifier 是 receiver 变量（不匹配 import）→ 留 NULL。
+ if (
+ language == "go"
+ and edge.callee_qualifier
+ and isinstance(resolver, GoImportResolver)
+ ):
+ for import_edge in self._imports.get(caller_file, ):
+ if _go_local_name(import_edge) != edge.callee_qualifier:
+ continue
+ package_dir = resolver.resolve_package_dir(import_edge.target_module)
+ if package_dir is None:
+ continue
+ candidates = [
+ symbol
+ for symbol in self._idx.fuzzy(callee_name)
+ if _dir_of(symbol.file_path) == package_dir
+ ]
+ if candidates:
+ symbol = _pick(candidates)
+ return ResolveResult(
+ symbol.id,
+ symbol.file_path,
+ is_cross_file=symbol.file_path != caller_file,
  )
  # 路径③组件引用解析：JSX / TEMPLATE_REF 边的 callee_name 是组件名，
  # 经 import 找到组件文件后连组件 Symbol。仅当 path② 未命中（名字未对齐，如重命名
