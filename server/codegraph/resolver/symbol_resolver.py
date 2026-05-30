@@ -15,10 +15,14 @@ if TYPE_CHECKING:
  from codegraph.models import CallEdge, ImportEdge
 __all__ = ["SymbolResolver"]
 logger = structlog.get_logger(__name__)
+_FRONTEND_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".vue")
+_COMPONENT_CALL_TYPES = ("JSX", "TEMPLATE_REF")
 def _lang_of(caller_file: str) -> str | None:
  """按 caller 文件扩展名选择语言 resolver；未知扩展走留空分支。"""
  if caller_file.endswith(".py"):
  return "python"
+ if caller_file.endswith(_FRONTEND_EXTENSIONS):
+ return "frontend"
  return None
 def _match_imported_name(callee_name: str, imported_names: Sequence[str]) -> str | None:
  """用本地名匹配 ``imported_names``，返回目标文件内应查找的原始名。
@@ -82,7 +86,42 @@ class SymbolResolver:
  target_file,
  is_cross_file=target_file != caller_file,
  )
- # JSX / TEMPLATE_REF → Phase 挂组件解析分支。
+ # 路径③组件引用解析：JSX / TEMPLATE_REF 边的 callee_name 是组件名，
+ # 经 import 找到组件文件后连组件 Symbol。仅当 path② 未命中（名字未对齐，如重命名
+ # default import）时才进入此兜底；无 import 的全局/auto 注册组件落空留 NULL。
+ if edge.call_type in _COMPONENT_CALL_TYPES and resolver is not None:
+ for import_edge in self._imports.get(caller_file, ):
+ original_name = _match_imported_name(
+ callee_name,
+ import_edge.imported_names,
+ )
+ if original_name is None:
+ continue
+ target_file = resolver.resolve_module(
+ import_edge.target_module,
+ import_edge.is_relative,
+ caller_file,
+ )
+ if target_file is None:
+ continue
+ # 名字对齐优先（原名 / callee 本地名），否则取目标文件的组件 CLASS Symbol。
+ hits = self._idx.exact(target_file, original_name) or self._idx.exact(
+ target_file, callee_name
+ )
+ if not hits:
+ hits = [
+ symbol
+ for symbol in self._idx.symbols_in_file(target_file)
+ if symbol.symbol_type == "CLASS"
+ ]
+ if hits:
+ symbol = _pick(hits)
+ return ResolveResult(
+ symbol.id,
+ target_file,
+ is_cross_file=target_file != caller_file,
+ )
+ # 路径④：解析不到留空，绝不靠 fuzzy 同名兜底乱连。
  return ResolveResult(None, None, False)
  def backfill(self, repository_id: str) -> dict[str, int]:
  """批量回填该仓尚未解析的 ``CallEdge``。
