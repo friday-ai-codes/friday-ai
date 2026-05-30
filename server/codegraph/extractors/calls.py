@@ -89,6 +89,8 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  # --- 判定 callee_name 和 call_type ---
  callee_name: str | None = None
  call_type: str = "DIRECT"
+ # selector / 对象调用的限定符（Go ``pkg.Func`` 的 ``pkg``）；仅简单 identifier 捕获。
+ callee_qualifier: str | None = None
  if function_node.type == "identifier":
  # 直接调用：foo
  callee_name = function_node.text
@@ -103,6 +105,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  if isinstance(callee_name, bytes):
  callee_name = callee_name.decode("utf-8")
  call_type = "METHOD"
+ callee_qualifier = _simple_operand_text(function_node, "object")
  else:
  # attribute 无 attribute 子字段（异常情况）
  return None
@@ -114,6 +117,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  if isinstance(callee_name, bytes):
  callee_name = callee_name.decode("utf-8")
  call_type = "METHOD"
+ callee_qualifier = _simple_operand_text(function_node, "operand")
  else:
  return None
  elif function_node.type == "member_expression":
@@ -124,6 +128,7 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  if isinstance(callee_name, bytes):
  callee_name = callee_name.decode("utf-8")
  call_type = "METHOD"
+ callee_qualifier = _simple_operand_text(function_node, "object")
  else:
  return None
  else:
@@ -143,5 +148,18 @@ def _extract_one_call(wn: Any, ctx: "FileContext") -> "CallData | None":
  callee_name=callee_name,
  call_type=call_type,
  line_number=line_number,
+ callee_qualifier=callee_qualifier,
  )
+def _simple_operand_text(function_node: Any, field_name: str) -> str | None:
+ """取 selector/对象调用的操作数限定符；仅当操作数是简单 identifier 才返回其文本。
+ ``pkg.Func`` / ``obj.method`` 的 ``pkg`` / ``obj`` 为简单 identifier → 返回文本；
+ 复杂操作数（链式 ``a.b.C`` / 调用结果 ``foo.bar``）返回 None（不误捕获）。
+ """
+ operand_node = function_node.child_by_field_name(field_name)
+ if operand_node is None or operand_node.type != "identifier":
+ return None
+ text = operand_node.text
+ if isinstance(text, bytes):
+ text = text.decode("utf-8")
+ return text or None
 __all__ = ["extract_calls", "_extract_one_call"]

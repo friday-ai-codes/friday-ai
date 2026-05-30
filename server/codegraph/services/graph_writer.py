@@ -193,6 +193,7 @@ class GraphWriter:
  callee_name=call.callee_name,
  call_type=call.call_type,
  line_number=call.line_number,
+ callee_qualifier=call.callee_qualifier,
  ))
  if call_objs:
  CallEdge.objects.bulk_create(call_objs)
