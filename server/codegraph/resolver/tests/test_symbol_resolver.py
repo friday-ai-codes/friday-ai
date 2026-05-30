@@ -6,6 +6,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from codegraph.resolver import ImportResolver, ResolveResult, SymbolIndex
 from codegraph.resolver.frontend_import import FrontendImportResolver
+from codegraph.resolver.go_import import GoImportResolver
 from codegraph.resolver.python_import import PythonImportResolver
 from codegraph.resolver.symbol_resolver import SymbolResolver, _lang_of
 from codegraph.resolver.tests.conftest import (
@@ -273,11 +274,157 @@ def _frontend_resolver(
  }
  return SymbolResolver(index, import_by_source, resolver_by_lang)
 def test_lang_of_frontend_extensions -> None:
- """``_lang_of`` 前端 5 扩展名归 frontend，.py 仍 python，未知 None。"""
+ """``_lang_of`` 前端 5 扩展名归 frontend，.py 仍 python，.go 归 go，未知 None。"""
  for ext in (".ts", ".tsx", ".js", ".jsx", ".vue"):
  assert _lang_of(f"src/views/Page{ext}") == "frontend"
  assert _lang_of("pkg/mod.py") == "python"
+ assert _lang_of("cmd/main.go") == "go"
  assert _lang_of("README.md") is None
+def _go_resolver(
+ index: SymbolIndex,
+ imports: Sequence[ImportEdge],
+ *,
+ module_path: str = "github.com/org/repo",
+) -> SymbolResolver:
+ """构造注册了 GoImportResolver 的 resolver（Go selector 解析用）。"""
+ import_by_source: dict[str, list[ImportEdge]] = {}
+ for edge in imports:
+ import_by_source.setdefault(edge.source_file, ).append(edge)
+ resolver_by_lang: dict[str, ImportResolver] = {
+ "go": GoImportResolver(index, module_path)
+ }
+ return SymbolResolver(index, import_by_source, resolver_by_lang)
+@pytest.mark.django_db(transaction=True)
+async def test_go_selector_alias_import(test_repository) -> None:
+ """Go selector：alias import + qualifier → 包目录内目标 Symbol。"""
+ symbols = await acreate_symbols(
+ test_repository,
+ [SymbolSpec(name="Handle", file_path="internal/svc/handler.go", start_line=1)],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="cmd/main.go",
+ target_module="github.com/org/repo/internal/svc",
+ imported_names=["svc as github.com/org/repo/internal/svc"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="cmd/main.go",
+ callee_name="Handle",
+ call_type="METHOD",
+ callee_qualifier="svc",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _go_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id == str(symbols[0].id)
+ assert result.callee_file == "internal/svc/handler.go"
+ assert result.is_cross_file is True
+@pytest.mark.django_db(transaction=True)
+async def test_go_selector_bare_import_last_segment(test_repository) -> None:
+ """Go selector：裸 import 本地名=path 末段，qualifier 匹配末段 → 命中。"""
+ symbols = await acreate_symbols(
+ test_repository,
+ [SymbolSpec(name="New", file_path="internal/svc/svc.go", start_line=1)],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="cmd/main.go",
+ target_module="github.com/org/repo/internal/svc",
+ imported_names=["github.com/org/repo/internal/svc"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="cmd/main.go",
+ callee_name="New",
+ call_type="METHOD",
+ callee_qualifier="svc",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _go_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id == str(symbols[0].id)
+ assert result.is_cross_file is True
+@pytest.mark.django_db(transaction=True)
+async def test_go_stdlib_selector_stays_empty(test_repository) -> None:
+ """Go selector：标准库 fmt.Sprintf → resolve_package_dir None → 留 NULL。"""
+ await acreate_symbols(
+ test_repository,
+ [SymbolSpec(name="Sprintf", file_path="internal/fake/fmt.go", start_line=1)],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="cmd/main.go",
+ target_module="fmt",
+ imported_names=["fmt"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="cmd/main.go",
+ callee_name="Sprintf",
+ call_type="METHOD",
+ callee_qualifier="fmt",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _go_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id is None
+ assert result.is_cross_file is False
+@pytest.mark.django_db(transaction=True)
+async def test_go_receiver_variable_qualifier_stays_empty(test_repository) -> None:
+ """Go selector：qualifier 是 receiver 变量（不匹配任何 import 本地名）→ 留 NULL。"""
+ # JSON 符号放在与 caller 不同的文件，避免路径①同文件命中；本例验证 Go 分支因
+ # qualifier="c" 不匹配 gin import 本地名（"gin"）而留空。
+ await acreate_symbols(
+ test_repository,
+ [SymbolSpec(name="JSON", file_path="vendor/gin/context.go", start_line=1)],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="internal/svc/handler.go",
+ target_module="github.com/gin-gonic/gin",
+ imported_names=["github.com/gin-gonic/gin"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="internal/svc/handler.go",
+ callee_name="JSON",
+ call_type="METHOD",
+ callee_qualifier="c",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _go_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id is None
+ assert result.is_cross_file is False
 @pytest.mark.django_db(transaction=True)
 async def test_symbols_in_file(test_repository) -> None:
  """``symbols_in_file`` 返回文件全部 Symbol；空文件返回 。"""
@@ -403,6 +550,7 @@ def test_public_exports -> None:
  """包根导出聚合：下游 phase 可从 ``codegraph.resolver`` 统一引入。"""
  from codegraph.resolver import ( # noqa: PLC0415
  FrontendImportResolver,
+ GoImportResolver,
  ImportResolver,
  PythonImportResolver,
  ResolveResult,
@@ -413,5 +561,6 @@ def test_public_exports -> None:
  assert SymbolResolver is not None
  assert PythonImportResolver is not None
  assert FrontendImportResolver is not None
+ assert GoImportResolver is not None
  assert ImportResolver is not None
  assert ResolveResult is not None
