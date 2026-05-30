@@ -5,10 +5,12 @@ NULL 的 ``CallEdge.callee_symbol`` 解析回填。框架可被 289（前端）/
 本 plan落地语言无关契约 ``base`` 与 ``SymbolIndex``。
 """
 from codegraph.resolver.base import ImportResolver, ResolveResult
+from codegraph.resolver.frontend_import import FrontendImportResolver
 from codegraph.resolver.python_import import PythonImportResolver
 from codegraph.resolver.symbol_index import IndexedSymbol, SymbolIndex
 from codegraph.resolver.symbol_resolver import SymbolResolver
 __all__ = [
+ "FrontendImportResolver",
  "ImportResolver",
  "IndexedSymbol",
  "PythonImportResolver",

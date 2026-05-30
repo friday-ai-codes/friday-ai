@@ -5,8 +5,9 @@ from typing import TYPE_CHECKING
 import pytest
 from asgiref.sync import sync_to_async
 from codegraph.resolver import ImportResolver, ResolveResult, SymbolIndex
+from codegraph.resolver.frontend_import import FrontendImportResolver
 from codegraph.resolver.python_import import PythonImportResolver
-from codegraph.resolver.symbol_resolver import SymbolResolver
+from codegraph.resolver.symbol_resolver import SymbolResolver, _lang_of
 from codegraph.resolver.tests.conftest import (
  CallSpec,
  ImportSpec,
@@ -257,9 +258,151 @@ async def test_backfill_isolates_single_edge_failures(test_repository, monkeypat
  assert stats == {"total": 2, "resolved": 1}
  assert calls[0].callee_symbol_id is None
  assert calls[1].callee_symbol_id == symbols[0].id
+def _frontend_resolver(
+ index: SymbolIndex,
+ imports: Sequence[ImportEdge],
+ *,
+ alias_map: dict[str, str] | None = None,
+) -> SymbolResolver:
+ """构造注册了 FrontendImportResolver 的 resolver（组件引用解析用）。"""
+ import_by_source: dict[str, list[ImportEdge]] = {}
+ for edge in imports:
+ import_by_source.setdefault(edge.source_file, ).append(edge)
+ resolver_by_lang: dict[str, ImportResolver] = {
+ "frontend": FrontendImportResolver(index, alias_map or {"~/": "src/"})
+ }
+ return SymbolResolver(index, import_by_source, resolver_by_lang)
+def test_lang_of_frontend_extensions -> None:
+ """``_lang_of`` 前端 5 扩展名归 frontend，.py 仍 python，未知 None。"""
+ for ext in (".ts", ".tsx", ".js", ".jsx", ".vue"):
+ assert _lang_of(f"src/views/Page{ext}") == "frontend"
+ assert _lang_of("pkg/mod.py") == "python"
+ assert _lang_of("README.md") is None
+@pytest.mark.django_db(transaction=True)
+async def test_symbols_in_file(test_repository) -> None:
+ """``symbols_in_file`` 返回文件全部 Symbol；空文件返回 。"""
+ await acreate_symbols(
+ test_repository,
+ [
+ SymbolSpec(name="a", file_path="src/m.ts", start_line=1),
+ SymbolSpec(name="b", file_path="src/m.ts", start_line=5),
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ names = sorted(s.name for s in index.symbols_in_file("src/m.ts"))
+ assert names == ["a", "b"]
+ assert index.symbols_in_file("src/nonexistent.ts") ==
+@pytest.mark.django_db(transaction=True)
+async def test_component_reference_aligned_name(test_repository) -> None:
+ """：组件 A 引用组件 B（名字对齐）→ 连到 B 的组件 CLASS Symbol。"""
+ symbols = await acreate_symbols(
+ test_repository,
+ [
+ SymbolSpec(
+ name="UserCard",
+ file_path="src/components/UserCard.vue",
+ symbol_type="CLASS",
+ start_line=1,
+ )
+ ],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="src/views/Home.vue",
+ target_module="~/components/UserCard.vue",
+ imported_names=["UserCard"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="src/views/Home.vue",
+ callee_name="UserCard",
+ call_type="TEMPLATE_REF",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _frontend_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id == str(symbols[0].id)
+ assert result.callee_file == "src/components/UserCard.vue"
+ assert result.is_cross_file is True
+@pytest.mark.django_db(transaction=True)
+async def test_component_reference_renamed_default(test_repository) -> None:
+ """重命名 default：<Card/> 经 import 兜底取目标文件组件 CLASS Symbol。"""
+ symbols = await acreate_symbols(
+ test_repository,
+ [
+ SymbolSpec(
+ name="UserCard",
+ file_path="src/components/UserCard.vue",
+ symbol_type="CLASS",
+ start_line=1,
+ )
+ ],
+ )
+ imports = await acreate_imports(
+ test_repository,
+ [
+ ImportSpec(
+ source_file="src/views/Home.vue",
+ target_module="~/components/UserCard.vue",
+ imported_names=["Card"],
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="src/views/Home.vue",
+ callee_name="Card",
+ call_type="TEMPLATE_REF",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _frontend_resolver(index, imports).resolve_call(calls[0])
+ assert result.callee_symbol_id == str(symbols[0].id)
+ assert result.callee_file == "src/components/UserCard.vue"
+ assert result.is_cross_file is True
+@pytest.mark.django_db(transaction=True)
+async def test_global_component_without_import_stays_empty(test_repository) -> None:
+ """无 import 的全局/auto 注册组件 → 留 NULL 不误连。"""
+ await acreate_symbols(
+ test_repository,
+ [
+ SymbolSpec(
+ name="RouterView",
+ file_path="src/components/RouterView.vue",
+ symbol_type="CLASS",
+ start_line=1,
+ )
+ ],
+ )
+ calls = await acreate_calls(
+ test_repository,
+ [
+ CallSpec(
+ caller_file="src/views/Home.vue",
+ callee_name="RouterView",
+ call_type="TEMPLATE_REF",
+ )
+ ],
+ )
+ index = await _build_index(str(test_repository.id))
+ result = _frontend_resolver(index, ).resolve_call(calls[0])
+ assert result.callee_symbol_id is None
+ assert result.callee_file is None
+ assert result.is_cross_file is False
 def test_public_exports -> None:
  """包根导出聚合：下游 phase 可从 ``codegraph.resolver`` 统一引入。"""
  from codegraph.resolver import ( # noqa: PLC0415
+ FrontendImportResolver,
  ImportResolver,
  PythonImportResolver,
  ResolveResult,
@@ -269,5 +412,6 @@ def test_public_exports -> None:
  assert SymbolIndex is not None
  assert SymbolResolver is not None
  assert PythonImportResolver is not None
+ assert FrontendImportResolver is not None
  assert ImportResolver is not None
  assert ResolveResult is not None

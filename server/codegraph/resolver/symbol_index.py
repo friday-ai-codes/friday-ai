@@ -26,6 +26,7 @@ class SymbolIndex:
  def __init__(self) -> None:
  self._exact: dict[tuple[str, str], list[IndexedSymbol]] = {}
  self._fuzzy: dict[str, list[IndexedSymbol]] = {}
+ self._by_file: dict[str, list[IndexedSymbol]] = {}
  self._files: set[str] = set
  @classmethod
  def build(cls, repository_id: str) -> SymbolIndex:
@@ -47,6 +48,7 @@ class SymbolIndex:
  )
  idx._exact.setdefault((indexed.file_path, indexed.name), ).append(indexed)
  idx._fuzzy.setdefault(indexed.name, ).append(indexed)
+ idx._by_file.setdefault(indexed.file_path, ).append(indexed)
  idx._files.add(indexed.file_path)
  return idx
  def exact(self, file_path: str, name: str) -> list[IndexedSymbol]:
@@ -58,4 +60,7 @@ class SymbolIndex:
  def has_file(self, file_path: str) -> bool:
  """判定 ``file_path`` 是否属于本仓（供 ImportResolver 精确等值口径使用）。"""
  return file_path in self._files
+ def symbols_in_file(self, file_path: str) -> list[IndexedSymbol]:
+ """返回某文件内的全部 Symbol（供组件引用解析按文件取组件 Symbol）。"""
+ return self._by_file.get(file_path, )
 __all__ = ["IndexedSymbol", "SymbolIndex"]
