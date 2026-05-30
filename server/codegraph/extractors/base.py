@@ -49,6 +49,9 @@ class CallData:
  callee_name: str
  call_type: str # "DIRECT" | "METHOD" | "ATTRIBUTE" (per )
  line_number: int
+ # selector / 对象调用的限定符（Go ``pkg.Func`` 的 ``pkg``）；简单 identifier 才捕获，
+ # 复杂操作数留 None。供 Go 跨包解析（Phase）。
+ callee_qualifier: str | None = None
 @dataclass
 class EndpointData:
  """API 端点抽取结果 —— HTTP 方法 + URL 路径 + 处理函数映射。

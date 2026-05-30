@@ -68,6 +68,7 @@ class CallSpec:
  callee_symbol: Symbol | None = None
  callee_file: str | None = None
  is_cross_file: bool = False
+ callee_qualifier: str | None = None
 async def acreate_symbols(repo: Repository, specs: Sequence[SymbolSpec]) -> list[Symbol]:
  """按 ``SymbolSpec`` 列表逐个 acreate Symbol，返回创建结果列表。"""
  from codegraph.models import Symbol
@@ -117,6 +118,7 @@ async def acreate_calls(repo: Repository, specs: Sequence[CallSpec]) -> list[Cal
  is_cross_file=spec.is_cross_file,
  call_type=spec.call_type,
  line_number=spec.line_number,
+ callee_qualifier=spec.callee_qualifier,
  )
  )
  return created

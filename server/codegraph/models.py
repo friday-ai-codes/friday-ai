@@ -109,6 +109,12 @@ class CallEdge(models.Model):
  related_name="incoming_calls",
  )
  callee_file = models.CharField(max_length=512, null=True, blank=True, db_index=True)
+ # selector / 对象调用的包或对象限定符，如 Go ``pkg.Func`` 的 ``pkg``、
+ # ``obj.method`` 的 ``obj``。供 Go 跨包 selector 调用解析按 import
+ # 本地名定位目标包目录；存量边默认 NULL，零破坏。
+ callee_qualifier = models.CharField(
+ max_length=255, null=True, blank=True, default=None, db_index=True
+ )
  is_cross_file = models.BooleanField(default=False)
  call_type = models.CharField(max_length=16, choices=CallType.choices)
  line_number = models.IntegerField
