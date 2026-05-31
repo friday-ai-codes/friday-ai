@@ -40,7 +40,7 @@ class ChunkRegistry(models.Model):
  )
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传
  # （配合 generate_chunk_id 的分支命名空间，feature chunk_id 与 base 天然不同）。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  file_path = models.CharField(max_length=512)
  chunk_index = models.PositiveIntegerField
  # Phase：邻居元数据 enrichment 字段——indexer 后续 plan 同步回填，
@@ -84,6 +84,11 @@ class ChunkRegistry(models.Model):
  fields=["repository", "file_path"],
  name="idx_chunk_reg_repo_file",
  ),
+ # v26.2：分支隔离复合索引（旧索引保留，新增并存）。
+ models.Index(
+ fields=["repository", "branch_name", "file_path"],
+ name="idx_chunkreg_repo_branch_file",
+ ),
  ]
  def __str__(self) -> str:
  return f"ChunkRegistry({self.chunk_id} @ {self.file_path}:{self.chunk_index})"
@@ -104,7 +109,7 @@ class ChunkEdge(models.Model):
  target_chunk_id = models.UUIDField(db_index=False)
  edge_type = models.CharField(max_length=20, choices=EdgeType.choices)
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  weight = models.FloatField(
  validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
  )
@@ -129,8 +134,10 @@ class ChunkEdge(models.Model):
  verbose_name = "Chunk 边"
  verbose_name_plural = "Chunk 边"
  constraints = [
+ # v26.2：branch_name 进唯一约束（Critical 1 防御性冗余，
+ # Phase 写入侧必须同步透传 branch_name，否则跨分支同三元组撞约束）。
  UniqueConstraint(
- fields=["source_chunk_id", "target_chunk_id", "edge_type"],
+ fields=["source_chunk_id", "target_chunk_id", "edge_type", "branch_name"],
  name="uniq_chunkedge_triple",
  ),
  CheckConstraint(
@@ -150,6 +157,11 @@ class ChunkEdge(models.Model):
  models.Index(
  fields=["repository", "source_chunk_id"],
  name="idx_chunkedge_fanout",
+ ),
+ # v26.2：分支隔离复合索引（旧索引保留，新增并存）。
+ models.Index(
+ fields=["repository", "branch_name", "source_chunk_id"],
+ name="idx_chunkedge_branch_fanout",
  ),
  models.Index(
  fields=["repository", "edge_type", "-weight"],
