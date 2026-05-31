@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
+import ClaudeCodeConfigPanel from '~/components/providers/ClaudeCodeConfigPanel.vue'
 import ProviderSettings from '~/components/providers/ProviderSettings.vue'
 import GeneralSettings from '~/components/settings/GeneralSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
@@ -122,6 +123,25 @@ const settingsTabs = [
  <!-- ProviderSettings 嵌入内容 -->
  <div class="">
  <ProviderSettings scope="system" embedded />
+ </div>
+ </div>
+ <!-- Claude Code 编码配置（选凭证 + opus/sonnet/haiku 三档模型映射） -->
+ <div class="card overflow-hidden">
+ <div class="flex items-center gap-3 border-b border-border/50">
+ <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
+ <span class="icon-[lucide--terminal] text-2xl text-primary" />
+ </div>
+ <div class="flex-1">
+ <h2 class="text-lg font-semibold">
+ Claude Code 编码配置
+ </h2>
+ <p class="text-sm text-muted-foreground">
+ 选定编码容器使用的 Provider 凭证，并映射 opus / sonnet / haiku 三档模型
+ </p>
+ </div>
+ </div>
+ <div class="">
+ <ClaudeCodeConfigPanel />
  </div>
  </div>
  </div>

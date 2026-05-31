@@ -43,6 +43,7 @@ function makeCred(overrides: Partial<ProviderCredentialDto> = {}): ProviderCrede
  scope: overrides.scope ?? 'system',
  scope_id: overrides.scope_id ?? null,
  is_active: overrides.is_active ?? true,
+ is_default: overrides.is_default ?? false,
  last_health_check_at: overrides.last_health_check_at ?? null,
  last_health_check_status: overrides.last_health_check_status ?? '',
  last_health_check_error: overrides.last_health_check_error ?? '',

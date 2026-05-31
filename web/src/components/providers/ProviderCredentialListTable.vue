@@ -35,6 +35,7 @@ const emit = defineEmits<{
  (e: 'toggleActive', c: ProviderCredentialDto): void
  (e: 'testConnection', c: ProviderCredentialDto): void
  (e: 'refreshModels', c: ProviderCredentialDto): void
+ (e: 'setDefault', c: ProviderCredentialDto): void
 }>
 function iconFor(providerType: string): string {
  const map: Record<string, string> = {
@@ -85,6 +86,10 @@ function iconFor(providerType: string): string {
  </td>
  <td class="px-4 py-3">
  <span class="text-foreground">{{ c.name }}</span>
+ <Badge v-if="c.is_default" variant="default" class="ml-2 align-middle">
+ <span class="icon-[lucide--star] w-3 mr-1" aria-hidden="true" />
+ <span class="text-xs font-normal">默认</span>
+ </Badge>
  <span class="ml-2 font-mono text-xs text-muted-foreground">{{ c.api_key_last4 }}</span>
  </td>
  <td class="hidden md:table-cell px-4 py-3">
@@ -121,6 +126,12 @@ function iconFor(providerType: string): string {
  <DropdownMenuContent>
  <DropdownMenuItem @click="emit('edit', c)">
  编辑
+ </DropdownMenuItem>
+ <DropdownMenuItem
+ v-if="!c.is_default"
+ @click="emit('setDefault', c)"
+ >
+ 设为默认
  </DropdownMenuItem>
  <DropdownMenuItem @click="emit('refreshModels', c)">
  刷新模型清单

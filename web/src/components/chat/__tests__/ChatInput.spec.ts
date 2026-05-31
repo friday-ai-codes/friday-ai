@@ -42,6 +42,7 @@ function makeCredential(
  scope: 'system',
  scope_id: null,
  is_active: true,
+ is_default: false,
  last_health_check_at: null,
  last_health_check_status: '',
  last_health_check_error: '',

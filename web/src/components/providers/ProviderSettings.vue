@@ -210,6 +210,15 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  handleError(e, '刷新模型清单')
  }
 }
+async function onSetDefault(c: ProviderCredentialDto) {
+ try {
+ await store.setDefault(c.id)
+ toast.success(`已将 ${c.name} 设为默认 ${c.provider_type} 凭证`)
+ }
+ catch (e) {
+ handleError(e, '设置默认凭证')
+ }
+}
 </script>
 <template>
  <section class="space-y-8">
@@ -266,6 +275,7 @@ async function onRefreshModels(c: ProviderCredentialDto) {
  @toggle-active="onToggleActive"
  @test-connection="onTestConnection"
  @refresh-models="onRefreshModels"
+ @set-default="onSetDefault"
  />
  <!-- 表单 Dialog（新建/编辑） -->
  <Dialog v-model:open="formOpen">
