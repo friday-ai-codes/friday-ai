@@ -314,6 +314,41 @@ async def health_check(
 # 时把脱敏错误写入 last_health_check_error（调用方 ViewSet @action 统一 save）。
 # - 返回 list[dict] 统一形状：[{id, display_name, context_length?}, ...]；
 # 前端 ModelSelect 组件消费。
+class FetchModelsError(Exception):
+ """无状态拉模型失败（错误信息已脱敏）。
+ 供 fetch_models_for_config 在无 credential 上下文时抛出，由调用方（API view）
+ 捕获后返回脱敏错误。message 已经过 _safe_error 处理，可安全回显。
+ """
+async def fetch_models_for_config(
+ provider_type: str,
+ cfg: dict[str, Any],
+) -> list[dict[str, Any]]:
+ """无状态：按 provider_type + 明文 config dispatch 拉取模型清单。
+ 与 fetch_models_for_credential 的区别：不依赖 ProviderCredential 实例、不读 DB、
+ 不写 last_health_check_error。供新建凭证表单「先填 key+base_url 再拉模型」场景使用
+ （Quick 问题④），以及被 fetch_models_for_credential 复用。
+ 返回统一结构：[{id: str, display_name: str, context_length?: int}, ...]
+ Args:
+ provider_type: ProviderType 字符串值。
+ cfg: 明文凭证 config（含 api_key / base_url 等，不落库）。
+ Raises:
+ FetchModelsError: provider_type 未知或上游调用失败（message 已脱敏）。
+ """
+ try:
+ if provider_type == ProviderType.ANTHROPIC.value:
+ return await _fetch_models_anthropic(cfg)
+ if provider_type in (
+ ProviderType.OPENAI_RESPONSES.value,
+ ProviderType.OPENAI_CHAT.value,
+ ):
+ return await _fetch_models_openai(cfg)
+ if provider_type == ProviderType.GEMINI.value:
+ return await _fetch_models_gemini(cfg)
+ if provider_type == ProviderType.OLLAMA.value:
+ return await _fetch_models_ollama(cfg)
+ except Exception as exc:
+ raise FetchModelsError(_safe_error(str(exc))) from exc
+ raise FetchModelsError(_safe_error(f"unknown_provider_type: {provider_type}"))
 async def fetch_models_for_credential(
  credential: ProviderCredential,
 ) -> list[dict[str, Any]]:
@@ -321,6 +356,7 @@ async def fetch_models_for_credential(
  返回统一结构：[{id: str, display_name: str, context_length?: int}, ...]
  失败时返回空 list 并将错误脱敏写入 credential.last_health_check_error（不 raise，
  不更新 last_health_check_status——避免污染健康检查语义）。
+ 内部委托无状态 fetch_models_for_config，仅在 credential 上下文补充解密 + 错误持久化。
  Args:
  credential: 已从 DB 读取的 ProviderCredential 实例。
  """
@@ -336,38 +372,17 @@ async def fetch_models_for_credential(
  f"decrypt_failed: {type(exc).__name__}"
  )
  return
- # 2. 按 provider_type 分派
- provider_type = credential.provider_type
+ # 2. 委托无状态 dispatch；失败时脱敏错误写回 credential（保持原语义）
  try:
- if provider_type == ProviderType.ANTHROPIC.value:
- return await _fetch_models_anthropic(cfg)
- if provider_type in (
- ProviderType.OPENAI_RESPONSES.value,
- ProviderType.OPENAI_CHAT.value,
- ):
- return await _fetch_models_openai(cfg)
- if provider_type == ProviderType.GEMINI.value:
- return await _fetch_models_gemini(cfg)
- if provider_type == ProviderType.OLLAMA.value:
- return await _fetch_models_ollama(cfg)
- except Exception as exc:
+ return await fetch_models_for_config(credential.provider_type, cfg)
+ except FetchModelsError as exc:
  logger.warning(
  "fetch_models_failed",
  credential_id=str(credential.id),
- provider_type=provider_type,
- error_summary=_safe_error(str(exc), 80),
+ provider_type=credential.provider_type,
+ error_summary=str(exc)[:80],
  )
  credential.last_health_check_error = _safe_error(str(exc))
- return
- # 未知 provider_type：返回空清单并记录
- logger.warning(
- "fetch_models_unknown_provider",
- credential_id=str(credential.id),
- provider_type=provider_type,
- )
- credential.last_health_check_error = _safe_error(
- f"unknown_provider_type: {provider_type}"
- )
  return
 _FETCH_MODELS_TIMEOUT_SECONDS = 15.0
 async def _fetch_models_anthropic(cfg: dict[str, Any]) -> list[dict[str, Any]]:
