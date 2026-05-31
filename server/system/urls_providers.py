@@ -15,6 +15,7 @@ TrailingSlashRouter 不会将其误匹配到 retrieve 视图。types/ 是静态�
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import (
+ ClaudeCodeConfigView,
  ProviderCredentialTestConnectionView,
  ProviderCredentialViewSet,
  ProviderFetchModelsView,
@@ -38,6 +39,12 @@ urlpatterns = [
  "fetch-models/",
  ProviderFetchModelsView.as_view,
  name="provider-fetch-models",
+ ),
+ # Quick 问题②⑥：Claude Code 编码容器配置（选凭证 + 三档模型映射）
+ path(
+ "claude-code-config/",
+ ClaudeCodeConfigView.as_view,
+ name="claude-code-config",
  ),
  # Phase：健康检查端点（保留既有实现，route 独立于 ViewSet）
  path(

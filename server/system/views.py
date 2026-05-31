@@ -587,6 +587,71 @@ class ProviderFetchModelsView(APIView):
  )
  return Response({"available_models": models_list})
 # ============================================================================
+# Quick 问题②⑥：Claude Code 编码容器配置端点
+# ============================================================================
+class ClaudeCodeConfigView(APIView):
+ """GET/PUT /api/providers/claude-code-config/ —— Claude Code 专属配置。
+ GET：返回 {credential_id, model_mapping, credential}（credential 含 provider_type/name
+ 等展示信息，便于 UI 渲染；绝不回显 api_key）。
+ PUT：接收 {credential_id, model_mapping} 写入。
+ 权限（T-hlj-02）：GET 任意已认证用户；PUT 仅 superuser（系统级配置写动作）。
+ """
+ permission_classes = [IsAuthenticated]
+ async def get(self, request) -> Response: # type: ignore[no-untyped-def]
+ from services.provider_config import aget_claude_code_config
+ config = await aget_claude_code_config
+ credential_info: dict[str, object] | None = None
+ cred_id = config.get("credential_id")
+ if cred_id:
+ try:
+ cred = await ProviderCredential.objects.aget(id=cred_id)
+ credential_info = {
+ "id": str(cred.id),
+ "provider_type": cred.provider_type,
+ "name": cred.name,
+ "scope": cred.scope,
+ "is_active": cred.is_active,
+ "available_models": cred.available_models or,
+ }
+ except ProviderCredential.DoesNotExist:
+ credential_info = None
+ return Response({
+ "credential_id": config["credential_id"],
+ "model_mapping": config["model_mapping"],
+ "credential": credential_info,
+ })
+ async def put(self, request) -> Response: # type: ignore[no-untyped-def]
+ from services.provider_config import (
+ ProviderConfigError,
+ aset_claude_code_config,
+ )
+ from system.serializers import ClaudeCodeConfigSerializer
+ if not request.user.is_superuser:
+ return Response(
+ {"detail": "仅系统管理员可配置 Claude Code 凭证"},
+ status=status.HTTP_403_FORBIDDEN,
+ )
+ serializer = ClaudeCodeConfigSerializer(data=request.data)
+ await sync_to_async(serializer.is_valid)(raise_exception=True)
+ data = serializer.validated_data
+ mapping_raw = data.get("model_mapping") or {}
+ model_mapping = {
+ "opus": mapping_raw.get("opus", "") or "",
+ "sonnet": mapping_raw.get("sonnet", "") or "",
+ "haiku": mapping_raw.get("haiku", "") or "",
+ }
+ try:
+ payload = await aset_claude_code_config(
+ credential_id=data.get("credential_id"),
+ model_mapping=model_mapping,
+ )
+ except ProviderConfigError as exc:
+ return Response(
+ {"detail": str(exc)},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ return Response(payload)
+# ============================================================================
 # Phase 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
 # ============================================================================
 import os

@@ -343,3 +343,18 @@ class ProviderTypeMetaSerializer(serializers.Serializer):
  supports_streaming = serializers.BooleanField
  # Pydantic BaseModel.model_json_schema 输出：通常含 properties / required / $defs
  credential_schema_json_schema = serializers.DictField
+# ============================================================================
+# Quick 问题②⑥：Claude Code 编码容器配置序列化器
+# ============================================================================
+class ClaudeCodeModelMappingSerializer(serializers.Serializer):
+ """opus/sonnet/haiku 三档模型映射（值为模型 id 字符串，可空）。"""
+ opus = serializers.CharField(allow_blank=True, required=False, default="")
+ sonnet = serializers.CharField(allow_blank=True, required=False, default="")
+ haiku = serializers.CharField(allow_blank=True, required=False, default="")
+class ClaudeCodeConfigSerializer(serializers.Serializer):
+ """Claude Code 配置读写序列化器。
+ credential_id 可为空（未选则回退系统默认 anthropic 凭证）；
+ model_mapping 为 opus/sonnet/haiku 三档映射。绝不回显 api_key。
+ """
+ credential_id = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+ model_mapping = ClaudeCodeModelMappingSerializer(required=False)

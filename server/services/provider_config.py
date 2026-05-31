@@ -283,6 +283,139 @@ async def aget_legacy_anthropic_config -> dict[str, str]:
  "default_model": default_model,
  "small_model": "", # ProviderCredential 无此字段
  }
+# ============================================================================
+# Quick 问题②⑥：Claude Code 编码容器专属配置
+# 存储于 SystemSetting(key=claude_code_config)，value 为 JSON：
+# {"credential_id": str, "model_mapping": {"opus": str, "sonnet": str, "haiku": str}}
+# ============================================================================
+CLAUDE_CODE_MODEL_TIERS = ("opus", "sonnet", "haiku")
+def _empty_claude_code_config -> dict[str, Any]:
+ return {
+ "credential_id": "",
+ "model_mapping": {tier: "" for tier in CLAUDE_CODE_MODEL_TIERS},
+ }
+async def aget_claude_code_config -> dict[str, Any]:
+ """读取 Claude Code 配置。缺省返回空配置（keys 固定）。
+ Returns:
+ {"credential_id": str, "model_mapping": {"opus": str, "sonnet": str, "haiku": str}}
+ """
+ import json as _json
+ from system.models import SettingKeys, SystemSetting
+ try:
+ setting = await SystemSetting.objects.aget(key=SettingKeys.CLAUDE_CODE_CONFIG)
+ except SystemSetting.DoesNotExist:
+ return _empty_claude_code_config
+ if not setting.value:
+ return _empty_claude_code_config
+ try:
+ parsed = _json.loads(setting.value)
+ except (ValueError, TypeError):
+ return _empty_claude_code_config
+ if not isinstance(parsed, dict):
+ return _empty_claude_code_config
+ mapping_raw = parsed.get("model_mapping")
+ mapping = {
+ tier: (mapping_raw.get(tier, "") if isinstance(mapping_raw, dict) else "")
+ for tier in CLAUDE_CODE_MODEL_TIERS
+ }
+ return {
+ "credential_id": str(parsed.get("credential_id") or ""),
+ "model_mapping": mapping,
+ }
+async def aset_claude_code_config(
+ credential_id: str | None,
+ model_mapping: dict[str, str],
+) -> dict[str, Any]:
+ """写入 Claude Code 配置。
+ 若 credential_id 非空，校验对应 ProviderCredential 存在且 is_active。
+ model_mapping 仅保留 opus/sonnet/haiku 三键（其余忽略）。
+ Raises:
+ ProviderConfigError: credential_id 指向不存在 / 已禁用凭证。
+ """
+ import json as _json
+ from system.models import ProviderCredential, SettingKeys, SystemSetting
+ cred_id_str = str(credential_id or "").strip
+ if cred_id_str:
+ parsed_id = _parse_uuid_or_none(cred_id_str)
+ if parsed_id is None:
+ raise ProviderConfigError("credential_id 不是合法 UUID")
+ exists = await ProviderCredential.objects.filter(
+ id=parsed_id, is_active=True
+ ).aexists
+ if not exists:
+ raise ProviderConfigError("所选凭证不存在或已禁用")
+ clean_mapping = {
+ tier: str(model_mapping.get(tier, "") or "") for tier in CLAUDE_CODE_MODEL_TIERS
+ }
+ payload = {"credential_id": cred_id_str, "model_mapping": clean_mapping}
+ await SystemSetting.objects.aupdate_or_create(
+ key=SettingKeys.CLAUDE_CODE_CONFIG,
+ defaults={"value": _json.dumps(payload, ensure_ascii=False), "is_encrypted": False},
+ )
+ logger.info(
+ "claude_code_config_updated",
+ has_credential=bool(cred_id_str),
+ mapped_tiers=[t for t, v in clean_mapping.items if v],
+ )
+ return payload
+async def aget_claude_code_runtime_config -> dict[str, str]:
+ """解析 Claude Code 运行时配置（供 dispatch / PR 草稿共用）。
+ 优先用 CC 专属配置选定的凭证 + 三档模型映射；未配置 credential_id 时回退
+ aget_legacy_anthropic_config（系统默认 anthropic 凭证），保持旧行为。
+ Returns:
+ {
+ "api_key": str, "base_url": str,
+ "opus_model": str, "sonnet_model": str, "haiku_model": str,
+ "default_model": str, # 主模型兜底（sonnet 档 or 凭证 default_model）
+ }
+ """
+ from system.models import ProviderCredential
+ cc = await aget_claude_code_config
+ cred_id = _parse_uuid_or_none(cc.get("credential_id"))
+ mapping = cc.get("model_mapping", {})
+ if cred_id is not None:
+ cred = await _fetch_credential_by_id(cred_id)
+ if cred is not None:
+ try:
+ raw_cfg = cred.get_decrypted_config
+ schema_cls = PROVIDER_REGISTRY[
+ _parse_provider_type(str(cred.provider_type))
+ ].credential_schema
+ validated = schema_cls.model_validate(raw_cfg)
+ except (ValidationError, Exception): # noqa: BLE001
+ validated = None
+ api_key = ""
+ base_url = ""
+ if validated is not None:
+ secret = getattr(validated, "api_key", None)
+ if secret is not None:
+ api_key = (
+ secret.get_secret_value
+ if hasattr(secret, "get_secret_value")
+ else str(secret)
+ )
+ base_url = getattr(validated, "base_url", "") or cred.base_url or ""
+ opus = mapping.get("opus", "") or ""
+ sonnet = mapping.get("sonnet", "") or ""
+ haiku = mapping.get("haiku", "") or ""
+ return {
+ "api_key": api_key,
+ "base_url": base_url,
+ "opus_model": opus,
+ "sonnet_model": sonnet,
+ "haiku_model": haiku,
+ "default_model": sonnet or cred.default_model or "",
+ }
+ # 回退 legacy 系统默认 anthropic 凭证
+ legacy = await aget_legacy_anthropic_config
+ return {
+ "api_key": legacy["api_key"],
+ "base_url": legacy["base_url"],
+ "opus_model": "",
+ "sonnet_model": "",
+ "haiku_model": legacy["small_model"],
+ "default_model": legacy["default_model"],
+ }
 # Phase Plan：ENV_KEY_TO_SETTING_KEY + SettingKeys.ANTHROPIC_*
 # 全部硬删；legacy 路径走 aget_legacy_anthropic_config 读 ProviderCredential。
 # Phase Plan：_get_setting_value_sync/_get_setting_value_async 硬删。
