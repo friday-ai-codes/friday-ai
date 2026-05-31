@@ -17,6 +17,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
  ProviderCredentialTestConnectionView,
  ProviderCredentialViewSet,
+ ProviderFetchModelsView,
  ProviderTypesView,
 )
 router = DefaultRouter
@@ -31,6 +32,12 @@ urlpatterns = [
  "types/",
  ProviderTypesView.as_view,
  name="provider-types",
+ ),
+ # Quick 问题④：无状态「试拉模型」（新建凭证表单，config 不落库）
+ path(
+ "fetch-models/",
+ ProviderFetchModelsView.as_view,
+ name="provider-fetch-models",
  ),
  # Phase：健康检查端点（保留既有实现，route 独立于 ViewSet）
  path(

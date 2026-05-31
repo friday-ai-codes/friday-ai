@@ -518,6 +518,75 @@ class ProviderTypesView(APIView):
  serializer = ProviderTypeMetaSerializer(data, many=True)
  return Response(serializer.data)
 # ============================================================================
+# Quick 问题④：无状态「试拉模型」端点（新建凭证表单用）
+# ============================================================================
+class ProviderFetchModelsView(APIView):
+ """POST /api/providers/fetch-models/ —— 用未落库的 config 直接拉模型清单。
+ 新建凭证场景下还没有 credential_id，无法走 credentials/{id}/refresh-models/；
+ 本端点接收 {provider_type, config}（含 api_key/base_url 明文，仅用于本次请求，
+ 不落库），先按 PROVIDER_REGISTRY[type].credential_schema 校验 config，再调
+ fetch_models_for_config 拉取。
+ 安全（T-hlj-01）：所有错误经 redact_secrets_in_text 脱敏 + 截断后返回，
+ 禁止原始 exception（可能含 api_key 明文）冒泡到 HTTP 响应。
+ """
+ permission_classes = [IsAuthenticated]
+ async def post(self, request: Request) -> Response: # type: ignore[no-untyped-def]
+ from common.logging import redact_secrets_in_text
+ from pydantic import ValidationError as PydanticValidationError
+ from services.provider_config import PROVIDER_REGISTRY, ProviderType
+ from services.provider_health import (
+ ERROR_TRUNCATE_LIMIT,
+ FetchModelsError,
+ fetch_models_for_config,
+ )
+ body = request.data if isinstance(request.data, dict) else {}
+ provider_type = body.get("provider_type", "")
+ config = body.get("config")
+ if not isinstance(config, dict):
+ return Response(
+ {"available_models":, "error": "config 必须是对象"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ try:
+ provider_enum = ProviderType(provider_type)
+ except ValueError:
+ return Response(
+ {"available_models":, "error": f"不支持的 Provider 类型：{provider_type}"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ meta = PROVIDER_REGISTRY[provider_enum]
+ # 用 credential_schema 校验 config（缺 api_key / 非法 base_url 等），
+ # hide_input_in_errors=True 保证 errors 不回显明文。
+ try:
+ validated = meta.credential_schema.model_validate(config)
+ except PydanticValidationError:
+ return Response(
+ {"available_models":, "error": "凭证字段校验失败，请检查必填项"},
+ status=status.HTTP_400_BAD_REQUEST,
+ )
+ # SecretStr → 明文，交给 fetch（仅内存，不落库）
+ plain_cfg: dict[str, object] = {}
+ for key, value in validated.model_dump(mode="python").items:
+ if hasattr(value, "get_secret_value"):
+ plain_cfg[key] = value.get_secret_value
+ else:
+ plain_cfg[key] = value
+ try:
+ models_list = await fetch_models_for_config(provider_type, plain_cfg)
+ except FetchModelsError as exc:
+ redacted = redact_secrets_in_text(str(exc))[:ERROR_TRUNCATE_LIMIT]
+ return Response(
+ {"available_models":, "error": redacted},
+ status=502,
+ )
+ except Exception as exc: # noqa: BLE001 —— 纵深防御兜底脱敏
+ redacted = redact_secrets_in_text(str(exc))[:ERROR_TRUNCATE_LIMIT]
+ return Response(
+ {"available_models":, "error": redacted},
+ status=502,
+ )
+ return Response({"available_models": models_list})
+# ============================================================================
 # Phase 通用设置：SystemInfoView（版本 / 环境变量 / 镜像 / 备份）
 # ============================================================================
 import os
