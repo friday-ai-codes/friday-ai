@@ -38,6 +38,9 @@ class ChunkRegistry(models.Model):
  on_delete=models.CASCADE,
  related_name="chunk_registry_entries",
  )
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传
+ # （配合 generate_chunk_id 的分支命名空间，feature chunk_id 与 base 天然不同）。
+ branch_name = models.CharField(max_length=200, default="")
  file_path = models.CharField(max_length=512)
  chunk_index = models.PositiveIntegerField
  # Phase：邻居元数据 enrichment 字段——indexer 后续 plan 同步回填，
@@ -100,6 +103,8 @@ class ChunkEdge(models.Model):
  source_chunk_id = models.UUIDField(db_index=False)
  target_chunk_id = models.UUIDField(db_index=False)
  edge_type = models.CharField(max_length=20, choices=EdgeType.choices)
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
+ branch_name = models.CharField(max_length=200, default="")
  weight = models.FloatField(
  validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
  )
