@@ -131,8 +131,8 @@ onMounted(load)
  </SelectItem>
  </SelectContent>
  </Select>
- <p class="max-w-xl text-xs leading-relaxed text-muted-foreground">
- 编码容器走 Anthropic 协议，优先选 anthropic 凭证；也支持任意 Anthropic 兼容网关（自定义 Base URL）。未选则回退系统默认 anthropic 凭证。
+ <p class="text-xs text-muted-foreground">
+ 优先选 anthropic 凭证，未选则用系统默认。
  </p>
  </div>
  <!-- 三档模型映射 -->
@@ -143,18 +143,22 @@ onMounted(load)
  <div class="overflow-hidden rounded-xl border border-border/60">
  <div
  v-for="(tier, idx) in TIERS":key="tier.key"
- class="flex items-center gap-3 px-4 py-3":class="{ 'border-t border-border/50': idx > 0 }"
+ class="flex items-center gap-4 px-5 py-4":class="{ 'border-t border-border/50': idx > 0 }"
  >
- <span class=" w-2 shrink-0 rounded-full":class="tier.dot" aria-hidden="true" />
- <div class="w-28 shrink-0">
- <p class="flex items-center gap-1.5 text-sm font-medium">
- <span class=".5 w-3.5 text-muted-foreground":class="tier.icon" aria-hidden="true" />
+ <!-- 档位身份：色点 + 名称 + 一行说明（whitespace-nowrap 避免挤压换行） -->
+ <div class="flex w-48 shrink-0 items-center gap-3">
+ <span class=".5 w-2.5 shrink-0 rounded-full":class="tier.dot" aria-hidden="true" />
+ <div class="min-w-0">
+ <p class="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+ <span class=" w-4 text-muted-foreground":class="tier.icon" aria-hidden="true" />
  {{ tier.label }}
  </p>
- <p class="text-xs text-muted-foreground">
+ <p class="whitespace-nowrap text-xs text-muted-foreground">
  {{ tier.hint }}
  </p>
  </div>
+ </div>
+ <!-- 模型选择：占据剩余空间，撑开层次 -->
  <div class="min-w-0 flex-1">
  <Select
  v-if="hasModelOptions"
@@ -181,7 +185,7 @@ onMounted(load)
  </div>
  </div>
  <p v-if="selectedCredentialId && !hasModelOptions" class="text-xs text-muted-foreground">
- 所选凭证暂无模型清单，可在上方列表点「刷新模型清单」后再来选择，或直接手动输入模型名。
+ 所选凭证暂无模型清单，可先在上方「刷新模型清单」，或手动输入模型名。
  </p>
  </div>
  <div class="flex justify-end border-t border-border/50 pt-4">
