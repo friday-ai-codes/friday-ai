@@ -386,6 +386,42 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  user_id=str(request.user.id),
  )
  return Response({"is_active": credential.is_active})
+ @action(detail=True, methods=["post"], url_path="set-default")
+ async def set_default( # type: ignore[no-untyped-def]
+ self, request: Request, pk=None
+ ) -> Response:
+ """把当前凭证设为同 (scope, scope_id, provider_type) 维度的默认凭证。
+ 替代 name='default' 魔法约定（Quick 问题①）。service 层主动保证
+ 唯一：先把同组其他行 is_default 清零，再把当前行置 True；DB 端
+ uniq_default_provider_per_scope_type partial unique 约束兜底竞态。
+ 权限：system 级写动作仅 superuser（与 Create/Update 的 校验一致）；
+ project 级由 ProviderCredentialPermission 对象级权限保证。
+ """
+ credential = await self.aget_object
+ if credential.scope == "system" and not request.user.is_superuser:
+ raise PermissionDenied("仅系统管理员可设置系统级默认凭证")
+ @sync_to_async
+ def _set_default_atomic -> None:
+ from django.db import transaction
+ with transaction.atomic:
+ # 清零同组其他默认凭证（含已禁用的，保证维度内唯一）
+ ProviderCredential.objects.filter(
+ scope=credential.scope,
+ scope_id=credential.scope_id,
+ provider_type=credential.provider_type,
+ is_default=True,
+ ).exclude(id=credential.id).update(is_default=False)
+ credential.is_default = True
+ credential.save(update_fields=["is_default", "updated_at"])
+ await _set_default_atomic
+ _viewset_logger.info(
+ "provider_credential_set_default",
+ credential_id=str(credential.id),
+ scope=credential.scope,
+ provider_type=credential.provider_type,
+ user_id=str(request.user.id),
+ )
+ return Response({"is_default": True})
  @action(detail=True, methods=["post"], url_path="refresh-models")
  async def refresh_models( # type: ignore[no-untyped-def]
  self, request: Request, pk=None
@@ -467,6 +503,9 @@ class ProviderTypesView(APIView):
  "api_format": meta.api_format.value,
  "credential_type": meta.credential_type.value,
  "default_base_url": meta.default_base_url,
+ # PROVIDER_REGISTRY 无类型级默认模型；返回空串保持前端契约稳定，
+ # 前端 ChatInput 的真正 fallback 取凭证自身的 cred.default_model。
+ "default_model": "",
  "supports_thinking": meta.supports_thinking,
  "supports_reasoning": meta.supports_reasoning,
  "supports_vision": meta.supports_vision,
