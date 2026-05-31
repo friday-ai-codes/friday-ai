@@ -119,6 +119,14 @@ class ProviderCredential(models.Model):
  base_url = models.CharField(max_length=500, blank=True, default="")
  default_model = models.CharField(max_length=128, blank=True, default="")
  is_active = models.BooleanField(default=True)
+ is_default = models.BooleanField(
+ default=False,
+ db_index=True,
+ help_text=(
+ "该 (scope, scope_id, provider_type) 维度的系统/项目默认凭证。"
+ "替代 name='default' 魔法约定。"
+ ),
+ )
  # Phase 健康检查预留字段
  last_health_check_at = models.DateTimeField(
  null=True,
@@ -158,6 +166,13 @@ class ProviderCredential(models.Model):
  fields=["scope_id", "provider_type", "name"],
  condition=models.Q(scope="project"),
  name="uniq_project_provider_credential",
+ ),
+ # 默认凭证唯一性 DB 兜底：同 (scope, scope_id, provider_type) 维度
+ # 最多一个 is_default=True（唯一性主动保证放在 service 层 set_default）。
+ models.UniqueConstraint(
+ fields=["scope", "scope_id", "provider_type"],
+ condition=models.Q(is_default=True),
+ name="uniq_default_provider_per_scope_type",
  ),
  ]
  indexes = [
