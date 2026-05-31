@@ -219,6 +219,15 @@ async function onSetDefault(c: ProviderCredentialDto) {
  handleError(e, '设置默认凭证')
  }
 }
+async function onSetDefaultModel(c: ProviderCredentialDto, modelId: string) {
+ try {
+ await store.updateCredential(c.id, { default_model: modelId })
+ toast.success(`${c.name} 默认模型已切换为 ${modelId}`)
+ }
+ catch (e) {
+ handleError(e, '切换默认模型')
+ }
+}
 </script>
 <template>
  <section class="space-y-8">
@@ -276,6 +285,7 @@ async function onSetDefault(c: ProviderCredentialDto) {
  @test-connection="onTestConnection"
  @refresh-models="onRefreshModels"
  @set-default="onSetDefault"
+ @set-default-model="onSetDefaultModel"
  />
  <!-- 表单 Dialog（新建/编辑） -->
  <Dialog v-model:open="formOpen">

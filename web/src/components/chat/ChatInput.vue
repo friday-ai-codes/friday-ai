@@ -99,8 +99,23 @@ const credentialModelOptions = computed<CredentialModelOption>( => {
  }
  }
  }
- // 排序：scope=system 优先 → scope=project；同 scope 内按 credential.name asc → model.id asc
+ // 排序优先级：
+ // 1. 默认 provider（is_default）置顶 —— 默认模型应排在最上面（用户诉求）
+ // 2. 同一凭证内：default_model 置顶
+ // 3. scope=system 优先于 project
+ // 4. 同 scope 内按 credential.name → model.id 升序
  return opts.sort((a, b) => {
+ if (a.credential.is_default !== b.credential.is_default)
+ return a.credential.is_default ? -1: 1
+ if (a.credential.id === b.credential.id) {
+ const dm = a.credential.default_model
+ if (dm) {
+ if (a.model.id === dm)
+ return -1
+ if (b.model.id === dm)
+ return 1
+ }
+ }
  if (a.credential.scope !== b.credential.scope)
  return a.credential.scope === 'system' ? -1: 1
  if (a.credential.name !== b.credential.name)
@@ -108,12 +123,33 @@ const credentialModelOptions = computed<CredentialModelOption>( => {
  return a.model.id.localeCompare(b.model.id)
  })
 })
+// 默认选项 = 排序后首项（即默认 provider 的默认模型）
+const defaultOptionKey = computed<string | null>(
+ => credentialModelOptions.value[0]?.key ?? null,
+)
+// 当前生效的选中项：优先对话已绑定，否则用户级记忆（含自动选中的默认）
+const effectiveSelectionKey = computed<string | null>(
+ => currentSelectionKey.value || chatStore.selectedCredentialModel || null,
+)
 const currentSelectionKey = computed<string | null>( => {
  const conv = chatStore.currentConversation
  if (!conv?.provider_credential_id || !conv.model)
  return null
  return `${conv.provider_credential_id}:${conv.model}`
 })
+// 无当前对话绑定、且无用户级记忆时，自动选中默认 provider 的默认模型并持久化（用户诉求②）
+watch(
+ [credentialModelOptions, currentSelectionKey],
+ ([opts, currentKey]) => {
+ if (opts.length === 0 || currentKey)
+ return
+ if (chatStore.selectedCredentialModel)
+ return
+ if (defaultOptionKey.value)
+ chatStore.selectedCredentialModel = defaultOptionKey.value
+ },
+ { immediate: true },
+)
 const currentSelectionLabel = computed<string>( => {
  const key = currentSelectionKey.value
  if (!key) {
@@ -424,13 +460,17 @@ function toggleNotifications {
  <div v-if="showModelMenu && !isSelectorDisabled" class="model-menu">
  <button
  v-for="opt in credentialModelOptions":key="opt.key"
- class="model-menu-item":class="{ 'model-menu-item--active': opt.key === currentSelectionKey }"
+ class="model-menu-item":class="{ 'model-menu-item--active': opt.key === effectiveSelectionKey }"
  @click="onSelectCombination(opt)"
  >
  <span class="truncate">{{ opt.label }}</span>
  <span
- v-if="opt.key === currentSelectionKey"
- class="icon-[lucide--check] text-xs text-primary shrink-0"
+ v-if="opt.key === defaultOptionKey"
+ class="ml-1 shrink-0 rounded bg-primary/10 px-1 text-[10px] text-primary"
+ >默认</span>
+ <span
+ v-if="opt.key === effectiveSelectionKey"
+ class="icon-[lucide--check] text-xs text-primary shrink-0 ml-auto"
  />
  </button>
  </div>
