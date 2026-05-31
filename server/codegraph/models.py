@@ -20,6 +20,9 @@ class Symbol(models.Model):
  on_delete=models.CASCADE,
  related_name="symbols",
  )
+ # v26.2：分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
+ # feature 分支由 Phase 写入侧透传；max_length 对齐 RepositoryBranchIndex.branch_name。
+ branch_name = models.CharField(max_length=200, default="")
  name = models.CharField(max_length=255, db_index=True)
  symbol_type = models.CharField(max_length=16, choices=SymbolType.choices, db_index=True)
  file_path = models.CharField(max_length=512, db_index=True)
@@ -52,6 +55,8 @@ class ImportEdge(models.Model):
  on_delete=models.CASCADE,
  related_name="import_edges",
  )
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
+ branch_name = models.CharField(max_length=200, default="")
  source_file = models.CharField(max_length=512, db_index=True)
  target_module = models.CharField(max_length=512, db_index=True)
  imported_names = models.JSONField(default=list)
@@ -92,6 +97,8 @@ class CallEdge(models.Model):
  on_delete=models.CASCADE,
  related_name="call_edges",
  )
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
+ branch_name = models.CharField(max_length=200, default="")
  caller_symbol = models.ForeignKey(
  Symbol,
  null=True,
@@ -147,6 +154,8 @@ class Endpoint(models.Model):
  on_delete=models.CASCADE,
  related_name="endpoints",
  )
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
+ branch_name = models.CharField(max_length=200, default="")
  http_method = models.CharField(max_length=16)
  url_path = models.CharField(max_length=512, db_index=True)
  handler_name = models.CharField(max_length=255)
@@ -178,6 +187,8 @@ class ApiWrapper(models.Model):
  on_delete=models.CASCADE,
  related_name="api_wrappers",
  )
+ # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
+ branch_name = models.CharField(max_length=200, default="")
  file_path = models.CharField(max_length=512, db_index=True)
  function_symbol = models.CharField(max_length=255)
  http_method = models.CharField(max_length=16)
