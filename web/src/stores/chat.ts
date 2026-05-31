@@ -27,6 +27,7 @@ import { ApiError, get as apiGet } from '~/api/client'
 import { getChatPartsProtocol } from '~/composables/useChatPartsProtocol'
 import { connectSSE, getCurrentRunId } from '~/composables/useSSEStream'
 import { useWebPush } from '~/composables/useWebPush'
+import { useAuthStore } from '~/stores/auth'
 import { useRoutingStore } from '~/stores/routing'
 /** Phase：preflight missing payload 契约。 */
 export interface CredentialMissingPayload {
@@ -163,8 +164,26 @@ export const useChatStore = defineStore('chat', => {
  const selectedSpaceId = useLocalStorage<string | null>('chat-space-id', null)
  const selectedRole = useLocalStorage<ChatRole>('chat-role', 'developer')
  const selectedModel = useLocalStorage<string>('chat-model', '__default__')
- /** 记忆上次选择的 credential+model 组合（格式：credentialId:modelId） */
- const selectedCredentialModel = useLocalStorage<string>('chat-credential-model', '')
+ /**
+ * 记忆上次选择的 credential+model 组合（格式：credentialId:modelId）。
+ *
+ * 用户级持久化（而非环境级）：localStorage 存 { [userId]: "credId:modelId" } 映射，
+ * 不同用户在同一浏览器各自独立。未登录时落到 '__anon__' 键。
+ */
+ const _credentialModelByUser = useLocalStorage<Record<string, string>>(
+ 'chat-credential-model-by-user',
+ {},
+ )
+ const selectedCredentialModel = computed<string>({
+ get {
+ const uid = useAuthStore.user?.id ?? '__anon__'
+ return _credentialModelByUser.value[uid] ?? ''
+ },
+ set(v: string) {
+ const uid = useAuthStore.user?.id ?? '__anon__'
+ _credentialModelByUser.value = { ..._credentialModelByUser.value, [uid]: v }
+ },
+ })
  const forceDeepAnalysis = useLocalStorage<boolean>('chat-force-deep-analysis', false)
  const notificationsEnabled = useLocalStorage<boolean>('chat-notifications-enabled', false)
  // ========================================================================

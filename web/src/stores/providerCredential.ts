@@ -65,15 +65,34 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  const activeCredentials = computed<ProviderCredentialDto>( =>
  credentials.value.filter(c => c.is_active),
  )
- /** 所有可用模型选项（用于单模型自动选择）。 */
+ /**
+ * 所有可用模型选项（用于单模型自动选择）。
+ *
+ * 排序：默认 provider（is_default）的默认模型（default_model）置于最前，
+ * 以便上层「无记忆选择时取首项」即落到默认 provider 的默认模型。
+ */
  const allAvailableModels = computed( => {
  const models: Array<{ credentialId: string, modelId: string }> =
- for (const cred of activeCredentials.value) {
+ // 默认 provider 优先；同 provider 内默认模型优先
+ const ordered = [...activeCredentials.value].sort((a, b) => {
+ if (a.is_default !== b.is_default)
+ return a.is_default ? -1: 1
+ return 0
+ })
+ for (const cred of ordered) {
  const available = cred.available_models ??
  if (available.length > 0) {
- for (const m of available) {
- models.push({ credentialId: cred.id, modelId: m.id })
+ const sortedModels = [...available].sort((a, b) => {
+ if (cred.default_model) {
+ if (a.id === cred.default_model)
+ return -1
+ if (b.id === cred.default_model)
+ return 1
  }
+ return 0
+ })
+ for (const m of sortedModels)
+ models.push({ credentialId: cred.id, modelId: m.id })
  }
  else if (cred.default_model) {
  models.push({ credentialId: cred.id, modelId: cred.default_model })

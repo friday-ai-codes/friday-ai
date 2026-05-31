@@ -23,6 +23,13 @@ import {
  DropdownMenuItem,
  DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu'
+import {
+ Select,
+ SelectContent,
+ SelectItem,
+ SelectTrigger,
+ SelectValue,
+} from '~/components/ui/select'
 import { Switch } from '~/components/ui/switch'
 import ProviderHealthBadge from './ProviderHealthBadge.vue'
 interface Props {
@@ -36,7 +43,13 @@ const emit = defineEmits<{
  (e: 'testConnection', c: ProviderCredentialDto): void
  (e: 'refreshModels', c: ProviderCredentialDto): void
  (e: 'setDefault', c: ProviderCredentialDto): void
+ (e: 'setDefaultModel', c: ProviderCredentialDto, modelId: string): void
 }>
+function onDefaultModelChange(c: ProviderCredentialDto, modelId: unknown) {
+ const v = typeof modelId === 'string' ? modelId: ''
+ if (v && v !== c.default_model)
+ emit('setDefaultModel', c, v)
+}
 function iconFor(providerType: string): string {
  const map: Record<string, string> = {
  anthropic: 'icon-[simple-icons--anthropic]',
@@ -61,6 +74,9 @@ function iconFor(providerType: string): string {
  </th>
  <th class="hidden md:table-cell px-4 py-2 text-left font-normal">
  作用域
+ </th>
+ <th class="px-4 py-2 text-left font-normal">
+ 默认模型
  </th>
  <th class="px-4 py-2 text-left font-normal">
  健康
@@ -102,6 +118,28 @@ function iconFor(providerType: string): string {
  {{ c.scope === 'system' ? '系统默认': '仅本空间' }}
  </span>
  </Badge>
+ </td>
+ <td class="px-4 py-3">
+ <!-- 有 available_models → 下拉切换默认模型；否则展示纯文本 default_model -->
+ <Select
+ v-if="(c.available_models?.length ?? 0) > 0":model-value="c.default_model || ''"
+ @update:model-value="onDefaultModelChange(c, $event)"
+ >
+ <SelectTrigger class=" min-w-40 text-xs">
+ <SelectValue placeholder="选择默认模型" />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem
+ v-for="m in c.available_models":key="m.id":value="m.id"
+ class="text-xs"
+ >
+ {{ m.display_name || m.id }}
+ </SelectItem>
+ </SelectContent>
+ </Select>
+ <span v-else class="font-mono text-xs text-muted-foreground">
+ {{ c.default_model || '—' }}
+ </span>
  </td>
  <td class="px-4 py-3">
  <ProviderHealthBadge:status="c.last_health_check_status":last-error="c.last_health_check_error":last-checked-at="c.last_health_check_at"
@@ -148,7 +186,7 @@ function iconFor(providerType: string): string {
  </tr>
  <tr v-if="credentials.length === 0">
  <td
- colspan="6"
+ colspan="7"
  class="px-4 py-12 text-center text-sm text-muted-foreground"
  >
  暂无凭证,点击"新建凭证"开始
