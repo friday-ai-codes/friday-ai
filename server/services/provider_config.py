@@ -245,6 +245,15 @@ async def aget_legacy_anthropic_config -> dict[str, str]:
  "default_model": "",
  "small_model": "",
  }
+ # is_default 优先 + name='default' 回退（向后兼容未迁移库）
+ try:
+ cred = await ProviderCredential.objects.aget(
+ scope="system",
+ provider_type="anthropic",
+ is_default=True,
+ is_active=True,
+ )
+ except ProviderCredential.DoesNotExist:
  try:
  cred = await ProviderCredential.objects.aget(
  scope="system",
@@ -317,8 +326,20 @@ async def _fetch_credential_by_id(credential_id: UUID) -> "ProviderCredential | 
 async def _fetch_system_default_credential(
  provider_type: ProviderType,
 ) -> "ProviderCredential | None":
- """IO 函数：异步查系统级 default 凭证（scope=system, name=default, is_active=True）。"""
+ """IO 函数：异步查系统级 default 凭证。
+ 优先按 is_default=True 定位（新口径）；捕获 DoesNotExist 后回退旧逻辑
+ name="default"（向后兼容尚未跑 0007 迁移的库），仍 miss 返回 None。
+ """
  from system.models import ProviderCredential
+ try:
+ return await ProviderCredential.objects.aget(
+ scope="system",
+ provider_type=str(provider_type),
+ is_default=True,
+ is_active=True,
+ )
+ except ProviderCredential.DoesNotExist:
+ # 回退：未迁移库仍靠 name='default' 定位
  try:
  return await ProviderCredential.objects.aget(
  scope="system",
