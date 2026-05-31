@@ -24,6 +24,9 @@ class SettingKeys:
  已由 ProviderCredential 表 + ProviderConfigService 承载。
  """
  GIT_HTTP_PROXY = "git_http_proxy"
+ # Claude Code 编码容器配置（Quick 问题②⑥）
+ # value 为 JSON：{credential_id: str, model_mapping: {opus, sonnet, haiku}}
+ CLAUDE_CODE_CONFIG = "claude_code_config"
  # Vector Index Settings
  QDRANT_URL = "qdrant_url"
  QDRANT_API_KEY = "qdrant_api_key"
