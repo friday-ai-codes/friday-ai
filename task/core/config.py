@@ -52,6 +52,18 @@ class TaskConfig(BaseSettings):
  default="",
  description="Claude 子代理模型（Explore 等），不设置时回退到主模型",
  )
+ # cc-switch 风格三档模型映射（Quick 问题⑥）。非空时映射到
+ # ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL，让 Claude Code 的三档模型别名
+ # 指向所选 provider 的具体模型。留空则回退 claude_model / claude_small_model。
+ claude_opus_model: str = Field(
+ default="", description="opus 档映射模型（ANTHROPIC_DEFAULT_OPUS_MODEL）"
+ )
+ claude_sonnet_model: str = Field(
+ default="", description="sonnet 档映射模型（ANTHROPIC_DEFAULT_SONNET_MODEL）"
+ )
+ claude_haiku_model: str = Field(
+ default="", description="haiku 档映射模型（ANTHROPIC_DEFAULT_HAIKU_MODEL）"
+ )
  claude_max_tokens: int = Field(default=8192, description="Max tokens per request")
  claude_max_turns: int = Field(
  default=50,

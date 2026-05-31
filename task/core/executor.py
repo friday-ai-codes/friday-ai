@@ -195,18 +195,35 @@ Implement the task as described. Make necessary code changes.
  env_vars["ANTHROPIC_API_KEY"] = self.config.claude_api_key
  if self.config.claude_base_url:
  env_vars["ANTHROPIC_BASE_URL"] = self.config.claude_base_url
- # 使用第三方网关时，子代理（Explore 等）默认用 haiku 可能不可用，
- # 需要用 ANTHROPIC_DEFAULT_HAIKU_MODEL / CLAUDE_CODE_SUBAGENT_MODEL 覆盖
- small_model = self.config.claude_small_model or self.config.claude_model
- if small_model:
- env_vars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = small_model
- env_vars["CLAUDE_CODE_SUBAGENT_MODEL"] = small_model
- log.debug("Sub-agent model override", model=small_model)
+ # cc-switch 三档模型映射（Quick 问题⑥）：把 Claude Code 的
+ # opus/sonnet/haiku 模型别名映射到所选 provider 的具体模型。
+ # haiku 档同时驱动子代理（Explore 等）——第三方网关默认 haiku 可能不可用。
+ haiku_model = (
+ self.config.claude_haiku_model
+ or self.config.claude_small_model
+ or self.config.claude_model
+ )
+ if haiku_model:
+ env_vars["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = haiku_model
+ env_vars["CLAUDE_CODE_SUBAGENT_MODEL"] = haiku_model
+ log.debug("Sub-agent (haiku) model override", model=haiku_model)
+ if self.config.claude_sonnet_model:
+ env_vars["ANTHROPIC_DEFAULT_SONNET_MODEL"] = self.config.claude_sonnet_model
+ log.debug("Sonnet tier model override", model=self.config.claude_sonnet_model)
+ if self.config.claude_opus_model:
+ env_vars["ANTHROPIC_DEFAULT_OPUS_MODEL"] = self.config.claude_opus_model
+ log.debug("Opus tier model override", model=self.config.claude_opus_model)
+ # 主模型优先级：sonnet 档（cc-switch 主力档）> claude_model > 默认 sonnet
+ main_model = (
+ self.config.claude_sonnet_model
+ or self.config.claude_model
+ or "sonnet"
+ )
  options = ClaudeAgentOptions(
  system_prompt=self._get_system_prompt,
  permission_mode=permission_mode,
  cwd=str(self.workspace),
- model=self.config.claude_model or "sonnet",
+ model=main_model,
  max_turns=max_turns or self.config.claude_max_turns,
  setting_sources=["project"],
  stderr=_stderr_handler,
