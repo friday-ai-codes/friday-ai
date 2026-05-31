@@ -228,6 +228,8 @@ async function onSetDefaultModel(c: ProviderCredentialDto, modelId: string) {
  handleError(e, '切换默认模型')
  }
 }
+// 供外层卡片头部「新建凭证」按钮调用（embedded 模式）
+defineExpose({ openCreate })
 </script>
 <template>
  <section class="space-y-8">
@@ -250,13 +252,7 @@ async function onSetDefaultModel(c: ProviderCredentialDto, modelId: string) {
  新建凭证
  </Button>
  </header>
- <!-- embedded 模式下的新建按钮 -->
- <div v-if="props.embedded && store.credentials.length > 0" class="flex justify-end">
- <Button variant="default" @click="openCreate">
- <span class="icon-[lucide--plus] w-4 mr-1" aria-hidden="true" />
- 新建凭证
- </Button>
- </div>
+ <!-- embedded 模式：新建按钮由外层卡片头部承载（同标题一行），此处不再渲染 -->
  <!-- 空态（work item §Empty State ） -->
  <div
  v-if="!store.loading && store.credentials.length === 0"

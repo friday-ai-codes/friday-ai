@@ -4,6 +4,7 @@ import ClaudeTestDialog from '~/components/ClaudeTestDialog.vue'
 import LoadingState from '~/components/common/LoadingState.vue'
 import ClaudeCodeConfigPanel from '~/components/providers/ClaudeCodeConfigPanel.vue'
 import ProviderSettings from '~/components/providers/ProviderSettings.vue'
+import { Button } from '~/components/ui/button'
 import GeneralSettings from '~/components/settings/GeneralSettings.vue'
 import RAGEnhancementSettings from '~/components/settings/RAGEnhancementSettings.vue'
 import VectorIndexSettings from '~/components/settings/VectorIndexSettings.vue'
@@ -16,6 +17,8 @@ definePage({
 })
 const claude = useClaudeSettings
 const feishu = useFeishuIMSettings(claude.settings, claude.loadSettings)
+// 引用嵌入的 ProviderSettings，让卡片头部「新建凭证」按钮触发其新建对话框
+const providerSettingsRef = ref<InstanceType<typeof ProviderSettings> | null>(null)
 // 设置加载完成后初始化飞书配置值
 watch( => claude.loading.value, (isLoading) => {
  if (!isLoading) {
@@ -106,12 +109,12 @@ const settingsTabs = [
  <!-- Tab: Provider -->
  <div v-show="activeTab === 'provider'" class="space-y-6">
  <div class="card overflow-hidden">
- <!-- 卡片头部（与其他设置卡片对齐） -->
+ <!-- 卡片头部：标题 + 新建按钮同行（避免按钮独占一行、左侧空白） -->
  <div class="flex items-center gap-3 border-b border-border/50">
  <div class=".5 rounded-xl bg-primary/10 flex items-center justify-center">
  <span class="icon-[lucide--cpu] text-2xl text-primary" />
  </div>
- <div class="flex-1">
+ <div class="flex-1 min-w-0">
  <h2 class="text-lg font-semibold">
  Provider 凭证管理
  </h2>
@@ -119,10 +122,17 @@ const settingsTabs = [
  管理系统级 LLM Provider 凭证，供全部空间共享
  </p>
  </div>
+ <Button
+ class="shrink-0"
+ @click="providerSettingsRef?.openCreate"
+ >
+ <span class="icon-[lucide--plus] w-4 mr-1" aria-hidden="true" />
+ 新建凭证
+ </Button>
  </div>
  <!-- ProviderSettings 嵌入内容 -->
  <div class="">
- <ProviderSettings scope="system" embedded />
+ <ProviderSettings ref="providerSettingsRef" scope="system" embedded />
  </div>
  </div>
  <!-- Claude Code 编码配置（选凭证 + opus/sonnet/haiku 三档模型映射） -->
