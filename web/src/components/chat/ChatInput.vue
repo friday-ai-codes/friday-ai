@@ -82,11 +82,13 @@ const credentialModelOptions = computed<CredentialModelOption>( => {
  }
  }
  else {
- // 尚未刷新模型清单 → fallback 到该 Provider 类型的 default_model
- const meta = providerStore.providerTypes.find(
- p => p.provider_type === cred.provider_type,
- )
- const fallbackModel = meta?.default_model
+ // 尚未刷新 available_models → fallback 到凭证自身配置的 default_model
+ // （Quick 问题③根因修复：旧代码 fallback 用 provider-type meta 的
+ // default_model，但 /types/ 端点不返回该字段恒为 undefined，导致有 active 凭证
+ // 却产生 0 选项，误显示「无可用 Provider」）。
+ const fallbackModel
+ = cred.default_model
+ || providerStore.providerTypes.find(p => p.provider_type === cred.provider_type)?.default_model
  if (fallbackModel) {
  opts.push({
  credential: cred,

@@ -9,6 +9,10 @@
  * 本模块统一写相对路径 `/providers/credentials/...`。
  */
 import type {
+ ClaudeCodeConfigDto,
+ ClaudeCodeConfigPayload,
+ FetchModelsStatelessPayload,
+ FetchModelsStatelessResponse,
  ProviderCredentialCreatePayload,
  ProviderCredentialDto,
  ProviderCredentialUpdatePayload,
@@ -17,7 +21,7 @@ import type {
  RefreshModelsResponse,
  TestConnectionResponse,
 } from '~/types/providerCredential'
-import { del, get, patch, post } from './client'
+import { del, get, patch, post, put } from './client'
 /** 凭证列表查询参数。 */
 export interface ListCredentialsParams {
  /**
@@ -121,6 +125,38 @@ export const providerCredentialsApi = {
  `/providers/credentials/${id}/refresh-models/`,
  {},
  )
+ },
+ /**
+ * POST /api/providers/credentials/<id>/set-default/
+ *
+ * 把该凭证设为同 (scope, scope_id, provider_type) 维度的默认凭证（Quick 问题①）。
+ */
+ setDefault: async (id: string): Promise<{ is_default: boolean }> => {
+ return post<{ is_default: boolean }>(
+ `/providers/credentials/${id}/set-default/`,
+ {},
+ )
+ },
+ /**
+ * POST /api/providers/fetch-models/
+ *
+ * 无状态拉模型：用未落库的 config（含 api_key/base_url）直接拉取该 Provider
+ * 支持的模型清单，供新建凭证表单使用（Quick 问题④）。
+ */
+ fetchModelsStateless: async (
+ payload: FetchModelsStatelessPayload,
+ ): Promise<FetchModelsStatelessResponse> => {
+ return post<FetchModelsStatelessResponse>('/providers/fetch-models/', payload)
+ },
+ /** GET /api/providers/claude-code-config/（Claude Code 编码配置 + credential 展示信息）。 */
+ getClaudeCodeConfig: async: Promise<ClaudeCodeConfigDto> => {
+ return get<ClaudeCodeConfigDto>('/providers/claude-code-config/')
+ },
+ /** PUT /api/providers/claude-code-config/（写入选定凭证 + 三档模型映射）。 */
+ updateClaudeCodeConfig: async (
+ payload: ClaudeCodeConfigPayload,
+ ): Promise<ClaudeCodeConfigPayload> => {
+ return put<ClaudeCodeConfigPayload>('/providers/claude-code-config/', payload)
  },
  /** GET /api/providers/types/（5 Provider 元信息 + credential_schema JSON Schema）。 */
  listProviderTypes: async: Promise<ProviderTypeMetaDto> => {

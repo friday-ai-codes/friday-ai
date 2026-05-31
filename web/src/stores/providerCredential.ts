@@ -120,6 +120,8 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  credentials.value = (parsed.credentials as ProviderCredentialDto).map(c => ({
  ...c,
  available_models: Array.isArray(c.available_models) ? c.available_models:,
+ // 兼容历史快照：早期版本无 is_default 字段，统一补 false 兜底
+ is_default: typeof c.is_default === 'boolean' ? c.is_default: false,
  }))
  providerTypes.value = parsed.providerTypes as ProviderTypeMetaDto
  lastFetchedAt.value = typeof parsed.lastFetchedAt === 'number' ? parsed.lastFetchedAt: 0
@@ -317,6 +319,44 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  throw e
  }
  }
+ /**
+ * 问题①：把凭证设为同 (scope, provider_type) 维度默认（乐观更新 + 失败回滚）。
+ *
+ * 同 scope + provider_type 的其他凭证 is_default 置 false（与后端 set-default 唯一性语义一致）。
+ */
+ async function setDefault(id: string): Promise<boolean> {
+ const target = credentials.value.find(c => c.id === id)
+ if (!target)
+ throw new Error(`凭证 ${id} 不存在`)
+ const snapshot = credentials.value.map(c => ({ id: c.id, is_default: c.is_default }))
+ credentials.value = credentials.value.map((c) => {
+ if (c.id === id)
+ return { ...c, is_default: true }
+ // 同维度其他凭证清默认
+ if (
+ c.scope === target.scope
+ && c.scope_id === target.scope_id
+ && c.provider_type === target.provider_type
+ ) {
+ return { ...c, is_default: false }
+ }
+ return c
+ })
+ try {
+ await providerCredentialsApi.setDefault(id)
+ persist
+ return true
+ }
+ catch (e) {
+ // 回滚
+ credentials.value = credentials.value.map((c) => {
+ const prev = snapshot.find(s => s.id === c.id)
+ return prev ? { ...c, is_default: prev.is_default }: c
+ })
+ lastError.value = e instanceof Error ? e.message: '设置默认凭证失败'
+ throw e
+ }
+ }
  /** 核心路径：cache hit 直接返回；miss 触发 refreshModels。 */
  async function getModelsForCredential(id: string): Promise<AvailableModel> {
  const cred = credentials.value.find(c => c.id === id)
@@ -382,6 +422,7 @@ export const useProviderCredentialStore = defineStore('providerCredential', => {
  updateCredential,
  deleteCredential,
  toggleActive,
+ setDefault,
  testConnection,
  refreshModels,
  getModelsForCredential,
