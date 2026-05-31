@@ -309,13 +309,13 @@ async def _call_llm_for_pr_draft(
  Returns:
  (title, description) 元组。
  """
- # Phase Plan：SettingKeys.ANTHROPIC_* 硬删 → 走
- # ProviderCredential(scope=system, name=default, provider_type=anthropic)
- from services.provider_config import aget_legacy_anthropic_config
- legacy = await aget_legacy_anthropic_config
- api_key = legacy["api_key"]
- base_url = legacy["base_url"]
- model = legacy["default_model"] or "claude-sonnet-4-20250514"
+ # Quick 问题②⑥：PR 草稿生成跟随 Claude Code 选定凭证；
+ # 未配置时 runtime_config 内部回退系统默认 anthropic 凭证。
+ from services.provider_config import aget_claude_code_runtime_config
+ cc = await aget_claude_code_runtime_config
+ api_key = cc["api_key"]
+ base_url = cc["base_url"]
+ model = cc["default_model"] or cc["sonnet_model"] or "claude-sonnet-4-20250514"
  if not api_key:
  raise ValueError("Anthropic API key 未配置")
  if base_url:
