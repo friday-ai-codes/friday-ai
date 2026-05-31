@@ -125,6 +125,7 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  "scope_id",
  "is_active",
  "is_default",
+ "default_model",
  "last_health_check_at",
  "last_health_check_status",
  "last_health_check_error",
