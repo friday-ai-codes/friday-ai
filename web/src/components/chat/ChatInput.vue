@@ -55,8 +55,43 @@ async function loadCredentialsForChat {
 }
 onMounted(loadCredentialsForChat)
 watch( => chatStore.selectedSpaceId, loadCredentialsForChat)
-onClickOutside(modelMenuRef, => {
+// 弹层 Teleport 到 body 后，需基于触发器 rect 做 fixed 定位（规避 .input-card
+// overflow:hidden 裁剪）。menuRef 指向 teleport 后的菜单，ignore 触发器包裹层。
+const menuRef = ref<HTMLElement | null>(null)
+const menuStyle = ref<Record<string, string>>({})
+function updateMenuPosition {
+ const el = modelMenuRef.value
+ if (!el)
+ return
+ const r = el.getBoundingClientRect
+ menuStyle.value = {
+ position: 'fixed',
+ // 右对齐触发器右边缘，向上弹出（输入框在屏幕底部）
+ right: `${Math.max(8, window.innerWidth - r.right)}px`,
+ bottom: `${window.innerHeight - r.top + 6}px`,
+ minWidth: `${Math.max(r.width, 208)}px`,
+ maxWidth: 'min(22rem, calc(100vw - 1rem))',
+ }
+}
+function toggleModelMenu {
+ showModelMenu.value = !showModelMenu.value
+ if (showModelMenu.value)
+ nextTick(updateMenuPosition)
+}
+onClickOutside(menuRef, => {
  showModelMenu.value = false
+}, { ignore: [modelMenuRef] })
+function onViewportChange {
+ if (showModelMenu.value)
+ updateMenuPosition
+}
+onMounted( => {
+ window.addEventListener('resize', onViewportChange)
+ window.addEventListener('scroll', onViewportChange, true)
+})
+onBeforeUnmount( => {
+ window.removeEventListener('resize', onViewportChange)
+ window.removeEventListener('scroll', onViewportChange, true)
 })
 interface CredentialModelOption {
  credential: ProviderCredentialDto
@@ -443,12 +478,14 @@ function toggleNotifications {
  </Tooltip>
  </TooltipProvider>
  <!-- 三态③：可用态 → 正常 dropdown -->
- <button v-else class="model-selector" @click="showModelMenu = !showModelMenu">
+ <button v-else class="model-selector" @click="toggleModelMenu">
  <span class="model-label">{{ currentSelectionLabel }}</span>
  <span
  class="icon-[lucide--chevron-down] text-[11px] transition-transform":class="{ 'rotate-180': showModelMenu }"
  />
  </button>
+ <!-- Teleport 到 body + fixed 定位，规避 .input-card overflow:hidden 裁剪 -->
+ <Teleport to="body">
  <Transition
  enter-active-class="transition-all duration-150 ease-out"
  leave-active-class="transition-all duration-100 ease-in"
@@ -457,7 +494,11 @@ function toggleNotifications {
  leave-from-class="opacity-100 translate-y-0 scale-100"
  leave-to-class="opacity-0 translate-y-1 scale-95"
  >
- <div v-if="showModelMenu && !isSelectorDisabled" class="model-menu">
+ <div
+ v-if="showModelMenu && !isSelectorDisabled"
+ ref="menuRef"
+ class="model-menu":style="menuStyle"
+ >
  <button
  v-for="opt in credentialModelOptions":key="opt.key"
  class="model-menu-item":class="{ 'model-menu-item--active': opt.key === effectiveSelectionKey }"
@@ -475,6 +516,7 @@ function toggleNotifications {
  </button>
  </div>
  </Transition>
+ </Teleport>
  </div>
  <!-- PinConfirmDialog（chat 路径凭证+模型切换确认） -->
  <PinConfirmDialog
@@ -655,11 +697,9 @@ function toggleNotifications {
  overflow: hidden;
  text-overflow: ellipsis;
 }
+/* 定位（position/right/bottom/min-width）由内联 menuStyle 提供（Teleport + fixed）。 */
 .model-menu {
- position: absolute;
- bottom: calc(100% + 0.375rem);
- right: 0;
- min-width: 12rem;
+ min-width: 13rem;
  max-height: 16rem;
  overflow-y: auto;
  padding: 0.25rem;
@@ -669,7 +709,7 @@ function toggleNotifications {
  box-shadow:
  0 4px 16px rgba(0, 0, 0, 0.08),
  0 8px 32px rgba(0, 0, 0, 0.04);
- z-index: 50;
+ z-index: 9999;
 }
 .model-menu-item {
  display: flex;

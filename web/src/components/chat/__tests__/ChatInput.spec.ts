@@ -127,6 +127,8 @@ describe('chatInput model-selector 折叠重构', => {
  TooltipTrigger: SlotStub('TooltipTrigger'),
  RouterLink: SlotStub('RouterLink'),
  Transition: false,
+ // 模型弹层 Teleport 到 body；测试中原地渲染以便 wrapper 查询 .model-menu-item
+ teleport: true,
  },
  },
  })
