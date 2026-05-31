@@ -90,6 +90,44 @@ export async function getCallsForSymbol(
  { max_per_hop: limit, max_total: hop === 2 ? 50: limit * 2 },
  )
 }
+// ============================================================================
+// Phase 统一邻居查询 + Phase 前端消费
+// ============================================================================
+export type NeighborNodeType = 'file' | 'component' | 'symbol'
+export type NeighborDirection = 'both' | 'up' | 'down'
+export interface NeighborNode {
+ id: string
+ type: NeighborNodeType
+ label: string
+ file?: string
+}
+export interface NeighborEdge {
+ source: string
+ target: string
+ kind: string
+ count?: number
+}
+export interface NeighborsData {
+ node_type: NeighborNodeType
+ direction: NeighborDirection
+ nodes: NeighborNode
+ edges: NeighborEdge
+}
+/**
+ * 统一邻居查询（GET /codegraph/graph/neighbors/）。
+ * file/component 走查询时聚合，symbol 走符号级 CallEdge（受益 callee_symbol 回填）。
+ */
+export async function getNeighbors(
+ repositoryId: string,
+ nodeType: NeighborNodeType,
+ id: string,
+ direction: NeighborDirection = 'both',
+): Promise<NeighborsData> {
+ return get<NeighborsData>(
+ `/repositories/${repositoryId}/codegraph/graph/neighbors/`,
+ { node_type: nodeType, id, direction },
+ )
+}
 export async function getImports(
  repositoryId: string,
  params: Omit<GetImportsParams, 'repositoryId'> = {},

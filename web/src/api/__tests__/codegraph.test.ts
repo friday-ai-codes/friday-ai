@@ -15,7 +15,7 @@ vi.mock('~/api/client', => ({
  upload: vi.fn,
  ApiError: MockApiError,
 }))
-const { getSymbols, getCallsForSymbol, getImports, getEndpoints } = await import('~/api/codegraph')
+const { getSymbols, getCallsForSymbol, getImports, getEndpoints, getNeighbors } = await import('~/api/codegraph')
 const REPO = '48338acf-35d3-4b44-abfc-c8946113529e'
 beforeEach( => {
  vi.clearAllMocks
@@ -28,6 +28,20 @@ describe('codegraph API URL 构造', => {
  expect(url).toBe(`/repositories/${REPO}/codegraph/symbols/`)
  expect(url).not.toContain('?')
  expect(params).toMatchObject({ limit: 50, offset: 0 })
+ })
+ it('getNeighbors 拼对 url 并以 params 传 node_type/id/direction', async => {
+ getMock.mockResolvedValueOnce({ node_type: 'file', direction: 'both', nodes:, edges: })
+ await getNeighbors(REPO, 'file', 'src/a.ts', 'down')
+ const [url, params] = getMock.mock.calls[0]
+ expect(url).toBe(`/repositories/${REPO}/codegraph/graph/neighbors/`)
+ expect(url).not.toContain('?')
+ expect(params).toMatchObject({ node_type: 'file', id: 'src/a.ts', direction: 'down' })
+ })
+ it('getNeighbors direction 默认 both', async => {
+ getMock.mockResolvedValueOnce({ node_type: 'component', direction: 'both', nodes:, edges: })
+ await getNeighbors(REPO, 'component', 'abc-id')
+ const [, params] = getMock.mock.calls[0]
+ expect(params).toMatchObject({ node_type: 'component', id: 'abc-id', direction: 'both' })
  })
  it('getSymbols 多个 symbol_type 通过数组传给 params（client 负责多次 append）', async => {
  getMock.mockResolvedValueOnce({ count: 0, offset: 0, limit: 50, results: })

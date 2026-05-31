@@ -13,6 +13,7 @@ import {
  TabsTrigger,
 } from '~/components/ui/tabs'
 import CallsDagTab from './CallsDagTab.vue'
+import DependenciesTab from './DependenciesTab.vue'
 import ImportsTab from './ImportsTab.vue'
 import SymbolsTab from './SymbolsTab.vue'
 const props = withDefaults(defineProps<{
@@ -26,7 +27,7 @@ const props = withDefaults(defineProps<{
 const isOpen = useLocalStorage(`kbs-open-${props.repositoryId}`, true)
 // 跨 Tab 共享状态
 const selectedSymbolId = ref<string | null>(null)
-const activeTab = ref<'symbols' | 'calls' | 'imports'>('symbols')
+const activeTab = ref<'symbols' | 'calls' | 'dependencies' | 'imports'>('symbols')
 function toggle {
  isOpen.value = !isOpen.value
 }
@@ -75,6 +76,9 @@ function handleSelectSymbol(id: string) {
  <TabsTrigger value="calls">
  调用关系 DAG
  </TabsTrigger>
+ <TabsTrigger value="dependencies">
+ 依赖关系
+ </TabsTrigger>
  <TabsTrigger value="imports">
  导入
  </TabsTrigger>
@@ -86,6 +90,11 @@ function handleSelectSymbol(id: string) {
  </TabsContent>
  <TabsContent value="calls">
  <CallsDagTab:repository-id="repositoryId":selected-symbol-id="selectedSymbolId"
+ @select-symbol="handleSelectSymbol"
+ />
+ </TabsContent>
+ <TabsContent value="dependencies">
+ <DependenciesTab:repository-id="repositoryId"
  @select-symbol="handleSelectSymbol"
  />
  </TabsContent>
