@@ -2437,6 +2437,24 @@ class IndexerService:
  error=str(exc),
  error_type=type(exc).__name__,
  )
+ # Phase：整库 raw 写完后，对整库构建解析上下文（SymbolIndex +
+ # python/frontend/go resolver）回填 CallEdge.callee_symbol/callee_file/
+ # is_cross_file。创建索引与手动重建均经本函数 → 一处接入两路径覆盖。
+ # 异常隔离：回填是优化项，失败仅 warning 不阻塞索引主流程。
+ try:
+ from asgiref.sync import sync_to_async
+ from codegraph.resolver.wiring import backfill_symbol_resolution
+ resolve_stats = await sync_to_async(backfill_symbol_resolution)(
+ str(repository_id), repo_path
+ )
+ stats["calls_resolved"] = resolve_stats.get("resolved", 0)
+ except Exception as exc:
+ logger.warning(
+ "symbol_resolution_wire_failed",
+ repository_id=str(repository_id),
+ error=str(exc),
+ error_type=type(exc).__name__,
+ )
  return stats
  async def _write_endpoint_rag_docs(
  self,
