@@ -110,20 +110,29 @@ async def build_dispatch_metadata(
  """
  from common.encryption import decrypt_value
  from repositories.models import GitCredential
- from services.provider_config import aget_legacy_anthropic_config
- # Phase Plan：SettingKeys.ANTHROPIC_* 硬删后走
- # ProviderCredential(scope=system, name=default, provider_type=anthropic)
- legacy = await aget_legacy_anthropic_config
- api_key = legacy["api_key"]
- base_url = legacy["base_url"]
- system_model = legacy["default_model"]
- small_model = legacy["small_model"]
+ from services.provider_config import aget_claude_code_runtime_config
+ # Quick 问题②⑥：优先读 Claude Code 专属配置（选定凭证 + opus/sonnet/haiku
+ # 三档映射）；未配置 credential_id 时 runtime_config 内部回退系统默认 anthropic 凭证。
+ cc = await aget_claude_code_runtime_config
+ api_key = cc["api_key"]
+ base_url = cc["base_url"]
+ opus_model = cc["opus_model"]
+ sonnet_model = cc["sonnet_model"]
+ haiku_model = cc["haiku_model"]
+ # 主模型兜底：sonnet 档 > 凭证 default_model；小模型兜底：haiku 档
+ main_model = cc["default_model"] or sonnet_model
+ small_model = haiku_model
  env_metadata: dict[str, Any] = {
  "repository_id": str(repository.id),
  "env_FRIDAY_TASK_CLAUDE_API_KEY": api_key,
  "env_FRIDAY_TASK_CLAUDE_BASE_URL": base_url,
- "env_FRIDAY_TASK_CLAUDE_MODEL": system_model,
+ # 兼容既有两档 env（容器旧逻辑仍读取）
+ "env_FRIDAY_TASK_CLAUDE_MODEL": main_model,
  "env_FRIDAY_TASK_CLAUDE_SMALL_MODEL": small_model,
+ # Quick：cc-switch 三档映射（容器据此设 ANTHROPIC_DEFAULT_*_MODEL）
+ "env_FRIDAY_TASK_CLAUDE_OPUS_MODEL": opus_model,
+ "env_FRIDAY_TASK_CLAUDE_SONNET_MODEL": sonnet_model,
+ "env_FRIDAY_TASK_CLAUDE_HAIKU_MODEL": haiku_model,
  }
  repo_url = repository.git_url
  # Git 凭据
