@@ -64,10 +64,14 @@ const toast = useToast
 // 模型获取状态
 const isFetchingModels = ref(false)
 const fetchModelsError = ref<string | null>(null)
-const fetchedModels = ref<Array<{ id: string, display_name: string }>>
+// 编辑模式回显：后端已持久化的 available_models / default_model 直接落地，
+// 用户无需重新点「获取模型列表」即可看到此前拉取过的清单与当前默认模型。
+const fetchedModels = ref<Array<{ id: string, display_name: string }>>(
+ (props.initial?.available_models ?? ).map(m => ({ id: m.id, display_name: m.display_name })),
+)
 const showManualModelInput = ref(false)
 const manualModelName = ref('')
-const selectedDefaultModel = ref('')
+const selectedDefaultModel = ref(props.initial?.default_model ?? '')
 // 模型测试状态
 const testingModelId = ref<string | null>(null)
 const modelTestResults = ref<Record<string, { status: 'ok' | 'error', latency_ms?: number, error?: string }>>({})
@@ -256,6 +260,15 @@ async function handleFetchModelsCreate {
  isFetchingModels.value = false
  }
 }
+/** 选中某个模型作为默认模型（同步写回表单 default_model）。 */
+function selectModel(id: string) {
+ selectedDefaultModel.value = id
+ setValues({ default_model: id } as Record<string, unknown>, false)
+}
+/** 切换到手动输入模型名称。 */
+function showManual {
+ showManualModelInput.value = true
+}
 /** 确认手动输入的模型 */
 function confirmManualModel {
  if (!manualModelName.value.trim) {
@@ -318,8 +331,11 @@ function getPlaceholder(key: string): string {
 defineExpose({ selectedType })
 </script>
 <template>
- <form class="space-y-6" @submit.prevent="onSubmit">
- <!-- Provider 类型选择 -->
+ <form class="flex min- flex-1 flex-col" @submit.prevent="onSubmit">
+ <!-- 滚动主体 -->
+ <div class="min- flex-1 space-y-5 overflow-y-auto px-6 py-5">
+ <!-- 基础信息：Provider 类型 + 凭证名称 -->
+ <div class="grid gap-4 sm:grid-cols-2">
  <FormField v-slot="{ componentField }" name="provider_type">
  <FormItem>
  <FormLabel class="font-normal">
@@ -355,7 +371,6 @@ defineExpose({ selectedType })
  <FormMessage />
  </FormItem>
  </FormField>
- <!-- 凭证名称 -->
  <FormField v-slot="{ componentField }" name="name">
  <FormItem>
  <FormLabel class="font-normal">
@@ -370,12 +385,13 @@ defineExpose({ selectedType })
  <FormMessage />
  </FormItem>
  </FormField>
+ </div>
  <!-- 动态 config 字段（schema-driven） -->
- <div
+ <div class="space-y-4">
+ <FormField
  v-for="(prop, key) in schemaProperties":key="String(key)"
- class="space-y-1"
+ v-slot="{ componentField }":name="`config.${String(key)}`"
  >
- <FormField v-slot="{ componentField }":name="`config.${String(key)}`">
  <FormItem>
  <FormLabel class="font-normal">
  {{ (prop as JsonSchemaProperty).title ?? String(key) }}
@@ -388,16 +404,16 @@ defineExpose({ selectedType })
  <div class="relative">
  <Input
  v-bind="componentField":type="isPasswordField(prop as JsonSchemaProperty) && !passwordVisible[String(key)]
- ? 'password': (isUriField(prop as JsonSchemaProperty) ? 'url': 'text')":placeholder="getPlaceholder(String(key))":autocomplete="isPasswordField(prop as JsonSchemaProperty) ? 'new-password': 'off'"
+ ? 'password': (isUriField(prop as JsonSchemaProperty) ? 'url': 'text')":placeholder="getPlaceholder(String(key))":autocomplete="isPasswordField(prop as JsonSchemaProperty) ? 'new-password': 'off'":class="isPasswordField(prop as JsonSchemaProperty) && props.mode === 'edit' ? 'pr-10': ''"
  />
  <button
  v-if="isPasswordField(prop as JsonSchemaProperty) && props.mode === 'edit'"
  type="button"
- class="absolute right-2 top-1/2 -translate-y-1/2 ":aria-label="passwordVisible[String(key)] ? '隐藏 API Key': '显示 API Key'"
+ class="absolute right-1 top-1/2 -translate-y-1/2 rounded-md .5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground":aria-label="passwordVisible[String(key)] ? '隐藏 API Key': '显示 API Key'"
  @click="togglePassword(String(key))"
  >
  <span:class="passwordVisible[String(key)] ? 'icon-[lucide--eye-off]': 'icon-[lucide--eye]'"
- class="w-4 "
+ class=" w-4"
  />
  </button>
  </div>
@@ -413,98 +429,96 @@ defineExpose({ selectedType })
  </FormField>
  </div>
  <!-- 模型配置区域 -->
- <div class="space-y-3 rounded-lg border ">
- <div class="flex items-center justify-between">
- <h4 class="text-sm font-medium">
- 支持的模型 <span class="text-xs text-destructive">*</span>
+ <div class="overflow-hidden rounded-xl border border-border/60">
+ <div class="flex items-center justify-between gap-2 border-b border-border/50 bg-muted/20 px-4 py-3">
+ <div class="flex items-center gap-2">
+ <span class="icon-[lucide--boxes] w-4 text-primary" aria-hidden="true" />
+ <h4 class="text-sm font-semibold text-foreground">
+ 支持的模型
  </h4>
+ <span class="text-destructive" aria-hidden="true">*</span>
+ </div>
  <Button
- v-if="props.mode === 'edit'"
  type="button"
  variant="outline"
- size="sm":disabled="isFetchingModels"
- @click="handleFetchModels"
+ size="sm"
+ class="":disabled="isFetchingModels"
+ @click="props.mode === 'create' ? handleFetchModelsCreate: handleFetchModels"
  >
  <span
  v-if="isFetchingModels"
- class="icon-[lucide--loader-2] mr-1 w-3 animate-spin"
+ class="icon-[lucide--loader-2] mr-1.5 .5 w-3.5 animate-spin"
  />
- <span v-else class="icon-[lucide--refresh-cw] mr-1 w-3" />
- {{ isFetchingModels ? '获取中...': '获取模型列表' }}
+ <span v-else class="icon-[lucide--refresh-cw] mr-1.5 .5 w-3.5" />
+ {{ isFetchingModels ? '获取中…': (fetchedModels.length > 0 ? '刷新模型': '获取模型列表') }}
  </Button>
  </div>
- <!-- 获取到的模型列表（edit 模式） -->
- <div v-if="props.mode === 'edit' && fetchedModels.length > 0" class="space-y-2">
- <p class="text-xs text-muted-foreground">
- 选择默认模型并测试:
- </p>
- <div class="flex flex-wrap gap-2">
+ <div class="space-y-3 ">
+ <!-- 已获取的模型：可选卡片网格 -->
+ <div v-if="fetchedModels.length > 0" class="grid grid-cols-1 gap-2 sm:grid-cols-2">
  <div
  v-for="m in fetchedModels":key="m.id"
- class="flex items-center gap-1"
+ class="group/chip flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 transition-all":class="selectedDefaultModel === m.id
+ ? 'border-primary bg-primary/5 ring-1 ring-primary/15': 'border-border/60 hover:border-border hover:bg-accent/40'"
+ @click="selectModel(m.id)"
  >
- <button
- type="button"
- class="rounded-md border px-2 py-1 text-xs transition-colors":class="selectedDefaultModel === m.id
- ? 'border-primary bg-primary/10 text-primary': 'border-border hover:bg-accent'"
- @click="selectedDefaultModel = m.id; setValues({ default_model: m.id } as Record<string, unknown>, false)"
+ <span class="flex min-w-0 items-center gap-2">
+ <span
+ class=" w-4 shrink-0":class="selectedDefaultModel === m.id
+ ? 'icon-[lucide--circle-check] text-primary': 'icon-[lucide--circle] text-muted-foreground/40'"
+ aria-hidden="true"
+ />
+ <span
+ class="truncate text-xs font-medium":class="selectedDefaultModel === m.id ? 'text-primary': 'text-foreground'"
  >
  {{ m.display_name || m.id }}
- </button>
+ </span>
+ </span>
  <button
+ v-if="props.mode === 'edit'"
  type="button"
- class="rounded-md text-xs transition-colors hover:bg-accent":title="`测试模型 ${m.id}`"
- @click="testModel(m.id)"
+ class="shrink-0 rounded-md transition-colors hover:bg-background":title="`测试模型 ${m.id} 连接`"
+ @click.stop="testModel(m.id)"
  >
  <span
  v-if="testingModelId === m.id"
- class="icon-[lucide--loader-2] w-3 animate-spin text-muted-foreground"
+ class="icon-[lucide--loader-2] .5 w-3.5 animate-spin text-muted-foreground"
  />
  <span
  v-else-if="modelTestResults[m.id]?.status === 'ok'"
- class="icon-[lucide--check] w-3 text-green-500"
+ class="icon-[lucide--circle-check] .5 w-3.5 text-emerald-500"
  />
  <span
  v-else-if="modelTestResults[m.id]?.status === 'error'"
- class="icon-[lucide--x] w-3 text-destructive"
+ class="icon-[lucide--circle-x] .5 w-3.5 text-destructive"
  />
- <span v-else class="icon-[lucide--zap] w-3 text-muted-foreground" />
+ <span v-else class="icon-[lucide--zap] .5 w-3.5 text-muted-foreground/60" />
  </button>
  </div>
  </div>
- </div>
- <!-- create 模式：先拉模型，拉不到再手动输入 default_model -->
- <div v-if="props.mode === 'create'" class="space-y-2">
- <Button
- type="button"
- variant="outline"
- size="sm":disabled="isFetchingModels"
- @click="handleFetchModelsCreate"
+ <!-- 空态：尚未获取模型 -->
+ <div
+ v-else-if="!showManualModelInput && !fetchModelsError"
+ class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/20 py-6 text-center"
  >
- <span
- v-if="isFetchingModels"
- class="icon-[lucide--loader-2] mr-1 w-3 animate-spin"
- />
- <span v-else class="icon-[lucide--download-cloud] mr-1 w-3" />
- {{ isFetchingModels ? '获取中...': '拉取模型列表' }}
- </Button>
- <p class="text-xs text-muted-foreground">
- 填好 API Key 与 Base URL 后点击「拉取模型列表」自动获取该 Provider 支持的模型并选择，无需手动输入。
+ <span class="icon-[lucide--package-open] w-7 text-muted-foreground/40" aria-hidden="true" />
+ <p class="px-4 text-xs text-muted-foreground">
+ 填好 API Key 与 Base URL 后点击右上角「获取模型列表」自动拉取
  </p>
- <!-- 拉取到的模型：可选列表（单 Provider 多模型，问题⑤） -->
- <div v-if="fetchedModels.length > 0" class="flex flex-wrap gap-2">
  <button
- v-for="m in fetchedModels":key="m.id"
  type="button"
- class="rounded-md border px-2 py-1 text-xs transition-colors":class="selectedDefaultModel === m.id
- ? 'border-primary bg-primary/10 text-primary': 'border-border hover:bg-accent'"
- @click="selectedDefaultModel = m.id; setValues({ default_model: m.id } as Record<string, unknown>, false)"
+ class="text-xs font-medium text-primary transition-colors hover:text-primary/80"
+ @click="showManual"
  >
- {{ m.display_name || m.id }}
+ 或手动输入模型名称
  </button>
  </div>
- <!-- 拉不到模型 / 用户想手填：手动输入 default_model -->
- <FormField v-if="fetchedModels.length === 0 || showManualModelInput" v-slot="{ componentField }" name="default_model">
+ <!-- create 模式手动输入（受 zod default_model 校验） -->
+ <FormField
+ v-if="props.mode === 'create' && (showManualModelInput || fetchModelsError)"
+ v-slot="{ componentField }"
+ name="default_model"
+ >
  <FormItem>
  <FormControl>
  <Input
@@ -517,16 +531,11 @@ defineExpose({ selectedType })
  <FormMessage />
  </FormItem>
  </FormField>
- <p v-if="fetchModelsError" class="text-xs text-destructive">
- {{ fetchModelsError }}
- </p>
- </div>
- <!-- edit 模式：错误提示 + 手动输入 -->
- <div v-if="props.mode === 'edit' && (fetchModelsError || showManualModelInput)" class="space-y-2">
- <p v-if="fetchModelsError" class="text-xs text-destructive">
- {{ fetchModelsError }}
- </p>
- <div class="flex gap-2">
+ <!-- edit 模式手动输入 -->
+ <div
+ v-if="props.mode === 'edit' && (showManualModelInput || fetchModelsError)"
+ class="flex gap-2"
+ >
  <Input
  v-model="manualModelName"
  placeholder="手动输入模型名称，例如: claude-3-5-sonnet-20241022"
@@ -536,18 +545,33 @@ defineExpose({ selectedType })
  确认
  </Button>
  </div>
- </div>
+ <!-- 错误提示 -->
+ <p v-if="fetchModelsError" class="flex items-center gap-1.5 text-xs text-destructive">
+ <span class="icon-[lucide--triangle-alert] .5 w-3.5 shrink-0" aria-hidden="true" />
+ {{ fetchModelsError }}
+ </p>
  <!-- 已选择的默认模型 -->
- <div v-if="selectedDefaultModel" class="text-xs text-muted-foreground">
- 默认模型: <span class="font-medium text-foreground">{{ selectedDefaultModel }}</span>
+ <div
+ v-if="selectedDefaultModel"
+ class="flex items-center gap-1.5 rounded-md bg-primary/5 px-2.5 py-1.5 text-xs"
+ >
+ <span class="icon-[lucide--check] .5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+ <span class="text-muted-foreground">默认模型</span>
+ <span class="truncate font-medium text-foreground">{{ selectedDefaultModel }}</span>
  </div>
  </div>
- <!-- 操作按钮 -->
- <div class="flex justify-end gap-2 pt-4">
+ </div>
+ </div>
+ <!-- 固定底部操作栏 -->
+ <div class="flex items-center justify-end gap-2 border-t border-border/50 bg-muted/20 px-6 py-4">
  <Button type="button" variant="ghost" @click="emit('cancel')">
  取消
  </Button>
  <Button type="submit" variant="default">
+ <span:class="props.mode === 'create' ? 'icon-[lucide--check]': 'icon-[lucide--save]'"
+ class="mr-1.5 w-4"
+ aria-hidden="true"
+ />
  {{ props.mode === 'create' ? '保存凭证': '更新凭证' }}
  </Button>
  </div>

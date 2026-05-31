@@ -42,6 +42,7 @@ import {
 } from '~/components/ui/dialog'
 import { useErrorHandler } from '~/composables/useErrorHandler'
 import { useToast } from '~/composables/useToast'
+import { getProviderBrandColor } from '~/lib/providerBrandColors'
 import { useProviderCredentialStore } from '~/stores/providerCredential'
 import ProviderCredentialForm from './ProviderCredentialForm.vue'
 import ProviderCredentialListTable from './ProviderCredentialListTable.vue'
@@ -88,6 +89,21 @@ const formDirty = ref(false)
 const deleteTarget = ref<ProviderCredentialDto | null>(null)
 const deleteConfirmOpen = ref(false)
 const cancelConfirmOpen = ref(false)
+// ==== 弹窗标题区品牌识别（edit 模式按 provider 品牌色 + 图标，create 用统一 primary）====
+const PROVIDER_ICON: Record<string, string> = {
+ anthropic: 'icon-[simple-icons--anthropic]',
+ openai_chat: 'icon-[simple-icons--openai]',
+ openai_responses: 'icon-[simple-icons--openai]',
+ gemini: 'icon-[simple-icons--googlegemini]',
+ ollama: 'icon-[lucide--cpu]',
+}
+const dialogBrand = computed( => {
+ if (formMode.value === 'edit' && formInitial.value) {
+ const brand = getProviderBrandColor(formInitial.value.provider_type)
+ return { bg: brand.bg, text: brand.text, icon: PROVIDER_ICON[formInitial.value.provider_type] ?? 'icon-[lucide--key-round]' }
+ }
+ return { bg: 'bg-primary/10', text: 'text-primary', icon: 'icon-[lucide--plus]' }
+})
 // ==== 生命周期 ====
 onMounted( => {
  // 并行拉取 provider types + credentials，错误由 handleError 承接，不阻塞另一路
@@ -106,8 +122,6 @@ function openCreate {
  formOpen.value = true
 }
 function onEdit(c: ProviderCredentialDto) {
- // eslint-disable-next-line no-console
- console.log('[ProviderSettings.onEdit] credential id =', c.id, 'object keys =', Object.keys(c))
  formMode.value = 'edit'
  formInitial.value = c
  formDirty.value = false
@@ -128,11 +142,9 @@ async function onSubmit(
  if (!formInitial.value)
  throw new Error('编辑目标丢失，请重新打开对话框')
  const id = formInitial.value.id
- // eslint-disable-next-line no-console
- console.log('[ProviderSettings.onSubmit] editing id =', id, 'formInitial keys =', Object.keys(formInitial.value))
  if (!id) {
  throw new Error(
- `凭证 ID 缺失（formInitial.id=${id}），可能是列表数据未包含 id 字段或缓存脏数据。请刷新页面后重试，并在 Console 查看 [ProviderSettings.onEdit] 日志。`,
+ `凭证 ID 缺失（formInitial.id=${id}），可能是列表数据未包含 id 字段或缓存脏数据。请刷新页面后重试。`,
  )
  }
  await store.updateCredential(
@@ -285,14 +297,26 @@ defineExpose({ openCreate })
  />
  <!-- 表单 Dialog（新建/编辑） -->
  <Dialog v-model:open="formOpen">
- <DialogContent class="max-w-2xl">
- <DialogHeader>
- <DialogTitle>
+ <DialogContent
+ class="flex max-h-[88vh] max-w-2xl flex-col gap-0 overflow-hidden "
+ >
+ <DialogHeader
+ class="flex-row items-start gap-3 space-y-0 border-b border-border/50 px-6 py-4 text-left"
+ >
+ <span
+ class="flex w-11 shrink-0 items-center justify-center rounded-xl":class="dialogBrand.bg"
+ aria-hidden="true"
+ >
+ <span class=" w-5":class="[dialogBrand.icon, dialogBrand.text]" />
+ </span>
+ <div class="min-w-0 space-y-1">
+ <DialogTitle class="text-base font-semibold">
  {{ formMode === 'create' ? '新建 Provider 凭证': '编辑 Provider 凭证' }}
  </DialogTitle>
- <DialogDescription>
+ <DialogDescription class="text-xs text-muted-foreground">
  按所选 Provider 类型填写凭证字段，保存后将加密存储。
  </DialogDescription>
+ </div>
  </DialogHeader>
  <ProviderCredentialForm:mode="formMode":initial="formInitial":default-scope="props.scope":default-space-id="props.spaceId ?? null"
  @submit="onSubmit"
