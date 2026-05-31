@@ -12,6 +12,7 @@ from codegraph.views import (
  CodegraphProgressStreamView,
  CodegraphRebuildView,
  EndpointListView,
+ GraphNeighborsView,
  ImportEdgeListView,
  SymbolListView,
 )
@@ -24,6 +25,12 @@ urlpatterns = [
  ),
  path("imports/", ImportEdgeListView.as_view, name="codegraph-import-list"),
  path("endpoints/", EndpointListView.as_view, name="codegraph-endpoint-list"),
+ # Phase：统一邻居查询（file | component | symbol）。具名前缀放空 path 之前。
+ path(
+ "graph/neighbors/",
+ GraphNeighborsView.as_view,
+ name="codegraph-graph-neighbors",
+ ),
  # Phase GRAPH- / GRAPH-：REST 三件套
  # 显式前缀放在根路径 CodegraphDeleteView 之前避免被空字符串 path 抢匹配。
  path(

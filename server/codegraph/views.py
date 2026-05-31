@@ -17,12 +17,16 @@ from rest_framework.generics import ListAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from codegraph.models import Endpoint, ImportEdge, Symbol
+from codegraph.models import CallEdge, Endpoint, ImportEdge, Symbol
 from codegraph.serializers import (
  EndpointSerializer,
  GraphBuildHistorySerializer,
  ImportEdgeSerializer,
  SymbolSerializer,
+)
+from codegraph.services.dependency_aggregator import (
+ component_neighbors,
+ file_neighbors,
 )
 from codegraph.services.graph_expansion import GraphExpansionService
 from repositories.index_views import (
@@ -153,6 +157,214 @@ class CallsForSymbolView(APIView):
  "edges": edges,
  }
  )
+def _basename(file_path: str) -> str:
+ """取路径末段作展示 label。"""
+ return file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+class GraphNeighborsView(APIView):
+ """GET /api/repositories/{repository_id}/codegraph/graph/neighbors/
+ 统一邻居查询接口。参数：
+ - node_type: file | component | symbol
+ - id: 文件路径（file）或 Symbol UUID（component/symbol）
+ - direction: both | up | down（默认 both）
+ 返回 ``{node_type, direction, nodes:[...], edges:[...]}``，前端可直接渲染。
+ file/component 走 dependency_aggregator；symbol 走符号级 CallEdge（受益 callee_symbol）。
+ """
+ permission_classes = [IsAuthenticated, RepositoryPermission]
+ async def get(self, request: Any, repository_id: uuid.UUID) -> Response:
+ node_type = request.query_params.get("node_type", "")
+ node_id = request.query_params.get("id") or request.query_params.get("path")
+ direction = request.query_params.get("direction", "both")
+ if node_type not in ("file", "component", "symbol"):
+ return Response(
+ {"detail": "node_type 必须为 file | component | symbol。"}, status=400
+ )
+ if direction not in ("both", "up", "down"):
+ return Response(
+ {"detail": "direction 必须为 both | up | down。"}, status=400
+ )
+ if not node_id:
+ return Response({"detail": "缺少 id 参数。"}, status=400)
+ if node_type == "file":
+ payload = await self._file_payload(str(repository_id), node_id, direction)
+ elif node_type == "component":
+ payload = await self._component_payload(
+ str(repository_id), node_id, direction
+ )
+ else:
+ payload = await self._symbol_payload(str(repository_id), node_id, direction)
+ if payload is None:
+ return Response({"detail": "节点不存在。"}, status=404)
+ logger.info(
+ "graph_neighbors",
+ repository_id=str(repository_id),
+ node_type=node_type,
+ direction=direction,
+ nodes=len(payload["nodes"]),
+ edges=len(payload["edges"]),
+ )
+ return Response({"node_type": node_type, "direction": direction, **payload})
+ async def _file_payload(
+ self, repository_id: str, file_path: str, direction: str
+ ) -> dict[str, Any]:
+ agg = await sync_to_async(file_neighbors)(repository_id, file_path, direction)
+ nodes: dict[str, dict[str, Any]] = {
+ file_path: {"id": file_path, "type": "file", "label": _basename(file_path)}
+ }
+ edges: list[dict[str, Any]] =
+ for row in agg.get("downstream", ):
+ nodes[row["file"]] = {
+ "id": row["file"],
+ "type": "file",
+ "label": _basename(row["file"]),
+ }
+ edges.append(
+ {
+ "source": file_path,
+ "target": row["file"],
+ "kind": "+".join(row["kinds"]),
+ "count": row["count"],
+ }
+ )
+ for row in agg.get("upstream", ):
+ nodes[row["file"]] = {
+ "id": row["file"],
+ "type": "file",
+ "label": _basename(row["file"]),
+ }
+ edges.append(
+ {
+ "source": row["file"],
+ "target": file_path,
+ "kind": "+".join(row["kinds"]),
+ "count": row["count"],
+ }
+ )
+ return {"nodes": list(nodes.values), "edges": edges}
+ async def _component_payload(
+ self, repository_id: str, symbol_id: str, direction: str
+ ) -> dict[str, Any] | None:
+ seed = await Symbol.objects.filter(
+ id=symbol_id, repository_id=repository_id
+ ).afirst
+ if seed is None:
+ return None
+ agg = await sync_to_async(component_neighbors)(
+ repository_id, symbol_id, direction
+ )
+ nodes: dict[str, dict[str, Any]] = {
+ str(seed.id): {
+ "id": str(seed.id),
+ "type": "component",
+ "label": seed.name,
+ "file": seed.file_path,
+ }
+ }
+ edges: list[dict[str, Any]] =
+ for row in agg.get("downstream", ):
+ nodes[row["symbol_id"]] = {
+ "id": row["symbol_id"],
+ "type": "component",
+ "label": row["name"],
+ "file": row["file"],
+ }
+ edges.append(
+ {
+ "source": str(seed.id),
+ "target": row["symbol_id"],
+ "kind": "component",
+ "count": row["count"],
+ }
+ )
+ for row in agg.get("upstream", ):
+ nodes[row["symbol_id"]] = {
+ "id": row["symbol_id"],
+ "type": "component",
+ "label": row["name"],
+ "file": row["file"],
+ }
+ edges.append(
+ {
+ "source": row["symbol_id"],
+ "target": str(seed.id),
+ "kind": "component",
+ "count": row["count"],
+ }
+ )
+ return {"nodes": list(nodes.values), "edges": edges}
+ async def _symbol_payload(
+ self, repository_id: str, symbol_id: str, direction: str
+ ) -> dict[str, Any] | None:
+ seed = await Symbol.objects.filter(
+ id=symbol_id, repository_id=repository_id
+ ).afirst
+ if seed is None:
+ return None
+ def _query -> dict[str, Any]:
+ nodes: dict[str, dict[str, Any]] = {
+ str(seed.id): {
+ "id": str(seed.id),
+ "type": "symbol",
+ "label": seed.name,
+ "file": seed.file_path,
+ }
+ }
+ edges: list[dict[str, Any]] =
+ if direction in ("both", "down"):
+ down = (
+ CallEdge.objects.filter(
+ repository_id=repository_id,
+ caller_symbol=seed,
+ callee_symbol__isnull=False,
+ )
+ .select_related("callee_symbol")
+ .distinct
+ )
+ for edge in down:
+ target = edge.callee_symbol
+ nodes[str(target.id)] = {
+ "id": str(target.id),
+ "type": "symbol",
+ "label": target.name,
+ "file": target.file_path,
+ }
+ edges.append(
+ {
+ "source": str(seed.id),
+ "target": str(target.id),
+ "kind": CALL_TYPE_API_MAP.get(
+ edge.call_type, edge.call_type
+ ),
+ }
+ )
+ if direction in ("both", "up"):
+ up = (
+ CallEdge.objects.filter(
+ repository_id=repository_id,
+ callee_symbol=seed,
+ caller_symbol__isnull=False,
+ )
+ .select_related("caller_symbol")
+ .distinct
+ )
+ for edge in up:
+ source = edge.caller_symbol
+ nodes[str(source.id)] = {
+ "id": str(source.id),
+ "type": "symbol",
+ "label": source.name,
+ "file": source.file_path,
+ }
+ edges.append(
+ {
+ "source": str(source.id),
+ "target": str(seed.id),
+ "kind": CALL_TYPE_API_MAP.get(
+ edge.call_type, edge.call_type
+ ),
+ }
+ )
+ return {"nodes": list(nodes.values), "edges": edges}
+ return await sync_to_async(_query)
 class ImportEdgeListView(APIView):
  """GET /api/repositories/{repository_id}/codegraph/imports/
  返回分页过滤后的 ImportEdge 列表。
