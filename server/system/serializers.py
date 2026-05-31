@@ -124,6 +124,7 @@ class ProviderCredentialSerializer(serializers.ModelSerializer):
  "scope",
  "scope_id",
  "is_active",
+ "is_default",
  "last_health_check_at",
  "last_health_check_status",
  "last_health_check_error",
@@ -184,6 +185,7 @@ class ProviderCredentialCreateSerializer(serializers.Serializer):
  # AttributeError；同时契约上也严禁明文回显）。
  config = serializers.DictField(write_only=True)
  is_active = serializers.BooleanField(default=True)
+ is_default = serializers.BooleanField(required=False, default=False)
  default_model = serializers.CharField(
  max_length=128, required=True, allow_blank=False
  )
@@ -263,6 +265,7 @@ class ProviderCredentialUpdateSerializer(serializers.Serializer):
  scope_id = serializers.UUIDField(required=False, allow_null=True)
  config = serializers.DictField(required=False, allow_null=True)
  is_active = serializers.BooleanField(required=False)
+ is_default = serializers.BooleanField(required=False)
  default_model = serializers.CharField(max_length=128, required=False, allow_blank=True)
  def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
  """含 config 时按 instance.provider_type dispatch Pydantic 校验 + default_model 非空。"""
@@ -330,6 +333,9 @@ class ProviderTypeMetaSerializer(serializers.Serializer):
  api_format = serializers.CharField
  credential_type = serializers.CharField
  default_base_url = serializers.CharField(allow_blank=True)
+ # PROVIDER_REGISTRY 无统一 default_model；前端 ChatInput fallback 仍可用 cred.default_model，
+ # 该字段允许为空，仅当后端登记了类型级默认模型时回显。
+ default_model = serializers.CharField(allow_blank=True, required=False)
  supports_thinking = serializers.BooleanField
  supports_reasoning = serializers.BooleanField
  supports_vision = serializers.BooleanField
