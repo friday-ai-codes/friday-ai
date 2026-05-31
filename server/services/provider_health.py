@@ -385,32 +385,56 @@ async def fetch_models_for_credential(
  credential.last_health_check_error = _safe_error(str(exc))
  return
 _FETCH_MODELS_TIMEOUT_SECONDS = 15.0
+def _parse_models_data(payload: Any) -> list[dict[str, Any]]:
+ """解析 Anthropic / OpenAI 两种 `{data: [{id, ...}]}` 形状为统一结构。"""
+ data = payload.get("data", ) if isinstance(payload, dict) else
+ return [
+ {"id": m["id"], "display_name": m.get("display_name") or m["id"]}
+ for m in data
+ if isinstance(m, dict) and "id" in m
+ ]
 async def _fetch_models_anthropic(cfg: dict[str, Any]) -> list[dict[str, Any]]:
- """Anthropic /v1/models 端点。"""
+ """Anthropic 及 Anthropic 兼容网关的模型清单拉取。
+ 原生 Anthropic 走 `/v1/models`（x-api-key + anthropic-version）。但许多
+ Anthropic 兼容网关（如 DeepSeek 的 https://api.deepseek.com/anthropic）只在
+ /anthropic 下暴露 /v1/messages，模型清单仍在 OpenAI 风格的根路径
+ （https://api.deepseek.com/models，Bearer 认证）。因此按候选端点依次探测，
+ 任一返回可解析的 data.id 即采用（Quick follow-up）。
+ """
  api_key = cfg.get("api_key", "")
  base_url = (
  cfg.get("base_url")
  or PROVIDER_REGISTRY[ProviderType.ANTHROPIC].default_base_url
  ).rstrip("/")
- async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
- resp = await client.get(
- f"{base_url}/v1/models",
- headers={
- "x-api-key": api_key,
- "anthropic-version": "2023-06-01",
- },
- )
- resp.raise_for_status
- payload = resp.json
- data = payload.get("data", ) if isinstance(payload, dict) else
- return [
- {
- "id": m["id"],
- "display_name": m.get("display_name", m["id"]),
- }
- for m in data
- if isinstance(m, dict) and "id" in m
+ anthropic_headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+ bearer_headers = {"Authorization": f"Bearer {api_key}"}
+ # 候选 (url, headers)，顺序即优先级
+ candidates: list[tuple[str, dict[str, str]]] = [
+ (f"{base_url}/v1/models", anthropic_headers),
+ (f"{base_url}/models", bearer_headers),
  ]
+ # 形如 .../anthropic 的兼容网关：模型清单在去掉 /anthropic 后的根路径（OpenAI 风格）
+ if base_url.endswith("/anthropic"):
+ root = base_url[: -len("/anthropic")].rstrip("/")
+ candidates.append((f"{root}/v1/models", bearer_headers))
+ candidates.append((f"{root}/models", bearer_headers))
+ last_error = ""
+ async with httpx.AsyncClient(timeout=_FETCH_MODELS_TIMEOUT_SECONDS) as client:
+ for url, headers in candidates:
+ try:
+ resp = await client.get(url, headers=headers)
+ except Exception as exc: # noqa: BLE001 —— 单候选失败继续尝试下一个
+ last_error = f"{type(exc).__name__}"
+ continue
+ if resp.status_code != 200:
+ last_error = f"{resp.status_code} @ {url}"
+ continue
+ models = _parse_models_data(resp.json if resp.content else {})
+ if models:
+ return models
+ last_error = f"empty data @ {url}"
+ # 所有候选均失败：抛错由上层 fetch_models_for_config 包成 FetchModelsError
+ raise RuntimeError(f"无法获取模型清单（已尝试 {len(candidates)} 个端点）：{last_error}")
 async def _fetch_models_openai(cfg: dict[str, Any]) -> list[dict[str, Any]]:
  """OpenAI / Compatible /v1/models 端点（Responses + Chat 两种 API 共用）。"""
  api_key = cfg.get("api_key", "")
