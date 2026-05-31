@@ -32,10 +32,10 @@ const loading = ref(true)
 const saving = ref(false)
 const selectedCredentialId = ref<string>('')
 const mapping = ref<Record<ModelTier, string>>({ opus: '', sonnet: '', haiku: '' })
-const TIERS: { key: ModelTier, label: string, hint: string } = [
- { key: 'opus', label: 'Opus（最强）', hint: '复杂规划 / 高难度任务' },
- { key: 'sonnet', label: 'Sonnet（主力）', hint: '默认主模型，日常编码' },
- { key: 'haiku', label: 'Haiku（轻量）', hint: '子代理 / 后台快速任务' },
+const TIERS: { key: ModelTier, label: string, hint: string, dot: string, icon: string } = [
+ { key: 'opus', label: 'Opus', hint: '复杂规划 / 高难度任务', dot: 'bg-violet-500', icon: 'icon-[lucide--gem]' },
+ { key: 'sonnet', label: 'Sonnet', hint: '默认主模型，日常编码', dot: 'bg-primary', icon: 'icon-[lucide--zap]' },
+ { key: 'haiku', label: 'Haiku', hint: '子代理 / 后台快速任务', dot: 'bg-slate-400', icon: 'icon-[lucide--feather]' },
 ]
 /** 候选凭证：active 全集，anthropic 排前。 */
 const candidateCredentials = computed<ProviderCredentialDto>( => {
@@ -116,46 +116,51 @@ onMounted(load)
  <template v-else>
  <!-- 凭证选择 -->
  <div class="space-y-1.5">
- <label class="text-sm font-normal">编码 Provider 凭证</label>
+ <label class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+ 编码 Provider 凭证
+ </label>
  <Select v-model="selectedCredentialId">
- <SelectTrigger>
+ <SelectTrigger class="max-w-md">
  <SelectValue placeholder="选择 Claude Code 使用的凭证" />
  </SelectTrigger>
  <SelectContent>
  <SelectItem
  v-for="c in candidateCredentials":key="c.id":value="c.id"
  >
- {{ c.name }}（{{ c.provider_type }}）
+ {{ c.name }} · {{ c.provider_type }}
  </SelectItem>
  </SelectContent>
  </Select>
- <p class="text-xs text-muted-foreground">
- Claude Code 编码容器走 Anthropic 协议，优先选 anthropic 凭证；也支持任意 Anthropic
- 兼容网关（自定义 Base URL）。未选则回退系统默认 anthropic 凭证。
+ <p class="max-w-xl text-xs leading-relaxed text-muted-foreground">
+ 编码容器走 Anthropic 协议，优先选 anthropic 凭证；也支持任意 Anthropic 兼容网关（自定义 Base URL）。未选则回退系统默认 anthropic 凭证。
  </p>
  </div>
  <!-- 三档模型映射 -->
- <div class="space-y-3">
- <p class="text-sm font-normal">
- 模型映射（opus / sonnet / haiku）
- </p>
+ <div class="space-y-2.5">
+ <label class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+ 模型映射
+ </label>
+ <div class="overflow-hidden rounded-xl border border-border/60">
  <div
- v-for="tier in TIERS":key="tier.key"
- class="grid grid-cols-[7rem_1fr] items-center gap-3"
+ v-for="(tier, idx) in TIERS":key="tier.key"
+ class="flex items-center gap-3 px-4 py-3":class="{ 'border-t border-border/50': idx > 0 }"
  >
- <div>
- <p class="text-sm">
+ <span class=" w-2 shrink-0 rounded-full":class="tier.dot" aria-hidden="true" />
+ <div class="w-28 shrink-0">
+ <p class="flex items-center gap-1.5 text-sm font-medium">
+ <span class=".5 w-3.5 text-muted-foreground":class="tier.icon" aria-hidden="true" />
  {{ tier.label }}
  </p>
  <p class="text-xs text-muted-foreground">
  {{ tier.hint }}
  </p>
  </div>
+ <div class="min-w-0 flex-1">
  <Select
  v-if="hasModelOptions"
  v-model="mapping[tier.key]"
  >
- <SelectTrigger>
+ <SelectTrigger class="">
  <SelectValue placeholder="选择模型（留空回退主模型）" />
  </SelectTrigger>
  <SelectContent>
@@ -169,18 +174,21 @@ onMounted(load)
  <Input
  v-else
  v-model="mapping[tier.key]"
- placeholder="手动输入模型名，例如 claude-sonnet-4-20250514"
- class="text-sm"
+ placeholder="手动输入模型名，如 claude-sonnet-4-20250514"
+ class=" text-sm"
  />
  </div>
+ </div>
+ </div>
  <p v-if="selectedCredentialId && !hasModelOptions" class="text-xs text-muted-foreground">
- 所选凭证暂无模型清单，可在 Provider 列表点「刷新模型清单」后再来选择，或直接手动输入模型名。
+ 所选凭证暂无模型清单，可在上方列表点「刷新模型清单」后再来选择，或直接手动输入模型名。
  </p>
  </div>
- <div class="flex justify-end">
+ <div class="flex justify-end border-t border-border/50 pt-4">
  <Button:disabled="saving" @click="save">
- <span v-if="saving" class="icon-[lucide--loader-2] w-4 mr-1 animate-spin" />
- 保存 Claude Code 配置
+ <span v-if="saving" class="icon-[lucide--loader-2] w-4 mr-1.5 animate-spin" />
+ <span v-else class="icon-[lucide--save] w-4 mr-1.5" />
+ 保存配置
  </Button>
  </div>
  </template>
