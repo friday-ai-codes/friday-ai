@@ -22,7 +22,7 @@ class Symbol(models.Model):
  )
  # v26.2：分支隔离维度。"" = base 分支（与向量 overlay 语义同构），
  # feature 分支由 Phase 写入侧透传；max_length 对齐 RepositoryBranchIndex.branch_name。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  name = models.CharField(max_length=255, db_index=True)
  symbol_type = models.CharField(max_length=16, choices=SymbolType.choices, db_index=True)
  file_path = models.CharField(max_length=512, db_index=True)
@@ -43,8 +43,12 @@ class Symbol(models.Model):
  indexes = [
  models.Index(fields=["repository", "file_path"]),
  models.Index(fields=["repository", "name"]),
+ # v26.2：分支隔离复合索引（旧索引保留，新增并存）。
+ models.Index(fields=["repository", "branch_name", "file_path"]),
  ]
- unique_together = [("repository", "file_path", "name", "start_line")]
+ # v26.2：branch_name 进 unique 是 Critical 1 防御性冗余，
+ # Phase 写入侧必须同步透传 branch_name，否则撞约束（Pitfall 4）。
+ unique_together = [("repository", "branch_name", "file_path", "name", "start_line")]
  def __str__(self) -> str:
  return f"{self.name} ({self.symbol_type}) [{self.file_path}:{self.start_line}]"
 class ImportEdge(models.Model):
@@ -56,7 +60,7 @@ class ImportEdge(models.Model):
  related_name="import_edges",
  )
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  source_file = models.CharField(max_length=512, db_index=True)
  target_module = models.CharField(max_length=512, db_index=True)
  imported_names = models.JSONField(default=list)
@@ -68,6 +72,8 @@ class ImportEdge(models.Model):
  indexes = [
  models.Index(fields=["repository", "source_file"]),
  models.Index(fields=["repository", "target_module"]),
+ # v26.2：分支隔离复合索引。
+ models.Index(fields=["repository", "branch_name", "source_file"]),
  ]
  def __str__(self) -> str:
  return f"{self.source_file} -> {self.target_module}"
@@ -98,7 +104,7 @@ class CallEdge(models.Model):
  related_name="call_edges",
  )
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  caller_symbol = models.ForeignKey(
  Symbol,
  null=True,
@@ -134,6 +140,8 @@ class CallEdge(models.Model):
  models.Index(fields=["repository", "callee_name"]),
  models.Index(fields=["repository", "caller_file"]),
  models.Index(fields=["repository", "callee_file"]),
+ # v26.2：分支隔离复合索引。
+ models.Index(fields=["repository", "branch_name", "caller_file"]),
  ]
  def __str__(self) -> str:
  # caller_symbol 可空：模块级边用 caller_file 兜底，避免 None.name 崩溃。
@@ -155,7 +163,7 @@ class Endpoint(models.Model):
  related_name="endpoints",
  )
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  http_method = models.CharField(max_length=16)
  url_path = models.CharField(max_length=512, db_index=True)
  handler_name = models.CharField(max_length=255)
@@ -170,6 +178,8 @@ class Endpoint(models.Model):
  indexes = [
  models.Index(fields=["repository", "url_path"]),
  models.Index(fields=["repository", "handler_name"]),
+ # v26.2：分支隔离复合索引。
+ models.Index(fields=["repository", "branch_name", "file_path"]),
  ]
  def __str__(self) -> str:
  return f"{self.http_method} {self.url_path} -> {self.handler_name}"
@@ -188,7 +198,7 @@ class ApiWrapper(models.Model):
  related_name="api_wrappers",
  )
  # v26.2：分支隔离维度。"" = base 分支，feature 由 Phase 写入侧透传。
- branch_name = models.CharField(max_length=200, default="")
+ branch_name = models.CharField(max_length=200, default="", blank=True)
  file_path = models.CharField(max_length=512, db_index=True)
  function_symbol = models.CharField(max_length=255)
  http_method = models.CharField(max_length=16)
@@ -204,8 +214,11 @@ class ApiWrapper(models.Model):
  indexes = [
  models.Index(fields=["repository", "url_path_pattern"]),
  models.Index(fields=["repository", "function_symbol"]),
+ # v26.2：分支隔离复合索引。
+ models.Index(fields=["repository", "branch_name", "file_path"]),
  ]
- unique_together = [("repository", "file_path", "function_symbol")]
+ # v26.2：branch_name 进 unique（Pitfall 4：294 写入侧须同步透传）。
+ unique_together = [("repository", "branch_name", "file_path", "function_symbol")]
  def __str__(self) -> str:
  return f"{self.http_method} {self.url_path_pattern} ({self.function_symbol})"
 class ApiCallSite(models.Model):

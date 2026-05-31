@@ -8,26 +8,26 @@ class Migration(migrations.Migration):
  migrations.AddField(
  model_name='apiwrapper',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  migrations.AddField(
  model_name='calledge',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  migrations.AddField(
  model_name='endpoint',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  migrations.AddField(
  model_name='importedge',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  migrations.AddField(
  model_name='symbol',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  ]

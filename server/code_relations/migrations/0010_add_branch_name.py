@@ -8,11 +8,11 @@ class Migration(migrations.Migration):
  migrations.AddField(
  model_name='chunkedge',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  migrations.AddField(
  model_name='chunkregistry',
  name='branch_name',
- field=models.CharField(default='', max_length=200),
+ field=models.CharField(blank=True, default='', max_length=200),
  ),
  ]
