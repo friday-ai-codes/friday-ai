@@ -143,7 +143,7 @@ const zodSchema = computed( => {
  return z.object(shape)
 })
 const formSchema = computed( => toTypedSchema(zodSchema.value))
-const { handleSubmit, meta, setValues } = useForm({
+const { handleSubmit, meta, setValues, values } = useForm({
  validationSchema: formSchema,
  initialValues: {
  provider_type: selectedType.value,
@@ -223,6 +223,38 @@ async function handleFetchModels {
  if (!props.initial?.id)
  return
  await fetchModelsAfterCreate(props.initial.id)
+}
+/**
+ * 新建模式：用当前表单 config（含 api_key/base_url）无状态拉模型（问题④）。
+ * 无需先保存凭证；成功后渲染可选列表并自动选第一个写入 default_model。
+ */
+async function handleFetchModelsCreate {
+ const config = (values.config ?? {}) as Record<string, unknown>
+ isFetchingModels.value = true
+ fetchModelsError.value = null
+ try {
+ const resp = await providerCredentialsApi.fetchModelsStateless({
+ provider_type: selectedType.value,
+ config,
+ })
+ fetchedModels.value = resp.available_models
+ if (resp.available_models.length === 0) {
+ fetchModelsError.value = resp.error || '未获取到模型，请手动输入模型名称'
+ showManualModelInput.value = true
+ }
+ else {
+ selectedDefaultModel.value = resp.available_models[0].id
+ setValues({ default_model: resp.available_models[0].id } as Record<string, unknown>, false)
+ toast.success(`成功获取 ${resp.available_models.length} 个模型`)
+ }
+ }
+ catch (e) {
+ fetchModelsError.value = e instanceof Error ? e.message: '获取模型列表失败'
+ showManualModelInput.value = true
+ }
+ finally {
+ isFetchingModels.value = false
+ }
 }
 /** 确认手动输入的模型 */
 function confirmManualModel {
@@ -441,22 +473,52 @@ defineExpose({ selectedType })
  </div>
  </div>
  </div>
- <!-- create 模式：手动输入 default_model -->
+ <!-- create 模式：先拉模型，拉不到再手动输入 default_model -->
  <div v-if="props.mode === 'create'" class="space-y-2">
- <FormField v-slot="{ componentField }" name="default_model">
+ <Button
+ type="button"
+ variant="outline"
+ size="sm":disabled="isFetchingModels"
+ @click="handleFetchModelsCreate"
+ >
+ <span
+ v-if="isFetchingModels"
+ class="icon-[lucide--loader-2] mr-1 w-3 animate-spin"
+ />
+ <span v-else class="icon-[lucide--download-cloud] mr-1 w-3" />
+ {{ isFetchingModels ? '获取中...': '拉取模型列表' }}
+ </Button>
+ <p class="text-xs text-muted-foreground">
+ 填好 API Key 与 Base URL 后点击「拉取模型列表」自动获取该 Provider 支持的模型并选择，无需手动输入。
+ </p>
+ <!-- 拉取到的模型：可选列表（单 Provider 多模型，问题⑤） -->
+ <div v-if="fetchedModels.length > 0" class="flex flex-wrap gap-2">
+ <button
+ v-for="m in fetchedModels":key="m.id"
+ type="button"
+ class="rounded-md border px-2 py-1 text-xs transition-colors":class="selectedDefaultModel === m.id
+ ? 'border-primary bg-primary/10 text-primary': 'border-border hover:bg-accent'"
+ @click="selectedDefaultModel = m.id; setValues({ default_model: m.id } as Record<string, unknown>, false)"
+ >
+ {{ m.display_name || m.id }}
+ </button>
+ </div>
+ <!-- 拉不到模型 / 用户想手填：手动输入 default_model -->
+ <FormField v-if="fetchedModels.length === 0 || showManualModelInput" v-slot="{ componentField }" name="default_model">
  <FormItem>
  <FormControl>
  <Input
  v-bind="componentField"
  placeholder="输入模型名称，例如: claude-3-5-sonnet-20241022"
  class="text-sm"
+ @input="selectedDefaultModel = ($event.target as HTMLInputElement).value"
  />
  </FormControl>
  <FormMessage />
  </FormItem>
  </FormField>
- <p class="text-xs text-muted-foreground">
- 创建后可点击「获取模型列表」自动拉取该 Provider 支持的模型。
+ <p v-if="fetchModelsError" class="text-xs text-destructive">
+ {{ fetchModelsError }}
  </p>
  </div>
  <!-- edit 模式：错误提示 + 手动输入 -->

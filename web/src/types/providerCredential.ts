@@ -41,6 +41,8 @@ export interface ProviderCredentialDto {
  scope: ProviderScope
  scope_id: string | null
  is_active: boolean
+ /** 该 (scope, scope_id, provider_type) 维度的默认凭证（替代 name='default' 魔法约定）。 */
+ is_default: boolean
  last_health_check_at: string | null
  last_health_check_status: Exclude<ProviderHealthStatus, 'testing'>
  last_health_check_error: string
@@ -100,6 +102,8 @@ export interface ProviderCredentialCreatePayload {
  /** 按 provider_type 具体字段（api_key / base_url / organization_id / bearer_token 等）。 */
  config: Record<string, unknown>
  is_active?: boolean
+ /** 是否设为该维度默认凭证。 */
+ is_default?: boolean
  /** 默认模型（每个 Provider 必须至少配置一个模型）。 */
  default_model: string
 }
@@ -115,6 +119,8 @@ export interface ProviderCredentialUpdatePayload {
  scope_id?: string | null
  config?: Record<string, unknown> | null
  is_active?: boolean
+ /** 是否设为该维度默认凭证。 */
+ is_default?: boolean
  /** 手动设置或刷新后选择的默认模型 */
  default_model?: string
 }
@@ -128,6 +134,41 @@ export interface TestConnectionResponse {
 /** POST /refresh-models/ 响应。 */
 export interface RefreshModelsResponse {
  available_models: AvailableModel
+}
+/** POST /api/providers/fetch-models/ body（无状态拉模型，config 不落库）。 */
+export interface FetchModelsStatelessPayload {
+ provider_type: ProviderType
+ config: Record<string, unknown>
+}
+/** POST /api/providers/fetch-models/ 响应。 */
+export interface FetchModelsStatelessResponse {
+ available_models: AvailableModel
+ error?: string
+}
+// ============================================================================
+// Quick 问题②⑥：Claude Code 编码配置
+// ============================================================================
+/** opus/sonnet/haiku 三档模型映射（值为模型 id，可空）。 */
+export interface ClaudeCodeModelMapping {
+ opus: string
+ sonnet: string
+ haiku: string
+}
+/** GET/PUT /api/providers/claude-code-config/ 读写体。 */
+export interface ClaudeCodeConfigPayload {
+ credential_id: string
+ model_mapping: ClaudeCodeModelMapping
+}
+/** GET /api/providers/claude-code-config/ 响应（附 credential 展示信息）。 */
+export interface ClaudeCodeConfigDto extends ClaudeCodeConfigPayload {
+ credential: {
+ id: string
+ provider_type: ProviderType
+ name: string
+ scope: ProviderScope
+ is_active: boolean
+ available_models: AvailableModel
+ } | null
 }
 // ============================================================================
 // Phase：四层 Provider 解析 Inspector
