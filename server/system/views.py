@@ -465,6 +465,8 @@ class ProviderCredentialViewSet(AsyncModelViewSet):
  status=502,
  )
  credential.available_models = models_list
+ # 成功拉取后清掉历史失败错误，避免健康 badge 持续展示旧的 404/超时
+ credential.last_health_check_error = ""
  await sync_to_async(credential.save)(
  update_fields=[
  "available_models",
