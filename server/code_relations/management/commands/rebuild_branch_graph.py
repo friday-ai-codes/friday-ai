@@ -156,7 +156,12 @@ class Command(BaseCommand):
  "file_path", flat=True
  )
  )
+ # 去重：同一 path 若在 A 分支 added、B 分支 modified，归入 definite（更强的下界信号），
+ # 避免同一 base 行被 definite + ambiguous 双计而虚增上界。
+ modified_paths -= added_paths
  # 命中统计只看 base 图谱行（branch_name=""），即历史误写进 base 的潜在 feature 边。
+ # 注意：当前仅覆盖 Symbol/CallEdge/Endpoint/ChunkRegistry 四表（per RESEARCH 设计），
+ # ImportEdge/ApiWrapper 暂不计入，区间为保守低估；Phase 实跑时再补全。
  definite_rows = self._count_base_rows_in_paths(repo_id, added_paths)
  ambiguous_rows = self._count_base_rows_in_paths(repo_id, modified_paths)
  base_symbols = Symbol.objects.filter(
