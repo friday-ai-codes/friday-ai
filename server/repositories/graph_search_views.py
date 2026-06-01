@@ -103,20 +103,70 @@ class GraphSearchView(APIView):
  if (effective_branch and effective_branch != base_branch_name)
  else None
  )
+ # 6. search 编排：消费 branch-aware 图谱层（base/overlay 合并）。
+ from services.code_intel import get_provider
+ from services.retrieval import HybridSearchService
+ provider = get_provider
+ result = await HybridSearchService(provider).search(
+ query,
+ repository_ids=[str(repository_id)],
+ branch_name=graph_branch,
+ max_tokens=max_tokens,
+ top_k=top_k,
+ )
+ # 7. neighbor 序列化（复用 _serialize_neighbor —— 含 edge_type/weight/reason/hop
+ # 兜底；CONTEXT 锁定直接 import。Pitfall 6：若 reviewer 介意私有符号跨模块，
+ # 再轻量提取到公共模块）。getattr 兜底：NullProvider 降级走 RagSearchResult
+ # 时无 hop1/hop2/graph_context 字段。
+ from codegraph.playground_views import _serialize_neighbor
+ hop1_neighbors = [
+ _serialize_neighbor(n)
+ for n in (getattr(result, "hop1_neighbors", ) or )
+ ]
+ hop2_neighbors = [
+ _serialize_neighbor(n)
+ for n in (getattr(result, "hop2_neighbors", ) or )
+ ]
+ graph_context: str = getattr(result, "graph_context", "") or ""
+ total_tokens: int = getattr(result, "total_tokens", 0) or 0
+ # 8. results 序列化（L3 命中片段）：从 result.layers 取 L3 layer 的 items，
+ # chunk_id 显式映射（Pitfall 7：chunk_id 取 item["id"]，payload 不含 chunk_id）。
+ results: list[dict[str, object]] =
+ for layer in getattr(result, "layers", ) or:
+ if getattr(layer, "layer", None) != "L3":
+ continue
+ for item in getattr(layer, "items", ) or:
+ payload = item.get("payload", {}) or {}
+ chunk_id = item.get("id") or payload.get("chunk_id", "")
+ results.append(
+ {
+ "chunk_id": chunk_id,
+ "file_path": payload.get("file_path", ""),
+ "line_start": payload.get("start_line"),
+ "line_end": payload.get("end_line"),
+ "content": payload.get("content", ""),
+ "score": item.get("score", 0.0),
+ "language": payload.get("language", ""),
+ }
+ )
  logger.info(
- "graph_search_request",
+ "graph_search_completed",
  repository_id=str(repository_id),
  query_len=len(query),
  branch=branch,
  graph_branch=graph_branch,
- top_k=top_k,
- max_tokens=max_tokens,
+ results_count=len(results),
+ hop1_count=len(hop1_neighbors),
+ hop2_count=len(hop2_neighbors),
  )
- # Task 3 接 search 编排 + results/neighbor 序列化。
  return Response(
  {
  "query": query,
- "graph_branch": graph_branch,
+ "results": results,
+ "hop1_neighbors": hop1_neighbors,
+ "hop2_neighbors": hop2_neighbors,
+ "graph_context": graph_context,
+ "total_tokens": total_tokens,
  },
  status=status.HTTP_200_OK,
  )
