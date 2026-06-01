@@ -1027,6 +1027,8 @@ class IndexStatsView(APIView):
  """
  permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
+ from code_relations.models import ChunkEdge
+ from services.branch_utils import resolve_branch_for_query
  try:
  repository = await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
@@ -1038,6 +1040,27 @@ class IndexStatsView(APIView):
  indexed_files = await FileIndex.objects.filter(
  repository_id=repository_id,
  ).acount
+ #：图谱/ChunkEdge 维度 branch-aware。归一化复用
+ # resolve_branch_for_query（与 GraphRagStatusView 同口径，不自写
+ # default_branch 判定）：缺省/==base → branch_name="" 干净 base 计数
+ # （向后兼容）；feature → branch_name__in=["", effective_branch] 合并。
+ branch = request.query_params.get("branch")
+ effective_branch, _ = await resolve_branch_for_query(repository_id, branch)
+ base_branch_name, _ = await resolve_branch_for_query(repository_id, None)
+ if not effective_branch or effective_branch == base_branch_name:
+ edge_count = await ChunkEdge.objects.filter(
+ repository_id=repository_id, branch_name=""
+ ).acount
+ else:
+ edge_count = await ChunkEdge.objects.filter(
+ repository_id=repository_id,
+ branch_name__in=["", effective_branch],
+ ).acount
+ # 口径裁定（Open Question 2 / T- DoS 防御）：chunks_total 来自
+ # Qdrant base collection points，overlay 合并需双 collection scroll（比
+ # ChunkEdge 纯 ORM count 重得多，且 Qdrant 已有不可用降级路径）。本 phase
+ # **收窄**——chunks_total 始终保 base collection points，仅图谱/ChunkEdge
+ # 维度（edge_count）做 branch-aware 合并。overlay 向量合并 deferred。
  try:
  stats = await sync_to_async(QdrantService.get_collection_stats)(str(repository_id))
  except Exception as exc:
@@ -1053,6 +1076,7 @@ class IndexStatsView(APIView):
  "chunks_total": repository.index_total_chunks,
  "language_distribution": {},
  "indexed_files_count": indexed_files,
+ "edge_count": edge_count,
  "coverage_percent": None,
  "qdrant_unavailable": True,
  "warning": "Qdrant 暂时不可用，已返回缓存计数；请稍后重试以获取最新统计",
@@ -1069,6 +1093,7 @@ class IndexStatsView(APIView):
  "chunks_total": stats.get("points_count", 0),
  "language_distribution": stats.get("language_distribution", {}),
  "indexed_files_count": indexed_files,
+ "edge_count": edge_count,
  "coverage_percent": coverage,
  }
  )
