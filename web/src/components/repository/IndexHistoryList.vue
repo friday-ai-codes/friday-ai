@@ -166,6 +166,28 @@ function isIndeterminateProgress(item: IndexHistoryItem): boolean {
  // total 有但 progress 还在 0% → 仍然在前置阶段
  return (p.overall_progress ?? 0) <= 0
 }
+// Phase 行级 diff 显示（Pitfall 6 前端镜像）：
+// null / undefined（不可计算：全量索引 / shallow 加深失败）→ "—"，
+// 真实数字（含 0：无增删或二进制文件）→ 原值字符串，二者严格不混。
+function linesDisplay(v: number | null | undefined): string {
+ return v === null || v === undefined ? '—': `${v}`
+}
+// Phase per-run delta 段是否有可展示内容：
+// 任一字段已回填（非 undefined）即显示；老行未回填（全 undefined）则整段隐藏，
+// 避免渲染一排无意义的 0。
+function hasPerRunDelta(item: IndexHistoryItem): boolean {
+ return (
+ item.symbols_added !== undefined
+ || item.calls_added !== undefined
+ || item.imports_added !== undefined
+ || item.chunk_edges_added !== undefined
+ )
+}
+// Phase 行级 diff 段是否有可展示内容：
+// 任一字段已回填（含 null=不可计算，须显示 "—"）即显示。
+function hasLineDiff(item: IndexHistoryItem): boolean {
+ return item.lines_added !== undefined || item.lines_deleted !== undefined
+}
 function changedFilesOf(item: IndexHistoryItem) {
  return item.changed_files ?? { added:, modified:, deleted: }
 }
@@ -306,7 +328,7 @@ onBeforeUnmount( => {
  <span:class="[
  'block w-2 rounded-full ring-[3px] ring-card',
  statusDotClass(item.status),
- item.status === 'running' || item.status === 'indexing'
+ item.status === 'running'
  ? 'shadow-[0_0_0_3px_rgba(59,130,246,0.18)] animate-pulse': '',
  ]"
  />
@@ -426,6 +448,47 @@ onBeforeUnmount( => {
  />
  {{ expandedItems.has(item.id) ? '收起': '查看变更文件' }}
  </button>
+ </div>
+ <!-- Phase：per-run delta 段（本次索引新增图谱实体，
+ 区别于累计 edge_count；读 running_history 携带的 字段，
+ RUNNING 行经 liveRunningHistory merge 实时刷新） -->
+ <div
+ v-if="hasPerRunDelta(item)"
+ class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+ >
+ <span class="text-muted-foreground/70">本次新增</span>
+ <span class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">{{ item.symbols_added ?? 0 }}</span>
+ <span>符号</span>
+ </span>
+ <span class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">{{ item.calls_added ?? 0 }}</span>
+ <span>调用</span>
+ </span>
+ <span class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">{{ item.imports_added ?? 0 }}</span>
+ <span>import</span>
+ </span>
+ <span class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">{{ item.chunk_edges_added ?? 0 }}</span>
+ <span>chunk edge</span>
+ </span>
+ </div>
+ <!-- Phase：行级 diff 段（+N −N 行 / N 文件重索引；
+ null=不可计算 → linesDisplay 显示 "—"，真实 0 显示 "0"，Pitfall 6） -->
+ <div
+ v-if="hasLineDiff(item)"
+ class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground"
+ >
+ <span class="inline-flex items-center gap-1 tabular-nums">
+ <span class="text-emerald-600 font-medium">+{{ linesDisplay(item.lines_added) }}</span>
+ <span class="text-destructive font-medium">−{{ linesDisplay(item.lines_deleted) }}</span>
+ <span>行</span>
+ </span>
+ <span v-if="totalChangedCount(item) > 0" class="inline-flex items-center gap-1 tabular-nums">
+ <span class="font-medium">{{ totalChangedCount(item) }}</span>
+ <span>文件重索引</span>
+ </span>
  </div>
  <!-- 变更文件列表（按状态分组，无边框、靠左缩进，像 git status 输出） -->
  <div
