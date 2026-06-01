@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 import structlog
 from asgiref.sync import sync_to_async
+from services.branch_utils import get_effective_collection_name
 from services.qdrant_service import QdrantService
 logger = structlog.get_logger(__name__)
 __all__ = ["SymbolChunkResolver"]
@@ -21,8 +22,11 @@ class SymbolChunkResolver:
  Phase 不跨 builder 共享（避免 cache 一致性复杂度），instances 与
  builder 实例 1:1。
  """
- def __init__(self, repository_id: str) -> None:
+ def __init__(self, repository_id: str, *, branch_name: str = "") -> None:
  self.repository_id = repository_id
+ # Phase：feature 分支的 chunk 向量在 overlay collection；base（""）
+ # 落到旧 collection（字节不变）。base→base collection，feature→overlay。
+ self.branch_name = branch_name
  self._index: dict[str, list[tuple[int, int, uuid.UUID]]] | None = None
  async def resolve(self, file_path: str, line_number: int) -> uuid.UUID | None:
  """返回 file_path 中包含 line_number 的 chunk_id；否则 None。
@@ -49,7 +53,9 @@ class SymbolChunkResolver:
  @sync_to_async
  def _load_index(self) -> dict[str, list[tuple[int, int, uuid.UUID]]]:
  client = QdrantService.get_client
- collection = QdrantService.get_collection_name(self.repository_id)
+ collection = get_effective_collection_name(
+ self.repository_id, self.branch_name
+ )
  index: dict[str, list[tuple[int, int, uuid.UUID]]] = {}
  offset: Any = None
  count = 0

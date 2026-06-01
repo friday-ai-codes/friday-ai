@@ -32,7 +32,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  ) -> list[ChunkEdge]:
  from codegraph.models import CallEdge as CodegraphCallEdge
  from codegraph.models import Symbol
- resolver = SymbolChunkResolver(str(repository.id))
+ resolver = SymbolChunkResolver(str(repository.id), branch_name=branch_name)
  # 用 (count, names) 元组结构避免 mypy 对 dict[str, object] 的二次 narrow
  groups: dict[tuple[uuid.UUID, uuid.UUID], tuple[int, set[str]]] = {}
  skipped_callee = 0
