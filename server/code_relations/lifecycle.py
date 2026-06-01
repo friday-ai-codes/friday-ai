@@ -127,13 +127,23 @@ async def _handle_completion(
  "payload_synced_at": timezone.now,
  }
  if edge_count is not None:
+ # edge_count：全表累计快照口径（_count_edges_or_none），保留累计语义。
  update_fields["edge_count"] = edge_count
+ # Phase（Pitfall 7）：chunk_edges_added 是 per-run delta
+ # ——本次 orchestrator bulk_insert_edges 去重后的真实新增数，经
+ # task.result 读取（orchestrator `return inserted`）。与上方累计
+ # edge_count 落同一行但语义对立：绝不复用 _count_edges_or_none 全表 count
+ # 作 chunk_edges_added 来源。task.result 非 int / None 时降级 0（保
+ # default），不影响 edge_count 既有逻辑。
+ inserted = task.result or 0
+ update_fields["chunk_edges_added"] = inserted
  await _update_history(history_id, **update_fields)
  logger.info(
  "lifecycle_task_completed",
  history_id=str(history_id),
  repository_id=repository_id,
  edge_count=edge_count,
+ chunk_edges_added=inserted,
  )
  except Exception as exc:
  logger.exception(

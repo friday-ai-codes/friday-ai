@@ -24,7 +24,7 @@ job 跨进程边界事务一致性需额外设计）。
 from __future__ import annotations
 import asyncio
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 import structlog
 from asgiref.sync import sync_to_async
 from code_relations.builders import BUILDERS
@@ -35,13 +35,13 @@ if TYPE_CHECKING:
  from code_relations.models import ChunkEdge
 logger = structlog.get_logger(__name__)
 __all__ = ["enqueue_edge_build", "snapshot_background_tasks"]
-_BACKGROUND_TASKS: set[asyncio.Task[None]] = set
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set
 """ 修复：保存 `asyncio.create_task` 强引用避免 GC 中途回收（CPython event
 loop 对 task 仅持弱引用，IO-wait 期间触发 GC 理论上可 collect）。task 完成后由
 `add_done_callback(_BACKGROUND_TASKS.discard)` 自动回收。
 外部模块不应直接读 `_BACKGROUND_TASKS`，应通过 `snapshot_background_tasks`
 取浅拷贝快照（per Phase REVIEW ）。"""
-def snapshot_background_tasks -> set[asyncio.Task[None]]:
+def snapshot_background_tasks -> set[asyncio.Task[Any]]:
  """返回当前 ``_BACKGROUND_TASKS`` 的浅拷贝快照（per Phase REVIEW ）。
  替代跨模块直读私有 ``_BACKGROUND_TASKS``。``verify_payload_consistency`` 与
  ``rebuild_chunk_edges`` 命令的 ``_dispatch_and_drain`` before/after diff 模式
@@ -101,7 +101,7 @@ async def _run_all_builders_and_sync_payload(
  dirty_chunk_ids: list[uuid.UUID],
  *,
  branch_name: str = "",
-) -> None:
+) -> int:
  """6 builder 并发跑 + 统一 bulk_insert_edges + 单次 batch_set_payload。
  per：6 builder 全部完成后**统一**调一次 `batch_set_payload`，不是
  每 builder 独立 sync。
@@ -111,6 +111,15 @@ async def _run_all_builders_and_sync_payload(
  修复：函数顶层包 try/except，兜住 `bulk_insert_edges` /
  `aggregate_top_neighbors` / `batch_set_payload` 的所有未捕获异常（fire-and-
  forget task 不会被 await，未 catch 异常会被静默吞噬）。
+ Phase：成功路径 `return inserted`（`bulk_insert_edges`
+ ignore_conflicts 去重后的本次真实新增数，per-run delta 语义），异常/早退
+ 路径 `return 0`。lifecycle `_handle_completion` 经 `task.result` 读取此值
+ 回写 IndexHistory.chunk_edges_added（区别于全表累计 edge_count，Pitfall 7）。
+ 本改动不引入新 await，不破 `test_enqueue_edge_build_no_await_in_body` 契约
+ （该测试只校验 `enqueue_edge_build` 函数体，不约束本 orchestrator）。
+ Returns:
+ int: 本次 bulk_insert_edges 去重后真实新增的 ChunkEdge 数；repo 不存在、
+ 获取失败或顶层异常时返回 0。
  """
  from repositories.models import Repository
  try:
@@ -121,7 +130,7 @@ async def _run_all_builders_and_sync_payload(
  "edge_build_repo_not_found",
  repository_id=repository_id,
  )
- return
+ return 0
  except Exception as exc:
  logger.error(
  "edge_build_repo_fetch_failed",
@@ -129,7 +138,7 @@ async def _run_all_builders_and_sync_payload(
  error=str(exc),
  error_type=type(exc).__name__,
  )
- return
+ return 0
  builders = [cls for cls in BUILDERS]
  results: list[list[ChunkEdge] | BaseException] = (
  list(
@@ -172,6 +181,8 @@ async def _run_all_builders_and_sync_payload(
  edges_inserted=inserted,
  payload_updates=len(updates),
  )
+ #：返回本次去重后真实新增数，供 lifecycle 回写 chunk_edges_added。
+ return inserted
  except Exception as exc:
  logger.exception(
  "edge_build_orchestrator_unhandled",
@@ -179,3 +190,4 @@ async def _run_all_builders_and_sync_payload(
  error=str(exc),
  error_type=type(exc).__name__,
  )
+ return 0
