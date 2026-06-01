@@ -20,6 +20,14 @@ vi.mock('~/api/repositories', => ({
  getIndexStatus: vi.fn,
  getCollectionHealth: vi.fn,
  getGraphRagStatus: vi.fn.mockResolvedValue({ edge_count: 0, status: 'pending', last_synced_at: null }),
+ // Phase：IndexStatsPanel 触达需 mock，否则报 undefined（Pitfall C）
+ getIndexStats: vi.fn.mockResolvedValue({
+ chunks_total: 0,
+ indexed_files_count: 0,
+ coverage_percent: null,
+ language_distribution: {},
+ qdrant_unavailable: false,
+ }),
  refreshRemoteHead: vi.fn,
  },
 }))
@@ -37,7 +45,10 @@ const stubComponents = {
  RepositoryIndexCard: defineComponent({ props: ['repositoryId', 'embedded'], template: '<div class="index-stub" />' }),
  RepositoryGraphCard: defineComponent({ props: ['repositoryId', 'embedded'], template: '<div class="graph-stub" />' }),
  KnowledgeBaseSection: defineComponent({ props: ['repositoryId', 'embedded'], template: '<div class="kbs-stub" />' }),
- IndexStatsPanel: defineComponent({ props: ['repositoryId'], template: '<div class="stats-stub" />' }),
+ IndexStatsPanel: defineComponent({ props: ['repositoryId', 'branch'], template: '<div class="stats-stub":data-branch="branch ?? \'\'" />' }),
+ BranchCombobox: defineComponent({ props: ['branches', 'indexRows', 'recommendedBranch', 'modelValue', 'disabled'], template: '<div class="branch-combobox-stub":data-branches="(branches ?? ).join(\',\')":data-model="modelValue ?? \'\'" />' }),
+ BranchIndexHealthSection: defineComponent({ props: ['row'], template: '<div class="branch-health-stub" />' }),
+ GraphSearchModal: defineComponent({ props: ['repositoryId', 'branch', 'open'], template: '<div class="graph-search-stub":data-branch="branch ?? \'\'" />' }),
  IndexedFilesPanel: defineComponent({ template: '<div class="files-stub" />' }),
  IndexHistoryList: defineComponent({ template: '<div class="history-stub" />' }),
  IndexProgressTimeline: defineComponent({ template: '<div class="timeline-stub" />' }),
@@ -79,9 +90,17 @@ function makeRepo(overrides: Partial<Repository> = {}): Repository {
  ...overrides,
  } as Repository
 }
-function mountHub {
+function mountHub(props: Record<string, unknown> = {}) {
  return mount(RepositoryKnowledgeHub, {
- props: { repositoryId: 'repo-1', gitUrl: 'https://github.com/a/b.git' },
+ props: {
+ repositoryId: 'repo-1',
+ gitUrl: 'https://github.com/a/b.git',
+ branches: ['main', 'feature-x'],
+ indexRows:,
+ recommendedBranch: 'main',
+ selectedBranch: 'main',
+ ...props,
+ },
  global: { stubs: stubComponents },
  })
 }
@@ -125,5 +144,36 @@ describe('repositoryKnowledgeHub', => {
  await flushPromises
  // 真实计数应渲染（toLocaleString 千分位），而非旧快照漏写的 0/—
  expect(wrapper.text).toContain('35,900 语义边')
+ })
+ it('Hub 头部渲染 BranchCombobox 并透传 branches', async => {
+ const wrapper = mountHub
+ await flushPromises
+ const combobox = wrapper.find('.branch-combobox-stub')
+ expect(combobox.exists).toBe(true)
+ expect(combobox.attributes('data-branches')).toBe('main,feature-x')
+ expect(combobox.attributes('data-model')).toBe('main')
+ })
+ it('切分支即时带 branch（ 红线）', async => {
+ const wrapper = mountHub({ selectedBranch: 'main' })
+ await flushPromises
+ // 初始以 main 拉取
+ expect(repositoriesApi.getGraphRagStatus).toHaveBeenLastCalledWith('repo-1', 'main')
+ await wrapper.setProps({ selectedBranch: 'feature-x' })
+ await flushPromises
+ // 切分支后 graphrag-status 以新 branch 重拉
+ expect(repositoriesApi.getGraphRagStatus).toHaveBeenLastCalledWith('repo-1', 'feature-x')
+ // GraphSearchModal 收到新 branch
+ expect(wrapper.find('.graph-search-stub').attributes('data-branch')).toBe('feature-x')
+ // IndexStatsPanel 收到新 branch
+ expect(wrapper.find('.stats-stub').attributes('data-branch')).toBe('feature-x')
+ })
+ it('base 态（selectedBranch=null）不污染 query', async => {
+ mountHub({ selectedBranch: null })
+ await flushPromises
+ // base 态传 falsy branch；getGraphRagStatus 内部 `branch || undefined` 再归一化为
+ // 不发 branch query（client.ts 仅跳过 undefined），保持与现状字节级一致。
+ const lastCall = vi.mocked(repositoriesApi.getGraphRagStatus).mock.lastCall
+ expect(lastCall?.[0]).toBe('repo-1')
+ expect(lastCall?.[1] ?? undefined).toBeFalsy
  })
 })
