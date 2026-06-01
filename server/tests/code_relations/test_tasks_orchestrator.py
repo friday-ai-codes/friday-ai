@@ -45,7 +45,9 @@ async def test_enqueue_empty_dirty_does_not_spawn -> None:
 @pytest.mark.django_db(transaction=True)
 async def test_enqueue_fire_and_forget_returns_quickly(repository) -> None:
  """enqueue_edge_build 立即 return（< 100ms），不等待背景 task 完成。"""
- async def _slow_runner(repo_id: str, dirty: list[uuid.UUID]) -> None:
+ async def _slow_runner(
+ repo_id: str, dirty: list[uuid.UUID], *, branch_name: str = ""
+ ) -> None:
  await asyncio.sleep(2.0)
  with patch.object(tasks_module, "_run_all_builders_and_sync_payload", _slow_runner):
  start = time.monotonic
@@ -70,11 +72,11 @@ async def test_run_all_builders_one_failure_does_not_abort_rest(repository) -> N
  ]
  class _GoodBuilder:
  edge_type_label = "Good"
- async def build(self, repo, dirty): # type: ignore[no-untyped-def]
+ async def build(self, repo, dirty, *, branch_name=""): # type: ignore[no-untyped-def]
  return successful_edges
  class _BadBuilder:
  edge_type_label = "Bad"
- async def build(self, repo, dirty): # type: ignore[no-untyped-def]
+ async def build(self, repo, dirty, *, branch_name=""): # type: ignore[no-untyped-def]
  raise RuntimeError("simulated builder failure")
  fake_builders = [_GoodBuilder, _GoodBuilder, _GoodBuilder, _BadBuilder, _GoodBuilder, _GoodBuilder]
  with patch.object(tasks_module, "BUILDERS", fake_builders):
@@ -93,7 +95,7 @@ async def test_batch_set_payload_called_exactly_once(repository) -> None:
  def _make_builder(weight: float, target: uuid.UUID, edge_type: EdgeType, label: str):
  class _B:
  edge_type_label = label
- async def build(self, repo, dirty): # type: ignore[no-untyped-def]
+ async def build(self, repo, dirty, *, branch_name=""): # type: ignore[no-untyped-def]
  return [
  ChunkEdge(
  source_chunk_id=src,
@@ -144,7 +146,7 @@ async def test_top_level_exception_logged_not_silent(repository) -> None:
  src = uuid.uuid4
  class _GoodBuilder:
  edge_type_label = "Good"
- async def build(self, repo, dirty): # type: ignore[no-untyped-def]
+ async def build(self, repo, dirty, *, branch_name=""): # type: ignore[no-untyped-def]
  return [
  ChunkEdge(
  source_chunk_id=src,
@@ -178,7 +180,9 @@ async def test_create_task_strong_reference_held(repository) -> None:
  """ 回归：enqueue_edge_build spawn 的 task 被 _BACKGROUND_TASKS 强持有，
  完成后由 done_callback 自动 discard。"""
  started_event = asyncio.Event
- async def _slow_runner(repo_id: str, dirty: list[uuid.UUID]) -> None:
+ async def _slow_runner(
+ repo_id: str, dirty: list[uuid.UUID], *, branch_name: str = ""
+ ) -> None:
  started_event.set
  await asyncio.sleep(0.05)
  with patch.object(
