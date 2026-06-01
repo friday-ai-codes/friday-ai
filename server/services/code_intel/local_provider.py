@@ -24,18 +24,27 @@ class LocalProvider:
  names: list[str],
  *,
  repository_ids: list[str],
+ branch_name: str | None = None,
  ) -> list[dict[str, Any]]:
- """按符号名做 iexact 精确查找 + icontains 回退（与 L2 行为完全对齐）。"""
+ """按符号名做 iexact 精确查找 + icontains 回退（与 L2 行为完全对齐）。
+ ``branch_name``: base/overlay 合并语义同 hop2——base 行
+ ``branch_name=""`` 全分支可见，feature 行仅本分支可见；``None`` → 仅 base
+ （向后兼容，保 ``find_related_code.py`` MCP 不传 branch 的现存调用）。命中索引
+ ``(repository, branch_name, file_path)``。**不读 settings**（守 Pitfall 5）。
+ """
  if not names or not repository_ids:
  logger.debug("local_provider_lookup_skipped", names=names, repo_count=len(repository_ids))
  return
  from codegraph.models import Symbol
+ # base/overlay 合并：空 branch → 仅 base 行；非空 → base + 本分支合并。
+ branch_filter = ["", branch_name] if branch_name else [""]
  all_symbols: list[Any] =
  seen_ids: set[str] = set
  for term in names:
  exact_matches: list[Any] = await sync_to_async(list)( # type: ignore[call-arg]
  Symbol.objects.filter(
  name__iexact=term, repository_id__in=repository_ids,
+ branch_name__in=branch_filter,
  ).select_related("repository"),
  )
  for sym in exact_matches:
@@ -47,6 +56,7 @@ class LocalProvider:
  fuzzy_matches: list[Any] = await sync_to_async(list)( # type: ignore[call-arg]
  Symbol.objects.filter(
  name__icontains=term, repository_id__in=repository_ids,
+ branch_name__in=branch_filter,
  ).select_related("repository")[:10],
  )
  for sym in fuzzy_matches:
