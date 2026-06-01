@@ -108,6 +108,7 @@ markers = [
  "integration: integration tests requiring external binaries (e.g. vue-language-server)（Phase）",
  "slow: 耗时较长的测试（如规模性能测试），CI 默认 skip；本地 `pytest -m slow` 主动运行（Phase）",
  "real_history_load: 关闭 test_chat_runner.py 的 _disable_history_load autouse mock，用于专测历史回灌逻辑本身",
+ "no_workdir_stub: 关闭 test_graph_builder.py 的 prepare_repo_workdir autouse stub，用于专测 clone 命令本身",
 ]
 [tool.coverage.run]
 source = ["friday"]

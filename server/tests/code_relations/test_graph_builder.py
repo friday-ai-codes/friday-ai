@@ -35,9 +35,16 @@ from repositories.models import (
 # `https://example.com/...`（fixture 的 fake URL），导致超时。下方 autouse 把
 # clone 替换成一个直接 yield 假路径的 async context manager。
 @pytest.fixture(autouse=True)
-def _stub_prepare_repo_workdir -> Any:
+def _stub_prepare_repo_workdir(request: Any) -> Any:
+ #：标记 no_workdir_stub 的用例需要真实 prepare_repo_workdir_async
+ # （专测 git clone --branch 命令本身），此处放行不打桩。
+ if "no_workdir_stub" in request.keywords:
+ yield
+ return
  @contextlib.asynccontextmanager
- async def _fake_workdir(_repository_id: str) -> AsyncIterator[str]:
+ async def _fake_workdir(
+ _repository_id: str, *, branch: str | None = None,
+ ) -> AsyncIterator[str]:
  yield "/tmp/fake-graph-build-workdir"
  with patch(
  "services.graph_builder.prepare_repo_workdir_async",
@@ -365,3 +372,190 @@ async def test_manual_and_auto_after_index_produce_equivalent_history_counts(
  f"manual 与 auto_after_index 在 {field} 上不一致："
  f"manual={getattr(manual_h, field)}, auto={getattr(auto_h, field)}"
  )
+# ---------------------------------------------------------------------------
+# 8.：manual REST 按 branch clone + 构建 + history.branch_name 写入
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def graph_repo_with_branch_diff(graph_repo_with_files: Repository) -> Repository:
+ """在已索引仓库基础上预填一个 feature 分支 overlay + 2 个 diff 文件。
+ 用于验证 ``_collect_file_paths`` 传 branch 时只取该分支 ``BranchFileIndex``
+ diff 文件（对齐 overlay 合并语义）。
+ """
+ from repositories.models import BranchFileIndex, RepositoryBranchIndex
+ branch_index = RepositoryBranchIndex.objects.create(
+ repository=graph_repo_with_files,
+ branch_name="feature/awesome",
+ is_base_branch=False,
+ )
+ BranchFileIndex.objects.bulk_create([
+ BranchFileIndex(
+ branch_index=branch_index,
+ file_path=f"src/feature_{i}.py",
+ change_type="modified",
+ )
+ for i in range(2)
+ ])
+ return graph_repo_with_files
+@pytest.mark.django_db(transaction=True)
+async def test_branch_param_clones_branch_and_writes_history(
+ graph_repo_with_branch_diff: Repository,
+ fake_extract_stats: dict[str, Any],
+) -> None:
+ """：传 branch → 按该分支 clone、仅取该分支 diff 文件、history.branch_name 写入该分支。"""
+ from services.graph_builder import build_graph_for_repository
+ from services.indexer import IndexerService
+ repo_id = str(graph_repo_with_branch_diff.id)
+ captured_branch: list[str | None] =
+ captured_file_paths: list[list[str]] =
+ @contextlib.asynccontextmanager
+ async def _spy_workdir(
+ _repository_id: str, *, branch: str | None = None,
+ ) -> AsyncIterator[str]:
+ captured_branch.append(branch)
+ yield "/tmp/fake-graph-build-workdir"
+ async def _extract_spy(
+ self: Any,
+ *,
+ repo_path: str,
+ file_paths: list[str],
+ repository_id: str,
+ branch_name: str = "",
+ history_id: str | None = None,
+ ) -> dict[str, Any]:
+ captured_file_paths.append(list(file_paths))
+ # feature 路径图谱行须带该分支 branch_name（不污染 base）
+ assert branch_name == "feature/awesome"
+ return fake_extract_stats
+ with (
+ patch(
+ "services.graph_builder.prepare_repo_workdir_async", new=_spy_workdir,
+ ),
+ patch.object(
+ IndexerService, "_extract_and_write_graph", new=_extract_spy,
+ ),
+ ):
+ await build_graph_for_repository(
+ repo_id, trigger="manual", branch="feature/awesome",
+ )
+ # 按该分支 clone：normalized_branch 透传给 prepare_repo_workdir_async（clone_branch==branch）
+ assert captured_branch == ["feature/awesome"]
+ # 仅取该分支 diff 文件（BranchFileIndex），不混入 base 全量 FileIndex
+ assert captured_file_paths
+ assert sorted(captured_file_paths[0]) == [
+ "src/feature_0.py",
+ "src/feature_1.py",
+ ]
+ count = await GraphBuildHistory.objects.filter(
+ repository_id=repo_id,
+ ).acount
+ assert count == 1
+ history = await GraphBuildHistory.objects.filter(
+ repository_id=repo_id,
+ ).aget
+ assert history.branch_name == "feature/awesome"
+ assert history.status == GraphBuildHistoryStatus.COMPLETED
+@pytest.mark.django_db(transaction=True)
+async def test_no_branch_backward_compat(
+ graph_repo_with_files: Repository,
+ fake_extract_stats: dict[str, Any],
+) -> None:
+ """ 向后兼容：不传 branch → clone default_branch、取全量 FileIndex、history.branch_name==""。"""
+ from services.graph_builder import build_graph_for_repository
+ from services.indexer import IndexerService
+ repo_id = str(graph_repo_with_files.id)
+ captured_branch: list[str | None] =
+ captured_file_paths: list[list[str]] =
+ @contextlib.asynccontextmanager
+ async def _spy_workdir(
+ _repository_id: str, *, branch: str | None = None,
+ ) -> AsyncIterator[str]:
+ captured_branch.append(branch)
+ yield "/tmp/fake-graph-build-workdir"
+ async def _extract_spy(
+ self: Any,
+ *,
+ repo_path: str,
+ file_paths: list[str],
+ repository_id: str,
+ branch_name: str = "",
+ history_id: str | None = None,
+ ) -> dict[str, Any]:
+ captured_file_paths.append(list(file_paths))
+ # base 路径图谱行 branch_name 恒为 ""（字节不变）
+ assert branch_name == ""
+ return fake_extract_stats
+ with (
+ patch(
+ "services.graph_builder.prepare_repo_workdir_async", new=_spy_workdir,
+ ),
+ patch.object(
+ IndexerService, "_extract_and_write_graph", new=_extract_spy,
+ ),
+ ):
+ await build_graph_for_repository(repo_id, trigger="manual")
+ # 不传 branch → 归一化为 ""，透传 None（prepare_repo_workdir_async 内回退 default_branch）
+ assert captured_branch == [None]
+ # base 取全量 FileIndex（与历史行为字节不变）
+ assert sorted(captured_file_paths[0]) == [
+ "src/module_0.py",
+ "src/module_1.py",
+ "src/module_2.py",
+ ]
+ count = await GraphBuildHistory.objects.filter(
+ repository_id=repo_id,
+ ).acount
+ assert count == 1
+ history = await GraphBuildHistory.objects.filter(
+ repository_id=repo_id,
+ ).aget
+ assert history.branch_name == ""
+@pytest.mark.no_workdir_stub
+@pytest.mark.django_db(transaction=True)
+async def test_prepare_repo_workdir_clones_given_branch(
+ graph_repo: Repository,
+) -> None:
+ """：prepare_repo_workdir_async 传 branch → git clone ``--branch`` 为该分支。"""
+ import asyncio as _asyncio
+ from services.graph_builder import prepare_repo_workdir_async
+ captured_argv: list[list[str]] =
+ class _FakeProc:
+ returncode = 0
+ async def communicate(self) -> tuple[bytes, bytes]:
+ return (b"", b"")
+ async def _fake_exec(*argv: Any, **kwargs: Any) -> Any:
+ captured_argv.append([a for a in argv if isinstance(a, str)])
+ return _FakeProc
+ repo_id = str(graph_repo.id)
+ with patch.object(_asyncio, "create_subprocess_exec", new=_fake_exec):
+ async with prepare_repo_workdir_async(
+ repo_id, branch="feature/awesome",
+ ) as path:
+ assert isinstance(path, str)
+ assert captured_argv, "git clone 未被调用"
+ argv = captured_argv[0]
+ assert "--branch" in argv
+ assert argv[argv.index("--branch") + 1] == "feature/awesome"
+@pytest.mark.no_workdir_stub
+@pytest.mark.django_db(transaction=True)
+async def test_prepare_repo_workdir_defaults_to_default_branch(
+ graph_repo: Repository,
+) -> None:
+ """ 向后兼容：prepare_repo_workdir_async 不传 branch → clone default_branch（main）。"""
+ import asyncio as _asyncio
+ from services.graph_builder import prepare_repo_workdir_async
+ captured_argv: list[list[str]] =
+ class _FakeProc:
+ returncode = 0
+ async def communicate(self) -> tuple[bytes, bytes]:
+ return (b"", b"")
+ async def _fake_exec(*argv: Any, **kwargs: Any) -> Any:
+ captured_argv.append([a for a in argv if isinstance(a, str)])
+ return _FakeProc
+ repo_id = str(graph_repo.id)
+ with patch.object(_asyncio, "create_subprocess_exec", new=_fake_exec):
+ async with prepare_repo_workdir_async(repo_id) as path:
+ assert isinstance(path, str)
+ assert captured_argv, "git clone 未被调用"
+ argv = captured_argv[0]
+ assert "--branch" in argv
+ assert argv[argv.index("--branch") + 1] == "main"
