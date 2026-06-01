@@ -261,10 +261,12 @@ class HybridSearchService:
  )
  # GraphCapableProvider 已守卫；mypy 不识别 isinstance + create_task 闭合，
  # 用 self._provider 直接调，运行时由 isinstance(GraphCapableProvider) 保证。
+ #：透传 branch_name 让 symbol lookup 做 base/overlay 合并。
  symbol_task = asyncio.create_task(
  self._provider.lookup_symbols( # type: ignore[attr-defined]
  keywords,
  repository_ids=repo_ids,
+ branch_name=branch_name,
  ),
  )
  results = await asyncio.gather(
@@ -317,13 +319,19 @@ class HybridSearchService:
  hop1_chunk_ids: set[str],
  rag_chunk_ids: set[str],
  repo_ids: list[str],
+ branch_name: str | None = None,
  ) -> list[NeighborMetadata]:
- """ 提取：wave 二跳 enrichment（ChunkEdge ORM aiter + 三重去重）。"""
+ """ 提取：wave 二跳 enrichment（ChunkEdge ORM aiter + 三重去重）。：``branch_name`` 透传给 ``expand_hop2`` → ``fetch_hop2_edges``
+ 做 base/overlay 合并。注意 hop2 读**已建 ChunkEdge**（含 SEMANTIC 边），
+ ``branch_name__in=["", eff]`` 合并 base+feature 已落库的边，**非重新向量
+ 检索**，不受 294 跨 collection 向量限制（边已落库，OQ4 裁定）。
+ """
  return await expand_hop2(
  hop1_chunk_ids=hop1_chunk_ids,
  rag_chunk_ids=rag_chunk_ids,
  repo_ids=repo_ids,
  reason_fn=_enrichment_reason_fn,
+ branch_name=branch_name,
  )
  @staticmethod
  async def _run_wave_3(
@@ -400,10 +408,13 @@ class HybridSearchService:
  if item.get("id")
  }
  hop1_neighbors, hop1_chunk_ids = await self._run_wave_1(rag_snapshot)
+ # hop1 经 RAG collection 路由 + ChunkRegistry.in_bulk PK 命名空间隔离，已
+ # 隐式 branch-aware，故 hop1_reader 不加冗余 branch 过滤（研究 §2.2 YAGNI）。
  hop2_neighbors = await self._run_wave_2(
  hop1_chunk_ids=hop1_chunk_ids,
  rag_chunk_ids=rag_chunk_ids,
  repo_ids=repo_ids,
+ branch_name=branch_name,
  )
  # --- wave: 跨仓 API 扩散（Phase/08）---
  # ENABLE_CROSS_REPO_ENRICHMENT 唯一直读点（hybrid_search 模块）。
