@@ -7,8 +7,6 @@ import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
 import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
-import BranchCombobox from '~/components/repository/BranchCombobox.vue'
-import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import CredentialModal from '~/components/repository/CredentialModal.vue'
 import EditRepositoryModal from '~/components/repository/EditRepositoryModal.vue'
 import RepositoryKnowledgeHub from '~/components/repository/RepositoryKnowledgeHub.vue'
@@ -188,7 +186,6 @@ async function handleCredentialSaved {
 }
 const sections = ref<NavSection>([
  { id: 'basic-info', label: '基本信息', icon: 'icon-[lucide--info]' },
- { id: 'branch-index', label: '分支索引', icon: 'icon-[lucide--git-branch]' },
  { id: 'knowledge-base', label: '知识库', icon: 'icon-[lucide--layers]' },
  { id: 'linked-projects', label: '关联空间', icon: 'icon-[lucide--folder]' },
  { id: 'credential', label: '凭证配置', icon: 'icon-[lucide--key]' },
@@ -392,46 +389,11 @@ function copyUrl {
  </div>
  </div>
  </section>
- <!-- ==================== 分支索引 ==================== -->
- <section id="branch-index" class="scroll-mt-22">
- <div v-if="branchNames.length > 0" class="card">
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center gap-2">
- <span class="icon-[lucide--git-branch] text-primary" />
- <h3 class="text-sm font-semibold">
- 分支索引
- </h3>
- <span class="text-xs text-muted-foreground">选择检索分支与健康状态</span>
- </div>
- <div class=" space-y-4">
- <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
- <div class="space-y-2">
- <label class="text-xs text-muted-foreground">当前分支</label>
- <BranchCombobox
- v-model="selectedBranch":branches="branchNames":index-rows="branchIndexRows":recommended-branch="recommendedBaseBranch":disabled="indexGlobalBusy"
- />
- </div>
- <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
- <Button
- v-if="selectedBranchRow?.is_stale":disabled="indexGlobalBusy || rebuildingBranch"
- class="w-full sm:w-auto"
- @click="rebuildDialogOpen = true"
- >
- <span
- v-if="rebuildingBranch"
- class="icon-[lucide--loader-circle] animate-spin mr-2"
- />
- <span v-else class="icon-[lucide--refresh-cw] mr-2" />
- 重建索引
- </Button>
- </div>
- </div>
- <BranchIndexHealthSection:row="selectedBranchRow" />
- </div>
- </div>
- </section>
- <!-- ==================== 知识库 ==================== -->
+ <!-- ==================== 知识库（含分支选择器，Phase 合并自分支索引段） ==================== -->
  <section id="knowledge-base" class="scroll-mt-22">
- <RepositoryKnowledgeHub:repository-id="repository.id":git-url="repository.git_url":selected-branch="selectedBranch"
+ <RepositoryKnowledgeHub:repository-id="repository.id":git-url="repository.git_url"
+ v-model:selected-branch="selectedBranch":branches="branchNames":index-rows="branchIndexRows":recommended-branch="recommendedBaseBranch":selected-branch-row="selectedBranchRow":index-global-busy="indexGlobalBusy":rebuilding-branch="rebuildingBranch"
+ @rebuild="rebuildDialogOpen = true"
  />
  </section>
  <!-- ==================== 凭证配置 ==================== -->

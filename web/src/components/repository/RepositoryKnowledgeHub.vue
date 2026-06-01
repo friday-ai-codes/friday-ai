@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import type { BranchIndexRow } from '~/api/repositories'
 import { useLocalStorage } from '@vueuse/core'
 import { IndexStatus } from '~/api/repositories'
 import KnowledgeBaseSection from '~/components/codegraph/KnowledgeBaseSection.vue'
 import StatusBadge from '~/components/common/StatusBadge.vue'
+import BranchCombobox from '~/components/repository/BranchCombobox.vue'
+import BranchIndexHealthSection from '~/components/repository/BranchIndexHealthSection.vue'
 import IndexedFilesPanel from '~/components/repository/IndexedFilesPanel.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
@@ -25,12 +28,30 @@ import {
 } from '~/components/ui/tooltip'
 import { useKnowledgeOverview } from '~/composables/useKnowledgeOverview'
 import { formatRelativeTime } from '~/lib/relativeTime'
-const props = defineProps<{
+const props = withDefaults(defineProps<{
  repositoryId: string
  gitUrl: string
- // 当前检索分支（来自页面 selectedBranch，经 prop 透传给 GraphSearchModal）；
- // 298 再把 BranchCombobox 上提进 Hub 头部统一单源。
- selectedBranch?: string | null
+ // Phase：分支选择器上提进 Hub 头部所需的下传数据
+ branches?: string
+ indexRows?: BranchIndexRow
+ recommendedBranch?: string | null
+ selectedBranchRow?: BranchIndexRow | null
+ indexGlobalBusy?: boolean
+ rebuildingBranch?: boolean
+}>, {
+ branches: =>,
+ indexRows: =>,
+ recommendedBranch: null,
+ selectedBranchRow: null,
+ indexGlobalBusy: false,
+ rebuildingBranch: false,
+})
+// selectedBranch 单一状态源仍在 index.vue，经 v-model:selected-branch 双向绑定到此
+const selectedBranch = defineModel<string | null>('selectedBranch', { default: null })
+// 重建索引仍由 index.vue 持有逻辑（confirmRebuildBranchIndex + 轮询 + ConfirmDialog），
+// 此处仅回传意图（Pitfall F）
+const emit = defineEmits<{
+ rebuild:
 }>
 // 关联搜索弹窗开关（graph tab 内触发入口）
 const showGraphSearch = ref(false)
@@ -49,7 +70,7 @@ const {
  latestRemoteHeadSha,
  refreshFreshness,
  loadAll,
-} = useKnowledgeOverview(toRef( => props.repositoryId))
+} = useKnowledgeOverview(toRef( => props.repositoryId), toRef( => selectedBranch.value))
 onMounted(loadAll)
 const localSha = computed( => repo.value?.last_indexed_commit_sha?.slice(0, 7) || '—')
 const remoteSha = computed( => (latestRemoteHeadSha.value || repo.value?.remote_head_sha || '').slice(0, 7) || '—')
@@ -131,7 +152,8 @@ const pipelineSteps = computed( => [
 <template>
  <div class="card overflow-hidden">
  <!-- Header -->
- <div class="px-5 py-3.5 border-b border-border/50 flex items-center justify-between gap-3">
+ <div class="border-b border-border/50">
+ <div class="px-5 py-3.5 flex items-center justify-between gap-3">
  <div class="flex items-center gap-2 min-w-0">
  <div class=".5 rounded-lg bg-primary/10 shrink-0">
  <span class="icon-[lucide--layers] text-primary" />
@@ -154,6 +176,30 @@ const pipelineSteps = computed( => [
  <span:class="checking ? 'icon-[lucide--loader-circle] animate-spin mr-1.5': 'icon-[lucide--refresh-cw] mr-1.5'" />
  {{ checking ? '检查中...': '立即检查' }}
  </Button>
+ </div>
+ <!-- 分支选择器（Phase 上提）：切分支即时联动 stats / graphrag-status / graph-search -->
+ <div
+ v-if="branches.length > 0"
+ class="px-5 pb-3.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+ >
+ <span class="text-xs text-muted-foreground shrink-0">检索分支</span>
+ <div class="min-w-0 flex-1 sm:max-w-xs">
+ <BranchCombobox
+ v-model="selectedBranch":branches="branches":index-rows="indexRows":recommended-branch="recommendedBranch":disabled="indexGlobalBusy"
+ />
+ </div>
+ <Button
+ v-if="selectedBranchRow?.is_stale"
+ size="sm"
+ class=" text-xs shrink-0 sm:ml-auto":disabled="indexGlobalBusy || rebuildingBranch"
+ @click="emit('rebuild')"
+ >
+ <span:class="rebuildingBranch
+ ? 'icon-[lucide--loader-circle] animate-spin mr-1.5': 'icon-[lucide--refresh-cw] mr-1.5'"
+ />
+ 重建索引
+ </Button>
+ </div>
  </div>
  <!-- Pipeline Overview -->
  <div
@@ -251,6 +297,10 @@ const pipelineSteps = computed( => [
  </p>
  </template>
  </div>
+ <!-- 分支健康（Phase 上提自独立分支索引段） -->
+ <div v-if="branches.length > 0" class="px-5 py-4 border-b border-border/50">
+ <BranchIndexHealthSection:row="selectedBranchRow" />
+ </div>
  <!-- Tabs -->
  <Tabs v-model="activeTab" class=" pt-4">
  <TabsList class="mb-4 w-full justify-start overflow-x-auto">
@@ -295,7 +345,7 @@ const pipelineSteps = computed( => [
  <KnowledgeBaseSection:repository-id="repositoryId" embedded />
  </TabsContent>
  <TabsContent value="details" class="mt-0 space-y-4">
- <IndexStatsPanel:repository-id="repositoryId" />
+ <IndexStatsPanel:repository-id="repositoryId":branch="selectedBranch" />
  <IndexedFilesPanel:repository-id="repositoryId":git-url="gitUrl" />
  <IndexHistoryList:repository-id="repositoryId":git-url="gitUrl" />
  </TabsContent>
