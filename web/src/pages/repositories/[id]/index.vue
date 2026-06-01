@@ -425,7 +425,7 @@ function copyUrl {
  </section>
  <!-- ==================== 知识库 ==================== -->
  <section id="knowledge-base" class="scroll-mt-22">
- <RepositoryKnowledgeHub:repository-id="repository.id":git-url="repository.git_url"
+ <RepositoryKnowledgeHub:repository-id="repository.id":git-url="repository.git_url":selected-branch="selectedBranch"
  />
  </section>
  <!-- ==================== 凭证配置 ==================== -->

@@ -6,6 +6,7 @@ import StatusBadge from '~/components/common/StatusBadge.vue'
 import IndexedFilesPanel from '~/components/repository/IndexedFilesPanel.vue'
 import IndexHistoryList from '~/components/repository/IndexHistoryList.vue'
 import IndexProgressTimeline from '~/components/repository/IndexProgressTimeline.vue'
+import GraphSearchModal from '~/components/repository/GraphSearchModal.vue'
 import IndexStatsPanel from '~/components/repository/IndexStatsPanel.vue'
 import RepositoryGraphCard from '~/components/repository/RepositoryGraphCard.vue'
 import RepositoryIndexCard from '~/components/repository/RepositoryIndexCard.vue'
@@ -27,7 +28,12 @@ import { formatRelativeTime } from '~/lib/relativeTime'
 const props = defineProps<{
  repositoryId: string
  gitUrl: string
+ // 当前检索分支（来自页面 selectedBranch，经 prop 透传给 GraphSearchModal）；
+ // 298 再把 BranchCombobox 上提进 Hub 头部统一单源。
+ selectedBranch?: string | null
 }>
+// 关联搜索弹窗开关（graph tab 内触发入口）
+const showGraphSearch = ref(false)
 const activeTab = useLocalStorage<'index' | 'graph' | 'explore' | 'details'>(`kb-tab-${props.repositoryId}`, 'index')
 const {
  loading,
@@ -271,7 +277,18 @@ const pipelineSteps = computed( => [
  v-if="indexStatus?.index_status === IndexStatus.INDEXING":repository-id="repositoryId":index-history-id="null":changed-files="{}":is-indexing="true"
  />
  </TabsContent>
- <TabsContent value="graph" class="mt-0">
+ <TabsContent value="graph" class="mt-0 space-y-4">
+ <div class="flex items-center justify-end">
+ <Button
+ variant="outline"
+ size="sm"
+ class=" text-xs"
+ @click="showGraphSearch = true"
+ >
+ <span class="icon-[lucide--share-2] mr-1.5" />
+ 关联搜索
+ </Button>
+ </div>
  <RepositoryGraphCard:repository-id="repositoryId" embedded />
  </TabsContent>
  <TabsContent value="explore" class="mt-0">
@@ -283,5 +300,9 @@ const pipelineSteps = computed( => [
  <IndexHistoryList:repository-id="repositoryId":git-url="gitUrl" />
  </TabsContent>
  </Tabs>
+ <!--：关联搜索弹窗，branch 经页面 selectedBranch → Hub → Modal prop 透传 -->
+ <GraphSearchModal
+ v-model:open="showGraphSearch":repository-id="repositoryId":branch="selectedBranch"
+ />
  </div>
 </template>
