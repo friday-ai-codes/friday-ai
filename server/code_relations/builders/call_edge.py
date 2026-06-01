@@ -27,6 +27,8 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  from codegraph.models import CallEdge as CodegraphCallEdge
  from codegraph.models import Symbol
@@ -36,7 +38,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  skipped_callee = 0
  skipped_caller_chunk = 0
  qs = CodegraphCallEdge.objects.filter(
- repository_id=repository.id
+ repository_id=repository.id, branch_name=branch_name
  ).select_related("caller_symbol")
  callee_cache: dict[str, "Symbol | None"] = {}
  async for cedge in qs.aiterator(chunk_size=1000):
@@ -53,7 +55,9 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  if cedge.callee_name not in callee_cache:
  callee_cache[cedge.callee_name] = await sync_to_async(
  Symbol.objects.filter(
- repository_id=repository.id, name=cedge.callee_name
+ repository_id=repository.id,
+ name=cedge.callee_name,
+ branch_name=branch_name,
  ).first
  )
  callee_sym = callee_cache[cedge.callee_name]
@@ -88,6 +92,7 @@ class CallEdgeBuilder(BaseEdgeBuilder):
  "callee_name": callee_name,
  },
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(

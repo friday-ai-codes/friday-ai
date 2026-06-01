@@ -26,6 +26,8 @@ class SameFileEdgeBuilder(BaseEdgeBuilder):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list[ChunkEdge]:
  # 全扫策略（per CONTEXT ）：本 phase 接受全仓 ChunkRegistry
  # 重建全文件 SAME_FILE 边集；dirty_chunk_ids 暂未用于过滤，仅靠
@@ -35,7 +37,9 @@ class SameFileEdgeBuilder(BaseEdgeBuilder):
  @sync_to_async
  def _load_rows -> list[tuple[str, int, uuid.UUID]]:
  return list(
- ChunkRegistry.objects.filter(repository_id=repository.id)
+ ChunkRegistry.objects.filter(
+ repository_id=repository.id, branch_name=branch_name
+ )
  .order_by("file_path", "chunk_index")
  .values_list("file_path", "chunk_index", "chunk_id")
  )
@@ -78,6 +82,7 @@ class SameFileEdgeBuilder(BaseEdgeBuilder):
  "chunk_index_diff": abs(b_idx - a_idx),
  },
  repository=repository,
+ branch_name=branch_name,
  )
  )
  logger.info(
