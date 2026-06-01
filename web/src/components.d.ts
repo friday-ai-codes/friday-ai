@@ -179,6 +179,7 @@ declare module 'vue' {
  GradientEdge: typeof import('./components/workflow/editor/edges/GradientEdge.vue')['default']
  GraphAutoBuildToggle: typeof import('./components/repository/GraphAutoBuildToggle.vue')['default']
  GraphRAGDiffusionTab: typeof import('./components/codegraph/GraphRAGDiffusionTab.vue')['default']
+ GraphSearchModal: typeof import('./components/repository/GraphSearchModal.vue')['default']
  ImportsTab: typeof import('./components/codegraph/ImportsTab.vue')['default']
  IndexedFilesPanel: typeof import('./components/repository/IndexedFilesPanel.vue')['default']
  IndexHistoryList: typeof import('./components/repository/IndexHistoryList.vue')['default']
