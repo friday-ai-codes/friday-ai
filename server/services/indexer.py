@@ -68,6 +68,18 @@ def qdrant_create_collection_by_name(collection_name: str, vector_size: int, hyb
 @sync_to_async # KEEP: Qdrant SDK 同步限制
 def qdrant_upsert_vectors_by_name(collection_name: str, points: list[dict]) -> bool:
  return QdrantService.upsert_vectors_by_name(collection_name, points)
+def _resolve_write_branch(repository: Repository, branch_name: str | None) -> str:
+ """写入侧分支归一化：None/""/==base_branch/==default_branch → ""（base），否则原样。
+ 集中式归一化入口，避免「等于 base 视为空串」的判断散落各 callsite（Pitfall 4）。
+ base 分支来源对齐向量层 ``resolve_branch_for_query``（branch_utils.py）：
+ ``base = repository.base_branch or repository.default_branch``，base_branch 优先回退
+ default_branch。返回 ``""`` 表示 base 路径——配合 ``generate_chunk_id`` 的 base
+ 命名空间，chunk_id 字节不变（293 golden 不回归）。
+ """
+ base = repository.base_branch or repository.default_branch
+ if not branch_name or branch_name == base:
+ return ""
+ return branch_name
 async def update_index_progress(repository_id: str, total: int, processed: int) -> None:
  """Update indexing progress in database."""
  await Repository.objects.filter(id=repository_id).aupdate(
