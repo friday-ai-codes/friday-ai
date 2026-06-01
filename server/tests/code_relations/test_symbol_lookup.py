@@ -32,7 +32,7 @@ async def test_resolve_basic_bisect_hits -> None:
  ]
  mock_client = _scroll_factory(points)
  with patch("code_relations.symbol_lookup.QdrantService.get_client", return_value=mock_client), patch(
- "code_relations.symbol_lookup.QdrantService.get_collection_name", return_value="repo_x"
+ "code_relations.symbol_lookup.get_effective_collection_name", return_value="repo_x"
  ):
  resolver = SymbolChunkResolver("repo-uuid")
  assert await resolver.resolve("src/a.py", 10) == uuid.UUID(CID_A)
@@ -45,7 +45,7 @@ async def test_resolve_lazy_load_and_cache -> None:
  points = [_make_point(CID_A, "src/a.py", 1, 20)]
  mock_client = _scroll_factory(points)
  with patch("code_relations.symbol_lookup.QdrantService.get_client", return_value=mock_client), patch(
- "code_relations.symbol_lookup.QdrantService.get_collection_name", return_value="repo_x"
+ "code_relations.symbol_lookup.get_effective_collection_name", return_value="repo_x"
  ):
  resolver = SymbolChunkResolver("repo-uuid")
  for _ in range(100):
@@ -56,7 +56,7 @@ async def test_resolve_no_call_before_first_resolve -> None:
  points: list[MagicMock] =
  mock_client = _scroll_factory(points)
  with patch("code_relations.symbol_lookup.QdrantService.get_client", return_value=mock_client), patch(
- "code_relations.symbol_lookup.QdrantService.get_collection_name", return_value="repo_x"
+ "code_relations.symbol_lookup.get_effective_collection_name", return_value="repo_x"
  ):
  resolver = SymbolChunkResolver("repo-uuid")
  assert mock_client.scroll.call_count == 0
@@ -70,7 +70,7 @@ async def test_resolve_skip_invalid_uuid -> None:
  ]
  mock_client = _scroll_factory(points)
  with patch("code_relations.symbol_lookup.QdrantService.get_client", return_value=mock_client), patch(
- "code_relations.symbol_lookup.QdrantService.get_collection_name", return_value="repo_x"
+ "code_relations.symbol_lookup.get_effective_collection_name", return_value="repo_x"
  ):
  resolver = SymbolChunkResolver("repo-uuid")
  assert await resolver.resolve("src/a.py", 5) == uuid.UUID(CID_A)
@@ -83,7 +83,7 @@ async def test_resolve_skip_payload_missing_fields -> None:
  ]
  mock_client = _scroll_factory(points)
  with patch("code_relations.symbol_lookup.QdrantService.get_client", return_value=mock_client), patch(
- "code_relations.symbol_lookup.QdrantService.get_collection_name", return_value="repo_x"
+ "code_relations.symbol_lookup.get_effective_collection_name", return_value="repo_x"
  ):
  resolver = SymbolChunkResolver("repo-uuid")
  assert await resolver.resolve("src/a.py", 50) == uuid.UUID(CID_C)
