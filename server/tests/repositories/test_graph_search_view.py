@@ -117,6 +117,9 @@ def _patch_search -> Any:
  "services.retrieval.hybrid_search.HybridSearchService.search",
  new=AsyncMock(return_value=_make_mock_result),
  )
+def _patch_search_capture -> AsyncMock:
+ """返回可断言 call_args 的 search mock（捕获透传的 branch_name）。"""
+ return AsyncMock(return_value=_make_mock_result)
 # ---------------------------------------------------------------------------
 #：RBAC/IDOR 状态码矩阵
 # ---------------------------------------------------------------------------
@@ -224,3 +227,56 @@ def test_results_chunk_id_present(
  assert item["language"] == "python"
  for r in data["results"]:
  assert r["chunk_id"], "results 项 chunk_id 不应为空"
+# ---------------------------------------------------------------------------
+# （view 层）：branch 二段归一化（code-review 296 M2 红线回归）
+# ---------------------------------------------------------------------------
+def test_base_branch_normalized_to_none(
+ client_a: APIClient, repo_indexed: Repository
+) -> None:
+ """传 base 分支名（==default_branch）→ search 收到 branch_name=None（base，不漏边）。"""
+ search_mock = _patch_search_capture
+ # repo_indexed.default_branch == "main"；resolve_branch_for_query 对 base 返回 base 名。
+ with patch(
+ "repositories.graph_search_views.resolve_branch_for_query",
+ new=AsyncMock(return_value=("main", None)),
+ ), patch(
+ "services.retrieval.hybrid_search.HybridSearchService.search",
+ new=search_mock,
+ ):
+ response = client_a.post(
+ _url(repo_indexed),
+ {"query": "auth login", "branch": "main"},
+ format="json",
+ )
+ assert response.status_code == 200, getattr(response, "data", response)
+ assert search_mock.call_args.kwargs["branch_name"] is None
+def test_feature_branch_passed_through(
+ client_a: APIClient, repo_indexed: Repository
+) -> None:
+ """传 feature 分支名（!=default_branch）→ search 收到该分支名（branch-aware overlay）。"""
+ search_mock = _patch_search_capture
+ with patch(
+ "repositories.graph_search_views.resolve_branch_for_query",
+ new=AsyncMock(return_value=("feature-x", None)),
+ ), patch(
+ "services.retrieval.hybrid_search.HybridSearchService.search",
+ new=search_mock,
+ ):
+ response = client_a.post(
+ _url(repo_indexed),
+ {"query": "auth login", "branch": "feature-x"},
+ format="json",
+ )
+ assert response.status_code == 200, getattr(response, "data", response)
+ assert search_mock.call_args.kwargs["branch_name"] == "feature-x"
+def test_top_k_over_limit_400(
+ client_a: APIClient, repo_indexed: Repository
+) -> None:
+ """top_k 超上界（>50）→ 400（code-review 296 M1：防资源滥用）。"""
+ with _patch_search:
+ response = client_a.post(
+ _url(repo_indexed),
+ {"query": "auth login", "top_k": 1000000},
+ format="json",
+ )
+ assert response.status_code == 400
