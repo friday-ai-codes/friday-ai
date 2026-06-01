@@ -90,9 +90,9 @@ class TestGraphWriterWriteBundle:
  outer_thread = threading.get_ident
  graph_writer_threads: list[int] =
  original_sync = GraphWriter.write_bundle_sync
- def _spy_sync(self, repository_id, bundle):
+ def _spy_sync(self, repository_id, bundle, *, branch_name=""):
  graph_writer_threads.append(threading.get_ident)
- return original_sync(self, repository_id, bundle)
+ return original_sync(self, repository_id, bundle, branch_name=branch_name)
  from services.indexer import IndexerService
  # 用 monkeypatch 替代：直接 setattr 到类
  GraphWriter.write_bundle_sync = _spy_sync # type: ignore[assignment]
