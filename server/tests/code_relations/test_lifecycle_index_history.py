@@ -108,7 +108,9 @@ async def test_completion_marks_failed_on_exception(repository) -> None:
  raise RuntimeError("simulated builder crash")
  # patch enqueue_edge_build 自己 spawn 一个会抛错的 task，模拟"成功 dispatch
  # 但后台执行失败"的语义；done_callback 应识别 task.exception 并写 FAILED。
- async def _fake_enqueue(repo_id: str, dirty_ids: list[uuid.UUID]) -> None:
+ async def _fake_enqueue(
+ repo_id: str, dirty_ids: list[uuid.UUID], *, branch_name: str = ""
+ ) -> None:
  task = asyncio.create_task(_boom)
  tasks_module._BACKGROUND_TASKS.add(task)
  task.add_done_callback(tasks_module._BACKGROUND_TASKS.discard)
@@ -142,7 +144,9 @@ async def test_multi_task_completion_marks_completed_only_after_last(
  completed_evts = [asyncio.Event, asyncio.Event]
  async def _slow_task(idx: int) -> None:
  await completed_evts[idx].wait
- async def _fake_enqueue(repo_id: str, dirty_ids: list[uuid.UUID]) -> None:
+ async def _fake_enqueue(
+ repo_id: str, dirty_ids: list[uuid.UUID], *, branch_name: str = ""
+ ) -> None:
  for i in range(2):
  t = asyncio.create_task(_slow_task(i))
  tasks_module._BACKGROUND_TASKS.add(t)
@@ -165,7 +169,9 @@ async def test_no_task_spawned_keeps_running_not_failed(repository) -> None:
  """ regression：enqueue 合法不 spawn task（dedup 等）→ 保 RUNNING，不写 FAILED。"""
  history = await _make_history(repository)
  dirty = [uuid.uuid4]
- async def _no_op(repo_id: str, dirty_ids: list[uuid.UUID]) -> None:
+ async def _no_op(
+ repo_id: str, dirty_ids: list[uuid.UUID], *, branch_name: str = ""
+ ) -> None:
  return None
  with patch.object(tasks_module, "enqueue_edge_build", side_effect=_no_op):
  await enqueue_edge_build_for_history(str(repository.id), dirty, history.id)

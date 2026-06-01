@@ -193,10 +193,11 @@ async def enqueue_edge_build_for_history(
  dirty_chunk_ids: 本次 indexer 写入/更新的 chunk_id 列表
  history_id: 关联的 IndexHistory 行 ID；None 时跳过 lifecycle 更新，
  直接透传到 `enqueue_edge_build`（保兼容无 history 调用方）
- branch_name: 写入侧归一化后的分支名（""=base）。Phase 透传链入口
- 先在签名就位；将其继续下发给 `enqueue_edge_build` → orchestrator →
- 6 EdgeBuilder（查询加 branch 过滤、写 ChunkEdge 打 branch）的完整透传
- 由 Phase 落地。本 plan 接受该 kwarg 以保透传链自洽通过 mypy。
+ branch_name: 写入侧归一化后的分支名（""=base）。Phase 接通完整
+ 透传链：继续下发给 `enqueue_edge_build` → orchestrator
+ `_run_all_builders_and_sync_payload` → 6 EdgeBuilder.build（查询加
+ branch 过滤、写 ChunkEdge 打 branch、SemanticEdge/Resolver 切 overlay
+ collection）。base 路径透传 "" 保持字节不变。
  异常隔离（per CONTEXT ）：函数体顶层 try/except 包裹，任何失败仅 log
  warning，不重抛——indexer 主流程不会被 reconcile 异常拉下水。
  """
@@ -225,7 +226,9 @@ async def enqueue_edge_build_for_history(
  # 误归到自己 `new_tasks`。`test_enqueue_edge_build_no_await_in_body`
  # 单测固化此契约（inspect.getsource regex 检查），改动会立刻测试失败。
  before_tasks = set(_tasks_module._BACKGROUND_TASKS)
- await _tasks_module.enqueue_edge_build(repository_id, dirty_chunk_ids)
+ await _tasks_module.enqueue_edge_build(
+ repository_id, dirty_chunk_ids, branch_name=branch_name
+ )
  if history_id is None:
  return
  new_tasks = _tasks_module._BACKGROUND_TASKS - before_tasks

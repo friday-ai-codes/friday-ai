@@ -13,10 +13,13 @@ if TYPE_CHECKING:
 __all__ = ["BaseEdgeBuilder"]
 class BaseEdgeBuilder(abc.ABC):
  """所有 EdgeBuilder 的抽象基类。
- 子类必须实现 `build(repository, dirty_chunk_ids)`：
+ 子类必须实现 `build(repository, dirty_chunk_ids, *, branch_name="")`：
  - `repository` 为 `repositories.Repository` 实例（带 .id / .git_url 等）。
  - `dirty_chunk_ids` 为本次索引刚写入或更新的 chunk_id 列表（来源：indexer
  `_upsert_chunk_registry_batch` 返回的 registry_rows，Plan 转换）。
+ - `branch_name` 为写入侧归一化后的分支名（""=base，Phase 透传链）。
+ 子类据此对 Symbol/ChunkRegistry/ChunkEdge 查询加 branch 过滤，并把
+ branch_name 打到产出的 ChunkEdge 上（base 路径 "" 保持字节不变）。
  - 返回 `list[ChunkEdge]`：**未 save 的实例**，统一交由 orchestrator 走
  `storage.bulk_insert_edges(...)` 落库（避免每 builder 触发独立写事务）。
  builder 失败时直接抛异常；orchestrator 用 `asyncio.gather(..., return_exceptions=True)`
@@ -29,5 +32,7 @@ class BaseEdgeBuilder(abc.ABC):
  self,
  repository: "Repository",
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
  ) -> list["ChunkEdge"]:
  """构建本 builder 负责的 ChunkEdge 实例列表（未 save）。"""
