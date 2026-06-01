@@ -5,6 +5,7 @@ import { useClipboard } from '@vueuse/core'
 import { useHead } from '@vueuse/head'
 import { IndexStatus, repositoriesApi } from '~/api/repositories'
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue'
+import CompactEmptyState from '~/components/common/CompactEmptyState.vue'
 import AnchorNavLayout from '~/components/layout/AnchorNavLayout.vue'
 import AISummarySection from '~/components/repository/AISummarySection.vue'
 import CredentialModal from '~/components/repository/CredentialModal.vue'
@@ -366,12 +367,19 @@ function copyUrl {
  <span class="text-xs text-muted-foreground">({{ repository.spaces?.length || 0 }})</span>
  </div>
  <div class="">
- <div v-if="!repository.spaces || repository.spaces.length === 0" class="text-center py-6">
- <span class="icon-[lucide--folder] text-2xl text-muted-foreground/40 block mb-2" />
- <p class="text-sm text-muted-foreground">
- 暂无关联空间
- </p>
- </div>
+ <CompactEmptyState
+ v-if="!repository.spaces || repository.spaces.length === 0"
+ icon="lucide--folder"
+ title="暂无关联空间"
+ description="将仓库关联到空间后，可在空间内统一管理与协作"
+ >
+ <Button as-child size="sm" class=" text-xs">
+ <RouterLink to="/spaces">
+ <span class="icon-[lucide--folder] mr-1.5" />
+ 前往空间管理
+ </RouterLink>
+ </Button>
+ </CompactEmptyState>
  <div v-else class="space-y-1.5">
  <RouterLink
  v-for="space in repository.spaces":key="space.id":to="`/spaces/${space.id}`"
@@ -441,16 +449,17 @@ function copyUrl {
  </div>
  </div>
  </div>
- <div v-else class="text-center py-6">
- <span class="icon-[lucide--lock] text-2xl text-muted-foreground/40 block mb-2" />
- <p class="text-sm text-muted-foreground mb-3">
- 尚未配置凭证
- </p>
+ <CompactEmptyState
+ v-else
+ icon="lucide--lock"
+ title="尚未配置凭证"
+ description="配置 SSH 密钥或 Access Token 后即可拉取私有仓库"
+ >
  <Button size="sm" class=" text-xs" @click="credentialModalOpen = true">
  <span class="icon-[lucide--key] mr-1.5" />
  配置凭证
  </Button>
- </div>
+ </CompactEmptyState>
  </div>
  </div>
  </section>
