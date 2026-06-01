@@ -119,14 +119,23 @@ async def test_history_id_threaded(repository, settings, monkeypatch) -> None:
  monkeypatch.setattr(
  "code_relations.lifecycle.enqueue_edge_build_for_history", _fake_enqueue
  )
- # fallback 查询守门：history_id 透传时不应触碰 IndexHistory.objects
+ # fallback 查询守门：history_id 透传时不应触发 IndexHistory **fallback 读**
+ # （filter(...).order_by(...).values_list(...)）。但 Phase 的
+ # per-run delta 回填会合法地调 filter(id=running_history).aupdate(...) 写本次
+ # delta —— 该写路径应放行，只拦截 fallback 读路径。
  from repositories.models import IndexHistory
- class _BoomManager:
- def filter(self, *args: object, **kwargs: object) -> object:
+ class _BackfillOnlyQuerySet:
+ async def aupdate(self, **kwargs: object) -> int:
+ # per-run delta 回填写（keyed by 已知 history_id），放行
+ return 1
+ def order_by(self, *args: object, **kwargs: object) -> object:
  raise AssertionError(
- "history_id 透传时不应触发 IndexHistory fallback 查询"
+ "history_id 透传时不应触发 IndexHistory fallback 读查询"
  )
- monkeypatch.setattr(IndexHistory, "objects", _BoomManager)
+ class _FallbackGuardManager:
+ def filter(self, *args: object, **kwargs: object) -> object:
+ return _BackfillOnlyQuerySet
+ monkeypatch.setattr(IndexHistory, "objects", _FallbackGuardManager)
  # 后置 backfill hook 屏蔽，保测试快速且隔离 DB/Service
  monkeypatch.setattr(
  "code_relations.symbol_chunk_binding.backfill_symbol_chunk_ids",
