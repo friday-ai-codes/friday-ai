@@ -54,6 +54,8 @@ def snapshot_background_tasks -> set[asyncio.Task[None]]:
 async def enqueue_edge_build(
  repository_id: str,
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
 ) -> None:
  """Fire-and-forget 触发 6 builder 并发构建 + payload 同步。
  立即 return（不等待 builders 完成），由 `asyncio.create_task` 在背景执行
@@ -67,6 +69,13 @@ async def enqueue_edge_build(
  repository_id: 仓库 UUID 字符串
  dirty_chunk_ids: 本次 indexer 写入或更新的 chunk_id 列表；空 list →
  直接 return 不 spawn task
+ branch_name: 写入侧归一化后的分支名（""=base，Phase 透传链）。
+ 透传给 orchestrator → 6 EdgeBuilder.build；feature 分支据此过滤
+ Symbol/ChunkRegistry/ChunkEdge 查询并把 branch_name 打到写入的边上。
+ **无 await 后再 spawn task 的隐式契约：** 本函数体内不得引入任何
+ `await`（`lifecycle.py` 的 before/after `_BACKGROUND_TASKS` diff 依赖此契约，
+ `test_enqueue_edge_build_no_await_in_body` 守门）。加 `branch_name` 形参不引
+ 入 await，仅在 `create_task` 闭包透传，安全。
  """
  if not dirty_chunk_ids:
  logger.debug(
@@ -75,7 +84,9 @@ async def enqueue_edge_build(
  )
  return
  task = asyncio.create_task(
- _run_all_builders_and_sync_payload(repository_id, dirty_chunk_ids)
+ _run_all_builders_and_sync_payload(
+ repository_id, dirty_chunk_ids, branch_name=branch_name
+ )
  )
  _BACKGROUND_TASKS.add(task)
  task.add_done_callback(_BACKGROUND_TASKS.discard)
@@ -88,6 +99,8 @@ async def enqueue_edge_build(
 async def _run_all_builders_and_sync_payload(
  repository_id: str,
  dirty_chunk_ids: list[uuid.UUID],
+ *,
+ branch_name: str = "",
 ) -> None:
  """6 builder 并发跑 + 统一 bulk_insert_edges + 单次 batch_set_payload。
  per：6 builder 全部完成后**统一**调一次 `batch_set_payload`，不是
@@ -121,7 +134,10 @@ async def _run_all_builders_and_sync_payload(
  results: list[list[ChunkEdge] | BaseException] = (
  list(
  await asyncio.gather(
- *[b.build(repo, dirty_chunk_ids) for b in builders],
+ *[
+ b.build(repo, dirty_chunk_ids, branch_name=branch_name)
+ for b in builders
+ ],
  return_exceptions=True,
  )
  )
