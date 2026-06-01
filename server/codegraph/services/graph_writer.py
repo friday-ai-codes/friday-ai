@@ -245,15 +245,20 @@ class GraphWriter:
  # - 异常不在内部 catch——按调用方（indexer）决定降级策略，配合
  # transaction.atomic 自动 rollback。
  # =========================================================================
- def delete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
+ def delete_for_files(
+ self, repository_id: str, file_paths: list[str], *, branch_name: str = "",
+ ) -> int:
  """按文件批量删除 Symbol / ImportEdge / Endpoint / 模块级 CallEdge（同步版）。
  CallEdge.caller_symbol 现为 SET_NULL —— 删除 Symbol 只把边的 caller_symbol
  置 NULL、**不**级联删边（Pitfall 2）。函数内边与模块级边的 caller_file 都
  等于其所在文件，统一按 caller_file__in 显式删除，是唯一清理路径，与 Symbol
- 删除无耦合（不依赖任何 FK 级联）。
+ 删除无耦合（不依赖任何 FK 级联）。：4 个 __in 删除 filter 全部带 branch_name —— feature 孤儿清理
+ 加 branch_name=<feature> 过滤后只清本分支行，base 行（branch_name=""）绝不
+ 被删（Pitfall 1）。默认 ""=base，现有调用方行为字节不变。
  Args:
  repository_id: 仓库 UUID 字符串
  file_paths: 要清理的文件路径列表
+ branch_name: 分支维度（""=base）。仅删除该分支的图谱行。
  Returns:
  四表删除行数总和（int）。空 file_paths 直接返回 0。
  Raises:
@@ -264,15 +269,19 @@ class GraphWriter:
  with transaction.atomic:
  symbols_deleted, _ = Symbol.objects.filter(
  repository_id=repository_id, file_path__in=file_paths,
+ branch_name=branch_name,
  ).delete
  imports_deleted, _ = ImportEdge.objects.filter(
  repository_id=repository_id, source_file__in=file_paths,
+ branch_name=branch_name,
  ).delete
  endpoints_deleted, _ = Endpoint.objects.filter(
  repository_id=repository_id, file_path__in=file_paths,
+ branch_name=branch_name,
  ).delete
  call_edges_deleted, _ = CallEdge.objects.filter(
  repository_id=repository_id, caller_file__in=file_paths,
+ branch_name=branch_name,
  ).delete
  total = (
  int(symbols_deleted) + int(imports_deleted)
@@ -281,6 +290,7 @@ class GraphWriter:
  logger.info(
  "graph_orphan_cleanup",
  repository_id=repository_id,
+ branch_name=branch_name,
  file_count=len(file_paths),
  symbols_deleted=int(symbols_deleted),
  import_edges_deleted=int(imports_deleted),
@@ -289,13 +299,16 @@ class GraphWriter:
  total_deleted=total,
  )
  return total
- async def adelete_for_files(self, repository_id: str, file_paths: list[str]) -> int:
+ async def adelete_for_files(
+ self, repository_id: str, file_paths: list[str], *, branch_name: str = "",
+ ) -> int:
  """delete_for_files 的 async 包装器（GRAPH-）。
  通过 sync_to_async(thread_sensitive=False) 调度到独立线程池，与
- write_bundle 同模式，避免与 ASGI 请求线程共享 SingleThreadExecutor。
+ write_bundle 同模式，避免与 ASGI 请求线程共享 SingleThreadExecutor。：branch_name 透传给 sync 实现，feature 孤儿清理只清本分支行。
  Args:
  repository_id: 仓库 UUID 字符串
  file_paths: 要清理的文件路径列表
+ branch_name: 分支维度（""=base）。
  Returns:
  三表删除行数总和（int）。空 file_paths 直接返回 0，不调度到线程池。
  """
@@ -303,7 +316,7 @@ class GraphWriter:
  return 0
  return await sync_to_async(
  self.delete_for_files, thread_sensitive=False,
- )(repository_id, file_paths)
+ )(repository_id, file_paths, branch_name=branch_name)
  # =========================================================================
  # Phase: ApiWrapper + ApiCallSite 写入
  # =========================================================================
@@ -312,24 +325,32 @@ class GraphWriter:
  repository_id: str,
  file_path: str,
  wrappers: "list[ApiWrapperData]",
+ *,
+ branch_name: str = "",
  ) -> int:
  """Per-file 幂等写入 ApiWrapper（先 delete 再 bulk_create）。
  与 write_bundle_sync 的 per-file 幂等策略一致：先删除该文件旧记录，
- 再 bulk_create 新记录，保证重复运行不重复插入。
+ 再 bulk_create 新记录，保证重复运行不重复插入。：293 已给 ApiWrapper 加 branch_name 字段 + unique 含 branch_name，
+ 故 filter/构造同步带 branch_name，避免 base+feature 双写撞 unique（Pitfall 1）。
+ **ApiCallSite 不动**：293 未给 ApiCallSite 加 branch 维度，per-wrapper 删除
+ 已隔离（write_api_call_sites_for_wrapper 保持原样）。调用入口在 /04 透传。
  Args:
  repository_id: 仓库 UUID 字符串
  file_path: 源文件路径（ApiWrapper 所在文件）
  wrappers: ApiWrapperData 列表
+ branch_name: 分支维度（""=base）。
  Returns:
  写入的 ApiWrapper 数量
  """
  with transaction.atomic:
  ApiWrapper.objects.filter(
- repository_id=repository_id, file_path=file_path
+ repository_id=repository_id, file_path=file_path,
+ branch_name=branch_name,
  ).delete
  objs = [
  ApiWrapper(
  repository_id=repository_id,
+ branch_name=branch_name,
  file_path=w.file_path,
  function_symbol=w.function_symbol,
  http_method=w.http_method,
