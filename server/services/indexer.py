@@ -918,6 +918,10 @@ class IndexerService:
  repo_path=repo_path,
  file_paths=graph_file_paths,
  repository_id=self.repository_id,
+ # base 全量索引：硬传 ""，保 base chunk_id/图谱行字节不变（Pitfall 4）。
+ # 本路径无本次 IndexHistory.id 在 scope，history_id=None 走 lifecycle fallback。
+ branch_name="",
+ history_id=None,
  )
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_file_paths)
@@ -1217,10 +1221,14 @@ class IndexerService:
  # Phase GRAPH-：入口 reset Repository 5 字段。
  await reset_repository_graph_progress(self.repository_id)
  try:
+ #：feature overlay 索引，归一化分支名后透传（==base 仍归 ""）。
+ # run_branch_index 无本次 IndexHistory.id 在 scope，history_id=None 走 fallback。
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ branch_name=_resolve_write_branch(repository, branch_name),
+ history_id=None,
  )
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
@@ -1640,10 +1648,23 @@ class IndexerService:
  # Phase GRAPH-：入口 reset Repository 5 字段。
  await reset_repository_graph_progress(self.repository_id)
  try:
+ #：归一化分支名 + 透传本次 IndexHistory.id（history_id 形参）。
+ # 本函数无 repository 对象在 scope，取一次后走集中式 _resolve_write_branch；
+ # 取不到时退用 is_base_branch 标记归一化（base→""，feature→branch_name）。
+ _repo_for_branch = await Repository.objects.filter(
+ id=self.repository_id
+ ).afirst
+ _write_branch = (
+ _resolve_write_branch(_repo_for_branch, branch_name)
+ if _repo_for_branch is not None
+ else ("" if (branch_name is None or is_base_branch) else branch_name)
+ )
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ branch_name=_write_branch,
+ history_id=history_id,
  )
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
@@ -2005,10 +2026,23 @@ class IndexerService:
  total=len(graph_files),
  )
  try:
+ #：归一化分支名 + 透传本次 IndexHistory.id（history_id 形参）。
+ # 本函数无 repository 对象在 scope，取一次后走集中式 _resolve_write_branch；
+ # 取不到时退用 is_base_branch 标记归一化（base→""，feature→branch_name）。
+ _repo_for_branch = await Repository.objects.filter(
+ id=self.repository_id
+ ).afirst
+ _write_branch = (
+ _resolve_write_branch(_repo_for_branch, branch_name)
+ if _repo_for_branch is not None
+ else ("" if (branch_name is None or is_base_branch) else branch_name)
+ )
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
  repository_id=self.repository_id,
+ branch_name=_write_branch,
+ history_id=history_id,
  )
  gbh.status = GraphBuildHistoryStatus.COMPLETED
  gbh.files_total = len(graph_files)
