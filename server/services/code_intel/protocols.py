@@ -36,11 +36,15 @@ class SymbolCapableProvider(BaseCodeProvider, Protocol):
  names: list[str],
  *,
  repository_ids: list[str],
+ branch_name: str | None = None,
  ) -> list[dict[str, Any]]:
  """按符号名在指定仓库范围内做 iexact + icontains 回退查找。
  Args:
  names: 候选符号名列表（已过 keyword 过滤）。
  repository_ids: 限定的仓库 id 范围（不可为空）。
+ branch_name: 分支维度过滤（base/overlay 合并语义同 hop2）。
+ ``None`` / ``""`` → base 语义（仅 base 行），现存不传 branch 的
+ callsite 向后兼容；``"feature"`` → 合并 base + 本分支符号。
  Returns:
  符号 dict 列表；未命中返回空列表，不抛错。
  """
