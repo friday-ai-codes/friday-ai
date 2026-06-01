@@ -37,8 +37,14 @@ class GraphSearchRequestSerializer(serializers.Serializer):
  branch = serializers.CharField(
  required=False, allow_blank=True, allow_null=True, default=None
  )
- top_k = serializers.IntegerField(required=False, default=30, min_value=1)
- max_tokens = serializers.IntegerField(required=False, default=8000, min_value=1)
+ # code-review 296 M1：加上界防资源滥用（已认证用户传超大值压垮 Qdrant/ORM/响应体）。
+ # top_k 上界对齐 CodeSearchView（max_value=50）；max_tokens 给合理上限。
+ top_k = serializers.IntegerField(
+ required=False, default=30, min_value=1, max_value=50
+ )
+ max_tokens = serializers.IntegerField(
+ required=False, default=8000, min_value=1, max_value=32000
+ )
 class GraphSearchView(APIView):
  """POST /api/repositories/{id}/graph-search/
  仓库级 GraphRAG 关联搜索（adrf 异步 APIView）。
