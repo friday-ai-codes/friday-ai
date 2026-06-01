@@ -748,6 +748,16 @@ class IndexHistorySerializer(serializers.Serializer):
  # Phase：跨仓 API 匹配状态（Phase migration 0023 已落字段）
  cross_repo_match_count = serializers.IntegerField
  cross_repo_built_at = serializers.DateTimeField(allow_null=True)
+ # Phase：per-run delta（本次索引新增，区别于累计 edge_count）
+ # 加字段后 SSE running_history 段（running_payload）天然携带 delta，供 展示。
+ symbols_added = serializers.IntegerField
+ imports_added = serializers.IntegerField
+ calls_added = serializers.IntegerField
+ endpoints_added = serializers.IntegerField
+ chunk_edges_added = serializers.IntegerField
+ # Phase：行级 diff（nullable，null 原样透传给前端显示 "—"）
+ lines_added = serializers.IntegerField(allow_null=True)
+ lines_deleted = serializers.IntegerField(allow_null=True)
 class IndexedFileSerializer(serializers.Serializer):
  """：已索引文件清单单行序列化。"""
  file_path = serializers.CharField
