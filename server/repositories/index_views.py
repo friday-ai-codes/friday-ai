@@ -308,8 +308,13 @@ class GraphRagStatusView(APIView):
  """
  permission_classes = [IsAuthenticated]
  async def get(self, request: Any, repository_id: str) -> Response:
- """返回真实 ChunkEdge 计数 + 综合状态 + 最近同步时间。"""
+ """返回真实 ChunkEdge 计数 + 综合状态 + 最近同步时间。：可选 ``?branch=`` 参数支持 branch-aware 计数。归一化复用
+ ``resolve_branch_for_query``（读侧标准归一化，绝不自己写
+ ``if branch == default_branch``）。base 行 ``branch_name=""``、feature 行
+ ``branch_name=<分支名>``，feature 查询走 base+overlay 合并。
+ """
  from code_relations.models import ChunkEdge
+ from services.branch_utils import resolve_branch_for_query
  try:
  await Repository.objects.aget(id=repository_id, is_deleted=False)
  except Repository.DoesNotExist:
@@ -317,8 +322,23 @@ class GraphRagStatusView(APIView):
  {"detail": "仓库不存在"},
  status=status.HTTP_404_NOT_FOUND,
  )
+ # branch 归一化：传入分支与 base（branch=None）各解析一次，二者相等即视为
+ # ==base，统一吸收 "" vs default_branch 二义（不自己判 default_branch）。
+ branch = request.query_params.get("branch")
+ effective_branch, _ = await resolve_branch_for_query(repository_id, branch)
+ base_branch_name, _ = await resolve_branch_for_query(repository_id, None)
+ if not effective_branch or effective_branch == base_branch_name:
+ # 缺省/==base：只算 branch_name="" 的干净 base 计数（向后兼容）。存量纯
+ # base 仓库全部 branch_name=""（293 迁移 + 清污前置保证），该过滤
+ # 等价于旧全表 count，缺省口径不漂移（Pitfall B）。
  edge_count = await ChunkEdge.objects.filter(
- repository_id=repository_id
+ repository_id=repository_id, branch_name=""
+ ).acount
+ else:
+ # feature：base + overlay 合并计数（base 行 "" + 该分支 overlay 行）。
+ edge_count = await ChunkEdge.objects.filter(
+ repository_id=repository_id,
+ branch_name__in=["", effective_branch],
  ).acount
  # 最近一条索引历史：取 graph_build_status（兜底状态）与 payload_synced_at（时间戳展示）
  latest = (
