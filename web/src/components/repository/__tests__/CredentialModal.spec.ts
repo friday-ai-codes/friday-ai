@@ -15,6 +15,7 @@ import type { GitCredential } from '~/types'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
@@ -88,6 +89,9 @@ function mountModal(props: Record<string, unknown> = {}) {
 }
 describe('credentialModal', => {
  beforeEach( => {
+ // 弹窗走 repositoriesStore.setAccessToken（同步 has_credential，code-review ）；
+ // store action 内部仍调用被 mock 的 repositoriesApi.setAccessToken，故断言 API 调用不变。
+ setActivePinia(createPinia)
  vi.clearAllMocks
  vi.mocked(repositoriesApi.setAccessToken).mockResolvedValue(makeCredential)
  })
