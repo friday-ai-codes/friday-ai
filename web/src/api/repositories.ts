@@ -310,9 +310,11 @@ export const repositoriesApi = {
  },
  /**
  * Phase: 获取 GraphRAG 真实状态（直接 count ChunkEdge 表，不依赖 IndexHistory 快照）
+ * Phase: 可选 branch 参数（消费 295 后端 ?branch= 口径，base+overlay 合并）；
+ * `branch || undefined` 防 null→"null"，base 态不发 branch query（与现状字节级一致）。
  */
- getGraphRagStatus: async (id: string): Promise<GraphRagStatusResponse> => {
- return get<GraphRagStatusResponse>(`/repositories/${id}/index/graphrag-status/`)
+ getGraphRagStatus: async (id: string, branch?: string | null): Promise<GraphRagStatusResponse> => {
+ return get<GraphRagStatusResponse>(`/repositories/${id}/index/graphrag-status/`, { branch: branch || undefined })
  },
  /**
  * 删除索引
@@ -417,9 +419,11 @@ export const repositoriesApi = {
  },
  /**
  * 获取索引统计
+ * Phase: 可选 branch 参数（edge/图谱维度 branch-aware；chunks_total 仍走 base collection）。
+ * `branch || undefined` 防 null→"null"，base 态不发 branch query。
  */
- getIndexStats: async (id: string): Promise<IndexStatsResponse> => {
- return get<IndexStatsResponse>(`/repositories/${id}/index/stats/`)
+ getIndexStats: async (id: string, branch?: string | null): Promise<IndexStatsResponse> => {
+ return get<IndexStatsResponse>(`/repositories/${id}/index/stats/`, { branch: branch || undefined })
  },
  /**
  * 获取集合健康状态

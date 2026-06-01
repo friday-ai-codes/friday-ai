@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { IndexStatsResponse } from '~/api/repositories'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { repositoriesApi } from '~/api/repositories'
 import { Progress } from '~/components/ui/progress'
 const props = defineProps<{
  repositoryId: string
+ // Phase: 当前检索分支，切分支即时重拉统计（edge/图谱维度 branch-aware）
+ branch?: string | null
 }>
 const loading = ref(true)
 const stats = ref<IndexStatsResponse | null>(null)
@@ -13,7 +15,7 @@ async function loadStats {
  loading.value = true
  error.value = false
  try {
- stats.value = await repositoriesApi.getIndexStats(props.repositoryId)
+ stats.value = await repositoriesApi.getIndexStats(props.repositoryId, props.branch)
  }
  catch {
  error.value = true
@@ -75,6 +77,7 @@ function getPieSlices(distribution: Record<string, number>) {
  })
 }
 onMounted(loadStats)
+watch( => props.branch, loadStats)
 </script>
 <template>
  <div class="card">
