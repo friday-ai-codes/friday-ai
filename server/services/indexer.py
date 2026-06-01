@@ -495,6 +495,47 @@ def _parse_git_diff_output(output: str) -> list[FileDiff]:
  diffs.append(FileDiff(old_path, DiffAction.DELETE))
  diffs.append(FileDiff(new_path, DiffAction.ADD))
  return diffs
+def _parse_numstat_output(output: str) -> tuple[int, int]:
+ """解析 git diff --numstat -z 输出，汇总 (lines_added, lines_deleted)。
+ Phase（与 _parse_git_diff_output 并列，绝不改其函数体）。
+ -z 模式每条记录形如 ``added\\tdeleted\\t<path>\\0``；rename 时为
+ ``added\\tdeleted\\t\\0<old>\\0<new>\\0``（path 字段为空，须额外消费 old/new
+ 两个 NUL 路径字段）。二进制文件 added/deleted 为 ``-``，该文件计 0（不累加，
+ 区别于真实 0）。解析不出数字的脏记录跳过（不抛错），保持鲁棒。
+ Args:
+ output: ``git diff --numstat -z`` 的 stdout 文本（已 decode）。
+ Returns:
+ tuple[int, int]: (新增行数汇总, 删除行数汇总)，均 >= 0。
+ """
+ total_added = 0
+ total_deleted = 0
+ tokens = output.split("\0")
+ i = 0
+ n = len(tokens)
+ while i < n:
+ token = tokens[i]
+ if not token:
+ i += 1
+ continue
+ parts = token.split("\t")
+ if len(parts) < 3:
+ # 非预期格式 / 脏记录，跳过不抛错
+ i += 1
+ continue
+ added_str, deleted_str, path = parts[0], parts[1], parts[2]
+ # rename：path 字段为空 → 后随 old/new 两个独立 NUL 字段，消费掉避免污染
+ if path == "":
+ i += 2
+ # 二进制文件 added/deleted 输出 "-" → 该文件计 0（不累加）
+ if added_str != "-" and deleted_str != "-":
+ try:
+ total_added += int(added_str)
+ total_deleted += int(deleted_str)
+ except ValueError:
+ # 前两列非数字的脏记录跳过
+ pass
+ i += 1
+ return total_added, total_deleted
 def _build_summary_text(files_added: int, files_modified: int, files_deleted: int) -> str:
  """生成人可读的差异摘要文本。"""
  parts: list[str] =
@@ -1353,6 +1394,45 @@ class IndexerService:
  deleted_file_paths = [
  d.file_path for d in diffs if d.action == DiffAction.DELETE
  ]
+ # Phase（Pitfall 6）：行级 diff 采集，三态落库。
+ # 在既有 --name-status 之后对同一对 SHA 追加 numstat（已 fetch 对象的 diff
+ # 极廉价）。三态：numstat 成功 → 真实值（含真实 0，二进制文件在解析函数内
+ # 计 0）；returncode≠0 / 超时 / 解析异常 → None（绝不写 0），降级写
+ # lines_diff_fallback structlog warning 且不抛错、不阻断索引。
+ # 全量索引（run_full_index）根本不走本函数 → 字段保持 default=None（天然 null）。
+ # 口径（Open Question 1）：numstat 失败即写 null 的诚实降级，本函数内不主动
+ # 调 _deepen_for_merge_base 重试（加深作后续优化）。
+ lines_added: int | None = None
+ lines_deleted: int | None = None
+ try:
+ numstat_proc = await asyncio.create_subprocess_exec(
+ "git", "diff", "--numstat", "-z", "--find-renames", from_sha, to_sha,
+ cwd=repo_path,
+ stdout=asyncio.subprocess.PIPE,
+ stderr=asyncio.subprocess.PIPE,
+ )
+ numstat_out, _ = await asyncio.wait_for(
+ numstat_proc.communicate, timeout=30.0
+ )
+ if numstat_proc.returncode == 0:
+ lines_added, lines_deleted = _parse_numstat_output(
+ numstat_out.decode
+ )
+ else:
+ logger.warning(
+ "lines_diff_fallback",
+ reason="numstat_returncode",
+ returncode=numstat_proc.returncode,
+ repository_id=self.repository_id,
+ )
+ except Exception as exc: # noqa: BLE001 —— 诚实降级，不阻断索引
+ logger.warning(
+ "lines_diff_fallback",
+ reason="numstat_exception",
+ error=str(exc),
+ repository_id=self.repository_id,
+ )
+ lines_added = lines_deleted = None
  if history_id:
  from repositories.models import IndexHistory
  await IndexHistory.objects.filter(id=history_id).aupdate(
@@ -1371,6 +1451,9 @@ class IndexerService:
  len(modified_file_paths),
  len(deleted_file_paths),
  ),
+ # 三态：成功为真实值（含 0），失败/全量为 None（不可计算，前端显示 "—"）
+ lines_added=lines_added,
+ lines_deleted=lines_deleted,
  )
  if not diffs:
  logger.info("no_changes_detected", repository_id=self.repository_id)
