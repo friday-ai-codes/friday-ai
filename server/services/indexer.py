@@ -1201,8 +1201,11 @@ class IndexerService:
  self._init_graph_services
  if self._graph_writer is not None:
  try:
+ #：feature overlay 删除孤儿必须带 branch_name，
+ # 否则会误删 base 图谱行（run_branch_index 必为 feature 分支）。
  await self._graph_writer.adelete_for_files(
- str(self.repository_id), deleted_file_paths
+ str(self.repository_id), deleted_file_paths,
+ branch_name=_resolve_write_branch(repository, branch_name),
  )
  except Exception:
  logger.warning(
@@ -1624,12 +1627,23 @@ class IndexerService:
  await update_index_stage(self.repository_id, IndexStage.BUILDING_GRAPH)
  # Phase GRAPH-：先按 deleted_file_paths 清孤儿（git_diff 路径
  # 的 deleted_file_paths 已在 line ~1210 提早计算好）。
+ #：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
+ # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
+ _repo_for_branch = await Repository.objects.filter(
+ id=self.repository_id
+ ).afirst
+ _write_branch = (
+ _resolve_write_branch(_repo_for_branch, branch_name)
+ if _repo_for_branch is not None
+ else ("" if (branch_name is None or is_base_branch) else branch_name)
+ )
  if deleted_file_paths:
  self._init_graph_services
  if self._graph_writer is not None:
  try:
  await self._graph_writer.adelete_for_files(
- str(self.repository_id), deleted_file_paths
+ str(self.repository_id), deleted_file_paths,
+ branch_name=_write_branch,
  )
  except Exception:
  logger.warning(
@@ -1648,17 +1662,8 @@ class IndexerService:
  # Phase GRAPH-：入口 reset Repository 5 字段。
  await reset_repository_graph_progress(self.repository_id)
  try:
- #：归一化分支名 + 透传本次 IndexHistory.id（history_id 形参）。
- # 本函数无 repository 对象在 scope，取一次后走集中式 _resolve_write_branch；
- # 取不到时退用 is_base_branch 标记归一化（base→""，feature→branch_name）。
- _repo_for_branch = await Repository.objects.filter(
- id=self.repository_id
- ).afirst
- _write_branch = (
- _resolve_write_branch(_repo_for_branch, branch_name)
- if _repo_for_branch is not None
- else ("" if (branch_name is None or is_base_branch) else branch_name)
- )
+ #：复用上方已归一化的 _write_branch（：删除与写入同分支）；
+ # 透传本次 IndexHistory.id（history_id 形参）。
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
@@ -1992,12 +1997,23 @@ class IndexerService:
  deleted_file_paths = [
  d.file_path for d in diffs if d.action == DiffAction.DELETE
  ]
+ #：孤儿删除与图谱写入必须用同一归一化分支，否则 feature
+ # 分支删除文件会误删 base 图谱行。提前归一化，复用于删除与写入两处。
+ _repo_for_branch = await Repository.objects.filter(
+ id=self.repository_id
+ ).afirst
+ _write_branch = (
+ _resolve_write_branch(_repo_for_branch, branch_name)
+ if _repo_for_branch is not None
+ else ("" if (branch_name is None or is_base_branch) else branch_name)
+ )
  if deleted_file_paths:
  self._init_graph_services
  if self._graph_writer is not None:
  try:
  await self._graph_writer.adelete_for_files(
- str(self.repository_id), deleted_file_paths
+ str(self.repository_id), deleted_file_paths,
+ branch_name=_write_branch,
  )
  except Exception:
  logger.warning(
@@ -2026,17 +2042,8 @@ class IndexerService:
  total=len(graph_files),
  )
  try:
- #：归一化分支名 + 透传本次 IndexHistory.id（history_id 形参）。
- # 本函数无 repository 对象在 scope，取一次后走集中式 _resolve_write_branch；
- # 取不到时退用 is_base_branch 标记归一化（base→""，feature→branch_name）。
- _repo_for_branch = await Repository.objects.filter(
- id=self.repository_id
- ).afirst
- _write_branch = (
- _resolve_write_branch(_repo_for_branch, branch_name)
- if _repo_for_branch is not None
- else ("" if (branch_name is None or is_base_branch) else branch_name)
- )
+ #：复用上方已归一化的 _write_branch（：删除与写入同分支）；
+ # 透传本次 IndexHistory.id（history_id 形参）。
  stats = await self._extract_and_write_graph(
  repo_path=repo_path,
  file_paths=graph_files,
